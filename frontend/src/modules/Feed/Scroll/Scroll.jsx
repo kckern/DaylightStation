@@ -23,15 +23,21 @@ function decodeItemId(slug) {
   try { return atob(s); } catch { return null; }
 }
 
-function ScrollCard({ item, colors, onDismiss, onPlay, onClick, style, itemRef }) {
+function ScrollCard({ item, colors, onDismiss, onPlay, onClick, style, itemRef, viewportObserver }) {
   const wrapperRef = useRef(null);
   const touchRef = useRef(null);
 
-  // Combine refs: local wrapperRef + external measureRef
+  // Combine refs: local wrapperRef + external measureRef + viewport observer
   const setRefs = useCallback((node) => {
+    if (wrapperRef.current && viewportObserver) {
+      viewportObserver.unobserve(wrapperRef.current);
+    }
     wrapperRef.current = node;
     if (itemRef) itemRef(node);
-  }, [itemRef]);
+    if (node && viewportObserver) {
+      viewportObserver.observe(node);
+    }
+  }, [itemRef, viewportObserver]);
 
   const handleTouchStart = (e) => {
     const touch = e.touches[0];
@@ -85,6 +91,7 @@ function ScrollCard({ item, colors, onDismiss, onPlay, onClick, style, itemRef }
     <div
       ref={setRefs}
       className="scroll-item-wrapper"
+      data-item-id={item.id}
       style={style}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
@@ -169,7 +176,9 @@ export default function Scroll() {
 
       feedLog.scroll(append ? 'fetchMore' : 'fetchInitial', { cursor, focus: focusSource, filter: filterParam, currentCount: cur.length });
 
+      const fetchStart = performance.now();
       const result = await DaylightAPI(`/api/v1/feed/scroll?${params}`);
+      feedLog.timing('scroll-fetch', { durationMs: Math.round(performance.now() - fetchStart), append, cursor, count: (result.items || []).length });
 
       const incoming = result.items || [];
       if (result.colors) setColors(result.colors);
@@ -231,6 +240,56 @@ export default function Scroll() {
     return () => observerRef.current?.disconnect();
   }, [hasMore, loadingMore, fetchItems, loading]);
 
+  // Scroll activity tracking
+  useEffect(() => {
+    let lastY = window.scrollY;
+    let lastTime = performance.now();
+
+    const handler = () => {
+      const now = performance.now();
+      const y = window.scrollY;
+      const dy = y - lastY;
+      const dt = now - lastTime;
+      const velocity = dt > 0 ? Math.round((dy / dt) * 1000) : 0;
+      feedLog.scroll('activity', {
+        scrollY: Math.round(y),
+        direction: dy > 0 ? 'down' : dy < 0 ? 'up' : 'idle',
+        velocity,
+        dt: Math.round(dt),
+      });
+      lastY = y;
+      lastTime = now;
+    };
+
+    window.addEventListener('scroll', handler, { passive: true });
+    return () => window.removeEventListener('scroll', handler);
+  }, []);
+
+  // Card viewport tracking (enter/exit with dwell time)
+  const enterTimesRef = useRef(new Map());
+  const viewportObserverRef = useRef(null);
+
+  useEffect(() => {
+    viewportObserverRef.current = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const id = entry.target.dataset.itemId;
+          if (!id) continue;
+          if (entry.isIntersecting) {
+            enterTimesRef.current.set(id, performance.now());
+            feedLog.viewport('enter', { id, scrollY: Math.round(window.scrollY) });
+          } else if (enterTimesRef.current.has(id)) {
+            const dwellMs = Math.round(performance.now() - enterTimesRef.current.get(id));
+            enterTimesRef.current.delete(id);
+            feedLog.viewport('exit', { id, dwellMs, scrollY: Math.round(window.scrollY) });
+          }
+        }
+      },
+      { threshold: 0.5 }
+    );
+    return () => viewportObserverRef.current?.disconnect();
+  }, []);
+
   /** Queue of item IDs to batch-dismiss via API. */
   const dismissQueueRef = useRef([]);
   const dismissTimerRef = useRef(null);
@@ -283,8 +342,10 @@ export default function Scroll() {
       if (item.link) params.set('link', item.link);
       if (item.meta) params.set('meta', JSON.stringify(item.meta));
 
+      const detailStart = performance.now();
       DaylightAPI(`/api/v1/feed/detail/${encodeURIComponent(item.id)}?${params}`)
         .then(result => {
+          feedLog.timing('detail-sections', { durationMs: Math.round(performance.now() - detailStart), id: fullId, sectionCount: result.sections?.length || 0 });
           feedLog.detail('loaded', { id: fullId, sections: result.sections?.length || 0 });
           setDetailData(result);
         })
@@ -302,8 +363,10 @@ export default function Scroll() {
       setDeepLinkedItem(null);
       if (!isDesktop) window.scrollTo(0, 0);
 
+      const detailStart = performance.now();
       DaylightAPI(`/api/v1/feed/scroll/item/${urlSlug}`)
         .then(result => {
+          feedLog.timing('deeplink-fetch', { durationMs: Math.round(performance.now() - detailStart), slug: urlSlug, hasItem: !!result.item, sectionCount: result.sections?.length || 0 });
           feedLog.detail('deep link loaded', { hasItem: !!result.item, sections: result.sections?.length || 0 });
           if (result.item) setDeepLinkedItem(result.item);
           setDetailData({
@@ -325,13 +388,17 @@ export default function Scroll() {
   // Restore scroll position when navigating back to list
   useEffect(() => {
     if (!urlSlug) {
-      feedLog.nav('back to list — restoring scrollY', { savedY: savedScrollRef.current, itemCount: items.length });
+      const savedY = savedScrollRef.current;
+      feedLog.nav('back to list', { savedY, itemCount: items.length });
       setDetailData(null);
       setDetailLoading(false);
       setDeepLinkedItem(null);
       prevSlugRef.current = null;
       requestAnimationFrame(() => {
-        window.scrollTo(0, savedScrollRef.current);
+        window.scrollTo(0, savedY);
+        requestAnimationFrame(() => {
+          feedLog.nav('scroll restored', { targetY: savedY, actualY: Math.round(window.scrollY), delta: Math.round(window.scrollY - savedY) });
+        });
       });
     }
   }, [urlSlug]);
@@ -366,7 +433,7 @@ export default function Scroll() {
   const handleCardClick = useCallback((e, item) => {
     e.preventDefault();
     savedScrollRef.current = window.scrollY;
-    feedLog.nav('card click — saving scrollY', { scrollY: window.scrollY, id: item.id, title: item.title });
+    feedLog.nav('card click', { scrollY: Math.round(window.scrollY), id: item.id, title: item.title, source: item.source, tier: item.tier });
     navigate(`/feed/scroll/${encodeItemId(item.id)}`);
   }, [navigate]);
 
@@ -449,6 +516,7 @@ export default function Scroll() {
               onClick={(e) => handleCardClick(e, item)}
               style={getItemStyle(item.id)}
               itemRef={measureRef(item.id)}
+              viewportObserver={viewportObserverRef.current}
             />
           ))}
         </div>

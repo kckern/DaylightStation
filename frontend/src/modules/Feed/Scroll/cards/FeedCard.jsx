@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { formatAge, proxyIcon, proxyImage, isImageUrl } from './utils.js';
 import { getBodyModule } from './bodies/index.js';
 import { getContentPlugin } from '../../contentPlugins/index.js';
 import { feedLog } from '../feedLog.js';
-import FeedPlayer from '../detail/FeedPlayer.jsx';
+import FeedPlayer from '../../players/FeedPlayer.jsx';
 import { DaylightAPI } from '../../../../lib/api.mjs';
 
 function formatDuration(seconds) {
@@ -27,11 +27,13 @@ function HeroImage({ src, thumbnail }) {
   const [phase, setPhase] = useState(thumbnail ? 'thumbnail' : 'original');
   // Track when full image is loaded and ready to display
   const [fullLoaded, setFullLoaded] = useState(!thumbnail);
+  const loadStartRef = useRef(performance.now());
 
   useEffect(() => {
     setImgSrc(thumbnail || src);
     setPhase(thumbnail ? 'thumbnail' : 'original');
     setFullLoaded(!thumbnail);
+    loadStartRef.current = performance.now();
   }, [src, thumbnail]);
 
   // Preload full image in background when we have a thumbnail
@@ -39,14 +41,16 @@ function HeroImage({ src, thumbnail }) {
     if (!thumbnail || !src || thumbnail === src) return;
     const img = new Image();
     img.onload = () => {
+      const durationMs = Math.round(performance.now() - loadStartRef.current);
+      feedLog.timing('card-image-preload', { phase: 'full', durationMs, src });
       setImgSrc(src);
       setPhase('original');
-      // Small delay to let the browser paint the new src before fading in
+      loadStartRef.current = performance.now();
       requestAnimationFrame(() => setFullLoaded(true));
     };
     img.onerror = () => {
-      // Full image failed; stay on thumbnail, that's fine
-      feedLog.image('card hero full-res failed, keeping thumbnail', { src, thumbnail });
+      const durationMs = Math.round(performance.now() - loadStartRef.current);
+      feedLog.image('card hero full-res failed, keeping thumbnail', { src, thumbnail, durationMs });
       setFullLoaded(true);
     };
     img.src = src;
@@ -54,19 +58,21 @@ function HeroImage({ src, thumbnail }) {
   }, [src, thumbnail]);
 
   const handleError = () => {
+    const durationMs = Math.round(performance.now() - loadStartRef.current);
     if (phase === 'thumbnail' && src && src !== thumbnail) {
-      // Thumbnail failed, try full image directly
-      feedLog.image('card hero thumbnail failed, trying full', { thumbnail, src });
+      feedLog.image('card hero thumbnail failed', { thumbnail, src, durationMs });
       setPhase('original');
       setImgSrc(src);
       setFullLoaded(true);
+      loadStartRef.current = performance.now();
     } else if ((phase === 'original' || phase === 'thumbnail') && proxied) {
-      feedLog.image('card hero fallback to proxy', { original: src, proxy: proxied });
+      feedLog.image('card hero fallback to proxy', { original: src, proxy: proxied, durationMs });
       setPhase('proxy');
       setImgSrc(proxied);
       setFullLoaded(true);
+      loadStartRef.current = performance.now();
     } else {
-      feedLog.image('card hero hidden — all sources failed', { src });
+      feedLog.image('card hero hidden', { src, durationMs });
       setPhase('hidden');
     }
   };
@@ -85,6 +91,10 @@ function HeroImage({ src, thumbnail }) {
         objectFit: 'cover',
         opacity: fullLoaded ? 1 : 0.6,
         transition: 'opacity 0.4s ease-in-out',
+      }}
+      onLoad={() => {
+        const durationMs = Math.round(performance.now() - loadStartRef.current);
+        feedLog.timing('card-image', { phase, durationMs, src: imgSrc });
       }}
       onError={handleError}
     />
@@ -120,8 +130,10 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
   const handlePlay = (e) => {
     e.stopPropagation();
     if (canPlayInline) {
+      feedLog.interaction('inline-play', { id: item.id, contentType: item.contentType, videoId: item.meta?.videoId });
       setPlayingInline(true);
     } else {
+      feedLog.interaction('remote-play', { id: item.id, contentType: item.contentType });
       onPlay?.(item);
     }
   };
@@ -335,19 +347,42 @@ function CardYouTubePlayer({ item }) {
   const [useEmbed, setUseEmbed] = useState(false);
 
   useEffect(() => {
+    const fetchStart = performance.now();
     const params = new URLSearchParams();
     params.set('quality', '720p');
     if (item.meta) params.set('meta', JSON.stringify(item.meta));
+
+    feedLog.resolution('native-attempt', { videoId: item.meta?.videoId, quality: '720p' });
+
     DaylightAPI(`/api/v1/feed/detail/${encodeURIComponent(item.id)}?${params}`)
       .then(result => {
+        const durationMs = Math.round(performance.now() - fetchStart);
         const section = result?.sections?.find(s => s.type === 'player' && s.data?.provider === 'youtube');
-        if (section) setPlayerData(section.data);
+        if (section) {
+          feedLog.resolution('native-resolved', {
+            videoId: item.meta?.videoId,
+            hasVideoUrl: !!section.data?.videoUrl,
+            hasAudioUrl: !!section.data?.audioUrl,
+            hasUrl: !!section.data?.url,
+            mode: (section.data?.videoUrl && section.data?.audioUrl) ? 'split' : 'combined',
+            durationMs,
+          });
+          setPlayerData(section.data);
+        } else {
+          feedLog.resolution('native-no-player-section', { videoId: item.meta?.videoId, durationMs, sectionCount: result?.sections?.length || 0 });
+        }
         setFetchDone(true);
       })
-      .catch(() => setFetchDone(true));
+      .catch((err) => {
+        feedLog.resolution('native-fetch-error', { videoId: item.meta?.videoId, error: err.message });
+        setFetchDone(true);
+      });
   }, [item.id, item.meta]);
 
-  const handleStreamError = useCallback(() => setUseEmbed(true), []);
+  const handleStreamError = useCallback(() => {
+    feedLog.resolution('embed-fallback', { videoId: item.meta?.videoId, reason: 'stream-error' });
+    setUseEmbed(true);
+  }, [item.meta?.videoId]);
 
   const ar = (item.meta?.imageWidth && item.meta?.imageHeight)
     ? `${item.meta.imageWidth} / ${item.meta.imageHeight}`

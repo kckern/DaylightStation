@@ -19,11 +19,26 @@ function isScrapedGarbage(text) {
 }
 
 export class YouTubeContentPlugin extends IContentPlugin {
+  #logger;
+
+  constructor({ logger = console } = {}) {
+    super();
+    this.#logger = logger;
+  }
+
   get contentType() { return 'youtube'; }
 
   detect(item) {
     if (!item.link) return false;
-    return YT_URL_PATTERN.test(item.link);
+    const match = YT_URL_PATTERN.test(item.link);
+    if (match) {
+      this.#logger.debug?.('feed.youtube.detected', {
+        videoId: item.link.match(YT_URL_PATTERN)?.[1],
+        isShorts: YT_SHORTS_PATTERN.test(item.link),
+        url: item.link,
+      });
+    }
+    return match;
   }
 
   enrich(item) {
@@ -32,6 +47,13 @@ export class YouTubeContentPlugin extends IContentPlugin {
 
     const videoId = match[1];
     const isShort = YT_SHORTS_PATTERN.test(item.link);
+
+    this.#logger.debug?.('feed.youtube.enriched', {
+      videoId,
+      isShort,
+      hasExistingImage: !!item.image,
+    });
+
     const result = {
       contentType: 'youtube',
       meta: {

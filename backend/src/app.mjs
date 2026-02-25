@@ -874,7 +874,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const { ContentPluginRegistry } = await import('./3_applications/feed/services/ContentPluginRegistry.mjs');
     const { YouTubeContentPlugin } = await import('./1_adapters/feed/plugins/youtube.mjs');
     const contentPluginRegistry = new ContentPluginRegistry([
-      new YouTubeContentPlugin(),
+      new YouTubeContentPlugin({ logger: rootLogger.child({ module: 'youtube-plugin' }) }),
     ]);
 
     const tierAssemblyService = new TierAssemblyService({

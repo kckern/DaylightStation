@@ -52,10 +52,12 @@ export class WebContentAdapter {
   async resolveIcon(url) {
     const cached = this.#iconCache.get(url);
     if (cached && Date.now() - cached.time < ICON_TTL) {
+      this.#logger.debug?.('webcontent.icon.cacheHit', { url });
       return { data: cached.data, contentType: cached.contentType };
     }
 
     try {
+      const start = Date.now();
       const iconUrl = await this.#resolveIconUrl(url);
       const iconRes = await fetch(iconUrl);
       if (!iconRes.ok) return null;
@@ -65,6 +67,13 @@ export class WebContentAdapter {
 
       this.#iconCache.set(url, { data: buffer, contentType, time: Date.now() });
       this.#evictStaleIcons();
+
+      this.#logger.debug?.('webcontent.icon.resolved', {
+        url,
+        contentType,
+        size: buffer.length,
+        durationMs: Date.now() - start,
+      });
 
       return { data: buffer, contentType };
     } catch (err) {
@@ -175,14 +184,24 @@ export class WebContentAdapter {
    */
   async proxyImage(url) {
     try {
+      const start = Date.now();
       const res = await fetch(url, {
         headers: { 'User-Agent': USER_AGENT },
         signal: AbortSignal.timeout(READABLE_TIMEOUT),
       });
-      if (!res.ok) return { data: PLACEHOLDER_SVG, contentType: 'image/svg+xml' };
+      if (!res.ok) {
+        this.#logger.debug?.('webcontent.image.fallback', { url, status: res.status, durationMs: Date.now() - start });
+        return { data: PLACEHOLDER_SVG, contentType: 'image/svg+xml' };
+      }
 
       const contentType = res.headers.get('content-type') || 'image/png';
       const buffer = Buffer.from(await res.arrayBuffer());
+      this.#logger.debug?.('webcontent.image.proxied', {
+        url,
+        contentType,
+        size: buffer.length,
+        durationMs: Date.now() - start,
+      });
       return { data: buffer, contentType };
     } catch (err) {
       this.#logger.warn?.('webcontent.proxyImage.error', { url, error: err.message });
@@ -202,19 +221,28 @@ export class WebContentAdapter {
    * @throws {Error} If the upstream page cannot be fetched
    */
   async extractReadableContent(url) {
+    const start = Date.now();
     const pageRes = await fetch(url, {
       headers: { 'User-Agent': USER_AGENT, 'Accept': 'text/html' },
       signal: AbortSignal.timeout(READABLE_TIMEOUT),
     });
 
     if (!pageRes.ok) {
+      this.#logger.warn?.('webcontent.readable.upstream-error', { url, status: pageRes.status, durationMs: Date.now() - start });
       const err = new Error(`Upstream returned ${pageRes.status}`);
       err.upstreamStatus = pageRes.status;
       throw err;
     }
 
     const html = await pageRes.text();
-    return this.#parseHtml(html);
+    const result = this.#parseHtml(html);
+    this.#logger.debug?.('webcontent.readable.extracted', {
+      url,
+      wordCount: result.wordCount,
+      hasOgImage: !!result.ogImage,
+      durationMs: Date.now() - start,
+    });
+    return result;
   }
 
   /**

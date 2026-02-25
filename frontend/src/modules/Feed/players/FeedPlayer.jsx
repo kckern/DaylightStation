@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { RemuxPlayer } from '../../Player/renderers/RemuxPlayer.jsx';
 import { useFeedPlayer } from './FeedPlayerContext.jsx';
+import getLogger from '../../../lib/logging/Logger.js';
+
+const log = getLogger().child({ module: 'feed-player' });
 
 function formatTime(s) {
   if (!s || !Number.isFinite(s)) return '0:00';
@@ -55,7 +58,29 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
   const [duration, setDuration] = useState(0);
   const [controlsVisible, setControlsVisible] = useState(true);
   const hideTimerRef = useRef(null);
+  const mountTimeRef = useRef(performance.now());
+  const firstFrameLoggedRef = useRef(false);
   const isSplit = !!(playerData.videoUrl && playerData.audioUrl);
+
+  useEffect(() => {
+    mountTimeRef.current = performance.now();
+    firstFrameLoggedRef.current = false;
+  }, [playerData]);
+
+  // Log mount with stream info
+  useEffect(() => {
+    log.info('feedPlayer.mount', {
+      mode: isSplit ? 'split' : 'combined',
+      hasVideo: !!playerData.videoUrl,
+      hasAudio: !!playerData.audioUrl,
+      hasUrl: !!playerData.url,
+      provider: playerData.provider,
+      videoUrl: playerData.videoUrl || null,
+      audioUrl: playerData.audioUrl || null,
+      url: playerData.url || null,
+    });
+    return () => log.info('feedPlayer.unmount');
+  }, []);
 
   // Read playback preferences from context
   const {
@@ -150,8 +175,8 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
     seek(Math.max(0, Math.min(duration, pct * duration)));
   }, [duration, seek]);
 
-  const handlePlay = useCallback(() => setPlaying(true), []);
-  const handlePause = useCallback(() => setPlaying(false), []);
+  const handlePlay = useCallback(() => { log.info('feedPlayer.play'); setPlaying(true); }, []);
+  const handlePause = useCallback(() => { log.info('feedPlayer.pause'); setPlaying(false); }, []);
 
   // RemuxPlayer callback refs
   const handleRemuxMediaRef = useCallback((el) => {
@@ -174,11 +199,20 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
         <RemuxPlayer
           videoUrl={playerData.videoUrl}
           audioUrl={playerData.audioUrl}
-          onError={() => onError?.('stream-error')}
+          onError={() => { log.error('feedPlayer.error', { mode: 'split' }); onError?.('stream-error'); }}
           onMediaRef={handleRemuxMediaRef}
           onRegisterMediaAccess={handleRemuxRegisterMediaAccess}
           onPlaybackMetrics={({ isPaused }) => {
-            if (typeof isPaused === 'boolean') setPlaying(!isPaused);
+            if (typeof isPaused === 'boolean') {
+              if (!isPaused && !firstFrameLoggedRef.current) {
+                firstFrameLoggedRef.current = true;
+                log.info('feedPlayer.firstFrame', {
+                  mode: 'split',
+                  durationMs: Math.round(performance.now() - mountTimeRef.current),
+                });
+              }
+              setPlaying(!isPaused);
+            }
           }}
           volume={volume}
           playbackRate={speed}
@@ -193,7 +227,33 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
             playsInline
             onPlay={handlePlay}
             onPause={handlePause}
-            onError={() => onError?.('stream-error')}
+            onLoadedMetadata={() => {
+              const v = videoRef.current;
+              if (!v) return;
+              log.debug('feedPlayer.loadedMetadata', {
+                mode: 'combined',
+                width: v.videoWidth,
+                height: v.videoHeight,
+                duration: v.duration,
+                src: playerData.url,
+              });
+            }}
+            onCanPlay={() => {
+              log.debug('feedPlayer.canplay', {
+                mode: 'combined',
+                durationMs: Math.round(performance.now() - mountTimeRef.current),
+              });
+            }}
+            onPlaying={() => {
+              if (!firstFrameLoggedRef.current) {
+                firstFrameLoggedRef.current = true;
+                log.info('feedPlayer.firstFrame', {
+                  mode: 'combined',
+                  durationMs: Math.round(performance.now() - mountTimeRef.current),
+                });
+              }
+            }}
+            onError={() => { log.error('feedPlayer.error', { mode: 'combined', src: playerData.url }); onError?.('stream-error'); }}
             style={{ width: '100%', height: '100%', objectFit: 'contain' }}
           />
         </>
