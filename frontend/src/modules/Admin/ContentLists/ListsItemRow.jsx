@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, forwardRef, useCallback, useMemo } 
 import { useNavigate, useParams } from 'react-router-dom';
 import { Text, Checkbox, ActionIcon, Menu, TextInput, Combobox, useCombobox, InputBase, Loader, Group, Avatar, Badge, Box, Drawer, Stack, ScrollArea, Divider, Progress, Modal } from '@mantine/core';
 import { useDebouncedValue } from '@mantine/hooks';
+import { notifications } from '@mantine/notifications';
 import {
   IconGripVertical, IconTrash, IconCopy, IconDotsVertical, IconPlus,
   IconMusic, IconDeviceTv, IconMovie, IconDeviceTvOld, IconStack2,
@@ -2472,6 +2473,15 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
   };
 
   const handleLabelSave = () => {
+    if (!labelValue?.trim()) {
+      notifications.show({
+        message: 'Label cannot be empty',
+        color: 'red',
+        autoClose: 2000,
+      });
+      setEditingLabel(false);
+      return;
+    }
     if (labelValue.trim() && labelValue !== item.label) {
       log.info('label.save', { index: item.index, oldLabel: item.label, newLabel: labelValue.trim() });
       onUpdate({ label: labelValue.trim() });
