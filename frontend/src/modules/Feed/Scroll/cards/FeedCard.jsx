@@ -21,7 +21,7 @@ const STATUS_COLORS = {
   green: '#51cf66',
 };
 
-function HeroImage({ src, thumbnail }) {
+function HeroImage({ src, thumbnail, itemId, title }) {
   const proxied = proxyImage(src);
   const [imgSrc, setImgSrc] = useState(thumbnail || src);
   const [phase, setPhase] = useState(thumbnail ? 'thumbnail' : 'original');
@@ -42,7 +42,7 @@ function HeroImage({ src, thumbnail }) {
     const img = new Image();
     img.onload = () => {
       const durationMs = Math.round(performance.now() - loadStartRef.current);
-      feedLog.timing('card-image-preload', { phase: 'full', durationMs, src });
+      feedLog.timing('card-image-preload', { phase: 'full', durationMs, src, itemId, title });
       setImgSrc(src);
       setPhase('original');
       loadStartRef.current = performance.now();
@@ -50,7 +50,7 @@ function HeroImage({ src, thumbnail }) {
     };
     img.onerror = () => {
       const durationMs = Math.round(performance.now() - loadStartRef.current);
-      feedLog.image('card hero full-res failed, keeping thumbnail', { src, thumbnail, durationMs });
+      feedLog.image('card hero full-res failed, keeping thumbnail', { src, thumbnail, durationMs, itemId, title });
       setFullLoaded(true);
     };
     img.src = src;
@@ -60,19 +60,19 @@ function HeroImage({ src, thumbnail }) {
   const handleError = () => {
     const durationMs = Math.round(performance.now() - loadStartRef.current);
     if (phase === 'thumbnail' && src && src !== thumbnail) {
-      feedLog.image('card hero thumbnail failed', { thumbnail, src, durationMs });
+      feedLog.image('card hero thumbnail failed', { thumbnail, src, durationMs, itemId, title });
       setPhase('original');
       setImgSrc(src);
       setFullLoaded(true);
       loadStartRef.current = performance.now();
     } else if ((phase === 'original' || phase === 'thumbnail') && proxied) {
-      feedLog.image('card hero fallback to proxy', { original: src, proxy: proxied, durationMs });
+      feedLog.image('card hero fallback to proxy', { original: src, proxy: proxied, durationMs, itemId, title });
       setPhase('proxy');
       setImgSrc(proxied);
       setFullLoaded(true);
       loadStartRef.current = performance.now();
     } else {
-      feedLog.image('card hero hidden', { src, durationMs });
+      feedLog.image('card hero hidden', { src, durationMs, itemId, title });
       setPhase('hidden');
     }
   };
@@ -94,7 +94,7 @@ function HeroImage({ src, thumbnail }) {
       }}
       onLoad={() => {
         const durationMs = Math.round(performance.now() - loadStartRef.current);
-        feedLog.timing('card-image', { phase, durationMs, src: imgSrc });
+        feedLog.timing('card-image', { phase, durationMs, src: imgSrc, itemId, title });
       }}
       onError={handleError}
     />
@@ -130,10 +130,10 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
   const handlePlay = (e) => {
     e.stopPropagation();
     if (canPlayInline) {
-      feedLog.interaction('inline-play', { id: item.id, contentType: item.contentType, videoId: item.meta?.videoId });
+      feedLog.interaction('inline-play', { id: item.id, title: item.title, contentType: item.contentType, videoId: item.meta?.videoId });
       setPlayingInline(true);
     } else {
-      feedLog.interaction('remote-play', { id: item.id, contentType: item.contentType });
+      feedLog.interaction('remote-play', { id: item.id, title: item.title, contentType: item.contentType });
       onPlay?.(item);
     }
   };
@@ -163,7 +163,7 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
             <CardYouTubePlayer item={item} />
           ) : (
             <>
-              <HeroImage src={item.image} thumbnail={item.thumbnail} />
+              <HeroImage src={item.image} thumbnail={item.thumbnail} itemId={item.id} title={item.title} />
               {/* Duration badge */}
               {item.meta?.duration > 0 && (
                 <span style={{
@@ -352,7 +352,7 @@ function CardYouTubePlayer({ item }) {
     params.set('quality', '720p');
     if (item.meta) params.set('meta', JSON.stringify(item.meta));
 
-    feedLog.resolution('native-attempt', { videoId: item.meta?.videoId, quality: '720p' });
+    feedLog.resolution('native-attempt', { videoId: item.meta?.videoId, title: item.title, quality: '720p' });
 
     DaylightAPI(`/api/v1/feed/detail/${encodeURIComponent(item.id)}?${params}`)
       .then(result => {
@@ -361,6 +361,7 @@ function CardYouTubePlayer({ item }) {
         if (section) {
           feedLog.resolution('native-resolved', {
             videoId: item.meta?.videoId,
+            title: item.title,
             hasVideoUrl: !!section.data?.videoUrl,
             hasAudioUrl: !!section.data?.audioUrl,
             hasUrl: !!section.data?.url,
@@ -369,18 +370,18 @@ function CardYouTubePlayer({ item }) {
           });
           setPlayerData(section.data);
         } else {
-          feedLog.resolution('native-no-player-section', { videoId: item.meta?.videoId, durationMs, sectionCount: result?.sections?.length || 0 });
+          feedLog.resolution('native-no-player-section', { videoId: item.meta?.videoId, title: item.title, durationMs, sectionCount: result?.sections?.length || 0 });
         }
         setFetchDone(true);
       })
       .catch((err) => {
-        feedLog.resolution('native-fetch-error', { videoId: item.meta?.videoId, error: err.message });
+        feedLog.resolution('native-fetch-error', { videoId: item.meta?.videoId, title: item.title, error: err.message });
         setFetchDone(true);
       });
   }, [item.id, item.meta]);
 
   const handleStreamError = useCallback(() => {
-    feedLog.resolution('embed-fallback', { videoId: item.meta?.videoId, reason: 'stream-error' });
+    feedLog.resolution('embed-fallback', { videoId: item.meta?.videoId, title: item.title, reason: 'stream-error' });
     setUseEmbed(true);
   }, [item.meta?.videoId]);
 
