@@ -45,7 +45,7 @@ Validated by `IContentSource.mjs`:
 
 | Method | Capability | Purpose |
 |--------|-----------|---------|
-| `search(query)` | `searchable` | Return items matching a text query |
+| `search(query)` | `searchable` | Return items matching a text query. Receives `query.tier` (1=fast, 2=full) — see Search Tiers |
 | `getThumbnail(localId)` | `displayable` | Return an image/thumbnail for the item |
 | `getCapabilities(localId)` | — | Return the list of capabilities for a specific item |
 | `getContainerType(id)` | — | Return a container type string for selection strategy inference (see Content Progress) |
@@ -78,6 +78,74 @@ registry.register('hymn-library', filesystemAdapter, { driver: 'filesystem', con
 
 ---
 
+## Search Tiers
+
+The `tier` query parameter controls how much work a `search()` call does. This is an adapter-level concern — the query parser passes `query.tier` through, and each adapter decides how to handle it.
+
+### Why Tiers Exist
+
+Some adapters make many API calls per search. Plex's `search()` makes 30-80 calls: hub search, then load all playlists, then load collections per library section, then hydrate every result with `getItem()`. This takes 8-18 seconds. Most of that work is unnecessary when the user just wants to find "Star Wars" — the hub search alone returns it in ~300ms.
+
+Tiers let the frontend get fast results first and defer expensive work until the user explicitly asks for it.
+
+### Tier Definitions
+
+| Tier | Purpose | What Adapters Should Do |
+|------|---------|------------------------|
+| `1` (default) | Fast, top-level results | Single API call, no hydration, filter to containers/top-level types |
+| `2` (full) | Exhaustive search | All side-searches (playlists, collections), full metadata hydration, all item types |
+
+### Per-Adapter Behavior
+
+| Driver | Tier 1 | Tier 2 | Difference |
+|--------|--------|--------|------------|
+| **plex** | `hubSearch()` only → filter to show/movie/artist/album/collection → return without hydration (~300ms) | Full: hubSearch + `_searchPlaylists` + `_searchCollections` + `getItem()` per result (~8-18s) | 30-80x fewer API calls |
+| **immich** | Same as tier 2 | 4 parallel searches (assets, people, tags, albums) (~50-200ms) | No difference — already fast |
+| **audiobookshelf** | Same as tier 2 | Library scan + author detail fetch (~100-500ms) | No difference — already fast |
+| **filesystem** | Same as tier 2 | Local file scan (~<50ms) | No difference — local I/O |
+
+Adapters that are already fast (<500ms) ignore the tier parameter and always do their full search. Only adapters with expensive multi-phase search need to differentiate.
+
+### Adding Tier Support to a New Adapter
+
+If your adapter's `search()` takes >1s, consider adding tier support:
+
+```javascript
+async search(query) {
+  const tier = query.tier || 1;
+
+  // Always do the fast part
+  const quickResults = await this.quickSearch(query.text);
+
+  if (tier === 1) {
+    return { items: quickResults, total: quickResults.length };
+  }
+
+  // Tier 2: expensive follow-up
+  const [extras, hydrated] = await Promise.all([
+    this.searchExtras(query.text),
+    this.hydrateResults(quickResults)
+  ]);
+
+  const items = [...extras, ...hydrated];
+  return { items, total: items.length };
+}
+```
+
+If your adapter's search is already fast, just ignore `query.tier` — no changes needed.
+
+### Frontend Integration
+
+The admin `ContentSearchCombobox` handles tiers automatically:
+
+1. User types query → tier 1 fires after 300ms debounce → results appear in ~300ms
+2. If tier 1 returns results, a "Search all sources..." option appears at the bottom
+3. Clicking it (or Enter on it) triggers tier 2 → replaces results with full set
+4. If tier 1 returns 0 results, tier 2 auto-triggers immediately
+5. Auto-resolve (Tab/Enter on freeform text like "star wars") always uses tier 1 for speed
+
+---
+
 ## Built-in Drivers
 
 ### plex
@@ -89,6 +157,7 @@ Connects to a Plex media server via its API.
 - **Capabilities**: `playable`, `listable`, `queueable`, `searchable`, `displayable`
 - **Multi-instance**: Yes — one instance per Plex server
 - **Config**: host, port, token, libraries
+- **Search tiers**: Yes — tier 1 uses `hubSearch()` only (single API call, ~300ms), tier 2 adds playlist search, collection search per library section, and per-result `getItem()` hydration (30-80 API calls, 8-18s)
 
 ### immich
 

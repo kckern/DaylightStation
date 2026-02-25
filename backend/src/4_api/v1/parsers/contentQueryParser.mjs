@@ -120,6 +120,12 @@ export function parseContentQuery(rawParams) {
     if (parsed) query.time = parsed;
   }
 
+  // Search tier (1 = fast/lightweight, 2 = full/exhaustive)
+  if (rawParams.tier !== undefined) {
+    const tier = parseInt(rawParams.tier, 10);
+    if (!isNaN(tier)) query.tier = tier;
+  }
+
   // Pagination (convert to numbers)
   if (rawParams.take !== undefined) {
     const take = parseInt(rawParams.take, 10);
@@ -225,6 +231,14 @@ export function validateContentQuery(query) {
     errors.push({
       field: 'duration',
       message: `Invalid duration format: ${query.duration}. Use: 30, 3m, 1h, 1h30m, or ranges like 3m..10m`
+    });
+  }
+
+  // Tier validation
+  if (query.tier !== undefined && ![1, 2].includes(query.tier)) {
+    errors.push({
+      field: 'tier',
+      message: `Invalid tier: ${query.tier}. Must be 1 (fast) or 2 (full)`
     });
   }
 

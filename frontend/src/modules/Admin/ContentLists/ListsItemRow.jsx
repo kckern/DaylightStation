@@ -524,6 +524,29 @@ function ContentOption({ item, isCurrent, isHighlighted, onDrillDown, ...others 
   );
 }
 
+// Loading display with countup timer — shows user's intent while resolving
+function ResolvingDisplay({ value, onClick }) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const t0 = Date.now();
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div onClick={onClick} className="content-display" style={{ cursor: 'pointer' }}>
+      <Group gap={6} wrap="nowrap" style={{ flex: 1 }}>
+        <Avatar size={28} radius="sm" color="dark">
+          <Loader size={14} color="dimmed" />
+        </Avatar>
+        <Box style={{ flex: 1, minWidth: 0 }}>
+          <Text size="xs" truncate fw={500} c="dimmed">{value}</Text>
+          <Text size="xs" c="dimmed" fs="italic">Resolving...{elapsed > 0 ? ` ${elapsed}s` : ''}</Text>
+        </Box>
+      </Group>
+    </div>
+  );
+}
+
 // Shimmer skeleton matching resolved ContentItemDisplay layout (compact)
 function ContentDisplayShimmer({ onClick }) {
   return (
@@ -692,7 +715,7 @@ export async function fetchContentMetadata(value) {
 function ContentSearchCombobox({ value, onChange }) {
   const log = useMemo(() => adminLog('ContentSearchCombobox'), []);
   const [highlightedIdx, setHighlightedIdx] = useState(-1);
-  const { contentInfoMap } = useListsContext();
+  const { contentInfoMap, setContentInfo } = useListsContext();
   const [pagination, setPagination] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
 
@@ -707,6 +730,7 @@ function ContentSearchCombobox({ value, onChange }) {
   const [debouncedSearch] = useDebouncedValue(searchQuery, 300);
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
+  const [searchTier, setSearchTier] = useState(1); // 1 = fast results shown, 2 = full results loaded
   const [isEditing, setIsEditing] = useState(false);
   const contentInfo = contentInfoMap.get(value) || null;
   const loadingInfo = value && !contentInfoMap.has(value);
@@ -763,15 +787,30 @@ function ContentSearchCombobox({ value, onChange }) {
     setPendingApp(null);
     setParamOptions(null);
     setPagination(null);
+    setSearchTier(1);
     combobox.closeDropdown();
   }, [combobox]);
 
   // Content info is now derived from contentInfoMap via context (no independent fetch needed)
 
-  // Search content when query changes
+  // Helper: map API items to combobox options
+  const mapSearchItems = (items) => (items || []).map(item => ({
+    value: item.id || `${item.source}:${item.localId}`,
+    title: item.title,
+    source: item.source,
+    type: item.metadata?.type || item.type,
+    thumbnail: item.thumbnail,
+    grandparent: item.metadata?.grandparentTitle,
+    parent: item.metadata?.parentTitle,
+    library: item.metadata?.librarySectionTitle,
+    itemCount: item.metadata?.childCount ?? item.metadata?.leafCount ?? null
+  }));
+
+  // Search content when query changes — two-phase: tier 1 (fast) then tier 2 (full)
   useEffect(() => {
     if (!debouncedSearch || debouncedSearch.length < 2) {
       setSearchResults([]);
+      setSearchTier(1);
       return;
     }
     // Don't search when query matches the current value (just opened for browsing)
@@ -787,25 +826,20 @@ function ContentSearchCombobox({ value, onChange }) {
       return;
     }
 
+    let cancelled = false;
+
     const searchContent = async () => {
-      log.info('search.request', { query: debouncedSearch });
+      log.info('search.request', { query: debouncedSearch, tier: 1 });
       setSearching(true);
+      setSearchTier(1);
       const t0 = performance.now();
       try {
-        const response = await fetch(`/api/v1/content/query/search?text=${encodeURIComponent(debouncedSearch)}&take=20`);
+        // Phase 1: tier=1 (fast — hubSearch only, no hydration)
+        const response = await fetch(`/api/v1/content/query/search?text=${encodeURIComponent(debouncedSearch)}&take=20&tier=1`);
+        if (cancelled) return;
         if (response.ok) {
           const data = await response.json();
-          const results = (data.items || []).map(item => ({
-            value: item.id || `${item.source}:${item.localId}`,
-            title: item.title,
-            source: item.source,
-            type: item.metadata?.type || item.type,
-            thumbnail: item.thumbnail,
-            grandparent: item.metadata?.grandparentTitle,
-            parent: item.metadata?.parentTitle,
-            library: item.metadata?.librarySectionTitle,
-            itemCount: item.metadata?.childCount ?? item.metadata?.leafCount ?? null
-          }));
+          const results = mapSearchItems(data.items);
           // Merge in local app results
           const { searchApps, APP_REGISTRY: appReg } = await import('../../../lib/appRegistry.js');
           const appMatches = searchApps(debouncedSearch).map(app => ({
@@ -820,30 +854,96 @@ function ContentSearchCombobox({ value, onChange }) {
             param: app.param,
           }));
           const allResults = [...appMatches, ...results];
-          setSearchResults(allResults);
-          log.info('search.results', {
-            query: debouncedSearch,
-            durationMs: Math.round(performance.now() - t0),
-            resultCount: allResults.length,
-            appMatches: appMatches.length,
-            contentMatches: results.length,
-            items: allResults.slice(0, 20).map(r => ({ value: r.value, title: r.title, source: r.source, type: r.type }))
-          });
+          if (!cancelled) {
+            setSearchResults(allResults);
+            setSearching(false);
+            log.info('search.results', {
+              query: debouncedSearch, tier: 1,
+              durationMs: Math.round(performance.now() - t0),
+              resultCount: allResults.length,
+              appMatches: appMatches.length,
+              contentMatches: results.length,
+              items: allResults.slice(0, 20).map(r => ({ value: r.value, title: r.title, source: r.source, type: r.type }))
+            });
+
+            // If tier 1 returned 0 content results, auto-trigger tier 2
+            if (results.length === 0) {
+              log.info('search.auto_tier2', { query: debouncedSearch, reason: 'no_tier1_results' });
+              fetchTier2(debouncedSearch, appMatches, t0);
+            }
+          }
         } else {
-          log.warn('search.http_error', { query: debouncedSearch, status: response.status, durationMs: Math.round(performance.now() - t0) });
+          if (!cancelled) {
+            log.warn('search.http_error', { query: debouncedSearch, tier: 1, status: response.status, durationMs: Math.round(performance.now() - t0) });
+            setSearching(false);
+          }
         }
       } catch (err) {
-        adminLog('ContentSearchCombobox').error('search.error', { query: debouncedSearch, error: err.message });
-      } finally {
-        setSearching(false);
+        if (!cancelled) {
+          adminLog('ContentSearchCombobox').error('search.error', { query: debouncedSearch, tier: 1, error: err.message });
+          setSearching(false);
+        }
       }
     };
 
     searchContent();
+
+    return () => { cancelled = true; };
   }, [debouncedSearch, value, browseItems.length]);
+
+  // Tier 2 full search — triggered on demand or when tier 1 yields 0 results
+  const fetchTier2 = useCallback(async (query, existingAppMatches = null, t0Start = null) => {
+    const t0 = t0Start || performance.now();
+    log.info('search.request', { query, tier: 2 });
+    setSearching(true);
+    try {
+      const response = await fetch(`/api/v1/content/query/search?text=${encodeURIComponent(query)}&take=20&tier=2`);
+      if (response.ok) {
+        const data = await response.json();
+        const results = mapSearchItems(data.items);
+        // Merge app results if not already provided
+        let appMatches = existingAppMatches;
+        if (!appMatches) {
+          const { searchApps, APP_REGISTRY: appReg } = await import('../../../lib/appRegistry.js');
+          appMatches = searchApps(query).map(app => ({
+            value: `app:${app.id}`,
+            title: app.label,
+            source: 'app',
+            type: 'app',
+            thumbnail: appReg[app.id]?.icon || null,
+            isApp: true,
+            appId: app.id,
+            hasParam: !!app.param,
+            param: app.param,
+          }));
+        }
+        const allResults = [...appMatches, ...results];
+        setSearchResults(allResults);
+        setSearchTier(2);
+        log.info('search.results', {
+          query, tier: 2,
+          durationMs: Math.round(performance.now() - t0),
+          resultCount: allResults.length,
+          contentMatches: results.length
+        });
+      } else {
+        log.warn('search.http_error', { query, tier: 2, status: response.status });
+      }
+    } catch (err) {
+      adminLog('ContentSearchCombobox').error('search.error', { query, tier: 2, error: err.message });
+    } finally {
+      setSearching(false);
+    }
+  }, []);
 
   const handleOptionSelect = async (val) => {
     log.info('option.select', { val, value });
+    // "Search all sources..." triggers tier 2 fetch instead of selecting
+    if (val === '__search_all__') {
+      log.info('search.tier2.manual', { query: debouncedSearch });
+      fetchTier2(debouncedSearch);
+      return;
+    }
     // Check if this is an app with params
     const item = [...searchResults, ...browseItems].find(r => r.value === val);
     if (item?.isApp && item.hasParam) {
@@ -1295,6 +1395,15 @@ function ContentSearchCombobox({ value, onChange }) {
     } else if (cached?.status === 'pending' && cached.promise) {
       // In flight - wait for it
       log.debug('editing.cache_pending', { value });
+      // Prepopulate with current item so dropdown shows content instead of blank "Loading..."
+      if (contentInfo && !contentInfo.unresolved) {
+        setBrowseItems([{
+          value: contentInfo.value, title: contentInfo.title, source: contentInfo.source,
+          type: contentInfo.type, thumbnail: contentInfo.thumbnail, grandparent: contentInfo.grandparent,
+          parent: contentInfo.parent, library: contentInfo.library, itemCount: contentInfo.itemCount,
+        }]);
+        setHighlightedIdx(0);
+      }
       setLoadingBrowse(true);
       cached.promise.then(data => {
         if (data) {
@@ -1313,14 +1422,30 @@ function ContentSearchCombobox({ value, onChange }) {
     } else {
       // Cache miss - fetch normally
       log.debug('editing.cache_miss', { value });
+      // Prepopulate with current item so dropdown shows content instead of blank "Loading..."
+      if (contentInfo && !contentInfo.unresolved) {
+        setBrowseItems([{
+          value: contentInfo.value, title: contentInfo.title, source: contentInfo.source,
+          type: contentInfo.type, thumbnail: contentInfo.thumbnail, grandparent: contentInfo.grandparent,
+          parent: contentInfo.parent, library: contentInfo.library, itemCount: contentInfo.itemCount,
+        }]);
+        setHighlightedIdx(0);
+      }
       fetchSiblings();
     }
   };
 
   const handleBlur = () => {
-    log.debug('blur', { value, searchQuery });
     // Delay to allow click events on dropdown to fire first
-    blurTimeoutRef.current = setTimeout(() => resetComboboxState(), 150);
+    blurTimeoutRef.current = setTimeout(() => {
+      // If user typed freeform text and clicked away, commit it (same as Tab/Enter)
+      if (searchQuery && searchQuery !== value) {
+        commitFreeformText('blur');
+      } else {
+        log.debug('blur.no_change', { searchQuery, value });
+        resetComboboxState();
+      }
+    }, 150);
   };
 
   // Normalize value for comparison (handle "plex: 123" vs "plex:123")
@@ -1347,16 +1472,21 @@ function ContentSearchCombobox({ value, onChange }) {
     : isActiveSearch ? searchResults : browseItems;
 
   // Commit freeform text + fire auto-resolve search
+  const AUTO_RESOLVE_TIMEOUT_MS = 15000;
   const commitFreeformText = (trigger) => {
-    log.info(`key.${trigger}.freeform`, { searchQuery, availableResults: displayItems.length, prevValue: value });
+    log.info(`commit.freeform`, { searchQuery, availableResults: displayItems.length, prevValue: value, trigger });
     log.info('value.save', { newValue: searchQuery, prevValue: value, source: 'freeform', trigger });
     onChange(searchQuery);
     // Auto-resolve: if freeform text isn't a content ID, search for it
     if (!searchQuery.match(/^[^:]+:\s*.+$/)) {
       const controller = new AbortController();
-      autoResolveRef.current = { query: searchQuery, controller };
-      log.info('search.auto_resolve.start', { query: searchQuery, trigger });
-      fetch(`/api/v1/content/query/search?text=${encodeURIComponent(searchQuery)}&take=1`,
+      const timeout = setTimeout(() => {
+        log.warn('search.auto_resolve.timeout', { query: searchQuery, timeoutMs: AUTO_RESOLVE_TIMEOUT_MS });
+        controller.abort();
+      }, AUTO_RESOLVE_TIMEOUT_MS);
+      autoResolveRef.current = { query: searchQuery, controller, startedAt: Date.now() };
+      log.info('search.auto_resolve.start', { query: searchQuery, trigger, timeoutMs: AUTO_RESOLVE_TIMEOUT_MS });
+      fetch(`/api/v1/content/query/search?text=${encodeURIComponent(searchQuery)}&take=1&tier=1`,
             { signal: controller.signal })
         .then(res => res.ok ? res.json() : null)
         .then(data => {
@@ -1364,14 +1494,19 @@ function ContentSearchCombobox({ value, onChange }) {
           const items = data?.items || [];
           if (items.length > 0) {
             const resolved = items[0].id || `${items[0].source}:${items[0].localId}`;
-            log.info('search.auto_resolve.success', { query: searchQuery, resolvedTo: resolved, title: items[0].title });
+            log.info('search.auto_resolve.success', { query: searchQuery, resolvedTo: resolved, title: items[0].title, durationMs: Date.now() - autoResolveRef.current.startedAt });
             onChange(resolved);
+            // Eagerly populate content cache so the row doesn't stay in loading state
+            fetchContentMetadata(resolved).then(info => {
+              if (info) setContentInfo(resolved, info);
+            });
           } else {
             log.info('search.auto_resolve.no_results', { query: searchQuery });
           }
           autoResolveRef.current = null;
         })
-        .catch(() => { autoResolveRef.current = null; });
+        .catch(() => { autoResolveRef.current = null; })
+        .finally(() => clearTimeout(timeout));
     }
     resetComboboxState();
   };
@@ -1537,23 +1672,36 @@ function ContentSearchCombobox({ value, onChange }) {
     />
   ));
 
+  // "Search all sources..." option when tier 1 results are shown and tier 2 hasn't loaded
+  const showSearchAllOption = isActiveSearch && searchTier === 1 && !searching && displayItems.length > 0;
+  const searchAllOption = showSearchAllOption ? (
+    <Combobox.Option
+      key="__search_all__"
+      value="__search_all__"
+      className="content-option"
+      onClick={(e) => {
+        e.stopPropagation();
+        log.info('search.tier2.manual', { query: debouncedSearch });
+        fetchTier2(debouncedSearch);
+      }}
+    >
+      <Group gap={6} wrap="nowrap" style={{ flex: 1 }}>
+        <Avatar size={36} radius="sm" color="blue">
+          <IconSearch size={16} />
+        </Avatar>
+        <Box style={{ flex: 1, minWidth: 0 }}>
+          <Text size="xs" c="blue" fw={500}>Search all sources...</Text>
+          <Text size="xs" c="dimmed">Include playlists, collections, episodes, tracks</Text>
+        </Box>
+      </Group>
+    </Combobox.Option>
+  ) : null;
+
   // Not editing - show display mode
   if (!isEditing) {
-    // Loading state - show user's input text with a spinner so intent is visible
+    // Loading state - show user's input text with a spinner and countup so intent is visible
     if (loadingInfo) {
-      return (
-        <div onClick={handleStartEditing} className="content-display" style={{ cursor: 'pointer' }}>
-          <Group gap={6} wrap="nowrap" style={{ flex: 1 }}>
-            <Avatar size={28} radius="sm" color="dark">
-              <Loader size={14} color="dimmed" />
-            </Avatar>
-            <Box style={{ flex: 1, minWidth: 0 }}>
-              <Text size="xs" truncate fw={500} c="dimmed">{value}</Text>
-              <Text size="xs" c="dimmed" fs="italic">Resolving...</Text>
-            </Box>
-          </Group>
-        </div>
-      );
+      return <ResolvingDisplay value={value} onClick={handleStartEditing} />;
     }
 
     // Have content info - check if unresolved
@@ -1852,6 +2000,10 @@ function ContentSearchCombobox({ value, onChange }) {
             <Combobox.Empty>No items in this container</Combobox.Empty>
           )}
           {options}
+          {searchAllOption}
+          {searching && displayItems.length > 0 && (
+            <Box py={4} style={{ textAlign: 'center' }}><Loader size={12} /></Box>
+          )}
           {loadingMore && pagination?.hasAfter && (
             <Box py={4} style={{ textAlign: 'center' }}><Loader size={12} /></Box>
           )}
@@ -2641,37 +2793,47 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
 // Empty row for adding new items at the bottom
 function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
   const log = useMemo(() => adminLog('EmptyItemRow'), []);
+  const { contentInfoMap } = useListsContext();
   const [label, setLabel] = useState('');
   const [action, setAction] = useState('Play');
   const [input, setInput] = useState('');
+  const addedRef = useRef(false); // prevent double-add from rapid state changes
   const labelInputRef = useRef(null);
 
-  const handleAdd = () => {
-    if (label.trim() || input) {
-      log.info('item.add', { nextIndex, label: label.trim() || `Item ${nextIndex + 1}`, action, input });
-      onAdd({
-        label: label.trim() || `Item ${nextIndex + 1}`,
-        action,
-        input,
-        active: true
-      });
-      // Reset fields
-      setLabel('');
-      setAction('Play');
-      setInput('');
-    }
-  };
+  const doAdd = useCallback((currentInput, currentLabel, currentAction) => {
+    if (addedRef.current) return;
+    if (!currentInput) return;
+    addedRef.current = true;
+    // Derive label: explicit label > resolved content title > freeform input
+    const resolvedInfo = contentInfoMap.get(currentInput);
+    const derivedLabel = currentLabel.trim()
+      || resolvedInfo?.title
+      || currentInput.replace(/^[^:]+:\s*/, '');
+    log.info('item.add', { nextIndex, label: derivedLabel, action: currentAction, input: currentInput });
+    onAdd({
+      label: derivedLabel,
+      action: currentAction,
+      input: currentInput,
+      active: true
+    });
+    // Reset fields
+    setLabel('');
+    setAction('Play');
+    setInput('');
+    // Allow next add after reset settles
+    setTimeout(() => { addedRef.current = false; }, 100);
+  }, [onAdd, nextIndex, contentInfoMap, log]);
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && (label.trim() || input)) {
-      handleAdd();
+      doAdd(input, label, action);
     }
   };
 
-  // Auto-save when input is selected (content picked)
+  // Auto-save when input changes (content picked or auto-resolved)
   useEffect(() => {
-    if (input && label.trim()) {
-      handleAdd();
+    if (input) {
+      doAdd(input, label, action);
     }
   }, [input]);
 
