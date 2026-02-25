@@ -2104,14 +2104,8 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
         setItemInfo(info);
       }
 
-      // Fetch children
-      const childrenResponse = await fetch(`/api/v1/info/${source}/${localId}`);
-      if (childrenResponse.ok) {
-        const childData = await childrenResponse.json();
-        setChildren(childData.items || []);
-      } else {
-        setChildren([]);
-      }
+      // No children endpoint available — /info endpoint does not return .items
+      setChildren([]);
 
       return info;
     } catch (err) {
