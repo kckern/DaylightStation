@@ -10,7 +10,7 @@ import FitnessPlayer from '../modules/Fitness/FitnessPlayer.jsx';
 import FitnessPluginContainer from '../modules/Fitness/FitnessPlugins/FitnessPluginContainer.jsx';
 import { VolumeProvider } from '../modules/Fitness/VolumeProvider.jsx';
 import { FitnessProvider } from '../context/FitnessContext.jsx';
-import getLogger from '../lib/logging/Logger.js';
+import getLogger, { configure as configureLogger } from '../lib/logging/Logger.js';
 import { sortNavItems } from '../modules/Fitness/lib/navigationUtils.js';
 import VoiceMemoOverlay from '../modules/Fitness/FitnessPlayerOverlay/VoiceMemoOverlay.jsx';
 import { useFitnessContext } from '../context/FitnessContext.jsx';
@@ -47,6 +47,15 @@ const FitnessApp = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [urlInitialized, setUrlInitialized] = useState(false);
+
+  // Configure root logger so child components using getLogger() directly
+  // also get sessionLog: true (routes their events to the JSONL session file)
+  useEffect(() => {
+    configureLogger({ context: { app: 'fitness', sessionLog: true } });
+    return () => {
+      configureLogger({ context: { sessionLog: false } });
+    };
+  }, []);
 
   useEffect(() => {
     logger.info('fitness-app-mount');
