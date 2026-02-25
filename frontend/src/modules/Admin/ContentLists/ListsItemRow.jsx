@@ -40,7 +40,7 @@ function adminLog(component) {
 // Types that represent containers (can be drilled into)
 const CONTAINER_TYPES = [
   'show', 'season', 'artist', 'album', 'collection', 'playlist', 'watchlist', 'container',
-  'series', 'channel', 'conference', 'watchlist', 'query', 'menu', 'program', 'console'
+  'series', 'channel', 'conference', 'query', 'menu', 'program', 'console'
 ];
 
 /**
