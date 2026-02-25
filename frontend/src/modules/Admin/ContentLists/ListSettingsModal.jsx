@@ -99,6 +99,7 @@ function ListSettingsModal({
   existingGroups = []
 }) {
   const [formData, setFormData] = useState({});
+  const [localGroupOptions, setLocalGroupOptions] = useState([]);
 
   // Reset form when modal opens
   useEffect(() => {
@@ -118,6 +119,15 @@ function ListSettingsModal({
     }
   }, [opened, metadata]);
 
+  // Reset local group options when modal opens
+  useEffect(() => {
+    if (opened) {
+      setLocalGroupOptions(
+        existingGroups.filter(g => g).map(g => ({ value: g, label: g }))
+      );
+    }
+  }, [opened, existingGroups]);
+
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
@@ -127,11 +137,6 @@ function ListSettingsModal({
     const payload = buildSavePayload(formData);
     onSave(payload);
   };
-
-  // Build group options from existing groups
-  const groupOptions = existingGroups
-    .filter(g => g)
-    .map(g => ({ value: g, label: g }));
 
   return (
     <Modal
@@ -167,14 +172,15 @@ function ListSettingsModal({
               label="Group"
               description="Category for organizing lists"
               placeholder="Select or type a group"
-              data={groupOptions}
+              data={localGroupOptions}
               value={formData.group || ''}
               onChange={(value) => handleInputChange('group', value || '')}
               searchable
               creatable
               getCreateLabel={(query) => `+ Create "${query}"`}
               onCreate={(query) => {
-                groupOptions.push({ value: query, label: query });
+                const newOption = { value: query, label: query };
+                setLocalGroupOptions(prev => [...prev, newOption]);
                 return query;
               }}
               clearable
