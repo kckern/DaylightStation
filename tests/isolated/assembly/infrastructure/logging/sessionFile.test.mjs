@@ -7,6 +7,12 @@ import {
   getSessionFileTransport,
   resetSessionFileTransport
 } from '#backend/src/0_system/logging/transports/sessionFile.mjs';
+import { ingestFrontendLogs } from '#backend/src/0_system/logging/ingestion.mjs';
+import {
+  initializeLogging,
+  resetLogging,
+  getDispatcher
+} from '#backend/src/0_system/logging/dispatcher.mjs';
 
 describe('SessionFileTransport', () => {
   let tmpDir;
@@ -198,5 +204,66 @@ describe('SessionFileTransport', () => {
 
       expect(fs.existsSync(readmeFile)).toBe(true);
     });
+  });
+});
+
+describe('ingestion integration', () => {
+  let tmpDir;
+
+  beforeEach(() => {
+    resetSessionFileTransport();
+    resetLogging();
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'session-log-ingest-'));
+  });
+
+  afterEach(() => {
+    const sft = getSessionFileTransport();
+    if (sft) sft.flush();
+    resetSessionFileTransport();
+    resetLogging();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('ingestFrontendLogs writes to session file when sessionLog context is set', () => {
+    // Set up dispatcher (required for ingestion)
+    initializeLogging({ defaultLevel: 'debug' });
+    const mockTransport = { name: 'mock', send: jest.fn() };
+    getDispatcher().addTransport(mockTransport);
+
+    // Set up session file transport
+    initSessionFileTransport({ baseDir: tmpDir, maxAgeDays: 3 });
+
+    // Ingest a session-log.start event
+    ingestFrontendLogs({
+      events: [
+        {
+          ts: '2026-02-24T16:00:00.000',
+          level: 'info',
+          event: 'session-log.start',
+          data: {},
+          context: { app: 'admin', sessionLog: true }
+        },
+        {
+          ts: '2026-02-24T16:00:01.000',
+          level: 'info',
+          event: 'admin-page-loaded',
+          data: { page: 'config' },
+          context: { app: 'admin', sessionLog: true }
+        }
+      ]
+    });
+
+    // Normal dispatch should still work
+    expect(mockTransport.send).toHaveBeenCalledTimes(2);
+
+    // Session file should also have been written
+    const appDir = path.join(tmpDir, 'admin');
+    expect(fs.existsSync(appDir)).toBe(true);
+    const files = fs.readdirSync(appDir);
+    expect(files).toHaveLength(1);
+
+    const content = fs.readFileSync(path.join(appDir, files[0]), 'utf-8');
+    const lines = content.trim().split('\n');
+    expect(lines).toHaveLength(2);
   });
 });
