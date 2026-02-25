@@ -57,8 +57,8 @@ export function toQueueItem(item) {
     albumArtist: item.metadata?.albumArtist,
     album: item.metadata?.album || item.metadata?.parentTitle,
 
-    // Namespace for isolated progress tracking
-    namespace: item.metadata?.namespace || null,
+    // List identity for server-side progress namespace resolution
+    listId: item.metadata?.listId || null,
   };
 }
 

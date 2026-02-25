@@ -137,7 +137,7 @@ export function useMediaKeyboardHandler(config) {
         const title = meta.title + (meta.grandparentTitle ? ` (${meta.grandparentTitle} - ${meta.parentTitle})` : '');
         const progressPercent = Number.isFinite(percent) ? percent : 100;
         const logType = meta.source || (meta.plex ? 'plex' : null) || type;
-        DaylightAPI('api/v1/play/log', { title, type: logType, assetId, seconds: currentTime, percent: progressPercent, namespace: meta?.namespace || null });
+        DaylightAPI('api/v1/play/log', { title, type: logType, assetId, seconds: currentTime, percent: progressPercent, listId: meta?.listId || null });
         DaylightAPI('api/v1/harvest/watchlist');
       }
 

@@ -49,7 +49,7 @@ export function createPlayRouter(config) {
       headers: { 'content-type': req.headers['content-type'] }
     });
 
-    const { type, assetId, percent, seconds, title, watched_duration, namespace } = req.body;
+    const { type, assetId, percent, seconds, title, watched_duration, listId } = req.body;
 
       // Validate required fields
       if (!type || !assetId || percent === undefined) {
@@ -61,8 +61,8 @@ export function createPlayRouter(config) {
         return res.status(400).json({ error: 'Invalid request: seconds < 10' });
       }
 
-      // Determine storage path based on type (namespace override takes priority)
-      let storagePath = namespace || type;
+      // Determine storage path based on type
+      let storagePath = type;
       let itemMetadata = null;
       const compoundId = assetId.includes(':') ? assetId : `${type}:${assetId}`;
 
@@ -70,7 +70,7 @@ export function createPlayRouter(config) {
       const adapter = registry.get(type);
       if (adapter) {
         try {
-          if (!namespace && typeof adapter.getStoragePath === 'function') {
+          if (typeof adapter.getStoragePath === 'function') {
             storagePath = await adapter.getStoragePath(compoundId);
           }
           if (typeof adapter.getItem === 'function') {
@@ -79,6 +79,15 @@ export function createPlayRouter(config) {
           }
         } catch (e) {
           logger.warn?.('play.log.metadata_fetch_failed', { assetId, error: e.message });
+        }
+      }
+
+      // Override with list namespace when listId is provided (server-side resolution)
+      if (listId) {
+        const listAdapter = registry.adapters?.get('watchlist');
+        if (listAdapter?.getListNamespace) {
+          const ns = await listAdapter.getListNamespace(listId);
+          if (ns) storagePath = ns;
         }
       }
 
