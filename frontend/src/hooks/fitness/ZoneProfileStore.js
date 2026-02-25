@@ -60,6 +60,7 @@ export class ZoneProfileStore {
       return;
     }
     this._baseZoneConfig = cloneZoneConfig(zoneConfig);
+    this._profileCache.clear();
   }
 
   /**
