@@ -8,8 +8,8 @@
 
 const GAME_REGISTRY = {
   rhythm: {
-    component: () => import('./components/GameOverlay'),
-    hook: () => import('./useGameMode'),
+    component: () => import('./components/RhythmOverlay'),
+    hook: () => import('./useRhythmGame'),
     layout: 'waterfall',
   },
   tetris: {
