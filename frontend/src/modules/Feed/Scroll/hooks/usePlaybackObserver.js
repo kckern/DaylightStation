@@ -28,9 +28,11 @@ export function usePlaybackObserver(playerRef, active) {
 
     feedLog.player('observer active — starting 500ms poll');
     let prevPlaying = null;
+    let loggedNull = false;
     const id = setInterval(() => {
       const p = playerRef.current;
-      if (!p) { feedLog.player('poll: playerRef.current is null'); return; }
+      if (!p) { if (!loggedNull) { feedLog.player('poll: playerRef.current is null'); loggedNull = true; } return; }
+      loggedNull = false;
       const currentTime = p.getCurrentTime?.() || 0;
       const duration = p.getDuration?.() || 0;
       const el = p.getMediaElement?.();
