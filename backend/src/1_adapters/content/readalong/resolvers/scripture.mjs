@@ -11,8 +11,8 @@ const VOLUME_RANGES = {
   ot: { start: 1, end: 23145 },
   nt: { start: 23146, end: 31102 },
   bom: { start: 31103, end: 37706 },
-  dc: { start: 37707, end: 41994 },
-  pgp: { start: 41995, end: 42663 }
+  dc: { start: 37707, end: 41360 },
+  pgp: { start: 41361, end: 42663 }
 };
 
 /** Minimum progress percentage to consider a version "watched" */

@@ -69,7 +69,7 @@ function normalizeListSource(source) {
  * Uses streaming search via SSE for progressive results
  */
 function ContentSearchCombobox({ value, onChange, placeholder = 'Search content...', selectContainers = false, searchParams = '' }) {
-  const log = useMemo(() => getChildLogger({ component: 'ContentSearchCombobox' }), []);
+  const log = useMemo(() => getChildLogger({ component: 'ContentSearchCombobox', app: 'admin', sessionLog: true }), []);
   const [search, setSearch] = useState(null); // null = not editing (show value), string = user's input
   const [browseResults, setBrowseResults] = useState([]);
   const [loading, setLoading] = useState(false);

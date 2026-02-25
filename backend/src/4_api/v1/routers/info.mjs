@@ -142,6 +142,7 @@ export function createInfoRouter(config) {
    * - /info/12345 (heuristic detection)
    */
   const handleInfoRequest = asyncHandler(async (req, res) => {
+    const requestStart = performance.now();
     const { source } = req.params;
     const rawPath = req.params[0] || '';
 
@@ -151,11 +152,14 @@ export function createInfoRouter(config) {
       path: rawPath
     });
 
+    logger.info?.('info.request', { source, localId, compoundId, ip: req.ip });
+
     // Resolve content ID through unified resolver (handles all layers:
     // exact source, prefix resolution, system aliases, household aliases)
     const resolved = contentIdResolver.resolve(compoundId);
 
     if (!resolved?.adapter) {
+      logger.warn?.('info.unknown_source', { source: resolvedSource || source, compoundId });
       return res.status(404).json({
         error: `Unknown source: ${resolvedSource || source}`
       });
@@ -168,6 +172,7 @@ export function createInfoRouter(config) {
     // Fetch item from adapter using resolved localId
     const item = await adapter.getItem(finalLocalId);
     if (!item) {
+      logger.warn?.('info.not_found', { source: finalSource, localId: finalLocalId });
       return res.status(404).json({
         error: 'Item not found',
         source: finalSource,
@@ -184,10 +189,15 @@ export function createInfoRouter(config) {
       response.itemCount = item.metadata?.childCount ?? item.metadata?.leafCount ?? 0;
     }
 
-    logger.info?.('info.get', {
+    const totalMs = Math.round(performance.now() - requestStart);
+    logger.info?.('info.response', {
       source: finalSource,
       localId: finalLocalId,
-      capabilities: response.capabilities
+      title: response.title,
+      type: response.type || response.metadata?.type,
+      itemType: item.itemType,
+      capabilities: response.capabilities,
+      totalMs
     });
 
     res.json(response);
