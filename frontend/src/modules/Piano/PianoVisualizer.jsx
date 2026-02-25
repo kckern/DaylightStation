@@ -341,14 +341,14 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
           {activation.activeGameId === 'tetris' && (
             <PianoTetris
               activeNotes={activeNotes}
-              tetrisConfig={gamesConfig?.tetris}
+              gameConfig={gamesConfig?.tetris}
               onDeactivate={activation.deactivate}
             />
           )}
           {activation.activeGameId === 'flashcards' && (
             <PianoFlashcards
               activeNotes={activeNotes}
-              flashcardsConfig={gamesConfig?.flashcards}
+              gameConfig={gamesConfig?.flashcards}
               onDeactivate={activation.deactivate}
             />
           )}
