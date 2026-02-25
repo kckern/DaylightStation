@@ -29,7 +29,8 @@ export function ReadalongScroller({
   onRegisterMediaAccess,
   seekToIntentSeconds,
   onSeekRequestConsumed,
-  remountDiagnostics
+  remountDiagnostics,
+  namespace
 }) {
   const [data, setData] = useState(initialData || null);
   const renderer = getReadalongRenderer();
@@ -175,6 +176,7 @@ export function ReadalongScroller({
         seekToIntentSeconds={seekToIntentSeconds}
         onSeekRequestConsumed={onSeekRequestConsumed}
         remountDiagnostics={remountDiagnostics}
+        namespace={namespace}
       />
     </div>
   );
