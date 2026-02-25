@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getChildLogger } from '../../lib/logging/singleton.js';
-import { isActivationComboHeld } from './gameEngine.js';
+import { isActivationComboHeld } from './rhythmEngine.js';
 
 const ACTIVATION_COOLDOWN_MS = 2000;
 
@@ -8,7 +8,7 @@ const ACTIVATION_COOLDOWN_MS = 2000;
  * Shared activation hook — watches MIDI input for any game's activation combo
  * and returns which game (if any) is currently active.
  *
- * Replaces activation detection previously hardcoded in useGameMode for the
+ * Replaces activation detection previously hardcoded in useRhythmGame for the
  * rhythm game. Supports multiple games via config-driven combos.
  *
  * @param {Map<number, {velocity: number, timestamp: number}>} activeNotes

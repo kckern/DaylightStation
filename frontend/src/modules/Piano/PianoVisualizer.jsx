@@ -6,10 +6,10 @@ import { useMidiSubscription } from './useMidiSubscription';
 import { DaylightAPI } from '../../lib/api.mjs';
 import { isWhiteKey, computeKeyboardRange } from './noteUtils.js';
 import './PianoVisualizer.scss';
-import { useGameMode } from './useGameMode.js';
+import { useRhythmGame } from './useRhythmGame.js';
 import { useGameActivation } from './useGameActivation.js';
-import { TOTAL_HEALTH } from './gameEngine.js';
-import { GameOverlay } from './components/GameOverlay';
+import { TOTAL_HEALTH } from './rhythmEngine.js';
+import { RhythmOverlay } from './components/RhythmOverlay';
 import { PianoTetris } from './PianoTetris/PianoTetris.jsx';
 import { PianoFlashcards } from './PianoFlashcards/PianoFlashcards.jsx';
 import { getGameEntry } from './gameRegistry.js';
@@ -48,7 +48,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   const [gamesConfig, setGamesConfig] = useState(null);
   const pianoConfigRef = useRef(null); // Cache piano config for cleanup
 
-  const game = useGameMode(activeNotes, noteHistory, gameConfig);
+  const game = useRhythmGame(activeNotes, noteHistory, gameConfig);
   const activation = useGameActivation(activeNotes, gamesConfig, initialGame);
   const [screenFlash, setScreenFlash] = useState(false);
 
@@ -318,7 +318,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
       </div>
 
       {game.isGameMode && (
-        <GameOverlay
+        <RhythmOverlay
           gameState={game.gameState}
           countdown={game.countdown}
           score={game.score}

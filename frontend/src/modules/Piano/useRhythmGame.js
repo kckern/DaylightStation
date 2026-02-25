@@ -13,7 +13,7 @@ import {
   evaluateLevel,
   getFallDuration,
   TOTAL_HEALTH,
-} from './gameEngine.js';
+} from './rhythmEngine.js';
 
 const TICK_INTERVAL = 16; // ~60fps
 const COUNTDOWN_STEPS = [3, 2, 1, 0]; // 0 = "GO"
@@ -30,7 +30,7 @@ const ERROR_SFX_PATH = '/media/audio/sfx/error.mp3'; // Resolved via DaylightMed
  * @param {Object|null} gameConfig - Parsed game config from piano.yml, or null to disable
  * @returns {Object} Game mode state for rendering
  */
-export function useGameMode(activeNotes, noteHistory, gameConfig) {
+export function useRhythmGame(activeNotes, noteHistory, gameConfig) {
   const logger = useMemo(() => getChildLogger({ component: 'piano-game' }), []);
   const [gameState, setGameState] = useState(createInitialState);
   const gameStateRef = useRef(gameState);
@@ -351,4 +351,4 @@ export function useGameMode(activeNotes, noteHistory, gameConfig) {
   };
 }
 
-export default useGameMode;
+export default useRhythmGame;
