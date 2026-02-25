@@ -4,7 +4,6 @@ import { DaylightMediaPath } from '../../lib/api.mjs';
 import {
   createInitialState,
   resetForLevel,
-  isActivationComboHeld,
   maybeSpawnNote,
   processHit,
   applyScore,
@@ -38,7 +37,6 @@ export function useRhythmGame(activeNotes, noteHistory, gameConfig) {
   const tickRef = useRef(null);
   const countdownRef = useRef(null);
   const bannerTimeoutRef = useRef(null);
-  const activationCooldownRef = useRef(0);
   const [wrongNotes, setWrongNotes] = useState(new Map()); // pitch → expiry timestamp
   const errorAudioRef = useRef(null);
 
@@ -56,7 +54,6 @@ export function useRhythmGame(activeNotes, noteHistory, gameConfig) {
   }, [gameState]);
 
   const levels = gameConfig?.levels ?? [];
-  const activation = gameConfig?.activation ?? {};
   const timing = gameConfig?.timing ?? {};
   const scoring = gameConfig?.scoring ?? {};
 
@@ -89,63 +86,6 @@ export function useRhythmGame(activeNotes, noteHistory, gameConfig) {
       }
     }, COUNTDOWN_STEP_MS);
   }, [logger]);
-
-  // ─── Activation Detection ───────────────────────────────────
-
-  useEffect(() => {
-    if (!gameConfig) return;
-    if (Date.now() < activationCooldownRef.current) return;
-
-    const comboHeld = isActivationComboHeld(
-      activeNotes,
-      activation.notes,
-      activation.window_ms ?? 300
-    );
-
-    if (!comboHeld) return;
-
-    activationCooldownRef.current = Date.now() + 2000;
-
-    const current = gameStateRef.current;
-
-    if (current.phase === 'IDLE') {
-      logger.info('piano.game.activated', {});
-      startCountdown();
-    } else {
-      logger.info('piano.game.deactivated', { phase: current.phase });
-      cleanup();
-      setGameState(createInitialState());
-    }
-  }, [activeNotes, gameConfig, activation, cleanup, startCountdown, logger]);
-
-  // ─── Dev shortcut: backtick toggles game mode (localhost only) ─
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || window.location.hostname !== 'localhost') return;
-    if (!gameConfig) return;
-
-    const handleKey = (e) => {
-      if (e.key !== '`') return;
-      e.preventDefault();
-      e.stopPropagation();
-
-      if (Date.now() < activationCooldownRef.current) return;
-      activationCooldownRef.current = Date.now() + 2000;
-
-      const current = gameStateRef.current;
-      if (current.phase === 'IDLE') {
-        logger.info('piano.game.dev-activated', {});
-        startCountdown();
-      } else {
-        logger.info('piano.game.dev-deactivated', {});
-        cleanup();
-        setGameState(createInitialState());
-      }
-    };
-
-    window.addEventListener('keydown', handleKey, true);
-    return () => window.removeEventListener('keydown', handleKey, true);
-  }, [gameConfig, cleanup, startCountdown, logger]);
 
   // ─── Game Tick (spawning + miss detection + cleanup) ────────
 
@@ -324,6 +264,19 @@ export function useRhythmGame(activeNotes, noteHistory, gameConfig) {
     return () => clearTimeout(timer);
   }, [wrongNotes]);
 
+  // ─── External activation controls ──────────────────────────
+
+  const startGame = useCallback(() => {
+    logger.info('piano.game.activated', {});
+    startCountdown();
+  }, [startCountdown, logger]);
+
+  const deactivateGame = useCallback(() => {
+    logger.info('piano.game.deactivated', {});
+    cleanup();
+    setGameState(createInitialState());
+  }, [cleanup, logger]);
+
   // ─── Derived state for rendering ────────────────────────────
 
   const currentLevel = levels[gameState.levelIndex] ?? null;
@@ -348,6 +301,8 @@ export function useRhythmGame(activeNotes, noteHistory, gameConfig) {
     levelProgress,
     fallDuration: getFallDuration(currentLevel),
     wrongNotes,
+    startGame,
+    deactivate: deactivateGame,
   };
 }
 

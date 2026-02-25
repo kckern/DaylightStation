@@ -44,12 +44,20 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   const sessionStartRef = useRef(null);
   const timerRef = useRef(null);
   const [showPlaceholder, setShowPlaceholder] = useState(false);
-  const [gameConfig, setGameConfig] = useState(null);
   const [gamesConfig, setGamesConfig] = useState(null);
   const pianoConfigRef = useRef(null); // Cache piano config for cleanup
 
-  const game = useRhythmGame(activeNotes, noteHistory, gameConfig);
   const activation = useGameActivation(activeNotes, gamesConfig, initialGame);
+  const rhythmConfig = activation.activeGameId === 'rhythm' ? gamesConfig?.rhythm : null;
+  const game = useRhythmGame(activeNotes, noteHistory, rhythmConfig);
+
+  // Auto-start rhythm game when activated
+  useEffect(() => {
+    if (activation.activeGameId === 'rhythm' && game.gameState === 'IDLE' && rhythmConfig) {
+      game.startGame();
+    }
+  }, [activation.activeGameId, rhythmConfig]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [screenFlash, setScreenFlash] = useState(false);
 
   // Determine active game type
@@ -100,8 +108,6 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
         // Load game config from piano app config
         try {
           const pianoAppConfig = await DaylightAPI('api/v1/admin/apps/piano/config');
-          const gc = pianoAppConfig?.parsed?.game ?? null;
-          setGameConfig(gc);
           const gamesC = pianoAppConfig?.parsed?.games ?? null;
           setGamesConfig(gamesC);
         } catch (err) {
