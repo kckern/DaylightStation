@@ -35,6 +35,40 @@ describe('frontend sampled logging', () => {
     expect(mockSend).toHaveBeenCalledTimes(20);
   });
 
+  test('child logger sampled() includes child context (sessionLog)', () => {
+    const child = getLogger().child({ app: 'fitness', sessionLog: true });
+
+    child.sampled('test.child.event', { value: 42 });
+
+    expect(mockSend).toHaveBeenCalledTimes(2); // session-log.start + sampled event
+    const sampledCall = mockSend.mock.calls[1][0];
+    expect(sampledCall.event).toBe('test.child.event');
+    expect(sampledCall.context.sessionLog).toBe(true);
+    expect(sampledCall.context.app).toBe('fitness');
+  });
+
+  test('child logger sampled() aggregated event includes child context', () => {
+    const child = getLogger().child({ app: 'fitness', sessionLog: true });
+
+    // Fill the rate limit window
+    for (let i = 0; i < 25; i++) {
+      child.sampled('test.agg.event', { count: 1 }, { maxPerMinute: 20 });
+    }
+
+    jest.useFakeTimers();
+    jest.setSystemTime(Date.now() + 61_000);
+
+    child.sampled('test.agg.event', { count: 1 }, { maxPerMinute: 20 });
+
+    jest.useRealTimers();
+
+    // Find the aggregated event
+    const aggCall = mockSend.mock.calls.find(c => c[0].event === 'test.agg.event.aggregated');
+    expect(aggCall).toBeTruthy();
+    expect(aggCall[0].context.sessionLog).toBe(true);
+    expect(aggCall[0].context.app).toBe('fitness');
+  });
+
   test('emits aggregate summary when window expires', () => {
     const logger = getLogger();
 
