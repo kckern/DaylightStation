@@ -86,7 +86,7 @@ function ListsFolder() {
         });
       }
     });
-  }, [flatItems]); // Only run when flatItems change
+  }, [flatItems]); // eslint-disable-line react-hooks/exhaustive-deps -- contentInfoMap intentionally omitted: re-running on every cache update would loop; setContentInfo is stable (useCallback)
 
   const sensors = useSensors(
     useSensor(PointerSensor),
