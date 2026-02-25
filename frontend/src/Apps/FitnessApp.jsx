@@ -40,7 +40,7 @@ const FitnessApp = () => {
     return isFirefox;
   });
   const viewportRef = useRef(null);
-  const logger = useMemo(() => getLogger().child({ app: 'fitness' }), []);
+  const logger = useMemo(() => getLogger().child({ app: 'fitness', sessionLog: true }), []);
 
   // URL-based navigation
   const { urlState } = useFitnessUrlParams();
