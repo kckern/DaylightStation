@@ -53,6 +53,8 @@ export function initSessionFileTransport({ baseDir, maxAgeDays = 3 }) {
   };
 
   instance = {
+    // Note: uses write() rather than send() because this transport is invoked
+    // directly from ingestion, not registered with the dispatcher.
     write(event) {
       const app = event?.context?.app;
       if (!app || !event?.context?.sessionLog) return;
@@ -75,7 +77,7 @@ export function initSessionFileTransport({ baseDir, maxAgeDays = 3 }) {
       }
     },
 
-    async flush() {
+    flush() {
       for (const [, session] of activeSessions) {
         if (session.fd != null) {
           try { fs.closeSync(session.fd); } catch { /* ignore */ }
@@ -103,7 +105,7 @@ export function getSessionFileTransport() {
 
 export function resetSessionFileTransport() {
   if (instance) {
-    instance.flush().catch(() => {});
+    instance.flush();
   }
   instance = null;
 }
