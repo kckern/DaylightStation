@@ -15,10 +15,10 @@
 
 import getLogger from '../../../lib/logging/Logger.js';
 
-let _logger;
+// Re-create child each call so it picks up the current root context
+// (sessionLog: true is set via configureLogger after first import).
 function logger() {
-  if (!_logger) _logger = getLogger().child({ component: 'feed-scroll' });
-  return _logger;
+  return getLogger().child({ component: 'feed-scroll' });
 }
 
 function emit(category, detail, data) {
