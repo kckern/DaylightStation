@@ -5,6 +5,7 @@
  *   'waterfall' — game overlays on top of the existing waterfall view
  *   'replace'   — game takes over the entire PianoVisualizer viewport
  */
+import { lazy } from 'react';
 
 const GAME_REGISTRY = {
   rhythm: {
@@ -16,11 +17,13 @@ const GAME_REGISTRY = {
     component: () => import('./PianoTetris/PianoTetris'),
     hook: () => import('./PianoTetris/useTetrisGame'),
     layout: 'replace',
+    LazyComponent: lazy(() => import('./PianoTetris/PianoTetris')),
   },
   flashcards: {
     component: () => import('./PianoFlashcards/PianoFlashcards'),
     hook: () => import('./PianoFlashcards/useFlashcardGame'),
     layout: 'replace',
+    LazyComponent: lazy(() => import('./PianoFlashcards/PianoFlashcards')),
   },
 };
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, Suspense } from 'react';
 import { PianoKeyboard } from './components/PianoKeyboard';
 import { NoteWaterfall } from './components/NoteWaterfall';
 import { CurrentChordStaff } from './components/CurrentChordStaff';
@@ -8,10 +8,7 @@ import { isWhiteKey, computeKeyboardRange } from './noteUtils.js';
 import './PianoVisualizer.scss';
 import { useRhythmGame } from './useRhythmGame.js';
 import { useGameActivation } from './useGameActivation.js';
-import { TOTAL_HEALTH } from './rhythmEngine.js';
 import { RhythmOverlay } from './components/RhythmOverlay';
-import { PianoTetris } from './PianoTetris/PianoTetris.jsx';
-import { PianoFlashcards } from './PianoFlashcards/PianoFlashcards.jsx';
 import { getGameEntry } from './gameRegistry.js';
 import { getChildLogger } from '../../lib/logging/singleton.js';
 
@@ -299,11 +296,11 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
         {game.isGameMode && game.gameState === 'PLAYING' && (
           <div className="life-meter" aria-hidden="true">
             <div className="life-meter__frame">
-              {Array.from({ length: TOTAL_HEALTH }, (_, i) => (
+              {Array.from({ length: game.totalHealth }, (_, i) => (
                 <div
                   key={i}
                   className={`life-meter__notch${i < Math.ceil(game.health) ? ' life-meter__notch--active' : ''}${
-                    i < Math.ceil(game.health) && game.health <= TOTAL_HEALTH * 0.25 ? ' life-meter__notch--danger' : ''
+                    i < Math.ceil(game.health) && game.health <= game.totalHealth * 0.25 ? ' life-meter__notch--danger' : ''
                   }`}
                 />
               ))}
@@ -342,22 +339,15 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
 
       {screenFlash && <div className="wrong-flash" />}
 
-      {isFullscreenGame && (
+      {isFullscreenGame && activeGameEntry?.LazyComponent && (
         <div className="tetris-fullscreen">
-          {activation.activeGameId === 'tetris' && (
-            <PianoTetris
+          <Suspense fallback={null}>
+            <activeGameEntry.LazyComponent
               activeNotes={activeNotes}
-              gameConfig={gamesConfig?.tetris}
+              gameConfig={gamesConfig?.[activation.activeGameId]}
               onDeactivate={activation.deactivate}
             />
-          )}
-          {activation.activeGameId === 'flashcards' && (
-            <PianoFlashcards
-              activeNotes={activeNotes}
-              gameConfig={gamesConfig?.flashcards}
-              onDeactivate={activation.deactivate}
-            />
-          )}
+          </Suspense>
         </div>
       )}
     </div>
