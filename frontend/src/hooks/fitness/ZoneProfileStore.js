@@ -51,6 +51,7 @@ export class ZoneProfileStore {
     this._baseZoneConfig = null;
     // Per-user hysteresis state: Map<userId, { committedZoneId, lastCommitTs, rawZoneId, rawZoneStableSince }>
     this._hysteresis = new Map();
+    this._profileCache = new Map();
   }
 
   setBaseZoneConfig(zoneConfig) {
@@ -74,15 +75,24 @@ export class ZoneProfileStore {
     this._profiles.clear();
     this._signature = null;
     this._hysteresis.clear();
+    this._profileCache.clear();
   }
 
   syncFromUsers(usersIterable) {
     const nextMap = new Map();
     if (usersIterable && typeof usersIterable[Symbol.iterator] === 'function') {
       for (const user of usersIterable) {
+        // Per-user input memoization: skip rebuild if inputs unchanged
+        const inputSig = this.#userInputSignature(user);
+        const cached = inputSig ? this._profileCache.get(inputSig) : null;
+        if (cached) {
+          nextMap.set(cached.id, cached);
+          continue;
+        }
         const profile = this.#buildProfileFromUser(user);
         if (profile) {
           nextMap.set(profile.id, profile);
+          if (inputSig) this._profileCache.set(inputSig, profile);
         }
       }
     }
@@ -336,5 +346,16 @@ export class ZoneProfileStore {
     }));
     fingerprint.sort((a, b) => String(a.slug || '').localeCompare(String(b.slug || '')));
     return JSON.stringify(fingerprint);
+  }
+
+  #userInputSignature(user) {
+    if (!user?.id) return null;
+    const hr = Number.isFinite(user?.currentData?.heartRate)
+      ? Math.round(user.currentData.heartRate)
+      : 0;
+    const zoneKey = Array.isArray(user.zoneConfig)
+      ? user.zoneConfig.map(z => `${z?.id}:${z?.min ?? ''}`).join('|')
+      : '_base_';
+    return `${user.id}:${hr}:${zoneKey}`;
   }
 }
