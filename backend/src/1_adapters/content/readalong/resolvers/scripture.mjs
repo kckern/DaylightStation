@@ -15,6 +15,9 @@ const VOLUME_RANGES = {
   pgp: { start: 41995, end: 42663 }
 };
 
+/** Minimum progress percentage to consider a version "watched" */
+const WATCHED_THRESHOLD = 90;
+
 /**
  * Get volume name from verse_id
  * @param {string|number} verseId - The verse_id to look up
@@ -140,6 +143,42 @@ function deriveTextFromAudio(audioSlug, dataPath, volume) {
     return base;
   }
   return null;
+}
+
+/**
+ * Select the next version to play based on watch history.
+ * @param {string[]} versionPrefs - Ordered preference list
+ * @param {string[]} watchedVersions - Versions already watched (>=90%)
+ * @returns {{ version: string|null, watchState: 'unwatched'|'partial'|'complete' }}
+ */
+function selectVersion(versionPrefs, watchedVersions) {
+  if (!versionPrefs?.length) {
+    return { version: null, watchState: 'unwatched' };
+  }
+
+  const watchedSet = new Set(watchedVersions || []);
+
+  if (watchedSet.size === 0) {
+    return { version: versionPrefs[0], watchState: 'unwatched' };
+  }
+
+  const nextVersion = versionPrefs.find(v => !watchedSet.has(v));
+  if (nextVersion) {
+    return { version: nextVersion, watchState: 'partial' };
+  }
+
+  return { version: versionPrefs[0], watchState: 'complete' };
+}
+
+/**
+ * Build the media progress storage key for a versioned scripture chapter.
+ * @param {string} verseId - Bare verse ID
+ * @param {string} volume - Volume name (ot, pgp, etc.)
+ * @param {string} version - Audio/text version slug
+ * @returns {string} Storage key like 'readalong:scripture/ot/esv-music/1'
+ */
+function buildVersionedStorageKey(verseId, volume, version) {
+  return `readalong:scripture/${volume}/${version}/${verseId}`;
 }
 
 /**
@@ -285,7 +324,11 @@ export const ScriptureResolver = {
     }
   },
 
-  VOLUME_RANGES
+  VOLUME_RANGES,
+  WATCHED_THRESHOLD,
+  getVolumeFromVerseId,
+  selectVersion,
+  buildVersionedStorageKey
 };
 
 export default ScriptureResolver;
