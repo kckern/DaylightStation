@@ -2113,19 +2113,13 @@ export class FitnessSession {
     const interval = this.timeline?.timebase.intervalMs || this._tickIntervalMs;
     if (!(interval > 0)) return;
 
-    // Rate limiter: don't restart within 4 seconds of last start
-    const now = Date.now();
-    if (this._tickTimer && (now - this._lastTimerStartAt) < 4000) {
-      getLogger().debug('fitness.tick_timer.rate_limited', {
-        sessionId: this.sessionId,
-        msSinceLastStart: now - this._lastTimerStartAt
-      });
-      return;
-    }
+    // Guard: don't restart if timer is already running
+    if (this._tickTimer) return;
 
     this._stopTickTimer();
     const gen = ++this._timerGeneration;
 
+    const now = Date.now();
     this._lastTimerStartAt = now;
     this._tickTimerStartedAt = now;
     this._tickTimerTickCount = 0;
