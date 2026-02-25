@@ -303,6 +303,7 @@ export function useRhythmGame(activeNotes, noteHistory, gameConfig) {
     wrongNotes,
     startGame,
     deactivate: deactivateGame,
+    totalHealth: TOTAL_HEALTH,
   };
 }
 
