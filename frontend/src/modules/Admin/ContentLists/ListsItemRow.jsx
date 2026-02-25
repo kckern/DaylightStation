@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, forwardRef, useCallback } from 'react';
+import React, { useState, useRef, useEffect, forwardRef, useCallback, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Text, Checkbox, ActionIcon, Menu, TextInput, Combobox, useCombobox, InputBase, Loader, Group, Avatar, Badge, Box, Drawer, Stack, ScrollArea, Divider, Progress, Modal } from '@mantine/core';
 import { useDebouncedValue } from '@mantine/hooks';
@@ -26,6 +26,14 @@ import ImagePickerModal from './ImagePickerModal.jsx';
 import AdminPreviewPlayer from '../Preview/AdminPreviewPlayer.jsx';
 import Displayer from '../../Displayer/Displayer.jsx';
 import AppContainer from '../../AppContainer/AppContainer.jsx';
+import { getChildLogger } from '../../../lib/logging/singleton.js';
+
+// Lazy admin logger with session logging enabled
+let _adminLog;
+function adminLog(component) {
+  if (!_adminLog) _adminLog = getChildLogger({ app: 'admin', sessionLog: true });
+  return component ? _adminLog.child({ component }) : _adminLog;
+}
 
 const ACTION_OPTIONS = [
   { value: 'Play', label: 'Play' },
@@ -108,7 +116,10 @@ function normalizeListSource(source) {
  */
 async function doFetchSiblings(itemId, contentInfo) {
   const match = itemId.match(/^([^:]+):\s*(.+)$/);
-  if (!match) return null;
+  if (!match) {
+    adminLog('doFetchSiblings').debug('skip', { itemId, reason: 'no_match' });
+    return null;
+  }
 
   const source = contentInfo?.source || normalizeListSource(match[1].trim());
   const localId = match[2].trim();
@@ -204,7 +215,7 @@ export async function preloadSiblings(itemId, contentInfo) {
     setCacheEntry(itemId, { status: 'loaded', data, promise: null });
     return data;
   } catch (err) {
-    console.error('Preload siblings failed:', itemId, err);
+    adminLog('preloadSiblings').error('preload_siblings.error', { itemId, error: err.message });
     setCacheEntry(itemId, { status: 'error', data: null, promise: null });
     return null;
   }
@@ -663,11 +674,11 @@ export async function fetchContentMetadata(value) {
         return info;
       } else {
         // API returned error status - return unresolved
-        console.warn(`Content API returned ${response.status} for ${value}`);
+        adminLog('fetchContentMetadata').warn('content_api.error_status', { value, status: response.status });
         return { value, title: localId, source: normalizedSource, type: null, unresolved: true };
       }
     } catch (err) {
-      console.error('Failed to fetch content info:', err);
+      adminLog('fetchContentMetadata').error('content_info.fetch_error', { value, error: err.message });
       // Return unresolved on network/parse failure
       return { value, title: localId, source: normalizedSource, type: null, unresolved: true };
     }
@@ -679,6 +690,7 @@ export async function fetchContentMetadata(value) {
 
 // Content search combobox component with browser navigation
 function ContentSearchCombobox({ value, onChange }) {
+  const log = useMemo(() => adminLog('ContentSearchCombobox'), []);
   const [highlightedIdx, setHighlightedIdx] = useState(-1);
   const { contentInfoMap } = useListsContext();
   const [pagination, setPagination] = useState(null);
@@ -706,11 +718,13 @@ function ContentSearchCombobox({ value, onChange }) {
   const blurTimeoutRef = useRef(null);
   const prevIdxRef = useRef(-1);
   const scrollAnimRef = useRef(null);
+  const autoResolveRef = useRef(null);
 
-  // Cleanup blur timeout on unmount
+  // Cleanup blur timeout and auto-resolve on unmount
   useEffect(() => {
     return () => {
       if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+      if (autoResolveRef.current) autoResolveRef.current.controller.abort();
     };
   }, []);
 
@@ -739,6 +753,7 @@ function ContentSearchCombobox({ value, onChange }) {
 
   // Shared cleanup for dismissing the combobox (used by blur, Escape, Tab, and selection)
   const resetComboboxState = useCallback(() => {
+    log.debug('combobox.reset', { searchQuery, isEditing, navStackDepth: navStack.length });
     setSearchQuery('');
     setIsEditing(false);
     setBrowseItems([]);
@@ -761,17 +776,21 @@ function ContentSearchCombobox({ value, onChange }) {
     }
     // Don't search when query matches the current value (just opened for browsing)
     if (debouncedSearch === value) {
+      log.debug('search.skip.matches_value', { debouncedSearch });
       setSearchResults([]);
       return;
     }
     // Don't search backend when user is refining within loaded browse items (e.g. hymn: 113)
     const prefix = value?.split(':')[0];
     if (prefix && debouncedSearch.startsWith(prefix + ':') && browseItems.length > 0) {
+      log.debug('search.skip.local_filter', { debouncedSearch, prefix, browseItemCount: browseItems.length });
       return;
     }
 
     const searchContent = async () => {
+      log.info('search.request', { query: debouncedSearch });
       setSearching(true);
+      const t0 = performance.now();
       try {
         const response = await fetch(`/api/v1/content/query/search?text=${encodeURIComponent(debouncedSearch)}&take=20`);
         if (response.ok) {
@@ -800,10 +819,21 @@ function ContentSearchCombobox({ value, onChange }) {
             hasParam: !!app.param,
             param: app.param,
           }));
-          setSearchResults([...appMatches, ...results]);
+          const allResults = [...appMatches, ...results];
+          setSearchResults(allResults);
+          log.info('search.results', {
+            query: debouncedSearch,
+            durationMs: Math.round(performance.now() - t0),
+            resultCount: allResults.length,
+            appMatches: appMatches.length,
+            contentMatches: results.length,
+            items: allResults.slice(0, 20).map(r => ({ value: r.value, title: r.title, source: r.source, type: r.type }))
+          });
+        } else {
+          log.warn('search.http_error', { query: debouncedSearch, status: response.status, durationMs: Math.round(performance.now() - t0) });
         }
       } catch (err) {
-        console.error('Search error:', err);
+        adminLog('ContentSearchCombobox').error('search.error', { query: debouncedSearch, error: err.message });
       } finally {
         setSearching(false);
       }
@@ -813,10 +843,12 @@ function ContentSearchCombobox({ value, onChange }) {
   }, [debouncedSearch, value, browseItems.length]);
 
   const handleOptionSelect = async (val) => {
+    log.info('option.select', { val, value });
     // Check if this is an app with params
     const item = [...searchResults, ...browseItems].find(r => r.value === val);
     if (item?.isApp && item.hasParam) {
       // App needs a parameter — show param picker
+      log.info('app_param.prompt', { appId: item.appId, paramName: item.param?.name });
       setPendingApp({ appId: item.appId, param: item.param });
       setParamInput('');
       const { resolveParamOptions } = await import('../../../lib/appRegistry.js');
@@ -827,6 +859,7 @@ function ContentSearchCombobox({ value, onChange }) {
       return;
     }
 
+    log.info('value.save', { newValue: val, prevValue: value, source: item?.source, title: item?.title });
     onChange(val);
     resetComboboxState();
   };
@@ -834,6 +867,8 @@ function ContentSearchCombobox({ value, onChange }) {
   // Fetch children of a container for drill-down
   const fetchContainerChildren = async (containerId, containerTitle, source, thumbnail = null) => {
     const localId = containerId.replace(/^[^:]+:/, '');
+    log.info('container_children.fetch', { containerId, containerTitle, source });
+    const t0 = performance.now();
     try {
       setLoadingBrowse(true);
 
@@ -877,10 +912,16 @@ function ContentSearchCombobox({ value, onChange }) {
         }));
         setBrowseItems(children);
         setHighlightedIdx(0);
+        log.info('container_children.results', {
+          containerId, containerTitle, source,
+          count: children.length,
+          containerTypes: children.filter(c => c.isContainer).length,
+          durationMs: Math.round(performance.now() - t0)
+        });
         return children;
       }
     } catch (err) {
-      console.error('Failed to fetch container children:', err);
+      adminLog('ContentSearchCombobox').error('container_children.error', { containerId, source, error: err.message });
       setHighlightedIdx(0);
     } finally {
       setLoadingBrowse(false);
@@ -893,6 +934,7 @@ function ContentSearchCombobox({ value, onChange }) {
     if (!isContainerItem(item)) {
       return false;
     }
+    log.info('drill_down', { itemValue: item.value, title: item.title, source: item.source, type: item.type });
 
     // Push current parent to nav stack (if we have one)
     if (currentParent) {
@@ -913,6 +955,7 @@ function ContentSearchCombobox({ value, onChange }) {
 
   // Go up to parent (left arrow) - also loads parent level when at root
   const goUp = async () => {
+    log.info('go_up', { navStackDepth: navStack.length, hasParentKey: !!currentParent?.parentKey, hasLibraryId: !!currentParent?.libraryId });
     setSearchQuery('');
 
     if (navStack.length > 0) {
@@ -950,6 +993,8 @@ function ContentSearchCombobox({ value, onChange }) {
 
   // Load library level items
   const loadLibraryLevel = async (libraryId, source, currentContextId) => {
+    log.info('library_level.fetch', { libraryId, source, currentContextId });
+    const t0 = performance.now();
     try {
       setLoadingBrowse(true);
 
@@ -978,6 +1023,7 @@ function ContentSearchCombobox({ value, onChange }) {
         parentKey: null,
         libraryId
       });
+      log.info('library_level.results', { libraryId, source, count: libraryItems.length, durationMs: Math.round(performance.now() - t0) });
 
       // Find and highlight the container we came from
       const normalizedContextId = currentContextId?.replace(/:\s+/g, ':');
@@ -988,7 +1034,7 @@ function ContentSearchCombobox({ value, onChange }) {
         scrollOptionIntoView(`[data-value="${normalizedContextId}"]`);
       }
     } catch (err) {
-      console.error('Failed to load library level:', err);
+      adminLog('ContentSearchCombobox').error('library_level.error', { libraryId, source, error: err.message });
       setHighlightedIdx(0);
     } finally {
       setLoadingBrowse(false);
@@ -997,6 +1043,8 @@ function ContentSearchCombobox({ value, onChange }) {
 
   // Load parent level (grandparent's children) for left arrow at root
   const loadParentLevel = async (parentKey, source) => {
+    log.info('parent_level.fetch', { parentKey, source });
+    const t0 = performance.now();
     try {
       setLoadingBrowse(true);
 
@@ -1055,6 +1103,7 @@ function ContentSearchCombobox({ value, onChange }) {
       setBrowseItems(siblings);
       setCurrentParent(newContext);
       setHighlightedIdx(0);
+      log.info('parent_level.results', { parentKey, source, count: siblings.length, durationMs: Math.round(performance.now() - t0) });
 
       // Find and highlight the parent we came from
       const parentIndex = siblings.findIndex(s => s.value === `${source}:${parentKey}`);
@@ -1063,7 +1112,7 @@ function ContentSearchCombobox({ value, onChange }) {
         scrollOptionIntoView(`[data-value="${source}:${parentKey}"]`);
       }
     } catch (err) {
-      console.error('Failed to load parent level:', err);
+      adminLog('ContentSearchCombobox').error('parent_level.error', { parentKey, source, error: err.message });
       setHighlightedIdx(0);
     } finally {
       setLoadingBrowse(false);
@@ -1072,6 +1121,7 @@ function ContentSearchCombobox({ value, onChange }) {
 
   // Navigate to specific breadcrumb level
   const navigateTo = async (index) => {
+    log.info('breadcrumb.navigate', { index, target: index >= 0 ? navStack[index]?.title : 'root' });
     if (index < 0) {
       // Go to root (siblings)
       setNavStack([]);
@@ -1090,6 +1140,8 @@ function ContentSearchCombobox({ value, onChange }) {
 
   // Fetch siblings (items from the same parent) when opening dropdown
   const fetchSiblings = async () => {
+    log.info('siblings.fetch', { value });
+    const t0 = performance.now();
     const rawSource = value?.split(':')[0]?.trim();
     const source = normalizeListSource(contentInfo?.source || rawSource);
     const localId = value?.split(':').slice(1).join(':').trim();
@@ -1147,6 +1199,7 @@ function ContentSearchCombobox({ value, onChange }) {
 
         setBrowseItems(siblings);
         setCurrentParent({ id: 'app:', title: parentTitle, source: 'app', thumbnail: null, parentKey: null, libraryId: null });
+        log.info('siblings.results', { value, source: 'app', parentTitle, count: siblings.length, durationMs: Math.round(performance.now() - t0) });
 
         // Highlight current item
         const normalizedVal = value?.replace(/:\s+/g, ':');
@@ -1155,7 +1208,7 @@ function ContentSearchCombobox({ value, onChange }) {
 
         scrollOptionIntoView(`[data-value="${normalizedVal}"]`);
       } catch (err) {
-        console.error('Failed to fetch app siblings:', err);
+        adminLog('ContentSearchCombobox').error('app_siblings.error', { value, error: err.message });
       } finally {
         setLoadingBrowse(false);
       }
@@ -1165,10 +1218,21 @@ function ContentSearchCombobox({ value, onChange }) {
     try {
       setLoadingBrowse(true);
       const data = await doFetchSiblings(value, contentInfo);
-      if (!data) return;
+      if (!data) {
+        log.warn('siblings.empty', { value, durationMs: Math.round(performance.now() - t0) });
+        return;
+      }
       setBrowseItems(data.browseItems);
       setCurrentParent(data.currentParent);
       setPagination(data.pagination || null);
+      log.info('siblings.results', {
+        value,
+        source: data.currentParent?.source,
+        parentTitle: data.currentParent?.title,
+        count: data.browseItems.length,
+        hasPagination: !!data.pagination,
+        durationMs: Math.round(performance.now() - t0)
+      });
 
       // Use referenceIndex from API if available, otherwise find by value
       const normalizedVal = value?.replace(/:\s+/g, ':');
@@ -1178,13 +1242,18 @@ function ContentSearchCombobox({ value, onChange }) {
       setHighlightedIdx(currentIndex >= 0 ? currentIndex : 0);
       scrollOptionIntoView(`[data-value="${normalizedVal}"]`);
     } catch (err) {
-      console.error('Failed to fetch siblings:', err);
+      adminLog('ContentSearchCombobox').error('siblings.error', { value, error: err.message });
     } finally {
       setLoadingBrowse(false);
     }
   };
 
   const handleStartEditing = () => {
+    log.info('editing.start', { value });
+    if (autoResolveRef.current) {
+      autoResolveRef.current.controller.abort();
+      autoResolveRef.current = null;
+    }
     setIsEditing(true);
     const q = value || '';
     setSearchQuery(q);
@@ -1210,6 +1279,7 @@ function ContentSearchCombobox({ value, onChange }) {
 
     if (cached?.status === 'loaded' && cached.data) {
       // Cache hit - use instantly
+      log.debug('editing.cache_hit', { value, count: cached.data.browseItems.length });
       setBrowseItems(cached.data.browseItems);
       setCurrentParent(cached.data.currentParent);
       setPagination(cached.data.pagination || null);
@@ -1224,6 +1294,7 @@ function ContentSearchCombobox({ value, onChange }) {
       scrollOptionIntoView(`[data-value="${normalizedVal}"]`);
     } else if (cached?.status === 'pending' && cached.promise) {
       // In flight - wait for it
+      log.debug('editing.cache_pending', { value });
       setLoadingBrowse(true);
       cached.promise.then(data => {
         if (data) {
@@ -1241,11 +1312,13 @@ function ContentSearchCombobox({ value, onChange }) {
       });
     } else {
       // Cache miss - fetch normally
+      log.debug('editing.cache_miss', { value });
       fetchSiblings();
     }
   };
 
   const handleBlur = () => {
+    log.debug('blur', { value, searchQuery });
     // Delay to allow click events on dropdown to fire first
     blurTimeoutRef.current = setTimeout(() => resetComboboxState(), 150);
   };
@@ -1283,15 +1356,41 @@ function ContentSearchCombobox({ value, onChange }) {
       e.preventDefault();
       const item = items[highlightedIdx];
       if (item) {
+        log.info('key.enter.select', { value: item.value, title: item.title });
         handleOptionSelect(item.value);
       } else if (searchQuery) {
         // No matching item highlighted — save raw text as-is
+        log.info('key.enter.freeform', { searchQuery, availableResults: displayItems.length, prevValue: value });
+        log.info('value.save', { newValue: searchQuery, prevValue: value, source: 'freeform' });
         onChange(searchQuery);
+        // Auto-resolve: if freeform text isn't a content ID, search for it
+        if (!searchQuery.match(/^[^:]+:\s*.+$/)) {
+          const controller = new AbortController();
+          autoResolveRef.current = { query: searchQuery, controller };
+          log.info('search.auto_resolve.start', { query: searchQuery });
+          fetch(`/api/v1/content/query/search?text=${encodeURIComponent(searchQuery)}&take=1`,
+                { signal: controller.signal })
+            .then(res => res.ok ? res.json() : null)
+            .then(data => {
+              if (!autoResolveRef.current || autoResolveRef.current.query !== searchQuery) return;
+              const items = data?.items || [];
+              if (items.length > 0) {
+                const resolved = items[0].id || `${items[0].source}:${items[0].localId}`;
+                log.info('search.auto_resolve.success', { query: searchQuery, resolvedTo: resolved, title: items[0].title });
+                onChange(resolved);
+              } else {
+                log.info('search.auto_resolve.no_results', { query: searchQuery });
+              }
+              autoResolveRef.current = null;
+            })
+            .catch(() => { autoResolveRef.current = null; });
+        }
         resetComboboxState();
       }
       return;
     } else if (e.key === 'Escape') {
       e.preventDefault();
+      log.debug('key.escape');
       resetComboboxState();
       return;
     } else if (e.key === 'Tab') {
@@ -1306,14 +1405,19 @@ function ContentSearchCombobox({ value, onChange }) {
 
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setHighlightedIdx(prev => (prev + 1) % items.length);
+      const newIdx = (highlightedIdx + 1) % items.length;
+      log.debug('key.arrow_down', { from: highlightedIdx, to: newIdx, itemTitle: items[newIdx]?.title });
+      setHighlightedIdx(newIdx);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setHighlightedIdx(prev => prev <= 0 ? items.length - 1 : prev - 1);
+      const newIdx = highlightedIdx <= 0 ? items.length - 1 : highlightedIdx - 1;
+      log.debug('key.arrow_up', { from: highlightedIdx, to: newIdx, itemTitle: items[newIdx]?.title });
+      setHighlightedIdx(newIdx);
     } else if (e.key === 'ArrowRight') {
       const item = items[highlightedIdx];
       if (item && isContainerItem(item)) {
         e.preventDefault();
+        log.info('key.arrow_right.drill_down', { value: item.value, title: item.title });
         await drillDown(item);
       }
       // If not a container, let default cursor movement happen
@@ -1322,6 +1426,7 @@ function ContentSearchCombobox({ value, onChange }) {
       const cursorAtStart = e.target.selectionStart === 0;
       if (cursorAtStart || !isActiveSearch) {
         e.preventDefault();
+        log.info('key.arrow_left.go_up', { navStackDepth: navStack.length });
         await goUp();
       }
       // Otherwise, let default cursor movement happen
@@ -1465,6 +1570,7 @@ function ContentSearchCombobox({ value, onChange }) {
       const fullId = paramVal
         ? `app:${pendingApp.appId}/${paramVal}`
         : `app:${pendingApp.appId}`;
+      log.info('app_param.commit', { appId: pendingApp.appId, paramVal, fullId });
       onChange(fullId);
       setSearchQuery('');
       setIsEditing(false);
@@ -1474,6 +1580,7 @@ function ContentSearchCombobox({ value, onChange }) {
     };
 
     const cancelParam = () => {
+      log.info('app_param.cancel', { appId: pendingApp.appId });
       setPendingApp(null);
       setParamOptions(null);
       setParamInput('');
@@ -1495,6 +1602,7 @@ function ContentSearchCombobox({ value, onChange }) {
               rightSectionPointerEvents="none"
               value={paramInput}
               onChange={(e) => {
+                log.debug('param_input.change', { value: e.currentTarget.value, appId: pendingApp.appId });
                 setParamInput(e.currentTarget.value);
                 combobox.openDropdown();
               }}
@@ -1564,7 +1672,9 @@ function ContentSearchCombobox({ value, onChange }) {
           rightSectionPointerEvents="none"
           value={searchQuery}
           onChange={(e) => {
-            setSearchQuery(e.currentTarget.value);
+            const val = e.currentTarget.value;
+            log.debug('input.change', { value: val, prevValue: searchQuery });
+            setSearchQuery(val);
             setHighlightedIdx(0);
             combobox.openDropdown();
           }}
@@ -1739,6 +1849,7 @@ const ACTION_META = {
 
 // Action chip select
 function ActionChipSelect({ value, onChange }) {
+  const log = useMemo(() => adminLog('ActionChipSelect'), []);
   const combobox = useCombobox({
     onDropdownClose: () => combobox.resetSelectedOption(),
   });
@@ -1751,6 +1862,7 @@ function ActionChipSelect({ value, onChange }) {
     <Combobox
       store={combobox}
       onOptionSubmit={(val) => {
+        log.info('action.select', { oldAction: value, newAction: val });
         onChange(val);
         combobox.closeDropdown();
       }}
@@ -1797,6 +1909,7 @@ function ActionChipSelect({ value, onChange }) {
 
 // Item Details Drawer - shows full info, children list, watch states
 function ItemDetailsDrawer({ opened, onClose, contentValue }) {
+  const log = useMemo(() => adminLog('ItemDetailsDrawer'), []);
   const [loading, setLoading] = useState(true);
   const [itemInfo, setItemInfo] = useState(null);
   const [children, setChildren] = useState([]);
@@ -1809,6 +1922,7 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
     const match = itemId.match(/^([^:]+):\s*(.+)$/);
     if (!match) return null;
     const [, source, localId] = [null, match[1].trim(), match[2].trim()];
+    log.info('details.fetch', { itemId, source, localId });
 
     try {
       setLoading(true);
@@ -1832,7 +1946,7 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
 
       return info;
     } catch (err) {
-      console.error('Failed to fetch item details:', err);
+      adminLog('ItemDetailsDrawer').error('item_details.error', { error: err.message });
       return null;
     } finally {
       setLoading(false);
@@ -1842,6 +1956,7 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
   // Navigate to parent
   const navigateToParent = async () => {
     if (!itemInfo?.metadata?.parentRatingKey) return;
+    log.info('details.navigate_parent', { parentKey: itemInfo.metadata.parentRatingKey, currentTitle: itemInfo.title });
 
     const parentId = `${itemInfo.source}:${itemInfo.metadata.parentRatingKey}`;
 
@@ -1857,6 +1972,7 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
   // Navigate back to child
   const navigateBack = async () => {
     if (navStack.length === 0) return;
+    log.info('details.navigate_back', { stackDepth: navStack.length });
 
     const newStack = [...navStack];
     const target = newStack.pop();
@@ -1868,6 +1984,7 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
 
   // Reset to original item
   const navigateToOriginal = async () => {
+    log.info('details.navigate_original', { originalValue: originalValueRef.current });
     setNavStack([]);
     setCurrentItemId(null);
     await fetchItemDetails(originalValueRef.current);
@@ -2024,6 +2141,7 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
                           cursor: isContainer ? 'pointer' : 'default'
                         }}
                         onClick={isContainer ? () => {
+                          log.info('details.child_click', { childId: child.id, childTitle: child.title, childType: childType });
                           setNavStack([...navStack, { id: itemInfo.id, title: itemInfo.title }]);
                           setCurrentItemId(null);
                           fetchItemDetails(child.id);
@@ -2115,6 +2233,7 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
 }
 
 function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, isWatchlist, onEdit, onSplit, sectionIndex, sectionCount, sections, itemCount, onMoveItem }) {
+  const log = useMemo(() => adminLog('ListsItemRow'), []);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item.index
   });
@@ -2184,12 +2303,14 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
 
   // Label editing handlers
   const handleLabelClick = () => {
+    log.info('label.edit_start', { index: item.index, label: item.label });
     setLabelValue(item.label || '');
     setEditingLabel(true);
   };
 
   const handleLabelSave = () => {
     if (labelValue.trim() && labelValue !== item.label) {
+      log.info('label.save', { index: item.index, oldLabel: item.label, newLabel: labelValue.trim() });
       onUpdate({ label: labelValue.trim() });
     }
     setEditingLabel(false);
@@ -2197,8 +2318,10 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
 
   const handleLabelKeyDown = (e) => {
     if (e.key === 'Enter') {
+      log.debug('label.key.enter', { index: item.index });
       handleLabelSave();
     } else if (e.key === 'Escape') {
+      log.debug('label.key.escape', { index: item.index });
       setLabelValue(item.label || '');
       setEditingLabel(false);
     }
@@ -2207,6 +2330,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
   // Input (content) change handler
   const handleInputChange = (value) => {
     if (value && value !== item.input) {
+      log.info('input.change', { index: item.index, oldInput: item.input, newInput: value });
       onUpdate({ input: value });
     }
   };
@@ -2214,6 +2338,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
   // Action change handler
   const handleActionChange = (value) => {
     if (value && value !== item.action) {
+      log.info('action.change', { index: item.index, oldAction: item.action, newAction: value });
       onUpdate({ action: value });
     }
   };
@@ -2223,7 +2348,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
       <div className="col-active">
         <Checkbox
           checked={item.active !== false}
-          onChange={onToggleActive}
+          onChange={() => { log.info('active.toggle', { index: item.index, newActive: item.active === false }); onToggleActive(); }}
           size="xs"
         />
       </div>
@@ -2237,6 +2362,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
             onContextMenu={(e) => {
               e.preventDefault();
               e.stopPropagation();
+              log.info('drag_menu.open', { index: item.index });
               setDragMenuOpen(true);
             }}
           >
@@ -2248,14 +2374,14 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
           <Menu.Item
             leftSection={<IconArrowBarUp size={14} />}
             disabled={item.index === 0}
-            onClick={() => onMoveItem('top')}
+            onClick={() => { log.info('move.top', { index: item.index }); onMoveItem('top'); }}
           >
             Move to Top
           </Menu.Item>
           <Menu.Item
             leftSection={<IconArrowBarDown size={14} />}
             disabled={item.index === itemCount - 1}
-            onClick={() => onMoveItem('bottom')}
+            onClick={() => { log.info('move.bottom', { index: item.index }); onMoveItem('bottom'); }}
           >
             Move to Bottom
           </Menu.Item>
@@ -2267,7 +2393,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
               <Menu.Item
                 key={si}
                 leftSection={<IconSection size={14} />}
-                onClick={() => onMoveItem('section', si)}
+                onClick={() => { log.info('move.section', { index: item.index, targetSection: si }); onMoveItem('section', si); }}
               >
                 {s.title || `Section ${si + 1}`}
               </Menu.Item>
@@ -2275,7 +2401,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
           })}
           <Menu.Item
             leftSection={<IconPlus size={14} />}
-            onClick={() => onMoveItem('new-section')}
+            onClick={() => { log.info('move.new_section', { index: item.index }); onMoveItem('new-section'); }}
           >
             New Section
           </Menu.Item>
@@ -2286,7 +2412,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
         <Text size="xs" c="dimmed">{item.index + 1}</Text>
       </div>
 
-      <div className="col-icon" onClick={() => setImagePickerOpen(true)}>
+      <div className="col-icon" onClick={() => { log.info('image_picker.open', { index: item.index }); setImagePickerOpen(true); }}>
         <Avatar src={rowThumbnail} size={28} radius="sm">
           {item.label ? item.label.charAt(0).toUpperCase() : '#'}
         </Avatar>
@@ -2296,7 +2422,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
         onClose={() => setImagePickerOpen(false)}
         currentImage={item.image || null}
         inheritedImage={inheritedImage}
-        onSave={(path) => onUpdate({ image: path })}
+        onSave={(path) => { log.info('image.save', { index: item.index, path }); onUpdate({ image: path }); }}
         inUseImages={inUseImages || new Set()}
       />
 
@@ -2337,7 +2463,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
               variant="subtle"
               size="sm"
               color="violet"
-              onClick={() => navigate(`/admin/content/lists/${currentListType}/${listName}`)}
+              onClick={() => { log.info('navigate.sublist', { index: item.index, listName }); navigate(`/admin/content/lists/${currentListType}/${listName}`); }}
               title={`Open list: ${listName}`}
             >
               <IconLayoutList size={14} />
@@ -2349,7 +2475,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
             variant="subtle"
             size="sm"
             color="gray"
-            onClick={() => setPreviewOpen(true)}
+            onClick={() => { log.info('preview.open', { index: item.index, action: item.action || 'Play', input: item.input }); setPreviewOpen(true); }}
             title="Preview"
           >
             <IconPlayerPlay size={14} />
@@ -2360,7 +2486,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
             variant="subtle"
             size="sm"
             color="cyan"
-            onClick={() => setPreviewOpen(true)}
+            onClick={() => { log.info('preview.open', { index: item.index, action: 'Display', input: item.input }); setPreviewOpen(true); }}
             title="Preview image"
           >
             <IconPhoto size={14} />
@@ -2371,7 +2497,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
             variant="subtle"
             size="sm"
             color="teal"
-            onClick={() => setPreviewOpen(true)}
+            onClick={() => { log.info('preview.open', { index: item.index, action: 'Open', input: item.input }); setPreviewOpen(true); }}
             title="Preview app"
           >
             <IconAppWindow size={14} />
@@ -2382,7 +2508,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
             variant="subtle"
             size="sm"
             color="orange"
-            onClick={() => setPreviewOpen(true)}
+            onClick={() => { log.info('preview.open', { index: item.index, action: 'Read', input: item.input }); setPreviewOpen(true); }}
             title="Preview reader"
           >
             <IconBookmark size={14} />
@@ -2390,7 +2516,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
         )}
         <Modal
           opened={previewOpen}
-          onClose={() => setPreviewOpen(false)}
+          onClose={() => { log.info('preview.close', { index: item.index }); setPreviewOpen(false); }}
           title={item.label || 'Preview'}
           centered
           size={item.action === 'Display' ? 'lg' : item.action === 'Open' ? 'xl' : 980}
@@ -2460,19 +2586,19 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
             </ActionIcon>
           </Menu.Target>
           <Menu.Dropdown>
-            <Menu.Item leftSection={<IconInfoCircle size={14} />} onClick={() => setDrawerOpen(true)}>
+            <Menu.Item leftSection={<IconInfoCircle size={14} />} onClick={() => { log.info('menu.more_info', { index: item.index, input: item.input }); setDrawerOpen(true); }}>
               More Info
             </Menu.Item>
-            <Menu.Item leftSection={<IconCopy size={14} />} onClick={onDuplicate}>
+            <Menu.Item leftSection={<IconCopy size={14} />} onClick={() => { log.info('menu.duplicate', { index: item.index }); onDuplicate(); }}>
               Duplicate
             </Menu.Item>
             {onSplit && (
-              <Menu.Item leftSection={<IconArrowBarDown size={14} />} onClick={onSplit}>
+              <Menu.Item leftSection={<IconArrowBarDown size={14} />} onClick={() => { log.info('menu.split', { index: item.index }); onSplit(); }}>
                 Split Below
               </Menu.Item>
             )}
             <Menu.Divider />
-            <Menu.Item color="red" leftSection={<IconTrash size={14} />} onClick={onDelete}>
+            <Menu.Item color="red" leftSection={<IconTrash size={14} />} onClick={() => { log.info('menu.delete', { index: item.index, label: item.label }); onDelete(); }}>
               Delete
             </Menu.Item>
           </Menu.Dropdown>
@@ -2490,6 +2616,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
 
 // Empty row for adding new items at the bottom
 function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
+  const log = useMemo(() => adminLog('EmptyItemRow'), []);
   const [label, setLabel] = useState('');
   const [action, setAction] = useState('Play');
   const [input, setInput] = useState('');
@@ -2497,6 +2624,7 @@ function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
 
   const handleAdd = () => {
     if (label.trim() || input) {
+      log.info('item.add', { nextIndex, label: label.trim() || `Item ${nextIndex + 1}`, action, input });
       onAdd({
         label: label.trim() || `Item ${nextIndex + 1}`,
         action,

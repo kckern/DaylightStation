@@ -496,7 +496,7 @@ Readalong collections can customize ID resolution and rendering via two thin plu
 
 | Resolver | What It Does |
 |----------|-------------|
-| `scripture` | Reference strings (`1-nephi-1`) → verse IDs, multi-version path resolution via `scripture-guide` package |
+| `scripture` | Flexible segment interpretation: `john-1` (defaults), `niv/john-1` (smart text/audio detection), `kjvf/kjv-dramatized/john-1` (explicit). Uses filesystem checks to disambiguate text editions vs audio recordings. See `features/scripture-resolver.md` |
 | (default) | Direct path lookup with directory traversal |
 
 **Frontend Renderer** — controls content → JSX parsing, title extraction, CSS type:
@@ -527,7 +527,7 @@ Collections with `ambient: true` in their manifest get background audio layered 
 
 ### Directory Structures
 
-**Scripture**: `section/version/itemId` — `bom/sebom/31103`, `ot/kjvf/1`, `dc/rex/37707`
+**Scripture**: `volume/edition/verseId` — text: `nt/kjvf/23146`, audio: `nt/kjv-maxmclean/23146`. Text and audio paths are independent (different edition and recording slugs). See `features/scripture-resolver.md`
 
 **Talks**: `conference/session/talkNum` — `ldsgc/ldsgc202510/11` (uses `.yaml` extension)
 

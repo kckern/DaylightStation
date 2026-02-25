@@ -251,7 +251,7 @@ export function toListItem(item) {
  * @returns {express.Router}
  */
 export function createListRouter(config) {
-  const { registry, loadFile, configService, contentQueryService, contentIdResolver, menuMemoryPath } = config;
+  const { registry, loadFile, configService, contentQueryService, contentIdResolver, menuMemoryPath, logger = console } = config;
   const router = express.Router();
 
   /**
@@ -296,6 +296,7 @@ export function createListRouter(config) {
     const nowUnix = Math.floor(Date.now() / 1000);
     menuLog[assetId] = nowUnix;
     saveYaml(menuMemoryPath, menuLog);
+    logger.info?.('list.menu_log', { assetId, timestamp: nowUnix });
     res.json({ [assetId]: nowUnix });
   }));
 
@@ -303,6 +304,7 @@ export function createListRouter(config) {
    * GET /api/list/:source/(path)
    */
   router.get('/:source/*', asyncHandler(async (req, res) => {
+      const requestStart = performance.now();
       const rawSource = req.params.source;
       const rawPath = req.params[0] || '';
 
@@ -311,6 +313,8 @@ export function createListRouter(config) {
         source: rawSource,
         path: rawPath
       });
+
+      logger.info?.('list.request', { source, localId, modifiers, ip: req.ip });
 
       // Resolve through ContentIdResolver (handles aliases, prefixes, exact matches)
       const compoundIdForResolver = `${source}:${localId}`;
@@ -322,6 +326,7 @@ export function createListRouter(config) {
       let resolvedViaPrefix = resolvedSource !== source;
 
       if (!adapter) {
+        logger.warn?.('list.unknown_source', { source, localId });
         return res.status(404).json({ error: `Unknown source: ${source}` });
       }
 
@@ -444,6 +449,16 @@ export function createListRouter(config) {
         parents,
         items: items.map(toListItem)
       };
+
+      const totalMs = Math.round(performance.now() - requestStart);
+      logger.info?.('list.response', {
+        source, localId,
+        title: response.title,
+        itemCount: response.items?.length ?? 0,
+        hasParents: !!response.parents,
+        totalMs,
+        items: (response.items || []).slice(0, 10).map(i => ({ id: i.id, title: i.title, type: i.type }))
+      });
 
       res.json(response);
   }));

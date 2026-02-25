@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { MantineProvider, createTheme } from '@mantine/core';
-import { getChildLogger } from '../lib/logging/singleton.js';
+import getLogger from '../lib/logging/Logger.js';
 import AdminLayout from '../modules/Admin/AdminLayout.jsx';
 import ListsIndex from '../modules/Admin/ContentLists/ListsIndex.jsx';
 import ListsFolder from '../modules/Admin/ContentLists/ListsFolder.jsx';
@@ -119,7 +119,7 @@ const theme = createTheme({
 });
 
 function AdminApp() {
-  const logger = useMemo(() => getChildLogger({ app: 'admin' }), []);
+  const logger = useMemo(() => getLogger().child({ app: 'admin', sessionLog: true }), []);
 
   React.useEffect(() => {
     logger.info('admin.app.mounted');

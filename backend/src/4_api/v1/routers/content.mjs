@@ -263,7 +263,18 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
     const query = parseContentQuery(req.query);
     const validation = validateContentQuery(query);
 
+    logger.info?.('content.query.search.request', {
+      text: query.text,
+      source: query.source,
+      take: query.take,
+      skip: query.skip,
+      sort: query.sort,
+      mediaType: query.mediaType,
+      ip: req.ip
+    });
+
     if (!validation.valid) {
+      logger.warn?.('content.query.search.validation_failed', { query, errors: validation.errors });
       return res.status(400).json({
         error: 'Validation failed',
         details: validation.errors
@@ -274,12 +285,21 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
       const result = await contentQueryService.search(query);
       const totalMs = Math.round(performance.now() - requestStart);
 
+      const resultCount = result.items?.length ?? 0;
+      logger.info?.('content.query.search.response', {
+        text: query.text,
+        source: query.source,
+        resultCount,
+        totalMs,
+        items: (result.items || []).slice(0, 10).map(i => ({ id: i.id, title: i.title, source: i.source, type: i.metadata?.type || i.type }))
+      });
+
       // Log request performance (service-level perf already logged internally)
       if (totalMs > 5000) {
         logger.warn?.('content.query.search.slow', {
           query: { text: query.text, source: query.source },
           totalMs,
-          resultCount: result.items?.length ?? 0,
+          resultCount,
         });
       }
 
