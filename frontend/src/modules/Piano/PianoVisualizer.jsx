@@ -1,20 +1,17 @@
-import { useState, useEffect, useRef, useMemo, Suspense } from 'react';
+import { useState, useEffect, useMemo, Suspense } from 'react';
 import { PianoKeyboard } from './components/PianoKeyboard';
 import { NoteWaterfall } from './components/NoteWaterfall';
 import { CurrentChordStaff } from './components/CurrentChordStaff';
 import { useMidiSubscription } from './useMidiSubscription';
-import { DaylightAPI } from '../../lib/api.mjs';
-import { isWhiteKey, computeKeyboardRange } from './noteUtils.js';
+import { computeKeyboardRange } from './noteUtils.js';
 import './PianoVisualizer.scss';
 import { useRhythmGame } from './useRhythmGame.js';
 import { useGameActivation } from './useGameActivation.js';
 import { RhythmOverlay } from './components/RhythmOverlay';
 import { getGameEntry } from './gameRegistry.js';
-import { getChildLogger } from '../../lib/logging/singleton.js';
-
-const GRACE_PERIOD_MS = 10000; // 10 seconds before countdown starts
-const COUNTDOWN_MS = 30000;   // 30 seconds countdown
-const PLACEHOLDER_DELAY_MS = 2000; // 2 seconds before showing "Play something..."
+import { usePianoConfig } from './usePianoConfig.js';
+import { useInactivityTimer } from './useInactivityTimer.js';
+import { useSessionTracking } from './useSessionTracking.js';
 
 
 // Format duration as mm:ss
@@ -32,17 +29,8 @@ const formatDuration = (seconds) => {
  * @param {function} props.onSessionEnd - Called when a piano session ends
  */
 export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
-  const logger = useMemo(() => getChildLogger({ component: 'piano-visualizer' }), []);
   const { activeNotes, sustainPedal, sessionInfo, noteHistory } = useMidiSubscription();
-  const [inactivityState, setInactivityState] = useState('active'); // 'active' | 'grace' | 'countdown'
-  const [countdownProgress, setCountdownProgress] = useState(100);
-  const [sessionDuration, setSessionDuration] = useState(0);
-  const lastNoteOffRef = useRef(null); // Track when the last note was released
-  const sessionStartRef = useRef(null);
-  const timerRef = useRef(null);
-  const [showPlaceholder, setShowPlaceholder] = useState(false);
-  const [gamesConfig, setGamesConfig] = useState(null);
-  const pianoConfigRef = useRef(null); // Cache piano config for cleanup
+  const { gamesConfig } = usePianoConfig();
 
   const activation = useGameActivation(activeNotes, gamesConfig, initialGame);
   const rhythmConfig = activation.activeGameId === 'rhythm' ? gamesConfig?.rhythm : null;
@@ -61,6 +49,9 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   const activeGameEntry = activation.activeGameId ? getGameEntry(activation.activeGameId) : null;
   const isFullscreenGame = activeGameEntry?.layout === 'replace';
   const isAnyGame = game.isGameMode || isFullscreenGame;
+
+  const { inactivityState, countdownProgress } = useInactivityTimer(activeNotes, noteHistory, isAnyGame, onClose);
+  const { sessionDuration } = useSessionTracking(noteHistory);
 
   // Dynamic range for game mode — expand to at least 2 octaves, center with 1/3 octave padding
   const gameRange = game.isGameMode && game.currentLevel?.range;
@@ -92,120 +83,6 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
     }
     setScreenFlash(false);
   }, [game.wrongNotes]);
-
-  // On mount: Load piano config and run HA script if configured
-  useEffect(() => {
-    const initPiano = async () => {
-      try {
-        // Load device config to get module hooks
-        const devicesConfig = await DaylightAPI('api/v1/device/config');
-        const pianoConfig = devicesConfig?.devices?.['office-tv']?.modules?.['piano-visualizer'] ?? {};
-        pianoConfigRef.current = pianoConfig;
-
-        // Load game config from piano app config
-        try {
-          const pianoAppConfig = await DaylightAPI('api/v1/admin/apps/piano/config');
-          const gamesC = pianoAppConfig?.parsed?.games ?? null;
-          setGamesConfig(gamesC);
-        } catch (err) {
-          // Game mode unavailable — that's fine
-        }
-
-        // Run on_open HA script if configured
-        if (pianoConfig?.on_open) {
-          DaylightAPI(`/api/v1/home/ha/script/${pianoConfig.on_open}`, {}, 'POST')
-            .then(() => logger.debug('ha.on-open-executed', {}))
-            .catch(err => logger.warn('ha.on-open-failed', { error: err.message }));
-        }
-      } catch (err) {
-        logger.warn('config-load-failed', { error: err.message });
-      }
-    };
-    initPiano();
-
-    // Cleanup: Run on_close HA script if configured
-    return () => {
-      const config = pianoConfigRef.current;
-      if (config?.on_close) {
-        DaylightAPI(`/api/v1/home/ha/script/${config.on_close}`, {}, 'POST')
-          .catch(err => console.warn('[Piano] HA on_close script failed:', err.message));
-      }
-    };
-  }, []);
-
-  // Track when all notes are released (for inactivity timer)
-  useEffect(() => {
-    if (activeNotes.size === 0 && noteHistory.length > 0) {
-      // All notes released - start inactivity timer from now
-      lastNoteOffRef.current = Date.now();
-    } else if (activeNotes.size > 0) {
-      // Notes are being played - reset the timer reference
-      lastNoteOffRef.current = null;
-      setInactivityState('active');
-      setCountdownProgress(100);
-    }
-  }, [activeNotes.size, noteHistory.length]);
-
-  // Track session start and update duration
-  useEffect(() => {
-    if (noteHistory.length > 0 && !sessionStartRef.current) {
-      sessionStartRef.current = Date.now();
-    }
-  }, [noteHistory.length]);
-
-  // Update session duration every second
-  useEffect(() => {
-    const durationTimer = setInterval(() => {
-      if (sessionStartRef.current) {
-        setSessionDuration((Date.now() - sessionStartRef.current) / 1000);
-      }
-    }, 1000);
-    return () => clearInterval(durationTimer);
-  }, []);
-
-  // Inactivity detection - only starts after last note is released
-  useEffect(() => {
-    const checkInactivity = () => {
-      // Don't auto-close during any game mode
-      if (isAnyGame) {
-        setInactivityState('active');
-        setCountdownProgress(100);
-        return;
-      }
-
-      // If notes are currently being played, stay active
-      if (activeNotes.size > 0) {
-        setInactivityState('active');
-        setCountdownProgress(100);
-        return;
-      }
-
-      // If no notes have been released yet, stay active
-      if (!lastNoteOffRef.current) {
-        setInactivityState('active');
-        setCountdownProgress(100);
-        return;
-      }
-
-      const elapsed = Date.now() - lastNoteOffRef.current;
-
-      if (elapsed < GRACE_PERIOD_MS) {
-        setInactivityState('active');
-        setCountdownProgress(100);
-      } else if (elapsed < GRACE_PERIOD_MS + COUNTDOWN_MS) {
-        setInactivityState('countdown');
-        const countdownElapsed = elapsed - GRACE_PERIOD_MS;
-        const progress = 100 - (countdownElapsed / COUNTDOWN_MS) * 100;
-        setCountdownProgress(Math.max(0, progress));
-      } else {
-        // Time's up - close the visualizer only when countdown reaches zero
-        if (onClose) onClose();
-      }
-    };
-
-    timerRef.current = setInterval(checkInactivity, 100);
-    return () => clearInterval(timerRef.current);
-  }, [onClose, activeNotes.size, isAnyGame]);
 
   // Handle session end
   useEffect(() => {
