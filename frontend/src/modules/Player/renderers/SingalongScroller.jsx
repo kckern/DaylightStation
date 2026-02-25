@@ -30,7 +30,7 @@ export function SingalongScroller({
   seekToIntentSeconds,
   onSeekRequestConsumed,
   remountDiagnostics,
-  namespace
+  listId
 }) {
   const [data, setData] = useState(initialData || null);
   const textRef = useRef(null);
@@ -126,7 +126,7 @@ export function SingalongScroller({
         seekToIntentSeconds={seekToIntentSeconds}
         onSeekRequestConsumed={onSeekRequestConsumed}
         remountDiagnostics={remountDiagnostics}
-        namespace={namespace}
+        listId={listId}
       />
     </div>
   );
