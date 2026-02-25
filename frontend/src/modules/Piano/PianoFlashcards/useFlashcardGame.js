@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { getChildLogger } from '../../../lib/logging/singleton.js';
 import { generateCardPitches, evaluateMatch } from './flashcardEngine.js';
 
 const CARD_ADVANCE_DELAY_MS = 400;
@@ -24,6 +25,7 @@ function createInitialState() {
  * @returns game state + controls
  */
 export function useFlashcardGame(activeNotes, flashcardsConfig) {
+  const logger = useMemo(() => getChildLogger({ component: 'flashcard-game' }), []);
   const [state, setState] = useState(createInitialState);
   const advanceTimerRef = useRef(null);
   const completeTimerRef = useRef(null);
@@ -58,6 +60,7 @@ export function useFlashcardGame(activeNotes, flashcardsConfig) {
 
     if (result === 'correct' && !state.cardFailed) {
       // First-try correct — award points
+      logger.debug('flashcards.card-hit', { pitches: state.currentCard.pitches, firstTry: true });
       setState(prev => ({
         ...prev,
         cardStatus: 'hit',
@@ -66,12 +69,14 @@ export function useFlashcardGame(activeNotes, flashcardsConfig) {
       }));
     } else if (result === 'correct' && state.cardFailed) {
       // Correct after a miss — no points, but advance
+      logger.debug('flashcards.card-hit', { pitches: state.currentCard.pitches, firstTry: false });
       setState(prev => ({
         ...prev,
         cardStatus: 'hit',
         attempts: [...prev.attempts, { hit: false }],
       }));
     } else if (result === 'wrong') {
+      logger.debug('flashcards.card-miss', { pitches: state.currentCard.pitches });
       setState(prev => ({
         ...prev,
         cardStatus: 'miss',
@@ -79,7 +84,7 @@ export function useFlashcardGame(activeNotes, flashcardsConfig) {
       }));
     }
     // 'partial' and 'idle' — no state change, player is still working
-  }, [activeNotes, state.phase, state.currentCard, state.cardFailed, state.cardStatus, scorePerCard]);
+  }, [activeNotes, state.phase, state.currentCard, state.cardFailed, state.cardStatus, scorePerCard, logger]);
 
   // ─── Clear miss status when all notes released ────────────────
   useEffect(() => {
@@ -133,16 +138,34 @@ export function useFlashcardGame(activeNotes, flashcardsConfig) {
     return () => clearTimeout(completeTimerRef.current);
   }, [state.phase]);
 
+  // ─── Log phase transitions ──────────────────────────────────
+  useEffect(() => {
+    if (state.phase === 'COMPLETE') {
+      logger.info('flashcards.game-complete', { finalScore: state.score, level: state.level });
+    }
+  }, [state.phase, state.score, state.level, logger]);
+
+  // ─── Log level advances ─────────────────────────────────────
+  const prevLevelRef = useRef(state.level);
+  useEffect(() => {
+    if (state.level !== prevLevelRef.current) {
+      logger.info('flashcards.level-advance', { from: prevLevelRef.current, to: state.level });
+      prevLevelRef.current = state.level;
+    }
+  }, [state.level, logger]);
+
   // ─── Controls ─────────────────────────────────────────────────
   const startGame = useCallback(() => {
+    logger.info('flashcards.game-started', {});
     setState({ ...createInitialState(), phase: 'PLAYING' });
-  }, []);
+  }, [logger]);
 
   const deactivate = useCallback(() => {
     clearTimeout(advanceTimerRef.current);
     clearTimeout(completeTimerRef.current);
+    logger.info('flashcards.game-deactivated', {});
     setState(createInitialState());
-  }, []);
+  }, [logger]);
 
   // ─── Derived values ───────────────────────────────────────────
   const accuracy = useMemo(() => {
