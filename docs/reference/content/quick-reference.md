@@ -245,6 +245,22 @@ Query params: `take=N`, `skip=N`
 | `mediaType` | image/video/audio | All |
 | `favorites` | boolean | Immich, Plex |
 | `sort` | date/title/random | All |
+| `tier` | 1 or 2 | All searchable (see Search Tiers) |
+
+### Search Tiers
+
+The `tier` query parameter controls how much work adapters do per search request. Not all adapters differentiate — lightweight adapters treat both tiers identically.
+
+| Tier | Default? | Behavior | Typical Latency |
+|------|----------|----------|-----------------|
+| `1` | Yes | Fast path — minimal API calls, top-level results, no hydration | ~200-500ms |
+| `2` | No | Full path — playlists, collections, metadata hydration, all item types | ~5-18s (Plex) |
+
+**How it works:** The `tier` parameter is parsed by `contentQueryParser` and passed through to each adapter's `search(query)` method in `query.tier`. Adapters that only have one search phase ignore the parameter. Adapters with expensive multi-phase search (like Plex) use it to short-circuit.
+
+**Frontend behavior:** The admin search combobox uses two-phase search: tier 1 fires first for instant results, then a "Search all sources..." option at the bottom of the dropdown triggers tier 2 on demand. If tier 1 returns 0 results, tier 2 auto-triggers. Auto-resolve (Tab/Enter on freeform text) always uses tier 1.
+
+See `content-sources.md` § Search Tiers for per-adapter details.
 
 ---
 
@@ -263,7 +279,7 @@ Query params: `take=N`, `skip=N`
 
 | Method | Capability | Returns |
 |--------|-----------|---------|
-| `search(query)` | searchable | Items matching text/filters |
+| `search(query)` | searchable | Items matching text/filters. Receives `query.tier` (1=fast, 2=full) — see Search Tiers |
 | `getThumbnail(localId)` | displayable | Image/thumbnail URL |
 | `getCapabilities(localId)` | — | List of capabilities for an item |
 | `getContainerType(id)` | — | Container type string for selection strategy inference |

@@ -1760,6 +1760,8 @@ export class PlexAdapter {
         return { items: [], total: 0 };
       }
 
+      const tier = query.tier || 1;
+
       // Build Plex search options
       const options = {
         limit: query.take || 50
@@ -1787,7 +1789,15 @@ export class PlexAdapter {
         items = items.slice(query.skip);
       }
 
-      // Also search playlists and collections
+      // ── Tier 1 (fast): hubSearch only, top-level types, no hydration ──
+      if (tier === 1) {
+        const topLevelTypes = ['show', 'movie', 'artist', 'album', 'collection'];
+        const filtered = items.filter(item => topLevelTypes.includes(item.type));
+        const converted = filtered.map(item => this._hubResultToListableItem(item));
+        return { items: converted, total: converted.length };
+      }
+
+      // ── Tier 2 (full): playlists, collections, hydration ──
       const [matchingPlaylists, matchingCollections] = await Promise.all([
         this._searchPlaylists(query.text),
         this._searchCollections(query.text)
@@ -1848,6 +1858,36 @@ export class PlexAdapter {
       console.error('[PlexAdapter] search error:', err.message);
       return { items: [], total: 0 };
     }
+  }
+
+  /**
+   * Convert a hubSearch result to a ListableItem without hydration (no extra API calls).
+   * Used by tier 1 fast-path search to avoid per-item getMetadata() calls.
+   * @param {Object} item - Raw hubSearch result with ratingKey, title, type, thumb, etc.
+   * @returns {ListableItem}
+   * @private
+   */
+  _hubResultToListableItem(item) {
+    const thumbPath = item.composite || item.thumb;
+    const thumbnail = thumbPath ? `${this.proxyPath}${thumbPath}` : null;
+    const isContainer = ['show', 'artist', 'album', 'collection', 'season'].includes(item.type);
+
+    return new ListableItem({
+      id: `plex:${item.ratingKey}`,
+      source: 'plex',
+      localId: String(item.ratingKey),
+      title: item.title || `[${item.type || 'Untitled'}]`,
+      itemType: isContainer ? 'container' : 'leaf',
+      childCount: item.leafCount || item.childCount || 0,
+      thumbnail,
+      metadata: {
+        type: item.type,
+        category: this.#mapTypeToCategory(item.type),
+        year: item.year || null,
+        librarySectionTitle: item.librarySectionTitle || null,
+        childCount: item.leafCount || item.childCount || 0
+      }
+    });
   }
 
   /**

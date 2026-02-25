@@ -150,7 +150,14 @@ export class PlexClient {
           grandparent: item.grandparentTitle || null, // For TV episodes: show name
           year: item.year,
           type: item.type,
-          guid: item.guid
+          guid: item.guid,
+          thumb: item.thumb || null,
+          parentThumb: item.parentThumb || null,
+          grandparentThumb: item.grandparentThumb || null,
+          composite: item.composite || null,
+          leafCount: item.leafCount || null,
+          childCount: item.childCount || null,
+          librarySectionTitle: item.librarySectionTitle || null
         });
       }
     }
