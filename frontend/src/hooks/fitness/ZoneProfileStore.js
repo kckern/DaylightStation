@@ -356,6 +356,7 @@ export class ZoneProfileStore {
     const zoneKey = Array.isArray(user.zoneConfig)
       ? user.zoneConfig.map(z => `${z?.id}:${z?.min ?? ''}`).join('|')
       : '_base_';
-    return `${user.id}:${hr}:${zoneKey}`;
+    const committedZone = this._hysteresis.get(user.id)?.committedZoneId ?? '_none_';
+    return `${user.id}:${hr}:${zoneKey}:${committedZone}`;
   }
 }

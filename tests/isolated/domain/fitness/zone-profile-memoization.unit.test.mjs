@@ -56,12 +56,18 @@ describe('ZoneProfileStore.syncFromUsers memoization', () => {
     const users = [makeUser('alice', 110)];
     store.syncFromUsers(users);
 
-    // After first sync, cache should have 1 entry
+    // After first sync, cache should have 1 entry (keyed with committedZone '_none_')
     expect(store._profileCache.size).toBe(1);
 
-    // Second sync with same data should still have 1 entry (no growth)
+    // Second sync: hysteresis has now committed a zone, so the cache key changes
+    // (committedZone shifts from '_none_' to the actual zone). This is correct —
+    // the key must include committed zone to avoid skipping #applyHysteresis().
     store.syncFromUsers(users);
-    expect(store._profileCache.size).toBe(1);
+    expect(store._profileCache.size).toBe(2);
+
+    // Third sync: committed zone is stable, so the key matches the second entry — cache hit
+    store.syncFromUsers(users);
+    expect(store._profileCache.size).toBe(2);
   });
 
   it('clears cache on clear()', () => {
