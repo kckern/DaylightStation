@@ -475,6 +475,17 @@ export class ListAdapter {
   }
 
   /**
+   * Resolve the progress-tracking namespace for a watchlist by name.
+   * Used by the play/log endpoint to determine storage path from a listId.
+   * @param {string} listName - Watchlist file name (e.g., 'kidsscriptures2026')
+   * @returns {Promise<string|null>} The namespace from list metadata, or null
+   */
+  async getListNamespace(listName) {
+    const listData = this._loadList('watchlists', listName);
+    return listData?.metadata?.namespace || null;
+  }
+
+  /**
    * @param {string} id - Compound ID or just prefix for browsing all lists
    * @returns {Promise<ListableItem[]|ListableItem|null>}
    */
@@ -969,7 +980,7 @@ export class ListAdapter {
         src: normalizedSrc,
         assetId: assetId,
         versionState: versionState || null,
-        namespace: listMetadata?.namespace || null,
+        listId: listName || null,
         // Display fields
         folder: listName,
         fixedOrder: item.fixed_order || false
@@ -1155,6 +1166,12 @@ export class ListAdapter {
           const fallback = await this._getNextPlayableFromChild(firstChild, resolved);
           if (fallback) playables.push(fallback);
         }
+      }
+
+      // Inject list identity into resolved playables so queue items carry listId
+      for (const item of playables) {
+        if (item.metadata) item.metadata.listId = parsed.name;
+        else item.metadata = { listId: parsed.name };
       }
 
       return playables;
