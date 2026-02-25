@@ -221,6 +221,7 @@ export class FeedAssemblyService {
    * @returns {Promise<{ sections: Array } | null>}
    */
   async getDetail(itemId, itemMeta, username, opts = {}) {
+    const start = Date.now();
     const colonIdx = itemId.indexOf(':');
     if (colonIdx === -1) return null;
 
@@ -231,14 +232,28 @@ export class FeedAssemblyService {
     const adapter = this.#sourceAdapters.get(source);
     if (adapter && typeof adapter.getDetail === 'function') {
       const result = await adapter.getDetail(localId, itemMeta || {}, username, opts);
-      if (result) return result;
+      if (result) {
+        this.#logger.debug?.('feed.detail.resolved', {
+          itemId, source, adapter: true,
+          sectionCount: result.sections?.length || 0,
+          durationMs: Date.now() - start,
+        });
+        return result;
+      }
     }
 
     // Generic fallback: any item with a link gets article extraction
     if (itemMeta?.link) {
-      return this.#getArticleDetail(itemMeta.link);
+      const result = await this.#getArticleDetail(itemMeta.link);
+      this.#logger.debug?.('feed.detail.resolved', {
+        itemId, source, adapter: false, fallbackToArticle: true,
+        sectionCount: result?.sections?.length || 0,
+        durationMs: Date.now() - start,
+      });
+      return result;
     }
 
+    this.#logger.debug?.('feed.detail.notFound', { itemId, source, durationMs: Date.now() - start });
     return null;
   }
 
@@ -250,7 +265,11 @@ export class FeedAssemblyService {
    */
   async getItemWithDetail(itemId, username) {
     const item = this.#itemCache.get(itemId);
-    if (!item) return null;
+    if (!item) {
+      this.#logger.debug?.('feed.deeplink.cacheMiss', { itemId });
+      return null;
+    }
+    this.#logger.debug?.('feed.deeplink.cacheHit', { itemId });
 
     const detail = await this.getDetail(itemId, item.meta || {}, username);
     return {

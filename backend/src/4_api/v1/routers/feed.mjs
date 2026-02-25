@@ -244,6 +244,7 @@ export function createFeedRouter(config) {
   // =========================================================================
 
   router.get('/scroll', asyncHandler(async (req, res) => {
+    const start = Date.now();
     const username = getUsername();
     const { cursor, limit, focus, source, nocache, filter } = req.query;
 
@@ -256,12 +257,20 @@ export function createFeedRouter(config) {
       filter: filter || null,
     });
 
+    logger.info?.('feed.scroll.served', {
+      durationMs: Date.now() - start,
+      cursor: cursor || null,
+      itemCount: result.items?.length || 0,
+      hasMore: result.hasMore,
+    });
+
     res.json(result);
   }));
 
   // Single-item lookup (deep-link resolution — returns item + detail)
   // Accepts base64url-encoded item ID slug (same encoding used in frontend URLs)
   router.get('/scroll/item/:slug', asyncHandler(async (req, res) => {
+    const start = Date.now();
     const { slug } = req.params;
     if (!slug) return res.status(400).json({ error: 'slug required' });
 
@@ -277,6 +286,12 @@ export function createFeedRouter(config) {
 
     const username = getUsername();
     const result = await feedAssemblyService.getItemWithDetail(itemId, username);
+    logger.info?.('feed.deeplink.served', {
+      durationMs: Date.now() - start,
+      slug,
+      itemId,
+      found: !!result,
+    });
     if (!result) return res.status(404).json({ error: 'Item not found or expired' });
 
     res.json(result);
@@ -333,6 +348,7 @@ export function createFeedRouter(config) {
   // =========================================================================
 
   router.get('/detail/:itemId', asyncHandler(async (req, res) => {
+    const start = Date.now();
     const { itemId } = req.params;
     if (!itemId) return res.status(400).json({ error: 'itemId required' });
 
@@ -345,6 +361,13 @@ export function createFeedRouter(config) {
 
     const quality = req.query.quality || undefined;
     const result = await feedAssemblyService.getDetail(itemId, meta, username, { quality });
+    logger.info?.('feed.detail.served', {
+      durationMs: Date.now() - start,
+      itemId,
+      quality: quality || null,
+      sectionCount: result?.sections?.length || 0,
+      found: !!result,
+    });
     if (!result) return res.status(404).json({ error: 'No detail available' });
 
     res.json(result);
@@ -355,10 +378,17 @@ export function createFeedRouter(config) {
   // =========================================================================
 
   router.get('/icon', asyncHandler(async (req, res) => {
+    const start = Date.now();
     const { url } = req.query;
     if (!url) return res.status(400).json({ error: 'url parameter required' });
 
     const result = await feedContentService.resolveIcon(url);
+    logger.debug?.('feed.icon.served', {
+      durationMs: Date.now() - start,
+      url,
+      found: !!result,
+      contentType: result?.contentType || null,
+    });
     if (!result) return res.status(404).json({ error: 'Icon not found' });
 
     res.set('Content-Type', result.contentType);
@@ -371,10 +401,18 @@ export function createFeedRouter(config) {
   // =========================================================================
 
   router.get('/image', asyncHandler(async (req, res) => {
+    const start = Date.now();
     const { url } = req.query;
     if (!url) return res.status(400).json({ error: 'url parameter required' });
 
     const result = await feedContentService.proxyImage(url);
+    logger.debug?.('feed.image.served', {
+      durationMs: Date.now() - start,
+      url,
+      contentType: result.contentType,
+      size: result.data?.length || 0,
+      isFallback: result.contentType === 'image/svg+xml',
+    });
     res.set('Content-Type', result.contentType);
     res.set('Cache-Control', 'public, max-age=3600');
     res.send(result.data);
@@ -385,13 +423,21 @@ export function createFeedRouter(config) {
   // =========================================================================
 
   router.get('/readable', asyncHandler(async (req, res) => {
+    const start = Date.now();
     const { url } = req.query;
     if (!url) return res.status(400).json({ error: 'url parameter required' });
 
     try {
       const result = await feedContentService.extractReadableContent(url);
+      logger.debug?.('feed.readable.served', {
+        durationMs: Date.now() - start,
+        url,
+        wordCount: result.wordCount,
+        hasOgImage: !!result.ogImage,
+      });
       res.json(result);
     } catch (err) {
+      logger.warn?.('feed.readable.error', { url, error: err.message, durationMs: Date.now() - start });
       res.status(502).json({ error: err.message || 'Failed to extract content' });
     }
   }));
