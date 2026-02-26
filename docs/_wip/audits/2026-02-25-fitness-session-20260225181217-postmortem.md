@@ -16,13 +16,13 @@ Each issue below is tagged with the corresponding voice memo complaint where app
 
 ---
 
-## Anomaly 1: Playback Stall Storm on Mario Kart 8 Deluxe (66 stalls)
+## Anomaly 1: Phantom Stall Detection — False Overlays on Smooth Playback (66 false stalls)
 
 **Voice memo:** *"player pause loading overlay"*
 
 ### Evidence
 
-66 `playback.stalled` events — nearly all on "Mario Kart 8 Deluxe" (plex:649319). Stalls began at 02:20:50 with a **12.7-second stall** and then continued at ~8–13 second intervals from 02:26 through 02:39.
+66 `playback.stalled` events — nearly all on "Mario Kart 8 Deluxe" (plex:649319). Stalls began at 02:20:50 with a **12.7-second reported stall** and then continued at ~8–13 second intervals from 02:26 through 02:39.
 
 | Window | Stall Count | Avg Duration | Trend |
 |--------|------------|--------------|-------|
@@ -32,17 +32,49 @@ Each issue below is tagged with the corresponding voice memo complaint where app
 | 02:31–02:36 | 16 | 1,565ms | Escalating |
 | 02:36–02:39 | 12 | 1,860ms | Worsening |
 
-Three `stall_threshold_exceeded` events had `playheadPosition: null` and `videoFps: null`, meaning the video element was unresponsive during those periods.
+### User Correction: Video Was Playing Smoothly
 
-The overlay showed "Seeking…" for the initial stall, which is misleading — the video wasn't seeking, it was buffering/stuck.
+**Users reported the video played smoothly throughout.** The overlay flashed needlessly, appearing to start after a failed challenge triggered a governance lock→unlock cycle.
 
-### Likely Cause
+### Playhead Advancement Analysis (Proves Phantom)
 
-The playhead was only advancing ~10–12 seconds of content per ~12 seconds of wall clock, meaning near-continuous stuttering. Combined with the render thrashing (Anomaly 3), the browser was CPU-starved. The 12.7s mega-stall at 02:20:50 arrived just as the second video loaded, suggesting a Plex transcoding startup delay.
+Playhead advancement ratio analysis for all stalls from 02:26 onward shows **ratio = 1.00** — the video was advancing in perfect real-time. Example from 02:26–02:28:
+
+| Stall Start | Stall End | Playhead Start | Playhead End | Ratio |
+|-------------|-----------|----------------|--------------|-------|
+| 02:26:14 | 02:26:22 | 335.2s | 343.2s | 1.00 |
+| 02:26:30 | 02:26:38 | 351.2s | 359.2s | 1.00 |
+| 02:27:02 | 02:27:10 | 383.2s | 391.2s | 1.00 |
+
+A ratio of 1.00 means the playhead advanced exactly as much as wall-clock time during the "stall" — **the video was not stalled at all.**
+
+### Overlay Visibility Analysis
+
+In the 02:26–02:28 window (16 reported stalls), only **3 overlays were actually visible to the user**:
+- One 7ms "Recovering..." flash (too brief to perceive)
+- Two governance pause overlays (from lock/unlock transitions, not buffer stalls)
+
+The "seeking" overlays were hidden or suppressed before becoming visible.
+
+### The 12.7s "Mega Stall" Was a Governance Lock
+
+The 12.7s event at 02:20:50 correlates exactly with a governance `warning→locked→unlocked` transition — the governance engine paused playback (by design), not a buffer/network stall.
+
+### Root Cause
+
+The stall detector is being falsely triggered. Likely mechanism: the render thrashing (Anomaly 3, ~1,400 force updates per 30s) interferes with the stall detection timing logic. The detector compares timestamps between animation frames, and when the main thread is saturated with React re-renders, frame-to-frame intervals stretch beyond the stall threshold even though the video element is playing normally.
+
+Three `stall_threshold_exceeded` events had `playheadPosition: null` and `videoFps: null`, which may indicate the detector sampled the video element during a React reconciliation pause rather than an actual video stall.
 
 ### Impact
 
-Visible loading overlay during active exercise. Breaks immersion.
+Phantom loading overlay flashes during active exercise. Misleading — users see brief "Seeking…" overlays when video is playing fine. Breaks immersion.
+
+### Recommendation
+
+1. **Fix root cause:** Throttle `batchedForceUpdate()` (Anomaly 3) to reduce CPU pressure on the stall detector's frame timing
+2. **Validate stalls:** Before showing an overlay, confirm the playhead has actually stopped advancing (compare playhead position at stall-start vs stall-end)
+3. **Overlay label:** Show "Buffering" not "Seeking" when the stall is detected during normal playback (not a seek operation)
 
 ### Files
 
@@ -347,7 +379,7 @@ Low — purely cosmetic. The `mediaId` is consistent (606442).
 
 | # | Anomaly | Severity | Voice Memo | Status |
 |---|---------|----------|------------|--------|
-| 1 | Playback stall storm / phantom overlay flashes (66 stalls on MK8D) | **High** | "player pause loading overlay" | New — needs investigation |
+| 1 | Phantom stall detection — false overlays on smooth playback (66 false stalls) | **High** | "player pause loading overlay" | New — root cause: render thrashing (#3) fools stall detector |
 | 2 | Failed Hot challenge (alan unreachable) | **Medium** | "challenge ended without all satisfied" | New |
 | 3 | Render thrashing (1,400+/30s sustained) | **High** | — | Recurring (tick fix helped, root persists) |
 | 4 | Chart no_series_data log spam (597) | **Low** | — | New |
