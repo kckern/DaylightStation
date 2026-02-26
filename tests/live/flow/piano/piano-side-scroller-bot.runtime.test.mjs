@@ -18,10 +18,10 @@ import { WS_URL } from '#fixtures/runtime/urls.mjs';
 
 // ─── Constants ──────────────────────────────────────────────────
 
-const PLAYER_X = 0.15;        // Must match sideScrollerEngine.js
+const PLAYER_X = 0.25;        // Must match sideScrollerEngine.js
 const PLAYER_WIDTH = 0.04;
-const REACTION_DISTANCE = 0.12; // How far ahead to start reacting to obstacles
-const JUMP_DURATION_MS = 500;   // Must match piano.yml jump_duration_ms
+const REACTION_DISTANCE = 0.22; // How far ahead to start reacting to obstacles
+const JUMP_DURATION_MS = 1200;  // Must match piano.yml jump_duration_ms
 
 // ─── MIDI Simulator ─────────────────────────────────────────────
 
@@ -304,7 +304,7 @@ test.describe('Piano Side-Scroller Bot', () => {
           // Brief tap for jump
           const jumpPitches = state.targets.jump;
           if (jumpPitches?.length) {
-            await midi.playNotes(jumpPitches, 150);
+            await midi.playNotes(jumpPitches, 200);
           }
         } else if (action === 'duck') {
           // Start holding duck notes

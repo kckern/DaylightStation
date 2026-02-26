@@ -27,25 +27,56 @@ const SIDE_SCROLLER_ACTIONS = ['jump', 'duck'];
 
 // ─── Target Generation (2 actions only) ─────────────────────────
 
+const MIN_ACTION_SEPARATION = 4; // Minimum semitones between notes of different actions
+
 function generateScrollerTargets(noteRange, complexity, whiteKeysOnly) {
   const notesPerAction = { single: 1, dyad: 2, triad: 3 };
   let count = notesPerAction[complexity] || 1;
 
   const available = shuffle([...buildNotePool(noteRange, whiteKeysOnly)]);
-  const totalNeeded = count * SIDE_SCROLLER_ACTIONS.length;
 
+  // Separate by clef: treble (>= 60 / C4) for jump (top staff), bass (< 60) for duck (bottom staff)
+  const trebleNotes = available.filter(n => n >= 60);
+  const bassNotes = available.filter(n => n < 60);
+
+  if (bassNotes.length >= count && trebleNotes.length >= count) {
+    // Enough notes in both clefs — assign by clef
+    return {
+      jump: trebleNotes.slice(0, count),
+      duck: bassNotes.slice(0, count),
+    };
+  }
+
+  // All in one clef — pick well-separated notes for visual distinction
+  const totalNeeded = count * 2;
   if (available.length < totalNeeded) count = 1;
 
-  const targets = {};
-  for (let a = 0; a < SIDE_SCROLLER_ACTIONS.length; a++) {
-    const start = a * count;
-    const pitches = [];
-    for (let i = 0; i < count; i++) {
-      pitches.push(available[(start + i) % available.length]);
-    }
-    targets[SIDE_SCROLLER_ACTIONS[a]] = pitches;
+  // Sort by pitch, then pick from opposite ends for maximum separation
+  const sorted = [...available].sort((a, b) => a - b);
+  const jumpPitches = [];
+  const duckPitches = [];
+
+  // Take higher notes for jump (top staff), lower notes for duck (bottom staff)
+  for (let i = 0; i < count; i++) {
+    duckPitches.push(sorted[i % sorted.length]);
+    jumpPitches.push(sorted[(sorted.length - 1 - i) % sorted.length]);
   }
-  return targets;
+
+  // Verify minimum separation; if too close, re-shuffle and retry from opposite ends
+  const minGap = Math.min(
+    ...jumpPitches.flatMap(j => duckPitches.map(d => Math.abs(j - d)))
+  );
+  if (minGap < MIN_ACTION_SEPARATION && sorted.length > totalNeeded) {
+    // Pick from 1st and 3rd quartile for better spread
+    const q1 = Math.floor(sorted.length * 0.25);
+    const q3 = Math.floor(sorted.length * 0.75);
+    for (let i = 0; i < count; i++) {
+      duckPitches[i] = sorted[(q1 + i) % sorted.length];
+      jumpPitches[i] = sorted[(q3 + i) % sorted.length];
+    }
+  }
+
+  return { jump: jumpPitches, duck: duckPitches };
 }
 
 // ─── Hook ───────────────────────────────────────────────────────
@@ -76,7 +107,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     damagePerHit: gameConfig?.damage_per_hit ?? 2,
     healPerDodge: gameConfig?.heal_per_dodge ?? 1,
     invincibilityMs: gameConfig?.invincibility_ms ?? 1000,
-    jumpDurationMs: gameConfig?.jump_duration_ms ?? 500,
+    jumpDurationMs: gameConfig?.jump_duration_ms ?? 900,
   }), [gameConfig]);
 
   // Timer refs
@@ -284,6 +315,24 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
 
   useEffect(() => clearAllTimers, [clearAllTimers]);
 
+  // ─── Next Obstacle (for staff hint opacity) ────────────────
+
+  const nextObstacleType = useMemo(() => {
+    if (phase !== 'PLAYING' || !world.obstacles) return null;
+    let nearest = null;
+    let nearestDist = Infinity;
+    for (const ob of world.obstacles) {
+      if (ob.hit || ob.dodged) continue;
+      const dist = ob.x - 0.25; // PLAYER_X
+      if (dist < -ob.width) continue;
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearest = ob;
+      }
+    }
+    return nearest?.type ?? null;
+  }, [phase, world.obstacles]);
+
   // ─── Return ─────────────────────────────────────────────────
 
   return {
@@ -298,6 +347,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     totalHealth: config.health,
     score: world.score,
     startGame,
+    nextObstacleType,
   };
 }
 

@@ -175,56 +175,97 @@ export function ActionStaff({ action, targetPitches = [], matched = false, fired
           {clef === 'treble' ? '\u{1D11E}' : '\u{1D122}'}
         </text>
 
-        {/* Single note with stem (quarter note) — centered */}
-        {notePositions.map((np) => {
-          // Y position: bottom line (pos=0) = bottomLineY, each step = -lineSpacing/2
+        {/* Notes with shared stem — proper dyad/chord formatting */}
+        {(() => {
+          if (notePositions.length === 0) return null;
+
           const stepSize = lineSpacing / 2;
-          const noteY = bottomLineY - np.position * stepSize;
-          const noteX = 65; // Right of center (55%), clear of clef
+          const baseX = 65;
 
-          // Stem direction: notes on/below middle line (pos <= 4) stem up, above stem down
-          const stemUp = np.position <= 4;
-          const stemX = stemUp ? noteX + 8 : noteX - 8;
-          const stemY1 = noteY;
+          // Sort by position (lowest first)
+          const sorted = [...notePositions].sort((a, b) => a.position - b.position);
+
+          // Stem direction: based on average position relative to middle line (pos 4)
+          const avgPos = sorted.reduce((s, n) => s + n.position, 0) / sorted.length;
+          const stemUp = avgPos <= 4;
+
+          // Compute Y positions
+          const noteYs = sorted.map(np => bottomLineY - np.position * stepSize);
+          const lowestY = noteYs[noteYs.length - 1]; // visually highest (smallest Y) = highest pitch
+          const highestY = noteYs[0]; // visually lowest (largest Y) = lowest pitch
+
+          // Stem: single line connecting all noteheads + extension
           const stemLen = lineSpacing * 3.5;
-          const stemY2 = stemUp ? noteY - stemLen : noteY + stemLen;
+          const stemX = stemUp ? baseX + 8 : baseX - 8;
+          const stemTop = stemUp ? Math.min(...noteYs) - stemLen : Math.min(...noteYs);
+          const stemBottom = stemUp ? Math.max(...noteYs) : Math.max(...noteYs) + stemLen;
 
-          // Ledger lines for notes above/below staff
-          const ledgerLines = [];
-          if (np.position < 0) {
-            for (let p = -2; p >= np.position; p -= 2) {
-              ledgerLines.push(bottomLineY - p * stepSize);
+          // Determine which noteheads need side-offset (seconds / adjacent notes)
+          const offsets = sorted.map(() => 0);
+          for (let i = 1; i < sorted.length; i++) {
+            const gap = sorted[i].position - sorted[i - 1].position;
+            if (gap <= 1) {
+              // Adjacent notes: offset the one further from the stem
+              // Stem up: offset the lower note (index i-1) to the left
+              // Stem down: offset the upper note (index i) to the right
+              if (stemUp) {
+                offsets[i - 1] = -18;
+              } else {
+                offsets[i] = 18;
+              }
             }
           }
-          if (np.position > 8) {
-            for (let p = 10; p <= np.position; p += 2) {
-              ledgerLines.push(bottomLineY - p * stepSize);
-            }
-          }
+
+          // Stagger sharp positions to avoid overlap
+          let sharpIdx = 0;
 
           return (
-            <g key={np.pitch}>
-              {/* Ledger lines */}
-              {ledgerLines.map((ly, li) => (
-                <line key={`ledger-${li}`} x1={noteX - 14} y1={ly} x2={noteX + 14} y2={ly}
-                  stroke="rgba(0,0,0,1)" strokeWidth="1" />
-              ))}
-              {/* Stem */}
-              <line x1={stemX} y1={stemY1} x2={stemX} y2={stemY2}
+            <g>
+              {/* Single shared stem */}
+              <line x1={stemX} y1={stemTop} x2={stemX} y2={stemBottom}
                 className={`action-staff__stem${matched ? ' action-staff__stem--matched' : ''}`}
               />
-              {/* Note head — filled ellipse */}
-              <ellipse cx={noteX} cy={noteY} rx="9" ry="6.5"
-                className={`action-staff__note${matched ? ' action-staff__note--matched' : ''}`}
-                transform={`rotate(-12, ${noteX}, ${noteY})`}
-              />
-              {/* Sharp sign — positioned well left of notehead */}
-              {np.isSharp && (
-                <text x={noteX - 22} y={noteY + 7} fontSize="22" fill="rgba(0,0,0,1)" fontFamily="serif">{'\u266F'}</text>
-              )}
+
+              {sorted.map((np, i) => {
+                const noteY = noteYs[i];
+                const noteX = baseX + offsets[i];
+
+                // Ledger lines
+                const ledgerLines = [];
+                if (np.position < 0) {
+                  for (let p = -2; p >= np.position; p -= 2) {
+                    ledgerLines.push(bottomLineY - p * stepSize);
+                  }
+                }
+                if (np.position > 8) {
+                  for (let p = 10; p <= np.position; p += 2) {
+                    ledgerLines.push(bottomLineY - p * stepSize);
+                  }
+                }
+
+                // Stagger sharps horizontally to avoid overlap — place well left of any offset noteheads
+                const sharpBaseX = Math.min(baseX, noteX) - 18;
+                const sharpX = np.isSharp ? sharpBaseX - (sharpIdx++ % 2) * 12 : 0;
+
+                return (
+                  <g key={np.pitch}>
+                    {ledgerLines.map((ly, li) => (
+                      <line key={`ledger-${li}`} x1={baseX - 14} y1={ly} x2={baseX + 14} y2={ly}
+                        stroke="rgba(0,0,0,1)" strokeWidth="1" />
+                    ))}
+                    <ellipse cx={noteX} cy={noteY} rx="9" ry="6.5"
+                      className={`action-staff__note${matched ? ' action-staff__note--matched' : ''}`}
+                      transform={`rotate(-12, ${noteX}, ${noteY})`}
+                    />
+                    {np.isSharp && (
+                      <text x={sharpX} y={noteY + 5} fontSize="18" fill="rgba(0,0,0,1)" fontFamily="serif">{'\u266F'}</text>
+                    )}
+                  </g>
+                );
+              })}
             </g>
           );
-        })}
+        })()}
 
         {/* Ghost notes — currently pressed notes at 50% opacity for reference */}
         {ghostNotes.map((gn) => {

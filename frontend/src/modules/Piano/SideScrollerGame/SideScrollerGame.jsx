@@ -40,6 +40,11 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate }) {
   // Invincibility check (for flashing)
   const invincible = game.world.invincibleUntil > performance.now();
 
+  // Staff opacity hints — early levels (single complexity) highlight the relevant staff
+  const isSingleComplexity = (currentLevelConfig?.complexity ?? 'single') === 'single';
+  const jumpStaffOpacity = isSingleComplexity && game.nextObstacleType === 'high' ? 0.4 : 1;
+  const duckStaffOpacity = isSingleComplexity && game.nextObstacleType === 'low' ? 0.4 : 1;
+
   // Expose game state for testing
   useEffect(() => {
     if (typeof window === 'undefined' || window.location.hostname !== 'localhost') return;
@@ -50,6 +55,9 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate }) {
       targets: game.targets,
       score: Math.floor(game.score),
       health: game.health,
+      matchedActions: game.matchedActions ? [...game.matchedActions] : [],
+      activeNotesCount: activeNotes?.size ?? 0,
+      activeNotesList: activeNotes ? [...activeNotes.keys()] : [],
     };
     return () => { delete window.__SIDE_SCROLLER_DEBUG__; };
   });
@@ -78,7 +86,7 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate }) {
           <RunnerCanvas world={game.world} scrollSpeed={currentLevelConfig?.scroll_speed ?? 3} invincible={invincible} phase={game.phase} />
 
           {/* Jump staff — 45° up-right from player */}
-          <div className="side-scroller__staff-above" style={{ left: `${(PLAYER_X + 0.12) * 100}%` }}>
+          <div className="side-scroller__staff-above" style={{ left: `${(PLAYER_X + 0.12) * 100}%`, opacity: jumpStaffOpacity }}>
             <ActionStaff
               action="jump"
               targetPitches={game.targets?.jump ?? []}
@@ -88,7 +96,7 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate }) {
           </div>
 
           {/* Duck staff — 45° down-right from player */}
-          <div className="side-scroller__staff-below" style={{ left: `${(PLAYER_X + 0.12) * 100}%` }}>
+          <div className="side-scroller__staff-below" style={{ left: `${(PLAYER_X + 0.12) * 100}%`, opacity: duckStaffOpacity }}>
             <ActionStaff
               action="duck"
               targetPitches={game.targets?.duck ?? []}
@@ -119,7 +127,7 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate }) {
           startNote={startNote}
           endNote={endNote}
           showLabels={true}
-          targetNotes={keyboardTargets}
+          targetNotes={null}
         />
       </div>
 

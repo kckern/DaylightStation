@@ -92,8 +92,8 @@ describe('spawnObstacle', () => {
     expect(obs.type).toBe(OBSTACLE_HIGH);
     expect(obs.x).toBe(1.05);
     expect(obs.height).toBeCloseTo(0.05, 1);
-    // High obstacle at head height: y = GROUND_Y - PLAYER_HEIGHT - 0.02
-    expect(obs.y).toBeCloseTo(GROUND_Y - PLAYER_HEIGHT - 0.02, 5);
+    // High obstacle just above standing head: y = GROUND_Y - PLAYER_HEIGHT - 0.03
+    expect(obs.y).toBeCloseTo(GROUND_Y - PLAYER_HEIGHT - 0.03, 5);
   });
 
   it('does NOT mutate the original world', () => {
@@ -475,8 +475,8 @@ describe('checkCollisions', () => {
     };
     const hb = getPlayerHitbox(world);
     // Ducking hitbox top = GROUND_Y - PLAYER_DUCK_HEIGHT = 0.68 - 0.09 = 0.59
-    // High obstacle bottom = (GROUND_Y - PLAYER_HEIGHT - 0.02) + 0.05 = 0.68 - 0.18 - 0.02 + 0.05 = 0.53
-    // 0.53 < 0.59, so no overlap vertically
+    // High obstacle bottom = (GROUND_Y - PLAYER_HEIGHT - 0.03) + 0.05 = 0.68 - 0.18 - 0.03 + 0.05 = 0.52
+    // 0.52 < 0.59, so no overlap vertically
     const hits = checkCollisions(world);
     expect(hits.length).toBe(0);
   });
