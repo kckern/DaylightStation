@@ -89,57 +89,11 @@
     background: #2a2a2a;
   }
 
-  // ─── Mega Man Life Meter ────────────────────────────────────────
-  .life-meter {
-    position: absolute;
-    left: clamp(12px, 2vw, 32px);
-    top: 50%;
-    transform: translateY(-50%);
-    height: 80%;
-    width: clamp(32px, 3.5vw, 56px);
-    z-index: 30;
-    pointer-events: none;
-
-    &__frame {
-      height: 100%;
-      width: 100%;
-      display: flex;
-      flex-direction: column-reverse; // Fill from bottom
-      gap: clamp(1px, 0.15vh, 3px);
-      padding: clamp(4px, 0.5vw, 8px);
-      background: #0a0a12;
-      border: clamp(2px, 0.3vw, 5px) solid #1a1a2e;
-      border-radius: clamp(6px, 0.8vw, 14px);
-      box-shadow: inset 0 0 0 clamp(1px, 0.1vw, 2px) rgba(255, 255, 255, 0.08);
-      box-sizing: border-box;
-    }
-
-    &__notch {
-      flex: 1;
-      width: 100%;
-      border-radius: clamp(1px, 0.1vw, 2px);
-      background: transparent;
-
-      &--active {
-        background: #e8b830;
-        box-shadow: inset 0 clamp(-1px, -0.1vh, -2px) 0 rgba(0, 0, 0, 0.35);
-        border-top: clamp(1px, 0.08vh, 2px) solid rgba(255, 235, 150, 0.6);
-      }
-
-      &--danger {
-        background: #e83030;
-        box-shadow: inset 0 clamp(-1px, -0.1vh, -2px) 0 rgba(0, 0, 0, 0.35);
-        border-top-color: rgba(255, 150, 150, 0.6);
-      }
-    }
-  }
-
   .keyboard-container {
-    height: 25%; // Default; overridden by inline style in game mode for limited ranges
+    height: 25%;
     flex-shrink: 0;
     display: flex;
     align-items: flex-start;
-    transition: height 0.3s ease-out;
   }
 
   .session-summary {
@@ -164,117 +118,7 @@
     }
   }
 
-  // ─── Game Mode Header ──────────────────────────────────────────
-
-  &.game-mode .piano-header {
-    background: rgba(20, 20, 30, 0.95);
-    color: #fff;
-    height: 12%;
-  }
-
-  .header-right {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    z-index: 10;
-  }
-
-  .game-score {
-    display: flex;
-    align-items: baseline;
-    gap: 0.5rem;
-
-    .score-value {
-      font-size: 2rem;
-      font-weight: 700;
-      font-variant-numeric: tabular-nums;
-      color: #00ffc8;
-      text-shadow: 0 0 10px rgba(0, 255, 200, 0.4);
-    }
-
-    .combo-badge {
-      font-size: 1.2rem;
-      font-weight: 700;
-      color: #ffd700;
-      text-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
-    }
-  }
-
-  .level-info {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-    width: 300px;
-
-    .level-name {
-      font-size: 1rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: #ccc;
-    }
-
-    .progress-bar-container {
-      width: 100%;
-      height: 8px;
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 4px;
-      overflow: hidden;
-
-      .progress-bar-fill {
-        height: 100%;
-        background: linear-gradient(90deg, #00ffc8, #00ddaa);
-        border-radius: 4px;
-        transition: width 0.15s ease-out;
-      }
-    }
-  }
-
-  .miss-counter {
-    display: flex;
-    align-items: baseline;
-    gap: 0.2rem;
-    font-variant-numeric: tabular-nums;
-
-    .miss-count {
-      font-size: 1.5rem;
-      font-weight: 700;
-      color: #ff6666;
-    }
-
-    .miss-separator {
-      font-size: 1rem;
-      color: #666;
-    }
-
-    .miss-max {
-      font-size: 1rem;
-      color: #666;
-    }
-
-    .miss-label {
-      font-size: 0.7rem;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: #666;
-      margin-left: 0.3rem;
-    }
-  }
-
-  // ─── Wrong-Press Screen Flash ─────────────────────────────────
-  .wrong-flash {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(255, 0, 0, 0.6);
-    z-index: 60;
-    pointer-events: none;
-  }
-
-  // ─── Tetris Fullscreen Overlay ──────────────────────────────
+  // ─── Fullscreen Game Overlay ──────────────────────────────
   .tetris-fullscreen {
     position: absolute;
     top: 0;
@@ -282,14 +126,5 @@
     right: 0;
     bottom: 0;
     z-index: 50;
-  }
-}
-
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.4;
   }
 }

@@ -1,0 +1,205 @@
+.space-invaders-game {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background: #1a1a2e;
+  color: #fff;
+  position: relative;
+  overflow: hidden;
+
+  // ─── Header ───────────────────────────────────────────────────
+  &__header {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: rgba(20, 20, 30, 0.95);
+    color: #fff;
+    height: 12%;
+    flex-shrink: 0;
+    padding: 0 1rem;
+  }
+
+  &__header-left {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    z-index: 10;
+  }
+
+  &__header-center {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  &__header-right {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    z-index: 10;
+  }
+
+  // ─── Score ────────────────────────────────────────────────────
+  &__score {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+
+  &__score-value {
+    font-size: 2rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: #00ffc8;
+    text-shadow: 0 0 10px rgba(0, 255, 200, 0.4);
+  }
+
+  &__combo-badge {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #ffd700;
+    text-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
+  }
+
+  // ─── Level Info ───────────────────────────────────────────────
+  &__level-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    width: 300px;
+  }
+
+  &__level-name {
+    font-size: 1rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #ccc;
+  }
+
+  &__progress-bar {
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  &__progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #00ffc8, #00ddaa);
+    border-radius: 4px;
+    transition: width 0.15s ease-out;
+  }
+
+  // ─── Miss Counter ─────────────────────────────────────────────
+  &__miss-counter {
+    display: flex;
+    align-items: baseline;
+    gap: 0.2rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__miss-count {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #ff6666;
+  }
+
+  &__miss-sep {
+    font-size: 1rem;
+    color: #666;
+  }
+
+  &__miss-max {
+    font-size: 1rem;
+    color: #666;
+  }
+
+  &__miss-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #666;
+    margin-left: 0.3rem;
+  }
+
+  // ─── Waterfall ────────────────────────────────────────────────
+  &__waterfall {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    overflow: hidden;
+    background: #2a2a2a;
+  }
+
+  // ─── Mega Man Life Meter ──────────────────────────────────────
+  &__life-meter {
+    position: absolute;
+    left: clamp(12px, 2vw, 32px);
+    top: 50%;
+    transform: translateY(-50%);
+    height: 80%;
+    width: clamp(32px, 3.5vw, 56px);
+    z-index: 30;
+    pointer-events: none;
+  }
+
+  &__life-frame {
+    height: 100%;
+    width: 100%;
+    display: flex;
+    flex-direction: column-reverse; // Fill from bottom
+    gap: clamp(1px, 0.15vh, 3px);
+    padding: clamp(4px, 0.5vw, 8px);
+    background: #0a0a12;
+    border: clamp(2px, 0.3vw, 5px) solid #1a1a2e;
+    border-radius: clamp(6px, 0.8vw, 14px);
+    box-shadow: inset 0 0 0 clamp(1px, 0.1vw, 2px) rgba(255, 255, 255, 0.08);
+    box-sizing: border-box;
+  }
+
+  &__life-notch {
+    flex: 1;
+    width: 100%;
+    border-radius: clamp(1px, 0.1vw, 2px);
+    background: transparent;
+
+    &--active {
+      background: #e8b830;
+      box-shadow: inset 0 clamp(-1px, -0.1vh, -2px) 0 rgba(0, 0, 0, 0.35);
+      border-top: clamp(1px, 0.08vh, 2px) solid rgba(255, 235, 150, 0.6);
+    }
+
+    &--danger {
+      background: #e83030;
+      box-shadow: inset 0 clamp(-1px, -0.1vh, -2px) 0 rgba(0, 0, 0, 0.35);
+      border-top-color: rgba(255, 150, 150, 0.6);
+    }
+  }
+
+  // ─── Keyboard ─────────────────────────────────────────────────
+  &__keyboard {
+    height: 40%;
+    flex-shrink: 0;
+    display: flex;
+    align-items: flex-start;
+  }
+
+  // ─── Wrong-Press Screen Flash ─────────────────────────────────
+  &__wrong-flash {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 0, 0, 0.6);
+    z-index: 60;
+    pointer-events: none;
+  }
+}
