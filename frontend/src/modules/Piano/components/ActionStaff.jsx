@@ -6,6 +6,7 @@ import {
   IconRotate,
   IconRotateClockwise,
   IconArrowBigDownLine,
+  IconArrowBigUpLine,
   IconReplace,
 } from '@tabler/icons-react';
 import './ActionStaff.scss';
@@ -53,6 +54,8 @@ const ACTION_ICONS = {
   rotateCW: <IconRotateClockwise className="action-icon" />,
   hardDrop: <IconArrowBigDownLine className="action-icon" />,
   hold: <IconReplace className="action-icon" />,
+  jump: <IconArrowBigUpLine className="action-icon" />,
+  duck: <IconArrowBigDownLine className="action-icon" />,
 };
 
 /**
