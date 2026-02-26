@@ -288,6 +288,15 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
       volume: Math.round((musicVolumeState.volume || 0) * 100) / 100,
       musicEnabled: Boolean(musicEnabled)
     });
+
+    return () => {
+      if (currentTrackIdentity && sessionInstance) {
+        sessionInstance.logEvent('media_end', {
+          mediaId: currentTrackIdentity,
+          source: 'music_player',
+        });
+      }
+    };
   }, [sessionInstance, currentTrackIdentity, currentTrack, selectedPlaylistId, musicVolumeState.volume, musicEnabled]);
 
   const handleNext = (e) => {
