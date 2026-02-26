@@ -33,7 +33,7 @@ const GAME_REGISTRY = {
   },
   'side-scroller': {
     component: () => import('./SideScrollerGame/SideScrollerGame'),
-    hook: () => import('./SideScrollerGame/SideScrollerGame'),
+    hook: () => import('./SideScrollerGame/useSideScrollerGame'),
     layout: 'replace',
     LazyComponent: lazy(() => import('./SideScrollerGame/SideScrollerGame')),
   },
