@@ -7,6 +7,7 @@ import { useAutoGameLifecycle } from '../useAutoGameLifecycle.js';
 import { RunnerCanvas } from './components/RunnerCanvas.jsx';
 import { SideScrollerOverlay } from './components/SideScrollerOverlay.jsx';
 import { computeKeyboardRange } from '../noteUtils.js';
+import { PLAYER_X } from './sideScrollerEngine.js';
 import './SideScrollerGame.scss';
 
 export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate }) {
@@ -47,7 +48,7 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate }) {
       world: game.world,
       level: game.level,
       targets: game.targets,
-      score: game.score,
+      score: Math.floor(game.score),
       health: game.health,
     };
     return () => { delete window.__SIDE_SCROLLER_DEBUG__; };
@@ -72,15 +73,35 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate }) {
           </div>
         )}
 
-        {/* Game canvas — fills left */}
+        {/* Game canvas — full width */}
         <div className="side-scroller__canvas">
-          <RunnerCanvas world={game.world} scrollSpeed={currentLevelConfig?.scroll_speed ?? 3} invincible={invincible} />
+          <RunnerCanvas world={game.world} scrollSpeed={currentLevelConfig?.scroll_speed ?? 3} invincible={invincible} phase={game.phase} />
+
+          {/* Jump staff — 45° up-right from player */}
+          <div className="side-scroller__staff-above" style={{ left: `${(PLAYER_X + 0.12) * 100}%` }}>
+            <ActionStaff
+              action="jump"
+              targetPitches={game.targets?.jump ?? []}
+              matched={game.matchedActions?.has('jump') ?? false}
+              activeNotes={activeNotes}
+            />
+          </div>
+
+          {/* Duck staff — 45° down-right from player */}
+          <div className="side-scroller__staff-below" style={{ left: `${(PLAYER_X + 0.12) * 100}%` }}>
+            <ActionStaff
+              action="duck"
+              targetPitches={game.targets?.duck ?? []}
+              matched={game.matchedActions?.has('duck') ?? false}
+              activeNotes={activeNotes}
+            />
+          </div>
 
           {/* Score overlay */}
           {game.phase === 'PLAYING' && (
             <div className="side-scroller__hud">
               <div className="side-scroller__score">
-                <span className="side-scroller__score-value">{game.score}</span>
+                <span className="side-scroller__score-value">{Math.floor(game.score)}</span>
                 <span className="side-scroller__score-label">SCORE</span>
               </div>
               <div className="side-scroller__level-badge">
@@ -88,22 +109,6 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate }) {
               </div>
             </div>
           )}
-        </div>
-
-        {/* Action staves — stacked right */}
-        <div className="side-scroller__staves-right">
-          <ActionStaff
-            action="jump"
-            targetPitches={game.targets?.jump ?? []}
-            matched={game.matchedActions?.has('jump') ?? false}
-            activeNotes={activeNotes}
-          />
-          <ActionStaff
-            action="duck"
-            targetPitches={game.targets?.duck ?? []}
-            matched={game.matchedActions?.has('duck') ?? false}
-            activeNotes={activeNotes}
-          />
         </div>
       </div>
 

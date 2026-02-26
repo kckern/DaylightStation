@@ -29,7 +29,7 @@ export function SideScrollerOverlay({ phase, countdown, score, level, levelName 
           <h2 className="scroller-overlay__title">GAME OVER</h2>
           <div className="scroller-overlay__stats">
             <div className="scroller-overlay__stat">
-              <span className="scroller-overlay__stat-value">{score}</span>
+              <span className="scroller-overlay__stat-value">{Math.floor(score)}</span>
               <span className="scroller-overlay__stat-label">Score</span>
             </div>
             <div className="scroller-overlay__stat">
