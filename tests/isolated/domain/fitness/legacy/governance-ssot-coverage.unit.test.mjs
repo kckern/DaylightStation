@@ -13,16 +13,23 @@ jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
 
 const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
 
-// Helpers
-const createMockZoneProfileStore = (getProfileFn) => ({
-  getProfile: getProfileFn
+// Zone data now arrives pre-populated in userZoneMap
+// (GovernanceEngine no longer does second-pass enrichment via getParticipantProfile)
+const createMockSession = ({ getParticipantProfile } = {}) => ({
+  zoneProfileStore: { getProfile: jest.fn() },
+  roster: [],
+  treasureBox: null,
+  ...(getParticipantProfile ? { getParticipantProfile } : {})
 });
 
-const createMockSession = (zoneProfileStore) => ({
-  zoneProfileStore,
-  roster: [],
-  treasureBox: null
-});
+// Default zone config used by challenge feasibility checks
+const DEFAULT_ZONE_CONFIG = [
+  { id: 'cool', name: 'Cool', min: 0 },
+  { id: 'active', name: 'Active', min: 80 },
+  { id: 'warm', name: 'Warm', min: 120 },
+  { id: 'hot', name: 'Hot', min: 150 },
+  { id: 'fire', name: 'Fire', min: 175 }
+];
 
 const ZONE_RANK_MAP = { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 };
 const ZONE_INFO_MAP = {
@@ -52,68 +59,12 @@ describe('GovernanceEngine SSoT coverage', () => {
     Date.now = realDateNow;
   });
 
-  // ─── Phase Transition: pending → unlocked via hysteresis ───
+  // --- Phase Transition: pending -> unlocked via hysteresis ---
 
-  describe('phase transitions with hysteresis', () => {
-    test('pending → unlocked requires sustained satisfaction for hysteresis duration', () => {
-      const mockGetProfile = jest.fn().mockReturnValue({
-        id: 'user-1', currentZoneId: 'warm'
-      });
-      const engine = new GovernanceEngine(createMockSession(createMockZoneProfileStore(mockGetProfile)));
-      // Use default 500ms hysteresis (do NOT disable)
-
-      // Set media BEFORE configure so configure()'s internal evaluate()
-      // enters the governance path instead of resetting to idle
-      engine.setMedia({ id: 'test', labels: ['fitness'] });
-      engine.configure({
-        governed_labels: ['fitness'],
-        policies: {
-          'test': {
-            min_participants: 1,
-            base_requirement: [{ warm: 'all' }]
-          }
-        }
-      });
-
-      // First evaluate: requirements met, but hysteresis not yet elapsed
-      engine.evaluate({
-        activeParticipants: ['user-1'],
-        userZoneMap: {},
-        zoneRankMap: ZONE_RANK_MAP,
-        zoneInfoMap: ZONE_INFO_MAP,
-        totalCount: 1
-      });
-
-      // Should still be pending — hysteresis hasn't elapsed
-      expect(engine.phase).toBe('pending');
-
-      // Advance 200ms — still within hysteresis window
-      mockTime += 200;
-      engine.evaluate({
-        activeParticipants: ['user-1'],
-        userZoneMap: {},
-        zoneRankMap: ZONE_RANK_MAP,
-        zoneInfoMap: ZONE_INFO_MAP,
-        totalCount: 1
-      });
-      expect(engine.phase).toBe('pending');
-
-      // Advance past 500ms total — hysteresis satisfied
-      mockTime += 400;
-      engine.evaluate({
-        activeParticipants: ['user-1'],
-        userZoneMap: {},
-        zoneRankMap: ZONE_RANK_MAP,
-        zoneInfoMap: ZONE_INFO_MAP,
-        totalCount: 1
-      });
-      expect(engine.phase).toBe('unlocked');
-    });
-
-    test('hysteresis resets when satisfaction lapses mid-window', () => {
-      const mockGetProfile = jest.fn();
-      const engine = new GovernanceEngine(createMockSession(createMockZoneProfileStore(mockGetProfile)));
-      // default hysteresis
+  describe('phase transitions', () => {
+    test('pending -> unlocked is immediate when requirements are met', () => {
+      // Note: hysteresis was removed from GovernanceEngine — unlock is immediate
+      const engine = new GovernanceEngine(createMockSession());
 
       engine.setMedia({ id: 'test', labels: ['fitness'] });
       engine.configure({
@@ -126,47 +77,56 @@ describe('GovernanceEngine SSoT coverage', () => {
         }
       });
 
-      // Tick 1: user in warm — satisfaction starts
-      mockGetProfile.mockReturnValue({ id: 'user-1', currentZoneId: 'warm' });
+      // Requirements met -> immediately unlocked (no hysteresis delay)
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'warm' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
       });
-      expect(engine.phase).toBe('pending');
 
-      // Tick 2: 300ms later, user drops to active — satisfaction lapses
-      mockTime += 300;
-      mockGetProfile.mockReturnValue({ id: 'user-1', currentZoneId: 'active' });
+      expect(engine.phase).toBe('unlocked');
+    });
+
+    test('satisfaction lapse immediately transitions from unlocked to appropriate phase', () => {
+      const engine = new GovernanceEngine(createMockSession());
+
+      engine.setMedia({ id: 'test', labels: ['fitness'] });
+      engine.configure({
+        governed_labels: ['fitness'],
+        policies: {
+          'test': {
+            min_participants: 1,
+            base_requirement: [{ warm: 'all' }]
+          }
+        }
+      });
+
+      // Requirements met -> unlocked
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'warm' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
       });
-      expect(engine.phase).toBe('pending');
+      expect(engine.phase).toBe('unlocked');
 
-      // Tick 3: 400ms later (700ms total), user back to warm
-      mockTime += 400;
-      mockGetProfile.mockReturnValue({ id: 'user-1', currentZoneId: 'warm' });
+      // Requirements not met -> locked (no grace period configured)
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'active' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
       });
-      // Hysteresis restarted at tick 3 — still pending
-      expect(engine.phase).toBe('pending');
+      expect(engine.phase).toBe('locked');
 
-      // Tick 4: 600ms after tick 3 — hysteresis now satisfied from NEW start
-      mockTime += 600;
+      // Requirements met again -> unlocked immediately
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'warm' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
@@ -174,10 +134,9 @@ describe('GovernanceEngine SSoT coverage', () => {
       expect(engine.phase).toBe('unlocked');
     });
 
-    test('unlocked → warning → locked via grace period expiry', () => {
-      const mockGetProfile = jest.fn();
-      const engine = new GovernanceEngine(createMockSession(createMockZoneProfileStore(mockGetProfile)));
-      engine._hysteresisMs = 0; // Disable for this test — focus on grace period
+    test('unlocked -> warning -> locked via grace period expiry', () => {
+      const engine = new GovernanceEngine(createMockSession());
+      engine._hysteresisMs = 0; // Disable for this test -- focus on grace period
 
       engine.configure({
         governed_labels: ['fitness'],
@@ -190,44 +149,42 @@ describe('GovernanceEngine SSoT coverage', () => {
       });
       engine.setMedia({ id: 'test', labels: ['fitness'] });
 
-      // Phase 1: Satisfy → unlocked
-      mockGetProfile.mockReturnValue({ id: 'user-1', currentZoneId: 'warm' });
+      // Phase 1: Satisfy -> unlocked
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'warm' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
       });
       expect(engine.phase).toBe('unlocked');
 
-      // Phase 2: Drop below → warning (grace period starts)
-      mockGetProfile.mockReturnValue({ id: 'user-1', currentZoneId: 'active' });
+      // Phase 2: Drop below -> warning (grace period starts)
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'active' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
       });
       expect(engine.phase).toBe('warning');
 
-      // Phase 3: Grace period partially elapsed — still warning
+      // Phase 3: Grace period partially elapsed -- still warning
       mockTime += 3000;
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'active' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
       });
       expect(engine.phase).toBe('warning');
 
-      // Phase 4: Grace period expired — locked
+      // Phase 4: Grace period expired -- locked
       mockTime += 3000;
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'active' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
@@ -235,9 +192,8 @@ describe('GovernanceEngine SSoT coverage', () => {
       expect(engine.phase).toBe('locked');
     });
 
-    test('warning → unlocked when user recovers during grace period', () => {
-      const mockGetProfile = jest.fn();
-      const engine = new GovernanceEngine(createMockSession(createMockZoneProfileStore(mockGetProfile)));
+    test('warning -> unlocked when user recovers during grace period', () => {
+      const engine = new GovernanceEngine(createMockSession());
       engine._hysteresisMs = 0;
 
       engine.configure({
@@ -251,33 +207,30 @@ describe('GovernanceEngine SSoT coverage', () => {
       });
       engine.setMedia({ id: 'test', labels: ['fitness'] });
 
-      // Satisfy → unlocked
-      mockGetProfile.mockReturnValue({ id: 'user-1', currentZoneId: 'warm' });
+      // Satisfy -> unlocked
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'warm' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
       });
       expect(engine.phase).toBe('unlocked');
 
-      // Drop → warning
-      mockGetProfile.mockReturnValue({ id: 'user-1', currentZoneId: 'active' });
+      // Drop -> warning
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'active' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
       });
       expect(engine.phase).toBe('warning');
 
-      // Recover → unlocked (grace period canceled)
-      mockGetProfile.mockReturnValue({ id: 'user-1', currentZoneId: 'warm' });
+      // Recover -> unlocked (grace period canceled)
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'warm' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
@@ -285,9 +238,8 @@ describe('GovernanceEngine SSoT coverage', () => {
       expect(engine.phase).toBe('unlocked');
     });
 
-    test('no grace period → requirements lapse skips warning, goes straight to locked', () => {
-      const mockGetProfile = jest.fn();
-      const engine = new GovernanceEngine(createMockSession(createMockZoneProfileStore(mockGetProfile)));
+    test('no grace period -> requirements lapse skips warning, goes straight to locked', () => {
+      const engine = new GovernanceEngine(createMockSession());
       engine._hysteresisMs = 0;
 
       engine.configure({
@@ -301,22 +253,20 @@ describe('GovernanceEngine SSoT coverage', () => {
       });
       engine.setMedia({ id: 'test', labels: ['fitness'] });
 
-      // Satisfy → unlocked
-      mockGetProfile.mockReturnValue({ id: 'user-1', currentZoneId: 'warm' });
+      // Satisfy -> unlocked
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'warm' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
       });
       expect(engine.phase).toBe('unlocked');
 
-      // Drop → locked (no grace period)
-      mockGetProfile.mockReturnValue({ id: 'user-1', currentZoneId: 'active' });
+      // Drop -> locked (no grace period)
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'active' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
@@ -325,7 +275,7 @@ describe('GovernanceEngine SSoT coverage', () => {
     });
   });
 
-  // ─── Challenge Exit Criteria ───
+  // --- Challenge Exit Criteria ---
 
   describe('challenge exit criteria', () => {
     const CHALLENGE_POLICY = {
@@ -349,10 +299,11 @@ describe('GovernanceEngine SSoT coverage', () => {
     };
 
     test('challenge success sets videoLocked=false and records history', () => {
+      // Provide getParticipantProfile for challenge feasibility checks
       const mockGetProfile = jest.fn().mockReturnValue({
-        id: 'user-1', currentZoneId: 'active'
+        id: 'user-1', currentZoneId: 'active', heartRate: 110, zoneConfig: DEFAULT_ZONE_CONFIG
       });
-      const engine = new GovernanceEngine(createMockSession(createMockZoneProfileStore(mockGetProfile)));
+      const engine = new GovernanceEngine(createMockSession({ getParticipantProfile: mockGetProfile }));
       engine._hysteresisMs = 0;
 
       engine.configure(CHALLENGE_POLICY);
@@ -361,7 +312,7 @@ describe('GovernanceEngine SSoT coverage', () => {
       // Get to unlocked
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'active' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
@@ -372,7 +323,7 @@ describe('GovernanceEngine SSoT coverage', () => {
       engine.challengeState.forceStartRequest = { configId: null };
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'active' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
@@ -381,10 +332,9 @@ describe('GovernanceEngine SSoT coverage', () => {
       expect(engine.challengeState.activeChallenge.status).toBe('pending');
 
       // User meets challenge zone requirement
-      mockGetProfile.mockReturnValue({ id: 'user-1', currentZoneId: 'warm' });
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'warm' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
@@ -398,9 +348,9 @@ describe('GovernanceEngine SSoT coverage', () => {
 
     test('challenge failure sets videoLocked=true and phase=locked', () => {
       const mockGetProfile = jest.fn().mockReturnValue({
-        id: 'user-1', currentZoneId: 'active'
+        id: 'user-1', currentZoneId: 'active', heartRate: 110, zoneConfig: DEFAULT_ZONE_CONFIG
       });
-      const engine = new GovernanceEngine(createMockSession(createMockZoneProfileStore(mockGetProfile)));
+      const engine = new GovernanceEngine(createMockSession({ getParticipantProfile: mockGetProfile }));
       engine._hysteresisMs = 0;
 
       engine.configure(CHALLENGE_POLICY);
@@ -409,7 +359,7 @@ describe('GovernanceEngine SSoT coverage', () => {
       // Get to unlocked
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'active' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
@@ -420,7 +370,7 @@ describe('GovernanceEngine SSoT coverage', () => {
       engine.challengeState.forceStartRequest = { configId: null };
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'active' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
@@ -432,7 +382,7 @@ describe('GovernanceEngine SSoT coverage', () => {
       mockTime = challenge.expiresAt + 1;
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'active' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
@@ -445,9 +395,9 @@ describe('GovernanceEngine SSoT coverage', () => {
 
     test('failed challenge recovers when user meets zone after failure', () => {
       const mockGetProfile = jest.fn().mockReturnValue({
-        id: 'user-1', currentZoneId: 'active'
+        id: 'user-1', currentZoneId: 'active', heartRate: 110, zoneConfig: DEFAULT_ZONE_CONFIG
       });
-      const engine = new GovernanceEngine(createMockSession(createMockZoneProfileStore(mockGetProfile)));
+      const engine = new GovernanceEngine(createMockSession({ getParticipantProfile: mockGetProfile }));
       engine._hysteresisMs = 0;
 
       engine.configure(CHALLENGE_POLICY);
@@ -456,7 +406,7 @@ describe('GovernanceEngine SSoT coverage', () => {
       // Get to unlocked
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'active' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
@@ -466,7 +416,7 @@ describe('GovernanceEngine SSoT coverage', () => {
       engine.challengeState.forceStartRequest = { configId: null };
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'active' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
@@ -475,7 +425,7 @@ describe('GovernanceEngine SSoT coverage', () => {
       mockTime = challenge.expiresAt + 1;
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'active' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
@@ -483,11 +433,10 @@ describe('GovernanceEngine SSoT coverage', () => {
       expect(engine.challengeState.videoLocked).toBe(true);
       expect(engine.phase).toBe('locked');
 
-      // Now user meets zone — challenge recovers
-      mockGetProfile.mockReturnValue({ id: 'user-1', currentZoneId: 'warm' });
+      // Now user meets zone -- challenge recovers
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'warm' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
@@ -498,14 +447,11 @@ describe('GovernanceEngine SSoT coverage', () => {
     });
   });
 
-  // ─── videoLocked as sole lock authority ───
+  // --- videoLocked as sole lock authority ---
 
   describe('videoLocked sole authority', () => {
     test('challengeState.videoLocked is false when no challenge is active', () => {
-      const mockGetProfile = jest.fn().mockReturnValue({
-        id: 'user-1', currentZoneId: 'warm'
-      });
-      const engine = new GovernanceEngine(createMockSession(createMockZoneProfileStore(mockGetProfile)));
+      const engine = new GovernanceEngine(createMockSession());
       engine._hysteresisMs = 0;
 
       engine.configure({
@@ -521,7 +467,7 @@ describe('GovernanceEngine SSoT coverage', () => {
 
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'warm' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
@@ -531,11 +477,11 @@ describe('GovernanceEngine SSoT coverage', () => {
       expect(engine.challengeState.videoLocked).toBe(false);
     });
 
-    test('videoLocked transitions: false → true on failure, true → false on recovery', () => {
+    test('videoLocked transitions: false -> true on failure, true -> false on recovery', () => {
       const mockGetProfile = jest.fn().mockReturnValue({
-        id: 'user-1', currentZoneId: 'active'
+        id: 'user-1', currentZoneId: 'active', heartRate: 110, zoneConfig: DEFAULT_ZONE_CONFIG
       });
-      const engine = new GovernanceEngine(createMockSession(createMockZoneProfileStore(mockGetProfile)));
+      const engine = new GovernanceEngine(createMockSession({ getParticipantProfile: mockGetProfile }));
       engine._hysteresisMs = 0;
 
       engine.configure({
@@ -562,18 +508,18 @@ describe('GovernanceEngine SSoT coverage', () => {
       // Unlocked, videoLocked=false
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'active' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
       });
       expect(engine.challengeState.videoLocked).toBe(false);
 
-      // Start and fail challenge → videoLocked=true
+      // Start and fail challenge -> videoLocked=true
       engine.challengeState.forceStartRequest = { configId: null };
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'active' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
@@ -582,18 +528,17 @@ describe('GovernanceEngine SSoT coverage', () => {
       mockTime = challenge.expiresAt + 1;
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'active' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
       });
       expect(engine.challengeState.videoLocked).toBe(true);
 
-      // Recover → videoLocked=false
-      mockGetProfile.mockReturnValue({ id: 'user-1', currentZoneId: 'warm' });
+      // Recover -> videoLocked=false
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'warm' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
@@ -602,10 +547,7 @@ describe('GovernanceEngine SSoT coverage', () => {
     });
 
     test('governance state snapshot includes videoLocked field', () => {
-      const mockGetProfile = jest.fn().mockReturnValue({
-        id: 'user-1', currentZoneId: 'warm'
-      });
-      const engine = new GovernanceEngine(createMockSession(createMockZoneProfileStore(mockGetProfile)));
+      const engine = new GovernanceEngine(createMockSession());
       engine._hysteresisMs = 0;
 
       engine.configure({
@@ -621,7 +563,7 @@ describe('GovernanceEngine SSoT coverage', () => {
 
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'warm' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
@@ -634,17 +576,14 @@ describe('GovernanceEngine SSoT coverage', () => {
     });
   });
 
-  // ─── Early zone map capture (bug fix verification) ───
+  // --- Early zone map capture (bug fix verification) ---
 
   describe('early zone map capture', () => {
     test('zone rank lookups work on first evaluate after configure', () => {
-      const mockGetProfile = jest.fn().mockReturnValue({
-        id: 'user-1', currentZoneId: 'warm'
-      });
-      const engine = new GovernanceEngine(createMockSession(createMockZoneProfileStore(mockGetProfile)));
+      const engine = new GovernanceEngine(createMockSession());
       engine._hysteresisMs = 0;
 
-      // Configure WITHOUT zoneConfig in config — zone maps come only from evaluate()
+      // Configure WITHOUT zoneConfig in config -- zone maps come only from evaluate()
       engine.configure({
         governed_labels: ['fitness'],
         policies: {
@@ -656,10 +595,10 @@ describe('GovernanceEngine SSoT coverage', () => {
       });
       engine.setMedia({ id: 'test', labels: ['fitness'] });
 
-      // First evaluate with zone maps — should work (was broken before early capture fix)
+      // First evaluate with zone maps -- should work (was broken before early capture fix)
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'warm' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
@@ -677,12 +616,11 @@ describe('GovernanceEngine SSoT coverage', () => {
     });
   });
 
-  // ─── Multi-user governance scenarios ───
+  // --- Multi-user governance scenarios ---
 
   describe('multi-user governance', () => {
     test('all-rule locks when ANY user drops below zone', () => {
-      const mockGetProfile = jest.fn();
-      const engine = new GovernanceEngine(createMockSession(createMockZoneProfileStore(mockGetProfile)));
+      const engine = new GovernanceEngine(createMockSession());
       engine._hysteresisMs = 0;
 
       engine.configure({
@@ -696,26 +634,20 @@ describe('GovernanceEngine SSoT coverage', () => {
       });
       engine.setMedia({ id: 'test', labels: ['fitness'] });
 
-      // Both users in warm → unlocked
-      mockGetProfile.mockImplementation((id) => ({
-        id, currentZoneId: 'warm'
-      }));
+      // Both users in warm -> unlocked
       engine.evaluate({
         activeParticipants: ['user-1', 'user-2'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'warm', 'user-2': 'warm' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 2
       });
       expect(engine.phase).toBe('unlocked');
 
-      // User-2 drops to active → warning
-      mockGetProfile.mockImplementation((id) => ({
-        id, currentZoneId: id === 'user-1' ? 'warm' : 'active'
-      }));
+      // User-2 drops to active -> warning
       engine.evaluate({
         activeParticipants: ['user-1', 'user-2'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'warm', 'user-2': 'active' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 2

@@ -22,8 +22,10 @@ const ZONE_INFO_MAP = {
   fire: { id: 'fire', name: 'Fire', color: '#ef4444' }
 };
 
-const createMockSession = (zoneProfileStore, roster = []) => ({
-  zoneProfileStore,
+// Zone data now arrives pre-populated in userZoneMap
+// (GovernanceEngine no longer does second-pass enrichment via getParticipantProfile)
+const createMockSession = (roster = []) => ({
+  zoneProfileStore: { getProfile: jest.fn() },
   roster,
   treasureBox: null
 });
@@ -38,13 +40,7 @@ describe('Governance transition tightness', () => {
   });
 
   test('lockRows has entries when participants exist and requirements unsatisfied', () => {
-    const mockGetProfile = jest.fn().mockReturnValue({
-      id: 'user-1',
-      currentZoneId: 'active'
-    });
-    const mockZoneProfileStore = { getProfile: mockGetProfile };
-
-    const session = createMockSession(mockZoneProfileStore, [
+    const session = createMockSession([
       { id: 'user-1', isActive: true }
     ]);
 
@@ -67,7 +63,7 @@ describe('Governance transition tightness', () => {
     // Evaluate with 1 participant whose zone is 'active' (below 'warm' target)
     engine.evaluate({
       activeParticipants: ['user-1'],
-      userZoneMap: {},
+      userZoneMap: { 'user-1': 'active' },
       zoneRankMap: ZONE_RANK_MAP,
       zoneInfoMap: ZONE_INFO_MAP,
       totalCount: 1
@@ -81,14 +77,8 @@ describe('Governance transition tightness', () => {
   });
 
   test('lockRows populated immediately after participant joins (no empty intermediate)', () => {
-    const mockGetProfile = jest.fn().mockReturnValue({
-      id: 'user-1',
-      currentZoneId: 'active'
-    });
-    const mockZoneProfileStore = { getProfile: mockGetProfile };
-
     // Start with empty roster, then add participant
-    const session = createMockSession(mockZoneProfileStore, []);
+    const session = createMockSession([]);
 
     const engine = new GovernanceEngine(session);
     engine._hysteresisMs = 0;
@@ -120,7 +110,7 @@ describe('Governance transition tightness', () => {
     // Evaluate with 1 participant (user in 'active', below 'warm' target)
     engine.evaluate({
       activeParticipants: ['user-1'],
-      userZoneMap: {},
+      userZoneMap: { 'user-1': 'active' },
       zoneRankMap: ZONE_RANK_MAP,
       zoneInfoMap: ZONE_INFO_MAP,
       totalCount: 1
@@ -133,10 +123,7 @@ describe('Governance transition tightness', () => {
   });
 
   test('pre-populated requirements have zone labels before any participant data', () => {
-    const mockGetProfile = jest.fn();
-    const mockZoneProfileStore = { getProfile: mockGetProfile };
-
-    const session = createMockSession(mockZoneProfileStore, []);
+    const session = createMockSession([]);
 
     const engine = new GovernanceEngine(session);
     engine._hysteresisMs = 0;
@@ -160,15 +147,9 @@ describe('Governance transition tightness', () => {
       }
     });
 
-    // Evaluate with 0 participants
-    engine.evaluate({
-      activeParticipants: [],
-      userZoneMap: {},
-      zoneRankMap: ZONE_RANK_MAP,
-      zoneInfoMap: ZONE_INFO_MAP,
-      totalCount: 0
-    });
-
+    // configure() calls evaluate() internally which sets up initial state.
+    // The pre-populated requirements are built during that first evaluate.
+    // We check state immediately after configure — no second evaluate needed.
     const state = engine.state;
 
     expect(state.requirements.length).toBeGreaterThan(0);
@@ -177,12 +158,7 @@ describe('Governance transition tightness', () => {
 
   describe('governance state carries decision data (no display data)', () => {
     test('requirements carry zone ID and label but not zoneColor', () => {
-      const mockGetProfile = jest.fn().mockReturnValue({
-        id: 'user-1', currentZoneId: 'active'
-      });
-      const engine = new GovernanceEngine(
-        createMockSession({ getProfile: mockGetProfile })
-      );
+      const engine = new GovernanceEngine(createMockSession());
       engine._hysteresisMs = 0;
       engine.setMedia({ id: 'test', labels: ['fitness'] });
       engine.configure({
@@ -194,7 +170,7 @@ describe('Governance transition tightness', () => {
 
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'active' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
@@ -207,12 +183,7 @@ describe('Governance transition tightness', () => {
     });
 
     test('lockRows carry targetZoneId but not participantZones', () => {
-      const mockGetProfile = jest.fn().mockReturnValue({
-        id: 'user-1', currentZoneId: 'active'
-      });
-      const engine = new GovernanceEngine(
-        createMockSession({ getProfile: mockGetProfile })
-      );
+      const engine = new GovernanceEngine(createMockSession());
       engine._hysteresisMs = 0;
       engine.setMedia({ id: 'test', labels: ['fitness'] });
       engine.configure({
@@ -224,7 +195,7 @@ describe('Governance transition tightness', () => {
 
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'active' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
@@ -239,10 +210,7 @@ describe('Governance transition tightness', () => {
 
   describe('state cache invalidation', () => {
     test('state reflects new zone data after evaluate, not cached stale data', () => {
-      const mockGetProfile = jest.fn();
-      const engine = new GovernanceEngine(
-        createMockSession({ getProfile: mockGetProfile })
-      );
+      const engine = new GovernanceEngine(createMockSession());
       engine._hysteresisMs = 0;
       engine.setMedia({ id: 'test', labels: ['fitness'] });
       engine.configure({
@@ -252,22 +220,20 @@ describe('Governance transition tightness', () => {
         }
       });
 
-      // First: user in active → pending
-      mockGetProfile.mockReturnValue({ id: 'user-1', currentZoneId: 'active' });
+      // First: user in active -> pending
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'active' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
       });
       expect(engine.state.status).toBe('pending');
 
-      // Second: user in warm → unlocked (must not return cached 'pending')
-      mockGetProfile.mockReturnValue({ id: 'user-1', currentZoneId: 'warm' });
+      // Second: user in warm -> unlocked (must not return cached 'pending')
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'warm' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
@@ -277,12 +243,7 @@ describe('Governance transition tightness', () => {
     });
 
     test('state reflects participant changes immediately after evaluate', () => {
-      const mockGetProfile = jest.fn().mockImplementation((id) => ({
-        id, currentZoneId: 'active'
-      }));
-      const engine = new GovernanceEngine(
-        createMockSession({ getProfile: mockGetProfile })
-      );
+      const engine = new GovernanceEngine(createMockSession());
       engine._hysteresisMs = 0;
       engine.setMedia({ id: 'test', labels: ['fitness'] });
       engine.configure({
@@ -295,17 +256,17 @@ describe('Governance transition tightness', () => {
       // 1 participant
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'active' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 1
       });
       expect(engine.state.activeUserCount).toBe(1);
 
-      // 2 participants — state must reflect immediately
+      // 2 participants -- state must reflect immediately
       engine.evaluate({
         activeParticipants: ['user-1', 'user-2'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'active', 'user-2': 'active' },
         zoneRankMap: ZONE_RANK_MAP,
         zoneInfoMap: ZONE_INFO_MAP,
         totalCount: 2
