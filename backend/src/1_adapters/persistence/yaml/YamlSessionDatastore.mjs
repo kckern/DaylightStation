@@ -265,6 +265,35 @@ export class YamlSessionDatastore extends ISessionDatastore {
         };
       }
 
+      // Fallback: if no summary.media, try extracting from timeline.events
+      if (!media && data.timeline?.events?.length > 0) {
+        const mediaEvents = (data.timeline.events || []).filter(e => e.type === 'media');
+        if (mediaEvents.length > 0) {
+          const formatFromEvent = (evt) => {
+            const d = evt.data || {};
+            return {
+              mediaId: d.mediaId,
+              title: d.title,
+              showTitle: d.grandparentTitle,
+              seasonTitle: d.parentTitle,
+              grandparentId: d.grandparentId || null,
+              parentId: d.parentId || null,
+            };
+          };
+          // Pick longest-duration as primary
+          let primaryIdx = 0;
+          for (let i = 1; i < mediaEvents.length; i++) {
+            const durI = (mediaEvents[i].data?.end || 0) - (mediaEvents[i].data?.start || 0);
+            const durP = (mediaEvents[primaryIdx].data?.end || 0) - (mediaEvents[primaryIdx].data?.start || 0);
+            if (durI > durP) primaryIdx = i;
+          }
+          media = {
+            primary: formatFromEvent(mediaEvents[primaryIdx]),
+            others: mediaEvents.filter((_, i) => i !== primaryIdx).map(formatFromEvent),
+          };
+        }
+      }
+
       const totalCoins = summary?.coins?.total ?? data.treasureBox?.totalCoins ?? 0;
       const challengeCount = summary?.challenges?.total ?? 0;
       const voiceMemoCount = summary?.voiceMemos?.length ?? 0;
