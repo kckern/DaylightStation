@@ -264,6 +264,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const rosterCacheRef = useRef({ signature: null, value: emptyRosterRef.current });
   const [version, setVersion] = useState(0); // Trigger re-render
   const scheduledUpdateRef = useRef(false);
+  const updateThrottleRef = useRef({ lastUpdateTime: 0, timer: null });
   
   // MEMORY LEAK TRACKING: Count forceUpdate calls and renders for profiling
   const renderStatsRef = useRef({ forceUpdateCount: 0, renderCount: 0, lastResetTime: Date.now() });
@@ -321,12 +322,36 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       return; // Drop this update
     }
 
-    if (scheduledUpdateRef.current) return;
-    scheduledUpdateRef.current = true;
-    requestAnimationFrame(() => {
-      scheduledUpdateRef.current = false;
-      forceUpdate();
-    });
+    // Time-based throttle: max ~4 updates/sec (250ms minimum interval)
+    // HR data still flows to TreasureBox/ZoneProfileStore at full rate
+    const MIN_UPDATE_INTERVAL_MS = 250;
+    const elapsed = now - updateThrottleRef.current.lastUpdateTime;
+
+    if (elapsed >= MIN_UPDATE_INTERVAL_MS) {
+      // Enough time has passed — schedule immediately via RAF
+      if (scheduledUpdateRef.current) return;
+      scheduledUpdateRef.current = true;
+      requestAnimationFrame(() => {
+        scheduledUpdateRef.current = false;
+        updateThrottleRef.current.lastUpdateTime = Date.now();
+        forceUpdate();
+      });
+    } else if (!updateThrottleRef.current.timer) {
+      // Too soon — schedule a trailing update after the remaining interval
+      const delay = MIN_UPDATE_INTERVAL_MS - elapsed;
+      updateThrottleRef.current.timer = setTimeout(() => {
+        updateThrottleRef.current.timer = null;
+        if (!scheduledUpdateRef.current) {
+          scheduledUpdateRef.current = true;
+          requestAnimationFrame(() => {
+            scheduledUpdateRef.current = false;
+            updateThrottleRef.current.lastUpdateTime = Date.now();
+            forceUpdate();
+          });
+        }
+      }, delay);
+    }
+    // Otherwise: RAF already scheduled or throttle timer pending — drop this call
   }, [forceUpdate]);
 
   // Track render count

@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect, useRef, useLayoutEffect, useCallba
 import useFitnessPlugin from '../../useFitnessPlugin';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import { useRenderProfiler } from '@/hooks/fitness/useRenderProfiler.js';
+import getLogger from '@/lib/logging/Logger.js';
 import './FitnessChartApp.scss';
 import {
 	MIN_VISIBLE_TICKS,
@@ -143,7 +144,9 @@ const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 		// Global safety cap - if total points exceed limit, log warning
 		const totalPoints = debugItems.reduce((sum, e) => sum + (e.beats?.length || 0), 0);
 		if (totalPoints > MAX_TOTAL_POINTS) {
-			console.warn(`[FitnessChart] Global cap warning: ${totalPoints} total points across ${debugItems.length} entries`);
+			getLogger().sampled('fitness_chart.global_cap_warning', {
+				totalPoints, entryCount: debugItems.length
+			}, { maxPerMinute: 1, aggregate: true });
 		}
 
 		// Allow entries with zero beats to display - they'll accumulate over time
@@ -151,7 +154,10 @@ const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 		const shaped = debugItems.filter((item) => item.segments.length > 0);
 
 		// Debug guardrail: log when roster/active/chart counts diverge
-		const rosterIds = roster.map((r, i) => slugifyId(r.profileId || r.hrDeviceId || r.name || r.displayLabel || i, `anon-${i}`));
+		// Filter out synthetic entries (e.g., 'global' combined score) before comparison
+		const rosterIds = roster
+			.map((r, i) => slugifyId(r.profileId || r.hrDeviceId || r.name || r.displayLabel || i, `anon-${i}`))
+			.filter(id => id !== 'global' && !id.startsWith('global:'));
 		const chartIds = shaped.map((s) => s.id);
 		let activeRosterCount = rosterIds.length;
 		if (activityMonitor) {
@@ -194,14 +200,13 @@ const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 					isActiveFromMonitor: activityMonitor ? activityMonitor.isActive?.(item.id) ?? null : null,
 				};
 			});
-			console.warn('[FitnessChart] Avatar mismatch', {
+			getLogger().sampled('fitness_chart.avatar_mismatch', {
 				rosterCount,
 				activeRosterCount,
 				chartCount,
 				missingFromChart: missing,
-				extraOnChart: extra,
-				details
-			});
+				extraOnChart: extra
+			}, { maxPerMinute: 2, aggregate: true });
 		}
 
 		// GUARDRAIL: Log when roster.isActive differs from segment state (for debugging)
@@ -212,12 +217,11 @@ const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 			const isActiveFromRoster = item.isActive !== false;
 			// Note: We expect endsWithGap when !isActive, but isActive is authoritative
 			if (endsWithGap && isActiveFromRoster) {
-				console.warn('[FitnessChart] Segment shows gap but roster says active', {
+				getLogger().sampled('fitness_chart.gap_roster_mismatch', {
 					id: item.id,
 					endsWithGap,
-					isActive: item.isActive,
-					lastSegment: lastSeg ? { isGap: lastSeg.isGap, status: lastSeg.status } : null
-				});
+					isActive: item.isActive
+				}, { maxPerMinute: 2, aggregate: true });
 			}
 		});
 
@@ -813,7 +817,7 @@ const FitnessChartApp = ({ mode, onClose, config, onMount, sessionData }) => {
 		const signature = JSON.stringify(snapshot);
 		if (signature !== lastWarmupLogRef.current) {
 			lastWarmupLogRef.current = signature;
-			console.warn('[FitnessChart][warmup]', snapshot);
+			getLogger().sampled('fitness_chart.warmup', snapshot, { maxPerMinute: 2, aggregate: true });
 		}
 	}, [chartParticipants, allEntries, timebase, chartGetSeries]);
 	
@@ -823,26 +827,23 @@ const FitnessChartApp = ({ mode, onClose, config, onMount, sessionData }) => {
 		const rosterCount = Array.isArray(chartParticipants) ? chartParticipants.length : 0;
 		const chartPresentCount = presentEntries.length;
 
-		if (rosterCount > 0 && chartPresentCount !== rosterCount) {
-			const rosterIds = (chartParticipants || []).map(p => p.profileId || p.id || p.name);
-			const chartPresentIds = presentEntries.map(e => e.profileId || e.id);
-			const chartAbsentIds = absentEntries.map(e => e.profileId || e.id);
-			const allChartIds = allEntries.map(e => ({ id: e.profileId || e.id, status: e.status }));
+		// Filter out synthetic entries before mismatch comparison
+		const filteredParticipants = (chartParticipants || []).filter(p => {
+			const id = p.profileId || p.id || p.name || '';
+			return id !== 'global' && !id.startsWith('global:');
+		});
+		const filteredRosterCount = filteredParticipants.length;
 
-			console.warn('[FitnessChart] Participant count mismatch!', {
-				rosterCount,
+		if (filteredRosterCount > 0 && chartPresentCount !== filteredRosterCount) {
+			const rosterIds = filteredParticipants.map(p => p.profileId || p.id || p.name);
+			const chartPresentIds = presentEntries.map(e => e.profileId || e.id);
+
+			getLogger().sampled('fitness_chart.participant_mismatch', {
+				rosterCount: filteredRosterCount,
 				chartPresentCount,
-				chartAbsentCount: absentEntries.length,
 				chartTotalCount: allEntries.length,
-				rosterIds,
-				chartPresentIds,
-				chartAbsentIds,
-				allChartEntries: allChartIds,
-				// Show which roster IDs are missing from chart present
-				missingFromChart: rosterIds.filter(id => !chartPresentIds.includes(id)),
-				// Show which chart present IDs are not in roster
-				extraInChart: chartPresentIds.filter(id => !rosterIds.includes(id))
-			});
+				missingFromChart: rosterIds.filter(id => !chartPresentIds.includes(id))
+			}, { maxPerMinute: 2, aggregate: true });
 		}
 	}, [chartParticipants, presentEntries, absentEntries, allEntries]);
 	
