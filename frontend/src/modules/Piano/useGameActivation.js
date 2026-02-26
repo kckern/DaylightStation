@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getChildLogger } from '../../lib/logging/singleton.js';
-import { isActivationComboHeld } from './rhythmEngine.js';
+import { isActivationComboHeld } from './PianoSpaceInvaders/spaceInvadersEngine.js';
 
 const ACTIVATION_COOLDOWN_MS = 2000;
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { getChildLogger } from '../../lib/logging/singleton.js';
-import { DaylightMediaPath } from '../../lib/api.mjs';
+import { getChildLogger } from '../../../lib/logging/singleton.js';
+import { DaylightMediaPath } from '../../../lib/api.mjs';
 import {
   createInitialState,
   resetForLevel,
@@ -12,7 +12,7 @@ import {
   evaluateLevel,
   getFallDuration,
   TOTAL_HEALTH,
-} from './rhythmEngine.js';
+} from './spaceInvadersEngine.js';
 
 const TICK_INTERVAL = 16; // ~60fps
 const COUNTDOWN_STEPS = [3, 2, 1, 0]; // 0 = "GO"
@@ -22,15 +22,15 @@ const WRONG_NOTE_GLOW_MS = 400; // How long wrong-press red glow lasts
 const ERROR_SFX_PATH = '/media/audio/sfx/error.mp3'; // Resolved via DaylightMediaPath
 
 /**
- * Game mode hook — manages state machine, note spawning, hit detection, scoring.
+ * Space Invaders game hook — manages state machine, note spawning, hit detection, scoring.
  *
  * @param {Map} activeNotes - From useMidiSubscription
  * @param {Array} noteHistory - From useMidiSubscription
  * @param {Object|null} gameConfig - Parsed game config from piano.yml, or null to disable
- * @returns {Object} Game mode state for rendering
+ * @returns {Object} Game state for rendering
  */
-export function useRhythmGame(activeNotes, noteHistory, gameConfig) {
-  const logger = useMemo(() => getChildLogger({ component: 'piano-game' }), []);
+export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
+  const logger = useMemo(() => getChildLogger({ component: 'space-invaders-game' }), []);
   const [gameState, setGameState] = useState(createInitialState);
   const gameStateRef = useRef(gameState);
   const lastNoteHistoryLen = useRef(0);
@@ -82,7 +82,7 @@ export function useRhythmGame(activeNotes, noteHistory, gameConfig) {
         clearInterval(countdownRef.current);
         countdownRef.current = null;
         setGameState(prev => resetForLevel(prev, prev.levelIndex));
-        logger.info('piano.game.started', { level: gameStateRef.current.levelIndex });
+        logger.info('space-invaders.started', { level: gameStateRef.current.levelIndex });
       }
     }, COUNTDOWN_STEP_MS);
   }, [logger]);
@@ -116,7 +116,7 @@ export function useRhythmGame(activeNotes, noteHistory, gameConfig) {
         const outcome = evaluateLevel(next.score, level, next.health);
         if (outcome === 'fail') {
           const failReason = next.health <= 0 ? 'health' : 'misses';
-          logger.info('piano.game.level-failed', {
+          logger.info('space-invaders.level-failed', {
             level: next.levelIndex,
             score: next.score.points,
             misses: next.score.misses,
@@ -126,7 +126,7 @@ export function useRhythmGame(activeNotes, noteHistory, gameConfig) {
           return { ...next, phase: 'LEVEL_FAILED', failReason };
         }
         if (outcome === 'advance') {
-          logger.info('piano.game.level-complete', {
+          logger.info('space-invaders.level-complete', {
             level: next.levelIndex,
             score: next.score.points,
           });
@@ -189,7 +189,7 @@ export function useRhythmGame(activeNotes, noteHistory, gameConfig) {
           // Correct hit — score + health heal + reset wrong streak
           const newScore = applyScore(newState.score, hitResult, scoring);
           const newHealth = Math.min(TOTAL_HEALTH, newState.health + 1);
-          logger.debug('piano.game.hit', { pitch, result: hitResult, combo: newScore.combo, points: newScore.points, health: newHealth, mode: lm });
+          logger.debug('space-invaders.hit', { pitch, result: hitResult, combo: newScore.combo, points: newScore.points, health: newHealth, mode: lm });
           return { ...newState, score: newScore, health: newHealth, wrongStreak: 0 };
         }
 
@@ -197,7 +197,7 @@ export function useRhythmGame(activeNotes, noteHistory, gameConfig) {
         const streak = newState.wrongStreak + 1;
         const penalty = streak === 1 ? 1 : streak === 2 ? 3 : streak === 3 ? 5 : 7;
         const newHealth = Math.max(0, newState.health - penalty);
-        logger.debug('piano.game.wrong-press', { pitch, health: newHealth, streak, penalty });
+        logger.debug('space-invaders.wrong-press', { pitch, health: newHealth, streak, penalty });
         return { ...newState, health: newHealth, wrongStreak: streak };
       });
     }
@@ -211,7 +211,7 @@ export function useRhythmGame(activeNotes, noteHistory, gameConfig) {
     if (gameState.phase === 'LEVEL_COMPLETE') {
       bannerTimeoutRef.current = setTimeout(() => {
         const nextLevel = gameState.levelIndex + 1;
-        logger.info('piano.game.next-level', { level: nextLevel });
+        logger.info('space-invaders.next-level', { level: nextLevel });
         setGameState(prev => ({ ...prev, levelIndex: nextLevel }));
         startCountdown();
       }, BANNER_DISPLAY_MS);
@@ -221,13 +221,13 @@ export function useRhythmGame(activeNotes, noteHistory, gameConfig) {
     if (gameState.phase === 'LEVEL_FAILED') {
       bannerTimeoutRef.current = setTimeout(() => {
         if (gameState.failReason === 'health') {
-          // Health depleted — exit game mode entirely, back to regular visualizer
-          logger.info('piano.game.health-exit', { level: gameState.levelIndex, score: gameState.score.points });
+          // Health depleted — exit game mode entirely
+          logger.info('space-invaders.health-exit', { level: gameState.levelIndex, score: gameState.score.points });
           cleanup();
           setGameState(createInitialState());
         } else {
           // Miss limit exceeded — retry same level
-          logger.info('piano.game.retry-level', { level: gameState.levelIndex });
+          logger.info('space-invaders.retry-level', { level: gameState.levelIndex });
           startCountdown();
         }
       }, BANNER_DISPLAY_MS);
@@ -236,7 +236,7 @@ export function useRhythmGame(activeNotes, noteHistory, gameConfig) {
 
     if (gameState.phase === 'VICTORY') {
       bannerTimeoutRef.current = setTimeout(() => {
-        logger.info('piano.game.victory-dismiss', { finalScore: gameState.score.points });
+        logger.info('space-invaders.victory-dismiss', { finalScore: gameState.score.points });
         cleanup();
         setGameState(createInitialState());
       }, 8000);
@@ -267,15 +267,9 @@ export function useRhythmGame(activeNotes, noteHistory, gameConfig) {
   // ─── External activation controls ──────────────────────────
 
   const startGame = useCallback(() => {
-    logger.info('piano.game.activated', {});
+    logger.info('space-invaders.activated', {});
     startCountdown();
   }, [startCountdown, logger]);
-
-  const deactivateGame = useCallback(() => {
-    logger.info('piano.game.deactivated', {});
-    cleanup();
-    setGameState(createInitialState());
-  }, [cleanup, logger]);
 
   // ─── Derived state for rendering ────────────────────────────
 
@@ -290,7 +284,6 @@ export function useRhythmGame(activeNotes, noteHistory, gameConfig) {
     : null;
 
   return {
-    isGameMode: gameState.phase !== 'IDLE',
     gameState: gameState.phase,
     currentLevel,
     levelMode: currentLevel?.mode ?? 'hero',
@@ -302,9 +295,8 @@ export function useRhythmGame(activeNotes, noteHistory, gameConfig) {
     fallDuration: getFallDuration(currentLevel),
     wrongNotes,
     startGame,
-    deactivate: deactivateGame,
     totalHealth: TOTAL_HEALTH,
   };
 }
 
-export default useRhythmGame;
+export default useSpaceInvadersGame;

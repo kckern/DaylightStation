@@ -1,5 +1,5 @@
 /**
- * Piano Game Engine — Pure functions, no React
+ * Space Invaders Game Engine — Pure functions, no React
  *
  * State shape:
  * {

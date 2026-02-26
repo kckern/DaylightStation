@@ -2,16 +2,16 @@
  * Game Registry — maps game IDs to their component/hook lazy loaders and layout mode.
  *
  * layout modes:
- *   'waterfall' — game overlays on top of the existing waterfall view
  *   'replace'   — game takes over the entire PianoVisualizer viewport
  */
 import { lazy } from 'react';
 
 const GAME_REGISTRY = {
-  rhythm: {
-    component: () => import('./components/RhythmOverlay'),
-    hook: () => import('./useRhythmGame'),
-    layout: 'waterfall',
+  'space-invaders': {
+    component: () => import('./PianoSpaceInvaders/SpaceInvadersGame'),
+    hook: () => import('./PianoSpaceInvaders/useSpaceInvadersGame'),
+    layout: 'replace',
+    LazyComponent: lazy(() => import('./PianoSpaceInvaders/SpaceInvadersGame')),
   },
   tetris: {
     component: () => import('./PianoTetris/PianoTetris'),
@@ -24,6 +24,18 @@ const GAME_REGISTRY = {
     hook: () => import('./PianoFlashcards/useFlashcardGame'),
     layout: 'replace',
     LazyComponent: lazy(() => import('./PianoFlashcards/PianoFlashcards')),
+  },
+  hero: {
+    component: () => import('./PianoHeroGame/PianoHeroGame'),
+    hook: () => import('./PianoHeroGame/PianoHeroGame'),
+    layout: 'replace',
+    LazyComponent: lazy(() => import('./PianoHeroGame/PianoHeroGame')),
+  },
+  'side-scroller': {
+    component: () => import('./SideScrollerGame/SideScrollerGame'),
+    hook: () => import('./SideScrollerGame/SideScrollerGame'),
+    layout: 'replace',
+    LazyComponent: lazy(() => import('./SideScrollerGame/SideScrollerGame')),
   },
 };
 
