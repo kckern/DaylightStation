@@ -1,18 +1,5 @@
 import { jest } from '@jest/globals';
 
-// Mock ZoneProfileStore
-const mockGetProfile = jest.fn();
-const mockZoneProfileStore = {
-  getProfile: mockGetProfile
-};
-
-// Mock session with zoneProfileStore
-const createMockSession = (zoneProfileStore) => ({
-  zoneProfileStore,
-  roster: [],
-  treasureBox: null
-});
-
 // Mock logger
 const mockSampled = jest.fn();
 const mockInfo = jest.fn();
@@ -26,27 +13,28 @@ jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
 
 const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
 
+// Mock session — zone data now arrives pre-populated in userZoneMap
+// (GovernanceEngine no longer does a second-pass enrichment via getParticipantProfile)
+const createMockSession = () => ({
+  zoneProfileStore: { getProfile: jest.fn() },
+  roster: [],
+  treasureBox: null
+});
+
 describe('GovernanceEngine zone source', () => {
   beforeEach(() => {
-    mockGetProfile.mockClear();
     mockSampled.mockClear();
     mockInfo.mockClear();
     mockWarn.mockClear();
   });
 
-  test('reads zone state from ZoneProfileStore, not TreasureBox', async () => {
-    // Setup: ZoneProfileStore returns 'warm' for user
-    mockGetProfile.mockReturnValue({
-      id: 'user-1',
-      currentZoneId: 'warm',
-      currentZoneColor: 'yellow'
-    });
-
-    const session = createMockSession(mockZoneProfileStore);
+  test('zone data from userZoneMap satisfies governance requirements', async () => {
+    // Zone data now arrives pre-populated in userZoneMap (from getActiveParticipantState
+    // or the snapshot caller). GovernanceEngine no longer enriches from ZoneProfileStore.
+    const session = createMockSession();
     const engine = new GovernanceEngine(session);
-    engine._hysteresisMs = 0; // Disable hysteresis for instant phase transitions in tests
+    engine._hysteresisMs = 0;
 
-    // Configure with a policy requiring 'warm' zone
     engine.configure({
       governed_labels: ['fitness'],
       policies: {
@@ -59,34 +47,25 @@ describe('GovernanceEngine zone source', () => {
 
     engine.setMedia({ id: 'test', labels: ['fitness'] });
 
-    // Evaluate with one active participant
-    // Pass empty userZoneMap - GovernanceEngine should populate from ZoneProfileStore
+    // Pass zone data directly in userZoneMap (the canonical path)
     engine.evaluate({
       activeParticipants: ['user-1'],
-      userZoneMap: {}, // Empty - should be populated from ZoneProfileStore
+      userZoneMap: { 'user-1': 'warm' },
       zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
       zoneInfoMap: { warm: { id: 'warm', name: 'Warm', color: 'yellow' } },
       totalCount: 1
     });
 
-    // Verify ZoneProfileStore was consulted
-    expect(mockGetProfile).toHaveBeenCalledWith('user-1');
-
-    // Verify phase is unlocked (requirement satisfied via ZoneProfileStore)
+    // Verify phase is unlocked (requirement satisfied via userZoneMap)
     expect(engine.phase).toBe('unlocked');
   });
 
-  test('governance phase changes when ZoneProfileStore reports new zone', async () => {
-    // ZoneProfileStore is the single source of truth for zone state.
-    // Governance phase changes when the store reports a different zone.
-
-    mockGetProfile
-      .mockReturnValueOnce({ id: 'user-1', currentZoneId: 'active' }) // First tick
-      .mockReturnValueOnce({ id: 'user-1', currentZoneId: 'warm' });  // Second tick
-
-    const session = createMockSession(mockZoneProfileStore);
+  test('governance phase changes when userZoneMap reports new zone', async () => {
+    // Zone data changes between evaluations — simulates what happens when
+    // getActiveParticipantState() returns updated zone data.
+    const session = createMockSession();
     const engine = new GovernanceEngine(session);
-    engine._hysteresisMs = 0; // Disable hysteresis for instant phase transitions in tests
+    engine._hysteresisMs = 0;
 
     engine.configure({
       governed_labels: ['fitness'],
@@ -106,7 +85,7 @@ describe('GovernanceEngine zone source', () => {
     // First evaluation - user in 'active' zone (below warm)
     engine.evaluate({
       activeParticipants: ['user-1'],
-      userZoneMap: {},
+      userZoneMap: { 'user-1': 'active' },
       zoneRankMap,
       zoneInfoMap,
       totalCount: 1
@@ -114,10 +93,10 @@ describe('GovernanceEngine zone source', () => {
 
     expect(engine.phase).toBe('pending'); // Not satisfied yet
 
-    // Second evaluation (simulating next tick) - user now in 'warm' zone
+    // Second evaluation - user now in 'warm' zone
     engine.evaluate({
       activeParticipants: ['user-1'],
-      userZoneMap: {},
+      userZoneMap: { 'user-1': 'warm' },
       zoneRankMap,
       zoneInfoMap,
       totalCount: 1

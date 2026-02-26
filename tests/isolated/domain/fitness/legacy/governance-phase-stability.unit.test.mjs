@@ -19,13 +19,10 @@ describe('GovernanceEngine phase stability', () => {
   });
 
   test('phase cannot cycle faster than tick interval (5 seconds)', async () => {
-    const mockGetProfile = jest.fn();
-    const mockZoneProfileStore = { getProfile: mockGetProfile };
-
     const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
 
     const session = {
-      zoneProfileStore: mockZoneProfileStore,
+      zoneProfileStore: { getProfile: jest.fn() },
       roster: [],
       treasureBox: null
     };
@@ -52,11 +49,9 @@ describe('GovernanceEngine phase stability', () => {
     };
 
     // Simulate: User starts in warm zone
-    mockGetProfile.mockReturnValue({ id: 'user-1', currentZoneId: 'warm' });
-
     engine.evaluate({
       activeParticipants: ['user-1'],
-      userZoneMap: {},
+      userZoneMap: { 'user-1': 'warm' },
       zoneRankMap,
       zoneInfoMap,
       totalCount: 1
@@ -69,7 +64,7 @@ describe('GovernanceEngine phase stability', () => {
     for (let i = 0; i < 10; i++) {
       engine.evaluate({
         activeParticipants: ['user-1'],
-        userZoneMap: {},
+        userZoneMap: { 'user-1': 'warm' },
         zoneRankMap,
         zoneInfoMap,
         totalCount: 1
@@ -80,12 +75,10 @@ describe('GovernanceEngine phase stability', () => {
     // Verify: Phase stayed stable (all 'unlocked')
     expect(phaseHistory.every(p => p === 'unlocked')).toBe(true);
 
-    // Simulate: Next tick - ZoneProfileStore now returns 'active' (below warm)
-    mockGetProfile.mockReturnValue({ id: 'user-1', currentZoneId: 'active' });
-
+    // Simulate: Next tick - user drops to 'active' (below warm)
     engine.evaluate({
       activeParticipants: ['user-1'],
-      userZoneMap: {},
+      userZoneMap: { 'user-1': 'active' },
       zoneRankMap,
       zoneInfoMap,
       totalCount: 1

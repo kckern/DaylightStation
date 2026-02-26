@@ -848,9 +848,9 @@ export class GovernanceEngine {
   _triggerPulse() {
     this.pulse += 1;
 
-    // SIMPLIFIED: Self-evaluate on each pulse using session.roster
-    if (this.session?.roster) {
-      this.evaluate();  // No params needed - reads from session.roster directly
+    // SIMPLIFIED: Self-evaluate on each pulse using canonical participant state
+    if (this.session?.getActiveParticipantState) {
+      this.evaluate();  // No params needed - reads from session.getActiveParticipantState() directly
     }
 
     if (this.callbacks.onPulse) {
@@ -1292,24 +1292,13 @@ export class GovernanceEngine {
     const now = Date.now();
     const hasGovernanceRules = (this._governedLabelSet.size + this._governedTypeSet.size) > 0;
 
-    // If no data passed in, read participant list from session.roster
-    // P1: Also pre-populate userZoneMap from roster entries (matches updateSnapshot path).
-    // ZoneProfileStore will supplement/override below.
-    if (!activeParticipants && this.session?.roster) {
-      const roster = this.session.roster || [];
-      activeParticipants = roster
-        .filter((entry) => entry.isActive !== false && (entry.id || entry.profileId))
-        .map((entry) => entry.id || entry.profileId);
-
-      userZoneMap = {};
-      roster.forEach((entry) => {
-        const userId = entry.id || entry.profileId;
-        const zoneId = entry.zoneId || entry.currentZoneId;
-        if (userId && zoneId) {
-          userZoneMap[userId] = typeof zoneId === 'string' ? zoneId.toLowerCase() : String(zoneId).toLowerCase();
-        }
-      });
-      totalCount = activeParticipants.length;
+    // Use canonical participant state from ParticipantRoster (SSOT).
+    // This replaces reading session.roster and re-extracting IDs/zones.
+    if (!activeParticipants && this.session?.getActiveParticipantState) {
+      const state = this.session.getActiveParticipantState();
+      activeParticipants = state.participants;
+      userZoneMap = state.zoneMap;
+      totalCount = state.totalCount;
     }
 
     // BUGFIX: Fall back to previous zoneRankMap/zoneInfoMap when not provided
@@ -1352,40 +1341,13 @@ export class GovernanceEngine {
       });
     }
 
-    // Populate userZoneMap using canonical resolution (FitnessSession.getParticipantProfile)
-    // (Must happen before ghost filter so participants have zone data)
-    // Uses the session's unified resolution chain: ZoneProfileStore → ParticipantRoster → legacy roster
-    if (this.session) {
-      activeParticipants.forEach((participantId) => {
-        const profile = this.session.getParticipantProfile?.(participantId)
-          ?? this.session.zoneProfileStore?.getProfile(participantId)
-          ?? null;
-        if (profile?.currentZoneId) {
-          userZoneMap[participantId] = profile.currentZoneId.toLowerCase();
-        } else if (participantId) {
-          getLogger().debug('governance.evaluate.no_zone_profile', {
-            participantId,
-            hasProfile: !!profile,
-            currentZoneId: profile?.currentZoneId ?? null
-          });
-        }
-      });
-    }
-
-    // Filter out ghost participants — users in the roster but with no zone data.
-    // These are disconnected participants whose roster entries are stale.
-    // IMPORTANT: Must run AFTER ZoneProfileStore population above.
-    if (userZoneMap && typeof userZoneMap === 'object') {
-      const beforeCount = activeParticipants.length;
-      activeParticipants = activeParticipants.filter(id => id in userZoneMap);
-      totalCount = activeParticipants.length;
-      if (activeParticipants.length < beforeCount) {
-        getLogger().debug('governance.filtered_ghost_participants', {
-          removed: beforeCount - activeParticipants.length,
-          remaining: activeParticipants.length
-        });
-      }
-    }
+    // Zone enrichment and ghost filtering removed:
+    // - Second-pass zone enrichment via getParticipantProfile is redundant —
+    //   the roster already includes ZoneProfileStore data via _buildZoneLookup().
+    // - Ghost filter (removing participants without zone data) is redundant —
+    //   isActive from ParticipantRoster is the authority, not zone-data presence.
+    //   Removing it fixes the startup bug where participants without zone data
+    //   (because zones haven't arrived yet) were incorrectly excluded.
 
     // Capture zone maps early so _getZoneRank()/_getZoneInfo() work during evaluation
     // (Previously stored only after evaluation, causing first-call misses)
