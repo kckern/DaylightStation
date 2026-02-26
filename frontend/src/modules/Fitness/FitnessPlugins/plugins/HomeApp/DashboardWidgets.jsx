@@ -144,20 +144,24 @@ export function WorkoutsCard({ sessions, onSessionClick, selectedSessionId }) {
               >
                 <div className="session-row__top">
                   {/* Thumbnail */}
-                  <img
-                    src={`/api/v1/display/plex/${s.media.mediaId}`}
-                    alt=""
-                    className="session-thumbnail"
-                    onError={(e) => { e.target.style.display = 'none'; }}
-                  />
+                  {s.media ? (
+                    <img
+                      src={`/api/v1/display/plex/${s.media.mediaId}`}
+                      alt=""
+                      className="session-thumbnail"
+                      onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                  ) : (
+                    <div className="session-thumbnail session-thumbnail--placeholder" />
+                  )}
 
                   {/* Title + metadata */}
                   <div className="session-row__info">
                     <div className="session-row__title-line">
-                      <Text size="sm" fw={700} truncate="end" title={s.media.title}>
-                        {s.media.title}
+                      <Text size="sm" fw={700} truncate="end" title={s.media?.title || 'Workout'}>
+                        {s.media?.title || s.participants?.map(p => p.displayName).join(', ') || 'Workout'}
                       </Text>
-                      {s.media.showTitle && (
+                      {s.media?.showTitle && (
                         <Text size="xs" c="dimmed" truncate="end" title={s.media.showTitle}>
                           {s.media.showTitle}
                         </Text>
@@ -218,7 +222,7 @@ export function WorkoutsCard({ sessions, onSessionClick, selectedSessionId }) {
                   </div>
 
                   {/* Show poster */}
-                  {s.media.grandparentId && (
+                  {s.media?.grandparentId && (
                     <img
                       src={`/api/v1/display/plex/${s.media.grandparentId}`}
                       alt=""
@@ -229,7 +233,7 @@ export function WorkoutsCard({ sessions, onSessionClick, selectedSessionId }) {
                 </div>
 
                 {/* Secondary media row */}
-                {s.media.others?.length > 0 && (
+                {s.media?.others?.length > 0 && (
                   <div className="session-row__others">
                     {s.media.others.map((m) => (
                       <div key={m.mediaId} className="session-row__other-item">
