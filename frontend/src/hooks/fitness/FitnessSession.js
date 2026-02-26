@@ -1,4 +1,4 @@
-import { formatSessionId, ensureSeriesCapacity, deepClone, resolveDisplayLabel } from './types.js';
+import { formatSessionId, ensureSeriesCapacity, deepClone } from './types.js';
 import { DeviceManager } from './DeviceManager.js';
 import { UserManager } from './UserManager.js';
 import { GovernanceEngine } from './GovernanceEngine.js';
@@ -1112,79 +1112,7 @@ export class FitnessSession {
   }
 
   get roster() {
-    // Delegate to ParticipantRoster but maintain backward compatibility
-    // If ParticipantRoster is configured, use it; otherwise fall back to original logic
-    if (this._participantRoster && this._participantRoster._deviceManager) {
-      return this._participantRoster.getRoster();
-    }
-    
-    // Original roster implementation (backward compatibility during migration)
-    const roster = [];
-    const heartRateDevices = this.deviceManager.getAllDevices().filter(d => d.type === 'heart_rate');
-    const zoneLookup = new Map();
-    const zoneSnapshot = typeof this.treasureBox?.getUserZoneSnapshot === 'function'
-      ? this.treasureBox.getUserZoneSnapshot()
-      : [];
-    zoneSnapshot.forEach((entry) => {
-      if (!entry || !entry.userId) return;
-      // Use userId as the key
-      zoneLookup.set(entry.userId, {
-        zoneId: entry.zoneId ? String(entry.zoneId).toLowerCase() : null,
-        color: entry.color || null
-      });
-    });
-
-    heartRateDevices.forEach((device) => {
-      if (!device || device.id == null) return;
-      const deviceId = String(device.id);
-      const heartRate = Number.isFinite(device.heartRate) ? Math.round(device.heartRate) : null;
-      const guestEntry = this.userManager?.assignmentLedger?.get?.(deviceId) || null;
-      const ledgerName = guestEntry?.occupantName || guestEntry?.metadata?.name || null;
-      const mappedUser = this.userManager.resolveUserForDevice(deviceId);
-      const participantName = ledgerName || mappedUser?.name;
-      if (!participantName) return;
-
-      // Use user ID for zone lookup
-      const userId = mappedUser?.id || guestEntry?.occupantId || guestEntry?.metadata?.profileId;
-      const zoneInfo = zoneLookup.get(userId) || null;
-      const fallbackZoneId = mappedUser?.currentData?.zone || null;
-      const fallbackZoneColor = mappedUser?.currentData?.color || null;
-
-      let resolvedHeartRate = heartRate;
-      if (mappedUser?.currentData && Number.isFinite(mappedUser.currentData.heartRate)) {
-        const candidateHr = Math.round(mappedUser.currentData.heartRate);
-        if (candidateHr > 0) {
-          resolvedHeartRate = candidateHr;
-        }
-      }
-
-      const isGuest = (guestEntry?.occupantType || 'guest') === 'guest';
-      const baseUserName = isGuest
-        ? (guestEntry?.metadata?.baseUserName || guestEntry?.metadata?.base_user_name || null)
-        : participantName;
-      const displayLabel = resolveDisplayLabel({
-        name: participantName,
-        groupLabel: isGuest ? null : mappedUser?.groupLabel,
-        preferGroupLabel: !isGuest
-      });
-
-      roster.push({
-        name: participantName,
-        displayLabel,
-        groupLabel: isGuest ? null : mappedUser?.groupLabel || null,
-        profileId: mappedUser?.id || userId || deviceId,
-        baseUserName,
-        isGuest,
-        hrDeviceId: deviceId,
-        heartRate: resolvedHeartRate,
-        zoneId: zoneInfo?.zoneId || fallbackZoneId || null,
-        zoneColor: zoneInfo?.color || fallbackZoneColor || null,
-        avatarUrl: isGuest ? null : mappedUser?.avatarUrl || null,
-        isActive: true // Legacy fallback: assume active if in heartRateDevices
-      });
-    });
-
-    return roster;
+    return this._participantRoster?.getRoster() ?? [];
   }
 
   /**
