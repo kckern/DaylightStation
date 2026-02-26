@@ -250,6 +250,69 @@ export class GovernanceEngine {
   }
 
   /**
+   * Check if a challenge zone is achievable given current participant HR.
+   * Used to prevent starting structurally impossible challenges.
+   * @param {string} targetZone - Zone the challenge requires
+   * @param {string|number} rule - 'all', 'majority', 'any', or a number
+   * @param {string[]} activeParticipants - Participant IDs
+   * @returns {{feasible: boolean, reason?: string, suggestedZone?: string}}
+   */
+  _checkChallengeFeasibility(targetZone, rule, activeParticipants) {
+    if (!targetZone) return { feasible: true };
+    // No participants = challenge is meaningless (don't silently pass through)
+    if (!activeParticipants?.length) {
+      return { feasible: false, reason: 'No active participants to evaluate' };
+    }
+
+    const FEASIBILITY_MARGIN_BPM = 20;
+    if (!this.session) return { feasible: true };
+
+    let achievableCount = 0;
+    let unresolvedCount = 0;
+    for (const pid of activeParticipants) {
+      // Use FitnessSession's canonical resolution interface (not direct ZoneProfileStore)
+      const profile = this.session.getParticipantProfile?.(pid)
+        ?? this.session.zoneProfileStore?.getProfile(pid)
+        ?? null;
+      if (!profile) {
+        // Unresolved participant = NOT achievable (don't assume they can reach the zone)
+        unresolvedCount++;
+        continue;
+      }
+      const hr = profile.heartRate ?? 0;
+      // Find the min threshold for the target zone from the profile's zone config
+      const targetZoneConfig = (profile.zoneConfig || []).find(
+        z => normalizeZoneId(z.id || z.name) === normalizeZoneId(targetZone)
+      );
+      const targetMin = targetZoneConfig?.min ?? null;
+      if (targetMin == null) continue; // No zone config for this zone = can't determine, skip
+      if ((targetMin - hr) <= FEASIBILITY_MARGIN_BPM) achievableCount++;
+    }
+
+    if (unresolvedCount > 0) {
+      getLogger().warn('governance.feasibility.unresolved_participants', {
+        targetZone, unresolvedCount, total: activeParticipants.length
+      });
+    }
+
+    const requiredCount = this._normalizeRequiredCount(rule, activeParticipants.length, activeParticipants);
+    if (achievableCount < requiredCount) {
+      // Try downgrading: hot → warm → active
+      const zoneDowngrades = ['fire', 'hot', 'warm', 'active'];
+      const targetIdx = zoneDowngrades.indexOf(normalizeZoneId(targetZone));
+      if (targetIdx >= 0 && targetIdx < zoneDowngrades.length - 1) {
+        const downgrade = zoneDowngrades[targetIdx + 1];
+        const downResult = this._checkChallengeFeasibility(downgrade, rule, activeParticipants);
+        if (downResult.feasible) {
+          return { feasible: false, suggestedZone: downgrade, reason: `${targetZone} not achievable, downgraded to ${downgrade}` };
+        }
+      }
+      return { feasible: false, reason: `Only ${achievableCount}/${requiredCount} within ${FEASIBILITY_MARGIN_BPM} BPM of ${targetZone}` };
+    }
+    return { feasible: true };
+  }
+
+  /**
    * Update global window state for cross-component logging correlation
    * Uses getters for warningDuration/lockDuration so they're calculated fresh when accessed
    */
@@ -1289,11 +1352,14 @@ export class GovernanceEngine {
       });
     }
 
-    // Populate userZoneMap from ZoneProfileStore FIRST
+    // Populate userZoneMap using canonical resolution (FitnessSession.getParticipantProfile)
     // (Must happen before ghost filter so participants have zone data)
-    if (this.session?.zoneProfileStore) {
+    // Uses the session's unified resolution chain: ZoneProfileStore → ParticipantRoster → legacy roster
+    if (this.session) {
       activeParticipants.forEach((participantId) => {
-        const profile = this.session.zoneProfileStore.getProfile(participantId);
+        const profile = this.session.getParticipantProfile?.(participantId)
+          ?? this.session.zoneProfileStore?.getProfile(participantId)
+          ?? null;
         if (profile?.currentZoneId) {
           userZoneMap[participantId] = profile.currentZoneId.toLowerCase();
         } else if (participantId) {
@@ -1901,6 +1967,28 @@ export class GovernanceEngine {
         return false;
       }
 
+      // Feasibility check: don't start challenges participants can't reach
+      if (!forced) {
+        const feasibility = this._checkChallengeFeasibility(
+          preview.zone, preview.rule, activeParticipants
+        );
+        if (!feasibility.feasible) {
+          if (feasibility.suggestedZone) {
+            getLogger().info('governance.challenge.zone_downgraded', {
+              original: preview.zone, downgraded: feasibility.suggestedZone,
+              reason: feasibility.reason
+            });
+            preview.zone = feasibility.suggestedZone;
+          } else {
+            getLogger().info('governance.challenge.skipped_infeasible', { reason: feasibility.reason });
+            const nextDelay = this._pickIntervalMs?.(challengeConfig.intervalRangeSeconds) || 60000;
+            queueNextChallenge(nextDelay);
+            this._schedulePulse(50);
+            return false;
+          }
+        }
+      }
+
       const timeLimitSeconds = Number.isFinite(preview.timeLimitSeconds) && preview.timeLimitSeconds > 0
         ? Math.round(preview.timeLimitSeconds)
         : 60;
@@ -2198,7 +2286,9 @@ export class GovernanceEngine {
     }
 
     if (shouldForceStart) {
-      const started = startChallenge({ previewOverride: forcePreviewPayload, forced: true });
+      // Only bypass feasibility if explicitly requested via payload.forced
+      const isForced = forceStartRequest?.payload?.forced === true;
+      const started = startChallenge({ previewOverride: forcePreviewPayload, forced: isForced });
       if (!started && !canTriggerChallenge) {
         this._schedulePulse(1000);
       }

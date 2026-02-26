@@ -85,6 +85,7 @@ export function usePlayheadStallDetection({
   // Track playhead position for stall/regression detection
   const lastPlayheadPositionRef = useRef(null);
   const stallStartTimeRef = useRef(null);
+  const stallStartPlayheadRef = useRef(null); // Playhead position when stall tracking began
   const recoveryAttemptsRef = useRef(0);
   const lastCheckTimeRef = useRef(Date.now());
   const checkIntervalRef = useRef(null);
@@ -334,10 +335,11 @@ export function usePlayheadStallDetection({
       }
       
       stallStartTimeRef.current = null;
+      stallStartPlayheadRef.current = null;
       hasLoggedCurrentStallRef.current = false;
       recoveryAttemptsRef.current = 0;
       lastPlayheadPositionRef.current = currentTime;
-      
+
       setStallInfo({
         isStalled: false,
         stallDurationMs: 0,
@@ -351,6 +353,7 @@ export function usePlayheadStallDetection({
     // No progress detected - track stall duration
     if (stallStartTimeRef.current === null) {
       stallStartTimeRef.current = now;
+      stallStartPlayheadRef.current = currentTime;
     }
 
     const stallDuration = now - stallStartTimeRef.current;
@@ -366,10 +369,45 @@ export function usePlayheadStallDetection({
 
     // Check if we've hit the stall threshold
     if (stallDuration >= STALL_THRESHOLD_MS) {
+      // Phantom stall validation: re-read the playhead and check if it's actually advancing
+      // Render thrashing can cause the interval-based check to see stale positions
+      const freshPosition = mediaEl.currentTime;
+      const stallStartPlayhead = stallStartPlayheadRef.current;
+      if (stallStartPlayhead != null && freshPosition != null) {
+        const wallElapsedSec = stallDuration / 1000;
+        if (wallElapsedSec > 0) {
+          const playheadAdvance = freshPosition - stallStartPlayhead;
+          const ratio = playheadAdvance / wallElapsedSec;
+          if (ratio >= 0.8) {
+            // Phantom stall — playhead is advancing fine despite interval-check misses
+            logger.debug('playback.stall_phantom', {
+              ratio: Math.round(ratio * 100) / 100,
+              playheadAdvance: Math.round(playheadAdvance * 100) / 100,
+              wallElapsedMs: stallDuration,
+              position: freshPosition
+            });
+            // Reset stall tracking — this was a false positive
+            stallStartTimeRef.current = null;
+            stallStartPlayheadRef.current = null;
+            hasLoggedCurrentStallRef.current = false;
+            recoveryAttemptsRef.current = 0;
+            lastPlayheadPositionRef.current = freshPosition;
+            setStallInfo({
+              isStalled: false,
+              stallDurationMs: 0,
+              recoveryAttempts: 0,
+              position: freshPosition,
+              lastRegression: null
+            });
+            return;
+          }
+        }
+      }
+
       // Log stall detection (only once per stall episode)
       if (!hasLoggedCurrentStallRef.current) {
         hasLoggedCurrentStallRef.current = true;
-        
+
         logEvent('playback.stall_detected', {
           position: currentTime,
           stallDurationMs: stallDuration,
@@ -410,6 +448,7 @@ export function usePlayheadStallDetection({
   const resetStallState = useCallback(() => {
     lastPlayheadPositionRef.current = null;
     stallStartTimeRef.current = null;
+    stallStartPlayheadRef.current = null;
     recoveryAttemptsRef.current = 0;
     hasLoggedCurrentStallRef.current = false;
     lastCheckTimeRef.current = Date.now();

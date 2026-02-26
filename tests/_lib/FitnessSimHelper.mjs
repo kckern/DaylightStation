@@ -146,6 +146,10 @@ export class FitnessSimHelper {
     return this.page.evaluate(() => window.__fitnessSimController.getActiveDevices());
   }
 
+  async getParticipantProfiles() {
+    return this.page.evaluate(() => window.__fitnessSimController.getParticipantProfiles());
+  }
+
   // ═══════════════════════════════════════════════════════════════
   // Convenience Assertions
   // ═══════════════════════════════════════════════════════════════

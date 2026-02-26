@@ -278,14 +278,10 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options 
   // Defensive logging: no series data found (Issue #3 remediation)
   // This indicates ID mismatch between timeline recording and chart lookup
   if (!Array.isArray(heartRate) || heartRate.length === 0) {
-    getLogger().warn('fitness_chart.no_series_data', {
+    getLogger().sampled('fitness_chart.no_series_data', {
       targetId,
-      name: rosterEntry?.name || rosterEntry?.displayLabel,
-      hrDeviceId: rosterEntry?.hrDeviceId,
-      coinsRaw: coinsRaw?.length ?? 0,
-      beatsRaw: beatsRaw?.length ?? 0,
-      heartRateLen: heartRate?.length ?? 0
-    });
+      name: rosterEntry?.name || rosterEntry?.displayLabel
+    }, { maxPerMinute: 5, aggregate: true });
     return { beats: [], zones: [], active: [] };
   }
 
