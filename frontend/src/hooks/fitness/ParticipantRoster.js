@@ -190,6 +190,32 @@ export class ParticipantRoster {
   }
 
   /**
+   * Canonical participant state for governance and other consumers.
+   * Returns active participant IDs and their zone map in a single call.
+   * Consumers should use this instead of reading getRoster() and re-extracting.
+   *
+   * @returns {{ participants: string[], zoneMap: Object<string, string>, totalCount: number }}
+   */
+  getActiveParticipantState() {
+    const roster = this.getRoster();
+    const participants = [];
+    const zoneMap = {};
+
+    for (const entry of roster) {
+      if (!entry.isActive) continue;
+      const id = entry.id || entry.profileId;
+      if (!id) continue;
+      participants.push(id);
+      const zoneId = entry.zoneId;
+      if (zoneId) {
+        zoneMap[id] = typeof zoneId === 'string' ? zoneId.toLowerCase() : String(zoneId).toLowerCase();
+      }
+    }
+
+    return { participants, zoneMap, totalCount: participants.length };
+  }
+
+  /**
    * Get historical participant IDs (all who have been in session)
    * @returns {string[]}
    */
