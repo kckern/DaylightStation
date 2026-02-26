@@ -1342,9 +1342,9 @@ test.describe('Fitness Happy Path', () => {
 
     state = await sim.getGovernanceState();
     console.log(`After activation + warmup: phase=${state.phase}`);
-    // Should be unlocked (all participants in active+ zone)
-    expect(['unlocked', 'pending'].includes(state.phase),
-      `Expected unlocked or pending, got: ${state.phase}`).toBe(true);
+    // Should be unlocked (real engine) or main (sim controller phase after warmup)
+    expect(['unlocked', 'pending', 'main'].includes(state.phase),
+      `Expected unlocked/pending/main, got: ${state.phase}`).toBe(true);
 
     // Drop all devices to cool — should trigger warning → locked
     for (const d of devices) {

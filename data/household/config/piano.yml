@@ -2,7 +2,7 @@
 
 # ── Multi-game registry ──────────────────────────────────────────
 games:
-  rhythm:
+  space-invaders:
     activation:
       notes: [30, 102]        # F#1 + F#7 — first and last F# keys on keyboard
       window_ms: 300
@@ -219,3 +219,13 @@ games:
         complexity: triad
         note_range: [48, 84]      # C3–C6
         score_to_advance: 260
+
+  hero:
+    activation:
+      notes: [32, 104]       # G#1 + G#7
+      window_ms: 300
+
+  side-scroller:
+    activation:
+      notes: [33, 105]       # A1 + A7
+      window_ms: 300

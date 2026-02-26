@@ -1,0 +1,27 @@
+.side-scroller-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: #1a1a2e;
+
+  &__content {
+    text-align: center;
+  }
+
+  &__title {
+    font-size: 3rem;
+    font-weight: 900;
+    color: #ffd700;
+    text-shadow: 0 0 30px rgba(255, 215, 0, 0.5);
+    margin: 0 0 1rem 0;
+  }
+
+  &__subtitle {
+    font-size: 1.2rem;
+    color: rgba(255, 255, 255, 0.5);
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+  }
+}
