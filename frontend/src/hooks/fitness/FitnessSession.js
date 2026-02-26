@@ -2449,7 +2449,8 @@ export class FitnessSession {
       return { ...zoneProfile, resolved: true };
     }
 
-    // Fallback 1: ParticipantRoster (if configured with DeviceManager)
+    // Fallback: ParticipantRoster (works whether or not roster is configured —
+    // findParticipant returns null when unconfigured)
     const rosterEntry = this._participantRoster?.findParticipant(identifier) ?? null;
     if (rosterEntry) {
       this._log('participant_profile_roster_fallback', { identifier, hasHr: rosterEntry.heartRate != null });
@@ -2459,23 +2460,6 @@ export class FitnessSession {
         zoneConfig: this.zoneProfileStore?.getBaseZoneConfig() || [],
         resolved: true,
         _source: 'roster'
-      };
-    }
-
-    // Fallback 2: Legacy roster (uses DeviceManager + UserManager directly,
-    // works even when ParticipantRoster._deviceManager is not yet configured)
-    const legacyRoster = this.roster;
-    const legacyEntry = legacyRoster?.find(e =>
-      e.profileId === identifier || e.id === identifier ||
-      e.hrDeviceId === identifier || e.name === identifier
-    );
-    if (legacyEntry) {
-      return {
-        heartRate: legacyEntry.heartRate,
-        currentZoneId: legacyEntry.zoneId || null,
-        zoneConfig: this.zoneProfileStore?.getBaseZoneConfig() || [],
-        resolved: true,
-        _source: 'legacy_roster'
       };
     }
 
