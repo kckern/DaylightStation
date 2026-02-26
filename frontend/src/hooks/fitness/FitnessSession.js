@@ -1096,6 +1096,15 @@ export class FitnessSession {
   }
 
   /**
+   * Canonical participant state for governance consumers.
+   * Delegates to ParticipantRoster.getActiveParticipantState().
+   */
+  getActiveParticipantState() {
+    return this._participantRoster?.getActiveParticipantState()
+      ?? { participants: [], zoneMap: {}, totalCount: 0 };
+  }
+
+  /**
    * Get inactive participants (uses ParticipantRoster)
    * @returns {import('./ParticipantRoster.js').RosterEntry[]}
    */
