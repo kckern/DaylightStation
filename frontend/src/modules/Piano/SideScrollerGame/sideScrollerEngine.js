@@ -79,9 +79,9 @@ export function spawnObstacle(world, type) {
     height = 0.10;
     y = GROUND_Y - height;
   } else {
-    // high obstacle floats at head height
+    // high obstacle just above standing head — must duck to clear
     height = 0.05;
-    y = GROUND_Y - PLAYER_HEIGHT - 0.02;
+    y = GROUND_Y - PLAYER_HEIGHT - 0.03;
   }
 
   const obstacle = {
