@@ -855,13 +855,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   }, [postEpisodeStatus, setQueue, currentItem?.grandparentId]);
 
   const handleClose = () => {
-    // Log media_end before any cleanup
-    if (currentMediaIdentity && fitnessSessionInstance && typeof fitnessSessionInstance.logEvent === 'function') {
-      fitnessSessionInstance.logEvent('media_end', {
-        mediaId: currentMediaIdentity,
-        source: 'video_player',
-      });
-    }
+    // Note: media_end is logged by the useEffect cleanup when currentMediaIdentity changes to null
+    // (triggered by setCurrentItem(null) in executeClose). No explicit media_end here to avoid duplicates.
 
     // 4A: Guard - if voice memo overlay is open, pause video but don't unmount
     if (voiceMemoOverlayState?.open) {
