@@ -28,8 +28,8 @@ import {
 describe('constants', () => {
   it('exports expected constant values', () => {
     expect(TOTAL_HEALTH).toBe(28);
-    expect(GROUND_Y).toBe(0.75);
-    expect(PLAYER_X).toBe(0.15);
+    expect(GROUND_Y).toBe(0.68);
+    expect(PLAYER_X).toBe(0.25);
     expect(PLAYER_HEIGHT).toBe(0.18);
     expect(PLAYER_DUCK_HEIGHT).toBe(0.09);
     expect(PLAYER_WIDTH).toBe(0.04);
@@ -170,12 +170,12 @@ describe('tickWorld', () => {
     let world2 = {
       ...createInitialWorld(),
       obstacles: [
-        { type: OBSTACLE_LOW, x: 0.16, y: 0.65, width: 0.04, height: 0.10, hit: false, dodged: false },
+        { type: OBSTACLE_LOW, x: 0.26, y: 0.65, width: 0.04, height: 0.10, hit: false, dodged: false },
       ],
     };
-    // right edge = 0.16 + 0.04 = 0.20 > PLAYER_X(0.15) before tick
-    // After tick: shift = 1 * 0.08 * 1 = 0.08, newX = 0.16 - 0.08 = 0.08
-    // right edge = 0.08 + 0.04 = 0.12 < PLAYER_X(0.15)
+    // right edge = 0.26 + 0.04 = 0.30 > PLAYER_X(0.25) before tick
+    // After tick: shift = 1 * 0.08 * 1 = 0.08, newX = 0.26 - 0.08 = 0.18
+    // right edge = 0.18 + 0.04 = 0.22 < PLAYER_X(0.25)
     const ticked2 = tickWorld(world2, 1, 1);
     expect(ticked2.obstacles[0].dodged).toBe(true);
     expect(ticked2.dodgeCount).toBe(1);
@@ -207,7 +207,7 @@ describe('tickWorld', () => {
     const dt = 1;
     const scrollSpeed = 5;
     const ticked = tickWorld(world, dt, scrollSpeed);
-    expect(ticked.score).toBe(Math.round(scrollSpeed * dt * 10));
+    expect(ticked.score).toBeCloseTo(scrollSpeed * dt * 10, 5);
   });
 
   it('does NOT mutate original world', () => {
@@ -258,7 +258,7 @@ describe('updateJump', () => {
     const world = { ...createInitialWorld(), playerState: 'jumping', jumpT: 0 };
     const jumpDurationMs = 500;
     // At t=0.5 (peak), arcOffset = -4 * 0.25 * 0.5 * (0.5 - 1) = -4 * 0.25 * 0.5 * -0.5 = 0.25
-    // playerY = GROUND_Y - arcOffset = 0.75 - 0.25 = 0.50
+    // playerY = GROUND_Y - arcOffset = 0.68 - 0.25 = 0.43
     const dt = 0.25; // 250ms = half of 500ms
     const updated = updateJump(world, dt, jumpDurationMs);
     expect(updated.jumpT).toBeCloseTo(0.5, 5);
@@ -474,9 +474,9 @@ describe('checkCollisions', () => {
       ],
     };
     const hb = getPlayerHitbox(world);
-    // Ducking hitbox top = GROUND_Y - PLAYER_DUCK_HEIGHT = 0.75 - 0.09 = 0.66
-    // High obstacle bottom = (GROUND_Y - PLAYER_HEIGHT - 0.02) + 0.05 = 0.75 - 0.18 - 0.02 + 0.05 = 0.60
-    // 0.60 < 0.66, so no overlap vertically
+    // Ducking hitbox top = GROUND_Y - PLAYER_DUCK_HEIGHT = 0.68 - 0.09 = 0.59
+    // High obstacle bottom = (GROUND_Y - PLAYER_HEIGHT - 0.02) + 0.05 = 0.68 - 0.18 - 0.02 + 0.05 = 0.53
+    // 0.53 < 0.59, so no overlap vertically
     const hits = checkCollisions(world);
     expect(hits.length).toBe(0);
   });
@@ -485,22 +485,22 @@ describe('checkCollisions', () => {
     const world = {
       ...createInitialWorld(),
       playerState: 'jumping',
-      playerY: 0.50, // jumping, feet at y=0.50, well above GROUND_Y
+      playerY: 0.30, // jumping, feet at y=0.30, well above GROUND_Y
       obstacles: [
         {
           type: OBSTACLE_LOW,
           x: PLAYER_X,
-          y: GROUND_Y - 0.10, // sits on ground = 0.65
+          y: GROUND_Y - 0.10, // sits on ground = 0.58
           width: 0.05,
-          height: 0.10, // bottom at GROUND_Y = 0.75
+          height: 0.10, // bottom at GROUND_Y = 0.68
           hit: false,
           dodged: false,
         },
       ],
     };
-    // Player hitbox top = 0.50 - 0.18 = 0.32, bottom = 0.50
-    // Obstacle top = 0.65, bottom = 0.75
-    // No vertical overlap (0.50 < 0.65)
+    // Player hitbox top = 0.30 - 0.18 = 0.12, bottom = 0.30
+    // Obstacle top = 0.58, bottom = 0.68
+    // No vertical overlap (0.30 < 0.45)
     const hits = checkCollisions(world);
     expect(hits.length).toBe(0);
   });
