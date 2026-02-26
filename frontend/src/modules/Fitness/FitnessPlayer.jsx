@@ -855,6 +855,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   }, [postEpisodeStatus, setQueue, currentItem?.grandparentId]);
 
   const handleClose = () => {
+    // Log media_end before any cleanup
+    if (currentMediaIdentity && fitnessSessionInstance && typeof fitnessSessionInstance.logEvent === 'function') {
+      fitnessSessionInstance.logEvent('media_end', {
+        mediaId: currentMediaIdentity,
+        source: 'video_player',
+      });
+    }
+
     // 4A: Guard - if voice memo overlay is open, pause video but don't unmount
     if (voiceMemoOverlayState?.open) {
       if (process.env.NODE_ENV === 'development') {
@@ -1039,6 +1047,15 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       governancePhase: governanceState?.status ?? null,
       labels: Array.isArray(media.labels) ? media.labels : []
     });
+    return () => {
+      // Log media_end for the media that's being replaced
+      if (currentMediaIdentity && session) {
+        session.logEvent('media_end', {
+          mediaId: currentMediaIdentity,
+          source: 'video_player',
+        });
+      }
+    };
   }, [fitnessSessionInstance, currentMediaIdentity, enhancedCurrentItem, currentItem, autoplayEnabled, governanceState?.videoLocked, queueSize]);
 
   const resilienceMediaIdentity = useMemo(
