@@ -49,22 +49,6 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
     });
   }
 
-  // Roster fallback: when governance is pending/locked with no missingUsers but the roster
-  // has participants (displayMap is roster-first), show all roster participants as needing
-  // to meet the first unsatisfied requirement. This prevents "Waiting for participant data..."
-  // during startup when GovernanceEngine hasn't resolved zone data yet.
-  if (userTargets.size === 0 && (status === 'pending' || status === 'locked') && displayMap && displayMap.size > 0) {
-    const firstTarget = (requirements || []).find(r => !r.satisfied);
-    const fallbackTargetZoneId = firstTarget?.zone || null;
-    const seen = new Set();
-    for (const [key, entry] of displayMap) {
-      const entryId = entry.id || key;
-      if (seen.has(entryId)) continue;
-      seen.add(entryId);
-      userTargets.set(key, { userId: entryId, targetZoneId: fallbackTargetZoneId });
-    }
-  }
-
   // Resolve each user against the display map
   const rows = [];
   for (const [key, { userId, targetZoneId }] of userTargets) {
