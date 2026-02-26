@@ -40,41 +40,29 @@ function generateScrollerTargets(noteRange, complexity, whiteKeysOnly) {
   const bassNotes = available.filter(n => n < 60);
 
   if (bassNotes.length >= count && trebleNotes.length >= count) {
-    // Enough notes in both clefs — assign by clef
+    // Enough notes in both clefs — assign by clef (already shuffled)
     return {
       jump: trebleNotes.slice(0, count),
       duck: bassNotes.slice(0, count),
     };
   }
 
-  // All in one clef — pick well-separated notes for visual distinction
+  // All in one clef — pick from shuffled pool, ensuring minimum separation
   const totalNeeded = count * 2;
   if (available.length < totalNeeded) count = 1;
 
-  // Sort by pitch, then pick from opposite ends for maximum separation
-  const sorted = [...available].sort((a, b) => a - b);
-  const jumpPitches = [];
-  const duckPitches = [];
+  // Pick duck notes first (from shuffled pool), then find well-separated jump notes
+  const duckPitches = available.slice(0, count);
+  const duckSet = new Set(duckPitches);
 
-  // Take higher notes for jump (top staff), lower notes for duck (bottom staff)
-  for (let i = 0; i < count; i++) {
-    duckPitches.push(sorted[i % sorted.length]);
-    jumpPitches.push(sorted[(sorted.length - 1 - i) % sorted.length]);
-  }
-
-  // Verify minimum separation; if too close, re-shuffle and retry from opposite ends
-  const minGap = Math.min(
-    ...jumpPitches.flatMap(j => duckPitches.map(d => Math.abs(j - d)))
+  // Filter remaining notes to those at least MIN_ACTION_SEPARATION from all duck notes
+  const separated = available.filter(n =>
+    !duckSet.has(n) && duckPitches.every(d => Math.abs(n - d) >= MIN_ACTION_SEPARATION)
   );
-  if (minGap < MIN_ACTION_SEPARATION && sorted.length > totalNeeded) {
-    // Pick from 1st and 3rd quartile for better spread
-    const q1 = Math.floor(sorted.length * 0.25);
-    const q3 = Math.floor(sorted.length * 0.75);
-    for (let i = 0; i < count; i++) {
-      duckPitches[i] = sorted[(q1 + i) % sorted.length];
-      jumpPitches[i] = sorted[(q3 + i) % sorted.length];
-    }
-  }
+
+  const jumpPitches = separated.length >= count
+    ? separated.slice(0, count)
+    : available.filter(n => !duckSet.has(n)).slice(0, count);
 
   return { jump: jumpPitches, duck: duckPitches };
 }
