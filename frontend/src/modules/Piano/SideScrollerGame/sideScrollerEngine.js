@@ -32,8 +32,8 @@
 // ─── Constants ──────────────────────────────────────────────────
 
 export const TOTAL_HEALTH = 28;
-export const GROUND_Y = 0.75;
-export const PLAYER_X = 0.15;
+export const GROUND_Y = 0.68;
+export const PLAYER_X = 0.25;
 export const PLAYER_HEIGHT = 0.18;
 export const PLAYER_DUCK_HEIGHT = 0.09;
 export const PLAYER_WIDTH = 0.04;
@@ -147,7 +147,7 @@ export function tickWorld(world, dt, scrollSpeed) {
     ...world,
     obstacles,
     worldPos: world.worldPos + shift,
-    score: world.score + Math.round(scrollSpeed * dt * 10),
+    score: world.score + scrollSpeed * dt * 10,
     dodgeCount,
   };
 }

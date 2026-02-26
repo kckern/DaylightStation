@@ -69,13 +69,15 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
   useEffect(() => { levelRef.current = level; }, [level]);
 
   const levels = gameConfig?.levels ?? [];
-  const config = {
+
+  // ─── Memoize config to prevent gameLoop recreation every render ─
+  const config = useMemo(() => ({
     health: gameConfig?.health ?? TOTAL_HEALTH,
     damagePerHit: gameConfig?.damage_per_hit ?? 2,
     healPerDodge: gameConfig?.heal_per_dodge ?? 1,
     invincibilityMs: gameConfig?.invincibility_ms ?? 1000,
     jumpDurationMs: gameConfig?.jump_duration_ms ?? 500,
-  };
+  }), [gameConfig]);
 
   // Timer refs
   const rafRef = useRef(null);
@@ -117,16 +119,21 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     const scrollSpeed = lvlConfig.scroll_speed ?? 3;
     const obstacleIntervalMs = lvlConfig.obstacle_interval_ms ?? 2000;
 
+    // Spawn decision — computed OUTSIDE state updater to avoid side-effect issues
+    const elapsed = timestamp - lastSpawnRef.current;
+    let spawnType = null;
+    if (elapsed >= obstacleIntervalMs || lastSpawnRef.current === 0) {
+      spawnType = Math.random() < 0.5 ? OBSTACLE_LOW : OBSTACLE_HIGH;
+      lastSpawnRef.current = timestamp;
+    }
+
     setWorld(prev => {
       let next = tickWorld(prev, dt, scrollSpeed);
       next = updateJump(next, dt, config.jumpDurationMs);
 
-      // Spawn obstacles at intervals
-      const elapsed = timestamp - lastSpawnRef.current;
-      if (elapsed >= obstacleIntervalMs || lastSpawnRef.current === 0) {
-        const type = Math.random() < 0.5 ? OBSTACLE_LOW : OBSTACLE_HIGH;
-        next = spawnObstacle(next, type);
-        lastSpawnRef.current = timestamp;
+      // Spawn obstacle (decision was made outside updater)
+      if (spawnType) {
+        next = spawnObstacle(next, spawnType);
       }
 
       // Check collisions
@@ -134,7 +141,6 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
       if (collisions.length > 0) {
         const hitIndices = collisions.map(c => next.obstacles.indexOf(c));
         next = applyDamage(next, config.damagePerHit, config.invincibilityMs, timestamp, hitIndices);
-        logger.debug('side-scroller.collision', { health: next.health });
       }
 
       // Check for newly dodged obstacles → heal
@@ -172,12 +178,9 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     rafRef.current = requestAnimationFrame(gameLoop);
   }, [levels, config, logger, regenerateTargets]);
 
-  // Start/stop game loop based on phase
+  // Start/stop game loop based on phase — DO NOT reset refs here
   useEffect(() => {
     if (phase === 'PLAYING') {
-      lastFrameRef.current = 0;
-      lastSpawnRef.current = 0;
-      prevDodgeCountRef.current = 0;
       rafRef.current = requestAnimationFrame(gameLoop);
     } else {
       if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
@@ -228,12 +231,17 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     if (phaseRef.current !== 'IDLE') return;
     clearAllTimers();
 
+    // Reset all timing refs here (NOT in the rAF effect)
+    lastFrameRef.current = 0;
+    lastSpawnRef.current = 0;
+    prevDodgeCountRef.current = 0;
+    lastRegenDodgeRef.current = 0;
+
     setWorld(createInitialWorld(config));
     setLevel(0);
     setPhase('STARTING');
     setCountdown(3);
     setLevelName(levels[0]?.name ?? '');
-    lastRegenDodgeRef.current = 0;
 
     logger.info('side-scroller.game-started', {});
 
