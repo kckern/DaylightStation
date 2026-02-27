@@ -95,6 +95,11 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, o
 
   const handleExitFullscreen = useCallback(() => setIsFullscreen(false), []);
 
+  const handleExpandFullscreen = useCallback(() => {
+    logger.info('player.expand-fullscreen', { format: currentItem?.format });
+    setIsFullscreen(true);
+  }, [currentItem?.format, logger]);
+
   const progress = playbackState.duration > 0
     ? (playbackState.currentTime / playbackState.duration) * 100
     : 0;
@@ -168,6 +173,16 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, o
           <div className="media-track-title">{currentItem.title || currentItem.contentId}</div>
           {currentItem.source && (
             <div className="media-track-source">{currentItem.source}</div>
+          )}
+          {/* Expand to fullscreen for singalong/readalong (8.1.5, 8.1.7) */}
+          {!isFullscreen && (currentItem.format === 'singalong' || currentItem.format === 'readalong') && (
+            <button
+              className="media-expand-btn"
+              onClick={handleExpandFullscreen}
+              aria-label="Expand to fullscreen"
+            >
+              &#x26F6;
+            </button>
           )}
         </div>
       </div>
