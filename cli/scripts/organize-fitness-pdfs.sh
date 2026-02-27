@@ -285,6 +285,12 @@ while IFS= read -r -d '' filepath; do
   # Get path relative to BASE
   relpath="${filepath#"${BASE}/"}"
 
+  # Skip _Inbox (not a program — holds unsorted/bulk content)
+  if [[ "$relpath" == _Inbox/* ]]; then
+    vlog "SKIP (_Inbox): $relpath"
+    continue
+  fi
+
   # Determine target scope (program/docs or program/season/docs)
   target_dir=$(get_target_scope "$relpath")
 
