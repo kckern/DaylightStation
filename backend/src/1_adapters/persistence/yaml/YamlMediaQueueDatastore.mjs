@@ -36,6 +36,9 @@ export class YamlMediaQueueDatastore extends IMediaQueueDatastore {
     return path.join(mediaDir, 'queue');
   }
 
+  // Note: loadYamlSafe and saveYaml are synchronous (by codebase convention for YAML datastores).
+  // The async declaration satisfies the IMediaQueueDatastore port interface.
+  // This is intentional — all YAML datastores in this project use synchronous file I/O.
   /**
    * Load a media queue for a household.
    * @param {string} householdId

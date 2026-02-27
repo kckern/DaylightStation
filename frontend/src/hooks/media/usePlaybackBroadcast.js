@@ -91,7 +91,7 @@ export function usePlaybackBroadcast(playerRef, currentItem) {
     const interval = setInterval(broadcast, BROADCAST_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [currentItem?.contentId, clientId, deviceId, displayName, playerRef, currentItem]);
+  }, [currentItem, clientId, deviceId, displayName, playerRef]);
 
   return null;
 }

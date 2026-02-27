@@ -9,24 +9,24 @@ const QueueDrawer = ({ open, onClose }) => {
   const logger = useMemo(() => getLogger().child({ component: 'QueueDrawer' }), []);
   const [draggedId, setDraggedId] = useState(null);
 
-  const handlePlay = (queueId) => {
+  const handlePlay = useCallback((queueId) => {
     const idx = queue.items.findIndex(i => i.queueId === queueId);
     if (idx >= 0) queue.setPosition(idx);
-  };
+  }, [queue]);
 
-  const handleRemove = (queueId) => {
+  const handleRemove = useCallback((queueId) => {
     queue.removeItem(queueId);
-  };
+  }, [queue]);
 
-  const handleClear = () => {
+  const handleClear = useCallback(() => {
     queue.clear();
-  };
+  }, [queue]);
 
-  const cycleRepeat = () => {
+  const cycleRepeat = useCallback(() => {
     const modes = ['off', 'one', 'all'];
     const next = modes[(modes.indexOf(queue.repeat) + 1) % modes.length];
     queue.setRepeat(next);
-  };
+  }, [queue]);
 
   const handleDragStart = useCallback((queueId) => {
     setDraggedId(queueId);

@@ -4,7 +4,7 @@ const STORAGE_KEY = 'daylight_media_client_id';
 const NAME_KEY = 'daylight_media_client_name';
 
 function generateHexId() {
-  return Math.random().toString(16).slice(2, 10);
+  return crypto.getRandomValues(new Uint32Array(1))[0].toString(16).padStart(8, '0');
 }
 
 function parseUserAgent(ua) {
