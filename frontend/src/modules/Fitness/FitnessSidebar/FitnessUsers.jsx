@@ -910,10 +910,11 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                   hasGuestAssignment: !!guestAssignment
                 });
               }
-              const zoneIdForGrouping = isHeartRate ? getDeviceZoneId(device) : null;
+              // Prefer raw zone (real-time, matches displayed HR) over committed (hysteresis-delayed)
+              const zoneIdForGrouping = isHeartRate ? (participantEntry?.rawZoneId || getDeviceZoneId(device)) : null;
               const zoneClass = zoneIdForGrouping ? `zone-${zoneIdForGrouping}` : 'no-zone';
               const zoneBadgeColor = zoneIdForGrouping
-                ? (userVitalsEntry?.zoneColor || participantEntry?.zoneColor || progressInfo?.zoneColor || zoneColorMap[zoneIdForGrouping] || null)
+                ? (userVitalsEntry?.zoneColor || participantEntry?.rawZoneColor || participantEntry?.zoneColor || progressInfo?.zoneColor || zoneColorMap[zoneIdForGrouping] || null)
                 : null;
               const readableZone = zoneIdForGrouping
                 ? zoneIdForGrouping.charAt(0).toUpperCase() + zoneIdForGrouping.slice(1)

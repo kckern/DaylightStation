@@ -1,13 +1,13 @@
 import { useMemo } from 'react';
-import { getChildLogger } from '../../../lib/logging/singleton.js';
-import './RhythmOverlay.scss';
+import { getChildLogger } from '../../../../lib/logging/singleton.js';
+import './SpaceInvadersOverlay.scss';
 
 /**
  * Game mode overlay — countdown, banners, victory screen.
- * Score HUD is in the PianoVisualizer header, not here.
+ * Score HUD is in the SpaceInvadersGame header, not here.
  */
-export function RhythmOverlay({ gameState, countdown, score, currentLevel, levelProgress }) {
-  const logger = useMemo(() => getChildLogger({ component: 'piano-game-overlay' }), []);
+export function SpaceInvadersOverlay({ gameState, countdown, score, currentLevel, levelProgress }) {
+  const logger = useMemo(() => getChildLogger({ component: 'space-invaders-overlay' }), []);
 
   // Countdown: 3, 2, 1, GO
   if (gameState === 'STARTING') {
@@ -123,4 +123,4 @@ export function RhythmOverlay({ gameState, countdown, score, currentLevel, level
   return null;
 }
 
-export default RhythmOverlay;
+export default SpaceInvadersOverlay;

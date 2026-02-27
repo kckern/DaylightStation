@@ -190,6 +190,32 @@ export class ParticipantRoster {
   }
 
   /**
+   * Canonical participant state for governance and other consumers.
+   * Returns active participant IDs and their zone map in a single call.
+   * Consumers should use this instead of reading getRoster() and re-extracting.
+   *
+   * @returns {{ participants: string[], zoneMap: Object<string, string>, totalCount: number }}
+   */
+  getActiveParticipantState() {
+    const roster = this.getRoster();
+    const participants = [];
+    const zoneMap = {};
+
+    for (const entry of roster) {
+      if (!entry.isActive) continue;
+      const id = entry.id || entry.profileId;
+      if (!id) continue;
+      participants.push(id);
+      const zoneId = entry.zoneId;
+      if (zoneId) {
+        zoneMap[id] = typeof zoneId === 'string' ? zoneId.toLowerCase() : String(zoneId).toLowerCase();
+      }
+    }
+
+    return { participants, zoneMap, totalCount: participants.length };
+  }
+
+  /**
    * Get historical participant IDs (all who have been in session)
    * @returns {string[]}
    */
@@ -298,13 +324,20 @@ export class ParticipantRoster {
     }
 
     // Override with ZoneProfileStore committed zones (hysteresis-aware)
+    // Preserve raw zone for real-time UI (cards, LEDs) while committed zone
+    // is used for governance decisions and historical persistence.
     if (this._zoneProfileStore && typeof this._zoneProfileStore.getZoneState === 'function') {
       for (const [trackingId] of zoneLookup) {
         const committed = this._zoneProfileStore.getZoneState(trackingId);
         if (committed?.zoneId) {
+          const baseline = zoneLookup.get(trackingId);
+          const rawZoneId = baseline?.zoneId || null;
+          const rawZoneColor = baseline?.color || null;
           zoneLookup.set(trackingId, {
             zoneId: String(committed.zoneId).toLowerCase(),
-            color: committed.zoneColor || zoneLookup.get(trackingId)?.color || null
+            color: committed.zoneColor || rawZoneColor || null,
+            rawZoneId,
+            rawZoneColor
           });
         }
       }
@@ -420,6 +453,8 @@ export class ParticipantRoster {
       heartRate: resolvedHeartRate,
       zoneId: zoneInfo?.zoneId || fallbackZoneId || null,
       zoneColor: zoneInfo?.color || fallbackZoneColor || null,
+      rawZoneId: zoneInfo?.rawZoneId || zoneInfo?.zoneId || fallbackZoneId || null,
+      rawZoneColor: zoneInfo?.rawZoneColor || zoneInfo?.color || fallbackZoneColor || null,
       avatarUrl: isGuest ? null : mappedUser?.avatarUrl || null,
       status,
       isActive, // SINGLE SOURCE OF TRUTH for avatar visibility

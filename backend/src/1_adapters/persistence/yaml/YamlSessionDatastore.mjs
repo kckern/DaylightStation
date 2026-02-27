@@ -252,7 +252,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
         const primaryItem = summary.media.find(m => m.primary);
         const otherItems = summary.media.filter(m => !m.primary);
         const formatMedia = (m) => ({
-          mediaId: m.mediaId,
+          contentId: m.contentId || m.mediaId,
           title: m.title,
           showTitle: m.showTitle,
           seasonTitle: m.seasonTitle,
@@ -263,6 +263,35 @@ export class YamlSessionDatastore extends ISessionDatastore {
           primary: primaryItem ? formatMedia(primaryItem) : null,
           others: otherItems.map(formatMedia),
         };
+      }
+
+      // Fallback: if no summary.media, try extracting from timeline.events
+      if (!media && data.timeline?.events?.length > 0) {
+        const mediaEvents = (data.timeline.events || []).filter(e => e.type === 'media');
+        if (mediaEvents.length > 0) {
+          const formatFromEvent = (evt) => {
+            const d = evt.data || {};
+            return {
+              contentId: d.contentId || d.mediaId,
+              title: d.title,
+              showTitle: d.grandparentTitle,
+              seasonTitle: d.parentTitle,
+              grandparentId: d.grandparentId || null,
+              parentId: d.parentId || null,
+            };
+          };
+          // Pick longest-duration as primary
+          let primaryIdx = 0;
+          for (let i = 1; i < mediaEvents.length; i++) {
+            const durI = (mediaEvents[i].data?.end || 0) - (mediaEvents[i].data?.start || 0);
+            const durP = (mediaEvents[primaryIdx].data?.end || 0) - (mediaEvents[primaryIdx].data?.start || 0);
+            if (durI > durP) primaryIdx = i;
+          }
+          media = {
+            primary: formatFromEvent(mediaEvents[primaryIdx]),
+            others: mediaEvents.filter((_, i) => i !== primaryIdx).map(formatFromEvent),
+          };
+        }
       }
 
       const totalCoins = summary?.coins?.total ?? data.treasureBox?.totalCoins ?? 0;

@@ -28,7 +28,7 @@ function buildZoneSignature(roster) {
   
   const normalized = roster
     .filter(p => p && p.isActive !== false)
-    .map(p => p.zoneId || 'unknown')
+    .map(p => p.rawZoneId || p.zoneId || 'unknown')
     .sort()
     .join(',');
   
@@ -71,7 +71,7 @@ export function useZoneLedSync({
     try {
       const payload = {
         zones: zones.map(z => ({
-          zoneId: z.zoneId || null,
+          zoneId: z.rawZoneId || z.zoneId || null,
           isActive: z.isActive !== false
         })),
         sessionEnded,

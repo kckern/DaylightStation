@@ -1,9 +1,14 @@
 import { DaylightMediaPath } from '../../lib/api.mjs';
 
 /**
- * Builds a display-ready map of participants from ZoneProfileStore + roster.
+ * Builds a display-ready map of participants from roster + ZoneProfileStore.
  * Single source of truth for "how to render a participant."
  * Exported for testability — used in FitnessContext via useMemo.
+ *
+ * The ROSTER is the ground truth for "who is participating."
+ * ZoneProfileStore profiles ENRICH roster entries with zone detail.
+ * This ensures the display map always has entries even when the
+ * ZoneProfileStore is empty (e.g., during startup discard window).
  *
  * @param {Array} profiles - From ZoneProfileStore.getProfiles()
  * @param {Array} roster - Session roster with avatar/metadata
@@ -13,44 +18,72 @@ export function buildParticipantDisplayMap(profiles, roster) {
   const map = new Map();
   const normalize = (v) => (typeof v === 'string' ? v.trim().toLowerCase() : '');
 
-  const rosterIndex = new Map();
-  (roster || []).forEach((r) => {
-    const key = normalize(r?.name || r?.id || '');
-    if (key) rosterIndex.set(key, r);
+  // Index profiles by normalized name and ID for fast lookup
+  const profileIndex = new Map();
+  (profiles || []).forEach((profile) => {
+    if (!profile?.id) return;
+    const nameKey = normalize(profile.name || profile.displayName || '');
+    const idKey = normalize(profile.id);
+    if (nameKey) profileIndex.set(nameKey, profile);
+    if (idKey) profileIndex.set(idKey, profile);
   });
 
+  const buildEntry = (id, rosterEntry, profile) => {
+    const resolvedProfileId = profile?.profileId || profile?.id || rosterEntry?.profileId || id;
+    const rawAvatar = rosterEntry?.avatarUrl
+      || (resolvedProfileId ? `/static/img/users/${resolvedProfileId}` : '/static/img/users/user');
+    const avatarSrc = DaylightMediaPath(rawAvatar);
+
+    return {
+      id: profile?.id || resolvedProfileId || id,
+      displayName: profile?.displayName || profile?.name || rosterEntry?.displayLabel || rosterEntry?.name || id,
+      avatarSrc,
+      heartRate: profile?.heartRate ?? rosterEntry?.heartRate ?? null,
+      zoneId: profile?.currentZoneId || rosterEntry?.zoneId || null,
+      zoneName: profile?.currentZoneName || null,
+      zoneColor: profile?.currentZoneColor || rosterEntry?.zoneColor || null,
+      progress: profile?.progress ?? null,
+      targetHeartRate: profile?.targetHeartRate ?? null,
+      zoneSequence: profile?.zoneSequence || [],
+      groupLabel: profile?.groupLabel || rosterEntry?.groupLabel || null,
+      source: profile ? (profile.source || 'profile') : 'roster',
+      updatedAt: profile?.updatedAt || null
+    };
+  };
+
+  const seen = new Set();
+
+  // Primary: iterate roster (ground truth for "who is participating")
+  (roster || []).forEach((r) => {
+    if (!r) return;
+    const nameKey = normalize(r.name || '');
+    const idKey = normalize(r.profileId || r.id || '');
+    const key = idKey || nameKey;
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    if (nameKey) seen.add(nameKey);
+    if (idKey) seen.add(idKey);
+
+    const profile = profileIndex.get(nameKey) || profileIndex.get(idKey) || null;
+    const entry = buildEntry(key, r, profile);
+
+    map.set(key, entry);
+    if (nameKey && nameKey !== key) map.set(nameKey, entry);
+    if (idKey && idKey !== key) map.set(idKey, entry);
+  });
+
+  // Secondary: profiles not covered by roster (edge case: profile exists but device dropped)
   (profiles || []).forEach((profile) => {
     if (!profile?.id) return;
     const nameKey = normalize(profile.name || profile.displayName || '');
     const idKey = normalize(profile.id);
     const key = nameKey || idKey;
-    const rosterEntry = rosterIndex.get(nameKey)
-      || rosterIndex.get(idKey);
-    const resolvedProfileId = profile.profileId || profile.id;
-    const rawAvatar = rosterEntry?.avatarUrl
-      || (resolvedProfileId ? `/static/img/users/${resolvedProfileId}` : '/static/img/users/user');
-    const avatarSrc = DaylightMediaPath(rawAvatar);
+    if (seen.has(key)) return;
+    seen.add(key);
 
-    const entry = {
-      id: profile.id,
-      displayName: profile.displayName || profile.name || profile.id,
-      avatarSrc,
-      heartRate: profile.heartRate ?? null,
-      zoneId: profile.currentZoneId || null,
-      zoneName: profile.currentZoneName || null,
-      zoneColor: profile.currentZoneColor || null,
-      progress: profile.progress ?? null,
-      targetHeartRate: profile.targetHeartRate ?? null,
-      zoneSequence: profile.zoneSequence || [],
-      groupLabel: profile.groupLabel || null,
-      source: profile.source || null,
-      updatedAt: profile.updatedAt || null
-    };
+    const entry = buildEntry(key, null, profile);
     map.set(key, entry);
-    // Also index by normalized ID so governance engine lookups by ID work
-    if (idKey && idKey !== key) {
-      map.set(idKey, entry);
-    }
+    if (idKey && idKey !== key) map.set(idKey, entry);
   });
 
   return map;

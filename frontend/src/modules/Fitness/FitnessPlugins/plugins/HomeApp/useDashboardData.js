@@ -127,11 +127,9 @@ async function fetchRecentSessions(limit = 10) {
   const response = await DaylightAPI(`/api/v1/fitness/sessions?since=${sinceStr}&limit=${limit * 2}`);
   const sessionSummaries = response?.sessions || [];
 
-  // Filter sessions with media and reshape for display
   const sessions = [];
   for (const s of sessionSummaries) {
     if (sessions.length >= limit) break;
-    if (!s.media?.primary) continue; // Skip sessions without primary media
 
     // Convert participants keyed object → array for component consumption
     const participants = Object.entries(s.participants || {}).map(([id, p]) => ({
@@ -142,11 +140,19 @@ async function fetchRecentSessions(limit = 10) {
       hrMax: p.hrMax,
     }));
 
-    // Flatten media.primary into s.media for backward compat, keep others available
-    const media = {
-      ...s.media.primary,
-      others: s.media.others || [],
-    };
+    // Build media object: prefer primary, fall back to first of others, or null
+    let media = null;
+    if (s.media?.primary) {
+      media = {
+        ...s.media.primary,
+        others: s.media.others || [],
+      };
+    } else if (s.media?.others?.length > 0) {
+      media = {
+        ...s.media.others[0],
+        others: s.media.others.slice(1),
+      };
+    }
 
     sessions.push({
       sessionId: s.sessionId,

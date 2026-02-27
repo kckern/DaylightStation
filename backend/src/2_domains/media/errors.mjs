@@ -1,3 +1,5 @@
+import { DomainInvariantError } from '#domains/core/errors/index.mjs';
+
 /**
  * Error thrown when a media key uses an unrecognized source prefix.
  *
@@ -25,5 +27,20 @@ export class UnresolvableMediaKeyError extends Error {
     this.name = 'UnresolvableMediaKeyError';
     this.key = key;
     this.appContext = appContext;
+  }
+}
+
+/**
+ * Error thrown when attempting to add items beyond the queue capacity.
+ *
+ * @class QueueFullError
+ * @extends DomainInvariantError
+ */
+export class QueueFullError extends DomainInvariantError {
+  constructor(currentSize, maxSize = 500) {
+    super(`Queue is full: ${currentSize}/${maxSize} items`, { code: 'QUEUE_FULL' });
+    this.name = 'QueueFullError';
+    this.currentSize = currentSize;
+    this.maxSize = maxSize;
   }
 }

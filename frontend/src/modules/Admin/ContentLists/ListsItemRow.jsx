@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, forwardRef, useCallback, useMemo } 
 import { useNavigate, useParams } from 'react-router-dom';
 import { Text, Checkbox, ActionIcon, Menu, TextInput, Combobox, useCombobox, InputBase, Loader, Group, Avatar, Badge, Box, Drawer, Stack, ScrollArea, Divider, Progress, Modal } from '@mantine/core';
 import { useDebouncedValue } from '@mantine/hooks';
+import { notifications } from '@mantine/notifications';
 import {
   IconGripVertical, IconTrash, IconCopy, IconDotsVertical, IconPlus,
   IconMusic, IconDeviceTv, IconMovie, IconDeviceTvOld, IconStack2,
@@ -13,7 +14,7 @@ import {
   IconCheck, IconArrowBarDown, IconPlayerPlayFilled, IconPlaylistAdd,
   IconLayoutList, IconAppWindow, IconDeviceDesktop, IconBookmark,
   IconArrowUp, IconArrowDown, IconArrowBarUp, IconSection,
-  IconDeviceGamepad2
+  IconDeviceGamepad2, IconArrowsShuffle, IconRocket
 } from '@tabler/icons-react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -27,6 +28,7 @@ import AdminPreviewPlayer from '../Preview/AdminPreviewPlayer.jsx';
 import Displayer from '../../Displayer/Displayer.jsx';
 import AppContainer from '../../AppContainer/AppContainer.jsx';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
+import { ACTION_OPTIONS } from './listConstants.js';
 
 // Lazy admin logger with session logging enabled
 let _adminLog;
@@ -35,20 +37,10 @@ function adminLog(component) {
   return component ? _adminLog.child({ component }) : _adminLog;
 }
 
-const ACTION_OPTIONS = [
-  { value: 'Play', label: 'Play' },
-  { value: 'Queue', label: 'Queue' },
-  { value: 'List', label: 'List' },
-  { value: 'Open', label: 'Open' },
-  { value: 'Display', label: 'Display' },
-  { value: 'Read', label: 'Read' },
-  { value: 'Launch', label: 'Launch' },
-];
-
 // Types that represent containers (can be drilled into)
 const CONTAINER_TYPES = [
   'show', 'season', 'artist', 'album', 'collection', 'playlist', 'watchlist', 'container',
-  'series', 'channel', 'conference', 'watchlist', 'query', 'menu', 'program', 'console'
+  'series', 'channel', 'conference', 'query', 'menu', 'program', 'console'
 ];
 
 /**
@@ -676,7 +668,14 @@ export async function fetchContentMetadata(value) {
     const normalizedSource = normalizeListSource(source);
 
     try {
-      const response = await fetch(`/api/v1/info/${normalizedSource}/${localId}`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      let response;
+      try {
+        response = await fetch(`/api/v1/info/${normalizedSource}/${localId}`, { signal: controller.signal });
+      } finally {
+        clearTimeout(timeoutId);
+      }
       if (response.ok) {
         const data = await response.json();
         const info = {
@@ -2021,6 +2020,8 @@ const ACTION_META = {
   Open:    { color: 'gray',   icon: IconAppWindow },
   Display: { color: 'cyan',   icon: IconDeviceDesktop },
   Read:    { color: 'orange', icon: IconBookmark },
+  Launch:  { color: 'teal',   icon: IconRocket },
+  Shuffle: { color: 'grape',  icon: IconArrowsShuffle },
 };
 
 // Action chip select
@@ -2111,14 +2112,8 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
         setItemInfo(info);
       }
 
-      // Fetch children
-      const childrenResponse = await fetch(`/api/v1/info/${source}/${localId}`);
-      if (childrenResponse.ok) {
-        const childData = await childrenResponse.json();
-        setChildren(childData.items || []);
-      } else {
-        setChildren([]);
-      }
+      // No children endpoint available — /info endpoint does not return .items
+      setChildren([]);
 
       return info;
     } catch (err) {
@@ -2485,6 +2480,29 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
   };
 
   const handleLabelSave = () => {
+    if (!labelValue?.trim()) {
+      notifications.show({
+        message: 'Label cannot be empty',
+        color: 'red',
+        autoClose: 2000,
+      });
+      setEditingLabel(false);
+      return;
+    }
+    if (labelValue.trim() && labelValue !== item.label) {
+      log.info('label.save', { index: item.index, oldLabel: item.label, newLabel: labelValue.trim() });
+      onUpdate({ label: labelValue.trim() });
+    }
+    setEditingLabel(false);
+  };
+
+  const handleLabelBlur = () => {
+    if (!labelValue?.trim()) {
+      log.debug('label.blur.revert', { index: item.index, label: item.label });
+      setLabelValue(item.label || '');
+      setEditingLabel(false);
+      return;
+    }
     if (labelValue.trim() && labelValue !== item.label) {
       log.info('label.save', { index: item.index, oldLabel: item.label, newLabel: labelValue.trim() });
       onUpdate({ label: labelValue.trim() });
@@ -2611,7 +2629,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
               value={labelValue}
               onChange={(e) => setLabelValue(e.target.value)}
               onKeyDown={handleLabelKeyDown}
-              onBlur={handleLabelSave}
+              onBlur={handleLabelBlur}
               styles={{ input: { minHeight: 22, height: 22 } }}
             />
           </div>

@@ -10,7 +10,7 @@ export const INITIAL_REPEAT_DELAY = 200; // ms before hold-to-repeat kicks in
 export const REPEAT_INTERVAL = 100;      // ms between repeated actions
 
 // Actions that should NOT repeat on hold (one-shot per key press)
-const NO_REPEAT_ACTIONS = new Set(['hardDrop', 'hold']);
+const NO_REPEAT_ACTIONS = new Set(['hardDrop', 'hold', 'jump', 'duck']);
 
 // ─── Pure Functions ─────────────────────────────────────────────
 
@@ -77,6 +77,8 @@ export function useStaffMatching(activeNotes, targets, onAction, enabled = true)
   const logger = useMemo(() => getChildLogger({ component: 'staff-matching' }), []);
   const [matchedActions, setMatchedActions] = useState(() => new Set());
   const timersRef = useRef({}); // { [action]: { delay: timeoutId, interval: intervalId } }
+  const prevTargetsRef = useRef(null);
+  const staleActionsRef = useRef(new Set()); // actions that need fresh press after target change
 
   const onActionRef = useRef(onAction);
   onActionRef.current = onAction;
@@ -93,16 +95,38 @@ export function useStaffMatching(activeNotes, targets, onAction, enabled = true)
   useEffect(() => {
     if (!enabled || !targets) {
       // Clear all timers and matched state when disabled
-      for (const action of ACTIONS) {
+      for (const action of Object.keys(timersRef.current)) {
         clearActionTimers(action);
       }
       setMatchedActions(new Set());
+      staleActionsRef.current = new Set();
+      prevTargetsRef.current = null;
       return;
     }
 
-    const nextMatched = new Set();
+    // Detect target change — mark currently-held matches as stale to require fresh press
+    if (targets !== prevTargetsRef.current) {
+      if (prevTargetsRef.current !== null) {
+        const stale = new Set();
+        for (const action of Object.keys(targets)) {
+          const pitches = targets[action];
+          if (pitches && pitches.length > 0 && isActionMatched(activeNotes, pitches)) {
+            stale.add(action);
+          }
+        }
+        staleActionsRef.current = stale;
+        // Clear all existing timers since targets changed
+        for (const action of Object.keys(timersRef.current)) {
+          clearActionTimers(action);
+        }
+      }
+      prevTargetsRef.current = targets;
+    }
 
-    for (const action of ACTIONS) {
+    const nextMatched = new Set();
+    const actions = Object.keys(targets);
+
+    for (const action of actions) {
       const pitches = targets[action];
       if (!pitches || pitches.length === 0) continue;
 
@@ -110,6 +134,11 @@ export function useStaffMatching(activeNotes, targets, onAction, enabled = true)
 
       if (matched) {
         nextMatched.add(action);
+
+        // Skip stale actions — notes were held from before target change
+        if (staleActionsRef.current.has(action)) {
+          continue;
+        }
 
         // If this action wasn't already tracked, fire immediately and start hold timers
         if (!timersRef.current[action]) {
@@ -133,10 +162,15 @@ export function useStaffMatching(activeNotes, targets, onAction, enabled = true)
             timersRef.current[action] = { delay: delayId, interval: null };
           }
         }
-      } else if (timersRef.current[action]) {
-        // Action no longer matched — stop repeat
-        logger.debug('staff.action-released', { action });
-        clearActionTimers(action);
+      } else {
+        // Notes released — clear stale flag so next press fires normally
+        staleActionsRef.current.delete(action);
+
+        if (timersRef.current[action]) {
+          // Action no longer matched — stop repeat
+          logger.debug('staff.action-released', { action });
+          clearActionTimers(action);
+        }
       }
     }
 
@@ -146,7 +180,7 @@ export function useStaffMatching(activeNotes, targets, onAction, enabled = true)
   // Cleanup all timers on unmount
   useEffect(() => {
     return () => {
-      for (const action of ACTIONS) {
+      for (const action of Object.keys(timersRef.current)) {
         const entry = timersRef.current[action];
         if (entry) {
           if (entry.delay != null) clearTimeout(entry.delay);
