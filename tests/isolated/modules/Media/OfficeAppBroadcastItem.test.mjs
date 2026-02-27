@@ -6,7 +6,7 @@ function deriveBroadcastItem(currentContent) {
   const playerTypes = new Set(['play', 'queue', 'playlist']);
   if (!currentContent || !playerTypes.has(currentContent.type)) return null;
   const props = currentContent.props || {};
-  const item = props.play || (props.queue && props.queue[0]) || null;
+  const item = props.play || (props.queue && props.queue[0]) || (props.playlist && props.playlist[0]) || null;
   if (!item) return null;
   return {
     contentId: item.contentId ?? item.plex ?? item.assetId ?? null,
@@ -46,5 +46,14 @@ describe('OfficeApp broadcastItem derivation', () => {
 
   it('returns null when play prop is missing from play type', () => {
     expect(deriveBroadcastItem({ type: 'play', props: {} })).toBeNull();
+  });
+
+  it('extracts from first item in playlist type', () => {
+    const result = deriveBroadcastItem({
+      type: 'playlist',
+      props: { playlist: [{ contentId: 'plex:789', title: 'Track', format: 'audio' }] },
+    });
+    expect(result?.contentId).toBe('plex:789');
+    expect(result?.format).toBe('audio');
   });
 });
