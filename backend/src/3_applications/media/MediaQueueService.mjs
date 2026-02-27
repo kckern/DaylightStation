@@ -13,7 +13,7 @@ export class MediaQueueService {
 
   /**
    * @param {Object} deps
-   * @param {import('./ports/IMediaQueueDatastore.mjs').IMediaQueueDatastore} deps.queueStore
+   * @param {import('#domains/media/ports/IMediaQueueDatastore.mjs').IMediaQueueDatastore} deps.queueStore
    * @param {string} deps.defaultHouseholdId
    * @param {Object} [deps.logger=console]
    */
