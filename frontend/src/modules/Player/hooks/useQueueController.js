@@ -4,6 +4,11 @@ import { DaylightAPI } from '../../../lib/api.mjs';
 import { guid } from '../lib/helpers.js';
 import { playbackLog } from '../lib/playbackLogger.js';
 
+// Module-level signature cache — survives React remounts for the same content.
+// Prevents re-fetching queue when the player remounts during resilience recovery.
+// Follows the same pattern as _recoveryTracker in useMediaResilience.js.
+const _signatureCache = new Map();
+
 /**
  * Queue controller hook for managing playlist/queue playback
  * Handles queue initialization, advancement, and shader management
@@ -26,7 +31,7 @@ export function useQueueController({ play, queue, clear, shuffle }) {
   const [originalQueue, setOriginalQueue] = useState([]);
   const [isShuffle, setIsShuffle] = useState(!!play?.shuffle || !!queue?.shuffle || !!shuffle || false);
   const [shaderUserCycled, setShaderUserCycled] = useState(false);
-  const sourceSignatureRef = useRef(null);
+  const sourceSignatureRef = useRef(_signatureCache.get(contentRef) ?? null);
 
   const cycleThroughClasses = useCallback((upOrDownInt) => {
     upOrDownInt = parseInt(upOrDownInt) || 1;
@@ -74,6 +79,7 @@ export function useQueueController({ play, queue, clear, shuffle }) {
 
     let isCancelled = false;
     sourceSignatureRef.current = nextSignature;
+    if (contentRef) _signatureCache.set(contentRef, nextSignature);
 
     async function initQueue() {
       let newQueue = [];
@@ -114,6 +120,7 @@ export function useQueueController({ play, queue, clear, shuffle }) {
       }, { level: 'error' });
       if (!isCancelled) {
         sourceSignatureRef.current = previousSignature;
+        if (contentRef) _signatureCache.set(contentRef, previousSignature);
       }
     });
 
