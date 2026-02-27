@@ -625,16 +625,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
           await mediaQueueService.replace(queue, householdId);
           eventBus.broadcast('media:queue', queue.toJSON());
         } else if (action === 'add') {
-          await mediaQueueService.addItems(
-            [{ contentId, addedFrom: 'WEBSOCKET' }], 'end', householdId
-          );
+          // Load once → mutate in memory → save once (matches play/queue pattern)
           const queue = await mediaQueueService.load(householdId);
+          queue.addItems([{ contentId, addedFrom: 'WEBSOCKET' }], 'end');
+          await mediaQueueService.replace(queue, householdId);
           eventBus.broadcast('media:queue', queue.toJSON());
         } else if (action === 'next') {
-          await mediaQueueService.addItems(
-            [{ contentId, addedFrom: 'WEBSOCKET' }], 'next', householdId
-          );
+          // Load once → mutate in memory → save once (matches play/queue pattern)
           const queue = await mediaQueueService.load(householdId);
+          queue.addItems([{ contentId, addedFrom: 'WEBSOCKET' }], 'next');
+          await mediaQueueService.replace(queue, householdId);
           eventBus.broadcast('media:queue', queue.toJSON());
         } else if (action === 'clear') {
           const queue = await mediaQueueService.clear(householdId);
