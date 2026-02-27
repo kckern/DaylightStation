@@ -24,6 +24,7 @@ function LoadingFallback() {
  * 
  * @param {Object} props
  * @param {Object|string} props.rootMenu - The root menu configuration (list name or menu object)
+ * @param {React.RefObject} [props.playerRef] - Optional ref forwarded to Player for playback broadcast
  */
 export function MenuStack({ rootMenu, playerRef }) {
   const { currentContent, depth, push, pop } = useMenuNavigationContext();
