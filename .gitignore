@@ -35,6 +35,7 @@ data/household/config/*
 node_modules/*
 *.sh
 !docker/entrypoint.sh
+!cli/scripts/*.sh
 docker.local.sh
 known_hosts
 /_extentions/fitness/node_modules
