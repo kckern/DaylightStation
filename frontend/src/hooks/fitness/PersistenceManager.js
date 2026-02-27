@@ -800,18 +800,34 @@ export class PersistenceManager {
       persistSessionData.timeline = { ...persistSessionData.timeline };
     }
 
-    // Merge orphan voice memos into timeline.events
+    // Merge voice memos into timeline.events — VoiceMemoManager is authoritative
+    // for transcript/duration (handles replaceMemo updates from redo/retry).
     const timelineEvents = persistSessionData.timeline?.events;
     if (Array.isArray(timelineEvents)) {
-      const existingMemoIds = new Set();
-      timelineEvents.forEach((evt) => {
-        if (evt?.type === 'voice_memo' && evt.data?.memoId) existingMemoIds.add(evt.data.memoId);
-      });
       const voiceMemos = Array.isArray(sessionData.voiceMemos) ? sessionData.voiceMemos : [];
+      const memoLookup = new Map();
       voiceMemos.forEach((memo) => {
         if (!memo || typeof memo !== 'object') return;
         const memoId = memo.memoId ?? memo.id;
-        if (memoId && existingMemoIds.has(memoId)) return;
+        if (memoId) memoLookup.set(String(memoId), memo);
+      });
+
+      // Update existing timeline events with current VoiceMemoManager data
+      timelineEvents.forEach((evt) => {
+        if (evt?.type === 'voice_memo' && evt.data?.memoId) {
+          const current = memoLookup.get(String(evt.data.memoId));
+          if (current) {
+            evt.data.transcript = current.transcriptClean ?? current.transcript ?? evt.data.transcript;
+            if (Number.isFinite(current.durationSeconds)) {
+              evt.data.duration_seconds = current.durationSeconds;
+            }
+            memoLookup.delete(String(evt.data.memoId));
+          }
+        }
+      });
+
+      // Add any remaining orphan memos not yet in timeline
+      for (const [memoId, memo] of memoLookup) {
         const rawTs = Number(memo.createdAt ?? memo.startedAt ?? memo.endedAt);
         timelineEvents.push({
           ...(Number.isFinite(rawTs) ? { timestamp: rawTs } : {}),
@@ -822,7 +838,7 @@ export class PersistenceManager {
             transcript: memo.transcriptClean ?? memo.transcript ?? null
           }
         });
-      });
+      }
     }
 
     // Restructure timeline with v2 fields

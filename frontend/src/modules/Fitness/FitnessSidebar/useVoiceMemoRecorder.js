@@ -167,6 +167,8 @@ const useVoiceMemoRecorder = ({
   const lastStateRef = useRef(null);
   const abortControllerRef = useRef(null);
   const cancelledRef = useRef(false);
+  const lastAudioPayloadRef = useRef(null);
+  const retryAbortRef = useRef(null);
 
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
@@ -393,6 +395,9 @@ const useVoiceMemoRecorder = ({
         return;
       }
 
+      // Stash audio payload for retry transcription
+      lastAudioPayloadRef.current = payload;
+
       if (memo && onMemoCaptured) {
         onMemoCaptured(memo);
       }
@@ -421,6 +426,7 @@ const useVoiceMemoRecorder = ({
 
   const startRecording = useCallback(async () => {
     setError(null);
+    lastAudioPayloadRef.current = null;
     emitState('requesting');
     emitLevel(null);
     pauseMediaIfNeeded(playerRef, wasPlayingBeforeRecordingRef);
@@ -518,6 +524,7 @@ const useVoiceMemoRecorder = ({
   const cancelUpload = useCallback(() => {
     // Set cancelled flag to prevent handleRecordingStop from processing
     cancelledRef.current = true;
+    lastAudioPayloadRef.current = null;
 
     // Abort any in-flight API request
     if (abortControllerRef.current) {
@@ -540,6 +547,51 @@ const useVoiceMemoRecorder = ({
     });
   }, [emitState, logVoiceMemo, uploading]);
 
+  const retryTranscription = useCallback(async () => {
+    const payload = lastAudioPayloadRef.current;
+    if (!payload) throw new Error('No audio available for retry');
+
+    retryAbortRef.current = new AbortController();
+
+    try {
+      setUploading(true);
+      emitState('processing');
+
+      const resp = await Promise.race([
+        DaylightAPI('api/v1/fitness/voice_memo', payload, 'POST'),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Processing timed out')), UPLOAD_TIMEOUT_MS))
+      ]);
+
+      if (retryAbortRef.current?.signal.aborted) {
+        logVoiceMemo('retry-transcription-aborted', { reason: 'user_cancel' });
+        return null;
+      }
+
+      if (!resp?.ok) {
+        throw new Error(resp?.error || 'Transcription failed');
+      }
+
+      const memo = resp.memo || null;
+      if (memo) {
+        logVoiceMemo('retry-transcription-complete', { memoId: memo.memoId || null });
+      }
+      emitState('ready');
+      return memo;
+    } catch (err) {
+      if (retryAbortRef.current?.signal.aborted) {
+        logVoiceMemo('retry-transcription-aborted', { reason: 'user_cancel', phase: 'error' });
+        return null;
+      }
+      logVoiceMemo('retry-transcription-error', { error: err?.message || String(err) }, { level: 'warn' });
+      throw err;
+    } finally {
+      setUploading(false);
+      retryAbortRef.current = null;
+    }
+  }, [emitState, logVoiceMemo]);
+
+  const hasAudioBlob = Boolean(lastAudioPayloadRef.current);
+
   useEffect(() => () => {
     clearDurationTimer();
     cleanupStream();
@@ -549,6 +601,11 @@ const useVoiceMemoRecorder = ({
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    if (retryAbortRef.current) {
+      retryAbortRef.current.abort();
+      retryAbortRef.current = null;
+    }
+    lastAudioPayloadRef.current = null;
     cancelledRef.current = false;
 
     try {
@@ -567,7 +624,9 @@ const useVoiceMemoRecorder = ({
     setError,
     startRecording,
     stopRecording,
-    cancelUpload
+    cancelUpload,
+    retryTranscription,
+    hasAudioBlob
   };
 };
 
