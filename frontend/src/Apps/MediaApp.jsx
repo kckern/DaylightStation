@@ -2,26 +2,36 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import getLogger, { configure as configureLogger } from '../lib/logging/Logger.js';
 import useMediaUrlParams from '../hooks/media/useMediaUrlParams.js';
+import { MediaAppProvider, useMediaApp } from '../contexts/MediaAppContext.jsx';
 import NowPlaying from '../modules/Media/NowPlaying.jsx';
 import MiniPlayer from '../modules/Media/MiniPlayer.jsx';
+import QueueDrawer from '../modules/Media/QueueDrawer.jsx';
 import './MediaApp.scss';
 
 /**
  * MediaApp — media controller and player.
- * Phase 1: URL-driven local playback with basic transport.
+ * Phase 2: Queue-backed playback with context provider.
  *
  * Req: 1.2.1, 1.2.2, 1.1.1, 1.1.2, 1.1.3, 1.1.9
  */
 const MediaApp = () => {
+  return (
+    <MediaAppProvider>
+      <MediaAppInner />
+    </MediaAppProvider>
+  );
+};
+
+const MediaAppInner = () => {
+  const { queue, playerRef } = useMediaApp();
   const logger = useMemo(() => getLogger().child({ app: 'media' }), []);
   const urlCommand = useMediaUrlParams();
 
-  // View state: 'now-playing' or 'mini' (Phase 1 only has these two)
+  // View state: 'now-playing' or 'mini'
   const [view, setView] = useState('now-playing');
 
-  // Current item being played
-  const [currentItem, setCurrentItem] = useState(null);
-  const [loading, setLoading] = useState(false);
+  // Queue drawer state
+  const [queueDrawerOpen, setQueueDrawerOpen] = useState(false);
 
   // Playback state (shared between NowPlaying and MiniPlayer)
   const [playbackState, setPlaybackState] = useState({
@@ -40,47 +50,46 @@ const MediaApp = () => {
     };
   }, [logger]);
 
-  // Process URL command on mount
+  // Process URL command on mount — now uses queue
   useEffect(() => {
-    if (!urlCommand) return;
-
+    if (!urlCommand || queue.loading) return;
     const playCommand = urlCommand.play || urlCommand.queue;
     if (!playCommand?.contentId) return;
 
-    logger.info('media-app.url-command', {
-      action: urlCommand.play ? 'play' : 'queue',
-      contentId: playCommand.contentId,
-    });
+    const { contentId, volume, ...config } = playCommand;
+    logger.info('media-app.url-command', { action: urlCommand.play ? 'play' : 'queue', contentId });
 
-    // Build current item from URL command
-    // The Player component handles content resolution internally via Play API,
-    // so we just need the contentId and any config modifiers
-    const { contentId, ...config } = playCommand;
-    setCurrentItem({
-      contentId,
-      config: Object.keys(config).length > 0 ? config : undefined,
-      title: contentId, // Player will resolve the real title
-    });
-  }, [urlCommand, logger]);
+    if (urlCommand.play) {
+      queue.clear().then(() =>
+        queue.addItems([{ contentId, title: contentId, config: Object.keys(config).length > 0 ? config : undefined }])
+      );
+    }
+    if (volume) queue.setVolume(Number(volume) / 100);
+  }, [urlCommand, queue.loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Handle item end (clear callback from Player)
+  // Handle item end — advance queue
   const handleItemEnd = useCallback(() => {
-    logger.info('media-app.item-ended', { contentId: currentItem?.contentId });
-    // Phase 1: single play mode, just clear
-    setCurrentItem(null);
+    logger.info('media-app.item-ended', { contentId: queue.currentItem?.contentId });
+    queue.advance(1);
     setPlaybackState({ currentTime: 0, duration: 0, paused: true });
-  }, [currentItem, logger]);
+  }, [queue.currentItem, queue, logger]);
 
-  // Phase 1: next/prev are no-ops (no queue yet)
+  // Next/prev now use queue
   const handleNext = useCallback(() => {
-    logger.debug('media-app.next-pressed', { note: 'no queue in Phase 1' });
-  }, [logger]);
+    logger.debug('media-app.next-pressed');
+    queue.advance(1);
+  }, [logger, queue]);
 
   const handlePrev = useCallback(() => {
-    logger.debug('media-app.prev-pressed', { note: 'no queue in Phase 1' });
-  }, [logger]);
+    logger.debug('media-app.prev-pressed');
+    if (playbackState.currentTime > 3) {
+      playerRef.current?.seek?.(0);
+    } else {
+      queue.advance(-1);
+    }
+  }, [logger, queue, playbackState.currentTime, playerRef]);
 
-  if (loading) {
+  if (queue.loading) {
     return (
       <div className="App media-app">
         <div className="media-app-container">
@@ -95,22 +104,26 @@ const MediaApp = () => {
       <div className="media-app-container">
         {view === 'now-playing' && (
           <NowPlaying
-            currentItem={currentItem}
+            currentItem={queue.currentItem}
             onItemEnd={handleItemEnd}
             onNext={handleNext}
             onPrev={handlePrev}
+            onPlaybackState={setPlaybackState}
+            onQueueToggle={() => setQueueDrawerOpen(o => !o)}
+            queueLength={queue.items.length}
           />
         )}
 
-        {/* MiniPlayer shows when viewing other panels (Phase 2+) */}
-        {view !== 'now-playing' && currentItem && (
+        <QueueDrawer
+          open={queueDrawerOpen}
+          onClose={() => setQueueDrawerOpen(false)}
+        />
+
+        {/* MiniPlayer shows when viewing other panels */}
+        {view !== 'now-playing' && queue.currentItem && (
           <MiniPlayer
-            currentItem={currentItem}
+            currentItem={queue.currentItem}
             playbackState={playbackState}
-            onToggle={() => {
-              // In Phase 1, we don't have playerRef at this level
-              // MiniPlayer toggle will be wired in Phase 2 via context
-            }}
             onExpand={() => setView('now-playing')}
           />
         )}
