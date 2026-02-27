@@ -588,3 +588,140 @@ describe('module exports', () => {
     expect(typeof mod.useMediaQueue).toBe('function');
   });
 });
+
+// ── Test 9: currentItem with shuffleOrder ─────────────────────────────────
+
+describe('currentItem with shuffleOrder', () => {
+  it('returns items[position] when shuffle is off', async () => {
+    const serverQueue = makeQueueResponse({
+      items: [
+        { queueId: 'a', contentId: 'video:1', title: 'A' },
+        { queueId: 'b', contentId: 'video:2', title: 'B' },
+        { queueId: 'c', contentId: 'video:3', title: 'C' },
+      ],
+      position: 2,
+      shuffle: false,
+      shuffleOrder: null,
+    });
+
+    global.fetch = vi.fn().mockImplementation(() => fetchOk(serverQueue));
+    const { result } = renderHook(() => useMediaQueue());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.currentItem).not.toBeNull();
+    expect(result.current.currentItem.queueId).toBe('c');
+  });
+
+  it('returns items[shuffleOrder[position]] when shuffle is on', async () => {
+    const serverQueue = makeQueueResponse({
+      items: [
+        { queueId: 'a', contentId: 'video:1', title: 'A' },
+        { queueId: 'b', contentId: 'video:2', title: 'B' },
+        { queueId: 'c', contentId: 'video:3', title: 'C' },
+      ],
+      position: 0,
+      shuffle: true,
+      shuffleOrder: [2, 0, 1],
+    });
+
+    global.fetch = vi.fn().mockImplementation(() => fetchOk(serverQueue));
+    const { result } = renderHook(() => useMediaQueue());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    // shuffleOrder[0] = 2, so items[2] = 'c'
+    expect(result.current.currentItem).not.toBeNull();
+    expect(result.current.currentItem.queueId).toBe('c');
+  });
+});
+
+// ── Test 10: WebSocket sync preserves shuffleOrder ────────────────────────
+
+describe('WebSocket sync preserves shuffleOrder', () => {
+  it('retains shuffleOrder across a WS broadcast that omits it', async () => {
+    useWebSocketSubscription.mockImplementation((_topic, cb) => {
+      // captured via mock.calls below
+    });
+
+    const serverQueue = makeQueueResponse({
+      items: [
+        { queueId: 'a', contentId: 'video:1', title: 'A' },
+        { queueId: 'b', contentId: 'video:2', title: 'B' },
+        { queueId: 'c', contentId: 'video:3', title: 'C' },
+      ],
+      position: 0,
+      shuffle: true,
+      shuffleOrder: [2, 0, 1],
+    });
+
+    global.fetch = vi.fn().mockImplementation(() => fetchOk(serverQueue));
+    const { result } = renderHook(() => useMediaQueue());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    // Confirm initial currentItem: shuffleOrder[0]=2 → items[2]='c'
+    expect(result.current.currentItem).not.toBeNull();
+    expect(result.current.currentItem.queueId).toBe('c');
+
+    // Retrieve the registered WS callback
+    const wsCallback = useWebSocketSubscription.mock.calls[0][1];
+
+    // Broadcast: same items, position=1, shuffle=true, but NO shuffleOrder key
+    act(() => wsCallback({
+      items: [
+        { queueId: 'a', contentId: 'video:1', title: 'A' },
+        { queueId: 'b', contentId: 'video:2', title: 'B' },
+        { queueId: 'c', contentId: 'video:3', title: 'C' },
+      ],
+      position: 1,
+      shuffle: true,
+      // shuffleOrder intentionally omitted
+      mutationId: 'external-peer',
+    }));
+
+    // shuffleOrder must be preserved → shuffleOrder[1]=0 → items[0]='a'
+    await waitFor(() => expect(result.current.position).toBe(1));
+    expect(result.current.currentItem).not.toBeNull();
+    expect(result.current.currentItem.queueId).toBe('a');
+  });
+
+  it('updates shuffleOrder when WS broadcast includes a new one', async () => {
+    useWebSocketSubscription.mockImplementation((_topic, cb) => {
+      // captured via mock.calls below
+    });
+
+    const serverQueue = makeQueueResponse({
+      items: [
+        { queueId: 'a', contentId: 'video:1', title: 'A' },
+        { queueId: 'b', contentId: 'video:2', title: 'B' },
+        { queueId: 'c', contentId: 'video:3', title: 'C' },
+      ],
+      position: 0,
+      shuffle: true,
+      shuffleOrder: [2, 0, 1],
+    });
+
+    global.fetch = vi.fn().mockImplementation(() => fetchOk(serverQueue));
+    const { result } = renderHook(() => useMediaQueue());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    // Retrieve the registered WS callback
+    const wsCallback = useWebSocketSubscription.mock.calls[0][1];
+
+    // Broadcast with a new shuffleOrder=[1,2,0], position=0
+    act(() => wsCallback({
+      items: [
+        { queueId: 'a', contentId: 'video:1', title: 'A' },
+        { queueId: 'b', contentId: 'video:2', title: 'B' },
+        { queueId: 'c', contentId: 'video:3', title: 'C' },
+      ],
+      position: 0,
+      shuffle: true,
+      shuffleOrder: [1, 2, 0],
+      mutationId: 'external-peer',
+    }));
+
+    // shuffleOrder[0]=1 → items[1]='b'
+    await waitFor(() => expect(result.current.shuffle).toBe(true));
+    expect(result.current.currentItem).not.toBeNull();
+    expect(result.current.currentItem.queueId).toBe('b');
+  });
+});
