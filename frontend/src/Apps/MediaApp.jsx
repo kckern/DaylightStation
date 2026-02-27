@@ -69,6 +69,7 @@ const MediaAppInner = () => {
       );
     }
     if (volume) queue.setVolume(Number(volume) / 100);
+    if (playCommand.shuffle) queue.setShuffle(true);
   }, [urlCommand, queue.loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Handle item end — advance queue
