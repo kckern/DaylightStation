@@ -8,7 +8,7 @@ import { ContentDisplayUrl } from '../../lib/api.mjs';
  *
  * Req: 1.2.4, 1.1.4, 1.1.5, 1.1.6, 1.1.7
  */
-const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, onQueueToggle, queueLength }) => {
+const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, onQueueToggle, onSearchToggle, queueLength }) => {
   const logger = useMemo(() => getLogger().child({ component: 'NowPlaying' }), []);
   const playerRef = useRef(null);
 
@@ -129,6 +129,11 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, o
         <button className="media-transport-btn" onClick={onNext} aria-label="Next">
           &#9197;
         </button>
+        {onSearchToggle && (
+          <button className="media-transport-btn" onClick={onSearchToggle} aria-label="Search">
+            &#128269;
+          </button>
+        )}
         {onQueueToggle && (
           <button className="media-transport-btn" onClick={onQueueToggle} aria-label="Queue">
             &#9776; {queueLength > 0 && <span className="queue-badge">{queueLength}</span>}

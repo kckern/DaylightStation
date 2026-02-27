@@ -6,6 +6,7 @@ import { MediaAppProvider, useMediaApp } from '../contexts/MediaAppContext.jsx';
 import NowPlaying from '../modules/Media/NowPlaying.jsx';
 import MiniPlayer from '../modules/Media/MiniPlayer.jsx';
 import QueueDrawer from '../modules/Media/QueueDrawer.jsx';
+import ContentBrowser from '../modules/Media/ContentBrowser.jsx';
 import './MediaApp.scss';
 
 /**
@@ -30,8 +31,9 @@ const MediaAppInner = () => {
   // View state: 'now-playing' or 'mini'
   const [view, setView] = useState('now-playing');
 
-  // Queue drawer state
+  // Queue drawer and content browser state
   const [queueDrawerOpen, setQueueDrawerOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   // Playback state (shared between NowPlaying and MiniPlayer)
   const [playbackState, setPlaybackState] = useState({
@@ -110,6 +112,7 @@ const MediaAppInner = () => {
             onPrev={handlePrev}
             onPlaybackState={setPlaybackState}
             onQueueToggle={() => setQueueDrawerOpen(o => !o)}
+            onSearchToggle={() => setSearchOpen(o => !o)}
             queueLength={queue.items.length}
           />
         )}
@@ -117,6 +120,11 @@ const MediaAppInner = () => {
         <QueueDrawer
           open={queueDrawerOpen}
           onClose={() => setQueueDrawerOpen(false)}
+        />
+
+        <ContentBrowser
+          open={searchOpen}
+          onClose={() => setSearchOpen(false)}
         />
 
         {/* MiniPlayer shows when viewing other panels */}
