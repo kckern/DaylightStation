@@ -34,6 +34,12 @@ const Icons = {
       <polyline points="20 6 9 17 4 12"></polyline>
     </svg>
   ),
+  Retry: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="23 4 23 10 17 10"/>
+      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+    </svg>
+  ),
   Close: () => (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -241,6 +247,8 @@ const VoiceMemoOverlay = ({
   }, [logVoiceMemo, onAddMemo, onClose, onOpenReview, onReplaceMemo, overlayState?.memoId, overlayState?.open]);
 
   const [recorderState, setRecorderState] = useState('idle'); // idle|recording|processing|ready|error
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState(null);
   const {
     isRecording,
     recordingDuration,
@@ -249,7 +257,9 @@ const VoiceMemoOverlay = ({
     setError: setRecorderError,
     startRecording,
     stopRecording,
-    cancelUpload
+    cancelUpload,
+    retryTranscription,
+    hasAudioBlob
   } = useVoiceMemoRecorder({
     sessionId,
     playerRef,
@@ -272,6 +282,28 @@ const VoiceMemoOverlay = ({
   const recorderErrorMessage = typeof recorderError === 'string' ? recorderError : recorderError?.message;
   const recorderErrorRetryable = recorderError?.retryable !== false;
   const isRecorderErrored = recorderState === 'error' || Boolean(recorderError);
+
+  const handleRetryTranscription = useCallback(async () => {
+    if (!retryTranscription || !hasAudioBlob) return;
+    const memoId = currentMemo?.memoId || overlayState?.memoId;
+    setRetrying(true);
+    setRetryError(null);
+    setAutoAcceptCancelled(true);
+    setAutoAcceptProgress(0);
+    logVoiceMemo('retry-transcription-start', { memoId });
+    try {
+      const newMemo = await retryTranscription();
+      if (newMemo && memoId) {
+        onReplaceMemo?.(memoId, newMemo);
+      }
+      logVoiceMemo('retry-transcription-success', { memoId, newMemoId: newMemo?.memoId });
+    } catch (err) {
+      setRetryError(err?.message || 'Retry failed');
+      logVoiceMemo('retry-transcription-failed', { memoId, error: err?.message }, { level: 'warn' });
+    } finally {
+      setRetrying(false);
+    }
+  }, [retryTranscription, hasAudioBlob, currentMemo?.memoId, overlayState?.memoId, logVoiceMemo, onReplaceMemo]);
 
   const handleClose = useCallback(() => {
     const wasRecording = isRecording;
@@ -348,6 +380,8 @@ const VoiceMemoOverlay = ({
       setAutoAcceptProgress(0);
       setMicLevel(0);
       setAutoAcceptCancelled(false); // Fix 6: Reset cancelled flag when overlay closes
+      setRetrying(false);
+      setRetryError(null);
     }
   }, [overlayState?.open]);
 
@@ -639,28 +673,48 @@ const VoiceMemoOverlay = ({
 
         {showReview ? (
           <div className="voice-memo-overlay__content voice-memo-overlay__content--review">
-            <div className="voice-memo-overlay__transcript voice-memo-overlay__transcript--large">{displayTranscript}</div>
+            {retrying ? (
+              <div className="voice-memo-overlay__processing">
+                <Icons.Processing />
+                <span className="voice-memo-overlay__processing-text">Transcribing…</span>
+              </div>
+            ) : (
+              <>
+                {retryError && <div className="voice-memo-overlay__error">{retryError}</div>}
+                <div className="voice-memo-overlay__transcript voice-memo-overlay__transcript--large">{displayTranscript}</div>
+              </>
+            )}
             <div className="voice-memo-overlay__actions">
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className={`voice-memo-overlay__icon-btn voice-memo-overlay__icon-btn--keep ${overlayState.autoAccept ? 'voice-memo-overlay__icon-btn--auto-accept' : ''}`}
-                onClick={handleAccept} 
+                onClick={handleAccept}
                 title={overlayState.autoAccept ? `Auto-saving in ${Math.ceil((1 - autoAcceptProgress) * VOICE_MEMO_AUTO_ACCEPT_MS / 1000)}s` : 'Keep'}
+                disabled={retrying}
               >
                 <Icons.Keep />
                 {overlayState.autoAccept && (
-                  <div 
-                    className="voice-memo-overlay__auto-accept-bar" 
+                  <div
+                    className="voice-memo-overlay__auto-accept-bar"
                     style={{ transform: `scaleX(${autoAcceptProgress})` }}
                   />
                 )}
               </button>
               <button
                 type="button"
+                className="voice-memo-overlay__icon-btn voice-memo-overlay__icon-btn--retry"
+                onClick={handleRetryTranscription}
+                title="Retry Transcription"
+                disabled={retrying || !hasAudioBlob}
+              >
+                <Icons.Retry />
+              </button>
+              <button
+                type="button"
                 className="voice-memo-overlay__icon-btn voice-memo-overlay__icon-btn--redo"
                 onClick={() => handleRedo(currentMemo?.memoId || overlayState?.memoId)}
                 title="Redo"
-                disabled={!hasMemoId}
+                disabled={retrying || !hasMemoId}
               >
                 <Icons.Redo />
               </button>
@@ -669,7 +723,7 @@ const VoiceMemoOverlay = ({
                 className="voice-memo-overlay__icon-btn voice-memo-overlay__icon-btn--delete"
                 onClick={handleDelete}
                 title="Delete"
-                disabled={!hasMemoId}
+                disabled={retrying || !hasMemoId}
               >
                 <Icons.Delete />
               </button>

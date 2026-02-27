@@ -27,7 +27,8 @@ export class Session {
     participants = {},
     entities = [],
     treasureBox = null,
-    session = null
+    session = null,
+    summary = null   // Session summary (computed by frontend, preserved through persistence)
   }) {
     // Normalize sessionId to SessionId value object
     this.sessionId = sessionId instanceof SessionId ? sessionId : new SessionId(sessionId);
@@ -46,6 +47,7 @@ export class Session {
     this.entities = Array.isArray(entities) ? entities : [];
     this.treasureBox = treasureBox;
     this.session = session;
+    this.summary = summary;
   }
 
   /**
@@ -263,6 +265,9 @@ export class Session {
 
     // Treasure box (v3 gamification)
     if (this.treasureBox) result.treasureBox = this.treasureBox;
+
+    // Summary block (computed by frontend, preserved through persistence)
+    if (this.summary) result.summary = this.summary;
 
     // Entities (participation segments)
     if (this.entities.length > 0) result.entities = this.entities;

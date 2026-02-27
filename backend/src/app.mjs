@@ -72,7 +72,8 @@ import {
   createHarvesterServices,
   createAgentsApiRouter,
   createCostServices,
-  createCostApiRouter
+  createCostApiRouter,
+  createMediaServices
 } from './0_system/bootstrap.mjs';
 
 // AI router import
@@ -91,6 +92,7 @@ import { UPCGateway } from '#adapters/nutribot/UPCGateway.mjs';
 import { createDevProxy, errorHandlerMiddleware } from './0_system/http/middleware/index.mjs';
 import { createEventBusRouter } from './4_api/v1/routers/admin/eventbus.mjs';
 import { createAdminRouter } from './4_api/v1/routers/admin/index.mjs';
+import { createMediaRouter } from './4_api/v1/routers/media.mjs';
 
 // Homeline call state tracking
 import { handleSignalingMessage } from '#apps/homeline/CallStateService.mjs';
@@ -596,6 +598,58 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'fitness' })
   });
 
+  // Media domain
+  const mediaServices = createMediaServices({
+    configService,
+    defaultHouseholdId: householdId,
+    logger: rootLogger.child({ module: 'media' })
+  });
+
+  // Media command handler (registered separately because mediaServices must be in scope)
+  eventBus.onClientMessage((clientId, message) => {
+    if (message.topic !== 'media:command') return;
+
+    const { action, contentId, householdId } = message;
+    rootLogger.info?.('eventbus.media.command', { clientId, action, contentId });
+
+    (async () => {
+      try {
+        const mediaQueueService = mediaServices.mediaQueueService;
+
+        if (action === 'play') {
+          // Insert after current, advance to it
+          const added = await mediaQueueService.addItems(
+            [{ contentId, addedFrom: 'WEBSOCKET' }], 'next', householdId
+          );
+          const queue = await mediaQueueService.load(householdId);
+          const insertedIdx = queue.items.findIndex(i => i.queueId === added[0].queueId);
+          if (insertedIdx >= 0) await mediaQueueService.setPosition(insertedIdx, householdId);
+          const updated = await mediaQueueService.load(householdId);
+          eventBus.broadcast('media:queue', updated.toJSON());
+        } else if (action === 'add') {
+          await mediaQueueService.addItems(
+            [{ contentId, addedFrom: 'WEBSOCKET' }], 'end', householdId
+          );
+          const queue = await mediaQueueService.load(householdId);
+          eventBus.broadcast('media:queue', queue.toJSON());
+        } else if (action === 'next') {
+          await mediaQueueService.addItems(
+            [{ contentId, addedFrom: 'WEBSOCKET' }], 'next', householdId
+          );
+          const queue = await mediaQueueService.load(householdId);
+          eventBus.broadcast('media:queue', queue.toJSON());
+        } else if (action === 'clear') {
+          const queue = await mediaQueueService.clear(householdId);
+          eventBus.broadcast('media:queue', queue.toJSON());
+        } else {
+          rootLogger.warn?.('eventbus.media.unknown-action', { action });
+        }
+      } catch (err) {
+        rootLogger.error?.('eventbus.media.command.error', { action, error: err.message });
+      }
+    })();
+  });
+
   // ==========================================================================
   // Create API v1 Routers
   // ==========================================================================
@@ -645,6 +699,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     registry: contentRegistry,
     contentIdResolver: contentServices.contentIdResolver,
     logger: rootLogger.child({ module: 'display-api' })
+  });
+
+  // Media queue management
+  v1Routers.media = createMediaRouter({
+    mediaQueueService: mediaServices.mediaQueueService,
+    broadcastEvent: (topic, payload) => eventBus.broadcast(topic, payload),
+    logger: rootLogger.child({ module: 'media-api' }),
   });
 
   // Health domain router
@@ -1174,6 +1235,58 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'fitness-playable' })
   });
 
+  // Strava webhook enrichment (provider-agnostic webhook, Strava adapter)
+  let providerWebhookAdapters = {};
+  let stravaEnrichmentService = null;
+  try {
+    const stravaClientId = configService.getSystemAuth?.('strava', 'client_id');
+    if (!stravaClientId) {
+      rootLogger.info?.('strava.enrichment.skipped', { reason: 'no strava client_id in system auth' });
+    } else {
+      const { StravaClientAdapter } = await import('./1_adapters/fitness/StravaClientAdapter.mjs');
+      const { StravaWebhookAdapter } = await import('./1_adapters/strava/StravaWebhookAdapter.mjs');
+      const { StravaWebhookJobStore } = await import('./1_adapters/strava/StravaWebhookJobStore.mjs');
+      const { StravaEnrichmentService } = await import('./3_applications/strava/StravaEnrichmentService.mjs');
+
+      const stravaClient = new StravaClientAdapter({
+        httpClient: axios,
+        configService,
+        logger: rootLogger.child({ module: 'strava-client' }),
+      });
+
+      const stravaVerifyToken = configService.getSystemAuth?.('strava', 'verify_token') || '';
+      const stravaWebhookAdapter = new StravaWebhookAdapter({
+        verifyToken: stravaVerifyToken,
+        logger: rootLogger.child({ module: 'strava-webhook' }),
+      });
+
+      const jobStore = new StravaWebhookJobStore({
+        basePath: configService.getHouseholdPath('common/strava/strava-webhooks'),
+        logger: rootLogger.child({ module: 'strava-jobs' }),
+      });
+
+      stravaEnrichmentService = new StravaEnrichmentService({
+        stravaClient,
+        jobStore,
+        authStore: {
+          loadUserAuth: (provider, username) => configService.getUserAuth?.(provider, username),
+        },
+        configService,
+        fitnessHistoryDir: configService.getHouseholdPath('history/fitness'),
+        logger: rootLogger.child({ module: 'strava-enrichment' }),
+      });
+
+      providerWebhookAdapters = { strava: stravaWebhookAdapter };
+
+      // Recover pending jobs on startup
+      stravaEnrichmentService.recoverPendingJobs();
+
+      rootLogger.info?.('strava.enrichment.initialized');
+    }
+  } catch (err) {
+    rootLogger.warn?.('strava.enrichment.init_failed', { error: err?.message });
+  }
+
   // Fitness domain router
   // Note: contentRegistry passed for /show endpoint - playlist thumbnail enrichment is household-specific
   v1Routers.fitness = createFitnessApiRouter({
@@ -1186,6 +1299,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     contentQueryService: contentServices.contentQueryService,
     createReceiptCanvas: createFitnessReceiptCanvas,
     printerAdapter: hardwareAdapters.printerAdapter,
+    providerWebhookAdapters,
+    enrichmentService: stravaEnrichmentService,
     logger: rootLogger.child({ module: 'fitness-api' })
   });
 
@@ -1693,6 +1808,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   app.use('/api/v1/nutribot/webhook', devProxy.middleware);
   app.use('/api/v1/journalist/webhook', devProxy.middleware);
   app.use('/api/v1/homebot/webhook', devProxy.middleware);
+  app.use('/api/v1/fitness/provider/webhook', devProxy.middleware);
 
   // ==========================================================================
   // Frontend Static Files (Production Only) - MUST be before API router

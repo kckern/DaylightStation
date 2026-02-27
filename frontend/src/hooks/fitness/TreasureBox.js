@@ -15,6 +15,7 @@ export class FitnessTreasureBox {
   constructor(sessionRef) {
     this.sessionRef = sessionRef; // reference to owning FitnessSession
     this._log('constructor', { hasSessionRef: !!sessionRef });
+    this._zoneProfileStore = null; // ZoneProfileStore reference for committed zone lookup
     this.activityMonitor = null;  // ActivityMonitor for checking if user is active
     this.coinTimeUnitMs = 5000; // default; will be overridden by configuration injection
     this.globalZones = []; // array of {id,name,min,color,coins}
@@ -59,6 +60,10 @@ export class FitnessTreasureBox {
    */
   setActivityMonitor(monitor) {
     this.activityMonitor = monitor;
+  }
+
+  setZoneProfileStore(store) {
+    this._zoneProfileStore = store;
   }
 
   setMutationCallback(cb) { this._mutationCb = typeof cb === 'function' ? cb : null; }
@@ -522,11 +527,15 @@ export class FitnessTreasureBox {
       if (!acc.highestZone || zone.min > acc.highestZone.min) {
         this._log('update_highest_zone', { accKey, zone: { id: zone.id, name: zone.name } });
         acc.highestZone = zone;
-        acc.currentColor = zone.color;
-        acc.lastColor = zone.color; // update persistent last color
-        acc.lastZoneId = zone.id || zone.name || null;
-        // REMOVED: _notifyGovernance() call - governance now reads from ZoneProfileStore on tick boundaries
       }
+
+      // For display (LEDs, roster), prefer committed zone from ZoneProfileStore (honors hysteresis)
+      const committedZone = this._zoneProfileStore?.getZoneState?.(accKey);
+      const effectiveColor = committedZone?.zoneColor || zone.color;
+      const effectiveZoneId = committedZone?.zoneId || zone.id || zone.name || null;
+      acc.currentColor = effectiveColor;
+      acc.lastColor = effectiveColor;
+      acc.lastZoneId = effectiveZoneId;
     }
     acc.lastHR = hr;
     

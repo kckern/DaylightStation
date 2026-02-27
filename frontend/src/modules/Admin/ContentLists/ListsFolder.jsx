@@ -86,7 +86,7 @@ function ListsFolder() {
         });
       }
     });
-  }, [flatItems]); // Only run when flatItems change
+  }, [flatItems]); // eslint-disable-line react-hooks/exhaustive-deps -- contentInfoMap intentionally omitted: re-running on every cache update would loop; setContentInfo is stable (useCallback)
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -113,8 +113,8 @@ function ListsFolder() {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const sectionItems = sections[sectionIndex]?.items || [];
-    const oldIndex = active.id;
-    const newIndex = over.id;
+    const oldIndex = Number(active.id);
+    const newIndex = Number(over.id);
     const reordered = arrayMove(sectionItems, oldIndex, newIndex);
     await reorderItems(sectionIndex, reordered);
   };
@@ -233,11 +233,12 @@ function ListsFolder() {
         { section: targetSection, index: targetItems.length }
       );
     } else if (action === 'new-section') {
-      await addSection({ title: `Section ${sections.length + 1}` });
+      const newSectionIndex = sections.length;
+      await addSection({ title: `Section ${newSectionIndex + 1}` });
       // After adding, move the item to the newly created section (last index)
       await moveItem(
         { section: sectionIndex, index: itemIndex },
-        { section: sections.length, index: 0 }
+        { section: newSectionIndex, index: 0 }
       );
     }
   };

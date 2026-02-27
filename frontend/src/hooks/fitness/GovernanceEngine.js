@@ -250,6 +250,69 @@ export class GovernanceEngine {
   }
 
   /**
+   * Check if a challenge zone is achievable given current participant HR.
+   * Used to prevent starting structurally impossible challenges.
+   * @param {string} targetZone - Zone the challenge requires
+   * @param {string|number} rule - 'all', 'majority', 'any', or a number
+   * @param {string[]} activeParticipants - Participant IDs
+   * @returns {{feasible: boolean, reason?: string, suggestedZone?: string}}
+   */
+  _checkChallengeFeasibility(targetZone, rule, activeParticipants) {
+    if (!targetZone) return { feasible: true };
+    // No participants = challenge is meaningless (don't silently pass through)
+    if (!activeParticipants?.length) {
+      return { feasible: false, reason: 'No active participants to evaluate' };
+    }
+
+    const FEASIBILITY_MARGIN_BPM = 20;
+    if (!this.session) return { feasible: true };
+
+    let achievableCount = 0;
+    let unresolvedCount = 0;
+    for (const pid of activeParticipants) {
+      // Use FitnessSession's canonical resolution interface (not direct ZoneProfileStore)
+      const profile = this.session.getParticipantProfile?.(pid)
+        ?? this.session.zoneProfileStore?.getProfile(pid)
+        ?? null;
+      if (!profile) {
+        // Unresolved participant = NOT achievable (don't assume they can reach the zone)
+        unresolvedCount++;
+        continue;
+      }
+      const hr = profile.heartRate ?? 0;
+      // Find the min threshold for the target zone from the profile's zone config
+      const targetZoneConfig = (profile.zoneConfig || []).find(
+        z => normalizeZoneId(z.id || z.name) === normalizeZoneId(targetZone)
+      );
+      const targetMin = targetZoneConfig?.min ?? null;
+      if (targetMin == null) continue; // No zone config for this zone = can't determine, skip
+      if ((targetMin - hr) <= FEASIBILITY_MARGIN_BPM) achievableCount++;
+    }
+
+    if (unresolvedCount > 0) {
+      getLogger().warn('governance.feasibility.unresolved_participants', {
+        targetZone, unresolvedCount, total: activeParticipants.length
+      });
+    }
+
+    const requiredCount = this._normalizeRequiredCount(rule, activeParticipants.length, activeParticipants);
+    if (achievableCount < requiredCount) {
+      // Try downgrading: hot → warm → active
+      const zoneDowngrades = ['fire', 'hot', 'warm', 'active'];
+      const targetIdx = zoneDowngrades.indexOf(normalizeZoneId(targetZone));
+      if (targetIdx >= 0 && targetIdx < zoneDowngrades.length - 1) {
+        const downgrade = zoneDowngrades[targetIdx + 1];
+        const downResult = this._checkChallengeFeasibility(downgrade, rule, activeParticipants);
+        if (downResult.feasible) {
+          return { feasible: false, suggestedZone: downgrade, reason: `${targetZone} not achievable, downgraded to ${downgrade}` };
+        }
+      }
+      return { feasible: false, reason: `Only ${achievableCount}/${requiredCount} within ${FEASIBILITY_MARGIN_BPM} BPM of ${targetZone}` };
+    }
+    return { feasible: true };
+  }
+
+  /**
    * Update global window state for cross-component logging correlation
    * Uses getters for warningDuration/lockDuration so they're calculated fresh when accessed
    */
@@ -269,7 +332,7 @@ export class GovernanceEngine {
         activeChallengeZone: this.challengeState?.activeChallenge?.zone || null,
         videoLocked: (this.challengeState?.videoLocked || this._mediaIsGoverned())
           && this.phase !== 'unlocked' && this.phase !== 'warning',
-        mediaId: this.media?.id || null,
+        contentId: this.media?.id || null,
         // Expose internal state for test diagnostics
         satisfiedOnce: this.meta?.satisfiedOnce || false,
         userZoneMap: { ...(this._latestInputs?.userZoneMap || {}) },
@@ -308,7 +371,7 @@ export class GovernanceEngine {
           hr,
           hrPercent,
           governancePhase: this.phase,
-          mediaId: this.media?.id
+          contentId: this.media?.id
         }, { maxPerMinute: 30 });
 
         // Trigger reactive evaluation for faster zone change response
@@ -657,7 +720,7 @@ export class GovernanceEngine {
         logger.sampled('governance.phase_change', {
           from: oldPhase,
           to: newPhase,
-          mediaId: this.media?.id,
+          contentId: this.media?.id,
           deadline: this.meta?.deadline,
           satisfiedOnce: this.meta?.satisfiedOnce,
           requirementCount: this.requirementSummary?.requirements?.length || 0,
@@ -677,7 +740,7 @@ export class GovernanceEngine {
       if (newPhase === 'warning' && oldPhase !== 'warning') {
         const participantsBelowThreshold = this._getParticipantsBelowThreshold(evalContext);
         logger.info('governance.warning_started', {
-          mediaId: this.media?.id,
+          contentId: this.media?.id,
           deadline: this.meta?.deadline,
           gracePeriodTotal: this.meta?.gracePeriodTotal,
           participantsBelowThreshold,
@@ -691,7 +754,7 @@ export class GovernanceEngine {
           ? now - savedWarningStartTime
           : null;
         logger.info('governance.lock_triggered', {
-          mediaId: this.media?.id,
+          contentId: this.media?.id,
           reason: this.challengeState?.activeChallenge?.status === 'failed' ? 'challenge_failed' : 'requirements_not_met',
           timeSinceWarningMs: timeSinceWarning,
           participantStates: this._getParticipantStates(evalContext),
@@ -785,9 +848,9 @@ export class GovernanceEngine {
   _triggerPulse() {
     this.pulse += 1;
 
-    // SIMPLIFIED: Self-evaluate on each pulse using session.roster
-    if (this.session?.roster) {
-      this.evaluate();  // No params needed - reads from session.roster directly
+    // SIMPLIFIED: Self-evaluate on each pulse using canonical participant state
+    if (this.session?.getActiveParticipantState) {
+      this.evaluate();  // No params needed - reads from session.getActiveParticipantState() directly
     }
 
     if (this.callbacks.onPulse) {
@@ -867,7 +930,7 @@ export class GovernanceEngine {
     getLogger().info('governance.timers_paused', {
       phase: this.phase,
       remainingMs: this._remainingMs,
-      mediaId: this.media?.id
+      contentId: this.media?.id
     });
   }
 
@@ -890,7 +953,7 @@ export class GovernanceEngine {
       phase: this.phase,
       newDeadline: this.meta?.deadline,
       pauseDurationMs: pauseDuration,
-      mediaId: this.media?.id
+      contentId: this.media?.id
     });
   }
 
@@ -1229,24 +1292,13 @@ export class GovernanceEngine {
     const now = Date.now();
     const hasGovernanceRules = (this._governedLabelSet.size + this._governedTypeSet.size) > 0;
 
-    // If no data passed in, read participant list from session.roster
-    // P1: Also pre-populate userZoneMap from roster entries (matches updateSnapshot path).
-    // ZoneProfileStore will supplement/override below.
-    if (!activeParticipants && this.session?.roster) {
-      const roster = this.session.roster || [];
-      activeParticipants = roster
-        .filter((entry) => entry.isActive !== false && (entry.id || entry.profileId))
-        .map((entry) => entry.id || entry.profileId);
-
-      userZoneMap = {};
-      roster.forEach((entry) => {
-        const userId = entry.id || entry.profileId;
-        const zoneId = entry.zoneId || entry.currentZoneId;
-        if (userId && zoneId) {
-          userZoneMap[userId] = typeof zoneId === 'string' ? zoneId.toLowerCase() : String(zoneId).toLowerCase();
-        }
-      });
-      totalCount = activeParticipants.length;
+    // Use canonical participant state from ParticipantRoster (SSOT).
+    // This replaces reading session.roster and re-extracting IDs/zones.
+    if (!activeParticipants && this.session?.getActiveParticipantState) {
+      const state = this.session.getActiveParticipantState();
+      activeParticipants = state.participants;
+      userZoneMap = state.zoneMap;
+      totalCount = state.totalCount;
     }
 
     // BUGFIX: Fall back to previous zoneRankMap/zoneInfoMap when not provided
@@ -1289,37 +1341,13 @@ export class GovernanceEngine {
       });
     }
 
-    // Populate userZoneMap from ZoneProfileStore FIRST
-    // (Must happen before ghost filter so participants have zone data)
-    if (this.session?.zoneProfileStore) {
-      activeParticipants.forEach((participantId) => {
-        const profile = this.session.zoneProfileStore.getProfile(participantId);
-        if (profile?.currentZoneId) {
-          userZoneMap[participantId] = profile.currentZoneId.toLowerCase();
-        } else if (participantId) {
-          getLogger().debug('governance.evaluate.no_zone_profile', {
-            participantId,
-            hasProfile: !!profile,
-            currentZoneId: profile?.currentZoneId ?? null
-          });
-        }
-      });
-    }
-
-    // Filter out ghost participants — users in the roster but with no zone data.
-    // These are disconnected participants whose roster entries are stale.
-    // IMPORTANT: Must run AFTER ZoneProfileStore population above.
-    if (userZoneMap && typeof userZoneMap === 'object') {
-      const beforeCount = activeParticipants.length;
-      activeParticipants = activeParticipants.filter(id => id in userZoneMap);
-      totalCount = activeParticipants.length;
-      if (activeParticipants.length < beforeCount) {
-        getLogger().debug('governance.filtered_ghost_participants', {
-          removed: beforeCount - activeParticipants.length,
-          remaining: activeParticipants.length
-        });
-      }
-    }
+    // Zone enrichment and ghost filtering removed:
+    // - Second-pass zone enrichment via getParticipantProfile is redundant —
+    //   the roster already includes ZoneProfileStore data via _buildZoneLookup().
+    // - Ghost filter (removing participants without zone data) is redundant —
+    //   isActive from ParticipantRoster is the authority, not zone-data presence.
+    //   Removing it fixes the startup bug where participants without zone data
+    //   (because zones haven't arrived yet) were incorrectly excluded.
 
     // Capture zone maps early so _getZoneRank()/_getZoneInfo() work during evaluation
     // (Previously stored only after evaluation, causing first-call misses)
@@ -1346,7 +1374,7 @@ export class GovernanceEngine {
     const hasGovernedMedia = this._mediaIsGoverned();
     if (!hasGovernedMedia) {
       getLogger().sampled('governance.evaluate.media_not_governed', {
-        mediaId: this.media?.id
+        contentId: this.media?.id
       }, { maxPerMinute: 2, aggregate: true });
       this._resetToIdle();
       return;
@@ -1901,6 +1929,28 @@ export class GovernanceEngine {
         return false;
       }
 
+      // Feasibility check: don't start challenges participants can't reach
+      if (!forced) {
+        const feasibility = this._checkChallengeFeasibility(
+          preview.zone, preview.rule, activeParticipants
+        );
+        if (!feasibility.feasible) {
+          if (feasibility.suggestedZone) {
+            getLogger().info('governance.challenge.zone_downgraded', {
+              original: preview.zone, downgraded: feasibility.suggestedZone,
+              reason: feasibility.reason
+            });
+            preview.zone = feasibility.suggestedZone;
+          } else {
+            getLogger().info('governance.challenge.skipped_infeasible', { reason: feasibility.reason });
+            const nextDelay = this._pickIntervalMs?.(challengeConfig.intervalRangeSeconds) || 60000;
+            queueNextChallenge(nextDelay);
+            this._schedulePulse(50);
+            return false;
+          }
+        }
+      }
+
       const timeLimitSeconds = Number.isFinite(preview.timeLimitSeconds) && preview.timeLimitSeconds > 0
         ? Math.round(preview.timeLimitSeconds)
         : 60;
@@ -2198,7 +2248,9 @@ export class GovernanceEngine {
     }
 
     if (shouldForceStart) {
-      const started = startChallenge({ previewOverride: forcePreviewPayload, forced: true });
+      // Only bypass feasibility if explicitly requested via payload.forced
+      const isForced = forceStartRequest?.payload?.forced === true;
+      const started = startChallenge({ previewOverride: forcePreviewPayload, forced: isForced });
       if (!started && !canTriggerChallenge) {
         this._schedulePulse(1000);
       }

@@ -1772,10 +1772,12 @@ export class PlexAdapter {
       let items = result.results || [];
 
       // Filter by mediaType if specified
+      // Include both leaf types and their container types so that
+      // tier 1 (which shows containers) and tier 2 (which shows leaves) both work.
       if (query.mediaType) {
         const typeMap = {
-          'video': ['movie', 'episode', 'clip'],
-          'audio': ['track'],
+          'video': ['movie', 'show', 'episode', 'clip', 'season'],
+          'audio': ['artist', 'album', 'track'],
           'image': [] // Plex doesn't have images
         };
         const allowedTypes = typeMap[query.mediaType] || [];

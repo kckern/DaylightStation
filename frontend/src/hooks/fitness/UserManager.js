@@ -429,6 +429,11 @@ export class UserManager {
     });
     if (guestUser) {
       guestUser.hrDeviceId = key;
+      // Clear stale HR from previous session/device to prevent phantom data
+      // leaking into MetricsRecorder via the ?? coalesce fallback
+      if (guestUser.currentData) {
+        guestUser.currentData.heartRate = 0;
+      }
     }
     return payload;
   }
@@ -541,6 +546,10 @@ export class UserManager {
     }
     if (deviceId && !user.hrDeviceId) {
       user.hrDeviceId = String(deviceId);
+      // Clear stale HR from previous session/device to prevent phantom data
+      if (user.currentData) {
+        user.currentData.heartRate = 0;
+      }
     }
     return user;
   }

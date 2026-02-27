@@ -277,7 +277,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     );
     sessionInstance.logEvent('media_start', {
       source: 'music_player',
-      mediaId: currentTrackIdentity,
+      contentId: currentTrackIdentity,
       title: currentTrack?.title || currentTrack?.label || null,
       artist: currentTrack?.artist || currentTrack?.albumArtist || currentTrack?.grandparentTitle || null,
       album: currentTrack?.album || currentTrack?.parentTitle || null,
@@ -288,6 +288,15 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
       volume: Math.round((musicVolumeState.volume || 0) * 100) / 100,
       musicEnabled: Boolean(musicEnabled)
     });
+
+    return () => {
+      if (currentTrackIdentity && sessionInstance) {
+        sessionInstance.logEvent('media_end', {
+          contentId: currentTrackIdentity,
+          source: 'music_player',
+        });
+      }
+    };
   }, [sessionInstance, currentTrackIdentity, currentTrack, selectedPlaylistId, musicVolumeState.volume, musicEnabled]);
 
   const handleNext = (e) => {

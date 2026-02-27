@@ -293,8 +293,8 @@ const _consolidateEvents = (events) => {
 
   // ── Challenges: pair start+end by challengeId ──
   const challengeMap = new Map(); // challengeId → { startEvt, endEvt }
-  // ── Media: pair start+end by mediaId ──
-  const mediaMap = new Map(); // mediaId → { startEvt, endEvt, pauses }
+  // ── Media: pair start+end by contentId ──
+  const mediaMap = new Map(); // contentId → { startEvt, endEvt, pauses }
   // ── Governance overlay: collapse into phase transitions ──
   let govPhase = null; // current governance phase
   let govPhaseStart = null; // timestamp when phase began
@@ -328,19 +328,19 @@ const _consolidateEvents = (events) => {
 
     // ── Media grouping ──
     if (type === 'media_start') {
-      const id = evt.data?.mediaId || evt.data?.mediaKey || `unknown_${ts}`;
+      const id = evt.data?.contentId || evt.data?.mediaId || evt.data?.mediaKey || `unknown_${ts}`;
       if (!mediaMap.has(id)) mediaMap.set(id, { startEvt: evt, endEvt: null, pauses: [] });
       else mediaMap.get(id).startEvt = evt;
       continue;
     }
     if (type === 'media_end') {
-      const id = evt.data?.mediaId || evt.data?.mediaKey || `unknown_${ts}`;
+      const id = evt.data?.contentId || evt.data?.mediaId || evt.data?.mediaKey || `unknown_${ts}`;
       if (!mediaMap.has(id)) mediaMap.set(id, { startEvt: null, endEvt: evt, pauses: [] });
       else mediaMap.get(id).endEvt = evt;
       continue;
     }
     if (type === 'media_pause' || type === 'media_resume') {
-      const id = evt.data?.mediaId || evt.data?.mediaKey || null;
+      const id = evt.data?.contentId || evt.data?.mediaId || evt.data?.mediaKey || null;
       if (id && mediaMap.has(id)) {
         mediaMap.get(id).pauses.push({ type, timestamp: ts });
       }
@@ -450,7 +450,7 @@ const _consolidateEvents = (events) => {
       timestamp: Number(startEvt?.timestamp || endEvt?.timestamp) || 0,
       type: 'media',
       data: {
-        mediaId: id,
+        contentId: id,
         title: s.title || e.title || null,
         grandparentTitle: s.grandparentTitle || null,
         parentTitle: s.parentTitle || null,
@@ -800,18 +800,34 @@ export class PersistenceManager {
       persistSessionData.timeline = { ...persistSessionData.timeline };
     }
 
-    // Merge orphan voice memos into timeline.events
+    // Merge voice memos into timeline.events — VoiceMemoManager is authoritative
+    // for transcript/duration (handles replaceMemo updates from redo/retry).
     const timelineEvents = persistSessionData.timeline?.events;
     if (Array.isArray(timelineEvents)) {
-      const existingMemoIds = new Set();
-      timelineEvents.forEach((evt) => {
-        if (evt?.type === 'voice_memo' && evt.data?.memoId) existingMemoIds.add(evt.data.memoId);
-      });
       const voiceMemos = Array.isArray(sessionData.voiceMemos) ? sessionData.voiceMemos : [];
+      const memoLookup = new Map();
       voiceMemos.forEach((memo) => {
         if (!memo || typeof memo !== 'object') return;
         const memoId = memo.memoId ?? memo.id;
-        if (memoId && existingMemoIds.has(memoId)) return;
+        if (memoId) memoLookup.set(String(memoId), memo);
+      });
+
+      // Update existing timeline events with current VoiceMemoManager data
+      timelineEvents.forEach((evt) => {
+        if (evt?.type === 'voice_memo' && evt.data?.memoId) {
+          const current = memoLookup.get(String(evt.data.memoId));
+          if (current) {
+            evt.data.transcript = current.transcriptClean ?? current.transcript ?? evt.data.transcript;
+            if (Number.isFinite(current.durationSeconds)) {
+              evt.data.duration_seconds = current.durationSeconds;
+            }
+            memoLookup.delete(String(evt.data.memoId));
+          }
+        }
+      });
+
+      // Add any remaining orphan memos not yet in timeline
+      for (const [memoId, memo] of memoLookup) {
         const rawTs = Number(memo.createdAt ?? memo.startedAt ?? memo.endedAt);
         timelineEvents.push({
           ...(Number.isFinite(rawTs) ? { timestamp: rawTs } : {}),
@@ -822,7 +838,7 @@ export class PersistenceManager {
             transcript: memo.transcriptClean ?? memo.transcript ?? null
           }
         });
-      });
+      }
     }
 
     // Restructure timeline with v2 fields

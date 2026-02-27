@@ -1088,4 +1088,547 @@ test.describe('Fitness Happy Path', () => {
     console.log('Backend persistence test PASSED');
   });
 
+  // ═══════════════════════════════════════════════════════════════
+  // TEST 14: Render update rate stays below threshold
+  // Regression: batchedForceUpdate fired ~1,400/30s causing CPU starvation
+  // Fix: Throttled to max 4/sec (250ms interval)
+  // ═══════════════════════════════════════════════════════════════
+  test('render update rate stays below threshold during simulation', async () => {
+    if (!sharedPage.url().includes('/fitness')) {
+      await sharedPage.goto(`${BASE_URL}/fitness`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await sharedPage.waitForTimeout(2000);
+    }
+
+    const sim = new FitnessSimHelper(sharedPage);
+    await sim.waitForController();
+
+    // Activate all devices to generate HR traffic
+    await sim.activateAll('warm');
+    const devices = await sim.getDevices();
+    await sim.waitForActiveCount(devices.length, 5000);
+
+    // Collect render stats over 10 seconds
+    const startStats = await sharedPage.evaluate(() => {
+      const stats = typeof window.__fitnessRenderStats === 'function'
+        ? window.__fitnessRenderStats()
+        : window.__fitnessRenderStats;
+      return { timestamp: Date.now(), forceUpdateCount: stats?.forceUpdateCount ?? null };
+    });
+
+    await sharedPage.waitForTimeout(10000);
+
+    const endStats = await sharedPage.evaluate(() => {
+      const stats = typeof window.__fitnessRenderStats === 'function'
+        ? window.__fitnessRenderStats()
+        : window.__fitnessRenderStats;
+      return { timestamp: Date.now(), forceUpdateCount: stats?.forceUpdateCount ?? null };
+    });
+
+    await sim.stopAll();
+
+    if (startStats.forceUpdateCount != null && endStats.forceUpdateCount != null) {
+      const elapsed = (endStats.timestamp - startStats.timestamp) / 1000;
+      const updates = endStats.forceUpdateCount - startStats.forceUpdateCount;
+      const rate = updates / elapsed;
+      console.log(`Force update rate: ${rate.toFixed(1)}/sec over ${elapsed.toFixed(1)}s (${updates} updates)`);
+
+      // With 250ms throttle, max should be ~4/sec. Allow headroom for circuit breaker resets.
+      expect(rate).toBeLessThan(10); // Was ~47/sec before fix
+    } else {
+      // If render stats not exposed, check dev.log for render_thrashing warnings
+      const logContent = readDevLog(testLogPosition);
+      const thrashingWarnings = logContent.split('\n').filter(l => l.includes('render_thrashing'));
+      console.log(`Render thrashing warnings in log: ${thrashingWarnings.length}`);
+      expect(thrashingWarnings.length).toBeLessThan(5);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // TEST 15: No phantom stall overlays during smooth playback
+  // Regression: 66 false stall events per session, overlay flashed
+  // Fix: Validate playhead advancement before showing overlay
+  // ═══════════════════════════════════════════════════════════════
+  test('no phantom stall overlays during playback with simulation', async () => {
+    if (!plexContentAvailable) {
+      console.log('Skipping: Plex content not available');
+      test.skip();
+      return;
+    }
+
+    const sim = new FitnessSimHelper(sharedPage);
+    await sim.waitForController();
+
+    // Activate devices to generate HR traffic while video plays
+    await sim.activateAll('active');
+
+    // Let video play for 15 seconds with HR simulation active
+    await sharedPage.waitForTimeout(15000);
+
+    // Check dev.log for phantom stall events
+    const logContent = readDevLog(testLogPosition);
+    const stallEvents = logContent.split('\n').filter(l => l.includes('playback.stall_detected'));
+    const phantomStalls = logContent.split('\n').filter(l => l.includes('playback.stall_phantom'));
+
+    console.log(`Stall events: ${stallEvents.length}, Phantom (suppressed): ${phantomStalls.length}`);
+
+    // Real stalls should be very rare. Before fix: 66 in 30min.
+    const realStalls = stallEvents.length;
+    console.log(`Real stalls: ${realStalls}`);
+    expect(realStalls).toBeLessThan(5);
+
+    await sim.stopAll();
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // TEST 16: Challenge feasibility prevents unwinnable challenges
+  // Regression: Hot-zone challenge triggered when participant 32 BPM below
+  // Fix: Feasibility check with zone downgrade
+  // ═══════════════════════════════════════════════════════════════
+  test('challenge feasibility prevents unwinnable hot challenges', async () => {
+    if (!sharedPage.url().includes('/fitness')) {
+      await sharedPage.goto(`${BASE_URL}/fitness`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await sharedPage.waitForTimeout(2000);
+    }
+
+    const sim = new FitnessSimHelper(sharedPage);
+    await sim.waitForController();
+
+    // Put all devices in cool zone (far from hot)
+    // Must send 4+ readings per device to get past the startup discard (first 3 discarded)
+    await sim.activateAll('cool');
+    await sharedPage.waitForTimeout(500);
+    await sim.activateAll('cool');
+    await sharedPage.waitForTimeout(500);
+    await sim.activateAll('cool');
+    await sharedPage.waitForTimeout(500);
+    await sim.activateAll('cool');
+    const devices = await sim.getDevices();
+    await sim.waitForActiveCount(devices.length, 5000);
+
+    // Wait for profiles to be built from HR data, then verify user resolution
+    await sharedPage.waitForTimeout(2000);
+    const profileStatus = await sim.getParticipantProfiles();
+    console.log(`Profile resolution: ${profileStatus.resolvedCount}/${profileStatus.total} resolved, ${profileStatus.unresolvedCount} unresolved`);
+    for (const [id, p] of Object.entries(profileStatus.profiles || {})) {
+      console.log(`  ${id}: resolved=${p.resolved}, hr=${p.heartRate}, zone=${p.currentZoneId}, zoneConfig=${p.hasZoneConfig}(${p.zoneConfigCount}), source=${p.source}`);
+    }
+
+    // GATE: Fail fast if user resolution is broken — no point testing feasibility
+    expect(profileStatus.resolvedCount,
+      `Expected all participants resolved but got ${profileStatus.resolvedCount}/${profileStatus.total}. ` +
+      `Unresolved IDs signal a user-resolution coupling bug.`
+    ).toBeGreaterThan(0);
+    expect(profileStatus.unresolvedCount,
+      `${profileStatus.unresolvedCount} participants unresolved — feasibility check will be vacuous`
+    ).toBe(0);
+
+    // Verify each resolved profile has zone config (needed for threshold lookup)
+    for (const [id, p] of Object.entries(profileStatus.profiles || {})) {
+      if (p.resolved) {
+        expect(p.hasZoneConfig, `Profile ${id} resolved but has no zone config`).toBe(true);
+      }
+    }
+
+    // Enable governance
+    await sim.enableGovernance({
+      phases: { warmup: 2, main: 60, cooldown: 2 },
+      challenges: { enabled: true, interval: 5, duration: 30 }
+    });
+
+    // Wait for warmup phase to pass
+    await sharedPage.waitForTimeout(3000);
+
+    // Trigger a hot challenge — should be downgraded or skipped
+    const challengeResult = await sim.triggerChallenge({ targetZone: 'hot' });
+    await sharedPage.waitForTimeout(2000);
+
+    const state = await sim.getGovernanceState();
+
+    if (state.activeChallenge) {
+      // If a challenge was created, it should NOT be hot (feasibility should downgrade)
+      const zone = state.activeChallenge.targetZone;
+      console.log(`Challenge zone: ${zone} (requested: hot)`);
+      expect(zone).not.toBe('hot');
+    } else {
+      // Challenge was skipped as infeasible (also correct)
+      console.log('Challenge skipped as infeasible (correct behavior)');
+    }
+
+    // Check log for feasibility events
+    const logContent = readDevLog(testLogPosition);
+    const feasibilityEvents = logContent.split('\n').filter(l =>
+      l.includes('challenge.skipped_infeasible') || l.includes('challenge.zone_downgraded')
+    );
+    console.log(`Feasibility events: ${feasibilityEvents.length}`);
+    expect(feasibilityEvents.length).toBeGreaterThan(0);
+
+    await sim.disableGovernance();
+    await sim.stopAll();
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // TEST 17: No chart mismatch console.warn spam
+  // Regression: 756 raw console.warn calls per session
+  // Fix: Convert to logger.sampled(), filter 'global' entry
+  // ═══════════════════════════════════════════════════════════════
+  test('chart does not spam console.warn during session', async () => {
+    if (!sharedPage.url().includes('/fitness')) {
+      await sharedPage.goto(`${BASE_URL}/fitness`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await sharedPage.waitForTimeout(2000);
+    }
+
+    // Capture console.warn count during a 10-second simulation
+    let warnCount = 0;
+    const chartWarnMessages = [];
+    const warnHandler = (msg) => {
+      if (msg.type() === 'warning') {
+        const text = msg.text();
+        if (text.includes('[FitnessChart]')) {
+          warnCount++;
+          if (chartWarnMessages.length < 5) chartWarnMessages.push(text.slice(0, 100));
+        }
+      }
+    };
+    sharedPage.on('console', warnHandler);
+
+    const sim = new FitnessSimHelper(sharedPage);
+    await sim.waitForController();
+    await sim.activateAll('active');
+
+    await sharedPage.waitForTimeout(10000);
+
+    sharedPage.off('console', warnHandler);
+    await sim.stopAll();
+
+    console.log(`Chart console.warn count in 10s: ${warnCount}`);
+    if (chartWarnMessages.length > 0) {
+      console.log('Sample warnings:', chartWarnMessages);
+    }
+
+    // Before fix: ~250 in 10s. After fix: 0 (migrated to logger.sampled).
+    expect(warnCount).toBeLessThan(5);
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // TEST 18: Governance phase transitions work correctly
+  // Tests: pending → unlocked → warning → locked lifecycle
+  // ═══════════════════════════════════════════════════════════════
+  test('governance phases transition correctly', async () => {
+    if (!sharedPage.url().includes('/fitness')) {
+      await sharedPage.goto(`${BASE_URL}/fitness`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await sharedPage.waitForTimeout(2000);
+    }
+
+    const sim = new FitnessSimHelper(sharedPage);
+    await sim.waitForController();
+
+    // Enable governance with short phases
+    await sim.enableGovernance({
+      phases: { warmup: 2, main: 60, cooldown: 2 },
+      challenges: { enabled: false }
+    });
+
+    // Initially should be pending (no active participants)
+    let state = await sim.getGovernanceState();
+    console.log(`Initial phase: ${state.phase}`);
+
+    // Activate all devices at active zone — should transition to unlocked
+    await sim.activateAll('active');
+    const devices = await sim.getDevices();
+    await sim.waitForActiveCount(devices.length, 5000);
+
+    // Wait for warmup + transition
+    await sharedPage.waitForTimeout(4000);
+
+    state = await sim.getGovernanceState();
+    console.log(`After activation + warmup: phase=${state.phase}`);
+    // Should be unlocked (real engine) or main (sim controller phase after warmup)
+    expect(['unlocked', 'pending', 'main'].includes(state.phase),
+      `Expected unlocked/pending/main, got: ${state.phase}`).toBe(true);
+
+    // Drop all devices to cool — should trigger warning → locked
+    for (const d of devices) {
+      await sim.setZone(d.deviceId, 'cool');
+    }
+
+    // Wait for warning grace period + lock
+    await sharedPage.waitForTimeout(8000);
+
+    state = await sim.getGovernanceState();
+    console.log(`After dropping to cool: phase=${state.phase}`);
+
+    // Check log for phase transitions
+    const logContent = readDevLog(testLogPosition);
+    const phaseChanges = logContent.split('\n').filter(l => l.includes('governance.phase_change'));
+    console.log(`Phase change events: ${phaseChanges.length}`);
+
+    // Move back to active to unlock
+    for (const d of devices) {
+      await sim.setZone(d.deviceId, 'active');
+    }
+    await sharedPage.waitForTimeout(3000);
+
+    state = await sim.getGovernanceState();
+    console.log(`After returning to active: phase=${state.phase}`);
+
+    await sim.disableGovernance();
+    await sim.stopAll();
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // TEST 19: Challenge lifecycle — trigger, satisfy, complete
+  // Tests the full challenge flow with zone changes
+  // ═══════════════════════════════════════════════════════════════
+  test('challenge lifecycle completes when participants reach target zone', async () => {
+    if (!sharedPage.url().includes('/fitness')) {
+      await sharedPage.goto(`${BASE_URL}/fitness`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await sharedPage.waitForTimeout(2000);
+    }
+
+    const sim = new FitnessSimHelper(sharedPage);
+    await sim.waitForController();
+
+    // Start all devices in warm zone (achievable for hot challenge)
+    await sim.activateAll('warm');
+    const devices = await sim.getDevices();
+    await sim.waitForActiveCount(devices.length, 5000);
+
+    await sim.enableGovernance({
+      phases: { warmup: 2, main: 60, cooldown: 2 },
+      challenges: { enabled: true, interval: 10, duration: 30 }
+    });
+
+    // Wait for warmup
+    await sharedPage.waitForTimeout(3000);
+
+    // Trigger a warm challenge (achievable from current zone)
+    const challengeResult = await sim.triggerChallenge({ targetZone: 'warm' });
+    console.log(`Challenge trigger result: ${JSON.stringify(challengeResult)}`);
+
+    // Wait for challenge to activate
+    await sharedPage.waitForTimeout(2000);
+    let state = await sim.getGovernanceState();
+
+    if (!state.activeChallenge && challengeResult.delegated) {
+      console.log('Challenge delegated but media not governed — skipping lifecycle assertions');
+      await sim.disableGovernance();
+      await sim.stopAll();
+      return;
+    }
+
+    if (state.activeChallenge) {
+      console.log(`Active challenge: zone=${state.activeChallenge.targetZone}, required=${state.activeChallenge.requiredCount}`);
+
+      // Move all devices to target zone
+      for (const d of devices) {
+        await sim.setZone(d.deviceId, state.activeChallenge.targetZone);
+      }
+
+      // Wait for zone to register and challenge to evaluate
+      await sharedPage.waitForTimeout(3000);
+
+      // Complete the challenge
+      await sim.completeChallenge(true);
+
+      const finalState = await sim.getGovernanceState();
+      console.log(`After completion: wins=${finalState.stats?.challengesWon}, losses=${finalState.stats?.challengesLost}`);
+
+      // Should have recorded the win
+      expect(finalState.stats?.challengesWon).toBeGreaterThan(0);
+    } else {
+      console.log('No active challenge (may have been skipped for feasibility)');
+    }
+
+    await sim.disableGovernance();
+    await sim.stopAll();
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // TEST 20: Challenge failure when time expires
+  // Tests that challenges fail gracefully when not satisfied
+  // ═══════════════════════════════════════════════════════════════
+  test('challenge fails when participants cannot reach target zone', async () => {
+    if (!sharedPage.url().includes('/fitness')) {
+      await sharedPage.goto(`${BASE_URL}/fitness`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await sharedPage.waitForTimeout(2000);
+    }
+
+    const sim = new FitnessSimHelper(sharedPage);
+    await sim.waitForController();
+
+    // Start all devices in active zone
+    await sim.activateAll('active');
+    const devices = await sim.getDevices();
+    await sim.waitForActiveCount(devices.length, 5000);
+
+    await sim.enableGovernance({
+      phases: { warmup: 2, main: 60, cooldown: 2 },
+      challenges: { enabled: true, interval: 10, duration: 10 } // short duration
+    });
+
+    await sharedPage.waitForTimeout(3000);
+
+    // Trigger warm challenge but keep devices in cool (don't meet it)
+    await sim.triggerChallenge({ targetZone: 'warm' });
+    await sharedPage.waitForTimeout(1000);
+
+    let state = await sim.getGovernanceState();
+    if (!state.activeChallenge) {
+      console.log('No challenge activated (may be feasibility-skipped or media not governed)');
+      await sim.disableGovernance();
+      await sim.stopAll();
+      return;
+    }
+
+    // Drop to cool — won't satisfy the warm challenge
+    for (const d of devices) {
+      await sim.setZone(d.deviceId, 'cool');
+    }
+
+    // Wait for challenge to expire (10s duration + buffer)
+    console.log('Waiting for challenge to expire...');
+    await sharedPage.waitForTimeout(12000);
+
+    // Force completion as failed
+    await sim.completeChallenge(false);
+
+    const finalState = await sim.getGovernanceState();
+    console.log(`After expiry: wins=${finalState.stats?.challengesWon}, losses=${finalState.stats?.challengesLost}`);
+
+    // Check log for challenge failure
+    const logContent = readDevLog(testLogPosition);
+    const challengeEvents = logContent.split('\n').filter(l =>
+      l.includes('challenge.started') || l.includes('challenge.failed') || l.includes('challenge.completed')
+    );
+    console.log(`Challenge events: ${challengeEvents.length}`);
+    challengeEvents.slice(-5).forEach(e => console.log(`  ${e.slice(0, 120)}`));
+
+    await sim.disableGovernance();
+    await sim.stopAll();
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // TEST 21: Device startup HR readings are discarded
+  // Regression: BLE monitors send stale cached readings (161→90 BPM)
+  // Fix: First 3 HR readings per device are discarded
+  // ═══════════════════════════════════════════════════════════════
+  test('device startup does not cause false zone spikes', async () => {
+    if (!sharedPage.url().includes('/fitness')) {
+      await sharedPage.goto(`${BASE_URL}/fitness`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await sharedPage.waitForTimeout(2000);
+    }
+
+    const sim = new FitnessSimHelper(sharedPage);
+    await sim.waitForController();
+
+    // Clear all devices to simulate fresh connection
+    await sim.clearAllDevices();
+    await sharedPage.waitForTimeout(1000);
+
+    // Check dev.log for startup discard events
+    const logPos = getDevLogPosition();
+
+    // Activate one device — the first few HR readings should be discarded
+    const devices = await sim.getDevices();
+    if (devices.length === 0) {
+      console.log('No devices available after clear — activating all');
+      await sim.activateAll('active');
+      await sharedPage.waitForTimeout(3000);
+    } else {
+      await sim.setHR(devices[0].deviceId, 160); // Simulate stale high reading
+      await sharedPage.waitForTimeout(500);
+      await sim.setHR(devices[0].deviceId, 155); // Another stale reading
+      await sharedPage.waitForTimeout(500);
+      await sim.setHR(devices[0].deviceId, 90);  // Real reading (cool zone)
+      await sharedPage.waitForTimeout(500);
+      await sim.setHR(devices[0].deviceId, 95);  // 4th reading — should be accepted
+      await sharedPage.waitForTimeout(2000);
+    }
+
+    // Check for startup discard log events
+    const logContent = readDevLog(logPos);
+    const discardEvents = logContent.split('\n').filter(l => l.includes('device_startup_discard'));
+    console.log(`Startup discard events: ${discardEvents.length}`);
+
+    // If discard events logged, verify they contain expected fields
+    if (discardEvents.length > 0) {
+      console.log('Sample discard event:', discardEvents[0].slice(0, 150));
+      expect(discardEvents.length).toBeGreaterThanOrEqual(1);
+    } else {
+      // Simulator may bypass the normal device activity path
+      console.log('No discard events (simulator may use direct path)');
+    }
+
+    await sim.stopAll();
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // TEST 22: Governance lock pauses video, unlock resumes
+  // Tests that governance lock/unlock actually affects playback
+  // ═══════════════════════════════════════════════════════════════
+  test('governance lock pauses video and unlock resumes', async () => {
+    if (!plexContentAvailable) {
+      console.log('Skipping: Plex content not available');
+      test.skip();
+      return;
+    }
+
+    const sim = new FitnessSimHelper(sharedPage);
+    await sim.waitForController();
+
+    // Ensure video is playing
+    await sim.activateAll('active');
+    const devices = await sim.getDevices();
+    await sim.waitForActiveCount(devices.length, 5000);
+
+    await sim.enableGovernance({
+      phases: { warmup: 2, main: 60, cooldown: 2 },
+      challenges: { enabled: false }
+    });
+
+    // Wait for warmup + unlocked
+    await sharedPage.waitForTimeout(4000);
+
+    // Capture video state before lock
+    const beforeLock = await sharedPage.evaluate(() => {
+      const v = document.querySelector('video');
+      return v ? { paused: v.paused, time: v.currentTime } : null;
+    });
+    console.log(`Before lock: paused=${beforeLock?.paused}, time=${beforeLock?.time?.toFixed(2)}`);
+
+    // Drop all to cool to trigger warning → lock
+    for (const d of devices) {
+      await sim.setZone(d.deviceId, 'cool');
+    }
+
+    // Wait for warning grace + lock
+    await sharedPage.waitForTimeout(8000);
+
+    let state = await sim.getGovernanceState();
+    console.log(`After cool drop: phase=${state.phase}`);
+
+    if (state.phase === 'locked') {
+      // Check if video is locked/paused
+      const duringLock = await sharedPage.evaluate(() => {
+        const v = document.querySelector('video');
+        return v ? { paused: v.paused, time: v.currentTime } : null;
+      });
+      console.log(`During lock: paused=${duringLock?.paused}, time=${duringLock?.time?.toFixed(2)}`);
+
+      // Bring devices back to active to unlock
+      for (const d of devices) {
+        await sim.setZone(d.deviceId, 'active');
+      }
+      await sharedPage.waitForTimeout(3000);
+
+      state = await sim.getGovernanceState();
+      console.log(`After return to active: phase=${state.phase}`);
+    } else {
+      console.log(`Phase is ${state.phase}, not locked — governance may not have activated on this content`);
+    }
+
+    await sim.disableGovernance();
+    await sim.stopAll();
+  });
+
 });

@@ -708,6 +708,46 @@ export class FitnessSimulationController {
   }
 
   /**
+   * Get participant profile resolution status for all active participants.
+   * Returns profile data from FitnessSession.getParticipantProfile() (canonical interface)
+   * with fallback to direct ZoneProfileStore access.
+   * Tests use this to verify user IDs resolve before testing governance features.
+   */
+  getParticipantProfiles() {
+    const session = this.getSession?.();
+    if (!session) return { ok: false, error: 'No session', profiles: {} };
+
+    const roster = session.roster || [];
+    const profiles = {};
+    let resolvedCount = 0;
+    let unresolvedCount = 0;
+
+    for (const entry of roster) {
+      const id = entry.id || entry.profileId;
+      if (!id) continue;
+
+      // Use canonical getParticipantProfile interface
+      const profile = session.getParticipantProfile?.(id)
+        ?? session.zoneProfileStore?.getProfile(id)
+        ?? null;
+
+      profiles[id] = {
+        resolved: !!profile,
+        heartRate: profile?.heartRate ?? entry.heartRate ?? null,
+        currentZoneId: profile?.currentZoneId ?? entry.zoneId ?? null,
+        hasZoneConfig: Array.isArray(profile?.zoneConfig) && profile.zoneConfig.length > 0,
+        zoneConfigCount: profile?.zoneConfig?.length ?? 0,
+        source: profile?._source || (profile ? 'zoneProfileStore' : 'none')
+      };
+
+      if (profile) resolvedCount++;
+      else unresolvedCount++;
+    }
+
+    return { ok: true, profiles, resolvedCount, unresolvedCount, total: roster.length };
+  }
+
+  /**
    * Cleanup on destroy
    */
   destroy() {

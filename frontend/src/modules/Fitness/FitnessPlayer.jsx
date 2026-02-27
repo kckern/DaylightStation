@@ -10,7 +10,7 @@ import FitnessPlayerFooter from './FitnessPlayerFooter.jsx';
 import FitnessPlayerOverlay from './FitnessPlayerOverlay.jsx';
 import { playbackLog } from '../Player/lib/playbackLogger.js';
 import { useFitnessVolumeControls } from './useFitnessVolumeControls.js';
-import { resolveMediaIdentity, normalizeDuration } from '../Player/utils/mediaIdentity.js';
+import { resolveMediaIdentity, resolveContentId, normalizeDuration } from '../Player/utils/mediaIdentity.js';
 import { resolvePause, PAUSE_REASON } from '../Player/utils/pauseArbiter.js';
 import FitnessChart from './FitnessSidebar/FitnessChart.jsx';
 import { useMediaAmplifier } from './components/useMediaAmplifier.js';
@@ -468,6 +468,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       type: currentItem.type || currentItem.mediaType || 'video',
       assetId: currentItem.id || currentItem.assetId || `fitness-${currentItem.id || ''}`,
       thumbId: currentItem.thumbId,
+      grandparentId: currentItem.grandparentId || currentItem.grandparentRatingKey || currentItem.seriesId || currentItem.plex || null,
+      parentId: currentItem.parentId || null,
       grandparentTitle: currentItem.grandparentTitle || 'Fitness',
       parentTitle: currentItem.parentTitle || 'Workout',
       percent: (() => {
@@ -506,12 +508,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   );
 
   const currentMediaIdentity = useMemo(
-    () => resolveMediaIdentity(enhancedCurrentItem || currentItem),
+    () => resolveContentId(enhancedCurrentItem || currentItem),
     [enhancedCurrentItem, currentItem]
   );
 
   const fitnessLogContext = useMemo(() => ({
-    mediaId: resolveMediaIdentity(currentItem),
+    contentId: resolveContentId(currentItem),
     title: currentItem?.title,
     grandparentTitle: enhancedCurrentItem?.grandparentTitle,
     parentTitle: enhancedCurrentItem?.parentTitle,
@@ -855,6 +857,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   }, [postEpisodeStatus, setQueue, currentItem?.grandparentId]);
 
   const handleClose = () => {
+    // Note: media_end is logged by the useEffect cleanup when currentMediaIdentity changes to null
+    // (triggered by setCurrentItem(null) in executeClose). No explicit media_end here to avoid duplicates.
+
     // 4A: Guard - if voice memo overlay is open, pause video but don't unmount
     if (voiceMemoOverlayState?.open) {
       if (process.env.NODE_ENV === 'development') {
@@ -1006,15 +1011,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     if (!media) {
       return;
     }
-    loggedVideoMediaRef.current = currentMediaIdentity;
     const durationSeconds = normalizeDuration(
       media.duration,
       media.length,
       media.metadata?.duration
     );
-    session.logEvent('media_start', {
+    const logged = session.logEvent('media_start', {
       source: 'video_player',
-      mediaId: currentMediaIdentity,
+      contentId: currentMediaIdentity,
       title: media.title || media.label || null,
       grandparentTitle: media.grandparentTitle || null,
       parentTitle: media.parentTitle || null,
@@ -1030,19 +1034,34 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       type: media.type || media.mediaType || 'video',
       queueSize
     });
+    // Only mark as logged if the event was actually accepted by the timeline.
+    // If timeline is null (session not started yet), leave ref unset so the
+    // effect retries on the next dependency change.
+    if (logged) {
+      loggedVideoMediaRef.current = currentMediaIdentity;
+    }
     // Prod-visible log for autoplay SSoT verification
     getLogger().info('fitness.media_start.autoplay', {
-      mediaId: currentMediaIdentity,
+      contentId: currentMediaIdentity,
       autoplay: autoplayEnabled,
       videoLocked: governanceState?.videoLocked ?? null,
       isGoverned: governanceState?.isGoverned ?? null,
       governancePhase: governanceState?.status ?? null,
       labels: Array.isArray(media.labels) ? media.labels : []
     });
+    return () => {
+      // Log media_end for the media that's being replaced
+      if (currentMediaIdentity && session) {
+        session.logEvent('media_end', {
+          contentId: currentMediaIdentity,
+          source: 'video_player',
+        });
+      }
+    };
   }, [fitnessSessionInstance, currentMediaIdentity, enhancedCurrentItem, currentItem, autoplayEnabled, governanceState?.videoLocked, queueSize]);
 
   const resilienceMediaIdentity = useMemo(
-    () => resolveMediaIdentity(resilienceState?.meta),
+    () => resolveContentId(resilienceState?.meta),
     [resilienceState]
   );
 
