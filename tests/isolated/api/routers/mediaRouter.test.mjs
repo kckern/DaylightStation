@@ -166,6 +166,50 @@ describe('Media Queue Router', () => {
       expect(res.status).toBe(200);
       expect(mockMediaQueueService.setPosition).toHaveBeenCalledWith(3, undefined);
     });
+
+    it('returns 400 when position is missing', async () => {
+      const res = await request(app)
+        .patch('/media/queue/position')
+        .send({ mutationId: 'abc' });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/position/i);
+      expect(mockMediaQueueService.setPosition).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when position is negative', async () => {
+      const res = await request(app)
+        .patch('/media/queue/position')
+        .send({ position: -1, mutationId: 'abc' });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/position/i);
+      expect(mockMediaQueueService.setPosition).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when position is a float', async () => {
+      const res = await request(app)
+        .patch('/media/queue/position')
+        .send({ position: 1.5, mutationId: 'abc' });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/position/i);
+      expect(mockMediaQueueService.setPosition).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when position is not a number', async () => {
+      const res = await request(app)
+        .patch('/media/queue/position')
+        .send({ position: 'first', mutationId: 'abc' });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/position/i);
+      expect(mockMediaQueueService.setPosition).not.toHaveBeenCalled();
+    });
+
+    it('accepts position: 0 as valid', async () => {
+      const res = await request(app)
+        .patch('/media/queue/position')
+        .send({ position: 0, mutationId: 'abc' });
+      expect(res.status).toBe(200);
+      expect(mockMediaQueueService.setPosition).toHaveBeenCalledWith(0, undefined);
+    });
   });
 
   // ── 7. PATCH /media/queue/state ──────────────────────────────────
@@ -245,6 +289,24 @@ describe('Media Queue Router', () => {
 
       expect(res.status).toBe(200);
       expect(mockMediaQueueService.advance).toHaveBeenCalledWith(1, { auto: false }, undefined);
+    });
+
+    it('returns 400 when step is a float', async () => {
+      const res = await request(app)
+        .post('/media/queue/advance')
+        .send({ step: 1.5, auto: false });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/step/i);
+      expect(mockMediaQueueService.advance).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when step is not a number', async () => {
+      const res = await request(app)
+        .post('/media/queue/advance')
+        .send({ step: 'next', auto: false });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/step/i);
+      expect(mockMediaQueueService.advance).not.toHaveBeenCalled();
     });
 
     it('broadcasts the updated queue after advance', async () => {
