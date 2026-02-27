@@ -16,3 +16,34 @@
   position: relative;
   overflow: hidden;
 }
+
+// MediaAppPlayer fullscreen
+.media-player-wrapper {
+  position: relative;
+  width: 100%;
+
+  &.fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: #000;
+  }
+}
+
+.media-fullscreen-exit {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1001;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  font-size: 24px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
