@@ -111,7 +111,21 @@ export function createMediaRouter(config) {
     res.json(queue.toJSON());
   }));
 
-  // ── 6. PATCH /queue/position ───────────────────────────────────
+  // ── 6. POST /queue/advance ─────────────────────────────────────
+  // Delegates to MediaQueue.advance() — honours repeat, shuffle, and step direction.
+  // Use this instead of PATCH /queue/position for end-of-track and manual skip.
+
+  router.post('/queue/advance', asyncHandler(async (req, res) => {
+    const hid = resolveHid(req);
+    const { step = 1, auto = false, mutationId } = req.body;
+    const queue = await mediaQueueService.advance(step, { auto }, hid);
+    broadcast(queue, mutationId);
+    res.json(queue.toJSON());
+  }));
+
+  // ── 7. PATCH /queue/position ───────────────────────────────────
+  // Direct position setter — use only for jump-to-index (tapping a queue item).
+  // For next/prev/auto-advance use POST /queue/advance.
 
   router.patch('/queue/position', asyncHandler(async (req, res) => {
     const hid = resolveHid(req);

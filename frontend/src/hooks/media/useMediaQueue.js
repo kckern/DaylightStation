@@ -125,12 +125,12 @@ export function useMediaQueue() {
     );
   }, [mutate]);
 
-  const advance = useCallback(async (step = 1) => {
+  const advance = useCallback(async (step = 1, { auto = false } = {}) => {
     return mutate(null, (mid) =>
-      apiFetch('/position', { method: 'PATCH', body: { position: queue.position + step, mutationId: mid } })
+      apiFetch('/advance', { method: 'POST', body: { step, auto, mutationId: mid } })
         .then(res => setQueue(res))
     );
-  }, [queue.position, mutate]);
+  }, [mutate]);
 
   const setShuffle = useCallback(async (enabled) => {
     return mutate(null, (mid) =>

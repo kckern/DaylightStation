@@ -6,7 +6,7 @@
  */
 import path from 'path';
 import { loadYamlSafe, saveYaml, ensureDir } from '#system/utils/FileIO.mjs';
-import { IMediaQueueDatastore } from '#apps/media/ports/IMediaQueueDatastore.mjs';
+import { IMediaQueueDatastore } from '#domains/media/ports/IMediaQueueDatastore.mjs';
 import { MediaQueue } from '#domains/media/entities/MediaQueue.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 

@@ -84,10 +84,10 @@ const MediaAppInner = () => {
     if (playCommand.shuffle) queue.setShuffle(true);
   }, [urlCommand, queue.loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Handle item end — advance queue
+  // Handle item end — auto-advance (passes auto:true so repeat:one loops correctly)
   const handleItemEnd = useCallback(() => {
     logger.info('media-app.item-ended', { contentId: queue.currentItem?.contentId });
-    queue.advance(1);
+    queue.advance(1, { auto: true });
     setPlaybackState({ currentTime: 0, duration: 0, paused: true });
   }, [queue.currentItem, queue, logger]);
 
