@@ -122,16 +122,28 @@ export function useMediaTransportAdapter({ controllerRef, mediaAccess, resilienc
     return null;
   }, [resilienceBridge]);
 
+  // Deferred capability check — warn only if getMediaEl is still unavailable
+  // after the shadow DOM initialization window (2s grace period).
+  // The <dash-video> web component needs time to initialize its shadow DOM
+  // after mount. Previous mount-time check always fired a false positive.
+  const mountTimeRef = useRef(Date.now());
   useEffect(() => {
     if (warnedMissingMediaRef.current) return;
-    const hasMediaEl =
-      typeof resilienceBridge?.getMediaEl === 'function' ||
-      typeof mediaAccess?.getMediaEl === 'function' ||
-      typeof controllerRef?.current?.transport?.getMediaEl === 'function';
-    if (!hasMediaEl) {
-      warnedMissingMediaRef.current = true;
-      playbackLog('transport-capability-missing', { capability: 'getMediaEl' }, { level: 'warn' });
-    }
+    const timer = setTimeout(() => {
+      if (warnedMissingMediaRef.current) return;
+      const hasMediaEl =
+        typeof resilienceBridge?.getMediaEl === 'function' ||
+        typeof mediaAccess?.getMediaEl === 'function' ||
+        typeof controllerRef?.current?.transport?.getMediaEl === 'function';
+      if (!hasMediaEl) {
+        warnedMissingMediaRef.current = true;
+        playbackLog('transport-capability-missing', {
+          capability: 'getMediaEl',
+          delayMs: Date.now() - mountTimeRef.current
+        }, { level: 'warn' });
+      }
+    }, 2000);
+    return () => clearTimeout(timer);
   }, [controllerRef, mediaAccess, resilienceBridge]);
 
   const play = useMemo(() => guard('play', () => controllerRef?.current?.transport?.play?.()), [controllerRef]);

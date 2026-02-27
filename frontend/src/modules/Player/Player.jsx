@@ -549,6 +549,26 @@ const Player = forwardRef(function Player(props, ref) {
       pendingSeekSeconds: seekSeconds
     };
 
+    // If hardReset succeeded in-place, give it a chance to recover without
+    // a full React remount. Remounting via setTimeout breaks the user gesture
+    // chain, causing Firefox to block autoplay after 3-4 cycles.
+    // The startup deadline timer (15s) in useMediaResilience will trigger
+    // another recovery attempt if hardReset fails silently.
+    if (hardResetInvoked && !hardResetErrored) {
+      playbackLog('player-remount', {
+        payload: {
+          waitKey: resolvedWaitKey,
+          reason: rest?.reason || 'resilience',
+          source: 'hard-reset-accepted',
+          seekSeconds,
+          guid: currentMediaGuid,
+          remountNonce: remountInfoRef.current?.nonce ?? 0,
+          ...conditions
+        }
+      });
+      return;
+    }
+
     scheduleSinglePlayerRemount({
       seekSeconds,
       reason: rest?.reason || 'resilience',
@@ -556,7 +576,7 @@ const Player = forwardRef(function Player(props, ref) {
       trigger: triggerDetails,
       conditions
     });
-  }, [scheduleSinglePlayerRemount, mediaAccess, transportAdapter, playerType, isQueue, advance, clear, currentMediaGuid]);
+  }, [scheduleSinglePlayerRemount, mediaAccess, transportAdapter, playerType, isQueue, advance, clear, currentMediaGuid, resolvedWaitKey]);
 
   const { overlayProps, state: resilienceState, onStartupSignal } = useMediaResilience({
     getMediaEl: transportAdapter.getMediaEl,
