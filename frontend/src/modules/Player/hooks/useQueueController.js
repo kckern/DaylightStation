@@ -31,6 +31,14 @@ export function useQueueController({ play, queue, clear, shuffle }) {
   const [originalQueue, setOriginalQueue] = useState([]);
   const [isShuffle, setIsShuffle] = useState(!!play?.shuffle || !!queue?.shuffle || !!shuffle || false);
   const [shaderUserCycled, setShaderUserCycled] = useState(false);
+
+  const isQueue = !!queue || (play && (play.playlist || play.queue)) || Array.isArray(play);
+  const contentRef = play?.contentId || queue?.contentId
+                  || play?.plex || queue?.plex
+                  || play?.playlist || play?.queue
+                  || queue?.playlist || queue?.queue || queue?.media
+                  || null;
+
   const sourceSignatureRef = useRef(_signatureCache.get(contentRef) ?? null);
 
   const cycleThroughClasses = useCallback((upOrDownInt) => {
@@ -44,13 +52,6 @@ export function useQueueController({ play, queue, clear, shuffle }) {
       return nextClass;
     });
   }, []);
-
-  const isQueue = !!queue || (play && (play.playlist || play.queue)) || Array.isArray(play);
-  const contentRef = play?.contentId || queue?.contentId
-                  || play?.plex || queue?.plex
-                  || play?.playlist || play?.queue
-                  || queue?.playlist || queue?.queue || queue?.media
-                  || null;
 
   useEffect(() => {
     const signatureParts = [];
