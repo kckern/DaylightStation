@@ -35,7 +35,7 @@ declare -i COUNT_DIRS_CLEANED=0
 declare -A DEST_SEEN
 
 # Known legacy doc-folder basenames (case-sensitive match)
-LEGACY_DOC_DIRS=("_Docs" "_docs" "docs" "Documents" "_Documentation" "PDFs" "pdf" "_PDF" "TSS PDFs" "Insanity Documents")
+LEGACY_DOC_DIRS=("_Docs" "_docs" "Documents" "_Documentation" "PDFs" "pdf" "_PDF" "TSS PDFs" "Insanity Documents")
 
 # ---------------------------------------------------------------------------
 # Usage / argument parsing
@@ -114,7 +114,7 @@ categorize_filename() {
   fi
 
   # Worksheet / tracker / measurement
-  if [[ "$lower" =~ (worksheet|tally|tracker|fit[-_]?test|measurement|journal|logbook|selfie|fit[-_]?check|workbook|playbook) ]]; then
+  if [[ "$lower" =~ (worksheet|tally|tracker|fit[-_]?test|measurement|journal|log|selfie|fit[-_]?check|workbook|playbook) ]]; then
     echo "worksheet"
     return
   fi
@@ -137,8 +137,11 @@ clean_name() {
   #    "MUDINS1101_", "ACCINS1181_", "MLRINS1103_", "80DO_").
   #    Also handles numeric-only prefixes like "448150_", "387250_", "8370_".
   #    Repeat up to 3 times for chained prefixes (e.g., "448150_DDPR_").
+  # Handle long INS-style codes first (e.g., 21DINS1203_, ASYINS1103_, ACCINS1181_)
+  name=$(echo "$name" | sed -E 's/^[A-Z0-9]{2,6}INS[0-9]+[-_]//')
+  # Then strip standard 2-6 char prefixes, repeat for chained prefixes (e.g., 448150_DDPR_)
   for _ in 1 2 3; do
-    name=$(echo "$name" | sed -E 's/^[A-Z0-9]{2,10}[-_]//')
+    name=$(echo "$name" | sed -E 's/^[A-Z0-9]{2,6}[-_]//')
   done
 
   # 2. Strip BOD-EN-US / BOD-EN_US internal codes (mid-string too)
