@@ -82,6 +82,9 @@ function TVAppContent({ rootMenu, autoplay, appParam, logger }) {
   return <MenuStack rootMenu={rootMenu} />;
 }
 
+// TODO: Wire usePlaybackBroadcast when Player ref is surfaced from MenuStack (4.2.5)
+// The Player lives inside MenuStack and is lazily rendered — no playerRef is available
+// at this level. Surfacing it requires threading a ref through MenuNavigationProvider.
 export default function TVApp({ appParam }) {
   const [list, setList] = useState(null);
   const logger = useMemo(() => getChildLogger({ app: 'tv' }), []);
