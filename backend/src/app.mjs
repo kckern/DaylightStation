@@ -1265,7 +1265,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       const { StravaClientAdapter } = await import('./1_adapters/fitness/StravaClientAdapter.mjs');
       const { StravaWebhookAdapter } = await import('./1_adapters/strava/StravaWebhookAdapter.mjs');
       const { StravaWebhookJobStore } = await import('./1_adapters/strava/StravaWebhookJobStore.mjs');
-      const { StravaEnrichmentService } = await import('./3_applications/strava/StravaEnrichmentService.mjs');
+      const { FitnessActivityEnrichmentService } = await import('./3_applications/fitness/FitnessActivityEnrichmentService.mjs');
 
       const stravaClient = new StravaClientAdapter({
         httpClient: axios,
@@ -1284,7 +1284,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         logger: rootLogger.child({ module: 'strava-jobs' }),
       });
 
-      stravaEnrichmentService = new StravaEnrichmentService({
+      stravaEnrichmentService = new FitnessActivityEnrichmentService({
         stravaClient,
         jobStore,
         authStore: {
