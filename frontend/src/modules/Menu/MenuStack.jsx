@@ -232,7 +232,7 @@ export function MenuStack({ rootMenu, playerRef }) {
       );
 
     default:
-      console.warn(`MenuStack: Unknown content type "${type}"`, props);
+      getLogger().warn('menu-stack.unknown-type', { type });
       return (
         <div className="menu-stack-error">
           Unknown content type: {type}
