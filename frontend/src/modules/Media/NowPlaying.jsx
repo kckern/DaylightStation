@@ -34,24 +34,27 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, o
 
   const showOverlay = useCallback(() => {
     setOverlayVisible(true);
+    logger.debug('overlay.show', { format: currentItem?.format });
     if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
     if (currentItem?.format === 'video') {
       overlayTimerRef.current = setTimeout(() => setOverlayVisible(false), 3000);
     }
-  }, [currentItem?.format]);
+  }, [currentItem?.format, logger]);
 
   // Reset overlay when entering/exiting fullscreen
   useEffect(() => {
     if (isFullscreen) {
       showOverlay();
+      logger.info('player.fullscreen-enter', { format: currentItem?.format });
     } else {
       setOverlayVisible(true);
-      if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
+      // Timer cleared by cleanup function
+      logger.info('player.fullscreen-exit', {});
     }
     return () => {
       if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
     };
-  }, [isFullscreen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isFullscreen, showOverlay]);
 
   // Auto-fullscreen for video; reset on format change (8.2.2, 8.1.11)
   useEffect(() => {
@@ -96,12 +99,12 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, o
     ? (playbackState.currentTime / playbackState.duration) * 100
     : 0;
 
-  const renderTransportOverlay = useCallback(() => (
+  const renderTransportOverlay = () => (
     <div
       className={`media-fullscreen-controls${!overlayVisible ? ' media-fullscreen-controls--hidden' : ''}`}
       onClick={(e) => { e.stopPropagation(); showOverlay(); }}
     >
-      <div className="media-progress" onClick={(e) => { e.stopPropagation(); handleSeek(e); }}>
+      <div className="media-progress" onClick={(e) => { e.stopPropagation(); showOverlay(); handleSeek(e); }}>
         <div className="media-progress-bar">
           <div className="media-progress-fill" style={{ width: `${progress}%` }} />
         </div>
@@ -122,7 +125,7 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, o
         <button className="media-transport-btn" onClick={onNext} aria-label="Next">&#9197;</button>
       </div>
     </div>
-  ), [overlayVisible, showOverlay, handleSeek, progress, playbackState, onPrev, handleToggle, onNext]);
+  );
 
   if (!currentItem) {
     return (
@@ -220,18 +223,20 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, o
         </>
       )}
 
-      {/* Volume */}
-      <div className="media-volume">
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.05"
-          value={volume}
-          onChange={handleVolumeChange}
-          aria-label="Volume"
-        />
-      </div>
+      {/* Volume — hidden in fullscreen */}
+      {!isFullscreen && (
+        <div className="media-volume">
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={volume}
+            onChange={handleVolumeChange}
+            aria-label="Volume"
+          />
+        </div>
+      )}
     </div>
   );
 };
