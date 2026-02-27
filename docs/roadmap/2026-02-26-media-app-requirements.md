@@ -5,7 +5,7 @@
 
 **Companion to:** `2026-02-26-media-app-design.md` (narrative architecture reference)
 **Last Updated:** 2026-02-27
-**Status:** Phase 3 Implemented
+**Status:** Phase 4 Implemented
 
 ---
 
@@ -1085,4 +1085,17 @@ Implementation commits mapped to requirement IDs.
 
 **Phase 1 coverage:** 19/19 requirements addressed
 **Phase 2 coverage:** 62 requirements addressed (1 partial: 2.1.5 drag UX)
+
+### Phase 4 Commits
+
+| Req IDs | Commit | Description |
+|---------|--------|-------------|
+| 8.2.1, 8.2.2, 8.1.11, 8.1.12 | `0da85afd` | Lift fullscreen state to NowPlaying, MediaAppPlayer is now controlled |
+| quality | `d6700466` | Quality fixes: useCallback for exit, remove dead format prop, hoist formatTime |
+| 8.1.8, 8.2.4 | `6e1ed2ba` | Fullscreen transport overlay with auto-hide for video |
+| quality | `b5830868` | Quality fixes: stable deps, remove useCallback, seek resets timer, logging |
+| 8.1.4–8.1.7 | `e132202c` | Expand-to-fullscreen for singalong and readalong formats |
+| 8.1.9 | `b8c06653` | FormatMetadata component for format-specific secondary info in track view |
+| 8.1.10 | `b97f3394` | Format badge in ContentBrowser search results |
+| styling | `4d795f1c` | SCSS for fullscreen overlay, format badges, expand button |
 **Phase 3 coverage:** 44 requirements addressed (2 partial: 4.2.5 TVApp broadcast, 4.2.6 OfficeApp broadcast — Player ref not accessible at top level; 3 deferred items from P2 resolved: 3.1.13, 6.1.4, 6.2.2, 6.1.12)
