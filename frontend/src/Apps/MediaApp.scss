@@ -308,3 +308,137 @@
     height: 80px;
   }
 }
+
+/* Queue Drawer */
+.queue-drawer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-height: 70vh;
+  background: #111;
+  border-top: 1px solid #333;
+  border-radius: 12px 12px 0 0;
+  display: flex;
+  flex-direction: column;
+  z-index: 900;
+  animation: slideUp 0.2s ease-out;
+
+  @media (min-width: 768px) {
+    position: static;
+    max-height: none;
+    width: 320px;
+    border-radius: 0;
+    border-left: 1px solid #333;
+    border-top: none;
+    animation: none;
+  }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.queue-drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #222;
+
+  h3 { margin: 0; font-size: 14px; color: #e0e0e0; }
+}
+
+.queue-drawer-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.queue-action-btn {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+
+  &:hover { color: #e0e0e0; }
+  &.active { color: #1db954; }
+}
+
+.queue-drawer-list {
+  overflow-y: auto;
+  flex: 1;
+  padding: 4px 0;
+}
+
+.queue-empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: #666;
+  font-size: 14px;
+}
+
+/* Queue Item */
+.queue-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  gap: 12px;
+  cursor: pointer;
+
+  &:hover { background: #1a1a1a; }
+  &--current { background: #1a2a1a; border-left: 3px solid #1db954; }
+}
+
+.queue-item-thumbnail {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #222;
+  flex-shrink: 0;
+
+  img { width: 100%; height: 100%; object-fit: cover; }
+}
+
+.queue-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.queue-item-title {
+  font-size: 13px;
+  color: #e0e0e0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.queue-item-source {
+  font-size: 11px;
+  color: #666;
+}
+
+.queue-item-badge {
+  font-size: 10px;
+  color: #888;
+  background: #222;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
+.queue-item-remove {
+  background: none;
+  border: none;
+  color: #555;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+
+  &:hover { color: #ff4444; }
+}
