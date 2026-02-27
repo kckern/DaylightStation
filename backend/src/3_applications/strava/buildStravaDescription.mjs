@@ -81,7 +81,7 @@ export function buildStravaDescription(session, currentActivity = {}) {
     parts.push(descBlock);
   }
 
-  const description = parts.length > 0 ? parts.join('\n\n---\n') : null;
+  const description = parts.length > 0 ? parts.join('\n\n') : null;
 
   // If we have neither name nor description, nothing to do
   if (!name && !description) {
