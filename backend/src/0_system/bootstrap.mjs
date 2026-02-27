@@ -32,6 +32,8 @@ import { SavedQueryService } from '#apps/content/SavedQueryService.mjs';
 import { FilesystemCanvasAdapter, ImmichCanvasAdapter } from '#adapters/content/canvas/index.mjs';
 import { ImmichClient } from '#adapters/content/gallery/immich/ImmichClient.mjs';
 import { YamlMediaProgressMemory } from '#adapters/persistence/yaml/YamlMediaProgressMemory.mjs';
+import { YamlMediaQueueDatastore } from '#adapters/persistence/yaml/YamlMediaQueueDatastore.mjs';
+import { MediaQueueService } from '#apps/media/MediaQueueService.mjs';
 
 // Content adapter manifests (for category/provider metadata)
 import mediaManifest from '#adapters/content/media/files/manifest.mjs';
@@ -857,6 +859,32 @@ export function createFitnessServices(config) {
   };
 }
 
+// =============================================================================
+// Media Domain Bootstrap
+// =============================================================================
+
+/**
+ * Create media domain services
+ * @param {Object} config
+ * @param {Object} config.configService - ConfigService instance for path resolution
+ * @param {string} config.defaultHouseholdId - Default household ID
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {Object} Media services
+ */
+export function createMediaServices(config) {
+  const { configService, defaultHouseholdId, logger = console } = config;
+
+  const queueStore = new YamlMediaQueueDatastore({ configService });
+
+  const mediaQueueService = new MediaQueueService({
+    queueStore,
+    defaultHouseholdId,
+    logger,
+  });
+
+  return { queueStore, mediaQueueService };
+}
+
 /**
  * Create fitness API router
  * @param {Object} config
@@ -881,6 +909,8 @@ export function createFitnessApiRouter(config) {
     contentQueryService,
     createReceiptCanvas,
     printerAdapter,
+    providerWebhookAdapters,
+    enrichmentService,
     logger = console
   } = config;
 
@@ -924,6 +954,8 @@ export function createFitnessApiRouter(config) {
     contentRegistry,  // Still needed for playlist thumbnail enrichment
     createReceiptCanvas,
     printerAdapter,
+    providerWebhookAdapters,
+    enrichmentService,
     logger
   });
 }

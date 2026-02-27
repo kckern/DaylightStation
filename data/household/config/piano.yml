@@ -2,7 +2,7 @@
 
 # ── Multi-game registry ──────────────────────────────────────────
 games:
-  rhythm:
+  space-invaders:
     activation:
       notes: [30, 102]        # F#1 + F#7 — first and last F# keys on keyboard
       window_ms: 300
@@ -219,3 +219,109 @@ games:
         complexity: triad
         note_range: [48, 84]      # C3–C6
         score_to_advance: 260
+
+  hero:
+    activation:
+      notes: [32, 104]       # G#1 + G#7
+      window_ms: 300
+
+  side-scroller:
+    activation:
+      notes: [33, 105]       # A1 + A7
+      window_ms: 300
+    health: 28
+    damage_per_hit: 2
+    heal_per_dodge: 1
+    invincibility_ms: 1000
+    jump_duration_ms: 500
+    levels:
+      # --- White keys, treble clef (gentle intro) ---
+      - name: "Easy Run"
+        scroll_speed: 2
+        obstacle_interval_ms: 3000
+        note_range: [60, 72]
+        complexity: single
+        white_keys_only: true
+        target_rotation: dodge
+        score_to_advance: 400
+
+      - name: "Warming Up"
+        scroll_speed: 2.5
+        obstacle_interval_ms: 2500
+        note_range: [60, 72]
+        complexity: single
+        white_keys_only: true
+        target_rotation: dodge
+        score_to_advance: 600
+
+      # --- Add sharps/flats ---
+      - name: "Sharp Turn"
+        scroll_speed: 2.5
+        obstacle_interval_ms: 2500
+        note_range: [60, 72]
+        complexity: single
+        target_rotation: dodge
+        score_to_advance: 700
+
+      # --- Bass clef ---
+      - name: "Low Road"
+        scroll_speed: 3
+        obstacle_interval_ms: 2200
+        note_range: [48, 60]
+        complexity: single
+        target_rotation: dodge
+        score_to_advance: 800
+
+      # --- Full range ---
+      - name: "Wide Open"
+        scroll_speed: 3
+        obstacle_interval_ms: 2000
+        note_range: [48, 84]
+        complexity: single
+        target_rotation: dodge
+        score_to_advance: 900
+
+      # --- Dyads ---
+      - name: "Double Up"
+        scroll_speed: 3
+        obstacle_interval_ms: 2500
+        note_range: [60, 72]
+        complexity: dyad
+        white_keys_only: true
+        target_rotation: dodge
+        score_to_advance: 1000
+
+      - name: "Dyad Dash"
+        scroll_speed: 3.5
+        obstacle_interval_ms: 2200
+        note_range: [48, 84]
+        complexity: dyad
+        target_rotation: dodge
+        score_to_advance: 1200
+
+      # --- Triads ---
+      - name: "Triad Trail"
+        scroll_speed: 3.5
+        obstacle_interval_ms: 2500
+        note_range: [60, 72]
+        complexity: triad
+        white_keys_only: true
+        target_rotation: dodge
+        score_to_advance: 1400
+
+      - name: "Full Chord"
+        scroll_speed: 4
+        obstacle_interval_ms: 2000
+        note_range: [48, 84]
+        complexity: triad
+        target_rotation: dodge
+        score_to_advance: 1800
+
+      # --- Speed finale ---
+      - name: "Sprint!"
+        scroll_speed: 7
+        obstacle_interval_ms: 1000
+        note_range: [48, 84]
+        complexity: triad
+        target_rotation: dodge
+        score_to_advance: 3000

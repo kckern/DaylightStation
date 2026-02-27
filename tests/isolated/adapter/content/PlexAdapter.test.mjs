@@ -225,7 +225,54 @@ describe('PlexAdapter', () => {
         expect(result.total).toBe(1);
       });
 
-      test('filters by mediaType video', async () => {
+      test('filters by mediaType video (tier 1 - containers)', async () => {
+        const adapter = new PlexAdapter(
+          { host: 'http://localhost:32400', token: 'test-token' },
+          { httpClient: createMockHttpClient() }
+        );
+
+        adapter.client.hubSearch = jest.fn().mockResolvedValue({
+          results: [
+            { ratingKey: '1', title: 'Action Movie', type: 'movie' },
+            { ratingKey: '2', title: 'TV Show', type: 'show' },
+            { ratingKey: '3', title: 'Artist', type: 'artist' },
+            { ratingKey: '4', title: 'Song', type: 'track' }
+          ]
+        });
+
+        const result = await adapter.search({ text: 'test', mediaType: 'video' });
+
+        // Tier 1: should return video containers (movie, show) not audio (artist, track)
+        expect(result.items.length).toBe(2);
+        const titles = result.items.map(i => i.title);
+        expect(titles).toContain('Action Movie');
+        expect(titles).toContain('TV Show');
+      });
+
+      test('filters by mediaType audio (tier 1 - containers)', async () => {
+        const adapter = new PlexAdapter(
+          { host: 'http://localhost:32400', token: 'test-token' },
+          { httpClient: createMockHttpClient() }
+        );
+
+        adapter.client.hubSearch = jest.fn().mockResolvedValue({
+          results: [
+            { ratingKey: '1', title: 'Movie', type: 'movie' },
+            { ratingKey: '2', title: 'Jazz Album', type: 'album' },
+            { ratingKey: '3', title: 'Rock Artist', type: 'artist' }
+          ]
+        });
+
+        const result = await adapter.search({ text: 'test', mediaType: 'audio' });
+
+        // Tier 1: should return audio containers (album, artist) not video (movie)
+        expect(result.items.length).toBe(2);
+        const titles = result.items.map(i => i.title);
+        expect(titles).toContain('Jazz Album');
+        expect(titles).toContain('Rock Artist');
+      });
+
+      test('filters by mediaType video (tier 2 - leaves)', async () => {
         const adapter = new PlexAdapter(
           { host: 'http://localhost:32400', token: 'test-token' },
           { httpClient: createMockHttpClient() }
@@ -246,13 +293,13 @@ describe('PlexAdapter', () => {
           metadata: {}
         }));
 
-        const result = await adapter.search({ text: 'test', mediaType: 'video' });
+        const result = await adapter.search({ text: 'test', mediaType: 'video', tier: 2 });
 
-        // Should only return movie and episode, not track
+        // Tier 2: should return movie and episode, not track
         expect(result.items.length).toBe(2);
       });
 
-      test('filters by mediaType audio', async () => {
+      test('filters by mediaType audio (tier 2 - leaves)', async () => {
         const adapter = new PlexAdapter(
           { host: 'http://localhost:32400', token: 'test-token' },
           { httpClient: createMockHttpClient() }
@@ -272,9 +319,9 @@ describe('PlexAdapter', () => {
           metadata: {}
         }));
 
-        const result = await adapter.search({ text: 'test', mediaType: 'audio' });
+        const result = await adapter.search({ text: 'test', mediaType: 'audio', tier: 2 });
 
-        // Should only return track
+        // Tier 2: should only return track
         expect(result.items.length).toBe(1);
       });
 

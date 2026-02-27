@@ -92,14 +92,8 @@ describe('Governance + TreasureBox Zone Integration', () => {
   test('GovernanceEngine should cache and reuse zoneRankMap on internal pulse', async () => {
     const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
 
-    const mockGetProfile = jest.fn().mockReturnValue({
-      id: 'user1',
-      currentZoneId: 'warm'
-    });
-    const mockZoneProfileStore = { getProfile: mockGetProfile };
-
     const session = {
-      zoneProfileStore: mockZoneProfileStore,
+      zoneProfileStore: { getProfile: jest.fn() },
       roster: [{ id: 'user1', isActive: true, zoneId: 'warm' }],
       treasureBox: null
     };
@@ -147,14 +141,11 @@ describe('Governance + TreasureBox Zone Integration', () => {
     expect(engine._latestInputs?.zoneInfoMap).toEqual(zoneInfoMap);
   });
 
-  test('zone change is reflected in ZoneProfileStore before governance evaluates', async () => {
+  test('zone change is reflected in userZoneMap before governance evaluates', async () => {
     const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
 
-    const mockGetProfile = jest.fn();
-    const mockZoneProfileStore = { getProfile: mockGetProfile };
-
     const session = {
-      zoneProfileStore: mockZoneProfileStore,
+      zoneProfileStore: { getProfile: jest.fn() },
       roster: [{ id: 'user1', isActive: true }],
       treasureBox: null
     };
@@ -185,10 +176,9 @@ describe('Governance + TreasureBox Zone Integration', () => {
 
     try {
       // First evaluate: user in 'active' (below warm requirement)
-      mockGetProfile.mockReturnValue({ id: 'user1', currentZoneId: 'active' });
       engine.evaluate({
         activeParticipants: ['user1'],
-        userZoneMap: {},  // Empty — governance reads exclusively from ZoneProfileStore
+        userZoneMap: { user1: 'active' },
         zoneRankMap,
         zoneInfoMap,
         totalCount: 1
@@ -196,36 +186,16 @@ describe('Governance + TreasureBox Zone Integration', () => {
 
       expect(engine.phase).toBe('pending'); // Requirement not met
 
-      // ZoneProfileStore now returns 'warm' (synchronous sync after HR update)
-      mockGetProfile.mockReturnValue({ id: 'user1', currentZoneId: 'warm' });
-
-      // Second evaluate: satisfied, starts hysteresis timer
+      // Second evaluate: user now in 'warm' -- unlocks immediately (no hysteresis in engine)
       engine.evaluate({
         activeParticipants: ['user1'],
-        userZoneMap: {},
-        zoneRankMap,
-        zoneInfoMap,
-        totalCount: 1
-      });
-
-      // Still pending — hysteresis requires 500ms of sustained satisfaction
-      expect(engine.phase).toBe('pending');
-
-      // Advance time past hysteresis (500ms)
-      mockTime += 600;
-
-      // Third evaluate: hysteresis satisfied, transitions to unlocked
-      engine.evaluate({
-        activeParticipants: ['user1'],
-        userZoneMap: {},
+        userZoneMap: { user1: 'warm' },
         zoneRankMap,
         zoneInfoMap,
         totalCount: 1
       });
 
       expect(engine.phase).toBe('unlocked');
-      // Verify governance read zone data from ZoneProfileStore
-      expect(mockGetProfile).toHaveBeenCalledWith('user1');
     } finally {
       Date.now = realDateNow;
     }
@@ -234,16 +204,16 @@ describe('Governance + TreasureBox Zone Integration', () => {
   test('GovernanceEngine should not lose state after internal evaluate()', async () => {
     const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
 
-    const mockGetProfile = jest.fn().mockReturnValue({
-      id: 'user1',
-      currentZoneId: 'active'
-    });
-    const mockZoneProfileStore = { getProfile: mockGetProfile };
-
+    // Session provides getActiveParticipantState for no-arg evaluate() calls
     const session = {
-      zoneProfileStore: mockZoneProfileStore,
+      zoneProfileStore: { getProfile: jest.fn() },
       roster: [{ id: 'user1', isActive: true, zoneId: 'active' }],
-      treasureBox: null
+      treasureBox: null,
+      getActiveParticipantState: jest.fn().mockReturnValue({
+        participants: ['user1'],
+        zoneMap: { user1: 'active' },
+        totalCount: 1
+      })
     };
 
     const engine = new GovernanceEngine(session);
@@ -279,6 +249,7 @@ describe('Governance + TreasureBox Zone Integration', () => {
     const phaseAfterFirst = engine.phase;
 
     // Multiple internal pulses (simulating timer-triggered re-evaluations)
+    // These call evaluate() with no args, which uses getActiveParticipantState()
     engine.evaluate();
     engine.evaluate();
     engine.evaluate();

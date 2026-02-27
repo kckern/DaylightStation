@@ -1,4 +1,4 @@
-import { formatSessionId, ensureSeriesCapacity, deepClone, resolveDisplayLabel } from './types.js';
+import { formatSessionId, ensureSeriesCapacity, deepClone } from './types.js';
 import { DeviceManager } from './DeviceManager.js';
 import { UserManager } from './UserManager.js';
 import { GovernanceEngine } from './GovernanceEngine.js';
@@ -286,7 +286,8 @@ export class FitnessSession {
     this.zoneProfileStore = new ZoneProfileStore();
     this.eventJournal = new EventJournal();
     this.treasureBox = null; // Instantiated on start
-    
+    this._deviceHrSampleCount = new Map(); // deviceId -> count for startup discard
+
     // Session Entity Registry - tracks participation segments per device assignment
     // Each device assignment creates a new entity with fresh metrics (coins, start time)
     // @see /docs/design/guest-switch-session-transition.md
@@ -504,8 +505,30 @@ export class FitnessSession {
         device.lastOccupantSlug = currentOccupant;
         
         user.updateFromDevice(deviceData);
+
+        // Device startup discard: first 3 HR readings may be stale/cached from prior session
+        // NOTE: Sets a flag instead of returning early — the pre-session buffer check (below)
+        // must still run so the session can start. Only TreasureBox/ZoneProfileStore/governance
+        // are skipped during the discard window.
+        let startupDiscarded = false;
+        if (deviceData.type === 'heart_rate') {
+          const STARTUP_DISCARD_COUNT = 3;
+          const deviceKey = String(device.id);
+          const count = this._deviceHrSampleCount.get(deviceKey) || 0;
+          this._deviceHrSampleCount.set(deviceKey, count + 1);
+          if (count < STARTUP_DISCARD_COUNT) {
+            this._log('device_startup_discard', {
+              deviceId: deviceKey,
+              sampleIndex: count,
+              discardedHr: deviceData.heartRate,
+              reason: 'BLE monitors may send stale cached values on connect'
+            });
+            startupDiscarded = true;
+          }
+        }
+
         // Feed TreasureBox if HR - Phase 2: Use entity-based routing
-        if (this.treasureBox && deviceData.type === 'heart_rate') {
+        if (!startupDiscarded && this.treasureBox && deviceData.type === 'heart_rate') {
           // Check ledger for current occupant (guest may have taken over)
           const ledgerEntry = this.userManager?.assignmentLedger?.get(device.id);
           const currentOccupantId = ledgerEntry?.metadata?.profileId || ledgerEntry?.occupantId || user.id;
@@ -518,11 +541,15 @@ export class FitnessSession {
         }
 
         // Sync ZoneProfileStore immediately so governance sees fresh zone data
-        if (this.zoneProfileStore && deviceData.type === 'heart_rate') {
+        // BUGFIX: Use getRoster() (device-present) not getActive() (ActivityMonitor-verified)
+        // ActivityMonitor is tick-driven (5s intervals), so between ticks getActive() returns
+        // empty, causing ZoneProfileStore to have zero profiles and governance to ghost-filter
+        // all participants. getRoster() reflects DeviceManager state which is immediately updated.
+        if (!startupDiscarded && this.zoneProfileStore && deviceData.type === 'heart_rate') {
           const allUsers = this.userManager.getAllUsers();
-          const activeRoster = this._participantRoster?.getActive();
-          const usersForZones = activeRoster
-            ? (() => { const ids = new Set(activeRoster.map(e => e.id)); return allUsers.filter(u => ids.has(u.id)); })()
+          const currentRoster = this._participantRoster?.getRoster();
+          const usersForZones = currentRoster
+            ? (() => { const ids = new Set(currentRoster.map(e => e.id)); return allUsers.filter(u => ids.has(u.id)); })()
             : allUsers;
           const changed = this._syncZoneProfiles(usersForZones);
           if (changed && this.governanceEngine) {
@@ -1069,6 +1096,15 @@ export class FitnessSession {
   }
 
   /**
+   * Canonical participant state for governance consumers.
+   * Delegates to ParticipantRoster.getActiveParticipantState().
+   */
+  getActiveParticipantState() {
+    return this._participantRoster?.getActiveParticipantState()
+      ?? { participants: [], zoneMap: {}, totalCount: 0 };
+  }
+
+  /**
    * Get inactive participants (uses ParticipantRoster)
    * @returns {import('./ParticipantRoster.js').RosterEntry[]}
    */
@@ -1085,79 +1121,7 @@ export class FitnessSession {
   }
 
   get roster() {
-    // Delegate to ParticipantRoster but maintain backward compatibility
-    // If ParticipantRoster is configured, use it; otherwise fall back to original logic
-    if (this._participantRoster && this._participantRoster._deviceManager) {
-      return this._participantRoster.getRoster();
-    }
-    
-    // Original roster implementation (backward compatibility during migration)
-    const roster = [];
-    const heartRateDevices = this.deviceManager.getAllDevices().filter(d => d.type === 'heart_rate');
-    const zoneLookup = new Map();
-    const zoneSnapshot = typeof this.treasureBox?.getUserZoneSnapshot === 'function'
-      ? this.treasureBox.getUserZoneSnapshot()
-      : [];
-    zoneSnapshot.forEach((entry) => {
-      if (!entry || !entry.userId) return;
-      // Use userId as the key
-      zoneLookup.set(entry.userId, {
-        zoneId: entry.zoneId ? String(entry.zoneId).toLowerCase() : null,
-        color: entry.color || null
-      });
-    });
-
-    heartRateDevices.forEach((device) => {
-      if (!device || device.id == null) return;
-      const deviceId = String(device.id);
-      const heartRate = Number.isFinite(device.heartRate) ? Math.round(device.heartRate) : null;
-      const guestEntry = this.userManager?.assignmentLedger?.get?.(deviceId) || null;
-      const ledgerName = guestEntry?.occupantName || guestEntry?.metadata?.name || null;
-      const mappedUser = this.userManager.resolveUserForDevice(deviceId);
-      const participantName = ledgerName || mappedUser?.name;
-      if (!participantName) return;
-
-      // Use user ID for zone lookup
-      const userId = mappedUser?.id || guestEntry?.occupantId || guestEntry?.metadata?.profileId;
-      const zoneInfo = zoneLookup.get(userId) || null;
-      const fallbackZoneId = mappedUser?.currentData?.zone || null;
-      const fallbackZoneColor = mappedUser?.currentData?.color || null;
-
-      let resolvedHeartRate = heartRate;
-      if (mappedUser?.currentData && Number.isFinite(mappedUser.currentData.heartRate)) {
-        const candidateHr = Math.round(mappedUser.currentData.heartRate);
-        if (candidateHr > 0) {
-          resolvedHeartRate = candidateHr;
-        }
-      }
-
-      const isGuest = (guestEntry?.occupantType || 'guest') === 'guest';
-      const baseUserName = isGuest
-        ? (guestEntry?.metadata?.baseUserName || guestEntry?.metadata?.base_user_name || null)
-        : participantName;
-      const displayLabel = resolveDisplayLabel({
-        name: participantName,
-        groupLabel: isGuest ? null : mappedUser?.groupLabel,
-        preferGroupLabel: !isGuest
-      });
-
-      roster.push({
-        name: participantName,
-        displayLabel,
-        groupLabel: isGuest ? null : mappedUser?.groupLabel || null,
-        profileId: mappedUser?.id || userId || deviceId,
-        baseUserName,
-        isGuest,
-        hrDeviceId: deviceId,
-        heartRate: resolvedHeartRate,
-        zoneId: zoneInfo?.zoneId || fallbackZoneId || null,
-        zoneColor: zoneInfo?.color || fallbackZoneColor || null,
-        avatarUrl: isGuest ? null : mappedUser?.avatarUrl || null,
-        isActive: true // Legacy fallback: assume active if in heartRateDevices
-      });
-    });
-
-    return roster;
+    return this._participantRoster?.getRoster() ?? [];
   }
 
   /**
@@ -1341,6 +1305,10 @@ export class FitnessSession {
       this.treasureBox = new FitnessTreasureBox(this);
       // Inject ActivityMonitor for activity-aware coin processing (Priority 2)
       this.treasureBox.setActivityMonitor(this.activityMonitor);
+      // Wire ZoneProfileStore so TreasureBox uses committed (hysteresis) zones for display
+      if (this.zoneProfileStore) {
+        this.treasureBox.setZoneProfileStore(this.zoneProfileStore);
+      }
 
       // BUGFIX: Configure TreasureBox with zones immediately after creation
       // Previously, this was only done in FitnessContext React effect which
@@ -1480,11 +1448,14 @@ export class FitnessSession {
         this.snapshot.participantSeries.set(userId, series);
       });
 
-    const activeRoster = this._participantRoster?.getActive();
-    const activeUsersForZones = activeRoster
-      ? (() => { const ids = new Set(activeRoster.map(e => e.id)); return allUsers.filter(u => ids.has(u.id)); })()
+    // BUGFIX: Use getRoster() (device-present) not getActive() (ActivityMonitor-verified)
+    // Same fix as in recordDeviceActivity — prevents timing gap where ZoneProfileStore
+    // is empty between ActivityMonitor ticks, desynchronizing governance from the roster.
+    const currentRoster = this._participantRoster?.getRoster();
+    const usersForZones = currentRoster
+      ? (() => { const ids = new Set(currentRoster.map(e => e.id)); return allUsers.filter(u => ids.has(u.id)); })()
       : allUsers;
-    this._syncZoneProfiles(activeUsersForZones);
+    this._syncZoneProfiles(usersForZones);
 
     // Process Devices (from DeviceManager)
     const allDevices = this.deviceManager.getAllDevices();
@@ -2405,7 +2376,15 @@ export class FitnessSession {
 
   logEvent(type, data = {}, timestamp) {
     if (!type) return null;
-    return this.timeline ? this.timeline.logEvent(type, data, timestamp) : null;
+    if (!this.timeline) {
+      getLogger().warn('fitness.session.logEvent_dropped', {
+        type,
+        sessionId: this.sessionId || null,
+        reason: this.sessionId ? 'timeline_null_after_start' : 'session_not_started'
+      });
+      return null;
+    }
+    return this.timeline.logEvent(type, data, timestamp);
   }
 
   recordSnapshot(filename) {
@@ -2468,6 +2447,42 @@ export class FitnessSession {
 
   getZoneProfile(identifier) {
     return this.zoneProfileStore ? this.zoneProfileStore.getProfile(identifier) : null;
+  }
+
+  /**
+   * Robust participant profile lookup — the canonical interface for subsystems.
+   * Tries ZoneProfileStore first, then falls back to roster data.
+   * Returns null only when the participant truly cannot be resolved.
+   *
+   * @param {string} identifier - participant ID (userId / profileId)
+   * @returns {{ heartRate: number|null, zoneConfig: Array, currentZoneId: string|null, resolved: boolean }|null}
+   */
+  getParticipantProfile(identifier) {
+    if (!identifier) return null;
+
+    // Primary: ZoneProfileStore (authoritative for zone state + config)
+    const zoneProfile = this.zoneProfileStore?.getProfile(identifier) ?? null;
+    if (zoneProfile) {
+      return { ...zoneProfile, resolved: true };
+    }
+
+    // Fallback: ParticipantRoster (works whether or not roster is configured —
+    // findParticipant returns null when unconfigured)
+    const rosterEntry = this._participantRoster?.findParticipant(identifier) ?? null;
+    if (rosterEntry) {
+      this._log('participant_profile_roster_fallback', { identifier, hasHr: rosterEntry.heartRate != null });
+      return {
+        heartRate: rosterEntry.heartRate,
+        currentZoneId: rosterEntry.zoneId || null,
+        zoneConfig: this.zoneProfileStore?.getBaseZoneConfig() || [],
+        resolved: true,
+        _source: 'roster'
+      };
+    }
+
+    // Not resolvable
+    this._log('participant_profile_unresolved', { identifier });
+    return null;
   }
 
   cleanupOrphanGuests() {

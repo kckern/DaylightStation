@@ -67,7 +67,7 @@ export function buildSessionSummary({ participants, series, events, treasureBox,
     const d = e.data || {};
     const durationMs = (d.end != null && d.start != null) ? d.end - d.start : 0;
     return {
-      mediaId: d.mediaId,
+      contentId: d.contentId || d.mediaId,
       title: d.title,
       showTitle: d.grandparentTitle,
       seasonTitle: d.parentTitle,
