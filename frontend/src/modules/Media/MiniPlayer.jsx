@@ -1,5 +1,6 @@
 import React, { useCallback } from 'react';
 import { ContentDisplayUrl } from '../../lib/api.mjs';
+import { useMediaApp } from '../../contexts/MediaAppContext.jsx';
 
 /**
  * Persistent bottom bar when content is playing.
@@ -8,7 +9,9 @@ import { ContentDisplayUrl } from '../../lib/api.mjs';
  *
  * Req: 1.2.5, 1.1.8
  */
-const MiniPlayer = ({ currentItem, playbackState, onToggle, onExpand }) => {
+const MiniPlayer = ({ currentItem, playbackState, onExpand }) => {
+  const { playerRef } = useMediaApp();
+
   if (!currentItem) return null;
 
   const thumbnailUrl = currentItem.contentId
@@ -24,6 +27,10 @@ const MiniPlayer = ({ currentItem, playbackState, onToggle, onExpand }) => {
     onExpand?.();
   }, [onExpand]);
 
+  const handleToggle = useCallback(() => {
+    playerRef.current?.toggle?.();
+  }, [playerRef]);
+
   return (
     <div className="media-mini-player" onClick={handleBarClick}>
       <div className="mini-player-progress" style={{ width: `${progress}%` }} />
@@ -36,7 +43,7 @@ const MiniPlayer = ({ currentItem, playbackState, onToggle, onExpand }) => {
         </div>
         <button
           className="mini-player-toggle"
-          onClick={onToggle}
+          onClick={handleToggle}
           aria-label={playbackState?.paused ? 'Play' : 'Pause'}
         >
           {playbackState?.paused ? '\u25B6' : '\u23F8'}
