@@ -43,7 +43,9 @@ export class StravaWebhookAdapter {
    * @returns {'challenge'|'event'|null}
    */
   identify(req) {
-    if (req.method === 'GET' && req.query?.['hub.mode'] === 'subscribe') {
+    // Express qs parser turns hub.mode into { hub: { mode } } — handle both
+    const hubMode = req.query?.['hub.mode'] ?? req.query?.hub?.mode;
+    if (req.method === 'GET' && hubMode === 'subscribe') {
       return 'challenge';
     }
     if (req.method === 'POST' && req.body?.object_type && req.body?.subscription_id != null) {
@@ -58,24 +60,28 @@ export class StravaWebhookAdapter {
    * @returns {{ ok: boolean, response?: Object, status?: number, reason?: string }}
    */
   handleChallenge(query) {
-    const mode = query['hub.mode'];
-    const token = query['hub.verify_token'];
-    const challenge = query['hub.challenge'];
+    // Express qs parser turns hub.mode into { hub: { mode } } — handle both
+    const mode = query['hub.mode'] ?? query?.hub?.mode;
+    const token = query['hub.verify_token'] ?? query?.hub?.verify_token;
+    const challenge = query['hub.challenge'] ?? query?.hub?.challenge;
 
     if (mode !== 'subscribe') {
       return { ok: false, status: 400, reason: 'invalid-mode' };
     }
 
     if (token !== this.#verifyToken) {
-      this.#logger.warn?.('strava.webhook.challenge.token_mismatch');
+      this.#logger.warn?.('strava.webhook.challenge.token_mismatch', {
+        received: token ? `${token.slice(0, 6)}...` : null,
+      });
       return { ok: false, status: 403, reason: 'token-mismatch' };
     }
 
     if (!challenge) {
+      this.#logger.warn?.('strava.webhook.challenge.missing_challenge');
       return { ok: false, status: 400, reason: 'missing-challenge' };
     }
 
-    this.#logger.info?.('strava.webhook.challenge.validated');
+    this.#logger.info?.('strava.webhook.challenge.validated', { challenge });
     return { ok: true, response: { 'hub.challenge': challenge } };
   }
 

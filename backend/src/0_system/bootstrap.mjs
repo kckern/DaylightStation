@@ -909,6 +909,8 @@ export function createFitnessApiRouter(config) {
     contentQueryService,
     createReceiptCanvas,
     printerAdapter,
+    providerWebhookAdapters,
+    enrichmentService,
     logger = console
   } = config;
 
@@ -952,6 +954,8 @@ export function createFitnessApiRouter(config) {
     contentRegistry,  // Still needed for playlist thumbnail enrichment
     createReceiptCanvas,
     printerAdapter,
+    providerWebhookAdapters,
+    enrichmentService,
     logger
   });
 }

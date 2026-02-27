@@ -63,21 +63,31 @@ export class StravaEnrichmentService {
    */
   handleEvent(event) {
     if (!event || event.objectType !== 'activity' || event.aspectType !== 'create') {
+      this.#logger.info?.('strava.enrichment.event_rejected', {
+        objectType: event?.objectType,
+        aspectType: event?.aspectType,
+        reason: 'not activity/create',
+      });
       return false;
     }
 
     const activityId = String(event.objectId);
+    this.#logger.info?.('strava.enrichment.event_accepted', {
+      activityId,
+      ownerId: event.ownerId,
+      eventTime: event.eventTime,
+    });
 
     // Circuit breaker: cooldown check
     if (this._isOnCooldown(activityId)) {
-      this.#logger.debug?.('strava.enrichment.cooldown_skip', { activityId });
+      this.#logger.info?.('strava.enrichment.cooldown_skip', { activityId });
       return false;
     }
 
     // Circuit breaker: already completed
     const existing = this.#jobStore.findById(activityId);
     if (existing?.status === 'completed') {
-      this.#logger.debug?.('strava.enrichment.already_completed', { activityId });
+      this.#logger.info?.('strava.enrichment.already_completed', { activityId });
       return false;
     }
 
@@ -119,6 +129,8 @@ export class StravaEnrichmentService {
     if (job.status === 'completed') return;
 
     const attempt = (job.attempts || 0) + 1;
+    this.#logger.info?.('strava.enrichment.attempt_start', { activityId, attempt });
+
     this.#jobStore.update(activityId, {
       attempts: attempt,
       lastAttemptAt: new Date().toISOString(),
@@ -128,7 +140,7 @@ export class StravaEnrichmentService {
       // Find matching home session
       const session = this._findMatchingSession(activityId, job.eventTime);
       if (!session) {
-        this.#logger.debug?.('strava.enrichment.no_match', { activityId, attempt });
+        this.#logger.info?.('strava.enrichment.no_match', { activityId, attempt });
         if (attempt < MAX_RETRIES) {
           setTimeout(() => this._attemptEnrichment(activityId), RETRY_INTERVAL_MS);
         } else {
@@ -203,16 +215,28 @@ export class StravaEnrichmentService {
    * @returns {Object|null} Parsed session YAML data
    */
   _findMatchingSession(activityId, eventTime) {
-    if (!this.#fitnessHistoryDir || !dirExists(this.#fitnessHistoryDir)) return null;
+    if (!this.#fitnessHistoryDir || !dirExists(this.#fitnessHistoryDir)) {
+      this.#logger.warn?.('strava.enrichment.session_scan.no_history_dir', {
+        activityId,
+        dir: this.#fitnessHistoryDir,
+      });
+      return null;
+    }
 
     // Determine which dates to scan
     const dates = this._resolveScanDates(eventTime);
+    this.#logger.info?.('strava.enrichment.session_scan.start', {
+      activityId,
+      dates,
+    });
 
+    let filesScanned = 0;
     for (const date of dates) {
       const dateDir = path.join(this.#fitnessHistoryDir, date);
       if (!dirExists(dateDir)) continue;
 
       const files = listYamlFiles(dateDir);
+      filesScanned += files.length;
       for (const filename of files) {
         const filePath = path.join(dateDir, `${filename}.yml`);
         const data = loadYamlSafe(filePath);
@@ -221,12 +245,22 @@ export class StravaEnrichmentService {
         // Check each participant for matching strava.activityId
         for (const participant of Object.values(data.participants)) {
           if (String(participant?.strava?.activityId) === String(activityId)) {
+            this.#logger.info?.('strava.enrichment.session_scan.matched', {
+              activityId,
+              date,
+              file: filename,
+            });
             return data;
           }
         }
       }
     }
 
+    this.#logger.info?.('strava.enrichment.session_scan.miss', {
+      activityId,
+      dates,
+      filesScanned,
+    });
     return null;
   }
 
@@ -270,10 +304,13 @@ export class StravaEnrichmentService {
     const auth = this.#authStore?.loadUserAuth?.('strava', username);
 
     if (!auth?.refresh) {
+      this.#logger.error?.('strava.enrichment.auth.no_refresh_token', { username });
       throw new Error(`No Strava refresh token for user: ${username}`);
     }
 
+    this.#logger.info?.('strava.enrichment.auth.refreshing', { username });
     await this.#stravaClient.refreshToken(auth.refresh);
+    this.#logger.info?.('strava.enrichment.auth.refreshed', { username });
   }
 
   /**
