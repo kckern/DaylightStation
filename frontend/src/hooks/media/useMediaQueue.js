@@ -41,24 +41,23 @@ export function useMediaQueue() {
   }, []);
 
   // WebSocket sync — replace local state on broadcast (suppress self-echo)
-  useWebSocketSubscription(
-    'media:queue',
-    useCallback((data) => {
-      if (data.mutationId && data.mutationId === lastMutationId.current) {
-        logger().debug('media-queue.self-echo-suppressed', { mutationId: data.mutationId });
-        return;
-      }
-      logger().info('media-queue.sync-received', { items: data.items?.length });
-      setQueue(prev => ({
-        items: data.items ?? prev.items,
-        position: data.position ?? prev.position,
-        shuffle: data.shuffle ?? prev.shuffle,
-        repeat: data.repeat ?? prev.repeat,
-        volume: data.volume ?? prev.volume,
-      }));
-    }, []),
-    []
-  );
+  // Stable callback: empty dep array is intentional — reads only refs and setQueue (both stable).
+  const handleQueueBroadcast = useCallback((data) => {
+    if (data.mutationId && data.mutationId === lastMutationId.current) {
+      logger().debug('media-queue.self-echo-suppressed', { mutationId: data.mutationId });
+      return;
+    }
+    logger().info('media-queue.sync-received', { items: data.items?.length });
+    setQueue(prev => ({
+      items: data.items ?? prev.items,
+      position: data.position ?? prev.position,
+      shuffle: data.shuffle ?? prev.shuffle,
+      repeat: data.repeat ?? prev.repeat,
+      volume: data.volume ?? prev.volume,
+    }));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- reads only refs and stable setQueue
+
+  useWebSocketSubscription('media:queue', handleQueueBroadcast, []);
 
   // Optimistic mutation helper
   const mutate = useCallback(async (optimisticUpdate, apiCall) => {
@@ -126,11 +125,13 @@ export function useMediaQueue() {
   }, [mutate]);
 
   const advance = useCallback(async (step = 1, { auto = false } = {}) => {
-    return mutate(null, (mid) =>
+    const optimisticPosition = queue.position + step;
+    const optimistic = { ...queue, position: optimisticPosition };
+    return mutate(optimistic, (mid) =>
       apiFetch('/advance', { method: 'POST', body: { step, auto, mutationId: mid } })
         .then(res => setQueue(res))
     );
-  }, [mutate]);
+  }, [queue, mutate]);
 
   const setShuffle = useCallback(async (enabled) => {
     return mutate(null, (mid) =>

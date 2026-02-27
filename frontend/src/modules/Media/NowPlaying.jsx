@@ -87,7 +87,7 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, o
     } else {
       setOverlayVisible(true);
       // Timer cleared by cleanup function
-      logger.info('player.fullscreen-exit', {});
+      logger.info('player.fullscreen-exit', { format: currentItem?.format, contentId: currentItem?.contentId });
     }
     return () => {
       if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);

@@ -17,6 +17,9 @@ const MediaAppPlayer = forwardRef(function MediaAppPlayer(
   { contentId, onItemEnd, onProgress, config, isFullscreen, onExitFullscreen, renderOverlay, onPlayerClick },
   ref
 ) {
+  // IMPORTANT: config must be a stable object reference (e.g., from useState/useMemo in parent).
+  // A new config object reference on each render will cause Player to remount and restart playback.
+  // The queue item stores config in state, which is stable — do not inline config objects here.
   const playObject = useMemo(() => {
     if (!contentId) return null;
     return { contentId, ...config };

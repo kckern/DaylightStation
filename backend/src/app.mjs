@@ -617,15 +617,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         const mediaQueueService = mediaServices.mediaQueueService;
 
         if (action === 'play') {
-          // Insert after current, advance to it
-          const added = await mediaQueueService.addItems(
-            [{ contentId, addedFrom: 'WEBSOCKET' }], 'next', householdId
-          );
+          // Insert after current, advance to it — load once, mutate, save once
           const queue = await mediaQueueService.load(householdId);
+          const added = queue.addItems([{ contentId, addedFrom: 'WEBSOCKET' }], 'next');
           const insertedIdx = queue.items.findIndex(i => i.queueId === added[0].queueId);
-          if (insertedIdx >= 0) await mediaQueueService.setPosition(insertedIdx, householdId);
-          const updated = await mediaQueueService.load(householdId);
-          eventBus.broadcast('media:queue', updated.toJSON());
+          if (insertedIdx >= 0) queue.position = insertedIdx;
+          await mediaQueueService.replace(queue, householdId);
+          eventBus.broadcast('media:queue', queue.toJSON());
         } else if (action === 'add') {
           await mediaQueueService.addItems(
             [{ contentId, addedFrom: 'WEBSOCKET' }], 'end', householdId
@@ -642,14 +640,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
           const queue = await mediaQueueService.clear(householdId);
           eventBus.broadcast('media:queue', queue.toJSON());
         } else if (action === 'queue') {
-          // Replace entire queue with item (6.1.4 + 6.2.2 basic)
-          await mediaQueueService.clear(householdId);
-          await mediaQueueService.addItems(
-            [{ contentId, addedFrom: 'WEBSOCKET' }], 'end', householdId
-          );
-          await mediaQueueService.setPosition(0, householdId);
-          const updated = await mediaQueueService.load(householdId);
-          eventBus.broadcast('media:queue', updated.toJSON());
+          // Replace entire queue with item — load once, mutate, save once
+          const queue = await mediaQueueService.load(householdId);
+          queue.clear();
+          queue.addItems([{ contentId, addedFrom: 'WEBSOCKET' }], 'end');
+          queue.position = 0;
+          await mediaQueueService.replace(queue, householdId);
+          eventBus.broadcast('media:queue', queue.toJSON());
         } else {
           rootLogger.warn?.('eventbus.media.unknown-action', { action });
         }
