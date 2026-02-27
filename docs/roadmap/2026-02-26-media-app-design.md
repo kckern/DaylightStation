@@ -293,17 +293,15 @@ URL params (?play=, ?queue=)
     MediaApp ──────────────────────► QueueService (backend)
          │                              │
          │  WebSocket subscribe         │  GET/POST /api/v1/media/queue
-         │  topic: "media:{userId}"     │  Persistent queue CRUD
+         │  topic: "media:queue"        │  Persistent queue CRUD
          │                              │
          ▼                              ▼
     useMediaQueue ◄───────────── Queue state (items, position, shuffle)
-         │
-         ├──► Local Player (Player.jsx hierarchy)
-         │      └── Playable Contract (advance → next in queue)
-         │
-         └──► Remote Device (cast)
-                └── GET /api/v1/device/{id}/load?play={contentId}
-                    └── WebSocket broadcast to device topic
+         │                              ▲
+         ├──► Local Player              │
+         │                    media:command events
+         └──► Remote Device             │
+                              External systems (HA, CLI, other apps)
 ```
 
 ### Reused Infrastructure
@@ -322,7 +320,7 @@ URL params (?play=, ?queue=)
 | Queue API (`/api/v1/queue/:source/*`) | Resolve containers to playable lists |
 | Display API (`/api/v1/display/:source/*`) | Thumbnails everywhere |
 | `ContentDisplayUrl()` | Thumbnail URL builder |
-| `websocketHandler.js` normalization (OfficeApp-specific) | Reference for payload format — MediaApp handles `media:command` messages directly via `useMediaQueue`, not through this handler |
+| `websocketHandler.js` normalization (OfficeApp-specific) | Reference for payload format — `media:command` is processed backend-only; frontend reacts to `media:queue` broadcasts |
 
 ---
 
@@ -391,6 +389,18 @@ items:
 - `"cast"` — added via CastButton from device panel
 - `"websocket"` — added via `media:command` WebSocket event
 - `"reorder"` — not set (preserves original `addedFrom`)
+
+**Implementation note:** Define `addedFrom` values as constants in the entity
+file rather than scattering string literals:
+
+```js
+export const ADDED_FROM = {
+  SEARCH: 'search',
+  URL: 'url',
+  CAST: 'cast',
+  WEBSOCKET: 'websocket',
+};
+```
 
 **DDD note:** `addedFrom` is presentation-layer provenance metadata. The
 domain entity passes it through without interpreting it — no domain logic
@@ -512,6 +522,7 @@ class MediaQueue {
   removeByQueueId(queueId)         // removes item by stable ID, adjusts position
   reorder(queueId, toIndex)        // moves item to new index, adjusts position
   advance(step = 1, { auto } = {}) // moves position; auto=true for end-of-item
+                                   // returns null when at end with repeat:off (not an error)
   clear()                          // empties items, resets position to 0
 ```
 
@@ -522,6 +533,11 @@ class MediaQueue {
 | `off` | Move to next. At end of queue → stop (return `null`) | Move to next/prev. Clamp to bounds |
 | `one` | Stay on same item (replay) | Move to next/prev normally (escape the loop) |
 | `all` | Move to next. At end → wrap to position 0 | Move to next/prev. Wrap in both directions |
+
+When `advance()` reaches the end of the queue with `repeat: off`, it clamps
+`position` to the last item and returns `null` from `currentItem`. This is
+normal flow — the frontend checks `currentItem` and stops playback. No error
+is thrown; reaching the end of a playlist is not a domain invariant violation.
 
 `advance()` accepts an optional `{ auto: true }` flag to distinguish auto-
 advance (item ended) from manual next/prev. `repeat: one` only loops on
@@ -541,10 +557,14 @@ device's system volume via the device API — completely independent. When casti
 content to a device, the queue volume does NOT transfer; the device plays at
 its own volume level. There is no master volume concept.
 
-**DDD note:** `volume` is a UI playback preference, not domain state. It's
-persisted here for pragmatic cross-session continuity (same reason PlexAmp
-persists volume in its queue file). No domain logic references `volume` —
-it's purely a persistence pass-through for the frontend.
+**DDD note:** `volume`, `repeat`, and `shuffle` are playback preferences, not
+queue-structural state. They're persisted here for pragmatic cross-session
+continuity (same reason PlexAmp persists volume in its queue file). No domain
+logic branches on `volume`. The entity methods that reference `repeat` and
+`shuffle` (`advance()`, `setShuffle()`) are the exception — these have real
+domain semantics (advance behavior changes with repeat mode). If this entity
+grows more UI-only fields in the future, consider extracting a
+`QueuePreferences` value object to separate structure from preferences.
 
 **Shuffle model:** When shuffle is enabled, the entity generates a `shuffleOrder`
 array (Fisher-Yates on indices `[0..items.length-1]`). `advance()` follows
@@ -579,6 +599,47 @@ is missing (backward compat).
 }
 ```
 
+### Key Test Cases
+
+The `MediaQueue` entity has complex state machine behavior that must be
+unit tested. These are the critical scenarios:
+
+**advance() × repeat modes:**
+
+| Scenario | repeat | auto | Expected |
+|----------|--------|------|----------|
+| Middle of queue | off | true | position + 1 |
+| End of queue | off | true | currentItem → null, playback stops |
+| End of queue | all | true | position wraps to 0 |
+| Any position | one | true | position unchanged (replay) |
+| Any position | one | false | position + 1 (manual escapes loop) |
+
+**Position stability on mutations:**
+
+| Mutation | Position relative to current | Expected position change |
+|----------|------------------------------|--------------------------|
+| Remove item before current | Before | position - 1 (stays on same item) |
+| Remove current item | At | position stays (now points to next) |
+| Remove item after current | After | No change |
+| Reorder item from before to after | Across current | Adjust to keep current stable |
+
+**Shuffle:**
+
+| Scenario | Expected |
+|----------|----------|
+| Enable shuffle | shuffleOrder generated, current item at shuffleOrder[0] |
+| Disable shuffle | position resets to current item's index in original order |
+| Add item while shuffled | New item appended to shuffleOrder |
+| Remove item while shuffled | Item spliced from shuffleOrder, position adjusted |
+
+**Boundary conditions:**
+
+- `addItems()` at MAX_QUEUE_SIZE → throws QueueFullError
+- `addItems()` to empty queue → position = 0
+- `removeByQueueId()` unknown ID → throws EntityNotFoundError
+- `clear()` → items empty, position 0
+- `toJSON()` → `fromJSON()` round-trip preserves all state
+
 **Key invariant:** `position` is always clamped to `[0, items.length - 1]`
 (or 0 when empty). `removeByQueueId` and `reorder` adjust position to keep
 the current item stable — if the removed/moved item is before `position`,
@@ -587,7 +648,8 @@ stays (now pointing at the next item) or clamps to the new end.
 
 **Queue size limit:** `MAX_QUEUE_SIZE = 500`. `addItems()` throws if adding would
 exceed the limit. The API returns 422 with a clear message. This prevents YAML
-bloat — at 500 items the file is ~25KB, well within sync I/O budget.
+bloat — at 500 items with ~200 bytes/item the file is ~100KB, well within sync
+I/O budget (other YAML datastores handle similar sizes without issue).
 
 ### Error Handling
 
@@ -597,7 +659,6 @@ Uses the existing error hierarchy from `2_domains/core/errors/` and extends
 | Error | Thrown When | HTTP Status |
 |-------|-----------|-------------|
 | `DomainInvariantError` | `addItems()` when queue exceeds `MAX_QUEUE_SIZE` | 422 |
-| `DomainInvariantError` | `advance()` past end of queue with `repeat: off` | 422 |
 | `EntityNotFoundError` | `removeByQueueId()` / `reorder()` with unknown `queueId` | 404 |
 | `ValidationError` | Invalid `repeat` mode, negative `volume`, etc. | 400 |
 | `InfrastructureError` | YAML read/write failure in datastore | 500 |
@@ -699,6 +760,13 @@ export function createMediaApiRouter({ mediaServices, contentIdResolver, configS
   });
 }
 
+**Naming note:** The broadcast function is wired under different parameter
+names across existing routers (`broadcastToWebsockets` in fitness,
+`broadcast` in device, `websocketBroadcast` in others). This plan uses
+`broadcastEvent` for clarity. The actual parameter name in
+`createMediaRouter` should match whatever convention the codebase has
+converged on at implementation time — check `app.mjs` router wiring.
+
 // app.mjs — call both factories, register router
 const mediaServices = createMediaServices({ configService });
 const mediaRouter = createMediaApiRouter({
@@ -737,9 +805,9 @@ export function createMediaRouter({ mediaQueueService, contentIdResolver, config
   }));
 
   router.put('/queue', asyncHandler(async (req, res) => {
-    await mediaQueueService.replace(req.body, resolveHid(req));
-    broadcastEvent('media:queue', req.body);
-    res.json({ ok: true });
+    const queue = await mediaQueueService.replace(req.body, resolveHid(req));
+    broadcastEvent('media:queue', queue.toJSON());
+    res.json({ success: true, queue: queue.toJSON() });
   }));
 
   router.post('/queue/items', asyncHandler(async (req, res) => {
@@ -754,37 +822,37 @@ export function createMediaRouter({ mediaQueueService, contentIdResolver, config
     );
     const queue = await mediaQueueService.addItems(resolved, req.body.placement, hid);
     broadcastEvent('media:queue', queue.toJSON());
-    res.json(queue.toJSON());
+    res.json({ success: true, queue: queue.toJSON() });
   }));
 
   router.delete('/queue/items/:queueId', asyncHandler(async (req, res) => {
     const queue = await mediaQueueService.removeItem(req.params.queueId, resolveHid(req));
     broadcastEvent('media:queue', queue.toJSON());
-    res.json(queue.toJSON());
+    res.json({ success: true, queue: queue.toJSON() });
   }));
 
   router.patch('/queue/items/reorder', asyncHandler(async (req, res) => {
     const queue = await mediaQueueService.reorder(req.body.queueId, req.body.toIndex, resolveHid(req));
     broadcastEvent('media:queue', queue.toJSON());
-    res.json(queue.toJSON());
+    res.json({ success: true, queue: queue.toJSON() });
   }));
 
   router.patch('/queue/position', asyncHandler(async (req, res) => {
     const queue = await mediaQueueService.setPosition(req.body.position, resolveHid(req));
     broadcastEvent('media:queue', queue.toJSON());
-    res.json(queue.toJSON());
+    res.json({ success: true, queue: queue.toJSON() });
   }));
 
   router.patch('/queue/state', asyncHandler(async (req, res) => {
     const queue = await mediaQueueService.updateState(req.body, resolveHid(req));
     broadcastEvent('media:queue', queue.toJSON());
-    res.json(queue.toJSON());
+    res.json({ success: true, queue: queue.toJSON() });
   }));
 
   router.delete('/queue', asyncHandler(async (req, res) => {
     await mediaQueueService.clear(resolveHid(req));
     broadcastEvent('media:queue', { items: [], position: 0 });
-    res.json({ ok: true });
+    res.json({ success: true });
   }));
 
   return router;
@@ -832,9 +900,15 @@ MediaApp queue actions by publishing to the `media:command` topic:
 | `queue` | Resolve container, replace entire queue, start playing | Yes — loads a new playlist |
 | `clear` | Clear queue, stop playback | Yes |
 
-MediaApp subscribes to `media:command` and processes these actions through
-`useMediaQueue`. The backend can also process them server-side (for headless
-operation when no MediaApp tab is open) via an internal event bus subscriber.
+`media:command` events are processed **backend-only**. The backend event bus
+handler receives the command, mutates the queue via `MediaQueueService`, and
+broadcasts the updated queue state on `media:queue`. Frontend `useMediaQueue`
+instances react to the `media:queue` broadcast — they never process
+`media:command` directly. This avoids dual-processing race conditions (a
+command processed by both frontend and backend would cause double-adds).
+
+This also enables headless operation: commands work even with no MediaApp tab
+open, because the backend handles them independently.
 
 ### URL Parameters (Override)
 
@@ -1017,7 +1091,8 @@ device/browser identity) for the broadcast topic, not the connection ID.
 
 | Topic | Direction | Purpose |
 |-------|-----------|---------|
-| `media:queue` | Subscribe + Publish | Queue sync across MediaApp tabs/devices |
+| `media:queue` | Subscribe | Queue state sync — backend broadcasts after every mutation |
+| `media:command` | Backend-only | External triggers processed by backend event handler |
 | `playback:{clientId}` | Subscribe | Live now-playing from a specific client |
 | `homeline:{deviceId}` | Subscribe | Wake progress events when casting |
 
@@ -1123,7 +1198,8 @@ Devices without `content_control` are hidden from the cast UI.
 - [ ] Drag-to-reorder queue items
 - [ ] Queue item actions (play next, move to end, remove)
 - [ ] Wire `?queue=` URL param
-- [ ] Handle `media:command` WebSocket events (add, next, play, queue, clear)
+- [ ] Backend: register `media:command` event handler that routes commands through `MediaQueueService` and broadcasts result on `media:queue`
+- [ ] Frontend: `useMediaQueue` subscribes to `media:queue` for state sync (does NOT process `media:command` directly)
 - [ ] Minimal ContentBrowser UI (search bar + results list with Play/Add/Next actions)
 - [ ] Wire `useStreamingSearch` with `capability=playable` filter
 - [ ] Search result actions: play now, play next, add to queue
@@ -1143,7 +1219,7 @@ Devices without `content_control` are hidden from the cast UI.
 - [ ] Add `usePlaybackBroadcast` to OfficeApp (deviceId from `useDeviceIdentity`)
 - [ ] Backend: register `playback_state` message handler on event bus in `app.mjs`
 - [ ] MediaApp: browser client identity (generate ID + name on first load, persist in localStorage)
-- [ ] First-load naming modal: prompt for client name ("Dad's phone"), default to browser user-agent shortname, persist in localStorage alongside generated ID
+- [ ] Browser client identity: auto-generate name from user-agent shortname (e.g., "Chrome on iPhone"), persist in localStorage alongside generated ID. User can rename later via DevicePanel — no first-load modal blocking interaction.
 - [ ] Device list from `/api/v1/device` (filter to castable devices)
 - [ ] DevicePanel UI — registered devices + browser clients via playback predicate subscription
 - [ ] Cast button: send queue item or search result to a device
@@ -1153,6 +1229,10 @@ Devices without `content_control` are hidden from the cast UI.
 - [ ] Wake-and-load integration (power on device before casting)
 
 **Reuses:** Device load API, `WakeAndLoadService`, `WebSocketEventBus`, `useWakeProgress`.
+
+**Risk note:** Adding `usePlaybackBroadcast` to TVApp and OfficeApp is
+additive but touches production apps. Test broadcast hook in MediaApp first,
+then port to TV/Office with careful regression testing.
 
 ### Phase 4: Content Library & Polish
 
