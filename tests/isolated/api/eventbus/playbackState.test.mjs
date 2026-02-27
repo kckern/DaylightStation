@@ -1,6 +1,7 @@
 // tests/isolated/api/eventbus/playbackState.test.mjs
 // Tests for the playback_state WebSocket relay handler (4.2.8)
-import { jest } from '@jest/globals';
+import { vi, describe, test, expect, beforeEach } from 'vitest';
+const jest = { fn: vi.fn };
 
 /**
  * Creates a mock eventBus and registers the playback_state handler

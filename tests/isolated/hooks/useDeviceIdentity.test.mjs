@@ -1,5 +1,5 @@
 // tests/isolated/hooks/useDeviceIdentity.test.mjs
-import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 
 describe('useDeviceIdentity', () => {
   const originalWindow = globalThis.window;
