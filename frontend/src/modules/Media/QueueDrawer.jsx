@@ -39,6 +39,10 @@ const QueueDrawer = ({ open, onClose }) => {
     setDraggedId(null);
   }, [draggedId, queue, logger]);
 
+  const handleDragEnd = useCallback(() => {
+    setDraggedId(null);
+  }, []);
+
   if (!open) return null;
 
   return (
@@ -82,6 +86,7 @@ const QueueDrawer = ({ open, onClose }) => {
             onRemove={handleRemove}
             onDragStart={handleDragStart}
             onDrop={handleDrop}
+            onDragEnd={handleDragEnd}
           />
         ))}
       </div>
