@@ -31,7 +31,7 @@ export function TVAppWrapper({ children }) {
  * Inner component that uses the navigation context for autoplay handling
  */
 function TVAppContent({ rootMenu, autoplay, appParam, logger }) {
-  const { push, pop, currentContent, reset } = useMenuNavigationContext();
+  const { push, pop, currentContent } = useMenuNavigationContext();
   const [autoplayed, setAutoplayed] = useState(false);
   const playerRef = useRef(null);
 
