@@ -8,6 +8,7 @@ import NowPlaying from '../modules/Media/NowPlaying.jsx';
 import MiniPlayer from '../modules/Media/MiniPlayer.jsx';
 import QueueDrawer from '../modules/Media/QueueDrawer.jsx';
 import ContentBrowser from '../modules/Media/ContentBrowser.jsx';
+import DevicePanel from '../modules/Media/DevicePanel.jsx';
 import './MediaApp.scss';
 
 /**
@@ -33,9 +34,10 @@ const MediaAppInner = () => {
   // View state: 'now-playing' or 'mini'
   const [view, setView] = useState('now-playing');
 
-  // Queue drawer and content browser state
+  // Queue drawer, content browser, and device panel state
   const [queueDrawerOpen, setQueueDrawerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [devicePanelOpen, setDevicePanelOpen] = useState(false);
 
   // Playback state (shared between NowPlaying and MiniPlayer)
   const [playbackState, setPlaybackState] = useState({
@@ -61,7 +63,17 @@ const MediaAppInner = () => {
     if (!playCommand?.contentId) return;
 
     const { contentId, volume, ...config } = playCommand;
-    logger.info('media-app.url-command', { action: urlCommand.play ? 'play' : 'queue', contentId });
+    logger.info('media-app.url-command', { action: urlCommand.play ? 'play' : 'queue', contentId, device: urlCommand.device });
+
+    // Cast to device if ?device= specified (5.2.3, 5.1.7)
+    if (urlCommand.device && playCommand?.contentId) {
+      const params = new URLSearchParams({ open: '/media', play: playCommand.contentId });
+      fetch(`/api/v1/device/${urlCommand.device}/load?${params}`)
+        .then(r => r.json())
+        .then(result => logger.info('media-app.device-cast', { device: urlCommand.device, contentId: playCommand.contentId, ok: result.ok }))
+        .catch(err => logger.error('media-app.device-cast-failed', { device: urlCommand.device, error: err.message }));
+      return; // Don't play locally
+    }
 
     if (urlCommand.play) {
       queue.clear().then(() =>
@@ -116,6 +128,7 @@ const MediaAppInner = () => {
             onPlaybackState={setPlaybackState}
             onQueueToggle={() => setQueueDrawerOpen(o => !o)}
             onSearchToggle={() => setSearchOpen(o => !o)}
+            onDeviceToggle={() => setDevicePanelOpen(o => !o)}
             queueLength={queue.items.length}
           />
         )}
@@ -128,6 +141,11 @@ const MediaAppInner = () => {
         <ContentBrowser
           open={searchOpen}
           onClose={() => setSearchOpen(false)}
+        />
+
+        <DevicePanel
+          open={devicePanelOpen}
+          onClose={() => setDevicePanelOpen(false)}
         />
 
         {/* MiniPlayer shows when viewing other panels */}
