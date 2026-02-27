@@ -74,6 +74,7 @@ export function buildSessionSummary({ participants, series, events, treasureBox,
       grandparentId: d.grandparentId,
       parentId: d.parentId,
       durationMs,
+      ...(d.description ? { description: d.description } : {}),
     };
   });
 

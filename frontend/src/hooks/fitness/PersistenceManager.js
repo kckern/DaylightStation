@@ -459,6 +459,7 @@ const _consolidateEvents = (events) => {
         labels: s.labels || [],
         contentType: s.type || null,
         governed: s.governed ?? null,
+        description: s.description || e.description || null,
         durationSeconds: s.durationSeconds ?? e.durationSeconds ?? null,
         start: Number(startEvt?.timestamp) || null,
         end: Number(endEvt?.timestamp) || null,
