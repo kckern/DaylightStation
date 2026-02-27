@@ -1,8 +1,53 @@
-import React, { useState, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import getLogger from '../../lib/logging/Logger.js';
 import MediaAppPlayer from './MediaAppPlayer.jsx';
 import CastButton from './CastButton.jsx';
 import { ContentDisplayUrl } from '../../lib/api.mjs';
+
+function formatTime(seconds) {
+  if (!seconds || !isFinite(seconds)) return '0:00';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Format-appropriate secondary metadata below the track title.
+ *
+ * Req: 8.1.9
+ */
+const FormatMetadata = ({ item, duration }) => {
+  const { format, subtitle, source } = item;
+
+  if (format === 'video') {
+    if (!duration || !isFinite(duration)) return null;
+    const m = Math.floor(duration / 60);
+    const s = Math.floor(duration % 60);
+    return <div className="media-track-meta">{m}:{s.toString().padStart(2, '0')}</div>;
+  }
+
+  if (format === 'audio') {
+    const meta = subtitle || source;
+    return meta ? <div className="media-track-meta">{meta}</div> : null;
+  }
+
+  if (format === 'singalong' || format === 'hymn') {
+    const meta = subtitle || source;
+    return (
+      <div className="media-track-meta">
+        {meta ? `${meta} · Singalong` : 'Singalong'}
+      </div>
+    );
+  }
+
+  if (format === 'readalong' || format === 'audiobook') {
+    const meta = subtitle || source;
+    return meta ? <div className="media-track-meta">{meta}</div> : null;
+  }
+
+  // Default: show source if available
+  return source ? <div className="media-track-meta">{source}</div> : null;
+};
 
 /**
  * Main player view: player + track info + progress bar + transport controls + volume.
@@ -19,6 +64,44 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, o
     paused: true,
   });
   const [volume, setVolume] = useState(0.8);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Overlay visibility for video fullscreen auto-hide (8.2.4)
+  const [overlayVisible, setOverlayVisible] = useState(true);
+  const overlayTimerRef = useRef(null);
+
+  const showOverlay = useCallback(() => {
+    setOverlayVisible(true);
+    logger.debug('overlay.show', { format: currentItem?.format });
+    if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
+    if (currentItem?.format === 'video') {
+      overlayTimerRef.current = setTimeout(() => setOverlayVisible(false), 3000);
+    }
+  }, [currentItem?.format, logger]);
+
+  // Reset overlay when entering/exiting fullscreen
+  useEffect(() => {
+    if (isFullscreen) {
+      showOverlay();
+      logger.info('player.fullscreen-enter', { format: currentItem?.format });
+    } else {
+      setOverlayVisible(true);
+      // Timer cleared by cleanup function
+      logger.info('player.fullscreen-exit', { format: currentItem?.format, contentId: currentItem?.contentId });
+    }
+    return () => {
+      if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
+    };
+  }, [isFullscreen, showOverlay]);
+
+  // Auto-fullscreen for video; reset on format change (8.2.2, 8.1.11)
+  useEffect(() => {
+    if (!currentItem) {
+      setIsFullscreen(false);
+      return;
+    }
+    setIsFullscreen(currentItem.format === 'video');
+  }, [currentItem?.contentId, currentItem?.format]);
 
   const handleProgress = useCallback((data) => {
     setPlaybackState({
@@ -48,12 +131,44 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, o
     if (el) el.volume = newVolume;
   }, []);
 
-  const formatTime = (seconds) => {
-    if (!seconds || !isFinite(seconds)) return '0:00';
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
-    return `${m}:${s.toString().padStart(2, '0')}`;
-  };
+  const handleExitFullscreen = useCallback(() => setIsFullscreen(false), []);
+
+  const handleExpandFullscreen = useCallback(() => {
+    logger.info('player.expand-fullscreen', { format: currentItem?.format });
+    setIsFullscreen(true);
+  }, [currentItem?.format, logger]);
+
+  const progress = playbackState.duration > 0
+    ? (playbackState.currentTime / playbackState.duration) * 100
+    : 0;
+
+  const renderTransportOverlay = () => (
+    <div
+      className={`media-fullscreen-controls${!overlayVisible ? ' media-fullscreen-controls--hidden' : ''}`}
+      onClick={(e) => { e.stopPropagation(); showOverlay(); }}
+    >
+      <div className="media-progress" onClick={(e) => { e.stopPropagation(); showOverlay(); handleSeek(e); }}>
+        <div className="media-progress-bar">
+          <div className="media-progress-fill" style={{ width: `${progress}%` }} />
+        </div>
+        <div className="media-progress-times">
+          <span>{formatTime(playbackState.currentTime)}</span>
+          <span>{formatTime(playbackState.duration)}</span>
+        </div>
+      </div>
+      <div className="media-transport">
+        <button className="media-transport-btn" onClick={onPrev} aria-label="Previous">&#9198;</button>
+        <button
+          className="media-transport-btn media-transport-btn--primary"
+          onClick={handleToggle}
+          aria-label={playbackState.paused ? 'Play' : 'Pause'}
+        >
+          {playbackState.paused ? '\u25B6' : '\u23F8'}
+        </button>
+        <button className="media-transport-btn" onClick={onNext} aria-label="Next">&#9197;</button>
+      </div>
+    </div>
+  );
 
   if (!currentItem) {
     return (
@@ -70,20 +185,19 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, o
     ? ContentDisplayUrl(currentItem.contentId)
     : null;
 
-  const progress = playbackState.duration > 0
-    ? (playbackState.currentTime / playbackState.duration) * 100
-    : 0;
-
   return (
     <div className="media-now-playing">
       {/* Player (may be embedded or fullscreen) */}
       <MediaAppPlayer
         ref={playerRef}
         contentId={currentItem.contentId}
-        format={currentItem.format}
         config={currentItem.config}
         onItemEnd={onItemEnd}
         onProgress={handleProgress}
+        isFullscreen={isFullscreen}
+        onExitFullscreen={handleExitFullscreen}
+        renderOverlay={isFullscreen ? renderTransportOverlay : undefined}
+        onPlayerClick={isFullscreen ? showOverlay : undefined}
       />
 
       {/* Track Info */}
@@ -95,71 +209,85 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, o
         )}
         <div className="media-track-details">
           <div className="media-track-title">{currentItem.title || currentItem.contentId}</div>
-          {currentItem.source && (
-            <div className="media-track-source">{currentItem.source}</div>
+          <FormatMetadata item={currentItem} duration={playbackState.duration} />
+          {/* Expand to fullscreen for singalong/readalong (8.1.5, 8.1.7) */}
+          {!isFullscreen && (currentItem.format === 'singalong' || currentItem.format === 'hymn' || currentItem.format === 'readalong') && (
+            <button
+              className="media-expand-btn"
+              onClick={handleExpandFullscreen}
+              aria-label="Expand to fullscreen"
+            >
+              &#x26F6;
+            </button>
           )}
         </div>
       </div>
 
-      {/* Progress Bar */}
-      <div className="media-progress" onClick={handleSeek}>
-        <div className="media-progress-bar">
-          <div
-            className="media-progress-fill"
-            style={{ width: `${progress}%` }}
+      {!isFullscreen && (
+        <>
+          {/* Progress Bar */}
+          <div className="media-progress" onClick={handleSeek}>
+            <div className="media-progress-bar">
+              <div
+                className="media-progress-fill"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <div className="media-progress-times">
+              <span>{formatTime(playbackState.currentTime)}</span>
+              <span>{formatTime(playbackState.duration)}</span>
+            </div>
+          </div>
+
+          {/* Transport Controls */}
+          <div className="media-transport">
+            <button className="media-transport-btn" onClick={onPrev} aria-label="Previous">
+              &#9198;
+            </button>
+            <button
+              className="media-transport-btn media-transport-btn--primary"
+              onClick={handleToggle}
+              aria-label={playbackState.paused ? 'Play' : 'Pause'}
+            >
+              {playbackState.paused ? '\u25B6' : '\u23F8'}
+            </button>
+            <button className="media-transport-btn" onClick={onNext} aria-label="Next">
+              &#9197;
+            </button>
+            {onSearchToggle && (
+              <button className="media-transport-btn" onClick={onSearchToggle} aria-label="Search">
+                &#128269;
+              </button>
+            )}
+            {currentItem && <CastButton contentId={currentItem.contentId} className="media-transport-btn" />}
+            {onDeviceToggle && (
+              <button className="media-transport-btn" onClick={onDeviceToggle} aria-label="Devices">
+                &#x1F4F1;
+              </button>
+            )}
+            {onQueueToggle && (
+              <button className="media-transport-btn" onClick={onQueueToggle} aria-label="Queue">
+                &#9776; {queueLength > 0 && <span className="queue-badge">{queueLength}</span>}
+              </button>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Volume — hidden in fullscreen */}
+      {!isFullscreen && (
+        <div className="media-volume">
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={volume}
+            onChange={handleVolumeChange}
+            aria-label="Volume"
           />
         </div>
-        <div className="media-progress-times">
-          <span>{formatTime(playbackState.currentTime)}</span>
-          <span>{formatTime(playbackState.duration)}</span>
-        </div>
-      </div>
-
-      {/* Transport Controls */}
-      <div className="media-transport">
-        <button className="media-transport-btn" onClick={onPrev} aria-label="Previous">
-          &#9198;
-        </button>
-        <button
-          className="media-transport-btn media-transport-btn--primary"
-          onClick={handleToggle}
-          aria-label={playbackState.paused ? 'Play' : 'Pause'}
-        >
-          {playbackState.paused ? '\u25B6' : '\u23F8'}
-        </button>
-        <button className="media-transport-btn" onClick={onNext} aria-label="Next">
-          &#9197;
-        </button>
-        {onSearchToggle && (
-          <button className="media-transport-btn" onClick={onSearchToggle} aria-label="Search">
-            &#128269;
-          </button>
-        )}
-        {currentItem && <CastButton contentId={currentItem.contentId} className="media-transport-btn" />}
-        {onDeviceToggle && (
-          <button className="media-transport-btn" onClick={onDeviceToggle} aria-label="Devices">
-            &#x1F4F1;
-          </button>
-        )}
-        {onQueueToggle && (
-          <button className="media-transport-btn" onClick={onQueueToggle} aria-label="Queue">
-            &#9776; {queueLength > 0 && <span className="queue-badge">{queueLength}</span>}
-          </button>
-        )}
-      </div>
-
-      {/* Volume */}
-      <div className="media-volume">
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.05"
-          value={volume}
-          onChange={handleVolumeChange}
-          aria-label="Volume"
-        />
-      </div>
+      )}
     </div>
   );
 };

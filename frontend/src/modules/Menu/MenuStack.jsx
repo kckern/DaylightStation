@@ -24,8 +24,9 @@ function LoadingFallback() {
  * 
  * @param {Object} props
  * @param {Object|string} props.rootMenu - The root menu configuration (list name or menu object)
+ * @param {React.RefObject} [props.playerRef] - Optional ref forwarded to Player for playback broadcast
  */
-export function MenuStack({ rootMenu }) {
+export function MenuStack({ rootMenu, playerRef }) {
   const { currentContent, depth, push, pop } = useMenuNavigationContext();
 
   /**
@@ -183,7 +184,7 @@ export function MenuStack({ rootMenu }) {
     case 'player':
       return (
         <Suspense fallback={<LoadingFallback />}>
-          <Player {...props} clear={clear} />
+          <Player {...props} ref={playerRef} clear={clear} />
         </Suspense>
       );
 
@@ -191,7 +192,7 @@ export function MenuStack({ rootMenu }) {
       // Composed presentation with visual + audio tracks
       return (
         <Suspense fallback={<LoadingFallback />}>
-          <Player {...props} clear={clear} />
+          <Player {...props} ref={playerRef} clear={clear} />
         </Suspense>
       );
 
@@ -231,7 +232,7 @@ export function MenuStack({ rootMenu }) {
       );
 
     default:
-      console.warn(`MenuStack: Unknown content type "${type}"`, props);
+      getLogger().warn('menu-stack.unknown-type', { type });
       return (
         <div className="menu-stack-error">
           Unknown content type: {type}

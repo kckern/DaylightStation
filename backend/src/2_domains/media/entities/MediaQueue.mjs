@@ -88,7 +88,7 @@ export class MediaQueue {
   }
 
   findByQueueId(queueId) {
-    return this.items.find((item) => item.queueId === queueId);
+    return this.items.find((item) => item.queueId === queueId) ?? null;
   }
 
   // ---- Mutations ----

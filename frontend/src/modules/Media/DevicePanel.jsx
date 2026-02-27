@@ -4,7 +4,7 @@ import { useDeviceMonitor } from '../../hooks/media/useDeviceMonitor.js';
 import DeviceCard from './DeviceCard.jsx';
 import getLogger from '../../lib/logging/Logger.js';
 
-const DevicePanel = ({ open, onClose, onCastToDevice }) => {
+const DevicePanel = ({ open, onClose }) => {
   const logger = useMemo(() => getLogger().child({ component: 'DevicePanel' }), []);
   const { devices, playbackStates, isLoading } = useDeviceMonitor();
 
@@ -36,7 +36,6 @@ const DevicePanel = ({ open, onClose, onCastToDevice }) => {
             playbackState={playbackStates.get(device.id)}
             isOnline={playbackStates.has(device.id)}
             type="device"
-            onCast={onCastToDevice}
           />
         ))}
 

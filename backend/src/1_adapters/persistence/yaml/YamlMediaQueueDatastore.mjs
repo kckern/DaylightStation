@@ -6,7 +6,7 @@
  */
 import path from 'path';
 import { loadYamlSafe, saveYaml, ensureDir } from '#system/utils/FileIO.mjs';
-import { IMediaQueueDatastore } from '#apps/media/ports/IMediaQueueDatastore.mjs';
+import { IMediaQueueDatastore } from '#domains/media/ports/IMediaQueueDatastore.mjs';
 import { MediaQueue } from '#domains/media/entities/MediaQueue.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
@@ -36,6 +36,9 @@ export class YamlMediaQueueDatastore extends IMediaQueueDatastore {
     return path.join(mediaDir, 'queue');
   }
 
+  // Note: loadYamlSafe and saveYaml are synchronous (by codebase convention for YAML datastores).
+  // The async declaration satisfies the IMediaQueueDatastore port interface.
+  // This is intentional — all YAML datastores in this project use synchronous file I/O.
   /**
    * Load a media queue for a household.
    * @param {string} householdId

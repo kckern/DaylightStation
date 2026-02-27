@@ -36,11 +36,10 @@ const ContentBrowser = ({ open, onClose }) => {
   }, [search, exitBrowse]);
 
   const handlePlayNow = useCallback((item) => {
+    const nextPosition = queue.position + 1; // capture synchronously before async call
     logger.info('content-browser.play-now', { contentId: item.contentId, title: item.title });
     queue.addItems([{ contentId: item.contentId, title: item.title, format: item.format }], 'next')
-      .then(() => {
-        queue.setPosition(queue.position + 1);
-      });
+      .then(() => queue.setPosition(nextPosition));
   }, [queue, logger]);
 
   const handleAddToQueue = useCallback((item) => {
@@ -114,6 +113,9 @@ const ContentBrowser = ({ open, onClose }) => {
               <div className="search-result-meta">
                 {item.source && <span className="source-badge">{item.source}</span>}
                 {item.duration && <span>{Math.round(item.duration / 60)}m</span>}
+                {item.format && (
+                  <span className={`format-badge format-badge--${item.format}`}>{item.format}</span>
+                )}
               </div>
             </div>
             <div className="search-result-actions">
