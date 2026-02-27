@@ -117,15 +117,17 @@ export function VideoPlayer({
     }
   });
 
-  // Hard reset: seek to position, reload, and resume playback
+  // Hard reset: seek to position, reload, and resume playback.
+  // Uses getMediaEl to traverse shadow DOM for dash-video,
+  // falling back to containerRef for native video/audio.
   const hardReset = useCallback(({ seekToSeconds } = {}) => {
-    const mediaEl = containerRef.current;
-    if (!mediaEl) return;
+    const target = getMediaEl() || containerRef.current;
+    if (!target) return;
     const normalized = Number.isFinite(seekToSeconds) ? Math.max(0, seekToSeconds) : 0;
-    try { mediaEl.currentTime = normalized; } catch (_) {}
-    mediaEl.load?.();
-    mediaEl.play?.().catch(() => {});
-  }, [containerRef]);
+    try { target.currentTime = normalized; } catch (_) {}
+    target.load?.();
+    target.play?.().catch(() => {});
+  }, [containerRef, getMediaEl]);
 
   // Register accessors with resilience bridge
   useEffect(() => {
