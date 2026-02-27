@@ -35,7 +35,9 @@ export function PlayerOverlayLoading({
   getMediaEl,
   sessionInstance = null,
   currentTime = null,
-  videoFps = null
+  videoFps = null,
+  isExhausted = false,
+  onRetryFromExhausted
 }) {
   // In blackout mode, keep screen completely dark (TV appears off)
   if (suppressForBlackout) {
@@ -238,6 +240,7 @@ export function PlayerOverlayLoading({
   const hasValidPosition = positionDisplay && positionDisplay !== '0:00';
   const isStartupPhase = status === 'startup';
   const statusLabel = (() => {
+    if (isExhausted) return 'Tap to Retry';
     if (isStartupPhase) return 'Starting…';
     if (status === 'seeking') return 'Seeking…';
     if (stalled) return 'Recovering…';
@@ -251,8 +254,12 @@ export function PlayerOverlayLoading({
     event?.preventDefault?.();
     event?.stopPropagation?.();
     event?.nativeEvent?.stopImmediatePropagation?.();
+    if (isExhausted && typeof onRetryFromExhausted === 'function') {
+      onRetryFromExhausted();
+      return;
+    }
     emitManualReset('overlay-spinner-manual', { eventType: event?.type });
-  }, [emitManualReset]);
+  }, [emitManualReset, isExhausted, onRetryFromExhausted]);
 
   const spinnerInteractionProps = {
     onClick: handleSpinnerInteraction,
@@ -447,7 +454,9 @@ PlayerOverlayLoading.propTypes = {
     logEvent: PropTypes.func
   }),
   currentTime: PropTypes.number,
-  videoFps: PropTypes.number
+  videoFps: PropTypes.number,
+  isExhausted: PropTypes.bool,
+  onRetryFromExhausted: PropTypes.func
 };
 
 export default PlayerOverlayLoading;
