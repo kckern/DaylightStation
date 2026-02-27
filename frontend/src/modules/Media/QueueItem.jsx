@@ -1,5 +1,6 @@
 // frontend/src/modules/Media/QueueItem.jsx
 import React, { useCallback, useMemo } from 'react';
+import CastButton from './CastButton.jsx';
 import { ContentDisplayUrl } from '../../lib/api.mjs';
 
 const QueueItem = ({ item, isCurrent, onPlay, onRemove }) => {
@@ -37,6 +38,7 @@ const QueueItem = ({ item, isCurrent, onPlay, onRemove }) => {
         {item.source && <div className="queue-item-source">{item.source}</div>}
       </div>
       {item.format && <span className="queue-item-badge">{item.format}</span>}
+      <CastButton contentId={item.contentId} className="queue-item-cast" />
       <button
         className="queue-item-remove"
         onClick={(e) => { e.stopPropagation(); onRemove(item.queueId); }}

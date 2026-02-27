@@ -470,8 +470,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       thumbId: currentItem.thumbId,
       grandparentId: currentItem.grandparentId || currentItem.grandparentRatingKey || currentItem.seriesId || currentItem.plex || null,
       parentId: currentItem.parentId || null,
-      grandparentTitle: currentItem.grandparentTitle || 'Fitness',
-      parentTitle: currentItem.parentTitle || 'Workout',
+      grandparentTitle: currentItem.grandparentTitle || null,
+      parentTitle: currentItem.parentTitle || null,
       percent: (() => {
         const normalized = typeof currentItem.watchProgress === 'string'
           ? parseFloat(currentItem.watchProgress)
@@ -1032,6 +1032,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       governed: governanceState?.isGoverned ?? Boolean(governanceState?.videoLocked),
       labels: Array.isArray(media.labels) ? media.labels : [],
       type: media.type || media.mediaType || 'video',
+      description: media.summary || media.episodeDescription || null,
       queueSize
     });
     // Only mark as logged if the event was actually accepted by the timeline.
