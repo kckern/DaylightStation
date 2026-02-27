@@ -1,15 +1,14 @@
 // frontend/src/contexts/MediaAppContext.jsx
-import React, { createContext, useContext, useRef } from 'react';
+import React, { createContext, useContext } from 'react';
 import { useMediaQueue } from '../hooks/media/useMediaQueue.js';
 
 const MediaAppContext = createContext(null);
 
 export function MediaAppProvider({ children }) {
   const queue = useMediaQueue();
-  const playerRef = useRef(null);
 
   return (
-    <MediaAppContext.Provider value={{ queue, playerRef }}>
+    <MediaAppContext.Provider value={{ queue }}>
       {children}
     </MediaAppContext.Provider>
   );
