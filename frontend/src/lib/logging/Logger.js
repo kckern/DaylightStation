@@ -222,7 +222,10 @@ export const getLogger = () => {
       error: (eventName, data, opts) => emit('error', eventName, data, opts),
       sampled: emitSampled,
       child,
-      configure
+      configure,
+      startDiagnostics,
+      stopDiagnostics,
+      perfSnapshot,
     };
   }
   return singleton;
@@ -232,6 +235,124 @@ export const getLogger = () => {
  * Get current configuration (for debugging)
  */
 export const getConfig = () => ({ ...config });
+
+// ─── Performance Diagnostics ───────────────────────────────────
+
+const diagState = {
+  running: false,
+  rafId: null,
+  intervalId: null,
+  frameTimes: [],      // recent frame deltas (ms)
+  lastFrameTs: 0,
+};
+
+const DIAG_MAX_SAMPLES = 300; // ~5s at 60fps
+
+function diagFrame(ts) {
+  if (!diagState.running) return;
+  if (diagState.lastFrameTs > 0) {
+    const dt = ts - diagState.lastFrameTs;
+    diagState.frameTimes.push(dt);
+    if (diagState.frameTimes.length > DIAG_MAX_SAMPLES) {
+      diagState.frameTimes.shift();
+    }
+  }
+  diagState.lastFrameTs = ts;
+  diagState.rafId = requestAnimationFrame(diagFrame);
+}
+
+function collectSnapshot() {
+  const ft = diagState.frameTimes;
+  const count = ft.length;
+
+  // FPS / frame-time stats
+  let fps = 0, avgMs = 0, minMs = 0, maxMs = 0, jank = 0;
+  if (count > 0) {
+    const sum = ft.reduce((s, v) => s + v, 0);
+    avgMs = sum / count;
+    fps = 1000 / avgMs;
+    minMs = Math.min(...ft);
+    maxMs = Math.max(...ft);
+    jank = ft.filter(d => d > 33.4).length; // frames slower than 30fps
+  }
+
+  // Heap (Chrome / Edge only)
+  const mem = performance.memory; // non-standard, Chrome only
+  const heap = mem ? {
+    usedMB: +(mem.usedJSHeapSize / 1048576).toFixed(1),
+    totalMB: +(mem.totalJSHeapSize / 1048576).toFixed(1),
+    limitMB: +(mem.jsHeapSizeLimit / 1048576).toFixed(1),
+  } : null;
+
+  // DOM node count
+  const domNodes = typeof document !== 'undefined'
+    ? document.getElementsByTagName('*').length
+    : 0;
+
+  return {
+    fps: +fps.toFixed(1),
+    frameMs: { avg: +avgMs.toFixed(1), min: +minMs.toFixed(1), max: +maxMs.toFixed(1) },
+    jankFrames: jank,
+    sampleCount: count,
+    heap,
+    domNodes,
+  };
+}
+
+/**
+ * Start periodic performance diagnostics.
+ * Emits 'perf.diagnostics' via the logger at the given interval.
+ *
+ * @param {object} [opts]
+ * @param {number} [opts.intervalMs=5000] - How often to emit a snapshot
+ */
+export const startDiagnostics = (opts = {}) => {
+  if (diagState.running) return;
+  const intervalMs = opts.intervalMs ?? 5000;
+
+  diagState.running = true;
+  diagState.frameTimes = [];
+  diagState.lastFrameTs = 0;
+  diagState.rafId = requestAnimationFrame(diagFrame);
+
+  diagState.intervalId = setInterval(() => {
+    const snap = collectSnapshot();
+    emit('info', 'perf.diagnostics', snap);
+    // Also expose on window for live debugging
+    if (typeof window !== 'undefined') {
+      window.__PERF_DIAG__ = snap;
+    }
+  }, intervalMs);
+
+  emit('info', 'perf.diagnostics.started', { intervalMs });
+};
+
+/**
+ * Stop performance diagnostics.
+ */
+export const stopDiagnostics = () => {
+  diagState.running = false;
+  if (diagState.rafId != null) {
+    cancelAnimationFrame(diagState.rafId);
+    diagState.rafId = null;
+  }
+  if (diagState.intervalId != null) {
+    clearInterval(diagState.intervalId);
+    diagState.intervalId = null;
+  }
+  diagState.frameTimes = [];
+  diagState.lastFrameTs = 0;
+  if (typeof window !== 'undefined') {
+    delete window.__PERF_DIAG__;
+  }
+  emit('info', 'perf.diagnostics.stopped', {});
+};
+
+/**
+ * Take a one-shot performance snapshot without starting the periodic reporter.
+ * (Requires diagnostics to already be running for FPS data.)
+ */
+export const perfSnapshot = () => collectSnapshot();
 
 /**
  * Get WebSocket state (for debugging/health checks)
@@ -253,6 +374,19 @@ export const getStatus = () => {
     reconnecting: false
   };
 };
+
+// Expose diagnostics on window for browser console access:
+//   window.__PERF__.start()   — start periodic reporting
+//   window.__PERF__.stop()    — stop
+//   window.__PERF__.snap()    — one-shot snapshot
+//   window.__PERF_DIAG__      — latest snapshot (auto-updated while running)
+if (typeof window !== 'undefined') {
+  window.__PERF__ = {
+    start: startDiagnostics,
+    stop: stopDiagnostics,
+    snap: perfSnapshot,
+  };
+}
 
 // Compatibility exports
 export default getLogger;

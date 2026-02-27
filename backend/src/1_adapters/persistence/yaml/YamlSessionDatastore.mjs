@@ -252,7 +252,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
         const primaryItem = summary.media.find(m => m.primary);
         const otherItems = summary.media.filter(m => !m.primary);
         const formatMedia = (m) => ({
-          mediaId: m.mediaId,
+          contentId: m.contentId || m.mediaId,
           title: m.title,
           showTitle: m.showTitle,
           seasonTitle: m.seasonTitle,
@@ -272,7 +272,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
           const formatFromEvent = (evt) => {
             const d = evt.data || {};
             return {
-              mediaId: d.mediaId,
+              contentId: d.contentId || d.mediaId,
               title: d.title,
               showTitle: d.grandparentTitle,
               seasonTitle: d.parentTitle,

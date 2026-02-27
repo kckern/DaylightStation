@@ -3,6 +3,20 @@
 import React from 'react';
 import { Paper, Text, Title, Group, Stack, Badge, Progress, Skeleton } from '@mantine/core';
 
+/**
+ * Build display URL from a media ID that may or may not be namespaced.
+ * Handles both "plex:649319" (new) and "649319" (legacy) formats.
+ */
+function mediaDisplayUrl(contentId) {
+  if (!contentId) return null;
+  const str = String(contentId);
+  if (str.includes(':')) {
+    const [source, id] = str.split(':', 2);
+    return `/api/v1/display/${source}/${id}`;
+  }
+  return `/api/v1/display/plex/${str}`;
+}
+
 // ─── Shared card wrapper ───────────────────────────────────────
 
 export function DashboardCard({ title, icon, children, className = '', onClick }) {
@@ -146,7 +160,7 @@ export function WorkoutsCard({ sessions, onSessionClick, selectedSessionId }) {
                   {/* Thumbnail */}
                   {s.media ? (
                     <img
-                      src={`/api/v1/display/plex/${s.media.mediaId}`}
+                      src={mediaDisplayUrl(s.media.contentId || s.media.mediaId)}
                       alt=""
                       className="session-thumbnail"
                       onError={(e) => { e.target.style.display = 'none'; }}
@@ -224,7 +238,7 @@ export function WorkoutsCard({ sessions, onSessionClick, selectedSessionId }) {
                   {/* Show poster */}
                   {s.media?.grandparentId && (
                     <img
-                      src={`/api/v1/display/plex/${s.media.grandparentId}`}
+                      src={mediaDisplayUrl(s.media.grandparentId)}
                       alt=""
                       className="session-poster"
                       onError={(e) => { e.target.style.display = 'none'; }}
@@ -236,9 +250,9 @@ export function WorkoutsCard({ sessions, onSessionClick, selectedSessionId }) {
                 {s.media?.others?.length > 0 && (
                   <div className="session-row__others">
                     {s.media.others.map((m) => (
-                      <div key={m.mediaId} className="session-row__other-item">
+                      <div key={m.contentId || m.mediaId} className="session-row__other-item">
                         <img
-                          src={`/api/v1/display/plex/${m.mediaId}`}
+                          src={mediaDisplayUrl(m.contentId || m.mediaId)}
                           alt=""
                           className="session-row__other-thumb"
                           onError={(e) => { e.target.style.display = 'none'; }}

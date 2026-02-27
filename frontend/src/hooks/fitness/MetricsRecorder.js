@@ -328,7 +328,7 @@ export class MetricsRecorder {
         color: snapshot?.zoneColor || user.currentData?.color || null
       },
       metrics: {
-        heartRate: sanitizeHeartRate(snapshot?.heartRate ?? user.currentData?.heartRate),
+        heartRate: sanitizeHeartRate(snapshot?.heartRate ?? 0),
         zoneId: snapshot?.zoneId || user.currentData?.zone || null,
         rpm: sanitizeNumber(snapshot?.rpm),
         power: sanitizeNumber(snapshot?.power),

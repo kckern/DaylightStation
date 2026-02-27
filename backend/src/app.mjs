@@ -1174,6 +1174,56 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'fitness-playable' })
   });
 
+  // Strava webhook enrichment (provider-agnostic webhook, Strava adapter)
+  let providerWebhookAdapters = {};
+  let stravaEnrichmentService = null;
+  try {
+    const stravaClientId = configService.getSystemAuth?.('strava', 'client_id');
+    if (stravaClientId) {
+      const { StravaClientAdapter } = await import('./1_adapters/fitness/StravaClientAdapter.mjs');
+      const { StravaWebhookAdapter } = await import('./1_adapters/strava/StravaWebhookAdapter.mjs');
+      const { StravaWebhookJobStore } = await import('./1_adapters/strava/StravaWebhookJobStore.mjs');
+      const { StravaEnrichmentService } = await import('./3_applications/strava/StravaEnrichmentService.mjs');
+
+      const stravaClient = new StravaClientAdapter({
+        httpClient: axios,
+        configService,
+        logger: rootLogger.child({ module: 'strava-client' }),
+      });
+
+      const stravaVerifyToken = configService.getSystemAuth?.('strava', 'verify_token') || '';
+      const stravaWebhookAdapter = new StravaWebhookAdapter({
+        verifyToken: stravaVerifyToken,
+        logger: rootLogger.child({ module: 'strava-webhook' }),
+      });
+
+      const jobStore = new StravaWebhookJobStore({
+        basePath: configService.getHouseholdPath('common/strava/strava-webhooks'),
+        logger: rootLogger.child({ module: 'strava-jobs' }),
+      });
+
+      stravaEnrichmentService = new StravaEnrichmentService({
+        stravaClient,
+        jobStore,
+        authStore: {
+          loadUserAuth: (provider, username) => configService.getUserAuth?.(provider, username),
+        },
+        configService,
+        fitnessHistoryDir: configService.getHouseholdPath('history/fitness'),
+        logger: rootLogger.child({ module: 'strava-enrichment' }),
+      });
+
+      providerWebhookAdapters = { strava: stravaWebhookAdapter };
+
+      // Recover pending jobs on startup
+      stravaEnrichmentService.recoverPendingJobs();
+
+      rootLogger.info?.('strava.enrichment.initialized');
+    }
+  } catch (err) {
+    rootLogger.warn?.('strava.enrichment.init_failed', { error: err?.message });
+  }
+
   // Fitness domain router
   // Note: contentRegistry passed for /show endpoint - playlist thumbnail enrichment is household-specific
   v1Routers.fitness = createFitnessApiRouter({
@@ -1186,6 +1236,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     contentQueryService: contentServices.contentQueryService,
     createReceiptCanvas: createFitnessReceiptCanvas,
     printerAdapter: hardwareAdapters.printerAdapter,
+    providerWebhookAdapters,
+    enrichmentService: stravaEnrichmentService,
     logger: rootLogger.child({ module: 'fitness-api' })
   });
 
@@ -1693,6 +1745,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   app.use('/api/v1/nutribot/webhook', devProxy.middleware);
   app.use('/api/v1/journalist/webhook', devProxy.middleware);
   app.use('/api/v1/homebot/webhook', devProxy.middleware);
+  app.use('/api/v1/fitness/provider/webhook', devProxy.middleware);
 
   // ==========================================================================
   // Frontend Static Files (Production Only) - MUST be before API router

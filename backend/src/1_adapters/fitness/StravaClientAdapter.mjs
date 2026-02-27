@@ -6,6 +6,8 @@
  * - refreshToken(refreshToken) - OAuth token refresh
  * - getActivities(params) - Fetch athlete activities
  * - getActivityStreams(activityId, keys) - Fetch activity streams
+ * - getActivity(activityId) - Fetch single activity detail
+ * - updateActivity(activityId, updates) - Update activity name/description
  *
  * @module adapters/fitness/StravaClientAdapter
  */
@@ -128,6 +130,65 @@ export class StravaClientAdapter {
       {
         params: { keys: keys.join(','), key_by_type: true },
         headers: { Authorization: `Bearer ${this.#currentAccessToken}` },
+      }
+    );
+
+    return response.data;
+  }
+
+  /**
+   * Get a single activity by ID.
+   * @param {number|string} activityId
+   * @returns {Promise<Object>} Activity data
+   */
+  async getActivity(activityId) {
+    if (!this.#currentAccessToken) {
+      throw new InfrastructureError('No access token available. Call refreshToken first.', {
+        code: 'AUTHENTICATION_ERROR',
+        service: 'Strava'
+      });
+    }
+
+    const response = await this.#httpClient.get(
+      `${STRAVA_BASE_URL}/api/v3/activities/${activityId}`,
+      {
+        headers: { Authorization: `Bearer ${this.#currentAccessToken}` },
+      }
+    );
+
+    return response.data;
+  }
+
+  /**
+   * Update an activity's name and/or description.
+   * @param {number|string} activityId
+   * @param {Object} updates
+   * @param {string} [updates.name] - New activity name
+   * @param {string} [updates.description] - New activity description
+   * @returns {Promise<Object>} Updated activity data
+   */
+  async updateActivity(activityId, updates) {
+    if (!this.#currentAccessToken) {
+      throw new InfrastructureError('No access token available. Call refreshToken first.', {
+        code: 'AUTHENTICATION_ERROR',
+        service: 'Strava'
+      });
+    }
+
+    const body = {};
+    if (updates.name != null) body.name = updates.name;
+    if (updates.description != null) body.description = updates.description;
+
+    this.#logger.info?.('strava.client.updateActivity', { activityId, fields: Object.keys(body) });
+
+    const response = await this.#httpClient.put(
+      `${STRAVA_BASE_URL}/api/v3/activities/${activityId}`,
+      body,
+      {
+        headers: {
+          Authorization: `Bearer ${this.#currentAccessToken}`,
+          'Content-Type': 'application/json',
+        },
       }
     );
 

@@ -8,6 +8,18 @@
 
 ---
 
+## Audit Notes (2026-02-26)
+
+> The following amendments address findings from a DDD compliance audit
+> that verified every infrastructure claim against the live codebase and
+> checked the proposed architecture against `docs/reference/core/layers-of-abstraction/ddd-reference.md`.
+>
+> **Accuracy:** 19/20 infrastructure claims verified correct. Key gaps were
+> in implementation-level specification (router, bootstrap, error handling,
+> logging), not architectural direction.
+
+---
+
 ## Overview
 
 MediaApp is a unified media control surface: a personal player with queue management, a remote control for household devices, and a content browser — all in one mobile-first interface. Think PlexAmp meets universal remote.
@@ -36,6 +48,7 @@ MediaApp is a unified media control surface: a personal player with queue manage
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | User scoping | Head of household only (v1) | Avoids auth complexity; multi-user deferred |
+| Queue scoping | One queue per household | Matches codebase pattern (`householdId` on all service methods). Head-of-household-only means one queue per household is sufficient for v1. Multi-user (per-user queues within a household) deferred to Phase 5. |
 | Queue persistence | Backend-persistent | Survives refreshes, works cross-device |
 | Cast policy | Always replace | Simple; permission hierarchy deferred |
 | Layout | Mobile-first, full viewport | Not screen-constrained like TV app; 100% width/height |
@@ -247,10 +260,14 @@ presets require adding `mediaType` pass-through to `searchStream()` so adapters
 (specifically PlexAdapter) can scope results to audio-only or video-only. Without
 this change, both presets return all Plex content regardless of media type.
 
-**Implementation:** Add `query.mediaType` filtering in `searchStream()` after the
-`resolveSource()` call — pass it through to adapters via `#translateQuery()`, and
-have PlexAdapter use it to filter by `type` (artist/album/track for audio,
-movie/show/episode for video). This is a small backend change in Phase 2.
+**Implementation:** In `ContentQueryService.mjs` (`3_applications/content/`),
+add `query.mediaType` pass-through in `searchStream()` (line ~226, after
+`resolveSource()`). Pass it to adapters via `#translateQuery()`. In
+`PlexClientAdapter.mjs` (`1_adapters/plex/`), use `mediaType` to filter by
+Plex `type` field (artist/album/track for audio, movie/show/episode for
+video). Note: `mediaType` filtering already exists in `#pickRandom()`
+(line ~564) — extend the same pattern to `searchStream()`. This is a
+small backend change in Phase 2.
 
 These are just `useStreamingSearch` calls with pre-injected params — no new
 backend code beyond the `mediaType` pass-through above. The `resolveSource`
@@ -375,6 +392,11 @@ items:
 - `"websocket"` — added via `media:command` WebSocket event
 - `"reorder"` — not set (preserves original `addedFrom`)
 
+**DDD note:** `addedFrom` is presentation-layer provenance metadata. The
+domain entity passes it through without interpreting it — no domain logic
+branches on `addedFrom` values. This is acceptable as pass-through metadata
+but should not be used in domain invariants or business rules.
+
 ### Content Resolution on Add
 
 Queue items require metadata (`title`, `format`, `duration`, `thumbnail`) beyond
@@ -392,9 +414,25 @@ item with only a `contentId` (no `title`), `MediaQueueService.addItems()` calls
 `contentIdResolver.resolve(contentId)` to fetch metadata before persisting. This
 reuses the same resolution chain as the Play API.
 
-**Consequence:** `MediaQueueService` needs `contentIdResolver` as a dependency
-(injected via `createMediaServices()` factory). The `IMediaQueueDatastore` port
-stays thin — resolution happens in the application service, not the adapter.
+**DDD compliance note:** Content resolution is cross-domain orchestration
+(content domain → media domain). Per the dependency rule, one application
+service should not depend on another domain's resolver. Instead, the
+**router** (layer 4) resolves contentIds before passing fully-formed items
+to `MediaQueueService.addItems()`. The service only accepts items with
+`title`, `format`, and `duration` already populated.
+
+**Router-level resolution flow:**
+
+```
+POST /api/v1/media/queue/items
+  → router checks: does item have `title`?
+  → if no: router calls contentIdResolver.resolve(contentId)
+  → router passes resolved item to mediaQueueService.addItems()
+```
+
+This keeps `MediaQueueService` free of content-domain dependencies.
+`createMediaServices()` does NOT inject `contentIdResolver` — that
+dependency stays in the router factory (`createMediaApiRouter()`).
 
 ### DDD Layer Mapping
 
@@ -402,7 +440,7 @@ stays thin — resolution happens in the application service, not the adapter.
 |-------|----------|---------|
 | 0_system | — | Uses existing `loadYaml`/`saveYaml` from `FileIO.mjs` |
 | 1_adapters | `YamlMediaQueueDatastore.mjs` | Reads/writes `queue.yml` via standard FileIO pattern |
-| 2_domains | `MediaQueue.mjs` | Queue entity: add, remove, reorder, advance, state |
+| 2_domains | `MediaQueue.mjs` (new, in existing `media/entities/`) | Queue entity: add, remove, reorder, advance, state. **Note:** `2_domains/media/` already contains `IMediaSearchable.mjs`, `MediaKeyResolver.mjs`, `errors.mjs`, and `index.mjs`. `MediaQueue` joins this existing domain — add an `entities/` subfolder. Extend `errors.mjs` with queue-specific errors rather than creating new error files. |
 | 3_applications | `IMediaQueueDatastore.mjs` (port) + `MediaQueueService.mjs` | Port interface + queue CRUD orchestration |
 | 4_api | `media.mjs` router | HTTP endpoints for queue management |
 | wiring | `bootstrap.mjs` + `app.mjs` | `createMediaServices()` factory + route registration |
@@ -447,13 +485,26 @@ ensures all tabs converge on the same state.
 per operation. The broadcast includes this ID. The originating tab ignores
 broadcasts matching its own `mutationId` to avoid redundant state replacement.
 
+**New pattern note:** `mutationId`-based self-echo suppression is not used
+elsewhere in the codebase. Document this pattern in the implementation PR
+so future WebSocket sync features can reuse it.
+
 ### MediaQueue Entity
 
 ```js
 // 2_domains/media/entities/MediaQueue.mjs
 class MediaQueue {
   constructor({ position, shuffle, repeat, volume, items }) { ... }
+```
 
+**Codebase entity patterns to follow:**
+- Mutable public fields (not private `#` fields) for state — matches `Session.mjs`
+- Constructor accepts `{ position, shuffle, repeat, volume, items }` with defaults
+- `toJSON()` / `static fromJSON(data)` for serialization — NOT `static create()` factories
+- No `Object.freeze()` on the entity (only on value objects like `SessionId`)
+- `static empty()` is fine as a convenience alongside `fromJSON()`
+
+```js
   // Queue manipulation — all adjust position to keep current item stable
   addItems(items, placement)       // placement: 'next' | 'end' | index
                                    // assigns queueId to each item on add
@@ -489,6 +540,11 @@ advance (item ended) from manual next/prev. `repeat: one` only loops on
 device's system volume via the device API — completely independent. When casting
 content to a device, the queue volume does NOT transfer; the device plays at
 its own volume level. There is no master volume concept.
+
+**DDD note:** `volume` is a UI playback preference, not domain state. It's
+persisted here for pragmatic cross-session continuity (same reason PlexAmp
+persists volume in its queue file). No domain logic references `volume` —
+it's purely a persistence pass-through for the frontend.
 
 **Shuffle model:** When shuffle is enabled, the entity generates a `shuffleOrder`
 array (Fisher-Yates on indices `[0..items.length-1]`). `advance()` follows
@@ -533,6 +589,72 @@ stays (now pointing at the next item) or clamps to the new end.
 exceed the limit. The API returns 422 with a clear message. This prevents YAML
 bloat — at 500 items the file is ~25KB, well within sync I/O budget.
 
+### Error Handling
+
+Uses the existing error hierarchy from `2_domains/core/errors/` and extends
+`2_domains/media/errors.mjs`:
+
+| Error | Thrown When | HTTP Status |
+|-------|-----------|-------------|
+| `DomainInvariantError` | `addItems()` when queue exceeds `MAX_QUEUE_SIZE` | 422 |
+| `DomainInvariantError` | `advance()` past end of queue with `repeat: off` | 422 |
+| `EntityNotFoundError` | `removeByQueueId()` / `reorder()` with unknown `queueId` | 404 |
+| `ValidationError` | Invalid `repeat` mode, negative `volume`, etc. | 400 |
+| `InfrastructureError` | YAML read/write failure in datastore | 500 |
+
+**Extend `2_domains/media/errors.mjs`** with:
+
+```js
+export class QueueFullError extends DomainInvariantError {
+  constructor(maxSize) {
+    super(`Queue is full (max ${maxSize} items)`);
+    this.name = 'QueueFullError';
+    this.maxSize = maxSize;
+  }
+}
+```
+
+The router maps domain errors to HTTP responses via the existing
+`asyncHandler` error middleware — no custom error handling needed.
+
+### Logging
+
+Per CLAUDE.md: "New Features Must Ship With Logging." All backend
+artifacts use the injected `logger` (never raw `console.log`).
+
+**Backend log events (MediaQueueService):**
+
+| Event | Level | Data |
+|-------|-------|------|
+| `media-queue.loaded` | debug | `{ householdId }` |
+| `media-queue.saved` | debug | `{ householdId, itemCount }` |
+| `media-queue.items-added` | info | `{ count, placement, householdId }` |
+| `media-queue.item-removed` | info | `{ queueId, householdId }` |
+| `media-queue.reordered` | debug | `{ queueId, toIndex }` |
+| `media-queue.position-changed` | debug | `{ position, contentId }` |
+| `media-queue.cleared` | info | `{ householdId }` |
+
+**Frontend log events (useMediaQueue):**
+
+| Event | Level | Data |
+|-------|-------|------|
+| `media-queue.sync-received` | debug | `{ itemCount, source: 'websocket' }` |
+| `media-queue.optimistic-rollback` | warn | `{ operation, error }` |
+| `media-queue.backend-unreachable` | warn | `{ retryIn }` |
+
+**Frontend logger pattern:**
+
+```js
+// In useMediaQueue.js
+import getLogger from '../../lib/logging/Logger.js';
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'useMediaQueue' });
+  return _logger;
+}
+```
+
 ### IMediaQueueDatastore Port
 
 ```js
@@ -557,26 +679,124 @@ class IMediaQueueDatastore {
 
 ```js
 // 0_system/bootstrap.mjs — add createMediaServices()
-export function createMediaServices({ configService, contentIdResolver }) {
+export function createMediaServices({ configService }) {
   const store = new YamlMediaQueueDatastore({ configService });
   const service = new MediaQueueService({
     queueStore: store,
-    contentIdResolver,
     defaultHouseholdId: configService.getDefaultHouseholdId()
   });
   return { store, service };
 }
 
-// app.mjs — call factory, register router
+// 0_system/bootstrap.mjs — add createMediaApiRouter()
+export function createMediaApiRouter({ mediaServices, contentIdResolver, configService, broadcastEvent, logger }) {
+  return createMediaRouter({
+    mediaQueueService: mediaServices.service,
+    contentIdResolver,   // resolution happens in router, not service
+    configService,
+    broadcastEvent,
+    logger
+  });
+}
+
+// app.mjs — call both factories, register router
 const mediaServices = createMediaServices({ configService });
-v1Routers.media = createMediaRouter({
-  mediaQueueService: mediaServices.service,
-  configService
+const mediaRouter = createMediaApiRouter({
+  mediaServices,
+  contentIdResolver,
+  configService,
+  broadcastEvent,
+  logger
 });
+// In routeMap: '/media': mediaRouter
 
 // api.mjs routeMap — add entry
 '/media': 'media'
 ```
+
+### Router Implementation
+
+Follows the codebase factory-function pattern (see `createFitnessRouter` in
+`4_api/v1/routers/fitness.mjs`):
+
+```js
+// 4_api/v1/routers/media.mjs
+import { Router } from 'express';
+import { asyncHandler } from '#system/http/middleware/index.mjs';
+
+export function createMediaRouter({ mediaQueueService, contentIdResolver, configService, broadcastEvent, logger = console }) {
+  const router = Router();
+
+  const resolveHid = (req) => req.query.household || configService.getDefaultHouseholdId();
+
+  // --- Queue CRUD ---
+
+  router.get('/queue', asyncHandler(async (req, res) => {
+    const queue = await mediaQueueService.load(resolveHid(req));
+    res.json(queue ? queue.toJSON() : { items: [], position: 0 });
+  }));
+
+  router.put('/queue', asyncHandler(async (req, res) => {
+    await mediaQueueService.replace(req.body, resolveHid(req));
+    broadcastEvent('media:queue', req.body);
+    res.json({ ok: true });
+  }));
+
+  router.post('/queue/items', asyncHandler(async (req, res) => {
+    const hid = resolveHid(req);
+    // Resolve contentIds missing metadata (URL params, WebSocket triggers)
+    const resolved = await Promise.all(
+      (req.body.items || []).map(async (item) => {
+        if (item.title) return item;  // already resolved
+        const meta = await contentIdResolver.resolve(item.contentId);
+        return { ...item, ...meta };
+      })
+    );
+    const queue = await mediaQueueService.addItems(resolved, req.body.placement, hid);
+    broadcastEvent('media:queue', queue.toJSON());
+    res.json(queue.toJSON());
+  }));
+
+  router.delete('/queue/items/:queueId', asyncHandler(async (req, res) => {
+    const queue = await mediaQueueService.removeItem(req.params.queueId, resolveHid(req));
+    broadcastEvent('media:queue', queue.toJSON());
+    res.json(queue.toJSON());
+  }));
+
+  router.patch('/queue/items/reorder', asyncHandler(async (req, res) => {
+    const queue = await mediaQueueService.reorder(req.body.queueId, req.body.toIndex, resolveHid(req));
+    broadcastEvent('media:queue', queue.toJSON());
+    res.json(queue.toJSON());
+  }));
+
+  router.patch('/queue/position', asyncHandler(async (req, res) => {
+    const queue = await mediaQueueService.setPosition(req.body.position, resolveHid(req));
+    broadcastEvent('media:queue', queue.toJSON());
+    res.json(queue.toJSON());
+  }));
+
+  router.patch('/queue/state', asyncHandler(async (req, res) => {
+    const queue = await mediaQueueService.updateState(req.body, resolveHid(req));
+    broadcastEvent('media:queue', queue.toJSON());
+    res.json(queue.toJSON());
+  }));
+
+  router.delete('/queue', asyncHandler(async (req, res) => {
+    await mediaQueueService.clear(resolveHid(req));
+    broadcastEvent('media:queue', { items: [], position: 0 });
+    res.json({ ok: true });
+  }));
+
+  return router;
+}
+```
+
+**Key patterns followed:**
+- Factory function returning `express.Router()` (not a class)
+- `asyncHandler` on all async routes
+- `req.query.household` with `configService.getDefaultHouseholdId()` fallback
+- `broadcastEvent` for WebSocket sync after every mutation
+- Content resolution in router, not in service
 
 ---
 

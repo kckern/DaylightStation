@@ -277,7 +277,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     );
     sessionInstance.logEvent('media_start', {
       source: 'music_player',
-      mediaId: currentTrackIdentity,
+      contentId: currentTrackIdentity,
       title: currentTrack?.title || currentTrack?.label || null,
       artist: currentTrack?.artist || currentTrack?.albumArtist || currentTrack?.grandparentTitle || null,
       album: currentTrack?.album || currentTrack?.parentTitle || null,
@@ -292,7 +292,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     return () => {
       if (currentTrackIdentity && sessionInstance) {
         sessionInstance.logEvent('media_end', {
-          mediaId: currentTrackIdentity,
+          contentId: currentTrackIdentity,
           source: 'music_player',
         });
       }
