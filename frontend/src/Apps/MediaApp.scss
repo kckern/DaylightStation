@@ -47,3 +47,58 @@
   align-items: center;
   justify-content: center;
 }
+
+// MiniPlayer
+.media-mini-player {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  background: #1a1a1a;
+  border-top: 1px solid #333;
+  cursor: pointer;
+  z-index: 100;
+  overflow: hidden;
+}
+
+.mini-player-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 2px;
+  background: #1db954;
+  transition: width 0.3s linear;
+}
+
+.mini-player-content {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 12px;
+  gap: 12px;
+}
+
+.mini-player-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.mini-player-title {
+  flex: 1;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mini-player-toggle {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 20px;
+  padding: 8px;
+  cursor: pointer;
+}
