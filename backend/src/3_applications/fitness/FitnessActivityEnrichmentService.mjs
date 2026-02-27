@@ -1,14 +1,14 @@
 /**
- * StravaEnrichmentService
+ * FitnessActivityEnrichmentService
  *
- * Orchestrates the enrichment of Strava activities with DaylightStation
- * fitness session data (media titles, voice memos, episode descriptions).
+ * Orchestrates the enrichment of fitness provider activities with DaylightStation
+ * session data (media titles, voice memos, episode descriptions).
  *
  * Flow:
  * 1. Receive webhook event → check circuit breaker → write durable job
- * 2. Scan fitness history for matching strava activityId
+ * 2. Scan fitness history for matching activityId
  * 3. Build enrichment payload (title + description)
- * 4. PUT to Strava API
+ * 4. PUT to provider API via stravaClient port
  * 5. Update job status
  *
  * Circuit breaker (3 layers):
@@ -16,19 +16,19 @@
  * - Cooldown set: recently-enriched activityIds (1hr TTL)
  * - Job store: completed jobs are skipped
  *
- * @module applications/strava/StravaEnrichmentService
+ * @module applications/fitness/FitnessActivityEnrichmentService
  */
 
 import path from 'path';
 import moment from 'moment-timezone';
 import { loadYamlSafe, listYamlFiles, dirExists, saveYaml } from '#system/utils/FileIO.mjs';
-import { buildStravaDescription } from './buildStravaDescription.mjs';
+import { buildStravaDescription } from '../../1_adapters/fitness/buildStravaDescription.mjs';
 
 const MAX_RETRIES = 3;
 const RETRY_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const COOLDOWN_TTL_MS = 60 * 60 * 1000;  // 1 hour
 
-export class StravaEnrichmentService {
+export class FitnessActivityEnrichmentService {
   #stravaClient;
   #jobStore;
   #authStore;
@@ -119,7 +119,7 @@ export class StravaEnrichmentService {
 
   /**
    * @private
-   * Attempt to enrich a Strava activity. Schedules retries on failure.
+   * Attempt to enrich a provider activity. Schedules retries on failure.
    */
   async _attemptEnrichment(activityId) {
     const job = this.#jobStore.findById(activityId);
@@ -141,7 +141,7 @@ export class StravaEnrichmentService {
       // Ensure we have a fresh access token (needed for getActivity)
       await this._ensureAuth();
 
-      // Fetch activity from Strava (need start_date + duration for time matching)
+      // Fetch activity from provider (need start_date + duration for time matching)
       const currentActivity = await this.#stravaClient.getActivity(activityId);
       if (!currentActivity?.start_date) {
         this.#logger.warn?.('strava.enrichment.activity_fetch_failed', { activityId });
@@ -168,7 +168,7 @@ export class StravaEnrichmentService {
 
       const session = match.data;
 
-      // Write Strava data back to session YAML (if not already linked)
+      // Write provider data back to session YAML (if not already linked)
       const username = this.#configService.getHeadOfHousehold?.() || 'kckern';
       if (session.participants?.[username] && !session.participants[username]?.strava?.activityId) {
         session.participants[username].strava = {
@@ -202,7 +202,7 @@ export class StravaEnrichmentService {
         return;
       }
 
-      // Push to Strava
+      // Push to provider
       const updatePayload = {};
       if (enrichment.name) updatePayload.name = enrichment.name;
       if (enrichment.description) updatePayload.description = enrichment.description;
@@ -241,13 +241,13 @@ export class StravaEnrichmentService {
 
   /**
    * @private
-   * Find a home fitness session matching a Strava activity by time overlap.
+   * Find a home fitness session matching a provider activity by time overlap.
    *
    * Two-pass approach:
    *  1. Fast path: check if any session already has this strava.activityId
    *  2. Time match: overlap the activity window against session windows (5-min buffer)
    *
-   * @param {Object} activity - Strava activity object (from API: start_date, moving_time, elapsed_time, id)
+   * @param {Object} activity - Provider activity object (start_date, moving_time, elapsed_time, id)
    * @returns {{ data: Object, filePath: string }|null}
    */
   _findMatchingSession(activity) {
@@ -375,7 +375,7 @@ export class StravaEnrichmentService {
 
   /**
    * @private
-   * Ensure the Strava client has a valid access token.
+   * Ensure the provider client has a valid access token.
    */
   async _ensureAuth() {
     if (this.#stravaClient.hasAccessToken()) return;
@@ -417,4 +417,4 @@ export class StravaEnrichmentService {
   }
 }
 
-export default StravaEnrichmentService;
+export default FitnessActivityEnrichmentService;

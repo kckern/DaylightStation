@@ -457,7 +457,8 @@ const _consolidateEvents = (events) => {
         grandparentId: s.grandparentId || null,
         parentId: s.parentId || null,
         labels: s.labels || [],
-        contentType: s.type || null,
+        contentType: s.type || (s.artist ? 'track' : null) || null,
+        artist: s.artist || null,
         governed: s.governed ?? null,
         description: s.description || e.description || null,
         durationSeconds: s.durationSeconds ?? e.durationSeconds ?? null,
@@ -946,7 +947,8 @@ export class PersistenceManager {
       console.error(`📤 SESSION_SAVE [${this._debugSaveCount}/5]: ${persistSessionData.session?.id}, ticks=${tickCount}, series=${seriesCount}`);
     }
 
-    this._persistApi('api/v1/fitness/save_session', { sessionData: persistSessionData }, 'POST')
+    this._enrichMissingPlexDescriptions(persistSessionData.timeline?.events)
+      .then(() => this._persistApi('api/v1/fitness/save_session', { sessionData: persistSessionData }, 'POST'))
       .then(resp => {
         // DEBUG: Log success (throttled)
         if ((this._debugSaveSuccessCount = (this._debugSaveSuccessCount || 0) + 1) <= 3) {
@@ -966,6 +968,42 @@ export class PersistenceManager {
   }
 
   // -------------------- Private Helpers --------------------
+
+  /**
+   * Fetch missing Plex descriptions for episode media events and populate in-place.
+   * Runs concurrently; per-event errors do not fail the save.
+   * @param {Array} events - Consolidated timeline events
+   * @returns {Promise<void>}
+   */
+  async _enrichMissingPlexDescriptions(events) {
+    if (!Array.isArray(events)) return;
+
+    const toFetch = events.filter(evt => {
+      if (evt?.type !== 'media') return false;
+      const d = evt.data || {};
+      if (d.description) return false;
+      if (d.artist || d.contentType === 'track') return false;
+      return (d.contentId || '').startsWith('plex:');
+    });
+
+    if (toFetch.length === 0) return;
+
+    getLogger().debug('fitness.persistence.plex_enrich_start', { count: toFetch.length });
+
+    await Promise.all(toFetch.map(async (evt) => {
+      const plexId = evt.data.contentId.split(':', 2)[1];
+      try {
+        const resp = await this._persistApi(`api/v1/info/plex/${plexId}`, {}, 'GET');
+        const summary = resp?.metadata?.summary;
+        if (summary) {
+          evt.data.description = summary.replace(/\s+/g, ' ').trim();
+          getLogger().debug('fitness.persistence.plex_enrich_hit', { plexId });
+        }
+      } catch (err) {
+        getLogger().warn('fitness.persistence.plex_enrich_fail', { plexId, error: err?.message });
+      }
+    }));
+  }
 
   /**
    * Augment roster with participants discovered in series data.

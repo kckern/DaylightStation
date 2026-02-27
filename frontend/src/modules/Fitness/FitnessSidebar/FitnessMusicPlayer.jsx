@@ -279,7 +279,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
       source: 'music_player',
       contentId: currentTrackIdentity,
       title: currentTrack?.title || currentTrack?.label || null,
-      artist: currentTrack?.artist || currentTrack?.albumArtist || currentTrack?.grandparentTitle || null,
+      artist: currentTrack?.artist || currentTrack?.albumArtist || currentTrack?.grandparentTitle || currentTrack?.metadata?.grandparentTitle || null,
       album: currentTrack?.album || currentTrack?.parentTitle || null,
       playlistId: selectedPlaylistId || null,
       plexId: currentTrack?.plex || null,
