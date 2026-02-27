@@ -605,6 +605,51 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'media' })
   });
 
+  // Media command handler (registered separately because mediaServices must be in scope)
+  eventBus.onClientMessage((clientId, message) => {
+    if (message.topic !== 'media:command') return;
+
+    const { action, contentId, householdId } = message;
+    rootLogger.info?.('eventbus.media.command', { clientId, action, contentId });
+
+    (async () => {
+      try {
+        const mediaQueueService = mediaServices.mediaQueueService;
+
+        if (action === 'play') {
+          // Insert after current, advance to it
+          const added = await mediaQueueService.addItems(
+            [{ contentId, addedFrom: 'WEBSOCKET' }], 'next', householdId
+          );
+          const queue = await mediaQueueService.load(householdId);
+          const insertedIdx = queue.items.findIndex(i => i.queueId === added[0].queueId);
+          if (insertedIdx >= 0) await mediaQueueService.setPosition(insertedIdx, householdId);
+          const updated = await mediaQueueService.load(householdId);
+          eventBus.broadcast('media:queue', updated.toJSON());
+        } else if (action === 'add') {
+          await mediaQueueService.addItems(
+            [{ contentId, addedFrom: 'WEBSOCKET' }], 'end', householdId
+          );
+          const queue = await mediaQueueService.load(householdId);
+          eventBus.broadcast('media:queue', queue.toJSON());
+        } else if (action === 'next') {
+          await mediaQueueService.addItems(
+            [{ contentId, addedFrom: 'WEBSOCKET' }], 'next', householdId
+          );
+          const queue = await mediaQueueService.load(householdId);
+          eventBus.broadcast('media:queue', queue.toJSON());
+        } else if (action === 'clear') {
+          const queue = await mediaQueueService.clear(householdId);
+          eventBus.broadcast('media:queue', queue.toJSON());
+        } else {
+          rootLogger.warn?.('eventbus.media.unknown-action', { action });
+        }
+      } catch (err) {
+        rootLogger.error?.('eventbus.media.command.error', { action, error: err.message });
+      }
+    })();
+  });
+
   // ==========================================================================
   // Create API v1 Routers
   // ==========================================================================
