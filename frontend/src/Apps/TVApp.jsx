@@ -8,6 +8,7 @@ import { MenuSkeleton } from "../modules/Menu/MenuSkeleton";
 import { getChildLogger } from "../lib/logging/singleton.js";
 import { useViewportProbe } from "../hooks/useViewportProbe.js";
 import { parseAutoplayParams } from "../lib/parseAutoplayParams.js";
+import { usePlaybackBroadcast } from '../hooks/media/usePlaybackBroadcast.js';
 
 const TV_ACTIONS = ['play', 'queue', 'playlist', 'random', 'display', 'read', 'open', 'app', 'launch', 'list'];
 
@@ -30,8 +31,25 @@ export function TVAppWrapper({ children }) {
  * Inner component that uses the navigation context for autoplay handling
  */
 function TVAppContent({ rootMenu, autoplay, appParam, logger }) {
-  const { push, pop, currentContent, reset } = useMenuNavigationContext();
+  const { push, pop, currentContent } = useMenuNavigationContext();
   const [autoplayed, setAutoplayed] = useState(false);
+  const playerRef = useRef(null);
+
+  const broadcastItem = useMemo(() => {
+    if (!currentContent) return null;
+    if (currentContent.type !== 'player' && currentContent.type !== 'composite') return null;
+    const contentProps = currentContent.props || {};
+    const item = contentProps.play || (contentProps.queue && contentProps.queue[0]) || null;
+    if (!item) return null;
+    return {
+      contentId: item.contentId ?? item.plex ?? item.assetId ?? null,
+      title: item.title ?? item.label ?? item.name ?? null,
+      format: item.format ?? item.mediaType ?? item.type ?? null,
+      thumbnail: item.thumbnail ?? item.image ?? null,
+    };
+  }, [currentContent]);
+
+  usePlaybackBroadcast(playerRef, broadcastItem);
 
   // Handle autoplay on mount
   useEffect(() => {
@@ -79,12 +97,9 @@ function TVAppContent({ rootMenu, autoplay, appParam, logger }) {
     return <PlayerOverlayLoading shouldRender isVisible />;
   }
 
-  return <MenuStack rootMenu={rootMenu} />;
+  return <MenuStack rootMenu={rootMenu} playerRef={playerRef} />;
 }
 
-// TODO: Wire usePlaybackBroadcast when Player ref is surfaced from MenuStack (4.2.5)
-// The Player lives inside MenuStack and is lazily rendered — no playerRef is available
-// at this level. Surfacing it requires threading a ref through MenuNavigationProvider.
 export default function TVApp({ appParam }) {
   const [list, setList] = useState(null);
   const logger = useMemo(() => getChildLogger({ app: 'tv' }), []);
