@@ -1,24 +1,27 @@
 // frontend/src/modules/Media/DeviceCard.jsx
 import React, { useCallback, useMemo } from 'react';
+import { notifications } from '@mantine/notifications';
 import getLogger from '../../lib/logging/Logger.js';
 
-const DeviceCard = ({ device, playbackState, isOnline, type, onCast }) => {
+const DeviceCard = ({ device, playbackState, isOnline, type }) => {
   const logger = useMemo(() => getLogger().child({ component: 'DeviceCard' }), []);
   const isDevice = type === 'device';
 
   const handlePower = useCallback(() => {
     const action = isOnline ? 'off' : 'on';
     logger.info('device-card.power', { deviceId: device.id, action });
-    fetch(`/api/v1/device/${device.id}/${action}`).catch(err =>
-      logger.error('device-card.power-failed', { error: err.message })
-    );
+    fetch(`/api/v1/device/${device.id}/${action}`).catch(err => {
+      logger.error('device-card.power-failed', { error: err.message });
+      notifications.show({ title: 'Device command failed', message: err.message, color: 'red' });
+    });
   }, [device.id, isOnline, logger]);
 
   const handleVolume = useCallback((e) => {
     const level = Math.round(parseFloat(e.target.value) * 100);
-    fetch(`/api/v1/device/${device.id}/volume/${level}`).catch(err =>
-      logger.error('device-card.volume-failed', { error: err.message })
-    );
+    fetch(`/api/v1/device/${device.id}/volume/${level}`).catch(err => {
+      logger.error('device-card.volume-failed', { error: err.message });
+      notifications.show({ title: 'Volume change failed', message: err.message, color: 'red' });
+    });
   }, [device.id, logger]);
 
   const progress = useMemo(() => {
@@ -61,11 +64,6 @@ const DeviceCard = ({ device, playbackState, isOnline, type, onCast }) => {
               onChange={handleVolume}
               aria-label="Volume"
             />
-          )}
-          {isOnline && device.capabilities?.contentControl && onCast && (
-            <button className="device-card-btn" onClick={() => onCast(device.id)} aria-label="Cast">
-              &#x1F4E1;
-            </button>
           )}
         </div>
       )}

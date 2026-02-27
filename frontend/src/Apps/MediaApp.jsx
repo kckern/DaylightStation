@@ -1,5 +1,5 @@
 // frontend/src/Apps/MediaApp.jsx
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import getLogger, { configure as configureLogger } from '../lib/logging/Logger.js';
 import useMediaUrlParams from '../hooks/media/useMediaUrlParams.js';
 import { MediaAppProvider, useMediaApp } from '../contexts/MediaAppContext.jsx';
@@ -13,7 +13,7 @@ import './MediaApp.scss';
 
 /**
  * MediaApp — media controller and player.
- * Phase 2: Queue-backed playback with context provider.
+ * Phase 5: Queue-backed playback with device monitoring and format-aware fullscreen.
  *
  * Req: 1.2.1, 1.2.2, 1.1.1, 1.1.2, 1.1.3, 1.1.9
  */
@@ -27,6 +27,7 @@ const MediaApp = () => {
 
 const MediaAppInner = () => {
   const { queue, playerRef } = useMediaApp();
+  const urlCommandProcessed = useRef(false);
   usePlaybackBroadcast(playerRef, queue.currentItem);
   const logger = useMemo(() => getLogger().child({ app: 'media' }), []);
   const urlCommand = useMediaUrlParams();
@@ -58,9 +59,12 @@ const MediaAppInner = () => {
 
   // Process URL command on mount — now uses queue
   useEffect(() => {
-    if (!urlCommand || queue.loading) return;
+    if (queue.loading || urlCommandProcessed.current) return;
+    if (!urlCommand) return;
     const playCommand = urlCommand.play || urlCommand.queue;
     if (!playCommand?.contentId) return;
+
+    urlCommandProcessed.current = true;
 
     const { contentId, volume, ...config } = playCommand;
     logger.info('media-app.url-command', { action: urlCommand.play ? 'play' : 'queue', contentId, device: urlCommand.device });
@@ -82,12 +86,13 @@ const MediaAppInner = () => {
     }
     if (volume) queue.setVolume(Number(volume) / 100);
     if (playCommand.shuffle) queue.setShuffle(true);
-  }, [urlCommand, queue.loading]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [urlCommand, queue.loading, queue.clear, queue.addItems, queue.setVolume, queue.setShuffle, logger]);
+  // No eslint-disable needed: urlCommandProcessed ref prevents double-execution
 
-  // Handle item end — advance queue
+  // Handle item end — auto-advance (passes auto:true so repeat:one loops correctly)
   const handleItemEnd = useCallback(() => {
     logger.info('media-app.item-ended', { contentId: queue.currentItem?.contentId });
-    queue.advance(1);
+    queue.advance(1, { auto: true });
     setPlaybackState({ currentTime: 0, duration: 0, paused: true });
   }, [queue.currentItem, queue, logger]);
 

@@ -887,3 +887,115 @@
   color: #888;
   &:hover { color: #1db954; }
 }
+
+// ─── Fullscreen Transport Overlay (8.1.8, 8.2.4) ───────────────────────────
+
+.media-fullscreen-controls {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 1001;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
+  padding: 32px 16px 16px;
+  transition: opacity 0.3s ease;
+
+  &--hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .media-progress {
+    margin-bottom: 8px;
+  }
+
+  .media-transport {
+    justify-content: center;
+  }
+
+  .media-transport-btn {
+    color: #fff;
+    font-size: 24px;
+  }
+
+  .media-progress-bar {
+    background: rgba(255, 255, 255, 0.3);
+  }
+
+  .media-progress-fill {
+    background: #1db954;
+  }
+
+  .media-progress-times {
+    color: rgba(255, 255, 255, 0.8);
+  }
+}
+
+// ─── Format Badges (8.1.10) ─────────────────────────────────────────────────
+
+.format-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: #2a2a2a;
+  color: #888;
+
+  &--audio    { background: #1a3a5c; color: #5ba3e0; }
+  &--video    { background: #3a1a5c; color: #a05be0; }
+  &--singalong,
+  &--hymn     { background: #1a3a22; color: #1db954; }
+  &--readalong,
+  &--audiobook { background: #3a2a1a; color: #e0945b; }
+}
+
+// ─── Expand Button for Scrollers (8.1.5, 8.1.7) ─────────────────────────────
+
+.media-expand-btn {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #aaa;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 14px;
+  cursor: pointer;
+  margin-top: 6px;
+  display: inline-block;
+
+  &:hover {
+    border-color: #1db954;
+    color: #1db954;
+  }
+}
+
+// ─── Format-Appropriate Track Metadata (8.1.9) ───────────────────────────────
+
+.media-track-meta {
+  font-size: 12px;
+  color: #888;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// Queue drag-to-reorder
+.queue-item-drag-handle {
+  cursor: grab;
+  padding: 0 8px 0 4px;
+  opacity: 0.35;
+  font-size: 1.1rem;
+  user-select: none;
+  flex-shrink: 0;
+
+  &:hover {
+    opacity: 0.8;
+  }
+}
+
+.queue-item[draggable="true"]:active {
+  cursor: grabbing;
+}

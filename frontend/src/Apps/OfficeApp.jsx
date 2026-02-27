@@ -24,10 +24,8 @@ import { createWebSocketHandler } from '../lib/OfficeApp/websocketHandler.js'
 import { useKeyboardHandler } from '../lib/OfficeApp/keyboardHandler.js'
 import { createMenuSelectionHandler } from '../lib/OfficeApp/menuHandler.js'
 import { getChildLogger } from '../lib/logging/singleton.js'
+import { usePlaybackBroadcast } from '../hooks/media/usePlaybackBroadcast.js'
 
-// TODO: Wire usePlaybackBroadcast when Player ref is surfaced (4.2.6)
-// Player is rendered dynamically in renderContent() without a stable ref.
-// Wiring requires creating a persistent playerRef and passing it to all Player instances.
 function OfficeApp({ initialGame = null }) {
   const logger = useMemo(() => getChildLogger({ app: 'office' }), []);
   logger.debug('office.render');
@@ -48,6 +46,7 @@ function OfficeApp({ initialGame = null }) {
 
   // Track if player is active (queue has items or currentContent is a player)
   const isPlayerActive = useRef(false)
+  const playerRef = useRef(null)
 
   // Get WebSocket functions
   const { registerPayloadCallback, unregisterPayloadCallback } = useWebSocket()
@@ -184,6 +183,22 @@ function OfficeApp({ initialGame = null }) {
     isPlayerActive.current = hasQueue || isPlayerContent;
   }, [queue, currentContent])
 
+  const broadcastItem = useMemo(() => {
+    const playerTypes = new Set(['play', 'queue', 'playlist']);
+    if (!currentContent || !playerTypes.has(currentContent.type)) return null;
+    const props = currentContent.props || {};
+    const item = props.play || (props.queue && props.queue[0]) || (props.playlist && props.playlist[0]) || null;
+    if (!item) return null;
+    return {
+      contentId: item.contentId ?? item.plex ?? item.assetId ?? null,
+      title: item.title ?? item.label ?? item.name ?? null,
+      format: item.format ?? item.mediaType ?? item.type ?? null,
+      thumbnail: item.thumbnail ?? item.image ?? null,
+    };
+  }, [currentContent]);
+
+  usePlaybackBroadcast(playerRef, broadcastItem);
+
   // MIDI subscription: auto-show piano visualizer
   const handleMidiEvent = useCallback((data) => {
     logger.info('piano.midi.received', { topic: data.topic, type: data.type, event: data.data?.event });
@@ -257,9 +272,9 @@ function OfficeApp({ initialGame = null }) {
         delete safeProps.ref;
         delete safeProps.key;
         const componentMap = {
-          play: <Player {...safeProps} />,
-          queue: <Player {...safeProps} />,
-          playlist: <Player {...safeProps} />,
+          play: <Player {...safeProps} ref={playerRef} />,
+          queue: <Player {...safeProps} ref={playerRef} />,
+          playlist: <Player {...safeProps} ref={playerRef} />,
           list: <KeypadMenu {...safeProps} key={uuid} />,
           menu: <KeypadMenu {...safeProps} key={uuid} />,
           open: <AppContainer {...safeProps} />,
@@ -277,7 +292,7 @@ function OfficeApp({ initialGame = null }) {
 
     // If there's a queue, but also require both keyMap and playbackKeys to be present
     if (queue.length && keyMap && playbackKeys) {
-      return <Player queue={queue} clear={resetQueue} playbackKeys={playbackKeys} />;
+      return <Player queue={queue} clear={resetQueue} playbackKeys={playbackKeys} ref={playerRef} />;
     }
 
     // If there's a menu open

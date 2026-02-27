@@ -96,9 +96,9 @@ describe('MediaQueue', () => {
       expect(found.mediaKey).toBe('b');
     });
 
-    test('findByQueueId returns undefined for unknown id', () => {
+    test('findByQueueId returns null for unknown id', () => {
       queue.addItems([{ mediaKey: 'a' }]);
-      expect(queue.findByQueueId('nonexistent')).toBeUndefined();
+      expect(queue.findByQueueId('nonexistent')).toBeNull();
     });
   });
 

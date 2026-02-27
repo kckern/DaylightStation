@@ -18,9 +18,8 @@ beforeEach(async () => {
 describe('generateHexId', () => {
   test('produces an 8-character hex string', () => {
     const id = generateHexId();
-    expect(id).toMatch(/^[0-9a-f]{1,8}$/);
-    expect(id.length).toBeLessThanOrEqual(8);
-    expect(id.length).toBeGreaterThan(0);
+    expect(id).toMatch(/^[0-9a-f]{8}$/);
+    expect(id.length).toBe(8);
   });
 
   test('produces different values on successive calls', () => {
@@ -84,7 +83,7 @@ describe('useMediaClientId localStorage integration', () => {
     localStorage.setItem(STORAGE_KEY, clientId);
 
     expect(localStorage.setItem).toHaveBeenCalledWith(STORAGE_KEY, clientId);
-    expect(clientId).toMatch(/^[0-9a-f]{1,8}$/);
+    expect(clientId).toMatch(/^[0-9a-f]{8}$/);
   });
 
   test('reuses existing clientId from localStorage', () => {

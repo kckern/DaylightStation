@@ -5,7 +5,7 @@
 
 **Companion to:** `2026-02-26-media-app-design.md` (narrative architecture reference)
 **Last Updated:** 2026-02-27
-**Status:** Phase 3 Implemented
+**Status:** Phase 5 Implemented
 
 ---
 
@@ -987,7 +987,7 @@ Implementation commits mapped to requirement IDs.
 | **2.1.2** | Add item to end of queue | Done | `c4836302` | Via useMediaQueue.addItems() |
 | **2.1.3** | Play next (insert after current) | Done | `c4836302` | placement='next' |
 | **2.1.4** | Remove single item | Done | `eaa67a08` | Swipe-to-remove + button |
-| **2.1.5** | Drag to reorder | Partial | `eaa67a08` | API wired; drag-and-drop UX deferred |
+| **2.1.5** | Drag to reorder | Done | `eaa67a08`, `3b79d1d5` | Drag-and-drop UX implemented |
 | **2.1.6** | Clear entire queue | Done | `eaa67a08` | Clear button in QueueDrawer |
 | **2.1.7** | Toggle shuffle mode | Done | `eaa67a08` | Button in QueueDrawer |
 | **2.1.8** | Cycle repeat modes | Done | `eaa67a08` | off→one→all cycle |
@@ -1010,7 +1010,7 @@ Implementation commits mapped to requirement IDs.
 | **3.1.4** | Video filter | Done | `81e0e6bf` | source=plex&mediaType=video |
 | **3.1.5** | Hymns filter | Done | `81e0e6bf` | source=singalong |
 | **3.1.6** | Audiobooks filter | Done | `81e0e6bf` | source=readable |
-| **3.1.7** | Prefix shorthand search | Done | — | Already handled by alias resolver |
+| **3.1.7** | Prefix shorthand search | Done | `782f04cb` | Already handled by alias resolver |
 | **3.1.8** | Search results display | Done | `81e0e6bf` | Thumbnail, title, source badge, duration |
 | **3.1.9** | Drill into containers | Done | `81e0e6bf` | useContentBrowse + breadcrumbs |
 | **3.1.10** | Play Now from search result | Done | `81e0e6bf` | Insert next + advance |
@@ -1051,9 +1051,9 @@ Implementation commits mapped to requirement IDs.
 | **4.2.1** | usePlaybackBroadcast hook | Done | `e960d8f0` | 5s interval + state change broadcast |
 | **4.2.2** | Add usePlaybackBroadcast to MediaApp | Done | `76a7678a` | Wired in MediaAppInner |
 | **4.2.3** | useDeviceIdentity hook | Done | `5aced0c0` | Reads ?deviceId= URL param |
-| **4.2.4** | WakeAndLoadService deviceId injection | Done | — | Already injects deviceId in load query |
-| **4.2.5** | Add usePlaybackBroadcast to TVApp | Partial | `76a7678a` | TODO: Player ref not accessible at top level |
-| **4.2.6** | Add usePlaybackBroadcast to OfficeApp | Partial | `76a7678a` | TODO: Player rendered dynamically |
+| **4.2.4** | WakeAndLoadService deviceId injection | Done | `5694b522` | Already injects deviceId in load query |
+| **4.2.5** | Add usePlaybackBroadcast to TVApp | Done | `76a7678a`, `b180d618` | Wired via MenuStack playerRef |
+| **4.2.6** | Add usePlaybackBroadcast to OfficeApp | Done | `76a7678a`, `769eb565` | Wired to Player ref |
 | **4.2.7** | useMediaClientId hook | Done | `cc63eb1c` | Persistent 8-char hex ID in localStorage |
 | **4.2.8** | Backend playback_state handler | Done | `b72954cb` | eventBus.onClientMessage relay |
 | **4.2.9** | useDeviceMonitor hook | Done | `e3140e0f` | REST + WebSocket aggregation |
@@ -1064,12 +1064,12 @@ Implementation commits mapped to requirement IDs.
 | **5.1.3** | Cast queue item to device | Done | `aeedff21` | CastButton in QueueItem |
 | **5.1.4** | Device picker | Done | `3b0eccd2` | Bottom sheet, content_control filter |
 | **5.1.5** | Wake device before casting | Done | `3b0eccd2` | WakeAndLoadService handles wake-if-needed |
-| **5.1.6** | Show wake progress indicator | Done | — | Existing useWakeProgress reused |
+| **5.1.6** | Show wake progress indicator | Done | `8eb38ed9` | Existing useWakeProgress reused |
 | **5.1.7** | Cast via URL parameter | Done | `71dc81de` | ?device= param in useMediaUrlParams |
 | **5.1.8** | Cast replaces device content | Done | `3b0eccd2` | Always-replace, no confirmation |
 | **5.1.9** | Confirm cast succeeded | Done | `e3140e0f` | DeviceCard updates via playback broadcast |
 | **5.2.1** | CastButton component | Done | `3b0eccd2`, `aeedff21` | NowPlaying, QueueItem, ContentBrowser |
-| **5.2.2** | WakeAndLoadService integration | Done | — | Existing service, no new backend code |
+| **5.2.2** | WakeAndLoadService integration | Done | `7933a8e3` | Existing service, no new backend code |
 | **5.2.3** | ?device= URL param in useMediaUrlParams | Done | `71dc81de` | Cast to device instead of local play |
 | **7.1.1** | Multiple tabs show same queue | Done | `db201ba9` | P2: useMediaQueue fetch on mount |
 | **7.1.2** | Add on one device, appears on other | Done | `db201ba9` | P2: media:queue WebSocket broadcast |
@@ -1085,4 +1085,31 @@ Implementation commits mapped to requirement IDs.
 
 **Phase 1 coverage:** 19/19 requirements addressed
 **Phase 2 coverage:** 62 requirements addressed (1 partial: 2.1.5 drag UX)
+
+### Phase 4 Commits
+
+| Req IDs | Commit | Description |
+|---------|--------|-------------|
+| 8.2.1, 8.2.2, 8.1.11, 8.1.12 | `0da85afd` | Lift fullscreen state to NowPlaying, MediaAppPlayer is now controlled |
+| quality | `d6700466` | Quality fixes: useCallback for exit, remove dead format prop, hoist formatTime |
+| 8.1.8, 8.2.4 | `6e1ed2ba` | Fullscreen transport overlay with auto-hide for video |
+| quality | `b5830868` | Quality fixes: stable deps, remove useCallback, seek resets timer, logging |
+| 8.1.4–8.1.7 | `e132202c` | Expand-to-fullscreen for singalong and readalong formats |
+| 8.1.9 | `b8c06653` | FormatMetadata component for format-specific secondary info in track view |
+| 8.1.10 | `b97f3394` | Format badge in ContentBrowser search results |
+| styling | `4d795f1c` | SCSS for fullscreen overlay, format badges, expand button |
 **Phase 3 coverage:** 44 requirements addressed (2 partial: 4.2.5 TVApp broadcast, 4.2.6 OfficeApp broadcast — Player ref not accessible at top level; 3 deferred items from P2 resolved: 3.1.13, 6.1.4, 6.2.2, 6.1.12)
+
+#### Phase 5 Commit Traceability
+
+| Commit | Message | Req |
+|--------|---------|-----|
+| `3b79d1d5` | feat(media): drag-to-reorder queue items | 2.1.5 |
+| `47210ac1` | fix(media): add dragEnd cleanup + include modules in isolated test harness | 2.1.5 |
+| `5cfd5799` | fix(tests): scope --only filter to per-runner targets in isolated harness | — |
+| `769eb565` | feat(office): wire usePlaybackBroadcast to Player ref | 4.2.6 |
+| `447e9a4b` | fix(office): handle playlist type in broadcastItem extraction | 4.2.6 |
+| `b180d618` | feat(tv): wire usePlaybackBroadcast via MenuStack playerRef | 4.2.5 |
+| `bea04c92` | fix(tv): remove unused reset destructure, document playerRef prop | 4.2.5 |
+
+**Phase 5 coverage:** 3 requirements closed (2.1.5 drag UX, 4.2.5 TVApp broadcast, 4.2.6 OfficeApp broadcast)

@@ -208,7 +208,58 @@ describe('Media Queue Router', () => {
     });
   });
 
-  // ── 9. PUT /media/queue ──────────────────────────────────────────
+  // ── 9. POST /media/queue/advance ─────────────────────────────────
+  describe('POST /media/queue/advance', () => {
+    it('calls service.advance(1, { auto: false }) for a manual step-forward', async () => {
+      const res = await request(app)
+        .post('/media/queue/advance')
+        .send({ step: 1, auto: false, mutationId: 'adv-1' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.items).toBeDefined();
+      expect(mockMediaQueueService.advance).toHaveBeenCalledWith(1, { auto: false }, undefined);
+    });
+
+    it('calls service.advance(1, { auto: true }) for end-of-track auto-advance', async () => {
+      const res = await request(app)
+        .post('/media/queue/advance')
+        .send({ step: 1, auto: true, mutationId: 'adv-2' });
+
+      expect(res.status).toBe(200);
+      expect(mockMediaQueueService.advance).toHaveBeenCalledWith(1, { auto: true }, undefined);
+    });
+
+    it('supports step=-1 for previous', async () => {
+      const res = await request(app)
+        .post('/media/queue/advance')
+        .send({ step: -1, auto: false, mutationId: 'adv-3' });
+
+      expect(res.status).toBe(200);
+      expect(mockMediaQueueService.advance).toHaveBeenCalledWith(-1, { auto: false }, undefined);
+    });
+
+    it('defaults step to 1 and auto to false when omitted', async () => {
+      const res = await request(app)
+        .post('/media/queue/advance')
+        .send({ mutationId: 'adv-4' });
+
+      expect(res.status).toBe(200);
+      expect(mockMediaQueueService.advance).toHaveBeenCalledWith(1, { auto: false }, undefined);
+    });
+
+    it('broadcasts the updated queue after advance', async () => {
+      await request(app)
+        .post('/media/queue/advance')
+        .send({ step: 1, auto: true, mutationId: 'adv-5' });
+
+      expect(mockBroadcastEvent).toHaveBeenCalledWith(
+        'media:queue',
+        expect.objectContaining({ mutationId: 'adv-5' }),
+      );
+    });
+  });
+
+  // ── 10. PUT /media/queue ──────────────────────────────────────────
   describe('PUT /media/queue', () => {
     it('replaces the queue and returns queue JSON', async () => {
       const res = await request(app)

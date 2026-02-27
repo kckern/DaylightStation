@@ -22,17 +22,16 @@ export function useContentBrowse() {
   }, []);
 
   const goBack = useCallback(() => {
-    setBreadcrumbs(prev => {
-      const next = prev.slice(0, -1);
-      if (next.length === 0) {
-        setBrowseResults([]);
-        return [];
-      }
-      const last = next[next.length - 1];
-      browse(last.source, last.localId, last.title);
-      return next.slice(0, -1); // browse will re-push
-    });
-  }, [browse]);
+    const trimmed = breadcrumbs.slice(0, -1);
+    if (trimmed.length === 0) {
+      setBreadcrumbs([]);
+      setBrowseResults([]);
+      return;
+    }
+    const parent = trimmed[trimmed.length - 1];
+    setBreadcrumbs(trimmed.slice(0, -1)); // browse() will re-add the parent
+    browse(parent.source, parent.localId, parent.title);
+  }, [breadcrumbs, browse]);
 
   const exitBrowse = useCallback(() => {
     setBreadcrumbs([]);
