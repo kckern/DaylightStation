@@ -289,6 +289,12 @@
       border-color: rgba(34, 197, 94, 0.2);
     }
 
+    &--retry {
+      background: rgba(59, 130, 246, 0.15);
+      color: #3b82f6;
+      border-color: rgba(59, 130, 246, 0.2);
+    }
+
     &--auto-accept {
       animation: pulse-glow 1.5s ease-in-out infinite;
     }
