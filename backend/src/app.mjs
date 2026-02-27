@@ -650,6 +650,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     })();
   });
 
+  // Playback state broadcast relay — routes playback_state from any client
+  // to playback:{deviceId|clientId} topic for device monitoring (4.2.8)
+  eventBus.onClientMessage((clientId, message) => {
+    if (message.topic !== 'playback_state') return;
+    const broadcastId = message.deviceId || message.clientId;
+    if (!broadcastId) return;
+    rootLogger.debug?.('eventbus.playback_state.relay', { from: clientId, broadcastId, state: message.state });
+    eventBus.broadcast(`playback:${broadcastId}`, message);
+  });
+
   // ==========================================================================
   // Create API v1 Routers
   // ==========================================================================
