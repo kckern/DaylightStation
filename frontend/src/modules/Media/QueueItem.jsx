@@ -3,7 +3,7 @@ import React, { useCallback, useMemo } from 'react';
 import CastButton from './CastButton.jsx';
 import { ContentDisplayUrl } from '../../lib/api.mjs';
 
-const QueueItem = ({ item, isCurrent, onPlay, onRemove, index, onDragStart, onDrop }) => {
+const QueueItem = ({ item, isCurrent, onPlay, onRemove, index, onDragStart, onDrop, onDragEnd }) => {
   const thumbnailUrl = useMemo(
     () => item.contentId ? ContentDisplayUrl(item.contentId) : null,
     [item.contentId]
@@ -33,6 +33,7 @@ const QueueItem = ({ item, isCurrent, onPlay, onRemove, index, onDragStart, onDr
       onDragStart={() => onDragStart?.(item.queueId)}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => { e.preventDefault(); onDrop?.(index); }}
+      onDragEnd={() => onDragEnd?.()}
     >
       <span className="queue-item-drag-handle" aria-hidden="true">&#8942;</span>
       <div className="queue-item-thumbnail">
