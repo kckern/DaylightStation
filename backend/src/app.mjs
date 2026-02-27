@@ -641,6 +641,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         } else if (action === 'clear') {
           const queue = await mediaQueueService.clear(householdId);
           eventBus.broadcast('media:queue', queue.toJSON());
+        } else if (action === 'queue') {
+          // Replace entire queue with item (6.1.4 + 6.2.2 basic)
+          await mediaQueueService.clear(householdId);
+          await mediaQueueService.addItems(
+            [{ contentId, addedFrom: 'WEBSOCKET' }], 'end', householdId
+          );
+          await mediaQueueService.setPosition(0, householdId);
+          const updated = await mediaQueueService.load(householdId);
+          eventBus.broadcast('media:queue', updated.toJSON());
         } else {
           rootLogger.warn?.('eventbus.media.unknown-action', { action });
         }
