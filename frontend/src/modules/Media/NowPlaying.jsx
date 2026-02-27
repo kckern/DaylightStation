@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import getLogger from '../../lib/logging/Logger.js';
 import MediaAppPlayer from './MediaAppPlayer.jsx';
 import CastButton from './CastButton.jsx';
@@ -19,6 +19,16 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, o
     paused: true,
   });
   const [volume, setVolume] = useState(0.8);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Auto-fullscreen for video; reset on format change (8.2.2, 8.1.11)
+  useEffect(() => {
+    if (!currentItem) {
+      setIsFullscreen(false);
+      return;
+    }
+    setIsFullscreen(currentItem.format === 'video');
+  }, [currentItem?.contentId, currentItem?.format]);
 
   const handleProgress = useCallback((data) => {
     setPlaybackState({
@@ -84,6 +94,8 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, o
         config={currentItem.config}
         onItemEnd={onItemEnd}
         onProgress={handleProgress}
+        isFullscreen={isFullscreen}
+        onExitFullscreen={() => setIsFullscreen(false)}
       />
 
       {/* Track Info */}
