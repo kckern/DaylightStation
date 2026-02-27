@@ -1,5 +1,5 @@
 // frontend/src/modules/Media/QueueDrawer.jsx
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { useMediaApp } from '../../contexts/MediaAppContext.jsx';
 import QueueItem from './QueueItem.jsx';
 import getLogger from '../../lib/logging/Logger.js';
@@ -7,6 +7,7 @@ import getLogger from '../../lib/logging/Logger.js';
 const QueueDrawer = ({ open, onClose }) => {
   const { queue } = useMediaApp();
   const logger = useMemo(() => getLogger().child({ component: 'QueueDrawer' }), []);
+  const [draggedId, setDraggedId] = useState(null);
 
   const handlePlay = (queueId) => {
     const idx = queue.items.findIndex(i => i.queueId === queueId);
@@ -26,6 +27,17 @@ const QueueDrawer = ({ open, onClose }) => {
     const next = modes[(modes.indexOf(queue.repeat) + 1) % modes.length];
     queue.setRepeat(next);
   };
+
+  const handleDragStart = useCallback((queueId) => {
+    setDraggedId(queueId);
+  }, []);
+
+  const handleDrop = useCallback((toIndex) => {
+    if (draggedId == null) return;
+    logger.info('queue.reorder', { queueId: draggedId, toIndex });
+    queue.reorder(draggedId, toIndex);
+    setDraggedId(null);
+  }, [draggedId, queue, logger]);
 
   if (!open) return null;
 
@@ -64,9 +76,12 @@ const QueueDrawer = ({ open, onClose }) => {
           <QueueItem
             key={item.queueId}
             item={item}
+            index={idx}
             isCurrent={idx === queue.position}
             onPlay={handlePlay}
             onRemove={handleRemove}
+            onDragStart={handleDragStart}
+            onDrop={handleDrop}
           />
         ))}
       </div>

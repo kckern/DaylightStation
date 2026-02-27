@@ -981,3 +981,21 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+// Queue drag-to-reorder
+.queue-item-drag-handle {
+  cursor: grab;
+  padding: 0 8px 0 4px;
+  opacity: 0.35;
+  font-size: 1.1rem;
+  user-select: none;
+  flex-shrink: 0;
+
+  &:hover {
+    opacity: 0.8;
+  }
+}
+
+.queue-item[draggable="true"]:active {
+  cursor: grabbing;
+}
