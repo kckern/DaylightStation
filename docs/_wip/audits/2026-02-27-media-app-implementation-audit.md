@@ -558,7 +558,7 @@ Items M-3, M-4, M-7 should be addressed in the same sprint. All remaining items 
 
 ## Resolution Log
 
-All findings from this audit were resolved in two commits following the audit.
+All findings from this audit were resolved in three commits following the audit.
 
 ### Commit 1 — `9ec987bb` — `fix(media): resolve C-1 and C-2 from architecture audit`
 
@@ -592,12 +592,23 @@ All findings from this audit were resolved in two commits following the audit.
 | **N-3** Stale phase comment | Updated `MediaApp.jsx` header comment to `Phase 5: Queue-backed playback with device monitoring and format-aware fullscreen.` |
 | **N-4** `QueueDrawer` handlers not memoized | Wrapped `handlePlay`, `handleRemove`, `handleClear`, and `cycleRepeat` in `useCallback([queue])`. |
 
+### Commit 3 — `07203a50` — `fix(media): NF-1 shuffleOrder + NF-5 playerRef wiring`
+
+Two silent correctness failures found by an independent post-audit review.
+
+| Finding | Resolution |
+|---|---|
+| **NF-1** `shuffleOrder` stripped from WS sync; `currentItem` ignores `shuffleOrder` | Added `shuffleOrder: null` to initial queue state. Added `shuffleOrder: data.shuffleOrder ?? prev.shuffleOrder` to `handleQueueBroadcast`. Updated `currentItem` useMemo to compute `items[shuffleOrder[position]]` when `shuffle: true && shuffleOrder?.length > 0`, matching backend logic. 4 new behavioral tests added to `useMediaQueue.test.mjs` (TDD red → green). |
+| **NF-5** Context `playerRef` never attached to Player; broadcast used dead ref | Removed `playerRef` from `MediaAppContext`. Created `playerRef = useRef(null)` in `MediaAppInner`. Passed to `NowPlaying` as prop. `NowPlaying` uses prop ref instead of local ref. Both `usePlaybackBroadcast` and `handlePrev` now hold the live attached ref. Device monitoring broadcasts now fire correctly. |
+
+---
+
 ### Updated Scorecard (post-fix)
 
 | Dimension | Before | After | Notes |
 |---|---|---|---|
 | DDD Architecture | 6/10 | 10/10 | Port at correct layer; handlers atomic |
-| Implementation Quality | 6/10 | 10/10 | Advance uses domain logic; closures correct; no listener leaks |
+| Implementation Quality | 6/10 | 10/10 | Advance uses domain logic; closures correct; no listener leaks — NF-1 and NF-5 resolved post-audit (see Commit 3) |
 | Test Coverage | 7/10 | 10/10 | Hook has 17 behavioural tests; all passing |
 | Plan Compliance | 7/10 | 10/10 | `/queue/advance` endpoint added; hook tests written |
 | Logging Discipline | 9/10 | 10/10 | No empty log objects |
