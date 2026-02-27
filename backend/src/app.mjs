@@ -72,7 +72,8 @@ import {
   createHarvesterServices,
   createAgentsApiRouter,
   createCostServices,
-  createCostApiRouter
+  createCostApiRouter,
+  createMediaServices
 } from './0_system/bootstrap.mjs';
 
 // AI router import
@@ -91,6 +92,7 @@ import { UPCGateway } from '#adapters/nutribot/UPCGateway.mjs';
 import { createDevProxy, errorHandlerMiddleware } from './0_system/http/middleware/index.mjs';
 import { createEventBusRouter } from './4_api/v1/routers/admin/eventbus.mjs';
 import { createAdminRouter } from './4_api/v1/routers/admin/index.mjs';
+import { createMediaRouter } from './4_api/v1/routers/media.mjs';
 
 // Homeline call state tracking
 import { handleSignalingMessage } from '#apps/homeline/CallStateService.mjs';
@@ -596,6 +598,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'fitness' })
   });
 
+  // Media domain
+  const mediaServices = createMediaServices({
+    configService,
+    defaultHouseholdId: householdId,
+    logger: rootLogger.child({ module: 'media' })
+  });
+
   // ==========================================================================
   // Create API v1 Routers
   // ==========================================================================
@@ -645,6 +654,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     registry: contentRegistry,
     contentIdResolver: contentServices.contentIdResolver,
     logger: rootLogger.child({ module: 'display-api' })
+  });
+
+  // Media queue management
+  v1Routers.media = createMediaRouter({
+    mediaQueueService: mediaServices.mediaQueueService,
+    broadcastEvent: (topic, payload) => eventBus.broadcast(topic, payload),
+    logger: rootLogger.child({ module: 'media-api' }),
   });
 
   // Health domain router
@@ -1179,7 +1195,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   let stravaEnrichmentService = null;
   try {
     const stravaClientId = configService.getSystemAuth?.('strava', 'client_id');
-    if (stravaClientId) {
+    if (!stravaClientId) {
+      rootLogger.info?.('strava.enrichment.skipped', { reason: 'no strava client_id in system auth' });
+    } else {
       const { StravaClientAdapter } = await import('./1_adapters/fitness/StravaClientAdapter.mjs');
       const { StravaWebhookAdapter } = await import('./1_adapters/strava/StravaWebhookAdapter.mjs');
       const { StravaWebhookJobStore } = await import('./1_adapters/strava/StravaWebhookJobStore.mjs');
