@@ -140,6 +140,7 @@ export function useMediaResilience({
         reason, waitKey: logWaitKey,
         attempts: tracker.count, maxAttempts
       });
+      actions.setStatus(STATUS.exhausted);
       return;
     }
 
@@ -159,6 +160,16 @@ export function useMediaResilience({
       });
     }
   }, [actions, logWaitKey, meta, onReload, playbackHealth.lastProgressSeconds, recoveryCooldownMs, maxAttempts, seconds, statusRef, targetTimeSeconds, waitKey, playbackSessionKey]);
+
+  const retryFromExhausted = useCallback(() => {
+    _clearTracker(playbackSessionKey);
+    consumeTargetTimeSeconds();
+    actions.setStatus(STATUS.recovering);
+    playbackLog('resilience-retry-from-exhausted', { waitKey: logWaitKey });
+    if (typeof onReload === 'function') {
+      onReload({ reason: 'user-retry-exhausted', meta, waitKey, seekToIntentMs: 0 });
+    }
+  }, [actions, consumeTargetTimeSeconds, logWaitKey, meta, onReload, playbackSessionKey, waitKey]);
 
   useEffect(() => {
     if (userIntent === USER_INTENT.paused) {
@@ -336,7 +347,8 @@ export function useMediaResilience({
   // Seek grace: brief seeks (ffwd/rew bumps) suppress the overlay for SEEK_OVERLAY_GRACE_MS.
   // If the seek stalls beyond the grace period, buffering/stall triggers show the overlay.
   // Note: isLoopTransition still handles loop restart case
-  const shouldShowOverlay = !isLoopTransition && !seekGraceActive && (isStalled || isRecovering || (isStartup && !hasEverPlayedRef.current) || isBuffering || isUserPaused);
+  const isExhausted = status === STATUS.exhausted;
+  const shouldShowOverlay = !isLoopTransition && !seekGraceActive && (isExhausted || isStalled || isRecovering || (isStartup && !hasEverPlayedRef.current) || isBuffering || isUserPaused);
 
   const overlayProps = useMemo(() => ({
     status: effectiveSeeking ? 'seeking' : status,
@@ -360,6 +372,8 @@ export function useMediaResilience({
     isSeeking: effectiveSeeking,
     waitKey: logWaitKey,
     onRequestHardReset: () => triggerRecovery('manual-reset'),
+    onRetryFromExhausted: retryFromExhausted,
+    isExhausted,
     playerPositionDisplay: formatTime(Math.max(0, seconds)),
     intentPositionDisplay: (Number.isFinite(targetTimeSeconds) ? formatTime(Math.max(0, targetTimeSeconds)) : null)
       || (effectiveSeeking ? stickyIntentDisplayRef.current : null),
@@ -397,6 +411,8 @@ export function useMediaResilience({
     playbackHealth,
     logWaitKey,
     triggerRecovery,
+    retryFromExhausted,
+    isExhausted,
     targetTimeSeconds,
     playerPositionUpdatedAt,
     intentPositionUpdatedAt

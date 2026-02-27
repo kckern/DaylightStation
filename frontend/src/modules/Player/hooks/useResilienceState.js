@@ -6,7 +6,8 @@ export const RESILIENCE_STATUS = Object.freeze({
   playing: 'playing',
   paused: 'paused',
   stalling: 'stalling',
-  recovering: 'recovering'
+  recovering: 'recovering',
+  exhausted: 'exhausted'
 });
 
 export const RESILIENCE_ACTIONS = Object.freeze({
