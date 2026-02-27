@@ -654,8 +654,14 @@ export function createFitnessRouter(config) {
    * Dispatches to the correct adapter based on query params.
    */
   router.get('/provider/webhook', (req, res) => {
+    logger.info?.('fitness.provider.webhook.challenge_request', {
+      query: req.query,
+      adapterCount: Object.keys(providerWebhookAdapters).length,
+    });
+
     for (const adapter of Object.values(providerWebhookAdapters)) {
-      if (adapter.identify?.(req) === 'challenge') {
+      const identified = adapter.identify?.(req);
+      if (identified === 'challenge') {
         const result = adapter.handleChallenge(req.query);
         if (result.ok) {
           return res.status(200).json(result.response);
@@ -672,6 +678,13 @@ export function createFitnessRouter(config) {
    * Returns 200 immediately — enrichment is async.
    */
   router.post('/provider/webhook', (req, res) => {
+    logger.info?.('fitness.provider.webhook.received', {
+      bodyKeys: Object.keys(req.body || {}),
+      objectType: req.body?.object_type,
+      aspectType: req.body?.aspect_type,
+      objectId: req.body?.object_id,
+    });
+
     for (const [name, adapter] of Object.entries(providerWebhookAdapters)) {
       if (adapter.identify?.(req) === 'event') {
         const event = adapter.parseEvent(req.body);
@@ -680,7 +693,26 @@ export function createFitnessRouter(config) {
           return res.status(200).json({ ok: true, skipped: true, reason: 'parse-failed' });
         }
 
-        if (adapter.shouldEnrich?.(event) && enrichmentService) {
+        logger.info?.('fitness.provider.webhook.identified', {
+          provider: name,
+          objectType: event.objectType,
+          objectId: event.objectId,
+          aspectType: event.aspectType,
+        });
+
+        const shouldEnrich = adapter.shouldEnrich?.(event);
+        if (!shouldEnrich) {
+          logger.info?.('fitness.provider.webhook.skip_enrich', {
+            provider: name,
+            objectId: event.objectId,
+            reason: `${event.objectType}/${event.aspectType} not enrichable`,
+          });
+        } else if (!enrichmentService) {
+          logger.warn?.('fitness.provider.webhook.no_enrichment_service', {
+            provider: name,
+            objectId: event.objectId,
+          });
+        } else {
           enrichmentService.handleEvent(event);
         }
 

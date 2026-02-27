@@ -149,12 +149,20 @@ export class StravaClientAdapter {
       });
     }
 
+    this.#logger.info?.('strava.client.getActivity', { activityId });
+
     const response = await this.#httpClient.get(
       `${STRAVA_BASE_URL}/api/v3/activities/${activityId}`,
       {
         headers: { Authorization: `Bearer ${this.#currentAccessToken}` },
       }
     );
+
+    this.#logger.info?.('strava.client.getActivity.done', {
+      activityId,
+      name: response.data?.name,
+      hasDescription: !!response.data?.description,
+    });
 
     return response.data;
   }

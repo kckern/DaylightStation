@@ -1,0 +1,237 @@
+# Fitness Provider Webhook Enrichment
+
+Automatically enriches fitness provider activities with DaylightStation session data (media titles, voice memos, episode descriptions) when a workout ends.
+
+The system is vendor-agnostic — the router dispatches to provider-specific adapters based on payload shape. **Strava** is the first (and currently only) provider implementation.
+
+---
+
+## Overview
+
+When a fitness provider reports a new activity (e.g., workout ends, watch syncs), it sends a webhook event to DaylightStation. The enrichment pipeline matches the activity to a home fitness session and pushes a title + description back to the provider.
+
+### Flow
+
+```
+Provider (activity created)
+  │
+  │ POST /api/v1/fitness/provider/webhook
+  ▼
+┌─────────────────────────────────────────┐
+│ Fitness Router (vendor-agnostic)        │
+│  1. Loop adapters → identify(req)       │
+│  2. parseEvent(body) → normalized event │
+│  3. shouldEnrich(event) check           │
+│  4. enrichmentService.handleEvent()     │
+│  Returns 200 immediately                │
+└──────────────────┬──────────────────────┘
+                   │ async
+                   ▼
+┌─────────────────────────────────────────┐
+│ Enrichment Service                      │
+│  1. Circuit breaker (cooldown, dups)    │
+│  2. Write durable job (YAML)            │
+│  3. Scan fitness history for match      │
+│  4. Build enrichment payload            │
+│  5. PUT to provider API                 │
+│  6. Retry up to 3× at 5min intervals   │
+└─────────────────────────────────────────┘
+```
+
+### Vendor-Agnostic Design
+
+The router holds a map of `providerWebhookAdapters` (e.g., `{ strava: StravaWebhookAdapter }`). On each incoming request, it loops over all adapters and calls `identify(req)`. The first adapter that recognizes the payload handles it. To add a new provider:
+
+1. Create an adapter in `1_adapters/{provider}/` implementing `identify()`, `handleChallenge()`, `parseEvent()`, `shouldEnrich()`
+2. Create a client adapter for the provider's API
+3. Register it in `app.mjs` bootstrap alongside the existing Strava setup
+4. Add it to the `providerWebhookAdapters` map
+
+The router, enrichment service interface, and webhook routes remain unchanged.
+
+---
+
+## Components
+
+### Layer Map
+
+| Layer | Component | File | Purpose |
+|-------|-----------|------|---------|
+| API | Fitness router | `4_api/v1/routers/fitness.mjs` | `GET/POST /provider/webhook` — vendor-agnostic dispatch |
+| Bootstrap | `createFitnessApiRouter` | `0_system/bootstrap.mjs` | Passes `providerWebhookAdapters` + `enrichmentService` through to router |
+| Bootstrap | `app.mjs` | `app.mjs` | Constructs all provider dependencies, calls `recoverPendingJobs()` on startup |
+
+#### Strava Implementation
+
+| Layer | Component | File | Purpose |
+|-------|-----------|------|---------|
+| Adapter | `StravaWebhookAdapter` | `1_adapters/strava/StravaWebhookAdapter.mjs` | Strava webhook protocol: challenge validation, event parsing, verify token |
+| Adapter | `StravaClientAdapter` | `1_adapters/fitness/StravaClientAdapter.mjs` | HTTP client for Strava API (getActivity, updateActivity, refreshToken) |
+| Adapter | `StravaWebhookJobStore` | `1_adapters/strava/StravaWebhookJobStore.mjs` | Durable YAML-backed job queue for crash recovery |
+| Application | `StravaEnrichmentService` | `3_applications/strava/StravaEnrichmentService.mjs` | Orchestration: matching, enrichment, retries, circuit breakers |
+| Application | `buildStravaDescription` | `3_applications/strava/buildStravaDescription.mjs` | Pure function: session data → Strava title + description |
+
+### Webhook Routes
+
+- **`GET /api/v1/fitness/provider/webhook`** — Subscription validation. Provider sends a challenge; we echo it back.
+- **`POST /api/v1/fitness/provider/webhook`** — Event receiver. Returns 200 immediately; enrichment is async.
+
+---
+
+## Configuration
+
+### Provider Auth
+
+Each provider needs a system auth file and per-user OAuth tokens.
+
+#### Strava Example
+
+System credentials in `data/system/auth/strava.yml`:
+```yaml
+client_id: <strava_app_client_id>
+client_secret: <strava_app_client_secret>
+verify_token: <random_string_for_webhook_validation>
+```
+
+If this file is missing or `client_id` is falsy, the webhook system skips initialization and logs `strava.enrichment.skipped`.
+
+User tokens in `data/users/{username}/auth/strava.yml`:
+```yaml
+refresh: <oauth_refresh_token>
+access_token: <current_access_token>
+expires_at: <unix_timestamp>
+```
+
+The enrichment service refreshes the access token automatically using the refresh token.
+
+### Cloudflare Access
+
+The webhook endpoint must be publicly reachable. A Cloudflare Access bypass policy is required for the path `/api/v1/fitness/provider/webhook` — without it, providers get a 403 from Cloudflare Access and webhooks silently fail.
+
+### Provider Subscription
+
+Each provider has its own subscription mechanism. Example for Strava:
+
+```bash
+# Create subscription
+curl -X POST https://www.strava.com/api/v3/push_subscriptions \
+  -d client_id=<client_id> \
+  -d client_secret=<client_secret> \
+  -d callback_url=https://<public_host>/api/v1/fitness/provider/webhook \
+  -d verify_token=<verify_token>
+
+# Check existing subscriptions
+curl "https://www.strava.com/api/v3/push_subscriptions?client_id=<client_id>&client_secret=<client_secret>"
+```
+
+---
+
+## Circuit Breakers
+
+Three layers prevent duplicate enrichment:
+
+1. **`shouldEnrich()`** — Adapter-level filter. For Strava: only `activity` + `create` events proceed. Updates, deletes, and athlete events are skipped.
+2. **In-memory cooldown** — Recently-enriched activity IDs are held in a Map with 1-hour TTL.
+3. **Job store** — Completed jobs are checked before re-processing. Jobs persist across restarts.
+
+---
+
+## Session Matching
+
+The enrichment service scans `data/household/history/fitness/` for YAML session files where a participant's provider-specific activity ID matches the webhook's activity ID (e.g., `participant.strava.activityId`).
+
+Dates scanned: today, yesterday, and the event date (from webhook timestamp). Files scanned per date directory.
+
+If no match is found, the service retries up to 3 times at 5-minute intervals (the home session may not have been saved yet when the webhook arrives). After 3 failures, the job is marked `unmatched`.
+
+---
+
+## Enrichment Payload
+
+For Strava, `buildStravaDescription(session, currentActivity)` produces:
+
+- **Title**: Primary media → `Show—Episode` (skipped if activity already has an em-dash title)
+- **Description**: Voice memo transcripts first, then episode description (skipped if activity already has a description)
+
+Returns `null` if nothing to enrich (no media, no memos).
+
+---
+
+## Logging
+
+All log events are `info` level — visible in production.
+
+### Webhook Arrival (vendor-agnostic)
+
+| Event | Data | When |
+|-------|------|------|
+| `fitness.provider.webhook.challenge_request` | query params, adapter count | GET challenge received |
+| `fitness.provider.webhook.received` | objectType, aspectType, objectId | POST event received |
+| `fitness.provider.webhook.identified` | provider, event details | Adapter matched |
+| `fitness.provider.webhook.skip_enrich` | reason | Event not enrichable |
+| `fitness.provider.webhook.no_enrichment_service` | provider, objectId | Service missing (warn) |
+
+### Strava-Specific
+
+| Event | Data | When |
+|-------|------|------|
+| `strava.webhook.challenge.validated` | challenge value | Challenge passed |
+| `strava.webhook.challenge.token_mismatch` | first 6 chars of token | Wrong verify token |
+| `strava.webhook.challenge.missing_challenge` | — | No challenge param |
+| `strava.enrichment.event_accepted` | activityId, ownerId, eventTime | Event queued |
+| `strava.enrichment.event_rejected` | objectType, aspectType, reason | Not activity/create |
+| `strava.enrichment.cooldown_skip` | activityId | Recently enriched |
+| `strava.enrichment.already_completed` | activityId | Job already done |
+| `strava.job.created` | activityId | Durable job written |
+| `strava.enrichment.attempt_start` | activityId, attempt | Enrichment attempt begins |
+| `strava.enrichment.session_scan.start` | activityId, dates | Scanning history |
+| `strava.enrichment.session_scan.matched` | activityId, date, file | Session found |
+| `strava.enrichment.session_scan.miss` | activityId, dates, filesScanned | No match |
+| `strava.enrichment.auth.refreshing` | username | Token refresh starting |
+| `strava.enrichment.auth.refreshed` | username | Token refresh done |
+| `strava.enrichment.auth.no_refresh_token` | username | No token (error) |
+| `strava.client.getActivity` | activityId | Fetching current state |
+| `strava.client.getActivity.done` | activityId, name, hasDescription | Current state received |
+| `strava.enrichment.nothing_to_enrich` | activityId | No media/memos in session |
+| `strava.client.updateActivity` | activityId, fields | Pushing to provider |
+| `strava.enrichment.success` | activityId, sessionId, fields | Done |
+| `strava.enrichment.error` | activityId, attempt, error | Failed |
+| `strava.enrichment.unmatched` | activityId, attempts | Max retries exhausted |
+
+### Bootstrap
+
+| Event | Data | When |
+|-------|------|------|
+| `strava.enrichment.initialized` | — | System ready |
+| `strava.enrichment.skipped` | reason | No credentials |
+| `strava.enrichment.init_failed` | error | Bootstrap error (warn) |
+
+---
+
+## Troubleshooting
+
+### "I ended a workout and nothing happened"
+
+Check prod logs in order:
+
+1. **No `webhook.received`?** → Provider didn't send it, or Cloudflare blocked it. Check subscription exists and Cloudflare bypass is active.
+2. **`webhook.received` but no `webhook.identified`?** → Payload shape doesn't match any adapter.
+3. **`webhook.identified` + `skip_enrich`?** → Event was `update` or `delete`, not `create`. This is normal.
+4. **`event_accepted` but no `attempt_start`?** → Cooldown or already-completed circuit breaker.
+5. **`session_scan.miss`?** → No matching session yet. Will retry up to 3× at 5-min intervals.
+6. **`auth.no_refresh_token`?** → OAuth token missing from user auth file.
+7. **`nothing_to_enrich`?** → Session had no media events or voice memos.
+8. **`enrichment.error`?** → Provider API call failed. Check error message.
+9. **`enrichment.success`?** → It worked. Check provider app for updated title/description.
+
+### Testing the Challenge Endpoint
+
+```bash
+curl "https://<public_host>/api/v1/fitness/provider/webhook?hub.mode=subscribe&hub.verify_token=<verify_token>&hub.challenge=test"
+```
+
+Expected: `{"hub.challenge":"test"}`
+
+### Job Files
+
+Durable jobs stored per provider, e.g. `data/household/common/strava/strava-webhooks/{activityId}.yml`. Check `status` field: `pending`, `completed`, or `unmatched`.
