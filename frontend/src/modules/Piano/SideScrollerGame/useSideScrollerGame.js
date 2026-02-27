@@ -136,12 +136,19 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     if (!lvlConfig) return;
 
     const scrollSpeed = lvlConfig.scroll_speed ?? 3;
-    const obstacleIntervalMs = lvlConfig.obstacle_interval_ms ?? 2000;
+
+    // Obstacle interval: supports [min, max] range or single fixed value
+    const rawInterval = lvlConfig.obstacle_interval_ms ?? 2000;
+    const [intervalMin, intervalMax] = Array.isArray(rawInterval)
+      ? [rawInterval[0], rawInterval[1]]
+      : [rawInterval, rawInterval];
 
     // Spawn decision — computed OUTSIDE state updater to avoid side-effect issues
     const elapsed = timestamp - lastSpawnRef.current;
+    // Pick a random threshold within the configured range for this spawn cycle
+    const nextInterval = intervalMin + Math.random() * (intervalMax - intervalMin);
     let spawnType = null;
-    if (elapsed >= obstacleIntervalMs || lastSpawnRef.current === 0) {
+    if (elapsed >= nextInterval || lastSpawnRef.current === 0) {
       spawnType = Math.random() < 0.5 ? OBSTACLE_LOW : OBSTACLE_HIGH;
       lastSpawnRef.current = timestamp;
     }

@@ -2376,7 +2376,15 @@ export class FitnessSession {
 
   logEvent(type, data = {}, timestamp) {
     if (!type) return null;
-    return this.timeline ? this.timeline.logEvent(type, data, timestamp) : null;
+    if (!this.timeline) {
+      getLogger().warn('fitness.session.logEvent_dropped', {
+        type,
+        sessionId: this.sessionId || null,
+        reason: this.sessionId ? 'timeline_null_after_start' : 'session_not_started'
+      });
+      return null;
+    }
+    return this.timeline.logEvent(type, data, timestamp);
   }
 
   recordSnapshot(filename) {

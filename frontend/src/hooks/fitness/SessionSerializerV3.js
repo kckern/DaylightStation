@@ -174,7 +174,7 @@ export class SessionSerializerV3 {
       title: d.title,
       ...(d.artist && { artist: d.artist }),
       ...(d.album && { album: d.album }),
-      plex_id: d.plexId || d.plex_id || d.mediaId,
+      plex_id: d.plexId || d.plex_id || d.contentId || d.mediaId,
       duration_seconds: d.durationSeconds || d.duration_seconds
     };
   }
@@ -192,7 +192,7 @@ export class SessionSerializerV3 {
       title: d.title,
       ...(d.grandparentTitle && { grandparentTitle: d.grandparentTitle }),
       ...(d.parentTitle && { parentTitle: d.parentTitle }),
-      plex_id: d.plexId || d.plex_id || d.mediaId,
+      plex_id: d.plexId || d.plex_id || d.contentId || d.mediaId,
       ...(d.grandparentId && { grandparent_id: d.grandparentId }),
       ...(d.parentId && { parent_id: d.parentId }),
       duration_seconds: d.durationSeconds || d.duration_seconds,

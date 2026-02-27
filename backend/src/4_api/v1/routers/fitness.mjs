@@ -20,6 +20,8 @@
  * - POST /api/fitness/simulate - Start fitness simulation
  * - DELETE /api/fitness/simulate - Stop running simulation
  * - GET  /api/fitness/simulate/status - Get simulation status
+ * - GET  /api/fitness/provider/webhook - Provider subscription validation
+ * - POST /api/fitness/provider/webhook - Provider webhook events
  */
 import express from 'express';
 import path from 'path';
@@ -52,6 +54,8 @@ const simulationState = {
  * @param {Object} config.transcriptionService - OpenAI transcription service (optional)
  * @param {Object} [config.screenshotService] - ScreenshotService for saving session screenshots
  * @param {Function} [config.createReceiptCanvas] - async (sessionId, upsidedown) => { canvas, width, height }
+ * @param {Object} [config.providerWebhookAdapters] - Map of provider webhook adapters (e.g. { strava: StravaWebhookAdapter })
+ * @param {Object} [config.enrichmentService] - StravaEnrichmentService instance
  * @param {Object} config.logger - Logger instance
  * @returns {express.Router}
  */
@@ -69,6 +73,8 @@ export function createFitnessRouter(config) {
     screenshotService,
     createReceiptCanvas,
     printerAdapter,
+    providerWebhookAdapters = {},
+    enrichmentService = null,
     logger = console
   } = config;
 
@@ -198,7 +204,7 @@ export function createFitnessRouter(config) {
       return res.status(503).json({ error: 'Fitness content adapter not configured' });
     }
 
-    const compoundId = `plex:${id}`;
+    const compoundId = id.includes(':') ? id : `plex:${id}`;
     const item = adapter.getItem ? await adapter.getItem(compoundId) : null;
 
       if (!item) {
@@ -639,6 +645,52 @@ export function createFitnessRouter(config) {
       config: running ? simulationState.config : null,
       runningSince: running ? Date.now() - simulationState.startedAt : null
     });
+  });
+
+  // ── Provider Webhook (vendor-agnostic) ──────────────────────────
+
+  /**
+   * GET /api/fitness/provider/webhook - Subscription validation
+   * Dispatches to the correct adapter based on query params.
+   */
+  router.get('/provider/webhook', (req, res) => {
+    for (const adapter of Object.values(providerWebhookAdapters)) {
+      if (adapter.identify?.(req) === 'challenge') {
+        const result = adapter.handleChallenge(req.query);
+        if (result.ok) {
+          return res.status(200).json(result.response);
+        }
+        return res.status(result.status || 400).json({ error: result.reason });
+      }
+    }
+    return res.status(400).json({ error: 'unrecognized-provider' });
+  });
+
+  /**
+   * POST /api/fitness/provider/webhook - Event receiver
+   * Dispatches to the correct adapter based on payload shape.
+   * Returns 200 immediately — enrichment is async.
+   */
+  router.post('/provider/webhook', (req, res) => {
+    for (const [name, adapter] of Object.entries(providerWebhookAdapters)) {
+      if (adapter.identify?.(req) === 'event') {
+        const event = adapter.parseEvent(req.body);
+        if (!event) {
+          logger.warn?.('fitness.provider.webhook.parse_failed', { provider: name });
+          return res.status(200).json({ ok: true, skipped: true, reason: 'parse-failed' });
+        }
+
+        if (adapter.shouldEnrich?.(event) && enrichmentService) {
+          enrichmentService.handleEvent(event);
+        }
+
+        return res.status(200).json({ ok: true });
+      }
+    }
+
+    // Unknown provider — still return 200 to avoid retries
+    logger.warn?.('fitness.provider.webhook.unknown', { bodyKeys: Object.keys(req.body || {}) });
+    return res.status(200).json({ ok: true, skipped: true, reason: 'unknown-provider' });
   });
 
   return router;

@@ -11,6 +11,28 @@ export const resolveMediaIdentity = (meta) => {
   return candidate != null ? String(candidate) : null;
 };
 
+/**
+ * Resolve media identity with source namespace prefix.
+ * Returns format like "plex:649319" for source-aware identification.
+ * Falls back to bare ID if source cannot be determined.
+ */
+export const resolveContentId = (metadata) => {
+  const bareId = resolveMediaIdentity(metadata);
+  if (!bareId) return null;
+
+  // If already namespaced, return as-is
+  if (typeof bareId === 'string' && bareId.includes(':')) return bareId;
+
+  // Determine source from metadata
+  const source = metadata?.source
+    || (metadata?.plex != null ? 'plex' : null)
+    || (metadata?.assetId != null ? 'plex' : null)
+    || (metadata?.key != null ? 'plex' : null)
+    || 'plex';
+
+  return `${source}:${bareId}`;
+};
+
 export const normalizeDuration = (...candidates) => {
   for (const candidate of candidates) {
     if (candidate == null) continue;

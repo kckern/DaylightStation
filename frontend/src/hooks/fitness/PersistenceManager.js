@@ -293,8 +293,8 @@ const _consolidateEvents = (events) => {
 
   // ── Challenges: pair start+end by challengeId ──
   const challengeMap = new Map(); // challengeId → { startEvt, endEvt }
-  // ── Media: pair start+end by mediaId ──
-  const mediaMap = new Map(); // mediaId → { startEvt, endEvt, pauses }
+  // ── Media: pair start+end by contentId ──
+  const mediaMap = new Map(); // contentId → { startEvt, endEvt, pauses }
   // ── Governance overlay: collapse into phase transitions ──
   let govPhase = null; // current governance phase
   let govPhaseStart = null; // timestamp when phase began
@@ -328,19 +328,19 @@ const _consolidateEvents = (events) => {
 
     // ── Media grouping ──
     if (type === 'media_start') {
-      const id = evt.data?.mediaId || evt.data?.mediaKey || `unknown_${ts}`;
+      const id = evt.data?.contentId || evt.data?.mediaId || evt.data?.mediaKey || `unknown_${ts}`;
       if (!mediaMap.has(id)) mediaMap.set(id, { startEvt: evt, endEvt: null, pauses: [] });
       else mediaMap.get(id).startEvt = evt;
       continue;
     }
     if (type === 'media_end') {
-      const id = evt.data?.mediaId || evt.data?.mediaKey || `unknown_${ts}`;
+      const id = evt.data?.contentId || evt.data?.mediaId || evt.data?.mediaKey || `unknown_${ts}`;
       if (!mediaMap.has(id)) mediaMap.set(id, { startEvt: null, endEvt: evt, pauses: [] });
       else mediaMap.get(id).endEvt = evt;
       continue;
     }
     if (type === 'media_pause' || type === 'media_resume') {
-      const id = evt.data?.mediaId || evt.data?.mediaKey || null;
+      const id = evt.data?.contentId || evt.data?.mediaId || evt.data?.mediaKey || null;
       if (id && mediaMap.has(id)) {
         mediaMap.get(id).pauses.push({ type, timestamp: ts });
       }
@@ -450,7 +450,7 @@ const _consolidateEvents = (events) => {
       timestamp: Number(startEvt?.timestamp || endEvt?.timestamp) || 0,
       type: 'media',
       data: {
-        mediaId: id,
+        contentId: id,
         title: s.title || e.title || null,
         grandparentTitle: s.grandparentTitle || null,
         parentTitle: s.parentTitle || null,

@@ -55,13 +55,18 @@ export const getNoteHue = (note, startNote = 21, endNote = 108) => {
   return Math.round(position * 280);
 };
 
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+// Sharp and flat spellings for each black key
+const NOTE_NAMES_SHARP = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const NOTE_NAMES_FLAT  = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
 /**
- * Get the note name (e.g. "C4", "F#5") for a MIDI note number
+ * Get the note name (e.g. "C4", "F#5", "Bb3") for a MIDI note number.
+ * @param {number} note - MIDI note number
+ * @param {'sharp'|'flat'} [prefer] - Force sharp or flat spelling; omit for sharp default
  */
-export const getNoteName = (note) => {
-  const name = NOTE_NAMES[note % 12];
+export const getNoteName = (note, prefer) => {
+  const names = prefer === 'flat' ? NOTE_NAMES_FLAT : NOTE_NAMES_SHARP;
+  const name = names[note % 12];
   const octave = Math.floor(note / 12) - 1;
   return `${name}${octave}`;
 };

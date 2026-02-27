@@ -17,13 +17,24 @@ const TREBLE_BOTTOM = 64; // E4
 const BASS_BOTTOM = 43;   // G2
 
 // Map MIDI note to staff position (number of half-steps from bottom line)
-// Returns { staffY, needsLedger, clef }
+// Returns { position, clef, isSharp, isFlat }
+//
+// Sharps: position = natural note below (notehead on lower line + ♯)
+// Flats:  position = natural note above (notehead on upper line + ♭)
+// Black keys randomly spell as sharp or flat each time targets change.
+const WHITE_KEYS = new Set([0, 2, 4, 5, 7, 9, 11]);
+const NOTE_TO_DIATONIC = { 0: 0, 2: 1, 4: 2, 5: 3, 7: 4, 9: 5, 11: 6 };
+
 function getNoteStaffPosition(midiNote) {
-  // Note names in chromatic order with staff positions
-  // C D E F G A B map to positions 0 1 2 3 4 5 6 (diatonic)
-  const NOTE_TO_DIATONIC = { 0: 0, 2: 1, 4: 2, 5: 3, 7: 4, 9: 5, 11: 6 };
-  const isSharp = ![0, 2, 4, 5, 7, 9, 11].includes(midiNote % 12);
-  const baseMidi = isSharp ? midiNote - 1 : midiNote;
+  const pc = midiNote % 12;
+  const isBlack = !WHITE_KEYS.has(pc);
+  // Random sharp/flat for each black key — stable within a useMemo call
+  const isSharp = isBlack && Math.random() < 0.5;
+  const isFlat  = isBlack && !isSharp;
+
+  // For sharps: base is the natural note below (midi - 1)
+  // For flats:  base is the natural note above (midi + 1)
+  const baseMidi = isSharp ? midiNote - 1 : isFlat ? midiNote + 1 : midiNote;
   const octave = Math.floor(baseMidi / 12) - 1;
   const noteInOctave = baseMidi % 12;
   const diatonic = NOTE_TO_DIATONIC[noteInOctave] ?? 0;
@@ -34,7 +45,6 @@ function getNoteStaffPosition(midiNote) {
   // Treble clef: bottom line = E4 (diatonic 30), top line = F5 (diatonic 34)
   // Bass clef: bottom line = G2 (diatonic 18), top line = A3 (diatonic 22)
   const trebleBottom = 30; // E4
-  const bassTop = 22;      // A3
 
   const useTreeble = absDiatonic >= 28; // C4 and above -> treble
   const clef = useTreeble ? 'treble' : 'bass';
@@ -43,7 +53,7 @@ function getNoteStaffPosition(midiNote) {
   const bottomLineDiatonic = useTreeble ? trebleBottom : 18; // G2 for bass
   const position = absDiatonic - bottomLineDiatonic;
 
-  return { position, clef, isSharp };
+  return { position, clef, isSharp, isFlat };
 }
 
 // Tabler action icons
@@ -243,9 +253,10 @@ export function ActionStaff({ action, targetPitches = [], matched = false, fired
                   }
                 }
 
-                // Stagger sharps horizontally to avoid overlap — place well left of any offset noteheads
-                const sharpBaseX = Math.min(baseX, noteX) - 18;
-                const sharpX = np.isSharp ? sharpBaseX - (sharpIdx++ % 2) * 12 : 0;
+                // Stagger accidentals horizontally to avoid overlap
+                const accBaseX = Math.min(baseX, noteX) - 18;
+                const hasAccidental = np.isSharp || np.isFlat;
+                const accX = hasAccidental ? accBaseX - (sharpIdx++ % 2) * 12 : 0;
 
                 return (
                   <g key={np.pitch}>
@@ -258,7 +269,10 @@ export function ActionStaff({ action, targetPitches = [], matched = false, fired
                       transform={`rotate(-12, ${noteX}, ${noteY})`}
                     />
                     {np.isSharp && (
-                      <text x={sharpX} y={noteY + 5} fontSize="18" fill="rgba(0,0,0,1)" fontFamily="serif">{'\u266F'}</text>
+                      <text x={accX} y={noteY + 5} fontSize="18" fill="rgba(0,0,0,1)" fontFamily="serif">{'\u266F'}</text>
+                    )}
+                    {np.isFlat && (
+                      <text x={accX} y={noteY + 5} fontSize="18" fill="rgba(0,0,0,1)" fontFamily="serif">{'\u266D'}</text>
                     )}
                   </g>
                 );
