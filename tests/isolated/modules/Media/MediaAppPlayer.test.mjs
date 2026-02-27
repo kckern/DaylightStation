@@ -15,7 +15,7 @@ describe('MediaAppPlayer', () => {
     const { render } = await import('@testing-library/react');
     const { default: MediaAppPlayer } = await import('#frontend/modules/Media/MediaAppPlayer.jsx');
     const { container } = render(
-      React.createElement(MediaAppPlayer, { contentId: 'plex:1', format: 'video', isFullscreen: true, onExitFullscreen: () => {} })
+      React.createElement(MediaAppPlayer, { contentId: 'plex:1', isFullscreen: true, onExitFullscreen: () => {} })
     );
     expect(container.querySelector('.media-player-wrapper.fullscreen')).toBeTruthy();
   });
@@ -24,7 +24,7 @@ describe('MediaAppPlayer', () => {
     const { render } = await import('@testing-library/react');
     const { default: MediaAppPlayer } = await import('#frontend/modules/Media/MediaAppPlayer.jsx');
     const { container } = render(
-      React.createElement(MediaAppPlayer, { contentId: 'plex:1', format: 'audio', isFullscreen: false, onExitFullscreen: () => {} })
+      React.createElement(MediaAppPlayer, { contentId: 'plex:1', isFullscreen: false, onExitFullscreen: () => {} })
     );
     expect(container.querySelector('.media-player-wrapper.fullscreen')).toBeNull();
   });
@@ -34,7 +34,7 @@ describe('MediaAppPlayer', () => {
     const { default: MediaAppPlayer } = await import('#frontend/modules/Media/MediaAppPlayer.jsx');
     const onExit = vi.fn();
     render(
-      React.createElement(MediaAppPlayer, { contentId: 'plex:1', format: 'video', isFullscreen: true, onExitFullscreen: onExit })
+      React.createElement(MediaAppPlayer, { contentId: 'plex:1', isFullscreen: true, onExitFullscreen: onExit })
     );
     fireEvent.click(screen.getByLabelText('Exit fullscreen'));
     expect(onExit).toHaveBeenCalled();

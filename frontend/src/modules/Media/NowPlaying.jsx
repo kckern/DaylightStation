@@ -211,7 +211,7 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, o
           <div className="media-track-title">{currentItem.title || currentItem.contentId}</div>
           <FormatMetadata item={currentItem} duration={playbackState.duration} />
           {/* Expand to fullscreen for singalong/readalong (8.1.5, 8.1.7) */}
-          {!isFullscreen && (currentItem.format === 'singalong' || currentItem.format === 'readalong') && (
+          {!isFullscreen && (currentItem.format === 'singalong' || currentItem.format === 'hymn' || currentItem.format === 'readalong') && (
             <button
               className="media-expand-btn"
               onClick={handleExpandFullscreen}
