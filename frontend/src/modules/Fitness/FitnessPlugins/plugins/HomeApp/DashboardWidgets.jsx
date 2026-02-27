@@ -141,6 +141,8 @@ export function WorkoutsCard({ sessions, onSessionClick, selectedSessionId }) {
     }
     groups[groups.length - 1].sessions.push(s);
   }
+  // Within each day, show workouts in chronological order (ASC)
+  for (const g of groups) g.sessions.reverse();
 
   return (
     <DashboardCard title="Recent Sessions" className="dashboard-card--workouts">

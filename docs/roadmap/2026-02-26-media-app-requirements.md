@@ -4,8 +4,8 @@
 > Each requirement has a unique ID (e.g., `2.1.3`) that developers reference in commit messages.
 
 **Companion to:** `2026-02-26-media-app-design.md` (narrative architecture reference)
-**Last Updated:** 2026-02-26
-**Status:** Design Draft
+**Last Updated:** 2026-02-27
+**Status:** Phase 2 Implemented
 
 ---
 
@@ -884,3 +884,141 @@ All files created or modified, mapped to the requirements that drive them.
 | `backend/src/3_applications/content/ContentQueryService.mjs` | 3.2.3 |
 | `backend/src/1_adapters/plex/PlexClientAdapter.mjs` | 3.2.3 |
 | `backend/src/3_applications/device/WakeAndLoadService.mjs` | 4.2.4 |
+
+---
+
+## Commit Traceability
+
+Implementation commits mapped to requirement IDs.
+
+### Phase 1 Commits
+
+| Commit | Message | Requirements |
+|--------|---------|-------------|
+| `93814c58` | test(media): 0.9.1 add parseAutoplayParams unit tests | 0.9.1 |
+| `61157b5f` | feat(media): 0.9.1 extract parseAutoplayParams from TVApp into shared utility | 0.9.1 |
+| `008ea413` | refactor(tv): 0.9.2 use shared parseAutoplayParams utility (no behavior change) | 0.9.2 |
+| `c3dff9c9` | feat(media): 0.1.3, 1.2.1 register /media route with app shell | 0.1.3, 1.2.1 |
+| `be07b883` | feat(media): 1.2.6 add useMediaUrlParams hook for URL-driven playback | 1.2.6 |
+| `9455f6dd` | feat(media): 1.2.3 create MediaAppPlayer wrapper with fullscreen support | 1.2.3 |
+| `8b615d53` | feat(media): 1.2.4, 1.1.4–1.1.7 create NowPlaying view with transport controls | 1.2.4, 1.1.4, 1.1.5, 1.1.6, 1.1.7 |
+| `358c90de` | feat(media): 1.2.5, 1.1.8 create MiniPlayer persistent bottom bar | 1.2.5, 1.1.8 |
+| `d7d126e6` | feat(media): 1.2.2, 1.1.1–1.1.3, 1.1.9 wire MediaApp with URL-driven playback | 1.2.2, 1.1.1, 1.1.2, 1.1.3, 1.1.9 |
+| `7f707fd1` | style(media): 1.2.7 complete Phase 1 SCSS (mobile-first dark theme) | 1.2.7 |
+
+### Phase 2 Commits
+
+| Commit | Message | Requirements |
+|--------|---------|-------------|
+| `c09a1cea` | feat(media): add MediaQueue entity and QueueFullError | 0.2.1–0.2.6, 0.3.1, 0.7.1 |
+| `172d46c5` | feat(media): add MediaQueueService application-layer orchestrator | 0.4.1, 0.4.2, 0.5.1, 0.8.1 |
+| (merged) | feat(media): add media queue router with 8 endpoints | 0.6.1, 0.3.2 |
+| `935e689c` | feat(media): wire media services and router in bootstrap | 0.1.1, 0.1.2, 0.1.3, 0.1.4 |
+| `123ddc28` | feat(media): add media:command WebSocket handler | 6.1.1–6.1.7, 6.2.1, 6.2.2 |
+| `db201ba9` | feat(media): add useMediaQueue hook with optimistic updates | 2.2.1, 2.2.2, 2.2.6, 0.8.2, 7.2.1 |
+| (merged) | feat(media): add MediaAppProvider context, replace prop drilling | 1.2.2 |
+| `eaa67a08` | feat(media): add QueueDrawer and QueueItem components | 2.2.3, 2.2.4 |
+| `c4836302` | feat(media): wire queue into MediaApp with auto-advance, prev restart, queue toggle | 2.1.1–2.1.15, 2.2.5, 6.1.8–6.1.13 |
+| (merged) | fix(media): add container types to PlexAdapter mediaType filter | 3.2.3 |
+| `81e0e6bf` | feat(media): add ContentBrowser with search, filters, and drill-down | 3.1.1–3.1.13, 3.2.1, 3.2.2 |
+| `85e023c4` | feat(media): wire ContentBrowser search button into NowPlaying | 3.2.1 |
+
+### Requirement Status
+
+| ID | Description | Status | Commit | Notes |
+|----|-------------|--------|--------|-------|
+| **0.1.1** | Register `createMediaServices()` in bootstrap | Done | `935e689c` | Follows `createFitnessServices()` pattern |
+| **0.1.2** | Register `createMediaApiRouter()` in bootstrap | Done | `935e689c` | |
+| **0.1.3** | Route entry in `api.mjs` routeMap | Done | `c3dff9c9`, `935e689c` | Frontend (P1) + backend (P2) |
+| **0.1.4** | Wire both factories in app startup | Done | `935e689c` | |
+| **0.2.1** | MediaQueue entity with constructor/serialization | Done | `c09a1cea` | 40 unit tests |
+| **0.2.2** | Queue manipulation methods | Done | `c09a1cea` | addItems, removeByQueueId, reorder, advance, clear |
+| **0.2.3** | Position stability invariant | Done | `c09a1cea` | Position clamped and adjusted on mutations |
+| **0.2.4** | Shuffle model (Fisher-Yates) | Done | `c09a1cea` | Current item at shuffleOrder[0], toggle off restores |
+| **0.2.5** | Repeat + advance interaction | Done | `c09a1cea` | off/one/all modes with auto vs manual distinction |
+| **0.2.6** | Accessors (currentItem, isEmpty, etc.) | Done | `c09a1cea` | |
+| **0.3.1** | QueueFullError | Done | `c09a1cea` | Extends DomainInvariantError, code QUEUE_FULL |
+| **0.3.2** | Error mapping (422/404/400) | Done | (merged) | Via errorHandlerMiddleware |
+| **0.4.1** | IMediaQueueDatastore port | Done | `172d46c5` | load/save interface |
+| **0.4.2** | YamlMediaQueueDatastore adapter | Done | `172d46c5` | 9 tests |
+| **0.5.1** | MediaQueueService | Done | `172d46c5` | 16 tests, load→mutate→save→log pattern |
+| **0.6.1** | Media router (8 endpoints) | Done | (merged) | 18 tests, asyncHandler + broadcastEvent |
+| **0.7.1** | ADDED_FROM constants | Done | `c09a1cea` | SEARCH, URL, CAST, WEBSOCKET |
+| **0.8.1** | Backend structured logging | Done | `172d46c5` | Via injected logger |
+| **0.8.2** | Frontend useMediaQueue logging | Done | `db201ba9` | Lazy getLogger().child() pattern |
+| **0.9.1** | Extract `parseAutoplayParams()` | Done | `93814c58`, `61157b5f` | 24 unit tests |
+| **0.9.2** | TVApp uses shared parser | Done | `008ea413` | No behavior change |
+| **1.1.1** | Play content by URL parameter | Done | `d7d126e6` | |
+| **1.1.2** | Play content by alias shorthand | Done | `d7d126e6` | |
+| **1.1.3** | Render Player in single-play mode | Done | `d7d126e6` | |
+| **1.1.4** | Display track info | Done | `8b615d53` | |
+| **1.1.5** | Seekable progress bar | Done | `8b615d53` | |
+| **1.1.6** | Transport controls | Done | `8b615d53`, `c4836302` | P1: no-ops; P2: wired to queue |
+| **1.1.7** | Volume control | Done | `8b615d53` | Local HTMLMediaElement.volume |
+| **1.1.8** | MiniPlayer persistent bar | Done | `358c90de` | |
+| **1.1.9** | Playback continues during navigation | Done | `d7d126e6` | Player stays mounted |
+| **1.2.1** | MediaApp.jsx route entry point | Done | `c3dff9c9` | `/media` route |
+| **1.2.2** | MediaAppProvider context | Done | `d7d126e6`, (merged) | P1: prop drilling; P2: React context |
+| **1.2.3** | MediaAppPlayer wrapper | Done | `9455f6dd` | CSS-based fullscreen |
+| **1.2.4** | NowPlaying view | Done | `8b615d53` | |
+| **1.2.5** | MiniPlayer component | Done | `358c90de` | |
+| **1.2.6** | useMediaUrlParams hook | Done | `be07b883` | |
+| **1.2.7** | SCSS styling | Done | `7f707fd1`, `eaa67a08`, `81e0e6bf` | Extended with queue + browser styles |
+| **2.1.1** | View full upcoming queue | Done | `c4836302` | Slide-up drawer mobile, sidebar desktop |
+| **2.1.2** | Add item to end of queue | Done | `c4836302` | Via useMediaQueue.addItems() |
+| **2.1.3** | Play next (insert after current) | Done | `c4836302` | placement='next' |
+| **2.1.4** | Remove single item | Done | `eaa67a08` | Swipe-to-remove + button |
+| **2.1.5** | Drag to reorder | Partial | `eaa67a08` | API wired; drag-and-drop UX deferred |
+| **2.1.6** | Clear entire queue | Done | `eaa67a08` | Clear button in QueueDrawer |
+| **2.1.7** | Toggle shuffle mode | Done | `eaa67a08` | Button in QueueDrawer |
+| **2.1.8** | Cycle repeat modes | Done | `eaa67a08` | off→one→all cycle |
+| **2.1.9** | Skip to next | Done | `c4836302` | queue.advance(1) |
+| **2.1.10** | Go back to previous | Done | `c4836302` | Restart if >3s, else advance(-1) |
+| **2.1.11** | Auto-advance on item completion | Done | `c4836302` | handleItemEnd calls queue.advance |
+| **2.1.12** | Tap queue item to jump | Done | `eaa67a08` | QueueItem onClick → setPosition |
+| **2.1.13** | Queue survives page refresh | Done | `172d46c5`, `db201ba9` | YAML persistence + fetch on mount |
+| **2.1.14** | Queue survives browser close/reopen | Done | `172d46c5` | Backend YAML persistence |
+| **2.1.15** | Queue full error at 500 items | Done | `c09a1cea` | QueueFullError → 422 |
+| **2.2.1** | useMediaQueue hook | Done | `db201ba9` | Fetch, mutations, WebSocket sync |
+| **2.2.2** | Optimistic updates | Done | `db201ba9` | Rollback + toast + 1 retry |
+| **2.2.3** | QueueDrawer component | Done | `eaa67a08` | Mobile slide-up, desktop sidebar |
+| **2.2.4** | QueueItem component | Done | `eaa67a08` | Thumbnail, title, swipe-to-remove |
+| **2.2.5** | Wire ?queue= URL parameter | Done | `c4836302` | Via queue.clear + addItems |
+| **2.2.6** | Self-echo suppression | Done | `db201ba9` | mutationId matching |
+| **3.1.1** | Search across all sources | Done | `81e0e6bf` | SSE streaming via useStreamingSearch |
+| **3.1.2** | Filter by source preset | Done | `81e0e6bf` | 5 filter chips |
+| **3.1.3** | Music filter | Done | `81e0e6bf` | source=plex&mediaType=audio |
+| **3.1.4** | Video filter | Done | `81e0e6bf` | source=plex&mediaType=video |
+| **3.1.5** | Hymns filter | Done | `81e0e6bf` | source=singalong |
+| **3.1.6** | Audiobooks filter | Done | `81e0e6bf` | source=readable |
+| **3.1.7** | Prefix shorthand search | Done | — | Already handled by alias resolver |
+| **3.1.8** | Search results display | Done | `81e0e6bf` | Thumbnail, title, source badge, duration |
+| **3.1.9** | Drill into containers | Done | `81e0e6bf` | useContentBrowse + breadcrumbs |
+| **3.1.10** | Play Now from search result | Done | `81e0e6bf` | Insert next + advance |
+| **3.1.11** | Add to Queue from search result | Done | `81e0e6bf` | Append to end |
+| **3.1.12** | Play Next from search result | Done | `81e0e6bf` | Insert after current |
+| **3.1.13** | Cast from search result | Deferred | — | Depends on Section 5 (Phase 3) |
+| **3.2.1** | ContentBrowser component | Done | `81e0e6bf`, `85e023c4` | Search + filters + drill-down |
+| **3.2.2** | useContentBrowse hook | Done | `81e0e6bf` | Breadcrumb navigation |
+| **3.2.3** | Backend mediaType pass-through | Done | (merged) | Already wired; PlexAdapter container types fixed |
+| **6.1.1** | WebSocket play command | Done | `123ddc28` | Insert next + advance |
+| **6.1.2** | WebSocket add command | Done | `123ddc28` | Append to end |
+| **6.1.3** | WebSocket next command | Done | `123ddc28` | Insert after current |
+| **6.1.4** | WebSocket queue command | Partial | `123ddc28` | Deferred: needs contentIdResolver in scope |
+| **6.1.5** | WebSocket clear command | Done | `123ddc28` | Clears queue, broadcasts |
+| **6.1.6** | Commands processed backend-only | Done | `123ddc28` | eventBus.onClientMessage handler |
+| **6.1.7** | Headless operation | Done | `123ddc28` | No frontend needed |
+| **6.1.8** | URL ?play= clears queue | Done | `c4836302` | queue.clear().then(addItems) |
+| **6.1.9** | URL ?queue= replaces queue | Done | `c4836302` | Via queue.clear + addItems |
+| **6.1.10** | URL aliases | Done | `be07b883` | parseAutoplayParams handles aliases |
+| **6.1.11** | URL ?volume=50 sets volume | Done | `c4836302` | queue.setVolume(volume/100) |
+| **6.1.12** | URL ?shuffle=true | Deferred | — | Needs wiring in URL command handler |
+| **6.1.13** | URL ?shader= config modifier | Done | `be07b883` | Passed through as config |
+| **6.2.1** | Backend media:command event handler | Done | `123ddc28` | play/add/next/clear actions |
+| **6.2.2** | Content resolution for WS commands | Partial | `123ddc28` | Basic contentId pass-through; full resolve deferred |
+| **7.2.1** | useMediaQueue WebSocket subscription | Done | `db201ba9` | media:queue topic with self-echo suppression |
+| **7.2.2** | Backend broadcast after mutation | Done | (merged) | All router endpoints broadcast |
+| **7.2.3** | Concurrency safety | Done | `172d46c5` | Sync YAML I/O, Node event loop serialization |
+
+**Phase 1 coverage:** 19/19 requirements addressed
+**Phase 2 coverage:** 62 requirements addressed (3 partial: 2.1.5 drag UX, 6.1.4 queue command, 6.2.2 full resolution; 2 deferred: 3.1.13 cast, 6.1.12 shuffle URL)
