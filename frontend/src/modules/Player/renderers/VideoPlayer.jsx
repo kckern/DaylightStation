@@ -6,6 +6,7 @@ import { ProgressBar } from '../components/ProgressBar.jsx';
 import { useUpscaleEffects } from '../hooks/useUpscaleEffects.js';
 import { useRenderFpsMonitor } from '../hooks/useRenderFpsMonitor.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
+import { cleanupDashElement } from '../lib/dashCleanup.js';
 
 /**
  * Video player component for playing video content (including DASH video)
@@ -145,6 +146,12 @@ export function VideoPlayer({
       }
     };
   }, [resilienceBridge, getMediaEl, getContainerEl, hardReset, fetchVideoInfo]);
+
+  // Clean up DASH resources on unmount to prevent SourceBuffer orphans.
+  useEffect(() => {
+    const el = containerRef.current;
+    return () => { cleanupDashElement(el); };
+  }, []);
 
   const { grandparentTitle, parentTitle, title, mediaUrl } = media;
 
