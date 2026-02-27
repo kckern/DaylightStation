@@ -7,6 +7,9 @@ import { PlayerOverlayLoading } from "../modules/Player/Player";
 import { MenuSkeleton } from "../modules/Menu/MenuSkeleton";
 import { getChildLogger } from "../lib/logging/singleton.js";
 import { useViewportProbe } from "../hooks/useViewportProbe.js";
+import { parseAutoplayParams } from "../lib/parseAutoplayParams.js";
+
+const TV_ACTIONS = ['play', 'queue', 'playlist', 'random', 'display', 'read', 'open', 'app', 'launch', 'list'];
 
 export function TVAppWrapper({ children }) {
   const tvAppRef = useRef(null);
@@ -92,104 +95,8 @@ export default function TVApp({ appParam }) {
     fetchData();
   }, [logger]);
 
-  // Parse autoplay from query params
-  const autoplay = useMemo(() => {
-    const params = new URLSearchParams(window.location.search);
-    const queryEntries = Object.fromEntries(params.entries());
-
-    // Ensure value is a compound content ID.
-    // Values already in source:id format pass through unchanged.
-    // Bare digits default to plex: prefix; bare paths stay as-is (media files).
-    const toContentId = (value) => {
-      if (/^[a-z]+:.+$/i.test(value)) return value;
-      if (/^\d+$/.test(value)) return `plex:${value}`;
-      return value;
-    };
-
-    // Config modifiers that can be combined with any source
-    const configList = ["volume","shader","playbackRate","shuffle","continuous","repeat","loop","overlay","advance","interval","mode","frame"];
-    const config = {};
-    for (const configKey of configList) {
-      if (queryEntries[configKey]) {
-        // Parse overlay as playlist with shuffle
-        if (configKey === 'overlay') {
-          config.overlay = {
-            queue: { contentId: toContentId(queryEntries[configKey]) },
-            shuffle: true
-          };
-        } else {
-          config[configKey] = queryEntries[configKey];
-        }
-      }
-    }
-
-    // Parse advance config for composed presentations
-    if (queryEntries.advance) {
-      config.advance = {
-        mode: queryEntries.advance,
-        interval: parseInt(queryEntries.interval) || 5000
-      };
-    }
-
-    // Parse per-track modifiers (e.g., loop.audio=0, shuffle.visual=1)
-    const trackModifiers = { visual: {}, audio: {} };
-    for (const [key, value] of Object.entries(queryEntries)) {
-      const match = key.match(/^(\w+)\.(visual|audio)$/);
-      if (match) {
-        const [, modifier, track] = match;
-        trackModifiers[track][modifier] = value;
-      }
-    }
-    if (Object.keys(trackModifiers.visual).length || Object.keys(trackModifiers.audio).length) {
-      config.trackModifiers = trackModifiers;
-    }
-
-    // Action mappings — source-agnostic.
-    // Only action verbs are mapped; source resolution is handled by the backend.
-    const mappings = {
-      playlist:  (value) => ({ queue: { contentId: toContentId(value), ...config } }),
-      queue:     (value) => {
-        if (value.includes(',')) {
-          return { compose: { sources: value.split(',').map(s => s.trim()), ...config } };
-        }
-        if (value.startsWith('app:')) {
-          return { compose: { sources: [value], ...config } };
-        }
-        return { queue: { contentId: toContentId(value), ...config } };
-      },
-      play:      (value) => {
-        if (value.includes(',')) {
-          return { compose: { sources: value.split(',').map(s => s.trim()), ...config } };
-        }
-        if (value.startsWith('app:')) {
-          return { compose: { sources: [value], ...config } };
-        }
-        return { play: { contentId: toContentId(value), ...config } };
-      },
-      random:    (value) => ({ play: { contentId: toContentId(value), random: true, ...config } }),
-      display:   (value) => ({ display: { id: value, ...config } }),
-      read:      (value) => ({ read: { id: value, ...config } }),
-      open:      (value) => ({ open: { app: value } }),
-      app:       (value) => ({ open: { app: value } }),
-      launch:    (value) => ({ launch: { contentId: toContentId(value) } }),
-      list:      (value) => ({ list: { contentId: toContentId(value), ...config } }),
-    };
-
-    for (const [key, value] of Object.entries(queryEntries)) {
-      if (mappings[key]) {
-        return mappings[key](value);
-      }
-      // Skip config modifiers and track modifiers (handled above)
-      if (configList.includes(key) || key.match(/^\w+\.(visual|audio)$/)) {
-        continue;
-      }
-      // Unknown key: treat as shorthand for ?play=key:value
-      // e.g., ?hymn=166 → play hymn:166, ?plex=12345 → play plex:12345
-      return { play: { contentId: `${key}:${value}`, ...config } };
-    }
-
-    return null;
-  }, []);
+  // Parse autoplay from query params (shared utility — see parseAutoplayParams.js)
+  const autoplay = useMemo(() => parseAutoplayParams(window.location.search, TV_ACTIONS), []);
 
   const isQueueOrPlay = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
