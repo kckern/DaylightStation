@@ -5,7 +5,7 @@
 
 **Companion to:** `2026-02-26-media-app-design.md` (narrative architecture reference)
 **Last Updated:** 2026-02-27
-**Status:** Phase 2 Implemented
+**Status:** Phase 3 Implemented
 
 ---
 
@@ -923,6 +923,25 @@ Implementation commits mapped to requirement IDs.
 | `81e0e6bf` | feat(media): add ContentBrowser with search, filters, and drill-down | 3.1.1–3.1.13, 3.2.1, 3.2.2 |
 | `85e023c4` | feat(media): wire ContentBrowser search button into NowPlaying | 3.2.1 |
 
+### Phase 3 Commits
+
+| Commit | Message | Requirements |
+|--------|---------|-------------|
+| `5aced0c0` | feat(media): 4.2.3 add useDeviceIdentity hook | 4.2.3 |
+| `b72954cb` | feat(media): 4.2.8 add playback_state WebSocket relay handler | 4.2.8 |
+| `cc63eb1c` | feat(media): 4.2.7 add useMediaClientId hook | 4.2.7 |
+| `c3eb2e56` | fix(test): use vitest imports in Phase 3 tests | — |
+| `e960d8f0` | feat(media): 4.2.1 add usePlaybackBroadcast hook | 4.2.1 |
+| `76a7678a` | feat(media): 4.2.2, 4.2.5, 4.2.6 wire usePlaybackBroadcast into apps | 4.2.2, 4.2.5, 4.2.6 |
+| `e3140e0f` | feat(media): 4.2.9 add useDeviceMonitor hook | 4.2.9, 4.1.1, 4.1.2, 4.1.3 |
+| `6a344414` | feat(media): 4.2.11 add DeviceCard component | 4.2.11, 4.1.4–4.1.10 |
+| `3b0eccd2` | feat(media): 5.2.1, 5.1.4 add CastButton and DevicePicker | 5.2.1, 5.1.1, 5.1.4, 5.1.5 |
+| `2950ef7b` | feat(media): 4.2.10 add DevicePanel drawer | 4.2.10, 4.1.1, 4.1.8 |
+| `58b528ec` | feat(media): 6.1.4, 6.2.2, 6.1.12 fix deferred items | 6.1.4, 6.2.2, 6.1.12 |
+| `71dc81de` | feat(media): 5.2.3, 5.1.7 add ?device= URL param | 5.2.3, 5.1.7 |
+| `aeedff21` | feat(media): wire DevicePanel + CastButton into MediaApp UI | 4.2.2, 5.1.2, 5.1.3, 5.2.1, 3.1.13 |
+| `827f5436` | style(media): Phase 3 SCSS | — |
+
 ### Requirement Status
 
 | ID | Description | Status | Commit | Notes |
@@ -997,14 +1016,14 @@ Implementation commits mapped to requirement IDs.
 | **3.1.10** | Play Now from search result | Done | `81e0e6bf` | Insert next + advance |
 | **3.1.11** | Add to Queue from search result | Done | `81e0e6bf` | Append to end |
 | **3.1.12** | Play Next from search result | Done | `81e0e6bf` | Insert after current |
-| **3.1.13** | Cast from search result | Deferred | — | Depends on Section 5 (Phase 3) |
+| **3.1.13** | Cast from search result | Done | `aeedff21` | CastButton added to ContentBrowser results |
 | **3.2.1** | ContentBrowser component | Done | `81e0e6bf`, `85e023c4` | Search + filters + drill-down |
 | **3.2.2** | useContentBrowse hook | Done | `81e0e6bf` | Breadcrumb navigation |
 | **3.2.3** | Backend mediaType pass-through | Done | (merged) | Already wired; PlexAdapter container types fixed |
 | **6.1.1** | WebSocket play command | Done | `123ddc28` | Insert next + advance |
 | **6.1.2** | WebSocket add command | Done | `123ddc28` | Append to end |
 | **6.1.3** | WebSocket next command | Done | `123ddc28` | Insert after current |
-| **6.1.4** | WebSocket queue command | Partial | `123ddc28` | Deferred: needs contentIdResolver in scope |
+| **6.1.4** | WebSocket queue command | Done | `123ddc28`, `58b528ec` | P2: handler; P3: contentIdResolver wired |
 | **6.1.5** | WebSocket clear command | Done | `123ddc28` | Clears queue, broadcasts |
 | **6.1.6** | Commands processed backend-only | Done | `123ddc28` | eventBus.onClientMessage handler |
 | **6.1.7** | Headless operation | Done | `123ddc28` | No frontend needed |
@@ -1012,13 +1031,58 @@ Implementation commits mapped to requirement IDs.
 | **6.1.9** | URL ?queue= replaces queue | Done | `c4836302` | Via queue.clear + addItems |
 | **6.1.10** | URL aliases | Done | `be07b883` | parseAutoplayParams handles aliases |
 | **6.1.11** | URL ?volume=50 sets volume | Done | `c4836302` | queue.setVolume(volume/100) |
-| **6.1.12** | URL ?shuffle=true | Deferred | — | Needs wiring in URL command handler |
+| **6.1.12** | URL ?shuffle=true | Done | `58b528ec` | Wired in MediaApp URL command handler |
 | **6.1.13** | URL ?shader= config modifier | Done | `be07b883` | Passed through as config |
 | **6.2.1** | Backend media:command event handler | Done | `123ddc28` | play/add/next/clear actions |
-| **6.2.2** | Content resolution for WS commands | Partial | `123ddc28` | Basic contentId pass-through; full resolve deferred |
+| **6.2.2** | Content resolution for WS commands | Done | `123ddc28`, `58b528ec` | P2: basic pass-through; P3: full contentIdResolver wired |
 | **7.2.1** | useMediaQueue WebSocket subscription | Done | `db201ba9` | media:queue topic with self-echo suppression |
 | **7.2.2** | Backend broadcast after mutation | Done | (merged) | All router endpoints broadcast |
 | **7.2.3** | Concurrency safety | Done | `172d46c5` | Sync YAML I/O, Node event loop serialization |
+| **4.1.1** | Display registered household devices | Done | `e3140e0f`, `2950ef7b` | useDeviceMonitor fetches device list; DevicePanel renders |
+| **4.1.2** | Display now-playing state per device | Done | `e3140e0f`, `6a344414` | WebSocket playback subscription + DeviceCard |
+| **4.1.3** | Display online/offline status per device | Done | `e3140e0f` | 30s expiry in useDeviceMonitor |
+| **4.1.4** | Remote play/pause | Done | `6a344414` | DeviceCard transport API call |
+| **4.1.5** | Remote skip forward/back | Done | `6a344414` | Same transport forwarding |
+| **4.1.6** | Remote volume control | Done | `6a344414` | Volume slider via device API |
+| **4.1.7** | Remote power on/off | Done | `6a344414` | Power button via device API |
+| **4.1.8** | Browser client "also playing" cards | Done | `2950ef7b` | Unmatched playback entries in DevicePanel |
+| **4.1.9** | Browser clients are read-only | Done | `6a344414` | type='browser' variant, no controls |
+| **4.1.10** | Distinguish controllable vs read-only | Done | `6a344414` | Visual differentiation, "Browser" badge |
+| **4.2.1** | usePlaybackBroadcast hook | Done | `e960d8f0` | 5s interval + state change broadcast |
+| **4.2.2** | Add usePlaybackBroadcast to MediaApp | Done | `76a7678a` | Wired in MediaAppInner |
+| **4.2.3** | useDeviceIdentity hook | Done | `5aced0c0` | Reads ?deviceId= URL param |
+| **4.2.4** | WakeAndLoadService deviceId injection | Done | — | Already injects deviceId in load query |
+| **4.2.5** | Add usePlaybackBroadcast to TVApp | Partial | `76a7678a` | TODO: Player ref not accessible at top level |
+| **4.2.6** | Add usePlaybackBroadcast to OfficeApp | Partial | `76a7678a` | TODO: Player rendered dynamically |
+| **4.2.7** | useMediaClientId hook | Done | `cc63eb1c` | Persistent 8-char hex ID in localStorage |
+| **4.2.8** | Backend playback_state handler | Done | `b72954cb` | eventBus.onClientMessage relay |
+| **4.2.9** | useDeviceMonitor hook | Done | `e3140e0f` | REST + WebSocket aggregation |
+| **4.2.10** | DevicePanel component | Done | `2950ef7b` | Right-edge drawer |
+| **4.2.11** | DeviceCard component | Done | `6a344414` | Full controls + browser variant |
+| **5.1.1** | Cast currently playing item | Done | `3b0eccd2` | Via DevicePicker + device load API |
+| **5.1.2** | Cast search result to device | Done | `aeedff21` | CastButton in ContentBrowser |
+| **5.1.3** | Cast queue item to device | Done | `aeedff21` | CastButton in QueueItem |
+| **5.1.4** | Device picker | Done | `3b0eccd2` | Bottom sheet, content_control filter |
+| **5.1.5** | Wake device before casting | Done | `3b0eccd2` | WakeAndLoadService handles wake-if-needed |
+| **5.1.6** | Show wake progress indicator | Done | — | Existing useWakeProgress reused |
+| **5.1.7** | Cast via URL parameter | Done | `71dc81de` | ?device= param in useMediaUrlParams |
+| **5.1.8** | Cast replaces device content | Done | `3b0eccd2` | Always-replace, no confirmation |
+| **5.1.9** | Confirm cast succeeded | Done | `e3140e0f` | DeviceCard updates via playback broadcast |
+| **5.2.1** | CastButton component | Done | `3b0eccd2`, `aeedff21` | NowPlaying, QueueItem, ContentBrowser |
+| **5.2.2** | WakeAndLoadService integration | Done | — | Existing service, no new backend code |
+| **5.2.3** | ?device= URL param in useMediaUrlParams | Done | `71dc81de` | Cast to device instead of local play |
+| **7.1.1** | Multiple tabs show same queue | Done | `db201ba9` | P2: useMediaQueue fetch on mount |
+| **7.1.2** | Add on one device, appears on other | Done | `db201ba9` | P2: media:queue WebSocket broadcast |
+| **7.1.3** | Remove on one device, disappears on other | Done | `db201ba9` | P2: same broadcast mechanism |
+| **7.1.4** | Reorder on one device, reflected everywhere | Done | `db201ba9` | P2: broadcast replaces local state |
+| **7.1.5** | Skip track, position updates on other | Done | `db201ba9` | P2: position change broadcast |
+| **7.1.6** | Optimistic updates feel instant | Done | `db201ba9` | P2: local apply before API response |
+| **7.1.7** | Rollback with toast on failure | Done | `db201ba9` | P2: revert + toast + retry |
+| **7.1.8** | One automatic retry after failure | Done | `db201ba9` | P2: 2s retry |
+| **7.1.9** | Playback continues during outage | Done | `d7d126e6` | P1: player keeps current item in memory |
+| **7.1.10** | No duplicate items from multi-tab add | Done | `172d46c5` | P2: Node event loop serialization |
+| **7.1.11** | No flicker on originating tab | Done | `db201ba9` | P2: mutationId self-echo suppression |
 
 **Phase 1 coverage:** 19/19 requirements addressed
-**Phase 2 coverage:** 62 requirements addressed (3 partial: 2.1.5 drag UX, 6.1.4 queue command, 6.2.2 full resolution; 2 deferred: 3.1.13 cast, 6.1.12 shuffle URL)
+**Phase 2 coverage:** 62 requirements addressed (1 partial: 2.1.5 drag UX)
+**Phase 3 coverage:** 44 requirements addressed (2 partial: 4.2.5 TVApp broadcast, 4.2.6 OfficeApp broadcast — Player ref not accessible at top level; 3 deferred items from P2 resolved: 3.1.13, 6.1.4, 6.2.2, 6.1.12)
