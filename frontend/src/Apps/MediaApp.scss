@@ -614,3 +614,276 @@
   padding: 1px 5px;
   margin-left: 4px;
 }
+
+// Device Panel — right-edge drawer
+.device-panel {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 320px;
+  background: #181818;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.5);
+
+  @media (max-width: 600px) {
+    width: 100%;
+    top: auto;
+    height: 70vh;
+    border-radius: 16px 16px 0 0;
+  }
+}
+
+.device-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  border-bottom: 1px solid #282828;
+
+  h3 {
+    margin: 0;
+    color: #fff;
+    font-size: 18px;
+  }
+}
+
+.device-panel-close {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 4px 8px;
+  &:hover { color: #fff; }
+}
+
+.device-panel-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.device-panel-divider {
+  color: #888;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 16px 8px 8px;
+  border-top: 1px solid #282828;
+  margin-top: 8px;
+}
+
+.device-panel-loading {
+  color: #888;
+  text-align: center;
+  padding: 32px;
+}
+
+// Device Card
+.device-card {
+  background: #282828;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+
+  &--offline {
+    opacity: 0.5;
+  }
+
+  &--browser {
+    background: #1e1e1e;
+    border: 1px solid #333;
+  }
+}
+
+.device-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.device-card-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+
+  &.online { background: #1db954; }
+  &.offline { background: #555; }
+}
+
+.device-card-name {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  flex: 1;
+}
+
+.device-card-badge {
+  font-size: 10px;
+  color: #888;
+  background: #333;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.device-card-playing {
+  margin-bottom: 8px;
+}
+
+.device-card-title {
+  color: #ccc;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.device-card-progress {
+  height: 3px;
+  background: #444;
+  border-radius: 2px;
+  margin-top: 4px;
+  overflow: hidden;
+}
+
+.device-card-progress-fill {
+  height: 100%;
+  background: #1db954;
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+
+.device-card-idle {
+  color: #666;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.device-card-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #333;
+}
+
+.device-card-btn {
+  background: none;
+  border: none;
+  color: #ccc;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  &:hover { color: #1db954; background: #333; }
+}
+
+.device-card-volume {
+  flex: 1;
+  accent-color: #1db954;
+  height: 4px;
+}
+
+// Device Picker — bottom sheet overlay
+.device-picker-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 300;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.device-picker {
+  background: #282828;
+  border-radius: 16px 16px 0 0;
+  width: 100%;
+  max-width: 480px;
+  max-height: 50vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.device-picker-header {
+  padding: 16px;
+  border-bottom: 1px solid #333;
+
+  h3 {
+    margin: 0;
+    color: #fff;
+    font-size: 16px;
+  }
+}
+
+.device-picker-list {
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.device-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  color: #fff;
+
+  &:hover { background: #333; }
+
+  &--offline {
+    opacity: 0.5;
+  }
+}
+
+.device-picker-name {
+  font-size: 14px;
+  flex: 1;
+}
+
+.device-picker-playing {
+  font-size: 12px;
+  color: #888;
+}
+
+.device-picker-empty {
+  color: #666;
+  text-align: center;
+  padding: 24px;
+}
+
+// Cast Button
+.cast-btn {
+  background: none;
+  border: none;
+  color: #ccc;
+  cursor: pointer;
+  padding: 4px;
+  font-size: 16px;
+  border-radius: 4px;
+  &:hover { color: #1db954; }
+}
+
+.queue-item-cast {
+  font-size: 14px;
+  color: #888;
+  &:hover { color: #1db954; }
+}
+
+.search-action-cast {
+  font-size: 14px;
+  color: #888;
+  &:hover { color: #1db954; }
+}

@@ -25,6 +25,9 @@ import { useKeyboardHandler } from '../lib/OfficeApp/keyboardHandler.js'
 import { createMenuSelectionHandler } from '../lib/OfficeApp/menuHandler.js'
 import { getChildLogger } from '../lib/logging/singleton.js'
 
+// TODO: Wire usePlaybackBroadcast when Player ref is surfaced (4.2.6)
+// Player is rendered dynamically in renderContent() without a stable ref.
+// Wiring requires creating a persistent playerRef and passing it to all Player instances.
 function OfficeApp({ initialGame = null }) {
   const logger = useMemo(() => getChildLogger({ app: 'office' }), []);
   logger.debug('office.render');

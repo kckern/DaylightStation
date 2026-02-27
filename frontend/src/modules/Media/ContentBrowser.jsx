@@ -4,6 +4,7 @@ import { useStreamingSearch } from '../../hooks/useStreamingSearch.js';
 import { useContentBrowse } from '../../hooks/media/useContentBrowse.js';
 import { useMediaApp } from '../../contexts/MediaAppContext.jsx';
 import { ContentDisplayUrl } from '../../lib/api.mjs';
+import CastButton from './CastButton.jsx';
 import getLogger from '../../lib/logging/Logger.js';
 
 const FILTERS = [
@@ -119,6 +120,7 @@ const ContentBrowser = ({ open, onClose }) => {
               <button onClick={() => handlePlayNow(item)} title="Play Now">&#9654;</button>
               <button onClick={() => handlePlayNext(item)} title="Play Next">&#10549;</button>
               <button onClick={() => handleAddToQueue(item)} title="Add to Queue">+</button>
+              <CastButton contentId={item.contentId} className="search-action-cast" />
             </div>
           </div>
         ))}
