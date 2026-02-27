@@ -1338,3 +1338,157 @@ backend/src/4_api/v1/routers/
 ## Open Questions
 
 *(None remaining)*
+
+---
+
+## User Stories
+
+### 1. Local Playback
+
+| # | Story |
+|---|-------|
+| 1 | Play a hymn by number to practice for Sunday |
+| 2 | Play a Plex movie on my phone while in bed |
+| 3 | Listen to an audiobook from AudioBookShelf while doing chores |
+| 4 | Follow along with a scripture readalong at my own pace |
+| 5 | Play a Primary song for the kids |
+| 6 | See album art or a thumbnail while music plays |
+| 7 | See elapsed and remaining time on a progress bar |
+| 8 | Scrub/seek to a specific point by dragging the progress bar |
+| 9 | Pause playback and resume right where I left off |
+| 10 | Adjust volume without leaving the player |
+| 11 | Video auto-fullscreens when it starts playing |
+| 12 | Exit video fullscreen with the back button to see the rest of the app |
+| 13 | See a MiniPlayer bar at the bottom while browsing other parts of the app |
+| 14 | Tap the MiniPlayer to jump back to the full Now Playing view |
+| 15 | Playback continues uninterrupted while searching for more content or managing the queue |
+
+### 2. Queue Management
+
+| # | Story |
+|---|-------|
+| 1 | See the entire upcoming queue |
+| 2 | Add a song to the end of the queue |
+| 3 | "Play next" a song so it plays right after the current track |
+| 4 | Swipe to remove a single item from the queue |
+| 5 | Drag items to reorder the queue without interrupting playback |
+| 6 | Clear the entire queue to start fresh |
+| 7 | Toggle shuffle so the queue plays in random order |
+| 8 | Cycle repeat modes (off / repeat one / repeat all) with a single tap |
+| 9 | See the currently playing item highlighted in the queue |
+| 10 | Tap "next" to skip to the next item |
+| 11 | Tap "previous" to go back to the last item |
+| 12 | Playback auto-advances to the next item when the current one finishes |
+| 13 | "Repeat one" loops the current track until I manually skip |
+| 14 | "Repeat all" loops back to the beginning after the last item |
+| 15 | Queue survives a page refresh |
+| 16 | Queue survives closing and reopening the browser tab |
+| 17 | See a clear error message if the queue is full (500 items) |
+| 18 | Tap any item in the queue to jump directly to it |
+
+### 3. Content Discovery
+
+| # | Story |
+|---|-------|
+| 1 | Search across all sources at once |
+| 2 | See results stream in progressively (Plex first, then hymns, then audiobooks) |
+| 3 | Filter to "Music" only to see audio from Plex |
+| 4 | Filter to "Video" only to see movies and TV shows |
+| 5 | Filter to "Hymns" only when preparing for church |
+| 6 | Filter to "Audiobooks" for long-form listening |
+| 7 | Type `hymn:amazing` as shorthand to search only hymns |
+| 8 | Search results grouped by source for quick scanning |
+| 9 | See thumbnails and durations on search results |
+| 10 | Tap into an album or show to see its tracks/episodes |
+| 11 | Back button after drilling into a container to navigate up |
+| 12 | Tap "Play Now" on a search result to start it immediately |
+| 13 | Tap "Add to Queue" on a search result without leaving search |
+| 14 | Tap "Play Next" on a search result to queue it right after the current track |
+| 15 | Cast a search result directly to a device without adding it to the local queue |
+| 16 | Only playable content appears in results |
+
+### 4. Remote Control & Monitoring
+
+| # | Story |
+|---|-------|
+| 1 | See a list of all household devices (TV, office, etc.) even when idle |
+| 2 | See what's currently playing on each device — title, thumbnail, progress |
+| 3 | See online/offline status for each registered device |
+| 4 | Play/pause a remote device from my phone |
+| 5 | Skip forward/back on a remote device |
+| 6 | Adjust volume on a remote device |
+| 7 | Power a device on or off from the device panel |
+| 8 | See "also playing" cards for other browser clients (e.g. "Dad's phone", "Kitchen laptop") |
+| 9 | Browser clients appear automatically when they start playing and disappear when they stop |
+| 10 | Registered devices always appear in the list, even with no content playing |
+| 11 | See real-time progress updates (refreshes every 5 seconds) |
+| 12 | Distinguish at a glance between controllable devices and read-only browser clients |
+
+### 5. Casting
+
+| # | Story |
+|---|-------|
+| 1 | Cast the currently playing item to a household device |
+| 2 | Cast a search result directly to a device without playing it locally first |
+| 3 | Pick which device to cast to from a device picker |
+| 4 | Device wakes up automatically if it's asleep/off when I cast to it |
+| 5 | See a progress indicator while a device is waking up |
+| 6 | Cast a specific item to a specific device via URL (`?hymn=198&device=livingroom-tv`) |
+| 7 | Only see castable devices in the picker (no MIDI keyboards or non-content devices) |
+| 8 | Cast replaces whatever was playing on the target device (no confirmation needed) |
+| 9 | Cast a queue item from the queue list to a device (not just the current track) |
+| 10 | After casting, see the target device's now-playing update to confirm it worked |
+
+### 6. External Triggers & Deep Links
+
+| # | Story |
+|---|-------|
+| 1 | Open `?play=hymn:198` to immediately play a specific hymn |
+| 2 | Open `?queue=plex:67890` to load an entire playlist and start playing |
+| 3 | Use shorthand aliases like `?hymn=100` instead of `?play=hymn:100` |
+| 4 | Set volume via URL (`?volume=50`) |
+| 5 | Enable shuffle via URL (`?shuffle=true`) |
+| 6 | Home Assistant automation sends a "play" command via WebSocket to start a hymn at bedtime |
+| 7 | CLI tool adds a song to the queue via WebSocket without interrupting what's playing |
+| 8 | Another DaylightStation app pushes content into my queue via WebSocket |
+| 9 | WebSocket commands work even when no MediaApp tab is open (headless/backend-only) |
+| 10 | WebSocket "play" interrupts current playback but keeps the rest of the queue intact |
+| 11 | WebSocket "add" appends to the end without interrupting anything |
+| 12 | WebSocket "next" inserts after the current item |
+| 13 | WebSocket "queue" replaces the entire queue with a new playlist |
+| 14 | WebSocket "clear" stops playback and empties the queue |
+| 15 | `?play=` clears the existing queue (intentional — it's an override mechanism) |
+| 16 | See a loading spinner while `?queue=` resolves a container before playback starts |
+
+### 7. Cross-Device Sync
+
+| # | Story |
+|---|-------|
+| 1 | Open MediaApp on phone and laptop — both show the same queue |
+| 2 | Add an item on phone, see it appear on laptop within a second |
+| 3 | Remove an item on laptop, see it disappear on phone |
+| 4 | Reorder items on one device, see the new order reflected everywhere |
+| 5 | Skip a track on one device, see the position update on the other |
+| 6 | Changes feel instant on the acting device (optimistic updates) |
+| 7 | If the backend save fails, local state rolls back with a toast explaining what happened |
+| 8 | One automatic retry happens after a backend failure before giving up |
+| 9 | Playback continues even if the backend is temporarily unreachable |
+| 10 | No duplicate items when two tabs are open and I add something from one |
+| 11 | No brief flicker/double-add on the originating tab after adding an item |
+
+### 8. Content Format Handling
+
+| # | Story |
+|---|-------|
+| 1 | Audio plays with an album art card in embedded view — never auto-fullscreens |
+| 2 | Video auto-enters fullscreen when it starts playing |
+| 3 | Exit video fullscreen with back button or swipe down |
+| 4 | Singalong plays embedded with lyrics visible in the now-playing card |
+| 5 | Tap a singalong to expand it to fullscreen for easier reading |
+| 6 | Readalong plays embedded with text visible in the now-playing card |
+| 7 | Tap a readalong to expand to fullscreen |
+| 8 | Transport controls overlay on top of fullscreen content |
+| 9 | Now Playing shows format-appropriate metadata (verse count for hymns, chapter for audiobooks, duration for video) |
+| 10 | Queue items show a format badge to distinguish audio from video from singalong at a glance |
+| 11 | Switching between a video and audio queue item transitions smoothly between fullscreen and embedded |
+| 12 | Fullscreen doesn't remount the player — playback continues uninterrupted during the transition |

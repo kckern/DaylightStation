@@ -244,77 +244,127 @@
   &:active { background: rgba(255, 255, 255, 0.12); }
 }
 
-// --- Session Thumbnails ---
+// --- Date Headers ---
 
 .session-date-header {
-  padding: 0.2rem 0 0.1rem;
-  letter-spacing: 0.05em;
+  padding: 0.5rem 0 0.25rem;
+  letter-spacing: 0.06em;
   position: sticky;
   top: 0;
-  background: rgba(26, 26, 46, 0.95); /* Matches main bg */
+  background: rgba(26, 26, 46, 0.97);
   z-index: 10;
-  margin-bottom: 0.15rem;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-// Remove top padding from the first date group
 .dashboard-card--workouts > .mantine-Stack-root > div:first-child > .session-date-header {
   padding-top: 0;
-  margin-top: 0;
 }
 
-// --- Session Row (card-like row per session) ---
+// --- Session Row ---
 
 .session-row {
-  padding: 0.2rem 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
   cursor: pointer;
-  border-left: 3px solid transparent;
-  transition: background 0.15s, border-color 0.15s;
+  margin-bottom: 6px;
+  background: rgba(255, 255, 255, 0.03);
 
-  &:active { background: rgba(255, 255, 255, 0.05); }
-  &:last-child { border-bottom: none; }
+  &:last-child { margin-bottom: 0; }
+  &:active { opacity: 0.9; }
 
+  // Selected highlight — works for both bg-image and plain rows
   &--selected {
-    background: rgba(34, 139, 230, 0.15);
-    border-left-color: #228be6;
+    box-shadow: inset 0 0 0 2px rgba(34, 139, 230, 0.5);
+    background-color: rgba(34, 139, 230, 0.12);
+  }
+
+  // Background episode thumbnail
+  &--has-bg {
+    background-size: contain;
+    background-position: right center;
+    background-repeat: no-repeat;
+
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      background: linear-gradient(
+        to right,
+        rgba(26, 26, 46, 1) 0%,
+        rgba(26, 26, 46, 1) 35%,
+        rgba(26, 26, 46, 0.85) 55%,
+        rgba(26, 26, 46, 0.4) 80%,
+        rgba(26, 26, 46, 0.15) 100%
+      );
+    }
+
+    .session-row__top {
+      position: relative;
+      z-index: 1;
+    }
+
+    // Selected with bg — tint the gradient overlay blue
+    &.session-row--selected::before {
+      background: linear-gradient(
+        to right,
+        rgba(20, 40, 80, 1) 0%,
+        rgba(20, 40, 80, 0.95) 35%,
+        rgba(20, 40, 80, 0.7) 55%,
+        rgba(20, 40, 80, 0.3) 80%,
+        rgba(34, 139, 230, 0.15) 100%
+      );
+    }
   }
 }
 
 .session-row__top {
   display: flex;
-  align-items: stretch;
-  gap: 0.4rem;
-  min-height: 40px;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem;
+  padding-right: 25%;
+  min-height: 60px;
 }
+
+// --- Poster (left) ---
+
+.session-poster {
+  width: 80px;
+  min-width: 80px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  flex-shrink: 0;
+
+  &--placeholder {
+    aspect-ratio: 2 / 3;
+  }
+}
+
+// --- Info (center) ---
 
 .session-row__info {
   flex: 1;
-  min-width: 0; // Prevent text overflow from breaking layout
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  align-self: center;
+  gap: 4px;
 }
 
 .session-row__title-line {
   display: flex;
-  align-items: baseline;
-  gap: 0.35rem;
+  flex-direction: column;
+  gap: 1px;
   min-width: 0;
-  overflow: hidden;
 
   > * {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    flex-shrink: 1;
-  }
-
-  > *:first-child {
-    flex-shrink: 0;
-    max-width: 75%;
   }
 }
 
@@ -322,100 +372,41 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   line-height: 1;
+  margin-top: 2px;
 }
 
 .session-row__sep {
   width: 1px;
   height: 10px;
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.2);
   flex-shrink: 0;
 }
 
+// --- Participants ---
+
 .session-row__participants {
-  display: grid;
-  gap: 2px 6px;
-  margin-top: 2px;
-  justify-content: start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
 }
 
 .session-row__participant {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  background: rgba(255, 255, 255, 0.05);
-  padding: 2px 5px 2px 2px;
-  border-radius: 12px;
 }
 
-.session-row__hr {
-  font-size: 0.65rem;
-  color: rgba(255, 255, 255, 0.5);
-  line-height: 1;
-
-  &::before {
-    content: '\2764\FE0F ';
-    font-size: 0.55rem;
-  }
-}
-
-// --- Secondary media strip ---
-
-.session-row__others {
-  display: flex;
-  gap: 0.4rem;
-  margin-top: 2px;
-  padding-left: 88px; // Align under title (80px thumbnail + 8px gap)
-}
-
-.session-row__other-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-
-  > span, > div {
-    max-width: 100px;
-  }
-}
-
-.session-row__other-thumb {
-  width: 32px;
-  min-width: 32px;
-  height: 20px;
-  border-radius: 3px;
-  object-fit: cover;
-  background: rgba(255, 255, 255, 0.05);
-}
-
-// --- Thumbnails and Avatars ---
-
-.session-thumbnail {
-  width: 80px;
-  min-width: 80px;
-  border-radius: 4px;
-  object-fit: cover;
-  background: rgba(255, 255, 255, 0.05);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-}
-
-.session-poster {
-  width: 36px;
-  min-width: 36px;
-  border-radius: 4px;
-  object-fit: cover;
-  align-self: center;
-  background: rgba(255, 255, 255, 0.05);
-  flex-shrink: 0;
-}
+// --- Avatars ---
 
 .session-avatar {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   object-fit: cover;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 // --- Nutrition History ---
