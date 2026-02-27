@@ -1,0 +1,811 @@
+=== EXECUTE MODE — files will be moved ===
+
+--- Phase 1: Deleting macOS ._*.pdf dot files ---
+  DELETED: /data/media/video/fitness/P90X3 (2014)/_Docs/._X3_Worksheet.pdf
+  DELETED: /data/media/video/fitness/P90X3 (2014)/_Docs/._X3_Calendar.pdf
+  DELETED: /data/media/video/fitness/Chop Wood Carry Water/_Docs/._CWCW_Get-Started-Guide_EN-US_060923.pdf
+  DELETED: /data/media/video/fitness/Chop Wood Carry Water/_Docs/._CWCW_Workout-Calendar_4-Day_EN-US_060123.pdf
+  DELETED: /data/media/video/fitness/Chop Wood Carry Water/_Docs/._387250_CWCW_Tracker_en-us_061223.pdf
+  DELETED: /data/media/video/fitness/Chop Wood Carry Water/_Docs/._Calendar.pdf
+  DELETED: /data/media/video/fitness/Tough Mudder/._MUDINS1101_OPF_TM30_Training_Guide-052622.pdf
+  DELETED: /data/media/video/fitness/Tough Mudder/._TM30-EN_US-5k_Calendar-06.03.22.pdf
+  DELETED: /data/media/video/fitness/Bomb Body/._OPF_SROS_Calendar_Online_042622_01.pdf
+  DELETED: /data/media/video/fitness/DIG DEEPER/._DDPR_Collection2-Cal-en-us-121923.pdf
+  DELETED: /data/media/video/fitness/DIG DEEPER/._448150_DDPR_Collection1-Cal-en-us-112223.pdf
+  DELETED: /data/media/video/fitness/DIG DEEPER/._DDPR-BOD-EN-US-Dumbbell_Tracker-112823.pdf
+  DELETED: /data/media/video/fitness/DIG DEEPER/._DDPR-EN_US-12_Week_Calendar-121823.pdf
+  DELETED: /data/media/video/fitness/DIG DEEPER/._DDPR_2BM_BOD-EN_US-How_to_do_2BM_with_DD.pdf
+  DELETED: /data/media/video/fitness/DIG DEEPER/._DDPR-BOD-EN_US-Get_Started_Guide-111623.pdf
+  DELETED: /data/media/video/fitness/DIG DEEPER/._448150_DDPR_Collection3-Cal-en-us-112223.pdf
+  DELETED: /data/media/video/fitness/DIG DEEPER/._448150_DDPR_Collection4-Cal-en-us-112223-1.pdf
+  DELETED: /data/media/video/fitness/DIG DEEPER/._DDPR_4WGP_BOD-EN_US-How_to_do_4WGP_with_DD.pdf
+  DELETED: /data/media/video/fitness/DIG DEEPER/._DDPR_PFX_BOD-EN-US-How_to_do_PFX_with_DD.pdf
+  Dot files found: 19
+
+--- Phase 2: Organizing PDFs ---
+  MOVED: 10 Minute Beginner/10MB_Workout-Calendar_EN_US.pdf
+  MOVED: 10 Minute Focus/10MF_Workout-Calendar_EN_US.pdf
+  MOVED: 10 Minute Muscle/10MM_Workout-Calendar_EN_US.pdf
+  MOVED: 10 Minute Trainer/_Docs/TM_10Lbs10Days.pdf
+  MOVED: 10 Minute Trainer/_Docs/TM_Calendar.pdf
+  MOVED: 10 Minute Trainer/_Docs/TM_FitnessGuide_06072017.pdf
+  MOVED: 10 Minute Trainer/_Docs/TM_NutritionGuide.pdf
+  MOVED: 10 Minute Trainer/_Docs/TM_OnTheGo.pdf
+  MOVED: 10 Rounds/_Docs/10R_2BM_7-Day_MealPlan.pdf
+  MOVED: 10 Rounds/_Docs/10R_2BM_7-Day_MealPlan_Vegan.pdf
+  MOVED: 10 Rounds/_Docs/10R_BOD_Get-Started-Guide_US.pdf
+  MOVED: 10 Rounds/_Docs/10R_Calendar_EN-US.pdf
+  MOVED: 10 Rounds/_Docs/10R-FR-Workout_Calendar-3.16.20-Calendar.pdf
+  MOVED: 10 Rounds/_Docs/10R_UPF_7-Day_MealPlans.pdf
+  MOVED: 10 Rounds/_Docs/10R_UPF_7-Day_Vegan_MealPlans.pdf
+  MOVED: 10 Rounds/_Docs/Beachbody-Guide-to-Nutrition-US-PDF.pdf
+  MOVED: 21 Day Fix/Season 01/_Docs/21D_Calendar.pdf
+  MOVED: 21 Day Fix/Season 01/_Docs/21D_Food_List.pdf
+  MOVED: 21 Day Fix/Season 01/_Docs/21DINS1201_21F_3DayQuickFix_BOD_022119.pdf
+  MOVED: 21 Day Fix/Season 01/_Docs/21DINS1202_21F_Start-Here-Guide_BOD_022119.pdf
+  MOVED: 21 Day Fix/Season 01/_Docs/21DINS1203_21F_EatingPlan_BOD_022219.pdf
+  MOVED: 21 Day Fix/Season 01/_Docs/21D_PrintableTallySheet.pdf
+  MOVED: 21 Day Fix/Season 01/_Docs/21D_TallySheets.pdf
+  MOVED: 21 Day Fix/Season 01/_Docs/21D_Vegan-Eating-Plan_BOD_022119.pdf
+  MOVED: 21 Day Fix/Season 01/_Docs/3 Day Quick Fix.pdf
+  MOVED: 21 Day Fix/Season 01/_Docs/Container Sizes.pdf
+  MOVED: 21 Day Fix/Season 01/_Docs/Eating Plan.pdf
+  MOVED: 21 Day Fix/Season 01/_Docs/Start Here.pdf
+  MOVED: 21 Day Fix/Season 01/_Docs/Tally Sheet.pdf
+  MOVED: 21 Day Fix/Season 01/_Docs/Workout Calendar 1.pdf
+  MOVED: 21 Day Fix/Season 01/_Docs/Workout Calendar 2.pdf
+  MOVED: 21 Day Fix/Season 02 Extreme/_Docs/21DFX_EatingPlan_BOD.pdf
+  MOVED: 21 Day Fix/Season 02 Extreme/_Docs/21DFX_StartHere_BOD.pdf
+  MOVED: 21 Day Fix/Season 02 Extreme/_Docs/21E_Calendar.pdf
+  MOVED: 21 Day Fix/Season 02 Extreme/_Docs/21E_CountdownTallySheet.pdf
+  MOVED: 21 Day Fix/Season 02 Extreme/_Docs/21EINS1202_21X_Countdown_Competition_BOD_.pdf
+  MOVED: 21 Day Fix/Season 02 Extreme/_Docs/21E_PrintableTallySheet.pdf
+  MOVED: 21 Day Fix/Season 02 Extreme/_Docs/21E_TallySheets.pdf
+  MOVED: 21 Day Fix/Season 03 Realtime/_Docs/11768_21FRT-CALENDAR_LR_3-15-19.pdf
+  MOVED: 21 Day Fix/Season 03 Realtime/_Docs/21D_21FX_EatingPlan_Tally_Sheet_5.20.19-2.pdf
+  MOVED: 21 Day Fix/Season 03 Realtime/_Docs/21F_21FRT_Start-Here-Guide_BOD_100919.pdf
+  MOVED: 21 Day Fix/Season 03 Realtime/_Docs/21F_21X_EatingPlan_Tally_Sheet_Interactive_5.20.19-2.pdf
+  MOVED: 21 Day Fix/Season 04 Extreme Realtime/_Docs/21-Day-Fix-Extreme-Real-Time-Workout-Calendar.pdf
+  MOVED: 21 Day Fix/Season 04 Extreme Realtime/_Docs/21F_21X_EatingPlan_Tally_Sheet_Interactive_5.20.19.pdf
+  MOVED: 21 Day Fix/Season 04 Extreme Realtime/_Docs/21FX_21FXRT_Start-Here-Guide_ENG.pdf
+  MOVED: 21 Day Fix/Season 04 Extreme Realtime/_Docs/21FX_Countdown_Tally_Sheet_Interactive_5.20.19.pdf
+  MOVED: 21 Day Fix/Season 04 Extreme Realtime/_Docs/21FX_CountDown_Tally_Sheet_Printable_5.20.19.pdf
+  MOVED: 22-Minute Hard Corps/_Docs/22HC_Calendar.pdf
+  MOVED: 22-Minute Hard Corps/_Docs/22HC_HellWeekChallenge.pdf
+  MOVED: 22-Minute Hard Corps/_Docs/22HC_NutritionGuide_06062017.pdf
+  MOVED: 22-Minute Hard Corps/_Docs/22HC_Quickstart06062917.pdf
+  MOVED: 22-Minute Hard Corps/_Docs/22HC_TallySheets.pdf
+  MOVED: 22-Minute Hard Corps/_Docs/22HC_Worksheets_FitTest.pdf
+  MOVED: 30 Day Breakaway/_Docs/30B-EN-AdvancedCalendar-10.5.20-GettingStarted.pdf
+  MOVED: 30 Day Breakaway/_Docs/30B-EN-GetStartedGuide-8.10.5.20-Getting_Started.pdf
+  MOVED: 30 Day Breakaway/_Docs/30B-EN-TimeCrunchCalendar-10.5.20-Getting_Started.pdf
+  MOVED: 30 Day Breakaway/_Docs/30B-UK-GetStartedGuide-8.10.5.20-Getting_Started.pdf
+  MOVED: 30 Day Breakaway/_Docs/30DB-EN-US-Hearing_Impared_Audio_Run-092820-Program_Materials.pdf
+  MOVED: 30 Day Breakaway/_Docs/30D-EN-BasicCalendar-10.5.20-Getting_Started.pdf
+  MOVED: 3-Day Yoga Refresh/3DayRefresh_Guide_BOD.pdf
+  MOVED: 3-Day Yoga Refresh/_Docs/3DayRefresh_Guide_BOD.pdf
+  MOVED: 3-week Yoga Retreat/3-week Yoga Retreat/3YR_Calendar1.pdf
+  MOVED: 3-week Yoga Retreat/3-week Yoga Retreat/3YR_NUTRITION-GUIDE_050318.pdf
+  MOVED: 3-week Yoga Retreat/3-week Yoga Retreat/3YR_POSE_TRACKER_050318.pdf
+  MOVED: 3-week Yoga Retreat/3-week Yoga Retreat/3YR_QuickstartGuide.pdf
+  MOVED: 3-week Yoga Retreat/3YR_Calendar1.pdf
+  MOVED: 3-week Yoga Retreat/3YR_NUTRITION-GUIDE_050318.pdf
+  MOVED: 3-week Yoga Retreat/3YR_POSE_TRACKER_050318.pdf
+  MOVED: 3-week Yoga Retreat/3YR_QuickstartGuide.pdf
+  MOVED: 5 Day Beginner Yoga/Calendar.pdf
+  MOVED: 600/600S_resource_21dayAbsCore_calendar.pdf
+  MOVED: 600/600S_resource_21dayCardioWeightLoss_calendar.pdf
+  MOVED: 600/600S_resource_21dayLoseWeightToneUp_calendar.pdf
+  MOVED: 600/600S_resource_21daySuperSculpt_calendar.pdf
+  MOVED: 600/600S_resource_21dayTotalBodyStrength_calendar.pdf
+  MOVED: 645/_Docs/645-Dumbbell-Tracker-Wk-13-BOD-072621.pdf
+  MOVED: 645/_Docs/645-Dumbbell-Tracker-Wks-1-4-BOD-en-us-070121.pdf
+  MOVED: 645/_Docs/645-Dumbbell-Tracker-Wks-5-8-BOD-071221.pdf
+  MOVED: 645/_Docs/645-Dumbbell-Tracker-Wks-9-12-BOD-072321.pdf
+  MOVED: 645/_Docs/645-EN-GetStartedGuide-07.06.21-ProgramMaterials.pdf.pdf
+  MOVED: 645/_Docs/645-EN-WorkoutCalendar-7.6.21-ProgramMaterials.pdf (1).pdf
+  MOVED: 645/_Docs/645-EN-WorkoutCalendar-7.6.21-ProgramMaterials.pdf.pdf
+  MOVED: 645/_Docs/645-Form-Chk-Assmnt-Tracker-BOD-en-us-061621.pdf
+  MOVED: 7 Day Jump Start/Calendar.pdf
+  MOVED: 80 Day Obsession/_Docs/80DAY_OBSESSION_STARTER_GUIDE_UK_012218.pdf
+  MOVED: 80 Day Obsession/_Docs/80DAY_OBSESSION_STARTER_GUIDE_US_BOD_050418.pdf
+  MOVED: 80 Day Obsession/_Docs/80DO_Trackersheets_1_25_011718.pdf
+  MOVED: 80 Day Obsession/_Docs/80DO_Trackersheets_27_49.pdf
+  MOVED: 80 Day Obsession/_Docs/80DO_Trackersheets_51_74.pdf
+  MOVED: 80 Day Obsession/_Docs/80DO_Trackersheets_76_80.pdf
+  MOVED: 80 Day Obsession/_Docs/8DO_Calendar_BOD_050418.pdf
+  MOVED: 80 Day Obsession/Season 01 Program/eng/80DAY_OBSESSION_STARTER_GUIDE_US_012218.pdf
+  MOVED: 80 Day Obsession/Season 01 Program/eng/80DO_Calendar.pdf
+  MOVED: 80 Day Obsession/Season 01 Program/eng/80DO_EATING_PLAN_A.pdf
+  MOVED: 80 Day Obsession/Season 01 Program/eng/80DO_EATING_PLAN_A_Vegan.pdf
+  MOVED: 80 Day Obsession/Season 01 Program/eng/80DO_EATING_PLAN_B.pdf
+  MOVED: 80 Day Obsession/Season 01 Program/eng/80DO_EATING_PLAN_B_Vegan.pdf
+  MOVED: 80 Day Obsession/Season 01 Program/eng/80DO_EATING_PLAN_C.pdf
+  MOVED: 80 Day Obsession/Season 01 Program/eng/80DO_EATING_PLAN_C_Vegan.pdf
+  MOVED: 80 Day Obsession/Season 01 Program/eng/80DO_EATING_PLAN_D.pdf
+  MOVED: 80 Day Obsession/Season 01 Program/eng/80DO_EATING_PLAN_D_Vegan.pdf
+  MOVED: 80 Day Obsession/Season 01 Program/eng/80DO_EATING_PLAN_E.pdf
+  MOVED: 80 Day Obsession/Season 01 Program/eng/80DO_EATING_PLAN_E_Vegan.pdf
+  MOVED: 80 Day Obsession/Season 01 Program/eng/80DO_EATING_PLAN_F.pdf
+  MOVED: 80 Day Obsession/Season 01 Program/eng/80DO_EATING_PLAN_F_Vegan.pdf
+  MOVED: 80 Day Obsession/Season 01 Program/eng/80DO_FOOD-LIST_021318.pdf
+  MOVED: 80 Day Obsession/Season 01 Program/eng/80DO_FOOD-LIST_Vegan_021318.pdf
+  MOVED: 80 Day Obsession/Season 01 Program/eng/80DO_Trackersheets_1_25_011718.pdf
+  MOVED: 80 Day Obsession/Season 01 Program/eng/80DO_Trackersheets_27_49.pdf
+  MOVED: 80 Day Obsession/Season 01 Program/eng/80DO_Trackersheets_51_74.pdf
+  MOVED: 80 Day Obsession/Season 01 Program/eng/80DO_Trackersheets_76_80.pdf
+  MOVED: 80 Day Obsession/Season 02 A Little Obsessed/_Docs/8643-ALO_Workout_Calendar_EN.pdf
+  MOVED: 80 Day Obsession/Season 02 A Little Obsessed/_Docs/8664-ALO_TrackerSheets_EN.pdf
+  MOVED: 80 Day Obsession/Season 02 A Little Obsessed/_Docs/ALO-eating-plans_021418 (1).pdf
+  MOVED: 80 Day Obsession/Season 02 A Little Obsessed/_Docs/ALO-eating-plans_021418.pdf
+  MOVED: 80 Day Obsession/Season 02 A Little Obsessed/_Docs/ALO-vegan-eating-plans_EN-US_021418.pdf
+  MOVED: 80 Day Obsession/Season 03 A Little More Obsessed/ALMO_TrackerSheets_091118.pdf
+  MOVED: 80 Day Obsession/Season 03 A Little More Obsessed/ALMO_Workout_Calendar_EN_10.17.18.pdf
+  MOVED: 9 Week Control Freak/_Docs/9WC-B-Lines-Cntrl-Trk-Care-Safty-Ins-BOD-EN-US-102720.pdf
+  MOVED: 9 Week Control Freak/_Docs/9WC-Daily-Tracker-PHASE-01-en-us-022621-rv1.pdf
+  MOVED: 9 Week Control Freak/_Docs/9WC-Daily-Tracker-PHASE-02-en-us-102920.pdf
+  MOVED: 9 Week Control Freak/_Docs/9WC-Daily-Tracker-PHASE-03-en-us-120120.pdf
+  MOVED: 9 Week Control Freak/_Docs/9WC-DT-OffTheWall-PHASE-01-en-us-rv1-021221-.pdf
+  MOVED: 9 Week Control Freak/_Docs/9WC-DT-OffTheWall-PHASE-02-en-us-021821.pdf
+  MOVED: 9 Week Control Freak/_Docs/9WC-DT-OffTheWall-PHASE-03-en-us-030321.pdf
+  MOVED: 9 Week Control Freak/_Docs/9WCF-EN-Nutrition-1.11.2020-QuickStart.pdf
+  MOVED: 9 Week Control Freak/_Docs/9WCF-OffTheWall-Workout-Calendar-BOD-en-us-022321.pdf
+  MOVED: 9 Week Control Freak/_Docs/9WCF-Workout-Calendar-BOD-en-us-101220.pdf
+  MOVED: 9 Week Control Freak/_Docs/9WC-GSG-BOD-en-us-091720.pdf
+  MOVED: 9 Week Control Freak/_Docs/9wc-remote-cal-BOD-en-us-120920-1.pdf
+  MOVED: 9 Week Control Freak/_Docs/9WC-Wall-Mount-Safety-Insert-EN-US-110420-1.pdf
+  MOVED: 9 Week Control Freak/_Docs/9wc_wall-tracker-BOD-en-us-101620.pdf
+  MOVED: Abs + Booty Burn/JMOR-EN_US-4_Week_Calendar-05.12.22.pdf
+  MOVED: Asylum/_Docs/ASY_Calendar.pdf
+  MOVED: Asylum/_Docs/asy_fitnessguide_10.19.18.pdf
+  MOVED: Asylum/_Docs/ASY_Hybrid_Tracker1.pdf
+  MOVED: Asylum/_Docs/ASYINS1103_Nutrition-Guide_FM_LR.pdf
+  MOVED: Asylum/_Docs/ASY_QuickStart.pdf
+  MOVED: Asylum/_Docs/ASY_Worksheet.pdf
+  MOVED: Asylum/_Docs/_Docs/A2_Calendar.pdf
+  MOVED: Asylum/_Docs/_Docs/A2_FitnessGuide.pdf
+  MOVED: Asylum/_Docs/_Docs/A2_HybridCalendar.pdf
+  MOVED: Asylum/_Docs/_Docs/A2_NutritionGuide.pdf
+  MOVED: Asylum/_Docs/_Docs/A2_QuickStart.pdf
+  MOVED: Asylum/_Docs/_Docs/A2_Worksheets.pdf
+  MOVED: Asylum/_Docs/_Docs/ASY_Hybrid_Tracker1.pdf
+  MOVED: Barre Blend/_Docs/2B-Mindset-1-Week-Meal-Plan-US-PDF2.pdf
+  MOVED: Barre Blend/_Docs/Barre-Blend-Get-Started-Guide-US.pdf
+  MOVED: Barre Blend/_Docs/Barre-Blend-UPF-7day-MealPlan-US.pdf
+  MOVED: Barre Blend/_Docs/Barre-Blend-Workout-Calendar-US (1).pdf
+  MOVED: Barre Blend/_Docs/Barre-Blend-Workout-Calendar-US.pdf
+  MOVED: Barre Blend/_Docs/Beachbody-Guide-to-Nutrition-US-PDF.pdf
+  MOVED: Barre Blend/_Docs/BRB_2BM_1_week_MealPlan_vegan_BOD_121119_en_us21.pdf
+  MOVED: Barre Blend/_Docs/BRB_PPN_Nutrition-Guidelines_EN-US_072820-1.pdf
+  MOVED: Barre Blend/_Docs/BRB-Prep-Calendar-BOD-EN-US-122019.pdf
+  MOVED: Barre Blend/_Docs/I-AM-Daily-Motivation-CardsUSPDF.pdf
+  MOVED: Barre Blend/_Docs/PPN-EN-GetStartedGuide-8.3.20-Getting_Started.pdf
+  MOVED: Barre Blend/_Docs/PPN_EN-IAMDailyMotivationalCards-8.3.20-Getting_Started.pdf
+  MOVED: Barre Blend/_Docs/PPN-EN-UPFPreandPostNatalCalculations-8.3.20-Nutrition.pdf
+  MOVED: Barre Blend/_Docs/PPN-EN-WorkoutCalendar-8.3.20-Getting_Started.pdf
+  MOVED: Beachbody Live/Season 02 Insanity/_Docs/ASY_Hybrid_Tracker1.pdf
+  MOVED: Beachbody Live/Season 02 Insanity/_Docs/SAN_Calendar.pdf
+  MOVED: Beachbody Live/Season 02 Insanity/_Docs/SAN_EatingPlan.pdf
+  MOVED: Beachbody Live/Season 02 Insanity/_Docs/SAN_FitnessGuide.pdf
+  MOVED: Beachbody Live/Season 02 Insanity/_Docs/SAN_FitTest.pdf
+  MOVED: Beginner Pilates/LHUB_Calendar_Online_04202022.pdf
+  MOVED: Belle Vitale/ACCINS1180_BLVT_Resistance-Bands_Care-Safety-Insert_ESF_120424.pdf
+  MOVED: Belle Vitale/ACCINS1181_BLVT_Wall-Mount-Safety-Insert_EN-US_111124.pdf
+  MOVED: Belle Vitale/BLVT_Dumbbell-Tracker-EN-US-112224.pdf
+  MOVED: Belle Vitale/BLVT_Guide-Book_EN-CA_sRGB_021125.pdf
+  MOVED: Belle Vitale/BLVT_Guide-Book_EN-US_sRGB_021125.pdf
+  MOVED: Belle Vitale/BLVT-Workout-Calendar-3-Phases-en-us-110124.pdf
+  MOVED: Body Beast/_docs/BE_BeastUpCalendar.pdf
+  MOVED: Body Beast/_docs/BE_BeastUpWorkoutTracker.pdf
+  MOVED: Body Beast/_docs/BE_Calendar.pdf
+  MOVED: Body Beast/_docs/be_eatingplan_04242017.pdf
+  MOVED: Body Beast/_docs/be_fitnessguide_06122017.pdf
+  MOVED: Body Beast/_docs/BE_QuickStart.pdf
+  MOVED: Body Beast/_docs/BE_TallySheets.pdf
+  MOVED: Body Beast/_docs/Worksheet/Official Beachbody BEAST_worksheet_2.pdf
+  MOVED: Body Beast/Season 01/_Docs/BE_BeastUpCalendar.pdf
+  MOVED: Body Beast/Season 01/_Docs/BE_BeastUpWorkoutTracker.pdf
+  MOVED: Body Beast/Season 01/_Docs/BE_Calendar.pdf
+  MOVED: Body Beast/Season 01/_Docs/be_eatingplan_04242017.pdf
+  MOVED: Body Beast/Season 01/_Docs/be_fitnessguide_06122017.pdf
+  MOVED: Body Beast/Season 01/_Docs/BE_QuickStart.pdf
+  MOVED: Body Beast/Season 01/_Docs/BE_TallySheets.pdf
+  MOVED: Body Beast/Season 01/_Docs/be_workouttrackerv2.pdf
+  MOVED: Body Beast/Season 02/WHL_Calendar_V2.pdf
+  MOVED: Body Beast/Season 02/WHL_Nutrition_Guide.pdf
+  MOVED: Body Gospel/_Docs/Workout Schedule.pdf
+  MOVED: Bodyweight Bootcamp/VGUT_EN_US-4_Week_Calendar-05.13.22.pdf
+  MOVED: Bomb Body/OPF_SROS_Calendar_Online_042622_01.pdf
+  MOVED: Brazil Butt Lift/_Docs/BBL_6DaySlimDown.pdf
+  MOVED: Brazil Butt Lift/_Docs/BBL_Calendar.pdf
+  MOVED: Brazil Butt Lift/_Docs/BBL_EatingPlan.pdf
+  MOVED: Brazil Butt Lift/_Docs/BBL_FitnessGuide_06122017.pdf
+  MOVED: Brazil Butt Lift/_Docs/BBL_QuickStart.pdf
+  MOVED: Brazil Butt Lift/_Docs/BBL_TrainingCards.pdf
+  MOVED: ChaLean/_Docs/CE_Calendar.pdf
+  MOVED: ChaLean/_Docs/CE_NutritionGuide.pdf
+  MOVED: ChaLean/_Docs/CE_QuickStart.pdf
+  MOVED: ChaLean/_Docs/CE_Worksheet.pdf
+  MOVED: ChaLean/_Docs/TF_TallySheet_Hybrid.pdf
+  MOVED: ChaLean/_Docs/TR_Chalean_Hybrid_Calendar.pdf
+  MOVED: Chop Wood Carry Water/_Docs/387250_CWCW_Tracker_en-us_061223.pdf
+  MOVED: Chop Wood Carry Water/_Docs/BODi_Essentials-Guide_EN-US_031723.pdf
+  MOVED: Chop Wood Carry Water/_Docs/Calendar.pdf
+  MOVED: Chop Wood Carry Water/_Docs/CWCW_Get-Started-Guide_EN-US_060923.pdf
+  MOVED: Chop Wood Carry Water/_Docs/CWCW_Workout-Calendar_4-Day_EN-US_060123.pdf
+  MOVED: Chop Wood Carry Water/_Docs/CWCW_Workout-Calendar_5-Day_EN-US_060123.pdf
+  MOVED: Chop Wood Carry Water/_Docs/CWCW_Workout-Calendar_6-Day_EN-US_060123.pdf
+  MOVED: Chop Wood Carry Water/_Docs/CWCW_Workout-Calendars_Social_EN-US_060823.pdf
+  MOVED: Chop Wood Carry Water/_Docs/PFX-BODi-EN_US-Quick_Start_Guide-04.14.23.pdf
+  MOVED: Chop Wood Carry Water/_Docs/T25_2BM-EN_US-Quick_Start_Guide-05.01.23.pdf
+  MOVED: Circuit Burnout 30/_Docs/cb30-calendar.pdf
+  MOVED: Circuit Burnout 30/_Docs/circuit-burnout-nutrition-plan.pdf
+  MOVED: Circuit Burnout 90/_Docs/cb90-nutrition-guide.pdf
+  MOVED: Circuit Burnout 90/_Docs/circuit-burnout-90-training-calendar.pdf
+  MOVED: Cize/_Docs/Advanced Calendar.pdf
+  MOVED: Cize/_Docs/Beginner Calendar.pdf
+  MOVED: Cize/_Docs/Eat Up.pdf
+  MOVED: Cize/_Docs/Get Started Guide.pdf
+  MOVED: Cize/_Docs/Promotional Inserts.pdf
+  MOVED: Cize/_Docs/Weekend Survival Guide.pdf
+  MOVED: Clean Week/CLW_QuickStart_US1.pdf
+  MOVED: Clean Week/CWINS1101_CLW_EatingPlan_BOD_EN_US.pdf
+  MOVED: Combat Fighter/_Docs/AdvancedSituationalAwareness.pdf
+  MOVED: Combat Fighter/_Docs/AlphaSurvivalGuide.pdf
+  MOVED: Combat Fighter/_Docs/CombatFighter-MainManual.pdf
+  MOVED: Core de Force/_Docs/CDF_AtAGlance_Calendar_BOD_061418.pdf
+  MOVED: Core de Force/_Docs/CDF_AtAGlance_DeluxeCalendar_BOD_061418.pdf
+  MOVED: Core de Force/_Docs/CDF_EatingPlan_BOD_061418.pdf
+  MOVED: Core de Force/_Docs/CDF_FoodTracker.pdf
+  MOVED: Core de Force/_Docs/CDF_HybridCalendar.pdf
+  MOVED: Core de Force/_Docs/CDF_QuickStart_BOD_061418.pdf
+  MOVED: Core de Force/_Docs/Workout Calendar.pdf
+  MOVED: Country Heat/_Docs/CH_BaseCalendar.pdf
+  MOVED: Country Heat/_Docs/CH_DLX_Calendar.pdf
+  MOVED: Country Heat/_Docs/CH_Quickstart.pdf
+  MOVED: Country Heat/_Docs/CH_TallySheets.pdf
+  MOVED: Country Heat/_Docs/CHT_EatingPlan_BOD_061418.pdf
+  MOVED: DIG DEEPER/448150_DDPR_Collection1-Cal-en-us-112223.pdf
+  MOVED: DIG DEEPER/448150_DDPR_Collection3-Cal-en-us-112223.pdf
+  MOVED: DIG DEEPER/448150_DDPR_Collection4-Cal-en-us-112223-1.pdf
+  MOVED: DIG DEEPER/DDPR_2BM_BOD-EN_US-How_to_do_2BM_with_DD.pdf
+  MOVED: DIG DEEPER/DDPR_4WGP_BOD-EN_US-How_to_do_4WGP_with_DD.pdf
+  MOVED: DIG DEEPER/DDPR-BOD-EN-US-Dumbbell_Tracker-112823.pdf
+  MOVED: DIG DEEPER/DDPR-BOD-EN_US-Get_Started_Guide-111623.pdf
+  MOVED: DIG DEEPER/DDPR_Collection2-Cal-en-us-121923.pdf
+  MOVED: DIG DEEPER/DDPR-EN_US-12_Week_Calendar-121823.pdf
+  MOVED: DIG DEEPER/DDPR_PFX_BOD-EN-US-How_to_do_PFX_with_DD.pdf
+  MOVED: Dig In/pdf/DIGIN_Get-Started.pdf
+  MOVED: Dig In/pdf/DIG IN_How-To-Do-2BM_EN-US_052025.pdf
+  MOVED: Dig In/pdf/DIG IN_How-To-Do-PFX_EN-US_112025.pdf
+  MOVED: Dig In/pdf/DIGIN_Selfie-Calendar_EN-US_112025.pdf
+  MOVED: Dig In/pdf/DIGIN-Workout-Calendar-en-us-110124.pdf
+  MOVED: Double Time/_Docs/DT_Calendar.pdf
+  MOVED: Double Time/_Docs/DT_EATING_GUIDE.pdf
+  MOVED: Double Time/_Docs/DT_KIDS_CALENDAR.pdf
+  MOVED: Double Time/_Docs/DT_QuickStart.pdf
+  MOVED: Double Time/_Docs/DT_Recipes_101617.pdf
+  MOVED: Epic/_Docs/endgame-guide.pdf
+  MOVED: Epic/_Docs/epic3guide.pdf
+  MOVED: Epic/_Docs/epic-heat-program.pdf
+  MOVED: Epic/_Docs/epic-program.pdf
+  MOVED: Fast Results/JTHU-EN_US-3_week_Total-Body-Abs-Calendar-06.24.22.pdf
+  MOVED: Fast Results/JTHU-EN_US-3_week_Total-Body-Calendar-06.24.22.pdf
+  MOVED: Fast Results/JTHU-EN_US-5_day_abs-Calendar-06.01.22.pdf
+  MOVED: Fire and Flow/_PDF/FAF_BOD-en_us-Journal-05.19.22.pdf
+  MOVED: Fire and Flow/_PDF/FAF-Calendars-BOD-en-us-031822.pdf
+  MOVED: Fire and Flow/_PDF/FAF-step-by-step-guide-BOD-en-us-031822.pdf
+  MOVED: Fit Kids Club/FitKids_ProdTrainGuide_FM.pdf
+  MOVED: Focus T25/_Docs/NIKATSCT-3.0.7_EM_NIKE_USA_ENG_200527.0.pdf
+  MOVED: Focus T25/_Docs/T25_5DayFastTrack.pdf
+  MOVED: Focus T25/_Docs/T25-Alpha.pdf
+  MOVED: Focus T25/_Docs/T25-Beta.pdf
+  MOVED: Focus T25/_Docs/T25_FitnessJournal.pdf
+  MOVED: Focus T25/_Docs/T25-Gamma Hybrid.pdf
+  MOVED: Focus T25/_Docs/T25-Gamma.pdf
+  MOVED: Focus T25/_Docs/T25_Nutrition-Guide_BOD_061518.pdf
+  MOVED: Freak Week/Calendar.pdf
+  MOVED: Get Real/GetReal_ProdTrainGuide_63010.pdf
+  MOVED: Get Strong/KHEE_Calendar_4-week.pdf
+  MOVED: Hammer and Chisel/_Docs/MHC_Calendars_Multi-Language.pdf
+  MOVED: Hammer and Chisel/_Docs/MHC_Chisel-Calendar.pdf
+  MOVED: Hammer and Chisel/_Docs/MHC_Hammer-Calendar.pdf
+  MOVED: Hammer and Chisel/_Docs/mhc_programguide_10.19.18.pdf
+  MOVED: Hammer and Chisel/_Docs/MHC_ProgramGuide_20170719.pdf
+  MOVED: Hammer and Chisel/_Docs/MHC_Worksheet.pdf
+  MOVED: Hammer and Chisel/_Docs/MHC_Worksheets_Tracker.pdf
+  MOVED: HIIT Your Goals/Calendar.pdf
+  MOVED: Hip Hop Abs/_Docs/6 Day Slim Down.pdf
+  MOVED: Hip Hop Abs/_Docs/Hip Hop Abs & Turbojam Hybrid Schedule.pdf
+  MOVED: Hip Hop Abs/_Docs/Workout Schedule.pdf
+  MOVED: How to Dance/80150 How to Dance.pdf
+  MOVED: Insanity/_Docs/ASY_Hybrid_Tracker1.pdf
+  MOVED: Insanity/_Docs/SAN_Calendar.pdf
+  MOVED: Insanity/_Docs/SAN_EatingPlan.pdf
+  MOVED: Insanity/_Docs/SAN_FitnessGuide.pdf
+  MOVED: Insanity/_Docs/SAN_FitTest.pdf
+  MOVED: Insanity/Insanity Documents/Asylum Documents/Asylum Calendar.pdf
+  MOVED: Insanity/Insanity Documents/Asylum Documents/Asylum-Insanity Hybrid Calendar.pdf
+  MOVED: Insanity/Insanity Documents/Asylum Documents/Asylum Nutrition Guide.pdf
+  MOVED: Insanity/Insanity Documents/Asylum Documents/Asylum-P90x Hybrid Calendar.pdf
+  MOVED: Insanity/Insanity Documents/Asylum Documents/Asylum Worksheet Book.pdf
+  MOVED: Insanity/Insanity Documents/Beachbody Insanity Custom Chart - Version 1.0.pdf
+  MOVED: Insanity/Insanity Documents/Documentation/Asylum Fit Test and Mesurements Chart.pdf
+  MOVED: Insanity/Insanity Documents/Documentation/Asylum Nutrition Guide.pdf
+  MOVED: Insanity/Insanity Documents/Documentation/Asylum Vol 2 Playbook.pdf
+  MOVED: Insanity/Insanity Documents/Documentation/Asylum Worksheet Book.pdf
+  MOVED: Insanity/Insanity Documents/Documentation/Calendars/Asylum-Insanity Hybrid.pdf
+  MOVED: Insanity/Insanity Documents/Documentation/Calendars/Asylum-Insanity Schedule 1.pdf
+  MOVED: Insanity/Insanity Documents/Documentation/Calendars/Asylum-P90x Hybrid.pdf
+  MOVED: Insanity/Insanity Documents/Documentation/Calendars/Asylum.pdf
+  MOVED: Insanity/Insanity Documents/Documentation/Calendars/Asylum Vol 1 & 2 Hybrid.pdf
+  MOVED: Insanity/Insanity Documents/Documentation/Calendars/Asylum Vol 2.pdf
+  MOVED: Insanity/Insanity Documents/Documentation/Calendars/Insanity-P90X Hybrid.pdf
+  MOVED: Insanity/Insanity Documents/Documentation/Calendars/INSANITY™.pdf
+  MOVED: Insanity/Insanity Documents/Documentation/Calendars/INSANITY™ Workout.pdf
+  MOVED: Insanity/Insanity Documents/Documentation/Calendars/Other Insanity Hybrids.pdf
+  MOVED: Insanity/Insanity Documents/Documentation/Elite Nutrition Plan.pdf
+  MOVED: Insanity/Insanity Documents/Documentation/Fitness Guide.pdf
+  MOVED: Insanity/Insanity Documents/Documentation/Get Shredded 2.pdf
+  MOVED: Insanity/Insanity Documents/Elite Nutrition Plan.pdf
+  MOVED: Insanity/Insanity Documents/Fitness Guide.pdf
+  MOVED: Insanity/Insanity Documents/Fitness Guide (RU) ver.00.pdf
+  MOVED: Insanity/Insanity Documents/Insanity MAX 30 Documentation/7 Day Journal.pdf
+  MOVED: Insanity/Insanity Documents/Insanity MAX 30 Documentation/Calendar.pdf
+  MOVED: Insanity/Insanity Documents/Insanity MAX 30 Documentation/Food Tracker.pdf
+  MOVED: Insanity/Insanity Documents/Insanity MAX 30 Documentation/Max out guide.pdf
+  MOVED: Insanity/Insanity Documents/Insanity MAX 30 Documentation/No time too cook guide.pdf
+  MOVED: Insanity/Insanity Documents/Insanity MAX 30 Documentation/Nutrition to the MAX.pdf
+  MOVED: Insanity/Insanity Documents/Insanity MAX 30 Documentation/Progress Tracker.pdf
+  MOVED: Insanity/Insanity Documents/Insanity MAX 30 Documentation/Schedule 1.pdf
+  MOVED: Insanity/Insanity Documents/Insanity MAX 30 Documentation/Schedule 2.pdf
+  MOVED: Insanity/Insanity Documents/Insanity MAX 30 Documentation/Schedule 3 Black & White.pdf
+  MOVED: Insanity/Insanity Documents/Insanity MAX 30 Documentation/Schedule 4 with Ab Maximizer.pdf
+  MOVED: Insanity/Insanity Documents/Insanity Nutrition Guide.pdf
+  MOVED: Insanity/Insanity Documents/INSANITY™ Calendar.pdf
+  MOVED: Insanity/Insanity Documents/Insanity Welcome.pdf
+  MOVED: Insanity Max/_Docs/I30_Tracker.pdf
+  MOVED: Insanity Max/_Docs/IM_7DayAbMaximizer.pdf
+  MOVED: Insanity Max/_Docs/IM_Calendar.pdf
+  MOVED: Insanity Max/_Docs/IM_FitnessGuide_06122017.pdf
+  MOVED: Insanity Max/_Docs/IM_NutritionGuide.pdf
+  MOVED: Insanity Max/_Docs/IM_QuickStart.pdf
+  MOVED: Insanity Max/_Docs/max30-foodtracker.pdf
+  MOVED: Jillian Michaels/S01 BodyShred/Documentation/Calendar.pdf
+  MOVED: Jillian Michaels/S16 Body Revolution/7-Day Kickstart Your Metabolism.pdf
+  MOVED: Jillian Michaels/S16 Body Revolution/Fat Burning Meal Plan.pdf
+  MOVED: Jillian Michaels/S16 Body Revolution/Fitness Guide.pdf
+  MOVED: Job 1/JB1_Bonus-Overtime-Calendar_EN-US_122821.pdf
+  MOVED: Job 1/Job1-Calendar-BOD-8.5x11-en-us-102021.pdf
+  MOVED: Job 1/Job1-Get-Started-Guide-EN-US-101121.pdf
+  MOVED: Job 1/Job1-Hybrid-Calendar-en-us-122721.pdf
+  MOVED: Job 1/Job1-Notepad-4x6-BOD-090821.pdf
+  MOVED: Just Bring Your Body/Calendar.pdf
+  MOVED: Let’s Get Up/Lets-Get-UP-advanced-hybrid-cal-en-us-051422-1.pdf
+  MOVED: Let’s Get Up/Lets-Get-UP-intermed-hybrid-cal-en-us-051422-1.pdf
+  MOVED: Let’s Get Up/Lets-Get-UP-intermed-hybrid-cal-en-us-051422.pdf
+  MOVED: Let’s Get Up/LGU_GSG_BOD_EN-CA_060121-1.pdf
+  MOVED: Let’s Get Up/LGU_GSG_BOD_EN-GB_060121-1-1.pdf
+  MOVED: Let’s Get Up/LGU-GSG-BOD-EN-US-111621.pdf
+  MOVED: LIIFT4/_Docs/LIIFT4_Calendar_6.11.18.pdf
+  MOVED: LIIFT4/_Docs/LIIFT4_Program-Guide_BOD_053018.pdf
+  MOVED: LIIFT4/_Docs/LIIFT4_ProgramGuide_Vegan_BOD_0620183.pdf
+  MOVED: LIIFT4/_Docs/LIIFT4_Weight_Progression_Tracker_6.10.18.pdf
+  MOVED: LIIFT MORE/_PDF/Calendar.pdf
+  MOVED: LIIFT MORE/_PDF/Get Started.pdf
+  MOVED: LIIFT MORE/_PDF/Weights.pdf
+  MOVED: Mes de Más/_Docs/MDM_BOD_Quickstart_EN-US_052518.pdf
+  MOVED: Mes de Más/_Docs/MDM_BOD_Tracker_EN_US_060818.pdf
+  MOVED: Mes de Más/_Docs/Mes_de_Más_Recipe_Collection.pdf
+  MOVED: Morning Meltdown 100/_Docs/MLRINS1103_MLT_Nutrition-Guide_BOD_101519.pdf
+  MOVED: Morning Meltdown 100/_Docs/MLT_60_Day_Calendar_BOD-EN.pdf
+  MOVED: Morning Meltdown 100/_Docs/MLT_Alt_Wall-Calendar_BOD-EN.pdf
+  MOVED: Morning Meltdown 100/_Docs/MLT_Journal_BOD_interactive_Rv1.pdf
+  MOVED: Morning Meltdown 100/_Docs/MM100_Prep_Calendar_v1a_061019 (1).pdf
+  MOVED: Morning Meltdown 100/_Docs/MM100_Prep_Calendar_v1a_061019.pdf
+  MOVED: Morning Meltdown 100/_Docs/MM100_QuickStart_Guide_BOD_LR.pdf
+  MOVED: Morning Meltdown 100/_Docs/MM100_Wall-Calendar_BOD_interactive.pdf
+  MOVED: Muscle Burns Fat/_Docs/MBFA_EN-DumbbellTrackerSheet-8.17.20-Nutrition_and_Tracking.pdf-2.pdf
+  MOVED: Muscle Burns Fat/_Docs/MBFA-US-Calendar-8.17.20-Calendar_and_Tracking.pdf
+  MOVED: Muscle Burns Fat/_Docs/MBFA_US-GetStartedGuide-8.17.20-Getting_Started.pdf
+  MOVED: Muscle Burns Fat/_Docs/MBF-EN-Calendar-7.6.20-Calendar_and_Tracking.pdf
+  MOVED: Muscle Burns Fat/_Docs/MBF_EN-DumbbellTrackerSheet-7620-Nutrition_and_Tracking.pdf
+  MOVED: Muscle Burns Fat/_Docs/MBF-EN-GetStartedGuide-7620-Getting_Started.pdf
+  MOVED: P90/_Docs/P2_6DayShred.pdf
+  MOVED: P90/_Docs/p2_calendar_10.19.18.pdf
+  MOVED: P90/_Docs/p2_quickstart_10.19.18.pdf
+  MOVED: P90/_Docs/P2_Tracker.pdf
+  MOVED: P90/_Docs/P90_NutritionGuide_06082017.pdf
+  MOVED: P90X2 (2011)/_Docs/P90X2_Worksheets.pdf
+  MOVED: P90X2 (2011)/_Docs/X2_Calendar.pdf
+  MOVED: P90X2 (2011)/_Docs/X2_FitnessGuide_20170719.pdf
+  MOVED: P90X2 (2011)/_Docs/X2_NutritionGuide.pdf
+  MOVED: P90X2 (2011)/_Docs/X2_QuickStart.pdf
+  MOVED: P90X3 (2014)/_Docs/BBPIYO_Calendar_Hybrid.pdf
+  MOVED: P90X3 (2014)/_Docs/X3_Calendar.pdf
+  MOVED: P90X3 (2014)/_Docs/X3_FitnessGuide_06072017.pdf
+  MOVED: P90X3 (2014)/_Docs/x3_nutritionguide_10.19.18.pdf
+  MOVED: P90X3 (2014)/_Docs/x3_quickstart_10.19.18.pdf
+  MOVED: P90X3 (2014)/_Docs/X3_Worksheet.pdf
+  MOVED: P90X/_Docs/P90X_Calendar.pdf
+  MOVED: P90X/_Docs/P90X_FitnessGuide_06082017.pdf
+  MOVED: P90X/_Docs/P90X_FitTest.pdf
+  MOVED: P90X/_Docs/P90X_NutritionGuide.pdf
+  MOVED: P90X/_Docs/P90X_Worksheet.pdf
+  MOVED: P90X/_Docs/workout_sheet-p90xplus.pdf
+  MOVED: P90X Generation Next/docs/dumbbells.pdf
+  MOVED: P90X Generation Next/docs/get-started.pdf
+  MOVED: P90X Generation Next/docs/selfie-calendar.pdf
+  MOVED: P90X Generation Next/docs/workout-calendar.pdf
+  MOVED: PiYo Strength/_Documentation/Food Tracker.pdf
+  MOVED: PiYo Strength/_Documentation/Get Lean Eating Plan.pdf
+  MOVED: PiYo Strength/_Documentation/P90 -- Diet Guide.pdf
+  MOVED: PiYo Strength/_Documentation/Piyo & Focus T25 Hybrid Calendar.pdf
+  MOVED: PiYo Strength/_Documentation/Piyo & P90x3 Hybrid Calendar.pdf
+  MOVED: PiYo Strength/_Documentation/Quick Start Guide.pdf
+  MOVED: PiYo Strength/_Documentation/Schedule 1.pdf
+  MOVED: PiYo Strength/_Documentation/Schedule 2.pdf
+  MOVED: PiYo Strength/_Documentation/Schedule 3.pdf
+  MOVED: PiYo Strength/_Documentation/Schedule 4.pdf
+  MOVED: Power 90/_Docs/6 Day Fat Burning Express.pdf
+  MOVED: Power 90/_Docs/Calendar.pdf
+  MOVED: Power 90/_Docs/Diet Guide.pdf
+  MOVED: Power 90/_Docs/Fat Burner Food Plan.pdf
+  MOVED: Power 90/_Docs/Master Series Guide.pdf
+  MOVED: Power 90/_Docs/Measurement Tracker.pdf
+  MOVED: Power 90/_Docs/P90 Calander.pdf
+  MOVED: Power 90/_Docs/p90calendar_2step.pdf
+  MOVED: Power 90/_Docs/p90calendar_3step.pdf
+  MOVED: Power 90/_Docs/P90_Calendar.pdf
+  MOVED: Power 90/_Docs/P90 Diet Guide - Beachbody.pdf
+  MOVED: Power 90/_Docs/P90 -- Diet Guide.pdf
+  MOVED: Power 90/_Docs/P90_Extras.pdf
+  MOVED: Power 90/_Docs/P90_NutritionGuide.pdf
+  MOVED: Power 90/_Docs/P90_QuickStart.pdf
+  MOVED: Power 90/_Docs/Power90 6 Day Fat Burning Express.pdf
+  MOVED: Power 90/_Docs/Power 90 Calendar 2 Step.pdf
+  MOVED: Power 90/_Docs/Power 90 Calendar 3 Step.pdf
+  MOVED: Power 90/_Docs/Power 90 Diet Guide.pdf
+  MOVED: Power 90/_Docs/Power 90 Fat Burner Food Plan.pdf
+  MOVED: Power 90/_Docs/Power 90 Program Guide.pdf
+  MOVED: Power 90/_Docs/Program Guide.pdf
+  MOVED: Power Half Hour/_Docs/PHH_Calendar.pdf
+  MOVED: Power Half Hour/_Docs/PHH_FitnessGuide.pdf
+  MOVED: Power Nation/_PDF/1+5x5 _ The Power of 4 _ Worksheet.pdf
+  MOVED: Power Nation/_PDF/3bb8TvtjRRynIN9BTMdo_Vegan 2400 Calorie Meal Planner.pdf
+  MOVED: Power Nation/_PDF/5Izexs6HQwOtjelLbX3a_1 5 5 worksheet.pdf
+  MOVED: Power Nation/_PDF/5yboh4WURlyI7zrT3gxx_Attack_And_Defend_Power_of_Fourt_Worksheet.pdf
+  MOVED: Power Nation/_PDF/63d6b16129f84e97d92f96aa.pdf
+  MOVED: Power Nation/_PDF/63daf9174ded975d8d9e2b06.pdf
+  MOVED: Power Nation/_PDF/63daf917bf2b74689d83f611.pdf
+  MOVED: Power Nation/_PDF/63dbf989077c9afa7b47c47b.pdf
+  MOVED: Power Nation/_PDF/63dbf989bf2b7406cf848afc.pdf
+  MOVED: Power Nation/_PDF/63dbf989dbe2d36959b07453.pdf
+  MOVED: Power Nation/_PDF/63dbf989dbe2d3db73b07452.pdf
+  MOVED: Power Nation/_PDF/63dbfe73dbe2d34245b0763e.pdf
+  MOVED: Power Nation/_PDF/63dc259c077c9a02ea47da0d.pdf
+  MOVED: Power Nation/_PDF/63dc259c077c9a6d0147da0f.pdf
+  MOVED: Power Nation/_PDF/63dc259c077c9aa2ae47da0e.pdf
+  MOVED: Power Nation/_PDF/63dc25c7bf2b74087884a507.pdf
+  MOVED: Power Nation/_PDF/63dc25c7bf2b740d7984a509.pdf
+  MOVED: Power Nation/_PDF/63dc25c7bf2b742f1b84a508.pdf
+  MOVED: Power Nation/_PDF/63dc27b2077c9a706a47dbff.pdf
+  MOVED: Power Nation/_PDF/63fed2fd23b26529410179c3.pdf
+  MOVED: Power Nation/_PDF/6425ff108f356efa7ea6a6eb.pdf
+  MOVED: Power Nation/_PDF/64507bcdbdb1c5272d03ab6c.pdf
+  MOVED: Power Nation/_PDF/6476102be2e6425d88971fbb.pdf
+  MOVED: Power Nation/_PDF/64921f394e07380e81a29669.pdf
+  MOVED: Power Nation/_PDF/6sJPFXO8THyRJhgu6Ecv_The_Power_of_Fourt_Morning_Yoga_Worksheet.pdf
+  MOVED: Power Nation/_PDF/7Vhvkt1yToaBoQOjUb9y_The_Power_of_Four_Primal_Flow_Worksheet.pdf
+  MOVED: Power Nation/_PDF/Attack and Defend _ The Power of 4 _ Worksheet.pdf
+  MOVED: Power Nation/_PDF/azbiJyR2S0awz5cjBgZC_The_Power_Of_Four_Flash_Card_Plyo_Worksheet.pdf
+  MOVED: Power Nation/_PDF/bEcWuQzpSGmAe4pt4Xt4_The_Power_Of_Four_Drop_Pulse_Hold_Worksheet.pdf
+  MOVED: Power Nation/_PDF/BKVIHA2ATKeIXlyk384i_Nutrition Fat Burner Meal Plans 1500 .pdf
+  MOVED: Power Nation/_PDF/Cardio24 _ The Power of 4 _ Worksheet.pdf
+  MOVED: Power Nation/_PDF/Chest Back Round Robin _ The Power of 4 _ Worksheet.pdf
+  MOVED: Power Nation/_PDF/CIA-RDP96-00789R002600250001-6.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/3bb8TvtjRRynIN9BTMdo_Vegan 2400 Calorie Meal Planner.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/8SpNN7ACRoKyjoBBApwF_Vegan Lentil Tacos Recipe.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/Arms and Abs Worksheet.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/Attack & Defend.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/bErRarBPTwCHixph2sZB_Simple Skillet Salmon with Peter Capozzi.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/bK3r5rJlQkK3ctZNxUDQ_Lasagna.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/Blood Breath Worksheet.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/Chest, Back, and Triceps.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/Chest Back Round Robin Worksheet.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/Core Deep.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/Core Warrior 2 Worksheet.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/Crunch Town Worksheet.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/Drop, Pulse, & Hold Worksheet.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/e6NHFTIeTECFOSSMYNia_Anti-Inflammatory Food Guide.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/Fat Burner Meal Plans 1800 2200 plus grocery lists.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/FFRo254BSVSRKew5dvoq_Spices and Substitutions.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/Flash Card Plyo.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/fx4PANTfQlKzAwXjzyW9_Curry.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/fY8QYhaYT3a3FhIiOCud_Performance & Strength Meal Planner & Grocery 1800 2400 3000 calories.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/gzacxt5RVuNXj53w1pGx_Anti-Inflammatory Meal Planner and Recipes.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/Heart Lungs Legs Worksheet.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/IEhANbx9Qtu9EpUwHPnt_Berbere Chicken.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/JQ89Jh30ReuX7bGDMT29_Almost Famous Guacamole Recipe.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/Kickin' & Punchin' Worksheet.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/Plyo 30_15 Worksheet.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/Primal Flow Worksheet.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/QpC4bYHTtCli34LPM6J9_Vegan 1500 Calorie Meal Planner.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/rKLqW04xQquNYceQUuIn_Kale Avocado Salad with Tony and Peter Capozzi.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/SmUQjM7ySLuRqZQTRiJf_Vegan 3000 Calorie Meal Planner.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/Something New Worksheet.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/Three Speed Core Warrior Worksheet.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/Total Body 2 Worksheet.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/Total Body Worksheet.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/Triple Trouble Challenge Worksheet.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/uaFwenFFSnnsTS2AD3c4_Banana Chia Seed Pudding.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/vVhWYn24T3ePM3yW0wZT_Power Nation Fitness Nutrition Guide.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/Who's Got Your Back Worksheet.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/WKgvBVrRwGcHZ8gsoQlA_Vegan 1800 Calorie Meal Planner.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/wLuFGmRnTySmasSjbvQq_Vegan 2200 Calorie Meal Planner.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/xmYqdaUCQl69EGTWoJuB_Roasted Cauliflower.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/xPIb4g5qTx2q1UIffRiG_Italian Red Sauce with Mushrooms.pdf
+  MOVED: Power Nation/_PDF/_Docs/pdf/Z0jroGWrRGS6uGl2ZFx8_Cantaloupe Cashew Soup with Peter Capozzi.pdf
+  MOVED: Power Nation/_PDF/Don't Skip Yoga _ The Power of 4 _ Worksheet.pdf
+  MOVED: Power Nation/_PDF/Dq2epUj5RGCP6q9PHLZk_The_Power_Of_Four_Plyo_3015_Worksheet.pdf
+  MOVED: Power Nation/_PDF/Drop Pulse Hold _ The Power of 4 _ Worksheet.pdf
+  MOVED: Power Nation/_PDF/dTKpIeeQlmMut6z9ujTy_The_Power_of_Four_Pure_Stretch_Worksheet.pdf
+  MOVED: Power Nation/_PDF/EqvPQKm5S1auMV4QvSMS_The_Power_of_Four_Whos_Got_Your_Back_Worksheet.pdf
+  MOVED: Power Nation/_PDF/FFRo254BSVSRKew5dvoq_Spices and Substitutions.pdf
+  MOVED: Power Nation/_PDF/Flash CardIO _ The Power of 4 _ Worksheet.pdf
+  MOVED: Power Nation/_PDF/fY8QYhaYT3a3FhIiOCud_Performance & Strength Meal Planner & Grocery 1800 2400 3000 calories.pdf
+  MOVED: Power Nation/_PDF/GeDosm9rTROWCDi5LeNi_The_Power_of_Four_Power_and_Strength_Yoga_Workseet.pdf
+  MOVED: Power Nation/_PDF/h507ANSaTSuWiSC1S0wq_Head_to_Toe_Power_of_Four_Worksheet.pdf
+  MOVED: Power Nation/_PDF/Head to Toe _ The Power of 4 _ Worksheet.pdf
+  MOVED: Power Nation/_PDF/Heart Lungs Legs _ The Power of 4 _ Worksheet.pdf
+  MOVED: Power Nation/_PDF/HggI6LgCQBOmvs2dRTxU_Heart_Lungs_Legs_Power_of_Four_Worksheet.pdf
+  MOVED: Power Nation/_PDF/hlLWEUVITpCt6N7cImCK_Dont_Skip_Yoga_Power_of_Four_Worksheet.pdf
+  MOVED: Power Nation/_PDF/JWgVqkfWQCKOfxf4vd89_The_Power_of_Four_Crunchtown_Worksheet.pdf
+  MOVED: Power Nation/_PDF/Kicking and Punching _ The Power of 4 _ Worksheet.pdf
+  MOVED: Power Nation/_PDF/Month 1 The Power of 4 by Tony Horton Calendars.pdf
+  MOVED: Power Nation/_PDF/Morning Yoga _ The Power of 4 _ Worksheet.pdf
+  MOVED: Power Nation/_PDF/nVsQgzFqR8mctbvFJp3Q_Chest_Back_Round_Robin_Power_of_Four_Worksheet.pdf
+  MOVED: Power Nation/_PDF/Power and Strength Yoga _ The Power of 4 _ Worksheet.pdf
+  MOVED: Power Nation/_PDF/Primal Flow _ The Power of 4 _ Worksheet.pdf
+  MOVED: Power Nation/_PDF/Pure Stretch _ The Power of 4 _ Worksheet.pdf
+  MOVED: Power Nation/_PDF/QpC4bYHTtCli34LPM6J9_Vegan 1500 Calorie Meal Planner.pdf
+  MOVED: Power Nation/_PDF/QsRfmKzsTfmAyBxTjMdz_Arms_and_Abs_Power_Of_Worksheet.pdf
+  MOVED: Power Nation/_PDF/RDevAS7jRCOuCDTgTbMp_The_Power_of_Four_Power_of_Core_Worksheet.pdf
+  MOVED: Power Nation/_PDF/Shoulders and Arms Recharge _ The Power of 4 _ Worksheet.pdf
+  MOVED: Power Nation/_PDF/SmUQjM7ySLuRqZQTRiJf_Vegan 3000 Calorie Meal Planner.pdf
+  MOVED: Power Nation/_PDF/The Power of 4 Calendar Month 1.pdf
+  MOVED: Power Nation/_PDF/ul4ljJnSISmENIDKQhbw_Nutrition Fat Burner Meal Plans 1800 .pdf
+  MOVED: Power Nation/_PDF/v6uFEqLZTgSIdS0U4MDL_Nutrition Fat Burner Meal Plans 2200.pdf
+  MOVED: Power Nation/_PDF/vioxkwMTXS53hGtwjAKb_Triple_Trouble_Challenge_Power_of_Four_Worksheet.pdf
+  MOVED: Power Nation/_PDF/vVhWYn24T3ePM3yW0wZT_Power Nation Fitness Nutrition Guide.pdf
+  MOVED: Power Nation/_PDF/Who's Got Your Back _ The Power of 4 _ Worksheet.pdf
+  MOVED: Power Nation/_PDF/WKgvBVrRwGcHZ8gsoQlA_Vegan 1800 Calorie Meal Planner.pdf
+  MOVED: Power Nation/_PDF/wLuFGmRnTySmasSjbvQq_Vegan 2200 Calorie Meal Planner.pdf
+  MOVED: Project You/_Docs/KS_FitnessGuide.pdf
+  MOVED: Project You/_Docs/KS_NutritionGuide.pdf
+  MOVED: Project You/_Docs/KS_QuickStart.pdf
+  MOVED: RIPT90/_Docs/ript90-nutrition-guide.pdf
+  MOVED: RIPT90/_Docs/ript90_tracker_pages.pdf
+  MOVED: RIPT90/_Docs/ript90-training-calendar.pdf
+  MOVED: RIPT90 FIT/_Docs/ript90-fit-90-day-calendar.pdf
+  MOVED: RIPT90 FIT/_Docs/ript90-fit-nutrition-guide.pdf
+  MOVED: RIPT90 FIT/_Docs/ript90---ript90-fit-combined-calendar.pdf
+  MOVED: Rockin’ Body/_Docs/RB_QuickStart_06072017.pdf
+  MOVED: Rockin’ Body/_Docs/RockinBody_Calendar_BaseCalendar_DeluxeCalendar.pdf
+  MOVED: Rockin’ Body/_Docs/RockinBody_ProdTrainGuide_081613.pdf
+  MOVED: Rough around the Edges/Calendar.pdf
+  MOVED: ShapeU/_Docs/resistance-bands-ebook-final.pdf
+  MOVED: Shaun Week/sw_hybridcalendar.pdf
+  MOVED: Shift Shop/_Docs/BOD_TSS_AgilityMarkers.pdf
+  MOVED: Shift Shop/_Docs/SHIFT_SHOP_Nutrition-Guide_BOD_061518.pdf
+  MOVED: Shift Shop/_Docs/TSS_HybridCalendar.pdf
+  MOVED: Shift Shop/_Docs/TSS_QuickstartGuide_10.01.18.pdf
+  MOVED: Shift Shop/_Docs/TSS_Recipes_10.01.18.pdf
+  MOVED: Shift Shop/_Docs/TSS_Workout_Calendar_10.1.18.pdf
+  MOVED: Shift Shop/TSS PDFs/8249_TSS_COO-PTG_ENG.pdf
+  MOVED: Shift Shop/TSS PDFs/8370_TSS_-_Printable_Agility_Markers_-_V4.pdf
+  MOVED: Shift Shop/TSS PDFs/SHIFT_SHOP_Recipe_Booklet.pdf
+  MOVED: Shift Shop/TSS PDFs/TSS_Jumpstart.pdf
+  MOVED: Shift Shop/TSS PDFs/TSS_NutritionGuide.pdf
+  MOVED: Shift Shop/TSS PDFs/TSS_Round1_Calendar_BOD_061617.pdf
+  MOVED: Slim in 6/_Docs/CWINS1101_CLW_EatingPlan_BOD_EN_US.pdf
+  MOVED: Slim in 6/_Docs/SL6_Calendar.pdf
+  MOVED: Slim in 6/_Docs/sl6_fitnessguide_10.19.18.pdf
+  MOVED: Slim in 6/_Docs/SL6_HybridCalendar.pdf
+  MOVED: Slim in 6/_Docs/SL6_JumpStart.pdf
+  MOVED: Slim in 6/_Docs/SL6_SlimmingGuide_20170719.pdf
+  MOVED: Sound Meditiation/SNDM-EN_US-7_Day_Calendar-05.13.22.pdf
+  MOVED: Speed Train/25ST_Workout-Calendar_EN-US_051425.pdf
+  MOVED: Start Losing/JWID_Calendar_Online_en-2.pdf
+  MOVED: Strong and Solid/1638_OPF_LLEW_Calendar_Online_042022.pdf
+  MOVED: Supreme 90 Day/_Documentation/90 Day Workout Schedule.pdf
+  MOVED: Supreme 90 Day/_Documentation/Back and Biceps.pdf
+  MOVED: Supreme 90 Day/_Documentation/Cardio Challenge.pdf
+  MOVED: Supreme 90 Day/_Documentation/Chest and Back.pdf
+  MOVED: Supreme 90 Day/_Documentation/Chest Shoulders Triceps.pdf
+  MOVED: Supreme 90 Day/_Documentation/Core Dynamics.pdf
+  MOVED: Supreme 90 Day/_Documentation/Nutrition Meal Plan.pdf
+  MOVED: Supreme 90 Day/_Documentation/Shoulders and Arms.pdf
+  MOVED: Supreme 90 Day/_Documentation/Total Body.pdf
+  MOVED: Sure Thing/_PDF/SUR-EN_US-BOD-Fit_Check-111422.pdf
+  MOVED: Sure Thing/_PDF/SUR_EN-US_BOD_Get-Started-Guide-111422.pdf
+  MOVED: Sure Thing/_PDF/SUR-EN_US-BOD-Workout_Calendar-111422.pdf
+  MOVED: Taekwondo/Taekwondo.pdf
+  MOVED: Tai Cheng/_Docs/Calendar Basic.pdf
+  MOVED: Tai Cheng/_Docs/Calendar Master.pdf
+  MOVED: Tai Cheng/_Docs/Easy Does It Guidebook.pdf
+  MOVED: Tai Cheng/_Docs/Feel Better Food Plan.pdf
+  MOVED: Tai Cheng/_Docs/Get Started.pdf
+  MOVED: Tai Cheng/_Docs/Journal.pdf
+  MOVED: Tai Cheng/_Docs/Just Eat This.pdf
+  MOVED: Tapout XT/Calendar.pdf
+  MOVED: The Great Courses Workouts/Season 1918 Mastering Tai Chi/Mastering Tai Chi Guidebook.pdf
+  MOVED: The Great Courses Workouts/Season 80150 How to Dance/80150 How to Dance.pdf
+  MOVED: The Power of 4/PDFs/01 The Power of 4 by Tony Horton® Month 1 Calendar-flatten.pdf
+  MOVED: The Power of 4/PDFs/Workout Worksheets/1+5x5 Worksheet.pdf
+  MOVED: The Power of 4/PDFs/Workout Worksheets/Arms andAbs Worksheet.pdf
+  MOVED: The Power of 4/PDFs/Workout Worksheets/Attack and Defend Worksheet.pdf
+  MOVED: The Power of 4/PDFs/Workout Worksheets/Cardio 24 Worksheet.pdf
+  MOVED: The Power of 4/PDFs/Workout Worksheets/Chest and Back Round Robin Worksheet.pdf
+  MOVED: The Power of 4/PDFs/Workout Worksheets/Crunch Town Worksheet.pdf
+  MOVED: The Power of 4/PDFs/Workout Worksheets/Don't Skip Yoga Worksheet.pdf
+  MOVED: The Power of 4/PDFs/Workout Worksheets/Drop Pulse and Hold Worksheet.pdf
+  MOVED: The Power of 4/PDFs/Workout Worksheets/Flash Card-io Worksheet.pdf
+  MOVED: The Power of 4/PDFs/Workout Worksheets/Flash Card Plyo Worksheet.pdf
+  MOVED: The Power of 4/PDFs/Workout Worksheets/Head to Toe Worksheet.pdf
+  MOVED: The Power of 4/PDFs/Workout Worksheets/Heart, Lungs and Legs Worksheet.pdf
+  MOVED: The Power of 4/PDFs/Workout Worksheets/Kickin and Punchin Worksheet.pdf
+  MOVED: The Power of 4/PDFs/Workout Worksheets/Morning Yoga Worksheet.pdf
+  MOVED: The Power of 4/PDFs/Workout Worksheets/Plyo 30_15 Worksheet.pdf
+  MOVED: The Power of 4/PDFs/Workout Worksheets/Power and Strength Yoga Worksheet.pdf
+  MOVED: The Power of 4/PDFs/Workout Worksheets/Power of Core.pdf
+  MOVED: The Power of 4/PDFs/Workout Worksheets/Primal Flow Worksheet.pdf
+  MOVED: The Power of 4/PDFs/Workout Worksheets/Push Worksheet.pdf
+  MOVED: The Power of 4/PDFs/Workout Worksheets/Shoulders and ARms Recharge Worksheet.pdf
+  MOVED: The Power of 4/PDFs/Workout Worksheets/Triple Trouble Challenge Worksheet.pdf
+  MOVED: The Power of 4/PDFs/Workout Worksheets/Who's Got Your Back Worksheet.pdf
+  MOVED: The Work/_Docs/6WW-Calendar-BOD-US-UPDATED.pdf
+  MOVED: The Work/_Docs/6WW-Fit-Test-BOD-EN-US.pdf
+  MOVED: The Work/_Docs/6WW-GetStartedGuide-EN-US_UPDATED-2.pdf
+  MOVED: The Work/_Docs/Beachbody-Guide-to-Nutrition-US-PDF.pdf
+  MOVED: The Work/Season 00 The Prep/_Docs/4WP-Calendar-BOD-US.pdf
+  MOVED: The Work/Season 00 The Prep/_Docs/4WP-GSG-BOD-EN-US.pdf
+  MOVED: The Work/Season 00 The Prep/_Docs/Beachbody-Guide-to-Nutrition-US-PDF.pdf
+  MOVED: Tough Mudder/MUDINS1101_OPF_TM30_Training_Guide-052622.pdf
+  MOVED: Tough Mudder/TM30-EN_US-10k_Calendar-06.03.22.pdf
+  MOVED: Tough Mudder/TM30-EN_US-5k_Calendar-06.03.22.pdf
+  MOVED: Tough Mudder/TM30-EN_US-Get-Fit_Calendar-06.03.22.pdf
+  MOVED: Tough Mudder/TM30-EN_US-Taper_Week_Calendar-06.03.22.pdf
+  MOVED: Transform 20/_Docs/T20_Tracker_12.03.18.pdf
+  MOVED: Transform 20/_Docs/T20_Tracker_2.11.19.pdf
+  MOVED: Transform 20/_Docs/Transform20_Calendar_12.03.18.pdf
+  MOVED: Transform 20/_Docs/Transform20_Hybrid_Calendar_12.03.18.pdf
+  MOVED: Transform 20/_Docs/Transform20_NutritionGuide_12.03.18.pdf
+  MOVED: Transform 20/_Docs/Transform20_QuickStart_12.03.18.pdf
+  MOVED: Transform 20/_Docs/tv.pdf
+  MOVED: Triple Threat/_Docs/ttr-advanced-calendar-(5k---10k).pdf
+  MOVED: Triple Threat/_Docs/ttr-advanced-calendar-(half-marathon).pdf
+  MOVED: Triple Threat/_Docs/ttr-advanced-calendar-(marathon).pdf
+  MOVED: Triple Threat/_Docs/ttr-beginner-calendar-(5k---10k).pdf
+  MOVED: Triple Threat/_Docs/ttr-beginner-calendar-(half-marathon).pdf
+  MOVED: Triple Threat/_Docs/ttr-beginner-calendar-(marathon).pdf
+  MOVED: Triple Threat/_Docs/ttr-intermediate-calendar-(5k---10k).pdf
+  MOVED: Triple Threat/_Docs/ttr-intermediate-calendar-(half-marathon).pdf
+  MOVED: Triple Threat/_Docs/ttr_nutrition_guide.pdf
+  MOVED: Turbofire/_Docs/5 Day Inferno Plan.pdf
+  MOVED: Turbofire/_Docs/Class Schedules/Class Schedules (20 Weeks).pdf
+  MOVED: Turbofire/_Docs/Class Schedules/Class Schedules.pdf
+  MOVED: Turbofire/_Docs/Class Schedules/Hybrids Schedules.pdf
+  MOVED: Turbofire/_Docs/Class Schedules/Les Mills Pump - Turbofire Hybrid.pdf
+  MOVED: Turbofire/_Docs/Class Schedules/P90X - Turbofire Hybrid Sheet.pdf
+  MOVED: Turbofire/_Docs/Class Schedules/Turbofire Chalean Extreme Hybrid.pdf
+  MOVED: Turbofire/_Docs/Daily Tracker.pdf
+  MOVED: Turbofire/_Docs/Fuel the Fire Nutrition Guide.pdf
+  MOVED: Turbofire/_Docs/TurboTracker.pdf
+  MOVED: Turbofire/_Docs/Turn Up the Burn Fitness Guide.pdf
+  MOVED: Turbo Jam/Documents/Turbo Jam 10 Day Kickstart.pdf
+  MOVED: Turbo Jam/Documents/Turbo Jam Guidebook.pdf
+  MOVED: Turbo Jam/Documents/Turbo Jam Measurements.pdf
+  MOVED: Unstress/_Docs/uns_calendar_En.pdf
+  MOVED: XB Pilates/OPF_XTST_Hybrid-Calendar_04062022.pdf
+  MOVED: XB Pilates/XTBP_EN_US-21_Day_Amp_Calender-06.16.22.pdf
+  MOVED: XB Pilates/XTPI_Calendar_21-Days_BOD_022522.pdf
+  MOVED: XB Stretch/OPF_XTST_Calendar_04062022.pdf
+  MOVED: Xtend Barre Express/XTBR_30-Day_Hybrid_Calendar_en.pdf
+  MOVED: Xtend Barre Express/XTXP-EN_US-21_Day_Calendar-05.13.22.pdf
+  MOVED: XTFMAX/_Docs/xtfmax-90-day-calendar.pdf
+  MOVED: XTFMAX/_Docs/xtfmax-nutrition-guide.pdf
+  MOVED: XTFMAX/Season 2/_Docs/one-on-one-30-day-training-calendar.pdf
+  MOVED: XTFMAX/Season 3/_Docs/personal-trainer-90-day-calendar.pdf
+  MOVED: XTFMAX/Season 3/_Docs/xtfmax-personal-trainer-nutrition-guide (1).pdf
+  MOVED: XTFMAX/Season 3/_Docs/xtfmax-personal-trainer-nutrition-guide.pdf
+  MOVED: Yoga 52/YO52_EN_US-14_Day_Calender-05.10.22-2.pdf
+  MOVED: Yoga 52/YO52_EN_US-14_Day_Calender-05.10.22-3-2.pdf
+  MOVED: Yoga 52/YO52_EN_US-14_Day_Calender-05.10.22.pdf
+  MOVED: Yoga 52/YO52_EN_US-30_Day_Calender-05.10.22.pdf
+  MOVED: Yoga 52/YO52_EN_US-52_Week_Calender-06.24.22.pdf
+  MOVED: Yoga Booty Ballet/_Docs/YBB_7DaySlimdown.pdf
+  MOVED: Yoga Booty Ballet/_Docs/YBB_Calendar.pdf
+  MOVED: Yoga Booty Ballet/_Docs/YBB_FitnessGuide.pdf
+  MOVED: You v2/_Docs/YV2_Calendar.pdf
+  MOVED: You v2/_Docs/YV2_Journal_06072017.pdf
+  MOVED: You v2/_Docs/YV2_NutritionGuide_10.19.18.pdf
+  MOVED: You v2/_Docs/YV2_QuickStart_06072017.pdf
+
+  PDFs to move: 708
+  PDFs skipped (already correct): 0
+  Name collisions resolved: 34
+
+--- Phase 3: Cleaning empty legacy doc directories ---
+  REMOVED: /data/media/video/fitness/You v2/_Docs
+  REMOVED: /data/media/video/fitness/Yoga Booty Ballet/_Docs
+  REMOVED: /data/media/video/fitness/XTF Yoga/_Docs
+  REMOVED: /data/media/video/fitness/XTF Toning/_Docs
+  REMOVED: /data/media/video/fitness/XTFMAX/Season 3/_Docs
+  REMOVED: /data/media/video/fitness/XTFMAX/Season 2/_Docs
+  REMOVED: /data/media/video/fitness/XTFMAX/_Docs
+  REMOVED: /data/media/video/fitness/Workout Hotel/_Docs
+  REMOVED: /data/media/video/fitness/Vetra Fitness/_Docs
+  REMOVED: /data/media/video/fitness/Unstress/_Docs
+  REMOVED: /data/media/video/fitness/Triple Threat/_Docs
+  REMOVED: /data/media/video/fitness/The Work/Season 00 The Prep/_Docs
+  REMOVED: /data/media/video/fitness/The Work/_Docs
+  REMOVED: /data/media/video/fitness/The Power of 4/PDFs
+  REMOVED: /data/media/video/fitness/Sure Thing/_PDF
+  REMOVED: /data/media/video/fitness/Supreme 90 Day/_Documentation
+  REMOVED: /data/media/video/fitness/Slim in 6/_Docs
+  REMOVED: /data/media/video/fitness/Shift Shop/TSS PDFs
+  REMOVED: /data/media/video/fitness/Shift Shop/_Docs
+  REMOVED: /data/media/video/fitness/ShapeU/_Docs
+  REMOVED: /data/media/video/fitness/Rockin’ Body/_Docs
+  REMOVED: /data/media/video/fitness/RIPT90 FIT/_Docs
+  REMOVED: /data/media/video/fitness/RIPT90/_Docs
+  REMOVED: /data/media/video/fitness/Project You/_Docs
+  REMOVED: /data/media/video/fitness/Power Nation/_PDF/_Docs/pdf
+  REMOVED: /data/media/video/fitness/Muscle Burns Fat/_Docs
+  REMOVED: /data/media/video/fitness/Morning Meltdown 100/_Docs
+  REMOVED: /data/media/video/fitness/Mes de Más/_Docs
+  REMOVED: /data/media/video/fitness/LIIFT MORE/_PDF
+  REMOVED: /data/media/video/fitness/LIIFT4/_Docs
+  REMOVED: /data/media/video/fitness/Insanity/_Docs
+  REMOVED: /data/media/video/fitness/Hammer and Chisel/_Docs
+  REMOVED: /data/media/video/fitness/Fire and Flow/_PDF
+  REMOVED: /data/media/video/fitness/Epic/_Docs
+  REMOVED: /data/media/video/fitness/Double Time/_Docs
+  REMOVED: /data/media/video/fitness/Dig In/pdf
+  REMOVED: /data/media/video/fitness/Country Heat/_Docs
+  REMOVED: /data/media/video/fitness/Core de Force/_Docs
+  REMOVED: /data/media/video/fitness/Circuit Burnout 90/_Docs
+  REMOVED: /data/media/video/fitness/Circuit Burnout 30/_Docs
+  REMOVED: /data/media/video/fitness/Chop Wood Carry Water/_Docs
+  REMOVED: /data/media/video/fitness/ChaLean/_Docs
+  REMOVED: /data/media/video/fitness/Brazil Butt Lift/_Docs
+  REMOVED: /data/media/video/fitness/Body Beast/Season 01/_Docs
+  REMOVED: /data/media/video/fitness/Beachbody Live/Season 02 Insanity/_Docs
+  REMOVED: /data/media/video/fitness/Barre Blend/_Docs
+  REMOVED: /data/media/video/fitness/Asylum/_Docs/_Docs
+  REMOVED: /data/media/video/fitness/9 Week Control Freak/_Docs
+  REMOVED: /data/media/video/fitness/80 Day Obsession/Season 02 A Little Obsessed/_Docs
+  REMOVED: /data/media/video/fitness/80 Day Obsession/_Docs
+  REMOVED: /data/media/video/fitness/645/_Docs
+  REMOVED: /data/media/video/fitness/3-Day Yoga Refresh/_Docs
+  REMOVED: /data/media/video/fitness/30 Day Breakaway/_Docs
+  REMOVED: /data/media/video/fitness/22-Minute Hard Corps/_Docs
+  REMOVED: /data/media/video/fitness/21 Day Fix/Season 04 Extreme Realtime/_Docs
+  REMOVED: /data/media/video/fitness/21 Day Fix/Season 03 Realtime/_Docs
+  REMOVED: /data/media/video/fitness/21 Day Fix/Season 02 Extreme/_Docs
+  REMOVED: /data/media/video/fitness/10 Rounds/_Docs
+  REMOVED: /data/media/video/fitness/10 Minute Trainer/_Docs
+
+  Empty directories to remove: 59
+
+==============================
+  SUMMARY
+==============================
+  Dot files deleted:    19
+  PDFs moved/renamed:   708
+  PDFs already correct: 0
+  Name collisions:      34
+  Empty dirs cleaned:   59
+  Mode: EXECUTED
+==============================
