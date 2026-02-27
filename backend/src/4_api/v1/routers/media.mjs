@@ -55,6 +55,21 @@ export function createMediaRouter(config) {
     broadcastEvent('media:queue', { ...queue.toJSON(), mutationId });
   }
 
+  /**
+   * Returns true if value is a non-negative integer (0, 1, 2, ...).
+   * Rejects floats, negatives, strings, null, undefined.
+   */
+  function isNonNegativeInt(value) {
+    return Number.isInteger(value) && value >= 0;
+  }
+
+  /**
+   * Returns true if value is an integer (includes negatives, for step).
+   */
+  function isInt(value) {
+    return Number.isInteger(value);
+  }
+
   // ── 1. GET /queue ──────────────────────────────────────────────
 
   router.get('/queue', asyncHandler(async (req, res) => {
@@ -118,6 +133,11 @@ export function createMediaRouter(config) {
   router.post('/queue/advance', asyncHandler(async (req, res) => {
     const hid = resolveHid(req);
     const { step = 1, auto = false, mutationId } = req.body;
+
+    if (!isInt(step)) {
+      return res.status(400).json({ error: 'step must be an integer' });
+    }
+
     const queue = await mediaQueueService.advance(step, { auto }, hid);
     broadcast(queue, mutationId);
     res.json(queue.toJSON());
@@ -130,6 +150,11 @@ export function createMediaRouter(config) {
   router.patch('/queue/position', asyncHandler(async (req, res) => {
     const hid = resolveHid(req);
     const { position, mutationId } = req.body;
+
+    if (!isNonNegativeInt(position)) {
+      return res.status(400).json({ error: 'position must be a non-negative integer' });
+    }
+
     const queue = await mediaQueueService.setPosition(position, hid);
     broadcast(queue, mutationId);
     res.json(queue.toJSON());
