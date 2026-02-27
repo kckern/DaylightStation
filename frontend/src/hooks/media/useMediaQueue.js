@@ -26,7 +26,7 @@ async function apiFetch(path, options = {}) {
 
 export function useMediaQueue() {
   const [queue, setQueue] = useState({
-    items: [], position: 0, shuffle: false, repeat: 'off', volume: 1.0,
+    items: [], position: 0, shuffle: false, repeat: 'off', volume: 1.0, shuffleOrder: null,
   });
   const [loading, setLoading] = useState(true);
   const lastMutationId = useRef(null);
@@ -54,6 +54,7 @@ export function useMediaQueue() {
       shuffle: data.shuffle ?? prev.shuffle,
       repeat: data.repeat ?? prev.repeat,
       volume: data.volume ?? prev.volume,
+      shuffleOrder: data.shuffleOrder ?? prev.shuffleOrder,
     }));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- reads only refs and stable setQueue
 
@@ -163,8 +164,12 @@ export function useMediaQueue() {
 
   const currentItem = useMemo(() => {
     if (queue.items.length === 0) return null;
+    if (queue.shuffle && queue.shuffleOrder?.length > 0) {
+      const itemIndex = queue.shuffleOrder[queue.position];
+      return queue.items[itemIndex] ?? null;
+    }
     return queue.items[queue.position] ?? null;
-  }, [queue.items, queue.position]);
+  }, [queue.items, queue.position, queue.shuffle, queue.shuffleOrder]);
 
   return {
     items: queue.items,
