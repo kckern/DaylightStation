@@ -592,6 +592,13 @@ All findings from this audit were resolved in three commits following the audit.
 | **N-3** Stale phase comment | Updated `MediaApp.jsx` header comment to `Phase 5: Queue-backed playback with device monitoring and format-aware fullscreen.` |
 | **N-4** `QueueDrawer` handlers not memoized | Wrapped `handlePlay`, `handleRemove`, `handleClear`, and `cycleRepeat` in `useCallback([queue])`. |
 
+### Commit 4 — *(current commits)* — `fix(media): input validation + WS handler atomicity`
+
+| Finding | Resolution |
+|---|---|
+| **Input validation gap** `PATCH /queue/position` and `POST /queue/advance` accepted floats, negatives, and non-numbers | Added `isNonNegativeInt` guard to `PATCH /queue/position` (rejects missing, negative, float, non-number). Added `isInt` guard to `POST /queue/advance` (rejects floats and non-numbers; negative integers allowed for prev). 8 new tests in `mediaRouter.test.mjs` — TDD red → green. |
+| **D-2 / WS atomicity gap** `add` and `next` `media:command` handlers did two I/O round-trips (addItems → load) | Restructured both to follow the established load-once → mutate-in-memory → replace-once pattern, consistent with `play` and `queue` handlers. Race window eliminated. |
+
 ### Commit 3 — `07203a50` — `fix(media): NF-1 shuffleOrder + NF-5 playerRef wiring`
 
 Two silent correctness failures found by an independent post-audit review.
@@ -612,4 +619,4 @@ Two silent correctness failures found by an independent post-audit review.
 | Test Coverage | 7/10 | 10/10 | Hook has 17 behavioural tests; all passing |
 | Plan Compliance | 7/10 | 10/10 | `/queue/advance` endpoint added; hook tests written |
 | Logging Discipline | 9/10 | 10/10 | No empty log objects |
-| Security / Input Validation | 7/10 | 7/10 | Unchanged — household ID auth and position validation remain future work |
+| Security / Input Validation | 7/10 | 9/10 | position and step validation added; household ID auth remains v1 deferral |
