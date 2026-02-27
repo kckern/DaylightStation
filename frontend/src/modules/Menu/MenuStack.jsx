@@ -25,7 +25,7 @@ function LoadingFallback() {
  * @param {Object} props
  * @param {Object|string} props.rootMenu - The root menu configuration (list name or menu object)
  */
-export function MenuStack({ rootMenu }) {
+export function MenuStack({ rootMenu, playerRef }) {
   const { currentContent, depth, push, pop } = useMenuNavigationContext();
 
   /**
@@ -183,7 +183,7 @@ export function MenuStack({ rootMenu }) {
     case 'player':
       return (
         <Suspense fallback={<LoadingFallback />}>
-          <Player {...props} clear={clear} />
+          <Player {...props} ref={playerRef} clear={clear} />
         </Suspense>
       );
 
@@ -191,7 +191,7 @@ export function MenuStack({ rootMenu }) {
       // Composed presentation with visual + audio tracks
       return (
         <Suspense fallback={<LoadingFallback />}>
-          <Player {...props} clear={clear} />
+          <Player {...props} ref={playerRef} clear={clear} />
         </Suspense>
       );
 
