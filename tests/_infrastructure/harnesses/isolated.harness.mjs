@@ -29,8 +29,11 @@ function runVitest(files) {
 async function main() {
   const args = parseArgs(process.argv);
 
-  const jestFiles = findTestFiles(ISOLATED_DIR, JEST_TARGETS, args);
-  const vitestFiles = findTestFiles(ISOLATED_DIR, VITEST_TARGETS, args);
+  const jestArgs   = args.only ? { ...args, only: args.only.filter(t => JEST_TARGETS.includes(t))   } : args;
+  const vitestArgs = args.only ? { ...args, only: args.only.filter(t => VITEST_TARGETS.includes(t)) } : args;
+
+  const jestFiles   = findTestFiles(ISOLATED_DIR, JEST_TARGETS,   jestArgs);
+  const vitestFiles = findTestFiles(ISOLATED_DIR, VITEST_TARGETS, vitestArgs);
   const allFiles = [...jestFiles, ...vitestFiles];
 
   if (allFiles.length === 0) {
