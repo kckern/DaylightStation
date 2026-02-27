@@ -4,6 +4,13 @@ import MediaAppPlayer from './MediaAppPlayer.jsx';
 import CastButton from './CastButton.jsx';
 import { ContentDisplayUrl } from '../../lib/api.mjs';
 
+function formatTime(seconds) {
+  if (!seconds || !isFinite(seconds)) return '0:00';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 /**
  * Main player view: player + track info + progress bar + transport controls + volume.
  *
@@ -58,12 +65,7 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, o
     if (el) el.volume = newVolume;
   }, []);
 
-  const formatTime = (seconds) => {
-    if (!seconds || !isFinite(seconds)) return '0:00';
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
-    return `${m}:${s.toString().padStart(2, '0')}`;
-  };
+  const handleExitFullscreen = useCallback(() => setIsFullscreen(false), []);
 
   if (!currentItem) {
     return (
@@ -90,12 +92,11 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, o
       <MediaAppPlayer
         ref={playerRef}
         contentId={currentItem.contentId}
-        format={currentItem.format}
         config={currentItem.config}
         onItemEnd={onItemEnd}
         onProgress={handleProgress}
         isFullscreen={isFullscreen}
-        onExitFullscreen={() => setIsFullscreen(false)}
+        onExitFullscreen={handleExitFullscreen}
       />
 
       {/* Track Info */}

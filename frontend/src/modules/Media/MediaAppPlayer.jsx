@@ -9,10 +9,12 @@ import Player from '../Player/Player.jsx';
  * - renderOverlay?: () => ReactNode — rendered inside fullscreen wrapper
  * - onPlayerClick: handler for click on the player wrapper div
  *
+ * Note: format is NOT a prop here — it is embedded in contentId / config via the playObject.
+ *
  * Req: 1.2.3, 8.2.1, 8.2.2
  */
 const MediaAppPlayer = forwardRef(function MediaAppPlayer(
-  { contentId, format, onItemEnd, onProgress, config, isFullscreen, onExitFullscreen, renderOverlay, onPlayerClick },
+  { contentId, onItemEnd, onProgress, config, isFullscreen, onExitFullscreen, renderOverlay, onPlayerClick },
   ref
 ) {
   const playObject = useMemo(() => {
@@ -25,6 +27,7 @@ const MediaAppPlayer = forwardRef(function MediaAppPlayer(
   return (
     <div
       className={`media-player-wrapper${isFullscreen ? ' fullscreen' : ''}`}
+      // onPlayerClick — wired for Task 2 auto-hide: tap fullscreen wrapper to reveal controls
       onClick={onPlayerClick}
     >
       <Player
