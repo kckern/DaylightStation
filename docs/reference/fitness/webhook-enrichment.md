@@ -138,11 +138,41 @@ Three layers prevent duplicate enrichment:
 
 ## Session Matching
 
-The enrichment service scans `data/household/history/fitness/` for YAML session files where a participant's provider-specific activity ID matches the webhook's activity ID (e.g., `participant.strava.activityId`).
+Two-pass approach to find the DaylightStation fitness session that corresponds to a provider activity:
 
-Dates scanned: today, yesterday, and the event date (from webhook timestamp). Files scanned per date directory.
+### Pass 1: Fast path (activityId lookup)
 
-If no match is found, the service retries up to 3 times at 5-minute intervals (the home session may not have been saved yet when the webhook arrives). After 3 failures, the job is marked `unmatched`.
+If a session already has a `strava.activityId` field under a participant (from a previous enrichment), it's returned immediately. This avoids redundant time-matching on retries or re-deployments.
+
+### Pass 2: Time-overlap matching
+
+The enrichment service fetches the activity from the provider API (needs `start_date` + `elapsed_time`) and scans `data/household/history/fitness/` for YAML session files whose time windows overlap.
+
+- **Buffer**: 5 minutes added to each end of the activity window
+- **Minimum session duration**: 2 minutes (skips junk/short sessions)
+- **Best-overlap wins**: If multiple sessions overlap, the one with the greatest overlap is selected
+- **Dates scanned**: today, yesterday, and the activity start date (from provider API)
+- **Timezone-aware**: Uses `moment-timezone` with session-specific timezone or household default
+
+### Write-back
+
+After a successful time-match, the enrichment service writes the provider's activity data back to the session YAML. For Strava, this creates a `strava:` block under the participant:
+
+```yaml
+participants:
+  username:
+    strava:
+      activityId: 17541823520
+      type: WeightTraining
+      sufferScore: 8
+      deviceName: Garmin Forerunner 245 Music
+```
+
+This creates the two-way link: the session now references the provider activity (for future fast-path lookups), and the provider activity gets enriched with session data.
+
+### Retries
+
+If no match is found, the service retries up to 3 times at 5-minute intervals (the home session may not have been saved yet when the webhook arrives). After 3 failures, the job is marked `unmatched`. On container restart, `recoverPendingJobs()` retries all pending/unmatched jobs.
 
 ---
 
@@ -154,6 +184,15 @@ For Strava, `buildStravaDescription(session, currentActivity)` produces:
 - **Description**: Voice memo transcripts first, then episode description (skipped if activity already has a description)
 
 Returns `null` if nothing to enrich (no media, no memos).
+
+### Episode Descriptions
+
+Episode descriptions (e.g., Plex metadata summaries) are persisted to the session YAML at save time by the frontend. The flow:
+
+1. `FitnessPlayer.jsx` captures `media.summary` (from Plex metadata) at `media_start` event time and includes it as `description` in the event data
+2. `PersistenceManager.js` carries the description through event consolidation (media_start + media_end pairing)
+3. `buildSessionSummary.js` includes `description` in the summary media entries (only when present)
+4. The enrichment service reads the description directly from the session YAML — no provider API call needed
 
 ---
 
@@ -187,6 +226,10 @@ All log events are `info` level — visible in production.
 | `strava.enrichment.session_scan.start` | activityId, dates | Scanning history |
 | `strava.enrichment.session_scan.matched` | activityId, date, file | Session found |
 | `strava.enrichment.session_scan.miss` | activityId, dates, filesScanned | No match |
+| `strava.enrichment.session_scan.no_history_dir` | activityId, dir | History dir missing (warn) |
+| `strava.enrichment.session_writeback` | activityId, sessionId, filePath | Strava block written to session YAML |
+| `strava.enrichment.activity_fetch_failed` | activityId | Could not fetch activity from provider (warn) |
+| `strava.enrichment.no_match` | activityId, attempt | No session match on this attempt |
 | `strava.enrichment.auth.refreshing` | username | Token refresh starting |
 | `strava.enrichment.auth.refreshed` | username | Token refresh done |
 | `strava.enrichment.auth.no_refresh_token` | username | No token (error) |
