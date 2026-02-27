@@ -3,6 +3,7 @@ import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import getLogger, { configure as configureLogger } from '../lib/logging/Logger.js';
 import useMediaUrlParams from '../hooks/media/useMediaUrlParams.js';
 import { MediaAppProvider, useMediaApp } from '../contexts/MediaAppContext.jsx';
+import { usePlaybackBroadcast } from '../hooks/media/usePlaybackBroadcast.js';
 import NowPlaying from '../modules/Media/NowPlaying.jsx';
 import MiniPlayer from '../modules/Media/MiniPlayer.jsx';
 import QueueDrawer from '../modules/Media/QueueDrawer.jsx';
@@ -25,6 +26,7 @@ const MediaApp = () => {
 
 const MediaAppInner = () => {
   const { queue, playerRef } = useMediaApp();
+  usePlaybackBroadcast(playerRef, queue.currentItem);
   const logger = useMemo(() => getLogger().child({ app: 'media' }), []);
   const urlCommand = useMediaUrlParams();
 
