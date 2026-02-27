@@ -692,13 +692,13 @@ const FitnessApp = () => {
         contentSource,
         type: response.type || 'episode',
         title: response.title || `Episode ${episodeId}`,
-        grandparentTitle: response.grandparentTitle,
-        parentTitle: response.parentTitle,
+        grandparentTitle: response.metadata?.grandparentTitle || null,
+        parentTitle: response.metadata?.parentTitle || null,
         videoUrl: response.mediaUrl || DaylightMediaPath(`api/v1/play/${contentSource}/${episodeId}`),
-        thumbId: response.thumbId || episodeId,
+        thumbId: response.metadata?.thumbId || response.thumbId || episodeId,
         image: response.image || DaylightMediaPath(`api/v1/display/${contentSource}/${episodeId}`),
         labels: response.labels || response.metadata?.labels || [],
-        summary: response.summary
+        summary: response.metadata?.summary || null
       };
 
       setFitnessPlayQueue([queueItem]);

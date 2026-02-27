@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef, useMemo } from 'react';
 import getLogger from '../../lib/logging/Logger.js';
 import MediaAppPlayer from './MediaAppPlayer.jsx';
+import CastButton from './CastButton.jsx';
 import { ContentDisplayUrl } from '../../lib/api.mjs';
 
 /**
@@ -8,7 +9,7 @@ import { ContentDisplayUrl } from '../../lib/api.mjs';
  *
  * Req: 1.2.4, 1.1.4, 1.1.5, 1.1.6, 1.1.7
  */
-const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, onQueueToggle, onSearchToggle, queueLength }) => {
+const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, onQueueToggle, onSearchToggle, onDeviceToggle, queueLength }) => {
   const logger = useMemo(() => getLogger().child({ component: 'NowPlaying' }), []);
   const playerRef = useRef(null);
 
@@ -132,6 +133,12 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, o
         {onSearchToggle && (
           <button className="media-transport-btn" onClick={onSearchToggle} aria-label="Search">
             &#128269;
+          </button>
+        )}
+        {currentItem && <CastButton contentId={currentItem.contentId} className="media-transport-btn" />}
+        {onDeviceToggle && (
+          <button className="media-transport-btn" onClick={onDeviceToggle} aria-label="Devices">
+            &#x1F4F1;
           </button>
         )}
         {onQueueToggle && (

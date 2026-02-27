@@ -641,6 +641,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         } else if (action === 'clear') {
           const queue = await mediaQueueService.clear(householdId);
           eventBus.broadcast('media:queue', queue.toJSON());
+        } else if (action === 'queue') {
+          // Replace entire queue with item (6.1.4 + 6.2.2 basic)
+          await mediaQueueService.clear(householdId);
+          await mediaQueueService.addItems(
+            [{ contentId, addedFrom: 'WEBSOCKET' }], 'end', householdId
+          );
+          await mediaQueueService.setPosition(0, householdId);
+          const updated = await mediaQueueService.load(householdId);
+          eventBus.broadcast('media:queue', updated.toJSON());
         } else {
           rootLogger.warn?.('eventbus.media.unknown-action', { action });
         }
@@ -648,6 +657,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         rootLogger.error?.('eventbus.media.command.error', { action, error: err.message });
       }
     })();
+  });
+
+  // Playback state broadcast relay — routes playback_state from any client
+  // to playback:{deviceId|clientId} topic for device monitoring (4.2.8)
+  eventBus.onClientMessage((clientId, message) => {
+    if (message.topic !== 'playback_state') return;
+    const broadcastId = message.deviceId || message.clientId;
+    if (!broadcastId) return;
+    rootLogger.debug?.('eventbus.playback_state.relay', { from: clientId, broadcastId, state: message.state });
+    eventBus.broadcast(`playback:${broadcastId}`, message);
   });
 
   // ==========================================================================
@@ -1246,7 +1265,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       const { StravaClientAdapter } = await import('./1_adapters/fitness/StravaClientAdapter.mjs');
       const { StravaWebhookAdapter } = await import('./1_adapters/strava/StravaWebhookAdapter.mjs');
       const { StravaWebhookJobStore } = await import('./1_adapters/strava/StravaWebhookJobStore.mjs');
-      const { StravaEnrichmentService } = await import('./3_applications/strava/StravaEnrichmentService.mjs');
+      const { FitnessActivityEnrichmentService } = await import('./3_applications/fitness/FitnessActivityEnrichmentService.mjs');
 
       const stravaClient = new StravaClientAdapter({
         httpClient: axios,
@@ -1265,7 +1284,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         logger: rootLogger.child({ module: 'strava-jobs' }),
       });
 
-      stravaEnrichmentService = new StravaEnrichmentService({
+      stravaEnrichmentService = new FitnessActivityEnrichmentService({
         stravaClient,
         jobStore,
         authStore: {

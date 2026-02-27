@@ -571,6 +571,9 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
         show: showTitle,
         season: seasonTitle,
         title: episode.label,
+        grandparentTitle: String(episode.grandparentTitle || showTitle || ''),
+        grandparentId: episode.grandparentId || showId,
+        summary: episode.summary || null,
         mediaUrl: episodeUrl,
         duration: episode.duration,
         thumbId: episode.thumbId, // Pass thumbId directly to FitnessPlayer
