@@ -54,9 +54,8 @@ const FormatMetadata = ({ item, duration }) => {
  *
  * Req: 1.2.4, 1.1.4, 1.1.5, 1.1.6, 1.1.7
  */
-const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, onQueueToggle, onSearchToggle, onDeviceToggle, queueLength }) => {
+const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, onQueueToggle, onSearchToggle, onDeviceToggle, queueLength, playerRef }) => {
   const logger = useMemo(() => getLogger().child({ component: 'NowPlaying' }), []);
-  const playerRef = useRef(null);
 
   const [playbackState, setPlaybackState] = useState({
     currentTime: 0,

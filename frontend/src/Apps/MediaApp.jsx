@@ -26,7 +26,8 @@ const MediaApp = () => {
 };
 
 const MediaAppInner = () => {
-  const { queue, playerRef } = useMediaApp();
+  const { queue } = useMediaApp();
+  const playerRef = useRef(null);
   const urlCommandProcessed = useRef(false);
   usePlaybackBroadcast(playerRef, queue.currentItem);
   const logger = useMemo(() => getLogger().child({ app: 'media' }), []);
@@ -135,6 +136,7 @@ const MediaAppInner = () => {
             onSearchToggle={() => setSearchOpen(o => !o)}
             onDeviceToggle={() => setDevicePanelOpen(o => !o)}
             queueLength={queue.items.length}
+            playerRef={playerRef}
           />
         )}
 
