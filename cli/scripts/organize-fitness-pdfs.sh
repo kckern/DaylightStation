@@ -95,8 +95,8 @@ categorize_filename() {
   local lower
   lower=$(echo "$1" | tr '[:upper:]' '[:lower:]')
 
-  # Calendar / schedule
-  if [[ "$lower" =~ (calendar|schedule|hybrid) ]]; then
+  # Calendar / schedule (include common misspelling "calender")
+  if [[ "$lower" =~ (calendar|calender|schedule|hybrid) ]]; then
     echo "calendar"
     return
   fi
@@ -108,13 +108,13 @@ categorize_filename() {
   fi
 
   # Guide / getting started
-  if [[ "$lower" =~ (guide|start[-_]here|get[-_]started|getting[-_]started|welcome|quick[-_]?start|how[-_]to|quickstart|gsg) ]]; then
+  if [[ "$lower" =~ (guide|start[-_ ]here|get[-_ ]started|getting[-_ ]started|welcome|quick[-_ ]?start|how[-_ ]to|quickstart|gsg) ]]; then
     echo "guide"
     return
   fi
 
   # Worksheet / tracker / measurement
-  if [[ "$lower" =~ (worksheet|tally|tracker|fit[-_]?test|measurement|journal|log|selfie|fit[-_]?check|workbook|playbook) ]]; then
+  if [[ "$lower" =~ (worksheet|tally|tracker|fit[-_ ]?test|measurement|journal|log|selfie|fit[-_ ]?check|workbook|playbook) ]]; then
     echo "worksheet"
     return
   fi
@@ -288,14 +288,33 @@ while IFS= read -r -d '' filepath; do
   # Determine target scope (program/docs or program/season/docs)
   target_dir=$(get_target_scope "$relpath")
 
-  # Get the basename without .pdf
+  # Get the basename without .pdf (strip multiple .pdf extensions if present)
   stem="${local_basename%.pdf}"
+  stem="${stem%.pdf}"
 
   # Categorize
   category=$(categorize_filename "$stem")
 
   # Clean the name
   cleaned=$(clean_name "$stem")
+
+  # Strip redundant category word from cleaned name
+  # e.g., category="nutrition" + cleaned="nutrition-guide" → "guide"
+  # e.g., category="calendar" + cleaned="calendar" → just use category
+  # e.g., category="guide" + cleaned="get-started-guide" → "get-started"
+  cleaned=$(echo "$cleaned" | sed -E "s/^${category}-//")
+  cleaned=$(echo "$cleaned" | sed -E "s/-${category}$//")
+  cleaned=$(echo "$cleaned" | sed -E "s/^${category}$//")
+  # Handle misspelling variant for calendar
+  if [[ "$category" == "calendar" ]]; then
+    cleaned=$(echo "$cleaned" | sed -E "s/^calender-//")
+    cleaned=$(echo "$cleaned" | sed -E "s/-calender$//")
+    cleaned=$(echo "$cleaned" | sed -E "s/^calender$//")
+  fi
+  # If cleaned is now empty, use "general"
+  if [[ -z "$cleaned" ]]; then
+    cleaned="general"
+  fi
 
   # Build the target filename
   target_name="${category}-${cleaned}.pdf"
