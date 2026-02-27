@@ -187,7 +187,7 @@ function OfficeApp({ initialGame = null }) {
     const playerTypes = new Set(['play', 'queue', 'playlist']);
     if (!currentContent || !playerTypes.has(currentContent.type)) return null;
     const props = currentContent.props || {};
-    const item = props.play || (props.queue && props.queue[0]) || null;
+    const item = props.play || (props.queue && props.queue[0]) || (props.playlist && props.playlist[0]) || null;
     if (!item) return null;
     return {
       contentId: item.contentId ?? item.plex ?? item.assetId ?? null,
