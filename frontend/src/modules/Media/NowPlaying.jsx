@@ -12,6 +12,44 @@ function formatTime(seconds) {
 }
 
 /**
+ * Format-appropriate secondary metadata below the track title.
+ *
+ * Req: 8.1.9
+ */
+const FormatMetadata = ({ item, duration }) => {
+  const { format, subtitle, source } = item;
+
+  if (format === 'video') {
+    if (!duration || !isFinite(duration)) return null;
+    const m = Math.floor(duration / 60);
+    const s = Math.floor(duration % 60);
+    return <div className="media-track-meta">{m}:{s.toString().padStart(2, '0')}</div>;
+  }
+
+  if (format === 'audio') {
+    const meta = subtitle || source;
+    return meta ? <div className="media-track-meta">{meta}</div> : null;
+  }
+
+  if (format === 'singalong' || format === 'hymn') {
+    const meta = subtitle || source;
+    return (
+      <div className="media-track-meta">
+        {meta ? `${meta} · Singalong` : 'Singalong'}
+      </div>
+    );
+  }
+
+  if (format === 'readalong' || format === 'audiobook') {
+    const meta = subtitle || source;
+    return meta ? <div className="media-track-meta">{meta}</div> : null;
+  }
+
+  // Default: show source if available
+  return source ? <div className="media-track-meta">{source}</div> : null;
+};
+
+/**
  * Main player view: player + track info + progress bar + transport controls + volume.
  *
  * Req: 1.2.4, 1.1.4, 1.1.5, 1.1.6, 1.1.7
@@ -171,9 +209,7 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, o
         )}
         <div className="media-track-details">
           <div className="media-track-title">{currentItem.title || currentItem.contentId}</div>
-          {currentItem.source && (
-            <div className="media-track-source">{currentItem.source}</div>
-          )}
+          <FormatMetadata item={currentItem} duration={playbackState.duration} />
           {/* Expand to fullscreen for singalong/readalong (8.1.5, 8.1.7) */}
           {!isFullscreen && (currentItem.format === 'singalong' || currentItem.format === 'readalong') && (
             <button
