@@ -114,6 +114,9 @@ const ContentBrowser = ({ open, onClose }) => {
               <div className="search-result-meta">
                 {item.source && <span className="source-badge">{item.source}</span>}
                 {item.duration && <span>{Math.round(item.duration / 60)}m</span>}
+                {item.format && (
+                  <span className={`format-badge format-badge--${item.format}`}>{item.format}</span>
+                )}
               </div>
             </div>
             <div className="search-result-actions">
