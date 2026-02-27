@@ -20,7 +20,8 @@
  */
 
 import path from 'path';
-import { loadYamlSafe, listYamlFiles, dirExists } from '#system/utils/FileIO.mjs';
+import moment from 'moment-timezone';
+import { loadYamlSafe, listYamlFiles, dirExists, saveYaml } from '#system/utils/FileIO.mjs';
 import { buildStravaDescription } from './buildStravaDescription.mjs';
 
 const MAX_RETRIES = 3;
@@ -137,9 +138,24 @@ export class StravaEnrichmentService {
     });
 
     try {
-      // Find matching home session
-      const session = this._findMatchingSession(activityId, job.eventTime);
-      if (!session) {
+      // Ensure we have a fresh access token (needed for getActivity)
+      await this._ensureAuth();
+
+      // Fetch activity from Strava (need start_date + duration for time matching)
+      const currentActivity = await this.#stravaClient.getActivity(activityId);
+      if (!currentActivity?.start_date) {
+        this.#logger.warn?.('strava.enrichment.activity_fetch_failed', { activityId });
+        if (attempt < MAX_RETRIES) {
+          setTimeout(() => this._attemptEnrichment(activityId), RETRY_INTERVAL_MS);
+        } else {
+          this.#jobStore.update(activityId, { status: 'unmatched' });
+        }
+        return;
+      }
+
+      // Find matching home session (time-based)
+      const match = this._findMatchingSession(currentActivity);
+      if (!match) {
         this.#logger.info?.('strava.enrichment.no_match', { activityId, attempt });
         if (attempt < MAX_RETRIES) {
           setTimeout(() => this._attemptEnrichment(activityId), RETRY_INTERVAL_MS);
@@ -150,11 +166,27 @@ export class StravaEnrichmentService {
         return;
       }
 
-      // Ensure we have a fresh access token
-      await this._ensureAuth();
+      const session = match.data;
 
-      // Get current activity state (for skip logic)
-      const currentActivity = await this.#stravaClient.getActivity(activityId);
+      // Write Strava data back to session YAML (if not already linked)
+      const username = this.#configService.getHeadOfHousehold?.() || 'kckern';
+      if (session.participants?.[username] && !session.participants[username]?.strava?.activityId) {
+        session.participants[username].strava = {
+          activityId: currentActivity.id,
+          type: currentActivity.type || currentActivity.sport_type || null,
+          sufferScore: currentActivity.suffer_score || null,
+          deviceName: currentActivity.device_name || null,
+        };
+
+        const savePath = match.filePath.replace(/\.yml$/, '');
+        saveYaml(savePath, session);
+
+        this.#logger.info?.('strava.enrichment.session_writeback', {
+          activityId,
+          sessionId: session.sessionId || session.session?.id,
+          filePath: match.filePath,
+        });
+      }
 
       // Build enrichment payload
       const enrichment = buildStravaDescription(session, currentActivity);
@@ -209,12 +241,18 @@ export class StravaEnrichmentService {
 
   /**
    * @private
-   * Scan fitness history for a session matching a Strava activityId.
-   * @param {string} activityId
-   * @param {number} [eventTime] - Unix timestamp from webhook (for date hint)
-   * @returns {Object|null} Parsed session YAML data
+   * Find a home fitness session matching a Strava activity by time overlap.
+   *
+   * Two-pass approach:
+   *  1. Fast path: check if any session already has this strava.activityId
+   *  2. Time match: overlap the activity window against session windows (5-min buffer)
+   *
+   * @param {Object} activity - Strava activity object (from API: start_date, moving_time, elapsed_time, id)
+   * @returns {{ data: Object, filePath: string }|null}
    */
-  _findMatchingSession(activityId, eventTime) {
+  _findMatchingSession(activity) {
+    const activityId = String(activity.id);
+
     if (!this.#fitnessHistoryDir || !dirExists(this.#fitnessHistoryDir)) {
       this.#logger.warn?.('strava.enrichment.session_scan.no_history_dir', {
         activityId,
@@ -223,37 +261,80 @@ export class StravaEnrichmentService {
       return null;
     }
 
-    // Determine which dates to scan
-    const dates = this._resolveScanDates(eventTime);
+    const BUFFER_MS = 5 * 60 * 1000;
+    const MIN_SESSION_SECONDS = 120;
+
+    const tz = this.#configService?.getTimezone?.() || 'America/Los_Angeles';
+
+    const actStart = moment(activity.start_date).tz(tz);
+    const actEnd = actStart.clone().add(activity.elapsed_time || activity.moving_time || 0, 'seconds');
+    const actStartBuffered = actStart.clone().subtract(BUFFER_MS, 'ms');
+    const actEndBuffered = actEnd.clone().add(BUFFER_MS, 'ms');
+
+    const dates = this._resolveScanDates(actStart.unix());
     this.#logger.info?.('strava.enrichment.session_scan.start', {
       activityId,
       dates,
+      activityStart: actStart.format(),
+      activityEnd: actEnd.format(),
     });
 
     let filesScanned = 0;
+    let bestMatch = null;
+    let bestOverlap = 0;
+
     for (const date of dates) {
       const dateDir = path.join(this.#fitnessHistoryDir, date);
       if (!dirExists(dateDir)) continue;
 
       const files = listYamlFiles(dateDir);
       filesScanned += files.length;
+
       for (const filename of files) {
         const filePath = path.join(dateDir, `${filename}.yml`);
         const data = loadYamlSafe(filePath);
-        if (!data?.participants) continue;
+        if (!data?.session?.start || !data?.participants) continue;
 
-        // Check each participant for matching strava.activityId
+        const durationSec = data.session.duration_seconds || 0;
+        if (durationSec < MIN_SESSION_SECONDS) continue;
+
+        // Fast path: already has this activityId
         for (const participant of Object.values(data.participants)) {
-          if (String(participant?.strava?.activityId) === String(activityId)) {
+          if (String(participant?.strava?.activityId) === activityId) {
             this.#logger.info?.('strava.enrichment.session_scan.matched', {
-              activityId,
-              date,
-              file: filename,
+              activityId, date, file: filename, matchType: 'activityId',
             });
-            return data;
+            return { data, filePath };
           }
         }
+
+        // Time-based matching
+        const sessionTz = data.timezone || tz;
+        const sessStart = moment.tz(data.session.start, sessionTz);
+        const sessEnd = data.session.end
+          ? moment.tz(data.session.end, sessionTz)
+          : sessStart.clone().add(durationSec, 'seconds');
+
+        const overlapStart = moment.max(actStartBuffered, sessStart);
+        const overlapEnd = moment.min(actEndBuffered, sessEnd);
+        const overlapMs = overlapEnd.diff(overlapStart);
+
+        if (overlapMs > 0 && overlapMs > bestOverlap) {
+          bestOverlap = overlapMs;
+          bestMatch = { data, filePath, date, filename };
+        }
       }
+    }
+
+    if (bestMatch) {
+      this.#logger.info?.('strava.enrichment.session_scan.matched', {
+        activityId,
+        date: bestMatch.date,
+        file: bestMatch.filename,
+        matchType: 'time-overlap',
+        overlapMs: bestOverlap,
+      });
+      return { data: bestMatch.data, filePath: bestMatch.filePath };
     }
 
     this.#logger.info?.('strava.enrichment.session_scan.miss', {
