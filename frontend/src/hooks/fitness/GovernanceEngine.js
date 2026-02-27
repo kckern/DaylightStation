@@ -332,7 +332,7 @@ export class GovernanceEngine {
         activeChallengeZone: this.challengeState?.activeChallenge?.zone || null,
         videoLocked: (this.challengeState?.videoLocked || this._mediaIsGoverned())
           && this.phase !== 'unlocked' && this.phase !== 'warning',
-        mediaId: this.media?.id || null,
+        contentId: this.media?.id || null,
         // Expose internal state for test diagnostics
         satisfiedOnce: this.meta?.satisfiedOnce || false,
         userZoneMap: { ...(this._latestInputs?.userZoneMap || {}) },
@@ -371,7 +371,7 @@ export class GovernanceEngine {
           hr,
           hrPercent,
           governancePhase: this.phase,
-          mediaId: this.media?.id
+          contentId: this.media?.id
         }, { maxPerMinute: 30 });
 
         // Trigger reactive evaluation for faster zone change response
@@ -720,7 +720,7 @@ export class GovernanceEngine {
         logger.sampled('governance.phase_change', {
           from: oldPhase,
           to: newPhase,
-          mediaId: this.media?.id,
+          contentId: this.media?.id,
           deadline: this.meta?.deadline,
           satisfiedOnce: this.meta?.satisfiedOnce,
           requirementCount: this.requirementSummary?.requirements?.length || 0,
@@ -740,7 +740,7 @@ export class GovernanceEngine {
       if (newPhase === 'warning' && oldPhase !== 'warning') {
         const participantsBelowThreshold = this._getParticipantsBelowThreshold(evalContext);
         logger.info('governance.warning_started', {
-          mediaId: this.media?.id,
+          contentId: this.media?.id,
           deadline: this.meta?.deadline,
           gracePeriodTotal: this.meta?.gracePeriodTotal,
           participantsBelowThreshold,
@@ -754,7 +754,7 @@ export class GovernanceEngine {
           ? now - savedWarningStartTime
           : null;
         logger.info('governance.lock_triggered', {
-          mediaId: this.media?.id,
+          contentId: this.media?.id,
           reason: this.challengeState?.activeChallenge?.status === 'failed' ? 'challenge_failed' : 'requirements_not_met',
           timeSinceWarningMs: timeSinceWarning,
           participantStates: this._getParticipantStates(evalContext),
@@ -930,7 +930,7 @@ export class GovernanceEngine {
     getLogger().info('governance.timers_paused', {
       phase: this.phase,
       remainingMs: this._remainingMs,
-      mediaId: this.media?.id
+      contentId: this.media?.id
     });
   }
 
@@ -953,7 +953,7 @@ export class GovernanceEngine {
       phase: this.phase,
       newDeadline: this.meta?.deadline,
       pauseDurationMs: pauseDuration,
-      mediaId: this.media?.id
+      contentId: this.media?.id
     });
   }
 
@@ -1374,7 +1374,7 @@ export class GovernanceEngine {
     const hasGovernedMedia = this._mediaIsGoverned();
     if (!hasGovernedMedia) {
       getLogger().sampled('governance.evaluate.media_not_governed', {
-        mediaId: this.media?.id
+        contentId: this.media?.id
       }, { maxPerMinute: 2, aggregate: true });
       this._resetToIdle();
       return;
