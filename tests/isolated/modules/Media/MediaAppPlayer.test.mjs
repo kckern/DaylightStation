@@ -39,4 +39,32 @@ describe('MediaAppPlayer', () => {
     fireEvent.click(screen.getByLabelText('Exit fullscreen'));
     expect(onExit).toHaveBeenCalled();
   });
+
+  it('renders renderOverlay content inside fullscreen wrapper', async () => {
+    const { render, screen } = await import('@testing-library/react');
+    const { default: MediaAppPlayer } = await import('#frontend/modules/Media/MediaAppPlayer.jsx');
+    render(
+      React.createElement(MediaAppPlayer, {
+        contentId: 'plex:1',
+        isFullscreen: true,
+        onExitFullscreen: () => {},
+        renderOverlay: () => React.createElement('div', { 'data-testid': 'overlay-content' }, 'Overlay'),
+      })
+    );
+    expect(screen.getByTestId('overlay-content')).toBeTruthy();
+  });
+
+  it('does not render renderOverlay when not fullscreen', async () => {
+    const { render, screen } = await import('@testing-library/react');
+    const { default: MediaAppPlayer } = await import('#frontend/modules/Media/MediaAppPlayer.jsx');
+    render(
+      React.createElement(MediaAppPlayer, {
+        contentId: 'plex:1',
+        isFullscreen: false,
+        onExitFullscreen: () => {},
+        renderOverlay: () => React.createElement('div', { 'data-testid': 'overlay-content' }, 'Overlay'),
+      })
+    );
+    expect(screen.queryByTestId('overlay-content')).toBeNull();
+  });
 });
