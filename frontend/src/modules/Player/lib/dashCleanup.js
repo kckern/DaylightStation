@@ -6,7 +6,14 @@
 export function cleanupDashElement(el) {
   if (!el) return;
 
-  // Try web component's own destroy/reset method first
+  // Destroy the dash.js MediaPlayer instance first — this is what owns
+  // the MediaSource and SourceBuffers. Without this, orphaned buffers
+  // keep polling and throwing InvalidStateError after the element is removed.
+  try {
+    if (el.api && typeof el.api.destroy === 'function') el.api.destroy();
+  } catch (_) {}
+
+  // Try web component's own destroy/reset method as fallback
   try {
     if (typeof el.destroy === 'function') el.destroy();
     else if (typeof el.reset === 'function') el.reset();
