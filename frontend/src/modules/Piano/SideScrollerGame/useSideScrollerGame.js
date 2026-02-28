@@ -4,6 +4,7 @@ import { useStaffMatching } from '../PianoTetris/useStaffMatching.js';
 import { shuffle, buildNotePool } from '../noteUtils.js';
 import {
   TOTAL_HEALTH,
+  MAX_DUCK_MS,
   createInitialWorld,
   spawnObstacle,
   tickWorld,
@@ -11,6 +12,7 @@ import {
   applyDuck,
   releaseDuck,
   updateJump,
+  updateDuck,
   checkCollisions,
   applyDamage,
   applyHeal,
@@ -100,6 +102,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     healPerDodge: gameConfig?.heal_per_dodge ?? 1,
     invincibilityMs: gameConfig?.invincibility_ms ?? 1000,
     jumpDurationMs: gameConfig?.jump_duration_ms ?? 900,
+    maxDuckMs: gameConfig?.max_duck_ms ?? MAX_DUCK_MS,
   }), [gameConfig]);
 
   // Timer refs
@@ -163,6 +166,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     setWorld(prev => {
       let next = tickWorld(prev, dt, scrollSpeed);
       next = updateJump(next, dt, config.jumpDurationMs);
+      next = updateDuck(next, timestamp, config.maxDuckMs);
 
       // Spawn obstacle (decision was made outside updater)
       if (spawnType) {
@@ -246,7 +250,8 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     if (actionName === 'jump') {
       setWorld(prev => applyJump(prev));
     } else if (actionName === 'duck') {
-      setWorld(prev => applyDuck(prev));
+      const now = performance.now();
+      setWorld(prev => applyDuck(prev, now));
     }
   }, [logger]);
 
@@ -268,7 +273,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
   useEffect(() => {
     if (phase !== 'PLAYING') return;
     const lvlConfig = levels[level] ?? levels[0];
-    if (!lvlConfig || lvlConfig.target_rotation !== 'dodge') return;
+    if (!lvlConfig) return;
     if (world.dodgeCount > lastRegenDodgeRef.current) {
       lastRegenDodgeRef.current = world.dodgeCount;
       regenerateTargets(lvlConfig);
