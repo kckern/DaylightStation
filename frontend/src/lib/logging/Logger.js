@@ -238,53 +238,58 @@ export const getConfig = () => ({ ...config });
 
 // ─── Performance Diagnostics ───────────────────────────────────
 
+const DIAG_MAX_SAMPLES = 300; // ~5s at 60fps
+
 const diagState = {
   running: false,
   rafId: null,
   intervalId: null,
-  frameTimes: [],      // recent frame deltas (ms)
+  // Circular buffer for frame times
+  frameTimes: new Float64Array(DIAG_MAX_SAMPLES),
+  head: 0,       // next write position
+  count: 0,      // number of valid samples (max 300)
   lastFrameTs: 0,
 };
-
-const DIAG_MAX_SAMPLES = 300; // ~5s at 60fps
 
 function diagFrame(ts) {
   if (!diagState.running) return;
   if (diagState.lastFrameTs > 0) {
     const dt = ts - diagState.lastFrameTs;
-    diagState.frameTimes.push(dt);
-    if (diagState.frameTimes.length > DIAG_MAX_SAMPLES) {
-      diagState.frameTimes.shift();
-    }
+    diagState.frameTimes[diagState.head] = dt;
+    diagState.head = (diagState.head + 1) % DIAG_MAX_SAMPLES;
+    if (diagState.count < DIAG_MAX_SAMPLES) diagState.count++;
   }
   diagState.lastFrameTs = ts;
   diagState.rafId = requestAnimationFrame(diagFrame);
 }
 
 function collectSnapshot() {
-  const ft = diagState.frameTimes;
-  const count = ft.length;
+  const buf = diagState.frameTimes;
+  const count = diagState.count;
 
-  // FPS / frame-time stats
   let fps = 0, avgMs = 0, minMs = 0, maxMs = 0, jank = 0;
   if (count > 0) {
-    const sum = ft.reduce((s, v) => s + v, 0);
+    let sum = 0, lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < count; i++) {
+      const v = buf[i];
+      sum += v;
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+      if (v > 33.4) jank++;
+    }
     avgMs = sum / count;
     fps = 1000 / avgMs;
-    minMs = Math.min(...ft);
-    maxMs = Math.max(...ft);
-    jank = ft.filter(d => d > 33.4).length; // frames slower than 30fps
+    minMs = lo;
+    maxMs = hi;
   }
 
-  // Heap (Chrome / Edge only)
-  const mem = performance.memory; // non-standard, Chrome only
+  const mem = performance.memory;
   const heap = mem ? {
     usedMB: +(mem.usedJSHeapSize / 1048576).toFixed(1),
     totalMB: +(mem.totalJSHeapSize / 1048576).toFixed(1),
     limitMB: +(mem.jsHeapSizeLimit / 1048576).toFixed(1),
   } : null;
 
-  // DOM node count
   const domNodes = typeof document !== 'undefined'
     ? document.getElementsByTagName('*').length
     : 0;
@@ -311,7 +316,9 @@ export const startDiagnostics = (opts = {}) => {
   const intervalMs = opts.intervalMs ?? 5000;
 
   diagState.running = true;
-  diagState.frameTimes = [];
+  diagState.frameTimes = new Float64Array(DIAG_MAX_SAMPLES);
+  diagState.head = 0;
+  diagState.count = 0;
   diagState.lastFrameTs = 0;
   diagState.rafId = requestAnimationFrame(diagFrame);
 
@@ -340,7 +347,9 @@ export const stopDiagnostics = () => {
     clearInterval(diagState.intervalId);
     diagState.intervalId = null;
   }
-  diagState.frameTimes = [];
+  diagState.frameTimes = new Float64Array(DIAG_MAX_SAMPLES);
+  diagState.head = 0;
+  diagState.count = 0;
   diagState.lastFrameTs = 0;
   if (typeof window !== 'undefined') {
     delete window.__PERF_DIAG__;
