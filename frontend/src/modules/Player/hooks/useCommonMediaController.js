@@ -891,7 +891,24 @@ export function useCommonMediaController({
       
       mediaEl.dataset.key = assetId;
       
-      if (Number.isFinite(startTime)) {
+      if (Number.isFinite(startTime) && startTime > 0 && isDash) {
+        // DASH: defer seek until playing, then use dash.js API.
+        // Setting currentTime on the inner <video> bypasses dash.js's
+        // SourceBuffer management, leaving the audio buffer permanently empty.
+        // The dash.js api.seek() properly flushes buffers and re-initializes.
+        if (DEBUG_MEDIA) console.log('[StartTime] DASH: deferring seek to playing', { startTime });
+        const container = containerRef.current;
+        mediaEl.addEventListener('playing', () => {
+          try {
+            if (container?.api?.seek) {
+              container.api.seek(startTime);
+            } else {
+              mediaEl.currentTime = startTime;
+            }
+          } catch (_) {}
+          if (DEBUG_MEDIA) console.log('[StartTime] DASH: applied deferred seek at playing', { startTime });
+        }, { once: true });
+      } else if (Number.isFinite(startTime)) {
         try {
           mediaEl.currentTime = startTime;
           if (DEBUG_MEDIA) console.log('[StartTime] set currentTime on load', { startTime, recovering: isRecoveringRef.current });
