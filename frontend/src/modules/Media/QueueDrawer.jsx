@@ -11,22 +11,28 @@ const QueueDrawer = () => {
 
   const handlePlay = useCallback((queueId) => {
     const idx = queue.items.findIndex(i => i.queueId === queueId);
-    if (idx >= 0) queue.setPosition(idx);
-  }, [queue]);
+    if (idx >= 0) {
+      logger.info('queue.play-item', { queueId, index: idx });
+      queue.setPosition(idx);
+    }
+  }, [queue, logger]);
 
   const handleRemove = useCallback((queueId) => {
+    logger.info('queue.remove-item', { queueId });
     queue.removeItem(queueId);
-  }, [queue]);
+  }, [queue, logger]);
 
   const handleClear = useCallback(() => {
+    logger.info('queue.clear', { itemCount: queue.items.length });
     queue.clear();
-  }, [queue]);
+  }, [queue, logger]);
 
   const cycleRepeat = useCallback(() => {
     const modes = ['off', 'one', 'all'];
     const next = modes[(modes.indexOf(queue.repeat) + 1) % modes.length];
+    logger.debug('queue.repeat', { from: queue.repeat, to: next });
     queue.setRepeat(next);
-  }, [queue]);
+  }, [queue, logger]);
 
   const handleDragStart = useCallback((queueId) => {
     setDraggedId(queueId);
@@ -50,7 +56,7 @@ const QueueDrawer = () => {
         <div className="queue-drawer-actions">
           <button
             className={`queue-action-btn ${queue.shuffle ? 'active' : ''}`}
-            onClick={() => queue.setShuffle(!queue.shuffle)}
+            onClick={() => { logger.debug('queue.shuffle', { enabled: !queue.shuffle }); queue.setShuffle(!queue.shuffle); }}
             aria-label="Shuffle"
           >
             &#8652;

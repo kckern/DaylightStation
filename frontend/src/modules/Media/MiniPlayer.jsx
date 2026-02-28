@@ -1,6 +1,7 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { ContentDisplayUrl } from '../../lib/api.mjs';
 import { useMediaApp } from '../../contexts/MediaAppContext.jsx';
+import getLogger from '../../lib/logging/Logger.js';
 
 /**
  * Persistent bottom bar when content is playing.
@@ -11,6 +12,7 @@ import { useMediaApp } from '../../contexts/MediaAppContext.jsx';
  */
 const MiniPlayer = ({ currentItem, playbackState, onExpand }) => {
   const { playerRef } = useMediaApp();
+  const logger = useMemo(() => getLogger().child({ component: 'MiniPlayer' }), []);
 
   if (!currentItem) return null;
 
@@ -24,12 +26,14 @@ const MiniPlayer = ({ currentItem, playbackState, onExpand }) => {
 
   const handleBarClick = useCallback((e) => {
     if (e.target.closest('.mini-player-toggle')) return;
+    logger.debug('mini-player.expand', { contentId: currentItem?.contentId });
     onExpand?.();
-  }, [onExpand]);
+  }, [onExpand, logger, currentItem?.contentId]);
 
   const handleToggle = useCallback(() => {
+    logger.debug('mini-player.toggle', { paused: playbackState?.paused, contentId: currentItem?.contentId });
     playerRef.current?.toggle?.();
-  }, [playerRef]);
+  }, [playerRef, logger, playbackState?.paused, currentItem?.contentId]);
 
   return (
     <div className="media-mini-player" onClick={handleBarClick}>
