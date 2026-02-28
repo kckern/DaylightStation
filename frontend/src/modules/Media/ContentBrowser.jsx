@@ -1,5 +1,5 @@
 // frontend/src/modules/Media/ContentBrowser.jsx
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useStreamingSearch } from '../../hooks/useStreamingSearch.js';
 import { useContentBrowse } from '../../hooks/media/useContentBrowse.js';
 import { useMediaApp } from '../../contexts/MediaAppContext.jsx';
@@ -7,21 +7,34 @@ import { ContentDisplayUrl } from '../../lib/api.mjs';
 import CastButton from './CastButton.jsx';
 import getLogger from '../../lib/logging/Logger.js';
 
-const FILTERS = [
-  { label: 'All', params: '' },
-  { label: 'Music', params: 'source=plex&mediaType=audio' },
-  { label: 'Video', params: 'source=plex&mediaType=video' },
-  { label: 'Hymns', params: 'source=singalong' },
-  { label: 'Audiobooks', params: 'source=readable' },
-];
-
-const ContentBrowser = ({ open, onClose }) => {
+const ContentBrowser = ({ hasMiniplayer }) => {
   const { queue } = useMediaApp();
   const logger = useMemo(() => getLogger().child({ component: 'ContentBrowser' }), []);
   const [activeFilter, setActiveFilter] = useState(0);
   const [searchText, setSearchText] = useState('');
+  const [browseConfig, setBrowseConfig] = useState([]);
 
-  const filterParams = FILTERS[activeFilter].params;
+  // Fetch browse categories from backend config
+  useEffect(() => {
+    fetch('/api/v1/media/config')
+      .then(r => r.json())
+      .then(data => setBrowseConfig(data.browse || []))
+      .catch(err => logger.warn('content-browser.config-fetch-failed', { error: err.message }));
+  }, [logger]);
+
+  // Build filters from config: "All" + entries with searchFilter: true
+  const filters = useMemo(() => {
+    const configFilters = browseConfig
+      .filter(c => c.searchFilter)
+      .map(c => ({
+        label: c.label.replace(/^Browse\s+/i, ''),
+        params: [c.source && `source=${c.source}`, c.mediaType && `mediaType=${c.mediaType}`]
+          .filter(Boolean).join('&'),
+      }));
+    return [{ label: 'All', params: '' }, ...configFilters];
+  }, [browseConfig]);
+
+  const filterParams = filters[activeFilter]?.params || '';
   const { results, pending, isSearching, search } = useStreamingSearch(
     '/api/v1/content/query/search/stream',
     filterParams
@@ -36,7 +49,7 @@ const ContentBrowser = ({ open, onClose }) => {
   }, [search, exitBrowse]);
 
   const handlePlayNow = useCallback((item) => {
-    const nextPosition = queue.position + 1; // capture synchronously before async call
+    const nextPosition = queue.position + 1;
     logger.info('content-browser.play-now', { contentId: item.contentId, title: item.title });
     queue.addItems([{ contentId: item.contentId, title: item.title, format: item.format }], 'next')
       .then(() => queue.setPosition(nextPosition));
@@ -60,25 +73,28 @@ const ContentBrowser = ({ open, onClose }) => {
     }
   }, [browse, logger]);
 
-  const displayResults = browsing ? browseResults : results;
+  const handleBrowseCategory = useCallback((cat) => {
+    logger.info('content-browser.browse-category', { source: cat.source, label: cat.label });
+    browse(cat.source, '', cat.label);
+  }, [browse, logger]);
 
-  if (!open) return null;
+  const displayResults = browsing ? browseResults : results;
+  const isSearchActive = searchText.length > 0 || browsing;
 
   return (
-    <div className="content-browser">
+    <div className={`content-browser ${hasMiniplayer ? 'content-browser--with-miniplayer' : ''}`}>
       <div className="content-browser-header">
         <input
           type="text"
           className="content-browser-search"
-          placeholder="Search..."
+          placeholder="Search media..."
           value={searchText}
           onChange={handleSearch}
         />
-        <button className="content-browser-close" onClick={onClose}>&#x2715;</button>
       </div>
 
       <div className="content-browser-filters">
-        {FILTERS.map((f, i) => (
+        {filters.map((f, i) => (
           <button
             key={f.label}
             className={`filter-chip ${i === activeFilter ? 'active' : ''}`}
@@ -98,34 +114,53 @@ const ContentBrowser = ({ open, onClose }) => {
         </div>
       )}
 
-      <div className="content-browser-results">
-        {(isSearching || browseLoading) && <div className="search-loading">Searching...</div>}
-        {pending.length > 0 && (
-          <div className="search-pending">Loading from: {pending.join(', ')}</div>
-        )}
-        {displayResults.map((item, i) => (
-          <div key={item.contentId || i} className="search-result-item">
-            <div className="search-result-thumb">
-              {item.contentId && <img src={ContentDisplayUrl(item.contentId)} alt="" />}
-            </div>
-            <div className="search-result-info" onClick={() => item.isContainer ? handleDrillDown(item) : handlePlayNow(item)}>
-              <div className="search-result-title">{item.title}</div>
-              <div className="search-result-meta">
-                {item.source && <span className="source-badge">{item.source}</span>}
-                {item.duration && <span>{Math.round(item.duration / 60)}m</span>}
-                {item.format && (
-                  <span className={`format-badge format-badge--${item.format}`}>{item.format}</span>
-                )}
+      <div className="content-browser-body">
+        {isSearchActive && (
+          <div className="content-browser-results">
+            {(isSearching || browseLoading) && <div className="search-loading">Searching...</div>}
+            {pending.length > 0 && (
+              <div className="search-pending">Loading from: {pending.join(', ')}</div>
+            )}
+            {displayResults.map((item, i) => (
+              <div key={item.contentId || i} className="search-result-item">
+                <div className="search-result-thumb">
+                  {item.contentId && <img src={ContentDisplayUrl(item.contentId)} alt="" />}
+                </div>
+                <div className="search-result-info" onClick={() => item.isContainer ? handleDrillDown(item) : handlePlayNow(item)}>
+                  <div className="search-result-title">{item.title}</div>
+                  <div className="search-result-meta">
+                    {item.source && <span className="source-badge">{item.source}</span>}
+                    {item.duration && <span>{Math.round(item.duration / 60)}m</span>}
+                    {item.format && (
+                      <span className={`format-badge format-badge--${item.format}`}>{item.format}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="search-result-actions">
+                  <button onClick={() => handlePlayNow(item)} title="Play Now">&#9654;</button>
+                  <button onClick={() => handlePlayNext(item)} title="Play Next">&#10549;</button>
+                  <button onClick={() => handleAddToQueue(item)} title="Add to Queue">+</button>
+                  <CastButton contentId={item.contentId} className="search-action-cast" />
+                </div>
               </div>
-            </div>
-            <div className="search-result-actions">
-              <button onClick={() => handlePlayNow(item)} title="Play Now">&#9654;</button>
-              <button onClick={() => handlePlayNext(item)} title="Play Next">&#10549;</button>
-              <button onClick={() => handleAddToQueue(item)} title="Add to Queue">+</button>
-              <CastButton contentId={item.contentId} className="search-action-cast" />
-            </div>
+            ))}
           </div>
-        ))}
+        )}
+
+        {!isSearchActive && (
+          <div className="content-browser-home">
+            {browseConfig.map((cat, i) => (
+              <button
+                key={`${cat.source}-${cat.mediaType || i}`}
+                className="browse-category-row"
+                onClick={() => handleBrowseCategory(cat)}
+              >
+                <span className="browse-category-label">{cat.label}</span>
+                <span className="browse-category-arrow">&rarr;</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
