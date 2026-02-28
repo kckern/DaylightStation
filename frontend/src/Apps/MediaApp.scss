@@ -973,6 +973,17 @@
   cursor: grabbing;
 }
 
+// ── Mode Containers (always mounted, toggled via display) ─────
+.media-mode-browse,
+.media-mode-player {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  &.hidden { display: none; }
+}
+
 // ── Player Mode ────────────────────────────────────────────────
 .player-mode {
   flex: 1;

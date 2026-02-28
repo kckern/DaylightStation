@@ -11,17 +11,19 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
  * - onCollapse: () => void — called when user taps collapse handle or swipes down
  * - children: exactly 3 React elements (queue, nowPlaying, devices)
  */
-const PlayerSwipeContainer = ({ onCollapse, children }) => {
+const PlayerSwipeContainer = ({ onCollapse, visible, children }) => {
   const scrollRef = useRef(null);
   const [activePage, setActivePage] = useState(1); // 0=queue, 1=now-playing, 2=devices
 
-  // On mount, scroll to center page (NowPlaying) on mobile
+  // Scroll to center page (NowPlaying) on mount and whenever player mode becomes visible
   useEffect(() => {
+    if (!visible) return;
     const el = scrollRef.current;
     if (!el) return;
     const page = el.children[1];
     if (page) page.scrollIntoView({ behavior: 'instant', inline: 'start' });
-  }, []);
+    setActivePage(1);
+  }, [visible]);
 
   // Track active page via scroll position (mobile only)
   useEffect(() => {
