@@ -218,7 +218,8 @@ export function SinglePlayer(props = {}) {
     // Content formats (readalong, singalong, etc.) need the /play API for full content data.
     const directFormat = play?.format;
     const directMediaUrl = play?.mediaUrl;
-    if (directMediaUrl && directFormat && !getRenderer(directFormat)) {
+    const isRecoveryRemount = !!remountDiagnostics;
+    if (directMediaUrl && directFormat && !getRenderer(directFormat) && !isRecoveryRemount) {
       const directInfo = {
         ...play,
         id: play.id || play.contentId || effectiveContentId,
@@ -312,7 +313,7 @@ export function SinglePlayer(props = {}) {
     } else if (!!open) {
       setGoToApp(open);
     }
-  }, [effectiveContentId, plex, media, open, shuffle, continuous, play?.maxVideoBitrate, play?.maxResolution, play?.seconds, play?.resume, plexClientSession]);
+  }, [effectiveContentId, plex, media, open, shuffle, continuous, play?.maxVideoBitrate, play?.maxResolution, play?.seconds, play?.resume, plexClientSession, remountDiagnostics]);
 
   useEffect(() => {
     fetchVideoInfoCallback();
