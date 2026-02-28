@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import getLogger from '../../lib/logging/Logger.js';
 import MediaAppPlayer from './MediaAppPlayer.jsx';
-import CastButton from './CastButton.jsx';
 import { ContentDisplayUrl } from '../../lib/api.mjs';
 
 function formatTime(seconds) {
@@ -54,7 +53,7 @@ const FormatMetadata = ({ item, duration }) => {
  *
  * Req: 1.2.4, 1.1.4, 1.1.5, 1.1.6, 1.1.7
  */
-const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, onQueueToggle, onSearchToggle, onDeviceToggle, queueLength, playerRef }) => {
+const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, playerRef }) => {
   const logger = useMemo(() => getLogger().child({ component: 'NowPlaying' }), []);
 
   const [playbackState, setPlaybackState] = useState({
@@ -174,7 +173,7 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, o
       <div className="media-now-playing media-now-playing--empty">
         <div className="media-empty-state">
           <p>Nothing playing</p>
-          <p className="media-empty-hint">Use ?play=hymn:198 to start playback</p>
+          <p className="media-empty-hint">Search or browse to find something to play</p>
         </div>
       </div>
     );
@@ -253,22 +252,6 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, o
             <button className="media-transport-btn" onClick={onNext} aria-label="Next">
               &#9197;
             </button>
-            {onSearchToggle && (
-              <button className="media-transport-btn" onClick={onSearchToggle} aria-label="Search">
-                &#128269;
-              </button>
-            )}
-            {currentItem && <CastButton contentId={currentItem.contentId} className="media-transport-btn" />}
-            {onDeviceToggle && (
-              <button className="media-transport-btn" onClick={onDeviceToggle} aria-label="Devices">
-                &#x1F4F1;
-              </button>
-            )}
-            {onQueueToggle && (
-              <button className="media-transport-btn" onClick={onQueueToggle} aria-label="Queue">
-                &#9776; {queueLength > 0 && <span className="queue-badge">{queueLength}</span>}
-              </button>
-            )}
           </div>
         </>
       )}
