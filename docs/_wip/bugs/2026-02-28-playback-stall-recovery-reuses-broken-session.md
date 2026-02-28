@@ -3,7 +3,7 @@
 **Date:** 2026-02-28
 **Severity:** Critical
 **Component:** Frontend / Player Resilience + SinglePlayer
-**Status:** Open
+**Status:** Fixed
 
 ---
 
@@ -156,3 +156,13 @@ After fix, recovery logs should show:
 - Fresh `/play` API call in network tab during recovery
 - New Plex session ID in the media URL after recovery
 - `playback.started` event after recovery (not more `stall_threshold_exceeded`)
+
+---
+
+## Resolution
+
+**Fixed in commit:** `be48a7ec`
+
+SinglePlayer.jsx now checks `remountDiagnostics` before the direct-play bypass.
+During recovery remounts, the bypass is skipped, forcing a fresh `/play` API call
+that generates a new Plex transcode session URL.
