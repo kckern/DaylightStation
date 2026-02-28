@@ -95,10 +95,10 @@ describe('spawnObstacle', () => {
     const obs = next.obstacles[0];
     expect(obs.type).toBe(OBSTACLE_HIGH);
     expect(obs.x).toBe(1.05);
-    expect(obs.height).toBeCloseTo(0.25, 1);
+    expect(obs.height).toBeCloseTo(0.22, 1);
     // Bottom baseline = GROUND_Y - PLAYER_HEIGHT + 0.02 = 0.52
-    // y = bottom - height = 0.52 - 0.25 = 0.27
-    expect(obs.y).toBeCloseTo(0.27, 2);
+    // y = bottom - height = 0.52 - 0.22 = 0.30
+    expect(obs.y).toBeCloseTo(0.30, 2);
   });
 
   it('does NOT mutate the original world', () => {
@@ -505,9 +505,9 @@ describe('checkCollisions', () => {
         {
           type: OBSTACLE_HIGH,
           x: PLAYER_X,
-          y: 0.27,
+          y: 0.30,
           width: 0.05,
-          height: 0.25,
+          height: 0.22,
           hit: false,
           dodged: false,
         },
@@ -550,9 +550,9 @@ describe('checkCollisions', () => {
         {
           type: OBSTACLE_HIGH,
           x: PLAYER_X,
-          y: 0.27,
+          y: 0.30,
           width: 0.05,
-          height: 0.25,
+          height: 0.22,
           hit: false,
           dodged: false,
         },
