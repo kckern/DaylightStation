@@ -311,33 +311,10 @@
 
 /* Queue Drawer */
 .queue-drawer {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  max-height: 70vh;
-  background: #111;
-  border-top: 1px solid #333;
-  border-radius: 12px 12px 0 0;
   display: flex;
   flex-direction: column;
-  z-index: 900;
-  animation: slideUp 0.2s ease-out;
-
-  @media (min-width: 768px) {
-    position: static;
-    max-height: none;
-    width: 320px;
-    border-radius: 0;
-    border-left: 1px solid #333;
-    border-top: none;
-    animation: none;
-  }
-}
-
-@keyframes slideUp {
-  from { transform: translateY(100%); }
-  to { transform: translateY(0); }
+  height: 100%;
+  background: #111;
 }
 
 .queue-drawer-header {
@@ -445,20 +422,14 @@
 
 /* Content Browser */
 .content-browser {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: #0a0a0a;
-  z-index: 800;
+  flex: 1;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  background: #0a0a0a;
 
-  @media (min-width: 768px) {
-    position: static;
-    width: 400px;
-    border-left: 1px solid #333;
+  &--with-miniplayer {
+    padding-bottom: 56px;
   }
 }
 
@@ -480,14 +451,6 @@
 
   &::placeholder { color: #666; }
   &:focus { outline: none; border-color: #1db954; }
-}
-
-.content-browser-close {
-  background: none;
-  border: none;
-  color: #888;
-  font-size: 18px;
-  cursor: pointer;
 }
 
 .content-browser-filters {
@@ -526,6 +489,11 @@
     cursor: pointer;
     font-size: 12px;
   }
+}
+
+.content-browser-body {
+  flex: 1;
+  overflow-y: auto;
 }
 
 .content-browser-results {
@@ -615,25 +583,40 @@
   margin-left: 4px;
 }
 
-// Device Panel — right-edge drawer
+// Browse category rows (home screen when not searching)
+.content-browser-home {
+  padding: 8px 0;
+}
+
+.browse-category-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 16px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid #1a1a1a;
+  color: #e0e0e0;
+  font-size: 16px;
+  cursor: pointer;
+  text-align: left;
+
+  &:hover { background: #1a1a1a; }
+  &:active { background: #222; }
+}
+
+.browse-category-arrow {
+  color: #666;
+  font-size: 18px;
+}
+
+// Device Panel
 .device-panel {
-  position: fixed;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  width: 320px;
-  background: #181818;
-  z-index: 200;
   display: flex;
   flex-direction: column;
-  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.5);
-
-  @media (max-width: 600px) {
-    width: 100%;
-    top: auto;
-    height: 70vh;
-    border-radius: 16px 16px 0 0;
-  }
+  height: 100%;
+  background: #181818;
 }
 
 .device-panel-header {
@@ -648,16 +631,6 @@
     color: #fff;
     font-size: 18px;
   }
-}
-
-.device-panel-close {
-  background: none;
-  border: none;
-  color: #888;
-  font-size: 24px;
-  cursor: pointer;
-  padding: 4px 8px;
-  &:hover { color: #fff; }
 }
 
 .device-panel-list {
@@ -998,4 +971,104 @@
 
 .queue-item[draggable="true"]:active {
   cursor: grabbing;
+}
+
+// ── Player Mode ────────────────────────────────────────────────
+.player-mode {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: playerSlideUp 0.25s ease-out;
+}
+
+@keyframes playerSlideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.player-collapse-handle {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 4px;
+  cursor: pointer;
+
+  @media (min-width: 768px) {
+    display: none;
+  }
+}
+
+.player-collapse-bar {
+  width: 36px;
+  height: 4px;
+  background: #444;
+  border-radius: 2px;
+}
+
+// Mobile: horizontal scroll-snap
+.player-swipe-container {
+  flex: 1;
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar { display: none; }
+
+  // Desktop: 3-column grid, no scrolling
+  @media (min-width: 768px) {
+    overflow-x: hidden;
+    scroll-snap-type: none;
+    display: grid;
+    grid-template-columns: 280px 1fr 280px;
+    gap: 0;
+  }
+}
+
+.player-swipe-page {
+  flex: 0 0 100%;
+  scroll-snap-align: start;
+  overflow-y: auto;
+
+  @media (min-width: 768px) {
+    flex: none;
+  }
+
+  &--queue {
+    @media (min-width: 768px) {
+      border-right: 1px solid #222;
+    }
+  }
+
+  &--devices {
+    @media (min-width: 768px) {
+      border-left: 1px solid #222;
+    }
+  }
+}
+
+// Dot indicators — mobile only
+.player-dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 0 12px;
+
+  @media (min-width: 768px) {
+    display: none;
+  }
+}
+
+.player-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: none;
+  background: #444;
+  cursor: pointer;
+  padding: 0;
+
+  &--active { background: #1db954; }
 }
