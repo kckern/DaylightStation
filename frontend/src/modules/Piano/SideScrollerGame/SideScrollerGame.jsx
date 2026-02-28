@@ -1,4 +1,5 @@
 import { useMemo, useEffect } from 'react';
+import getLogger from '../../../lib/logging/Logger.js';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
 import { PianoKeyboard } from '../components/PianoKeyboard';
 import { ActionStaff } from '../components/ActionStaff.jsx';
@@ -60,7 +61,15 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate }) {
       activeNotesList: activeNotes ? [...activeNotes.keys()] : [],
     };
     return () => { delete window.__SIDE_SCROLLER_DEBUG__; };
-  });
+  }, [game.phase, game.world, game.level, game.targets, game.score, game.health, game.matchedActions, activeNotes]);
+
+  // Performance diagnostics during gameplay
+  useEffect(() => {
+    if (game.phase === 'PLAYING') {
+      getLogger().startDiagnostics({ intervalMs: 5000 });
+      return () => getLogger().stopDiagnostics();
+    }
+  }, [game.phase]);
 
   return (
     <div className="side-scroller">

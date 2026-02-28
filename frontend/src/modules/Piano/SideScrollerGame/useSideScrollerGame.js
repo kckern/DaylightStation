@@ -19,6 +19,10 @@ import {
   OBSTACLE_HIGH,
 } from './sideScrollerEngine.js';
 
+// Outcome types for pendingOutcomeRef (extracted from setWorld updater)
+const OUTCOME_FAIL = 'fail';
+const OUTCOME_ADVANCE = 'advance';
+
 // ─── Constants ──────────────────────────────────────────────────
 const COUNTDOWN_STEPS = [3, 2, 1, 0];
 const COUNTDOWN_STEP_MS = 800;
@@ -105,6 +109,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
   const lastFrameRef = useRef(0);
   const lastSpawnRef = useRef(0);
   const prevDodgeCountRef = useRef(0);
+  const pendingOutcomeRef = useRef(null);
 
   // ─── Cleanup ────────────────────────────────────────────────
 
@@ -121,8 +126,10 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     const noteRange = lvlConfig.note_range || [60, 72];
     const complexity = lvlConfig.complexity || 'single';
     const whiteKeysOnly = lvlConfig.white_keys_only ?? false;
-    setTargets(generateScrollerTargets(noteRange, complexity, whiteKeysOnly));
-  }, []);
+    const newTargets = generateScrollerTargets(noteRange, complexity, whiteKeysOnly);
+    logger.debug('side-scroller.targets-regenerated', { jump: newTargets.jump, duck: newTargets.duck });
+    setTargets(newTargets);
+  }, [logger]);
 
   // ─── Game Loop (rAF) ───────────────────────────────────────
 
@@ -167,6 +174,10 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
       if (collisions.length > 0) {
         const hitIndices = collisions.map(c => next.obstacles.indexOf(c));
         next = applyDamage(next, config.damagePerHit, config.invincibilityMs, timestamp, hitIndices);
+        logger.debug('side-scroller.collision', { count: collisions.length, health: next.health, damagePerHit: config.damagePerHit });
+        if (next.health <= TOTAL_HEALTH * 0.25 && next.health > 0) {
+          logger.warn('side-scroller.health-warning', { health: next.health, totalHealth: TOTAL_HEALTH });
+        }
       }
 
       // Check for newly dodged obstacles → heal
@@ -175,31 +186,43 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
         for (let i = 0; i < dodged; i++) {
           next = applyHeal(next, config.healPerDodge);
         }
+        logger.debug('side-scroller.heal', { dodged, health: next.health, healPerDodge: config.healPerDodge });
         prevDodgeCountRef.current = next.dodgeCount;
       }
 
-      // Evaluate level
+      // Evaluate level — store outcome in ref instead of calling setState from updater
       const outcome = evaluateLevel(next, lvlConfig);
       if (outcome === 'fail') {
-        logger.info('side-scroller.game-over', { score: next.score, level: levelRef.current });
-        setPhase('GAME_OVER');
+        pendingOutcomeRef.current = { type: OUTCOME_FAIL, score: next.score, level: levelRef.current };
         return next;
       }
       if (outcome === 'advance') {
-        logger.info('side-scroller.level-advance', { from: levelRef.current, score: next.score });
         const nextLevel = levelRef.current + 1;
-        if (nextLevel >= levels.length) {
-          setPhase('GAME_OVER');
-          return next;
-        }
-        setLevel(nextLevel);
-        setLevelName(levels[nextLevel]?.name ?? '');
+        pendingOutcomeRef.current = { type: OUTCOME_ADVANCE, from: levelRef.current, score: next.score, nextLevel };
         next = { ...next, score: 0 };
-        setTimeout(() => regenerateTargets(levels[nextLevel]), 0);
       }
 
       return next;
     });
+
+    // Apply side effects after setWorld (extracted from updater)
+    const outcome = pendingOutcomeRef.current;
+    if (outcome) {
+      pendingOutcomeRef.current = null;
+      if (outcome.type === OUTCOME_FAIL) {
+        logger.info('side-scroller.game-over', { score: outcome.score, level: outcome.level });
+        setPhase('GAME_OVER');
+      } else if (outcome.type === OUTCOME_ADVANCE) {
+        logger.info('side-scroller.level-advance', { from: outcome.from, score: outcome.score });
+        if (outcome.nextLevel >= levels.length) {
+          setPhase('GAME_OVER');
+        } else {
+          setLevel(outcome.nextLevel);
+          setLevelName(levels[outcome.nextLevel]?.name ?? '');
+          setTimeout(() => regenerateTargets(levels[outcome.nextLevel]), 0);
+        }
+      }
+    }
 
     rafRef.current = requestAnimationFrame(gameLoop);
   }, [levels, config, logger, regenerateTargets]);
@@ -219,12 +242,13 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
   // ─── Action Handlers ────────────────────────────────────────
 
   const handleAction = useCallback((actionName) => {
+    logger.debug('side-scroller.action', { action: actionName });
     if (actionName === 'jump') {
       setWorld(prev => applyJump(prev));
     } else if (actionName === 'duck') {
       setWorld(prev => applyDuck(prev));
     }
-  }, []);
+  }, [logger]);
 
   // Staff matching
   const staffEnabled = phase === 'PLAYING';
