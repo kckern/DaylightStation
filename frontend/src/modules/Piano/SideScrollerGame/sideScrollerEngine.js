@@ -84,9 +84,9 @@ export function spawnObstacle(world, type) {
   } else {
     // Tall pillar — unjumpable, must duck to clear
     // Bottom baseline at GROUND_Y - PLAYER_HEIGHT + 0.02 = 0.52
-    // Top at 0.27 — above jump peak (player top at peak = 0.25)
-    // but below the jump staff zone (ends at 30%)
-    height = 0.25;
+    // Top at 0.30 — clears the jump staff zone (ends at 30%)
+    // Still unjumpable: player bottom at peak = 0.43 > 0.30
+    height = 0.22;
     y = GROUND_Y - PLAYER_HEIGHT + 0.02 - height;
   }
 
