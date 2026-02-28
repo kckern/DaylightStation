@@ -9,12 +9,14 @@ import {
   OBSTACLE_LOW,
   OBSTACLE_HIGH,
   JUMP_HEIGHT,
+  MAX_DUCK_MS,
   createInitialWorld,
   spawnObstacle,
   tickWorld,
   applyJump,
   updateJump,
   applyDuck,
+  updateDuck,
   releaseDuck,
   getPlayerHitbox,
   checkCollisions,
@@ -36,6 +38,7 @@ describe('constants', () => {
     expect(OBSTACLE_LOW).toBe('low');
     expect(OBSTACLE_HIGH).toBe('high');
     expect(JUMP_HEIGHT).toBe(0.25);
+    expect(MAX_DUCK_MS).toBe(800);
   });
 });
 
@@ -52,6 +55,7 @@ describe('createInitialWorld', () => {
       playerState: 'running',
       playerY: GROUND_Y,
       jumpT: 0,
+      duckStartT: 0,
       invincibleUntil: 0,
       dodgeCount: 0,
     });
@@ -293,32 +297,68 @@ describe('updateJump', () => {
 // ─── applyDuck ──────────────────────────────────────────────────
 
 describe('applyDuck', () => {
-  it('sets playerState to ducking', () => {
+  it('sets playerState to ducking and records duckStartT', () => {
     const world = createInitialWorld();
-    const ducked = applyDuck(world);
+    const ducked = applyDuck(world, 5000);
     expect(ducked.playerState).toBe('ducking');
+    expect(ducked.duckStartT).toBe(5000);
   });
 
   it('is a no-op if jumping', () => {
     const world = { ...createInitialWorld(), playerState: 'jumping' };
-    const result = applyDuck(world);
+    const result = applyDuck(world, 5000);
     expect(result).toBe(world);
   });
 
   it('does NOT mutate original world', () => {
     const world = createInitialWorld();
-    applyDuck(world);
+    applyDuck(world, 5000);
     expect(world.playerState).toBe('running');
+  });
+});
+
+describe('updateDuck', () => {
+  it('is a no-op if not ducking', () => {
+    const world = createInitialWorld();
+    const result = updateDuck(world, 5000, MAX_DUCK_MS);
+    expect(result).toBe(world);
+  });
+
+  it('remains ducking if within time limit', () => {
+    const world = { ...createInitialWorld(), playerState: 'ducking', duckStartT: 5000 };
+    const result = updateDuck(world, 5500, MAX_DUCK_MS); // 500ms elapsed, limit 800ms
+    expect(result.playerState).toBe('ducking');
+  });
+
+  it('auto-releases to running when time limit exceeded', () => {
+    const world = { ...createInitialWorld(), playerState: 'ducking', duckStartT: 5000 };
+    const result = updateDuck(world, 5800, MAX_DUCK_MS); // 800ms elapsed = limit
+    expect(result.playerState).toBe('running');
+    expect(result.duckStartT).toBe(0);
+  });
+
+  it('auto-releases when well past time limit', () => {
+    const world = { ...createInitialWorld(), playerState: 'ducking', duckStartT: 1000 };
+    const result = updateDuck(world, 5000, MAX_DUCK_MS); // 4000ms elapsed
+    expect(result.playerState).toBe('running');
+    expect(result.duckStartT).toBe(0);
+  });
+
+  it('does NOT mutate original world', () => {
+    const world = { ...createInitialWorld(), playerState: 'ducking', duckStartT: 1000 };
+    updateDuck(world, 5000, MAX_DUCK_MS);
+    expect(world.playerState).toBe('ducking');
   });
 });
 
 // ─── releaseDuck ────────────────────────────────────────────────
 
 describe('releaseDuck', () => {
-  it('returns to running if ducking', () => {
-    const world = { ...createInitialWorld(), playerState: 'ducking' };
+  it('returns to running and resets duckStartT if ducking', () => {
+    const world = { ...createInitialWorld(), playerState: 'ducking', duckStartT: 5000 };
     const released = releaseDuck(world);
     expect(released.playerState).toBe('running');
+    expect(released.duckStartT).toBe(0);
   });
 
   it('is a no-op if not ducking', () => {
