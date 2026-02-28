@@ -85,15 +85,16 @@ describe('spawnObstacle', () => {
     expect(obs.y).toBeCloseTo(GROUND_Y - obs.height, 5);
   });
 
-  it('spawns a high obstacle floating at head height', () => {
+  it('spawns a high obstacle — unjumpable pillar', () => {
     const world = createInitialWorld();
     const next = spawnObstacle(world, OBSTACLE_HIGH);
     const obs = next.obstacles[0];
     expect(obs.type).toBe(OBSTACLE_HIGH);
     expect(obs.x).toBe(1.05);
-    expect(obs.height).toBeCloseTo(0.05, 1);
-    // High obstacle just above standing head: y = GROUND_Y - PLAYER_HEIGHT - 0.03
-    expect(obs.y).toBeCloseTo(GROUND_Y - PLAYER_HEIGHT - 0.03, 5);
+    expect(obs.height).toBeCloseTo(0.30, 1);
+    // Bottom baseline = GROUND_Y - PLAYER_HEIGHT + 0.02 = 0.52
+    // y = bottom - height = 0.52 - 0.30 = 0.22
+    expect(obs.y).toBeCloseTo(0.22, 2);
   });
 
   it('does NOT mutate the original world', () => {
@@ -463,20 +464,15 @@ describe('checkCollisions', () => {
       obstacles: [
         {
           type: OBSTACLE_HIGH,
-          // head height for standing player, but ducking player is shorter
           x: PLAYER_X,
-          y: GROUND_Y - PLAYER_HEIGHT - 0.02,
+          y: 0.22,
           width: 0.05,
-          height: 0.05,
+          height: 0.30,
           hit: false,
           dodged: false,
         },
       ],
     };
-    const hb = getPlayerHitbox(world);
-    // Ducking hitbox top = GROUND_Y - PLAYER_DUCK_HEIGHT = 0.68 - 0.09 = 0.59
-    // High obstacle bottom = (GROUND_Y - PLAYER_HEIGHT - 0.03) + 0.05 = 0.68 - 0.18 - 0.03 + 0.05 = 0.52
-    // 0.52 < 0.59, so no overlap vertically
     const hits = checkCollisions(world);
     expect(hits.length).toBe(0);
   });
@@ -503,6 +499,27 @@ describe('checkCollisions', () => {
     // No vertical overlap (0.30 < 0.45)
     const hits = checkCollisions(world);
     expect(hits.length).toBe(0);
+  });
+
+  it('collides with high obstacle even at jump peak', () => {
+    const world = {
+      ...createInitialWorld(),
+      playerState: 'jumping',
+      playerY: GROUND_Y - JUMP_HEIGHT,
+      obstacles: [
+        {
+          type: OBSTACLE_HIGH,
+          x: PLAYER_X,
+          y: 0.22,
+          width: 0.05,
+          height: 0.30,
+          hit: false,
+          dodged: false,
+        },
+      ],
+    };
+    const hits = checkCollisions(world);
+    expect(hits.length).toBe(1);
   });
 });
 
