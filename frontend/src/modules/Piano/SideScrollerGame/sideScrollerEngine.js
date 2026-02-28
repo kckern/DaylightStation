@@ -79,9 +79,11 @@ export function spawnObstacle(world, type) {
     height = 0.10;
     y = GROUND_Y - height;
   } else {
-    // high obstacle just above standing head — must duck to clear
-    height = 0.05;
-    y = GROUND_Y - PLAYER_HEIGHT - 0.03;
+    // Tall pillar — unjumpable, must duck to clear
+    // Bottom baseline at GROUND_Y - PLAYER_HEIGHT + 0.02 = 0.52
+    // Extends above jump peak (player top at peak = 0.25)
+    height = 0.30;
+    y = GROUND_Y - PLAYER_HEIGHT + 0.02 - height;
   }
 
   const obstacle = {
