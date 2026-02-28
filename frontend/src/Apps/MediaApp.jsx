@@ -133,13 +133,13 @@ const MediaAppInner = () => {
     <div className="App media-app">
       <div className="media-app-container">
         {/* Browse Mode — always mounted, hidden when in player mode */}
-        <div style={{ display: mode === 'browse' ? 'flex' : 'none', flex: 1, flexDirection: 'column', overflow: 'hidden' }}>
+        <div className={`media-mode-browse${mode !== 'browse' ? ' hidden' : ''}`}>
           <ContentBrowser hasMiniplayer={hasMiniplayer} />
         </div>
 
         {/* Player Mode — always mounted, hidden when in browse mode */}
-        <div style={{ display: mode === 'player' ? 'flex' : 'none', flex: 1, flexDirection: 'column', overflow: 'hidden' }}>
-          <PlayerSwipeContainer onCollapse={() => setMode('browse')}>
+        <div className={`media-mode-player${mode !== 'player' ? ' hidden' : ''}`}>
+          <PlayerSwipeContainer onCollapse={() => setMode('browse')} visible={mode === 'player'}>
             <QueueDrawer />
             <NowPlaying
               currentItem={queue.currentItem}

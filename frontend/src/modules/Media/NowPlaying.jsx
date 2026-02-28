@@ -112,7 +112,7 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
 
   const handleToggle = useCallback(() => {
     playerRef.current?.toggle?.();
-  }, []);
+  }, [playerRef]);
 
   const handleSeek = useCallback((e) => {
     const bar = e.currentTarget;
@@ -120,14 +120,14 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
     const percent = (e.clientX - rect.left) / rect.width;
     const seekTime = percent * playbackState.duration;
     playerRef.current?.seek?.(seekTime);
-  }, [playbackState.duration]);
+  }, [playbackState.duration, playerRef]);
 
   const handleVolumeChange = useCallback((e) => {
     const newVolume = parseFloat(e.target.value);
     setVolume(newVolume);
     const el = playerRef.current?.getMediaElement?.();
     if (el) el.volume = newVolume;
-  }, []);
+  }, [playerRef]);
 
   const handleExitFullscreen = useCallback(() => setIsFullscreen(false), []);
 
