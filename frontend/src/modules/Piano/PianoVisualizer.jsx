@@ -1,4 +1,5 @@
 import { useEffect, useMemo, Suspense } from 'react';
+import { configure as configureLogger } from '../../lib/logging/Logger.js';
 import { PianoKeyboard } from './components/PianoKeyboard';
 import { NoteWaterfall } from './components/NoteWaterfall';
 import { CurrentChordStaff } from './components/CurrentChordStaff';
@@ -28,6 +29,15 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
 
   const { inactivityState, countdownProgress } = useInactivityTimer(activeNotes, noteHistory, isFullscreenGame, onClose);
   const { sessionDuration } = useSessionTracking(noteHistory);
+
+  // Configure root logger so child components using getLogger() directly
+  // also get sessionLog: true (routes their events to the JSONL session file)
+  useEffect(() => {
+    configureLogger({ context: { app: 'piano', sessionLog: true } });
+    return () => {
+      configureLogger({ context: { sessionLog: false } });
+    };
+  }, []);
 
   const { startNote, endNote } = useMemo(
     () => computeKeyboardRange(null),

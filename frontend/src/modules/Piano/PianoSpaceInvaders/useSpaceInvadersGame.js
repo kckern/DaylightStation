@@ -104,10 +104,19 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
         let next = prev;
 
         // 1. Spawn notes
+        const prevNoteCount = next.fallingNotes.length;
         next = maybeSpawnNote(next, level, now);
+        if (next.fallingNotes.length > prevNoteCount) {
+          const newNote = next.fallingNotes[next.fallingNotes.length - 1];
+          logger.debug('space-invaders.spawn', { pitches: newNote.pitches, noteId: newNote.id });
+        }
 
         // 2. Detect misses
+        const prevMisses = next.score.misses;
         next = processMisses(next, now, timing.miss_threshold_ms ?? 400);
+        if (next.score.misses > prevMisses) {
+          logger.debug('space-invaders.miss', { count: next.score.misses - prevMisses, totalMisses: next.score.misses, combo: 0 });
+        }
 
         // 3. Cleanup old resolved notes
         next = cleanupResolvedNotes(next, now);
@@ -198,6 +207,9 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
         const penalty = streak === 1 ? 1 : streak === 2 ? 3 : streak === 3 ? 5 : 7;
         const newHealth = Math.max(0, newState.health - penalty);
         logger.debug('space-invaders.wrong-press', { pitch, health: newHealth, streak, penalty });
+        if (newHealth <= TOTAL_HEALTH * 0.25 && newHealth > 0) {
+          logger.warn('space-invaders.health-warning', { health: newHealth, totalHealth: TOTAL_HEALTH, threshold: '25%' });
+        }
         return { ...newState, health: newHealth, wrongStreak: streak };
       });
     }

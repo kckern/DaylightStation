@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import getLogger from '../../../lib/logging/Logger.js';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
 import { PianoKeyboard } from '../components/PianoKeyboard';
 import { NoteWaterfall } from '../components/NoteWaterfall';
@@ -43,6 +44,14 @@ export function SpaceInvadersGame({ activeNotes, noteHistory, gameConfig, onDeac
     }
     return pitches.size > 0 ? pitches : null;
   }, [game.fallingNotes]);
+
+  // Performance diagnostics during gameplay
+  useEffect(() => {
+    if (game.gameState === 'PLAYING') {
+      getLogger().startDiagnostics({ intervalMs: 5000 });
+      return () => getLogger().stopDiagnostics();
+    }
+  }, [game.gameState]);
 
   // Screen flash on wrong press
   useEffect(() => {
