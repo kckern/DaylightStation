@@ -71,14 +71,16 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
         </div>
       </div>
 
-      <div className="waterfall-container">
-        <NoteWaterfall
-          noteHistory={noteHistory}
-          activeNotes={activeNotes}
-          startNote={startNote}
-          endNote={endNote}
-        />
-      </div>
+      {!isFullscreenGame && (
+        <div className="waterfall-container">
+          <NoteWaterfall
+            noteHistory={noteHistory}
+            activeNotes={activeNotes}
+            startNote={startNote}
+            endNote={endNote}
+          />
+        </div>
+      )}
 
       <div className="keyboard-container">
         <PianoKeyboard
