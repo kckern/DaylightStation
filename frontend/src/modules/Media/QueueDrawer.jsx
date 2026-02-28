@@ -4,7 +4,7 @@ import { useMediaApp } from '../../contexts/MediaAppContext.jsx';
 import QueueItem from './QueueItem.jsx';
 import getLogger from '../../lib/logging/Logger.js';
 
-const QueueDrawer = ({ open, onClose }) => {
+const QueueDrawer = () => {
   const { queue } = useMediaApp();
   const logger = useMemo(() => getLogger().child({ component: 'QueueDrawer' }), []);
   const [draggedId, setDraggedId] = useState(null);
@@ -43,8 +43,6 @@ const QueueDrawer = ({ open, onClose }) => {
     setDraggedId(null);
   }, []);
 
-  if (!open) return null;
-
   return (
     <div className="queue-drawer">
       <div className="queue-drawer-header">
@@ -66,9 +64,6 @@ const QueueDrawer = ({ open, onClose }) => {
           </button>
           <button className="queue-action-btn" onClick={handleClear} aria-label="Clear">
             &#10005;
-          </button>
-          <button className="queue-action-btn" onClick={onClose} aria-label="Close">
-            &#9660;
           </button>
         </div>
       </div>
