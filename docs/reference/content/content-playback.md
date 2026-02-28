@@ -229,6 +229,44 @@ Every renderer of playable content implements the Playable Contract. This is the
 
 Note: `onResolvedMeta` is called at the SinglePlayer level after content resolution, not by individual renderers. `onStartupSignal` is currently only implemented by ContentScroller-based renderers (SingalongScroller, ReadalongScroller) via `useMediaReporter`.
 
+### DASH Video Playback (`dash_video`)
+
+DASH video uses the `<dash-video>` web component (from `dash-video-element`), which wraps dash.js's `MediaPlayer` and renders an inner `<video>` element inside its shadow DOM.
+
+**Architecture:**
+
+```
+<dash-video src="/api/v1/proxy/plex/stream/:ratingKey">
+  #shadow-root
+    <video>  ← inner element, accessed via containerRef.shadowRoot.querySelector('video')
+```
+
+- `containerRef` → the `<dash-video>` custom element
+- `getMediaEl()` → the inner `<video>` from shadow DOM
+- `containerRef.api` → the dash.js `MediaPlayer` instance
+
+**Resume position seek constraint:**
+
+Setting `currentTime` directly on the inner `<video>` element during initialization bypasses dash.js's SourceBuffer management and corrupts the audio buffer. The sequence:
+
+1. dash.js loads the MPD manifest and creates two SourceBuffers (video + audio)
+2. Init segments (headers) are appended to each SourceBuffer
+3. `loadedmetadata` fires on the inner `<video>`
+4. If `currentTime` is set here → dash.js abandons in-flight segments, flushes audio SourceBuffer, re-fetches the audio init segment, and loads data segments from the new position — but the audio SourceBuffer enters an inconsistent state where downloaded segments never append. Audio buffer stays at 0.00 permanently while video plays fine.
+
+**Fix (in `useCommonMediaController.js`):** For `isDash` content with a non-zero `startTime`, the seek is deferred to the `playing` event and uses `container.api.seek(startTime)` instead of `mediaEl.currentTime`. This ensures:
+- Both SourceBuffers are fully initialized before any seek
+- The seek goes through dash.js's internal buffer management (proper flush + re-init)
+- Both audio and video buffers fill correctly after the seek
+
+**Cleanup on unmount (`dashCleanup.js`):**
+
+The `<dash-video>` element has no `destroy()` method. On unmount, `cleanupDashElement()` must:
+1. Call `el.api.destroy()` to release the dash.js MediaPlayer (owns the MediaSource/SourceBuffers)
+2. Pause the inner `<video>`, revoke any blob URL, and call `removeAttribute('src') + load()` (W3C resource release pattern)
+
+Without explicit cleanup, orphaned SourceBuffers from rapid remount cycles accumulate — Firefox has lower SourceBuffer quotas than Chrome and hits ceilings faster.
+
 ### Future Extension: Intra-Item Stepping
 
 The current Playable Contract handles **inter-item** advancement only: `advance()` moves to the next queue item. Some content types (slideshow, pageturner, presentation) need **intra-item** stepping — advancing within a single queue item (next slide, next page).
