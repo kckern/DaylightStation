@@ -1,5 +1,6 @@
 // frontend/src/modules/Media/PlayerSwipeContainer.jsx
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import getLogger from '../../lib/logging/Logger.js';
 
 /**
  * Responsive container for Queue | NowPlaying | Devices.
@@ -11,8 +12,11 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
  * - onCollapse: () => void — called when user taps collapse handle or swipes down
  * - children: exactly 3 React elements (queue, nowPlaying, devices)
  */
+const PAGE_NAMES = ['queue', 'now-playing', 'devices'];
+
 const PlayerSwipeContainer = ({ onCollapse, visible, children }) => {
   const scrollRef = useRef(null);
+  const logger = useMemo(() => getLogger().child({ component: 'PlayerSwipeContainer' }), []);
   const [activePage, setActivePage] = useState(1); // 0=queue, 1=now-playing, 2=devices
 
   // Scroll to center page (NowPlaying) on mount and whenever player mode becomes visible
@@ -37,8 +41,11 @@ const PlayerSwipeContainer = ({ onCollapse, visible, children }) => {
       requestAnimationFrame(() => {
         const scrollLeft = el.scrollLeft;
         const pageWidth = el.clientWidth;
-        const page = Math.round(scrollLeft / pageWidth);
-        setActivePage(Math.min(2, Math.max(0, page)));
+        const page = Math.min(2, Math.max(0, Math.round(scrollLeft / pageWidth)));
+        setActivePage(prev => {
+          if (prev !== page) logger.debug('player.swipe', { page: PAGE_NAMES[page] });
+          return page;
+        });
         ticking = false;
       });
     };
@@ -50,15 +57,16 @@ const PlayerSwipeContainer = ({ onCollapse, visible, children }) => {
   const scrollToPage = useCallback((page) => {
     const el = scrollRef.current;
     if (!el || !el.children[page]) return;
+    logger.debug('player.dot-tap', { page: PAGE_NAMES[page] });
     el.children[page].scrollIntoView({ behavior: 'smooth', inline: 'start' });
-  }, []);
+  }, [logger]);
 
   const childArray = React.Children.toArray(children);
 
   return (
     <div className="player-mode">
       {/* Collapse handle — mobile only */}
-      <div className="player-collapse-handle" onClick={onCollapse}>
+      <div className="player-collapse-handle" onClick={() => { logger.debug('player.collapse'); onCollapse(); }}>
         <div className="player-collapse-bar" />
       </div>
 

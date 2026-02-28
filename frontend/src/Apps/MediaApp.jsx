@@ -35,7 +35,7 @@ const MediaAppInner = () => {
   const { queue, playerRef } = useMediaApp();
   const urlCommandProcessed = useRef(false);
   usePlaybackBroadcast(playerRef, queue.currentItem);
-  const logger = useMemo(() => getLogger().child({ app: 'media' }), []);
+  const logger = useMemo(() => getLogger().child({ app: 'media', sessionLog: true }), []);
   const urlCommand = useMediaUrlParams();
 
   // Two-mode navigation: 'browse' (default) or 'player' (expanded)
@@ -50,10 +50,10 @@ const MediaAppInner = () => {
 
   // Logger setup
   useEffect(() => {
-    configureLogger({ context: { app: 'media' } });
+    configureLogger({ context: { app: 'media', sessionLog: true } });
     logger.info('media-app.mounted');
     return () => {
-      configureLogger({ context: {} });
+      configureLogger({ context: { sessionLog: false } });
       logger.info('media-app.unmounted');
     };
   }, [logger]);
