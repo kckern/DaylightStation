@@ -3,7 +3,6 @@ import { getNotePosition, getNoteWidth, getNoteHue, getNoteName } from '../noteU
 import './NoteWaterfall.scss';
 
 const DISPLAY_DURATION = 8000; // Show notes for 8 seconds as they rise
-const TICK_INTERVAL = 16; // ~60fps
 const EXPLOSION_DURATION_MS = 600;
 const PARTICLE_COUNT = 8;
 // Pre-computed particle directions (evenly spaced around a circle)
@@ -25,12 +24,16 @@ const PARTICLE_ANGLES = Array.from({ length: PARTICLE_COUNT }, (_, i) => {
 export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), startNote = 21, endNote = 108, gameMode = null, wrongColumns = null }) {
   const [tick, setTick] = useState(0);
 
-  // Continuous animation tick
+  // Continuous animation tick — use rAF instead of setInterval for proper
+  // frame synchronization and to avoid scheduling conflicts
   useEffect(() => {
-    const interval = setInterval(() => {
+    let rafId;
+    const step = () => {
       setTick(t => t + 1);
-    }, TICK_INTERVAL);
-    return () => clearInterval(interval);
+      rafId = requestAnimationFrame(step);
+    };
+    rafId = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(rafId);
   }, []);
 
   const visibleNotes = useMemo(() => {
