@@ -45,8 +45,9 @@ const ContentBrowser = ({ hasMiniplayer }) => {
     const val = e.target.value;
     setSearchText(val);
     exitBrowse();
+    if (val.length > 0) logger.debug('content-browser.search', { query: val });
     search(val);
-  }, [search, exitBrowse]);
+  }, [search, exitBrowse, logger]);
 
   const handlePlayNow = useCallback((item) => {
     const nextPosition = queue.position + 1;
@@ -98,7 +99,7 @@ const ContentBrowser = ({ hasMiniplayer }) => {
           <button
             key={f.label}
             className={`filter-chip ${i === activeFilter ? 'active' : ''}`}
-            onClick={() => { setActiveFilter(i); search(searchText); }}
+            onClick={() => { logger.debug('content-browser.filter', { filter: f.label }); setActiveFilter(i); search(searchText); }}
           >
             {f.label}
           </button>
