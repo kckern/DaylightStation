@@ -4,11 +4,9 @@ import { useDeviceMonitor } from '../../hooks/media/useDeviceMonitor.js';
 import DeviceCard from './DeviceCard.jsx';
 import getLogger from '../../lib/logging/Logger.js';
 
-const DevicePanel = ({ open, onClose }) => {
+const DevicePanel = () => {
   const logger = useMemo(() => getLogger().child({ component: 'DevicePanel' }), []);
   const { devices, playbackStates, isLoading } = useDeviceMonitor();
-
-  if (!open) return null;
 
   // Separate registered devices from browser-only clients
   const deviceIds = new Set(devices.map(d => d.id));
@@ -23,7 +21,6 @@ const DevicePanel = ({ open, onClose }) => {
     <div className="device-panel">
       <div className="device-panel-header">
         <h3>Devices</h3>
-        <button className="device-panel-close" onClick={onClose}>&times;</button>
       </div>
 
       {isLoading && <div className="device-panel-loading">Loading devices...</div>}
