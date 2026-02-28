@@ -1,7 +1,8 @@
 /**
- * Media Queue API Router
+ * Media API Router
  *
  * Endpoints:
+ * - GET    /config                 — Load media browse config
  * - GET    /queue                  — Load current queue
  * - PUT    /queue                  — Replace entire queue
  * - POST   /queue/items            — Add items to queue
@@ -20,6 +21,7 @@ import { MediaQueue } from '#domains/media/entities/MediaQueue.mjs';
  *
  * @param {Object} config
  * @param {Object} config.mediaQueueService - MediaQueueService instance
+ * @param {Object} config.configService - ConfigService instance (for browse config)
  * @param {Function} config.contentIdResolver - Resolves content IDs (reserved for future use)
  * @param {Function} config.broadcastEvent - (eventName, payload) => void
  * @param {Object} config.logger - Structured logger
@@ -28,6 +30,7 @@ import { MediaQueue } from '#domains/media/entities/MediaQueue.mjs';
 export function createMediaRouter(config) {
   const {
     mediaQueueService,
+    configService,
     contentIdResolver,
     broadcastEvent,
     logger = console,
@@ -69,6 +72,14 @@ export function createMediaRouter(config) {
   function isInt(value) {
     return Number.isInteger(value);
   }
+
+  // ── 0. GET /config ────────────────────────────────────────────
+
+  router.get('/config', asyncHandler(async (req, res) => {
+    const hid = resolveHid(req);
+    const appConfig = configService.getHouseholdAppConfig(hid, 'media') || {};
+    res.json({ browse: appConfig.browse || [] });
+  }));
 
   // ── 1. GET /queue ──────────────────────────────────────────────
 

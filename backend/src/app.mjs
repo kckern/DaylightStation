@@ -720,6 +720,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Media queue management
   v1Routers.media = createMediaRouter({
     mediaQueueService: mediaServices.mediaQueueService,
+    configService,
     broadcastEvent: (topic, payload) => eventBus.broadcast(topic, payload),
     logger: rootLogger.child({ module: 'media-api' }),
   });
