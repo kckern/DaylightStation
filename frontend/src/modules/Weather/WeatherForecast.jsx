@@ -4,8 +4,11 @@ import React from 'react';
 import Highcharts, { color } from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import moment from 'moment';
+import { useScreenData } from '../../screen-framework/data/ScreenDataProvider.jsx';
 
-export default function WeatherForecast({ weatherData }) {
+export default function WeatherForecast({ weatherData: weatherDataProp }) {
+  const screenData = useScreenData('weather');
+  const weatherData = weatherDataProp || screenData;
   const [temps, setTemps] = useState([]);
   const [times, setTimes] = useState([]);
 

@@ -5,6 +5,7 @@ import green from "../../assets/icons/green.png";
 import yellow from "../../assets/icons/yellow.png";
 import red from "../../assets/icons/red.png";
 import lime from "../../assets/icons/lime.png";
+import { useScreenData } from '../../screen-framework/data/ScreenDataProvider.jsx';
 
 const codes = {
   "0": {
@@ -289,7 +290,9 @@ const codes = {
   }
 };
 
-export default function Weather({ weatherData }) {
+export default function Weather({ weatherData: weatherDataProp }) {
+  const screenData = useScreenData('weather');
+  const weatherData = weatherDataProp || screenData;
   const celciusToFahrenheit = temp => Math.round(temp * 9 / 5 + 32);
   const isDaytime = () =>
     moment().isBetween(
