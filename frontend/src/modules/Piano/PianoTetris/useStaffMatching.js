@@ -142,7 +142,7 @@ export function useStaffMatching(activeNotes, targets, onAction, enabled = true)
 
         // If this action wasn't already tracked, fire immediately and start hold timers
         if (!timersRef.current[action]) {
-          logger.debug('staff.action-fired', { action, pitches });
+          logger.info('staff.action-fired', { action, pitches });
           onActionRef.current(action);
 
           // Hard drop and hold should not repeat on hold
@@ -168,7 +168,7 @@ export function useStaffMatching(activeNotes, targets, onAction, enabled = true)
 
         if (timersRef.current[action]) {
           // Action no longer matched — stop repeat
-          logger.debug('staff.action-released', { action });
+          logger.info('staff.action-released', { action });
           clearActionTimers(action);
         }
       }
