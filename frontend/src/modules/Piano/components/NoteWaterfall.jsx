@@ -137,8 +137,8 @@ export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), start
       .filter(l => l.active)
       .map(l => {
         const progress = Math.min(1, (now - l.spawnTime) / travelMs);
-        // Laser travels from bottom (100%) to top (0%)
-        const bottomPercent = (1 - progress) * 100;
+        // Laser travels from bottom (0%) to top (100%)
+        const bottomPercent = progress * 100;
         return {
           ...l,
           x: getNotePosition(l.pitch, startNote, endNote),
