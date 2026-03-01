@@ -1301,7 +1301,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       rootLogger.info?.('strava.enrichment.initialized');
     }
   } catch (err) {
-    rootLogger.warn?.('strava.enrichment.init_failed', { error: err?.message });
+    rootLogger.error?.('strava.enrichment.init_failed', { error: err?.message, stack: err?.stack });
   }
 
   // Fitness domain router
