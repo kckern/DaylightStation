@@ -20,6 +20,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { existsSync } from 'fs';
+import { computeSessionEndMs, findBrokenEndEvents } from './backfill-media-durations.lib.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.join(__dirname, '..');
@@ -117,10 +118,50 @@ async function fetchPlexDurationMs(ratingKey) {
 }
 
 // ------------------------------------------------------------------
-// Placeholder exports for Task 2 and Task 3
+// Bug B: Fix missing end timestamps
 // ------------------------------------------------------------------
 
-// Bug B and Bug A implementations go here (Tasks 2-3)
+// Bug B: sessions with null or start==end in media events
+const BUG_B_SESSIONS = [
+  '20260223185457', '20260224124137', '20260224190930',
+  '20260225053400', '20260225181217', '20260226185825', '20260227054558',
+];
+
+function backfillBugB(write) {
+  let totalFixed = 0;
+
+  for (const sessionId of BUG_B_SESSIONS) {
+    console.log(`  Session ${sessionId}:`);
+    const data = loadSession(sessionId);
+    if (!data) continue;
+
+    const sessionEndMs = computeSessionEndMs(data.session);
+    if (!sessionEndMs) {
+      console.log(`    SKIP: Cannot compute session end time`);
+      continue;
+    }
+
+    const broken = findBrokenEndEvents(data.timeline?.events || []);
+    if (broken.length === 0) {
+      console.log(`    OK: No broken end timestamps`);
+      continue;
+    }
+
+    for (const evt of broken) {
+      const cid = evt.data?.contentId || '?';
+      const oldEnd = evt.data?.end;
+      console.log(`    FIX: ${cid} end: ${oldEnd} → ${sessionEndMs}`);
+      if (write) evt.data.end = sessionEndMs;
+      totalFixed++;
+    }
+
+    if (write) saveSession(sessionId, data);
+  }
+
+  console.log(`  Bug B total: ${totalFixed} events fixed\n`);
+}
+
+// Bug A implementation goes here (Task 3)
 
 // ------------------------------------------------------------------
 // Main
@@ -132,7 +173,7 @@ async function main() {
   // Bug B first (fixes end timestamps, which Bug A may use for summary.durationMs)
   if (scope === 'all' || scope === 'b') {
     console.log('=== Bug B: Fix missing end timestamps ===\n');
-    // backfillBugB(writeMode);  // Uncomment in Task 2
+    backfillBugB(writeMode);
   }
 
   if (scope === 'all' || scope === 'a') {
