@@ -1740,7 +1740,12 @@ export class FitnessSession {
     } catch(_){}
     
     if (sessionData) this._persistSession(sessionData, { force: true });
-    
+
+    // Release session lock
+    if (this._persistenceManager && this.sessionId) {
+      this._persistenceManager.releaseLock(this.sessionId);
+    }
+
     // 6A: Notify listeners that session has ended
     const endedSessionId = this.sessionId;
     this._notifySessionEnded(endedSessionId, reason);
