@@ -11,6 +11,7 @@ import { EventJournal } from './EventJournal.js';
 import { ActivityMonitor } from '../../modules/Fitness/domain/ActivityMonitor.js';
 import { SessionEntityRegistry } from './SessionEntity.js';
 import { DeviceEventRouter } from './DeviceEventRouter.js';
+import { findUnclosedMedia } from './closeOpenMedia.js';
 import moment from 'moment-timezone';
 import getLogger from '../../lib/logging/Logger.js';
 
@@ -1721,12 +1722,13 @@ export class FitnessSession {
     }
 
     this._collectTimelineTick({ timestamp: now });
+    this._closeOpenMedia(now);
     this._log('end', {
       sessionId: this.sessionId,
       durationMs,
       reason
     });
-    
+
     let sessionData = null;
     try {
       if (this.treasureBox) {
@@ -1749,9 +1751,21 @@ export class FitnessSession {
   }
 
   /**
+   * Emit media_end for any media_start events that lack a matching media_end.
+   * Called during endSession() so the last-playing video/music track gets closed.
+   */
+  _closeOpenMedia(now) {
+    if (!this.timeline?.events) return;
+
+    for (const contentId of findUnclosedMedia(this.timeline.events)) {
+      this.logEvent('media_end', { contentId, source: 'session_end' }, now);
+    }
+  }
+
+  /**
    * Phase 3: Check if an entity is active (has user with active HR this tick).
    * Used for determining whether to record entity coins_total.
-   * 
+   *
    * @param {string} entityId - Entity ID to check
    * @param {Set<string>} activeHRSet - Set of user IDs with active HR this tick
    * @param {Map<string, Object>} userMetricMap - Map of userId -> staged entry
