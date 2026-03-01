@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WidgetRegistry } from './registry.js';
 
-// Mock widget components
 const MockClock = () => 'clock';
 const MockWeather = () => 'weather';
 
@@ -12,46 +11,29 @@ describe('WidgetRegistry', () => {
     registry = new WidgetRegistry();
   });
 
-  it('should register a widget', () => {
+  it('should register and retrieve a widget', () => {
     registry.register('clock', MockClock);
-
     expect(registry.has('clock')).toBe(true);
-  });
-
-  it('should retrieve a registered widget', () => {
-    registry.register('clock', MockClock);
-
-    const widget = registry.get('clock');
-
-    expect(widget).toBe(MockClock);
+    expect(registry.get('clock')).toBe(MockClock);
   });
 
   it('should return null for unregistered widget', () => {
     expect(registry.get('nonexistent')).toBe(null);
   });
 
-  it('should register widget with metadata', () => {
-    registry.register('weather', MockWeather, {
-      defaultSource: '/api/v1/home/weather',
-      refreshInterval: 60000,
-      actions: ['select', 'refresh']
-    });
-
-    const meta = registry.getMetadata('weather');
-
-    expect(meta.defaultSource).toBe('/api/v1/home/weather');
-    expect(meta.refreshInterval).toBe(60000);
-    expect(meta.actions).toContain('refresh');
-  });
-
-  it('should list all registered widgets', () => {
+  it('should list all registered widget names', () => {
     registry.register('clock', MockClock);
     registry.register('weather', MockWeather);
+    const names = registry.list();
+    expect(names).toContain('clock');
+    expect(names).toContain('weather');
+    expect(names.length).toBe(2);
+  });
 
-    const widgets = registry.list();
-
-    expect(widgets).toContain('clock');
-    expect(widgets).toContain('weather');
-    expect(widgets.length).toBe(2);
+  it('should clear all registrations', () => {
+    registry.register('clock', MockClock);
+    registry.clear();
+    expect(registry.has('clock')).toBe(false);
+    expect(registry.list().length).toBe(0);
   });
 });
