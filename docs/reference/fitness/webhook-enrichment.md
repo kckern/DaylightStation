@@ -68,8 +68,8 @@ The router, enrichment service interface, and webhook routes remain unchanged.
 | Adapter | `StravaWebhookAdapter` | `1_adapters/strava/StravaWebhookAdapter.mjs` | Strava webhook protocol: challenge validation, event parsing, verify token |
 | Adapter | `StravaClientAdapter` | `1_adapters/fitness/StravaClientAdapter.mjs` | HTTP client for Strava API (getActivity, updateActivity, refreshToken) |
 | Adapter | `StravaWebhookJobStore` | `1_adapters/strava/StravaWebhookJobStore.mjs` | Durable YAML-backed job queue for crash recovery |
-| Application | `StravaEnrichmentService` | `3_applications/strava/StravaEnrichmentService.mjs` | Orchestration: matching, enrichment, retries, circuit breakers |
-| Application | `buildStravaDescription` | `3_applications/strava/buildStravaDescription.mjs` | Pure function: session data → Strava title + description |
+| Application | `FitnessActivityEnrichmentService` | `3_applications/fitness/FitnessActivityEnrichmentService.mjs` | Orchestration: matching, enrichment, retries, circuit breakers |
+| Adapter | `buildStravaDescription` | `1_adapters/fitness/buildStravaDescription.mjs` | Pure function: session data → Strava title + description |
 
 ### Webhook Routes
 
@@ -181,9 +181,30 @@ If no match is found, the service retries up to 3 times at 5-minute intervals (t
 For Strava, `buildStravaDescription(session, currentActivity)` produces:
 
 - **Title**: Primary media → `Show—Episode` (skipped if activity already has an em-dash title)
-- **Description**: Voice memo transcripts first, then episode description (skipped if activity already has a description)
+- **Description**: Voice memo transcripts first, then watched episode descriptions, then music playlist (skipped if activity already has a description)
 
-Returns `null` if nothing to enrich (no media, no memos).
+Returns `null` if nothing to enrich (no media, no memos, no music).
+
+### Primary Media Selection
+
+The primary episode (used for the title) is selected by longest `durationSeconds`. The fallback chain:
+
+1. Longest episode from `watchedEpisodes` (watched >= 2 min)
+2. Longest episode from all `episodeEvents` (any duration)
+3. First non-audio entry from `summary.media`
+4. `null`
+
+### Episode Watch-Time Filtering
+
+Episodes watched less than 2 minutes (`MIN_WATCH_MS`) are filtered from the description (but may still appear in the title via the fallback chain). Watch time is estimated using:
+
+1. Direct event window (`end - start`) if >= 2 min
+2. Gap to next episode's start time (for legacy sessions with brief detection windows)
+3. Remaining session time for the last episode
+
+### Unit Tests
+
+`tests/unit/suite/fitness/buildStravaDescription.test.mjs` — 48 tests covering null inputs, title generation, skip logic, description formatting, episode filtering, music-only sessions, and combined skip scenarios.
 
 ### Episode Descriptions
 
@@ -243,11 +264,12 @@ All log events are `info` level — visible in production.
 
 ### Bootstrap
 
-| Event | Data | When |
-|-------|------|------|
-| `strava.enrichment.initialized` | — | System ready |
-| `strava.enrichment.skipped` | reason | No credentials |
-| `strava.enrichment.init_failed` | error | Bootstrap error (warn) |
+| Event | Level | Data | When |
+|-------|-------|------|------|
+| `strava.enrichment.initialized` | info | adapters | System ready |
+| `strava.enrichment.skipped` | info | reason | No credentials |
+| `strava.enrichment.init_failed` | **error** | error, stack | Bootstrap error — enrichment subsystem is dead |
+| `strava.enrichment.health_check_failed` | **error** | reason | Strava creds configured but no adapters registered (post-init safety net) |
 
 ---
 
@@ -257,8 +279,9 @@ All log events are `info` level — visible in production.
 
 Check prod logs in order:
 
+0. **`init_failed` or `health_check_failed` in startup logs?** → The enrichment subsystem never initialized. Check the error/stack for the root cause (syntax error, missing module, bad import). All webhooks will be silently discarded until this is fixed and redeployed.
 1. **No `webhook.received`?** → Provider didn't send it, or Cloudflare blocked it. Check subscription exists and Cloudflare bypass is active.
-2. **`webhook.received` but no `webhook.identified`?** → Payload shape doesn't match any adapter.
+2. **`webhook.received` but no `webhook.identified`?** → Payload shape doesn't match any adapter. If `providerWebhookAdapters` is empty (check step 0), all events land here.
 3. **`webhook.identified` + `skip_enrich`?** → Event was `update` or `delete`, not `create`. This is normal.
 4. **`event_accepted` but no `attempt_start`?** → Cooldown or already-completed circuit breaker.
 5. **`session_scan.miss`?** → No matching session yet. Will retry up to 3× at 5-min intervals.
