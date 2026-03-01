@@ -230,7 +230,7 @@ async function backfillBugA(write) {
     // Fix summary.media[].durationMs
     for (const media of data.summary?.media || []) {
       if (!contentMap[media.contentId]) continue;
-      if (media.durationMs && media.durationMs > 0) {
+      if (media.durationMs && media.durationMs > 1000) {
         console.log(`    OK summary: ${media.contentId} durationMs=${media.durationMs} (already set)`);
         continue;
       }
@@ -239,9 +239,10 @@ async function backfillBugA(write) {
       const evt = (data.timeline?.events || []).find(e => e.data?.contentId === media.contentId);
       let newDurationMs;
 
-      // Prefer end-start if both exist and end was fixed by Bug B
-      if (evt?.data?.start && evt?.data?.end && evt.data.end > evt.data.start) {
-        newDurationMs = evt.data.end - evt.data.start;
+      // Prefer end-start if both exist, end is plausible (>1s gap), and was fixed by Bug B
+      const gap = (evt?.data?.end && evt?.data?.start) ? evt.data.end - evt.data.start : 0;
+      if (gap > 1000) {
+        newDurationMs = gap;
       } else {
         // Fall back to corrected durationSeconds
         const correctSec = await getCorrectDurationSec(media.contentId, contentMap[media.contentId], sessionDurSec);
