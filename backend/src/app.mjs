@@ -1141,7 +1141,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     },
     mqtt: {
       host: mqtt.host || '',
-      port: mqtt.port || 1883
+      port: mqtt.port || 1883,
+      logsPath: mediaBasePath ? `${mediaBasePath}/logs` : null
     },
     tts: {
       apiKey: ttsApiKey,

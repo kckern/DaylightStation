@@ -1737,7 +1737,8 @@ export function createHardwareAdapters(config) {
     mqttAdapter = new MQTTSensorAdapter(
       {
         host: config.mqtt.host,
-        port: config.mqtt.port
+        port: config.mqtt.port,
+        logsPath: config.mqtt.logsPath || null
       },
       { logger, onMessage: config.onMqttMessage }
     );
