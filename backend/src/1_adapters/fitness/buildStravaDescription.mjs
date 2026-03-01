@@ -39,7 +39,6 @@ export function buildStravaDescription(session, currentActivity = {}) {
   // Primary episode = longest full video (durationSeconds), fallback to first watched
   const primaryMedia = _selectPrimaryEpisode(watchedEpisodes)
     ?? _selectPrimaryEpisode(episodeEvents)
-    ?? summary?.media?.find(m => m?.mediaType !== 'audio' && m?.primary)?.title && null
     ?? summary?.media?.find(m => m?.mediaType !== 'audio')
     ?? null;
 
