@@ -144,7 +144,7 @@
   &::before {
     transform: none;
     height: 100%;
-    // Dim the grid in game mode — lanes provide the visual structure
+    // Dim the grid in game mode — glow trails provide the visual structure
     opacity: 0.3;
   }
 
@@ -159,71 +159,80 @@
   display: none;
 }
 
-// Lane highlights — vertical columns for each possible pitch in the level
-.game-lane {
-  position: absolute;
-  left: var(--x);
-  width: var(--width);
-  top: 0;
-  bottom: 0;
-  transform: translateX(-50%);
-  background: hsla(var(--hue), 40%, 50%, 0.06);
-  border-left: 1px solid hsla(var(--hue), 40%, 50%, 0.12);
-  border-right: 1px solid hsla(var(--hue), 40%, 50%, 0.12);
-  pointer-events: none;
-  z-index: 1;
-
-  &--active {
-    background: hsla(var(--hue), 70%, 50%, 0.15);
-    border-left-color: hsla(var(--hue), 70%, 60%, 0.35);
-    border-right-color: hsla(var(--hue), 70%, 60%, 0.35);
-    box-shadow: inset 0 0 20px hsla(var(--hue), 70%, 50%, 0.1);
-  }
-
-  &--wrong {
-    background: rgba(255, 40, 40, 0.25);
-    border-left: 2px solid rgba(255, 50, 50, 0.6);
-    border-right: 2px solid rgba(255, 50, 50, 0.6);
-    box-shadow: inset 0 0 30px rgba(255, 40, 40, 0.2);
-    z-index: 5;
-  }
-}
 
 // Game notes fall from top to bottom (flat 2D, outside perspective container)
 .game-note {
   position: absolute;
   left: var(--x);
   width: var(--width);
-  height: 48px;
   top: var(--top);
   transform: translateX(-50%);
-  border-radius: 6px;
   pointer-events: none;
   z-index: 15;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 
-  background: linear-gradient(
-    to bottom,
-    hsla(var(--hue), 100%, 70%, 1) 0%,
-    hsla(var(--hue), 90%, 55%, 0.9) 100%
-  );
-
-  box-shadow:
-    0 0 12px hsla(var(--hue), 100%, 60%, 0.6),
-    0 0 24px hsla(var(--hue), 100%, 50%, 0.3);
-
-  // Note name label — large centered letter
-  .game-note-label {
+  // Glow trail — extends upward from sprite, clipped by waterfall overflow
+  &::before {
+    content: '';
     position: absolute;
-    top: 50%;
+    bottom: 100%;
     left: 50%;
-    transform: translate(-50%, -50%);
-    font-size: 1.2rem;
-    font-weight: 800;
-    color: rgba(0, 0, 0, 0.75);
+    transform: translateX(-50%);
+    width: 60%;
+    height: 100vh;
+    background: linear-gradient(
+      to top,
+      hsla(var(--hue), 70%, 50%, 0.35) 0%,
+      hsla(var(--hue), 70%, 50%, 0.15) 20%,
+      hsla(var(--hue), 70%, 50%, 0.05) 50%,
+      transparent 80%
+    );
+    filter: blur(3px);
+    z-index: -1;
+    pointer-events: none;
+    transition: opacity 0.3s ease-out;
+  }
+
+  &.game-note--hit::before {
+    opacity: 0;
+    transition: opacity 0.3s ease-out;
+  }
+
+  &.game-note--missed::before {
+    background: linear-gradient(
+      to top,
+      rgba(255, 40, 40, 0.4) 0%,
+      rgba(255, 40, 40, 0.1) 30%,
+      transparent 60%
+    );
+    opacity: 0;
+    transition: opacity 0.5s ease-out;
+  }
+
+  // Invader SVG sprite
+  .invader-sprite {
+    width: 100%;
+    max-width: 56px;
+    height: auto;
+    color: hsla(var(--hue), 100%, 65%, 1);
+    filter:
+      drop-shadow(0 0 6px hsla(var(--hue), 100%, 60%, 0.7))
+      drop-shadow(0 0 14px hsla(var(--hue), 100%, 50%, 0.35));
+  }
+
+  // Note name label — below the sprite
+  .game-note-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: hsla(var(--hue), 80%, 75%, 0.9);
     white-space: nowrap;
     pointer-events: none;
     user-select: none;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.04em;
+    text-shadow: 0 0 6px hsla(var(--hue), 100%, 50%, 0.6);
+    margin-top: 2px;
   }
 
   // Hit feedback states
@@ -232,21 +241,27 @@
   }
 
   &.game-note--hit.game-note--perfect {
-    background: hsl(130, 100%, 60%);
-    box-shadow: 0 0 30px hsla(130, 100%, 60%, 0.8);
     opacity: 1;
+    .invader-sprite {
+      color: hsl(130, 100%, 65%);
+      filter: drop-shadow(0 0 16px hsla(130, 100%, 60%, 0.9));
+    }
   }
 
   &.game-note--hit.game-note--good {
-    background: hsl(50, 100%, 60%);
-    box-shadow: 0 0 30px hsla(50, 100%, 60%, 0.8);
     opacity: 1;
+    .invader-sprite {
+      color: hsl(50, 100%, 65%);
+      filter: drop-shadow(0 0 16px hsla(50, 100%, 60%, 0.9));
+    }
   }
 
   &.game-note--missed {
-    background: hsl(0, 80%, 50%);
-    box-shadow: 0 0 20px hsla(0, 80%, 50%, 0.6);
     opacity: 0.5;
+    .invader-sprite {
+      color: hsl(0, 80%, 55%);
+      filter: drop-shadow(0 0 12px hsla(0, 80%, 50%, 0.7));
+    }
   }
 }
 
@@ -260,6 +275,30 @@
   box-shadow:
     0 0 8px hsla(var(--hue), 100%, 60%, 0.8),
     0 0 16px hsla(var(--hue), 100%, 50%, 0.4);
+}
+
+// Laser projectiles — narrow beams fired from keyboard upward
+.laser-projectile {
+  position: absolute;
+  left: var(--x);
+  bottom: var(--bottom);
+  width: 4px;
+  height: 24px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 18;
+  background: linear-gradient(
+    to top,
+    rgba(0, 255, 255, 0.6) 0%,
+    rgba(200, 255, 255, 1) 40%,
+    rgba(255, 255, 255, 1) 70%,
+    rgba(200, 255, 255, 0.8) 100%
+  );
+  border-radius: 2px;
+  box-shadow:
+    0 0 6px rgba(0, 255, 255, 0.9),
+    0 0 14px rgba(0, 255, 255, 0.5),
+    0 0 28px rgba(0, 255, 255, 0.2);
 }
 
 // Hit line — glowing horizontal bar at bottom of waterfall

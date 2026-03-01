@@ -33,12 +33,28 @@ export const resolveContentId = (metadata) => {
   return `${source}:${bareId}`;
 };
 
+const MIN_PLAUSIBLE_DURATION_SEC = 10;
+
 export const normalizeDuration = (...candidates) => {
+  const toSeconds = (v) => {
+    if (v == null) return null;
+    const n = typeof v === 'string' ? parseFloat(v) : Number(v);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return n > 1000 ? Math.round(n / 1000) : Math.round(n);
+  };
+
+  // First pass: prefer candidates that look like real media durations (≥ 10s).
+  // This skips Plex metadata placeholders (e.g. season number "2") that can
+  // appear in media.duration before the HTML5 player reports the real value.
   for (const candidate of candidates) {
-    if (candidate == null) continue;
-    const normalized = typeof candidate === 'string' ? parseFloat(candidate) : Number(candidate);
-    if (!Number.isFinite(normalized) || normalized <= 0) continue;
-    return normalized > 1000 ? Math.round(normalized / 1000) : Math.round(normalized);
+    const sec = toSeconds(candidate);
+    if (sec != null && sec >= MIN_PLAUSIBLE_DURATION_SEC) return sec;
+  }
+
+  // Fallback: accept any positive value (for genuinely short media)
+  for (const candidate of candidates) {
+    const sec = toSeconds(candidate);
+    if (sec != null) return sec;
   }
   return null;
 };

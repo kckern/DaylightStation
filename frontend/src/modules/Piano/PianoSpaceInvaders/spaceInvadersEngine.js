@@ -10,6 +10,9 @@
  *   countdown: number | null,  // 3, 2, 1, 0(GO), null
  *   nextNoteId: number,
  *   lastSpawnTime: number,
+ *   lasers: Array<{ id, pitch, spawnTime, active }>,
+ *   nextLaserId: number,
+ *   destroyedKeys: Map<pitch, { destroyedAt, cooldownMs }>,
  * }
  */
 
@@ -29,6 +32,9 @@ export function createInitialState() {
     countdown: null,
     nextNoteId: 1,
     lastSpawnTime: 0,
+    lasers: [],
+    nextLaserId: 1,
+    destroyedKeys: new Map(),
   };
 }
 
@@ -44,6 +50,9 @@ export function resetForLevel(state, levelIndex) {
     countdown: null,
     nextNoteId: 1,
     lastSpawnTime: Date.now(),
+    lasers: [],
+    nextLaserId: 1,
+    destroyedKeys: new Map(),
   };
 }
 
@@ -306,17 +315,20 @@ export function applyScore(score, hitQuality, scoringConfig) {
 
 /**
  * Check for missed notes (past the miss threshold).
- * Returns updated state with missed notes tagged and combo reset if needed.
+ * Returns updated state with missed notes tagged, combo reset, and missed pitches
+ * collected for key destruction.
  */
-export function processMisses(state, now, missThresholdMs) {
+export function processMisses(state, now, missThresholdMs, cooldownMs = 8000) {
   let missOccurred = false;
   let missCount = 0;
+  const missedPitches = [];
 
   const updatedNotes = state.fallingNotes.map(fg => {
     if (fg.state !== 'falling') return fg;
     if (now > fg.targetTime + missThresholdMs) {
       missOccurred = true;
       missCount++;
+      fg.pitches.forEach(p => missedPitches.push(p));
       return { ...fg, state: 'missed', hitResult: null, resolvedTime: now };
     }
     return fg;
@@ -324,9 +336,18 @@ export function processMisses(state, now, missThresholdMs) {
 
   if (!missOccurred) return state;
 
+  // Destroy keys for missed pitches
+  const newDestroyed = new Map(state.destroyedKeys);
+  for (const pitch of missedPitches) {
+    if (!newDestroyed.has(pitch)) {
+      newDestroyed.set(pitch, { destroyedAt: now, cooldownMs });
+    }
+  }
+
   return {
     ...state,
     fallingNotes: updatedNotes,
+    destroyedKeys: newDestroyed,
     score: {
       ...state.score,
       combo: 0,
@@ -367,6 +388,156 @@ export function evaluateLevel(score, levelConfig, health) {
   if (score.misses >= levelConfig.max_misses) return 'fail';
   if (score.points >= levelConfig.points_to_advance) return 'advance';
   return null;
+}
+
+// ─── Laser Projectiles ──────────────────────────────────────────
+
+/**
+ * Spawn a laser projectile from a key press.
+ * @returns Updated state with new laser added
+ */
+export function spawnLaser(state, pitch, now) {
+  const laser = {
+    id: state.nextLaserId,
+    pitch,
+    spawnTime: now,
+    active: true,
+  };
+  return {
+    ...state,
+    lasers: [...state.lasers, laser],
+    nextLaserId: state.nextLaserId + 1,
+  };
+}
+
+/**
+ * Advance lasers: compute progress, deactivate expired ones, remove old inactive.
+ * @param {number} laserTravelMs - Time for laser to cross waterfall (e.g. 250)
+ */
+export function advanceLasers(state, now, laserTravelMs) {
+  const CLEANUP_AFTER_MS = 300;
+  const filtered = state.lasers.filter(l => {
+    if (!l.active) {
+      return (now - l.deactivatedAt) < CLEANUP_AFTER_MS;
+    }
+    return true;
+  });
+
+  const updated = filtered.map(l => {
+    if (!l.active) return l;
+    const progress = (now - l.spawnTime) / laserTravelMs;
+    if (progress >= 1) {
+      return { ...l, active: false, deactivatedAt: now };
+    }
+    return l;
+  });
+
+  if (updated.length === state.lasers.length &&
+      updated.every((l, i) => l === state.lasers[i])) {
+    return state;
+  }
+  return { ...state, lasers: updated };
+}
+
+/**
+ * Check laser-vs-falling-note collisions.
+ * A laser collides with a note when the laser's y-position (from bottom)
+ * overlaps the note's y-position (from top), in the same pitch column.
+ *
+ * @param {number} fallDuration - Level fall duration in ms
+ * @param {number} laserTravelMs - Laser travel time in ms
+ * @param {string} mode - 'invaders' | 'hero'
+ * @param {Object} timingConfig - { perfect_ms, good_ms }
+ * @returns {{ state, hits: Array<{ pitch, hitResult }> }}
+ */
+export function checkLaserCollisions(state, now, fallDuration, laserTravelMs, mode, timingConfig) {
+  const hits = [];
+  let updatedLasers = [...state.lasers];
+  let updatedNotes = [...state.fallingNotes];
+  let changed = false;
+
+  for (let li = 0; li < updatedLasers.length; li++) {
+    const laser = updatedLasers[li];
+    if (!laser.active) continue;
+
+    const laserProgress = (now - laser.spawnTime) / laserTravelMs;
+    // Laser travels from bottom (progress=0 → topPercent=100) to top (progress=1 → topPercent=0)
+    const laserTopPercent = (1 - laserProgress) * 100;
+
+    for (let ni = 0; ni < updatedNotes.length; ni++) {
+      const note = updatedNotes[ni];
+      if (note.state !== 'falling') continue;
+      if (!note.pitches.includes(laser.pitch)) continue;
+      if (note.hitPitches.has(laser.pitch)) continue;
+
+      // Note's current top position
+      const noteElapsed = now - (note.targetTime - fallDuration);
+      const noteProgress = Math.min(1, noteElapsed / fallDuration);
+      const noteTopPercent = noteProgress * 100;
+
+      // Collision: laser has reached or passed the note's position
+      if (laserTopPercent <= noteTopPercent + 5) {
+        // Hit detected
+        const delta = Math.abs(now - note.targetTime);
+        const hitQuality = mode === 'invaders'
+          ? 'perfect'
+          : delta <= (timingConfig.perfect_ms ?? 100) ? 'perfect' : 'good';
+
+        const updatedHitPitches = new Set(note.hitPitches);
+        updatedHitPitches.add(laser.pitch);
+        const allHit = note.pitches.every(p => updatedHitPitches.has(p));
+
+        updatedNotes[ni] = {
+          ...note,
+          hitPitches: updatedHitPitches,
+          state: allHit ? 'hit' : 'falling',
+          hitResult: allHit ? hitQuality : note.hitResult,
+          resolvedTime: allHit ? now : note.resolvedTime,
+        };
+
+        // Deactivate the laser
+        updatedLasers[li] = { ...laser, active: false, deactivatedAt: now };
+        changed = true;
+
+        if (allHit) {
+          hits.push({ pitch: laser.pitch, hitResult: hitQuality });
+        }
+        break; // Each laser hits at most one note
+      }
+    }
+  }
+
+  if (!changed) return { state, hits: [] };
+  return {
+    state: { ...state, lasers: updatedLasers, fallingNotes: updatedNotes },
+    hits,
+  };
+}
+
+// ─── Destroyed Keys ─────────────────────────────────────────────
+
+/**
+ * Check destroyed keys and rebuild any whose cooldown has expired.
+ * Returns updated state, plus array of rebuilt pitches for visual feedback.
+ */
+export function processDestroyedKeys(state, now) {
+  if (state.destroyedKeys.size === 0) return { state, rebuilt: [] };
+
+  const rebuilt = [];
+  const remaining = new Map();
+  for (const [pitch, info] of state.destroyedKeys) {
+    if (now - info.destroyedAt >= info.cooldownMs) {
+      rebuilt.push(pitch);
+    } else {
+      remaining.set(pitch, info);
+    }
+  }
+
+  if (rebuilt.length === 0) return { state, rebuilt: [] };
+  return {
+    state: { ...state, destroyedKeys: remaining },
+    rebuilt,
+  };
 }
 
 // ─── Constants ──────────────────────────────────────────────────
