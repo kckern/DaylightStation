@@ -142,10 +142,10 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
       if (newLines > 0) {
         logger.info('tetris.lines-cleared', { lines: newLines, score: lineScore, totalLines, totalScore });
       }
-      logger.debug('tetris.piece-locked', { type: prev.currentPiece.type, y: prev.currentPiece.y });
+      logger.info('tetris.piece-locked', { type: prev.currentPiece.type, y: prev.currentPiece.y });
 
       if (leveledUp) {
-        logger.debug('tetris.level-up', { from: prev.level, to: newLevel });
+        logger.info('tetris.level-up', { from: prev.level, to: newLevel });
       }
 
       // 5. Advance to next piece
@@ -277,7 +277,7 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
         if (newLines > 0) {
           logger.info('tetris.lines-cleared', { lines: newLines, score: lineScore, totalLines, totalScore });
         }
-        logger.debug('tetris.hard-drop', { type: prev.currentPiece.type, distance });
+        logger.info('tetris.hard-drop', { type: prev.currentPiece.type, distance });
 
         const stateForAdvance = {
           ...prev,
@@ -311,7 +311,7 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
           // Swap: spawn the held piece, store the current one
           const spawned = spawnPiece(prev.board, prev.heldPiece);
           if (!spawned) return prev; // blocked — shouldn't happen but be safe
-          logger.debug('tetris.hold-swap', { stored: currentType, retrieved: prev.heldPiece });
+          logger.info('tetris.hold-swap', { stored: currentType, retrieved: prev.heldPiece });
           return {
             ...prev,
             currentPiece: spawned,
@@ -321,7 +321,7 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
           };
         } else {
           // No held piece yet — store current, advance to next
-          logger.debug('tetris.hold-store', { stored: currentType });
+          logger.info('tetris.hold-store', { stored: currentType });
           const advanced = advanceToNextPiece(prev);
           if (advanced.phase === 'GAME_OVER') return advanced;
           return {
