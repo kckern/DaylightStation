@@ -3,13 +3,19 @@
  * Config-driven kiosk interfaces for room-based displays
  */
 
-export const VERSION = '0.1.0';
+export const VERSION = '0.2.0';
 
 // Main renderer
 export { ScreenRenderer } from './ScreenRenderer.jsx';
 
-// Layouts
-export { GridLayout } from './layouts/GridLayout.jsx';
+// Panel layout
+export { PanelRenderer } from './panels/PanelRenderer.jsx';
+
+// Data coordination
+export { ScreenDataProvider, useScreenData } from './data/ScreenDataProvider.jsx';
+
+// Overlay system
+export { ScreenOverlayProvider, useScreenOverlay } from './overlays/ScreenOverlayProvider.jsx';
 
 // Input system
 export { ActionBus, getActionBus, resetActionBus } from './input/ActionBus.js';
@@ -21,10 +27,6 @@ export { NumpadAdapter } from './input/adapters/NumpadAdapter.js';
 export { RemoteAdapter } from './input/adapters/RemoteAdapter.js';
 export { GamepadAdapter } from './input/adapters/GamepadAdapter.js';
 
-// Data layer
-export { DataManager, getDataManager, resetDataManager } from './data/DataManager.js';
-
 // Widget system
 export { WidgetRegistry, getWidgetRegistry, resetWidgetRegistry } from './widgets/registry.js';
-export { WidgetWrapper } from './widgets/WidgetWrapper.jsx';
 export { registerBuiltinWidgets } from './widgets/builtins.js';
