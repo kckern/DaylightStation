@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { DaylightAPI } from '../lib/api.mjs';
 import { PanelRenderer } from './panels/PanelRenderer.jsx';
 import { ScreenDataProvider } from './data/ScreenDataProvider.jsx';
+import { ScreenOverlayProvider } from './overlays/ScreenOverlayProvider.jsx';
 import { registerBuiltinWidgets } from './widgets/builtins.js';
 import { getActionBus } from './input/ActionBus.js';
 import { createInputManager } from './input/InputManager.js';
@@ -76,9 +77,12 @@ export function ScreenRenderer({ screenId: propScreenId }) {
         width: '100%',
         height: '100%',
         display: 'flex',
+        position: 'relative',
         ...themeStyle,
       }}>
-        <PanelRenderer node={config.layout} />
+        <ScreenOverlayProvider>
+          <PanelRenderer node={config.layout} />
+        </ScreenOverlayProvider>
       </div>
     </ScreenDataProvider>
   );
