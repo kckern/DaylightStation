@@ -1741,7 +1741,10 @@ export class FitnessSession {
     
     if (sessionData) this._persistSession(sessionData, { force: true });
 
-    // Release session lock
+    // Release session lock. Note: the final persist above is fire-and-forget,
+    // so there's a brief window where the lock is released while the API call
+    // is still in-flight. This is acceptable — the final persist uses force: true
+    // (bypasses lock check) and the window is sub-second.
     if (this._persistenceManager && this.sessionId) {
       this._persistenceManager.releaseLock(this.sessionId);
     }
