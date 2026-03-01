@@ -20,7 +20,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { existsSync } from 'fs';
-import { computeSessionEndMs, findBrokenEndEvents } from './backfill-media-durations.lib.mjs';
+import { computeSessionEndMs, findBrokenEndEvents, findStaleDurationEvents } from './backfill-media-durations.lib.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.join(__dirname, '..');
@@ -161,7 +161,106 @@ function backfillBugB(write) {
   console.log(`  Bug B total: ${totalFixed} events fixed\n`);
 }
 
-// Bug A implementation goes here (Task 3)
+// ------------------------------------------------------------------
+// Bug A: Fix stale durationSeconds and summary durationMs
+// ------------------------------------------------------------------
+
+// Bug A: sessions with known bad durationSeconds
+// source: 'plex' → fetch real duration from Plex API (workout videos)
+// source: 'session' → use session.duration_seconds (gaming, runs for full session)
+const BUG_A_SESSIONS = {
+  '20260224124137': { 'plex:10551': { source: 'plex' } },
+  '20260225053400': { 'plex:600161': { source: 'plex' } },
+  '20260227054558': { 'plex:664558': { source: 'plex' } },
+  '20260223185457': { 'plex:606442': { source: 'session' } },
+  '20260224190930': { 'plex:606442': { source: 'session' } },
+  '20260225181217': { 'plex:606442': { source: 'session' }, 'plex:649319': { source: 'session' } },
+  '20260226185825': { 'plex:649319': { source: 'session' } },
+};
+
+// Cache Plex durations so we don't fetch the same ID twice
+const plexDurationCache = new Map();
+
+async function getCorrectDurationSec(contentId, spec, sessionDurationSec) {
+  if (spec.source === 'session') {
+    return sessionDurationSec;
+  }
+
+  // source === 'plex'
+  if (plexDurationCache.has(contentId)) {
+    return plexDurationCache.get(contentId);
+  }
+
+  const durationMs = await fetchPlexDurationMs(contentId);
+  if (durationMs) {
+    const durationSec = Math.round(durationMs / 1000);
+    plexDurationCache.set(contentId, durationSec);
+    return durationSec;
+  }
+
+  // Fallback: use session duration
+  console.log(`    WARN: Plex lookup failed for ${contentId}, falling back to session duration`);
+  return sessionDurationSec;
+}
+
+async function backfillBugA(write) {
+  let totalFixed = 0;
+
+  for (const [sessionId, contentMap] of Object.entries(BUG_A_SESSIONS)) {
+    console.log(`  Session ${sessionId}:`);
+    const data = loadSession(sessionId);
+    if (!data) continue;
+
+    const sessionDurSec = data.session?.duration_seconds;
+    let changed = false;
+
+    // Fix timeline event durationSeconds
+    const stale = findStaleDurationEvents(data.timeline?.events || [], contentMap);
+    for (const evt of stale) {
+      const cid = evt.data.contentId;
+      const correctSec = await getCorrectDurationSec(cid, contentMap[cid], sessionDurSec);
+      if (correctSec && evt.data.durationSeconds !== correctSec) {
+        console.log(`    FIX timeline: ${cid} durationSeconds: ${evt.data.durationSeconds} → ${correctSec}`);
+        if (write) evt.data.durationSeconds = correctSec;
+        changed = true;
+        totalFixed++;
+      }
+    }
+
+    // Fix summary.media[].durationMs
+    for (const media of data.summary?.media || []) {
+      if (!contentMap[media.contentId]) continue;
+      if (media.durationMs && media.durationMs > 0) {
+        console.log(`    OK summary: ${media.contentId} durationMs=${media.durationMs} (already set)`);
+        continue;
+      }
+
+      // Compute durationMs from the (now-corrected) timeline event
+      const evt = (data.timeline?.events || []).find(e => e.data?.contentId === media.contentId);
+      let newDurationMs;
+
+      // Prefer end-start if both exist and end was fixed by Bug B
+      if (evt?.data?.start && evt?.data?.end && evt.data.end > evt.data.start) {
+        newDurationMs = evt.data.end - evt.data.start;
+      } else {
+        // Fall back to corrected durationSeconds
+        const correctSec = await getCorrectDurationSec(media.contentId, contentMap[media.contentId], sessionDurSec);
+        newDurationMs = correctSec ? correctSec * 1000 : null;
+      }
+
+      if (newDurationMs) {
+        console.log(`    FIX summary: ${media.contentId} durationMs: ${media.durationMs || 0} → ${newDurationMs}`);
+        if (write) media.durationMs = newDurationMs;
+        changed = true;
+        totalFixed++;
+      }
+    }
+
+    if (changed && write) saveSession(sessionId, data);
+  }
+
+  console.log(`  Bug A total: ${totalFixed} fields fixed\n`);
+}
 
 // ------------------------------------------------------------------
 // Main
@@ -178,7 +277,7 @@ async function main() {
 
   if (scope === 'all' || scope === 'a') {
     console.log('=== Bug A: Fix stale durationSeconds ===\n');
-    // await backfillBugA(writeMode);  // Uncomment in Task 3
+    await backfillBugA(writeMode);
   }
 
   console.log('\nDone.');

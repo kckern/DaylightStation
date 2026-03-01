@@ -32,3 +32,19 @@ export function findBrokenEndEvents(events) {
     return false;
   });
 }
+
+/**
+ * Find timeline media events that have stale durationSeconds values.
+ *
+ * @param {Array} events - timeline.events array
+ * @param {Object} fixMap - { contentId: { source: 'plex'|'session' } }
+ * @returns {Array} events with contentId in the fixMap
+ */
+export function findStaleDurationEvents(events, fixMap) {
+  if (!Array.isArray(events) || !fixMap) return [];
+  return events.filter(evt => {
+    if (evt.type !== 'media') return false;
+    const cid = evt.data?.contentId;
+    return cid && fixMap[cid];
+  });
+}

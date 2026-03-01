@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeSessionEndMs, findBrokenEndEvents } from './backfill-media-durations.lib.mjs';
+import { computeSessionEndMs, findBrokenEndEvents, findStaleDurationEvents } from './backfill-media-durations.lib.mjs';
 
 describe('computeSessionEndMs', () => {
   it('computes end from start + duration_seconds', () => {
@@ -53,5 +53,26 @@ describe('findBrokenEndEvents', () => {
     ];
     const broken = findBrokenEndEvents(events);
     assert.equal(broken.length, 0);
+  });
+});
+
+describe('findStaleDurationEvents', () => {
+  it('finds events whose contentId is in the fix map', () => {
+    const events = [
+      { type: 'media', data: { contentId: 'plex:10551', durationSeconds: 2 } },
+      { type: 'media', data: { contentId: 'plex:99999', durationSeconds: 2 } },
+    ];
+    const fixMap = { 'plex:10551': { source: 'plex' } };
+    const stale = findStaleDurationEvents(events, fixMap);
+    assert.equal(stale.length, 1);
+    assert.equal(stale[0].data.contentId, 'plex:10551');
+  });
+
+  it('returns empty for events not in fix map', () => {
+    const events = [
+      { type: 'media', data: { contentId: 'plex:99999', durationSeconds: 2 } },
+    ];
+    const stale = findStaleDurationEvents(events, {});
+    assert.equal(stale.length, 0);
   });
 });
