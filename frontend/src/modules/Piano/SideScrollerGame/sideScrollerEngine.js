@@ -13,6 +13,7 @@
  *   playerState: 'running' | 'jumping' | 'ducking',
  *   playerY: GROUND_Y,   // player feet position (Y coordinate)
  *   jumpT: 0,            // jump progress 0..1
+ *   duckStartT: 0,       // timestamp when duck started (0 = not ducking)
  *   invincibleUntil: 0,  // timestamp until which player is invincible
  *   dodgeCount: 0,       // number of obstacles successfully dodged
  * }
@@ -40,6 +41,7 @@ export const PLAYER_WIDTH = 0.04;
 export const OBSTACLE_LOW = 'low';
 export const OBSTACLE_HIGH = 'high';
 export const JUMP_HEIGHT = 0.25;
+export const MAX_DUCK_MS = 800;
 
 // ─── World Creation ─────────────────────────────────────────────
 
@@ -56,6 +58,7 @@ export function createInitialWorld(config = {}) {
     playerState: 'running',
     playerY: GROUND_Y,
     jumpT: 0,
+    duckStartT: 0,
     invincibleUntil: 0,
     dodgeCount: 0,
   };
@@ -79,9 +82,12 @@ export function spawnObstacle(world, type) {
     height = 0.10;
     y = GROUND_Y - height;
   } else {
-    // high obstacle just above standing head — must duck to clear
-    height = 0.05;
-    y = GROUND_Y - PLAYER_HEIGHT - 0.03;
+    // Tall pillar — unjumpable, must duck to clear
+    // Bottom baseline at GROUND_Y - PLAYER_HEIGHT + 0.02 = 0.52
+    // Top at 0.30 — clears the jump staff zone (ends at 30%)
+    // Still unjumpable: player bottom at peak = 0.43 > 0.30
+    height = 0.22;
+    y = GROUND_Y - PLAYER_HEIGHT + 0.02 - height;
   }
 
   const obstacle = {
@@ -211,11 +217,12 @@ export function updateJump(world, dt, jumpDurationMs) {
  * @param {object} world
  * @returns {object} New world (or same reference if no-op)
  */
-export function applyDuck(world) {
+export function applyDuck(world, now) {
   if (world.playerState === 'jumping') return world;
   return {
     ...world,
     playerState: 'ducking',
+    duckStartT: now,
   };
 }
 
@@ -229,7 +236,27 @@ export function releaseDuck(world) {
   return {
     ...world,
     playerState: 'running',
+    duckStartT: 0,
   };
+}
+
+/**
+ * Auto-release duck if time limit exceeded.
+ * @param {object} world
+ * @param {number} now - Current timestamp (ms)
+ * @param {number} maxDuckMs - Maximum duck duration
+ * @returns {object} New world (or same reference if no-op)
+ */
+export function updateDuck(world, now, maxDuckMs) {
+  if (world.playerState !== 'ducking') return world;
+  if (now - world.duckStartT >= maxDuckMs) {
+    return {
+      ...world,
+      playerState: 'running',
+      duckStartT: 0,
+    };
+  }
+  return world;
 }
 
 // ─── Hitbox & Collision ─────────────────────────────────────────
