@@ -13,6 +13,8 @@
  */
 
 import mqtt from 'mqtt';
+import fs from 'fs';
+import path from 'path';
 import { configService } from '#system/config/index.mjs';
 
 /**
@@ -68,6 +70,8 @@ export class MQTTSensorAdapter {
   #lastBroadcastTime;
   #onMessage;
   #logger;
+  #logsPath;
+  #logStreams;
 
   // Config
   #reconnectIntervalMs;
@@ -117,6 +121,8 @@ export class MQTTSensorAdapter {
     this.#lastBroadcastTime = new Map();
     this.#onMessage = options.onMessage;
     this.#logger = options.logger || console;
+    this.#logsPath = config.logsPath || null;
+    this.#logStreams = new Map();
 
     // Config with defaults
     this.#reconnectIntervalMs = config.reconnectIntervalMs || DEFAULTS.RECONNECT_INTERVAL_MS;
@@ -188,7 +194,7 @@ export class MQTTSensorAdapter {
   }
 
   /**
-   * Close MQTT connection
+   * Close MQTT connection and log streams
    */
   close() {
     this.#isShuttingDown = true;
@@ -202,6 +208,13 @@ export class MQTTSensorAdapter {
       this.#client.end(true);
       this.#client = null;
     }
+
+    // Close all vibration log streams
+    for (const [id, stream] of this.#logStreams) {
+      stream.end();
+      this.#logger.info?.('mqtt.log.closed', { equipment: id });
+    }
+    this.#logStreams.clear();
 
     this.#lastBroadcastTime.clear();
     this.#logger.info?.('mqtt.closed');
@@ -269,6 +282,38 @@ export class MQTTSensorAdapter {
     });
 
     return map;
+  }
+
+  #getLogStream(equipmentId) {
+    if (!this.#logsPath) return null;
+    if (this.#logStreams.has(equipmentId)) return this.#logStreams.get(equipmentId);
+
+    const dir = path.join(this.#logsPath, 'vibration');
+    fs.mkdirSync(dir, { recursive: true });
+
+    const filePath = path.join(dir, `${equipmentId}.jsonl`);
+    const stream = fs.createWriteStream(filePath, { flags: 'a' });
+    stream.on('error', (err) => {
+      this.#logger.error?.('mqtt.log.writeError', { equipment: equipmentId, error: err.message });
+    });
+    this.#logStreams.set(equipmentId, stream);
+    this.#logger.info?.('mqtt.log.opened', { equipment: equipmentId, path: filePath });
+    return stream;
+  }
+
+  #logVibrationData(equipmentId, timestamp, data) {
+    const stream = this.#getLogStream(equipmentId);
+    if (!stream) return;
+
+    const line = JSON.stringify({
+      ts: timestamp,
+      id: equipmentId,
+      x: data.x_axis ?? 0,
+      y: data.y_axis ?? 0,
+      z: data.z_axis ?? 0,
+      v: data.vibration || false
+    });
+    stream.write(line + '\n');
   }
 
   #shouldThrottle(topic) {
@@ -388,6 +433,8 @@ export class MQTTSensorAdapter {
             linkquality: data.linkquality ?? null
           }
         };
+
+        this.#logVibrationData(equipConfig.id, payload.timestamp, data);
 
         if (this.#onMessage) {
           this.#onMessage(payload);
