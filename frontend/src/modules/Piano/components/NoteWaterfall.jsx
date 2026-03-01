@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
 import { getNotePosition, getNoteWidth, getNoteHue, getNoteName } from '../noteUtils.js';
+import { InvaderSprite } from './InvaderSprite.jsx';
 import './NoteWaterfall.scss';
 
 const DISPLAY_DURATION = 8000; // Show notes for 8 seconds as they rise
@@ -21,7 +22,7 @@ const PARTICLE_ANGLES = Array.from({ length: PARTICLE_COUNT }, (_, i) => {
  * @param {number} props.startNote - Lowest note on keyboard
  * @param {number} props.endNote - Highest note on keyboard
  */
-export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), startNote = 21, endNote = 108, gameMode = null, wrongColumns = null }) {
+export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), startNote = 21, endNote = 108, gameMode = null }) {
   const [tick, setTick] = useState(0);
 
   // Continuous animation tick — use rAF instead of setInterval for proper
@@ -126,49 +127,29 @@ export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), start
     });
   }, [gameMode, startNote, endNote, tick]);
 
-  // Lane highlights for game mode (all possible pitches in current level)
-  const gameLanes = useMemo(() => {
-    if (!gameMode?.currentLevel?.notes) return [];
-    const fallingPitches = new Set();
-    gameMode.fallingNotes.forEach(fn => {
-      if (fn.state === 'falling') fn.pitches.forEach(p => fallingPitches.add(p));
-    });
-    return gameMode.currentLevel.notes.map(pitch => ({
-      pitch,
-      x: getNotePosition(pitch, startNote, endNote),
-      width: getNoteWidth(pitch, startNote, endNote, true),
-      hue: getNoteHue(pitch, startNote, endNote),
-      active: fallingPitches.has(pitch),
-    }));
+  // Laser projectile positions
+  const gameLasers = useMemo(() => {
+    if (!gameMode?.lasers) return [];
+    const now = Date.now();
+    const travelMs = gameMode.laserTravelMs || 250;
+
+    return gameMode.lasers
+      .filter(l => l.active)
+      .map(l => {
+        const progress = Math.min(1, (now - l.spawnTime) / travelMs);
+        // Laser travels from bottom (100%) to top (0%)
+        const bottomPercent = (1 - progress) * 100;
+        return {
+          ...l,
+          x: getNotePosition(l.pitch, startNote, endNote),
+          bottomPercent,
+        };
+      });
   }, [gameMode, startNote, endNote, tick]);
+
 
   return (
     <div className={`note-waterfall${gameMode ? ' note-waterfall--game' : ''}`}>
-      {/* Game mode: lane highlights */}
-      {gameLanes.map(lane => (
-        <div
-          key={`lane-${lane.pitch}`}
-          className={`game-lane${lane.active ? ' game-lane--active' : ''}`}
-          style={{
-            '--x': `${lane.x}%`,
-            '--width': `${lane.width}%`,
-            '--hue': lane.hue,
-          }}
-        />
-      ))}
-
-      {/* Wrong-press column flash */}
-      {wrongColumns && Array.from(wrongColumns.keys()).map(pitch => (
-        <div
-          key={`wrong-col-${pitch}`}
-          className="game-lane game-lane--wrong"
-          style={{
-            '--x': `${getNotePosition(pitch, startNote, endNote)}%`,
-            '--width': `${getNoteWidth(pitch, startNote, endNote, true)}%`,
-          }}
-        />
-      ))}
-
       <div className="waterfall-perspective">
         {/* Free-play rising notes (hidden during game mode via CSS) */}
         {visibleNotes.map((note, idx) => {
@@ -236,6 +217,10 @@ export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), start
                     '--hue': pos.hue,
                   }}
                 >
+                  <InvaderSprite
+                    variant={gn.id % 3}
+                    frame={gn.state === 'falling' ? Math.floor(Date.now() / 500) % 2 : 0}
+                  />
                   <span className="game-note-label">{pos.name.replace(/\d+$/, '')}</span>
                 </div>
               )
@@ -267,6 +252,18 @@ export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), start
           </div>
         );
       })}
+
+      {/* Laser projectiles */}
+      {gameLasers.map(laser => (
+        <div
+          key={`laser-${laser.id}`}
+          className="laser-projectile"
+          style={{
+            '--x': `${laser.x}%`,
+            '--bottom': `${laser.bottomPercent}%`,
+          }}
+        />
+      ))}
 
       {gameMode && gameMode.levelMode !== 'invaders' && <div className="hit-line" />}
     </div>
