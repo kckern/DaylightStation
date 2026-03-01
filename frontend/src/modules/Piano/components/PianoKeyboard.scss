@@ -9,6 +9,54 @@
   .piano-key {
     position: relative;
     transition: background-color 0.05s ease-out;
+    overflow: hidden;
+
+    // Destroyed key — grayscale, dimmed, diagonal crack pattern
+    &.destroyed {
+      filter: grayscale(0.8) brightness(0.5);
+      opacity: 0.5;
+      pointer-events: none;
+
+      // Diagonal crack lines overlay
+      &::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: repeating-linear-gradient(
+          -45deg,
+          transparent,
+          transparent 4px,
+          rgba(255, 50, 50, 0.25) 4px,
+          rgba(255, 50, 50, 0.25) 5px
+        );
+        pointer-events: none;
+        z-index: 5;
+      }
+    }
+
+    // Rebuild progress bar — fills upward from bottom
+    .rebuild-bar {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: calc(var(--rebuild-progress, 0) * 100%);
+      z-index: 4;
+      pointer-events: none;
+      border-radius: 0 0 4px 4px;
+
+      // Color transitions: red → yellow → green
+      background: linear-gradient(
+        to top,
+        hsl(calc(var(--rebuild-progress, 0) * 120), 80%, 45%) 0%,
+        hsl(calc(var(--rebuild-progress, 0) * 120), 80%, 55%) 100%
+      );
+      opacity: 0.5;
+      transition: height 0.1s linear;
+    }
 
     &.white {
       width: calc(100% / var(--white-key-count, 52));

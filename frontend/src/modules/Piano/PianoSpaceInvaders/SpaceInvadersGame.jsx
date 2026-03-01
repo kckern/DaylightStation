@@ -106,7 +106,6 @@ export function SpaceInvadersGame({ activeNotes, noteHistory, gameConfig, onDeac
         <NoteWaterfall noteHistory={noteHistory} activeNotes={activeNotes}
           startNote={startNote} endNote={endNote}
           gameMode={game}
-          wrongColumns={game.wrongNotes}
         />
         {game.gameState === 'PLAYING' && (
           <div className="space-invaders-game__life-meter" aria-hidden="true">
@@ -125,6 +124,7 @@ export function SpaceInvadersGame({ activeNotes, noteHistory, gameConfig, onDeac
       <div className="space-invaders-game__keyboard">
         <PianoKeyboard activeNotes={activeNotes} startNote={startNote} endNote={endNote}
           showLabels={true} targetNotes={targetNotes} wrongNotes={game.wrongNotes}
+          destroyedKeys={game.destroyedKeys}
         />
       </div>
 
