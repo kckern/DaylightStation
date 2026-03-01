@@ -9,6 +9,9 @@
  * - GET  /api/fitness/sessions/dates - List all session dates
  * - GET  /api/fitness/sessions - List sessions for a date
  * - GET  /api/fitness/sessions/:sessionId - Get session detail
+ * - POST /api/fitness/session_lock - Acquire or renew session lock
+ * - DELETE /api/fitness/session_lock - Release session lock
+ * - GET  /api/fitness/session_lock/:sessionId - Check lock status
  * - POST /api/fitness/save_session - Save session data
  * - POST /api/fitness/save_screenshot - Save session screenshot
  * - POST /api/fitness/voice_memo - Transcribe voice memo
@@ -30,6 +33,10 @@ import { writeBinary, deleteFile } from '#system/utils/FileIO.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { toListItem } from './list.mjs';
 import { ScreenshotValidationError } from '#apps/fitness/services/ScreenshotService.mjs';
+import { SessionLockService } from '#apps/fitness/services/SessionLockService.mjs';
+
+// Module-level session lock (shared across all router instances)
+const sessionLockService = new SessionLockService();
 
 // Module-level state for simulation process
 const simulationState = {
@@ -388,6 +395,40 @@ export function createFitnessRouter(config) {
       logger.error?.('fitness.receipt.print.error', { sessionId, error: err?.message });
       return res.status(500).json({ error: 'Failed to print receipt' });
     }
+  });
+
+  // ── Session Lock (leader protocol) ──────────────────────────
+
+  /**
+   * POST /api/fitness/session_lock - Acquire or renew session lock
+   */
+  router.post('/session_lock', (req, res) => {
+    const { sessionId, clientId } = req.body;
+    if (!sessionId || !clientId) {
+      return res.status(400).json({ error: 'sessionId and clientId required' });
+    }
+    const result = sessionLockService.acquire(sessionId, clientId);
+    res.json(result);
+  });
+
+  /**
+   * DELETE /api/fitness/session_lock - Release session lock
+   */
+  router.delete('/session_lock', (req, res) => {
+    const { sessionId, clientId } = req.body;
+    if (!sessionId || !clientId) {
+      return res.status(400).json({ error: 'sessionId and clientId required' });
+    }
+    const released = sessionLockService.release(sessionId, clientId);
+    res.json({ released });
+  });
+
+  /**
+   * GET /api/fitness/session_lock/:sessionId - Check lock status
+   */
+  router.get('/session_lock/:sessionId', (req, res) => {
+    const lock = sessionLockService.check(req.params.sessionId);
+    res.json({ locked: !!lock, ...(lock || {}) });
   });
 
   /**
