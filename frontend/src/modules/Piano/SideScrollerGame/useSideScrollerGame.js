@@ -127,7 +127,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     const complexity = lvlConfig.complexity || 'single';
     const whiteKeysOnly = lvlConfig.white_keys_only ?? false;
     const newTargets = generateScrollerTargets(noteRange, complexity, whiteKeysOnly);
-    logger.debug('side-scroller.targets-regenerated', { jump: newTargets.jump, duck: newTargets.duck });
+    logger.info('side-scroller.targets-regenerated', { jump: newTargets.jump, duck: newTargets.duck });
     setTargets(newTargets);
   }, [logger]);
 
@@ -174,7 +174,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
       if (collisions.length > 0) {
         const hitIndices = collisions.map(c => next.obstacles.indexOf(c));
         next = applyDamage(next, config.damagePerHit, config.invincibilityMs, timestamp, hitIndices);
-        logger.debug('side-scroller.collision', { count: collisions.length, health: next.health, damagePerHit: config.damagePerHit });
+        logger.info('side-scroller.collision', { count: collisions.length, health: next.health, damagePerHit: config.damagePerHit });
         if (next.health <= TOTAL_HEALTH * 0.25 && next.health > 0) {
           logger.warn('side-scroller.health-warning', { health: next.health, totalHealth: TOTAL_HEALTH });
         }
@@ -186,7 +186,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
         for (let i = 0; i < dodged; i++) {
           next = applyHeal(next, config.healPerDodge);
         }
-        logger.debug('side-scroller.heal', { dodged, health: next.health, healPerDodge: config.healPerDodge });
+        logger.info('side-scroller.heal', { dodged, health: next.health, healPerDodge: config.healPerDodge });
         prevDodgeCountRef.current = next.dodgeCount;
       }
 
@@ -242,7 +242,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
   // ─── Action Handlers ────────────────────────────────────────
 
   const handleAction = useCallback((actionName) => {
-    logger.debug('side-scroller.action', { action: actionName });
+    logger.info('side-scroller.action', { action: actionName });
     if (actionName === 'jump') {
       setWorld(prev => applyJump(prev));
     } else if (actionName === 'duck') {
