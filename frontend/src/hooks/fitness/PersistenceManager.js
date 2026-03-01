@@ -989,7 +989,10 @@ export class PersistenceManager {
       seriesSample: seriesSample.map(([k, v]) => [k, typeof v, v?.substring?.(0, 50)])
     });
 
-    // Session lock: try to acquire/renew (fire-and-forget)
+    // Session lock: try to acquire/renew (fire-and-forget).
+    // On the first call, _sessionLockGranted is null (unknown), so persistence
+    // proceeds while the lock result resolves asynchronously. By the second
+    // autosave (~2s later), the cached result gates subsequent saves.
     const lockSessionId = persistSessionData.session?.id;
     if (lockSessionId) {
       this._tryAcquireLock(lockSessionId);
