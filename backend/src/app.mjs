@@ -1298,10 +1298,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // Recover pending jobs on startup
       stravaEnrichmentService.recoverPendingJobs();
 
-      rootLogger.info?.('strava.enrichment.initialized');
+      rootLogger.info?.('strava.enrichment.initialized', {
+        adapters: Object.keys(providerWebhookAdapters),
+      });
     }
   } catch (err) {
-    rootLogger.warn?.('strava.enrichment.init_failed', { error: err?.message });
+    rootLogger.error?.('strava.enrichment.init_failed', { error: err?.message, stack: err?.stack });
+  }
+
+  // Health check: warn if Strava creds are configured but no adapters registered
+  if (configService.getSystemAuth?.('strava', 'client_id') && Object.keys(providerWebhookAdapters).length === 0) {
+    rootLogger.error?.('strava.enrichment.health_check_failed', {
+      reason: 'Strava credentials configured but no webhook adapters registered — enrichment is dead',
+    });
   }
 
   // Fitness domain router

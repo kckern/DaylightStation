@@ -21,6 +21,7 @@ import { DaylightAPI } from '../../lib/api.mjs';
 import getLogger from '../../lib/logging/Logger.js';
 import { SessionSerializerV3 } from './SessionSerializerV3.js';
 import { buildSessionSummary } from './buildSessionSummary.js';
+import { getClientId } from '../../lib/clientId.js';
 
 // -------------------- Constants --------------------
 
@@ -527,6 +528,10 @@ export class PersistenceManager {
     // Track save state
     this._saveTriggered = false;
     this._lastSaveAt = 0;
+
+    // Session lock state: null = unknown, true = leader, false = not leader
+    this._sessionLockGranted = null;
+    this._sessionLockLeader = null;
   }
 
   /**
@@ -559,6 +564,54 @@ export class PersistenceManager {
    */
   getLastSaveTime() {
     return this._lastSaveAt;
+  }
+
+  // -------------------- Session Lock --------------------
+
+  /**
+   * Attempt to acquire or renew the session lock (fire-and-forget).
+   * Updates internal lock state for subsequent persistSession() calls.
+   * @param {string} sessionId
+   */
+  async _tryAcquireLock(sessionId) {
+    if (!sessionId) return;
+    try {
+      const res = await this._persistApi('api/v1/fitness/session_lock', {
+        sessionId,
+        clientId: getClientId(),
+      }, 'POST');
+      this._sessionLockGranted = res?.granted ?? true;
+      this._sessionLockLeader = res?.leader ?? null;
+      if (!this._sessionLockGranted) {
+        this._log('lock_denied', { sessionId, leader: this._sessionLockLeader, clientId: getClientId() });
+      }
+    } catch (err) {
+      // Lock service unavailable — assume granted (graceful degradation)
+      this._sessionLockGranted = true;
+      this._log('session_lock_unavailable', { sessionId, error: err?.message });
+    }
+  }
+
+  /**
+   * Release the session lock (best effort).
+   * Called during session teardown.
+   * @param {string} sessionId - Raw session ID (may have fs_ prefix)
+   */
+  async releaseLock(sessionId) {
+    if (!sessionId) return;
+    // Normalize to numeric ID to match _tryAcquireLock format
+    const numericId = deriveNumericSessionId(sessionId);
+    if (!numericId) return;
+    try {
+      await this._persistApi('api/v1/fitness/session_lock', {
+        sessionId: numericId,
+        clientId: getClientId(),
+      }, 'DELETE');
+    } catch (_) {
+      // Best effort
+    }
+    this._sessionLockGranted = null;
+    this._sessionLockLeader = null;
   }
 
   // -------------------- Payload Building (v3) --------------------
@@ -687,7 +740,7 @@ export class PersistenceManager {
     if (roster.length === 0) {
       return { ok: false, reason: 'no-participants' };
     }
-    if (sessionData.durationMs < 60000) {
+    if (sessionData.durationMs < 300000) {
       return { ok: false, reason: 'session-too-short', durationMs: sessionData.durationMs };
     }
 
@@ -935,6 +988,25 @@ export class PersistenceManager {
       seriesKeys: persistSessionData.timeline?.series ? Object.keys(persistSessionData.timeline.series).length : 0,
       seriesSample: seriesSample.map(([k, v]) => [k, typeof v, v?.substring?.(0, 50)])
     });
+
+    // Session lock: try to acquire/renew (fire-and-forget).
+    // On the first call, _sessionLockGranted is null (unknown), so persistence
+    // proceeds while the lock result resolves asynchronously. By the second
+    // autosave (~2s later), the cached result gates subsequent saves.
+    const lockSessionId = persistSessionData.session?.id;
+    if (lockSessionId) {
+      this._tryAcquireLock(lockSessionId);
+    }
+
+    // If we know we're not the leader, skip persistence (unless forced)
+    if (this._sessionLockGranted === false && !force) {
+      this._log('persist_skipped_not_leader', {
+        sessionId: lockSessionId,
+        leader: this._sessionLockLeader,
+        clientId: getClientId(),
+      });
+      return false;
+    }
 
     // Persist
     this._lastSaveAt = Date.now();
