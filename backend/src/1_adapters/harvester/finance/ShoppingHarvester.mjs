@@ -576,7 +576,7 @@ Rules:
     this.#logger.debug?.('shopping.ai.extract', { emailId: email.id, retailer: retailerName });
 
     const result = await this.#aiGateway.chatWithJson(messages, {
-      model: 'gpt-4o-mini',
+      model: this.#aiGateway.miniModel,
       maxTokens: 2000,
       temperature: 0.1,
     });

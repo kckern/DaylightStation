@@ -87,8 +87,8 @@ export class OpenAICostSource extends ICostSource {
    */
   getSupportedCategories() {
     return [
-      CostCategory.fromString('ai/openai/gpt-4o/chat'),
-      CostCategory.fromString('ai/openai/gpt-4o-mini/chat'),
+      CostCategory.fromString('ai/openai/gpt-4.1/chat'),
+      CostCategory.fromString('ai/openai/gpt-4.1-mini/chat'),
       CostCategory.fromString('ai/openai/whisper/transcription')
     ];
   }

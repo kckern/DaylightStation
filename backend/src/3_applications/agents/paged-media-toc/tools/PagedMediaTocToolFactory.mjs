@@ -153,7 +153,6 @@ export class PagedMediaTocToolFactory extends ToolFactory {
 - If a title spans multiple lines, combine into one string` },
         ];
         const response = await aiGateway.chatWithImage(messages, fetchResult.imageDataUri, {
-          model: 'gpt-4o',
           maxTokens: 2000,
           imageDetail: 'high',
         });

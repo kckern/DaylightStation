@@ -18,7 +18,7 @@ export class OpenAIFoodParserAdapter {
   /**
    * @param {Object} config
    * @param {string} config.apiKey - OpenAI API key
-   * @param {string} [config.model='gpt-4o-mini'] - Model to use
+   * @param {string} [config.model='gpt-4.1-mini'] - Model to use
    * @param {Object} deps
    * @param {import('#system/services/HttpClient.mjs').HttpClient} deps.httpClient
    * @param {Object} [deps.logger=console]
@@ -37,7 +37,7 @@ export class OpenAIFoodParserAdapter {
       });
     }
     this.#apiKey = config.apiKey;
-    this.#model = config.model || 'gpt-4o-mini';
+    this.#model = config.model || 'gpt-4.1-mini';
     this.#baseUrl = 'https://api.openai.com/v1';
     this.#httpClient = deps.httpClient;
     this.#logger = deps.logger || console;

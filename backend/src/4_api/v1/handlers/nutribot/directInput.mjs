@@ -198,6 +198,7 @@ export function directTextHandler(container, options = {}) {
 
     // Get text from body or query
     const text = req.body?.text || req.query?.text;
+    const date = req.body?.date || req.query?.date;
 
     if (!text) {
       return res.status(400).json({
@@ -213,6 +214,7 @@ export function directTextHandler(container, options = {}) {
       textLength: text.length,
       userId,
       conversationId,
+      date: date || undefined,
     });
 
     // Call use case
@@ -221,6 +223,7 @@ export function directTextHandler(container, options = {}) {
       userId,
       conversationId,
       text,
+      date,
       messageId: null, // No Telegram message
     });
 
