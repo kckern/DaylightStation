@@ -30,7 +30,12 @@ From session `2026-03-02T00-38-51.jsonl`:
 
 ## Resolution
 
-- Invariant confirmed already holding in both implementations (standalone + inline)
-- Regression tests added: `tests/live/flow/admin/content-search-combobox/12-freeform-commit.runtime.test.mjs`
-- Defensive comments added to both `ContentSearchCombobox.jsx` and `ListsItemRow.jsx`
-- Status: **Resolved — invariant preserved and tested**
+- **Root cause:** In `ListsItemRow.jsx`'s inline combobox, `setHighlightedIdx(0)` on every
+  keystroke (line 1852) caused Enter/Tab to select `displayItems[0]` instead of committing
+  freeform text. The highlight was auto-set, not user-navigated.
+- **Fix:** Added `userNavigatedRef` to distinguish auto-highlight (typing) from explicit
+  navigation (ArrowUp/Down). Enter/Tab only selects highlighted item when user arrow-navigated.
+  All programmatic `setHighlightedIdx` calls reset the ref to `false`.
+- Regression tests: `tests/live/flow/admin/content-search-combobox/12-freeform-commit.runtime.test.mjs`
+- Defensive comments in both `ContentSearchCombobox.jsx` and `ListsItemRow.jsx`
+- Status: **Fixed**
