@@ -1,4 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import getLogger from '../../lib/logging/Logger.js';
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'ScreenDataProvider' });
+  return _logger;
+}
 
 const ScreenDataContext = createContext({});
 
@@ -22,8 +29,8 @@ export function ScreenDataProvider({ sources = {}, children }) {
         if (!res.ok) return;
         const data = await res.json();
         setStore(prev => ({ ...prev, [key]: data }));
-      } catch {
-        // silent — widget shows its own loading/error state
+      } catch (err) {
+        logger().warn('screendataprovider.fetch-failed', { key, url, error: err.message });
       }
     };
 
