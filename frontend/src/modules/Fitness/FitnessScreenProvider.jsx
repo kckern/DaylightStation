@@ -1,4 +1,4 @@
-import React, { createContext, useContext } from 'react';
+import React, { createContext, useContext, useMemo } from 'react';
 
 const FitnessScreenContext = createContext(null);
 
@@ -10,7 +10,7 @@ const FitnessScreenContext = createContext(null);
  * @param {Function} props.onCtaAction - Handle coach CTA actions
  */
 export function FitnessScreenProvider({ onPlay, onNavigate, onCtaAction, children }) {
-  const value = { onPlay, onNavigate, onCtaAction };
+  const value = useMemo(() => ({ onPlay, onNavigate, onCtaAction }), [onPlay, onNavigate, onCtaAction]);
   return (
     <FitnessScreenContext.Provider value={value}>
       {children}
