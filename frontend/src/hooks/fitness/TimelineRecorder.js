@@ -88,6 +88,9 @@ export class TimelineRecorder {
     // Track which users have had initial coins_total=0 recorded
     this._usersWithCoinsRecorded = new Set();
 
+    // Vibration trackers reference (injected via setVibrationTrackers)
+    this._vibrationTrackers = null;
+
     // Pending snapshot reference for next tick
     this._pendingSnapshotRef = null;
 
@@ -144,6 +147,14 @@ export class TimelineRecorder {
    */
   setLogCallback(callback) {
     this._onLog = callback;
+  }
+
+  /**
+   * Set vibration trackers reference for timeline recording.
+   * @param {Map<string, VibrationActivityTracker>} trackers
+   */
+  setVibrationTrackers(trackers) {
+    this._vibrationTrackers = trackers || null;
   }
 
   /**
@@ -346,6 +357,20 @@ export class TimelineRecorder {
       entry.metrics.power = entry.metrics.power ?? sanitizedDeviceMetrics.power;
       entry.metrics.distance = entry.metrics.distance ?? sanitizedDeviceMetrics.distance;
     });
+
+    // -------------------- Vibration Tracker Recording --------------------
+
+    if (this._vibrationTrackers) {
+      this._vibrationTrackers.forEach((tracker, equipmentId) => {
+        tracker.tick(timestamp);
+        const snap = tracker.snapshot;
+        assignMetric(`vib:${equipmentId}:active`, snap.status === 'active' ? 1 : 0);
+        if (snap.currentIntensity > 0) {
+          assignMetric(`vib:${equipmentId}:intensity`, snap.currentIntensity);
+        }
+        assignMetric(`vib:${equipmentId}:impacts`, snap.estimatedImpacts);
+      });
+    }
 
     // -------------------- Activity Detection --------------------
 
