@@ -128,6 +128,10 @@ async function main() {
     context: { env: process.env.NODE_ENV }
   });
 
+  // Validate data directory permissions
+  const { validateDataPermissions } = await import('./src/0_system/boot/validateDataPermissions.mjs');
+  validateDataPermissions({ dataDir, logger });
+
   // ==========================================================================
   // Create HTTP Server and Load Backend
   // ==========================================================================
