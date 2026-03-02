@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { DaylightAPI } from '../lib/api.mjs';
 import { PanelRenderer } from './panels/PanelRenderer.jsx';
 import { ScreenDataProvider } from './data/ScreenDataProvider.jsx';
+import { ScreenProvider } from './providers/ScreenProvider.jsx';
 import { ScreenOverlayProvider, useScreenOverlay } from './overlays/ScreenOverlayProvider.jsx';
 import { registerBuiltinWidgets } from './widgets/builtins.js';
 import { getActionBus } from './input/ActionBus.js';
@@ -113,7 +114,9 @@ export function ScreenRenderer({ screenId: propScreenId }) {
           <ScreenOverlayProvider>
             <ScreenActionHandler />
             <ScreenSubscriptionHandler subscriptions={config.subscriptions} />
-            <PanelRenderer node={config.layout} />
+            <ScreenProvider config={config.layout}>
+              <PanelRenderer />
+            </ScreenProvider>
           </ScreenOverlayProvider>
         </div>
       </div>
