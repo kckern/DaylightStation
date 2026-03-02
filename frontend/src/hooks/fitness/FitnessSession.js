@@ -1334,7 +1334,8 @@ export class FitnessSession {
       eventJournal: this.eventJournal,
       resolveEquipmentId: (device) => this._resolveEquipmentId(device)
     });
-    
+    this._timelineRecorder.setVibrationTrackers(this._vibrationTrackers);
+
     this._participantRoster.reset();
     this._participantRoster.configure({
       deviceManager: this.deviceManager,
