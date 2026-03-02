@@ -3,7 +3,7 @@
  * Config-driven kiosk interfaces for room-based displays
  */
 
-export const VERSION = '0.3.0';
+export const VERSION = '0.4.0';
 
 // Main renderer
 export { ScreenRenderer } from './ScreenRenderer.jsx';
@@ -37,5 +37,5 @@ export { useScreenSubscriptions } from './subscriptions/useScreenSubscriptions.j
 export { WidgetRegistry, getWidgetRegistry, resetWidgetRegistry } from './widgets/registry.js';
 export { registerBuiltinWidgets } from './widgets/builtins.js';
 
-// Slot system
-export { ScreenSlotProvider, useSlot, useSlotState } from './slots/ScreenSlotProvider.jsx';
+// Screen provider (replaces slot system in v0.4.0)
+export { ScreenProvider, useScreen } from './providers/ScreenProvider.jsx';

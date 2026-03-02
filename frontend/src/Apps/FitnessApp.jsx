@@ -18,7 +18,7 @@ import { FitnessFrame } from '../modules/Fitness/frames';
 import { useFitnessUrlParams } from '../hooks/fitness/useFitnessUrlParams.js';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ScreenDataProvider } from '../screen-framework/data/ScreenDataProvider.jsx';
-import { ScreenSlotProvider } from '../screen-framework/slots/ScreenSlotProvider.jsx';
+import { ScreenProvider } from '../screen-framework/providers/ScreenProvider.jsx';
 import { PanelRenderer } from '../screen-framework/panels/PanelRenderer.jsx';
 import { FitnessScreenProvider } from '../modules/Fitness/FitnessScreenProvider.jsx';
 import { registerBuiltinWidgets } from '../screen-framework/widgets/builtins.js';
@@ -1122,17 +1122,19 @@ const FitnessApp = () => {
             >
               <div className={`fitness-main-content ${currentView === 'users' ? 'fitness-cam-active' : ''}`}>
                 {currentView === 'home' && homeScreenConfig && (
-                  <FitnessScreenProvider
-                    onPlay={handleHomePlay}
-                    onNavigate={handleNavigate}
-                    onCtaAction={(cta) => logger.info('fitness-cta-action', { action: cta.action })}
-                  >
-                    <ScreenDataProvider sources={homeScreenSources}>
-                      <ScreenSlotProvider>
-                        <PanelRenderer node={homeScreenConfig.layout} />
-                      </ScreenSlotProvider>
-                    </ScreenDataProvider>
-                  </FitnessScreenProvider>
+                  <div className="home-app">
+                    <FitnessScreenProvider
+                      onPlay={handleHomePlay}
+                      onNavigate={handleNavigate}
+                      onCtaAction={(cta) => logger.info('fitness-cta-action', { action: cta.action })}
+                    >
+                      <ScreenDataProvider sources={homeScreenSources}>
+                        <ScreenProvider config={{ ...homeScreenConfig.layout, theme: homeScreenConfig.theme }}>
+                          <PanelRenderer />
+                        </ScreenProvider>
+                      </ScreenDataProvider>
+                    </FitnessScreenProvider>
+                  </div>
                 )}
                 {currentView === 'users' && (
                   <FitnessModuleContainer moduleId="fitness_session" mode="standalone" />
