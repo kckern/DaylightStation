@@ -15,8 +15,15 @@ import {
   SortableContext, verticalListSortingStrategy, arrayMove
 } from '@dnd-kit/sortable';
 import { useAdminLists } from '../../../hooks/admin/useAdminLists.js';
+import { getChildLogger } from '../../../lib/logging/singleton.js';
 import ListsItemRow, { EmptyItemRow, fetchContentMetadata } from './ListsItemRow.jsx';
 import { swapContentPayloads } from './listConstants.js';
+
+let _log;
+function dndLog() {
+  if (!_log) _log = getChildLogger({ app: 'admin', sessionLog: true }).child({ component: 'ListsDnd' });
+  return _log;
+}
 import SectionHeader from './SectionHeader.jsx';
 import ListsItemEditor from './ListsItemEditor.jsx';
 import { ListsContext } from './ListsContext.js';
@@ -129,29 +136,45 @@ function ListsFolder() {
 
   const handleDragEnd = async (event) => {
     const { active, over } = event;
-    if (!over || active.id === over.id) return;
+    if (!over || active.id === over.id) {
+      dndLog().debug('drag.cancel', { activeId: String(active.id), reason: !over ? 'no_target' : 'same_item' });
+      setActiveContentDrag(null);
+      return;
+    }
 
     const activeId = String(active.id);
     const overId = String(over.id);
 
     // Content swap
     if (activeId.startsWith('content-')) {
-      if (!overId.startsWith('content-')) return;
+      if (!overId.startsWith('content-')) {
+        dndLog().debug('drag.cancel', { activeId, overId, reason: 'invalid_target_type' });
+        setActiveContentDrag(null);
+        return;
+      }
       const srcParts = activeId.replace('content-', '').split('-');
       const dstParts = overId.replace('content-', '').split('-');
       const [srcSi, srcIdx] = [Number(srcParts[0]), Number(srcParts[1])];
       const [dstSi, dstIdx] = [Number(dstParts[0]), Number(dstParts[1])];
       const srcItem = sections[srcSi]?.items?.[srcIdx];
       const dstItem = sections[dstSi]?.items?.[dstIdx];
-      if (!srcItem || !dstItem) return;
+      if (!srcItem || !dstItem) {
+        dndLog().warn('content.swap.invalid', { srcSi, srcIdx, dstSi, dstIdx, reason: 'item_not_found' });
+        setActiveContentDrag(null);
+        return;
+      }
 
+      dndLog().info('content.swap', {
+        src: { section: srcSi, index: srcIdx, input: srcItem.input },
+        dst: { section: dstSi, index: dstIdx, input: dstItem.input },
+      });
       const { updatesForA, updatesForB } = swapContentPayloads(srcItem, dstItem);
       try {
         await updateItem(dstSi, dstIdx, updatesForA);
         await updateItem(srcSi, srcIdx, updatesForB);
       } catch (err) {
         // updateItem refetches on success, so partial failure auto-corrects on next refetch
-        console.error('Content swap failed:', err);
+        dndLog().error('content.swap.failed', { srcSi, srcIdx, dstSi, dstIdx, error: err.message });
       }
 
       // Flash both rows
@@ -177,7 +200,11 @@ function ListsFolder() {
       const [activeSi, activeIdx] = [Number(activeParts[0]), Number(activeParts[1])];
       const [overSi, overIdx] = [Number(overParts[0]), Number(overParts[1])];
       // Only reorder within the same section
-      if (activeSi !== overSi) return;
+      if (activeSi !== overSi) {
+        dndLog().debug('row.reorder.cancel', { activeSi, overSi, reason: 'cross_section' });
+        return;
+      }
+      dndLog().info('row.reorder', { section: activeSi, from: activeIdx, to: overIdx });
       const sectionItems = sections[activeSi]?.items || [];
       const reordered = arrayMove(sectionItems, activeIdx, overIdx);
       await reorderItems(activeSi, reordered);
@@ -191,8 +218,13 @@ function ListsFolder() {
       const [si, idx] = [Number(parts[0]), Number(parts[1])];
       const item = sections[si]?.items?.[idx];
       if (item) {
+        dndLog().info('drag.start', { type: 'content', section: si, index: idx, input: item.input });
         setActiveContentDrag({ sectionIndex: si, itemIndex: idx, item });
       }
+    } else if (activeId.startsWith('row-')) {
+      const parts = activeId.replace('row-', '').split('-');
+      const [si, idx] = [Number(parts[0]), Number(parts[1])];
+      dndLog().info('drag.start', { type: 'row', section: si, index: idx });
     }
   };
 
