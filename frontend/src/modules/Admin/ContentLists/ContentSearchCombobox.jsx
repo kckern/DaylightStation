@@ -558,6 +558,8 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
           }}
           onBlur={() => {
             log.debug('input.blur', { search, value, willCommitFreeform: !!(search && search !== value) });
+            // INVARIANT: Always save freeform text on blur. Never gate on result count.
+            // See: docs/_wip/bugs/2026-03-01-admin-freeform-commit-must-always-save.md
             // Commit freeform text if user typed something different from current value
             if (search && search !== value) {
               log.info('freeform.commit_on_blur', { freeformValue: search, prevValue: value });
@@ -571,6 +573,8 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
             if (e.key === 'Enter' && search && search !== value) {
               const idx = combobox.getSelectedOptionIndex();
               log.debug('input.enter', { search, value, selectedOptionIndex: idx, resultCount: results.length });
+              // INVARIANT: Commit freeform when no option is highlighted or no results.
+              // Never prevent save based on result availability. User decides what's valid.
               // Commit freeform text on Enter when no dropdown option is highlighted
               if (idx === -1 || results.length === 0) {
                 log.info('freeform.commit_on_enter', { freeformValue: search, prevValue: value });
