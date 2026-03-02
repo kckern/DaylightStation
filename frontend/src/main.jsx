@@ -146,7 +146,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/fitness/*" element={<FitnessApp />} />
         <Route path="/lifelog" element={<LifelogApp />} />
         <Route path="/admin/*" element={<AdminApp />} />
-        <Route path="/screen/:screenId" element={<ScreenRenderer />} />
+        <Route path="/screen/:screenId" element={<WebSocketProvider><ScreenRenderer /></WebSocketProvider>} />
         <Route path="/setup" element={<SetupWizard onComplete={() => window.location.href = '/'} />} />
         <Route path="/invite/:token" element={<InviteAccept />} />
         <Route path="/feed/*" element={<FeedApp />} />

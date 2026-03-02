@@ -1,5 +1,7 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import moment from 'moment';
+import ConnectionStatus from '../../components/ConnectionStatus/ConnectionStatus';
 import './Time.scss';
 
 // function component for the animated flipping card
@@ -177,8 +179,21 @@ class FlipClock extends React.Component {
 
 // Main exported function component
 export default function Time() {
+  const [date, setDate] = useState(moment().format('dddd, MMMM Do, YYYY'));
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDate(moment().format('dddd, MMMM Do, YYYY'));
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <div>
+      <div className="clockHeader">
+        <span>{date}</span>
+        <ConnectionStatus size={14} />
+      </div>
       <FlipClock />
     </div>
   );

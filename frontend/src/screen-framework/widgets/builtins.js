@@ -6,6 +6,7 @@ import Upcoming from '../../modules/Upcoming/Upcoming.jsx';
 import { FinanceChart } from '../../modules/Finance/Finance.jsx';
 import Weight from '../../modules/Health/Weight.jsx';
 import EntropyPanel from '../../modules/Entropy/EntropyPanel.jsx';
+import { PianoVisualizer } from '../../modules/Piano/index.js';
 
 export function registerBuiltinWidgets() {
   const registry = getWidgetRegistry();
@@ -16,5 +17,6 @@ export function registerBuiltinWidgets() {
   registry.register('finance', FinanceChart);
   registry.register('health', Weight);
   registry.register('entropy', EntropyPanel);
+  registry.register('piano', PianoVisualizer);
   return registry;
 }

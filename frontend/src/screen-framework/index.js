@@ -3,7 +3,7 @@
  * Config-driven kiosk interfaces for room-based displays
  */
 
-export const VERSION = '0.2.0';
+export const VERSION = '0.3.0';
 
 // Main renderer
 export { ScreenRenderer } from './ScreenRenderer.jsx';
@@ -26,6 +26,12 @@ export { KeyboardAdapter } from './input/adapters/KeyboardAdapter.js';
 export { NumpadAdapter } from './input/adapters/NumpadAdapter.js';
 export { RemoteAdapter } from './input/adapters/RemoteAdapter.js';
 export { GamepadAdapter } from './input/adapters/GamepadAdapter.js';
+
+// Actions
+export { ScreenActionHandler } from './actions/ScreenActionHandler.jsx';
+
+// Subscriptions
+export { useScreenSubscriptions } from './subscriptions/useScreenSubscriptions.js';
 
 // Widget system
 export { WidgetRegistry, getWidgetRegistry, resetWidgetRegistry } from './widgets/registry.js';

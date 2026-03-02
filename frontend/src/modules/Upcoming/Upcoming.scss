@@ -6,10 +6,9 @@ $transition-time: 1s;
 
 .upcoming {
     width: 100%;
-    max-width: 66.5vw;
     display: flex;
-    height: 45.5%;
-    flex-grow: 0;
+    height: 100%;
+    flex-grow: 1;
     outline: 2px solid #f0f0f077;
 
     .grey{
@@ -139,17 +138,20 @@ $transition-time: 1s;
       
       .list-panel {
         width: max(40%, 300px);
+        height: 100%;
         overflow: hidden;
         position: relative;
         transition: none!important;
         background-color: #000;
-        position: relative;
         border-left: 1px solid #f0f0f0;
         margin-left: -1px;
+        display: flex;
+        flex-direction: column;
       
         .list-panel-item {
           border: 1px solid #f0f0f033;
-          height: 2.21rem;
+          height: 2.8rem;
+          line-height: 2.8rem;
           padding: 0 0.5ex;
           font-size: 1.5rem;
           font-weight: 600;
@@ -158,6 +160,7 @@ $transition-time: 1s;
           word-break: break-all;
           overflow: hidden;
           flex-shrink: 0;
+          white-space: nowrap;
         }
         .list-panel-item.slide-out {
           transform: translateX(-100%);
