@@ -11,6 +11,7 @@ import { EventJournal } from './EventJournal.js';
 import { ActivityMonitor } from '../../modules/Fitness/domain/ActivityMonitor.js';
 import { SessionEntityRegistry } from './SessionEntity.js';
 import { DeviceEventRouter } from './DeviceEventRouter.js';
+import { VibrationActivityTracker } from './VibrationActivityTracker.js';
 import { findUnclosedMedia } from './closeOpenMedia.js';
 import moment from 'moment-timezone';
 import getLogger from '../../lib/logging/Logger.js';
@@ -287,6 +288,7 @@ export class FitnessSession {
     this.zoneProfileStore = new ZoneProfileStore();
     this.eventJournal = new EventJournal();
     this.treasureBox = null; // Instantiated on start
+    this._vibrationTrackers = new Map(); // equipmentId -> VibrationActivityTracker
     this._deviceHrSampleCount = new Map(); // deviceId -> count for startup discard
 
     // Session Entity Registry - tracks participation segments per device assignment
@@ -967,6 +969,58 @@ export class FitnessSession {
   setEquipmentCatalog(equipmentList = []) {
     // Delegate to DeviceEventRouter for unified equipment lookups
     this._deviceRouter.setEquipmentCatalog(equipmentList);
+    this.initVibrationTrackers(equipmentList);
+  }
+
+  /**
+   * Initialize vibration activity trackers from equipment config.
+   * @param {Array} equipmentList - Equipment config array
+   */
+  initVibrationTrackers(equipmentList = []) {
+    this._vibrationTrackers.clear();
+    equipmentList.forEach(item => {
+      if (item?.sensor?.type === 'vibration' && item.id) {
+        const tracker = new VibrationActivityTracker(item.id, item.activity || {});
+        this._vibrationTrackers.set(String(item.id), tracker);
+        getLogger().debug('fitness.vibration_tracker.created', {
+          equipmentId: item.id,
+          config: item.activity || {}
+        });
+      }
+    });
+  }
+
+  /**
+   * Route a vibration event to the appropriate tracker.
+   * @param {string} equipmentId
+   * @param {Object} payload - { vibration, x_axis, y_axis, z_axis, timestamp }
+   */
+  ingestVibration(equipmentId, payload) {
+    if (!equipmentId || !payload) return;
+    const tracker = this._vibrationTrackers.get(String(equipmentId));
+    if (!tracker) return;
+    tracker.ingest(payload);
+  }
+
+  /**
+   * Get a vibration tracker by equipment ID.
+   * @param {string} equipmentId
+   * @returns {VibrationActivityTracker|null}
+   */
+  getVibrationTracker(equipmentId) {
+    return this._vibrationTrackers.get(String(equipmentId)) || null;
+  }
+
+  /**
+   * Get all vibration tracker snapshots.
+   * @returns {Map<string, Object>}
+   */
+  getVibrationSnapshots() {
+    const snapshots = new Map();
+    this._vibrationTrackers.forEach((tracker, id) => {
+      snapshots.set(id, tracker.snapshot);
+    });
+    return snapshots;
   }
 
   _isValidPreSessionSample(payload) {
@@ -1879,6 +1933,7 @@ export class FitnessSession {
     this._isEndingSession = false; // Clear re-entrancy guard
     // Note: Don't clear _sessionEndedCallbacks - they persist across sessions
     this.governanceEngine.reset();
+    this._vibrationTrackers.forEach(t => t.reset());
     if (this.timeline) {
       this.timeline.reset(Date.now(), this.timeline.timebase?.intervalMs || 5000);
     }
@@ -1917,7 +1972,11 @@ export class FitnessSession {
     this._timelineRecorder = null;
     this._participantRoster = null;
     this._lifecycle = null;
-    
+
+    // Clear vibration trackers
+    this._vibrationTrackers.clear();
+    this._vibrationTrackers = null;
+
     // Clear zone profile store
     this.zoneProfileStore?.clear();
     this.zoneProfileStore = null;
