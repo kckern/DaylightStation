@@ -260,7 +260,10 @@ function FamilySelectorInner({ members, winner, title, exclude }) {
   const selectWinner = useCallback(() => {
     let index, member;
     if (riggedWinner) {
-      index = activeMembers.findIndex(m => m.id === riggedWinner);
+      const needle = riggedWinner.toLowerCase();
+      index = activeMembers.findIndex(m =>
+        m.id === riggedWinner || m.name.toLowerCase() === needle
+      );
       if (index !== -1) {
         member = activeMembers[index];
       }
