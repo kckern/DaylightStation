@@ -4,6 +4,7 @@ import { DaylightAPI, DaylightMediaPath, ContentDisplayUrl, normalizeImageUrl } 
 import './FitnessShow.scss';
 import { useFitness } from '../../context/FitnessContext.jsx';
 import moment from 'moment';
+import { buildVirtualSeasons } from './lib/playlistVirtualSeasons.js';
 
 const formatWatchedDate = (dateString) => {
   try {
@@ -252,8 +253,19 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
       setLoading(true);
       // Fitness API assumes plex source - no need to specify it in URL
       const response = await DaylightAPI(`/api/v1/fitness/show/${showId}/playable`);
+      // If this is a playlist, create virtual seasons for pagination
+      if (response.info?.type === 'playlist') {
+        const pageSize = plexConfig?.playlist_episodes_per_season || 20;
+        const { parents, items: taggedItems } = buildVirtualSeasons(response.items || [], pageSize);
+        response.parents = parents;
+        response.items = taggedItems;
+        // Use playlist image for show display
+        if (!response.image && response.info?.image) {
+          response.image = response.info.image;
+        }
+      }
       setShowData(response);
-      
+
       const rawLabels = [];
       if (Array.isArray(response?.info?.labels)) {
         rawLabels.push(...response.info.labels);
@@ -290,7 +302,7 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- setMusicAutoEnabled is stable
-  }, [showId, nomusicLabelSet]);
+  }, [showId, nomusicLabelSet, plexConfig]);
 
   useEffect(() => {
     fetchShowData();
