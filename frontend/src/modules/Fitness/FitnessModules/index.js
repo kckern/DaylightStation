@@ -43,6 +43,21 @@ for (const [key, mod] of Object.entries(REGISTRY_KEYS)) {
   registry.register(key, mod.default, mod.manifest);
 }
 
+// Dashboard widgets (screen-framework compatible)
+import {
+  FitnessSessionsWidget,
+  FitnessWeightWidget,
+  FitnessNutritionWidget,
+  FitnessUpNextWidget,
+  FitnessCoachWidget,
+} from './modules/HomeApp/widgets/index.js';
+
+registry.register('fitness:sessions', FitnessSessionsWidget);
+registry.register('fitness:weight', FitnessWeightWidget);
+registry.register('fitness:nutrition', FitnessNutritionWidget);
+registry.register('fitness:upnext', FitnessUpNextWidget);
+registry.register('fitness:coach', FitnessCoachWidget);
+
 // --- Bridge functions for existing consumers ---
 // These accept old manifest IDs (e.g. 'fitness_chart') and resolve
 // through the unified widget registry via the legacy ID map.
