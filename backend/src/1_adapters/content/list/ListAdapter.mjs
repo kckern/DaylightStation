@@ -8,7 +8,8 @@ import {
   dirExists,
   listEntries,
   fileExists,
-  loadYaml
+  loadYaml,
+  getStats
 } from '#system/utils/FileIO.mjs';
 import { normalizeListItem, extractContentId, normalizeListConfig } from './listConfigNormalizer.mjs';
 
@@ -315,19 +316,22 @@ export class ListAdapter {
    */
   _loadList(listType, name) {
     const cacheKey = `${listType}:${name}`;
-    if (this._listCache.has(cacheKey)) {
-      return this._listCache.get(cacheKey);
+    const filePath = this._getListPath(listType, name);
+    if (!filePath || !fileExists(filePath)) {
+      this._listCache.delete(cacheKey);
+      return null;
     }
 
-    const filePath = this._getListPath(listType, name);
-    if (!fileExists(filePath)) {
-      return null;
+    const mtime = getStats(filePath)?.mtimeMs;
+    const cached = this._listCache.get(cacheKey);
+    if (cached && cached.mtime === mtime) {
+      return cached.data;
     }
 
     try {
       const raw = loadYaml(filePath.replace(/\.yml$/, ''));
       const data = normalizeListConfig(raw, name);
-      this._listCache.set(cacheKey, data);
+      this._listCache.set(cacheKey, { data, mtime });
       return data;
     } catch (err) {
       console.warn(`Failed to load list ${listType}/${name}:`, err.message);
