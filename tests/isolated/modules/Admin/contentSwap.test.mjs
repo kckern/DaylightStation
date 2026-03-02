@@ -1,26 +1,25 @@
-import { describe, it } from 'node:test';
-import assert from 'node:assert/strict';
+import { describe, it, expect } from 'vitest';
 import {
   CONTENT_PAYLOAD_FIELDS,
   IDENTITY_FIELDS,
   swapContentPayloads,
   ITEM_DEFAULTS
-} from '../../../../frontend/src/modules/Admin/ContentLists/listConstants.js';
+} from '#frontend/modules/Admin/ContentLists/listConstants.js';
 
 describe('CONTENT_PAYLOAD_FIELDS', () => {
   it('should not overlap with IDENTITY_FIELDS', () => {
     const overlap = CONTENT_PAYLOAD_FIELDS.filter(f => IDENTITY_FIELDS.includes(f));
-    assert.deepStrictEqual(overlap, [], `Fields overlap: ${overlap.join(', ')}`);
+    expect(overlap).toEqual([]);
   });
 
   it('should include input and action', () => {
-    assert.ok(CONTENT_PAYLOAD_FIELDS.includes('input'));
-    assert.ok(CONTENT_PAYLOAD_FIELDS.includes('action'));
+    expect(CONTENT_PAYLOAD_FIELDS).toContain('input');
+    expect(CONTENT_PAYLOAD_FIELDS).toContain('action');
   });
 
   it('should include all playback fields', () => {
     for (const field of ['shuffle', 'continuous', 'loop', 'fixedOrder', 'volume', 'playbackRate']) {
-      assert.ok(CONTENT_PAYLOAD_FIELDS.includes(field), `Missing: ${field}`);
+      expect(CONTENT_PAYLOAD_FIELDS).toContain(field);
     }
   });
 });
@@ -33,16 +32,16 @@ describe('swapContentPayloads', () => {
     const { updatesForA, updatesForB } = swapContentPayloads(itemA, itemB);
 
     // A gets B's content
-    assert.equal(updatesForA.input, 'abs:456');
-    assert.equal(updatesForA.action, 'Queue');
-    assert.equal(updatesForA.shuffle, false);
-    assert.equal(updatesForA.volume, 100);
+    expect(updatesForA.input).toBe('abs:456');
+    expect(updatesForA.action).toBe('Queue');
+    expect(updatesForA.shuffle).toBe(false);
+    expect(updatesForA.volume).toBe(100);
 
     // B gets A's content
-    assert.equal(updatesForB.input, 'plex:123');
-    assert.equal(updatesForB.action, 'Play');
-    assert.equal(updatesForB.shuffle, true);
-    assert.equal(updatesForB.volume, 80);
+    expect(updatesForB.input).toBe('plex:123');
+    expect(updatesForB.action).toBe('Play');
+    expect(updatesForB.shuffle).toBe(true);
+    expect(updatesForB.volume).toBe(80);
   });
 
   it('should not include identity fields in swap', () => {
@@ -51,12 +50,12 @@ describe('swapContentPayloads', () => {
 
     const { updatesForA, updatesForB } = swapContentPayloads(itemA, itemB);
 
-    assert.equal(updatesForA.label, undefined);
-    assert.equal(updatesForA.image, undefined);
-    assert.equal(updatesForA.uid, undefined);
-    assert.equal(updatesForA.active, undefined);
-    assert.equal(updatesForB.label, undefined);
-    assert.equal(updatesForB.image, undefined);
+    expect(updatesForA.label).toBeUndefined();
+    expect(updatesForA.image).toBeUndefined();
+    expect(updatesForA.uid).toBeUndefined();
+    expect(updatesForA.active).toBeUndefined();
+    expect(updatesForB.label).toBeUndefined();
+    expect(updatesForB.image).toBeUndefined();
   });
 
   it('should handle undefined fields by using ITEM_DEFAULTS', () => {
@@ -64,11 +63,9 @@ describe('swapContentPayloads', () => {
     const itemB = { label: 'B', input: 'plex:2', action: 'List', shuffle: true };
 
     const { updatesForA } = swapContentPayloads(itemA, itemB);
-    // B has shuffle=true, so A should get it
-    assert.equal(updatesForA.shuffle, true);
+    expect(updatesForA.shuffle).toBe(true);
 
     const { updatesForB } = swapContentPayloads(itemA, itemB);
-    // A has no shuffle, so B should get the default (false)
-    assert.equal(updatesForB.shuffle, ITEM_DEFAULTS.shuffle);
+    expect(updatesForB.shuffle).toBe(ITEM_DEFAULTS.shuffle);
   });
 });
