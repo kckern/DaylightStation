@@ -36,3 +36,6 @@ export { useScreenSubscriptions } from './subscriptions/useScreenSubscriptions.j
 // Widget system
 export { WidgetRegistry, getWidgetRegistry, resetWidgetRegistry } from './widgets/registry.js';
 export { registerBuiltinWidgets } from './widgets/builtins.js';
+
+// Slot system
+export { ScreenSlotProvider, useSlot, useSlotState } from './slots/ScreenSlotProvider.jsx';
