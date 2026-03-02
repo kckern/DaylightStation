@@ -45,7 +45,10 @@ function classifyNode(node, depth) {
 function WidgetNode({ node, fullPanel }) {
   const registry = getWidgetRegistry();
   const Component = registry.get(node.widget);
-  if (!Component) return null;
+  if (!Component) {
+    console.warn(`[screen-framework] Widget "${node.widget}" not found in registry`);
+    return null;
+  }
 
   const theme = themeVars(node.theme);
   const className = fullPanel
