@@ -581,6 +581,62 @@ describe('PlexAdapter', () => {
       expect(result[0].title).toBe('Rock');
     });
   });
+
+  describe('getContainerInfo', () => {
+    let adapter;
+    let mockClient;
+    let mockHttpClient;
+
+    beforeEach(() => {
+      mockHttpClient = { get: jest.fn(), post: jest.fn() };
+      adapter = new PlexAdapter(
+        { host: 'http://localhost:32400', token: 'test-token' },
+        { httpClient: mockHttpClient }
+      );
+      mockClient = {
+        getContainer: jest.fn(),
+        getMetadata: jest.fn()
+      };
+      adapter.client = mockClient;
+    });
+
+    test('uses composite thumbnail for playlists', async () => {
+      mockClient.getMetadata.mockResolvedValue({
+        MediaContainer: {
+          Metadata: [{
+            ratingKey: '450234',
+            title: 'Stretch Playlist',
+            type: 'playlist',
+            playlistType: 'video',
+            composite: '/playlists/450234/composite/abc123',
+            leafCount: 45
+          }]
+        }
+      });
+
+      const info = await adapter.getContainerInfo('plex:450234');
+      expect(info.image).toContain('/playlists/450234/composite/abc123');
+      expect(info.type).toBe('playlist');
+    });
+
+    test('uses thumb for non-playlist containers', async () => {
+      mockClient.getMetadata.mockResolvedValue({
+        MediaContainer: {
+          Metadata: [{
+            ratingKey: '662027',
+            title: '630',
+            type: 'show',
+            thumb: '/library/metadata/662027/thumb/abc',
+            leafCount: 120
+          }]
+        }
+      });
+
+      const info = await adapter.getContainerInfo('plex:662027');
+      expect(info.image).toContain('/library/metadata/662027/thumb/abc');
+      expect(info.type).toBe('show');
+    });
+  });
 });
 
 describe('PlexClient', () => {
