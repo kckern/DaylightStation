@@ -25,7 +25,7 @@ export default function FitnessSessionsWidget() {
 
     setSelectedSessionId(sessionId);
     revertRef.current = replace('right-area', {
-      children: [{ widget: 'fitness:chart', props: { sessionId } }]
+      children: [{ widget: 'fitness:session-detail', props: { sessionId } }]
     });
   };
 
