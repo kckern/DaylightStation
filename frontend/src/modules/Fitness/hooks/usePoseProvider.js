@@ -1,5 +1,5 @@
 /**
- * usePoseProvider - Simplified hook for plugins to consume pose data
+ * usePoseProvider - Simplified hook for modules to consume pose data
  * 
  * Provides a clean interface to PoseContext with automatic lifecycle management.
  */
@@ -8,7 +8,7 @@ import { useEffect, useCallback, useRef } from 'react';
 import { usePoseContext, usePoseContextOptional } from '../context/PoseContext.jsx';
 
 /**
- * Hook for plugins to consume pose data from PoseProvider
+ * Hook for modules to consume pose data from PoseProvider
  * 
  * @param {Object} options - Configuration options
  * @param {boolean} options.autoStart - Automatically start detection when video source is set

@@ -7,7 +7,7 @@ import FitnessMenu from '../modules/Fitness/FitnessMenu.jsx';
 import FitnessNavbar from '../modules/Fitness/FitnessNavbar.jsx';
 import FitnessShow from '../modules/Fitness/FitnessShow.jsx';
 import FitnessPlayer from '../modules/Fitness/FitnessPlayer.jsx';
-import FitnessPluginContainer from '../modules/Fitness/FitnessPlugins/FitnessPluginContainer.jsx';
+import FitnessModuleContainer from '../modules/Fitness/FitnessModules/FitnessModuleContainer.jsx';
 import { VolumeProvider } from '../modules/Fitness/VolumeProvider.jsx';
 import { FitnessProvider } from '../context/FitnessContext.jsx';
 import getLogger, { configure as configureLogger } from '../lib/logging/Logger.js';
@@ -28,10 +28,10 @@ const FitnessApp = () => {
   const [fitnessConfiguration, setFitnessConfiguration] = useState({});
   const [fetchError, setFetchError] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [currentView, setCurrentView] = useState('menu'); // 'menu', 'users', 'show', 'plugin'
+  const [currentView, setCurrentView] = useState('menu'); // 'menu', 'users', 'show', 'module'
   const [activeCollection, setActiveCollection] = useState(null);
   const [selectedShow, setSelectedShow] = useState(null);
-  const [activePlugin, setActivePlugin] = useState(null); // { id, ...manifest }
+  const [activeModule, setActiveModule] = useState(null); // { id, ...manifest }
   const [fitnessPlayQueue, setFitnessPlayQueue] = useState([]);
   const [kioskUI, setKioskUI] = useState(() => {
     // Check if Firefox on initial load - use more robust detection
@@ -716,7 +716,7 @@ const FitnessApp = () => {
       case 'collection':
       case 'plex_collection':
         setActiveCollection(target.collection_id);
-        setActivePlugin(null);
+        setActiveModule(null);
         setCurrentView('menu');
         setSelectedShow(null);
         navigate(`/fitness/menu/${target.collection_id}`, { replace: true });
@@ -725,46 +725,46 @@ const FitnessApp = () => {
       case 'collection_group':
       case 'plex_collection_group':
         setActiveCollection(target.collection_ids);
-        setActivePlugin(null);
+        setActiveModule(null);
         setCurrentView('menu');
         setSelectedShow(null);
         navigate(`/fitness/menu/${target.collection_ids.join(',')}`, { replace: true });
         break;
 
-      case 'plugin_menu':
+      case 'module_menu':
         setActiveCollection(target.menu_id);
-        setActivePlugin(null);
+        setActiveModule(null);
         setCurrentView('menu');
         setSelectedShow(null);
         navigate(`/fitness/menu/${target.menu_id}`, { replace: true });
         break;
 
-      case 'plugin_direct':
-        setActivePlugin({
-          id: target.plugin_id,
+      case 'module_direct':
+        setActiveModule({
+          id: target.module_id,
           ...(target.config || {})
         });
         setActiveCollection(null);
-        setCurrentView('plugin');
+        setCurrentView('module');
         setSelectedShow(null);
-        navigate(`/fitness/plugin/${target.plugin_id}`, { replace: true });
+        navigate(`/fitness/module/${target.module_id}`, { replace: true });
         break;
 
-      case 'plugin':
-        // Launched from FitnessPluginMenu
-        setActivePlugin({
+      case 'module':
+        // Launched from FitnessModuleMenu
+        setActiveModule({
           id: target.id,
           ...(target || {})
         });
         setActiveCollection(null);
-        setCurrentView('plugin');
+        setCurrentView('module');
         setSelectedShow(null);
-        navigate(`/fitness/plugin/${target.id}`, { replace: true });
+        navigate(`/fitness/module/${target.id}`, { replace: true });
         break;
 
       case 'view_direct':
         setActiveCollection(null);
-        setActivePlugin(null);
+        setActiveModule(null);
         setCurrentView(target.view);
         setSelectedShow(null);
         if (target.view === 'users') {
@@ -908,9 +908,9 @@ const FitnessApp = () => {
     } else if (view === 'show' && id) {
       setSelectedShow(id);
       setCurrentView('show');
-    } else if (view === 'plugin' && id) {
-      setActivePlugin({ id });
-      setCurrentView('plugin');
+    } else if (view === 'module' && id) {
+      setActiveModule({ id });
+      setCurrentView('module');
     } else if (view === 'play' && id) {
       handlePlayFromUrl(id);
     } else if (view === 'menu' && ids) {
@@ -935,7 +935,7 @@ const FitnessApp = () => {
     if (urlInitialized && (urlState.view !== 'menu' || urlState.id || urlState.ids)) {
       return;
     }
-    if (activeCollection == null && activePlugin == null && navItems.length > 0) {
+    if (activeCollection == null && activeModule == null && navItems.length > 0) {
       // Sort items to match navbar display order
       const sortedItems = sortNavItems(navItems);
       const firstItem = sortedItems[0];
@@ -949,7 +949,7 @@ const FitnessApp = () => {
         handleNavigate(firstItem.type, firstItem.target, firstItem);
       }
     }
-  }, [navItems, activeCollection, activePlugin, currentView, urlInitialized, urlState]);
+  }, [navItems, activeCollection, activeModule, currentView, urlInitialized, urlState]);
 
   const queueSize = fitnessPlayQueue.length;
   useEffect(() => {
@@ -1066,7 +1066,7 @@ const FitnessApp = () => {
                   currentState={{
                     currentView,
                     activeCollection,
-                    activePlugin
+                    activeModule
                   }}
                   onNavigate={handleNavigate}
                 />
@@ -1076,7 +1076,7 @@ const FitnessApp = () => {
             >
               <div className={`fitness-main-content ${currentView === 'users' ? 'fitness-cam-active' : ''}`}>
                 {currentView === 'users' && (
-                  <FitnessPluginContainer pluginId="fitness_session" mode="standalone" />
+                  <FitnessModuleContainer pluginId="fitness_session" mode="standalone" />
                 )}
                 {currentView === 'show' && selectedShow && (
                   <FitnessShow
@@ -1098,12 +1098,12 @@ const FitnessApp = () => {
                     onContentSelect={handleNavigate}
                   />
                 )}
-                {currentView === 'plugin' && activePlugin && (
-                  <FitnessPluginContainer
-                    pluginId={activePlugin.id}
+                {currentView === 'module' && activeModule && (
+                  <FitnessModuleContainer
+                    pluginId={activeModule.id}
                     mode="standalone"
                     onClose={() => {
-                      setActivePlugin(null);
+                      setActiveModule(null);
                       setCurrentView('menu');
                     }}
                   />

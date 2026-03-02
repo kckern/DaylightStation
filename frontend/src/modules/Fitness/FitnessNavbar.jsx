@@ -34,7 +34,7 @@ const FitnessNavbar = ({
         activeType: activeItem.type,
         currentView: currentState.currentView,
         activeCollection: currentState.activeCollection,
-        activePlugin: currentState.activePlugin?.id || null
+        activeModule: currentState.activeModule?.id || null
       });
     }
   }, [activeItem?.name]);

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { LoadingOverlay, Alert, Text } from '@mantine/core';
 import { DaylightAPI, normalizeImageUrl } from '../../lib/api.mjs';
-import FitnessPluginMenu from './FitnessPlugins/FitnessPluginMenu.jsx';
+import FitnessModuleMenu from './FitnessModules/FitnessModuleMenu.jsx';
 import './FitnessMenu.scss';
 
 /**
@@ -39,13 +39,13 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
     
     // Convert nav_items back to collection-like objects for internal use
     return navItems
-      .filter(item => ['collection', 'plex_collection', 'collection_group', 'plex_collection_group', 'plugin_menu'].includes(item.type))
+      .filter(item => ['collection', 'plex_collection', 'collection_group', 'plex_collection_group', 'module_menu'].includes(item.type))
       .map(item => {
         if (item.type === 'collection' || item.type === 'plex_collection') {
           return { id: item.target.collection_id, name: item.name, icon: item.icon };
         } else if (item.type === 'collection_group' || item.type === 'plex_collection_group') {
           return { id: item.target.collection_ids, name: item.name, icon: item.icon };
-        } else if (item.type === 'plugin_menu') {
+        } else if (item.type === 'module_menu') {
           return { id: item.target.menu_id, name: item.name, icon: item.icon };
         }
         return null;
@@ -257,9 +257,9 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
 
   if (activeAppMenu) {
     return (
-      <FitnessPluginMenu 
-        activePluginMenuId={activeAppMenu.id} 
-        onPluginSelect={(pluginId, manifest) => onContentSelect && onContentSelect('plugin', { id: pluginId, ...manifest })}
+      <FitnessModuleMenu
+        activeModuleMenuId={activeAppMenu.id}
+        onModuleSelect={(moduleId, manifest) => onContentSelect && onContentSelect('module', { id: moduleId, ...manifest })}
         onBack={() => {}} 
       />
     );
