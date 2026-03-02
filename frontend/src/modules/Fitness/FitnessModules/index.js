@@ -5,7 +5,6 @@ import * as FitnessChartApp from './modules/FitnessChartApp/index.jsx';
 import * as CameraViewApp from './modules/CameraViewApp/index.jsx';
 import * as JumpingJackGame from './modules/JumpingJackGame/index.jsx';
 import * as ComponentShowcase from './modules/ComponentShowcase/index.jsx';
-import * as HomeApp from './modules/HomeApp/index.jsx';
 import * as PoseDemo from './modules/PoseDemo/index.jsx';
 import * as VibrationApp from './modules/VibrationApp/index.jsx';
 import * as SessionBrowserApp from './modules/SessionBrowserApp/index.jsx';
@@ -17,7 +16,6 @@ const REGISTRY_KEYS = {
   'fitness:camera': CameraViewApp,
   'fitness:jumping-jacks': JumpingJackGame,
   'fitness:showcase': ComponentShowcase,
-  'fitness:home': HomeApp,
   'fitness:pose-demo': PoseDemo,
   'fitness:vibration': VibrationApp,
   'fitness:session-browser': SessionBrowserApp,
@@ -30,7 +28,6 @@ const LEGACY_ID_MAP = {
   'camera_view': 'fitness:camera',
   'jumping_jack_game': 'fitness:jumping-jacks',
   'component_showcase': 'fitness:showcase',
-  'home': 'fitness:home',
   'pose_demo': 'fitness:pose-demo',
   'vibration_monitor': 'fitness:vibration',
   'session-browser': 'fitness:session-browser',

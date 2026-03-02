@@ -1,2 +1,2 @@
-export { default } from './HomeApp';
-export { default as manifest } from './manifest';
+export { DashboardCard } from './DashboardWidgets.jsx';
+export { parseContentId } from './useDashboardData.js';
