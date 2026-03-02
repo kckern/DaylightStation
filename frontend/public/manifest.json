@@ -25,28 +25,22 @@
   "background_color": "#000000",
   "shortcuts": [
     {
-      "name": "Scroll",
-      "short_name": "Scroll",
-      "url": "/feed/scroll",
+      "name": "Feed",
+      "short_name": "Feed",
+      "url": "/feed",
       "icons": [{ "src": "/icons/shortcut-scroll.svg", "sizes": "96x96", "type": "image/svg+xml" }]
-    },
-    {
-      "name": "Reader",
-      "short_name": "Reader",
-      "url": "/feed/reader",
-      "icons": [{ "src": "/icons/shortcut-reader.svg", "sizes": "96x96", "type": "image/svg+xml" }]
-    },
-    {
-      "name": "Headlines",
-      "short_name": "Headlines",
-      "url": "/feed/headlines",
-      "icons": [{ "src": "/icons/shortcut-headlines.svg", "sizes": "96x96", "type": "image/svg+xml" }]
     },
     {
       "name": "Media",
       "short_name": "Media",
       "url": "/media",
       "icons": [{ "src": "/icons/shortcut-media.svg", "sizes": "96x96", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Call",
+      "short_name": "Call",
+      "url": "/call",
+      "icons": [{ "src": "/icons/shortcut-call.svg", "sizes": "96x96", "type": "image/svg+xml" }]
     }
   ]
 }
