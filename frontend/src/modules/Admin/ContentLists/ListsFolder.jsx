@@ -49,7 +49,15 @@ function dualCollisionDetection(args) {
     const filtered = args.droppableContainers.filter(
       c => String(c.id).startsWith('content-') && c.id !== args.active.id
     );
-    return closestCenter({ ...args, droppableContainers: filtered });
+    const result = closestCenter({ ...args, droppableContainers: filtered });
+    if (result.length > 0) {
+      const top = result[0];
+      const rect = args.droppableRects?.get(top.id);
+      if (rect && rect.width === 0 && rect.height === 0) {
+        dndLog().warn('collision.zero-rect', { targetId: top.id, activeId });
+      }
+    }
+    return result;
   }
   return closestCenter(args);
 }
