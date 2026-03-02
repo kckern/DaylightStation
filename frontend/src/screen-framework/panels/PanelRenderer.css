@@ -1,12 +1,24 @@
 /* frontend/src/screen-framework/panels/PanelRenderer.css */
 
-.screen-panel {
+/* Root layout container */
+.screen-root {
   display: flex;
   min-width: 0;
   min-height: 0;
 }
 
-.screen-panel--widget {
+/* Area — top-level layout region, no visual chrome */
+.screen-area {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Panel — visual container with chrome (bg, border, padding, radius) */
+.screen-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
   background: var(--screen-panel-bg, transparent);
   border-radius: var(--screen-panel-radius, 0);
   box-shadow: var(--screen-panel-shadow, none);
@@ -16,8 +28,23 @@
   -webkit-backdrop-filter: var(--screen-panel-blur, none);
   font-family: var(--screen-font-family, inherit);
   color: var(--screen-font-color, inherit);
-  flex-direction: column;
-  overflow: hidden;
+}
+
+/* Widget — inner component wrapper */
+.screen-widget {
+  flex: 1;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Full-panel widget — merges chrome with panel, no inner padding/border */
+.screen-widget--full {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
 }
