@@ -3,23 +3,50 @@
   "name": "Daylight Station",
   "icons": [
     {
-      "src": "favicon.ico",
-      "sizes": "64x64 32x32 24x24 16x16",
-      "type": "image/x-icon"
-    },
-    {
-      "src": "logo192.png",
+      "src": "/icon-192.png",
       "type": "image/png",
       "sizes": "192x192"
     },
     {
-      "src": "logo512.png",
+      "src": "/icon-512.png",
       "type": "image/png",
       "sizes": "512x512"
+    },
+    {
+      "src": "/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
     }
   ],
-  "start_url": ".",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "theme_color": "#000000",
-  "background_color": "#ffffff"
+  "background_color": "#000000",
+  "shortcuts": [
+    {
+      "name": "Scroll",
+      "short_name": "Scroll",
+      "url": "/feed/scroll",
+      "icons": [{ "src": "/icons/shortcut-scroll.svg", "sizes": "96x96", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Reader",
+      "short_name": "Reader",
+      "url": "/feed/reader",
+      "icons": [{ "src": "/icons/shortcut-reader.svg", "sizes": "96x96", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Headlines",
+      "short_name": "Headlines",
+      "url": "/feed/headlines",
+      "icons": [{ "src": "/icons/shortcut-headlines.svg", "sizes": "96x96", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Media",
+      "short_name": "Media",
+      "url": "/media",
+      "icons": [{ "src": "/icons/shortcut-media.svg", "sizes": "96x96", "type": "image/svg+xml" }]
+    }
+  ]
 }
