@@ -1,0 +1,46 @@
+{
+  "short_name": "Feed",
+  "name": "Daylight Feed",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    },
+    {
+      "src": "/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
+    }
+  ],
+  "start_url": "/feed",
+  "scope": "/feed",
+  "display": "standalone",
+  "theme_color": "#000000",
+  "background_color": "#000000",
+  "shortcuts": [
+    {
+      "name": "Scroll",
+      "short_name": "Scroll",
+      "url": "/feed/scroll",
+      "icons": [{ "src": "/icons/shortcut-scroll.svg", "sizes": "96x96", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Reader",
+      "short_name": "Reader",
+      "url": "/feed/reader",
+      "icons": [{ "src": "/icons/shortcut-reader.svg", "sizes": "96x96", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Headlines",
+      "short_name": "Headlines",
+      "url": "/feed/headlines",
+      "icons": [{ "src": "/icons/shortcut-headlines.svg", "sizes": "96x96", "type": "image/svg+xml" }]
+    }
+  ]
+}
