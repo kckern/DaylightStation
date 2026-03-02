@@ -11,7 +11,7 @@ import { GuestAssignmentService } from '../hooks/fitness/GuestAssignmentService.
 import { useZoneLedSync } from '../hooks/fitness/useZoneLedSync.js';
 import { playbackLog } from '../modules/Player/lib/playbackLogger.js';
 import getLogger from '../lib/logging/Logger.js';
-import { getModuleManifest } from '../modules/Fitness/FitnessModules/registry.js';
+import { getModuleManifest } from '../modules/Fitness/FitnessModules/index';
 import { VIBRATION_CONSTANTS } from '../modules/Fitness/FitnessModules/modules/VibrationApp/constants.js';
 
 // Phase 3 SSOT: Domain model imports
