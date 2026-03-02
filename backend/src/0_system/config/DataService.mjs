@@ -56,9 +56,20 @@ const writeYamlFile = (absolutePath, data) => {
     fs.writeFileSync(absolutePath, content, 'utf8');
     return true;
   } catch (err) {
+    if (err.code === 'EACCES') {
+      const stat = safeStatSync(absolutePath) || safeStatSync(path.dirname(absolutePath));
+      console.error(
+        `[DataService] EACCES writing ${absolutePath} — ` +
+        `file owner uid=${stat?.uid ?? '?'}, ` +
+        `running as uid=${process.getuid?.() ?? '?'}. ` +
+        `Fix: chown node:node "${absolutePath}"`
+      );
+    }
     return false;
   }
 };
+
+const safeStatSync = (p) => { try { return fs.statSync(p); } catch { return null; } };
 
 /**
  * Append .yml extension if no extension is present

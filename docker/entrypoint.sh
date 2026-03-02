@@ -30,5 +30,18 @@ if [ -f "$ADB_KEY_SRC/adbkey" ]; then
     echo "ADB keys provisioned from data mount"
 fi
 
+# Fix data volume ownership (handles Dropbox drift, manual edits)
+if [ -d "/usr/src/app/data" ]; then
+    BAD_FILES=$(find /usr/src/app/data -not -user node 2>/dev/null | head -1)
+    if [ -n "$BAD_FILES" ]; then
+        echo "[Entrypoint] Fixing data directory ownership..."
+        find /usr/src/app/data -not -user node -exec chown node:node {} +
+        echo "[Entrypoint] Ownership fix complete"
+    else
+        echo "[Entrypoint] Data directory ownership OK"
+    fi
+fi
+
+# Drop privileges and start app
 cd backend
-forever index.js
+exec su-exec node forever index.js

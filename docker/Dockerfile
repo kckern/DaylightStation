@@ -5,7 +5,7 @@ FROM node:${NODE_VERSION}-alpine
 WORKDIR /usr/src/app
 
 # Layer 1: System dependencies - stable, rarely changes
-RUN apk add --no-cache openssh-client git curl ffmpeg tzdata yq android-tools
+RUN apk add --no-cache openssh-client git curl ffmpeg tzdata yq android-tools su-exec
 
 # Set System Timezone
 ARG TZ=America/Los_Angeles
@@ -55,7 +55,6 @@ ARG COMMIT_HASH
 RUN echo "Build Time: ${BUILD_TIME:-unknown}" > /build.txt \
     && echo "Commit: ${COMMIT_HASH:-unknown}" >> /build.txt
 
-USER node
 ENV NODE_ENV=production
 EXPOSE 3111
 ENTRYPOINT ["/usr/src/app/entrypoint.sh"]
