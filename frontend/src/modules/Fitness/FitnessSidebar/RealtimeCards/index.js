@@ -10,6 +10,7 @@ import { RpmDeviceCard } from './RpmDeviceCard.jsx';
 import { VibrationCard } from './VibrationCard.jsx';
 import { BaseRealtimeCard, StatsRow } from './BaseRealtimeCard.jsx';
 import RpmDeviceAvatar from './RpmDeviceAvatar.jsx';
+import VibrationActivityAvatar from './VibrationActivityAvatar.jsx';
 import { calculateRpmProgress, getRpmZoneColor } from './rpmUtils.mjs';
 
 /**
@@ -72,6 +73,7 @@ export {
   PersonCard,
   RpmDeviceCard,
   RpmDeviceAvatar,
+  VibrationActivityAvatar,
   calculateRpmProgress,
   getRpmZoneColor,
   VibrationCard,
@@ -87,6 +89,7 @@ export default {
   PersonCard,
   RpmDeviceCard,
   RpmDeviceAvatar,
+  VibrationActivityAvatar,
   VibrationCard,
   BaseRealtimeCard,
   StatsRow

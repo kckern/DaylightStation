@@ -1,0 +1,79 @@
+.vibration-device-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: rgba(30, 30, 30, 0.9);
+  border-radius: 12px;
+  position: relative;
+  min-height: 78px;
+
+  &.card-horizontal {
+    flex-direction: row;
+  }
+
+  &.card-vertical {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  &.inactive {
+    opacity: 0.5;
+  }
+
+  .device-timeout-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 12px 12px 0 0;
+    overflow: hidden;
+
+    .device-timeout-fill {
+      height: 100%;
+      background: #ff6b6b;
+      transition: width 0.5s linear;
+    }
+  }
+
+  .vibration-avatar-wrapper {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .device-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+
+    .device-name {
+      font-weight: 600;
+      font-size: 14px;
+      color: #fff;
+    }
+
+    .device-stats {
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+
+      .device-icon {
+        font-size: 14px;
+      }
+
+      .device-value {
+        font-size: 20px;
+        font-weight: 700;
+        color: #fff;
+      }
+
+      .device-unit {
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.6);
+        text-transform: uppercase;
+      }
+    }
+  }
+}
