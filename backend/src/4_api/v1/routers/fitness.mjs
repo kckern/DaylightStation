@@ -281,7 +281,15 @@ export function createFitnessRouter(config) {
     if (since) {
       try {
         const endDate = new Date().toISOString().split('T')[0]; // Today
-        const sessions = await sessionService.listSessionsInRange(since, endDate, household);
+        // Parse relative date notation (e.g. "30d" = 30 days ago)
+        let startDate = since;
+        const relMatch = since.match(/^(\d+)d$/);
+        if (relMatch) {
+          const d = new Date();
+          d.setDate(d.getDate() - parseInt(relMatch[1], 10));
+          startDate = d.toISOString().split('T')[0];
+        }
+        const sessions = await sessionService.listSessionsInRange(startDate, endDate, household);
         const maxLimit = parseInt(limit) || 20;
         const limited = sessions.slice(0, maxLimit);
         
