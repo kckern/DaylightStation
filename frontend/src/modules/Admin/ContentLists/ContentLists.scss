@@ -202,6 +202,15 @@
       opacity: 1;
     }
 
+    // Content drop zone wrapper — must have box model for dnd-kit collision detection.
+    // display:contents would zero-out getBoundingClientRect(), breaking closestCenter.
+    .content-drop-zone {
+      display: flex;
+      align-items: center;
+      flex: 1;
+      min-width: 0;
+    }
+
     .col-action {
       width: 96px;
       flex-shrink: 0;

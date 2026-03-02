@@ -2689,7 +2689,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
         <IconGripVertical size={14} />
       </div>
 
-      <div ref={setContentDropRef} style={{ display: 'contents' }}>
+      <div ref={setContentDropRef} className="content-drop-zone">
       <div className="col-action">
         <ActionChipSelect
           value={item.action || 'Play'}
