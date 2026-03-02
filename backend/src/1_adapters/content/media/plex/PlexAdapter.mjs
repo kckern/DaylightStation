@@ -1033,7 +1033,7 @@ export class PlexAdapter {
       return {
         key: localId,
         title: item.title,
-        image: item.thumb ? `${this.proxyPath}${item.thumb}` : null,
+        image: (item.thumb || item.composite) ? `${this.proxyPath}${item.thumb || item.composite}` : null,
         summary: item.summary || null,
         tagline: item.tagline || null,
         year: item.year || null,
