@@ -3,8 +3,8 @@ export class WidgetRegistry {
     this.widgets = new Map();
   }
 
-  register(name, component) {
-    this.widgets.set(name, component);
+  register(name, component, meta = null) {
+    this.widgets.set(name, { component, meta });
   }
 
   has(name) {
@@ -12,11 +12,20 @@ export class WidgetRegistry {
   }
 
   get(name) {
-    return this.widgets.get(name) || null;
+    const entry = this.widgets.get(name);
+    return entry ? entry.component : null;
   }
 
-  list() {
-    return Array.from(this.widgets.keys());
+  getMeta(name) {
+    const entry = this.widgets.get(name);
+    return entry ? entry.meta : null;
+  }
+
+  list(namespace) {
+    const keys = Array.from(this.widgets.keys());
+    if (!namespace) return keys;
+    const prefix = namespace + ':';
+    return keys.filter(k => k.startsWith(prefix));
   }
 
   clear() {
