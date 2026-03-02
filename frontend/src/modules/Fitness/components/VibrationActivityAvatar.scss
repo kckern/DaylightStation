@@ -1,0 +1,71 @@
+.vibration-activity-avatar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: var(--vib-size, 80px);
+
+  &.is-active .vib-avatar-ring {
+    border-width: 3px;
+    opacity: 1;
+  }
+
+  &.is-idle .vib-avatar-ring {
+    border-width: 2px;
+    opacity: 0.5;
+  }
+}
+
+.vib-avatar-ring {
+  width: var(--vib-size, 80px);
+  height: var(--vib-size, 80px);
+  border-radius: 50%;
+  border: 2px solid var(--color-muted, #666);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.vib-avatar-content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vib-avatar-image {
+  width: 60%;
+  height: 60%;
+  object-fit: contain;
+}
+
+.vib-avatar-placeholder {
+  width: 40%;
+  height: 40%;
+  border-radius: 50%;
+  background: var(--color-muted, #666);
+}
+
+.vib-timer {
+  font-size: 0.7em;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary, #aaa);
+  text-align: center;
+}
+
+.vib-activity-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 20px;
+  width: 100%;
+  overflow: hidden;
+}
+
+.vib-bar-segment {
+  flex: 1;
+  min-width: 2px;
+  border-radius: 1px 1px 0 0;
+}
