@@ -1,3 +1,4 @@
+/* Legacy class - kept for backward compatibility */
 .screen-overlay-layer {
   position: absolute;
   top: 0;
@@ -5,4 +6,59 @@
   width: 100%;
   height: 100%;
   z-index: 1000;
+}
+
+/* Fullscreen overlay - replaces dashboard visually */
+.screen-overlay--fullscreen {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1000;
+}
+
+/* PiP overlay - floats in corner */
+.screen-overlay--pip {
+  position: absolute;
+  z-index: 1001;
+  width: 320px;
+  height: 240px;
+}
+
+.screen-overlay--pip-top-right {
+  top: 16px;
+  right: 16px;
+}
+
+.screen-overlay--pip-top-left {
+  top: 16px;
+  left: 16px;
+}
+
+.screen-overlay--pip-bottom-right {
+  bottom: 16px;
+  right: 16px;
+}
+
+.screen-overlay--pip-bottom-left {
+  bottom: 16px;
+  left: 16px;
+}
+
+/* Toast stack - stackable notifications */
+.screen-overlay--toast-stack {
+  position: absolute;
+  z-index: 1002;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.screen-overlay--toast {
+  pointer-events: auto;
+  max-width: 320px;
 }
