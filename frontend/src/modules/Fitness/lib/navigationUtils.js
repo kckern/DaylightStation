@@ -38,11 +38,13 @@ export function isNavItemActive(item, currentState) {
     case 'collection_group':
     case 'plex_collection_group':
       if (Array.isArray(activeCollection)) {
-        return item.target.collection_ids.some(id => 
-          activeCollection.includes(id)
-        );
+        // Exact match: same IDs in same order (not partial overlap)
+        const ids = item.target.collection_ids;
+        return ids.length === activeCollection.length &&
+          ids.every((id, i) => String(id) === String(activeCollection[i]));
       }
-      return item.target.collection_ids.includes(activeCollection);
+      return item.target.collection_ids.length === 1 &&
+        String(item.target.collection_ids[0]) === String(activeCollection);
       
     case 'plugin_menu':
       return String(activeCollection) === String(item.target.menu_id);

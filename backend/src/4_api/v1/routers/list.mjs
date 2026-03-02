@@ -158,7 +158,9 @@ export function toListItem(item) {
       folder,
       // RetroArch thumbnail aspect ratio (height/width) and play stats
       thumbRatio,
-      lastPlayed
+      lastPlayed,
+      // Playlist-as-show marker
+      sourceType
     } = item.metadata;
 
     // Note: plex is NOT copied to top-level from metadata.
@@ -216,6 +218,8 @@ export function toListItem(item) {
     // RetroArch thumbnail aspect ratio
     if (thumbRatio !== undefined) base.thumbRatio = thumbRatio;
     if (lastPlayed !== undefined) base.lastPlayed = lastPlayed;
+    // Playlist-as-show marker for frontend sorting
+    if (sourceType !== undefined) base.sourceType = sourceType;
 
     // Duration from PlayableItem
     if (item.duration !== undefined) base.duration = item.duration;
@@ -423,7 +427,7 @@ export function createListRouter(config) {
           label: containerInfo?.title || info?.title || localId,
           itemType: 'container',
           childCount: info?.childCount || items.length,
-          thumbnail: containerInfo?.thumbnail || info?.image,
+          thumbnail: info?.image || containerInfo?.thumbnail,
           metadata: {
             type: 'show',
             sourceType: 'playlist',
