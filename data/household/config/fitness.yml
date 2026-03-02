@@ -39,3 +39,12 @@ home_screen:
         children:
           - widget: "fitness:upnext"
           - widget: "fitness:coach"
+
+plex:
+  nav_items:
+    - name: Home
+      type: view_direct
+      icon: home
+      target:
+        view: home
+      order: -1
