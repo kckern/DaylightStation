@@ -48,6 +48,34 @@ export const KNOWN_ITEM_FIELDS = [
   'play', 'open', 'display', 'list', 'queue', 'title'
 ];
 
+// Fields that travel with content during a content-swap drag
+// Everything except identity fields (label, image, uid, active)
+export const CONTENT_PAYLOAD_FIELDS = [
+  'input', 'action',
+  'shuffle', 'continuous', 'loop', 'fixedOrder', 'volume', 'playbackRate',
+  'days', 'snooze', 'waitUntil',
+  'shader', 'composite', 'playable',
+  'progress', 'watched',
+];
+
+// Fields that stay with the row position (identity)
+export const IDENTITY_FIELDS = ['label', 'image', 'uid', 'active'];
+
+/**
+ * Extract content payloads from two items and return crossed updates.
+ * Identity fields (label, image, uid, active) are NOT included.
+ * Missing fields fall back to ITEM_DEFAULTS.
+ */
+export function swapContentPayloads(itemA, itemB) {
+  const updatesForA = {};
+  const updatesForB = {};
+  for (const field of CONTENT_PAYLOAD_FIELDS) {
+    updatesForA[field] = itemB[field] ?? ITEM_DEFAULTS[field] ?? null;
+    updatesForB[field] = itemA[field] ?? ITEM_DEFAULTS[field] ?? null;
+  }
+  return { updatesForA, updatesForB };
+}
+
 // Default values for item fields
 export const ITEM_DEFAULTS = {
   action: 'Play',
