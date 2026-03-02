@@ -408,6 +408,8 @@ function ListsFolder() {
           <div className="col-index"><Text size="xs" fw={600} c="dimmed">#</Text></div>
           <div className="col-icon"></div>
           <div className="col-label"><Text size="xs" fw={600} c="dimmed">Label</Text></div>
+          <div className="col-divider"></div>
+          <div className="col-content-drag"></div>
           <div className="col-action"><Text size="xs" fw={600} c="dimmed">Action</Text></div>
           <div className="col-preview"></div>
           <div className="col-input"><Text size="xs" fw={600} c="dimmed">Input</Text></div>
