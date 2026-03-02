@@ -1,7 +1,7 @@
 /**
  * MoveDetectorRegistry - Registry for available move detectors
  * 
- * Allows plugins to register new move types and instantiate them by ID.
+ * Allows modules to register new move types and instantiate them by ID.
  */
 
 class MoveDetectorRegistry {

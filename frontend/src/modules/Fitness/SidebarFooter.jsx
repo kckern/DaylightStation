@@ -322,7 +322,7 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
       // Only navigate when NOT in video playback mode.
       // During playback, FitnessPlayer already shows FitnessSidebar with users.
       // Navigating to 'users' view would cause duplicate sidebars.
-      console.log('[SidebarFooter] navigating to users view (fitness_session plugin)');
+      console.log('[SidebarFooter] navigating to users view (fitness_session module)');
       onContentSelect('view_direct', { view: 'users' });
     }
   }, [onAvatarClick, onContentSelect, sortedDevices, resolveDeviceKey, hrOwnerMap, userIdMap, isVideoPlaying]);

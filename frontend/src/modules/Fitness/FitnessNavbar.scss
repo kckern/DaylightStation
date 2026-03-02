@@ -140,23 +140,23 @@
   }
   
   // Type-specific styles
-  &--plugin_direct {
-    // Optional: Style direct plugin links differently
+  &--module_direct {
+    // Optional: Style direct module links differently
   }
-  
+
   &--view_direct {
     // Optional: Style view links differently
   }
-  
+
   &--collection,
   &--plex_collection,
   &--collection_group,
   &--plex_collection_group {
     // Collection styles
   }
-  
-  &--plugin_menu {
-    // Plugin menu styles
+
+  &--module_menu {
+    // Module menu styles
   }
 }
 

@@ -1,7 +1,7 @@
 /**
  * PoseContext - Shared pose detection provider for the Fitness module
  * 
- * Provides pose data to all consuming plugins via React Context.
+ * Provides pose data to all consuming modules via React Context.
  * Manages a singleton PoseDetectorService instance.
  */
 

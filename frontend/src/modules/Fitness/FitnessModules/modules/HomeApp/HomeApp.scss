@@ -1,0 +1,468 @@
+// frontend/src/modules/Fitness/FitnessModules/modules/HomeApp/HomeApp.scss
+
+.home-app {
+  height: 100vh;
+  width: 100%;
+  padding: 1rem;
+  box-sizing: border-box;
+  background: #1a1a2e;
+  color: #fff;
+  overflow: hidden; /* Prevent global scroll */
+
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: 100%;
+    gap: 1.5rem;
+    height: 100%;
+    width: 100%;
+
+    &--detail {
+      grid-template-columns: 1fr 2fr;
+    }
+  }
+
+  /* 
+     Shared Column Styles
+  */
+  .dashboard-column {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    height: 100%;
+    min-width: 0; /* Flexbox text truncation fix */
+    overflow: hidden; /* Contain children */
+  }
+
+  /* 
+     Specific Column Behaviors 
+  */
+  .column-history {
+    /* Workouts card fills full height */
+    .dashboard-card--workouts {
+      flex: 1;
+    }
+  }
+
+  .column-metrics {
+    /* Weight is auto height, Nutrition takes rest */
+    .dashboard-card--nutrition {
+      flex: 1;
+      min-height: 0; /* Allow shrinking for scroll */
+    }
+  }
+
+  .column-interactions {
+    /* UpNext is auto, Coach takes rest */
+    .dashboard-card--coach {
+      flex: 1;
+      min-height: 0;
+    }
+  }
+
+  /* 
+     Dashboard Cards Redesign 
+     - Making them feel more like panels
+  */
+  .dashboard-card {
+    background: rgba(30, 30, 50, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    display: flex;
+    flex-direction: column;
+    border-radius: 12px;
+    height: 100%; /* Default to full height of grid cell/flex item */
+    
+    &.dashboard-card--weight,
+    &.dashboard-card--upnext {
+      height: auto; /* Exception for shrink-wrap cards */
+      flex-shrink: 0;
+    }
+
+    /* 
+       Internal Scrolling Logic 
+       We target the Mantine Stack inside the card to handle scrolling
+    */
+    > .mantine-Stack-root {
+      flex: 1;
+      overflow-y: auto;
+      padding-right: 4px; /* Space for scrollbar */
+      min-height: 0;
+
+      /* Thin scrollbar styling */
+      &::-webkit-scrollbar { width: 6px; }
+      &::-webkit-scrollbar-track { background: transparent; }
+      &::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
+    }
+  }
+
+  /* 
+     Responsive Fallback 
+  */
+  @media (max-width: 1000px) {
+    height: auto;
+    overflow-y: auto;
+    
+    .dashboard-grid {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto;
+      height: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .dashboard-column {
+      height: auto;
+      overflow: visible;
+    }
+    
+    .dashboard-card {
+      height: auto !important;
+      min-height: 200px;
+    }
+  }
+}
+
+/* 
+   =============================================
+   Existing Component Styles (Preserved & Adjusted)
+   =============================================
+*/
+
+.dashboard-stat-value {
+  font-size: 2.5rem;
+  font-weight: 700;
+  line-height: 1;
+  color: white;
+}
+
+// --- Up Next Card (curated) ---
+
+.dashboard-card--upnext {
+  background: rgba(34, 139, 230, 0.08);
+  border-color: rgba(34, 139, 230, 0.2);
+}
+
+.content-thumbnail {
+  width: 120px; /* Made slightly smaller for 3-col layout */
+  min-width: 120px;
+  height: 80px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.dashboard-play-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.6rem 2rem;
+  background: #228be6;
+  border-radius: 8px;
+  cursor: pointer;
+  min-height: 48px;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  width: 100%; /* Full width button in this layout */
+  margin-top: 0.5rem;
+
+  &:active {
+    background: #1c7ed6;
+    transform: scale(0.97);
+  }
+}
+
+.alternate-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  min-height: 48px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  user-select: none;
+  flex: 1; /* Distribute space */
+
+  &:active { background: rgba(255, 255, 255, 0.12); }
+}
+
+// --- Coach Card ---
+
+.dashboard-card--coach {
+  background: rgba(255, 255, 255, 0.04);
+  border-left: 3px solid rgba(34, 139, 230, 0.5);
+}
+
+.coach-briefing {
+  font-style: italic;
+  opacity: 0.9;
+  line-height: 1.6;
+}
+
+.coach-cta {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+
+  &--data_gap { border-left: 3px solid #fab005; }
+  &--observation { border-left: 3px solid #40c057; }
+  &--nudge { border-left: 3px solid #228be6; }
+
+  &[role="button"] {
+    cursor: pointer;
+    &:active { background: rgba(255, 255, 255, 0.1); }
+  }
+}
+
+.coach-prompt {
+  padding: 0.5rem 0;
+}
+
+.prompt-option {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center; /* Center text */
+  user-select: none;
+  text-align: center;
+  flex: 1;
+
+  &:active { background: rgba(255, 255, 255, 0.12); }
+}
+
+// --- Date Headers ---
+
+.session-date-header {
+  padding: 0.5rem 0 0.25rem;
+  letter-spacing: 0.06em;
+  position: sticky;
+  top: 0;
+  background: rgba(26, 26, 46, 0.97);
+  z-index: 10;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.dashboard-card--workouts > .mantine-Stack-root > div:first-child > .session-date-header {
+  padding-top: 0;
+}
+
+// --- Session Row ---
+
+.session-row {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-bottom: 6px;
+  background: rgba(255, 255, 255, 0.03);
+
+  &:last-child { margin-bottom: 0; }
+  &:active { opacity: 0.9; }
+
+  // Selected highlight — works for both bg-image and plain rows
+  &--selected {
+    box-shadow: inset 0 0 0 2px rgba(34, 139, 230, 0.5);
+    background-color: rgba(34, 139, 230, 0.12);
+  }
+
+  // Background episode thumbnail
+  &--has-bg {
+    background-size: contain;
+    background-position: right center;
+    background-repeat: no-repeat;
+
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      background: linear-gradient(
+        to right,
+        rgba(26, 26, 46, 1) 0%,
+        rgba(26, 26, 46, 1) 45%,
+        rgba(26, 26, 46, 0.8) 65%,
+        rgba(26, 26, 46, 0.3) 85%,
+        rgba(26, 26, 46, 0) 100%
+      );
+    }
+
+    .session-row__top {
+      position: relative;
+      z-index: 1;
+    }
+
+    // Selected with bg — tint the gradient overlay blue
+    &.session-row--selected::before {
+      background: linear-gradient(
+        to right,
+        rgba(20, 40, 80, 1) 0%,
+        rgba(20, 40, 80, 0.95) 45%,
+        rgba(20, 40, 80, 0.7) 65%,
+        rgba(20, 40, 80, 0.3) 85%,
+        rgba(34, 139, 230, 0) 100%
+      );
+    }
+  }
+}
+
+.session-row__top {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem;
+  padding-right: 15%;
+  min-height: 60px;
+}
+
+// --- Poster (left) ---
+
+.session-poster {
+  width: 80px;
+  min-width: 80px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  flex-shrink: 0;
+
+  &--placeholder {
+    aspect-ratio: 2 / 3;
+  }
+}
+
+// --- Info (center) ---
+
+.session-row__info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.session-row__title-line {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+
+  > * {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.session-row__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+.session-row__sep {
+  width: 1px;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.2);
+  flex-shrink: 0;
+}
+
+// --- Participants ---
+
+.session-row__participants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.session-row__participant {
+  display: inline-flex;
+  align-items: center;
+}
+
+// --- Avatars ---
+
+.session-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+// --- Nutrition History ---
+
+.nutrition-row {
+  padding: 0.35rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  &:last-child { border-bottom: none; }
+}
+
+// --- Detail Panel (session chart view) ---
+
+.detail-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+
+  &__close {
+    flex-shrink: 0;
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    user-select: none;
+    opacity: 0.7;
+    transition: opacity 0.15s;
+
+    &:hover { opacity: 1; }
+    &::before {
+      content: '\2190  ';
+    }
+  }
+
+  > :last-child {
+    flex: 1;
+    min-height: 0;
+  }
+}
+
+// --- Empty State ---
+
+.dashboard-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  opacity: 0.6;
+  height: 100%;
+}
+
+// --- Loading State ---
+
+.dashboard-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
