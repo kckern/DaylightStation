@@ -1035,12 +1035,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       description: media.summary || media.episodeDescription || null,
       queueSize
     });
-    // Only mark as logged if the event was actually accepted by the timeline.
-    // If timeline is null (session not started yet), leave ref unset so the
-    // effect retries on the next dependency change.
-    if (logged) {
-      loggedVideoMediaRef.current = currentMediaIdentity;
-    }
     // Prod-visible log for autoplay SSoT verification
     getLogger().info('fitness.media_start.autoplay', {
       contentId: currentMediaIdentity,
@@ -1050,15 +1044,18 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       governancePhase: governanceState?.status ?? null,
       labels: Array.isArray(media.labels) ? media.labels : []
     });
-    return () => {
-      // Log media_end for the media that's being replaced
-      if (currentMediaIdentity && session) {
-        session.logEvent('media_end', {
-          contentId: currentMediaIdentity,
-          source: 'video_player',
-        });
-      }
-    };
+    if (logged) {
+      loggedVideoMediaRef.current = currentMediaIdentity;
+      return () => {
+        if (currentMediaIdentity && session) {
+          session.logEvent('media_end', {
+            contentId: currentMediaIdentity,
+            source: 'video_player',
+          });
+        }
+      };
+    }
+    // No cleanup — media_start wasn't logged or queued, effect will retry
   }, [fitnessSessionInstance, currentMediaIdentity, enhancedCurrentItem, currentItem, autoplayEnabled, governanceState?.videoLocked, queueSize]);
 
   const resilienceMediaIdentity = useMemo(
