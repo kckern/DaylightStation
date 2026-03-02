@@ -336,7 +336,13 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
         )}
         {!showsLoading && shows.length > 0 && (
           shows
-            .sort((a, b) => (b.rating || 0) - (a.rating || 0))
+            .sort((a, b) => {
+              // Playlist-as-show items appear first
+              const aPlaylist = a.sourceType === 'playlist' ? 1 : 0;
+              const bPlaylist = b.sourceType === 'playlist' ? 1 : 0;
+              if (bPlaylist !== aPlaylist) return bPlaylist - aPlaylist;
+              return (b.rating || 0) - (a.rating || 0);
+            })
             .map((show, index) => (
               <div
                 key={getItemKey(show) || index}
