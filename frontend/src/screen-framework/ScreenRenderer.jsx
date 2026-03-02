@@ -3,13 +3,32 @@ import { useParams } from 'react-router-dom';
 import { DaylightAPI } from '../lib/api.mjs';
 import { PanelRenderer } from './panels/PanelRenderer.jsx';
 import { ScreenDataProvider } from './data/ScreenDataProvider.jsx';
-import { ScreenOverlayProvider } from './overlays/ScreenOverlayProvider.jsx';
+import { ScreenOverlayProvider, useScreenOverlay } from './overlays/ScreenOverlayProvider.jsx';
 import { registerBuiltinWidgets } from './widgets/builtins.js';
 import { getActionBus } from './input/ActionBus.js';
 import { createInputManager } from './input/InputManager.js';
+import { ScreenActionHandler } from './actions/ScreenActionHandler.jsx';
+import { getWidgetRegistry } from './widgets/registry.js';
+import { useScreenSubscriptions } from './subscriptions/useScreenSubscriptions.js';
 
 // Register built-ins on module load
 registerBuiltinWidgets();
+
+/**
+ * ScreenSubscriptionHandler - Bridges WS subscription config to the overlay system.
+ *
+ * Reads the subscriptions block from screen YAML config, subscribes to declared
+ * WS topics, and triggers showOverlay/dismissOverlay based on incoming events.
+ *
+ * Must be mounted inside ScreenOverlayProvider to access overlay context.
+ * This is a renderless component (returns null).
+ */
+function ScreenSubscriptionHandler({ subscriptions }) {
+  const { showOverlay, dismissOverlay } = useScreenOverlay();
+  const registry = useMemo(() => getWidgetRegistry(), []);
+  useScreenSubscriptions(subscriptions, showOverlay, dismissOverlay, registry);
+  return null;
+}
 
 /**
  * ScreenRenderer - Config-driven kiosk screen.
@@ -71,18 +90,32 @@ export function ScreenRenderer({ screenId: propScreenId }) {
     return <div className="screen-root screen-root--not-found">Screen not found: {screenId}</div>;
   }
 
+  const res = config.resolution;
+
   return (
     <ScreenDataProvider sources={config.data}>
-      <div className={`screen-root screen-root--${screenId}`} style={{
-        width: '100%',
-        height: '100%',
+      <div className="screen-viewport" style={{
+        width: '100vw',
+        height: '100vh',
         display: 'flex',
-        position: 'relative',
-        ...themeStyle,
+        justifyContent: 'center',
+        alignItems: 'center',
+        overflow: 'hidden',
+        backgroundColor: config.theme?.['screen-bg'] || '#000',
       }}>
-        <ScreenOverlayProvider>
-          <PanelRenderer node={config.layout} />
-        </ScreenOverlayProvider>
+        <div className={`screen-root screen-root--${screenId}`} style={{
+          width: res ? `${res.width}px` : '100%',
+          height: res ? `${res.height}px` : '100%',
+          display: 'flex',
+          position: 'relative',
+          ...themeStyle,
+        }}>
+          <ScreenOverlayProvider>
+            <ScreenActionHandler />
+            <ScreenSubscriptionHandler subscriptions={config.subscriptions} />
+            <PanelRenderer node={config.layout} />
+          </ScreenOverlayProvider>
+        </div>
       </div>
     </ScreenDataProvider>
   );

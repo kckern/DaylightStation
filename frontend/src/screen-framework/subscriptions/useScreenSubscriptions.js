@@ -1,0 +1,116 @@
+import { useEffect, useRef, useCallback, useMemo } from 'react';
+import { useWebSocketSubscription } from '../../hooks/useWebSocket.js';
+
+/**
+ * useScreenSubscriptions - Processes YAML subscription config into live WS listeners.
+ *
+ * Iterates subscription entries from the screen config, subscribes to the declared
+ * WS topics via useWebSocketSubscription, checks event filters, resolves overlay
+ * components from the widget registry, and calls showOverlay/dismissOverlay.
+ *
+ * YAML config format:
+ *   subscriptions:
+ *     midi:                       # WS topic name
+ *       on:
+ *         event: session_start    # Optional filter (omit to trigger on any message)
+ *       response:
+ *         overlay: piano          # Widget registry key
+ *         mode: fullscreen        # Overlay mode (fullscreen|pip|toast)
+ *         priority: high          # Optional overlay priority
+ *         timeout: 3000           # Optional timeout (ms) for toast mode
+ *       dismiss:
+ *         event: session_end      # WS event that dismisses the overlay
+ *         inactivity: 30          # Seconds of inactivity before auto-dismiss
+ *
+ * @param {object} subscriptions - The subscriptions block from screen YAML config
+ * @param {function} showOverlay - From useScreenOverlay()
+ * @param {function} dismissOverlay - From useScreenOverlay()
+ * @param {object} widgetRegistry - From getWidgetRegistry()
+ */
+export function useScreenSubscriptions(subscriptions, showOverlay, dismissOverlay, widgetRegistry) {
+  // Normalize entries once; stable across renders unless config changes
+  const entries = useMemo(() => {
+    if (!subscriptions || typeof subscriptions !== 'object') return [];
+    return Object.entries(subscriptions).map(([topic, cfg]) => ({
+      topic,
+      onEvent: cfg?.on?.event ?? null,
+      overlay: cfg?.response?.overlay ?? null,
+      mode: cfg?.response?.mode ?? 'fullscreen',
+      priority: cfg?.response?.priority ?? undefined,
+      timeout: cfg?.response?.timeout ?? undefined,
+      dismissEvent: cfg?.dismiss?.event ?? null,
+      dismissInactivity: cfg?.dismiss?.inactivity ?? null,
+    }));
+  }, [subscriptions]);
+
+  // Collect all unique topics for a single WS subscription
+  const topics = useMemo(() => entries.map((e) => e.topic), [entries]);
+
+  // Ref to hold current entries so the callback doesn't go stale
+  const entriesRef = useRef(entries);
+  entriesRef.current = entries;
+
+  // Inactivity timers keyed by topic
+  const inactivityTimers = useRef({});
+
+  // Clean up inactivity timers on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(inactivityTimers.current).forEach(clearTimeout);
+    };
+  }, []);
+
+  const handleMessage = useCallback((data) => {
+    const eventName = data?.event ?? data?.type ?? null;
+    const messageTopic = data?.topic ?? null;
+
+    for (const entry of entriesRef.current) {
+      // Match by topic
+      if (messageTopic !== entry.topic) continue;
+
+      // Check dismiss event first
+      if (entry.dismissEvent && eventName === entry.dismissEvent) {
+        dismissOverlay(entry.mode);
+        // Clear any running inactivity timer for this topic
+        if (inactivityTimers.current[entry.topic]) {
+          clearTimeout(inactivityTimers.current[entry.topic]);
+          delete inactivityTimers.current[entry.topic];
+        }
+        continue;
+      }
+
+      // Check trigger filter
+      if (entry.onEvent && eventName !== entry.onEvent) continue;
+
+      // Resolve component from registry
+      const Component = entry.overlay ? widgetRegistry.get(entry.overlay) : null;
+      if (!Component) continue;
+
+      // Show the overlay
+      showOverlay(Component, { ...data }, {
+        mode: entry.mode,
+        priority: entry.priority,
+        timeout: entry.timeout,
+      });
+
+      // Start inactivity timer if configured
+      if (entry.dismissInactivity != null && entry.dismissInactivity > 0) {
+        // Clear any existing timer for this topic
+        if (inactivityTimers.current[entry.topic]) {
+          clearTimeout(inactivityTimers.current[entry.topic]);
+        }
+        inactivityTimers.current[entry.topic] = setTimeout(() => {
+          dismissOverlay(entry.mode);
+          delete inactivityTimers.current[entry.topic];
+        }, entry.dismissInactivity * 1000);
+      }
+    }
+  }, [showOverlay, dismissOverlay, widgetRegistry]);
+
+  // Subscribe to all relevant topics (single subscription)
+  useWebSocketSubscription(
+    topics.length > 0 ? topics : null,
+    handleMessage,
+    [handleMessage]
+  );
+}
