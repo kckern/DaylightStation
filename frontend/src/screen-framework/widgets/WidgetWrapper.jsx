@@ -54,7 +54,7 @@ export function WidgetWrapper({
 
   // Subscribe to data source
   useEffect(() => {
-    const metadata = registry.getMetadata(name);
+    const metadata = registry.getMeta(name);
     const source = config.source || metadata?.defaultSource;
     const refreshInterval = config.refresh || metadata?.refreshInterval;
 
