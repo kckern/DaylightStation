@@ -255,9 +255,7 @@ export class TransactionCategorizationService {
     messages.push({ role: 'user', content: description });
 
     try {
-      const response = await this.#aiGateway.chatWithJson(messages, {
-        model: 'gpt-4o'
-      });
+      const response = await this.#aiGateway.chatWithJson(messages);
 
       const { category, friendlyName, memo } = response;
 
