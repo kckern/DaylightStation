@@ -27,15 +27,20 @@ const SeasonInfo = ({ item, type = 'episode', showSummary = null }) => {
   if (!item) return null;
   // Prefer item's own summary; if season and summary missing, fallback to showSummary
   const effectiveSummary = item.summary || (type === 'season' ? showSummary : null);
-  
+  // For virtual seasons, item.image is already a resolved URL; for real seasons use ContentDisplayUrl
+  const isVirtual = item.id && String(item.id).startsWith('virtual-');
+  const seasonImageSrc = type === 'season'
+    ? (isVirtual && item.image ? normalizeImageUrl(item.image) : (item.id ? ContentDisplayUrl(item.contentId || item.id) : normalizeImageUrl(item.image)))
+    : normalizeImageUrl(item.image);
+
   return (
     <div className={`season-info ${type}-info`}>
-      {item.image && (
+      {(item.image || seasonImageSrc) && (
         <div className="info-image-container">
-          <img 
-            src={type === 'season' && item.id ? ContentDisplayUrl(item.contentId || item.id) : normalizeImageUrl(item.image)}
-            alt={item.title || item.label || item.name} 
-            className="info-image" 
+          <img
+            src={seasonImageSrc}
+            alt={item.title || item.label || item.name}
+            className="info-image"
           />
         </div>
       )}
@@ -106,7 +111,11 @@ const EpisodeInfo = ({ episode, showInfo, parentsMap, parentsList, onPlay }) => 
   const parentDescription = [parent.summary, parent.description, showInfo?.summary]
     .find(v => typeof v === 'string' && v.trim().length) || '';
 
-  const parentImage = normalizeImageUrl(parent.thumbnail || parent.image) || (parentId ? ContentDisplayUrl(parent.contentId || parentId) : normalizeImageUrl(showInfo?.image));
+  // For playlist episodes, use the actual show poster (grandparentId) instead of the virtual season's poster
+  const isVirtualParent = parentId && String(parentId).startsWith('virtual-');
+  const parentImage = isVirtualParent && episode.grandparentId
+    ? ContentDisplayUrl(episode.grandparentId)
+    : normalizeImageUrl(parent.thumbnail || parent.image) || (parentId ? ContentDisplayUrl(parent.contentId || parentId) : normalizeImageUrl(showInfo?.image));
   // Use the same episode image source as grid: primary is episode.image; fallback to thumbId path
   const episodeImage = (episode.image && episode.image.trim())
     ? normalizeImageUrl(episode.image)
@@ -121,11 +130,11 @@ const EpisodeInfo = ({ episode, showInfo, parentsMap, parentsList, onPlay }) => 
       <div className="episode-season-header">
         {parentImage && (
           <div className="season-thumb-wrapper">
-            <img src={parentImage} alt={parentName} className="season-thumb" />
+            <img key={parentImage} src={parentImage} alt={parentName} className="season-thumb" />
           </div>
         )}
         <div className="season-meta">
-          <h2 className="show-name">{showInfo?.title}</h2>
+          <h2 className="show-name">{isVirtualParent && episode.grandparentTitle ? episode.grandparentTitle : showInfo?.title}</h2>
           {parentDescription && (
             <div className="season-description"><p>{parentName}—{parentDescription}</p></div>
           )}
@@ -256,7 +265,9 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
       // If this is a playlist, create virtual seasons for pagination
       if (response.info?.type === 'playlist') {
         const pageSize = plexConfig?.playlist_episodes_per_season || 20;
-        const { parents, items: taggedItems } = buildVirtualSeasons(response.items || [], pageSize);
+        const { parents, items: taggedItems } = buildVirtualSeasons(response.items || [], pageSize, {
+          resolveShowImage: (gpId) => ContentDisplayUrl(gpId)
+        });
         response.parents = parents;
         response.items = taggedItems;
         // Use playlist image for show display

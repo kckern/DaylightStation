@@ -258,6 +258,7 @@
           display: flex;
           flex-direction: column;
           gap: 0.4rem;
+          padding-left: 1rem;
 
           .episode-heading {
             margin: 0;
@@ -362,6 +363,7 @@
 
       .info-details {
         flex: 1 1 auto;
+        padding-left: 1rem;
 
         .info-title {
           font-size: 1.5rem;
