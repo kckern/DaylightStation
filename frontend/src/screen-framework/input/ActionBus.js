@@ -4,6 +4,14 @@
  * Input adapters emit actions, widgets subscribe to actions they handle.
  * Supports wildcard subscriptions for logging/debugging.
  */
+import getLogger from '../../lib/logging/Logger.js';
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'ActionBus' });
+  return _logger;
+}
+
 export class ActionBus {
   constructor() {
     this.subscribers = new Map();
@@ -41,9 +49,13 @@ export class ActionBus {
    * @param {*} payload - Action payload
    */
   emit(action, payload) {
-    // Notify specific subscribers
     const handlers = this.subscribers.get(action);
-    if (handlers) {
+    const subscriberCount = handlers ? handlers.size : 0;
+
+    if (subscriberCount === 0) {
+      logger().warn('actionbus.emit.unhandled', { action, subscriberCount: 0 });
+    } else {
+      logger().debug('actionbus.emit', { action, subscriberCount });
       handlers.forEach(handler => handler(payload));
     }
 
