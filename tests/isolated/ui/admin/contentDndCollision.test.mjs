@@ -7,12 +7,17 @@
  * pick index 0 instead of the geometrically correct adjacent row.
  */
 import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
+import { dirname, resolve } from 'path';
 
 // Resolve @dnd-kit/core from frontend/node_modules since it is not
 // installed at the repository root.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const projectRoot = resolve(__dirname, '../../../..');
 const require = createRequire(import.meta.url);
 const dndCorePath = require.resolve('@dnd-kit/core', {
-  paths: [process.cwd() + '/frontend/node_modules'],
+  paths: [resolve(projectRoot, 'frontend/node_modules')],
 });
 const { closestCenter } = await import(dndCorePath);
 
@@ -172,7 +177,7 @@ describe('content DnD collision detection', () => {
   });
 
   // ---- Test 2 ---------------------------------------------------------
-  test('row 0 is NOT selected when dragging between rows 4 and 5', () => {
+  test('row 0 is NOT selected when dragging between rows 4 and 3', () => {
     const activeId = `content-${SECTION}-4`;
     const pointer = pointerBetweenRows(4, 3);
 
