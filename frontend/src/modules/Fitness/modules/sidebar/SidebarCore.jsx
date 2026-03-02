@@ -55,7 +55,7 @@ SidebarCore.propTypes = {
   /** Panel components to render inside the sidebar */
   children: PropTypes.node,
   /** Sidebar mode affects styling */
-  mode: PropTypes.oneOf(['player', 'plugin', 'session', 'standalone']),
+  mode: PropTypes.oneOf(['player', 'module', 'session', 'standalone']),
   /** Additional CSS classes */
   className: PropTypes.string,
   /** Menu overlay component (settings menu, guest selector, etc.) */

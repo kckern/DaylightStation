@@ -7,7 +7,7 @@
  *   /fitness/menu/:id            → menu view with video ID(s)
  *   /fitness/show/:id            → show view
  *   /fitness/play/:id            → play view
- *   /fitness/plugin/:id          → plugin view
+ *   /fitness/module/:id          → module view
  *   /fitness/users               → users view
  *
  * Query parameters:

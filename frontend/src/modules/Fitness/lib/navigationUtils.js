@@ -26,8 +26,8 @@ export function getNavItemClasses(item, isActive = false) {
  * Determine if a nav item is currently active
  */
 export function isNavItemActive(item, currentState) {
-  const { currentView, activeCollection, activePlugin } = currentState;
-  
+  const { currentView, activeCollection, activeModule } = currentState;
+
   if (!item || !item.target) return false;
 
   switch (item.type) {
@@ -45,17 +45,17 @@ export function isNavItemActive(item, currentState) {
       }
       return item.target.collection_ids.length === 1 &&
         String(item.target.collection_ids[0]) === String(activeCollection);
-      
-    case 'plugin_menu':
+
+    case 'module_menu':
       return String(activeCollection) === String(item.target.menu_id);
-      
-    case 'plugin_direct':
-      return currentView === 'plugin' && 
-             activePlugin?.id === item.target.plugin_id;
-      
+
+    case 'module_direct':
+      return currentView === 'module' &&
+             activeModule?.id === item.target.module_id;
+
     case 'view_direct':
       return currentView === item.target.view;
-      
+
     default:
       return false;
   }
@@ -75,16 +75,16 @@ export function getNavItemDeepLink(item) {
     case 'collection_group':
     case 'plex_collection_group':
       return `#/fitness/collections/${item.target.collection_ids.join(',')}`;
-      
-    case 'plugin_menu':
+
+    case 'module_menu':
       return `#/fitness/menu/${item.target.menu_id}`;
-      
-    case 'plugin_direct':
-      return `#/fitness/plugin/${item.target.plugin_id}`;
-      
+
+    case 'module_direct':
+      return `#/fitness/module/${item.target.module_id}`;
+
     case 'view_direct':
       return `#/fitness/view/${item.target.view}`;
-      
+
     default:
       return '#/fitness';
   }

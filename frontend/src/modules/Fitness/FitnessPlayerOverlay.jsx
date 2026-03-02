@@ -6,7 +6,7 @@ import { ChallengeOverlay, useChallengeOverlays } from './FitnessPlayerOverlay/C
 import GovernanceStateOverlay from './FitnessPlayerOverlay/GovernanceStateOverlay.jsx';
 import { useGovernanceDisplay } from './hooks/useGovernanceDisplay.js';
 import FullscreenVitalsOverlay from './FitnessPlayerOverlay/FullscreenVitalsOverlay.jsx';
-import FitnessPluginContainer from './FitnessPlugins/FitnessPluginContainer.jsx';
+import FitnessModuleContainer from './FitnessModules/FitnessModuleContainer.jsx';
 import './FitnessPlayerOverlay/FitnessAppOverlay.scss';
 
 const normalizeChallengeStatusForLogging = (status) => {
@@ -151,7 +151,7 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
       ) : null}
       {fitnessCtx.overlayApp && (
         <div className="fitness-app-overlay-wrapper">
-          <FitnessPluginContainer
+          <FitnessModuleContainer
             pluginId={fitnessCtx.overlayApp.id}
             mode="overlay"
             config={fitnessCtx.overlayApp.config}

@@ -11,8 +11,8 @@ import { GuestAssignmentService } from '../hooks/fitness/GuestAssignmentService.
 import { useZoneLedSync } from '../hooks/fitness/useZoneLedSync.js';
 import { playbackLog } from '../modules/Player/lib/playbackLogger.js';
 import getLogger from '../lib/logging/Logger.js';
-import { getPluginManifest } from '../modules/Fitness/FitnessPlugins/registry.js';
-import { VIBRATION_CONSTANTS } from '../modules/Fitness/FitnessPlugins/plugins/VibrationApp/constants.js';
+import { getModuleManifest } from '../modules/Fitness/FitnessModules/registry.js';
+import { VIBRATION_CONSTANTS } from '../modules/Fitness/FitnessModules/modules/VibrationApp/constants.js';
 
 // Phase 3 SSOT: Domain model imports
 import ParticipantFactory from '../modules/Fitness/domain/ParticipantFactory.js';
@@ -155,7 +155,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   // App launch/close methods
   const launchApp = React.useCallback((appId, options = {}) => {
-    const manifest = getPluginManifest(appId);
+    const manifest = getModuleManifest(appId);
     if (!manifest) return false;
     
     if (options.mode === 'overlay') {
