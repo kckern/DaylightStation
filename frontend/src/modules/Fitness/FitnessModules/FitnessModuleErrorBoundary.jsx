@@ -8,17 +8,17 @@ class FitnessModuleErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    const { pluginId, sessionInstance } = this.props;
+    const { moduleId, sessionInstance } = this.props;
 
     // Log to session
     sessionInstance?.logEvent?.('module_error', {
-      pluginId,
+      moduleId,
       error: error.message,
       stack: error.stack,
       componentStack: errorInfo.componentStack
     });
 
-    console.error(`Fitness Module Error [${pluginId}]:`, error, errorInfo);
+    console.error(`Fitness Module Error [${moduleId}]:`, error, errorInfo);
   }
 
   handleRetry = () => {

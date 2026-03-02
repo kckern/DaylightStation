@@ -6,14 +6,14 @@ import FitnessModuleLoader from './FitnessModuleLoader.jsx';
 import FitnessSidebar from '../FitnessSidebar.jsx';
 import './FitnessModuleContainer.scss';
 
-const FitnessModuleContainer = ({ pluginId, mode = 'standalone', onClose, config = {} }) => {
+const FitnessModuleContainer = ({ moduleId, mode = 'standalone', onClose, config = {} }) => {
   const fitnessCtx = useFitnessContext();
-  const ModuleComponent = getModule(pluginId);
-  const manifest = getModuleManifest(pluginId);
+  const ModuleComponent = getModule(moduleId);
+  const manifest = getModuleManifest(moduleId);
   const [loading, setLoading] = useState(true);
 
   if (!ModuleComponent) {
-    return <div className="fitness-module-not-found">Module not found: {pluginId}</div>;
+    return <div className="fitness-module-not-found">Module not found: {moduleId}</div>;
   }
 
   const LoaderComponent = manifest?.loading?.custom
@@ -22,7 +22,7 @@ const FitnessModuleContainer = ({ pluginId, mode = 'standalone', onClose, config
 
   const content = (
     <FitnessModuleErrorBoundary
-      pluginId={pluginId}
+      moduleId={moduleId}
       manifest={manifest}
       sessionInstance={fitnessCtx.fitnessSessionInstance}
       onClose={onClose}

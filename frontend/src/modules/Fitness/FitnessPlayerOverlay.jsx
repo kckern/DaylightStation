@@ -152,7 +152,7 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
       {fitnessCtx.overlayApp && (
         <div className="fitness-app-overlay-wrapper">
           <FitnessModuleContainer
-            pluginId={fitnessCtx.overlayApp.id}
+            moduleId={fitnessCtx.overlayApp.id}
             mode="overlay"
             config={fitnessCtx.overlayApp.config}
             onClose={() => fitnessCtx.closeApp(fitnessCtx.overlayApp.id)}
