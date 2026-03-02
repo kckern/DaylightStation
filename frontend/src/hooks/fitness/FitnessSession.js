@@ -391,7 +391,8 @@ export class FitnessSession {
     };
     this._lastSampleIndex = -1;
     this.timeline = null;
-    
+    this._pendingEvents = [];
+
     this.screenshots = {
       captures: [],
       intervalMs: null,
@@ -1306,7 +1307,18 @@ export class FitnessSession {
     this.timebase.intervalMs = this.timeline.timebase.intervalMs;
     this.timebase.startAbsMs = this.timeline.timebase.startTime;
     this._pendingSnapshotRef = null;
-    
+
+    // Flush any events that were queued before the timeline was ready
+    if (this._pendingEvents.length > 0) {
+      getLogger().info('fitness.session.flush_pending_events', {
+        sessionId: this.sessionId, count: this._pendingEvents.length
+      });
+      for (const evt of this._pendingEvents) {
+        this.timeline.logEvent(evt.type, evt.data, evt.timestamp);
+      }
+      this._pendingEvents = [];
+    }
+
     // Reset ActivityMonitor for new session (Phase 2 - centralized activity tracking)
     this.activityMonitor.reset(now);
     this.activityMonitor.configure({
@@ -1939,6 +1951,7 @@ export class FitnessSession {
       this.timeline.reset(Date.now(), this.timeline.timebase?.intervalMs || 5000);
     }
     this.timeline = null;
+    this._pendingEvents = [];
     this.timebase = {
       startAbsMs: null,
       intervalMs: 5000,
@@ -2459,12 +2472,13 @@ export class FitnessSession {
   logEvent(type, data = {}, timestamp) {
     if (!type) return null;
     if (!this.timeline) {
-      getLogger().warn('fitness.session.logEvent_dropped', {
-        type,
-        sessionId: this.sessionId || null,
-        reason: this.sessionId ? 'timeline_null_after_start' : 'session_not_started'
+      const ts = timestamp || Date.now();
+      const entry = { timestamp: ts, type, data: { ...data }, queued: true };
+      this._pendingEvents.push(entry);
+      getLogger().debug('fitness.session.logEvent_queued', {
+        type, sessionId: this.sessionId || null
       });
-      return null;
+      return entry;
     }
     return this.timeline.logEvent(type, data, timestamp);
   }
