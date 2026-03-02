@@ -1,7 +1,9 @@
 # Dual-Drag Content Swap Design
 
 **Date:** 2026-03-01
-**Status:** Approved
+**Status:** Implemented
+
+**Implementation Note:** The design specified nested DndContexts, but dnd-kit registers hooks with the nearest parent context, making true nesting impractical. The implementation uses a single global `DndContext` with ID-prefixed routing (`row-*` for reorder, `content-*` for swap) and custom collision detection that filters targets by drag type. This achieves the same separation of concerns.
 **Component:** `frontend/src/modules/Admin/ContentLists/ListsItemRow.jsx`
 
 ## Problem
