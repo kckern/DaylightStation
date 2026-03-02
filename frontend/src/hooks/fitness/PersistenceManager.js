@@ -1019,7 +1019,7 @@ export class PersistenceManager {
       console.error(`📤 SESSION_SAVE [${this._debugSaveCount}/5]: ${persistSessionData.session?.id}, ticks=${tickCount}, series=${seriesCount}`);
     }
 
-    this._enrichMissingPlexDescriptions(persistSessionData.timeline?.events)
+    this._enrichMissingPlexMetadata(persistSessionData.timeline?.events)
       .then(() => this._persistApi('api/v1/fitness/save_session', { sessionData: persistSessionData }, 'POST'))
       .then(resp => {
         // DEBUG: Log success (throttled)
@@ -1042,20 +1042,22 @@ export class PersistenceManager {
   // -------------------- Private Helpers --------------------
 
   /**
-   * Fetch missing Plex descriptions for episode media events and populate in-place.
+   * Fetch missing Plex metadata for episode media events and populate in-place.
+   * Enriches description, title, grandparentTitle, and parentTitle.
    * Runs concurrently; per-event errors do not fail the save.
    * @param {Array} events - Consolidated timeline events
    * @returns {Promise<void>}
    */
-  async _enrichMissingPlexDescriptions(events) {
+  async _enrichMissingPlexMetadata(events) {
     if (!Array.isArray(events)) return;
 
     const toFetch = events.filter(evt => {
       if (evt?.type !== 'media') return false;
       const d = evt.data || {};
-      if (d.description) return false;
       if (d.artist || d.contentType === 'track') return false;
-      return (d.contentId || '').startsWith('plex:');
+      if (!(d.contentId || '').startsWith('plex:')) return false;
+      // Enrich if any metadata field is missing
+      return !d.description || !d.title || !d.grandparentTitle;
     });
 
     if (toFetch.length === 0) return;
@@ -1066,10 +1068,27 @@ export class PersistenceManager {
       const plexId = evt.data.contentId.split(':', 2)[1];
       try {
         const resp = await this._persistApi(`api/v1/info/plex/${plexId}`, {}, 'GET');
-        const summary = resp?.metadata?.summary;
-        if (summary) {
-          evt.data.description = summary.replace(/\s+/g, ' ').trim();
-          getLogger().debug('fitness.persistence.plex_enrich_hit', { plexId });
+        const meta = resp?.metadata;
+        if (!meta) return;
+        const enriched = [];
+        if (meta.summary && !evt.data.description) {
+          evt.data.description = meta.summary.replace(/\s+/g, ' ').trim();
+          enriched.push('description');
+        }
+        if (meta.title && !evt.data.title) {
+          evt.data.title = meta.title;
+          enriched.push('title');
+        }
+        if (meta.grandparentTitle && !evt.data.grandparentTitle) {
+          evt.data.grandparentTitle = meta.grandparentTitle;
+          enriched.push('grandparentTitle');
+        }
+        if (meta.parentTitle && !evt.data.parentTitle) {
+          evt.data.parentTitle = meta.parentTitle;
+          enriched.push('parentTitle');
+        }
+        if (enriched.length > 0) {
+          getLogger().debug('fitness.persistence.plex_enrich_hit', { plexId, enriched });
         }
       } catch (err) {
         getLogger().warn('fitness.persistence.plex_enrich_fail', { plexId, error: err?.message });
