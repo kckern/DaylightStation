@@ -5,6 +5,22 @@ import yaml from 'js-yaml';
 import axios from 'axios';
 
 /**
+ * Log actionable diagnostics for EACCES errors
+ */
+function logPermissionError(filePath, err) {
+  if (err.code !== 'EACCES') return;
+  let stat;
+  try { stat = fs.statSync(filePath); } catch { /* ignore */ }
+  if (!stat) try { stat = fs.statSync(path.dirname(filePath)); } catch { /* ignore */ }
+  console.error(
+    `[FileIO] EACCES writing ${filePath} — ` +
+    `owner uid=${stat?.uid ?? '?'}, ` +
+    `running as uid=${process.getuid?.() ?? '?'}. ` +
+    `Fix: chown node:node "${filePath}"`
+  );
+}
+
+/**
  * FileIO - Centralized filesystem gateway for the DDD backend.
  *
  * ALL file operations in adapters/services MUST go through these utilities.
@@ -123,8 +139,13 @@ export function saveYaml(basePath, content, options = {}) {
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  const yamlContent = yaml.dump(content, { lineWidth: -1, ...options });
-  fs.writeFileSync(filePath, yamlContent, 'utf8');
+  try {
+    const yamlContent = yaml.dump(content, { lineWidth: -1, ...options });
+    fs.writeFileSync(filePath, yamlContent, 'utf8');
+  } catch (err) {
+    logPermissionError(filePath, err);
+    throw err;
+  }
 }
 
 /**
@@ -268,7 +289,12 @@ export function readFile(filePath) {
 export function writeFile(filePath, content) {
   const dir = path.dirname(filePath);
   ensureDir(dir);
-  fs.writeFileSync(filePath, content, 'utf8');
+  try {
+    fs.writeFileSync(filePath, content, 'utf8');
+  } catch (err) {
+    logPermissionError(filePath, err);
+    throw err;
+  }
 }
 
 /**
@@ -295,8 +321,13 @@ export function loadYamlFromPath(filePath) {
 export function saveYamlToPath(filePath, content, options = {}) {
   const dir = path.dirname(filePath);
   ensureDir(dir);
-  const yamlContent = yaml.dump(content, { lineWidth: -1, ...options });
-  fs.writeFileSync(filePath, yamlContent, 'utf8');
+  try {
+    const yamlContent = yaml.dump(content, { lineWidth: -1, ...options });
+    fs.writeFileSync(filePath, yamlContent, 'utf8');
+  } catch (err) {
+    logPermissionError(filePath, err);
+    throw err;
+  }
 }
 
 /**
@@ -335,7 +366,12 @@ export function deleteYaml(basePath) {
 export function writeBinary(filePath, buffer) {
   const dir = path.dirname(filePath);
   ensureDir(dir);
-  fs.writeFileSync(filePath, buffer);
+  try {
+    fs.writeFileSync(filePath, buffer);
+  } catch (err) {
+    logPermissionError(filePath, err);
+    throw err;
+  }
 }
 
 /**
