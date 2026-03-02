@@ -1,4 +1,11 @@
 import { useCallback } from 'react';
+import getLogger from '../../../lib/logging/Logger.js';
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'useModuleStorage' });
+  return _logger;
+}
 
 const MODULE_STORAGE_PREFIX = 'fitness_module_';
 
@@ -23,7 +30,7 @@ const useModuleStorage = (moduleId) => {
       data[key] = value;
       localStorage.setItem(storageKey, JSON.stringify(data));
     } catch (e) {
-      console.error(`Failed to save module setting: ${key}`, e);
+      logger().warn('module-storage-save-failed', { key, error: e.message });
     }
   }, [storageKey]);
 

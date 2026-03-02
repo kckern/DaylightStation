@@ -1,4 +1,11 @@
 import React from 'react';
+import getLogger from '../../../lib/logging/Logger.js';
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'FitnessModuleErrorBoundary' });
+  return _logger;
+}
 
 class FitnessModuleErrorBoundary extends React.Component {
   state = { hasError: false, error: null };
@@ -18,7 +25,7 @@ class FitnessModuleErrorBoundary extends React.Component {
       componentStack: errorInfo.componentStack
     });
 
-    console.error(`Fitness Module Error [${moduleId}]:`, error, errorInfo);
+    logger().error('module-error', { moduleId, error: error.message, stack: error.stack, componentStack: errorInfo.componentStack });
   }
 
   handleRetry = () => {

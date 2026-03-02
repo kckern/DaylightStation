@@ -3,6 +3,13 @@ import { DaylightAPI } from '../../../lib/api.mjs';
 import { listModules, getModuleManifest } from './index';
 import useModuleStorage from './useModuleStorage';
 import './FitnessModuleMenu.scss';
+import getLogger from '../../../lib/logging/Logger.js';
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'FitnessModuleMenu' });
+  return _logger;
+}
 
 const SettingsControls = ({ onClose }) => {
   const { clearAll } = useModuleStorage('_menu');
@@ -35,7 +42,7 @@ const FitnessModuleMenu = ({ activeModuleMenuId, onModuleSelect, onBack }) => {
         const menu = menus.find(m => String(m.id) === String(activeModuleMenuId));
         setMenuConfig(menu);
       } catch (err) {
-        console.error('Failed to load module menu:', err);
+        logger().error('module-menu-load-failed', { error: err.message });
       } finally {
         setLoading(false);
       }
