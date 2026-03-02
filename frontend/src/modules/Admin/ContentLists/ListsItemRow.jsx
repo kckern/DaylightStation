@@ -1472,6 +1472,9 @@ function ContentSearchCombobox({ value, onChange }) {
 
   // Commit freeform text + fire auto-resolve search
   const AUTO_RESOLVE_TIMEOUT_MS = 15000;
+  // INVARIANT: Always save freeform text. Never gate on availableResults.
+  // Zero search results ≠ invalid input. The user decides what's valid.
+  // See: docs/_wip/bugs/2026-03-01-admin-freeform-commit-must-always-save.md
   const commitFreeformText = (trigger) => {
     log.info(`commit.freeform`, { searchQuery, availableResults: displayItems.length, prevValue: value, trigger });
     log.info('value.save', { newValue: searchQuery, prevValue: value, source: 'freeform', trigger });
