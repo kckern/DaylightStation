@@ -17,6 +17,7 @@ import {
   IconDeviceGamepad2, IconArrowsShuffle, IconRocket
 } from '@tabler/icons-react';
 import { useSortable } from '@dnd-kit/sortable';
+import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import ConfigIndicators from './ConfigIndicators.jsx';
 import ProgressDisplay from './ProgressDisplay.jsx';
@@ -2425,10 +2426,18 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
   );
 }
 
-function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, isWatchlist, onEdit, onSplit, sectionIndex, sectionCount, sections, itemCount, onMoveItem }) {
+function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, isWatchlist, onEdit, onSplit, sectionIndex, sectionCount, sections, itemCount, onMoveItem, activeContentDrag }) {
   const log = useMemo(() => adminLog('ListsItemRow'), []);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: item.index
+    id: `row-${sectionIndex}-${item.index}`
+  });
+
+  const { attributes: contentDragAttrs, listeners: contentDragListeners, setNodeRef: setContentDragRef } = useDraggable({
+    id: `content-${sectionIndex}-${item.index}`,
+  });
+
+  const { setNodeRef: setContentDropRef, isOver: isContentDropTarget } = useDroppable({
+    id: `content-${sectionIndex}-${item.index}`,
   });
 
   const navigate = useNavigate();
@@ -2485,6 +2494,13 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
     transition,
     opacity: isDragging ? 0.5 : 1,
   };
+
+  const isContentSource = activeContentDrag?.sectionIndex === sectionIndex && activeContentDrag?.itemIndex === item.index;
+  const rowClassName = [
+    'item-row',
+    isContentSource && 'content-dragging',
+    isContentDropTarget && !isContentSource && 'content-drop-target',
+  ].filter(Boolean).join(' ');
 
   // Focus label input when editing starts
   useEffect(() => {
@@ -2560,7 +2576,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
   };
 
   return (
-    <div ref={setNodeRef} style={style} className="item-row" data-testid={`item-row-${item.index}`} onMouseEnter={handleRowHover}>
+    <div ref={setNodeRef} style={style} className={rowClassName} data-testid={`item-row-${sectionIndex}-${item.index}`} onMouseEnter={handleRowHover}>
       <div className="col-active">
         <Checkbox
           checked={item.active !== false}
@@ -2662,6 +2678,18 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
         )}
       </div>
 
+      <div className="col-divider" />
+
+      <div
+        className="col-content-drag"
+        ref={setContentDragRef}
+        {...contentDragAttrs}
+        {...contentDragListeners}
+      >
+        <IconGripVertical size={14} />
+      </div>
+
+      <div ref={setContentDropRef} style={{ display: 'contents' }}>
       <div className="col-action">
         <ActionChipSelect
           value={item.action || 'Play'}
@@ -2820,6 +2848,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
           </Menu.Dropdown>
         </Menu>
       </div>
+      </div>
 
       <ItemDetailsDrawer
         opened={drawerOpen}
@@ -2902,6 +2931,8 @@ function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
           styles={{ input: { minHeight: 22, height: 22, background: 'transparent', border: 'none' } }}
         />
       </div>
+      <div className="col-divider" />
+      <div className="col-content-drag"></div>
       <div className="col-action">
         <ActionChipSelect value={action} onChange={setAction} />
       </div>
