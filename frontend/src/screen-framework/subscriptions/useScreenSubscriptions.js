@@ -1,5 +1,12 @@
 import { useEffect, useRef, useCallback, useMemo } from 'react';
 import { useWebSocketSubscription } from '../../hooks/useWebSocket.js';
+import getLogger from '../../lib/logging/Logger.js';
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'ScreenSubscriptions' });
+  return _logger;
+}
 
 /**
  * useScreenSubscriptions - Processes YAML subscription config into live WS listeners.
@@ -64,12 +71,17 @@ export function useScreenSubscriptions(subscriptions, showOverlay, dismissOverla
     const eventName = data?.event ?? data?.type ?? null;
     const messageTopic = data?.topic ?? null;
 
+    let matched = false;
+
     for (const entry of entriesRef.current) {
       // Match by topic
       if (messageTopic !== entry.topic) continue;
 
+      matched = true;
+
       // Check dismiss event first
       if (entry.dismissEvent && eventName === entry.dismissEvent) {
+        logger().debug('subscription.dismiss', { topic: entry.topic, dismissEvent: eventName });
         dismissOverlay(entry.mode);
         // Clear any running inactivity timer for this topic
         if (inactivityTimers.current[entry.topic]) {
@@ -80,13 +92,20 @@ export function useScreenSubscriptions(subscriptions, showOverlay, dismissOverla
       }
 
       // Check trigger filter
-      if (entry.onEvent && eventName !== entry.onEvent) continue;
+      if (entry.onEvent && eventName !== entry.onEvent) {
+        logger().debug('subscription.event-filtered', { topic: entry.topic, expected: entry.onEvent, received: eventName });
+        continue;
+      }
 
       // Resolve component from registry
       const Component = entry.overlay ? widgetRegistry.get(entry.overlay) : null;
-      if (!Component) continue;
+      if (!Component) {
+        logger().warn('subscription.widget-not-found', { topic: entry.topic, overlay: entry.overlay });
+        continue;
+      }
 
       // Show the overlay
+      logger().info('subscription.show-overlay', { topic: entry.topic, overlay: entry.overlay, mode: entry.mode, event: eventName });
       showOverlay(Component, { ...data }, {
         mode: entry.mode,
         priority: entry.priority,
@@ -104,6 +123,10 @@ export function useScreenSubscriptions(subscriptions, showOverlay, dismissOverla
           delete inactivityTimers.current[entry.topic];
         }, entry.dismissInactivity * 1000);
       }
+    }
+
+    if (!matched) {
+      logger().debug('subscription.no-match', { messageTopic, event: eventName, registeredTopics: entriesRef.current.map(e => e.topic) });
     }
   }, [showOverlay, dismissOverlay, widgetRegistry]);
 
