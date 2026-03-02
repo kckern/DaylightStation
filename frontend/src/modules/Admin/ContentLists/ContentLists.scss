@@ -49,6 +49,8 @@
     .col-index { width: 28px; text-align: center; flex-shrink: 0; flex-grow: 0; }
     .col-icon { width: 40px; flex-shrink: 0; flex-grow: 0; }
     .col-label { width: 12vw; min-width: 100px; flex-shrink: 0; flex-grow: 0; }
+    .col-divider { width: 1px; flex-shrink: 0; flex-grow: 0; }
+    .col-content-drag { width: 24px; flex-shrink: 0; flex-grow: 0; }
     .col-action { width: 96px; flex-shrink: 0; flex-grow: 0; text-align: center; }
     .col-preview { width: 32px; flex-shrink: 0; flex-grow: 0; text-align: center; }
     .col-input { flex: 1; min-width: 200px; }
@@ -158,6 +160,48 @@
       }
     }
 
+    .col-divider {
+      width: 1px;
+      flex-shrink: 0;
+      flex-grow: 0;
+      align-self: stretch;
+      margin: 6px 0;
+      background: var(--ds-border);
+      opacity: 0.4;
+      transition: opacity var(--ds-transition-fast), background var(--ds-transition-fast);
+    }
+
+    &:hover .col-divider {
+      opacity: 1;
+      background: var(--ds-text-muted);
+      width: 2px;
+    }
+
+    .col-content-drag {
+      width: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: grab;
+      color: var(--ds-text-muted);
+      flex-shrink: 0;
+      flex-grow: 0;
+      opacity: 0;
+      transition: opacity var(--ds-transition-fast), color var(--ds-transition-fast);
+
+      &:active {
+        cursor: grabbing;
+      }
+
+      &:hover {
+        color: var(--ds-text-secondary);
+      }
+    }
+
+    &:hover .col-content-drag {
+      opacity: 1;
+    }
+
     .col-action {
       width: 96px;
       flex-shrink: 0;
@@ -265,6 +309,29 @@
       flex-grow: 0;
     }
 
+    // Content zone during active content drag (source row)
+    &.content-dragging {
+      .col-action, .col-preview, .col-input, .col-progress, .col-config, .col-menu, .col-content-drag {
+        opacity: 0.3;
+        border: 1px dashed var(--ds-border);
+        border-radius: 4px;
+      }
+    }
+
+    // Content zone drop target (row being hovered during content drag)
+    &.content-drop-target {
+      .col-action, .col-preview, .col-input, .col-progress, .col-config {
+        outline: 2px solid var(--ds-accent);
+        outline-offset: -2px;
+        border-radius: 4px;
+      }
+    }
+
+    // Swap confirmation flash
+    &.swap-flash {
+      animation: swap-confirm 300ms ease-out;
+    }
+
     // Empty row for adding new items
     &.empty-row {
       background: transparent;
@@ -276,6 +343,27 @@
         background: var(--ds-bg-surface);
       }
     }
+  }
+
+  @keyframes swap-confirm {
+    0% { background: var(--ds-accent); }
+    100% { background: transparent; }
+  }
+
+  // Content drag overlay (floating ghost)
+  .content-drag-overlay {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    background: var(--ds-bg-elevated);
+    border: 1px solid var(--ds-accent);
+    border-radius: 6px;
+    box-shadow: var(--ds-shadow-elevated);
+    opacity: 0.9;
+    max-width: 300px;
+    height: 36px;
+    pointer-events: none;
   }
 
   // Insert row button between items
