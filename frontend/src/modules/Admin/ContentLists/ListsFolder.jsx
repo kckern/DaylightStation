@@ -9,13 +9,14 @@ import {
   IconTrash, IconDotsVertical, IconPlus, IconSettings
 } from '@tabler/icons-react';
 import {
-  DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors
+  DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragOverlay
 } from '@dnd-kit/core';
 import {
   SortableContext, verticalListSortingStrategy, arrayMove
 } from '@dnd-kit/sortable';
 import { useAdminLists } from '../../../hooks/admin/useAdminLists.js';
 import ListsItemRow, { EmptyItemRow, fetchContentMetadata } from './ListsItemRow.jsx';
+import { swapContentPayloads } from './listConstants.js';
 import SectionHeader from './SectionHeader.jsx';
 import ListsItemEditor from './ListsItemEditor.jsx';
 import { ListsContext } from './ListsContext.js';
@@ -29,6 +30,22 @@ const TYPE_LABELS = {
   watchlists: 'Watchlist',
   programs: 'Program'
 };
+
+/**
+ * Custom collision detection that filters targets based on active drag type.
+ * Row drags (id starts with 'row-') collide with sortable items.
+ * Content drags (id starts with 'content-') collide only with content drop zones.
+ */
+function dualCollisionDetection(args) {
+  const activeId = String(args.active.id);
+  if (activeId.startsWith('content-')) {
+    const filtered = args.droppableContainers.filter(
+      c => String(c.id).startsWith('content-') && c.id !== args.active.id
+    );
+    return closestCenter({ ...args, droppableContainers: filtered });
+  }
+  return closestCenter(args);
+}
 
 function ListsFolder() {
   const { type, name: listName } = useParams();
@@ -45,6 +62,7 @@ function ListsFolder() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sectionSettingsOpen, setSectionSettingsOpen] = useState(null);
   const [collapsedSections, setCollapsedSections] = useState(new Set());
+  const [activeContentDrag, setActiveContentDrag] = useState(null); // { sectionIndex, itemIndex, item }
   const toggleCollapse = (si) => {
     setCollapsedSections(prev => {
       const next = new Set(prev);
@@ -109,14 +127,73 @@ function ListsFolder() {
     );
   }, [flatItems, searchQuery]);
 
-  const handleDragEnd = async (event, sectionIndex) => {
+  const handleDragEnd = async (event) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const sectionItems = sections[sectionIndex]?.items || [];
-    const oldIndex = Number(active.id);
-    const newIndex = Number(over.id);
-    const reordered = arrayMove(sectionItems, oldIndex, newIndex);
-    await reorderItems(sectionIndex, reordered);
+
+    const activeId = String(active.id);
+    const overId = String(over.id);
+
+    // Content swap
+    if (activeId.startsWith('content-')) {
+      if (!overId.startsWith('content-')) return;
+      const srcParts = activeId.replace('content-', '').split('-');
+      const dstParts = overId.replace('content-', '').split('-');
+      const [srcSi, srcIdx] = [Number(srcParts[0]), Number(srcParts[1])];
+      const [dstSi, dstIdx] = [Number(dstParts[0]), Number(dstParts[1])];
+      const srcItem = sections[srcSi]?.items?.[srcIdx];
+      const dstItem = sections[dstSi]?.items?.[dstIdx];
+      if (!srcItem || !dstItem) return;
+
+      const { updatesForA, updatesForB } = swapContentPayloads(srcItem, dstItem);
+      try {
+        await updateItem(dstSi, dstIdx, updatesForA);
+        await updateItem(srcSi, srcIdx, updatesForB);
+      } catch (err) {
+        // updateItem refetches on success, so partial failure auto-corrects on next refetch
+        console.error('Content swap failed:', err);
+      }
+
+      // Flash both rows
+      requestAnimationFrame(() => {
+        document.querySelectorAll('.item-row.swap-flash').forEach(el => el.classList.remove('swap-flash'));
+        const allRows = document.querySelectorAll('[data-testid^="item-row-"]');
+        allRows.forEach(row => {
+          const testId = row.getAttribute('data-testid');
+          if (testId === `item-row-${srcSi}-${srcIdx}` || testId === `item-row-${dstSi}-${dstIdx}`) {
+            row.classList.add('swap-flash');
+            row.addEventListener('animationend', () => row.classList.remove('swap-flash'), { once: true });
+          }
+        });
+      });
+      setActiveContentDrag(null);
+      return;
+    }
+
+    // Row reorder
+    if (activeId.startsWith('row-') && overId.startsWith('row-')) {
+      const activeParts = activeId.replace('row-', '').split('-');
+      const overParts = overId.replace('row-', '').split('-');
+      const [activeSi, activeIdx] = [Number(activeParts[0]), Number(activeParts[1])];
+      const [overSi, overIdx] = [Number(overParts[0]), Number(overParts[1])];
+      // Only reorder within the same section
+      if (activeSi !== overSi) return;
+      const sectionItems = sections[activeSi]?.items || [];
+      const reordered = arrayMove(sectionItems, activeIdx, overIdx);
+      await reorderItems(activeSi, reordered);
+    }
+  };
+
+  const handleDragStart = (event) => {
+    const activeId = String(event.active.id);
+    if (activeId.startsWith('content-')) {
+      const parts = activeId.replace('content-', '').split('-');
+      const [si, idx] = [Number(parts[0]), Number(parts[1])];
+      const item = sections[si]?.items?.[idx];
+      if (item) {
+        setActiveContentDrag({ sectionIndex: si, itemIndex: idx, item });
+      }
+    }
   };
 
   const handleAddItem = async (itemData, sectionIndex = 0) => {
@@ -246,7 +323,7 @@ function ListsFolder() {
   const renderItems = (itemsToRender, sectionIndex) => (
     <Box className="items-container">
       <SortableContext
-        items={itemsToRender.map((_, i) => i)}
+        items={itemsToRender.map((_, i) => `row-${sectionIndex}-${i}`)}
         strategy={verticalListSortingStrategy}
       >
         {itemsToRender.map((item, idx) => (
@@ -265,6 +342,7 @@ function ListsFolder() {
             sections={sections}
             itemCount={itemsToRender.length}
             onMoveItem={(action, targetSection) => handleMoveItem(sectionIndex, idx, action, targetSection)}
+            activeContentDrag={activeContentDrag}
           />
         ))}
       </SortableContext>
@@ -341,45 +419,62 @@ function ListsFolder() {
         </div>
       )}
 
-      <div className="sections-scroll">
-        {filteredItems ? (
-          // Search mode — flat list
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => handleDragEnd(e, 0)}>
-            {renderItems(filteredItems, 0)}
-          </DndContext>
-        ) : (
-          // Normal mode — sections
-          <Stack gap="md">
-            {sections.map((section, si) => (
-              <Box key={si} className="section-container">
-                <SectionHeader
-                  section={section}
-                  sectionIndex={si}
-                  collapsed={collapsedSections.has(si)}
-                  onToggleCollapse={toggleCollapse}
-                  onUpdate={(idx, updates) => updates ? updateSection(idx, updates) : setSectionSettingsOpen(idx)}
-                  onDelete={deleteSection}
-                  onMoveUp={(idx) => handleMoveSection(idx, -1)}
-                  onMoveDown={(idx) => handleMoveSection(idx, 1)}
-                  isFirst={si === 0}
-                  isLast={si === sections.length - 1}
-                  itemCount={section.items.length}
-                />
-                <Collapse in={!collapsedSections.has(si)}>
-                  <DndContext sensors={sensors} collisionDetection={closestCenter}
-                    onDragEnd={(e) => handleDragEnd(e, si)}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={dualCollisionDetection}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="sections-scroll">
+          {filteredItems ? (
+            renderItems(filteredItems, 0)
+          ) : (
+            <Stack gap="md">
+              {sections.map((section, si) => (
+                <Box key={si} className="section-container">
+                  <SectionHeader
+                    section={section}
+                    sectionIndex={si}
+                    collapsed={collapsedSections.has(si)}
+                    onToggleCollapse={toggleCollapse}
+                    onUpdate={(idx, updates) => updates ? updateSection(idx, updates) : setSectionSettingsOpen(idx)}
+                    onDelete={deleteSection}
+                    onMoveUp={(idx) => handleMoveSection(idx, -1)}
+                    onMoveDown={(idx) => handleMoveSection(idx, 1)}
+                    isFirst={si === 0}
+                    isLast={si === sections.length - 1}
+                    itemCount={section.items.length}
+                  />
+                  <Collapse in={!collapsedSections.has(si)}>
                     {renderItems(section.items, si)}
-                  </DndContext>
-                </Collapse>
-              </Box>
-            ))}
-            <Button variant="light" leftSection={<IconPlus size={16} />}
-              onClick={() => addSection({ title: `Section ${sections.length + 1}` })}>
-              Add Section
-            </Button>
-          </Stack>
-        )}
-      </div>
+                  </Collapse>
+                </Box>
+              ))}
+              <Button variant="light" leftSection={<IconPlus size={16} />}
+                onClick={() => addSection({ title: `Section ${sections.length + 1}` })}>
+                Add Section
+              </Button>
+            </Stack>
+          )}
+        </div>
+
+        <DragOverlay dropAnimation={null}>
+          {activeContentDrag && (() => {
+            const { item } = activeContentDrag;
+            const info = contentInfoMap.get(item.input);
+            return (
+              <div className="content-drag-overlay">
+                <Text size="xs" fw={500} truncate style={{ maxWidth: 200 }}>
+                  {info?.title || item.input || 'Content'}
+                </Text>
+                {info?.source && (
+                  <Text size="xs" c="dimmed">{info.source.toUpperCase()}</Text>
+                )}
+              </div>
+            );
+          })()}
+        </DragOverlay>
+      </DndContext>
 
       {flatItems.length === 0 && !filteredItems && !loading && (
         <Center h="40vh">
