@@ -1114,6 +1114,17 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       }
     }));
 
+    // Feed vibration data into session tracker for timeline/governance
+    if (fitnessSessionRef.current) {
+      fitnessSessionRef.current.ingestVibration(equipmentId, {
+        vibration: data?.vibration ?? false,
+        x_axis: axes?.x ?? data?.x_axis ?? 0,
+        y_axis: axes?.y ?? data?.y_axis ?? 0,
+        z_axis: axes?.z ?? data?.z_axis ?? 0,
+        timestamp: timestamp || Date.now()
+      });
+    }
+
     if (vibrationTimeoutRefs.current[equipmentId]) {
       clearTimeout(vibrationTimeoutRefs.current[equipmentId]);
     }
