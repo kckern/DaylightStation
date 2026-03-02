@@ -1,6 +1,13 @@
 import React, { useRef, useEffect, useMemo } from 'react';
 import PropTypes from 'prop-types';
+import getLogger from '../../../../lib/logging/Logger.js';
 import './VibrationActivityAvatar.scss';
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'VibrationActivityAvatar' });
+  return _logger;
+}
 
 const DEFAULT_RING_COLORS = {
   none: 'var(--color-muted, #666)',
@@ -33,6 +40,7 @@ const VibrationActivityAvatar = ({
 }) => {
   const ringRef = useRef(null);
   const prevIntensityRef = useRef('none');
+  const didFallbackRef = useRef(false);
 
   const {
     status = 'idle',
@@ -49,6 +57,11 @@ const VibrationActivityAvatar = ({
     ? (ringColorMap[intensityLevel] || ringColorMap.none)
     : (isActive ? (ringColorMap.active || DEFAULT_RING_COLORS.active) : ringColorMap.none);
 
+  // Reset fallback guard when image source changes
+  useEffect(() => {
+    didFallbackRef.current = false;
+  }, [avatarSrc, fallbackSrc]);
+
   // Pulse animation via Web Animations API (CSS transitions killed by TVApp)
   useEffect(() => {
     if (!ringRef.current) return;
@@ -56,6 +69,7 @@ const VibrationActivityAvatar = ({
     prevIntensityRef.current = intensityLevel;
 
     if (intensityLevel !== prev && intensityLevel !== 'none') {
+      logger().debug('intensity-pulse', { from: prev, to: intensityLevel });
       ringRef.current.animate([
         { transform: 'scale(1.15)', opacity: 1 },
         { transform: 'scale(1)', opacity: 0.8 }
@@ -63,15 +77,24 @@ const VibrationActivityAvatar = ({
     }
   }, [intensityLevel]);
 
-  // Activity bar: normalize heights to peak
+  // Activity bar: normalize heights to session peak
   const barData = useMemo(() => {
     if (!showActivityBar || recentIntensityHistory.length === 0) return [];
-    const max = Math.max(...recentIntensityHistory, 1);
+    const max = Math.max(peakIntensity, ...recentIntensityHistory, 1);
     return recentIntensityHistory.map(v => ({
       height: Math.max(2, Math.round((v / max) * 100)),
       value: v
     }));
-  }, [showActivityBar, recentIntensityHistory]);
+  }, [showActivityBar, recentIntensityHistory, peakIntensity]);
+
+  const handleImageError = (e) => {
+    if (!fallbackSrc || didFallbackRef.current) {
+      e.currentTarget.style.display = 'none';
+      return;
+    }
+    didFallbackRef.current = true;
+    e.currentTarget.src = fallbackSrc;
+  };
 
   const rootClass = ['vibration-activity-avatar', isActive ? 'is-active' : 'is-idle', className]
     .filter(Boolean).join(' ');
@@ -85,10 +108,7 @@ const VibrationActivityAvatar = ({
               src={avatarSrc}
               alt={avatarAlt}
               className="vib-avatar-image"
-              onError={(e) => {
-                if (fallbackSrc) e.currentTarget.src = fallbackSrc;
-                else e.currentTarget.style.display = 'none';
-              }}
+              onError={handleImageError}
             />
           ) : (
             <div className="vib-avatar-placeholder" />
