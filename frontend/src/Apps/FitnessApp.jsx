@@ -650,6 +650,19 @@ const FitnessApp = () => {
     return root?.home_screen || null;
   }, [fitnessConfiguration]);
 
+  // Resolve data sources for home screen, injecting dashboard URL with primary userId
+  const homeScreenSources = useMemo(() => {
+    if (!homeScreenConfig?.data) return {};
+    const sources = { ...homeScreenConfig.data };
+    const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
+    const primaryUser = root?.users?.primary?.[0];
+    if (primaryUser) {
+      const userId = primaryUser.id || primaryUser.profileId;
+      sources.dashboard = { source: `/api/v1/health-dashboard/${userId}`, refresh: 300 };
+    }
+    return sources;
+  }, [homeScreenConfig, fitnessConfiguration]);
+
   // Derive sequential labels config for route-based play blocking
   const sequentialLabelSet = useMemo(() => {
     const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
@@ -1114,7 +1127,7 @@ const FitnessApp = () => {
                     onNavigate={handleNavigate}
                     onCtaAction={(cta) => logger.info('fitness-cta-action', { action: cta.action })}
                   >
-                    <ScreenDataProvider sources={homeScreenConfig.data || {}}>
+                    <ScreenDataProvider sources={homeScreenSources}>
                       <ScreenSlotProvider>
                         <PanelRenderer node={homeScreenConfig.layout} />
                       </ScreenSlotProvider>
@@ -1122,7 +1135,7 @@ const FitnessApp = () => {
                   </FitnessScreenProvider>
                 )}
                 {currentView === 'users' && (
-                  <FitnessModuleContainer pluginId="fitness_session" mode="standalone" />
+                  <FitnessModuleContainer moduleId="fitness_session" mode="standalone" />
                 )}
                 {currentView === 'show' && selectedShow && (
                   <FitnessShow
@@ -1146,7 +1159,7 @@ const FitnessApp = () => {
                 )}
                 {currentView === 'module' && activeModule && (
                   <FitnessModuleContainer
-                    pluginId={activeModule.id}
+                    moduleId={activeModule.id}
                     mode="standalone"
                     onClose={() => {
                       setActiveModule(null);
