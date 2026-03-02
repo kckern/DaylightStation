@@ -80,7 +80,7 @@ export class VoiceMemoTranscriptionService {
       audioSize: buffer.length
     });
 
-    // 2. Clean transcript with GPT-4o
+    // 2. Clean transcript with AI
     let transcriptClean = transcriptRaw;
     if (transcriptRaw) {
       try {
@@ -90,7 +90,6 @@ export class VoiceMemoTranscriptionService {
             { role: 'user', content: transcriptRaw }
           ],
           {
-            model: 'gpt-4o',
             temperature: 0.2,
             maxTokens: 1000
           }

@@ -9,7 +9,7 @@ export default {
 
   configSchema: {
     api_key: { type: 'string', secret: true, required: true, description: 'OpenAI API key' },
-    model: { type: 'string', default: 'gpt-4o', description: 'Model to use for completions' },
+    model: { type: 'string', default: 'gpt-4.1', description: 'Model to use for completions' },
     max_tokens: { type: 'number', default: 4000, description: 'Maximum tokens in response' },
   }
 };

@@ -38,7 +38,8 @@ export class OpenAIAdapter extends IAIGateway {
     }
 
     this.apiKey = config.apiKey;
-    this.model = config.model || 'gpt-4o';
+    this.model = config.model || 'gpt-4.1';
+    this.miniModel = config.miniModel || config.mini_model || 'gpt-4.1-mini';
     this.maxTokens = config.maxTokens || 1000;
     this.timeout = config.timeout || 60000;
     this.httpClient = deps.httpClient;
@@ -317,7 +318,7 @@ export class OpenAIAdapter extends IAIGateway {
    * Send conversation with image for vision analysis
    */
   async chatWithImage(messages, imageSource, options = {}) {
-    const model = options.model || 'gpt-4o';
+    const model = options.model || this.model;
 
     // Convert Buffer to base64 data URI (OpenAI requires URL or data URI, not raw buffers)
     let imageUrl;
