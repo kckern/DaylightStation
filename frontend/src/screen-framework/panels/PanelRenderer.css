@@ -12,6 +12,7 @@
   display: flex;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
 /* Panel — visual container with chrome (bg, border, padding, radius) */
@@ -35,10 +36,15 @@
   flex: 1;
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
 }
+
+.screen-widget::-webkit-scrollbar { width: 6px; }
+.screen-widget::-webkit-scrollbar-track { background: transparent; }
+.screen-widget::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
 
 /* Full-panel widget — merges chrome with panel, no inner padding/border */
 .screen-widget--full {

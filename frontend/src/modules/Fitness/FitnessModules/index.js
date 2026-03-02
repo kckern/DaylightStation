@@ -47,6 +47,7 @@ import {
   FitnessNutritionWidget,
   FitnessUpNextWidget,
   FitnessCoachWidget,
+  FitnessSessionDetailWidget,
 } from './modules/HomeApp/widgets/index.js';
 
 registry.register('fitness:sessions', FitnessSessionsWidget);
@@ -54,6 +55,7 @@ registry.register('fitness:weight', FitnessWeightWidget);
 registry.register('fitness:nutrition', FitnessNutritionWidget);
 registry.register('fitness:upnext', FitnessUpNextWidget);
 registry.register('fitness:coach', FitnessCoachWidget);
+registry.register('fitness:session-detail', FitnessSessionDetailWidget);
 
 // --- Bridge functions for existing consumers ---
 // These accept old manifest IDs (e.g. 'fitness_chart') and resolve

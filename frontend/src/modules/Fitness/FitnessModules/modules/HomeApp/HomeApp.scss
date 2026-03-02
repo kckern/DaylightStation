@@ -1,13 +1,25 @@
 // frontend/src/modules/Fitness/FitnessModules/modules/HomeApp/HomeApp.scss
 
 .home-app {
-  height: 100vh;
+  height: 100%;
   width: 100%;
   padding: 1rem;
   box-sizing: border-box;
   background: #1a1a2e;
   color: #fff;
   overflow: hidden; /* Prevent global scroll */
+
+  /* Screen-framework panels fill parent and never scroll at root */
+  > * {
+    height: 100%;
+  }
+  .screen-panel {
+    height: 100%;
+    overflow: hidden;
+  }
+  .screen-panel--widget {
+    overflow-y: auto;
+  }
 
   .dashboard-grid {
     display: grid;
@@ -79,20 +91,10 @@
       flex-shrink: 0;
     }
 
-    /* 
-       Internal Scrolling Logic 
-       We target the Mantine Stack inside the card to handle scrolling
-    */
+    /* Internal content fills card, scrolling handled by screen-framework widget wrapper */
     > .mantine-Stack-root {
       flex: 1;
-      overflow-y: auto;
-      padding-right: 4px; /* Space for scrollbar */
       min-height: 0;
-
-      /* Thin scrollbar styling */
-      &::-webkit-scrollbar { width: 6px; }
-      &::-webkit-scrollbar-track { background: transparent; }
-      &::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
     }
   }
 
