@@ -24,7 +24,6 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
 }
 
 .vib-avatar-content {
@@ -33,6 +32,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 50%;
+  overflow: hidden;
 }
 
 .vib-avatar-image {
