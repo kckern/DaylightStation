@@ -6,6 +6,7 @@ import FlipMove from 'react-flip-move';
 import '../FitnessSidebar.scss';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import RpmDeviceAvatar from '../components/RpmDeviceAvatar.jsx';
+import { VibrationCard } from './RealtimeCards/VibrationCard.jsx';
 import { useZoneProfiles } from '../../../hooks/useZoneProfiles.js';
 
 // Note: slugifyId has been removed - we now use explicit IDs from config
@@ -110,6 +111,9 @@ const CONFIG = {
 
 // Backward-compat constant for existing references
 const UI_LABELS = CONFIG.uiLabels;
+
+// Vibration device types that should render VibrationCard instead of the generic inline card
+const VIBRATION_DEVICE_TYPES = new Set(['vibration', 'punching_bag', 'step_platform', 'pull_up_bar']);
 
 const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   // Use the fitness context
@@ -832,7 +836,38 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                   </div>
                 );
               }
-              
+
+              // Vibration devices: render VibrationCard with live activity avatar
+              if (VIBRATION_DEVICE_TYPES.has(device.type)) {
+                const equipmentInfo = equipmentMap[String(device.deviceId)];
+                const vibDeviceName = equipmentInfo?.name || device.name || String(device.deviceId);
+                const vibEquipmentId = equipmentInfo?.id || String(device.deviceId);
+                const vibEquipmentType = equipmentInfo?.type || device.type;
+                // Get tracker snapshot from session instance
+                const tracker = fitnessContext.fitnessSessionInstance?.getVibrationTracker?.(vibEquipmentId);
+                const trackerSnapshot = tracker?.snapshot || {};
+
+                const removalCountdown = device.removalCountdown;
+                const isCountdownActive = Number.isFinite(removalCountdown);
+                const countdownWidth = isCountdownActive ? Math.round(removalCountdown * 100) : 0;
+
+                return (
+                  <div className="device-wrapper" key={`device-${device.deviceId}`}>
+                    <VibrationCard
+                      device={device}
+                      deviceName={vibDeviceName}
+                      equipmentId={vibEquipmentId}
+                      equipmentType={vibEquipmentType}
+                      trackerSnapshot={trackerSnapshot}
+                      layoutMode={layoutMode}
+                      isInactive={device.isActive === false || !!device.inactiveSince}
+                      isCountdownActive={isCountdownActive}
+                      countdownWidth={countdownWidth}
+                    />
+                  </div>
+                );
+              }
+
               const deviceIdStr = String(device.deviceId);
               const isHeartRate = device.type === 'heart_rate';
               const guestAssignment = isHeartRate ? getGuestAssignment(deviceIdStr) : null;
