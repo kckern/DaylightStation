@@ -1,4 +1,5 @@
 import React from 'react';
+import { DaylightMediaPath } from '../../../../../../lib/api.mjs';
 import { useScreenData } from '../../../../../../screen-framework/data/ScreenDataProvider.jsx';
 import { useFitnessScreen } from '../../../../FitnessScreenProvider.jsx';
 import { UpNextCard } from '../DashboardWidgets.jsx';
@@ -18,8 +19,8 @@ export default function FitnessUpNextWidget() {
       contentSource: source,
       type: 'episode',
       title: contentItem.title,
-      videoUrl: `/api/v1/play/${source}/${localId}`,
-      image: `/api/v1/display/${source}/${localId}`,
+      videoUrl: DaylightMediaPath(`api/v1/play/${source}/${localId}`),
+      image: DaylightMediaPath(`api/v1/display/${source}/${localId}`),
       duration: contentItem.duration,
     });
   };
