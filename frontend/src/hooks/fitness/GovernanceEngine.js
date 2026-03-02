@@ -616,7 +616,10 @@ export class GovernanceEngine {
             .map((selectionValue, selectionIndex) => {
               if (!selectionValue || typeof selectionValue !== 'object') return null;
               const zone = selectionValue.zone || selectionValue.zoneId || selectionValue.zone_id;
-              if (!zone) return null;
+              const vibration = selectionValue.vibration;
+
+              // Either zone-based or vibration-based selection required
+              if (!zone && !vibration) return null;
 
               const rule = selectionValue.min_participants ?? selectionValue.minParticipants ?? selectionValue.rule ?? 'all';
               const timeAllowed = Number(selectionValue.time_allowed ?? selectionValue.timeAllowed);
@@ -626,11 +629,15 @@ export class GovernanceEngine {
 
               return {
                 id: `${policyId}_${index}_${selectionIndex}`,
-                zone: String(zone),
+                zone: zone ? String(zone) : null,
                 rule,
                 timeAllowedSeconds: Math.max(1, Math.round(timeAllowed)),
                 weight: Number.isFinite(weight) && weight > 0 ? weight : 1,
-                label: selectionValue.label || selectionValue.name || null
+                label: selectionValue.label || selectionValue.name || null,
+                vibration: vibration ? String(vibration) : null,
+                criteria: selectionValue.criteria || null,
+                target: Number(selectionValue.target) || null,
+                count: Number(selectionValue.count) || null,
               };
             })
             .filter(Boolean);
@@ -1764,6 +1771,41 @@ export class GovernanceEngine {
     return `${requiredCount} participant${requiredCount === 1 ? '' : 's'}`;
   }
 
+  /**
+   * Evaluate a vibration-based challenge against the current tracker state.
+   * @param {Object} selection - { vibration: equipmentId, criteria, target, count? }
+   * @returns {boolean} Whether the challenge criteria are satisfied
+   */
+  _evaluateVibrationChallenge(selection) {
+    if (!selection?.vibration || !this.session?.getVibrationTracker) return false;
+    const tracker = this.session.getVibrationTracker(selection.vibration);
+    if (!tracker) return false;
+
+    const snap = tracker.snapshot;
+    const criteria = selection.criteria;
+    const target = Number(selection.target);
+
+    if (!Number.isFinite(target) || target <= 0) return false;
+
+    switch (criteria) {
+      case 'duration':
+        return snap.sessionDurationMs >= target * 1000;
+
+      case 'impacts':
+        return snap.estimatedImpacts >= target;
+
+      case 'intensity': {
+        const count = Number(selection.count) || 1;
+        const hits = (snap.recentIntensityHistory || []).filter(m => m >= target);
+        return hits.length >= count;
+      }
+
+      default:
+        getLogger().warn('governance.vibration_challenge.unknown_criteria', { criteria });
+        return false;
+    }
+  }
+
   _pickIntervalMs(rangeSeconds) {
     if (!Array.isArray(rangeSeconds) || rangeSeconds.length < 2) return 180000;
     const min = rangeSeconds[0];
@@ -2006,6 +2048,24 @@ export class GovernanceEngine {
 
     const buildChallengeSummary = (challenge) => {
         if (!challenge) return null;
+
+        // Vibration-based challenge — no zone/participant evaluation needed
+        if (challenge.vibration) {
+          const satisfied = this._evaluateVibrationChallenge(challenge);
+          const tracker = this.session?.getVibrationTracker?.(challenge.vibration);
+          const snap = tracker?.snapshot || {};
+          return {
+            satisfied,
+            metUsers: satisfied ? activeParticipants : [],
+            missingUsers: satisfied ? [] : activeParticipants,
+            actualCount: satisfied ? 1 : 0,
+            requiredCount: 1,
+            zoneLabel: challenge.label || challenge.vibration,
+            vibrationSnapshot: snap
+          };
+        }
+
+        // Existing zone-based logic follows unchanged...
         const zoneId = challenge.zone;
         const zoneInfo = this._getZoneInfo(zoneId);
         const requiredRank = this._getZoneRank(zoneId) ?? 0;
