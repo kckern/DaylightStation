@@ -1,6 +1,13 @@
 // frontend/src/screen-framework/input/adapters/NumpadAdapter.js
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { translateAction, translateSecondary } from '../actionMap.js';
+import getLogger from '../../../lib/logging/Logger.js';
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'NumpadAdapter' });
+  return _logger;
+}
 
 export class NumpadAdapter {
   constructor(actionBus, { keyboardId, fetchFn } = {}) {
@@ -16,10 +23,12 @@ export class NumpadAdapter {
       try {
         this.keymap = await this.fetchFn(`/api/v1/home/keyboard/${this.keyboardId}`);
       } catch (err) {
-        console.warn(`NumpadAdapter: failed to fetch keymap for "${this.keyboardId}"`, err);
+        logger().warn('numpad.keymap-fetch-failed', { keyboardId: this.keyboardId, error: err.message });
         this.keymap = {};
       }
     }
+
+    logger().info('numpad.attach', { keyboardId: this.keyboardId, keymapSize: this.keymap ? Object.keys(this.keymap).length : 0 });
 
     this.handler = (event) => {
       if (!this.keymap) return;
@@ -28,6 +37,7 @@ export class NumpadAdapter {
 
       const result = translateAction(entry.function, entry.params);
       if (result) {
+        logger().debug('numpad.key', { key: event.key, action: result.action });
         this.actionBus.emit(result.action, result.payload);
         return;
       }
@@ -35,6 +45,7 @@ export class NumpadAdapter {
       if (entry.secondary) {
         const fallback = translateSecondary(entry.secondary);
         if (fallback) {
+          logger().debug('numpad.key', { key: event.key, action: fallback.action, source: 'secondary' });
           this.actionBus.emit(fallback.action, fallback.payload);
         }
       }
@@ -48,5 +59,6 @@ export class NumpadAdapter {
       this.handler = null;
     }
     this.keymap = null;
+    logger().debug('numpad.destroy', {});
   }
 }
