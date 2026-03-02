@@ -1,3 +1,11 @@
+import getLogger from '../../lib/logging/Logger.js';
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'DataManager' });
+  return _logger;
+}
+
 /**
  * DataManager - Handles data fetching, caching, and subscriptions
  *
@@ -26,6 +34,7 @@ export class DataManager {
     }
     const data = await response.json();
     this.cache.set(source, { data, timestamp: Date.now() });
+    logger().debug('datamanager.fetched', { source });
     return data;
   }
 
@@ -58,7 +67,7 @@ export class DataManager {
     // Initial fetch
     this.fetch(source)
       .then(data => callback(data))
-      .catch(err => console.error(`DataManager fetch error: ${source}`, err));
+      .catch(err => logger().error('datamanager.fetch-failed', { source, error: err.message }));
 
     // Set up refresh interval if specified
     if (refreshInterval && !this.intervals.has(source)) {
@@ -70,7 +79,7 @@ export class DataManager {
               subscribers.forEach(cb => cb(data));
             }
           })
-          .catch(err => console.error(`DataManager refresh error: ${source}`, err));
+          .catch(err => logger().error('datamanager.refresh-failed', { source, error: err.message }));
       }, refreshInterval);
       this.intervals.set(source, intervalId);
     }
