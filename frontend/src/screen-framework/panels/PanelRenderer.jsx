@@ -1,6 +1,7 @@
 // frontend/src/screen-framework/panels/PanelRenderer.jsx
 import React from 'react';
 import { getWidgetRegistry } from '../widgets/registry.js';
+import { useSlotState } from '../slots/ScreenSlotProvider.jsx';
 import './PanelRenderer.css';
 
 function themeVars(theme) {
@@ -19,10 +20,42 @@ function flexItemStyle(node) {
   };
 }
 
+function SlotNode({ node }) {
+  const slotState = useSlotState(node.slot);
+  const theme = themeVars(node.theme);
+
+  if (slotState) {
+    const registry = getWidgetRegistry();
+    const Component = registry.get(slotState.widget);
+    if (!Component) return null;
+
+    return (
+      <div
+        className="screen-panel screen-panel--widget screen-panel--slot-active"
+        style={{ ...flexItemStyle(node), ...theme }}
+      >
+        <Component {...slotState.props} />
+      </div>
+    );
+  }
+
+  // Render default subtree
+  if (node.default) {
+    return <PanelRenderer node={{ ...node.default, grow: node.grow, shrink: node.shrink, basis: node.basis }} />;
+  }
+
+  return null;
+}
+
 export function PanelRenderer({ node }) {
   if (!node) return null;
 
   const theme = themeVars(node.theme);
+
+  // Slot node — dynamic replacement
+  if (node.slot) {
+    return <SlotNode node={node} />;
+  }
 
   // Leaf node — render widget
   if (node.widget) {
@@ -55,7 +88,7 @@ export function PanelRenderer({ node }) {
         }}
       >
         {node.children.map((child, i) => (
-          <PanelRenderer key={child.widget || `panel-${i}`} node={child} />
+          <PanelRenderer key={child.widget || child.slot || `panel-${i}`} node={child} />
         ))}
       </div>
     );
