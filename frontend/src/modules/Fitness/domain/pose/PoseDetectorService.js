@@ -17,9 +17,22 @@ const MODEL_TYPES = {
 
 const BACKENDS = ['webgl', 'wasm', 'cpu'];
 
+/**
+ * Detect optimal default backend based on browser engine.
+ * Firefox's WebGL implementation has higher per-frame overhead for TF.js
+ * inference compared to Chromium, but Firefox's SpiderMonkey WASM engine
+ * is competitive. Prefer WASM on Firefox for smoother pose detection.
+ */
+const getDefaultBackend = () => {
+  if (typeof navigator !== 'undefined' && /Firefox/i.test(navigator.userAgent)) {
+    return 'wasm';
+  }
+  return 'webgl';
+};
+
 const DEFAULT_CONFIG = {
   modelType: MODEL_TYPES.full,
-  backend: 'webgl',
+  backend: getDefaultBackend(),
   targetResolution: 240,
   enableSmoothing: true,
   minPoseConfidence: 0.5,
