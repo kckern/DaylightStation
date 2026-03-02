@@ -410,6 +410,32 @@ export function createListRouter(config) {
         info = await adapter.getContainerInfo(compoundId);
       }
 
+      // === Playlist-as-show wrapping ===
+      // When the container is a playlist, return a single "show" container item
+      // instead of the playlist's individual tracks. This makes playlists appear
+      // as show cards in FitnessMenu. resolvePlayables() (used by FitnessShow)
+      // calls the adapter directly and is NOT affected by this HTTP-layer change.
+      if (info?.type === 'playlist') {
+        const playlistItem = {
+          id: `${source}:${localId}`,
+          localId: String(localId),
+          title: containerInfo?.title || info?.title || localId,
+          label: containerInfo?.title || info?.title || localId,
+          itemType: 'container',
+          childCount: info?.childCount || items.length,
+          thumbnail: containerInfo?.thumbnail || info?.image,
+          metadata: {
+            type: 'show',
+            sourceType: 'playlist',
+            rating: null
+          },
+          actions: {
+            list: { contentId: `${source}:${localId}`, [source]: String(localId) }
+          }
+        };
+        items = [playlistItem];
+      }
+
       // Build parents map from items' hierarchy metadata (canonical relative fields)
       let parents = null;
       if (modifiers.playable && items.length > 0) {
