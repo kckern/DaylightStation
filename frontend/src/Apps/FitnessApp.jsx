@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { MantineProvider, Paper, Title, Group, Text, Alert, Grid } from '@mantine/core';
 import '@mantine/core/styles.css';
 import "./FitnessApp.scss";
@@ -17,6 +17,15 @@ import { useFitnessContext } from '../context/FitnessContext.jsx';
 import { FitnessFrame } from '../modules/Fitness/frames';
 import { useFitnessUrlParams } from '../hooks/fitness/useFitnessUrlParams.js';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { ScreenDataProvider } from '../screen-framework/data/ScreenDataProvider.jsx';
+import { ScreenSlotProvider } from '../screen-framework/slots/ScreenSlotProvider.jsx';
+import { PanelRenderer } from '../screen-framework/panels/PanelRenderer.jsx';
+import { FitnessScreenProvider } from '../modules/Fitness/FitnessScreenProvider.jsx';
+import { registerBuiltinWidgets } from '../screen-framework/widgets/builtins.js';
+// Ensure fitness modules are registered in widget registry
+import '../modules/Fitness/FitnessModules/index.js';
+
+registerBuiltinWidgets();
 
 const FitnessApp = () => {
   // NOTE: This app targets a large touchscreen TV device. To reduce perceived latency
@@ -28,7 +37,7 @@ const FitnessApp = () => {
   const [fitnessConfiguration, setFitnessConfiguration] = useState({});
   const [fetchError, setFetchError] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [currentView, setCurrentView] = useState('menu'); // 'menu', 'users', 'show', 'module'
+  const [currentView, setCurrentView] = useState('menu'); // 'home', 'menu', 'users', 'show', 'module'
   const [activeCollection, setActiveCollection] = useState(null);
   const [selectedShow, setSelectedShow] = useState(null);
   const [activeModule, setActiveModule] = useState(null); // { id, ...manifest }
@@ -635,6 +644,12 @@ const FitnessApp = () => {
     return Array.isArray(src) ? src : [];
   }, [fitnessConfiguration, contentSource]);
 
+  // Derive home screen config from fitness configuration
+  const homeScreenConfig = useMemo(() => {
+    const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
+    return root?.home_screen || null;
+  }, [fitnessConfiguration]);
+
   // Derive sequential labels config for route-based play blocking
   const sequentialLabelSet = useMemo(() => {
     const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
@@ -709,6 +724,14 @@ const FitnessApp = () => {
     }
   };
 
+  const handleHomePlay = useCallback((queueItem) => {
+    setFitnessPlayQueue(prev => [...prev, queueItem]);
+    const episodeId = String(queueItem.id).replace(/^[a-z]+:/i, '');
+    if (episodeId) {
+      navigate(`/fitness/play/${episodeId}`, { replace: true });
+    }
+  }, [navigate]);
+
   const handleNavigate = (type, target, item) => {
     logger.info('fitness-navigate', { type, target });
 
@@ -769,6 +792,8 @@ const FitnessApp = () => {
         setSelectedShow(null);
         if (target.view === 'users') {
           navigate('/fitness/users', { replace: true });
+        } else if (target.view === 'home') {
+          navigate('/fitness/home', { replace: true });
         }
         break;
 
@@ -905,6 +930,8 @@ const FitnessApp = () => {
     // Set view based on URL
     if (view === 'users') {
       setCurrentView('users');
+    } else if (view === 'home') {
+      setCurrentView('home');
     } else if (view === 'show' && id) {
       setSelectedShow(id);
       setCurrentView('show');
@@ -927,12 +954,18 @@ const FitnessApp = () => {
 
   // Initialize to the first nav item once navItems arrive
   useEffect(() => {
-    // Don't auto-navigate if we're on a special view like 'users' or 'show'
-    if (currentView === 'users' || currentView === 'show') {
+    // Don't auto-navigate if we're on a special view like 'users', 'show', or 'home'
+    if (currentView === 'users' || currentView === 'show' || currentView === 'home') {
       return;
     }
     // Don't auto-navigate if URL already set up the initial state
     if (urlInitialized && (urlState.view !== 'menu' || urlState.id || urlState.ids)) {
+      return;
+    }
+    // Default to home view when home_screen config exists and no collection/module selected
+    if (homeScreenConfig && activeCollection == null && activeModule == null && currentView === 'menu') {
+      setCurrentView('home');
+      navigate('/fitness/home', { replace: true });
       return;
     }
     if (activeCollection == null && activeModule == null && navItems.length > 0) {
@@ -949,7 +982,7 @@ const FitnessApp = () => {
         handleNavigate(firstItem.type, firstItem.target, firstItem);
       }
     }
-  }, [navItems, activeCollection, activeModule, currentView, urlInitialized, urlState]);
+  }, [navItems, activeCollection, activeModule, currentView, urlInitialized, urlState, homeScreenConfig, navigate]);
 
   const queueSize = fitnessPlayQueue.length;
   useEffect(() => {
@@ -1075,6 +1108,19 @@ const FitnessApp = () => {
               className={fitnessPlayQueue.length > 0 || loading ? 'fitness-frame--hidden' : ''}
             >
               <div className={`fitness-main-content ${currentView === 'users' ? 'fitness-cam-active' : ''}`}>
+                {currentView === 'home' && homeScreenConfig && (
+                  <FitnessScreenProvider
+                    onPlay={handleHomePlay}
+                    onNavigate={handleNavigate}
+                    onCtaAction={(cta) => logger.info('fitness-cta-action', { action: cta.action })}
+                  >
+                    <ScreenDataProvider sources={homeScreenConfig.data || {}}>
+                      <ScreenSlotProvider>
+                        <PanelRenderer node={homeScreenConfig.layout} />
+                      </ScreenSlotProvider>
+                    </ScreenDataProvider>
+                  </FitnessScreenProvider>
+                )}
                 {currentView === 'users' && (
                   <FitnessModuleContainer pluginId="fitness_session" mode="standalone" />
                 )}
