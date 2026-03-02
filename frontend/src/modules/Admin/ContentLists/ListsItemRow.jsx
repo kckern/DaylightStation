@@ -721,6 +721,7 @@ function ContentSearchCombobox({ value, onChange }) {
   const combobox = useCombobox({
     onDropdownClose: () => {
       combobox.resetSelectedOption();
+      userNavigatedRef.current = false;
       setHighlightedIdx(-1);
     },
   });
@@ -742,6 +743,7 @@ function ContentSearchCombobox({ value, onChange }) {
   const prevIdxRef = useRef(-1);
   const scrollAnimRef = useRef(null);
   const autoResolveRef = useRef(null);
+  const userNavigatedRef = useRef(false);
 
   // Cleanup blur timeout and auto-resolve on unmount
   useEffect(() => {
@@ -783,6 +785,7 @@ function ContentSearchCombobox({ value, onChange }) {
     setNavStack([]);
     setCurrentParent(null);
     setHighlightedIdx(-1);
+    userNavigatedRef.current = false;
     setPendingApp(null);
     setParamOptions(null);
     setPagination(null);
@@ -1010,6 +1013,7 @@ function ContentSearchCombobox({ value, onChange }) {
           isContainer: CONTAINER_TYPES.includes(item.metadata?.type || item.type)
         }));
         setBrowseItems(children);
+        userNavigatedRef.current = false;
         setHighlightedIdx(0);
         log.info('container_children.results', {
           containerId, containerTitle, source,
@@ -1021,6 +1025,7 @@ function ContentSearchCombobox({ value, onChange }) {
       }
     } catch (err) {
       adminLog('ContentSearchCombobox').error('container_children.error', { containerId, source, error: err.message });
+      userNavigatedRef.current = false;
       setHighlightedIdx(0);
     } finally {
       setLoadingBrowse(false);
@@ -1127,6 +1132,7 @@ function ContentSearchCombobox({ value, onChange }) {
       // Find and highlight the container we came from
       const normalizedContextId = currentContextId?.replace(/:\s+/g, ':');
       const contextIndex = libraryItems.findIndex(i => i.value === normalizedContextId);
+      userNavigatedRef.current = false;
       setHighlightedIdx(contextIndex >= 0 ? contextIndex : 0);
 
       if (contextIndex >= 0) {
@@ -1134,6 +1140,7 @@ function ContentSearchCombobox({ value, onChange }) {
       }
     } catch (err) {
       adminLog('ContentSearchCombobox').error('library_level.error', { libraryId, source, error: err.message });
+      userNavigatedRef.current = false;
       setHighlightedIdx(0);
     } finally {
       setLoadingBrowse(false);
@@ -1201,17 +1208,20 @@ function ContentSearchCombobox({ value, onChange }) {
 
       setBrowseItems(siblings);
       setCurrentParent(newContext);
+      userNavigatedRef.current = false;
       setHighlightedIdx(0);
       log.info('parent_level.results', { parentKey, source, count: siblings.length, durationMs: Math.round(performance.now() - t0) });
 
       // Find and highlight the parent we came from
       const parentIndex = siblings.findIndex(s => s.value === `${source}:${parentKey}`);
       if (parentIndex >= 0) {
+        userNavigatedRef.current = false;
         setHighlightedIdx(parentIndex);
         scrollOptionIntoView(`[data-value="${source}:${parentKey}"]`);
       }
     } catch (err) {
       adminLog('ContentSearchCombobox').error('parent_level.error', { parentKey, source, error: err.message });
+      userNavigatedRef.current = false;
       setHighlightedIdx(0);
     } finally {
       setLoadingBrowse(false);
@@ -1303,6 +1313,7 @@ function ContentSearchCombobox({ value, onChange }) {
         // Highlight current item
         const normalizedVal = value?.replace(/:\s+/g, ':');
         const currentIndex = siblings.findIndex(s => s.value === normalizedVal);
+        userNavigatedRef.current = false;
         setHighlightedIdx(currentIndex >= 0 ? currentIndex : 0);
 
         scrollOptionIntoView(`[data-value="${normalizedVal}"]`);
@@ -1338,6 +1349,7 @@ function ContentSearchCombobox({ value, onChange }) {
       const currentIndex = data.referenceIndex >= 0
         ? data.referenceIndex
         : data.browseItems.findIndex(s => s.value === normalizedVal);
+      userNavigatedRef.current = false;
       setHighlightedIdx(currentIndex >= 0 ? currentIndex : 0);
       scrollOptionIntoView(`[data-value="${normalizedVal}"]`);
     } catch (err) {
@@ -1388,6 +1400,7 @@ function ContentSearchCombobox({ value, onChange }) {
       const currentIndex = cached.data.referenceIndex >= 0
         ? cached.data.referenceIndex
         : cached.data.browseItems.findIndex(s => s.value === normalizedVal);
+      userNavigatedRef.current = false;
       setHighlightedIdx(currentIndex >= 0 ? currentIndex : 0);
       // Scroll to current item
       scrollOptionIntoView(`[data-value="${normalizedVal}"]`);
@@ -1401,6 +1414,7 @@ function ContentSearchCombobox({ value, onChange }) {
           type: contentInfo.type, thumbnail: contentInfo.thumbnail, grandparent: contentInfo.grandparent,
           parent: contentInfo.parent, library: contentInfo.library, itemCount: contentInfo.itemCount,
         }]);
+        userNavigatedRef.current = false;
         setHighlightedIdx(0);
       }
       setLoadingBrowse(true);
@@ -1413,6 +1427,7 @@ function ContentSearchCombobox({ value, onChange }) {
           const currentIndex = data.referenceIndex >= 0
             ? data.referenceIndex
             : data.browseItems.findIndex(s => s.value === normalizedVal);
+          userNavigatedRef.current = false;
           setHighlightedIdx(currentIndex >= 0 ? currentIndex : 0);
           scrollOptionIntoView(`[data-value="${normalizedVal}"]`);
         }
@@ -1428,6 +1443,7 @@ function ContentSearchCombobox({ value, onChange }) {
           type: contentInfo.type, thumbnail: contentInfo.thumbnail, grandparent: contentInfo.grandparent,
           parent: contentInfo.parent, library: contentInfo.library, itemCount: contentInfo.itemCount,
         }]);
+        userNavigatedRef.current = false;
         setHighlightedIdx(0);
       }
       fetchSiblings();
@@ -1521,7 +1537,7 @@ function ContentSearchCombobox({ value, onChange }) {
     // input is always accepted, even when no results match.
     if (e.key === 'Enter') {
       e.preventDefault();
-      const item = items[highlightedIdx];
+      const item = userNavigatedRef.current ? items[highlightedIdx] : null;
       if (item) {
         log.info('key.enter.select', { value: item.value, title: item.title });
         handleOptionSelect(item.value);
@@ -1535,7 +1551,7 @@ function ContentSearchCombobox({ value, onChange }) {
       resetComboboxState();
       return;
     } else if (e.key === 'Tab') {
-      const item = items[highlightedIdx];
+      const item = userNavigatedRef.current ? items[highlightedIdx] : null;
       if (item) {
         log.info('key.tab.select', { value: item.value, title: item.title });
         handleOptionSelect(item.value);
@@ -1557,11 +1573,13 @@ function ContentSearchCombobox({ value, onChange }) {
       const newIdx = (highlightedIdx + 1) % items.length;
       log.debug('key.arrow_down', { from: highlightedIdx, to: newIdx, itemTitle: items[newIdx]?.title });
       setHighlightedIdx(newIdx);
+      userNavigatedRef.current = true;
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       const newIdx = highlightedIdx <= 0 ? items.length - 1 : highlightedIdx - 1;
       log.debug('key.arrow_up', { from: highlightedIdx, to: newIdx, itemTitle: items[newIdx]?.title });
       setHighlightedIdx(newIdx);
+      userNavigatedRef.current = true;
     } else if (e.key === 'ArrowRight') {
       const item = items[highlightedIdx];
       if (item && isContainerItem(item)) {
@@ -1849,6 +1867,7 @@ function ContentSearchCombobox({ value, onChange }) {
             const val = e.currentTarget.value;
             log.debug('input.change', { value: val, prevValue: searchQuery });
             setSearchQuery(val);
+            userNavigatedRef.current = false;
             setHighlightedIdx(0);
             combobox.openDropdown();
           }}
