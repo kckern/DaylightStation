@@ -99,6 +99,7 @@ export function ImageFrame({
   const startTimeRef = useRef(null);
   const rafRef = useRef(null);
   const [loaded, setLoaded] = useState(false);
+  const [enrichedPeople, setEnrichedPeople] = useState(null);
 
   const imageId = media?.id || null;
   const slideshow = useMemo(() => media?.slideshow || {}, [media?.slideshow]);
@@ -127,9 +128,42 @@ export function ImageFrame({
     };
   }, [imageId]);
 
+  // JIT fetch face data from /info/ endpoint for smart zoom
+  useEffect(() => {
+    setEnrichedPeople(null); // Reset for new image
+    if (!imageId) return;
+    if (hasFaces) return; // Already have face data from queue
+
+    let cancelled = false;
+    const fetchFaceData = async () => {
+      try {
+        const response = await fetch(`/api/v1/info/${encodeURIComponent(imageId)}`);
+        if (!response.ok || cancelled) return;
+        const data = await response.json();
+        const infoPeople = data.metadata?.people;
+        if (!cancelled && infoPeople?.length > 0) {
+          const hasFaceData = infoPeople.some(p => p.faces?.length > 0);
+          if (hasFaceData) {
+            logger.debug('image-frame-jit-faces', {
+              imageId,
+              peopleCount: infoPeople.length,
+              faceCount: infoPeople.reduce((n, p) => n + (p.faces?.length || 0), 0),
+            });
+            setEnrichedPeople(infoPeople);
+          }
+        }
+      } catch (err) {
+        logger.warn('image-frame-jit-faces-error', { imageId, error: err.message });
+      }
+    };
+    fetchFaceData();
+    return () => { cancelled = true; };
+  }, [imageId, hasFaces]);
+
+  const effectivePeople = useMemo(() => enrichedPeople || people, [enrichedPeople, people]);
   const zoomTarget = useMemo(
-    () => computeZoomTarget({ people, focusPerson, zoom }),
-    [people, focusPerson, zoom]
+    () => computeZoomTarget({ people: effectivePeople, focusPerson, zoom }),
+    [effectivePeople, focusPerson, zoom]
   );
 
   useEffect(() => {
