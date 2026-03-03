@@ -117,6 +117,18 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const { restore } = useScreen();
+  const posterRef = useRef(null);
+  const [posterWidth, setPosterWidth] = useState(0);
+
+  useLayoutEffect(() => {
+    const el = posterRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      setPosterWidth(Math.round(entry.contentRect.width));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [loading]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -196,7 +208,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       {/* Header (25%) */}
       <div className="session-detail__header">
         {header?.posterUrl ? (
-          <div className="session-detail__poster">
+          <div ref={posterRef} className="session-detail__poster">
             <img
               src={header.posterUrl}
               alt=""
@@ -204,7 +216,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
             />
           </div>
         ) : (
-          <div className="session-detail__poster session-detail__poster--placeholder" />
+          <div ref={posterRef} className="session-detail__poster session-detail__poster--placeholder" />
         )}
 
         <div className="session-detail__meta">
@@ -252,7 +264,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
 
       {/* Timeline (35%) */}
       <div className="session-detail__timeline">
-        <FitnessTimeline sessionData={sessionData} />
+        <FitnessTimeline sessionData={sessionData} maxAvatarSize={posterWidth} />
       </div>
     </div>
   );
