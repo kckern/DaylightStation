@@ -869,6 +869,7 @@ const Player = forwardRef(function Player(props, ref) {
           contentId={audioConfig.contentId}
           behavior={audioConfig.behavior || 'pause'}
           mode={audioConfig.mode || 'hidden'}
+          duckLevel={audioConfig.duckLevel}
           currentItemMediaType={currentItemMediaType}
           Player={Player}
           ignoreKeys={ignoreKeys}
