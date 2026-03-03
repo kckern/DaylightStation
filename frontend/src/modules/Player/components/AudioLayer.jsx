@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
+import React, { useRef, useEffect, useCallback, useState } from 'react';
 import PropTypes from 'prop-types';
 import getLogger from '../../../lib/logging/Logger.js';
 
