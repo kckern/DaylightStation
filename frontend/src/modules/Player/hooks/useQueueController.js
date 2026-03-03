@@ -31,6 +31,7 @@ export function useQueueController({ play, queue, clear, shuffle }) {
   const [originalQueue, setOriginalQueue] = useState([]);
   const [isShuffle, setIsShuffle] = useState(!!play?.shuffle || !!queue?.shuffle || !!shuffle || false);
   const [shaderUserCycled, setShaderUserCycled] = useState(false);
+  const [queueAudio, setQueueAudio] = useState(null);
 
   const isQueue = !!queue || (play && (play.playlist || play.queue)) || Array.isArray(play);
   const contentRef = play?.contentId || queue?.contentId
@@ -84,6 +85,7 @@ export function useQueueController({ play, queue, clear, shuffle }) {
 
     async function initQueue() {
       let newQueue = [];
+      let fetchedAudio = null;
 
       // Extract overrides that should apply to all generated items
       const sourceObj = (play && typeof play === 'object' && !Array.isArray(play)) ? play :
@@ -102,8 +104,9 @@ export function useQueueController({ play, queue, clear, shuffle }) {
       } else if ((play && typeof play === 'object') || (queue && typeof queue === 'object')) {
         if (contentRef) {
           const shuffleParam = isShuffle ? '?shuffle=true' : '';
-          const { items } = await DaylightAPI(`api/v1/queue/${contentRef}${shuffleParam}`);
-          newQueue = items.map(item => ({ ...item, ...itemOverrides, guid: guid() }));
+          const response = await DaylightAPI(`api/v1/queue/${contentRef}${shuffleParam}`);
+          newQueue = response.items.map(item => ({ ...item, ...itemOverrides, guid: guid() }));
+          fetchedAudio = response.audio || null;
         } else if (play?.media) {
           // Inline media object — no API resolution needed
           newQueue = [{ ...play, ...itemOverrides, guid: guid() }];
@@ -112,6 +115,7 @@ export function useQueueController({ play, queue, clear, shuffle }) {
       if (!isCancelled) {
         setQueue(newQueue);
         setOriginalQueue(newQueue);
+        setQueueAudio(fetchedAudio);
       }
     }
     initQueue().catch((error) => {
@@ -236,6 +240,7 @@ export function useQueueController({ play, queue, clear, shuffle }) {
     playbackRate: play?.playbackRate || play?.playbackrate || queue?.playbackRate || queue?.playbackrate || 1,
     setQueue,
     advance,
-    queuePosition
+    queuePosition,
+    queueAudio
   };
 }
