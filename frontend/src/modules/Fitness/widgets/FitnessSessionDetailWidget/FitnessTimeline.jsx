@@ -93,24 +93,34 @@ function buildHrAreaPath(hrSeries, zoneSeries, effectiveTicks, plotWidth, laneTo
 
   const baseline = laneTop + laneHeight;
 
+  // Fill-forward null zones to avoid false transitions
+  const zones = new Array(interpolated.length);
+  let lastZone = null;
+  for (let i = 0; i < interpolated.length; i++) {
+    const z = zoneSeries?.[i] ?? null;
+    if (z != null) lastZone = z;
+    zones[i] = lastZone;
+  }
+
   const fills = [];
   let segStart = firstValid;
   for (let i = firstValid; i <= lastValid + 1; i++) {
-    const currentZone = i <= lastValid ? (zoneSeries?.[i] || null) : null;
-    const prevZone = i > firstValid ? (zoneSeries?.[i - 1] || null) : null;
+    const currentZone = i <= lastValid ? zones[i] : null;
+    const prevZone = i > firstValid ? zones[i - 1] : null;
 
     if (i === lastValid + 1 || (i > firstValid && currentZone !== prevZone)) {
-      const segEnd = i;
       const zone = prevZone || 'rest';
       const color = ZONE_COLOR_MAP[zone] || ZONE_COLOR_MAP.default || '#888';
 
+      // Extend one tick past segment end to overlap with next segment (eliminates gaps)
+      const drawEnd = Math.min(i, lastValid);
       let d = '';
-      for (let j = segStart; j < segEnd; j++) {
+      for (let j = segStart; j <= drawEnd; j++) {
         const x = tickToX(j, effectiveTicks, plotWidth);
         const y = hrToY(interpolated[j]);
         d += j === segStart ? `M${x},${y}` : ` L${x},${y}`;
       }
-      const xEnd = tickToX(segEnd - 1, effectiveTicks, plotWidth);
+      const xEnd = tickToX(drawEnd, effectiveTicks, plotWidth);
       const xStart = tickToX(segStart, effectiveTicks, plotWidth);
       d += ` L${xEnd},${baseline} L${xStart},${baseline} Z`;
 
@@ -122,7 +132,7 @@ function buildHrAreaPath(hrSeries, zoneSeries, effectiveTicks, plotWidth, laneTo
   return { fills };
 }
 
-export default function FitnessTimeline({ sessionData }) {
+export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
   const containerRef = useRef(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
@@ -194,26 +204,60 @@ export default function FitnessTimeline({ sessionData }) {
   return (
     <div ref={containerRef} className="fitness-timeline">
       <svg width={width} height={height} className="fitness-timeline__svg">
-        {lanes.map((lane) => (
-          <g key={lane.userId}>
-            {lane.fills.map((fill, i) => (
-              <path
-                key={i}
-                d={fill.d}
-                fill={fill.color}
-                opacity={0.6}
-                stroke="none"
-              />
-            ))}
-            <text
-              x={CHART_MARGIN.left + 4}
-              y={lane.laneTop + 12}
-              className="fitness-timeline__label"
-            >
-              {lane.name}
-            </text>
-          </g>
-        ))}
+        <defs>
+          {lanes.map((lane) => {
+            const avatarSize = maxAvatarSize > 0 ? Math.min(lane.laneHeight, maxAvatarSize) : lane.laneHeight;
+            const r = avatarSize / 2;
+            const cx = r;
+            const cy = lane.laneTop + lane.laneHeight / 2;
+            return (
+              <clipPath key={`clip-${lane.userId}`} id={`avatar-clip-${lane.userId}`}>
+                <circle cx={cx} cy={cy} r={r} />
+              </clipPath>
+            );
+          })}
+        </defs>
+        {lanes.map((lane) => {
+          const size = maxAvatarSize > 0 ? Math.min(lane.laneHeight, maxAvatarSize) : lane.laneHeight;
+          const r = size / 2;
+          const cx = r;
+          const cy = lane.laneTop + lane.laneHeight / 2;
+          const borderWidth = 3;
+          return (
+            <g key={lane.userId}>
+              {lane.fills.map((fill, i) => (
+                <path
+                  key={i}
+                  d={fill.d}
+                  fill={fill.color}
+                  opacity={0.6}
+                  stroke="none"
+                />
+              ))}
+              {lane.avatarUrl && (
+                <>
+                  <image
+                    href={lane.avatarUrl}
+                    x={0}
+                    y={lane.laneTop + (lane.laneHeight - size) / 2}
+                    width={size}
+                    height={size}
+                    clipPath={`url(#avatar-clip-${lane.userId})`}
+                    preserveAspectRatio="xMidYMid slice"
+                  />
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={r - borderWidth / 2}
+                    fill="none"
+                    stroke="rgba(0, 0, 0, 0.7)"
+                    strokeWidth={borderWidth}
+                  />
+                </>
+              )}
+            </g>
+          );
+        })}
       </svg>
     </div>
   );

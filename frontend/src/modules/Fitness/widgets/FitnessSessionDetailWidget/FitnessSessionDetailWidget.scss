@@ -5,6 +5,8 @@
   width: 100%;
   overflow: hidden;
   background: transparent;
+  padding-bottom: 8px;
+  box-sizing: border-box;
 
   // Header row (25%)
   &__header {
