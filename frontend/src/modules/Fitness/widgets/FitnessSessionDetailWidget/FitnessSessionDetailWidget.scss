@@ -41,6 +41,32 @@
 
   &__thumb {
     aspect-ratio: 16/9;
+    position: relative;
+  }
+
+  &__thumb-desc {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 24px 8px 6px;
+    background: linear-gradient(
+      rgba(0, 0, 0, 0) 0%,
+      rgba(0, 0, 0, 0.4) 15%,
+      rgba(0, 0, 0, 0.6) 30%,
+      rgba(0, 0, 0, 0.8) 50%,
+      rgba(0, 0, 0, .9) 100%
+    );
+    font-size: 0.7rem;
+    line-height: 1.3;
+    color: rgba(255, 255, 255, 0.85);
+
+    span {
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
   }
 
   // Center meta: two rows stacked vertically
@@ -68,13 +94,22 @@
     border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   }
 
-  // Metadata row
+  // Metadata area — stats row + voice memos stacked
   &__meta-bottom {
     flex: 1 1 0;
     display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    overflow-y: auto;
+    min-height: 0;
+  }
+
+  &__stats-row {
+    display: flex;
     flex-direction: row;
     align-items: center;
-    gap: 0;
+    flex-shrink: 0;
   }
 
   &__meta-item {
@@ -97,6 +132,40 @@
   &__coins {
     color: #f5c542;
     font-weight: 700;
+  }
+
+  &__suffer {
+    color: #fc4c02;
+    font-weight: 700;
+  }
+
+  &__memos {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    flex-shrink: 0;
+  }
+
+  &__memo {
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  &__memo-icon {
+    flex-shrink: 0;
+    font-size: 0.7rem;
+    line-height: 1.3;
+  }
+
+  &__memo-text {
+    font-size: 0.7rem;
+    line-height: 1.3;
+    color: rgba(255, 255, 255, 0.4);
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   // Chart row (40%)

@@ -120,30 +120,47 @@ function SessionsCard({ sessions, onSessionClick, selectedSessionId }) {
                         )}
                       </div>
 
-                      {s.participants && Object.keys(s.participants).length > 0 && (
-                        <div className="session-row__participants">
-                          {Object.entries(s.participants).map(([id, p]) => (
-                            <span key={id} className="session-row__participant">
-                              <img
-                                src={`/api/v1/static/users/${id}`}
-                                alt={p.displayName}
-                                title={p.displayName}
-                                className="session-avatar"
-                                onError={(e) => { e.target.style.display = 'none'; }}
-                              />
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                      {(() => {
+                        const participantIds = s.participants ? Object.keys(s.participants) : [];
+                        const memoText = s.voiceMemos?.length > 0
+                          ? s.voiceMemos.map(m => m.transcript).filter(Boolean).join(' \u2022 ')
+                          : null;
+                        const isSolo = participantIds.length === 1;
+
+                        return (
+                          <>
+                            {participantIds.length > 0 && (
+                              <div className={`session-row__participants${isSolo && memoText ? ' session-row__participants--with-memo' : ''}`}>
+                                {Object.entries(s.participants).map(([id, p]) => (
+                                  <span key={id} className="session-row__participant">
+                                    <img
+                                      src={`/api/v1/static/users/${id}`}
+                                      alt={p.displayName}
+                                      title={p.displayName}
+                                      className="session-avatar"
+                                      onError={(e) => { e.target.style.display = 'none'; }}
+                                    />
+                                  </span>
+                                ))}
+                                {isSolo && memoText && (
+                                  <span className="session-row__memo-inline">
+                                    <span className="session-row__memo-icon">{'\uD83C\uDF99'}</span>
+                                    <span className="session-row__memo-text session-row__memo-text--2line">{memoText}</span>
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            {!isSolo && memoText && (
+                              <div className="session-row__memo-line">
+                                <span className="session-row__memo-icon">{'\uD83C\uDF99'}</span>
+                                <span className="session-row__memo-text">{memoText}</span>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
-                  {s.voiceMemos?.length > 0 && (
-                    <div className="session-row__memos">
-                      <Text size="xs" c="dimmed" className="session-row__memo-text">
-                        {s.voiceMemos.map(m => m.transcript).join(' ')}
-                      </Text>
-                    </div>
-                  )}
                 </div>
               );
             })}

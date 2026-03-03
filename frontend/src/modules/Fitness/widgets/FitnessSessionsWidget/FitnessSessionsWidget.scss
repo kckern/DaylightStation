@@ -150,11 +150,17 @@
   gap: 4px;
   margin-top: 4px;
   min-height: 22px;
+
+  &--with-memo {
+    flex-wrap: nowrap;
+    align-items: flex-start;
+  }
 }
 
 .session-row__participant {
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .session-avatar {
@@ -168,19 +174,38 @@
 
 // --- Voice Memo Snippet ---
 
-.session-row__memos {
-  position: relative;
-  z-index: 1;
-  padding: 0 0.6rem 0.5rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+.session-row__memo-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+// Inline memo (solo participant — avatar + memo on same row)
+.session-row__memo-inline {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.session-row__memo-icon {
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  line-height: 1.4;
 }
 
 .session-row__memo-text {
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  font-size: 0.7rem;
   line-height: 1.4;
+  color: rgba(255, 255, 255, 0.4);
   font-style: italic;
-  opacity: 0.7;
+
+  &--2line {
+    -webkit-line-clamp: 2;
+  }
 }

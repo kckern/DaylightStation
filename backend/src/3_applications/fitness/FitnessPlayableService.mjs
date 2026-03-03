@@ -145,9 +145,9 @@ export class FitnessPlayableService {
       watchedDate: item.lastPlayed ?? null,
       // Preserve undefined for watchTime so classifier can skip anti-seeking check when data is missing
       isWatched: classifier.classify(
-        { playhead, percent, watchTime: item.watchTime },
-        { duration }
-      ) === 'watched'
+          { playhead, percent, watchTime: item.watchTime },
+          { duration }
+        ) === 'watched'
     };
   }
 
