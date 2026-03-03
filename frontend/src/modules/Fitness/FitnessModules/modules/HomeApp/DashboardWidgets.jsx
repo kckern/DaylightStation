@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { Paper, Text, Title, Group, Stack, Badge, Progress, Skeleton } from '@mantine/core';
+import './HomeApp.scss';
 
 /**
  * Build display URL from a media ID that may or may not be namespaced.
@@ -153,8 +154,9 @@ export function WorkoutsCard({ sessions, onSessionClick, selectedSessionId }) {
               {group.label}
             </Text>
             {group.sessions.map((s) => {
-              const bgUrl = s.media?.grandparentId
-                ? mediaDisplayUrl(s.media.contentId || s.media.mediaId)
+              const pm = s.media?.primary;
+              const bgUrl = pm?.grandparentId
+                ? mediaDisplayUrl(pm.contentId || pm.mediaId)
                 : null;
               return (
                 <div
@@ -165,16 +167,16 @@ export function WorkoutsCard({ sessions, onSessionClick, selectedSessionId }) {
                 >
                   <div className="session-row__top">
                     {/* Show poster (left) — fallback to episode thumb */}
-                    {s.media?.grandparentId ? (
+                    {pm?.grandparentId ? (
                       <img
-                        src={mediaDisplayUrl(s.media.grandparentId)}
+                        src={mediaDisplayUrl(pm.grandparentId)}
                         alt=""
                         className="session-poster"
                         onError={(e) => { e.target.style.display = 'none'; }}
                       />
-                    ) : s.media ? (
+                    ) : pm ? (
                       <img
-                        src={mediaDisplayUrl(s.media.contentId || s.media.mediaId)}
+                        src={mediaDisplayUrl(pm.contentId || pm.mediaId)}
                         alt=""
                         className="session-poster"
                         onError={(e) => { e.target.style.display = 'none'; }}
@@ -186,12 +188,12 @@ export function WorkoutsCard({ sessions, onSessionClick, selectedSessionId }) {
                     {/* Title + metadata */}
                     <div className="session-row__info">
                       <div className="session-row__title-line">
-                        <Text size="md" fw={700} truncate="end" title={s.media?.title || 'Workout'}>
-                          {s.media?.title || s.participants?.map(p => p.displayName).join(', ') || 'Workout'}
+                        <Text size="md" fw={700} truncate="end" title={pm?.title || 'Workout'}>
+                          {pm?.title || (s.participants && Object.values(s.participants).map(p => p.displayName).join(', ')) || 'Workout'}
                         </Text>
-                        {s.media?.showTitle && (
-                          <Text size="xs" c="dimmed" truncate="end" title={s.media.showTitle}>
-                            {s.media.showTitle}
+                        {pm?.showTitle && (
+                          <Text size="xs" c="dimmed" truncate="end" title={pm.showTitle}>
+                            {pm.showTitle}
                           </Text>
                         )}
                       </div>
@@ -213,12 +215,12 @@ export function WorkoutsCard({ sessions, onSessionClick, selectedSessionId }) {
                         )}
                       </div>
 
-                      {s.participants?.length > 0 && (
+                      {s.participants && Object.keys(s.participants).length > 0 && (
                         <div className="session-row__participants">
-                          {s.participants.map((p) => (
-                            <span key={p.id} className="session-row__participant">
+                          {Object.entries(s.participants).map(([id, p]) => (
+                            <span key={id} className="session-row__participant">
                               <img
-                                src={`/api/v1/static/users/${p.id}`}
+                                src={`/api/v1/static/users/${id}`}
                                 alt={p.displayName}
                                 title={p.displayName}
                                 className="session-avatar"

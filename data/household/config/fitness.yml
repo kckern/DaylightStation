@@ -25,20 +25,26 @@ home_screen:
     direction: row
     gap: 1rem
     children:
-      - widget: "fitness:sessions"
+      - id: left-area
         basis: "33%"
-      - slot: detail-area
-        default:
-          direction: column
-          gap: 0.5rem
-          children:
-            - widget: "fitness:weight"
-            - widget: "fitness:nutrition"
-      - direction: column
+        children:
+          - widget: "fitness:sessions"
+      - id: right-area
+        basis: "66%"
+        direction: column
         gap: 0.5rem
         children:
-          - widget: "fitness:upnext"
-          - widget: "fitness:coach"
+          - direction: row
+            gap: 0.5rem
+            children:
+              - id: weight-panel
+                widget: "fitness:weight"
+              - widget: "fitness:upnext"
+          - direction: row
+            gap: 0.5rem
+            children:
+              - widget: "fitness:nutrition"
+              - widget: "fitness:coach"
 
 plex:
   nav_items:
