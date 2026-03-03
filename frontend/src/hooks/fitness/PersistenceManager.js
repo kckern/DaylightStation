@@ -1057,7 +1057,7 @@ export class PersistenceManager {
       if (d.artist || d.contentType === 'track') return false;
       if (!(d.contentId || '').startsWith('plex:')) return false;
       // Enrich if any metadata field is missing
-      return !d.description || !d.title || !d.grandparentTitle;
+      return !d.description || !d.title || !d.grandparentTitle || !d.grandparentId;
     });
 
     if (toFetch.length === 0) return;
@@ -1086,6 +1086,14 @@ export class PersistenceManager {
         if (meta.parentTitle && !evt.data.parentTitle) {
           evt.data.parentTitle = meta.parentTitle;
           enriched.push('parentTitle');
+        }
+        if (meta.grandparentId && !evt.data.grandparentId) {
+          evt.data.grandparentId = Number(meta.grandparentId);
+          enriched.push('grandparentId');
+        }
+        if (meta.parentId && !evt.data.parentId) {
+          evt.data.parentId = Number(meta.parentId);
+          enriched.push('parentId');
         }
         if (enriched.length > 0) {
           getLogger().debug('fitness.persistence.plex_enrich_hit', { plexId, enriched });
