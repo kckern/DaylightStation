@@ -128,6 +128,7 @@ export function ImageFrame({
   const [enrichment, setEnrichment] = useState({ forId: null, people: null });
   const [settledImageId, setSettledImageId] = useState(null);
   const [metadataVisible, setMetadataVisible] = useState(false);
+  const preloadedEnrichmentRef = useRef({ forId: null, data: null });
 
   const imageId = media?.id || null;
   const slideshow = useMemo(() => media?.slideshow || {}, [media?.slideshow]);
@@ -210,10 +211,20 @@ export function ImageFrame({
     };
   }, []);
 
-  // JIT fetch metadata from /info/ endpoint for smart zoom + overlay
+  // Consume pre-fetched enrichment or defer JIT fetch to idle time
   useEffect(() => {
     if (!imageId) return;
 
+    // Check if metadata was pre-fetched during previous slide
+    const preloaded = preloadedEnrichmentRef.current;
+    if (preloaded.forId === imageId && preloaded.data) {
+      logger.debug('image-frame-enrichment-preloaded', { imageId });
+      setEnrichment({ forId: imageId, ...preloaded.data });
+      preloadedEnrichmentRef.current = { forId: null, data: null };
+      return;
+    }
+
+    // Fallback: defer fetch to idle time so it doesn't collide with animation setup
     let cancelled = false;
     const fetchMetadata = async () => {
       try {
@@ -224,6 +235,7 @@ export function ImageFrame({
         const meta = data.metadata || {};
         logger.debug('image-frame-jit-metadata', {
           imageId,
+          deferred: true,
           peopleCount: meta.people?.length || 0,
           hasCapturedAt: !!meta.capturedAt,
           hasLocation: !!meta.location,
@@ -238,8 +250,28 @@ export function ImageFrame({
         logger.warn('image-frame-jit-metadata-error', { imageId, error: err.message });
       }
     };
-    fetchMetadata();
-    return () => { cancelled = true; };
+
+    // Use requestIdleCallback to defer until browser is idle (after animation setup)
+    // Falls back to setTimeout(200ms) for browsers without requestIdleCallback
+    let idleHandle;
+    if (typeof requestIdleCallback === 'function') {
+      idleHandle = requestIdleCallback(() => {
+        if (!cancelled) fetchMetadata();
+      }, { timeout: 2000 });
+    } else {
+      idleHandle = setTimeout(() => {
+        if (!cancelled) fetchMetadata();
+      }, 200);
+    }
+
+    return () => {
+      cancelled = true;
+      if (typeof cancelIdleCallback === 'function' && typeof requestIdleCallback === 'function') {
+        cancelIdleCallback(idleHandle);
+      } else {
+        clearTimeout(idleHandle);
+      }
+    };
   }, [imageId]);
 
   // Only use enriched data if it belongs to the current image
@@ -337,11 +369,15 @@ export function ImageFrame({
     if (!nextMedia?.thumbnail && !nextMedia?.mediaUrl) return;
     const thumbUrl = nextMedia.thumbnail || nextMedia.mediaUrl;
     const origUrl = nextMedia.mediaUrl;
+    const nextId = nextMedia.id;
     const t0 = performance.now();
+    let cancelled = false;
+
+    // Preload images (existing logic)
     const thumbImg = new Image();
     thumbImg.onload = () => {
       preloadRef.current.thumbDone = true;
-      perfLog.info('slideshow.preload-thumb', { nextId: nextMedia.id, ms: Math.round(performance.now() - t0) });
+      perfLog.info('slideshow.preload-thumb', { nextId, ms: Math.round(performance.now() - t0) });
     };
     thumbImg.src = thumbUrl;
     preloadRef.current.thumb = thumbImg;
@@ -351,15 +387,42 @@ export function ImageFrame({
       const origImg = new Image();
       origImg.onload = () => {
         preloadRef.current.origDone = true;
-        perfLog.info('slideshow.preload-orig', { nextId: nextMedia.id, ms: Math.round(performance.now() - t0) });
+        perfLog.info('slideshow.preload-orig', { nextId, ms: Math.round(performance.now() - t0) });
       };
       origImg.src = origUrl;
       preloadRef.current.orig = origImg;
     } else {
       preloadRef.current.origDone = true; // same URL, no separate original
     }
-    logger.debug('image-frame-preload-start', { nextId: nextMedia.id });
-    return () => { preloadRef.current = { thumb: null, orig: null, thumbDone: false, origDone: false }; };
+
+    // Preload metadata for next slide
+    const fetchNextMeta = async () => {
+      try {
+        const response = await fetch(`/api/v1/info/${encodeURIComponent(nextId)}`);
+        if (!response.ok || cancelled) return;
+        const data = await response.json();
+        if (cancelled) return;
+        const meta = data.metadata || {};
+        preloadedEnrichmentRef.current = {
+          forId: nextId,
+          data: {
+            people: meta.people?.length > 0 ? meta.people : null,
+            capturedAt: meta.capturedAt || null,
+            location: meta.location || null,
+          },
+        };
+        logger.debug('image-frame-preload-meta', { nextId, peopleCount: meta.people?.length || 0 });
+      } catch (err) {
+        logger.warn('image-frame-preload-meta-error', { nextId, error: err.message });
+      }
+    };
+    fetchNextMeta();
+
+    logger.debug('image-frame-preload-start', { nextId });
+    return () => {
+      cancelled = true;
+      preloadRef.current = { thumb: null, orig: null, thumbDone: false, origDone: false };
+    };
   }, [nextMedia?.id]);
 
   // Main effect: handle image transitions (cross-dissolve + Ken Burns)
