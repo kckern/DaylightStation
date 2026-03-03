@@ -58,6 +58,7 @@ export function useSpamDetection(activeNotes, noteHistory) {
 
   const [warningVisible, setWarningVisible] = useState(false);
   const [blackoutRemaining, setBlackoutRemaining] = useState(() => getBlackoutRemaining());
+  const [spamEventCount, setSpamEventCount] = useState(0);
 
   // ─── Refs ─────────────────────────────────────────────────
 
@@ -86,6 +87,15 @@ export function useSpamDetection(activeNotes, noteHistory) {
   const recordSpamEvent = useCallback((signal) => {
     const now = Date.now();
 
+    // Deduplicate: if multiple signals fire from the same physical event
+    // (e.g., a fist-smash triggers both note-count and dense-cluster),
+    // only count it as one strike.
+    const lastEvent = spamEventsRef.current[spamEventsRef.current.length - 1];
+    if (lastEvent && now - lastEvent < 100) {
+      logger.debug('spam.deduplicated', { signal });
+      return;
+    }
+
     logger.warn('spam.detected', { signal });
 
     // Prune events older than escalation window
@@ -97,6 +107,7 @@ export function useSpamDetection(activeNotes, noteHistory) {
     spamEventsRef.current.push(now);
 
     const count = spamEventsRef.current.length;
+    setSpamEventCount(count);
 
     if (count >= STRIKES_TO_BLACKOUT) {
       // Trigger blackout
@@ -106,6 +117,8 @@ export function useSpamDetection(activeNotes, noteHistory) {
       } catch { /* localStorage full — blackout still applies in-memory */ }
 
       logger.warn('spam.blackout', { duration: BLACKOUT_DURATION_MS });
+      spamEventsRef.current = [];
+      setSpamEventCount(0);
       setBlackoutRemaining(BLACKOUT_DURATION_MS);
       setWarningVisible(false);
       if (warningTimerRef.current) {
@@ -194,10 +207,6 @@ export function useSpamDetection(activeNotes, noteHistory) {
     : warningVisible
       ? 'warning'
       : 'clear';
-
-  const spamEventCount = spamEventsRef.current.filter(
-    (t) => Date.now() - t < ESCALATION_WINDOW_MS
-  ).length;
 
   return {
     spamState,
