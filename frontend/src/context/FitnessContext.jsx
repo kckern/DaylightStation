@@ -11,8 +11,8 @@ import { GuestAssignmentService } from '../hooks/fitness/GuestAssignmentService.
 import { useZoneLedSync } from '../hooks/fitness/useZoneLedSync.js';
 import { playbackLog } from '../modules/Player/lib/playbackLogger.js';
 import getLogger from '../lib/logging/Logger.js';
-import { getModuleManifest } from '../modules/Fitness/FitnessModules/index';
-import { VIBRATION_CONSTANTS } from '../modules/Fitness/FitnessModules/modules/VibrationApp/constants.js';
+import { getModuleManifest } from '../modules/Fitness/index.js';
+import { VIBRATION_CONSTANTS } from '../modules/Fitness/widgets/VibrationApp/constants.js';
 
 // Phase 3 SSOT: Domain model imports
 import ParticipantFactory from '../modules/Fitness/domain/ParticipantFactory.js';
@@ -1247,7 +1247,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
     let controller = null;
 
-    import('../modules/Fitness/FitnessSimulationController.js')
+    import('../modules/Fitness/nav/FitnessSimulationController.js')
       .then(({ FitnessSimulationController }) => {
         import('../services/WebSocketService.js').then(({ wsService }) => {
           controller = new FitnessSimulationController({

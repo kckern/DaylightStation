@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import PropTypes from 'prop-types';
-import RpmDeviceAvatar from '../../../FitnessModules/shared/RealtimeCards/RpmDeviceAvatar.jsx';
+import RpmDeviceAvatar from '../../../player/panels/RealtimeCards/RpmDeviceAvatar.jsx';
 import './FullScreenContainer.scss';
 
 const FullScreenContainer = ({

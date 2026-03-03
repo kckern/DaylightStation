@@ -79,31 +79,45 @@ export function ScreenRenderer({ screenId: propScreenId }) {
     );
   }, [config]);
 
+  const res = config?.resolution;
+  const bgColor = config?.theme?.['screen-bg'] || '#000';
+
+  // Always render the dark viewport wrapper to prevent white flash during loading
+  const viewport = (content) => (
+    <div className="screen-viewport" style={{
+      width: '100vw',
+      height: '100vh',
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+      overflow: 'hidden',
+      backgroundColor: bgColor,
+    }}>
+      {content}
+    </div>
+  );
+
   if (loading) {
-    return <div className="screen-root screen-root--loading">Loading screen: {screenId}...</div>;
+    return viewport(
+      <div className="screen-root screen-root--loading">Loading screen: {screenId}...</div>
+    );
   }
 
   if (error) {
-    return <div className="screen-root screen-root--error"><h2>Screen Error</h2><p>{error}</p></div>;
+    return viewport(
+      <div className="screen-root screen-root--error"><h2>Screen Error</h2><p>{error}</p></div>
+    );
   }
 
   if (!config) {
-    return <div className="screen-root screen-root--not-found">Screen not found: {screenId}</div>;
+    return viewport(
+      <div className="screen-root screen-root--not-found">Screen not found: {screenId}</div>
+    );
   }
-
-  const res = config.resolution;
 
   return (
     <ScreenDataProvider sources={config.data}>
-      <div className="screen-viewport" style={{
-        width: '100vw',
-        height: '100vh',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        overflow: 'hidden',
-        backgroundColor: config.theme?.['screen-bg'] || '#000',
-      }}>
+      {viewport(
         <div className={`screen-root screen-root--${screenId}`} style={{
           width: res ? `${res.width}px` : '100%',
           height: res ? `${res.height}px` : '100%',
@@ -119,7 +133,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
             </ScreenProvider>
           </ScreenOverlayProvider>
         </div>
-      </div>
+      )}
     </ScreenDataProvider>
   );
 }

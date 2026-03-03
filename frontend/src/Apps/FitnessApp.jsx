@@ -3,18 +3,18 @@ import { MantineProvider, Paper, Title, Group, Text, Alert, Grid } from '@mantin
 import '@mantine/core/styles.css';
 import "./FitnessApp.scss";
 import { DaylightAPI, DaylightMediaPath } from '../lib/api.mjs';
-import FitnessMenu from '../modules/Fitness/FitnessMenu.jsx';
-import FitnessNavbar from '../modules/Fitness/FitnessNavbar.jsx';
-import FitnessShow from '../modules/Fitness/FitnessShow.jsx';
-import FitnessPlayer from '../modules/Fitness/FitnessPlayer.jsx';
-import FitnessModuleContainer from '../modules/Fitness/FitnessModules/FitnessModuleContainer.jsx';
-import { VolumeProvider } from '../modules/Fitness/VolumeProvider.jsx';
+import FitnessMenu from '../modules/Fitness/nav/FitnessMenu.jsx';
+import FitnessNavbar from '../modules/Fitness/nav/FitnessNavbar.jsx';
+import FitnessShow from '../modules/Fitness/player/FitnessShow.jsx';
+import FitnessPlayer from '../modules/Fitness/player/FitnessPlayer.jsx';
+import FitnessModuleContainer from '../modules/Fitness/player/FitnessModuleContainer.jsx';
+import { VolumeProvider } from '../modules/Fitness/nav/VolumeProvider.jsx';
 import { FitnessProvider } from '../context/FitnessContext.jsx';
 import getLogger, { configure as configureLogger } from '../lib/logging/Logger.js';
 import { sortNavItems } from '../modules/Fitness/lib/navigationUtils.js';
-import VoiceMemoOverlay from '../modules/Fitness/FitnessPlayerOverlay/VoiceMemoOverlay.jsx';
+import VoiceMemoOverlay from '../modules/Fitness/player/overlays/VoiceMemoOverlay.jsx';
 import { useFitnessContext } from '../context/FitnessContext.jsx';
-import { FitnessFrame } from '../modules/Fitness/frames';
+import { FitnessFrame } from '../modules/Fitness/player/frames';
 import { useFitnessUrlParams } from '../hooks/fitness/useFitnessUrlParams.js';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ScreenDataProvider } from '../screen-framework/data/ScreenDataProvider.jsx';
@@ -23,7 +23,7 @@ import { PanelRenderer } from '../screen-framework/panels/PanelRenderer.jsx';
 import { FitnessScreenProvider } from '../modules/Fitness/FitnessScreenProvider.jsx';
 import { registerBuiltinWidgets } from '../screen-framework/widgets/builtins.js';
 // Ensure fitness modules are registered in widget registry
-import '../modules/Fitness/FitnessModules/index.js';
+import '../modules/Fitness/index.js';
 
 registerBuiltinWidgets();
 
@@ -37,10 +37,11 @@ const FitnessApp = () => {
   const [fitnessConfiguration, setFitnessConfiguration] = useState({});
   const [fetchError, setFetchError] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [currentView, setCurrentView] = useState('menu'); // 'home', 'menu', 'users', 'show', 'module'
+  const [currentView, setCurrentView] = useState('menu'); // 'screen', 'menu', 'users', 'show', 'module'
   const [activeCollection, setActiveCollection] = useState(null);
   const [selectedShow, setSelectedShow] = useState(null);
   const [activeModule, setActiveModule] = useState(null); // { id, ...manifest }
+  const [activeScreen, setActiveScreen] = useState(null); // screen_id from screens config
   const [fitnessPlayQueue, setFitnessPlayQueue] = useState([]);
   const [kioskUI, setKioskUI] = useState(() => {
     // Check if Firefox on initial load - use more robust detection
@@ -644,16 +645,17 @@ const FitnessApp = () => {
     return Array.isArray(src) ? src : [];
   }, [fitnessConfiguration, contentSource]);
 
-  // Derive home screen config from fitness configuration
-  const homeScreenConfig = useMemo(() => {
+  // Derive screens config map from fitness configuration
+  const screensConfig = useMemo(() => {
     const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
-    return root?.home_screen || null;
+    return root?.screens || {};
   }, [fitnessConfiguration]);
 
-  // Resolve data sources for home screen, injecting dashboard URL with primary userId
-  const homeScreenSources = useMemo(() => {
-    if (!homeScreenConfig?.data) return {};
-    const sources = { ...homeScreenConfig.data };
+  // Resolve data sources for active screen, injecting dashboard URL with primary userId
+  const screenSources = useMemo(() => {
+    const screenCfg = activeScreen ? screensConfig[activeScreen] : null;
+    if (!screenCfg?.data) return {};
+    const sources = { ...screenCfg.data };
     const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
     const primaryUser = root?.users?.primary?.[0];
     if (primaryUser) {
@@ -661,7 +663,7 @@ const FitnessApp = () => {
       sources.dashboard = { source: `/api/v1/health-dashboard/${userId}`, refresh: 300 };
     }
     return sources;
-  }, [homeScreenConfig, fitnessConfiguration]);
+  }, [activeScreen, screensConfig, fitnessConfiguration]);
 
   // Derive sequential labels config for route-based play blocking
   const sequentialLabelSet = useMemo(() => {
@@ -798,15 +800,29 @@ const FitnessApp = () => {
         navigate(`/fitness/module/${target.id}`, { replace: true });
         break;
 
+      case 'screen':
+        setActiveScreen(target.screen_id);
+        setActiveCollection(null);
+        setActiveModule(null);
+        setSelectedShow(null);
+        setCurrentView('screen');
+        navigate(`/fitness/${target.screen_id}`, { replace: true });
+        break;
+
       case 'view_direct':
         setActiveCollection(null);
         setActiveModule(null);
-        setCurrentView(target.view);
         setSelectedShow(null);
         if (target.view === 'users') {
+          setCurrentView('users');
           navigate('/fitness/users', { replace: true });
         } else if (target.view === 'home') {
+          // Backward compat: view_direct home → screen
+          setActiveScreen('home');
+          setCurrentView('screen');
           navigate('/fitness/home', { replace: true });
+        } else {
+          setCurrentView(target.view);
         }
         break;
 
@@ -860,12 +876,38 @@ const FitnessApp = () => {
         if (!response.fitness) response.fitness = {};
 
         // Normalize: move top-level domain keys into response.fitness if not already nested
-        const unifyKeys = ['ant_devices','equipment','users','coin_time_unit_ms','zones','plex','governance','ambient_led','device_colors','devices','home_screen'];
+        const unifyKeys = ['ant_devices','equipment','users','coin_time_unit_ms','zones','plex','governance','ambient_led','device_colors','devices','home_screen','screens'];
         unifyKeys.forEach(k => {
           if (response[k] !== undefined && response.fitness[k] === undefined) {
             response.fitness[k] = response[k];
           }
         });
+
+        // Backward compat: wrap legacy home_screen into screens map
+        if (response.fitness.home_screen && !response.fitness.screens) {
+          response.fitness.screens = { home: response.fitness.home_screen };
+        }
+        if (response.fitness.screens) {
+          delete response.fitness.home_screen;
+        }
+
+        // Backward compat: normalize legacy nav item types
+        const contentSection = response.fitness.content || response.fitness.plex || {};
+        if (Array.isArray(contentSection.nav_items)) {
+          contentSection.nav_items.forEach(item => {
+            if (item.type === 'plugin_direct') {
+              item.type = 'screen';
+              if (item.target?.plugin_id && !item.target.screen_id) {
+                item.target = { screen_id: item.target.plugin_id };
+              }
+            } else if (item.type === 'plugin_menu') {
+              item.type = 'module_menu';
+              if (item.target?.plugin_id && !item.target.menu_id) {
+                item.target = { menu_id: item.target.plugin_id };
+              }
+            }
+          });
+        }
 
         // Diagnostics for user + HR color availability
         const primaryLen = response.fitness?.users?.primary?.length || 0;
@@ -943,8 +985,9 @@ const FitnessApp = () => {
     // Set view based on URL
     if (view === 'users') {
       setCurrentView('users');
-    } else if (view === 'home') {
-      setCurrentView('home');
+    } else if (screensConfig[view]) {
+      setActiveScreen(view);
+      setCurrentView('screen');
     } else if (view === 'show' && id) {
       setSelectedShow(id);
       setCurrentView('show');
@@ -963,22 +1006,24 @@ const FitnessApp = () => {
     }
 
     setUrlInitialized(true);
-  }, [urlState, loading, urlInitialized, navigate, location]);
+  }, [urlState, loading, urlInitialized, navigate, location, screensConfig]);
 
   // Initialize to the first nav item once navItems arrive
   useEffect(() => {
-    // Don't auto-navigate if we're on a special view like 'users', 'show', or 'home'
-    if (currentView === 'users' || currentView === 'show' || currentView === 'home') {
+    // Don't auto-navigate if we're on a special view like 'users', 'show', or 'screen'
+    if (currentView === 'users' || currentView === 'show' || currentView === 'screen') {
       return;
     }
     // Don't auto-navigate if URL already set up the initial state
     if (urlInitialized && (urlState.view !== 'menu' || urlState.id || urlState.ids)) {
       return;
     }
-    // Default to home view when home_screen config exists and no collection/module selected
-    if (homeScreenConfig && activeCollection == null && activeModule == null && currentView === 'menu') {
-      setCurrentView('home');
-      navigate('/fitness/home', { replace: true });
+    // Default to first screen if screens config exists and nothing else is active
+    const screenIds = Object.keys(screensConfig);
+    if (screenIds.length > 0 && activeCollection == null && activeModule == null && activeScreen == null && currentView === 'menu') {
+      setActiveScreen(screenIds[0]);
+      setCurrentView('screen');
+      navigate(`/fitness/${screenIds[0]}`, { replace: true });
       return;
     }
     if (activeCollection == null && activeModule == null && navItems.length > 0) {
@@ -995,7 +1040,7 @@ const FitnessApp = () => {
         handleNavigate(firstItem.type, firstItem.target, firstItem);
       }
     }
-  }, [navItems, activeCollection, activeModule, currentView, urlInitialized, urlState, homeScreenConfig, navigate]);
+  }, [navItems, activeCollection, activeModule, activeScreen, currentView, urlInitialized, urlState, screensConfig, navigate]);
 
   const queueSize = fitnessPlayQueue.length;
   useEffect(() => {
@@ -1112,7 +1157,8 @@ const FitnessApp = () => {
                   currentState={{
                     currentView,
                     activeCollection,
-                    activeModule
+                    activeModule,
+                    activeScreen
                   }}
                   onNavigate={handleNavigate}
                 />
@@ -1121,15 +1167,15 @@ const FitnessApp = () => {
               className={fitnessPlayQueue.length > 0 || loading ? 'fitness-frame--hidden' : ''}
             >
               <div className={`fitness-main-content ${currentView === 'users' ? 'fitness-cam-active' : ''}`}>
-                {currentView === 'home' && homeScreenConfig && (
-                  <div className="home-app">
+                {currentView === 'screen' && activeScreen && screensConfig[activeScreen] && (
+                  <div className="screen-app">
                     <FitnessScreenProvider
                       onPlay={handleHomePlay}
                       onNavigate={handleNavigate}
                       onCtaAction={(cta) => logger.info('fitness-cta-action', { action: cta.action })}
                     >
-                      <ScreenDataProvider sources={homeScreenSources}>
-                        <ScreenProvider config={{ ...homeScreenConfig.layout, theme: homeScreenConfig.theme }}>
+                      <ScreenDataProvider sources={screenSources}>
+                        <ScreenProvider config={{ ...screensConfig[activeScreen].layout, theme: screensConfig[activeScreen].theme }}>
                           <PanelRenderer />
                         </ScreenProvider>
                       </ScreenDataProvider>
