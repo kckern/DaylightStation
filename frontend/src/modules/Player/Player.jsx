@@ -2,8 +2,8 @@ import React, { useRef, useCallback, useState, useEffect, useMemo, forwardRef, u
 import PropTypes from 'prop-types';
 import './styles/Player.scss';
 import { useQueueController } from './hooks/useQueueController.js';
-import { CompositePlayer } from './renderers/CompositePlayer.jsx';
 import { SinglePlayer } from './components/SinglePlayer.jsx';
+import { AudioLayer } from './components/AudioLayer.jsx';
 import { PlayerOverlayLoading } from './components/PlayerOverlayLoading.jsx';
 import { PlayerOverlayPaused } from './components/PlayerOverlayPaused.jsx';
 import { PlayerOverlayStateDebug } from './components/PlayerOverlayStateDebug.jsx';
@@ -11,7 +11,6 @@ import { useMediaResilience, mergeMediaResilienceConfig } from './hooks/useMedia
 import { usePlaybackSession } from './hooks/usePlaybackSession.js';
 import { guid } from './lib/helpers.js';
 import { playbackLog } from './lib/playbackLogger.js';
-import { useCompositeControllerChannel } from './components/CompositeControllerContext.jsx';
 import { resolveMediaIdentity } from './utils/mediaIdentity.js';
 import { useMediaTransportAdapter } from './hooks/transport/useMediaTransportAdapter.js';
 import { guardedReload } from '../../lib/reloadGuard.js';
@@ -75,14 +74,6 @@ const createDefaultPlaybackMetrics = () => ({
  * Supports composite overlays (video with audio background)
  */
 const Player = forwardRef(function Player(props, ref) {
-  // Detect composite presentations:
-  // - Old format: play.overlay or queue.overlay
-  // - New format: visual + audio tracks
-  // - Sources format: sources array (unresolved, needs backend resolution)
-  if (props.play?.overlay || props.queue?.overlay || props.visual || props.audio || props.sources) {
-    return <CompositePlayer {...props} Player={Player} />;
-  }
-  
   const noop = useMemo(() => () => {}, []);
 
   let {
@@ -103,7 +94,6 @@ const Player = forwardRef(function Player(props, ref) {
     pauseDecision,
     plexClientSession: externalPlexClientSession
   } = props || {};
-  const compositeChannel = useCompositeControllerChannel(playerType);
 
   // Override playback rate if passed in via menu selection
   if (playbackrate && play) play['playbackRate'] = playbackrate;
@@ -501,8 +491,7 @@ const Player = forwardRef(function Player(props, ref) {
     if (typeof resolvedResilienceOnState === 'function') {
       resolvedResilienceOnState(state);
     }
-    compositeChannel?.reportResilienceState(state);
-  }, [resolvedResilienceOnState, compositeChannel]);
+  }, [resolvedResilienceOnState]);
 
   const handleResilienceReload = useCallback((options = {}) => {
     const {
@@ -679,9 +668,8 @@ const Player = forwardRef(function Player(props, ref) {
 
   const handleController = useCallback((controller) => {
     controllerRef.current = controller;
-    compositeChannel?.registerController(controller);
     if (props.onController) props.onController(controller);
-  }, [props.onController, compositeChannel]);
+  }, [props.onController]);
 
   const withTransport = useCallback((handler, fallback) => {
     const controller = controllerRef.current;
@@ -854,6 +842,9 @@ const Player = forwardRef(function Player(props, ref) {
     </div>
   );
 
+  const audioConfig = play?.audio || queue?.audio || activeSource?.audio || null;
+  const currentItemMediaType = activeSource?.mediaType || null;
+
   const mainContent = sanitizedSinglePlayerProps ? (
     <SinglePlayer
       key={singlePlayerKey}
@@ -864,6 +855,16 @@ const Player = forwardRef(function Player(props, ref) {
 
   return (
     <div className={playerShellClass}>
+      {audioConfig && (
+        <AudioLayer
+          contentId={audioConfig.contentId}
+          behavior={audioConfig.behavior || 'pause'}
+          mode={audioConfig.mode || 'hidden'}
+          currentItemMediaType={currentItemMediaType}
+          Player={Player}
+          ignoreKeys={ignoreKeys}
+        />
+      )}
       {overlayElements}
       {mainContent}
     </div>
