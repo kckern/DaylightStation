@@ -61,7 +61,7 @@ function CardMode({ data }) {
         {data.category && <span className="displayer__card-category">{data.category}</span>}
         {data.metadata?.location && <span className="displayer__card-location">{data.metadata.location}</span>}
         {data.metadata?.people?.length > 0 && (
-          <span className="displayer__card-people">{data.metadata.people.join(', ')}</span>
+          <span className="displayer__card-people">{data.metadata.people.map(p => typeof p === 'string' ? p : p.name).join(', ')}</span>
         )}
       </div>
     </div>

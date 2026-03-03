@@ -45,7 +45,8 @@ export class ImmichFeedAdapter extends IFeedSourceAdapter {
         const created = exif?.capturedAt || item.metadata?.capturedAt || null;
         const location = exif?.location || item.metadata?.location || null;
         const people = exif?.people || [];
-        const title = this.#buildPhotoTitle(people, location, created);
+        const peopleNames = people.map(p => typeof p === 'string' ? p : p.name);
+        const title = this.#buildPhotoTitle(peopleNames, location, created);
         const subtitle = created ? this.#formatDate(created) : null;
         return {
           id: `immich:${localId}`,
