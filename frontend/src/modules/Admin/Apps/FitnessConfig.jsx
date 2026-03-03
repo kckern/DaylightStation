@@ -129,10 +129,11 @@ const NAV_ITEM_COLUMNS = [
     type: 'select',
     width: 200,
     options: [
-      { value: 'plugin_direct', label: 'Plugin Direct' },
+      { value: 'screen', label: 'Screen' },
       { value: 'plex_collection', label: 'Plex Collection' },
       { value: 'plex_collection_group', label: 'Collection Group' },
-      { value: 'plugin_menu', label: 'Plugin Menu' },
+      { value: 'module_menu', label: 'Module Menu' },
+      { value: 'module_direct', label: 'Module Direct' },
     ],
   },
   { key: 'icon', label: 'Icon', type: 'text', width: 120 },
@@ -284,7 +285,7 @@ function NavItemsSection({ data, update }) {
       items={navItems}
       onChange={(items) => update('plex.nav_items', items)}
       columns={NAV_ITEM_COLUMNS}
-      createDefaults={{ name: '', type: 'plugin_direct', icon: '', order: 0 }}
+      createDefaults={{ name: '', type: 'screen', icon: '', order: 0 }}
       addLabel="Add Nav Item"
       confirmDelete
       emptyMessage="No nav items configured."
