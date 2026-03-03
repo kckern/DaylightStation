@@ -101,6 +101,11 @@ export default function Weight() {
 
 function HealthChart({data}) {
 	data = data.sort((a, b) => new Date(a.date) - new Date(b.date)).slice(- 7 * 12);
+	const last = data[data.length - 1];
+	const today = moment().format('YYYY-MM-DD');
+	if (last && last.date < today) {
+		data.push({ ...last, date: today, measurement: null });
+	}
 	const currentWaterWeight = data[data.length - 1]?.water_weight || 0;
 	const minValue = Math.min(...data.map(({lbs_adjusted_average, measurement}) => Math.min(lbs_adjusted_average, measurement || lbs_adjusted_average)));
 	const maxValue = Math.max(...data.map(({lbs_adjusted_average, measurement}) => Math.max(lbs_adjusted_average, measurement || lbs_adjusted_average)));
