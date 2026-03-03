@@ -5,20 +5,18 @@ import { useRenderProfiler } from '@/hooks/fitness/useRenderProfiler.js';
 import getLogger from '@/lib/logging/Logger.js';
 import './FitnessChartApp.scss';
 import {
-	MIN_VISIBLE_TICKS,
 	ZONE_COLOR_MAP,
 	buildBeatsSeries,
 	buildSegments,
 	createPaths
-} from '../../../FitnessSidebar/FitnessChart.helpers.js';
+} from '../../lib/chartHelpers.js';
+import { CHART_MARGIN, MIN_VISIBLE_TICKS } from '../../lib/chartConstants.js';
 import { ParticipantStatus, getZoneColor, isBroadcasting } from '../../../domain';
 import { LayoutManager } from './layout';
 import { createChartDataSource } from './sessionDataAdapter.js';
 
 const DEFAULT_CHART_WIDTH = 420;
 const DEFAULT_CHART_HEIGHT = 390;
-// Right margin: avatar radius (30) + label width (~50) + gap (8) = 88, rounded to 90
-const CHART_MARGIN = { top: 10, right: 90, bottom: 38, left: 4 };
 const AVATAR_RADIUS = 30;
 const ABSENT_BADGE_RADIUS = 10;
 const COIN_LABEL_GAP = 8;

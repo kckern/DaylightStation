@@ -298,6 +298,12 @@ export class YamlSessionDatastore extends ISessionDatastore {
       const challengeCount = summary?.challenges?.total ?? 0;
       const voiceMemoCount = summary?.voiceMemos?.length ?? 0;
 
+      // Include transcript text for display (truncated to keep payload small)
+      const voiceMemos = (summary?.voiceMemos || []).map(m => ({
+        transcript: typeof m.transcript === 'string' ? m.transcript.slice(0, 300) : '',
+        durationSeconds: m.durationSeconds ?? 0,
+      }));
+
       sessions.push({
         sessionId: data.sessionId || baseName,
         date: date,
@@ -309,6 +315,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
         totalCoins,
         challengeCount,
         voiceMemoCount,
+        voiceMemos,
       });
     }
 

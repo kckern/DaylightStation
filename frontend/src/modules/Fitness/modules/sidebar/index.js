@@ -25,9 +25,9 @@ export { default as MusicPanel } from './MusicPanel.jsx';
 export { default as VoiceMemoPanel } from './VoiceMemoPanel.jsx';
 
 // Re-export the underlying implementations for direct access
-export { default as FitnessTreasureBox } from '../../FitnessSidebar/FitnessTreasureBox.jsx';
-export { default as FitnessGovernance } from '../../FitnessSidebar/FitnessGovernance.jsx';
-export { default as FitnessUsersList } from '../../FitnessSidebar/FitnessUsers.jsx';
-export { default as FitnessMusicPlayer } from '../../FitnessSidebar/FitnessMusicPlayer.jsx';
-export { default as FitnessVoiceMemo } from '../../FitnessSidebar/FitnessVoiceMemo.jsx';
-export { default as FitnessSidebarMenu } from '../../FitnessSidebar/FitnessSidebarMenu.jsx';
+export { default as FitnessTreasureBox } from '../../FitnessModules/shared/FitnessTreasureBox.jsx';
+export { default as FitnessGovernance } from '../../FitnessModules/shared/FitnessGovernance.jsx';
+export { default as FitnessUsersList } from '../../FitnessModules/shared/FitnessUsers.jsx';
+export { default as FitnessMusicPlayer } from '../../FitnessModules/shared/FitnessMusicPlayer.jsx';
+export { default as FitnessVoiceMemo } from '../../FitnessModules/shared/FitnessVoiceMemo.jsx';
+export { default as FitnessSidebarMenu } from '../../FitnessModules/shared/FitnessSidebarMenu.jsx';

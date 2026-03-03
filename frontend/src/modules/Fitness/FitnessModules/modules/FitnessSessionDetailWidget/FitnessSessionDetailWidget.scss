@@ -1,0 +1,41 @@
+// FitnessSessionDetailWidget — detail panel layout
+
+.detail-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+
+  &__close {
+    flex-shrink: 0;
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    user-select: none;
+    opacity: 0.7;
+    transition: opacity 0.15s;
+
+    &:hover { opacity: 1; }
+    &::before {
+      content: '\2190  ';
+    }
+  }
+
+  &__loading {
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    height: 100%;
+  }
+
+  &__error {
+    padding: 2rem;
+    text-align: center;
+  }
+
+  > :last-child {
+    flex: 1;
+    min-height: 0;
+  }
+}

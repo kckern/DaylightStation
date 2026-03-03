@@ -40,15 +40,13 @@ for (const [key, mod] of Object.entries(REGISTRY_KEYS)) {
   registry.register(key, mod.default, mod.manifest);
 }
 
-// Dashboard widgets (screen-framework compatible)
-import {
-  FitnessSessionsWidget,
-  FitnessWeightWidget,
-  FitnessNutritionWidget,
-  FitnessUpNextWidget,
-  FitnessCoachWidget,
-  FitnessSessionDetailWidget,
-} from './modules/HomeApp/widgets/index.js';
+// Dashboard widgets (screen-framework compatible, sibling modules)
+import FitnessSessionsWidget from './modules/FitnessSessionsWidget/index.jsx';
+import FitnessWeightWidget from './modules/FitnessWeightWidget/index.jsx';
+import FitnessNutritionWidget from './modules/FitnessNutritionWidget/index.jsx';
+import FitnessUpNextWidget from './modules/FitnessUpNextWidget/index.jsx';
+import FitnessCoachWidget from './modules/FitnessCoachWidget/index.jsx';
+import FitnessSessionDetailWidget from './modules/FitnessSessionDetailWidget/index.jsx';
 
 registry.register('fitness:sessions', FitnessSessionsWidget);
 registry.register('fitness:weight', FitnessWeightWidget);

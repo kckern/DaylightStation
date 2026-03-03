@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import PropTypes from 'prop-types';
-import FitnessGovernance from '../../FitnessSidebar/FitnessGovernance.jsx';
+import FitnessGovernance from '../../FitnessModules/shared/FitnessGovernance.jsx';
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import { useRenderProfiler } from '@/hooks/fitness/useRenderProfiler.js';
 import './panels.scss';
