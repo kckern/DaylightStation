@@ -304,6 +304,11 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
               alt=""
               onError={(e) => { e.target.style.display = 'none'; }}
             />
+            <button
+              className="session-detail__close"
+              onClick={() => restore('right-area')}
+              title="Close"
+            >&times;</button>
             {sessionId && (
               <code
                 className="session-detail__session-id"
@@ -318,7 +323,13 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
             )}
           </div>
         ) : (
-          <div className="session-detail__thumb session-detail__thumb--placeholder" />
+          <div className="session-detail__thumb session-detail__thumb--placeholder">
+            <button
+              className="session-detail__close"
+              onClick={() => restore('right-area')}
+              title="Close"
+            >&times;</button>
+          </div>
         )}
       </div>
 
