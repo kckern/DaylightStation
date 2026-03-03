@@ -234,15 +234,11 @@ export class YamlSessionDatastore extends ISessionDatastore {
 
       const summary = data.summary;
 
-      // Build participants from summary block (keyed object with stats)
+      // Build participants — list view only needs displayName
       const participants = {};
       for (const [slug, info] of Object.entries(data.participants || {})) {
-        const ps = summary?.participants?.[slug];
         participants[slug] = {
           displayName: info.display_name || slug,
-          coins: ps?.coins ?? 0,
-          hrAvg: ps?.hr_avg ?? 0,
-          hrMax: ps?.hr_max ?? 0,
         };
       }
 
@@ -252,7 +248,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
         const primaryItem = summary.media.find(m => m.primary);
         const otherItems = summary.media.filter(m => !m.primary);
         const formatMedia = (m) => ({
-          contentId: m.contentId || m.mediaId,
+          contentId: m.contentId,
           title: m.title,
           showTitle: m.showTitle,
           seasonTitle: m.seasonTitle,
@@ -261,7 +257,6 @@ export class YamlSessionDatastore extends ISessionDatastore {
         });
         media = {
           primary: primaryItem ? formatMedia(primaryItem) : null,
-          others: otherItems.map(formatMedia),
         };
       }
 
@@ -272,7 +267,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
           const formatFromEvent = (evt) => {
             const d = evt.data || {};
             return {
-              contentId: d.contentId || d.mediaId,
+              contentId: d.contentId,
               title: d.title,
               showTitle: d.grandparentTitle,
               seasonTitle: d.parentTitle,
@@ -289,24 +284,65 @@ export class YamlSessionDatastore extends ISessionDatastore {
           }
           media = {
             primary: formatFromEvent(mediaEvents[primaryIdx]),
-            others: mediaEvents.filter((_, i) => i !== primaryIdx).map(formatFromEvent),
           };
+        }
+
+        // Second fallback: extract from media_start events (older v3 sessions)
+        if (!media) {
+          const videoStarts = (data.timeline.events || [])
+            .filter(e => e.type === 'media_start' && e.data?.source === 'video_player');
+          if (videoStarts.length > 0) {
+            // Pick longest-duration video as primary
+            let primaryIdx = 0;
+            for (let i = 1; i < videoStarts.length; i++) {
+              if ((videoStarts[i].data?.durationSeconds || 0) > (videoStarts[primaryIdx].data?.durationSeconds || 0)) {
+                primaryIdx = i;
+              }
+            }
+            const d = videoStarts[primaryIdx].data || {};
+            media = {
+              primary: {
+                contentId: d.contentId || (d.plexId ? `plex:${d.plexId}` : null),
+                title: d.title,
+                showTitle: d.show,
+                seasonTitle: d.season,
+                grandparentId: null,
+                parentId: null,
+              },
+            };
+          }
         }
       }
 
-      // Extract max suffer score and corresponding activityId across participants
+      // Extract suffer scores and corresponding activityId across participants
       let maxSufferScore = null;
+      let totalSufferScore = 0;
       let stravaActivityId = null;
       for (const [slug, info] of Object.entries(data.participants || {})) {
         const ss = info.strava?.sufferScore;
-        if (ss != null && (maxSufferScore === null || ss > maxSufferScore)) {
-          maxSufferScore = ss;
-          stravaActivityId = info.strava?.activityId || null;
+        if (ss != null) {
+          totalSufferScore += ss;
+          if (maxSufferScore === null || ss > maxSufferScore) {
+            maxSufferScore = ss;
+            stravaActivityId = info.strava?.activityId || null;
+          }
         }
       }
 
+      // Extract session-level strava display data
+      let strava = null;
+      if (data.strava?.name || data.strava?.type) {
+        strava = {
+          name: data.strava.name || null,
+          type: data.strava.type || null,
+          sportType: data.strava.sportType || null,
+          distance: data.strava.distance || 0,
+          trainer: data.strava.trainer ?? true,
+          hasMap: !!(data.strava.map?.polyline),
+        };
+      }
+
       const totalCoins = summary?.coins?.total ?? data.treasureBox?.totalCoins ?? 0;
-      const challengeCount = summary?.challenges?.total ?? 0;
 
       // Voice memos: prefer summary, fall back to timeline events
       let rawMemos = summary?.voiceMemos;
@@ -319,7 +355,6 @@ export class YamlSessionDatastore extends ISessionDatastore {
             timestamp: e.timestamp,
           }));
       }
-      const voiceMemoCount = rawMemos?.length ?? 0;
       const voiceMemos = (rawMemos || [])
         .filter(m => m.transcript)
         .map(m => ({
@@ -337,9 +372,9 @@ export class YamlSessionDatastore extends ISessionDatastore {
         media,
         totalCoins,
         maxSufferScore,
+        totalSufferScore,
         stravaActivityId,
-        challengeCount,
-        voiceMemoCount,
+        strava,
         voiceMemos,
       });
     }
