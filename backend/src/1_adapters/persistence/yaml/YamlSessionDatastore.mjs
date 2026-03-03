@@ -296,13 +296,25 @@ export class YamlSessionDatastore extends ISessionDatastore {
 
       const totalCoins = summary?.coins?.total ?? data.treasureBox?.totalCoins ?? 0;
       const challengeCount = summary?.challenges?.total ?? 0;
-      const voiceMemoCount = summary?.voiceMemos?.length ?? 0;
 
-      // Include transcript text for display (truncated to keep payload small)
-      const voiceMemos = (summary?.voiceMemos || []).map(m => ({
-        transcript: typeof m.transcript === 'string' ? m.transcript.slice(0, 300) : '',
-        durationSeconds: m.durationSeconds ?? 0,
-      }));
+      // Voice memos: prefer summary, fall back to timeline events
+      let rawMemos = summary?.voiceMemos;
+      if ((!rawMemos || rawMemos.length === 0) && data.timeline?.events?.length > 0) {
+        rawMemos = data.timeline.events
+          .filter(e => e.type === 'voice_memo' && e.data)
+          .map(e => ({
+            transcript: e.data.transcript || e.data.transcriptPreview || '',
+            durationSeconds: e.data.durationSeconds ?? e.data.duration_seconds ?? 0,
+            timestamp: e.timestamp,
+          }));
+      }
+      const voiceMemoCount = rawMemos?.length ?? 0;
+      const voiceMemos = (rawMemos || [])
+        .filter(m => m.transcript)
+        .map(m => ({
+          transcript: typeof m.transcript === 'string' ? m.transcript.slice(0, 300) : '',
+          durationSeconds: m.durationSeconds ?? 0,
+        }));
 
       sessions.push({
         sessionId: data.sessionId || baseName,

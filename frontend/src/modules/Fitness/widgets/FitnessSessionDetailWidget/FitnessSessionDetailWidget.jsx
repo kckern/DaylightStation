@@ -162,15 +162,26 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
 
     const durationMs = (session.duration_seconds || 0) * 1000;
 
+    // Extract max suffer score across all participants
+    const participants = sessionData.participants || {};
+    let sufferScore = null;
+    for (const p of Object.values(participants)) {
+      const ss = p.strava?.sufferScore;
+      if (ss != null && (sufferScore === null || ss > sufferScore)) sufferScore = ss;
+    }
+
     return {
       title: pm?.title || 'Workout',
       showTitle: pm?.showTitle || pm?.grandparentTitle || null,
       posterUrl: pm?.grandparentId ? mediaDisplayUrl(pm.grandparentId) : null,
       thumbUrl: pm?.contentId ? mediaDisplayUrl(pm.contentId) : null,
+      description: pm?.description || null,
       date: dateStr ? formatDate(dateStr) : '',
       time: session.start ? formatTime(new Date(session.start).getTime(), sessionData.timezone) : '--',
       durationMin: durationMs > 0 ? Math.round(durationMs / 60000) : null,
       totalCoins: sessionData.treasureBox?.totalCoins || summary.coins?.total || 0,
+      sufferScore,
+      voiceMemos: Array.isArray(summary.voiceMemos) ? summary.voiceMemos.filter(m => m.transcript) : [],
     };
   }, [sessionData]);
 
@@ -226,16 +237,34 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
               : header?.title}
           </FitText>
           <div className="session-detail__meta-bottom">
-            {header?.date && <span className="session-detail__meta-item">{header.date}</span>}
-            <span className="session-detail__meta-sep" />
-            {header?.time && <span className="session-detail__meta-item">{header.time}</span>}
-            <span className="session-detail__meta-sep" />
-            {header?.durationMin && <span className="session-detail__meta-item">{header.durationMin}m</span>}
-            {header?.totalCoins > 0 && (
-              <>
-                <span className="session-detail__meta-sep" />
-                <span className="session-detail__meta-item session-detail__coins">+{header.totalCoins}</span>
-              </>
+            <div className="session-detail__stats-row">
+              {header?.date && <span className="session-detail__meta-item">{header.date}</span>}
+              <span className="session-detail__meta-sep" />
+              {header?.time && <span className="session-detail__meta-item">{header.time}</span>}
+              <span className="session-detail__meta-sep" />
+              {header?.durationMin && <span className="session-detail__meta-item">{header.durationMin}m</span>}
+              {header?.totalCoins > 0 && (
+                <>
+                  <span className="session-detail__meta-sep" />
+                  <span className="session-detail__meta-item session-detail__coins">+{header.totalCoins}</span>
+                </>
+              )}
+              {header?.sufferScore != null && (
+                <>
+                  <span className="session-detail__meta-sep" />
+                  <span className="session-detail__meta-item session-detail__suffer">{header.sufferScore}</span>
+                </>
+              )}
+            </div>
+            {header?.voiceMemos?.length > 0 && (
+              <div className="session-detail__memos">
+                {header.voiceMemos.map((memo, i) => (
+                  <div key={i} className="session-detail__memo">
+                    <span className="session-detail__memo-icon">{'\uD83C\uDF99'}</span>
+                    <span className="session-detail__memo-text">{memo.transcript}</span>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </div>
@@ -247,6 +276,11 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
               alt=""
               onError={(e) => { e.target.style.display = 'none'; }}
             />
+            {header?.description && (
+              <div className="session-detail__thumb-desc">
+                <span>{header.description}</span>
+              </div>
+            )}
           </div>
         ) : (
           <div className="session-detail__thumb session-detail__thumb--placeholder" />
