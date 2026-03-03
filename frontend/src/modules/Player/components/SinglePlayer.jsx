@@ -6,6 +6,7 @@ import { fetchMediaInfo } from '../lib/api.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { AudioPlayer } from '../renderers/AudioPlayer.jsx';
 import { VideoPlayer } from '../renderers/VideoPlayer.jsx';
+import { ImageFrame } from '../renderers/ImageFrame.jsx';
 import { PlayerOverlayLoading } from './PlayerOverlayLoading.jsx';
 import { useShaderDiagnostics } from '../hooks/useShaderDiagnostics.js';
 
@@ -373,6 +374,18 @@ export function SinglePlayer(props = {}) {
 
     // Media playback formats → video/audio player
     if (isMediaFormat(format)) {
+      if (format === 'image') {
+        return (
+          <ImageFrame
+            media={mediaInfo}
+            advance={advance}
+            clear={clear}
+            shader={shader}
+            resilienceBridge={resilienceBridge}
+            ignoreKeys={ignoreKeys}
+          />
+        );
+      }
       const PlayerComponent = format === 'audio' ? AudioPlayer : VideoPlayer;
       return (
         <PlayerComponent
