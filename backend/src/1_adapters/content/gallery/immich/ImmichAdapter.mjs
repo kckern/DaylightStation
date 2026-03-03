@@ -396,7 +396,7 @@ export class ImmichAdapter {
     const result = await this.#client.searchMetadata(immichQuery);
 
     const items = (result.items || []).map(asset =>
-      asset.type === 'VIDEO' ? this.#toPlayableItem(asset) : this.#toListableItem(asset)
+      this.#toPlayableItem(asset)
     );
 
     return { items };
