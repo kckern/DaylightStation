@@ -329,19 +329,19 @@ const _consolidateEvents = (events) => {
 
     // ── Media grouping ──
     if (type === 'media_start') {
-      const id = evt.data?.contentId || evt.data?.mediaId || evt.data?.mediaKey || `unknown_${ts}`;
+      const id = evt.data?.contentId || evt.data?.mediaKey || `unknown_${ts}`;
       if (!mediaMap.has(id)) mediaMap.set(id, { startEvt: evt, endEvt: null, pauses: [] });
       else mediaMap.get(id).startEvt = evt;
       continue;
     }
     if (type === 'media_end') {
-      const id = evt.data?.contentId || evt.data?.mediaId || evt.data?.mediaKey || `unknown_${ts}`;
+      const id = evt.data?.contentId || evt.data?.mediaKey || `unknown_${ts}`;
       if (!mediaMap.has(id)) mediaMap.set(id, { startEvt: null, endEvt: evt, pauses: [] });
       else mediaMap.get(id).endEvt = evt;
       continue;
     }
     if (type === 'media_pause' || type === 'media_resume') {
-      const id = evt.data?.contentId || evt.data?.mediaId || evt.data?.mediaKey || null;
+      const id = evt.data?.contentId || evt.data?.mediaKey || null;
       if (id && mediaMap.has(id)) {
         mediaMap.get(id).pauses.push({ type, timestamp: ts });
       }

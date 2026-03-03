@@ -68,7 +68,7 @@ export function buildSessionSummary({ participants, series, events, treasureBox,
     const durationMs = (d.end != null && d.start != null) ? d.end - d.start : 0;
     const isTrack = d.contentType === 'track' || !!d.artist;
     return {
-      contentId: d.contentId || d.mediaId,
+      contentId: d.contentId,
       title: d.title,
       mediaType: isTrack ? 'audio' : 'video',
       ...(d.artist ? { artist: d.artist } : {}),

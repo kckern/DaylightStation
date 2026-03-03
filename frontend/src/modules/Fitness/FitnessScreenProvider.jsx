@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useMemo } from 'react';
+import React, { createContext, useContext, useMemo, useState } from 'react';
 
 const FitnessScreenContext = createContext(null);
 
@@ -10,7 +10,15 @@ const FitnessScreenContext = createContext(null);
  * @param {Function} props.onCtaAction - Handle coach CTA actions
  */
 export function FitnessScreenProvider({ onPlay, onNavigate, onCtaAction, children }) {
-  const value = useMemo(() => ({ onPlay, onNavigate, onCtaAction }), [onPlay, onNavigate, onCtaAction]);
+  const [scrollToDate, setScrollToDate] = useState(null);
+  const [selectedSessionId, setSelectedSessionId] = useState(null);
+
+  const value = useMemo(() => ({
+    onPlay, onNavigate, onCtaAction,
+    scrollToDate, setScrollToDate,
+    selectedSessionId, setSelectedSessionId,
+  }), [onPlay, onNavigate, onCtaAction, scrollToDate, selectedSessionId]);
+
   return (
     <FitnessScreenContext.Provider value={value}>
       {children}
@@ -24,7 +32,11 @@ export function FitnessScreenProvider({ onPlay, onNavigate, onCtaAction, childre
 export function useFitnessScreen() {
   const ctx = useContext(FitnessScreenContext);
   if (!ctx) {
-    return { onPlay: null, onNavigate: null, onCtaAction: null };
+    return {
+      onPlay: null, onNavigate: null, onCtaAction: null,
+      scrollToDate: null, setScrollToDate: () => {},
+      selectedSessionId: null, setSelectedSessionId: () => {},
+    };
   }
   return ctx;
 }

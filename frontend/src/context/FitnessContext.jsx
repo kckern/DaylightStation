@@ -89,7 +89,7 @@ const createEmptyOwnership = () => ({
   cadence: new Map()
 });
 
-export const calculateIntensity = (x, y, z) => {
+const calculateIntensity = (x, y, z) => {
   if (x == null || y == null || z == null) return 0;
   return Math.sqrt(x * x + y * y + z * z);
 };

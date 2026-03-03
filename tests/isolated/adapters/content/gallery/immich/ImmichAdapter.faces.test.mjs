@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { ListableItem } from '../../../../../../backend/src/2_domains/content/capabilities/Listable.mjs';
+import { resolveFormat } from '../../../../../../backend/src/2_domains/content/utils/resolveFormat.mjs';
 
 describe('ImmichAdapter face enrichment', () => {
   const transformPeople = (people) =>
@@ -50,5 +52,53 @@ describe('ImmichAdapter face enrichment', () => {
     const result = transformPeople(input);
     expect(result[0].name).toBe('Felix');
     expect(result.map(p => p.name)).toEqual(['Felix']);
+  });
+});
+
+describe('ImmichAdapter ListableItem image format contract', () => {
+  it('ListableItem with mediaType "image" causes resolveFormat to return "image"', () => {
+    const item = new ListableItem({
+      id: 'immich:test-asset-uuid',
+      source: 'immich',
+      title: 'photo.jpg',
+      itemType: 'leaf',
+      mediaType: 'image',
+      thumbnail: '/thumb/test-asset-uuid',
+      imageUrl: '/original/test-asset-uuid',
+      metadata: { type: 'image', category: 'media' },
+    });
+
+    expect(item.mediaType).toBe('image');
+    expect(resolveFormat(item)).toBe('image');
+  });
+
+  it('ListableItem without mediaType falls back to "video" via resolveFormat', () => {
+    const item = new ListableItem({
+      id: 'immich:test-asset-uuid',
+      source: 'immich',
+      title: 'photo.jpg',
+      itemType: 'leaf',
+      thumbnail: '/thumb/test-asset-uuid',
+      imageUrl: '/original/test-asset-uuid',
+      metadata: { type: 'image', category: 'media' },
+    });
+
+    // Without mediaType, resolveFormat falls through to the 'video' default
+    expect(item.mediaType).toBeNull();
+    expect(resolveFormat(item)).toBe('video');
+  });
+
+  it('ListableItem with contentFormat in metadata takes priority over mediaType', () => {
+    const item = new ListableItem({
+      id: 'immich:test-asset-uuid',
+      source: 'immich',
+      title: 'photo.jpg',
+      itemType: 'leaf',
+      mediaType: 'image',
+      metadata: { contentFormat: 'gallery' },
+    });
+
+    // metadata.contentFormat is priority 1 in resolveFormat
+    expect(resolveFormat(item)).toBe('gallery');
   });
 });

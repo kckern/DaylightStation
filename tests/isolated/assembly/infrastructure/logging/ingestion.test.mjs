@@ -69,13 +69,13 @@ describe('ingestFrontendLogs', () => {
         source: 'playback-logger',
         event: 'playback.started',
         level: 'info',
-        payload: { mediaId: '123' },
+        payload: { contentId: '123' },
         timestamp: '2026-01-11T10:00:00Z'
       });
 
       expect(result).toBe(1);
       expect(dispatchedEvents[0].event).toBe('playback.started');
-      expect(dispatchedEvents[0].data.mediaId).toBe('123');
+      expect(dispatchedEvents[0].data.contentId).toBe('123');
       expect(dispatchedEvents[0].context.channel).toBe('playback');
     });
   });

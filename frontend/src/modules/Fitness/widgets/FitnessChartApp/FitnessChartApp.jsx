@@ -1005,18 +1005,12 @@ const FitnessChartApp = ({ mode, onClose, config, onMount, sessionData }) => {
 		const ticks = Math.max(MIN_VISIBLE_TICKS, effectiveTicks || 1, 1);
 
 		// Build avatar elements from presentEntries
+		// Use entry.lastIndex (last ACTIVE tick) so dropout avatars appear at the dropout point,
+		// not at the end of the forward-filled beats array
 		const avatarElements = presentEntries.map((entry) => {
 			const beats = entry.beats || [];
-			let lastIndex = -1;
-			let lastValue = null;
-			for (let i = beats.length - 1; i >= 0; i -= 1) {
-				const v = beats[i];
-				if (Number.isFinite(v)) {
-					lastIndex = i;
-					lastValue = v;
-					break;
-				}
-			}
+			const lastIndex = entry.lastIndex >= 0 ? entry.lastIndex : -1;
+			const lastValue = lastIndex >= 0 && Number.isFinite(beats[lastIndex]) ? beats[lastIndex] : null;
 			if (lastIndex < 0 || !Number.isFinite(lastValue)) {
 				return null;
 			}
