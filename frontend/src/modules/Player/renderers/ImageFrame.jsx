@@ -15,6 +15,7 @@ function computeZoomTarget({ people, focusPerson, zoom }) {
   let targetX = 0.5;
   let targetY = 0.5;
   let found = false;
+  let strategy = 'random';
 
   const allFaces = (people || []).flatMap(p =>
     (p.faces || []).map(f => ({ ...f, personName: p.name }))
@@ -28,6 +29,7 @@ function computeZoomTarget({ people, focusPerson, zoom }) {
       targetX = ((match.x1 + match.x2) / 2) / match.imageWidth;
       targetY = ((match.y1 + match.y2) / 2) / match.imageHeight;
       found = true;
+      strategy = 'focus-person';
     }
   }
 
@@ -45,6 +47,7 @@ function computeZoomTarget({ people, focusPerson, zoom }) {
       targetX = ((largest.x1 + largest.x2) / 2) / largest.imageWidth;
       targetY = ((largest.y1 + largest.y2) / 2) / largest.imageHeight;
       found = true;
+      strategy = 'largest-face';
     }
   }
 
@@ -52,6 +55,16 @@ function computeZoomTarget({ people, focusPerson, zoom }) {
     targetX = 0.2 + Math.random() * 0.6;
     targetY = 0.2 + Math.random() * 0.6;
   }
+
+  logger.debug('zoom-target-computed', {
+    strategy,
+    focusPerson: focusPerson || null,
+    faceCount: allFaces.length,
+    faceNames: [...new Set(allFaces.map(f => f.personName).filter(Boolean))],
+    targetX: targetX.toFixed(3),
+    targetY: targetY.toFixed(3),
+    zoom,
+  });
 
   const startOffX = (0.5 - targetX) * maxTranslate * 0.3;
   const startOffY = (0.5 - targetY) * maxTranslate * 0.3;
@@ -63,6 +76,7 @@ function computeZoomTarget({ people, focusPerson, zoom }) {
     startY: `${startOffY.toFixed(2)}%`,
     endX: `${endOffX.toFixed(2)}%`,
     endY: `${endOffY.toFixed(2)}%`,
+    strategy,
   };
 }
 
@@ -86,12 +100,32 @@ export function ImageFrame({
   const rafRef = useRef(null);
   const [loaded, setLoaded] = useState(false);
 
-  const slideshow = media?.slideshow || {};
+  const imageId = media?.id || null;
+  const slideshow = useMemo(() => media?.slideshow || {}, [media?.slideshow]);
   const duration = (slideshow.duration || 5) * 1000;
   const zoom = slideshow.zoom || 1.2;
   const effect = slideshow.effect || 'kenburns';
   const focusPerson = slideshow.focusPerson || null;
-  const people = media?.metadata?.people || [];
+  const people = useMemo(() => media?.metadata?.people || [], [media?.metadata?.people]);
+  const peopleNames = useMemo(() => people.map(p => p.name).filter(Boolean), [people]);
+  const hasFaces = useMemo(() => people.some(p => p.faces?.length > 0), [people]);
+
+  // Mount logging
+  useEffect(() => {
+    logger.debug('image-frame-mount', {
+      imageId,
+      title: media?.title,
+      mediaType: media?.mediaType,
+      hasFaces,
+      peopleNames,
+      width: media?.metadata?.width,
+      height: media?.metadata?.height,
+      slideshowConfig: slideshow,
+    });
+    return () => {
+      logger.debug('image-frame-unmount', { imageId });
+    };
+  }, [imageId]);
 
   const zoomTarget = useMemo(
     () => computeZoomTarget({ people, focusPerson, zoom }),
@@ -118,11 +152,16 @@ export function ImageFrame({
     if (!loaded || !imgRef.current) return;
 
     logger.info('image-frame-start', {
-      mediaUrl: media?.mediaUrl,
+      imageId,
+      title: media?.title,
       duration: duration / 1000,
       effect,
       zoom,
       focusPerson,
+      hasFaces,
+      peopleNames,
+      zoomStrategy: zoomTarget.strategy,
+      transition: slideshow.transition || 'none',
     });
 
     if (typeof resilienceBridge?.onStartupSignal === 'function') {
@@ -155,12 +194,15 @@ export function ImageFrame({
     rafRef.current = requestAnimationFrame(tickMetrics);
 
     timerRef.current = setTimeout(() => {
-      logger.debug('image-frame-advance', { mediaUrl: media?.mediaUrl });
+      logger.debug('image-frame-advance', { imageId, title: media?.title, durationSec: duration / 1000 });
       if (typeof advance === 'function') advance();
     }, duration);
 
     return () => {
-      if (animationRef.current) animationRef.current.cancel();
+      if (animationRef.current) {
+        animationRef.current.cancel();
+        logger.debug('image-frame-animation-cancelled', { imageId });
+      }
       if (timerRef.current) clearTimeout(timerRef.current);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
@@ -168,7 +210,7 @@ export function ImageFrame({
 
   const handleLoad = useCallback(() => setLoaded(true), []);
   const handleError = useCallback(() => {
-    logger.warn('image-frame-load-error', { mediaUrl: media?.mediaUrl });
+    logger.warn('image-frame-load-error', { imageId, mediaUrl: media?.mediaUrl, title: media?.title });
     if (typeof advance === 'function') advance();
   }, [advance, media?.mediaUrl]);
 
