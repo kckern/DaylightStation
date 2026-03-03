@@ -10,7 +10,7 @@ import {
 	buildSegments,
 	createPaths
 } from '@/modules/Fitness/lib/chartHelpers.js';
-import { CHART_MARGIN, MIN_VISIBLE_TICKS } from '@/modules/Fitness/lib/chartConstants.js';
+import { CHART_MARGIN, MIN_VISIBLE_TICKS, MIN_GAP_DURATION_FOR_DASHED_MS } from '@/modules/Fitness/lib/chartConstants.js';
 import { ParticipantStatus, getZoneColor, isBroadcasting } from '@/modules/Fitness/domain';
 import { LayoutManager } from './layout';
 import { createChartDataSource } from './sessionDataAdapter.js';
@@ -25,9 +25,6 @@ const MIN_GRID_LINES = 4;
 const PATH_STROKE_WIDTH = 5;
 const TICK_FONT_SIZE = 20;
 const COIN_FONT_SIZE = 20;
-// Bug 01 fix: Minimum gap duration before showing grey dotted style (2 minutes)
-const MIN_GAP_DURATION_FOR_DASHED_MS = 2 * 60 * 1000;
-
 const slugifyId = (value, fallback = 'user') => {
 	if (!value) return fallback;
 	const slug = String(value)
