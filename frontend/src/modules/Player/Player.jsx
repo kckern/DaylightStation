@@ -802,7 +802,7 @@ const Player = forwardRef(function Player(props, ref) {
     remountDiagnostics: remountState.context,
     wrapWithContainer: false,
     suppressLocalOverlay: !!overlayElements,
-    // Use external session if provided (e.g., from CompositePlayer for multi-player isolation),
+    // Use external session if provided (for multi-player isolation),
     // otherwise generate based on current media GUID and remount nonce
     plexClientSession: externalPlexClientSession || (currentMediaGuid ? `${currentMediaGuid}-r${remountState.nonce}` : null)
   };
@@ -896,7 +896,7 @@ Player.propTypes = {
   onController: PropTypes.func,
   maxVideoBitrate: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   maxResolution: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
-  /** External Plex client session ID for multi-player isolation (e.g., from CompositePlayer) */
+  /** External Plex client session ID for multi-player isolation */
   plexClientSession: PropTypes.string
 };
 
