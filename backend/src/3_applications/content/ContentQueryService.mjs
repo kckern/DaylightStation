@@ -739,7 +739,6 @@ export class ContentQueryService {
     // Enrich items from the map (no additional API/file calls)
     return items.map(item => {
       const progress = progressMap.get(item.id);
-
       if (!progress) return item;
 
       const playhead = progress.playhead ?? 0;
