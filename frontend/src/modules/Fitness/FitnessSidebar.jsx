@@ -2,15 +2,15 @@ import React, { useState, forwardRef, useImperativeHandle } from 'react';
 import { useFitnessContext } from '../../context/FitnessContext.jsx';
 import getLogger from '../../lib/logging/Logger.js';
 import { useRenderProfiler } from '../../hooks/fitness/useRenderProfiler.js';
-import FitnessTreasureBox from './FitnessSidebar/FitnessTreasureBox.jsx';
-import FitnessUsersList from './FitnessSidebar/FitnessUsers.jsx';
-import FitnessSidebarMenu from './FitnessSidebar/FitnessSidebarMenu.jsx';
-import FitnessVideo from './FitnessSidebar/FitnessVideo.jsx';
-import FitnessVoiceMemo from './FitnessSidebar/FitnessVoiceMemo.jsx';
-import FitnessMusicPlayer from './FitnessSidebar/FitnessMusicPlayer.jsx';
-import FitnessGovernance from './FitnessSidebar/FitnessGovernance.jsx';
+import FitnessTreasureBox from './FitnessModules/shared/FitnessTreasureBox.jsx';
+import FitnessUsersList from './FitnessModules/shared/FitnessUsers.jsx';
+import FitnessSidebarMenu from './FitnessModules/shared/FitnessSidebarMenu.jsx';
+import FitnessVideo from './FitnessModules/shared/FitnessVideo.jsx';
+import FitnessVoiceMemo from './FitnessModules/shared/FitnessVoiceMemo.jsx';
+import FitnessMusicPlayer from './FitnessModules/shared/FitnessMusicPlayer.jsx';
+import FitnessGovernance from './FitnessModules/shared/FitnessGovernance.jsx';
 import './FitnessSidebar.scss';
-import './FitnessSidebar/FitnessGovernance.scss';
+import './FitnessModules/shared/FitnessGovernance.scss';
 
 const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, reloadTargetSeconds = 0, mode = 'player', governanceDisabled = false, viewMode = 'cam', onToggleViewMode = null, miniCamContent = null, onToggleChart = null, showChart = true, boostLevel, setBoost }, ref) => {
   useRenderProfiler('FitnessSidebar');

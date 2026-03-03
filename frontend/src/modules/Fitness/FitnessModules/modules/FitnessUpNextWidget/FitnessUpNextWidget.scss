@@ -1,0 +1,58 @@
+// FitnessUpNextWidget — up-next card, thumbnails, play button, alternates
+
+.dashboard-card--upnext {
+  background: rgba(34, 139, 230, 0.08);
+  border-color: rgba(34, 139, 230, 0.2);
+}
+
+.content-thumbnail {
+  width: 120px;
+  min-width: 120px;
+  height: 80px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.dashboard-play-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.6rem 2rem;
+  background: #228be6;
+  border-radius: 8px;
+  cursor: pointer;
+  min-height: 48px;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  width: 100%;
+  margin-top: 0.5rem;
+
+  &:active {
+    background: #1c7ed6;
+    transform: scale(0.97);
+  }
+}
+
+.alternate-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  min-height: 48px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  user-select: none;
+  flex: 1;
+
+  &:active { background: rgba(255, 255, 255, 0.12); }
+}

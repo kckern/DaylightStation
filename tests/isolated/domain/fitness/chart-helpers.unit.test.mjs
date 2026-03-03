@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildBeatsSeries, getZoneCoinRate, buildSegments } from '#frontend/modules/Fitness/FitnessSidebar/FitnessChart.helpers.js';
+import { buildBeatsSeries, getZoneCoinRate, buildSegments } from '#frontend/modules/Fitness/FitnessModules/lib/chartHelpers.js';
 import { ZoneColors } from '#frontend/modules/Fitness/domain/types.js';
 import { ZONE_COLORS } from '#frontend/modules/Fitness/shared/constants/fitness.js';
 

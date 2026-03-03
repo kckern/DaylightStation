@@ -1,0 +1,186 @@
+// FitnessSessionsWidget — session list, rows, posters, metadata, voice memos
+
+// --- Date Headers ---
+
+.session-date-header {
+  padding: 0.5rem 0 0.25rem;
+  letter-spacing: 0.06em;
+  position: sticky;
+  top: 0;
+  background: rgba(26, 26, 46, 0.97);
+  z-index: 10;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.dashboard-card--workouts > .mantine-Stack-root > div:first-child > .session-date-header {
+  padding-top: 0;
+}
+
+// --- Session Row ---
+
+.session-row {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-bottom: 6px;
+  background: rgba(255, 255, 255, 0.03);
+
+  &:last-child { margin-bottom: 0; }
+  &:active { opacity: 0.9; }
+
+  &--selected {
+    box-shadow: inset 0 0 0 2px rgba(34, 139, 230, 0.5);
+    background-color: rgba(34, 139, 230, 0.12);
+  }
+
+  &--has-bg {
+    background-size: contain;
+    background-position: right center;
+    background-repeat: no-repeat;
+
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      background: linear-gradient(
+        to right,
+        rgba(26, 26, 46, 1) 0%,
+        rgba(26, 26, 46, 1) 45%,
+        rgba(26, 26, 46, 0.8) 65%,
+        rgba(26, 26, 46, 0.3) 85%,
+        rgba(26, 26, 46, 0) 100%
+      );
+    }
+
+    .session-row__top {
+      position: relative;
+      z-index: 1;
+    }
+
+    &.session-row--selected::before {
+      background: linear-gradient(
+        to right,
+        rgba(20, 40, 80, 1) 0%,
+        rgba(20, 40, 80, 0.95) 45%,
+        rgba(20, 40, 80, 0.7) 65%,
+        rgba(20, 40, 80, 0.3) 85%,
+        rgba(34, 139, 230, 0) 100%
+      );
+    }
+  }
+}
+
+.session-row__top {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem;
+  padding-right: 15%;
+  min-height: 60px;
+}
+
+// --- Poster ---
+// Explicit width + height prevent layout shift while images load.
+
+.session-poster {
+  width: 80px;
+  min-width: 80px;
+  height: 120px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  flex-shrink: 0;
+
+  &--placeholder {
+    height: 120px;
+    aspect-ratio: 2 / 3;
+  }
+}
+
+// --- Info ---
+
+.session-row__info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.session-row__title-line {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  min-height: 36px;
+
+  > * {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.session-row__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  line-height: 1;
+  margin-top: 2px;
+  min-height: 18px;
+}
+
+.session-row__sep {
+  width: 1px;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.2);
+  flex-shrink: 0;
+}
+
+// --- Participants ---
+
+.session-row__participants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+  min-height: 22px;
+}
+
+.session-row__participant {
+  display: inline-flex;
+  align-items: center;
+}
+
+.session-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+// --- Voice Memo Snippet ---
+
+.session-row__memos {
+  position: relative;
+  z-index: 1;
+  padding: 0 0.6rem 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.session-row__memo-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.4;
+  font-style: italic;
+  opacity: 0.7;
+}
