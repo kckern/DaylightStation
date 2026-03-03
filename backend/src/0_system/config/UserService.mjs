@@ -133,19 +133,21 @@ export class UserService {
       }
 
       // Family and friends stay as-is (inline definitions)
-      // Just ensure they have consistent structure
+      // Require explicit id — never derive from display name (produces wrong keys like 'kc_kern' for 'kckern')
+      const hydrateInlineUser = (user) => {
+        if (!user.id) {
+          console.warn(`[UserService] Family/friend user missing 'id' field (name: "${user.name}") — skipping`);
+          return null;
+        }
+        return user;
+      };
+
       if (Array.isArray(fitnessConfig.users.family)) {
-        hydrated.users.family = fitnessConfig.users.family.map(user => ({
-          ...user,
-          id: user.id || user.name?.toLowerCase().replace(/\s+/g, '_'),
-        }));
+        hydrated.users.family = fitnessConfig.users.family.map(hydrateInlineUser).filter(Boolean);
       }
 
       if (Array.isArray(fitnessConfig.users.friends)) {
-        hydrated.users.friends = fitnessConfig.users.friends.map(user => ({
-          ...user,
-          id: user.id || user.name?.toLowerCase().replace(/\s+/g, '_'),
-        }));
+        hydrated.users.friends = fitnessConfig.users.friends.map(hydrateInlineUser).filter(Boolean);
       }
     }
 

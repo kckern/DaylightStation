@@ -57,17 +57,25 @@ export default function FitnessCalendarWidget() {
     return map;
   }, [sessions]);
 
-  // Compute min/max suffer scores for normalization
-  const { minSuffer, maxSuffer } = useMemo(() => {
-    let min = Infinity;
-    let max = -Infinity;
-    for (const d of dateMap.values()) {
+  // Build sorted suffer scores for decile-based coloring.
+  // Rank each day's suffer score against all others so outlier spikes
+  // don't flatten everything else to the bottom of the gradient.
+  const sufferRankMap = useMemo(() => {
+    const scores = [];
+    for (const [date, d] of dateMap.entries()) {
       if (d.totalSufferScore != null && d.totalSufferScore > 0) {
-        if (d.totalSufferScore < min) min = d.totalSufferScore;
-        if (d.totalSufferScore > max) max = d.totalSufferScore;
+        scores.push({ date, score: d.totalSufferScore });
       }
     }
-    return { minSuffer: min === Infinity ? 0 : min, maxSuffer: max === -Infinity ? 0 : max };
+    if (scores.length === 0) return new Map();
+    scores.sort((a, b) => a.score - b.score);
+    const rank = new Map();
+    for (let i = 0; i < scores.length; i++) {
+      // Percentile rank 0–1
+      const t = scores.length > 1 ? i / (scores.length - 1) : 0.5;
+      rank.set(scores[i].date, t);
+    }
+    return rank;
   }, [dateMap]);
 
   // Derive selected date from selectedSessionId (format: YYYYMMDD...)
@@ -148,14 +156,12 @@ export default function FitnessCalendarWidget() {
           if (isFuture) {
             bgColor = 'transparent';
           } else if (!hasSession) {
-            bgColor = '#DDD';
-          } else if (data.totalSufferScore != null && data.totalSufferScore > 0) {
-            const range = maxSuffer - minSuffer;
-            const t = range > 0 ? (data.totalSufferScore - minSuffer) / range : 0.5;
-            // Ensure minimum visibility — floor at 0.15 so the lightest isn't invisible
+            bgColor = '#888';
+          } else if (sufferRankMap.has(dateStr)) {
+            const t = sufferRankMap.get(dateStr);
             bgColor = sufferColor(Math.max(t, 0.15));
           } else {
-            bgColor = '#2d6a2d';
+            bgColor = '#FFF';
           }
 
           const classNames = ['fitness-calendar__cell'];
