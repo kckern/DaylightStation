@@ -8,6 +8,7 @@ import { AudioPlayer } from '../renderers/AudioPlayer.jsx';
 import { VideoPlayer } from '../renderers/VideoPlayer.jsx';
 import { ImageFrame } from '../renderers/ImageFrame.jsx';
 import { PlayerOverlayLoading } from './PlayerOverlayLoading.jsx';
+import { SlideshowMetadataOverlay } from './SlideshowMetadataOverlay.jsx';
 import { useShaderDiagnostics } from '../hooks/useShaderDiagnostics.js';
 
 /**
@@ -88,6 +89,8 @@ export function SinglePlayer(props = {}) {
   const [mediaInfo, setMediaInfo] = useState({});
   const [isReady, setIsReady] = useState(false);
   const [goToApp, setGoToApp] = useState(false);
+  const [videoMetaVisible, setVideoMetaVisible] = useState(false);
+  const videoMetaTimerRef = useRef(null);
   const watchedDurationRef = useRef(0);
   const playbackTimerRef = useRef({ lastTickTs: null });
 
@@ -328,6 +331,30 @@ export function SinglePlayer(props = {}) {
     onResolvedMeta?.(mediaInfo);
   }, [isReady, mediaInfo, onResolvedMeta]);
 
+  // Video metadata overlay: show shortly after video starts, hide after a few seconds
+  const showVideoMeta = isReady && mediaInfo?.slideshow?.showMetadata
+    && mediaInfo?.format !== 'image' && isMediaFormat(mediaInfo?.format);
+  useEffect(() => {
+    if (videoMetaTimerRef.current) {
+      clearTimeout(videoMetaTimerRef.current);
+      videoMetaTimerRef.current = null;
+    }
+    if (!showVideoMeta) {
+      setVideoMetaVisible(false);
+      return;
+    }
+    // Fade in after 500ms, fade out after 4s
+    videoMetaTimerRef.current = setTimeout(() => {
+      setVideoMetaVisible(true);
+      videoMetaTimerRef.current = setTimeout(() => {
+        setVideoMetaVisible(false);
+      }, 4000);
+    }, 500);
+    return () => {
+      if (videoMetaTimerRef.current) clearTimeout(videoMetaTimerRef.current);
+    };
+  }, [showVideoMeta, mediaInfo?.id, mediaInfo?.mediaUrl]);
+
   if (goToApp) return <AppContainer open={goToApp} clear={clear} />;
   
   // Calculate plexId from available sources - plex prop is passed directly from Player
@@ -389,7 +416,7 @@ export function SinglePlayer(props = {}) {
         );
       }
       const PlayerComponent = format === 'audio' ? AudioPlayer : VideoPlayer;
-      return (
+      const videoEl = (
         <PlayerComponent
           media={mediaInfo}
           advance={advance}
@@ -414,6 +441,17 @@ export function SinglePlayer(props = {}) {
           watchedDurationProvider={getWatchedDuration}
           upscaleEffects={upscaleEffects}
         />
+      );
+      if (!showVideoMeta) return videoEl;
+      const videoMediaId = mediaInfo?.id || mediaInfo?.assetId || effectiveContentId;
+      return (
+        <>
+          {videoEl}
+          <SlideshowMetadataOverlay
+            mediaId={videoMediaId}
+            visible={videoMetaVisible}
+          />
+        </>
       );
     }
 

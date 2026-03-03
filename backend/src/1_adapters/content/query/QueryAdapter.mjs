@@ -286,12 +286,10 @@ export class QueryAdapter {
       });
     }
 
-    // Stamp slideshow config on image items
+    // Stamp slideshow config on all items (images and videos)
     if (query.slideshow) {
       for (const item of filtered) {
-        if (item.mediaType === 'image') {
-          item.slideshow = query.slideshow;
-        }
+        item.slideshow = query.slideshow;
       }
     }
 
