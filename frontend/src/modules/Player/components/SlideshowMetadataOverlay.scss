@@ -1,0 +1,53 @@
+.slideshow-metadata {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  font-family: 'Roboto Condensed', 'Arial Narrow', Roboto, sans-serif;
+  pointer-events: none;
+
+  &__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+  }
+
+  &__content {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 20px 36px;
+    color: #fff;
+  }
+
+  &__date {
+    font-size: 18px;
+    font-weight: 400;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    opacity: 0.9;
+  }
+
+  &__ago {
+    margin-left: 14px;
+    font-style: italic;
+    text-transform: none;
+    opacity: 0.55;
+  }
+
+  &__people {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+
+  &__location {
+    font-size: 15px;
+    font-weight: 300;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    opacity: 0.7;
+  }
+}
