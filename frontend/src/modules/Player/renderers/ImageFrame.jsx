@@ -34,20 +34,23 @@ function computeZoomTarget({ people, focusPerson, zoom }) {
   }
 
   if (!found && allFaces.length > 0) {
-    let largest = allFaces[0];
-    let largestArea = 0;
+    let closest = allFaces[0];
+    let closestDist = Infinity;
     for (const f of allFaces) {
-      const area = Math.abs((f.x2 - f.x1) * (f.y2 - f.y1));
-      if (area > largestArea) {
-        largestArea = area;
-        largest = f;
+      if (!f.imageWidth || !f.imageHeight) continue;
+      const cx = ((f.x1 + f.x2) / 2) / f.imageWidth;
+      const cy = ((f.y1 + f.y2) / 2) / f.imageHeight;
+      const dist = (cx - 0.5) ** 2 + (cy - 0.5) ** 2;
+      if (dist < closestDist) {
+        closestDist = dist;
+        closest = f;
       }
     }
-    if (largest.imageWidth && largest.imageHeight) {
-      targetX = ((largest.x1 + largest.x2) / 2) / largest.imageWidth;
-      targetY = ((largest.y1 + largest.y2) / 2) / largest.imageHeight;
+    if (closest.imageWidth && closest.imageHeight) {
+      targetX = ((closest.x1 + closest.x2) / 2) / closest.imageWidth;
+      targetY = ((closest.y1 + closest.y2) / 2) / closest.imageHeight;
       found = true;
-      strategy = 'largest-face';
+      strategy = 'center-face';
     }
   }
 
