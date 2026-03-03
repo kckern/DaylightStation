@@ -33,7 +33,7 @@ const CONTENT_FORMAT_COMPONENTS = {
   slideshow: SlideShow,
 };
 
-const MEDIA_PLAYBACK_FORMATS = new Set(['video', 'dash_video', 'audio']);
+const MEDIA_PLAYBACK_FORMATS = new Set(['video', 'dash_video', 'audio', 'image']);
 
 /**
  * Get the renderer component for a content format.
