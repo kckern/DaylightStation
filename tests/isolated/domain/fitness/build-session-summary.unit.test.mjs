@@ -173,7 +173,7 @@ describe('buildSessionSummary', () => {
             type: 'media',
             timestamp: 1000,
             data: {
-              mediaId: 'vid1',
+              contentId: 'vid1',
               title: 'Episode One',
               grandparentTitle: 'The Show',
               parentTitle: 'Season 1',
@@ -187,7 +187,7 @@ describe('buildSessionSummary', () => {
             type: 'media',
             timestamp: 3000000,
             data: {
-              mediaId: 'vid2',
+              contentId: 'vid2',
               title: 'Episode Two',
               grandparentTitle: 'The Show',
               parentTitle: 'Season 1',
@@ -202,8 +202,8 @@ describe('buildSessionSummary', () => {
 
       expect(result.media).toHaveLength(2);
 
-      const vid1 = result.media.find(m => m.mediaId === 'vid1');
-      const vid2 = result.media.find(m => m.mediaId === 'vid2');
+      const vid1 = result.media.find(m => m.contentId === 'vid1');
+      const vid2 = result.media.find(m => m.contentId === 'vid2');
 
       expect(vid1.primary).toBe(true);
       expect(vid2.primary).toBeUndefined();
@@ -228,7 +228,7 @@ describe('buildSessionSummary', () => {
             type: 'media',
             timestamp: 1000,
             data: {
-              mediaId: 'vid1',
+              contentId: 'vid1',
               title: 'Solo Video',
               grandparentTitle: 'Show',
               parentTitle: 'S1',
@@ -419,7 +419,7 @@ describe('buildSessionSummary', () => {
     it('correctly separates media, challenges, and voice memos from the same events array', () => {
       const result = buildSessionSummary(makeInput({
         events: [
-          { type: 'media', timestamp: 1000, data: { mediaId: 'v1', title: 'Ep1', grandparentTitle: 'S', parentTitle: 'S1', grandparentId: 'g1', parentId: 'p1', start: 1000, end: 2000 } },
+          { type: 'media', timestamp: 1000, data: { contentId: 'v1', title: 'Ep1', grandparentTitle: 'S', parentTitle: 'S1', grandparentId: 'g1', parentId: 'p1', start: 1000, end: 2000 } },
           { type: 'challenge', data: { result: 'success' } },
           { type: 'voice_memo', timestamp: 5000, data: { transcript: 'note', durationSeconds: 5 } },
           { type: 'challenge', data: { result: 'fail' } },

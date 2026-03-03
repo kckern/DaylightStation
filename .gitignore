@@ -85,3 +85,4 @@ tests/output/
 # Speex AEC WASM build
 frontend/src/lib/audio/vendor/
 !frontend/src/lib/audio/build-speex-aec.sh
+.claude/worktrees/

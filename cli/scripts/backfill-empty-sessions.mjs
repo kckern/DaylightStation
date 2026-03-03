@@ -123,13 +123,13 @@ async function main() {
 
   console.log(`Found ${emptySessions.length} sessions with empty events\n`);
 
-  // Build media memory index: array of { mediaId, lastPlayedMs, entry }
+  // Build media memory index: array of { contentId, lastPlayedMs, entry }
   const mediaIndex = [];
   for (const [key, entry] of Object.entries(mediaMemory)) {
     if (!entry.lastPlayed) continue;
     const ms = parseMediaTimestamp(entry.lastPlayed);
     if (!ms) continue;
-    mediaIndex.push({ mediaId: key, lastPlayedMs: ms, entry });
+    mediaIndex.push({ contentId: key, lastPlayedMs: ms, entry });
   }
 
   const BUFFER_MS = 5 * 60 * 1000; // 5 min buffer
@@ -163,12 +163,12 @@ async function main() {
   // ── Backfill matched sessions ──────────────────────────────
   console.log('── Backfilling matched sessions ──\n');
   for (const { filePath, fileName, data, match } of matched) {
-    const rawId = match.mediaId.replace('plex:', '');
+    const rawId = match.contentId.replace('plex:', '');
     const item = await lookupPlexItem(rawId);
     const sessionId = data.sessionId || path.basename(fileName, '.yml');
 
     if (!item) {
-      console.log(`  ⚠ Could not look up ${match.mediaId} for session ${sessionId}`);
+      console.log(`  ⚠ Could not look up ${match.contentId} for session ${sessionId}`);
       unmatched.push({ filePath, fileName, data });
       continue;
     }
@@ -177,7 +177,7 @@ async function main() {
       timestamp: parseSessionTimestamp(data.session?.start),
       type: 'media',
       data: {
-        mediaId: String(item.key || rawId),
+        contentId: String(item.key || rawId),
         title: item.title || null,
         grandparentTitle: item.grandparentTitle || null,
         parentTitle: item.parentTitle || null,

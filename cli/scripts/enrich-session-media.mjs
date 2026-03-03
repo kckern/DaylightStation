@@ -103,7 +103,7 @@ for (const plexId of allPlexIds) {
     const data = await resp.json();
     const meta = data.metadata || {};
     metadataCache.set(plexId, {
-      mediaId: numericId,
+      contentId: numericId,
       title: data.title || `Episode ${numericId}`,
       showTitle: meta.grandparentTitle || null,
       seasonTitle: meta.parentTitle || null,
@@ -147,7 +147,7 @@ for (const { filePath, dateDir, file, bareIds } of sessionFiles) {
     if (meta) {
       // Summary entry
       const summaryEntry = {
-        mediaId: meta.mediaId,
+        contentId: meta.contentId,
         title: meta.title,
         ...(meta.showTitle ? { showTitle: meta.showTitle } : {}),
         ...(meta.seasonTitle ? { seasonTitle: meta.seasonTitle } : {}),
@@ -168,7 +168,7 @@ for (const { filePath, dateDir, file, bareIds } of sessionFiles) {
           timestamp: evtStart,
           type: 'media',
           data: {
-            mediaId: meta.mediaId,
+            contentId: meta.contentId,
             title: meta.title,
             ...(meta.showTitle ? { grandparentTitle: meta.showTitle } : {}),
             ...(meta.seasonTitle ? { parentTitle: meta.seasonTitle } : {}),
@@ -184,14 +184,14 @@ for (const { filePath, dateDir, file, bareIds } of sessionFiles) {
       }
     } else {
       // Keep bare ID as fallback
-      richMedia.push({ mediaId: plexId.replace('plex:', ''), title: `Unknown (${plexId})` });
+      richMedia.push({ contentId: plexId.replace('plex:', ''), title: `Unknown (${plexId})` });
     }
   }
 
   // Replace the bare media section in the YAML text
   // Find and replace `media:\n    - plex:XXXXX\n    - plex:YYYYY` blocks
   const mediaYamlLines = richMedia.map((m, i) => {
-    const lines = [`    - mediaId: '${m.mediaId}'`];
+    const lines = [`    - contentId: '${m.contentId}'`];
     lines.push(`      title: ${m.title}`);
     if (m.showTitle) lines.push(`      showTitle: ${m.showTitle}`);
     if (m.seasonTitle) lines.push(`      seasonTitle: ${m.seasonTitle}`);
@@ -213,9 +213,9 @@ for (const { filePath, dateDir, file, bareIds } of sessionFiles) {
     // Fallback: replace each bare ID individually in media section
     let fallbackContent = content;
     for (const m of richMedia) {
-      const bareId = `plex:${m.mediaId}`;
+      const bareId = `plex:${m.contentId}`;
       const richYaml = [
-        `mediaId: '${m.mediaId}'`,
+        `contentId: '${m.contentId}'`,
         `      title: ${m.title}`,
         ...(m.showTitle ? [`      showTitle: ${m.showTitle}`] : []),
         ...(m.seasonTitle ? [`      seasonTitle: ${m.seasonTitle}`] : []),
@@ -254,7 +254,7 @@ for (const { filePath, dateDir, file, bareIds } of sessionFiles) {
             `    - timestamp: ${evt.timestamp}`,
             `      type: ${evt.type}`,
             `      data:`,
-            `        mediaId: '${evt.data.mediaId}'`,
+            `        contentId: '${evt.data.contentId}'`,
             `        title: ${evt.data.title}`,
           ];
           if (evt.data.grandparentTitle) lines.push(`        grandparentTitle: ${evt.data.grandparentTitle}`);

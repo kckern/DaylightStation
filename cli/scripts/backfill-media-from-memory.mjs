@@ -265,7 +265,7 @@ async function main() {
           timestamp: startMs,
           type: 'media',
           data: {
-            mediaId: match.plexId,
+            contentId: match.plexId,
             title,
             ...(grandparentTitle ? { grandparentTitle } : {}),
             ...(parentTitle ? { parentTitle } : {}),
@@ -280,7 +280,7 @@ async function main() {
         });
 
         const summaryEntry = {
-          mediaId: match.plexId,
+          contentId: match.plexId,
           title,
           ...(grandparentTitle ? { showTitle: grandparentTitle } : {}),
           ...(grandparentId ? { grandparentId: Number(grandparentId) || grandparentId } : {}),

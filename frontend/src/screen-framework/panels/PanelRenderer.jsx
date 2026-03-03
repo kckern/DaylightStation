@@ -139,9 +139,11 @@ export function PanelRenderer({
           justifyContent: node.justify || undefined,
           alignItems: node.align || 'stretch',
           gap: node.gap || undefined,
+          padding: node.padding || undefined,
           display: 'flex',
           width: '100%',
           height: '100%',
+          boxSizing: 'border-box',
           ...theme,
         }}
       >

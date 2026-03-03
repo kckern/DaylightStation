@@ -135,10 +135,10 @@ describe('YamlMediaQueueDatastore', () => {
         repeat: 'all',
         volume: 0.75,
         items: [
-          { queueId: 'r1', title: 'Alpha', source: 'plex', mediaId: '100' },
-          { queueId: 'r2', title: 'Beta', source: 'plex', mediaId: '200' },
-          { queueId: 'r3', title: 'Gamma', source: 'plex', mediaId: '300' },
-          { queueId: 'r4', title: 'Delta', source: 'plex', mediaId: '400' },
+          { queueId: 'r1', title: 'Alpha', source: 'plex', contentId: '100' },
+          { queueId: 'r2', title: 'Beta', source: 'plex', contentId: '200' },
+          { queueId: 'r3', title: 'Gamma', source: 'plex', contentId: '300' },
+          { queueId: 'r4', title: 'Delta', source: 'plex', contentId: '400' },
         ],
         shuffleOrder: [3, 1, 0, 2],
       });
@@ -153,7 +153,7 @@ describe('YamlMediaQueueDatastore', () => {
       expect(loaded.volume).toBe(original.volume);
       expect(loaded.items).toHaveLength(original.items.length);
       expect(loaded.items[0].title).toBe('Alpha');
-      expect(loaded.items[3].mediaId).toBe('400');
+      expect(loaded.items[3].contentId).toBe('400');
       expect(loaded.shuffleOrder).toEqual([3, 1, 0, 2]);
     });
   });

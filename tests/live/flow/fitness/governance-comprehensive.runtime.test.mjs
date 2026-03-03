@@ -335,7 +335,7 @@ async function extractGovernanceState(page) {
       lockDuration: gov.lockDuration,
       activeChallenge: gov.activeChallenge,
       videoLocked: gov.videoLocked,
-      mediaId: gov.mediaId,
+      contentId: gov.contentId,
       // New fields exposed for test diagnostics
       satisfiedOnce: gov.satisfiedOnce,
       userZoneMap: gov.userZoneMap || {},

@@ -185,7 +185,7 @@ async function main() {
 
       // --- Find media events needing backfill ---
       const events = data.timeline?.events || [];
-      const mediaEvents = events.filter(e => e.type === 'media' && e.data?.mediaId);
+      const mediaEvents = events.filter(e => e.type === 'media' && e.data?.contentId);
 
       if (mediaEvents.length === 0) {
         noMediaCount++;
@@ -196,7 +196,7 @@ async function main() {
 
       for (const evt of mediaEvents) {
         const d = evt.data;
-        const plexId = d.mediaId;
+        const plexId = d.contentId;
 
         // Skip if already has grandparentId
         if (d.grandparentId && d.parentId) {

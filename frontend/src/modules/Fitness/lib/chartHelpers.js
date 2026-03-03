@@ -459,23 +459,8 @@ export const buildSegments = (beats = [], zones = [], active = [], options = {})
     }
   }
 
-  // PERMANENT DROPOUT: If loop ended with an open gap (user never rejoined),
-  // close it with a flat line to the end of the series so the line is visible
-  if (inGap && gapStartPoint && beats.length > 0) {
-    const endTick = beats.length - 1;
-    if (endTick > gapStartPoint.i) {
-      segments.push({
-        zone: null,
-        color: getZoneColor(null),
-        status: ParticipantStatus.IDLE,
-        isGap: true,
-        points: [
-          { ...gapStartPoint },
-          { i: endTick, v: gapStartPoint.v }
-        ]
-      });
-    }
-  }
+  // PERMANENT DROPOUT: User never rejoined — no trailing grey line.
+  // The colored line ends at the dropout point; avatar renders there.
 
   // POST-PROCESS: Enforce zone-based slopes to fix sawtooth pattern
   // Blue zones (coinRate=0) should be flat, non-blue zones should have slope

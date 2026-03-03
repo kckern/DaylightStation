@@ -2,7 +2,10 @@ import React, { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallba
 import { Text, Skeleton } from '@mantine/core';
 import { getWidgetRegistry } from '@/screen-framework/widgets/registry.js';
 import { useScreen } from '@/screen-framework/providers/ScreenProvider.jsx';
+import { useFitnessScreen } from '@/modules/Fitness/FitnessScreenProvider.jsx';
 import FitnessTimeline from './FitnessTimeline.jsx';
+import SportIcon from '../_shared/SportIcon.jsx';
+import StravaRouteMap from './StravaRouteMap.jsx';
 import './FitnessSessionDetailWidget.scss';
 
 const CoinIcon = ({ size = 12 }) => (
@@ -131,6 +134,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const { restore } = useScreen();
+  const { onNavigate } = useFitnessScreen() || {};
   const posterRef = useRef(null);
   const [posterWidth, setPosterWidth] = useState(0);
 
@@ -188,9 +192,12 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       }
     }
 
+    const stravaBlock = sessionData.strava || null;
+
     return {
-      title: pm?.title || 'Workout',
+      title: pm?.title || stravaBlock?.name || 'Workout',
       showTitle: pm?.showTitle || pm?.grandparentTitle || null,
+      grandparentId: pm?.grandparentId || null,
       posterUrl: pm?.grandparentId ? mediaDisplayUrl(pm.grandparentId) : null,
       thumbUrl: pm?.contentId ? mediaDisplayUrl(pm.contentId) : null,
       description: pm?.description || null,
@@ -201,6 +208,8 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       sufferScore,
       stravaActivityId,
       voiceMemos: Array.isArray(summary.voiceMemos) ? summary.voiceMemos.filter(m => m.transcript) : [],
+      stravaType: stravaBlock?.type || null,
+      stravaHasMap: !!(stravaBlock?.map?.polyline),
     };
   }, [sessionData]);
 
@@ -238,7 +247,11 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       {/* Header (25%) */}
       <div className="session-detail__header">
         {header?.posterUrl ? (
-          <div ref={posterRef} className="session-detail__poster">
+          <div
+            ref={posterRef}
+            className={`session-detail__poster${header.grandparentId && onNavigate ? ' session-detail__poster--clickable' : ''}`}
+            onClick={header.grandparentId && onNavigate ? () => onNavigate('show', { contentId: header.grandparentId }) : undefined}
+          >
             <img
               src={header.posterUrl}
               alt=""
@@ -246,7 +259,13 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
             />
           </div>
         ) : (
-          <div ref={posterRef} className="session-detail__poster session-detail__poster--placeholder" />
+          <div ref={posterRef} className="session-detail__poster session-detail__poster--placeholder">
+            <SportIcon
+              type={header?.stravaType}
+              sessionId={sessionId}
+              variant="detail"
+            />
+          </div>
         )}
 
         <div className="session-detail__meta">
@@ -322,20 +341,62 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
               </div>
             )}
           </div>
+        ) : sessionData?.strava ? (
+          <div className="session-detail__thumb session-detail__thumb--strava-stats">
+            <button className="session-detail__close" onClick={() => restore('right-area')} title="Close">&times;</button>
+            <div className="session-detail__strava-stats">
+              {sessionData.strava.distance > 0 && (
+                <div className="session-detail__stat">
+                  <span className="session-detail__stat-value">{(sessionData.strava.distance / 1000).toFixed(1)}</span>
+                  <span className="session-detail__stat-label">km</span>
+                </div>
+              )}
+              {sessionData.strava.movingTime > 0 && (
+                <div className="session-detail__stat">
+                  <span className="session-detail__stat-value">{Math.round(sessionData.strava.movingTime / 60)}</span>
+                  <span className="session-detail__stat-label">min</span>
+                </div>
+              )}
+              {sessionData.strava.avgHeartrate && (
+                <div className="session-detail__stat">
+                  <span className="session-detail__stat-value">{Math.round(sessionData.strava.avgHeartrate)}</span>
+                  <span className="session-detail__stat-label">avg HR</span>
+                </div>
+              )}
+              {sessionData.strava.maxHeartrate && (
+                <div className="session-detail__stat">
+                  <span className="session-detail__stat-value">{Math.round(sessionData.strava.maxHeartrate)}</span>
+                  <span className="session-detail__stat-label">max HR</span>
+                </div>
+              )}
+              {sessionData.strava.totalElevationGain > 0 && (
+                <div className="session-detail__stat">
+                  <span className="session-detail__stat-value">{Math.round(sessionData.strava.totalElevationGain)}</span>
+                  <span className="session-detail__stat-label">m elev</span>
+                </div>
+              )}
+            </div>
+            {sessionId && (
+              <code className="session-detail__session-id" onClick={() => navigator.clipboard?.writeText(sessionId)} title="Click to copy session ID">{sessionId}</code>
+            )}
+          </div>
         ) : (
           <div className="session-detail__thumb session-detail__thumb--placeholder">
-            <button
-              className="session-detail__close"
-              onClick={() => restore('right-area')}
-              title="Close"
-            >&times;</button>
+            <button className="session-detail__close" onClick={() => restore('right-area')} title="Close">&times;</button>
           </div>
         )}
       </div>
 
       {/* Chart (40%) */}
       <div className="session-detail__chart">
-        {ChartComponent ? (
+        {header?.stravaHasMap ? (
+          <StravaRouteMap
+            polyline={sessionData.strava?.map?.polyline}
+            sessionId={sessionId}
+            distance={sessionData.strava?.distance}
+            elevation={sessionData.strava?.totalElevationGain}
+          />
+        ) : ChartComponent ? (
           <ChartComponent sessionData={sessionData} mode="standalone" />
         ) : (
           <Text c="dimmed" ta="center" py="xl">Chart not available</Text>
