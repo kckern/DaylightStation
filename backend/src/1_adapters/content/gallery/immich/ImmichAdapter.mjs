@@ -326,7 +326,15 @@ export class ImmichAdapter {
         mimeType: asset.originalMimeType,
         metadata: {
           exif: asset.exifInfo,
-          people: asset.people?.map(p => p.name) || [],
+          people: asset.people?.map(p => ({
+            name: p.name,
+            id: p.id,
+            faces: p.faces?.map(f => ({
+              x1: f.boundingBoxX1, y1: f.boundingBoxY1,
+              x2: f.boundingBoxX2, y2: f.boundingBoxY2,
+              imageWidth: f.imageWidth, imageHeight: f.imageHeight,
+            })) || [],
+          })) || [],
           capturedAt: asset.exifInfo?.dateTimeOriginal,
           favorite: asset.isFavorite
         }
@@ -808,7 +816,15 @@ export class ImmichAdapter {
         capturedAt: asset.exifInfo?.dateTimeOriginal,
         location: asset.exifInfo?.city,
         favorite: asset.isFavorite,
-        people: asset.people?.map(p => p.name) || []
+        people: asset.people?.map(p => ({
+          name: p.name,
+          id: p.id,
+          faces: p.faces?.map(f => ({
+            x1: f.boundingBoxX1, y1: f.boundingBoxY1,
+            x2: f.boundingBoxX2, y2: f.boundingBoxY2,
+            imageWidth: f.imageWidth, imageHeight: f.imageHeight,
+          })) || [],
+        })) || []
       }
     });
   }
