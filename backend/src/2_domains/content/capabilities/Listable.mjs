@@ -22,6 +22,7 @@ export class ListableItem extends Item {
    * @param {string} [props.thumbnail] - Proxied thumbnail URL
    * @param {string} [props.imageUrl] - Full-size image URL (for display)
    * @param {string} [props.description] - Item description
+   * @param {string} [props.mediaType] - Media type hint for format resolution (e.g., 'image', 'audio')
    * @param {Object} [props.metadata] - Additional metadata
    */
   constructor(props) {
@@ -31,6 +32,7 @@ export class ListableItem extends Item {
     this.childCount = props.childCount ?? this.children.length;
     this.sortOrder = props.sortOrder ?? 0;
     this.imageUrl = props.imageUrl ?? null;
+    this.mediaType = props.mediaType ?? null;
   }
 
   /**

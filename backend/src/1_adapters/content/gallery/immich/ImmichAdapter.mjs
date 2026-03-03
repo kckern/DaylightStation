@@ -752,6 +752,7 @@ export class ImmichAdapter {
       source: 'immich',
       title: asset.originalFileName,
       itemType: 'leaf',
+      mediaType: 'image',
       thumbnail: this.#thumbnailUrl(asset.id),
       imageUrl: this.#originalUrl(asset.id),
       metadata: {
