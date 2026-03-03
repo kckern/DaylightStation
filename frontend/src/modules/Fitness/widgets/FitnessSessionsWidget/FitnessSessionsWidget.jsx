@@ -1,9 +1,23 @@
 import React, { useState, useRef } from 'react';
-import { Text, Stack, Badge } from '@mantine/core';
+import { Text, Stack } from '@mantine/core';
 import { useScreenData } from '@/screen-framework/data/ScreenDataProvider.jsx';
 import { useScreen } from '@/screen-framework/providers/ScreenProvider.jsx';
 import { DashboardCard } from '../_shared/DashboardCard.jsx';
 import './FitnessSessionsWidget.scss';
+
+const CoinIcon = ({ size = 12 }) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+    <circle cx="8" cy="8" r="7" fill="#f5c542" stroke="#c9a020" strokeWidth="1" />
+    <circle cx="8" cy="8" r="5" fill="none" stroke="#c9a020" strokeWidth="0.5" opacity="0.5" />
+    <text x="8" y="11.5" textAnchor="middle" fontSize="9" fontWeight="700" fill="#8a6d10" fontFamily="sans-serif">$</text>
+  </svg>
+);
+
+const StravaIcon = ({ size = 12, color = '#fff' }) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" fill={color} style={{ flexShrink: 0 }}>
+    <path d="M6.731 0 2 9.125h2.788L6.73 5.497l1.93 3.628h2.766zm4.694 9.125-1.372 2.756L8.66 9.125H6.547L10.053 16l3.484-6.875z" />
+  </svg>
+);
 
 /**
  * Build display URL from a media ID that may or may not be namespaced.
@@ -93,31 +107,26 @@ function SessionsCard({ sessions, onSessionClick, selectedSessionId }) {
 
                     <div className="session-row__info">
                       <div className="session-row__title-line">
+                        {pm?.showTitle && (
+                          <div className="session-row__show-line">
+                            {s.durationMs > 0 && (
+                              <span className="session-row__duration-badge">
+                                {Math.round(s.durationMs / 60000)}m
+                              </span>
+                            )}
+                            <Text size="xs" c="dimmed" truncate="end" title={pm.showTitle}>
+                              {pm.showTitle}
+                            </Text>
+                          </div>
+                        )}
+                        {!pm?.showTitle && s.durationMs > 0 && (
+                          <span className="session-row__duration-badge">
+                            {Math.round(s.durationMs / 60000)}m
+                          </span>
+                        )}
                         <Text size="md" fw={700} truncate="end" title={pm?.title || 'Workout'}>
                           {pm?.title || (s.participants && Object.values(s.participants).map(p => p.displayName).join(', ')) || 'Workout'}
                         </Text>
-                        {pm?.showTitle && (
-                          <Text size="xs" c="dimmed" truncate="end" title={pm.showTitle}>
-                            {pm.showTitle}
-                          </Text>
-                        )}
-                      </div>
-
-                      <div className="session-row__meta">
-                        <Text size="xs" c="dimmed" fw={500}>
-                          {s.startTime ? new Date(s.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', ...(s.timezone ? { timeZone: s.timezone } : {}) }).toLowerCase().replace(' ', '') : '--'}
-                        </Text>
-                        <span className="session-row__sep" />
-                        {s.durationMs > 0 && (
-                          <Badge variant="filled" color="dark" size="xs" radius="sm">
-                            {Math.round(s.durationMs / 60000)}m
-                          </Badge>
-                        )}
-                        {s.totalCoins > 0 && (
-                          <Badge variant="transparent" size="xs" color="yellow" p={0}>
-                            +{s.totalCoins}
-                          </Badge>
-                        )}
                       </div>
 
                       {(() => {
@@ -126,9 +135,18 @@ function SessionsCard({ sessions, onSessionClick, selectedSessionId }) {
                           ? s.voiceMemos.map(m => m.transcript).filter(Boolean).join(' \u2022 ')
                           : null;
                         const isSolo = participantIds.length === 1;
+                        const timeStr = s.startTime
+                          ? new Date(s.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', ...(s.timezone ? { timeZone: s.timezone } : {}) }).toLowerCase().replace(' ', '')
+                          : null;
 
                         return (
                           <>
+                            {!memoText && timeStr && (
+                              <div className="session-row__meta">
+                                <Text size="xs" c="dimmed" fw={500}>{timeStr}</Text>
+                              </div>
+                            )}
+
                             {participantIds.length > 0 && (
                               <div className={`session-row__participants${isSolo && memoText ? ' session-row__participants--with-memo' : ''}`}>
                                 {Object.entries(s.participants).map(([id, p]) => (
@@ -142,18 +160,33 @@ function SessionsCard({ sessions, onSessionClick, selectedSessionId }) {
                                     />
                                   </span>
                                 ))}
-                                {isSolo && memoText && (
-                                  <span className="session-row__memo-inline">
-                                    <span className="session-row__memo-icon">{'\uD83C\uDF99'}</span>
-                                    <span className="session-row__memo-text session-row__memo-text--2line">{memoText}</span>
-                                  </span>
+                                {s.totalCoins > 0 && (
+                                  <span className="session-row__coins"><CoinIcon size={14} />{s.totalCoins}</span>
+                                )}
+                                {s.maxSufferScore > 0 && (
+                                  s.stravaActivityId ? (
+                                    <a
+                                      href={`https://www.strava.com/activities/${s.stravaActivityId}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="session-row__suffer"
+                                      onClick={(e) => e.stopPropagation()}
+                                      onPointerDown={(e) => e.stopPropagation()}
+                                    ><StravaIcon size={14} />{s.maxSufferScore}</a>
+                                  ) : (
+                                    <span className="session-row__suffer"><StravaIcon size={14} />{s.maxSufferScore}</span>
+                                  )
                                 )}
                               </div>
                             )}
-                            {!isSolo && memoText && (
+
+                            {memoText && (
                               <div className="session-row__memo-line">
+                                {timeStr && (
+                                  <span className="session-row__memo-time">{timeStr}</span>
+                                )}
                                 <span className="session-row__memo-icon">{'\uD83C\uDF99'}</span>
-                                <span className="session-row__memo-text">{memoText}</span>
+                                <span className={`session-row__memo-text${isSolo ? ' session-row__memo-text--2line' : ''}`}>{memoText}</span>
                               </div>
                             )}
                           </>
