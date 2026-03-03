@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
-import { useVolumeStore } from '../VolumeProvider.jsx';
+import { useVolumeStore } from '../nav/VolumeProvider.jsx';
 
 const amplifiers = new WeakMap();
 

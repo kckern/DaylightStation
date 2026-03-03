@@ -1,0 +1,199 @@
+@use '../shared/styles/mixins' as *;
+@use '../shared/styles/rpm-device' as *;
+
+.sidebar-footer {
+  margin-top: auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0 4px 8px 4px;
+
+  .device-container {
+    width: 100%;
+    min-height: 50px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .device-card {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.3s ease;
+    border: 3px solid rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.4);
+
+    /* Hover removed for TV */
+
+    &.inactive {
+      opacity: 0.5;
+      filter: grayscale(0.5);
+    }
+
+    // Zone-based border colors for heart rate devices
+    &.zone-fire {
+      border-color: #ff6b6b;
+      box-shadow: 0 0 8px rgba(255, 107, 107, 0.5);
+    }
+
+    &.zone-hot {
+      border-color: #ff922b;
+      box-shadow: 0 0 8px rgba(255, 146, 43, 0.5);
+    }
+
+    &.zone-warm {
+      border-color: #ffd43b;
+      box-shadow: 0 0 8px rgba(255, 212, 59, 0.5);
+    }
+
+    &.zone-active {
+      border-color: #51cf66;
+      box-shadow: 0 0 8px rgba(81, 207, 102, 0.5);
+    }
+
+    &.zone-cool {
+      border-color: #6ab8ff;
+      box-shadow: 0 0 8px rgba(106, 184, 255, 0.5);
+    }
+
+    &.no-zone {
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .device-avatar-container {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+
+      .device-avatar {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: 50%;
+      }
+
+      .bpm-overlay {
+        position: absolute;
+        bottom: -16px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        font-size: 0.5rem;
+        font-weight: 700;
+        padding: 1px 3px;
+        border-radius: 3px;
+        min-width: 16px;
+        text-align: center;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+      }
+
+      .device-icon-fallback {
+        font-size: 1.5rem;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 100%;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.1);
+      }
+    }
+  }
+
+  .fitness-monitor {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.3s ease;
+    border: 3px solid rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.4);
+
+    &.connected {
+
+      .device-icon {
+        filter: drop-shadow(0 0 4px rgba(0, 255, 0, 0.4));
+      }
+    }
+
+    &.disconnected {
+      opacity: 0.6;
+      border-color: rgba(255, 0, 0, 0.3);
+
+      .device-icon {
+        filter: grayscale(0.5) drop-shadow(0 0 4px rgba(255, 0, 0, 0.3));
+      }
+    }
+
+    .device-icon {
+      font-size: 2rem;
+    }
+  }
+}
+
+// RPM Device Card Styles - Uses shared partial for single source of truth
+// Only scale differs between sidebar and fullscreen views
+.device-card.rpm-device {
+  --rpm-scale: 0.6; // Sidebar is smaller than fullscreen (68px base)
+  @include rpm-device-base;
+
+  // Size is controlled by parent .device-card (aspect-ratio: 1)
+  // The shared mixins use --rpm-scale for proportional sizing
+
+  .rpm-spinning-border {
+    @include rpm-spinning-border;
+  }
+
+  .rpm-avatar-container {
+    @include rpm-avatar-wrapper;
+  }
+
+  .device-avatar {
+    @include rpm-avatar-content;
+  }
+
+  .rpm-value-overlay {
+    @include rpm-value-overlay;
+  }
+
+  @include rpm-zone-colors;
+}
+
+// Animations (heartbeat is sidebar-specific, rpm-spin is in shared partial)
+@keyframes heartbeat {
+
+  0%,
+  50%,
+  100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 4px rgba(255, 107, 107, 0.4));
+  }
+
+  25% {
+    transform: scale(1.15);
+    filter: drop-shadow(0 0 8px rgba(255, 107, 107, 0.8));
+  }
+
+  75% {
+    transform: scale(1.05);
+    filter: drop-shadow(0 0 6px rgba(255, 107, 107, 0.6));
+  }
+}

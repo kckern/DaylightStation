@@ -4,7 +4,7 @@
  * Provides utilities for parsing and building fitness URLs.
  * Supports the following URL patterns:
  *   /fitness                     → menu view (no ID)
- *   /fitness/home                → home view (screen-framework dashboard)
+ *   /fitness/:screen-id           → screen view (screen-framework dashboard, matched against screens config)
  *   /fitness/menu/:id            → menu view with video ID(s)
  *   /fitness/show/:id            → show view
  *   /fitness/play/:id            → play view

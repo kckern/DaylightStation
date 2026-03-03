@@ -26,7 +26,7 @@ export function getNavItemClasses(item, isActive = false) {
  * Determine if a nav item is currently active
  */
 export function isNavItemActive(item, currentState) {
-  const { currentView, activeCollection, activeModule } = currentState;
+  const { currentView, activeCollection, activeModule, activeScreen } = currentState;
 
   if (!item || !item.target) return false;
 
@@ -52,6 +52,9 @@ export function isNavItemActive(item, currentState) {
     case 'module_direct':
       return currentView === 'module' &&
              activeModule?.id === item.target.module_id;
+
+    case 'screen':
+      return currentView === 'screen' && activeScreen === item.target.screen_id;
 
     case 'view_direct':
       return currentView === item.target.view;
@@ -81,6 +84,9 @@ export function getNavItemDeepLink(item) {
 
     case 'module_direct':
       return `#/fitness/module/${item.target.module_id}`;
+
+    case 'screen':
+      return `#/fitness/${item.target.screen_id}`;
 
     case 'view_direct':
       return `#/fitness/view/${item.target.view}`;
