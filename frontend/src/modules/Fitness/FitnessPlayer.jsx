@@ -12,7 +12,7 @@ import { playbackLog } from '../Player/lib/playbackLogger.js';
 import { useFitnessVolumeControls } from './useFitnessVolumeControls.js';
 import { resolveMediaIdentity, resolveContentId, normalizeDuration } from '../Player/utils/mediaIdentity.js';
 import { resolvePause, PAUSE_REASON } from '../Player/utils/pauseArbiter.js';
-import FitnessChart from './FitnessSidebar/FitnessChart.jsx';
+import FitnessChartApp from './FitnessModules/modules/FitnessChartApp/index.jsx';
 import { useMediaAmplifier } from './components/useMediaAmplifier.js';
 import { FitnessPlayerFrame } from './frames';
 import HRSimTrigger from './HRSimTrigger.jsx';
@@ -1447,7 +1447,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       ) : null}
       {showChart && (
         <div className="fitness-chart-overlay">
-          <FitnessChart />
+          <FitnessChartApp mode="sidebar" onClose={() => {}} />
         </div>
       )}
       {playerMode === 'fullscreen' && fitnessSessionInstance?.isActive && (

@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import PropTypes from 'prop-types';
-import FitnessUsersList from '../../FitnessSidebar/FitnessUsers.jsx';
+import FitnessUsersList from '../../FitnessModules/shared/FitnessUsers.jsx';
 import './panels.scss';
 
 /**

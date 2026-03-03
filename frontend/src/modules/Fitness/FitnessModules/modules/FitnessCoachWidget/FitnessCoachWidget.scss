@@ -1,0 +1,48 @@
+// FitnessCoachWidget — briefing, CTAs, prompt options
+
+.dashboard-card--coach {
+  background: rgba(255, 255, 255, 0.04);
+  border-left: 3px solid rgba(34, 139, 230, 0.5);
+}
+
+.coach-briefing {
+  font-style: italic;
+  opacity: 0.9;
+  line-height: 1.6;
+}
+
+.coach-cta {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+
+  &--data_gap { border-left: 3px solid #fab005; }
+  &--observation { border-left: 3px solid #40c057; }
+  &--nudge { border-left: 3px solid #228be6; }
+
+  &[role="button"] {
+    cursor: pointer;
+    &:active { background: rgba(255, 255, 255, 0.1); }
+  }
+}
+
+.coach-prompt {
+  padding: 0.5rem 0;
+}
+
+.prompt-option {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  text-align: center;
+  flex: 1;
+
+  &:active { background: rgba(255, 255, 255, 0.12); }
+}

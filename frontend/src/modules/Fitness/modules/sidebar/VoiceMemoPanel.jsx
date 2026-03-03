@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import PropTypes from 'prop-types';
-import FitnessVoiceMemo from '../../FitnessSidebar/FitnessVoiceMemo.jsx';
+import FitnessVoiceMemo from '../../FitnessModules/shared/FitnessVoiceMemo.jsx';
 import './panels.scss';
 
 /**
