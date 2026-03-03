@@ -52,7 +52,8 @@ export function SinglePlayer(props = {}) {
     onProgress,
     onMediaRef,
     assetId: mediaKeyProp,
-    upscaleEffects
+    upscaleEffects,
+    nextMedia
   } = play || {};
 
   // Compute effective contentId. Prefers the canonical contentId prop;
@@ -383,6 +384,7 @@ export function SinglePlayer(props = {}) {
             shader={shader}
             resilienceBridge={resilienceBridge}
             ignoreKeys={ignoreKeys}
+            nextMedia={nextMedia}
           />
         );
       }
