@@ -37,6 +37,47 @@ describe('SavedQueryService', () => {
       const svc = new SavedQueryService({ readQuery: () => null });
       expect(svc.getQuery('anything')).toBeNull();
     });
+
+    it('passes through exclude array when present', () => {
+      const svc = new SavedQueryService({
+        readQuery: () => ({ type: 'immich', exclude: ['uuid-1', 'uuid-2'] }),
+      });
+      const query = svc.getQuery('test');
+      expect(query.exclude).toEqual(['uuid-1', 'uuid-2']);
+    });
+
+    it('omits exclude when not present', () => {
+      const query = service.getQuery('dailynews');
+      expect(query).not.toHaveProperty('exclude');
+    });
+
+    it('passes through slideshow config when present', () => {
+      const slideshow = { duration: 5, effect: 'kenburns', zoom: 1.2, transition: 'crossfade', focusPerson: 'Felix' };
+      const svc = new SavedQueryService({
+        readQuery: () => ({ type: 'immich', slideshow }),
+      });
+      const query = svc.getQuery('test');
+      expect(query.slideshow).toEqual(slideshow);
+    });
+
+    it('omits slideshow when not present', () => {
+      const query = service.getQuery('dailynews');
+      expect(query).not.toHaveProperty('slideshow');
+    });
+
+    it('passes through audio config when present', () => {
+      const audio = { contentId: 'music:anniversary', behavior: 'pause', mode: 'hidden' };
+      const svc = new SavedQueryService({
+        readQuery: () => ({ type: 'immich', audio }),
+      });
+      const query = svc.getQuery('test');
+      expect(query.audio).toEqual(audio);
+    });
+
+    it('omits audio when not present', () => {
+      const query = service.getQuery('dailynews');
+      expect(query).not.toHaveProperty('audio');
+    });
   });
 
   describe('listQueries', () => {
