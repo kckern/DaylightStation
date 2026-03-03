@@ -17,7 +17,7 @@ function parseQueueQuery(query = {}) {
 }
 
 export function toQueueItem(item) {
-  return {
+  const qi = {
     // Identity
     id: item.id,
     contentId: item.id,
@@ -60,6 +60,20 @@ export function toQueueItem(item) {
     // List identity for server-side progress namespace resolution
     listId: item.metadata?.listId || null,
   };
+
+  // Slideshow config (stamped by QueryAdapter on image items)
+  if (item.slideshow) qi.slideshow = item.slideshow;
+
+  // Rich metadata for image rendering (people/faces, dimensions)
+  if (item.metadata) {
+    qi.metadata = {
+      width: item.metadata.width,
+      height: item.metadata.height,
+      ...(item.metadata.people?.length > 0 && { people: item.metadata.people }),
+    };
+  }
+
+  return qi;
 }
 
 export function createQueueRouter(config) {
@@ -108,6 +122,7 @@ export function createQueueRouter(config) {
     }
 
     const playables = await adapter.resolvePlayables(finalId);
+    const audioConfig = playables.audio || null;
 
     let items = await queueService.resolveQueue(playables, resolvedSource, { shuffle });
 
@@ -132,6 +147,7 @@ export function createQueueRouter(config) {
       count: queueItems.length,
       totalDuration,
       thumbnail: queueItems[0]?.thumbnail || null,
+      ...(audioConfig && { audio: audioConfig }),
       items: queueItems
     });
   });

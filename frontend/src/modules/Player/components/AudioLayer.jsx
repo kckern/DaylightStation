@@ -25,6 +25,14 @@ export function AudioLayer({
   const savedVolumeRef = useRef(1);
   const [audioQueue, setAudioQueue] = useState(null);
 
+  // Mount/unmount logging
+  useEffect(() => {
+    logger.info('audio-layer-mount', { contentId, behavior, mode });
+    return () => {
+      logger.debug('audio-layer-unmount', { contentId });
+    };
+  }, [contentId, behavior, mode]);
+
   // Resolve contentId to playable queue via API
   useEffect(() => {
     if (!contentId) return;
@@ -39,8 +47,13 @@ export function AudioLayer({
         }
         const data = await response.json();
         if (!cancelled) {
-          setAudioQueue(data.items || data);
-          logger.info('audio-layer-resolved', { contentId, itemCount: (data.items || data).length });
+          const items = data.items || data;
+          setAudioQueue(items);
+          logger.info('audio-layer-resolved', {
+            contentId,
+            itemCount: items.length,
+            tracks: items.slice(0, 5).map(t => ({ id: t.id, title: t.title })),
+          });
         }
       } catch (err) {
         logger.error('audio-layer-resolve-error', { contentId, error: err.message });
@@ -56,19 +69,24 @@ export function AudioLayer({
     const prev = prevMediaTypeRef.current;
     prevMediaTypeRef.current = currentItemMediaType;
 
-    if (!playerRef.current) return;
     if (prev === currentItemMediaType) return;
+
+    if (!playerRef.current) {
+      logger.warn('audio-layer-no-player-ref', { contentId, prev, currentItemMediaType, behavior });
+      return;
+    }
 
     const isVideo = currentItemMediaType === 'video';
     const wasVideo = prev === 'video';
 
     if (isVideo && !wasVideo) {
       if (behavior === 'pause') {
-        logger.debug('audio-layer-pause', { reason: 'video-start' });
+        logger.debug('audio-layer-pause', { contentId, reason: 'video-start', fromType: prev, toType: currentItemMediaType });
         playerRef.current.pause();
       } else if (behavior === 'duck') {
-        logger.debug('audio-layer-duck', { reason: 'video-start' });
         const el = playerRef.current.getMediaElement?.();
+        const prevVolume = el?.volume ?? null;
+        logger.debug('audio-layer-duck', { contentId, reason: 'video-start', prevVolume });
         if (el) {
           savedVolumeRef.current = el.volume;
           el.volume = Math.max(0, el.volume * 0.1);
@@ -76,10 +94,10 @@ export function AudioLayer({
       }
     } else if (wasVideo && !isVideo) {
       if (behavior === 'pause') {
-        logger.debug('audio-layer-resume', { reason: 'video-end' });
+        logger.debug('audio-layer-resume', { contentId, reason: 'video-end', fromType: prev, toType: currentItemMediaType });
         playerRef.current.play();
       } else if (behavior === 'duck') {
-        logger.debug('audio-layer-unduck', { reason: 'video-end' });
+        logger.debug('audio-layer-unduck', { contentId, reason: 'video-end', restoreVolume: savedVolumeRef.current });
         const el = playerRef.current.getMediaElement?.();
         if (el) {
           el.volume = savedVolumeRef.current;

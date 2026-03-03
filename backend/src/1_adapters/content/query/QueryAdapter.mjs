@@ -108,7 +108,9 @@ export class QueryAdapter {
     }
 
     if (query.source === 'immich') {
-      return this.#resolveImmichQuery(query);
+      const items = await this.#resolveImmichQuery(query);
+      if (query.audio) items.audio = query.audio;
+      return items;
     }
 
     console.warn(`[QueryAdapter] Unknown query type: ${query.source}`);
