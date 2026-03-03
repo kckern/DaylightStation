@@ -44,6 +44,31 @@
     position: relative;
   }
 
+  &__close {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    z-index: 2;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.55);
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 1.4rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+
+    &:hover {
+      background: rgba(0, 0, 0, 0.75);
+      color: #fff;
+    }
+  }
+
   &__session-id {
     position: absolute;
     top: 2px;
