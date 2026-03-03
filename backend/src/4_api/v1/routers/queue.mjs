@@ -70,6 +70,8 @@ export function toQueueItem(item) {
       width: item.metadata.width,
       height: item.metadata.height,
       ...(item.metadata.people?.length > 0 && { people: item.metadata.people }),
+      ...(item.metadata.capturedAt && { capturedAt: item.metadata.capturedAt }),
+      ...(item.metadata.location && { location: item.metadata.location }),
     };
   }
 

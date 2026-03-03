@@ -416,8 +416,12 @@ const Player = forwardRef(function Player(props, ref) {
 
   const singlePlayerKey = useMemo(() => {
     if (!singlePlayerProps) return 'player-idle';
+    // Stable key for image→image transitions so ImageFrame persists (cross-dissolve)
+    if (activeSource?.mediaType === 'image') {
+      return `image-slideshow:${remountState.nonce}`;
+    }
     return `${currentMediaGuid || 'entry'}:${remountState.nonce}`;
-  }, [singlePlayerProps, currentMediaGuid, remountState.nonce]);
+  }, [singlePlayerProps, currentMediaGuid, remountState.nonce, activeSource?.mediaType]);
 
   const exposedMediaRef = useRef(null);
   const controllerRef = useRef(null);
@@ -845,12 +849,16 @@ const Player = forwardRef(function Player(props, ref) {
 
   const audioConfig = play?.audio || queue?.audio || queueAudio || activeSource?.audio || null;
   const currentItemMediaType = activeSource?.mediaType || null;
+  const nextMedia = useMemo(() => (
+    isQueue && Array.isArray(playQueue) && playQueue.length > 1 ? playQueue[1] : null
+  ), [isQueue, playQueue]);
 
   const mainContent = sanitizedSinglePlayerProps ? (
     <SinglePlayer
       key={singlePlayerKey}
       {...sanitizedSinglePlayerProps}
       {...playerProps}
+      nextMedia={nextMedia}
     />
   ) : fallbackContent;
 
