@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  *
  * Three code paths:
  *   1. focusPerson targeting — zoom toward a named person's face center
- *   2. Largest face fallback — pick the biggest bounding box
+ *   2. Center-most face fallback — pick the face closest to image center
  *   3. Random fallback — random point in center 60% of the image
  */
 function computeZoomTarget({ people, focusPerson, zoom }) {
@@ -38,20 +38,23 @@ function computeZoomTarget({ people, focusPerson, zoom }) {
   }
 
   if (!found && allFaces.length > 0) {
-    let largest = allFaces[0];
-    let largestArea = 0;
+    let closest = allFaces[0];
+    let closestDist = Infinity;
     for (const f of allFaces) {
-      const area = Math.abs((f.x2 - f.x1) * (f.y2 - f.y1));
-      if (area > largestArea) {
-        largestArea = area;
-        largest = f;
+      if (!f.imageWidth || !f.imageHeight) continue;
+      const cx = ((f.x1 + f.x2) / 2) / f.imageWidth;
+      const cy = ((f.y1 + f.y2) / 2) / f.imageHeight;
+      const dist = (cx - 0.5) ** 2 + (cy - 0.5) ** 2;
+      if (dist < closestDist) {
+        closestDist = dist;
+        closest = f;
       }
     }
-    if (largest.imageWidth && largest.imageHeight) {
-      targetX = ((largest.x1 + largest.x2) / 2) / largest.imageWidth;
-      targetY = ((largest.y1 + largest.y2) / 2) / largest.imageHeight;
+    if (closest.imageWidth && closest.imageHeight) {
+      targetX = ((closest.x1 + closest.x2) / 2) / closest.imageWidth;
+      targetY = ((closest.y1 + closest.y2) / 2) / closest.imageHeight;
       found = true;
-      strategy = 'largest-face';
+      strategy = 'center-face';
     }
   }
 
@@ -150,29 +153,29 @@ describe('computeZoomTarget', () => {
     });
   });
 
-  // ── Largest face fallback ───────────────────────────────────────────
-  describe('largest face fallback', () => {
-    it('picks largest face when no focusPerson specified', () => {
-      const smallFace = makeFace({ centerX: 0.2, centerY: 0.2, width: 50, height: 50 });
-      const bigFace   = makeFace({ centerX: 0.7, centerY: 0.6, width: 200, height: 200 });
+  // ── Center-most face fallback ───────────────────────────────────────
+  describe('center-most face fallback', () => {
+    it('picks center-most face when no focusPerson specified', () => {
+      const cornerFace = makeFace({ centerX: 0.1, centerY: 0.1, width: 200, height: 200 });
+      const centerFace = makeFace({ centerX: 0.45, centerY: 0.55, width: 50, height: 50 });
       const people = [
-        makePerson('Small', [smallFace]),
-        makePerson('Big',   [bigFace]),
+        makePerson('Corner', [cornerFace]),
+        makePerson('Center', [centerFace]),
       ];
 
       const result = computeZoomTarget({ people, focusPerson: null, zoom: defaultZoom });
 
-      expect(result.strategy).toBe('largest-face');
+      expect(result.strategy).toBe('center-face');
 
-      // Should zoom toward Big's face at (0.7, 0.6)
+      // Should zoom toward Center's face at (0.45, 0.55), not Corner's bigger face
       const maxTranslate = ((defaultZoom - 1) / defaultZoom) * 50;
-      const expectedEndX = (0.5 - 0.7) * maxTranslate;
-      const expectedEndY = (0.5 - 0.6) * maxTranslate;
+      const expectedEndX = (0.5 - 0.45) * maxTranslate;
+      const expectedEndY = (0.5 - 0.55) * maxTranslate;
       expect(pct(result.endX)).toBeCloseTo(expectedEndX, 1);
       expect(pct(result.endY)).toBeCloseTo(expectedEndY, 1);
     });
 
-    it('picks largest face when focusPerson does not match anyone', () => {
+    it('picks center-most face when focusPerson does not match anyone', () => {
       const face = makeFace({ centerX: 0.6, centerY: 0.4, width: 150, height: 150 });
       const people = [makePerson('Charlie', [face])];
 
@@ -182,7 +185,7 @@ describe('computeZoomTarget', () => {
         zoom: defaultZoom,
       });
 
-      expect(result.strategy).toBe('largest-face');
+      expect(result.strategy).toBe('center-face');
 
       const maxTranslate = ((defaultZoom - 1) / defaultZoom) * 50;
       const expectedEndX = (0.5 - 0.6) * maxTranslate;
@@ -191,17 +194,17 @@ describe('computeZoomTarget', () => {
       expect(pct(result.endY)).toBeCloseTo(expectedEndY, 1);
     });
 
-    it('selects correctly among multiple faces on one person', () => {
-      const smallFace = makeFace({ centerX: 0.3, centerY: 0.3, width: 40, height: 40 });
-      const bigFace   = makeFace({ centerX: 0.8, centerY: 0.8, width: 300, height: 300 });
-      const people = [makePerson('Multi', [smallFace, bigFace])];
+    it('selects center-most among multiple faces on one person', () => {
+      const edgeFace   = makeFace({ centerX: 0.9, centerY: 0.9, width: 300, height: 300 });
+      const centerFace = makeFace({ centerX: 0.5, centerY: 0.5, width: 40, height: 40 });
+      const people = [makePerson('Multi', [edgeFace, centerFace])];
 
       const result = computeZoomTarget({ people, focusPerson: null, zoom: defaultZoom });
-      expect(result.strategy).toBe('largest-face');
+      expect(result.strategy).toBe('center-face');
 
-      const maxTranslate = ((defaultZoom - 1) / defaultZoom) * 50;
-      const expectedEndX = (0.5 - 0.8) * maxTranslate;
-      expect(pct(result.endX)).toBeCloseTo(expectedEndX, 1);
+      // Dead center face → zero translation
+      expect(pct(result.endX)).toBeCloseTo(0, 1);
+      expect(pct(result.endY)).toBeCloseTo(0, 1);
     });
   });
 
@@ -268,14 +271,14 @@ describe('computeZoomTarget', () => {
 
       const result = computeZoomTarget({ people, focusPerson: 'Broken', zoom: defaultZoom });
       // focusPerson match has no imageWidth so it falls through
-      // largest-face also lacks imageWidth so it falls through to random
+      // center-face also lacks imageWidth so it falls through to random
       expect(result.strategy).toBe('random');
     });
 
-    it('falls through focusPerson to largest-face when good face has bigger area', () => {
-      // Broken face: no imageWidth/imageHeight, area = 100*100 = 10000
+    it('falls through focusPerson to center-face when good face has dimensions', () => {
+      // Broken face: no imageWidth/imageHeight — skipped by center-face loop
       const brokenFace = { x1: 100, y1: 100, x2: 200, y2: 200 };
-      // Good face: has dimensions, area must be LARGER than broken so it wins the loop
+      // Good face: has dimensions, will be picked as center-most (only valid candidate)
       const goodFace = makeFace({ centerX: 0.5, centerY: 0.5, width: 200, height: 200 });
       const people = [
         makePerson('Broken', [brokenFace]),
@@ -284,9 +287,8 @@ describe('computeZoomTarget', () => {
 
       const result = computeZoomTarget({ people, focusPerson: 'Broken', zoom: defaultZoom });
       // focusPerson matches "Broken" but it lacks imageWidth, so found stays false.
-      // largest-face loop: good face (200x200=40000) beats broken face (100x100=10000),
-      // and good face has imageWidth/imageHeight, so it succeeds.
-      expect(result.strategy).toBe('largest-face');
+      // center-face loop: broken face skipped (no dimensions), good face wins.
+      expect(result.strategy).toBe('center-face');
     });
 
     it('falls to random when largest face also lacks dimensions', () => {
@@ -299,7 +301,7 @@ describe('computeZoomTarget', () => {
       ];
 
       const result = computeZoomTarget({ people, focusPerson: null, zoom: defaultZoom });
-      // largest-face picks brokenA (largest area) but it lacks imageWidth, so falls to random
+      // center-face skips both (no imageWidth), falls to random
       expect(result.strategy).toBe('random');
     });
 
@@ -362,8 +364,8 @@ describe('computeZoomTarget', () => {
         zoom: defaultZoom,
       });
 
-      // focusPerson "Alice" won't match null name, falls to largest-face
-      expect(result.strategy).toBe('largest-face');
+      // focusPerson "Alice" won't match null name, falls to center-face
+      expect(result.strategy).toBe('center-face');
     });
   });
 });
