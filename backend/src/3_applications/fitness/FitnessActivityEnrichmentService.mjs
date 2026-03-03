@@ -23,6 +23,7 @@ import path from 'path';
 import moment from 'moment-timezone';
 import { loadYamlSafe, listYamlFiles, dirExists, saveYaml } from '#system/utils/FileIO.mjs';
 import { buildStravaDescription } from '../../1_adapters/fitness/buildStravaDescription.mjs';
+import { userService } from '#system/config/index.mjs';
 
 const MAX_RETRIES = 3;
 const RETRY_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -447,7 +448,7 @@ export class FitnessActivityEnrichmentService {
       timezone: tz,
       participants: {
         [username]: {
-          display_name: username,
+          display_name: userService.resolveDisplayName(username),
           is_primary: true,
           strava: {
             activityId: activity.id,
