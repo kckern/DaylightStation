@@ -156,13 +156,27 @@ export class FitnessActivityEnrichmentService {
       // Find matching home session (time-based)
       const match = this._findMatchingSession(currentActivity);
       if (!match) {
-        this.#logger.info?.('strava.enrichment.no_match', { activityId, attempt });
         if (attempt < MAX_RETRIES) {
+          this.#logger.info?.('strava.enrichment.no_match', { activityId, attempt });
           setTimeout(() => this._attemptEnrichment(activityId), RETRY_INTERVAL_MS);
-        } else {
-          this.#jobStore.update(activityId, { status: 'unmatched' });
-          this.#logger.warn?.('strava.enrichment.unmatched', { activityId, attempts: attempt });
+          return;
         }
+
+        // No matching home session after retries — create a Strava-only session
+        this.#logger.info?.('strava.enrichment.creating_strava_session', {
+          activityId,
+          activityName: currentActivity.name,
+          activityType: currentActivity.type,
+        });
+
+        const created = await this._createStravaOnlySession(currentActivity);
+        this.#jobStore.update(activityId, {
+          status: 'completed',
+          completedAt: new Date().toISOString(),
+          matchedSessionId: created?.sessionId || null,
+          note: 'created-strava-session',
+        });
+        this._addToCooldown(activityId);
         return;
       }
 
@@ -392,6 +406,105 @@ export class FitnessActivityEnrichmentService {
     this.#logger.info?.('strava.enrichment.auth.refreshing', { username });
     await this.#stravaClient.refreshToken(auth.refresh);
     this.#logger.info?.('strava.enrichment.auth.refreshed', { username });
+  }
+
+  /**
+   * @private
+   * Create a new session YAML for a Strava activity that has no matching home session.
+   * @param {Object} activity - Strava activity object from API
+   * @returns {{ sessionId: string, filePath: string }}
+   */
+  async _createStravaOnlySession(activity) {
+    const tz = this.#configService?.getTimezone?.() || 'America/Los_Angeles';
+    const username = this.#configService.getHeadOfHousehold?.() || 'kckern';
+    const startLocal = moment(activity.start_date_local || activity.start_date).tz(tz);
+    const sessionId = startLocal.format('YYYYMMDDHHmmss');
+    const date = startLocal.format('YYYY-MM-DD');
+    const durationSeconds = activity.elapsed_time || activity.moving_time || 0;
+    const endLocal = startLocal.clone().add(durationSeconds, 'seconds');
+
+    // Build map data if GPS exists
+    let mapData = null;
+    if (activity.map?.summary_polyline) {
+      mapData = {
+        polyline: activity.map.summary_polyline,
+        startLatLng: activity.start_latlng || [],
+        endLatLng: activity.end_latlng || [],
+      };
+    }
+
+    const sessionData = {
+      version: 3,
+      sessionId,
+      session: {
+        id: sessionId,
+        date,
+        start: startLocal.format('YYYY-MM-DD HH:mm:ss'),
+        end: endLocal.format('YYYY-MM-DD HH:mm:ss'),
+        duration_seconds: durationSeconds,
+        source: 'strava',
+      },
+      timezone: tz,
+      participants: {
+        [username]: {
+          display_name: username,
+          is_primary: true,
+          strava: {
+            activityId: activity.id,
+            type: activity.type || activity.sport_type || null,
+            sufferScore: activity.suffer_score || null,
+            deviceName: activity.device_name || null,
+          },
+        },
+      },
+      strava: {
+        activityId: activity.id,
+        name: activity.name || null,
+        type: activity.type || null,
+        sportType: activity.sport_type || null,
+        movingTime: activity.moving_time || 0,
+        distance: activity.distance || 0,
+        totalElevationGain: activity.total_elevation_gain || 0,
+        trainer: activity.trainer ?? true,
+        avgHeartrate: activity.average_heartrate || null,
+        maxHeartrate: activity.max_heartrate || null,
+        ...(mapData ? { map: mapData } : {}),
+      },
+      timeline: {
+        series: {},
+        events: [],
+        interval_seconds: 5,
+        tick_count: Math.ceil(durationSeconds / 5),
+        encoding: 'rle',
+      },
+      treasureBox: { coinTimeUnitMs: 5000, totalCoins: 0, buckets: { blue: 0, green: 0, yellow: 0, orange: 0, red: 0 } },
+      summary: {
+        participants: {},
+        media: [],
+        coins: { total: 0, buckets: { blue: 0, green: 0, yellow: 0, orange: 0, red: 0 } },
+        challenges: { total: 0, succeeded: 0, failed: 0 },
+        voiceMemos: [],
+      },
+    };
+
+    // Write to fitness history
+    const sessionDir = path.join(this.#fitnessHistoryDir, date);
+    if (!dirExists(sessionDir)) {
+      const { mkdirSync } = await import('fs');
+      mkdirSync(sessionDir, { recursive: true });
+    }
+    const filePath = path.join(sessionDir, `${sessionId}.yml`);
+    saveYaml(filePath.replace(/\.yml$/, ''), sessionData);
+
+    this.#logger.info?.('strava.enrichment.strava_session_created', {
+      sessionId,
+      activityId: activity.id,
+      name: activity.name,
+      type: activity.type,
+      filePath,
+    });
+
+    return { sessionId, filePath };
   }
 
   /**
