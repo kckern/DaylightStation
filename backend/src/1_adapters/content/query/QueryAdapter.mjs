@@ -275,6 +275,24 @@ export class QueryAdapter {
       ? dateFiltered.filter(item => item.mediaType === mediaType)
       : dateFiltered;
 
+    // Exclude specific asset IDs
+    if (query.exclude?.length > 0) {
+      const excludeSet = new Set(query.exclude);
+      filtered = filtered.filter(item => {
+        const assetId = item.id?.replace(/^immich:/, '');
+        return !excludeSet.has(assetId);
+      });
+    }
+
+    // Stamp slideshow config on image items
+    if (query.slideshow) {
+      for (const item of filtered) {
+        if (item.mediaType === 'image') {
+          item.slideshow = query.slideshow;
+        }
+      }
+    }
+
     // Sort if specified
     if (query.sort) {
       const getDate = (item) => item.metadata?.capturedAt || item.title || '';
