@@ -1,8 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import { Text, Stack } from '@mantine/core';
 import { useScreenData } from '@/screen-framework/data/ScreenDataProvider.jsx';
 import { useScreen } from '@/screen-framework/providers/ScreenProvider.jsx';
 import { DashboardCard } from '../_shared/DashboardCard.jsx';
+import { useFitnessScreen } from '@/modules/Fitness/FitnessScreenProvider.jsx';
+import SportIcon, { formatSportType } from '../_shared/SportIcon.jsx';
 import './FitnessSessionsWidget.scss';
 
 const CoinIcon = ({ size = 12 }) => (
@@ -17,6 +19,18 @@ const StravaIcon = ({ size = 12, color = '#fff' }) => (
   <svg width={size} height={size} viewBox="0 0 16 16" fill={color} style={{ flexShrink: 0 }}>
     <path d="M6.731 0 2 9.125h2.788L6.73 5.497l1.93 3.628h2.766zm4.694 9.125-1.372 2.756L8.66 9.125H6.547L10.053 16l3.484-6.875z" />
   </svg>
+);
+
+const WorkoutPlaceholder = () => (
+  <div className="session-poster session-poster--placeholder">
+    <svg viewBox="0 0 48 48" fill="none" className="session-poster__icon">
+      <rect x="6" y="20" width="6" height="8" rx="1.5" fill="currentColor" opacity="0.5" />
+      <rect x="36" y="20" width="6" height="8" rx="1.5" fill="currentColor" opacity="0.5" />
+      <rect x="2" y="21" width="4" height="6" rx="1" fill="currentColor" opacity="0.35" />
+      <rect x="42" y="21" width="4" height="6" rx="1" fill="currentColor" opacity="0.35" />
+      <rect x="12" y="22" width="24" height="4" rx="1" fill="currentColor" opacity="0.4" />
+    </svg>
+  </div>
 );
 
 /**
@@ -70,14 +84,14 @@ function SessionsCard({ sessions, onSessionClick, selectedSessionId }) {
     <DashboardCard title={null} className="dashboard-card--workouts">
       <Stack gap={4}>
         {groups.map((group) => (
-          <div key={group.date}>
+          <div key={group.date} data-date={group.date}>
             <Text size="xs" fw={600} c="dimmed" tt="uppercase" className="session-date-header">
               {group.label}
             </Text>
             {group.sessions.map((s) => {
               const pm = s.media?.primary;
               const bgUrl = pm?.grandparentId
-                ? mediaDisplayUrl(pm.contentId || pm.mediaId)
+                ? mediaDisplayUrl(pm.contentId)
                 : null;
               return (
                 <div
@@ -95,17 +109,23 @@ function SessionsCard({ sessions, onSessionClick, selectedSessionId }) {
                         src={mediaDisplayUrl(pm.grandparentId)}
                         alt=""
                         className="session-poster"
-                        onError={(e) => { e.target.style.display = 'none'; }}
+                        onError={(e) => { e.target.replaceWith(Object.assign(document.createElement('div'), { className: 'session-poster session-poster--placeholder session-poster--fallback' })); }}
                       />
-                    ) : pm ? (
+                    ) : pm?.contentId ? (
                       <img
-                        src={mediaDisplayUrl(pm.contentId || pm.mediaId)}
+                        src={mediaDisplayUrl(pm.contentId)}
                         alt=""
                         className="session-poster"
-                        onError={(e) => { e.target.style.display = 'none'; }}
+                        onError={(e) => { e.target.replaceWith(Object.assign(document.createElement('div'), { className: 'session-poster session-poster--placeholder session-poster--fallback' })); }}
                       />
                     ) : (
-                      <div className="session-poster session-poster--placeholder" />
+                      <div className="session-poster">
+                        <SportIcon
+                          type={s.strava?.type}
+                          sessionId={s.sessionId}
+                          variant="poster"
+                        />
+                      </div>
                     )}
 
                     <div className="session-row__info">
@@ -122,13 +142,25 @@ function SessionsCard({ sessions, onSessionClick, selectedSessionId }) {
                             </Text>
                           </div>
                         )}
-                        {!pm?.showTitle && s.durationMs > 0 && (
+                        {!pm?.showTitle && s.strava?.type && (
+                          <div className="session-row__show-line">
+                            {s.durationMs > 0 && (
+                              <span className="session-row__duration-badge">
+                                {Math.round(s.durationMs / 60000)}m
+                              </span>
+                            )}
+                            <Text size="xs" c="dimmed" truncate="end">
+                              {formatSportType(s.strava.type)}
+                            </Text>
+                          </div>
+                        )}
+                        {!pm?.showTitle && !s.strava?.type && s.durationMs > 0 && (
                           <span className="session-row__duration-badge">
                             {Math.round(s.durationMs / 60000)}m
                           </span>
                         )}
-                        <Text size="md" fw={700} truncate="end" title={pm?.title || 'Workout'}>
-                          {pm?.title || (s.participants && Object.values(s.participants).map(p => p.displayName).join(', ')) || 'Workout'}
+                        <Text size="md" fw={700} truncate="end" title={pm?.title || s.strava?.name || 'Workout'}>
+                          {pm?.title || s.strava?.name || 'Workout'}
                         </Text>
                       </div>
 
@@ -212,12 +244,13 @@ function SessionsCard({ sessions, onSessionClick, selectedSessionId }) {
 export default function FitnessSessionsWidget() {
   const rawSessions = useScreenData('sessions');
   const { replace } = useScreen();
-  const [selectedSessionId, setSelectedSessionId] = useState(null);
+  const { scrollToDate, setScrollToDate, selectedSessionId, setSelectedSessionId } = useFitnessScreen();
   const revertRef = useRef(null);
+  const containerRef = useRef(null);
 
   const sessions = rawSessions?.sessions || [];
 
-  const handleSessionClick = (sessionId) => {
+  const handleSessionClick = useCallback((sessionId) => {
     if (selectedSessionId === sessionId) {
       revertRef.current?.revert();
       revertRef.current = null;
@@ -229,13 +262,30 @@ export default function FitnessSessionsWidget() {
     revertRef.current = replace('right-area', {
       children: [{ widget: 'fitness:session-detail', props: { sessionId } }]
     });
-  };
+  }, [selectedSessionId, setSelectedSessionId, replace]);
+
+  // When calendar sets scrollToDate, scroll to that date group and auto-select first session
+  useEffect(() => {
+    if (!scrollToDate || !containerRef.current) return;
+    const dateEl = containerRef.current.querySelector(`[data-date="${scrollToDate}"]`);
+    if (dateEl) {
+      dateEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    // Find first session for that date (sessions are reversed in display, so last in API = first visible)
+    const dateSessions = sessions.filter(s => s.date === scrollToDate);
+    if (dateSessions.length > 0) {
+      handleSessionClick(dateSessions[dateSessions.length - 1].sessionId);
+    }
+    setScrollToDate(null);
+  }, [scrollToDate, sessions, handleSessionClick, setScrollToDate]);
 
   return (
-    <SessionsCard
-      sessions={sessions}
-      onSessionClick={handleSessionClick}
-      selectedSessionId={selectedSessionId}
-    />
+    <div ref={containerRef}>
+      <SessionsCard
+        sessions={sessions}
+        onSessionClick={handleSessionClick}
+        selectedSessionId={selectedSessionId}
+      />
+    </div>
   );
 }

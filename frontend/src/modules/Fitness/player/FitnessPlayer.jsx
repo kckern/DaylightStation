@@ -35,20 +35,20 @@ const generateThumbnailUrl = (plexObj, timeInSeconds) => {
     // Check for available properties to use in URL generation
     let thumbId = plexObj.thumbId || null;
     let image = plexObj.image || null;
-    let mediaId = typeof plexObj === 'object' ? plexObj.id || plexObj.plex : plexObj;
-    
+    let plexId = typeof plexObj === 'object' ? plexObj.id || plexObj.plex : plexObj;
+
     // Basic logging
-    
+
     // Option 1: Use thumbId directly with library/parts pattern (best quality)
     if (thumbId) {
       // Ensure thumbId is treated as a number not a string for consistency
       const numericThumbId = parseInt(thumbId, 10);
       return DaylightMediaPath(`/api/v1/proxy/plex/photo/:/transcode?width=240&height=135&minSize=1&upscale=1&url=/library/parts/${numericThumbId}/indexes/sd/${timeInMillis}`);
     }
-    
-    // Option 2: If we have mediaId, use library/metadata pattern 
-    if (mediaId) {
-      return DaylightMediaPath(`/api/v1/proxy/plex/photo/:/transcode?width=240&height=135&minSize=1&upscale=1&url=/library/metadata/${mediaId}/thumb/${timeInMillis}`);
+
+    // Option 2: If we have plexId, use library/metadata pattern
+    if (plexId) {
+      return DaylightMediaPath(`/api/v1/proxy/plex/photo/:/transcode?width=240&height=135&minSize=1&upscale=1&url=/library/metadata/${plexId}/thumb/${timeInMillis}`);
     }
     
     // Option 3: If we have an image URL that already has a timestamp, replace the timestamp
@@ -293,9 +293,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       setGovernanceMedia(null);
       return;
     }
-    const mediaId = currentItem.contentId || currentItem.assetId || currentItem.id || currentItem.plex || currentItem.videoUrl || currentItem.mediaUrl || currentItem.guid;
+    const contentId = currentItem.contentId || currentItem.assetId || currentItem.id || currentItem.plex || currentItem.videoUrl || currentItem.mediaUrl || currentItem.guid;
     setGovernanceMedia({
-      id: mediaId || `unknown-${currentItem.title || 'fitness'}`,
+      id: contentId || `unknown-${currentItem.title || 'fitness'}`,
       labels: Array.isArray(currentItem.labels) ? currentItem.labels : [],
       type: currentItem.type || currentItem.mediaType || null
     });

@@ -248,7 +248,7 @@ for (const entry of sessionEntries) {
     type: 'media_start',
     data: {
       source: 'plex',
-      ...(p.ratingKey ? { mediaId: p.ratingKey, plexId: p.ratingKey } : {}),
+      ...(p.ratingKey ? { contentId: p.ratingKey, plexId: p.ratingKey } : {}),
       title: p.title,
       ...(p.durationMs > 0 ? { durationSeconds: Math.round(p.durationMs / 1000) } : {}),
     },

@@ -26,7 +26,7 @@ function formatDateShort(dateStr) {
 
 export default function FitnessNutritionWidget() {
   const rawHealth = useScreenData('nutrition');
-  if (!rawHealth) return <Skeleton height={200} />;
+  if (!rawHealth) return <DashboardCard title="Nutrition" className="dashboard-card--nutrition" />;
   const nutrition = parseNutritionHistory(rawHealth);
 
   if (!nutrition || nutrition.length === 0) {

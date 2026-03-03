@@ -235,7 +235,7 @@ function parseStartTime(date, startTimeStr, archive) {
 // ------------------------------------------------------------------
 // Media matching: Tautulli (by time overlap) + 14_fitness.yml (by lastPlayed)
 // Tautulli provides titles; 14_fitness.yml catches content not in Tautulli.
-// De-duplicates by rating_key/mediaId.
+// De-duplicates by rating_key/contentId.
 // ------------------------------------------------------------------
 function findMediaForWindow(tautulliPlays, mediaMemory, startMs, endMs, bufferMs = 5 * 60 * 1000) {
   const windowStartS = Math.floor((startMs - bufferMs) / 1000);
@@ -254,7 +254,7 @@ function findMediaForWindow(tautulliPlays, mediaMemory, startMs, endMs, bufferMs
       seen.add(key);
       matches.push({
         source: 'plex',
-        mediaId: key,
+        contentId: key,
         title: play.full_title || play.title || null,
         duration: play.duration || 0,
         startedMs: play.started * 1000,
@@ -270,12 +270,12 @@ function findMediaForWindow(tautulliPlays, mediaMemory, startMs, endMs, bufferMs
       if (!playedMoment.isValid()) continue;
       const playedMs = playedMoment.valueOf();
       if (playedMs >= windowStartMs && playedMs <= windowEndMs) {
-        const mediaId = memKey.replace('plex:', '');
-        if (seen.has(mediaId)) continue;
-        seen.add(mediaId);
+        const contentId = memKey.replace('plex:', '');
+        if (seen.has(contentId)) continue;
+        seen.add(contentId);
         matches.push({
           source: 'plex',
-          mediaId,
+          contentId,
           title: null, // 14_fitness.yml has no titles
           duration: entry.duration || 0,
           startedMs: playedMs,
@@ -399,8 +399,8 @@ for (const { date, entry } of entries) {
     type: 'media_start',
     data: {
       source: m.source,
-      mediaId: m.mediaId,
-      plexId: m.mediaId,
+      contentId: m.contentId,
+      plexId: m.contentId,
       title: m.title,
       durationSeconds: m.duration,
     },
@@ -408,7 +408,7 @@ for (const { date, entry } of entries) {
 
   // Build media summary
   const mediaTitles = mediaMatches.map(m => m.title).filter(Boolean);
-  const mediaSummary = mediaMatches.map(m => m.title || `plex:${m.mediaId}`);
+  const mediaSummary = mediaMatches.map(m => m.title || `plex:${m.contentId}`);
 
   // Encode series to RLE JSON strings
   const hrEncoded = encodeSingleSeries(hrSamples);
