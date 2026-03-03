@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import './ImageFrame.scss';
 import getLogger from '../../../lib/logging/Logger.js';
+import { SlideshowMetadataOverlay } from '../components/SlideshowMetadataOverlay.jsx';
 
 const logger = getLogger().child({ component: 'ImageFrame' });
 
@@ -87,37 +88,6 @@ export function computeZoomTarget({ people, focusPerson, zoom }) {
   };
 }
 
-function formatPhotoDate(dateStr) {
-  if (!dateStr) return null;
-  try {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  } catch {
-    return null;
-  }
-}
-
-function formatTimeAgo(dateStr) {
-  if (!dateStr) return null;
-  try {
-    const d = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now - d;
-    const days = Math.floor(diffMs / 86400000);
-    if (days < 1) return 'Today';
-    if (days === 1) return '1 day ago';
-    if (days < 30) return `${days} days ago`;
-    const months = Math.floor(days / 30.44);
-    if (months < 12) return months === 1 ? '1 month ago' : `${months} months ago`;
-    const years = Math.floor(days / 365.25);
-    const remMonths = Math.floor((days - years * 365.25) / 30.44);
-    if (remMonths > 0) return `${years} year${years > 1 ? 's' : ''}, ${remMonths} month${remMonths > 1 ? 's' : ''} ago`;
-    return years === 1 ? '1 year ago' : `${years} years ago`;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * ImageFrame — photo renderer with Ken Burns, cross-dissolve, and metadata overlay.
  *
@@ -147,9 +117,6 @@ export function ImageFrame({
   const expectedIdRef = useRef(null);
   const pausedRef = useRef(false);
   const remainingRef = useRef(0);
-  const metadataRef = useRef(null);
-  const metaFadeRef = useRef(null);
-
   // Stable refs for callbacks — keeps them out of effect deps to prevent
   // unnecessary cleanup cycles that would clear the advance timer.
   const advanceRef = useRef(advance);
@@ -160,6 +127,7 @@ export function ImageFrame({
   // Enriched face data tracked with source ID to prevent stale cross-image leaks
   const [enrichment, setEnrichment] = useState({ forId: null, people: null });
   const [settledImageId, setSettledImageId] = useState(null);
+  const [metadataVisible, setMetadataVisible] = useState(false);
 
   const imageId = media?.id || null;
   const slideshow = useMemo(() => media?.slideshow || {}, [media?.slideshow]);
@@ -418,6 +386,7 @@ export function ImageFrame({
     if (timerRef.current) clearTimeout(timerRef.current);
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     setSettledImageId(null);
+    setMetadataVisible(false);
 
     const outgoingKey = activeLayerRef.current;
     const incomingKey = outgoingKey === 'a' ? 'b' : 'a';
@@ -502,32 +471,18 @@ export function ImageFrame({
       // Show metadata after dissolve settles, fade out before advance
       if (slideshow.showMetadata) {
         const metaDelay = isFirstImage ? 500 : DISSOLVE_MS + 200;
-        const FADE_IN_MS = 600;
         const FADE_OUT_MS = 800;
         setTimeout(() => {
           if (expectedIdRef.current !== currentId) return;
           setSettledImageId(currentId);
-          // Fade-in via Web Animations API (TVApp kills CSS transitions)
-          requestAnimationFrame(() => {
-            if (metadataRef.current && expectedIdRef.current === currentId) {
-              metaFadeRef.current = metadataRef.current.animate(
-                [{ opacity: 0 }, { opacity: 1 }],
-                { duration: FADE_IN_MS, fill: 'forwards', easing: 'ease-in' }
-              );
-            }
-          });
+          setMetadataVisible(true);
         }, metaDelay);
         // Schedule fade-out before advance
         const fadeOutAt = duration - FADE_OUT_MS - 200;
-        if (fadeOutAt > metaDelay + FADE_IN_MS) {
+        if (fadeOutAt > metaDelay + 600) {
           setTimeout(() => {
             if (expectedIdRef.current !== currentId) return;
-            if (metadataRef.current) {
-              metaFadeRef.current = metadataRef.current.animate(
-                [{ opacity: 1 }, { opacity: 0 }],
-                { duration: FADE_OUT_MS, fill: 'forwards', easing: 'ease-out' }
-              );
-            }
+            setMetadataVisible(false);
           }, fadeOutAt);
         }
       }
@@ -599,16 +554,15 @@ export function ImageFrame({
     };
   }, []);
 
-  const metadataOverlay = useMemo(() => {
+  // Build preloaded metadata from enrichment + queue metadata for the overlay
+  const preloadedMeta = useMemo(() => {
     if (!slideshow.showMetadata) return null;
     const enrichedForThis = enrichment.forId === imageId ? enrichment : null;
-    const rawDate = enrichedForThis?.capturedAt || media?.metadata?.capturedAt;
-    const names = (enrichedForThis?.people || media?.metadata?.people || []).map(p => p.name).filter(Boolean);
-    const date = formatPhotoDate(rawDate);
-    const timeAgo = formatTimeAgo(rawDate);
-    const location = enrichedForThis?.location || media?.metadata?.location || null;
-    if (!names.length && !date && !location) return null;
-    return { names, date, timeAgo, location };
+    return {
+      capturedAt: enrichedForThis?.capturedAt || media?.metadata?.capturedAt || null,
+      people: enrichedForThis?.people || media?.metadata?.people || null,
+      location: enrichedForThis?.location || media?.metadata?.location || null,
+    };
   }, [slideshow.showMetadata, media?.metadata, enrichment, imageId]);
 
   if (!media?.mediaUrl) {
@@ -619,26 +573,12 @@ export function ImageFrame({
     <div ref={containerRef} className="image-frame">
       <img ref={layerARef} className="image-frame__layer" draggable={false} alt="" />
       <img ref={layerBRef} className="image-frame__layer" draggable={false} alt="" />
-      {settledImageId === imageId && metadataOverlay && (
-        <div ref={metadataRef} className="image-frame__metadata" style={{ opacity: 0 }}>
-          <div className="image-frame__metadata-backdrop" />
-          <div className="image-frame__metadata-content">
-            {metadataOverlay.date && (
-              <span className="image-frame__metadata-date">
-                {metadataOverlay.date}
-                {metadataOverlay.timeAgo && (
-                  <span className="image-frame__metadata-ago">{metadataOverlay.timeAgo}</span>
-                )}
-              </span>
-            )}
-            {metadataOverlay.names.length > 0 && (
-              <span className="image-frame__metadata-people">{metadataOverlay.names.join(' \u00b7 ')}</span>
-            )}
-            {metadataOverlay.location && (
-              <span className="image-frame__metadata-location">{metadataOverlay.location}</span>
-            )}
-          </div>
-        </div>
+      {slideshow.showMetadata && settledImageId === imageId && (
+        <SlideshowMetadataOverlay
+          mediaId={imageId}
+          visible={metadataVisible}
+          preloaded={preloadedMeta}
+        />
       )}
     </div>
   );
