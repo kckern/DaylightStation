@@ -256,7 +256,7 @@ for (const [activityIdStr, archive] of archivesByActivityId) {
     timezone: TIMEZONE,
     participants: {
       [username]: {
-        display_name: username,
+        display_name: 'User_1',
         is_primary: true,
         strava: {
           activityId: archive.id,

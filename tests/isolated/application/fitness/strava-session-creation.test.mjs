@@ -9,6 +9,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+
+// Mock userService before importing the service under test
+vi.mock('#system/config/index.mjs', () => ({
+  userService: {
+    resolveDisplayName: (userId) => userId === 'testuser' ? 'Test User' : userId,
+  },
+}));
+
 import { FitnessActivityEnrichmentService } from '#apps/fitness/FitnessActivityEnrichmentService.mjs';
 import { loadYamlSafe } from '#system/utils/FileIO.mjs';
 
