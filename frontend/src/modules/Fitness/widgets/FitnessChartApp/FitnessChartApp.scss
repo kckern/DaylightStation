@@ -1,4 +1,5 @@
 .fitness-chart-app {
+  position: relative;
   background: rgba(0, 0, 0, 0.35);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
@@ -44,6 +45,33 @@
       margin: 0.1rem 0 0;
       font-size: 0.75rem;
       color: rgba(255, 255, 255, 0.6);
+    }
+  }
+
+  .race-chart__scale-toggle {
+    position: absolute;
+    top: 1.5rem;
+    left: 2.5rem;
+    z-index: 5;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 3px 6px;
+    cursor: pointer;
+    line-height: 1;
+    transition: background 0.15s, color 0.15s;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.18);
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    &--log {
+      color: rgba(255, 255, 255, 0.45);
     }
   }
 

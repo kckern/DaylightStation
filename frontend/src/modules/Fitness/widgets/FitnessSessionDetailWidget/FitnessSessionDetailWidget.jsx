@@ -5,6 +5,20 @@ import { useScreen } from '@/screen-framework/providers/ScreenProvider.jsx';
 import FitnessTimeline from './FitnessTimeline.jsx';
 import './FitnessSessionDetailWidget.scss';
 
+const CoinIcon = ({ size = 12 }) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+    <circle cx="8" cy="8" r="7" fill="#f5c542" stroke="#c9a020" strokeWidth="1" />
+    <circle cx="8" cy="8" r="5" fill="none" stroke="#c9a020" strokeWidth="0.5" opacity="0.5" />
+    <text x="8" y="11.5" textAnchor="middle" fontSize="9" fontWeight="700" fill="#8a6d10" fontFamily="sans-serif">$</text>
+  </svg>
+);
+
+const StravaIcon = ({ size = 12, color = '#fc4c02' }) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" fill={color} style={{ flexShrink: 0 }}>
+    <path d="M6.731 0 2 9.125h2.788L6.73 5.497l1.93 3.628h2.766zm4.694 9.125-1.372 2.756L8.66 9.125H6.547L10.053 16l3.484-6.875z" />
+  </svg>
+);
+
 function mediaDisplayUrl(contentId) {
   if (!contentId) return null;
   const str = String(contentId);
@@ -162,12 +176,16 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
 
     const durationMs = (session.duration_seconds || 0) * 1000;
 
-    // Extract max suffer score across all participants
+    // Extract max suffer score and first activityId across all participants
     const participants = sessionData.participants || {};
     let sufferScore = null;
+    let stravaActivityId = null;
     for (const p of Object.values(participants)) {
       const ss = p.strava?.sufferScore;
-      if (ss != null && (sufferScore === null || ss > sufferScore)) sufferScore = ss;
+      if (ss != null && (sufferScore === null || ss > sufferScore)) {
+        sufferScore = ss;
+        stravaActivityId = p.strava?.activityId || null;
+      }
     }
 
     return {
@@ -181,6 +199,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       durationMin: durationMs > 0 ? Math.round(durationMs / 60000) : null,
       totalCoins: sessionData.treasureBox?.totalCoins || summary.coins?.total || 0,
       sufferScore,
+      stravaActivityId,
       voiceMemos: Array.isArray(summary.voiceMemos) ? summary.voiceMemos.filter(m => m.transcript) : [],
     };
   }, [sessionData]);
@@ -246,13 +265,22 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
               {header?.totalCoins > 0 && (
                 <>
                   <span className="session-detail__meta-sep" />
-                  <span className="session-detail__meta-item session-detail__coins">+{header.totalCoins}</span>
+                  <span className="session-detail__meta-item session-detail__coins"><CoinIcon size={14} /> {header.totalCoins}</span>
                 </>
               )}
               {header?.sufferScore != null && (
                 <>
                   <span className="session-detail__meta-sep" />
-                  <span className="session-detail__meta-item session-detail__suffer">{header.sufferScore}</span>
+                  {header.stravaActivityId ? (
+                    <a
+                      href={`https://www.strava.com/activities/${header.stravaActivityId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="session-detail__meta-item session-detail__suffer"
+                    ><StravaIcon size={14} /> {header.sufferScore}</a>
+                  ) : (
+                    <span className="session-detail__meta-item session-detail__suffer"><StravaIcon size={14} /> {header.sufferScore}</span>
+                  )}
                 </>
               )}
             </div>
@@ -276,6 +304,13 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
               alt=""
               onError={(e) => { e.target.style.display = 'none'; }}
             />
+            {sessionId && (
+              <code
+                className="session-detail__session-id"
+                onClick={() => navigator.clipboard?.writeText(sessionId)}
+                title="Click to copy session ID"
+              >{sessionId}</code>
+            )}
             {header?.description && (
               <div className="session-detail__thumb-desc">
                 <span>{header.description}</span>

@@ -44,6 +44,21 @@
     position: relative;
   }
 
+  &__session-id {
+    position: absolute;
+    top: 2px;
+    right: 3px;
+    font-size: 0.5rem;
+    opacity: 0.3;
+    color: #fff;
+    cursor: pointer;
+    z-index: 1;
+
+    &:active {
+      opacity: 0.8;
+    }
+  }
+
   &__thumb-desc {
     position: absolute;
     bottom: 0;
@@ -129,14 +144,21 @@
     vertical-align: middle;
   }
 
+  &__coins,
+  &__suffer {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-weight: 700;
+  }
+
   &__coins {
     color: #f5c542;
-    font-weight: 700;
   }
 
   &__suffer {
     color: #fc4c02;
-    font-weight: 700;
+    text-decoration: none;
   }
 
   &__memos {

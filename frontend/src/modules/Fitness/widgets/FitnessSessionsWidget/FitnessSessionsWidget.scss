@@ -77,7 +77,6 @@
   align-items: center;
   gap: 0.6rem;
   padding: 0.4rem;
-  padding-right: 15%;
   min-height: 60px;
 }
 
@@ -100,6 +99,35 @@
   }
 }
 
+// --- Duration Badge (inline, left of show title) ---
+
+.session-row__show-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+
+  > .mantine-Text-root {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.session-row__duration-badge {
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.65);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
 // --- Info ---
 
 .session-row__info {
@@ -107,6 +135,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 4px;
 }
 
@@ -135,40 +164,57 @@
   min-height: 18px;
 }
 
-.session-row__sep {
-  width: 1px;
-  height: 10px;
-  background: rgba(255, 255, 255, 0.2);
-  flex-shrink: 0;
-}
-
 // --- Participants ---
 
 .session-row__participants {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0 6px;
   margin-top: 4px;
-  min-height: 22px;
-
-  &--with-memo {
-    flex-wrap: nowrap;
-    align-items: flex-start;
-  }
+  min-height: 30px;
 }
 
 .session-row__participant {
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
+  margin-right: -6px;
+}
+
+.session-row__coins,
+.session-row__suffer {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.session-row__coins {
+  background: #f5c54266;
+  margin-left: 6px;
+}
+
+.session-row__suffer {
+  background: #fc4c0266;
+  text-decoration: none;
+  color: #fff;
 }
 
 .session-avatar {
-  width: 22px;
-  height: 22px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   object-fit: cover;
-  border: 2px solid rgba(255, 255, 255, 0.15);
+  border: 2px solid rgba(30, 30, 50, 0.9);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
@@ -181,12 +227,11 @@
   margin-top: 2px;
 }
 
-// Inline memo (solo participant — avatar + memo on same row)
-.session-row__memo-inline {
-  display: flex;
-  align-items: flex-start;
-  gap: 4px;
-  min-width: 0;
+.session-row__memo-time {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.45);
 }
 
 .session-row__memo-icon {
@@ -197,7 +242,7 @@
 
 .session-row__memo-text {
   display: -webkit-box;
-  -webkit-line-clamp: 1;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   font-size: 0.7rem;

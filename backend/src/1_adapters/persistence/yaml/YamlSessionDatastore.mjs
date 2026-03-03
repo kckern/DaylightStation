@@ -294,6 +294,17 @@ export class YamlSessionDatastore extends ISessionDatastore {
         }
       }
 
+      // Extract max suffer score and corresponding activityId across participants
+      let maxSufferScore = null;
+      let stravaActivityId = null;
+      for (const [slug, info] of Object.entries(data.participants || {})) {
+        const ss = info.strava?.sufferScore;
+        if (ss != null && (maxSufferScore === null || ss > maxSufferScore)) {
+          maxSufferScore = ss;
+          stravaActivityId = info.strava?.activityId || null;
+        }
+      }
+
       const totalCoins = summary?.coins?.total ?? data.treasureBox?.totalCoins ?? 0;
       const challengeCount = summary?.challenges?.total ?? 0;
 
@@ -325,6 +336,8 @@ export class YamlSessionDatastore extends ISessionDatastore {
         participants,
         media,
         totalCoins,
+        maxSufferScore,
+        stravaActivityId,
         challengeCount,
         voiceMemoCount,
         voiceMemos,

@@ -852,6 +852,7 @@ const FitnessChartApp = ({ mode, onClose, config, onMount, sessionData }) => {
 	// Always use Y_SCALE_BASE regardless of entry count for consistent grid spacing
 	const yScaleBase = Y_SCALE_BASE;
 	const [persisted, setPersisted] = useState(null);
+	const [useLogScale, setUseLogScale] = useState(true);
 
 	// MEMORY LEAK FIX: Clear persisted chart data when session ends
 	// This prevents stale chart snapshots from lingering in memory
@@ -920,8 +921,8 @@ const FitnessChartApp = ({ mode, onClose, config, onMount, sessionData }) => {
 			const norm = (clamped - domainMin) / domainSpan;
 			let mapped = norm;
 
-			if (userCount === 1) {
-				// Linear scale for single user
+			if (!useLogScale || userCount === 1) {
+				// Linear scale
 				mapped = norm;
 			} else if (userCount === 2) {
 				// Standard log scale for 2 users
@@ -933,7 +934,7 @@ const FitnessChartApp = ({ mode, onClose, config, onMount, sessionData }) => {
 				// 3+ users: Clamp bottom user to 25% height
 				// Calculate normalized value of the lowest user
 				const normLow = (lowestValue - domainMin) / domainSpan;
-				
+
 				if (normLow > 0 && normLow < 1) {
 					// Calculate k for power curve: normLow^k = 0.25
 					// k = log(0.25) / log(normLow)
@@ -952,7 +953,7 @@ const FitnessChartApp = ({ mode, onClose, config, onMount, sessionData }) => {
 			const frac = bottomFrac + (topFrac - bottomFrac) * mapped;
 			return CHART_MARGIN.top + frac * innerHeight;
 		};
-	}, [minAxisValue, paddedMaxValue, chartHeight, yScaleBase, allEntries.length, lowestValue]);
+	}, [minAxisValue, paddedMaxValue, chartHeight, yScaleBase, allEntries.length, lowestValue, useLogScale]);
 
 	const paths = useMemo(() => {
 		if (!allEntries.length || !(paddedMaxValue > 0)) return [];
@@ -1140,6 +1141,15 @@ const FitnessChartApp = ({ mode, onClose, config, onMount, sessionData }) => {
 		<div className={`fitness-chart-app ${layoutClass}`} ref={containerRef}>
 			{!hasData && !persisted && !isHistorical && <div className="race-chart-panel__empty">Timeline warming up…</div>}
 			{!hasData && !persisted && isHistorical && <div className="race-chart-panel__empty">No timeline data for this session</div>}
+			{(hasData || persisted) && allEntries.length > 1 && (
+				<button
+					className={`race-chart__scale-toggle${useLogScale ? ' race-chart__scale-toggle--log' : ''}`}
+					onClick={() => setUseLogScale(prev => !prev)}
+					title={useLogScale ? 'Switch to linear scale' : 'Switch to logarithmic scale'}
+				>
+					{useLogScale ? 'LOG' : 'LIN'}
+				</button>
+			)}
 			{(hasData || persisted) && (
 				<div className="race-chart-panel__body">
 					<RaceChartSvg
