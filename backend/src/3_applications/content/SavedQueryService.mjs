@@ -50,6 +50,9 @@ export class SavedQueryService {
       params: raw.params || {},
       ...(raw.sort != null && { sort: raw.sort }),
       ...(raw.take != null && { take: raw.take }),
+      ...(raw.exclude != null && { exclude: raw.exclude }),
+      ...(raw.slideshow != null && { slideshow: raw.slideshow }),
+      ...(raw.audio != null && { audio: raw.audio }),
     };
   }
 
