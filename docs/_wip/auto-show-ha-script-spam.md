@@ -158,3 +158,11 @@ const haScriptHandler = asyncHandler(async (req, res) => {
 | `frontend/src/modules/Piano/usePianoConfig.js:15-48` | Frontend | Fires `on_open` script on mount |
 | `backend/src/4_api/v1/routers/homeAutomation.mjs:325-344` | Backend | HA script execution endpoint |
 | `backend/src/4_api/v1/routers/device.mjs:40-44` | Backend | Device config serving `on_open` value |
+
+---
+
+## Resolution
+
+**Implemented:** Option A (debounce) — 2026-03-03
+
+Module-scoped `lastOnOpenTime` in `usePianoConfig.js` debounces `on_open` calls to once per 5 minutes. Combined with the HA-side condition guard already deployed in `office_tv_hdmi_3.yaml`, the nightlight flash spam is fully resolved at both layers.
