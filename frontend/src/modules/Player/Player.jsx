@@ -109,7 +109,8 @@ const Player = forwardRef(function Player(props, ref) {
     queuePosition,
     playbackRate: queuePlaybackRate,
     playQueue,
-    advance
+    advance,
+    queueAudio
   } = useQueueController({ play, queue, clear, shuffle: props?.shuffle });
 
   const hasNextQueueItem = useMemo(() => (
@@ -842,7 +843,7 @@ const Player = forwardRef(function Player(props, ref) {
     </div>
   );
 
-  const audioConfig = play?.audio || queue?.audio || activeSource?.audio || null;
+  const audioConfig = play?.audio || queue?.audio || queueAudio || activeSource?.audio || null;
   const currentItemMediaType = activeSource?.mediaType || null;
 
   const mainContent = sanitizedSinglePlayerProps ? (
