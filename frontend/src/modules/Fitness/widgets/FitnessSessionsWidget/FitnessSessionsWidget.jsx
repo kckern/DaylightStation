@@ -67,7 +67,7 @@ function SessionsCard({ sessions, onSessionClick, selectedSessionId }) {
   for (const g of groups) g.sessions.reverse();
 
   return (
-    <DashboardCard title="Recent Sessions" className="dashboard-card--workouts">
+    <DashboardCard title={null} className="dashboard-card--workouts">
       <Stack gap={4}>
         {groups.map((group) => (
           <div key={group.date}>
@@ -82,6 +82,9 @@ function SessionsCard({ sessions, onSessionClick, selectedSessionId }) {
               return (
                 <div
                   key={s.sessionId}
+                  ref={s.sessionId === selectedSessionId ? (el) => {
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  } : undefined}
                   className={`session-row${bgUrl ? ' session-row--has-bg' : ''}${s.sessionId === selectedSessionId ? ' session-row--selected' : ''}`}
                   style={bgUrl ? { backgroundImage: `url(${bgUrl})` } : undefined}
                   onPointerDown={() => onSessionClick?.(s.sessionId)}
