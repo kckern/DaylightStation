@@ -7,6 +7,10 @@ import { ContentDisplayUrl } from '../../lib/api.mjs';
 import CastButton from './CastButton.jsx';
 import getLogger from '../../lib/logging/Logger.js';
 
+function resolveContentId(item) {
+  return item.id || item.contentId;
+}
+
 const ContentBrowser = ({ hasMiniplayer }) => {
   const { queue } = useMediaApp();
   const logger = useMemo(() => getLogger().child({ component: 'ContentBrowser' }), []);
@@ -57,24 +61,28 @@ const ContentBrowser = ({ hasMiniplayer }) => {
 
   const handlePlayNow = useCallback((item) => {
     const nextPosition = queue.position + 1;
-    logger.info('content-browser.play-now', { contentId: item.contentId, title: item.title });
-    queue.addItems([{ contentId: item.contentId, title: item.title, format: item.format }], 'next')
+    const contentId = resolveContentId(item);
+    logger.info('content-browser.play-now', { contentId, title: item.title });
+    queue.addItems([{ contentId, title: item.title, format: item.format, thumbnail: item.thumbnail }], 'next')
       .then(() => queue.setPosition(nextPosition));
   }, [queue, logger]);
 
   const handleAddToQueue = useCallback((item) => {
-    logger.info('content-browser.add-to-queue', { contentId: item.contentId, title: item.title });
-    queue.addItems([{ contentId: item.contentId, title: item.title, format: item.format }]);
+    const contentId = resolveContentId(item);
+    logger.info('content-browser.add-to-queue', { contentId, title: item.title });
+    queue.addItems([{ contentId, title: item.title, format: item.format, thumbnail: item.thumbnail }]);
   }, [queue, logger]);
 
   const handlePlayNext = useCallback((item) => {
-    logger.info('content-browser.play-next', { contentId: item.contentId, title: item.title });
-    queue.addItems([{ contentId: item.contentId, title: item.title, format: item.format }], 'next');
+    const contentId = resolveContentId(item);
+    logger.info('content-browser.play-next', { contentId, title: item.title });
+    queue.addItems([{ contentId, title: item.title, format: item.format, thumbnail: item.thumbnail }], 'next');
   }, [queue, logger]);
 
   const handleDrillDown = useCallback((item) => {
-    if (item.contentId) {
-      const [source, ...rest] = item.contentId.split(':');
+    const contentId = resolveContentId(item);
+    if (contentId) {
+      const [source, ...rest] = contentId.split(':');
       logger.debug('content-browser.drill-down', { source, localId: rest.join(':'), title: item.title });
       browse(source, rest.join(':'), item.title);
     }
@@ -89,7 +97,7 @@ const ContentBrowser = ({ hasMiniplayer }) => {
 
   useEffect(() => {
     if (displayResults.length > 0) {
-      const withThumbs = displayResults.filter(r => !!r.contentId).length;
+      const withThumbs = displayResults.filter(r => r.thumbnail || resolveContentId(r)).length;
       logger.info('content-browser.results-rendered', { count: displayResults.length, withThumbnails: withThumbs, source: browsing ? 'browse' : 'search' });
     }
   }, [displayResults.length, browsing, logger]);
@@ -136,10 +144,12 @@ const ContentBrowser = ({ hasMiniplayer }) => {
             {pending.length > 0 && (
               <div className="search-pending">Loading from: {pending.join(', ')}</div>
             )}
-            {displayResults.map((item, i) => (
-              <div key={item.contentId || i} className="search-result-item">
+            {displayResults.map((item, i) => {
+              const contentId = resolveContentId(item);
+              return (
+              <div key={contentId || i} className="search-result-item">
                 <div className="search-result-thumb">
-                  {item.contentId && <img src={ContentDisplayUrl(item.contentId)} alt="" />}
+                  {(item.thumbnail || contentId) && <img src={item.thumbnail || ContentDisplayUrl(contentId)} alt="" />}
                 </div>
                 <div className="search-result-info" onClick={() => item.isContainer ? handleDrillDown(item) : handlePlayNow(item)}>
                   <div className="search-result-title">{item.title}</div>
@@ -155,10 +165,11 @@ const ContentBrowser = ({ hasMiniplayer }) => {
                   <button onClick={() => handlePlayNow(item)} title="Play Now">&#9654;</button>
                   <button onClick={() => handlePlayNext(item)} title="Play Next">&#10549;</button>
                   <button onClick={() => handleAddToQueue(item)} title="Add to Queue">+</button>
-                  <CastButton contentId={item.contentId} className="search-action-cast" />
+                  <CastButton contentId={contentId} className="search-action-cast" />
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
