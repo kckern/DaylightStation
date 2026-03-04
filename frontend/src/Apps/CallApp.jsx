@@ -573,6 +573,9 @@ export default function CallApp() {
         setWakeError(result.error || 'Could not wake device');
         return;
       }
+      setWaking(false);
+      coldWakeRef.current = !!result.coldWake;
+      connect(targetDeviceId, { coldWake: !!result.coldWake });
     } catch (err) {
       logger.warn('wake-failed', { targetDeviceId, error: err.message });
       setWaking(false);
@@ -581,9 +584,6 @@ export default function CallApp() {
       setTimeout(() => setCooldown(false), 3000);
       return;
     }
-    setWaking(false);
-    coldWakeRef.current = !!result.coldWake;
-    connect(targetDeviceId, { coldWake: !!result.coldWake });
   }, [logger, connect, waking, status, stream, error, cooldown]);
 
   // Execute pending retry once status returns to idle
