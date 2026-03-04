@@ -532,7 +532,7 @@ export class FitnessTreasureBox {
       // For display (LEDs, roster), prefer committed zone from ZoneProfileStore (honors hysteresis)
       const committedZone = this._zoneProfileStore?.getZoneState?.(accKey);
       const effectiveColor = committedZone?.zoneColor || zone.color;
-      const effectiveZoneId = committedZone?.zoneId || zone.id || zone.name || null;
+      const effectiveZoneId = committedZone?.displayZoneId || committedZone?.zoneId || zone.id || zone.name || null;
       acc.currentColor = effectiveColor;
       acc.lastColor = effectiveColor;
       acc.lastZoneId = effectiveZoneId;
