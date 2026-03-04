@@ -101,6 +101,22 @@ export class AudiobookshelfClient {
   }
 
   /**
+   * Search a library by text query
+   * @param {string} libraryId - Library ID
+   * @param {string} query - Search text
+   * @param {number} [limit=25] - Max results
+   * @returns {Promise<{book: Array, authors: Array, series: Array}>}
+   */
+  async searchLibrary(libraryId, query, limit = 25) {
+    const params = new URLSearchParams({ q: query, limit });
+    const response = await this.#httpClient.get(
+      `${this.#host}/api/libraries/${libraryId}/search?${params}`,
+      { headers: this.#getHeaders() }
+    );
+    return response.data;
+  }
+
+  /**
    * Get a single item by ID with expanded details
    * @param {string} itemId - Item ID
    * @returns {Promise<Object>}
