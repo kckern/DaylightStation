@@ -183,7 +183,8 @@ export default function FitnessCalendarWidget() {
               className={classNames.join(' ')}
               style={{ backgroundColor: bgColor }}
               title={tooltip}
-              onPointerDown={hasSession && !isFuture ? () => handleCellClick(dateStr) : undefined}
+              onTouchStart={hasSession && !isFuture ? () => handleCellClick(dateStr) : undefined}
+              onMouseDown={hasSession && !isFuture ? () => handleCellClick(dateStr) : undefined}
             >
               {totalMin != null && <span className="fitness-calendar__mins">{totalMin}m</span>}
             </div>
