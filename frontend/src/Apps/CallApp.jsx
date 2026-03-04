@@ -107,6 +107,7 @@ export default function CallApp() {
   const [activeDeviceId, setActiveDeviceId] = useState(null);
   const connectedDeviceRef = useRef(null);
   const coldWakeRef = useRef(false);
+  const rebootTimerRef = useRef(null);
   const { isOwner } = useCallOwnership(activeDeviceId);
   const { progress: wakeProgress, reset: resetWakeProgress } = useWakeProgress(
     (waking || status === 'connecting') ? activeDeviceId : null
@@ -505,6 +506,7 @@ export default function CallApp() {
     coldWakeRef.current = false;
     setCameraWarning(false);
     setRebooting(false);
+    if (rebootTimerRef.current) clearTimeout(rebootTimerRef.current);
     setRemoteVerified(false);
     setTransitionReady(false);
     const devId = connectedDeviceRef.current;
@@ -547,6 +549,7 @@ export default function CallApp() {
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
+      if (rebootTimerRef.current) clearTimeout(rebootTimerRef.current);
       // SPA navigation: power off TV if we were in a call or connecting
       const devId = connectedDeviceRef.current;
       if (devId && isOwner()) {
@@ -621,7 +624,7 @@ export default function CallApp() {
     }
   }, [devices, status, dropIn, stream]);
 
-  const isIdle = (status === 'idle' || status === 'occupied') && !wakeError && !waking;
+  const isIdle = (status === 'idle' || status === 'occupied') && !wakeError && !waking && !cameraWarning;
   const isConnecting = status === 'connecting' || waking || (peerConnected && !transitionReady);
   const isConnected = !isIdle && !isConnecting && !wakeError && transitionReady;
 
@@ -824,8 +827,7 @@ export default function CallApp() {
               setCameraWarning(false);
               const devId = connectedDeviceRef.current;
               if (devId) {
-                coldWakeRef.current = true;
-                connect(devId, { coldWake: true });
+                connect(devId, { coldWake: coldWakeRef.current });
               }
             }}
           >
@@ -840,10 +842,11 @@ export default function CallApp() {
               logger.info('reboot-requested', { targetDeviceId: devId });
               try {
                 await DaylightAPI(`/api/v1/device/${devId}/reboot`, {}, 'POST');
+                rebootTimerRef.current = setTimeout(() => setRebooting(false), 60_000);
               } catch (err) {
                 logger.warn('reboot-failed', { error: err.message });
+                setRebooting(false);
               }
-              setTimeout(() => setRebooting(false), 60_000);
             }}
           >
             Reboot TV
