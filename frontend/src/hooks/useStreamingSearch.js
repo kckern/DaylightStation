@@ -1,5 +1,12 @@
 // frontend/src/hooks/useStreamingSearch.js
 import { useState, useCallback, useRef, useEffect } from 'react';
+import getLogger from '../lib/logging/Logger.js';
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'useStreamingSearch' });
+  return _logger;
+}
 
 /**
  * Hook for streaming search via SSE with AbortController for race condition handling.
@@ -29,6 +36,7 @@ export function useStreamingSearch(endpoint, extraQueryString = '') {
   const search = useCallback((query) => {
     // Cancel any in-flight request
     if (eventSourceRef.current) {
+      logger().debug('search.cancelled', { reason: 'new-query' });
       eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
@@ -43,6 +51,7 @@ export function useStreamingSearch(endpoint, extraQueryString = '') {
 
     // Start new search
     setIsSearching(true);
+    logger().info('search.started', { query, endpoint, filterParams: extraQueryString || null });
     setResults([]);
     setPending([]);
 
@@ -63,13 +72,19 @@ export function useStreamingSearch(endpoint, extraQueryString = '') {
         if (data.event === 'pending') {
           setPending(data.sources);
         } else if (data.event === 'results') {
-          setResults(prev => [...prev, ...data.items]);
+          setResults(prev => {
+            const total = prev.length + (data.items?.length || 0);
+            logger().info('search.results-received', { source: data.source, newItems: data.items?.length || 0, totalSoFar: total });
+            return [...prev, ...data.items];
+          });
           setPending(data.pending);
         } else if (data.event === 'complete') {
+          logger().info('search.completed', { query });
           setPending([]);
           setIsSearching(false);
           eventSource.close();
         } else if (data.event === 'error') {
+          logger().warn('search.error', { query, error: data.message });
           setIsSearching(false);
           setPending([]);
           eventSource.close();
@@ -80,6 +95,7 @@ export function useStreamingSearch(endpoint, extraQueryString = '') {
     };
 
     eventSource.onerror = () => {
+      logger().warn('search.connection-error', { endpoint });
       if (eventSourceRef.current === eventSource) {
         setIsSearching(false);
         setPending([]);
