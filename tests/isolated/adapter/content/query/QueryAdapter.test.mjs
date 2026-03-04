@@ -6,6 +6,7 @@ import { QueryAdapter } from '#adapters/content/query/QueryAdapter.mjs';
 function createMockFileAdapter(videos = []) {
   return {
     source: 'files',
+    mediaBasePath: '/tmp/mock-media',
     getList: vi.fn(async () => videos),
     getItem: vi.fn(async (id) => {
       const v = videos.find(v => v.localId === id);
@@ -46,7 +47,7 @@ describe('QueryAdapter', () => {
       const adapter = new QueryAdapter({
         savedQueryService: {
           getQuery: (name) => name === 'dailynews'
-            ? { title: 'Daily News', source: 'freshvideo', filters: { sources: ['news/cnn'] } }
+            ? { title: 'Daily News', items: [{ source: 'freshvideo', filters: { sources: ['news/cnn'] } }] }
             : null,
         },
       });
@@ -68,7 +69,7 @@ describe('QueryAdapter', () => {
       const adapter = new QueryAdapter({
         savedQueryService: {
           getQuery: (name) => name === 'dailynews'
-            ? { title: 'Daily News', source: 'freshvideo', filters: { sources: [] } }
+            ? { title: 'Daily News', items: [{ source: 'freshvideo', filters: { sources: [] } }] }
             : null,
         },
       });
@@ -88,8 +89,7 @@ describe('QueryAdapter', () => {
         savedQueryService: {
           getQuery: () => ({
             title: 'Daily News',
-            source: 'freshvideo',
-            filters: { sources: ['news/cnn'] },
+            items: [{ source: 'freshvideo', filters: { sources: ['news/cnn'] } }],
           }),
         },
         fileAdapter: createMockFileAdapter(videos),
@@ -112,8 +112,7 @@ describe('QueryAdapter', () => {
         savedQueryService: {
           getQuery: () => ({
             title: 'Daily News',
-            source: 'freshvideo',
-            filters: { sources: ['news/cnn'] },
+            items: [{ source: 'freshvideo', filters: { sources: ['news/cnn'] } }],
           }),
         },
         fileAdapter: createMockFileAdapter(videos),
@@ -145,6 +144,7 @@ describe('QueryAdapter', () => {
       // File adapter returns different lists based on path
       const fileAdapter = {
         source: 'files',
+        mediaBasePath: '/tmp/mock-media',
         getList: vi.fn(async (path) => {
           if (path === 'video/news/cnn') return cnnVideos;
           if (path === 'video/news/az') return azVideos;
@@ -159,8 +159,7 @@ describe('QueryAdapter', () => {
         savedQueryService: {
           getQuery: () => ({
             title: 'Daily News',
-            source: 'freshvideo',
-            filters: { sources: ['news/cnn', 'news/az'] },
+            items: [{ source: 'freshvideo', filters: { sources: ['news/cnn', 'news/az'] } }],
           }),
         },
         fileAdapter,
@@ -186,12 +185,12 @@ describe('QueryAdapter', () => {
         savedQueryService: {
           getQuery: () => ({
             title: 'Daily News',
-            source: 'freshvideo',
-            filters: { sources: ['news/cnn'] },
+            items: [{ source: 'freshvideo', filters: { sources: ['news/cnn'] } }],
           }),
         },
         fileAdapter: {
           source: 'files',
+          mediaBasePath: '/tmp/mock-media',
           getList: vi.fn(async () => videos),
           getItem: vi.fn(async (id) => {
             const v = videos.find(v => v.localId === id);
@@ -218,12 +217,12 @@ describe('QueryAdapter', () => {
         savedQueryService: {
           getQuery: () => ({
             title: 'Daily News',
-            source: 'freshvideo',
-            filters: { sources: ['news/cnn'] },
+            items: [{ source: 'freshvideo', filters: { sources: ['news/cnn'] } }],
           }),
         },
         fileAdapter: {
           source: 'files',
+          mediaBasePath: '/tmp/mock-media',
           getList: vi.fn(async () => items),
           getItem: vi.fn(async (id) => {
             const v = items.find(v => v.localId === id);
@@ -245,8 +244,7 @@ describe('QueryAdapter', () => {
         savedQueryService: {
           getQuery: () => ({
             title: 'Daily News',
-            source: 'freshvideo',
-            filters: { sources: ['news/cnn'] },
+            items: [{ source: 'freshvideo', filters: { sources: ['news/cnn'] } }],
           }),
           listQueries: () => ['dailynews'],
         },

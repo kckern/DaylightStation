@@ -3,6 +3,7 @@
 import path from 'path';
 import { fileExists } from '#system/utils/FileIO.mjs';
 import { ItemSelectionService } from '#domains/content/index.mjs';
+import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
 
 /** Percentage threshold above which a video is considered "watched". */
 const WATCHED_THRESHOLD = 90;
@@ -62,9 +63,11 @@ export class QueryAdapter {
     const playables = await this.resolvePlayables(id);
     const thumbnail = playables[0]?.thumbnail || null;
 
-    // Format query type for display (e.g., "immich" → "Immich", "freshvideo" → "Freshvideo")
-    const queryTypeLabel = query.source
-      ? query.source.charAt(0).toUpperCase() + query.source.slice(1)
+    // Derive query type from the first content entry (skip titlecards)
+    const firstContent = (query.items || []).find(e => e.source && e.type !== 'titlecard');
+    const querySource = firstContent?.source || null;
+    const queryTypeLabel = querySource
+      ? querySource.charAt(0).toUpperCase() + querySource.slice(1)
       : 'Query';
 
     return {
@@ -75,8 +78,8 @@ export class QueryAdapter {
       thumbnail,
       metadata: {
         type: 'query',
-        queryType: query.source,
-        sources: query.filters?.sources || [],
+        queryType: querySource,
+        sources: firstContent?.filters?.sources || [],
         librarySectionTitle: queryTypeLabel,
         childCount: playables.length,
       },
@@ -94,7 +97,7 @@ export class QueryAdapter {
 
   /**
    * Resolve a saved query to playable items.
-   * Dispatches by query type (currently: freshvideo).
+   * Iterates the query's items array and dispatches each entry by type.
    * @param {string} id - e.g. "query:dailynews"
    * @returns {Promise<Array>}
    */
@@ -103,17 +106,99 @@ export class QueryAdapter {
     const query = this.#savedQueryService.getQuery(name);
     if (!query) return [];
 
-    if (query.source === 'freshvideo') {
-      return this.#resolveFreshVideo(query);
+    const allItems = [];
+
+    for (let i = 0; i < query.items.length; i++) {
+      const entry = query.items[i];
+
+      if (entry.type === 'titlecard') {
+        allItems.push(this.#buildTitleCardItem(entry, name, i));
+        continue;
+      }
+
+      if (entry.query) {
+        const subItems = await this.resolvePlayables(`query:${entry.query}`);
+        allItems.push(...subItems);
+        continue;
+      }
+
+      // Content query — delegate to existing resolution
+      const contentItems = await this.#resolveContentEntry(entry);
+      allItems.push(...contentItems);
     }
 
-    if (query.source === 'immich') {
-      const items = await this.#resolveImmichQuery(query);
-      if (query.audio) items.audio = query.audio;
-      return items;
+    if (query.audio) allItems.audio = query.audio;
+
+    return allItems;
+  }
+
+  /**
+   * Build a synthetic PlayableItem for a title card entry.
+   * @param {Object} entry - Title card entry from items array
+   * @param {string} queryName - Parent query name (for ID generation)
+   * @param {number} index - Index in the items array
+   * @returns {PlayableItem}
+   */
+  #buildTitleCardItem(entry, queryName, index) {
+    const imageUrl = entry.image ? this.#resolveImageUrl(entry.image) : null;
+
+    const item = new PlayableItem({
+      id: `titlecard:${queryName}:${index}`,
+      source: 'titlecard',
+      title: entry.text?.title || 'Title Card',
+      mediaType: 'image',
+      duration: entry.duration || 5,
+      metadata: {
+        contentFormat: 'titlecard',
+      },
+    });
+
+    // Attach slideshow and titlecard as runtime properties
+    // (same pattern as immich items — these are stamped post-construction)
+    item.slideshow = {
+      duration: entry.duration || 5,
+      ...(entry.effect != null && { effect: entry.effect }),
+      ...(entry.zoom != null && { zoom: entry.zoom }),
+    };
+
+    item.titlecard = {
+      template: entry.template || 'centered',
+      text: entry.text || {},
+      ...(entry.theme != null && { theme: entry.theme }),
+      ...(entry.css != null && { css: entry.css }),
+      ...(imageUrl != null && { imageUrl }),
+    };
+
+    return item;
+  }
+
+  /**
+   * Resolve an image content ID to a proxy URL.
+   * @param {string} contentId - e.g. "immich:assetId"
+   * @returns {string|null}
+   */
+  #resolveImageUrl(contentId) {
+    const match = contentId.match(/^immich:(.+)$/);
+    if (match) return `/api/v1/proxy/immich/assets/${match[1]}/original`;
+    return null;
+  }
+
+  /**
+   * Resolve a single content entry from the items array.
+   * Dispatches by source type (freshvideo, immich).
+   * @param {Object} entry - Content entry with source, params, etc.
+   * @returns {Promise<Array>}
+   */
+  async #resolveContentEntry(entry) {
+    if (entry.source === 'freshvideo') {
+      return this.#resolveFreshVideo(entry);
     }
 
-    console.warn(`[QueryAdapter] Unknown query type: ${query.source}`);
+    if (entry.source === 'immich') {
+      return this.#resolveImmichQuery(entry);
+    }
+
+    console.warn(`[QueryAdapter] Unknown content source: ${entry.source}`);
     return [];
   }
 
@@ -315,19 +400,20 @@ export class QueryAdapter {
   #describeQuery(query, name) {
     if (!query) return name;
     const parts = [];
-    const src = query.source || 'query';
+    const firstContent = (query.items || []).find(e => e.source && e.type !== 'titlecard');
+    const src = firstContent?.source || 'query';
     parts.push(src.charAt(0).toUpperCase() + src.slice(1));
 
-    if (src === 'freshvideo' && query.filters?.sources?.length) {
-      parts.push(`· ${query.filters.sources.join(', ')}`);
-    } else if (src === 'immich' && query.params) {
-      const { month, day, yearFrom } = query.params;
+    if (src === 'freshvideo' && firstContent?.filters?.sources?.length) {
+      parts.push(`· ${firstContent.filters.sources.join(', ')}`);
+    } else if (src === 'immich' && firstContent?.params) {
+      const { month, day, yearFrom } = firstContent.params;
       if (month && day) parts.push(`· ${month}/${day}`);
       if (yearFrom) parts.push(`since ${yearFrom}`);
-    } else if (query.filters?.sources?.length) {
-      parts.push(`· ${query.filters.sources.join(', ')}`);
+    } else if (firstContent?.filters?.sources?.length) {
+      parts.push(`· ${firstContent.filters.sources.join(', ')}`);
     }
-    if (query.take) parts.push(`(limit ${query.take})`);
+    if (firstContent?.take) parts.push(`(limit ${firstContent.take})`);
     return parts.join(' ');
   }
 
@@ -342,7 +428,8 @@ export class QueryAdapter {
     // Build base items from YAML definitions (cheap)
     const baseItems = detailed.map(({ name, origin, username }) => {
       const query = this.#savedQueryService.getQuery(name);
-      const queryType = query?.source || 'query';
+      const firstContent = (query?.items || []).find(e => e.source && e.type !== 'titlecard');
+      const queryType = firstContent?.source || 'query';
       const group = origin === 'user' ? `${username}'s Queries` : 'Shared Queries';
       const description = this.#describeQuery(query, name);
       const queryTypeLabel = queryType.charAt(0).toUpperCase() + queryType.slice(1);
@@ -359,7 +446,7 @@ export class QueryAdapter {
           group,
           metadata: {
             type: queryType,
-            queryType: query?.source,
+            queryType: firstContent?.source,
             parentTitle: description,
             librarySectionTitle: queryTypeLabel,
             childCount: null,
@@ -382,16 +469,17 @@ export class QueryAdapter {
         }
 
         // Fallback: ask the target adapter via registry for a thumbnail
-        if (!this.#registry || !query?.source) return;
+        const firstContentEntry = (query?.items || []).find(e => e.source && e.type !== 'titlecard');
+        if (!this.#registry || !firstContentEntry?.source) return;
 
         // Try registry lookup with common name variations
-        const sourceType = query.source;
+        const sourceType = firstContentEntry.source;
         const adapter = this.#registry.get(sourceType)
           || this.#registry.get(sourceType.split('-')[0]);  // abs-ebooks → abs
         if (!adapter) return;
 
         // If query has parentIds, try each until we get a thumbnail
-        const parentIds = query.params?.parentIds;
+        const parentIds = firstContentEntry?.params?.parentIds;
         if (parentIds?.length && adapter.getItem) {
           for (const entry of parentIds) {
             const pid = String(entry.id || entry);
@@ -466,14 +554,16 @@ export class QueryAdapter {
       const titleMatch = def.title?.toLowerCase().includes(searchText);
 
       if (nameMatch || titleMatch || !searchText) {
+        const firstContent = (def.items || []).find(e => e.source && e.type !== 'titlecard');
+        const defSource = firstContent?.source || 'query';
         items.push({
           id: `query:${name}`,
           title: def.title || name,
           source: 'query',
-          type: def.source || 'query',
+          type: defSource,
           metadata: {
-            type: def.source || 'query',
-            queryType: def.source,
+            type: defSource,
+            queryType: firstContent?.source,
           },
         });
         if (items.length >= take) break;
