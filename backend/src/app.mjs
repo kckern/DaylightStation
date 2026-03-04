@@ -97,6 +97,9 @@ import { createMediaRouter } from './4_api/v1/routers/media.mjs';
 // Homeline call state tracking
 import { handleSignalingMessage } from '#apps/homeline/CallStateService.mjs';
 
+// Pose frame logging
+import { createPoseLogHandler } from '#apps/fitness/services/PoseLogService.mjs';
+
 // Fitness application services (shared between fitness router and agents router)
 import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs';
 import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
@@ -665,6 +668,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     rootLogger.debug?.('eventbus.playback_state.relay', { from: clientId, broadcastId, state: message.state });
     eventBus.broadcast(`playback:${broadcastId}`, message);
   });
+
+  // Pose frame logging — streams raw keypoints to JSONL files
+  const poseLogHandler = createPoseLogHandler(configService, rootLogger.child({ module: 'pose-log' }));
+  eventBus.onClientMessage(poseLogHandler);
+  eventBus.onClientDisconnection(poseLogHandler.onDisconnect);
 
   // ==========================================================================
   // Create API v1 Routers

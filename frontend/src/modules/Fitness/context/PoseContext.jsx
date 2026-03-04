@@ -72,7 +72,7 @@ export const PoseProvider = ({
    * Handle errors from detector service
    */
   const handleError = useCallback((err) => {
-    console.error('[PoseProvider] Error:', err);
+    getLogger().error('fitness.pose_provider.error', { error: err.message || err });
     setError(err);
   }, []);
   

@@ -5,7 +5,7 @@
  */
 
 import React, { useEffect, useRef, useCallback, useMemo } from 'react';
-import { BLAZEPOSE_CONNECTIONS, SIMPLIFIED_CONNECTIONS, getBodyPart, isLeftSide, isRightSide } from '@/modules/Fitness/lib/pose/poseConnections.js';
+import { BLAZEPOSE_CONNECTIONS, SIMPLIFIED_CONNECTIONS, KEYPOINT_NAMES, getBodyPart, isLeftSide, isRightSide } from '@/modules/Fitness/lib/pose/poseConnections.js';
 import { getColorScheme, COLOR_SCHEMES } from '@/modules/Fitness/lib/pose/poseColors.js';
 import { mirrorKeypoints, toHipCenteredCoordinates, fromHipCenteredCoordinates, getPoseBoundingBox } from '@/modules/Fitness/lib/pose/poseGeometry.js';
 import { calculatePoseConfidence } from '@/modules/Fitness/lib/pose/poseConfidence.js';
@@ -306,7 +306,6 @@ const SkeletonCanvas = ({
     
     // Draw labels
     if (opts.showLabels) {
-      const { KEYPOINT_NAMES } = require('@/modules/Fitness/lib/pose/poseConnections.js');
       keypoints.forEach((kp, idx) => {
         drawLabel(ctx, kp, idx, KEYPOINT_NAMES[idx]);
       });

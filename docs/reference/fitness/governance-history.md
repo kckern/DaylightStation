@@ -22,6 +22,7 @@ For event-driven architecture and SSoT boundaries, see `governance-system-archit
   - [Era 9: Ghost Oscillation Saga (Feb 14-17)](#era-9-ghost-oscillation-saga-feb-14-17)
   - [Era 10: Warning Cooldown & Observability (Feb 17-18)](#era-10-warning-cooldown--observability-feb-17-18)
   - [Era 11: Zone Boundary Exit Margin (Feb 18)](#era-11-zone-boundary-exit-margin-feb-18)
+  - [Era 12: Seek Thrashing, Display Zone & Chart Bleed (Mar 4)](#era-12-seek-thrashing-display-zone--chart-bleed-mar-4)
 - [Recurring Bug Patterns](#recurring-bug-patterns)
 - [Optimal Patterns vs Antipatterns](#optimal-patterns-vs-antipatterns)
 - [Mechanisms Added Then Removed](#mechanisms-added-then-removed)
@@ -46,6 +47,7 @@ For event-driven architecture and SSoT boundaries, see `governance-system-archit
 | 9 | Feb 14-17 | Ghost oscillation | Dual-path data race caused 31 phase flips in 85s |
 | 10 | Feb 17-18 | Warning observability | Stale logging fixed; HR/threshold/delta enrichment |
 | 11 | Feb 18 | Zone boundary exit margin | Schmitt trigger in ZoneProfileStore; 19 warnings/33min → near-zero |
+| 12 | Mar 4 | Seek thrashing, display zone, chart bleed | Seeking guard in pauseArbiter; displayZoneId for UI; chart hidden during lock |
 
 ---
 
@@ -341,6 +343,58 @@ if (heartRate >= exitThreshold) {
 
 ---
 
+### Era 12: Seek Thrashing, Display Zone & Chart Bleed (Mar 4)
+
+Three user-reported bugs from the Mar 4 session (audit: `docs/_wip/audits/2026-03-04-fitness-session-mar04-audit.md`).
+
+#### Bug 1 (P1): Video stall on seek — pause/play thrashing
+
+**The problem:** Seeking to 55:45 caused a 7-second stall followed by 10 pause/resume cycles in 9 seconds, all stuck at the same `currentTime`. The user had to exit and restart the session.
+
+**Root cause (two factors):**
+1. DASH buffering failure on a ~20 minute forward seek. Video `readyState` dropped below `HAVE_ENOUGH_DATA`.
+2. A governance challenge started during buffering (`governance.challenge.started`), triggering a state update cascade. `resolvePause()` re-evaluated on each re-render, alternating between governance-paused and playing based on transient state. The 0ms gap between one paused→resumed pair confirmed synchronous re-entry.
+
+**Fix (three layers):**
+1. **Seeking guard in `pauseArbiter.js`:** Added `SEEKING` as the highest-priority reason. When `seeking.active` is true, `resolvePause()` returns `{ paused: false, reason: 'SEEKING' }`, suppressing all other pause reasons until the seek completes.
+2. **`isSeeking` state in FitnessPlayer:** Set `true` on seek initiation (`handleSeek`), cleared on the video element's `seeked` event. Safety timeout clears after 15 seconds if `seeked` never fires. Keyboard seeks routed through `handleSeek` to ensure coverage.
+3. **Pause/play debounce (150ms):** Guards system-driven `media.pause()`/`media.play()` calls. Governance unlock uses deferred retry (setTimeout for remaining debounce window) instead of drop, ensuring playback eventually resumes.
+
+**Key commits:** `be6aef54` (pauseArbiter seeking guard), `feabf3e5` (isSeeking wiring), `cd77e287` (keyboard seek + logging), `12004975` (debounce)
+
+#### Bug 2 (P2): Zone color not updating when HR below threshold
+
+**The problem:** Users saw "HR: 118" displayed with a green "Active" badge (min: 120). The numbers contradicted the colors. 164 `exit_margin_suppressed` events in the session; 396 suppressions in a single 60-second window.
+
+**Root cause:** Era 11's Schmitt trigger exit margin was correct for governance stability, but `ZoneProfileStore` was the single source of truth for BOTH governance and UI. When the exit margin suppressed a zone downgrade, UI consumers (zone LEDs, chart, badges) displayed the stale committed zone instead of the real-time HR-derived zone.
+
+**Architectural principle:** Governance needs stability (committed zone). UI needs accuracy (raw zone). These are different requirements served by different data.
+
+**Fix:** Exposed `displayZoneId`/`displayZoneName`/`displayZoneColor` from `ZoneProfileStore`:
+1. `#applyHysteresis()` now returns both committed zone (for governance) and raw zone (for display) on all 6 return paths.
+2. `getProfile()` and `getZoneState()` expose `displayZoneId` alongside existing `currentZoneId`.
+3. LED sync (`FitnessContext.jsx`) prefers `rawZoneId` over `zoneId` in the payload.
+4. Chart live edge (`TreasureBox.js`) prefers `displayZoneId` from `getZoneState()`.
+
+**Key commits:** `2af03cb0` (displayZoneId), `e821ab06` (LED sync), `5f52808c` (chart edge)
+
+#### Bug 3 (P2): Chart visible behind lock overlay
+
+**The problem:** During governance lock, users saw the HR chart overlay (z-index 15) between the video (back) and the lock panel (z-index 60). The lock panel's semi-transparency let chart data peek through.
+
+**Root cause:** `showChart` state defaulted to `true` and was only toggleable via the sidebar button. No code path set it to `false` during governance lock.
+
+**Fix:** Declarative render guard — chart suppressed when `govStatus === 'locked'` or `govStatus === 'pending'`. No state management needed; `govStatus` was already derived in the component.
+
+**Key commit:** `08313c67`
+
+**Lessons established:**
+- **Pause arbitration needs a seeking guard.** The video element cannot buffer while being rapidly paused/resumed. Seeking must suppress all other pause reasons until the seek completes.
+- **Governance stability and UI accuracy are separate concerns.** The exit margin (Era 11) was correct for governance but wrong for display. Expose both committed and raw zone IDs so each consumer reads the appropriate one.
+- **Overlay visibility must track governance phase.** Any overlay rendered between the video and the governance panel will bleed through during lock. Declarative phase guards (`govStatus !== 'locked'`) are safer than reactive state management.
+
+---
+
 ## Recurring Bug Patterns
 
 These patterns have caused repeated failures across multiple eras. Understanding them prevents regression.
@@ -386,7 +440,25 @@ These patterns have caused repeated failures across multiple eras. Understanding
 
 **Prevention:** Never apply CSS `filter` to `<video>` elements. Use overlay-only approaches with single `backdrop-filter`.
 
-### 5. Ghost Participants
+### 5. Governance/Playback State Collision During Seeks
+
+**Pattern:** Governance state changes during an active seek cause `resolvePause()` to thrash, rapidly toggling video pause/play while the browser is trying to buffer.
+
+**Instance:**
+- Era 12: Governance challenge started during a seek stall — 10 pause/resume cycles in 9s at the same currentTime
+
+**Prevention:** Seeking is the highest-priority pause reason. While a seek is active, all other pause arbitration is suppressed. The seek must complete before governance can control playback.
+
+### 6. Single Source Serving Dual Concerns
+
+**Pattern:** A single data source tries to serve both stability (governance) and accuracy (UI), resulting in one concern corrupting the other.
+
+**Instance:**
+- Era 12: Exit margin (Era 11) correctly stabilized governance but made UI zone colors lag behind displayed HR
+
+**Prevention:** Expose separate fields for each concern from the same store. `currentZoneId` for governance (committed, stable). `displayZoneId` for UI (raw, instant).
+
+### 7. Ghost Participants
 
 **Pattern:** Disconnected users remain in the roster, causing governance to enforce requirements against stale entries.
 
@@ -523,7 +595,7 @@ These mechanisms were introduced during debugging and later removed when the act
 
 ## Current Architecture Snapshot
 
-As of Feb 18, 2026:
+As of Mar 4, 2026:
 
 ```
 Sensor -> DeviceManager -> UserManager -> ZoneProfileStore (SSoT: zone)
@@ -557,6 +629,9 @@ satisfiedOnce && graceActive -> warning
 - `_warningCooldownUntil`: timestamp suppressing re-entry to warning after recovery
 - `deadline`: grace period expiry timestamp (passed to UI for countdown display)
 - `EXIT_MARGIN_BPM`: (ZoneProfileStore) Schmitt trigger margin; zone downgrades require HR to drop 5 BPM below zone min
+- `displayZoneId`: (ZoneProfileStore) raw HR-derived zone for UI display, bypasses exit margin
+- `PAUSE_REASON.SEEKING`: (pauseArbiter) highest-priority reason; suppresses all pause during active seeks
+- `PAUSE_DEBOUNCE_MS`: (FitnessPlayer) 150ms debounce on system-driven pause/play toggles
 
 **Evaluation paths:**
 - **Snapshot path:** React re-render -> `updateSnapshot()` -> `evaluate()` with roster data
@@ -599,10 +674,15 @@ satisfiedOnce && graceActive -> warning
 ### Warning Cooldown & Observability
 `96fb78bf` `96420bd7` `9320da21` `cc80a9cb` `170cac93` `f9c17b9c` `ba9d5d1a`
 
+### Seek Thrashing, Display Zone & Chart Bleed
+`be6aef54` `feabf3e5` `cd77e287` `12004975` `2af03cb0` `e821ab06` `5f52808c` `08313c67`
+
 ---
 
 ## See Also
 
 - `governance-engine.md` -- API reference, configuration, testing patterns
 - `governance-system-architecture.md` -- Event-driven architecture, SSoT boundaries, data flow sequences
-- `docs/plans/2026-02-18-governance-remaining-fixes.md` -- Most recent implementation plan
+- `docs/plans/2026-02-18-governance-remaining-fixes.md` -- Era 11 implementation plan
+- `docs/plans/2026-03-04-fitness-mar04-audit-remediation.md` -- Era 12 implementation plan
+- `docs/_wip/audits/2026-03-04-fitness-session-mar04-audit.md` -- Mar 4 session audit (source for Era 12)
