@@ -39,7 +39,13 @@ const MediaAppInner = () => {
   const urlCommand = useMediaUrlParams();
 
   // Two-mode navigation: 'browse' (default) or 'player' (expanded)
-  const [mode, setMode] = useState('browse');
+  const [mode, setModeRaw] = useState('browse');
+  const setMode = useCallback((newMode) => {
+    setModeRaw(prev => {
+      if (prev !== newMode) logger.info('media-app.mode-change', { from: prev, to: newMode });
+      return newMode;
+    });
+  }, [logger]);
 
   // Playback state (shared between NowPlaying and MiniPlayer)
   const [playbackState, setPlaybackState] = useState({
@@ -62,6 +68,13 @@ const MediaAppInner = () => {
   useEffect(() => {
     if (queue.loading || urlCommandProcessed.current) return;
     if (!urlCommand) return;
+    logger.info('media-app.url-parsed', {
+      action: urlCommand.play ? 'play' : urlCommand.queue ? 'queue' : 'unknown',
+      contentId: (urlCommand.play || urlCommand.queue)?.contentId,
+      volume: (urlCommand.play || urlCommand.queue)?.volume,
+      shuffle: (urlCommand.play || urlCommand.queue)?.shuffle,
+      device: urlCommand.device,
+    });
     const playCommand = urlCommand.play || urlCommand.queue;
     if (!playCommand?.contentId) return;
 
@@ -83,7 +96,8 @@ const MediaAppInner = () => {
     if (urlCommand.play) {
       queue.clear().then(() =>
         queue.addItems([{ contentId, title: contentId, config: Object.keys(config).length > 0 ? config : undefined }])
-      );
+      ).then(() => logger.info('media-app.autoplay-result', { contentId, success: true }))
+        .catch(err => logger.warn('media-app.autoplay-result', { contentId, success: false, error: err.message }));
     }
     if (volume) queue.setVolume(Number(volume) / 100);
     if (playCommand.shuffle) queue.setShuffle(true);
