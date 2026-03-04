@@ -41,13 +41,21 @@ describe('SemanticPosition with real pose data', () => {
       const pos = extractSemanticPosition(frame.keypoints);
       if (pos) {
         validCount++;
-        // All limb properties should be LOW/MID/HIGH or null
-        for (const prop of ['leftHand', 'rightHand', 'leftKnee', 'rightKnee']) {
+        // Layer 1: limb properties should be LOW/MID/HIGH or null
+        for (const prop of ['leftHand', 'rightHand', 'leftKnee', 'rightKnee',
+                             'leftHip', 'rightHip', 'leftElbow', 'rightElbow',
+                             'leftShoulder', 'rightShoulder']) {
           expect([null, 'LOW', 'MID', 'HIGH']).toContain(pos[prop]);
         }
-        // Booleans should be bool or null
-        for (const prop of ['handsUp', 'bodyUpright', 'bodyProne']) {
-          expect([null, true, false]).toContain(pos[prop]);
+        // Torso should be UPRIGHT/LEANING/PRONE or null
+        expect([null, 'UPRIGHT', 'LEANING', 'PRONE']).toContain(pos.torso);
+        // Stance should be NARROW/HIP/WIDE or null
+        expect([null, 'NARROW', 'HIP', 'WIDE']).toContain(pos.stance);
+        // Combos should be booleans
+        for (const prop of ['upright', 'prone', 'squatting', 'lunging',
+                             'armsOverhead', 'armsAtSides', 'armsExtended',
+                             'wideStance', 'narrowStance']) {
+          expect(typeof pos[prop]).toBe('boolean');
         }
       }
     }
@@ -64,7 +72,8 @@ describe('SemanticPosition with real pose data', () => {
     for (const frame of frames) {
       const pos = extractor(frame.keypoints, frame.timestamp);
       if (pos && prevPos) {
-        for (const prop of ['leftHand', 'rightHand', 'leftKnee', 'rightKnee']) {
+        for (const prop of ['leftHand', 'rightHand', 'leftKnee', 'rightKnee',
+                             'leftHip', 'rightHip', 'leftShoulder', 'rightShoulder']) {
           if (pos[prop] !== prevPos[prop]) transitions++;
         }
       }
@@ -72,7 +81,8 @@ describe('SemanticPosition with real pose data', () => {
     }
 
     // With hysteresis, transitions should be much less than frame count * properties
-    const maxExpectedTransitions = frames.length * 0.3;
+    // Threshold scaled for 8 tracked properties (was 0.3 for 4 properties)
+    const maxExpectedTransitions = frames.length * 0.6;
     expect(transitions).toBeLessThan(maxExpectedTransitions);
   });
 
@@ -85,7 +95,8 @@ describe('SemanticPosition with real pose data', () => {
     for (const frame of frames) {
       const pos = extractSemanticPosition(frame.keypoints);
       if (pos && prevRaw) {
-        for (const prop of ['leftHand', 'rightHand', 'leftKnee', 'rightKnee']) {
+        for (const prop of ['leftHand', 'rightHand', 'leftKnee', 'rightKnee',
+                             'leftHip', 'rightHip', 'leftShoulder', 'rightShoulder']) {
           if (pos[prop] !== prevRaw[prop]) rawTransitions++;
         }
       }
@@ -99,7 +110,8 @@ describe('SemanticPosition with real pose data', () => {
     for (const frame of frames) {
       const pos = extractor(frame.keypoints, frame.timestamp);
       if (pos && prevSmooth) {
-        for (const prop of ['leftHand', 'rightHand', 'leftKnee', 'rightKnee']) {
+        for (const prop of ['leftHand', 'rightHand', 'leftKnee', 'rightKnee',
+                             'leftHip', 'rightHip', 'leftShoulder', 'rightShoulder']) {
           if (pos[prop] !== prevSmooth[prop]) smoothTransitions++;
         }
       }
