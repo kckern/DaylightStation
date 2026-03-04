@@ -157,7 +157,8 @@ export class PlexClient {
           composite: item.composite || null,
           leafCount: item.leafCount || null,
           childCount: item.childCount || null,
-          librarySectionTitle: item.librarySectionTitle || null
+          librarySectionTitle: item.librarySectionTitle || null,
+          librarySectionID: item.librarySectionID || null
         });
       }
     }

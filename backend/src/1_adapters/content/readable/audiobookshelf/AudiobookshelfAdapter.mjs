@@ -288,10 +288,15 @@ export class AudiobookshelfAdapter {
     try {
       const { mediaType, text, take = 20, skip = 0 } = query;
       const searchText = text || query.query; // Support translated query.query
+      const rawLibraryId = query.libraryId || query['abs.libraryId'] || undefined;
 
-      // Get all libraries first
+      // Get libraries, optionally filtered by abs.libraryId
       const librariesData = await this.#client.getLibraries();
-      const libraries = librariesData.libraries || [];
+      let libraries = librariesData.libraries || [];
+      if (rawLibraryId) {
+        const allowedIds = new Set(String(rawLibraryId).split(',').map(s => s.trim()));
+        libraries = libraries.filter(lib => allowedIds.has(lib.id));
+      }
 
       // Search authors and items in parallel
       const [matchingAuthors, allItems] = await Promise.all([
@@ -381,7 +386,8 @@ export class AudiobookshelfAdapter {
   }
 
   /**
-   * Search for items (books) by title
+   * Search for items (books) by title using ABS native search API.
+   * Falls back to browse (first page) when no search text is provided.
    * @param {string} searchText
    * @param {string} mediaType
    * @param {Array} libraries
@@ -391,26 +397,25 @@ export class AudiobookshelfAdapter {
     const allItems = [];
 
     for (const lib of libraries) {
-      const itemsData = await this.#client.getLibraryItems(lib.id, { limit: 100 });
-      const items = itemsData.results || [];
+      let items;
+
+      if (searchText) {
+        // Use ABS native search endpoint — searches full library server-side
+        const searchData = await this.#client.searchLibrary(lib.id, searchText);
+        items = (searchData.book || []).map(b => b.libraryItem);
+      } else {
+        // No search text — browse first page
+        const itemsData = await this.#client.getLibraryItems(lib.id, { limit: 100 });
+        items = itemsData.results || [];
+      }
 
       for (const item of items) {
-        // Filter by mediaType if specified
         const isAudiobook = this.#isAudiobook(item);
         const isEbook = this.#isEbook(item);
 
         if (mediaType === 'audio' && !isAudiobook) continue;
         if (mediaType === 'ebook' && !isEbook) continue;
 
-        // Filter by text if specified (simple title search)
-        if (searchText) {
-          const title = item.media?.metadata?.title?.toLowerCase() || '';
-          const author = item.media?.metadata?.authorName?.toLowerCase() || '';
-          if (!title.includes(searchText.toLowerCase()) &&
-              !author.includes(searchText.toLowerCase())) continue;
-        }
-
-        // Convert to appropriate item type
         if (isAudiobook) {
           allItems.push(this.#toPlayableItem(item, null));
         } else if (isEbook) {
