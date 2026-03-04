@@ -14,6 +14,10 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
   const isYouTube = item.contentType === 'youtube' && item.meta?.videoId;
   const subtitle = isYouTube ? null : (item.body || ogDescription);
   const hasArticle = sections.length > 0 && !loading;
+  const CONTENT_TYPES = new Set(['body', 'article', 'player', 'embed', 'gallery', 'media', 'comments', 'scripture', 'timeline']);
+  const hasContentSections = hasArticle && sections.some(s => CONTENT_TYPES.has(s.type));
+  const showIframe = !loading && !hasContentSections && item.link && !isYouTube;
+  const iframeSrc = item.meta?.paywall && item.meta?.paywallProxy ? item.meta.paywallProxy + item.link : item.link;
   const dateStr = item.timestamp ? new Date(item.timestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : null;
 
   const [imageLoaded, setImageLoaded] = useState(false);
@@ -209,7 +213,7 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
           <h2 className="detail-title">{item.title}</h2>
           {dateStr && <span className="detail-date">{dateStr}</span>}
           {!hasArticle && subtitle && <p className="detail-subtitle">{subtitle}</p>}
-          {item.link && (
+          {item.link && !showIframe && (
             <a
               href={item.meta?.paywall && item.meta?.paywallProxy ? item.meta.paywallProxy + item.link : item.link}
               target="_blank"
@@ -244,6 +248,18 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
             {renderSection(section, { onPlay, activeMedia, playback, item, onNavigateToItem })}
           </div>
         ))}
+
+        {showIframe && (
+          <div className="detail-iframe-wrap">
+            <iframe
+              src={iframeSrc}
+              title={item.title}
+              className="detail-iframe"
+              sandbox="allow-scripts allow-same-origin allow-popups"
+              onLoad={() => feedLog.detail('iframe loaded', { id: item.id, src: iframeSrc })}
+            />
+          </div>
+        )}
 
       </div>
       </div>

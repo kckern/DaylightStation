@@ -35,6 +35,9 @@
 .feed-content {
   flex: 1;
   overflow-y: auto;
+  scrollbar-gutter: stable;
+  &::-webkit-scrollbar { display: none; }
+  scrollbar-width: none;
 }
 
 .feed-placeholder {

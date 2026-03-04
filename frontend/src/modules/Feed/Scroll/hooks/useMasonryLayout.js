@@ -239,13 +239,15 @@ export function useMasonryLayout(containerRef, items, isDesktop) {
         opacity: 1,
       };
     }
-    // Truly new item — render at correct width but offscreen for initial measurement
+    // Truly new item — render at correct width but offscreen for initial measurement.
+    // Override CSS content-visibility so browser renders content fully for height measurement.
     return {
       position: 'absolute',
       top: 0,
       left: '-9999px',
       width: `${colWidthRef.current}px`,
       opacity: 0,
+      contentVisibility: 'visible',
     };
   }, [isDesktop]);
 

@@ -6,9 +6,11 @@ import DetailModal from './detail/DetailModal.jsx';
 import { useFeedPlayer } from '../players/FeedPlayerContext.jsx';
 import { usePlaybackObserver } from './hooks/usePlaybackObserver.js';
 import { useMasonryLayout } from './hooks/useMasonryLayout.js';
+import { usePerfMonitor } from './hooks/usePerfMonitor.js';
 import FeedAssemblyOverlay from './FeedAssemblyOverlay.jsx';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { feedLog } from './feedLog.js';
+import getLogger from '../../../lib/logging/Logger.js';
 import './Scroll.scss';
 
 /** Base64url-encode an item ID for use in the URL path. */
@@ -104,6 +106,9 @@ function ScrollCard({ item, colors, onDismiss, onPlay, onClick, style, itemRef, 
   );
 }
 
+/** Scroll container is .feed-content (overflow-y: auto), NOT the window. */
+function getScrollEl() { return document.querySelector('.feed-content'); }
+
 export default function Scroll() {
   const { itemId: urlSlug } = useParams();
   const navigate = useNavigate();
@@ -152,6 +157,9 @@ export default function Scroll() {
     mql.addEventListener('change', handler);
     return () => mql.removeEventListener('change', handler);
   }, []);
+
+  // Performance monitoring — active when scroll list is visible (not detail view)
+  usePerfMonitor(!loading && !(urlSlug && !isDesktop));
 
   // Decode URL slug to full item ID
   const fullId = urlSlug ? decodeItemId(urlSlug) : null;
@@ -240,14 +248,20 @@ export default function Scroll() {
     return () => observerRef.current?.disconnect();
   }, [hasMore, loadingMore, fetchItems, loading]);
 
-  // Scroll activity tracking
+  // Scroll activity tracking (throttled to ~5/sec to reduce main-thread work)
   useEffect(() => {
-    let lastY = window.scrollY;
+    const scrollEl = getScrollEl();
+    if (!scrollEl) return;
+    let lastY = scrollEl.scrollTop;
     let lastTime = performance.now();
+    let lastLogTime = 0;
 
     const handler = () => {
       const now = performance.now();
-      const y = window.scrollY;
+      if (now - lastLogTime < 200) return;
+      lastLogTime = now;
+
+      const y = scrollEl.scrollTop;
       const dy = y - lastY;
       const dt = now - lastTime;
       const velocity = dt > 0 ? Math.round((dy / dt) * 1000) : 0;
@@ -261,8 +275,8 @@ export default function Scroll() {
       lastTime = now;
     };
 
-    window.addEventListener('scroll', handler, { passive: true });
-    return () => window.removeEventListener('scroll', handler);
+    scrollEl.addEventListener('scroll', handler, { passive: true });
+    return () => scrollEl.removeEventListener('scroll', handler);
   }, []);
 
   // Card viewport tracking (enter/exit with dwell time)
@@ -298,11 +312,7 @@ export default function Scroll() {
     const ids = dismissQueueRef.current.splice(0);
     if (ids.length === 0) return;
     feedLog.dismiss('flush batch', { count: ids.length, ids });
-    DaylightAPI('/api/v1/feed/scroll/dismiss', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ itemIds: ids }),
-    }).catch(err => {
+    DaylightAPI('/api/v1/feed/scroll/dismiss', { itemIds: ids }, 'POST').catch(err => {
       console.error('Dismiss failed:', err);
       feedLog.dismiss('flush error', err.message);
     });
@@ -335,7 +345,7 @@ export default function Scroll() {
       feedLog.detail('open (in batch)', { id: fullId, source: item.source, title: item.title });
       setDetailData(null);
       setDetailLoading(true);
-      if (!isDesktop) window.scrollTo(0, 0);
+      if (!isDesktop) { const el = getScrollEl(); if (el) el.scrollTop = 0; }
 
       const params = new URLSearchParams();
       if (item.contentType === 'youtube') params.set('quality', '480p');
@@ -361,7 +371,7 @@ export default function Scroll() {
       setDetailData(null);
       setDetailLoading(true);
       setDeepLinkedItem(null);
-      if (!isDesktop) window.scrollTo(0, 0);
+      if (!isDesktop) { const el = getScrollEl(); if (el) el.scrollTop = 0; }
 
       const detailStart = performance.now();
       DaylightAPI(`/api/v1/feed/scroll/item/${urlSlug}`)
@@ -386,20 +396,31 @@ export default function Scroll() {
   }, [urlSlug, items, fullId, navigate, queueDismiss]);
 
   // Restore scroll position when navigating back to list
+  const scrollLog = useCallback(() => getLogger().child({ module: 'scroll-restore' }), []);
   useEffect(() => {
     if (!urlSlug) {
       const savedY = savedScrollRef.current;
-      feedLog.nav('back to list', { savedY, itemCount: items.length });
+      const el = getScrollEl();
+      scrollLog().info('nav.backToList', { savedY, itemCount: items.length, scrollHeight: el?.scrollHeight || 0 });
       setDetailData(null);
       setDetailLoading(false);
       setDeepLinkedItem(null);
       prevSlugRef.current = null;
-      requestAnimationFrame(() => {
-        window.scrollTo(0, savedY);
-        requestAnimationFrame(() => {
-          feedLog.nav('scroll restored', { targetY: savedY, actualY: Math.round(window.scrollY), delta: Math.round(window.scrollY - savedY) });
-        });
-      });
+
+      // Restore scroll on .feed-content — retry if content hasn't laid out yet
+      let attempts = 0;
+      const tryRestore = () => {
+        const scrollEl = getScrollEl();
+        if (!scrollEl) return;
+        scrollEl.scrollTop = savedY;
+        attempts++;
+        const actual = scrollEl.scrollTop;
+        scrollLog().info('nav.scrollRestore', { savedY, actualY: actual, attempt: attempts, scrollHeight: scrollEl.scrollHeight });
+        if (savedY > 0 && Math.abs(actual - savedY) > 50 && attempts < 5) {
+          requestAnimationFrame(tryRestore);
+        }
+      };
+      requestAnimationFrame(tryRestore);
     }
   }, [urlSlug]);
 
@@ -432,8 +453,15 @@ export default function Scroll() {
 
   const handleCardClick = useCallback((e, item) => {
     e.preventDefault();
-    savedScrollRef.current = window.scrollY;
-    feedLog.nav('card click', { scrollY: Math.round(window.scrollY), id: item.id, title: item.title, source: item.source, tier: item.tier });
+    const el = getScrollEl();
+    const scrollY = el ? el.scrollTop : 0;
+    savedScrollRef.current = scrollY;
+    getLogger().child({ module: 'scroll-restore' }).info('nav.saveScroll', {
+      scrollY: Math.round(scrollY),
+      scrollHeight: el ? el.scrollHeight : 0,
+      id: item.id,
+    });
+    feedLog.nav('card click', { scrollY: Math.round(scrollY), id: item.id, title: item.title, source: item.source, tier: item.tier });
     navigate(`/feed/scroll/${encodeItemId(item.id)}`);
   }, [navigate]);
 
