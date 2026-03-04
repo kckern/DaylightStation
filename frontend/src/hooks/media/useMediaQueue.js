@@ -101,6 +101,27 @@ export function useMediaQueue() {
     );
   }, [queue, mutate]);
 
+  const playNow = useCallback(async (items) => {
+    const nextPosition = queue.position + 1;
+    const contentIds = items.map(i => i.contentId);
+    logger().info('media-queue.play-now', { count: items.length, contentIds, position: nextPosition });
+
+    // Atomic optimistic update: insert items AND advance position in one state change
+    const optimistic = {
+      ...queue,
+      items: [...queue.items.slice(0, nextPosition), ...items, ...queue.items.slice(nextPosition)],
+      position: nextPosition,
+    };
+
+    return mutate(optimistic, async (mid) => {
+      const res = await apiFetch('/items', { method: 'POST', body: { items, placement: 'next', mutationId: mid } });
+      setQueue(res.queue);
+      const posRes = await apiFetch('/position', { method: 'PATCH', body: { position: nextPosition, mutationId: mid } });
+      setQueue(posRes);
+      return res.added;
+    });
+  }, [queue, mutate]);
+
   const removeItem = useCallback(async (queueId) => {
     const item = queue.items.find(i => i.queueId === queueId);
     logger().info('media-queue.remove-item', { queueId, contentId: item?.contentId, title: item?.title });
@@ -193,6 +214,7 @@ export function useMediaQueue() {
     currentItem,
     loading,
     addItems,
+    playNow,
     removeItem,
     reorder,
     setPosition,

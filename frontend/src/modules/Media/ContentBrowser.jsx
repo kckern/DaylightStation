@@ -73,10 +73,8 @@ const ContentBrowser = ({ hasMiniplayer }) => {
   const handlePlayNow = useCallback((item) => {
     const contentId = resolveContentId(item);
     if (!contentId) { logger.warn('content-browser.play-now.no-content-id', { title: item.title }); return; }
-    const nextPosition = queue.position + 1;
     logger.info('content-browser.play-now', { contentId, title: item.title });
-    queue.addItems([{ contentId, title: item.title, format: item.format, thumbnail: item.thumbnail }], 'next')
-      .then(() => queue.setPosition(nextPosition));
+    queue.playNow([{ contentId, title: item.title, format: item.format, thumbnail: item.thumbnail }]);
   }, [queue, logger]);
 
   const handleAddToQueue = useCallback((item) => {
@@ -111,10 +109,25 @@ const ContentBrowser = ({ hasMiniplayer }) => {
 
   useEffect(() => {
     if (displayResults.length > 0) {
-      const withThumbs = displayResults.filter(r => r.thumbnail || resolveContentId(r)).length;
-      logger.info('content-browser.results-rendered', { count: displayResults.length, withThumbnails: withThumbs, source: browsing ? 'browse' : 'search' });
+      const withThumbs = displayResults.filter(r => !!(r.thumbnail || resolveContentId(r))).length;
+      const withDirectThumb = displayResults.filter(r => !!r.thumbnail).length;
+      const sourceBreakdown = {};
+      displayResults.forEach(r => {
+        sourceBreakdown[r.source || 'unknown'] = (sourceBreakdown[r.source || 'unknown'] || 0) + 1;
+      });
+      logger.info('content-browser.results-rendered', {
+        count: displayResults.length,
+        withThumbnails: withThumbs,
+        withDirectThumbnail: withDirectThumb,
+        sources: sourceBreakdown,
+        source: browsing ? 'browse' : 'search',
+      });
     }
   }, [displayResults.length, browsing, logger]);
+
+  useEffect(() => {
+    logger.debug('content-browser.loading-state', { isSearching, browseLoading });
+  }, [isSearching, browseLoading, logger]);
 
   const isSearchActive = searchText.length > 0 || browsing;
 
@@ -136,7 +149,12 @@ const ContentBrowser = ({ hasMiniplayer }) => {
             key={f.label}
             className={`filter-chip ${i === activeFilter ? 'active' : ''}`}
             onClick={() => {
-              logger.debug('content-browser.filter', { filter: f.label, params: f.params });
+              const oldFilter = filters[activeFilter]?.label;
+              logger.info('content-browser.filter-changed', {
+                from: oldFilter,
+                to: f.label,
+                params: f.params,
+              });
               setActiveFilter(i);
               if (searchText.length >= 2) {
                 search(searchText, f.params);
