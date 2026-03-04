@@ -231,6 +231,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const seekIntentRef = useRef(null); // Track seek/resume intent to override actual time
   const [isSeeking, setIsSeeking] = useState(false);
   const seekTimeoutRef = useRef(null);
+  const lastPauseToggleRef = useRef(0);
+  const PAUSE_DEBOUNCE_MS = 150;
   const thumbnailsCommitRef = useRef(null); // will hold commit function from FitnessPlayerFooterSeekThumbnails
   const thumbnailsGetTimeRef = useRef(null); // will hold function to get current display time from thumbnails
   const renderCountRef = useRef(0);
@@ -338,6 +340,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       if (media) {
         media.muted = true;
         if (!media.paused) {
+          const elapsed = Date.now() - lastPauseToggleRef.current;
+          if (elapsed < PAUSE_DEBOUNCE_MS) return;
+          lastPauseToggleRef.current = Date.now();
           media.pause();
         }
       }
@@ -367,6 +372,13 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         // Only call play() if video is actually ready (readyState >= 3)
         // This prevents AbortError from conflicting play() calls
         if (currentMedia.readyState >= 3 && currentMedia.paused) {
+          const elapsed = Date.now() - lastPauseToggleRef.current;
+          if (elapsed < PAUSE_DEBOUNCE_MS) {
+            // Retry after debounce window expires
+            governanceUnlockTimerRef.current = setTimeout(() => tryPlay(attempt), PAUSE_DEBOUNCE_MS - elapsed);
+            return;
+          }
+          lastPauseToggleRef.current = Date.now();
           currentMedia.play?.().catch(() => {});
         } else if (currentMedia.readyState < 3 && attempt < 10) {
           // Not ready yet, wait for Shaka to load
@@ -392,6 +404,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     if (videoPlayerPaused) {
       // Capture playing state before pausing
       if (mediaElement && !mediaElement.paused) {
+        const elapsed = Date.now() - lastPauseToggleRef.current;
+        if (elapsed < PAUSE_DEBOUNCE_MS) return;
+        lastPauseToggleRef.current = Date.now();
         wasPlayingBeforeVoiceMemoRef.current = true;
         mediaElement.pause();
       }
@@ -402,6 +417,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         // Only resume if governance isn't currently locking the video.
         // If governance is locked, the governance unlock effect will handle resume.
         if (!governancePaused && mediaElement.paused) {
+          const elapsed = Date.now() - lastPauseToggleRef.current;
+          if (elapsed < PAUSE_DEBOUNCE_MS) return;
+          lastPauseToggleRef.current = Date.now();
           mediaElement.play().catch(() => {
             // Ignore play errors (e.g. user gesture requirements which should already be met)
           });
