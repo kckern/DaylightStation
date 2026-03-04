@@ -16,7 +16,7 @@
 .scroll-items {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 10px;
 
   @media (min-width: 600px) {
     gap: 12px;
@@ -29,7 +29,6 @@
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
   user-select: none;
-  will-change: transform, opacity;
 
   .feed-card-overlay {
     border-radius: 0;
@@ -39,6 +38,15 @@
 // Flush cards on mobile — override inline border-radius
 .scroll-item-wrapper .feed-card {
   border-radius: 0 !important;
+}
+
+// Hide dismiss buttons on mobile — swipe-left handles dismissal
+.scroll-item-wrapper .feed-card-dismiss {
+  display: none !important;
+
+  @media (min-width: 900px) {
+    display: flex !important;
+  }
 }
 
 // Cap portrait images at 9:16 (tallest allowed ratio)
@@ -57,6 +65,13 @@
   }
 
   .scroll-item-wrapper {
+    // Desktop only: browser skips layout/paint for off-screen cards.
+    // Safe here because masonry container has explicit pixel height —
+    // scroll position doesn't depend on individual card heights.
+    // NOT on mobile: flexbox flow relies on card heights for scroll position.
+    content-visibility: auto;
+    contain-intrinsic-block-size: auto 300px;
+
     .feed-card {
       border-radius: 12px !important;
     }

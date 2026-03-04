@@ -3,8 +3,12 @@ import { formatAge, proxyIcon, proxyImage, isImageUrl } from './utils.js';
 import { getBodyModule } from './bodies/index.js';
 import { getContentPlugin } from '../../contentPlugins/index.js';
 import { feedLog } from '../feedLog.js';
+import getLogger from '../../../../lib/logging/Logger.js';
 import FeedPlayer from '../../players/FeedPlayer.jsx';
 import { DaylightAPI } from '../../../../lib/api.mjs';
+
+// Info-level logger for image lifecycle (visible in backend session logs)
+function imgLog() { return getLogger().child({ module: 'feed-card-image' }); }
 
 function formatDuration(seconds) {
   if (!seconds || !Number.isFinite(seconds)) return '';
@@ -21,18 +25,34 @@ const STATUS_COLORS = {
   green: '#51cf66',
 };
 
+/** Inline SVG data-URI shimmer placeholder (no network request). */
+const PLACEHOLDER_SVG = `data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300">
+    <defs>
+      <linearGradient id="g" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%" stop-color="#2c2e33"/>
+        <stop offset="50%" stop-color="#3a3c42"/>
+        <stop offset="100%" stop-color="#2c2e33"/>
+      </linearGradient>
+    </defs>
+    <rect width="400" height="300" fill="#1a1b1e"/>
+    <rect width="400" height="300" fill="url(#g)">
+      <animate attributeName="x" from="-400" to="400" dur="1.5s" repeatCount="indefinite"/>
+    </rect>
+  </svg>`
+)}`;
+
 function HeroImage({ src, thumbnail, itemId, title }) {
   const proxied = proxyImage(src);
   const [imgSrc, setImgSrc] = useState(thumbnail || src);
   const [phase, setPhase] = useState(thumbnail ? 'thumbnail' : 'original');
-  // Track when full image is loaded and ready to display
-  const [fullLoaded, setFullLoaded] = useState(!thumbnail);
+  const [loaded, setLoaded] = useState(false);
   const loadStartRef = useRef(performance.now());
 
   useEffect(() => {
     setImgSrc(thumbnail || src);
     setPhase(thumbnail ? 'thumbnail' : 'original');
-    setFullLoaded(!thumbnail);
+    setLoaded(false);
     loadStartRef.current = performance.now();
   }, [src, thumbnail]);
 
@@ -42,16 +62,14 @@ function HeroImage({ src, thumbnail, itemId, title }) {
     const img = new Image();
     img.onload = () => {
       const durationMs = Math.round(performance.now() - loadStartRef.current);
-      feedLog.timing('card-image-preload', { phase: 'full', durationMs, src, itemId, title });
+      imgLog().info('preload.done', { phase: 'full', durationMs, src, itemId, title });
       setImgSrc(src);
       setPhase('original');
       loadStartRef.current = performance.now();
-      requestAnimationFrame(() => setFullLoaded(true));
     };
     img.onerror = () => {
       const durationMs = Math.round(performance.now() - loadStartRef.current);
-      feedLog.image('card hero full-res failed, keeping thumbnail', { src, thumbnail, durationMs, itemId, title });
-      setFullLoaded(true);
+      imgLog().warn('preload.failed', { src, thumbnail, durationMs, itemId, title });
     };
     img.src = src;
     return () => { img.onload = null; img.onerror = null; };
@@ -60,19 +78,17 @@ function HeroImage({ src, thumbnail, itemId, title }) {
   const handleError = () => {
     const durationMs = Math.round(performance.now() - loadStartRef.current);
     if (phase === 'thumbnail' && src && src !== thumbnail) {
-      feedLog.image('card hero thumbnail failed', { thumbnail, src, durationMs, itemId, title });
+      imgLog().warn('thumbnail.failed', { thumbnail, src, durationMs, itemId, title });
       setPhase('original');
       setImgSrc(src);
-      setFullLoaded(true);
       loadStartRef.current = performance.now();
     } else if ((phase === 'original' || phase === 'thumbnail') && proxied) {
-      feedLog.image('card hero fallback to proxy', { original: src, proxy: proxied, durationMs, itemId, title });
+      imgLog().warn('fallback.proxy', { original: src, proxy: proxied, durationMs, itemId, title });
       setPhase('proxy');
       setImgSrc(proxied);
-      setFullLoaded(true);
       loadStartRef.current = performance.now();
     } else {
-      feedLog.image('card hero hidden', { src, durationMs, itemId, title });
+      imgLog().warn('image.hidden', { src, durationMs, itemId, title });
       setPhase('hidden');
     }
   };
@@ -80,24 +96,151 @@ function HeroImage({ src, thumbnail, itemId, title }) {
   if (phase === 'hidden') return null;
 
   return (
-    <img
-      src={imgSrc}
-      alt=""
-      className="feed-card-image"
-      style={{
-        width: '100%',
-        height: '100%',
-        display: 'block',
-        objectFit: 'cover',
-        opacity: fullLoaded ? 1 : 0.6,
-        transition: 'opacity 0.4s ease-in-out',
-      }}
-      onLoad={() => {
-        const durationMs = Math.round(performance.now() - loadStartRef.current);
-        feedLog.timing('card-image', { phase, durationMs, src: imgSrc, itemId, title });
-      }}
-      onError={handleError}
-    />
+    <>
+      {/* SVG shimmer placeholder — visible until real image loads */}
+      {!loaded && (
+        <img
+          src={PLACEHOLDER_SVG}
+          alt=""
+          style={{
+            position: 'absolute', inset: 0,
+            width: '100%', height: '100%',
+            display: 'block', objectFit: 'cover',
+          }}
+        />
+      )}
+      <img
+        src={imgSrc}
+        alt=""
+        className="feed-card-image"
+        style={{
+          width: '100%',
+          height: '100%',
+          display: 'block',
+          objectFit: 'cover',
+          opacity: loaded ? 1 : 0,
+          transition: 'opacity 0.3s ease-in-out',
+        }}
+        onLoad={() => {
+          const durationMs = Math.round(performance.now() - loadStartRef.current);
+          imgLog().info('loaded', { phase, durationMs, src: imgSrc, itemId, title });
+          setLoaded(true);
+        }}
+        onError={handleError}
+      />
+    </>
+  );
+}
+
+/**
+ * GalleryHero — swipeable image gallery for cards with multiple images.
+ * Source-agnostic: works with any adapter that provides meta.galleryImages.
+ * Supports touch swipe (mobile) and click arrows (desktop).
+ */
+function GalleryHero({ images, itemId, title }) {
+  const [index, setIndex] = useState(0);
+  const dragStartRef = useRef(null);
+  const count = images.length;
+  const current = images[index] || images[0];
+
+  const goPrev = useCallback((e) => { e?.stopPropagation(); setIndex(i => Math.max(i - 1, 0)); }, []);
+  const goNext = useCallback((e) => { e?.stopPropagation(); setIndex(i => Math.min(i + 1, count - 1)); }, [count]);
+
+  // Touch swipe (mobile)
+  const handleTouchStart = (e) => { dragStartRef.current = e.touches[0].clientX; };
+  const handleTouchEnd = (e) => {
+    if (dragStartRef.current === null) return;
+    const dx = e.changedTouches[0].clientX - dragStartRef.current;
+    dragStartRef.current = null;
+    if (dx < -40) goNext();
+    else if (dx > 40) goPrev();
+  };
+
+  // Mouse drag (desktop)
+  const handleMouseDown = (e) => { dragStartRef.current = e.clientX; };
+  const handleMouseUp = (e) => {
+    if (dragStartRef.current === null) return;
+    const dx = e.clientX - dragStartRef.current;
+    dragStartRef.current = null;
+    if (dx < -40) goNext();
+    else if (dx > 40) goPrev();
+  };
+
+  // Keyboard navigation when focused
+  const handleKeyDown = useCallback((e) => {
+    if (e.key === 'ArrowLeft') goPrev(e);
+    else if (e.key === 'ArrowRight') goNext(e);
+  }, [goPrev, goNext]);
+
+  // Log only user-initiated slides (skip initial index=0)
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    if (!mountedRef.current) { mountedRef.current = true; return; }
+    feedLog.interaction('gallery-slide', { index, total: count, itemId, title });
+  }, [index, count, itemId, title]);
+
+  const arrowStyle = {
+    position: 'absolute', top: '50%', transform: 'translateY(-50%)',
+    width: '32px', height: '32px', borderRadius: '50%',
+    background: 'rgba(0,0,0,0.5)', border: 'none', color: '#fff',
+    fontSize: '16px', fontWeight: 700, cursor: 'pointer', display: 'flex',
+    alignItems: 'center', justifyContent: 'center', zIndex: 2,
+    backdropFilter: 'blur(4px)',
+  };
+
+  return (
+    <div
+      style={{ position: 'relative', width: '100%', height: '100%', userSelect: 'none' }}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+      onKeyDown={handleKeyDown}
+      tabIndex={0}
+      role="region"
+      aria-label={`Image gallery, ${index + 1} of ${count}`}
+    >
+      <HeroImage src={current.url} thumbnail={current.thumbnail} itemId={itemId} title={title} />
+
+      {/* Left arrow */}
+      {index > 0 && (
+        <button onClick={goPrev} aria-label="Previous image"
+          style={{ ...arrowStyle, left: '6px' }}>‹</button>
+      )}
+      {/* Right arrow */}
+      {index < count - 1 && (
+        <button onClick={goNext} aria-label="Next image"
+          style={{ ...arrowStyle, right: '6px' }}>›</button>
+      )}
+
+      {/* Dot indicators (cap at 10 to avoid clutter) */}
+      {count <= 10 && (
+        <div style={{
+          position: 'absolute', bottom: '8px', left: '50%', transform: 'translateX(-50%)',
+          display: 'flex', gap: '4px', zIndex: 2,
+        }}>
+          {images.map((_, i) => (
+            <span key={i} style={{
+              width: i === index ? '8px' : '6px',
+              height: i === index ? '8px' : '6px',
+              borderRadius: '50%',
+              background: i === index ? '#fff' : 'rgba(255,255,255,0.5)',
+              transition: 'all 0.2s',
+            }} />
+          ))}
+        </div>
+      )}
+
+      {/* Counter badge */}
+      <span style={{
+        position: 'absolute', top: '8px', left: '8px',
+        background: 'rgba(0,0,0,0.6)', color: '#fff',
+        fontSize: '0.6rem', fontWeight: 600,
+        padding: '2px 6px', borderRadius: '4px', zIndex: 2,
+      }}>
+        {index + 1} / {count}
+      </span>
+    </div>
   );
 }
 
@@ -161,6 +304,8 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
           }}>
           {playingInline ? (
             <CardYouTubePlayer item={item} />
+          ) : item.meta?.galleryImages?.length > 1 ? (
+            <GalleryHero images={item.meta.galleryImages} itemId={item.id} title={item.title} />
           ) : (
             <>
               <HeroImage src={item.image} thumbnail={item.thumbnail} itemId={item.id} title={item.title} />
@@ -211,9 +356,10 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
               )}
             </>
           )}
-          {/* Dismiss button overlay */}
+          {/* Dismiss button overlay — desktop only (mobile uses swipe-left) */}
           {onDismiss && (
             <button
+              className="feed-card-dismiss"
               onClick={(e) => { e.stopPropagation(); onDismiss(item); }}
               style={{
                 position: 'absolute',
@@ -307,9 +453,9 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
             Overdue
           </span>
         )}
-        {/* Dismiss footer for text-only cards */}
+        {/* Dismiss footer for text-only cards — desktop only (mobile uses swipe-left) */}
         {onDismiss && !(item.image && isImageUrl(item.image)) && (
-          <div style={{
+          <div className="feed-card-dismiss" style={{
             display: 'flex',
             justifyContent: 'flex-end',
             marginTop: '0.4rem',

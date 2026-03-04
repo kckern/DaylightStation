@@ -12,6 +12,8 @@
  * @module adapters/feed/WebContentAdapter
  */
 
+import { extract } from '@extractus/article-extractor';
+
 const ICON_TTL = 5 * 60 * 1000; // 5 minutes
 const MAX_ICON_CACHE = 200;
 const READABLE_TIMEOUT = 8000;
@@ -222,6 +224,32 @@ export class WebContentAdapter {
    */
   async extractReadableContent(url) {
     const start = Date.now();
+
+    // Try article-extractor library first (better quality extraction)
+    try {
+      const article = await extract(url);
+      if (article?.content) {
+        const cleaned = this.#cleanExtractedHtml(article.content, article.title);
+        const textOnly = cleaned.replace(/<[^>]*>/g, '').trim();
+        const wordCount = textOnly.split(/\s+/).filter(Boolean).length;
+        const content = wordCount > MAX_WORDS
+          ? WebContentAdapter.#truncateHtml(cleaned, MAX_WORDS)
+          : cleaned;
+
+        this.#logger.debug?.('webcontent.readable.extracted', {
+          url, wordCount, hasOgImage: !!article.image,
+          method: 'article-extractor', durationMs: Date.now() - start,
+        });
+
+        return { title: article.title || null, content, wordCount, ogImage: article.image || null, ogDescription: article.description || null };
+      }
+    } catch (err) {
+      this.#logger.debug?.('webcontent.readable.extractor-failed', {
+        url, error: err.message, durationMs: Date.now() - start,
+      });
+    }
+
+    // Fallback: manual fetch + regex parser
     const pageRes = await fetch(url, {
       headers: { 'User-Agent': USER_AGENT, 'Accept': 'text/html' },
       signal: AbortSignal.timeout(READABLE_TIMEOUT),
@@ -237,12 +265,49 @@ export class WebContentAdapter {
     const html = await pageRes.text();
     const result = this.#parseHtml(html);
     this.#logger.debug?.('webcontent.readable.extracted', {
-      url,
-      wordCount: result.wordCount,
-      hasOgImage: !!result.ogImage,
-      durationMs: Date.now() - start,
+      url, wordCount: result.wordCount, hasOgImage: !!result.ogImage,
+      method: 'regex-fallback', durationMs: Date.now() - start,
     });
     return result;
+  }
+
+  /**
+   * Sanitize HTML returned by article-extractor for safe rendering.
+   * Strips attributes, whitelists tags, decodes entities.
+   */
+  #cleanExtractedHtml(html, title) {
+    if (!html) return '';
+
+    // Strip leading heading that duplicates the title
+    if (title) {
+      const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      html = html.replace(new RegExp(`^\\s*<h[1-3][^>]*>\\s*${escaped}\\s*</h[1-3]>`, 'i'), '');
+    }
+
+    html = html.replace(/<(\/?)\s*h1[\s>]/gi, '<$1h2>');
+    html = html.replace(/<(br|hr)\s*\/?>/gi, '<$1>');
+    html = html.replace(/<(\/?\w+)\s+[^>]*>/gi, '<$1>');
+
+    const ALLOWED_TAG = /^(?:p|br|h[2-4]|b|strong|em|i|u|ul|ol|li|blockquote|hr)$/i;
+    html = html.replace(/<(\/?)([\w]+)>/gi, (full, _slash, tag) =>
+      ALLOWED_TAG.test(tag) ? full : ''
+    );
+
+    html = html
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
+
+    html = html
+      .replace(/<p>\s*<\/p>/gi, '')
+      .replace(/(<br>){3,}/gi, '<br><br>')
+      .replace(/\s*\n\s*/g, ' ')
+      .trim();
+
+    return html;
   }
 
   /**

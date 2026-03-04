@@ -1,3 +1,7 @@
+import getLogger from '../../../../../lib/logging/Logger.js';
+
+function log() { return getLogger().child({ module: 'feed-player-section' }); }
+
 export default function PlayerSection({ data, onPlay, activeMedia, item, playback }) {
   if (!data?.contentId) return null;
 
@@ -6,7 +10,10 @@ export default function PlayerSection({ data, onPlay, activeMedia, item, playbac
   if (!isPlaying) {
     return (
       <button
-        onClick={() => onPlay?.(item)}
+        onClick={() => {
+          log().info('section.play', { itemId: item?.id, title: item?.title, contentId: data.contentId, provider: data.provider });
+          onPlay?.(item);
+        }}
         style={{
           width: '100%',
           padding: '1rem',
@@ -74,7 +81,10 @@ export default function PlayerSection({ data, onPlay, activeMedia, item, playbac
           {formatTime(currentTime)} / {formatTime(duration)}
         </span>
         <button
-          onClick={() => onPlay?.(null)}
+          onClick={() => {
+            log().info('section.stop', { itemId: item?.id, title: item?.title });
+            onPlay?.(null);
+          }}
           style={{
             marginLeft: 'auto',
             background: 'none',

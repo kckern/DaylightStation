@@ -1,4 +1,8 @@
-import { createContext, useContext, useReducer, useRef, useCallback, useEffect } from 'react';
+import { createContext, useContext, useReducer, useRef, useCallback, useEffect, useMemo } from 'react';
+import getLogger from '../../../lib/logging/Logger.js';
+
+// Recreate child each call to pick up sessionLog context set by FeedApp
+function log() { return getLogger().child({ module: 'feed-player' }); }
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -58,6 +62,7 @@ function feedPlayerReducer(state, action) {
   switch (action.type) {
     case 'PLAY': {
       const { item, contentId, currentPosition } = action.payload;
+      log().info('player.play', { title: item?.title, contentId, hadActive: !!state.activeMedia });
       // Pause current active → pausedMedia (capture position from caller)
       const pausedMedia = state.activeMedia
         ? {
@@ -74,10 +79,12 @@ function feedPlayerReducer(state, action) {
     }
 
     case 'STOP':
+      log().info('player.stop', { had: !!state.activeMedia });
       return { ...state, activeMedia: null };
 
     case 'RESUME_PAUSED': {
       if (!state.pausedMedia) return state;
+      log().info('player.resumePaused', { title: state.pausedMedia.item?.title });
       // Swap paused ↔ active; capture current active position from caller
       const { currentPosition } = action.payload || {};
       const newPaused = state.activeMedia
@@ -120,8 +127,12 @@ function feedPlayerReducer(state, action) {
       return { ...state, speed: next };
     }
 
-    case 'SET_PLAYER_VISIBLE':
-      return { ...state, playerVisible: !!action.payload };
+    case 'SET_PLAYER_VISIBLE': {
+      const visible = !!action.payload;
+      if (visible === state.playerVisible) return state; // no-op guard
+      log().info('player.visibility', { visible });
+      return { ...state, playerVisible: visible };
+    }
 
     default:
       return state;
@@ -215,7 +226,10 @@ export function FeedPlayerProvider({ children }) {
     };
   }, []);
 
-  const value = {
+  // Memoize context value to prevent unnecessary consumer re-renders.
+  // Without this, every provider render creates a new object reference,
+  // triggering all consumers (Scroll, FeedLayout, etc.) to re-render.
+  const value = useMemo(() => ({
     ...state,
     playerRef,
     play,
@@ -228,7 +242,12 @@ export function FeedPlayerProvider({ children }) {
     setPlayerVisible,
     registerPlayerEl,
     dispatch,
-  };
+  }), [
+    state.activeMedia, state.pausedMedia, state.volume,
+    state.speed, state.muted, state.playerVisible,
+    play, stop, resumePaused, setVolume, toggleMute,
+    setSpeed, cycleSpeed, setPlayerVisible, registerPlayerEl,
+  ]);
 
   return (
     <FeedPlayerContext.Provider value={value}>
