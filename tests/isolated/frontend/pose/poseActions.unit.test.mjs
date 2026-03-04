@@ -84,6 +84,82 @@ describe('createActionDetector — cyclic (rep-counted)', () => {
     const det = createActionDetector(JUMPING_JACK);
     expect(det.id).toBe('jumping-jack');
   });
+
+  test('activityDurationMs starts at 0', () => {
+    const det = createActionDetector(JUMPING_JACK);
+    const r = det.update({ armsAtSides: true, narrowStance: true, upright: true }, 1000);
+    expect(r.activityDurationMs).toBe(0);
+  });
+
+  test('activityDurationMs tracks time from first phase match', () => {
+    const det = createActionDetector(JUMPING_JACK);
+    det.update({ armsOverhead: true, wideStance: true }, 1000);                  // match phase 0 (open)
+    det.update({ armsAtSides: true, narrowStance: true, upright: true }, 1500);  // match phase 1 (closed) = 1 rep
+    const r = det.update({ armsOverhead: true, wideStance: true }, 2000);        // match phase 0 again
+    expect(r.activityDurationMs).toBe(1000); // 2000 - 1000
+  });
+
+  test('activityDurationMs accumulates across multiple reps', () => {
+    const det = createActionDetector(JUMPING_JACK);
+    let t = 1000;
+    det.update({ armsOverhead: true, wideStance: true }, t);  // match phase 0
+    for (let i = 0; i < 3; i++) {
+      t += 500;
+      det.update({ armsAtSides: true, narrowStance: true, upright: true }, t);  // match phase 1
+      t += 500;
+      det.update({ armsOverhead: true, wideStance: true }, t);  // match phase 0
+    }
+    const r = det.update({ armsOverhead: true, wideStance: true }, t + 100);
+    expect(r.activityDurationMs).toBe(t + 100 - 1000); // continuous since first match
+  });
+
+  test('activityDurationMs resets after inactivityTimeoutMs gap', () => {
+    const JACK_WITH_TIMEOUT = {
+      ...JUMPING_JACK,
+      timing: { ...JUMPING_JACK.timing, inactivityTimeoutMs: 3000 },
+    };
+    const det = createActionDetector(JACK_WITH_TIMEOUT);
+    // Do one rep
+    det.update({ armsOverhead: true, wideStance: true }, 1000);                  // match open
+    det.update({ armsAtSides: true, narrowStance: true, upright: true }, 1500);  // match closed = 1 rep
+
+    // Wait 4 seconds (exceeds 3000ms timeout), then start again
+    det.update({ armsOverhead: true, wideStance: true }, 5500);                  // match open (restart)
+    det.update({ armsAtSides: true, narrowStance: true, upright: true }, 6000);  // match closed = rep
+    const r = det.update({ armsOverhead: true, wideStance: true }, 6500);        // match open
+
+    // Duration should be from the restart (5500), not the original start (1000)
+    expect(r.activityDurationMs).toBe(1000); // 6500 - 5500
+  });
+
+  test('activityDurationMs survives brief pauses within inactivityTimeoutMs', () => {
+    const JACK_WITH_TIMEOUT = {
+      ...JUMPING_JACK,
+      timing: { ...JUMPING_JACK.timing, inactivityTimeoutMs: 3000 },
+    };
+    const det = createActionDetector(JACK_WITH_TIMEOUT);
+    // Do one rep
+    det.update({ armsOverhead: true, wideStance: true }, 1000);                  // match open
+    det.update({ armsAtSides: true, narrowStance: true, upright: true }, 1500);  // match closed = 1 rep
+
+    // Pause 2 seconds (within 3000ms timeout), then continue
+    det.update({ armsOverhead: true, wideStance: true }, 3500);                  // match open
+    det.update({ armsAtSides: true, narrowStance: true, upright: true }, 4000);  // match closed = rep
+    const r = det.update({ armsOverhead: true, wideStance: true }, 4500);        // match open
+
+    // Duration should be continuous from original start
+    expect(r.activityDurationMs).toBe(3500); // 4500 - 1000
+  });
+
+  test('reset() clears activityDurationMs', () => {
+    const det = createActionDetector(JUMPING_JACK);
+    det.update({ armsAtSides: true, narrowStance: true, upright: true }, 1000);
+    det.update({ armsOverhead: true, wideStance: true }, 1500);
+    det.update({ armsAtSides: true, narrowStance: true, upright: true }, 2000);
+    det.reset();
+    const r = det.update({ armsAtSides: true, narrowStance: true, upright: true }, 3000);
+    expect(r.activityDurationMs).toBe(0);
+  });
 });
 
 describe('createActionDetector — sustained (hold)', () => {

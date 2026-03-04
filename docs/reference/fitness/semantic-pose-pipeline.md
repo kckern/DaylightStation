@@ -6,6 +6,7 @@ Three abstraction layers that convert raw BlazePose keypoints into meaningful bo
 
 - frontend/src/modules/Fitness/lib/pose/poseSemantics.js
 - frontend/src/modules/Fitness/lib/pose/poseActions.js
+- frontend/src/modules/Fitness/lib/pose/exercisePatterns.js
 - frontend/src/modules/Fitness/domain/pose/SemanticMoveDetector.js
 - frontend/src/modules/Fitness/domain/pose/PoseDetectorService.js (upstream)
 - frontend/src/modules/Fitness/context/PoseContext.jsx (upstream)
@@ -203,10 +204,40 @@ const JUMPING_JACK = {
 
 const detector = createActionDetector(JUMPING_JACK);
 const result = detector.update(semanticPosition, timestamp);
-// -> { repCount: 3, currentPhase: 'open', phaseIndex: 0, active: true }
+// -> { repCount: 3, currentPhase: 'open', phaseIndex: 0, active: true, activityDurationMs: 8500 }
 ```
 
 A rep is counted when all phases complete in order. Timing constraints prevent false positives from noise.
+
+#### Cyclic Output
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repCount` | number | Total completed reps |
+| `currentPhase` | string\|null | Name of current phase, or null if waiting |
+| `phaseIndex` | number | Index into phases array (-1 if waiting) |
+| `active` | boolean | True if mid-cycle (past phase 0) |
+| `activityDurationMs` | number | Milliseconds since the first phase match in the current activity window |
+
+#### Activity Duration Tracking
+
+`activityDurationMs` tracks how long the person has been doing the exercise. It starts from the first phase match and accumulates continuously. Combined with `inactivityTimeoutMs` in the timing config, it handles pauses:
+
+- **No timeout (default):** Duration accumulates indefinitely from first match.
+- **With timeout:** If no phase matches for longer than `inactivityTimeoutMs`, the duration resets. The next phase match starts a new activity window.
+
+This enables both rep-based and time-based challenges:
+- "Do 15 jumping jacks" → `result.repCount >= 15`
+- "Do jumping jacks for 60 seconds" → `result.activityDurationMs >= 60000`
+
+#### Timing Config
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| `minCycleMs` | 0 | Minimum time for a full cycle (rejects too-fast reps) |
+| `maxCycleMs` | Infinity | Maximum time for a full cycle (rejects too-slow reps) |
+| `maxPhaseMs` | Infinity | Maximum time in one phase before resetting |
+| `inactivityTimeoutMs` | Infinity | Gap before activity duration resets |
 
 ### Sustain Detector (holds)
 
@@ -291,7 +322,7 @@ const JUMPING_JACK = {
     { name: 'open',   match: { armsOverhead: true, wideStance: true } },
     { name: 'closed', match: { armsAtSides: true, narrowStance: true, upright: true } },
   ],
-  timing: { minCycleMs: 400, maxCycleMs: 3000 },
+  timing: { minCycleMs: 400, maxCycleMs: 3000, maxPhaseMs: 2000 },
 };
 ```
 
@@ -333,7 +364,7 @@ const PUSHUP = {
     { name: 'down', match: { prone: true, leftElbow: 'MID' } },
     { name: 'up',   match: { prone: true, armsExtended: true } },
   ],
-  timing: { minCycleMs: 600, maxCycleMs: 4000 },
+  timing: { minCycleMs: 500, maxCycleMs: 4000 },
 };
 ```
 
@@ -375,12 +406,23 @@ All match criteria use Layer 1 joint states (tri-state strings) and Layer 1.5 co
 
 ---
 
-## Future: GovernanceEngine Integration
+## GovernanceEngine Integration
 
-The semantic pipeline is designed to integrate with GovernanceEngine as a third challenge type alongside heart rate zones and vibration challenges. An exercise challenge would:
+The semantic pipeline integrates with GovernanceEngine as a challenge type alongside heart rate zones and vibration challenges. The interface is simple — GovernanceEngine asks "are you doing this exercise?" and the detector answers yes/no with duration and reps.
 
-1. Register a `SemanticMoveDetector` for the target exercise when a challenge activates
-2. Evaluate rep count or hold duration against challenge requirements
-3. Unregister the detector when the challenge ends
+### Challenge Types
+
+| Challenge | Completion Criteria | Example |
+|-----------|-------------------|---------|
+| Rep-based | `result.repCount >= target` | "Do 15 jumping jacks" |
+| Time-based | `result.activityDurationMs >= targetMs` | "60 seconds of jumping jacks" |
+| Hold-based | `result.holdDurationMs >= targetMs` | "Hold plank for 30 seconds" |
+
+### Lifecycle
+
+1. Challenge activates → register a `SemanticMoveDetector` for the target exercise
+2. Each frame → detector returns `{ active, repCount, activityDurationMs }` (cyclic) or `{ holding, holdDurationMs }` (sustain)
+3. GovernanceEngine evaluates completion criteria
+4. Challenge ends → unregister the detector
 
 See `governance-engine.md` for the existing challenge system.
