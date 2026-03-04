@@ -163,7 +163,39 @@ export class FullyKioskContentAdapter {
             this.#logger.info?.('fullykiosk.prepareForContent.companionApp', { pkg, ok: appResult.ok });
           }
 
-          return { ok: true, coldRestart, elapsedMs: Date.now() - startTime };
+          // Check if USB camera is available via /dev/video* nodes.
+          // After cold restart, the UVC driver may need time to re-enumerate.
+          let cameraAvailable = false;
+          if (this.#adbAdapter) {
+            const MAX_CAMERA_ATTEMPTS = 3;
+            const CAMERA_RETRY_MS = 2000;
+
+            for (let camAttempt = 1; camAttempt <= MAX_CAMERA_ATTEMPTS; camAttempt++) {
+              const camResult = await this.#adbAdapter.shell('ls /dev/video* 2>/dev/null | wc -l');
+              const count = parseInt(camResult.output?.trim(), 10) || 0;
+
+              if (count > 0) {
+                this.#logger.info?.('fullykiosk.prepareForContent.cameraCheck.passed', {
+                  attempt: camAttempt, videoDevices: count
+                });
+                cameraAvailable = true;
+                break;
+              }
+
+              this.#logger.warn?.('fullykiosk.prepareForContent.cameraCheck.failed', {
+                attempt: camAttempt, maxAttempts: MAX_CAMERA_ATTEMPTS
+              });
+
+              if (camAttempt < MAX_CAMERA_ATTEMPTS) {
+                await new Promise(r => setTimeout(r, CAMERA_RETRY_MS));
+              }
+            }
+          } else {
+            // No ADB adapter — can't check, assume available
+            cameraAvailable = true;
+          }
+
+          return { ok: true, coldRestart, cameraAvailable, elapsedMs: Date.now() - startTime };
         }
 
         this.#logger.warn?.('fullykiosk.prepareForContent.notInForeground', {
@@ -181,6 +213,25 @@ export class FullyKioskContentAdapter {
       this.#logger.error?.('fullykiosk.prepareForContent.exception', { error: error.message, stack: error.stack });
       return { ok: false, error: error.message };
     }
+  }
+
+  /**
+   * Reboot the device via ADB
+   * @returns {Promise<Object>}
+   */
+  async reboot() {
+    if (!this.#adbAdapter) {
+      return { ok: false, error: 'No ADB adapter configured' };
+    }
+
+    this.#logger.info?.('fullykiosk.reboot', { host: this.#host });
+    const result = await this.#adbAdapter.reboot();
+
+    return {
+      ok: result.ok,
+      error: result.error,
+      hint: result.ok ? 'Device is rebooting. Allow ~60s before reconnecting.' : undefined
+    };
   }
 
   /**
