@@ -1,4 +1,5 @@
-import React, { useMemo, forwardRef } from 'react';
+import React, { useMemo, useEffect, forwardRef } from 'react';
+import getLogger from '../../lib/logging/Logger.js';
 import Player from '../Player/Player.jsx';
 
 /**
@@ -17,6 +18,8 @@ const MediaAppPlayer = forwardRef(function MediaAppPlayer(
   { contentId, onItemEnd, onProgress, config, isFullscreen, onExitFullscreen, renderOverlay, onPlayerClick },
   ref
 ) {
+  const logger = useMemo(() => getLogger().child({ component: 'MediaAppPlayer' }), []);
+
   // IMPORTANT: config must be a stable object reference (e.g., from useState/useMemo in parent).
   // A new config object reference on each render will cause Player to remount and restart playback.
   // The queue item stores config in state, which is stable — do not inline config objects here.
@@ -24,6 +27,12 @@ const MediaAppPlayer = forwardRef(function MediaAppPlayer(
     if (!contentId) return null;
     return { contentId, ...config };
   }, [contentId, config]);
+
+  useEffect(() => {
+    if (playObject) {
+      logger.info('media-player.loaded', { contentId: playObject.contentId, hasConfig: !!config });
+    }
+  }, [playObject?.contentId, logger]);
 
   if (!playObject) return null;
 

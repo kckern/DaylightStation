@@ -101,6 +101,19 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
     setIsFullscreen(currentItem.format === 'video');
   }, [currentItem?.contentId, currentItem?.format]);
 
+  useEffect(() => {
+    if (currentItem) {
+      logger.info('now-playing.content-rendered', {
+        contentId: currentItem.contentId,
+        title: currentItem.title,
+        format: currentItem.format,
+        hasThumbnail: !!currentItem.contentId,
+      });
+    } else {
+      logger.info('now-playing.empty-state');
+    }
+  }, [currentItem?.contentId, logger]);
+
   const handleProgress = useCallback((data) => {
     setPlaybackState({
       currentTime: data.currentTime || 0,
