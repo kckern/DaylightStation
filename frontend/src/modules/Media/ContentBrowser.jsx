@@ -43,10 +43,10 @@ const ContentBrowser = ({ hasMiniplayer }) => {
       .filter(c => c.searchFilter)
       .map(c => ({
         label: c.label.replace(/^Browse\s+/i, ''),
-        params: [c.source && `source=${c.source}`, c.mediaType && `mediaType=${c.mediaType}`]
+        params: ['capability=playable', c.source && `source=${c.source}`, c.mediaType && `mediaType=${c.mediaType}`]
           .filter(Boolean).join('&'),
       }));
-    return [{ label: 'All', params: '' }, ...configFilters];
+    return [{ label: 'All', params: 'capability=playable' }, ...configFilters];
   }, [browseConfig]);
 
   const filterParams = filters[activeFilter]?.params || '';
@@ -160,9 +160,15 @@ const ContentBrowser = ({ hasMiniplayer }) => {
       <div className="content-browser-body">
         {isSearchActive && (
           <div className="content-browser-results">
-            {(isSearching || browseLoading) && <div className="search-loading">Searching...</div>}
-            {pending.length > 0 && (
-              <div className="search-pending">Loading from: {pending.join(', ')}</div>
+            {(isSearching || browseLoading) && (
+              <div className="search-loading">
+                <span className="search-loading-spinner" />
+                <span>
+                  {pending.length > 0
+                    ? `Searching ${pending.length} source${pending.length > 1 ? 's' : ''}...`
+                    : 'Searching...'}
+                </span>
+              </div>
             )}
             {displayResults.map((item, i) => {
               const contentId = resolveContentId(item);
