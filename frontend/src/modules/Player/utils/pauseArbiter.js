@@ -1,4 +1,5 @@
 export const PAUSE_REASON = Object.freeze({
+  SEEKING: 'SEEKING',
   GOVERNANCE: 'PAUSED_GOVERNANCE',
   BUFFERING: 'PAUSED_BUFFERING',
   USER: 'PAUSED_USER',
@@ -7,7 +8,13 @@ export const PAUSE_REASON = Object.freeze({
 
 const truthy = (value) => Boolean(value);
 
-export const resolvePause = ({ governance = {}, resilience = {}, user = {} } = {}) => {
+export const resolvePause = ({ seeking = {}, governance = {}, resilience = {}, user = {} } = {}) => {
+  // Seeking is highest priority — suppress all pause while the video is mid-seek
+  // to prevent pause/resume thrashing from governance challenge events during seeks
+  if (truthy(seeking.active)) {
+    return { paused: false, reason: PAUSE_REASON.SEEKING };
+  }
+
   const governancePaused = truthy(
     governance.blocked
     ?? governance.paused
