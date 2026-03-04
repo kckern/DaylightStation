@@ -783,7 +783,7 @@ export default function CallApp() {
                 const devId = connectedDeviceRef.current;
                 if (devId) {
                   setWaking(false);
-                  connect(devId);
+                  connect(devId, { coldWake: coldWakeRef.current });
                 }
               }}
             >
