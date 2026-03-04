@@ -5,11 +5,26 @@
  * Each detection session produces a JSONL file at {mediaDir}/logs/poses/{date}/{timestamp}.jsonl
  * with a session_start metadata line, frame lines (t + kp), and a session_end line.
  *
+ * Compact format: keypoints are [x, y, z, score] arrays; keypoint_names in session_start metadata.
+ *
  * Uses synchronous file descriptor writes (matching sessionFile.mjs pattern) for throughput.
  */
 
 import fs from 'fs';
 import path from 'path';
+
+// BlazePose 33 keypoint order (canonical, matches frontend poseConnections.js)
+const KEYPOINT_NAMES = [
+  'nose', 'left_eye_inner', 'left_eye', 'left_eye_outer',
+  'right_eye_inner', 'right_eye', 'right_eye_outer',
+  'left_ear', 'right_ear', 'mouth_left', 'mouth_right',
+  'left_shoulder', 'right_shoulder', 'left_elbow', 'right_elbow',
+  'left_wrist', 'right_wrist', 'left_pinky', 'right_pinky',
+  'left_index', 'right_index', 'left_thumb', 'right_thumb',
+  'left_hip', 'right_hip', 'left_knee', 'right_knee',
+  'left_ankle', 'right_ankle', 'left_heel', 'right_heel',
+  'left_foot_index', 'right_foot_index',
+];
 
 /**
  * @param {import('../../../0_system/config/ConfigService.mjs').ConfigService} configService
@@ -52,7 +67,14 @@ export function createPoseLogHandler(configService, logger) {
 
       activeSessions.set(clientId, { fd, filePath });
 
-      const meta = { type: 'session_start', ts: Date.now(), backend: message.backend, modelType: message.modelType };
+      const meta = {
+        type: 'session_start',
+        ts: Date.now(),
+        backend: message.backend,
+        modelType: message.modelType,
+        format: 'compact',
+        keypoint_names: KEYPOINT_NAMES,
+      };
       fs.writeSync(fd, JSON.stringify(meta) + '\n');
       logger.info?.('pose_log.session_start', { clientId, filePath });
     }

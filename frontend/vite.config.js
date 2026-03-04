@@ -68,6 +68,10 @@ export default defineConfig(({ command, mode }) => {
       }
     },
     server: {
+      headers: {
+        'Cross-Origin-Opener-Policy': 'same-origin',
+        'Cross-Origin-Embedder-Policy': 'credentialless',
+      },
       host: env.VITE_HOST || '0.0.0.0',
       port: ports.app,
       watch: {
