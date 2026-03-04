@@ -73,11 +73,14 @@ export function usePlaybackBroadcast(playerRef, currentItem) {
     if (!currentItem) {
       // Send stop broadcast if we were previously playing
       if (lastStateRef.current === 'playing' || lastStateRef.current === 'paused') {
+        logger().info('playback-broadcast.stop-sent', { previousState: lastStateRef.current });
         wsService.send(buildStopMessage(identity));
         lastStateRef.current = 'stopped';
       }
       return;
     }
+
+    logger().info('playback-broadcast.setup', { contentId: currentItem.contentId, clientId });
 
     function broadcast() {
       const msg = buildBroadcastMessage(playerRef, currentItem, identity);
@@ -90,7 +93,10 @@ export function usePlaybackBroadcast(playerRef, currentItem) {
 
     const interval = setInterval(broadcast, BROADCAST_INTERVAL_MS);
 
-    return () => clearInterval(interval);
+    return () => {
+      logger().debug('playback-broadcast.cleanup', { contentId: currentItem.contentId });
+      clearInterval(interval);
+    };
   }, [currentItem, clientId, deviceId, displayName, playerRef]);
 
   return null;

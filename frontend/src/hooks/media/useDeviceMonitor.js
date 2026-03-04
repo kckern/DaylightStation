@@ -87,16 +87,20 @@ export function useDeviceMonitor() {
         setPlaybackStates(prev => {
           const next = new Map(prev);
           next.set(id, msg);
+          const isNew = !prev.has(id);
+          if (isNew) logger().info('device-monitor.device-online', { id, displayName: msg.displayName, contentId: msg.contentId });
           return next;
         });
       }
     );
+    logger().info('device-monitor.subscribed');
 
     // Expire stale entries every 10s
     const cleanup = setInterval(() => {
       const now = Date.now();
       const expired = purgeStale(timestampsRef.current, now, EXPIRY_MS);
       if (expired.length > 0) {
+        logger().info('device-monitor.devices-expired', { count: expired.length, ids: expired });
         setPlaybackStates(prev => {
           const next = new Map(prev);
           expired.forEach(id => next.delete(id));
@@ -106,6 +110,7 @@ export function useDeviceMonitor() {
     }, 10000);
 
     return () => {
+      logger().debug('device-monitor.cleanup');
       unsubscribe();
       clearInterval(cleanup);
     };
