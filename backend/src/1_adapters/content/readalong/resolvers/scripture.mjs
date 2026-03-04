@@ -1,6 +1,6 @@
 // backend/src/1_adapters/content/readalong/resolvers/scripture.mjs
 import { lookupReference, generateReference } from 'scripture-guide';
-import { listDirs, dirExists } from '#system/utils/FileIO.mjs';
+import { listDirs, dirExists, listYamlFiles, loadContainedYaml } from '#system/utils/FileIO.mjs';
 import path from 'path';
 
 /**
@@ -322,6 +322,136 @@ export const ScriptureResolver = {
     } catch {
       return null;
     }
+  },
+
+  /**
+   * Search scripture by reference text (e.g., "genesis 1", "psalm 23", "john").
+   * Returns matching chapter IDs as resolved paths ready for getItem().
+   * @param {string} query - Search text
+   * @param {string} dataPath - Base scripture data path
+   * @param {Object} [options]
+   * @param {string} [options.version] - Preferred text version (e.g., 'nirv')
+   * @param {Object} [options.defaults] - Per-volume defaults from manifest
+   * @param {Object} [options.audioDefaults] - Audio alias mappings
+   * @param {string} [options.mediaPath] - Media base path
+   * @param {number} [options.take=20] - Max results
+   * @returns {Array<{localId: string, title: string, volume: string}>}
+   */
+  search(query, dataPath, options = {}) {
+    const { version, defaults = {}, audioDefaults = {}, mediaPath, take = 20 } = options;
+
+    const results = [];
+
+    // 1. Try scripture-guide reference lookup (fast, indexed)
+    const ref = lookupReference(query);
+
+    if (ref?.verse_ids?.length > 0) {
+      // Specific chapter(s) matched — find chapter files by verse ID
+      const seenChapters = new Set();
+      for (const verseId of ref.verse_ids) {
+        const volume = getVolumeFromVerseId(verseId);
+        if (!volume) continue;
+
+        const textVersion = version
+          || defaults[volume]?.text
+          || getFirstDir(path.join(dataPath, volume))
+          || 'default';
+        const versionDir = path.join(dataPath, volume, textVersion);
+        if (!dirExists(versionDir)) continue;
+
+        try {
+          const files = listYamlFiles(versionDir);
+          for (const file of files) {
+            if (file === 'manifest.yml') continue;
+            const prefix = parseInt(file.split('-')[0], 10);
+            if (isNaN(prefix)) continue;
+            if (prefix > verseId) break;
+            const chapterKey = `${volume}/${textVersion}/${prefix}`;
+            if (!seenChapters.has(chapterKey)) {
+              seenChapters.add(chapterKey);
+              const chapterRef = generateReference(prefix);
+              results.push({
+                localId: `scripture/${volume}/${textVersion}/${prefix}`,
+                title: chapterRef || file.replace('.yml', ''),
+                volume
+              });
+            }
+          }
+        } catch { /* skip */ }
+        if (results.length >= take) break;
+      }
+      return results.slice(0, take);
+    }
+
+    if (ref?.ref) {
+      // Book name matched but no verse IDs — list chapters of the book
+      const bookName = ref.ref.toLowerCase().replace(/\s+/g, '-');
+      for (const [vol] of Object.entries(VOLUME_RANGES)) {
+        const textVersion = version
+          || defaults[vol]?.text
+          || getFirstDir(path.join(dataPath, vol))
+          || 'default';
+        const versionDir = path.join(dataPath, vol, textVersion);
+        if (!dirExists(versionDir)) continue;
+
+        try {
+          const files = listYamlFiles(versionDir);
+          for (const file of files) {
+            if (file === 'manifest.yml') continue;
+            const namePart = file.replace(/^\d+-/, '').replace('.yml', '');
+            if (!namePart.startsWith(bookName)) continue;
+            const prefix = parseInt(file.split('-')[0], 10);
+            if (isNaN(prefix)) continue;
+            const chapterRef = generateReference(prefix);
+            results.push({
+              localId: `scripture/${vol}/${textVersion}/${prefix}`,
+              title: chapterRef || namePart,
+              volume: vol
+            });
+            if (results.length >= take) break;
+          }
+        } catch { /* skip */ }
+        if (results.length >= take) break;
+      }
+      if (results.length > 0) return results.slice(0, take);
+    }
+
+    // 2. Fallback: search YAML heading content (handles non-standard references)
+    const queryLower = query.toLowerCase();
+    for (const [vol] of Object.entries(VOLUME_RANGES)) {
+      const textVersion = version
+        || defaults[vol]?.text
+        || getFirstDir(path.join(dataPath, vol))
+        || 'default';
+      const versionDir = path.join(dataPath, vol, textVersion);
+      if (!dirExists(versionDir)) continue;
+
+      try {
+        const files = listYamlFiles(versionDir);
+        for (const file of files) {
+          if (file === 'manifest.yml') continue;
+          const filePath = file.replace('.yml', '');
+          const data = loadContainedYaml(versionDir, filePath);
+          if (!data) continue;
+          const firstVerse = Array.isArray(data) ? data[0] : data;
+          const title = firstVerse?.headings?.title?.toLowerCase() || '';
+          const heading = firstVerse?.headings?.heading?.toLowerCase() || '';
+          if (title.includes(queryLower) || heading.includes(queryLower)) {
+            const prefix = parseInt(file.split('-')[0], 10);
+            const chapterRef = isNaN(prefix) ? null : generateReference(prefix);
+            results.push({
+              localId: `scripture/${vol}/${textVersion}/${prefix || filePath}`,
+              title: chapterRef || filePath,
+              volume: vol
+            });
+            if (results.length >= take) break;
+          }
+        }
+      } catch { /* skip */ }
+      if (results.length >= take) break;
+    }
+
+    return results.slice(0, take);
   },
 
   VOLUME_RANGES,
