@@ -17,7 +17,7 @@ function logger() {
  *   results: Array,
  *   pending: string[],
  *   isSearching: boolean,
- *   search: (query: string) => void
+ *   search: (query: string, overrideExtraQuery?: string) => void
  * }}
  */
 export function useStreamingSearch(endpoint, extraQueryString = '') {
