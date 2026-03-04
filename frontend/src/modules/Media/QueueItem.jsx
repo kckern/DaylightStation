@@ -6,8 +6,8 @@ import getLogger from '../../lib/logging/Logger.js';
 
 const QueueItem = ({ item, isCurrent, onPlay, onRemove, index, onDragStart, onDrop, onDragEnd }) => {
   const thumbnailUrl = useMemo(
-    () => item.contentId ? ContentDisplayUrl(item.contentId) : null,
-    [item.contentId]
+    () => item.thumbnail || (item.contentId ? ContentDisplayUrl(item.contentId) : null),
+    [item.thumbnail, item.contentId]
   );
 
   const logger = useMemo(() => getLogger().child({ component: 'QueueItem' }), []);
