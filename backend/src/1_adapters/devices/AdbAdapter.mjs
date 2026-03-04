@@ -103,6 +103,15 @@ export class AdbAdapter {
   }
 
   /**
+   * Reboot the device
+   * @returns {Promise<{ok: boolean, error?: string}>}
+   */
+  async reboot() {
+    this.#logger.info?.('adb.reboot', { serial: this.#serial });
+    return this.#exec(`adb -s ${this.#serial} reboot`);
+  }
+
+  /**
    * Get adapter metrics
    * @returns {Object}
    */
