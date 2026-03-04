@@ -72,11 +72,9 @@ export function useStreamingSearch(endpoint, extraQueryString = '') {
         if (data.event === 'pending') {
           setPending(data.sources);
         } else if (data.event === 'results') {
-          setResults(prev => {
-            const total = prev.length + (data.items?.length || 0);
-            logger().info('search.results-received', { source: data.source, newItems: data.items?.length || 0, totalSoFar: total });
-            return [...prev, ...data.items];
-          });
+          const newItems = data.items?.length || 0;
+          setResults(prev => [...prev, ...data.items]);
+          logger().info('search.results-received', { source: data.source, newItems });
           setPending(data.pending);
         } else if (data.event === 'complete') {
           logger().info('search.completed', { query });

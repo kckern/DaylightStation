@@ -40,7 +40,7 @@ const QueueItem = ({ item, isCurrent, onPlay, onRemove, index, onDragStart, onDr
       activeTouchHandler.current = null;
       document.removeEventListener('touchmove', handler);
     }, { once: true });
-  }, [item.queueId, onRemove]);
+  }, [item.queueId, item.contentId, item.title, onRemove, logger]);
 
   return (
     <div
