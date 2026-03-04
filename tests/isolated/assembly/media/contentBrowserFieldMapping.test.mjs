@@ -1,10 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { resolveContentId } from '../../../../frontend/src/modules/Media/ContentBrowser.jsx';
 
 describe('ContentBrowser field mapping', () => {
-  function resolveContentId(item) {
-    return item.id || item.contentId;
-  }
-
   function mapSearchResultToQueueItem(item) {
     return {
       contentId: resolveContentId(item),
@@ -36,5 +33,10 @@ describe('ContentBrowser field mapping', () => {
     const searchResult = { id: 'plex:1', title: 'T', thumbnail: '/api/v1/proxy/immich/assets/abc/thumbnail' };
     const queueItem = mapSearchResultToQueueItem(searchResult);
     expect(queueItem.thumbnail).toBe('/api/v1/proxy/immich/assets/abc/thumbnail');
+  });
+
+  it('returns undefined when both id and contentId are missing', () => {
+    const searchResult = { title: 'No ID' };
+    expect(resolveContentId(searchResult)).toBeUndefined();
   });
 });

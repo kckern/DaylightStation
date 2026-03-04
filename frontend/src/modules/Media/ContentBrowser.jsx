@@ -7,7 +7,7 @@ import { ContentDisplayUrl } from '../../lib/api.mjs';
 import CastButton from './CastButton.jsx';
 import getLogger from '../../lib/logging/Logger.js';
 
-function resolveContentId(item) {
+export function resolveContentId(item) {
   return item.id || item.contentId;
 }
 
@@ -60,8 +60,9 @@ const ContentBrowser = ({ hasMiniplayer }) => {
   }, [search, exitBrowse, logger]);
 
   const handlePlayNow = useCallback((item) => {
-    const nextPosition = queue.position + 1;
     const contentId = resolveContentId(item);
+    if (!contentId) { logger.warn('content-browser.play-now.no-content-id', { title: item.title }); return; }
+    const nextPosition = queue.position + 1;
     logger.info('content-browser.play-now', { contentId, title: item.title });
     queue.addItems([{ contentId, title: item.title, format: item.format, thumbnail: item.thumbnail }], 'next')
       .then(() => queue.setPosition(nextPosition));
@@ -69,12 +70,14 @@ const ContentBrowser = ({ hasMiniplayer }) => {
 
   const handleAddToQueue = useCallback((item) => {
     const contentId = resolveContentId(item);
+    if (!contentId) { logger.warn('content-browser.add-to-queue.no-content-id', { title: item.title }); return; }
     logger.info('content-browser.add-to-queue', { contentId, title: item.title });
     queue.addItems([{ contentId, title: item.title, format: item.format, thumbnail: item.thumbnail }]);
   }, [queue, logger]);
 
   const handlePlayNext = useCallback((item) => {
     const contentId = resolveContentId(item);
+    if (!contentId) { logger.warn('content-browser.play-next.no-content-id', { title: item.title }); return; }
     logger.info('content-browser.play-next', { contentId, title: item.title });
     queue.addItems([{ contentId, title: item.title, format: item.format, thumbnail: item.thumbnail }], 'next');
   }, [queue, logger]);
