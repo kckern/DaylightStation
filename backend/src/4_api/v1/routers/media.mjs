@@ -78,7 +78,10 @@ export function createMediaRouter(config) {
   router.get('/config', asyncHandler(async (req, res) => {
     const hid = resolveHid(req);
     const appConfig = configService.getHouseholdAppConfig(hid, 'media') || {};
-    res.json({ browse: appConfig.browse || [] });
+    res.json({
+      browse: appConfig.browse || [],
+      searchScopes: appConfig.searchScopes || [],
+    });
   }));
 
   // ── 1. GET /queue ──────────────────────────────────────────────
