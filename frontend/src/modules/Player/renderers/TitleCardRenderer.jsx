@@ -47,20 +47,37 @@ export function TitleCardRenderer({ media, advance, resilienceBridge }) {
     }
   }, [resilienceBridge, slideshow.duration]);
 
-  // Ken Burns on background image
+  // Ken Burns effect
   useEffect(() => {
-    const bgEl = bgRef.current;
-    if (!bgEl || !card.imageUrl || effect !== 'kenburns') return;
+    if (effect !== 'kenburns') return;
 
-    const target = computeZoomTarget({ people: [], focusPerson: null, zoom });
-    bgEl.animate([
-      { transform: `scale(1.0) translate(${target.startX}, ${target.startY})` },
-      { transform: `scale(${zoom}) translate(${target.endX}, ${target.endY})` },
-    ], {
-      duration,
-      easing: 'ease-in-out',
-      fill: 'forwards',
-    });
+    // Background image: pan + zoom
+    const bgEl = bgRef.current;
+    if (bgEl && card.imageUrl) {
+      const target = computeZoomTarget({ people: [], focusPerson: null, zoom });
+      bgEl.animate([
+        { transform: `scale(1.0) translate(${target.startX}, ${target.startY})` },
+        { transform: `scale(${zoom}) translate(${target.endX}, ${target.endY})` },
+      ], {
+        duration,
+        easing: 'ease-in-out',
+        fill: 'forwards',
+      });
+    }
+
+    // Text-only: slow continuous zoom + drift over full duration
+    const overlayEl = containerRef.current?.querySelector('.titlecard-tpl');
+    if (overlayEl && !card.imageUrl) {
+      overlayEl.animate([
+        { transform: 'scale(1.0) translateY(0%)', opacity: 0 },
+        { transform: 'scale(1.0) translateY(0%)', opacity: 1, offset: 0.15 },
+        { transform: `scale(${zoom}) translateY(-2%)`, opacity: 1 },
+      ], {
+        duration,
+        easing: 'ease-in-out',
+        fill: 'forwards',
+      });
+    }
   }, [media?.id, card.imageUrl, effect, zoom, duration]);
 
   // Auto-advance timer

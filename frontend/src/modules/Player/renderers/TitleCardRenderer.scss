@@ -35,9 +35,20 @@
 }
 
 .titlecard--theme-warm-gold {
-  .titlecard-tpl__title { color: #ffd700; font-family: Georgia, serif; }
-  .titlecard-tpl__subtitle { color: rgba(255,215,0,0.7); font-family: Georgia, serif; }
-  .titlecard__overlay { background: rgba(30,15,0,0.5); }
+  background: radial-gradient(ellipse at 50% 40%, #1a0f00 0%, #000 100%);
+
+  .titlecard-tpl__title {
+    color: #f5e6c8;
+    font-family: Georgia, 'Times New Roman', serif;
+    text-shadow: 0 0 40px rgba(255, 200, 100, 0.3);
+  }
+  .titlecard-tpl__subtitle {
+    color: rgba(220, 200, 170, 0.8);
+    font-family: Georgia, 'Times New Roman', serif;
+    font-style: italic;
+    letter-spacing: 0.05em;
+  }
+  .titlecard__overlay { background: transparent; }
 }
 
 .titlecard--theme-minimal {
