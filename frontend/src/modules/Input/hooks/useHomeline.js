@@ -16,6 +16,7 @@ export const useHomeline = (role, deviceId, peer) => {
   const heartbeatRef = useRef(null);
   const connectedDeviceRef = useRef(null);
   const answerUnsubRef = useRef(null);
+  const coldWakeRef = useRef(false);
 
   const topic = useCallback((devId) => `homeline:${devId}`, []);
 
@@ -110,10 +111,11 @@ export const useHomeline = (role, deviceId, peer) => {
   // Phone: connect to a specific device (drop-in model)
   // Subscribes to the device's topic and waits for its "waiting" heartbeat
   // before sending the SDP offer, so the TV has time to boot up.
-  const connect = useCallback(async (targetDeviceId) => {
+  const connect = useCallback(async (targetDeviceId, { coldWake = false } = {}) => {
     if (role !== 'phone') return;
     connectedDeviceRef.current = targetDeviceId;
     setStatus('connecting');
+    coldWakeRef.current = coldWake;
     logger().info('connect-waiting-for-tv', { target: targetDeviceId });
 
     peer.onIceCandidate((candidate) => {
@@ -176,13 +178,16 @@ export const useHomeline = (role, deviceId, peer) => {
   useEffect(() => {
     if (role !== 'phone' || status !== 'connecting') return;
 
+    const timeoutMs = coldWakeRef.current ? 30_000 : 10_000;
+
     const timer = setTimeout(() => {
       logger().warn('connect-timeout', {
         target: connectedDeviceRef.current,
-        waitedMs: 10000,
-        hint: 'No heartbeat received from TV in 10s'
+        waitedMs: timeoutMs,
+        coldWake: coldWakeRef.current,
+        hint: `No heartbeat received from TV in ${timeoutMs / 1000}s`
       });
-    }, 10_000);
+    }, timeoutMs);
 
     return () => clearTimeout(timer);
   }, [role, status]);
