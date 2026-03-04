@@ -597,6 +597,58 @@ export class ReadalongAdapter {
   }
 
   /**
+   * Search capabilities for content query service.
+   * @returns {Object}
+   */
+  getSearchCapabilities() {
+    return { canonical: ['text'], specific: [] };
+  }
+
+  /**
+   * Search readalong content (scripture, etc.) by text.
+   * Delegates to collection-specific resolvers for search logic.
+   * @param {Object} query
+   * @param {string} query.text - Search text
+   * @param {number} [query.take=20] - Max results
+   * @param {string} [query.version] - Preferred text version (e.g., 'nirv')
+   * @returns {Promise<{items: Array, total: number}>}
+   */
+  async search(query = {}) {
+    const { text, take = 20 } = query;
+    if (!text) return { items: [], total: 0 };
+
+    const items = [];
+
+    // Search scripture collection if resolver is available
+    const scriptureDataPath = path.join(this.dataPath, 'scripture');
+    if (dirExists(scriptureDataPath)) {
+      const manifest = this._loadManifest('scripture');
+      const resolver = await this._loadResolver('scripture');
+      if (resolver?.search) {
+        const preferredVersion = query.version || query['readalong.version'] || 'nirv';
+        const matches = resolver.search(text, scriptureDataPath, {
+          version: preferredVersion,
+          defaults: manifest?.defaults || {},
+          audioDefaults: manifest?.audioDefaults || {},
+          mediaPath: path.join(this._getMediaBasePath('scripture'), 'scripture'),
+          take
+        });
+
+        // Resolve each match to a full PlayableItem
+        for (const match of matches) {
+          try {
+            const item = await this.getItem(match.localId);
+            if (item) items.push(item);
+          } catch { /* skip failed items */ }
+          if (items.length >= take) break;
+        }
+      }
+    }
+
+    return { items, total: items.length };
+  }
+
+  /**
    * Resolve playable items from a local ID.
    * For volumes with a manifest resolver, returns items based on bookmark tracking.
    * @param {string} localId - Item or collection/folder ID
