@@ -228,6 +228,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     trackId: currentItem?.id
   });
   const seekIntentRef = useRef(null); // Track seek/resume intent to override actual time
+  const [isSeeking, setIsSeeking] = useState(false);
+  const seekTimeoutRef = useRef(null);
   const thumbnailsCommitRef = useRef(null); // will hold commit function from FitnessPlayerFooterSeekThumbnails
   const thumbnailsGetTimeRef = useRef(null); // will hold function to get current display time from thumbnails
   const renderCountRef = useRef(0);
@@ -272,13 +274,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
 
   const pauseDecision = useMemo(() => resolvePause({
+    seeking: { active: isSeeking },
     governance: { locked: Boolean(governanceState?.videoLocked) },
     resilience: {
       stalled: resilienceState?.stalled,
       waiting: resilienceState?.waitingToPlay
     },
     user: { paused: isPaused }
-  }), [governanceState?.videoLocked, resilienceState?.stalled, resilienceState?.waitingToPlay, isPaused]);
+  }), [isSeeking, governanceState?.videoLocked, resilienceState?.stalled, resilienceState?.waitingToPlay, isPaused]);
 
   const governancePaused = pauseDecision.reason === PAUSE_REASON.GOVERNANCE && pauseDecision.paused;
 
@@ -570,6 +573,22 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     };
   }, [mediaElement]);
 
+  // Clear isSeeking when the media element fires 'seeked'
+  useEffect(() => {
+    if (!mediaElement) return undefined;
+    const handleSeeked = () => setIsSeeking(false);
+    mediaElement.addEventListener('seeked', handleSeeked);
+    return () => mediaElement.removeEventListener('seeked', handleSeeked);
+  }, [mediaElement]);
+
+  // Safety timeout: auto-clear isSeeking if seeked event never fires (e.g. network failure)
+  useEffect(() => {
+    if (isSeeking) {
+      seekTimeoutRef.current = setTimeout(() => setIsSeeking(false), 15000);
+    }
+    return () => clearTimeout(seekTimeoutRef.current);
+  }, [isSeeking]);
+
   // Memoize keyboard overrides to prevent recreation on every render
   const keyboardOverrides = useMemo(() => ({
     'Escape': () => handleClose(),
@@ -759,6 +778,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       seekTo(seconds);
       setCurrentTime(seconds);
       seekIntentRef.current = { time: seconds, timestamp: performance.now() };
+      setIsSeeking(true);
     }
   }, [seekTo, governancePaused]);
 
