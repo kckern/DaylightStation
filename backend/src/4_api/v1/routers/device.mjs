@@ -197,6 +197,27 @@ export function createDeviceRouter(config) {
     res.status(status).json(result);
   }));
 
+  /**
+   * POST /device/:deviceId/reboot
+   * Reboot the device via ADB. Fire-and-forget — device disconnects during reboot.
+   */
+  router.post('/:deviceId/reboot', asyncHandler(async (req, res) => {
+    const { deviceId } = req.params;
+
+    logger.info?.('device.router.reboot.start', { deviceId });
+
+    const device = deviceService.get(deviceId);
+    if (!device) {
+      return res.status(404).json({ ok: false, error: 'Device not found' });
+    }
+
+    const result = await device.reboot();
+
+    logger.info?.('device.router.reboot.complete', { deviceId, ok: result.ok });
+
+    res.json(result);
+  }));
+
   // ===========================================================================
   // Volume Control
   // ===========================================================================
