@@ -358,7 +358,8 @@ export default function CallApp() {
     if (connectingTooLong) {
       logger.warn('connect-timeout-user-visible', {
         deviceId: connectedDeviceRef.current,
-        elapsed: '15s'
+        elapsed: coldWakeRef.current ? '35s' : '15s',
+        coldWake: coldWakeRef.current
       });
     }
   }, [connectingTooLong, logger]);
@@ -566,6 +567,13 @@ export default function CallApp() {
     try {
       const result = await DaylightAPI(`/api/v1/device/${targetDeviceId}/load?open=videocall/${targetDeviceId}`);
       logger.info('wake-result', { targetDeviceId, ok: result.ok, failedStep: result.failedStep });
+
+      if (result.coldWake) {
+        logger.info('cold-wake-detected', {
+          targetDeviceId,
+          hint: 'Using extended heartbeat timeout (30s)'
+        });
+      }
 
       if (!result.ok) {
         setWaking(false);
