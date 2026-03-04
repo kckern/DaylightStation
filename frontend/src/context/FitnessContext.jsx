@@ -1496,7 +1496,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const zoneLedPayload = React.useMemo(() => {
     if (!ambientLedEnabled) return [];
     return participantRoster.map(p => ({
-      zoneId: p.zoneId || null,
+      zoneId: p.rawZoneId || p.zoneId || null,
       isActive: p.isActive !== false
     }));
   }, [participantRoster, ambientLedEnabled]);
