@@ -4,6 +4,9 @@ import { useStreamingSearch } from '../../hooks/useStreamingSearch.js';
 import { useContentBrowse } from '../../hooks/media/useContentBrowse.js';
 import { useMediaApp } from '../../contexts/MediaAppContext.jsx';
 import { ContentDisplayUrl } from '../../lib/api.mjs';
+import { useScopePrefs } from '../../hooks/media/useScopePrefs.js';
+import ScopeDropdown from './ScopeDropdown.jsx';
+import ScopeChips from './ScopeChips.jsx';
 import CastButton from './CastButton.jsx';
 import getLogger from '../../lib/logging/Logger.js';
 
@@ -14,12 +17,28 @@ export function resolveContentId(item) {
 const ContentBrowser = ({ hasMiniplayer }) => {
   const { queue } = useMediaApp();
   const logger = useMemo(() => getLogger().child({ component: 'ContentBrowser' }), []);
-  const [activeFilter, setActiveFilter] = useState(0);
   const [searchText, setSearchText] = useState('');
   const [browseConfig, setBrowseConfig] = useState([]);
+  const [searchScopes, setSearchScopes] = useState([]);
   const searchTimerRef = useRef(null);
 
-  // Fetch browse categories from backend config
+  // Scope persistence
+  const { lastScopeKey, recents, favorites, recordUsage, toggleFavorite } = useScopePrefs();
+  const [activeScopeKey, setActiveScopeKey] = useState(lastScopeKey);
+
+  // Find the active scope's params from the scopes config
+  const activeScopeParams = useMemo(() => {
+    for (const scope of searchScopes) {
+      if (scope.key === activeScopeKey) return scope.params || '';
+      if (scope.children) {
+        const child = scope.children.find(c => c.key === activeScopeKey);
+        if (child) return child.params || '';
+      }
+    }
+    return 'capability=playable&take=25';
+  }, [searchScopes, activeScopeKey]);
+
+  // Fetch browse categories + search scopes from backend config
   useEffect(() => {
     logger.info('content-browser.mounted');
     fetch('/api/v1/media/config')
@@ -28,6 +47,10 @@ const ContentBrowser = ({ hasMiniplayer }) => {
         const categories = data.browse || [];
         setBrowseConfig(categories);
         logger.info('content-browser.config-loaded', { categoryCount: categories.length, categories: categories.map(c => c.label) });
+
+        const scopes = data.searchScopes || [];
+        setSearchScopes(scopes);
+        logger.info('content-browser.scopes-loaded', { scopeCount: scopes.length });
       })
       .catch(err => logger.warn('content-browser.config-fetch-failed', { error: err.message }));
     return () => logger.info('content-browser.unmounted');
@@ -37,22 +60,9 @@ const ContentBrowser = ({ hasMiniplayer }) => {
     return () => clearTimeout(searchTimerRef.current);
   }, []);
 
-  // Build filters from config: "All" + entries with searchFilter: true
-  const filters = useMemo(() => {
-    const configFilters = browseConfig
-      .filter(c => c.searchFilter)
-      .map(c => ({
-        label: c.label.replace(/^Browse\s+/i, ''),
-        params: ['capability=playable', c.source && `source=${c.source}`, c.mediaType && `mediaType=${c.mediaType}`]
-          .filter(Boolean).join('&'),
-      }));
-    return [{ label: 'All', params: 'capability=playable' }, ...configFilters];
-  }, [browseConfig]);
-
-  const filterParams = filters[activeFilter]?.params || '';
   const { results, pending, isSearching, search } = useStreamingSearch(
     '/api/v1/content/query/search/stream',
-    filterParams
+    activeScopeParams
   );
   const { breadcrumbs, browseResults, browsing, loading: browseLoading, browse, goBack, exitBrowse } = useContentBrowse();
 
@@ -69,6 +79,31 @@ const ContentBrowser = ({ hasMiniplayer }) => {
     }
     searchTimerRef.current = setTimeout(() => search(val), 300);
   }, [search, exitBrowse, logger]);
+
+  const handleScopeSelect = useCallback((scope) => {
+    logger.info('content-browser.scope-changed', { key: scope.key, label: scope.label });
+    setActiveScopeKey(scope.key);
+    if (searchText.length >= 2) {
+      search(searchText, scope.params);
+    }
+  }, [logger, searchText, search]);
+
+  const handleSourceBadgeClick = useCallback((source) => {
+    // Find the narrowest scope matching this source
+    for (const scope of searchScopes) {
+      if (scope.children) {
+        const match = scope.children.find(c => {
+          const p = new URLSearchParams(c.params);
+          return p.get('source') === source;
+        });
+        if (match) {
+          handleScopeSelect(match);
+          return;
+        }
+      }
+    }
+    logger.debug('content-browser.source-badge-no-scope', { source });
+  }, [searchScopes, handleScopeSelect, logger]);
 
   const handlePlayNow = useCallback((item) => {
     const contentId = resolveContentId(item);
@@ -105,13 +140,11 @@ const ContentBrowser = ({ hasMiniplayer }) => {
     browse(cat.source, '', cat.label);
   }, [browse, logger]);
 
-  // Exclude image-only items from search results — MediaApp is for audio/video, not photos.
-  // Immich returns photos as PlayableItem (mediaType:'image') which pass capability=playable
-  // but aren't meaningful media player content.
-  const displayResults = browsing ? browseResults : results.filter(r => r.mediaType !== 'image');
+  const displayResults = browsing ? browseResults : results;
 
   useEffect(() => {
     if (displayResults.length > 0) {
+      recordUsage(activeScopeKey);
       const withThumbs = displayResults.filter(r => !!(r.thumbnail || resolveContentId(r))).length;
       const withDirectThumb = displayResults.filter(r => !!r.thumbnail).length;
       const sourceBreakdown = {};
@@ -126,7 +159,7 @@ const ContentBrowser = ({ hasMiniplayer }) => {
         source: browsing ? 'browse' : 'search',
       });
     }
-  }, [displayResults.length, browsing, logger]);
+  }, [displayResults.length, browsing, activeScopeKey, recordUsage, logger]);
 
   useEffect(() => {
     logger.info('content-browser.loading-state', { isSearching, browseLoading });
@@ -137,6 +170,14 @@ const ContentBrowser = ({ hasMiniplayer }) => {
   return (
     <div className={`content-browser ${hasMiniplayer ? 'content-browser--with-miniplayer' : ''}`}>
       <div className="content-browser-header">
+        <ScopeDropdown
+          scopes={searchScopes}
+          activeKey={activeScopeKey}
+          onSelect={handleScopeSelect}
+          recents={recents}
+          favorites={favorites}
+          onToggleFavorite={toggleFavorite}
+        />
         <input
           type="text"
           className="content-browser-search"
@@ -144,29 +185,6 @@ const ContentBrowser = ({ hasMiniplayer }) => {
           value={searchText}
           onChange={handleSearch}
         />
-      </div>
-
-      <div className="content-browser-filters">
-        {filters.map((f, i) => (
-          <button
-            key={f.label}
-            className={`filter-chip ${i === activeFilter ? 'active' : ''}`}
-            onClick={() => {
-              const oldFilter = filters[activeFilter]?.label;
-              logger.info('content-browser.filter-changed', {
-                from: oldFilter,
-                to: f.label,
-                params: f.params,
-              });
-              setActiveFilter(i);
-              if (searchText.length >= 2) {
-                search(searchText, f.params);
-              }
-            }}
-          >
-            {f.label}
-          </button>
-        ))}
       </div>
 
       {browsing && (
@@ -181,6 +199,12 @@ const ContentBrowser = ({ hasMiniplayer }) => {
       <div className="content-browser-body">
         {isSearchActive && (
           <div className="content-browser-results">
+            <ScopeChips
+              results={displayResults}
+              scopes={searchScopes}
+              activeKey={activeScopeKey}
+              onSelect={handleScopeSelect}
+            />
             {(isSearching || browseLoading) && (
               <div className="search-loading">
                 <span className="search-loading-spinner" />
@@ -201,7 +225,15 @@ const ContentBrowser = ({ hasMiniplayer }) => {
                 <div className="search-result-info" onClick={() => item.isContainer ? handleDrillDown(item) : handlePlayNow(item)}>
                   <div className="search-result-title">{item.title}</div>
                   <div className="search-result-meta">
-                    {item.source && <span className="source-badge">{item.source}</span>}
+                    {item.source && (
+                      <span
+                        className="source-badge source-badge--clickable"
+                        onClick={(e) => { e.stopPropagation(); handleSourceBadgeClick(item.source); }}
+                        title={`Search only ${item.source}`}
+                      >
+                        {item.source}
+                      </span>
+                    )}
                     {item.duration && <span>{Math.round(item.duration / 60)}m</span>}
                     {item.format && (
                       <span className={`format-badge format-badge--${item.format}`}>{item.format}</span>

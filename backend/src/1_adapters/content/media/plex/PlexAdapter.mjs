@@ -1763,13 +1763,23 @@ export class PlexAdapter {
       const tier = query.tier || 1;
 
       // Build Plex search options
-      const options = {
-        limit: query.take || 50
-      };
+      const rawLibraryId = query.libraryId || query['plex.libraryId'] || undefined;
+      const libraryIds = rawLibraryId ? String(rawLibraryId).split(',').map(s => s.trim()) : [undefined];
 
-      // Execute hub search
-      const result = await this.client.hubSearch(query.text, options);
-      let items = result.results || [];
+      // Execute hub search (multiple libraries if comma-separated)
+      const allResults = await Promise.all(
+        libraryIds.map(libId =>
+          this.client.hubSearch(query.text, { limit: query.take || 50, libraryId: libId })
+        )
+      );
+      let items = allResults.flatMap(r => r.results || []);
+
+      // Plex hub search leaks results from other libraries even with sectionId.
+      // Post-filter to only include items from the requested libraries.
+      if (rawLibraryId) {
+        const allowedIds = new Set(libraryIds);
+        items = items.filter(item => item.librarySectionID && allowedIds.has(String(item.librarySectionID)));
+      }
 
       // Filter by mediaType if specified
       // Include both leaf types and their container types so that
