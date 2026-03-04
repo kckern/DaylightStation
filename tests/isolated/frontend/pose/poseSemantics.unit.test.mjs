@@ -325,6 +325,167 @@ describe('extractSemanticPosition', () => {
     const result = extractSemanticPosition(kp);
     expect(result.bodyProne).toBe(false);
   });
+
+  // =========================================================================
+  // Layer 1 new joint classifiers (TDD — these should FAIL until implemented)
+  // =========================================================================
+
+  // --- hip flexion: angle(shoulder, hip, knee) ---
+  // LOW >= 160°, MID 90-160°, HIGH < 90°
+  describe('hip flexion (leftHip / rightHip)', () => {
+    test('standing straight (default) → both hips LOW (angle ~166°, ≥160°)', () => {
+      // Default: shoulder(0.4,0.3) hip(0.45,0.5) knee(0.45,0.7) → ~166°
+      const kp = makeKeypoints();
+      const result = extractSemanticPosition(kp);
+      expect(result.leftHip).toBe('LOW');
+      expect(result.rightHip).toBe('LOW');
+    });
+
+    test('partial hip flexion (knees forward) → both hips MID (angle ~121°, 90-160°)', () => {
+      // Knee pushed forward: angle(shoulder, hip, knee) drops to ~121°
+      const kp = makeKeypoints({
+        25: { x: 0.3, y: 0.65, score: 0.9 },   // leftKnee forward
+        26: { x: 0.7, y: 0.65, score: 0.9 },   // rightKnee forward (mirrored)
+        27: { x: 0.3, y: 0.9, score: 0.9 },    // leftAnkle
+        28: { x: 0.7, y: 0.9, score: 0.9 },    // rightAnkle
+      });
+      const result = extractSemanticPosition(kp);
+      expect(result.leftHip).toBe('MID');
+      expect(result.rightHip).toBe('MID');
+    });
+
+    test('deep hip flexion (knees at chest) → both hips HIGH (angle ~70°, <90°)', () => {
+      // Knee raised near chest: angle(shoulder, hip, knee) drops to ~70°
+      const kp = makeKeypoints({
+        25: { x: 0.6, y: 0.4, score: 0.9 },    // leftKnee up near chest
+        26: { x: 0.4, y: 0.4, score: 0.9 },    // rightKnee up near chest (mirrored)
+        27: { x: 0.6, y: 0.6, score: 0.9 },    // leftAnkle
+        28: { x: 0.4, y: 0.6, score: 0.9 },    // rightAnkle
+      });
+      const result = extractSemanticPosition(kp);
+      expect(result.leftHip).toBe('HIGH');
+      expect(result.rightHip).toBe('HIGH');
+    });
+  });
+
+  // --- shoulder elevation: angle(hip, shoulder, elbow) ---
+  // LOW < 45°, MID 45-135°, HIGH >= 135°
+  describe('shoulder elevation (leftShoulder / rightShoulder)', () => {
+    test('arms at sides (default) → both shoulders LOW (angle ~32°, <45°)', () => {
+      // Default: hip(0.45,0.5) shoulder(0.4,0.3) elbow(0.35,0.45) → ~32°
+      const kp = makeKeypoints();
+      const result = extractSemanticPosition(kp);
+      expect(result.leftShoulder).toBe('LOW');
+      expect(result.rightShoulder).toBe('LOW');
+    });
+
+    test('arms raised laterally → both shoulders MID (angle ~104°, 45-135°)', () => {
+      // Elbow extended laterally at shoulder height
+      const kp = makeKeypoints({
+        13: { x: 0.15, y: 0.3, score: 0.9 },   // leftElbow out to side
+        14: { x: 0.85, y: 0.3, score: 0.9 },   // rightElbow out to side
+        15: { x: 0.0, y: 0.3, score: 0.9 },    // leftWrist extended
+        16: { x: 1.0, y: 0.3, score: 0.9 },    // rightWrist extended
+      });
+      const result = extractSemanticPosition(kp);
+      expect(result.leftShoulder).toBe('MID');
+      expect(result.rightShoulder).toBe('MID');
+    });
+
+    test('arms overhead → both shoulders HIGH (angle ~166°, ≥135°)', () => {
+      // Elbow above head
+      const kp = makeKeypoints({
+        13: { x: 0.4, y: 0.1, score: 0.9 },    // leftElbow overhead
+        14: { x: 0.6, y: 0.1, score: 0.9 },    // rightElbow overhead
+        15: { x: 0.4, y: 0.0, score: 0.9 },    // leftWrist above head
+        16: { x: 0.6, y: 0.0, score: 0.9 },    // rightWrist above head
+      });
+      const result = extractSemanticPosition(kp);
+      expect(result.leftShoulder).toBe('HIGH');
+      expect(result.rightShoulder).toBe('HIGH');
+    });
+  });
+
+  // --- torso: angle from vertical using shoulder/hip midpoints ---
+  // UPRIGHT < 30°, LEANING 30-60°, PRONE > 60°
+  describe('torso classification', () => {
+    test('standing straight → torso UPRIGHT (<30° from vertical)', () => {
+      // Default: shoulderMid(0.5,0.3) hipMid(0.5,0.5) → 0° from vertical
+      const kp = makeKeypoints();
+      const result = extractSemanticPosition(kp);
+      expect(result.torso).toBe('UPRIGHT');
+    });
+
+    test('leaning forward ~45° → torso LEANING (30-60°)', () => {
+      // Shift shoulders forward: shoulderMid(0.7,0.3) hipMid(0.5,0.5)
+      // dx=0.2, dy=0.2 → atan2(0.2,0.2) = 45°
+      const kp = makeKeypoints({
+        11: { x: 0.6, y: 0.3, score: 0.99 },   // leftShoulder shifted right
+        12: { x: 0.8, y: 0.3, score: 0.99 },   // rightShoulder shifted right
+      });
+      const result = extractSemanticPosition(kp);
+      expect(result.torso).toBe('LEANING');
+    });
+
+    test('horizontal (plank/lying) → torso PRONE (>60°)', () => {
+      // Shoulders and hips at nearly same Y, spread horizontally
+      // shoulderMid(0.25,0.48) hipMid(0.75,0.5) → dx=0.5, dy=0.02 → ~88°
+      const kp = makeKeypoints({
+        11: { x: 0.2, y: 0.48, score: 0.99 },  // leftShoulder far left
+        12: { x: 0.3, y: 0.48, score: 0.99 },  // rightShoulder
+        23: { x: 0.7, y: 0.5, score: 0.99 },   // leftHip far right
+        24: { x: 0.8, y: 0.5, score: 0.99 },   // rightHip
+      });
+      const result = extractSemanticPosition(kp);
+      expect(result.torso).toBe('PRONE');
+    });
+  });
+
+  // --- stance: ankle spread / hip width ratio ---
+  // NARROW < 0.8, HIP 0.8-1.3, WIDE > 1.3
+  describe('stance classification', () => {
+    test('feet at hip width (default) → stance HIP (ratio 1.0, 0.8-1.3)', () => {
+      // Default: ankles(0.45,0.55) spread=0.1, hips(0.45,0.55) width=0.1 → ratio=1.0
+      const kp = makeKeypoints();
+      const result = extractSemanticPosition(kp);
+      expect(result.stance).toBe('HIP');
+    });
+
+    test('feet together → stance NARROW (ratio ~0.2, <0.8)', () => {
+      // Ankles very close together
+      const kp = makeKeypoints({
+        27: { x: 0.49, y: 0.9, score: 0.9 },   // leftAnkle near center
+        28: { x: 0.51, y: 0.9, score: 0.9 },   // rightAnkle near center
+      });
+      const result = extractSemanticPosition(kp);
+      expect(result.stance).toBe('NARROW');
+    });
+
+    test('feet wide apart → stance WIDE (ratio 3.0, >1.3)', () => {
+      // Ankles spread far apart
+      const kp = makeKeypoints({
+        27: { x: 0.35, y: 0.9, score: 0.9 },   // leftAnkle far left
+        28: { x: 0.65, y: 0.9, score: 0.9 },   // rightAnkle far right
+      });
+      const result = extractSemanticPosition(kp);
+      expect(result.stance).toBe('WIDE');
+    });
+  });
+
+  // --- removed properties: confirm these are gone ---
+  describe('removed properties', () => {
+    test('handsUp, bodyUpright, bodyProne, squatPosition, lungePosition, leftFoot, rightFoot are absent', () => {
+      const kp = makeKeypoints();
+      const result = extractSemanticPosition(kp);
+      expect(result).not.toHaveProperty('handsUp');
+      expect(result).not.toHaveProperty('bodyUpright');
+      expect(result).not.toHaveProperty('bodyProne');
+      expect(result).not.toHaveProperty('squatPosition');
+      expect(result).not.toHaveProperty('lungePosition');
+      expect(result).not.toHaveProperty('leftFoot');
+      expect(result).not.toHaveProperty('rightFoot');
+    });
+  });
 });
 
 describe('createSemanticExtractor (hysteresis)', () => {
@@ -425,5 +586,197 @@ describe('createSemanticExtractor (hysteresis)', () => {
     // After minHold — handsUp should be true
     const pos2 = extractor(kpHigh, 1200);
     expect(pos2.handsUp).toBe(true);
+  });
+});
+
+// ===========================================================================
+// Layer 1.5 combo states (TDD — these should FAIL until implemented)
+// ===========================================================================
+// These are boolean combos derived from Layer 1 classifiers, returned as
+// properties of the extractSemanticPosition result object.
+// ===========================================================================
+
+describe('Layer 1.5 combo states', () => {
+
+  // --- upright / prone ---
+  test('upright is true when torso === UPRIGHT', () => {
+    // Default standing pose → torso UPRIGHT
+    const kp = makeKeypoints();
+    const result = extractSemanticPosition(kp);
+    expect(result.upright).toBe(true);
+  });
+
+  test('upright is false when torso !== UPRIGHT', () => {
+    // Prone pose: shoulders and hips nearly same Y, spread horizontally
+    const kp = makeKeypoints({
+      11: { x: 0.2, y: 0.48, score: 0.99 },
+      12: { x: 0.3, y: 0.48, score: 0.99 },
+      23: { x: 0.7, y: 0.5, score: 0.99 },
+      24: { x: 0.8, y: 0.5, score: 0.99 },
+    });
+    const result = extractSemanticPosition(kp);
+    expect(result.upright).toBe(false);
+  });
+
+  test('prone is true when torso === PRONE', () => {
+    const kp = makeKeypoints({
+      11: { x: 0.2, y: 0.48, score: 0.99 },
+      12: { x: 0.3, y: 0.48, score: 0.99 },
+      23: { x: 0.7, y: 0.5, score: 0.99 },
+      24: { x: 0.8, y: 0.5, score: 0.99 },
+    });
+    const result = extractSemanticPosition(kp);
+    expect(result.prone).toBe(true);
+  });
+
+  test('prone is false when torso === UPRIGHT', () => {
+    const kp = makeKeypoints();
+    const result = extractSemanticPosition(kp);
+    expect(result.prone).toBe(false);
+  });
+
+  // --- squatting ---
+  test('squatting is true when both hips MID+, both knees MID+, upright, stance HIP or WIDE', () => {
+    // Squat pose: knees forward, hips flexed, torso upright, feet at hip width
+    // Hip angles ~132° (MID), knee angles ~125° (MID), torso upright (0°), stance ratio 1.0 (HIP)
+    const kp = makeKeypoints({
+      25: { x: 0.35, y: 0.65, score: 0.9 },   // leftKnee forward
+      26: { x: 0.65, y: 0.65, score: 0.9 },   // rightKnee forward
+    });
+    const result = extractSemanticPosition(kp);
+    expect(result.squatting).toBe(true);
+  });
+
+  test('squatting is false when not upright (sitting with forward lean)', () => {
+    // Same knee/hip flexion but torso leaning forward (>30° from vertical)
+    // Shift shoulders forward: shoulderMid(0.7,0.3) vs hipMid(0.5,0.5) → 45° lean
+    const kp = makeKeypoints({
+      11: { x: 0.6, y: 0.3, score: 0.99 },   // shoulders shifted forward
+      12: { x: 0.8, y: 0.3, score: 0.99 },
+      25: { x: 0.35, y: 0.65, score: 0.9 },   // knees forward (MID)
+      26: { x: 0.65, y: 0.65, score: 0.9 },
+    });
+    const result = extractSemanticPosition(kp);
+    expect(result.squatting).toBe(false);
+  });
+
+  // --- lunging ---
+  test('lunging is true when one hip MID/other LOW with matching knee asymmetry, upright', () => {
+    // Left leg forward (hip MID ~121°, knee MID ~104°), right leg back (hip LOW ~166°, knee LOW 180°)
+    const kp = makeKeypoints({
+      25: { x: 0.3, y: 0.65, score: 0.9 },    // leftKnee forward → MID
+      26: { x: 0.55, y: 0.7, score: 0.9 },    // rightKnee straight → LOW
+    });
+    const result = extractSemanticPosition(kp);
+    expect(result.lunging).toBe(true);
+  });
+
+  test('lunging is false when both knees same state', () => {
+    // Default standing: both knees LOW, both hips LOW
+    const kp = makeKeypoints();
+    const result = extractSemanticPosition(kp);
+    expect(result.lunging).toBe(false);
+  });
+
+  // --- armsOverhead ---
+  test('armsOverhead is true when both shoulders HIGH', () => {
+    // Elbows overhead: shoulder elevation angle ~166° (>=135°)
+    const kp = makeKeypoints({
+      13: { x: 0.4, y: 0.1, score: 0.9 },    // leftElbow overhead
+      14: { x: 0.6, y: 0.1, score: 0.9 },    // rightElbow overhead
+      15: { x: 0.4, y: 0.0, score: 0.9 },    // leftWrist above head
+      16: { x: 0.6, y: 0.0, score: 0.9 },    // rightWrist above head
+    });
+    const result = extractSemanticPosition(kp);
+    expect(result.armsOverhead).toBe(true);
+  });
+
+  test('armsOverhead is false when shoulders not both HIGH', () => {
+    // Default arms at sides: shoulder elevation ~32° (LOW)
+    const kp = makeKeypoints();
+    const result = extractSemanticPosition(kp);
+    expect(result.armsOverhead).toBe(false);
+  });
+
+  // --- armsAtSides ---
+  test('armsAtSides is true when both shoulders LOW', () => {
+    // Default pose: shoulder elevation ~32° (<45°) → LOW
+    const kp = makeKeypoints();
+    const result = extractSemanticPosition(kp);
+    expect(result.armsAtSides).toBe(true);
+  });
+
+  test('armsAtSides is false when shoulders not both LOW', () => {
+    // Arms raised laterally: shoulder elevation ~104° (MID)
+    const kp = makeKeypoints({
+      13: { x: 0.15, y: 0.3, score: 0.9 },
+      14: { x: 0.85, y: 0.3, score: 0.9 },
+      15: { x: 0.0, y: 0.3, score: 0.9 },
+      16: { x: 1.0, y: 0.3, score: 0.9 },
+    });
+    const result = extractSemanticPosition(kp);
+    expect(result.armsAtSides).toBe(false);
+  });
+
+  // --- armsExtended ---
+  test('armsExtended is true when both elbows LOW (straight arms)', () => {
+    // Default pose: elbow angle ~162° (>=150°) → LOW
+    const kp = makeKeypoints();
+    const result = extractSemanticPosition(kp);
+    expect(result.armsExtended).toBe(true);
+  });
+
+  test('armsExtended is false when elbows bent', () => {
+    // Elbows at ~104° (MID)
+    const kp = makeKeypoints({
+      13: { x: 0.35, y: 0.5, score: 0.9 },
+      14: { x: 0.65, y: 0.5, score: 0.9 },
+      15: { x: 0.2, y: 0.5, score: 0.9 },
+      16: { x: 0.8, y: 0.5, score: 0.9 },
+    });
+    const result = extractSemanticPosition(kp);
+    expect(result.armsExtended).toBe(false);
+  });
+
+  // --- wideStance ---
+  test('wideStance is true when stance WIDE', () => {
+    const kp = makeKeypoints({
+      27: { x: 0.35, y: 0.9, score: 0.9 },   // ankles spread wide (ratio 3.0)
+      28: { x: 0.65, y: 0.9, score: 0.9 },
+    });
+    const result = extractSemanticPosition(kp);
+    expect(result.wideStance).toBe(true);
+  });
+
+  test('wideStance is false when stance HIP', () => {
+    const kp = makeKeypoints();
+    const result = extractSemanticPosition(kp);
+    expect(result.wideStance).toBe(false);
+  });
+
+  // --- narrowStance ---
+  test('narrowStance is true when stance NARROW', () => {
+    const kp = makeKeypoints({
+      27: { x: 0.49, y: 0.9, score: 0.9 },   // feet together (ratio ~0.2)
+      28: { x: 0.51, y: 0.9, score: 0.9 },
+    });
+    const result = extractSemanticPosition(kp);
+    expect(result.narrowStance).toBe(true);
+  });
+
+  test('narrowStance is true when stance HIP', () => {
+    // HIP width is considered narrow (not wide)
+    const kp = makeKeypoints();
+    const result = extractSemanticPosition(kp);
+    expect(result.narrowStance).toBe(true);
+  });
+
+  test('narrowStance is false when stance WIDE', () => {
+    const kp = makeKeypoints({
+      27: { x: 0.35, y: 0.9, score: 0.9 },
+      28: { x: 0.65, y: 0.9, score: 0.9 },
+    });
+    const result = extractSemanticPosition(kp);
+    expect(result.narrowStance).toBe(false);
   });
 });
