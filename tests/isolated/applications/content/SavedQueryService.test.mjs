@@ -20,8 +20,8 @@ describe('SavedQueryService', () => {
       const query = service.getQuery('dailynews');
       expect(query).not.toBeNull();
       expect(query.title).toBe('dailynews');
-      expect(query.source).toBe('freshvideo');
-      expect(query.filters.sources).toEqual(['news/world_az', 'news/cnn']);
+      expect(query.items[0].source).toBe('freshvideo');
+      expect(query.items[0].filters.sources).toEqual(['news/world_az', 'news/cnn']);
     });
 
     it('uses title from YAML if present', () => {
@@ -43,12 +43,12 @@ describe('SavedQueryService', () => {
         readQuery: () => ({ type: 'immich', exclude: ['uuid-1', 'uuid-2'] }),
       });
       const query = svc.getQuery('test');
-      expect(query.exclude).toEqual(['uuid-1', 'uuid-2']);
+      expect(query.items[0].exclude).toEqual(['uuid-1', 'uuid-2']);
     });
 
     it('omits exclude when not present', () => {
       const query = service.getQuery('dailynews');
-      expect(query).not.toHaveProperty('exclude');
+      expect(query.items[0]).not.toHaveProperty('exclude');
     });
 
     it('passes through slideshow config when present', () => {
@@ -57,12 +57,12 @@ describe('SavedQueryService', () => {
         readQuery: () => ({ type: 'immich', slideshow }),
       });
       const query = svc.getQuery('test');
-      expect(query.slideshow).toEqual(slideshow);
+      expect(query.items[0].slideshow).toEqual(slideshow);
     });
 
     it('omits slideshow when not present', () => {
       const query = service.getQuery('dailynews');
-      expect(query).not.toHaveProperty('slideshow');
+      expect(query.items[0]).not.toHaveProperty('slideshow');
     });
 
     it('passes through audio config when present', () => {
@@ -77,6 +77,57 @@ describe('SavedQueryService', () => {
     it('omits audio when not present', () => {
       const query = service.getQuery('dailynews');
       expect(query).not.toHaveProperty('audio');
+    });
+
+    it('wraps flat query into single-element items array', () => {
+      const result = service.getQuery('dailynews');
+      expect(result.items).toEqual([{
+        source: 'freshvideo',
+        filters: { sources: ['news/world_az', 'news/cnn'] },
+        params: {},
+      }]);
+    });
+
+    it('returns items array from composite query', () => {
+      queries.anniversary = {
+        title: 'Anniversary',
+        items: [
+          { type: 'titlecard', template: 'centered', duration: 6, text: { title: 'Hello' } },
+          { type: 'immich', params: { month: 3, day: 4 } },
+          { query: 'dailynews' },
+        ],
+      };
+      const result = service.getQuery('anniversary');
+      expect(result.items).toHaveLength(3);
+      expect(result.items[0].type).toBe('titlecard');
+      expect(result.items[1].type).toBe('immich');
+      expect(result.items[2].query).toBe('dailynews');
+    });
+
+    it('preserves root-level audio on composite query', () => {
+      queries.anniversary = {
+        title: 'Anniversary',
+        audio: { contentId: 'music:test', behavior: 'pause' },
+        items: [
+          { type: 'immich', params: { month: 3 } },
+        ],
+      };
+      const result = service.getQuery('anniversary');
+      expect(result.audio).toEqual({ contentId: 'music:test', behavior: 'pause' });
+    });
+
+    it('flat titlecard query normalizes into items array', () => {
+      queries.welcome = {
+        title: 'Welcome',
+        type: 'titlecard',
+        template: 'centered',
+        duration: 10,
+        text: { title: 'Welcome' },
+      };
+      const result = service.getQuery('welcome');
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].type).toBe('titlecard');
+      expect(result.items[0].template).toBe('centered');
     });
   });
 

@@ -41,18 +41,39 @@ export class SavedQueryService {
     const raw = this.#readQuery(name);
     if (!raw) return null;
 
-    return {
+    const base = {
       title: raw.title || name,
-      source: raw.type,
-      filters: {
-        sources: raw.sources || [],
-      },
-      params: raw.params || {},
-      ...(raw.sort != null && { sort: raw.sort }),
-      ...(raw.take != null && { take: raw.take }),
-      ...(raw.exclude != null && { exclude: raw.exclude }),
-      ...(raw.slideshow != null && { slideshow: raw.slideshow }),
       ...(raw.audio != null && { audio: raw.audio }),
+    };
+
+    // Composite query — items array provided
+    if (raw.items) {
+      return { ...base, items: raw.items };
+    }
+
+    // Flat query — wrap into single-element items array
+    return {
+      ...base,
+      items: [{
+        source: raw.type,
+        filters: { sources: raw.sources || [] },
+        params: raw.params || {},
+        ...(raw.type === 'titlecard' && {
+          type: 'titlecard',
+          template: raw.template,
+          duration: raw.duration,
+          text: raw.text,
+          ...(raw.effect != null && { effect: raw.effect }),
+          ...(raw.zoom != null && { zoom: raw.zoom }),
+          ...(raw.image != null && { image: raw.image }),
+          ...(raw.theme != null && { theme: raw.theme }),
+          ...(raw.css != null && { css: raw.css }),
+        }),
+        ...(raw.sort != null && { sort: raw.sort }),
+        ...(raw.take != null && { take: raw.take }),
+        ...(raw.exclude != null && { exclude: raw.exclude }),
+        ...(raw.slideshow != null && { slideshow: raw.slideshow }),
+      }],
     };
   }
 
