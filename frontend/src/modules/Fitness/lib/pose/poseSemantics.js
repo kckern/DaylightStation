@@ -198,4 +198,104 @@ export const extractSemanticPosition = (keypoints) => {
   };
 };
 
+// ---------------------------------------------------------------------------
+// Hysteresis wrapper
+// ---------------------------------------------------------------------------
+
+const DEFAULT_HYSTERESIS = {
+  leftHand:   { minHoldMs: 80 },
+  rightHand:  { minHoldMs: 80 },
+  leftElbow:  { minHoldMs: 80 },
+  rightElbow: { minHoldMs: 80 },
+  leftKnee:   { minHoldMs: 120 },
+  rightKnee:  { minHoldMs: 120 },
+  leftFoot:   { minHoldMs: 80 },
+  rightFoot:  { minHoldMs: 80 },
+};
+
+// The discrete limb properties that get hysteresis applied
+const LIMB_KEYS = Object.keys(DEFAULT_HYSTERESIS);
+
+/**
+ * Create a stateful semantic extractor that applies per-property hysteresis
+ * to prevent thrash when keypoints are near classification boundaries.
+ *
+ * @param {object} [config] - Per-property hysteresis config (merged with defaults).
+ * @returns {(keypoints: Array, timestamp: number) => object} Stabilized extractor.
+ */
+export const createSemanticExtractor = (config = {}) => {
+  const hysteresis = {};
+  for (const key of LIMB_KEYS) {
+    hysteresis[key] = { ...DEFAULT_HYSTERESIS[key], ...(config[key] || {}) };
+  }
+
+  // Per-property state: { stabilized, pendingValue, pendingStartedAt }
+  let limbState = null;
+
+  return (keypoints, timestamp) => {
+    const raw = extractSemanticPosition(keypoints);
+    if (!raw) return null;
+
+    // First call — return raw values directly, initialise state
+    if (!limbState) {
+      limbState = {};
+      for (const key of LIMB_KEYS) {
+        limbState[key] = { stabilized: raw[key], pendingValue: null, pendingStartedAt: null };
+      }
+      return raw;
+    }
+
+    // Apply hysteresis per discrete limb property
+    const stabilized = {};
+    for (const key of LIMB_KEYS) {
+      const st = limbState[key];
+      const rawVal = raw[key];
+      const { minHoldMs } = hysteresis[key];
+
+      if (rawVal === st.stabilized) {
+        // Raw matches stabilized — cancel any pending transition
+        st.pendingValue = null;
+        st.pendingStartedAt = null;
+        stabilized[key] = st.stabilized;
+      } else if (rawVal === st.pendingValue) {
+        // Raw matches pending — check if minHold has elapsed
+        if (timestamp - st.pendingStartedAt >= minHoldMs) {
+          st.stabilized = rawVal;
+          st.pendingValue = null;
+          st.pendingStartedAt = null;
+        }
+        stabilized[key] = st.stabilized;
+      } else {
+        // New candidate — start pending transition
+        st.pendingValue = rawVal;
+        st.pendingStartedAt = timestamp;
+        stabilized[key] = st.stabilized;
+      }
+    }
+
+    // Recompute derived booleans from stabilized limb states
+    const handsUp = stabilized.leftHand === 'HIGH' && stabilized.rightHand === 'HIGH';
+
+    const kneeBent = (v) => v === 'MID' || v === 'HIGH';
+    const squatPosition =
+      kneeBent(stabilized.leftKnee) && kneeBent(stabilized.rightKnee) && raw.bodyUpright === true;
+
+    const lungePosition =
+      (kneeBent(stabilized.leftKnee) && stabilized.rightKnee === 'LOW') ||
+      (stabilized.leftKnee === 'LOW' && kneeBent(stabilized.rightKnee));
+
+    const armsExtended = stabilized.leftElbow === 'LOW' && stabilized.rightElbow === 'LOW';
+
+    return {
+      ...stabilized,
+      handsUp,
+      bodyUpright: raw.bodyUpright,
+      bodyProne: raw.bodyProne,
+      squatPosition,
+      lungePosition,
+      armsExtended,
+    };
+  };
+};
+
 export default extractSemanticPosition;
