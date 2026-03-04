@@ -63,6 +63,7 @@ export function toQueueItem(item) {
 
   // Slideshow config (stamped by QueryAdapter on image items)
   if (item.slideshow) qi.slideshow = item.slideshow;
+  if (item.titlecard) qi.titlecard = item.titlecard;
 
   // Rich metadata for image rendering (people/faces, dimensions)
   if (item.metadata) {
