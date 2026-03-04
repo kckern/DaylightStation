@@ -55,7 +55,7 @@ export class ImmichFeedAdapter extends IFeedSourceAdapter {
           title,
           subtitle,
           body: location,
-          image: item.imageUrl || `/api/v1/proxy/immich/assets/${localId}/original`,
+          image: item.imageUrl || `/api/v1/proxy/immich/assets/${localId}/thumbnail?size=preview`,
           thumbnail: `/api/v1/proxy/immich/assets/${localId}/thumbnail`,
           link: this.#webUrl ? `${this.#webUrl}/photos/${localId}` : null,
           timestamp: created || new Date().toISOString(),

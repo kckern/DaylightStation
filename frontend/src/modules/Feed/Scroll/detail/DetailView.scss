@@ -200,6 +200,19 @@
   padding: 0 1rem 0.75rem;
 }
 
+// ─── Inline iframe for items with no content sections ───
+.detail-iframe-wrap {
+  margin: 0 -1rem;  // bleed to edges
+  flex: 1;
+}
+
+.detail-iframe {
+  width: 100%;
+  height: calc(100vh - 140px); // leave room for header/title
+  border: none;
+  background: #1a1b1e;
+}
+
 .detail-open-link {
   display: flex;
   align-items: center;

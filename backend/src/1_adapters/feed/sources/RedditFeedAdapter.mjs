@@ -196,8 +196,42 @@ export class RedditFeedAdapter extends IFeedSourceAdapter {
     return m ? m[1] : null;
   }
 
+  /**
+   * Extract ordered gallery image URLs from a Reddit gallery post.
+   * Returns array of { url, thumbnail, width, height } using gallery_data order.
+   * `thumbnail` is the smallest preview ≥ 320px wide (for progressive loading).
+   */
+  #extractGalleryImages(post) {
+    if (!post.is_gallery) return [];
+    const items = post.gallery_data?.items || [];
+    const metadata = post.media_metadata || {};
+    const images = [];
+    for (const item of items) {
+      const meta = metadata[item.media_id];
+      if (!meta || meta.status !== 'valid') continue;
+      const s = meta.s;
+      if (!s?.u) continue;
+      // Pick smallest preview ≥ 320px as thumbnail for progressive loading
+      const previews = meta.p || [];
+      const thumb = previews.find(p => p.x >= 320) || previews[previews.length - 1];
+      images.push({
+        url: s.u.replace(/&amp;/g, '&'),
+        thumbnail: thumb?.u ? thumb.u.replace(/&amp;/g, '&') : undefined,
+        width: s.x,
+        height: s.y,
+      });
+    }
+    return images;
+  }
+
   #extractImage(post) {
     const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i;
+
+    // Gallery posts — use first gallery image
+    if (post.is_gallery) {
+      const gallery = this.#extractGalleryImages(post);
+      if (gallery.length > 0) return gallery[0].url;
+    }
 
     // Direct image link (i.redd.it, imgur, etc.)
     if (post.post_hint === 'image' && post.url) return post.url;
@@ -213,6 +247,68 @@ export class RedditFeedAdapter extends IFeedSourceAdapter {
     }
 
     return null;
+  }
+
+  #normalizePost(post, query) {
+    const subreddit = post.subreddit;
+    const youtubeId = this.#extractYoutubeId(post.url);
+    const galleryImages = this.#extractGalleryImages(post);
+
+    // Dimensions: prefer gallery first image, then preview source
+    let imageWidth, imageHeight;
+    if (galleryImages.length > 0) {
+      imageWidth = galleryImages[0].width;
+      imageHeight = galleryImages[0].height;
+    } else {
+      const previewSource = post.preview?.images?.[0]?.source;
+      imageWidth = previewSource?.width || undefined;
+      imageHeight = previewSource?.height || undefined;
+    }
+
+    const rawImage = this.#extractImage(post) || (youtubeId ? `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` : null);
+    const image = rawImage ? this.#proxyUrl(rawImage) : null;
+
+    // Thumbnail for progressive loading: gallery first-image thumb, or reddit preview smallest ≥ 320px
+    let thumbnail;
+    if (galleryImages.length > 0 && galleryImages[0].thumbnail) {
+      thumbnail = this.#proxyUrl(galleryImages[0].thumbnail);
+    } else {
+      const previews = post.preview?.images?.[0]?.resolutions || [];
+      const thumb = previews.find(p => p.width >= 320) || previews[previews.length - 1];
+      if (thumb?.url) thumbnail = this.#proxyUrl(thumb.url.replace(/&amp;/g, '&'));
+    }
+
+    return {
+      id: `reddit:${post.id}`,
+      tier: query.tier || 'wire',
+      source: 'reddit',
+      title: post.title,
+      body: post.selftext?.slice(0, 200) || null,
+      image,
+      thumbnail: thumbnail || undefined,
+      link: `https://www.reddit.com${post.permalink}`,
+      timestamp: new Date(post.created_utc * 1000).toISOString(),
+      priority: query.priority || 0,
+      meta: {
+        subreddit,
+        score: post.score,
+        numComments: post.num_comments,
+        postId: post.id,
+        youtubeId: youtubeId || undefined,
+        ...(youtubeId ? { playable: true } : {}),
+        sourceName: `r/${subreddit}`,
+        sourceIcon: `https://www.reddit.com/r/${subreddit}`,
+        ...(imageWidth && imageHeight ? { imageWidth, imageHeight } : {}),
+        ...(galleryImages.length > 1 ? {
+          galleryImages: galleryImages.map(g => ({
+            url: this.#proxyUrl(g.url),
+            thumbnail: g.thumbnail ? this.#proxyUrl(g.thumbnail) : undefined,
+            width: g.width,
+            height: g.height,
+          })),
+        } : {}),
+      },
+    };
   }
 
   async #fetchMultiSubreddit(subreddits, limit, query, attempt = 0) {
@@ -232,38 +328,7 @@ export class RedditFeedAdapter extends IFeedSourceAdapter {
 
     return posts
       .filter(p => p.kind === 't3' && !p.data.stickied)
-      .map(p => {
-        const post = p.data;
-        const subreddit = post.subreddit;
-        const youtubeId = this.#extractYoutubeId(post.url);
-        const previewSource = post.preview?.images?.[0]?.source;
-        const imageWidth = previewSource?.width || undefined;
-        const imageHeight = previewSource?.height || undefined;
-        const rawImage = this.#extractImage(post) || (youtubeId ? `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` : null);
-        const image = rawImage ? this.#proxyUrl(rawImage) : null;
-        return {
-          id: `reddit:${post.id}`,
-          tier: query.tier || 'wire',
-          source: 'reddit',
-          title: post.title,
-          body: post.selftext?.slice(0, 200) || null,
-          image,
-          link: `https://www.reddit.com${post.permalink}`,
-          timestamp: new Date(post.created_utc * 1000).toISOString(),
-          priority: query.priority || 0,
-          meta: {
-            subreddit,
-            score: post.score,
-            numComments: post.num_comments,
-            postId: post.id,
-            youtubeId: youtubeId || undefined,
-            ...(youtubeId ? { playable: true } : {}),
-            sourceName: `r/${subreddit}`,
-            sourceIcon: `https://www.reddit.com/r/${subreddit}`,
-            ...(imageWidth && imageHeight ? { imageWidth, imageHeight } : {}),
-          },
-        };
-      });
+      .map(p => this.#normalizePost(p.data, query));
   }
 
   async #fetchMultiSubredditPaginated(subreddits, limit, query, afterToken, attempt = 0) {
@@ -285,38 +350,7 @@ export class RedditFeedAdapter extends IFeedSourceAdapter {
 
     const items = posts
       .filter(p => p.kind === 't3' && !p.data.stickied)
-      .map(p => {
-        const post = p.data;
-        const subreddit = post.subreddit;
-        const youtubeId = this.#extractYoutubeId(post.url);
-        const previewSource = post.preview?.images?.[0]?.source;
-        const imageWidth = previewSource?.width || undefined;
-        const imageHeight = previewSource?.height || undefined;
-        const rawImage = this.#extractImage(post) || (youtubeId ? `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` : null);
-        const image = rawImage ? this.#proxyUrl(rawImage) : null;
-        return {
-          id: `reddit:${post.id}`,
-          tier: query.tier || 'wire',
-          source: 'reddit',
-          title: post.title,
-          body: post.selftext?.slice(0, 200) || null,
-          image,
-          link: `https://www.reddit.com${post.permalink}`,
-          timestamp: new Date(post.created_utc * 1000).toISOString(),
-          priority: query.priority || 0,
-          meta: {
-            subreddit,
-            score: post.score,
-            numComments: post.num_comments,
-            postId: post.id,
-            youtubeId: youtubeId || undefined,
-            ...(youtubeId ? { playable: true } : {}),
-            sourceName: `r/${subreddit}`,
-            sourceIcon: `https://www.reddit.com/r/${subreddit}`,
-            ...(imageWidth && imageHeight ? { imageWidth, imageHeight } : {}),
-          },
-        };
-      });
+      .map(p => this.#normalizePost(p.data, query));
 
     return { items, after };
   }
