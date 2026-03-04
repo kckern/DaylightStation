@@ -120,6 +120,7 @@ const FITNESS_MAX_VIDEO_BITRATE = null;
 
 const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   useRenderProfiler('FitnessPlayer');
+  const logger = useMemo(() => getLogger().child({ component: 'FitnessPlayer' }), []);
   const mainPlayerRef = useRef(null);
   const contentRef = useRef(null);
   const footerRef = useRef(null);
@@ -576,7 +577,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   // Clear isSeeking when the media element fires 'seeked'
   useEffect(() => {
     if (!mediaElement) return undefined;
-    const handleSeeked = () => setIsSeeking(false);
+    const handleSeeked = () => {
+      logger.debug('seek.cleared', { trigger: 'seeked-event' });
+      setIsSeeking(false);
+    };
     mediaElement.addEventListener('seeked', handleSeeked);
     return () => mediaElement.removeEventListener('seeked', handleSeeked);
   }, [mediaElement]);
@@ -584,10 +588,24 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   // Safety timeout: auto-clear isSeeking if seeked event never fires (e.g. network failure)
   useEffect(() => {
     if (isSeeking) {
-      seekTimeoutRef.current = setTimeout(() => setIsSeeking(false), 15000);
+      seekTimeoutRef.current = setTimeout(() => {
+        logger.warn('seek.timeout-cleared', { timeoutMs: 15000 });
+        setIsSeeking(false);
+      }, 15000);
     }
     return () => clearTimeout(seekTimeoutRef.current);
   }, [isSeeking]);
+
+  // Function to handle seeking to a specific point in the video
+  const handleSeek = useCallback((seconds) => {
+    if (governancePaused) return;
+    if (Number.isFinite(seconds)) {
+      seekTo(seconds);
+      setCurrentTime(seconds);
+      seekIntentRef.current = { time: seconds, timestamp: performance.now() };
+      setIsSeeking(true);
+    }
+  }, [seekTo, governancePaused]);
 
   // Memoize keyboard overrides to prevent recreation on every render
   const keyboardOverrides = useMemo(() => ({
@@ -615,7 +633,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       if (thumbnailsCommitRef.current) {
         thumbnailsCommitRef.current(newTime);
       } else {
-        seekTo(newTime);
+        handleSeek(newTime);
       }
     },
     'ArrowRight': (event) => {
@@ -641,10 +659,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       if (thumbnailsCommitRef.current) {
         thumbnailsCommitRef.current(newTime);
       } else {
-        seekTo(newTime);
+        handleSeek(newTime);
       }
     }
-  }), [getPlayerTime, getPlayerDuration, seekTo, logFitnessEvent]);
+  }), [getPlayerTime, getPlayerDuration, handleSeek, logFitnessEvent]);
 
   
 
@@ -770,17 +788,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       e.target.nextSibling.style.display = 'flex';
     }
   };
-  
-  // Function to handle seeking to a specific point in the video
-  const handleSeek = useCallback((seconds) => {
-    if (governancePaused) return;
-    if (Number.isFinite(seconds)) {
-      seekTo(seconds);
-      setCurrentTime(seconds);
-      seekIntentRef.current = { time: seconds, timestamp: performance.now() };
-      setIsSeeking(true);
-    }
-  }, [seekTo, governancePaused]);
 
   const computeEpisodeStatusPayload = useCallback(({ naturalEnd = false } = {}) => {
     if (!currentItem) return null;
