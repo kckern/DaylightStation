@@ -1,4 +1,11 @@
 import { useMemo } from 'react';
+import getLogger from '../../lib/logging/Logger.js';
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'useMediaClientId' });
+  return _logger;
+}
 
 const STORAGE_KEY = 'daylight_media_client_id';
 const NAME_KEY = 'daylight_media_client_name';
@@ -27,6 +34,7 @@ function parseUserAgent(ua) {
 export function useMediaClientId() {
   return useMemo(() => {
     let clientId = localStorage.getItem(STORAGE_KEY);
+    const isNewClient = !clientId;
     if (!clientId) {
       clientId = generateHexId();
       localStorage.setItem(STORAGE_KEY, clientId);
@@ -38,6 +46,7 @@ export function useMediaClientId() {
       localStorage.setItem(NAME_KEY, displayName);
     }
 
+    logger().info(isNewClient ? 'media-client-id.generated' : 'media-client-id.loaded', { clientId, displayName });
     return { clientId, displayName };
   }, []);
 }
