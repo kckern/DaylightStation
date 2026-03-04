@@ -104,6 +104,7 @@ export default function CallApp() {
   const [cooldown, setCooldown] = useState(false);
   const [activeDeviceId, setActiveDeviceId] = useState(null);
   const connectedDeviceRef = useRef(null);
+  const coldWakeRef = useRef(false);
   const { isOwner } = useCallOwnership(activeDeviceId);
   const { progress: wakeProgress, reset: resetWakeProgress } = useWakeProgress(
     (waking || status === 'connecting') ? activeDeviceId : null
@@ -341,13 +342,14 @@ export default function CallApp() {
     }
   }, [connectionState, logger]);
 
-  // User-facing connection timeout (15s)
+  // User-facing connection timeout (15s normal, 35s cold wake)
   useEffect(() => {
     if (status !== 'connecting') {
       setConnectingTooLong(false);
       return;
     }
-    const timer = setTimeout(() => setConnectingTooLong(true), 15000);
+    const timeoutMs = coldWakeRef.current ? 35_000 : 15_000;
+    const timer = setTimeout(() => setConnectingTooLong(true), timeoutMs);
     return () => clearTimeout(timer);
   }, [status]);
 
@@ -497,6 +499,7 @@ export default function CallApp() {
     reset();
     exitZoom();
     resetWakeProgress();
+    coldWakeRef.current = false;
     setRemoteVerified(false);
     setTransitionReady(false);
     const devId = connectedDeviceRef.current;
@@ -579,7 +582,8 @@ export default function CallApp() {
       return;
     }
     setWaking(false);
-    connect(targetDeviceId);
+    coldWakeRef.current = !!result.coldWake;
+    connect(targetDeviceId, { coldWake: !!result.coldWake });
   }, [logger, connect, waking, status, stream, error, cooldown]);
 
   // Execute pending retry once status returns to idle
