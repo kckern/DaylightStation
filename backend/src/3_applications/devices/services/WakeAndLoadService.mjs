@@ -53,7 +53,8 @@ export class WakeAndLoadService {
       steps: {},
       canProceed: false,
       allowOverride: false,
-      coldWake: false
+      coldWake: false,
+      cameraAvailable: true
     };
 
     // --- Step 1: Power On ---
@@ -130,6 +131,7 @@ export class WakeAndLoadService {
     this.#logger.info?.('wake-and-load.prepare.done', { deviceId });
 
     const coldWake = !!prepResult.coldRestart;
+    const cameraAvailable = prepResult.cameraAvailable !== false;
 
     // --- Step 4: Load Content ---
     this.#emitProgress(topic, 'load', 'running');
@@ -153,6 +155,7 @@ export class WakeAndLoadService {
     result.ok = true;
     result.canProceed = true;
     result.coldWake = coldWake;
+    result.cameraAvailable = cameraAvailable;
     result.totalElapsedMs = Date.now() - startTime;
 
     this.#logger.info?.('wake-and-load.complete', {
