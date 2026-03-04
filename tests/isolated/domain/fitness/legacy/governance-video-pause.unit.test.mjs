@@ -79,3 +79,55 @@ describe('Governance video pause contract', () => {
     expect(result.reason).toBe(PAUSE_REASON.USER);
   });
 });
+
+describe('Seeking suppresses pause', () => {
+
+  test('seeking suppresses governance pause', () => {
+    const result = resolvePause({
+      seeking: { active: true },
+      governance: { locked: true }
+    });
+
+    expect(result.paused).toBe(false);
+    expect(result.reason).toBe(PAUSE_REASON.SEEKING);
+  });
+
+  test('seeking suppresses buffering pause', () => {
+    const result = resolvePause({
+      seeking: { active: true },
+      resilience: { buffering: true }
+    });
+
+    expect(result.paused).toBe(false);
+    expect(result.reason).toBe(PAUSE_REASON.SEEKING);
+  });
+
+  test('seeking suppresses user pause', () => {
+    const result = resolvePause({
+      seeking: { active: true },
+      user: { paused: true }
+    });
+
+    expect(result.paused).toBe(false);
+    expect(result.reason).toBe(PAUSE_REASON.SEEKING);
+  });
+
+  test('seeking:false does not suppress', () => {
+    const result = resolvePause({
+      seeking: { active: false },
+      governance: { locked: true }
+    });
+
+    expect(result.paused).toBe(true);
+    expect(result.reason).toBe(PAUSE_REASON.GOVERNANCE);
+  });
+
+  test('no seeking bucket does not suppress', () => {
+    const result = resolvePause({
+      governance: { locked: true }
+    });
+
+    expect(result.paused).toBe(true);
+    expect(result.reason).toBe(PAUSE_REASON.GOVERNANCE);
+  });
+});
