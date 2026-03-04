@@ -1,4 +1,4 @@
-import { extractSemanticPosition } from '../../../../frontend/src/modules/Fitness/lib/pose/poseSemantics.js';
+import { extractSemanticPosition, createSemanticExtractor } from '../../../../frontend/src/modules/Fitness/lib/pose/poseSemantics.js';
 
 /**
  * Build synthetic BlazePose keypoints (normalized 0-1 coords, y increases downward).
@@ -324,5 +324,106 @@ describe('extractSemanticPosition', () => {
     const kp = makeKeypoints();
     const result = extractSemanticPosition(kp);
     expect(result.bodyProne).toBe(false);
+  });
+});
+
+describe('createSemanticExtractor (hysteresis)', () => {
+  test('returns same shape as extractSemanticPosition', () => {
+    const extractor = createSemanticExtractor();
+    const kp = makeKeypoints();
+    const pos = extractor(kp, 1000);
+    expect(pos).toHaveProperty('leftHand');
+    expect(pos).toHaveProperty('handsUp');
+  });
+
+  test('does not thrash on boundary — holds previous state within minHold', () => {
+    const extractor = createSemanticExtractor();
+    // First call: hands clearly LOW (wrist y=0.6, below hip y=0.5)
+    const kp1 = makeKeypoints({
+      15: { x: 0.35, y: 0.6, score: 0.9 },
+    });
+    const pos1 = extractor(kp1, 1000);
+    expect(pos1.leftHand).toBe('LOW');
+
+    // Second call: hand moves to MID (y=0.4, between shoulder 0.3 and hip 0.5)
+    // But only 30ms later — within minHoldMs (80ms default)
+    const kp2 = makeKeypoints({
+      15: { x: 0.35, y: 0.4, score: 0.9 },
+    });
+    const pos2 = extractor(kp2, 1030);
+    expect(pos2.leftHand).toBe('LOW');  // held by minHold
+  });
+
+  test('transitions after sustained clear crossing beyond minHold', () => {
+    const extractor = createSemanticExtractor();
+    // Start LOW
+    const kpLow = makeKeypoints({
+      15: { x: 0.35, y: 0.6, score: 0.9 },
+    });
+    extractor(kpLow, 1000);
+
+    // Move clearly into MID
+    const kpMid = makeKeypoints({
+      15: { x: 0.35, y: 0.4, score: 0.9 },
+    });
+    // First frame at new position — starts minHold timer
+    extractor(kpMid, 1050);
+    // After minHoldMs (default 80ms) — should transition
+    const pos = extractor(kpMid, 1200);
+    expect(pos.leftHand).toBe('MID');
+  });
+
+  test('does not transition during minHold period', () => {
+    const extractor = createSemanticExtractor();
+    const kpLow = makeKeypoints({
+      15: { x: 0.35, y: 0.6, score: 0.9 },
+    });
+    extractor(kpLow, 1000);
+
+    // Move clearly into MID
+    const kpMid = makeKeypoints({
+      15: { x: 0.35, y: 0.4, score: 0.9 },
+    });
+    // Only 30ms later — within minHoldMs
+    const pos = extractor(kpMid, 1030);
+    expect(pos.leftHand).toBe('LOW');  // still held
+  });
+
+  test('resets pending transition if value bounces back', () => {
+    const extractor = createSemanticExtractor();
+    const kpLow = makeKeypoints({ 15: { x: 0.35, y: 0.6, score: 0.9 } });
+    extractor(kpLow, 1000);
+
+    // Briefly move to MID
+    const kpMid = makeKeypoints({ 15: { x: 0.35, y: 0.4, score: 0.9 } });
+    extractor(kpMid, 1050);
+
+    // Bounce back to LOW before minHold expires
+    extractor(kpLow, 1070);
+
+    // Wait past minHold — should still be LOW (bounce cancelled)
+    const pos = extractor(kpLow, 1200);
+    expect(pos.leftHand).toBe('LOW');
+  });
+
+  test('derived booleans update based on stabilized limb states', () => {
+    const extractor = createSemanticExtractor();
+    // Start with hands LOW
+    const kpLow = makeKeypoints();
+    extractor(kpLow, 1000);
+
+    // Raise both hands HIGH
+    const kpHigh = makeKeypoints({
+      15: { x: 0.35, y: 0.15, score: 0.9 },
+      16: { x: 0.65, y: 0.15, score: 0.9 },
+    });
+
+    // During minHold — handsUp should still be false
+    const pos1 = extractor(kpHigh, 1030);
+    expect(pos1.handsUp).toBe(false);
+
+    // After minHold — handsUp should be true
+    const pos2 = extractor(kpHigh, 1200);
+    expect(pos2.handsUp).toBe(true);
   });
 });
