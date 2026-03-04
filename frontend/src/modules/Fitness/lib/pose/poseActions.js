@@ -28,14 +28,24 @@ function matchesPhase(position, match) {
 
 function createCyclicDetector(pattern) {
   const { phases, timing = {} } = pattern;
-  const { minCycleMs = 0, maxCycleMs = Infinity, maxPhaseMs = Infinity } = timing;
+  const { minCycleMs = 0, maxCycleMs = Infinity, maxPhaseMs = Infinity, inactivityTimeoutMs = Infinity } = timing;
 
   let phaseIndex = -1;       // -1 = waiting for first phase match
   let repCount = 0;
   let cycleStartTime = null;
   let phaseEnteredTime = null;
+  let activityStartTime = null;  // when first phase matched (for duration tracking)
+  let lastActivityTime = null;   // last timestamp we saw any phase match
 
   function update(position, timestamp) {
+    // Check inactivity timeout — reset activity tracking if too long since last match
+    if (activityStartTime !== null && lastActivityTime !== null) {
+      if (timestamp - lastActivityTime > inactivityTimeoutMs) {
+        activityStartTime = null;
+        lastActivityTime = null;
+      }
+    }
+
     // Check if current phase has exceeded maxPhaseMs
     if (phaseIndex >= 0 && phaseEnteredTime !== null) {
       const elapsed = timestamp - phaseEnteredTime;
@@ -52,6 +62,12 @@ function createCyclicDetector(pattern) {
     const nextPhase = phases[nextIndex];
 
     if (matchesPhase(position, nextPhase.match)) {
+      // Track activity duration from first-ever phase match
+      if (activityStartTime === null) {
+        activityStartTime = timestamp;
+      }
+      lastActivityTime = timestamp;
+
       if (nextIndex === 0 && phaseIndex === -1) {
         // Starting a new cycle from scratch
         phaseIndex = 0;
@@ -78,11 +94,16 @@ function createCyclicDetector(pattern) {
       }
     }
 
+    const activityDurationMs = activityStartTime !== null
+      ? timestamp - activityStartTime
+      : 0;
+
     return {
       repCount,
       currentPhase: phaseIndex >= 0 ? phases[phaseIndex].name : null,
       phaseIndex,
       active: phaseIndex > 0,
+      activityDurationMs,
     };
   }
 
@@ -91,6 +112,8 @@ function createCyclicDetector(pattern) {
     repCount = 0;
     cycleStartTime = null;
     phaseEnteredTime = null;
+    activityStartTime = null;
+    lastActivityTime = null;
   }
 
   return { update, reset, id: pattern.id };
