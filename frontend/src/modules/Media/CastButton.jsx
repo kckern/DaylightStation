@@ -1,14 +1,18 @@
 // frontend/src/modules/Media/CastButton.jsx
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
+import getLogger from '../../lib/logging/Logger.js';
 import DevicePicker from './DevicePicker.jsx';
 
 const CastButton = ({ contentId, className = '' }) => {
+  const logger = useMemo(() => getLogger().child({ component: 'CastButton' }), []);
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const handleToggle = useCallback((e) => {
     e.stopPropagation();
+    const opening = !pickerOpen;
+    logger.debug('cast-button.toggle', { contentId, opening });
     setPickerOpen(o => !o);
-  }, []);
+  }, [pickerOpen, contentId, logger]);
 
   if (!contentId) return null;
 

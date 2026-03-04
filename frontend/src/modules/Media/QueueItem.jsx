@@ -2,12 +2,15 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import CastButton from './CastButton.jsx';
 import { ContentDisplayUrl } from '../../lib/api.mjs';
+import getLogger from '../../lib/logging/Logger.js';
 
 const QueueItem = ({ item, isCurrent, onPlay, onRemove, index, onDragStart, onDrop, onDragEnd }) => {
   const thumbnailUrl = useMemo(
     () => item.contentId ? ContentDisplayUrl(item.contentId) : null,
     [item.contentId]
   );
+
+  const logger = useMemo(() => getLogger().child({ component: 'QueueItem' }), []);
 
   const activeTouchHandler = useRef(null);
 
@@ -27,6 +30,7 @@ const QueueItem = ({ item, isCurrent, onPlay, onRemove, index, onDragStart, onDr
       if (dx < -80) {
         activeTouchHandler.current = null;
         document.removeEventListener('touchmove', handler);
+        logger.info('queue-item.swipe-remove', { queueId: item.queueId, contentId: item.contentId, title: item.title });
         onRemove(item.queueId);
       }
     };
@@ -42,7 +46,7 @@ const QueueItem = ({ item, isCurrent, onPlay, onRemove, index, onDragStart, onDr
     <div
       className={`queue-item ${isCurrent ? 'queue-item--current' : ''}`}
       draggable
-      onClick={() => onPlay(item.queueId)}
+      onClick={() => { logger.info('queue-item.play-clicked', { queueId: item.queueId, contentId: item.contentId }); onPlay(item.queueId); }}
       onTouchStart={handleSwipeRemove}
       onDragStart={() => onDragStart?.(item.queueId)}
       onDragOver={(e) => e.preventDefault()}
@@ -61,7 +65,7 @@ const QueueItem = ({ item, isCurrent, onPlay, onRemove, index, onDragStart, onDr
       <CastButton contentId={item.contentId} className="queue-item-cast" />
       <button
         className="queue-item-remove"
-        onClick={(e) => { e.stopPropagation(); onRemove(item.queueId); }}
+        onClick={(e) => { e.stopPropagation(); logger.info('queue-item.remove-clicked', { queueId: item.queueId, contentId: item.contentId }); onRemove(item.queueId); }}
         aria-label="Remove"
       >
         &times;
