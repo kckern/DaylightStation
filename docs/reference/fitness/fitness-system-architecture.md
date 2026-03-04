@@ -3,6 +3,7 @@
 A comprehensive reference for the DaylightStation fitness system — from physical heart rate sensors through session management, video playback, governance enforcement, and data persistence.
 
 For governance-specific details, see `governance-engine.md` and `governance-system-architecture.md`.
+For pose detection and exercise recognition, see `semantic-pose-pipeline.md`.
 
 ---
 
