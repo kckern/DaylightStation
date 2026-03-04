@@ -1,13 +1,16 @@
 /**
  * Semantic position extraction from BlazePose keypoints.
  *
- * Converts raw 33-element keypoint arrays into discrete, body-relative states
- * (HIGH / MID / LOW) for hands, knees, elbows, and feet, plus derived booleans
- * such as handsUp, bodyUpright, bodyProne, squatPosition, lungePosition, and
- * armsExtended.
+ * Layer 1: Converts raw 33-element keypoint arrays into discrete, body-relative
+ * states (HIGH / MID / LOW) for hands, knees, elbows, hips, shoulders, torso,
+ * and stance.
  *
- * This is the first layer of a two-layer pipeline. It is a pure function with
- * no hysteresis -- every call is independent of previous frames.
+ * Layer 1.5: Derives boolean combo states (upright, prone, squatting, lunging,
+ * armsOverhead, armsAtSides, armsExtended, wideStance, narrowStance) from the
+ * Layer 1 classifiers.
+ *
+ * This is a pure function with no hysteresis -- every call is independent of
+ * previous frames. The createSemanticExtractor wrapper adds hysteresis.
  */
 
 import { calculateAngle } from './poseGeometry.js';
@@ -70,41 +73,36 @@ const classifyElbow = (shoulder, elbow, wrist) => {
   return 'HIGH';
 };
 
-/** Foot: compare ankle Y to knee Y and hip Y. */
-const classifyFoot = (ankle, knee, hip) => {
-  if (!ankle || !knee || !hip) return null;
-  if (ankle.y <= knee.y) return 'HIGH';
-  if (ankle.y >= hip.y + (hip.y - knee.y)) return 'LOW'; // well below hip
-  return 'MID';
+/** Hip flexion: angle(shoulder, hip, knee). >=160 LOW (standing), 90-160 MID, <90 HIGH */
+const classifyHip = (shoulder, hip, knee) => {
+  if (!shoulder || !hip || !knee) return null;
+  const angle = calculateAngle(shoulder, hip, knee);
+  if (angle === 0) return null;
+  if (angle >= 160) return 'LOW';
+  if (angle >= 90) return 'MID';
+  return 'HIGH';
+};
+
+/** Shoulder elevation: angle(hip, shoulder, elbow). <45 LOW (at side), 45-135 MID, >=135 HIGH (overhead) */
+const classifyShoulder = (hip, shoulder, elbow) => {
+  if (!hip || !shoulder || !elbow) return null;
+  const angle = calculateAngle(hip, shoulder, elbow);
+  if (angle === 0) return null;
+  if (angle >= 135) return 'HIGH';
+  if (angle >= 45) return 'MID';
+  return 'LOW';
 };
 
 // ---------------------------------------------------------------------------
-// Derived booleans
+// Whole-body classifiers
 // ---------------------------------------------------------------------------
 
-/** bodyUpright: shoulder midpoint is above hip midpoint AND more vertical than horizontal. */
-const deriveBodyUpright = (kp) => {
-  const ls = confident(kp[KP.LEFT_SHOULDER]);
-  const rs = confident(kp[KP.RIGHT_SHOULDER]);
-  const lh = confident(kp[KP.LEFT_HIP]);
-  const rh = confident(kp[KP.RIGHT_HIP]);
-  if (!ls || !rs || !lh || !rh) return null;
-
-  const shoulderMidX = (ls.x + rs.x) / 2;
-  const shoulderMidY = (ls.y + rs.y) / 2;
-  const hipMidX = (lh.x + rh.x) / 2;
-  const hipMidY = (lh.y + rh.y) / 2;
-
-  // Shoulders must be above hips (lower Y)
-  if (shoulderMidY >= hipMidY) return false;
-
-  const dx = Math.abs(shoulderMidX - hipMidX);
-  const dy = Math.abs(shoulderMidY - hipMidY);
-  return dy > dx; // more vertical than horizontal
-};
-
-/** bodyProne: torso more horizontal than vertical. */
-const deriveBodyProne = (kp) => {
+/**
+ * Torso angle from vertical.
+ * Uses shoulder midpoint vs hip midpoint.
+ * <30° → UPRIGHT, 30-60° → LEANING, >60° → PRONE.
+ */
+const classifyTorso = (kp) => {
   const ls = confident(kp[KP.LEFT_SHOULDER]);
   const rs = confident(kp[KP.RIGHT_SHOULDER]);
   const lh = confident(kp[KP.LEFT_HIP]);
@@ -118,7 +116,34 @@ const deriveBodyProne = (kp) => {
 
   const dx = Math.abs(shoulderMidX - hipMidX);
   const dy = Math.abs(shoulderMidY - hipMidY);
-  return dx > dy; // more horizontal than vertical
+
+  const angleFromVertical = Math.atan2(dx, dy) * (180 / Math.PI);
+
+  if (angleFromVertical < 30) return 'UPRIGHT';
+  if (angleFromVertical < 60) return 'LEANING';
+  return 'PRONE';
+};
+
+/**
+ * Stance width: ankle spread / hip width ratio.
+ * <0.8 → NARROW, 0.8-1.3 → HIP, >1.3 → WIDE.
+ */
+const classifyStance = (kp) => {
+  const lAnkle = confident(kp[KP.LEFT_ANKLE]);
+  const rAnkle = confident(kp[KP.RIGHT_ANKLE]);
+  const lHip = confident(kp[KP.LEFT_HIP]);
+  const rHip = confident(kp[KP.RIGHT_HIP]);
+  if (!lAnkle || !rAnkle || !lHip || !rHip) return null;
+
+  const hipWidth = Math.abs(lHip.x - rHip.x);
+  if (hipWidth < 0.01) return null;
+
+  const ankleSpread = Math.abs(lAnkle.x - rAnkle.x);
+  const ratio = ankleSpread / hipWidth;
+
+  if (ratio < 0.8) return 'NARROW';
+  if (ratio <= 1.3) return 'HIP';
+  return 'WIDE';
 };
 
 // ---------------------------------------------------------------------------
@@ -134,7 +159,6 @@ const deriveBodyProne = (kp) => {
 export const extractSemanticPosition = (keypoints) => {
   if (!keypoints || !Array.isArray(keypoints) || keypoints.length < 33) return null;
 
-  // Confident keypoints (null if below threshold)
   const lShoulder = confident(keypoints[KP.LEFT_SHOULDER]);
   const rShoulder = confident(keypoints[KP.RIGHT_SHOULDER]);
   const lElbow    = confident(keypoints[KP.LEFT_ELBOW]);
@@ -148,53 +172,53 @@ export const extractSemanticPosition = (keypoints) => {
   const lAnkle    = confident(keypoints[KP.LEFT_ANKLE]);
   const rAnkle    = confident(keypoints[KP.RIGHT_ANKLE]);
 
-  // --- individual joint states ---
+  // --- Layer 1: Individual joint states ---
   const leftHand  = classifyHand(lWrist, lShoulder, lHip);
   const rightHand = classifyHand(rWrist, rShoulder, rHip);
-
   const leftKnee  = classifyKnee(lHip, lKnee, lAnkle);
   const rightKnee = classifyKnee(rHip, rKnee, rAnkle);
-
   const leftElbow  = classifyElbow(lShoulder, lElbow, lWrist);
   const rightElbow = classifyElbow(rShoulder, rElbow, rWrist);
+  const leftHip    = classifyHip(lShoulder, lHip, lKnee);
+  const rightHip   = classifyHip(rShoulder, rHip, rKnee);
+  const leftShoulder  = classifyShoulder(lHip, lShoulder, lElbow);
+  const rightShoulder = classifyShoulder(rHip, rShoulder, rElbow);
+  const torso = classifyTorso(keypoints);
+  const stance = classifyStance(keypoints);
 
-  const leftFoot  = classifyFoot(lAnkle, lKnee, lHip);
-  const rightFoot = classifyFoot(rAnkle, rKnee, rHip);
+  // --- Layer 1.5: Multi-joint combo states ---
+  const upright = torso === 'UPRIGHT';
+  const prone   = torso === 'PRONE';
 
-  // --- derived booleans ---
-  const handsUp = leftHand === 'HIGH' && rightHand === 'HIGH';
+  const bentOrDeep = (v) => v === 'MID' || v === 'HIGH';
+  const squatting =
+    bentOrDeep(leftHip) && bentOrDeep(rightHip) &&
+    bentOrDeep(leftKnee) && bentOrDeep(rightKnee) &&
+    upright && (stance === 'HIP' || stance === 'WIDE');
 
-  const bodyUpright = deriveBodyUpright(keypoints);
-  const bodyProne   = deriveBodyProne(keypoints);
+  const lunging =
+    upright && (
+      (bentOrDeep(leftHip) && rightHip === 'LOW' && bentOrDeep(leftKnee) && rightKnee === 'LOW') ||
+      (leftHip === 'LOW' && bentOrDeep(rightHip) && leftKnee === 'LOW' && bentOrDeep(rightKnee))
+    );
 
-  const kneeBent = (v) => v === 'MID' || v === 'HIGH';
-  const squatPosition =
-    kneeBent(leftKnee) && kneeBent(rightKnee) && bodyUpright === true;
-
-  const lungePosition =
-    (kneeBent(leftKnee) && rightKnee === 'LOW') ||
-    (leftKnee === 'LOW' && kneeBent(rightKnee));
-
+  const armsOverhead = leftShoulder === 'HIGH' && rightShoulder === 'HIGH';
+  const armsAtSides  = leftShoulder === 'LOW' && rightShoulder === 'LOW';
   const armsExtended = leftElbow === 'LOW' && rightElbow === 'LOW';
+  const wideStance   = stance === 'WIDE';
+  const narrowStance = stance === 'NARROW' || stance === 'HIP';
 
   return {
-    // Individual joint states
-    leftHand,
-    rightHand,
-    leftKnee,
-    rightKnee,
-    leftElbow,
-    rightElbow,
-    leftFoot,
-    rightFoot,
-
-    // Derived booleans
-    handsUp,
-    bodyUpright,
-    bodyProne,
-    squatPosition,
-    lungePosition,
-    armsExtended,
+    leftHand, rightHand,
+    leftElbow, rightElbow,
+    leftKnee, rightKnee,
+    leftHip, rightHip,
+    leftShoulder, rightShoulder,
+    torso, stance,
+    upright, prone,
+    squatting, lunging,
+    armsOverhead, armsAtSides, armsExtended,
+    wideStance, narrowStance,
   };
 };
 
@@ -203,14 +227,18 @@ export const extractSemanticPosition = (keypoints) => {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_HYSTERESIS = {
-  leftHand:   { minHoldMs: 80 },
-  rightHand:  { minHoldMs: 80 },
-  leftElbow:  { minHoldMs: 80 },
-  rightElbow: { minHoldMs: 80 },
-  leftKnee:   { minHoldMs: 120 },
-  rightKnee:  { minHoldMs: 120 },
-  leftFoot:   { minHoldMs: 80 },
-  rightFoot:  { minHoldMs: 80 },
+  leftHand:      { minHoldMs: 80 },
+  rightHand:     { minHoldMs: 80 },
+  leftElbow:     { minHoldMs: 80 },
+  rightElbow:    { minHoldMs: 80 },
+  leftKnee:      { minHoldMs: 120 },
+  rightKnee:     { minHoldMs: 120 },
+  leftHip:       { minHoldMs: 120 },
+  rightHip:      { minHoldMs: 120 },
+  leftShoulder:  { minHoldMs: 80 },
+  rightShoulder: { minHoldMs: 80 },
+  torso:         { minHoldMs: 150 },
+  stance:        { minHoldMs: 100 },
 };
 
 // The discrete limb properties that get hysteresis applied
@@ -273,27 +301,36 @@ export const createSemanticExtractor = (config = {}) => {
       }
     }
 
-    // Recompute derived booleans from stabilized limb states
-    const handsUp = stabilized.leftHand === 'HIGH' && stabilized.rightHand === 'HIGH';
+    // Recompute combo booleans from stabilized joint states
+    const upright = stabilized.torso === 'UPRIGHT';
+    const prone   = stabilized.torso === 'PRONE';
 
-    const kneeBent = (v) => v === 'MID' || v === 'HIGH';
-    const squatPosition =
-      kneeBent(stabilized.leftKnee) && kneeBent(stabilized.rightKnee) && raw.bodyUpright === true;
+    const bentOrDeep = (v) => v === 'MID' || v === 'HIGH';
+    const squatting =
+      bentOrDeep(stabilized.leftHip) && bentOrDeep(stabilized.rightHip) &&
+      bentOrDeep(stabilized.leftKnee) && bentOrDeep(stabilized.rightKnee) &&
+      upright && (stabilized.stance === 'HIP' || stabilized.stance === 'WIDE');
 
-    const lungePosition =
-      (kneeBent(stabilized.leftKnee) && stabilized.rightKnee === 'LOW') ||
-      (stabilized.leftKnee === 'LOW' && kneeBent(stabilized.rightKnee));
+    const lunging =
+      upright && (
+        (bentOrDeep(stabilized.leftHip) && stabilized.rightHip === 'LOW' &&
+         bentOrDeep(stabilized.leftKnee) && stabilized.rightKnee === 'LOW') ||
+        (stabilized.leftHip === 'LOW' && bentOrDeep(stabilized.rightHip) &&
+         stabilized.leftKnee === 'LOW' && bentOrDeep(stabilized.rightKnee))
+      );
 
+    const armsOverhead = stabilized.leftShoulder === 'HIGH' && stabilized.rightShoulder === 'HIGH';
+    const armsAtSides  = stabilized.leftShoulder === 'LOW' && stabilized.rightShoulder === 'LOW';
     const armsExtended = stabilized.leftElbow === 'LOW' && stabilized.rightElbow === 'LOW';
+    const wideStance   = stabilized.stance === 'WIDE';
+    const narrowStance = stabilized.stance === 'NARROW' || stabilized.stance === 'HIP';
 
     return {
       ...stabilized,
-      handsUp,
-      bodyUpright: raw.bodyUpright,
-      bodyProne: raw.bodyProne,
-      squatPosition,
-      lungePosition,
-      armsExtended,
+      upright, prone,
+      squatting, lunging,
+      armsOverhead, armsAtSides, armsExtended,
+      wideStance, narrowStance,
     };
   };
 };
