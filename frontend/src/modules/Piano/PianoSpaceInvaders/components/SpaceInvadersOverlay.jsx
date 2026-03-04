@@ -108,18 +108,6 @@ export function SpaceInvadersOverlay({ gameState, countdown, score, currentLevel
     );
   }
 
-  // PLAYING state — show combo badge if combo > 5
-  if (gameState === 'PLAYING' && score.combo > 5) {
-    return (
-      <div className="game-overlay game-overlay--playing">
-        <div className="combo-display">
-          <span className="combo-number">{score.combo}x</span>
-          <span className="combo-label">COMBO</span>
-        </div>
-      </div>
-    );
-  }
-
   return null;
 }
 

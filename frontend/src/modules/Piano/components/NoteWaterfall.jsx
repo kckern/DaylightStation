@@ -257,10 +257,11 @@ export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), start
       {gameLasers.map(laser => (
         <div
           key={`laser-${laser.id}`}
-          className="laser-projectile"
+          className={`laser-projectile${laser.wrong ? ' laser-projectile--wrong' : ''}`}
           style={{
             '--x': `${laser.x}%`,
             '--bottom': `${laser.bottomPercent}%`,
+            ...(laser.wrong ? { '--angle': `${laser.driftAngle}deg` } : {}),
           }}
         />
       ))}
