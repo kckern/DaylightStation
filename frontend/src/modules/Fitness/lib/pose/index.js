@@ -8,6 +8,7 @@ export * from './poseGeometry.js';
 export * from './poseConfidence.js';
 export * from './poseSemantics.js';
 export * from './poseActions.js';
+export * from './exercisePatterns.js';
 
 export { default as poseConnections } from './poseConnections.js';
 export { default as poseColors } from './poseColors.js';
