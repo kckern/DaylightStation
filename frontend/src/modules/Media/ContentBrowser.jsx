@@ -16,10 +16,16 @@ const ContentBrowser = ({ hasMiniplayer }) => {
 
   // Fetch browse categories from backend config
   useEffect(() => {
+    logger.info('content-browser.mounted');
     fetch('/api/v1/media/config')
       .then(r => r.json())
-      .then(data => setBrowseConfig(data.browse || []))
+      .then(data => {
+        const categories = data.browse || [];
+        setBrowseConfig(categories);
+        logger.info('content-browser.config-loaded', { categoryCount: categories.length, categories: categories.map(c => c.label) });
+      })
       .catch(err => logger.warn('content-browser.config-fetch-failed', { error: err.message }));
+    return () => logger.info('content-browser.unmounted');
   }, [logger]);
 
   // Build filters from config: "All" + entries with searchFilter: true
@@ -80,6 +86,14 @@ const ContentBrowser = ({ hasMiniplayer }) => {
   }, [browse, logger]);
 
   const displayResults = browsing ? browseResults : results;
+
+  useEffect(() => {
+    if (displayResults.length > 0) {
+      const withThumbs = displayResults.filter(r => !!r.contentId).length;
+      logger.info('content-browser.results-rendered', { count: displayResults.length, withThumbnails: withThumbs, source: browsing ? 'browse' : 'search' });
+    }
+  }, [displayResults.length, browsing, logger]);
+
   const isSearchActive = searchText.length > 0 || browsing;
 
   return (

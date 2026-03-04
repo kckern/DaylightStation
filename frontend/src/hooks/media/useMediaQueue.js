@@ -87,6 +87,8 @@ export function useMediaQueue() {
 
   // Mutation methods
   const addItems = useCallback(async (items, placement = 'end') => {
+    const contentIds = items.map(i => i.contentId);
+    logger().info('media-queue.add-items', { count: items.length, contentIds, placement });
     const optimistic = {
       ...queue,
       items: placement === 'next'
@@ -100,6 +102,8 @@ export function useMediaQueue() {
   }, [queue, mutate]);
 
   const removeItem = useCallback(async (queueId) => {
+    const item = queue.items.find(i => i.queueId === queueId);
+    logger().info('media-queue.remove-item', { queueId, contentId: item?.contentId, title: item?.title });
     const optimistic = {
       ...queue,
       items: queue.items.filter(i => i.queueId !== queueId),
@@ -111,6 +115,7 @@ export function useMediaQueue() {
   }, [queue, mutate]);
 
   const reorder = useCallback(async (queueId, toIndex) => {
+    logger().info('media-queue.reorder', { queueId, toIndex });
     return mutate(null, (mid) =>
       apiFetch('/items/reorder', { method: 'PATCH', body: { queueId, toIndex, mutationId: mid } })
         .then(res => setQueue(res))
@@ -118,15 +123,19 @@ export function useMediaQueue() {
   }, [mutate]);
 
   const setPosition = useCallback(async (position) => {
+    const item = queue.items[position];
+    logger().info('media-queue.set-position', { position, contentId: item?.contentId, title: item?.title });
     setQueue(prev => ({ ...prev, position }));
     return mutate(null, (mid) =>
       apiFetch('/position', { method: 'PATCH', body: { position, mutationId: mid } })
         .then(res => setQueue(res))
     );
-  }, [mutate]);
+  }, [queue, mutate]);
 
   const advance = useCallback(async (step = 1, { auto = false } = {}) => {
     const optimisticPosition = queue.position + step;
+    const nextItem = queue.items[optimisticPosition];
+    logger().info('media-queue.advance', { step, auto, fromPosition: queue.position, toPosition: optimisticPosition, nextContentId: nextItem?.contentId });
     const optimistic = { ...queue, position: optimisticPosition };
     return mutate(optimistic, (mid) =>
       apiFetch('/advance', { method: 'POST', body: { step, auto, mutationId: mid } })
@@ -135,6 +144,7 @@ export function useMediaQueue() {
   }, [queue, mutate]);
 
   const setShuffle = useCallback(async (enabled) => {
+    logger().info('media-queue.set-shuffle', { enabled });
     return mutate(null, (mid) =>
       apiFetch('/state', { method: 'PATCH', body: { shuffle: enabled, mutationId: mid } })
         .then(res => setQueue(res))
@@ -142,6 +152,7 @@ export function useMediaQueue() {
   }, [mutate]);
 
   const setRepeat = useCallback(async (mode) => {
+    logger().info('media-queue.set-repeat', { mode });
     return mutate(null, (mid) =>
       apiFetch('/state', { method: 'PATCH', body: { repeat: mode, mutationId: mid } })
         .then(res => setQueue(res))
@@ -149,6 +160,7 @@ export function useMediaQueue() {
   }, [mutate]);
 
   const setVolume = useCallback(async (vol) => {
+    logger().debug('media-queue.set-volume', { volume: vol });
     setQueue(prev => ({ ...prev, volume: vol }));
     return mutate(null, (mid) =>
       apiFetch('/state', { method: 'PATCH', body: { volume: vol, mutationId: mid } })
@@ -156,11 +168,12 @@ export function useMediaQueue() {
   }, [mutate]);
 
   const clear = useCallback(async () => {
+    logger().info('media-queue.clear', { previousCount: queue.items.length });
     setQueue({ items: [], position: 0, shuffle: false, repeat: 'off', volume: queue.volume });
     return mutate(null, (mid) =>
       apiFetch('', { method: 'DELETE' }).then(res => setQueue(res))
     );
-  }, [queue.volume, mutate]);
+  }, [queue.volume, queue.items.length, mutate]);
 
   const currentItem = useMemo(() => {
     if (queue.items.length === 0) return null;
