@@ -84,6 +84,8 @@ export class FullyKioskContentAdapter {
     this.#logger.debug?.('fullykiosk.prepareForContent.start', { host: this.#host, port: this.#port });
 
     try {
+      let coldRestart = false;
+
       // Wake screen
       const screenResult = await this.#sendCommand('screenOn');
       if (!screenResult.ok) {
@@ -112,6 +114,7 @@ export class FullyKioskContentAdapter {
           if (connectResult.ok) {
             const stopResult = await this.#adbAdapter.shell('am force-stop de.ozerov.fully');
             this.#logger.info?.('fullykiosk.prepareForContent.adbForceStop', { ok: stopResult.ok });
+            coldRestart = true;
             // Brief pause for process to fully terminate
             await new Promise(r => setTimeout(r, 500));
             const launchResult = await this.#adbAdapter.launchActivity(this.#launchActivity);
@@ -160,7 +163,7 @@ export class FullyKioskContentAdapter {
             this.#logger.info?.('fullykiosk.prepareForContent.companionApp', { pkg, ok: appResult.ok });
           }
 
-          return { ok: true, elapsedMs: Date.now() - startTime };
+          return { ok: true, coldRestart, elapsedMs: Date.now() - startTime };
         }
 
         this.#logger.warn?.('fullykiosk.prepareForContent.notInForeground', {
