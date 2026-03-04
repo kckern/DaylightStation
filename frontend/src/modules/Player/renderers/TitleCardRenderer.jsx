@@ -33,13 +33,17 @@ export function TitleCardRenderer({ media, advance, resilienceBridge }) {
   // ResilienceBridge mock — title cards aren't real media elements
   useEffect(() => {
     if (resilienceBridge) {
+      const onStartup = resilienceBridge.current?.onStartupSignal;
       resilienceBridge.current = {
         get currentTime() { return 0; },
         get duration() { return slideshow.duration || 5; },
         get paused() { return false; },
         play() { return Promise.resolve(); },
         pause() {},
+        onStartupSignal: onStartup,
       };
+      // Signal startup so the resilience overlay dismisses
+      if (typeof onStartup === 'function') onStartup();
     }
   }, [resilienceBridge, slideshow.duration]);
 

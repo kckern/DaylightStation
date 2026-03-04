@@ -19,8 +19,8 @@ function getPortsFromConfig(env) {
 
   // Try environment-specific config first, fall back to base system.yml
   let config = null;
-  const localConfigPath = path.join(dataPath, 'system', `system-local.${envName}.yml`);
-  const baseConfigPath = path.join(dataPath, 'system', 'system.yml');
+  const localConfigPath = path.join(dataPath, 'system', 'config', `system-local.${envName}.yml`);
+  const baseConfigPath = path.join(dataPath, 'system', 'config', 'system.yml');
 
   if (fs.existsSync(localConfigPath)) {
     config = yaml.load(fs.readFileSync(localConfigPath, 'utf8'));
@@ -28,7 +28,11 @@ function getPortsFromConfig(env) {
     config = yaml.load(fs.readFileSync(baseConfigPath, 'utf8'));
   }
 
-  const appPort = config?.app?.port ?? defaultAppPort;
+  // Match ConfigService.getAppPort(): app.ports.{env} or legacy app.port
+  const ports = config?.app?.ports;
+  const appPort = (ports && typeof ports === 'object')
+    ? (ports[envName] ?? ports.default ?? defaultAppPort)
+    : (config?.app?.port ?? defaultAppPort);
   const backendPort = appPort + 1;  // Backend always +1 in dev (Vite only runs in dev)
 
   console.log(`[vite] ${envName}: app port ${appPort}, backend port ${backendPort}`);

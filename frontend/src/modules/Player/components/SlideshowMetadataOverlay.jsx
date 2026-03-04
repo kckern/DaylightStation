@@ -25,11 +25,16 @@ function formatTimeAgo(dateStr) {
     if (days < 1) return 'Today';
     if (days === 1) return '1 day ago';
     if (days < 30) return `${days} days ago`;
-    const months = Math.floor(days / 30.44);
-    if (months < 12) return months === 1 ? '1 month ago' : `${months} months ago`;
-    const years = Math.floor(days / 365.25);
-    const remMonths = Math.floor((days - years * 365.25) / 30.44);
-    if (remMonths > 0) return `${years} year${years > 1 ? 's' : ''}, ${remMonths} month${remMonths > 1 ? 's' : ''} ago`;
+    const yearDiff = now.getFullYear() - d.getFullYear();
+    const monthDiff = yearDiff * 12 + (now.getMonth() - d.getMonth());
+    // Same calendar day but timestamp hasn't crossed → use calendar year diff
+    // (e.g. March 4 2025 17:57 viewed on March 4 2026 12:00 = "1 year ago")
+    const sameDay = now.getMonth() === d.getMonth() && now.getDate() === d.getDate();
+    if (sameDay && yearDiff >= 1) {
+      return yearDiff === 1 ? '1 year ago' : `${yearDiff} years ago`;
+    }
+    if (monthDiff < 12) return monthDiff === 1 ? '1 month ago' : `${monthDiff} months ago`;
+    const years = Math.round(days / 365.25);
     return years === 1 ? '1 year ago' : `${years} years ago`;
   } catch {
     return null;
