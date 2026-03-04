@@ -33,7 +33,7 @@ export function useStreamingSearch(endpoint, extraQueryString = '') {
     };
   }, []);
 
-  const search = useCallback((query) => {
+  const search = useCallback((query, overrideExtraQuery) => {
     // Cancel any in-flight request
     if (eventSourceRef.current) {
       logger().debug('search.cancelled', { reason: 'new-query' });
@@ -49,13 +49,16 @@ export function useStreamingSearch(endpoint, extraQueryString = '') {
       return;
     }
 
+    // Use override if provided, otherwise use hook-level extraQueryString
+    const effectiveExtra = overrideExtraQuery !== undefined ? overrideExtraQuery : extraQueryString;
+
     // Start new search
     setIsSearching(true);
-    logger().info('search.started', { query, endpoint, filterParams: extraQueryString || null });
+    logger().info('search.started', { query, endpoint, filterParams: effectiveExtra || null });
     setResults([]);
     setPending([]);
 
-    const url = `${endpoint}?text=${encodeURIComponent(query)}${extraQueryString ? '&' + extraQueryString : ''}`;
+    const url = `${endpoint}?text=${encodeURIComponent(query)}${effectiveExtra ? '&' + effectiveExtra : ''}`;
     const eventSource = new EventSource(url);
     eventSourceRef.current = eventSource;
 
