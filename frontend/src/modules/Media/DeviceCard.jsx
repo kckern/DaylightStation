@@ -18,6 +18,7 @@ const DeviceCard = ({ device, playbackState, isOnline, type }) => {
 
   const handleVolume = useCallback((e) => {
     const level = Math.round(parseFloat(e.target.value) * 100);
+    logger.debug('device-card.volume-change', { deviceId: device.id, level });
     fetch(`/api/v1/device/${device.id}/volume/${level}`).catch(err => {
       logger.error('device-card.volume-failed', { error: err.message });
       notifications.show({ title: 'Volume change failed', message: err.message, color: 'red' });
