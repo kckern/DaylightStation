@@ -299,6 +299,22 @@
     0 0 6px rgba(0, 255, 255, 0.9),
     0 0 14px rgba(0, 255, 255, 0.5),
     0 0 28px rgba(0, 255, 255, 0.2);
+
+  &--wrong {
+    transform: translateX(-50%) rotate(var(--angle, 0deg));
+    transform-origin: center bottom;
+    background: linear-gradient(
+      to top,
+      rgba(255, 50, 50, 0.6) 0%,
+      rgba(255, 120, 120, 1) 40%,
+      rgba(255, 200, 200, 1) 70%,
+      rgba(255, 120, 120, 0.8) 100%
+    );
+    box-shadow:
+      0 0 6px rgba(255, 50, 50, 0.9),
+      0 0 14px rgba(255, 50, 50, 0.5),
+      0 0 28px rgba(255, 50, 50, 0.2);
+  }
 }
 
 // Hit line — glowing horizontal bar at bottom of waterfall
