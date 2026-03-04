@@ -1,5 +1,5 @@
 // frontend/src/modules/Media/ContentBrowser.jsx
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useStreamingSearch } from '../../hooks/useStreamingSearch.js';
 import { useContentBrowse } from '../../hooks/media/useContentBrowse.js';
 import { useMediaApp } from '../../contexts/MediaAppContext.jsx';
@@ -17,6 +17,7 @@ const ContentBrowser = ({ hasMiniplayer }) => {
   const [activeFilter, setActiveFilter] = useState(0);
   const [searchText, setSearchText] = useState('');
   const [browseConfig, setBrowseConfig] = useState([]);
+  const searchTimerRef = useRef(null);
 
   // Fetch browse categories from backend config
   useEffect(() => {
@@ -31,6 +32,10 @@ const ContentBrowser = ({ hasMiniplayer }) => {
       .catch(err => logger.warn('content-browser.config-fetch-failed', { error: err.message }));
     return () => logger.info('content-browser.unmounted');
   }, [logger]);
+
+  useEffect(() => {
+    return () => clearTimeout(searchTimerRef.current);
+  }, []);
 
   // Build filters from config: "All" + entries with searchFilter: true
   const filters = useMemo(() => {
@@ -56,7 +61,13 @@ const ContentBrowser = ({ hasMiniplayer }) => {
     setSearchText(val);
     exitBrowse();
     if (val.length > 0) logger.debug('content-browser.search', { query: val });
-    search(val);
+
+    clearTimeout(searchTimerRef.current);
+    if (!val || val.length < 2) {
+      search(val); // immediate clear
+      return;
+    }
+    searchTimerRef.current = setTimeout(() => search(val), 300);
   }, [search, exitBrowse, logger]);
 
   const handlePlayNow = useCallback((item) => {
@@ -124,7 +135,13 @@ const ContentBrowser = ({ hasMiniplayer }) => {
           <button
             key={f.label}
             className={`filter-chip ${i === activeFilter ? 'active' : ''}`}
-            onClick={() => { logger.debug('content-browser.filter', { filter: f.label }); setActiveFilter(i); search(searchText); }}
+            onClick={() => {
+              logger.debug('content-browser.filter', { filter: f.label, params: f.params });
+              setActiveFilter(i);
+              if (searchText.length >= 2) {
+                search(searchText, f.params);
+              }
+            }}
           >
             {f.label}
           </button>
