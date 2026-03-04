@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import { ContentDisplayUrl } from '../../lib/api.mjs';
 import { useMediaApp } from '../../contexts/MediaAppContext.jsx';
 import getLogger from '../../lib/logging/Logger.js';
@@ -13,6 +13,11 @@ import getLogger from '../../lib/logging/Logger.js';
 const MiniPlayer = ({ currentItem, playbackState, onExpand }) => {
   const { playerRef } = useMediaApp();
   const logger = useMemo(() => getLogger().child({ component: 'MiniPlayer' }), []);
+
+  useEffect(() => {
+    logger.info('mini-player.mounted', { contentId: currentItem?.contentId });
+    return () => logger.info('mini-player.unmounted');
+  }, [logger]);
 
   if (!currentItem) return null;
 

@@ -1,5 +1,12 @@
 // frontend/src/hooks/media/useDeviceIdentity.js
 import { useMemo } from 'react';
+import getLogger from '../../lib/logging/Logger.js';
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'useDeviceIdentity' });
+  return _logger;
+}
 
 /**
  * Reads `deviceId` from URL query params (injected by WakeAndLoadService
@@ -12,6 +19,9 @@ export function useDeviceIdentity() {
   return useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     const deviceId = params.get('deviceId') || null;
+    if (deviceId) {
+      logger().info('device-identity.resolved', { deviceId, isKiosk: true });
+    }
     return { deviceId, isKiosk: deviceId !== null };
   }, []);
 }
