@@ -52,7 +52,8 @@ export class WakeAndLoadService {
       deviceId,
       steps: {},
       canProceed: false,
-      allowOverride: false
+      allowOverride: false,
+      coldWake: false
     };
 
     // --- Step 1: Power On ---
@@ -128,6 +129,8 @@ export class WakeAndLoadService {
     this.#emitProgress(topic, 'prepare', 'done');
     this.#logger.info?.('wake-and-load.prepare.done', { deviceId });
 
+    const coldWake = !!prepResult.coldRestart;
+
     // --- Step 4: Load Content ---
     this.#emitProgress(topic, 'load', 'running');
     this.#logger.info?.('wake-and-load.load.start', { deviceId, query });
@@ -149,6 +152,7 @@ export class WakeAndLoadService {
     // --- All steps passed ---
     result.ok = true;
     result.canProceed = true;
+    result.coldWake = coldWake;
     result.totalElapsedMs = Date.now() - startTime;
 
     this.#logger.info?.('wake-and-load.complete', {
