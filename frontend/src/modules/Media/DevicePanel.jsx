@@ -1,5 +1,5 @@
 // frontend/src/modules/Media/DevicePanel.jsx
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useDeviceMonitor } from '../../hooks/media/useDeviceMonitor.js';
 import DeviceCard from './DeviceCard.jsx';
 import getLogger from '../../lib/logging/Logger.js';
@@ -16,6 +16,21 @@ const DevicePanel = () => {
       browserClients.push({ id, name: state.displayName || id, state });
     }
   });
+
+  useEffect(() => {
+    logger.info('device-panel.mounted', { deviceCount: devices.length });
+    return () => logger.info('device-panel.unmounted');
+  }, [logger]);
+
+  useEffect(() => {
+    if (!isLoading) {
+      logger.info('device-panel.devices-updated', {
+        registered: devices.length,
+        browserClients: browserClients.length,
+        deviceNames: devices.map(d => d.name || d.id),
+      });
+    }
+  }, [devices.length, browserClients.length, isLoading, logger]);
 
   return (
     <div className="device-panel">
