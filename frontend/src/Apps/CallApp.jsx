@@ -102,6 +102,8 @@ export default function CallApp() {
   const [wakeError, setWakeError] = useState(null);
   const [wakeAllowOverride, setWakeAllowOverride] = useState(false);
   const [cooldown, setCooldown] = useState(false);
+  const [cameraWarning, setCameraWarning] = useState(false);
+  const [rebooting, setRebooting] = useState(false);
   const [activeDeviceId, setActiveDeviceId] = useState(null);
   const connectedDeviceRef = useRef(null);
   const coldWakeRef = useRef(false);
@@ -501,6 +503,8 @@ export default function CallApp() {
     exitZoom();
     resetWakeProgress();
     coldWakeRef.current = false;
+    setCameraWarning(false);
+    setRebooting(false);
     setRemoteVerified(false);
     setTransitionReady(false);
     const devId = connectedDeviceRef.current;
@@ -573,6 +577,13 @@ export default function CallApp() {
           targetDeviceId,
           hint: 'Using extended heartbeat timeout (30s)'
         });
+      }
+
+      if (result.cameraAvailable === false) {
+        logger.warn('camera-not-detected', { targetDeviceId });
+        setWaking(false);
+        setCameraWarning(true);
+        return;
       }
 
       if (!result.ok) {
@@ -793,6 +804,80 @@ export default function CallApp() {
           <button className="call-app__cancel" onClick={() => {
             setWakeError(null);
             setWakeAllowOverride(false);
+            connectedDeviceRef.current = null;
+            setActiveDeviceId(null);
+          }}>
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* Camera warning overlay */}
+      {cameraWarning && !rebooting && (
+        <div className="call-app__overlay-bottom">
+          <p className="call-app__status-text">
+            Camera not detected on TV — video may be unavailable
+          </p>
+          <button
+            className="call-app__retry-btn"
+            onClick={() => {
+              setCameraWarning(false);
+              const devId = connectedDeviceRef.current;
+              if (devId) {
+                coldWakeRef.current = true;
+                connect(devId, { coldWake: true });
+              }
+            }}
+          >
+            Connect anyway
+          </button>
+          <button
+            className="call-app__device-btn"
+            onClick={async () => {
+              const devId = connectedDeviceRef.current;
+              if (!devId) return;
+              setRebooting(true);
+              logger.info('reboot-requested', { targetDeviceId: devId });
+              try {
+                await DaylightAPI(`/api/v1/device/${devId}/reboot`, {}, 'POST');
+              } catch (err) {
+                logger.warn('reboot-failed', { error: err.message });
+              }
+              setTimeout(() => setRebooting(false), 60_000);
+            }}
+          >
+            Reboot TV
+          </button>
+          <button className="call-app__cancel" onClick={() => {
+            setCameraWarning(false);
+            connectedDeviceRef.current = null;
+            setActiveDeviceId(null);
+          }}>
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* Rebooting overlay */}
+      {rebooting && (
+        <div className="call-app__overlay-bottom">
+          <p className="call-app__status-text">
+            Rebooting TV... try again in ~60 seconds
+          </p>
+          <button
+            className="call-app__retry-btn"
+            onClick={() => {
+              setRebooting(false);
+              setCameraWarning(false);
+              const devId = connectedDeviceRef.current;
+              if (devId) dropIn(devId);
+            }}
+          >
+            Retry Call
+          </button>
+          <button className="call-app__cancel" onClick={() => {
+            setRebooting(false);
+            setCameraWarning(false);
             connectedDeviceRef.current = null;
             setActiveDeviceId(null);
           }}>
