@@ -17,6 +17,12 @@ const MODEL_TYPES = {
 
 const BACKENDS = ['webgl', 'wasm', 'cpu'];
 
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'PoseDetectorService' });
+  return _logger;
+}
+
 /**
  * Detect optimal default backend based on browser engine.
  * Firefox's WebGL implementation has higher per-frame overhead for TF.js
@@ -101,10 +107,15 @@ class PoseDetectorService {
       
       this.tf = tfCore;
       this.poseDetection = poseDetection;
-      
+
+      // Tell TFJS where to find .wasm files (served from public/ via Vite)
+      if (tfBackendWasm.setWasmPaths) {
+        tfBackendWasm.setWasmPaths('/');
+      }
+
       // Initialize backend with fallback
       this.backend = await this._initializeBackend();
-      console.log(`[PoseDetectorService] Using backend: ${this.backend}`);
+      logger().info('pose_detector.backend_selected', { backend: this.backend });
       
       // Create detector
       await this._createDetector();
@@ -112,9 +123,9 @@ class PoseDetectorService {
       this.isInitialized = true;
       this.onLoadingChange(false);
       
-      console.log('[PoseDetectorService] Initialized successfully');
+      logger().info('pose_detector.initialized');
     } catch (error) {
-      console.error('[PoseDetectorService] Initialization failed:', error);
+      logger().error('pose_detector.init_failed', { error: error.message || error });
       this.onError(error);
       this.onLoadingChange(false);
       throw error;
@@ -185,7 +196,7 @@ class PoseDetectorService {
         maxPoses: 1,
         flipHorizontal: false,
       });
-      console.log('[PoseDetectorService] Model warmed up');
+      logger().debug('pose_detector.warmup_complete');
     } catch (e) {
       getLogger().warn('pose_detector.warmup_failed', { error: e.message || e });
     }
@@ -271,7 +282,7 @@ class PoseDetectorService {
   async _switchBackend(newBackend) {
     if (this.backend === newBackend) return;
     
-    console.log(`[PoseDetectorService] Switching backend to ${newBackend}`);
+    logger().info('pose_detector.backend_switching', { from: this.backend, to: newBackend });
     // Don't fully stop, just pause loop
     const wasRunning = this.isRunning;
     this.isRunning = false;
@@ -293,7 +304,7 @@ class PoseDetectorService {
         this._runDetectionLoop();
       }
     } catch (e) {
-      console.error(`[PoseDetectorService] Failed to switch to ${newBackend}:`, e);
+      logger().error('pose_detector.backend_switch_failed', { backend: newBackend, error: e.message || e });
       // Try to resume anyway
       if (wasRunning) {
         this.isRunning = true;
@@ -343,7 +354,7 @@ class PoseDetectorService {
           
           // Log only on first occurrence and then every 60 frames
           if (this.metrics.nanCount === 1 || this.metrics.nanCount % 60 === 0) {
-             console.error('[PoseDetectorService] NaN detected in pose output:', JSON.stringify(poses[0].keypoints.slice(0, 5)));
+             logger().sampled('pose_detector.nan_detected', { keypoints: poses[0].keypoints.slice(0, 3).map(k => ({ x: k.x, y: k.y })) }, { maxPerMinute: 5 });
           }
 
           if (this.metrics.nanCount > 10 && this.backend === 'webgl') {
@@ -372,7 +383,7 @@ class PoseDetectorService {
         modelType: this.config.modelType,
       });
     } catch (error) {
-      console.error('[PoseDetectorService] Inference error:', error);
+      logger().error('pose_detector.inference_error', { error: error.message || error });
       this.onError(error);
     }
   }
@@ -522,7 +533,7 @@ class PoseDetectorService {
     this.isInitialized = false;
     this.videoSource = null;
     
-    console.log('[PoseDetectorService] Disposed');
+    logger().info('pose_detector.disposed');
   }
   
   /**

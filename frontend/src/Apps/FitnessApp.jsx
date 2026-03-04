@@ -44,8 +44,10 @@ const FitnessApp = () => {
   const [activeScreen, setActiveScreen] = useState(null); // screen_id from screens config
   const [fitnessPlayQueue, setFitnessPlayQueue] = useState([]);
   const [kioskUI, setKioskUI] = useState(() => {
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (isLocalhost) return false;
     // Check if Firefox on initial load - use more robust detection
-    const isFirefox = typeof InstallTrigger !== 'undefined' || 
+    const isFirefox = typeof InstallTrigger !== 'undefined' ||
                      (navigator.userAgent && navigator.userAgent.toLowerCase().indexOf('firefox') > -1);
     return isFirefox;
   });

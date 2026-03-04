@@ -19,12 +19,14 @@ import PoseSettings from './components/PoseSettings.jsx';
 import PoseInspector from './components/PoseInspector.jsx';
 import ConfidenceMeter from './components/ConfidenceMeter.jsx';
 import { calculatePoseConfidence, createConfidenceSmoother } from '@/modules/Fitness/lib/pose/poseConfidence.js';
+import usePoseLogger from './hooks/usePoseLogger.js';
 import './PoseDemo.scss';
 
 /**
  * Inner component that consumes PoseProvider
  */
 const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
+  const logger = useMemo(() => getLogger().child({ component: 'PoseDemo' }), []);
   const fitnessModule = useFitnessModule('pose_demo');
   const { registerLifecycle } = fitnessModule || {};
   
@@ -85,6 +87,9 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
     videoSource,
   } = usePoseProvider({ autoStart: false });
 
+  // Stream pose keypoints to backend for offline analysis
+  usePoseLogger({ poses, isDetecting, backend: backend || poseConfig?.backend, modelType });
+
   // Calculate confidence when pose changes
   useEffect(() => {
     if (!confidenceSmootherRef.current) return;
@@ -100,7 +105,7 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
         setPoseConfidence(smoothed);
       }
     } catch (err) {
-      getLogger().warn('fitness.pose_demo.confidence_calc_error', { error: err.message || err });
+      logger.warn('fitness.pose_demo.confidence_calc_error', { error: err.message || err });
     }
   }, [primaryPose]);
   
@@ -156,7 +161,7 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
       setTimeout(() => start(), 100);
     } else {
       // Video not ready yet, will auto-start when onStreamReady fires
-      getLogger().warn('fitness.pose_demo.video_not_ready');
+      logger.warn('fitness.pose_demo.video_not_ready');
     }
   }, [setVideoSource, start]);
   
@@ -291,7 +296,7 @@ const PoseDemoInner = ({ mode, onClose, config, onMount }) => {
         onModelTypeChange={type => handleConfigChange({ modelType: type })}
         resolution={resolution}
         onResolutionChange={setResolution}
-        backend={backend}
+        backend={backend || poseConfig?.backend}
         onBackendChange={b => handleConfigChange({ backend: b })}
         poseConfig={poseConfig}
         onPoseConfigChange={updateConfig}
