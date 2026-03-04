@@ -73,6 +73,7 @@ tests/runtime/*.log
 .worktrees
 /_extensions/fitness/config
 .claude/ralph-loop.local.md
+CLAUDE.local.md
 /logs
 /.playwright-mcp
 /coverage

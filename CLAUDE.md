@@ -4,6 +4,8 @@
 
 Read `.claude/settings.local.json` and look at the `env` section for all environment-specific values (paths, hosts, ports).
 
+For local infrastructure details (Docker, secrets, networking, cron jobs, data paths), see `CLAUDE.local.md` (gitignored, workspace-specific).
+
 ---
 
 ## Environment Overview
