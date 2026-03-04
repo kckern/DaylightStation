@@ -1,0 +1,125 @@
+.titlecard {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+
+  &__bg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    z-index: 0;
+  }
+
+  &__overlay {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+// --- Themes ---
+.titlecard--theme-default {
+  .titlecard-tpl__title { color: #fff; }
+  .titlecard-tpl__subtitle { color: rgba(255,255,255,0.8); }
+  .titlecard__overlay { background: rgba(0,0,0,0.4); }
+}
+
+.titlecard--theme-warm-gold {
+  .titlecard-tpl__title { color: #ffd700; font-family: Georgia, serif; }
+  .titlecard-tpl__subtitle { color: rgba(255,215,0,0.7); font-family: Georgia, serif; }
+  .titlecard__overlay { background: rgba(30,15,0,0.5); }
+}
+
+.titlecard--theme-minimal {
+  .titlecard-tpl__title { color: #fff; font-weight: 200; }
+  .titlecard-tpl__subtitle { color: rgba(255,255,255,0.6); font-weight: 200; }
+  .titlecard__overlay { background: transparent; }
+}
+
+.titlecard--theme-bold {
+  .titlecard-tpl__title { color: #fff; font-weight: 900; font-size: 5rem; letter-spacing: -0.02em; }
+  .titlecard-tpl__subtitle { color: #fff; font-weight: 700; font-size: 2rem; }
+  .titlecard__overlay { background: rgba(0,0,0,0.6); }
+}
+
+// --- Template layouts ---
+.titlecard-tpl {
+  text-align: center;
+  padding: 2rem;
+
+  &__title {
+    margin: 0;
+    font-size: 3rem;
+    line-height: 1.2;
+  }
+
+  &__subtitle {
+    margin: 0.5rem 0 0;
+    font-size: 1.5rem;
+    line-height: 1.4;
+  }
+
+  &__line {
+    margin: 0.3rem 0;
+    font-size: 1.2rem;
+    line-height: 1.5;
+  }
+
+  &--centered {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &--section-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+
+    .titlecard-tpl__title {
+      font-size: 4rem;
+      font-weight: 300;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+  }
+
+  &--credits {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  &--lower-third {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 2rem 3rem;
+    text-align: left;
+    background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+
+    .titlecard-tpl__title {
+      font-size: 2rem;
+      text-align: left;
+    }
+
+    .titlecard-tpl__subtitle {
+      text-align: left;
+    }
+  }
+}
