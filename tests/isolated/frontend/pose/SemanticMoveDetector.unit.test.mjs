@@ -4,8 +4,8 @@ const SQUAT_PATTERN = {
   id: 'squat',
   name: 'Squat',
   phases: [
-    { name: 'down', match: { squatPosition: true } },
-    { name: 'up',   match: { squatPosition: false, bodyUpright: true } },
+    { name: 'down', match: { squatting: true } },
+    { name: 'up',   match: { squatting: false, upright: true, narrowStance: true } },
   ],
   timing: { minCycleMs: 800, maxCycleMs: 5000 },
 };
