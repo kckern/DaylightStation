@@ -202,6 +202,7 @@ export const useHomeline = (role, deviceId, peer) => {
     setRemoteMuteState({ audioMuted: false, videoMuted: false });
     setStatus(role === 'tv' ? 'waiting' : 'idle');
     connectedDeviceRef.current = null;
+    coldWakeRef.current = false;
     if (answerUnsubRef.current) {
       answerUnsubRef.current();
       answerUnsubRef.current = null;
