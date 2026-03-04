@@ -117,6 +117,19 @@ export class Device {
   }
 
   /**
+   * Reboot device via ADB
+   * @returns {Promise<Object>}
+   */
+  async reboot() {
+    if (!this.#contentControl?.reboot) {
+      return { ok: false, error: 'Reboot not supported for this device' };
+    }
+
+    this.#logger.info?.('device.reboot', { id: this.#id });
+    return this.#contentControl.reboot();
+  }
+
+  /**
    * Set volume level
    * @param {number|string} level - Volume level (0-100, '+', '-', 'mute', 'unmute')
    * @returns {Promise<Object>}
