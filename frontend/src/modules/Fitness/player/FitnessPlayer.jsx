@@ -1490,7 +1490,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
           ref={playerRef}
         />
       ) : null}
-      {showChart && (
+      {showChart && govStatus !== 'locked' && govStatus !== 'pending' && (
         <div className="fitness-chart-overlay">
           <FitnessChartApp mode="sidebar" onClose={() => {}} />
         </div>
