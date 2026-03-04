@@ -18,6 +18,7 @@ import PlayableAppShell from '../components/PlayableAppShell.jsx';
 import PagedReader from '../renderers/PagedReader.jsx';
 import FlowReader from '../renderers/FlowReader.jsx';
 import SlideShow from '../renderers/SlideShow.jsx';
+import { TitleCardRenderer } from '../renderers/TitleCardRenderer.jsx';
 
 /**
  * Content format → renderer component.
@@ -31,6 +32,7 @@ const CONTENT_FORMAT_COMPONENTS = {
   readable_paged: PagedReader,
   readable_flow: FlowReader,
   slideshow: SlideShow,
+  titlecard: TitleCardRenderer,
 };
 
 const MEDIA_PLAYBACK_FORMATS = new Set(['video', 'dash_video', 'audio', 'image']);
