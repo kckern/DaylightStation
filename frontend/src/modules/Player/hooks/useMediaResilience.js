@@ -188,6 +188,14 @@ export function useMediaResilience({
       return;
     }
 
+    // Coming out of paused with no progress: reset to startup so the deadline re-arms.
+    // This handles autoplay unblock: status was paused (browser blocked playback),
+    // user tapped to resume, but the seek/load hasn't produced progress yet.
+    if (status === STATUS.paused) {
+      actions.setStatus(STATUS.startup);
+      return; // The status change will re-trigger this effect
+    }
+
     // Startup/recovering: set a deadline for initial load
     if (status === STATUS.startup || status === STATUS.recovering) {
       if (!startupDeadlineRef.current) {
@@ -203,6 +211,7 @@ export function useMediaResilience({
   useEffect(() => {
     return () => {
       clearTimeout(startupDeadlineRef.current);
+      startupDeadlineRef.current = null;
     };
   }, [waitKey]);
 

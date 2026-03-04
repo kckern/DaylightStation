@@ -6,6 +6,7 @@ import { ProgressBar } from '../components/ProgressBar.jsx';
 import { useUpscaleEffects } from '../hooks/useUpscaleEffects.js';
 import { useRenderFpsMonitor } from '../hooks/useRenderFpsMonitor.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
+import { playbackLog } from '../lib/playbackLogger.js';
 import { cleanupDashElement } from '../lib/dashCleanup.js';
 
 /**
@@ -117,6 +118,10 @@ export function VideoPlayer({
     }
   });
 
+  // Track whether the browser has blocked autoplay (NotAllowedError).
+  // Surfaced via resilienceBridge so Player.jsx can render the click-to-play overlay.
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
+
   // Hard reset: seek to position, reload, and resume playback.
   // Uses getMediaEl to traverse shadow DOM for dash-video,
   // falling back to containerRef for native video/audio.
@@ -126,7 +131,15 @@ export function VideoPlayer({
     const normalized = Number.isFinite(seekToSeconds) ? Math.max(0, seekToSeconds) : 0;
     try { target.currentTime = normalized; } catch (_) {}
     target.load?.();
-    target.play?.().catch(() => {});
+    const p = target.play?.();
+    if (p && typeof p.catch === 'function') {
+      p.catch((err) => {
+        if (err?.name === 'NotAllowedError') {
+          setAutoplayBlocked(true);
+          playbackLog('autoplay-blocked', { source: 'hardReset' }, { level: 'warn' });
+        }
+      });
+    }
   }, [containerRef, getMediaEl]);
 
   // Register accessors with resilience bridge
@@ -139,7 +152,43 @@ export function VideoPlayer({
       resilienceBridge.onRegisterMediaAccess({
         getMediaEl,
         hardReset,
-        fetchVideoInfo: fetchVideoInfo || null
+        fetchVideoInfo: fetchVideoInfo || null,
+        autoplayBlocked,
+        onAutoplayResolved: () => {
+          // Guard: ignore if already resolving (prevents AbortError flood from rapid taps)
+          if (!autoplayBlocked) return;
+          setAutoplayBlocked(false); // Dismiss overlay immediately
+
+          // Clear any pending seek intent — after autoplay block, the video should
+          // play from its current position (0:00) rather than seeking to resume position.
+          resilienceBridge?.onSeekRequestConsumed?.();
+
+          // Called from user gesture context (tap/key overlay).
+          // <dash-video> is a web component with no play() method — must use the
+          // inner <video> from shadow DOM directly.
+          const el = containerRef.current;
+          const inner = el?.shadowRoot?.querySelector('video, audio') || el;
+          if (!inner) {
+            playbackLog('autoplay-blocked-retry-no-element', {}, { level: 'warn' });
+            return;
+          }
+
+          const p = inner.play?.();
+          if (p && typeof p.then === 'function') {
+            p.then(() => {
+              playbackLog('autoplay-blocked-resolved', { method: 'user-gesture' });
+            }).catch((err) => {
+              if (err?.name === 'NotAllowedError') {
+                setAutoplayBlocked(true);
+                playbackLog('autoplay-blocked-retry-failed', { error: 'NotAllowedError' }, { level: 'warn' });
+              } else {
+                playbackLog('autoplay-blocked-retry-failed', { error: err?.name || err?.message }, { level: 'warn' });
+              }
+            });
+          } else {
+            playbackLog('autoplay-blocked-retry-no-play-method', { tagName: inner?.tagName }, { level: 'warn' });
+          }
+        }
       });
     }
     return () => {
@@ -147,7 +196,7 @@ export function VideoPlayer({
         resilienceBridge.onRegisterMediaAccess({});
       }
     };
-  }, [resilienceBridge, getMediaEl, getContainerEl, hardReset, fetchVideoInfo]);
+  }, [resilienceBridge, getMediaEl, getContainerEl, hardReset, fetchVideoInfo, autoplayBlocked]);
 
   // Clean up DASH resources on unmount to prevent SourceBuffer orphans.
   useEffect(() => {
@@ -187,12 +236,136 @@ export function VideoPlayer({
       }
     };
 
+    // --- dash.js diagnostic logging ---
+    const dashLog = getLogger().child({ component: 'dash-diag' });
+    const waitForApi = setInterval(() => {
+      if (!el.api) return;
+      clearInterval(waitForApi);
+      const api = el.api;
+      const Dash = api.constructor;
+      const events = Dash?.events || {};
+
+      dashLog.info('dash.api-ready', { src: el.src, events: Object.keys(events).length });
+
+      // Manifest loaded
+      api.on('manifestLoaded', (e) => {
+        dashLog.info('dash.manifest-loaded', {
+          url: e?.data?.url?.substring(0, 120),
+          type: e?.data?.type,
+          duration: e?.data?.mediaPresentationDuration
+        });
+      });
+
+      // Stream initialized
+      api.on('streamInitialized', (e) => {
+        dashLog.info('dash.stream-initialized', { streamInfo: e?.streamInfo?.id });
+      });
+
+      // Fragment loading
+      api.on('fragmentLoadingStarted', (e) => {
+        const r = e?.request;
+        dashLog.info('dash.fragment-loading', {
+          type: r?.mediaType,
+          url: r?.url?.substring(0, 150),
+          index: r?.index,
+          startTime: r?.startTime,
+          duration: r?.duration
+        });
+      });
+
+      api.on('fragmentLoadingCompleted', (e) => {
+        const r = e?.request;
+        const resp = e?.response;
+        dashLog.info('dash.fragment-loaded', {
+          type: r?.mediaType,
+          index: r?.index,
+          startTime: r?.startTime,
+          bytes: resp?.byteLength ?? resp?.length ?? null,
+          status: r?.requestEndDate ? 'ok' : 'unknown'
+        });
+      });
+
+      api.on('fragmentLoadingAbandoned', (e) => {
+        const r = e?.request;
+        dashLog.warn('dash.fragment-abandoned', {
+          type: r?.mediaType,
+          url: r?.url?.substring(0, 150),
+          index: r?.index
+        });
+      });
+
+      // Buffer events
+      api.on('bufferLevelUpdated', (e) => {
+        if (Math.random() < 0.1) { // sample 10% to avoid log spam
+          dashLog.info('dash.buffer-level', {
+            type: e?.mediaType,
+            level: e?.bufferLevel?.toFixed(2)
+          });
+        }
+      });
+
+      api.on('bufferStalled', (e) => {
+        dashLog.warn('dash.buffer-stalled', { type: e?.mediaType });
+      });
+
+      // Playback events
+      api.on('playbackStarted', () => dashLog.info('dash.playback-started'));
+      api.on('playbackSeeking', (e) => dashLog.info('dash.seeking', { seekTime: e?.seekTime }));
+      api.on('playbackSeeked', () => dashLog.info('dash.seeked'));
+      api.on('playbackWaiting', () => dashLog.warn('dash.waiting'));
+      api.on('playbackStalled', () => dashLog.warn('dash.playback-stalled'));
+
+      // Errors — critical
+      api.on('error', (e) => {
+        dashLog.error('dash.error', {
+          error: e?.error?.code,
+          message: e?.error?.message?.substring(0, 200),
+          data: e?.error?.data ? JSON.stringify(e.error.data).substring(0, 300) : null
+        });
+      });
+
+      // Quality/representation changes
+      api.on('qualityChangeRendered', (e) => {
+        dashLog.info('dash.quality-change', {
+          type: e?.mediaType,
+          oldQuality: e?.oldQuality,
+          newQuality: e?.newQuality
+        });
+      });
+    }, 100);
+    // --- end dash.js diagnostic logging ---
+
+    // Detect autoplay block: Firefox won't fire canplay when autoplay is blocked
+    // (readyState stays at 1). Poll the inner <video> after 3s — if it's still
+    // paused, try play() to surface NotAllowedError.
+    const autoplayCheckTimer = setTimeout(() => {
+      const inner = el.shadowRoot?.querySelector('video, audio') || el;
+      if (inner.paused) {
+        const p = inner.play?.();
+        if (p && typeof p.catch === 'function') {
+          p.catch((err) => {
+            if (err?.name === 'NotAllowedError') {
+              setAutoplayBlocked(true);
+              playbackLog('autoplay-blocked', { source: 'initial-autoplay' }, { level: 'warn' });
+            }
+          });
+        }
+      }
+    }, 3000);
+
+    const handlePlaying = () => {
+      handleReady();
+      setAutoplayBlocked(false);
+    };
+
     el.addEventListener('canplay', handleReady);
-    el.addEventListener('playing', handleReady);
+    el.addEventListener('playing', handlePlaying);
 
     return () => {
       el.removeEventListener('canplay', handleReady);
-      el.removeEventListener('playing', handleReady);
+      el.removeEventListener('playing', handlePlaying);
+      clearTimeout(autoplayCheckTimer);
+      clearInterval(waitForApi);
     };
   }, [isDash, mediaUrl, elementKey]);
 
