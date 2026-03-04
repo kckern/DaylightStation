@@ -190,15 +190,18 @@ export class QueryAdapter {
    * @returns {Promise<Array>}
    */
   async #resolveContentEntry(entry) {
-    if (entry.source === 'freshvideo') {
+    // Composite items use `type`, flat-normalized items use `source`
+    const src = entry.source || entry.type;
+
+    if (src === 'freshvideo') {
       return this.#resolveFreshVideo(entry);
     }
 
-    if (entry.source === 'immich') {
+    if (src === 'immich') {
       return this.#resolveImmichQuery(entry);
     }
 
-    console.warn(`[QueryAdapter] Unknown content source: ${entry.source}`);
+    console.warn(`[QueryAdapter] Unknown content source: ${src}`);
     return [];
   }
 
@@ -310,13 +313,13 @@ export class QueryAdapter {
       return [];
     }
 
-    const { mediaType, month, day, yearFrom } = query.params;
+    const { mediaType, month, day, yearFrom, yearTo } = query.params;
     if (!month || !day || !yearFrom) {
       console.warn('[QueryAdapter] Immich query missing required params (month, day, yearFrom)');
       return [];
     }
 
-    const currentYear = new Date().getFullYear();
+    const lastYear = yearTo || new Date().getFullYear();
     const paddedMonth = String(month).padStart(2, '0');
     const paddedDay = String(day).padStart(2, '0');
     const targetDate = `${paddedMonth}-${paddedDay}`;
@@ -324,7 +327,7 @@ export class QueryAdapter {
     // Search each year with a ±1 day UTC window to cover all timezones,
     // then post-filter by the asset's local date (from filename)
     const yearPromises = [];
-    for (let year = yearFrom; year <= currentYear; year++) {
+    for (let year = yearFrom; year <= lastYear; year++) {
       const dayBefore = new Date(Date.UTC(year, month - 1, day - 1));
       const dayAfter = new Date(Date.UTC(year, month - 1, day + 1, 23, 59, 59, 999));
       yearPromises.push(
@@ -357,10 +360,27 @@ export class QueryAdapter {
       return match && `${match[2]}-${match[3]}` === targetDate;
     });
 
+    // Apply date-specific time filters (e.g. timeFilter: { "2021-03-04": { from: "20:00" } })
+    // Parses date and HH.MM from filename since immich search doesn't return EXIF capturedAt
+    let timeFiltered = dateFiltered;
+    if (query.timeFilter) {
+      timeFiltered = dateFiltered.filter(item => {
+        const titleMatch = (item.title || '').match(/(\d{4}-\d{2}-\d{2})[\s_](\d{2})[.](\d{2})/);
+        if (!titleMatch) return true;
+        const itemDate = titleMatch[1];
+        const rule = query.timeFilter[itemDate];
+        if (!rule) return true; // no rule for this date — keep it
+        const hhmm = `${titleMatch[2]}:${titleMatch[3]}`;
+        if (rule.from && hhmm < rule.from) return false;
+        if (rule.to && hhmm > rule.to) return false;
+        return true;
+      });
+    }
+
     // Filter by mediaType if specified
     let filtered = mediaType
-      ? dateFiltered.filter(item => item.mediaType === mediaType)
-      : dateFiltered;
+      ? timeFiltered.filter(item => item.mediaType === mediaType)
+      : timeFiltered;
 
     // Exclude specific asset IDs
     if (query.exclude?.length > 0) {

@@ -7,6 +7,7 @@ import { AudioLayer } from './components/AudioLayer.jsx';
 import { PlayerOverlayLoading } from './components/PlayerOverlayLoading.jsx';
 import { PlayerOverlayPaused } from './components/PlayerOverlayPaused.jsx';
 import { PlayerOverlayStateDebug } from './components/PlayerOverlayStateDebug.jsx';
+import { PlayerOverlayAutoplayBlocked } from './components/PlayerOverlayAutoplayBlocked.jsx';
 import { useMediaResilience, mergeMediaResilienceConfig } from './hooks/useMediaResilience.js';
 import { usePlaybackSession } from './hooks/usePlaybackSession.js';
 import { guid } from './lib/helpers.js';
@@ -300,7 +301,9 @@ const Player = forwardRef(function Player(props, ref) {
       hardReset: typeof access.hardReset === 'function' ? access.hardReset : null,
       fetchVideoInfo: typeof access.fetchVideoInfo === 'function' ? access.fetchVideoInfo : null,
       nudgePlayback: typeof access.nudgePlayback === 'function' ? access.nudgePlayback : null,
-      getTroubleDiagnostics: typeof access.getTroubleDiagnostics === 'function' ? access.getTroubleDiagnostics : null
+      getTroubleDiagnostics: typeof access.getTroubleDiagnostics === 'function' ? access.getTroubleDiagnostics : null,
+      autoplayBlocked: !!access.autoplayBlocked,
+      onAutoplayResolved: typeof access.onAutoplayResolved === 'function' ? access.onAutoplayResolved : null
     };
     setMediaAccess(newMediaAccess);
     mediaAccessRef.current = newMediaAccess;
@@ -771,11 +774,20 @@ const Player = forwardRef(function Player(props, ref) {
 
   const suppressOverlaysForBlackout = effectiveShader === 'blackout';
 
-  const overlayElements = overlayProps ? (
+  // Self-contained formats (titlecard, etc.) have no media element —
+  // suppress the resilience overlay which would never exit startup.
+  const isSelfContainedFormat = effectiveMeta?.format === 'titlecard';
+
+  const overlayElements = (overlayProps && !isSelfContainedFormat) ? (
     <>
       <PlayerOverlayLoading {...overlayProps} suppressForBlackout={suppressOverlaysForBlackout} />
       <PlayerOverlayPaused {...overlayProps} suppressForBlackout={suppressOverlaysForBlackout} />
       <PlayerOverlayStateDebug {...overlayProps} />
+      <PlayerOverlayAutoplayBlocked
+        autoplayBlocked={mediaAccess.autoplayBlocked}
+        onAutoplayResolved={mediaAccess.onAutoplayResolved}
+        suppressForBlackout={suppressOverlaysForBlackout}
+      />
     </>
   ) : null;
 

@@ -7,6 +7,7 @@ import { DaylightAPI } from '../../../lib/api.mjs';
 import { AudioPlayer } from '../renderers/AudioPlayer.jsx';
 import { VideoPlayer } from '../renderers/VideoPlayer.jsx';
 import { ImageFrame } from '../renderers/ImageFrame.jsx';
+import { TitleCardRenderer } from '../renderers/TitleCardRenderer.jsx';
 import { PlayerOverlayLoading } from './PlayerOverlayLoading.jsx';
 import { SlideshowMetadataOverlay } from './SlideshowMetadataOverlay.jsx';
 import { useShaderDiagnostics } from '../hooks/useShaderDiagnostics.js';
@@ -224,7 +225,9 @@ export function SinglePlayer(props = {}) {
     const directFormat = play?.format;
     const directMediaUrl = play?.mediaUrl;
     const isRecoveryRemount = !!remountDiagnostics;
-    if (directMediaUrl && directFormat && !getRenderer(directFormat) && !isRecoveryRemount) {
+    // Title cards are self-contained (no mediaUrl needed) — always use direct-play bypass
+    const isSelfContainedFormat = directFormat === 'titlecard';
+    if (isSelfContainedFormat || ((directMediaUrl && directFormat && !getRenderer(directFormat)) && !isRecoveryRemount)) {
       const directInfo = {
         ...play,
         id: play.id || play.contentId || effectiveContentId,
@@ -399,6 +402,17 @@ export function SinglePlayer(props = {}) {
     if (!isReady) return null;
 
     const format = mediaInfo?.format;
+
+    // Title card → rendered like a media item (needs media/advance/resilienceBridge)
+    if (format === 'titlecard') {
+      return (
+        <TitleCardRenderer
+          media={mediaInfo}
+          advance={advance}
+          resilienceBridge={resilienceBridge}
+        />
+      );
+    }
 
     // Media playback formats → video/audio player
     if (isMediaFormat(format)) {

@@ -72,8 +72,8 @@ function loadSystemConfig() {
   }
 
   // Try environment-specific config first
-  const localConfigPath = path.join(dataPath, 'system', `system-local.${envName}.yml`);
-  const baseConfigPath = path.join(dataPath, 'system', 'system.yml');
+  const localConfigPath = path.join(dataPath, 'system', 'config', `system-local.${envName}.yml`);
+  const baseConfigPath = path.join(dataPath, 'system', 'config', 'system.yml');
 
   if (fs.existsSync(localConfigPath)) {
     try {
@@ -100,6 +100,11 @@ function loadSystemConfig() {
  */
 export function getAppPort() {
   const config = loadSystemConfig();
+  const envName = getEnvName();
+  const ports = config?.app?.ports;
+  if (ports && typeof ports === 'object') {
+    return ports[envName] ?? ports.default ?? 3111;
+  }
   return config?.app?.port ?? 3111;
 }
 
