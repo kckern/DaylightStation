@@ -502,10 +502,27 @@
   padding: 4px 0;
 }
 
-.search-loading, .search-pending {
-  padding: 8px 16px;
-  color: #666;
-  font-size: 12px;
+.search-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  color: #999;
+  font-size: 13px;
+}
+
+.search-loading-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #333;
+  border-top-color: #999;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .search-result-item {
