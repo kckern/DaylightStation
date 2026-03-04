@@ -396,12 +396,15 @@ export function evaluateLevel(score, levelConfig, health) {
  * Spawn a laser projectile from a key press.
  * @returns Updated state with new laser added
  */
-export function spawnLaser(state, pitch, now) {
+export function spawnLaser(state, pitch, now, { wrong = false } = {}) {
   const laser = {
     id: state.nextLaserId,
     pitch,
     spawnTime: now,
     active: true,
+    wrong,
+    // Wrong lasers veer off at a random angle (30-60 deg left or right)
+    driftAngle: wrong ? (Math.random() > 0.5 ? 1 : -1) * (30 + Math.random() * 30) : 0,
   };
   return {
     ...state,
@@ -458,7 +461,7 @@ export function checkLaserCollisions(state, now, fallDuration, laserTravelMs, mo
 
   for (let li = 0; li < updatedLasers.length; li++) {
     const laser = updatedLasers[li];
-    if (!laser.active) continue;
+    if (!laser.active || laser.wrong) continue;
 
     const laserProgress = (now - laser.spawnTime) / laserTravelMs;
     // Laser travels from bottom (progress=0 → topPercent=100) to top (progress=1 → topPercent=0)

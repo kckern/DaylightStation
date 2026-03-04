@@ -60,7 +60,6 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
   const timing = gameConfig?.timing ?? {};
   const scoring = gameConfig?.scoring ?? {};
   const laserTravelMs = gameConfig?.laser_travel_ms ?? 250;
-  const keyRebuildCooldownMs = gameConfig?.key_rebuild_cooldown_ms ?? 8000;
 
   // ─── Cleanup helper ─────────────────────────────────────────
 
@@ -101,6 +100,9 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
     if (!level) return;
     const levelMode = level.mode ?? 'hero';
     const fallDuration = getFallDuration(level);
+    // Key rebuild cooldown = at least 3 spawn intervals (3 notes must fall before key recovers)
+    const spawnInterval = level.spawn_delay_ms ?? (60000 / level.bpm) / (level.notes_per_beat || 1);
+    const dynamicCooldownMs = spawnInterval * 3;
 
     tickRef.current = setInterval(() => {
       const now = Date.now();
@@ -137,7 +139,7 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
 
         // 4. Detect misses (and destroy keys for missed pitches)
         const prevMisses = next.score.misses;
-        next = processMisses(next, now, timing.miss_threshold_ms ?? 400, keyRebuildCooldownMs);
+        next = processMisses(next, now, timing.miss_threshold_ms ?? 400, dynamicCooldownMs);
         if (next.score.misses > prevMisses) {
           logger.debug('space-invaders.miss', { count: next.score.misses - prevMisses, totalMisses: next.score.misses, combo: 0 });
         }
@@ -184,7 +186,7 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
       clearInterval(tickRef.current);
       tickRef.current = null;
     };
-  }, [gameState.phase, gameState.levelIndex, levels, timing, scoring, laserTravelMs, keyRebuildCooldownMs, logger]);
+  }, [gameState.phase, gameState.levelIndex, levels, timing, scoring, laserTravelMs, logger]);
 
   // ─── Laser Spawning (watch noteHistory for new note_on events) ─
 
@@ -227,8 +229,8 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
 
         setGameState(prevState => {
           if (prevState.phase !== 'PLAYING') return prevState;
-          // Spawn visual-only laser (will fly up and dissipate)
-          let next = spawnLaser(prevState, pitch, now);
+          // Spawn visual-only wrong laser (veers off at random angle)
+          let next = spawnLaser(prevState, pitch, now, { wrong: true });
           // Escalating penalty
           const streak = next.wrongStreak + 1;
           const penalty = streak === 1 ? 1 : streak === 2 ? 3 : streak === 3 ? 5 : 7;
