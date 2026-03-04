@@ -131,6 +131,9 @@ export class ZoneProfileStore {
       zoneId: profile.currentZoneId,
       zoneName: profile.currentZoneName,
       zoneColor: profile.currentZoneColor,
+      displayZoneId: profile.displayZoneId,
+      displayZoneName: profile.displayZoneName,
+      displayZoneColor: profile.displayZoneColor,
       nextZoneId: profile.nextZoneId,
       nextZoneThreshold: profile.nextZoneThreshold,
       currentZoneThreshold: profile.currentZoneThreshold,
@@ -203,6 +206,9 @@ export class ZoneProfileStore {
       currentZoneId: stabilized.zoneId,
       currentZoneName: stabilized.zoneName,
       currentZoneColor: stabilized.zoneColor,
+      displayZoneId: stabilized.rawZoneId,
+      displayZoneName: stabilized.rawZoneName,
+      displayZoneColor: stabilized.rawZoneColor,
       currentZoneThreshold: normalizedSnapshot?.currentZoneThreshold ?? null,
       nextZoneId: normalizedSnapshot?.nextZoneId ?? null,
       nextZoneThreshold: normalizedSnapshot?.nextZoneThreshold ?? null,
@@ -226,7 +232,7 @@ export class ZoneProfileStore {
    * @param {string} userId
    * @param {string|null} rawZoneId - zone derived directly from current HR
    * @param {Array} zoneConfig - normalized zone config for name/color lookup
-   * @returns {{ zoneId: string|null, zoneName: string|null, zoneColor: string|null }}
+   * @returns {{ zoneId: string|null, zoneName: string|null, zoneColor: string|null, rawZoneId: string|null, rawZoneName: string|null, rawZoneColor: string|null }}
    */
   #applyHysteresis(userId, rawZoneId, zoneConfig, heartRate) {
     const ts = now();
@@ -238,6 +244,10 @@ export class ZoneProfileStore {
         zoneName: zone?.name ?? id,
         zoneColor: zone?.color ?? null
       };
+    };
+    const lookupRawZone = (rawId) => {
+      const raw = lookupZone(rawId);
+      return { rawZoneId: raw.zoneId, rawZoneName: raw.zoneName, rawZoneColor: raw.zoneColor };
     };
 
     const sortedZones = (zoneConfig || []).slice().sort((a, b) => (a?.min ?? 0) - (b?.min ?? 0));
@@ -259,7 +269,7 @@ export class ZoneProfileStore {
         rawZoneId,
         rawZoneStableSince: ts
       });
-      return lookupZone(rawZoneId);
+      return { ...lookupZone(rawZoneId), ...lookupRawZone(rawZoneId) };
     }
 
     // Track when the raw zone changed
@@ -270,7 +280,7 @@ export class ZoneProfileStore {
 
     // Raw zone matches committed — no change needed
     if (rawZoneId === state.committedZoneId) {
-      return lookupZone(state.committedZoneId);
+      return { ...lookupZone(state.committedZoneId), ...lookupRawZone(rawZoneId) };
     }
 
     // Schmitt trigger: suppress downgrade if HR within exit margin
@@ -287,7 +297,7 @@ export class ZoneProfileStore {
           }, { maxPerMinute: 10 });
           state.rawZoneId = state.committedZoneId;
           state.rawZoneStableSince = ts;
-          return lookupZone(state.committedZoneId);
+          return { ...lookupZone(state.committedZoneId), ...lookupRawZone(rawZoneId) };
         }
       }
     }
@@ -300,18 +310,18 @@ export class ZoneProfileStore {
       // No recent zone change — this is a "first" transition, commit instantly
       state.committedZoneId = rawZoneId;
       state.lastCommitTs = ts;
-      return lookupZone(rawZoneId);
+      return { ...lookupZone(rawZoneId), ...lookupRawZone(rawZoneId) };
     }
 
     if (rawStableDuration >= HYSTERESIS_STABILITY_MS) {
       // Rapid toggling detected but new zone has been stable long enough — commit
       state.committedZoneId = rawZoneId;
       state.lastCommitTs = ts;
-      return lookupZone(rawZoneId);
+      return { ...lookupZone(rawZoneId), ...lookupRawZone(rawZoneId) };
     }
 
     // Rapid toggling, not yet stable — keep the committed zone
-    return lookupZone(state.committedZoneId);
+    return { ...lookupZone(state.committedZoneId), ...lookupRawZone(rawZoneId) };
   }
 
   #buildZoneSequence(zoneConfig = []) {
