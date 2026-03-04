@@ -105,7 +105,10 @@ const ContentBrowser = ({ hasMiniplayer }) => {
     browse(cat.source, '', cat.label);
   }, [browse, logger]);
 
-  const displayResults = browsing ? browseResults : results;
+  // Exclude image-only items from search results — MediaApp is for audio/video, not photos.
+  // Immich returns photos as PlayableItem (mediaType:'image') which pass capability=playable
+  // but aren't meaningful media player content.
+  const displayResults = browsing ? browseResults : results.filter(r => r.mediaType !== 'image');
 
   useEffect(() => {
     if (displayResults.length > 0) {
@@ -126,7 +129,7 @@ const ContentBrowser = ({ hasMiniplayer }) => {
   }, [displayResults.length, browsing, logger]);
 
   useEffect(() => {
-    logger.debug('content-browser.loading-state', { isSearching, browseLoading });
+    logger.info('content-browser.loading-state', { isSearching, browseLoading });
   }, [isSearching, browseLoading, logger]);
 
   const isSearchActive = searchText.length > 0 || browsing;

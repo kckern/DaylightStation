@@ -67,7 +67,7 @@ export function useDeviceMonitor() {
       .then(data => {
         setDevices(data.devices || []);
         setIsLoading(false);
-        logger().info('devices-loaded', { count: data.devices?.length });
+        logger().debug('devices-loaded', { count: data.devices?.length });
       })
       .catch(err => {
         logger().error('devices-fetch-failed', { error: err.message });
@@ -93,7 +93,7 @@ export function useDeviceMonitor() {
         });
       }
     );
-    logger().info('device-monitor.subscribed');
+    logger().debug('device-monitor.subscribed');
 
     // Expire stale entries every 10s
     const cleanup = setInterval(() => {
