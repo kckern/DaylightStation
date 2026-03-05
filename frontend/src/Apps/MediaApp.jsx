@@ -103,12 +103,58 @@ const MediaAppInner = () => {
     if (queue.currentItem) recordPlay(queue.currentItem);
   }, [queue.currentItem?.contentId]);
 
-  // Update progress periodically
+  // Update progress periodically (~every 5s, only while playing)
+  const lastProgressBucket = useRef(-1);
   useEffect(() => {
-    if (queue.currentItem?.contentId && playbackState.currentTime > 0) {
-      updateProgress(queue.currentItem.contentId, playbackState.currentTime, playbackState.duration);
+    if (!queue.currentItem?.contentId || playbackState.paused || playbackState.currentTime <= 0) return;
+    const bucket = Math.floor(playbackState.currentTime / 5);
+    if (bucket === lastProgressBucket.current) return;
+    lastProgressBucket.current = bucket;
+    updateProgress(queue.currentItem.contentId, playbackState.currentTime, playbackState.duration);
+  }, [queue.currentItem?.contentId, playbackState.currentTime, playbackState.paused, playbackState.duration]);
+
+  // Stall detection: if playback hasn't advanced for 30s while not paused, auto-advance
+  const stallRef = useRef({ time: 0, since: 0 });
+  useEffect(() => {
+    if (!queue.currentItem || playbackState.paused) {
+      stallRef.current = { time: 0, since: 0 };
+      return;
     }
-  }, [queue.currentItem?.contentId, Math.floor(playbackState.currentTime / 5)]); // every ~5s
+    const now = Date.now();
+    const prev = stallRef.current;
+    if (Math.abs(playbackState.currentTime - prev.time) > 0.5) {
+      stallRef.current = { time: playbackState.currentTime, since: now };
+      return;
+    }
+    // Time hasn't changed — check if stalled long enough
+    if (prev.since > 0 && now - prev.since > 30000) {
+      logger.warn('media-app.stall-recovery', {
+        contentId: queue.currentItem.contentId,
+        stalledAt: playbackState.currentTime,
+        stallDurationMs: now - prev.since,
+      });
+      stallRef.current = { time: 0, since: 0 };
+      queue.advance(1, { auto: true });
+    }
+  }, [queue.currentItem?.contentId, playbackState.currentTime, playbackState.paused, queue, logger]);
+
+  // Poll stall check every 5s (playbackState updates may stop during stalls)
+  useEffect(() => {
+    if (!queue.currentItem || playbackState.paused) return;
+    const interval = setInterval(() => {
+      const prev = stallRef.current;
+      if (prev.since > 0 && Date.now() - prev.since > 30000) {
+        logger.warn('media-app.stall-recovery', {
+          contentId: queue.currentItem?.contentId,
+          stalledAt: prev.time,
+          stallDurationMs: Date.now() - prev.since,
+        });
+        stallRef.current = { time: 0, since: 0 };
+        queue.advance(1, { auto: true });
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [queue.currentItem?.contentId, playbackState.paused, queue, logger]);
 
   // Determine active panel from route for mobile layout
   const activePanel = useMemo(() => {
