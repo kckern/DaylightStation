@@ -94,7 +94,6 @@ export default defineConfig(({ command, mode }) => {
         '/harvest': `http://localhost:${ports.backend}`,
         '/home': `http://localhost:${ports.backend}`,
         '/print': `http://localhost:${ports.backend}`,
-        '/media': `http://localhost:${ports.backend}`,
         '/data': `http://localhost:${ports.backend}`,
       }
     }
