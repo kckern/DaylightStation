@@ -62,7 +62,9 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
     paused: true,
   });
   const [volume, setVolume] = useState(0.8);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(() => {
+    try { return localStorage.getItem('media:fullscreen') === 'true'; } catch { return false; }
+  });
 
   // Overlay visibility for video fullscreen auto-hide (8.2.4)
   const [overlayVisible, setOverlayVisible] = useState(true);
@@ -92,15 +94,17 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
     };
   }, [isFullscreen, showOverlay]);
 
-  // Auto-fullscreen for video; reset on format change (8.2.2, 8.1.11)
+  // Persist fullscreen preference; clear when nothing is playing
   useEffect(() => {
     if (!currentItem) {
       setIsFullscreen(false);
       return;
     }
-    const isVideo = currentItem.format === 'video' || currentItem.format === 'dash_video';
-    setIsFullscreen(isVideo);
-  }, [currentItem?.contentId, currentItem?.format]);
+  }, [currentItem?.contentId]);
+
+  useEffect(() => {
+    try { localStorage.setItem('media:fullscreen', String(isFullscreen)); } catch {}
+  }, [isFullscreen]);
 
   useEffect(() => {
     if (currentItem) {
