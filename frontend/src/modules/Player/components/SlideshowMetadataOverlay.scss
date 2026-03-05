@@ -14,7 +14,10 @@
   }
 
   &--video {
-    height: 33.33%;
+    height: 33.33vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
 
     .slideshow-metadata__backdrop {
       background: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.6) 40%, rgba(0, 0, 0, 0.75) 100%);
