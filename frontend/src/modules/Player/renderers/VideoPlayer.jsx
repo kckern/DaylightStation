@@ -59,7 +59,7 @@ export function VideoPlayer({
     getMediaEl,
     getContainerEl
   } = useCommonMediaController({
-    start: media.seconds,
+    start: media.segment ? media.segment.start : media.seconds,
     playbackRate: playbackRate || media.playbackRate || 1,
     onEnd: advance,
     onClear: clear,
