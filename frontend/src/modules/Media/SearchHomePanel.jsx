@@ -207,7 +207,10 @@ const SearchHomePanel = () => {
                     {(item.thumbnail || contentId) && <img src={item.thumbnail || ContentDisplayUrl(contentId)} alt="" />}
                   </div>
                   <div className="search-result-info" onClick={() => handleResultClick(item)}>
-                    <div className="search-result-title">{item.title}</div>
+                    <div className="search-result-title">
+                      {item.title}
+                      {item.childCount != null && <span className="search-result-child-count">{item.childCount}</span>}
+                    </div>
                     <div className="search-result-meta">
                       {item.source && (
                         <span className="source-badge source-badge--clickable"
@@ -216,6 +219,13 @@ const SearchHomePanel = () => {
                           {item.source}
                         </span>
                       )}
+                      {item.type && item.itemIndex != null && (
+                        <span className="search-result-type">{item.type.charAt(0).toUpperCase() + item.type.slice(1)} {item.itemIndex}</span>
+                      )}
+                      {item.type && item.itemIndex == null && (
+                        <span className="search-result-type">{item.type.charAt(0).toUpperCase() + item.type.slice(1)}</span>
+                      )}
+                      {item.parentTitle && <span className="search-result-parent">{item.parentTitle}</span>}
                       {item.duration && <span>{Math.round(item.duration / 60)}m</span>}
                       {item.format && <span className={`format-badge format-badge--${item.format}`}>{item.format}</span>}
                     </div>
