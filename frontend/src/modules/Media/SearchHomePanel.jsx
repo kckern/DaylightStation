@@ -10,6 +10,7 @@ import ScopeChips from './ScopeChips.jsx';
 import CastButton from './CastButton.jsx';
 import { useMediaHistory } from '../../hooks/media/useMediaHistory.js';
 import getLogger from '../../lib/logging/Logger.js';
+import { toast } from './Toast.jsx';
 
 // --- Recent Searches (localStorage) ---
 const RECENT_SEARCHES_KEY = 'media-recent-searches';
@@ -40,6 +41,7 @@ const SearchHomePanel = () => {
   const [searchScopes, setSearchScopes] = useState([]);
   const [recentSearches, setRecentSearches] = useState(loadRecentSearches);
   const searchTimerRef = useRef(null);
+  const playingRef = useRef(false);
   const { continueItems, recentlyPlayed } = useMediaHistory();
 
   // Scope persistence
@@ -113,13 +115,15 @@ const SearchHomePanel = () => {
   }, [recordSearchInteraction, navigate]);
 
   const handlePlayNow = useCallback((item) => {
+    if (playingRef.current) return;
+    playingRef.current = true;
+    setTimeout(() => { playingRef.current = false; }, 2000);
     recordSearchInteraction();
     const contentId = resolveContentId(item);
     if (!contentId) return;
     logger.info('search-home.play-now', { contentId, title: item.title });
     queue.playNow([{ contentId, title: item.title, format: item.format, thumbnail: item.thumbnail }]);
-    navigate('/media/play');
-  }, [recordSearchInteraction, queue, logger, navigate]);
+  }, [recordSearchInteraction, queue, logger]);
 
   const handlePlayNext = useCallback((item) => {
     recordSearchInteraction();
@@ -127,6 +131,7 @@ const SearchHomePanel = () => {
     if (!contentId) return;
     logger.info('search-home.play-next', { contentId });
     queue.addItems([{ contentId, title: item.title, format: item.format, thumbnail: item.thumbnail }], 'next');
+    toast(`"${item.title}" plays next`);
   }, [recordSearchInteraction, queue, logger]);
 
   const handleAddToQueue = useCallback((item) => {
@@ -135,6 +140,7 @@ const SearchHomePanel = () => {
     if (!contentId) return;
     logger.info('search-home.add-to-queue', { contentId });
     queue.addItems([{ contentId, title: item.title, format: item.format, thumbnail: item.thumbnail }]);
+    toast(`"${item.title}" added to queue`);
   }, [recordSearchInteraction, queue, logger]);
 
   const handleRecentSearchClick = useCallback((entry) => {
@@ -230,8 +236,8 @@ const SearchHomePanel = () => {
               <div className="search-home-section">
                 <h3 className="search-home-section-title">Continue</h3>
                 {continueItems.map(item => (
-                  <div key={item.contentId} className="search-result-item" onClick={() => navigate(`/media/view/${item.contentId}`)}>
-                    <div className="search-result-thumb">
+                  <div key={item.contentId} className="search-result-item">
+                    <div className="search-result-thumb" onClick={() => navigate(`/media/view/${item.contentId}`)}>
                       <img src={item.thumbnail || ContentDisplayUrl(item.contentId)} alt="" />
                       {item.duration > 0 && (
                         <div className="continue-progress-bar">
@@ -239,9 +245,21 @@ const SearchHomePanel = () => {
                         </div>
                       )}
                     </div>
-                    <div className="search-result-info">
+                    <div className="search-result-info" onClick={() => navigate(`/media/view/${item.contentId}`)}>
                       <div className="search-result-title">{item.title}</div>
                       {item.format && <div className="search-result-meta"><span className={`format-badge format-badge--${item.format}`}>{item.format}</span></div>}
+                    </div>
+                    <div className="search-result-actions">
+                      <button onClick={() => {
+                        logger.info('search-home.continue-play', { contentId: item.contentId, progress: item.progress });
+                        queue.playNow([{
+                          contentId: item.contentId,
+                          title: item.title,
+                          format: item.format,
+                          thumbnail: item.thumbnail,
+                          config: item.progress > 0 ? { offset: item.progress } : undefined,
+                        }]);
+                      }} title="Resume">&#9654;</button>
                     </div>
                   </div>
                 ))}
