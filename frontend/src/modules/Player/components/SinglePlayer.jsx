@@ -464,6 +464,7 @@ export function SinglePlayer(props = {}) {
           <SlideshowMetadataOverlay
             mediaId={videoMediaId}
             visible={videoMetaVisible}
+            variant="video"
           />
         </>
       );
