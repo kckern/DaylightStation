@@ -112,6 +112,16 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
     if (!isVideoFormat) setIsFullscreen(false);
   }, [currentItem?.contentId, currentItem?.format]);
 
+  // Keyboard fullscreen toggle (audit #15)
+  useEffect(() => {
+    const handler = () => {
+      const isVideoFormat = currentItem?.format === 'video' || currentItem?.format === 'dash_video';
+      if (isVideoFormat) setIsFullscreen(prev => !prev);
+    };
+    window.addEventListener('media:toggle-fullscreen', handler);
+    return () => window.removeEventListener('media:toggle-fullscreen', handler);
+  }, [currentItem?.format]);
+
   useEffect(() => {
     if (currentItem) {
       logger.info('now-playing.content-rendered', {
