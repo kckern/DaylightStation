@@ -799,6 +799,7 @@ export function useCommonMediaController({
             : getProgressPercent(mediaEl.currentTime, mediaEl.duration),
           stalled: isStalled,
           isSeeking,
+          seekIntent: lastSeekIntentRef.current,
           recoveryAttempt: stallSnapshot.attemptIndex,
           lastStrategy: stallSnapshot.strategy,
           stallState: stallSnapshot,
@@ -920,22 +921,25 @@ export function useCommonMediaController({
       mediaEl.dataset.key = assetId;
       
       if (Number.isFinite(startTime) && startTime > 0 && isDash) {
-        // DASH: defer seek until playing, then use dash.js API.
-        // Setting currentTime on the inner <video> bypasses dash.js's
-        // SourceBuffer management, leaving the audio buffer permanently empty.
-        // The dash.js api.seek() properly flushes buffers and re-initializes.
-        if (DEBUG_MEDIA) console.log('[StartTime] DASH: deferring seek to playing', { startTime });
+        // DASH: defer seek until playback has actually started progressing.
+        // Seeking during SourceBuffer initialization (playing/canplay events)
+        // permanently corrupts both audio and video buffers.
+        // Wait for timeupdate (proves buffers are healthy and playing), then seek.
+        if (DEBUG_MEDIA) console.log('[StartTime] DASH: deferring seek to timeupdate', { startTime });
         const container = containerRef.current;
-        mediaEl.addEventListener('playing', () => {
+        const onTimeUpdate = () => {
+          if (mediaEl.currentTime < 0.5) return; // wait for real progress
+          mediaEl.removeEventListener('timeupdate', onTimeUpdate);
           try {
-            if (container?.api?.seek) {
-              container.api.seek(startTime);
-            } else {
-              mediaEl.currentTime = startTime;
-            }
+            // Use native currentTime instead of api.seek() — dash.js api.seek()
+            // permanently corrupts SourceBuffers, but setting currentTime on the
+            // native <video> triggers dash.js's seeking event listener which
+            // handles buffer management correctly.
+            mediaEl.currentTime = startTime;
           } catch (_) {}
-          if (DEBUG_MEDIA) console.log('[StartTime] DASH: applied deferred seek at playing', { startTime });
-        }, { once: true });
+          if (DEBUG_MEDIA) console.log('[StartTime] DASH: applied deferred seek after timeupdate', { startTime, currentTime: mediaEl.currentTime });
+        };
+        mediaEl.addEventListener('timeupdate', onTimeUpdate);
       } else if (Number.isFinite(startTime)) {
         try {
           mediaEl.currentTime = startTime;

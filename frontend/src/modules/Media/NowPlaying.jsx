@@ -121,6 +121,8 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
       currentTime: data.currentTime || 0,
       duration: data.duration || 0,
       paused: data.paused ?? true,
+      isSeeking: data.isSeeking || false,
+      seekIntent: data.seekIntent ?? null,
     });
     onPlaybackState?.(data);
   }, [onPlaybackState]);
@@ -154,8 +156,13 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
     setIsFullscreen(true);
   }, [currentItem?.format, logger]);
 
+  // When seeking, show the seek intent position (where user dragged to) instead
+  // of the actual currentTime which fluctuates as the browser loads data.
+  const displayTime = (playbackState.isSeeking && playbackState.seekIntent != null)
+    ? playbackState.seekIntent
+    : playbackState.currentTime;
   const progress = playbackState.duration > 0
-    ? (playbackState.currentTime / playbackState.duration) * 100
+    ? (displayTime / playbackState.duration) * 100
     : 0;
 
   const renderTransportOverlay = () => (
@@ -168,7 +175,7 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
           <div className="media-progress-fill" style={{ width: `${progress}%` }} />
         </div>
         <div className="media-progress-times">
-          <span>{formatTime(playbackState.currentTime)}</span>
+          <span>{formatTime(displayTime)}</span>
           <span>{formatTime(playbackState.duration)}</span>
         </div>
       </div>
@@ -213,7 +220,7 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
         isFullscreen={isFullscreen}
         onExitFullscreen={handleExitFullscreen}
         renderOverlay={isFullscreen ? renderTransportOverlay : undefined}
-        onPlayerClick={isFullscreen ? showOverlay : undefined}
+        onPlayerClick={isFullscreen ? showOverlay : handleExpandFullscreen}
       />
 
       {/* Track Info */}
@@ -250,7 +257,7 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
               />
             </div>
             <div className="media-progress-times">
-              <span>{formatTime(playbackState.currentTime)}</span>
+              <span>{formatTime(displayTime)}</span>
               <span>{formatTime(playbackState.duration)}</span>
             </div>
           </div>
