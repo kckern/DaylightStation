@@ -62,6 +62,8 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
     paused: true,
   });
   const [volume, setVolume] = useState(0.8);
+  const [muted, setMuted] = useState(false);
+  const preMuteVolume = useRef(0.8);
   const [isFullscreen, setIsFullscreen] = useState(() => {
     try { return localStorage.getItem('media:fullscreen') === 'true'; } catch { return false; }
   });
@@ -173,9 +175,24 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
     const newVolume = parseFloat(e.target.value);
     logger.debug('player.volume', { volume: newVolume });
     setVolume(newVolume);
+    if (newVolume > 0) setMuted(false);
     const el = playerRef.current?.getMediaElement?.();
-    if (el) el.volume = newVolume;
+    if (el) { el.volume = newVolume; el.muted = false; }
   }, [playerRef, logger]);
+
+  const handleMuteToggle = useCallback(() => {
+    const el = playerRef.current?.getMediaElement?.();
+    if (muted) {
+      setMuted(false);
+      setVolume(preMuteVolume.current);
+      if (el) { el.volume = preMuteVolume.current; el.muted = false; }
+    } else {
+      preMuteVolume.current = volume;
+      setMuted(true);
+      if (el) { el.muted = true; }
+    }
+    logger.debug('player.mute-toggle', { muted: !muted });
+  }, [muted, volume, playerRef, logger]);
 
   const handleExitFullscreen = useCallback(() => setIsFullscreen(false), []);
 
@@ -217,6 +234,18 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
           {playbackState.paused ? '\u25B6' : '\u23F8'}
         </button>
         <button className="media-transport-btn" onClick={onNext} aria-label="Next">&#9197;</button>
+      </div>
+      <div className="media-volume-inline media-volume-inline--fullscreen">
+        <button className="media-mute-btn" onClick={(e) => { e.stopPropagation(); handleMuteToggle(); }} aria-label={muted ? 'Unmute' : 'Mute'}>
+          {muted || volume === 0 ? '\u{1F507}' : volume < 0.5 ? '\u{1F509}' : '\u{1F50A}'}
+        </button>
+        <input
+          type="range" min="0" max="1" step="0.05"
+          value={muted ? 0 : volume}
+          onChange={handleVolumeChange}
+          onClick={(e) => e.stopPropagation()}
+          aria-label="Volume"
+        />
       </div>
     </div>
   );
@@ -309,15 +338,15 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
         </>
       )}
 
-      {/* Volume — hidden in fullscreen */}
+      {/* Volume — inline with transport */}
       {!isFullscreen && (
-        <div className="media-volume">
+        <div className="media-volume-inline">
+          <button className="media-mute-btn" onClick={handleMuteToggle} aria-label={muted ? 'Unmute' : 'Mute'}>
+            {muted || volume === 0 ? '\u{1F507}' : volume < 0.5 ? '\u{1F509}' : '\u{1F50A}'}
+          </button>
           <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            value={volume}
+            type="range" min="0" max="1" step="0.05"
+            value={muted ? 0 : volume}
             onChange={handleVolumeChange}
             aria-label="Volume"
           />
