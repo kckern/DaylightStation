@@ -1,5 +1,6 @@
 // frontend/src/modules/Media/ContentBrowser.jsx
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useStreamingSearch } from '../../hooks/useStreamingSearch.js';
 import { useContentBrowse } from '../../hooks/media/useContentBrowse.js';
 import { useMediaApp } from '../../contexts/MediaAppContext.jsx';
@@ -16,6 +17,7 @@ export function resolveContentId(item) {
 
 const ContentBrowser = ({ hasMiniplayer }) => {
   const { queue } = useMediaApp();
+  const navigate = useNavigate();
   const logger = useMemo(() => getLogger().child({ component: 'ContentBrowser' }), []);
   const [searchText, setSearchText] = useState('');
   const [browseConfig, setBrowseConfig] = useState([]);
@@ -222,7 +224,10 @@ const ContentBrowser = ({ hasMiniplayer }) => {
                 <div className="search-result-thumb">
                   {(item.thumbnail || contentId) && <img src={item.thumbnail || ContentDisplayUrl(contentId)} alt="" />}
                 </div>
-                <div className="search-result-info" onClick={() => item.isContainer ? handleDrillDown(item) : handlePlayNow(item)}>
+                <div className="search-result-info" onClick={() => {
+                  const id = resolveContentId(item);
+                  if (id) navigate(`/media/view/${id}`);
+                }}>
                   <div className="search-result-title">{item.title}</div>
                   <div className="search-result-meta">
                     {item.source && (

@@ -141,7 +141,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/finances" element={<FinanceApp />} />
         <Route path="/tv/app/:app" element={<TVAppWithParams />} />
         <Route path="/tv" element={<TVApp />} />
-        <Route path="/media" element={<MediaApp />} />
+        <Route path="/media/*" element={<MediaApp />} />
         <Route path="/health" element={<HealthApp />} />
         <Route path="/fitness/*" element={<FitnessApp />} />
         <Route path="/lifelog" element={<LifelogApp />} />
