@@ -64,9 +64,7 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
   const [volume, setVolume] = useState(0.8);
   const [muted, setMuted] = useState(false);
   const preMuteVolume = useRef(0.8);
-  const [isFullscreen, setIsFullscreen] = useState(() => {
-    try { return localStorage.getItem('media:fullscreen') === 'true'; } catch { return false; }
-  });
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Overlay visibility for video fullscreen auto-hide (8.2.4)
   const [overlayVisible, setOverlayVisible] = useState(true);
@@ -78,7 +76,12 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
     logger.debug('overlay.show', { format: currentItem?.format });
     if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
     if (currentItem?.format === 'video') {
-      overlayTimerRef.current = setTimeout(() => setOverlayVisible(false), 3000);
+      overlayTimerRef.current = setTimeout(() => {
+        setIsFullscreen(current => {
+          if (current) setOverlayVisible(false);
+          return current;
+        });
+      }, 3000);
     }
   }, [currentItem?.format, logger]);
 
@@ -99,17 +102,15 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
     };
   }, [isFullscreen, showOverlay]);
 
-  // Persist fullscreen preference; clear when nothing is playing
+  // Clear fullscreen when nothing is playing or switching to non-video content
   useEffect(() => {
     if (!currentItem) {
       setIsFullscreen(false);
       return;
     }
-  }, [currentItem?.contentId]);
-
-  useEffect(() => {
-    try { localStorage.setItem('media:fullscreen', String(isFullscreen)); } catch {}
-  }, [isFullscreen]);
+    const isVideoFormat = currentItem.format === 'video' || currentItem.format === 'dash_video';
+    if (!isVideoFormat) setIsFullscreen(false);
+  }, [currentItem?.contentId, currentItem?.format]);
 
   useEffect(() => {
     if (currentItem) {

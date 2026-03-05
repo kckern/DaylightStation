@@ -1100,7 +1100,13 @@
 
   .media-transport-btn {
     color: #fff;
-    font-size: 24px;
+    font-size: 28px;
+
+    &--primary {
+      font-size: 36px;
+      width: 64px;
+      height: 64px;
+    }
   }
 
   .media-progress-bar {
