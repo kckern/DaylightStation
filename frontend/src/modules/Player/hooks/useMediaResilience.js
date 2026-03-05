@@ -72,7 +72,9 @@ export function useMediaResilience({
   externalPauseReason = null,
   // External stall state from useCommonMediaController - if provided, trust this instead of internal detection
   externalStalled = null,
-  externalStallState = null
+  externalStallState = null,
+  // Self-contained formats (titlecard, etc.) have no media element — disable resilience monitoring
+  disabled = false
 }) {
   const { monitorSettings, recoveryConfig } = useResilienceConfig({ configOverrides });
   const {
@@ -172,6 +174,15 @@ export function useMediaResilience({
   }, [actions, consumeTargetTimeSeconds, logWaitKey, meta, onReload, playbackSessionKey, waitKey]);
 
   useEffect(() => {
+    // Self-contained formats (titlecard, etc.) have no media element —
+    // skip resilience monitoring to avoid false startup-deadline-exceeded remounts.
+    if (disabled) {
+      if (status !== STATUS.playing) actions.setStatus(STATUS.playing);
+      clearTimeout(startupDeadlineRef.current);
+      startupDeadlineRef.current = null;
+      return;
+    }
+
     if (userIntent === USER_INTENT.paused) {
       if (status !== STATUS.paused) actions.setStatus(STATUS.paused);
       return;
@@ -205,7 +216,7 @@ export function useMediaResilience({
         }, hardRecoverLoadingGraceMs);
       }
     }
-  }, [status, playbackHealth.progressToken, userIntent, actions, triggerRecovery, hardRecoverLoadingGraceMs, playbackSessionKey]);
+  }, [status, playbackHealth.progressToken, userIntent, actions, triggerRecovery, hardRecoverLoadingGraceMs, playbackSessionKey, disabled]);
 
   // Clean up timers on unmount or waitKey change
   useEffect(() => {

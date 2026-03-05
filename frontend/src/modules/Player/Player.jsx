@@ -604,7 +604,9 @@ const Player = forwardRef(function Player(props, ref) {
     externalPauseActive: pauseDecision?.paused,
     // Pass stall state from useCommonMediaController to avoid duplicate detection
     externalStalled: effectiveMeta ? playbackMetrics.stalled : null,
-    externalStallState: effectiveMeta ? playbackMetrics.stallState : null
+    externalStallState: effectiveMeta ? playbackMetrics.stallState : null,
+    // Self-contained formats (titlecard) have no media element — disable resilience monitoring
+    disabled: isSelfContainedFormat
   });
 
   // Get playback rate from the current item, falling back to queue/play level, then default
