@@ -92,7 +92,7 @@ const MediaAppPlayer = forwardRef(function MediaAppPlayer(
         <>
           <button
             className="media-fullscreen-exit"
-            onClick={onExitFullscreen}
+            onClick={(e) => { e.stopPropagation(); onExitFullscreen(); }}
             aria-label="Exit fullscreen"
           >
             &times;

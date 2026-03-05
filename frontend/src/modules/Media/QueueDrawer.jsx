@@ -3,6 +3,7 @@ import React, { useMemo, useState, useCallback } from 'react';
 import { useMediaApp } from '../../contexts/MediaAppContext.jsx';
 import QueueItem from './QueueItem.jsx';
 import getLogger from '../../lib/logging/Logger.js';
+import { toast } from './Toast.jsx';
 
 const QueueDrawer = () => {
   const { queue } = useMediaApp();
@@ -23,8 +24,16 @@ const QueueDrawer = () => {
   }, [queue, logger]);
 
   const handleClear = useCallback(() => {
+    const snapshot = [...queue.items];
+    const prevPosition = queue.position;
     logger.info('queue.clear', { itemCount: queue.items.length });
     queue.clear();
+    toast(`Cleared ${snapshot.length} items`, {
+      undo: () => {
+        logger.info('queue.clear-undo', { itemCount: snapshot.length });
+        queue.addItems(snapshot).then(() => queue.setPosition(prevPosition));
+      },
+    });
   }, [queue, logger]);
 
   const cycleRepeat = useCallback(() => {
