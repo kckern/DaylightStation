@@ -140,6 +140,31 @@ const MediaAppInner = () => {
     }
   }, [mode, queue.currentItem, queue.items.length]);
 
+  // Auto-expand to player mode for video content (player is hidden in browse mode)
+  useEffect(() => {
+    if (mode === 'browse' && queue.currentItem) {
+      const fmt = queue.currentItem.format;
+      if (fmt === 'video' || fmt === 'dash_video') {
+        logger.info('media-app.auto-expand-for-video', { format: fmt, contentId: queue.currentItem.contentId });
+        setMode('player');
+      }
+    }
+  }, [mode, queue.currentItem?.contentId, queue.currentItem?.format, logger]);
+
+  // Log layout state when currentItem or mode changes
+  useEffect(() => {
+    if (queue.loading) return;
+    logger.info('media-app.layout-state', {
+      mode,
+      hasCurrentItem: !!queue.currentItem,
+      currentFormat: queue.currentItem?.format,
+      currentContentId: queue.currentItem?.contentId,
+      hasMiniplayer: mode === 'browse' && !!queue.currentItem,
+      detailContentId: detailContentId || null,
+      playerHidden: mode !== 'player',
+    });
+  }, [mode, queue.loading, queue.currentItem?.contentId, queue.currentItem?.format, detailContentId, logger]);
+
   if (queue.loading) {
     return (
       <div className="App media-app">

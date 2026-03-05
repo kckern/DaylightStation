@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, forwardRef } from 'react';
+import React, { useMemo, useEffect, useRef, forwardRef } from 'react';
 import getLogger from '../../lib/logging/Logger.js';
 import Player from '../Player/Player.jsx';
 
@@ -19,6 +19,7 @@ const MediaAppPlayer = forwardRef(function MediaAppPlayer(
   ref
 ) {
   const logger = useMemo(() => getLogger().child({ component: 'MediaAppPlayer' }), []);
+  const wrapperRef = useRef(null);
 
   // IMPORTANT: config must be a stable object reference (e.g., from useState/useMemo in parent).
   // A new config object reference on each render will cause Player to remount and restart playback.
@@ -34,10 +35,35 @@ const MediaAppPlayer = forwardRef(function MediaAppPlayer(
     }
   }, [playObject?.contentId, logger]);
 
+  // Layout diagnostics: report player wrapper visibility and dimensions
+  useEffect(() => {
+    if (!playObject || !wrapperRef.current) return;
+    const el = wrapperRef.current;
+    const rect = el.getBoundingClientRect();
+    const computedDisplay = getComputedStyle(el).display;
+    const parentHidden = el.closest('.hidden') !== null;
+    const modeContainer = el.closest('.media-mode-player, .media-mode-browse');
+    const modeContainerClass = modeContainer?.className || 'none';
+    logger.info('media-player.layout', {
+      contentId: playObject.contentId,
+      isFullscreen,
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+      top: Math.round(rect.top),
+      left: Math.round(rect.left),
+      display: computedDisplay,
+      parentHidden,
+      modeContainer: modeContainerClass,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+    });
+  }, [playObject?.contentId, isFullscreen, logger]);
+
   if (!playObject) return null;
 
   return (
     <div
+      ref={wrapperRef}
       className={`media-player-wrapper${isFullscreen ? ' fullscreen' : ''}`}
       // onPlayerClick — wired for Task 2 auto-hide: tap fullscreen wrapper to reveal controls
       onClick={onPlayerClick}
