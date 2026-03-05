@@ -29,6 +29,8 @@ export function AudioLayer({
   const prevMediaTypeRef = useRef(currentItemMediaType);
   const savedVolumeRef = useRef(1);
   const fadeRafRef = useRef(null);
+  const isDuckedRef = useRef(false);
+  const lastAudioElRef = useRef(null);
   const [audioQueue, setAudioQueue] = useState(null);
 
   /** Find the audio/video element rendered by the nested Player */
@@ -95,6 +97,27 @@ export function AudioLayer({
     return () => { cancelled = true; };
   }, [contentId]);
 
+  // Re-apply duck when the inner Player remounts (new audio element on track advance).
+  // Volume is track-level state on the DOM element; this promotes it to playlist-level.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || behavior !== 'duck') return;
+
+    const observer = new MutationObserver(() => {
+      const el = getAudioEl();
+      if (el && el !== lastAudioElRef.current) {
+        lastAudioElRef.current = el;
+        if (isDuckedRef.current) {
+          el.volume = Math.max(0, duckLevel);
+          logger.debug('audio-layer-reduck', { contentId, volume: el.volume, reason: 'track-advance' });
+        }
+      }
+    });
+
+    observer.observe(container, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [behavior, duckLevel, contentId, getAudioEl]);
+
   // React to media type changes for pause/duck/skip.
   // audioQueue in deps ensures we retry when the Player mounts (its queue resolves).
   useEffect(() => {
@@ -128,6 +151,7 @@ export function AudioLayer({
         el.pause();
       } else if (behavior === 'duck') {
         savedVolumeRef.current = el.volume;
+        isDuckedRef.current = true;
         const target = Math.max(0, el.volume * duckLevel);
         logger.info('audio-layer-duck', { contentId, reason: 'video-start', from: el.volume, to: target, fadeMs: FADE_MS });
         fadeVolume(el, el.volume, target, FADE_MS);
@@ -137,6 +161,7 @@ export function AudioLayer({
         logger.info('audio-layer-resume', { contentId, reason: 'video-end', fromType: prev, toType: currentItemMediaType });
         el.play().catch(() => {});
       } else if (behavior === 'duck') {
+        isDuckedRef.current = false;
         const restoreTo = savedVolumeRef.current;
         logger.info('audio-layer-unduck', { contentId, reason: 'video-end', from: el.volume, to: restoreTo, fadeMs: FADE_MS });
         fadeVolume(el, el.volume, restoreTo, FADE_MS);
