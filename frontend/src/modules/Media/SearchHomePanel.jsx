@@ -207,11 +207,19 @@ const SearchHomePanel = () => {
                     {(item.thumbnail || contentId) && <img src={item.thumbnail || ContentDisplayUrl(contentId)} alt="" />}
                   </div>
                   <div className="search-result-info">
-                    <div className="search-result-title">
-                      {item.title}
+                    <div className="search-result-line1">
+                      <span className="search-result-title">{item.title}</span>
                       {item.childCount != null && <span className="search-result-child-count">{item.childCount}</span>}
                     </div>
-                    <div className="search-result-meta">
+                    <div className="search-result-line2">
+                      {(() => {
+                        const type = item.type || item.metadata?.type;
+                        const typeLabel = type ? type.charAt(0).toUpperCase() + type.slice(1) : null;
+                        const indexed = typeLabel && item.itemIndex != null ? `${typeLabel} ${item.itemIndex}` : typeLabel;
+                        const parts = [indexed, item.parentTitle].filter(Boolean);
+                        const subtitle = parts.join(' \u2022 ');
+                        return subtitle ? <span className="search-result-subtitle">{subtitle}</span> : null;
+                      })()}
                       {item.source && (
                         <span className="source-badge source-badge--clickable"
                               onClick={(e) => { e.stopPropagation(); handleSourceBadgeClick(item.source); }}
@@ -219,15 +227,6 @@ const SearchHomePanel = () => {
                           {item.source}
                         </span>
                       )}
-                      {item.type && item.itemIndex != null && (
-                        <span className="search-result-type">{item.type.charAt(0).toUpperCase() + item.type.slice(1)} {item.itemIndex}</span>
-                      )}
-                      {item.type && item.itemIndex == null && (
-                        <span className="search-result-type">{item.type.charAt(0).toUpperCase() + item.type.slice(1)}</span>
-                      )}
-                      {item.parentTitle && <span className="search-result-parent">{item.parentTitle}</span>}
-                      {item.duration && <span>{Math.round(item.duration / 60)}m</span>}
-                      {item.format && <span className={`format-badge format-badge--${item.format}`}>{item.format}</span>}
                     </div>
                   </div>
                 </div>

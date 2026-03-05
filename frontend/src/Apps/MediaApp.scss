@@ -1018,33 +1018,44 @@
   text-overflow: ellipsis;
 }
 
-.search-result-meta {
+.search-result-line1 {
   display: flex;
-  gap: 6px;
-  font-size: 11px;
-  color: #666;
   align-items: center;
-  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
 }
 
-.search-result-type {
-  color: #888;
-}
-
-.search-result-parent {
-  color: #777;
-  &::before { content: '· '; color: #555; }
+.search-result-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  color: #e0e0e0;
 }
 
 .search-result-child-count {
-  display: inline-block;
+  flex-shrink: 0;
   background: #333;
   color: #999;
   font-size: 10px;
   padding: 0 5px;
   border-radius: 8px;
-  margin-left: 6px;
-  vertical-align: middle;
+}
+
+.search-result-line2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #666;
+  min-width: 0;
+}
+
+.search-result-subtitle {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #888;
 }
 
 .source-badge {
