@@ -1,5 +1,5 @@
 // frontend/src/modules/Media/QueueItem.jsx
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import CastButton from './CastButton.jsx';
 import { ContentDisplayUrl } from '../../lib/api.mjs';
 import getLogger from '../../lib/logging/Logger.js';
@@ -12,42 +12,44 @@ const QueueItem = ({ item, isCurrent, onPlay, onRemove, index, onDragStart, onDr
 
   const logger = useMemo(() => getLogger().child({ component: 'QueueItem' }), []);
 
-  const activeTouchHandler = useRef(null);
+  const touchRef = useRef({ startX: 0, startY: 0, moved: false });
 
-  useEffect(() => {
-    return () => {
-      if (activeTouchHandler.current) {
-        document.removeEventListener('touchmove', activeTouchHandler.current);
-        activeTouchHandler.current = null;
-      }
-    };
-  }, []);
+  const handleTouchStart = useCallback((e) => {
+    const touch = e.touches?.[0];
+    if (!touch) return;
+    touchRef.current = { startX: touch.clientX, startY: touch.clientY, moved: false };
 
-  const handleSwipeRemove = useCallback((e) => {
-    const startX = e.touches?.[0]?.clientX;
     const handler = (moveEvent) => {
-      const dx = moveEvent.touches[0].clientX - startX;
+      const dx = moveEvent.touches[0].clientX - touchRef.current.startX;
+      const dy = moveEvent.touches[0].clientY - touchRef.current.startY;
+      if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+        touchRef.current.moved = true;
+      }
       if (dx < -80) {
-        activeTouchHandler.current = null;
         document.removeEventListener('touchmove', handler);
         logger.info('queue-item.swipe-remove', { queueId: item.queueId, contentId: item.contentId, title: item.title });
         onRemove(item.queueId);
       }
     };
-    activeTouchHandler.current = handler;
+
     document.addEventListener('touchmove', handler, { passive: true });
     document.addEventListener('touchend', () => {
-      activeTouchHandler.current = null;
       document.removeEventListener('touchmove', handler);
     }, { once: true });
   }, [item.queueId, item.contentId, item.title, onRemove, logger]);
+
+  const handleClick = useCallback(() => {
+    if (touchRef.current.moved) return;
+    logger.info('queue-item.play-clicked', { queueId: item.queueId, contentId: item.contentId });
+    onPlay(item.queueId);
+  }, [item.queueId, item.contentId, onPlay, logger]);
 
   return (
     <div
       className={`queue-item ${isCurrent ? 'queue-item--current' : ''}`}
       draggable
-      onClick={() => { logger.info('queue-item.play-clicked', { queueId: item.queueId, contentId: item.contentId }); onPlay(item.queueId); }}
-      onTouchStart={handleSwipeRemove}
+      onClick={handleClick}
+      onTouchStart={handleTouchStart}
       onDragStart={() => onDragStart?.(item.queueId)}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => { e.preventDefault(); onDrop?.(index); }}
