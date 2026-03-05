@@ -921,13 +921,16 @@ export function useCommonMediaController({
       mediaEl.dataset.key = assetId;
       
       if (Number.isFinite(startTime) && startTime > 0 && isDash) {
-        // DASH: defer seek until playing, then use dash.js API.
-        // Setting currentTime on the inner <video> bypasses dash.js's
-        // SourceBuffer management, leaving the audio buffer permanently empty.
-        // The dash.js api.seek() properly flushes buffers and re-initializes.
-        if (DEBUG_MEDIA) console.log('[StartTime] DASH: deferring seek to playing', { startTime });
+        // DASH: defer seek until SourceBuffers have real data.
+        // Both 'playing' and 'canplay' fire before SourceBuffers are filled,
+        // so seeking at those events corrupts buffers permanently.
+        // Wait for timeupdate (proves real data is buffered), then use
+        // api.seek() which properly flushes and re-initializes both buffers.
+        if (DEBUG_MEDIA) console.log('[StartTime] DASH: deferring seek to timeupdate', { startTime });
         const container = containerRef.current;
-        mediaEl.addEventListener('playing', () => {
+        const onTimeUpdate = () => {
+          if (mediaEl.currentTime < 0.5) return; // wait for real progress
+          mediaEl.removeEventListener('timeupdate', onTimeUpdate);
           try {
             if (container?.api?.seek) {
               container.api.seek(startTime);
@@ -935,8 +938,9 @@ export function useCommonMediaController({
               mediaEl.currentTime = startTime;
             }
           } catch (_) {}
-          if (DEBUG_MEDIA) console.log('[StartTime] DASH: applied deferred seek at playing', { startTime });
-        }, { once: true });
+          if (DEBUG_MEDIA) console.log('[StartTime] DASH: applied deferred seek after timeupdate', { startTime, currentTime: mediaEl.currentTime });
+        };
+        mediaEl.addEventListener('timeupdate', onTimeUpdate);
       } else if (Number.isFinite(startTime)) {
         try {
           mediaEl.currentTime = startTime;
