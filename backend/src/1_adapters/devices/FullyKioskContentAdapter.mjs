@@ -24,6 +24,7 @@ export class FullyKioskContentAdapter {
   #adbAdapter;
   #launchActivity;
   #companionApps;
+  #cameraCheckPaths;
 
   /**
    * @param {Object} config
@@ -33,6 +34,7 @@ export class FullyKioskContentAdapter {
    * @param {string} config.daylightHost - Base URL for content loading
    * @param {string} [config.launchActivity] - Fully qualified activity for ADB re-launch
    * @param {string[]} [config.companionApps] - Android packages to launch via FKB after prepare
+   * @param {string[]} [config.cameraCheckPaths] - Ordered glob paths to check for camera (first match wins)
    * @param {Object} deps
    * @param {Object} deps.httpClient - HTTP client for API calls
    * @param {Object} [deps.logger]
@@ -55,6 +57,7 @@ export class FullyKioskContentAdapter {
     this.#adbAdapter = deps.adbAdapter || null;
     this.#launchActivity = config.launchActivity || null;
     this.#companionApps = config.companionApps || [];
+    this.#cameraCheckPaths = config.cameraCheckPaths || ['/dev/video*', '/sys/class/video4linux/*'];
 
     this.#metrics = {
       startedAt: Date.now(),
@@ -163,15 +166,19 @@ export class FullyKioskContentAdapter {
             this.#logger.info?.('fullykiosk.prepareForContent.companionApp', { pkg, ok: appResult.ok });
           }
 
-          // Check if USB camera is available via /dev/video* nodes.
-          // After cold restart, the UVC driver may need time to re-enumerate.
+          // Check if USB camera is available using configured paths (first match wins).
+          // Default paths: /dev/video* (V4L2 nodes), /sys/class/video4linux/* (kernel sysfs)
           let cameraAvailable = false;
           if (this.#adbAdapter) {
             const MAX_CAMERA_ATTEMPTS = 3;
             const CAMERA_RETRY_MS = 2000;
+            const checkExpr = this.#cameraCheckPaths
+              .map(p => `ls ${p} 2>/dev/null | wc -l`)
+              .join('; ');
+            const shellCmd = `counts=$(${checkExpr}); echo $counts | tr ' ' '\\n' | sort -rn | head -1`;
 
             for (let camAttempt = 1; camAttempt <= MAX_CAMERA_ATTEMPTS; camAttempt++) {
-              const camResult = await this.#adbAdapter.shell('ls /dev/video* 2>/dev/null | wc -l');
+              const camResult = await this.#adbAdapter.shell(shellCmd);
               const count = parseInt(camResult.output?.trim(), 10) || 0;
 
               if (count > 0) {

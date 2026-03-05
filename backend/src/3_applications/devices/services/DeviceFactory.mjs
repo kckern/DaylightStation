@@ -71,7 +71,7 @@ export class DeviceFactory {
 
     // Build content_control capability
     if (deviceConfig.content_control) {
-      capabilities.contentControl = this.#buildContentControl(deviceConfig.content_control);
+      capabilities.contentControl = this.#buildContentControl(deviceConfig.content_control, deviceConfig.camera_check);
     }
 
     return new Device(
@@ -138,7 +138,7 @@ export class DeviceFactory {
    * Build content control adapter
    * @private
    */
-  #buildContentControl(config) {
+  #buildContentControl(config, cameraCheck) {
     const provider = config.provider;
 
     if (provider === 'fully-kiosk') {
@@ -182,7 +182,8 @@ export class DeviceFactory {
           password: password || '',
           daylightHost: this.#daylightHost,
           launchActivity,
-          companionApps: config.companion_apps || []
+          companionApps: config.companion_apps || [],
+          cameraCheckPaths: cameraCheck?.paths
         },
         { httpClient: this.#httpClient, logger: this.#logger, adbAdapter }
       );
