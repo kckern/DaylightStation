@@ -27,7 +27,7 @@ ResilientContentAdapter.load()
 
 ADB is used in two ways:
 
-1. **Pre-emptive MIC release** — During `prepareForContent()`, the FK adapter force-stops and relaunches FKB via ADB to guarantee audio services release the microphone before the audio bridge APK connects. This happens on every content load when ADB is configured.
+1. **Lazy MIC release** — During `prepareForContent()`, the FK adapter checks if FKB's mic-blocking background services (`SoundMeterService`, `MotionDetectorService`) are still running via `dumpsys activity services`. Only if detected does it force-stop and relaunch FKB via ADB. This avoids the 10-20s restart penalty on every call when services are already disabled.
 
 2. **Connection-error recovery** — `ResilientContentAdapter` triggers ADB recovery when the primary FK REST API is unreachable (ECONNREFUSED, ETIMEDOUT, EHOSTUNREACH). Application-level errors (bad URL, auth failure) do **not** trigger recovery.
 
@@ -269,13 +269,17 @@ Recovery events are logged with the `resilient.*` prefix:
 | `resilient.load.recoverySuccess` | info | Content loaded after recovery |
 | `resilient.load.recoveryFailed` | error | Content still failed after recovery |
 
-Pre-emptive MIC release events use the `fullykiosk.prepareForContent.adb*` prefix:
+Lazy MIC release events use the `fullykiosk.*` prefix:
 
 | Event | Level | Meaning |
 |-------|-------|---------|
+| `fullykiosk.isMicBlocked.result` | info | Mic check completed (blocked: true/false) |
+| `fullykiosk.isMicBlocked.connectFailed` | warn | ADB connect failed, skipping mic check |
+| `fullykiosk.prepareForContent.micBlocked` | info | Mic-blocking services detected, triggering force-restart |
+| `fullykiosk.prepareForContent.micClear` | info | No mic-blocking services, skipping force-restart |
 | `fullykiosk.prepareForContent.adbForceStop` | info | FKB force-stopped via ADB (ok: true/false) |
 | `fullykiosk.prepareForContent.adbRelaunch` | info | FKB relaunched via ADB (ok: true/false) |
-| `fullykiosk.prepareForContent.adbRestart.failed` | warn | ADB connect failed, skipping force-restart |
+| `fullykiosk.prepareForContent.adbRestart.failed` | warn | ADB connect failed during force-restart |
 
 ADB-level events use the `adb.*` prefix:
 

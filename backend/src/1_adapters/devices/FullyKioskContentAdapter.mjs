@@ -24,7 +24,6 @@ export class FullyKioskContentAdapter {
   #adbAdapter;
   #launchActivity;
   #companionApps;
-  #cameraCheckPaths;
 
   /**
    * @param {Object} config
@@ -34,7 +33,6 @@ export class FullyKioskContentAdapter {
    * @param {string} config.daylightHost - Base URL for content loading
    * @param {string} [config.launchActivity] - Fully qualified activity for ADB re-launch
    * @param {string[]} [config.companionApps] - Android packages to launch via FKB after prepare
-   * @param {string[]} [config.cameraCheckPaths] - Ordered glob paths to check for camera (first match wins)
    * @param {Object} deps
    * @param {Object} deps.httpClient - HTTP client for API calls
    * @param {Object} [deps.logger]
@@ -57,7 +55,6 @@ export class FullyKioskContentAdapter {
     this.#adbAdapter = deps.adbAdapter || null;
     this.#launchActivity = config.launchActivity || null;
     this.#companionApps = config.companionApps || [];
-    this.#cameraCheckPaths = config.cameraCheckPaths || ['/dev/video*', '/sys/class/video4linux/*'];
 
     this.#metrics = {
       startedAt: Date.now(),
@@ -81,8 +78,8 @@ export class FullyKioskContentAdapter {
     const startTime = Date.now();
     this.#metrics.prepares++;
     const FK_PACKAGE = 'de.ozerov.fully';
-    const MAX_FOREGROUND_ATTEMPTS = 5;
-    const FOREGROUND_RETRY_MS = 500;
+    const MAX_FOREGROUND_ATTEMPTS = 15;
+    const FOREGROUND_RETRY_MS = 1000;
 
     this.#logger.debug?.('fullykiosk.prepareForContent.start', { host: this.#host, port: this.#port });
 
@@ -108,113 +105,88 @@ export class FullyKioskContentAdapter {
         }
       }
 
-      // Force-restart FKB via ADB to guarantee audio services release MIC.
-      // Settings are already persisted above, so FKB restarts clean.
-      // Non-blocking: log failures but don't abort prepare.
-      if (this.#adbAdapter && this.#launchActivity) {
-        try {
-          const connectResult = await this.#adbAdapter.connect();
-          if (connectResult.ok) {
-            const stopResult = await this.#adbAdapter.shell('am force-stop de.ozerov.fully');
-            this.#logger.info?.('fullykiosk.prepareForContent.adbForceStop', { ok: stopResult.ok });
-            coldRestart = true;
-            // Brief pause for process to fully terminate
-            await new Promise(r => setTimeout(r, 500));
-            const launchResult = await this.#adbAdapter.launchActivity(this.#launchActivity);
-            this.#logger.info?.('fullykiosk.prepareForContent.adbRelaunch', { ok: launchResult.ok });
-          } else {
-            this.#logger.warn?.('fullykiosk.prepareForContent.adbRestart.failed', {
-              error: connectResult.error || 'ADB connect failed'
-            });
-          }
-        } catch (err) {
-          this.#logger.warn?.('fullykiosk.prepareForContent.adbRestart.failed', { error: err.message });
-        }
+      // --- Phase 1: Soft prepare (no force-stop) ---
+      const fgResult = await this.#verifyForeground(FK_PACKAGE, MAX_FOREGROUND_ATTEMPTS, FOREGROUND_RETRY_MS, startTime);
+      if (!fgResult.ok) {
+        return fgResult;
       }
 
-      // Bring to foreground with verification loop
-      for (let attempt = 1; attempt <= MAX_FOREGROUND_ATTEMPTS; attempt++) {
-        await this.#sendCommand('toForeground');
-        await new Promise(r => setTimeout(r, FOREGROUND_RETRY_MS));
+      // Launch companion apps
+      await this.#launchCompanions();
 
-        // Verify FK is actually in the foreground
-        const info = await this.#sendCommand('getDeviceInfo', { type: 'json' });
-        const foreground = info.data?.foreground;
+      // Check if mic-blocking FKB services are still running
+      const micBlocked = await this.#isMicBlocked();
 
-        if (foreground === FK_PACKAGE) {
-          this.#logger.info?.('fullykiosk.prepareForContent.foregroundConfirmed', {
-            attempt, elapsedMs: Date.now() - startTime
+      if (micBlocked) {
+        // --- Phase 2: Force restart needed ---
+        this.#logger.info?.('fullykiosk.prepareForContent.micBlocked', { elapsedMs: Date.now() - startTime });
+
+        if (this.#adbAdapter && this.#launchActivity) {
+          try {
+            const connectResult = await this.#adbAdapter.connect();
+            if (connectResult.ok) {
+              const stopResult = await this.#adbAdapter.shell('am force-stop de.ozerov.fully');
+              this.#logger.info?.('fullykiosk.prepareForContent.adbForceStop', { ok: stopResult.ok });
+              coldRestart = true;
+
+              // Brief pause for process to fully terminate
+              await new Promise(r => setTimeout(r, 500));
+
+              const launchResult = await this.#adbAdapter.launchActivity(this.#launchActivity);
+              this.#logger.info?.('fullykiosk.prepareForContent.adbRelaunch', { ok: launchResult.ok });
+
+              // Re-verify foreground after restart
+              const fgResult2 = await this.#verifyForeground(FK_PACKAGE, MAX_FOREGROUND_ATTEMPTS, FOREGROUND_RETRY_MS, startTime);
+              if (!fgResult2.ok) {
+                return fgResult2;
+              }
+
+              // Re-launch companions with fresh foreground context
+              await this.#launchCompanions();
+            } else {
+              this.#logger.warn?.('fullykiosk.prepareForContent.adbRestart.failed', {
+                error: connectResult.error || 'ADB connect failed'
+              });
+            }
+          } catch (err) {
+            this.#logger.warn?.('fullykiosk.prepareForContent.adbRestart.failed', { error: err.message });
+          }
+        }
+      } else {
+        this.#logger.info?.('fullykiosk.prepareForContent.micClear', { elapsedMs: Date.now() - startTime });
+      }
+
+      // Camera check (runs after either phase)
+      let cameraAvailable = false;
+      if (this.#adbAdapter) {
+        const MAX_CAMERA_ATTEMPTS = 3;
+        const CAMERA_RETRY_MS = 2000;
+
+        for (let camAttempt = 1; camAttempt <= MAX_CAMERA_ATTEMPTS; camAttempt++) {
+          const camResult = await this.#adbAdapter.shell('ls /dev/video* 2>/dev/null | wc -l');
+          const count = parseInt(camResult.output?.trim(), 10) || 0;
+
+          if (count > 0) {
+            this.#logger.info?.('fullykiosk.prepareForContent.cameraCheck.passed', {
+              attempt: camAttempt, videoDevices: count
+            });
+            cameraAvailable = true;
+            break;
+          }
+
+          this.#logger.warn?.('fullykiosk.prepareForContent.cameraCheck.failed', {
+            attempt: camAttempt, maxAttempts: MAX_CAMERA_ATTEMPTS
           });
 
-          // Launch companion apps from FKB's foreground context.
-          // On Android 11+, apps started by the foreground app inherit
-          // foreground privileges (createdFromFg=true), enabling microphone
-          // access that background-started services are denied.
-          for (const pkg of this.#companionApps) {
-            // Force-stop first so the app's Activity recreates the service
-            // with fresh foreground context (restarting over a BootReceiver
-            // instance that has createdFromFg=false).
-            if (this.#adbAdapter) {
-              try {
-                await this.#adbAdapter.shell(`am force-stop ${pkg}`);
-                await new Promise(r => setTimeout(r, 300));
-              } catch (err) {
-                this.#logger.debug?.('fullykiosk.prepareForContent.companionForceStop.failed', { pkg, error: err.message });
-              }
-            }
-            const appResult = await this.#sendCommand('startApplication', { package: pkg });
-            this.#logger.info?.('fullykiosk.prepareForContent.companionApp', { pkg, ok: appResult.ok });
+          if (camAttempt < MAX_CAMERA_ATTEMPTS) {
+            await new Promise(r => setTimeout(r, CAMERA_RETRY_MS));
           }
-
-          // Check if USB camera is available using configured paths (first match wins).
-          // Default paths: /dev/video* (V4L2 nodes), /sys/class/video4linux/* (kernel sysfs)
-          let cameraAvailable = false;
-          if (this.#adbAdapter) {
-            const MAX_CAMERA_ATTEMPTS = 3;
-            const CAMERA_RETRY_MS = 2000;
-            const checkExpr = this.#cameraCheckPaths
-              .map(p => `ls ${p} 2>/dev/null | wc -l`)
-              .join('; ');
-            const shellCmd = `counts=$(${checkExpr}); echo $counts | tr ' ' '\\n' | sort -rn | head -1`;
-
-            for (let camAttempt = 1; camAttempt <= MAX_CAMERA_ATTEMPTS; camAttempt++) {
-              const camResult = await this.#adbAdapter.shell(shellCmd);
-              const count = parseInt(camResult.output?.trim(), 10) || 0;
-
-              if (count > 0) {
-                this.#logger.info?.('fullykiosk.prepareForContent.cameraCheck.passed', {
-                  attempt: camAttempt, videoDevices: count
-                });
-                cameraAvailable = true;
-                break;
-              }
-
-              this.#logger.warn?.('fullykiosk.prepareForContent.cameraCheck.failed', {
-                attempt: camAttempt, maxAttempts: MAX_CAMERA_ATTEMPTS
-              });
-
-              if (camAttempt < MAX_CAMERA_ATTEMPTS) {
-                await new Promise(r => setTimeout(r, CAMERA_RETRY_MS));
-              }
-            }
-          } else {
-            // No ADB adapter — can't check, assume available
-            cameraAvailable = true;
-          }
-
-          return { ok: true, coldRestart, cameraAvailable, elapsedMs: Date.now() - startTime };
         }
-
-        this.#logger.warn?.('fullykiosk.prepareForContent.notInForeground', {
-          attempt, foreground, expected: FK_PACKAGE
-        });
+      } else {
+        cameraAvailable = true;
       }
 
-      // All attempts exhausted
-      this.#logger.error?.('fullykiosk.prepareForContent.foregroundFailed', {
-        attempts: MAX_FOREGROUND_ATTEMPTS, elapsedMs: Date.now() - startTime
-      });
-      return { ok: false, step: 'toForeground', error: 'Could not bring Fully Kiosk to foreground' };
+      return { ok: true, coldRestart, cameraAvailable, elapsedMs: Date.now() - startTime };
     } catch (error) {
       this.#metrics.errors++;
       this.#logger.error?.('fullykiosk.prepareForContent.exception', { error: error.message, stack: error.stack });
@@ -409,6 +381,98 @@ export class FullyKioskContentAdapter {
         elapsedMs
       });
       return { ok: false, error: error.message };
+    }
+  }
+
+  /**
+   * Bring FKB to foreground and verify via polling loop.
+   * @private
+   * @param {string} fkPackage - Expected foreground package name
+   * @param {number} maxAttempts - Maximum verification attempts
+   * @param {number} retryMs - Delay between attempts in ms
+   * @param {number} startTime - Start time for elapsed logging
+   * @returns {Promise<{ok: boolean, step?: string, error?: string}>}
+   */
+  async #verifyForeground(fkPackage, maxAttempts, retryMs, startTime) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      await this.#sendCommand('toForeground');
+      await new Promise(r => setTimeout(r, retryMs));
+
+      const info = await this.#sendCommand('getDeviceInfo', { type: 'json' });
+      const foreground = info.data?.foreground;
+
+      if (foreground === fkPackage) {
+        this.#logger.info?.('fullykiosk.prepareForContent.foregroundConfirmed', {
+          attempt, elapsedMs: Date.now() - startTime
+        });
+        return { ok: true };
+      }
+
+      this.#logger.warn?.('fullykiosk.prepareForContent.notInForeground', {
+        attempt, foreground, expected: fkPackage
+      });
+    }
+
+    this.#logger.error?.('fullykiosk.prepareForContent.foregroundFailed', {
+      attempts: maxAttempts, elapsedMs: Date.now() - startTime
+    });
+    return { ok: false, step: 'toForeground', error: 'Could not bring Fully Kiosk to foreground' };
+  }
+
+  /**
+   * Launch companion apps from FKB's foreground context.
+   * On Android 11+, apps started by the foreground app inherit
+   * foreground privileges (createdFromFg=true), enabling microphone
+   * access that background-started services are denied.
+   * @private
+   */
+  async #launchCompanions() {
+    for (const pkg of this.#companionApps) {
+      // Force-stop first so the app's Activity recreates the service
+      // with fresh foreground context (restarting over a BootReceiver
+      // instance that has createdFromFg=false).
+      if (this.#adbAdapter) {
+        try {
+          await this.#adbAdapter.shell(`am force-stop ${pkg}`);
+          await new Promise(r => setTimeout(r, 300));
+        } catch (err) {
+          this.#logger.debug?.('fullykiosk.prepareForContent.companionForceStop.failed', { pkg, error: err.message });
+        }
+      }
+      const appResult = await this.#sendCommand('startApplication', { package: pkg });
+      this.#logger.info?.('fullykiosk.prepareForContent.companionApp', { pkg, ok: appResult.ok });
+    }
+  }
+
+  /**
+   * Check if FKB background services are holding mic/camera resources.
+   * Uses ADB dumpsys to inspect running services for known problematic ones.
+   * @private
+   * @returns {Promise<boolean>} true if mic-blocking services are detected
+   */
+  async #isMicBlocked() {
+    if (!this.#adbAdapter) return false;
+
+    try {
+      const connectResult = await this.#adbAdapter.connect();
+      if (!connectResult.ok) {
+        this.#logger.warn?.('fullykiosk.isMicBlocked.connectFailed', { error: connectResult.error });
+        return false;
+      }
+
+      const result = await this.#adbAdapter.shell('dumpsys activity services de.ozerov.fully');
+      if (!result.ok) {
+        this.#logger.warn?.('fullykiosk.isMicBlocked.dumpsysFailed', { error: result.error });
+        return false;
+      }
+
+      const output = result.output || '';
+      const blocked = output.includes('SoundMeterService') || output.includes('MotionDetectorService');
+      this.#logger.info?.('fullykiosk.isMicBlocked.result', { blocked, outputLength: output.length });
+      return blocked;
+    } catch (err) {
+      this.#logger.warn?.('fullykiosk.isMicBlocked.error', { error: err.message });
+      return false;
     }
   }
 }

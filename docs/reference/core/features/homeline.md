@@ -201,7 +201,7 @@ GET /api/v1/device/{deviceId}/load?open=videocall/{deviceId}
 
 This triggers the DDD device control chain:
 1. `Device.powerOn()` — HA script turns on TV via CEC/IR, with display verification (polls state sensor for 8s)
-2. `Device.prepareForContent()` — Fully Kiosk wakes screen, brings to foreground
+2. `Device.prepareForContent()` — Fully Kiosk wakes screen, brings to foreground, checks for mic-blocking services (lazy force-restart only if needed)
 3. `Device.loadContent('/tv', { open: 'videocall/{id}' })` — Fully Kiosk loads the URL
 
 Response includes `displayVerified` (boolean) and `displayVerifyFailed` (boolean) so the phone can warn if the TV didn't respond.
