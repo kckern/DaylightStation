@@ -194,7 +194,7 @@ const ContentDetailView = ({ contentId, onTitleResolved }) => {
                 &#9654; Play All
               </button>
             )}
-            {(capabilities.includes('playable') || isContainer) && (
+            {capabilities.includes('playable') && (
               <>
                 <button className="action-btn" onClick={() => handlePlayNext(null)}>&#10549; Next</button>
                 <button className="action-btn" onClick={() => handleAddToQueue(null)}>+ Queue</button>
