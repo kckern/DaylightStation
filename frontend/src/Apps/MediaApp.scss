@@ -270,6 +270,24 @@
   cursor: pointer;
   z-index: 100;
   overflow: hidden;
+
+  // PiP mode for video
+  &--pip {
+    width: 160px;
+    height: 90px;
+    bottom: 16px;
+    right: 16px;
+    left: auto;
+    border-radius: 8px;
+    border: 1px solid #333;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+
+    .mini-player-content { padding: 0; }
+    .mini-player-thumb { width: 100%; height: 100%; border-radius: 8px; }
+    .mini-player-title,
+    .mini-player-toggle { display: none; }
+    .mini-player-progress { bottom: 0; top: auto; border-radius: 0 0 8px 8px; }
+  }
 }
 
 .mini-player-progress {
