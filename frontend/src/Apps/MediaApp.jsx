@@ -9,6 +9,7 @@ import SearchHomePanel from '../modules/Media/SearchHomePanel.jsx';
 import ContentBrowserPanel from '../modules/Media/ContentBrowserPanel.jsx';
 import PlayerPanel from '../modules/Media/PlayerPanel.jsx';
 import MiniPlayer from '../modules/Media/MiniPlayer.jsx';
+import Toast from '../modules/Media/Toast.jsx';
 import { recordPlay, updateProgress } from '../hooks/media/useMediaHistory.js';
 import './MediaApp.scss';
 
@@ -216,6 +217,7 @@ const MediaAppInner = () => {
           onExpand={() => navigate('/media/play')}
         />
       )}
+      <Toast />
     </div>
   );
 };
