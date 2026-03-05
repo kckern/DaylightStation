@@ -236,7 +236,11 @@ const ContentDetailView = ({ contentId, onTitleResolved }) => {
                   </div>
                   <div className="child-item-info" onClick={() => handleChildClick(child)}>
                     <div className="child-item-title">
-                      {child.itemIndex !== undefined && <span className="child-item-index">{child.itemIndex}.</span>}
+                      {child.itemIndex !== undefined && (
+                        <span className="child-item-index">
+                          {(data.type === 'show' || data.type === 'season') ? `Ep ${child.itemIndex}. ` : `${child.itemIndex}. `}
+                        </span>
+                      )}
                       {child.title}
                     </div>
                     <div className="child-item-meta">

@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import getLogger from '../../lib/logging/Logger.js';
 import MediaAppPlayer from './MediaAppPlayer.jsx';
 import { ContentDisplayUrl } from '../../lib/api.mjs';
+import { useMediaApp } from '../../contexts/MediaAppContext.jsx';
 
 function formatTime(seconds) {
   if (!seconds || !isFinite(seconds)) return '0:00';
@@ -55,6 +56,7 @@ const FormatMetadata = ({ item, duration }) => {
  */
 const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, playerRef }) => {
   const logger = useMemo(() => getLogger().child({ component: 'NowPlaying' }), []);
+  const { queue } = useMediaApp();
 
   const [playbackState, setPlaybackState] = useState({
     currentTime: 0,
@@ -214,6 +216,8 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
 
   // When seeking, show the seek intent position (where user dragged to) instead
   // of the actual currentTime which fluctuates as the browser loads data.
+  const isVideoFormat = currentItem?.format === 'video' || currentItem?.format === 'dash_video';
+
   const displayTime = (playbackState.isSeeking && playbackState.seekIntent != null)
     ? playbackState.seekIntent
     : playbackState.currentTime;
@@ -277,7 +281,7 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
     : null;
 
   return (
-    <div className="media-now-playing">
+    <div className={`media-now-playing${isVideoFormat ? ' media-now-playing--video' : ''}`}>
       {/* Player (may be embedded or fullscreen) */}
       <MediaAppPlayer
         ref={playerRef}
@@ -300,6 +304,9 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
         )}
         <div className="media-track-details">
           <div className="media-track-title">{currentItem.title || currentItem.contentId}</div>
+          {queue.items.length > 1 && (
+            <div className="media-track-position">{queue.position + 1} of {queue.items.length}</div>
+          )}
           <FormatMetadata item={currentItem} duration={playbackState.duration} />
           {/* Expand to fullscreen for singalong/readalong (8.1.5, 8.1.7) */}
           {!isFullscreen && (currentItem.format === 'singalong' || currentItem.format === 'hymn' || currentItem.format === 'readalong') && (
