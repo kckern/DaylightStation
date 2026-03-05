@@ -35,28 +35,41 @@ const MediaAppPlayer = forwardRef(function MediaAppPlayer(
     }
   }, [playObject?.contentId, logger]);
 
-  // Layout diagnostics: report player wrapper visibility and dimensions
+  // Layout diagnostics: ResizeObserver fires when element gets/loses dimensions
+  // (e.g. parent switches from display:none to visible)
   useEffect(() => {
     if (!playObject || !wrapperRef.current) return;
     const el = wrapperRef.current;
-    const rect = el.getBoundingClientRect();
-    const computedDisplay = getComputedStyle(el).display;
-    const parentHidden = el.closest('.hidden') !== null;
-    const modeContainer = el.closest('.media-mode-player, .media-mode-browse');
-    const modeContainerClass = modeContainer?.className || 'none';
-    logger.info('media-player.layout', {
-      contentId: playObject.contentId,
-      isFullscreen,
-      width: Math.round(rect.width),
-      height: Math.round(rect.height),
-      top: Math.round(rect.top),
-      left: Math.round(rect.left),
-      display: computedDisplay,
-      parentHidden,
-      modeContainer: modeContainerClass,
-      viewportWidth: window.innerWidth,
-      viewportHeight: window.innerHeight,
-    });
+    let lastWidth = 0;
+    let lastHeight = 0;
+
+    const measure = () => {
+      const rect = el.getBoundingClientRect();
+      const w = Math.round(rect.width);
+      const h = Math.round(rect.height);
+      if (w === lastWidth && h === lastHeight) return;
+      lastWidth = w;
+      lastHeight = h;
+      const parentHidden = el.closest('.hidden') !== null;
+      const modeContainer = el.closest('.media-mode-player, .media-mode-browse');
+      logger.info('media-player.layout', {
+        contentId: playObject.contentId,
+        isFullscreen,
+        width: w,
+        height: h,
+        top: Math.round(rect.top),
+        left: Math.round(rect.left),
+        parentHidden,
+        modeContainer: modeContainer?.className || 'none',
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+      });
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
   }, [playObject?.contentId, isFullscreen, logger]);
 
   if (!playObject) return null;
