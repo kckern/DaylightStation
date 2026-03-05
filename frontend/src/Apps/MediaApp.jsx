@@ -1,30 +1,17 @@
 // frontend/src/Apps/MediaApp.jsx
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import getLogger, { configure as configureLogger } from '../lib/logging/Logger.js';
 import useMediaUrlParams from '../hooks/media/useMediaUrlParams.js';
 import { MediaAppProvider, useMediaApp } from '../contexts/MediaAppContext.jsx';
 import { usePlaybackBroadcast } from '../hooks/media/usePlaybackBroadcast.js';
-import NowPlaying from '../modules/Media/NowPlaying.jsx';
+import SearchHomePanel from '../modules/Media/SearchHomePanel.jsx';
+import ContentBrowserPanel from '../modules/Media/ContentBrowserPanel.jsx';
+import PlayerPanel from '../modules/Media/PlayerPanel.jsx';
 import MiniPlayer from '../modules/Media/MiniPlayer.jsx';
-import QueueDrawer from '../modules/Media/QueueDrawer.jsx';
-import ContentBrowser from '../modules/Media/ContentBrowser.jsx';
-import ContentDetailView from '../modules/Media/ContentDetailView.jsx';
-import DevicePanel from '../modules/Media/DevicePanel.jsx';
-import PlayerSwipeContainer from '../modules/Media/PlayerSwipeContainer.jsx';
+import { recordPlay, updateProgress } from '../hooks/media/useMediaHistory.js';
 import './MediaApp.scss';
 
-/**
- * MediaApp — media controller and player.
- *
- * Two-mode navigation:
- *   browse  — ContentBrowser (search/browse media library)
- *   player  — PlayerSwipeContainer with Queue | NowPlaying | Devices
- *
- * Both modes are ALWAYS mounted; CSS display:none hides the inactive one.
- * This keeps the <audio>/<video> element alive across mode switches so
- * playback never interrupts.
- */
 const MediaApp = () => {
   return (
     <MediaAppProvider>
@@ -35,21 +22,14 @@ const MediaApp = () => {
 
 const MediaAppInner = () => {
   const { queue, playerRef } = useMediaApp();
+  const location = useLocation();
+  const navigate = useNavigate();
   const urlCommandProcessed = useRef(false);
   usePlaybackBroadcast(playerRef, queue.currentItem);
   const logger = useMemo(() => getLogger().child({ app: 'media', sessionLog: true }), []);
   const urlCommand = useMediaUrlParams();
 
-  // Two-mode navigation: 'browse' (default) or 'player' (expanded)
-  const [mode, setModeRaw] = useState('browse');
-  const setMode = useCallback((newMode) => {
-    setModeRaw(prev => {
-      if (prev !== newMode) logger.info('media-app.mode-change', { from: prev, to: newMode });
-      return newMode;
-    });
-  }, [logger]);
-
-  // Playback state (shared between NowPlaying and MiniPlayer)
+  // Playback state (shared between PlayerPanel and MiniPlayer)
   const [playbackState, setPlaybackState] = useState({
     currentTime: 0,
     duration: 0,
@@ -66,31 +46,23 @@ const MediaAppInner = () => {
     };
   }, [logger]);
 
-  // Process URL command on mount
+  // Process URL command on mount (preserved from original)
   useEffect(() => {
     if (queue.loading || urlCommandProcessed.current) return;
     if (!urlCommand) return;
-    logger.info('media-app.url-parsed', {
-      action: urlCommand.play ? 'play' : urlCommand.queue ? 'queue' : 'unknown',
-      contentId: (urlCommand.play || urlCommand.queue)?.contentId,
-      volume: (urlCommand.play || urlCommand.queue)?.volume,
-      shuffle: (urlCommand.play || urlCommand.queue)?.shuffle,
-      device: urlCommand.device,
-    });
+    urlCommandProcessed.current = true;
+
     const playCommand = urlCommand.play || urlCommand.queue;
     if (!playCommand?.contentId) return;
 
-    urlCommandProcessed.current = true;
-
     const { contentId, volume, ...config } = playCommand;
-    logger.info('media-app.url-command', { action: urlCommand.play ? 'play' : 'queue', contentId, device: urlCommand.device });
+    logger.info('media-app.url-command', { action: urlCommand.play ? 'play' : 'queue', contentId });
 
-    // Cast to device if ?device= specified
     if (urlCommand.device && playCommand?.contentId) {
       const params = new URLSearchParams({ open: '/media', play: playCommand.contentId });
       fetch(`/api/v1/device/${urlCommand.device}/load?${params}`)
         .then(r => r.json())
-        .then(result => logger.info('media-app.device-cast', { device: urlCommand.device, contentId: playCommand.contentId, ok: result.ok }))
+        .then(result => logger.info('media-app.device-cast', { device: urlCommand.device, contentId, ok: result.ok }))
         .catch(err => logger.error('media-app.device-cast-failed', { device: urlCommand.device, error: err.message }));
       return;
     }
@@ -126,44 +98,31 @@ const MediaAppInner = () => {
     }
   }, [logger, queue, playbackState.currentTime, playerRef]);
 
-  // Derive detail view content ID from URL path (e.g., /media/view/plex:12345 or /media/view/readalong:scripture/ot/nirv/1)
-  const location = useLocation();
+  // Record play history when current item changes
+  useEffect(() => {
+    if (queue.currentItem) recordPlay(queue.currentItem);
+  }, [queue.currentItem?.contentId]);
+
+  // Update progress periodically
+  useEffect(() => {
+    if (queue.currentItem?.contentId && playbackState.currentTime > 0) {
+      updateProgress(queue.currentItem.contentId, playbackState.currentTime, playbackState.duration);
+    }
+  }, [queue.currentItem?.contentId, Math.floor(playbackState.currentTime / 5)]); // every ~5s
+
+  // Determine active panel from route for mobile layout
+  const activePanel = useMemo(() => {
+    if (location.pathname.startsWith('/media/play')) return 'player';
+    if (location.pathname.startsWith('/media/view/')) return 'browser';
+    if (location.pathname.startsWith('/media/search/')) return 'search';
+    return 'search'; // default: search/home
+  }, [location.pathname]);
+
+  // Extract content ID from /media/view/:contentId route
   const detailContentId = useMemo(() => {
     const match = location.pathname.match(/^\/media\/view\/(.+)$/);
     return match ? decodeURIComponent(match[1]) : null;
   }, [location.pathname]);
-
-  // Auto-collapse to browse mode when queue empties
-  useEffect(() => {
-    if (mode === 'player' && !queue.currentItem && queue.items.length === 0) {
-      setMode('browse');
-    }
-  }, [mode, queue.currentItem, queue.items.length]);
-
-  // Auto-expand to player mode for video content (player is hidden in browse mode)
-  useEffect(() => {
-    if (mode === 'browse' && queue.currentItem) {
-      const fmt = queue.currentItem.format;
-      if (fmt === 'video' || fmt === 'dash_video') {
-        logger.info('media-app.auto-expand-for-video', { format: fmt, contentId: queue.currentItem.contentId });
-        setMode('player');
-      }
-    }
-  }, [mode, queue.currentItem?.contentId, queue.currentItem?.format, logger]);
-
-  // Log layout state when currentItem or mode changes
-  useEffect(() => {
-    if (queue.loading) return;
-    logger.info('media-app.layout-state', {
-      mode,
-      hasCurrentItem: !!queue.currentItem,
-      currentFormat: queue.currentItem?.format,
-      currentContentId: queue.currentItem?.contentId,
-      hasMiniplayer: mode === 'browse' && !!queue.currentItem,
-      detailContentId: detailContentId || null,
-      playerHidden: mode !== 'player',
-    });
-  }, [mode, queue.loading, queue.currentItem?.contentId, queue.currentItem?.format, detailContentId, logger]);
 
   if (queue.loading) {
     return (
@@ -175,45 +134,42 @@ const MediaAppInner = () => {
     );
   }
 
-  const hasMiniplayer = mode === 'browse' && !!queue.currentItem;
+  const hasCurrentItem = !!queue.currentItem;
 
   return (
     <div className="App media-app">
-      <div className="media-app-container">
-        {/* Browse Mode — always mounted, hidden when in player mode */}
-        <div className={`media-mode-browse${mode !== 'browse' ? ' hidden' : ''}`}>
-          {/* ContentBrowser is ALWAYS mounted so search state persists across detail view navigation */}
-          <div className={detailContentId ? 'hidden' : ''}>
-            <ContentBrowser hasMiniplayer={hasMiniplayer} />
-          </div>
-          {detailContentId && <ContentDetailView contentId={detailContentId} />}
+      <div className={`media-panels media-panels--active-${activePanel}`}>
+        {/* Panel 1: Search/Home (left) */}
+        <div className={`media-panel media-panel--search ${activePanel === 'search' ? 'media-panel--active' : ''}`}>
+          <SearchHomePanel />
         </div>
 
-        {/* Player Mode — always mounted, hidden when in browse mode */}
-        <div className={`media-mode-player${mode !== 'player' ? ' hidden' : ''}`}>
-          <PlayerSwipeContainer onCollapse={() => setMode('browse')} visible={mode === 'player'}>
-            <QueueDrawer />
-            <NowPlaying
-              currentItem={queue.currentItem}
-              onItemEnd={handleItemEnd}
-              onNext={handleNext}
-              onPrev={handlePrev}
-              onPlaybackState={setPlaybackState}
-              playerRef={playerRef}
-            />
-            <DevicePanel />
-          </PlayerSwipeContainer>
+        {/* Panel 2: Content Browser (center) */}
+        <div className={`media-panel media-panel--browser ${activePanel === 'browser' ? 'media-panel--active' : ''}`}>
+          <ContentBrowserPanel contentId={detailContentId} />
         </div>
 
-        {/* MiniPlayer: shows in browse mode when something is playing */}
-        {hasMiniplayer && (
-          <MiniPlayer
+        {/* Panel 3: Player (right) */}
+        <div className={`media-panel media-panel--player ${activePanel === 'player' ? 'media-panel--active' : ''}`}>
+          <PlayerPanel
             currentItem={queue.currentItem}
-            playbackState={playbackState}
-            onExpand={() => setMode('player')}
+            onItemEnd={handleItemEnd}
+            onNext={handleNext}
+            onPrev={handlePrev}
+            onPlaybackState={setPlaybackState}
+            playerRef={playerRef}
           />
-        )}
+        </div>
       </div>
+
+      {/* MiniPlayer: visible on mobile/tablet when player panel is not active */}
+      {hasCurrentItem && activePanel !== 'player' && (
+        <MiniPlayer
+          currentItem={queue.currentItem}
+          playbackState={playbackState}
+          onExpand={() => navigate('/media/play')}
+        />
+      )}
     </div>
   );
 };

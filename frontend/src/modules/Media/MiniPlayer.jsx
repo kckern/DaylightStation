@@ -40,8 +40,10 @@ const MiniPlayer = ({ currentItem, playbackState, onExpand }) => {
     playerRef.current?.toggle?.();
   }, [playerRef, logger, playbackState?.paused, currentItem?.contentId]);
 
+  const isVideo = currentItem.format === 'video' || currentItem.format === 'dash_video';
+
   return (
-    <div className="media-mini-player" onClick={handleBarClick}>
+    <div className={`media-mini-player ${isVideo ? 'media-mini-player--pip' : ''}`} onClick={handleBarClick}>
       <div className="mini-player-progress" style={{ width: `${progress}%` }} />
       <div className="mini-player-content">
         {thumbnailUrl && (
