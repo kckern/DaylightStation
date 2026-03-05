@@ -69,6 +69,7 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
   // Overlay visibility for video fullscreen auto-hide (8.2.4)
   const [overlayVisible, setOverlayVisible] = useState(true);
   const overlayTimerRef = useRef(null);
+  const isDragging = useRef(false);
 
   const showOverlay = useCallback(() => {
     setOverlayVisible(true);
@@ -83,9 +84,11 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
   useEffect(() => {
     if (isFullscreen) {
       showOverlay();
+      setPlaybackState(prev => ({ ...prev, isSeeking: false, seekIntent: null }));
       logger.info('player.fullscreen-enter', { format: currentItem?.format });
     } else {
       setOverlayVisible(true);
+      setPlaybackState(prev => ({ ...prev, isSeeking: false, seekIntent: null }));
       // Timer cleared by cleanup function
       logger.info('player.fullscreen-exit', { format: currentItem?.format, contentId: currentItem?.contentId });
     }
@@ -136,14 +139,35 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
     playerRef.current?.toggle?.();
   }, [playerRef, logger, playbackState.paused, currentItem?.contentId]);
 
-  const handleSeek = useCallback((e) => {
-    const bar = e.currentTarget;
+  const getSeekTime = useCallback((e, bar) => {
     const rect = bar.getBoundingClientRect();
-    const percent = (e.clientX - rect.left) / rect.width;
-    const seekTime = percent * playbackState.duration;
+    const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    return percent * playbackState.duration;
+  }, [playbackState.duration]);
+
+  const handlePointerDown = useCallback((e) => {
+    if (playbackState.duration <= 0) return;
+    const bar = e.currentTarget;
+    isDragging.current = true;
+    bar.setPointerCapture(e.pointerId);
+    const seekTime = getSeekTime(e, bar);
+    setPlaybackState(prev => ({ ...prev, isSeeking: true, seekIntent: seekTime }));
+    logger.debug('player.seek-start', { seekTime: Math.round(seekTime) });
+  }, [playbackState.duration, getSeekTime, logger]);
+
+  const handlePointerMove = useCallback((e) => {
+    if (!isDragging.current) return;
+    const seekTime = getSeekTime(e, e.currentTarget);
+    setPlaybackState(prev => ({ ...prev, seekIntent: seekTime }));
+  }, [getSeekTime]);
+
+  const handlePointerUp = useCallback((e) => {
+    if (!isDragging.current) return;
+    isDragging.current = false;
+    const seekTime = getSeekTime(e, e.currentTarget);
     logger.debug('player.seek', { seekTime: Math.round(seekTime), duration: Math.round(playbackState.duration) });
     playerRef.current?.seek?.(seekTime);
-  }, [playbackState.duration, playerRef, logger]);
+  }, [getSeekTime, playbackState.duration, playerRef, logger]);
 
   const handleVolumeChange = useCallback((e) => {
     const newVolume = parseFloat(e.target.value);
@@ -166,7 +190,7 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
     ? playbackState.seekIntent
     : playbackState.currentTime;
   const progress = playbackState.duration > 0
-    ? (displayTime / playbackState.duration) * 100
+    ? Math.min(100, Math.max(0, (displayTime / playbackState.duration) * 100))
     : 0;
 
   const renderTransportOverlay = () => (
@@ -174,7 +198,7 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
       className={`media-fullscreen-controls${!overlayVisible ? ' media-fullscreen-controls--hidden' : ''}`}
       onClick={(e) => { e.stopPropagation(); showOverlay(); }}
     >
-      <div className="media-progress" onClick={(e) => { e.stopPropagation(); showOverlay(); handleSeek(e); }}>
+      <div className="media-progress" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => { e.stopPropagation(); showOverlay(); handlePointerDown(e); }} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp}>
         <div className="media-progress-bar">
           <div className="media-progress-fill" style={{ width: `${progress}%` }} />
         </div>
@@ -224,7 +248,7 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
         isFullscreen={isFullscreen}
         onExitFullscreen={handleExitFullscreen}
         renderOverlay={isFullscreen ? renderTransportOverlay : undefined}
-        onPlayerClick={isFullscreen ? showOverlay : handleExpandFullscreen}
+        onPlayerClick={isFullscreen ? showOverlay : handleToggle}
       />
 
       {/* Track Info */}
@@ -253,7 +277,7 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
       {!isFullscreen && (
         <>
           {/* Progress Bar */}
-          <div className="media-progress" onClick={handleSeek}>
+          <div className="media-progress" onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp}>
             <div className="media-progress-bar">
               <div
                 className="media-progress-fill"

@@ -26,7 +26,7 @@ const MiniPlayer = ({ currentItem, playbackState, onExpand }) => {
     : null;
 
   const progress = playbackState?.duration > 0
-    ? (playbackState.currentTime / playbackState.duration) * 100
+    ? Math.min(100, Math.max(0, (playbackState.currentTime / playbackState.duration) * 100))
     : 0;
 
   const handleBarClick = useCallback((e) => {
