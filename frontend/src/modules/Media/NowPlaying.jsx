@@ -357,14 +357,15 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
         </>
       )}
 
-      {/* Volume — inline with transport */}
+      {/* Volume — vertical bar next to transport */}
       {!isFullscreen && (
-        <div className="media-volume-inline">
+        <div className="media-volume-vertical">
           <button className="media-mute-btn" onClick={handleMuteToggle} aria-label={muted ? 'Unmute' : 'Mute'}>
             {muted || volume === 0 ? '\u{1F507}' : volume < 0.5 ? '\u{1F509}' : '\u{1F50A}'}
           </button>
           <input
             type="range" min="0" max="1" step="0.05"
+            orient="vertical"
             value={muted ? 0 : volume}
             onChange={handleVolumeChange}
             aria-label="Volume"
