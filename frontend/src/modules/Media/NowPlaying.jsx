@@ -151,6 +151,7 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
 
   const handleToggle = useCallback(() => {
     logger.debug('player.toggle', { paused: playbackState.paused, contentId: currentItem?.contentId });
+    setPlaybackState(prev => ({ ...prev, paused: !prev.paused }));
     playerRef.current?.toggle?.();
   }, [playerRef, logger, playbackState.paused, currentItem?.contentId]);
 

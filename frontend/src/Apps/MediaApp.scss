@@ -30,6 +30,7 @@
     &.media-panel--active {
       display: flex;
       flex: 1;
+      animation: panel-fade-in 0.2s ease;
     }
   }
 }
@@ -1602,6 +1603,11 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
   cursor: pointer;
   animation: toast-in 0.2s ease;
+}
+
+@keyframes panel-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes toast-in {
