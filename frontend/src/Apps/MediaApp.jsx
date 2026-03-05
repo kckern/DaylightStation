@@ -9,6 +9,7 @@ import SearchHomePanel from '../modules/Media/SearchHomePanel.jsx';
 import ContentBrowserPanel from '../modules/Media/ContentBrowserPanel.jsx';
 import PlayerPanel from '../modules/Media/PlayerPanel.jsx';
 import MiniPlayer from '../modules/Media/MiniPlayer.jsx';
+import { recordPlay, updateProgress } from '../hooks/media/useMediaHistory.js';
 import './MediaApp.scss';
 
 const MediaApp = () => {
@@ -96,6 +97,18 @@ const MediaAppInner = () => {
       queue.advance(-1);
     }
   }, [logger, queue, playbackState.currentTime, playerRef]);
+
+  // Record play history when current item changes
+  useEffect(() => {
+    if (queue.currentItem) recordPlay(queue.currentItem);
+  }, [queue.currentItem?.contentId]);
+
+  // Update progress periodically
+  useEffect(() => {
+    if (queue.currentItem?.contentId && playbackState.currentTime > 0) {
+      updateProgress(queue.currentItem.contentId, playbackState.currentTime, playbackState.duration);
+    }
+  }, [queue.currentItem?.contentId, Math.floor(playbackState.currentTime / 5)]); // every ~5s
 
   // Determine active panel from route for mobile layout
   const activePanel = useMemo(() => {
