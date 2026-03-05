@@ -98,7 +98,8 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
       setIsFullscreen(false);
       return;
     }
-    setIsFullscreen(currentItem.format === 'video');
+    const isVideo = currentItem.format === 'video' || currentItem.format === 'dash_video';
+    setIsFullscreen(isVideo);
   }, [currentItem?.contentId, currentItem?.format]);
 
   useEffect(() => {
