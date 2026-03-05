@@ -780,7 +780,7 @@ export function useCommonMediaController({
 
     const onTimeUpdate = () => {
       const rawTime = mediaEl.currentTime;
-      setSeconds(segDuration ? (rawTime - segStart) : rawTime);
+      setSeconds(segDuration ? Math.max(0, rawTime - segStart) : rawTime);
       // Keep a sticky record of the last known good time
       lastPlaybackPosRef.current = mediaEl.currentTime || 0;
       // Persist last position per assetId across remounts
@@ -790,7 +790,7 @@ export function useCommonMediaController({
       if (onProgress) {
         const stallSnapshot = readStallState();
         onProgress({
-          currentTime: segDuration ? (mediaEl.currentTime - segStart) : (mediaEl.currentTime || 0),
+          currentTime: segDuration ? Math.max(0, mediaEl.currentTime - segStart) : (mediaEl.currentTime || 0),
           duration: segDuration || (mediaEl.duration || 0),
           paused: mediaEl.paused,
           media: meta,
@@ -869,7 +869,7 @@ export function useCommonMediaController({
         const shouldApplyStart = (duration > (12 * 60) || isVideo);
         startTime = shouldApplyStart ? start : 0;
 
-        if (duration > 0 && startTime > 0) {
+        if (duration > 0 && startTime > 0 && !segment) {
           const progressPercent = (startTime / duration) * 100;
           const secondsRemaining = duration - startTime;
           if (progressPercent > 95 || secondsRemaining < 30) {
