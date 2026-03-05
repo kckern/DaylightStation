@@ -921,26 +921,31 @@ export function useCommonMediaController({
       mediaEl.dataset.key = assetId;
       
       if (Number.isFinite(startTime) && startTime > 0 && isDash) {
-        // DASH: defer seek until SourceBuffers have real data.
-        // Both 'playing' and 'canplay' fire before SourceBuffers are filled,
-        // so seeking at those events corrupts buffers permanently.
-        // Wait for timeupdate (proves real data is buffered), then use
-        // api.seek() which properly flushes and re-initializes both buffers.
-        if (DEBUG_MEDIA) console.log('[StartTime] DASH: deferring seek to timeupdate', { startTime });
-        const container = containerRef.current;
-        const onTimeUpdate = () => {
-          if (mediaEl.currentTime < 0.5) return; // wait for real progress
-          mediaEl.removeEventListener('timeupdate', onTimeUpdate);
-          try {
-            if (container?.api?.seek) {
-              container.api.seek(startTime);
-            } else {
-              mediaEl.currentTime = startTime;
-            }
-          } catch (_) {}
-          if (DEBUG_MEDIA) console.log('[StartTime] DASH: applied deferred seek after timeupdate', { startTime, currentTime: mediaEl.currentTime });
-        };
-        mediaEl.addEventListener('timeupdate', onTimeUpdate);
+        // DASH resume: the backend appends ?offset=<seconds> to the stream URL
+        // so Plex transcodes from the resume position. The DASH manifest's first
+        // segments are already near the resume point — no client-side seek needed.
+        // If the URL lacks an offset param, fall back to deferred api.seek().
+        const streamSrc = containerRef.current?.getAttribute?.('src') || meta.mediaUrl || '';
+        const hasServerOffset = /[?&]offset=/.test(streamSrc);
+        if (hasServerOffset) {
+          if (DEBUG_MEDIA) console.log('[StartTime] DASH: server-side offset, skipping client seek', { startTime, src: streamSrc });
+        } else {
+          if (DEBUG_MEDIA) console.log('[StartTime] DASH: no server offset, deferring seek to timeupdate', { startTime });
+          const container = containerRef.current;
+          const onTimeUpdate = () => {
+            if (mediaEl.currentTime < 0.5) return;
+            mediaEl.removeEventListener('timeupdate', onTimeUpdate);
+            try {
+              if (container?.api?.seek) {
+                container.api.seek(startTime);
+              } else {
+                mediaEl.currentTime = startTime;
+              }
+            } catch (_) {}
+            if (DEBUG_MEDIA) console.log('[StartTime] DASH: applied deferred seek after timeupdate', { startTime, currentTime: mediaEl.currentTime });
+          };
+          mediaEl.addEventListener('timeupdate', onTimeUpdate);
+        }
       } else if (Number.isFinite(startTime)) {
         try {
           mediaEl.currentTime = startTime;
