@@ -46,6 +46,12 @@ export function useCommonMediaController({
   if (!useCommonMediaController.__lastSeekByKey) useCommonMediaController.__lastSeekByKey = Object.create(null);
 
   const assetId = meta.assetId || meta.key || meta.guid || meta.id || meta.plex || meta.mediaUrl;
+
+  const segment = meta.segment || null;
+  const segStart = segment?.start ?? 0;
+  const segEnd = segment?.end ?? null;
+  const segDuration = segment ? (segment.end - segment.start) : null;
+
   const containerRef = useRef(null);
   const [seconds, setSeconds] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -335,8 +341,13 @@ export function useCommonMediaController({
     mediaEl.__seekSource = 'click';
     const rect = event.target.getBoundingClientRect();
     const clickX = event.clientX - rect.left;
-    mediaEl.currentTime = (clickX / rect.width) * duration;
-  }, [duration, getMediaEl]);
+    const clickPercent = clickX / rect.width;
+    if (segDuration) {
+      mediaEl.currentTime = segStart + (clickPercent * segDuration);
+    } else {
+      mediaEl.currentTime = clickPercent * duration;
+    }
+  }, [duration, getMediaEl, segStart, segDuration]);
 
   // Use centralized keyboard handler
   useMediaKeyboardHandler({
@@ -768,7 +779,8 @@ export function useCommonMediaController({
     };
 
     const onTimeUpdate = () => {
-      setSeconds(mediaEl.currentTime);
+      const rawTime = mediaEl.currentTime;
+      setSeconds(segDuration ? (rawTime - segStart) : rawTime);
       // Keep a sticky record of the last known good time
       lastPlaybackPosRef.current = mediaEl.currentTime || 0;
       // Persist last position per assetId across remounts
@@ -778,11 +790,13 @@ export function useCommonMediaController({
       if (onProgress) {
         const stallSnapshot = readStallState();
         onProgress({
-          currentTime: mediaEl.currentTime || 0,
-          duration: mediaEl.duration || 0,
+          currentTime: segDuration ? (mediaEl.currentTime - segStart) : (mediaEl.currentTime || 0),
+          duration: segDuration || (mediaEl.duration || 0),
           paused: mediaEl.paused,
           media: meta,
-          percent: getProgressPercent(mediaEl.currentTime, mediaEl.duration),
+          percent: segDuration
+            ? getProgressPercent(mediaEl.currentTime - segStart, segDuration)
+            : getProgressPercent(mediaEl.currentTime, mediaEl.duration),
           stalled: isStalled,
           isSeeking,
           recoveryAttempt: stallSnapshot.attemptIndex,
@@ -792,10 +806,24 @@ export function useCommonMediaController({
           droppedFramePct
         });
       }
+
+      // Segment end detection — advance when playback reaches segment boundary
+      if (segEnd && mediaEl.currentTime >= segEnd) {
+        const s = stallStateRef.current;
+        s.hasEnded = true;
+        clearTimers();
+        if (s.isStalled) {
+          s.isStalled = false;
+          setIsStalled(false);
+        }
+        logProgress();
+        onEnd();
+        return;
+      }
     };
 
     const onDurationChange = () => {
-      setDuration(mediaEl.duration);
+      setDuration(segDuration || mediaEl.duration);
     };
 
     const onEnded = () => {
