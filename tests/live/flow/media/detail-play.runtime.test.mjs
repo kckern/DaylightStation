@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test('detail view loads and play button works', async ({ page }) => {
   // Navigate to detail view for Star Wars (plex:653701)
-  await page.goto('http://localhost:3111/media/view/plex:653701', { waitUntil: 'networkidle', timeout: 15000 });
+  await page.goto('http://localhost:3111/media/view/plex:653701', { waitUntil: 'domcontentloaded', timeout: 15000 });
 
   // Verify detail view rendered
   const title = page.locator('.content-detail-title');
