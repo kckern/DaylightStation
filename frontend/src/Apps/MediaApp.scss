@@ -436,22 +436,24 @@
 }
 
 .media-progress-bar {
-  height: 4px;
+  height: 6px;
   background: #333;
-  border-radius: 2px;
+  border-radius: 3px;
   overflow: hidden;
   position: relative;
+  transition: height 0.15s ease;
 
-  &:hover {
-    height: 6px;
+  &:hover,
+  &:active {
+    height: 10px;
   }
 }
 
 .media-progress-fill {
   height: 100%;
   background: #1db954;
-  border-radius: 2px;
-  transition: width 0.2s linear;
+  border-radius: 3px;
+  transition: width 0.1s linear;
 }
 
 .media-progress-times {
@@ -461,6 +463,8 @@
   color: #888;
   margin-top: 4px;
   font-variant-numeric: tabular-nums;
+  height: 16px;
+  line-height: 16px;
 }
 
 // Transport Controls
