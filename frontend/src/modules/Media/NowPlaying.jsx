@@ -108,11 +108,12 @@ const NowPlaying = ({ currentItem, onItemEnd, onNext, onPrev, onPlaybackState, p
         title: currentItem.title,
         format: currentItem.format,
         hasThumbnail: !!currentItem.contentId,
+        isFullscreen,
       });
     } else {
       logger.info('now-playing.empty-state');
     }
-  }, [currentItem?.contentId, logger]);
+  }, [currentItem?.contentId, isFullscreen, logger]);
 
   const handleProgress = useCallback((data) => {
     setPlaybackState({
