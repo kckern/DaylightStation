@@ -10,3 +10,6 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-02-03 | feature/display-name-resolver | ad2e1cba | DisplayNameResolver SSOT module - merged to main |
 | 2026-02-03 | feature/governance-test-refactor | 8c6ba47d | Fix skipped governance tests - merged to main |
 | 2026-02-06 | save/2026-02-06-plex-token | 1efa08dd | Singalong/readalong rename and Plex token adjustments |
+| 2026-03-05 | feature/media-three-panel-redesign | c80b568b | MediaApp three-panel responsive redesign - merged to main |
+| 2026-03-05 | worktree-agent-a680a2e5 | 086d9327 | Temporary worktree agent branch (tip = main) - merged |
+| 2026-03-05 | origin/fix/firefox-dash-seeking-death-loop | 08c74b9e | Firefox DASH seeking recovery fixes - merged to main |
