@@ -60,6 +60,7 @@ export function SlideshowMetadataOverlay({
   fadeInMs = 600,
   fadeOutMs = 800,
   preloaded,
+  variant,
 }) {
   const elRef = useRef(null);
   const animRef = useRef(null);
@@ -142,7 +143,7 @@ export function SlideshowMetadataOverlay({
   if (!overlay) return null;
 
   return (
-    <div ref={elRef} className="slideshow-metadata" style={{ opacity: 0 }}>
+    <div ref={elRef} className={`slideshow-metadata${variant ? ` slideshow-metadata--${variant}` : ''}`} style={{ opacity: 0 }}>
       <div className="slideshow-metadata__backdrop" />
       <div className="slideshow-metadata__content">
         {overlay.date && (
@@ -174,4 +175,5 @@ SlideshowMetadataOverlay.propTypes = {
     people: PropTypes.array,
     location: PropTypes.string,
   }),
+  variant: PropTypes.string,
 };
