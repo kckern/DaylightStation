@@ -575,6 +575,10 @@ const Player = forwardRef(function Player(props, ref) {
     });
   }, [scheduleSinglePlayerRemount, mediaAccess, transportAdapter, playerType, isQueue, advance, clear, currentMediaGuid, resolvedWaitKey]);
 
+  // Self-contained formats (titlecard, etc.) have no media element —
+  // suppress the resilience overlay which would never exit startup.
+  const isSelfContainedFormat = effectiveMeta?.format === 'titlecard';
+
   const { overlayProps, state: resilienceState, onStartupSignal } = useMediaResilience({
     getMediaEl: transportAdapter.getMediaEl,
     meta: effectiveMeta,
@@ -775,10 +779,6 @@ const Player = forwardRef(function Player(props, ref) {
   useEffect(() => () => clearRemountTimer(), [clearRemountTimer]);
 
   const suppressOverlaysForBlackout = effectiveShader === 'blackout';
-
-  // Self-contained formats (titlecard, etc.) have no media element —
-  // suppress the resilience overlay which would never exit startup.
-  const isSelfContainedFormat = effectiveMeta?.format === 'titlecard';
 
   const overlayElements = (overlayProps && !isSelfContainedFormat) ? (
     <>
