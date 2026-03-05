@@ -157,6 +157,54 @@ const MediaAppInner = () => {
     return () => clearInterval(interval);
   }, [queue.currentItem?.contentId, playbackState.paused, queue, logger]);
 
+  // Global keyboard shortcuts (audit #15)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (document.activeElement?.isContentEditable) return;
+
+      switch (e.key) {
+        case ' ':
+          e.preventDefault();
+          playerRef.current?.toggle?.();
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          playerRef.current?.seek?.(Math.max(0, (playbackState.currentTime || 0) - 10));
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          playerRef.current?.seek?.((playbackState.currentTime || 0) + 10);
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          { const el = playerRef.current?.getMediaElement?.();
+            if (el) el.volume = Math.min(1, el.volume + 0.1); }
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          { const el = playerRef.current?.getMediaElement?.();
+            if (el) el.volume = Math.max(0, el.volume - 0.1); }
+          break;
+        case 'm':
+        case 'M':
+          { const el = playerRef.current?.getMediaElement?.();
+            if (el) el.muted = !el.muted; }
+          break;
+        case 'f':
+        case 'F':
+          window.dispatchEvent(new CustomEvent('media:toggle-fullscreen'));
+          break;
+        default:
+          return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [playerRef, playbackState.currentTime]);
+
   // Determine active panel from route for mobile layout
   const activePanel = useMemo(() => {
     if (location.pathname.startsWith('/media/play')) return 'player';
