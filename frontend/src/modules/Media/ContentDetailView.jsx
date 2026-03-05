@@ -1,18 +1,23 @@
-import React, { useMemo, useCallback, useRef } from 'react';
+import React, { useMemo, useCallback, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useContentDetail } from '../../hooks/media/useContentDetail.js';
 import { useMediaApp } from '../../contexts/MediaAppContext.jsx';
 import { ContentDisplayUrl } from '../../lib/api.mjs';
-import { resolveContentId } from './ContentBrowser.jsx';
+import { resolveContentId } from './SearchHomePanel.jsx';
 import CastButton from './CastButton.jsx';
 import getLogger from '../../lib/logging/Logger.js';
 
-const ContentDetailView = ({ contentId }) => {
+const ContentDetailView = ({ contentId, onTitleResolved }) => {
   const navigate = useNavigate();
   const { queue } = useMediaApp();
   const logger = useMemo(() => getLogger().child({ component: 'ContentDetailView' }), []);
   const { data, children, loading, error } = useContentDetail(contentId);
   const playingRef = useRef(false);
+
+  // Notify parent of title once data loads (for breadcrumbs)
+  useEffect(() => {
+    if (data?.title) onTitleResolved?.(data.title);
+  }, [data?.title, onTitleResolved]);
 
   const handleBack = useCallback(() => {
     navigate(-1);
