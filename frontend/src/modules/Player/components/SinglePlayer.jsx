@@ -459,14 +459,14 @@ export function SinglePlayer(props = {}) {
       if (!showVideoMeta) return videoEl;
       const videoMediaId = mediaInfo?.id || mediaInfo?.assetId || effectiveContentId;
       return (
-        <>
+        <div style={{ position: 'relative', width: '100%', height: '100%' }}>
           {videoEl}
           <SlideshowMetadataOverlay
             mediaId={videoMediaId}
             visible={videoMetaVisible}
             variant="video"
           />
-        </>
+        </div>
       );
     }
 
