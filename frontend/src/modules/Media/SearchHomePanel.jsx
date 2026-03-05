@@ -202,11 +202,11 @@ const SearchHomePanel = () => {
             {results.map((item, i) => {
               const contentId = resolveContentId(item);
               return (
-                <div key={contentId || i} className="search-result-item">
+                <div key={contentId || i} className="search-result-item" onClick={() => handleResultClick(item)}>
                   <div className="search-result-thumb">
                     {(item.thumbnail || contentId) && <img src={item.thumbnail || ContentDisplayUrl(contentId)} alt="" />}
                   </div>
-                  <div className="search-result-info" onClick={() => handleResultClick(item)}>
+                  <div className="search-result-info">
                     <div className="search-result-title">
                       {item.title}
                       {item.childCount != null && <span className="search-result-child-count">{item.childCount}</span>}
@@ -229,12 +229,6 @@ const SearchHomePanel = () => {
                       {item.duration && <span>{Math.round(item.duration / 60)}m</span>}
                       {item.format && <span className={`format-badge format-badge--${item.format}`}>{item.format}</span>}
                     </div>
-                  </div>
-                  <div className="search-result-actions">
-                    <button onClick={() => handlePlayNow(item)} title="Play Now">&#9654;</button>
-                    <button onClick={() => handlePlayNext(item)} title="Play Next">&#10549;</button>
-                    <button onClick={() => handleAddToQueue(item)} title="Add to Queue">+</button>
-                    <CastButton contentId={contentId} className="search-action-cast" />
                   </div>
                 </div>
               );
