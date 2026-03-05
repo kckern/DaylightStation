@@ -8,6 +8,7 @@ import { useScopePrefs } from '../../hooks/media/useScopePrefs.js';
 import ScopeDropdown from './ScopeDropdown.jsx';
 import ScopeChips from './ScopeChips.jsx';
 import CastButton from './CastButton.jsx';
+import { useMediaHistory } from '../../hooks/media/useMediaHistory.js';
 import getLogger from '../../lib/logging/Logger.js';
 
 // --- Recent Searches (localStorage) ---
@@ -39,6 +40,7 @@ const SearchHomePanel = () => {
   const [searchScopes, setSearchScopes] = useState([]);
   const [recentSearches, setRecentSearches] = useState(loadRecentSearches);
   const searchTimerRef = useRef(null);
+  const { continueItems, recentlyPlayed } = useMediaHistory();
 
   // Scope persistence
   const { lastScopeKey, recents, favorites, recordUsage, toggleFavorite } = useScopePrefs();
@@ -224,8 +226,44 @@ const SearchHomePanel = () => {
           </div>
         ) : (
           <div className="search-home-sections">
-            {/* TODO Task 7: Continue section (items with progress) */}
-            {/* TODO Task 7: Recently Played section */}
+            {continueItems.length > 0 && (
+              <div className="search-home-section">
+                <h3 className="search-home-section-title">Continue</h3>
+                {continueItems.map(item => (
+                  <div key={item.contentId} className="search-result-item" onClick={() => navigate(`/media/view/${item.contentId}`)}>
+                    <div className="search-result-thumb">
+                      <img src={item.thumbnail || ContentDisplayUrl(item.contentId)} alt="" />
+                      {item.duration > 0 && (
+                        <div className="continue-progress-bar">
+                          <div className="continue-progress-fill" style={{ width: `${(item.progress / item.duration) * 100}%` }} />
+                        </div>
+                      )}
+                    </div>
+                    <div className="search-result-info">
+                      <div className="search-result-title">{item.title}</div>
+                      {item.format && <div className="search-result-meta"><span className={`format-badge format-badge--${item.format}`}>{item.format}</span></div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {recentlyPlayed.length > 0 && (
+              <div className="search-home-section">
+                <h3 className="search-home-section-title">Recently Played</h3>
+                {recentlyPlayed.map(item => (
+                  <div key={item.contentId} className="search-result-item" onClick={() => navigate(`/media/view/${item.contentId}`)}>
+                    <div className="search-result-thumb">
+                      <img src={item.thumbnail || ContentDisplayUrl(item.contentId)} alt="" />
+                    </div>
+                    <div className="search-result-info">
+                      <div className="search-result-title">{item.title}</div>
+                      {item.format && <div className="search-result-meta"><span className={`format-badge format-badge--${item.format}`}>{item.format}</span></div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Recent Searches */}
             {recentSearches.length > 0 && (
