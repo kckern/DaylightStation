@@ -236,8 +236,8 @@ const SearchHomePanel = () => {
               <div className="search-home-section">
                 <h3 className="search-home-section-title">Continue</h3>
                 {continueItems.map(item => (
-                  <div key={item.contentId} className="search-result-item" onClick={() => navigate(`/media/view/${item.contentId}`)}>
-                    <div className="search-result-thumb">
+                  <div key={item.contentId} className="search-result-item">
+                    <div className="search-result-thumb" onClick={() => navigate(`/media/view/${item.contentId}`)}>
                       <img src={item.thumbnail || ContentDisplayUrl(item.contentId)} alt="" />
                       {item.duration > 0 && (
                         <div className="continue-progress-bar">
@@ -245,9 +245,21 @@ const SearchHomePanel = () => {
                         </div>
                       )}
                     </div>
-                    <div className="search-result-info">
+                    <div className="search-result-info" onClick={() => navigate(`/media/view/${item.contentId}`)}>
                       <div className="search-result-title">{item.title}</div>
                       {item.format && <div className="search-result-meta"><span className={`format-badge format-badge--${item.format}`}>{item.format}</span></div>}
+                    </div>
+                    <div className="search-result-actions">
+                      <button onClick={() => {
+                        logger.info('search-home.continue-play', { contentId: item.contentId, progress: item.progress });
+                        queue.playNow([{
+                          contentId: item.contentId,
+                          title: item.title,
+                          format: item.format,
+                          thumbnail: item.thumbnail,
+                          config: item.progress > 0 ? { offset: item.progress } : undefined,
+                        }]);
+                      }} title="Resume">&#9654;</button>
                     </div>
                   </div>
                 ))}
