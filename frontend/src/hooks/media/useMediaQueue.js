@@ -102,9 +102,10 @@ export function useMediaQueue() {
   }, [queue, mutate]);
 
   const playNow = useCallback(async (items) => {
-    const nextPosition = queue.position + 1;
+    // When queue is empty, insert at 0; otherwise insert after current and advance
+    const nextPosition = queue.items.length === 0 ? 0 : queue.position + 1;
     const contentIds = items.map(i => i.contentId);
-    logger().info('media-queue.play-now', { count: items.length, contentIds, position: nextPosition });
+    logger().info('media-queue.play-now', { count: items.length, contentIds, position: nextPosition, queueLength: queue.items.length });
 
     // Atomic optimistic update: insert items AND advance position in one state change
     const optimistic = {
@@ -115,7 +116,9 @@ export function useMediaQueue() {
 
     return mutate(optimistic, async (mid) => {
       const res = await apiFetch('/items', { method: 'POST', body: { items, placement: 'next', mutationId: mid } });
-      setQueue(res.queue);
+      // Merge items from backend but KEEP optimistic position — don't let the stale
+      // backend position overwrite it before the /position PATCH confirms
+      setQueue(prev => ({ ...prev, items: res.queue?.items ?? prev.items }));
       const posRes = await apiFetch('/position', { method: 'PATCH', body: { position: nextPosition, mutationId: mid } });
       setQueue(posRes);
       return res.added;

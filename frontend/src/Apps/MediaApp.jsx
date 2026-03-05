@@ -1,5 +1,6 @@
 // frontend/src/Apps/MediaApp.jsx
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import getLogger, { configure as configureLogger } from '../lib/logging/Logger.js';
 import useMediaUrlParams from '../hooks/media/useMediaUrlParams.js';
 import { MediaAppProvider, useMediaApp } from '../contexts/MediaAppContext.jsx';
@@ -8,6 +9,7 @@ import NowPlaying from '../modules/Media/NowPlaying.jsx';
 import MiniPlayer from '../modules/Media/MiniPlayer.jsx';
 import QueueDrawer from '../modules/Media/QueueDrawer.jsx';
 import ContentBrowser from '../modules/Media/ContentBrowser.jsx';
+import ContentDetailView from '../modules/Media/ContentDetailView.jsx';
 import DevicePanel from '../modules/Media/DevicePanel.jsx';
 import PlayerSwipeContainer from '../modules/Media/PlayerSwipeContainer.jsx';
 import './MediaApp.scss';
@@ -124,6 +126,13 @@ const MediaAppInner = () => {
     }
   }, [logger, queue, playbackState.currentTime, playerRef]);
 
+  // Derive detail view content ID from URL path (e.g., /media/view/plex:12345 or /media/view/readalong:scripture/ot/nirv/1)
+  const location = useLocation();
+  const detailContentId = useMemo(() => {
+    const match = location.pathname.match(/^\/media\/view\/(.+)$/);
+    return match ? decodeURIComponent(match[1]) : null;
+  }, [location.pathname]);
+
   // Auto-collapse to browse mode when queue empties
   useEffect(() => {
     if (mode === 'player' && !queue.currentItem && queue.items.length === 0) {
@@ -148,7 +157,11 @@ const MediaAppInner = () => {
       <div className="media-app-container">
         {/* Browse Mode — always mounted, hidden when in player mode */}
         <div className={`media-mode-browse${mode !== 'browse' ? ' hidden' : ''}`}>
-          <ContentBrowser hasMiniplayer={hasMiniplayer} />
+          {/* ContentBrowser is ALWAYS mounted so search state persists across detail view navigation */}
+          <div className={detailContentId ? 'hidden' : ''}>
+            <ContentBrowser hasMiniplayer={hasMiniplayer} />
+          </div>
+          {detailContentId && <ContentDetailView contentId={detailContentId} />}
         </div>
 
         {/* Player Mode — always mounted, hidden when in browse mode */}
