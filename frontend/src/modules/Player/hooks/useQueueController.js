@@ -196,18 +196,7 @@ export function useQueueController({ play, queue, clear, shuffle }) {
     });
   }, [clear, isContinuous, originalQueue]);
 
-  useEffect(() => {
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        clear();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [clear]);
+  // Removed: Escape key auto-clear handler (audit #13) — queue destruction should be explicit
 
   const queuePosition = originalQueue.findIndex(item => item.guid === playQueue[0]?.guid);
   

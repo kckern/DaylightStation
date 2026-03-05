@@ -9,6 +9,7 @@ import SearchHomePanel from '../modules/Media/SearchHomePanel.jsx';
 import ContentBrowserPanel from '../modules/Media/ContentBrowserPanel.jsx';
 import PlayerPanel from '../modules/Media/PlayerPanel.jsx';
 import MiniPlayer from '../modules/Media/MiniPlayer.jsx';
+import Toast from '../modules/Media/Toast.jsx';
 import { recordPlay, updateProgress } from '../hooks/media/useMediaHistory.js';
 import './MediaApp.scss';
 
@@ -103,12 +104,106 @@ const MediaAppInner = () => {
     if (queue.currentItem) recordPlay(queue.currentItem);
   }, [queue.currentItem?.contentId]);
 
-  // Update progress periodically
+  // Update progress periodically (~every 5s, only while playing)
+  const lastProgressBucket = useRef(-1);
   useEffect(() => {
-    if (queue.currentItem?.contentId && playbackState.currentTime > 0) {
-      updateProgress(queue.currentItem.contentId, playbackState.currentTime, playbackState.duration);
+    if (!queue.currentItem?.contentId || playbackState.paused || playbackState.currentTime <= 0) return;
+    const bucket = Math.floor(playbackState.currentTime / 5);
+    if (bucket === lastProgressBucket.current) return;
+    lastProgressBucket.current = bucket;
+    updateProgress(queue.currentItem.contentId, playbackState.currentTime, playbackState.duration);
+  }, [queue.currentItem?.contentId, playbackState.currentTime, playbackState.paused, playbackState.duration]);
+
+  // Stall detection: if playback hasn't advanced for 30s while not paused, auto-advance
+  const stallRef = useRef({ time: 0, since: 0 });
+  useEffect(() => {
+    if (!queue.currentItem || playbackState.paused) {
+      stallRef.current = { time: 0, since: 0 };
+      return;
     }
-  }, [queue.currentItem?.contentId, Math.floor(playbackState.currentTime / 5)]); // every ~5s
+    const now = Date.now();
+    const prev = stallRef.current;
+    if (Math.abs(playbackState.currentTime - prev.time) > 0.5) {
+      stallRef.current = { time: playbackState.currentTime, since: now };
+      return;
+    }
+    // Time hasn't changed — check if stalled long enough
+    if (prev.since > 0 && now - prev.since > 30000) {
+      logger.warn('media-app.stall-recovery', {
+        contentId: queue.currentItem.contentId,
+        stalledAt: playbackState.currentTime,
+        stallDurationMs: now - prev.since,
+      });
+      stallRef.current = { time: 0, since: 0 };
+      queue.advance(1, { auto: true });
+    }
+  }, [queue.currentItem?.contentId, playbackState.currentTime, playbackState.paused, queue, logger]);
+
+  // Poll stall check every 5s (playbackState updates may stop during stalls)
+  useEffect(() => {
+    if (!queue.currentItem || playbackState.paused) return;
+    const interval = setInterval(() => {
+      const prev = stallRef.current;
+      if (prev.since > 0 && Date.now() - prev.since > 30000) {
+        logger.warn('media-app.stall-recovery', {
+          contentId: queue.currentItem?.contentId,
+          stalledAt: prev.time,
+          stallDurationMs: Date.now() - prev.since,
+        });
+        stallRef.current = { time: 0, since: 0 };
+        queue.advance(1, { auto: true });
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [queue.currentItem?.contentId, playbackState.paused, queue, logger]);
+
+  // Global keyboard shortcuts (audit #15)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (document.activeElement?.isContentEditable) return;
+
+      switch (e.key) {
+        case ' ':
+          e.preventDefault();
+          playerRef.current?.toggle?.();
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          playerRef.current?.seek?.(Math.max(0, (playbackState.currentTime || 0) - 10));
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          playerRef.current?.seek?.((playbackState.currentTime || 0) + 10);
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          { const el = playerRef.current?.getMediaElement?.();
+            if (el) el.volume = Math.min(1, el.volume + 0.1); }
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          { const el = playerRef.current?.getMediaElement?.();
+            if (el) el.volume = Math.max(0, el.volume - 0.1); }
+          break;
+        case 'm':
+        case 'M':
+          { const el = playerRef.current?.getMediaElement?.();
+            if (el) el.muted = !el.muted; }
+          break;
+        case 'f':
+        case 'F':
+          window.dispatchEvent(new CustomEvent('media:toggle-fullscreen'));
+          break;
+        default:
+          return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [playerRef, playbackState.currentTime]);
 
   // Determine active panel from route for mobile layout
   const activePanel = useMemo(() => {
@@ -170,6 +265,7 @@ const MediaAppInner = () => {
           onExpand={() => navigate('/media/play')}
         />
       )}
+      <Toast />
     </div>
   );
 };

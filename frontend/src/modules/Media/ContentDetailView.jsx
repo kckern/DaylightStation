@@ -6,6 +6,7 @@ import { ContentDisplayUrl } from '../../lib/api.mjs';
 import { resolveContentId } from './SearchHomePanel.jsx';
 import CastButton from './CastButton.jsx';
 import getLogger from '../../lib/logging/Logger.js';
+import { toast } from './Toast.jsx';
 
 const DetailSummary = ({ tagline, summary }) => {
   const [expanded, setExpanded] = useState(false);
@@ -36,6 +37,7 @@ const ContentDetailView = ({ contentId, onTitleResolved }) => {
   const logger = useMemo(() => getLogger().child({ component: 'ContentDetailView' }), []);
   const { data, children, loading, error } = useContentDetail(contentId);
   const playingRef = useRef(false);
+  const playTimerRef = useRef(null);
 
   const [childrenView, setChildrenView] = useState(() => {
     try { return localStorage.getItem('media:childrenView') || 'list'; } catch { return 'list'; }
@@ -52,6 +54,10 @@ const ContentDetailView = ({ contentId, onTitleResolved }) => {
     if (data?.title) onTitleResolved?.(data.title);
   }, [data?.title, onTitleResolved]);
 
+  useEffect(() => {
+    return () => { clearTimeout(playTimerRef.current); };
+  }, []);
+
   const handleBack = useCallback(() => {
     navigate(-1);
   }, [navigate]);
@@ -59,7 +65,7 @@ const ContentDetailView = ({ contentId, onTitleResolved }) => {
   const handlePlayNow = useCallback((item) => {
     if (playingRef.current) return;
     playingRef.current = true;
-    setTimeout(() => { playingRef.current = false; }, 2000);
+    playTimerRef.current = setTimeout(() => { playingRef.current = false; }, 2000);
     const id = item ? resolveContentId(item) : contentId;
     const title = item?.title || data?.title;
     const format = item?.format || data?.format;
@@ -73,6 +79,7 @@ const ContentDetailView = ({ contentId, onTitleResolved }) => {
     const title = item?.title || data?.title;
     logger.info('detail.play-next', { contentId: id, title });
     queue.addItems([{ contentId: id, title, format: item?.format || data?.format, thumbnail: item?.thumbnail || data?.thumbnail }], 'next');
+    toast(`"${title}" plays next`);
   }, [contentId, data, queue, logger]);
 
   const handleAddToQueue = useCallback((item) => {
@@ -80,12 +87,17 @@ const ContentDetailView = ({ contentId, onTitleResolved }) => {
     const title = item?.title || data?.title;
     logger.info('detail.add-to-queue', { contentId: id, title });
     queue.addItems([{ contentId: id, title, format: item?.format || data?.format, thumbnail: item?.thumbnail || data?.thumbnail }]);
+    toast(`"${title}" added to queue`);
   }, [contentId, data, queue, logger]);
 
   const handleShuffle = useCallback(() => {
     logger.info('detail.shuffle', { contentId });
     if (children.length > 0) {
-      const shuffled = [...children].sort(() => Math.random() - 0.5);
+      const shuffled = [...children];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
       const items = shuffled.map(c => ({
         contentId: c.id || c.contentId,
         title: c.title,
@@ -182,14 +194,14 @@ const ContentDetailView = ({ contentId, onTitleResolved }) => {
                 &#9654; Play All
               </button>
             )}
-            {(capabilities.includes('playable') || isContainer) && (
+            {capabilities.includes('playable') && (
               <>
                 <button className="action-btn" onClick={() => handlePlayNext(null)}>&#10549; Next</button>
                 <button className="action-btn" onClick={() => handleAddToQueue(null)}>+ Queue</button>
               </>
             )}
             {isContainer && (
-              <button className="action-btn" onClick={handleShuffle}>&#8645; Shuffle</button>
+              <button className="action-btn" onClick={handleShuffle}>&#8652; Shuffle</button>
             )}
             <CastButton contentId={contentId} className="action-btn" />
           </div>
@@ -224,7 +236,11 @@ const ContentDetailView = ({ contentId, onTitleResolved }) => {
                   </div>
                   <div className="child-item-info" onClick={() => handleChildClick(child)}>
                     <div className="child-item-title">
-                      {child.itemIndex !== undefined && <span className="child-item-index">{child.itemIndex}.</span>}
+                      {child.itemIndex !== undefined && (
+                        <span className="child-item-index">
+                          {(data.type === 'show' || data.type === 'season') ? `Ep ${child.itemIndex}. ` : `${child.itemIndex}. `}
+                        </span>
+                      )}
                       {child.title}
                     </div>
                     <div className="child-item-meta">
