@@ -177,24 +177,16 @@ export const useWebRTCPeer = (localStream) => {
 
     for (const track of tracks) {
       const sender = senders.find(s => {
-        // Match by kind: either sender has no track (late-bind)
-        // or sender's track kind matches but is a different track (re-select)
-        if (!s.track) return true; // empty slot — match by kind via transceiver
+        if (!s.track) {
+          // Empty slot — match by transceiver's expected kind to avoid
+          // binding an audio track to a video sender (or vice versa).
+          const tc = pc.getTransceivers().find(t => t.sender === s);
+          return tc?.receiver?.track?.kind === track.kind;
+        }
         return s.track.kind === track.kind && s.track.id !== track.id;
       });
 
-      if (!sender) {
-        // Also check transceivers for empty senders matched by receiver kind
-        const transceiver = pc.getTransceivers().find(
-          t => !t.sender.track && t.receiver.track?.kind === track.kind
-        );
-        if (transceiver) {
-          transceiver.sender.replaceTrack(track)
-            .then(() => { replaced++; logger().info('track-replaced', { kind: track.kind, reason: 'late-bind' }); })
-            .catch(err => logger().warn('track-replace-failed', { kind: track.kind, error: err.message }));
-        }
-        continue;
-      }
+      if (!sender) continue;
 
       const reason = sender.track ? 'device-reselect' : 'late-bind';
       sender.replaceTrack(track)
