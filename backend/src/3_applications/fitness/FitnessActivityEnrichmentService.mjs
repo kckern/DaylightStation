@@ -191,6 +191,9 @@ export class FitnessActivityEnrichmentService {
           type: currentActivity.type || currentActivity.sport_type || null,
           sufferScore: currentActivity.suffer_score || null,
           deviceName: currentActivity.device_name || null,
+          calories: currentActivity.calories || null,
+          avgHeartrate: currentActivity.average_heartrate || null,
+          maxHeartrate: currentActivity.max_heartrate || null,
         };
 
         const savePath = match.filePath.replace(/\.yml$/, '');
@@ -455,6 +458,9 @@ export class FitnessActivityEnrichmentService {
             type: activity.type || activity.sport_type || null,
             sufferScore: activity.suffer_score || null,
             deviceName: activity.device_name || null,
+            calories: activity.calories || null,
+            avgHeartrate: activity.average_heartrate || null,
+            maxHeartrate: activity.max_heartrate || null,
           },
         },
       },
