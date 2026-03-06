@@ -2378,7 +2378,11 @@ export class FitnessSession {
       try {
         this._maybeAutosave();
       } catch (err) {
-        // console.error('Autosave failed', err);
+        getLogger().error('fitness.session.autosave_error', {
+          sessionId: this.sessionId,
+          error: err?.message || String(err),
+          stack: err?.stack?.split('\n').slice(0, 3).join(' <- ')
+        });
       }
     }, this._autosaveIntervalMs);
   }
