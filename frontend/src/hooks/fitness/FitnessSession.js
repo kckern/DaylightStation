@@ -1407,6 +1407,7 @@ export class FitnessSession {
     // Update TimelineRecorder with treasureBox reference after creation
     this._timelineRecorder.setTreasureBox(this.treasureBox);
     
+    this._persistenceManager?.resetSession();
     this._lastAutosaveAt = 0;
     this._startAutosaveTimer();
     this._startTickTimer();

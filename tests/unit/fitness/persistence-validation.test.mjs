@@ -302,6 +302,33 @@ describe('PersistenceManager — validation', () => {
     });
   });
 
+  describe('debug counter reset', () => {
+    it('resets debug counters via resetSession()', () => {
+      const pm = new PersistenceManager();
+      pm._debugBlockedCount = 3;
+      pm._debugValidationCount = 3;
+      pm._debugSaveCount = 5;
+      pm._debugSaveSuccessCount = 3;
+
+      pm.resetSession();
+
+      expect(pm._debugBlockedCount).toBe(0);
+      expect(pm._debugValidationCount).toBe(0);
+      expect(pm._debugSaveCount).toBe(0);
+      expect(pm._debugSaveSuccessCount).toBe(0);
+    });
+
+    it('clears _hasSuccessfulSave state via resetSession()', () => {
+      const pm = new PersistenceManager();
+      pm.markSaveSucceeded('fs_123');
+      expect(pm.hasSuccessfulSave('fs_123')).toBe(true);
+
+      pm.resetSession();
+
+      expect(pm.hasSuccessfulSave('fs_123')).toBe(false);
+    });
+  });
+
   describe('_augmentRosterFromSeries — roster augmentation from series', () => {
     it('should include participants from series data missing from roster', () => {
       const pm = new PersistenceManager();

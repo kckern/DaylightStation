@@ -536,6 +536,20 @@ export class PersistenceManager {
   }
 
   /**
+   * Reset debug counters and per-session state.
+   * Called at session start so logging thresholds apply per-session,
+   * not per-PersistenceManager lifetime.
+   */
+  resetSession() {
+    this._debugBlockedCount = 0;
+    this._debugValidationCount = 0;
+    this._debugSaveCount = 0;
+    this._debugSaveSuccessCount = 0;
+    this._saveTriggered = false;
+    this._hasSuccessfulSave = {};
+  }
+
+  /**
    * Set logging callback.
    * @param {Function} callback
    */
