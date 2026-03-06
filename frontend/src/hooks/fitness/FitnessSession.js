@@ -371,6 +371,8 @@ export class FitnessSession {
     
     // Ghost session detection - now also in SessionLifecycle but keeping for compatibility
     this._emptyRosterStartTime = null;
+    this._lastKnownGoodRoster = null;
+    this._lastKnownGoodDeviceAssignments = null;
     this._isEndingSession = false; // Re-entrancy guard for endSession()
     this._sessionEndedCallbacks = [];
 
@@ -1411,6 +1413,8 @@ export class FitnessSession {
     this._cumulativeBeats = new Map();
     this._cumulativeRotations = new Map();
     this._emptyRosterStartTime = null; // 6A: Reset empty roster tracking on session start
+    this._lastKnownGoodRoster = null;
+    this._lastKnownGoodDeviceAssignments = null;
     this._collectTimelineTick({ timestamp: now });
     return true;
   }
@@ -1646,6 +1650,13 @@ export class FitnessSession {
       sessionId: this.sessionId,
       roster: this.roster
     });
+
+    // Snapshot roster when non-empty (high-water-mark pattern)
+    const currentRoster = this.roster;
+    if (currentRoster.length > 0) {
+      this._lastKnownGoodRoster = currentRoster;
+      this._lastKnownGoodDeviceAssignments = this.userManager?.assignmentLedger?.snapshot?.() || [];
+    }
 
     // Update FitnessSession state from timeline (for backward compatibility)
     if (this.timeline?.timebase) {
@@ -2451,14 +2462,17 @@ export class FitnessSession {
       // Fix: Do not mutate this.endTime during summary generation (autosave)
       // this.endTime = derivedEndTime;
       const durationMs = Number.isFinite(startTime) ? Math.max(0, derivedEndTime - startTime) : null;
-      const deviceAssignments = this.userManager?.assignmentLedger?.snapshot?.() || [];
+      const liveAssignments = this.userManager?.assignmentLedger?.snapshot?.() || [];
+      const deviceAssignments = liveAssignments.length > 0
+        ? liveAssignments
+        : (this._lastKnownGoodDeviceAssignments || []);
       const entities = this.entityRegistry?.snapshot?.() || [];
         return {
           sessionId: this.sessionId,
           startTime,
           endTime: derivedEndTime,
           durationMs,
-          roster: this.roster,
+          roster: this.roster.length > 0 ? this.roster : (this._lastKnownGoodRoster || []),
           deviceAssignments,
           entities,
           voiceMemos: this.voiceMemoManager.summary,
