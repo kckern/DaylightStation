@@ -71,6 +71,13 @@ export class PlayResponseService {
       if (progress.isInProgress()) {
         response.resume_position = progress.playhead;
         response.resume_percent = progress.percent;
+
+        // For Plex DASH streams, append offset so Plex starts transcoding at
+        // the resume position — avoids client-side seeking which corrupts buffers.
+        if (response.mediaUrl && response.mediaUrl.includes('/proxy/plex/stream/')) {
+          const sep = response.mediaUrl.includes('?') ? '&' : '?';
+          response.mediaUrl = `${response.mediaUrl}${sep}offset=${Math.floor(progress.playhead)}`;
+        }
       }
     }
 

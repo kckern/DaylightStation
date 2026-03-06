@@ -48,18 +48,20 @@ export function createProxyRouter(config) {
   }));
 
   /**
-   * GET /proxy/plex/stream/:ratingKey
-   * Redirect to Plex stream (simplified - full transcode support would need more)
+   * GET /proxy/plex/stream/:ratingKey?offset=<seconds>
+   * Redirect to Plex DASH stream with optional start offset.
+   * Passing offset tells Plex to begin transcoding near that position,
+   * so the DASH manifest's first segments are available at the resume point.
    */
   router.get('/plex/stream/:ratingKey', asyncHandler(async (req, res) => {
     const { ratingKey } = req.params;
+    const startOffset = parseInt(req.query.offset) || 0;
     const adapter = registry.get('plex');
     if (!adapter) {
       return res.status(404).json({ error: 'Plex adapter not configured' });
     }
 
-    // Use adapter.loadMediaUrl for proper streaming URL with authentication
-    const mediaUrl = await adapter.loadMediaUrl(ratingKey, 0, {});
+    const mediaUrl = await adapter.loadMediaUrl(ratingKey, 0, { startOffset });
     if (!mediaUrl) {
       return res.status(404).json({ error: 'Could not generate stream URL', ratingKey });
     }
