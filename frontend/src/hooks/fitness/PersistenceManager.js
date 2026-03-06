@@ -528,6 +528,7 @@ export class PersistenceManager {
     // Track save state
     this._saveTriggered = false;
     this._lastSaveAt = 0;
+    this._hasSuccessfulSave = {};
 
     // Session lock state: null = unknown, true = leader, false = not leader
     this._sessionLockGranted = null;
@@ -548,6 +549,23 @@ export class PersistenceManager {
    */
   setSeriesLengthValidator(validator) {
     this._validateSeriesLengths = validator;
+  }
+
+  /**
+   * Record that a save succeeded for a given session.
+   * @param {string} sessionId
+   */
+  markSaveSucceeded(sessionId) {
+    if (sessionId) this._hasSuccessfulSave[sessionId] = true;
+  }
+
+  /**
+   * Check whether a session has had at least one successful save.
+   * @param {string} sessionId
+   * @returns {boolean}
+   */
+  hasSuccessfulSave(sessionId) {
+    return !!this._hasSuccessfulSave[sessionId];
   }
 
   /**
@@ -729,15 +747,15 @@ export class PersistenceManager {
     const hasUserSeries = Object.keys(series).some((key) => typeof key === 'string' && key.startsWith('user:'));
     const deviceAssignments = Array.isArray(sessionData.deviceAssignments) ? sessionData.deviceAssignments : [];
 
-    if (hasUserSeries && roster.length === 0) {
+    if (hasUserSeries && roster.length === 0 && !this.hasSuccessfulSave(sessionData.sessionId)) {
       return { ok: false, reason: 'roster-required' };
     }
-    if (hasUserSeries && deviceAssignments.length === 0) {
+    if (hasUserSeries && deviceAssignments.length === 0 && !this.hasSuccessfulSave(sessionData.sessionId)) {
       return { ok: false, reason: 'device-assignments-required' };
     }
 
     // Hard minimums: must have participants and be over 60 seconds
-    if (roster.length === 0) {
+    if (roster.length === 0 && !this.hasSuccessfulSave(sessionData.sessionId)) {
       return { ok: false, reason: 'no-participants' };
     }
     if (sessionData.durationMs < 300000) {
@@ -1022,6 +1040,7 @@ export class PersistenceManager {
     this._enrichMissingPlexMetadata(persistSessionData.timeline?.events)
       .then(() => this._persistApi('api/v1/fitness/save_session', { sessionData: persistSessionData }, 'POST'))
       .then(resp => {
+        this.markSaveSucceeded(sessionData.sessionId);
         // DEBUG: Log success (throttled)
         if ((this._debugSaveSuccessCount = (this._debugSaveSuccessCount || 0) + 1) <= 3) {
           console.error(`✅ SESSION_SAVED [${this._debugSaveSuccessCount}/3]: ${persistSessionData.session?.id}`);
