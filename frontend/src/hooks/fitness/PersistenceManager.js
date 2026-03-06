@@ -846,6 +846,12 @@ export class PersistenceManager {
       if ((this._debugValidationCount = (this._debugValidationCount || 0) + 1) <= 3) {
         console.error(`⚠️ VALIDATION_FAIL [${this._debugValidationCount}/3]: ${sessionData?.sessionId}, reason="${validation?.reason}"`, validation);
       }
+      getLogger().warn('fitness.persistence.validation_failed', {
+        sessionId: sessionData?.sessionId,
+        reason: validation?.reason,
+        rosterLength: (Array.isArray(sessionData?.roster) ? sessionData.roster.length : 0),
+        hasPriorSave: this.hasSuccessfulSave(sessionData?.sessionId)
+      });
       this._log('persist_validation_fail', { reason: validation.reason, detail: validation });
       return false;
     }
