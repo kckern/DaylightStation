@@ -2269,8 +2269,21 @@ export class FitnessSession {
       sessionId: this.sessionId,
       tickCount: this._tickTimerTickCount,
       runningForMs: Date.now() - (this._tickTimerStartedAt || Date.now()),
+      lastSuccessfulSaveAt: this._persistenceManager?.lastSuccessfulSaveAt || 0,
       ...stats
     }, { maxPerMinute: 5 });
+
+    // Warn if session has been active >5 minutes with zero successful saves
+    const sessionAge = Date.now() - this.startTime;
+    const lastSave = this._persistenceManager?.lastSuccessfulSaveAt || 0;
+    if (sessionAge > 300000 && lastSave === 0) {
+      getLogger().warn('fitness.session.save_health_warning', {
+        sessionId: this.sessionId,
+        sessionAgeMs: sessionAge,
+        lastSuccessfulSaveAt: lastSave,
+        message: 'Session active >5min with zero successful saves'
+      });
+    }
   }
 
   /**

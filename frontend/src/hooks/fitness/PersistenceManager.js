@@ -528,6 +528,7 @@ export class PersistenceManager {
     // Track save state
     this._saveTriggered = false;
     this._lastSaveAt = 0;
+    this._lastSuccessfulSaveAt = 0;
     this._hasSuccessfulSave = {};
 
     // Session lock state: null = unknown, true = leader, false = not leader
@@ -546,6 +547,7 @@ export class PersistenceManager {
     this._debugSaveCount = 0;
     this._debugSaveSuccessCount = 0;
     this._saveTriggered = false;
+    this._lastSuccessfulSaveAt = 0;
     this._hasSuccessfulSave = {};
   }
 
@@ -571,6 +573,14 @@ export class PersistenceManager {
    */
   markSaveSucceeded(sessionId) {
     if (sessionId) this._hasSuccessfulSave[sessionId] = true;
+  }
+
+  /**
+   * Timestamp of last successful save (unix-ms), or 0 if none.
+   * @returns {number}
+   */
+  get lastSuccessfulSaveAt() {
+    return this._lastSuccessfulSaveAt;
   }
 
   /**
@@ -1061,6 +1071,7 @@ export class PersistenceManager {
       .then(() => this._persistApi('api/v1/fitness/save_session', { sessionData: persistSessionData }, 'POST'))
       .then(resp => {
         this.markSaveSucceeded(sessionData.sessionId);
+        this._lastSuccessfulSaveAt = Date.now();
         // DEBUG: Log success (throttled)
         if ((this._debugSaveSuccessCount = (this._debugSaveSuccessCount || 0) + 1) <= 3) {
           console.error(`✅ SESSION_SAVED [${this._debugSaveSuccessCount}/3]: ${persistSessionData.session?.id}`);
