@@ -207,6 +207,128 @@ describe('PersistenceManager — validation', () => {
     });
   });
 
+  describe('no-participants gate — conditional on prior save success', () => {
+    it('should reject empty roster when session has never saved', () => {
+      const pm = new PersistenceManager();
+      const payload = {
+        sessionId: 'sess-never-saved',
+        startTime: Date.now() - 600000,
+        endTime: Date.now(),
+        roster: [],
+        deviceAssignments: [],
+        timeline: {
+          timebase: { tickCount: 6 },
+          series: {
+            'bike:123:rotations': [1, 2, 3, 4, 5, 6],
+          }
+        }
+      };
+
+      const result = pm.validateSessionPayload(payload);
+      expect(result.ok).toBe(false);
+      expect(result.reason).toBe('no-participants');
+    });
+
+    it('should allow empty roster when session has previously saved successfully', () => {
+      const pm = new PersistenceManager();
+      const sessionId = 'sess-already-saved';
+
+      // Simulate a prior successful save
+      pm.markSaveSucceeded(sessionId);
+
+      const payload = {
+        sessionId,
+        startTime: Date.now() - 600000,
+        endTime: Date.now(),
+        roster: [],
+        deviceAssignments: [],
+        timeline: {
+          timebase: { tickCount: 6 },
+          series: {
+            'bike:123:rotations': [1, 2, 3, 4, 5, 6],
+            'user:alice:heart_rate': Array(6).fill(120),
+          }
+        }
+      };
+
+      const result = pm.validateSessionPayload(payload);
+      expect(result.ok).toBe(true);
+    });
+
+    it('should bypass roster-required when session has previously saved', () => {
+      const pm = new PersistenceManager();
+      const sessionId = 'sess-roster-bypass';
+      pm.markSaveSucceeded(sessionId);
+
+      const payload = {
+        sessionId,
+        startTime: Date.now() - 600000,
+        endTime: Date.now(),
+        roster: [],
+        deviceAssignments: [{ deviceId: '28688', occupantId: 'alice' }],
+        timeline: {
+          timebase: { tickCount: 6 },
+          series: {
+            'user:alice:heart_rate': [80, 85, 90, 88, 92, 95],
+          }
+        }
+      };
+
+      const result = pm.validateSessionPayload(payload);
+      expect(result.ok).toBe(true);
+    });
+
+    it('should bypass device-assignments-required when session has previously saved', () => {
+      const pm = new PersistenceManager();
+      const sessionId = 'sess-device-bypass';
+      pm.markSaveSucceeded(sessionId);
+
+      const payload = {
+        sessionId,
+        startTime: Date.now() - 600000,
+        endTime: Date.now(),
+        roster: [],
+        deviceAssignments: [],
+        timeline: {
+          timebase: { tickCount: 6 },
+          series: {
+            'user:alice:heart_rate': [80, 85, 90, 88, 92, 95],
+          }
+        }
+      };
+
+      const result = pm.validateSessionPayload(payload);
+      expect(result.ok).toBe(true);
+    });
+  });
+
+  describe('debug counter reset', () => {
+    it('resets debug counters via resetSession()', () => {
+      const pm = new PersistenceManager();
+      pm._debugBlockedCount = 3;
+      pm._debugValidationCount = 3;
+      pm._debugSaveCount = 5;
+      pm._debugSaveSuccessCount = 3;
+
+      pm.resetSession();
+
+      expect(pm._debugBlockedCount).toBe(0);
+      expect(pm._debugValidationCount).toBe(0);
+      expect(pm._debugSaveCount).toBe(0);
+      expect(pm._debugSaveSuccessCount).toBe(0);
+    });
+
+    it('clears _hasSuccessfulSave state via resetSession()', () => {
+      const pm = new PersistenceManager();
+      pm.markSaveSucceeded('fs_123');
+      expect(pm.hasSuccessfulSave('fs_123')).toBe(true);
+
+      pm.resetSession();
+
+      expect(pm.hasSuccessfulSave('fs_123')).toBe(false);
+    });
+  });
+
   describe('_augmentRosterFromSeries — roster augmentation from series', () => {
     it('should include participants from series data missing from roster', () => {
       const pm = new PersistenceManager();
