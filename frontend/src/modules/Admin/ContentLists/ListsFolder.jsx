@@ -89,10 +89,10 @@ function ListsFolder() {
   // Content info cache for preloading
   const [contentInfoMap, setContentInfoMap] = useState(new Map());
 
-  const setContentInfo = useCallback((itemId, info) => {
+  const setContentInfo = useCallback((contentId, info) => {
     setContentInfoMap(prev => {
       const next = new Map(prev);
-      next.set(itemId, info);
+      next.set(contentId, info);
       return next;
     });
   }, []);

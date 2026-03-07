@@ -79,10 +79,10 @@ export class IGratitudeDatastore {
    * Remove an option by ID
    * @param {string} householdId
    * @param {Category} category
-   * @param {string} itemId
+   * @param {string} optionId
    * @returns {Promise<boolean>}
    */
-  async removeOption(householdId, category, itemId) {
+  async removeOption(householdId, category, optionId) {
     throw new Error('IGratitudeDatastore.removeOption must be implemented');
   }
 

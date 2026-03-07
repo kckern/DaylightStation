@@ -278,17 +278,17 @@ export class YamlNutriListDatastore extends INutriListDatastore {
   /**
    * Update a single item
    * @param {string} userId
-   * @param {string} itemId
+   * @param {string} entryId
    * @param {Object} updates
    * @returns {Promise<Object>}
    */
-  async update(userId, itemId, updates) {
+  async update(userId, entryId, updates) {
     const filePath = this.#getPath(userId);
     let items = this.#readFile(filePath);
 
-    const index = items.findIndex(item => item.uuid === itemId || item.id === itemId);
+    const index = items.findIndex(item => item.uuid === entryId || item.id === entryId);
     if (index === -1) {
-      throw new InfrastructureError(`Item not found: ${itemId}`, {
+      throw new InfrastructureError(`Item not found: ${entryId}`, {
         code: 'NOT_FOUND',
         entity: 'Item'
       });
