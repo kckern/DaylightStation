@@ -11,9 +11,24 @@ import { createInputManager } from './input/InputManager.js';
 import { ScreenActionHandler } from './actions/ScreenActionHandler.jsx';
 import { getWidgetRegistry } from './widgets/registry.js';
 import { useScreenSubscriptions } from './subscriptions/useScreenSubscriptions.js';
+import { useScreenCommands } from './commands/useScreenCommands.js';
 
 // Register built-ins on module load
 registerBuiltinWidgets();
+
+/**
+ * ScreenCommandHandler - Bridges WS command config to the ActionBus.
+ *
+ * Reads the websocket block from screen YAML config, subscribes to WS messages
+ * that look like remote commands, and emits ActionBus events.
+ *
+ * This is a renderless component (returns null).
+ */
+function ScreenCommandHandler({ wsConfig }) {
+  const bus = useMemo(() => getActionBus(), []);
+  useScreenCommands(wsConfig, bus);
+  return null;
+}
 
 /**
  * ScreenSubscriptionHandler - Bridges WS subscription config to the overlay system.
@@ -127,6 +142,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
         }}>
           <ScreenOverlayProvider>
             <ScreenActionHandler actions={config.actions} />
+            <ScreenCommandHandler wsConfig={config.websocket} />
             <ScreenSubscriptionHandler subscriptions={config.subscriptions} />
             <ScreenProvider config={config.layout}>
               <PanelRenderer />
