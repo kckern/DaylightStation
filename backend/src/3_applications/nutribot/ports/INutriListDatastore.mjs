@@ -59,7 +59,7 @@ export class INutriListDatastore {
   /**
    * Update a single item
    * @param {string} userId - User identifier
-   * @param {string} itemId - Item UUID or ID
+   * @param {string} entryId - Item UUID or ID
    * @param {Object} updates - Fields to update
    * @returns {Promise<Object>}
    */

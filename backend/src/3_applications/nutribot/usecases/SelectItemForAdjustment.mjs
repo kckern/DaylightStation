@@ -33,9 +33,9 @@ export class SelectItemForAdjustment {
    * Execute the use case
    */
   async execute(input) {
-    const { userId, conversationId, messageId, itemId } = input;
+    const { userId, conversationId, messageId, entryId } = input;
 
-    this.#logger.debug?.('adjustment.selectItem', { userId, itemId });
+    this.#logger.debug?.('adjustment.selectItem', { userId, entryId });
 
     try {
       // 1. Get current state to find the date
@@ -49,16 +49,16 @@ export class SelectItemForAdjustment {
       let foundItem = null;
       if (this.#nutriListStore) {
         if (this.#nutriListStore.findByUuid) {
-          foundItem = await this.#nutriListStore.findByUuid(userId, itemId);
+          foundItem = await this.#nutriListStore.findByUuid(userId, entryId);
         }
         if (!foundItem && this.#nutriListStore.findAll) {
           const allItems = await this.#nutriListStore.findAll(userId);
-          foundItem = allItems.find((item) => item.uuid === itemId || item.id === itemId);
+          foundItem = allItems.find((item) => item.uuid === entryId || item.id === entryId);
         }
       }
 
       if (!foundItem) {
-        this.#logger.warn?.('adjustment.itemNotFound', { userId, itemId });
+        this.#logger.warn?.('adjustment.itemNotFound', { userId, entryId });
         return { success: false, error: 'Item not found' };
       }
 
@@ -70,12 +70,12 @@ export class SelectItemForAdjustment {
         await this.#conversationStateStore.set(conversationId, {
           ...currentState,
           activeFlow: 'adjustment',
-          flowState: { level: 2, date, itemId },
+          flowState: { level: 2, date, entryId },
         });
       }
 
       // 4. Build action keyboard
-      const keyboard = this.#buildActionKeyboard(itemId);
+      const keyboard = this.#buildActionKeyboard(entryId);
 
       // 5. Build item detail message
       const message = this.#buildItemDetailMessage(foundItem, date);
@@ -88,7 +88,7 @@ export class SelectItemForAdjustment {
       });
 
       const label = foundItem.name || foundItem.label || 'item';
-      this.#logger.info?.('adjustment.itemSelected', { userId, itemId, label });
+      this.#logger.info?.('adjustment.itemSelected', { userId, entryId, label });
 
       return { success: true, item: foundItem };
     } catch (error) {
@@ -119,29 +119,29 @@ export class SelectItemForAdjustment {
    * Build action keyboard
    * @private
    */
-  #buildActionKeyboard(itemId) {
+  #buildActionKeyboard(entryId) {
     return [
       // Fraction row
       [
-        { text: '¼', callback_data: this.#encodeCallback('f', { id: itemId, f: 0.25 }) },
-        { text: '⅓', callback_data: this.#encodeCallback('f', { id: itemId, f: 0.33 }) },
-        { text: '½', callback_data: this.#encodeCallback('f', { id: itemId, f: 0.5 }) },
-        { text: '⅔', callback_data: this.#encodeCallback('f', { id: itemId, f: 0.67 }) },
-        { text: '¾', callback_data: this.#encodeCallback('f', { id: itemId, f: 0.75 }) },
+        { text: '¼', callback_data: this.#encodeCallback('f', { id: entryId, f: 0.25 }) },
+        { text: '⅓', callback_data: this.#encodeCallback('f', { id: entryId, f: 0.33 }) },
+        { text: '½', callback_data: this.#encodeCallback('f', { id: entryId, f: 0.5 }) },
+        { text: '⅔', callback_data: this.#encodeCallback('f', { id: entryId, f: 0.67 }) },
+        { text: '¾', callback_data: this.#encodeCallback('f', { id: entryId, f: 0.75 }) },
       ],
       // Multiplier row
       [
-        { text: '×1¼', callback_data: this.#encodeCallback('f', { id: itemId, f: 1.25 }) },
-        { text: '×1½', callback_data: this.#encodeCallback('f', { id: itemId, f: 1.5 }) },
-        { text: '×1¾', callback_data: this.#encodeCallback('f', { id: itemId, f: 1.75 }) },
-        { text: '×2', callback_data: this.#encodeCallback('f', { id: itemId, f: 2 }) },
-        { text: '×3', callback_data: this.#encodeCallback('f', { id: itemId, f: 3 }) },
-        { text: '×4', callback_data: this.#encodeCallback('f', { id: itemId, f: 4 }) },
+        { text: '×1¼', callback_data: this.#encodeCallback('f', { id: entryId, f: 1.25 }) },
+        { text: '×1½', callback_data: this.#encodeCallback('f', { id: entryId, f: 1.5 }) },
+        { text: '×1¾', callback_data: this.#encodeCallback('f', { id: entryId, f: 1.75 }) },
+        { text: '×2', callback_data: this.#encodeCallback('f', { id: entryId, f: 2 }) },
+        { text: '×3', callback_data: this.#encodeCallback('f', { id: entryId, f: 3 }) },
+        { text: '×4', callback_data: this.#encodeCallback('f', { id: entryId, f: 4 }) },
       ],
       // Actions row
       [
-        { text: '🗑️ Delete', callback_data: this.#encodeCallback('d', { id: itemId }) },
-        { text: '📅 Move Day', callback_data: this.#encodeCallback('m', { id: itemId }) },
+        { text: '🗑️ Delete', callback_data: this.#encodeCallback('d', { id: entryId }) },
+        { text: '📅 Move Day', callback_data: this.#encodeCallback('m', { id: entryId }) },
         { text: '↩️ Done', callback_data: this.#encodeCallback('bi') },
       ],
     ];

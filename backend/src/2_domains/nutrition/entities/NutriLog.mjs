@@ -292,28 +292,28 @@ export class NutriLog {
 
   /**
    * Remove a food item by ID
-   * @param {string} itemId
+   * @param {string} entryId
    * @param {Date} timestamp - Current timestamp (required)
    * @returns {NutriLog}
    */
-  removeItem(itemId, timestamp) {
+  removeItem(entryId, timestamp) {
     return new NutriLog({
       ...this.toJSON(),
-      items: this.#items.filter(i => i.id !== itemId).map(i => i.toJSON()),
+      items: this.#items.filter(i => i.id !== entryId).map(i => i.toJSON()),
       updatedAt: this.#formatTimestamp(timestamp),
     });
   }
 
   /**
    * Update a food item
-   * @param {string} itemId
+   * @param {string} entryId
    * @param {object} updates
    * @param {Date} timestamp - Current timestamp (required)
    * @returns {NutriLog}
    */
-  updateItem(itemId, updates, timestamp) {
+  updateItem(entryId, updates, timestamp) {
     const items = this.#items.map(item => {
-      if (item.id === itemId) {
+      if (item.id === entryId) {
         return item.with(updates).toJSON();
       }
       return item.toJSON();

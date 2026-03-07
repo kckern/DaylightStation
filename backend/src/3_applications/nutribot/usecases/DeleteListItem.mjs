@@ -41,28 +41,28 @@ export class DeleteListItem {
    * @param {string} input.userId
    * @param {string} input.conversationId
    * @param {string} [input.messageId]
-   * @param {string} [input.itemId]
+   * @param {string} [input.entryId]
    */
   async execute(input) {
-    const { userId, conversationId, messageId, itemId: inputItemId } = input;
+    const { userId, conversationId, messageId, entryId: inputEntryId } = input;
 
-    this.#logger.debug?.('adjustment.delete', { userId, inputItemId });
+    this.#logger.debug?.('adjustment.delete', { userId, inputEntryId });
 
     try {
-      // Prefer itemId from callback; fallback to state
-      let itemId = inputItemId;
+      // Prefer entryId from callback; fallback to state
+      let entryId = inputEntryId;
       let state = null;
-      if (!itemId && this.#conversationStateStore?.get) {
+      if (!entryId && this.#conversationStateStore?.get) {
         state = await this.#conversationStateStore.get(conversationId);
-        itemId = state?.flowState?.itemId;
+        entryId = state?.flowState?.entryId || state?.flowState?.itemId;
       }
 
-      if (!itemId) {
+      if (!entryId) {
         throw new Error('No item selected');
       }
 
       // Find item in nutrilist to get logId
-      const listItem = await this.#nutriListStore.findByUuid(userId, itemId);
+      const listItem = await this.#nutriListStore.findByUuid(userId, entryId);
       const logId = listItem?.logId || listItem?.log_uuid || state?.flowState?.logId;
 
       let itemLabel = listItem?.label || listItem?.name || 'item';
@@ -71,10 +71,10 @@ export class DeleteListItem {
       const log = logId ? await this.#foodLogStore.findById(userId, logId) : null;
 
       if (log) {
-        const item = log.items.find((i) => i.id === itemId || i.uuid === itemId);
+        const item = log.items.find((i) => i.id === entryId || i.uuid === entryId);
         if (item) {
           itemLabel = item.label || item.name || itemLabel;
-          const removeId = item.id || item.uuid || itemId;
+          const removeId = item.id || item.uuid || entryId;
           const updatedLog = log.removeItem(removeId, new Date());
 
           if (updatedLog.items.length === 0) {
@@ -85,12 +85,12 @@ export class DeleteListItem {
 
           await this.#nutriListStore.syncFromLog(updatedLog);
         } else {
-          this.#logger.debug?.('adjustment.delete.itemNotInLog', { userId, itemId, logId });
-          await this.#nutriListStore.deleteById(userId, itemId);
+          this.#logger.debug?.('adjustment.delete.itemNotInLog', { userId, entryId, logId });
+          await this.#nutriListStore.deleteById(userId, entryId);
         }
       } else {
-        this.#logger.debug?.('adjustment.delete.noLog', { userId, itemId, logId });
-        await this.#nutriListStore.deleteById(userId, itemId);
+        this.#logger.debug?.('adjustment.delete.noLog', { userId, entryId, logId });
+        await this.#nutriListStore.deleteById(userId, entryId);
       }
 
       // Update message with confirmation (use caption for photo messages)
@@ -119,7 +119,7 @@ export class DeleteListItem {
         });
       }
 
-      this.#logger.info?.('adjustment.deleted', { userId, logId, itemId });
+      this.#logger.info?.('adjustment.deleted', { userId, logId, entryId });
       return { success: true };
     } catch (error) {
       this.#logger.error?.('adjustment.delete.error', { userId, error: error.message });

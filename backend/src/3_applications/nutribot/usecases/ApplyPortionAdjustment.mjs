@@ -31,32 +31,32 @@ export class ApplyPortionAdjustment {
    * Execute the use case
    */
   async execute(input) {
-    const { userId, conversationId, messageId, factor, itemId: inputItemId } = input;
+    const { userId, conversationId, messageId, factor, entryId: inputEntryId } = input;
 
-    this.#logger.debug?.('adjustment.applyFactor', { userId, factor, itemId: inputItemId });
+    this.#logger.debug?.('adjustment.applyFactor', { userId, factor, entryId: inputEntryId });
 
     try {
-      // 1. Get itemId from input or fallback to state
-      let itemId = inputItemId;
+      // 1. Get entryId from input or fallback to state
+      let entryId = inputEntryId;
       let date = null;
-      if (!itemId && this.#conversationStateStore?.get) {
+      if (!entryId && this.#conversationStateStore?.get) {
         const state = await this.#conversationStateStore.get(conversationId);
-        itemId = state?.flowState?.itemId;
+        entryId = state?.flowState?.entryId || state?.flowState?.itemId;
         date = state?.flowState?.date;
       }
 
-      if (!itemId) {
+      if (!entryId) {
         throw new Error('No item selected in adjustment state');
       }
 
       // 2. Find the item in nutrilist
       let item = null;
       if (this.#nutriListStore?.findByUuid) {
-        item = await this.#nutriListStore.findByUuid(userId, itemId);
+        item = await this.#nutriListStore.findByUuid(userId, entryId);
       }
       if (!item && this.#nutriListStore?.findAll) {
         const allItems = await this.#nutriListStore.findAll(userId);
-        item = allItems.find((i) => i.id === itemId || i.uuid === itemId);
+        item = allItems.find((i) => i.id === entryId || i.uuid === entryId);
       }
 
       if (!item) {
@@ -83,7 +83,7 @@ export class ApplyPortionAdjustment {
       if (this.#nutriListStore?.update) {
         this.#logger.debug?.('adjustment.callingStoreUpdate', {
           userId,
-          itemId,
+          entryId,
           factor,
           scaledValues: {
             grams: scaledItem.grams,
@@ -91,11 +91,11 @@ export class ApplyPortionAdjustment {
           },
         });
 
-        const updatedItem = await this.#nutriListStore.update(userId, itemId, scaledItem);
+        const updatedItem = await this.#nutriListStore.update(userId, entryId, scaledItem);
 
         this.#logger.info?.('adjustment.storeUpdateComplete', {
           userId,
-          itemId,
+          entryId,
           updatedValues: {
             grams: updatedItem.grams,
             calories: updatedItem.calories,
@@ -106,17 +106,17 @@ export class ApplyPortionAdjustment {
         if (updatedItem.grams !== scaledItem.grams || updatedItem.calories !== scaledItem.calories) {
           this.#logger.error?.('adjustment.updateVerificationFailed', {
             userId,
-            itemId,
+            entryId,
             expected: { grams: scaledItem.grams, calories: scaledItem.calories },
             actual: { grams: updatedItem.grams, calories: updatedItem.calories },
           });
           throw new Error('Store update verification failed');
         }
       } else if (this.#nutriListStore?.save) {
-        this.#logger.warn?.('adjustment.usingLegacySave', { userId, itemId });
+        this.#logger.warn?.('adjustment.usingLegacySave', { userId, entryId });
         await this.#nutriListStore.save(scaledItem);
       } else {
-        this.#logger.error?.('adjustment.noStoreMethod', { userId, itemId });
+        this.#logger.error?.('adjustment.noStoreMethod', { userId, entryId });
         throw new Error('No store update or save method available');
       }
 
@@ -152,7 +152,7 @@ export class ApplyPortionAdjustment {
 
       this.#logger.info?.('adjustment.factorApplied', {
         userId,
-        itemId,
+        entryId,
         factor,
         oldGrams: originalGrams,
         newGrams: scaledItem.grams,
