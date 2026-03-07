@@ -153,7 +153,7 @@ export class NutribotInputRouter extends BaseInputRouter {
           userId: this.#resolveUserId(event),
           conversationId: event.conversationId,
           logUuid: decoded.logId || decoded.id,
-          itemId: decoded.itemId,
+          entryId: decoded.entryId || decoded.itemId,
           messageId: event.messageId,
           responseContext,
         });
@@ -201,7 +201,7 @@ export class NutribotInputRouter extends BaseInputRouter {
           userId: this.#resolveUserId(event),
           conversationId: event.conversationId,
           messageId: event.messageId,
-          itemId: decoded.id,
+          entryId: decoded.id,
           responseContext,
         });
       }
@@ -264,7 +264,7 @@ export class NutribotInputRouter extends BaseInputRouter {
           userId: this.#resolveUserId(event),
           conversationId: event.conversationId,
           messageId: event.messageId,
-          itemId: decoded.id,
+          entryId: decoded.id,
           factor: decoded.f,
           responseContext,
         });
@@ -277,7 +277,7 @@ export class NutribotInputRouter extends BaseInputRouter {
           userId: this.#resolveUserId(event),
           conversationId: event.conversationId,
           messageId: event.messageId,
-          itemId: decoded.id,
+          entryId: decoded.id,
           responseContext,
         });
       }
@@ -289,7 +289,7 @@ export class NutribotInputRouter extends BaseInputRouter {
           userId: this.#resolveUserId(event),
           conversationId: event.conversationId,
           messageId: event.messageId,
-          itemId: decoded.id,
+          entryId: decoded.id,
           // No newDate - will show date picker
           responseContext,
         });
@@ -304,7 +304,7 @@ export class NutribotInputRouter extends BaseInputRouter {
           userId: this.#resolveUserId(event),
           conversationId: event.conversationId,
           messageId: event.messageId,
-          itemId: decoded.id,
+          entryId: decoded.id,
           newDate,
           responseContext,
         });

@@ -14,12 +14,12 @@ import getLogger from '../../../lib/logging/Logger.js';
 import './Scroll.scss';
 
 /** Base64url-encode an item ID for use in the URL path. */
-function encodeItemId(id) {
+function encodeFeedItemId(id) {
   return btoa(id).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 /** Decode a base64url slug back to the original item ID. */
-function decodeItemId(slug) {
+function decodeFeedItemId(slug) {
   let s = slug.replace(/-/g, '+').replace(/_/g, '/');
   while (s.length % 4) s += '=';
   try { return atob(s); } catch { return null; }
@@ -110,7 +110,7 @@ function ScrollCard({ item, colors, onDismiss, onPlay, onClick, style, itemRef, 
 function getScrollEl() { return document.querySelector('.feed-content'); }
 
 export default function Scroll() {
-  const { itemId: urlSlug } = useParams();
+  const { feedItemId: urlSlug } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -162,7 +162,7 @@ export default function Scroll() {
   usePerfMonitor(!loading && !(urlSlug && !isDesktop));
 
   // Decode URL slug to full item ID
-  const fullId = urlSlug ? decodeItemId(urlSlug) : null;
+  const fullId = urlSlug ? decodeFeedItemId(urlSlug) : null;
 
   // Find selected item in loaded list or from deep-link fetch
   const selectedItem = fullId
@@ -462,7 +462,7 @@ export default function Scroll() {
       id: item.id,
     });
     feedLog.nav('card click', { scrollY: Math.round(scrollY), id: item.id, title: item.title, source: item.source, tier: item.tier });
-    navigate(`/feed/scroll/${encodeItemId(item.id)}`);
+    navigate(`/feed/scroll/${encodeFeedItemId(item.id)}`);
   }, [navigate]);
 
   const handleNav = useCallback((direction) => {
@@ -471,7 +471,7 @@ export default function Scroll() {
     if (idx === -1) return;
     const nextIdx = idx + direction;
     if (nextIdx < 0 || nextIdx >= visibleItems.length) return;
-    navigate(`/feed/scroll/${encodeItemId(visibleItems[nextIdx].id)}`, { replace: true });
+    navigate(`/feed/scroll/${encodeFeedItemId(visibleItems[nextIdx].id)}`, { replace: true });
   }, [selectedItem, visibleItems, navigate]);
 
   const handleGalleryNav = useCallback((galleryItem) => {
@@ -480,7 +480,7 @@ export default function Scroll() {
       if (prev.find(i => i.id === galleryItem.id)) return prev;
       return [...prev, galleryItem];
     });
-    navigate(`/feed/scroll/${encodeItemId(galleryItem.id)}`, { replace: true });
+    navigate(`/feed/scroll/${encodeFeedItemId(galleryItem.id)}`, { replace: true });
   }, [navigate]);
 
   const handleDismiss = useCallback((item, wrapperEl) => {

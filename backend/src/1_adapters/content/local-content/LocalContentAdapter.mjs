@@ -360,7 +360,7 @@ export class LocalContentAdapter {
     const watchMap = new Map();
 
     for (const p of allProgress) {
-      const key = p.itemId || '';
+      const key = p.contentId || '';
       let talkId = null;
       if (key.startsWith('plex:video/talks/')) {
         talkId = key.replace('plex:video/talks/', '');

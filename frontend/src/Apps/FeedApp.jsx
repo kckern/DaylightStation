@@ -141,7 +141,7 @@ const FeedApp = () => {
             <Route path="headlines/:pageId" element={<HeadlinesPage />} />
             <Route path="headlines" element={<Navigate to="/feed/headlines/mainstream" replace />} />
             <Route path="scroll" element={<Scroll />} />
-            <Route path="scroll/:itemId" element={<Scroll />} />
+            <Route path="scroll/:feedItemId" element={<Scroll />} />
           </Route>
         </Routes>
       </FeedPlayerProvider>

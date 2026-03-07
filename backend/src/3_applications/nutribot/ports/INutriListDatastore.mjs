@@ -63,7 +63,7 @@ export class INutriListDatastore {
    * @param {Object} updates - Fields to update
    * @returns {Promise<Object>}
    */
-  async update(userId, itemId, updates) {
+  async update(userId, entryId, updates) {
     throw new Error('INutriListDatastore.update must be implemented');
   }
 

@@ -186,34 +186,34 @@ export class NutriLog {
 
   /**
    * Remove an item from the log
-   * @param {string} itemId - ID of item to remove
+   * @param {string} entryId - ID of item to remove
    * @param {string} timestamp - Timestamp for the update (required)
    * @returns {NutriLog}
    * @throws {ValidationError} If timestamp is not provided
    */
-  removeItem(itemId, timestamp) {
+  removeItem(entryId, timestamp) {
     if (!timestamp) {
       throw new ValidationError('timestamp is required for removeItem');
     }
     return this.#withUpdates({
-      items: this.#items.filter(i => i.id !== itemId)
+      items: this.#items.filter(i => i.id !== entryId)
     }, timestamp);
   }
 
   /**
    * Update an item in the log
-   * @param {string} itemId - ID of item to update
+   * @param {string} entryId - ID of item to update
    * @param {Object} updates - Updates to apply
    * @param {string} timestamp - Timestamp for the update (required)
    * @returns {NutriLog}
    * @throws {ValidationError} If timestamp is not provided
    */
-  updateItem(itemId, updates, timestamp) {
+  updateItem(entryId, updates, timestamp) {
     if (!timestamp) {
       throw new ValidationError('timestamp is required for updateItem');
     }
     return this.#withUpdates({
-      items: this.#items.map(i => i.id === itemId ? i.with(updates) : i)
+      items: this.#items.map(i => i.id === entryId ? i.with(updates) : i)
     }, timestamp);
   }
 
