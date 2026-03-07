@@ -307,7 +307,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
     const localId = item.localId || item.id?.replace(`${source}:`, '');
 
     log.info('browse_container.start', {
-      itemId: item.id, title: item.title, source, localId,
+      contentId: item.id, title: item.title, source, localId,
       type: item.type, isContainer: item.isContainer, itemType: item.itemType,
       prevBreadcrumbDepth: breadcrumbs.length
     });
@@ -324,7 +324,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
       setBrowseResults(data.items || []);
       setBreadcrumbs(prev => [...prev, newCrumb]);
     } catch (err) {
-      log.error('browse_container.error', { itemId: item.id, source, localId, error: err.message });
+      log.error('browse_container.error', { contentId: item.id, source, localId, error: err.message });
     } finally {
       setLoading(false);
     }
@@ -371,7 +371,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
   const handleItemClick = (item) => {
     const container = isContainer(item);
     log.info('item_click', {
-      itemId: item.id, title: item.title, type: item.type,
+      contentId: item.id, title: item.title, type: item.type,
       isContainer: container, selectContainers,
       action: (container && !selectContainers) ? 'browse_into' : 'select',
       breadcrumbDepth: breadcrumbs.length
@@ -380,7 +380,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
     if (container && !selectContainers) {
       browseContainer(item);
     } else {
-      log.info('item_select', { itemId: item.id, title: item.title, prevValue: value });
+      log.info('item_select', { contentId: item.id, title: item.title, prevValue: value });
       onChange(item.id, item);
       setSearch(null);
       setBreadcrumbs([]);
@@ -402,7 +402,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
     // Get parent path by removing the last segment
     const parts = localId.split('/');
     if (parts.length <= 1) {
-      log.debug('browse_parent.skip', { reason: 'no_parent_path', itemId: item.id, localId });
+      log.debug('browse_parent.skip', { reason: 'no_parent_path', contentId: item.id, localId });
       return;
     }
 
@@ -410,7 +410,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
     const parentTitle = item.metadata?.parentTitle || parts[parts.length - 2];
 
     log.info('browse_parent.start', {
-      itemId: item.id, title: item.title, source, localId,
+      contentId: item.id, title: item.title, source, localId,
       parentPath, parentTitle, pathParts: parts
     });
     setLoading(true);
@@ -426,7 +426,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
       setBrowseResults(data.items || []);
       setBreadcrumbs([crumb]);
     } catch (err) {
-      log.error('browse_parent.error', { itemId: item.id, parentPath, error: err.message });
+      log.error('browse_parent.error', { contentId: item.id, parentPath, error: err.message });
     } finally {
       setLoading(false);
     }
@@ -480,7 +480,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
                   onClick={hasParent ? (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    log.debug('parent_title.click', { itemId: item.id, parentTitle });
+                    log.debug('parent_title.click', { contentId: item.id, parentTitle });
                     browseParent(item);
                   } : undefined}
                   style={hasParent ? { cursor: 'pointer', textDecoration: 'underline' } : undefined}

@@ -5,23 +5,23 @@
  * Stores processed {browseItems, currentParent} ready for immediate use.
  */
 const siblingsCache = new Map();
-// Key: itemId (e.g., "plex:12345")
+// Key: contentId (e.g., "plex:12345")
 // Value: {
 //   status: 'pending' | 'loaded' | 'error',
 //   data: { browseItems, currentParent } | null,
 //   promise: Promise | null
 // }
 
-export function getCacheEntry(itemId) {
-  return siblingsCache.get(itemId);
+export function getCacheEntry(contentId) {
+  return siblingsCache.get(contentId);
 }
 
-export function setCacheEntry(itemId, entry) {
-  siblingsCache.set(itemId, entry);
+export function setCacheEntry(contentId, entry) {
+  siblingsCache.set(contentId, entry);
 }
 
-export function hasCacheEntry(itemId) {
-  return siblingsCache.has(itemId);
+export function hasCacheEntry(contentId) {
+  return siblingsCache.has(contentId);
 }
 
 export function clearCache() {
