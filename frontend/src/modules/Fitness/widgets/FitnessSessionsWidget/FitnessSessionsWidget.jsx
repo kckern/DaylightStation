@@ -199,18 +199,7 @@ function SessionsCard({ sessions, onSessionClick, selectedSessionId }) {
                                   <span className="session-row__coins"><CoinIcon size={14} />{s.totalCoins}</span>
                                 )}
                                 {s.maxSufferScore > 0 && (
-                                  s.stravaActivityId ? (
-                                    <a
-                                      href={`https://www.strava.com/activities/${s.stravaActivityId}`}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="session-row__suffer"
-                                      onClick={(e) => e.stopPropagation()}
-                                      onPointerDown={(e) => e.stopPropagation()}
-                                    ><StravaIcon size={14} />{s.maxSufferScore}</a>
-                                  ) : (
-                                    <span className="session-row__suffer"><StravaIcon size={14} />{s.maxSufferScore}</span>
-                                  )
+                                  <span className="session-row__suffer"><StravaIcon size={14} />{s.maxSufferScore}</span>
                                 )}
                               </div>
                             )}
