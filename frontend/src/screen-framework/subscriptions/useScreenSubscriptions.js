@@ -98,6 +98,15 @@ export function useScreenSubscriptions(subscriptions, showOverlay, dismissOverla
         continue;
       }
 
+      // Reset inactivity timer on any message from this topic (not just trigger events)
+      if (entry.dismissInactivity != null && inactivityTimers.current[entry.topic]) {
+        clearTimeout(inactivityTimers.current[entry.topic]);
+        inactivityTimers.current[entry.topic] = setTimeout(() => {
+          dismissOverlay(entry.mode);
+          delete inactivityTimers.current[entry.topic];
+        }, entry.dismissInactivity * 1000);
+      }
+
       // Guard check — skip if condition not met
       if (entry.guard === 'no_overlay' && hasOverlayRef.current) {
         logger().debug('subscription.guard-blocked', { topic: entry.topic, guard: entry.guard });
