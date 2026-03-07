@@ -33,8 +33,12 @@ function logger() {
  * @param {function} showOverlay - From useScreenOverlay()
  * @param {function} dismissOverlay - From useScreenOverlay()
  * @param {object} widgetRegistry - From getWidgetRegistry()
+ * @param {object} options - Optional config
+ * @param {boolean} options.hasOverlay - Whether an overlay is currently active (for guard checks)
  */
-export function useScreenSubscriptions(subscriptions, showOverlay, dismissOverlay, widgetRegistry) {
+export function useScreenSubscriptions(subscriptions, showOverlay, dismissOverlay, widgetRegistry, { hasOverlay = false } = {}) {
+  const hasOverlayRef = useRef(hasOverlay);
+  hasOverlayRef.current = hasOverlay;
   // Normalize entries once; stable across renders unless config changes
   const entries = useMemo(() => {
     if (!subscriptions || typeof subscriptions !== 'object') return [];
@@ -47,6 +51,9 @@ export function useScreenSubscriptions(subscriptions, showOverlay, dismissOverla
       timeout: cfg?.response?.timeout ?? undefined,
       dismissEvent: cfg?.dismiss?.event ?? null,
       dismissInactivity: cfg?.dismiss?.inactivity ?? null,
+      guard: cfg?.guard ?? null,
+      alsoOnEvent: cfg?.also_on?.event ?? null,
+      alsoOnCondition: cfg?.also_on?.condition ?? null,
     }));
   }, [subscriptions]);
 
@@ -91,10 +98,25 @@ export function useScreenSubscriptions(subscriptions, showOverlay, dismissOverla
         continue;
       }
 
+      // Guard check — skip if condition not met
+      if (entry.guard === 'no_overlay' && hasOverlayRef.current) {
+        logger().debug('subscription.guard-blocked', { topic: entry.topic, guard: entry.guard });
+        continue;
+      }
+
       // Check trigger filter
       if (entry.onEvent && eventName !== entry.onEvent) {
-        logger().debug('subscription.event-filtered', { topic: entry.topic, expected: entry.onEvent, received: eventName });
-        continue;
+        // Check also_on as secondary trigger
+        if (entry.alsoOnEvent && eventName === entry.alsoOnEvent) {
+          if (entry.alsoOnCondition === 'no_overlay' && hasOverlayRef.current) {
+            logger().debug('subscription.also-on-blocked', { topic: entry.topic, condition: entry.alsoOnCondition });
+            continue;
+          }
+          // Fall through to show overlay
+        } else {
+          logger().debug('subscription.event-filtered', { topic: entry.topic, expected: entry.onEvent, received: eventName });
+          continue;
+        }
       }
 
       // Resolve component from registry

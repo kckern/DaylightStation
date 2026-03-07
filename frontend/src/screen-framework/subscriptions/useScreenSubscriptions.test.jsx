@@ -37,9 +37,9 @@ describe('useScreenSubscriptions', () => {
     vi.restoreAllMocks();
   });
 
-  function renderSubscriptions(config) {
+  function renderSubscriptions(config, options = {}) {
     return renderHook(() =>
-      useScreenSubscriptions(config, showOverlay, dismissOverlay, widgetRegistry)
+      useScreenSubscriptions(config, showOverlay, dismissOverlay, widgetRegistry, options)
     );
   }
 
@@ -347,5 +347,84 @@ describe('useScreenSubscriptions', () => {
       { topic: 'midi', event: 'note_on' },
       { mode: 'toast', priority: undefined, timeout: 5000 }
     );
+  });
+
+  describe('guard', () => {
+    it('skips trigger when guard is "no_overlay" and overlay is active', () => {
+      const config = {
+        midi: {
+          on: { event: 'session_start' },
+          guard: 'no_overlay',
+          response: { overlay: 'piano', mode: 'fullscreen' },
+        },
+      };
+
+      renderSubscriptions(config, { hasOverlay: true });
+
+      act(() => capturedCallback({ topic: 'midi', event: 'session_start' }));
+      expect(showOverlay).not.toHaveBeenCalled();
+    });
+
+    it('allows trigger when guard is "no_overlay" and no overlay is active', () => {
+      const config = {
+        midi: {
+          on: { event: 'session_start' },
+          guard: 'no_overlay',
+          response: { overlay: 'piano', mode: 'fullscreen' },
+        },
+      };
+
+      renderSubscriptions(config, { hasOverlay: false });
+
+      act(() => capturedCallback({ topic: 'midi', event: 'session_start' }));
+      expect(showOverlay).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('also_on', () => {
+    it('triggers on also_on event when primary does not match', () => {
+      const config = {
+        midi: {
+          on: { event: 'session_start' },
+          also_on: { event: 'note_on' },
+          response: { overlay: 'piano', mode: 'fullscreen' },
+        },
+      };
+
+      renderSubscriptions(config, { hasOverlay: false });
+
+      act(() => capturedCallback({ topic: 'midi', event: 'note_on' }));
+      expect(showOverlay).toHaveBeenCalledTimes(1);
+    });
+
+    it('blocks also_on when its condition is "no_overlay" and overlay is active', () => {
+      const config = {
+        midi: {
+          on: { event: 'session_start' },
+          also_on: { event: 'note_on', condition: 'no_overlay' },
+          response: { overlay: 'piano', mode: 'fullscreen' },
+        },
+      };
+
+      renderSubscriptions(config, { hasOverlay: true });
+
+      act(() => capturedCallback({ topic: 'midi', event: 'note_on' }));
+      expect(showOverlay).not.toHaveBeenCalled();
+    });
+
+    it('does not trigger on unmatched events even with also_on configured', () => {
+      const config = {
+        midi: {
+          on: { event: 'session_start' },
+          also_on: { event: 'note_on' },
+          response: { overlay: 'piano', mode: 'fullscreen' },
+        },
+      };
+
+      renderSubscriptions(config, { hasOverlay: false });
+
+      act(() => capturedCallback({ topic: 'midi', event: 'some_other_event' }));
+      expect(showOverlay).not.toHaveBeenCalled();
+    });
   });
 });
