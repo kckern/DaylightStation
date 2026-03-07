@@ -54,4 +54,46 @@ describe('toListItem', () => {
     expect(result.launch).toBeUndefined();
     expect(result.play).toBeDefined();
   });
+
+  it('does NOT overwrite classified watchProgress with resumePosition', () => {
+    const item = {
+      id: 'plex:600174',
+      localId: '600174',
+      title: 'Eccentric Upper',
+      type: 'episode',
+      metadata: { type: 'episode' },
+      mediaUrl: '/api/v1/proxy/plex/stream/600174',
+      watchProgress: 100,
+      watchSeconds: 1960,
+      isWatched: true,
+      lastPlayed: '2026-03-02',
+      resumePosition: 338,
+      duration: 1960
+    };
+
+    const result = toListItem(item);
+
+    expect(result.watchProgress).toBe(100);
+    expect(result.watchSeconds).toBe(1960);
+    expect(result.resumePosition).toBe(338);
+  });
+
+  it('uses resumePosition for watchProgress when no classified value exists', () => {
+    const item = {
+      id: 'plex:99999',
+      localId: '99999',
+      title: 'Some Movie',
+      type: 'movie',
+      metadata: { type: 'movie' },
+      mediaUrl: '/some/url',
+      resumePosition: 600,
+      duration: 3600
+    };
+
+    const result = toListItem(item);
+
+    expect(result.watchProgress).toBe(17);
+    expect(result.watchSeconds).toBe(600);
+    expect(result.resumePosition).toBe(600);
+  });
 });
