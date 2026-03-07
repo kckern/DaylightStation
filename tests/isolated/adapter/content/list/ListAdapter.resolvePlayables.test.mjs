@@ -41,8 +41,8 @@ function makeMockMemory(progressMap = {}) {
       return { percent };
     }),
     getAll: vi.fn(async () => {
-      return Object.entries(progressMap).map(([itemId, percent]) => ({
-        itemId,
+      return Object.entries(progressMap).map(([contentId, percent]) => ({
+        contentId,
         percent,
       }));
     }),
