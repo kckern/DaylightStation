@@ -107,10 +107,10 @@ function normalizeListSource(source) {
  * Fetch siblings data for an item. Returns processed data ready for state.
  * This is the core fetch logic extracted for use by both preload and direct calls.
  */
-async function doFetchSiblings(itemId, contentInfo) {
-  const match = itemId.match(/^([^:]+):\s*(.+)$/);
+async function doFetchSiblings(contentId, contentInfo) {
+  const match = contentId.match(/^([^:]+):\s*(.+)$/);
   if (!match) {
-    adminLog('doFetchSiblings').debug('skip', { itemId, reason: 'no_match' });
+    adminLog('doFetchSiblings').debug('skip', { contentId, reason: 'no_match' });
     return null;
   }
 
@@ -154,14 +154,14 @@ async function doFetchSiblings(itemId, contentInfo) {
 
 /**
  * Fetch a page of siblings for pagination follow-ups.
- * @param {string} itemId - Compound ID (e.g., "plex:12345")
+ * @param {string} contentId - Compound ID (e.g., "plex:12345")
  * @param {Object} contentInfo - Content metadata
  * @param {number} offset - Start offset
  * @param {number} limit - Number of items
  * @returns {Promise<{items: Array, pagination: Object}|null>}
  */
-export async function fetchSiblingsPage(itemId, contentInfo, offset, limit) {
-  const match = itemId.match(/^([^:]+):\s*(.+)$/);
+export async function fetchSiblingsPage(contentId, contentInfo, offset, limit) {
+  const match = contentId.match(/^([^:]+):\s*(.+)$/);
   if (!match) return null;
 
   const source = contentInfo?.source || normalizeListSource(match[1].trim());
@@ -192,24 +192,24 @@ export async function fetchSiblingsPage(itemId, contentInfo, offset, limit) {
  * Preload siblings for an item into the cache.
  * Skips if already cached or pending. Returns the promise for optional awaiting.
  */
-export async function preloadSiblings(itemId, contentInfo) {
-  if (!itemId || !contentInfo || contentInfo.unresolved) return null;
+export async function preloadSiblings(contentId, contentInfo) {
+  if (!contentId || !contentInfo || contentInfo.unresolved) return null;
 
   // Skip if already cached or pending
-  const existing = getCacheEntry(itemId);
+  const existing = getCacheEntry(contentId);
   if (existing) return existing.promise;
 
   // Mark as pending immediately to prevent duplicate requests
-  const promise = doFetchSiblings(itemId, contentInfo);
-  setCacheEntry(itemId, { status: 'pending', data: null, promise });
+  const promise = doFetchSiblings(contentId, contentInfo);
+  setCacheEntry(contentId, { status: 'pending', data: null, promise });
 
   try {
     const data = await promise;
-    setCacheEntry(itemId, { status: 'loaded', data, promise: null });
+    setCacheEntry(contentId, { status: 'loaded', data, promise: null });
     return data;
   } catch (err) {
-    adminLog('preloadSiblings').error('preload_siblings.error', { itemId, error: err.message });
-    setCacheEntry(itemId, { status: 'error', data: null, promise: null });
+    adminLog('preloadSiblings').error('preload_siblings.error', { contentId, error: err.message });
+    setCacheEntry(contentId, { status: 'error', data: null, promise: null });
     return null;
   }
 }
@@ -2114,15 +2114,15 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
   const [itemInfo, setItemInfo] = useState(null);
   const [children, setChildren] = useState([]);
   const [navStack, setNavStack] = useState([]); // [{id, title}] for navigation
-  const [currentItemId, setCurrentItemId] = useState(null); // To highlight in parent view
+  const [currentContentId, setCurrentContentId] = useState(null); // To highlight in parent view
   const originalValueRef = useRef(contentValue);
 
   // Fetch details for a specific item
-  const fetchItemDetails = async (itemId) => {
-    const match = itemId.match(/^([^:]+):\s*(.+)$/);
+  const fetchItemDetails = async (contentId) => {
+    const match = contentId.match(/^([^:]+):\s*(.+)$/);
     if (!match) return null;
     const [, source, localId] = [null, match[1].trim(), match[2].trim()];
-    log.info('details.fetch', { itemId, source, localId });
+    log.info('details.fetch', { contentId, source, localId });
 
     try {
       setLoading(true);
@@ -2155,7 +2155,7 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
     const parentId = `${itemInfo.source}:${itemInfo.metadata.parentRatingKey}`;
 
     // Save current item to highlight in parent's list
-    setCurrentItemId(itemInfo.id);
+    setCurrentContentId(itemInfo.id);
 
     // Push current to nav stack
     setNavStack([...navStack, { id: itemInfo.id, title: itemInfo.title }]);
@@ -2171,7 +2171,7 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
     const newStack = [...navStack];
     const target = newStack.pop();
     setNavStack(newStack);
-    setCurrentItemId(null);
+    setCurrentContentId(null);
 
     await fetchItemDetails(target.id);
   };
@@ -2180,7 +2180,7 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
   const navigateToOriginal = async () => {
     log.info('details.navigate_original', { originalValue: originalValueRef.current });
     setNavStack([]);
-    setCurrentItemId(null);
+    setCurrentContentId(null);
     await fetchItemDetails(originalValueRef.current);
   };
 
@@ -2193,7 +2193,7 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
     // Reset state when opening
     originalValueRef.current = contentValue;
     setNavStack([]);
-    setCurrentItemId(null);
+    setCurrentContentId(null);
     fetchItemDetails(contentValue);
   }, [opened, contentValue]);
 
@@ -2234,7 +2234,7 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
                     onClick={() => {
                       const newStack = navStack.slice(0, idx);
                       setNavStack(newStack);
-                      setCurrentItemId(null);
+                      setCurrentContentId(null);
                       fetchItemDetails(item.id);
                     }}
                   >
@@ -2315,7 +2315,7 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
                   {children.map((child, idx) => {
                     const isWatched = child.watched || child.viewCount > 0;
                     const childType = child.metadata?.type || child.type;
-                    const isCurrentItem = currentItemId && child.id === currentItemId;
+                    const isCurrentItem = currentContentId && child.id === currentContentId;
                     const isContainer = CONTAINER_TYPES.includes(childType);
 
                     return (
@@ -2337,7 +2337,7 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
                         onClick={isContainer ? () => {
                           log.info('details.child_click', { childId: child.id, childTitle: child.title, childType: childType });
                           setNavStack([...navStack, { id: itemInfo.id, title: itemInfo.title }]);
-                          setCurrentItemId(null);
+                          setCurrentContentId(null);
                           fetchItemDetails(child.id);
                         } : undefined}
                       >
