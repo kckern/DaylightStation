@@ -69,6 +69,21 @@ layout:
               grow: 1
               shrink: 1
 
+actions:
+  menu:
+    duplicate: navigate    # repeat-key-to-navigate: dispatch to menu for item selection
+  escape:
+    - when: shader_active
+      do: clear_shader
+    - when: overlay_active
+      do: dismiss_overlay
+    - when: idle
+      do: reload
+  sleep:
+    wake: keydown           # numpad has no touch — wake on any keypress
+  playback:
+    when_idle: secondary    # fall back to secondary action when no media active
+
 subscriptions:
   midi:
     on:
