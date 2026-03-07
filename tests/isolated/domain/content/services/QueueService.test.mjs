@@ -5,8 +5,8 @@ import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
 
 // Create a mock WatchState class for testing
 class WatchState {
-  constructor({ itemId, playhead = 0, duration = 0, playCount = 0, lastPlayed = null }) {
-    this.itemId = itemId;
+  constructor({ contentId, playhead = 0, duration = 0, playCount = 0, lastPlayed = null }) {
+    this.contentId = contentId;
     this.playhead = playhead;
     this.duration = duration;
     this.playCount = playCount;
@@ -67,7 +67,7 @@ describe('QueueService', () => {
 
       mockMediaProgressMemory.get.mockImplementation(async (id) => {
         if (id === 'test:2') {
-          return new WatchState({ itemId: 'test:2', playhead: 1800, duration: 3600 });
+          return new WatchState({ contentId: 'test:2', playhead: 1800, duration: 3600 });
         }
         return null;
       });
@@ -84,7 +84,7 @@ describe('QueueService', () => {
 
       mockMediaProgressMemory.get.mockImplementation(async (id) => {
         if (id === 'test:1') {
-          return new WatchState({ itemId: 'test:1', playhead: 3500, duration: 3600 }); // 97% watched
+          return new WatchState({ contentId: 'test:1', playhead: 3500, duration: 3600 }); // 97% watched
         }
         return null;
       });
@@ -97,7 +97,7 @@ describe('QueueService', () => {
       const items = [createPlayable('1', 'Episode 1')];
 
       mockMediaProgressMemory.get.mockResolvedValue(
-        new WatchState({ itemId: 'test:1', playhead: 3500, duration: 3600 })
+        new WatchState({ contentId: 'test:1', playhead: 3500, duration: 3600 })
       );
 
       const next = await service.getNextPlayable(items, 'test');
@@ -113,7 +113,7 @@ describe('QueueService', () => {
       const items = [createPlayable('1', 'Episode 1')];
 
       mockMediaProgressMemory.get.mockResolvedValue(
-        new WatchState({ itemId: 'test:1', playhead: 1800, duration: 3600 })
+        new WatchState({ contentId: 'test:1', playhead: 1800, duration: 3600 })
       );
 
       const next = await service.getNextPlayable(items, 'test');
