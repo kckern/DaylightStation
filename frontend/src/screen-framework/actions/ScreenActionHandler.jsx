@@ -77,6 +77,26 @@ export function ScreenActionHandler({ actions = {} }) {
 
   // --- Media playback controls ---
   const handleMediaPlayback = useCallback((payload) => {
+    const idleMode = actions?.playback?.when_idle || 'dispatch';
+
+    // Check if media is currently active
+    const media = document.querySelector('audio, video, dash-video');
+    const isActive = media && !media.paused;
+
+    if (!isActive && idleMode === 'secondary' && payload.secondary) {
+      logger().debug('playback.secondary-fallback', { secondary: payload.secondary.action });
+      const { action, payload: secPayload } = payload.secondary;
+      if (action === 'media:queue') {
+        showOverlay(Player, { queue: [secPayload.contentId], clear: () => dismissOverlay() });
+      } else if (action === 'media:play') {
+        showOverlay(Player, { play: secPayload.contentId, clear: () => dismissOverlay() });
+      } else if (action === 'menu:open') {
+        showOverlay(MenuStack, { rootMenu: secPayload.menuId });
+      }
+      return;
+    }
+
+    // Default: dispatch synthetic keydown
     const keyMapping = {
       play: 'Enter', pause: 'Enter', toggle: 'Enter',
       next: 'Tab', skip: 'Tab',
@@ -91,7 +111,7 @@ export function ScreenActionHandler({ actions = {} }) {
       return;
     }
     window.dispatchEvent(new KeyboardEvent('keydown', { key, code: key, bubbles: true }));
-  }, []);
+  }, [actions, showOverlay, dismissOverlay]);
 
   // --- Playback rate ---
   const handleMediaRate = useCallback(() => {
