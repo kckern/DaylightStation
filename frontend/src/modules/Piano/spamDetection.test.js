@@ -19,16 +19,22 @@ describe('detectNoteCountSpam', () => {
     expect(detectNoteCountSpam(new Map())).toBe(false);
   });
 
-  it('returns false for 9 notes (below threshold)', () => {
-    expect(detectNoteCountSpam(notesMap([60, 61, 62, 63, 64, 65, 66, 67, 68]))).toBe(false);
+  it('returns false for 10 notes (full chord with all fingers)', () => {
+    expect(detectNoteCountSpam(notesMap([60, 61, 62, 63, 64, 65, 66, 67, 68, 69]))).toBe(false);
   });
 
-  it('returns true for exactly 10 notes (at threshold)', () => {
-    expect(detectNoteCountSpam(notesMap([60, 61, 62, 63, 64, 65, 66, 67, 68, 69]))).toBe(true);
+  it('returns false for 14 notes (sustain pedal held)', () => {
+    const pitches = Array.from({ length: 14 }, (_, i) => 48 + i);
+    expect(detectNoteCountSpam(notesMap(pitches))).toBe(false);
   });
 
-  it('returns true for 12 notes (above threshold)', () => {
-    const pitches = Array.from({ length: 12 }, (_, i) => 48 + i);
+  it('returns true for exactly 15 notes (at threshold)', () => {
+    const pitches = Array.from({ length: 15 }, (_, i) => 48 + i);
+    expect(detectNoteCountSpam(notesMap(pitches))).toBe(true);
+  });
+
+  it('returns true for 20 notes (above threshold)', () => {
+    const pitches = Array.from({ length: 20 }, (_, i) => 36 + i);
     expect(detectNoteCountSpam(notesMap(pitches))).toBe(true);
   });
 });
@@ -40,51 +46,47 @@ describe('detectDenseClusterSpam', () => {
     expect(detectDenseClusterSpam(new Map())).toBe(false);
   });
 
-  it('returns false for small chord [60,61,62] — below 6 minimum', () => {
+  it('returns false for small chord [60,61,62] — below 10 minimum', () => {
     expect(detectDenseClusterSpam(notesMap([60, 61, 62]))).toBe(false);
   });
 
-  it('returns false for 5 black keys [61,63,66,68,70] — below 6 minimum', () => {
-    expect(detectDenseClusterSpam(notesMap([61, 63, 66, 68, 70]))).toBe(false);
+  it('returns false for 6 chromatic notes — below 10 minimum', () => {
+    expect(detectDenseClusterSpam(notesMap([60, 61, 62, 63, 64, 65]))).toBe(false);
+  });
+
+  it('returns false for 9 notes even if dense — below 10 minimum', () => {
+    expect(detectDenseClusterSpam(notesMap([60, 61, 62, 63, 64, 65, 66, 67, 68]))).toBe(false);
   });
 
   // ── SPAM cases ──
 
-  it('detects fist smash [60,61,62,63,64,65] — density 1.0', () => {
-    // 6 notes, range 5, density = 6/6 = 1.0
-    expect(detectDenseClusterSpam(notesMap([60, 61, 62, 63, 64, 65]))).toBe(true);
+  it('detects forearm smash — 12 chromatic notes, density 1.0', () => {
+    // 12 notes, range 11, density = 12/12 = 1.0
+    const pitches = Array.from({ length: 12 }, (_, i) => 60 + i);
+    expect(detectDenseClusterSpam(notesMap(pitches))).toBe(true);
   });
 
-  it('detects two-fist smash [60,61,62,63,66,68,70,73] — density 0.57', () => {
-    // 8 notes, range 13, density = 8/14 = 0.57
-    expect(detectDenseClusterSpam(notesMap([60, 61, 62, 63, 66, 68, 70, 73]))).toBe(true);
-  });
-
-  it('detects 7 chromatic [60,61,62,63,64,65,66] — density 1.0', () => {
-    // 7 notes, range 6, density = 7/7 = 1.0
-    expect(detectDenseClusterSpam(notesMap([60, 61, 62, 63, 64, 65, 66]))).toBe(true);
+  it('detects two-fist smash — 10 adjacent notes, density 1.0', () => {
+    // 10 notes, range 9, density = 10/10 = 1.0
+    const pitches = Array.from({ length: 10 }, (_, i) => 55 + i);
+    expect(detectDenseClusterSpam(notesMap(pitches))).toBe(true);
   });
 
   // ── SAFE cases ──
 
-  it('passes legit chord [48,52,55,60,64,67,71,72] — density 0.32', () => {
-    // 8 notes, range 24, density = 8/25 = 0.32
-    expect(detectDenseClusterSpam(notesMap([48, 52, 55, 60, 64, 67, 71, 72]))).toBe(false);
+  it('passes legit big chord [48,52,55,60,64,67,71,72,76,79] — density 0.32', () => {
+    // 10 notes, range 31, density = 10/32 = 0.31
+    expect(detectDenseClusterSpam(notesMap([48, 52, 55, 60, 64, 67, 71, 72, 76, 79]))).toBe(false);
   });
 
-  it('passes 8 black keys spread [61,63,66,68,70,73,75,78] — density never > 0.5', () => {
-    // Pentatonic-like spacing means no 6-note window hits 0.5
-    expect(detectDenseClusterSpam(notesMap([61, 63, 66, 68, 70, 73, 75, 78]))).toBe(false);
-  });
-
-  it('returns false for exactly 5 notes even if dense', () => {
-    // 5 chromatic notes: below the 6-note minimum
-    expect(detectDenseClusterSpam(notesMap([60, 61, 62, 63, 64]))).toBe(false);
+  it('passes 10 pentatonic notes spread across octaves', () => {
+    // C pentatonic across 3 octaves — wide spacing
+    expect(detectDenseClusterSpam(notesMap([48, 50, 52, 55, 57, 60, 62, 64, 67, 69]))).toBe(false);
   });
 
   it('detects spam in a subset window even if overall density is low', () => {
-    // 10 notes total, but notes 60-65 form a dense cluster
-    const pitches = [36, 40, 44, 60, 61, 62, 63, 64, 65, 96];
+    // 14 notes total, but notes 60-69 form a dense 10-note cluster
+    const pitches = [36, 40, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 84, 96];
     expect(detectDenseClusterSpam(notesMap(pitches))).toBe(true);
   });
 });
@@ -96,25 +98,25 @@ describe('detectRapidFireSpam', () => {
     expect(detectRapidFireSpam([], 10000)).toBe(false);
   });
 
-  it('returns false for 15 notes in window (below threshold)', () => {
+  it('returns false for 30 notes in window (fast scale run, below threshold)', () => {
     const now = 10000;
-    const history = Array.from({ length: 15 }, (_, i) => ({
+    const history = Array.from({ length: 30 }, (_, i) => ({
       startTime: now - 100 * i,
     }));
     expect(detectRapidFireSpam(history, now)).toBe(false);
   });
 
-  it('returns true for 20 notes in window (at threshold)', () => {
+  it('returns true for 40 notes in window (at threshold)', () => {
     const now = 10000;
-    const history = Array.from({ length: 20 }, (_, i) => ({
-      startTime: now - 100 * i, // 0ms to 1900ms ago — all within 3s
+    const history = Array.from({ length: 40 }, (_, i) => ({
+      startTime: now - 70 * i, // 0ms to 2730ms ago — all within 3s
     }));
     expect(detectRapidFireSpam(history, now)).toBe(true);
   });
 
-  it('returns true for 25 notes in window (above threshold)', () => {
+  it('returns true for 50 notes in window (above threshold)', () => {
     const now = 10000;
-    const history = Array.from({ length: 25 }, (_, i) => ({
+    const history = Array.from({ length: 50 }, (_, i) => ({
       startTime: now - 50 * i,
     }));
     expect(detectRapidFireSpam(history, now)).toBe(true);
@@ -122,33 +124,35 @@ describe('detectRapidFireSpam', () => {
 
   it('ignores old notes outside the 3-second window', () => {
     const now = 10000;
-    // 30 notes total, but only 10 within the window
-    const oldNotes = Array.from({ length: 20 }, (_, i) => ({
-      startTime: 1000 + i * 50, // 5000-9000ms ago
+    // 50 notes total, but only 20 within the window
+    const oldNotes = Array.from({ length: 30 }, (_, i) => ({
+      startTime: 1000 + i * 50, // very old
     }));
-    const recentNotes = Array.from({ length: 10 }, (_, i) => ({
-      startTime: now - 100 * i, // 0-900ms ago
+    const recentNotes = Array.from({ length: 20 }, (_, i) => ({
+      startTime: now - 100 * i, // 0-1900ms ago
     }));
     const history = [...oldNotes, ...recentNotes];
     expect(detectRapidFireSpam(history, now)).toBe(false);
   });
 
-  it('returns true when exactly 20 notes at boundary of 3-second window', () => {
+  it('returns true when exactly 40 notes at boundary of 3-second window', () => {
     const now = 10000;
-    // 20 notes evenly spaced across exactly 3000ms (inclusive)
-    const history = Array.from({ length: 20 }, (_, i) => ({
-      startTime: now - Math.floor((2999 / 19) * i), // all within 2999ms
+    const history = Array.from({ length: 40 }, (_, i) => ({
+      startTime: now - Math.floor((2999 / 39) * i), // all within 2999ms
     }));
     expect(detectRapidFireSpam(history, now)).toBe(true);
   });
 
-  it('returns false when 20 notes span just beyond 3-second window', () => {
+  it('returns false when only 39 notes fall within 3-second window', () => {
     const now = 10000;
-    // Oldest note is exactly 3001ms ago — outside the window
-    const history = Array.from({ length: 20 }, (_, i) => ({
-      startTime: now - Math.floor((3001 / 19) * i),
+    // 39 recent notes within window + 10 old notes outside
+    const recentNotes = Array.from({ length: 39 }, (_, i) => ({
+      startTime: now - Math.floor((2999 / 38) * i),
     }));
-    // The oldest note at index 0 is 3001ms ago, so only 19 fit in window
+    const oldNotes = Array.from({ length: 10 }, (_, i) => ({
+      startTime: now - 5000 - i * 100,
+    }));
+    const history = [...oldNotes, ...recentNotes];
     expect(detectRapidFireSpam(history, now)).toBe(false);
   });
 
