@@ -5,8 +5,8 @@
  * Implements IHarvester interface with circuit breaker resilience.
  *
  * Features:
- * - Open tasks fetched via official API (current data)
- * - Created/completed tasks via Activity API (lifelog data)
+ * - Open tasks fetched via Todoist API v1 (current data)
+ * - Completed tasks via API v1 /tasks/completed (lifelog data)
  * - Date-keyed merging with composite id+action deduplication
  *
  * @module harvester/productivity/TodoistHarvester
@@ -24,7 +24,6 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
  * @implements {IHarvester}
  */
 export class TodoistHarvester extends IHarvester {
-  #todoistApi;
   #httpClient;
   #lifelogStore;
   #currentStore;
@@ -32,11 +31,14 @@ export class TodoistHarvester extends IHarvester {
   #circuitBreaker;
   #timezone;
   #logger;
+  #addedAtCache = new Map();
+
+  /** @type {string} Base URL for Todoist API v1 */
+  static API_BASE = 'https://api.todoist.com/api/v1';
 
   /**
    * @param {Object} config
-   * @param {Object} config.todoistApi - Todoist API client instance
-   * @param {Object} config.httpClient - HTTP client for Activity API
+   * @param {Object} config.httpClient - HTTP client (axios-compatible)
    * @param {Object} config.lifelogStore - Store for lifelog YAML
    * @param {Object} [config.currentStore] - Store for current data YAML
    * @param {Object} config.configService - ConfigService for credentials
@@ -44,7 +46,7 @@ export class TodoistHarvester extends IHarvester {
    * @param {Object} [config.logger] - Logger instance
    */
   constructor({
-    todoistApi,
+    todoistApi, // deprecated, ignored — kept for backwards compat
     httpClient,
     lifelogStore,
     currentStore,
@@ -61,7 +63,6 @@ export class TodoistHarvester extends IHarvester {
       });
     }
 
-    this.#todoistApi = todoistApi;
     this.#httpClient = httpClient;
     this.#lifelogStore = lifelogStore;
     this.#currentStore = currentStore;
@@ -128,15 +129,18 @@ export class TodoistHarvester extends IHarvester {
         });
       }
 
-      // Initialize API if factory provided
-      const api = typeof this.#todoistApi === 'function'
-        ? this.#todoistApi(apiKey)
-        : this.#todoistApi;
+      const authHeaders = { Authorization: `Bearer ${apiKey}` };
+      const lifelogTasks = [];
+      const cutoffDate = moment().subtract(daysBack, 'days');
 
-      // === CURRENT DATA: Open tasks ===
+      // === CURRENT DATA: Open tasks via API v1 ===
       let currentCount = 0;
-      if (api) {
-        const tasks = await api.getTasks();
+      if (this.#httpClient) {
+        const tasksResponse = await this.#httpClient.get(
+          `${TodoistHarvester.API_BASE}/tasks`,
+          { headers: authHeaders }
+        );
+        const tasks = tasksResponse.data?.results || [];
         const currentTasks = tasks.map(task => ({
           id: task.id,
           content: task.content,
@@ -144,9 +148,8 @@ export class TodoistHarvester extends IHarvester {
           priority: task.priority,
           dueDate: task.due?.date || null,
           dueString: task.due?.string || null,
-          projectId: task.projectId,
+          projectId: task.project_id,
           labels: task.labels,
-          url: task.url,
         }));
 
         if (this.#currentStore) {
@@ -157,64 +160,60 @@ export class TodoistHarvester extends IHarvester {
           });
         }
         currentCount = currentTasks.length;
+
+        // Derive "created" lifelog entries from added_at on open tasks
+        // Store addedAt so it survives after task completion (completed API lacks it)
+        const createdFromOpen = tasks
+          .filter(t => t.added_at && moment(t.added_at).isAfter(cutoffDate))
+          .map(t => ({
+            id: t.id,
+            content: t.content,
+            time: moment(t.added_at).tz(this.#timezone).format('HH:mm'),
+            date: moment(t.added_at).tz(this.#timezone).format('YYYY-MM-DD'),
+            addedAt: t.added_at,
+            projectId: t.project_id,
+            action: 'created',
+          }));
+        lifelogTasks.push(...createdFromOpen);
+
+        // Also stash addedAt into a lookup so completed entries can reference it
+        for (const t of tasks) {
+          if (t.added_at) {
+            this.#addedAtCache.set(t.id, t.added_at);
+          }
+        }
       }
 
-      // === LIFELOG DATA: Created and completed tasks ===
-      const lifelogTasks = [];
-      const cutoffDate = moment().subtract(daysBack, 'days');
-
+      // === LIFELOG DATA: Completed tasks via API v1 ===
       if (this.#httpClient) {
-        // Fetch completed tasks
         try {
-          const completedResponse = await this.#httpClient.post(
-            'https://api.todoist.com/sync/v9/activity/get',
-            { event_type: 'item:completed', limit: 100 },
-            { headers: { Authorization: `Bearer ${apiKey}` } }
+          const completedResponse = await this.#httpClient.get(
+            `${TodoistHarvester.API_BASE}/tasks/completed`,
+            { headers: authHeaders }
           );
 
-          const completedTasks = (completedResponse.data?.events || [])
-            .filter(event => moment(event.event_date).isAfter(cutoffDate))
-            .map(event => ({
-              id: event.object_id,
-              content: event.extra_data?.content || 'Unknown task',
-              time: moment(event.event_date).tz(this.#timezone).format('HH:mm'),
-              date: moment(event.event_date).tz(this.#timezone).format('YYYY-MM-DD'),
-              projectId: event.parent_project_id,
-              action: 'completed',
-            }));
-
-          lifelogTasks.push(...completedTasks);
+          const completedItems = completedResponse.data?.items || [];
+          for (const item of completedItems) {
+            if (item.completed_at && moment(item.completed_at).isAfter(cutoffDate)) {
+              const entry = {
+                id: item.task_id,
+                content: item.content,
+                time: moment(item.completed_at).tz(this.#timezone).format('HH:mm'),
+                date: moment(item.completed_at).tz(this.#timezone).format('YYYY-MM-DD'),
+                projectId: item.project_id,
+                action: 'completed',
+              };
+              // Preserve addedAt from cache (open tasks) or existing lifelog
+              const cachedAddedAt = this.#addedAtCache.get(item.task_id);
+              if (cachedAddedAt) entry.addedAt = cachedAddedAt;
+              lifelogTasks.push(entry);
+            }
+          }
         } catch (error) {
-          this.#logger.warn?.('todoist.activity.completed.error', {
+          this.#logger.warn?.('todoist.completed.error', {
             username,
             error: error.message,
-          });
-        }
-
-        // Fetch created tasks
-        try {
-          const createdResponse = await this.#httpClient.post(
-            'https://api.todoist.com/sync/v9/activity/get',
-            { event_type: 'item:added', limit: 100 },
-            { headers: { Authorization: `Bearer ${apiKey}` } }
-          );
-
-          const createdTasks = (createdResponse.data?.events || [])
-            .filter(event => moment(event.event_date).isAfter(cutoffDate))
-            .map(event => ({
-              id: event.object_id,
-              content: event.extra_data?.content || 'Unknown task',
-              time: moment(event.event_date).tz(this.#timezone).format('HH:mm'),
-              date: moment(event.event_date).tz(this.#timezone).format('YYYY-MM-DD'),
-              projectId: event.parent_project_id,
-              action: 'created',
-            }));
-
-          lifelogTasks.push(...createdTasks);
-        } catch (error) {
-          this.#logger.warn?.('todoist.activity.created.error', {
-            username,
-            error: error.message,
+            status: error.response?.status,
           });
         }
       }
@@ -253,7 +252,7 @@ export class TodoistHarvester extends IHarvester {
     } catch (error) {
       const statusCode = error.response?.status;
 
-      if (statusCode === 429 || statusCode === 401) {
+      if (statusCode === 429 || statusCode === 401 || statusCode === 410) {
         this.#circuitBreaker.recordFailure(error);
       }
 
@@ -289,12 +288,27 @@ export class TodoistHarvester extends IHarvester {
   #mergeTasksByDate(existing, newTasks) {
     const merged = { ...existing };
 
+    // Build addedAt index from existing entries so completed entries inherit it
+    const addedAtIndex = new Map();
+    for (const entries of Object.values(existing)) {
+      for (const e of entries) {
+        if (e.addedAt && e.id) addedAtIndex.set(e.id, e.addedAt);
+      }
+    }
+
     for (const task of newTasks) {
       if (!task.date) continue;
 
       if (!merged[task.date]) {
         merged[task.date] = [];
       }
+
+      // Inherit addedAt from existing lifelog if not already set
+      if (!task.addedAt && addedAtIndex.has(task.id)) {
+        task.addedAt = addedAtIndex.get(task.id);
+      }
+      // Update index for future lookups within this merge
+      if (task.addedAt) addedAtIndex.set(task.id, task.addedAt);
 
       // Use composite key of id + action for deduplication
       const isDupe = merged[task.date].find(
