@@ -123,9 +123,9 @@ export const SCHEMAS = {
 
   // Progress/watch state schemas
   progressResponse: {
-    required: ['itemId', 'playhead', 'duration'],
+    required: ['contentId', 'playhead', 'duration'],
     types: {
-      itemId: 'string',
+      contentId: 'string',
       playhead: 'number',
       duration: 'number',
       percent: 'number',

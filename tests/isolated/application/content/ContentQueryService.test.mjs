@@ -233,9 +233,9 @@ describe('ContentQueryService', () => {
         };
 
         const mockMemory = {
-          get: vi.fn(async (itemId) => {
-            if (itemId === 'plex:123') return { percent: 95, playhead: 1800, duration: 1900 };
-            if (itemId === 'plex:456') return { percent: 10, playhead: 100, duration: 1000 };
+          get: vi.fn(async (contentId) => {
+            if (contentId === 'plex:123') return { percent: 95, playhead: 1800, duration: 1900 };
+            if (contentId === 'plex:456') return { percent: 10, playhead: 100, duration: 1000 };
             return null;
           }),
           getAll: vi.fn()
@@ -272,9 +272,9 @@ describe('ContentQueryService', () => {
         };
 
         const mockMemory = {
-          get: vi.fn(async (itemId) => {
-            if (itemId === 'plex:123') return { percent: 95, playhead: 1800, duration: 1900 };
-            if (itemId === 'plex:456') return { percent: 10, playhead: 100, duration: 1000 };
+          get: vi.fn(async (contentId) => {
+            if (contentId === 'plex:123') return { percent: 95, playhead: 1800, duration: 1900 };
+            if (contentId === 'plex:456') return { percent: 10, playhead: 100, duration: 1000 };
             return null;
           }),
           getAll: vi.fn()
@@ -390,8 +390,8 @@ describe('ContentQueryService', () => {
         };
 
         const mockMemory = {
-          get: vi.fn(async (itemId) => {
-            if (itemId === 'plex:456') return { percent: 45 };
+          get: vi.fn(async (contentId) => {
+            if (contentId === 'plex:456') return { percent: 45 };
             return null;
           }),
           getAll: vi.fn()
@@ -432,9 +432,9 @@ describe('ContentQueryService', () => {
         };
 
         const mockMemory = {
-          get: vi.fn(async (itemId) => {
-            if (itemId === 'plex:123') return { percent: 95 }; // watched
-            if (itemId === 'plex:456') return { percent: 10 }; // in progress
+          get: vi.fn(async (contentId) => {
+            if (contentId === 'plex:123') return { percent: 95 }; // watched
+            if (contentId === 'plex:456') return { percent: 10 }; // in progress
             return null; // not started
           }),
           getAll: vi.fn()
@@ -470,8 +470,8 @@ describe('ContentQueryService', () => {
         };
 
         const mockMemory = {
-          get: vi.fn(async (itemId) => {
-            if (itemId === 'plex:123') return { percent: 95 }; // watched
+          get: vi.fn(async (contentId) => {
+            if (contentId === 'plex:123') return { percent: 95 }; // watched
             return null;
           }),
           getAll: vi.fn()
