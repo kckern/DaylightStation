@@ -115,7 +115,7 @@ export function createPlayRouter(config) {
 
       // Create updated media progress via domain entity
       const newState = new MediaProgress({
-        itemId: compoundId,
+        contentId: compoundId,
         playhead: normalizedSeconds,
         duration: estimatedDuration,
         percent: statePercent,
@@ -153,7 +153,7 @@ export function createPlayRouter(config) {
           type,
           library: storagePath,
           title: itemMetadata?.title || title,
-          itemId: newState.itemId,
+          contentId: newState.contentId,
           playhead: newState.playhead,
           duration: newState.duration,
           percent: newState.percent,

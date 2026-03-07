@@ -92,7 +92,7 @@ describe('Play API Router', () => {
 
     it('includes resume position when item is in progress', async () => {
       mockWatchStore.get.mockResolvedValueOnce({
-        itemId: 'plex:12345',
+        contentId: 'plex:12345',
         playhead: 3600,
         duration: 7200,
         isInProgress: () => true,

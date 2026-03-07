@@ -70,7 +70,7 @@ describe('Content API Router', () => {
       .send({ seconds: 90, duration: 180 });
 
     expect(res.status).toBe(200);
-    expect(res.body.itemId).toBe('files:audio/test.mp3');
+    expect(res.body.contentId).toBe('files:audio/test.mp3');
     expect(res.body.playhead).toBe(90);
     expect(res.body.duration).toBe(180);
     expect(res.body.percent).toBe(50);

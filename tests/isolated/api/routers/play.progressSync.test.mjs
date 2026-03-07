@@ -106,7 +106,7 @@ describe('Play router — ProgressSyncService integration', () => {
 
     it('uses sync service result for resume_position', async () => {
       progressSyncService.reconcileOnPlay.mockResolvedValue({
-        itemId: 'abs:abc123',
+        contentId: 'abs:abc123',
         playhead: 5000,
         duration: 19766
       });
@@ -194,7 +194,7 @@ describe('Play router — ProgressSyncService integration', () => {
   describe('GET /play/abs:itemId?bookmark=true — bookmark restore', () => {
     it('uses bookmark playhead as resume_position', async () => {
       progressSyncService.reconcileOnPlay.mockResolvedValue({
-        itemId: 'abs:abc123',
+        contentId: 'abs:abc123',
         playhead: 5000,
         duration: 19766,
         bookmark: { playhead: 1000, reason: 'session-start', createdAt: new Date().toISOString() }
