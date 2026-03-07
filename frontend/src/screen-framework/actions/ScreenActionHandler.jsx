@@ -56,9 +56,16 @@ export function ScreenActionHandler({ actions = {} }) {
   }, []);
 
   // --- Menu ---
+  const currentMenuRef = useRef(null);
+
   const handleMenuOpen = useCallback((payload) => {
+    if (actions?.menu?.duplicate === 'ignore' && currentMenuRef.current === payload.menuId) {
+      logger().debug('menu.duplicate-ignored', { menuId: payload.menuId });
+      return;
+    }
+    currentMenuRef.current = payload.menuId;
     showOverlay(MenuStack, { rootMenu: payload.menuId });
-  }, [showOverlay]);
+  }, [showOverlay, actions]);
 
   // --- Media play/queue ---
   const handleMediaPlay = useCallback((payload) => {
@@ -205,6 +212,7 @@ export function ScreenActionHandler({ actions = {} }) {
         if (step.when === 'overlay_active' && hasOverlay) {
           logger().debug('escape.chain', { matched: step.when, action: step.do });
           if (step.do === 'dismiss_overlay') {
+            currentMenuRef.current = null;
             dismissOverlay();
           }
           return;
@@ -229,6 +237,7 @@ export function ScreenActionHandler({ actions = {} }) {
       return;
     }
     logger().debug('escape.default', { hadShader: false, dismissed: hasOverlay });
+    currentMenuRef.current = null;
     dismissOverlay();
   }, [dismissOverlay, hasOverlay, actions]);
 
