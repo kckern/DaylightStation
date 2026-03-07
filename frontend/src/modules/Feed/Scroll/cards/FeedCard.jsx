@@ -42,7 +42,7 @@ const PLACEHOLDER_SVG = `data:image/svg+xml,${encodeURIComponent(
   </svg>`
 )}`;
 
-function HeroImage({ src, thumbnail, itemId, title }) {
+function HeroImage({ src, thumbnail, feedItemId, title }) {
   const proxied = proxyImage(src);
   const [imgSrc, setImgSrc] = useState(thumbnail || src);
   const [phase, setPhase] = useState(thumbnail ? 'thumbnail' : 'original');
@@ -62,14 +62,14 @@ function HeroImage({ src, thumbnail, itemId, title }) {
     const img = new Image();
     img.onload = () => {
       const durationMs = Math.round(performance.now() - loadStartRef.current);
-      imgLog().info('preload.done', { phase: 'full', durationMs, src, itemId, title });
+      imgLog().info('preload.done', { phase: 'full', durationMs, src, feedItemId, title });
       setImgSrc(src);
       setPhase('original');
       loadStartRef.current = performance.now();
     };
     img.onerror = () => {
       const durationMs = Math.round(performance.now() - loadStartRef.current);
-      imgLog().warn('preload.failed', { src, thumbnail, durationMs, itemId, title });
+      imgLog().warn('preload.failed', { src, thumbnail, durationMs, feedItemId, title });
     };
     img.src = src;
     return () => { img.onload = null; img.onerror = null; };
@@ -78,17 +78,17 @@ function HeroImage({ src, thumbnail, itemId, title }) {
   const handleError = () => {
     const durationMs = Math.round(performance.now() - loadStartRef.current);
     if (phase === 'thumbnail' && src && src !== thumbnail) {
-      imgLog().warn('thumbnail.failed', { thumbnail, src, durationMs, itemId, title });
+      imgLog().warn('thumbnail.failed', { thumbnail, src, durationMs, feedItemId, title });
       setPhase('original');
       setImgSrc(src);
       loadStartRef.current = performance.now();
     } else if ((phase === 'original' || phase === 'thumbnail') && proxied) {
-      imgLog().warn('fallback.proxy', { original: src, proxy: proxied, durationMs, itemId, title });
+      imgLog().warn('fallback.proxy', { original: src, proxy: proxied, durationMs, feedItemId, title });
       setPhase('proxy');
       setImgSrc(proxied);
       loadStartRef.current = performance.now();
     } else {
-      imgLog().warn('image.hidden', { src, durationMs, itemId, title });
+      imgLog().warn('image.hidden', { src, durationMs, feedItemId, title });
       setPhase('hidden');
     }
   };
@@ -123,7 +123,7 @@ function HeroImage({ src, thumbnail, itemId, title }) {
         }}
         onLoad={() => {
           const durationMs = Math.round(performance.now() - loadStartRef.current);
-          imgLog().info('loaded', { phase, durationMs, src: imgSrc, itemId, title });
+          imgLog().info('loaded', { phase, durationMs, src: imgSrc, feedItemId, title });
           setLoaded(true);
         }}
         onError={handleError}
@@ -137,7 +137,7 @@ function HeroImage({ src, thumbnail, itemId, title }) {
  * Source-agnostic: works with any adapter that provides meta.galleryImages.
  * Supports touch swipe (mobile) and click arrows (desktop).
  */
-function GalleryHero({ images, itemId, title }) {
+function GalleryHero({ images, feedItemId, title }) {
   const [index, setIndex] = useState(0);
   const dragStartRef = useRef(null);
   const count = images.length;
@@ -176,8 +176,8 @@ function GalleryHero({ images, itemId, title }) {
   const mountedRef = useRef(false);
   useEffect(() => {
     if (!mountedRef.current) { mountedRef.current = true; return; }
-    feedLog.interaction('gallery-slide', { index, total: count, itemId, title });
-  }, [index, count, itemId, title]);
+    feedLog.interaction('gallery-slide', { index, total: count, feedItemId, title });
+  }, [index, count, feedItemId, title]);
 
   const arrowStyle = {
     position: 'absolute', top: '50%', transform: 'translateY(-50%)',
@@ -200,7 +200,7 @@ function GalleryHero({ images, itemId, title }) {
       role="region"
       aria-label={`Image gallery, ${index + 1} of ${count}`}
     >
-      <HeroImage src={current.url} thumbnail={current.thumbnail} itemId={itemId} title={title} />
+      <HeroImage src={current.url} thumbnail={current.thumbnail} feedItemId={feedItemId} title={title} />
 
       {/* Left arrow */}
       {index > 0 && (
@@ -305,10 +305,10 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
           {playingInline ? (
             <CardYouTubePlayer item={item} />
           ) : item.meta?.galleryImages?.length > 1 ? (
-            <GalleryHero images={item.meta.galleryImages} itemId={item.id} title={item.title} />
+            <GalleryHero images={item.meta.galleryImages} feedItemId={item.id} title={item.title} />
           ) : (
             <>
-              <HeroImage src={item.image} thumbnail={item.thumbnail} itemId={item.id} title={item.title} />
+              <HeroImage src={item.image} thumbnail={item.thumbnail} feedItemId={item.id} title={item.title} />
               {/* Duration badge */}
               {item.meta?.duration > 0 && (
                 <span style={{

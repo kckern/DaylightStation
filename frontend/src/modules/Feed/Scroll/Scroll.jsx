@@ -93,7 +93,7 @@ function ScrollCard({ item, colors, onDismiss, onPlay, onClick, style, itemRef, 
     <div
       ref={setRefs}
       className="scroll-item-wrapper"
-      data-item-id={item.id}
+      data-feed-item-id={item.id}
       style={style}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
@@ -287,7 +287,7 @@ export default function Scroll() {
     viewportObserverRef.current = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          const id = entry.target.dataset.itemId;
+          const id = entry.target.dataset.feedItemId;
           if (!id) continue;
           if (entry.isIntersecting) {
             enterTimesRef.current.set(id, performance.now());
@@ -318,9 +318,9 @@ export default function Scroll() {
     });
   }, []);
 
-  const queueDismiss = useCallback((itemId) => {
-    feedLog.dismiss('queue', { itemId, queueSize: dismissQueueRef.current.length + 1 });
-    dismissQueueRef.current.push(itemId);
+  const queueDismiss = useCallback((feedItemId) => {
+    feedLog.dismiss('queue', { feedItemId, queueSize: dismissQueueRef.current.length + 1 });
+    dismissQueueRef.current.push(feedItemId);
     clearTimeout(dismissTimerRef.current);
     dismissTimerRef.current = setTimeout(flushDismissQueue, 500);
   }, [flushDismissQueue]);
