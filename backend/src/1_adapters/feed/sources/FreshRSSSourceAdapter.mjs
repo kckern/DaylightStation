@@ -168,12 +168,12 @@ export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
 
   /**
    * Mark items as read via FreshRSS GReader API.
-   * @param {string[]} itemIds - Prefixed IDs ("freshrss:xxx") or raw IDs
+   * @param {string[]} feedItemIds - Prefixed IDs ("freshrss:xxx") or raw IDs
    * @param {string} username
    */
-  async markRead(itemIds, username) {
+  async markRead(feedItemIds, username) {
     if (!this.#freshRSSAdapter) return;
-    const stripped = itemIds.map(id => id.startsWith('freshrss:') ? id.slice('freshrss:'.length) : id);
+    const stripped = feedItemIds.map(id => id.startsWith('freshrss:') ? id.slice('freshrss:'.length) : id);
     await this.#freshRSSAdapter.markRead(stripped, username);
   }
 

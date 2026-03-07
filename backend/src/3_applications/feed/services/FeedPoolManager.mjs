@@ -136,14 +136,14 @@ export class FeedPoolManager {
    * Triggers silent recycling if pool is empty and all sources exhausted.
    *
    * @param {string} username
-   * @param {string[]} itemIds
+   * @param {string[]} feedItemIds
    */
-  markSeen(username, itemIds) {
+  markSeen(username, feedItemIds) {
     const seen = this.#seenIds.get(username) || new Set();
     const history = this.#seenItems.get(username) || [];
     const pool = this.#pools.get(username) || [];
 
-    for (const id of itemIds) {
+    for (const id of feedItemIds) {
       seen.add(id);
       const item = pool.find(i => i.id === id);
       if (item) history.push(item);

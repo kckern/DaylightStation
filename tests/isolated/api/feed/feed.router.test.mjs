@@ -1,5 +1,5 @@
 // tests/isolated/api/feed/feed.router.test.mjs
-import { jest } from '@jest/globals';
+import { vi, describe, test, expect, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createFeedRouter } from '#api/v1/routers/feed.mjs';
@@ -12,37 +12,37 @@ describe('Feed Router', () => {
 
   beforeEach(() => {
     mockFreshRSSAdapter = {
-      getCategories: jest.fn().mockResolvedValue([
+      getCategories: vi.fn().mockResolvedValue([
         { id: 'user/-/label/Tech', type: 'folder' },
       ]),
-      getFeeds: jest.fn().mockResolvedValue([
+      getFeeds: vi.fn().mockResolvedValue([
         { id: 'feed/1', title: 'Hacker News', categories: [] },
       ]),
-      getItems: jest.fn().mockResolvedValue({
+      getItems: vi.fn().mockResolvedValue({
         items: [
           { id: 'item1', title: 'Test Article', link: 'https://example.com', content: '<p>Body</p>' },
         ],
         continuation: null,
       }),
-      markRead: jest.fn().mockResolvedValue(undefined),
+      markRead: vi.fn().mockResolvedValue(undefined),
     };
     mockHeadlineService = {
-      getPageList: jest.fn().mockReturnValue([{ id: 'main', label: 'Main' }]),
-      getAllHeadlines: jest.fn().mockResolvedValue({
+      getPageList: vi.fn().mockReturnValue([{ id: 'main', label: 'Main' }]),
+      getAllHeadlines: vi.fn().mockResolvedValue({
         sources: {
           cnn: { source: 'cnn', label: 'CNN', items: [{ title: 'News', link: 'https://cnn.com/1' }] },
         },
         lastHarvest: '2026-02-15T10:00:00Z',
       }),
-      getSourceHeadlines: jest.fn().mockResolvedValue({
+      getSourceHeadlines: vi.fn().mockResolvedValue({
         source: 'cnn',
         label: 'CNN',
         items: [{ title: 'News' }],
       }),
-      harvestAll: jest.fn().mockResolvedValue({ harvested: 2, errors: 0, totalItems: 15 }),
+      harvestAll: vi.fn().mockResolvedValue({ harvested: 2, errors: 0, totalItems: 15 }),
     };
     mockConfigService = {
-      getHeadOfHousehold: jest.fn().mockReturnValue('kckern'),
+      getHeadOfHousehold: vi.fn().mockReturnValue('kckern'),
     };
 
     const router = createFeedRouter({
@@ -139,7 +139,7 @@ describe('Feed Router', () => {
 
     beforeEach(() => {
       mockFeedAssemblyService = {
-        getNextBatch: jest.fn().mockResolvedValue({ items: [], hasMore: false }),
+        getNextBatch: vi.fn().mockResolvedValue({ items: [], hasMore: false }),
       };
       const router = createFeedRouter({
         freshRSSAdapter: mockFreshRSSAdapter,
@@ -202,7 +202,7 @@ describe('Feed Router', () => {
 
       const ytMockAdapter = {
         ...mockFreshRSSAdapter,
-        getItems: jest.fn().mockResolvedValue({
+        getItems: vi.fn().mockResolvedValue({
           items: [{
             id: 'yt-item-1',
             title: 'Cool Video',
@@ -216,7 +216,7 @@ describe('Feed Router', () => {
           }],
           continuation: null,
         }),
-        getFeeds: jest.fn().mockResolvedValue([]),
+        getFeeds: vi.fn().mockResolvedValue([]),
       };
 
       const ytApp = express();
@@ -224,8 +224,8 @@ describe('Feed Router', () => {
       ytApp.use('/api/v1/feed', createFeedRouter({
         freshRSSAdapter: ytMockAdapter,
         headlineService: mockHeadlineService,
-        feedAssemblyService: { getNextBatch: jest.fn() },
-        feedContentService: { resolveIcon: jest.fn() },
+        feedAssemblyService: { getNextBatch: vi.fn() },
+        feedContentService: { resolveIcon: vi.fn() },
         contentPluginRegistry: registry,
         configService: mockConfigService,
       }));

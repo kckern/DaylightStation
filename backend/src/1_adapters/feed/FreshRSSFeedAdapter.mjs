@@ -113,13 +113,13 @@ export class FreshRSSFeedAdapter {
 
   /**
    * Mark items as read
-   * @param {string[]} itemIds - GReader item IDs
+   * @param {string[]} feedItemIds - GReader item IDs
    * @param {string} username
    */
-  async markRead(itemIds, username) {
+  async markRead(feedItemIds, username) {
     const body = new URLSearchParams();
     body.append('a', 'user/-/state/com.google/read');
-    for (const id of itemIds) {
+    for (const id of feedItemIds) {
       body.append('i', id);
     }
 
@@ -132,13 +132,13 @@ export class FreshRSSFeedAdapter {
 
   /**
    * Mark items as unread
-   * @param {string[]} itemIds
+   * @param {string[]} feedItemIds
    * @param {string} username
    */
-  async markUnread(itemIds, username) {
+  async markUnread(feedItemIds, username) {
     const body = new URLSearchParams();
     body.append('r', 'user/-/state/com.google/read');
-    for (const id of itemIds) {
+    for (const id of feedItemIds) {
       body.append('i', id);
     }
 
