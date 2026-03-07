@@ -59,8 +59,15 @@ export function ScreenActionHandler({ actions = {} }) {
   const currentMenuRef = useRef(null);
 
   const handleMenuOpen = useCallback((payload) => {
-    if (actions?.menu?.duplicate === 'ignore' && currentMenuRef.current === payload.menuId) {
-      logger().debug('menu.duplicate-ignored', { menuId: payload.menuId });
+    const duplicateMode = actions?.menu?.duplicate;
+    if (duplicateMode && currentMenuRef.current === payload.menuId) {
+      if (duplicateMode === 'navigate') {
+        // Dispatch synthetic keydown so Menu.jsx treats it as item selection
+        logger().debug('menu.duplicate-navigate', { menuId: payload.menuId });
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
+      } else {
+        logger().debug('menu.duplicate-ignored', { menuId: payload.menuId });
+      }
       return;
     }
     currentMenuRef.current = payload.menuId;

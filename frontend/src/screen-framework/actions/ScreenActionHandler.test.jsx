@@ -317,6 +317,31 @@ describe('ScreenActionHandler', () => {
       expect(getByTestId('menu-stack').dataset.menu).toBe('tv');
     });
 
+    it('dispatches synthetic Enter keydown when duplicate is "navigate" and same menu is open', () => {
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ menu: { duplicate: 'navigate' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('menu:open', { menuId: 'education' }));
+
+      // Clear spy calls from first open
+      dispatchSpy.mockClear();
+
+      // Second emit of same menu should dispatch Enter keydown
+      act(() => getActionBus().emit('menu:open', { menuId: 'education' }));
+
+      const enterCalls = dispatchSpy.mock.calls.filter(
+        ([e]) => e instanceof KeyboardEvent && e.key === 'Enter'
+      );
+      expect(enterCalls).toHaveLength(1);
+
+      dispatchSpy.mockRestore();
+    });
+
     it('allows re-opening same menu after escape dismisses it', () => {
       const { getByTestId, queryByTestId } = render(
         <ScreenOverlayProvider>
