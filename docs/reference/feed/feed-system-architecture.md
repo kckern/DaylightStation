@@ -69,7 +69,7 @@ The feed system aggregates content from external services (RSS, Reddit, YouTube,
 │  │  /feed/reader     → Reader (FreshRSS)                         │   │
 │  │  /feed/headlines/:pageId → Headlines (newspaper grid)         │   │
 │  │  /feed/scroll     → Scroll (card feed)                        │   │
-│  │  /feed/scroll/:itemId → DetailView (expanded content)         │   │
+│  │  /feed/scroll/:feedItemId → DetailView (expanded content)      │   │
 │  └───────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 │  ┌────────────────────┐  ┌──────────────────────┐                   │
@@ -201,7 +201,7 @@ The detail system provides expanded content when a user taps a scroll card.
 ### Backend Flow
 
 1. Frontend navigates to `/feed/scroll/{base64url-encoded-item-id}`
-2. Frontend calls `GET /api/v1/feed/detail/{itemId}?link=...&meta=...`
+2. Frontend calls `GET /api/v1/feed/detail/{feedItemId}?link=...&meta=...`
 3. `FeedAssemblyService.getDetail()` routes to the matching source adapter's `getDetail()` method
 4. If no adapter-specific detail, falls back to article extraction via `WebContentAdapter`
 5. Returns `{ sections: [{ type, data }] }` — a list of typed content sections
@@ -290,7 +290,7 @@ Headlines from sources marked with `paywall: true` in config are proxied through
 | `GET` | `/api/v1/feed/scroll` | Fetch next batch of scroll items |
 | | Query: `limit`, `cursor`, `focus`, `source`, `filter` | |
 | `GET` | `/api/v1/feed/scroll/item/:slug` | Deep-link resolution (base64url item ID) |
-| `GET` | `/api/v1/feed/detail/:itemId` | Fetch detail sections for an item |
+| `GET` | `/api/v1/feed/detail/:feedItemId` | Fetch detail sections for an item |
 | | Query: `link`, `meta` (JSON) | |
 
 ### Headlines
@@ -345,7 +345,7 @@ Headlines from sources marked with `paywall: true` in config are proxied through
 /feed/headlines           → Redirect to /feed/headlines/{first-page-id}
 /feed/headlines/:pageId   → Headlines page (dynamic tabs from API)
 /feed/scroll             → Scroll feed (card list)
-/feed/scroll/:itemId     → Detail view (base64url-encoded item ID)
+/feed/scroll/:feedItemId → Detail view (base64url-encoded item ID)
 ```
 
 ### Scroll Navigation
