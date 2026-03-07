@@ -215,18 +215,18 @@ export class FeedAssemblyService {
 
   /**
    * Fetch detail sections for a specific feed item.
-   * @param {string} itemId - Full item ID (e.g. "reddit:abc123")
+   * @param {string} feedItemId - Full item ID (e.g. "reddit:abc123")
    * @param {Object} itemMeta - The item's meta object (passed from frontend)
    * @param {string} username
    * @returns {Promise<{ sections: Array } | null>}
    */
-  async getDetail(itemId, itemMeta, username, opts = {}) {
+  async getDetail(feedItemId, itemMeta, username, opts = {}) {
     const start = Date.now();
-    const colonIdx = itemId.indexOf(':');
+    const colonIdx = feedItemId.indexOf(':');
     if (colonIdx === -1) return null;
 
-    const source = itemId.slice(0, colonIdx);
-    const localId = itemId.slice(colonIdx + 1);
+    const source = feedItemId.slice(0, colonIdx);
+    const localId = feedItemId.slice(colonIdx + 1);
 
     // Check registered source adapters first
     const adapter = this.#sourceAdapters.get(source);
@@ -234,7 +234,7 @@ export class FeedAssemblyService {
       const result = await adapter.getDetail(localId, itemMeta || {}, username, opts);
       if (result) {
         this.#logger.debug?.('feed.detail.resolved', {
-          itemId, source, adapter: true,
+          feedItemId, source, adapter: true,
           sectionCount: result.sections?.length || 0,
           durationMs: Date.now() - start,
         });
@@ -246,32 +246,32 @@ export class FeedAssemblyService {
     if (itemMeta?.link) {
       const result = await this.#getArticleDetail(itemMeta.link);
       this.#logger.debug?.('feed.detail.resolved', {
-        itemId, source, adapter: false, fallbackToArticle: true,
+        feedItemId, source, adapter: false, fallbackToArticle: true,
         sectionCount: result?.sections?.length || 0,
         durationMs: Date.now() - start,
       });
       return result;
     }
 
-    this.#logger.debug?.('feed.detail.notFound', { itemId, source, durationMs: Date.now() - start });
+    this.#logger.debug?.('feed.detail.notFound', { feedItemId, source, durationMs: Date.now() - start });
     return null;
   }
 
   /**
    * Retrieve a cached item and its detail in one call (for deep-link resolution).
-   * @param {string} itemId - Full item ID (e.g. "reddit:abc123")
+   * @param {string} feedItemId - Full item ID (e.g. "reddit:abc123")
    * @param {string} username
    * @returns {Promise<{ item: FeedItem, sections, ogImage, ogDescription } | null>}
    */
-  async getItemWithDetail(itemId, username) {
-    const item = this.#itemCache.get(itemId);
+  async getItemWithDetail(feedItemId, username) {
+    const item = this.#itemCache.get(feedItemId);
     if (!item) {
-      this.#logger.debug?.('feed.deeplink.cacheMiss', { itemId });
+      this.#logger.debug?.('feed.deeplink.cacheMiss', { feedItemId });
       return null;
     }
-    this.#logger.debug?.('feed.deeplink.cacheHit', { itemId });
+    this.#logger.debug?.('feed.deeplink.cacheHit', { feedItemId });
 
-    const detail = await this.getDetail(itemId, item.meta || {}, username);
+    const detail = await this.getDetail(feedItemId, item.meta || {}, username);
     return {
       item,
       sections: detail?.sections || [],

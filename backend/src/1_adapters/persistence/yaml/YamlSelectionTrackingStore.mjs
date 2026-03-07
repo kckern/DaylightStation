@@ -31,19 +31,19 @@ export class YamlSelectionTrackingStore extends ISelectionTrackingStore {
     return map;
   }
 
-  async incrementBatch(itemIds, username) {
-    if (!itemIds.length) return;
+  async incrementBatch(feedItemIds, username) {
+    if (!feedItemIds.length) return;
     const raw = this.#dataService.user.read(TRACKING_PATH, username) || {};
     const now = new Date().toISOString();
 
-    for (const id of itemIds) {
+    for (const id of feedItemIds) {
       if (!raw[id]) raw[id] = { count: 0, last: null };
       raw[id].count += 1;
       raw[id].last = now;
     }
 
     this.#dataService.user.write(TRACKING_PATH, raw, username);
-    this.#logger.debug?.('selection.tracking.incremented', { count: itemIds.length, username });
+    this.#logger.debug?.('selection.tracking.incremented', { count: feedItemIds.length, username });
   }
 }
 

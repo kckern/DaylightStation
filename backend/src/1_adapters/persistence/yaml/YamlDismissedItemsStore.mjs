@@ -3,7 +3,7 @@
  * YamlDismissedItemsStore
  *
  * YAML-backed persistence for dismissed feed item IDs.
- * Stores itemId → unix timestamp (seconds). Auto-prunes entries older than 30 days on load.
+ * Stores feedItemId → unix timestamp (seconds). Auto-prunes entries older than 30 days on load.
  *
  * Path: common/feed/dismissed (DataService appends .yml)
  * Scope: household-shared (not per-user) since there's a single scroll user.
@@ -60,15 +60,15 @@ export class YamlDismissedItemsStore extends IDismissedItemsStore {
 
   /**
    * Add item IDs to the dismissed set.
-   * @param {string[]} itemIds
+   * @param {string[]} feedItemIds
    */
-  add(itemIds) {
-    if (!itemIds.length) return;
+  add(feedItemIds) {
+    if (!feedItemIds.length) return;
 
     const raw = this.#dataService.household.read(DISMISSED_PATH) || {};
     const now = Math.floor(Date.now() / 1000);
 
-    for (const id of itemIds) {
+    for (const id of feedItemIds) {
       raw[id] = now;
     }
 
@@ -76,10 +76,10 @@ export class YamlDismissedItemsStore extends IDismissedItemsStore {
 
     // Update cache if loaded
     if (this.#cache) {
-      for (const id of itemIds) this.#cache.add(id);
+      for (const id of feedItemIds) this.#cache.add(id);
     }
 
-    this.#logger.debug?.('feed.dismissed.added', { count: itemIds.length });
+    this.#logger.debug?.('feed.dismissed.added', { count: feedItemIds.length });
   }
 
   /**

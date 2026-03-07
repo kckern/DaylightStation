@@ -17,11 +17,11 @@ export class ISelectionTrackingStore {
 
   /**
    * Increment selection count for a batch of item IDs.
-   * @param {string[]} itemIds - Short IDs of items selected into a batch
+   * @param {string[]} feedItemIds - Short IDs of items selected into a batch
    * @param {string} username
    * @returns {Promise<void>}
    */
-  async incrementBatch(itemIds, username) {
+  async incrementBatch(feedItemIds, username) {
     throw new Error('Not implemented');
   }
 }
