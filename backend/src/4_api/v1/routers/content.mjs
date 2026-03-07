@@ -40,10 +40,10 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
    * @returns {Object}
    */
   function createMediaProgressDTO(props) {
-    const { itemId, playhead = 0, duration = 0, playCount = 0, lastPlayed = null, watchTime = 0 } = props;
+    const { contentId, playhead = 0, duration = 0, playCount = 0, lastPlayed = null, watchTime = 0 } = props;
     const percent = duration > 0 ? Math.round((playhead / duration) * 100) : 0;
     return {
-      itemId,
+      contentId,
       playhead,
       duration,
       percent,
@@ -52,7 +52,7 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
       watchTime,
       toJSON() {
         return {
-          itemId: this.itemId,
+          contentId: this.contentId,
           playhead: this.playhead,
           duration: this.duration,
           percent: this.percent,
@@ -160,15 +160,15 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
       return res.status(404).json({ error: `Unknown source: ${source}` });
     }
 
-    const itemId = `${source}:${resolvedLocalId}`;
+    const contentId = `${source}:${resolvedLocalId}`;
     const storagePath = typeof adapter.getStoragePath === 'function'
       ? await adapter.getStoragePath(resolvedLocalId)
       : source;
 
     // Get existing state or create new one
-    const existing = await mediaProgressMemory.get(itemId, storagePath);
+    const existing = await mediaProgressMemory.get(contentId, storagePath);
     const state = createMediaProgressDTO({
-      itemId,
+      contentId,
       playhead: seconds,
       duration,
       playCount: (existing?.playCount || 0) + (seconds === 0 ? 1 : 0),
@@ -179,7 +179,7 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
     await mediaProgressMemory.set(state, storagePath);
 
     res.json({
-      itemId,
+      contentId,
       playhead: state.playhead,
       duration: state.duration,
       percent: state.percent,
