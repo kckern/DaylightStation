@@ -734,7 +734,7 @@ export class ContentQueryService {
       }
     }
 
-    const progressMap = new Map(allProgress.map(p => [p.itemId, p]));
+    const progressMap = new Map(allProgress.map(p => [p.contentId, p]));
 
     // Enrich items from the map (no additional API/file calls)
     return items.map(item => {

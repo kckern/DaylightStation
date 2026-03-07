@@ -305,7 +305,7 @@ export class QueueService {
   /**
    * Partition items into unwatched and watched groups using a classifier.
    * @param {Array} items - Playable items with .id property
-   * @param {Map<string, Object>} progressMap - Map of itemId -> MediaProgress-like object
+   * @param {Map<string, Object>} progressMap - Map of contentId -> MediaProgress-like object
    * @param {Object} classifier - Object with classify(progress, contentMeta) method
    * @returns {{ unwatched: Array, watched: Array }}
    */
@@ -411,7 +411,7 @@ export class QueueService {
     for (const src of itemSources) {
       const progress = await this.mediaProgressMemory.getAllFromAllLibraries(src);
       for (const p of progress) {
-        progressMap.set(p.itemId, p);
+        progressMap.set(p.contentId, p);
       }
     }
 
