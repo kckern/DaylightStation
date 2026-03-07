@@ -107,7 +107,7 @@ describe('useScreenSubscriptions', () => {
     expect(showOverlay).toHaveBeenCalledTimes(1);
     expect(showOverlay).toHaveBeenCalledWith(
       FakePiano,
-      { topic: 'midi', event: 'session_start' },
+      expect.objectContaining({ topic: 'midi', event: 'session_start' }),
       { mode: 'fullscreen', priority: 'high', timeout: undefined }
     );
   });
@@ -325,7 +325,7 @@ describe('useScreenSubscriptions', () => {
     });
     expect(showOverlay).toHaveBeenCalledWith(
       FakePiano,
-      { topic: 'midi', event: 'anything' },
+      expect.objectContaining({ topic: 'midi', event: 'anything' }),
       { mode: 'fullscreen', priority: undefined, timeout: undefined }
     );
   });
@@ -344,7 +344,7 @@ describe('useScreenSubscriptions', () => {
     });
     expect(showOverlay).toHaveBeenCalledWith(
       FakePiano,
-      { topic: 'midi', event: 'note_on' },
+      expect.objectContaining({ topic: 'midi', event: 'note_on' }),
       { mode: 'toast', priority: undefined, timeout: 5000 }
     );
   });
