@@ -284,6 +284,57 @@ describe('ScreenActionHandler', () => {
     });
   });
 
+  describe('menu duplicate guard', () => {
+    it('ignores second menu:open with same menuId when duplicate is "ignore"', () => {
+      const { getAllByTestId } = render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ menu: { duplicate: 'ignore' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('menu:open', { menuId: 'music' }));
+      act(() => getActionBus().emit('menu:open', { menuId: 'music' }));
+
+      // Should only have one menu-stack rendered
+      expect(getAllByTestId('menu-stack')).toHaveLength(1);
+    });
+
+    it('allows opening a different menu even with duplicate guard', () => {
+      const { getByTestId, queryByTestId } = render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ menu: { duplicate: 'ignore' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('menu:open', { menuId: 'music' }));
+      expect(getByTestId('menu-stack')).toBeTruthy();
+
+      // Dismiss first, then open a different menu
+      act(() => getActionBus().emit('escape', {}));
+      expect(queryByTestId('menu-stack')).toBeNull();
+
+      act(() => getActionBus().emit('menu:open', { menuId: 'tv' }));
+      expect(getByTestId('menu-stack').dataset.menu).toBe('tv');
+    });
+
+    it('allows re-opening same menu after escape dismisses it', () => {
+      const { getByTestId, queryByTestId } = render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ menu: { duplicate: 'ignore' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('menu:open', { menuId: 'music' }));
+      expect(getByTestId('menu-stack')).toBeTruthy();
+
+      act(() => getActionBus().emit('escape', {}));
+      expect(queryByTestId('menu-stack')).toBeNull();
+
+      act(() => getActionBus().emit('menu:open', { menuId: 'music' }));
+      expect(getByTestId('menu-stack')).toBeTruthy();
+    });
+  });
+
   describe('playback secondary fallback', () => {
     it('uses secondary action when idle and when_idle is "secondary"', () => {
       render(
