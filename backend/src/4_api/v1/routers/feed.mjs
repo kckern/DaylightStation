@@ -70,13 +70,13 @@ export function createFeedRouter(config) {
   }));
 
   router.post('/reader/items/mark', asyncHandler(async (req, res) => {
-    const { itemIds, action } = req.body;
+    const { itemIds: feedItemIds, action } = req.body;
     const username = getUsername();
 
     if (action === 'read') {
-      await freshRSSAdapter.markRead(itemIds, username);
+      await freshRSSAdapter.markRead(feedItemIds, username);
     } else if (action === 'unread') {
-      await freshRSSAdapter.markUnread(itemIds, username);
+      await freshRSSAdapter.markUnread(feedItemIds, username);
     } else {
       return res.status(400).json({ error: 'action must be "read" or "unread"' });
     }
@@ -275,21 +275,21 @@ export function createFeedRouter(config) {
     if (!slug) return res.status(400).json({ error: 'slug required' });
 
     // Decode base64url → original item ID
-    let itemId;
+    let feedItemId;
     try {
       let s = slug.replace(/-/g, '+').replace(/_/g, '/');
       while (s.length % 4) s += '=';
-      itemId = Buffer.from(s, 'base64').toString('utf-8');
+      feedItemId = Buffer.from(s, 'base64').toString('utf-8');
     } catch {
       return res.status(400).json({ error: 'Invalid slug' });
     }
 
     const username = getUsername();
-    const result = await feedAssemblyService.getItemWithDetail(itemId, username);
+    const result = await feedAssemblyService.getItemWithDetail(feedItemId, username);
     logger.info?.('feed.deeplink.served', {
       durationMs: Date.now() - start,
       slug,
-      itemId,
+      feedItemId,
       found: !!result,
     });
     if (!result) return res.status(404).json({ error: 'Item not found or expired' });
@@ -299,8 +299,8 @@ export function createFeedRouter(config) {
 
   // Dismiss / mark-read items (removes from future scroll batches)
   router.post('/scroll/dismiss', asyncHandler(async (req, res) => {
-    const { itemIds } = req.body;
-    if (!Array.isArray(itemIds) || itemIds.length === 0) {
+    const { itemIds: feedItemIds } = req.body;
+    if (!Array.isArray(feedItemIds) || feedItemIds.length === 0) {
       return res.status(400).json({ error: 'itemIds array required' });
     }
 
@@ -310,7 +310,7 @@ export function createFeedRouter(config) {
     const bySource = new Map(); // sourceType → [prefixedIds]
     const otherIds = [];
 
-    for (const id of itemIds) {
+    for (const id of feedItemIds) {
       const colonIdx = id.indexOf(':');
       if (colonIdx > 0) {
         const sourceType = id.slice(0, colonIdx);
@@ -340,17 +340,17 @@ export function createFeedRouter(config) {
 
     await Promise.all(promises);
 
-    res.json({ dismissed: itemIds.length });
+    res.json({ dismissed: feedItemIds.length });
   }));
 
   // =========================================================================
   // Detail (level 2 expanded content)
   // =========================================================================
 
-  router.get('/detail/:itemId', asyncHandler(async (req, res) => {
+  router.get('/detail/:feedItemId', asyncHandler(async (req, res) => {
     const start = Date.now();
-    const { itemId } = req.params;
-    if (!itemId) return res.status(400).json({ error: 'itemId required' });
+    const { feedItemId } = req.params;
+    if (!feedItemId) return res.status(400).json({ error: 'feedItemId required' });
 
     const username = getUsername();
     let meta = {};
@@ -360,10 +360,10 @@ export function createFeedRouter(config) {
     if (req.query.link) meta.link = req.query.link;
 
     const quality = req.query.quality || undefined;
-    const result = await feedAssemblyService.getDetail(itemId, meta, username, { quality });
+    const result = await feedAssemblyService.getDetail(feedItemId, meta, username, { quality });
     logger.info?.('feed.detail.served', {
       durationMs: Date.now() - start,
-      itemId,
+      feedItemId,
       quality: quality || null,
       sectionCount: result?.sections?.length || 0,
       found: !!result,

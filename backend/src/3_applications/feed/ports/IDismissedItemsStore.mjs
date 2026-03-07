@@ -24,9 +24,9 @@ export class IDismissedItemsStore {
   /**
    * Add item IDs to the dismissed set.
    *
-   * @param {string[]} itemIds - IDs of items to mark as dismissed
+   * @param {string[]} feedItemIds - IDs of items to mark as dismissed
    */
-  add(itemIds) {
+  add(feedItemIds) {
     throw new Error('Not implemented');
   }
 

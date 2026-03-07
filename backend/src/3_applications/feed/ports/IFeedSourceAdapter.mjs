@@ -69,10 +69,10 @@ export class IFeedSourceAdapter {
 
   /**
    * Mark items as read/consumed. No-op by default.
-   * @param {string[]} itemIds - Prefixed item IDs (e.g. "freshrss:12345")
+   * @param {string[]} feedItemIds - Prefixed item IDs (e.g. "freshrss:12345")
    * @param {string} username
    */
-  async markRead(itemIds, username) {
+  async markRead(feedItemIds, username) {
     // No-op default — sources without read-state tracking ignore this
   }
 }
