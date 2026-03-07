@@ -229,9 +229,11 @@ export function toListItem(item) {
   if (item.resumePosition !== undefined && item.resumePosition !== null) {
     base.resumePosition = item.resumePosition;
     base.resumeSeconds = item.resumePosition;
-    base.watchSeconds = item.resumePosition;
-    // Calculate watchProgress percentage
-    if (item.duration && item.duration > 0) {
+    // Only set watchSeconds/watchProgress from resumePosition if not already classified
+    if (base.watchSeconds === undefined) {
+      base.watchSeconds = item.resumePosition;
+    }
+    if (base.watchProgress === undefined && item.duration && item.duration > 0) {
       base.watchProgress = Math.round((item.resumePosition / item.duration) * 100);
     }
   }

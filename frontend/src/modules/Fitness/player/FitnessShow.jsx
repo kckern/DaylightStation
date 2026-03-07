@@ -591,6 +591,7 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
       const queueItem = {
         id: plexId || episode.id || `episode-${Date.now()}`,
         plex: plexId, // Ensure plex ID is passed for downstream components
+        source: plexId ? 'plex' : (episode.source || null),
         show: showTitle,
         season: seasonTitle,
         title: episode.label,
@@ -1035,6 +1036,7 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
         const queueItem = {
           id: plexId || episode.id || `episode-${Date.now()}`,
           plex: plexId, // Ensure plex ID is passed for downstream components
+          source: plexId ? 'plex' : (episode.source || null),
           show: showTitle,
           season: seasonTitle,
           title: episode.label,
