@@ -1074,10 +1074,10 @@ export class PlexAdapter {
         // Use resolver to parse compound key, or strip prefix as fallback
         let bareKey;
         if (this.mediaKeyResolver) {
-          const { id } = this.mediaKeyResolver.parse(state.itemId);
+          const { id } = this.mediaKeyResolver.parse(state.contentId);
           bareKey = id;
         } else {
-          bareKey = state.itemId.replace(/^plex:/, '');
+          bareKey = state.contentId.replace(/^plex:/, '');
         }
         history[bareKey] = {
           playhead: state.playhead || 0,

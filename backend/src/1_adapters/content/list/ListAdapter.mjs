@@ -759,7 +759,7 @@ export class ListAdapter {
     const allProgress = await this.mediaProgressMemory.getAll(storagePath);
     const progressMap = new Map();
     for (const p of allProgress) {
-      progressMap.set(p.itemId, p);
+      progressMap.set(p.contentId, p);
     }
 
     // First pass: find any in-progress item

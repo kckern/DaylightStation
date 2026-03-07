@@ -829,12 +829,12 @@ export class ReadalongAdapter {
     const seen = new Map(); // verseId → highest percent
     for (const p of allProgress) {
       let verseId = null;
-      if (p.itemId?.startsWith(legacyPrefix)) {
-        verseId = parseInt(p.itemId.split('/').pop(), 10);
-      } else if (p.itemId?.startsWith(readalongPrefix)) {
-        verseId = parseInt(p.itemId.split('/').pop(), 10);
-      } else if (p.itemId?.startsWith(narratedPrefix)) {
-        verseId = parseInt(p.itemId.split('/').pop(), 10);
+      if (p.contentId?.startsWith(legacyPrefix)) {
+        verseId = parseInt(p.contentId.split('/').pop(), 10);
+      } else if (p.contentId?.startsWith(readalongPrefix)) {
+        verseId = parseInt(p.contentId.split('/').pop(), 10);
+      } else if (p.contentId?.startsWith(narratedPrefix)) {
+        verseId = parseInt(p.contentId.split('/').pop(), 10);
       }
       if (verseId && verseId >= range.start && verseId <= range.end) {
         const existing = seen.get(verseId);
@@ -849,8 +849,8 @@ export class ReadalongAdapter {
     if (seen.size === 0) {
       const fallbackProgress = await this.mediaProgressMemory.getAll('readalong');
       for (const p of fallbackProgress) {
-        if (p.itemId?.startsWith(readalongPrefix)) {
-          const verseId = parseInt(p.itemId.split('/').pop(), 10);
+        if (p.contentId?.startsWith(readalongPrefix)) {
+          const verseId = parseInt(p.contentId.split('/').pop(), 10);
           if (verseId && verseId >= range.start && verseId <= range.end) {
             const existing = seen.get(verseId);
             const percent = p.percent || 0;
@@ -866,8 +866,8 @@ export class ReadalongAdapter {
     if (seen.size === 0) {
       const fallbackProgress = await this.mediaProgressMemory.getAll('narrated');
       for (const p of fallbackProgress) {
-        if (p.itemId?.startsWith(narratedPrefix)) {
-          const verseId = parseInt(p.itemId.split('/').pop(), 10);
+        if (p.contentId?.startsWith(narratedPrefix)) {
+          const verseId = parseInt(p.contentId.split('/').pop(), 10);
           if (verseId && verseId >= range.start && verseId <= range.end) {
             const existing = seen.get(verseId);
             const percent = p.percent || 0;
