@@ -75,7 +75,7 @@ export function useScreenSubscriptions(subscriptions, showOverlay, dismissOverla
   }, []);
 
   const handleMessage = useCallback((data) => {
-    const eventName = data?.event ?? data?.type ?? null;
+    const eventName = data?.event ?? data?.data?.event ?? data?.type ?? null;
     const messageTopic = data?.topic ?? null;
 
     let matched = false;
