@@ -32,7 +32,7 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
 
   // Reset image state when hero image changes
   useEffect(() => {
-    feedLog.image('detail hero reset', { heroImage, itemId: item.id });
+    feedLog.image('detail hero reset', { heroImage, feedItemId: item.id });
     setImageLoaded(false);
     setImagePhase('original');
     heroLoadStartRef.current = performance.now();
