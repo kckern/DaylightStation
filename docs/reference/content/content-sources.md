@@ -385,7 +385,7 @@ data/content/readalong/scripture/
         └── ...
 ```
 
-The pattern is `{section}/{version}/{itemId}`. The manifest's `defaults` map section abbreviations to preferred versions so users can request `john-1` without specifying a version. `localId` paths with explicit versions (`kjvf/john-1`) override the defaults.
+The pattern is `{section}/{version}/{contentId}`. The manifest's `defaults` map section abbreviations to preferred versions so users can request `john-1` without specifying a version. `localId` paths with explicit versions (`kjvf/john-1`) override the defaults.
 
 **Talks** — organized by conference / session / talk number:
 
