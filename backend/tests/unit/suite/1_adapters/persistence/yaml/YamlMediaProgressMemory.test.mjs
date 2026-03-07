@@ -42,7 +42,7 @@ describe('YamlMediaProgressMemory', () => {
   describe('set()', () => {
     it('should write canonical format correctly', async () => {
       const progress = new MediaProgress({
-        itemId: 'movie:12345',
+        contentId: 'movie:12345',
         playhead: 3600,
         duration: 7200,
         playCount: 2,
@@ -55,7 +55,7 @@ describe('YamlMediaProgressMemory', () => {
       // Verify the data was written
       const retrieved = await memory.get('movie:12345', 'plex/fitness');
       expect(retrieved).not.toBeNull();
-      expect(retrieved.itemId).toBe('movie:12345');
+      expect(retrieved.contentId).toBe('movie:12345');
       expect(retrieved.playhead).toBe(3600);
       expect(retrieved.duration).toBe(7200);
       expect(retrieved.playCount).toBe(2);
@@ -67,7 +67,7 @@ describe('YamlMediaProgressMemory', () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       const progress = new MediaProgress({
-        itemId: 'movie:67890',
+        contentId: 'movie:67890',
         playhead: 1800,
         duration: 3600,
         playCount: 1,
@@ -91,7 +91,7 @@ describe('YamlMediaProgressMemory', () => {
       // what the validation would catch if legacy fields somehow got through
       const mockState = {
         toJSON: () => ({
-          itemId: 'movie:legacy',
+          contentId: 'movie:legacy',
           playhead: 100,
           duration: 200,
           percent: 50,
@@ -110,7 +110,7 @@ describe('YamlMediaProgressMemory', () => {
       expect(warnSpy).toHaveBeenCalledWith(
         '[YamlMediaProgressMemory] Attempting to write data with legacy fields',
         expect.objectContaining({
-          itemId: 'movie:legacy',
+          contentId: 'movie:legacy',
           storagePath: 'plex/legacy',
           legacyFields: expect.arrayContaining(['seconds', 'mediaDuration']),
           hint: expect.stringContaining('seconds')
@@ -125,7 +125,7 @@ describe('YamlMediaProgressMemory', () => {
 
       const mockState = {
         toJSON: () => ({
-          itemId: 'movie:still-writes',
+          contentId: 'movie:still-writes',
           playhead: 500,
           duration: 1000,
           percent: 50,
@@ -141,7 +141,7 @@ describe('YamlMediaProgressMemory', () => {
       // Data should still be written
       const retrieved = await memory.get('movie:still-writes', 'plex/test');
       expect(retrieved).not.toBeNull();
-      expect(retrieved.itemId).toBe('movie:still-writes');
+      expect(retrieved.contentId).toBe('movie:still-writes');
       expect(retrieved.playhead).toBe(500);
       expect(retrieved.duration).toBe(1000);
 
@@ -150,7 +150,7 @@ describe('YamlMediaProgressMemory', () => {
 
     it('should update existing entries', async () => {
       const initialProgress = new MediaProgress({
-        itemId: 'movie:update-test',
+        contentId: 'movie:update-test',
         playhead: 100,
         duration: 1000,
         playCount: 1,
@@ -161,7 +161,7 @@ describe('YamlMediaProgressMemory', () => {
       await memory.set(initialProgress, 'plex/updates');
 
       const updatedProgress = new MediaProgress({
-        itemId: 'movie:update-test',
+        contentId: 'movie:update-test',
         playhead: 500,
         duration: 1000,
         playCount: 2,
@@ -181,7 +181,7 @@ describe('YamlMediaProgressMemory', () => {
   describe('get()', () => {
     it('should return MediaProgress entity with canonical fields', async () => {
       const progress = new MediaProgress({
-        itemId: 'movie:get-test',
+        contentId: 'movie:get-test',
         playhead: 2000,
         duration: 4000,
         playCount: 5,
@@ -194,7 +194,7 @@ describe('YamlMediaProgressMemory', () => {
       const retrieved = await memory.get('movie:get-test', 'plex/get-test');
 
       expect(retrieved).toBeInstanceOf(MediaProgress);
-      expect(retrieved.itemId).toBe('movie:get-test');
+      expect(retrieved.contentId).toBe('movie:get-test');
       expect(retrieved.playhead).toBe(2000);
       expect(retrieved.duration).toBe(4000);
       expect(retrieved.playCount).toBe(5);
@@ -240,13 +240,13 @@ describe('YamlMediaProgressMemory', () => {
   describe('getAll()', () => {
     it('should return all MediaProgress entries for a storage path', async () => {
       const progress1 = new MediaProgress({
-        itemId: 'movie:all-1',
+        contentId: 'movie:all-1',
         playhead: 100,
         duration: 200
       });
 
       const progress2 = new MediaProgress({
-        itemId: 'movie:all-2',
+        contentId: 'movie:all-2',
         playhead: 300,
         duration: 600
       });
@@ -259,9 +259,9 @@ describe('YamlMediaProgressMemory', () => {
       expect(allProgress).toHaveLength(2);
       expect(allProgress.every(p => p instanceof MediaProgress)).toBe(true);
 
-      const itemIds = allProgress.map(p => p.itemId);
-      expect(itemIds).toContain('movie:all-1');
-      expect(itemIds).toContain('movie:all-2');
+      const contentIds = allProgress.map(p => p.contentId);
+      expect(contentIds).toContain('movie:all-1');
+      expect(contentIds).toContain('movie:all-2');
     });
 
     it('should return empty array for non-existent storage path', async () => {
@@ -273,7 +273,7 @@ describe('YamlMediaProgressMemory', () => {
   describe('clear()', () => {
     it('should call deleteYaml with the computed file path', async () => {
       const progress = new MediaProgress({
-        itemId: 'movie:clear-test',
+        contentId: 'movie:clear-test',
         playhead: 100,
         duration: 200
       });

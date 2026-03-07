@@ -831,7 +831,7 @@ export class GratitudeRepository {
     selections.unshift(entry);
     this.#writeSelections(category, selections);
     
-    this.#logger.debug('gratitude.selection.added', { category, userId, itemId: item.id });
+    this.#logger.debug('gratitude.selection.added', { category, userId, optionId: item.id });
     
     return entry;
   }
