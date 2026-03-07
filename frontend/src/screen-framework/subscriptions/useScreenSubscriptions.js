@@ -126,9 +126,11 @@ export function useScreenSubscriptions(subscriptions, showOverlay, dismissOverla
         continue;
       }
 
-      // Show the overlay
+      // Show the overlay — include onClose/onSessionEnd mapped to dismissOverlay
+      // so components like PianoVisualizer get the callbacks they expect
+      const dismissFn = () => dismissOverlay(entry.mode);
       logger().info('subscription.show-overlay', { topic: entry.topic, overlay: entry.overlay, mode: entry.mode, event: eventName });
-      showOverlay(Component, { ...data }, {
+      showOverlay(Component, { ...data, onClose: dismissFn, onSessionEnd: dismissFn }, {
         mode: entry.mode,
         priority: entry.priority,
         timeout: entry.timeout,

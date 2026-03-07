@@ -16,6 +16,7 @@
   width: 100%;
   height: 100%;
   z-index: 1000;
+  background: #111111;
 }
 
 /* PiP overlay - floats in corner */
