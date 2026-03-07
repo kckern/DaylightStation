@@ -46,7 +46,7 @@ test.describe('Office Screen Input Parity', () => {
       );
     });
 
-    // Press k again — with duplicate:'navigate', dispatches ArrowDown to advance
+    // Press k again — with duplicate:'navigate', dispatches ArrowRight to advance
     await page.keyboard.press('k');
     await page.waitForTimeout(300);
 

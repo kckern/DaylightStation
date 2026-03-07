@@ -26,7 +26,7 @@ function LoadingFallback() {
  * @param {Object|string} props.rootMenu - The root menu configuration (list name or menu object)
  * @param {React.RefObject} [props.playerRef] - Optional ref forwarded to Player for playback broadcast
  */
-export function MenuStack({ rootMenu, playerRef }) {
+export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
   const { currentContent, depth, push, pop } = useMenuNavigationContext();
 
   /**
@@ -120,6 +120,7 @@ export function MenuStack({ rootMenu, playerRef }) {
         depth={0}
         onSelect={handleSelect}
         onEscape={() => {}} // At root, escape does nothing
+        MENU_TIMEOUT={MENU_TIMEOUT}
       />
     );
   }
@@ -135,6 +136,7 @@ export function MenuStack({ rootMenu, playerRef }) {
           depth={depth}
           onSelect={handleSelect}
           onEscape={clear}
+          MENU_TIMEOUT={MENU_TIMEOUT}
         />
       );
 

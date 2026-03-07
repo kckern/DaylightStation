@@ -112,15 +112,16 @@ function MenuEmpty({ title, image, message }) {
  * When depth is provided and MenuNavigationContext is available, uses context for state.
  * Otherwise falls back to controlled/uncontrolled pattern with props.
  */
-export function TVMenu({ 
-  list, 
+export function TVMenu({
+  list,
   depth,
-  selectedIndex: selectedIndexProp = 0, 
-  selectedKey: selectedKeyProp = null, 
-  onSelectedIndexChange, 
-  onSelect, 
-  onEscape, 
-  refreshToken = 0 
+  selectedIndex: selectedIndexProp = 0,
+  selectedKey: selectedKeyProp = null,
+  onSelectedIndexChange,
+  onSelect,
+  onEscape,
+  refreshToken = 0,
+  MENU_TIMEOUT = 0,
 }) {
   const { menuItems, menuMeta, loaded } = useFetchMenuData(list, refreshToken);
   const containerRef = useRef(null);
@@ -162,6 +163,7 @@ export function TVMenu({
         onSelectedIndexChange={onSelectedIndexChange}
         onSelect={handleSelect}
         onClose={onEscape}
+        MENU_TIMEOUT={MENU_TIMEOUT}
         containerRef={containerRef}
       />
     </div>

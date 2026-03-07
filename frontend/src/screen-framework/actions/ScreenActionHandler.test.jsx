@@ -317,7 +317,7 @@ describe('ScreenActionHandler', () => {
       expect(getByTestId('menu-stack').dataset.menu).toBe('tv');
     });
 
-    it('dispatches synthetic ArrowDown keydown when duplicate is "navigate" and same menu is open', () => {
+    it('dispatches synthetic ArrowRight keydown when duplicate is "navigate" and same menu is open', () => {
       const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
 
       render(
@@ -331,11 +331,11 @@ describe('ScreenActionHandler', () => {
       // Clear spy calls from first open
       dispatchSpy.mockClear();
 
-      // Second emit of same menu should dispatch ArrowDown to advance selection
+      // Second emit of same menu should dispatch ArrowRight to advance selection sequentially
       act(() => getActionBus().emit('menu:open', { menuId: 'education' }));
 
       const arrowCalls = dispatchSpy.mock.calls.filter(
-        ([e]) => e instanceof KeyboardEvent && e.key === 'ArrowDown'
+        ([e]) => e instanceof KeyboardEvent && e.key === 'ArrowRight'
       );
       expect(arrowCalls).toHaveLength(1);
 
