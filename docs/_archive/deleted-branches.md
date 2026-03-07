@@ -13,3 +13,5 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-03-05 | feature/media-three-panel-redesign | c80b568b | MediaApp three-panel responsive redesign - merged to main |
 | 2026-03-05 | worktree-agent-a680a2e5 | 086d9327 | Temporary worktree agent branch (tip = main) - merged |
 | 2026-03-05 | origin/fix/firefox-dash-seeking-death-loop | 08c74b9e | Firefox DASH seeking recovery fixes - merged to main |
+| 2026-03-05 | feat/media-ux-remediation | 0c0d7241 | 35-fix UX remediation from media player design audit - merged to main |
+| 2026-03-06 | fix/session-data-loss | e82baca6 | Fix fitness session data loss on HR device disconnect - merged to main |
