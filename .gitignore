@@ -10,26 +10,10 @@ backend/node_modules
 !tests/_fixtures/**/*.yml
 !tests/unit/suite/config/fixtures/**/*.yml
 !tests/_infrastructure/environments.yml
-data*
+data/
 !tests/_fixtures/data/
 !**/screen-framework/data/
 !**/screen-framework/data/**
-# Allow example config files in data/household
-!data/
-data/*
-!data/household/
-data/household/*
-!data/household/apps/
-data/household/apps/*
-!data/household/apps/canvas/
-data/household/apps/canvas/*
-!data/household/apps/canvas/*.example
-!data/household/config/
-data/household/config/*
-!data/household/config/*.example
-!data/household/config/*.example.yml
-!data/household/screens/
-!data/household/screens/*.yml
 !**/DataService.mjs
 !**/DataService.test.mjs
 node_modules/*
