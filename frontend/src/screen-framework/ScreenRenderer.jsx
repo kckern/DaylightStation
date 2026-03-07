@@ -58,6 +58,19 @@ export function ScreenRenderer({ screenId: propScreenId }) {
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const inputHealthyRef = React.useRef(false);
+
+  // Failsafe: digit 4 always reloads if the input system hasn't attached
+  useEffect(() => {
+    const failsafe = (e) => {
+      const key = e.key || e.code?.replace(/^(Digit|Numpad)/, '');
+      if (key !== '4') return;
+      if (inputHealthyRef.current) return; // NumpadAdapter is handling input
+      window.location.reload();
+    };
+    window.addEventListener('keydown', failsafe);
+    return () => window.removeEventListener('keydown', failsafe);
+  }, []);
 
   // Fetch screen configuration
   useEffect(() => {
@@ -84,7 +97,11 @@ export function ScreenRenderer({ screenId: propScreenId }) {
   useEffect(() => {
     if (!config?.input) return;
     const manager = createInputManager(getActionBus(), config.input);
-    return () => manager.destroy();
+    inputHealthyRef.current = true;
+    return () => {
+      manager.destroy();
+      inputHealthyRef.current = false;
+    };
   }, [config]);
 
   // Convert theme to --screen-* CSS custom properties
