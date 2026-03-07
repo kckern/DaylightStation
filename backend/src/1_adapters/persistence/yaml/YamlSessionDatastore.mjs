@@ -18,6 +18,7 @@ import {
 } from '#system/utils/FileIO.mjs';
 import { ISessionDatastore } from '#apps/fitness/ports/ISessionDatastore.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { ItemId } from '#domains/content/value-objects/ItemId.mjs';
 
 /**
  * Derive session date from sessionId
@@ -244,35 +245,39 @@ export class YamlSessionDatastore extends ISessionDatastore {
 
       // Build media from summary block: { primary, others }
       let media = null;
-      if (summary?.media?.length > 0) {
-        const primaryItem = summary.media.find(m => m.primary);
-        const otherItems = summary.media.filter(m => !m.primary);
-        const formatMedia = (m) => ({
-          contentId: m.contentId,
-          title: m.title,
-          showTitle: m.showTitle,
-          seasonTitle: m.seasonTitle,
-          grandparentId: m.grandparentId || null,
-          parentId: m.parentId || null,
-        });
+      const summaryMediaObjects = (summary?.media || []).filter(m => typeof m === 'object' && m !== null);
+      if (summaryMediaObjects.length > 0) {
+        const primaryItem = summaryMediaObjects.find(m => m.primary);
+        const formatMedia = (m) => {
+          const source = ItemId.extractSource(m.contentId);
+          return {
+            contentId: ItemId.normalize(m.contentId, source),
+            title: m.title,
+            showTitle: m.showTitle,
+            seasonTitle: m.seasonTitle,
+            grandparentId: ItemId.normalize(m.grandparentId, source),
+            parentId: ItemId.normalize(m.parentId, source),
+          };
+        };
         media = {
           primary: primaryItem ? formatMedia(primaryItem) : null,
         };
       }
 
-      // Fallback: if no summary.media, try extracting from timeline.events
+      // Fallback: if no structured summary.media, try extracting from timeline.events
       if (!media && data.timeline?.events?.length > 0) {
         const mediaEvents = (data.timeline.events || []).filter(e => e.type === 'media');
         if (mediaEvents.length > 0) {
           const formatFromEvent = (evt) => {
             const d = evt.data || {};
+            const source = ItemId.extractSource(d.contentId);
             return {
-              contentId: d.contentId,
+              contentId: ItemId.normalize(d.contentId, source),
               title: d.title,
               showTitle: d.grandparentTitle,
               seasonTitle: d.parentTitle,
-              grandparentId: d.grandparentId || null,
-              parentId: d.parentId || null,
+              grandparentId: ItemId.normalize(d.grandparentId, source),
+              parentId: ItemId.normalize(d.parentId, source),
             };
           };
           // Pick longest-duration as primary
@@ -300,9 +305,10 @@ export class YamlSessionDatastore extends ISessionDatastore {
               }
             }
             const d = videoStarts[primaryIdx].data || {};
+            const contentId = ItemId.normalize(d.contentId) || (d.plexId ? `plex:${d.plexId}` : null);
             media = {
               primary: {
-                contentId: d.contentId || (d.plexId ? `plex:${d.plexId}` : null),
+                contentId,
                 title: d.title,
                 showTitle: d.show,
                 seasonTitle: d.season,

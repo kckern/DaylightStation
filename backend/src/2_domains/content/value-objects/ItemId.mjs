@@ -151,6 +151,35 @@ export class ItemId {
   static from(source, localId) {
     return new ItemId(source, localId);
   }
+
+  /**
+   * Extract the source prefix from a compound content ID string.
+   * @param {string} compoundId - e.g. "plex:12345"
+   * @returns {string|null} The source prefix, or null if none found
+   */
+  static extractSource(compoundId) {
+    if (!compoundId) return null;
+    const s = String(compoundId);
+    const idx = s.indexOf(':');
+    return idx > 0 ? s.substring(0, idx) : null;
+  }
+
+  /**
+   * Normalize a value to "source:localId" format.
+   * Already-prefixed values pass through. Bare numbers/strings
+   * get the fallbackSource prepended.
+   * @param {string|number|null} id - The ID to normalize
+   * @param {string} [fallbackSource] - Source to prepend if id has no prefix
+   * @returns {string|null} Normalized "source:localId" string, or null
+   */
+  static normalize(id, fallbackSource) {
+    if (id == null) return null;
+    const s = String(id);
+    if (!s) return null;
+    if (s.includes(':')) return s;
+    if (fallbackSource) return `${fallbackSource}:${s}`;
+    return s;
+  }
 }
 
 export default ItemId;
