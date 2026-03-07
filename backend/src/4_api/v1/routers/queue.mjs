@@ -19,8 +19,8 @@ function parseQueueQuery(query = {}) {
 export function toQueueItem(item) {
   const qi = {
     // Identity
-    id: item.id,
-    contentId: item.id,
+    id: item.id,           // React key + backwards compat
+    contentId: item.id,    // Canonical content identifier (source:localId)
     title: item.title,
     source: item.source,
 
