@@ -42,30 +42,30 @@ export class MoveItemToDate {
    * Execute the use case
    */
   async execute(input) {
-    const { userId, conversationId, messageId, newDate, itemId: inputItemId } = input;
+    const { userId, conversationId, messageId, newDate, entryId: inputEntryId } = input;
 
-    this.#logger.debug?.('adjustment.move', { userId, newDate, itemId: inputItemId });
+    this.#logger.debug?.('adjustment.move', { userId, newDate, entryId: inputEntryId });
 
     try {
-      // 1. Get itemId from input or fallback to state
-      let itemId = inputItemId;
+      // 1. Get entryId from input or fallback to state
+      let entryId = inputEntryId;
       let oldDate = null;
       let logId = null;
 
-      if (!itemId) {
+      if (!entryId) {
         const state = await this.#conversationStateStore.get(conversationId);
         const flowState = state?.flowState || {};
-        itemId = flowState.itemId;
+        entryId = flowState.entryId || flowState.itemId;
         oldDate = flowState.date;
         logId = flowState.logId;
       }
 
-      if (!itemId) {
+      if (!entryId) {
         throw new Error('No item selected in adjustment state');
       }
 
       // If we don't have logId, look it up from nutrilist
-      const listItem = await this.#nutriListStore.findByUuid(userId, itemId);
+      const listItem = await this.#nutriListStore.findByUuid(userId, entryId);
       if (!logId) {
         logId = listItem?.logId || listItem?.log_uuid;
         oldDate = oldDate || listItem?.date;
@@ -73,16 +73,16 @@ export class MoveItemToDate {
 
       // 2. If no newDate provided, show date picker
       if (!newDate) {
-        // Save current state with itemId for when date is selected
+        // Save current state with entryId for when date is selected
         const currentState = await this.#conversationStateStore.get(conversationId) || {};
         await this.#conversationStateStore.set(conversationId, {
           ...currentState,
           activeFlow: 'move',
-          flowState: { itemId, logId, oldDate },
+          flowState: { entryId, logId, oldDate },
         });
 
         const itemLabel = listItem?.name || listItem?.label || 'item';
-        const keyboard = this.#buildDateKeyboard(itemId, oldDate);
+        const keyboard = this.#buildDateKeyboard(entryId, oldDate);
         await this.#messagingGateway.updateMessage(conversationId, messageId, {
           caption: `📅 Move <b>${itemLabel}</b> to which day?`,
           parseMode: 'HTML',
@@ -103,14 +103,14 @@ export class MoveItemToDate {
       }
 
       // 3. Find the item
-      const item = originalLog.items.find((i) => i.id === itemId);
+      const item = originalLog.items.find((i) => i.id === entryId);
       if (!item) {
         throw new Error('Item not found in log');
       }
 
       // 4. Remove item from original log
       const now = new Date();
-      const updatedOriginalLog = originalLog.removeItem(itemId, now);
+      const updatedOriginalLog = originalLog.removeItem(entryId, now);
 
       // 5. Save or delete original log
       if (updatedOriginalLog.items.length === 0) {
@@ -166,7 +166,7 @@ export class MoveItemToDate {
         });
       }
 
-      this.#logger.info?.('adjustment.moved', { userId, itemId, oldDate, newDate });
+      this.#logger.info?.('adjustment.moved', { userId, entryId, oldDate, newDate });
 
       return { success: true, oldDate, newDate, item };
     } catch (error) {
@@ -179,14 +179,14 @@ export class MoveItemToDate {
    * Build date selection keyboard for move
    * @private
    */
-  #buildDateKeyboard(itemId, currentDate) {
+  #buildDateKeyboard(entryId, currentDate) {
     const keyboard = [];
     const today = new Date();
 
     // Row 1: Today and Yesterday
     keyboard.push([
-      { text: '☀️ Today', callback_data: this.#encodeCallback('md', { id: itemId, d: 0 }) },
-      { text: '📆 Yesterday', callback_data: this.#encodeCallback('md', { id: itemId, d: 1 }) },
+      { text: '☀️ Today', callback_data: this.#encodeCallback('md', { id: entryId, d: 0 }) },
+      { text: '📆 Yesterday', callback_data: this.#encodeCallback('md', { id: entryId, d: 1 }) },
     ]);
 
     // Row 2: Past 3 days
@@ -195,7 +195,7 @@ export class MoveItemToDate {
       const date = new Date(today);
       date.setDate(date.getDate() - i);
       const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
-      row2.push({ text: dayName, callback_data: this.#encodeCallback('md', { id: itemId, d: i }) });
+      row2.push({ text: dayName, callback_data: this.#encodeCallback('md', { id: entryId, d: i }) });
     }
     keyboard.push(row2);
 

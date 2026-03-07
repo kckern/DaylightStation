@@ -145,7 +145,7 @@ export class WebhookHandler {
         return await useCase.execute({
           userId: input.userId,
           logId: decoded.logId || decoded.id,
-          itemId: decoded.itemId,
+          entryId: decoded.entryId || decoded.itemId,
           messageId: input.messageId
         });
       }
