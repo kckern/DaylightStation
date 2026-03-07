@@ -12,6 +12,7 @@ import { ScreenActionHandler } from './actions/ScreenActionHandler.jsx';
 import { getWidgetRegistry } from './widgets/registry.js';
 import { useScreenSubscriptions } from './subscriptions/useScreenSubscriptions.js';
 import { useScreenCommands } from './commands/useScreenCommands.js';
+import { MenuNavigationProvider } from '../context/MenuNavigationContext.jsx';
 
 // Register built-ins on module load
 registerBuiltinWidgets();
@@ -140,14 +141,16 @@ export function ScreenRenderer({ screenId: propScreenId }) {
           position: 'relative',
           ...themeStyle,
         }}>
-          <ScreenOverlayProvider>
-            <ScreenActionHandler actions={config.actions} />
-            <ScreenCommandHandler wsConfig={config.websocket} />
-            <ScreenSubscriptionHandler subscriptions={config.subscriptions} />
-            <ScreenProvider config={config.layout}>
-              <PanelRenderer />
-            </ScreenProvider>
-          </ScreenOverlayProvider>
+          <MenuNavigationProvider>
+            <ScreenOverlayProvider>
+              <ScreenActionHandler actions={config.actions} />
+              <ScreenCommandHandler wsConfig={config.websocket} />
+              <ScreenSubscriptionHandler subscriptions={config.subscriptions} />
+              <ScreenProvider config={config.layout}>
+                <PanelRenderer />
+              </ScreenProvider>
+            </ScreenOverlayProvider>
+          </MenuNavigationProvider>
         </div>
       )}
     </ScreenDataProvider>
