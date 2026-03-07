@@ -212,8 +212,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const trackRecentlyPlayed = React.useCallback((item) => {
     if (!item) return;
     setRecentlyPlayed(prev => {
-      const itemId = getItemIdentifier(item);
-      const filtered = prev.filter(p => getItemIdentifier(p) !== itemId);
+      const contentId = getItemIdentifier(item);
+      const filtered = prev.filter(p => getItemIdentifier(p) !== contentId);
       return [item, ...filtered].slice(0, 10);
     });
   }, []);

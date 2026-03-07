@@ -151,7 +151,7 @@ export class GratitudeService {
       s.item?.id === item.id && s.userId === userId
     );
     if (duplicate) {
-      throw new DomainInvariantError('Item already selected by this user', { code: 'DUPLICATE_SELECTION', itemId: item.id, userId });
+      throw new DomainInvariantError('Item already selected by this user', { code: 'DUPLICATE_SELECTION', optionId: item.id, userId });
     }
 
     const selection = Selection.create(userId, item, timestamp);

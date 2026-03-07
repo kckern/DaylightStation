@@ -130,12 +130,12 @@ export class YamlGratitudeDatastore extends IGratitudeDatastore {
    * Remove an option by ID
    * @param {string} householdId
    * @param {string} category
-   * @param {string} itemId
+   * @param {string} optionId
    * @returns {Promise<boolean>}
    */
-  async removeOption(householdId, category, itemId) {
+  async removeOption(householdId, category, optionId) {
     const options = this.#readArray(householdId, `options.${category}`);
-    const newOptions = options.filter(o => o.id !== itemId);
+    const newOptions = options.filter(o => o.id !== optionId);
     if (newOptions.length !== options.length) {
       this.#writeArray(householdId, `options.${category}`, newOptions);
       return true;

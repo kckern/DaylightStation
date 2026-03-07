@@ -131,7 +131,7 @@ export class FitnessContentToolFactory extends ToolFactory {
 
             return {
               items: recent.map(p => ({
-                contentId: p.itemId,
+                contentId: p.contentId,
                 percent: p.percent ?? Math.round(((p.playhead || 0) / (p.duration || 1)) * 100),
                 watched: (p.percent ?? 0) >= 90,
                 lastPlayed: p.lastPlayed,

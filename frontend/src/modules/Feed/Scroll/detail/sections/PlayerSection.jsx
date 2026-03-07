@@ -11,7 +11,7 @@ export default function PlayerSection({ data, onPlay, activeMedia, item, playbac
     return (
       <button
         onClick={() => {
-          log().info('section.play', { itemId: item?.id, title: item?.title, contentId: data.contentId, provider: data.provider });
+          log().info('section.play', { feedItemId: item?.id, title: item?.title, contentId: data.contentId, provider: data.provider });
           onPlay?.(item);
         }}
         style={{
@@ -82,7 +82,7 @@ export default function PlayerSection({ data, onPlay, activeMedia, item, playbac
         </span>
         <button
           onClick={() => {
-            log().info('section.stop', { itemId: item?.id, title: item?.title });
+            log().info('section.stop', { feedItemId: item?.id, title: item?.title });
             onPlay?.(null);
           }}
           style={{
