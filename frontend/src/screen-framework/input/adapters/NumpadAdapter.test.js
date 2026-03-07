@@ -79,6 +79,42 @@ describe('NumpadAdapter', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
+  it('should attach secondary to playback action payload', async () => {
+    const keymapWithSecondary = {
+      '1': { label: 'Play', function: 'playback', params: 'play', secondary: 'queue:Morning Program' },
+    };
+    const fetchFn = vi.fn().mockResolvedValue(keymapWithSecondary);
+    adapter = new NumpadAdapter(bus, { keyboardId: 'test', fetchFn });
+
+    const handler = vi.fn();
+    bus.subscribe('media:playback', handler);
+
+    await adapter.attach();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '1' }));
+
+    expect(handler).toHaveBeenCalledWith(expect.objectContaining({
+      command: 'play',
+      secondary: { action: 'media:queue', payload: { contentId: 'Morning Program' } },
+    }));
+  });
+
+  it('should not attach secondary to non-playback actions', async () => {
+    const keymapWithSecondary = {
+      '1': { label: 'Music', function: 'menu', params: 'music', secondary: 'queue:Morning Program' },
+    };
+    const fetchFn = vi.fn().mockResolvedValue(keymapWithSecondary);
+    adapter = new NumpadAdapter(bus, { keyboardId: 'test', fetchFn });
+
+    const handler = vi.fn();
+    bus.subscribe('menu:open', handler);
+
+    await adapter.attach();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '1' }));
+
+    expect(handler).toHaveBeenCalledWith({ menuId: 'music' });
+    expect(handler.mock.calls[0][0]).not.toHaveProperty('secondary');
+  });
+
   it('should stop listening after destroy', async () => {
     const fetchFn = vi.fn().mockResolvedValue(mockKeymap);
     adapter = new NumpadAdapter(bus, { keyboardId: 'officekeypad', fetchFn });

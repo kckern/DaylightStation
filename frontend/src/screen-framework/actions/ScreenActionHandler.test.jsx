@@ -1,5 +1,5 @@
 import { render, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { getActionBus, resetActionBus } from '../input/ActionBus.js';
 import { ScreenOverlayProvider } from '../overlays/ScreenOverlayProvider.jsx';
@@ -281,6 +281,109 @@ describe('ScreenActionHandler', () => {
 
       act(() => getActionBus().emit('escape', {}));
       expect(queryByTestId('menu-stack')).toBeNull();
+    });
+  });
+
+  describe('playback secondary fallback', () => {
+    it('uses secondary action when idle and when_idle is "secondary"', () => {
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'secondary' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      // No media elements exist, so media is idle
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+
+      act(() => {
+        getActionBus().emit('media:playback', {
+          command: 'play',
+          secondary: { action: 'media:queue', payload: { contentId: 'morning-program' } },
+        });
+      });
+
+      // Should NOT dispatch a synthetic keydown — secondary fallback should handle it
+      const keydownCalls = dispatchSpy.mock.calls.filter(
+        ([e]) => e instanceof KeyboardEvent
+      );
+      expect(keydownCalls).toHaveLength(0);
+
+      dispatchSpy.mockRestore();
+    });
+
+    it('dispatches keydown normally when when_idle is "dispatch"', () => {
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'dispatch' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => {
+        getActionBus().emit('media:playback', {
+          command: 'play',
+          secondary: { action: 'media:queue', payload: { contentId: 'morning-program' } },
+        });
+      });
+
+      const keydownCalls = dispatchSpy.mock.calls.filter(
+        ([e]) => e instanceof KeyboardEvent
+      );
+      expect(keydownCalls.length).toBeGreaterThan(0);
+
+      dispatchSpy.mockRestore();
+    });
+
+    it('dispatches keydown when no secondary is provided even if when_idle is "secondary"', () => {
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'secondary' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => {
+        getActionBus().emit('media:playback', { command: 'play' });
+      });
+
+      const keydownCalls = dispatchSpy.mock.calls.filter(
+        ([e]) => e instanceof KeyboardEvent
+      );
+      expect(keydownCalls.length).toBeGreaterThan(0);
+
+      dispatchSpy.mockRestore();
+    });
+
+    it('dispatches keydown when media is active even if when_idle is "secondary"', () => {
+      // Create a fake video element that is playing
+      const video = document.createElement('video');
+      Object.defineProperty(video, 'paused', { value: false });
+      document.body.appendChild(video);
+
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'secondary' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => {
+        getActionBus().emit('media:playback', {
+          command: 'play',
+          secondary: { action: 'media:queue', payload: { contentId: 'morning-program' } },
+        });
+      });
+
+      const keydownCalls = dispatchSpy.mock.calls.filter(
+        ([e]) => e instanceof KeyboardEvent
+      );
+      expect(keydownCalls.length).toBeGreaterThan(0);
+
+      dispatchSpy.mockRestore();
+      document.body.removeChild(video);
     });
   });
 });

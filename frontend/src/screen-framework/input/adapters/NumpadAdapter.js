@@ -40,6 +40,11 @@ export class NumpadAdapter {
 
       const result = translateAction(entry.function, entry.params);
       if (result) {
+        // Attach parsed secondary to playback actions for idle fallback
+        if (entry.secondary && result.action === 'media:playback') {
+          const sec = translateSecondary(entry.secondary);
+          if (sec) result.payload.secondary = sec;
+        }
         logger().debug('numpad.key', { key: event.key, action: result.action });
         this.actionBus.emit(result.action, result.payload);
         return;
