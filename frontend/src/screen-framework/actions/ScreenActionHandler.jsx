@@ -4,6 +4,13 @@ import { useScreenOverlay } from '../overlays/ScreenOverlayProvider.jsx';
 import { DaylightAPI } from '../../lib/api.mjs';
 import MenuStack from '../../modules/Menu/MenuStack.jsx';
 import Player from '../../modules/Player/Player.jsx';
+import getLogger from '../../lib/logging/Logger.js';
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'ScreenActionHandler' });
+  return _logger;
+}
 
 /**
  * ScreenActionHandler - Bridges ActionBus events to the overlay system.
@@ -24,7 +31,7 @@ import Player from '../../modules/Player/Player.jsx';
  *
  * This is a renderless component (returns null).
  */
-export function ScreenActionHandler() {
+export function ScreenActionHandler({ actions = {} }) {
   const { showOverlay, dismissOverlay, hasOverlay } = useScreenOverlay();
   const shaderRef = useRef(null);
   const prevShaderOpacity = useRef(null);
@@ -79,9 +86,11 @@ export function ScreenActionHandler() {
       stop: 'Escape', clear: 'Escape',
     };
     const key = keyMapping[payload.command?.toLowerCase()];
-    if (key) {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key, code: key, bubbles: true }));
+    if (!key) {
+      logger().warn('playback.unknown-command', { command: payload.command });
+      return;
     }
+    window.dispatchEvent(new KeyboardEvent('keydown', { key, code: key, bubbles: true }));
   }, []);
 
   // --- Playback rate ---
@@ -101,7 +110,9 @@ export function ScreenActionHandler() {
       'mute_toggle': 'api/v1/home/vol/togglemute',
     };
     const endpoint = endpoints[payload.command] || 'api/v1/home/vol/cycle';
-    DaylightAPI(endpoint).catch(() => {});
+    DaylightAPI(endpoint).catch((err) => {
+      logger().warn('volume.api-error', { endpoint, error: err.message });
+    });
   }, []);
 
   // --- Shader (dimming) ---
@@ -133,24 +144,56 @@ export function ScreenActionHandler() {
         el.style.opacity = String(prevShaderOpacity.current ?? 0);
         el.style.pointerEvents = 'none';
         prevShaderOpacity.current = null;
-        el.removeEventListener('click', wake);
       };
-      el.addEventListener('click', wake);
+      el.addEventListener('click', wake, { once: true });
     }
   }, [getShader]);
 
   // --- Escape ---
   const handleEscape = useCallback(() => {
-    // If shader is active, clear it first
-    const el = shaderRef.current;
-    if (el && parseFloat(el.style.opacity) > 0) {
-      el.style.opacity = '0';
-      el.style.pointerEvents = 'none';
+    const shaderActive = shaderRef.current && parseFloat(shaderRef.current.style.opacity) > 0;
+
+    // Configurable fallback chain from YAML actions.escape
+    if (Array.isArray(actions.escape)) {
+      for (const step of actions.escape) {
+        if (step.when === 'shader_active' && shaderActive) {
+          logger().debug('escape.chain', { matched: step.when, action: step.do });
+          if (step.do === 'clear_shader') {
+            shaderRef.current.style.opacity = '0';
+            shaderRef.current.style.pointerEvents = 'none';
+            prevShaderOpacity.current = null;
+          }
+          return;
+        }
+        if (step.when === 'overlay_active' && hasOverlay) {
+          logger().debug('escape.chain', { matched: step.when, action: step.do });
+          if (step.do === 'dismiss_overlay') {
+            dismissOverlay();
+          }
+          return;
+        }
+        if (step.when === 'idle') {
+          logger().debug('escape.chain', { matched: step.when, action: step.do });
+          if (step.do === 'reload') {
+            window.location.reload();
+          }
+          return;
+        }
+      }
+      return;
+    }
+
+    // Default behavior (no actions.escape configured)
+    if (shaderActive) {
+      logger().debug('escape.default', { hadShader: true, dismissed: true });
+      shaderRef.current.style.opacity = '0';
+      shaderRef.current.style.pointerEvents = 'none';
       prevShaderOpacity.current = null;
       return;
     }
+    logger().debug('escape.default', { hadShader: false, dismissed: hasOverlay });
     dismissOverlay();
-  }, [dismissOverlay]);
+  }, [dismissOverlay, hasOverlay, actions]);
 
   useScreenAction('menu:open', handleMenuOpen);
   useScreenAction('media:play', handleMediaPlay);

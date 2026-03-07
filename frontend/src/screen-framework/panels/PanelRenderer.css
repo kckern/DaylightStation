@@ -31,7 +31,7 @@
   color: var(--screen-font-color, inherit);
 }
 
-/* Widget — inner component wrapper */
+/* Widget — inner component wrapper with panel chrome */
 .screen-widget {
   flex: 1;
   min-width: 0;
@@ -40,6 +40,15 @@
   overflow-x: hidden;
   display: flex;
   flex-direction: column;
+  background: var(--screen-panel-bg, transparent);
+  border-radius: var(--screen-panel-radius, 0);
+  box-shadow: var(--screen-panel-shadow, none);
+  padding: var(--screen-panel-padding, 0);
+  border: var(--screen-panel-border, none);
+  backdrop-filter: var(--screen-panel-blur, none);
+  -webkit-backdrop-filter: var(--screen-panel-blur, none);
+  font-family: var(--screen-font-family, inherit);
+  color: var(--screen-font-color, inherit);
 }
 
 .screen-widget::-webkit-scrollbar { width: 6px; }

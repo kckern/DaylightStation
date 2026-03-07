@@ -126,7 +126,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
           ...themeStyle,
         }}>
           <ScreenOverlayProvider>
-            <ScreenActionHandler />
+            <ScreenActionHandler actions={config.actions} />
             <ScreenSubscriptionHandler subscriptions={config.subscriptions} />
             <ScreenProvider config={config.layout}>
               <PanelRenderer />
