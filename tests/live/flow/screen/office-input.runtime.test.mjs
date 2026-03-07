@@ -29,39 +29,39 @@ test.describe('Office Screen Input Parity', () => {
     await expect(page.locator('.screen-overlay--fullscreen')).toBeVisible();
   });
 
-  test('pressing k again while menu is open triggers item selection', async ({ page }) => {
+  test('pressing k again while menu is open advances selection (does not select)', async ({ page }) => {
     // Open menu
     await page.keyboard.press('k');
     await page.waitForSelector('.screen-overlay--fullscreen', { timeout: 5000 });
+    await page.waitForTimeout(500);
 
-    // Snapshot the current menu state
-    const stateBefore = await page.evaluate(() => {
+    // Get the initially selected index
+    const indexBefore = await page.evaluate(() => {
       const items = [...document.querySelectorAll('.menu-item, .menu-row')];
-      return {
-        count: items.length,
-        labels: items.slice(0, 5).map(el => el.textContent.trim()),
-      };
+      return items.findIndex(el =>
+        el.classList.contains('selected') ||
+        el.classList.contains('menu-item--selected') ||
+        el.getAttribute('data-selected') === 'true' ||
+        el.classList.contains('active')
+      );
     });
 
-    // Press k again — duplicate:'navigate' dispatches Enter, Menu.jsx calls onSelect
+    // Press k again — with duplicate:'navigate', dispatches ArrowDown to advance
     await page.keyboard.press('k');
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(300);
 
-    // After selection, state should change (navigated into submenu, or player opened)
-    const stateAfter = await page.evaluate(() => {
+    // Selection should have moved down by 1
+    const indexAfter = await page.evaluate(() => {
       const items = [...document.querySelectorAll('.menu-item, .menu-row')];
-      const hasPlayer = !!document.querySelector('.player-container, video, audio');
-      return {
-        count: items.length,
-        labels: items.slice(0, 5).map(el => el.textContent.trim()),
-        hasPlayer,
-      };
+      return items.findIndex(el =>
+        el.classList.contains('selected') ||
+        el.classList.contains('menu-item--selected') ||
+        el.getAttribute('data-selected') === 'true' ||
+        el.classList.contains('active')
+      );
     });
 
-    const changed = stateAfter.hasPlayer
-      || stateAfter.count !== stateBefore.count
-      || JSON.stringify(stateAfter.labels) !== JSON.stringify(stateBefore.labels);
-
-    expect(changed).toBe(true);
+    // The selected index should have advanced (wraps around if at end)
+    expect(indexAfter).not.toBe(indexBefore);
   });
 });

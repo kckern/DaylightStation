@@ -62,9 +62,10 @@ export function ScreenActionHandler({ actions = {} }) {
     const duplicateMode = actions?.menu?.duplicate;
     if (duplicateMode && currentMenuRef.current === payload.menuId) {
       if (duplicateMode === 'navigate') {
-        // Dispatch synthetic keydown so Menu.jsx treats it as item selection
+        // Dispatch synthetic ArrowDown so Menu.jsx advances the selected item
+        // (actual selection happens via the progress timeout auto-select)
         logger().debug('menu.duplicate-navigate', { menuId: payload.menuId });
-        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
       } else {
         logger().debug('menu.duplicate-ignored', { menuId: payload.menuId });
       }
