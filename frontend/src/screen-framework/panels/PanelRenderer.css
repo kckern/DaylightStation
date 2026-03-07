@@ -25,19 +25,21 @@
   box-shadow: var(--screen-panel-shadow, none);
   padding: var(--screen-panel-padding, 0);
   border: var(--screen-panel-border, none);
-  backdrop-filter: var(--screen-panel-blur, none);
-  -webkit-backdrop-filter: var(--screen-panel-blur, none);
   font-family: var(--screen-font-family, inherit);
   color: var(--screen-font-color, inherit);
 }
 
+/* Opt-in blur: set --screen-panel-blur in theme to enable */
+.screen-panel[data-blur] {
+  backdrop-filter: var(--screen-panel-blur, none);
+  -webkit-backdrop-filter: var(--screen-panel-blur, none);
+}
+
 /* Widget — inner component wrapper with panel chrome */
 .screen-widget {
-  flex: 1;
   min-width: 0;
   min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   background: var(--screen-panel-bg, transparent);
@@ -45,8 +47,6 @@
   box-shadow: var(--screen-panel-shadow, none);
   padding: var(--screen-panel-padding, 0);
   border: var(--screen-panel-border, none);
-  backdrop-filter: var(--screen-panel-blur, none);
-  -webkit-backdrop-filter: var(--screen-panel-blur, none);
   font-family: var(--screen-font-family, inherit);
   color: var(--screen-font-color, inherit);
 }
