@@ -164,11 +164,11 @@ export class SelectDateForAdjustment {
       const name = item.name || item.label || item.item || 'Item';
       const truncatedName = name.length > 12 ? name.substring(0, 10) + '…' : name;
       const label = `${emoji} ${truncatedName}`;
-      const itemId = item.id || item.uuid;
+      const entryId = item.id || item.uuid;
 
       currentRow.push({
         text: label,
-        callback_data: this.#encodeCallback('i', { id: itemId }),
+        callback_data: this.#encodeCallback('i', { id: entryId }),
       });
 
       if (currentRow.length === 3) {
