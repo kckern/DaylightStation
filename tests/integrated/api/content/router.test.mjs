@@ -112,7 +112,7 @@ describe('Content Router API', () => {
         });
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveProperty('itemId');
+      expect(res.body).toHaveProperty('contentId');
       expect(res.body).toHaveProperty('playhead');
     });
 
