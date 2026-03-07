@@ -1,21 +1,22 @@
-# TV media screen
+# TV Media Browser Screen
+# Placeholder - the main TV app lives at /tv via TVApp.jsx
+# This config is for future screen-framework migration
+
 screen: tv
-route: /tv
+route: /screen/tv
 profile: media-browser
 input:
   type: remote
   keyboard_id: tvremote
 
 layout:
-  type: grid
-  columns: 1
-  rows: 1
-  gap: 0
-
-widgets:
-  menu:
-    row: 1
-    col: 1
-  player:
-    row: 1
-    col: 1
+  direction: column
+  children:
+    - widget: menu
+      grow: 1
+      props:
+        source: /api/v1/item/folder/TVApp/recent_on_top
+        style: tv-menu
+        showImages: true
+    - widget: player
+      grow: 1
