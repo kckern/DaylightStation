@@ -45,6 +45,8 @@ export class NumpadAdapter {
           const sec = translateSecondary(entry.secondary);
           if (sec) result.payload.secondary = sec;
         }
+        event.preventDefault();
+        event.stopImmediatePropagation();
         logger().debug('numpad.key', { key: event.key, action: result.action });
         this.actionBus.emit(result.action, result.payload);
         return;
@@ -53,6 +55,8 @@ export class NumpadAdapter {
       if (entry.secondary) {
         const fallback = translateSecondary(entry.secondary);
         if (fallback) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
           logger().debug('numpad.key', { key: event.key, action: fallback.action, source: 'secondary' });
           this.actionBus.emit(fallback.action, fallback.payload);
         }

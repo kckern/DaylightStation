@@ -317,7 +317,7 @@ describe('ScreenActionHandler', () => {
       expect(getByTestId('menu-stack').dataset.menu).toBe('tv');
     });
 
-    it('dispatches synthetic Enter keydown when duplicate is "navigate" and same menu is open', () => {
+    it('dispatches synthetic ArrowDown keydown when duplicate is "navigate" and same menu is open', () => {
       const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
 
       render(
@@ -331,13 +331,13 @@ describe('ScreenActionHandler', () => {
       // Clear spy calls from first open
       dispatchSpy.mockClear();
 
-      // Second emit of same menu should dispatch Enter keydown
+      // Second emit of same menu should dispatch ArrowDown to advance selection
       act(() => getActionBus().emit('menu:open', { menuId: 'education' }));
 
-      const enterCalls = dispatchSpy.mock.calls.filter(
-        ([e]) => e instanceof KeyboardEvent && e.key === 'Enter'
+      const arrowCalls = dispatchSpy.mock.calls.filter(
+        ([e]) => e instanceof KeyboardEvent && e.key === 'ArrowDown'
       );
-      expect(enterCalls).toHaveLength(1);
+      expect(arrowCalls).toHaveLength(1);
 
       dispatchSpy.mockRestore();
     });
