@@ -116,7 +116,7 @@ Update watch progress.
 **Response:**
 ```json
 {
-  "itemId": "plex:12345",
+  "contentId": "plex:12345",
   "playhead": 3600,
   "duration": 7200,
   "percent": 50,
