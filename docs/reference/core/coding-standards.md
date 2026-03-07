@@ -520,6 +520,21 @@ export const MessageType = Object.freeze({
 |--------------|---------|---------|
 | Underscore private | `_privateMethod()` | `#privateMethod()` |
 | Generic names | `data`, `item`, `thing` | Domain terms: `session`, `entry` |
+| Generic `itemId` | `itemId` for any identifier | Domain-specific: see table below |
+
+### Domain Identifiers
+
+Use domain-specific names for identifiers — never the generic `itemId`.
+
+| Domain | Identifier Name | Format | Example |
+|--------|----------------|--------|---------|
+| Content/Media | `contentId` | `source:localId` | `plex:12345` |
+| Feed | `feedItemId` | `source:localId` | `reddit:abc123` |
+| Nutrition | `entryId` | UUID or shortId | `550e8400-...` |
+| Gratitude | `optionId` | UUID | `a1b2c3d4-...` |
+| Adapter-native | `itemId` (acceptable) | varies | Plex ratingKey, ABS ID |
+
+The `ItemId` value object (in `2_domains/content`) parses compound `source:localId` strings. Its class name stays `ItemId` (internal DDD convention).
 | Verb-less functions | `session()` | `getSession()`, `createSession()` |
 | Abbreviated names | `sess`, `cfg`, `msg` | `session`, `config`, `message` |
 
