@@ -32,7 +32,10 @@ export class NumpadAdapter {
 
     this.handler = (event) => {
       if (!this.keymap) return;
-      const entry = this.keymap[event.key];
+      // Try event.key first ("4"), then last char of event.code ("Digit4" → "4")
+      const entry = this.keymap[event.key]
+        || this.keymap[event.code?.replace(/^(Digit|Numpad)/, '')]
+        || null;
       if (!entry) return;
 
       const result = translateAction(entry.function, entry.params);
