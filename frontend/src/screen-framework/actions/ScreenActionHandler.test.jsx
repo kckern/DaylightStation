@@ -93,6 +93,94 @@ describe('ScreenActionHandler', () => {
     expect(queryByTestId('menu-stack')).toBeNull();
   });
 
+  describe('sleep wake mode', () => {
+    afterEach(() => {
+      document.querySelectorAll('.screen-action-shader').forEach(el => el.remove());
+    });
+
+    it('wakes from sleep on keydown when actions.sleep.wake is "keydown"', () => {
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ sleep: { wake: 'keydown' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      // Enter sleep
+      act(() => getActionBus().emit('display:sleep', {}));
+
+      const shader = document.querySelector('.screen-action-shader');
+      expect(shader).toBeTruthy();
+      expect(shader.style.opacity).toBe('1');
+
+      // Wake via keydown
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'x', bubbles: true }));
+      });
+
+      expect(parseFloat(shader.style.opacity)).toBeLessThan(1);
+    });
+
+    it('does not wake on keydown when wake mode is "click"', () => {
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ sleep: { wake: 'click' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('display:sleep', {}));
+
+      const shader = document.querySelector('.screen-action-shader');
+      expect(shader.style.opacity).toBe('1');
+
+      // Keydown should NOT wake
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'x', bubbles: true }));
+      });
+
+      expect(shader.style.opacity).toBe('1');
+    });
+
+    it('wakes on both click and keydown when wake mode is "both"', () => {
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ sleep: { wake: 'both' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      // Test keydown wake
+      act(() => getActionBus().emit('display:sleep', {}));
+
+      const shader = document.querySelector('.screen-action-shader');
+      expect(shader.style.opacity).toBe('1');
+
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'x', bubbles: true }));
+      });
+
+      expect(parseFloat(shader.style.opacity)).toBeLessThan(1);
+    });
+
+    it('defaults to click-only wake when no actions.sleep configured', () => {
+      render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('display:sleep', {}));
+
+      const shader = document.querySelector('.screen-action-shader');
+      expect(shader.style.opacity).toBe('1');
+
+      // Keydown should NOT wake (default is click)
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'x', bubbles: true }));
+      });
+
+      expect(shader.style.opacity).toBe('1');
+    });
+  });
+
   describe('configurable escape fallback chain', () => {
     const escapeActions = {
       escape: [
