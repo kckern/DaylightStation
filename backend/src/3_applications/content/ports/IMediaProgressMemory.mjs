@@ -7,11 +7,11 @@
 export class IMediaProgressMemory {
   /**
    * Get media progress for an item
-   * @param {string} itemId - Item identifier
+   * @param {string} contentId - Content identifier
    * @param {string} storagePath - Storage path
    * @returns {Promise<import('#domains/content/entities/MediaProgress.mjs').MediaProgress|null>}
    */
-  async get(itemId, storagePath) {
+  async get(contentId, storagePath) {
     throw new Error('IMediaProgressMemory.get must be implemented');
   }
 
@@ -51,7 +51,7 @@ export class IMediaProgressMemory {
  */
 export function validateMediaProgressMemory(store) {
   if (typeof store.get !== 'function') {
-    throw new Error('MediaProgressMemory must implement get(itemId, storagePath): Promise<MediaProgress|null>');
+    throw new Error('MediaProgressMemory must implement get(contentId, storagePath): Promise<MediaProgress|null>');
   }
   if (typeof store.set !== 'function') {
     throw new Error('MediaProgressMemory must implement set(mediaProgress, storagePath): Promise<void>');

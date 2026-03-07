@@ -78,14 +78,14 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
    * CANONICAL FORMAT (after migrate-watch-history.mjs P0 migration):
    *   playhead, duration, percent, playCount, lastPlayed, watchTime
    *
-   * @param {string} itemId
+   * @param {string} contentId
    * @param {Object} data - Raw persisted data
    * @returns {MediaProgress}
    * @private
    */
-  _toDomainEntity(itemId, data) {
+  _toDomainEntity(contentId, data) {
     return new MediaProgress({
-      itemId,
+      contentId,
       playhead: data.playhead ?? 0,
       duration: data.duration ?? 0,
       percent: data.percent ?? null,
@@ -98,15 +98,15 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
 
   /**
    * Get media progress for an item
-   * @param {string} itemId
+   * @param {string} contentId
    * @param {string} storagePath
    * @returns {Promise<MediaProgress|null>}
    */
-  async get(itemId, storagePath) {
+  async get(contentId, storagePath) {
     const data = this._readFile(storagePath);
-    const stateData = data[itemId];
+    const stateData = data[contentId];
     if (!stateData) return null;
-    return this._toDomainEntity(itemId, stateData);
+    return this._toDomainEntity(contentId, stateData);
   }
 
   /**
@@ -117,7 +117,7 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
    */
   async set(state, storagePath) {
     const data = this._readFile(storagePath);
-    const { itemId, ...rest } = serializeMediaProgress(state);
+    const { contentId, ...rest } = serializeMediaProgress(state);
 
     // Validate schema before writing
     const validation = validateCanonicalSchema(rest);
@@ -125,7 +125,7 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
       console.warn(
         '[YamlMediaProgressMemory] Attempting to write data with legacy fields',
         {
-          itemId,
+          contentId,
           storagePath,
           legacyFields: validation.legacyFields,
           hint: 'Use canonical field names: ' +
@@ -134,7 +134,7 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
       );
     }
 
-    data[itemId] = rest;
+    data[contentId] = rest;
     this._writeFile(storagePath, data);
   }
 
@@ -145,8 +145,8 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
    */
   async getAll(storagePath) {
     const data = this._readFile(storagePath);
-    return Object.entries(data).map(([itemId, stateData]) =>
-      this._toDomainEntity(itemId, stateData)
+    return Object.entries(data).map(([contentId, stateData]) =>
+      this._toDomainEntity(contentId, stateData)
     );
   }
 
@@ -182,8 +182,8 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
       const storagePath = `${source}/${libraryFile}`;
       const data = this._readFile(storagePath);
 
-      for (const [itemId, stateData] of Object.entries(data)) {
-        allProgress.push(this._toDomainEntity(itemId, stateData));
+      for (const [contentId, stateData] of Object.entries(data)) {
+        allProgress.push(this._toDomainEntity(contentId, stateData));
       }
     }
 

@@ -49,11 +49,11 @@ export const LEGACY_TO_CANONICAL = Object.freeze({
  * Serialize a MediaProgress domain entity to a plain object for persistence.
  * This is the adapter-layer responsibility (not domain entity's concern).
  * @param {import('#domains/content/entities/MediaProgress.mjs').MediaProgress} entity
- * @returns {{ itemId: string, playhead: number, duration: number, percent: number, playCount: number, lastPlayed: string|null, watchTime: number, bookmark?: Object }}
+ * @returns {{ contentId: string, playhead: number, duration: number, percent: number, playCount: number, lastPlayed: string|null, watchTime: number, bookmark?: Object }}
  */
 export function serializeMediaProgress(entity) {
   const json = {
-    itemId: entity.itemId,
+    contentId: entity.contentId,
     playhead: entity.playhead,
     duration: entity.duration,
     percent: entity.percent,
