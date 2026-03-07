@@ -40,9 +40,9 @@ function ScreenCommandHandler({ wsConfig }) {
  * This is a renderless component (returns null).
  */
 function ScreenSubscriptionHandler({ subscriptions }) {
-  const { showOverlay, dismissOverlay } = useScreenOverlay();
+  const { showOverlay, dismissOverlay, hasOverlay } = useScreenOverlay();
   const registry = useMemo(() => getWidgetRegistry(), []);
-  useScreenSubscriptions(subscriptions, showOverlay, dismissOverlay, registry);
+  useScreenSubscriptions(subscriptions, showOverlay, dismissOverlay, registry, { hasOverlay });
   return null;
 }
 
