@@ -488,7 +488,7 @@ function GratitudeApp({
       const newSelection = {
         id: crypto.randomUUID(),
         text: item.text,
-        itemId: item.id,
+        optionId: item.id,
         userId: currentUser?.id,
         userName: getUserLabel(currentUser),
         datetime: new Date().toISOString(),
@@ -518,7 +518,7 @@ function GratitudeApp({
           setSelected(prev => ({
             ...prev,
             [category]: prev[category].map(s => 
-              s.itemId === item.id ? { ...s, id: response.selection.id } : s
+              s.optionId === item.id ? { ...s, id: response.selection.id } : s
             )
           }));
         }
@@ -587,7 +587,7 @@ function GratitudeApp({
       
       // Add the item back to the top of the queue
       const itemToReturn = {
-        id: selection.itemId || selection.id,
+        id: selection.optionId || selection.id,
         text: selection.text,
       };
       
@@ -1020,7 +1020,7 @@ export default function Gratitude({ clear }) {
           result[cat] = (selections?.[cat] || []).map(s => ({
             id: s.id,
             text: s.item?.text || s.text,
-            itemId: s.item?.id || s.itemId,
+            optionId: s.item?.id || s.optionId,
             userId: s.userId,
             userName: s.userName,
             datetime: s.datetime,
