@@ -129,6 +129,8 @@ export function ScreenActionHandler({ actions = {} }) {
   const handleSleep = useCallback(() => {
     const el = getShader();
     const current = parseFloat(el.style.opacity) || 0;
+    const wakeMode = actions?.sleep?.wake || 'click';
+
     if (current >= 0.99) {
       // Wake up — restore previous opacity
       el.style.opacity = String(prevShaderOpacity.current ?? 0);
@@ -139,15 +141,30 @@ export function ScreenActionHandler({ actions = {} }) {
       prevShaderOpacity.current = current;
       el.style.opacity = '1';
       el.style.pointerEvents = 'auto';
-      // Wake on any click on the shader
-      const wake = () => {
+      logger().debug('sleep.enter', { wakeMode });
+
+      const wake = (e) => {
+        if (e) { e.stopPropagation(); e.preventDefault(); }
         el.style.opacity = String(prevShaderOpacity.current ?? 0);
         el.style.pointerEvents = 'none';
         prevShaderOpacity.current = null;
+        logger().debug('sleep.wake', { wakeMode });
+        if (wakeMode === 'click' || wakeMode === 'both') {
+          el.removeEventListener('click', wake);
+        }
+        if (wakeMode === 'keydown' || wakeMode === 'both') {
+          window.removeEventListener('keydown', wake, true);
+        }
       };
-      el.addEventListener('click', wake, { once: true });
+
+      if (wakeMode === 'click' || wakeMode === 'both') {
+        el.addEventListener('click', wake);
+      }
+      if (wakeMode === 'keydown' || wakeMode === 'both') {
+        window.addEventListener('keydown', wake, true);
+      }
     }
-  }, [getShader]);
+  }, [getShader, actions]);
 
   // --- Escape ---
   const handleEscape = useCallback(() => {
