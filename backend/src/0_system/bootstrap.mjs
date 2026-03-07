@@ -3108,10 +3108,9 @@ export function createHarvesterServices(config) {
   // Productivity Harvesters
   // ==========================================================================
 
-  // Todoist - requires todoistApi or httpClient
-  if (todoistApi || httpClient) {
+  // Todoist - requires httpClient (API v1, no SDK needed)
+  if (httpClient) {
     registerHarvester('todoist', () => new TodoistHarvester({
-      todoistApi,
       httpClient,
       lifelogStore,
       currentStore: effectiveCurrentStore,
