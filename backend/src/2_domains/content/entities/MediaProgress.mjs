@@ -4,7 +4,7 @@ import { ValidationError } from '../../core/errors/index.mjs';
 
 /**
  * @typedef {Object} MediaProgressProps
- * @property {string} itemId - Compound ID of the item
+ * @property {string} contentId - Compound ID of the item
  * @property {number} playhead - Current position in seconds
  * @property {number} duration - Total duration in seconds
  * @property {number} [playCount=0] - Number of times started
@@ -22,9 +22,9 @@ export class MediaProgress {
    * @param {MediaProgressProps} props
    */
   constructor(props) {
-    if (!props.itemId) throw new ValidationError('MediaProgress requires itemId', { code: 'MISSING_ITEM_ID', field: 'itemId' });
+    if (!props.contentId) throw new ValidationError('MediaProgress requires contentId', { code: 'MISSING_CONTENT_ID', field: 'contentId' });
 
-    this.itemId = props.itemId;
+    this.contentId = props.contentId;
     this.playhead = props.playhead ?? 0;
     this.duration = props.duration ?? 0;
     this.playCount = props.playCount ?? 0;
