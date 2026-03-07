@@ -50,22 +50,22 @@ export class ProgressSyncService {
    * 6. If remote won: update DS media_memory, return updated
    * 7. If local won: buffer debounced remote write-back, return local
    *
-   * @param {string} itemId
+   * @param {string} contentId
    * @param {string} storagePath
    * @param {string} localId - Remote server-native item ID
    * @returns {Promise<MediaProgress|null>}
    */
-  async reconcileOnPlay(itemId, storagePath, localId) {
+  async reconcileOnPlay(contentId, storagePath, localId) {
     // 1. Parallel fetch
     const [local, remote] = await Promise.all([
-      this.#mediaProgressMemory.get(itemId, storagePath),
+      this.#mediaProgressMemory.get(contentId, storagePath),
       this.#fetchRemoteProgress(localId),
     ]);
 
     // 2. Session-start bookmark
     if (local && local.playhead > 0) {
       const bookmarked = new MediaProgress({
-        itemId: local.itemId,
+        contentId: local.contentId,
         playhead: local.playhead,
         duration: local.duration,
         playCount: local.playCount,
@@ -92,7 +92,7 @@ export class ProgressSyncService {
     }
 
     // 5. Initialize skeptical tracking (including storagePath)
-    this._skepticalMap.set(itemId, {
+    this._skepticalMap.set(contentId, {
       lastCommittedPlayhead: resolution.playhead,
       watchTimeAccumulated: 0,
       storagePath,
@@ -101,7 +101,7 @@ export class ProgressSyncService {
     // 6. Remote won — update local store
     if (resolution.source === 'remote') {
       const updated = new MediaProgress({
-        itemId,
+        contentId,
         playhead: resolution.playhead,
         duration: resolution.duration,
         lastPlayed: new Date().toISOString(),
@@ -113,7 +113,7 @@ export class ProgressSyncService {
 
     // 7. Local won — buffer remote write-back
     if (local) {
-      this.#bufferRemoteWrite(itemId, localId, {
+      this.#bufferRemoteWrite(contentId, localId, {
         currentTime: local.playhead,
         isFinished: local.percent >= 90,
       });
@@ -134,22 +134,22 @@ export class ProgressSyncService {
    * 6. If not committable: skip
    * 7. If committable: update tracking, buffer remote write
    *
-   * @param {string} itemId
+   * @param {string} contentId
    * @param {string} localId
    * @param {{ playhead: number, duration: number, percent: number, watchTime: number }} progressData
    */
-  async onProgressUpdate(itemId, localId, progressData) {
+  async onProgressUpdate(contentId, localId, progressData) {
     const { playhead, duration, percent, watchTime } = progressData;
 
     // 1. Get or create tracking entry
-    if (!this._skepticalMap.has(itemId)) {
-      this._skepticalMap.set(itemId, {
+    if (!this._skepticalMap.has(contentId)) {
+      this._skepticalMap.set(contentId, {
         lastCommittedPlayhead: 0,
         watchTimeAccumulated: 0,
         storagePath: null,
       });
     }
-    const tracking = this._skepticalMap.get(itemId);
+    const tracking = this._skepticalMap.get(contentId);
 
     // 2. Calculate jump distance
     const jumpDistance = Math.abs(playhead - tracking.lastCommittedPlayhead);
@@ -161,7 +161,7 @@ export class ProgressSyncService {
         Math.abs(playhead - tracking.skepticalTarget) > LARGE_JUMP_THRESHOLD;
 
       if (isNewJump) {
-        this.#savePreJumpBookmark(itemId, tracking.lastCommittedPlayhead, duration, tracking.storagePath);
+        this.#savePreJumpBookmark(contentId, tracking.lastCommittedPlayhead, duration, tracking.storagePath);
         tracking.watchTimeAccumulated = 0;
         tracking.skepticalTarget = playhead;
       }
@@ -187,7 +187,7 @@ export class ProgressSyncService {
     tracking.watchTimeAccumulated = 0;
     tracking.skepticalTarget = null;
 
-    this.#bufferRemoteWrite(itemId, localId, {
+    this.#bufferRemoteWrite(contentId, localId, {
       currentTime: playhead,
       isFinished: percent >= 90,
     });
@@ -210,16 +210,16 @@ export class ProgressSyncService {
 
     if (entries.length === 0) return;
 
-    const promises = entries.map(([itemId, entry]) => {
+    const promises = entries.map(([contentId, entry]) => {
       const write = this.#remoteProgressProvider.updateProgress(entry.localId, entry.latestProgress);
 
       // Apply timeout
       const timeout = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(`Flush timeout for ${itemId}`)), timeoutMs),
+        setTimeout(() => reject(new Error(`Flush timeout for ${contentId}`)), timeoutMs),
       );
 
       return Promise.race([write, timeout]).catch((err) => {
-        this.#logger.error(`[ProgressSync] flush error for ${itemId}:`, err.message);
+        this.#logger.error(`[ProgressSync] flush error for ${contentId}:`, err.message);
       });
     });
 
@@ -255,27 +255,27 @@ export class ProgressSyncService {
 
   /**
    * Manages debounceMap with 30s timer for buffered remote writes.
-   * @param {string} itemId
+   * @param {string} contentId
    * @param {string} localId
    * @param {Object} progress - { currentTime, isFinished }
    */
-  #bufferRemoteWrite(itemId, localId, progress) {
+  #bufferRemoteWrite(contentId, localId, progress) {
     // Cancel existing timer if any
-    const existing = this._debounceMap.get(itemId);
+    const existing = this._debounceMap.get(contentId);
     if (existing) {
       clearTimeout(existing.timer);
     }
 
     const timer = setTimeout(async () => {
-      this._debounceMap.delete(itemId);
+      this._debounceMap.delete(contentId);
       try {
         await this.#remoteProgressProvider.updateProgress(localId, progress);
       } catch (err) {
-        this.#logger.error(`[ProgressSync] debounced write failed for ${itemId}:`, err.message);
+        this.#logger.error(`[ProgressSync] debounced write failed for ${contentId}:`, err.message);
       }
     }, DEBOUNCE_MS);
 
-    this._debounceMap.set(itemId, {
+    this._debounceMap.set(contentId, {
       timer,
       localId,
       latestProgress: progress,
@@ -284,18 +284,18 @@ export class ProgressSyncService {
 
   /**
    * Fire-and-forget bookmark save for pre-jump position.
-   * @param {string} itemId
+   * @param {string} contentId
    * @param {number} playhead
    * @param {number} duration
    * @param {string|null} storagePath
    */
-  #savePreJumpBookmark(itemId, playhead, duration, storagePath) {
+  #savePreJumpBookmark(contentId, playhead, duration, storagePath) {
     // Fire-and-forget: get current progress, add bookmark, save
-    this.#mediaProgressMemory.get(itemId, storagePath).then((existing) => {
+    this.#mediaProgressMemory.get(contentId, storagePath).then((existing) => {
       if (!existing) return;
 
       const bookmarked = new MediaProgress({
-        itemId: existing.itemId,
+        contentId: existing.contentId,
         playhead: existing.playhead,
         duration: existing.duration,
         playCount: existing.playCount,
@@ -309,7 +309,7 @@ export class ProgressSyncService {
       });
       return this.#mediaProgressMemory.set(bookmarked, storagePath);
     }).catch((err) => {
-      this.#logger.warn(`[ProgressSync] pre-jump bookmark save failed for ${itemId}:`, err.message);
+      this.#logger.warn(`[ProgressSync] pre-jump bookmark save failed for ${contentId}:`, err.message);
     });
   }
 }

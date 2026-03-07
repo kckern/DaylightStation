@@ -14,8 +14,8 @@ function createMockRemoteProgressProvider() {
 function createMockMediaProgressMemory() {
   const store = new Map();
   return {
-    get: jest.fn(async (itemId) => store.get(itemId) || null),
-    set: jest.fn(async (state, storagePath) => store.set(state.itemId, state)),
+    get: jest.fn(async (contentId) => store.get(contentId) || null),
+    set: jest.fn(async (state, storagePath) => store.set(state.contentId, state)),
     _store: store,
   };
 }
@@ -48,7 +48,7 @@ function createService(overrides = {}) {
 
 function makeLocalProgress(overrides = {}) {
   return new MediaProgress({
-    itemId: 'abs:book-1',
+    contentId: 'abs:book-1',
     playhead: 600,
     duration: 36000,
     playCount: 1,
@@ -94,7 +94,7 @@ describe('ProgressSyncService', () => {
       const result = await service.reconcileOnPlay('abs:book-1', 'plex/audiobooks', 'li_abc123');
 
       expect(result).toBeDefined();
-      expect(result.itemId).toBe('abs:book-1');
+      expect(result.contentId).toBe('abs:book-1');
       expect(result.playhead).toBe(600);
     });
 
