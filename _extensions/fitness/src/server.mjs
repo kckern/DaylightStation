@@ -259,13 +259,15 @@ async function startServer() {
     // Continue without BLE
   }
 
-  // Configure BLE HR users from environment
-  const bleHrUsers = process.env.BLE_HR_USERS;
-  if (bleHrUsers) {
-    const users = bleHrUsers.split(',').map(u => u.trim()).filter(Boolean);
-    bleManager.configureBleUsers(users);
-    // Auto-start HR scan if users configured
+  // Fetch BLE HR users from DaylightStation fitness config
+  try {
+    const protocol = DAYLIGHT_PORT == 443 ? 'https' : 'http';
+    const configUrl = `${protocol}://${DAYLIGHT_HOST}:${DAYLIGHT_PORT}/api/v1/fitness`;
+    const res = await fetch(configUrl);
+    const fitnessConfig = await res.json();
+    const users = fitnessConfig.ble_users || [];
     if (users.length > 0) {
+      bleManager.configureBleUsers(users);
       try {
         await bleManager.startHRScan();
         console.log('✅ BLE HR scan auto-started');
@@ -273,6 +275,8 @@ async function startServer() {
         console.error('❌ BLE HR auto-start failed:', error.message);
       }
     }
+  } catch (error) {
+    console.log('⚠️  Could not fetch fitness config for BLE HR users:', error.message);
   }
 
   // Connect to DaylightStation WebSocket

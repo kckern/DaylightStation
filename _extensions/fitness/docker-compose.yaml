@@ -26,7 +26,6 @@ services:
       - SERIAL_DEVICE=${SERIAL_DEVICE:-/dev/ttyUSB0}
       - TV_ON_COMMAND=${TV_ON_COMMAND:-01 30 41 30 41 30 43 02 43 32 30 33 44 36 30 30 30 31 03 73 0D}
       - TV_OFF_COMMAND=${TV_OFF_COMMAND:-01 30 41 30 41 30 43 02 43 32 30 33 44 36 30 30 30 34 03 76 0D}
-      - BLE_HR_USERS=${BLE_HR_USERS:-grannie}
     
     # Device access for ANT+ USB dongle, serial port, and Bluetooth
     devices:
