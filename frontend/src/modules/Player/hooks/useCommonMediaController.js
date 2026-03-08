@@ -4,6 +4,13 @@ import { getProgressPercent } from '../lib/helpers.js';
 import { useMediaKeyboardHandler } from '../../../lib/Player/useMediaKeyboardHandler.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
 
+// Lazy-init child logger for media controller diagnostics
+let _mcLogger;
+function mcLog() {
+  if (!_mcLogger) _mcLogger = getLogger().child({ component: 'media-controller' });
+  return _mcLogger;
+}
+
 const DEFAULT_STRATEGY_PIPELINE = [
   { name: 'nudge', maxAttempts: 2 },
   { name: 'seekback', maxAttempts: 1, options: { seconds: 5 } },
@@ -347,7 +354,14 @@ export function useCommonMediaController({
     } else {
       mediaEl.currentTime = clickPercent * duration;
     }
-  }, [duration, getMediaEl, segStart, segDuration]);
+    mcLog().info('playback.progress-click', {
+      mediaKey: assetId,
+      clickPercent: Math.round(clickPercent * 1000) / 10,
+      targetTime: mediaEl.currentTime,
+      duration,
+      segment: segment ? { start: segStart, end: segEnd } : null
+    });
+  }, [duration, getMediaEl, segStart, segDuration, assetId, segment, segStart, segEnd]);
 
   // Use centralized keyboard handler
   useMediaKeyboardHandler({
@@ -398,6 +412,7 @@ export function useCommonMediaController({
       // the pipeline escalates to seekback/reload instead of looping
       if (!inBuffer && buffered.length > 0) {
         if (DEBUG_MEDIA) console.log('[Stall Recovery] nudge: currentTime not in any buffered range, skipping', { t, ranges: buffered.length });
+        mcLog().debug('playback.recovery-strategy', { mediaKey: assetId, strategy: 'nudge', success: false, reason: 'outside-buffered-range', currentTime: t, bufferedRanges: buffered.length });
         return false;
       }
 
@@ -450,6 +465,7 @@ export function useCommonMediaController({
             mediaEl.removeEventListener('seeked', onSeeked);
             isRecoveringRef.current = false;
             lastSeekIntentRef.current = null;
+            mcLog().debug('playback.state-mutation', { dict: 'seekIntent', action: 'clear', mediaKey: assetId, reason: 'dash-reload-seeked-confirmed' });
             verifyRecoveryPosition(target);
             if (DEBUG_MEDIA) console.log('[Stall Recovery] reload (DASH): seeked confirmed, recovery complete', { currentTime: mediaEl.currentTime });
           };
@@ -492,6 +508,7 @@ export function useCommonMediaController({
               mediaEl.removeEventListener('seeked', onSeeked);
               isRecoveringRef.current = false;
               lastSeekIntentRef.current = null;
+              mcLog().debug('playback.state-mutation', { dict: 'seekIntent', action: 'clear', mediaKey: assetId, reason: 'dom-reload-seeked-confirmed' });
               verifyRecoveryPosition(target);
               if (DEBUG_MEDIA) console.log('[Stall Recovery] reload: seeked confirmed, recovery complete', { currentTime: mediaEl.currentTime });
             };
@@ -594,9 +611,11 @@ export function useCommonMediaController({
 
     // Clear the start-time guard so the remounted instance re-applies start time
     delete useCommonMediaController.__appliedStartByKey[assetId];
+    mcLog().debug('playback.state-mutation', { dict: 'appliedStartByKey', action: 'delete', mediaKey: assetId, reason: 'softReinit' });
 
     lastSeekIntentRef.current = targetTime;
     try { useCommonMediaController.__lastSeekByKey[assetId] = targetTime; } catch {}
+    mcLog().debug('playback.state-mutation', { dict: 'seekIntent', action: 'set', mediaKey: assetId, value: targetTime, reason: 'softReinit' });
 
     if (DEBUG_MEDIA) console.log('[Stall Recovery] softReinit: triggered', { targetTime, seekBackSeconds, hostDestroyed, mediaDestroyed });
 
@@ -616,6 +635,14 @@ export function useCommonMediaController({
       s.terminal = true;
       s.status = 'failed';
       s.lastError = s.lastError || 'terminal_exhausted';
+      mcLog().error('playback.recovery-terminal', {
+        mediaKey: assetId,
+        lastStrategy: s.lastStrategy,
+        totalAttempts: s.recoveryAttempt,
+        lastError: s.lastError,
+        currentTime: getMediaEl()?.currentTime,
+        duration: getMediaEl()?.duration
+      });
       publishStallSnapshot();
       if (terminalAction === 'autoClear') {
         try { onClear?.(); } catch (err) { console.warn('[Stall Recovery] autoClear failed', err); }
@@ -633,6 +660,7 @@ export function useCommonMediaController({
       const drift = Math.abs(actual - expectedTime);
       if (drift > toleranceSeconds) {
         if (DEBUG_MEDIA) console.log('[Stall Recovery] position watchdog: drift detected, correcting', { expected: expectedTime, actual, drift });
+        mcLog().warn('playback.position-watchdog', { mediaKey: assetId, status: 'drift-detected', expected: expectedTime, actual, drift, tolerance: toleranceSeconds, correcting: true });
         try {
           if (containerRef.current?.api?.seek) {
             containerRef.current.api.seek(expectedTime);
@@ -641,9 +669,11 @@ export function useCommonMediaController({
           }
         } catch (e) {
           if (DEBUG_MEDIA) console.log('[Stall Recovery] position watchdog: correction seek failed', e);
+          mcLog().error('playback.position-watchdog', { mediaKey: assetId, status: 'correction-failed', expected: expectedTime, actual, drift });
         }
       } else {
         if (DEBUG_MEDIA) console.log('[Stall Recovery] position watchdog: position OK', { expected: expectedTime, actual, drift });
+        mcLog().debug('playback.position-watchdog', { mediaKey: assetId, status: 'ok', expected: expectedTime, actual, drift });
       }
     }, checkDelay);
   }, [getMediaEl]);
@@ -704,6 +734,19 @@ export function useCommonMediaController({
     const success = method(step.options || {});
 
     s.strategyCounts[step.name] = (s.strategyCounts[step.name] || 0) + 1;
+
+    mcLog().warn('playback.recovery-strategy', {
+      mediaKey: assetId,
+      strategy: step.name,
+      attempt: s.strategyCounts[step.name],
+      manual,
+      success,
+      currentTime: getMediaEl()?.currentTime,
+      duration: getMediaEl()?.duration,
+      lastSeekIntent: lastSeekIntentRef.current,
+      totalAttempts: s.recoveryAttempt,
+      pipelineLength: strategySteps.length
+    });
 
     if (!manual) {
       s.recoveryAttempt = Math.min(s.recoveryAttempt + 1, strategySteps.length);
@@ -819,6 +862,14 @@ export function useCommonMediaController({
             // If duration is lost, skip to softReinit immediately — nudge/seekback can't help
             if (mediaEl && !Number.isFinite(mediaEl.duration)) {
               if (DEBUG_MEDIA) console.log('[Stall] hardTimer: duration lost, escalating to softReinit');
+              mcLog().error('playback.duration-lost', {
+                mediaKey: assetId,
+                currentTime: mediaEl.currentTime,
+                duration: mediaEl.duration,
+                lastSeekIntent: lastSeekIntentRef.current,
+                stallDurationMs: s.sinceTs ? Date.now() - s.sinceTs : null,
+                escalatingTo: 'softReinit'
+              });
               attemptRecovery({ strategyName: 'softReinit', manual: false });
               return;
             }
@@ -855,6 +906,15 @@ export function useCommonMediaController({
     if (wasStalled) {
   const mediaEl = getMediaEl();
   if (DEBUG_MEDIA) console.log('[Stall] Progress resumed; clearing stalled state', { currentTime: mediaEl?.currentTime, recoveryAttempt: s.recoveryAttempt, lastStrategy: s.lastStrategy });
+      mcLog().info('playback.recovery-resolved', {
+        mediaKey: assetId,
+        currentTime: mediaEl?.currentTime,
+        duration: mediaEl?.duration,
+        stallDurationMs: s.sinceTs ? Date.now() - s.sinceTs : null,
+        strategiesAttempted: s.recoveryAttempt,
+        lastStrategy: s.lastStrategy,
+        lastSeekIntent: lastSeekIntentRef.current
+      });
       s.isStalled = false;
       s.recoveryAttempt = 0;
       s.strategyCounts = Object.create(null);
@@ -996,6 +1056,7 @@ export function useCommonMediaController({
         // Mark that we've completed the initial load for this key
         isInitialLoadRef.current = false;
         try { useCommonMediaController.__appliedStartByKey[assetId] = true; } catch {}
+        mcLog().debug('playback.state-mutation', { dict: 'appliedStartByKey', action: 'set', mediaKey: assetId, reason: 'initial-load' });
         if (DEBUG_MEDIA) console.log('[StartTime] initial load applying start', { startTime, start, isVideo, duration });
       } else {
         if (DEBUG_MEDIA) console.log('[StartTime] treating as non-initial load', {
@@ -1033,8 +1094,26 @@ export function useCommonMediaController({
         startTime = snapshotTarget;
       }
       
+      // Structured diagnostic: log the full start time decision
+      mcLog().info('playback.start-time-decision', {
+        mediaKey: assetId,
+        requestedStart: start,
+        effectiveStart: startTime,
+        duration,
+        isEffectiveInitial,
+        isRecovering: isRecoveringRef.current,
+        hasAppliedForKey,
+        hasSnapshot: !!snapshot,
+        snapshotTarget,
+        isDash,
+        stickyUsed: startTime > 0 && !isEffectiveInitial && !snapshot,
+        lastSeekIntent: lastSeekIntentRef.current,
+        lastSeekByKey: useCommonMediaController.__lastSeekByKey[assetId] ?? null,
+        lastPosByKey: useCommonMediaController.__lastPosByKey[assetId] ?? null
+      });
+
       mediaEl.dataset.key = assetId;
-      
+
       if (Number.isFinite(startTime) && startTime > 0 && isDash) {
         // DASH resume: the backend appends ?offset=<seconds> to the stream URL
         // so Plex transcodes from the resume position. The DASH manifest's first
@@ -1057,6 +1136,13 @@ export function useCommonMediaController({
                 mediaEl.currentTime = startTime;
               }
             } catch (_) {}
+            mcLog().info('playback.start-time-applied', {
+              mediaKey: assetId,
+              method: 'dash-deferred',
+              intent: startTime,
+              actual: mediaEl.currentTime,
+              drift: Math.abs(mediaEl.currentTime - startTime)
+            });
             if (DEBUG_MEDIA) console.log('[StartTime] DASH: applied deferred seek after timeupdate', { startTime, currentTime: mediaEl.currentTime });
           };
           mediaEl.addEventListener('timeupdate', onTimeUpdate);
@@ -1064,6 +1150,13 @@ export function useCommonMediaController({
       } else if (Number.isFinite(startTime)) {
         try {
           mediaEl.currentTime = startTime;
+          mcLog().info('playback.start-time-applied', {
+            mediaKey: assetId,
+            method: 'direct',
+            intent: startTime,
+            actual: mediaEl.currentTime,
+            drift: Math.abs(mediaEl.currentTime - startTime)
+          });
           if (DEBUG_MEDIA) console.log('[StartTime] set currentTime on load', { startTime, recovering: isRecoveringRef.current });
         } catch (_) {}
       }
@@ -1128,6 +1221,7 @@ export function useCommonMediaController({
         stallStateRef.current.pendingSoftReinit = false;
         isRecoveringRef.current = false;
         lastSeekIntentRef.current = null;
+        mcLog().debug('playback.state-mutation', { dict: 'seekIntent', action: 'clear', mediaKey: assetId, reason: 'snapshot-cleanup' });
         verifyRecoveryPosition(snapshot.targetTime);
       }
     };
@@ -1138,11 +1232,30 @@ export function useCommonMediaController({
       if (mediaEl && Number.isFinite(mediaEl.currentTime)) {
         lastSeekIntentRef.current = mediaEl.currentTime;
         try { useCommonMediaController.__lastSeekByKey[assetId] = mediaEl.currentTime; } catch {}
+        mcLog().sampled('playback.seek', {
+          mediaKey: assetId,
+          phase: 'seeking',
+          intent: mediaEl.currentTime,
+          duration: mediaEl.duration,
+          source: mediaEl.__seekSource || 'programmatic'
+        }, { maxPerMinute: 30 });
+        delete mediaEl.__seekSource;
         if (DEBUG_MEDIA) console.log('[Seek] seeking event: intent captured', { intent: lastSeekIntentRef.current, duration: mediaEl.duration });
       }
       setIsSeeking(true);
     };
     const clearSeeking = () => {
+      const el = getMediaEl();
+      if (el) {
+        mcLog().sampled('playback.seek', {
+          mediaKey: assetId,
+          phase: 'seeked',
+          actual: el.currentTime,
+          intent: lastSeekIntentRef.current,
+          drift: lastSeekIntentRef.current != null ? Math.abs(el.currentTime - lastSeekIntentRef.current) : null,
+          duration: el.duration
+        }, { maxPerMinute: 30 });
+      }
       requestAnimationFrame(() => setIsSeeking(false));
     };
 
