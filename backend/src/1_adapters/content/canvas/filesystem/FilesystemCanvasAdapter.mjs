@@ -55,6 +55,25 @@ export class FilesystemCanvasAdapter {
     return items;
   }
 
+  getSearchCapabilities() {
+    return ['text'];
+  }
+
+  async search(query) {
+    const text = (query.text || query.query || '').toLowerCase().trim();
+    if (!text) return { items: [], total: 0 };
+
+    const take = query.take || 20;
+    const allItems = await this.list();
+    const matches = allItems.filter(item => {
+      const filename = (item.title || '').toLowerCase();
+      const category = (item.category || '').toLowerCase();
+      return filename.includes(text) || category.includes(text);
+    });
+
+    return { items: matches.slice(0, take), total: matches.length };
+  }
+
   async getItem(id) {
     let localPath = id.replace(/^canvas:/, '');
     let fullPath = `${this.#basePath}/${localPath}`;
