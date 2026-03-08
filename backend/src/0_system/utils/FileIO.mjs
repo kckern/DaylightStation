@@ -359,6 +359,21 @@ export function deleteYaml(basePath) {
 }
 
 /**
+ * Delete a directory and all its contents recursively
+ * @param {string} dirPath - Directory path
+ * @returns {boolean} True if directory was deleted, false if didn't exist
+ */
+export function deleteDir(dirPath) {
+  try {
+    if (!fs.existsSync(dirPath)) return false;
+    fs.rmSync(dirPath, { recursive: true, force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Write binary data to a file
  * @param {string} filePath - Full file path
  * @param {Buffer} buffer - Binary data
