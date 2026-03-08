@@ -3,7 +3,7 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
-import { findMediaFileByPrefix, fileExists } from '#system/utils/FileIO.mjs';
+import { findMediaFileByPrefix, fileExists, loadContainedYaml } from '#system/utils/FileIO.mjs';
 
 /**
  * MIME types for common media formats
@@ -77,13 +77,14 @@ function streamFile(fullPath, req, res, logger) {
  *
  * @param {Object} config
  * @param {string} config.singalongMediaPath - Base path for singalong media files
+ * @param {string} config.singalongDataPath - Base path for singalong data files (manifests)
  * @param {string} config.readalongAudioPath - Base path for readalong audio files
  * @param {string} config.readalongVideoPath - Base path for readalong video files
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createStreamRouter(config) {
-  const { singalongMediaPath, readalongAudioPath, readalongVideoPath, logger = console } = config;
+  const { singalongMediaPath, singalongDataPath, readalongAudioPath, readalongVideoPath, logger = console } = config;
   const router = express.Router();
 
   /**
@@ -96,9 +97,18 @@ export function createStreamRouter(config) {
    */
   router.get('/singalong/:collection/:id', asyncHandler(async (req, res) => {
     const { collection, id } = req.params;
-    const searchDirs = collection === 'hymn'
-      ? [path.join(singalongMediaPath, collection, '_ldsgc'), path.join(singalongMediaPath, collection)]
-      : [path.join(singalongMediaPath, collection)];
+    const collectionMediaDir = path.join(singalongMediaPath, collection);
+
+    // Read manifest for media subdirectory preference
+    let manifest = null;
+    if (singalongDataPath) {
+      try { manifest = loadContainedYaml(path.join(singalongDataPath, collection), 'manifest'); } catch { /* no manifest */ }
+    }
+    const subdirs = manifest?.mediaPreference?.subdirs;
+
+    const searchDirs = (subdirs && Array.isArray(subdirs) && subdirs.length > 0)
+      ? subdirs.map(s => s ? path.join(collectionMediaDir, s) : collectionMediaDir)
+      : [collectionMediaDir];
 
     // Find media file by prefix (handles 0002-the-spirit-of-god.mp3 format)
     // findMediaFileByPrefix returns full path or null

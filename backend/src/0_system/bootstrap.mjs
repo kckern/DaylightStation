@@ -771,6 +771,7 @@ export function createApiRouters(config) {
       local: createLocalRouter({ localMediaAdapter, mediaBasePath, cacheBasePath: cacheBasePath || path.join(dataPath, 'system/cache'), logger }),
       stream: createStreamRouter({
         singalongMediaPath: path.join(mediaBasePath, 'audio', 'singalong'),
+        singalongDataPath: config.singalong?.dataPath,
         readalongAudioPath: path.join(mediaBasePath, 'audio', 'readalong'),
         readalongVideoPath: path.join(mediaBasePath, 'video', 'readalong'),
         logger
