@@ -579,6 +579,20 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     return canonicalZones.includes(zoneId) ? zoneId : null;
   };
 
+  // Raw zone for sorting — matches the displayed card color (real-time HR zone)
+  // rather than the committed zone (hysteresis-delayed for governance stability).
+  const getRawZoneId = (device) => {
+    if (device.type !== 'heart_rate') return null;
+    const deviceKey = String(device.deviceId);
+    const participantEntry = participantByHrId.get(deviceKey) || participantsByDevice.get(deviceKey) || null;
+    const rawId = participantEntry?.rawZoneId;
+    if (rawId) {
+      const normalized = String(rawId).toLowerCase();
+      return canonicalZones.includes(normalized) ? normalized : null;
+    }
+    return getDeviceZoneId(device);
+  };
+
   const pickTextColor = (bg) => {
     if (!bg) return CONFIG.color.fallbackTextDark;
     const ctx = document.createElement ? document.createElement('canvas') : null;
@@ -622,10 +636,10 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     const rpmDevicesCopy = [...rpmDevices];
     const otherDevices = [...equipmentDevices];
 
-    // HR: Sort by zone rank, then by zone progress (not raw HR)
+    // HR: Sort by raw zone rank (matches displayed card color), then by zone progress
     hrDevices.sort((a, b) => {
-      const aZone = getDeviceZoneId(a);
-      const bZone = getDeviceZoneId(b);
+      const aZone = getRawZoneId(a);
+      const bZone = getRawZoneId(b);
       const aRank = aZone ? zoneRankMap[aZone] : -1;
       const bRank = bZone ? zoneRankMap[bZone] : -1;
       if (bRank !== aRank) return bRank - aRank;
