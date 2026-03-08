@@ -133,10 +133,24 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   const [sessionData, setSessionData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const { restore } = useScreen();
   const { onNavigate } = useFitnessScreen() || {};
   const posterRef = useRef(null);
   const [posterWidth, setPosterWidth] = useState(0);
+
+  const handleDelete = useCallback(async () => {
+    if (!sessionId || deleting) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/v1/fitness/sessions/${sessionId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`${res.status}`);
+      restore('right-area');
+    } catch (err) {
+      setDeleting(false);
+      setError(`Delete failed: ${err.message}`);
+    }
+  }, [sessionId, deleting, restore]);
 
   useLayoutEffect(() => {
     const el = posterRef.current;
@@ -328,6 +342,12 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
               onClick={() => restore('right-area')}
               title="Close"
             >&times;</button>
+            <button
+              className="session-detail__delete"
+              onClick={handleDelete}
+              disabled={deleting}
+              title="Delete session"
+            >{deleting ? '...' : '\u2715'}</button>
             {sessionId && (
               <code
                 className="session-detail__session-id"
@@ -344,6 +364,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
         ) : sessionData?.strava ? (
           <div className="session-detail__thumb session-detail__thumb--strava-stats">
             <button className="session-detail__close" onClick={() => restore('right-area')} title="Close">&times;</button>
+            <button className="session-detail__delete" onClick={handleDelete} disabled={deleting} title="Delete session">{deleting ? '...' : '\u2715'}</button>
             <div className="session-detail__strava-stats">
               {sessionData.strava.distance > 0 && (
                 <div className="session-detail__stat">
@@ -383,6 +404,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
         ) : (
           <div className="session-detail__thumb session-detail__thumb--placeholder">
             <button className="session-detail__close" onClick={() => restore('right-area')} title="Close">&times;</button>
+            <button className="session-detail__delete" onClick={handleDelete} disabled={deleting} title="Delete session">{deleting ? '...' : '\u2715'}</button>
           </div>
         )}
       </div>

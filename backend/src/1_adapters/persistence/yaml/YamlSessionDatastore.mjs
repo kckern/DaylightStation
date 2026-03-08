@@ -14,7 +14,8 @@ import {
   saveYaml,
   listYamlFiles,
   listDirsMatching,
-  deleteYaml
+  deleteYaml,
+  deleteDir
 } from '#system/utils/FileIO.mjs';
 import { ISessionDatastore } from '#apps/fitness/ports/ISessionDatastore.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
@@ -445,6 +446,9 @@ export class YamlSessionDatastore extends ISessionDatastore {
     if (!paths) return;
 
     deleteYaml(paths.sessionFilePath);
+    // Also remove the screenshots directory (one level up to get the session dir)
+    const sessionMediaDir = path.dirname(paths.screenshotsDir);
+    deleteDir(sessionMediaDir);
   }
 }
 

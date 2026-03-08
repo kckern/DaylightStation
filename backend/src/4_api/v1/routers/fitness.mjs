@@ -335,6 +335,29 @@ export function createFitnessRouter(config) {
   });
 
   /**
+   * DELETE /api/fitness/sessions/:sessionId - Delete a session and its media
+   */
+  router.delete('/sessions/:sessionId', async (req, res) => {
+    const { sessionId } = req.params;
+    const { household } = req.query;
+    if (!sessionId) {
+      return res.status(400).json({ error: 'sessionId is required' });
+    }
+    try {
+      const session = await sessionService.getSession(sessionId, household);
+      if (!session) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+      await sessionService.deleteSession(sessionId, household);
+      logger.info?.('fitness.sessions.deleted', { sessionId });
+      return res.json({ deleted: true, sessionId });
+    } catch (err) {
+      logger.error?.('fitness.sessions.delete.error', { sessionId, error: err?.message });
+      return res.status(500).json({ error: 'Failed to delete session' });
+    }
+  });
+
+  /**
    * GET /api/fitness/receipt/:sessionId - Get fitness receipt as PNG
    */
   router.get('/receipt/:sessionId', async (req, res) => {
