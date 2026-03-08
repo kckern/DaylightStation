@@ -59,11 +59,14 @@ export class FitnessSimulationController {
     // Get current usersConfig via getter (may change during session)
     const usersConfig = this.getUsersConfig?.() || {};
 
-    // First try to get devices from usersConfig.primary (configured users)
+    // Get devices from all user groups (primary + family + friends)
     const primaryUsers = Array.isArray(usersConfig?.primary) ? usersConfig.primary : [];
+    const familyUsers = Array.isArray(usersConfig?.family) ? usersConfig.family : [];
+    const friendsUsers = Array.isArray(usersConfig?.friends) ? usersConfig.friends : [];
+    const allUsers = [...primaryUsers, ...familyUsers, ...friendsUsers];
 
-    if (primaryUsers.length > 0) {
-      return primaryUsers
+    if (allUsers.length > 0) {
+      return allUsers
         .filter(user => user.hr) // Only users with HR device configured
         .map(user => {
           const deviceId = String(user.hr);

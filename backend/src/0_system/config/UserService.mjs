@@ -139,6 +139,15 @@ export class UserService {
           console.warn(`[UserService] Family/friend user missing 'id' field (name: "${user.name}") — skipping`);
           return null;
         }
+        // Attach HR device ID if mapped (same as primary users)
+        if (deviceMappings.heart_rate && !user.hr) {
+          for (const [deviceId, userId] of Object.entries(deviceMappings.heart_rate)) {
+            if (userId === user.id) {
+              user.hr = parseInt(deviceId, 10);
+              break;
+            }
+          }
+        }
         return user;
       };
 
