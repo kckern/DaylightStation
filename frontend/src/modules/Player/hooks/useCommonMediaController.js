@@ -815,7 +815,14 @@ export function useCommonMediaController({
               if (DEBUG_MEDIA) console.log('[Stall] hardTimer: not stalled anymore; abort');
               return;
             }
-            
+
+            // If duration is lost, skip to softReinit immediately — nudge/seekback can't help
+            if (mediaEl && !Number.isFinite(mediaEl.duration)) {
+              if (DEBUG_MEDIA) console.log('[Stall] hardTimer: duration lost, escalating to softReinit');
+              attemptRecovery({ strategyName: 'softReinit', manual: false });
+              return;
+            }
+
             if (s.recoveryAttempt < strategySteps.length) {
               if (DEBUG_MEDIA) console.log('[Stall] hardTimer: attempting recovery', { attempt: s.recoveryAttempt, strategy: getStrategyStep(s.recoveryAttempt)?.name, lastSeekIntent: lastSeekIntentRef.current });
               clearTimers();
