@@ -1,0 +1,65 @@
+@import '../../styles/variables';
+
+.data-entry-form {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+
+  &__fields {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--app-spacing-md);
+  }
+
+  &__actions {
+    padding: var(--app-spacing-md);
+    border-top: 1px solid var(--app-border-color);
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--app-spacing-md);
+    background: var(--app-bg-elevated);
+  }
+
+  &__value-display {
+    font-size: var(--app-font-size-2xl);
+    text-align: center;
+    margin-bottom: var(--app-spacing-lg);
+    font-family: var(--app-font-mono);
+    color: var(--app-action-primary);
+  }
+
+  /* Tabs */
+  &__tab-headers {
+    display: flex;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--app-border-color);
+    margin-bottom: var(--app-spacing-md);
+  }
+
+  &__tab-btn {
+    padding: var(--app-spacing-md);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--app-text-secondary);
+    font-size: var(--app-font-size-md);
+    cursor: pointer;
+    white-space: nowrap;
+
+    &.active {
+      color: var(--app-text-primary);
+      border-bottom-color: var(--app-action-primary);
+    }
+  }
+
+  &__tab-value {
+    color: var(--app-action-primary);
+    font-size: 0.8em;
+  }
+
+  &__tab-content {
+    padding: var(--app-spacing-md) 0;
+  }
+}
