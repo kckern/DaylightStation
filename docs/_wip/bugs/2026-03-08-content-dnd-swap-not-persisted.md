@@ -2,8 +2,9 @@
 
 **Date:** 2026-03-08
 **App:** Admin (ListsFolder / ContentSearchCombobox)
-**Status:** Open
+**Status:** Resolved (Bug 1 only — Bug 2 still open)
 **Severity:** High — silent data loss
+**Resolution:** Added atomic `PUT /items/swap` backend endpoint (single read-mutate-write), `swapItems` hook function, `swapInProgressRef` lock in `handleDragEnd`, and optimistic `setSections` update. Eliminates both the backend write race and the frontend stale-state race.
 **Session log:** `admin/2026-03-08T21-02-34.jsonl`
 **Affected file:** `data/household/config/lists/menus/fhe.yml`
 

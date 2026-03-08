@@ -396,6 +396,51 @@ export class ListManagementService {
   }
 
   /**
+   * Atomically swap content fields between two items.
+   * Identity fields (label, image, uid, active) stay with their row.
+   * Content fields swap — must match CONTENT_PAYLOAD_FIELDS in frontend listConstants.js.
+   */
+  swapItems(type, listName, householdId, itemA, itemB) {
+    validateType(type);
+
+    const list = this.listStore.getList(type, listName, householdId);
+    if (list === null) {
+      throw new NotFoundError('List', `${type}/${listName}`);
+    }
+
+    const sectionA = list.sections[itemA.section];
+    const sectionB = list.sections[itemB.section];
+    if (!sectionA || itemA.index >= sectionA.items.length) {
+      throw new NotFoundError('Item', `section ${itemA.section} index ${itemA.index}`);
+    }
+    if (!sectionB || itemB.index >= sectionB.items.length) {
+      throw new NotFoundError('Item', `section ${itemB.section} index ${itemB.index}`);
+    }
+
+    const a = sectionA.items[itemA.index];
+    const b = sectionB.items[itemB.index];
+
+    // Swap content fields only (identity fields stay with the row)
+    // Keep in sync with CONTENT_PAYLOAD_FIELDS in frontend/src/modules/Admin/ContentLists/listConstants.js
+    const contentFields = ['input', 'action', 'shuffle', 'continuous', 'loop', 'fixedOrder', 'volume', 'playbackRate', 'days', 'snooze', 'waitUntil', 'shader', 'composite', 'playable', 'progress', 'watched'];
+    for (const field of contentFields) {
+      const tmp = a[field];
+      a[field] = b[field];
+      b[field] = tmp;
+    }
+
+    this.listStore.saveList(type, listName, householdId, list);
+
+    this.logger.info?.('admin.lists.items.swapped', {
+      type, list: listName, household: householdId,
+      a: { section: itemA.section, index: itemA.index },
+      b: { section: itemB.section, index: itemB.index },
+    });
+
+    return { ok: true, type, list: listName };
+  }
+
+  /**
    * Delete an item at a specific index
    * @param {string} type
    * @param {string} listName
