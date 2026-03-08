@@ -2,86 +2,100 @@
 
 **Date:** 2026-03-08
 **App:** Admin (ListsFolder / ContentSearchCombobox)
-**Status:** Resolved (Bug 1 only — Bug 2 still open)
+**Status:** Partially resolved — see details below
 **Severity:** High — silent data loss
-**Resolution:** Added atomic `PUT /items/swap` backend endpoint (single read-mutate-write), `swapItems` hook function, `swapInProgressRef` lock in `handleDragEnd`, and optimistic `setSections` update. Eliminates both the backend write race and the frontend stale-state race.
-**Session log:** `admin/2026-03-08T21-02-34.jsonl`
 **Affected file:** `data/household/config/lists/menus/fhe.yml`
 
 ---
 
 ## Bug 1: Content Swap Race Condition
 
-### Symptom
+### Status: Code fix deployed, but blocked by file permission issue on prod
 
-User performed two rapid drag-and-drop content swaps. Neither persisted — the YAML file retained the original order.
+### What was fixed (commit 3583b43f)
 
-### Timeline (from logs)
+Added atomic `PUT /items/swap` backend endpoint (single read-mutate-write), `swapItems` hook function, `swapInProgressRef` lock in `handleDragEnd`, and optimistic `setSections` update. Eliminates both the backend write race and the frontend stale-state race.
 
-| Time | Event | Detail |
-|------|-------|--------|
-| 21:02:54.635 | `drag.start` | index 4, `plex:642175` |
-| 21:02:56.062 | `content.swap` | index 4 → index 3 (`plex:642175` ↔ `plex:457377`) |
-| 21:02:57.691 | `drag.start` | index 4, `plex:642175` ← **still shows old value** |
-| 21:02:58.897 | `content.swap` | index 4 → index 2 (`plex:642175` ↔ `plex:457402`) |
+### What still failed
 
-The second drag started **1.6s** after the first swap. The dragged item still shows `plex:642175` at index 4 — proving the first swap's state update hadn't taken effect yet.
+After deploying the fix to the Docker container, the swap endpoint returned **HTTP 500** with:
 
-### Expected vs Actual
-
-**Expected order (after both swaps):** `plex:642175` moves to index 2, with `plex:457402` and `plex:457377` shifting down.
-
-**Actual order in YAML (unchanged):**
-```yaml
-- input: plex:457402   # index 2 — Felix
-- input: plex:457377   # index 3 — Milo
-- input: plex:642175   # index 4 — Alan
+```
+EACCES: permission denied, open '/usr/src/app/data/household/config/lists/menus/fhe.yml'
 ```
 
-### Root Cause (suspected)
+### Root cause: file ownership mismatch
 
-**Race condition in `handleDragEnd`** — no lock or optimistic update prevents a second drag while the first is in-flight.
+The Node process inside the Docker container runs as user `node`, but `fhe.yml` was owned by `root:root` with mode `644` (owner read-write only). All other YAML files in the same directory are `node:node` with mode `664`.
 
-Each content swap in `ListsFolder.jsx:179-182` does:
-```js
-await updateItem(dstSi, dstIdx, updatesForA);  // PUT + fetchList
-await updateItem(srcSi, srcIdx, updatesForB);  // PUT + fetchList
+| File | Owner | Mode | Writable by `node`? |
+|------|-------|------|---------------------|
+| `fhe.yml` | `root:root` | `644` | No |
+| `adhoc.yml` | `node:node` | `664` | Yes |
+| `ambient.yml` | `node:node` | `664` | Yes |
+| (all others) | `node:node` | `664` | Yes |
+
+**How the ownership got corrupted:** The dev server (running as the local macOS user) wrote to `fhe.yml` via the Dropbox-mounted data path. This file synced into the Docker volume with `root:root` ownership, locking out the `node` user inside the container.
+
+### Fix applied
+
+```bash
+docker exec daylight-station chown node:node /usr/src/app/data/household/config/lists/menus/fhe.yml
+docker exec daylight-station chmod 664 /usr/src/app/data/household/config/lists/menus/fhe.yml
 ```
 
-Each `updateItem` (`useAdminLists.js:121-135`) does a PUT then calls `fetchList` to refetch the whole list. That's **4 HTTP requests per swap** (2 PUTs + 2 GETs).
+### Remaining risk
 
-**The failure mode:**
+Any time the dev server writes to a list YAML file via the Dropbox mount, the same ownership corruption can recur. This is a systemic issue with the dev-server-writes-to-prod-data-via-Dropbox workflow. Possible mitigations:
+- Add a `chown` step to `deploy.sh` that normalizes all data file ownership after deployment
+- Have the backend `saveList` method set file permissions explicitly after write
+- Avoid running the dev server against the Dropbox-synced data path
 
-1. First swap starts: PUT index 3 → fetchList → PUT index 4 → fetchList
-2. User initiates second drag **before step 4 completes** (1.6s gap)
-3. Second drag reads `sections` state, which is stale (first swap's fetchList hasn't resolved or the mid-swap fetchList returned partial state)
-4. Second swap sends PUTs based on stale indices/values
-5. The fetchList calls from both swaps race, and the final refetch shows the server's actual state — which may have conflicting or overwritten updates
+### Timeline of swap attempts
 
-**Contributing factors:**
-- `swapContentPayloads` swaps content fields between positions (not a move/reorder), making the operation non-idempotent when applied to stale state
-- No optimistic UI update — UI waits for fetchList round-trip
-- No drag lock or debounce while a swap is in-flight
-- `setLoading(true)` is set but nothing in the DnD UI checks `loading` before allowing new drags
+| Time (UTC) | Source | Event | Result |
+|------------|--------|-------|--------|
+| 22:02:06 | frontend (session 1) | `content.swap` idx 4↔2 | Backend succeeded (`admin.lists.items.swapped`) |
+| 22:02:20 | frontend (session 2) | `content.swap` idx 4↔2 | Backend succeeded — reversed the first swap |
+| 22:17:43 | frontend (session 3) | `content.swap` idx 2↔4 | **HTTP 500 — EACCES** |
 
-### Where to Fix
+The first two swaps succeeded (file was still writable at that point). The third failed after the file ownership was corrupted by an intervening dev server write.
 
-| File | Line | What |
-|------|------|------|
-| `frontend/src/modules/Admin/ContentLists/ListsFolder.jsx` | 145-202 | `handleDragEnd` — needs swap-in-progress lock |
-| `frontend/src/hooks/admin/useAdminLists.js` | 121-135 | `updateItem` — fetchList after each PUT causes mid-swap refetch |
-| `frontend/src/modules/Admin/ContentLists/listConstants.js` | 69-77 | `swapContentPayloads` — design is correct, but callers must serialize |
+### Evidence
 
-### Possible Fixes
+**Docker log showing EACCES:**
+```json
+{"ts":"2026-03-08T15:17:43.374","level":"error","event":"admin.lists.items.swap.failed",
+ "data":{"type":"menus","list":"fhe","a":{"section":0,"index":2},"b":{"section":0,"index":4},
+ "error":"EACCES: permission denied, open '/usr/src/app/data/household/config/lists/menus/fhe.yml'"}}
+```
 
-1. **Lock approach:** Add `swapInProgressRef` — disable drag handles or skip `handleDragEnd` while true
-2. **Batch approach:** Send both swap updates in a single API call, fetch once
-3. **Optimistic approach:** Update local `sections` state immediately, debounce the API call
-4. **Minimal fix:** Remove the intermediate `fetchList` from the first `updateItem` — only fetch after both PUTs complete
+**Frontend error:**
+```json
+{"event":"content.swap.failed",
+ "data":{"error":"HTTP 500:  - {\"error\":\"Failed to swap items\"}"}}
+```
+
+**API endpoint direct test (after permission fix):**
+```bash
+curl -X PUT http://localhost:3111/api/v1/admin/content/lists/menus/fhe/items/swap \
+  -H 'Content-Type: application/json' \
+  -d '{"a":{"section":0,"index":4},"b":{"section":0,"index":2}}'
+# → {"ok":true,"type":"menus","list":"fhe"}
+```
+
+### Current state of fhe.yml
+
+The data has been modified by multiple swap attempts and needs manual correction. Known issues:
+- Felix (index 2): `plex:642175` — may not be the intended content
+- Alan (index 4): `plex:457404` — may not be the intended content
+- Closing Hymn (index 8): still needs `input: singalong:primary/57` (see Bug 2)
 
 ---
 
 ## Bug 2: Blur Commits Raw Search Query as Content ID
+
+### Status: Partially fixed (search routing fixed, blur-commit UX still open)
 
 ### Symptom
 
@@ -98,85 +112,37 @@ User was searching for a primary song ("Tell Me...") but the search took **17 se
 | 21:04:17.415 | `commit.freeform` | Blur trigger — saved `primary:tell me` (raw query, not a content ID) |
 | 21:04:19.802 | `content_api.error_status` | 404 for `primary:tell me` — invalid ID |
 
-### Expected Behavior
-
-The search query `primary:tell me` is clearly a search (has no numeric ID), not a freeform content ID. Results had just loaded with valid options like `primary:57` ("Tell Me the Stories of Jesus").
-
 ### Root Cause: Slow Search Due to Missing Alias Resolution
 
-The 17-second search is the **primary cause**. The `primary:` prefix should route to only the `singalong` adapter, but instead searches ALL 12 adapters.
+The `primary:` prefix should route to only the `singalong` adapter, but instead searched ALL 12 adapters. Two separate alias systems existed and didn't talk to each other:
 
-**The disconnect:** Two separate alias systems exist and don't talk to each other:
-
-1. **`content-prefixes.yml` aliases** (`primary: singalong:primary`) — used by `ContentQueryService.#parseIdFromText()` for direct ID lookup (e.g., `primary:57` → `singalong:primary/57`). Works for IDs, **NOT used for text search routing**.
-
-2. **`ContentQueryAliasResolver`** — used by `ContentQueryService.search()` to route prefix-based queries to specific adapters. Has built-in aliases (`music`, `photos`, `video`, `audiobooks`) and user config aliases. **Does NOT read `content-prefixes.yml`.**
-
-When searching `primary:tell me`:
-1. `#parseContentQuery("primary:tell me")` → `{ prefix: "primary", term: "tell me" }`
-2. `aliasResolver.resolveContentQuery("primary")`:
-   - Not a user alias ✗
-   - Not a built-in alias (`music`/`photos`/`video`/`audiobooks`) ✗
-   - Not an exact source (`singalong` ≠ `primary`) ✗
-   - Not a provider ✗, not a category ✗
-   - → `#createPassthroughResult()` → **ALL sources, no filtering**
-3. `#parseIdFromText("tell me")` → not numeric, not UUID → `null`
-4. Text search "tell me" sent to ALL 12 adapters in parallel
-
-**Perf data from live test:**
-```
-abs:       6024ms (bottleneck — Audiobookshelf)
-singalong: 2408ms (the ONLY adapter that matters)
-plex:      2762ms
-immich:    2026ms
-files:     1361ms
-...11 other adapters wasting time
-```
-
-If routed to singalong only, this search would take ~2.4s instead of 6s+ (or 17s on a bad day).
-
-**Secondary cause:** blur-commit doesn't distinguish "search-in-progress" from intentional commit. Even with a faster search, accidental blur during slow network conditions could still save raw query text.
-
-### Where to Fix
-
-| File | What |
-|------|------|
-| `backend/src/3_applications/content/services/ContentQueryAliasResolver.mjs` | Should read `content-prefixes.yml` aliases and route `primary:` → singalong adapter |
-| `backend/src/3_applications/content/ContentQueryService.mjs:79-97` | Alias resolution path — if aliasResolver returns passthrough, should check `prefixAliases` as fallback |
-| `frontend/src/modules/Admin/ContentLists/ListsItemRow.jsx` | Blur handler — consider suppressing freeform commit if search is still pending |
-
-### Fix Options
-
-**Option A (preferred): Bridge the two alias systems.** Make `ContentQueryAliasResolver` aware of `prefixAliases` from `content-prefixes.yml`. When `primary` doesn't match built-in/user aliases, check prefix aliases and route to the mapped source (singalong).
-
-**Option B: Fallback in ContentQueryService.** After alias resolver returns passthrough, check if `prefix` exists in `this.#prefixAliases`. If so, extract the source and only search that adapter.
-
-**Option C: Add `primary` as built-in alias.** Quick but doesn't generalize — `hymn`, `scripture`, `poem` have the same problem.
+1. **`content-prefixes.yml` aliases** — used for direct ID lookup, NOT used for text search routing
+2. **`ContentQueryAliasResolver`** — used for search routing, did NOT read `content-prefixes.yml`
 
 ### Resolution (Search Routing)
 
-**Status: Fixed** — Option A implemented.
+**Status: Fixed** (commit 11082a8e)
 
-`ContentQueryAliasResolver` now accepts `prefixAliases` and checks them as step 4 in the resolution chain (after user config, built-in, registry; before passthrough). Bootstrap passes `prefixAliases` from `content-prefixes.yml` to the resolver.
-
-**Results:**
+`ContentQueryAliasResolver` now accepts `prefixAliases` and checks them in the resolution chain. Results:
 - `primary:tell me` → singalong only, **1.5s** (was 6-17s)
 - `hymn:love` → singalong only, **259ms** (was 6s+)
-- Unprefixed searches unchanged (all adapters)
 
-**Files changed:**
-- `backend/src/3_applications/content/services/ContentQueryAliasResolver.mjs` — accept `prefixAliases`, check in `#resolveFromRegistry`, update `isAlias()`/`getAvailableAliases()`
-- `backend/src/0_system/bootstrap.mjs:748` — pass `prefixAliases` to resolver
-- `tests/isolated/application/content/ContentQueryAliasResolver.test.mjs` — 7 tests
+### Still open: Blur-commit UX
 
-**Note:** The blur-commit UX issue (saving raw search text on blur) remains a separate concern. With the search now completing in ~1.5s instead of 17s, the window for accidental blur-commit is much smaller, but it's not eliminated.
+The blur handler doesn't distinguish "search-in-progress" from intentional commit. With faster search this is less likely, but not eliminated. The Closing Hymn field needs manual correction:
 
-### Current State in YAML
-
-Line 47 of `fhe.yml`:
 ```yaml
-- input: primary:tell me    # ← invalid, should be primary:57 or singalong:primary/57
+# Current (invalid):
+- input: primary:tell me
+  label: Closing Hymn
+
+# Correct:
+- input: singalong:primary/57
   label: Closing Hymn
 ```
 
-This needs manual correction.
+### Where to Fix (blur-commit)
+
+| File | What |
+|------|------|
+| `frontend/src/modules/Admin/ContentLists/ListsItemRow.jsx` | Blur handler — suppress freeform commit if search is still pending |
