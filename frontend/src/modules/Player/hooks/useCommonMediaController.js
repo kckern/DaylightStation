@@ -512,6 +512,9 @@ export function useCommonMediaController({
 
     setElementKey((prev) => prev + 1);
 
+    // Clear the start-time guard so the remounted instance re-applies start time
+    delete useCommonMediaController.__appliedStartByKey[assetId];
+
     lastSeekIntentRef.current = targetTime;
     try { useCommonMediaController.__lastSeekByKey[assetId] = targetTime; } catch {}
 
