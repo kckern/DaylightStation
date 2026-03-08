@@ -422,10 +422,24 @@ export function useCommonMediaController({
             if (Number.isFinite(target)) {
               try { mediaEl.currentTime = target; } catch (_) {}
             }
+            // Only clear seek intent after the seek is confirmed by the browser
+            const onSeeked = () => {
+              mediaEl.removeEventListener('seeked', onSeeked);
+              isRecoveringRef.current = false;
+              lastSeekIntentRef.current = null;
+              if (DEBUG_MEDIA) console.log('[Stall Recovery] reload: seeked confirmed, recovery complete', { currentTime: mediaEl.currentTime });
+            };
+            mediaEl.addEventListener('seeked', onSeeked, { once: true });
+            // Fallback: if seeked never fires (DASH failure), clear after 5s
+            setTimeout(() => {
+              mediaEl.removeEventListener('seeked', onSeeked);
+              if (isRecoveringRef.current) {
+                isRecoveringRef.current = false;
+                // Preserve lastSeekIntentRef — don't clear if seek wasn't confirmed
+                if (DEBUG_MEDIA) console.log('[Stall Recovery] reload: seeked timeout, clearing recovery flag but preserving seek intent');
+              }
+            }, 5000);
             mediaEl.play().catch(() => {});
-            isRecoveringRef.current = false;
-            lastSeekIntentRef.current = null;
-            if (DEBUG_MEDIA) console.log('[Stall Recovery] reload: complete');
           }, { once: true });
         } catch (_) {
           isRecoveringRef.current = false;
