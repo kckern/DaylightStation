@@ -166,6 +166,19 @@ app.get('/ble/stop/:device?', async (req, res) => {
   res.json({ success: result });
 });
 
+// BLE HR scan endpoints
+app.get('/ble/hr/start', async (req, res) => {
+  console.log('📱 Starting BLE HR scan');
+  const result = await bleManager.startHRScan();
+  res.json({ success: result, users: bleManager.bleUsers });
+});
+
+app.get('/ble/hr/stop', async (req, res) => {
+  console.log('📱 Stopping BLE HR scan');
+  const result = await bleManager.stopHRScan();
+  res.json({ success: result });
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
@@ -245,7 +258,23 @@ async function startServer() {
     console.error('❌ BLE initialization failed:', error.message);
     // Continue without BLE
   }
-  
+
+  // Configure BLE HR users from environment
+  const bleHrUsers = process.env.BLE_HR_USERS;
+  if (bleHrUsers) {
+    const users = bleHrUsers.split(',').map(u => u.trim()).filter(Boolean);
+    bleManager.configureBleUsers(users);
+    // Auto-start HR scan if users configured
+    if (users.length > 0) {
+      try {
+        await bleManager.startHRScan();
+        console.log('✅ BLE HR scan auto-started');
+      } catch (error) {
+        console.error('❌ BLE HR auto-start failed:', error.message);
+      }
+    }
+  }
+
   // Connect to DaylightStation WebSocket
   await connectWebSocket();
   
