@@ -383,6 +383,24 @@ export function useCommonMediaController({
 
     try {
       const t = mediaEl.currentTime;
+      const buffered = mediaEl.buffered;
+
+      // Check if current position is within any buffered range
+      let inBuffer = false;
+      for (let i = 0; i < buffered.length; i++) {
+        if (t >= buffered.start(i) && t <= buffered.end(i)) {
+          inBuffer = true;
+          break;
+        }
+      }
+
+      // If not in a buffered range, nudge won't help — signal failure so
+      // the pipeline escalates to seekback/reload instead of looping
+      if (!inBuffer && buffered.length > 0) {
+        if (DEBUG_MEDIA) console.log('[Stall Recovery] nudge: currentTime not in any buffered range, skipping', { t, ranges: buffered.length });
+        return false;
+      }
+
       mediaEl.pause();
       mediaEl.currentTime = Math.max(0, t - 0.001);
       mediaEl.play().catch(() => {});
