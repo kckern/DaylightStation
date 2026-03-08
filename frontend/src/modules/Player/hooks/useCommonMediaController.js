@@ -421,8 +421,54 @@ export function useCommonMediaController({
     const priorTime = lastSeekIntentRef.current !== null ? lastSeekIntentRef.current : (mediaEl.currentTime || 0);
     const src = mediaEl.getAttribute('src');
 
+    // DASH-aware reload: use the DASH player's own API to avoid destroying SourceBuffer state
+    const hostEl = containerRef.current;
+    const dashPlayer = hostEl?.dashjsPlayer;
+
     isRecoveringRef.current = true;
-    if (DEBUG_MEDIA) console.log('[Stall Recovery] reload: begin', { priorTime, intent: lastSeekIntentRef.current, seekBackSeconds, hasSrc: !!src });
+    if (DEBUG_MEDIA) console.log('[Stall Recovery] reload: begin', { priorTime, intent: lastSeekIntentRef.current, seekBackSeconds, hasSrc: !!src, hasDash: !!dashPlayer });
+
+    if (dashPlayer && typeof dashPlayer.reset === 'function' && typeof dashPlayer.initialize === 'function') {
+      const streamSrc = hostEl.getAttribute('src') || src;
+      try {
+        mediaEl.pause();
+        dashPlayer.reset();
+        dashPlayer.initialize(mediaEl, streamSrc, true);
+        const target = Math.max(0, priorTime - (Number.isFinite(seekBackSeconds) ? seekBackSeconds : 0));
+        mediaEl.addEventListener('loadedmetadata', function handleOnce() {
+          mediaEl.removeEventListener('loadedmetadata', handleOnce);
+          if (Number.isFinite(target)) {
+            try {
+              if (dashPlayer.seek) {
+                dashPlayer.seek(target);
+              } else {
+                mediaEl.currentTime = target;
+              }
+            } catch (_) {}
+          }
+          const onSeeked = () => {
+            mediaEl.removeEventListener('seeked', onSeeked);
+            isRecoveringRef.current = false;
+            lastSeekIntentRef.current = null;
+            if (DEBUG_MEDIA) console.log('[Stall Recovery] reload (DASH): seeked confirmed, recovery complete', { currentTime: mediaEl.currentTime });
+          };
+          mediaEl.addEventListener('seeked', onSeeked, { once: true });
+          setTimeout(() => {
+            mediaEl.removeEventListener('seeked', onSeeked);
+            if (isRecoveringRef.current) {
+              isRecoveringRef.current = false;
+              // Preserve lastSeekIntentRef — don't clear if seek wasn't confirmed
+              if (DEBUG_MEDIA) console.log('[Stall Recovery] reload (DASH): seeked timeout, clearing recovery flag but preserving seek intent');
+            }
+          }, 5000);
+          mediaEl.play().catch(() => {});
+        }, { once: true });
+        return true;
+      } catch (err) {
+        if (DEBUG_MEDIA) console.log('[Stall Recovery] reload: DASH reload failed, falling back to DOM reload', err);
+        // Fall through to DOM-based reload below
+      }
+    }
 
     try {
       mediaEl.pause();
