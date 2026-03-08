@@ -450,6 +450,7 @@ export function useCommonMediaController({
             mediaEl.removeEventListener('seeked', onSeeked);
             isRecoveringRef.current = false;
             lastSeekIntentRef.current = null;
+            verifyRecoveryPosition(target);
             if (DEBUG_MEDIA) console.log('[Stall Recovery] reload (DASH): seeked confirmed, recovery complete', { currentTime: mediaEl.currentTime });
           };
           mediaEl.addEventListener('seeked', onSeeked, { once: true });
@@ -491,6 +492,7 @@ export function useCommonMediaController({
               mediaEl.removeEventListener('seeked', onSeeked);
               isRecoveringRef.current = false;
               lastSeekIntentRef.current = null;
+              verifyRecoveryPosition(target);
               if (DEBUG_MEDIA) console.log('[Stall Recovery] reload: seeked confirmed, recovery complete', { currentTime: mediaEl.currentTime });
             };
             mediaEl.addEventListener('seeked', onSeeked, { once: true });
@@ -620,6 +622,31 @@ export function useCommonMediaController({
       }
     }
   }, [onClear, publishStallSnapshot, terminalAction]);
+
+  // Position watchdog: verify recovery landed at the expected position
+  const verifyRecoveryPosition = useCallback((expectedTime, toleranceSeconds = 30) => {
+    const checkDelay = 2000; // check 2s after recovery
+    setTimeout(() => {
+      const mediaEl = getMediaEl();
+      if (!mediaEl || !Number.isFinite(expectedTime) || expectedTime <= 0) return;
+      const actual = mediaEl.currentTime;
+      const drift = Math.abs(actual - expectedTime);
+      if (drift > toleranceSeconds) {
+        if (DEBUG_MEDIA) console.log('[Stall Recovery] position watchdog: drift detected, correcting', { expected: expectedTime, actual, drift });
+        try {
+          if (containerRef.current?.api?.seek) {
+            containerRef.current.api.seek(expectedTime);
+          } else {
+            mediaEl.currentTime = expectedTime;
+          }
+        } catch (e) {
+          if (DEBUG_MEDIA) console.log('[Stall Recovery] position watchdog: correction seek failed', e);
+        }
+      } else {
+        if (DEBUG_MEDIA) console.log('[Stall Recovery] position watchdog: position OK', { expected: expectedTime, actual, drift });
+      }
+    }, checkDelay);
+  }, [getMediaEl]);
 
   // Execute next recovery strategy (auto or manual override)
   const attemptRecovery = useCallback(({ strategyName, manual = false, options: overrideOptions } = {}) => {
@@ -1094,6 +1121,7 @@ export function useCommonMediaController({
         stallStateRef.current.pendingSoftReinit = false;
         isRecoveringRef.current = false;
         lastSeekIntentRef.current = null;
+        verifyRecoveryPosition(snapshot.targetTime);
       }
     };
 
