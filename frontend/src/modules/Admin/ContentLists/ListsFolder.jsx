@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Stack, Group, Title, TextInput, Center, Loader, Alert,
@@ -66,11 +66,12 @@ function ListsFolder() {
   const { type, name: listName } = useParams();
   const navigate = useNavigate();
   const {
-    sections, flatItems, loading, error, listMetadata,
-    fetchList, addItem, updateItem, deleteItem, reorderItems, toggleItemActive,
+    sections, setSections, flatItems, loading, error, listMetadata,
+    fetchList, addItem, updateItem, swapItems, deleteItem, reorderItems, toggleItemActive,
     deleteList, updateListSettings, addSection, updateSection, deleteSection, reorderSections, moveItem, splitSection
   } = useAdminLists();
 
+  const swapInProgressRef = useRef(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
@@ -160,6 +161,14 @@ function ListsFolder() {
         setActiveContentDrag(null);
         return;
       }
+
+      // Lock: prevent concurrent swaps
+      if (swapInProgressRef.current) {
+        dndLog().debug('drag.cancel', { activeId, overId, reason: 'swap_in_progress' });
+        setActiveContentDrag(null);
+        return;
+      }
+
       const srcParts = activeId.replace('content-', '').split('-');
       const dstParts = overId.replace('content-', '').split('-');
       const [srcSi, srcIdx] = [Number(srcParts[0]), Number(srcParts[1])];
@@ -176,13 +185,24 @@ function ListsFolder() {
         src: { section: srcSi, index: srcIdx, input: srcItem.input },
         dst: { section: dstSi, index: dstIdx, input: dstItem.input },
       });
+
+      swapInProgressRef.current = true;
+
+      // Optimistic local update: swap content fields immediately
       const { updatesForA, updatesForB } = swapContentPayloads(srcItem, dstItem);
+      setSections(prev => {
+        const next = prev.map(s => ({ ...s, items: [...s.items] }));
+        next[dstSi].items[dstIdx] = { ...next[dstSi].items[dstIdx], ...updatesForA };
+        next[srcSi].items[srcIdx] = { ...next[srcSi].items[srcIdx], ...updatesForB };
+        return next;
+      });
+
       try {
-        await updateItem(dstSi, dstIdx, updatesForA);
-        await updateItem(srcSi, srcIdx, updatesForB);
+        await swapItems(srcSi, srcIdx, dstSi, dstIdx);
       } catch (err) {
-        // updateItem refetches on success, so partial failure auto-corrects on next refetch
         dndLog().error('content.swap.failed', { srcSi, srcIdx, dstSi, dstIdx, error: err.message });
+      } finally {
+        swapInProgressRef.current = false;
       }
 
       // Flash both rows

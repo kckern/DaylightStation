@@ -18,6 +18,7 @@
  * - PUT    /lists/:type/:name         - Replace list contents (reorder)
  * - DELETE /lists/:type/:name         - Delete entire list
  * - POST   /lists/:type/:name/items          - Add item to list
+ * - PUT    /lists/:type/:name/items/swap      - Atomically swap content between two items
  * - PUT    /lists/:type/:name/items/:index   - Update item at index
  * - DELETE /lists/:type/:name/items/:index   - Remove item at index
  */
@@ -199,6 +200,25 @@ export function createAdminContentRouter(config) {
 
     const result = listManagementService.moveItem(type, listName, householdId, from, to);
     res.json(result);
+  });
+
+  /**
+   * PUT /lists/:type/:name/items/swap - Atomically swap content between two items
+   * NOTE: Must be registered BEFORE items/:index to avoid Express treating "swap" as an index param
+   */
+  router.put('/lists/:type/:name/items/swap', (req, res) => {
+    const { type, name: listName } = req.params;
+    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const { a, b } = req.body || {};
+
+    try {
+      const result = listManagementService.swapItems(type, listName, householdId, a, b);
+      res.json(result);
+    } catch (error) {
+      if (error.httpStatus) throw error;
+      logger.error?.('admin.lists.items.swap.failed', { type, list: listName, a, b, error: error.message });
+      res.status(500).json({ error: 'Failed to swap items' });
+    }
   });
 
   /**

@@ -134,6 +134,27 @@ export function useAdminLists() {
     }
   }, [currentType, currentList, fetchList, logger]);
 
+  // Atomically swap content fields between two items (single backend call)
+  const swapItems = useCallback(async (srcSection, srcIndex, dstSection, dstIndex) => {
+    if (!currentType || !currentList) throw new Error('No list selected');
+    setLoading(true);
+    setError(null);
+    try {
+      await DaylightAPI(
+        `${API_BASE}/lists/${currentType}/${currentList}/items/swap`,
+        { a: { section: srcSection, index: srcIndex }, b: { section: dstSection, index: dstIndex } },
+        'PUT'
+      );
+      logger.info('admin.lists.items.swapped', { type: currentType, list: currentList, srcSection, srcIndex, dstSection, dstIndex });
+      await fetchList(currentType, currentList);
+    } catch (err) {
+      setError(err);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [currentType, currentList, fetchList, logger]);
+
   // Delete an item
   const deleteItem = useCallback(async (sectionIndex, itemIndex) => {
     if (!currentType || !currentList) throw new Error('No list selected');
@@ -315,9 +336,9 @@ export function useAdminLists() {
   }, [currentType, currentList, logger]);
 
   return {
-    loading, error, lists, sections, flatItems, listMetadata, currentType, currentList,
+    loading, error, lists, sections, setSections, flatItems, listMetadata, currentType, currentList,
     fetchLists, createList, deleteList, fetchList,
-    addItem, updateItem, deleteItem, reorderItems, toggleItemActive,
+    addItem, updateItem, swapItems, deleteItem, reorderItems, toggleItemActive,
     addSection, updateSection, deleteSection, reorderSections, moveItem, splitSection,
     updateListSettings,
     clearError: () => setError(null)
