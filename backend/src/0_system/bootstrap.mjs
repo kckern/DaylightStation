@@ -745,7 +745,7 @@ export function createApiRouters(config) {
   });
 
   // Create ContentQueryAliasResolver for semantic query prefixes (music:, photos:, etc.)
-  const aliasResolver = new ContentQueryAliasResolver({ registry, configService });
+  const aliasResolver = new ContentQueryAliasResolver({ registry, configService, prefixAliases });
 
   // Create ContentQueryService for unified query interface
   const contentQueryService = new ContentQueryService({ registry, mediaProgressMemory, prefixAliases, logger, aliasResolver });

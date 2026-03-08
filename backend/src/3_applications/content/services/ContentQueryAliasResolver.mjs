@@ -7,7 +7,9 @@
  * Resolution priority:
  * 1. User config (custom aliases, overrides, tag-type mappings, mapTo shorthand)
  * 2. Built-in aliases (music, photos, video, audiobooks)
- * 3. Pass-through to registry (provider, category, source)
+ * 3. Registry match (exact source, provider, category)
+ * 4. Content-prefix aliases (from content-prefixes.yml, e.g., primary → singalong)
+ * 5. Passthrough (all sources, no filtering)
  *
  * @example
  * const resolver = new ContentQueryAliasResolver({ registry, configService });
@@ -49,6 +51,7 @@ export class ContentQueryAliasResolver {
   #registry;
   #configService;
   #householdId;
+  #prefixAliases;
 
   /**
    * Built-in aliases for common content query patterns.
@@ -81,11 +84,13 @@ export class ContentQueryAliasResolver {
    * @param {import('#domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} deps.registry
    * @param {import('#system/config/ConfigService.mjs').ConfigService} deps.configService
    * @param {string} [deps.householdId] - Household ID for user config lookup
+   * @param {Object<string, string>} [deps.prefixAliases={}] - Map of prefix names to source:collection strings from content-prefixes.yml
    */
-  constructor({ registry, configService, householdId = null }) {
+  constructor({ registry, configService, householdId = null, prefixAliases = {} }) {
     this.#registry = registry;
     this.#configService = configService;
     this.#householdId = householdId;
+    this.#prefixAliases = prefixAliases;
   }
 
   /**
@@ -361,6 +366,28 @@ export class ContentQueryAliasResolver {
       };
     }
 
+    // 4. Check content-prefixes.yml aliases (e.g., primary → singalong:primary)
+    const prefixMapping = this.#prefixAliases[prefix];
+    if (prefixMapping) {
+      const [source] = prefixMapping.split(':');
+      const adapter = this.#registry.get(source);
+      if (adapter) {
+        logger.debug('content-query-alias.resolve.prefixAlias', {
+          prefix,
+          mapping: prefixMapping,
+          source
+        });
+        return {
+          intent: `prefix-alias-${prefix}`,
+          sources: [source],
+          gatekeeper: null,
+          libraryFilter: {},
+          originalPrefix: prefix,
+          isPrefixAlias: true
+        };
+      }
+    }
+
     // No match found - return passthrough result
     logger.debug('content-query-alias.resolve.passthrough', { prefix });
     return this.#createPassthroughResult(prefix);
@@ -395,8 +422,10 @@ export class ContentQueryAliasResolver {
     const userAliases = this.#configService.getAppConfig('content', 'aliases') || {};
     const userKeys = Object.keys(userAliases).filter(k => !k.startsWith('_'));
 
+    const prefixKeys = Object.keys(this.#prefixAliases);
+
     // Combine and deduplicate
-    return [...new Set([...builtIn, ...userKeys])];
+    return [...new Set([...builtIn, ...userKeys, ...prefixKeys])];
   }
 
   /**
@@ -414,6 +443,9 @@ export class ContentQueryAliasResolver {
 
     // Check user config
     if (this.#getUserAlias(normalized)) return true;
+
+    // Check content-prefix aliases
+    if (this.#prefixAliases[normalized]) return true;
 
     return false;
   }
