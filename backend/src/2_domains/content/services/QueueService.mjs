@@ -415,6 +415,21 @@ export class QueueService {
       }
     }
 
+    // Load progress from explicit storagePaths (new behavior).
+    // Some adapters store progress under a different path than their source name
+    // (e.g., readalong adapter stores scripture progress under 'scriptures', not 'readalong').
+    const storagePaths = new Set(
+      playables.map(p => p.storagePath).filter(sp => sp && !itemSources.has(sp))
+    );
+    for (const sp of storagePaths) {
+      const progress = await this.mediaProgressMemory.getAll(sp);
+      for (const p of progress) {
+        if (!progressMap.has(p.contentId)) {
+          progressMap.set(p.contentId, p);
+        }
+      }
+    }
+
     // Enrich items with resume positions from media memory
     const enriched = playables.map(item => {
       const progress = progressMap.get(item.id);
