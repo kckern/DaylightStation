@@ -79,6 +79,12 @@ DaylightStation maintains its own progress records for:
 - Sources that don't track progress natively (filesystem, singalong)
 - Household-level aggregation
 
+### Storage Path Override
+
+Some adapters store progress under a path different from their source name. For example, the readalong adapter has `source: 'readalong'` but stores scripture progress under the `'scriptures'` storage path (configured via `storagePaths` in `content-prefixes.yml`).
+
+When building PlayableItems, adapters set `storagePath` on items that use non-default storage. `QueueService.resolveQueue()` uses this to look up progress from the correct location — it loads from both source directories (`getAllFromAllLibraries`) and explicit storagePaths (`getAll`).
+
 ### Client-Level Progress
 
 The frontend maintains transient progress in `localStorage` for:
