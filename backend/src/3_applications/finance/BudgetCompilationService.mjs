@@ -20,6 +20,7 @@ export class BudgetCompilationService {
   #financeStore;
   #mortgageCalculator;
   #logger;
+  #budgetAccounts;
 
   /**
    * @param {Object} deps - Dependencies
@@ -99,6 +100,7 @@ export class BudgetCompilationService {
     const classifier = new TransactionClassifier(config);
     const budgetStart = this.#toDateString(config.timeframe.start);
     const budgetEnd = this.#toDateString(config.timeframe.end);
+    this.#budgetAccounts = config.accounts || [];
 
     // Get monthly breakdown
     const { monthlyBudget, totalBudget } = this.#getMonthlyBudget(config, transactions, classifier);
@@ -238,9 +240,23 @@ export class BudgetCompilationService {
         if (!monthlyCategories[label]) {
           monthlyCategories[label] = { amount: 0, credits: 0, debits: 0, transactions: [] };
         }
-        monthlyCategories[label].amount += txn.expenseAmount;
-        monthlyCategories[label].credits += txn.expenseAmount < 0 ? Math.abs(txn.expenseAmount) : 0;
-        monthlyCategories[label].debits += txn.expenseAmount > 0 ? txn.expenseAmount : 0;
+        // Transfers routed to monthly (e.g., RSU Holdings, Mortgage) have expenseAmount=0
+        // but represent real cash movements. Use amount for these, with direction:
+        //   - Outgoing from budget accounts (e.g., Payroll→CPNG RSU): positive (debit)
+        //   - Incoming to budget accounts (e.g., CPNG RSU→Fidelity): negative (credit)
+        let effectiveAmount;
+        if (txn.type === 'transfer' || txn.transactionType === 'transfer') {
+          const toAccount = txn.toAccount?.name || txn.accountName || '';
+          const fromAccount = txn.fromAccount?.name || '';
+          const budgetAccounts = this.#budgetAccounts || [];
+          const isIncoming = budgetAccounts.includes(toAccount) && !budgetAccounts.includes(fromAccount);
+          effectiveAmount = isIncoming ? -txn.amount : txn.amount;
+        } else {
+          effectiveAmount = txn.expenseAmount;
+        }
+        monthlyCategories[label].amount += effectiveAmount;
+        monthlyCategories[label].credits += effectiveAmount < 0 ? Math.abs(effectiveAmount) : 0;
+        monthlyCategories[label].debits += effectiveAmount > 0 ? effectiveAmount : 0;
         monthlyCategories[label].transactions.push(txn);
 
         // Round values
@@ -259,7 +275,13 @@ export class BudgetCompilationService {
       }
     }
 
-    const income = this.#round(incomeTransactions.reduce((acc, txn) => acc + txn.amount, 0));
+    const income = this.#round(incomeTransactions.reduce((acc, txn) => {
+      // Expense-type transactions in income bucket should reduce income, not inflate it
+      if (txn.transactionType === 'expense' || txn.type === 'expense') {
+        return acc - txn.amount;
+      }
+      return acc + txn.amount;
+    }, 0));
     const nonBonusIncome = this.#round(
       incomeTransactions
         .filter(txn => txn.tagNames?.includes('Income'))
@@ -631,28 +653,17 @@ export class BudgetCompilationService {
           shortTermBuckets[label].balance = (shortTermBuckets[label].balance || 0) + allocation;
         }
       } else {
-        // Reduce from buckets with positive balance
-        for (const label in shortTermBuckets) {
-          const bucket = shortTermBuckets[label];
-          if (bucket.balance > 0) {
-            const reduction = Math.min(bucket.balance, amountToAdjust);
-            bucket.budget -= reduction;
-            bucket.balance -= reduction;
-            amountToAdjust -= reduction;
-            if (amountToAdjust <= 0) break;
-          }
-        }
+        // Deficit: distribute proportionally across flex buckets, allowing negative balances
+        const flexibleBuckets = config.shortTerm
+          .filter(({ flex }) => flex)
+          .map(({ label, flex }) => ({ label, flex }));
+        const flexWeightSum = flexibleBuckets.reduce((acc, { flex }) => acc + flex, 0);
 
-        // If still need to reduce, use flex buckets
-        if (amountToAdjust > 0) {
-          const flexibleBuckets = config.shortTerm
-            .filter(({ flex }) => flex)
-            .map(({ label, flex }) => ({ label, flex }));
-          const flexWeightSum = flexibleBuckets.reduce((acc, { flex }) => acc + flex, 0);
-
+        if (flexWeightSum > 0) {
           for (const { label, flex } of flexibleBuckets) {
             const percentage = flex / flexWeightSum;
             const reduction = this.#round(amountToAdjust * percentage);
+            if (!shortTermBuckets[label]) continue;
             shortTermBuckets[label].budget -= reduction;
             shortTermBuckets[label].balance -= reduction;
           }
@@ -660,25 +671,19 @@ export class BudgetCompilationService {
       }
     }
 
-    // Handle buckets with <5% balance remaining
+    // Calculate percent remaining for each bucket
     for (const label in shortTermBuckets) {
       const bucket = shortTermBuckets[label];
-      const percentLeft = Math.round(((bucket.balance / (bucket.budget + (bucket.credits || 0))) || 0) * 100);
+      const totalBudget = bucket.budget + (bucket.credits || 0);
+      const percentLeft = totalBudget > 0
+        ? Math.round((bucket.balance / totalBudget) * 100)
+        : (bucket.balance <= 0 ? 0 : 100);
       bucket.percentLeft = percentLeft;
 
-      if (percentLeft < 5) {
-        const amountToMove = Math.min(bucket.budget, bucket.balance);
-        bucket.budget -= amountToMove;
-        bucket.balance = 0;
+      if (bucket.balance < 0) {
+        bucket.status = 'overspent';
+      } else if (percentLeft < 5) {
         bucket.status = 'spent';
-
-        // Move to bucket with most balance
-        const targetBucket = Object.values(shortTermBuckets)
-          .reduce((max, b) => (b.balance > max.balance ? b : max), { balance: 0 });
-        if (targetBucket !== bucket && targetBucket.balance > 0) {
-          targetBucket.budget += amountToMove;
-          targetBucket.balance += amountToMove;
-        }
       }
     }
   }
