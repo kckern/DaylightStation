@@ -165,6 +165,7 @@ export class BLEManager {
   generateMonitorScript(deviceConfig) {
     return `
 import asyncio
+import subprocess
 import sys
 import json
 from datetime import datetime
@@ -178,26 +179,42 @@ except ImportError:
 TARGET_ADDRESS = "${deviceConfig.address}"
 CHARACTERISTIC_UUID = "${deviceConfig.characteristic}"
 
+def clear_bluez_cache(address):
+    """Remove device from BlueZ cache to prevent stale GATT service data.
+    Without this, BlueZ tries to use cached services on reconnect and the
+    device rejects it, causing GATT discovery to hang indefinitely."""
+    try:
+        subprocess.run(["bluetoothctl", "remove", address],
+                       capture_output=True, timeout=5)
+    except Exception:
+        pass
+
 async def find_and_monitor_device():
     print(json.dumps({"status": "scanning"}), flush=True)
-    
+
     while True:
         try:
-            # Scan for the device
-            device = await BleakScanner.find_device_by_address(TARGET_ADDRESS, timeout=5.0)
-            
+            # Clear stale BlueZ cache before scanning
+            clear_bluez_cache(TARGET_ADDRESS)
+            await asyncio.sleep(1)
+
+            device = None
+            devices = await BleakScanner.discover(timeout=10.0)
+            for d in devices:
+                if d.address.upper() == TARGET_ADDRESS.upper():
+                    device = d
+                    break
+
             if not device:
-                # Device not found, wait and try again
                 print(json.dumps({"status": "waiting", "message": "Device not found, waiting..."}), flush=True)
                 await asyncio.sleep(5)
                 continue
-            
-            # Device found, connect to it
+
             print(json.dumps({"status": "found", "name": device.name}), flush=True)
-            
-            async with BleakClient(device, timeout=10.0) as client:
+
+            async with BleakClient(device, timeout=20.0) as client:
                 print(json.dumps({"status": "connected"}), flush=True)
-                
+
                 def notification_handler(sender, data):
                     output = {
                         "type": "data",
@@ -205,17 +222,15 @@ async def find_and_monitor_device():
                         "data": list(data)
                     }
                     print(json.dumps(output), flush=True)
-                
+
                 await client.start_notify(CHARACTERISTIC_UUID, notification_handler)
                 print(json.dumps({"status": "listening"}), flush=True)
-                
-                # Keep connection alive
+
                 while client.is_connected:
                     await asyncio.sleep(1)
-                
-                # Connection lost
+
                 print(json.dumps({"status": "disconnected", "message": "Device disconnected, will retry..."}), flush=True)
-                
+
         except Exception as e:
             print(json.dumps({"status": "error", "message": str(e), "retry": True}), flush=True)
             await asyncio.sleep(5)
@@ -385,6 +400,12 @@ if __name__ == "__main__":
         }
       } else if (msg.status === 'scanning') {
         console.log('🔍 Scanning for BLE HR devices...');
+      } else if (msg.status === 'connecting') {
+        console.log(`🔗 Connecting to BLE HR: ${msg.address}`);
+      } else if (msg.status === 'listening') {
+        console.log(`👂 Listening for BLE HR data: ${msg.address}`);
+      } else if (msg.status === 'error') {
+        console.log(`❌ BLE HR error (${msg.address || 'scan'}): ${msg.message}`);
       }
       return;
     }
@@ -443,6 +464,7 @@ if __name__ == "__main__":
   _generateHRScanScript() {
     return `
 import asyncio
+import subprocess
 import sys
 import json
 from datetime import datetime
@@ -456,52 +478,91 @@ except ImportError:
 HR_SERVICE_UUID = "0000180d-0000-1000-8000-00805f9b34fb"
 HR_MEASUREMENT_UUID = "00002a37-0000-1000-8000-00805f9b34fb"
 
-connected_devices = set()
+known_devices = {}  # address -> device name
+
+def clear_bluez_cache(address):
+    """Remove device from BlueZ cache to prevent stale GATT service data."""
+    try:
+        subprocess.run(["bluetoothctl", "remove", address],
+                       capture_output=True, timeout=5)
+    except Exception:
+        pass
 
 async def monitor_device(address, name):
-    """Connect to a single HR device and stream data."""
-    try:
-        print(json.dumps({"status": "connected", "address": address}), flush=True)
-        async with BleakClient(address, timeout=15.0) as client:
-            def on_hr_data(sender, data):
-                output = {
-                    "type": "hr_data",
-                    "address": address,
-                    "timestamp": datetime.now().isoformat(),
-                    "data": list(data)
-                }
-                print(json.dumps(output), flush=True)
+    """Connect to a HR device and stream data. Retries on disconnect."""
+    while True:
+        try:
+            # Clear stale cache before connecting
+            clear_bluez_cache(address)
+            await asyncio.sleep(1)
 
-            await client.start_notify(HR_MEASUREMENT_UUID, on_hr_data)
+            print(json.dumps({"status": "connecting", "address": address}), flush=True)
+            device = None
+            devices = await BleakScanner.discover(timeout=10.0, service_uuids=[HR_SERVICE_UUID])
+            for d in devices:
+                if d.address.upper() == address.upper():
+                    device = d
+                    break
 
-            while client.is_connected:
-                await asyncio.sleep(1)
+            if not device:
+                # Address may have rotated (iPhone BLE address rotation)
+                print(json.dumps({"status": "scanning_for_device", "address": address}), flush=True)
+                for d in devices:
+                    if d.address not in known_devices:
+                        known_devices[d.address] = d.name
+                        print(json.dumps({
+                            "status": "found",
+                            "address": d.address,
+                            "name": d.name
+                        }), flush=True)
+                        asyncio.create_task(monitor_device(d.address, d.name))
+                return
 
-    except Exception as e:
-        pass
-    finally:
-        connected_devices.discard(address)
-        print(json.dumps({"status": "disconnected", "address": address}), flush=True)
+            async with BleakClient(device, timeout=20.0) as client:
+                print(json.dumps({"status": "connected", "address": address}), flush=True)
+
+                def on_hr_data(sender, data):
+                    output = {
+                        "type": "hr_data",
+                        "address": address,
+                        "timestamp": datetime.now().isoformat(),
+                        "data": list(data)
+                    }
+                    print(json.dumps(output), flush=True)
+
+                await client.start_notify(HR_MEASUREMENT_UUID, on_hr_data)
+                print(json.dumps({"status": "listening", "address": address}), flush=True)
+
+                while client.is_connected:
+                    await asyncio.sleep(1)
+
+                print(json.dumps({"status": "disconnected", "address": address, "message": "Connection lost, reconnecting..."}), flush=True)
+
+        except Exception as e:
+            print(json.dumps({"status": "error", "address": address, "message": str(e)}), flush=True)
+
+        await asyncio.sleep(5)
 
 async def scan_and_connect():
     print(json.dumps({"status": "scanning"}), flush=True)
 
     while True:
-        try:
-            devices = await BleakScanner.discover(timeout=5.0, service_uuids=[HR_SERVICE_UUID])
-            for device in devices:
-                if device.address not in connected_devices:
-                    connected_devices.add(device.address)
-                    print(json.dumps({
-                        "status": "found",
-                        "address": device.address,
-                        "name": device.name
-                    }), flush=True)
-                    asyncio.create_task(monitor_device(device.address, device.name))
-        except Exception as e:
-            print(json.dumps({"status": "error", "message": str(e)}), flush=True)
+        devices = await BleakScanner.discover(timeout=10.0, service_uuids=[HR_SERVICE_UUID])
 
-        await asyncio.sleep(10)
+        for device in devices:
+            if device.address not in known_devices:
+                known_devices[device.address] = device.name
+                print(json.dumps({
+                    "status": "found",
+                    "address": device.address,
+                    "name": device.name
+                }), flush=True)
+                asyncio.create_task(monitor_device(device.address, device.name))
+
+        if not known_devices:
+            print(json.dumps({"status": "waiting", "message": "No HR devices found, retrying..."}), flush=True)
+
+        await asyncio.sleep(30)
 
 if __name__ == "__main__":
     asyncio.run(scan_and_connect())
