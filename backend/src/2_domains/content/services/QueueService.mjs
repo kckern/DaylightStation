@@ -454,7 +454,8 @@ export class QueueService {
       playbackRate: item.playbackRate,
       thumbnail: item.thumbnail,
       description: item.description,
-      metadata: item.metadata
+      metadata: item.metadata,
+      storagePath: item.storagePath
     });
   }
 }
