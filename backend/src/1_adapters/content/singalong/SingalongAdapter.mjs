@@ -111,6 +111,7 @@ export class SingalongAdapter {
       },
       style,
       type: collection,
+      storagePath: this.getStoragePath(`singalong:${collection}`),
       metadata: {
         contentFormat: 'singalong',
         collection,
