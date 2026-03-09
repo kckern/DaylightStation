@@ -236,7 +236,15 @@ export function BudgetViewer({ budget, mortgage, setBudgetData }) {
   const [drawerContent, setDrawerContent] = useState(null);
   const [budgetBlockDimensions, setBudgetBlockDimensions] = useState({ width: null, height: null });
 
-  const [activeBudgetKey, setActiveBudgetKey] = useState(Object.keys(budget)[0]);
+  const [activeBudgetKey, setActiveBudgetKey] = useState(() => {
+    const keys = Object.keys(budget);
+    const today = moment().format('YYYY-MM-DD');
+    const current = keys.find(k => {
+      const b = budget[k];
+      return today >= b.budgetStart && today <= b.budgetEnd;
+    });
+    return current || keys[0];
+  });
   const activeBudget = budget[activeBudgetKey];
   const availableBudgetKeys = Object.keys(budget);
   return (

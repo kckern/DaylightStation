@@ -92,7 +92,14 @@ export class TransactionClassifier {
     const txnType = transaction.type;
 
     // Check for transfers first
+    // Most transfers are internal account movements (e.g., Fidelity cash sweeps) and stay in the transfer bucket.
+    // Exception: transfers whose main tag matches a configured monthly category represent real cash
+    // outflows to non-liquid assets (e.g., RSU Holdings → Long-term Savings, Housing → Housing)
+    // and should be classified as monthly expenses.
     if (this.#isTransfer(txnType, mainTag)) {
+      if (mainTag && this.#monthlyTagDict[mainTag]) {
+        return { label: this.#monthlyTagDict[mainTag], bucket: 'monthly' };
+      }
       return { label: mainTag || 'Transfer', bucket: 'transfer' };
     }
 
