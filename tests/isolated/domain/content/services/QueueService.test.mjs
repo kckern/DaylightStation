@@ -2,6 +2,7 @@
 import { describe, it, test, expect, beforeEach, vi } from 'vitest';
 import { QueueService } from '#domains/content/services/QueueService.mjs';
 import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
+import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
 
 // Create a mock WatchState class for testing
 class WatchState {
@@ -372,6 +373,59 @@ describe('QueueService', () => {
       ];
       const filtered = QueueService.filterByDayOfWeek(items, new Date());
       expect(filtered.length).toBe(1);
+    });
+  });
+
+  describe('resolveQueue', () => {
+    test('loads progress from storagePath when source directory has no progress', async () => {
+      const items = [
+        new PlayableItem({
+          id: 'readalong:scripture-1',
+          localId: 'scripture-1',
+          source: 'readalong',
+          storagePath: 'scriptures',
+          title: 'Scripture Chapter 1',
+          mediaType: 'audio',
+          mediaUrl: '/stream/scripture-1',
+          resumable: true
+        }),
+        new PlayableItem({
+          id: 'readalong:scripture-2',
+          localId: 'scripture-2',
+          source: 'readalong',
+          storagePath: 'scriptures',
+          title: 'Scripture Chapter 2',
+          mediaType: 'audio',
+          mediaUrl: '/stream/scripture-2',
+          resumable: true
+        })
+      ];
+
+      // Source-directory lookup returns nothing
+      mockMediaProgressMemory.getAllFromAllLibraries = vi.fn().mockResolvedValue([]);
+      // storagePath lookup returns progress for chapter 1 at 99% (watched)
+      mockMediaProgressMemory.getAll = vi.fn().mockImplementation(async (sp) => {
+        if (sp === 'scriptures') {
+          return [
+            new MediaProgress({
+              contentId: 'readalong:scripture-1',
+              playhead: 990,
+              duration: 1000,
+              playCount: 1
+            })
+          ];
+        }
+        return [];
+      });
+
+      const result = await service.resolveQueue(items, 'readalong');
+
+      // Chapter 2 (unwatched) should come first, Chapter 1 (watched) should be last
+      expect(result[0].id).toBe('readalong:scripture-2');
+      expect(result[1].id).toBe('readalong:scripture-1');
+
+      // Verify storagePath lookup was called
+      expect(mockMediaProgressMemory.getAll).toHaveBeenCalledWith('scriptures');
     });
   });
 
