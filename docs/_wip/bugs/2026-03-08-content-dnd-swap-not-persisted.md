@@ -2,8 +2,9 @@
 
 **Date:** 2026-03-08
 **App:** Admin (ListsFolder / ContentSearchCombobox)
-**Status:** Partially resolved — see details below
+**Status:** Resolved (Bug 1) — Bug 2 blur-commit UX still open
 **Severity:** High — silent data loss
+**Resolution:** Root cause was that `swapItems` only swapped derived fields (`input`, `action`) but not the normalized action keys (`play`, `list`, `open`, etc.) which are the SSOT after `normalizeListItem`. Fix: swap ALL non-identity fields (everything except `title`, `label`, `image`, `uid`, `active`) so action keys, playback config, and scheduling all swap correctly. Verified with 4 Playwright tests covering single swap, rapid consecutive swaps, concurrent API swaps, and reload persistence.
 **Affected file:** `data/household/config/lists/menus/fhe.yml`
 
 ---

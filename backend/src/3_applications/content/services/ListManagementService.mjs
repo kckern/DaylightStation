@@ -397,8 +397,14 @@ export class ListManagementService {
 
   /**
    * Atomically swap content fields between two items.
-   * Identity fields (label, image, uid, active) stay with their row.
-   * Content fields swap — must match CONTENT_PAYLOAD_FIELDS in frontend listConstants.js.
+   * Identity fields (title, image, uid, active) stay with their row.
+   * Everything else (action keys, playback config, scheduling) swaps.
+   *
+   * After getList(), items are in normalized format where action keys
+   * (play, open, list, queue, display, launch) are the SSOT — not the
+   * derived `input`/`action` fields. We must swap the action keys too,
+   * otherwise serializeListConfig regenerates input from the un-swapped
+   * action keys and the swap silently disappears.
    */
   swapItems(type, listName, householdId, itemA, itemB) {
     validateType(type);
@@ -420,13 +426,24 @@ export class ListManagementService {
     const a = sectionA.items[itemA.index];
     const b = sectionB.items[itemB.index];
 
-    // Swap content fields only (identity fields stay with the row)
-    // Keep in sync with CONTENT_PAYLOAD_FIELDS in frontend/src/modules/Admin/ContentLists/listConstants.js
-    const contentFields = ['input', 'action', 'shuffle', 'continuous', 'loop', 'fixedOrder', 'volume', 'playbackRate', 'days', 'snooze', 'waitUntil', 'shader', 'composite', 'playable', 'progress', 'watched'];
-    for (const field of contentFields) {
+    // Identity fields that stay with the row position — everything else swaps
+    const identityFields = new Set(['title', 'label', 'image', 'uid', 'active']);
+
+    // Collect all keys from both items, excluding identity
+    const allKeys = new Set([...Object.keys(a), ...Object.keys(b)]);
+    for (const key of identityFields) allKeys.delete(key);
+
+    // Swap all non-identity fields
+    for (const field of allKeys) {
       const tmp = a[field];
       a[field] = b[field];
       b[field] = tmp;
+    }
+
+    // Clean up undefined values left from asymmetric swaps
+    for (const field of allKeys) {
+      if (a[field] === undefined) delete a[field];
+      if (b[field] === undefined) delete b[field];
     }
 
     this.listStore.saveList(type, listName, householdId, list);
