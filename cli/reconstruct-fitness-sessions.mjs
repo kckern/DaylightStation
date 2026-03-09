@@ -40,6 +40,9 @@ const { hydrateProcessEnvFromConfigs } = await import('#system/logging/config.mj
 const { initConfigService, configService } = await import('#system/config/index.mjs');
 const { loadYamlSafe, saveYaml, fileExists } = await import('#system/utils/FileIO.mjs');
 const { encodeSingleSeries } = await import('#domains/fitness/services/TimelineService.mjs');
+const {
+  buildStravaSessionTimeline,
+} = await import('#domains/fitness/services/StravaSessionBuilder.mjs');
 
 hydrateProcessEnvFromConfigs(configDir);
 initConfigService(dataDir);
@@ -58,17 +61,6 @@ const TIMEZONE = 'America/Los_Angeles';
 
 console.log(`Reconstruct fitness sessions for ${username}, ${daysBack} days back`);
 console.log(`Mode: ${writeMode ? 'WRITE' : 'DRY-RUN'}\n`);
-
-// ------------------------------------------------------------------
-// Zone configuration (from fitness.yml)
-// ------------------------------------------------------------------
-const ZONES = [
-  { name: 'cool',   short: 'c',    min: 0,   color: 'blue',   coins: 0 },
-  { name: 'active', short: 'a',    min: 100, color: 'green',  coins: 1 },
-  { name: 'warm',   short: 'w',    min: 120, color: 'yellow', coins: 2 },
-  { name: 'hot',    short: 'h',    min: 140, color: 'orange', coins: 3 },
-  { name: 'fire',   short: 'fire', min: 160, color: 'red',    coins: 5 },
-];
 
 const INTERVAL_SECONDS = 5;
 const COIN_TIME_UNIT_MS = 5000;
@@ -105,89 +97,6 @@ async function fetchTautulliPlays() {
     console.warn('Tautulli fetch failed:', err.message);
     return [];
   }
-}
-
-// ------------------------------------------------------------------
-// Helper: get zone for a heart rate value
-// ------------------------------------------------------------------
-function getZone(hr) {
-  for (let i = ZONES.length - 1; i >= 0; i--) {
-    if (hr >= ZONES[i].min) return ZONES[i];
-  }
-  return ZONES[0];
-}
-
-// ------------------------------------------------------------------
-// Helper: resample per-second HR array to 5s intervals (point sampling)
-// ------------------------------------------------------------------
-function resampleHR(hrPerSecond) {
-  const result = [];
-  for (let i = 0; i < hrPerSecond.length; i += INTERVAL_SECONDS) {
-    result.push(hrPerSecond[i]);
-  }
-  return result;
-}
-
-// ------------------------------------------------------------------
-// Helper: derive zone shortcodes from HR array (already at 5s intervals)
-// ------------------------------------------------------------------
-function deriveZones(hrSamples) {
-  return hrSamples.map(hr => {
-    if (hr == null) return null;
-    return getZone(hr).short;
-  });
-}
-
-// ------------------------------------------------------------------
-// Helper: derive cumulative coins from HR array (already at 5s intervals)
-// ------------------------------------------------------------------
-function deriveCoins(hrSamples) {
-  const coins = [];
-  let cumulative = 0;
-  for (const hr of hrSamples) {
-    if (hr == null) {
-      coins.push(cumulative);
-      continue;
-    }
-    const zone = getZone(hr);
-    cumulative += zone.coins;
-    coins.push(cumulative);
-  }
-  return coins;
-}
-
-// ------------------------------------------------------------------
-// Helper: compute zone_minutes from zone shortcodes
-// ------------------------------------------------------------------
-function computeZoneMinutes(zoneSeries) {
-  const tickCounts = {};
-  for (const z of zoneSeries) {
-    if (z == null) continue;
-    const zoneDef = ZONES.find(zd => zd.short === z);
-    if (!zoneDef) continue;
-    tickCounts[zoneDef.name] = (tickCounts[zoneDef.name] || 0) + 1;
-  }
-  const result = {};
-  for (const [name, count] of Object.entries(tickCounts)) {
-    const minutes = (count * INTERVAL_SECONDS) / 60;
-    const rounded = Math.round(minutes * 100) / 100;
-    if (rounded > 0) result[name] = rounded;
-  }
-  return result;
-}
-
-// ------------------------------------------------------------------
-// Helper: compute treasure box buckets from zone shortcodes
-// ------------------------------------------------------------------
-function computeBuckets(zoneSeries) {
-  const bucketMap = { blue: 0, green: 0, yellow: 0, orange: 0, red: 0 };
-  for (const z of zoneSeries) {
-    if (z == null) continue;
-    const zoneDef = ZONES.find(zd => zd.short === z);
-    if (!zoneDef || zoneDef.coins === 0) continue;
-    bucketMap[zoneDef.color] += zoneDef.coins;
-  }
-  return bucketMap;
 }
 
 // ------------------------------------------------------------------
@@ -370,22 +279,15 @@ for (const { date, entry } of entries) {
     continue;
   }
 
-  // Resample HR to 5s intervals
-  const hrSamples = resampleHR(hrData);
+  const timeline = buildStravaSessionTimeline(hrData);
+  if (!timeline) {
+    console.log(`[SKIP]  ${date} ${entry.type} (${entry.title}) -- HR data too short`);
+    skipped++;
+    continue;
+  }
+  const { hrSamples, zoneSeries, coinsSeries, totalCoins, zoneMinutes, buckets, hrStats } = timeline;
+  const { hrAvg, hrMax, hrMin } = hrStats;
   const tickCount = hrSamples.length;
-
-  // Derive zone and coins series
-  const zoneSeries = deriveZones(hrSamples);
-  const coinsSeries = deriveCoins(hrSamples);
-  const totalCoins = coinsSeries.length > 0 ? coinsSeries[coinsSeries.length - 1] : 0;
-
-  // Compute stats
-  const validHR = hrSamples.filter(h => h != null && h > 0);
-  const hrAvg = validHR.length > 0 ? Math.round(validHR.reduce((s, h) => s + h, 0) / validHR.length) : 0;
-  const hrMax = validHR.length > 0 ? Math.max(...validHR) : 0;
-  const hrMin = validHR.length > 0 ? Math.min(...validHR) : 0;
-  const zoneMinutes = computeZoneMinutes(zoneSeries);
-  const buckets = computeBuckets(zoneSeries);
 
   // Find matching media (Tautulli + 14_fitness.yml)
   const startMs = sessionIdMoment.valueOf();
