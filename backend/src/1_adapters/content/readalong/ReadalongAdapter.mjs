@@ -217,6 +217,7 @@ export class ReadalongAdapter {
       },
       style,
       type: collection,
+      storagePath: this.getStoragePath(`readalong:${collection}`),
       metadata: {
         contentFormat: 'readalong',
         type: 'chapter',
