@@ -347,6 +347,33 @@ describe('Playable capability', () => {
     });
   });
 
+  describe('storagePath', () => {
+    test('stores storagePath when provided', () => {
+      const item = new PlayableItem({
+        id: 'readalong:123',
+        source: 'readalong',
+        title: 'Scripture Reading',
+        mediaType: 'audio',
+        mediaUrl: '/stream/123',
+        resumable: true,
+        storagePath: 'scriptures'
+      });
+      expect(item.storagePath).toBe('scriptures');
+    });
+
+    test('storagePath defaults to null when not provided', () => {
+      const item = new PlayableItem({
+        id: 'plex:123',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/stream/123',
+        resumable: true
+      });
+      expect(item.storagePath).toBeNull();
+    });
+  });
+
   describe('behavior flags', () => {
     it('should support shuffle flag', () => {
       const item = new PlayableItem({

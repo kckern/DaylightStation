@@ -30,6 +30,7 @@ export class PlayableItem extends Item {
    * @param {boolean} [props.continuous] - Whether to play continuously (default: false)
    * @param {boolean} [props.resume] - Whether to resume from last position (default: false)
    * @param {boolean} [props.active] - Whether item is active for queue filtering (default: true)
+   * @param {string} [props.storagePath] - Override storage path for progress lookup (e.g., 'scriptures' instead of source name)
    */
   constructor(props) {
     super(props);
@@ -51,6 +52,7 @@ export class PlayableItem extends Item {
     this.continuous = props.continuous || false;
     this.resume = props.resume || false;
     this.active = props.active !== false; // defaults to true
+    this.storagePath = props.storagePath ?? null;
   }
 
   /**
