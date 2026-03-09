@@ -188,6 +188,71 @@ describe('FitnessActivityEnrichmentService — Strava-only session creation', ()
     expect(data.strava.distance).toBe(0);
   });
 
+  it('derives sessionId from start_date (UTC) converted to local, not start_date_local', async () => {
+    await service._attemptEnrichment(ACTIVITY_ID);
+
+    const dateDir = path.join(tmpDir, '2026-03-01');
+    const files = fs.readdirSync(dateDir).filter(f => f.endsWith('.yml'));
+    expect(files[0]).toBe('20260301100000.yml');
+
+    const data = loadYamlSafe(path.join(dateDir, files[0]));
+    expect(data.sessionId).toBe('20260301100000');
+    expect(data.session.start).toBe('2026-03-01 10:00:00');
+  });
+
+  it('populates HR timeline, zones, coins when getActivityStreams returns data', async () => {
+    const hrData = Array(15).fill(130);
+    mockStravaClient.getActivityStreams = vi.fn().mockResolvedValue({
+      heartrate: { data: hrData },
+    });
+
+    // Need has_heartrate flag for the gate
+    const activityWithHR = { ...stravaActivity, has_heartrate: true };
+    mockStravaClient.getActivity.mockResolvedValue(activityWithHR);
+
+    await service._attemptEnrichment(ACTIVITY_ID);
+
+    const dateDir = path.join(tmpDir, '2026-03-01');
+    const files = fs.readdirSync(dateDir).filter(f => f.endsWith('.yml'));
+    const data = loadYamlSafe(path.join(dateDir, files[0]));
+
+    expect(data.timeline.series['testuser:hr']).toBeTruthy();
+    expect(data.timeline.series['testuser:zone']).toBeTruthy();
+    expect(data.timeline.series['testuser:coins']).toBeTruthy();
+    expect(data.timeline.series['global:coins']).toBeTruthy();
+    expect(data.treasureBox.totalCoins).toBe(6); // 3 ticks × 2 coins (warm zone)
+    expect(data.summary.participants.testuser.hr_avg).toBe(130);
+    expect(data.summary.participants.testuser.coins).toBe(6);
+  });
+
+  it('falls back to empty timeline when getActivityStreams fails', async () => {
+    const activityWithHR = { ...stravaActivity, has_heartrate: true };
+    mockStravaClient.getActivity.mockResolvedValue(activityWithHR);
+    mockStravaClient.getActivityStreams = vi.fn().mockRejectedValue(new Error('rate limited'));
+
+    await service._attemptEnrichment(ACTIVITY_ID);
+
+    const dateDir = path.join(tmpDir, '2026-03-01');
+    const files = fs.readdirSync(dateDir).filter(f => f.endsWith('.yml'));
+    const data = loadYamlSafe(path.join(dateDir, files[0]));
+
+    expect(data.version).toBe(3);
+    expect(data.timeline.series).toEqual({});
+    expect(data.treasureBox.totalCoins).toBe(0);
+  });
+
+  it('skips HR fetch when activity has no heartrate data', async () => {
+    const noHrActivity = { ...stravaActivity, has_heartrate: false };
+    mockStravaClient.getActivity.mockResolvedValue(noHrActivity);
+    mockStravaClient.getActivityStreams = vi.fn();
+
+    await service._attemptEnrichment(ACTIVITY_ID);
+
+    expect(mockStravaClient.getActivityStreams).not.toHaveBeenCalled();
+    const dateDir = path.join(tmpDir, '2026-03-01');
+    expect(fs.existsSync(dateDir)).toBe(true);
+  });
+
   it('populates empty timeline, treasureBox, and summary scaffolding', async () => {
     await service._attemptEnrichment(ACTIVITY_ID);
 
