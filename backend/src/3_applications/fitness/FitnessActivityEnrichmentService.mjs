@@ -24,6 +24,8 @@ import moment from 'moment-timezone';
 import { loadYamlSafe, listYamlFiles, dirExists, saveYaml } from '#system/utils/FileIO.mjs';
 import { buildStravaDescription } from '../../1_adapters/fitness/buildStravaDescription.mjs';
 import { userService } from '#system/config/index.mjs';
+import { buildStravaSessionTimeline } from '../../2_domains/fitness/services/StravaSessionBuilder.mjs';
+import { encodeSingleSeries } from '../../2_domains/fitness/services/TimelineService.mjs';
 
 const MAX_RETRIES = 3;
 const RETRY_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -170,7 +172,7 @@ export class FitnessActivityEnrichmentService {
           activityType: currentActivity.type,
         });
 
-        const created = await this._createStravaOnlySession(currentActivity);
+        const created = await this._createStravaOnlySession(currentActivity, this.#stravaClient);
         this.#jobStore.update(activityId, {
           status: 'completed',
           completedAt: new Date().toISOString(),
@@ -418,14 +420,42 @@ export class FitnessActivityEnrichmentService {
    * @param {Object} activity - Strava activity object from API
    * @returns {{ sessionId: string, filePath: string }}
    */
-  async _createStravaOnlySession(activity) {
+  async _createStravaOnlySession(activity, stravaClient = null) {
     const tz = this.#configService?.getTimezone?.() || 'America/Los_Angeles';
     const username = this.#configService.getHeadOfHousehold?.() || 'kckern';
-    const startLocal = moment(activity.start_date_local || activity.start_date).tz(tz);
+    const startLocal = moment(activity.start_date).tz(tz);
     const sessionId = startLocal.format('YYYYMMDDHHmmss');
     const date = startLocal.format('YYYY-MM-DD');
     const durationSeconds = activity.elapsed_time || activity.moving_time || 0;
     const endLocal = startLocal.clone().add(durationSeconds, 'seconds');
+
+    // Fetch HR data and build timeline
+    let timelineData = null;
+    const hrPerSecond = await this._fetchHRData(activity, stravaClient);
+    if (hrPerSecond) {
+      timelineData = buildStravaSessionTimeline(hrPerSecond);
+    }
+
+    const timelineSeries = {};
+    let totalCoins = 0;
+    let buckets = { blue: 0, green: 0, yellow: 0, orange: 0, red: 0 };
+    let participantSummary = {};
+
+    if (timelineData) {
+      timelineSeries[`${username}:hr`] = encodeSingleSeries(timelineData.hrSamples);
+      timelineSeries[`${username}:zone`] = encodeSingleSeries(timelineData.zoneSeries);
+      timelineSeries[`${username}:coins`] = encodeSingleSeries(timelineData.coinsSeries);
+      timelineSeries['global:coins'] = encodeSingleSeries(timelineData.coinsSeries);
+      totalCoins = timelineData.totalCoins;
+      buckets = timelineData.buckets;
+      participantSummary = {
+        coins: timelineData.totalCoins,
+        hr_avg: timelineData.hrStats.hrAvg,
+        hr_max: timelineData.hrStats.hrMax,
+        hr_min: timelineData.hrStats.hrMin,
+        zone_minutes: timelineData.zoneMinutes,
+      };
+    }
 
     // Build map data if GPS exists
     let mapData = null;
@@ -478,17 +508,17 @@ export class FitnessActivityEnrichmentService {
         ...(mapData ? { map: mapData } : {}),
       },
       timeline: {
-        series: {},
+        series: timelineSeries,
         events: [],
         interval_seconds: 5,
-        tick_count: Math.ceil(durationSeconds / 5),
+        tick_count: timelineData ? timelineData.hrSamples.length : Math.ceil(durationSeconds / 5),
         encoding: 'rle',
       },
-      treasureBox: { coinTimeUnitMs: 5000, totalCoins: 0, buckets: { blue: 0, green: 0, yellow: 0, orange: 0, red: 0 } },
+      treasureBox: { coinTimeUnitMs: 5000, totalCoins, buckets },
       summary: {
-        participants: {},
+        participants: participantSummary.coins != null ? { [username]: participantSummary } : {},
         media: [],
-        coins: { total: 0, buckets: { blue: 0, green: 0, yellow: 0, orange: 0, red: 0 } },
+        coins: { total: totalCoins, buckets },
         challenges: { total: 0, succeeded: 0, failed: 0 },
         voiceMemos: [],
       },
@@ -512,6 +542,35 @@ export class FitnessActivityEnrichmentService {
     });
 
     return { sessionId, filePath };
+  }
+
+  /**
+   * @private
+   * Fetch per-second heart rate data from Strava activity streams.
+   * @param {Object} activity - Strava activity object
+   * @param {Object} stravaClient - StravaClientAdapter instance
+   * @returns {number[]|null} Per-second HR array, or null
+   */
+  async _fetchHRData(activity, stravaClient) {
+    if (!stravaClient || !activity.has_heartrate) return null;
+
+    try {
+      const streams = await stravaClient.getActivityStreams(activity.id, ['heartrate']);
+      if (streams?.heartrate?.data?.length > 1) {
+        this.#logger.info?.('strava.enrichment.hr_from_api', {
+          activityId: activity.id,
+          samples: streams.heartrate.data.length,
+        });
+        return streams.heartrate.data;
+      }
+    } catch (err) {
+      this.#logger.warn?.('strava.enrichment.hr_fetch_failed', {
+        activityId: activity.id,
+        error: err?.message,
+      });
+    }
+
+    return null;
   }
 
   /**
