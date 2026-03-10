@@ -523,6 +523,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     composePresentationUseCase,
     configService,
     prefixAliases,
+    singalong: singalongConfig,
     savedQueryService,
     logger: rootLogger.child({ module: 'content' })
   });
@@ -1378,6 +1379,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const loadFile = (relativePath) => haLoadYaml(path.join(householdDir, relativePath));
   const saveFile = (relativePath, data) => haSaveYaml(path.join(householdDir, relativePath), data);
 
+  const { EventAggregationService } = await import('./3_applications/home/EventAggregationService.mjs');
+  const eventAggregationService = new EventAggregationService({
+    dataService,
+    configService,
+    logger: rootLogger.child({ module: 'event-aggregation' }),
+  });
+
   v1Routers.home = createHomeAutomationApiRouter({
     adapters: homeAutomationAdapters,
     loadFile,
@@ -1385,6 +1393,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     householdId,
     entropyService: entropyServices.entropyService,
     configService,
+    eventAggregationService,
     logger: rootLogger.child({ module: 'home-automation-api' })
   });
 

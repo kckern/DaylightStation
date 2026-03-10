@@ -25,6 +25,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * @param {string} [config.householdId] - Household ID for state files
  * @param {Object} [config.entropyService] - Entropy service for data freshness
  * @param {Object} [config.configService] - Config service for user lookup
+ * @param {Object} [config.eventAggregationService] - Event aggregation service
  * @param {Object} [config.logger]
  * @returns {express.Router}
  */
@@ -41,6 +42,7 @@ export function createHomeAutomationRouter(config) {
     householdId = 'default',
     entropyService,
     configService,
+    eventAggregationService,
     logger = console
   } = config;
 
@@ -304,8 +306,12 @@ export function createHomeAutomationRouter(config) {
    * Get events data from state files
    */
   router.get('/events', asyncHandler(async (req, res) => {
+    if (eventAggregationService) {
+      const events = eventAggregationService.getUpcomingEvents();
+      return res.json(events);
+    }
     if (!loadFile) {
-      return res.status(503).json({ error: 'State file loading not configured' });
+      return res.status(503).json({ error: 'Event data not configured' });
     }
 
     // loadFile already prepends household path, just use relative path
