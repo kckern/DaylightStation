@@ -1150,6 +1150,9 @@ export function useCommonMediaController({
               actual: mediaEl.currentTime,
               drift: Math.abs(mediaEl.currentTime - startTime)
             });
+            // Clear seek intent after start-time is applied — prevents stale intent
+            // from polluting drift calculations on subsequent pause/resume seeks
+            lastSeekIntentRef.current = null;
             if (DEBUG_MEDIA) console.log('[StartTime] DASH: applied deferred seek after timeupdate', { startTime, currentTime: mediaEl.currentTime });
           };
           mediaEl.addEventListener('timeupdate', onTimeUpdate);
@@ -1164,6 +1167,9 @@ export function useCommonMediaController({
             actual: mediaEl.currentTime,
             drift: Math.abs(mediaEl.currentTime - startTime)
           });
+          // Clear seek intent after start-time is applied — prevents stale intent
+          // from polluting drift calculations on subsequent pause/resume seeks
+          lastSeekIntentRef.current = null;
           if (DEBUG_MEDIA) console.log('[StartTime] set currentTime on load', { startTime, recovering: isRecoveringRef.current });
         } catch (_) {}
       }
