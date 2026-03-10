@@ -345,6 +345,55 @@ describe('BudgetCompilationService', () => {
       expect(jan31.endingBalance).toBe(0);
     });
 
+    it('emits displayBalance and overspent fields on daily balances', async () => {
+      const pastBudgetConfig = {
+        budget: [{
+          timeframe: { start: '2025-01-01', end: '2025-06-30' },
+          accounts: ['Checking'],
+          income: {
+            salary: { amount: 60000, payCheckCount: 24, payFrequencyInDays: 14, firstPaycheckDate: '2025-01-10' },
+            tags: ['Income'],
+            extra: []
+          },
+          dayToDay: { amount: 500, tags: ['Groceries'] },
+          monthly: [{ label: 'Rent', amount: 1500, tags: ['Rent'] }],
+          shortTerm: [{ label: 'Travel', amount: 500, flex: 1, tags: ['Travel'] }]
+        }],
+        mortgage: null
+      };
+
+      // $600 spent on $500 budget = $100 overspend
+      const overspendTransactions = [
+        { id: '1', date: '2025-01-15', amount: 2500, expenseAmount: -2500, description: 'Paycheck', tagNames: ['Income'], type: 'income' },
+        { id: '2', date: '2025-01-10', amount: 300, expenseAmount: 300, description: 'Groceries', tagNames: ['Groceries'], type: 'expense' },
+        { id: '3', date: '2025-01-20', amount: 300, expenseAmount: 300, description: 'More Groceries', tagNames: ['Groceries'], type: 'expense' },
+        { id: '4', date: '2025-01-25', amount: 1500, expenseAmount: 1500, description: 'Rent', tagNames: ['Rent'], type: 'expense' },
+      ];
+
+      mockFinanceStore.getBudgetConfig.mockReturnValue(pastBudgetConfig);
+      mockFinanceStore.getTransactions.mockReturnValue(overspendTransactions);
+
+      const result = await service.compile();
+      const dtd = result.budgets['2025-01-01'].dayToDayBudget['2025-01'];
+      const balances = dtd.dailyBalances;
+
+      // Day with positive balance (before any spending)
+      const jan01 = balances['2025-01-01'];
+      expect(jan01.displayBalance).toBe(500);
+      expect(jan01.overspent).toBe(false);
+
+      // Day with negative balance (after $600 spent on $500 budget)
+      const jan31 = balances['2025-01-31'];
+      expect(jan31.endingBalance).toBe(-100);
+      expect(jan31.displayBalance).toBe(100);
+      expect(jan31.overspent).toBe(true);
+
+      // Start entry should also have the fields
+      const start = balances['2025-01-start'];
+      expect(start.displayBalance).toBe(500);
+      expect(start.overspent).toBe(false);
+    });
+
     it('uses configured budget for past months, not spending', async () => {
       // Use a budget period in the past (2025-01-01 to 2025-06-30)
       const pastBudgetConfig = {
