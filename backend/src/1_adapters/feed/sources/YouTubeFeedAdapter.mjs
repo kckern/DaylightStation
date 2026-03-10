@@ -177,7 +177,8 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
       const chId = this.#extractTag(entry, 'yt:channelId');
 
       const thumbMatch = entry.match(/<media:thumbnail[^>]+url="([^"]+)"/);
-      const image = thumbMatch?.[1] || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+      const rawImage = thumbMatch?.[1] || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+      const { image, thumbnail } = this.#upgradeThumb(rawImage, videoId);
 
       const descMatch = entry.match(/<media:description>([\s\S]*?)<\/media:description>/);
       const body = descMatch?.[1]?.slice(0, 200) || null;
@@ -190,6 +191,7 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
         title: this.#decodeEntities(title),
         body: body ? this.#decodeEntities(body) : null,
         image,
+        thumbnail,
         link: `https://www.youtube.com/watch?v=${videoId}`,
         timestamp: published || new Date().toISOString(),
         priority: query.priority || 0,
@@ -200,7 +202,6 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
           videoId,
           sourceName: channelName || 'YouTube',
           sourceIcon: null, // stamped by #getChannelIcon after fetch
-          ...this.#thumbDimensions(image),
         },
       };
     }).filter(Boolean);
@@ -259,7 +260,8 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
       .map(v => {
         const snippet = v.snippet;
         const videoId = v.id.videoId;
-        const image = snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url || null;
+        const rawImage = snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url || null;
+        const { image, thumbnail } = this.#upgradeThumb(rawImage, videoId);
         return {
           id: `youtube:${videoId}`,
           tier: query.tier || 'wire',
@@ -268,6 +270,7 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
           title: snippet.title,
           body: snippet.description?.slice(0, 200) || null,
           image,
+          thumbnail,
           link: `https://www.youtube.com/watch?v=${videoId}`,
           timestamp: snippet.publishedAt || new Date().toISOString(),
           priority: query.priority || 0,
@@ -278,7 +281,6 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
             videoId,
             sourceName: snippet.channelTitle || 'YouTube',
             sourceIcon: null, // stamped by #getChannelIcon after fetch
-            ...this.#apiThumbDimensions(snippet, image),
           },
         };
       });
@@ -336,8 +338,24 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
   }
 
   // ======================================================================
-  // Thumbnail dimension helpers
+  // Thumbnail upgrade helpers
   // ======================================================================
+
+  /**
+   * Upgrade a ytimg thumbnail URL to the highest available quality.
+   * `maxresdefault.jpg` preserves the original aspect ratio (portrait for Shorts).
+   * Returns { image, thumbnail } where thumbnail is the original lower-res URL.
+   */
+  #upgradeThumb(url, videoId) {
+    if (!url || !videoId) return { image: url, thumbnail: null };
+    // Only upgrade ytimg.com URLs
+    if (!url.includes('i.ytimg.com')) return { image: url, thumbnail: null };
+    const maxres = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+    const sd = `https://i.ytimg.com/vi/${videoId}/sddefault.jpg`;
+    // If already maxres, no upgrade needed
+    if (url.includes('maxresdefault')) return { image: url, thumbnail: null };
+    return { image: maxres, thumbnail: url, sdFallback: sd };
+  }
 
   #thumbDimensions(url) {
     if (!url) return {};
@@ -345,16 +363,6 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
       if (url.includes(key)) return { imageWidth: dims.w, imageHeight: dims.h };
     }
     return {};
-  }
-
-  #apiThumbDimensions(snippet, imageUrl) {
-    for (const key of ['high', 'medium', 'default', 'maxres', 'standard']) {
-      const t = snippet.thumbnails?.[key];
-      if (t?.url === imageUrl && t.width && t.height) {
-        return { imageWidth: t.width, imageHeight: t.height };
-      }
-    }
-    return this.#thumbDimensions(imageUrl);
   }
 
   // ======================================================================

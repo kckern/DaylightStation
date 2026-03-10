@@ -42,7 +42,7 @@ const PLACEHOLDER_SVG = `data:image/svg+xml,${encodeURIComponent(
   </svg>`
 )}`;
 
-function HeroImage({ src, thumbnail, feedItemId, title }) {
+function HeroImage({ src, thumbnail, feedItemId, title, fit = 'cover' }) {
   const proxied = proxyImage(src);
   const [imgSrc, setImgSrc] = useState(thumbnail || src);
   const [phase, setPhase] = useState(thumbnail ? 'thumbnail' : 'original');
@@ -117,7 +117,7 @@ function HeroImage({ src, thumbnail, feedItemId, title }) {
           width: '100%',
           height: '100%',
           display: 'block',
-          objectFit: 'cover',
+          objectFit: fit,
           opacity: loaded ? 1 : 0,
           transition: 'opacity 0.3s ease-in-out',
         }}
@@ -258,6 +258,32 @@ function StatusDot({ status }) {
   );
 }
 
+const MAX_PORTRAIT_RATIO = 4 / 5; // tallest allowed (like Instagram)
+
+/**
+ * Compute hero aspect-ratio string.
+ * - Uses provided dimensions when available
+ * - Caps portrait thumbnails at 4:5 to prevent towering cards
+ * - Falls back to 16:9
+ */
+function heroAspectRatio(item) {
+  const w = item.meta?.imageWidth;
+  const h = item.meta?.imageHeight;
+  if (w && h) {
+    const ratio = w / h;
+    if (ratio < MAX_PORTRAIT_RATIO) return `4 / 5`;
+    return `${w} / ${h}`;
+  }
+  return '16 / 9';
+}
+
+/** True when portrait dimensions are capped at 4:5 (needs pillarboxing). */
+function isPortraitCapped(item) {
+  const w = item.meta?.imageWidth;
+  const h = item.meta?.imageHeight;
+  return w && h && (w / h) < MAX_PORTRAIT_RATIO;
+}
+
 export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
   const tier = item.tier || 'wire';
   const sourceName = item.meta?.sourceName || item.meta?.feedTitle || item.source || '';
@@ -297,9 +323,7 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
         <div style={{
             overflow: 'hidden',
             position: 'relative',
-            aspectRatio: (item.meta?.imageWidth && item.meta?.imageHeight)
-              ? `${item.meta.imageWidth} / ${item.meta.imageHeight}`
-              : '16 / 9',
+            aspectRatio: heroAspectRatio(item),
             backgroundColor: '#1a1b1e',
           }}>
           {playingInline ? (
@@ -308,12 +332,13 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
             <GalleryHero images={item.meta.galleryImages} feedItemId={item.id} title={item.title} />
           ) : (
             <>
-              <HeroImage src={item.image} thumbnail={item.thumbnail} feedItemId={item.id} title={item.title} />
+              <HeroImage src={item.image} thumbnail={item.thumbnail} feedItemId={item.id} title={item.title}
+                fit={isPortraitCapped(item) ? 'contain' : 'cover'} />
               {/* Duration badge */}
               {item.meta?.duration > 0 && (
                 <span style={{
                   position: 'absolute',
-                  bottom: '8px',
+                  bottom: '32px',
                   right: '8px',
                   background: 'rgba(0,0,0,0.75)',
                   color: '#fff',
@@ -356,6 +381,54 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
               )}
             </>
           )}
+          {/* Source bar overlay — inside thumbnail */}
+          <div style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            padding: '0.4rem 0.6rem',
+            background: 'rgba(0,0,0,0.5)',
+            zIndex: 2,
+          }}>
+            {item.meta?.status && <StatusDot status={item.meta.status} />}
+            {iconUrl && (
+              <img
+                src={iconUrl}
+                alt=""
+                style={{
+                  width: '14px',
+                  height: '14px',
+                  borderRadius: '50%',
+                  flexShrink: 0,
+                }}
+                onError={(e) => { feedLog.image('source icon failed', { url: iconUrl }); e.target.style.display = 'none'; }}
+              />
+            )}
+            <span style={{
+              fontSize: '0.65rem',
+              fontWeight: 600,
+              color: 'rgba(255,255,255,0.85)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.03em',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
+              {sourceName}
+            </span>
+            <span style={{
+              fontSize: '0.6rem',
+              color: 'rgba(255,255,255,0.55)',
+              marginLeft: 'auto',
+              flexShrink: 0,
+            }}>
+              {age}
+            </span>
+          </div>
           {/* Dismiss button overlay — desktop only (mobile uses swipe-left) */}
           {onDismiss && (
             <button
@@ -389,51 +462,37 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
         </div>
       )}
 
-      {/* Standard layout: source bar + body below image */}
-      <div style={{ padding: '0.75rem 1rem' }}>
-        {/* Source bar */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.4rem',
-          marginBottom: '0.35rem',
-        }}>
-          {item.meta?.status && <StatusDot status={item.meta.status} />}
-          {iconUrl && (
-            <img
-              src={iconUrl}
-              alt=""
-              style={{
-                width: '16px',
-                height: '16px',
-                borderRadius: '50%',
-                flexShrink: 0,
-              }}
-              onError={(e) => { feedLog.image('source icon failed', { url: iconUrl }); e.target.style.display = 'none'; }}
-            />
-          )}
-          <span style={{
-            fontSize: '0.7rem',
-            fontWeight: 600,
-            color: '#868e96',
-            textTransform: 'uppercase',
-            letterSpacing: '0.03em',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
+      {/* Body below image */}
+      <div style={{ padding: '0.75rem 1rem', lineHeight: 1.3 }}>
+        {/* Source bar for text-only cards (no thumbnail to overlay) */}
+        {!(item.image && isImageUrl(item.image)) && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            marginBottom: '0.35rem',
           }}>
-            {sourceName}
-          </span>
-          <span style={{
-            fontSize: '0.65rem',
-            color: '#5c636a',
-            marginLeft: 'auto',
-            flexShrink: 0,
-          }}>
-            {age}
-          </span>
-        </div>
-
+            {item.meta?.status && <StatusDot status={item.meta.status} />}
+            {iconUrl && (
+              <img
+                src={iconUrl}
+                alt=""
+                style={{ width: '16px', height: '16px', borderRadius: '50%', flexShrink: 0 }}
+                onError={(e) => { feedLog.image('source icon failed', { url: iconUrl }); e.target.style.display = 'none'; }}
+              />
+            )}
+            <span style={{
+              fontSize: '0.7rem', fontWeight: 600, color: '#868e96',
+              textTransform: 'uppercase', letterSpacing: '0.03em',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {sourceName}
+            </span>
+            <span style={{ fontSize: '0.65rem', color: '#5c636a', marginLeft: 'auto', flexShrink: 0 }}>
+              {age}
+            </span>
+          </div>
+        )}
         {/* Body */}
         <BodyModule item={item} />
 
