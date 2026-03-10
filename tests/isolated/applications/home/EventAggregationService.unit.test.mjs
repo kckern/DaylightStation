@@ -149,7 +149,7 @@ describe('EventAggregationService', () => {
       domain: 'app.todoist.com',
       location: null,
       url: 'https://app.todoist.com/app/task/6frX7VPFJfVrRvhx',
-      allday: true,
+      allday: false,
       status: null,
     });
   });
