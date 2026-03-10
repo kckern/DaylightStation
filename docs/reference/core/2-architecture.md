@@ -1140,30 +1140,25 @@ const listCalendarEvents = async (logger, job_id, targetUsername = null) => {
 
 ---
 
-### 5. Events Job (Aggregator)
+### 5. Events Aggregation (Live)
 
-The `events.mjs` job should be updated to pull from `current/` subdirectories:
+The `EventAggregationService` reads from `current/` data stores on each API request — no scheduled job or intermediate file needed.
 
 ```javascript
-// backend/jobs/events.mjs
+// backend/src/3_applications/home/EventAggregationService.mjs
 
-export default async (job_id) => {
-    const username = getDefaultUsername();
-    
-    // Load from CURRENT sources (not lifelog)
-    const calendarEvents = userLoadFile(username, 'current/calendar') || [];
-    const todoItems = userLoadFile(username, 'current/todoist')?.tasks || [];
-    const clickupData = userLoadFile(username, 'current/clickup')?.tasks || [];
-    
-    // ... rest of aggregation logic ...
-    
-    // Save to household shared location (for Upcoming module)
-    const hid = process.env.household_id || 'default';
-    householdSaveFile(hid, 'common/events', allItems);
-    
-    return allItems;
-};
+class EventAggregationService {
+    constructor({ dataService, configService, logger })
+
+    getUpcomingEvents(username?) {
+        // Reads current/calendar, current/todoist, current/clickup
+        // via dataService.user.read(path, username)
+        // Maps each to unified event schema, sorts by start date (nulls last)
+    }
+}
 ```
+
+Wired into `/api/v1/home/events` via the homeAutomation router. Falls back to static `common/events.yml` if service is unavailable.
 
 ---
 
