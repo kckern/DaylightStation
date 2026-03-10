@@ -30,20 +30,22 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
 
   // Build the actual data series
   const actualData = dayKeys.map((dateKey, idx) => {
-    const isMonday = moment(dateKey).day() === 1;
+    const day = dailyBalances[dateKey];
     const isFirstDay = idx === 0;
     const isWeekend = moment(dateKey).day() === 0 || moment(dateKey).day() === 6;
     const highlightToday = isCurrentMonth && idx === today;
+    const overspent = day.overspent;
     return {
-      y: dailyBalances[dateKey].endingBalance,
-      color: (highlightToday || isFirstDay) ? '#0077b6' : (isWeekend ? '#777' : undefined)
+      y: day.displayBalance ?? Math.abs(day.endingBalance),
+      actualBalance: day.endingBalance,
+      color: overspent ? '#c1121f' : (highlightToday || isFirstDay) ? '#0077b6' : (isWeekend ? '#777' : undefined)
     };
   });
 
   // Budget stats
   const startKey = `${inferredMonth}-start`;
   const initialBudget = dailyBalances[startKey]?.startingBalance || 0;
-  const endingBalance = dailyBalances[lastDayKey]?.endingBalance || 0;
+  const endingBalance = dailyBalances[lastDayKey]?.endingBalance ?? 0;
   const spent = initialBudget - endingBalance;
 
   // Build projected data for future days in the current month
@@ -91,7 +93,7 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
   });
 
   // Identify where the balance crosses below zero (shaded area)
-  const zeroCrossingIndex = actualData.findIndex((pt) => pt.y < 0);
+  const zeroCrossingIndex = dayKeys.findIndex(key => dailyBalances[key].overspent);
   const categories = [''].concat(Array.from({ length: daysInMonth }, (_, i) => (i + 1).toString()));
 
   return {
@@ -101,7 +103,10 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
         if (!this.y && this.y !== 0) return false;
         const dayNum = parseInt(this.key) || this.x + 1;
         const date = moment(inferredMonth).date(dayNum).format('MMMM D, YYYY');
-        return `<b>${this.series.name}: ${formatAsCurrency(this.y)}</b><br/>${date}`;
+        const displayValue = this.point?.actualBalance != null
+          ? formatAsCurrency(this.point.actualBalance)
+          : formatAsCurrency(this.y);
+        return `<b>${this.series.name}: ${displayValue}</b><br/>${date}`;
       }
     },
     title: {
@@ -153,11 +158,11 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
       plotBands: zeroCrossingIndex >= 0 ? [{
         from: zeroCrossingIndex,
         to: daysInMonth,
-        color: 'rgba(255, 0, 0, 0.1)'
+        color: 'rgba(255, 0, 0, 0.05)'
       }] : []
     },
     yAxis: {
-      min: Math.min(0, endingBalance, ...actualData.map((a) => a.y)),
+      min: 0,
       max: initialBudget,
       title: { text: '' },
       labels: {
