@@ -125,22 +125,29 @@ export function createFinanceRouter(config) {
         return res.status(404).json({ error: 'Budget data not found' });
       }
 
+      // Find the budget whose date range contains current/past months
+      // (sorted newest-first so we prefer the most recent applicable budget)
+      const currentMonth = nowMonth(); // YYYY-MM
       const dates = Object.keys(finances.budgets).sort((a, b) => b.localeCompare(a));
-      const latestBudget = finances.budgets[dates[0]];
-      if (!latestBudget?.dayToDayBudget) {
-        return res.status(404).json({ error: 'Day-to-day budget not found' });
+
+      let budgetData = null;
+      for (const startDate of dates) {
+        const budget = finances.budgets[startDate];
+        if (!budget?.dayToDayBudget) continue;
+
+        const months = Object.keys(budget.dayToDayBudget)
+          .filter(m => m <= currentMonth)
+          .sort((a, b) => b.localeCompare(a));
+
+        if (months.length > 0) {
+          budgetData = { ...budget.dayToDayBudget[months[0]] };
+          break;
+        }
       }
 
-      // Filter to current month or earlier (exclude future months)
-      const currentMonth = nowMonth(); // YYYY-MM
-      const months = Object.keys(latestBudget.dayToDayBudget)
-        .filter(m => m <= currentMonth)
-        .sort((a, b) => b.localeCompare(a));
-      const latestMonth = months[0];
-      if (!latestMonth) {
+      if (!budgetData) {
         return res.status(404).json({ error: 'No budget data for current or past months' });
       }
-      const budgetData = { ...latestBudget.dayToDayBudget[latestMonth] };
 
       // Remove transactions for lighter response
       delete budgetData.transactions;
