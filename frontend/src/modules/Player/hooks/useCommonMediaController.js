@@ -77,6 +77,9 @@ export function useCommonMediaController({
   // Track the last seek intent (what time user tried to seek to)
   const lastSeekIntentRef = useRef(null);
 
+  // Unique identity for this mount instance (used to scope the start-time guard)
+  const mountIdRef = useRef(Symbol('mount'));
+
   // Track if playback.started has been logged for this media (one-time per track)
   const playbackStartedRef = useRef(false);
 
@@ -1039,8 +1042,9 @@ export function useCommonMediaController({
 
       // Only apply start time on effective initial load (first time for this assetId), not on recovery reloads
       let startTime = 0;
-      const hasAppliedForKey = !!useCommonMediaController.__appliedStartByKey[assetId];
-      const isEffectiveInitial = isInitialLoadRef.current && !isRecoveringRef.current && !hasAppliedForKey;
+      const appliedByMount = useCommonMediaController.__appliedStartByKey[assetId];
+      const hasAppliedThisMount = appliedByMount === mountIdRef.current;
+      const isEffectiveInitial = isInitialLoadRef.current && !isRecoveringRef.current && !hasAppliedThisMount;
       if (isEffectiveInitial) {
         const shouldApplyStart = (duration > (12 * 60) || isVideo);
         startTime = shouldApplyStart ? start : 0;
@@ -1055,13 +1059,13 @@ export function useCommonMediaController({
 
         // Mark that we've completed the initial load for this key
         isInitialLoadRef.current = false;
-        try { useCommonMediaController.__appliedStartByKey[assetId] = true; } catch {}
+        try { useCommonMediaController.__appliedStartByKey[assetId] = mountIdRef.current; } catch {}
         mcLog().debug('playback.state-mutation', { dict: 'appliedStartByKey', action: 'set', mediaKey: assetId, reason: 'initial-load' });
         if (DEBUG_MEDIA) console.log('[StartTime] initial load applying start', { startTime, start, isVideo, duration });
       } else {
         if (DEBUG_MEDIA) console.log('[StartTime] treating as non-initial load', {
           isRecovering: isRecoveringRef.current,
-          hasAppliedForKey,
+          hasAppliedForKey: hasAppliedThisMount,
           wasInitial: isInitialLoadRef.current,
           duration
         });
@@ -1102,7 +1106,7 @@ export function useCommonMediaController({
         duration,
         isEffectiveInitial,
         isRecovering: isRecoveringRef.current,
-        hasAppliedForKey,
+        hasAppliedForKey: hasAppliedThisMount,
         hasSnapshot: !!snapshot,
         snapshotTarget,
         isDash,
