@@ -506,6 +506,8 @@ export class BudgetCompilationService {
       credits: 0,
       debits: 0,
       endingBalance: budget,
+      displayBalance: budget,
+      overspent: false,
       transactionCount: 0
     };
 
@@ -533,6 +535,8 @@ export class BudgetCompilationService {
         credits,
         debits,
         endingBalance,
+        displayBalance: Math.abs(endingBalance),
+        overspent: endingBalance < 0,
         transactionCount: dayTransactions.length
       };
     }
