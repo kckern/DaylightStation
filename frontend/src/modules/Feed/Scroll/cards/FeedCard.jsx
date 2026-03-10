@@ -42,7 +42,7 @@ const PLACEHOLDER_SVG = `data:image/svg+xml,${encodeURIComponent(
   </svg>`
 )}`;
 
-function HeroImage({ src, thumbnail, feedItemId, title, fit = 'cover' }) {
+function HeroImage({ src, thumbnail, feedItemId, title }) {
   const proxied = proxyImage(src);
   const [imgSrc, setImgSrc] = useState(thumbnail || src);
   const [phase, setPhase] = useState(thumbnail ? 'thumbnail' : 'original');
@@ -117,7 +117,7 @@ function HeroImage({ src, thumbnail, feedItemId, title, fit = 'cover' }) {
           width: '100%',
           height: '100%',
           display: 'block',
-          objectFit: fit,
+          objectFit: 'cover',
           opacity: loaded ? 1 : 0,
           transition: 'opacity 0.3s ease-in-out',
         }}
@@ -277,12 +277,6 @@ function heroAspectRatio(item) {
   return '16 / 9';
 }
 
-/** True when portrait dimensions are capped at 4:5 (needs pillarboxing). */
-function isPortraitCapped(item) {
-  const w = item.meta?.imageWidth;
-  const h = item.meta?.imageHeight;
-  return w && h && (w / h) < MAX_PORTRAIT_RATIO;
-}
 
 export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
   const tier = item.tier || 'wire';
@@ -332,8 +326,7 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
             <GalleryHero images={item.meta.galleryImages} feedItemId={item.id} title={item.title} />
           ) : (
             <>
-              <HeroImage src={item.image} thumbnail={item.thumbnail} feedItemId={item.id} title={item.title}
-                fit={isPortraitCapped(item) ? 'contain' : 'cover'} />
+              <HeroImage src={item.image} thumbnail={item.thumbnail} feedItemId={item.id} title={item.title} />
               {/* Duration badge */}
               {item.meta?.duration > 0 && (
                 <span style={{
@@ -463,7 +456,7 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
       )}
 
       {/* Body below image */}
-      <div style={{ padding: '0.75rem 1rem', lineHeight: 1.3 }}>
+      <div style={{ padding: '0.75rem 1rem', lineHeight: 1 }}>
         {/* Source bar for text-only cards (no thumbnail to overlay) */}
         {!(item.image && isImageUrl(item.image)) && (
           <div style={{
