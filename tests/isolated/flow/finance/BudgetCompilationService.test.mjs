@@ -344,5 +344,45 @@ describe('BudgetCompilationService', () => {
       expect(jan31.startingBalance).toBe(0);
       expect(jan31.endingBalance).toBe(0);
     });
+
+    it('uses configured budget for past months, not spending', async () => {
+      // Use a budget period in the past (2025-01-01 to 2025-06-30)
+      const pastBudgetConfig = {
+        budget: [{
+          timeframe: { start: '2025-01-01', end: '2025-06-30' },
+          accounts: ['Checking'],
+          income: {
+            salary: { amount: 60000, payCheckCount: 24, payFrequencyInDays: 14, firstPaycheckDate: '2025-01-10' },
+            tags: ['Income'],
+            extra: []
+          },
+          dayToDay: { amount: 800, tags: ['Groceries'] },
+          monthly: [{ label: 'Rent', amount: 1500, tags: ['Rent'] }],
+          shortTerm: [{ label: 'Travel', amount: 500, flex: 1, tags: ['Travel'] }]
+        }],
+        mortgage: null
+      };
+
+      // Past month transactions that overspend: $900 on an $800 budget
+      const overspendTransactions = [
+        { id: '1', date: '2025-01-15', amount: 2500, expenseAmount: -2500, description: 'Paycheck', tagNames: ['Income'], type: 'income' },
+        { id: '2', date: '2025-01-10', amount: 500, expenseAmount: 500, description: 'Groceries', tagNames: ['Groceries'], type: 'expense' },
+        { id: '3', date: '2025-01-20', amount: 400, expenseAmount: 400, description: 'More Groceries', tagNames: ['Groceries'], type: 'expense' },
+        { id: '4', date: '2025-01-25', amount: 1500, expenseAmount: 1500, description: 'Rent', tagNames: ['Rent'], type: 'expense' },
+      ];
+
+      mockFinanceStore.getBudgetConfig.mockReturnValue(pastBudgetConfig);
+      mockFinanceStore.getTransactions.mockReturnValue(overspendTransactions);
+
+      const result = await service.compile();
+      const dtd = result.budgets['2025-01-01'].dayToDayBudget['2025-01'];
+
+      // Budget should be the configured amount, not spending
+      expect(dtd.budget).toBe(800);
+
+      // With $900 spent on $800 budget, balance goes negative
+      const jan31 = dtd.dailyBalances['2025-01-31'];
+      expect(jan31.endingBalance).toBe(-100);
+    });
   });
 });
