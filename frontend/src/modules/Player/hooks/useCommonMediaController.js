@@ -77,6 +77,9 @@ export function useCommonMediaController({
   // Track the last seek intent (what time user tried to seek to)
   const lastSeekIntentRef = useRef(null);
 
+  // Debounce seek logging — DASH fires multiple seeked events per seek (audio+video tracks)
+  const lastSeekedLogTsRef = useRef(0);
+
   // Unique identity for this mount instance (used to scope the start-time guard)
   const mountIdRef = useRef(Symbol('mount'));
 
@@ -1250,7 +1253,9 @@ export function useCommonMediaController({
     };
     const clearSeeking = () => {
       const el = getMediaEl();
-      if (el) {
+      const now = Date.now();
+      if (el && now - lastSeekedLogTsRef.current > 200) {
+        lastSeekedLogTsRef.current = now;
         mcLog().sampled('playback.seek', {
           mediaKey: assetId,
           phase: 'seeked',
