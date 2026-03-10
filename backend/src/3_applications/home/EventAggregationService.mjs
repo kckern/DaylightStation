@@ -71,7 +71,7 @@ export class EventAggregationService {
       domain: 'app.todoist.com',
       location: null,
       url: t.url ?? `https://app.todoist.com/app/task/${t.id}`,
-      allday: true,
+      allday: false,
       status: null,
     }));
   }
