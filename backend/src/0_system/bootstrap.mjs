@@ -1477,6 +1477,7 @@ export function createHomeAutomationAdapters(config) {
  * @param {string} [config.householdId] - Household ID
  * @param {Object} [config.entropyService] - Entropy service for data freshness
  * @param {Object} [config.configService] - Config service for user lookup
+ * @param {Object} [config.eventAggregationService] - Event aggregation service
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
@@ -1488,6 +1489,7 @@ export function createHomeAutomationApiRouter(config) {
     householdId,
     entropyService,
     configService,
+    eventAggregationService,
     logger = console
   } = config;
 
@@ -1502,6 +1504,7 @@ export function createHomeAutomationApiRouter(config) {
     householdId,
     entropyService,
     configService,
+    eventAggregationService,
     logger
   });
 }
