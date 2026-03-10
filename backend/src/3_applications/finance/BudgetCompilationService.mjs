@@ -447,7 +447,7 @@ export class BudgetCompilationService {
       }
 
       const spending = this.#round(transactions.reduce((acc, txn) => acc + txn.amount, 0));
-      const budget = isCurrentMonth ? config.dayToDay.amount : spending;
+      const budget = config.dayToDay.amount;
       const balance = this.#round(budget - spending);
 
       const dailyBalances = this.#calculateDailyBalances(month, transactions, budget);
