@@ -314,4 +314,35 @@ describe('BudgetCompilationService', () => {
       expect(result.mortgage).toBeDefined();
     });
   });
+
+  describe('daily balance continuity', () => {
+    it('carries forward zero balance without resetting to budget', async () => {
+      // Transactions that exactly consume the $800 budget by day 15
+      const zeroOutTransactions = [
+        { id: '1', date: '2026-01-15', amount: 2500, expenseAmount: -2500, description: 'Paycheck', tagNames: ['Income'], type: 'income' },
+        { id: '2', date: '2026-01-05', amount: 400, expenseAmount: 400, description: 'Groceries', tagNames: ['Groceries'], type: 'expense' },
+        { id: '3', date: '2026-01-15', amount: 400, expenseAmount: 400, description: 'More Groceries', tagNames: ['Groceries'], type: 'expense' },
+        { id: '4', date: '2026-01-20', amount: 1500, expenseAmount: 1500, description: 'Rent', tagNames: ['Rent'], type: 'expense' },
+      ];
+      mockFinanceStore.getTransactions.mockReturnValue(zeroOutTransactions);
+
+      const result = await service.compile();
+      const dtd = result.budgets['2026-01-01'].dayToDayBudget['2026-01'];
+      const balances = dtd.dailyBalances;
+
+      // After spending $800 (400+400) on a $800 budget, balance should be 0
+      // Day after should start at 0, NOT reset to 800
+      const jan15 = balances['2026-01-15'];
+      expect(jan15.endingBalance).toBe(0);
+
+      const jan16 = balances['2026-01-16'];
+      expect(jan16.startingBalance).toBe(0);
+      expect(jan16.endingBalance).toBe(0);
+
+      // Last day should also be 0, not the budget
+      const jan31 = balances['2026-01-31'];
+      expect(jan31.startingBalance).toBe(0);
+      expect(jan31.endingBalance).toBe(0);
+    });
+  });
 });

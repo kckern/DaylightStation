@@ -454,7 +454,7 @@ export class BudgetCompilationService {
 
       // Calculate daily metrics
       const daysInMonth = this.#getDaysInMonth(month);
-      const lastBalance = Object.values(dailyBalances).pop()?.endingBalance || balance;
+      const lastBalance = Object.values(dailyBalances).pop()?.endingBalance ?? balance;
       const spent = this.#round(spending - lastBalance);
 
       const endOfMonth = new Date(`${month}-01`);
@@ -514,7 +514,7 @@ export class BudgetCompilationService {
       const prevDayStr = day === 1 ? `${month}-start` : `${month}-${String(day - 1).padStart(2, '0')}`;
       const dayTransactions = transactions.filter(txn => txn.date === dayStr);
 
-      const startingBalance = dailyBalances[prevDayStr]?.endingBalance || budget;
+      const startingBalance = dailyBalances[prevDayStr]?.endingBalance ?? budget;
       const credits = this.#round(
         dayTransactions
           .filter(txn => txn.expenseAmount < 0)
