@@ -8,6 +8,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
 import { formatFoodList, formatDateHeader } from '#domains/nutrition/entities/formatters.mjs';
+import { repairTruncatedJson } from '../lib/repairJson.mjs';
 
 /**
  * Log food from image use case
@@ -175,7 +176,7 @@ export class LogFoodFromImage {
 
       // 5. Call AI for food detection
       const prompt = this.#buildDetectionPrompt();
-      const response = await this.#aiGateway.chatWithImage(prompt, imageForAI, { maxTokens: 1000 });
+      const response = await this.#aiGateway.chatWithImage(prompt, imageForAI, { maxTokens: 4096 });
 
       this.#logger.info?.('logImage.aiResponse', {
         conversationId,
@@ -338,7 +339,7 @@ Be conservative with estimates.`,
    */
   #parseFoodResponse(response) {
     try {
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      const jsonMatch = response.match(/\{[\s\S]*\}?/);
       if (!jsonMatch) {
         this.#logger.warn?.('logImage.parse.noJson', {
           responseLength: response?.length || 0,
@@ -346,7 +347,16 @@ Be conservative with estimates.`,
         });
         return [];
       }
-      const data = JSON.parse(jsonMatch[0]);
+      let data;
+      try {
+        data = JSON.parse(jsonMatch[0]);
+      } catch {
+        data = repairTruncatedJson(jsonMatch[0]);
+        if (data) {
+          this.#logger.warn?.('logImage.parseRepaired', { itemCount: data.items?.length || 0 });
+        }
+      }
+      if (!data) return [];
       const rawItems = data.items || [];
       this.#logger.info?.('logImage.parse.success', { itemCount: rawItems.length });
 
