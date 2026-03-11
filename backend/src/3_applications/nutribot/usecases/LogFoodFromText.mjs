@@ -8,6 +8,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
 import { formatFoodList, formatDateHeader } from '#domains/nutrition/entities/formatters.mjs';
+import { repairTruncatedJson } from '../lib/repairJson.mjs';
 
 /**
  * Get current time details for date context in prompts
@@ -133,7 +134,7 @@ export class LogFoodFromText {
       const prompt = this.#buildDetectionPrompt(text);
       this.#logger.debug?.('logText.aiPrompt', { conversationId, text });
 
-      const response = await this.#aiGateway.chat(prompt, { maxTokens: 1000 });
+      const response = await this.#aiGateway.chat(prompt, { maxTokens: 4096 });
       this.#logger.debug?.('logText.aiResponse', { conversationId, response: response?.substring?.(0, 500) });
 
       // 3. Parse response into food items and date
@@ -381,9 +382,18 @@ Begin response with '{' character - output only valid JSON, no markdown.`,
     const { today } = getCurrentTimeDetails(this.#getTimezone());
 
     try {
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      const jsonMatch = response.match(/\{[\s\S]*\}?/);
       if (jsonMatch) {
-        const data = JSON.parse(jsonMatch[0]);
+        let data;
+        try {
+          data = JSON.parse(jsonMatch[0]);
+        } catch {
+          data = repairTruncatedJson(jsonMatch[0]);
+          if (data) {
+            this.#logger.warn?.('logText.parseRepaired', { itemCount: data.items?.length || 0 });
+          }
+        }
+        if (!data) return { items: [], date: today, time: null };
         const rawItems = data.items || [];
 
         const items = rawItems.map((item) => {
@@ -613,7 +623,7 @@ Begin response with '{' character - output only valid JSON, no markdown.`,
 
     // Call AI with contextual prompt
     const prompt = this.#buildDetectionPrompt(contextualText);
-    const response = await this.#aiGateway.chat(prompt, { maxTokens: 1000 });
+    const response = await this.#aiGateway.chat(prompt, { maxTokens: 4096 });
 
     const { items: revisedItems, date: revisedDate, time: revisedTime } = this.#parseFoodResponse(response);
     const finalItems = revisedItems.length > 0 ? revisedItems : targetLog.items || [];

@@ -7,6 +7,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { formatFoodList, formatDateHeader } from '#domains/nutrition/entities/formatters.mjs';
+import { repairTruncatedJson } from '../lib/repairJson.mjs';
 
 /**
  * Process revision input use case
@@ -97,7 +98,7 @@ export class ProcessRevisionInput {
 
       // 5. Call AI to apply revisions
       const prompt = this.#buildRevisionPrompt(nutriLog.items, text);
-      const response = await this.#aiGateway.chat(prompt, { maxTokens: 1000 });
+      const response = await this.#aiGateway.chat(prompt, { maxTokens: 4096 });
 
       // 6. Parse revised items
       const revisedItems = this.#parseRevisionResponse(response);
@@ -212,9 +213,18 @@ Noom colors:
    */
   #parseRevisionResponse(response) {
     try {
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      const jsonMatch = response.match(/\{[\s\S]*\}?/);
       if (jsonMatch) {
-        const data = JSON.parse(jsonMatch[0]);
+        let data;
+        try {
+          data = JSON.parse(jsonMatch[0]);
+        } catch {
+          data = repairTruncatedJson(jsonMatch[0]);
+          if (data) {
+            this.#logger.warn?.('processRevision.parseRepaired', { itemCount: data.items?.length || 0 });
+          }
+        }
+        if (!data) return [];
         const rawItems = data.items || [];
 
         return rawItems.map((item) => ({
