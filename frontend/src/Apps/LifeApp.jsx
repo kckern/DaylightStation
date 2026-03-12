@@ -15,6 +15,7 @@ import { BeliefsView } from '../modules/Life/views/plan/BeliefsView.jsx';
 import { ValuesView } from '../modules/Life/views/plan/ValuesView.jsx';
 import { QualitiesView } from '../modules/Life/views/plan/QualitiesView.jsx';
 import { CeremonyConfig } from '../modules/Life/views/plan/CeremonyConfig.jsx';
+import { CeremonyFlow } from '../modules/Life/views/ceremony/CeremonyFlow.jsx';
 
 const PlaceholderView = ({ title }) => (
   <div style={{ padding: '2rem' }}>
@@ -36,6 +37,12 @@ const LogCategoryRoute = () => {
 const GoalDetailRoute = () => {
   const { goalId } = useParams();
   return <GoalDetail goalId={goalId} />;
+};
+
+const CeremonyRoute = () => {
+  const { type } = useParams();
+  const navigate = useNavigate();
+  return <CeremonyFlow type={type} onComplete={() => navigate('/life/now')} />;
 };
 
 const LifeApp = () => {
@@ -100,7 +107,7 @@ const LifeApp = () => {
             <Route path="plan/values" element={<ValuesView />} />
             <Route path="plan/qualities" element={<QualitiesView />} />
             <Route path="plan/ceremonies" element={<CeremonyConfig />} />
-            <Route path="ceremony/:type" element={<PlaceholderView title="Ceremony Flow" />} />
+            <Route path="ceremony/:type" element={<CeremonyRoute />} />
           </Routes>
         </AppShell.Main>
       </AppShell>
