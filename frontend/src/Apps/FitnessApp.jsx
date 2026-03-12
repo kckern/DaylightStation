@@ -678,7 +678,7 @@ const FitnessApp = () => {
   }, [fitnessConfiguration, contentSource]);
 
   // Handle /fitness/play/:id route
-  const handlePlayFromUrl = async (episodeId) => {
+  const handlePlayFromUrl = async (episodeId, { nogovern = false } = {}) => {
     try {
       // Fetch episode metadata from API to get labels for governance
       const response = await DaylightAPI(`api/v1/info/${contentSource}/${episodeId}`);
@@ -706,7 +706,7 @@ const FitnessApp = () => {
         .map(l => typeof l === 'string' ? l.toLowerCase() : '');
       const isInSequentialShow = sequentialLabelSet.size > 0 &&
         episodeLabels.some(l => sequentialLabelSet.has(l));
-      if (isInSequentialShow) {
+      if (isInSequentialShow && !nogovern) {
         const showId = response.metadata?.grandparentId || response.metadata?.grandparentRatingKey;
         if (showId) {
           logger.info('fitness-play-url-sequential-blocked', { episodeId, showId });
@@ -997,7 +997,7 @@ const FitnessApp = () => {
       setActiveModule({ id });
       setCurrentView('module');
     } else if (view === 'play' && id) {
-      handlePlayFromUrl(id);
+      handlePlayFromUrl(id, { nogovern: new URLSearchParams(window.location.search).has('nogovern') });
     } else if (view === 'menu' && ids) {
       if (ids.length === 1) {
         setActiveCollection(ids[0]);
