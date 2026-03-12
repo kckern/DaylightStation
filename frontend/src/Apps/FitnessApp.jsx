@@ -34,6 +34,8 @@ const FitnessApp = () => {
   // feedback for tap interactions while we still provide keyboard accessibility (Enter/Space)
   // on focusable elements. If adding new buttons/interactive divs, prefer onPointerDown.
   // Security / compliance: start with empty config; all data must come from /api/fitness
+  // Sticky governance bypass — persists across route changes within the session
+  const [nogovern] = useState(() => new URLSearchParams(window.location.search).has('nogovern'));
   const [fitnessConfiguration, setFitnessConfiguration] = useState({});
   const [fetchError, setFetchError] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -997,7 +999,7 @@ const FitnessApp = () => {
       setActiveModule({ id });
       setCurrentView('module');
     } else if (view === 'play' && id) {
-      handlePlayFromUrl(id, { nogovern: new URLSearchParams(window.location.search).has('nogovern') });
+      handlePlayFromUrl(id, { nogovern });
     } else if (view === 'menu' && ids) {
       if (ids.length === 1) {
         setActiveCollection(ids[0]);
@@ -1231,10 +1233,11 @@ const FitnessApp = () => {
                 backgroundColor: 'rgba(0,0,0,0.9)',
                 zIndex: 1000
               }}>
-                <FitnessPlayer 
+                <FitnessPlayer
                   playQueue={fitnessPlayQueue}
                   setPlayQueue={setFitnessPlayQueue}
                   viewportRef={viewportRef}
+                  nogovern={nogovern}
                 />
               </div>
             )}
