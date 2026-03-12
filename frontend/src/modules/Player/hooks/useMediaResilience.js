@@ -163,21 +163,21 @@ export function useMediaResilience({
         reason,
         meta,
         waitKey,
-        seekToIntentMs: (targetTimeSeconds || playbackHealth.lastProgressSeconds || seconds || 0) * 1000
+        seekToIntentMs: (targetTimeSeconds || playbackHealth.lastProgressSeconds || seconds || initialStart || 0) * 1000
       });
     }
-  }, [actions, logWaitKey, meta, onReload, playbackHealth.lastProgressSeconds, recoveryCooldownMs, recoveryCooldownBackoffMultiplier, maxAttempts, seconds, statusRef, targetTimeSeconds, waitKey, playbackSessionKey]);
+  }, [actions, logWaitKey, meta, onReload, playbackHealth.lastProgressSeconds, recoveryCooldownMs, recoveryCooldownBackoffMultiplier, maxAttempts, seconds, statusRef, targetTimeSeconds, initialStart, waitKey, playbackSessionKey]);
 
   const retryFromExhausted = useCallback(() => {
     _clearTracker(playbackSessionKey);
-    const seekMs = (targetTimeSeconds || playbackHealth.lastProgressSeconds || seconds || 0) * 1000;
+    const seekMs = (targetTimeSeconds || playbackHealth.lastProgressSeconds || seconds || initialStart || 0) * 1000;
     consumeTargetTimeSeconds();
     actions.setStatus(STATUS.recovering);
     playbackLog('resilience-retry-from-exhausted', { waitKey: logWaitKey, seekToIntentMs: seekMs });
     if (typeof onReload === 'function') {
       onReload({ reason: 'user-retry-exhausted', meta, waitKey, seekToIntentMs: seekMs });
     }
-  }, [actions, consumeTargetTimeSeconds, logWaitKey, meta, onReload, playbackSessionKey, waitKey, targetTimeSeconds, playbackHealth.lastProgressSeconds, seconds]);
+  }, [actions, consumeTargetTimeSeconds, logWaitKey, meta, onReload, playbackSessionKey, waitKey, targetTimeSeconds, playbackHealth.lastProgressSeconds, seconds, initialStart]);
 
   useEffect(() => {
     // Self-contained formats (titlecard, etc.) have no media element —
