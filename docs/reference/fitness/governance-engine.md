@@ -311,11 +311,14 @@ await page.waitForTimeout(500);  // Final settle time
 
 ### `?nogovern` URL Bypass
 
-Adding `?nogovern` to any fitness play URL bypasses governance for testing and debugging:
+Adding `?nogovern` to any fitness URL bypasses governance for the entire session:
 
 ```
-/fitness/play/649319?nogovern
+/fitness?nogovern              # enter at root — persists as you navigate
+/fitness/play/649319?nogovern  # direct play URL
 ```
+
+The flag is **sticky** — captured once on initial page load and stored in React state, so it survives route changes within the session.
 
 **What it bypasses:**
 
@@ -327,8 +330,9 @@ Adding `?nogovern` to any fitness play URL bypasses governance for testing and d
 
 **How it works:**
 
-- `FitnessApp.jsx` captures the param at route parse time (before async API call) and passes `{ nogovern: true }` to `handlePlayFromUrl`, which skips the sequential show redirect
-- `FitnessPlayer.jsx` reads the param on mount and creates `effectiveGovernanceState` with `videoLocked: false, isGoverned: false, status: 'unlocked'`, which is used in place of the real `governanceState` throughout the component
+- `FitnessApp.jsx` captures the param on mount via `useState(() => ...)` — persists across route changes
+- Passes `nogovern` to `handlePlayFromUrl` (skips sequential redirect) and as a prop to `FitnessPlayer`
+- `FitnessPlayer` creates `effectiveGovernanceState` with `videoLocked: false, isGoverned: false, status: 'unlocked'`, used in place of the real `governanceState` throughout the component
 
 **When to use:** Automated Playwright tests, debugging video stall/seek issues, verifying resume behavior without needing real HR devices and participants.
 

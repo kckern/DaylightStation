@@ -148,9 +148,10 @@ Config: `recoveryCooldownMs: 4000`, `recoveryCooldownBackoffMultiplier: 3`, `max
 
 ### Testing with governance bypass
 
-Add `?nogovern` to the URL to bypass governance lock and sequential show redirect:
+Add `?nogovern` to any fitness URL to bypass governance lock and sequential show redirect. The flag is sticky for the session:
 ```
-/fitness/play/649319?nogovern
+/fitness?nogovern              # persists as you navigate
+/fitness/play/649319?nogovern  # direct play
 ```
 
 ---
