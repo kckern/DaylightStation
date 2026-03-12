@@ -80,7 +80,8 @@ export function useMediaResilience({
   const {
     epsilonSeconds,
     hardRecoverLoadingGraceMs,
-    recoveryCooldownMs
+    recoveryCooldownMs,
+    recoveryCooldownBackoffMultiplier
   } = monitorSettings;
   const { maxAttempts } = recoveryConfig;
 
@@ -128,13 +129,16 @@ export function useMediaResilience({
   const startupDeadlineRef = useRef(null);
   // Track if video has ever successfully played (for loop detection)
   const hasEverPlayedRef = useRef(false);
+  // Track transcode warmup state (0-byte fragment detection extends startup deadline)
+  const transcodeWarmingRef = useRef(false);
 
   const triggerRecovery = useCallback((reason) => {
     const now = Date.now();
     const tracker = _getTracker(playbackSessionKey);
 
-    // Cooldown check — uses module-level timestamp that survives remounts
-    if (now - tracker.lastAt < recoveryCooldownMs) return;
+    // Exponential backoff: cooldown grows with each attempt (4s → 12s → 36s → 108s)
+    const effectiveCooldown = recoveryCooldownMs * Math.pow(recoveryCooldownBackoffMultiplier, tracker.count);
+    if (now - tracker.lastAt < effectiveCooldown) return;
 
     // Max attempts check — prevents infinite remount loop
     if (tracker.count >= maxAttempts) {
@@ -149,7 +153,8 @@ export function useMediaResilience({
     const attempt = _recordRecovery(playbackSessionKey);
     playbackLog('resilience-recovery', {
       reason, waitKey: logWaitKey,
-      status: statusRef.current, attempt, maxAttempts
+      status: statusRef.current, attempt, maxAttempts,
+      effectiveCooldownMs: effectiveCooldown
     });
     actions.setStatus(STATUS.recovering);
 
@@ -161,17 +166,18 @@ export function useMediaResilience({
         seekToIntentMs: (targetTimeSeconds || playbackHealth.lastProgressSeconds || seconds || 0) * 1000
       });
     }
-  }, [actions, logWaitKey, meta, onReload, playbackHealth.lastProgressSeconds, recoveryCooldownMs, maxAttempts, seconds, statusRef, targetTimeSeconds, waitKey, playbackSessionKey]);
+  }, [actions, logWaitKey, meta, onReload, playbackHealth.lastProgressSeconds, recoveryCooldownMs, recoveryCooldownBackoffMultiplier, maxAttempts, seconds, statusRef, targetTimeSeconds, waitKey, playbackSessionKey]);
 
   const retryFromExhausted = useCallback(() => {
     _clearTracker(playbackSessionKey);
+    const seekMs = (targetTimeSeconds || playbackHealth.lastProgressSeconds || seconds || 0) * 1000;
     consumeTargetTimeSeconds();
     actions.setStatus(STATUS.recovering);
-    playbackLog('resilience-retry-from-exhausted', { waitKey: logWaitKey });
+    playbackLog('resilience-retry-from-exhausted', { waitKey: logWaitKey, seekToIntentMs: seekMs });
     if (typeof onReload === 'function') {
-      onReload({ reason: 'user-retry-exhausted', meta, waitKey, seekToIntentMs: 0 });
+      onReload({ reason: 'user-retry-exhausted', meta, waitKey, seekToIntentMs: seekMs });
     }
-  }, [actions, consumeTargetTimeSeconds, logWaitKey, meta, onReload, playbackSessionKey, waitKey]);
+  }, [actions, consumeTargetTimeSeconds, logWaitKey, meta, onReload, playbackSessionKey, waitKey, targetTimeSeconds, playbackHealth.lastProgressSeconds, seconds]);
 
   useEffect(() => {
     // Self-contained formats (titlecard, etc.) have no media element —
@@ -225,6 +231,44 @@ export function useMediaResilience({
       startupDeadlineRef.current = null;
     };
   }, [waitKey]);
+
+  // Transcode warmup awareness: extend deadline when 0-byte fragments detected
+  useEffect(() => {
+    if (disabled) return;
+
+    // The transcodewarming event is dispatched on the dash-video element (web component).
+    // We need to find it — getMediaEl returns the inner <video>, so walk up to the dash-video.
+    const innerEl = getMediaEl?.();
+    if (!innerEl) return;
+    const target = innerEl.closest?.('dash-video') || innerEl.parentElement?.closest?.('dash-video') || innerEl;
+
+    const handleWarming = () => {
+      transcodeWarmingRef.current = true;
+      playbackLog('resilience-transcode-warming', { waitKey: logWaitKey });
+
+      // Extend the startup deadline: clear current timer and set a longer one (60s)
+      clearTimeout(startupDeadlineRef.current);
+      startupDeadlineRef.current = setTimeout(() => {
+        triggerRecovery('startup-deadline-exceeded-after-warmup');
+        startupDeadlineRef.current = null;
+      }, 60000);
+    };
+
+    const handleWarmed = () => {
+      if (transcodeWarmingRef.current) {
+        transcodeWarmingRef.current = false;
+        playbackLog('resilience-transcode-warmed', { waitKey: logWaitKey });
+      }
+    };
+
+    target.addEventListener('transcodewarming', handleWarming);
+    target.addEventListener('transcodewarmed', handleWarmed);
+
+    return () => {
+      target.removeEventListener('transcodewarming', handleWarming);
+      target.removeEventListener('transcodewarmed', handleWarmed);
+    };
+  }, [disabled, getMediaEl, logWaitKey, triggerRecovery]);
 
   // Handle outside onStateChange
   useEffect(() => {

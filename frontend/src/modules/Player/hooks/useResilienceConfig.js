@@ -12,11 +12,12 @@ export const DEFAULT_MEDIA_RESILIENCE_CONFIG = {
     hardRecoverAfterStalledForMs: 2000,
     // Grace period for initial load
     hardRecoverLoadingGraceMs: 15000,
-    recoveryCooldownMs: 4000
+    recoveryCooldownMs: 4000,
+    recoveryCooldownBackoffMultiplier: 3
   },
   recovery: {
     enabled: true,
-    maxAttempts: 3
+    maxAttempts: 5
   },
   debug: {
     revealDelayMs: 5000
@@ -75,7 +76,8 @@ export function useResilienceConfig({ configOverrides, runtimeOverrides } = {}) 
         stallDetectionThresholdMs: coerceNumber(monitorConfig.stallDetectionThresholdMs, 5000),
         hardRecoverAfterStalledForMs: coerceNumber(monitorConfig.hardRecoverAfterStalledForMs, 2000),
         hardRecoverLoadingGraceMs: coerceNumber(monitorConfig.hardRecoverLoadingGraceMs, 15000),
-        recoveryCooldownMs: coerceNumber(monitorConfig.recoveryCooldownMs, 4000)
+        recoveryCooldownMs: coerceNumber(monitorConfig.recoveryCooldownMs, 4000),
+        recoveryCooldownBackoffMultiplier: coerceNumber(monitorConfig.recoveryCooldownBackoffMultiplier, 3)
       },
       recoveryConfig: {
         enabled: recoveryConfig.enabled ?? true,
