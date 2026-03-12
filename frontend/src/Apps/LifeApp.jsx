@@ -1,8 +1,12 @@
 import React, { useMemo } from 'react';
 import { MantineProvider, AppShell, NavLink, Title, Group, Text } from '@mantine/core';
-import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
 import '@mantine/core/styles.css';
 import { getChildLogger } from '../lib/logging/singleton.js';
+import { Dashboard } from '../modules/Life/views/now/Dashboard.jsx';
+import { LogBrowser } from '../modules/Life/views/log/LogBrowser.jsx';
+import { LogDayDetail } from '../modules/Life/views/log/LogDayDetail.jsx';
+import { LogCategoryView } from '../modules/Life/views/log/LogCategoryView.jsx';
 
 const PlaceholderView = ({ title }) => (
   <div style={{ padding: '2rem' }}>
@@ -10,6 +14,16 @@ const PlaceholderView = ({ title }) => (
     <Text c="dimmed" mt="sm">Coming soon</Text>
   </div>
 );
+
+const LogDayRoute = () => {
+  const { date } = useParams();
+  return <LogDayDetail date={date} />;
+};
+
+const LogCategoryRoute = () => {
+  const { category } = useParams();
+  return <LogCategoryView category={category} />;
+};
 
 const LifeApp = () => {
   const logger = useMemo(() => getChildLogger({ app: 'life' }), []);
@@ -52,9 +66,10 @@ const LifeApp = () => {
         <AppShell.Main>
           <Routes>
             <Route index element={<Navigate to="now" />} />
-            <Route path="now" element={<PlaceholderView title="Now — Alignment Engine" />} />
-            <Route path="log" element={<PlaceholderView title="Log — Lifelog Timeline" />} />
-            <Route path="log/:date" element={<PlaceholderView title="Log — Day Detail" />} />
+            <Route path="now" element={<Dashboard />} />
+            <Route path="log" element={<LogBrowser />} />
+            <Route path="log/:date" element={<LogDayRoute />} />
+            <Route path="log/category/:category" element={<LogCategoryRoute />} />
             <Route path="plan" element={<PlaceholderView title="Plan — Life Plan Overview" />} />
             <Route path="plan/goals" element={<PlaceholderView title="Goals" />} />
             <Route path="plan/beliefs" element={<PlaceholderView title="Beliefs" />} />
