@@ -618,6 +618,13 @@ export class PlexAdapter {
       labels: allLabels.length > 0 ? allLabels : null
     };
 
+    // Plex view count — how many times the item has been fully watched.
+    // Used by sequential-show gate logic so replaying an earlier episode
+    // doesn't reset the lock point.
+    if (item.viewCount != null) {
+      metadata.viewCount = item.viewCount;
+    }
+
     // Add episode-specific fields (TV shows) - using canonical relative hierarchy names
     if (item.type === 'episode') {
       // Grandparent (show) info
@@ -958,7 +965,7 @@ export class PlexAdapter {
         if (!decisionResult.success) {
           // Fallback to transcode URL
           const { sessionIdentifier, clientIdentifier } = decisionResult;
-          return this._buildTranscodeUrl(key, clientIdentifier, sessionIdentifier, maxVideoBitrate, maxResolution);
+          return this._buildTranscodeUrl(key, clientIdentifier, sessionIdentifier, maxVideoBitrate, maxResolution, startOffset);
         }
 
         const { sessionIdentifier, clientIdentifier, decision } = decisionResult;
@@ -971,7 +978,7 @@ export class PlexAdapter {
         }
 
         // Otherwise use transcode
-        return this._buildTranscodeUrl(key, clientIdentifier, sessionIdentifier, maxVideoBitrate, maxResolution);
+        return this._buildTranscodeUrl(key, clientIdentifier, sessionIdentifier, maxVideoBitrate, maxResolution, startOffset);
       }
     } catch (error) {
       console.error('[PlexAdapter] loadMediaUrl error:', error.message);
@@ -1576,7 +1583,7 @@ export class PlexAdapter {
    * @returns {string} Transcode URL
    * @private
    */
-  _buildTranscodeUrl(key, clientIdentifier, sessionIdentifier, maxVideoBitrate = null, maxResolution = null) {
+  _buildTranscodeUrl(key, clientIdentifier, sessionIdentifier, maxVideoBitrate = null, maxResolution = null, startOffset = 0) {
     const mediaBufferSize = 5242880 * 20; // 100MB buffer for better streaming
     const baseParams = [
       `path=%2Flibrary%2Fmetadata%2F${key}`,
@@ -1590,6 +1597,9 @@ export class PlexAdapter {
       `X-Plex-Client-Profile-Extra=${encodeURIComponent('append-transcode-target-codec(type=videoProfile&context=streaming&videoCodec=h264,hevc&audioCodec=aac&protocol=dash)')}`
     ];
 
+    if (startOffset > 0) {
+      baseParams.push(`offset=${Math.floor(startOffset)}`);
+    }
     if (maxVideoBitrate != null) {
       baseParams.push(`maxVideoBitrate=${encodeURIComponent(maxVideoBitrate)}`);
     }
@@ -1689,7 +1699,8 @@ export class PlexAdapter {
           clientIdentifier,
           sessionIdentifier,
           maxVideoBitrate,
-          resolvedMaxResolution
+          resolvedMaxResolution,
+          startOffset
         );
       }
 
@@ -1708,7 +1719,8 @@ export class PlexAdapter {
         clientIdentifier,
         sessionIdentifier,
         maxVideoBitrate,
-        resolvedMaxResolution
+        resolvedMaxResolution,
+        startOffset
       );
     } catch (error) {
       console.error('[PlexAdapter] loadMediaUrl error:', error.message);
