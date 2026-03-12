@@ -141,6 +141,104 @@ export class LifelogAggregator {
   }
 
   /**
+   * Aggregate lifelog data for a user across a date range.
+   * Loads each source file once, then iterates dates in memory.
+   *
+   * @param {string} username - System username
+   * @param {string} startDate - Start date (YYYY-MM-DD), inclusive
+   * @param {string} endDate - End date (YYYY-MM-DD), inclusive
+   * @returns {Object} { startDate, endDate, days: { [date]: { sources, categories, summaries } }, _meta }
+   */
+  async aggregateRange(username, startDate, endDate) {
+    this.#logger?.info('lifelog.aggregateRange.start', { username, startDate, endDate });
+
+    // Load all source files once (each file contains all dates)
+    const allSourceData = [];
+    for (const extractor of extractors) {
+      try {
+        const data = this.#loadSource(username, extractor.filename);
+        if (data) {
+          allSourceData.push({ extractor, data });
+        }
+      } catch (error) {
+        this.#logger?.warn('lifelog.aggregateRange.load-error', {
+          source: extractor.source,
+          error: error.message,
+        });
+      }
+    }
+
+    // Generate inclusive date range
+    const dates = [];
+    let current = moment(startDate);
+    const end = moment(endDate);
+    while (current.isSameOrBefore(end, 'day')) {
+      dates.push(current.format('YYYY-MM-DD'));
+      current = current.clone().add(1, 'day');
+    }
+
+    // Extract per-day from pre-loaded data
+    const days = {};
+    for (const date of dates) {
+      const daySources = {};
+      const dayCategories = {};
+      const daySummaries = [];
+
+      for (const { extractor, data } of allSourceData) {
+        try {
+          const extracted = extractor.extractForDate(data, date);
+          if (!extracted) continue;
+
+          daySources[extractor.source] = extracted;
+
+          if (!dayCategories[extractor.category]) {
+            dayCategories[extractor.category] = {};
+          }
+          dayCategories[extractor.category][extractor.source] = extracted;
+
+          const summary = extractor.summarize(extracted);
+          if (summary) {
+            daySummaries.push({
+              source: extractor.source,
+              category: extractor.category,
+              text: summary,
+            });
+          }
+        } catch (error) {
+          this.#logger?.warn('lifelog.aggregateRange.extract-error', {
+            source: extractor.source,
+            date,
+            error: error.message,
+          });
+        }
+      }
+
+      days[date] = { sources: daySources, categories: dayCategories, summaries: daySummaries };
+    }
+
+    const result = {
+      startDate,
+      endDate,
+      days,
+      _meta: {
+        username,
+        dayCount: dates.length,
+        availableSources: allSourceData.map(s => s.extractor.source),
+      },
+    };
+
+    this.#logger?.info('lifelog.aggregateRange.complete', {
+      username,
+      startDate,
+      endDate,
+      dayCount: dates.length,
+      sourcesLoaded: allSourceData.length,
+    });
+
+    return result;
+  }
+
+  /**
    * Load a harvested source file (with error handling)
    * @private
    */
