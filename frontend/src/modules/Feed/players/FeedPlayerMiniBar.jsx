@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { proxyImage } from '../Scroll/cards/utils.js';
 import { feedLog } from '../Scroll/feedLog.js';
 import { useFeedPlayer } from './FeedPlayerContext.jsx';
@@ -21,6 +22,16 @@ export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose }) {
     ? (item.image.startsWith('/api/') ? item.image : proxyImage(item.image))
     : null;
 
+  const touchRef = useRef({ startY: 0 });
+  const handleBarTouchStart = (e) => { touchRef.current.startY = e.touches[0].clientY; };
+  const handleBarTouchEnd = (e) => {
+    const dy = e.changedTouches[0].clientY - touchRef.current.startY;
+    if (dy < -60) {
+      feedLog.player('minibar swipe-up');
+      onOpen?.();
+    }
+  };
+
   const handleProgressClick = (e) => {
     if (!duration || !seek) return;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -31,7 +42,13 @@ export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose }) {
   };
 
   return (
-    <div className="feed-mini-bar" role="region" aria-label="Now playing">
+    <div
+      className="feed-mini-bar"
+      role="region"
+      aria-label="Now playing"
+      onTouchStart={handleBarTouchStart}
+      onTouchEnd={handleBarTouchEnd}
+    >
       {thumb && (
         <img
           src={thumb}
