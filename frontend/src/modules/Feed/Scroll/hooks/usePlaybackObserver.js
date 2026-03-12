@@ -12,8 +12,9 @@ import { feedLog } from '../feedLog.js';
  *
  * @param {React.RefObject} playerRef - ref to Player imperative handle
  * @param {boolean} active - whether to poll (true when activeMedia is set)
+ * @param {number} contextSpeed - playback rate from FeedPlayerContext (SSOT)
  */
-export function usePlaybackObserver(playerRef, active) {
+export function usePlaybackObserver(playerRef, active, contextSpeed) {
   const [state, setState] = useState({ playing: false, currentTime: 0, duration: 0 });
   const progressElRef = useRef(null);
   const rafIdRef = useRef(null);
@@ -69,7 +70,15 @@ export function usePlaybackObserver(playerRef, active) {
     };
   }, [playerRef, active]);
 
-  const [speed, setSpeedState] = useState(1);
+  // Sync context speed → media element playbackRate
+  useEffect(() => {
+    if (!active || !contextSpeed) return;
+    const el = playerRef.current?.getMediaElement?.();
+    if (el) {
+      feedLog.player('speed sync', { rate: contextSpeed });
+      el.playbackRate = contextSpeed;
+    }
+  }, [contextSpeed, active, playerRef]);
 
   const toggle = useCallback(() => {
     feedLog.player('toggle');
@@ -81,12 +90,5 @@ export function usePlaybackObserver(playerRef, active) {
     playerRef.current?.seek?.(t);
   }, [playerRef]);
 
-  const setSpeed = useCallback((rate) => {
-    feedLog.player('setSpeed', { rate });
-    const el = playerRef.current?.getMediaElement?.();
-    if (el) el.playbackRate = rate;
-    setSpeedState(rate);
-  }, [playerRef]);
-
-  return { ...state, toggle, seek, speed, setSpeed, progressElRef };
+  return { ...state, toggle, seek, progressElRef };
 }
