@@ -126,13 +126,13 @@ export default function Scroll() {
   itemsRef.current = items;
   const [detailData, setDetailData] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const { activeMedia, play: contextPlay, stop: contextStop, playerRef } = useFeedPlayer();
+  const { activeMedia, play: contextPlay, stop: contextStop, playerRef, speed } = useFeedPlayer();
   const [colors, setColors] = useState({});
   const [assemblyBatches, setAssemblyBatches] = useState([]);
   const [assemblyFilter, setAssemblyFilter] = useState({ tiers: [], sources: [] });
   const savedScrollRef = useRef(0);
 
-  const playback = usePlaybackObserver(playerRef, !!activeMedia);
+  const playback = usePlaybackObserver(playerRef, !!activeMedia, speed);
 
   const handlePlay = useCallback((item, contentId) => {
     if (!item) { feedLog.player('clear activeMedia'); contextStop(); return; }

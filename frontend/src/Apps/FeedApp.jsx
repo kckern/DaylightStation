@@ -70,8 +70,8 @@ function FeedLayout() {
   const location = useLocation();
   const isScroll = location.pathname.startsWith('/feed/scroll');
 
-  const { activeMedia, playerVisible, playerRef, stop } = useFeedPlayer();
-  const playback = usePlaybackObserver(playerRef, !!activeMedia);
+  const { activeMedia, playerVisible, playerRef, stop, speed } = useFeedPlayer();
+  const playback = usePlaybackObserver(playerRef, !!activeMedia, speed);
   const showMiniBar = !!activeMedia && !playerVisible;
 
   // Log mini-bar visibility changes
