@@ -247,6 +247,9 @@ export function VideoPlayer({
 
       dashLog.info('dash.api-ready', { src: el.src, events: Object.keys(events).length });
 
+      let consecutiveEmptyFragments = 0;
+      const EMPTY_FRAGMENT_THRESHOLD = 6;
+
       // Manifest loaded
       api.on('manifestLoaded', (e) => {
         dashLog.info('dash.manifest-loaded', {
@@ -276,13 +279,41 @@ export function VideoPlayer({
       api.on('fragmentLoadingCompleted', (e) => {
         const r = e?.request;
         const resp = e?.response;
+        const bytes = resp?.byteLength ?? resp?.length ?? null;
+
         dashLog.info('dash.fragment-loaded', {
           type: r?.mediaType,
           index: r?.index,
           startTime: r?.startTime,
-          bytes: resp?.byteLength ?? resp?.length ?? null,
+          bytes,
           status: r?.requestEndDate ? 'ok' : 'unknown'
         });
+
+        if (bytes === 0 || bytes === null) {
+          consecutiveEmptyFragments++;
+          if (consecutiveEmptyFragments === EMPTY_FRAGMENT_THRESHOLD) {
+            dashLog.warn('dash.transcode-warming', {
+              consecutiveEmpty: consecutiveEmptyFragments,
+              lastType: r?.mediaType,
+              lastIndex: r?.index,
+              lastStartTime: r?.startTime
+            });
+            el.dispatchEvent(new CustomEvent('transcodewarming', {
+              detail: { consecutiveEmpty: consecutiveEmptyFragments }
+            }));
+          }
+        } else {
+          if (consecutiveEmptyFragments > 0) {
+            dashLog.info('dash.transcode-warmed', {
+              emptyCount: consecutiveEmptyFragments,
+              firstDataType: r?.mediaType,
+              firstDataIndex: r?.index,
+              firstDataBytes: bytes
+            });
+            el.dispatchEvent(new CustomEvent('transcodewarmed'));
+          }
+          consecutiveEmptyFragments = 0;
+        }
       });
 
       api.on('fragmentLoadingAbandoned', (e) => {
