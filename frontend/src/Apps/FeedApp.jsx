@@ -7,6 +7,7 @@ import Scroll from '../modules/Feed/Scroll/Scroll.jsx';
 import Reader from '../modules/Feed/Reader/Reader.jsx';
 import { FeedPlayerProvider, useFeedPlayer } from '../modules/Feed/players/FeedPlayerContext.jsx';
 import FeedPlayerMiniBar from '../modules/Feed/players/FeedPlayerMiniBar.jsx';
+import FeedPlayerSheet from '../modules/Feed/players/FeedPlayerSheet.jsx';
 import PersistentPlayer from '../modules/Feed/Scroll/PersistentPlayer.jsx';
 import { usePlaybackObserver } from '../modules/Feed/Scroll/hooks/usePlaybackObserver.js';
 import { DaylightAPI } from '../lib/api.mjs';
@@ -73,6 +74,12 @@ function FeedLayout() {
   const { activeMedia, playerVisible, playerRef, stop, speed } = useFeedPlayer();
   const playback = usePlaybackObserver(playerRef, !!activeMedia, speed);
   const showMiniBar = !!activeMedia && !playerVisible;
+  const [sheetOpen, setSheetOpen] = useState(false);
+
+  // Close sheet if media is cleared
+  useEffect(() => {
+    if (!activeMedia) setSheetOpen(false);
+  }, [activeMedia]);
 
   // Log mini-bar visibility changes
   const prevMiniBarRef = useRef(showMiniBar);
@@ -113,14 +120,20 @@ function FeedLayout() {
       <div className="feed-content">
         <Outlet />
       </div>
-      {showMiniBar && (
+      {showMiniBar && !sheetOpen && (
         <FeedPlayerMiniBar
           item={activeMedia.item}
           playback={playback}
-          onOpen={() => {}}
+          onOpen={() => setSheetOpen(true)}
           onClose={stop}
         />
       )}
+      <FeedPlayerSheet
+        open={sheetOpen && !!activeMedia}
+        onClose={() => setSheetOpen(false)}
+        item={activeMedia?.item}
+        playback={playback}
+      />
       <PersistentPlayer
         ref={playerRef}
         contentId={activeMedia?.contentId || null}
