@@ -1121,13 +1121,18 @@ export function useCommonMediaController({
 
       mediaEl.dataset.key = assetId;
 
-      if (Number.isFinite(startTime) && startTime > 0 && isDash) {
-        // DASH resume: the backend appends ?offset=<seconds> to the stream URL
-        // so Plex starts transcoding from the resume position. However, Plex still
-        // declares the full timeline in the MPD (0 to full duration), so the client
-        // MUST seek to the offset position — segments before the offset are empty/0-byte.
+      // DASH resume: Plex appends ?offset=<seconds> to start transcoding from the resume
+      // position, but the MPD still declares the full timeline (0 to full duration).
+      // Segments before the offset are empty/0-byte, so we MUST client-side seek.
+      // Use startTime if provided, otherwise extract offset from the stream URL.
+      const streamSrc = isDash ? (containerRef.current?.getAttribute?.('src') || meta.mediaUrl || '') : '';
+      const urlOffsetMatch = isDash ? streamSrc.match(/[?&]offset=(\d+)/) : null;
+      const urlOffset = urlOffsetMatch ? Number(urlOffsetMatch[1]) : 0;
+      const dashSeekTarget = (Number.isFinite(startTime) && startTime > 0) ? startTime : urlOffset;
+
+      if (isDash && dashSeekTarget > 0) {
         {
-          if (DEBUG_MEDIA) console.log('[StartTime] DASH: deferring seek to loadedmetadata/timeupdate', { startTime });
+          if (DEBUG_MEDIA) console.log('[StartTime] DASH: deferring seek to loadedmetadata/timeupdate', { startTime, urlOffset, dashSeekTarget });
           const container = containerRef.current;
           let seekApplied = false;
           const applySeek = (source) => {
@@ -1137,20 +1142,20 @@ export function useCommonMediaController({
             mediaEl.removeEventListener('timeupdate', onTimeUpdate);
             try {
               if (container?.api?.seek) {
-                container.api.seek(startTime);
+                container.api.seek(dashSeekTarget);
               } else {
-                mediaEl.currentTime = startTime;
+                mediaEl.currentTime = dashSeekTarget;
               }
             } catch (_) {}
             mcLog().info('playback.start-time-applied', {
               mediaKey: assetId,
               method: `dash-${source}`,
-              intent: startTime,
+              intent: dashSeekTarget,
               actual: mediaEl.currentTime,
-              drift: Math.abs(mediaEl.currentTime - startTime)
+              drift: Math.abs(mediaEl.currentTime - dashSeekTarget)
             });
             lastSeekIntentRef.current = null;
-            if (DEBUG_MEDIA) console.log('[StartTime] DASH: applied seek via', source, { startTime, currentTime: mediaEl.currentTime });
+            if (DEBUG_MEDIA) console.log('[StartTime] DASH: applied seek via', source, { dashSeekTarget, currentTime: mediaEl.currentTime });
           };
           // Seek on loadedmetadata (earliest reliable point for DASH with server offset)
           const onLoaded = () => applySeek('loadedmetadata');
