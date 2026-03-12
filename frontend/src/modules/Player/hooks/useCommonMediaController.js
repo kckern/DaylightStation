@@ -1123,18 +1123,17 @@ export function useCommonMediaController({
 
       if (Number.isFinite(startTime) && startTime > 0 && isDash) {
         // DASH resume: the backend appends ?offset=<seconds> to the stream URL
-        // so Plex transcodes from the resume position. The DASH manifest's first
-        // segments are already near the resume point — no client-side seek needed.
-        // If the URL lacks an offset param, fall back to deferred api.seek().
-        const streamSrc = containerRef.current?.getAttribute?.('src') || meta.mediaUrl || '';
-        const hasServerOffset = /[?&]offset=/.test(streamSrc);
-        if (hasServerOffset) {
-          if (DEBUG_MEDIA) console.log('[StartTime] DASH: server-side offset, skipping client seek', { startTime, src: streamSrc });
-        } else {
-          if (DEBUG_MEDIA) console.log('[StartTime] DASH: no server offset, deferring seek to timeupdate', { startTime });
+        // so Plex starts transcoding from the resume position. However, Plex still
+        // declares the full timeline in the MPD (0 to full duration), so the client
+        // MUST seek to the offset position — segments before the offset are empty/0-byte.
+        {
+          if (DEBUG_MEDIA) console.log('[StartTime] DASH: deferring seek to loadedmetadata/timeupdate', { startTime });
           const container = containerRef.current;
-          const onTimeUpdate = () => {
-            if (mediaEl.currentTime < 0.5) return;
+          let seekApplied = false;
+          const applySeek = (source) => {
+            if (seekApplied) return;
+            seekApplied = true;
+            mediaEl.removeEventListener('loadedmetadata', onLoaded);
             mediaEl.removeEventListener('timeupdate', onTimeUpdate);
             try {
               if (container?.api?.seek) {
@@ -1145,17 +1144,25 @@ export function useCommonMediaController({
             } catch (_) {}
             mcLog().info('playback.start-time-applied', {
               mediaKey: assetId,
-              method: 'dash-deferred',
+              method: `dash-${source}`,
               intent: startTime,
               actual: mediaEl.currentTime,
               drift: Math.abs(mediaEl.currentTime - startTime)
             });
-            // Clear seek intent after start-time is applied — prevents stale intent
-            // from polluting drift calculations on subsequent pause/resume seeks
             lastSeekIntentRef.current = null;
-            if (DEBUG_MEDIA) console.log('[StartTime] DASH: applied deferred seek after timeupdate', { startTime, currentTime: mediaEl.currentTime });
+            if (DEBUG_MEDIA) console.log('[StartTime] DASH: applied seek via', source, { startTime, currentTime: mediaEl.currentTime });
           };
+          // Seek on loadedmetadata (earliest reliable point for DASH with server offset)
+          const onLoaded = () => applySeek('loadedmetadata');
+          // Fallback: seek on first timeupdate with any progress
+          const onTimeUpdate = () => {
+            if (mediaEl.currentTime < 0.5) return;
+            applySeek('timeupdate');
+          };
+          mediaEl.addEventListener('loadedmetadata', onLoaded);
           mediaEl.addEventListener('timeupdate', onTimeUpdate);
+          // If metadata already loaded (e.g. hardReset reload), seek immediately
+          if (mediaEl.readyState >= 1) applySeek('immediate');
         }
       } else if (Number.isFinite(startTime)) {
         try {
