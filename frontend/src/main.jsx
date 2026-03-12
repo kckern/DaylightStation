@@ -10,7 +10,7 @@ import OfficeApp from './Apps/OfficeApp.jsx';
 import TVApp from './Apps/TVApp.jsx';
 import FinanceApp from './Apps/FinanceApp.jsx';
 import HealthApp from './Apps/HealthApp.jsx';
-import LifelogApp from './Apps/LifelogApp.jsx';
+import LifeApp from './Apps/LifeApp.jsx';
 import FitnessApp from './Apps/FitnessApp.jsx';
 import FeedApp from './Apps/FeedApp.jsx';
 import AdminApp from './Apps/AdminApp.jsx';
@@ -144,7 +144,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/media/*" element={<MediaApp />} />
         <Route path="/health" element={<HealthApp />} />
         <Route path="/fitness/*" element={<FitnessApp />} />
-        <Route path="/lifelog" element={<LifelogApp />} />
+        <Route path="/life/*" element={<LifeApp />} />
         <Route path="/admin/*" element={<AdminApp />} />
         <Route path="/screen/:screenId" element={<WebSocketProvider><ScreenRenderer /></WebSocketProvider>} />
         <Route path="/setup" element={<SetupWizard onComplete={() => window.location.href = '/'} />} />
