@@ -5,6 +5,9 @@ import { CategoryFilter } from './shared/CategoryFilter.jsx';
 import { LogDayDetail } from './LogDayDetail.jsx';
 import { LogWeekView } from './LogWeekView.jsx';
 import { LogMonthView } from './LogMonthView.jsx';
+import { LogSeasonView } from './LogSeasonView.jsx';
+import { LogYearView } from './LogYearView.jsx';
+import { LogDecadeView } from './LogDecadeView.jsx';
 
 /**
  * Main log browser with scope switching and category filtering.
@@ -31,15 +34,12 @@ export function LogBrowser({ username }) {
         </Stack>
       </Paper>
 
-      {scope === 'day' && (
-        <LogDayDetail date={selectedDate} {...viewProps} />
-      )}
-      {scope === 'week' && (
-        <LogWeekView {...viewProps} />
-      )}
-      {scope === 'month' && (
-        <LogMonthView {...viewProps} />
-      )}
+      {scope === 'day' && <LogDayDetail date={selectedDate} {...viewProps} />}
+      {scope === 'week' && <LogWeekView {...viewProps} />}
+      {scope === 'month' && <LogMonthView {...viewProps} />}
+      {scope === 'season' && <LogSeasonView {...viewProps} />}
+      {scope === 'year' && <LogYearView {...viewProps} />}
+      {scope === 'decade' && <LogDecadeView {...viewProps} />}
     </Stack>
   );
 }
