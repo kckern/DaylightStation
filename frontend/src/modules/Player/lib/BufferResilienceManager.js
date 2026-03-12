@@ -14,7 +14,8 @@ export class BufferResilienceManager {
       attempts: 0,
       cooldownUntil: 0,
       pendingFetch: false,
-      skipped: false
+      skipped: false,
+      consecutiveEmpty: 0
     };
   }
 
@@ -45,6 +46,25 @@ export class BufferResilienceManager {
 
       // Return a hanging promise to induce stall
       return this._induceStall(response);
+    }
+
+    // Detect 0-byte segment responses (transcode not ready)
+    if (requestType === 1 && status === 200 && (bytes === 0 || bytes === null)) {
+      this.state.consecutiveEmpty = (this.state.consecutiveEmpty || 0) + 1;
+      if (this.state.consecutiveEmpty >= 4) {
+        this.callbacks.onLog('warn', 'shaka-zero-byte-segments', {
+          consecutiveEmpty: this.state.consecutiveEmpty,
+          uri: response?.uri || null,
+          action: 'transcode-warming-detected'
+        });
+      }
+    } else if (requestType === 1 && bytes > 0) {
+      if (this.state.consecutiveEmpty > 0) {
+        this.callbacks.onLog('info', 'shaka-zero-byte-cleared', {
+          wasEmpty: this.state.consecutiveEmpty
+        });
+      }
+      this.state.consecutiveEmpty = 0;
     }
 
     this.callbacks.onLog(status && status >= 400 ? 'warn' : 'debug', 'shaka-network-response', {
