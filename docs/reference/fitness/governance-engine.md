@@ -309,6 +309,29 @@ await page.waitForTimeout(500);  // Final settle time
 
 ## Testing Patterns
 
+### `?nogovern` URL Bypass
+
+Adding `?nogovern` to any fitness play URL bypasses governance for testing and debugging:
+
+```
+/fitness/play/649319?nogovern
+```
+
+**What it bypasses:**
+
+| Check | Normal behavior | With `?nogovern` |
+|-------|----------------|-------------------|
+| Governance lock | `videoLocked: true` blocks autoplay | `videoLocked: false`, autoplay allowed |
+| Governance phase | Stays in `pending` without participants | Overridden to `unlocked` |
+| Sequential show redirect | Redirects `/fitness/play/:id` to show UI | Skips redirect, plays directly |
+
+**How it works:**
+
+- `FitnessApp.jsx` captures the param at route parse time (before async API call) and passes `{ nogovern: true }` to `handlePlayFromUrl`, which skips the sequential show redirect
+- `FitnessPlayer.jsx` reads the param on mount and creates `effectiveGovernanceState` with `videoLocked: false, isGoverned: false, status: 'unlocked'`, which is used in place of the real `governanceState` throughout the component
+
+**When to use:** Automated Playwright tests, debugging video stall/seek issues, verifying resume behavior without needing real HR devices and participants.
+
 ### Verify Governance State
 
 ```javascript
