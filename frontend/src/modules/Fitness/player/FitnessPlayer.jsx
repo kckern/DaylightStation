@@ -118,7 +118,7 @@ const DEFAULT_SIDEBAR = 250;
 
 const FITNESS_MAX_VIDEO_BITRATE = null;
 
-const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
+const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false }) => {
   useRenderProfiler('FitnessPlayer');
   const logger = useMemo(() => getLogger().child({ component: 'FitnessPlayer' }), []);
   const mainPlayerRef = useRef(null);
@@ -251,11 +251,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const lastKnownTimeRef = useRef(0);
   const statusUpdateRef = useRef({ lastSent: 0, inflight: false, endSent: false });
   // GovernanceEngine is the sole authority for lock decisions (SSoT)
-  // ?nogovern URL param bypasses governance for testing/debugging
-  const governanceBypass = useMemo(() => {
-    try { return new URLSearchParams(window.location.search).has('nogovern'); } catch { return false; }
-  }, []);
-  const effectiveGovernanceState = governanceBypass
+  // nogovern prop bypasses governance for testing/debugging (sticky from ?nogovern URL param)
+  const effectiveGovernanceState = nogovern
     ? { ...governanceState, videoLocked: false, isGoverned: false, status: 'unlocked' }
     : governanceState;
 
