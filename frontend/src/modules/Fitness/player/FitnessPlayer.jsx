@@ -12,7 +12,7 @@ import { playbackLog } from '@/modules/Player/lib/playbackLogger.js';
 import { useFitnessVolumeControls } from '@/modules/Fitness/nav/useFitnessVolumeControls.js';
 import { resolveMediaIdentity, resolveContentId, normalizeDuration } from '@/modules/Player/utils/mediaIdentity.js';
 import { resolvePause, PAUSE_REASON } from '@/modules/Player/utils/pauseArbiter.js';
-import FitnessChartApp from '@/modules/Fitness/widgets/FitnessChartApp/index.jsx';
+import FitnessChart from '@/modules/Fitness/widgets/FitnessChart/index.jsx';
 import { useMediaAmplifier } from '@/modules/Fitness/components/useMediaAmplifier.js';
 import { FitnessPlayerFrame } from './frames';
 import HRSimTrigger from '@/modules/Fitness/nav/HRSimTrigger.jsx';
@@ -251,6 +251,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const lastKnownTimeRef = useRef(0);
   const statusUpdateRef = useRef({ lastSent: 0, inflight: false, endSent: false });
   // GovernanceEngine is the sole authority for lock decisions (SSoT)
+  // ?nogovern URL param bypasses governance for testing/debugging
+  const governanceBypass = useMemo(() => {
+    try { return new URLSearchParams(window.location.search).has('nogovern'); } catch { return false; }
+  }, []);
+  const effectiveGovernanceState = governanceBypass
+    ? { ...governanceState, videoLocked: false, isGoverned: false, status: 'unlocked' }
+    : governanceState;
+
   const [showChart, setShowChart] = useState(true);
 
   // Use participantRoster from context, with session roster as fallback for immediate data
@@ -262,7 +270,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
   renderCountRef.current += 1;
 
-  const govStatus = typeof governanceState?.status === 'string' ? governanceState.status.toLowerCase() : '';
+  const govStatus = typeof effectiveGovernanceState?.status === 'string' ? governanceState.status.toLowerCase() : '';
 
   const playerContentClassName = useMemo(() => {
     const classes = ['fitness-player-content'];
@@ -278,13 +286,13 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
   const pauseDecision = useMemo(() => resolvePause({
     seeking: { active: isSeeking },
-    governance: { locked: Boolean(governanceState?.videoLocked) },
+    governance: { locked: Boolean(effectiveGovernanceState?.videoLocked) },
     resilience: {
       stalled: resilienceState?.stalled,
       waiting: resilienceState?.waitingToPlay
     },
     user: { paused: isPaused }
-  }), [isSeeking, governanceState?.videoLocked, resilienceState?.stalled, resilienceState?.waitingToPlay, isPaused]);
+  }), [isSeeking, effectiveGovernanceState?.videoLocked, resilienceState?.stalled, resilienceState?.waitingToPlay, isPaused]);
 
   const governancePaused = pauseDecision.reason === PAUSE_REASON.GOVERNANCE && pauseDecision.paused;
 
@@ -540,8 +548,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     grandparentTitle: enhancedCurrentItem?.grandparentTitle,
     parentTitle: enhancedCurrentItem?.parentTitle,
     playerMode,
-    isGoverned: Boolean(governanceState?.videoLocked)
-  }), [currentItem, enhancedCurrentItem, playerMode, governanceState?.videoLocked]);
+    isGoverned: Boolean(effectiveGovernanceState?.videoLocked)
+  }), [currentItem, enhancedCurrentItem, playerMode, effectiveGovernanceState?.videoLocked]);
 
   const { videoVolume } = useFitnessVolumeControls({
     videoPlayerRef: playerRef,
@@ -1008,7 +1016,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     // SSoT: GovernanceEngine is sole authority for lock decisions.
     // videoLocked=true when media is governed AND phase is pending/locked.
     // Autoplay is allowed when video is not locked (ungoverned, unlocked, or warning phase).
-    const canAutoplay = !governanceState?.videoLocked;
+    const canAutoplay = !effectiveGovernanceState?.videoLocked;
     const stableGuid = String(
       enhancedCurrentItem.guid
         || enhancedCurrentItem.contentId
@@ -1036,7 +1044,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       continuous: false,
       autoplay: canAutoplay
     };
-  }, [enhancedCurrentItem, videoVolume.volume, videoVolume.volumeRef, currentItem?.playbackRate, governanceState?.videoLocked]);
+  }, [enhancedCurrentItem, videoVolume.volume, videoVolume.volumeRef, currentItem?.playbackRate, effectiveGovernanceState?.videoLocked]);
 
   const autoplayEnabled = Boolean(playObject?.autoplay);
 
@@ -1074,7 +1082,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       durationSeconds,
       resumeSeconds: Number.isFinite(media.seconds) ? Math.round(media.seconds) : null,
       autoplay: autoplayEnabled,
-      governed: governanceState?.isGoverned ?? Boolean(governanceState?.videoLocked),
+      governed: effectiveGovernanceState?.isGoverned ?? Boolean(effectiveGovernanceState?.videoLocked),
       labels: Array.isArray(media.labels) ? media.labels : [],
       type: media.type || media.mediaType || 'video',
       description: media.summary || media.episodeDescription || null,
@@ -1084,9 +1092,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     getLogger().info('fitness.media_start.autoplay', {
       contentId: currentMediaIdentity,
       autoplay: autoplayEnabled,
-      videoLocked: governanceState?.videoLocked ?? null,
-      isGoverned: governanceState?.isGoverned ?? null,
-      governancePhase: governanceState?.status ?? null,
+      videoLocked: effectiveGovernanceState?.videoLocked ?? null,
+      isGoverned: effectiveGovernanceState?.isGoverned ?? null,
+      governancePhase: effectiveGovernanceState?.status ?? null,
       labels: Array.isArray(media.labels) ? media.labels : []
     });
     if (logged) {
@@ -1101,7 +1109,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       };
     }
     // No cleanup — media_start wasn't logged or queued, effect will retry
-  }, [fitnessSessionInstance, currentMediaIdentity, enhancedCurrentItem, currentItem, autoplayEnabled, governanceState?.videoLocked, queueSize]);
+  }, [fitnessSessionInstance, currentMediaIdentity, enhancedCurrentItem, currentItem, autoplayEnabled, effectiveGovernanceState?.videoLocked, queueSize]);
 
   const resilienceMediaIdentity = useMemo(
     () => resolveContentId(resilienceState?.meta),
@@ -1492,7 +1500,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       ) : null}
       {showChart && govStatus !== 'locked' && govStatus !== 'pending' && (
         <div className="fitness-chart-overlay">
-          <FitnessChartApp mode="sidebar" onClose={() => {}} />
+          <FitnessChart mode="sidebar" onClose={() => {}} />
         </div>
       )}
       {playerMode === 'fullscreen' && fitnessSessionInstance?.isActive && (
@@ -1551,7 +1559,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       generateThumbnailUrl={generateThumbnailUrl}
       thumbnailsCommitRef={thumbnailsCommitRef}
       thumbnailsGetTimeRef={thumbnailsGetTimeRef}
-      playIsGoverned={Boolean(governanceState?.videoLocked)}
+      playIsGoverned={Boolean(effectiveGovernanceState?.videoLocked)}
       mediaElementKey={playerElementKey}
     />
   );
