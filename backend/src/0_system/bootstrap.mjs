@@ -174,6 +174,8 @@ import { KomgaClient } from '#adapters/content/readable/komga/KomgaClient.mjs';
 import { KomgaPagedMediaAdapter } from '#adapters/komga/KomgaPagedMediaAdapter.mjs';
 import { YamlTocCacheDatastore } from '#adapters/persistence/yaml/YamlTocCacheDatastore.mjs';
 import { MastraAdapter, YamlWorkingMemoryAdapter } from '#adapters/agents/index.mjs';
+import { LifeplanGuideAgent } from '#apps/agents/lifeplan-guide/LifeplanGuideAgent.mjs';
+import { YamlConversationStore } from '#adapters/agents/YamlConversationStore.mjs';
 import { createAgentsRouter } from '#api/v1/routers/agents.mjs';
 
 // Health domain + application imports
@@ -2638,6 +2640,29 @@ export function createAgentsApiRouter(config) {
         tocCacheDatastore,
       });
     }
+  }
+
+  // Register lifeplan guide agent (requires lifeplan services)
+  if (config.lifeplanServices) {
+    const conversationStore = new YamlConversationStore({
+      basePath: dataService.resolveUserPath?.('') || dataService.basePath,
+    });
+
+    agentOrchestrator.register(LifeplanGuideAgent, {
+      workingMemory,
+      lifePlanStore: config.lifeplanServices.container.getLifePlanStore(),
+      goalStateService: config.lifeplanServices.container.getGoalStateService(),
+      beliefEvaluator: config.lifeplanServices.container.getBeliefEvaluator(),
+      feedbackService: config.lifeplanServices.services.feedbackService,
+      aggregator: config.lifeplanServices.aggregator,
+      metricsStore: config.lifeplanServices.container.getMetricsStore(),
+      driftService: config.lifeplanServices.services.driftService,
+      ceremonyService: config.lifeplanServices.services.ceremonyService,
+      ceremonyRecordStore: config.lifeplanServices.container.getCeremonyRecordStore(),
+      cadenceService: config.lifeplanServices.container.getCadenceService(),
+      notificationService: config.notificationService || { send: () => [] },
+      conversationStore,
+    });
   }
 
   // Register scheduled assignments for all agents
