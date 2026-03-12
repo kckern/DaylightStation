@@ -103,6 +103,7 @@ Pure business logic with no external dependencies. Each domain has:
 | `entropy/` | Random content | Entropy reader |
 | `home-automation/` | Smart home control | Device states |
 | `ai/` | AI abstraction | AI-related value objects |
+| `lifeplan/` | Life planning (JOP) | LifePlan, Goal, Belief, Value, Quality |
 | `lifelog/` | Activity aggregation | Lifelog entries |
 | `core/` | Shared value objects | Common types |
 
@@ -116,6 +117,7 @@ Use case orchestration, complex workflows, and **port interfaces** (contracts fo
 | `journalist/` | Journal chatbot | 21 use cases, JournalistContainer |
 | `finance/` | Budget workflows | BudgetCompilationService, HarvestService |
 | `fitness/` | Session management | VoiceMemoTranscription |
+| `lifeplan/` | Life planning (JOP) | DriftService, CeremonyService, AlignmentService, RetroService, MetricsService |
 
 ### 4_api/ (39 files)
 
@@ -133,6 +135,7 @@ HTTP layer - Express routers and handlers.
 - `/api/fitness` - Fitness sessions
 - `/api/finance` - Budget data
 - `/api/health`, `/api/gratitude` - Health/wellness
+- `/api/life` - Life planning (plan, now, log, health)
 - `/api/nutribot`, `/api/journalist` - Chatbot webhooks
 - `/admin/legacy`, `/admin/shims` - Admin endpoints
 
