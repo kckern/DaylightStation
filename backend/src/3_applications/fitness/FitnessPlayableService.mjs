@@ -138,13 +138,17 @@ export class FitnessPlayableService {
     const percent = item.percent ?? 0;
     const duration = item.duration ?? 0;
 
+    // Plex viewCount >= 1 means the item was fully watched at least once.
+    // This prevents the sequential-show lock gate from resetting when a user
+    // replays an earlier episode (which resets playhead/percent in Plex).
+    const everCompleted = (item.metadata?.viewCount ?? 0) >= 1;
+
     return {
       ...item,
       watchProgress: percent,
       watchSeconds: playhead,
       watchedDate: item.lastPlayed ?? null,
-      // Preserve undefined for watchTime so classifier can skip anti-seeking check when data is missing
-      isWatched: classifier.classify(
+      isWatched: everCompleted || classifier.classify(
           { playhead, percent, watchTime: item.watchTime },
           { duration }
         ) === 'watched'
