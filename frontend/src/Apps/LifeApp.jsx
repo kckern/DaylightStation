@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { MantineProvider, AppShell, NavLink, Title, Group, Text } from '@mantine/core';
 import { Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
-import { IconDashboard, IconTimeline, IconTarget, IconHeart, IconBrain, IconDiamond, IconShield, IconCalendarEvent } from '@tabler/icons-react';
+import { IconDashboard, IconTimeline, IconTarget, IconHeart, IconBrain, IconDiamond, IconShield, IconCalendarEvent, IconMessageCircle } from '@tabler/icons-react';
 import '@mantine/core/styles.css';
 import { getChildLogger } from '../lib/logging/singleton.js';
 import { Dashboard } from '../modules/Life/views/now/Dashboard.jsx';
@@ -16,6 +16,7 @@ import { ValuesView } from '../modules/Life/views/plan/ValuesView.jsx';
 import { QualitiesView } from '../modules/Life/views/plan/QualitiesView.jsx';
 import { CeremonyConfig } from '../modules/Life/views/plan/CeremonyConfig.jsx';
 import { CeremonyFlow } from '../modules/Life/views/ceremony/CeremonyFlow.jsx';
+import CoachChat from '../modules/Life/views/coach/CoachChat.jsx';
 
 const PlaceholderView = ({ title }) => (
   <div style={{ padding: '2rem' }}>
@@ -91,6 +92,12 @@ const LifeApp = () => {
             <NavLink label="Qualities" leftSection={<IconShield size={14} />} active={isActive('plan/qualities')} onClick={() => navigate('/life/plan/qualities')} />
             <NavLink label="Ceremonies" leftSection={<IconCalendarEvent size={14} />} active={isActive('plan/ceremonies')} onClick={() => navigate('/life/plan/ceremonies')} />
           </NavLink>
+          <NavLink
+            label="Coach"
+            leftSection={<IconMessageCircle size={16} />}
+            active={isActive('coach')}
+            onClick={() => navigate('/life/coach')}
+          />
         </AppShell.Navbar>
 
         <AppShell.Main>
@@ -108,6 +115,7 @@ const LifeApp = () => {
             <Route path="plan/qualities" element={<QualitiesView />} />
             <Route path="plan/ceremonies" element={<CeremonyConfig />} />
             <Route path="ceremony/:type" element={<CeremonyRoute />} />
+            <Route path="coach" element={<CoachChat />} />
           </Routes>
         </AppShell.Main>
       </AppShell>
