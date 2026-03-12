@@ -245,19 +245,31 @@ DASH video uses the `<dash-video>` web component (from `dash-video-element`), wh
 - `getMediaEl()` → the inner `<video>` from shadow DOM
 - `containerRef.api` → the dash.js `MediaPlayer` instance
 
-**Resume position seek constraint:**
+**DASH resume and the Plex offset model:**
 
-Setting `currentTime` directly on the inner `<video>` element during initialization bypasses dash.js's SourceBuffer management and corrupts the audio buffer. The sequence:
+The stream URL includes `?offset=<seconds>` to tell Plex where to start transcoding. However, Plex's MPD still declares the **full video timeline** (0 to total duration). Segments before the offset are empty/0-byte because Plex only transcoded from the offset forward.
 
-1. dash.js loads the MPD manifest and creates two SourceBuffers (video + audio)
-2. Init segments (headers) are appended to each SourceBuffer
-3. `loadedmetadata` fires on the inner `<video>`
-4. If `currentTime` is set here → dash.js abandons in-flight segments, flushes audio SourceBuffer, re-fetches the audio init segment, and loads data segments from the new position — but the audio SourceBuffer enters an inconsistent state where downloaded segments never append. Audio buffer stays at 0.00 permanently while video plays fine.
+This means the client **must** seek to the offset position after the manifest loads. Without this seek, dash.js starts at segment 0 and receives empty data, causing stalls.
 
-**Fix (in `useCommonMediaController.js`):** For `isDash` content with a non-zero `startTime`, the seek is deferred to the `playing` event and uses `container.api.seek(startTime)` instead of `mediaEl.currentTime`. This ensures:
-- Both SourceBuffers are fully initialized before any seek
-- The seek goes through dash.js's internal buffer management (proper flush + re-init)
-- Both audio and video buffers fill correctly after the seek
+**Seek strategy (in `useCommonMediaController.js`):**
+
+1. The controller determines the seek target from `startTime` (prop) or extracts `offset` from the stream URL as a fallback
+2. Seek is applied at the earliest reliable point: `loadedmetadata` event, `timeupdate` fallback, or immediately if `readyState >= 1`
+3. The seek uses `container.api.seek()` (dash.js API) when available, falling back to `mediaEl.currentTime`
+
+```
+startTime (prop) > 0  →  seek to startTime
+startTime = 0, URL has ?offset=N  →  seek to N (extracted from URL)
+no offset  →  play from beginning
+```
+
+**Why `container.api.seek()` instead of `mediaEl.currentTime`:**
+
+Setting `currentTime` directly on the inner `<video>` during initialization bypasses dash.js's SourceBuffer management. This can corrupt the audio buffer — dash.js abandons in-flight segments, flushes the audio SourceBuffer, and enters an inconsistent state where downloaded segments never append. Using `container.api.seek()` routes through dash.js's internal buffer management for correct flush + re-init.
+
+**Resilience recovery seek:**
+
+When the resilience system triggers recovery (hard reset or remount), it computes a seek offset from the fallback chain: `targetTimeSeconds || lastProgressSeconds || currentSeconds || initialStart || 0`. The `initialStart` ensures the original resume position is preserved even if the video never progressed past its initial load.
 
 **Cleanup on unmount (`dashCleanup.js`):**
 
