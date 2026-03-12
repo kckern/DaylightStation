@@ -242,7 +242,7 @@ const Player = forwardRef(function Player(props, ref) {
     playbackRate: sessionPlaybackRate,
     setVolume: setSessionVolume,
     setPlaybackRate: setSessionPlaybackRate
-  } = usePlaybackSession({ sessionKey: playbackSessionKey });
+  } = usePlaybackSession({ sessionKey: playbackSessionKey, defaults: { targetTimeSeconds: explicitStartSeconds } });
 
   const handleResolvedMeta = useCallback((meta) => {
     if (!meta) {
