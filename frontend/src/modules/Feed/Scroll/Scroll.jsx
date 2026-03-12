@@ -134,10 +134,10 @@ export default function Scroll() {
 
   const playback = usePlaybackObserver(playerRef, !!activeMedia);
 
-  const handlePlay = useCallback((item) => {
+  const handlePlay = useCallback((item, contentId) => {
     if (!item) { feedLog.player('clear activeMedia'); contextStop(); return; }
-    feedLog.player('play', { id: item.id, title: item.title, source: item.source });
-    contextPlay(item);
+    feedLog.player('play', { id: item.id, title: item.title, source: item.source, contentId });
+    contextPlay(item, contentId);
   }, [contextPlay, contextStop]);
 
   const handleAssemblyFilter = useCallback((filter) => {

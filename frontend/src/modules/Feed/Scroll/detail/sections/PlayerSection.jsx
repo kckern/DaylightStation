@@ -12,7 +12,7 @@ export default function PlayerSection({ data, onPlay, activeMedia, item, playbac
       <button
         onClick={() => {
           log().info('section.play', { feedItemId: item?.id, title: item?.title, contentId: data.contentId, provider: data.provider });
-          onPlay?.(item);
+          onPlay?.(item, data.contentId);
         }}
         style={{
           width: '100%',
