@@ -32,7 +32,7 @@ export default function CoachChat() {
         input: `[FEEDBACK] Rating: ${rating}. Context: ${context}`,
         context: { userId: 'default' },
       }),
-    }).catch(() => {});
+    }).catch(err => logger.warn('coach.feedback-error', { error: err.message }));
   }, [logger]);
 
   return (

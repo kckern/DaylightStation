@@ -3,9 +3,14 @@ import { Assignment } from '../../framework/Assignment.mjs';
 export class CadenceCheck extends Assignment {
   static id = 'cadence-check';
   static description = 'Check ceremony schedule and send nudges for due/overdue items';
+  // TODO: Make schedule configurable from user's cadence config instead of hardcoded daily
   static schedule = '0 7 * * *';
 
+  #notifyTool = null;
+
   async gather({ tools, userId, memory, logger }) {
+    // Capture notification tool for use in act()
+    this.#notifyTool = tools.find(t => t.name === 'send_action_message') || null;
     const call = (name, params) => {
       const tool = tools.find(t => t.name === name);
       if (!tool) return Promise.resolve(null);
@@ -106,6 +111,18 @@ Compose a single, concise notification message for the user.
       return;
     }
 
+    // Send notification via tool
+    if (this.#notifyTool) {
+      await this.#notifyTool.execute({
+        username: userId,
+        title: 'Life Coach',
+        body: validated.message,
+        actions: validated.actions,
+      });
+      logger?.info?.('cadence-check.notified', { userId, actionCount: validated.actions.length });
+    }
+
+    // Also store in memory for frontend polling
     memory.set('pending_nudge', validated, { ttl: 24 * 60 * 60 * 1000 });
   }
 }
