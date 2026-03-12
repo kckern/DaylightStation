@@ -297,7 +297,7 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
       setPlayingInline(true);
     } else {
       feedLog.interaction('remote-play', { id: item.id, title: item.title, contentType: item.contentType });
-      onPlay?.(item);
+      onPlay?.(item, item.id);
     }
   };
 
