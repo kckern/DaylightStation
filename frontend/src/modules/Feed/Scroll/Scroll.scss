@@ -201,6 +201,8 @@
   border-top: 1px solid #25262b;
   width: 100vw;
   flex-wrap: wrap;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 @media (min-width: 900px) {
