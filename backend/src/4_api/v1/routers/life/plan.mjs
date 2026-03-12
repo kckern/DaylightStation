@@ -1,7 +1,7 @@
 import { Router } from 'express';
 
 export default function createPlanRouter(config) {
-  const { lifePlanStore, goalStateService, beliefEvaluator, cadenceService } = config;
+  const { lifePlanStore, goalStateService, beliefEvaluator, cadenceService, ceremonyService, feedbackService, retroService } = config;
   const router = Router();
 
   const getUsername = (req) => req.query.username || 'default';
@@ -125,6 +125,59 @@ export default function createPlanRouter(config) {
       plan.cadence = { ...(plan.cadence || {}), ...req.body };
       lifePlanStore.save(username, plan);
       res.json({ ok: true });
+    } catch (error) { next(error); }
+  });
+
+  // GET /ceremony/:type — get ceremony content
+  router.get('/ceremony/:type', async (req, res, next) => {
+    try {
+      if (!ceremonyService) return res.status(501).json({ error: 'Ceremony service not configured' });
+      const content = ceremonyService.getCeremonyContent(req.params.type, getUsername(req));
+      if (!content) return res.status(400).json({ error: `Unknown ceremony type: ${req.params.type}` });
+      res.json(content);
+    } catch (error) { next(error); }
+  });
+
+  // POST /ceremony/:type/complete — record ceremony completion
+  router.post('/ceremony/:type/complete', async (req, res, next) => {
+    try {
+      if (!ceremonyService) return res.status(501).json({ error: 'Ceremony service not configured' });
+      const ok = ceremonyService.completeCeremony(req.params.type, getUsername(req), req.body);
+      if (!ok) return res.status(400).json({ error: `Unknown ceremony type: ${req.params.type}` });
+      res.json({ ok: true });
+    } catch (error) { next(error); }
+  });
+
+  // POST /feedback — record observation
+  router.post('/feedback', async (req, res, next) => {
+    try {
+      if (!feedbackService) return res.status(501).json({ error: 'Feedback service not configured' });
+      feedbackService.recordObservation(getUsername(req), req.body);
+      res.json({ ok: true });
+    } catch (error) { next(error); }
+  });
+
+  // GET /feedback — get feedback entries
+  router.get('/feedback', async (req, res, next) => {
+    try {
+      if (!feedbackService) return res.status(501).json({ error: 'Feedback service not configured' });
+      const period = req.query.start && req.query.end
+        ? { start: req.query.start, end: req.query.end }
+        : null;
+      const entries = feedbackService.getFeedback(getUsername(req), period);
+      res.json({ feedback: entries });
+    } catch (error) { next(error); }
+  });
+
+  // GET /retro — generate retrospective
+  router.get('/retro', async (req, res, next) => {
+    try {
+      if (!retroService) return res.status(501).json({ error: 'Retro service not configured' });
+      const period = req.query.start && req.query.end
+        ? { start: req.query.start, end: req.query.end }
+        : null;
+      const retro = retroService.generateRetro(getUsername(req), period);
+      res.json(retro);
     } catch (error) { next(error); }
   });
 
