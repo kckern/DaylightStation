@@ -4,7 +4,7 @@
  * Centralizes activity tracking that was previously scattered across:
  * - DeviceManager (device timeout logic)
  * - FitnessSession.roster (roster membership)
- * - FitnessChartApp (isPresent tracking)
+ * - FitnessChart (isPresent tracking)
  * - buildSegments (heart_rate presence detection)
  * 
  * State Machine:

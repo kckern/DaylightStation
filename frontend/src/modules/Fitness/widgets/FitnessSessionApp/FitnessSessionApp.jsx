@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 import useFitnessModule from '@/modules/Fitness/player/useFitnessModule';
 import FitnessSidebar from '@/modules/Fitness/player/FitnessSidebar.jsx';
 import CameraViewApp from '../CameraViewApp/index.jsx';
-import FitnessChartApp from '../FitnessChartApp/index.jsx';
+import FitnessChart from '../FitnessChart/index.jsx';
 import { FullscreenVitalsOverlay } from '@/modules/Fitness/shared/integrations';
 import './FitnessSessionApp.scss';
 
@@ -79,7 +79,7 @@ const FitnessSessionApp = ({ mode = 'standalone', onClose, config = {}, onMount 
         onClick={toggleFullscreen}
       >
         <div className="fitness-session-app__chart">
-          <FitnessChartApp mode="standalone" onClose={() => {}} />
+          <FitnessChart mode="standalone" onClose={() => {}} />
         </div>
         <FullscreenVitalsOverlay visible={isFullscreen} />
       </div>

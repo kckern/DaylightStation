@@ -5,6 +5,7 @@ import { useScreen } from '@/screen-framework/providers/ScreenProvider.jsx';
 import { DashboardCard } from '../_shared/DashboardCard.jsx';
 import { useFitnessScreen } from '@/modules/Fitness/FitnessScreenProvider.jsx';
 import SportIcon, { formatSportType } from '../_shared/SportIcon.jsx';
+import MiniRouteMap from './MiniRouteMap.jsx';
 import './FitnessSessionsWidget.scss';
 
 const CoinIcon = ({ size = 12 }) => (
@@ -118,6 +119,10 @@ function SessionsCard({ sessions, onSessionClick, selectedSessionId }) {
                         className="session-poster"
                         onError={(e) => { e.target.replaceWith(Object.assign(document.createElement('div'), { className: 'session-poster session-poster--placeholder session-poster--fallback' })); }}
                       />
+                    ) : s.strava?.mapPolyline ? (
+                      <div className="session-poster session-poster--map">
+                        <MiniRouteMap polyline={s.strava.mapPolyline} sessionId={s.sessionId} />
+                      </div>
                     ) : (
                       <div className="session-poster">
                         <SportIcon
@@ -217,6 +222,29 @@ function SessionsCard({ sessions, onSessionClick, selectedSessionId }) {
                         );
                       })()}
                     </div>
+
+                    {!bgUrl && s.strava && (s.strava.distance > 0 || s.strava.avgHeartrate) && (
+                      <div className="session-row__strava-stats">
+                        {s.strava.distance > 0 && (
+                          <div className="session-row__stat">
+                            <span className="session-row__stat-value">{(s.strava.distance / 1000).toFixed(1)}</span>
+                            <span className="session-row__stat-label">km</span>
+                          </div>
+                        )}
+                        {s.strava.avgHeartrate > 0 && (
+                          <div className="session-row__stat">
+                            <span className="session-row__stat-value">{Math.round(s.strava.avgHeartrate)}</span>
+                            <span className="session-row__stat-label">bpm</span>
+                          </div>
+                        )}
+                        {s.strava.elevation > 0 && (
+                          <div className="session-row__stat">
+                            <span className="session-row__stat-value">{Math.round(s.strava.elevation)}</span>
+                            <span className="session-row__stat-label">m</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               );

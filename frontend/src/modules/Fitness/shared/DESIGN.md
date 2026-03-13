@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines a comprehensive, extensible framework of shared UX components for Fitness Apps. These components are designed to be inherited and composed by apps like `JumpingJackGame`, `FitnessChartApp`, `CameraViewApp`, and future fitness applications.
+This document outlines a comprehensive, extensible framework of shared UX components for Fitness Apps. These components are designed to be inherited and composed by apps like `JumpingJackGame`, `FitnessChart`, `CameraViewApp`, and future fitness applications.
 
 The framework follows a layered architecture:
 1. **Primitives** – Atomic UI building blocks (buttons, inputs, gauges)

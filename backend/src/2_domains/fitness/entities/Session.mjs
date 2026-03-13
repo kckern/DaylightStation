@@ -28,7 +28,8 @@ export class Session {
     entities = [],
     treasureBox = null,
     session = null,
-    summary = null   // Session summary (computed by frontend, preserved through persistence)
+    summary = null,   // Session summary (computed by frontend, preserved through persistence)
+    strava = null      // Strava activity metadata (name, type, sportType, etc.)
   }) {
     // Normalize sessionId to SessionId value object
     this.sessionId = sessionId instanceof SessionId ? sessionId : new SessionId(sessionId);
@@ -48,6 +49,7 @@ export class Session {
     this.treasureBox = treasureBox;
     this.session = session;
     this.summary = summary;
+    this.strava = strava;
   }
 
   /**
@@ -268,6 +270,9 @@ export class Session {
 
     // Summary block (computed by frontend, preserved through persistence)
     if (this.summary) result.summary = this.summary;
+
+    // Strava activity metadata (for Strava-sourced sessions)
+    if (this.strava) result.strava = this.strava;
 
     // Entities (participation segments)
     if (this.entities.length > 0) result.entities = this.entities;

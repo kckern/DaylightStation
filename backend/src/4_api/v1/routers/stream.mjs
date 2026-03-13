@@ -102,7 +102,7 @@ export function createStreamRouter(config) {
     // Read manifest for media subdirectory preference
     let manifest = null;
     if (singalongDataPath) {
-      try { manifest = loadContainedYaml(path.join(singalongDataPath, collection), 'manifest'); } catch { /* no manifest */ }
+      try { manifest = loadContainedYaml(path.resolve(singalongDataPath, collection), 'manifest'); } catch { /* no manifest */ }
     }
     const subdirs = manifest?.mediaPreference?.subdirs;
 

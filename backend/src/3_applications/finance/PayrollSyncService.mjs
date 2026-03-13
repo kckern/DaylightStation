@@ -110,6 +110,15 @@ export class PayrollSyncService {
     const checks = checksResponse.data?.data?.checkSummaries || [];
     this.#logger.info?.('payroll.sync.found', { count: checks.length });
 
+    // Build a set of existing check IDs to detect already-fetched paychecks.
+    // Each stored paycheck may have a `_checkId` field from prior syncs.
+    // Also index by payEndDt for legacy entries without _checkId.
+    const existingCheckIds = new Set();
+    for (const [key, data] of Object.entries(existingData.paychecks || {})) {
+      if (data._checkId) existingCheckIds.add(data._checkId);
+      existingCheckIds.add(key); // legacy: payEndDt was used as key
+    }
+
     // Fetch details for each new paycheck
     const paychecks = { ...existingData.paychecks };
     let newCount = 0;
@@ -120,9 +129,9 @@ export class PayrollSyncService {
 
       if (!payEndDt) continue;
 
-      // Skip if already retrieved
-      if (existingDates.includes(payEndDt)) {
-        this.#logger.debug?.('payroll.paycheck.skip', { payEndDt });
+      // Skip if already retrieved (by check ID or legacy payEndDt key)
+      if (existingCheckIds.has(id)) {
+        this.#logger.debug?.('payroll.paycheck.skip', { payEndDt, id });
         continue;
       }
 
@@ -130,11 +139,18 @@ export class PayrollSyncService {
       const detailUrl = `https://${baseUrl}/${company}/${employeeId}/paycheck-details/${id}`;
       try {
         const detailResponse = await this.#httpClient.get(detailUrl, { headers });
-        const date = detailResponse.data?.data?.header?.payEndDt;
+        const data = detailResponse.data?.data;
+        const date = data?.header?.payEndDt;
         if (date) {
-          paychecks[date] = detailResponse.data.data;
+          // Use payEndDt as key; append '-rsu' suffix if key already taken (off-cycle RSU vests)
+          let storageKey = date;
+          if (paychecks[storageKey]) {
+            storageKey = `${date}-rsu`;
+          }
+          paychecks[storageKey] = { ...data, _checkId: id };
+          existingCheckIds.add(id);
           newCount++;
-          this.#logger.info?.('payroll.paycheck.fetched', { date });
+          this.#logger.info?.('payroll.paycheck.fetched', { date, storageKey, id });
         }
       } catch (error) {
         this.#logger.warn?.('payroll.paycheck.error', { id, error: error.message });
