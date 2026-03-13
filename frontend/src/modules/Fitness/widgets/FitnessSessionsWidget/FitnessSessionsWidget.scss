@@ -102,6 +102,11 @@
     background: rgba(255, 255, 255, 0.06);
   }
 
+  &--map {
+    overflow: hidden;
+    padding: 0;
+  }
+
   &__icon {
     width: 40px;
     height: 40px;
@@ -226,6 +231,39 @@
   object-fit: cover;
   border: 2px solid rgba(30, 30, 50, 0.9);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+// --- Strava Stats (right side of row) ---
+
+.session-row__strava-stats {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 8px;
+  min-width: 48px;
+}
+
+.session-row__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+}
+
+.session-row__stat-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.session-row__stat-label {
+  font-size: 0.5rem;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.3);
+  letter-spacing: 0.04em;
 }
 
 // --- Voice Memo Snippet ---

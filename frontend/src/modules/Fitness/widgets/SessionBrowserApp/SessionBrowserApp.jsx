@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import FitnessChartApp from '../FitnessChartApp/FitnessChartApp.jsx';
+import FitnessChart from '../FitnessChart/FitnessChart.jsx';
 import './SessionBrowserApp.scss';
 
 const Calendar = ({ year, month, selectedDate, activeDates, onSelectDate, onMonthChange }) => {
@@ -192,7 +192,7 @@ const SessionBrowserApp = () => {
                 <div className="loading">Loading details...</div>
               ) : sessionDetail ? (
                 <div className="session-detail__content">
-                  <FitnessChartApp
+                  <FitnessChart
                     sessionData={sessionDetail}
                     mode="standalone"
                     onClose={() => setSelectedSessionId(null)}

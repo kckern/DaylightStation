@@ -5,7 +5,7 @@ import { useScreen } from '@/screen-framework/providers/ScreenProvider.jsx';
 import { useFitnessScreen } from '@/modules/Fitness/FitnessScreenProvider.jsx';
 import FitnessTimeline from './FitnessTimeline.jsx';
 import SportIcon from '../_shared/SportIcon.jsx';
-import StravaRouteMap from './StravaRouteMap.jsx';
+import RouteMap from './RouteMap.jsx';
 import './FitnessSessionDetailWidget.scss';
 
 const CoinIcon = ({ size = 12 }) => (
@@ -412,7 +412,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       {/* Chart (40%) */}
       <div className="session-detail__chart">
         {header?.stravaHasMap ? (
-          <StravaRouteMap
+          <RouteMap
             polyline={sessionData.strava?.map?.polyline}
             sessionId={sessionId}
             distance={sessionData.strava?.distance}

@@ -1,11 +1,11 @@
 import React, { useMemo, useRef, useState, useLayoutEffect } from 'react';
-import { createChartDataSource } from '../FitnessChartApp/sessionDataAdapter.js';
+import { createChartDataSource } from '../FitnessChart/sessionDataAdapter.js';
 import { CHART_MARGIN, MIN_VISIBLE_TICKS, MIN_GAP_DURATION_FOR_DASHED_MS } from '@/modules/Fitness/lib/chartConstants.js';
 import { ZONE_COLOR_MAP, buildActivityMaskFromHeartRate } from '@/modules/Fitness/lib/chartHelpers.js';
 import './FitnessTimeline.scss';
 
 /**
- * Map a tick index to an X pixel position, matching FitnessChartApp's X axis.
+ * Map a tick index to an X pixel position, matching FitnessChart's X axis.
  */
 function tickToX(index, effectiveTicks, plotWidth) {
   if (effectiveTicks <= 1) return CHART_MARGIN.left;
@@ -223,7 +223,7 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
   const plotWidth = width - CHART_MARGIN.left - CHART_MARGIN.right;
   const plotHeight = height; // No bottom margin — chart above provides x-axis labels
 
-  // Global effectiveTicks — matches FitnessChartApp's calculation (max across all participants)
+  // Global effectiveTicks — matches FitnessChart's calculation (max across all participants)
   const effectiveTicks = useMemo(() => {
     if (!roster || roster.length === 0) return MIN_VISIBLE_TICKS;
     let globalMaxIndex = 0;

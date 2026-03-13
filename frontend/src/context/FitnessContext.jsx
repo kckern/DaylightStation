@@ -1176,10 +1176,20 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
           }
 
           const session = fitnessSessionRef.current;
-          if (session) {
-            session.ingestData(data);
-            batchedForceUpdate(); // Batched: multiple messages in same frame = 1 render
+          if (!session) return;
+
+          // force_break: explicitly end the current session (overrides grace period)
+          if (data?.action === 'force_break') {
+            if (session.sessionId) {
+              getLogger().info('fitness.session.force_break', { sessionId: session.sessionId });
+              session.endSession('force_break');
+              batchedForceUpdate();
+            }
+            return;
           }
+
+          session.ingestData(data);
+          batchedForceUpdate(); // Batched: multiple messages in same frame = 1 render
         }
       );
 

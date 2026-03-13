@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 import { FRONTEND_URL } from '#fixtures/runtime/urls.mjs';
 
 test.describe('HomeApp session detail view', () => {
-  test('clicking a session shows FitnessChartApp, clicking back returns to dashboard', async ({ page }) => {
+  test('clicking a session shows FitnessChart, clicking back returns to dashboard', async ({ page }) => {
     await page.goto(`${FRONTEND_URL}/fitness/plugin/home`, { waitUntil: 'domcontentloaded' });
 
     // Wait for sessions to load
@@ -40,8 +40,8 @@ test.describe('HomeApp session detail view', () => {
     await expect(detailPanel).toBeVisible({ timeout: 5000 });
     await expect(page.locator('.detail-panel__close')).toBeVisible();
 
-    // FitnessChartApp should render with actual chart data (SVG race chart)
-    const chartApp = detailPanel.locator('.fitness-chart-app');
+    // FitnessChart should render with actual chart data (SVG race chart)
+    const chartApp = detailPanel.locator('.fitness-chart');
     await chartApp.waitFor({ timeout: 15000 });
     await expect(chartApp).toBeVisible();
 
@@ -50,7 +50,7 @@ test.describe('HomeApp session detail view', () => {
     await expect(chartBody).toBeVisible({ timeout: 10000 });
     const emptyCount = await chartApp.locator('.race-chart-panel__empty').count();
     expect(emptyCount).toBe(0);
-    console.log('FitnessChartApp rendered with chart data in detail panel');
+    console.log('FitnessChart rendered with chart data in detail panel');
 
     // Click back to dashboard
     await page.locator('.detail-panel__close').click();
@@ -88,7 +88,7 @@ test.describe('HomeApp session detail view', () => {
     await expect(sessionRows.first()).not.toHaveClass(/session-row--selected/);
 
     // Chart should still be visible
-    const chartApp = page.locator('.detail-panel .fitness-chart-app');
+    const chartApp = page.locator('.detail-panel .fitness-chart');
     await expect(chartApp).toBeVisible({ timeout: 15000 });
     console.log('Chart updated after switching sessions');
   });
