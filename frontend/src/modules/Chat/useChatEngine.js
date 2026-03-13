@@ -19,11 +19,13 @@ export function useChatEngine({ agentId, onAction, userId = 'default' }) {
   const send = useCallback(async (text) => {
     if (!text.trim()) return;
 
+    logger.info('chat.send', { agentId, inputLength: text.length });
     const userMsg = { role: 'user', content: text, type: 'text', timestamp: new Date().toISOString() };
     setMessages(prev => [...prev, userMsg]);
     setLoading(true);
     setError(null);
 
+    const start = performance.now();
     try {
       abortRef.current = new AbortController();
       const res = await fetch(`/api/agents/${agentId}/run`, {
@@ -38,7 +40,7 @@ export function useChatEngine({ agentId, onAction, userId = 'default' }) {
 
       const assistantMsg = parseAgentResponse(data);
       setMessages(prev => [...prev, assistantMsg]);
-      logger.info('chat.response', { agentId, msgLength: data.output?.length });
+      logger.info('chat.response', { agentId, type: assistantMsg.type, msgLength: data.output?.length, durationMs: Math.round(performance.now() - start) });
     } catch (err) {
       if (err.name !== 'AbortError') {
         setError(err.message);

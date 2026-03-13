@@ -1,3 +1,4 @@
+import { useMemo, useEffect } from 'react';
 import { Stack, Paper, Title, Text, Group, Button, Stepper, Loader } from '@mantine/core';
 import { IconCheck, IconArrowRight, IconArrowLeft } from '@tabler/icons-react';
 import { useCeremony } from '../../hooks/useCeremony.js';
@@ -5,6 +6,7 @@ import { UnitIntention } from './UnitIntention.jsx';
 import { UnitCapture } from './UnitCapture.jsx';
 import { CycleRetro } from './CycleRetro.jsx';
 import { PhaseReview } from './PhaseReview.jsx';
+import getLogger from '../../../../lib/logging/Logger.js';
 
 const CEREMONY_STEPS = {
   unit_intention: ['Context', 'Intentions', 'Confirm'],
@@ -23,14 +25,33 @@ const CEREMONY_COMPONENTS = {
 };
 
 export function CeremonyFlow({ type, username, onComplete }) {
+  const logger = useMemo(() => getLogger().child({ component: 'ceremony-flow' }), []);
   const ceremony = useCeremony(type, username);
   const { content, loading, error, step, nextStep, prevStep, submit, submitting, completed } = ceremony;
 
   const steps = CEREMONY_STEPS[type] || ['Step 1', 'Step 2', 'Confirm'];
   const CeremonyComponent = CEREMONY_COMPONENTS[type];
 
+  useEffect(() => {
+    logger.info('life.ceremony.started', { type, username });
+    return () => logger.info('life.ceremony.exited', { type, completed });
+  }, [type, username, logger]);
+
+  useEffect(() => {
+    logger.info('life.ceremony.step', { type, step, stepLabel: steps[step] });
+  }, [step, type, logger]);
+
+  useEffect(() => {
+    if (completed) {
+      logger.info('life.ceremony.completed', { type, periodId: content?.periodId });
+    }
+  }, [completed, type, content, logger]);
+
   if (loading) return <Loader size="sm" />;
-  if (error) return <Text c="red">{error}</Text>;
+  if (error) {
+    logger.warn('life.ceremony.error', { type, error });
+    return <Text c="red">{error}</Text>;
+  }
 
   if (completed) {
     return (

@@ -1,8 +1,10 @@
 import { Router } from 'express';
+import { createLogger } from '../../../0_system/logging/logger.mjs';
 
 export default function createPlanRouter(config) {
   const { lifePlanStore, goalStateService, beliefEvaluator, cadenceService, ceremonyService, feedbackService, retroService } = config;
   const router = Router();
+  const logger = createLogger({ source: 'backend', app: 'life', context: { router: 'plan' } });
 
   const getUsername = (req) => req.query.username || 'default';
 
@@ -33,6 +35,7 @@ export default function createPlanRouter(config) {
           plan[section] = data;
         }
         lifePlanStore.save(username, plan);
+        logger.info('life.plan.section-updated', { username, section });
         res.json({ ok: true });
       } else {
         res.status(400).json({ error: `Unknown section: ${section}` });
@@ -71,8 +74,10 @@ export default function createPlanRouter(config) {
       if (!goal) return res.status(404).json({ error: 'Goal not found' });
 
       const { state: newState, reason } = req.body;
+      const prevState = goal.state;
       goalStateService.transition(goal, newState, reason);
       lifePlanStore.save(username, plan);
+      logger.info('life.goal.transitioned', { username, goalId: req.params.goalId, from: prevState, to: newState, reason });
       res.json(goal.toJSON());
     } catch (error) {
       if (error.message?.includes('cannot transition')) {
@@ -101,6 +106,7 @@ export default function createPlanRouter(config) {
 
       beliefEvaluator.evaluateEvidence(belief, req.body);
       lifePlanStore.save(username, plan);
+      logger.info('life.belief.evidence-added', { username, beliefId: req.params.id });
       res.json(belief.toJSON());
     } catch (error) { next(error); }
   });
@@ -144,6 +150,7 @@ export default function createPlanRouter(config) {
       if (!ceremonyService) return res.status(501).json({ error: 'Ceremony service not configured' });
       const ok = ceremonyService.completeCeremony(req.params.type, getUsername(req), req.body);
       if (!ok) return res.status(400).json({ error: `Unknown ceremony type: ${req.params.type}` });
+      logger.info('life.ceremony.completed', { username: getUsername(req), type: req.params.type });
       res.json({ ok: true });
     } catch (error) { next(error); }
   });
@@ -153,6 +160,7 @@ export default function createPlanRouter(config) {
     try {
       if (!feedbackService) return res.status(501).json({ error: 'Feedback service not configured' });
       feedbackService.recordObservation(getUsername(req), req.body);
+      logger.info('life.feedback.recorded', { username: getUsername(req) });
       res.json({ ok: true });
     } catch (error) { next(error); }
   });
