@@ -20,7 +20,7 @@ const ZONE_ABBREV_MAP = { r: 'rest', c: 'cool', a: 'active', w: 'warm', h: 'hot'
 
 /**
  * Transform a session API response into the data interface
- * that FitnessChartApp's chart hooks expect.
+ * that FitnessChart's chart hooks expect.
  *
  * @param {Object} session - Response from GET /api/v1/fitness/sessions/:id
  * @returns {{ getSeries: Function, roster: Object[], timebase: Object }}

@@ -1,7 +1,7 @@
 import { getWidgetRegistry } from '@/screen-framework/widgets/registry.js';
 
 // Auto-register modules into the unified widget registry
-import * as FitnessChartApp from './widgets/FitnessChartApp/index.jsx';
+import * as FitnessChart from './widgets/FitnessChart/index.jsx';
 import * as CameraViewApp from './widgets/CameraViewApp/index.jsx';
 import * as JumpingJackGame from './widgets/JumpingJackGame/index.jsx';
 import * as ComponentShowcase from './widgets/ComponentShowcase/index.jsx';
@@ -12,7 +12,7 @@ import * as FitnessSessionApp from './widgets/FitnessSessionApp/index.jsx';
 
 // Maps new fitness: registry keys to module definitions
 const REGISTRY_KEYS = {
-  'fitness:chart': FitnessChartApp,
+  'fitness:chart': FitnessChart,
   'fitness:camera': CameraViewApp,
   'fitness:jumping-jacks': JumpingJackGame,
   'fitness:showcase': ComponentShowcase,

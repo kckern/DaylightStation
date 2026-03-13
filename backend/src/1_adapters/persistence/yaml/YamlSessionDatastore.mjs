@@ -345,7 +345,11 @@ export class YamlSessionDatastore extends ISessionDatastore {
           sportType: data.strava.sportType || null,
           distance: data.strava.distance || 0,
           trainer: data.strava.trainer ?? true,
+          avgHeartrate: data.strava.avgHeartrate || 0,
+          elevation: data.strava.totalElevationGain || 0,
           hasMap: !!(data.strava.map?.polyline),
+          ...(data.strava.map?.polyline ? { mapPolyline: data.strava.map.polyline } : {}),
+          ...(data.strava.map?.startLatLng ? { mapStart: data.strava.map.startLatLng } : {}),
         };
       }
 

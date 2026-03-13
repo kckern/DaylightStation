@@ -1,0 +1,324 @@
+{
+  "testName": "LEAK-1: Video playback stability",
+  "timestamp": "2026-03-12T13:43:27.997Z",
+  "durationSec": 300,
+  "passed": true,
+  "failures": [],
+  "warnings": [],
+  "thresholds": {
+    "maxHeapGrowthMB": 50,
+    "maxGrowthRateMBPerMin": 2.5,
+    "maxTimerGrowth": 5,
+    "warnHeapGrowthMB": 30,
+    "warnGrowthRateMBPerMin": 1.5,
+    "warnTimerGrowth": 2
+  },
+  "metrics": {
+    "heapGrowthMB": 0,
+    "growthRateMBPerMin": 0,
+    "peakUsageMB": 19.55,
+    "timerGrowth": 0,
+    "timerBaseline": 4,
+    "timerFinal": 4,
+    "staleIntervalCount": 4,
+    "staleIntervals": [
+      {
+        "id": 5,
+        "ms": 30000,
+        "ageMs": 317158,
+        "stack": "    at F (http://localhost:3111/assets/index-BwLvHf7d.js:458:60904)\n    at http://localhost:3111/assets/index-BwLvHf7d.js:458:61013\n    at ow (http://localhost:3111/assets/index-BwLvHf7d.js:41:24328)\n    at h2 (http://localhost:3111/assets/index-BwLvHf7d.js:41:42530)\n    at http://localhost:3111/assets/index-BwLvHf7d.js:41:40839"
+      },
+      {
+        "id": 18,
+        "ms": 15000,
+        "ageMs": 313450,
+        "stack": "    at CHe._startAutosaveTimer (http://localhost:3111/assets/index-BwLvHf7d.js:361:3610)\n    at CHe.ensureStarted (http://localhost:3111/assets/index-BwLvHf7d.js:359:3076)\n    at CHe._maybeStartSessionFromBuffer (http://localhost:3111/assets/index-BwLvHf7d.js:358:200632)\n    at CHe.recordDeviceActivity (http://localhost:3111/assets/index-BwLvHf7d.js:358:192368)\n    at CHe.ingestData (http://localhost:3111/assets/index-BwLvHf7d.js:358:189541)"
+      },
+      {
+        "id": 19,
+        "ms": 5000,
+        "ageMs": 313449,
+        "stack": "    at CHe._startTickTimer (http://localhost:3111/assets/index-BwLvHf7d.js:360:6667)\n    at CHe.ensureStarted (http://localhost:3111/assets/index-BwLvHf7d.js:359:3103)\n    at CHe._maybeStartSessionFromBuffer (http://localhost:3111/assets/index-BwLvHf7d.js:358:200632)\n    at CHe.recordDeviceActivity (http://localhost:3111/assets/index-BwLvHf7d.js:358:192368)\n    at CHe.ingestData (http://localhost:3111/assets/index-BwLvHf7d.js:358:189541)"
+      },
+      {
+        "id": 30,
+        "ms": 3000,
+        "ageMs": 313285,
+        "stack": "    at http://localhost:3111/assets/index-BwLvHf7d.js:362:44222\n    at ow (http://localhost:3111/assets/index-BwLvHf7d.js:41:24328)\n    at h2 (http://localhost:3111/assets/index-BwLvHf7d.js:41:42530)\n    at http://localhost:3111/assets/index-BwLvHf7d.js:41:40839\n    at x (http://localhost:3111/assets/index-BwLvHf7d.js:26:1539)"
+      }
+    ]
+  },
+  "memory": {
+    "sampleCount": 31,
+    "durationMs": 300032,
+    "baseline": {
+      "heapUsedMB": 19.550323486328125,
+      "heapTotalMB": 22.029876708984375
+    },
+    "final": {
+      "heapUsedMB": 19.550323486328125,
+      "heapTotalMB": 22.029876708984375
+    },
+    "totalGrowthMB": 0,
+    "growthRateMBPerMin": 0,
+    "peakUsageMB": 19.550323486328125,
+    "snapshots": [],
+    "samples": [
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322707827,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322717859,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322727858,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322737857,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322747858,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322757858,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322767857,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322777857,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322787858,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322797858,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322807858,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322817864,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322827857,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322837858,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322847859,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322857859,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322867858,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322877858,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322887858,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322897859,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322907859,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322917858,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322927859,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322937859,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322947859,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322957860,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322967858,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322977860,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322987859,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773322997858,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      },
+      {
+        "heapUsed": 20500000,
+        "heapTotal": 23100000,
+        "heapLimit": 3760000000,
+        "timestamp": 1773323007859,
+        "heapUsedMB": 19.550323486328125,
+        "heapTotalMB": 22.029876708984375
+      }
+    ]
+  },
+  "timers": {
+    "baselineCount": 4,
+    "finalCount": 4,
+    "growth": 0,
+    "leakedCount": 0,
+    "leakedTimers": []
+  }
+}

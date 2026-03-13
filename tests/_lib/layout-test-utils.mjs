@@ -37,7 +37,7 @@ export function createPRNG(seed) {
   };
 }
 
-/** Default chart constants (match FitnessChartApp) */
+/** Default chart constants (match FitnessChart) */
 export const CHART_DEFAULTS = {
   width: 420,
   height: 390,

@@ -4,6 +4,7 @@ A comprehensive reference for the DaylightStation fitness system — from physic
 
 For governance-specific details, see `governance-engine.md` and `governance-system-architecture.md`.
 For pose detection and exercise recognition, see `semantic-pose-pipeline.md`.
+For BLE heart rate monitor support (Apple Watch, etc.), see `ble-heart-rate.md`.
 
 ---
 
