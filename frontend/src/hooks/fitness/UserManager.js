@@ -83,8 +83,12 @@ export class User {
 
   #updateHeartRateData(heartRate) {
     if (!heartRate || heartRate <= 0) {
-      // Device disconnect (HR=0): preserve last known zone snapshot.
-      // Don't recompute with HR=0, which would drop user to "cool" zone.
+      // Device disconnect or cold start: clear stale HR data.
+      // Downstream consumers (ZoneProfileStore, TimelineRecorder) will see null
+      // and correctly treat this as "no data" rather than using cached values.
+      this.currentData.heartRate = null;
+      this.currentData.zone = null;
+      this.currentData.color = null;
       return;
     }
 
@@ -432,7 +436,7 @@ export class UserManager {
       // Clear stale HR from previous session/device to prevent phantom data
       // leaking into MetricsRecorder via the ?? coalesce fallback
       if (guestUser.currentData) {
-        guestUser.currentData.heartRate = 0;
+        guestUser.currentData.heartRate = null;
       }
     }
     return payload;
@@ -548,7 +552,7 @@ export class UserManager {
       user.hrDeviceId = String(deviceId);
       // Clear stale HR from previous session/device to prevent phantom data
       if (user.currentData) {
-        user.currentData.heartRate = 0;
+        user.currentData.heartRate = null;
       }
     }
     return user;
