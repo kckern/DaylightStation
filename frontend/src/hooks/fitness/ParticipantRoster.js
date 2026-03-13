@@ -384,17 +384,8 @@ export class ParticipantRoster {
     // Use registry start time if available, otherwise guestEntry update time
     const registryStartTime = entityId ? this._session?.entityRegistry?.get?.(entityId)?.startTime : null;
     let entityStartTime = registryStartTime || guestEntry?.updatedAt || null;
-    const fallbackZoneId = mappedUser?.currentData?.zone || null;
-    const fallbackZoneColor = mappedUser?.currentData?.color || null;
 
-    // Resolve heart rate from user if device doesn't have it
-    let resolvedHeartRate = heartRate;
-    if (mappedUser?.currentData && Number.isFinite(mappedUser.currentData.heartRate)) {
-      const candidateHr = Math.round(mappedUser.currentData.heartRate);
-      if (candidateHr > 0) {
-        resolvedHeartRate = candidateHr;
-      }
-    }
+    const resolvedHeartRate = heartRate;
 
     const isGuest = guestEntry
       ? (guestEntry.occupantType === 'guest')
@@ -451,10 +442,10 @@ export class ParticipantRoster {
       isGuest,
       hrDeviceId: deviceId,
       heartRate: resolvedHeartRate,
-      zoneId: zoneInfo?.zoneId || fallbackZoneId || null,
-      zoneColor: zoneInfo?.color || fallbackZoneColor || null,
-      rawZoneId: zoneInfo?.rawZoneId || zoneInfo?.zoneId || fallbackZoneId || null,
-      rawZoneColor: zoneInfo?.rawZoneColor || zoneInfo?.color || fallbackZoneColor || null,
+      zoneId: zoneInfo?.zoneId || null,
+      zoneColor: zoneInfo?.color || null,
+      rawZoneId: zoneInfo?.rawZoneId || zoneInfo?.zoneId || null,
+      rawZoneColor: zoneInfo?.rawZoneColor || zoneInfo?.color || null,
       avatarUrl: isGuest ? null : mappedUser?.avatarUrl || null,
       status,
       isActive, // SINGLE SOURCE OF TRUTH for avatar visibility
