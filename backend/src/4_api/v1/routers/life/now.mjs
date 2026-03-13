@@ -1,8 +1,10 @@
 import { Router } from 'express';
+import { createLogger } from '../../../0_system/logging/logger.mjs';
 
 export default function createNowRouter(config) {
   const { alignmentService, driftService } = config;
   const router = Router();
+  const logger = createLogger({ source: 'backend', app: 'life', context: { router: 'now' } });
 
   const getUsername = (req) => req.query.username || 'default';
 
@@ -11,9 +13,12 @@ export default function createNowRouter(config) {
     try {
       const username = getUsername(req);
       const mode = req.query.mode || 'priorities';
+      const start = Date.now();
       const result = alignmentService.computeAlignment(username);
 
       if (!result) return res.json({});
+
+      logger.debug('life.alignment.computed', { username, mode, durationMs: Date.now() - start });
 
       switch (mode) {
         case 'priorities':
@@ -47,7 +52,10 @@ export default function createNowRouter(config) {
   // POST /drift/refresh — recompute drift snapshot
   router.post('/drift/refresh', async (req, res, next) => {
     try {
-      const snapshot = await driftService.computeAndSave(getUsername(req));
+      const start = Date.now();
+      const username = getUsername(req);
+      const snapshot = await driftService.computeAndSave(username);
+      logger.info('life.drift.refreshed', { username, durationMs: Date.now() - start, correlation: snapshot?.correlation });
       res.json(snapshot || {});
     } catch (error) { next(error); }
   });

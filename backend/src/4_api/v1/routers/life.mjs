@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { createLogger } from '../../0_system/logging/logger.mjs';
 import createPlanRouter from './life/plan.mjs';
 import createNowRouter from './life/now.mjs';
 import createLogRouter from './life/log.mjs';
@@ -6,6 +7,22 @@ import createScheduleRouter from './life/schedule.mjs';
 
 export default function createLifeRouter(config) {
   const router = Router();
+  const logger = createLogger({ source: 'backend', app: 'life' });
+
+  // Request logging middleware for all life routes
+  router.use((req, res, next) => {
+    const start = Date.now();
+    res.on('finish', () => {
+      logger.info('life.api.request', {
+        method: req.method,
+        path: req.originalUrl,
+        status: res.statusCode,
+        durationMs: Date.now() - start,
+        username: req.query.username || 'default',
+      });
+    });
+    next();
+  });
 
   router.use('/plan', createPlanRouter(config));
   router.use('/now', createNowRouter(config));
@@ -72,10 +89,11 @@ export default function createLifeRouter(config) {
     const allOk = checks.plan?.loaded !== false
       && Object.values(checks.services).every(Boolean);
 
-    res.json({
-      status: allOk ? 'ok' : 'degraded',
-      checks,
-    });
+    const status = allOk ? 'ok' : 'degraded';
+    if (status === 'degraded') {
+      logger.warn('life.health.degraded', { checks });
+    }
+    res.json({ status, checks });
   });
 
   return router;
