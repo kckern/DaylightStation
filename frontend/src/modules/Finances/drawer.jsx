@@ -13,6 +13,7 @@ HighchartsDrilldown(Highcharts);
 import HC_More from "highcharts/highcharts-more";
 HC_More(Highcharts);
 import { formatAsCurrency } from "./blocks";
+import { baseUrl } from '../../Apps/FinanceApp.jsx';
 
 import externalIcon from "../../assets/icons/external.svg";;
 
@@ -77,9 +78,51 @@ export function Drawer({ cellKey, transactions, periodData }) {
           return showMe;
         });
 
+    const [menuOpenId, setMenuOpenId] = useState(null);
+    const [pairMode, setPairMode] = useState(null);
+
     const handleRowClick = (transaction) => {
       if(!transaction.id) return;
         window.open(`https://www.buxfer.com/transactions?tids=${transaction.id}`, '_blank');
+    };
+
+    const handleStartPair = (transaction) => {
+      setMenuOpenId(null);
+      setPairMode({ sourceTransaction: transaction });
+    };
+
+    const handleSelectPairTarget = async (targetTransaction) => {
+      const source = pairMode.sourceTransaction;
+      const isSourceExpense = source.expenseAmount > 0;
+      const debit = isSourceExpense ? source.id : targetTransaction.id;
+      const credit = isSourceExpense ? targetTransaction.id : source.id;
+      const desc = prompt('Pair description (optional):') || `${source.description} \u2194 ${targetTransaction.description}`;
+
+      try {
+        await fetch(`${baseUrl}/api/v1/finance/pairs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ debit, credit, desc })
+        });
+        setPairMode(null);
+        window.location.reload();
+      } catch (err) {
+        console.error('Failed to create pair:', err);
+      }
+    };
+
+    const handleUnpair = async (transaction) => {
+      setMenuOpenId(null);
+      try {
+        await fetch(`${baseUrl}/api/v1/finance/pairs`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ debit: transaction.id, credit: transaction.pairedWith })
+        });
+        window.location.reload();
+      } catch (err) {
+        console.error('Failed to unpair:', err);
+      }
     };
 
     const summary = sortedTransactions.reduce((acc, { expenseAmount }) => {
@@ -99,6 +142,12 @@ export function Drawer({ cellKey, transactions, periodData }) {
             <div className="budget-drawer-content">
               {transactionFilter.tags && <div>{unfilterButton} Filtering by tags: {transactionFilter.tags.join(", ")}</div>}
               {transactionFilter.description && <div>{unfilterButton} Filtering by description: {transactionFilter.description}</div>}
+              {pairMode && (
+                <div style={{ padding: '8px 12px', background: '#1a3a5c', borderRadius: '4px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Select the offsetting transaction for: <strong>{pairMode.sourceTransaction.description}</strong></span>
+                  <button onClick={() => setPairMode(null)} style={{ background: 'none', border: '1px solid #666', color: '#ccc', cursor: 'pointer', borderRadius: '3px', padding: '2px 8px' }}>Cancel</button>
+                </div>
+              )}
                 <table className="transactions-table">
                 <thead>
                     <tr>
@@ -117,6 +166,7 @@ export function Drawer({ cellKey, transactions, periodData }) {
                       <th onClick={() => handleSorting('tagNames')}>
                         Tags {getSortIcon('tagNames')}
                       </th>
+                      <th style={{ width: '2rem' }}></th>
                     </tr>
                   </thead>
                     <tbody>
@@ -134,16 +184,48 @@ export function Drawer({ cellKey, transactions, periodData }) {
                                   ? `$${transaction.amount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` 
                                   : `+$${Math.abs(transaction.amount).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
                                   const evenOdd = i % 2 === 0 ? "even" : "odd";
-                                const rowClassName = !isIncome ? `expense ${evenOdd}` : `income ${evenOdd}`;
+                                const pairedClass = transaction.paired ? ' paired' : '';
+                                const rowClassName = (!isIncome ? `expense ${evenOdd}` : `income ${evenOdd}`) + pairedClass;
                                 const memo = transaction.memo ? <span className="memo">{transaction.memo}</span> : null;
+                                const pairBadge = transaction.paired ? <span className="pair-badge" title={transaction.pairDesc}>🔗</span> : null;
                                 const hasId = !!transaction.id;
                                 return (
-                                    <tr key={guid} className={rowClassName} onClick={() => handleRowClick(transaction)}  style={{ cursor: hasId ? 'pointer' : 'default' }}>
+                                    <tr key={guid} className={rowClassName + (pairMode ? ' pair-selectable' : '')}
+                                      onClick={() => pairMode ? handleSelectPairTarget(transaction) : handleRowClick(transaction)}
+                                      style={{ cursor: pairMode ? 'crosshair' : (hasId ? 'pointer' : 'default') }}>
                                         <td className="date-col">{displayDate}</td>
                                         <td className="account-name-col">{transaction.accountName}</td>
                                         <td className="amount-col">{amountLabel}</td>
-                                        <td className="description-col">{transaction.description}{memo}</td>
+                                        <td className="description-col">{transaction.description}{memo}{pairBadge}</td>
                                         <td className="tags-col">{transaction.tagNames?.join(", ")}</td>
+                                        <td className="actions-col" onClick={(e) => e.stopPropagation()}>
+                                          {hasId && !pairMode && (
+                                            <div style={{ position: 'relative' }}>
+                                              <button
+                                                className="txn-menu-btn"
+                                                onClick={() => setMenuOpenId(menuOpenId === transaction.id ? null : transaction.id)}
+                                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', fontSize: '0.9rem', color: '#888' }}
+                                              >⋯</button>
+                                              {menuOpenId === transaction.id && (
+                                                <div className="txn-menu-dropdown" style={{
+                                                  position: 'absolute', right: 0, top: '100%', zIndex: 10,
+                                                  background: '#1a1a2e', border: '1px solid #333', borderRadius: '4px',
+                                                  minWidth: '120px', boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+                                                }}>
+                                                  {transaction.paired ? (
+                                                    <button className="txn-menu-item" onClick={() => handleUnpair(transaction)}
+                                                      style={{ display: 'block', width: '100%', padding: '8px 12px', background: 'none', border: 'none', color: '#ccc', cursor: 'pointer', textAlign: 'left', fontSize: '0.85rem' }}
+                                                    >Unpair</button>
+                                                  ) : (
+                                                    <button className="txn-menu-item" onClick={() => handleStartPair(transaction)}
+                                                      style={{ display: 'block', width: '100%', padding: '8px 12px', background: 'none', border: 'none', color: '#ccc', cursor: 'pointer', textAlign: 'left', fontSize: '0.85rem' }}
+                                                    >Pair</button>
+                                                  )}
+                                                </div>
+                                              )}
+                                            </div>
+                                          )}
+                                        </td>
                                     </tr>
                                 );
                             });
