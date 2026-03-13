@@ -20,8 +20,9 @@ export function BudgetShortTerm({ setDrawerContent, budget, budgetBlockDimension
         const item = shortTermBuckets[label];
         const { budget, debits, credits, balance, transactions } = item;
         const extendedBudget = budget + credits;
-        const overage = debits > extendedBudget ? parseFloat((debits - extendedBudget).toFixed(2)) : 0;
-        const spentWithinAllotted = Math.min(debits, extendedBudget);
+        const snapped = balance === 0 && debits > 0;
+        const overage = snapped ? 0 : (debits > extendedBudget ? parseFloat((debits - extendedBudget).toFixed(2)) : 0);
+        const spentWithinAllotted = snapped ? debits : Math.min(debits, extendedBudget);
         const remainingPortion = balance < 0 ? 0 : balance;
 
         return {

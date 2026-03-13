@@ -675,6 +675,28 @@ export class BudgetCompilationService {
       }
     }
 
+    // Snap near-zero balances to exactly 0 and redistribute residual to flex buckets
+    const SNAP_THRESHOLD = 1;
+    const flexLabels = (config.shortTerm || []).filter(({ flex }) => flex).map(({ label }) => label);
+    let snapResidual = 0;
+    for (const label in shortTermBuckets) {
+      if (flexLabels.includes(label)) continue;
+      const bucket = shortTermBuckets[label];
+      if (Math.abs(bucket.balance) > 0 && Math.abs(bucket.balance) < SNAP_THRESHOLD) {
+        snapResidual += bucket.balance;
+        bucket.balance = 0;
+      }
+    }
+    if (snapResidual !== 0 && flexLabels.length > 0) {
+      const flexWeights = (config.shortTerm || []).filter(({ flex }) => flex);
+      const flexWeightSum = flexWeights.reduce((acc, { flex }) => acc + flex, 0);
+      for (const { label, flex } of flexWeights) {
+        if (!shortTermBuckets[label]) continue;
+        const share = this.#round(snapResidual * (flex / flexWeightSum));
+        shortTermBuckets[label].balance += share;
+      }
+    }
+
     // Calculate percent remaining for each bucket
     for (const label in shortTermBuckets) {
       const bucket = shortTermBuckets[label];
