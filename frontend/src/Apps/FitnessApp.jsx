@@ -156,6 +156,17 @@ const FitnessApp = () => {
       const framesDelta = quality.totalVideoFrames - lastFpsCheck.totalFrames;
       const droppedDelta = quality.droppedVideoFrames - lastFpsCheck.droppedFrames;
 
+      // Guard: video element was reloaded/reset — frame counter went backwards
+      // Reset tracking and skip this sample
+      if (framesDelta < 0) {
+        lastFpsCheck = {
+          timestamp: now,
+          totalFrames: quality.totalVideoFrames,
+          droppedFrames: quality.droppedVideoFrames
+        };
+        return null;
+      }
+
       // Calculate FPS only if we have a previous sample
       let fps = null;
       let dropRate = null;

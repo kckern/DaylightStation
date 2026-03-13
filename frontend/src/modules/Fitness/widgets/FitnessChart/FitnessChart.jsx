@@ -55,6 +55,30 @@ const MAX_SERIES_POINTS = 1000; // Max points per series (at 5s intervals = ~83 
 const MAX_TOTAL_POINTS = 50000; // Global safety cap across all series
 
 /**
+ * Shallow-compare two participant cache entries.
+ * Returns true if all chart-relevant fields are identical.
+ * Compares beats/segments/dropoutMarkers by length; zones not compared (not chart-relevant from cache).
+ */
+function cacheEntryEqual(a, b) {
+	if (a === b) return true;
+	if (!a || !b) return false;
+	// Identity
+	if (a.id !== b.id || a.profileId !== b.profileId) return false;
+	// Status (drives avatar vs badge rendering)
+	if (a.status !== b.status || a.isActive !== b.isActive) return false;
+	// Visual data (drives line rendering)
+	if (a.lastSeenTick !== b.lastSeenTick || a.lastValue !== b.lastValue) return false;
+	// Series lengths (if series grew, need new render)
+	if ((a.beats?.length || 0) !== (b.beats?.length || 0)) return false;
+	if ((a.segments?.length || 0) !== (b.segments?.length || 0)) return false;
+	// Zone color (drives line color)
+	if (a.color !== b.color) return false;
+	// Dropout markers (drives badge rendering)
+	if ((a.dropoutMarkers?.length || 0) !== (b.dropoutMarkers?.length || 0)) return false;
+	return true;
+}
+
+/**
  * Hook to build race chart data from roster and timeline series.
  * @param {Array} roster - Current participant roster
  * @param {Function} getSeries - Timeline series getter
@@ -357,70 +381,80 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 		setParticipantCache((prev) => {
 			const next = { ...prev };
 			const presentIds = new Set();
+			let changed = false;
+
 			presentEntries.forEach((entry) => {
-				// Use profileId for cache key to match historical entries (which use slug)
 				const id = entry.profileId || entry.id;
 				presentIds.add(id);
 				const lastValue = getLastFiniteValue(entry.beats || []);
 				const lastSeenTick = entry.lastIndex;
 				const prevEntry = prev[id];
-				
+
 				// Preserve existing dropout markers (IMMUTABLE) for badge rendering
-				// CRITICAL: Create a NEW array to avoid mutating previous state
-				let dropoutMarkers = [...(prevEntry?.dropoutMarkers || [])];
-				
+				// Reused by reference when unchanged; replaced via spread only when a new marker is added
+				let dropoutMarkers = prevEntry?.dropoutMarkers || [];
+
 				// Create dropout marker ONLY when returning from dropout (was inactive, now active again)
-				// This is the REJOIN event - we mark where they LEFT
 				const wasInactive = prevEntry && (prevEntry.isActive === false || !isBroadcasting(prevEntry.status));
 				const nowActive = entry.isActive !== false;
 				const isRejoining = wasInactive && nowActive;
-				
+
 				if (isRejoining && prevEntry.lastValue != null && (prevEntry.lastSeenTick ?? -1) >= 0) {
 					const firstNewIdx = findFirstFiniteAfter(entry.beats || [], prevEntry.lastSeenTick ?? -1);
 					if (firstNewIdx != null) {
-						// Create IMMUTABLE dropout marker at the point where they left
 						const newMarker = {
 							tick: prevEntry.lastSeenTick,
 							value: prevEntry.lastValue,
 							timestamp: Date.now()
 						};
-						// Only add if not duplicate
 						const isDuplicate = dropoutMarkers.some(m => m.tick === newMarker.tick);
 						if (!isDuplicate) {
 							dropoutMarkers = [...dropoutMarkers, newMarker];
 						}
 					}
 				}
-				next[id] = {
+
+				const candidate = {
 					...prevEntry,
 					...entry,
-					segments: entry.segments, // Use segments as-is from buildSegments (includes gaps)
+					segments: entry.segments,
 					beats: entry.beats,
 					zones: entry.zones,
 					lastSeenTick,
 					lastValue,
-					status: entry.status, // SINGLE SOURCE OF TRUTH: From roster's isActive
-					isActive: entry.isActive, // Pass through for avatar rendering
-					dropoutMarkers, // Preserve immutable markers for badge rendering
+					status: entry.status,
+					isActive: entry.isActive,
+					dropoutMarkers,
 					absentSinceTick: entry.status === ParticipantStatus.IDLE ? (prevEntry?.absentSinceTick ?? lastSeenTick) : null
 				};
+
+				// Only create new entry if something chart-relevant changed
+				if (cacheEntryEqual(prevEntry, candidate)) {
+					// Keep previous reference — prevents downstream invalidation
+					next[id] = prevEntry;
+				} else {
+					next[id] = candidate;
+					changed = true;
+				}
 			});
+
 			Object.keys(next).forEach((id) => {
 				if (!presentIds.has(id)) {
 					const ent = next[id];
-					if (ent) {
-						// User just dropped out - record this as a potential dropout marker
-						// The marker becomes IMMUTABLE when they rejoin
+					if (ent && (ent.status !== ParticipantStatus.IDLE || ent.isActive !== false)) {
 						next[id] = {
 							...ent,
-							status: ParticipantStatus.REMOVED,
-							isActive: false, // Explicitly false for removed users
+							status: ParticipantStatus.IDLE,
+							isActive: false,
 							absentSinceTick: ent.absentSinceTick ?? ent.lastSeenTick ?? 0
 						};
+						changed = true;
 					}
 				}
 			});
-			return next;
+
+			// Return previous state if nothing meaningful changed — prevents re-render
+			return changed ? next : prev;
 		});
 	}, [presentEntries]);
 
