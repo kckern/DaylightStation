@@ -13,6 +13,9 @@
  * - POST /api/finance/compile - Trigger budget compilation only
  * - POST /api/finance/categorize - Trigger AI transaction categorization
  * - GET  /api/finance/metrics - Get adapter metrics
+ * - GET  /api/finance/pairs - Get all transaction pairs
+ * - POST /api/finance/pairs - Create a transaction pair
+ * - DELETE /api/finance/pairs - Remove a transaction pair
  *
  * Legacy compatibility (preserved from /data and /harvest routes):
  * - GET  /api/finance/data - Returns compiled finances (budgets + mortgage)
@@ -484,6 +487,73 @@ export function createFinanceRouter(config) {
     } catch (error) {
       logger.error?.('finance.memos.error', { error: error.message });
       return res.status(500).json({ error: 'Failed to load memos' });
+    }
+  });
+
+  // =============================================================================
+  // Transaction Pairs
+  // =============================================================================
+
+  /**
+   * GET /api/finance/pairs - Get all pairs
+   */
+  router.get('/pairs', (req, res) => {
+    const householdId = resolveHouseholdId(req.query.household);
+
+    try {
+      const pairs = financeStore?.getPairs(householdId) || [];
+      return res.json({ pairs, household: householdId });
+    } catch (error) {
+      logger.error?.('finance.pairs.get.error', { error: error.message });
+      return res.status(500).json({ error: 'Failed to load pairs' });
+    }
+  });
+
+  /**
+   * POST /api/finance/pairs - Create a pair
+   * Body: { debit: number, credit: number, desc: string }
+   */
+  router.post('/pairs', async (req, res) => {
+    const householdId = resolveHouseholdId(req.body.household || req.query.household);
+    const { debit, credit, desc } = req.body;
+
+    if (!debit || !credit) {
+      return res.status(400).json({ error: 'debit and credit transaction IDs required' });
+    }
+
+    try {
+      financeStore?.addPair({ debit: Number(debit), credit: Number(credit), desc: desc || '' }, householdId);
+      if (compilationService) {
+        await compilationService.compile(householdId);
+      }
+      return res.json({ ok: true, debit, credit, desc });
+    } catch (error) {
+      logger.error?.('finance.pairs.create.error', { debit, credit, error: error.message });
+      return res.status(500).json({ error: 'Failed to create pair' });
+    }
+  });
+
+  /**
+   * DELETE /api/finance/pairs - Remove a pair
+   * Body: { debit: number, credit: number }
+   */
+  router.delete('/pairs', async (req, res) => {
+    const householdId = resolveHouseholdId(req.body.household || req.query.household);
+    const { debit, credit } = req.body;
+
+    if (!debit || !credit) {
+      return res.status(400).json({ error: 'debit and credit transaction IDs required' });
+    }
+
+    try {
+      financeStore?.removePair(Number(debit), Number(credit), householdId);
+      if (compilationService) {
+        await compilationService.compile(householdId);
+      }
+      return res.json({ ok: true, debit, credit });
+    } catch (error) {
+      logger.error?.('finance.pairs.delete.error', { debit, credit, error: error.message });
+      return res.status(500).json({ error: 'Failed to delete pair' });
     }
   });
 

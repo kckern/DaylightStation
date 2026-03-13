@@ -389,3 +389,18 @@ button.reload{
 .last-row td:not(:first-child){
     border-bottom: 2px solid #666;
 }
+
+.transactions-table tr.paired {
+  opacity: 0.5;
+}
+.transactions-table tr.paired:hover {
+  opacity: 0.8;
+}
+.pair-badge {
+  margin-left: 4px;
+  font-size: 0.75rem;
+  cursor: help;
+}
+.txn-menu-item:hover {
+  background: #2a2a4e !important;
+}

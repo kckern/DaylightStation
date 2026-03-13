@@ -278,6 +278,56 @@ export class YamlFinanceDatastore {
   }
 
   // ==========================================================================
+  // Transaction Pairs
+  // ==========================================================================
+
+  /**
+   * Get all transaction pairs
+   * @param {string} [householdId]
+   * @returns {Array<{debit: number, credit: number, desc: string}>}
+   */
+  getPairs(householdId) {
+    const filePath = path.join(this.getBasePath(householdId), 'transaction.pairs');
+    return this.#readData(filePath) || [];
+  }
+
+  /**
+   * Save all transaction pairs
+   * @param {Array<{debit: number, credit: number, desc: string}>} pairs
+   * @param {string} [householdId]
+   */
+  savePairs(pairs, householdId) {
+    const filePath = path.join(this.getBasePath(householdId), 'transaction.pairs');
+    this.#writeData(filePath, pairs);
+  }
+
+  /**
+   * Add a transaction pair
+   * @param {{debit: number, credit: number, desc: string}} pair
+   * @param {string} [householdId]
+   */
+  addPair(pair, householdId) {
+    const pairs = this.getPairs(householdId);
+    const exists = pairs.some(p => p.debit === pair.debit && p.credit === pair.credit);
+    if (!exists) {
+      pairs.push(pair);
+      this.savePairs(pairs, householdId);
+    }
+  }
+
+  /**
+   * Remove a transaction pair
+   * @param {number} debit - Debit transaction ID
+   * @param {number} credit - Credit transaction ID
+   * @param {string} [householdId]
+   */
+  removePair(debit, credit, householdId) {
+    const pairs = this.getPairs(householdId);
+    const filtered = pairs.filter(p => !(p.debit === debit && p.credit === credit));
+    this.savePairs(filtered, householdId);
+  }
+
+  // ==========================================================================
   // AI Categorization Config
   // ==========================================================================
 

@@ -15,7 +15,7 @@ import { getChildLogger } from '../lib/logging/singleton.js';
 
 const isLocalhost = /localhost/.test(window.location.href);
 
-const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
+export const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
 const financeLogger = getChildLogger({ app: 'finance' });
 
 const fetchBudget = async () => {

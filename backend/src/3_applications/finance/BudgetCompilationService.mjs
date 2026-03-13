@@ -61,6 +61,10 @@ export class BudgetCompilationService {
     // Apply memos to transactions
     const transactions = this.#financeStore.applyMemos(rawTransactions, householdId);
 
+    // Apply transaction pair adjustments
+    const pairs = this.#financeStore.getPairs(householdId);
+    this.#applyPairAdjustments(transactions, pairs);
+
     // Calculate mortgage status
     const mortgage = this.#compileMortgage(mortgageConfig, accountBalances, mortgageTransactions);
 
@@ -87,6 +91,51 @@ export class BudgetCompilationService {
     this.#log('info', 'budget.finances.saved');
 
     return { budgets, mortgage };
+  }
+
+  /**
+   * Adjust paired transactions so only the delta counts toward spending/income.
+   * Mutates transactions in place.
+   *
+   * @param {Object[]} transactions
+   * @param {Array<{debit: number, credit: number, desc: string}>} pairs
+   */
+  #applyPairAdjustments(transactions, pairs) {
+    if (!pairs?.length) return;
+
+    const txnById = new Map(transactions.map(t => [t.id, t]));
+
+    for (const { debit: debitId, credit: creditId, desc } of pairs) {
+      const debitTxn = txnById.get(debitId);
+      const creditTxn = txnById.get(creditId);
+      if (!debitTxn || !creditTxn) continue;
+
+      const delta = debitTxn.amount - creditTxn.amount;
+
+      if (delta > 0) {
+        debitTxn.amount = this.#round(delta);
+        debitTxn.expenseAmount = this.#round(delta);
+        creditTxn.amount = 0;
+        creditTxn.expenseAmount = 0;
+      } else if (delta < 0) {
+        debitTxn.amount = 0;
+        debitTxn.expenseAmount = 0;
+        creditTxn.amount = this.#round(Math.abs(delta));
+        creditTxn.expenseAmount = this.#round(-Math.abs(delta));
+      } else {
+        debitTxn.amount = 0;
+        debitTxn.expenseAmount = 0;
+        creditTxn.amount = 0;
+        creditTxn.expenseAmount = 0;
+      }
+
+      debitTxn.paired = true;
+      debitTxn.pairDesc = desc;
+      debitTxn.pairedWith = creditId;
+      creditTxn.paired = true;
+      creditTxn.pairDesc = desc;
+      creditTxn.pairedWith = debitId;
+    }
   }
 
   /**
