@@ -8,11 +8,12 @@ import './GovernanceStateOverlay.scss';
 
 const TOTAL_NOTCHES = 56;
 
-const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ countdown, countdownTotal, rows, offenders }) {
-  const remaining = Number.isFinite(countdown) ? Math.max(countdown, 0) : 0;
-  const total = Number.isFinite(countdownTotal) ? Math.max(countdownTotal, 1) : 1;
-  const progress = Math.max(0, Math.min(1, remaining / total));
-  const visibleNotches = Math.round(progress * TOTAL_NOTCHES);
+const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ countdown, countdownTotal, notches, rows, offenders }) {
+  // Use notches directly from the per-notch interval timer when available,
+  // fall back to deriving from countdown for backward compatibility
+  const visibleNotches = Number.isFinite(notches)
+    ? Math.max(0, Math.min(TOTAL_NOTCHES, notches))
+    : Math.round(Math.max(0, Math.min(1, (Number.isFinite(countdown) ? Math.max(countdown, 0) : 0) / Math.max(countdownTotal || 1, 1))) * TOTAL_NOTCHES);
 
   // Support both new (rows) and legacy (offenders) format
   const items = Array.isArray(rows) && rows.length > 0 ? rows : (Array.isArray(offenders) ? offenders : []);
@@ -342,7 +343,7 @@ const GovernanceStateOverlay = ({ display, overlay = null, lockRows = [], warnin
   const effectiveCategory = useNewPath ? null : (overlay?.category || null);
 
   // Self-updating countdown from deadline
-  const { remaining: countdown } = useDeadlineCountdown(
+  const { remaining: countdown, notches: countdownNotches } = useDeadlineCountdown(
     useNewPath ? display.deadline : overlay?.deadline,
     useNewPath ? (display.gracePeriodTotal || 30) : (overlay?.countdownTotal || 30),
     TOTAL_NOTCHES
@@ -371,6 +372,7 @@ const GovernanceStateOverlay = ({ display, overlay = null, lockRows = [], warnin
           <GovernanceWarningOverlay
             countdown={countdown}
             countdownTotal={display.gracePeriodTotal}
+            notches={countdownNotches}
             rows={display.rows}
           />
         </>
@@ -394,6 +396,7 @@ const GovernanceStateOverlay = ({ display, overlay = null, lockRows = [], warnin
         <GovernanceWarningOverlay
           countdown={countdown}
           countdownTotal={overlay.countdownTotal}
+          notches={countdownNotches}
           offenders={warningOffenders}
         />
       </>
