@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { MantineProvider, AppShell, NavLink, Title, Group, Text } from '@mantine/core';
 import { Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
 import { IconDashboard, IconTimeline, IconTarget, IconHeart, IconBrain, IconDiamond, IconShield, IconCalendarEvent, IconMessageCircle } from '@tabler/icons-react';
 import '@mantine/core/styles.css';
+import { configure } from '../lib/logging/Logger.js';
 import { getChildLogger } from '../lib/logging/singleton.js';
 import { Dashboard } from '../modules/Life/views/now/Dashboard.jsx';
 import { LogBrowser } from '../modules/Life/views/log/LogBrowser.jsx';
@@ -50,6 +51,21 @@ const LifeApp = () => {
   const logger = useMemo(() => getChildLogger({ app: 'life' }), []);
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Enable session file logging — writes to media/logs/life/<timestamp>.jsonl
+  useEffect(() => {
+    configure({ context: { app: 'life', sessionLog: true } });
+    logger.info('life.app.mounted');
+    return () => {
+      logger.info('life.app.unmounted');
+      configure({ context: { sessionLog: false } });
+    };
+  }, [logger]);
+
+  // Log route changes
+  useEffect(() => {
+    logger.info('life.route.changed', { path: location.pathname });
+  }, [location.pathname, logger]);
 
   const isActive = (path) => location.pathname.startsWith(`/life/${path}`);
 

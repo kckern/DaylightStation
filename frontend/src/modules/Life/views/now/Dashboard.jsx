@@ -1,3 +1,4 @@
+import { useMemo, useEffect } from 'react';
 import { Stack, Paper, Title, Text, Group, Loader, SimpleGrid } from '@mantine/core';
 import { useAlignment } from '../../hooks/useAlignment.js';
 import { CadenceIndicator } from '../../widgets/CadenceIndicator.jsx';
@@ -6,10 +7,29 @@ import { GoalProgressBar } from '../../widgets/GoalProgressBar.jsx';
 import { BeliefConfidenceChip } from '../../widgets/BeliefConfidenceChip.jsx';
 import { ValueAllocationChart } from '../../widgets/ValueAllocationChart.jsx';
 import { PriorityList } from './PriorityList.jsx';
+import getLogger from '../../../../lib/logging/Logger.js';
 
 export function Dashboard() {
+  const logger = useMemo(() => getLogger().child({ component: 'life-dashboard' }), []);
   const { data: priorityData, loading: pLoading } = useAlignment('priorities');
   const { data: dashData, loading: dLoading } = useAlignment('dashboard');
+
+  useEffect(() => {
+    logger.info('life.dashboard.mounted');
+    return () => logger.debug('life.dashboard.unmounted');
+  }, [logger]);
+
+  useEffect(() => {
+    if (!pLoading && !dLoading) {
+      const dashboard = dashData?.dashboard;
+      logger.info('life.dashboard.loaded', {
+        goalCount: dashboard?.goalProgress?.length || 0,
+        beliefCount: dashboard?.beliefConfidence?.length || 0,
+        hasDrift: !!dashboard?.valueDrift,
+        priorityCount: priorityData?.priorities?.length || 0,
+      });
+    }
+  }, [pLoading, dLoading, dashData, priorityData, logger]);
 
   if (pLoading || dLoading) {
     return <Loader size="sm" />;

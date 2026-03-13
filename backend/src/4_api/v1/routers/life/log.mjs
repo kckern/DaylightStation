@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import moment from 'moment-timezone';
+import { createLogger } from '../../../0_system/logging/logger.mjs';
 
 const VALID_SCOPES = ['week', 'month', 'season', 'year', 'decade'];
 
@@ -54,6 +55,7 @@ function filterByCategory(rangeResult, category) {
 export default function createLogRouter(config) {
   const { aggregator } = config;
   const router = Router();
+  const logger = createLogger({ source: 'backend', app: 'life', context: { router: 'log' } });
 
   // GET /sources — available extractors
   router.get('/sources', (req, res) => {
@@ -71,9 +73,12 @@ export default function createLogRouter(config) {
         return res.status(400).json({ error: 'Both start and end date params required (YYYY-MM-DD)' });
       }
 
+      const t0 = Date.now();
       const result = await aggregator.aggregateRange(username, start, end);
+      logger.info('life.log.range-aggregated', { username, start, end, dayCount: Object.keys(result?.days || {}).length, durationMs: Date.now() - t0 });
       res.json(result);
     } catch (err) {
+      logger.error('life.log.range-error', { error: err.message });
       res.status(500).json({ error: err.message });
     }
   });
@@ -88,9 +93,12 @@ export default function createLogRouter(config) {
       }
 
       const { start, end } = resolveScopeRange(scope, req.query.at);
+      const t0 = Date.now();
       const result = await aggregator.aggregateRange(username, start, end);
+      logger.info('life.log.scope-aggregated', { username, scope, start, end, dayCount: Object.keys(result?.days || {}).length, durationMs: Date.now() - t0 });
       res.json(result);
     } catch (err) {
+      logger.error('life.log.scope-error', { scope, error: err.message });
       res.status(500).json({ error: err.message });
     }
   });
@@ -133,9 +141,12 @@ export default function createLogRouter(config) {
         return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
       }
 
+      const t0 = Date.now();
       const result = await aggregator.aggregate(username, date);
+      logger.info('life.log.day-aggregated', { username, date, sourceCount: Object.keys(result?.sources || {}).length, durationMs: Date.now() - t0 });
       res.json(result);
     } catch (err) {
+      logger.error('life.log.day-error', { date, error: err.message });
       res.status(500).json({ error: err.message });
     }
   });
