@@ -231,11 +231,11 @@ export class TimelineRecorder {
           name: user.name,
           groupLabel: user.groupLabel || null,
           source: user.source || null,
-          color: snapshot?.zoneColor || user.currentData?.color || null
+          color: snapshot?.zoneColor || null
         },
         metrics: {
-          heartRate: sanitizeHeartRate(snapshot?.heartRate ?? user.currentData?.heartRate),
-          zoneId: snapshot?.zoneId || user.currentData?.zone || null,
+          heartRate: sanitizeHeartRate(snapshot?.heartRate),
+          zoneId: snapshot?.zoneId || null,
           rpm: sanitizeNumber(snapshot?.rpm),
           power: sanitizeNumber(snapshot?.power),
           distance: sanitizeDistance(snapshot?.distance)
