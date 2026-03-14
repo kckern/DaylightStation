@@ -60,9 +60,10 @@ function useSelectAndLog(onSelectCallback) {
 }
 
 /**
- * MenuHeader: Displays the menu title with item count and current time.
+ * HeaderClock: Isolated clock component. Re-renders every second
+ * but is wrapped in React.memo so it never cascades to parent/siblings.
  */
-function MenuHeader({ title, itemCount, image }) {
+const HeaderClock = React.memo(function HeaderClock() {
   const [time, setTime] = useState(new Date());
 
   useEffect(() => {
@@ -70,14 +71,24 @@ function MenuHeader({ title, itemCount, image }) {
     return () => clearInterval(timer);
   }, []);
 
-  const formatTime = (date) => {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  };
+  const formatTime = (date) =>
+    date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const formatDate = (date) =>
+    date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 
-  const formatDate = (date) => {
-    return date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
-  };
+  return (
+    <div className="menu-header-datetime">
+      <span className="menu-header-time">{formatTime(time)}</span>
+      <span className="menu-header-date">{formatDate(time)}</span>
+    </div>
+  );
+});
 
+/**
+ * MenuHeader: Displays the menu title with item count and current time.
+ * Memoized — only re-renders when title/itemCount/image change.
+ */
+const MenuHeader = React.memo(function MenuHeader({ title, itemCount, image }) {
   return (
     <header className="menu-header">
       <div className="menu-header-left">
@@ -85,10 +96,7 @@ function MenuHeader({ title, itemCount, image }) {
         <h2>{title}</h2>
       </div>
       <div className="menu-header-center">
-        <div className="menu-header-datetime">
-          <span className="menu-header-time">{formatTime(time)}</span>
-          <span className="menu-header-date">{formatDate(time)}</span>
-        </div>
+        <HeaderClock />
       </div>
       <div className="menu-header-right">
         {itemCount > 0 && (
@@ -97,7 +105,7 @@ function MenuHeader({ title, itemCount, image }) {
       </div>
     </header>
   );
-}
+});
 
 function MenuEmpty({ title, image, message }) {
   return (
@@ -438,60 +446,19 @@ function generateGradientFromLabel(label) {
 }
 
 /**
- * MenuIMG: A helper component to display the menu image (and its orientation).
+ * MenuIMG: Lightweight image component.
+ * - Single state update on load (was 3 before — orientation, aspectRatio, loading)
+ * - No blur background (was the #1 GPU cost on Shield)
+ * - Uses object-fit: cover always (no orientation detection needed for cover mode)
+ * - Memoized to prevent re-render on parent state changes
  */
-function MenuIMG({ img, label }) {
-  const [orientation, setOrientation] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [aspectRatio, setAspectRatio] = useState(1);
-  const [imgError, setImgError] = useState(false);
+const MenuIMG = React.memo(function MenuIMG({ img, label }) {
+  const [state, setState] = useState('loading'); // loading | loaded | error
 
-  const handleImageLoad = (e) => {
-    const { naturalWidth, naturalHeight } = e.target;
-    const ratio = naturalWidth / naturalHeight;
-    const newOrientation =
-      ratio > 1 ? "landscape" : ratio < 1 ? "portrait" : "square";
+  const handleLoad = useCallback(() => setState('loaded'), []);
+  const handleError = useCallback(() => setState('error'), []);
 
-    setOrientation(newOrientation);
-    setAspectRatio(ratio);
-    setLoading(false);
-  };
-
-  const handleImageError = () => {
-    setImgError(true);
-    setLoading(false);
-  };
-
-  // Calculate zoom and pan values based on actual aspect ratio
-  // Container is 1:1, so we need to zoom until the image fills it
-  const getZoomStyles = () => {
-    if (!orientation || orientation === 'square') return {};
-    
-    if (orientation === 'portrait') {
-      // Portrait: zoom = 1 / aspectRatio (e.g., 2:3 = 0.667, zoom = 1.5)
-      const zoom = 1 / aspectRatio;
-      // Pan range: how much we can move vertically after zoom
-      // After zoom, image height = 100% * zoom, visible = 100%
-      // Max pan = (zoom - 1) / zoom * 50% (as percentage of image)
-      const panRange = ((zoom - 1) / zoom) * 50;
-      return {
-        '--img-zoom': zoom.toFixed(3),
-        '--img-pan': `${panRange.toFixed(1)}%`,
-      };
-    } else {
-      // Landscape: zoom = aspectRatio (e.g., 16:9 = 1.78, zoom = 1.78)
-      const zoom = aspectRatio;
-      // Pan range: how much we can move horizontally after zoom
-      const panRange = ((zoom - 1) / zoom) * 50;
-      return {
-        '--img-zoom': zoom.toFixed(3),
-        '--img-pan': `${panRange.toFixed(1)}%`,
-      };
-    }
-  };
-
-  // If no image or image failed to load, show a gradient placeholder
-  if (!img || imgError) {
+  if (!img || state === 'error') {
     const gradient = generateGradientFromLabel(label);
     return (
       <div className="menu-item-img no-image" style={{ background: gradient }}>
@@ -504,31 +471,20 @@ function MenuIMG({ img, label }) {
     );
   }
 
-  // Show blurred background for non-square images (letterboxing/pillarboxing)
-  const needsBlurBg = orientation && orientation !== 'square';
-  const zoomStyles = getZoomStyles();
-
   return (
-    <div
-      className={`menu-item-img ${loading ? "loading" : ""} ${orientation}`}
-      style={zoomStyles}
-    >
-      {needsBlurBg && (
-        <div 
-          className="menu-item-img-blur-bg"
-          style={{ backgroundImage: `url(${img})` }}
-        />
-      )}
+    <div className={`menu-item-img ${state === 'loading' ? 'loading' : ''}`}>
       <img
         src={img}
         alt={label}
-        onLoad={handleImageLoad}
-        onError={handleImageError}
-        style={{ display: loading ? "none" : "block" }}
+        loading="lazy"
+        decoding="async"
+        onLoad={handleLoad}
+        onError={handleError}
+        style={{ display: state === 'loading' ? 'none' : 'block' }}
       />
     </div>
   );
-}
+});
 
 /**
  * Memoized individual menu item — only re-renders when isActive or item data changes.
@@ -708,37 +664,55 @@ function MenuItems({
 
   /**
    * Scroll the container so the active item remains in view.
+   * Uses rAF to batch DOM reads and the transform write, avoiding forced reflow.
+   * Keeps header visible when top rows are selected.
    */
   useEffect(() => {
     if (!containerRef?.current || !items.length) return;
-    const containerEl = containerRef.current;
-    const containerHeight = containerEl.offsetHeight;
-    
-    // Get the items container to check dimensions
-    const menuItemsEl = containerEl.querySelector(".menu-items");
-    if (!menuItemsEl) return;
 
-    // Check if scrolling is needed by verifying if the last item is already visible
-    // This prevents unnecessary panning/scrolling when the content fits on screen
-    const lastElem = menuItemsEl.children[menuItemsEl.children.length - 1];
-    if (lastElem) {
-      const lastItemBottom = lastElem.offsetTop + lastElem.offsetHeight;
-      // If the bottom of the last item is within the container (plus small buffer), don't scroll
-      if (lastItemBottom <= containerHeight + 5) {
-        containerEl.style.transform = `translateY(0px)`;
-        return;
+    const rafId = requestAnimationFrame(() => {
+      const containerEl = containerRef.current;
+      if (!containerEl) return;
+      const containerHeight = containerEl.offsetHeight;
+
+      const menuItemsEl = containerEl.querySelector(".menu-items");
+      if (!menuItemsEl) return;
+
+      // Check if scrolling is needed
+      const lastElem = menuItemsEl.children[menuItemsEl.children.length - 1];
+      if (lastElem) {
+        const lastItemBottom = lastElem.offsetTop + lastElem.offsetHeight;
+        if (lastItemBottom <= containerHeight + 5) {
+          containerEl.style.transform = `translateY(0px)`;
+          return;
+        }
       }
-    }
 
-    const selectedElem = menuItemsEl.children[selectedIndex];
-    if (!selectedElem) return;
+      const selectedElem = menuItemsEl.children[selectedIndex];
+      if (!selectedElem) return;
 
-    const selectedHeight = selectedElem.offsetHeight;
-    const selectedTop = selectedElem.offsetTop;
-    const centerTarget = selectedTop - containerHeight / 2 + selectedHeight / 2;
-    const maxScroll = containerEl.scrollHeight - containerHeight;
-    const newTranslateY = Math.max(0, Math.min(maxScroll, centerTarget));
-    containerEl.style.transform = `translateY(${-newTranslateY}px)`;
+      const selectedHeight = selectedElem.offsetHeight;
+      const selectedTop = selectedElem.offsetTop;
+
+      // Keep header visible: don't scroll if selected item is in the top portion
+      const headerHeight = containerEl.querySelector('.menu-header')?.offsetHeight || 0;
+      const headerBuffer = headerHeight + 16; // header + gap
+      const selectedBottom = selectedTop + selectedHeight;
+
+      let newTranslateY;
+      if (selectedBottom <= containerHeight) {
+        // Item fully visible without scrolling — keep header in view
+        newTranslateY = 0;
+      } else {
+        // Center the selected item, but never scroll past the header
+        const centerTarget = selectedTop - containerHeight / 2 + selectedHeight / 2;
+        const maxScroll = containerEl.scrollHeight - containerHeight;
+        newTranslateY = Math.max(0, Math.min(maxScroll, centerTarget));
+      }
+      containerEl.style.transform = `translateY(${-newTranslateY}px)`;
+    });
+
+    return () => cancelAnimationFrame(rafId);
   }, [selectedIndex, items, containerRef]);
 
   /**

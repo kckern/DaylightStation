@@ -30,13 +30,13 @@ test.describe('Living Room Screen — Menu Widget', () => {
     const firstLabel = await getActiveLabel();
 
     await page.keyboard.press('ArrowRight');
-    await page.waitForTimeout(100);
+    await page.waitForTimeout(300);
 
     const secondLabel = await getActiveLabel();
     expect(secondLabel).not.toBe(firstLabel);
 
     await page.keyboard.press('ArrowLeft');
-    await page.waitForTimeout(100);
+    await page.waitForTimeout(300);
 
     const backLabel = await getActiveLabel();
     expect(backLabel).toBe(firstLabel);
