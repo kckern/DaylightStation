@@ -171,18 +171,23 @@ function ReaderYouTubePlayer({ article }) {
     setUseEmbed(true);
   }, []);
 
-  const wrapperStyle = (article.meta?.imageWidth && article.meta?.imageHeight && article.meta.imageHeight > article.meta.imageWidth) ? {
-    paddingBottom: `${(article.meta.imageHeight / article.meta.imageWidth) * 100}%`,
-    maxWidth: '360px',
+  const isPortrait = article.meta?.imageWidth && article.meta?.imageHeight && article.meta.imageHeight > article.meta.imageWidth;
+
+  const wrapperStyle = isPortrait ? {
+    paddingBottom: 0,
+    aspectRatio: `${article.meta.imageWidth} / ${article.meta.imageHeight}`,
     maxHeight: '80vh',
+    width: '100%',
   } : undefined;
 
   // Loading — don't show iframe yet
   if (!fetchDone) {
     return (
-      <div className="youtube-embed-wrapper" style={wrapperStyle}>
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000' }}>
-          <div className="scroll-loading-dots"><span /><span /><span /></div>
+      <div style={isPortrait ? { maxWidth: '360px' } : undefined}>
+        <div className="youtube-embed-wrapper" style={wrapperStyle}>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000' }}>
+            <div className="scroll-loading-dots"><span /><span /><span /></div>
+          </div>
         </div>
       </div>
     );
@@ -194,24 +199,28 @@ function ReaderYouTubePlayer({ article }) {
       ? `${article.meta.imageWidth} / ${article.meta.imageHeight}`
       : '16 / 9';
     return (
-      <FeedPlayer
-        playerData={playerData}
-        onError={handleStreamError}
-        aspectRatio={ar}
-      />
+      <div style={isPortrait ? { maxWidth: '360px' } : undefined}>
+        <FeedPlayer
+          playerData={playerData}
+          onError={handleStreamError}
+          aspectRatio={ar}
+        />
+      </div>
     );
   }
 
   // Embed fallback
   return (
-    <div className="youtube-embed-wrapper" style={wrapperStyle}>
-      <iframe
-        src={`https://www.youtube.com/embed/${article.meta.videoId}?rel=0`}
-        title={article.title}
-        allow="autoplay; encrypted-media; picture-in-picture"
-        allowFullScreen
-        className="youtube-embed"
-      />
+    <div style={isPortrait ? { maxWidth: '360px' } : undefined}>
+      <div className="youtube-embed-wrapper" style={wrapperStyle}>
+        <iframe
+          src={`https://www.youtube.com/embed/${article.meta.videoId}?rel=0`}
+          title={article.title}
+          allow="autoplay; encrypted-media; picture-in-picture"
+          allowFullScreen
+          className="youtube-embed"
+        />
+      </div>
     </div>
   );
 }
