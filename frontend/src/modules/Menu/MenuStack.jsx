@@ -10,6 +10,7 @@ const Player = lazy(() => import('../Player/Player').then(m => ({ default: m.def
 const AppContainer = lazy(() => import('../AppContainer/AppContainer').then(m => ({ default: m.default || m.AppContainer })));
 const Displayer = lazy(() => import('../Displayer/Displayer').then(m => ({ default: m.default })));
 const LaunchCard = lazy(() => import('./LaunchCard.jsx'));
+const AndroidLaunchCard = lazy(() => import('./AndroidLaunchCard.jsx'));
 
 /**
  * Loading fallback for lazy-loaded components
@@ -101,6 +102,16 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
         intentTs: Date.now()
       });
       push({ type: 'launch', props: selection });
+    } else if (selection.android) {
+      const logger = getLogger();
+      logger.info('android-launch.intent', {
+        package: selection.android.package,
+        activity: selection.android.activity,
+        title: selection.title || selection.label,
+        source: 'menu-selection',
+        intentTs: Date.now()
+      });
+      push({ type: 'android-launch', props: selection });
     }
     // If none of the above, it might be a leaf action - let parent handle
   }, [push]);
@@ -228,6 +239,18 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
             title={props.title}
             thumbnail={props.thumbnail || props.image}
             metadata={props.metadata}
+            onClose={clear}
+          />
+        </Suspense>
+      );
+
+    case 'android-launch':
+      return (
+        <Suspense fallback={<LoadingFallback />}>
+          <AndroidLaunchCard
+            android={props.android}
+            title={props.title}
+            image={props.image}
             onClose={clear}
           />
         </Suspense>
