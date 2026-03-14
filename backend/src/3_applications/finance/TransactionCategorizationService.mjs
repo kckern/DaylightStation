@@ -68,14 +68,18 @@ export class TransactionCategorizationService {
       return { processed: [], failed: [], skipped: transactions };
     }
 
-    const { validTags, chat: chatTemplate } = config;
+    const { validTags, chat: chatTemplate, descriptionRules } = config;
 
-    // Identify transactions that need processing
+    // Apply deterministic description rules before AI categorization
+    const ruleResults = this.#applyDescriptionRules(transactions, descriptionRules);
+
+    // Identify transactions that need processing (after rules applied)
     const needsProcessing = transactions.filter(txn => this.#needsCategorization(txn));
     const skipped = transactions.filter(txn => !this.#needsCategorization(txn));
 
     this.#log('info', 'categorization.start', {
       total: transactions.length,
+      rulesApplied: ruleResults.length,
       toProcess: needsProcessing.length,
       skipped: skipped.length
     });
@@ -146,10 +150,11 @@ export class TransactionCategorizationService {
 
     this.#log('info', 'categorization.complete', {
       processed: processed.length,
-      failed: failed.length
+      failed: failed.length,
+      rulesApplied: ruleResults.length
     });
 
-    return { processed, failed, skipped };
+    return { processed: [...ruleResults, ...processed], failed, skipped };
   }
 
   /**
@@ -166,7 +171,34 @@ export class TransactionCategorizationService {
       return { suggestions: [], failed: [] };
     }
 
-    const { validTags, chat: chatTemplate } = config;
+    const { validTags, chat: chatTemplate, descriptionRules } = config;
+
+    // Preview deterministic rules (without updating external source)
+    const ruleMatches = [];
+    if (descriptionRules?.length) {
+      const compiled = descriptionRules.map(r => ({
+        pattern: new RegExp(r.pattern, 'i'),
+        rename: r.rename,
+        tag: r.tag
+      }));
+      for (const txn of transactions) {
+        const desc = txn.description || '';
+        for (const rule of compiled) {
+          if (rule.pattern.test(desc) && desc !== rule.rename) {
+            ruleMatches.push({
+              id: txn.id,
+              date: txn.date,
+              originalDescription: desc,
+              suggestedName: rule.rename,
+              suggestedCategory: rule.tag || txn.tagNames?.[0],
+              source: 'rule'
+            });
+            break;
+          }
+        }
+      }
+    }
+
     const needsProcessing = transactions.filter(txn => this.#needsCategorization(txn));
 
     const suggestions = [];
@@ -203,7 +235,68 @@ export class TransactionCategorizationService {
       }
     }
 
-    return { suggestions, failed };
+    return { suggestions: [...ruleMatches, ...suggestions], failed };
+  }
+
+  /**
+   * Apply deterministic description rules to transactions.
+   * Rules match against the original description and rename + retag without AI.
+   * Updates both local transaction objects and the external source.
+   *
+   * @param {Object[]} transactions - Transactions to check
+   * @param {Object[]} [rules] - Description rules from config
+   * @returns {Object[]} List of transactions that were updated by rules
+   */
+  #applyDescriptionRules(transactions, rules) {
+    if (!rules?.length) return [];
+
+    const compiled = rules.map(r => ({
+      pattern: new RegExp(r.pattern, 'i'),
+      rename: r.rename,
+      tag: r.tag
+    }));
+
+    const applied = [];
+
+    for (const txn of transactions) {
+      const desc = txn.description || '';
+      for (const rule of compiled) {
+        if (!rule.pattern.test(desc)) continue;
+        if (desc === rule.rename) break; // already renamed
+
+        const originalDescription = desc;
+        txn.description = rule.rename;
+        if (rule.tag) {
+          txn.tagNames = [rule.tag];
+          txn.tags = rule.tag;
+        }
+
+        // Update in external source (fire and forget)
+        const update = { description: rule.rename };
+        if (rule.tag) update.tags = rule.tag;
+        this.#transactionSource.updateTransaction(txn.id, update).catch(err => {
+          this.#log('error', 'categorization.rule.updateFailed', { id: txn.id, error: err.message });
+        });
+
+        applied.push({
+          id: txn.id,
+          date: txn.date,
+          originalDescription,
+          friendlyName: rule.rename,
+          category: rule.tag || txn.tagNames?.[0]
+        });
+
+        this.#log('info', 'categorization.rule.applied', {
+          id: txn.id,
+          from: originalDescription,
+          to: rule.rename
+        });
+
+        break; // first matching rule wins
+      }
+    }
+
+    return applied;
   }
 
   /**
