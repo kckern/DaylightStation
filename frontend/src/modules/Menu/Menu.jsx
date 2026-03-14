@@ -13,6 +13,7 @@ import MenuNavigationContext from "../../context/MenuNavigationContext";
 import { MenuSkeleton } from "./MenuSkeleton";
 import { ArcadeSelector } from "./ArcadeSelector";
 import { isFKBAvailable } from '../../lib/fkb.js';
+import { useMenuPerfMonitor } from './hooks/useMenuPerfMonitor.js';
 
 /**
  * Logs a menu selection to the server.
@@ -592,6 +593,9 @@ function MenuItems({
     selectedIndex = internalSelectedIndex;
     currentKey = internalSelectedKey;
   }
+
+  // Jank monitoring — writes to media/logs/screens/
+  useMenuPerfMonitor(items.length > 0, selectedIndex);
 
   const findKeyForItem = useCallback((item) => {
     const action = item?.play || item?.queue || item?.list || item?.open;
