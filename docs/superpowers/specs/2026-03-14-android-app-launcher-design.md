@@ -406,6 +406,26 @@ The `fkb.onResume` field in living-room.yml controls what happens when FKB retur
 
 ---
 
+## Exit Criteria
+
+Playwright tests confirming:
+
+1. **Menu loads** — `/screen/living-room` renders the menu with items from tvapp.yml
+2. **Menu item selection coverage** — selecting various item types routes correctly:
+   - `plex:` items → Player or submenu
+   - `app:` items → AppContainer
+   - `scripture:` / `talk:` items → appropriate content view
+   - `android:` items → AndroidLaunchCard renders (with "Not available" message in headless browser since no FKB)
+3. **Autoplay URL params** — `/screen/living-room?play=plex:642120` opens Player directly
+4. **Escape navigation** — escape from Player/submenu returns to root menu
+5. **Disabled state** — android items render with `.disabled` class in non-FKB environments
+
+**Skip:** Actual Android app launching (requires FKB on real Android hardware). The AndroidLaunchCard's "unavailable" path is testable in headless.
+
+Test location: `tests/live/flow/screen/living-room.runtime.test.mjs`
+
+---
+
 ## Out of Scope
 
 - **App icon fetching from FKB** — API doesn't support it. Manual image config only.
