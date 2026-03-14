@@ -1,0 +1,42 @@
+// frontend/src/modules/Menu/AndroidLaunchCard.scss
+
+.android-launch-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  background: rgba(0, 0, 0, 0.9);
+  color: #e0e0e0;
+  font-family: inherit;
+  gap: 1.5rem;
+  padding: 2rem;
+  box-sizing: border-box;
+
+  &__icon {
+    width: 128px;
+    height: 128px;
+    object-fit: contain;
+    border-radius: 16px;
+  }
+
+  &__title {
+    font-size: 2rem;
+    font-weight: 500;
+    margin: 0;
+    text-align: center;
+  }
+
+  &__status {
+    font-size: 1.2rem;
+    opacity: 0.7;
+  }
+
+  &--unavailable {
+    .android-launch-card__status {
+      color: #ff6b6b;
+      opacity: 1;
+    }
+  }
+}
