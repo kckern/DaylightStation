@@ -85,12 +85,15 @@ class WebSocketService {
       this.connecting = false;
       this.reconnectTier = 0; // Reset tier on successful connection
       this.degradedMode = false;
+      this._lastMessageAt = Date.now();
+      this._startStaleCheck();
       this._notifyStatusListeners();
       this._syncSubscriptions(); // Inform backend of our interests
       this._flushMessageQueue();
     };
 
     this.ws.onmessage = (event) => {
+      this._lastMessageAt = Date.now();
       try {
         const data = JSON.parse(event.data);
         this._dispatch(data);
@@ -104,6 +107,8 @@ class WebSocketService {
       this.connected = false;
       this.connecting = false;
       this.ws = null;
+      this._lastSyncKey = null; // Force re-sync on reconnect
+      this._stopStaleCheck();
       this._notifyStatusListeners();
       this._scheduleReconnect();
     };
@@ -160,6 +165,28 @@ class WebSocketService {
       this.reconnectTier++;
       this.connect();
     }, delay);
+  }
+
+  /**
+   * Start periodic check for stale connections.
+   * Backend pings every 30s, so if we haven't received anything in 45s
+   * the connection is dead — force-close to trigger reconnect.
+   */
+  _startStaleCheck() {
+    this._stopStaleCheck();
+    this._staleCheckInterval = setInterval(() => {
+      if (this._lastMessageAt && Date.now() - this._lastMessageAt > 45000) {
+        console.warn('[WebSocketService] Connection stale (no data in 45s), forcing reconnect');
+        this.ws?.close();
+      }
+    }, 15000);
+  }
+
+  _stopStaleCheck() {
+    if (this._staleCheckInterval) {
+      clearInterval(this._staleCheckInterval);
+      this._staleCheckInterval = null;
+    }
   }
 
   /**

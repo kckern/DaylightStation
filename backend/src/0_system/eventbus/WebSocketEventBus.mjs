@@ -26,6 +26,7 @@ export class WebSocketEventBus {
   #path;
   #logger;
   #running = false;
+  #pingInterval = null;
 
   // Internal pub/sub
   #subscribers = new Map(); // topic -> handler[]
@@ -82,6 +83,20 @@ export class WebSocketEventBus {
     this.#wss.on('error', (err) => {
       this.#logger.error?.('eventbus.server_error', { error: err.message });
     });
+
+    // Ping all clients every 30s to detect stale connections
+    this.#pingInterval = setInterval(() => {
+      for (const [clientId, { ws }] of this.#clients) {
+        if (ws._wsPongReceived === false) {
+          // No pong since last ping — connection is stale
+          this.#logger.warn?.('eventbus.client_stale', { clientId });
+          ws.terminate();
+          continue;
+        }
+        ws._wsPongReceived = false;
+        ws.ping();
+      }
+    }, 30000);
   }
 
   /**
@@ -91,6 +106,12 @@ export class WebSocketEventBus {
     if (!this.#running) return;
 
     this.#logger.info?.('eventbus.stopping');
+
+    // Stop ping interval
+    if (this.#pingInterval) {
+      clearInterval(this.#pingInterval);
+      this.#pingInterval = null;
+    }
 
     // Close all client connections
     for (const [clientId, { ws }] of this.#clients) {
@@ -399,6 +420,10 @@ export class WebSocketEventBus {
         this.#logger.error?.('eventbus.connection_handler_error', { error: err.message });
       }
     }
+
+    // Track pong responses for stale connection detection
+    ws._wsPongReceived = true;
+    ws.on('pong', () => { ws._wsPongReceived = true; });
 
     // Set up message handler
     ws.on('message', (rawMessage) => {
