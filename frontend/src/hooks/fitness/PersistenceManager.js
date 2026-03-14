@@ -985,17 +985,14 @@ export class PersistenceManager {
       delete persistSessionData.timeline.timebase;
     }
 
-    // Compute summary block from raw (pre-encoded) series
-    if (persistSessionData.timeline?.series) {
-      const intervalSeconds = persistSessionData.timeline.interval_seconds || 5;
-      persistSessionData.summary = buildSessionSummary({
-        participants: persistSessionData.participants || {},
-        series: persistSessionData.timeline.series,
-        events: persistSessionData.timeline?.events || [],
-        treasureBox: persistSessionData.treasureBox || sessionData.treasureBox,
-        intervalSeconds,
-      });
-    }
+    // Capture summary inputs BEFORE series encoding (encoding mutates series to RLE strings).
+    // Summary is computed later, after Plex metadata enrichment populates grandparentId/parentId.
+    const summaryInputs = persistSessionData.timeline?.series ? {
+      participants: persistSessionData.participants || {},
+      series: persistSessionData.timeline.series,
+      treasureBox: persistSessionData.treasureBox || sessionData.treasureBox,
+      intervalSeconds: persistSessionData.timeline.interval_seconds || 5,
+    } : null;
 
     // Encode series
     if (persistSessionData.timeline?.series) {
@@ -1068,6 +1065,15 @@ export class PersistenceManager {
     }
 
     this._enrichMissingPlexMetadata(persistSessionData.timeline?.events)
+      .then(() => {
+        // Build summary AFTER enrichment so grandparentId/parentId are populated
+        if (summaryInputs) {
+          persistSessionData.summary = buildSessionSummary({
+            ...summaryInputs,
+            events: persistSessionData.timeline?.events || [],
+          });
+        }
+      })
       .then(() => this._persistApi('api/v1/fitness/save_session', { sessionData: persistSessionData }, 'POST'))
       .then(resp => {
         this.markSaveSucceeded(sessionData.sessionId);
