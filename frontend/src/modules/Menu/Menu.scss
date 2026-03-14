@@ -285,21 +285,9 @@ $item-radius: 0.75rem;
     position: relative;
     flex-direction: column;
     overflow: hidden;
+    // CSS containment: isolate layout/paint so each item is independent
+    contain: layout style paint;
     @include smooth-shadow(0.6);
-    
-    // Smooth transitions for all interactive states
-    transition: 
-      transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
-      border-color 0.2s ease,
-      box-shadow 0.25s ease,
-      background 0.2s ease;
-
-    // Subtle hover state for non-active items
-    &:not(.active):hover {
-      border-color: $color-border-hover;
-      transform: translateY(-2px);
-      @include smooth-shadow(1);
-    }
 
     &.active {
       .menu-item-label {
@@ -332,19 +320,6 @@ $item-radius: 0.75rem;
       justify-content: center;
       align-items: center;
       position: relative;
-
-      // Blurred background for letterboxing/pillarboxing
-      .menu-item-img-blur-bg {
-        position: absolute;
-        inset: 0;
-        background-size: cover;
-        background-position: center;
-        background-repeat: no-repeat;
-        filter: blur(8px) saturate(1.1);
-        transform: scale(1.1); // Prevent blur edge artifacts
-        opacity: 0.5;
-        z-index: 0;
-      }
 
       // Subtle inner shadow for depth
       &::after {
@@ -385,95 +360,6 @@ $item-radius: 0.75rem;
       height: 100%;
       position: relative;
       z-index: 1;
-      transition: 
-        transform 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-        filter 0.25s ease;
-    }
-
-    .menu-item-img.landscape img {
-      width: 100%;
-      height: auto;
-      object-fit: contain;
-      transform: scale(1);
-    }
-
-    .menu-item-img.portrait img {
-      width: auto;
-      height: 100%;
-      object-fit: contain;
-      transform: scale(1);
-      transform-origin: top center;
-    }
-
-    .menu-item-img.square img {
-      object-fit: cover;
-    }
-
-    // Active state zoom for portrait images - eliminates pillarboxing
-    &.active .menu-item-img.portrait {
-      .menu-item-img-blur-bg {
-        opacity: 0; // Hide blur bg when zoomed
-        transition: opacity 0.4s ease;
-      }
-      
-      img {
-        // Use CSS variable for dynamic zoom based on actual aspect ratio
-        transform: scale(var(--img-zoom, 1.5));
-        transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-        // Start pan animation after zoom completes
-        animation: portraitPan 8s ease-in-out 0.5s infinite;
-        animation-fill-mode: forwards;
-      }
-    }
-
-    @keyframes portraitPan {
-      0% {
-        transform: scale(var(--img-zoom, 1.5)) translateY(0);
-      }
-      40% {
-        transform: scale(var(--img-zoom, 1.5)) translateY(calc(-1 * var(--img-pan, 22%)));
-      }
-      60% {
-        transform: scale(var(--img-zoom, 1.5)) translateY(calc(-1 * var(--img-pan, 22%)));
-      }
-      100% {
-        transform: scale(var(--img-zoom, 1.5)) translateY(0);
-      }
-    }
-
-    // Active state zoom for landscape images - eliminates letterboxing
-    &.active .menu-item-img.landscape {
-      .menu-item-img-blur-bg {
-        opacity: 0; // Hide blur bg when zoomed
-        transition: opacity 0.4s ease;
-      }
-      
-      img {
-        // Use CSS variable for dynamic zoom based on actual aspect ratio
-        transform: scale(var(--img-zoom, 1.78));
-        transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-        // Start pan animation after zoom completes
-        animation: landscapePan 10s ease-in-out 0.5s infinite;
-        animation-fill-mode: forwards;
-      }
-    }
-
-    @keyframes landscapePan {
-      0% {
-        transform: scale(var(--img-zoom, 1.78)) translateX(0);
-      }
-      25% {
-        transform: scale(var(--img-zoom, 1.78)) translateX(calc(-1 * var(--img-pan, 22%)));
-      }
-      50% {
-        transform: scale(var(--img-zoom, 1.78)) translateX(0);
-      }
-      75% {
-        transform: scale(var(--img-zoom, 1.78)) translateX(var(--img-pan, 22%));
-      }
-      100% {
-        transform: scale(var(--img-zoom, 1.78)) translateX(0);
-      }
     }
 
     // Loading shimmer animation
@@ -518,31 +404,6 @@ $item-radius: 0.75rem;
       0 4px 12px rgba(59, 130, 246, 0.2);
     z-index: 10;
 
-    // Animated glow pulse
-    &::before {
-      content: '';
-      position: absolute;
-      inset: -3px;
-      border-radius: calc($item-radius + 3px);
-      background: linear-gradient(
-        135deg,
-        rgba(59, 130, 246, 0.4) 0%,
-        rgba(59, 130, 246, 0.1) 50%,
-        rgba(59, 130, 246, 0.4) 100%
-      );
-      z-index: -1;
-      opacity: 0;
-      animation: glowPulse 2s ease-in-out infinite;
-    }
-  }
-
-  .menu-item.active img {
-    filter: brightness(1.02);
-  }
-
-  @keyframes glowPulse {
-    0%, 100% { opacity: 0.4; }
-    50% { opacity: 0.8; }
   }
 
   .progress-bar {
