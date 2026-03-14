@@ -728,37 +728,33 @@ function MenuItems({
       const menuItemsEl = containerEl.querySelector(".menu-items");
       if (!menuItemsEl) return;
 
-      // Check if scrolling is needed
+      // Check if scrolling is needed at all
       const lastElem = menuItemsEl.children[menuItemsEl.children.length - 1];
       if (lastElem) {
-        const lastItemBottom = lastElem.offsetTop + lastElem.offsetHeight;
+        const lastItemBottom = menuItemsEl.offsetTop + lastElem.offsetTop + lastElem.offsetHeight;
         if (lastItemBottom <= containerHeight + 5) {
           containerEl.style.transform = `translateY(0px)`;
           return;
         }
       }
 
+      // Row 1 exemption: if selected item is in the first row, don't scroll
+      // so the header stays visible. First row = indices 0 through (columns-1).
+      if (selectedIndex < columns) {
+        containerEl.style.transform = `translateY(0px)`;
+        return;
+      }
+
       const selectedElem = menuItemsEl.children[selectedIndex];
       if (!selectedElem) return;
 
       const selectedHeight = selectedElem.offsetHeight;
-      const selectedTop = selectedElem.offsetTop;
+      // Absolute position within the container (item offset + items container offset)
+      const absoluteTop = menuItemsEl.offsetTop + selectedElem.offsetTop;
 
-      // Keep header visible: don't scroll if selected item is in the top portion
-      const headerHeight = containerEl.querySelector('.menu-header')?.offsetHeight || 0;
-      const headerBuffer = headerHeight + 16; // header + gap
-      const selectedBottom = selectedTop + selectedHeight;
-
-      let newTranslateY;
-      if (selectedBottom <= containerHeight) {
-        // Item fully visible without scrolling — keep header in view
-        newTranslateY = 0;
-      } else {
-        // Center the selected item, but never scroll past the header
-        const centerTarget = selectedTop - containerHeight / 2 + selectedHeight / 2;
-        const maxScroll = containerEl.scrollHeight - containerHeight;
-        newTranslateY = Math.max(0, Math.min(maxScroll, centerTarget));
-      }
+      const centerTarget = absoluteTop - containerHeight / 2 + selectedHeight / 2;
+      const maxScroll = containerEl.scrollHeight - containerHeight;
+      const newTranslateY = Math.max(0, Math.min(maxScroll, centerTarget));
       containerEl.style.transform = `translateY(${-newTranslateY}px)`;
     });
 
