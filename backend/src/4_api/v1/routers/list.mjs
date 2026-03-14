@@ -100,6 +100,9 @@ export function toListItem(item) {
     list: item.actions?.list ?? computedList
   };
 
+  // Android items are client-side only (FKB app launch) — pass through directly
+  if (item.android) base.android = item.android;
+
   // Action properties from Item (check item.actions for open, display, launch)
   if (item.actions?.open) base.open = item.actions.open;
   if (item.actions?.display) base.display = item.actions.display;
