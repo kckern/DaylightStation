@@ -1,10 +1,23 @@
 $font-primary: 'Roboto Condensed', sans-serif;
 $font-secondary: 'Open Sans', sans-serif;
 
+// Kill expensive animations (zoom, pan, glow) that cause jank on TV hardware.
+// Only whitelist the container transform for smooth scroll panning.
 .menu-items-container {
   font-family: $font-primary;
   color: #ffffffaa;
   will-change: transform;
+  *, *::before, *::after {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
+  }
+  // Whitelist: smooth scroll panning on the container itself
+  &, & > .menu-items {
+    transition-duration: 0.15s !important;
+    transition-timing-function: ease-out !important;
+  }
 }
 
 $color-primary: #3b82f6;
