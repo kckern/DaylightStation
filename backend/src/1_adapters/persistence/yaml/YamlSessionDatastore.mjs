@@ -265,6 +265,22 @@ export class YamlSessionDatastore extends ISessionDatastore {
         };
       }
 
+      // Patch: if summary.media has null grandparentId/parentId, try filling from timeline events
+      if (media?.primary && (!media.primary.grandparentId || !media.primary.parentId)) {
+        const matchingEvt = (data.timeline?.events || []).find(e =>
+          e.type === 'media' && e.data?.contentId && ItemId.normalize(e.data.contentId, ItemId.extractSource(e.data.contentId)) === media.primary.contentId
+        );
+        if (matchingEvt?.data) {
+          const evtSource = ItemId.extractSource(matchingEvt.data.contentId);
+          if (!media.primary.grandparentId && matchingEvt.data.grandparentId) {
+            media.primary.grandparentId = ItemId.normalize(matchingEvt.data.grandparentId, evtSource);
+          }
+          if (!media.primary.parentId && matchingEvt.data.parentId) {
+            media.primary.parentId = ItemId.normalize(matchingEvt.data.parentId, evtSource);
+          }
+        }
+      }
+
       // Fallback: if no structured summary.media, try extracting from timeline.events
       if (!media && data.timeline?.events?.length > 0) {
         const mediaEvents = (data.timeline.events || []).filter(e => e.type === 'media');
