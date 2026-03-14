@@ -46,6 +46,7 @@ export class TransactionClassifier {
   #dayToDayTags;
   #monthlyTagDict;
   #shortTermTagDict;
+  #transferTagDict;
 
   /**
    * @param {BucketConfig} config - Budget bucket configuration
@@ -71,6 +72,16 @@ export class TransactionClassifier {
       return acc;
     }, {});
 
+    // Build transfer tag dictionary: tags that route transfers to monthly
+    // Uses transferTags from monthly config items if specified, otherwise falls back to label
+    this.#transferTagDict = (config.monthly || []).reduce((acc, { tags, label, transferTags }) => {
+      const categoryLabel = label || 'Shopping';
+      if (transferTags) {
+        transferTags.forEach(tag => { acc[tag] = categoryLabel; });
+      }
+      return acc;
+    }, {});
+
     // Build short-term tag dictionary: tag -> label
     this.#shortTermTagDict = (config.shortTerm || []).reduce((acc, { tags, label }) => {
       (tags || []).forEach(tag => {
@@ -93,12 +104,12 @@ export class TransactionClassifier {
 
     // Check for transfers first
     // Most transfers are internal account movements (e.g., Fidelity cash sweeps) and stay in the transfer bucket.
-    // Exception: transfers whose main tag matches a configured monthly category represent real cash
+    // Exception: transfers whose main tag is in a monthly category's transferTags represent real cash
     // outflows to non-liquid assets (e.g., RSU Holdings → Long-term Savings, Housing → Housing)
     // and should be classified as monthly expenses.
     if (this.#isTransfer(txnType, mainTag)) {
-      if (mainTag && this.#monthlyTagDict[mainTag]) {
-        return { label: this.#monthlyTagDict[mainTag], bucket: 'monthly' };
+      if (mainTag && this.#transferTagDict[mainTag]) {
+        return { label: this.#transferTagDict[mainTag], bucket: 'monthly' };
       }
       return { label: mainTag || 'Transfer', bucket: 'transfer' };
     }
