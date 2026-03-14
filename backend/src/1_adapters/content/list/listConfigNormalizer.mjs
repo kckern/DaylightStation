@@ -62,30 +62,41 @@ export function normalizeListItem(item) {
   // ── Menu/program format: input + action ─────────────────
   else if (item.input) {
     const normalized = normalizeInput(item.input);
-    const action = (item.action || 'Play').toLowerCase();
 
-    switch (action) {
-      case 'open': {
-        // Extract local part after "app:" prefix (or use raw if no prefix)
-        const colonIdx = normalized.indexOf(':');
-        result.open = colonIdx >= 0 ? normalized.slice(colonIdx + 1) : normalized;
-        break;
+    // Android items are client-side only — produce android key, skip action switch
+    if (normalized.startsWith('android:')) {
+      const rest = normalized.slice('android:'.length);
+      const slashIdx = rest.indexOf('/');
+      result.android = {
+        package: slashIdx >= 0 ? rest.slice(0, slashIdx) : rest,
+        activity: slashIdx >= 0 ? rest.slice(slashIdx + 1) : ''
+      };
+    } else {
+      const action = (item.action || 'Play').toLowerCase();
+
+      switch (action) {
+        case 'open': {
+          // Extract local part after "app:" prefix (or use raw if no prefix)
+          const colonIdx = normalized.indexOf(':');
+          result.open = colonIdx >= 0 ? normalized.slice(colonIdx + 1) : normalized;
+          break;
+        }
+        case 'display':
+          result.display = { contentId: normalized };
+          break;
+        case 'list':
+          result.list = { contentId: normalized };
+          break;
+        case 'queue':
+          result.queue = { contentId: normalized };
+          break;
+        case 'launch':
+          result.launch = { contentId: normalized };
+          break;
+        default: // 'play' or unrecognized
+          result.play = { contentId: normalized };
+          break;
       }
-      case 'display':
-        result.display = { contentId: normalized };
-        break;
-      case 'list':
-        result.list = { contentId: normalized };
-        break;
-      case 'queue':
-        result.queue = { contentId: normalized };
-        break;
-      case 'launch':
-        result.launch = { contentId: normalized };
-        break;
-      default: // 'play' or unrecognized
-        result.play = { contentId: normalized };
-        break;
     }
   }
 
@@ -119,6 +130,7 @@ export function extractContentId(item) {
     || item.display?.contentId
     || item.launch?.contentId
     || (item.open ? `app:${item.open}` : '')
+    || (item.android ? `android:${item.android.package}/${item.android.activity}` : '')
     || '';
 }
 
@@ -132,6 +144,7 @@ export function extractContentId(item) {
 export function extractActionName(item) {
   if (!item) return 'Play';
   if (item.action) return item.action;
+  if (item.android) return 'Android';
   if (item.play) return 'Play';
   if (item.queue) return 'Queue';
   if (item.list) return 'List';
@@ -265,6 +278,7 @@ export function denormalizeItem(item) {
   delete result.list;
   delete result.queue;
   delete result.launch;
+  delete result.android;
 
   return result;
 }

@@ -197,6 +197,62 @@ describe('normalizeListItem', () => {
     });
   });
 
+  // ── Android app items (client-side FKB launch) ──────────
+  describe('android items', () => {
+    it('parses android: prefix into android key with package and activity', () => {
+      const item = { label: 'Gospel Stream', input: 'android:org.lds.stream/.ux.androidtv.main.TvMainActivity' };
+      const result = normalizeListItem(item);
+      expect(result.title).toBe('Gospel Stream');
+      expect(result.android).toEqual({
+        package: 'org.lds.stream',
+        activity: '.ux.androidtv.main.TvMainActivity'
+      });
+      expect(result.play).toBeUndefined();
+      expect(result.list).toBeUndefined();
+    });
+
+    it('handles android: prefix with space after colon (YAML quirk)', () => {
+      const item = { label: 'BYUtv', input: 'android: org.byutv.android/.MainActivity' };
+      const result = normalizeListItem(item);
+      expect(result.android).toEqual({
+        package: 'org.byutv.android',
+        activity: '.MainActivity'
+      });
+    });
+
+    it('handles android: prefix with no activity (package only)', () => {
+      const item = { label: 'Some App', input: 'android:com.example.app' };
+      const result = normalizeListItem(item);
+      expect(result.android).toEqual({
+        package: 'com.example.app',
+        activity: ''
+      });
+    });
+
+    it('preserves common fields (uid, image, active)', () => {
+      const item = {
+        uid: 'abc-123',
+        label: 'Zoom',
+        input: 'android:us.zoom.videomeetings/com.zipow.videobox.LauncherActivity',
+        image: '/media/img/apps/zoom.png',
+        active: true
+      };
+      const result = normalizeListItem(item);
+      expect(result.uid).toBe('abc-123');
+      expect(result.image).toBe('/media/img/apps/zoom.png');
+      expect(result.active).toBe(true);
+      expect(result.android.package).toBe('us.zoom.videomeetings');
+      expect(result.android.activity).toBe('com.zipow.videobox.LauncherActivity');
+    });
+
+    it('does not mutate the original item', () => {
+      const item = { label: 'Test', input: 'android:com.test/Activity' };
+      const copy = JSON.parse(JSON.stringify(item));
+      normalizeListItem(item);
+      expect(item).toEqual(copy);
+    });
+  });
+
   // ── Edge cases ──────────────────────────────────────────
   describe('edge cases', () => {
     it('handles empty input gracefully', () => {
@@ -258,6 +314,11 @@ describe('extractContentId', () => {
 
   it('returns empty string for null', () => {
     expect(extractContentId(null)).toBe('');
+  });
+
+  it('extracts content ID from android item', () => {
+    const item = { android: { package: 'org.lds.stream', activity: '.TvMainActivity' } };
+    expect(extractContentId(item)).toBe('android:org.lds.stream/.TvMainActivity');
   });
 });
 
@@ -705,6 +766,14 @@ describe('denormalizeItem', () => {
   it('handles null/undefined', () => {
     expect(denormalizeItem(null)).toBeNull();
     expect(denormalizeItem(undefined)).toBeUndefined();
+  });
+
+  it('strips android key and sets input+action during denormalization', () => {
+    const item = { title: 'Gospel Stream', android: { package: 'org.lds.stream', activity: '.TvMainActivity' } };
+    const result = denormalizeItem(item);
+    expect(result.android).toBeUndefined();
+    expect(result.input).toBe('android:org.lds.stream/.TvMainActivity');
+    expect(result.action).toBe('Android');
   });
 });
 
