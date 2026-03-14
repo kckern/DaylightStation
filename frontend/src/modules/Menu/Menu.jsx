@@ -476,7 +476,6 @@ const MenuIMG = React.memo(function MenuIMG({ img, label }) {
       <img
         src={img}
         alt={label}
-        loading="lazy"
         decoding="async"
         onLoad={handleLoad}
         onError={handleError}
@@ -814,8 +813,10 @@ function MenuItems({
   // Images are gated by imageReadyCount — items beyond the viewport start
   // with gradient placeholders and receive images progressively during idle.
   const itemData = useMemo(() => items.map((item, index) => {
+    // Check all action types for contentId (play, queue, list, open, display)
     const actionObj = item?.play || item?.queue || item?.list || item?.open || {};
-    const { contentId: itemContentId, plex } = actionObj;
+    const itemContentId = actionObj?.contentId;
+    const plex = actionObj?.plex;
     const itemKey = findKeyForItem(item) || `${index}-${item.label}`;
 
     // Only load images for items within the ready count
