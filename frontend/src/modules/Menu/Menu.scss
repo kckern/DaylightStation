@@ -69,8 +69,8 @@ $item-radius: 0.75rem;
   flex-direction: column;
   padding: 1.5 * $spacing-unit;
   position: relative;
-  @include transition(transform, 0.35s, cubic-bezier(0.4, 0, 0.2, 1));
-  animation: menu-fade-in 0.2s ease-in;
+  overflow: hidden;
+  will-change: transform;
 
   .menu-header {
     display: flex;

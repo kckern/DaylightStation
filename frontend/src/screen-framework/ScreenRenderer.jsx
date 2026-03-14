@@ -156,6 +156,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
           height: res ? `${res.height}px` : '100%',
           display: 'flex',
           position: 'relative',
+          overflow: 'hidden',
           ...themeStyle,
         }}>
           <MenuNavigationProvider>
