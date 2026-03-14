@@ -12,7 +12,8 @@
  * @module adapters/devices
  */
 
-const RECOVERY_WAIT_MS = 5000;
+const POLL_INTERVAL_MS = 2000;
+const POLL_MAX_WAIT_MS = 20000;
 const CONNREFUSED = 'ECONNREFUSED';
 
 export class ResilientContentAdapter {
@@ -70,7 +71,7 @@ export class ResilientContentAdapter {
     if (!recovered.ok) {
       return {
         ok: false,
-        error: result.error,
+        error: recovered.error || result.error,
         recovery: { attempted: true, error: recovered.error }
       };
     }
@@ -202,20 +203,44 @@ export class ResilientContentAdapter {
     // Step 1: Connect ADB
     const connectResult = await this.#adb.connect();
     if (!connectResult.ok) {
-      this.#logger.error?.('resilient.recovery.connectFailed', { error: connectResult.error });
-      return { ok: false, error: `ADB connect failed: ${connectResult.error}` };
+      const isAuthError = this.#isAdbAuthError(connectResult.error);
+      this.#logger.error?.('resilient.recovery.connectFailed', {
+        error: connectResult.error,
+        isAuthError
+      });
+      return {
+        ok: false,
+        error: isAuthError
+          ? 'ADB authorization required — approve the prompt on the Shield TV'
+          : `ADB connect failed: ${connectResult.error}`
+      };
     }
 
     // Step 2: Launch the app activity
     const launchResult = await this.#adb.launchActivity(this.#launchActivity);
     if (!launchResult.ok) {
-      this.#logger.error?.('resilient.recovery.launchFailed', { error: launchResult.error });
-      return { ok: false, error: `ADB launch failed: ${launchResult.error}` };
+      const isAuthError = this.#isAdbAuthError(launchResult.error);
+      this.#logger.error?.('resilient.recovery.launchFailed', {
+        error: launchResult.error,
+        isAuthError
+      });
+      return {
+        ok: false,
+        error: isAuthError
+          ? 'ADB authorization required — approve the prompt on the Shield TV'
+          : `ADB launch failed: ${launchResult.error}`
+      };
     }
 
-    // Step 3: Wait for app to boot
-    this.#logger.debug?.('resilient.recovery.waitingForBoot', { waitMs: RECOVERY_WAIT_MS });
-    await new Promise(r => setTimeout(r, RECOVERY_WAIT_MS));
+    // Step 3: Poll for FKB readiness instead of flat wait
+    this.#logger.info?.('resilient.recovery.pollingForBoot', { maxWaitMs: POLL_MAX_WAIT_MS });
+    const ready = await this.#pollPrimaryReady(POLL_MAX_WAIT_MS, POLL_INTERVAL_MS);
+
+    if (!ready) {
+      const elapsedMs = Date.now() - startTime;
+      this.#logger.error?.('resilient.recovery.bootTimeout', { elapsedMs });
+      return { ok: false, error: 'Kiosk app launched but did not become reachable' };
+    }
 
     this.#metrics.recoverySuccesses++;
     const elapsedMs = Date.now() - startTime;
@@ -227,6 +252,43 @@ export class ResilientContentAdapter {
     });
 
     return { ok: true, elapsedMs };
+  }
+
+  /**
+   * Poll the primary adapter until it responds or timeout.
+   * @private
+   * @param {number} maxWaitMs - Maximum time to poll
+   * @param {number} intervalMs - Delay between polls
+   * @returns {Promise<boolean>} true if primary became reachable
+   */
+  async #pollPrimaryReady(maxWaitMs, intervalMs) {
+    const deadline = Date.now() + maxWaitMs;
+    let attempt = 0;
+
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, intervalMs));
+      attempt++;
+
+      try {
+        const status = await this.#primary.getStatus();
+        this.#logger.debug?.('resilient.recovery.poll', { attempt, ready: status.ready });
+        if (status.ready) return true;
+      } catch {
+        this.#logger.debug?.('resilient.recovery.poll', { attempt, ready: false });
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Check if an ADB error indicates authorization is needed
+   * @private
+   */
+  #isAdbAuthError(errorMessage) {
+    if (!errorMessage) return false;
+    return errorMessage.includes('authoriz') ||
+           errorMessage.includes('unauthorized');
   }
 
   /**

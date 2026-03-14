@@ -50,7 +50,28 @@ export class AdbAdapter {
    * @returns {Promise<{ok: boolean, error?: string}>}
    */
   async connect() {
-    return this.#exec(`adb connect ${this.#serial}`);
+    const result = await this.#exec(`adb connect ${this.#serial}`);
+    if (!result.ok) return result;
+
+    // adb connect exits 0 even when device needs authorization.
+    // Verify with a lightweight command to detect auth issues early.
+    const verify = await this.#exec(`adb -s ${this.#serial} shell echo ok`);
+    if (!verify.ok) {
+      const isAuth = verify.error?.includes('authoriz') || verify.error?.includes('unauthorized');
+      this.#logger.warn?.('adb.connect.verifyFailed', {
+        serial: this.#serial,
+        isAuth,
+        error: verify.error
+      });
+      return {
+        ok: false,
+        error: isAuth
+          ? 'device still authorizing'
+          : verify.error
+      };
+    }
+
+    return result;
   }
 
   /**
