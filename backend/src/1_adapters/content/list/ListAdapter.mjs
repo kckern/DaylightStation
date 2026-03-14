@@ -814,6 +814,19 @@ export class ListAdapter {
     for (const item of items) {
       if (item.active === false) continue;
 
+      // Android items are client-side only (FKB app launch) — pass through without content resolution
+      if (item.android) {
+        results.push({
+          id: `android:${item.android.package}/${item.android.activity}`,
+          title: item.title,
+          thumbnail: item.image,
+          itemType: 'leaf',
+          metadata: { uid: item.uid },
+          android: item.android
+        });
+        continue;
+      }
+
       // Extract content ID from normalized item (play/list/queue/display action keys or legacy input)
       const contentId = extractContentId(item);
       let source = 'list';
