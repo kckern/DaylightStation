@@ -146,7 +146,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/fitness/*" element={<FitnessApp />} />
         <Route path="/life/*" element={<LifeApp />} />
         <Route path="/admin/*" element={<AdminApp />} />
-        <Route path="/screen/:screenId" element={<WebSocketProvider><ScreenRenderer /></WebSocketProvider>} />
+        {["/screen/:screenId", "/screens/:screenId"].map(p => <Route key={p} path={p} element={<WebSocketProvider><ScreenRenderer /></WebSocketProvider>} />)}
         <Route path="/setup" element={<SetupWizard onComplete={() => window.location.href = '/'} />} />
         <Route path="/invite/:token" element={<InviteAccept />} />
         <Route path="/feed/*" element={<FeedApp />} />
