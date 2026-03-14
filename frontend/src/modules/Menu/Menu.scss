@@ -580,6 +580,12 @@ $item-radius: 0.75rem;
   }
 }
 
+.menu-item.disabled {
+  opacity: 0.4;
+  filter: grayscale(0.8);
+  pointer-events: none;
+}
+
 @keyframes menu-fade-in {
   from { opacity: 0.7; }
   to { opacity: 1; }

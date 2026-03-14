@@ -12,12 +12,14 @@ import "./Menu.scss";
 import MenuNavigationContext from "../../context/MenuNavigationContext";
 import { MenuSkeleton } from "./MenuSkeleton";
 import { ArcadeSelector } from "./ArcadeSelector";
+import { isFKBAvailable } from '../../lib/fkb.js';
 
 /**
  * Logs a menu selection to the server.
  */
 const logMenuSelection = async (item) => {
-  const mediaKey = item?.play || item?.queue || item?.list || item?.open || item?.launch;
+  const mediaKey = item?.play || item?.queue || item?.list || item?.open || item?.launch
+    || (item?.android ? { contentId: `android:${item.android.package}` } : null);
   if (!mediaKey) return;
 
   const selectedKey = Array.isArray(mediaKey)
@@ -572,7 +574,8 @@ function MenuItems({
   const findKeyForItem = useCallback((item) => {
     const action = item?.play || item?.queue || item?.list || item?.open;
     const actionVal = action && (Array.isArray(action) ? action[0] : Object.values(action)[0]);
-    return item?.id ?? item?.key ?? actionVal ?? item?.label ?? null;
+    const androidKey = item?.android ? `android:${item.android.package}` : null;
+    return item?.id ?? item?.key ?? actionVal ?? androidKey ?? item?.label ?? null;
   }, []);
   
   const setSelectedIndex = useCallback((value, key = null) => {
@@ -780,10 +783,13 @@ function MenuItems({
         // Create a unique key for the image to force remount when navigating menus
         const imageKey = image ? `img-${image}` : `no-img-${itemKey}`;
 
+        const isAndroid = !!item.android;
+        const isDisabled = isAndroid && !isFKBAvailable();
+
         return (
           <div
             key={itemKey}
-            className={`menu-item ${item.type || ""} ${isActive ? "active" : ""}`}
+            className={`menu-item ${item.type || ""} ${isActive ? "active" : ""} ${isDisabled ? "disabled" : ""}`}
           >
             {!!MENU_TIMEOUT && isActive && (
               <ProgressTimeoutBar timeLeft={timeLeft} totalTime={MENU_TIMEOUT} />
