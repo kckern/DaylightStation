@@ -509,6 +509,53 @@ const MenuItem = React.memo(function MenuItem({ item, isActive, isDisabled, imag
 const _fkbAvailable = isFKBAvailable();
 
 /**
+ * Progressively reveals images beyond the initial viewport.
+ * Only the first `initialCount` items get images immediately;
+ * the rest load in batches via requestIdleCallback to avoid
+ * cold-start jank from 34 concurrent image decodes.
+ *
+ * @param {number} totalItems - Total number of menu items
+ * @param {number} initialCount - Items to show immediately (visible viewport)
+ * @param {number} batchSize - Items to reveal per idle callback
+ * @returns {number} Count of items whose images are ready
+ */
+function useProgressiveImages(totalItems, initialCount = 10, batchSize = 2) {
+  const [readyCount, setReadyCount] = useState(() => Math.min(initialCount, totalItems));
+
+  useEffect(() => {
+    if (readyCount >= totalItems) return;
+
+    const schedule = typeof requestIdleCallback === 'function'
+      ? requestIdleCallback
+      : (cb) => setTimeout(cb, 50);
+    const cancel = typeof cancelIdleCallback === 'function'
+      ? cancelIdleCallback
+      : clearTimeout;
+
+    let id;
+    function loadNext() {
+      setReadyCount(prev => {
+        const next = Math.min(prev + batchSize, totalItems);
+        if (next < totalItems) {
+          id = schedule(loadNext);
+        }
+        return next;
+      });
+    }
+
+    id = schedule(loadNext);
+    return () => cancel(id);
+  }, [totalItems, readyCount, batchSize]);
+
+  // Reset when item count changes (new menu loaded)
+  useEffect(() => {
+    setReadyCount(Math.min(initialCount, totalItems));
+  }, [totalItems, initialCount]);
+
+  return readyCount;
+}
+
+/**
  * MenuItems: Renders the menu items, handles arrow keys, and manages optional timeout.
  *
  * When depth is provided, uses MenuNavigationContext for state management.
@@ -552,6 +599,10 @@ function MenuItems({
 
   // Jank monitoring — writes to media/logs/screens/
   useMenuPerfMonitor(items.length > 0, selectedIndex);
+
+  // Progressive image loading — first 10 items get images immediately,
+  // rest load in batches of 2 during idle to avoid cold-start jank
+  const imageReadyCount = useProgressiveImages(items.length, 10, 2);
 
   const findKeyForItem = useCallback((item) => {
     const action = item?.play || item?.queue || item?.list || item?.open;
@@ -759,18 +810,22 @@ function MenuItems({
     }
   }, [items, selectedIndex, currentKey, setSelectedIndex]);
 
-  // Pre-compute item data outside the render loop for memoization stability
+  // Pre-compute item data outside the render loop for memoization stability.
+  // Images are gated by imageReadyCount — items beyond the viewport start
+  // with gradient placeholders and receive images progressively during idle.
   const itemData = useMemo(() => items.map((item, index) => {
     const actionObj = item?.play || item?.queue || item?.list || item?.open || {};
     const { contentId: itemContentId, plex } = actionObj;
     const itemKey = findKeyForItem(item) || `${index}-${item.label}`;
-    let image = item.image;
+
+    // Only load images for items within the ready count
+    let image = index < imageReadyCount ? item.image : null;
 
     if (image && (image.startsWith('/media/img/') || image.startsWith('media/img/'))) {
       image = DaylightMediaPath(image);
     }
 
-    if (!image && (itemContentId || plex)) {
+    if (!image && index < imageReadyCount && (itemContentId || plex)) {
       const displayId = itemContentId || plex;
       const val = Array.isArray(displayId) ? displayId[0] : displayId;
       image = ContentDisplayUrl(val);
@@ -781,7 +836,7 @@ function MenuItems({
     const isDisabled = isAndroid && !_fkbAvailable;
 
     return { item, itemKey, image, imageKey, isDisabled };
-  }), [items, findKeyForItem]);
+  }), [items, findKeyForItem, imageReadyCount]);
 
   return (
     <div className={`menu-items count_${items.length}`}>
