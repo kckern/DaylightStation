@@ -69,11 +69,7 @@ $item-radius: 0.75rem;
   flex-direction: column;
   padding: 1.5 * $spacing-unit;
   position: relative;
-  overflow: hidden;
-  overflow-y: auto;
-  // Hide scrollbar but allow programmatic scrolling
-  scrollbar-width: none;
-  &::-webkit-scrollbar { display: none; }
+  will-change: transform;
 
   .menu-header {
     display: flex;
@@ -280,7 +276,7 @@ $item-radius: 0.75rem;
       rgba(40, 40, 40, 0.6) 0%,
       rgba(25, 25, 25, 0.8) 100%
     );
-    border: 1px solid $color-border;
+    border: 2px solid $color-border;
     font-size: 14px;
     font-weight: 500;
     color: rgba(255, 255, 255, 0.7);
@@ -288,8 +284,6 @@ $item-radius: 0.75rem;
     position: relative;
     flex-direction: column;
     overflow: hidden;
-    // CSS containment: isolate layout/paint so each item is independent
-    contain: layout style paint;
     @include smooth-shadow(0.6);
 
     &.active {
@@ -391,22 +385,12 @@ $item-radius: 0.75rem;
     }
   }
 
-  // Active state with modern glow effect
+  // Active state — minimal paint cost for Shield TV performance.
+  // Only border-color changes (no layout shift, no new layers, no repaint of background).
   .menu-item.active {
-    background: linear-gradient(
-      165deg,
-      rgba(255, 255, 255, 0.98) 0%,
-      rgba(245, 245, 245, 1) 100%
-    );
     border: 2px solid $color-primary;
-    transform: scale(1.04);
-    color: $color-dark;
-    box-shadow: 
-      0 0 0 3px $color-primary-glow,
-      0 8px 24px rgba(0, 0, 0, 0.4),
-      0 4px 12px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 0 0 3px $color-primary-glow;
     z-index: 10;
-
   }
 
   .progress-bar {

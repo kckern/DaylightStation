@@ -489,16 +489,17 @@ const MenuIMG = React.memo(function MenuIMG({ img, label }) {
  * Memoized individual menu item — only re-renders when isActive or item data changes.
  * This eliminates 32 of 34 re-renders per keystroke (only old + new active items update).
  */
-const MenuItem = React.memo(function MenuItem({ item, isActive, isDisabled, image, imageKey, itemKey, MENU_TIMEOUT, timeLeft, totalTime }) {
+const MenuItem = React.memo(function MenuItem({ item, isActive, isDisabled, imageSrc, imageReady, itemKey, MENU_TIMEOUT, timeLeft, totalTime }) {
+  const img = imageReady ? imageSrc : null;
+  const imageKey = img ? `img-${img}` : `no-img-${itemKey}`;
   return (
     <div
-      key={itemKey}
       className={`menu-item ${item.type || ""} ${isActive ? "active" : ""} ${isDisabled ? "disabled" : ""}`}
     >
       {!!MENU_TIMEOUT && isActive && (
         <ProgressTimeoutBar timeLeft={timeLeft} totalTime={MENU_TIMEOUT} />
       )}
-      <MenuIMG key={imageKey} img={image} label={item.label} />
+      <MenuIMG key={imageKey} img={img} label={item.label} />
       <h3 className="menu-item-label">{item.label}</h3>
     </div>
   );
@@ -600,8 +601,8 @@ function MenuItems({
   useMenuPerfMonitor(items.length > 0, selectedIndex);
 
   // Progressive image loading — first 10 items get images immediately,
-  // rest load in batches of 2 during idle to avoid cold-start jank
-  const imageReadyCount = useProgressiveImages(items.length, 10, 2);
+  // rest load all at once after a single idle callback to avoid interfering with navigation
+  const imageReadyCount = useProgressiveImages(items.length, 10, items.length);
 
   const findKeyForItem = useCallback((item) => {
     const action = item?.play || item?.queue || item?.list || item?.open;
@@ -641,69 +642,148 @@ function MenuItems({
   }, [useContextMode, navContext, onClose]);
 
   /**
-   * Reset scroll position at component mount: always start at the top.
+   * DOM-direct navigation — bypasses React for arrow key handling.
+   * Like a native RecyclerView: swap CSS classes on 2 DOM elements, update scroll.
+   * React state only updates on Enter (selection) or when items change.
    */
+  const activeIndexRef = useRef(selectedIndex);
+  activeIndexRef.current = selectedIndex;
+
+  // Refs for stable keydown handler (never recreates → no addEventListener churn)
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+  const handleCloseRef = useRef(handleClose);
+  handleCloseRef.current = handleClose;
+
+  /**
+   * Cache item positions after initial render to avoid forced layout reads during navigation.
+   * Positions are measured once, then navigation uses cached values — zero DOM queries.
+   */
+  const layoutCacheRef = useRef(null);
+
+  const buildLayoutCache = useCallback(() => {
+    const containerEl = containerRef?.current;
+    if (!containerEl) return;
+    const menuItemsEl = containerEl.querySelector(".menu-items");
+    if (!menuItemsEl) return;
+
+    const containerHeight = containerEl.offsetHeight;
+    const menuItemsTop = menuItemsEl.offsetTop;
+    const scrollHeight = containerEl.scrollHeight;
+    const positions = [];
+
+    for (let i = 0; i < menuItemsEl.children.length; i++) {
+      const el = menuItemsEl.children[i];
+      positions.push({
+        top: menuItemsTop + el.offsetTop,
+        height: el.offsetHeight,
+      });
+    }
+
+    layoutCacheRef.current = { containerHeight, scrollHeight, positions };
+  }, [containerRef]);
+
+  // Build cache after images load (layout settles)
+  useEffect(() => {
+    const timer = setTimeout(buildLayoutCache, 500);
+    return () => clearTimeout(timer);
+  }, [buildLayoutCache, imageReadyCount]);
+
+  /**
+   * Swap active class directly on DOM — O(1), no React render, no DOM reads.
+   * Uses cached positions for scroll calculation.
+   */
+  const navigateTo = useCallback((nextIndex) => {
+    const containerEl = containerRef?.current;
+    if (!containerEl) return;
+    const menuItemsEl = containerEl.querySelector(".menu-items");
+    if (!menuItemsEl) return;
+
+    const prevIndex = activeIndexRef.current;
+    if (nextIndex === prevIndex) return;
+
+    // Swap CSS classes — direct DOM, no React
+    const prevEl = menuItemsEl.children[prevIndex];
+    const nextEl = menuItemsEl.children[nextIndex];
+    if (prevEl) prevEl.classList.remove("active");
+    if (nextEl) nextEl.classList.add("active");
+
+    activeIndexRef.current = nextIndex;
+
+    // Scroll using cached positions — zero DOM reads
+    const cache = layoutCacheRef.current;
+    if (!cache || !cache.positions[nextIndex]) {
+      // Fallback: rebuild cache if missing (first nav before cache ready)
+      buildLayoutCache();
+      return;
+    }
+
+    if (nextIndex < columns) {
+      containerEl.style.transform = `translateY(0px)`;
+    } else {
+      const pos = cache.positions[nextIndex];
+      const centerTarget = pos.top - cache.containerHeight / 2 + pos.height / 2;
+      const maxScroll = cache.scrollHeight - cache.containerHeight;
+      containerEl.style.transform = `translateY(${-Math.max(0, Math.min(maxScroll, centerTarget))}px)`;
+    }
+  }, [containerRef, columns, buildLayoutCache]);
+
+  // Reset scroll on mount
   useEffect(() => {
     if (containerRef?.current) {
       containerRef.current.style.transform = "translateY(0)";
     }
   }, [containerRef]);
 
-  /**
-   * Keyboard navigation for menu items.
-   */
-  const handleKeyDown = useCallback(
-    (e) => {
-      if (!items.length) return;
+  // Single stable keydown handler — never recreates
+  useEffect(() => {
+    const handler = (e) => {
+      const curItems = itemsRef.current;
+      if (!curItems.length) return;
 
       const key = e.key;
-      const synthetic = !!e.__gamepadSynthetic;
       const isBack = key === "Escape" || key === "GamepadSelect";
       const isModifier = key === "Shift" || key === "Control" || key === "Alt" || key === "Meta" || key === "Tab";
 
-      logger.debug("keydown", { key, code: e.code, synthetic, isBack, isModifier });
+      if (isModifier) return;
+
+      const current = activeIndexRef.current;
 
       if (key === "ArrowUp") {
         e.preventDefault();
-        const next = (selectedIndex - columns + items.length) % items.length;
-        setSelectedIndex(next, findKeyForItem(items[next]));
+        navigateTo((current - columns + curItems.length) % curItems.length);
       } else if (key === "ArrowDown") {
         e.preventDefault();
-        const next = (selectedIndex + columns) % items.length;
-        setSelectedIndex(next, findKeyForItem(items[next]));
+        navigateTo((current + columns) % curItems.length);
       } else if (key === "ArrowLeft") {
         e.preventDefault();
-        const next = (selectedIndex - 1 + items.length) % items.length;
-        setSelectedIndex(next, findKeyForItem(items[next]));
+        navigateTo((current - 1 + curItems.length) % curItems.length);
       } else if (key === "ArrowRight") {
         e.preventDefault();
-        const next = (selectedIndex + 1) % items.length;
-        setSelectedIndex(next, findKeyForItem(items[next]));
+        navigateTo((current + 1) % curItems.length);
       } else if (isBack) {
         e.preventDefault();
-        handleClose();
-      } else if (!isModifier) {
-        // Any non-navigation, non-back, non-modifier key is select
+        handleCloseRef.current?.();
+      } else {
         e.preventDefault();
-        onSelect?.(items[selectedIndex]);
+        // Sync React state on selection (Enter) — this is the only time React needs to know
+        const idx = activeIndexRef.current;
+        setSelectedIndex(idx, findKeyForItem(curItems[idx]));
+        onSelectRef.current?.(curItems[idx]);
       }
-    },
-    [items, selectedIndex, onSelect, handleClose, columns, setSelectedIndex, findKeyForItem]
-  );
+    };
 
-  /**
-   * Attach/detach the global keydown listener.
-   */
-  useEffect(() => {
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleKeyDown]);
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [columns, navigateTo]);
 
   /**
    * Optional countdown timer to auto-select.
    */
   const { timeLeft, resetTime } = useProgressTimeout(MENU_TIMEOUT, () => {
-    onSelect?.(items[selectedIndex]);
+    onSelect?.(items[activeIndexRef.current]);
   });
 
   useEffect(() => {
@@ -711,55 +791,6 @@ function MenuItems({
       resetTime();
     }
   }, [selectedIndex, items, MENU_TIMEOUT, resetTime]);
-
-  /**
-   * Scroll the container so the active item remains in view.
-   * Uses rAF to batch DOM reads and the transform write, avoiding forced reflow.
-   * Keeps header visible when top rows are selected.
-   */
-  useEffect(() => {
-    if (!containerRef?.current || !items.length) return;
-
-    const rafId = requestAnimationFrame(() => {
-      const containerEl = containerRef.current;
-      if (!containerEl) return;
-      const containerHeight = containerEl.offsetHeight;
-
-      const menuItemsEl = containerEl.querySelector(".menu-items");
-      if (!menuItemsEl) return;
-
-      // Check if scrolling is needed at all
-      const lastElem = menuItemsEl.children[menuItemsEl.children.length - 1];
-      if (lastElem) {
-        const lastItemBottom = menuItemsEl.offsetTop + lastElem.offsetTop + lastElem.offsetHeight;
-        if (lastItemBottom <= containerHeight + 5) {
-          containerEl.style.transform = `translateY(0px)`;
-          return;
-        }
-      }
-
-      // Row 1 exemption: if selected item is in the first row, don't scroll
-      // so the header stays visible. First row = indices 0 through (columns-1).
-      if (selectedIndex < columns) {
-        containerEl.style.transform = `translateY(0px)`;
-        return;
-      }
-
-      const selectedElem = menuItemsEl.children[selectedIndex];
-      if (!selectedElem) return;
-
-      const selectedHeight = selectedElem.offsetHeight;
-      // Absolute position within the container (item offset + items container offset)
-      const absoluteTop = menuItemsEl.offsetTop + selectedElem.offsetTop;
-
-      const centerTarget = absoluteTop - containerHeight / 2 + selectedHeight / 2;
-      const maxScroll = containerEl.scrollHeight - containerHeight;
-      const newTranslateY = Math.max(0, Math.min(maxScroll, centerTarget));
-      containerEl.style.transform = `translateY(${-newTranslateY}px)`;
-    });
-
-    return () => cancelAnimationFrame(rafId);
-  }, [selectedIndex, items, containerRef]);
 
   /**
    * A small child component for rendering the countdown progress bar (if used).
@@ -806,38 +837,36 @@ function MenuItems({
   }, [items, selectedIndex, currentKey, setSelectedIndex]);
 
   // Pre-compute item data outside the render loop for memoization stability.
-  // Images are gated by imageReadyCount — items beyond the viewport start
-  // with gradient placeholders and receive images progressively during idle.
+  // IMPORTANT: imageReadyCount is NOT in the dependency array — it would bust
+  // the memo for all 34 items on every progressive load increment, defeating React.memo.
+  // Instead, imageReady is passed as a separate prop to MenuItem.
   const itemData = useMemo(() => items.map((item, index) => {
-    // Check all action types for contentId (play, queue, list, open, display)
     const actionObj = item?.play || item?.queue || item?.list || item?.open || {};
     const itemContentId = actionObj?.contentId;
     const plex = actionObj?.plex;
     const itemKey = findKeyForItem(item) || `${index}-${item.label}`;
 
-    // Only load images for items within the ready count
-    let image = index < imageReadyCount ? item.image : null;
-
-    if (image && (image.startsWith('/media/img/') || image.startsWith('media/img/'))) {
-      image = DaylightMediaPath(image);
+    let imageSrc = item.image;
+    if (imageSrc && (imageSrc.startsWith('/media/img/') || imageSrc.startsWith('media/img/'))) {
+      imageSrc = DaylightMediaPath(imageSrc);
     }
-
-    if (!image && index < imageReadyCount && (itemContentId || plex)) {
+    if (!imageSrc && (itemContentId || plex)) {
       const displayId = itemContentId || plex;
       const val = Array.isArray(displayId) ? displayId[0] : displayId;
-      image = ContentDisplayUrl(val);
+      imageSrc = ContentDisplayUrl(val);
     }
 
-    const imageKey = image ? `img-${image}` : `no-img-${itemKey}`;
     const isAndroid = !!item.android;
     const isDisabled = isAndroid && !_fkbAvailable;
 
-    return { item, itemKey, image, imageKey, isDisabled };
-  }), [items, findKeyForItem, imageReadyCount]);
+    return { item, itemKey, imageSrc, isDisabled };
+  }), [items, findKeyForItem]);
 
   return (
     <div className={`menu-items count_${items.length}`}>
-      {itemData.map(({ item, itemKey, image, imageKey, isDisabled }, index) => {
+      {itemData.map(({ item, itemKey, imageSrc, isDisabled }, index) => {
+        // Active class is set on initial render only — subsequent navigation
+        // swaps classes via direct DOM manipulation (navigateTo), not React re-render
         const isActive = index === selectedIndex;
 
         return (
@@ -846,8 +875,8 @@ function MenuItems({
             item={item}
             isActive={isActive}
             isDisabled={isDisabled}
-            image={image}
-            imageKey={imageKey}
+            imageSrc={imageSrc}
+            imageReady={index < imageReadyCount}
             itemKey={itemKey}
             MENU_TIMEOUT={MENU_TIMEOUT}
             timeLeft={timeLeft}
