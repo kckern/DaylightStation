@@ -52,6 +52,29 @@ export function createLaunchRouter(config) {
     }
   });
 
+  /**
+   * GET /intent/:contentId - Resolve launch intent params for a content ID.
+   * Returns { target, params } that FKB clients can use with fully.startIntent()
+   * to launch apps directly without ADB.
+   */
+  router.get('/intent/*', async (req, res) => {
+    const contentId = req.params[0];
+    if (!contentId) {
+      return res.status(400).json({ error: 'Missing contentId' });
+    }
+
+    try {
+      const result = await launchService.resolveIntent(contentId);
+      if (!result) {
+        return res.status(404).json({ error: 'No launch intent found for ' + contentId });
+      }
+      res.json(result);
+    } catch (error) {
+      logger.error?.('launch.intent.resolve.error', { contentId, error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   return router;
 }
 
