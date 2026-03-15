@@ -1,7 +1,7 @@
 // frontend/src/modules/Menu/AndroidLaunchCard.jsx
 import { useState, useEffect, useMemo } from 'react';
 import getLogger from '../../lib/logging/Logger.js';
-import { isFKBAvailable, launchApp, onResume } from '../../lib/fkb.js';
+import { isFKBAvailable, launchApp, scheduleDismissAfterLaunch } from '../../lib/fkb.js';
 import { DaylightMediaPath } from '../../lib/api.mjs';
 import './AndroidLaunchCard.scss';
 
@@ -24,12 +24,7 @@ const AndroidLaunchCard = ({ android, title, image, onClose }) => {
 
     setStatus('launching');
     launchApp(android.package);
-
-    // Bind onResume to return to menu
-    onResume(() => {
-      logger.info('android-launch.returned', { package: android.package });
-      onClose?.();
-    });
+    scheduleDismissAfterLaunch(onClose);
   }, [android, logger, onClose]);
 
   // Escape key always dismisses

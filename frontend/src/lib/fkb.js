@@ -67,6 +67,19 @@ export function launchIntent(packageName, activityName, extras = {}) {
   return true;
 }
 
+/**
+ * Schedule dismiss after an FKB app launch.
+ * Auto-dismisses after a delay + registers onResume as backup.
+ * Call this AFTER the launch succeeds.
+ *
+ * @param {Function} onDismiss - Callback to dismiss the launch UI (e.g., pop MenuStack)
+ * @param {number} [delayMs=1500] - Delay before auto-dismiss
+ */
+export function scheduleDismissAfterLaunch(onDismiss, delayMs = 1500) {
+  setTimeout(() => onDismiss?.(), delayMs);
+  onResume(() => onDismiss?.());
+}
+
 // Singleton pattern: each call overwrites previous callback
 // to avoid stale handler accumulation (FKB has no unbind API).
 let _onResumeCallback = null;

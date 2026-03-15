@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import getLogger from '../../lib/logging/Logger.js';
 import { DaylightMediaPath } from '../../lib/api.mjs';
-import { isFKBAvailable, launchIntent, onResume } from '../../lib/fkb.js';
+import { isFKBAvailable, launchIntent, scheduleDismissAfterLaunch } from '../../lib/fkb.js';
 import './LaunchCard.scss';
 
 const LOAD_MS = 3000;
@@ -67,8 +67,8 @@ const LaunchCard = ({ launch, title, thumbnail, metadata, onClose }) => {
                 if (launched) {
                   logger.info('launch.fkb-intent', { contentId: launch.contentId, target: intentData.target });
                   setStatus('success');
-                  onResume(() => onClose?.());
-                  return; // Don't fall through to API launch
+                  scheduleDismissAfterLaunch(onClose);
+                  return;
                 }
               }
               // Intent not available — fall through to API launch below
