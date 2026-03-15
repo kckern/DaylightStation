@@ -276,7 +276,7 @@ $item-radius: 0.75rem;
       rgba(40, 40, 40, 0.6) 0%,
       rgba(25, 25, 25, 0.8) 100%
     );
-    border: 2px solid $color-border;
+    border: none;
     font-size: 14px;
     font-weight: 500;
     color: rgba(255, 255, 255, 0.7);
@@ -385,11 +385,10 @@ $item-radius: 0.75rem;
     }
   }
 
-  // Active state — minimal paint cost for Shield TV performance.
-  // Only border-color changes (no layout shift, no new layers, no repaint of background).
+  // Active state — outline only (no layout, no paint of siblings).
   .menu-item.active {
-    border: 2px solid $color-primary;
-    box-shadow: 0 0 0 3px $color-primary-glow;
+    outline: 3px solid $color-primary;
+    outline-offset: -3px;
     z-index: 10;
   }
 
