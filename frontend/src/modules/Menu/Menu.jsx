@@ -730,12 +730,13 @@ function MenuItems({
     }
   }, [containerRef, columns, buildLayoutCache]);
 
-  // Reset scroll on mount
+  // Reset scroll when items change (new menu loaded) or on mount
   useEffect(() => {
     if (containerRef?.current) {
       containerRef.current.style.transform = "translateY(0)";
     }
-  }, [containerRef]);
+    activeIndexRef.current = 0;
+  }, [containerRef, items]);
 
   // Single stable keydown handler — never recreates
   useEffect(() => {
