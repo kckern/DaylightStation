@@ -70,7 +70,10 @@ $item-radius: 0.75rem;
   padding: 1.5 * $spacing-unit;
   position: relative;
   overflow: hidden;
-  will-change: transform;
+  overflow-y: auto;
+  // Hide scrollbar but allow programmatic scrolling
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
 
   .menu-header {
     display: flex;
