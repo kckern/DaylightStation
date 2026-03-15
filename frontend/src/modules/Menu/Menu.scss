@@ -347,6 +347,21 @@ $item-radius: 0.75rem;
     outline: 3px solid $color-primary;
     outline-offset: -3px;
     z-index: 10;
+
+    // Slow cover zoom/pan — compositor-only (transform), no paint cost.
+    // Only runs on the ONE active item, not all 34.
+    .menu-item-img img {
+      animation: coverZoomPan 12s ease-in-out infinite !important;
+      animation-delay: 0s !important;
+    }
+  }
+
+  @keyframes coverZoomPan {
+    0%   { transform: scale(1.05) translate(0, 0); }
+    25%  { transform: scale(1.12) translate(-3%, -2%); }
+    50%  { transform: scale(1.08) translate(2%, -1%); }
+    75%  { transform: scale(1.12) translate(-1%, 2%); }
+    100% { transform: scale(1.05) translate(0, 0); }
   }
 
   .progress-bar {
