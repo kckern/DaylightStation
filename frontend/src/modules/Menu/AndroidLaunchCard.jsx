@@ -23,7 +23,7 @@ const AndroidLaunchCard = ({ android, title, image, onClose }) => {
     }
 
     setStatus('launching');
-    launchApp(android.package, android.activity);
+    launchApp(android.package);
 
     // Bind onResume to return to menu
     onResume(() => {

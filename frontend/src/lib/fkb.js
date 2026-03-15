@@ -26,13 +26,15 @@ export function isFKBAvailable() {
  * @param {string} [activityName] - Activity class name (e.g., '.TvMainActivity')
  * @returns {boolean} true if FKB was available and launch was attempted
  */
-export function launchApp(packageName, activityName) {
+export function launchApp(packageName) {
   if (!isFKBAvailable()) {
     logger().warn('fkb.launch.unavailable', { packageName });
     return false;
   }
-  logger().info('fkb.launch.attempt', { packageName, activityName });
-  fully.startApplication(packageName, '', activityName || '');
+  logger().info('fkb.launch.attempt', { packageName });
+  // Always use 1-arg form — FKB's 3-arg form (package, action, activity)
+  // doesn't work reliably. Android resolves the default launcher activity.
+  fully.startApplication(packageName);
   return true;
 }
 
