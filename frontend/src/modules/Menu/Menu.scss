@@ -318,7 +318,7 @@ $item-radius: 0.75rem;
     }
 
     .menu-item-img img {
-      object-fit: cover;
+      object-fit: contain;  // default: show full image (portrait visible in full)
       width: 100%;
       height: 100%;
       position: relative;
@@ -342,26 +342,27 @@ $item-radius: 0.75rem;
     }
   }
 
-  // Active state — outline only (no layout, no paint of siblings).
+  // Active state — use inset box-shadow instead of outline.
+  // Outline gets clipped by overflow:hidden on the item.
+  // Single-layer inset shadow is cheap (no blur, just solid border effect).
   .menu-item.active {
-    outline: 3px solid $color-primary;
-    outline-offset: -3px;
+    box-shadow: inset 0 0 0 3px $color-primary;
     z-index: 10;
 
-    // Slow cover zoom/pan — compositor-only (transform), no paint cost.
-    // Only runs on the ONE active item, not all 34.
+    // On select: switch to cover (fill + crop) and pan top→bottom→top.
+    // object-position animation is paint-level but only on 1 element.
     .menu-item-img img {
-      animation: coverZoomPan 12s ease-in-out infinite !important;
+      object-fit: cover !important;
+      animation: coverPanVertical 8s ease-in-out infinite !important;
       animation-delay: 0s !important;
     }
   }
 
-  @keyframes coverZoomPan {
-    0%   { transform: scale(1.05) translate(0, 0); }
-    25%  { transform: scale(1.12) translate(-3%, -2%); }
-    50%  { transform: scale(1.08) translate(2%, -1%); }
-    75%  { transform: scale(1.12) translate(-1%, 2%); }
-    100% { transform: scale(1.05) translate(0, 0); }
+  @keyframes coverPanVertical {
+    0%   { object-position: center top; }
+    45%  { object-position: center bottom; }
+    55%  { object-position: center bottom; }
+    100% { object-position: center top; }
   }
 
   .progress-bar {
