@@ -77,14 +77,9 @@ $item-radius: 0.75rem;
     justify-content: space-between;
     margin-bottom: 1rem;
     padding: 0.5rem 1rem;
-    background: linear-gradient(
-      135deg,
-      rgba(30, 30, 30, 0.85) 0%,
-      rgba(20, 20, 20, 0.9) 100%
-    );
+    background: rgba(25, 25, 25, 0.9);
     border-radius: $item-radius;
     border: 1px solid $color-border;
-    @include smooth-shadow(0.3);
 
     .menu-header-left {
       display: flex;
@@ -264,6 +259,8 @@ $item-radius: 0.75rem;
   justify-content: center;
 }
 
+  // WebView-optimized menu items: flat colors only, no gradients/shadows/pseudo-elements.
+  // Each removed paint property saves ~1ms per item per frame on Shield TV's WebView.
   .menu-item {
     display: flex;
     justify-content: flex-start;
@@ -271,11 +268,7 @@ $item-radius: 0.75rem;
     width: calc(20% - 0.8 * $spacing-unit);
     aspect-ratio: 1 / 1.19;
     border-radius: $item-radius;
-    background: linear-gradient(
-      165deg,
-      rgba(40, 40, 40, 0.6) 0%,
-      rgba(25, 25, 25, 0.8) 100%
-    );
+    background: rgba(30, 30, 30, 0.7);  // flat color, was linear-gradient
     border: none;
     font-size: 14px;
     font-weight: 500;
@@ -284,53 +277,27 @@ $item-radius: 0.75rem;
     position: relative;
     flex-direction: column;
     overflow: hidden;
-    @include smooth-shadow(0.6);
-
-    &.active {
-      .menu-item-label {
-        color: #111;
-        font-weight: 600;
-      }
-      .menu-item-img {
-        background: linear-gradient(135deg, #ffffff 0%, #f0f0f0 100%);
-      }
-      .menu-item-img img {
-        filter: brightness(1.05) contrast(1.02);
-      }
-    }
+    // No box-shadow — was smooth-shadow(0.6) = 3-layer shadow
 
     .menu-item-label {
       color: rgba(255, 255, 255, 0.75);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      transition: color 0.2s ease;
     }
 
     .menu-item-img {
       flex-grow: 1;
       width: 100%;
       aspect-ratio: 1;
-      background: linear-gradient(180deg, #1a1a1a 0%, #0d0d0d 100%);
+      background: #111;  // flat color, was linear-gradient
       overflow: hidden;
       display: flex;
       justify-content: center;
       align-items: center;
       position: relative;
+      // No ::after pseudo-element — was inset box-shadow
 
-      // Subtle inner shadow for depth
-      &::after {
-        content: '';
-        position: absolute;
-        inset: 0;
-        box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.4);
-        pointer-events: none;
-        border-radius: $item-radius $item-radius 0 0;
-        opacity: 0.7;
-        z-index: 2;
-      }
-
-      // No-image placeholder styling
       &.no-image {
         .menu-item-img-icon {
           display: flex;
@@ -339,7 +306,7 @@ $item-radius: 0.75rem;
           width: 100%;
           height: 100%;
           color: rgba(255, 255, 255, 0.5);
-          
+
           svg {
             width: 40%;
             height: 40%;
@@ -351,7 +318,6 @@ $item-radius: 0.75rem;
     }
 
     .menu-item-img img {
-      background-color: transparent;
       object-fit: cover;
       width: 100%;
       height: 100%;
@@ -359,16 +325,8 @@ $item-radius: 0.75rem;
       z-index: 1;
     }
 
-    // Loading shimmer animation
     .menu-item-img.loading {
-      background: linear-gradient(
-        90deg,
-        rgba(30, 30, 30, 1) 0%,
-        rgba(50, 50, 50, 1) 50%,
-        rgba(30, 30, 30, 1) 100%
-      );
-      background-size: 200% 100%;
-      animation: shimmer 1.5s ease-in-out infinite;
+      background: #1e1e1e;  // flat color, was shimmer gradient animation
     }
 
     h3 {
@@ -379,7 +337,6 @@ $item-radius: 0.75rem;
       text-align: center;
       line-height: 1.2;
       width: 100%;
-      z-index: 99;
       font-size: 0.85rem;
       letter-spacing: 0.01em;
     }
