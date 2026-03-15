@@ -38,6 +38,35 @@ export function launchApp(packageName) {
   return true;
 }
 
+/**
+ * Launch an Android intent with extras via FKB's startIntent API.
+ * Uses Android intent URI format: intent:#Intent;component=pkg/act;S.key=val;end
+ *
+ * This replaces ADB-based launching for apps that need intent extras
+ * (e.g., RetroArch with ROM/LIBRETRO/CONFIGFILE params).
+ *
+ * @param {string} packageName - Android package name
+ * @param {string} activityName - Full activity class name
+ * @param {Object} extras - Key-value pairs for intent string extras
+ * @returns {boolean} true if FKB was available and intent was sent
+ */
+export function launchIntent(packageName, activityName, extras = {}) {
+  if (!isFKBAvailable() || typeof fully.startIntent !== 'function') {
+    logger().warn('fkb.intent.unavailable', { packageName });
+    return false;
+  }
+
+  let uri = `intent:#Intent;component=${packageName}/${activityName};`;
+  for (const [key, value] of Object.entries(extras)) {
+    uri += `S.${key}=${value};`;
+  }
+  uri += 'end';
+
+  logger().info('fkb.intent.attempt', { packageName, activityName, extraKeys: Object.keys(extras) });
+  fully.startIntent(uri);
+  return true;
+}
+
 // Singleton pattern: each call overwrites previous callback
 // to avoid stale handler accumulation (FKB has no unbind API).
 let _onResumeCallback = null;

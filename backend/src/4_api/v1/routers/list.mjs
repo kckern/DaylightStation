@@ -115,6 +115,11 @@ export function toListItem(item) {
     base.launch = { contentId: item.id };
   }
 
+  // Include intent data on launch items so FKB clients can launch directly without ADB
+  if (base.launch && item.launchIntent) {
+    base.launch.intent = item.launchIntent;
+  }
+
   // Note: plex and assetId are NOT copied to top-level.
   // These identifiers belong in action objects (play.plex, queue.plex, list.plex).
   // Frontend should access them via item.play?.plex || item.queue?.plex || item.list?.plex

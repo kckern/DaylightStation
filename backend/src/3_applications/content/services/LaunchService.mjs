@@ -97,6 +97,23 @@ export class LaunchService {
     return { success: true, contentId, targetDeviceId: resolvedDeviceId, title: item.title };
   }
 
+  /**
+   * Resolve launch intent params for a content ID without executing.
+   * Used by FKB clients to launch via fully.startIntent() instead of ADB.
+   *
+   * @param {string} contentId - Compound content ID
+   * @returns {Promise<{ target: string, params: Object } | null>}
+   */
+  async resolveIntent(contentId) {
+    const resolved = this.#contentRegistry.resolve(contentId);
+    if (!resolved?.adapter) return null;
+
+    const item = await resolved.adapter.getItem(resolved.localId);
+    if (!item?.launchIntent) return null;
+
+    return item.launchIntent;
+  }
+
   #checkContentSchedule(contentId) {
     if (!this.#configService) return;
 

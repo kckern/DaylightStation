@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import getLogger from '../../lib/logging/Logger.js';
 import { DaylightMediaPath } from '../../lib/api.mjs';
+import { isFKBAvailable, launchIntent, onResume } from '../../lib/fkb.js';
 import './LaunchCard.scss';
 
 const LOAD_MS = 3000;
@@ -55,31 +56,56 @@ const LaunchCard = ({ launch, title, thumbnail, metadata, onClose }) => {
 
         logger.debug('launch.schedule.ok', { contentId: launch.contentId, source });
 
-        const payload = {
-          contentId: launch.contentId,
-          ...(deviceId && { targetDeviceId: deviceId })
-        };
-        logger.info('launch.api.request', payload);
+        // If FKB is available, try to launch via intent (no ADB needed)
+        if (isFKBAvailable()) {
+          return fetch(`/api/v1/launch/intent/${launch.contentId}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(intentData => {
+              if (intentData?.target && intentData?.params) {
+                const [pkg, activity] = intentData.target.split('/');
+                const launched = launchIntent(pkg, activity, intentData.params);
+                if (launched) {
+                  logger.info('launch.fkb-intent', { contentId: launch.contentId, target: intentData.target });
+                  setStatus('success');
+                  onResume(() => onClose?.());
+                  return; // Don't fall through to API launch
+                }
+              }
+              // Intent not available — fall through to API launch below
+              return doApiLaunch();
+            })
+            .catch(() => doApiLaunch());
+        }
 
-        return fetch('/api/v1/launch', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        })
-          .then(res => {
-            if (!res.ok) return res.json().then(d => Promise.reject(d));
-            return res.json();
+        return doApiLaunch();
+
+        function doApiLaunch() {
+          const payload = {
+            contentId: launch.contentId,
+            ...(deviceId && { targetDeviceId: deviceId })
+          };
+          logger.info('launch.api.request', payload);
+
+          return fetch('/api/v1/launch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
           })
-          .then(data => {
-            if (!data) return;
-            logger.info('launch.success', {
-              contentId: launch.contentId,
-              title: data.title,
-              targetDeviceId: data.targetDeviceId || deviceId,
+            .then(res => {
+              if (!res.ok) return res.json().then(d => Promise.reject(d));
+              return res.json();
+            })
+            .then(data => {
+              if (!data) return;
+              logger.info('launch.success', {
+                contentId: launch.contentId,
+                title: data.title,
+                targetDeviceId: data.targetDeviceId || deviceId,
+              });
+              setStatus('success');
+              setTimeout(() => onClose?.(), 1500);
             });
-            setStatus('success');
-            setTimeout(() => onClose?.(), 1500);
-          });
+        }
       })
       .catch(errData => {
         const message = errData?.error || errData?.message || 'Launch failed';
