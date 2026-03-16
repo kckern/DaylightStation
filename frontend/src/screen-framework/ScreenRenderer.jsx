@@ -12,10 +12,85 @@ import { ScreenActionHandler } from './actions/ScreenActionHandler.jsx';
 import { getWidgetRegistry } from './widgets/registry.js';
 import { useScreenSubscriptions } from './subscriptions/useScreenSubscriptions.js';
 import { useScreenCommands } from './commands/useScreenCommands.js';
-import { MenuNavigationProvider } from '../context/MenuNavigationContext.jsx';
+import { MenuNavigationProvider, useMenuNavigationContext } from '../context/MenuNavigationContext.jsx';
+import { parseAutoplayParams } from '../lib/parseAutoplayParams.js';
+import { bindBackButton } from '../lib/fkb.js';
+import getLogger from '../lib/logging/Logger.js';
 
 // Register built-ins on module load
 registerBuiltinWidgets();
+// Bind FKB back button → Escape on module load
+bindBackButton();
+
+const AUTOPLAY_ACTIONS = ['play', 'queue', 'playlist', 'random', 'display', 'read', 'open', 'app', 'launch', 'list'];
+
+/**
+ * ScreenAutoplay - Parses URL path suffix and query params into navigation actions.
+ *
+ * Supports two input forms:
+ *   Path:  /screens/living-room/fhe  → navigates to menu:fhe submenu
+ *   Query: ?queue=plex:642120        → queues content for playback
+ *
+ * Path-based navigation pushes directly onto the MenuNavigationContext stack
+ * (no ActionBus) so it works with panel-based MenuWidgets.
+ * Query-based autoplay emits on the ActionBus for the ScreenActionHandler.
+ *
+ * Runs once on mount, then cleans the URL to prevent re-triggering on reload.
+ */
+function ScreenAutoplay() {
+  const { push } = useMenuNavigationContext();
+
+  useEffect(() => {
+    const pathname = window.location.pathname;
+    const search = window.location.search;
+
+    // Path-based submenu: /screens/living-room/fhe → push menu:fhe
+    const pathMatch = pathname.match(/\/screens?\/[^/]+\/(.+)/);
+    if (pathMatch) {
+      const subPath = pathMatch[1];
+      const logger = getLogger().child({ component: 'ScreenAutoplay' });
+      logger.info('screen-autoplay.path', { subPath });
+
+      // Push submenu onto nav stack after a brief delay for the menu widget to mount
+      setTimeout(() => {
+        push({ type: 'menu', props: { list: { contentId: `menu:${subPath}` } } });
+      }, 500);
+
+      // Clean URL: /screens/living-room/fhe → /screens/living-room
+      const cleanPath = pathname.replace(/\/[^/]+$/, '');
+      window.history.replaceState({}, '', cleanPath);
+      return;
+    }
+
+    // Query-based autoplay: ?queue=plex:642120&shader=dark
+    if (!search) return;
+
+    const autoplay = parseAutoplayParams(search, AUTOPLAY_ACTIONS);
+    if (!autoplay) return;
+
+    const bus = getActionBus();
+    const logger = getLogger().child({ component: 'ScreenAutoplay' });
+    logger.info('screen-autoplay.parsed', { keys: Object.keys(autoplay) });
+
+    // Emit appropriate action after a brief delay to let the screen framework mount
+    setTimeout(() => {
+      if (autoplay.queue) {
+        bus.emit('media:queue', { contentId: autoplay.queue.contentId, ...autoplay.queue });
+      } else if (autoplay.play) {
+        bus.emit('media:play', { contentId: autoplay.play.contentId, ...autoplay.play });
+      } else if (autoplay.open) {
+        bus.emit('menu:open', { menuId: autoplay.open.app });
+      } else if (autoplay.list) {
+        bus.emit('menu:open', { menuId: autoplay.list.contentId });
+      }
+    }, 500);
+
+    // Clean URL to prevent re-trigger
+    window.history.replaceState({}, '', pathname);
+  }, [push]);
+
+  return null;
+}
 
 /**
  * ScreenCommandHandler - Bridges WS command config to the ActionBus.
@@ -161,6 +236,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
         }}>
           <MenuNavigationProvider>
             <ScreenOverlayProvider>
+              <ScreenAutoplay />
               <ScreenActionHandler actions={config.actions} />
               <ScreenCommandHandler wsConfig={config.websocket} />
               <ScreenSubscriptionHandler subscriptions={config.subscriptions} />
