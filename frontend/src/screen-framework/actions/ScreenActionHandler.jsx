@@ -32,7 +32,7 @@ function logger() {
  * This is a renderless component (returns null).
  */
 export function ScreenActionHandler({ actions = {} }) {
-  const { showOverlay, dismissOverlay, hasOverlay } = useScreenOverlay();
+  const { showOverlay, dismissOverlay, hasOverlay, escapeInterceptorRef } = useScreenOverlay();
   const shaderRef = useRef(null);
   const prevShaderOpacity = useRef(null);
 
@@ -204,6 +204,16 @@ export function ScreenActionHandler({ actions = {} }) {
 
   // --- Escape ---
   const handleEscape = useCallback(() => {
+    // First priority: let any registered interceptor handle escape
+    // (e.g., MenuStack pops its navigation stack before the framework acts)
+    if (escapeInterceptorRef?.current) {
+      const handled = escapeInterceptorRef.current();
+      if (handled) {
+        logger().debug('escape.intercepted', {});
+        return;
+      }
+    }
+
     const shaderActive = shaderRef.current && parseFloat(shaderRef.current.style.opacity) > 0;
 
     // Configurable fallback chain from YAML actions.escape

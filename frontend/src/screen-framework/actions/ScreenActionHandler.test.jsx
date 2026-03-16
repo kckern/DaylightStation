@@ -5,6 +5,19 @@ import { getActionBus, resetActionBus } from '../input/ActionBus.js';
 import { ScreenOverlayProvider } from '../overlays/ScreenOverlayProvider.jsx';
 import { ScreenActionHandler } from './ScreenActionHandler.jsx';
 
+import { useScreenOverlay } from '../overlays/ScreenOverlayProvider.jsx';
+
+/**
+ * Test helper: registers an escape interceptor that returns the given value.
+ */
+function InterceptorRegistrar({ handled }) {
+  const { registerEscapeInterceptor } = useScreenOverlay();
+  React.useEffect(() => {
+    registerEscapeInterceptor(() => handled);
+  }, [handled, registerEscapeInterceptor]);
+  return null;
+}
+
 // Mock MenuStack and Player to avoid importing their heavy dependency trees
 vi.mock('../../modules/Menu/MenuStack.jsx', () => ({
   default: (props) => <div data-testid="menu-stack" data-menu={props.rootMenu}>MenuStack</div>,
@@ -357,6 +370,83 @@ describe('ScreenActionHandler', () => {
 
       act(() => getActionBus().emit('menu:open', { menuId: 'music' }));
       expect(getByTestId('menu-stack')).toBeTruthy();
+    });
+  });
+
+  describe('escape interceptor', () => {
+    const escapeActions = {
+      escape: [
+        { when: 'shader_active', do: 'clear_shader' },
+        { when: 'overlay_active', do: 'dismiss_overlay' },
+        { when: 'idle', do: 'reload' },
+      ],
+    };
+
+    it('interceptor prevents overlay dismiss when it returns true', () => {
+      const { getByTestId } = render(
+        <ScreenOverlayProvider>
+          <InterceptorRegistrar handled={true} />
+          <ScreenActionHandler actions={escapeActions} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('menu:open', { menuId: 'tv' }));
+      expect(getByTestId('menu-stack')).toBeTruthy();
+
+      // Escape should be intercepted — overlay stays
+      act(() => getActionBus().emit('escape', {}));
+      expect(getByTestId('menu-stack')).toBeTruthy();
+    });
+
+    it('interceptor returning false allows normal escape chain', () => {
+      const { getByTestId, queryByTestId } = render(
+        <ScreenOverlayProvider>
+          <InterceptorRegistrar handled={false} />
+          <ScreenActionHandler actions={escapeActions} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('menu:open', { menuId: 'tv' }));
+      expect(getByTestId('menu-stack')).toBeTruthy();
+
+      // Interceptor returns false — overlay should dismiss
+      act(() => getActionBus().emit('escape', {}));
+      expect(queryByTestId('menu-stack')).toBeNull();
+    });
+
+    it('dismisses overlay when no interceptor is registered', () => {
+      const { getByTestId, queryByTestId } = render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={escapeActions} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => getActionBus().emit('menu:open', { menuId: 'tv' }));
+      expect(getByTestId('menu-stack')).toBeTruthy();
+
+      act(() => getActionBus().emit('escape', {}));
+      expect(queryByTestId('menu-stack')).toBeNull();
+    });
+
+    it('interceptor prevents page reload when no overlay is active', () => {
+      const reloadMock = vi.fn();
+      Object.defineProperty(window, 'location', {
+        value: { ...window.location, reload: reloadMock },
+        writable: true,
+        configurable: true,
+      });
+
+      render(
+        <ScreenOverlayProvider>
+          <InterceptorRegistrar handled={true} />
+          <ScreenActionHandler actions={escapeActions} />
+        </ScreenOverlayProvider>
+      );
+
+      // No overlay active — escape chain would hit idle→reload
+      // But interceptor should handle it first
+      act(() => getActionBus().emit('escape', {}));
+      expect(reloadMock).not.toHaveBeenCalled();
     });
   });
 

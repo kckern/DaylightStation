@@ -1,5 +1,6 @@
-import React, { useCallback, Suspense, lazy } from 'react';
+import React, { useCallback, useEffect, Suspense, lazy } from 'react';
 import { useMenuNavigationContext } from '../../context/MenuNavigationContext';
+import { useScreenOverlay } from '../../screen-framework/overlays/ScreenOverlayProvider.jsx';
 import { TVMenu } from './Menu';
 import { PlayerOverlayLoading } from '../Player/Player';
 import { PlexMenuRouter } from './PlexMenuRouter';
@@ -29,6 +30,23 @@ function LoadingFallback() {
  */
 export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
   const { currentContent, depth, push, pop } = useMenuNavigationContext();
+  const { registerEscapeInterceptor, unregisterEscapeInterceptor } = useScreenOverlay();
+
+  // Register escape interceptor: pop navigation stack before overlay dismisses
+  useEffect(() => {
+    if (!registerEscapeInterceptor) return;
+
+    const interceptor = () => {
+      if (depth > 0) {
+        pop();
+        return true; // handled — don't dismiss overlay
+      }
+      return false; // at root — let overlay dismiss
+    };
+
+    registerEscapeInterceptor(interceptor);
+    return () => unregisterEscapeInterceptor?.();
+  }, [depth, pop, registerEscapeInterceptor, unregisterEscapeInterceptor]);
 
   /**
    * Handle selection from any menu level.
