@@ -452,10 +452,51 @@ function generateGradientFromLabel(label) {
  * - Uses object-fit: cover always (no orientation detection needed for cover mode)
  * - Memoized to prevent re-render on parent state changes
  */
+/**
+ * Extract dominant color from left+right edges of an image via a tiny canvas.
+ * Runs once per image load — sets background-color on the container so
+ * pillarboxed/letterboxed images get a color-matched fill instead of black.
+ * Darkened to 60% to keep it subtle.
+ */
+function extractDominantColor(imgEl, containerEl) {
+  try {
+    const c = document.createElement('canvas');
+    const w = Math.min(imgEl.naturalWidth, 50);
+    const h = Math.min(imgEl.naturalHeight, 50);
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(imgEl, 0, 0, w, h);
+
+    let r = 0, g = 0, b = 0, n = 0;
+    // Sample left edge
+    const left = ctx.getImageData(0, 0, 1, h);
+    for (let i = 0; i < left.data.length; i += 4) {
+      r += left.data[i]; g += left.data[i + 1]; b += left.data[i + 2]; n++;
+    }
+    // Sample right edge
+    const right = ctx.getImageData(w - 1, 0, 1, h);
+    for (let i = 0; i < right.data.length; i += 4) {
+      r += right.data[i]; g += right.data[i + 1]; b += right.data[i + 2]; n++;
+    }
+
+    r = Math.round(r / n * 0.6);
+    g = Math.round(g / n * 0.6);
+    b = Math.round(b / n * 0.6);
+    containerEl.style.backgroundColor = `rgb(${r},${g},${b})`;
+  } catch (_) {
+    // CORS or canvas tainted — keep default background
+  }
+}
+
 const MenuIMG = React.memo(function MenuIMG({ img, label }) {
   const [state, setState] = useState('loading'); // loading | loaded | error
+  const containerRef = useRef(null);
 
-  const handleLoad = useCallback(() => setState('loaded'), []);
+  const handleLoad = useCallback((e) => {
+    setState('loaded');
+    if (containerRef.current) extractDominantColor(e.target, containerRef.current);
+  }, []);
   const handleError = useCallback(() => setState('error'), []);
 
   if (!img || state === 'error') {
@@ -472,7 +513,7 @@ const MenuIMG = React.memo(function MenuIMG({ img, label }) {
   }
 
   return (
-    <div className={`menu-item-img ${state === 'loading' ? 'loading' : ''}`}>
+    <div ref={containerRef} className={`menu-item-img ${state === 'loading' ? 'loading' : ''}`}>
       <img
         src={img}
         alt={label}
@@ -662,6 +703,7 @@ function MenuItems({
    * Positions are measured once, then navigation uses cached values — zero DOM queries.
    */
   const layoutCacheRef = useRef(null);
+  const coverTimerRef = useRef(null);
 
   const buildLayoutCache = useCallback(() => {
     const containerEl = containerRef?.current;
@@ -707,8 +749,14 @@ function MenuItems({
     // Swap CSS classes — direct DOM, no React
     const prevEl = menuItemsEl.children[prevIndex];
     const nextEl = menuItemsEl.children[nextIndex];
-    if (prevEl) prevEl.classList.remove("active");
+    if (prevEl) { prevEl.classList.remove("active"); prevEl.classList.remove("cover"); }
     if (nextEl) nextEl.classList.add("active");
+
+    // Delay the cover+pan so contain→cover zoom doesn't jank navigation
+    if (coverTimerRef.current) clearTimeout(coverTimerRef.current);
+    coverTimerRef.current = setTimeout(() => {
+      if (nextEl && nextEl.classList.contains("active")) nextEl.classList.add("cover");
+    }, 500);
 
     activeIndexRef.current = nextIndex;
 
@@ -720,7 +768,9 @@ function MenuItems({
       return;
     }
 
-    if (nextIndex < columns) {
+    // Only scroll if 3+ rows — short menus (1-2 rows) stay put
+    const totalRows = Math.ceil(cache.positions.length / columns);
+    if (totalRows <= 2 || cache.scrollHeight <= cache.containerHeight || nextIndex < columns) {
       containerEl.style.transform = `translateY(0px)`;
     } else {
       const pos = cache.positions[nextIndex];
@@ -730,12 +780,52 @@ function MenuItems({
     }
   }, [containerRef, columns, buildLayoutCache]);
 
-  // Reset scroll when items change (new menu loaded) or on mount
+  // Restore or reset scroll + active index when items change or on (re-)mount.
+  // If the context has a saved selection for this depth, restore to it (back navigation).
+  // Otherwise reset to 0 (new submenu opened).
   useEffect(() => {
-    if (containerRef?.current) {
-      containerRef.current.style.transform = "translateY(0)";
+    const savedIndex = selectedIndex;  // from context or prop — already restored by mode logic
+    const clampedIndex = Math.min(savedIndex, items.length - 1);
+    activeIndexRef.current = clampedIndex;
+
+    // Apply active + cover classes on the correct DOM element
+    const containerEl = containerRef?.current;
+    if (containerEl) {
+      const menuItemsEl = containerEl.querySelector(".menu-items");
+      if (menuItemsEl) {
+        // Clear any stale active/cover from previous render
+        menuItemsEl.querySelectorAll(".menu-item.active").forEach(el => {
+          el.classList.remove("active", "cover");
+        });
+        const targetEl = menuItemsEl.children[clampedIndex];
+        if (targetEl) {
+          targetEl.classList.add("active");
+          // Delay cover class for smooth zoom-in
+          if (coverTimerRef.current) clearTimeout(coverTimerRef.current);
+          coverTimerRef.current = setTimeout(() => {
+            if (targetEl.classList.contains("active")) targetEl.classList.add("cover");
+          }, 500);
+        }
+      }
+
+      // Scroll to the restored position (schedule after layout settles)
+      setTimeout(() => {
+        const cache = layoutCacheRef.current;
+        if (!cache || !cache.positions[clampedIndex]) {
+          buildLayoutCache();
+        }
+        const c = layoutCacheRef.current;
+        const restoreRows = c ? Math.ceil(c.positions.length / columns) : 0;
+        if (c && restoreRows >= 3 && c.scrollHeight > c.containerHeight && clampedIndex >= columns && c.positions[clampedIndex]) {
+          const pos = c.positions[clampedIndex];
+          const centerTarget = pos.top - c.containerHeight / 2 + pos.height / 2;
+          const maxScroll = c.scrollHeight - c.containerHeight;
+          containerEl.style.transform = `translateY(${-Math.max(0, Math.min(maxScroll, centerTarget))}px)`;
+        } else {
+          containerEl.style.transform = "translateY(0)";
+        }
+      }, 100);
     }
-    activeIndexRef.current = 0;
   }, [containerRef, items]);
 
   // Single stable keydown handler — never recreates
@@ -745,7 +835,8 @@ function MenuItems({
       if (!curItems.length) return;
 
       const key = e.key;
-      const isBack = key === "Escape" || key === "GamepadSelect";
+      const isBack = key === "Escape" || key === "GoBack" || key === "BrowserBack"
+        || key === "GamepadSelect" || e.keyCode === 4;  // Android KEYCODE_BACK = 4
       const isModifier = key === "Shift" || key === "Control" || key === "Alt" || key === "Meta" || key === "Tab";
 
       if (isModifier) return;
@@ -767,7 +858,9 @@ function MenuItems({
       } else if (isBack) {
         e.preventDefault();
         handleCloseRef.current?.();
-      } else {
+      } else if (key === "Enter" || key === " "
+        || key === "GamepadA" || key === "GamepadB"
+        || key === "GamepadStart" || key === "MediaPlayPause") {
         e.preventDefault();
         // Sync React state on selection (Enter) — this is the only time React needs to know
         const idx = activeIndexRef.current;
