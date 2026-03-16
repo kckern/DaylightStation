@@ -32,6 +32,15 @@ export function ScreenOverlayProvider({ children }) {
   const [fullscreen, setFullscreen] = useState(null);
   const [pip, setPip] = useState(null);
   const [toasts, setToasts] = useState([]);
+  const escapeInterceptorRef = useRef(null);
+
+  const registerEscapeInterceptor = useCallback((fn) => {
+    escapeInterceptorRef.current = fn;
+  }, []);
+
+  const unregisterEscapeInterceptor = useCallback(() => {
+    escapeInterceptorRef.current = null;
+  }, []);
 
   const showOverlay = useCallback((Component, props = {}, options = {}) => {
     const { mode = 'fullscreen', position = 'top-right', priority, timeout = 3000 } = options;
@@ -70,7 +79,7 @@ export function ScreenOverlayProvider({ children }) {
   const pipPositionClass = pip ? `screen-overlay--pip-${pip.position || 'top-right'}` : '';
 
   return (
-    <ScreenOverlayContext.Provider value={{ showOverlay, dismissOverlay, hasOverlay }}>
+    <ScreenOverlayContext.Provider value={{ showOverlay, dismissOverlay, hasOverlay, registerEscapeInterceptor, unregisterEscapeInterceptor, escapeInterceptorRef }}>
       {children}
       {fullscreen && (
         <div className="screen-overlay--fullscreen">
