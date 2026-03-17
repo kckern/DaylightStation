@@ -3,6 +3,7 @@ import { DaylightAPI } from '../../../lib/api.mjs';
 
 import { guid } from '../lib/helpers.js';
 import { playbackLog } from '../lib/playbackLogger.js';
+import { shouldEmitTrackChanged } from '../lib/shouldEmitTrackChanged.js';
 
 // Module-level signature cache — survives React remounts for the same content.
 // Prevents re-fetching queue when the player remounts during resilience recovery.
@@ -206,6 +207,7 @@ export function useQueueController({ play, queue, clear, shuffle }) {
     const currentItem = playQueue[0];
     if (!currentItem) return;
     if (currentItem.guid === lastLoggedGuidRef.current) return;
+    if (!shouldEmitTrackChanged(currentItem)) return;
 
     lastLoggedGuidRef.current = currentItem.guid;
     playbackLog('queue-track-changed', {
