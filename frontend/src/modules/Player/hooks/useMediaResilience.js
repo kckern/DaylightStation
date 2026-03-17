@@ -6,6 +6,7 @@ import { useResilienceConfig } from './useResilienceConfig.js';
 import { useResilienceState, RESILIENCE_STATUS } from './useResilienceState.js';
 import { usePlaybackSession } from './usePlaybackSession.js';
 import { formatTime } from '../lib/helpers.js';
+import { shouldArmStartupDeadline } from '../lib/shouldArmStartupDeadline.js';
 
 export { DEFAULT_MEDIA_RESILIENCE_CONFIG, MediaResilienceConfigContext, mergeMediaResilienceConfig } from './useResilienceConfig.js';
 export { RESILIENCE_STATUS } from './useResilienceState.js';
@@ -125,6 +126,9 @@ export function useMediaResilience({
     }
   }, [isPaused, isSeeking, pauseIntent]);
 
+  // Stable boolean for dep array — avoids re-runs from meta object reference changes
+  const hasMediaMeta = shouldArmStartupDeadline({ meta, disabled });
+
   // Startup deadline timer (for initial load grace period)
   const startupDeadlineRef = useRef(null);
   // Track if video has ever successfully played (for loop detection)
@@ -214,15 +218,16 @@ export function useMediaResilience({
     }
 
     // Startup/recovering: set a deadline for initial load
+    // Gate: only arm when we have media metadata (prevents phantom entry timers)
     if (status === STATUS.startup || status === STATUS.recovering) {
-      if (!startupDeadlineRef.current) {
+      if (!startupDeadlineRef.current && hasMediaMeta) {
         startupDeadlineRef.current = setTimeout(() => {
           triggerRecovery('startup-deadline-exceeded');
           startupDeadlineRef.current = null;
         }, hardRecoverLoadingGraceMs);
       }
     }
-  }, [status, playbackHealth.progressToken, userIntent, actions, triggerRecovery, hardRecoverLoadingGraceMs, playbackSessionKey, disabled]);
+  }, [status, playbackHealth.progressToken, userIntent, actions, triggerRecovery, hardRecoverLoadingGraceMs, playbackSessionKey, disabled, hasMediaMeta]);
 
   // Clean up timers on unmount or waitKey change
   useEffect(() => {
