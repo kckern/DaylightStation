@@ -494,9 +494,15 @@ export function useMediaResilience({
     }
   }, [controllerRef, resilienceState, actions, onReload, consumeTargetTimeSeconds]);
 
+  const cancelDeadline = useCallback(() => {
+    clearTimeout(startupDeadlineRef.current);
+    startupDeadlineRef.current = null;
+  }, []);
+
   return {
     overlayProps,
     state: resilienceState,
-    onStartupSignal: NOOP // Stable reference to avoid re-render cascades
+    onStartupSignal: NOOP, // Stable reference to avoid re-render cascades
+    cancelDeadline
   };
 }

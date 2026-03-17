@@ -214,7 +214,8 @@ const Player = forwardRef(function Player(props, ref) {
     setPlaybackMetrics(createDefaultPlaybackMetrics());
     setRemountState((prev) => (prev.guid === currentMediaGuid ? prev : { guid: currentMediaGuid || null, nonce: 0, context: null }));
     clearRemountTimer();
-  }, [currentMediaGuid, clearRemountTimer]);
+    cancelDeadline();
+  }, [currentMediaGuid, clearRemountTimer, cancelDeadline]);
 
   const effectiveMeta = resolvedMeta || singlePlayerProps || null;
   const plexId = queue?.plex || play?.plex || effectiveMeta?.plex || effectiveMeta?.assetId || null;
@@ -579,7 +580,7 @@ const Player = forwardRef(function Player(props, ref) {
   // suppress the resilience overlay which would never exit startup.
   const isSelfContainedFormat = effectiveMeta?.format === 'titlecard';
 
-  const { overlayProps, state: resilienceState, onStartupSignal } = useMediaResilience({
+  const { overlayProps, state: resilienceState, onStartupSignal, cancelDeadline } = useMediaResilience({
     getMediaEl: transportAdapter.getMediaEl,
     meta: effectiveMeta,
     maxVideoBitrate: effectiveMeta?.maxVideoBitrate
