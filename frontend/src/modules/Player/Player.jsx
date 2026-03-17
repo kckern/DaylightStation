@@ -15,6 +15,7 @@ import { playbackLog } from './lib/playbackLogger.js';
 import { resolveMediaIdentity } from './utils/mediaIdentity.js';
 import { useMediaTransportAdapter } from './hooks/transport/useMediaTransportAdapter.js';
 import { guardedReload } from '../../lib/reloadGuard.js';
+import { shouldSkipResilienceReload } from './lib/shouldSkipResilienceReload.js';
 
 const REMOUNT_BACKOFF_BASE_MS = 1000;
 const REMOUNT_BACKOFF_FACTOR = 1.5;
@@ -503,6 +504,18 @@ const Player = forwardRef(function Player(props, ref) {
   }, [resolvedResilienceOnState]);
 
   const handleResilienceReload = useCallback((options = {}) => {
+    // Guard: skip recovery for phantom/unresolvable entries
+    if (shouldSkipResilienceReload({ activeSource, playerType, resolvedMeta })) {
+      playbackLog('resilience-reload-skipped-phantom', {
+        guid: currentMediaGuid,
+        hasActiveSource: !!activeSource,
+        playerType: playerType || null,
+        hasResolvedMeta: !!resolvedMeta,
+        reason: options?.reason
+      }, { level: 'warn' });
+      return;
+    }
+
     const {
       forceDocumentReload: forceDocReload,
       forceFullReload,
@@ -574,7 +587,7 @@ const Player = forwardRef(function Player(props, ref) {
       trigger: triggerDetails,
       conditions
     });
-  }, [scheduleSinglePlayerRemount, mediaAccess, transportAdapter, playerType, isQueue, advance, clear, currentMediaGuid, resolvedWaitKey]);
+  }, [scheduleSinglePlayerRemount, mediaAccess, transportAdapter, playerType, isQueue, advance, clear, currentMediaGuid, resolvedWaitKey, activeSource, resolvedMeta]);
 
   // Self-contained formats (titlecard, etc.) have no media element —
   // suppress the resilience overlay which would never exit startup.
