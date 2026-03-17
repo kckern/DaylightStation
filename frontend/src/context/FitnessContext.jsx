@@ -441,7 +441,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     equipmentConfig,
     nomusicLabels,
     governedLabels,
-    governedTypes
+    governedTypes,
+    sessionsConfig
   } = React.useMemo(() => {
     const root = fitnessConfiguration?.fitness ? fitnessConfiguration.fitness : fitnessConfiguration?.plex ? fitnessConfiguration : (fitnessConfiguration || {});
     // Prefer 'content' config key, fall back to legacy 'plex' key
@@ -479,7 +480,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       equipmentConfig: root?.equipment || [],
       nomusicLabels: normalizedNomusicLabels,
       governedLabels: normalizedGovernedLabels,
-      governedTypes: normalizedGovernedTypes
+      governedTypes: normalizedGovernedTypes,
+      sessionsConfig: root?.sessions || {}
     };
   }, [fitnessConfiguration]);
 
@@ -566,8 +568,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     equipmentConfig,
     nomusicLabels,
     governedLabels,
-    governedTypes
-  }), [ant_devices, usersConfig, zoneConfig, governanceConfig, coinTimeUnitMs, equipmentConfig, nomusicLabels, governedLabels, governedTypes]);
+    governedTypes,
+    sessionsConfig
+  }), [ant_devices, usersConfig, zoneConfig, governanceConfig, coinTimeUnitMs, equipmentConfig, nomusicLabels, governedLabels, governedTypes, sessionsConfig]);
 
   const configurationSignature = React.useMemo(() => JSON.stringify({
     ...configurationInputs,
@@ -583,7 +586,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // Configure Timeouts
     const inactive = ant_devices?.timeout?.inactive;
     const remove = ant_devices?.timeout?.remove;
-    setFitnessTimeouts({ inactive, remove });
+    const sessionEndCooldown = sessionsConfig?.session_end_cooldown_ms;
+    setFitnessTimeouts({ inactive, remove, sessionEndCooldown });
 
     // Configure User Manager
     session.userManager.configure(usersConfig, zoneConfig);

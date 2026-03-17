@@ -28,8 +28,12 @@ const FITNESS_TIMEOUTS = {
   inactive: 60000,
   remove: 1800000, // 30 minutes — keeps session alive during breaks
   rpmZero: 3000,
-  emptySession: 60000 // 6A: Time (ms) with empty roster before auto-ending session
+  emptySession: 60000, // 6A: Time (ms) with empty roster before auto-ending session
+  sessionEndCooldown: 600000 // 10 minutes — prevents duplicate sessions from leftover HR data
 };
+
+// Module-scope: survives FitnessSession instance destruction on screen navigation
+let _lastSessionEndTimestamp = 0;
 
 // Soft guardrail to prevent oversized payloads
 const MAX_SERIALIZED_SERIES_POINTS = 200000;
@@ -160,11 +164,12 @@ const roundValue = (key, value) => {
   return value;
 };
 
-export const setFitnessTimeouts = ({ inactive, remove, rpmZero, emptySession } = {}) => {
+export const setFitnessTimeouts = ({ inactive, remove, rpmZero, emptySession, sessionEndCooldown } = {}) => {
   if (typeof inactive === 'number' && !Number.isNaN(inactive)) FITNESS_TIMEOUTS.inactive = inactive;
   if (typeof remove === 'number' && !Number.isNaN(remove)) FITNESS_TIMEOUTS.remove = remove;
   if (typeof rpmZero === 'number' && !Number.isNaN(rpmZero)) FITNESS_TIMEOUTS.rpmZero = rpmZero;
   if (typeof emptySession === 'number' && !Number.isNaN(emptySession)) FITNESS_TIMEOUTS.emptySession = emptySession;
+  if (typeof sessionEndCooldown === 'number' && !Number.isNaN(sessionEndCooldown)) FITNESS_TIMEOUTS.sessionEndCooldown = sessionEndCooldown;
 };
 
 export const getFitnessTimeouts = () => ({ ...FITNESS_TIMEOUTS });
@@ -327,8 +332,8 @@ export class FitnessSession {
     this._bufferThresholdMet = false;
     this._preSessionThreshold = 3; // Require N valid HR samples before starting
     this._lastPreSessionLogAt = 0;
-    this._lastSessionEndTime = 0;
-    this._sessionEndDebounceMs = 5000;
+    // Session-end cooldown uses module-scope _lastSessionEndTimestamp (survives remount)
+    this._lastCooldownLogAt = 0;
     
     // Configure lifecycle callbacks
     this._lifecycle.setCallbacks({
@@ -1060,8 +1065,17 @@ export class FitnessSession {
 
   _maybeStartSessionFromBuffer(deviceData, timestamp) {
     if (this.sessionId) return false;
-    // Debounce: don't start a new session within 5s of the last one ending
-    if (this._lastSessionEndTime && (timestamp - this._lastSessionEndTime) < this._sessionEndDebounceMs) {
+    // Cooldown: don't auto-start a new session within the cooldown window after the last one ended
+    const cooldownMs = FITNESS_TIMEOUTS.sessionEndCooldown;
+    if (_lastSessionEndTimestamp && (timestamp - _lastSessionEndTimestamp) < cooldownMs) {
+      if (!this._lastCooldownLogAt || (timestamp - this._lastCooldownLogAt) > 10000) {
+        this._lastCooldownLogAt = timestamp;
+        getLogger().debug('fitness.session.cooldown_active', {
+          elapsedMs: timestamp - _lastSessionEndTimestamp,
+          cooldownMs,
+          remainingMs: cooldownMs - (timestamp - _lastSessionEndTimestamp)
+        });
+      }
       return false;
     }
     const eligible = this._isValidPreSessionSample(deviceData);
@@ -1832,7 +1846,7 @@ export class FitnessSession {
     const endedSessionId = this.sessionId;
     this._notifySessionEnded(endedSessionId, reason);
 
-    this._lastSessionEndTime = Date.now();
+    _lastSessionEndTimestamp = Date.now();
     this.reset();
     return true;
   }
