@@ -7,6 +7,7 @@
 
 import { ITranscriptionService } from '#apps/common/ports/ITranscriptionService.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { retryTransient } from '#system/utils/retryTransient.mjs';
 
 export class TelegramVoiceTranscriptionService extends ITranscriptionService {
   #openaiAdapter;
@@ -111,7 +112,20 @@ export class TelegramVoiceTranscriptionService extends ITranscriptionService {
    */
   async #downloadAudio(url) {
     try {
-      return await this.#httpClient.downloadBuffer(url);
+      return await retryTransient(
+        () => this.#httpClient.downloadBuffer(url),
+        {
+          maxAttempts: 3,
+          baseDelay: 1000,
+          onRetry: (attempt, error) => {
+            this.#logger.warn?.('telegram-voice.download.retry', {
+              attempt,
+              error: error.message,
+              code: error.code,
+            });
+          },
+        },
+      );
     } catch (error) {
       this.#logger.error?.('telegram-voice.download.failed', {
         error: error.message,
