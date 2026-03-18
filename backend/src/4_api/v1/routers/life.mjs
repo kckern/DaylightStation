@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createLogger } from '../../0_system/logging/logger.mjs';
+import { createLogger } from '#system/logging/logger.mjs';
 import createPlanRouter from './life/plan.mjs';
 import createNowRouter from './life/now.mjs';
 import createLogRouter from './life/log.mjs';

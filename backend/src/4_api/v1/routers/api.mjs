@@ -29,6 +29,7 @@ import express from 'express';
  * @param {express.Router} config.routers.finance - Finance router
  * @param {express.Router} config.routers.harvest - Harvest router
  * @param {express.Router} config.routers.entropy - Entropy router
+ * @param {express.Router} [config.routers.life] - Life (lifeplan) router
  * @param {express.Router} config.routers.lifelog - Lifelog router
  * @param {express.Router} config.routers.static - Static router
  * @param {express.Router} config.routers.calendar - Calendar router
@@ -73,6 +74,7 @@ export function createApiRouter(config) {
     '/cost': 'cost',
     '/harvest': 'harvest',
     '/entropy': 'entropy',
+    '/life': 'life',
     '/lifelog': 'lifelog',
     '/static': 'static',
     '/calendar': 'calendar',

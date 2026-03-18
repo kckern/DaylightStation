@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import moment from 'moment-timezone';
-import { createLogger } from '../../../0_system/logging/logger.mjs';
+import { createLogger } from '#system/logging/logger.mjs';
 
 const VALID_SCOPES = ['week', 'month', 'season', 'year', 'decade'];
 

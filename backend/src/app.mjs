@@ -76,6 +76,8 @@ import {
   createMediaServices
 } from './0_system/bootstrap.mjs';
 
+import { bootstrapLifeplan } from './0_system/bootstrap/lifeplan.mjs';
+
 // AI router import
 import { createAIRouter } from './4_api/v1/routers/ai.mjs';
 
@@ -583,6 +585,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const lifelogServices = createLifelogServices({
     userLoadFile,
     logger: rootLogger.child({ module: 'lifelog' })
+  });
+
+  // Lifeplan domain
+  const lifeplanResult = bootstrapLifeplan({
+    dataPath: path.join(dataBasePath, 'users'),
+    aggregator: lifelogServices.lifelogAggregator,
+    notificationService: null,
+    clock: null,
+    logger: rootLogger.child({ module: 'lifeplan' }),
   });
 
   // Gratitude domain
@@ -1095,6 +1106,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService,
     logger: rootLogger.child({ module: 'lifelog-api' })
   });
+
+  // Lifeplan domain router
+  v1Routers.life = lifeplanResult.router;
 
   // Static assets router
   v1Routers.static = createStaticApiRouter({
@@ -1633,6 +1647,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService,
     aiGateway: sharedAiGateway,
     httpClient: axios,
+    lifeplanServices: {
+      container: lifeplanResult.container,
+      services: lifeplanResult.services,
+      aggregator: lifelogServices.lifelogAggregator,
+    },
   });
 
   // AI API router - provides direct AI endpoints (/api/ai/*)

@@ -58,12 +58,15 @@ export function PurposeView({ username }) {
         )}
       </Paper>
 
-      {purpose?.grounded_in?.length > 0 && (
+      {(purpose?.grounded_in?.beliefs?.length > 0 || purpose?.grounded_in?.values?.length > 0) && (
         <Paper p="sm" withBorder>
           <Text size="sm" fw={500} mb="xs">Grounded In</Text>
           <Group gap="xs">
-            {purpose.grounded_in.map((ref, i) => (
-              <Badge key={i} variant="light" size="sm">{ref}</Badge>
+            {purpose.grounded_in.beliefs?.map((ref, i) => (
+              <Badge key={`b-${i}`} variant="light" size="sm">{ref}</Badge>
+            ))}
+            {purpose.grounded_in.values?.map((ref, i) => (
+              <Badge key={`v-${i}`} variant="light" size="sm" color="green">{ref}</Badge>
             ))}
           </Group>
         </Paper>

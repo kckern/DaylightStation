@@ -75,8 +75,10 @@ export function QualitiesView({ username }) {
 
                 {q.shadow && (
                   <Paper p="xs" withBorder bg="yellow.0">
-                    <Text size="xs" fw={500}>Shadow: {q.shadow.name}</Text>
-                    <Text size="xs" c="dimmed">{q.shadow.description}</Text>
+                    <Text size="xs" fw={500}>Shadow: {typeof q.shadow === 'string' ? q.shadow : q.shadow.name}</Text>
+                    {typeof q.shadow !== 'string' && q.shadow.description && (
+                      <Text size="xs" c="dimmed">{q.shadow.description}</Text>
+                    )}
                   </Paper>
                 )}
 
@@ -91,11 +93,14 @@ export function QualitiesView({ username }) {
                   </div>
                 )}
 
-                {q.grounded_in?.length > 0 && (
+                {(q.grounded_in?.beliefs?.length > 0 || q.grounded_in?.values?.length > 0) && (
                   <Group gap="xs">
                     <Text size="xs" c="dimmed">Grounded in:</Text>
-                    {q.grounded_in.map((ref, i) => (
-                      <Badge key={i} variant="light" size="xs">{ref}</Badge>
+                    {q.grounded_in.beliefs?.map((ref, i) => (
+                      <Badge key={`b-${i}`} variant="light" size="xs">{ref}</Badge>
+                    ))}
+                    {q.grounded_in.values?.map((ref, i) => (
+                      <Badge key={`v-${i}`} variant="light" size="xs" color="green">{ref}</Badge>
                     ))}
                   </Group>
                 )}
