@@ -282,9 +282,12 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
       const aRank = aZone ? zoneRankMap[aZone] : -1; // unknown below cool
       const bRank = bZone ? zoneRankMap[bZone] : -1;
       if (bRank !== aRank) return bRank - aRank; // higher rank first
-      // Within same zone: heart rate descending
-      const hrDelta = (b.heartRate || 0) - (a.heartRate || 0);
-      if (hrDelta !== 0) return hrDelta;
+      // Within same zone: zone progress descending (normalized position within zone)
+      const aName = hrOwnerMap[resolveDeviceKey(a)] || '';
+      const bName = hrOwnerMap[resolveDeviceKey(b)] || '';
+      const aProgress = zoneProgressMap.get(aName)?.progress ?? 0;
+      const bProgress = zoneProgressMap.get(bName)?.progress ?? 0;
+      if (bProgress !== aProgress) return bProgress - aProgress;
       // Tertiary: active devices first
       const aActive = computeDeviceActive(a);
       const bActive = computeDeviceActive(b);
@@ -298,7 +301,7 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
 
     // Only keep the single top performer to prevent growth
     return hrDevices.length > 1 ? hrDevices.slice(0, 1) : hrDevices;
-  }, [activeHeartRateParticipants, getDeviceZoneId, zoneRankMap, resolveDeviceKey, computeDeviceActive]);
+  }, [activeHeartRateParticipants, getDeviceZoneId, zoneRankMap, resolveDeviceKey, computeDeviceActive, hrOwnerMap, zoneProgressMap]);
 
   const isVideoPlaying = Array.isArray(fitnessPlayQueue) && fitnessPlayQueue.length > 0;
 
