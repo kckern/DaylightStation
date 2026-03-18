@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createLogger } from '../../../0_system/logging/logger.mjs';
+import { createLogger } from '#system/logging/logger.mjs';
 
 export default function createPlanRouter(config) {
   const { lifePlanStore, goalStateService, beliefEvaluator, cadenceService, ceremonyService, feedbackService, retroService } = config;

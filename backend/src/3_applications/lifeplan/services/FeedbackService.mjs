@@ -1,3 +1,5 @@
+import { FeedbackEntry } from '#domains/lifeplan/entities/FeedbackEntry.mjs';
+
 export class FeedbackService {
   #lifePlanStore;
 
@@ -11,15 +13,14 @@ export class FeedbackService {
 
     if (!plan.feedback) plan.feedback = [];
 
-    const entry = {
-      text: observation.text,
-      sentiment: observation.sentiment,
-      timestamp: new Date().toISOString(),
-    };
-
-    if (observation.element_type) entry.element_type = observation.element_type;
-    if (observation.element_id) entry.element_id = observation.element_id;
-    if (observation.tags) entry.tags = observation.tags;
+    const entry = new FeedbackEntry({
+      date: new Date().toISOString(),
+      type: observation.type || 'observation',
+      content: observation.text,
+      related_goals: observation.related_goals || [],
+      related_beliefs: observation.related_beliefs || [],
+      related_rules: observation.related_rules || [],
+    });
 
     plan.feedback.push(entry);
     this.#lifePlanStore.save(username, plan);
