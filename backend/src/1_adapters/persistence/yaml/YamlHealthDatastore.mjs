@@ -197,6 +197,27 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
     this.#saveUserFile(userId, 'lifelog/reconciliation', data);
   }
 
+  /**
+   * Load adjusted nutrition data for a user
+   * @param {string} userId
+   * @returns {Promise<Object>} Adjusted nutrition data keyed by date
+   */
+  async loadAdjustedNutritionData(userId) {
+    this.#logger.debug?.('health.store.loadAdjustedNutrition', { userId });
+    return this.#loadUserFile(userId, 'lifelog/nutrition/nutriday_adjusted');
+  }
+
+  /**
+   * Save adjusted nutrition data for a user
+   * @param {string} userId
+   * @param {Object} data - Adjusted nutrition data keyed by date
+   * @returns {Promise<void>}
+   */
+  async saveAdjustedNutritionData(userId, data) {
+    this.#logger.debug?.('health.store.saveAdjustedNutrition', { userId, dates: Object.keys(data).length });
+    this.#saveUserFile(userId, 'lifelog/nutrition/nutriday_adjusted', data);
+  }
+
   // ===========================================================================
   // Additional Convenience Methods
   // ===========================================================================
