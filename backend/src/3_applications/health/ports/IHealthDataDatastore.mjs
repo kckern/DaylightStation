@@ -83,6 +83,25 @@ export class IHealthDataDatastore {
   async saveCoachingData(userId, coachingData) {
     throw new Error('Not implemented');
   }
+
+  /**
+   * Load reconciliation data for a user
+   * @param {string} userId
+   * @returns {Promise<Object>} Reconciliation data keyed by date
+   */
+  async loadReconciliationData(userId) {
+    throw new Error('Not implemented');
+  }
+
+  /**
+   * Save reconciliation data for a user
+   * @param {string} userId
+   * @param {Object} data - Reconciliation data keyed by date
+   * @returns {Promise<void>}
+   */
+  async saveReconciliationData(userId, data) {
+    throw new Error('Not implemented');
+  }
 }
 
 export default IHealthDataDatastore;
