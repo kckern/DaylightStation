@@ -874,7 +874,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                       equipmentType={vibEquipmentType}
                       trackerSnapshot={trackerSnapshot}
                       layoutMode={layoutMode}
-                      isInactive={device.isActive === false || !!device.inactiveSince}
+                      isInactive={device.isActive === false || !!device.inactiveSince || !!device.hrInactive}
                       isCountdownActive={isCountdownActive}
                       countdownWidth={countdownWidth}
                     />
@@ -979,7 +979,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
               const isCountdownActive = Number.isFinite(removalCountdown);
               const countdownWidth = isCountdownActive ? Math.round(removalCountdown * 100) : 0;
               // Robust check for inactivity: handle both class instance (getter) and serialized object (property)
-              const isInactive = device.isActive === false || !!device.inactiveSince;
+              const isInactive = device.isActive === false || !!device.inactiveSince || !!device.hrInactive;
 
               return (
                 <div className="device-wrapper" key={`device-${device.deviceId}`}>

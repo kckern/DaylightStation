@@ -449,7 +449,8 @@ export class ParticipantRoster {
       avatarUrl: isGuest ? null : mappedUser?.avatarUrl || null,
       status,
       isActive, // SINGLE SOURCE OF TRUTH for avatar visibility
-      inactiveSince: device.inactiveSince || null // Pass through for debugging
+      inactiveSince: device.inactiveSince || null, // Pass through for debugging
+      hrInactive: mappedUser?.currentData?.hrInactive ?? true
     };
 
     return rosterEntry;

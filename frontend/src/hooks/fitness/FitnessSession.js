@@ -1610,9 +1610,15 @@ export class FitnessSession {
     const activeParticipants = effectiveRoster
         .filter((entry) => {
           const isActive = entry.isActive !== false;
-          return isActive && (entry.id || entry.profileId);
+          const hrActive = !entry.hrInactive;
+          return isActive && hrActive && (entry.id || entry.profileId);
         })
         .map(entry => entry.id || entry.profileId);  // Use ID, not name!
+
+    // Build hrInactive list for display layer (governance-exempt but visible)
+    const hrInactiveUsers = effectiveRoster
+        .filter(entry => entry.hrInactive && (entry.id || entry.profileId))
+        .map(entry => entry.id || entry.profileId);
 
     // Key by userId/entityId (stable, no case issues)
     const userZoneMap = {};
@@ -1641,7 +1647,8 @@ export class FitnessSession {
         userZoneMap,
         zoneRankMap,
         zoneInfoMap,
-        totalCount: activeParticipants.length
+        totalCount: activeParticipants.length,
+        hrInactiveUsers
     });
   }
 
@@ -2108,7 +2115,13 @@ export class FitnessSession {
       return { ok: false, reason: 'roster-required' };
     }
     if (hasUserSeries && deviceAssignments.length === 0) {
-      return { ok: false, reason: 'device-assignments-required' };
+      // Log but don't block — BLE-only sessions (e.g. bike rides with Garmin watch)
+      // may never receive device assignments, and blocking persistence causes total
+      // data loss for video/voice memos (see 2026-03-17 incident).
+      getLogger().info('fitness.session.no_device_assignments', {
+        sessionId: sessionData.sessionId,
+        rosterLength: roster.length,
+      });
     }
 
     // 6A: Spam prevention - reject short, empty sessions

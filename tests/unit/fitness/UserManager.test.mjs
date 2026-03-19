@@ -104,3 +104,48 @@ describe('User HR=0 device disconnect handling', () => {
     expect(readingsAfterZero).toBe(readingsAfterReal);
   });
 });
+
+describe('User hrInactive flag', () => {
+  it('should start with hrInactive true (no valid HR yet)', () => {
+    const user = createTestUser();
+    expect(user.currentData.hrInactive).toBe(true);
+  });
+
+  it('should set hrInactive false when valid HR received', () => {
+    const user = createTestUser();
+    sendHeartRate(user, 120);
+    expect(user.currentData.hrInactive).toBe(false);
+  });
+
+  it('should set hrInactive true when HR drops to 0', () => {
+    const user = createTestUser();
+    sendHeartRate(user, 120);
+    expect(user.currentData.hrInactive).toBe(false);
+    sendHeartRate(user, 0);
+    expect(user.currentData.hrInactive).toBe(true);
+  });
+
+  it('should clear hrInactive when valid HR returns after 0', () => {
+    const user = createTestUser();
+    sendHeartRate(user, 120);
+    sendHeartRate(user, 0);
+    expect(user.currentData.hrInactive).toBe(true);
+    sendHeartRate(user, 105);
+    expect(user.currentData.hrInactive).toBe(false);
+  });
+
+  it('should include hrInactive in summary getter', () => {
+    const user = createTestUser();
+    expect(user.summary.hrInactive).toBe(true);
+    sendHeartRate(user, 120);
+    expect(user.summary.hrInactive).toBe(false);
+  });
+
+  it('should reset hrInactive to true on resetSession', () => {
+    const user = createTestUser();
+    sendHeartRate(user, 120);
+    expect(user.currentData.hrInactive).toBe(false);
+    user.resetSession();
+    expect(user.currentData.hrInactive).toBe(true);
+  });
+});

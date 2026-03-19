@@ -495,7 +495,8 @@ export class GovernanceEngine {
       userZoneMap,
       zoneRankMap: { ...(payload.zoneRankMap || {}) },
       zoneInfoMap,
-      totalCount: Number.isFinite(payload.totalCount) ? payload.totalCount : activeParticipants.length
+      totalCount: Number.isFinite(payload.totalCount) ? payload.totalCount : activeParticipants.length,
+      hrInactiveUsers: Array.isArray(payload.hrInactiveUsers) ? [...payload.hrInactiveUsers] : []
     };
     this._lastEvaluationTs = Date.now();
 
@@ -1271,7 +1272,8 @@ export class GovernanceEngine {
         : [],
       challengeCountdownSeconds: challengeSnapshot ? challengeSnapshot.remainingSeconds : null,
       challengeCountdownTotal: challengeSnapshot ? challengeSnapshot.totalSeconds : null,
-      nextChallenge: nextChallengeSnapshot
+      nextChallenge: nextChallengeSnapshot,
+      hrInactiveUsers: Array.isArray(this._latestInputs?.hrInactiveUsers) ? [...this._latestInputs.hrInactiveUsers] : []
     };
   }
 
@@ -1286,7 +1288,7 @@ export class GovernanceEngine {
    * @param {Record<string, Object>} params.zoneInfoMap - Map zoneId -> zone metadata
    * @param {number} params.totalCount - Total number of active participants
    */
-  evaluate({ activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount } = {}) {
+  evaluate({ activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, hrInactiveUsers } = {}) {
     // Tag which code path triggered this evaluation (for prod log diagnostics)
     this._lastEvaluatePath = activeParticipants ? 'snapshot' : 'pulse';
 
@@ -1450,7 +1452,8 @@ export class GovernanceEngine {
         userZoneMap: userZoneMap || {},
         zoneRankMap: zoneRankMap || {},
         zoneInfoMap: zoneInfoMap || {},
-        totalCount: totalCount || 0
+        totalCount: totalCount || 0,
+        hrInactiveUsers: Array.isArray(hrInactiveUsers) ? [...hrInactiveUsers] : []
       };
       this._invalidateStateCache();
       // No polling needed here - governance is reactive via TreasureBox mutation callback
@@ -1565,7 +1568,8 @@ export class GovernanceEngine {
       userZoneMap,
       zoneRankMap,
       zoneInfoMap,
-      totalCount
+      totalCount,
+      hrInactiveUsers
     });
     
     // Invalidate state cache after evaluation completes

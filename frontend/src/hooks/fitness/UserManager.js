@@ -56,7 +56,8 @@ export class User {
       rangeMin: zoneSnapshot?.rangeMin ?? null,
       rangeMax: zoneSnapshot?.rangeMax ?? null,
       targetHeartRate: zoneSnapshot?.targetHeartRate ?? null,
-      showProgress: zoneSnapshot?.showBar ?? false
+      showProgress: zoneSnapshot?.showBar ?? false,
+      hrInactive: true
     };
   }
 
@@ -77,7 +78,8 @@ export class User {
       rangeMin: zoneSnapshot.rangeMin ?? null,
       rangeMax: zoneSnapshot.rangeMax ?? null,
       targetHeartRate: zoneSnapshot.targetHeartRate ?? null,
-      showProgress: zoneSnapshot.showBar ?? false
+      showProgress: zoneSnapshot.showBar ?? false,
+      hrInactive: false
     };
   }
 
@@ -89,6 +91,7 @@ export class User {
       this.currentData.heartRate = null;
       this.currentData.zone = null;
       this.currentData.color = null;
+      this.currentData.hrInactive = true;
       return;
     }
 
@@ -208,7 +211,8 @@ export class User {
       avgRPM: this._cumulativeData.cadence.avgRPM,
       distance: this._cumulativeData.distance.total,
       duration: this._cumulativeData.sessionStartTime ? Math.floor((new Date() - this._cumulativeData.sessionStartTime) / 1000) : 0,
-      zones: { ...this._cumulativeData.heartRate.zones }
+      zones: { ...this._cumulativeData.heartRate.zones },
+      hrInactive: this.currentData.hrInactive ?? true
     };
   }
 
