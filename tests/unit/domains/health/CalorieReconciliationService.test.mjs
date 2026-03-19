@@ -71,6 +71,115 @@ describe('CalorieReconciliationService', () => {
     });
   });
 
+  describe('reconcile', () => {
+    const seedBmr = 1700;
+
+    it('computes implied intake from energy balance equation', () => {
+      const windowData = [{
+        date: '2026-03-17',
+        weightDelta: -0.2,  // lost 0.2 lbs
+        trackedCalories: 1800,
+        exerciseCalories: 300,
+        neatCalories: 250,
+        hasWeight: true,
+        hasNutrition: true,
+        hasSteps: true,
+      }];
+      // implied = (-0.2 * 3500) + 1700 + 300 + 250 = -700 + 2250 = 1550
+      // Uses seed BMR (< 3 high-confidence days for derived)
+      const results = CalorieReconciliationService.reconcile(windowData, seedBmr);
+      expect(results).toHaveLength(1);
+      expect(results[0].implied_intake).toBe(1550);
+      expect(results[0].calorie_adjustment).toBe(1550 - 1800); // -250
+      expect(results[0].tracking_accuracy).toBeCloseTo(1.0); // clamped: 1800/1550 > 1
+    });
+
+    it('sets tracking_accuracy to null when implied_intake <= 0', () => {
+      const windowData = [{
+        date: '2026-03-17',
+        weightDelta: -1.5,
+        trackedCalories: 0,
+        exerciseCalories: 0,
+        neatCalories: 0,
+        hasWeight: true,
+        hasNutrition: false,
+        hasSteps: false,
+      }];
+      // implied = (-1.5 * 3500) + 1700 + 0 + 0 = -3550
+      const results = CalorieReconciliationService.reconcile(windowData, seedBmr);
+      expect(results[0].implied_intake).toBe(-3550);
+      expect(results[0].tracking_accuracy).toBeNull();
+    });
+
+    it('interpolates NEAT for days missing step data', () => {
+      const windowData = [
+        { date: '2026-03-15', weightDelta: 0, trackedCalories: 2000,
+          exerciseCalories: 0, neatCalories: 200, hasWeight: true,
+          hasNutrition: true, hasSteps: true },
+        { date: '2026-03-16', weightDelta: 0, trackedCalories: 2000,
+          exerciseCalories: 0, neatCalories: null, hasWeight: true,
+          hasNutrition: true, hasSteps: false },
+        { date: '2026-03-17', weightDelta: 0, trackedCalories: 2000,
+          exerciseCalories: 0, neatCalories: 400, hasWeight: true,
+          hasNutrition: true, hasSteps: true },
+      ];
+      const results = CalorieReconciliationService.reconcile(windowData, seedBmr);
+      // Middle day NEAT interpolated: avg(200, 400) = 300
+      expect(results[1].neat_calories).toBe(300);
+    });
+
+    it('handles extended no-logging period (all days untracked)', () => {
+      const windowData = Array.from({ length: 4 }, (_, i) => ({
+        date: `2026-03-${15 + i}`,
+        weightDelta: 0,
+        trackedCalories: 0,
+        exerciseCalories: 0,
+        neatCalories: 200,
+        hasWeight: true,
+        hasNutrition: false,
+        hasSteps: true,
+      }));
+      const results = CalorieReconciliationService.reconcile(windowData, seedBmr);
+      results.forEach(r => {
+        expect(r.tracking_accuracy).toBe(0);
+        expect(r.implied_intake).toBeGreaterThan(0);
+      });
+    });
+
+    it('defaults NEAT to 0 when no step data at all', () => {
+      const windowData = [{
+        date: '2026-03-17',
+        weightDelta: 0,
+        trackedCalories: 2000,
+        exerciseCalories: 0,
+        neatCalories: null,
+        hasWeight: true,
+        hasNutrition: true,
+        hasSteps: false,
+      }];
+      const results = CalorieReconciliationService.reconcile(windowData, seedBmr);
+      expect(results[0].neat_calories).toBe(0);
+    });
+
+    it('computes rolling window outputs', () => {
+      const windowData = Array.from({ length: 4 }, (_, i) => ({
+        date: `2026-03-${15 + i}`,
+        weightDelta: 0,
+        trackedCalories: 2000,
+        exerciseCalories: 300,
+        neatCalories: 250,
+        hasWeight: true,
+        hasNutrition: true,
+        hasSteps: true,
+      }));
+      const results = CalorieReconciliationService.reconcile(windowData, seedBmr);
+      const last = results[results.length - 1];
+      expect(last.derived_bmr).toBeDefined();
+      expect(last.maintenance_calories).toBeDefined();
+      expect(last.avg_tracking_accuracy).toBeDefined();
+    });
+  });
+
   describe('computeConfidence', () => {
     it('returns 1.0 when all signals present', () => {
       expect(CalorieReconciliationService.computeConfidence({
