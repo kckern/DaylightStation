@@ -17,7 +17,7 @@ export class CalorieReconciliationService {
     if (!weightLbs) return null;
     const fat = fatPercent ?? DEFAULT_FAT_PERCENT;
     const leanMassKg = weightLbs * (1 - fat / 100) * LBS_TO_KG;
-    return Math.floor(370 + 21.6 * leanMassKg);
+    return Math.round(370 + 21.6 * leanMassKg);
   }
 
   static deriveRollingBmr(dailyRecords, seedBmr) {

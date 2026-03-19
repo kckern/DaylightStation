@@ -32,7 +32,7 @@ export class ReconciliationProcessor {
     }
 
     // Exclude today — morning weigh-in may not have happened yet
-    const today = new Date().toISOString().slice(0, 10);
+    const today = options.today || new Date().toISOString().slice(0, 10);
     const eligibleDates = weightDates.filter(d => d < today);
     const windowDates = eligibleDates.slice(-windowDays);
 

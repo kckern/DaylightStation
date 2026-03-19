@@ -4,9 +4,9 @@ import { CalorieReconciliationService } from '#domains/health/services/CalorieRe
 describe('CalorieReconciliationService', () => {
   describe('computeSeedBmr', () => {
     it('computes Katch-McArdle BMR from weight and fat percent', () => {
-      // 180 lbs, 20% fat → lean = 144 lbs = 65.3 kg → BMR = 370 + 21.6 * 65.3 = 1780
+      // 180 lbs, 20% fat → lean = 144 lbs / 2.205 = 65.31 kg → BMR = 370 + 21.6 * 65.31 = 1781
       const bmr = CalorieReconciliationService.computeSeedBmr(180, 20);
-      expect(bmr).toBeCloseTo(1780, 0);
+      expect(bmr).toBe(1781);
     });
 
     it('handles zero fat percent (all lean mass)', () => {
