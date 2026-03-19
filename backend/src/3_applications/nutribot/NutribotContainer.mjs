@@ -56,6 +56,7 @@ export class NutribotContainer {
   #reportRenderer;
   #barcodeGenerator;
   #foodIconsString;
+  #reconciliationReader;
 
   // Use Cases (lazy-loaded)
   #logFoodFromImage;
@@ -114,6 +115,7 @@ export class NutribotContainer {
     this.#reportRenderer = options.reportRenderer;
     this.#barcodeGenerator = options.barcodeGenerator;
     this.#foodIconsString = options.foodIconsString;
+    this.#reconciliationReader = options.reconciliationReader || null;
   }
 
   // ==================== Config Getter ====================
@@ -188,6 +190,7 @@ export class NutribotContainer {
         config: this.#config,
         foodIconsString: this.#foodIconsString,
         logger: this.#logger,
+        reconciliationReader: this.#reconciliationReader,
       });
     }
     return this.#logFoodFromImage;
@@ -203,6 +206,7 @@ export class NutribotContainer {
         config: this.#config,
         foodIconsString: this.#foodIconsString,
         logger: this.#logger,
+        reconciliationReader: this.#reconciliationReader,
       });
     }
     return this.#logFoodFromText;

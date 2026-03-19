@@ -23,6 +23,7 @@ export class LogFoodFromImage {
   #encodeCallback;
   #foodIconsString;
   #imageProcessor;
+  #reconciliationReader;
 
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
@@ -37,6 +38,7 @@ export class LogFoodFromImage {
     this.#encodeCallback = deps.encodeCallback || ((cmd, data) => JSON.stringify({ cmd, ...data }));
     this.#foodIconsString = deps.foodIconsString || 'apple banana bread cheese chicken default';
     this.#imageProcessor = deps.imageProcessor; // Optional: for downloading/processing images
+    this.#reconciliationReader = deps.reconciliationReader || null;
   }
 
   /**
@@ -175,7 +177,22 @@ export class LogFoodFromImage {
       });
 
       // 5. Call AI for food detection
-      const prompt = this.#buildDetectionPrompt();
+      // Pre-fetch portion boost for AI prompt (non-fatal if unavailable)
+      let portionBoost = '';
+      if (this.#reconciliationReader) {
+        try {
+          const reconData = await this.#reconciliationReader();
+          if (reconData?.avg_tracking_accuracy && reconData.avg_tracking_accuracy < 0.95) {
+            const multiplier = (1 / reconData.avg_tracking_accuracy).toFixed(2);
+            const accuracy = Math.round(reconData.avg_tracking_accuracy * 100);
+            portionBoost = `\n\nIMPORTANT CALIBRATION: Historical data shows portion estimates are typically ${accuracy}% of actual weight. Multiply all gram estimates by ${multiplier}x. For example, if you would estimate 150g, report ${Math.round(150 * parseFloat(multiplier))}g instead.`;
+          }
+        } catch (e) {
+          // Non-fatal — use uncalibrated estimates
+        }
+      }
+
+      const prompt = this.#buildDetectionPrompt(portionBoost);
       const response = await this.#aiGateway.chatWithImage(prompt, imageForAI, { maxTokens: 4096 });
 
       this.#logger.info?.('logImage.aiResponse', {
@@ -289,7 +306,11 @@ export class LogFoodFromImage {
    * Build detection prompt
    * @private
    */
-  #buildDetectionPrompt() {
+  #buildDetectionPrompt(portionBoost = '') {
+    const conservativeNote = portionBoost
+      ? 'Use the portion adjustment factor above to calibrate your gram estimates.'
+      : 'Be conservative with estimates.';
+
     return [
       {
         role: 'system',
@@ -324,7 +345,7 @@ Respond in JSON format:
   ]
 }
 
-Be conservative with estimates.`,
+${conservativeNote}${portionBoost}`,
       },
       {
         role: 'user',
