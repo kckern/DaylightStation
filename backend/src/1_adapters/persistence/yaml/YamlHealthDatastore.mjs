@@ -9,6 +9,7 @@
  *   - nutrition/nutriday.yml
  *   - health.yml
  *   - health_coaching.yml
+ *   - reconciliation.yml
  *
  * @module adapters/persistence/yaml
  */
@@ -173,6 +174,27 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
   async saveCoachingData(userId, coachingData) {
     this.#logger.debug?.('health.store.saveCoaching', { userId });
     this.#saveUserFile(userId, 'health_coaching', coachingData);
+  }
+
+  /**
+   * Load reconciliation data for a user
+   * @param {string} userId
+   * @returns {Promise<Object>} Reconciliation data keyed by date
+   */
+  async loadReconciliationData(userId) {
+    this.#logger.debug?.('health.store.loadReconciliation', { userId });
+    return this.#loadUserFile(userId, 'lifelog/reconciliation');
+  }
+
+  /**
+   * Save reconciliation data for a user
+   * @param {string} userId
+   * @param {Object} data - Reconciliation data keyed by date
+   * @returns {Promise<void>}
+   */
+  async saveReconciliationData(userId, data) {
+    this.#logger.debug?.('health.store.saveReconciliation', { userId, dates: Object.keys(data).length });
+    this.#saveUserFile(userId, 'lifelog/reconciliation', data);
   }
 
   // ===========================================================================
