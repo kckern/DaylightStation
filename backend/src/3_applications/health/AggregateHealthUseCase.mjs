@@ -12,16 +12,22 @@ import { HealthMetric } from '#domains/health/entities/HealthMetric.mjs';
 
 export class AggregateHealthUseCase {
   #healthStore;
+  #reconciliationProcessor;
+  #logger;
 
   /**
    * @param {Object} config
    * @param {Object} config.healthStore - IHealthDataDatastore implementation
+   * @param {Object} [config.reconciliationProcessor] - ReconciliationProcessor instance
+   * @param {Object} [config.logger] - Logger instance
    */
   constructor(config) {
     if (!config.healthStore) {
       throw new Error('AggregateHealthUseCase requires healthStore');
     }
     this.#healthStore = config.healthStore;
+    this.#reconciliationProcessor = config.reconciliationProcessor || null;
+    this.#logger = config.logger || console;
   }
 
   /**
@@ -72,6 +78,18 @@ export class AggregateHealthUseCase {
 
     // Save aggregated data (I/O)
     await this.#healthStore.saveHealthData(userId, mergedHealth);
+
+    // Run calorie reconciliation if processor is available
+    if (this.#reconciliationProcessor) {
+      try {
+        await this.#reconciliationProcessor.process(userId);
+      } catch (error) {
+        this.#logger.error?.('health.aggregate.reconciliation_failed', {
+          userId, error: error.message
+        });
+        // Non-fatal — don't fail the whole aggregation
+      }
+    }
 
     return metrics;
   }

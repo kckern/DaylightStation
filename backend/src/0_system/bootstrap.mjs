@@ -180,6 +180,7 @@ import { createAgentsRouter } from '#api/v1/routers/agents.mjs';
 
 // Health domain + application imports
 import { AggregateHealthUseCase } from '#apps/health/AggregateHealthUseCase.mjs';
+import { ReconciliationProcessor } from '#apps/health/ReconciliationProcessor.mjs';
 import { YamlHealthDatastore } from '#adapters/persistence/yaml/YamlHealthDatastore.mjs';
 import { createHealthRouter } from '#api/v1/routers/health.mjs';
 import { createHealthDashboardRouter } from '#api/v1/routers/health-dashboard.mjs';
@@ -2342,9 +2343,17 @@ export function createHealthServices(config) {
     logger
   });
 
+  // Calorie reconciliation processor (runs after health aggregation)
+  const reconciliationProcessor = new ReconciliationProcessor({
+    healthStore,
+    logger
+  });
+
   // Health aggregation use case (application layer)
   const healthService = new AggregateHealthUseCase({
-    healthStore
+    healthStore,
+    reconciliationProcessor,
+    logger
   });
 
   // NutriList store for nutrilist endpoints (optional, requires userDataService)
