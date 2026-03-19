@@ -114,4 +114,53 @@ describe('CalorieAdjustmentService', () => {
       expect(CalorieAdjustmentService.computePhantomEntry(-50, null)).toBeNull();
     });
   });
+
+  describe('adjustDay', () => {
+    const windowStats = { avgAccuracy: 0.75, stdDevAccuracy: 0.10 };
+
+    it('scales items and adds metadata', () => {
+      const items = [
+        { label: 'Chicken', grams: 150, calories: 250, protein: 47, carbs: 0, fat: 5, color: 'yellow' },
+      ];
+      const recon = { tracking_accuracy: 0.75, implied_intake: 1500, tracked_calories: 1125 };
+      const result = CalorieAdjustmentService.adjustDay(items, recon, windowStats);
+      expect(result.adjustedItems[0].adjusted).toBe(true);
+      expect(result.metadata.portion_multiplier).toBeCloseTo(1.33, 1);
+      expect(result.phantomEntry).toBeNull();
+    });
+
+    it('caps multiplier and creates phantom for low accuracy days', () => {
+      const items = [
+        { label: 'Salad', grams: 200, calories: 100, protein: 5, carbs: 15, fat: 3, color: 'green' },
+      ];
+      const recon = { tracking_accuracy: 0.40, implied_intake: 1800, tracked_calories: 720 };
+      const result = CalorieAdjustmentService.adjustDay(items, recon, windowStats);
+      expect(result.metadata.portion_multiplier).toBeCloseTo(1.54, 1);
+      expect(result.phantomEntry).not.toBeNull();
+      expect(result.phantomEntry.phantom).toBe(true);
+      expect(result.phantomEntry.calories).toBeCloseTo(691, -1);
+    });
+
+    it('returns unmodified items when accuracy is 1.0', () => {
+      const items = [{ label: 'Apple', grams: 180, calories: 95, protein: 0, carbs: 25, fat: 0 }];
+      const recon = { tracking_accuracy: 1.0, implied_intake: 95, tracked_calories: 95 };
+      const result = CalorieAdjustmentService.adjustDay(items, recon, windowStats);
+      expect(result.adjustedItems[0].adjusted).toBeUndefined();
+      expect(result.phantomEntry).toBeNull();
+    });
+
+    it('creates phantom-only when no items exist', () => {
+      const recon = { tracking_accuracy: 0.0, implied_intake: 1500, tracked_calories: 0 };
+      const result = CalorieAdjustmentService.adjustDay([], recon, windowStats);
+      expect(result.adjustedItems).toEqual([]);
+      expect(result.phantomEntry.calories).toBe(1500);
+    });
+
+    it('skips adjustment when tracking_accuracy is null', () => {
+      const items = [{ label: 'Apple', grams: 180, calories: 95 }];
+      const recon = { tracking_accuracy: null, implied_intake: -500, tracked_calories: 95 };
+      const result = CalorieAdjustmentService.adjustDay(items, recon, windowStats);
+      expect(result).toBeNull();
+    });
+  });
 });
