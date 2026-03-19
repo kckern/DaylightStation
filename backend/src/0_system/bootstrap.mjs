@@ -2178,6 +2178,7 @@ export async function createNutribotServices(config) {
     conversationStateStore,
     reportRenderer,
     nutribotConfig: rawNutribotConfig = {},
+    reconciliationReader,
     logger = console
   } = config;
 
@@ -2246,6 +2247,7 @@ export async function createNutribotServices(config) {
     reportRenderer,
     barcodeGenerator,
     foodIconsString,
+    reconciliationReader,
     logger
   });
 
@@ -2343,9 +2345,20 @@ export function createHealthServices(config) {
     logger
   });
 
+  // NutriList store for nutrilist endpoints and adjustment data (optional, requires userDataService)
+  let nutriListStore = null;
+  if (userDataService) {
+    nutriListStore = new YamlNutriListDatastore({
+      userDataService,
+      logger
+    });
+  }
+
   // Calorie reconciliation processor (runs after health aggregation)
+  // nutritionItemsReader uses nutriListStore for archive-aware nutrilist access
   const reconciliationProcessor = new ReconciliationProcessor({
     healthStore,
+    nutritionItemsReader: nutriListStore,
     logger
   });
 
@@ -2356,19 +2369,22 @@ export function createHealthServices(config) {
     logger
   });
 
-  // NutriList store for nutrilist endpoints (optional, requires userDataService)
-  let nutriListStore = null;
-  if (userDataService) {
-    nutriListStore = new YamlNutriListDatastore({
-      userDataService,
-      logger
-    });
-  }
+  // Reconciliation reader closure for real-time prompt boost
+  const reconciliationReader = async () => {
+    try {
+      const data = await healthStore.loadReconciliationData(
+        configService.getHeadOfHousehold?.() || 'kckern'
+      );
+      const dates = Object.keys(data).sort();
+      return dates.length > 0 ? data[dates[dates.length - 1]] : null;
+    } catch { return null; }
+  };
 
   return {
     healthStore,
     healthService,
-    nutriListStore
+    nutriListStore,
+    reconciliationReader,
   };
 }
 
