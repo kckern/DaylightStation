@@ -26,6 +26,51 @@ describe('CalorieReconciliationService', () => {
     });
   });
 
+  describe('deriveRollingBmr', () => {
+    const seedBmr = 1700;
+
+    it('returns seed BMR when no high-confidence days', () => {
+      const days = [
+        { confidence: 0.35, solvedBmr: null },
+        { confidence: 0.35, solvedBmr: null },
+      ];
+      const result = CalorieReconciliationService.deriveRollingBmr(days, seedBmr);
+      expect(result.derivedBmr).toBe(seedBmr);
+      expect(result.highConfidenceDayCount).toBe(0);
+    });
+
+    it('averages solved BMR from high-confidence days', () => {
+      const days = [
+        { confidence: 0.8, solvedBmr: 1650 },
+        { confidence: 1.0, solvedBmr: 1750 },
+        { confidence: 1.0, solvedBmr: 1700 },
+        { confidence: 0.35, solvedBmr: null },
+      ];
+      const result = CalorieReconciliationService.deriveRollingBmr(days, seedBmr);
+      expect(result.derivedBmr).toBe(1700);
+      expect(result.highConfidenceDayCount).toBe(3);
+    });
+
+    it('falls back to seed when fewer than 3 high-confidence days', () => {
+      const days = [
+        { confidence: 0.8, solvedBmr: 1650 },
+        { confidence: 0.8, solvedBmr: 1750 },
+      ];
+      const result = CalorieReconciliationService.deriveRollingBmr(days, seedBmr);
+      expect(result.derivedBmr).toBe(seedBmr);
+    });
+
+    it('clamps derived BMR to ±30% of seed', () => {
+      const days = [
+        { confidence: 1.0, solvedBmr: 500 },
+        { confidence: 1.0, solvedBmr: 500 },
+        { confidence: 1.0, solvedBmr: 500 },
+      ];
+      const result = CalorieReconciliationService.deriveRollingBmr(days, seedBmr);
+      expect(result.derivedBmr).toBe(Math.round(seedBmr * 0.7)); // 1190
+    });
+  });
+
   describe('computeConfidence', () => {
     it('returns 1.0 when all signals present', () => {
       expect(CalorieReconciliationService.computeConfidence({
