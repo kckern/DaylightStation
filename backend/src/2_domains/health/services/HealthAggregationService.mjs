@@ -45,7 +45,7 @@ export class HealthAggregator {
    * @returns {HealthMetric}
    */
   static aggregateDayMetrics(date, sources) {
-    const { weight, strava, fitness, nutrition, coaching } = sources;
+    const { weight, strava, fitness, nutrition, coaching, adjustedNutrition } = sources;
 
     // Merge workouts from all sources
     const workouts = HealthAggregator.mergeWorkouts(strava, fitness?.activities || []);
@@ -60,12 +60,27 @@ export class HealthAggregator {
     } : null;
 
     // Build nutrition data
+    const adjustedData = adjustedNutrition ? {
+      calories: adjustedNutrition.calories,
+      protein: adjustedNutrition.protein,
+      carbs: adjustedNutrition.carbs,
+      fat: adjustedNutrition.fat,
+      fiber: adjustedNutrition.fiber,
+      sodium: adjustedNutrition.sodium,
+      sugar: adjustedNutrition.sugar,
+      cholesterol: adjustedNutrition.cholesterol,
+      portion_multiplier: adjustedNutrition.adjustment_metadata?.portion_multiplier,
+      phantom_calories: adjustedNutrition.adjustment_metadata?.phantom_calories,
+      tracking_accuracy: adjustedNutrition.adjustment_metadata?.tracking_accuracy,
+    } : null;
+
     const nutritionData = nutrition ? {
       calories: nutrition.calories,
       protein: nutrition.protein,
       carbs: nutrition.carbs,
       fat: nutrition.fat,
-      foodCount: nutrition.food_items?.length || 0
+      foodCount: nutrition.food_items?.length || 0,
+      adjusted: adjustedData,
     } : null;
 
     // Build steps data

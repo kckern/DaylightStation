@@ -47,14 +47,15 @@ export class AggregateHealthUseCase {
     }
 
     // Load all data sources in parallel (I/O)
-    const [weightData, activityData, fitnessData, nutritionData, existingHealth, coachingData] =
+    const [weightData, activityData, fitnessData, nutritionData, existingHealth, coachingData, adjustedNutritionData] =
       await Promise.all([
         this.#healthStore.loadWeightData(userId),
         this.#healthStore.loadActivityData(userId),
         this.#healthStore.loadFitnessData(userId),
         this.#healthStore.loadNutritionData(userId),
         this.#healthStore.loadHealthData(userId),
-        this.#healthStore.loadCoachingData(userId)
+        this.#healthStore.loadCoachingData(userId),
+        this.#healthStore.loadAdjustedNutritionData(userId).catch(() => ({})),
       ]);
 
     // Generate date range (pure)
@@ -68,7 +69,8 @@ export class AggregateHealthUseCase {
         strava: activityData[date] || [],
         fitness: fitnessData[date],
         nutrition: nutritionData[date],
-        coaching: coachingData[date]
+        coaching: coachingData[date],
+        adjustedNutrition: adjustedNutritionData[date],
       });
       metrics[date] = metric;
     }
