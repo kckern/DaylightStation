@@ -1,6 +1,8 @@
 import { CalorieReconciliationService } from '#domains/health/services/CalorieReconciliationService.mjs';
 import { HealthAggregator } from '#domains/health/services/HealthAggregationService.mjs';
 
+const LBS_TO_KG = 1 / 2.205;
+
 export class ReconciliationProcessor {
   #healthStore;
   #logger;
@@ -67,7 +69,19 @@ export class ReconciliationProcessor {
       const stravaActivities = Array.isArray(strava) ? strava : [];
       const fitnessActivities = fitness?.activities || [];
       const mergedWorkouts = HealthAggregator.mergeWorkouts(stravaActivities, fitnessActivities);
-      const exerciseCalories = mergedWorkouts.reduce((sum, w) => sum + (w.calories || 0), 0);
+
+      // Estimate calories from HR when calories are missing (common for Strava weight training)
+      const weightKg = currWeight ? currWeight * LBS_TO_KG : null;
+      const exerciseCalories = mergedWorkouts.reduce((sum, w) => {
+        if (w.calories > 0) return sum + w.calories;
+        // Fall back to HR-based estimation
+        const hr = w.avgHr || w.strava?.avgHeartrate || w.fitness?.avgHeartrate;
+        const dur = w.duration || w.strava?.minutes || w.fitness?.minutes;
+        if (hr && dur && weightKg) {
+          return sum + CalorieReconciliationService.estimateCaloriesFromHR(hr, dur, weightKg);
+        }
+        return sum;
+      }, 0);
 
       return {
         date,

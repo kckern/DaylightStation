@@ -13,6 +13,28 @@ const MIN_HIGH_CONFIDENCE_DAYS = 3;
 const BMR_CLAMP_FACTOR = 0.3;
 
 export class CalorieReconciliationService {
+  /**
+   * Estimate exercise calories from heart rate and duration when calories are missing.
+   * Uses the Keytel et al. (2005) formula for calorie expenditure from HR.
+   * @param {number} avgHr - average heart rate during exercise
+   * @param {number} minutes - exercise duration in minutes
+   * @param {number} weightKg - body weight in kg
+   * @param {number} age - age in years (default 35)
+   * @param {string} gender - 'male' or 'female' (default 'male')
+   * @returns {number} estimated calories burned
+   */
+  static estimateCaloriesFromHR(avgHr, minutes, weightKg, age = 35, gender = 'male') {
+    if (!avgHr || !minutes || !weightKg) return 0;
+    // Keytel formula: male and female variants
+    let calPerMin;
+    if (gender === 'male') {
+      calPerMin = (-55.0969 + 0.6309 * avgHr + 0.1988 * weightKg + 0.2017 * age) / 4.184;
+    } else {
+      calPerMin = (-20.4022 + 0.4472 * avgHr - 0.1263 * weightKg + 0.074 * age) / 4.184;
+    }
+    return Math.max(0, Math.round(calPerMin * minutes));
+  }
+
   static computeSeedBmr(weightLbs, fatPercent) {
     if (!weightLbs) return null;
     const fat = fatPercent ?? DEFAULT_FAT_PERCENT;
