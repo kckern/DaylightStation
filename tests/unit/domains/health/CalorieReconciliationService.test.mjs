@@ -180,6 +180,29 @@ describe('CalorieReconciliationService', () => {
     });
   });
 
+  describe('estimateCaloriesFromHR', () => {
+    it('estimates calories from HR, duration, and weight', () => {
+      // 120 bpm avg, 30 min, 80 kg male age 35
+      const cal = CalorieReconciliationService.estimateCaloriesFromHR(120, 30, 80);
+      expect(cal).toBeGreaterThan(150);
+      expect(cal).toBeLessThan(400);
+    });
+
+    it('returns 0 when HR is missing', () => {
+      expect(CalorieReconciliationService.estimateCaloriesFromHR(null, 30, 80)).toBe(0);
+    });
+
+    it('returns 0 when duration is missing', () => {
+      expect(CalorieReconciliationService.estimateCaloriesFromHR(120, 0, 80)).toBe(0);
+    });
+
+    it('higher HR produces more calories', () => {
+      const low = CalorieReconciliationService.estimateCaloriesFromHR(100, 30, 80);
+      const high = CalorieReconciliationService.estimateCaloriesFromHR(140, 30, 80);
+      expect(high).toBeGreaterThan(low);
+    });
+  });
+
   describe('computeConfidence', () => {
     it('returns 1.0 when all signals present', () => {
       expect(CalorieReconciliationService.computeConfidence({
