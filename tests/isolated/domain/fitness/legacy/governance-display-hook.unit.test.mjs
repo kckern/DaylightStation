@@ -391,4 +391,91 @@ describe('resolveGovernanceDisplay', () => {
     expect(result.rows.length).toBe(1);
     expect(result.rows[0].userId).toBe('alan');
   });
+
+  test('warning phase does NOT include paused challenge missingUsers', () => {
+    const displayMap = makeDisplayMap([
+      {
+        id: 'dad', displayName: 'Dad', avatarSrc: '/img/dad.jpg',
+        heartRate: 85, zoneId: 'cool', zoneName: 'Cool', zoneColor: '#94a3b8',
+        progress: 0.3, zoneSequence: FULL_ZONE_SEQUENCE, targetHeartRate: 100
+      },
+      {
+        id: 'kid1', displayName: 'Kid1', avatarSrc: '/img/kid1.jpg',
+        heartRate: 115, zoneId: 'active', zoneName: 'Active', zoneColor: '#22c55e',
+        progress: 0.6, zoneSequence: FULL_ZONE_SEQUENCE, targetHeartRate: 130
+      },
+      {
+        id: 'kid2', displayName: 'Kid2', avatarSrc: '/img/kid2.jpg',
+        heartRate: 118, zoneId: 'active', zoneName: 'Active', zoneColor: '#22c55e',
+        progress: 0.65, zoneSequence: FULL_ZONE_SEQUENCE, targetHeartRate: 130
+      }
+    ]);
+
+    const result = resolveGovernanceDisplay(
+      {
+        isGoverned: true,
+        status: 'warning',
+        challengePaused: true,
+        deadline: Date.now() + 20000,
+        gracePeriodTotal: 30,
+        requirements: [
+          { zone: 'active', rule: 'all', missingUsers: ['dad'], satisfied: false }
+        ],
+        challenge: {
+          status: 'pending',
+          zone: 'warm',
+          missingUsers: ['kid1', 'kid2'],
+          paused: true
+        }
+      },
+      displayMap,
+      ZONE_META
+    );
+
+    expect(result.show).toBe(true);
+    expect(result.status).toBe('warning');
+    const rowUserIds = result.rows.map(r => r.userId);
+    expect(rowUserIds).toEqual(['dad']);
+    expect(rowUserIds).not.toContain('kid1');
+    expect(rowUserIds).not.toContain('kid2');
+  });
+
+  test('locked phase DOES include active (non-paused) challenge missingUsers', () => {
+    const displayMap = makeDisplayMap([
+      {
+        id: 'dad', displayName: 'Dad', avatarSrc: '/img/dad.jpg',
+        heartRate: 85, zoneId: 'cool', zoneName: 'Cool', zoneColor: '#94a3b8',
+        progress: 0.3, zoneSequence: FULL_ZONE_SEQUENCE, targetHeartRate: 100
+      },
+      {
+        id: 'kid1', displayName: 'Kid1', avatarSrc: '/img/kid1.jpg',
+        heartRate: 115, zoneId: 'active', zoneName: 'Active', zoneColor: '#22c55e',
+        progress: 0.6, zoneSequence: FULL_ZONE_SEQUENCE, targetHeartRate: 130
+      }
+    ]);
+
+    const result = resolveGovernanceDisplay(
+      {
+        isGoverned: true,
+        status: 'locked',
+        challengePaused: false,
+        requirements: [
+          { zone: 'active', rule: 'all', missingUsers: ['dad'], satisfied: false }
+        ],
+        challenge: {
+          status: 'failed',
+          zone: 'warm',
+          missingUsers: ['kid1'],
+          paused: false
+        }
+      },
+      displayMap,
+      ZONE_META
+    );
+
+    expect(result.show).toBe(true);
+    const rowUserIds = result.rows.map(r => r.userId);
+    expect(rowUserIds).toContain('dad');
+    expect(rowUserIds).toContain('kid1');
+  });
 });

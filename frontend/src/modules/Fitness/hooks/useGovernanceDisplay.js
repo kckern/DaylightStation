@@ -37,8 +37,8 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
     });
   });
 
-  // Challenge requirements (if active and has missing users)
-  if (challenge && (challenge.status === 'pending' || challenge.status === 'failed') && Array.isArray(challenge.missingUsers)) {
+  // Challenge requirements (if active, NOT paused, and has missing users)
+  if (challenge && !challenge.paused && (challenge.status === 'pending' || challenge.status === 'failed') && Array.isArray(challenge.missingUsers)) {
     const targetZoneId = challenge.zone || null;
     challenge.missingUsers.forEach((userId) => {
       const key = normalize(userId);
