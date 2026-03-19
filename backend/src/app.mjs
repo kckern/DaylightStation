@@ -1540,6 +1540,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     conversationStateStore: nutribotStateStore,
     reportRenderer: nutribotReportRenderer,  // Canvas-based PNG report renderer
     nutribotConfig,
+    reconciliationReader: healthServices.reconciliationReader,
     logger: rootLogger.child({ module: 'nutribot' })
   });
 
