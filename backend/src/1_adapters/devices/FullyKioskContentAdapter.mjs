@@ -76,10 +76,21 @@ export class FullyKioskContentAdapter {
    */
   async prepareForContent() {
     const startTime = Date.now();
+    const MAX_PREPARE_MS = 60_000; // Hard ceiling — never stall longer than 60s
     this.#metrics.prepares++;
     const FK_PACKAGE = 'de.ozerov.fully';
     const MAX_FOREGROUND_ATTEMPTS = 15;
     const FOREGROUND_RETRY_MS = 1000;
+
+    /** Check elapsed time and bail if we've exceeded the ceiling. */
+    const checkTimeout = (phase) => {
+      const elapsed = Date.now() - startTime;
+      if (elapsed > MAX_PREPARE_MS) {
+        this.#logger.warn?.('fullykiosk.prepareForContent.timeout', { phase, elapsedMs: elapsed, maxMs: MAX_PREPARE_MS });
+        return true;
+      }
+      return false;
+    };
 
     this.#logger.debug?.('fullykiosk.prepareForContent.start', { host: this.#host, port: this.#port });
 
@@ -105,6 +116,16 @@ export class FullyKioskContentAdapter {
         }
       }
 
+      // Pre-connect ADB once for all subsequent operations (companion launch,
+      // mic check, camera check, force-restart). Without this, a cold ADB daemon
+      // causes cascading 10s timeouts on every shell() call.
+      if (this.#adbAdapter) {
+        const adbConnect = await this.#adbAdapter.connect();
+        if (!adbConnect.ok) {
+          this.#logger.warn?.('fullykiosk.prepareForContent.adbPreconnect.failed', { error: adbConnect.error });
+        }
+      }
+
       // --- Phase 1: Soft prepare (no force-stop) ---
       const fgResult = await this.#verifyForeground(FK_PACKAGE, MAX_FOREGROUND_ATTEMPTS, FOREGROUND_RETRY_MS, startTime);
       if (!fgResult.ok) {
@@ -112,29 +133,31 @@ export class FullyKioskContentAdapter {
       }
 
       // Launch companion apps
-      await this.#launchCompanions();
+      if (!checkTimeout('before-companions')) {
+        await this.#launchCompanions();
+      }
 
       // Check if mic-blocking FKB services are still running
-      const micBlocked = await this.#isMicBlocked();
+      const micBlocked = checkTimeout('before-mic-check') ? false : await this.#isMicBlocked();
 
       if (micBlocked) {
         // --- Phase 2: Force restart needed ---
         this.#logger.info?.('fullykiosk.prepareForContent.micBlocked', { elapsedMs: Date.now() - startTime });
 
-        if (this.#adbAdapter && this.#launchActivity) {
+        if (this.#adbAdapter && this.#launchActivity && !checkTimeout('before-force-restart')) {
           try {
-            const connectResult = await this.#adbAdapter.connect();
-            if (connectResult.ok) {
-              const stopResult = await this.#adbAdapter.shell('am force-stop de.ozerov.fully');
-              this.#logger.info?.('fullykiosk.prepareForContent.adbForceStop', { ok: stopResult.ok });
-              coldRestart = true;
+            // ADB shell() auto-reconnects on "device not found", no manual connect needed
+            const stopResult = await this.#adbAdapter.shell('am force-stop de.ozerov.fully');
+            this.#logger.info?.('fullykiosk.prepareForContent.adbForceStop', { ok: stopResult.ok });
+            coldRestart = true;
 
-              // Brief pause for process to fully terminate
-              await new Promise(r => setTimeout(r, 500));
+            // Brief pause for process to fully terminate
+            await new Promise(r => setTimeout(r, 500));
 
-              const launchResult = await this.#adbAdapter.launchActivity(this.#launchActivity);
-              this.#logger.info?.('fullykiosk.prepareForContent.adbRelaunch', { ok: launchResult.ok });
+            const launchResult = await this.#adbAdapter.launchActivity(this.#launchActivity);
+            this.#logger.info?.('fullykiosk.prepareForContent.adbRelaunch', { ok: launchResult.ok });
 
+            if (!checkTimeout('before-re-verify')) {
               // Re-verify foreground after restart
               const fgResult2 = await this.#verifyForeground(FK_PACKAGE, MAX_FOREGROUND_ATTEMPTS, FOREGROUND_RETRY_MS, startTime);
               if (!fgResult2.ok) {
@@ -143,10 +166,6 @@ export class FullyKioskContentAdapter {
 
               // Re-launch companions with fresh foreground context
               await this.#launchCompanions();
-            } else {
-              this.#logger.warn?.('fullykiosk.prepareForContent.adbRestart.failed', {
-                error: connectResult.error || 'ADB connect failed'
-              });
             }
           } catch (err) {
             this.#logger.warn?.('fullykiosk.prepareForContent.adbRestart.failed', { error: err.message });
@@ -156,9 +175,9 @@ export class FullyKioskContentAdapter {
         this.#logger.info?.('fullykiosk.prepareForContent.micClear', { elapsedMs: Date.now() - startTime });
       }
 
-      // Camera check (runs after either phase)
+      // Camera check (runs after either phase) — skip if already timed out
       let cameraAvailable = false;
-      if (this.#adbAdapter) {
+      if (this.#adbAdapter && !checkTimeout('before-camera-check')) {
         const MAX_CAMERA_ATTEMPTS = 3;
         const CAMERA_RETRY_MS = 2000;
 
@@ -178,8 +197,10 @@ export class FullyKioskContentAdapter {
             attempt: camAttempt, maxAttempts: MAX_CAMERA_ATTEMPTS
           });
 
-          if (camAttempt < MAX_CAMERA_ATTEMPTS) {
+          if (camAttempt < MAX_CAMERA_ATTEMPTS && !checkTimeout('camera-retry')) {
             await new Promise(r => setTimeout(r, CAMERA_RETRY_MS));
+          } else {
+            break;
           }
         }
       } else {
@@ -454,12 +475,6 @@ export class FullyKioskContentAdapter {
     if (!this.#adbAdapter) return false;
 
     try {
-      const connectResult = await this.#adbAdapter.connect();
-      if (!connectResult.ok) {
-        this.#logger.warn?.('fullykiosk.isMicBlocked.connectFailed', { error: connectResult.error });
-        return false;
-      }
-
       const result = await this.#adbAdapter.shell('dumpsys activity services de.ozerov.fully');
       if (!result.ok) {
         this.#logger.warn?.('fullykiosk.isMicBlocked.dumpsysFailed', { error: result.error });

@@ -75,12 +75,33 @@ export class AdbAdapter {
   }
 
   /**
-   * Run a shell command on the device
+   * Run a shell command on the device.
+   * Auto-reconnects once if the device is not found (cold ADB daemon, dropped connection).
    * @param {string} command - Shell command to run
    * @returns {Promise<{ok: boolean, output?: string, error?: string}>}
    */
   async shell(command) {
-    return this.#exec(`adb -s ${this.#serial} shell ${JSON.stringify(command)}`);
+    const result = await this.#exec(`adb -s ${this.#serial} shell ${JSON.stringify(command)}`);
+
+    if (!result.ok && this.#isDeviceNotFound(result.error)) {
+      this.#logger.info?.('adb.shell.autoReconnect', { serial: this.#serial, command });
+      const reconnect = await this.connect();
+      if (reconnect.ok) {
+        return this.#exec(`adb -s ${this.#serial} shell ${JSON.stringify(command)}`);
+      }
+      return { ok: false, error: `reconnect failed: ${reconnect.error}` };
+    }
+
+    return result;
+  }
+
+  /**
+   * Check if an error indicates the device is disconnected.
+   * @private
+   */
+  #isDeviceNotFound(errorMsg) {
+    if (!errorMsg) return false;
+    return errorMsg.includes('not found') || errorMsg.includes('no devices') || errorMsg.includes('offline');
   }
 
   /**
