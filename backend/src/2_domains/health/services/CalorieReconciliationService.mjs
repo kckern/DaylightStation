@@ -18,6 +18,26 @@ export class CalorieReconciliationService {
     return Math.floor(370 + 21.6 * leanMassKg);
   }
 
+  static deriveRollingBmr(dailyRecords, seedBmr) {
+    const highConfDays = dailyRecords.filter(
+      d => d.confidence >= HIGH_CONFIDENCE_THRESHOLD && d.solvedBmr != null
+    );
+
+    if (highConfDays.length < MIN_HIGH_CONFIDENCE_DAYS) {
+      return { derivedBmr: seedBmr, highConfidenceDayCount: highConfDays.length };
+    }
+
+    const avgBmr = Math.round(
+      highConfDays.reduce((sum, d) => sum + d.solvedBmr, 0) / highConfDays.length
+    );
+
+    const lower = Math.round(seedBmr * (1 - BMR_CLAMP_FACTOR));
+    const upper = Math.round(seedBmr * (1 + BMR_CLAMP_FACTOR));
+    const clampedBmr = Math.max(lower, Math.min(upper, avgBmr));
+
+    return { derivedBmr: clampedBmr, highConfidenceDayCount: highConfDays.length };
+  }
+
   static computeConfidence({ hasWeight, hasNutrition, hasSteps }) {
     let score = 0;
     if (hasWeight) score += CONFIDENCE_WEIGHTS.weight;
