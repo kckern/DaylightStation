@@ -11,6 +11,13 @@ const MIN_HIGH_CONFIDENCE_DAYS = 3;
 const BMR_CLAMP_FACTOR = 0.3;
 
 export class CalorieReconciliationService {
+  static computeSeedBmr(weightLbs, fatPercent) {
+    if (!weightLbs) return null;
+    const fat = fatPercent ?? DEFAULT_FAT_PERCENT;
+    const leanMassKg = weightLbs * (1 - fat / 100) * LBS_TO_KG;
+    return Math.floor(370 + 21.6 * leanMassKg);
+  }
+
   static computeConfidence({ hasWeight, hasNutrition, hasSteps }) {
     let score = 0;
     if (hasWeight) score += CONFIDENCE_WEIGHTS.weight;
