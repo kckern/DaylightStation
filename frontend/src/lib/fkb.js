@@ -94,6 +94,21 @@ let _bound = false;
  *
  * @param {Function} callback
  */
+/**
+ * Bind FKB's hardware back button to dispatch a keyboard Escape event.
+ * This lets menu navigation handle "back" uniformly via keydown listeners.
+ * Safe to call multiple times — only binds once.
+ */
+let _backBound = false;
+export function bindBackButton() {
+  if (_backBound || !isFKBAvailable()) return;
+  fully.bind('onBackButton', () => {
+    logger().debug('fkb.backButton');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  });
+  _backBound = true;
+}
+
 export function onResume(callback) {
   _onResumeCallback = callback;
   if (!_bound && isFKBAvailable()) {
