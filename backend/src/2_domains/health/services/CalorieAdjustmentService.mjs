@@ -55,6 +55,47 @@ export class CalorieAdjustmentService {
       phantom: true,
     };
   }
+
+  static adjustDay(nutrilistItems, reconciliation, windowStats) {
+    if (reconciliation.tracking_accuracy == null) return null;
+
+    const { multiplier, maxMultiplier, phantomNeeded } = CalorieAdjustmentService.computePortionMultiplier(
+      reconciliation.tracking_accuracy,
+      windowStats.avgAccuracy,
+      windowStats.stdDevAccuracy
+    );
+
+    const adjustedItems = CalorieAdjustmentService.adjustDayItems(nutrilistItems, multiplier);
+
+    let phantomEntry = null;
+    if (phantomNeeded || (nutrilistItems.length === 0 && reconciliation.implied_intake > 0)) {
+      const scaledCalories = reconciliation.tracked_calories * multiplier;
+      const gapCalories = reconciliation.implied_intake - scaledCalories;
+
+      const totalCal = nutrilistItems.reduce((s, i) => s + (i.calories || 0), 0);
+      const macroRatios = totalCal > 0
+        ? {
+            proteinRatio: nutrilistItems.reduce((s, i) => s + (i.protein || 0) * 4, 0) / totalCal,
+            carbsRatio: nutrilistItems.reduce((s, i) => s + (i.carbs || 0) * 4, 0) / totalCal,
+            fatRatio: nutrilistItems.reduce((s, i) => s + (i.fat || 0) * 9, 0) / totalCal,
+          }
+        : null;
+
+      phantomEntry = CalorieAdjustmentService.computePhantomEntry(gapCalories, macroRatios);
+    }
+
+    return {
+      adjustedItems,
+      phantomEntry,
+      metadata: {
+        portion_multiplier: multiplier,
+        max_multiplier: maxMultiplier,
+        phantom_calories: phantomEntry?.calories || 0,
+        raw_calories: reconciliation.tracked_calories,
+        tracking_accuracy: reconciliation.tracking_accuracy,
+      },
+    };
+  }
 }
 
 export default CalorieAdjustmentService;
