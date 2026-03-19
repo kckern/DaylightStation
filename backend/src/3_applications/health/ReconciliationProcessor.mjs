@@ -1,11 +1,13 @@
 import { CalorieReconciliationService } from '#domains/health/services/CalorieReconciliationService.mjs';
 import { HealthAggregator } from '#domains/health/services/HealthAggregationService.mjs';
+import { CalorieAdjustmentService } from '#domains/health/services/CalorieAdjustmentService.mjs';
 
 const LBS_TO_KG = 1 / 2.205;
 
 export class ReconciliationProcessor {
   #healthStore;
   #logger;
+  #nutritionItemsReader;
 
   constructor(config) {
     if (!config.healthStore) {
@@ -13,6 +15,7 @@ export class ReconciliationProcessor {
     }
     this.#healthStore = config.healthStore;
     this.#logger = config.logger || console;
+    this.#nutritionItemsReader = config.nutritionItemsReader || null;
   }
 
   async process(userId, options = {}) {
@@ -114,11 +117,65 @@ export class ReconciliationProcessor {
     }
     await this.#healthStore.saveReconciliationData(userId, merged);
 
+    // Run calorie adjustment if nutrition items reader is available
+    if (this.#nutritionItemsReader && results.length > 0) {
+      try {
+        await this.#produceAdjustedNutrition(userId, results, windowDates);
+      } catch (error) {
+        this.#logger.error?.('reconciliation.adjustment.failed', {
+          userId, error: error.message
+        });
+      }
+    }
+
     this.#logger.info?.('reconciliation.process.complete', {
       userId, days: results.length, derivedBmr: results[results.length - 1]?.derived_bmr
     });
 
     return results;
+  }
+
+  async #produceAdjustedNutrition(userId, reconciliationResults, windowDates) {
+    const startDate = windowDates[0];
+    const endDate = windowDates[windowDates.length - 1];
+
+    const nutrilistItems = await this.#nutritionItemsReader.findByDateRange(userId, startDate, endDate);
+    const existingAdjusted = await this.#healthStore.loadAdjustedNutritionData(userId);
+
+    const windowStats = CalorieAdjustmentService.computeWindowStats(reconciliationResults);
+    if (!windowStats.avgAccuracy) return;
+
+    // Group nutrilist items by date
+    const itemsByDate = {};
+    for (const item of nutrilistItems) {
+      if (!itemsByDate[item.date]) itemsByDate[item.date] = [];
+      itemsByDate[item.date].push(item);
+    }
+
+    const adjusted = { ...existingAdjusted };
+    for (const record of reconciliationResults) {
+      const dayItems = itemsByDate[record.date] || [];
+      const result = CalorieAdjustmentService.adjustDay(dayItems, record, windowStats);
+      if (!result) continue;
+
+      const allItems = [...result.adjustedItems];
+      if (result.phantomEntry) allItems.push(result.phantomEntry);
+
+      adjusted[record.date] = {
+        calories: allItems.reduce((s, i) => s + (i.calories || 0), 0),
+        protein: allItems.reduce((s, i) => s + (i.protein || 0), 0),
+        carbs: allItems.reduce((s, i) => s + (i.carbs || 0), 0),
+        fat: allItems.reduce((s, i) => s + (i.fat || 0), 0),
+        fiber: allItems.reduce((s, i) => s + (i.fiber || 0), 0),
+        sodium: allItems.reduce((s, i) => s + (i.sodium || 0), 0),
+        sugar: allItems.reduce((s, i) => s + (i.sugar || 0), 0),
+        cholesterol: allItems.reduce((s, i) => s + (i.cholesterol || 0), 0),
+        items: allItems,
+        adjustment_metadata: result.metadata,
+      };
+    }
+
+    await this.#healthStore.saveAdjustedNutritionData(userId, adjusted);
   }
 }
 
