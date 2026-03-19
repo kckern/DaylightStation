@@ -67,7 +67,18 @@ export class ReconciliationProcessor {
       // Deduplicate exercise calories — strava.yml entries may or may not have `calories`.
       // mergeWorkouts takes max(strava, fitness) for duplicate activities.
       const stravaActivities = Array.isArray(strava) ? strava : [];
-      const fitnessActivities = fitness?.activities || [];
+      const rawFitnessActivities = fitness?.activities || [];
+
+      // Deduplicate fitness activities — FitnessSyncer harvester has a known bug
+      // where the same activity appears multiple times in the same day
+      const seen = new Set();
+      const fitnessActivities = rawFitnessActivities.filter(a => {
+        const key = `${a.title}|${a.minutes}|${a.calories}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
       const mergedWorkouts = HealthAggregator.mergeWorkouts(stravaActivities, fitnessActivities);
 
       // Estimate calories from HR when calories are missing (common for Strava weight training)

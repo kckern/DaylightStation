@@ -82,7 +82,7 @@ export class AggregateHealthUseCase {
     // Run calorie reconciliation if processor is available
     if (this.#reconciliationProcessor) {
       try {
-        await this.#reconciliationProcessor.process(userId);
+        await this.#reconciliationProcessor.process(userId, { windowDays: daysBack });
       } catch (error) {
         this.#logger.error?.('health.aggregate.reconciliation_failed', {
           userId, error: error.message
