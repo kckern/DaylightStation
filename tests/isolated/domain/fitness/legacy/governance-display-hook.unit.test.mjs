@@ -440,6 +440,41 @@ describe('resolveGovernanceDisplay', () => {
     expect(rowUserIds).not.toContain('kid2');
   });
 
+  test('hrInactive users are excluded from warning rows even if in missingUsers', () => {
+  const displayMap = makeDisplayMap([
+    {
+      id: 'dad', displayName: 'Dad', avatarSrc: '/img/dad.jpg',
+      heartRate: 85, zoneId: 'cool', zoneName: 'Cool', zoneColor: '#94a3b8',
+      progress: 0.3, zoneSequence: FULL_ZONE_SEQUENCE, targetHeartRate: 100
+    },
+    {
+      id: 'kid1', displayName: 'Kid1', avatarSrc: '/img/kid1.jpg',
+      heartRate: null, zoneId: null, zoneName: null, zoneColor: null,
+      progress: null, zoneSequence: FULL_ZONE_SEQUENCE, targetHeartRate: 100
+    }
+  ]);
+
+  const result = resolveGovernanceDisplay(
+    {
+      isGoverned: true,
+      status: 'warning',
+      deadline: Date.now() + 20000,
+      gracePeriodTotal: 30,
+      requirements: [
+        { zone: 'active', rule: 'all', missingUsers: ['dad', 'kid1'], satisfied: false }
+      ],
+      hrInactiveUsers: ['kid1']
+    },
+    displayMap,
+    ZONE_META
+  );
+
+  expect(result.show).toBe(true);
+  const rowUserIds = result.rows.map(r => r.userId);
+  expect(rowUserIds).toEqual(['dad']);
+  expect(rowUserIds).not.toContain('kid1');
+});
+
   test('locked phase DOES include active (non-paused) challenge missingUsers', () => {
     const displayMap = makeDisplayMap([
       {

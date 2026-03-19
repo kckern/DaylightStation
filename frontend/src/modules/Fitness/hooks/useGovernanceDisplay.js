@@ -13,7 +13,7 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
   const preferGroupLabels = options?.preferGroupLabels ?? false;
   if (!govState?.isGoverned) return null;
 
-  const { status, requirements, challenge, deadline, gracePeriodTotal, videoLocked } = govState;
+  const { status, requirements, challenge, deadline, gracePeriodTotal, videoLocked, hrInactiveUsers } = govState;
 
   if (status === 'unlocked') {
     return { show: false, status, rows: [] };
@@ -23,6 +23,7 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
   const userTargets = new Map(); // userId → targetZoneId (highest severity wins)
   const zoneMap = zoneMeta?.map || {};
   const rankOf = (zoneId) => zoneMap[zoneId]?.rank ?? -1;
+  const hrInactiveSet = new Set((hrInactiveUsers || []).map(normalize));
 
   // Base requirements
   (requirements || []).forEach((req) => {
@@ -30,6 +31,7 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
     const targetZoneId = req.zone || null;
     (req.missingUsers || []).forEach((userId) => {
       const key = normalize(userId);
+      if (hrInactiveSet.has(key)) return;
       const existing = userTargets.get(key);
       if (!existing || rankOf(targetZoneId) > rankOf(existing.targetZoneId)) {
         userTargets.set(key, { userId, targetZoneId });
@@ -42,6 +44,7 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
     const targetZoneId = challenge.zone || null;
     challenge.missingUsers.forEach((userId) => {
       const key = normalize(userId);
+      if (hrInactiveSet.has(key)) return;
       const existing = userTargets.get(key);
       if (!existing || rankOf(targetZoneId) > rankOf(existing.targetZoneId)) {
         userTargets.set(key, { userId, targetZoneId });

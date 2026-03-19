@@ -64,6 +64,7 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
 
   const computeDeviceActive = React.useCallback((device) => {
     if (!device) return false;    // Prefer explicit active state if available (from Roster/ActivityMonitor)
+    if (device.hrInactive) return false;
     if (device.isActive !== undefined) return device.isActive;
     
     // Fallback to timestamp check    const lastSeen = Number(device.lastSeen ?? device.timestamp);

@@ -73,9 +73,9 @@ export const fromRosterEntry = (rosterEntry, options = {}) => {
     displayLabel,
     profileId: rosterEntry.profileId || rosterEntry.id || null,
     deviceId: rosterEntry.hrDeviceId || (rawDevice?.deviceId) || null,
-    heartRate: Number.isFinite(rosterEntry.heartRate) 
-      ? rosterEntry.heartRate 
-      : (rawDevice?.heartRate ?? null),
+    heartRate: Number.isFinite(rosterEntry.heartRate) && rosterEntry.heartRate > 0
+      ? rosterEntry.heartRate
+      : (rawDevice?.heartRate > 0 ? rawDevice.heartRate : null),
     isActive,
     zoneId,
     zoneColor,
@@ -85,7 +85,8 @@ export const fromRosterEntry = (rosterEntry, options = {}) => {
     lastSeen: rawDevice?.lastSeen || Date.now(),
     metadata: rosterEntry.metadata || null,
     // Preserve type for backward compatibility with device-based code
-    type: 'heart_rate'
+    type: 'heart_rate',
+    hrInactive: rosterEntry.hrInactive ?? false
   };
 };
 
