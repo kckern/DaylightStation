@@ -360,7 +360,7 @@ export class FullyKioskContentAdapter {
     this.#logger.debug?.('fullykiosk.sendCommand.start', { cmd, host: this.#host, port: this.#port, params: logParams, logUrl });
 
     try {
-      const response = await this.#httpClient.get(url);
+      const response = await this.#httpClient.get(url, { timeout: 10_000 });
       const elapsedMs = Date.now() - startTime;
 
       this.#logger.debug?.('fullykiosk.sendCommand.response', {
