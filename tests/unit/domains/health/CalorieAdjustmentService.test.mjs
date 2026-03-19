@@ -63,4 +63,55 @@ describe('CalorieAdjustmentService', () => {
       expect(result.phantomNeeded).toBe(true);
     });
   });
+
+  describe('adjustDayItems', () => {
+    it('scales grams and all macros proportionally', () => {
+      const items = [{
+        label: 'Chicken Breast', grams: 150, calories: 250, protein: 47,
+        carbs: 0, fat: 5, fiber: 0, sugar: 0, sodium: 100, cholesterol: 80, color: 'yellow',
+      }];
+      const adjusted = CalorieAdjustmentService.adjustDayItems(items, 1.33);
+      expect(adjusted[0].grams).toBe(200);
+      expect(adjusted[0].calories).toBe(333);
+      expect(adjusted[0].protein).toBe(63);
+      expect(adjusted[0].adjusted).toBe(true);
+      expect(adjusted[0].original_grams).toBe(150);
+    });
+
+    it('returns items unchanged when multiplier is 1.0', () => {
+      const items = [{ label: 'Apple', grams: 180, calories: 95, protein: 0, carbs: 25, fat: 0 }];
+      const adjusted = CalorieAdjustmentService.adjustDayItems(items, 1.0);
+      expect(adjusted[0].grams).toBe(180);
+      expect(adjusted[0].adjusted).toBeUndefined();
+    });
+
+    it('handles empty items array', () => {
+      expect(CalorieAdjustmentService.adjustDayItems([], 1.5)).toEqual([]);
+    });
+  });
+
+  describe('computePhantomEntry', () => {
+    it('creates phantom entry with macro split from day ratios', () => {
+      const ratios = { proteinRatio: 0.30, carbsRatio: 0.40, fatRatio: 0.30 };
+      const phantom = CalorieAdjustmentService.computePhantomEntry(500, ratios);
+      expect(phantom.label).toBe('Estimated Untracked Intake');
+      expect(phantom.calories).toBe(500);
+      expect(phantom.protein).toBe(38);
+      expect(phantom.carbs).toBe(50);
+      expect(phantom.fat).toBe(17);
+      expect(phantom.phantom).toBe(true);
+    });
+
+    it('uses default 30/40/30 split when ratios are null', () => {
+      const phantom = CalorieAdjustmentService.computePhantomEntry(300, null);
+      expect(phantom.protein).toBe(23);
+      expect(phantom.carbs).toBe(30);
+      expect(phantom.fat).toBe(10);
+    });
+
+    it('returns null when gap is zero or negative', () => {
+      expect(CalorieAdjustmentService.computePhantomEntry(0, null)).toBeNull();
+      expect(CalorieAdjustmentService.computePhantomEntry(-50, null)).toBeNull();
+    });
+  });
 });

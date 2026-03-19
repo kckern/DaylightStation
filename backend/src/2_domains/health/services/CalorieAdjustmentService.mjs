@@ -23,6 +23,38 @@ export class CalorieAdjustmentService {
     const phantomNeeded = rawMultiplier > maxMultiplier;
     return { multiplier, maxMultiplier, phantomNeeded };
   }
+
+  static adjustDayItems(nutrilistItems, multiplier) {
+    if (!nutrilistItems?.length || multiplier === 1.0) return nutrilistItems;
+    return nutrilistItems.map(item => {
+      const scaled = { ...item };
+      scaled.original_grams = item.grams;
+      scaled.grams = Math.round(item.grams * multiplier);
+      scaled.calories = Math.round((item.calories || 0) * multiplier);
+      scaled.protein = Math.round((item.protein || 0) * multiplier);
+      scaled.carbs = Math.round((item.carbs || 0) * multiplier);
+      scaled.fat = Math.round((item.fat || 0) * multiplier);
+      scaled.fiber = Math.round((item.fiber || 0) * multiplier);
+      scaled.sugar = Math.round((item.sugar || 0) * multiplier);
+      scaled.sodium = Math.round((item.sodium || 0) * multiplier);
+      scaled.cholesterol = Math.round((item.cholesterol || 0) * multiplier);
+      scaled.adjusted = true;
+      return scaled;
+    });
+  }
+
+  static computePhantomEntry(gapCalories, macroRatios) {
+    if (!gapCalories || gapCalories <= 0) return null;
+    const ratios = macroRatios || DEFAULT_MACRO_SPLIT;
+    return {
+      label: 'Estimated Untracked Intake',
+      calories: Math.round(gapCalories),
+      protein: Math.round((gapCalories * ratios.proteinRatio) / 4),
+      carbs: Math.round((gapCalories * ratios.carbsRatio) / 4),
+      fat: Math.round((gapCalories * ratios.fatRatio) / 9),
+      phantom: true,
+    };
+  }
 }
 
 export default CalorieAdjustmentService;
