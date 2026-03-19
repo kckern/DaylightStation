@@ -102,6 +102,25 @@ export class IHealthDataDatastore {
   async saveReconciliationData(userId, data) {
     throw new Error('Not implemented');
   }
+
+  /**
+   * Load adjusted nutrition data for a user
+   * @param {string} userId
+   * @returns {Promise<Object>} Adjusted nutrition data keyed by date
+   */
+  async loadAdjustedNutritionData(userId) {
+    throw new Error('Not implemented');
+  }
+
+  /**
+   * Save adjusted nutrition data for a user
+   * @param {string} userId
+   * @param {Object} data - Adjusted nutrition data keyed by date
+   * @returns {Promise<void>}
+   */
+  async saveAdjustedNutritionData(userId, data) {
+    throw new Error('Not implemented');
+  }
 }
 
 export default IHealthDataDatastore;
