@@ -4,12 +4,13 @@
  * Replaces inline orchestration from the device router. Emits WebSocket progress
  * events at each step so the phone UI can show real-time feedback.
  *
- * Steps: power_on -> verify_display -> prepare_content -> load_content
+ * Steps: power_on -> verify_display -> set_volume -> prepare_content -> load_content
  *
  * @module applications/devices/services
  */
 
-const STEPS = ['power', 'verify', 'prepare', 'load'];
+const STEPS = ['power', 'verify', 'volume', 'prepare', 'load'];
+const VOLUME_TIMEOUT_MS = 3000;
 
 export class WakeAndLoadService {
   #deviceService;
@@ -111,7 +112,39 @@ export class WakeAndLoadService {
       this.#logger.info?.('wake-and-load.verify.done', { deviceId });
     }
 
-    // --- Step 3: Prepare Content ---
+    // --- Step 3: Set Volume ---
+    const volumeLevel = query.volume != null ? Number(query.volume) : device.defaultVolume;
+
+    if (volumeLevel != null && device.hasCapability('volume')) {
+      this.#emitProgress(topic, 'volume', 'running');
+      this.#logger.info?.('wake-and-load.volume.start', { deviceId, level: volumeLevel });
+
+      try {
+        const volumeResult = await Promise.race([
+          device.setVolume(volumeLevel),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), VOLUME_TIMEOUT_MS))
+        ]);
+        result.steps.volume = volumeResult;
+        this.#emitProgress(topic, 'volume', 'done', { level: volumeLevel });
+        this.#logger.info?.('wake-and-load.volume.done', { deviceId, level: volumeLevel, ok: volumeResult.ok });
+      } catch (err) {
+        result.steps.volume = { ok: false, error: err.message };
+        this.#emitProgress(topic, 'volume', 'done', { warning: err.message });
+        this.#logger.warn?.('wake-and-load.volume.failed', { deviceId, level: volumeLevel, error: err.message });
+      }
+    } else {
+      result.steps.volume = { skipped: true };
+      this.#logger.debug?.('wake-and-load.volume.skipped', {
+        deviceId,
+        reason: volumeLevel == null ? 'no_volume_param' : 'no_volume_capability'
+      });
+    }
+
+    // Remove volume from query so it's not passed to the frontend URL
+    const contentQuery = { ...query };
+    delete contentQuery.volume;
+
+    // --- Step 4: Prepare Content ---
     this.#emitProgress(topic, 'prepare', 'running');
     this.#logger.info?.('wake-and-load.prepare.start', { deviceId });
 
@@ -133,11 +166,11 @@ export class WakeAndLoadService {
     const coldWake = !!prepResult.coldRestart;
     const cameraAvailable = prepResult.cameraAvailable !== false;
 
-    // --- Step 4: Load Content ---
+    // --- Step 5: Load Content ---
     this.#emitProgress(topic, 'load', 'running');
-    this.#logger.info?.('wake-and-load.load.start', { deviceId, query });
+    this.#logger.info?.('wake-and-load.load.start', { deviceId, query: contentQuery });
 
-    const loadResult = await device.loadContent('/tv', query);
+    const loadResult = await device.loadContent('/tv', contentQuery);
     result.steps.load = loadResult;
 
     if (!loadResult.ok) {

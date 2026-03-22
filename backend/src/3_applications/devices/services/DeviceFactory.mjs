@@ -75,7 +75,7 @@ export class DeviceFactory {
     }
 
     return new Device(
-      { id: deviceId, type: deviceConfig.type },
+      { id: deviceId, type: deviceConfig.type, defaultVolume: deviceConfig.default_volume },
       capabilities,
       { logger: this.#logger }
     );
