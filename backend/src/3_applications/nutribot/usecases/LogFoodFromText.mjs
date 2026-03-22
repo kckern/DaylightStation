@@ -776,14 +776,16 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
   async #tryRevisionFallback(userId, conversationId, text, statusMsgId, existingLogMessageId = null, messaging) {
     this.#logger.debug?.('logText.revisionFallback.start', { conversationId, text });
 
-    const messageToUpdate = existingLogMessageId || statusMsgId;
-
-    // Check conversation state for pending log UUID
+    // Check conversation state for pending log UUID and originalMessageId
     let pendingLogUuid = null;
+    let originalMessageId = null;
     if (this.#conversationStateStore) {
       const state = await this.#conversationStateStore.get(conversationId);
       pendingLogUuid = state?.flowState?.pendingLogUuid;
+      originalMessageId = state?.flowState?.originalMessageId;
     }
+
+    const messageToUpdate = originalMessageId || existingLogMessageId || statusMsgId;
 
     if (!pendingLogUuid) {
       return { handled: false };
@@ -840,6 +842,11 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
       await this.#foodLogStore.save(updatedLog);
     }
 
+    if (this.#conversationStateStore) {
+      await this.#conversationStateStore.clear(conversationId);
+      this.#logger.debug?.('logText.revisionFallback.stateCleared', { conversationId });
+    }
+
     const logDate = updatedLog.meal?.date || updatedLog.date;
     const dateHeader = formatDateHeader(logDate, { timezone: this.#getTimezone(), now: new Date() });
     const foodList = formatFoodList(finalItems);
@@ -850,6 +857,15 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
       choices: buttons,
       inline: true,
     });
+
+    // Delete the "Analyzing..." status message if it's different from the target
+    if (statusMsgId && statusMsgId !== messageToUpdate) {
+      try {
+        await messaging.deleteMessage(statusMsgId);
+      } catch (e) {
+        this.#logger.debug?.('logText.revisionFallback.deleteStatus.failed', { error: e.message });
+      }
+    }
 
     this.#logger.info?.('logText.revisionFallback.success', { logUuid: updatedLog.id, itemCount: finalItems.length });
 
