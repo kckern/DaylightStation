@@ -1833,10 +1833,13 @@ export class FitnessSession {
     try {
       if (this.treasureBox) {
         this.treasureBox.stop();
-        // MEMORY LEAK FIX: Clear accumulated timeline data on session end
-        this.treasureBox.reset();
       }
       sessionData = this.summary;
+      if (this.treasureBox) {
+        // MEMORY LEAK FIX: Clear accumulated timeline data on session end
+        // Must happen AFTER summary capture so coins/buckets are preserved
+        this.treasureBox.reset();
+      }
     } catch(_){}
     
     if (sessionData) this._persistSession(sessionData, { force: true });
