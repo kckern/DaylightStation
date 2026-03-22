@@ -12,6 +12,7 @@ import {
   getStats
 } from '#system/utils/FileIO.mjs';
 import { normalizeListItem, extractContentId, normalizeListConfig } from './listConfigNormalizer.mjs';
+import { getCurrentDate } from '#system/utils/time.mjs';
 
 // Threshold for considering an item "watched" (90%)
 const WATCHED_THRESHOLD = 90;
@@ -47,8 +48,10 @@ const JS_DAY_TO_ABBREV = ['Sunday', 'M', 'T', 'W', 'Th', 'F', 'Saturday'];
  * Within priority 1: reverse date order (DESC — most recent past week first)
  * Within priority 2-3: same as 0-1
  */
-function _getCascadePriority(meta, now) {
-  const isCurrentWeek = !meta.skipAfter || new Date(meta.skipAfter) >= now;
+function _getCascadePriority(meta, todayStr) {
+  // Compare date strings directly (YYYY-MM-DD) to avoid timezone pitfalls
+  // todayStr is the local date from config-driven timezone
+  const isCurrentWeek = !meta.skipAfter || meta.skipAfter >= todayStr;
   const vs = meta.versionState;
 
   if (!vs || vs === 'unwatched') {
@@ -657,18 +660,21 @@ export class ListAdapter {
       // Keep skipAfter items in the queue (for catchup) — cascade sort deprioritizes them
       // Only skip if there's no versionState (existing behavior for non-version lists)
       if (!meta.versionState) {
-        const skipDate = new Date(meta.skipAfter);
-        if (skipDate < new Date()) return true;
+        const tz = this.configService?.getTimezone?.() || 'America/Los_Angeles';
+        const todayStr = getCurrentDate(tz);
+        if (meta.skipAfter < todayStr) return true;
       }
     }
 
     if (meta.waitUntil) {
-      const waitDate = new Date(meta.waitUntil);
+      const tz = this.configService?.getTimezone?.() || 'America/Los_Angeles';
+      const todayStr = getCurrentDate(tz);
       if (meta.versionState) {
         // Version-rotation lists: strict wait_until enforcement
-        if (waitDate > new Date()) return true;
+        if (meta.waitUntil > todayStr) return true;
       } else {
         // Non-version lists: 2-day grace period (existing behavior)
+        const waitDate = new Date(meta.waitUntil);
         const twoDaysFromNow = new Date();
         twoDaysFromNow.setDate(twoDaysFromNow.getDate() + 2);
         if (waitDate > twoDaysFromNow) return true;
@@ -1111,14 +1117,15 @@ export class ListAdapter {
       // Current week: source order ASC (count up)
       // Past items: reverse source order DESC (countdown from where current week starts)
       if (list?.children?.some(c => c.metadata?.versionState)) {
-        const now = new Date();
+        const tz = this.configService?.getTimezone?.() || 'America/Los_Angeles';
+        const todayStr = getCurrentDate(tz);
         // Tag with source index for reverse ordering
         list.children.forEach((c, i) => { c._srcIdx = i; });
         list.children.sort((a, b) => {
           const ma = a.metadata || {};
           const mb = b.metadata || {};
-          const cascadeA = _getCascadePriority(ma, now);
-          const cascadeB = _getCascadePriority(mb, now);
+          const cascadeA = _getCascadePriority(ma, todayStr);
+          const cascadeB = _getCascadePriority(mb, todayStr);
           if (cascadeA !== cascadeB) return cascadeA - cascadeB;
           // Current week (0, 2): preserve source order ASC
           if (cascadeA === 0 || cascadeA === 2) return 0;
