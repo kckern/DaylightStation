@@ -74,10 +74,18 @@ function ScreenAutoplay() {
 
     // Emit appropriate action after a brief delay to let the screen framework mount
     setTimeout(() => {
-      if (autoplay.queue) {
+      if (autoplay.compose) {
+        bus.emit('media:queue', { compose: true, sources: autoplay.compose.sources, ...autoplay.compose });
+      } else if (autoplay.queue) {
         bus.emit('media:queue', { contentId: autoplay.queue.contentId, ...autoplay.queue });
       } else if (autoplay.play) {
         bus.emit('media:play', { contentId: autoplay.play.contentId, ...autoplay.play });
+      } else if (autoplay.display) {
+        bus.emit('display:content', autoplay.display);
+      } else if (autoplay.read) {
+        bus.emit('display:content', { ...autoplay.read, mode: 'reader' });
+      } else if (autoplay.launch) {
+        bus.emit('media:play', { contentId: autoplay.launch.contentId, ...autoplay.launch });
       } else if (autoplay.open) {
         bus.emit('menu:open', { menuId: autoplay.open.app });
       } else if (autoplay.list) {
