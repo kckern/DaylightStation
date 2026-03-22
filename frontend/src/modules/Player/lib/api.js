@@ -12,7 +12,7 @@ import { DaylightAPI } from '../../../lib/api.mjs';
  * @param {string} params.session - Optional session identifier
  * @returns {Promise<Object>} Media information
  */
-export async function fetchMediaInfo({ contentId, plex, media, shuffle, maxVideoBitrate, maxResolution, session }) {
+export async function fetchMediaInfo({ contentId, plex, media, shuffle, maxVideoBitrate, maxResolution, session, resume }) {
   // Normalize legacy params to contentId — backend handles all source resolution
   const effectiveContentId = contentId || (plex != null ? String(plex) : null) || media || null;
   if (!effectiveContentId) return null;
@@ -30,6 +30,7 @@ export async function fetchMediaInfo({ contentId, plex, media, shuffle, maxVideo
   if (maxVideoBitrate !== undefined) queryCommon.maxVideoBitrate = maxVideoBitrate;
   if (maxResolution !== undefined) queryCommon.maxResolution = maxResolution;
   if (session !== undefined && session !== null) queryCommon.session = session;
+  if (resume === false) queryCommon.resume = 'false';
 
   if (shuffle) {
     const url = buildUrl(`api/v1/play/${effectiveContentId}/shuffle`, queryCommon);

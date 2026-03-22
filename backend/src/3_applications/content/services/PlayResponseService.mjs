@@ -50,7 +50,7 @@ export class PlayResponseService {
    * @param {Object} [options.adapter] - Content adapter instance (for format resolution)
    * @returns {Object} Play response DTO
    */
-  toPlayResponse(item, watchState = null, { adapter } = {}) {
+  toPlayResponse(item, watchState = null, { adapter, resume } = {}) {
     const response = {
       id: item.id,
       assetId: item.id,
@@ -66,7 +66,8 @@ export class PlayResponseService {
     };
 
     // Add resume position if in progress (use domain entity)
-    if (response.resumable && watchState?.playhead > 0 && watchState?.duration > 0) {
+    // Skip if resume explicitly disabled (e.g., list items with resume: false)
+    if (resume !== false && response.resumable && watchState?.playhead > 0 && watchState?.duration > 0) {
       const progress = new MediaProgress(watchState);
       if (progress.isInProgress()) {
         response.resume_position = progress.playhead;
