@@ -1,0 +1,14 @@
+{
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/coverage/**": true,
+    "**/logs/**": true,
+    "**/.git/objects/**": true,
+    "**/test-results/**": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/coverage": true,
+    "**/logs": true
+  }
+}
