@@ -283,6 +283,9 @@ export function PlayerOverlayLoading({
 
   const logLabel = overlayLogLabel || waitKey || '';
   const logOverlaySummary = useCallback(() => {
+    // Suppress noisy logging during normal healthy playback (overlay hidden, status playing)
+    if (!isVisible && status === 'playing') return;
+
     const now = Date.now();
     const timestampLabel = new Date(now).toISOString();
     const visibleDurationMs = visibleSinceRef.current ? now - visibleSinceRef.current : null;
@@ -320,7 +323,7 @@ export function PlayerOverlayLoading({
         context: overlayLogContext
       });
     }
-  }, [overlayRevealDelayMs, timerSummary, seekSummary, mediaSummary, startupSummary, logLabel, overlayLogContext, sessionInstance, statusLabel, countdownSeconds, intentPositionDisplay, normalizedMediaDetails, isStartupPhase, startupWatchdogState, stalled, waitingToPlay, waitKey, overlayLogLabel]);
+  }, [isVisible, status, overlayRevealDelayMs, timerSummary, seekSummary, mediaSummary, startupSummary, logLabel, overlayLogContext, sessionInstance, statusLabel, countdownSeconds, intentPositionDisplay, normalizedMediaDetails, isStartupPhase, startupWatchdogState, stalled, waitingToPlay, waitKey, overlayLogLabel]);
 
   // Use a ref to store the latest logOverlaySummary function to avoid timer recreation
   const logOverlaySummaryRef = useRef(logOverlaySummary);
