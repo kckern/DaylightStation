@@ -141,9 +141,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
       const key = e.key || e.code?.replace(/^(Digit|Numpad)/, '');
       if (key !== '4') return;
       if (inputHealthyRef.current) return; // NumpadAdapter is handling input
-      const url = new URL(window.location.href);
-      url.searchParams.set('_cb', Date.now());
-      window.location.replace(url.href);
+      window.location.reload();
     };
     window.addEventListener('keydown', failsafe);
     return () => window.removeEventListener('keydown', failsafe);

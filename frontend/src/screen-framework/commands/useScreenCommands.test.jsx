@@ -33,16 +33,16 @@ describe('useScreenCommands', () => {
     expect(actionBus.emit).toHaveBeenCalledWith('escape', {});
   });
 
-  it('navigates away on WS reload command (cache-bust)', () => {
-    const replaceMock = vi.fn();
+  it('calls window.location.reload on WS reload command', () => {
+    const reloadMock = vi.fn();
     Object.defineProperty(window, 'location', {
-      value: { ...window.location, href: 'http://localhost/screen/office', replace: replaceMock },
+      value: { ...window.location, reload: reloadMock },
       writable: true,
       configurable: true,
     });
     renderHook(() => useScreenCommands({ commands: true }, actionBus));
     act(() => capturedCallback({ action: 'reload' }));
-    expect(replaceMock).toHaveBeenCalled();
+    expect(reloadMock).toHaveBeenCalled();
     expect(actionBus.emit).not.toHaveBeenCalled();
   });
 

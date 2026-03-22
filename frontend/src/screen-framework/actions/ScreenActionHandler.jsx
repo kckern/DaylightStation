@@ -241,13 +241,7 @@ export function ScreenActionHandler({ actions = {} }) {
         if (step.when === 'idle') {
           logger().debug('escape.chain', { matched: step.when, action: step.do });
           if (step.do === 'reload') {
-            try {
-              const url = new URL(window.location.href);
-              url.searchParams.set('_cb', Date.now());
-              window.location.replace(url.href);
-            } catch {
-              window.location.reload();
-            }
+            window.location.reload();
           }
           return;
         }

@@ -67,13 +67,10 @@ export function useScreenCommands(wsConfig, actionBus) {
       return;
     }
 
-    // Reload (hard page refresh — cache-bust to clear stale JS chunks)
+    // Reload (hard page refresh — server sends no-cache on HTML)
     if (data.action === 'reload') {
       logger().info('commands.reload');
-      // Append cache-bust param to force fresh asset fetch after deploys
-      const url = new URL(window.location.href);
-      url.searchParams.set('_cb', Date.now());
-      window.location.replace(url.href);
+      window.location.reload();
       return;
     }
 
