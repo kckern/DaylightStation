@@ -179,6 +179,11 @@
     }
 }
 
+.audio-player.blackout {
+    background-color: #000;
+    .audio-content, .progress-bar { visibility: hidden; }
+}
+
 .audio-player .audio-content {
     display: flex;
     flex-direction: column;
