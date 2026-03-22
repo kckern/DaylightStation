@@ -306,7 +306,8 @@ export function createPlayRouter(config) {
         watchState.playhead = watchState.bookmark.playhead;
       }
 
-      res.json(playResponseService.toPlayResponse(item, watchState, { adapter }));
+      const resumeOverride = req.query.resume === 'false' ? false : undefined;
+      res.json(playResponseService.toPlayResponse(item, watchState, { adapter, resume: resumeOverride }));
   }));
 
   // GET /:source - handles compound IDs like /play/plex:12345 and heuristics like /play/12345

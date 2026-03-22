@@ -253,7 +253,8 @@ export function SinglePlayer(props = {}) {
       shuffle,
       maxVideoBitrate: play?.maxVideoBitrate,
       maxResolution: play?.maxResolution,
-      session: plexClientSession
+      session: plexClientSession,
+      resume: play?.resume
     });
 
     if (info) {
