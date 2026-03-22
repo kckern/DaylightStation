@@ -88,6 +88,8 @@ export class HomeAssistantDeviceAdapter {
     const allOk = results.every(r => r.ok);
     const anyVerified = results.some(r => r.verified === true);
     const anyVerifyFailed = results.some(r => r.verifyFailed === true);
+    const allUnverifiedSkipped = !anyVerified &&
+      results.every(r => r.verified === true || r.verifySkipped === 'no_state_sensor');
     this.#metrics.operations.on++;
 
     return {
@@ -95,6 +97,7 @@ export class HomeAssistantDeviceAdapter {
       displays: results,
       verified: anyVerified,
       verifyFailed: anyVerifyFailed,
+      ...(allUnverifiedSkipped && { verifySkipped: 'no_state_sensor' }),
       attempts: Math.max(...results.map(r => r.attempts || 0)),
       elapsedMs: Date.now() - startTime
     };
