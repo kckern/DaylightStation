@@ -111,6 +111,27 @@ export class LogFoodFromText {
     }
 
     try {
+      // SHORT-CIRCUIT: If in revision mode, handle revision directly
+      // Skip generic AI call and status message creation — update original message in-place
+      if (isRevisionMode && pendingLogUuid) {
+        this.#logger.info?.('logText.revisionShortCircuit', {
+          conversationId, pendingLogUuid, originalMessageId, text,
+        });
+
+        const revisionResult = await this.#handleRevisionDirect({
+          userId, conversationId, pendingLogUuid, originalMessageId,
+          text, messageId, messaging,
+        });
+
+        if (revisionResult) return revisionResult;
+
+        // Stale revision state — log not found or not pending.
+        this.#logger.warn?.('logText.revisionShortCircuit.staleState', { conversationId, pendingLogUuid });
+        await messaging.sendMessage('Your revision session has expired. Please log the food again and try revising.', {});
+        if (messageId) await this.#deleteMessageWithRetry(messaging, messageId);
+        return { success: false, error: 'Revision session expired' };
+      }
+
       // 1. Create status indicator (or use existing message for revision flows)
       const truncatedText = text.length > 300 ? text.substring(0, 300) + '...' : text;
       let status = null;
@@ -585,6 +606,164 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
   }
 
   /**
+   * Handle revision directly — short-circuit path that skips generic AI detection.
+   * Updates the original message in-place instead of creating new messages.
+   * @private
+   * @returns {object|null} Result object if successful, null if log not found
+   */
+  async #handleRevisionDirect({ userId, conversationId, pendingLogUuid, originalMessageId, text, messageId, messaging }) {
+    // 1. Load the existing log
+    let targetLog = null;
+    if (this.#foodLogStore) {
+      targetLog = await this.#foodLogStore.findByUuid(pendingLogUuid, userId);
+    }
+
+    if (!targetLog || targetLog.status !== 'pending') {
+      this.#logger.warn?.('logText.revisionDirect.logNotFound', { conversationId, pendingLogUuid });
+      return null;
+    }
+
+    const isImageLog = targetLog.metadata?.source === 'image';
+
+    // 2. Update original message to show "Processing revision..."
+    if (originalMessageId) {
+      const processingPayload = isImageLog
+        ? { caption: '🔍 Processing revision...' }
+        : { text: '🔍 Processing revision...' };
+      try {
+        await messaging.updateMessage(originalMessageId, processingPayload);
+      } catch (e) {
+        this.#logger.debug?.('logText.revisionDirect.processingUpdate.failed', { error: e.message });
+      }
+    }
+
+    // 3. Build contextual prompt with original items
+    const originalItems = (targetLog.items || [])
+      .map((item) => {
+        const qty = item.quantity || item.amount || 1;
+        const unit = item.unit || '';
+        const name = item.label || item.name || 'Unknown';
+        return `- ${qty} ${unit} ${name} (${item.calories || 0} cal)`;
+      })
+      .join('\n');
+
+    const contextualText = `Original items:\n${originalItems}\n\nUser revision: "${text}"`;
+
+    // 4-10. AI call, parse, update log, and update message — wrapped so we can
+    // restore on failure. User's message is NOT deleted until after this succeeds.
+    let updatedLog;
+    let finalItems;
+    let messageToUpdate;
+    try {
+      // 4. Call AI with revision-aware prompt
+      const prompt = this.#buildDetectionPrompt(contextualText);
+      const response = await this.#aiGateway.chat(prompt, { maxTokens: 4096 });
+
+      // 5. Parse response
+      const { items: revisedItems, date: revisedDate, time: revisedTime } = this.#parseFoodResponse(response);
+      finalItems = revisedItems.length > 0 ? revisedItems : targetLog.items || [];
+
+      if (finalItems.length === 0) {
+        // Truly empty — restore original message with buttons
+        const existingDate = targetLog.meal?.date || targetLog.date;
+        const dateHeader = formatDateHeader(existingDate, { timezone: this.#getTimezone(), now: new Date() });
+        const foodList = formatFoodList(targetLog.items || []);
+        const buttons = this.#buildActionButtons(targetLog.id);
+
+        if (originalMessageId) {
+          const restorePayload = isImageLog
+            ? { caption: `${dateHeader}\n\n${foodList}`, choices: buttons, inline: true }
+            : { text: `${dateHeader}\n\n${foodList}`, choices: buttons, inline: true };
+          await messaging.updateMessage(originalMessageId, restorePayload);
+        }
+
+        // Delete user's text message — safe to do now since we've restored the original
+        if (messageId) {
+          await this.#deleteMessageWithRetry(messaging, messageId);
+        }
+
+        return {
+          success: true,
+          nutrilogUuid: targetLog.id,
+          messageId: originalMessageId,
+          itemCount: (targetLog.items || []).length,
+          revised: true,
+          note: 'Revision produced no new items; original items preserved',
+        };
+      }
+
+      // 6. Update log with revised items
+      const revisionTimestamp = new Date();
+      updatedLog = targetLog.updateItems(finalItems, revisionTimestamp);
+
+      const existingDate = targetLog.meal?.date || targetLog.date;
+      if (revisedDate && revisedDate !== existingDate) {
+        updatedLog = updatedLog.updateDate(revisedDate, revisedTime, revisionTimestamp);
+      }
+
+      // 7. Save
+      if (this.#foodLogStore) {
+        await this.#foodLogStore.save(updatedLog);
+      }
+
+      // 8. Clear conversation state
+      if (this.#conversationStateStore) {
+        await this.#conversationStateStore.clear(conversationId);
+        this.#logger.debug?.('logText.revisionDirect.stateCleared', { conversationId });
+      }
+
+      // 9. Update ORIGINAL message with revised items + buttons
+      const finalDate = updatedLog.meal?.date || updatedLog.date || existingDate;
+      const dateHeader = formatDateHeader(finalDate, { timezone: this.#getTimezone(), now: new Date() });
+      const foodList = formatFoodList(finalItems);
+      const buttons = this.#buildActionButtons(updatedLog.id);
+
+      messageToUpdate = originalMessageId;
+      const updatePayload = isImageLog
+        ? { caption: `${dateHeader}\n\n${foodList}`, choices: buttons, inline: true }
+        : { text: `${dateHeader}\n\n${foodList}`, choices: buttons, inline: true };
+
+      if (messageToUpdate) {
+        await messaging.updateMessage(messageToUpdate, updatePayload);
+      }
+    } catch (aiError) {
+      this.#logger.error?.('logText.revisionDirect.aiError', { conversationId, error: aiError.message });
+      // Restore original message with buttons so user can try again
+      if (originalMessageId) {
+        const buttons = this.#buildActionButtons(targetLog.id);
+        const logDate = targetLog.meal?.date || targetLog.date;
+        const dateHeader = formatDateHeader(logDate, { timezone: this.#getTimezone(), now: new Date() });
+        const foodList = formatFoodList(targetLog.items || []);
+        const restorePayload = isImageLog
+          ? { caption: `${dateHeader}\n\n${foodList}`, choices: buttons, inline: true }
+          : { text: `${dateHeader}\n\n${foodList}`, choices: buttons, inline: true };
+        try { await messaging.updateMessage(originalMessageId, restorePayload); } catch (e) { /* best effort */ }
+      }
+      // Don't clear state and don't delete user's message — user might want to try again
+      throw aiError;
+    }
+
+    // 10. Delete user's text message — only after AI succeeded and original message is updated
+    if (messageId) {
+      await this.#deleteMessageWithRetry(messaging, messageId);
+    }
+
+    this.#logger.info?.('logText.revisionDirect.complete', {
+      conversationId,
+      logUuid: updatedLog.id,
+      itemCount: finalItems.length,
+    });
+
+    return {
+      success: true,
+      nutrilogUuid: updatedLog.id,
+      messageId: messageToUpdate,
+      itemCount: finalItems.length,
+      revised: true,
+    };
+  }
+
+  /**
    * Try to interpret failed food detection as a revision attempt
    * @private
    * @param {string} userId
@@ -597,14 +776,16 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
   async #tryRevisionFallback(userId, conversationId, text, statusMsgId, existingLogMessageId = null, messaging) {
     this.#logger.debug?.('logText.revisionFallback.start', { conversationId, text });
 
-    const messageToUpdate = existingLogMessageId || statusMsgId;
-
-    // Check conversation state for pending log UUID
+    // Check conversation state for pending log UUID and originalMessageId
     let pendingLogUuid = null;
+    let originalMessageId = null;
     if (this.#conversationStateStore) {
       const state = await this.#conversationStateStore.get(conversationId);
       pendingLogUuid = state?.flowState?.pendingLogUuid;
+      originalMessageId = state?.flowState?.originalMessageId;
     }
+
+    const messageToUpdate = originalMessageId || existingLogMessageId || statusMsgId;
 
     if (!pendingLogUuid) {
       return { handled: false };
@@ -661,6 +842,11 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
       await this.#foodLogStore.save(updatedLog);
     }
 
+    if (this.#conversationStateStore) {
+      await this.#conversationStateStore.clear(conversationId);
+      this.#logger.debug?.('logText.revisionFallback.stateCleared', { conversationId });
+    }
+
     const logDate = updatedLog.meal?.date || updatedLog.date;
     const dateHeader = formatDateHeader(logDate, { timezone: this.#getTimezone(), now: new Date() });
     const foodList = formatFoodList(finalItems);
@@ -671,6 +857,15 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
       choices: buttons,
       inline: true,
     });
+
+    // Delete the "Analyzing..." status message if it's different from the target
+    if (statusMsgId && statusMsgId !== messageToUpdate) {
+      try {
+        await messaging.deleteMessage(statusMsgId);
+      } catch (e) {
+        this.#logger.debug?.('logText.revisionFallback.deleteStatus.failed', { error: e.message });
+      }
+    }
 
     this.#logger.info?.('logText.revisionFallback.success', { logUuid: updatedLog.id, itemCount: finalItems.length });
 

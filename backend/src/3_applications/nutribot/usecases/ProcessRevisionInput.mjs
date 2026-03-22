@@ -42,13 +42,24 @@ export class ProcessRevisionInput {
     return this.#config?.getDefaultTimezone?.() || this.#config?.weather?.timezone || 'America/Los_Angeles';
   }
 
+  #getMessaging(responseContext, conversationId) {
+    if (responseContext) return responseContext;
+    return {
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(conversationId, text, options),
+      updateMessage: (msgId, updates) => this.#messagingGateway.updateMessage(conversationId, msgId, updates),
+      deleteMessage: (msgId) => this.#messagingGateway.deleteMessage(conversationId, msgId),
+    };
+  }
+
   /**
    * Execute the use case
    */
   async execute(input) {
-    const { userId, conversationId, text, messageId } = input;
+    const { userId, conversationId, text, messageId, responseContext } = input;
 
     this.#logger.debug?.('processRevision.start', { conversationId });
+
+    const messaging = this.#getMessaging(responseContext, conversationId);
 
     try {
       // 1. Get current state
@@ -67,7 +78,7 @@ export class ProcessRevisionInput {
       // 2. Delete user's revision message
       if (messageId) {
         try {
-          await this.#messagingGateway.deleteMessage(conversationId, messageId);
+          await messaging.deleteMessage(messageId);
         } catch (e) {
           // Ignore
         }
@@ -77,7 +88,7 @@ export class ProcessRevisionInput {
       if (originalMessageId) {
         try {
           const processingButton = [[{ text: '⏳ Processing...', callback_data: 'noop' }]];
-          await this.#messagingGateway.updateMessage(conversationId, originalMessageId, {
+          await messaging.updateMessage(originalMessageId, {
             choices: processingButton,
             inline: true,
           });
@@ -104,7 +115,7 @@ export class ProcessRevisionInput {
       const revisedItems = this.#parseRevisionResponse(response);
 
       if (revisedItems.length === 0) {
-        await this.#messagingGateway.sendMessage(conversationId, "❓ I couldn't understand that revision. Try being more specific.", {});
+        await messaging.sendMessage("❓ I couldn't understand that revision. Try being more specific.", {});
         return { success: false, error: 'Could not parse revision' };
       }
 
@@ -133,9 +144,9 @@ export class ProcessRevisionInput {
       const isImageLog = nutriLog?.metadata?.source === 'image';
       if (originalMessageId) {
         const updatePayload = isImageLog ? { caption: messageText, choices: buttons, inline: true } : { text: messageText, choices: buttons, inline: true };
-        await this.#messagingGateway.updateMessage(conversationId, originalMessageId, updatePayload);
+        await messaging.updateMessage(originalMessageId, updatePayload);
       } else {
-        await this.#messagingGateway.sendMessage(conversationId, messageText, {
+        await messaging.sendMessage(messageText, {
           choices: buttons,
           inline: true,
         });
