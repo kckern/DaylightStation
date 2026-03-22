@@ -22,6 +22,7 @@ export class Device {
   #id;
   #type;
   #defaultVolume;
+  #screenPath;
   #deviceControl;
   #osControl;
   #contentControl;
@@ -44,6 +45,7 @@ export class Device {
     this.#id = config.id;
     this.#type = config.type || 'unknown';
     this.#defaultVolume = config.defaultVolume ?? null;
+    this.#screenPath = config.screenPath || null;
     this.#deviceControl = capabilities.deviceControl || null;
     this.#osControl = capabilities.osControl || null;
     this.#contentControl = capabilities.contentControl || null;
@@ -79,6 +81,15 @@ export class Device {
    */
   get defaultVolume() {
     return this.#defaultVolume;
+  }
+
+  /**
+   * Get screen path for content loading (e.g., '/screen/living-room').
+   * Falls back to null if not configured (caller should default to '/tv').
+   * @returns {string|null}
+   */
+  get screenPath() {
+    return this.#screenPath;
   }
 
   /**

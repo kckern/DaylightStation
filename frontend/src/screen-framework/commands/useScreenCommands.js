@@ -35,6 +35,10 @@ export function useScreenCommands(wsConfig, actionBus) {
     const bus = busRef.current;
     if (!bus) return;
 
+    // Ignore playback_state broadcasts — these are status updates, not commands.
+    // Without this, the broadcast loop re-triggers media:play for already-playing content.
+    if (data.topic === 'playback_state') return;
+
     // Guardrails
     if (data.topic && g.blocked_topics?.includes(data.topic)) {
       logger().debug('commands.blocked-topic', { topic: data.topic });
@@ -56,10 +60,20 @@ export function useScreenCommands(wsConfig, actionBus) {
       return;
     }
 
-    // Reset
+    // Reset (dismiss overlay)
     if (data.action === 'reset') {
       logger().info('commands.reset');
       bus.emit('escape', {});
+      return;
+    }
+
+    // Reload (hard page refresh — cache-bust to clear stale JS chunks)
+    if (data.action === 'reload') {
+      logger().info('commands.reload');
+      // Append cache-bust param to force fresh asset fetch after deploys
+      const url = new URL(window.location.href);
+      url.searchParams.set('_cb', Date.now());
+      window.location.replace(url.href);
       return;
     }
 

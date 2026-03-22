@@ -33,6 +33,19 @@ describe('useScreenCommands', () => {
     expect(actionBus.emit).toHaveBeenCalledWith('escape', {});
   });
 
+  it('navigates away on WS reload command (cache-bust)', () => {
+    const replaceMock = vi.fn();
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, href: 'http://localhost/screen/office', replace: replaceMock },
+      writable: true,
+      configurable: true,
+    });
+    renderHook(() => useScreenCommands({ commands: true }, actionBus));
+    act(() => capturedCallback({ action: 'reload' }));
+    expect(replaceMock).toHaveBeenCalled();
+    expect(actionBus.emit).not.toHaveBeenCalled();
+  });
+
   it('emits media:playback on WS playback command', () => {
     renderHook(() => useScreenCommands({ commands: true }, actionBus));
     act(() => capturedCallback({ playback: 'next' }));

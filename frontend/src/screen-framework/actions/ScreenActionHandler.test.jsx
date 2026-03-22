@@ -25,7 +25,7 @@ vi.mock('../../modules/Menu/MenuStack.jsx', () => ({
 
 vi.mock('../../modules/Player/Player.jsx', () => ({
   default: React.forwardRef((props, ref) => (
-    <div data-testid="player" data-play={props.play}>Player</div>
+    <div data-testid="player" data-play={typeof props.play === 'object' ? JSON.stringify(props.play) : props.play}>Player</div>
   )),
 }));
 
@@ -62,7 +62,7 @@ describe('ScreenActionHandler', () => {
     act(() => getActionBus().emit('media:play', { contentId: 'plex:12345' }));
 
     expect(getByTestId('player')).toBeTruthy();
-    expect(getByTestId('player').dataset.play).toBe('plex:12345');
+    expect(getByTestId('player').dataset.play).toContain('plex:12345');
   });
 
   it('opens Player overlay on media:queue action', () => {

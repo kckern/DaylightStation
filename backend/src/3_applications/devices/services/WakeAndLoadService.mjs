@@ -170,7 +170,8 @@ export class WakeAndLoadService {
     this.#emitProgress(topic, 'load', 'running');
     this.#logger.info?.('wake-and-load.load.start', { deviceId, query: contentQuery });
 
-    const loadResult = await device.loadContent('/tv', contentQuery);
+    const screenPath = device.screenPath || '/tv';
+    const loadResult = await device.loadContent(screenPath, contentQuery);
     result.steps.load = loadResult;
 
     if (!loadResult.ok) {

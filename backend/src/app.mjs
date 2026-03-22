@@ -1893,8 +1893,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const frontendExists = existsSync(frontendPath);
 
     if (frontendExists) {
-      // Serve static assets (JS, CSS, images)
-      app.use(express.static(frontendPath));
+      // Serve static assets (JS, CSS, images) — hashed filenames are immutable
+      app.use(express.static(frontendPath, {
+        setHeaders: (res, filePath) => {
+          // index.html must never be cached so location.reload() always gets fresh script tags
+          if (filePath.endsWith('index.html')) {
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+          }
+        }
+      }));
 
       // For SPA routes, serve index.html (but NOT for API or WebSocket paths)
       // This catch-all must be BEFORE the API router
@@ -1907,7 +1914,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         if (req.path.includes('.')) {
           return next();
         }
-        // SPA route - serve index.html
+        // SPA route - serve index.html with no-cache so deploys take effect on reload
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
         res.sendFile(join(frontendPath, 'index.html'));
       });
       rootLogger.info('frontend.static.mounted', { path: frontendPath });

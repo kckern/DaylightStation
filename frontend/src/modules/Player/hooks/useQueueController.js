@@ -113,9 +113,24 @@ export function useQueueController({ play, queue, clear, shuffle }) {
           newQueue = [{ ...play, ...itemOverrides, guid: guid() }];
         }
       }
+      // Validate queue items — reject garbage (e.g., string-spread objects with numeric keys)
+      const validQueue = newQueue.filter(item =>
+        item.contentId || item.play || item.media || item.mediaUrl || item.media_url
+        || item.key || item.id || item.plex || item.assetId
+      );
+      if (newQueue.length > 0 && validQueue.length === 0) {
+        playbackLog('queue-init-invalid', {
+          contentRef,
+          itemCount: newQueue.length,
+          sampleKeys: Object.keys(newQueue[0] || {}).slice(0, 5),
+        }, { level: 'error' });
+        if (!isCancelled && clear) clear();
+        return;
+      }
+
       if (!isCancelled) {
-        setQueue(newQueue);
-        setOriginalQueue(newQueue);
+        setQueue(validQueue);
+        setOriginalQueue(validQueue);
         setQueueAudio(fetchedAudio);
       }
     }
