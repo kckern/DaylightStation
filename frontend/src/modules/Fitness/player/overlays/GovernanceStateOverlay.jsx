@@ -114,10 +114,29 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
   const primaryMessage = Array.isArray(overlay?.descriptions) && overlay.descriptions.length > 0
     ? overlay.descriptions[0]
     : 'Meet these conditions to unlock playback.';
-  const rows = (display ? display.rows : lockRows) || [];
+  const unsortedRows = (display ? display.rows : lockRows) || [];
+  // Sort by progress descending — closest to meeting target bubbles to top
+  const rows = useMemo(() => {
+    if (unsortedRows.length <= 1) return unsortedRows;
+    return [...unsortedRows].sort((a, b) => {
+      const pa = a.progress ?? -1;
+      const pb = b.progress ?? -1;
+      return pb - pa; // highest progress first
+    });
+  }, [unsortedRows]);
   const hasRows = rows.length > 0;
   const isCompact = rows.length > 6;
   const showTableHeader = !isCompact;
+
+  // Exit criteria: show how many participants need to meet the target
+  const challenge = display?.challenge || null;
+  const requiredCount = challenge ? challenge.requiredCount : null;
+  const exitCriteriaLabel = useMemo(() => {
+    if (!hasRows || requiredCount == null || !Number.isFinite(requiredCount)) return null;
+    if (requiredCount >= rows.length) return null; // all required — no need to specify
+    const targetZoneName = challenge?.zoneLabel || challenge?.zone || 'target';
+    return `${requiredCount} of ${rows.length} need to reach ${targetZoneName}`;
+  }, [hasRows, requiredCount, rows.length, challenge]);
 
   // Log when "Waiting for participant data" renders (rate-limited)
   const lastWaitingLogRef = useRef(0);
@@ -217,6 +236,9 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
         <div className="governance-lock__title">{title}</div>
         {primaryMessage ? (
           <p className="governance-lock__message">{primaryMessage}</p>
+        ) : null}
+        {exitCriteriaLabel ? (
+          <p className="governance-lock__exit-criteria">{exitCriteriaLabel}</p>
         ) : null}
         <div className="governance-lock__table" role="table" aria-label="Unlock requirements">
           {showTableHeader ? (

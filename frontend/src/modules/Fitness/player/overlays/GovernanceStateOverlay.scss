@@ -56,6 +56,14 @@
     color: rgba(248, 250, 252, 0.85);
   }
 
+  &__exit-criteria {
+    margin: 4px 0 0;
+    font-size: clamp(0.75rem, 1.4vw, 0.9rem);
+    color: rgba(248, 250, 252, 0.6);
+    font-weight: 500;
+    letter-spacing: 0.03em;
+  }
+
   &__table {
     width: 100%;
     border-radius: 22px;
@@ -220,7 +228,7 @@
     background: linear-gradient(90deg, #38bdf8, #22c55e);
     transform-origin: left;
     transform: scaleX(0);
-    transition: transform 0.8s ease-in-out;
+    transition: transform 0.5s ease-out;
     will-change: transform;
     overflow: hidden;
   }
@@ -241,7 +249,7 @@
     text-align: center;
     pointer-events: none;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
-    transition: left 0.3s ease-in-out, opacity 0.2s ease-in-out, visibility 0.2s ease-in-out;
+    transition: left 0.5s ease-out, opacity 0.2s ease-in-out, visibility 0.2s ease-in-out;
   }
 
   &__zone-marker {
