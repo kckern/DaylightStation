@@ -1,0 +1,297 @@
+/**
+ * Revision Flow Short-Circuit Tests
+ *
+ * Verifies that LogFoodFromText short-circuits in revision mode:
+ * - No new status messages created
+ * - Updates the ORIGINAL message with revised items
+ * - Clears conversation state
+ * - Deletes the user's revision text message
+ * - Calls AI once with revision-aware prompt
+ */
+
+import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { LogFoodFromText } from '#apps/nutribot/usecases/LogFoodFromText.mjs';
+
+// Doubled-items AI response for "Double the recipe"
+const DOUBLED_AI_RESPONSE = JSON.stringify({
+  date: '2026-03-22',
+  time: 'morning',
+  items: [
+    {
+      name: 'Green Peas',
+      icon: 'peas',
+      noom_color: 'green',
+      quantity: 1,
+      unit: 'g',
+      grams: 480,
+      calories: 400,
+      protein: 26,
+      carbs: 72,
+      fat: 2,
+      fiber: 0,
+      sugar: 0,
+      sodium: 0,
+      cholesterol: 0,
+    },
+  ],
+});
+
+function buildExistingLog() {
+  return {
+    id: 'log-uuid-123',
+    status: 'pending',
+    items: [
+      {
+        id: 'item-1',
+        label: 'Green Peas',
+        grams: 240,
+        calories: 200,
+        protein: 13,
+        carbs: 36,
+        fat: 1,
+        unit: 'g',
+        amount: 240,
+        color: 'green',
+        icon: 'peas',
+        fiber: 0,
+        sugar: 0,
+        sodium: 0,
+        cholesterol: 0,
+      },
+    ],
+    meal: { date: '2026-03-22', time: 'morning' },
+    metadata: { source: 'text' },
+    date: '2026-03-22',
+    updateItems(items, ts) {
+      return {
+        ...this,
+        items,
+        updatedAt: ts,
+        updateDate: this.updateDate.bind({ ...this, items }),
+      };
+    },
+    updateDate(date, time, ts) {
+      return { ...this, meal: { ...this.meal, date }, date, updatedAt: ts };
+    },
+  };
+}
+
+function buildDeps(overrides = {}) {
+  const messagingGateway = {
+    sendMessage: jest.fn().mockResolvedValue({ messageId: 'new-msg-1' }),
+    updateMessage: jest.fn().mockResolvedValue({}),
+    deleteMessage: jest.fn().mockResolvedValue({}),
+  };
+
+  const aiGateway = {
+    chat: jest.fn().mockResolvedValue(DOUBLED_AI_RESPONSE),
+  };
+
+  const foodLogStore = {
+    findByUuid: jest.fn().mockResolvedValue(buildExistingLog()),
+    save: jest.fn().mockResolvedValue({}),
+  };
+
+  const conversationStateStore = {
+    get: jest.fn().mockResolvedValue({
+      activeFlow: 'revision',
+      flowState: {
+        pendingLogUuid: 'log-uuid-123',
+        originalMessageId: 'orig-msg-42',
+      },
+    }),
+    clear: jest.fn().mockResolvedValue({}),
+  };
+
+  const responseContext = {
+    sendMessage: jest.fn().mockResolvedValue({ messageId: 'ctx-msg-1' }),
+    updateMessage: jest.fn().mockResolvedValue({}),
+    deleteMessage: jest.fn().mockResolvedValue({}),
+    createStatusIndicator: jest.fn().mockResolvedValue({
+      messageId: 'status-msg-1',
+      finish: jest.fn().mockResolvedValue({}),
+    }),
+  };
+
+  const logger = {
+    info: jest.fn(),
+    debug: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+  };
+
+  return {
+    messagingGateway,
+    aiGateway,
+    foodLogStore,
+    conversationStateStore,
+    responseContext,
+    logger,
+    config: { getDefaultTimezone: () => 'America/Los_Angeles', getUserTimezone: () => 'America/Los_Angeles' },
+    encodeCallback: (cmd, data) => JSON.stringify({ cmd, ...data }),
+    ...overrides,
+  };
+}
+
+describe('LogFoodFromText — revision short-circuit', () => {
+  let deps;
+  let useCase;
+
+  beforeEach(() => {
+    deps = buildDeps();
+    useCase = new LogFoodFromText(deps);
+  });
+
+  it('should NOT create new status message when in revision mode', async () => {
+    const result = await useCase.execute({
+      userId: 'user-1',
+      conversationId: 'conv-1',
+      text: 'Double the recipe',
+      messageId: 'user-msg-99',
+      responseContext: deps.responseContext,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.revised).toBe(true);
+
+    // createStatusIndicator should NOT have been called
+    expect(deps.responseContext.createStatusIndicator).not.toHaveBeenCalled();
+    // sendMessage should NOT have been called (no new messages)
+    expect(deps.responseContext.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('should update the ORIGINAL message with revised items', async () => {
+    await useCase.execute({
+      userId: 'user-1',
+      conversationId: 'conv-1',
+      text: 'Double the recipe',
+      messageId: 'user-msg-99',
+      responseContext: deps.responseContext,
+    });
+
+    // updateMessage should be called with the original message ID
+    const updateCalls = deps.responseContext.updateMessage.mock.calls;
+    // Find the final update (with choices/buttons)
+    const finalUpdate = updateCalls.find(
+      ([msgId, payload]) => msgId === 'orig-msg-42' && payload.choices
+    );
+    expect(finalUpdate).toBeTruthy();
+    expect(finalUpdate[0]).toBe('orig-msg-42');
+    expect(finalUpdate[1].choices).toBeDefined();
+    expect(finalUpdate[1].inline).toBe(true);
+  });
+
+  it('should clear conversation state after successful revision', async () => {
+    await useCase.execute({
+      userId: 'user-1',
+      conversationId: 'conv-1',
+      text: 'Double the recipe',
+      messageId: 'user-msg-99',
+      responseContext: deps.responseContext,
+    });
+
+    expect(deps.conversationStateStore.clear).toHaveBeenCalledWith('conv-1');
+  });
+
+  it('should delete the user revision text message', async () => {
+    await useCase.execute({
+      userId: 'user-1',
+      conversationId: 'conv-1',
+      text: 'Double the recipe',
+      messageId: 'user-msg-99',
+      responseContext: deps.responseContext,
+    });
+
+    expect(deps.responseContext.deleteMessage).toHaveBeenCalledWith('user-msg-99');
+  });
+
+  it('should call AI exactly once with revision-aware prompt including original items', async () => {
+    await useCase.execute({
+      userId: 'user-1',
+      conversationId: 'conv-1',
+      text: 'Double the recipe',
+      messageId: 'user-msg-99',
+      responseContext: deps.responseContext,
+    });
+
+    expect(deps.aiGateway.chat).toHaveBeenCalledTimes(1);
+
+    const [prompt] = deps.aiGateway.chat.mock.calls[0];
+    // The user content should include original item names in the contextual text
+    const userContent = prompt.find((m) => m.role === 'user')?.content || '';
+    expect(userContent).toContain('Green Peas');
+  });
+
+  it('should send error message when log is not found (stale state)', async () => {
+    deps.foodLogStore.findByUuid.mockResolvedValue(null);
+    useCase = new LogFoodFromText(deps);
+
+    const result = await useCase.execute({
+      userId: 'user-1',
+      conversationId: 'conv-1',
+      text: 'Double the recipe',
+      messageId: 'user-msg-99',
+      responseContext: deps.responseContext,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('expired');
+    expect(deps.responseContext.sendMessage).toHaveBeenCalledWith(
+      expect.stringContaining('expired'),
+      expect.any(Object)
+    );
+    // Should NOT create status messages or call AI
+    expect(deps.responseContext.createStatusIndicator).not.toHaveBeenCalled();
+  });
+
+  it('should handle image-based logs by using caption instead of text', async () => {
+    const imageLog = buildExistingLog();
+    imageLog.metadata = { source: 'image' };
+    deps.foodLogStore.findByUuid.mockResolvedValue(imageLog);
+    useCase = new LogFoodFromText(deps);
+
+    await useCase.execute({
+      userId: 'user-1',
+      conversationId: 'conv-1',
+      text: 'Double the recipe',
+      messageId: 'user-msg-99',
+      responseContext: deps.responseContext,
+    });
+
+    const updateCalls = deps.responseContext.updateMessage.mock.calls;
+    const finalUpdate = updateCalls.find(
+      ([msgId, payload]) => msgId === 'orig-msg-42' && payload.choices
+    );
+    expect(finalUpdate).toBeTruthy();
+    expect(finalUpdate[1].caption).toBeDefined();
+    expect(finalUpdate[1].text).toBeUndefined();
+  });
+
+  it('should restore original message and NOT delete user message when AI call fails', async () => {
+    deps.aiGateway.chat.mockRejectedValue(new Error('Network timeout'));
+    useCase = new LogFoodFromText(deps);
+
+    await expect(
+      useCase.execute({
+        userId: 'user-1',
+        conversationId: 'conv-1',
+        text: 'Double the recipe',
+        messageId: 'user-msg-99',
+        responseContext: deps.responseContext,
+      })
+    ).rejects.toThrow('Network timeout');
+
+    // Original message should be restored with buttons so user can retry
+    const updateCalls = deps.responseContext.updateMessage.mock.calls;
+    const restoreCall = updateCalls.find(
+      ([msgId, payload]) => msgId === 'orig-msg-42' && payload.choices
+    );
+    expect(restoreCall).toBeTruthy();
+
+    // User's revision message should NOT be deleted — they can see their input and retry
+    expect(deps.responseContext.deleteMessage).not.toHaveBeenCalled();
+
+    // Conversation state should NOT be cleared — user can still retry
+    expect(deps.conversationStateStore.clear).not.toHaveBeenCalled();
+  });
+});
