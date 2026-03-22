@@ -29,29 +29,46 @@ export class NutribotInputRouter extends BaseInputRouter {
   // ==================== Event Handlers ====================
 
   async handleText(event, responseContext) {
-    // Check if we're in revision mode
     const conversationStateStore = this.container.getConversationStateStore?.();
+
+    if (!conversationStateStore) {
+      this.logger.debug?.('nutribot.handleText.noStateStore');
+    }
+
     if (conversationStateStore) {
-      const state = await conversationStateStore.get(event.conversationId);
-      // ReviseFoodLog stores logUuid as pendingLogUuid in flowState
-      const pendingLogUuid = state?.flowState?.pendingLogUuid;
-      if (state?.activeFlow === 'revision' && pendingLogUuid) {
-        this.logger.debug?.('nutribot.handleText.revisionMode', {
+      try {
+        const state = await conversationStateStore.get(event.conversationId);
+        const pendingLogUuid = state?.flowState?.pendingLogUuid;
+
+        this.logger.debug?.('nutribot.handleText.stateCheck', {
           conversationId: event.conversationId,
-          pendingLogUuid,
-          text: event.payload.text,
+          hasState: !!state,
+          activeFlow: state?.activeFlow || null,
+          hasPendingLogUuid: !!pendingLogUuid,
         });
-        // Route to ProcessRevisionInput
-        const useCase = this.container.getProcessRevisionInput();
-        const result = await useCase.execute({
-          userId: this.#resolveUserId(event),
+
+        if (state?.activeFlow === 'revision' && pendingLogUuid) {
+          this.logger.info?.('nutribot.handleText.revisionRouted', {
+            conversationId: event.conversationId,
+            pendingLogUuid,
+            text: event.payload.text?.substring(0, 50),
+          });
+          const useCase = this.container.getProcessRevisionInput();
+          const result = await useCase.execute({
+            userId: this.#resolveUserId(event),
+            conversationId: event.conversationId,
+            logUuid: pendingLogUuid,
+            text: event.payload.text,
+            messageId: event.messageId,
+            responseContext,
+          });
+          return { ok: true, result };
+        }
+      } catch (e) {
+        this.logger.warn?.('nutribot.handleText.stateCheck.error', {
           conversationId: event.conversationId,
-          logUuid: pendingLogUuid,
-          text: event.payload.text,
-          messageId: event.messageId,
-          responseContext,
+          error: e.message,
         });
-        return { ok: true, result };
       }
     }
 
