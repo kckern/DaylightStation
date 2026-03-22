@@ -74,9 +74,8 @@ const MediaAppInner = () => {
       ).then(() => logger.info('media-app.autoplay-result', { contentId, success: true }))
         .catch(err => logger.warn('media-app.autoplay-result', { contentId, success: false, error: err.message }));
     }
-    if (volume) queue.setVolume(Number(volume) / 100);
     if (playCommand.shuffle) queue.setShuffle(true);
-  }, [urlCommand, queue.loading, queue.clear, queue.addItems, queue.setVolume, queue.setShuffle, logger]);
+  }, [urlCommand, queue.loading, queue.clear, queue.addItems, queue.setShuffle, logger]);
 
   // Handle item end — auto-advance
   const handleItemEnd = useCallback(() => {
