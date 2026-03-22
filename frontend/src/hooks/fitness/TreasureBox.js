@@ -64,6 +64,7 @@ export class FitnessTreasureBox {
 
   setZoneProfileStore(store) {
     this._zoneProfileStore = store;
+    this._zoneProfileOverrideCache = new Map();
   }
 
   setMutationCallback(cb) { this._mutationCb = typeof cb === 'function' ? cb : null; }
@@ -87,6 +88,8 @@ export class FitnessTreasureBox {
         color: z.color,
         coins: Number(z.coins) || 0
       })).sort((a,b) => a.min - b.min);
+      // Pre-sort descending for resolveZone() to avoid re-sorting on every call
+      this._globalZonesDescending = [...this.globalZones].reverse();
       // Initialize bucket colors
       for (const z of this.globalZones) {
         if (!(z.color in this.buckets)) this.buckets[z.color] = 0;
@@ -168,7 +171,9 @@ export class FitnessTreasureBox {
     this._timeline.lastIndex = -1;
     this._deviceEntityMap.clear();
     this.usersConfigOverrides.clear();
-    
+    this._zoneProfileOverrideCache = new Map();
+    this._globalZonesDescending = [];
+
     // Note: Keep globalZones, coinTimeUnitMs, callbacks - these are configuration, not session state
   }
 
@@ -436,11 +441,35 @@ export class FitnessTreasureBox {
   // Determine zone for HR for a given user, returns zone object or null
   resolveZone(userId, hr) {
     if (!hr || hr <= 0 || this.globalZones.length === 0) return null;
-    // Build effective thresholds using overrides where present
-    const overrides = this.usersConfigOverrides.get(userId) || {};
-    // Map of zone.id -> threshold min override (matching id by name semantics: active/warm/hot/fire)
-    // We'll evaluate global zones but swap min if override present (by zone.id OR zone.name lowercased)
-    const zonesDescending = [...this.globalZones].sort((a,b) => b.min - a.min);
+
+    // Build effective thresholds: priority is usersConfigOverrides > ZoneProfileStore > global
+    let overrides = this.usersConfigOverrides.get(userId);
+
+    // If no manual overrides, pull from ZoneProfileStore (per-user custom zones)
+    // Cache the converted override map to avoid deep-cloning the profile on every HR sample
+    if (!overrides && this._zoneProfileStore) {
+      if (!this._zoneProfileOverrideCache) this._zoneProfileOverrideCache = new Map();
+      if (this._zoneProfileOverrideCache.has(userId)) {
+        overrides = this._zoneProfileOverrideCache.get(userId);
+      } else {
+        const profile = this._zoneProfileStore.getProfile(userId);
+        if (profile?.zoneConfig && Array.isArray(profile.zoneConfig)) {
+          // Convert zoneConfig array [{id:'active', min:125}, ...] to override map {active: 125, ...}
+          overrides = {};
+          for (const z of profile.zoneConfig) {
+            const key = z.id || z.name?.toLowerCase();
+            if (key && typeof z.min === 'number') {
+              overrides[key] = z.min;
+            }
+          }
+        }
+        this._zoneProfileOverrideCache.set(userId, overrides || null);
+      }
+    }
+
+    if (!overrides) overrides = {};
+
+    const zonesDescending = this._globalZonesDescending || [...this.globalZones].sort((a, b) => b.min - a.min);
     for (const zone of zonesDescending) {
       const key = zone.id || zone.name?.toLowerCase();
       const overrideMin = overrides[key];
