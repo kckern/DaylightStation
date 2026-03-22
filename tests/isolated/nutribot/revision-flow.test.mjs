@@ -11,6 +11,7 @@
 
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { LogFoodFromText } from '#apps/nutribot/usecases/LogFoodFromText.mjs';
+import { ProcessRevisionInput } from '../../../backend/src/3_applications/nutribot/usecases/ProcessRevisionInput.mjs';
 
 // Doubled-items AI response for "Double the recipe"
 const DOUBLED_AI_RESPONSE = JSON.stringify({
@@ -293,5 +294,68 @@ describe('LogFoodFromText — revision short-circuit', () => {
 
     // Conversation state should NOT be cleared — user can still retry
     expect(deps.conversationStateStore.clear).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProcessRevisionInput — responseContext', () => {
+  it('should use responseContext for message operations when available', async () => {
+    const mockResponseContext = {
+      updateMessage: jest.fn().mockResolvedValue({}),
+      deleteMessage: jest.fn().mockResolvedValue({}),
+      sendMessage: jest.fn().mockResolvedValue({ messageId: 'msg' }),
+    };
+
+    const mockGateway = {
+      sendMessage: jest.fn(),
+      updateMessage: jest.fn(),
+      deleteMessage: jest.fn(),
+    };
+
+    const mockStateStore = {
+      get: jest.fn().mockResolvedValue({
+        activeFlow: 'revision',
+        flowState: { pendingLogUuid: 'log-1', originalMessageId: 'orig-msg' },
+      }),
+      set: jest.fn().mockResolvedValue({}),
+      clear: jest.fn().mockResolvedValue({}),
+    };
+
+    const mockAi = {
+      chat: jest.fn().mockResolvedValue(JSON.stringify({
+        items: [{ name: 'Doubled Peas', noom_color: 'green', quantity: 1, unit: 'g', grams: 480, calories: 400, protein: 26, carbs: 72, fat: 2 }],
+      })),
+    };
+
+    const mockLogStore = {
+      findByUuid: jest.fn().mockResolvedValue({
+        id: 'log-1',
+        items: [{ label: 'Peas', grams: 240, calories: 200, protein: 13, carbs: 36, fat: 1 }],
+        meal: { date: '2026-03-22' },
+        metadata: { source: 'text' },
+      }),
+      updateItems: jest.fn().mockResolvedValue({}),
+    };
+
+    const useCase = new ProcessRevisionInput({
+      messagingGateway: mockGateway,
+      aiGateway: mockAi,
+      foodLogStore: mockLogStore,
+      conversationStateStore: mockStateStore,
+      logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+    });
+
+    await useCase.execute({
+      userId: 'kckern',
+      conversationId: 'telegram:bot_user',
+      text: 'Double the recipe.',
+      messageId: 'user-msg',
+      responseContext: mockResponseContext,
+    });
+
+    // responseContext should be used, NOT messagingGateway
+    expect(mockResponseContext.deleteMessage).toHaveBeenCalledWith('user-msg');
+    expect(mockResponseContext.updateMessage).toHaveBeenCalled();
+    expect(mockGateway.deleteMessage).not.toHaveBeenCalled();
+    expect(mockGateway.updateMessage).not.toHaveBeenCalled();
   });
 });
