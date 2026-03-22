@@ -42,6 +42,7 @@ const entryGuidCache = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
 const ensureEntryGuid = (source) => {
   if (!source) return null;
   if (source.guid) return source.guid;
+  if (typeof source !== 'object') return guid();  // primitives can't be WeakMap keys
   if (!entryGuidCache) return guid();
   if (entryGuidCache.has(source)) {
     return entryGuidCache.get(source);
@@ -131,6 +132,21 @@ const Player = forwardRef(function Player(props, ref) {
     return null;
   }, [isQueue, playQueue, play]);
 
+  // Auto-dismiss if no playable source materializes within 30s
+  // Catches garbage queues, failed resolutions, and missing content
+  useEffect(() => {
+    if (activeSource) return;
+    const timeout = setTimeout(() => {
+      playbackLog('player-no-source-timeout', {
+        isQueue,
+        queueLength: playQueue?.length ?? 0,
+        hasPlay: !!play,
+      }, { level: 'error' });
+      clear?.();
+    }, 30000);
+    return () => clearTimeout(timeout);
+  }, [activeSource, isQueue, playQueue, play, clear]);
+
   const currentMediaGuid = useMemo(() => {
     if (!activeSource) return null;
     if (activeSource.guid) return activeSource.guid;
@@ -215,8 +231,7 @@ const Player = forwardRef(function Player(props, ref) {
     setPlaybackMetrics(createDefaultPlaybackMetrics());
     setRemountState((prev) => (prev.guid === currentMediaGuid ? prev : { guid: currentMediaGuid || null, nonce: 0, context: null }));
     clearRemountTimer();
-    cancelDeadline();
-  }, [currentMediaGuid, clearRemountTimer, cancelDeadline]);
+  }, [currentMediaGuid, clearRemountTimer]);
 
   const effectiveMeta = resolvedMeta || singlePlayerProps || null;
   const plexId = queue?.plex || play?.plex || effectiveMeta?.plex || effectiveMeta?.assetId || null;
@@ -626,6 +641,12 @@ const Player = forwardRef(function Player(props, ref) {
     // Self-contained formats (titlecard) have no media element — disable resilience monitoring
     disabled: isSelfContainedFormat
   });
+
+  // Cancel stale resilience deadline when media guid changes.
+  // Must be after useMediaResilience (source of cancelDeadline) to avoid TDZ in Firefox.
+  useEffect(() => {
+    cancelDeadline();
+  }, [currentMediaGuid, cancelDeadline]);
 
   // Get playback rate from the current item, falling back to queue/play level, then default
   const currentItemPlaybackRate = effectiveMeta?.playbackRate || effectiveMeta?.playbackrate;

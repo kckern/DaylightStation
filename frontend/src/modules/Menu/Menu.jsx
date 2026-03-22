@@ -530,16 +530,13 @@ const MenuIMG = React.memo(function MenuIMG({ img, label }) {
  * Memoized individual menu item — only re-renders when isActive or item data changes.
  * This eliminates 32 of 34 re-renders per keystroke (only old + new active items update).
  */
-const MenuItem = React.memo(function MenuItem({ item, isActive, isDisabled, imageSrc, imageReady, itemKey, MENU_TIMEOUT, timeLeft, totalTime }) {
+const MenuItem = React.memo(function MenuItem({ item, isActive, isDisabled, imageSrc, imageReady, itemKey }) {
   const img = imageReady ? imageSrc : null;
   const imageKey = img ? `img-${img}` : `no-img-${itemKey}`;
   return (
     <div
       className={`menu-item ${item.type || ""} ${isActive ? "active" : ""} ${isDisabled ? "disabled" : ""}`}
     >
-      {!!MENU_TIMEOUT && isActive && (
-        <ProgressTimeoutBar timeLeft={timeLeft} totalTime={MENU_TIMEOUT} />
-      )}
       <MenuIMG key={imageKey} img={img} label={item.label} />
       <h3 className="menu-item-label">{item.label}</h3>
     </div>
@@ -688,7 +685,6 @@ function MenuItems({
    * React state only updates on Enter (selection) or when items change.
    */
   const activeIndexRef = useRef(selectedIndex);
-  activeIndexRef.current = selectedIndex;
 
   // Refs for stable keydown handler (never recreates → no addEventListener churn)
   const itemsRef = useRef(items);
@@ -704,6 +700,8 @@ function MenuItems({
    */
   const layoutCacheRef = useRef(null);
   const coverTimerRef = useRef(null);
+  const progressBarRef = useRef(null);
+  const resetTimeRef = useRef(null);
 
   const buildLayoutCache = useCallback(() => {
     const containerEl = containerRef?.current;
@@ -752,6 +750,11 @@ function MenuItems({
     if (prevEl) { prevEl.classList.remove("active"); prevEl.classList.remove("cover"); }
     if (nextEl) nextEl.classList.add("active");
 
+    // Move the progress bar to the new active item
+    if (progressBarRef.current && nextEl) {
+      nextEl.prepend(progressBarRef.current);
+    }
+
     // Delay the cover+pan so contain→cover zoom doesn't jank navigation
     if (coverTimerRef.current) clearTimeout(coverTimerRef.current);
     coverTimerRef.current = setTimeout(() => {
@@ -759,6 +762,9 @@ function MenuItems({
     }, 500);
 
     activeIndexRef.current = nextIndex;
+
+    // Reset auto-select countdown when selection moves (numpad cycling)
+    resetTimeRef.current?.();
 
     // Scroll using cached positions — zero DOM reads
     const cache = layoutCacheRef.current;
@@ -830,6 +836,8 @@ function MenuItems({
 
   // Single stable keydown handler — never recreates
   useEffect(() => {
+    let selectCooldown = false;
+
     const handler = (e) => {
       const curItems = itemsRef.current;
       if (!curItems.length) return;
@@ -862,6 +870,12 @@ function MenuItems({
         || key === "GamepadA" || key === "GamepadB"
         || key === "GamepadStart" || key === "MediaPlayPause") {
         e.preventDefault();
+        // Guard: ignore key repeat and rapid duplicate events.
+        // Shield TV remote fires repeated Enter at ~150ms when held,
+        // each pushing a menu level — this prevents nav stack bloat.
+        if (e.repeat || selectCooldown) return;
+        selectCooldown = true;
+        setTimeout(() => { selectCooldown = false; }, 300);
         // Sync React state on selection (Enter) — this is the only time React needs to know
         const idx = activeIndexRef.current;
         setSelectedIndex(idx, findKeyForItem(curItems[idx]));
@@ -879,25 +893,13 @@ function MenuItems({
   const { timeLeft, resetTime } = useProgressTimeout(MENU_TIMEOUT, () => {
     onSelect?.(items[activeIndexRef.current]);
   });
+  resetTimeRef.current = resetTime;
 
   useEffect(() => {
     if (MENU_TIMEOUT > 0 && items.length) {
       resetTime();
     }
   }, [selectedIndex, items, MENU_TIMEOUT, resetTime]);
-
-  /**
-   * A small child component for rendering the countdown progress bar (if used).
-   */
-  const ProgressTimeoutBar = ({ timeLeft, totalTime }) => {
-    if (totalTime <= 0) return null;
-    const percentage = 100 - (timeLeft / totalTime) * 100;
-    return (
-      <div className="progress-bar">
-        <div className="progress" style={{ width: `${percentage}%` }} />
-      </div>
-    );
-  };
 
   // Clamp the selected index when items change (instead of always resetting to 0)
   // When items change, prefer to restore by key; if not found, clamp by index
@@ -956,6 +958,44 @@ function MenuItems({
     return { item, itemKey, imageSrc, isDisabled };
   }), [items, findKeyForItem]);
 
+  /**
+   * Create and manage a DOM-only progress bar element.
+   * Lives outside React's render tree to avoid HierarchyRequestError
+   * when moving between .menu-item elements via DOM manipulation.
+   */
+  useEffect(() => {
+    if (!MENU_TIMEOUT) return;
+
+    // Create progress bar element once
+    const bar = document.createElement('div');
+    bar.className = 'progress-bar';
+    const fill = document.createElement('div');
+    fill.className = 'progress';
+    bar.appendChild(fill);
+    progressBarRef.current = bar;
+
+    // Attach to the initially active item
+    const containerEl = containerRef?.current;
+    const menuItemsEl = containerEl?.querySelector(".menu-items");
+    const activeEl = menuItemsEl?.children[activeIndexRef.current];
+    if (activeEl) activeEl.prepend(bar);
+
+    return () => {
+      bar.remove();
+      progressBarRef.current = null;
+    };
+  }, [MENU_TIMEOUT, containerRef]);
+
+  // Update progress bar width on each tick
+  useEffect(() => {
+    if (!progressBarRef.current || !MENU_TIMEOUT) return;
+    const fill = progressBarRef.current.querySelector('.progress');
+    if (fill) {
+      const percentage = 100 - (timeLeft / MENU_TIMEOUT) * 100;
+      fill.style.width = `${percentage}%`;
+    }
+  }, [timeLeft, MENU_TIMEOUT]);
+
   return (
     <div className={`menu-items count_${items.length}`}>
       {itemData.map(({ item, itemKey, imageSrc, isDisabled }, index) => {
@@ -972,9 +1012,6 @@ function MenuItems({
             imageSrc={imageSrc}
             imageReady={index < imageReadyCount}
             itemKey={itemKey}
-            MENU_TIMEOUT={MENU_TIMEOUT}
-            timeLeft={timeLeft}
-            totalTime={MENU_TIMEOUT}
           />
         );
       })}
