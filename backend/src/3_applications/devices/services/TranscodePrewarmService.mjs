@@ -88,7 +88,8 @@ export class TranscodePrewarmService {
   }
 
   #scheduleCleanup(token) {
-    setTimeout(() => this.#cache.delete(token), TOKEN_TTL_MS + 1000);
+    const timer = setTimeout(() => this.#cache.delete(token), TOKEN_TTL_MS + 1000);
+    if (timer.unref) timer.unref();
   }
 }
 
