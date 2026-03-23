@@ -83,6 +83,7 @@ import { createHomeAutomationRouter } from '#api/v1/routers/homeAutomation.mjs';
 import { HaSensorDisplayPowerCheck } from '#adapters/home-automation/HaSensorDisplayPowerCheck.mjs';
 import { DisplayReadinessPolicy, createNoOpDisplayPowerCheck } from '#domains/home-automation/index.mjs';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
+import { TranscodePrewarmService } from '#apps/devices/services/TranscodePrewarmService.mjs';
 
 // Device registry imports
 import { DeviceService } from '#apps/devices/services/DeviceService.mjs';
@@ -1606,7 +1607,7 @@ export function createDeviceApiRouter(config) {
  * @returns {{ wakeAndLoadService: WakeAndLoadService }}
  */
 export function createWakeAndLoadService(config) {
-  const { deviceService, haGateway, devicesConfig, broadcast, logger = console } = config;
+  const { deviceService, haGateway, devicesConfig, broadcast, prewarmService, logger = console } = config;
 
   // Build sensor map from device config: deviceId -> state_sensor entity
   const sensorMap = {};
@@ -1638,10 +1639,45 @@ export function createWakeAndLoadService(config) {
     deviceService,
     readinessPolicy,
     broadcast,
+    prewarmService,
     logger
   });
 
   return { wakeAndLoadService };
+}
+
+/**
+ * Create TranscodePrewarmService
+ * @param {Object} config
+ * @param {Object} config.contentIdResolver - ContentIdResolver for queue resolution
+ * @param {Object} config.mediaProgressMemory - For QueueService watch-state enrichment
+ * @param {string} config.appBaseUrl - Local app URL for MPD fetch (e.g., "http://localhost:3111")
+ * @param {Object} [config.logger]
+ * @returns {{ prewarmService: TranscodePrewarmService }}
+ */
+export function createTranscodePrewarmService(config) {
+  const { contentIdResolver, mediaProgressMemory, appBaseUrl, logger = console } = config;
+
+  const queueService = new QueueService({ mediaProgressMemory });
+
+  const httpClient = {
+    async get(url) {
+      try {
+        const fullUrl = `${appBaseUrl}${url}`;
+        const resp = await fetch(fullUrl, { signal: AbortSignal.timeout(10_000) });
+        return { status: resp.status };
+      } catch (err) {
+        logger.debug?.('prewarm.httpClient.error', { url, error: err.message });
+        return { status: 0 };
+      }
+    }
+  };
+
+  const prewarmService = new TranscodePrewarmService({
+    contentIdResolver, queueService, httpClient, logger
+  });
+
+  return { prewarmService };
 }
 
 // =============================================================================

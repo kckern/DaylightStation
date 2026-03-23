@@ -54,6 +54,7 @@ import {
   createDeviceServices,
   createDeviceApiRouter,
   createWakeAndLoadService,
+  createTranscodePrewarmService,
   createHardwareAdapters,
   createProxyService,
   createMessagingServices,
@@ -1427,11 +1428,20 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'devices' })
   });
 
+  // Transcode pre-warming for device loads
+  const { prewarmService } = createTranscodePrewarmService({
+    contentIdResolver: contentServices.contentIdResolver,
+    mediaProgressMemory: mediaProgressMemory,
+    appBaseUrl: `http://localhost:${appPort}`,
+    logger: rootLogger.child({ module: 'prewarm' })
+  });
+
   const { wakeAndLoadService } = createWakeAndLoadService({
     deviceService: deviceServices.deviceService,
     haGateway: homeAutomationAdapters.haGateway,
     devicesConfig: devicesConfig.devices || {},
     broadcast: broadcastEvent,
+    prewarmService,
     logger: rootLogger.child({ module: 'wake-and-load' })
   });
 
@@ -1440,6 +1450,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     wakeAndLoadService,
     configService,
     logger: rootLogger.child({ module: 'device-api' })
+  });
+
+  const { createPrewarmRouter } = await import('./4_api/v1/routers/prewarm.mjs');
+  v1Routers.prewarm = createPrewarmRouter({
+    prewarmService,
+    logger: rootLogger.child({ module: 'prewarm-api' })
   });
 
   // Messaging domain (provides telegramAdapter for chatbots)
