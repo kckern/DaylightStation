@@ -9,13 +9,14 @@
  * @module applications/devices/services
  */
 
-const STEPS = ['power', 'verify', 'volume', 'prepare', 'load'];
+const STEPS = ['power', 'verify', 'volume', 'prepare', 'prewarm', 'load'];
 const VOLUME_TIMEOUT_MS = 3000;
 
 export class WakeAndLoadService {
   #deviceService;
   #readinessPolicy;
   #broadcast;
+  #prewarmService;
   #logger;
 
   /**
@@ -23,6 +24,7 @@ export class WakeAndLoadService {
    * @param {Object} deps.deviceService - DeviceService for device lookup
    * @param {Object} deps.readinessPolicy - DisplayReadinessPolicy instance
    * @param {Function} deps.broadcast - broadcastEvent(payload) function
+   * @param {Object} [deps.prewarmService] - TranscodePrewarmService (optional)
    * @param {Object} [deps.logger]
    */
   /** @type {Map<string, Promise<Object>>} In-flight wake-and-load per device */
@@ -32,6 +34,7 @@ export class WakeAndLoadService {
     this.#deviceService = deps.deviceService;
     this.#readinessPolicy = deps.readinessPolicy;
     this.#broadcast = deps.broadcast;
+    this.#prewarmService = deps.prewarmService || null;
     this.#logger = deps.logger || console;
   }
 
@@ -184,7 +187,37 @@ export class WakeAndLoadService {
     const coldWake = !!prepResult.coldRestart;
     const cameraAvailable = prepResult.cameraAvailable !== false;
 
-    // --- Step 5: Load Content ---
+    // --- Step 5: Pre-warm transcode (best-effort) ---
+    let prewarmResult = null;
+    if (this.#prewarmService && contentQuery.queue) {
+      this.#emitProgress(topic, 'prewarm', 'running');
+      this.#logger.info?.('wake-and-load.prewarm.start', { deviceId, queue: contentQuery.queue });
+
+      try {
+        prewarmResult = await this.#prewarmService.prewarm(contentQuery.queue, {
+          shuffle: contentQuery.shuffle === '1' || contentQuery.shuffle === 'true'
+        });
+        if (prewarmResult) {
+          contentQuery.prewarmToken = prewarmResult.token;
+          contentQuery.prewarmContentId = prewarmResult.contentId;
+          result.steps.prewarm = { ok: true, contentId: prewarmResult.contentId };
+          this.#logger.info?.('wake-and-load.prewarm.done', {
+            deviceId, contentId: prewarmResult.contentId, token: prewarmResult.token
+          });
+        } else {
+          result.steps.prewarm = { skipped: true, reason: 'not applicable' };
+          this.#logger.debug?.('wake-and-load.prewarm.skipped', { deviceId, reason: 'not applicable' });
+        }
+      } catch (err) {
+        result.steps.prewarm = { ok: false, error: err.message };
+        this.#logger.warn?.('wake-and-load.prewarm.failed', { deviceId, error: err.message });
+      }
+      this.#emitProgress(topic, 'prewarm', 'done');
+    } else {
+      result.steps.prewarm = { skipped: true, reason: contentQuery.queue ? 'no service' : 'no queue' };
+    }
+
+    // --- Step 6: Load Content ---
     this.#emitProgress(topic, 'load', 'running');
     this.#logger.info?.('wake-and-load.load.start', { deviceId, query: contentQuery });
 
