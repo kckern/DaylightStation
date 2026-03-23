@@ -346,14 +346,15 @@ export default function CallApp() {
     }
   }, [connectionState, logger]);
 
-  // User-facing connection timeout (15s normal, 35s cold wake)
+  // User-facing connection timeout.
+  // Shield TV's FKB WebView can take 30-60s to parse+render after a fresh
+  // deploy (no warm cache). Use a generous 60s ceiling for all wake types.
   useEffect(() => {
     if (status !== 'connecting') {
       setConnectingTooLong(false);
       return;
     }
-    const timeoutMs = coldWakeRef.current ? 35_000 : 15_000;
-    const timer = setTimeout(() => setConnectingTooLong(true), timeoutMs);
+    const timer = setTimeout(() => setConnectingTooLong(true), 60_000);
     return () => clearTimeout(timer);
   }, [status]);
 
@@ -362,7 +363,7 @@ export default function CallApp() {
     if (connectingTooLong) {
       logger.warn('connect-timeout-user-visible', {
         deviceId: connectedDeviceRef.current,
-        elapsed: coldWakeRef.current ? '35s' : '15s',
+        elapsed: '60s',
         coldWake: coldWakeRef.current
       });
     }
