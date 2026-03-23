@@ -173,8 +173,7 @@ export class MediaAdapter {
       { prefix: 'media' },
       { prefix: 'local' },
       { prefix: 'file' },
-      { prefix: 'fs' },
-      { prefix: 'freshvideo', idTransform: (id) => `video/news/${id}` }
+      { prefix: 'fs' }
     ];
   }
 
