@@ -346,15 +346,42 @@ export default function CallApp() {
     }
   }, [connectionState, logger]);
 
+  // Auto-recovery: if no TV heartbeat after 30s, trigger backend recovery
+  // (FKB restart or power cycle). Keeps waiting for heartbeat after recovery.
+  const recoveryAttemptedRef = useRef(false);
+  useEffect(() => {
+    if (status !== 'connecting') {
+      recoveryAttemptedRef.current = false;
+      return;
+    }
+    const timer = setTimeout(async () => {
+      if (recoveryAttemptedRef.current) return;
+      recoveryAttemptedRef.current = true;
+      const devId = connectedDeviceRef.current;
+      if (!devId) return;
+      logger.warn('auto-recovery-triggered', { deviceId: devId, waitedMs: 30_000 });
+      try {
+        await DaylightAPI(`/api/v1/device/${devId}/recover`, {
+          body: JSON.stringify({ reloadQuery: { open: `videocall/${devId}` } }),
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        logger.info('auto-recovery-complete', { deviceId: devId });
+      } catch (err) {
+        logger.warn('auto-recovery-failed', { deviceId: devId, error: err.message });
+      }
+    }, 30_000);
+    return () => clearTimeout(timer);
+  }, [status, logger]);
+
   // User-facing connection timeout.
-  // Shield TV's FKB WebView can take 30-60s to parse+render after a fresh
-  // deploy (no warm cache). Use a generous 60s ceiling for all wake types.
+  // Generous ceiling to allow for auto-recovery (FKB restart or power cycle).
   useEffect(() => {
     if (status !== 'connecting') {
       setConnectingTooLong(false);
       return;
     }
-    const timer = setTimeout(() => setConnectingTooLong(true), 60_000);
+    const timer = setTimeout(() => setConnectingTooLong(true), 120_000);
     return () => clearTimeout(timer);
   }, [status]);
 
@@ -363,7 +390,7 @@ export default function CallApp() {
     if (connectingTooLong) {
       logger.warn('connect-timeout-user-visible', {
         deviceId: connectedDeviceRef.current,
-        elapsed: '60s',
+        elapsed: '120s',
         coldWake: coldWakeRef.current
       });
     }

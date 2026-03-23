@@ -218,6 +218,66 @@ export function createDeviceRouter(config) {
     res.json(result);
   }));
 
+  /**
+   * POST /device/:deviceId/recover
+   * Attempt to recover an unresponsive device (FKB restart, then power cycle).
+   * Called by CallApp when TV heartbeat doesn't arrive after load.
+   */
+  router.post('/:deviceId/recover', asyncHandler(async (req, res) => {
+    const { deviceId } = req.params;
+    const { reloadQuery } = req.body || {};
+
+    logger.info?.('device.router.recover.start', { deviceId });
+
+    const device = deviceService.get(deviceId);
+    if (!device) {
+      return res.status(404).json({ ok: false, error: 'Device not found' });
+    }
+
+    // Step 1: Try FKB force-stop + restart via ADB
+    let adbOk = false;
+    try {
+      const rebootResult = await device.reboot();
+      adbOk = rebootResult.ok;
+      logger.info?.('device.router.recover.adb', { deviceId, ok: adbOk });
+    } catch (err) {
+      logger.warn?.('device.router.recover.adb.failed', { deviceId, error: err.message });
+    }
+
+    // Step 2: If ADB failed, power cycle via HA
+    if (!adbOk) {
+      logger.info?.('device.router.recover.power-cycle', { deviceId });
+      try {
+        await device.powerOff();
+        await new Promise(r => setTimeout(r, 10_000));
+        await device.powerOn();
+        // Wait for FKB to boot after power cycle
+        await new Promise(r => setTimeout(r, 60_000));
+      } catch (err) {
+        logger.error?.('device.router.recover.power-cycle.failed', { deviceId, error: err.message });
+        return res.json({ ok: false, error: 'Recovery failed: ' + err.message, method: 'power-cycle' });
+      }
+    } else {
+      // Wait for FKB to restart after ADB reboot
+      await new Promise(r => setTimeout(r, 15_000));
+    }
+
+    // Step 3: Re-prepare and re-load content
+    try {
+      await device.prepareForContent();
+      if (reloadQuery) {
+        const screenPath = device.screenPath || '/tv';
+        await device.loadContent(screenPath, reloadQuery);
+      }
+    } catch (err) {
+      logger.warn?.('device.router.recover.reload.failed', { deviceId, error: err.message });
+    }
+
+    const method = adbOk ? 'adb-restart' : 'power-cycle';
+    logger.info?.('device.router.recover.complete', { deviceId, method });
+    res.json({ ok: true, method });
+  }));
+
   // ===========================================================================
   // Volume Control
   // ===========================================================================
