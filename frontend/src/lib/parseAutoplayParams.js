@@ -11,7 +11,8 @@
 
 const CONFIG_KEYS = [
   'volume', 'shader', 'playbackRate', 'shuffle', 'continuous',
-  'repeat', 'loop', 'overlay', 'advance', 'interval', 'mode', 'frame'
+  'repeat', 'loop', 'overlay', 'advance', 'interval', 'mode', 'frame',
+  'prewarmToken', 'prewarmContentId'
 ];
 
 function toContentId(value) {
