@@ -182,7 +182,7 @@ export class FullyKioskContentAdapter {
         const CAMERA_RETRY_MS = 2000;
 
         for (let camAttempt = 1; camAttempt <= MAX_CAMERA_ATTEMPTS; camAttempt++) {
-          const camResult = await this.#adbAdapter.shell('ls /dev/video* 2>/dev/null | wc -l');
+          const camResult = await this.#adbAdapter.shell('ls /dev/camera/video* /dev/video* 2>/dev/null | wc -l');
           const count = parseInt(camResult.output?.trim(), 10) || 0;
 
           if (count > 0) {
