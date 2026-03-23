@@ -193,8 +193,7 @@ export class FileAdapter {
       { prefix: 'files' },
       { prefix: 'media' },
       { prefix: 'file' },
-      { prefix: 'fs' },
-      { prefix: 'freshvideo', idTransform: (id) => `video/news/${id}` }
+      { prefix: 'fs' }
     ];
   }
 
@@ -619,8 +618,14 @@ export class FileAdapter {
    * @returns {Promise<PlayableItem[]>}
    */
   async resolvePlayables(id, options = {}) {
-    // Detect freshvideo paths (video/news/*) and apply strategy
-    const isFreshVideo = options.freshvideo || id.startsWith('video/news/');
+    // Detect freshvideo paths — check both explicit video/news/ prefix
+    // and paths that resolve under the video/ MEDIA_PREFIX with a news/ localId
+    // (e.g., "media:news/aljazeera" resolves to media/video/news/aljazeera/)
+    const localId = id.replace(/^(files|media|local|file|fs):/, '');
+    const resolved = this.resolvePath(localId);
+    const isFreshVideo = options.freshvideo
+      || localId.startsWith('video/news/')
+      || (resolved?.prefix === 'video' && localId.startsWith('news/'));
 
     // Try as single item first (handles single files like sfx/intro)
     const item = await this.getItem(id);
