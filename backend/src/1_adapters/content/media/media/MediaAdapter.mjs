@@ -371,8 +371,10 @@ export class MediaAdapter {
         const entries = listEntries(resolved.path);
         const baseName = path.basename(localId);
 
-        // Detect freshvideo paths (video/news/*)
-        const isFreshVideo = localId.startsWith('video/news/');
+        // Detect freshvideo paths (video/news/*) — also check resolved prefix
+        // for paths like news/aljazeera that resolve under the video/ MEDIA_PREFIX
+        const isFreshVideo = localId.startsWith('video/news/')
+          || (resolved.prefix === 'video' && localId.startsWith('news/'));
         let title = baseName;
         let thumbnail = null;
 
