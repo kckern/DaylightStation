@@ -245,4 +245,90 @@ describe('FullyKioskContentAdapter', () => {
       expect(forceStopCalls).toHaveLength(0);
     });
   });
+
+  describe('load', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('should succeed on first attempt when loadURL succeeds', async () => {
+      const httpClient = createMockHttpClient();
+      const adapter = new FullyKioskContentAdapter(defaultConfig, { httpClient, logger: mockLogger });
+
+      const result = await adapter.load('/tv/screen', { device: 'shield' });
+
+      expect(result.ok).toBe(true);
+      expect(result.attempt).toBe(1);
+      expect(result.url).toContain('/tv/screen');
+      expect(result.url).toContain('device=shield');
+    });
+
+    it('should retry and succeed on second attempt after transient failure', async () => {
+      let callCount = 0;
+      const httpClient = {
+        get: vi.fn(async (url) => {
+          if (url.includes('cmd=loadURL')) {
+            callCount++;
+            if (callCount === 1) {
+              throw new Error('socket hang up');
+            }
+            return { status: 200, data: '{}' };
+          }
+          if (url.includes('cmd=getDeviceInfo')) {
+            return { status: 200, data: JSON.stringify({ foreground: 'de.ozerov.fully' }) };
+          }
+          return { status: 200, data: '{}' };
+        }),
+      };
+
+      const adapter = new FullyKioskContentAdapter(defaultConfig, { httpClient, logger: mockLogger });
+
+      const loadPromise = adapter.load('/tv/screen', { device: 'shield' });
+      // Advance past the 1s backoff between attempt 1 and 2
+      await vi.advanceTimersByTimeAsync(1500);
+      const result = await loadPromise;
+
+      expect(result.ok).toBe(true);
+      expect(result.attempt).toBe(2);
+      // First attempt failure should have been logged as a warn
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'fullykiosk.load.attemptFailed',
+        expect.objectContaining({ attempt: 1 })
+      );
+    });
+
+    it('should fail after exhausting all retries', async () => {
+      const httpClient = {
+        get: vi.fn(async (url) => {
+          if (url.includes('cmd=loadURL')) {
+            throw new Error('ECONNREFUSED');
+          }
+          if (url.includes('cmd=getDeviceInfo')) {
+            return { status: 200, data: JSON.stringify({ foreground: 'de.ozerov.fully' }) };
+          }
+          return { status: 200, data: '{}' };
+        }),
+      };
+
+      const adapter = new FullyKioskContentAdapter(defaultConfig, { httpClient, logger: mockLogger });
+
+      const loadPromise = adapter.load('/tv/screen', { device: 'shield' });
+      // Advance past all backoff delays: 1s + 2s between attempts
+      await vi.advanceTimersByTimeAsync(1500);
+      await vi.advanceTimersByTimeAsync(2500);
+      const result = await loadPromise;
+
+      expect(result.ok).toBe(false);
+      expect(result.attempts).toBe(3);
+      expect(result.error).toBe('ECONNREFUSED');
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'fullykiosk.load.failed',
+        expect.objectContaining({ attempts: 3 })
+      );
+    });
+  });
 });
