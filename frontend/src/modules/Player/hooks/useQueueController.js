@@ -98,6 +98,9 @@ export function useQueueController({ play, queue, clear, shuffle }) {
       if (sourceObj.maxVideoBitrate !== undefined) itemOverrides.maxVideoBitrate = sourceObj.maxVideoBitrate;
       if (sourceObj.maxResolution !== undefined) itemOverrides.maxResolution = sourceObj.maxResolution;
 
+      const prewarmToken = sourceObj.prewarmToken || null;
+      const prewarmContentId = sourceObj.prewarmContentId || null;
+
       if (Array.isArray(play)) {
         newQueue = play.map(item => ({ ...item, guid: guid() }));
       } else if (Array.isArray(queue)) {
@@ -108,6 +111,36 @@ export function useQueueController({ play, queue, clear, shuffle }) {
           const response = await DaylightAPI(`api/v1/queue/${contentRef}${shuffleParam}`);
           newQueue = response.items.map(item => ({ ...item, ...itemOverrides, guid: guid() }));
           fetchedAudio = response.audio || null;
+
+          // Inject pre-warmed DASH URL into first matching queue item
+          if (prewarmToken && prewarmContentId && newQueue.length > 0) {
+            const firstItem = newQueue[0];
+            if (firstItem.contentId === prewarmContentId) {
+              try {
+                const resp = await DaylightAPI(`api/v1/prewarm/${prewarmToken}`);
+                if (resp?.url) {
+                  firstItem.mediaUrl = resp.url;
+                  firstItem.format = 'dash_video';
+                  firstItem.mediaType = 'dash_video';
+                  playbackLog('prewarm-applied', {
+                    contentId: prewarmContentId,
+                    token: prewarmToken
+                  }, { level: 'info' });
+                }
+              } catch (err) {
+                playbackLog('prewarm-redeem-failed', {
+                  contentId: prewarmContentId,
+                  error: err?.message
+                }, { level: 'warn' });
+                // Fall through — normal /play API flow will handle it
+              }
+            } else {
+              playbackLog('prewarm-mismatch', {
+                expected: prewarmContentId,
+                actual: firstItem.contentId
+              }, { level: 'debug' });
+            }
+          }
         } else if (play?.media) {
           // Inline media object — no API resolution needed
           newQueue = [{ ...play, ...itemOverrides, guid: guid() }];
