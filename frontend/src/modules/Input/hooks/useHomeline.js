@@ -178,7 +178,7 @@ export const useHomeline = (role, deviceId, peer) => {
   useEffect(() => {
     if (role !== 'phone' || status !== 'connecting') return;
 
-    const timeoutMs = coldWakeRef.current ? 30_000 : 10_000;
+    const timeoutMs = coldWakeRef.current ? 60_000 : 45_000;
 
     const timer = setTimeout(() => {
       logger().warn('connect-timeout', {
