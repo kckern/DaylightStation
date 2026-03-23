@@ -8,6 +8,7 @@ import useCallOwnership from '../modules/Input/hooks/useCallOwnership.js';
 import useMediaControls from '../modules/Input/hooks/useMediaControls.js';
 import useZoomGestures from '../modules/Input/hooks/useZoomGestures.js';
 import { useWakeProgress } from '../modules/Input/hooks/useWakeProgress';
+import wsService from '../services/WebSocketService.js';
 import getLogger from '../lib/logging/Logger.js';
 import './CallApp.scss';
 
@@ -559,6 +560,19 @@ export default function CallApp() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Check if the TV is already running VideoCall by listening for its heartbeat.
+  // Returns true if a heartbeat is detected within the timeout, false otherwise.
+  const checkTvHeartbeat = useCallback((targetDeviceId, timeoutMs = 2000) => {
+    return new Promise((resolve) => {
+      const topic = `homeline:${targetDeviceId}`;
+      const timer = setTimeout(() => { unsub(); resolve(false); }, timeoutMs);
+      const unsub = wsService.subscribe(
+        (data) => data.topic === topic && data.type === 'waiting',
+        () => { clearTimeout(timer); unsub(); resolve(true); }
+      );
+    });
+  }, []);
+
   // Wake device (power on + load videocall URL) then connect signaling
   const dropIn = useCallback(async (targetDeviceId) => {
     if (waking || status !== 'idle' || cooldown) return;
@@ -571,6 +585,18 @@ export default function CallApp() {
     setWakeError(null);
     connectedDeviceRef.current = targetDeviceId;
     setActiveDeviceId(targetDeviceId);
+
+    // Fast path: if the TV is already heartbeating (e.g., after page reload),
+    // skip the full wake-and-load cycle and connect immediately.
+    const alreadyReady = await checkTvHeartbeat(targetDeviceId);
+    if (alreadyReady) {
+      logger.info('drop-in-fast-path', { targetDeviceId, hint: 'TV already heartbeating, skipping wake' });
+      setWaking(false);
+      coldWakeRef.current = false;
+      connect(targetDeviceId);
+      return;
+    }
+
     try {
       const result = await DaylightAPI(`/api/v1/device/${targetDeviceId}/load?open=videocall/${targetDeviceId}`);
       logger.info('wake-result', { targetDeviceId, ok: result.ok, failedStep: result.failedStep });
@@ -606,7 +632,7 @@ export default function CallApp() {
       setTimeout(() => setCooldown(false), 3000);
       return;
     }
-  }, [logger, connect, waking, status, stream, error, cooldown]);
+  }, [logger, connect, checkTvHeartbeat, waking, status, stream, error, cooldown]);
 
   // Execute pending retry once status returns to idle
   useEffect(() => {

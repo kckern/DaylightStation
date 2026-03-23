@@ -25,6 +25,9 @@ export class WakeAndLoadService {
    * @param {Function} deps.broadcast - broadcastEvent(payload) function
    * @param {Object} [deps.logger]
    */
+  /** @type {Map<string, Promise<Object>>} In-flight wake-and-load per device */
+  #inflight = new Map();
+
   constructor(deps) {
     this.#deviceService = deps.deviceService;
     this.#readinessPolicy = deps.readinessPolicy;
@@ -34,12 +37,27 @@ export class WakeAndLoadService {
 
   /**
    * Execute the full wake-and-load workflow.
+   * Deduplicates concurrent calls for the same device — a second call while
+   * the first is in-flight returns the first call's result.
    *
    * @param {string} deviceId - Target device
    * @param {Object} query - Query params for content loading (e.g., { open: 'videocall/id' })
    * @returns {Promise<Object>} - Result with per-step outcomes
    */
   async execute(deviceId, query = {}) {
+    if (this.#inflight.has(deviceId)) {
+      this.#logger.info?.('wake-and-load.deduplicated', { deviceId });
+      return this.#inflight.get(deviceId);
+    }
+
+    const promise = this.#executeInner(deviceId, query).finally(() => {
+      this.#inflight.delete(deviceId);
+    });
+    this.#inflight.set(deviceId, promise);
+    return promise;
+  }
+
+  async #executeInner(deviceId, query = {}) {
     const startTime = Date.now();
     const topic = `homeline:${deviceId}`;
     const device = this.#deviceService.get(deviceId);
