@@ -235,12 +235,18 @@ export class FullyKioskContentAdapter {
   }
 
   /**
-   * Load content URL on the device
+   * Load content URL on the device with retry logic.
+   *
+   * Retries up to MAX_LOAD_RETRIES times on transient failures (socket hang up,
+   * timeout, connection refused) before giving up. Each retry waits with
+   * exponential backoff (1s, 2s, 4s).
+   *
    * @param {string} path - Path to load
    * @param {Object} [query] - Query parameters
    * @returns {Promise<Object>}
    */
   async load(path, query = {}) {
+    const MAX_LOAD_RETRIES = 3;
     const startTime = Date.now();
     this.#metrics.loads++;
 
@@ -252,37 +258,65 @@ export class FullyKioskContentAdapter {
       kioskPort: this.#port
     });
 
-    try {
-      // Build destination URL
-      const queryString = new URLSearchParams(query).toString();
-      const fullUrl = `${this.#daylightHost}${path}${queryString ? `?${queryString}` : ''}`;
+    // Build destination URL
+    const queryString = new URLSearchParams(query).toString();
+    const fullUrl = `${this.#daylightHost}${path}${queryString ? `?${queryString}` : ''}`;
 
-      this.#logger.info?.('fullykiosk.load.builtUrl', { fullUrl });
+    this.#logger.info?.('fullykiosk.load.builtUrl', { fullUrl });
 
-      // Send load command
-      const result = await this.#sendCommand('loadURL', { url: fullUrl });
+    let lastError = null;
 
-      if (result.ok) {
-        this.#logger.info?.('fullykiosk.load.success', { fullUrl, loadTimeMs: Date.now() - startTime });
-        return {
-          ok: true,
-          url: fullUrl,
-          loadTimeMs: Date.now() - startTime
-        };
-      } else {
-        this.#metrics.errors++;
-        this.#logger.error?.('fullykiosk.load.failed', { fullUrl, error: result.error, loadTimeMs: Date.now() - startTime });
-        return {
-          ok: false,
-          url: fullUrl,
-          error: result.error
-        };
+    for (let attempt = 1; attempt <= MAX_LOAD_RETRIES; attempt++) {
+      try {
+        const result = await this.#sendCommand('loadURL', { url: fullUrl });
+
+        if (result.ok) {
+          this.#logger.info?.('fullykiosk.load.success', {
+            fullUrl,
+            attempt,
+            loadTimeMs: Date.now() - startTime
+          });
+          return {
+            ok: true,
+            url: fullUrl,
+            attempt,
+            loadTimeMs: Date.now() - startTime
+          };
+        }
+
+        lastError = result.error;
+        this.#logger.warn?.('fullykiosk.load.attemptFailed', {
+          fullUrl, attempt, maxRetries: MAX_LOAD_RETRIES, error: result.error
+        });
+      } catch (error) {
+        lastError = error.message;
+        this.#logger.warn?.('fullykiosk.load.attemptException', {
+          fullUrl, attempt, maxRetries: MAX_LOAD_RETRIES, error: error.message
+        });
       }
-    } catch (error) {
-      this.#metrics.errors++;
-      this.#logger.error?.('fullykiosk.load.exception', { path, error: error.message, stack: error.stack });
-      return { ok: false, error: error.message };
+
+      // Exponential backoff before retry (1s, 2s, 4s)
+      if (attempt < MAX_LOAD_RETRIES) {
+        const backoffMs = 1000 * Math.pow(2, attempt - 1);
+        this.#logger.info?.('fullykiosk.load.retrying', { attempt, nextAttempt: attempt + 1, backoffMs });
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+      }
     }
+
+    // All retries exhausted
+    this.#metrics.errors++;
+    this.#logger.error?.('fullykiosk.load.failed', {
+      fullUrl,
+      error: lastError,
+      attempts: MAX_LOAD_RETRIES,
+      loadTimeMs: Date.now() - startTime
+    });
+    return {
+      ok: false,
+      url: fullUrl,
+      error: lastError,
+      attempts: MAX_LOAD_RETRIES
+    };
   }
 
   /**
