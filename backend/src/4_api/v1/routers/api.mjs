@@ -100,7 +100,8 @@ export function createApiRouter(config) {
     '/queries': 'queries',
     '/test': 'test',  // Test infrastructure (dev/test only)
     '/launch': 'launch',
-    '/sync': 'sync'
+    '/sync': 'sync',
+    '/prewarm': 'prewarm'
   };
 
   // Mount each router at its path
