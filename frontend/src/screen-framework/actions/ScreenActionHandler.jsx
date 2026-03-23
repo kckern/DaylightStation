@@ -4,6 +4,8 @@ import { useScreenOverlay } from '../overlays/ScreenOverlayProvider.jsx';
 import { DaylightAPI } from '../../lib/api.mjs';
 import MenuStack from '../../modules/Menu/MenuStack.jsx';
 import Player from '../../modules/Player/Player.jsx';
+import AppContainer from '../../modules/AppContainer/AppContainer.jsx';
+import { getApp } from '../../lib/appRegistry.js';
 import getLogger from '../../lib/logging/Logger.js';
 
 let _logger;
@@ -59,22 +61,31 @@ export function ScreenActionHandler({ actions = {} }) {
   const currentMenuRef = useRef(null);
 
   const handleMenuOpen = useCallback((payload) => {
+    // Check if menuId matches a registered app (e.g., "videocall/livingroom-tv")
+    const menuId = payload.menuId;
+    const appId = menuId?.split('/')[0];
+    if (appId && getApp(appId)) {
+      logger().info('app.open', { menuId, appId });
+      showOverlay(AppContainer, { open: menuId, clear: () => dismissOverlay() });
+      return;
+    }
+
     const duplicateMode = actions?.menu?.duplicate;
-    if (duplicateMode && currentMenuRef.current === payload.menuId) {
+    if (duplicateMode && currentMenuRef.current === menuId) {
       if (duplicateMode === 'navigate') {
         // Dispatch synthetic ArrowRight so Menu.jsx advances to the next item sequentially
         // (ArrowDown skips by column count in grid layouts; ArrowRight always moves +1)
-        logger().debug('menu.duplicate-navigate', { menuId: payload.menuId });
+        logger().debug('menu.duplicate-navigate', { menuId });
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', code: 'ArrowRight', bubbles: true }));
       } else {
-        logger().debug('menu.duplicate-ignored', { menuId: payload.menuId });
+        logger().debug('menu.duplicate-ignored', { menuId });
       }
       return;
     }
-    currentMenuRef.current = payload.menuId;
+    currentMenuRef.current = menuId;
     const menuTimeout = actions?.menu?.timeout ?? 0;
-    showOverlay(MenuStack, { rootMenu: payload.menuId, MENU_TIMEOUT: menuTimeout });
-  }, [showOverlay, actions]);
+    showOverlay(MenuStack, { rootMenu: menuId, MENU_TIMEOUT: menuTimeout });
+  }, [showOverlay, dismissOverlay, actions]);
 
   // --- Media play/queue ---
   const handleMediaPlay = useCallback((payload) => {
