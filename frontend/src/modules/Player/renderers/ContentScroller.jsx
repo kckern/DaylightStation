@@ -99,6 +99,19 @@ import { useMediaReporter } from '../hooks/useMediaReporter.js';
       contentHeight
     } = useDynamicDimensions([contentData, duration]);
 
+  // Track in-body heading positions for sticky header
+  const headingPositionsRef = useRef([]);
+
+  // Measure h4 positions after content renders
+  useEffect(() => {
+    const contentEl = contentRef.current;
+    if (!contentEl) return;
+    const h4s = contentEl.querySelectorAll('h4');
+    headingPositionsRef.current = Array.from(h4s).map(el => ({
+      top: el.offsetTop,
+      text: el.textContent,
+    }));
+  }, [contentData]);
 
 
   const classes = Array.isArray(shaders)? shaders : ['regular', 'minimal', 'night', 'screensaver', 'dark'];
@@ -296,17 +309,34 @@ import { useMediaReporter } from '../hooks/useMediaReporter.js';
       // Clamp to reasonable bounds to prevent over-scrolling
       const maxOffset = Math.max(0, contentHeight - panelHeight);
       return Math.max(0, Math.min(maxOffset, baseOffset));
-    }, [yProgress, contentHeight, panelHeight]); 
+    }, [yProgress, contentHeight, panelHeight]);
+
+  // Determine which section heading has scrolled past
+  const currentSection = useMemo(() => {
+    const positions = headingPositionsRef.current;
+    if (!positions.length || yOffset <= 0) return null;
+    let current = null;
+    for (const pos of positions) {
+      if (pos.top <= yOffset) current = pos.text;
+      else break;
+    }
+    return current;
+  }, [yOffset]);
+
     return (
       <div className={`content-scroller ${type} ${className} ${shader}${isSeeking ? ' seeking' : ''}`} style={{
         backgroundImage: `url(${paperBackground})`,
         backgroundPosition: `0px ${-yOffset}px`
       }}>
-        {(title || subtitle) && (
-          <>
-            {title && <h2>{title}</h2>}
-            {subtitle && <h3>{subtitle}</h3>}
-          </>
+        {title && (
+          <header className={`scroller-header${currentSection ? ' has-section' : ''}`}>
+            <span className="scroller-header-title">{title}</span>
+            {currentSection && (
+              <span key={currentSection} className="scroller-header-section">
+                {currentSection}
+              </span>
+            )}
+          </header>
         )}
         <div className="content-container">
 
