@@ -380,6 +380,7 @@ export class FullyKioskContentAdapter {
     const queryParams = new URLSearchParams({
       cmd,
       password: this.#password,
+      type: 'json',
       ...params
     });
 
