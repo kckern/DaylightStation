@@ -248,10 +248,17 @@
 
   .poetry-text {
     width: 100%;
-    padding-top: 2rem;
-    padding-bottom: calc(0.2 * var(--textpanel-height)); // 60% of .textpanel height
-    font-size: 3rem;
-    margin-bottom: 2rem;
+    padding: 0 2rem 20rem 2rem;
+    margin-top: -1rem;
+    font-size: 2.8rem;
+    font-family: serif;
+    color: #5d3408;
+    line-height: 1.15;
+
+    p {
+      margin: 0 0 0.3rem 0;
+      line-height: 1.15;
+    }
 
     > div {
       display: inline-block;
