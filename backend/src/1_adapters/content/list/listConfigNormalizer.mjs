@@ -109,6 +109,7 @@ export function normalizeListItem(item) {
   if (item.shuffle != null) result.shuffle = item.shuffle;
   if (item.menuStyle != null) result.menuStyle = item.menuStyle;
   if (item.playbackrate != null) result.playbackrate = item.playbackrate;
+  if (item.shader != null) result.shader = item.shader;
   if (item.days != null) result.days = item.days;
   if (item.applySchedule != null) result.applySchedule = item.applySchedule;
 

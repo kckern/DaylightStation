@@ -14,13 +14,15 @@ import { useScreenSubscriptions } from './subscriptions/useScreenSubscriptions.j
 import { useScreenCommands } from './commands/useScreenCommands.js';
 import { MenuNavigationProvider, useMenuNavigationContext } from '../context/MenuNavigationContext.jsx';
 import { parseAutoplayParams } from '../lib/parseAutoplayParams.js';
-import { bindBackButton } from '../lib/fkb.js';
+import { bindBackButton, enableGlobalKeyCapture } from '../lib/fkb.js';
 import getLogger from '../lib/logging/Logger.js';
 
 // Register built-ins on module load
 registerBuiltinWidgets();
 // Bind FKB back button → Escape on module load
 bindBackButton();
+// Log all remote button presses for Shield TV audit
+enableGlobalKeyCapture();
 
 const AUTOPLAY_ACTIONS = ['play', 'queue', 'playlist', 'random', 'display', 'read', 'open', 'app', 'launch', 'list'];
 

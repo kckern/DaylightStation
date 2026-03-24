@@ -164,6 +164,8 @@ export function ArcadeSelector({
   }, [layout, tilePos]);
 
   // --- Keyboard navigation (spatial nearest-neighbor) ---
+  const selectCooldownRef = useRef(false);
+
   const handleKeyDown = useCallback(
     (e) => {
       if (!items.length) return;
@@ -173,45 +175,45 @@ export function ArcadeSelector({
       };
 
       const key = e.key;
-      const synthetic = !!e.__gamepadSynthetic;
-      const isBack = key === "Escape" || key === "GamepadSelect";
+      const isBack = key === "Escape" || key === "GoBack" || key === "BrowserBack"
+        || key === "GamepadSelect" || e.keyCode === 4;  // Android KEYCODE_BACK = 4
       const isArrow = key.startsWith("Arrow");
       const isModifier = key === "Shift" || key === "Control" || key === "Alt" || key === "Meta" || key === "Tab";
 
-      logger.debug("keydown", { key, code: e.code, synthetic, isArrow, isBack, isModifier });
+      if (isModifier) return;
 
-      if (key === "ArrowUp") {
+      // Log all meaningful key events (sampled to avoid flood)
+      if (!isArrow) {
+        logger.sampled('arcade.keydown', {
+          key, code: e.code, keyCode: e.keyCode, isBack,
+          repeat: e.repeat, currentIndex: selectedIndex, itemCount: items.length,
+        }, { maxPerMinute: 30 });
+      }
+
+      if (isArrow) {
           e.preventDefault();
-          navigate(findNearest(selectedIndex, 'up'));
-      } else if (key === "ArrowDown") {
-          e.preventDefault();
-          navigate(findNearest(selectedIndex, 'down'));
-      } else if (key === "ArrowLeft") {
-          e.preventDefault();
-          navigate(findNearest(selectedIndex, 'left'));
-      } else if (key === "ArrowRight") {
-          e.preventDefault();
-          navigate(findNearest(selectedIndex, 'right'));
+          const dir = key === "ArrowUp" ? 'up' : key === "ArrowDown" ? 'down'
+            : key === "ArrowLeft" ? 'left' : 'right';
+          navigate(findNearest(selectedIndex, dir));
       } else if (isBack) {
           e.preventDefault();
+          logger.info('arcade.back', { key, code: e.code, keyCode: e.keyCode, currentIndex: selectedIndex });
           handleClose();
-      } else if (!isModifier) {
+      } else {
           // Any non-navigation, non-back, non-modifier key is select
-          // (covers Enter, Space, and all gamepad face/shoulder buttons
-          //  regardless of what key name the WebView reports)
           e.preventDefault();
+          // Guard: ignore key repeat and rapid duplicate events.
+          if (e.repeat || selectCooldownRef.current) return;
+          selectCooldownRef.current = true;
+          setTimeout(() => { selectCooldownRef.current = false; }, 300);
           const selected = items[selectedIndex];
-          onSelect?.(selected);
-          const launchObj = selected?.launch;
-          logger.info("item-selected", {
+          logger.info('arcade.select', {
+            key, code: e.code, keyCode: e.keyCode,
             contentId: findKeyForItem(selected),
             title: selected?.label,
             parentTitle: selected?.parentTitle,
-            ...(launchObj && {
-              launchContentId: launchObj.contentId,
-              launchTarget: launchObj.targetDeviceId,
-            }),
           });
+          onSelect?.(selected);
       }
     },
     [items, selectedIndex, layout, tilePos, findNearest, onSelect, handleClose, setSelectedIndex, findKeyForItem, logger]

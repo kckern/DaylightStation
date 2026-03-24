@@ -26,6 +26,7 @@ import { getClientId } from '../../lib/clientId.js';
 // -------------------- Constants --------------------
 
 const MAX_SERIALIZED_SERIES_POINTS = 200000;
+const MIN_MEDIA_MS = 30 * 1000; // 30s — filter brief browse-past blips
 
 const ZONE_SYMBOL_MAP = {
   rest: 'r',
@@ -470,6 +471,21 @@ const _consolidateEvents = (events) => {
     });
   }
 
+  // ── Filter brief video blips (browse-past) ──
+  // Keep short events if they're the only video media, so sessions aren't left empty.
+  const videoEvents = mediaEvents.filter(e => {
+    const d = e.data || {};
+    const isAudio = d.contentType === 'track' || !!d.artist;
+    if (isAudio) return true; // never filter audio
+    const watchMs = (d.end != null && d.start != null) ? d.end - d.start : Infinity;
+    return watchMs >= MIN_MEDIA_MS;
+  });
+  const hasLongerVideo = videoEvents.some(e => {
+    const d = e.data || {};
+    return !(d.contentType === 'track' || !!d.artist);
+  });
+  const filteredMedia = hasLongerVideo ? videoEvents : mediaEvents;
+
   // ── Build consolidated governance events ──
   const consolidatedGov = govEvents.map((g) => ({
     timestamp: g.start,
@@ -502,7 +518,7 @@ const _consolidateEvents = (events) => {
   }
 
   // Merge and sort by timestamp
-  const all = [...challengeEvents, ...mediaEvents, ...consolidatedGov, ...voiceMemoEvents, ...otherEvents];
+  const all = [...challengeEvents, ...filteredMedia, ...consolidatedGov, ...voiceMemoEvents, ...otherEvents];
   all.sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
   return all;
 };
@@ -775,7 +791,13 @@ export class PersistenceManager {
       return { ok: false, reason: 'roster-required' };
     }
     if (hasUserSeries && deviceAssignments.length === 0 && !this.hasSuccessfulSave(sessionData.sessionId)) {
-      return { ok: false, reason: 'device-assignments-required' };
+      // Log but don't block — BLE-only sessions (e.g. bike rides with Garmin watch)
+      // may never receive device assignments, and blocking persistence causes total
+      // data loss for video/voice memos (see 2026-03-17 incident).
+      getLogger().info('fitness.persistence.no_device_assignments', {
+        sessionId: sessionData.sessionId,
+        rosterLength: roster.length,
+      });
     }
 
     // Hard minimums: must have participants and be over 60 seconds

@@ -78,6 +78,8 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
   const [pagination, setPagination] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const scrollViewportRef = useRef(null);
+  const loadCooldownRef = useRef(false); // prevent scroll-triggered load feedback loop
+  const inputRef = useRef(null);
 
   // Log prop changes
   useEffect(() => {
@@ -122,11 +124,6 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
 
   // Debounced search function
   const debouncedSearch = useDebouncedCallback((text) => {
-    if (breadcrumbs.length > 0) {
-      log.debug('search.skip_browsing', { text, breadcrumbDepth: breadcrumbs.length });
-      return;
-    }
-
     const mode = supportsSSE() ? 'sse' : 'batch';
     log.info('search.dispatch', { text, mode });
     if (supportsSSE()) {
@@ -150,19 +147,25 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
     onDropdownClose: () => {
       log.debug('dropdown.close', { search, value, breadcrumbDepth: breadcrumbs.length, resultCount: results.length });
       combobox.resetSelectedOption();
+      // Reset search to null so input shows committed value when closed
+      setSearch(null);
     },
     onDropdownOpen: () => {
       log.debug('dropdown.open', { value, search, initialLoadDone, resultCount: results.length });
-      // Initialize search with current value so user can see/edit it
-      if (value && search === null) {
-        log.debug('dropdown.open.init_search_from_value', { value });
-        setSearch(value);
+      // Start with empty search field so user can type immediately
+      if (search === null) {
+        log.debug('dropdown.open.init_empty_search');
+        setSearch('');
       }
       // When opening, if we have a value and haven't loaded siblings yet, browse to parent
       if (value && !initialLoadDone && results.length === 0) {
         log.info('dropdown.open.load_siblings', { value });
         loadSiblings(value);
       }
+      // Select all text so user can type over it
+      requestAnimationFrame(() => {
+        inputRef.current?.select();
+      });
     }
   });
 
@@ -291,6 +294,14 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
       log.error('load_more_siblings.error', { direction, error: err.message });
     } finally {
       setLoadingMore(false);
+      // Cooldown: ignore scroll events briefly after load to prevent feedback loop
+      // (appending items can shift scroll position, re-triggering onScrollPositionChange)
+      loadCooldownRef.current = true;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          loadCooldownRef.current = false;
+        });
+      });
     }
   }, [value, pagination, loadingMore]);
 
@@ -540,9 +551,17 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
       <Combobox.Target>
         <TextInput
           value={displayValue}
+          ref={inputRef}
           onChange={(e) => {
             const newValue = e.target.value;
             log.debug('input.change', { newValue, prevSearch: search, breadcrumbDepth: breadcrumbs.length });
+            // Exit browse mode when user types — enables search
+            if (breadcrumbs.length > 0) {
+              log.info('input.exit_browse_mode', { reason: 'user_typed', breadcrumbDepth: breadcrumbs.length });
+              setBreadcrumbs([]);
+              setBrowseResults([]);
+              setPagination(null);
+            }
             setSearch(newValue);
             debouncedSearch(newValue);
             combobox.openDropdown();
@@ -634,7 +653,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
             mah={300}
             viewportRef={scrollViewportRef}
             onScrollPositionChange={({ y }) => {
-              if (!pagination || loadingMore || breadcrumbs.length === 0) return;
+              if (!pagination || loadingMore || loadCooldownRef.current || breadcrumbs.length === 0) return;
               const viewport = scrollViewportRef.current;
               if (!viewport) return;
               const { scrollHeight, clientHeight } = viewport;

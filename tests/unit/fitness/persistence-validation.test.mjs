@@ -207,6 +207,202 @@ describe('PersistenceManager — validation', () => {
     });
   });
 
+  describe('_consolidateEvents — media blip filtering', () => {
+    it('should filter out media events watched less than 30 seconds', () => {
+      const pm = new PersistenceManager();
+      const now = Date.now();
+      const sessionData = {
+        startTime: now - 600000,
+        endTime: now,
+        roster: [{ id: 'alice', name: 'Alice' }],
+        deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+        timeline: {
+          timebase: { tickCount: 6 },
+          series: { 'user:alice:heart_rate': [80, 85, 90, 88, 92, 95] },
+          events: [
+            {
+              timestamp: now - 100000,
+              type: 'media_start',
+              data: { contentId: 'plex:111', title: 'Dynamix', source: 'video_player' }
+            },
+            {
+              timestamp: now - 98000,
+              type: 'media_end',
+              data: { contentId: 'plex:111', source: 'video_player' }
+            },
+            {
+              timestamp: now - 97000,
+              type: 'media_start',
+              data: { contentId: 'plex:222', title: 'Total Synergistics', source: 'video_player' }
+            },
+            {
+              timestamp: now - 1000,
+              type: 'media_end',
+              data: { contentId: 'plex:222', source: 'video_player' }
+            },
+          ]
+        }
+      };
+
+      pm.validateSessionPayload(sessionData);
+      const mediaEvents = sessionData.timeline.events.filter(e => e.type === 'media');
+      expect(mediaEvents).toHaveLength(1);
+      expect(mediaEvents[0].data.contentId).toBe('plex:222');
+      expect(mediaEvents[0].data.title).toBe('Total Synergistics');
+    });
+
+    it('should keep the blip if it is the only media event', () => {
+      const pm = new PersistenceManager();
+      const now = Date.now();
+      const sessionData = {
+        startTime: now - 600000,
+        endTime: now,
+        roster: [{ id: 'alice', name: 'Alice' }],
+        deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+        timeline: {
+          timebase: { tickCount: 6 },
+          series: { 'user:alice:heart_rate': [80, 85, 90, 88, 92, 95] },
+          events: [
+            {
+              timestamp: now - 100000,
+              type: 'media_start',
+              data: { contentId: 'plex:111', title: 'Dynamix', source: 'video_player' }
+            },
+            {
+              timestamp: now - 98000,
+              type: 'media_end',
+              data: { contentId: 'plex:111', source: 'video_player' }
+            },
+          ]
+        }
+      };
+
+      pm.validateSessionPayload(sessionData);
+      const mediaEvents = sessionData.timeline.events.filter(e => e.type === 'media');
+      expect(mediaEvents).toHaveLength(1);
+      expect(mediaEvents[0].data.contentId).toBe('plex:111');
+    });
+
+    it('should keep all blips when no video exceeds threshold', () => {
+      const pm = new PersistenceManager();
+      const now = Date.now();
+      const sessionData = {
+        startTime: now - 600000,
+        endTime: now,
+        roster: [{ id: 'alice', name: 'Alice' }],
+        deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+        timeline: {
+          timebase: { tickCount: 6 },
+          series: { 'user:alice:heart_rate': [80, 85, 90, 88, 92, 95] },
+          events: [
+            {
+              timestamp: now - 100000,
+              type: 'media_start',
+              data: { contentId: 'plex:111', title: 'Short A', source: 'video_player' }
+            },
+            {
+              timestamp: now - 95000,
+              type: 'media_end',
+              data: { contentId: 'plex:111', source: 'video_player' }
+            },
+            {
+              timestamp: now - 90000,
+              type: 'media_start',
+              data: { contentId: 'plex:222', title: 'Short B', source: 'video_player' }
+            },
+            {
+              timestamp: now - 85000,
+              type: 'media_end',
+              data: { contentId: 'plex:222', source: 'video_player' }
+            },
+          ]
+        }
+      };
+
+      pm.validateSessionPayload(sessionData);
+      const mediaEvents = sessionData.timeline.events.filter(e => e.type === 'media');
+      expect(mediaEvents).toHaveLength(2);
+    });
+
+    it('should keep media events with no end timestamp (still playing)', () => {
+      const pm = new PersistenceManager();
+      const now = Date.now();
+      const sessionData = {
+        startTime: now - 600000,
+        endTime: now,
+        roster: [{ id: 'alice', name: 'Alice' }],
+        deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+        timeline: {
+          timebase: { tickCount: 6 },
+          series: { 'user:alice:heart_rate': [80, 85, 90, 88, 92, 95] },
+          events: [
+            {
+              timestamp: now - 100000,
+              type: 'media_start',
+              data: { contentId: 'plex:111', title: 'Blip', source: 'video_player' }
+            },
+            {
+              timestamp: now - 98000,
+              type: 'media_end',
+              data: { contentId: 'plex:111', source: 'video_player' }
+            },
+            {
+              timestamp: now - 97000,
+              type: 'media_start',
+              data: { contentId: 'plex:222', title: 'Workout', source: 'video_player' }
+            },
+          ]
+        }
+      };
+
+      pm.validateSessionPayload(sessionData);
+      const mediaEvents = sessionData.timeline.events.filter(e => e.type === 'media');
+      expect(mediaEvents).toHaveLength(1);
+      expect(mediaEvents[0].data.contentId).toBe('plex:222');
+    });
+
+    it('should not filter audio tracks regardless of duration', () => {
+      const pm = new PersistenceManager();
+      const now = Date.now();
+      const sessionData = {
+        startTime: now - 600000,
+        endTime: now,
+        roster: [{ id: 'alice', name: 'Alice' }],
+        deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+        timeline: {
+          timebase: { tickCount: 6 },
+          series: { 'user:alice:heart_rate': [80, 85, 90, 88, 92, 95] },
+          events: [
+            {
+              timestamp: now - 100000,
+              type: 'media_start',
+              data: { contentId: 'plex:333', title: 'Song', artist: 'Artist', source: 'music_player' }
+            },
+            {
+              timestamp: now - 95000,
+              type: 'media_end',
+              data: { contentId: 'plex:333', source: 'music_player' }
+            },
+            {
+              timestamp: now - 90000,
+              type: 'media_start',
+              data: { contentId: 'plex:222', title: 'Workout', source: 'video_player' }
+            },
+            {
+              timestamp: now - 1000,
+              type: 'media_end',
+              data: { contentId: 'plex:222', source: 'video_player' }
+            },
+          ]
+        }
+      };
+
+      pm.validateSessionPayload(sessionData);
+      const mediaEvents = sessionData.timeline.events.filter(e => e.type === 'media');
+      expect(mediaEvents).toHaveLength(2);
+    });
+  });
+
   describe('no-participants gate — conditional on prior save success', () => {
     it('should reject empty roster when session has never saved', () => {
       const pm = new PersistenceManager();
@@ -278,7 +474,28 @@ describe('PersistenceManager — validation', () => {
       expect(result.ok).toBe(true);
     });
 
-    it('should bypass device-assignments-required when session has previously saved', () => {
+    it('should allow saving when deviceAssignments is empty (warns but does not block)', () => {
+      const pm = new PersistenceManager();
+
+      const payload = {
+        sessionId: 'sess-no-device-assignments',
+        startTime: Date.now() - 600000,
+        endTime: Date.now(),
+        roster: [{ profileId: 'alice', name: 'Alice' }],
+        deviceAssignments: [],
+        timeline: {
+          timebase: { tickCount: 6 },
+          series: {
+            'user:alice:heart_rate': [80, 85, 90, 88, 92, 95],
+          }
+        }
+      };
+
+      const result = pm.validateSessionPayload(payload);
+      expect(result.ok).toBe(true);
+    });
+
+    it('should also allow saving when session has previously saved and deviceAssignments is empty', () => {
       const pm = new PersistenceManager();
       const sessionId = 'sess-device-bypass';
       pm.markSaveSucceeded(sessionId);

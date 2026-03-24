@@ -1,4 +1,11 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import getLogger from '../lib/logging/Logger.js';
+
+let _navLogger;
+function navLogger() {
+  if (!_navLogger) _navLogger = getLogger().child({ component: 'MenuNav' });
+  return _navLogger;
+}
 
 const MenuNavigationContext = createContext(null);
 
@@ -32,6 +39,7 @@ export function MenuNavigationProvider({ children, onBackAtRoot }) {
    * @param {StackItem} content - Content to push
    */
   const push = useCallback((content) => {
+    navLogger().info('nav.push', { type: content.type });
     setStack(prev => [...prev, content]);
     // Initialize selection for the new depth
     setSelections(prev => ({
@@ -46,6 +54,7 @@ export function MenuNavigationProvider({ children, onBackAtRoot }) {
    */
   const pop = useCallback(() => {
     setStack(prev => {
+      navLogger().info('nav.pop', { stackLength: prev.length, types: prev.map(s => s.type) });
       if (prev.length === 0) {
         // At root, call the callback if provided
         onBackAtRoot?.();
@@ -106,6 +115,7 @@ export function MenuNavigationProvider({ children, onBackAtRoot }) {
   useEffect(() => {
     const handlePopState = (event) => {
       event.preventDefault();
+      navLogger().info('nav.popstate', { historyLength: window.history.length });
       pop();
       // Push a new state to keep the trap active
       window.history.pushState(null, '', window.location.href);

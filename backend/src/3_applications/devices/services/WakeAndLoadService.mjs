@@ -187,6 +187,26 @@ export class WakeAndLoadService {
     const coldWake = !!prepResult.coldRestart;
     const cameraAvailable = prepResult.cameraAvailable !== false;
 
+    // --- Step 4b: Re-verify TV power ---
+    // The prepare phase can take 20-30s (ADB reconnect, companion apps, FKB
+    // foreground verification). TVs with CEC auto-sleep or energy-saver may
+    // power off during this window because no active content is displayed.
+    // Re-check and power on again if needed before loading content.
+    if (device.hasCapability('power')) {
+      const postPreparePower = await device.powerOn();
+      if (postPreparePower.ok && postPreparePower.wasPoweredOff) {
+        this.#logger.warn?.('wake-and-load.power.re-verified', {
+          deviceId,
+          reason: 'tv-powered-off-during-prepare',
+          elapsedMs: postPreparePower.elapsedMs
+        });
+        result.steps.powerRecheck = { restarted: true, elapsedMs: postPreparePower.elapsedMs };
+      } else {
+        this.#logger.debug?.('wake-and-load.power.still-on', { deviceId });
+        result.steps.powerRecheck = { restarted: false };
+      }
+    }
+
     // --- Step 5: Pre-warm transcode (best-effort) ---
     let prewarmResult = null;
     if (this.#prewarmService && contentQuery.queue) {

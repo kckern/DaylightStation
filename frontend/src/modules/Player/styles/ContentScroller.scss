@@ -14,41 +14,44 @@
   .scroller-header {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     background-color: #222;
     height: 4rem;
     padding: 0 2rem;
     overflow: hidden;
-    transition: justify-content 0.4s ease;
-
-    &.has-section {
-      justify-content: space-between;
-    }
+    position: relative;
   }
 
   .scroller-header-title {
     color: #ffffff99;
     font-size: 3rem;
+    font-weight: 700;
     line-height: 4rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    transition: all 0.4s ease;
+    flex: 0 0 auto;
+    // Centered by default via margin auto; slides left when section appears
+    margin-left: auto;
+    margin-right: auto;
+    transition: margin 0.5s ease;
 
     .has-section & {
-      flex: 0 1 auto;
-      max-width: 50%;
+      margin-left: 0;
+      margin-right: 2rem;
     }
   }
 
   .scroller-header-section {
     color: #ffffff66;
     font-size: 2rem;
+    font-weight: 600;
     line-height: 4rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 50%;
+    flex: 1 1 auto;
+    min-width: 0;
     text-align: right;
 
     animation: sectionFadeIn 0.4s ease forwards;

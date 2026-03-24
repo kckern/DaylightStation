@@ -237,6 +237,11 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false 
   const thumbnailsGetTimeRef = useRef(null); // will hold function to get current display time from thumbnails
   const renderCountRef = useRef(0);
   const loggedVideoMediaRef = useRef(null);
+  const mediaDebounceRef = useRef(null);
+  const currentMediaRef = useRef(null);
+  const autoplayRef = useRef(false);
+  const governanceRef = useRef(null);
+  const queueSizeRef = useRef(0);
   const queue = useMemo(() => playQueue || fitnessPlayQueue || [], [playQueue, fitnessPlayQueue]);
   const queueSize = Array.isArray(queue) ? queue.length : 0;
   const setQueue = setPlayQueue || setFitnessPlayQueue;
@@ -1045,6 +1050,24 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false 
 
   const autoplayEnabled = Boolean(playObject?.autoplay);
 
+  // Keep refs in sync so the debounce callback reads fresh values without
+  // needing them in its dependency array (avoids spurious cleanup/re-runs).
+  useEffect(() => {
+    currentMediaRef.current = enhancedCurrentItem || currentItem;
+  }, [enhancedCurrentItem, currentItem]);
+
+  useEffect(() => {
+    autoplayRef.current = autoplayEnabled;
+  }, [autoplayEnabled]);
+
+  useEffect(() => {
+    governanceRef.current = effectiveGovernanceState;
+  }, [effectiveGovernanceState]);
+
+  useEffect(() => {
+    queueSizeRef.current = queueSize;
+  }, [queueSize]);
+
   useEffect(() => {
     const session = fitnessSessionInstance;
     if (!session || typeof session.logEvent !== 'function') {
@@ -1057,56 +1080,79 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false 
     if (loggedVideoMediaRef.current === currentMediaIdentity) {
       return;
     }
-    const media = enhancedCurrentItem || currentItem;
-    if (!media) {
-      return;
+
+    // Debounce: wait 10s before logging media_start.
+    // If currentMediaIdentity changes within 10s (browse-past), the effect
+    // cleanup cancels the timer and starts fresh for the new content.
+    if (mediaDebounceRef.current) {
+      clearTimeout(mediaDebounceRef.current);
+      mediaDebounceRef.current = null;
     }
-    const durationSeconds = normalizeDuration(
-      media.duration,
-      media.length,
-      media.metadata?.duration
-    );
-    const logged = session.logEvent('media_start', {
-      source: 'video_player',
-      contentId: currentMediaIdentity,
-      title: media.title || media.label || null,
-      grandparentTitle: media.grandparentTitle || null,
-      parentTitle: media.parentTitle || null,
-      grandparentId: media.grandparentId || null,
-      parentId: media.parentId || null,
-      plexId: media.plex || media.id || null,
-      mediaKey: media.assetId || null,
-      durationSeconds,
-      resumeSeconds: Number.isFinite(media.seconds) ? Math.round(media.seconds) : null,
-      autoplay: autoplayEnabled,
-      governed: effectiveGovernanceState?.isGoverned ?? Boolean(effectiveGovernanceState?.videoLocked),
-      labels: Array.isArray(media.labels) ? media.labels : [],
-      type: media.type || media.mediaType || 'video',
-      description: media.summary || media.episodeDescription || null,
-      queueSize
-    });
-    // Prod-visible log for autoplay SSoT verification
-    getLogger().info('fitness.media_start.autoplay', {
-      contentId: currentMediaIdentity,
-      autoplay: autoplayEnabled,
-      videoLocked: effectiveGovernanceState?.videoLocked ?? null,
-      isGoverned: effectiveGovernanceState?.isGoverned ?? null,
-      governancePhase: effectiveGovernanceState?.status ?? null,
-      labels: Array.isArray(media.labels) ? media.labels : []
-    });
-    if (logged) {
-      loggedVideoMediaRef.current = currentMediaIdentity;
-      return () => {
-        if (currentMediaIdentity && session) {
-          session.logEvent('media_end', {
-            contentId: currentMediaIdentity,
-            source: 'video_player',
-          });
-        }
-      };
-    }
-    // No cleanup — media_start wasn't logged or queued, effect will retry
-  }, [fitnessSessionInstance, currentMediaIdentity, enhancedCurrentItem, currentItem, autoplayEnabled, effectiveGovernanceState?.videoLocked, queueSize]);
+
+    const capturedIdentity = currentMediaIdentity;
+    mediaDebounceRef.current = setTimeout(() => {
+      mediaDebounceRef.current = null;
+
+      // Read fresh values from refs (not stale closure captures)
+      const media = currentMediaRef.current;
+      if (!media) return;
+
+      const durationSeconds = normalizeDuration(
+        media.duration,
+        media.length,
+        media.metadata?.duration
+      );
+      const gov = governanceRef.current;
+      const logged = session.logEvent('media_start', {
+        source: 'video_player',
+        contentId: capturedIdentity,
+        title: media.title || media.label || null,
+        grandparentTitle: media.grandparentTitle || null,
+        parentTitle: media.parentTitle || null,
+        grandparentId: media.grandparentId || null,
+        parentId: media.parentId || null,
+        plexId: media.plex || media.id || null,
+        mediaKey: media.assetId || null,
+        durationSeconds,
+        resumeSeconds: Number.isFinite(media.seconds) ? Math.round(media.seconds) : null,
+        autoplay: autoplayRef.current,
+        governed: gov?.isGoverned ?? Boolean(gov?.videoLocked),
+        labels: Array.isArray(media.labels) ? media.labels : [],
+        type: media.type || media.mediaType || 'video',
+        description: media.summary || media.episodeDescription || null,
+        queueSize: queueSizeRef.current
+      });
+
+      getLogger().info('fitness.media_start.autoplay', {
+        contentId: capturedIdentity,
+        autoplay: autoplayRef.current,
+        videoLocked: gov?.videoLocked ?? null,
+        isGoverned: gov?.isGoverned ?? null,
+        governancePhase: gov?.status ?? null,
+        labels: Array.isArray(media.labels) ? media.labels : []
+      });
+
+      if (logged) {
+        loggedVideoMediaRef.current = capturedIdentity;
+      }
+    }, 10_000);
+
+    return () => {
+      // Cleanup fires only when fitnessSessionInstance or currentMediaIdentity changes.
+      // Cancel pending debounce timer.
+      if (mediaDebounceRef.current) {
+        clearTimeout(mediaDebounceRef.current);
+        mediaDebounceRef.current = null;
+      }
+      // Log media_end for the previously logged content (if any).
+      if (loggedVideoMediaRef.current && session) {
+        session.logEvent('media_end', {
+          contentId: loggedVideoMediaRef.current,
+          source: 'video_player',
+        });
+      }
+    };
+  }, [fitnessSessionInstance, currentMediaIdentity]);
 
   const resilienceMediaIdentity = useMemo(
     () => resolveContentId(resilienceState?.meta),

@@ -159,7 +159,7 @@ const CircularUserAvatar = ({
           />
         ) : null}
 
-        {Number.isFinite(heartRate) && (
+        {Number.isFinite(heartRate) && heartRate > 0 && (
           <div className="hr-value-overlay" aria-hidden="true">
             <span className="hr-value">{Math.round(heartRate)}</span>
           </div>

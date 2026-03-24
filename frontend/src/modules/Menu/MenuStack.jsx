@@ -38,6 +38,12 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
 
     const interceptor = () => {
       if (depth > 0) {
+        // If popping back to root on a timed menu, dismiss the overlay entirely
+        // to avoid the auto-select timer creating an escape trap
+        if (depth === 1 && MENU_TIMEOUT > 0) {
+          pop();
+          return false; // let overlay dismiss
+        }
         pop();
         return true; // handled — don't dismiss overlay
       }

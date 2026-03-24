@@ -47,7 +47,7 @@ export class NumpadAdapter {
         }
         event.preventDefault();
         event.stopImmediatePropagation();
-        logger().debug('numpad.key', { key: event.key, action: result.action });
+        logger().info('numpad.key', { key: event.key, action: result.action });
         this.actionBus.emit(result.action, result.payload);
         return;
       }
@@ -57,7 +57,7 @@ export class NumpadAdapter {
         if (fallback) {
           event.preventDefault();
           event.stopImmediatePropagation();
-          logger().debug('numpad.key', { key: event.key, action: fallback.action, source: 'secondary' });
+          logger().info('numpad.key', { key: event.key, action: fallback.action, source: 'secondary' });
           this.actionBus.emit(fallback.action, fallback.payload);
         }
       }

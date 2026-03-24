@@ -122,3 +122,30 @@ export function bindBackButton() {
   });
   _backBound = true;
 }
+
+/**
+ * Global key capture logger for Shield TV remote button audit.
+ * Logs every keydown event (sampled) to identify which remote buttons
+ * FKB passes through to the WebView vs swallows.
+ * Call once at app startup.
+ */
+let _keyCaptureEnabled = false;
+export function enableGlobalKeyCapture() {
+  if (_keyCaptureEnabled) return;
+  _keyCaptureEnabled = true;
+  const log = logger();
+  window.addEventListener('keydown', (e) => {
+    log.sampled('fkb.keyCapture', {
+      key: e.key,
+      code: e.code,
+      keyCode: e.keyCode,
+      which: e.which,
+      repeat: e.repeat,
+      altKey: e.altKey,
+      ctrlKey: e.ctrlKey,
+      shiftKey: e.shiftKey,
+      metaKey: e.metaKey,
+      synthetic: !e.isTrusted,
+    }, { maxPerMinute: 60 });
+  }, { capture: true }); // capture phase — logs before any handler can preventDefault
+}
