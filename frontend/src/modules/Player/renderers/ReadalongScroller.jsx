@@ -62,15 +62,16 @@ export function ReadalongScroller({
       if (result) return result;
     }
 
-    // Plain array of strings (talks, poetry) — most common for non-scripture
+    // Plain array of strings or arrays of lines (talks, poetry)
     if (Array.isArray(contentData)) {
       return (
         <div className={`${textWrapperClass} paragraphs`}>
           {contentData.map((para, idx) => {
+            const text = Array.isArray(para) ? para.join('\n') : (typeof para === 'string' ? para : '');
             if (typeof para === 'string' && para.startsWith('##')) {
               return <h4 key={idx}>{para.slice(2).trim()}</h4>;
             }
-            return <p key={idx}>{typeof para === 'string' ? para : ''}</p>;
+            return <p key={idx} style={{ whiteSpace: 'pre-line' }}>{text}</p>;
           })}
         </div>
       );
@@ -92,14 +93,15 @@ export function ReadalongScroller({
       );
     }
 
-    // Structured paragraphs
+    // Structured paragraphs (items may be strings or arrays of lines)
     return (
       <div className={`${textWrapperClass} paragraphs`}>
         {contentData.data.map((para, idx) => {
+          const text = Array.isArray(para) ? para.join('\n') : (typeof para === 'string' ? para : '');
           if (typeof para === 'string' && para.startsWith('##')) {
             return <h4 key={idx}>{para.slice(2).trim()}</h4>;
           }
-          return <p key={idx}>{typeof para === 'string' ? para : ''}</p>;
+          return <p key={idx} style={{ whiteSpace: 'pre-line' }}>{text}</p>;
         })}
       </div>
     );
