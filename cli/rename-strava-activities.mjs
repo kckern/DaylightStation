@@ -2,13 +2,18 @@
 /**
  * rename-strava-activities.mjs
  *
- * Two-phase script:
+ * Renames Strava activities using DaylightStation session data.
+ *
+ * Primary path: find matching fitness session → buildStravaDescription() (canonical format)
+ * Fallback: TSV-based titles formatted to match buildStravaDescription conventions
+ *
+ * Phases:
  *   Phase 1 (--enrich):  Fill missing titles/descriptions in TSV via Plex API
- *   Phase 2 (--apply):   Rename Strava activities using the enriched TSV
+ *   Phase 2 (--apply):   Rename on Strava (session-based primary, TSV fallback)
  *
  * Usage:
  *   node cli/rename-strava-activities.mjs                     # dry run preview
- *   node cli/rename-strava-activities.mjs --enrich            # fetch missing titles from Plex
+ *   node cli/rename-strava-activities.mjs --enrich            # fetch Plex metadata into TSV
  *   node cli/rename-strava-activities.mjs --apply             # rename on Strava
  *   node cli/rename-strava-activities.mjs --apply --limit 10  # rename first 10
  */
@@ -17,16 +22,34 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
+import dotenv from 'dotenv';
+import { buildStravaDescription } from '../backend/src/1_adapters/fitness/buildStravaDescription.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
-// --- Config ---
+dotenv.config({ path: path.join(ROOT, '.env') });
+
+// --- Config (environment-aware) ---
+const isDocker = fs.existsSync('/.dockerenv');
+const BASE_PATH = isDocker ? '/usr/src/app' : process.env.DAYLIGHT_BASE_PATH;
+if (!BASE_PATH) {
+  console.error('DAYLIGHT_BASE_PATH not set in .env — cannot locate data directory.');
+  process.exit(1);
+}
+const DATA_DIR = path.join(BASE_PATH, 'data');
+
 const TSV_PATH = path.join(ROOT, 'strava-plex-media.tsv');
-const USER_AUTH_PATH = '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data/users/kckern/auth/strava.yml';
-const SYSTEM_AUTH_PATH = '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data/system/auth/strava.yml';
+const USER_AUTH_PATH = path.join(DATA_DIR, 'users', 'kckern', 'auth', 'strava.yml');
+const SYSTEM_AUTH_PATH = path.join(DATA_DIR, 'system', 'auth', 'strava.yml');
+const FITNESS_HISTORY_DIR = path.join(DATA_DIR, 'household', 'history', 'fitness');
 const PLEX_HOST = 'http://10.0.0.10:32400';
-const PLEX_TOKEN = yaml.load(fs.readFileSync('/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data/household/auth/plex.yml', 'utf8')).token;
+
+let PLEX_TOKEN = null;
+try {
+  PLEX_TOKEN = yaml.load(fs.readFileSync(path.join(DATA_DIR, 'household', 'auth', 'plex.yml'), 'utf8')).token;
+} catch { /* Plex auth unavailable — Plex lookups will be skipped */ }
+
 const RATE_LIMIT_MS = 12000; // 12s between calls = 5/min = 75 per 15min (under 100 limit)
 
 // --- Parse args ---
@@ -71,6 +94,7 @@ function writeTsv(rows) {
 // --- Plex API ---
 
 async function plexGetMetadata(ratingKey) {
+  if (!PLEX_TOKEN) return null;
   const url = `${PLEX_HOST}/library/metadata/${ratingKey}?X-Plex-Token=${PLEX_TOKEN}`;
   const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
   if (!res.ok) throw new Error(`Plex ${res.status} for key ${ratingKey}`);
@@ -78,23 +102,27 @@ async function plexGetMetadata(ratingKey) {
   const item = data?.MediaContainer?.Metadata?.[0];
   if (!item) return null;
 
-  // Build full title: "ShowName - EpisodeTitle"
   const showTitle = item.grandparentTitle || item.parentTitle || '';
   const episodeTitle = item.title || '';
   const fullTitle = showTitle && episodeTitle ? `${showTitle} - ${episodeTitle}` : episodeTitle || showTitle;
-
-  // Build description: show name + summary
   const summary = (item.summary || '').replace(/[\t\n\r]/g, ' ').trim();
-  const description = [showTitle, summary].filter(Boolean).join(' — ');
+  const description = [showTitle, summary].filter(Boolean).join(' \u2014 ');
 
   return {
+    // Computed fields (for TSV enrichment)
     title: fullTitle,
     description,
     type: item.type || '',
+    // Raw fields (for session hydration)
+    grandparentTitle: item.grandparentTitle || '',
+    parentTitle: item.parentTitle || '',
+    rawTitle: item.title || '',
+    summary,
   };
 }
 
 async function plexSearch(query) {
+  if (!PLEX_TOKEN) return null;
   const url = `${PLEX_HOST}/hubs/search?query=${encodeURIComponent(query)}&limit=5&X-Plex-Token=${PLEX_TOKEN}`;
   const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
   if (!res.ok) return null;
@@ -102,13 +130,12 @@ async function plexSearch(query) {
   const hubs = data?.MediaContainer?.Hub || [];
   for (const hub of hubs) {
     for (const item of hub.Metadata || []) {
-      // Match by title (case-insensitive)
       if (item.title?.toLowerCase() === query.toLowerCase()) {
         const showTitle = item.grandparentTitle || item.parentTitle || '';
         const episodeTitle = item.title || '';
         const fullTitle = showTitle && episodeTitle ? `${showTitle} - ${episodeTitle}` : episodeTitle || showTitle;
         const summary = (item.summary || '').replace(/[\t\n\r]/g, ' ').trim();
-        const description = [showTitle, summary].filter(Boolean).join(' — ');
+        const description = [showTitle, summary].filter(Boolean).join(' \u2014 ');
         return { ratingKey: item.ratingKey, title: fullTitle, description };
       }
     }
@@ -174,6 +201,75 @@ async function renameActivity(accessToken, activityId, newName, description) {
 
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+// --- Session lookup ---
+
+/**
+ * Scan fitness history and build activityId → session data map.
+ */
+function buildActivitySessionMap() {
+  const map = new Map();
+  if (!fs.existsSync(FITNESS_HISTORY_DIR)) {
+    console.log('Fitness history not found \u2014 session enrichment disabled');
+    return map;
+  }
+
+  let fileCount = 0;
+  let dateDirs;
+  try {
+    dateDirs = fs.readdirSync(FITNESS_HISTORY_DIR).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d));
+  } catch { return map; }
+
+  for (const dateDir of dateDirs) {
+    const dirPath = path.join(FITNESS_HISTORY_DIR, dateDir);
+    let sessionFiles;
+    try { sessionFiles = fs.readdirSync(dirPath).filter(f => f.endsWith('.yml')); } catch { continue; }
+
+    for (const file of sessionFiles) {
+      try {
+        const data = yaml.load(fs.readFileSync(path.join(dirPath, file), 'utf8'));
+        if (!data?.participants) continue;
+        fileCount++;
+
+        for (const participant of Object.values(data.participants)) {
+          const actId = participant?.strava?.activityId;
+          if (actId) map.set(String(actId), data);
+        }
+      } catch { /* skip corrupt files */ }
+    }
+  }
+
+  console.log(`Session map: ${map.size} activities from ${fileCount} sessions`);
+  return map;
+}
+
+/**
+ * Hydrate session media events with Plex metadata (grandparentTitle, description).
+ * Mutates session in place. Gracefully skips if Plex is unavailable.
+ */
+async function hydrateSessionMedia(session) {
+  if (!PLEX_TOKEN) return;
+
+  const events = session?.timeline?.events || [];
+  for (const event of events) {
+    if (event.type !== 'media' || !event.data) continue;
+    // Skip if already has show-level metadata
+    if (event.data.grandparentTitle || event.data.showTitle) continue;
+
+    const contentId = event.data.contentId;
+    if (!contentId?.startsWith('plex:')) continue;
+
+    const ratingKey = contentId.split(':')[1];
+    try {
+      const meta = await plexGetMetadata(ratingKey);
+      if (meta) {
+        if (meta.grandparentTitle) event.data.grandparentTitle = meta.grandparentTitle;
+        if (meta.summary) event.data.description = meta.summary;
+      }
+    } catch { /* skip Plex errors */ }
+    await delay(100);
+  }
+}
+
 // --- Dedupe ---
 
 function dedupeRows(rows) {
@@ -191,9 +287,70 @@ function dedupeRows(rows) {
   return [...byId.values()];
 }
 
+// --- Fallback ---
+
+/**
+ * Build enrichment payload from TSV data, formatted to match buildStravaDescription output.
+ * Used when no session YAML is available.
+ */
+function buildFallbackPayload(row) {
+  const rawTitle = row.bestTitle || row.longestTitle || row.firstTitle;
+  if (!rawTitle) return null;
+
+  // Title: em dash without spaces (matching buildStravaDescription)
+  const name = rawTitle.includes(' - ')
+    ? rawTitle.replace(' - ', '\u2014')
+    : rawTitle;
+
+  // Description: match buildStravaDescription emoji format
+  const rawDesc = row.bestDesc || row.longestDesc || row.firstDesc || '';
+  let description = null;
+
+  if (rawDesc) {
+    // rawDesc is typically "ShowName — summary" from Plex enrichment
+    const emDashIdx = rawDesc.indexOf(' \u2014 ');
+    if (emDashIdx !== -1) {
+      const summary = rawDesc.substring(emDashIdx + 3).trim();
+      const label = rawTitle.includes(' - ')
+        ? rawTitle.replace(' - ', ' \u2014 ')
+        : rawTitle;
+      description = `\uD83D\uDDA5\uFE0F ${label}\n${summary}`;
+    }
+  }
+
+  return { name, description };
+}
+
+// --- Resolve payload ---
+
+/**
+ * Resolve enrichment payload: session-based (primary) or TSV (fallback).
+ */
+async function resolvePayload(session, row) {
+  // Primary: session-based via buildStravaDescription
+  if (session) {
+    try {
+      await hydrateSessionMedia(session);
+      const result = buildStravaDescription(session, {});
+      if (result?.name) return { ...result, source: 'session' };
+    } catch { /* fall through to TSV */ }
+  }
+
+  // Fallback: TSV-based with canonical formatting
+  const fallback = buildFallbackPayload(row);
+  if (fallback) return { ...fallback, source: 'tsv' };
+
+  return null;
+}
+
 // --- Phase 1: Enrich from Plex ---
 
 async function enrichFromPlex(rows) {
+  if (!PLEX_TOKEN) {
+    console.log('Plex token unavailable \u2014 skipping enrichment.');
+    return rows;
+  }
+
   // Collect ALL unique plex IDs for canonical title lookup
   const needsLookup = new Set();
   for (const row of rows) {
@@ -236,12 +393,12 @@ async function enrichFromPlex(rows) {
     if (row.firstPlexId && cache.has(row.firstPlexId)) {
       const meta = cache.get(row.firstPlexId);
       if (meta.title) { row.firstTitle = meta.title; enrichedTitles++; }
-      if (meta.description && (!row.firstDesc || !row.firstDesc.includes(' — '))) { row.firstDesc = meta.description; enrichedDescs++; }
+      if (meta.description && (!row.firstDesc || !row.firstDesc.includes(' \u2014 '))) { row.firstDesc = meta.description; enrichedDescs++; }
     }
     if (row.longestPlexId && cache.has(row.longestPlexId)) {
       const meta = cache.get(row.longestPlexId);
       if (meta.title) { row.longestTitle = meta.title; enrichedTitles++; }
-      if (meta.description && (!row.longestDesc || !row.longestDesc.includes(' — '))) { row.longestDesc = meta.description; enrichedDescs++; }
+      if (meta.description && (!row.longestDesc || !row.longestDesc.includes(' \u2014 '))) { row.longestDesc = meta.description; enrichedDescs++; }
     }
   }
 
@@ -251,8 +408,8 @@ async function enrichFromPlex(rows) {
   // Covers: no plex ID, or plex ID returned 404
   const needsSearch = [];
   for (const row of rows) {
-    if (row.firstTitle && (!row.firstDesc || !row.firstDesc.includes(' — '))) needsSearch.push({ row, field: 'first' });
-    if (row.longestTitle && (!row.longestDesc || !row.longestDesc.includes(' — '))) needsSearch.push({ row, field: 'longest' });
+    if (row.firstTitle && (!row.firstDesc || !row.firstDesc.includes(' \u2014 '))) needsSearch.push({ row, field: 'first' });
+    if (row.longestTitle && (!row.longestDesc || !row.longestDesc.includes(' \u2014 '))) needsSearch.push({ row, field: 'longest' });
   }
 
   if (needsSearch.length > 0) {
@@ -280,7 +437,7 @@ async function enrichFromPlex(rows) {
           }
           searchHits++;
         }
-      } catch (err) {
+      } catch {
         // skip search errors
       }
       await delay(150);
@@ -296,18 +453,22 @@ async function enrichFromPlex(rows) {
 
 async function renameOnStrava(rows) {
   const deduped = dedupeRows(rows);
+  const sessionMap = buildActivitySessionMap();
 
-  // Build rename list from best_title/best_description
+  // Build rename candidates
   const renames = [];
   for (const row of deduped) {
-    const title = row.bestTitle || row.longestTitle || row.firstTitle;
-    if (!title) continue;
-    const desc = row.bestDesc || row.longestDesc || row.firstDesc || '';
-    renames.push({ stravaId: row.stravaId, title, description: desc });
+    const session = sessionMap.get(row.stravaId) || null;
+    const tsvTitle = row.bestTitle || row.longestTitle || row.firstTitle;
+    if (!session && !tsvTitle) continue;
+    renames.push({ stravaId: row.stravaId, session, row });
   }
 
+  const sessionCount = renames.filter(r => r.session).length;
+  const fallbackCount = renames.filter(r => !r.session).length;
+
   console.log(`Unique Strava IDs: ${deduped.length}`);
-  console.log(`With usable title: ${renames.length}`);
+  console.log(`With session: ${sessionCount}, TSV fallback: ${fallbackCount}`);
   console.log(`Mode: ${doApply ? 'APPLY' : 'DRY RUN'}`);
   if (offset > 0) console.log(`Offset: ${offset}`);
   if (limit < Infinity) console.log(`Limit: ${limit}`);
@@ -316,8 +477,14 @@ async function renameOnStrava(rows) {
   if (!doApply) {
     const preview = renames.slice(offset, offset + Math.min(limit, 20));
     for (const r of preview) {
-      const descTag = r.description ? ` [${r.description}]` : '';
-      console.log(`  ${r.stravaId} → ${r.title}${descTag}`);
+      if (r.session) {
+        const result = buildStravaDescription(r.session, {});
+        const title = result?.name || '(needs Plex hydration)';
+        console.log(`  ${r.stravaId} \u2192 [session] ${title}`);
+      } else {
+        const fb = buildFallbackPayload(r.row);
+        console.log(`  ${r.stravaId} \u2192 [tsv] ${fb?.name || '?'}`);
+      }
     }
     const remaining = renames.length - offset;
     if (remaining > 20) console.log(`  ... and ${remaining - 20} more`);
@@ -330,25 +497,33 @@ async function renameOnStrava(rows) {
   let success = 0, failed = 0;
 
   for (let i = 0; i < toProcess.length; i++) {
-    const { stravaId, title, description } = toProcess[i];
+    const { stravaId, session, row } = toProcess[i];
     try {
-      await renameActivity(accessToken, stravaId, title, description);
+      const payload = await resolvePayload(session, row);
+      if (!payload?.name) {
+        console.log(`[${i + 1}/${toProcess.length}] - ${stravaId}: no enrichment available`);
+        continue;
+      }
+
+      await renameActivity(accessToken, stravaId, payload.name, payload.description);
       success++;
-      console.log(`[${i + 1}/${toProcess.length}] ✓ ${stravaId} → ${title}`);
+      console.log(`[${i + 1}/${toProcess.length}] \u2713 ${stravaId} \u2192 ${payload.name} [${payload.source}]`);
     } catch (err) {
       failed++;
-      console.error(`[${i + 1}/${toProcess.length}] ✗ ${stravaId}: ${err.message}`);
+      console.error(`[${i + 1}/${toProcess.length}] \u2717 ${stravaId}: ${err.message}`);
       if (err.message.includes('Rate limited')) {
-        console.log('Rate limited — sleeping 16 minutes...');
+        console.log('Rate limited \u2014 sleeping 16 minutes...');
         await delay(16 * 60 * 1000);
-        // Retry this one
         try {
           const retryToken = await getStravaToken();
-          await renameActivity(retryToken, stravaId, title, description);
-          success++; failed--;
-          console.log(`[${i + 1}/${toProcess.length}] ✓ (retry) ${stravaId} → ${title}`);
+          const payload = await resolvePayload(session, row);
+          if (payload?.name) {
+            await renameActivity(retryToken, stravaId, payload.name, payload.description);
+            success++; failed--;
+            console.log(`[${i + 1}/${toProcess.length}] \u2713 (retry) ${stravaId} \u2192 ${payload.name}`);
+          }
         } catch (retryErr) {
-          console.error(`[${i + 1}/${toProcess.length}] ✗ (retry) ${stravaId}: ${retryErr.message}`);
+          console.error(`[${i + 1}/${toProcess.length}] \u2717 (retry) ${stravaId}: ${retryErr.message}`);
         }
       }
     }

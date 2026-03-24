@@ -20,6 +20,7 @@ export class StravaClientAdapter {
   #httpClient;
   #configService;
   #currentAccessToken;
+  #tokenExpiresAt; // Unix timestamp (seconds)
   #logger;
 
   /**
@@ -45,6 +46,7 @@ export class StravaClientAdapter {
     this.#httpClient = httpClient;
     this.#configService = configService;
     this.#currentAccessToken = null;
+    this.#tokenExpiresAt = 0;
     this.#logger = logger;
   }
 
@@ -79,6 +81,7 @@ export class StravaClientAdapter {
 
     // Store for subsequent API calls
     this.#currentAccessToken = response.data.access_token;
+    this.#tokenExpiresAt = response.data.expires_at || 0;
 
     return response.data;
   }
@@ -212,11 +215,17 @@ export class StravaClientAdapter {
   }
 
   /**
-   * Check if client has an access token
+   * Check if client has a valid (non-expired) access token.
+   * Returns false if the token will expire within the next 60 seconds.
    * @returns {boolean}
    */
   hasAccessToken() {
-    return !!this.#currentAccessToken;
+    if (!this.#currentAccessToken) return false;
+    if (this.#tokenExpiresAt) {
+      const now = Math.floor(Date.now() / 1000);
+      if (now >= this.#tokenExpiresAt - 60) return false;
+    }
+    return true;
   }
 }
 

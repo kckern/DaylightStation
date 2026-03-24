@@ -744,10 +744,11 @@ function MenuItems({
     const prevIndex = activeIndexRef.current;
     if (nextIndex === prevIndex) return;
 
-    // Swap CSS classes — direct DOM, no React
-    const prevEl = menuItemsEl.children[prevIndex];
+    // Clear ALL active classes — defensive against stale state after remount
+    menuItemsEl.querySelectorAll(".menu-item.active").forEach(el => {
+      el.classList.remove("active", "cover");
+    });
     const nextEl = menuItemsEl.children[nextIndex];
-    if (prevEl) { prevEl.classList.remove("active"); prevEl.classList.remove("cover"); }
     if (nextEl) nextEl.classList.add("active");
 
     // Move the progress bar to the new active item
@@ -776,7 +777,8 @@ function MenuItems({
 
     // Only scroll if 3+ rows — short menus (1-2 rows) stay put
     const totalRows = Math.ceil(cache.positions.length / columns);
-    if (totalRows <= 2 || cache.scrollHeight <= cache.containerHeight || nextIndex < columns) {
+    const didScroll = totalRows > 2 && cache.scrollHeight > cache.containerHeight && nextIndex >= columns;
+    if (!didScroll) {
       containerEl.style.transform = `translateY(0px)`;
     } else {
       const pos = cache.positions[nextIndex];
@@ -784,6 +786,13 @@ function MenuItems({
       const maxScroll = cache.scrollHeight - cache.containerHeight;
       containerEl.style.transform = `translateY(${-Math.max(0, Math.min(maxScroll, centerTarget))}px)`;
     }
+
+    // Diagnostic: log scroll decision for 2-row menu bug investigation
+    logger.sampled('menu.scroll.decision', {
+      totalRows, columns, positionsLength: cache.positions.length,
+      scrollHeight: cache.scrollHeight, containerHeight: cache.containerHeight,
+      nextIndex, didScroll,
+    }, { maxPerMinute: 10 });
   }, [containerRef, columns, buildLayoutCache]);
 
   // Restore or reset scroll + active index when items change or on (re-)mount.
@@ -791,7 +800,7 @@ function MenuItems({
   // Otherwise reset to 0 (new submenu opened).
   useEffect(() => {
     const savedIndex = selectedIndex;  // from context or prop — already restored by mode logic
-    const clampedIndex = Math.min(savedIndex, items.length - 1);
+    const clampedIndex = items.length > 0 ? Math.min(savedIndex, items.length - 1) : 0;
     activeIndexRef.current = clampedIndex;
 
     // Apply active + cover classes on the correct DOM element
@@ -799,6 +808,13 @@ function MenuItems({
     if (containerEl) {
       const menuItemsEl = containerEl.querySelector(".menu-items");
       if (menuItemsEl) {
+        // Diagnostic: detect stale actives (dual-selection bug)
+        const staleActiveCount = menuItemsEl.querySelectorAll(".menu-item.active").length;
+        if (staleActiveCount > 1) {
+          logger.warn('menu.restore.staleActives', {
+            staleActiveCount, savedIndex, clampedIndex, itemsLength: items.length,
+          });
+        }
         // Clear any stale active/cover from previous render
         menuItemsEl.querySelectorAll(".menu-item.active").forEach(el => {
           el.classList.remove("active", "cover");
@@ -850,25 +866,32 @@ function MenuItems({
       if (isModifier) return;
 
       const current = activeIndexRef.current;
+      const isArrow = key.startsWith("Arrow");
+      const isSelect = key === "Enter" || key === " "
+        || key === "GamepadA" || key === "GamepadB"
+        || key === "GamepadStart" || key === "MediaPlayPause";
 
-      if (key === "ArrowUp") {
+      // Log all meaningful key events (sampled to avoid flood)
+      if (!isArrow) {
+        logger.sampled('menu.keydown', {
+          key, code: e.code, keyCode: e.keyCode, isBack, isSelect,
+          repeat: e.repeat, currentIndex: current, itemCount: curItems.length,
+        }, { maxPerMinute: 30 });
+      }
+
+      if (isArrow) {
         e.preventDefault();
-        navigateTo((current - columns + curItems.length) % curItems.length);
-      } else if (key === "ArrowDown") {
-        e.preventDefault();
-        navigateTo((current + columns) % curItems.length);
-      } else if (key === "ArrowLeft") {
-        e.preventDefault();
-        navigateTo((current - 1 + curItems.length) % curItems.length);
-      } else if (key === "ArrowRight") {
-        e.preventDefault();
-        navigateTo((current + 1) % curItems.length);
+        let next;
+        if (key === "ArrowUp") next = (current - columns + curItems.length) % curItems.length;
+        else if (key === "ArrowDown") next = (current + columns) % curItems.length;
+        else if (key === "ArrowLeft") next = (current - 1 + curItems.length) % curItems.length;
+        else next = (current + 1) % curItems.length;
+        navigateTo(next);
       } else if (isBack) {
         e.preventDefault();
+        logger.info('menu.back', { key, code: e.code, keyCode: e.keyCode, currentIndex: current });
         handleCloseRef.current?.();
-      } else if (key === "Enter" || key === " "
-        || key === "GamepadA" || key === "GamepadB"
-        || key === "GamepadStart" || key === "MediaPlayPause") {
+      } else if (isSelect) {
         e.preventDefault();
         // Guard: ignore key repeat and rapid duplicate events.
         // Shield TV remote fires repeated Enter at ~150ms when held,
@@ -878,6 +901,7 @@ function MenuItems({
         setTimeout(() => { selectCooldown = false; }, 300);
         // Sync React state on selection (Enter) — this is the only time React needs to know
         const idx = activeIndexRef.current;
+        logger.info('menu.select', { key, index: idx, title: curItems[idx]?.label });
         setSelectedIndex(idx, findKeyForItem(curItems[idx]));
         onSelectRef.current?.(curItems[idx]);
       }

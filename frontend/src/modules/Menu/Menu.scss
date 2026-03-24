@@ -1,6 +1,11 @@
 $font-primary: 'Roboto Condensed', sans-serif;
 $font-secondary: 'Open Sans', sans-serif;
 
+// Suppress Android TV / FKB WebView default focus ring (orange outline)
+*:focus, *:focus-visible {
+  outline: none !important;
+}
+
 // Kill expensive animations (zoom, pan, glow) that cause jank on TV hardware.
 // Only whitelist the container transform for smooth scroll panning.
 .menu-items-container {
@@ -269,7 +274,7 @@ $item-radius: 0.75rem;
     aspect-ratio: 1 / 1.19;
     border-radius: $item-radius;
     background: rgba(30, 30, 30, 0.7);  // flat color, was linear-gradient
-    border: none;
+    border: 3px solid transparent;  // reserve space; active swaps to blue
     font-size: 14px;
     font-weight: 500;
     color: rgba(255, 255, 255, 0.7);
@@ -342,20 +347,21 @@ $item-radius: 0.75rem;
     }
   }
 
-  // Active state — use inset box-shadow instead of outline.
-  // Outline gets clipped by overflow:hidden on the item.
-  // Single-layer inset shadow is cheap (no blur, just solid border effect).
+  // Active state — swap transparent border to blue.
+  // Cannot use box-shadow/outline/::after — child elements (.menu-item-img) paint over them.
+  // Border paints on the border-box, outside the content clip, so it's always visible.
   .menu-item.active {
-    box-shadow: inset 0 0 0 3px $color-primary;
+    border-color: $color-primary;  // swap transparent → blue; no layout shift
     z-index: 10;
+  }
 
-    // On select: switch to cover (fill + crop) and pan top→bottom→top.
-    // object-position animation is paint-level but only on 1 element.
-    .menu-item-img img {
-      object-fit: cover !important;
-      animation: coverPanVertical 8s ease-in-out infinite !important;
-      animation-delay: 0s !important;
-    }
+  // Cover + pan applied separately via JS after a delay so the contain→cover
+  // zoom doesn't jank the navigation scroll. navigateTo() adds "active" immediately,
+  // then adds "cover" after 500ms.
+  .menu-item.active.cover .menu-item-img img {
+    object-fit: cover !important;
+    animation: coverPanVertical 8s ease-in-out infinite !important;
+    animation-delay: 0s !important;
   }
 
   @keyframes coverPanVertical {

@@ -37,6 +37,7 @@ const RECONNECT_DELAYS = [
 ];
 
 const DEGRADED_MODE_TIER = 6; // 1 minute mark
+const AUTO_RELOAD_DELAY = 180000; // 3 minutes in degraded mode → hard reload
 
 class WebSocketService {
   constructor() {
@@ -86,6 +87,7 @@ class WebSocketService {
       this.reconnectTier = 0; // Reset tier on successful connection
       this.degradedMode = false;
       this._lastMessageAt = Date.now();
+      this._clearAutoReloadTimer();
       this._startStaleCheck();
       this._notifyStatusListeners();
       this._syncSubscriptions(); // Inform backend of our interests
@@ -155,6 +157,10 @@ class WebSocketService {
     if (this.degradedMode !== wasDegraded) {
       console.log(`[WebSocketService] ${this.degradedMode ? 'Entering' : 'Exiting'} degraded mode (tier ${this.reconnectTier})`);
       this._notifyStatusListeners();
+
+      if (this.degradedMode) {
+        this._startAutoReloadTimer();
+      }
     }
     
     const tierLabel = this.reconnectTier < RECONNECT_DELAYS.length ? `tier ${this.reconnectTier}` : 'terminal';
@@ -186,6 +192,26 @@ class WebSocketService {
     if (this._staleCheckInterval) {
       clearInterval(this._staleCheckInterval);
       this._staleCheckInterval = null;
+    }
+  }
+
+  /**
+   * Auto-reload the page after sustained degraded mode.
+   * On a kiosk, a fresh page load is better than waiting an hour to reconnect.
+   */
+  _startAutoReloadTimer() {
+    this._clearAutoReloadTimer();
+    console.warn(`[WebSocketService] Will auto-reload page in ${AUTO_RELOAD_DELAY / 1000}s if connection not restored`);
+    this._autoReloadTimeout = setTimeout(() => {
+      console.error('[WebSocketService] Degraded too long — reloading page');
+      window.location.reload();
+    }, AUTO_RELOAD_DELAY);
+  }
+
+  _clearAutoReloadTimer() {
+    if (this._autoReloadTimeout) {
+      clearTimeout(this._autoReloadTimeout);
+      this._autoReloadTimeout = null;
     }
   }
 
@@ -388,6 +414,11 @@ class WebSocketService {
 
 // Singleton instance
 export const wsService = new WebSocketService();
+
+// Expose for watchdog health checks via DevTools Protocol
+if (typeof window !== 'undefined') {
+  window.__wsService = wsService;
+}
 
 // Also export the class for testing
 export { WebSocketService };
