@@ -1207,7 +1207,7 @@ export class ListAdapter {
 
     const items = listData.sections.flatMap(s => s.items);
 
-    // Build resolution tasks (preserving order) then run in parallel batches
+    // Build resolution tasks (preserving order) then run sequentially for programs
     const tasks = [];
 
     for (const item of items) {
@@ -1256,16 +1256,30 @@ export class ListAdapter {
       }
     }
 
-    // Run in parallel batches to avoid overwhelming external APIs
+    // Run resolution tasks — sequential for programs (order matters), batched for menus
     const BATCH_SIZE = 10;
     const playables = [];
-    for (let i = 0; i < tasks.length; i += BATCH_SIZE) {
-      const batch = tasks.slice(i, i + BATCH_SIZE);
-      const batchResults = await Promise.all(batch.map(fn => fn()));
-      for (const items of batchResults) {
+    if (listType === 'programs') {
+      // Sequential: program queue order must match config order
+      for (let t = 0; t < tasks.length; t++) {
+        const items = await tasks[t]();
         if (items?.length) playables.push(...items);
+        if (limit > 0 && playables.length >= limit) break;
       }
-      if (limit > 0 && playables.length >= limit) break;
+    } else {
+      for (let i = 0; i < tasks.length; i += BATCH_SIZE) {
+        const batch = tasks.slice(i, i + BATCH_SIZE);
+        const batchResults = await Promise.all(batch.map(fn => fn()));
+        for (const items of batchResults) {
+          if (items?.length) playables.push(...items);
+        }
+        if (limit > 0 && playables.length >= limit) break;
+      }
+    }
+
+    // Programs are pre-ordered sequences — flag to skip watch-state reordering
+    if (listType === 'programs') {
+      playables.preserveOrder = true;
     }
 
     return playables;

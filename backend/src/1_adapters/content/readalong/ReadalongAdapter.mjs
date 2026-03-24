@@ -687,11 +687,11 @@ export class ReadalongAdapter {
       }
     }
 
-    // Standard item resolution
-    const item = await this.getItem(localId);
+    // Standard item resolution (use cleanId — getItem strips prefix but getList does not)
+    const item = await this.getItem(cleanId);
     if (item && item.mediaUrl) return [item];
 
-    const list = await this.getList(localId);
+    const list = await this.getList(cleanId);
     return list?.items?.filter(i => i.mediaUrl) || [];
   }
 
