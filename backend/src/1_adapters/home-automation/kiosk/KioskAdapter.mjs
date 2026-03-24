@@ -189,6 +189,7 @@ export class KioskAdapter {
       const queryParams = new URLSearchParams({
         cmd,
         password: this.#password,
+        type: 'json',
         ...params
       });
       const response = await this.#fetch(`http://${this.#host}:${this.#port}/?${queryParams}`);
@@ -307,7 +308,7 @@ export class KioskAdapter {
    * @private
    */
   async #apiGet(path) {
-    const url = `http://${this.#host}:${this.#port}${path}?password=${this.#password}`;
+    const url = `http://${this.#host}:${this.#port}${path}?password=${this.#password}&type=json`;
     return this.#fetch(url);
   }
 
