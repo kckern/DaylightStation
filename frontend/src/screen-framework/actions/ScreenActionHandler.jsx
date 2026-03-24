@@ -116,7 +116,7 @@ export function ScreenActionHandler({ actions = {} }) {
       logger().debug('playback.secondary-fallback', { secondary: payload.secondary.action });
       const { action, payload: secPayload } = payload.secondary;
       if (action === 'media:queue') {
-        showOverlay(Player, { queue: [secPayload.contentId], clear: () => dismissOverlay() });
+        showOverlay(Player, { queue: { contentId: secPayload.contentId }, clear: () => dismissOverlay() });
       } else if (action === 'media:play') {
         showOverlay(Player, { play: secPayload.contentId, clear: () => dismissOverlay() });
       } else if (action === 'menu:open') {
