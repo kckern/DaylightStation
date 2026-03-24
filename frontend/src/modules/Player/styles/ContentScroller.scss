@@ -153,6 +153,7 @@
   .scripture-text{
     padding: 1rem 2rem 20rem 2rem;
     margin-top: -2rem;
+    p { line-height: 1.1; }
   }
   .verse-headings {
     margin-top: 0;
@@ -171,7 +172,7 @@
     font-family: "Roboto Condensed", sans-serif;
     font-size: 3.4rem;
     line-height: 1;
-    margin: 3rem 0 0 0;
+    margin: 1.5rem 0 0 0;
   }
   .verse-number {
     font-size: 1rem;

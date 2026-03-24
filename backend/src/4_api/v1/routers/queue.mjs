@@ -61,6 +61,11 @@ export function toQueueItem(item) {
     listId: item.metadata?.listId || null,
   };
 
+  // Readalong content (scripture, poetry, talks) — text body + style for ContentScroller
+  if (item.content) qi.content = item.content;
+  if (item.style) qi.style = item.style;
+  if (item.subtitle) qi.subtitle = item.subtitle;
+
   // Slideshow config (stamped by QueryAdapter on image items)
   if (item.slideshow) qi.slideshow = item.slideshow;
   if (item.titlecard) qi.titlecard = item.titlecard;

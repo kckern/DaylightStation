@@ -397,6 +397,25 @@ export class QueueService {
    * @returns {Promise<PlayableItem[]>} Ordered items: unwatched/in-progress first, watched last
    */
   async resolveQueue(playables, source, { shuffle = false } = {}) {
+    // Programs are pre-ordered sequences — enrich with resume positions but skip reordering
+    if (playables.preserveOrder) {
+      if (!this.mediaProgressMemory) return [...playables];
+      const itemSources = new Set(playables.map(p => p.source).filter(Boolean));
+      if (!itemSources.size) itemSources.add(source);
+      const progressMap = new Map();
+      for (const src of itemSources) {
+        const progress = await this.mediaProgressMemory.getAllFromAllLibraries(src);
+        for (const p of progress) progressMap.set(p.contentId, p);
+      }
+      return playables.map(item => {
+        const progress = progressMap.get(item.id);
+        if (progress && item.resumable && progress.playhead) {
+          return this._withResumePosition(item, progress);
+        }
+        return item;
+      });
+    }
+
     if (!this.mediaProgressMemory) {
       return shuffle ? QueueService.shuffleArray([...playables]) : playables;
     }
