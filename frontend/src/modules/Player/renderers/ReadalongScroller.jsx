@@ -51,9 +51,10 @@ export function ReadalongScroller({
     });
   }, [contentId, initialData]);
 
-  // Determine wrapper class: talks use "talk-text" to match legacy CSS, others use "readalong-text"
+  // Determine wrapper class: match CSS selectors for each content type
   const contentCssType = data?.type || data?.metadata?.cssType;
-  const textWrapperClass = contentCssType === 'talk' ? 'talk-text' : 'readalong-text';
+  const TEXT_WRAPPER_MAP = { talk: 'talk-text', poetry: 'poetry-text', hymn: 'hymn-text', singalong: 'singalong-text' };
+  const textWrapperClass = TEXT_WRAPPER_MAP[contentCssType] || 'readalong-text';
 
   const parseContent = useCallback((contentData) => {
     // Try renderer first (handles scripture verses with special formatting)
