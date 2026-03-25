@@ -70,9 +70,16 @@ When producing messages for the nutrition coaching channel:
 
 ### Data Rules
 - Always show both raw (tracked) and adjusted (reconciled) numbers when available.
-- If tracking accuracy < 70%, lead with that fact.
-- Flag days with < 800 tracked calories as likely incomplete, not as real intake.
 - Reference weight trends to ground calorie advice ("weight down 1.2 lbs this week at X avg intake").
+- Never suggest specific foods. State the macro gap, not the solution.
+
+### Tracking Accuracy
+- Tracking accuracy is a TRAILING INDICATOR derived from smoothed 14-day weight averages.
+- It measures midterm trends ("over the past month, you log about half of what you eat"), NOT daily precision.
+- Never claim per-day accuracy for recent days — the weight data hasn't caught up yet.
+- Use accuracy for trend direction: "accuracy declining from 82% to 53% over 3 weeks" — not "today's accuracy is 38%".
+- Low-calorie days (< 800 cal) are likely incomplete tracking, but state this as "likely incomplete" not "accuracy is X%".
+- When reporting accuracy, always qualify it: "rolling tracking accuracy" or "average over N weeks".
 
 ### Message Discipline
 - Check working memory for alerts_sent_today. Max 2 per day.
