@@ -79,7 +79,7 @@ export class EndOfDayReport extends Assignment {
 
     sections.push(`\n## Raw Tracked Nutrition (today)\n${JSON.stringify(gathered.todayNutrition || {}, null, 2)}`);
     sections.push(`\n## Adjusted Nutrition (with multiplier/phantom)\n${JSON.stringify(gathered.adjustedNutrition || {}, null, 2)}`);
-    sections.push(`\n## Reconciliation Summary (7 days)\n${JSON.stringify(gathered.reconciliation || {}, null, 2)}`);
+    sections.push(`\n## Reconciliation Summary (7-day window)\nIMPORTANT: Due to 14-day weight smoothing, these accuracy numbers reflect eating behavior from ~4 weeks ago. Frame as historical: "About 4 weeks ago, tracking accuracy was X%".\n${JSON.stringify(gathered.reconciliation || {}, null, 2)}`);
     sections.push(`\n## Weight Trend (7 days)\n${JSON.stringify(gathered.weight || {}, null, 2)}`);
     sections.push(`\n## Today's Workouts\n${JSON.stringify(gathered.workouts || {}, null, 2)}`);
     sections.push(`\n## Recent Coaching History (last 7 days — for dedup)\n${JSON.stringify(gathered.coachingHistory || {}, null, 2)}`);

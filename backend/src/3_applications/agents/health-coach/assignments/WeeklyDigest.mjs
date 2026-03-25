@@ -67,7 +67,7 @@ export class WeeklyDigest extends Assignment {
     const today = new Date().toISOString().split('T')[0];
     const sections = [`## Week ending: ${today}`];
 
-    sections.push(`\n## Reconciliation Summary (7 days)\n${JSON.stringify(gathered.reconciliation || {}, null, 2)}`);
+    sections.push(`\n## Reconciliation Summary (7-day window)\nIMPORTANT: Due to 14-day weight smoothing, these accuracy numbers reflect eating behavior from ~4 weeks ago. Frame as historical: "About 4 weeks ago, tracking accuracy was X%".\n${JSON.stringify(gathered.reconciliation || {}, null, 2)}`);
     sections.push(`\n## Weight Trend (14 days — for both 7d and 14d trends)\n${JSON.stringify(gathered.weight || {}, null, 2)}`);
     sections.push(`\n## Nutrition History (7 days)\n${JSON.stringify(gathered.nutritionHistory || {}, null, 2)}`);
     sections.push(`\n## User Goals\n${JSON.stringify(gathered.goals || {}, null, 2)}`);

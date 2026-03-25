@@ -64,7 +64,7 @@ export class MorningBrief extends Assignment {
     const today = new Date().toISOString().split('T')[0];
     const sections = [`## Date: ${today}`];
 
-    sections.push(`\n## Reconciliation Summary (7 days)\n${JSON.stringify(gathered.reconciliation || {}, null, 2)}`);
+    sections.push(`\n## Reconciliation Summary (7-day window)\nIMPORTANT: Due to 14-day weight smoothing, these accuracy numbers reflect eating behavior from ~4 weeks ago, not this week. Frame accordingly: "About 4 weeks ago, you were logging X% of actual intake" — NOT "this week's accuracy is X%".\n${JSON.stringify(gathered.reconciliation || {}, null, 2)}`);
     sections.push(`\n## Weight Trend (7 days)\n${JSON.stringify(gathered.weight || {}, null, 2)}`);
     sections.push(`\n## User Goals\n${JSON.stringify(gathered.goals || {}, null, 2)}`);
     sections.push(`\n## Today's Nutrition (so far)\n${JSON.stringify(gathered.todayNutrition || {}, null, 2)}`);
