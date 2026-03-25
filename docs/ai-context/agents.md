@@ -43,10 +43,18 @@ Autonomous AI agents that use LLM reasoning for complex tasks. Unlike rule-based
 ### Health Coach Agent (`3_applications/agents/health-coach/`)
 - `HealthCoachAgent.mjs` - Main agent class (extends BaseAgent)
 - `assignments/DailyDashboard.mjs` - Daily dashboard preparation assignment
+- `assignments/MorningBrief.mjs` - Daily reconciliation-aware nutrition brief (scheduled 10am)
+- `assignments/NoteReview.mjs` - Per-accept coaching review (event-triggered, default silent)
+- `assignments/EndOfDayReport.mjs` - Daily report coaching commentary (event-triggered)
+- `assignments/WeeklyDigest.mjs` - Weekly trend summary (scheduled Sunday 7pm)
+- `assignments/ExerciseReaction.mjs` - Post-exercise context message (Strava webhook-triggered)
 - `tools/HealthToolFactory.mjs` - Weight, nutrition, workout tools (5 tools)
 - `tools/FitnessContentToolFactory.mjs` - Plex content browsing, program state (3 tools)
 - `tools/DashboardToolFactory.mjs` - Dashboard write, goals, coaching notes (3 tools)
+- `tools/ReconciliationToolFactory.mjs` - Reconciliation summary, adjusted nutrition, coaching history (3 tools)
+- `tools/MessagingChannelToolFactory.mjs` - Channel message delivery (1 tool)
 - `schemas/dashboard.mjs` - Dashboard output JSON Schema
+- `schemas/coachingMessage.mjs` - Output schema for coaching messages (should_send, text, parse_mode)
 - `prompts/system.mjs` - System prompt
 - `index.mjs` - Barrel exports
 
@@ -70,22 +78,30 @@ Autonomous AI agents that use LLM reasoning for complex tasks. Unlike rule-based
 ### Bootstrap (`0_system/`)
 - `bootstrap.mjs` - `createAgentsApiRouter()` function
 
-### Tests (`tests/unit/agents/`)
-- `AgentOrchestrator.test.mjs` - 12 tests
-- `EchoAgent.test.mjs` - 10 tests
-- `framework/WorkingMemoryState.test.mjs` - 17 tests
-- `framework/YamlWorkingMemoryAdapter.test.mjs` - 5 tests
-- `framework/ToolFactory.test.mjs` - 4 tests
-- `framework/OutputValidator.test.mjs` - 9 tests
-- `framework/Assignment.test.mjs` - 4 tests
-- `framework/BaseAgent.test.mjs` - 10 tests
-- `framework/Scheduler.test.mjs` - 6 tests
-- `health-coach/dashboard-schema.test.mjs` - 5 tests
-- `health-coach/HealthToolFactory.test.mjs` - 7 tests
-- `health-coach/FitnessContentToolFactory.test.mjs` - 5 tests
-- `health-coach/DashboardToolFactory.test.mjs` - 5 tests
-- `health-coach/DailyDashboard.test.mjs` - 8 tests
-- `health-coach/HealthCoachAgent.test.mjs` - 8 tests
+### Tests (`tests/isolated/agents/` and `tests/live/`)
+- `isolated/agents/AgentOrchestrator.test.mjs` - 12 tests
+- `isolated/agents/EchoAgent.test.mjs` - 10 tests
+- `isolated/agents/framework/WorkingMemoryState.test.mjs` - 17 tests
+- `isolated/agents/framework/YamlWorkingMemoryAdapter.test.mjs` - 5 tests
+- `isolated/agents/framework/ToolFactory.test.mjs` - 4 tests
+- `isolated/agents/framework/OutputValidator.test.mjs` - 9 tests
+- `isolated/agents/framework/Assignment.test.mjs` - 4 tests
+- `isolated/agents/framework/BaseAgent.test.mjs` - 10 tests
+- `isolated/agents/framework/Scheduler.test.mjs` - 6 tests
+- `isolated/agents/health-coach/dashboard-schema.test.mjs` - 5 tests
+- `isolated/agents/health-coach/HealthToolFactory.test.mjs` - 7 tests
+- `isolated/agents/health-coach/FitnessContentToolFactory.test.mjs` - 5 tests
+- `isolated/agents/health-coach/DashboardToolFactory.test.mjs` - 5 tests
+- `isolated/agents/health-coach/DailyDashboard.test.mjs` - 8 tests
+- `isolated/agents/health-coach/HealthCoachAgent.test.mjs` - 8 tests
+- `isolated/agents/health-coach/MorningBrief.test.mjs` - Nutrition brief assignment tests
+- `isolated/agents/health-coach/NoteReview.test.mjs` - Coaching review assignment tests
+- `isolated/agents/health-coach/EndOfDayReport.test.mjs` - Daily report assignment tests
+- `isolated/agents/health-coach/WeeklyDigest.test.mjs` - Weekly digest assignment tests
+- `isolated/agents/health-coach/ExerciseReaction.test.mjs` - Exercise reaction assignment tests
+- `isolated/agents/health-coach/ReconciliationToolFactory.test.mjs` - Reconciliation tools tests
+- `isolated/agents/health-coach/MessagingChannelToolFactory.test.mjs` - Messaging channel tools tests
+- `live/agent/health-coach-assignment.test.mjs` - Integration tests for health coach assignments
 
 ## API Endpoints
 
