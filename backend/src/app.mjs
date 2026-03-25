@@ -1667,11 +1667,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     aiGateway: sharedAiGateway,
     httpClient: axios,
     messagingGateway: nutribotTelegramAdapter,
-    // Nutribot conversation ID for agent→Telegram delivery
+    // Nutribot chat ID for agent→Telegram delivery
+    // extractChatId splits on '_' and takes last segment, so just pass raw chatId
     // TODO: derive chatId from user identity mapping instead of hardcoding
-    conversationId: systemBots.nutribot?.telegram?.bot_id
-      ? `telegram:b${systemBots.nutribot.telegram.bot_id}_c575596036`
-      : null,
+    conversationId: '575596036',
     lifeplanServices: {
       container: lifeplanResult.container,
       services: lifeplanResult.services,
