@@ -66,8 +66,11 @@ export class NoteReview extends Assignment {
    * genuinely new, actionable information the user doesn't already have.
    */
   buildPrompt(gathered, memory) {
-    const today = new Date().toISOString().split('T')[0];
-    const sections = [`## Date: ${today}`];
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    const hour = now.getHours();
+    const timeOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
+    const sections = [`## Date: ${today}\n## Current Time: ${now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} (${timeOfDay})`];
 
     sections.push(`\n## Today's Nutrition\n${JSON.stringify(gathered.todayNutrition || {}, null, 2)}`);
     sections.push(`\n## User Goals\n${JSON.stringify(gathered.goals || {}, null, 2)}`);
@@ -88,6 +91,13 @@ ${isForced
 - If alerts_sent_today.count >= 2, should_send: false`}
 - Never say "great job", "keep it up", or similar. Numbers only.
 - Never suggest specific foods. State the gap, not the solution.
+
+### Time-of-Day Awareness
+- It is currently ${timeOfDay}. Low calorie totals in the morning/afternoon are NORMAL — the user hasn't finished eating yet.
+- NEVER warn about incomplete tracking or low calories before evening. The day isn't over.
+- "Likely incomplete" warnings only apply to YESTERDAY's data or after 8pm today.
+- In the morning/afternoon, focus on what's been logged so far and remaining targets — not what's "missing".
+
 - text: the message body (HTML formatted, under 100 words) — only set if should_send is true
 - parse_mode: "HTML"
 
