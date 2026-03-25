@@ -33,7 +33,7 @@ export class Assignment {
     memory.pruneExpired();
 
     // 2. Gather — programmatic data collection
-    const gathered = await this.gather({ tools, userId, memory, logger });
+    const gathered = await this.gather({ tools, userId, memory, logger, context });
 
     // 3. Build prompt — context engineering
     const prompt = this.buildPrompt(gathered, memory);
@@ -66,6 +66,7 @@ export class Assignment {
   }
 
   // --- Subclass contract ---
+  // gather({ tools, userId, memory, logger, context }) — context is the execution context passed to execute()
   async gather(deps) { throw new Error('Subclass must implement gather()'); }
   buildPrompt(gathered, memory) { throw new Error('Subclass must implement buildPrompt()'); }
   getOutputSchema() { throw new Error('Subclass must implement getOutputSchema()'); }
