@@ -16,6 +16,8 @@ export class AcceptFoodLog {
   #nutriListStore;
   #conversationStateStore;
   #generateDailyReport;
+  #agentOrchestrator;
+  #config;
   #logger;
 
   constructor(deps) {
@@ -26,6 +28,8 @@ export class AcceptFoodLog {
     this.#nutriListStore = deps.nutriListStore;
     this.#conversationStateStore = deps.conversationStateStore;
     this.#generateDailyReport = deps.generateDailyReport;
+    this.#agentOrchestrator = deps.agentOrchestrator || null;
+    this.#config = deps.config || null;
     this.#logger = deps.logger || console;
   }
 
@@ -113,7 +117,20 @@ export class AcceptFoodLog {
           const dateHeader = logDate ? formatDateHeader(logDate, { now: new Date() }).replace('🕒', '✅') : '';
           const foodList = formatFoodList(nutriLog.items || []);
 
-          const acceptedText = `${dateHeader}\n\n${foodList}`;
+          let acceptedText = `${dateHeader}\n\n${foodList}`;
+
+          // Append running total line (deterministic, no AI)
+          try {
+            if (this.#nutriListStore && logDate) {
+              const todayItems = await this.#nutriListStore.findByDate(userId, logDate);
+              const totalCalories = todayItems.reduce((sum, item) => sum + (Number(item.calories) || 0), 0);
+              const totalProtein = todayItems.reduce((sum, item) => sum + (Number(item.protein) || 0), 0);
+              const targetRange = this.#config?.getNutritionGoals?.(userId) || '1500-2000';
+              acceptedText = `${dateHeader}\n\n${foodList}\n\n↳ ${totalCalories} / ${targetRange} cal • ${totalProtein}g protein`;
+            }
+          } catch (e) {
+            this.#logger.warn?.('acceptLog.runningTotal.error', { error: e.message });
+          }
 
           // Use caption for photo messages (image/upc sources), text for others
           const isPhotoMessage = ['image', 'upc'].includes(nutriLog.metadata?.source);
@@ -146,10 +163,26 @@ export class AcceptFoodLog {
               date: nutriLog.meal?.date || nutriLog.date,
               responseContext,
             });
+
+            // Agent coaching commentary on end-of-day report (fire-and-forget)
+            if (this.#agentOrchestrator) {
+              this.#agentOrchestrator.runAssignment('health-coach', 'end-of-day-report', {
+                userId,
+                context: { conversationId },
+              }).catch(e => this.#logger.warn?.('acceptLog.endOfDayReport.error', { error: e.message }));
+            }
           }
         } catch (e) {
           this.#logger.warn?.('acceptLog.autoreport.error', { error: e.message });
         }
+      }
+
+      // Fire NoteReview — agent decides whether to speak (fire-and-forget)
+      if (this.#agentOrchestrator) {
+        this.#agentOrchestrator.runAssignment('health-coach', 'note-review', {
+          userId,
+          context: { conversationId },
+        }).catch(e => this.#logger.warn?.('acceptLog.noteReview.error', { error: e.message }));
       }
 
       return {
