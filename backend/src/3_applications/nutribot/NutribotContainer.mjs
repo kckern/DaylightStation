@@ -18,9 +18,6 @@ import {
   SelectUPCPortion,
   GenerateDailyReport,
   GetReportAsJSON,
-  GenerateThresholdCoaching,
-  GenerateOnDemandCoaching,
-  GenerateReportCoaching,
   StartAdjustmentFlow,
   SelectDateForAdjustment,
   SelectItemForAdjustment,
@@ -70,9 +67,7 @@ export class NutribotContainer {
   #selectUPCPortion;
   #generateDailyReport;
   #getReportAsJSON;
-  #generateThresholdCoaching;
-  #generateOnDemandCoaching;
-  #generateReportCoaching;
+  #agentOrchestrator;
   #startAdjustmentFlow;
   #showDateSelection;
   #selectDateForAdjustment;
@@ -116,6 +111,7 @@ export class NutribotContainer {
     this.#barcodeGenerator = options.barcodeGenerator;
     this.#foodIconsString = options.foodIconsString;
     this.#reconciliationReader = options.reconciliationReader || null;
+    this.#agentOrchestrator = options.agentOrchestrator || null;
   }
 
   // ==================== Config Getter ====================
@@ -251,6 +247,7 @@ export class NutribotContainer {
         nutriListStore: this.#nutriListStore,
         conversationStateStore: this.#conversationStateStore,
         generateDailyReport: this.getGenerateDailyReport(),
+        agentOrchestrator: this.#agentOrchestrator,
         logger: this.#logger,
       });
     }
@@ -317,7 +314,6 @@ export class NutribotContainer {
         nutriListStore: this.#nutriListStore,
         conversationStateStore: this.#conversationStateStore,
         reportRenderer: this.#reportRenderer,
-        generateThresholdCoaching: this.getGenerateThresholdCoaching(),
         config: this.#config,
         logger: this.#logger,
       });
@@ -337,46 +333,10 @@ export class NutribotContainer {
     return this.#getReportAsJSON;
   }
 
-  // ==================== Coaching Use Cases ====================
+  // ==================== Agent Orchestrator ====================
 
-  getGenerateThresholdCoaching() {
-    if (!this.#generateThresholdCoaching) {
-      this.#generateThresholdCoaching = new GenerateThresholdCoaching({
-        messagingGateway: this.getMessagingGateway(),
-        aiGateway: this.getAIGateway(),
-        nutriListStore: this.#nutriListStore,
-        config: this.#config,
-        logger: this.#logger,
-      });
-    }
-    return this.#generateThresholdCoaching;
-  }
-
-  getGenerateOnDemandCoaching() {
-    if (!this.#generateOnDemandCoaching) {
-      this.#generateOnDemandCoaching = new GenerateOnDemandCoaching({
-        messagingGateway: this.getMessagingGateway(),
-        aiGateway: this.getAIGateway(),
-        nutriListStore: this.#nutriListStore,
-        config: this.#config,
-        logger: this.#logger,
-      });
-    }
-    return this.#generateOnDemandCoaching;
-  }
-
-  getGenerateReportCoaching() {
-    if (!this.#generateReportCoaching) {
-      this.#generateReportCoaching = new GenerateReportCoaching({
-        messagingGateway: this.getMessagingGateway(),
-        aiGateway: this.getAIGateway(),
-        nutriListStore: this.#nutriListStore,
-        nutriCoachStore: this.#nutriCoachStore,
-        config: this.#config,
-        logger: this.#logger,
-      });
-    }
-    return this.#generateReportCoaching;
+  getAgentOrchestrator() {
+    return this.#agentOrchestrator;
   }
 
   // ==================== Adjustment Use Cases ====================
@@ -504,6 +464,7 @@ export class NutribotContainer {
         foodLogStore: this.#foodLogStore,
         nutriListStore: this.#nutriListStore,
         generateDailyReport: this.getGenerateDailyReport(),
+        agentOrchestrator: this.#agentOrchestrator,
         config: this.#config,
         logger: this.#logger,
       });

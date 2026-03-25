@@ -13,6 +13,7 @@ export class ConfirmAllPending {
   #nutriListStore;
   #logger;
   #generateDailyReport;
+  #agentOrchestrator;
   #config;
 
   constructor(deps) {
@@ -22,6 +23,7 @@ export class ConfirmAllPending {
     this.#foodLogStore = deps.foodLogStore;
     this.#nutriListStore = deps.nutriListStore;
     this.#generateDailyReport = deps.generateDailyReport;
+    this.#agentOrchestrator = deps.agentOrchestrator || null;
     this.#config = deps.config;
     this.#logger = deps.logger || console;
   }
@@ -69,6 +71,13 @@ export class ConfirmAllPending {
       }
 
       this.#logger.info?.('confirmAllPending.complete', { userId, confirmedCount });
+
+      if (this.#agentOrchestrator) {
+        this.#agentOrchestrator.runAssignment('health-coach', 'end-of-day-report', {
+          userId,
+          context: { conversationId },
+        }).catch(e => this.#logger.warn?.('confirmAll.endOfDayReport.error', { error: e.message }));
+      }
 
       return {
         success: true,

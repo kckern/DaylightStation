@@ -38,7 +38,3 @@ export { HandleReviewCommand } from './HandleReviewCommand.mjs';
 export { GenerateDailyReport } from './GenerateDailyReport.mjs';
 export { GetReportAsJSON } from './GetReportAsJSON.mjs';
 
-// Coaching
-export { GenerateThresholdCoaching } from './GenerateThresholdCoaching.mjs';
-export { GenerateOnDemandCoaching } from './GenerateOnDemandCoaching.mjs';
-export { GenerateReportCoaching } from './GenerateReportCoaching.mjs';

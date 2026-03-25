@@ -417,6 +417,20 @@ export class NutribotInputRouter extends BaseInputRouter {
           responseContext,
         });
       }
+      case 'coach': {
+        const orchestrator = this.container.getAgentOrchestrator?.();
+        if (!orchestrator) {
+          if (responseContext?.sendMessage) {
+            await responseContext.sendMessage('Coaching not available.', {});
+          }
+          return { ok: true, handled: false };
+        }
+        const result = await orchestrator.runAssignment('health-coach', 'note-review', {
+          userId: this.#resolveUserId(event),
+          context: { forceSpeak: true, conversationId: event.conversationId },
+        });
+        return { ok: true, result };
+      }
       default:
         this.logger.warn?.('nutribot.command.unknown', { command });
         return { ok: true, handled: false };

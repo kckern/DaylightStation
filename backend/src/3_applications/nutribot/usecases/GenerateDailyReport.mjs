@@ -16,7 +16,6 @@ export class GenerateDailyReport {
   #foodLogStore;
   #nutriListStore;
   #conversationStateStore;
-  #generateThresholdCoaching;
   #config;
   #logger;
   #encodeCallback;
@@ -32,7 +31,6 @@ export class GenerateDailyReport {
     this.#foodLogStore = deps.foodLogStore;
     this.#nutriListStore = deps.nutriListStore;
     this.#conversationStateStore = deps.conversationStateStore;
-    this.#generateThresholdCoaching = deps.generateThresholdCoaching;
     this.#config = deps.config;
     this.#logger = deps.logger || console;
     this.#encodeCallback = deps.encodeCallback || ((cmd, data) => JSON.stringify({ cmd, ...data }));
@@ -249,10 +247,7 @@ export class GenerateDailyReport {
 
       this.#logger.info?.('report.generate.success', { userId, date, messageId, itemCount: summary.itemCount });
 
-      // 13. Check thresholds and trigger coaching
-      const coachingTriggered = await this.#checkAndTriggerCoaching(userId, conversationId, summary);
-
-      return { success: true, messageId, summary, coachingTriggered };
+      return { success: true, messageId, summary };
     } catch (error) {
       this.#logger.error?.('report.generate.error', { userId, date, error: error.message });
       throw error;
@@ -334,49 +329,6 @@ export class GenerateDailyReport {
     }
 
     return message;
-  }
-
-  /**
-   * Check thresholds and trigger coaching
-   * @private
-   */
-  async #checkAndTriggerCoaching(userId, conversationId, summary) {
-    if (!this.#generateThresholdCoaching) {
-      return false;
-    }
-
-    const thresholds = this.#config.getThresholds?.(userId) || { daily: 2000 };
-    const estimatedCalories = this.#estimateCalories(summary);
-
-    if (estimatedCalories > thresholds.daily * 0.8) {
-      this.#logger.debug?.('report.threshold.approaching', { userId, estimated: estimatedCalories });
-
-      try {
-        const threshold = estimatedCalories >= thresholds.daily ? '100%' : '80%';
-        await this.#generateThresholdCoaching.execute({
-          userId,
-          conversationId,
-          threshold,
-          dailyTotal: estimatedCalories,
-          recentItems: summary.items?.slice(-5) || [],
-        });
-        return true;
-      } catch (e) {
-        this.#logger.error?.('report.coaching.error', { userId, error: e.message });
-        return false;
-      }
-    }
-
-    return false;
-  }
-
-  /**
-   * Rough calorie estimation from grams/colors
-   * @private
-   */
-  #estimateCalories(summary) {
-    const { gramsByColor } = summary;
-    return (gramsByColor.green || 0) * 0.5 + (gramsByColor.yellow || 0) * 1.5 + (gramsByColor.orange || 0) * 3;
   }
 
   /**
