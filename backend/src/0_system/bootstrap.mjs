@@ -2200,6 +2200,7 @@ export function createHomebotApiRouter(config) {
  * @param {Object} [config.conversationStateStore] - State store for conversation flow
  * @param {Object} [config.reportRenderer] - Report renderer
  * @param {Object} [config.nutribotConfig] - NutriBot configuration
+ * @param {Object} [config.agentOrchestrator] - AgentOrchestrator for delegating to health-coach agent
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Nutribot services
  */
@@ -2215,6 +2216,7 @@ export async function createNutribotServices(config) {
     reportRenderer,
     nutribotConfig: rawNutribotConfig = {},
     reconciliationReader,
+    agentOrchestrator = null,
     logger = console
   } = config;
 
@@ -2271,6 +2273,9 @@ export async function createNutribotServices(config) {
   // Create nutribot container with all dependencies
   // Note: Identity resolution (conversation ID -> username) is handled by
   // UserResolver in the adapter layer (NutribotInputRouter), not here.
+  //
+  // agentOrchestrator may be provided as a lazy proxy if the orchestrator is
+  // created after the container (e.g. in app.mjs initialization order).
   const nutribotContainer = new NutribotContainer(nutribotConfig, {
     messagingGateway: telegramAdapter,
     aiGateway,
@@ -2284,6 +2289,7 @@ export async function createNutribotServices(config) {
     barcodeGenerator,
     foodIconsString,
     reconciliationReader,
+    agentOrchestrator,
     logger
   });
 
@@ -2626,6 +2632,8 @@ export function createCalendarApiRouter(config) {
  * @param {Object} [config.mediaProgressMemory] - YamlMediaProgressMemory for watch history
  * @param {Object} [config.dataService] - DataService for user data read/write
  * @param {Object} [config.configService] - ConfigService for household/user config
+ * @param {Object} [config.messagingGateway] - TelegramAdapter for outbound messaging (health coach)
+ * @param {string} [config.conversationId] - Nutribot Telegram chat conversation ID (health coach)
  * @returns {express.Router}
  */
 export function createAgentsApiRouter(config) {
@@ -2640,6 +2648,8 @@ export function createAgentsApiRouter(config) {
     configService,
     aiGateway,
     httpClient,
+    messagingGateway = null,
+    conversationId = null,
   } = config;
 
   // Mastra reads API keys from process.env — bridge from ConfigService
@@ -2676,6 +2686,8 @@ export function createAgentsApiRouter(config) {
       mediaProgressMemory,
       dataService,
       configService,
+      messagingGateway,
+      conversationId: conversationId ?? configService?.getNutribotConversationId?.() ?? null,
     });
   }
 
