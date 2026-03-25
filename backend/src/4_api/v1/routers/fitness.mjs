@@ -63,6 +63,7 @@ const simulationState = {
  * @param {Function} [config.createReceiptCanvas] - async (sessionId, upsidedown) => { canvas, width, height }
  * @param {Object} [config.providerWebhookAdapters] - Map of provider webhook adapters (e.g. { strava: StravaWebhookAdapter })
  * @param {Object} [config.enrichmentService] - StravaEnrichmentService instance
+ * @param {Object} [config.agentOrchestrator] - AgentOrchestrator for triggering agent assignments (optional)
  * @param {Object} config.logger - Logger instance
  * @returns {express.Router}
  */
@@ -82,6 +83,7 @@ export function createFitnessRouter(config) {
     printerAdapter,
     providerWebhookAdapters = {},
     enrichmentService = null,
+    agentOrchestrator = null,
     logger = console
   } = config;
 
@@ -786,6 +788,16 @@ export function createFitnessRouter(config) {
           });
         } else {
           enrichmentService.handleEvent(event);
+        }
+
+        // Trigger HealthCoachAgent exercise reaction (fire-and-forget)
+        // The assignment itself guards on calorie threshold (>200 cal)
+        if (adapter.shouldEnrich?.(event)) {
+          const userId = event.ownerId;
+          agentOrchestrator?.runAssignment('health-coach', 'exercise-reaction', {
+            userId,
+            context: { activity: event },
+          }).catch(err => logger.warn?.('strava.exerciseReaction.error', { error: err.message }));
         }
 
         return res.status(200).json({ ok: true });
