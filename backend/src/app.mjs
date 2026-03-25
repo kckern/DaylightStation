@@ -1666,6 +1666,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService,
     aiGateway: sharedAiGateway,
     httpClient: axios,
+    messagingGateway: nutribotTelegramAdapter,
+    // Nutribot conversation ID for agent→Telegram delivery
+    // TODO: derive chatId from user identity mapping instead of hardcoding
+    conversationId: systemBots.nutribot?.telegram?.bot_id
+      ? `telegram:b${systemBots.nutribot.telegram.bot_id}_c575596036`
+      : null,
     lifeplanServices: {
       container: lifeplanResult.container,
       services: lifeplanResult.services,
