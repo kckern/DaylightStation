@@ -75,17 +75,19 @@ export class NoteReview extends Assignment {
     sections.push(`\n## Alert Budget\nAlerts sent today: ${gathered.alertsSentToday.count}\nTopics already covered: ${JSON.stringify(gathered.alertsSentToday.topics)}`);
     sections.push(`\n## Working Memory\n${memory.serialize()}`);
 
-    const forceSpeakInstruction = gathered.forceSpeak
-      ? '\nThe user explicitly asked for coaching. should_send: true. Respond with a concise, numbers-focused summary.'
-      : '';
+    const isForced = gathered.forceSpeak;
 
     sections.push(`\n## Instructions
 Produce a JSON object matching the coachingMessageSchema:
-- should_send: false UNLESS there is something the user doesn't already know
+${isForced
+    ? `- The user explicitly asked for coaching via /coach. should_send MUST be true. Ignore the alert budget.
+- Respond with a concise, numbers-focused summary of current state.`
+    : `- should_send: false UNLESS there is something the user doesn't already know
 - A running total line is already shown on accept — do not restate calories
 - Max 2 alerts per day. Already sent today: ${gathered.alertsSentToday.count}
-- If alerts_sent_today.count >= 2, should_send: false regardless of data${forceSpeakInstruction}
+- If alerts_sent_today.count >= 2, should_send: false`}
 - Never say "great job", "keep it up", or similar. Numbers only.
+- Never suggest specific foods. State the gap, not the solution.
 - text: the message body (HTML formatted, under 100 words) — only set if should_send is true
 - parse_mode: "HTML"
 
