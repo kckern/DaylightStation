@@ -70,7 +70,10 @@ export class HealthCoachAgent extends BaseAgent {
     if (coachingAssignments.includes(assignmentId) && result?.should_send) {
       const sendTool = this.getTools().find(t => t.name === 'send_channel_message');
       if (sendTool) {
-        await sendTool.execute({ text: result.text, parseMode: result.parse_mode || 'HTML' });
+        const deliveryResult = await sendTool.execute({ text: result.text, parseMode: result.parse_mode || 'HTML' });
+        this.deps.logger?.info?.('coaching.delivery', { assignmentId, success: deliveryResult?.success, messageId: deliveryResult?.messageId, error: deliveryResult?.error });
+      } else {
+        this.deps.logger?.warn?.('coaching.delivery.noTool', { assignmentId, toolCount: this.getTools().length, toolNames: this.getTools().map(t => t.name) });
       }
       // Log coaching note for end-of-day report
       if (assignmentId === 'end-of-day-report') {
