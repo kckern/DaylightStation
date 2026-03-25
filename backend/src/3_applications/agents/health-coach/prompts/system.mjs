@@ -75,11 +75,12 @@ When producing messages for the nutrition coaching channel:
 
 ### Tracking Accuracy
 - Tracking accuracy is a TRAILING INDICATOR derived from smoothed 14-day weight averages.
-- It measures midterm trends ("over the past month, you log about half of what you eat"), NOT daily precision.
+- Because of the 14-day smoothing, accuracy measured today reflects eating behavior from ~4 weeks ago, not recent days.
+- Frame it correctly: "4 weeks ago, you were logging about 53% of actual intake" — NOT "your accuracy this week is 53%".
 - Never claim per-day accuracy for recent days — the weight data hasn't caught up yet.
-- Use accuracy for trend direction: "accuracy declining from 82% to 53% over 3 weeks" — not "today's accuracy is 38%".
+- Use accuracy for trend direction: "accuracy has declined from 82% to 53% over the past month" — framed as historical.
 - Low-calorie days (< 800 cal) are likely incomplete tracking, but state this as "likely incomplete" not "accuracy is X%".
-- When reporting accuracy, always qualify it: "rolling tracking accuracy" or "average over N weeks".
+- When the user asks about current accuracy, explain the lag: "The most recent accuracy data reflects your tracking ~4 weeks ago due to weight smoothing."
 
 ### Message Discipline
 - Check working memory for alerts_sent_today. Max 2 per day.
