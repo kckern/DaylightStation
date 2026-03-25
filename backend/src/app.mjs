@@ -1557,6 +1557,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     reportRenderer: nutribotReportRenderer,  // Canvas-based PNG report renderer
     nutribotConfig,
     reconciliationReader: healthServices.reconciliationReader,
+    // Lazy proxy: agentOrchestrator is created later in createAgentsApiRouter
+    agentOrchestrator: { runAssignment: (...args) => v1Routers.agents?.orchestrator?.runAssignment(...args) },
     logger: rootLogger.child({ module: 'nutribot' })
   });
 

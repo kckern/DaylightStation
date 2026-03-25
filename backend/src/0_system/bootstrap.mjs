@@ -2748,7 +2748,10 @@ export function createAgentsApiRouter(config) {
     scheduledJobs: scheduler.list(),
   });
 
-  return createAgentsRouter({ agentOrchestrator, workingMemory, scheduler, logger });
+  const router = createAgentsRouter({ agentOrchestrator, workingMemory, scheduler, logger });
+  // Expose orchestrator alongside router for cross-domain agent invocations (e.g., nutribot → health-coach)
+  router.orchestrator = agentOrchestrator;
+  return router;
 }
 
 // =============================================================================
