@@ -9,14 +9,14 @@ describe('WeeklyDigest', () => {
     assert.equal(typeof WeeklyDigest.description, 'string');
   });
 
-  it('gather calls all 4 expected tools', async () => {
+  it('gather calls all 5 expected tools (including long-term weight)', async () => {
     const digest = new WeeklyDigest();
     const calls = [];
     const mockTools = [
-      { name: 'get_reconciliation_summary', execute: async (p) => { calls.push('reconciliation'); return { avgAccuracy: 0.71, days: [] }; } },
-      { name: 'get_weight_trend',           execute: async (p) => { calls.push('weight');         return { current: { lbs: 182 }, trend: { sevenDay: -0.5, fourteenDay: -1.2 } }; } },
-      { name: 'get_nutrition_history',      execute: async (p) => { calls.push('nutrition');      return { days: [], avgCalories: 1900 }; } },
-      { name: 'get_user_goals',             execute: async (p) => { calls.push('goals');          return { goals: { calories: 2000, protein: 150 } }; } },
+      { name: 'get_reconciliation_summary', execute: async (p) => { calls.push(`reconciliation:${p.days}`); return { avgAccuracy: 0.71, days: [] }; } },
+      { name: 'get_weight_trend',           execute: async (p) => { calls.push(`weight:${p.days}`);         return { current: { lbs: 182 }, trend: { sevenDay: -0.5, fourteenDay: -1.2 } }; } },
+      { name: 'get_nutrition_history',      execute: async (p) => { calls.push('nutrition');                 return { days: [], avgCalories: 1900 }; } },
+      { name: 'get_user_goals',             execute: async (p) => { calls.push('goals');                     return { goals: { calories: 2000, protein: 150 } }; } },
     ];
     const gathered = await digest.gather({
       tools: mockTools,
@@ -25,27 +25,29 @@ describe('WeeklyDigest', () => {
       logger: { warn: () => {}, info: () => {} },
     });
 
-    assert.deepEqual(calls.sort(), ['goals', 'nutrition', 'reconciliation', 'weight']);
+    assert.deepEqual(calls.sort(), ['goals', 'nutrition', 'reconciliation:84', 'weight:14', 'weight:84']);
     assert.ok(gathered.reconciliation);
     assert.ok(gathered.weight);
+    assert.ok(gathered.weightLongTerm);
     assert.ok(gathered.nutritionHistory);
     assert.ok(gathered.goals);
   });
 
-  it('buildPrompt includes weekly trend data', () => {
+  it('buildPrompt includes weekly trend data and long-term context', () => {
     const digest = new WeeklyDigest();
     const gathered = {
       reconciliation:   { avgAccuracy: 0.71, missedDays: 1, days: [{ date: '2026-03-23', tracking_accuracy: 0.71 }] },
       weight:           { current: { lbs: 182 }, trend: { sevenDay: -0.5, fourteenDay: -1.2 } },
+      weightLongTerm:   { current: { lbs: 182 }, trend: { sevenDay: -0.5, fourteenDay: -1.2 } },
       nutritionHistory: { days: [], avgCalories: 1900, avgProtein: 140 },
       goals:            { goals: { calories: 2000, protein: 150 } },
     };
     const prompt = digest.buildPrompt(gathered, { serialize: () => 'mem-content' });
     assert.ok(typeof prompt === 'string');
     assert.ok(prompt.length > 100);
-    // Should include numeric data from the gathered payload
-    assert.ok(prompt.includes('1900') || prompt.includes('avoidance') || prompt.includes('nutrition'));
+    assert.ok(prompt.includes('1900') || prompt.includes('nutrition'));
     assert.ok(prompt.includes('mem-content'));
+    assert.ok(prompt.includes('long-term') || prompt.includes('12 week'));
   });
 
   it('act sets last_weekly_digest in memory with 7-day TTL', async () => {

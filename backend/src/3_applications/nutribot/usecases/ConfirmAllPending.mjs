@@ -72,6 +72,22 @@ export class ConfirmAllPending {
 
       this.#logger.info?.('confirmAllPending.complete', { userId, confirmedCount });
 
+      // Generate daily report image after all logs confirmed
+      if (this.#generateDailyReport?.execute) {
+        try {
+          const logDate = pendingLogs[0]?.meal?.date || pendingLogs[0]?.date;
+          await this.#generateDailyReport.execute({
+            userId,
+            conversationId,
+            date: logDate,
+            skipPendingCheck: true,
+          });
+        } catch (e) {
+          this.#logger.warn?.('confirmAll.generateReport.error', { error: e.message });
+        }
+      }
+
+      // Agent coaching commentary (fire-and-forget)
       if (this.#agentOrchestrator) {
         this.#agentOrchestrator.runAssignment('health-coach', 'end-of-day-report', {
           userId,

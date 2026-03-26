@@ -9,13 +9,11 @@ describe('EndOfDayReport', () => {
     assert.equal(EndOfDayReport.schedule, undefined);
   });
 
-  it('gather calls all 6 expected tools in parallel', async () => {
+  it('gather calls all 4 expected tools in parallel', async () => {
     const report = new EndOfDayReport();
     const calls = [];
     const mockTools = [
       { name: 'get_today_nutrition',       execute: async () => { calls.push('today_nutrition');      return { calories: 1800 }; } },
-      { name: 'get_adjusted_nutrition',    execute: async () => { calls.push('adjusted_nutrition');   return { calories: 1950 }; } },
-      { name: 'get_reconciliation_summary',execute: async () => { calls.push('reconciliation');       return { avgAccuracy: 0.72, days: [] }; } },
       { name: 'get_weight_trend',          execute: async () => { calls.push('weight');               return { current: { lbs: 183 } }; } },
       { name: 'get_recent_workouts',       execute: async () => { calls.push('workouts');             return { workouts: [] }; } },
       { name: 'get_coaching_history',      execute: async () => { calls.push('coaching_history');     return { history: [] }; } },
@@ -28,17 +26,13 @@ describe('EndOfDayReport', () => {
     });
 
     assert.deepEqual(calls.sort(), [
-      'adjusted_nutrition',
       'coaching_history',
-      'reconciliation',
       'today_nutrition',
       'weight',
       'workouts',
     ]);
 
     assert.ok(gathered.todayNutrition);
-    assert.ok(gathered.adjustedNutrition);
-    assert.ok(gathered.reconciliation);
     assert.ok(gathered.weight);
     assert.ok(gathered.workouts);
     assert.ok(gathered.coachingHistory);
@@ -58,43 +52,39 @@ describe('EndOfDayReport', () => {
     });
     assert.ok(gathered.todayNutrition);
     assert.ok(gathered.weight);
-    assert.equal(gathered.adjustedNutrition, null);
-    assert.equal(gathered.reconciliation, null);
     assert.equal(gathered.workouts, null);
     assert.equal(gathered.coachingHistory, null);
   });
 
-  it('buildPrompt includes both raw and adjusted nutrition numbers', () => {
+  it('buildPrompt focuses on tracked nutrition vs goals, not implied intake', () => {
     const report = new EndOfDayReport();
     const gathered = {
       todayNutrition:    { calories: 1800, protein: 120 },
-      adjustedNutrition: { calories: 1950, protein: 130 },
-      reconciliation:    { avgAccuracy: 0.65, days: [] },
       weight:            { current: { lbs: 183 }, trend: { sevenDay: -0.5 } },
       workouts:          { workouts: [] },
       coachingHistory:   { history: [] },
     };
     const prompt = report.buildPrompt(gathered, { serialize: () => 'mem' });
     assert.ok(typeof prompt === 'string');
-    // Raw and adjusted should both appear
-    assert.ok(prompt.includes('1800') || prompt.includes('raw'));
-    assert.ok(prompt.includes('1950') || prompt.includes('adjusted'));
+    assert.ok(prompt.includes('1800'));
+    // Should NOT include adjusted nutrition data section or reconciliation data section
+    assert.ok(!prompt.includes('## Adjusted Nutrition'));
+    assert.ok(!prompt.includes('## Reconciliation'));
+    // Should instruct coach NOT to mention implied intake
+    assert.ok(prompt.includes('Do NOT mention implied intake'));
     assert.ok(prompt.length > 100);
   });
 
-  it('buildPrompt leads with tracking accuracy when below 70%', () => {
+  it('buildPrompt instructs not to mention implied intake', () => {
     const report = new EndOfDayReport();
     const gathered = {
       todayNutrition:    { calories: 1800, protein: 100 },
-      adjustedNutrition: { calories: 2000, protein: 115 },
-      reconciliation:    { avgAccuracy: 0.55, days: [] },
       weight:            null,
       workouts:          null,
       coachingHistory:   null,
     };
     const prompt = report.buildPrompt(gathered, { serialize: () => '' });
-    // Accuracy / reconciliation instruction should be present
-    assert.ok(prompt.includes('accuracy') || prompt.includes('70') || prompt.includes('0.55') || prompt.includes('55'));
+    assert.ok(prompt.includes('Do NOT mention implied intake'));
   });
 
   it('getOutputSchema returns coachingMessageSchema', () => {

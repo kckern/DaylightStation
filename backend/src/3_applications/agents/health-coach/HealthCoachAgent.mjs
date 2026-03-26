@@ -75,17 +75,15 @@ export class HealthCoachAgent extends BaseAgent {
       } else {
         this.deps.logger?.warn?.('coaching.delivery.noTool', { assignmentId, toolCount: this.getTools().length, toolNames: this.getTools().map(t => t.name) });
       }
-      // Log coaching note for end-of-day report
-      if (assignmentId === 'end-of-day-report') {
-        const noteTool = this.getTools().find(t => t.name === 'log_coaching_note');
-        if (noteTool) {
-          const today = new Date().toISOString().split('T')[0];
-          await noteTool.execute({
-            userId: opts.userId,
-            date: today,
-            note: { type: 'observation', text: result.text },
-          });
-        }
+      // Persist all coaching messages to history
+      const noteTool = this.getTools().find(t => t.name === 'log_coaching_note');
+      if (noteTool) {
+        const today = new Date().toISOString().split('T')[0];
+        await noteTool.execute({
+          userId: opts.userId,
+          date: today,
+          note: { type: assignmentId, text: result.text },
+        });
       }
     }
 
