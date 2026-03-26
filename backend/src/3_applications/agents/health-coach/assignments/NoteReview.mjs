@@ -86,7 +86,7 @@ ${isForced
     ? `- The user explicitly asked for coaching via /coach. should_send MUST be true. Ignore the alert budget.
 - Respond with a concise, numbers-focused summary of current state.`
     : `- should_send: false UNLESS there is something the user doesn't already know
-- A running total line is already shown on accept — do not restate calories
+- The user can see what they just logged — do not restate it
 - Max 2 alerts per day. Already sent today: ${gathered.alertsSentToday.count}
 - If alerts_sent_today.count >= 2, should_send: false`}
 - Never say "great job", "keep it up", or similar. Numbers only.

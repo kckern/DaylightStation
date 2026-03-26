@@ -117,20 +117,7 @@ export class AcceptFoodLog {
           const dateHeader = logDate ? formatDateHeader(logDate, { now: new Date() }).replace('🕒', '✅') : '';
           const foodList = formatFoodList(nutriLog.items || []);
 
-          let acceptedText = `${dateHeader}\n\n${foodList}`;
-
-          // Append running total line (deterministic, no AI)
-          try {
-            if (this.#nutriListStore && logDate) {
-              const todayItems = await this.#nutriListStore.findByDate(userId, logDate);
-              const totalCalories = todayItems.reduce((sum, item) => sum + (Number(item.calories) || 0), 0);
-              const totalProtein = todayItems.reduce((sum, item) => sum + (Number(item.protein) || 0), 0);
-              const targetRange = this.#config?.getNutritionGoals?.(userId) || '1500-2000';
-              acceptedText = `${dateHeader}\n\n${foodList}\n\n↳ ${totalCalories} / ${targetRange} cal • ${totalProtein}g protein`;
-            }
-          } catch (e) {
-            this.#logger.warn?.('acceptLog.runningTotal.error', { error: e.message });
-          }
+          const acceptedText = `${dateHeader}\n\n${foodList}`;
 
           // Use caption for photo messages (image/upc sources), text for others
           const isPhotoMessage = ['image', 'upc'].includes(nutriLog.metadata?.source);

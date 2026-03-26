@@ -43,15 +43,11 @@ export class EndOfDayReport extends Assignment {
 
     const [
       todayNutrition,
-      adjustedNutrition,
-      reconciliation,
       weight,
       workouts,
       coachingHistory,
     ] = await Promise.all([
       call('get_today_nutrition',        { userId }),
-      call('get_adjusted_nutrition',     { userId }),
-      call('get_reconciliation_summary', { userId, days: 7 }),
       call('get_weight_trend',           { userId, days: 7 }),
       call('get_recent_workouts',        { userId }),
       call('get_coaching_history',       { userId, days: 7 }),
@@ -59,14 +55,12 @@ export class EndOfDayReport extends Assignment {
 
     logger?.info?.('gather.complete', {
       hasTodayNutrition:    !!todayNutrition,
-      hasAdjustedNutrition: !!adjustedNutrition,
-      hasReconciliation:    !!reconciliation,
       hasWeight:            !!weight?.current,
       hasWorkouts:          !!workouts,
       hasCoachingHistory:   !!coachingHistory,
     });
 
-    return { todayNutrition, adjustedNutrition, reconciliation, weight, workouts, coachingHistory };
+    return { todayNutrition, weight, workouts, coachingHistory };
   }
 
   /**
@@ -77,9 +71,7 @@ export class EndOfDayReport extends Assignment {
     const today = new Date().toISOString().split('T')[0];
     const sections = [`## Date: ${today}`];
 
-    sections.push(`\n## Raw Tracked Nutrition (today)\n${JSON.stringify(gathered.todayNutrition || {}, null, 2)}`);
-    sections.push(`\n## Adjusted Nutrition (with multiplier/phantom)\n${JSON.stringify(gathered.adjustedNutrition || {}, null, 2)}`);
-    sections.push(`\n## Reconciliation Summary (7-day window)\nIMPORTANT: Due to 14-day weight smoothing, these accuracy numbers reflect eating behavior from ~4 weeks ago. Frame as historical: "About 4 weeks ago, tracking accuracy was X%".\n${JSON.stringify(gathered.reconciliation || {}, null, 2)}`);
+    sections.push(`\n## Tracked Nutrition (today)\n${JSON.stringify(gathered.todayNutrition || {}, null, 2)}`);
     sections.push(`\n## Weight Trend (7 days)\n${JSON.stringify(gathered.weight || {}, null, 2)}`);
     sections.push(`\n## Today's Workouts\n${JSON.stringify(gathered.workouts || {}, null, 2)}`);
     sections.push(`\n## Recent Coaching History (last 7 days — for dedup)\n${JSON.stringify(gathered.coachingHistory || {}, null, 2)}`);
@@ -92,9 +84,9 @@ Produce a JSON object matching the coachingMessageSchema:
 - parse_mode: "HTML"
 
 Writing rules:
-- Show both raw and adjusted numbers side by side so the user can see the difference
-- If tracking accuracy is below 70%, lead with that — it is the most important signal
+- Summarize today's tracked calories and protein vs goals
 - Reference the 7-day weight trend to ground advice in real outcomes (e.g., "down 0.5 lbs over 7 days")
+- Do NOT mention implied intake, calorie adjustments, or tracking accuracy — today's data is too recent for these to be meaningful
 - Do not repeat any coaching point that appears in the coaching history from the last 7 days
 - Never say "great job", "awesome", "well done", or similar empty praise — data only
 - Keep the message under 150 words

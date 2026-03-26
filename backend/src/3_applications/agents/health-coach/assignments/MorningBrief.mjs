@@ -64,7 +64,7 @@ export class MorningBrief extends Assignment {
     const today = new Date().toISOString().split('T')[0];
     const sections = [`## Date: ${today}`];
 
-    sections.push(`\n## Reconciliation Summary (7-day window)\nIMPORTANT: Due to 14-day weight smoothing, these accuracy numbers reflect eating behavior from ~4 weeks ago, not this week. Frame accordingly: "About 4 weeks ago, you were logging X% of actual intake" — NOT "this week's accuracy is X%".\n${JSON.stringify(gathered.reconciliation || {}, null, 2)}`);
+    sections.push(`\n## Reconciliation Summary\nNote: implied_intake and tracking_accuracy are REDACTED for days less than 14 days old. Only mature data (14+ days) includes these fields. Do NOT mention implied intake or tracking accuracy for yesterday or any recent day.\n${JSON.stringify(gathered.reconciliation || {}, null, 2)}`);
     sections.push(`\n## Weight Trend (7 days)\n${JSON.stringify(gathered.weight || {}, null, 2)}`);
     sections.push(`\n## User Goals\n${JSON.stringify(gathered.goals || {}, null, 2)}`);
     sections.push(`\n## Today's Nutrition (so far)\n${JSON.stringify(gathered.todayNutrition || {}, null, 2)}`);
@@ -77,13 +77,12 @@ Produce a JSON object matching the coachingMessageSchema:
 - parse_mode: "HTML"
 
 Writing rules:
-- Lead with yesterday's reconciled numbers (tracked vs implied calories/protein), not cheerleading
-- Reference specific numbers from the reconciliation and weight data
+- Lead with yesterday's tracked calories and protein vs goals — never mention implied intake for recent days
+- Reference weight trend direction (e.g., "down 0.3 lbs over 7 days") if weight data is present
 - Never say "great job", "awesome", or similar empty praise
-- Note tracking accuracy trend (improving / declining / flat) if data is available
+- Do NOT reference implied intake, calorie adjustments, or tracking accuracy for any day in the last 14 days — these fields are intentionally absent from recent data
 - Include today's calorie and protein targets from goals
-- Mention weight trend direction (e.g., "down 0.3 lbs over 7 days") if weight data is present
-- Flag missed tracking days if any are present in reconciliation
+- Flag missed tracking days (days with 0 tracked calories) if present
 - Return raw JSON only, no markdown code fences`);
 
     return sections.join('\n');
