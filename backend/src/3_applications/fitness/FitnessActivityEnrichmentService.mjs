@@ -208,8 +208,17 @@ export class FitnessActivityEnrichmentService {
         });
       }
 
+      // Read warmup config for primary media selection
+      const fitnessConfig = this.#configService.getAppConfig('fitness');
+      const plex = fitnessConfig?.plex || {};
+      const warmupConfig = {
+        warmup_labels: plex.warmup_labels || [],
+        warmup_description_tags: plex.warmup_description_tags || [],
+        warmup_title_patterns: plex.warmup_title_patterns || [],
+      };
+
       // Build enrichment payload
-      const enrichment = buildStravaDescription(session, currentActivity);
+      const enrichment = buildStravaDescription(session, currentActivity, warmupConfig);
       if (!enrichment) {
         this.#logger.info?.('strava.enrichment.nothing_to_enrich', { activityId });
         this.#jobStore.update(activityId, {
