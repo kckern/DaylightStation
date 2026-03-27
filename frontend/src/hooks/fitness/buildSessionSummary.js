@@ -1,4 +1,5 @@
 import { SessionSerializerV3 } from './SessionSerializerV3.js';
+import { selectPrimaryMedia } from './selectPrimaryMedia.js';
 
 /**
  * Look up a series by trying both v2 and compact key formats.
@@ -31,7 +32,7 @@ function findSeries(series, slug, v2Metric, compactMetric) {
  * @param {number} params.intervalSeconds - Seconds per tick
  * @returns {Object} Session summary
  */
-export function buildSessionSummary({ participants, series, events, treasureBox, intervalSeconds }) {
+export function buildSessionSummary({ participants, series, events, treasureBox, intervalSeconds, warmupConfig }) {
   const safeSeries = series || {};
   const safeEvents = events || [];
 
@@ -78,18 +79,14 @@ export function buildSessionSummary({ participants, series, events, treasureBox,
       parentId: d.parentId,
       durationMs,
       ...(d.description ? { description: d.description } : {}),
+      ...(Array.isArray(d.labels) && d.labels.length ? { labels: d.labels } : {}),
     };
   });
 
-  // Mark the longest-duration media event as primary
-  if (media.length > 0) {
-    let longestIdx = 0;
-    for (let i = 1; i < media.length; i++) {
-      if (media[i].durationMs > media[longestIdx].durationMs) {
-        longestIdx = i;
-      }
-    }
-    media[longestIdx].primary = true;
+  // Mark primary media (warmup-aware selection)
+  const primary = selectPrimaryMedia(media, warmupConfig);
+  if (primary) {
+    primary.primary = true;
   }
 
   // ---------- Coins from treasureBox ----------

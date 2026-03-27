@@ -583,6 +583,10 @@ export class PersistenceManager {
     this._validateSeriesLengths = validator;
   }
 
+  setWarmupConfig(config) {
+    this._warmupConfig = config || null;
+  }
+
   /**
    * Record that a save succeeded for a given session.
    * @param {string} sessionId
@@ -1014,6 +1018,7 @@ export class PersistenceManager {
       series: persistSessionData.timeline.series,
       treasureBox: persistSessionData.treasureBox || sessionData.treasureBox,
       intervalSeconds: persistSessionData.timeline.interval_seconds || 5,
+      warmupConfig: this._warmupConfig,
     } : null;
 
     // Encode series
