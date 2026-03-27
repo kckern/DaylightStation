@@ -114,7 +114,7 @@ describe('buildStravaDescription — null/empty inputs', () => {
     // but primaryMedia still falls through to episodeEvents for the title
     expect(result).not.toBeNull();
     expect(result.name).not.toBeNull();
-    expect(result.description).toBeNull();
+    expect(result.description).not.toBeNull();
   });
 
   test('returns null for session with no timeline property', () => {
@@ -334,9 +334,9 @@ describe('buildStravaDescription — description generation', () => {
       ],
     });
     const result = buildStravaDescription(session);
-    expect(result.description).toContain('\uD83C\uDFB5 Playlist');
-    expect(result.description).toContain('Radiohead \u2014 Creep');
-    expect(result.description).toContain('Nirvana \u2014 Smells Like Teen Spirit');
+    expect(result.description).toContain('\uD83C\uDFB5 Radiohead \u2014 Creep');
+    expect(result.description).toContain('\uD83C\uDFB5 Nirvana \u2014 Smells Like Teen Spirit');
+    expect(result.description).not.toContain('Playlist');
   });
 
   test('voice memos appear before episodes in description', () => {
@@ -409,9 +409,8 @@ describe('buildStravaDescription — description generation', () => {
     const result = buildStravaDescription(session);
     expect(result.description).toContain('Good Artist \u2014 Good Song');
     // The null/null track should be filtered out
-    const playlistSection = result.description.split('\uD83C\uDFB5 Playlist')[1];
-    const trackLines = playlistSection.trim().split('\n').filter(l => l.trim());
-    expect(trackLines).toHaveLength(1);
+    const musicLines = result.description.split('\n').filter(l => l.includes('\uD83C\uDFB5'));
+    expect(musicLines).toHaveLength(1);
   });
 });
 
@@ -484,7 +483,7 @@ describe('buildStravaDescription — episode watch-time filtering', () => {
     });
     const result = buildStravaDescription(session);
     expect(result.description).toContain('Long Show');
-    expect(result.description).not.toContain('Brief Show');
+    expect(result.description).toContain('Brief Show');
   });
 
   test('includes episodes watched exactly 2 minutes', () => {
@@ -559,9 +558,9 @@ describe('buildStravaDescription — music-only sessions', () => {
     const result = buildStravaDescription(session);
     expect(result).not.toBeNull();
     expect(result.name).toBeNull();
-    expect(result.description).toContain('\uD83C\uDFB5 Playlist');
-    expect(result.description).toContain('Radiohead \u2014 Creep');
-    expect(result.description).toContain('Muse \u2014 Hysteria');
+    expect(result.description).toContain('\uD83C\uDFB5 Radiohead \u2014 Creep');
+    expect(result.description).toContain('\uD83C\uDFB5 Muse \u2014 Hysteria');
+    expect(result.description).not.toContain('Playlist');
   });
 
   test('returns null when all music tracks have no title and no artist', () => {
@@ -686,7 +685,7 @@ describe('buildStravaDescription — media classification', () => {
     const result = buildStravaDescription(session);
     // Should be treated as music, not episode => no title, just playlist
     expect(result.name).toBeNull();
-    expect(result.description).toContain('\uD83C\uDFB5 Playlist');
+    expect(result.description).toContain('\uD83C\uDFB5 Some Artist \u2014 Some Video');
   });
 
   test('events with contentType "track" are classified as music', () => {
@@ -697,8 +696,7 @@ describe('buildStravaDescription — media classification', () => {
     });
     const result = buildStravaDescription(session);
     expect(result.name).toBeNull();
-    expect(result.description).toContain('\uD83C\uDFB5 Playlist');
-    expect(result.description).toContain('Ambient');
+    expect(result.description).toContain('\uD83C\uDFB5 Ambient');
   });
 });
 
@@ -756,5 +754,161 @@ describe('buildStravaDescription — return shape', () => {
     });
     const result = buildStravaDescription(session);
     expect(typeof result.description === 'string' || result.description === null).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// WARMUP-AWARE PRIMARY SELECTION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('buildStravaDescription — warmup-aware primary selection', () => {
+  const warmupConfig = {
+    warmup_labels: ['Warmup'],
+    warmup_description_tags: ['[Warmup]'],
+    warmup_title_patterns: ['warm[\\s-]?up', 'stretch'],
+  };
+
+  test('selects non-warmup video as primary even if warmup is longer', () => {
+    const now = Date.now();
+    const session = createSession({
+      events: [
+        createEpisodeEvent({
+          grandparentTitle: 'Insanity',
+          title: 'Ten minute warm-up',
+          durationSeconds: 650,
+          start: now,
+          end: now + 10 * 60 * 1000,
+        }),
+        createEpisodeEvent({
+          grandparentTitle: '10 Minute Muscle',
+          title: 'Shoulders 2',
+          durationSeconds: 647,
+          start: now + 10 * 60 * 1000,
+          end: now + 21 * 60 * 1000,
+        }),
+      ],
+    });
+    const result = buildStravaDescription(session, {}, warmupConfig);
+    expect(result.name).toBe('10 Minute Muscle\u2014Shoulders 2');
+  });
+
+  test('falls back to warmup if all episodes are warmups', () => {
+    const now = Date.now();
+    const session = createSession({
+      events: [
+        createEpisodeEvent({
+          grandparentTitle: 'Insanity',
+          title: 'Warm-Up',
+          durationSeconds: 600,
+          start: now,
+          end: now + 10 * 60 * 1000,
+        }),
+      ],
+    });
+    const result = buildStravaDescription(session, {}, warmupConfig);
+    expect(result.name).toBe('Insanity\u2014Warm-Up');
+  });
+
+  test('backward compatible — works without warmupConfig', () => {
+    const session = createSession({
+      events: [createEpisodeEvent()],
+    });
+    const result = buildStravaDescription(session);
+    expect(result).not.toBeNull();
+    expect(result.name).not.toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NEW DESCRIPTION FORMAT — ALL EPISODES + INDIVIDUAL MUSIC TRACKS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('buildStravaDescription — new description format', () => {
+  test('lists all episodes chronologically, not just watched >= 2min', () => {
+    const now = Date.now();
+    const session = createSession({
+      events: [
+        createEpisodeEvent({
+          grandparentTitle: 'Show A',
+          title: 'Ep A',
+          start: now,
+          end: now + 60 * 1000, // 1 min — would have been filtered before
+        }),
+        createEpisodeEvent({
+          grandparentTitle: 'Show B',
+          title: 'Ep B',
+          start: now + 60 * 1000,
+          end: now + 31 * 60 * 1000,
+        }),
+      ],
+    });
+    const result = buildStravaDescription(session);
+    expect(result.description).toContain('Show A');
+    expect(result.description).toContain('Show B');
+  });
+
+  test('annotates warmup episodes with (warmup)', () => {
+    const now = Date.now();
+    const warmupConfig = {
+      warmup_labels: [],
+      warmup_description_tags: [],
+      warmup_title_patterns: ['warm[\\s-]?up'],
+    };
+    const session = createSession({
+      events: [
+        createEpisodeEvent({
+          grandparentTitle: 'Insanity',
+          title: 'Ten minute warm-up',
+          start: now,
+          end: now + 10 * 60 * 1000,
+        }),
+        createEpisodeEvent({
+          grandparentTitle: '10 Minute Muscle',
+          title: 'Shoulders 2',
+          start: now + 10 * 60 * 1000,
+          end: now + 21 * 60 * 1000,
+        }),
+      ],
+    });
+    const result = buildStravaDescription(session, {}, warmupConfig);
+    expect(result.description).toContain('Ten minute warm-up (warmup)');
+    expect(result.description).not.toContain('Shoulders 2 (warmup)');
+  });
+
+  test('episodes ordered chronologically (earliest first)', () => {
+    const now = Date.now();
+    const session = createSession({
+      events: [
+        createEpisodeEvent({
+          grandparentTitle: 'Second',
+          title: 'Ep 2',
+          start: now + 20 * 60 * 1000,
+          end: now + 40 * 60 * 1000,
+        }),
+        createEpisodeEvent({
+          grandparentTitle: 'First',
+          title: 'Ep 1',
+          start: now,
+          end: now + 20 * 60 * 1000,
+        }),
+      ],
+    });
+    const result = buildStravaDescription(session);
+    const firstIdx = result.description.indexOf('First');
+    const secondIdx = result.description.indexOf('Second');
+    expect(firstIdx).toBeLessThan(secondIdx);
+  });
+
+  test('music tracks listed one per line with emoji, no "Playlist" header', () => {
+    const session = createSession({
+      events: [
+        createMusicEvent({ artist: 'Radiohead', title: 'Creep' }),
+        createMusicEvent({ artist: 'Nirvana', title: 'Smells Like Teen Spirit' }),
+      ],
+    });
+    const result = buildStravaDescription(session);
+    expect(result.description).toContain('\uD83C\uDFB5 Radiohead \u2014 Creep');
+    expect(result.description).toContain('\uD83C\uDFB5 Nirvana \u2014 Smells Like Teen Spirit');
+    expect(result.description).not.toContain('Playlist');
   });
 });

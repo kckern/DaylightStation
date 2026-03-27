@@ -4,43 +4,37 @@
  * Pure function that builds a Strava activity name and description
  * from a DaylightStation fitness session.
  *
- * Title:       longest episode by durationSeconds → "Show — Episode"
- * Description: voice memos, then all qualified episodes (>= 2 min watched)
- *              each with their Plex description, then music playlist
+ * Title:       primary episode (warmup-aware) → "Show — Episode"
+ * Description: voice memos, then all episodes chronologically
+ *              (warmups annotated), then music tracks one-per-line
  *
  * @module adapters/fitness/buildStravaDescription
  */
 
-const MIN_WATCH_MS = 2 * 60 * 1000; // 2 minutes — filter out brief browses
+import { selectPrimaryMedia, buildWarmupChecker } from './selectPrimaryMedia.mjs';
+
+const STRAVA_DESC_LIMIT = 700;
 
 /**
  * Build Strava activity enrichment payload from a session.
  *
  * @param {Object} session - Parsed session YAML data
  * @param {Object} [currentActivity] - Current Strava activity (for skip logic)
+ * @param {Object} [warmupConfig] - { warmup_labels, warmup_description_tags, warmup_title_patterns }
  * @returns {{ name: string|null, description: string|null }|null}
  *   null if nothing to enrich
  */
-export function buildStravaDescription(session, currentActivity = {}) {
+export function buildStravaDescription(session, currentActivity = {}, warmupConfig = null) {
   const events = session?.timeline?.events || [];
-  const summary = session?.summary || {};
-  const sessionDurationMs = (session?.session?.duration_seconds || 0) * 1000;
 
   // Extract media events — separate episodes from music tracks
   const mediaEvents = events.filter(e => e?.type === 'media');
   const musicTracks = mediaEvents.filter(e => e?.data?.artist || e?.data?.contentType === 'track');
   const episodeEvents = mediaEvents.filter(e => !e?.data?.artist && e?.data?.contentType !== 'track');
 
-  // Filter episodes to those watched >= 2 min (suppress brief browses)
-  const watchedEpisodes = episodeEvents.filter(
-    ep => _getEpisodeWatchMs(ep, episodeEvents, sessionDurationMs) >= MIN_WATCH_MS
-  );
-
-  // Primary episode = longest full video (durationSeconds), fallback to first watched
-  const primaryMedia = _selectPrimaryEpisode(watchedEpisodes)
-    ?? _selectPrimaryEpisode(episodeEvents)
-    ?? summary?.media?.find(m => m?.mediaType !== 'audio')
-    ?? null;
+  // Primary episode — warmup-aware selection
+  const primaryEvent = selectPrimaryMedia(episodeEvents, warmupConfig);
+  const primaryData = primaryEvent?.data || null;
 
   // Extract voice memos
   const voiceMemos = events
@@ -48,15 +42,15 @@ export function buildStravaDescription(session, currentActivity = {}) {
     .map(e => e.data);
 
   // Nothing to enrich
-  if (!primaryMedia && voiceMemos.length === 0 && musicTracks.length === 0) {
+  if (!primaryData && voiceMemos.length === 0 && musicTracks.length === 0) {
     return null;
   }
 
-  // Build title from primary episode (longest)
+  // Build title from primary episode
   let name = null;
-  if (primaryMedia) {
-    const show = primaryMedia.grandparentTitle || primaryMedia.showTitle || null;
-    const episode = primaryMedia.title || null;
+  if (primaryData) {
+    const show = primaryData.grandparentTitle || primaryData.showTitle || null;
+    const episode = primaryData.title || null;
 
     if (show && episode) {
       name = `${show}\u2014${episode}`;
@@ -88,34 +82,48 @@ export function buildStravaDescription(session, currentActivity = {}) {
     parts.push(memoTexts);
   }
 
-  // All watched episodes — each with its Plex description if available
-  for (const ep of watchedEpisodes) {
+  // All episodes chronologically (earliest first)
+  const sortedEpisodes = [...episodeEvents].sort((a, b) => {
+    const aStart = a.data?.start ?? a.timestamp ?? 0;
+    const bStart = b.data?.start ?? b.timestamp ?? 0;
+    return aStart - bStart;
+  });
+
+  // Reuse the same warmup checker from selectPrimaryMedia for annotation
+  const isWarmupEpisode = buildWarmupChecker(warmupConfig);
+
+  const episodeParts = [];
+  for (const ep of sortedEpisodes) {
     const label = _formatMediaLabel(ep.data);
+    if (!label) continue;
+    const warmupTag = isWarmupEpisode(ep) ? ' (warmup)' : '';
     const desc = ep.data?.description ? _flattenText(ep.data.description) : null;
-    if (!label && !desc) continue;
-    const block = label && desc
-      ? `\uD83D\uDDA5\uFE0F ${label}\n${desc}`
-      : label
-        ? `\uD83D\uDDA5\uFE0F ${label}`
-        : desc;
-    parts.push(block);
+    episodeParts.push(desc
+      ? `\uD83D\uDDA5\uFE0F ${label}${warmupTag}\n${desc}`
+      : `\uD83D\uDDA5\uFE0F ${label}${warmupTag}`
+    );
+  }
+  if (episodeParts.length) parts.push(episodeParts.join('\n\n'));
+
+  // Music tracks one per line
+  const trackLines = musicTracks
+    .map(e => {
+      const { title, artist } = e.data;
+      if (!title && !artist) return null;
+      const line = artist ? `${artist} \u2014 ${title}` : title;
+      return `\uD83C\uDFB5 ${line}`;
+    })
+    .filter(Boolean);
+  if (trackLines.length > 0) {
+    parts.push(trackLines.join('\n'));
   }
 
-  // Playlist (music tracks)
-  if (musicTracks.length > 0) {
-    const trackLines = musicTracks
-      .map(e => {
-        const { title, artist } = e.data;
-        if (!title && !artist) return null;
-        return artist ? `${artist} \u2014 ${title}` : title;
-      })
-      .filter(Boolean);
-    if (trackLines.length > 0) {
-      parts.push(`\uD83C\uDFB5 Playlist\n${trackLines.join('\n')}`);
-    }
-  }
+  let description = parts.length > 0 ? parts.join('\n\n') : null;
 
-  const description = parts.length > 0 ? parts.join('\n\n') : null;
+  // Truncate for Strava limit
+  if (description && description.length > STRAVA_DESC_LIMIT) {
+    description = _truncateDescription(parts, episodeParts, trackLines, STRAVA_DESC_LIMIT);
+  }
 
   if (!name && !description) {
     return null;
@@ -125,73 +133,44 @@ export function buildStravaDescription(session, currentActivity = {}) {
 }
 
 /**
- * Select the primary episode — longest full video (durationSeconds).
- * Falls back to first if all durations are equal or missing.
- *
- * @param {Array} episodeEvents
- * @returns {Object|null} episode data object
+ * Truncate description to fit Strava limit.
+ * Priority: keep voice memos + episode titles, drop music tracks first, then episode descriptions.
  */
-function _selectPrimaryEpisode(episodeEvents) {
-  if (!episodeEvents?.length) return null;
-  return episodeEvents.reduce((best, ep) => {
-    const bestSec = best.data?.durationSeconds || 0;
-    const epSec = ep.data?.durationSeconds || 0;
-    return epSec > bestSec ? ep : best;
-  }).data ?? null;
+function _truncateDescription(parts, episodeParts, trackLines, limit) {
+  // Try without music tracks
+  const withoutMusic = parts.filter(p => !trackLines.some(t => p.includes(t)));
+  let desc = withoutMusic.length > 0 ? withoutMusic.join('\n\n') : '';
+  if (trackLines.length > 0 && desc.length < limit) {
+    // Add back as many tracks as fit
+    const remaining = limit - desc.length - 2; // -2 for \n\n separator
+    if (remaining > 0) {
+      let musicBlock = '';
+      for (const line of trackLines) {
+        const next = musicBlock ? musicBlock + '\n' + line : line;
+        if (next.length > remaining) break;
+        musicBlock = next;
+      }
+      if (musicBlock) desc = desc + '\n\n' + musicBlock;
+    }
+  }
+  if (desc.length <= limit) return desc;
+
+  // Still over — trim episode descriptions to titles only
+  const trimmedEpisodes = episodeParts.map(ep => ep.split('\n')[0]); // first line only
+  const nonEpisodeParts = parts.filter(p => !episodeParts.some(ep => p.includes(ep)) && !trackLines.some(t => p.includes(t)));
+  desc = [...nonEpisodeParts, trimmedEpisodes.join('\n\n')].filter(Boolean).join('\n\n');
+  return desc.slice(0, limit);
 }
 
 /**
- * Estimate how long an episode was watched during the session.
- *
- * Two-pass approach:
- *  1. Direct: use event end-start if the window is >= 2 min (reliable in current sessions)
- *  2. Consecutive: gap between this episode's start and the next one's start
- *     (handles old media_memory_crossref sessions with brief detection windows)
- *
- * @param {Object} ep - Episode media event
- * @param {Array}  allEpisodes - All episode events in this session
- * @param {number} sessionDurationMs
- * @returns {number} Estimated watch time in ms
- */
-function _getEpisodeWatchMs(ep, allEpisodes, sessionDurationMs) {
-  const start = ep.data?.start ?? ep.timestamp;
-  const end = ep.data?.end;
-  const rawMs = (end != null && start != null) ? end - start : 0;
-
-  // If the direct window is long enough, trust it
-  if (rawMs >= MIN_WATCH_MS) return rawMs;
-
-  // Otherwise infer from consecutive event positions
-  const idx = allEpisodes.indexOf(ep);
-  const nextEp = allEpisodes[idx + 1];
-
-  if (nextEp) {
-    const nextStart = nextEp.data?.start ?? nextEp.timestamp;
-    return (nextStart ?? 0) - (start ?? 0);
-  }
-
-  // Last episode: remaining session time after this episode started
-  if (sessionDurationMs && start) {
-    const firstStart = allEpisodes[0]?.data?.start ?? allEpisodes[0]?.timestamp ?? start;
-    return sessionDurationMs - (start - firstStart);
-  }
-
-  return rawMs;
-}
-
-/**
- * Collapse all internal whitespace/newlines in a description to single spaces.
- * @param {string} text
- * @returns {string}
+ * Collapse whitespace in a description to single spaces.
  */
 function _flattenText(text) {
   return text.replace(/\s+/g, ' ').trim();
 }
 
 /**
- * Format a media label: "Show — Episode" or just show/episode if only one exists.
- * @param {Object} media
- * @returns {string|null}
+ * Format: "Show — Episode" or just show/episode.
  */
 function _formatMediaLabel(media) {
   const show = media.grandparentTitle || media.showTitle || null;
