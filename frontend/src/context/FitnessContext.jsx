@@ -485,6 +485,18 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     };
   }, [fitnessConfiguration]);
 
+  // Pass warmup config to persistence manager for primary media selection
+  useEffect(() => {
+    const pm = fitnessSessionRef.current?._persistenceManager;
+    if (pm && plexConfig) {
+      pm.setWarmupConfig({
+        warmup_labels: plexConfig.warmup_labels || [],
+        warmup_description_tags: plexConfig.warmup_description_tags || [],
+        warmup_title_patterns: plexConfig.warmup_title_patterns || [],
+      });
+    }
+  }, [plexConfig]);
+
   // Keep usersConfigRef in sync for simulation controller
   useEffect(() => {
     usersConfigRef.current = usersConfig;
