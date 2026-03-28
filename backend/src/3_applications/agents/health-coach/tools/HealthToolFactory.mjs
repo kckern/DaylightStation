@@ -68,7 +68,7 @@ export class HealthToolFactory extends ToolFactory {
             const today = new Date().toISOString().split('T')[0];
             const todayData = nutritionData?.[today];
 
-            if (!todayData) return { logged: false, date: today, calories: 0, protein: 0, carbs: 0, fat: 0 };
+            if (!todayData) return { logged: false, date: today, calories: 0, protein: 0, carbs: 0, fat: 0, food_items: [] };
 
             return {
               logged: true,
@@ -78,6 +78,7 @@ export class HealthToolFactory extends ToolFactory {
               carbs: todayData.carbs || 0,
               fat: todayData.fat || 0,
               foodCount: todayData.foodCount || 0,
+              food_items: todayData.food_items || [],
             };
           } catch (err) {
             return { error: err.message, logged: false, date: new Date().toISOString().split('T')[0] };
@@ -107,6 +108,7 @@ export class HealthToolFactory extends ToolFactory {
               protein: nutritionData[d]?.protein || 0,
               carbs: nutritionData[d]?.carbs || 0,
               fat: nutritionData[d]?.fat || 0,
+              food_items: nutritionData[d]?.food_items || [],
             }));
 
             const avg = (arr, key) => arr.length ? Math.round(arr.reduce((s, d) => s + d[key], 0) / arr.length) : 0;
