@@ -84,6 +84,7 @@ export class HandleSlashCommand {
             const debrief = await this.#generateMorningDebrief.execute({
               username: userId || 'unknown',
               date: null, // defaults to yesterday
+              conversationId: chatId,
             });
 
             // Step 2: Send via messaging gateway

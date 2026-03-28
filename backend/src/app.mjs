@@ -1696,7 +1696,20 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     agentsScheduler.registerTask('journalist:morning-debrief', debriefCron, async () => {
       const container = journalistServices.journalistContainer;
       const generateMorningDebrief = container.getGenerateMorningDebrief();
-      const debrief = await generateMorningDebrief.execute({ username: debriefUsername });
+
+      // Resolve conversation ID early so generation can use conversation context
+      let conversationIdString;
+      try {
+        const identity = telegramIdentityAdapter.resolve('journalist', { username: debriefUsername });
+        conversationIdString = identity.conversationIdString;
+      } catch (err) {
+        rootLogger.warn?.('journalist.scheduled_debrief.identity_failed', { error: err?.message });
+      }
+
+      const debrief = await generateMorningDebrief.execute({
+        username: debriefUsername,
+        conversationId: conversationIdString,
+      });
 
       if (!debrief.success) {
         rootLogger.info?.('journalist.scheduled_debrief.skipped', {
@@ -1706,12 +1719,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         return;
       }
 
-      // Resolve conversation ID and send
+      // Send using already-resolved conversation ID
       try {
-        const identity = telegramIdentityAdapter.resolve('journalist', { username: debriefUsername });
         const sendMorningDebrief = container.getSendMorningDebrief();
         await sendMorningDebrief.execute({
-          conversationId: identity.conversationIdString,
+          conversationId: conversationIdString,
           debrief,
         });
         rootLogger.info?.('journalist.scheduled_debrief.sent', {

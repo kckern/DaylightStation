@@ -33,15 +33,16 @@ export function journalistMorningDebriefHandler(container, options = {}) {
 
     logger.info?.('morning.handler.start', { username, date });
 
-    // Step 1: Generate the debrief
+    // Step 1: Resolve conversation ID early so generation can use conversation context
+    const conversationId = resolveConversationId(telegramIdentityAdapter, username, logger);
+
+    // Step 2: Generate the debrief (with conversation context)
     const generateMorningDebrief = container.getGenerateMorningDebrief();
     const debrief = await generateMorningDebrief.execute({
       username,
       date,
+      conversationId,
     });
-
-    // Step 2: Resolve user's conversation ID
-    const conversationId = resolveConversationId(telegramIdentityAdapter, username, logger);
 
     if (!conversationId) {
       logger.error?.('morning.handler.no-conversation-id', { username });
