@@ -396,6 +396,7 @@ export class JournalistContainer {
         lifelogAggregator: this.getLifelogAggregator(),
         aiGateway: this.getAIGateway(),
         debriefRepository: this.getDebriefRepository(),
+        journalEntryRepository: this.#journalEntryRepository,
         logger: this.#logger,
       });
     }

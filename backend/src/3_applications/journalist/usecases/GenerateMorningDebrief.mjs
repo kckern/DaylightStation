@@ -18,6 +18,7 @@ export class GenerateMorningDebrief {
   #lifelogAggregator;
   #aiGateway;
   #debriefRepository;
+  #journalEntryRepository;
   #logger;
 
   /**
@@ -25,6 +26,7 @@ export class GenerateMorningDebrief {
    * @param {Object} deps.lifelogAggregator - Lifelog aggregation service
    * @param {Object} deps.aiGateway - AI gateway for summaries
    * @param {Object} deps.debriefRepository - Repository to check for existing debriefs
+   * @param {Object} [deps.journalEntryRepository] - Journal entry repo for conversation context
    * @param {Object} deps.logger - Logger instance
    */
   constructor(deps) {
@@ -34,6 +36,7 @@ export class GenerateMorningDebrief {
     this.#lifelogAggregator = deps.lifelogAggregator;
     this.#aiGateway = deps.aiGateway;
     this.#debriefRepository = deps.debriefRepository;
+    this.#journalEntryRepository = deps.journalEntryRepository;
     this.#logger = deps.logger || console;
   }
 
@@ -46,7 +49,7 @@ export class GenerateMorningDebrief {
    * @returns {Object} Generated debrief with summary and questions
    */
   async execute(input) {
-    const { username, date } = input;
+    const { username, date, conversationId } = input;
     const startTime = Date.now();
 
     this.#logger.info?.('debrief.generate.start', { username, date });
@@ -97,14 +100,18 @@ export class GenerateMorningDebrief {
         };
       }
 
+      // Step 2.5: Load recent conversation context (last 3 days of user messages)
+      const conversationContext = await this.#loadConversationContext(conversationId);
+
       // Step 3: Generate AI summary
-      const summary = await this.#generateSummary(lifelog, username);
+      const summary = await this.#generateSummary(lifelog, username, conversationContext);
 
       const duration = Date.now() - startTime;
       this.#logger.info?.('debrief.generate.complete', {
         username,
         date: lifelog._meta.date,
         duration,
+        hasConversationContext: conversationContext.length > 0,
       });
 
       return {
@@ -132,9 +139,42 @@ export class GenerateMorningDebrief {
   }
 
   /**
+   * Load recent user messages from journalist conversation for context.
+   * Extracts only user messages (not bot) from the last 3 days.
+   * @param {string} conversationId
+   * @returns {Promise<Array<{content: string, timestamp: string}>>}
+   */
+  async #loadConversationContext(conversationId) {
+    if (!this.#journalEntryRepository || !conversationId) return [];
+
+    try {
+      const recent = await this.#journalEntryRepository.findRecent(conversationId, 3);
+      // Only user messages — these are the insights the debrief should absorb
+      const userMessages = recent
+        .filter(msg => msg.senderId !== 'bot' && msg.role !== 'assistant')
+        .map(msg => ({
+          content: msg.content || msg.text,
+          timestamp: msg.timestamp,
+        }))
+        .filter(msg => msg.content && msg.content.length > 10); // Skip button taps / short callbacks
+
+      this.#logger.debug?.('debrief.conversation-context', {
+        conversationId,
+        totalRecent: recent.length,
+        userMessages: userMessages.length,
+      });
+
+      return userMessages;
+    } catch (err) {
+      this.#logger.warn?.('debrief.conversation-context.failed', { error: err.message });
+      return [];
+    }
+  }
+
+  /**
    * Generate natural language summary using AI
    */
-  async #generateSummary(lifelog, username) {
+  async #generateSummary(lifelog, username, conversationContext = []) {
     const systemPrompt = `You produce a compact morning data roundup from yesterday's logged data. Telegram message — no markdown headers.
 
 FORMAT — three sections, separated by blank lines:
@@ -174,6 +214,13 @@ Short prompts for journaling. Use • bullets.
 - Ask about gaps the data doesn't explain
 - Ask about people mentioned
 
+CONVERSATION CONTEXT:
+You may also receive recent messages the user sent in the last few days. This is context the user has ALREADY shared with you. Use it to:
+- ENRICH facts: if the user explained why they went somewhere or what an event was about, weave that context into the fact bullet (e.g., "• 3:31p 📍 Topgolf — work team outing" not just "• 3:31p 📍 Topgolf")
+- INFORM commentary: reference what they told you, not just raw data (e.g., "Dashboard Confessional was a nostalgia trip — your BYU roommate used to play it")
+- DEEPEN questions: don't ask things they already answered. If they said Topgolf was a work outing, don't ask "What prompted the Topgolf visit?" — ask something that builds on it ("How's the team dynamic outside the office?")
+- You should appear to ALREADY KNOW what they told you. Never ask a question they've already answered.
+
 RULES:
 - NO markdown headers (no #, ##, **bold headers**). Use emoji + text for section breaks.
 - NO "Yesterday" or date at the start — the message already has a date header.
@@ -183,13 +230,23 @@ RULES:
 
     const dataPrompt = this.#buildDataPrompt(lifelog);
 
+    // Build conversation context section
+    let contextSection = '';
+    if (conversationContext.length > 0) {
+      const contextLines = conversationContext.map(msg => {
+        const ts = msg.timestamp ? ` (${msg.timestamp.split('T')[0]})` : '';
+        return `- ${msg.content}${ts}`;
+      });
+      contextSection = `\n\nRECENT USER MESSAGES (context they've already shared):\n${contextLines.join('\n')}`;
+    }
+
     try {
       const response = await this.#aiGateway.chat(
         [
           { role: 'system', content: systemPrompt },
           {
             role: 'user',
-            content: `Here's the data from ${lifelog._meta.date}:\n\n${dataPrompt}\n\nProduce the morning roundup: facts, commentary, questions.`,
+            content: `Here's the data from ${lifelog._meta.date}:\n\n${dataPrompt}${contextSection}\n\nProduce the morning roundup: facts, commentary, questions.`,
           },
         ],
         {
