@@ -41,8 +41,11 @@ export function buildStravaDescription(session, currentActivity = {}, warmupConf
     .filter(e => e?.type === 'voice_memo' && e?.data?.transcript)
     .map(e => e.data);
 
+  // Extract strava_notes (manually entered on Strava, pulled back)
+  const stravaNotes = session?.strava_notes?.text || null;
+
   // Nothing to enrich
-  if (!primaryData && voiceMemos.length === 0 && musicTracks.length === 0) {
+  if (!primaryData && voiceMemos.length === 0 && musicTracks.length === 0 && !stravaNotes) {
     return null;
   }
 
@@ -80,6 +83,11 @@ export function buildStravaDescription(session, currentActivity = {}, warmupConf
       .map(m => `\uD83C\uDF99\uFE0F "${m.transcript.trim()}"`)
       .join('\n\n');
     parts.push(memoTexts);
+  }
+
+  // Strava notes (pulled from manually-entered Strava descriptions)
+  if (stravaNotes) {
+    parts.push(`\uD83D\uDCDD "${stravaNotes.trim()}"`);
   }
 
   // All episodes chronologically (earliest first)

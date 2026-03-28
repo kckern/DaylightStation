@@ -389,6 +389,9 @@ export class YamlSessionDatastore extends ISessionDatastore {
           durationSeconds: m.durationSeconds ?? 0,
         }));
 
+      // Extract strava_notes text if present
+      const stravaNotes = data.strava_notes?.text || null;
+
       sessions.push({
         sessionId: data.sessionId || baseName,
         date: date,
@@ -403,6 +406,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
         stravaActivityId,
         strava,
         voiceMemos,
+        stravaNotes,
       });
     }
 
