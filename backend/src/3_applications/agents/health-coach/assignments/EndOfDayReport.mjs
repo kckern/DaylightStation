@@ -74,10 +74,15 @@ export class EndOfDayReport extends Assignment {
    * The LLM uses this to produce the structured coaching message JSON.
    */
   buildPrompt(gathered, memory) {
-    const today = new Date().toISOString().split('T')[0];
-    const sections = [`## Date: ${today}`];
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    // User timezone from nutrilog or default to Pacific
+    const tz = gathered.todayNutrition?.timezone || 'America/Los_Angeles';
+    const localHour = parseInt(now.toLocaleString('en-US', { timeZone: tz, hour: 'numeric', hour12: false }));
+    const dayComplete = localHour >= 20; // 8 PM — day is essentially over
+    const sections = [`## Date: ${today}\n## Current Local Time: ${now.toLocaleString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: true })}\n## Day Complete: ${dayComplete}`];
 
-    sections.push(`\n## Tracked Nutrition (today)\n${JSON.stringify(gathered.todayNutrition || {}, null, 2)}`);
+    sections.push(`\n## Tracked Nutrition (today so far)\n${JSON.stringify(gathered.todayNutrition || {}, null, 2)}`);
     sections.push(`\n## Nutrition History (last 7 days — for trend context)\n${JSON.stringify(gathered.nutritionHistory || {}, null, 2)}`);
     sections.push(`\n## User Goals\n${JSON.stringify(gathered.goals || {}, null, 2)}`);
     sections.push(`\n## Weight Trend (7 days)\n${JSON.stringify(gathered.weight || {}, null, 2)}`);
@@ -91,21 +96,34 @@ Produce a JSON object matching the coachingMessageSchema:
 - text: the message body (HTML formatted, under 200 words)
 - parse_mode: "HTML"
 
+Critical context — time of day:
+- CHECK THE TIME. If "Day Complete" is false, today's totals are PARTIAL — the user is still eating.
+- When the day is incomplete, your PRIMARY job is remaining-budget coaching:
+  1. State what's been consumed so far (cal + protein)
+  2. Calculate the remaining budget: calories left to ceiling (round to nearest 50), protein still needed (round to nearest 5g)
+  3. Prescribe the rest of the day in macro terms: "You've got ~700-1100 cal and ~90g protein left — that's a protein shake + a chicken-heavy dinner"
+  4. Reference what worked on similar good days from nutrition history to suggest a concrete plan for the remaining meals (e.g., "a Premier Protein + salmon dinner like the 24th would close the protein gap at ~650 cal")
+  5. If yesterday was an overshoot, factor that in: "after yesterday's 1628, aim for the low end tonight — keep it under 700 cal for dinner"
+- When the day IS complete, evaluate the full day against goals and the 7-day trend
+
+Weight-loss context:
+- The user's objective is weight_loss. A low-calorie day after an overshoot is CORRECTIVE, not alarming
+- Frame deficits after surplus days positively. Only flag undereating if it's a multi-day pattern
+
 Writing rules:
-- State today's calories and protein vs goals with exact numbers and the delta (e.g., "1628 cal — 28 over your 1600 ceiling, protein 83g — 37g short of 120g target")
 - Zoom out: compare today against the 7-day trend — is this day better or worse? Is there a multi-day pattern? Calculate the weekly average vs target
-- If today exceeded calorie goal: prescribe a specific compensatory target for tomorrow (e.g., "aim for 1200 tomorrow to keep the weekly average in range")
+- If today exceeded calorie goal (day complete): prescribe a specific compensatory target for tomorrow
 - If there's a multi-day overshoot streak, calculate the cumulative surplus and what it takes to recover
 - If protein is short: state the gap in grams and the weekly protein average vs target
 - USE THE FOOD ITEMS to give specific, comparative insight across days:
-  - Find a recent "good day" from nutrition history where macros were on target and CONTRAST it with today: "On the 24th you hit 148g protein at 1425 cal with salmon + protein shake + Premier Protein — today was 83g at 1628 cal because it was all appetizer food"
-  - Name the specific items that made the good day work AND the specific items that derailed today
-  - Frame it as a tradeoff: "the fried mac & cheese balls (330 cal, 9g protein) vs a Premier Protein (160 cal, 30g protein) — same slot, wildly different outcome"
-  - Don't just note what's missing — connect the dots between food choices and the macro result
-- Reference weight trend to ground the stakes (e.g., "weight up 0.4 lbs this week — the calorie surplus is showing up on the scale")
+  - Find a recent "good day" from nutrition history and CONTRAST it with today by naming specific foods
+  - Frame tradeoffs: "the fried mac & cheese balls (330 cal, 9g protein) vs a Premier Protein (160 cal, 30g protein) — same slot, wildly different outcome"
+  - Connect food choices to macro results — don't just list foods
+- Reference weight trend to ground the stakes
 - Do NOT mention implied intake, calorie adjustments, or tracking accuracy — today's data is too recent
 - Do not repeat any coaching point from the coaching history in the last 7 days
 - Never say "great job", "awesome", "well done", or similar cheerleading
+- Round calories to the nearest 50 and protein to the nearest 5g — "~700 cal" not "714 cal". False precision undermines trust
 - Never give generic advice like "consider adjusting" or "ensure you're logging" — be specific and prescriptive
 - Return raw JSON only, no markdown code fences`);
 

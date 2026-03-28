@@ -93,6 +93,7 @@ Writing rules:
 - Reference weight trend direction to ground the stakes (e.g., "weight up 0.4 lbs — the 3-day calorie surplus is showing up on the scale")
 - Never say "great job", "awesome", or similar empty praise
 - Do NOT reference implied intake, calorie adjustments, or tracking accuracy for any day in the last 14 days
+- Round calories to the nearest 50 and protein to the nearest 5g — "~1650 cal" not "1628 cal". False precision undermines trust
 - Do NOT give generic advice like "consider adjusting your intake" or "ensure you're logging all meals" — be specific and prescriptive based on the actual numbers
 - Flag missed tracking days (days with 0 tracked calories) if present
 - Return raw JSON only, no markdown code fences`);
