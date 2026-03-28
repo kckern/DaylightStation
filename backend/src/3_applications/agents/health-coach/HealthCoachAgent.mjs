@@ -65,26 +65,38 @@ export class HealthCoachAgent extends BaseAgent {
       }
     }
 
-    // New: deliver coaching messages via messaging channel
+    // Deliver coaching messages via messaging channel
     const coachingAssignments = ['morning-brief', 'note-review', 'end-of-day-report', 'weekly-digest', 'exercise-reaction'];
     if (coachingAssignments.includes(assignmentId) && result?.should_send) {
+      const today = new Date().toISOString().split('T')[0];
+      const coachingMeta = { assignmentId, userId: opts.userId, date: today, textLength: result.text?.length };
+
+      // 1. Deliver via messaging channel
       const sendTool = this.getTools().find(t => t.name === 'send_channel_message');
       if (sendTool) {
         const deliveryResult = await sendTool.execute({ text: result.text, parseMode: result.parse_mode || 'HTML' });
-        this.deps.logger?.info?.('coaching.delivery', { assignmentId, success: deliveryResult?.success, messageId: deliveryResult?.messageId, error: deliveryResult?.error });
+        this.deps.logger?.info?.('coaching.delivered', { ...coachingMeta, success: deliveryResult?.success, messageId: deliveryResult?.messageId, error: deliveryResult?.error });
       } else {
-        this.deps.logger?.warn?.('coaching.delivery.noTool', { assignmentId, toolCount: this.getTools().length, toolNames: this.getTools().map(t => t.name) });
+        this.deps.logger?.warn?.('coaching.delivery.noTool', { ...coachingMeta, toolCount: this.getTools().length, toolNames: this.getTools().map(t => t.name) });
       }
-      // Persist all coaching messages to history
+
+      // 2. Persist to YAML history
       const noteTool = this.getTools().find(t => t.name === 'log_coaching_note');
       if (noteTool) {
-        const today = new Date().toISOString().split('T')[0];
-        await noteTool.execute({
+        const persistResult = await noteTool.execute({
           userId: opts.userId,
           date: today,
           note: { type: assignmentId, text: result.text },
         });
+        this.deps.logger?.info?.('coaching.persisted', { ...coachingMeta, success: persistResult?.success, error: persistResult?.error });
+      } else {
+        this.deps.logger?.warn?.('coaching.persist.noTool', coachingMeta);
       }
+
+      // 3. Log the full coaching message for traceability
+      this.deps.logger?.info?.('coaching.message', { ...coachingMeta, text: result.text, parseMode: result.parse_mode });
+    } else if (coachingAssignments.includes(assignmentId) && !result?.should_send) {
+      this.deps.logger?.debug?.('coaching.suppressed', { assignmentId, userId: opts.userId, reason: 'should_send=false' });
     }
 
     return result;

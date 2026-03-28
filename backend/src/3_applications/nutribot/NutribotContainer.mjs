@@ -48,7 +48,8 @@ export class NutribotContainer {
   #googleImageGateway;
   #foodLogStore;
   #nutriListStore;
-  #nutriCoachStore;
+  // NOTE: nutriCoachStore removed — coaching is now handled by HealthCoachAgent
+  // via healthStore.loadCoachingData/saveCoachingData (YamlHealthDatastore)
   #conversationStateStore;
   #reportRenderer;
   #barcodeGenerator;
@@ -88,7 +89,7 @@ export class NutribotContainer {
    * @param {Object} [options.googleImageGateway] - Google Image Search gateway
    * @param {Object} [options.foodLogStore] - Food log store (IFoodLogStore)
    * @param {Object} [options.nutriListStore] - Nutrient list store (INutriListStore)
-   * @param {Object} [options.nutriCoachStore] - Coach store (INutriCoachStore)
+   * @param {Object} [options.nutriCoachStore] - DEPRECATED: coaching now handled by HealthCoachAgent
    * @param {Object} [options.conversationStateStore] - Conversation state store
    * @param {Object} [options.reportRenderer] - Report renderer
    * @param {Object} [options.logger] - Custom logger instance
@@ -105,7 +106,7 @@ export class NutribotContainer {
     this.#googleImageGateway = options.googleImageGateway;
     this.#foodLogStore = options.foodLogStore;
     this.#nutriListStore = options.nutriListStore;
-    this.#nutriCoachStore = options.nutriCoachStore;
+    // nutriCoachStore no longer used — HealthCoachAgent owns coaching persistence
     this.#conversationStateStore = options.conversationStateStore;
     this.#reportRenderer = options.reportRenderer;
     this.#barcodeGenerator = options.barcodeGenerator;
@@ -162,8 +163,9 @@ export class NutribotContainer {
     return this.#nutriListStore;
   }
 
+  /** @deprecated Coaching is now handled by HealthCoachAgent via YamlHealthDatastore */
   getNutriCoachStore() {
-    return this.#nutriCoachStore; // Optional - coach features degrade gracefully
+    return null;
   }
 
   getConversationStateStore() {

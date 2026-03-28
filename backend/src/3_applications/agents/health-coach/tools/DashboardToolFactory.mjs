@@ -2,6 +2,7 @@
 
 import { ToolFactory } from '../../framework/ToolFactory.mjs';
 import { createTool } from '../../ports/ITool.mjs';
+import { configService } from '#system/config/index.mjs';
 
 export class DashboardToolFactory extends ToolFactory {
   static domain = 'dashboard';
@@ -44,7 +45,26 @@ export class DashboardToolFactory extends ToolFactory {
         },
         execute: async ({ userId }) => {
           try {
-            const goals = dataService.user.read('agents/health-coach/goals', userId);
+            const goals = dataService.user.read('agents/health-coach/goals', userId) || {};
+
+            // Enrich with nutrition goals from user profile if not in agent goals
+            if (!goals.nutrition?.calories_min && configService?.isReady?.()) {
+              const profile = configService.getUserProfile(userId);
+              const profileGoals = profile?.apps?.nutribot?.goals;
+              if (profileGoals) {
+                goals.nutrition = {
+                  ...goals.nutrition,
+                  calories_min: profileGoals.calories_min,
+                  calories_max: profileGoals.calories_max,
+                  protein_g: goals.nutrition?.protein_g || profileGoals.protein,
+                  carbs_g: goals.nutrition?.carbs_g || profileGoals.carbs,
+                  fat_g: goals.nutrition?.fat_g || profileGoals.fat,
+                  fiber_g: goals.nutrition?.fiber_g || profileGoals.fiber,
+                  sodium_mg: goals.nutrition?.sodium_mg || profileGoals.sodium,
+                };
+              }
+            }
+
             return { goals: goals || null };
           } catch (err) {
             return { error: err.message, goals: null };
@@ -63,7 +83,7 @@ export class DashboardToolFactory extends ToolFactory {
             note: {
               type: 'object',
               properties: {
-                type: { type: 'string', enum: ['observation', 'milestone', 'recommendation'] },
+                type: { type: 'string', enum: ['observation', 'milestone', 'recommendation', 'morning-brief', 'note-review', 'end-of-day-report', 'weekly-digest', 'exercise-reaction'] },
                 text: { type: 'string' },
               },
               required: ['type', 'text'],

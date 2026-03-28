@@ -337,9 +337,8 @@ export class NutriBotConfig {
   }
 
   /**
-   * Get the nutricoach path for a user
-   * @param {string} username - System username (NOT conversation ID)
-   * @returns {string}
+   * @deprecated Coaching is now handled by HealthCoachAgent via YamlHealthDatastore.
+   * Data lives at data/users/{username}/health_coaching.yml
    */
   getNutricoachPath(username) {
     return this.getStoragePath('nutricoach', username);
