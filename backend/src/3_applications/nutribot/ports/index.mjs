@@ -2,7 +2,6 @@
 
 // Persistence ports (class-based, moved from domain layer)
 export { IFoodLogDatastore, isFoodLogDatastore, assertFoodLogDatastore } from './IFoodLogDatastore.mjs';
-export { INutriCoachDatastore, isNutriCoachDatastore } from './INutriCoachDatastore.mjs';
 export { INutriListDatastore, isNutriListDatastore } from './INutriListDatastore.mjs';
 export { INutriLogDatastore, isNutriLogDatastore } from './INutriLogDatastore.mjs';
 

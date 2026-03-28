@@ -155,7 +155,8 @@ export class ReconciliationToolFactory extends ToolFactory {
             const entries = dates.map(date => ({
               date,
               messages: (data[date] || []).map(entry => ({
-                message: entry.message,
+                type: entry.type,
+                text: entry.text || entry.message,
                 timestamp: entry.timestamp,
               })),
             }));

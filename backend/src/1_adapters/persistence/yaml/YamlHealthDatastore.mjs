@@ -162,7 +162,7 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
    */
   async loadCoachingData(userId) {
     this.#logger.debug?.('health.store.loadCoaching', { userId });
-    return this.#loadUserFile(userId, 'lifelog/health_coaching');
+    return this.#loadUserFile(userId, 'health_coaching');
   }
 
   /**

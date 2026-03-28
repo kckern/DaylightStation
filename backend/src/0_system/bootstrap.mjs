@@ -154,7 +154,7 @@ import { NutribotContainer } from '#apps/nutribot/NutribotContainer.mjs';
 import { NutriBotConfig } from '#apps/nutribot/config/NutriBotConfig.mjs';
 import { dataService } from '#system/config/index.mjs';
 import { YamlNutriListDatastore } from '#adapters/persistence/yaml/YamlNutriListDatastore.mjs';
-import { YamlNutriCoachDatastore } from '#adapters/persistence/yaml/YamlNutriCoachDatastore.mjs';
+// YamlNutriCoachDatastore removed — coaching handled by HealthCoachAgent via YamlHealthDatastore
 import { NutribotInputRouter } from '#adapters/nutribot/index.mjs';
 import { createNutribotRouter } from '#api/v1/routers/nutribot.mjs';
 
@@ -2243,11 +2243,8 @@ export async function createNutribotServices(config) {
     logger
   });
 
-  // Coaching store (YAML persistence)
-  const nutriCoachStore = new YamlNutriCoachDatastore({
-    configService,
-    logger
-  });
+  // NOTE: Legacy nutriCoachStore removed — coaching is now handled by
+  // HealthCoachAgent via healthStore.loadCoachingData/saveCoachingData
 
   // Barcode image generator (for UPC photo status)
   const { BarcodeImageAdapter } = await import('#adapters/nutribot/BarcodeImageAdapter.mjs');
@@ -2283,7 +2280,6 @@ export async function createNutribotServices(config) {
     googleImageGateway,
     foodLogStore,
     nutriListStore,
-    nutriCoachStore,
     conversationStateStore,
     reportRenderer,
     barcodeGenerator,
@@ -2296,7 +2292,6 @@ export async function createNutribotServices(config) {
   return {
     foodLogStore,
     nutriListStore,
-    nutriCoachStore,
     nutribotContainer
   };
 }
