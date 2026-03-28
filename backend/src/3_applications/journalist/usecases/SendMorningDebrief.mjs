@@ -124,17 +124,18 @@ export class SendMorningDebrief {
         year: 'numeric',
       });
 
-      const message = `📅 Yesterday (${formattedDate})
-
-${debrief.summary}`;
+      const styledSummary = SendMorningDebrief.applyTelegramStyling(debrief.summary);
+      const message = `📅 <b>Yesterday</b> (${formattedDate})\n\n${styledSummary}`;
 
       // Build main 3-button keyboard
       const keyboard = this.#buildMainKeyboard();
 
       // Send message with keyboard
+      // Note: TelegramAdapter expects camelCase 'parseMode' and 'choices'/'inline' for keyboards
       const result = await messaging.sendMessage(message, {
-        parse_mode: 'Markdown',
-        reply_markup: keyboard,
+        parseMode: 'HTML',
+        inline: true,
+        choices: keyboard.inline_keyboard,
       });
 
       // Validate result before proceeding
@@ -213,6 +214,86 @@ ${debrief.summary}`;
 
       throw error;
     }
+  }
+
+  /**
+   * Apply Telegram HTML styling to AI-generated debrief text.
+   * Keeps DDD compliant — formatting lives in the adapter/send layer, not in the AI prompt.
+   *
+   * Styling rules:
+   * - Time-of-day headers (🌅 Morning, etc.) → bold
+   * - Commentary/Questions section labels → bold
+   * - Escape HTML entities in content
+   */
+  static applyTelegramStyling(text) {
+    if (!text) return '';
+
+    // Escape HTML entities first (but preserve emoji)
+    let styled = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    // Bold the time-of-day headers
+    styled = styled.replace(/^(🌅 Morning)$/gm, '<b>$1</b>');
+    styled = styled.replace(/^(☀️ Midday)$/gm, '<b>$1</b>');
+    styled = styled.replace(/^(🌆 Afternoon)$/gm, '<b>$1</b>');
+    styled = styled.replace(/^(🌙 Evening)$/gm, '<b>$1</b>');
+    styled = styled.replace(/^(📌 Other)$/gm, '<b>$1</b>');
+
+    // Italicize commentary section (the 2-3 sentence paragraph after the facts)
+    // Heuristic: lines that don't start with • or an emoji header and are 50+ chars
+    // Wrap commentary and questions in <blockquote> tags.
+    // Structure: facts (bullets/headers) → commentary (prose) → questions (bullets)
+    const lines = styled.split('\n');
+    const result = [];
+    let section = 'facts'; // facts → commentary → questions
+    let blockLines = [];
+
+    const flushBlock = () => {
+      if (blockLines.length === 0) return;
+      const content = blockLines.join('\n').trim();
+      if (content) {
+        result.push(`<blockquote>${content}</blockquote>`);
+      }
+      blockLines = [];
+    };
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const lower = trimmed.toLowerCase();
+
+      if (section === 'facts') {
+        // Commentary starts at first long prose line (not a bullet or header)
+        if (trimmed.length > 40 && !trimmed.startsWith('•') && !trimmed.startsWith('<b>')) {
+          section = 'commentary';
+          blockLines.push(line);
+          continue;
+        }
+        result.push(line);
+      } else if (section === 'commentary') {
+        // Questions section starts when we see "question" in a line
+        if (lower.includes('question')) {
+          flushBlock();
+          section = 'questions';
+          // Include the "Questions" label line outside the blockquote
+          result.push(line);
+          continue;
+        }
+        // Empty line between commentary and questions
+        if (trimmed === '') {
+          flushBlock();
+          result.push(line);
+          continue;
+        }
+        blockLines.push(line);
+      } else if (section === 'questions') {
+        blockLines.push(line);
+      }
+    }
+
+    flushBlock();
+    return result.join('\n');
   }
 
   /**
