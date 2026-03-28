@@ -154,7 +154,6 @@ import { NutribotContainer } from '#apps/nutribot/NutribotContainer.mjs';
 import { NutriBotConfig } from '#apps/nutribot/config/NutriBotConfig.mjs';
 import { dataService } from '#system/config/index.mjs';
 import { YamlNutriListDatastore } from '#adapters/persistence/yaml/YamlNutriListDatastore.mjs';
-// YamlNutriCoachDatastore removed — coaching handled by HealthCoachAgent via YamlHealthDatastore
 import { NutribotInputRouter } from '#adapters/nutribot/index.mjs';
 import { createNutribotRouter } from '#api/v1/routers/nutribot.mjs';
 

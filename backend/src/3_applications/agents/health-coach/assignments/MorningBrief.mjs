@@ -39,11 +39,12 @@ export class MorningBrief extends Assignment {
       });
     };
 
-    const [reconciliation, weight, goals, todayNutrition] = await Promise.all([
+    const [reconciliation, weight, goals, todayNutrition, nutritionHistory] = await Promise.all([
       call('get_reconciliation_summary', { userId, days: 7 }),
       call('get_weight_trend', { userId, days: 7 }),
       call('get_user_goals', { userId }),
       call('get_today_nutrition', { userId }),
+      call('get_nutrition_history', { userId, days: 7 }),
     ]);
 
     logger?.info?.('gather.complete', {
@@ -51,9 +52,10 @@ export class MorningBrief extends Assignment {
       hasWeight: !!weight?.current,
       hasGoals: !!goals,
       hasTodayNutrition: !!todayNutrition,
+      hasNutritionHistory: !!nutritionHistory,
     });
 
-    return { reconciliation, weight, goals, todayNutrition };
+    return { reconciliation, weight, goals, todayNutrition, nutritionHistory };
   }
 
   /**
@@ -67,6 +69,7 @@ export class MorningBrief extends Assignment {
     sections.push(`\n## Reconciliation Summary\nNote: implied_intake and tracking_accuracy are REDACTED for days less than 14 days old. Only mature data (14+ days) includes these fields. Do NOT mention implied intake or tracking accuracy for yesterday or any recent day.\n${JSON.stringify(gathered.reconciliation || {}, null, 2)}`);
     sections.push(`\n## Weight Trend (7 days)\n${JSON.stringify(gathered.weight || {}, null, 2)}`);
     sections.push(`\n## User Goals\n${JSON.stringify(gathered.goals || {}, null, 2)}`);
+    sections.push(`\n## Nutrition History (last 7 days — calories, protein, macros per day)\n${JSON.stringify(gathered.nutritionHistory || {}, null, 2)}`);
     sections.push(`\n## Today's Nutrition (so far)\n${JSON.stringify(gathered.todayNutrition || {}, null, 2)}`);
     sections.push(`\n## Working Memory\n${memory.serialize()}`);
 
@@ -77,11 +80,20 @@ Produce a JSON object matching the coachingMessageSchema:
 - parse_mode: "HTML"
 
 Writing rules:
-- Lead with yesterday's tracked calories and protein vs goals — never mention implied intake for recent days
-- Reference weight trend direction (e.g., "down 0.3 lbs over 7 days") if weight data is present
+- Lead with yesterday's ACTUAL tracked calories AND protein vs goals with exact deltas — use the nutrition history data, not reconciliation (which lacks protein)
+- Then zoom out: what does the 7-day trend look like? Are calories consistently over/under? Is protein chronically short? Identify the pattern, not just yesterday's snapshot
+- If yesterday exceeded the calorie ceiling, prescribe a specific compensatory target for today (e.g., "aim for ${gathered.goals?.goals?.nutrition?.calories_min || 1200} today to offset")
+- If there's a multi-day overshoot streak, calculate the cumulative surplus and what it takes to get back on track this week
+- If protein is short: state the gap in grams and the weekly average vs target
+- USE THE FOOD ITEMS to give specific, comparative insight across days:
+  - Find a recent "good day" from nutrition history and CONTRAST it with yesterday: "On the 24th you hit 148g protein at 1425 cal with salmon + protein shake + Premier Protein — yesterday was all appetizer food, 83g protein at 1628 cal"
+  - Name the specific items that made the good day work AND the specific items that derailed yesterday
+  - Frame it as a tradeoff: "the fried mac & cheese balls (330 cal, 9g protein) vs a Premier Protein (160 cal, 30g protein) — same slot, wildly different outcome"
+  - Use the good day as a blueprint for today: "get back to the salmon + shake pattern and you'll hit protein while staying under 1400"
+- Reference weight trend direction to ground the stakes (e.g., "weight up 0.4 lbs — the 3-day calorie surplus is showing up on the scale")
 - Never say "great job", "awesome", or similar empty praise
-- Do NOT reference implied intake, calorie adjustments, or tracking accuracy for any day in the last 14 days — these fields are intentionally absent from recent data
-- Include today's calorie and protein targets from goals
+- Do NOT reference implied intake, calorie adjustments, or tracking accuracy for any day in the last 14 days
+- Do NOT give generic advice like "consider adjusting your intake" or "ensure you're logging all meals" — be specific and prescriptive based on the actual numbers
 - Flag missed tracking days (days with 0 tracked calories) if present
 - Return raw JSON only, no markdown code fences`);
 
