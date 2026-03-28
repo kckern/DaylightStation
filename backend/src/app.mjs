@@ -1295,6 +1295,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       const { StravaWebhookAdapter } = await import('./1_adapters/strava/StravaWebhookAdapter.mjs');
       const { StravaWebhookJobStore } = await import('./1_adapters/strava/StravaWebhookJobStore.mjs');
       const { FitnessActivityEnrichmentService } = await import('./3_applications/fitness/FitnessActivityEnrichmentService.mjs');
+      const { StravaReconciliationService } = await import('./3_applications/fitness/StravaReconciliationService.mjs');
 
       const stravaClient = new StravaClientAdapter({
         httpClient: axios,
@@ -1313,6 +1314,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         logger: rootLogger.child({ module: 'strava-jobs' }),
       });
 
+      const stravaReconciliationService = new StravaReconciliationService({
+        stravaClient,
+        configService,
+        fitnessHistoryDir: configService.getHouseholdPath('history/fitness'),
+        logger: rootLogger.child({ module: 'strava-reconciliation' }),
+      });
+
       stravaEnrichmentService = new FitnessActivityEnrichmentService({
         stravaClient,
         jobStore,
@@ -1321,6 +1329,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         },
         configService,
         fitnessHistoryDir: configService.getHouseholdPath('history/fitness'),
+        reconciliationService: stravaReconciliationService,
         logger: rootLogger.child({ module: 'strava-enrichment' }),
       });
 
@@ -1677,6 +1686,46 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       aggregator: lifelogServices.lifelogAggregator,
     },
   });
+
+  // Register morning debrief as a scheduled task (via agents scheduler)
+  const agentsScheduler = v1Routers.agents?.scheduler;
+  if (agentsScheduler && journalistServices?.journalistContainer) {
+    const debriefCron = journalistConfig.morning_debrief?.schedule || '0 7 * * *';
+    const debriefUsername = configService.getHeadOfHousehold?.() || 'kckern';
+
+    agentsScheduler.registerTask('journalist:morning-debrief', debriefCron, async () => {
+      const container = journalistServices.journalistContainer;
+      const generateMorningDebrief = container.getGenerateMorningDebrief();
+      const debrief = await generateMorningDebrief.execute({ username: debriefUsername });
+
+      if (!debrief.success) {
+        rootLogger.info?.('journalist.scheduled_debrief.skipped', {
+          username: debriefUsername,
+          reason: debrief.reason,
+        });
+        return;
+      }
+
+      // Resolve conversation ID and send
+      try {
+        const identity = telegramIdentityAdapter.resolve('journalist', { username: debriefUsername });
+        const sendMorningDebrief = container.getSendMorningDebrief();
+        await sendMorningDebrief.execute({
+          conversationId: identity.conversationIdString,
+          debrief,
+        });
+        rootLogger.info?.('journalist.scheduled_debrief.sent', {
+          username: debriefUsername,
+          date: debrief.date,
+        });
+      } catch (err) {
+        rootLogger.warn?.('journalist.scheduled_debrief.send_failed', {
+          username: debriefUsername,
+          error: err?.message,
+        });
+      }
+    });
+  }
 
   // AI API router - provides direct AI endpoints (/api/ai/*)
   // Create adapters for OpenAI and Anthropic

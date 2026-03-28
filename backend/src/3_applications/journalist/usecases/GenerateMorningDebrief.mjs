@@ -135,31 +135,45 @@ export class GenerateMorningDebrief {
    * Generate natural language summary using AI
    */
   async #generateSummary(lifelog, username) {
-    const systemPrompt = `You are reconstructing a day from data. Write a factual, stoic account. Journalism tone—report what happened, note patterns worth noting, skip the sentiment.
+    const systemPrompt = `You are producing a morning data roundup from yesterday's logged data. This is NOT a diary or narrative reconstruction—it's a briefing.
 
-PRIORITY DATA:
-- JOURNAL ENTRIES take precedence—quote or reference specific details mentioned
-- Use journal content to contextualize other data points
-- If journals mention people, events, or specifics—those anchor the record
+OUTPUT FORMAT — three sections, in order:
 
-Style guidelines:
-- Matter-of-fact. No flowery transitions, no "as evening approached," no "you reflected on..."
-- Chronological structure is fine, but not a dry bullet list—synthesize into readable prose
-- Include timestamps when useful (e.g., "12:36pm gym session")
-- For workouts: stats matter—duration, calories, heart rate range. State them plainly.
-- For code work: what areas were touched, rough volume, any notable features
-- For music: top artists, track count, genres if discernible
-- For food: what was eaten, calorie totals, macros if available
-- For calendar: what meetings/events occurred and when
-- For locations: where you went
-- For weight/fitness: current numbers, trend direction if relevant
+## 1. FACTS (bulleted)
+A bulleted list of what happened. Each bullet is one fact. Use • for bullets.
+- Name things specifically: event names, workout titles, people, places, food items—not counts.
+- Include times when available (e.g., "• 2:00pm — Dentist appointment")
+- Workouts: title, duration, calories, HR range. Include voice memo notes if present.
+- Calendar: name each event with time, not "3 meetings"
+- Checkins/locations: where you went, with time if available
+- Food: notable meals/items, total calories and protein
+- Music: top artists or notable listens, not just track count
+- Code: repos/areas touched, not just commit count
+- Weight: current number and trend direction
+- Journal entries: quote or paraphrase specific content
+- Chronological order preferred
 - Second person ("you") throughout
-- DO NOT include the date or "Yesterday" at the start
-- Observations and analysis welcome—"unusually high screen time," "light on protein," "no evening activity logged"—but no manufactured meaning
-- Avoid: "wound down," "kicked off," "treated yourself," "took time to," "embraced," "transitioned into"
-- Bulleted lists are fine for dense data (meals, workouts, music)—use • for bullets, keep them tight
-- Mix prose and lists as appropriate—don't overdo either
-- Aim for 6-10 lines total. Dense with fact, light on filler.`;
+
+## 2. COMMENTARY (2-3 sentences)
+A short paragraph of observations. Patterns, gaps, or anything notable:
+- "Light on protein again — third day this week under target"
+- "No evening activity logged after 6pm"
+- "Heavy code day but no exercise"
+Keep it matter-of-fact. No cheerleading, no manufactured meaning.
+
+## 3. QUESTIONS (2-3 bullets)
+Prompts for journaling or to fill in gaps the data doesn't capture:
+- Ask about things the data implies but doesn't explain
+- Ask about people, context, or feelings behind the events
+- Ask about anything missing or unusual
+Format as simple bullet points starting with •
+
+RULES:
+- DO NOT include the date, "Yesterday," or any header/title at the start
+- DO NOT use flowery language: no "wound down," "kicked off," "embraced," "transitioned"
+- Be concise. Dense with specifics, light on filler.
+- Prefer names over counts. "Met with Sarah and Tom" not "had 2 meetings"
+- Second person throughout`;
 
     const dataPrompt = this.#buildDataPrompt(lifelog);
 
@@ -169,7 +183,7 @@ Style guidelines:
           { role: 'system', content: systemPrompt },
           {
             role: 'user',
-            content: `Here's the data from ${lifelog._meta.date}:\n\n${dataPrompt}\n\nReconstruct this day with detail and natural flow. Create a cohesive daily debrief that captures the full scope of the day, and asks what may not be clear from the data.`,
+            content: `Here's the data from ${lifelog._meta.date}:\n\n${dataPrompt}\n\nProduce the morning roundup: facts, commentary, questions.`,
           },
         ],
         {

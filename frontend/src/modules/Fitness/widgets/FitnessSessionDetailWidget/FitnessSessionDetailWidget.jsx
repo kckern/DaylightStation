@@ -222,6 +222,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       sufferScore,
       stravaActivityId,
       voiceMemos: Array.isArray(summary.voiceMemos) ? summary.voiceMemos.filter(m => m.transcript) : [],
+      stravaNotes: sessionData.strava_notes?.text || sessionData.stravaNotes || null,
       stravaType: stravaBlock?.type || null,
       stravaHasMap: !!(stravaBlock?.map?.polyline),
     };
@@ -317,14 +318,20 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
                 </>
               )}
             </div>
-            {header?.voiceMemos?.length > 0 && (
+            {(header?.voiceMemos?.length > 0 || header?.stravaNotes) && (
               <div className="session-detail__memos">
-                {header.voiceMemos.map((memo, i) => (
-                  <div key={i} className="session-detail__memo">
+                {header.voiceMemos?.map((memo, i) => (
+                  <div key={`memo-${i}`} className="session-detail__memo">
                     <span className="session-detail__memo-icon">{'\uD83C\uDF99'}</span>
                     <span className="session-detail__memo-text">{memo.transcript}</span>
                   </div>
                 ))}
+                {header.stravaNotes && (
+                  <div className="session-detail__memo">
+                    <span className="session-detail__memo-icon">{'\uD83D\uDCDD'}</span>
+                    <span className="session-detail__memo-text">{header.stravaNotes}</span>
+                  </div>
+                )}
               </div>
             )}
           </div>

@@ -2751,6 +2751,8 @@ export function createAgentsApiRouter(config) {
   const router = createAgentsRouter({ agentOrchestrator, workingMemory, scheduler, logger });
   // Expose orchestrator alongside router for cross-domain agent invocations (e.g., nutribot → health-coach)
   router.orchestrator = agentOrchestrator;
+  // Expose scheduler for cross-domain task registration (e.g., journalist morning debrief)
+  router.scheduler = scheduler;
   return router;
 }
 

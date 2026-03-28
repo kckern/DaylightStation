@@ -37,6 +37,7 @@ export class FitnessActivityEnrichmentService {
   #authStore;
   #configService;
   #fitnessHistoryDir;
+  #reconciliationService;
   #logger;
 
   // Circuit breaker: in-memory cooldown of recently-enriched activity IDs
@@ -49,14 +50,16 @@ export class FitnessActivityEnrichmentService {
    * @param {Object} config.authStore - { loadUserAuth(provider, username) } for OAuth tokens
    * @param {Object} config.configService - ConfigService
    * @param {string} config.fitnessHistoryDir - Path to fitness history dir
+   * @param {Object} [config.reconciliationService] - StravaReconciliationService instance
    * @param {Object} [config.logger]
    */
-  constructor({ stravaClient, jobStore, authStore, configService, fitnessHistoryDir, logger = console }) {
+  constructor({ stravaClient, jobStore, authStore, configService, fitnessHistoryDir, reconciliationService, logger = console }) {
     this.#stravaClient = stravaClient;
     this.#jobStore = jobStore;
     this.#authStore = authStore;
     this.#configService = configService;
     this.#fitnessHistoryDir = fitnessHistoryDir;
+    this.#reconciliationService = reconciliationService || null;
     this.#logger = logger;
   }
 
@@ -251,6 +254,11 @@ export class FitnessActivityEnrichmentService {
         activityId,
         sessionId: session.sessionId || session.session?.id,
         fields: Object.keys(updatePayload),
+      });
+
+      // Non-blocking background reconciliation
+      this.#reconciliationService?.reconcile().catch(err => {
+        this.#logger.warn?.('strava.reconciliation.error', { error: err?.message });
       });
 
     } catch (err) {

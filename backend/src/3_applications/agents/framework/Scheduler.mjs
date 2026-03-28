@@ -56,6 +56,30 @@ export class Scheduler {
   }
 
   /**
+   * Register a standalone scheduled task (not an agent assignment).
+   * @param {string} taskKey - Unique identifier (e.g., 'journalist:morning-debrief')
+   * @param {string} cronExpr - Cron expression
+   * @param {Function} handler - Async function to execute
+   */
+  registerTask(taskKey, cronExpr, handler) {
+    try {
+      CronExpressionParser.parse(cronExpr);
+    } catch {
+      this.#logger.error?.('scheduler.invalid_cron', { jobKey: taskKey, cronExpr });
+      return;
+    }
+
+    this.#jobs.set(taskKey, {
+      cronExpr,
+      handler,
+      lastRun: null,
+    });
+
+    this.#logger.info?.('scheduler.registered', { jobKey: taskKey, cronExpr });
+    this.#ensureRunning();
+  }
+
+  /**
    * Start the interval loop if jobs exist and it isn't already running.
    */
   #ensureRunning() {
@@ -77,11 +101,17 @@ export class Scheduler {
           job.lastRun = now;
           this.#logger.info?.('scheduler.trigger', { jobKey });
           try {
-            await job.orchestrator.runAssignment(
-              job.agentId,
-              job.assignmentId,
-              { triggeredBy: 'scheduler' }
-            );
+            if (job.handler) {
+              // Plain task (registered via registerTask)
+              await job.handler();
+            } else {
+              // Agent assignment (registered via registerAgent)
+              await job.orchestrator.runAssignment(
+                job.agentId,
+                job.assignmentId,
+                { triggeredBy: 'scheduler' }
+              );
+            }
           } catch (err) {
             this.#logger.error?.('scheduler.failed', { jobKey, error: err.message });
           }
