@@ -431,6 +431,23 @@ export class NutribotInputRouter extends BaseInputRouter {
         });
         return { ok: true, result };
       }
+      case 'done': {
+        const healthStore = this.container.getHealthStore?.();
+        if (!healthStore) {
+          if (responseContext?.sendMessage) {
+            await responseContext.sendMessage('Health store not available.', {});
+          }
+          return { ok: true, handled: false };
+        }
+        const userId = this.#resolveUserId(event);
+        const today = new Date().toISOString().split('T')[0];
+        await healthStore.markDayClosed(userId, today);
+        this.logger.info?.('nutribot.command.done', { userId, date: today });
+        if (responseContext?.sendMessage) {
+          await responseContext.sendMessage(`Day marked as done for ${today}. Coaching will treat today's totals as final.`, {});
+        }
+        return { ok: true, handled: true };
+      }
       default:
         this.logger.warn?.('nutribot.command.unknown', { command });
         return { ok: true, handled: false };
