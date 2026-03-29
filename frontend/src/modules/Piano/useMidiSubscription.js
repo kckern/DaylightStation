@@ -1,36 +1,75 @@
-import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useWebSocketSubscription } from '../../hooks/useWebSocket';
 import { getChildLogger } from '../../lib/logging/singleton.js';
 
-const MAX_HISTORY_SIZE = 500; // Keep last 500 notes for waterfall
-const STALE_NOTE_MS = 10000; // Auto-release notes held longer than 10s (likely lost note_off)
+const MAX_HISTORY_SIZE = 500;
+const STALE_NOTE_MS = 10000;
+const DISPLAY_DURATION = 8000;
 
 // Dev keyboard mapping: number row keys to MIDI notes (C4-G5)
 const DEV_KEY_MAP = {
-  '1': 60, // C4
-  '2': 62, // D4
-  '3': 64, // E4
-  '4': 65, // F4
-  '5': 67, // G4
-  '6': 69, // A4
-  '7': 71, // B4
-  '8': 72, // C5
-  '9': 74, // D5
-  '0': 76, // E5
-  '-': 77, // F5
-  '=': 79  // G5
+  '1': 60, '2': 62, '3': 64, '4': 65, '5': 67,
+  '6': 69, '7': 71, '8': 72, '9': 74, '0': 76,
+  '-': 77, '=': 79
 };
 
 /**
- * React hook to subscribe to MIDI events from the piano recorder
+ * Find the last entry in history matching a note number with no endTime.
+ * Scans backward for O(1) typical case (most recent match is near the end).
+ */
+function findLastActive(history, noteNum) {
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].note === noteNum && !history[i].endTime) return i;
+  }
+  return -1;
+}
+
+/**
+ * Close an active note in-place by index, returning a new array.
+ */
+function closeNote(history, idx, endTime) {
+  const next = [...history];
+  next[idx] = { ...next[idx], endTime };
+  return next;
+}
+
+/**
+ * Trim history: drop expired completed notes, keep all active + recent completed.
+ */
+function trimHistory(history, now) {
+  const cutoff = now - DISPLAY_DURATION;
+  const trimmed = history.filter(n => !n.endTime || n.endTime > cutoff);
+  if (trimmed.length > MAX_HISTORY_SIZE) {
+    // Keep active notes + most recent completed
+    const active = trimmed.filter(n => !n.endTime);
+    const completed = trimmed.filter(n => n.endTime);
+    return [...completed.slice(-(MAX_HISTORY_SIZE - active.length)), ...active];
+  }
+  return trimmed;
+}
+
+/**
+ * Core note event handler — pure function on history array.
+ * Returns new history array. No refs, no side-channel state.
+ */
+function handleNoteOn(history, note, velocity, startTime) {
+  // Close any existing active entry for this pitch (retrigger)
+  const activeIdx = findLastActive(history, note);
+  let next = activeIdx >= 0 ? closeNote(history, activeIdx, startTime) : history;
+  return [...next, { note, velocity, startTime, endTime: null }];
+}
+
+function handleNoteOff(history, note, endTime) {
+  const activeIdx = findLastActive(history, note);
+  if (activeIdx < 0) return history; // No matching active note — ignore
+  return closeNote(history, activeIdx, endTime);
+}
+
+/**
+ * React hook to subscribe to MIDI events from the piano recorder.
  *
- * @returns {{
- *   activeNotes: Map<number, { velocity: number, timestamp: number }>,
- *   sustainPedal: boolean,
- *   sessionInfo: object|null,
- *   isPlaying: boolean,
- *   noteHistory: Array<{ note: number, velocity: number, startTime: number, endTime: number|null }>
- * }}
+ * Single source of truth: noteHistory array. No refs for index tracking.
+ * activeNotes Map is derived state for keyboard highlighting only.
  */
 export function useMidiSubscription() {
   const logger = useMemo(() => getChildLogger({ app: 'piano-visualizer' }), []);
@@ -38,34 +77,17 @@ export function useMidiSubscription() {
   const [sustainPedal, setSustainPedal] = useState(false);
   const [sessionInfo, setSessionInfo] = useState(null);
   const [noteHistory, setNoteHistory] = useState([]);
-  const activeNoteIds = useRef(new Map()); // Map note number to history index
 
   const handleMidiMessage = useCallback((data) => {
-    // Filter for midi topic
     if (data.topic !== 'midi') return;
 
     const { type, data: eventData } = data;
-    logger.info('piano.visualizer.midi', { type, event: eventData?.event, note: eventData?.note });
 
     if (type === 'note') {
       const { event, note, velocity } = eventData;
-      logger.info('piano.visualizer.note', { event, note, velocity });
 
       if (event === 'note_on' && velocity > 0) {
-        // Note on - use single timestamp for consistency
         const startTime = Date.now();
-
-        // If this note is already active (re-trigger without note_off), close the previous one
-        const prevStartTime = activeNoteIds.current.get(note);
-        if (prevStartTime) {
-          setNoteHistory(prev =>
-            prev.map(n =>
-              n.note === note && n.startTime === prevStartTime && !n.endTime
-                ? { ...n, endTime: startTime }
-                : n
-            )
-          );
-        }
 
         setActiveNotes(prev => {
           const next = new Map(prev);
@@ -73,47 +95,18 @@ export function useMidiSubscription() {
           return next;
         });
 
-        // Add to history
-        setNoteHistory(prev => {
-          const newNote = {
-            note,
-            velocity,
-            startTime,
-            endTime: null
-          };
-          const newHistory = [...prev, newNote];
-          // Keep history size bounded — but preserve active notes (endTime: null)
-          if (newHistory.length > MAX_HISTORY_SIZE) {
-            const active = newHistory.filter(n => !n.endTime);
-            const completed = newHistory.filter(n => n.endTime);
-            const trimmed = completed.slice(-(MAX_HISTORY_SIZE - active.length));
-            return [...trimmed, ...active];
-          }
-          return newHistory;
-        });
-
-        // Track which history entry this note corresponds to
-        activeNoteIds.current.set(note, startTime);
+        setNoteHistory(prev => handleNoteOn(prev, note, velocity, startTime));
       } else {
-        // Note off
+        // note_off (or note_on with velocity 0)
+        const endTime = Date.now();
+
         setActiveNotes(prev => {
           const next = new Map(prev);
           next.delete(note);
           return next;
         });
 
-        // Update history with end time
-        const noteStartTime = activeNoteIds.current.get(note);
-        if (noteStartTime) {
-          setNoteHistory(prev =>
-            prev.map(n =>
-              n.note === note && n.startTime === noteStartTime && !n.endTime
-                ? { ...n, endTime: Date.now() }
-                : n
-            )
-          );
-          activeNoteIds.current.delete(note);
-        }
+        setNoteHistory(prev => handleNoteOff(prev, note, endTime));
       }
     }
 
@@ -124,22 +117,21 @@ export function useMidiSubscription() {
     if (type === 'session') {
       setSessionInfo(eventData);
       if (eventData.event === 'session_start') {
-        // Clear notes on new session
         setActiveNotes(new Map());
         setSustainPedal(false);
         setNoteHistory([]);
-        activeNoteIds.current.clear();
       }
     }
   }, [logger]);
 
   useWebSocketSubscription('midi', handleMidiMessage, [handleMidiMessage]);
 
-  // Stale note cleanup — auto-release notes held longer than STALE_NOTE_MS
-  // Handles lost note_off events (WebSocket drops, sustain pedal edge cases)
+  // Periodic cleanup: expire stale active notes + trim old completed notes
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
+
+      // Release stale active notes (lost note_off)
       setActiveNotes(prev => {
         let changed = false;
         const next = new Map(prev);
@@ -147,42 +139,45 @@ export function useMidiSubscription() {
           if (now - timestamp > STALE_NOTE_MS) {
             next.delete(note);
             changed = true;
-            // Set endTime in history for the orphaned note
-            const noteStartTime = activeNoteIds.current.get(note);
-            if (noteStartTime) {
-              setNoteHistory(h =>
-                h.map(n =>
-                  n.note === note && n.startTime === noteStartTime && !n.endTime
-                    ? { ...n, endTime: now }
-                    : n
-                )
-              );
-              activeNoteIds.current.delete(note);
-            }
           }
         }
         return changed ? next : prev;
       });
-    }, 2000); // Check every 2 seconds
+
+      // Close stale notes in history + trim expired entries
+      setNoteHistory(prev => {
+        let history = prev;
+        let changed = false;
+
+        // Close any notes active longer than STALE_NOTE_MS
+        for (let i = history.length - 1; i >= 0; i--) {
+          if (!history[i].endTime && (now - history[i].startTime) > STALE_NOTE_MS) {
+            history = closeNote(history, i, now);
+            changed = true;
+          }
+        }
+
+        // Trim expired completed notes
+        const trimmed = trimHistory(history, now);
+        if (trimmed.length !== history.length) changed = true;
+
+        return changed ? trimmed : prev;
+      });
+    }, 2000);
     return () => clearInterval(interval);
   }, []);
 
   // Dev keyboard input (localhost only)
   useEffect(() => {
-    if (typeof window === 'undefined' || window.location.hostname !== 'localhost') {
-      return;
-    }
+    if (typeof window === 'undefined' || window.location.hostname !== 'localhost') return;
 
     const pressedKeys = new Set();
 
     const handleKeyDown = (e) => {
       const note = DEV_KEY_MAP[e.key];
       if (!note || pressedKeys.has(e.key)) return;
-
-      // Prevent other handlers from receiving this key
       e.preventDefault();
       e.stopPropagation();
-
       pressedKeys.add(e.key);
       const startTime = Date.now();
 
@@ -191,68 +186,34 @@ export function useMidiSubscription() {
         next.set(note, { velocity: 80, timestamp: startTime });
         return next;
       });
-
-      setNoteHistory(prev => {
-        const newNote = { note, velocity: 80, startTime, endTime: null };
-        const newHistory = [...prev, newNote];
-        if (newHistory.length > MAX_HISTORY_SIZE) {
-          const active = newHistory.filter(n => !n.endTime);
-          const completed = newHistory.filter(n => n.endTime);
-          const trimmed = completed.slice(-(MAX_HISTORY_SIZE - active.length));
-          return [...trimmed, ...active];
-        }
-        return newHistory;
-      });
-
-      activeNoteIds.current.set(note, startTime);
+      setNoteHistory(prev => handleNoteOn(prev, note, 80, startTime));
     };
 
     const handleKeyUp = (e) => {
       const note = DEV_KEY_MAP[e.key];
       if (!note) return;
-
-      // Prevent other handlers from receiving this key
       e.preventDefault();
       e.stopPropagation();
-
       pressedKeys.delete(e.key);
+      const endTime = Date.now();
 
       setActiveNotes(prev => {
         const next = new Map(prev);
         next.delete(note);
         return next;
       });
-
-      const noteStartTime = activeNoteIds.current.get(note);
-      if (noteStartTime) {
-        setNoteHistory(prev =>
-          prev.map(n =>
-            n.note === note && n.startTime === noteStartTime && !n.endTime
-              ? { ...n, endTime: Date.now() }
-              : n
-          )
-        );
-        activeNoteIds.current.delete(note);
-      }
+      setNoteHistory(prev => handleNoteOff(prev, note, endTime));
     };
 
-    // Use capture phase to intercept before other handlers
     window.addEventListener('keydown', handleKeyDown, true);
     window.addEventListener('keyup', handleKeyUp, true);
-
     return () => {
       window.removeEventListener('keydown', handleKeyDown, true);
       window.removeEventListener('keyup', handleKeyUp, true);
     };
   }, []);
 
-  return {
-    activeNotes,
-    sustainPedal,
-    sessionInfo,
-    isPlaying: activeNotes.size > 0,
-    noteHistory
-  };
+  return { activeNotes, sustainPedal, sessionInfo, isPlaying: activeNotes.size > 0, noteHistory };
 }
 
 export default useMidiSubscription;
