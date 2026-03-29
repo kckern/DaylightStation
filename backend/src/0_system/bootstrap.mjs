@@ -2215,6 +2215,7 @@ export async function createNutribotServices(config) {
     reportRenderer,
     nutribotConfig: rawNutribotConfig = {},
     reconciliationReader,
+    healthStore = null,
     agentOrchestrator = null,
     logger = console
   } = config;
@@ -2284,6 +2285,7 @@ export async function createNutribotServices(config) {
     barcodeGenerator,
     foodIconsString,
     reconciliationReader,
+    healthStore,
     agentOrchestrator,
     logger
   });

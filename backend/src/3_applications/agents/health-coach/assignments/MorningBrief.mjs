@@ -39,12 +39,15 @@ export class MorningBrief extends Assignment {
       });
     };
 
-    const [reconciliation, weight, goals, todayNutrition, nutritionHistory] = await Promise.all([
+    const yesterdayDate = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+
+    const [reconciliation, weight, goals, todayNutrition, nutritionHistory, yesterdayClosed] = await Promise.all([
       call('get_reconciliation_summary', { userId, days: 7 }),
       call('get_weight_trend', { userId, days: 7 }),
       call('get_user_goals', { userId }),
       call('get_today_nutrition', { userId }),
       call('get_nutrition_history', { userId, days: 7 }),
+      call('is_day_closed', { userId, date: yesterdayDate }),
     ]);
 
     logger?.info?.('gather.complete', {
@@ -53,9 +56,10 @@ export class MorningBrief extends Assignment {
       hasGoals: !!goals,
       hasTodayNutrition: !!todayNutrition,
       hasNutritionHistory: !!nutritionHistory,
+      yesterdayClosed: !!yesterdayClosed?.closed,
     });
 
-    return { reconciliation, weight, goals, todayNutrition, nutritionHistory };
+    return { reconciliation, weight, goals, todayNutrition, nutritionHistory, yesterdayClosed: !!yesterdayClosed?.closed };
   }
 
   /**
@@ -73,12 +77,31 @@ export class MorningBrief extends Assignment {
     sections.push(`\n## Today's Nutrition (so far)\n${JSON.stringify(gathered.todayNutrition || {}, null, 2)}`);
     sections.push(`\n## Working Memory\n${memory.serialize()}`);
 
+    // Detect likely incomplete logging yesterday
+    const calorieFloor = gathered.goals?.goals?.nutrition?.calories_min || 1200;
+    const yesterdayDate = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    const history = gathered.nutritionHistory?.days || gathered.nutritionHistory || [];
+    const yesterdayEntry = Array.isArray(history)
+      ? history.find(d => d.date === yesterdayDate)
+      : history[yesterdayDate];
+    const yesterdayCals = yesterdayEntry?.calories ?? yesterdayEntry?.total_calories ?? null;
+    // Under calorie min = incomplete, UNLESS user explicitly marked the day as done
+    const incompleteDay = yesterdayCals !== null && yesterdayCals < calorieFloor && !gathered.yesterdayClosed;
+
     sections.push(`\n## Instructions
 Produce a JSON object matching the coachingMessageSchema:
 - should_send: true (morning brief always sends unless there is genuinely nothing to say)
 - text: the message body (HTML formatted, under 200 words)
 - parse_mode: "HTML"
-
+${incompleteDay ? `
+INCOMPLETE LOGGING DETECTED — OVERRIDE NORMAL COACHING:
+Yesterday's tracked calories (~${Math.round((yesterdayCals || 0) / 50) * 50}) are below the daily minimum target (${calorieFloor}), and the user did NOT mark the day as done via /done. This almost certainly means the user forgot to log one or more meals — NOT that they actually ate this little. DO NOT lecture about missed goals or undereating. Instead:
+1. Note what WAS logged yesterday (name the specific items)
+2. Point out the total looks incomplete — "looks like dinner didn't get logged" or similar
+3. Ask the user what they had for the missing meal(s) so it can be logged
+4. Keep it brief and helpful, not judgmental
+This takes priority over ALL other coaching rules below.
+` : ''}
 Writing rules:
 - Lead with yesterday's ACTUAL tracked calories AND protein vs goals with exact deltas — use the nutrition history data, not reconciliation (which lacks protein)
 - Then zoom out: what does the 7-day trend look like? Are calories consistently over/under? Is protein chronically short? Identify the pattern, not just yesterday's snapshot

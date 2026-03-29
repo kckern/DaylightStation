@@ -169,6 +169,27 @@ export class HealthToolFactory extends ToolFactory {
       }),
 
       createTool({
+        name: 'is_day_closed',
+        description: 'Check if a date was explicitly marked as done (user finished eating for the day)',
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string' },
+            date: { type: 'string', description: 'YYYY-MM-DD' },
+          },
+          required: ['userId', 'date'],
+        },
+        execute: async ({ userId, date }) => {
+          try {
+            const closed = await healthStore.isDayClosed(userId, date);
+            return { date, closed };
+          } catch (err) {
+            return { date, closed: false, error: err.message };
+          }
+        },
+      }),
+
+      createTool({
         name: 'get_health_summary',
         description: 'Comprehensive daily health snapshot: weight, nutrition, workouts',
         parameters: {

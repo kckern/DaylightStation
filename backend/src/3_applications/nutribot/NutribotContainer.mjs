@@ -55,6 +55,7 @@ export class NutribotContainer {
   #barcodeGenerator;
   #foodIconsString;
   #reconciliationReader;
+  #healthStore;
 
   // Use Cases (lazy-loaded)
   #logFoodFromImage;
@@ -113,6 +114,7 @@ export class NutribotContainer {
     this.#foodIconsString = options.foodIconsString;
     this.#reconciliationReader = options.reconciliationReader || null;
     this.#agentOrchestrator = options.agentOrchestrator || null;
+    this.#healthStore = options.healthStore || null;
   }
 
   // ==================== Config Getter ====================
@@ -170,6 +172,10 @@ export class NutribotContainer {
 
   getConversationStateStore() {
     return this.#conversationStateStore; // Optional - state features degrade gracefully
+  }
+
+  getHealthStore() {
+    return this.#healthStore; // Optional - used for /done command
   }
 
   getReportRenderer() {

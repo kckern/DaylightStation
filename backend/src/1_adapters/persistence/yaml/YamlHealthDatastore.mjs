@@ -219,6 +219,54 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
   }
 
   // ===========================================================================
+  // Day-Closed Flags
+  // ===========================================================================
+
+  /**
+   * Load day-closed flags for a user
+   * @param {string} userId
+   * @returns {Promise<Object>} Object keyed by date, e.g. { "2026-03-28": true }
+   */
+  async loadDayClosedData(userId) {
+    this.#logger.debug?.('health.store.loadDayClosed', { userId });
+    return this.#loadUserFile(userId, 'day_closed') || {};
+  }
+
+  /**
+   * Save day-closed flags for a user
+   * @param {string} userId
+   * @param {Object} data - Object keyed by date
+   * @returns {Promise<void>}
+   */
+  async saveDayClosedData(userId, data) {
+    this.#logger.debug?.('health.store.saveDayClosed', { userId });
+    this.#saveUserFile(userId, 'day_closed', data);
+  }
+
+  /**
+   * Mark a specific date as closed (user is done eating for the day)
+   * @param {string} userId
+   * @param {string} date - YYYY-MM-DD
+   * @returns {Promise<void>}
+   */
+  async markDayClosed(userId, date) {
+    const data = await this.loadDayClosedData(userId);
+    data[date] = true;
+    await this.saveDayClosedData(userId, data);
+  }
+
+  /**
+   * Check if a specific date is marked as closed
+   * @param {string} userId
+   * @param {string} date - YYYY-MM-DD
+   * @returns {Promise<boolean>}
+   */
+  async isDayClosed(userId, date) {
+    const data = await this.loadDayClosedData(userId);
+    return !!data[date];
+  }
+
+  // ===========================================================================
   // Additional Convenience Methods
   // ===========================================================================
 

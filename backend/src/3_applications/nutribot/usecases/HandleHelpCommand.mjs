@@ -55,6 +55,7 @@ export class HandleHelpCommand {
 /report - Today's nutrition report
 /review - Review and adjust entries
 /coach - Get personalized advice
+/done - Mark today as done (fasting/cutting)
 
 <b>Tips:</b>
 • Be specific about portions (e.g., "2 cups of rice")
