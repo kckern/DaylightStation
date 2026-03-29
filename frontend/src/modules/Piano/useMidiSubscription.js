@@ -3,6 +3,7 @@ import { useWebSocketSubscription } from '../../hooks/useWebSocket';
 import { getChildLogger } from '../../lib/logging/singleton.js';
 
 const MAX_HISTORY_SIZE = 500; // Keep last 500 notes for waterfall
+const STALE_NOTE_MS = 10000; // Auto-release notes held longer than 10s (likely lost note_off)
 
 // Dev keyboard mapping: number row keys to MIDI notes (C4-G5)
 const DEV_KEY_MAP = {
@@ -69,9 +70,12 @@ export function useMidiSubscription() {
             endTime: null
           };
           const newHistory = [...prev, newNote];
-          // Keep history size bounded
+          // Keep history size bounded — but preserve active notes (endTime: null)
           if (newHistory.length > MAX_HISTORY_SIZE) {
-            return newHistory.slice(-MAX_HISTORY_SIZE);
+            const active = newHistory.filter(n => !n.endTime);
+            const completed = newHistory.filter(n => n.endTime);
+            const trimmed = completed.slice(-(MAX_HISTORY_SIZE - active.length));
+            return [...trimmed, ...active];
           }
           return newHistory;
         });
@@ -119,6 +123,38 @@ export function useMidiSubscription() {
 
   useWebSocketSubscription('midi', handleMidiMessage, [handleMidiMessage]);
 
+  // Stale note cleanup — auto-release notes held longer than STALE_NOTE_MS
+  // Handles lost note_off events (WebSocket drops, sustain pedal edge cases)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setActiveNotes(prev => {
+        let changed = false;
+        const next = new Map(prev);
+        for (const [note, { timestamp }] of prev) {
+          if (now - timestamp > STALE_NOTE_MS) {
+            next.delete(note);
+            changed = true;
+            // Set endTime in history for the orphaned note
+            const noteStartTime = activeNoteIds.current.get(note);
+            if (noteStartTime) {
+              setNoteHistory(h =>
+                h.map(n =>
+                  n.note === note && n.startTime === noteStartTime && !n.endTime
+                    ? { ...n, endTime: now }
+                    : n
+                )
+              );
+              activeNoteIds.current.delete(note);
+            }
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 2000); // Check every 2 seconds
+    return () => clearInterval(interval);
+  }, []);
+
   // Dev keyboard input (localhost only)
   useEffect(() => {
     if (typeof window === 'undefined' || window.location.hostname !== 'localhost') {
@@ -148,7 +184,10 @@ export function useMidiSubscription() {
         const newNote = { note, velocity: 80, startTime, endTime: null };
         const newHistory = [...prev, newNote];
         if (newHistory.length > MAX_HISTORY_SIZE) {
-          return newHistory.slice(-MAX_HISTORY_SIZE);
+          const active = newHistory.filter(n => !n.endTime);
+          const completed = newHistory.filter(n => n.endTime);
+          const trimmed = completed.slice(-(MAX_HISTORY_SIZE - active.length));
+          return [...trimmed, ...active];
         }
         return newHistory;
       });
