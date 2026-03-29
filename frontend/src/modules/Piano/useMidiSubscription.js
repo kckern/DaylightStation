@@ -55,6 +55,18 @@ export function useMidiSubscription() {
         // Note on - use single timestamp for consistency
         const startTime = Date.now();
 
+        // If this note is already active (re-trigger without note_off), close the previous one
+        const prevStartTime = activeNoteIds.current.get(note);
+        if (prevStartTime) {
+          setNoteHistory(prev =>
+            prev.map(n =>
+              n.note === note && n.startTime === prevStartTime && !n.endTime
+                ? { ...n, endTime: startTime }
+                : n
+            )
+          );
+        }
+
         setActiveNotes(prev => {
           const next = new Map(prev);
           next.set(note, { velocity, timestamp: startTime });
