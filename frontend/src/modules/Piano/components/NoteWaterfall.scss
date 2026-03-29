@@ -3,35 +3,29 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
-  // Perspective container - vanishing point at top center
   perspective: 600px;
   perspective-origin: 50% 0%;
 
   .waterfall-perspective {
     position: absolute;
     width: 100%;
-    height: 300%; // Extended runway length
+    height: 300%;
     bottom: 0;
-    // Tilt the plane back into the distance
     transform: rotateX(60deg);
     transform-origin: 50% 100%;
     transform-style: preserve-3d;
   }
 
+  // ─── Waterfall Notes (CSS-animated) ─────────────────────────────
   .waterfall-note {
     position: absolute;
     left: var(--x);
     width: var(--width);
-    height: var(--height);
-    bottom: var(--bottom);
+    bottom: 0%;
     transform: translateX(-50%);
     border-radius: 4px 4px 0 0;
     pointer-events: none;
 
-    // Fade out as notes rise into the distance
-    opacity: calc(1 - var(--progress) * 0.8);
-
-    // Glowing gradient effect - gradient goes from bottom (bright) to top (fading)
     background: linear-gradient(
       to top,
       hsla(var(--hue), 100%, calc(60% + 20% * var(--velocity)), 1) 0%,
@@ -40,15 +34,14 @@
       hsla(var(--hue), 100%, 80%, 0.1) 100%
     );
 
-    // Glow effect - intensity based on velocity and fades with distance
     box-shadow:
-      0 0 calc(15px * var(--velocity)) hsla(var(--hue), 100%, 60%, calc((0.5 + 0.4 * var(--velocity)) * (1 - var(--progress)))),
-      0 0 calc(30px * var(--velocity)) hsla(var(--hue), 100%, 50%, calc((0.3 + 0.3 * var(--velocity)) * (1 - var(--progress)))),
-      0 0 calc(50px * var(--velocity)) hsla(var(--hue), 100%, 40%, calc((0.15 + 0.2 * var(--velocity)) * (1 - var(--progress))));
+      0 0 calc(15px * var(--velocity)) hsla(var(--hue), 100%, 60%, calc(0.5 + 0.4 * var(--velocity))),
+      0 0 calc(30px * var(--velocity)) hsla(var(--hue), 100%, 50%, calc(0.3 + 0.3 * var(--velocity))),
+      0 0 calc(50px * var(--velocity)) hsla(var(--hue), 100%, 40%, calc(0.15 + 0.2 * var(--velocity)));
 
-    // Active notes have stronger glow and pulse
+    // Active notes: anchored at bottom, height grows via CSS animation
     &.active {
-      animation: notePulse 0.3s ease-in-out infinite alternate;
+      animation: noteGrow 8000ms linear forwards;
 
       &::after {
         content: '';
@@ -66,19 +59,33 @@
         filter: blur(3px);
       }
     }
+
+    // Released notes: fixed height, rise + fade via CSS animation
+    &.released {
+      height: var(--height);
+      animation: noteRise 8000ms linear forwards;
+    }
   }
+}
+
+// Active note height grows from tiny to max over 8s
+@keyframes noteGrow {
+  0%   { height: 0.5%; }
+  100% { height: 95%; }
+}
+
+// Released note rises from bottom to top, fading out
+@keyframes noteRise {
+  0%   { bottom: 0%;   opacity: 1; }
+  100% { bottom: 100%; opacity: 0; }
 }
 
 @keyframes notePulse {
-  0% {
-    filter: brightness(1) saturate(1);
-  }
-  100% {
-    filter: brightness(1.4) saturate(1.2);
-  }
+  0%   { filter: brightness(1) saturate(1); }
+  100% { filter: brightness(1.4) saturate(1.2); }
 }
 
-// Gradient fade at the top (into the distance)
+// Gradient fade at the top
 .note-waterfall::after {
   content: '';
   position: absolute;
@@ -103,10 +110,8 @@
   left: 0;
   right: 0;
   bottom: 0;
-  height: 300%; // Match extended runway
-  // Grid pattern - horizontal and vertical lines
+  height: 300%;
   background-image:
-    // Vertical lines
     repeating-linear-gradient(
       90deg,
       transparent,
@@ -114,7 +119,6 @@
       rgba(0, 200, 255, 0.15) calc(100% / 52 - 1px),
       rgba(0, 200, 255, 0.15) calc(100% / 52)
     ),
-    // Horizontal lines
     repeating-linear-gradient(
       0deg,
       transparent,
@@ -122,7 +126,6 @@
       rgba(0, 200, 255, 0.12) 39px,
       rgba(0, 200, 255, 0.12) 40px
     );
-  // Apply same perspective transform as notes
   transform: rotateX(60deg);
   transform-origin: 50% 100%;
   z-index: 0;
@@ -130,8 +133,6 @@
 }
 
 // ─── Game Mode ──────────────────────────────────────────────────
-
-// Flatten waterfall in game mode — no 3D perspective, clean 2D lanes
 .note-waterfall--game {
   perspective: none;
 
@@ -140,27 +141,21 @@
     height: 100%;
   }
 
-  // Flatten the grid background
   &::before {
     transform: none;
     height: 100%;
-    // Dim the grid in game mode — glow trails provide the visual structure
     opacity: 0.3;
   }
 
-  // Remove distance fade (not needed in flat mode)
   &::after {
     display: none;
   }
 }
 
-// When in game mode, hide free-play rising notes
 .note-waterfall--game .waterfall-note {
   display: none;
 }
 
-
-// Game notes fall from top to bottom (flat 2D, outside perspective container)
 .game-note {
   position: absolute;
   left: var(--x);
@@ -173,7 +168,6 @@
   flex-direction: column;
   align-items: center;
 
-  // Glow trail — extends upward from sprite, clipped by waterfall overflow
   &::before {
     content: '';
     position: absolute;
@@ -211,7 +205,6 @@
     transition: opacity 0.5s ease-out;
   }
 
-  // Invader SVG sprite
   .invader-sprite {
     width: 100%;
     max-width: 56px;
@@ -222,7 +215,6 @@
       drop-shadow(0 0 14px hsla(var(--hue), 100%, 50%, 0.35));
   }
 
-  // Note name label — below the sprite
   .game-note-label {
     font-size: 0.65rem;
     font-weight: 700;
@@ -235,37 +227,21 @@
     margin-top: 2px;
   }
 
-  // Hit feedback states
-  &.game-note--hit {
-    opacity: 0;
-  }
-
+  &.game-note--hit { opacity: 0; }
   &.game-note--hit.game-note--perfect {
     opacity: 1;
-    .invader-sprite {
-      color: hsl(130, 100%, 65%);
-      filter: drop-shadow(0 0 16px hsla(130, 100%, 60%, 0.9));
-    }
+    .invader-sprite { color: hsl(130, 100%, 65%); filter: drop-shadow(0 0 16px hsla(130, 100%, 60%, 0.9)); }
   }
-
   &.game-note--hit.game-note--good {
     opacity: 1;
-    .invader-sprite {
-      color: hsl(50, 100%, 65%);
-      filter: drop-shadow(0 0 16px hsla(50, 100%, 60%, 0.9));
-    }
+    .invader-sprite { color: hsl(50, 100%, 65%); filter: drop-shadow(0 0 16px hsla(50, 100%, 60%, 0.9)); }
   }
-
   &.game-note--missed {
     opacity: 0.5;
-    .invader-sprite {
-      color: hsl(0, 80%, 55%);
-      filter: drop-shadow(0 0 12px hsla(0, 80%, 50%, 0.7));
-    }
+    .invader-sprite { color: hsl(0, 80%, 55%); filter: drop-shadow(0 0 12px hsla(0, 80%, 50%, 0.7)); }
   }
 }
 
-// Explosion particles (invaders mode hit)
 .explosion-particle {
   position: absolute;
   border-radius: 50%;
@@ -277,7 +253,6 @@
     0 0 16px hsla(var(--hue), 100%, 50%, 0.4);
 }
 
-// Laser projectiles — narrow beams fired from keyboard upward
 .laser-projectile {
   position: absolute;
   left: var(--x);
@@ -287,85 +262,37 @@
   transform: translateX(-50%);
   pointer-events: none;
   z-index: 18;
-  background: linear-gradient(
-    to top,
-    rgba(0, 255, 255, 0.6) 0%,
-    rgba(200, 255, 255, 1) 40%,
-    rgba(255, 255, 255, 1) 70%,
-    rgba(200, 255, 255, 0.8) 100%
-  );
+  background: linear-gradient(to top, rgba(0,255,255,0.6) 0%, rgba(200,255,255,1) 40%, rgba(255,255,255,1) 70%, rgba(200,255,255,0.8) 100%);
   border-radius: 2px;
-  box-shadow:
-    0 0 6px rgba(0, 255, 255, 0.9),
-    0 0 14px rgba(0, 255, 255, 0.5),
-    0 0 28px rgba(0, 255, 255, 0.2);
+  box-shadow: 0 0 6px rgba(0,255,255,0.9), 0 0 14px rgba(0,255,255,0.5), 0 0 28px rgba(0,255,255,0.2);
 
   &--wrong {
     transform: translateX(-50%) rotate(var(--angle, 0deg));
     transform-origin: center bottom;
-    background: linear-gradient(
-      to top,
-      rgba(255, 50, 50, 0.6) 0%,
-      rgba(255, 120, 120, 1) 40%,
-      rgba(255, 200, 200, 1) 70%,
-      rgba(255, 120, 120, 0.8) 100%
-    );
-    box-shadow:
-      0 0 6px rgba(255, 50, 50, 0.9),
-      0 0 14px rgba(255, 50, 50, 0.5),
-      0 0 28px rgba(255, 50, 50, 0.2);
+    background: linear-gradient(to top, rgba(255,50,50,0.6) 0%, rgba(255,120,120,1) 40%, rgba(255,200,200,1) 70%, rgba(255,120,120,0.8) 100%);
+    box-shadow: 0 0 6px rgba(255,50,50,0.9), 0 0 14px rgba(255,50,50,0.5), 0 0 28px rgba(255,50,50,0.2);
   }
 }
 
-// Hit line — glowing horizontal bar at bottom of waterfall
 .hit-line {
   position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  bottom: 0; left: 0; right: 0;
   height: 3px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(0, 255, 200, 0.8) 10%,
-    rgba(0, 255, 200, 1) 50%,
-    rgba(0, 255, 200, 0.8) 90%,
-    transparent 100%
-  );
-  box-shadow:
-    0 0 10px rgba(0, 255, 200, 0.6),
-    0 0 20px rgba(0, 255, 200, 0.3),
-    0 0 40px rgba(0, 255, 200, 0.1);
+  background: linear-gradient(90deg, transparent 0%, rgba(0,255,200,0.8) 10%, rgba(0,255,200,1) 50%, rgba(0,255,200,0.8) 90%, transparent 100%);
+  box-shadow: 0 0 10px rgba(0,255,200,0.6), 0 0 20px rgba(0,255,200,0.3), 0 0 40px rgba(0,255,200,0.1);
   z-index: 20;
   pointer-events: none;
 }
 
-// Hit/miss feedback text
 .hit-feedback {
   position: absolute;
-  left: var(--x);
-  top: var(--top);
+  left: var(--x); top: var(--top);
   transform: translate(-50%, -50%);
-  font-size: 1rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  pointer-events: none;
-  z-index: 16;
-  white-space: nowrap;
+  font-size: 1rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  pointer-events: none; z-index: 16; white-space: nowrap;
 
-  &--perfect {
-    color: #00ff88;
-    text-shadow: 0 0 10px rgba(0, 255, 136, 0.8);
-  }
-
-  &--good {
-    color: #ffdd00;
-    text-shadow: 0 0 10px rgba(255, 221, 0, 0.8);
-  }
-
-  &--miss {
-    color: #ff4444;
-    text-shadow: 0 0 10px rgba(255, 68, 68, 0.8);
-  }
+  &--perfect { color: #00ff88; text-shadow: 0 0 10px rgba(0,255,136,0.8); }
+  &--good    { color: #ffdd00; text-shadow: 0 0 10px rgba(255,221,0,0.8); }
+  &--miss    { color: #ff4444; text-shadow: 0 0 10px rgba(255,68,68,0.8); }
 }
