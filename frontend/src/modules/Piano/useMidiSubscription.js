@@ -88,6 +88,7 @@ export function useMidiSubscription() {
 
       if (event === 'note_on' && velocity > 0) {
         const startTime = Date.now();
+        logger.info('note.on', { note, velocity });
 
         setActiveNotes(prev => {
           if (prev.has(note)) {
@@ -98,21 +99,15 @@ export function useMidiSubscription() {
           return next;
         });
 
-        setNoteHistory(prev => {
-          const result = handleNoteOn(prev, note, velocity, startTime);
-          const activeCount = result.filter(n => !n.endTime).length;
-          if (activeCount > 10) {
-            logger.warn('note.activeCount.high', { activeCount, total: result.length });
-          }
-          return result;
-        });
+        setNoteHistory(prev => handleNoteOn(prev, note, velocity, startTime));
       } else {
         // note_off (or note_on with velocity 0)
         const endTime = Date.now();
+        logger.info('note.off', { note });
 
         setActiveNotes(prev => {
           if (!prev.has(note)) {
-            logger.warn('note.off.orphan', { note, msg: 'note_off for note not in activeNotes' });
+            logger.warn('note.off.orphan', { note });
           }
           const next = new Map(prev);
           next.delete(note);
@@ -122,7 +117,7 @@ export function useMidiSubscription() {
         setNoteHistory(prev => {
           const idx = findLastActive(prev, note);
           if (idx < 0) {
-            logger.warn('note.off.noHistory', { note, msg: 'note_off but no matching active entry in history' });
+            logger.warn('note.off.noHistory', { note });
             return prev;
           }
           return closeNote(prev, idx, endTime);
