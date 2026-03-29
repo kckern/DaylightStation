@@ -90,23 +90,43 @@ export function useMidiSubscription() {
         const startTime = Date.now();
 
         setActiveNotes(prev => {
+          if (prev.has(note)) {
+            logger.warn('note.retrigger', { note, heldMs: startTime - prev.get(note).timestamp });
+          }
           const next = new Map(prev);
           next.set(note, { velocity, timestamp: startTime });
           return next;
         });
 
-        setNoteHistory(prev => handleNoteOn(prev, note, velocity, startTime));
+        setNoteHistory(prev => {
+          const result = handleNoteOn(prev, note, velocity, startTime);
+          const activeCount = result.filter(n => !n.endTime).length;
+          if (activeCount > 10) {
+            logger.warn('note.activeCount.high', { activeCount, total: result.length });
+          }
+          return result;
+        });
       } else {
         // note_off (or note_on with velocity 0)
         const endTime = Date.now();
 
         setActiveNotes(prev => {
+          if (!prev.has(note)) {
+            logger.warn('note.off.orphan', { note, msg: 'note_off for note not in activeNotes' });
+          }
           const next = new Map(prev);
           next.delete(note);
           return next;
         });
 
-        setNoteHistory(prev => handleNoteOff(prev, note, endTime));
+        setNoteHistory(prev => {
+          const idx = findLastActive(prev, note);
+          if (idx < 0) {
+            logger.warn('note.off.noHistory', { note, msg: 'note_off but no matching active entry in history' });
+            return prev;
+          }
+          return closeNote(prev, idx, endTime);
+        });
       }
     }
 
@@ -139,6 +159,7 @@ export function useMidiSubscription() {
           if (now - timestamp > STALE_NOTE_MS) {
             next.delete(note);
             changed = true;
+            logger.warn('note.stale.activeMap', { note, heldMs: now - timestamp });
           }
         }
         return changed ? next : prev;
@@ -148,13 +169,25 @@ export function useMidiSubscription() {
       setNoteHistory(prev => {
         let history = prev;
         let changed = false;
+        const staleNotes = [];
 
         // Close any notes active longer than STALE_NOTE_MS
         for (let i = history.length - 1; i >= 0; i--) {
           if (!history[i].endTime && (now - history[i].startTime) > STALE_NOTE_MS) {
+            staleNotes.push({ note: history[i].note, heldMs: now - history[i].startTime });
             history = closeNote(history, i, now);
             changed = true;
           }
+        }
+
+        if (staleNotes.length > 0) {
+          logger.warn('note.stale.history', { count: staleNotes.length, notes: staleNotes });
+        }
+
+        // Log active note count every sweep for visibility
+        const activeCount = history.filter(n => !n.endTime).length;
+        if (activeCount > 0) {
+          logger.debug('note.sweep', { activeInHistory: activeCount, totalHistory: history.length });
         }
 
         // Trim expired completed notes
@@ -165,7 +198,7 @@ export function useMidiSubscription() {
       });
     }, 2000);
     return () => clearInterval(interval);
-  }, []);
+  }, [logger]);
 
   // Dev keyboard input (localhost only)
   useEffect(() => {
