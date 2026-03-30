@@ -7,6 +7,7 @@ export function createWeeklyReviewRouter(config) {
   router.get('/bootstrap', async (req, res) => {
     try {
       const { week } = req.query;
+      logger.info?.('weekly-review.api.bootstrap', { week: week || 'default' });
       const data = await weeklyReviewService.bootstrap(week || undefined);
       res.json(data);
     } catch (err) {
@@ -24,6 +25,7 @@ export function createWeeklyReviewRouter(config) {
       if (!week) {
         return res.status(400).json({ ok: false, error: 'week required' });
       }
+      logger.info?.('weekly-review.api.recording', { week, mimeType, hasAudio: !!audioBase64 });
 
       const result = await weeklyReviewService.saveRecording({ audioBase64, mimeType, week, duration });
       res.json(result);

@@ -35,6 +35,10 @@ export class WeeklyReviewImmichAdapter {
 
     const assets = result.items || result || [];
 
+    if (assets.filter(a => a.type === 'IMAGE').length === 0) {
+      this.#logger.warn?.('weekly-review.immich.no-photos', { startDate, endDate });
+    }
+
     const byDate = new Map();
     for (const asset of assets) {
       if (asset.type !== 'IMAGE') continue;
@@ -51,6 +55,12 @@ export class WeeklyReviewImmichAdapter {
       const dateStr = cursor.toISOString().slice(0, 10);
       const dayAssets = byDate.get(dateStr) || [];
       const processed = this.#processDay(dateStr, dayAssets);
+      this.#logger.debug?.('weekly-review.immich.day-summary', {
+        date: dateStr,
+        photoCount: processed.photoCount,
+        sessionCount: processed.sessions.length,
+        heroSelected: processed.photos.some(p => p.isHero),
+      });
       days.push(processed);
       cursor.setDate(cursor.getDate() + 1);
     }
