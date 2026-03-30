@@ -15,10 +15,20 @@ export default function WeeklyReview() {
   const [focusedDay, setFocusedDay] = useState(0);
   const [uploading, setUploading] = useState(false);
   const containerRef = useRef(null);
+  const uploadStartRef = useRef(null);
+
+  useEffect(() => {
+    logger.info('mount');
+  }, []);
+
+  useEffect(() => {
+    logger.debug('focus-day', { day: focusedDay });
+  }, [focusedDay]);
 
   const handleRecordingComplete = useCallback(async ({ audioBase64, mimeType, duration }) => {
     if (!data?.week) return;
     setUploading(true);
+    uploadStartRef.current = Date.now();
     try {
       logger.info('recording.uploading', { week: data.week, duration });
       const result = await DaylightAPI('/api/v1/weekly-review/recording', {
@@ -27,7 +37,8 @@ export default function WeeklyReview() {
         week: data.week,
         duration,
       }, 'POST');
-      logger.info('recording.complete', { week: data.week, ok: result.ok });
+      const uploadMs = Date.now() - uploadStartRef.current;
+      logger.info('recording.complete', { week: data.week, ok: result.ok, uploadMs });
       setData(prev => ({
         ...prev,
         recording: { exists: true, recordedAt: new Date().toISOString(), duration },

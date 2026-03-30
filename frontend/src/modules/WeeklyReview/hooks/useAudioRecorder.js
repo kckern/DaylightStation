@@ -80,11 +80,17 @@ export function useAudioRecorder({ onRecordingComplete }) {
           if (normalized < 0.02) {
             if (!silenceStartRef.current) silenceStartRef.current = now;
             if (now - silenceStartRef.current > SILENCE_WARNING_MS) {
-              setSilenceWarning(true);
+              setSilenceWarning(prev => {
+                if (!prev) logger.warn('recorder.silence-warning');
+                return true;
+              });
             }
           } else {
             silenceStartRef.current = null;
-            setSilenceWarning(false);
+            setSilenceWarning(prev => {
+              if (prev) logger.debug('recorder.silence-cleared');
+              return false;
+            });
           }
         }
         levelRafRef.current = requestAnimationFrame(sample);
@@ -133,7 +139,11 @@ export function useAudioRecorder({ onRecordingComplete }) {
       setIsRecording(true);
 
       timerRef.current = setInterval(() => {
-        setDuration(Math.round((Date.now() - startTimeRef.current) / 1000));
+        const seconds = Math.round((Date.now() - startTimeRef.current) / 1000);
+        setDuration(seconds);
+        if (seconds > 0 && seconds % 30 === 0) {
+          logger.debug('recorder.duration', { seconds });
+        }
       }, 1000);
 
       logger.info('recorder.started');
