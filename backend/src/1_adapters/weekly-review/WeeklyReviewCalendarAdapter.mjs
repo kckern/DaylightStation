@@ -62,7 +62,7 @@ export class WeeklyReviewCalendarAdapter {
       cursor.setDate(cursor.getDate() + 1);
     }
 
-    this.#logger.debug?.('weekly-review.calendar.loaded', { startDate, endDate, totalEvents: results.reduce((s, d) => s + d.events.length, 0) });
+    this.#logger.info?.('weekly-review.calendar.loaded', { startDate, endDate, totalEvents: results.reduce((s, d) => s + d.events.length, 0) });
     return results;
   }
 }

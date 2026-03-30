@@ -22,6 +22,7 @@ export class WeeklyReviewService {
   async bootstrap(weekStart) {
     const start = weekStart || this.#defaultWeekStart();
     const end = this.#addDays(start, 7);
+    const bootstrapStart = Date.now();
 
     this.#logger.info?.('weekly-review.bootstrap', { week: start });
 
@@ -32,6 +33,13 @@ export class WeeklyReviewService {
 
     const { days } = WeeklyReviewAggregator.aggregate(photoDays, calendarDays);
     const recording = this.#getRecordingStatus(start);
+
+    this.#logger.info?.('weekly-review.bootstrap.complete', {
+      week: start,
+      durationMs: Date.now() - bootstrapStart,
+      dayCount: days.length,
+      totalPhotos: photoDays.reduce((s, d) => s + (d.photoCount || 0), 0),
+    });
 
     return { week: start, days, recording };
   }
@@ -46,6 +54,7 @@ export class WeeklyReviewService {
 
     // Save audio to media volume
     const ext = mimeType === 'audio/ogg' ? 'ogg' : 'webm';
+    this.#logger.debug?.('weekly-review.recording.file', { week, bytes: buffer.length, ext });
     const audioDir = path.join(this.#mediaPath, 'weekly-review', week);
     const audioPath = path.join(audioDir, `recording.${ext}`);
 
@@ -53,9 +62,16 @@ export class WeeklyReviewService {
     fs.writeFileSync(audioPath, buffer);
 
     // Transcribe
+    const transcribeStart = Date.now();
     const { transcriptRaw, transcriptClean } = await this.#transcriptionService.transcribe(buffer, {
       mimeType: mimeType || 'audio/webm',
       prompt: 'Family weekly review. Members discuss their week: activities, events, feelings, and memories.',
+    });
+    this.#logger.info?.('weekly-review.transcription.complete', {
+      week,
+      durationMs: Date.now() - transcribeStart,
+      rawLength: transcriptRaw?.length,
+      cleanLength: transcriptClean?.length,
     });
 
     // Save transcript
