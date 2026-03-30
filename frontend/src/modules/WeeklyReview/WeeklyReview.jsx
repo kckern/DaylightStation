@@ -3,7 +3,7 @@ import getLogger from '@/lib/logging/Logger.js';
 import { DaylightAPI } from '@/lib/api.mjs';
 import DayColumn from './components/DayColumn.jsx';
 import RecordingBar from './components/RecordingBar.jsx';
-import { useAudioRecorder } from './components/useAudioRecorder.js';
+import { useAudioRecorder } from './hooks/useAudioRecorder.js';
 import './WeeklyReview.scss';
 
 const logger = getLogger().child({ component: 'weekly-review' });
