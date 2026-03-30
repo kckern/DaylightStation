@@ -25,79 +25,62 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
   import { useMemo } from 'react';
   
   export default function MortgageChart({ mortgage }) {
-    if (!mortgage?.transactions) return null;
-  
-    const { months, pastData, futureSeries, maxY } = useMemo(() => {
-      // 1. Identify the earliest transaction date.
-      const { date: startDate } =
-        mortgage.transactions
-          .sort((a, b) => moment(b.date).diff(moment(a.date)))
-          .pop() || {};
-  
-      // 2. Identify the latest payoff date among plans.
-      const lastDate = mortgage.paymentPlans
-        .map(({ info }) => moment(info.payoffDate))
-        .sort((a, b) => a.diff(b))
-        .pop();
-  
-      // If for some reason these are not valid, return empty placeholders.
-      if (!startDate || !lastDate) {
-        return {
-          months: [],
-          pastData: [],
-          futureSeries: [],
-          maxY: 0
-        };
-      }
-  
-      // 3. Build a month-by-month array from startDate to lastDate.
-      const months = [];
-      const cursor = moment(startDate, "YYYY-MM");
-      while (cursor.isBefore(lastDate)) {
-        months.push(cursor.clone());
-        cursor.add(1, "month");
-      }
-  
-      // 4. Build the pastData by matching each month to a transaction.
-      const pastData = months.map(m => {
-        const ms = m.valueOf();
-        const matchingTransaction = mortgage.transactions.find(
-          ({ date }) => moment(date).format("YYYY-MM") === m.format("YYYY-MM")
-        );
-        // Note that we flip runningBalance to a positive value:
-        const rawBalance = matchingTransaction?.runningBalance ?? null;
-        const value = rawBalance == null ? null : Math.abs(rawBalance);
-        return [ms, value];
+    if (!mortgage?.amortization && !mortgage?.transactions) return null;
+
+    const { months, pastData, cumulativeInterestData, futureSeries, maxY } = useMemo(() => {
+      // 1. Build sawtooth pastData from amortization records.
+      const pastData = (mortgage.amortization || []).flatMap(record => {
+        const monthStart = moment(record.month, "YYYY-MM").valueOf();
+        const monthEnd = moment(record.month, "YYYY-MM").endOf('month').valueOf();
+        const peak = record.openingBalance + record.interestAccrued;
+        return [
+          [monthStart, peak],
+          [monthEnd, record.closingBalance]
+        ];
       });
-  
-      // 5. Build a future series for each payment plan. Each plan gets its own line.
-      const futureSeries = mortgage.paymentPlans.map((plan, index) => {
-        const data = months.map(m => {
-          const ms = m.valueOf();
-          const planMonth = plan.months.find(
-            ({ month }) => month === m.format("YYYY-MM")
-          );
-          const futureBalance = planMonth?.startBalance ?? null;
-          return [ms, futureBalance];
-        });
-  
+
+      const cumulativeInterestData = (mortgage.amortization || []).map(record => {
+        const ms = moment(record.month, "YYYY-MM").endOf('month').valueOf();
+        return [ms, record.cumulativeInterest];
+      });
+
+      // 2. Determine last amortization month to avoid overlap with future series.
+      const lastAmortMonth = mortgage.amortization?.length
+        ? mortgage.amortization[mortgage.amortization.length - 1].month
+        : null;
+
+      // 3. Build a future series for each payment plan (only months after amortization).
+      const futureSeries = mortgage.paymentPlans.map((plan) => {
+        const data = plan.months
+          .filter(({ month }) => !lastAmortMonth || month > lastAmortMonth)
+          .map(({ month, endBalance }) => {
+            const ms = moment(month, "YYYY-MM").valueOf();
+            return [ms, endBalance];
+          });
+
         return {
-          // Optionally include plan.info.planName or some other label:
-          name: plan.info.planName ? plan.info.planName : `Plan ${index + 1}`,
+          name: plan.info.title || 'Plan',
           type: "line",
           data
         };
       });
-  
-      // 6. Compute the maximum Y value for chart scaling.
-      //    In addition to the past data, consider all future lines.
+
+      // 4. Compute xAxis bounds spanning amortization + future projections.
+      const amortMonths = (mortgage.amortization || []).map(r => moment(r.month, "YYYY-MM"));
+      const planEndMonths = mortgage.paymentPlans
+        .map(({ info }) => moment(info.payoffDate, "MMMM YYYY"))
+        .filter(m => m.isValid());
+      const allMonths = [...amortMonths, ...planEndMonths].sort((a, b) => a.diff(b));
+      const months = allMonths.length ? [allMonths[0], allMonths[allMonths.length - 1]] : [];
+
+      // 5. Compute the maximum Y value for chart scaling (includes sawtooth peaks).
       const allPastValues = pastData.map(([_, y]) => y || 0);
       const allFutureValues = futureSeries.flatMap(s =>
         s.data.map(([_, y]) => y || 0)
       );
       const maxY = Math.max(...allPastValues, ...allFutureValues, 0);
-  
-      return { months, pastData, futureSeries, maxY };
+
+      return { months, pastData, cumulativeInterestData, futureSeries, maxY };
     }, [mortgage]);
   
     // Early-exit if we have no months at all:
@@ -112,7 +95,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       },
       credits: { enabled: false },
       title: { text: null },
-      legend: { enabled: false }, // Disable the legend
+      legend: { enabled: true, itemStyle: { color: '#ccc' } },
       xAxis: {
       type: "datetime",
       min: months[0].valueOf(),
@@ -120,21 +103,39 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       tickInterval: 365.25 * 24 * 3600 * 1000, // one year
       minorTickInterval: 30 * 24 * 3600 * 1000,
       gridLineWidth: 1,
-      minorGridLineWidth: 0.5
+      minorGridLineWidth: 0.5,
+      plotLines: [{
+        color: '#ffffff55',
+        width: 2,
+        value: moment().valueOf(),
+        dashStyle: 'Dash',
+        label: { text: 'Today', style: { color: '#999' } }
+      }]
       },
-      yAxis: {
-      title: { text: null },
-      max: maxY,
-      tickInterval: 25000,
-      labels: {
+      yAxis: [
+      {
+        title: { text: null },
+        max: maxY,
+        tickInterval: 25000,
+        labels: {
         formatter() {
-        return `$${(this.value / 1000).toFixed(0)}k`;
+          return `$${(this.value / 1000).toFixed(0)}k`;
         }
+        },
+        gridLineColor: "#e0e0e0",
       },
-      gridLineColor: "#e0e0e0",
-      minorGridLineColor: "#f0f0f0",
-      minorTickInterval: "auto"
-      },
+      {
+        title: { text: null },
+        opposite: true,
+        labels: {
+        formatter() {
+          return `$${(this.value / 1000).toFixed(0)}k`;
+        },
+        style: { color: '#ff9800' }
+        },
+        gridLineWidth: 0,
+      }
+      ],
       plotOptions: {
       series: {
         lineWidth: 2,
@@ -146,18 +147,28 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       }
       },
       series: [
-      // Past balance (area)
       {
-        name: "Past",
+        name: "Balance",
         type: "area",
         data: pastData,
         color: "#4c8ffc",
+        fillOpacity: 0.3,
+        yAxis: 0,
         zIndex: 1
       },
-      // Spread out each plan’s future data as a separate line
+      {
+        name: "Cumulative Interest",
+        type: "area",
+        data: cumulativeInterestData,
+        color: "#ff9800",
+        fillOpacity: 0.15,
+        yAxis: 1,
+        zIndex: 0
+      },
       ...futureSeries.map((planSeries, idx) => ({
         ...planSeries,
-        color: Highcharts.getOptions().colors[idx] || "#2b2b2b",
+        yAxis: 0,
+        color: Highcharts.getOptions().colors[idx + 2] || "#2b2b2b",
         zIndex: 2 + idx
       }))
       ]
@@ -183,10 +194,18 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       <tr>
       <td style={{ width: '20%', textAlign: 'right' }}>Balance:</td>
       <td style={{ width: '20%', textAlign: 'left' }}><b>{formatAsCurrency(-balance, "K")}</b></td>
-      <td style={{ width: '20%', textAlign: 'right' }}>Interest Paid:</td>
-      <td style={{ width: '20%', textAlign: 'left' }}><b>{formatAsCurrency(totalInterestPaid, "K")}</b></td>
       <td style={{ width: '20%', textAlign: 'right' }}>Avg Rent / Month:</td>
       <td style={{ width: '20%', textAlign: 'left' }}><b>{formatAsCurrency(monthlyRent, "K")}</b></td>
+      <td style={{ width: '20%', textAlign: 'right' }}>Paid Off:</td>
+      <td style={{ width: '20%', textAlign: 'left' }}><b>{(percentPaidOff * 100).toFixed(1)}%</b></td>
+      </tr>
+      <tr>
+      <td style={{ width: '20%', textAlign: 'right' }}>Interest Paid:</td>
+      <td style={{ width: '20%', textAlign: 'left' }}><b>{formatAsCurrency(totalInterestPaid, "K")}</b></td>
+      <td style={{ width: '20%', textAlign: 'right' }}>Interest Ratio:</td>
+      <td style={{ width: '20%', textAlign: 'left' }}><b>{totalPaid > 0 ? `${(totalInterestPaid / totalPaid * 100).toFixed(1)}%` : '0%'}</b></td>
+      <td style={{ width: '20%', textAlign: 'right' }}></td>
+      <td style={{ width: '20%', textAlign: 'left' }}></td>
       </tr>
       </tbody>
       </table>
