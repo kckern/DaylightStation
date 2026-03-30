@@ -1,0 +1,302 @@
+.weekly-review {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #1a1a1a;
+  color: #e0e0e0;
+  outline: none;
+  overflow: hidden;
+
+  &--loading,
+  &--error {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    color: #888;
+  }
+}
+
+.weekly-review-grid {
+  flex: 1;
+  display: flex;
+  gap: 8px;
+  padding: 16px 16px 8px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.day-column {
+  display: flex;
+  flex-direction: column;
+  background: #2a2a2a;
+  border: 2px solid #333;
+  border-radius: 10px;
+  overflow: hidden;
+  min-width: 60px;
+  transition: border-color 0.2s ease, flex 0.3s ease;
+
+  &--focused {
+    border-color: #4da6ff;
+    box-shadow: 0 0 12px rgba(77, 166, 255, 0.25);
+  }
+
+  &--today {
+    border-color: #4caf50;
+
+    .day-header {
+      background: #2a4a2a;
+
+      .day-label {
+        color: #aaffaa;
+      }
+    }
+  }
+
+  &--empty {
+    opacity: 0.5;
+  }
+}
+
+.day-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 6px;
+  background: #333;
+  border-bottom: 1px solid #444;
+  flex-shrink: 0;
+
+  .day-label {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #ccc;
+  }
+
+  .day-date {
+    font-size: 1rem;
+    font-weight: 600;
+  }
+}
+
+.day-calendar {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px;
+  flex-shrink: 0;
+}
+
+.calendar-chip {
+  font-size: 0.65rem;
+  background: #3a5a3a;
+  color: #aaffaa;
+  border-radius: 4px;
+  padding: 2px 6px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.day-photos {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 6px;
+}
+
+.photo-wall {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+  gap: 4px;
+  height: 100%;
+
+  &--with-hero {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    grid-template-rows: 1fr;
+    gap: 4px;
+    height: 100%;
+  }
+}
+
+.photo-wall-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #555;
+  font-style: italic;
+}
+
+.photo-hero {
+  position: relative;
+  border-radius: 6px;
+  overflow: hidden;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .photo-people {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 2px 6px;
+    background: rgba(0, 0, 0, 0.6);
+    font-size: 0.6rem;
+    color: #ddd;
+  }
+}
+
+.photo-thumbs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.photo-thumb {
+  border-radius: 4px;
+  overflow: hidden;
+  flex: 1;
+  min-height: 30px;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.recording-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: #2a2a2a;
+  border-top: 1px solid #444;
+  flex-shrink: 0;
+  gap: 12px;
+  transition: background 0.3s ease;
+
+  &.silence-warning {
+    background: #3a3520;
+  }
+}
+
+.recording-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  .week-label {
+    font-size: 0.9rem;
+    color: #888;
+  }
+
+  .existing-badge {
+    font-size: 0.75rem;
+    color: #4caf50;
+    background: rgba(76, 175, 80, 0.15);
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+}
+
+.recording-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.recording-dot {
+  color: #e53935;
+  font-size: 1.2rem;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.recording-timer {
+  font-size: 1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-width: 40px;
+}
+
+.vu-meter {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  height: 20px;
+}
+
+.vu-bar {
+  width: 4px;
+  height: 100%;
+  background: #444;
+  border-radius: 2px;
+  transition: background 0.05s ease;
+
+  &.filled {
+    background: #4caf50;
+  }
+
+  &.filled:nth-child(n+15) {
+    background: #ff9800;
+  }
+
+  &.filled:nth-child(n+18) {
+    background: #e53935;
+  }
+}
+
+.recording-start-btn,
+.recording-stop-btn {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.recording-start-btn {
+  background: #c0392b;
+  color: white;
+
+  &:hover {
+    background: #e74c3c;
+  }
+}
+
+.recording-stop-btn {
+  background: #555;
+  color: white;
+
+  &:hover {
+    background: #666;
+  }
+}
+
+.uploading-status {
+  font-size: 0.85rem;
+  color: #999;
+  font-style: italic;
+}
+
+.recording-error {
+  font-size: 0.8rem;
+  color: #e53935;
+}
