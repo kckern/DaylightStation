@@ -464,11 +464,15 @@ export function createFinanceRouter(config) {
   router.post('/memos/:transactionId', (req, res) => {
     const householdId = resolveHouseholdId(req.body.household || req.query.household);
     const { transactionId } = req.params;
-    const { memo } = req.body;
+    const { memo, effectiveDate } = req.body;
 
     try {
-      financeStore?.saveMemo(transactionId, memo, householdId);
-      return res.json({ ok: true, transactionId, memo });
+      // Plain string if just memo, object if effectiveDate is set
+      const value = effectiveDate
+        ? { ...(memo ? { memo } : {}), effectiveDate }
+        : memo;
+      financeStore?.saveMemo(transactionId, value, householdId);
+      return res.json({ ok: true, transactionId, memo: value });
     } catch (error) {
       logger.error?.('finance.memo.error', { transactionId, error: error.message });
       return res.status(500).json({ error: 'Failed to save memo' });
