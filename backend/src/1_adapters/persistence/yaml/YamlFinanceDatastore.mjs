@@ -226,6 +226,20 @@ export class YamlFinanceDatastore {
   }
 
   // ==========================================================================
+  // Mortgage Statements (PDF-derived authoritative data)
+  // ==========================================================================
+
+  /**
+   * Get mortgage statements (PDF-derived principal balances and P/I/E splits)
+   * @param {string} [householdId]
+   * @returns {{ loan: Object, statements: Object, escrowAnalyses: Object }|null}
+   */
+  getMortgageStatements(householdId) {
+    const filePath = path.join(this.getBasePath(householdId), 'mortgage.statements');
+    return this.#readData(filePath);
+  }
+
+  // ==========================================================================
   // Transaction Memos
   // ==========================================================================
 

@@ -128,10 +128,22 @@ export class MortgageCalculator {
    * @param {Date|string} params.asOfDate - The date to calculate status as of (required)
    * @returns {MortgageStatus}
    */
-  calculateMortgageStatus({ config, balance, transactions, asOfDate }) {
+  calculateMortgageStatus({ config, balance, transactions, asOfDate, statementData }) {
     if (!asOfDate) {
       throw new ValidationError('asOfDate required', { code: 'MISSING_DATE', field: 'asOfDate' });
     }
+
+    if (statementData?.statements) {
+      return this.#buildFromStatements({ config, balance, transactions, asOfDate, statementData });
+    }
+    return this.#buildFromBuxferOnly({ config, balance, transactions, asOfDate });
+  }
+
+  /**
+   * Build mortgage status from PDF-derived statement data, with Buxfer fallback for recent months
+   * @private
+   */
+  #buildFromStatements({ config, balance, transactions, asOfDate, statementData }) {
     const {
       mortgageStartValue,
       accountId,
@@ -141,32 +153,155 @@ export class MortgageCalculator {
       paymentPlans = []
     } = config;
 
-    // Sort transactions chronologically
+    const statements = statementData.statements;
+    const statementMonths = Object.keys(statements).sort();
+
+    let totalInterestPaid = 0;
+    let totalPrincipalPaid = 0;
+    let totalEscrowPaid = 0;
+    let totalPaid = 0;
+    const allTransactions = [];
+
+    let lastStatementBalance = null;
+    let lastStatementMonth = null;
+
+    for (let mi = 0; mi < statementMonths.length; mi++) {
+      const month = statementMonths[mi];
+      const stmt = statements[month];
+      lastStatementMonth = month;
+      lastStatementBalance = stmt.principalBalance;
+
+      // principalBalance on statement N is the balance AFTER N's transactions.
+      // So the starting point for N's transactions is the PREVIOUS statement's principalBalance.
+      const prevBalance = mi > 0
+        ? statements[statementMonths[mi - 1]].principalBalance
+        : mortgageStartValue;
+
+      const txns = stmt.transactions || [];
+      let periodBalance = prevBalance;
+
+      for (const txn of txns) {
+        const principal = txn.principal || 0;
+        const interest = txn.interest || 0;
+        const escrow = txn.escrow || 0;
+
+        totalPrincipalPaid += principal;
+        totalInterestPaid += interest;
+        totalEscrowPaid += Math.max(0, escrow);
+        totalPaid += txn.total || (principal + interest + Math.max(0, escrow));
+
+        periodBalance -= principal;
+
+        allTransactions.push({
+          date: txn.date,
+          description: txn.description || 'Payment',
+          amount: txn.total || (principal + interest + escrow),
+          principal,
+          interest,
+          escrow,
+          runningBalance: this.#round(-periodBalance),
+          source: 'statement'
+        });
+      }
+    }
+
+    // Append Buxfer transactions for months after the latest statement
+    if (lastStatementMonth && transactions?.length) {
+      const sortedBuxfer = [...transactions].sort(
+        (a, b) => new Date(a.date) - new Date(b.date)
+      );
+
+      let runningBuxferBalance = -lastStatementBalance;
+      for (const txn of sortedBuxfer) {
+        const txnMonth = txn.date.substring(0, 7);
+        if (txnMonth <= lastStatementMonth) continue;
+
+        runningBuxferBalance += txn.amount || 0;
+        totalPaid += txn.amount || 0;
+        allTransactions.push({
+          ...txn,
+          runningBalance: this.#round(runningBuxferBalance),
+          source: 'buxfer'
+        });
+      }
+    }
+
+    const currentBalance = lastStatementBalance != null
+      ? lastStatementBalance
+      : Math.abs(balance);
+
+    const paymentPlansFilled = this.calculatePaymentPlans({
+      balance: -currentBalance,
+      interestRate,
+      minimumPayment,
+      paymentPlans,
+      startDate: asOfDate
+    });
+
+    const startingBalance = mortgageStartValue;
+    const monthsSinceStart = this.#monthsDiff(new Date(startDate), new Date(asOfDate));
+    const percentPaidOff = (startingBalance - currentBalance) / startingBalance;
+
+    const monthlyRent = this.#round(totalInterestPaid / monthsSinceStart);
+    const monthlyEquity = this.#round(totalPrincipalPaid / monthsSinceStart);
+
+    const { earliestPayoff, latestPayoff } = this.#findPayoffRange(paymentPlansFilled);
+
+    return {
+      accountId,
+      mortgageStartValue,
+      startingBalance,
+      totalInterestPaid: this.#round(totalInterestPaid),
+      totalPrincipalPaid: this.#round(totalPrincipalPaid),
+      monthlyRent,
+      monthlyEquity,
+      percentPaidOff,
+      balance: currentBalance,
+      interestRate,
+      earliestPayoff,
+      latestPayoff,
+      totalPaid: this.#round(totalPaid),
+      transactions: allTransactions,
+      paymentPlans: paymentPlansFilled
+    };
+  }
+
+  /**
+   * Build mortgage status from Buxfer transactions only (original logic)
+   * @private
+   */
+  #buildFromBuxferOnly({ config, balance, transactions, asOfDate }) {
+    const {
+      mortgageStartValue,
+      accountId,
+      startDate,
+      interestRate,
+      minimumPayment,
+      paymentPlans = []
+    } = config;
+
     const sortedTransactions = [...transactions].sort(
       (a, b) => new Date(a.date) - new Date(b.date)
     );
 
-    // Calculate sum of all transactions
     const sumOfTransactions = sortedTransactions.reduce(
       (total, { amount }) => total + amount,
       0
     );
 
-    // Calculate starting balance (before any payments were tracked)
     const startingBalanceNeg = this.#round(balance - sumOfTransactions);
     const startingBalance = Math.abs(startingBalanceNeg);
 
-    // Add running balance to each transaction
     let runningTotal = 0;
     const transactionsWithBalance = sortedTransactions.map((txn) => {
       runningTotal += txn.amount;
       return {
         ...txn,
-        runningBalance: this.#round(startingBalanceNeg + runningTotal)
+        runningBalance: this.#round(startingBalanceNeg + runningTotal),
+        source: 'buxfer'
       };
     });
 
-    // Calculate payment plan projections
     const paymentPlansFilled = this.calculatePaymentPlans({
       balance: balance,
       interestRate: interestRate,
@@ -175,7 +310,6 @@ export class MortgageCalculator {
       startDate: asOfDate
     });
 
-    // Calculate totals
     const totalPaid = transactions.reduce((total, { amount }) => total + (amount || 0), 0);
     const monthsSinceStart = this.#monthsDiff(new Date(startDate), new Date(asOfDate));
 
@@ -186,7 +320,6 @@ export class MortgageCalculator {
     const monthlyRent = this.#round(totalInterestPaid / monthsSinceStart);
     const monthlyEquity = this.#round(totalPrincipalPaid / monthsSinceStart);
 
-    // Find earliest and latest payoff dates
     const { earliestPayoff, latestPayoff } = this.#findPayoffRange(paymentPlansFilled);
 
     return {
