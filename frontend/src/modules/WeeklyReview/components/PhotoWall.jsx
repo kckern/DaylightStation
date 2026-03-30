@@ -1,5 +1,14 @@
 import React from 'react';
 
+function MediaThumb({ photo }) {
+  return (
+    <div className={`photo-thumb${photo.type === 'video' ? ' photo-thumb--video' : ''}`}>
+      <img src={photo.thumbnail} alt="" loading="lazy" />
+      {photo.type === 'video' && <span className="video-badge">▶</span>}
+    </div>
+  );
+}
+
 export default function PhotoWall({ photos }) {
   if (!photos || photos.length === 0) {
     return <div className="photo-wall-empty">—</div>;
@@ -18,11 +27,7 @@ export default function PhotoWall({ photos }) {
           )}
         </div>
         <div className="photo-thumbs">
-          {rest.map(photo => (
-            <div key={photo.id} className="photo-thumb">
-              <img src={photo.thumbnail} alt="" loading="lazy" />
-            </div>
-          ))}
+          {rest.map(photo => <MediaThumb key={photo.id} photo={photo} />)}
         </div>
       </div>
     );
@@ -30,11 +35,7 @@ export default function PhotoWall({ photos }) {
 
   return (
     <div className="photo-wall">
-      {photos.map(photo => (
-        <div key={photo.id} className="photo-thumb">
-          <img src={photo.thumbnail} alt="" loading="lazy" />
-        </div>
-      ))}
+      {photos.map(photo => <MediaThumb key={photo.id} photo={photo} />)}
     </div>
   );
 }

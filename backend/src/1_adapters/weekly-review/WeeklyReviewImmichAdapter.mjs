@@ -29,19 +29,18 @@ export class WeeklyReviewImmichAdapter {
     const result = await this.#client.searchMetadata({
       takenAfter,
       takenBefore,
-      type: 'IMAGE',
       size: 500,
     });
 
     const assets = result.items || result || [];
 
-    if (assets.filter(a => a.type === 'IMAGE').length === 0) {
-      this.#logger.warn?.('weekly-review.immich.no-photos', { startDate, endDate });
+    if (assets.length === 0) {
+      this.#logger.warn?.('weekly-review.immich.no-assets', { startDate, endDate });
     }
 
     const byDate = new Map();
     for (const asset of assets) {
-      if (asset.type !== 'IMAGE') continue;
+      if (asset.type !== 'IMAGE' && asset.type !== 'VIDEO') continue;
       const date = asset.localDateTime.slice(0, 10);
       if (!byDate.has(date)) byDate.set(date, []);
       byDate.get(date).push(asset);
@@ -67,6 +66,7 @@ export class WeeklyReviewImmichAdapter {
 
     this.#logger.info?.('weekly-review.immich.done', {
       totalPhotos: assets.filter(a => a.type === 'IMAGE').length,
+      totalVideos: assets.filter(a => a.type === 'VIDEO').length,
       days: days.length,
     });
 
@@ -88,10 +88,11 @@ export class WeeklyReviewImmichAdapter {
 
     const photos = scored.map((item, index) => ({
       id: item.asset.id,
+      type: item.asset.type === 'VIDEO' ? 'video' : 'image',
       thumbnail: `${this.#proxyPath}/assets/${item.asset.id}/thumbnail`,
       original: `${this.#proxyPath}/assets/${item.asset.id}/original`,
       people: item.people,
-      isHero: assets.length >= 3 && index === 0,
+      isHero: assets.length >= 3 && index === 0 && item.asset.type !== 'VIDEO',
       sessionIndex: this.#findSessionIndex(sessions, item.asset),
       takenAt: item.asset.localDateTime,
     }));

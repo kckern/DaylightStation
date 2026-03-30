@@ -17,6 +17,7 @@ export default function WeeklyReview() {
   const [focusedDay, setFocusedDay] = useState(0);
   const [selectedDay, setSelectedDay] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [hasInteracted, setHasInteracted] = useState(false);
   const containerRef = useRef(null);
   const uploadStartRef = useRef(null);
 
@@ -58,6 +59,17 @@ export default function WeeklyReview() {
     error: recorderError, startRecording, stopRecording,
   } = useAudioRecorder({ onRecordingComplete: handleRecordingComplete });
 
+  // Auto-start recording on first non-back interaction
+  const ensureRecording = useCallback(() => {
+    if (!hasInteracted) {
+      setHasInteracted(true);
+      if (!isRecording) {
+        logger.info('recording.auto-start');
+        startRecording();
+      }
+    }
+  }, [hasInteracted, isRecording, startRecording]);
+
   useEffect(() => {
     const fetchBootstrap = async () => {
       try {
@@ -91,10 +103,12 @@ export default function WeeklyReview() {
             break;
           case 'ArrowLeft':
             e.preventDefault();
+            ensureRecording();
             setSelectedDay(prev => (prev - 1 + total) % total);
             break;
           case 'ArrowRight':
             e.preventDefault();
+            ensureRecording();
             setSelectedDay(prev => (prev + 1) % total);
             break;
         }
@@ -104,25 +118,34 @@ export default function WeeklyReview() {
       switch (e.key) {
         case 'ArrowLeft':
           e.preventDefault();
+          ensureRecording();
           setFocusedDay(prev => (prev - 1 + total) % total);
           break;
         case 'ArrowRight':
           e.preventDefault();
+          ensureRecording();
           setFocusedDay(prev => (prev + 1) % total);
           break;
         case 'ArrowUp':
           e.preventDefault();
+          ensureRecording();
           setFocusedDay(prev => (prev - COLS + total) % total);
           break;
         case 'ArrowDown':
           e.preventDefault();
+          ensureRecording();
           setFocusedDay(prev => (prev + COLS) % total);
           break;
         case 'Enter':
         case ' ':
           e.preventDefault();
+          ensureRecording();
           logger.info('day-detail.open', { day: focusedDay, date: data.days[focusedDay]?.date });
           setSelectedDay(focusedDay);
+          break;
+        case 'Escape':
+        case 'Backspace':
+          // Back keys don't trigger recording
           break;
       }
     };
@@ -132,7 +155,7 @@ export default function WeeklyReview() {
       container.addEventListener('keydown', handleKeyDown);
       return () => container.removeEventListener('keydown', handleKeyDown);
     }
-  }, [data, selectedDay, focusedDay]);
+  }, [data, selectedDay, focusedDay, ensureRecording]);
 
   useEffect(() => {
     containerRef.current?.focus();
@@ -159,8 +182,10 @@ export default function WeeklyReview() {
     return <div className="weekly-review weekly-review--error">Failed to load: {error}</div>;
   }
 
+  const dimmed = !isRecording;
+
   return (
-    <div className="weekly-review" ref={containerRef} tabIndex={0}>
+    <div className={`weekly-review${dimmed ? ' weekly-review--dimmed' : ''}`} ref={containerRef} tabIndex={0}>
       {selectedDay !== null ? (
         <DayDetail
           day={data.days[selectedDay]}
@@ -175,7 +200,7 @@ export default function WeeklyReview() {
               day={day}
               isFocused={i === focusedDay}
               isToday={day.date === todayStr}
-              onClick={() => { setSelectedDay(i); setFocusedDay(i); }}
+              onClick={() => { ensureRecording(); setSelectedDay(i); setFocusedDay(i); }}
             />
           ))}
         </div>
