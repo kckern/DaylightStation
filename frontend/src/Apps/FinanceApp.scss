@@ -415,8 +415,8 @@ button.reload{
 
 .mortgage-summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 0.25rem 1rem;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.25rem 0.5rem;
   padding: 0.5rem;
   div {
     display: flex;
