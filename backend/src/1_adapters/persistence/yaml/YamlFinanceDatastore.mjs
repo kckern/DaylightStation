@@ -286,8 +286,19 @@ export class YamlFinanceDatastore {
   applyMemos(transactions, householdId) {
     const memos = this.getMemos(householdId);
     return transactions.map(txn => {
-      const memo = memos[String(txn.id)];
-      return memo ? { ...txn, memo } : txn;
+      const entry = memos[String(txn.id)];
+      if (!entry) return txn;
+      // Support plain string (legacy) or object with memo + effectiveDate
+      if (typeof entry === 'string') {
+        return { ...txn, memo: entry };
+      }
+      const result = { ...txn };
+      if (entry.memo) result.memo = entry.memo;
+      if (entry.effectiveDate) {
+        result.originalDate = txn.date;
+        result.date = entry.effectiveDate;
+      }
+      return result;
     });
   }
 
