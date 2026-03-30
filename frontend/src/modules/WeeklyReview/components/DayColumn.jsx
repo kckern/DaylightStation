@@ -10,6 +10,8 @@ export default function DayColumn({ day, isFocused, isToday }) {
     day.photoCount === 0 && 'day-column--empty',
   ].filter(Boolean).join(' ');
 
+  const dayName = new Date(`${day.date}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long' });
+
   return (
     <div
       className={columnClass}
@@ -31,7 +33,13 @@ export default function DayColumn({ day, isFocused, isToday }) {
       )}
 
       <div className="day-photos">
-        <PhotoWall photos={day.photos} />
+        {day.photoCount > 0 ? (
+          <PhotoWall photos={day.photos} />
+        ) : (
+          <div className="day-empty-content">
+            <span className="day-empty-name">{dayName}</span>
+          </div>
+        )}
       </div>
     </div>
   );
