@@ -342,6 +342,106 @@ export class MortgageCalculator {
   }
 
   /**
+   * Reconstruct month-by-month amortization from actual payment history
+   *
+   * Walks forward from loan start applying known interest rate and actual payments,
+   * then reconciles against the current balance anchor to correct for rounding drift.
+   *
+   * @param {Object} params
+   * @param {number} params.mortgageStartValue - Original loan amount
+   * @param {number} params.interestRate - Annual interest rate (decimal)
+   * @param {string} params.startDate - Loan start date (YYYY-MM-DD)
+   * @param {Object[]} params.transactions - Payment transactions [{date, amount}]
+   * @param {number} params.currentBalance - Current balance from bank (negative = debt)
+   * @param {string|Date} params.asOfDate - Date to reconstruct up to
+   * @returns {Object[]} Per-month amortization records
+   */
+  reconstructAmortization({ mortgageStartValue, interestRate, startDate, transactions, currentBalance, asOfDate }) {
+    const monthlyRate = interestRate / 12;
+    const actualBalance = Math.abs(currentBalance);
+
+    // Group transactions by month
+    const txnsByMonth = {};
+    for (const txn of transactions) {
+      const month = txn.date.slice(0, 7); // YYYY-MM
+      if (!txnsByMonth[month]) txnsByMonth[month] = [];
+      txnsByMonth[month].push(txn);
+    }
+
+    // Build month list from startDate to asOfDate
+    const startYM = startDate.slice(0, 7);
+    const endYM = (typeof asOfDate === 'string' ? asOfDate : asOfDate.toISOString()).slice(0, 7);
+    const months = [];
+    let [y, m] = startYM.split('-').map(Number);
+    const [endY, endM] = endYM.split('-').map(Number);
+    while (y < endY || (y === endY && m <= endM)) {
+      months.push(`${y}-${String(m).padStart(2, '0')}`);
+      m++;
+      if (m > 12) { m = 1; y++; }
+    }
+
+    // Walk forward computing interest and applying payments
+    let balance = mortgageStartValue;
+    let cumulativeInterest = 0;
+    const records = [];
+
+    for (const month of months) {
+      const openingBalance = this.#round(balance);
+      const interestAccrued = this.#round(balance * monthlyRate);
+      balance += interestAccrued;
+      cumulativeInterest += interestAccrued;
+
+      const monthTxns = txnsByMonth[month] || [];
+      const payments = monthTxns.map(t => t.amount);
+      const totalPaid = payments.reduce((a, b) => a + b, 0);
+      balance -= totalPaid;
+
+      records.push({
+        month,
+        effectiveRate: interestRate,
+        openingBalance,
+        interestAccrued,
+        payments,
+        totalPaid: this.#round(totalPaid),
+        principalPaid: this.#round(totalPaid - interestAccrued),
+        closingBalance: this.#round(balance),
+        cumulativeInterest: this.#round(cumulativeInterest),
+        reconciliationAdj: 0
+      });
+    }
+
+    // Reconcile against anchor balance
+    if (records.length > 0) {
+      const drift = this.#round(actualBalance - Math.abs(records[records.length - 1].closingBalance));
+      if (Math.abs(drift) > 0.01) {
+        const totalInterest = records.reduce((sum, r) => sum + r.interestAccrued, 0);
+        let cumulativeAdj = 0;
+        for (const record of records) {
+          const weight = totalInterest > 0 ? record.interestAccrued / totalInterest : 1 / records.length;
+          const adj = this.#round(drift * weight);
+          record.reconciliationAdj = adj;
+          record.interestAccrued = this.#round(record.interestAccrued + adj);
+          record.principalPaid = this.#round(record.totalPaid - record.interestAccrued);
+          cumulativeAdj += adj;
+        }
+        // Recompute balances and cumulative interest after adjustment
+        balance = mortgageStartValue;
+        cumulativeInterest = 0;
+        for (const record of records) {
+          record.openingBalance = this.#round(balance);
+          balance += record.interestAccrued;
+          cumulativeInterest += record.interestAccrued;
+          balance -= record.totalPaid;
+          record.closingBalance = this.#round(balance);
+          record.cumulativeInterest = this.#round(cumulativeInterest);
+        }
+      }
+    }
+
+    return records;
+  }
+
+  /**
    * Calculate a single payment plan projection
    * @private
    */
