@@ -284,14 +284,28 @@ export class MortgageCalculator {
       (a, b) => new Date(a.date) - new Date(b.date)
     );
 
-    const sumOfTransactions = sortedTransactions.reduce(
-      (total, { amount }) => total + amount,
-      0
-    );
+    // Reconstruct amortization from first principles
+    const amortization = this.reconstructAmortization({
+      mortgageStartValue,
+      interestRate,
+      startDate,
+      transactions: sortedTransactions,
+      currentBalance: balance,
+      asOfDate
+    });
 
-    const startingBalanceNeg = this.#round(balance - sumOfTransactions);
-    const startingBalance = Math.abs(startingBalanceNeg);
+    // Derive totals from reconstruction
+    const totalPaid = sortedTransactions.reduce((total, { amount }) => total + (amount || 0), 0);
+    const totalInterestPaid = amortization.reduce((sum, m) => sum + m.interestAccrued, 0);
+    const totalPrincipalPaid = this.#round(totalPaid - totalInterestPaid);
+    const monthsSinceStart = this.#monthsDiff(new Date(startDate), new Date(asOfDate));
 
+    const monthlyRent = this.#round(totalInterestPaid / monthsSinceStart);
+    const monthlyEquity = this.#round(totalPrincipalPaid / monthsSinceStart);
+    const percentPaidOff = totalPrincipalPaid / mortgageStartValue;
+
+    // Add running balance to transactions (preserves existing behavior)
+    const startingBalanceNeg = -mortgageStartValue;
     let runningTotal = 0;
     const transactionsWithBalance = sortedTransactions.map((txn) => {
       runningTotal += txn.amount;
@@ -302,41 +316,65 @@ export class MortgageCalculator {
       };
     });
 
+    // Start projections from the month after the last amortization month
+    const lastAmortMonth = amortization.length > 0
+      ? amortization[amortization.length - 1].month
+      : null;
+    let projectionStartDate;
+    if (lastAmortMonth) {
+      const [y, m] = lastAmortMonth.split('-').map(Number);
+      projectionStartDate = new Date(Date.UTC(y, m, 1));
+    } else {
+      projectionStartDate = new Date(asOfDate);
+    }
+
+    const projectionBalance = amortization.length > 0
+      ? -amortization[amortization.length - 1].closingBalance
+      : balance;
+
     const paymentPlansFilled = this.calculatePaymentPlans({
-      balance: balance,
-      interestRate: interestRate,
-      minimumPayment: minimumPayment,
-      paymentPlans: paymentPlans,
-      startDate: asOfDate
+      balance: projectionBalance,
+      interestRate,
+      minimumPayment,
+      paymentPlans,
+      startDate: projectionStartDate
     });
 
-    const totalPaid = transactions.reduce((total, { amount }) => total + (amount || 0), 0);
-    const monthsSinceStart = this.#monthsDiff(new Date(startDate), new Date(asOfDate));
-
-    const totalInterestPaid = startingBalance - mortgageStartValue;
-    const totalPrincipalPaid = totalPaid - totalInterestPaid;
-    const percentPaidOff = (startingBalance - Math.abs(balance)) / startingBalance;
-
-    const monthlyRent = this.#round(totalInterestPaid / monthsSinceStart);
-    const monthlyEquity = this.#round(totalPrincipalPaid / monthsSinceStart);
+    // Add a "Historical Pace" plan derived from actual payment average
+    if (amortization.length > 0) {
+      const avgMonthlyPayment = this.#round(totalPaid / amortization.length);
+      const historicalPlan = this.calculatePaymentPlans({
+        balance: projectionBalance,
+        interestRate,
+        minimumPayment: avgMonthlyPayment,
+        paymentPlans: [{
+          id: 'historical',
+          title: 'Historical Pace',
+          subtitle: `Avg ${Math.round(avgMonthlyPayment).toLocaleString()}/mo based on actuals`
+        }],
+        startDate: projectionStartDate
+      });
+      paymentPlansFilled.push(...historicalPlan);
+    }
 
     const { earliestPayoff, latestPayoff } = this.#findPayoffRange(paymentPlansFilled);
 
     return {
       accountId,
       mortgageStartValue,
-      startingBalance,
-      totalInterestPaid,
+      startingBalance: mortgageStartValue,
+      totalInterestPaid: this.#round(totalInterestPaid),
       totalPrincipalPaid,
       monthlyRent,
       monthlyEquity,
-      percentPaidOff,
+      percentPaidOff: this.#round(percentPaidOff),
       balance: Math.abs(balance),
       interestRate,
       earliestPayoff,
       latestPayoff,
       totalPaid,
       transactions: transactionsWithBalance,
+      amortization,
       paymentPlans: paymentPlansFilled
     };
   }
