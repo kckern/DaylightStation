@@ -1067,10 +1067,11 @@ const FitnessApp = () => {
   return (
     <MantineProvider theme={{ colorScheme: 'dark' }}>
       <VolumeProvider>
-        <FitnessProvider 
+        <FitnessProvider
           fitnessConfiguration={fitnessConfiguration}
           fitnessPlayQueue={fitnessPlayQueue}
           setFitnessPlayQueue={setFitnessPlayQueue}
+          kioskMode={kioskUI}
         >
           <GlobalOverlays />
           <div className={`fitness-app-container ${kioskUI ? 'kiosk-ui' : ''}`}>
