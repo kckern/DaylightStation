@@ -31,7 +31,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
   );
 }
 
-  export default function MortgageChart({ mortgage }) {
+  export default function MortgageChart({ mortgage, zoomable = false }) {
     if (!mortgage?.amortization && !mortgage?.transactions) return null;
 
     const { months, pastData, cumulativeInterestData, futureSeries, maxY } = useMemo(() => {
@@ -57,13 +57,24 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
         : null;
 
       // 3. Build a future series for each payment plan (only months after amortization).
+      // Start each plan line from the last amortization closing balance for seamless connection.
+      const lastAmortRecord = mortgage.amortization?.length
+        ? mortgage.amortization[mortgage.amortization.length - 1]
+        : null;
+      const seamPoint = lastAmortRecord
+        ? [moment(lastAmortRecord.month, "YYYY-MM").endOf('month').valueOf(), lastAmortRecord.closingBalance]
+        : null;
+
       const futureSeries = mortgage.paymentPlans.map((plan) => {
-        const data = plan.months
+        const futureData = plan.months
           .filter(({ month }) => !lastAmortMonth || month > lastAmortMonth)
           .map(({ month, endBalance }) => {
             const ms = moment(month, "YYYY-MM").valueOf();
             return [ms, endBalance];
           });
+
+        // Prepend the seam point so the line connects to the past data
+        const data = seamPoint ? [seamPoint, ...futureData] : futureData;
 
         return {
           name: plan.info.title || 'Plan',
@@ -98,9 +109,14 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
     const options = {
       chart: {
       backgroundColor: "transparent",
-      style: { fontFamily: "sans-serif", marginBottom: '2rem' },  
+      style: { fontFamily: "sans-serif", marginBottom: '2rem' },
+      zoomType: zoomable ? 'x' : undefined,
+      panning: zoomable ? { enabled: true, type: 'x' } : undefined,
+      panKey: zoomable ? 'shift' : undefined,
+      height: zoomable ? 350 : undefined,
       },
       credits: { enabled: false },
+      ...(zoomable && { resetZoomButton: { theme: { fill: '#333', stroke: '#555', style: { color: '#ccc' } } } }),
       title: { text: null },
       legend: { enabled: true, itemStyle: { color: '#ccc' } },
       xAxis: {
@@ -111,6 +127,10 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       minorTickInterval: 30 * 24 * 3600 * 1000,
       gridLineWidth: 1,
       minorGridLineWidth: 0.5,
+      labels: {
+        rotation: -45,
+        style: { color: '#999', fontSize: '10px' }
+      },
       plotLines: [{
         color: '#ffffff55',
         width: 2,
@@ -119,30 +139,18 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
         label: { text: 'Today', style: { color: '#999' } }
       }]
       },
-      yAxis: [
-      {
+      yAxis: {
         title: { text: null },
         max: maxY,
         tickInterval: 25000,
         labels: {
-        formatter() {
-          return `$${(this.value / 1000).toFixed(0)}k`;
-        }
+          formatter() {
+            return `$${(this.value / 1000).toFixed(0)}k`;
+          },
+          style: { color: '#999' }
         },
-        gridLineColor: "#e0e0e0",
+        gridLineColor: "#444",
       },
-      {
-        title: { text: null },
-        opposite: true,
-        labels: {
-        formatter() {
-          return `$${(this.value / 1000).toFixed(0)}k`;
-        },
-        style: { color: '#ff9800' }
-        },
-        gridLineWidth: 0,
-      }
-      ],
       plotOptions: {
       series: {
         lineWidth: 2,
@@ -160,7 +168,6 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
         data: pastData,
         color: "#4c8ffc",
         fillOpacity: 0.3,
-        yAxis: 0,
         zIndex: 1
       },
       {
@@ -168,13 +175,11 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
         type: "area",
         data: cumulativeInterestData,
         color: "#ff9800",
-        fillOpacity: 0.15,
-        yAxis: 1,
+        fillOpacity: 0.25,
         zIndex: 0
       },
       ...futureSeries.map((planSeries, idx) => ({
         ...planSeries,
-        yAxis: 0,
         color: Highcharts.getOptions().colors[idx + 2] || "#2b2b2b",
         zIndex: 2 + idx
       }))
@@ -188,34 +193,16 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
     
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' }}>
-      <table style={{ width: '95%'}} className="mortgage-summary">
-      <tbody>
-      <tr>
-      <td style={{ width: '20%', textAlign: 'right' }}>Paid:</td>
-      <td style={{ width: '20%', textAlign: 'left' }}><b>{formatAsCurrency(totalPaid, "K")}</b></td>
-      <td style={{ width: '20%', textAlign: 'right' }}>Principal Paid:</td>
-      <td style={{ width: '20%', textAlign: 'left' }}><b>{formatAsCurrency(totalPrincipalPaid, "K")}</b></td>
-      <td style={{ width: '20%', textAlign: 'right' }}>Avg Equity / Month:</td>
-      <td style={{ width: '20%', textAlign: 'left' }}><b>{formatAsCurrency(monthlyEquity, "K")}</b></td>
-      </tr>
-      <tr>
-      <td style={{ width: '20%', textAlign: 'right' }}>Balance:</td>
-      <td style={{ width: '20%', textAlign: 'left' }}><b>{formatAsCurrency(-balance, "K")}</b></td>
-      <td style={{ width: '20%', textAlign: 'right' }}>Avg Rent / Month:</td>
-      <td style={{ width: '20%', textAlign: 'left' }}><b>{formatAsCurrency(monthlyRent, "K")}</b></td>
-      <td style={{ width: '20%', textAlign: 'right' }}>Paid Off:</td>
-      <td style={{ width: '20%', textAlign: 'left' }}><b>{(percentPaidOff * 100).toFixed(1)}%</b></td>
-      </tr>
-      <tr>
-      <td style={{ width: '20%', textAlign: 'right' }}>Interest Paid:</td>
-      <td style={{ width: '20%', textAlign: 'left' }}><b>{formatAsCurrency(totalInterestPaid, "K")}</b></td>
-      <td style={{ width: '20%', textAlign: 'right' }}>Interest Ratio:</td>
-      <td style={{ width: '20%', textAlign: 'left' }}><b>{totalPaid > 0 ? `${(totalInterestPaid / totalPaid * 100).toFixed(1)}%` : '0%'}</b></td>
-      <td style={{ width: '20%', textAlign: 'right' }}></td>
-      <td style={{ width: '20%', textAlign: 'left' }}></td>
-      </tr>
-      </tbody>
-      </table>
+      <div className="mortgage-summary-grid">
+        <div><span>Paid</span><b>{formatAsCurrency(totalPaid, "K")}</b></div>
+        <div><span>Balance</span><b>{formatAsCurrency(-balance, "K")}</b></div>
+        <div><span>Principal</span><b>{formatAsCurrency(totalPrincipalPaid, "K")}</b></div>
+        <div><span>Interest</span><b style={{ color: '#ff9800' }}>{formatAsCurrency(totalInterestPaid, "K")}</b></div>
+        <div><span>Equity/mo</span><b>{formatAsCurrency(monthlyEquity, "K")}</b></div>
+        <div><span>Rent/mo</span><b>{formatAsCurrency(monthlyRent, "K")}</b></div>
+        <div><span>Paid Off</span><b>{(percentPaidOff * 100).toFixed(1)}%</b></div>
+        <div><span>Int. Ratio</span><b>{totalPaid > 0 ? `${(totalInterestPaid / totalPaid * 100).toFixed(1)}%` : '0%'}</b></div>
+      </div>
       <div style={{ flexGrow: 1, width: '100%', overflow: 'hidden' }}>
       <HighchartsReact
       highcharts={Highcharts}
@@ -259,6 +246,10 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
     ];
 
     return (
+      <div>
+      <div style={{ width: '100%', marginBottom: '1rem' }}>
+        <MortgageChart mortgage={mortgage} zoomable />
+      </div>
       <Tabs defaultValue={defaultTab}>
         <Tabs.List>
           <Tabs.Tab value="amortization">Amortization</Tabs.Tab>
@@ -276,7 +267,9 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
               style={{ maxWidth: 300 }}
             />
           </div>
-          <AmortizationTable months={combinedMonths} />
+          <div style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+            <AmortizationTable months={combinedMonths} />
+          </div>
         </Tabs.Panel>
 
         <Tabs.Panel value="comparison" pt="md">
@@ -287,6 +280,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
           <CostOfCapitalCalculator mortgage={mortgage} />
         </Tabs.Panel>
       </Tabs>
+      </div>
     );
   }
 
@@ -319,7 +313,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
                   <Badge color={record.isFuture ? 'blue' : 'gray'}>{monthLabel}</Badge>
                 </td>
                 <td>{formatAsCurrency(record.openingBalance)}</td>
-                <td style={{ color: '#c00' }}>{formatAsCurrency(record.interestAccrued)}</td>
+                <td style={{ color: record.isFuture ? '#ff6b6b' : '#c00' }}>{formatAsCurrency(record.interestAccrued)}</td>
                 <td>{record.payments?.length > 0 ? formatAsCurrency(record.payments[0]) : ''}</td>
                 <td>{formatAsCurrency(record.closingBalance)}</td>
                 <td>{record.cumulativeInterest != null ? formatAsCurrency(record.cumulativeInterest) : ''}</td>
