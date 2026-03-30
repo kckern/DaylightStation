@@ -398,6 +398,85 @@ describe('MortgageCalculator', () => {
       expect(result[2].closingBalance).toBeCloseTo(98492.49, 0);
       expect(result[2].cumulativeInterest).toBeCloseTo(1492.49, 0);
     });
+
+    test('reconciles drift against actual balance by distributing proportionally', () => {
+      const result = calculator.reconstructAmortization({
+        mortgageStartValue: 100000,
+        interestRate: 0.06,
+        startDate: '2026-01-01',
+        transactions: [
+          { date: '2026-01-15', amount: 1000 },
+          { date: '2026-02-15', amount: 1000 },
+          { date: '2026-03-15', amount: 1000 },
+        ],
+        currentBalance: -98592.49, // $100 more than pure calc (98492.49)
+        asOfDate: '2026-03-31'
+      });
+
+      // Final balance should match the anchor
+      expect(result[2].closingBalance).toBeCloseTo(98592.49, 1);
+
+      // Each month should have a reconciliation adjustment
+      const totalAdj = result.reduce((sum, r) => sum + r.reconciliationAdj, 0);
+      expect(totalAdj).toBeCloseTo(100, 0);
+
+      // Higher-interest months should absorb more of the adjustment
+      expect(result[0].reconciliationAdj).toBeGreaterThanOrEqual(result[2].reconciliationAdj);
+    });
+
+    test('handles zero drift (perfect reconciliation)', () => {
+      const result = calculator.reconstructAmortization({
+        mortgageStartValue: 10000,
+        interestRate: 0.06,
+        startDate: '2026-01-01',
+        transactions: [
+          { date: '2026-01-15', amount: 500 },
+        ],
+        currentBalance: -9550, // 10000 + 50 - 500 = 9550
+        asOfDate: '2026-01-31'
+      });
+
+      expect(result[0].reconciliationAdj).toBe(0);
+      expect(result[0].closingBalance).toBe(9550);
+    });
+
+    test('handles months with no payments', () => {
+      const result = calculator.reconstructAmortization({
+        mortgageStartValue: 100000,
+        interestRate: 0.06,
+        startDate: '2026-01-01',
+        transactions: [
+          { date: '2026-03-15', amount: 1000 },
+        ],
+        currentBalance: -100497.50,
+        asOfDate: '2026-03-31'
+      });
+
+      expect(result).toHaveLength(3);
+      expect(result[0].totalPaid).toBe(0);
+      expect(result[0].payments).toEqual([]);
+      expect(result[1].totalPaid).toBe(0);
+      expect(result[2].totalPaid).toBe(1000);
+      expect(result[1].closingBalance).toBeGreaterThan(result[0].closingBalance);
+    });
+
+    test('handles multiple payments in same month', () => {
+      const result = calculator.reconstructAmortization({
+        mortgageStartValue: 100000,
+        interestRate: 0.06,
+        startDate: '2026-01-01',
+        transactions: [
+          { date: '2026-01-05', amount: 1000 },
+          { date: '2026-01-20', amount: 5000 },
+        ],
+        currentBalance: -94500,
+        asOfDate: '2026-01-31'
+      });
+
+      expect(result).toHaveLength(1);
+      expect(result[0].payments).toEqual([1000, 5000]);
+      expect(result[0].totalPaid).toBe(6000);
+    });
   });
 
   describe('edge cases', () => {
