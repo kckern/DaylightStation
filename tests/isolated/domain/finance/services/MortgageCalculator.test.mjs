@@ -337,6 +337,39 @@ describe('MortgageCalculator', () => {
       expect(result.transactions).toHaveLength(0);
     });
 
+    test('includes reconstructed amortization in status', () => {
+      const config = {
+        mortgageStartValue: 100000,
+        accountId: 'mortgage-1',
+        startDate: '2026-01-01',
+        interestRate: 0.06,
+        minimumPayment: 1000,
+        paymentPlans: [{ id: 'default', title: 'Default' }]
+      };
+
+      const transactions = [
+        { date: '2026-01-15', amount: 1000 },
+        { date: '2026-02-15', amount: 1000 },
+      ];
+
+      const result = calculator.calculateMortgageStatus({
+        config,
+        balance: -99000,
+        transactions,
+        asOfDate: new Date('2026-02-28')
+      });
+
+      expect(result.amortization).toBeDefined();
+      expect(result.amortization).toHaveLength(2);
+      expect(result.amortization[0]).toHaveProperty('interestAccrued');
+      expect(result.amortization[0]).toHaveProperty('cumulativeInterest');
+      expect(result.amortization[0]).toHaveProperty('principalPaid');
+
+      expect(result.totalInterestPaid).toBeCloseTo(
+        result.amortization.reduce((sum, m) => sum + m.interestAccrued, 0), 1
+      );
+    });
+
     test('sorts transactions chronologically', () => {
       const config = {
         mortgageStartValue: 100000,
