@@ -317,17 +317,19 @@ export class MortgageCalculator {
     });
 
     // Start projections from the month after the last amortization month
+    // so the first plan month connects seamlessly to the last reconstructed balance
     const lastAmortMonth = amortization.length > 0
       ? amortization[amortization.length - 1].month
       : null;
     let projectionStartDate;
     if (lastAmortMonth) {
       const [y, m] = lastAmortMonth.split('-').map(Number);
-      projectionStartDate = new Date(Date.UTC(y, m, 1));
+      projectionStartDate = new Date(Date.UTC(y, m, 1)); // month after (0-indexed: m is already next)
     } else {
       projectionStartDate = new Date(asOfDate);
     }
 
+    // Use the reconstructed closing balance (reconciled to actual) as the projection start
     const projectionBalance = amortization.length > 0
       ? -amortization[amortization.length - 1].closingBalance
       : balance;

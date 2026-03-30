@@ -36,12 +36,14 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
 
     const { months, pastData, cumulativeInterestData, futureSeries, maxY } = useMemo(() => {
       // 1. Build sawtooth pastData from amortization records.
+      // Three points per month: opening → interest peak → payment trough
       const pastData = (mortgage.amortization || []).flatMap(record => {
         const monthStart = moment(record.month, "YYYY-MM").valueOf();
+        const midMonth = moment(record.month, "YYYY-MM").date(15).valueOf();
         const monthEnd = moment(record.month, "YYYY-MM").endOf('month').valueOf();
-        const peak = record.openingBalance + record.interestAccrued;
         return [
-          [monthStart, peak],
+          [monthStart, record.openingBalance],
+          [midMonth, record.openingBalance + record.interestAccrued],
           [monthEnd, record.closingBalance]
         ];
       });
@@ -56,25 +58,14 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
         ? mortgage.amortization[mortgage.amortization.length - 1].month
         : null;
 
-      // 3. Build a future series for each payment plan (only months after amortization).
-      // Start each plan line from the last amortization closing balance for seamless connection.
-      const lastAmortRecord = mortgage.amortization?.length
-        ? mortgage.amortization[mortgage.amortization.length - 1]
-        : null;
-      const seamPoint = lastAmortRecord
-        ? [moment(lastAmortRecord.month, "YYYY-MM").endOf('month').valueOf(), lastAmortRecord.closingBalance]
-        : null;
-
+      // 3. Build a future series for each payment plan.
+      // Projections now start from the month after the last amortization month,
+      // using the reconciled closing balance — so the first startBalance matches exactly.
       const futureSeries = mortgage.paymentPlans.map((plan) => {
-        const futureData = plan.months
-          .filter(({ month }) => !lastAmortMonth || month > lastAmortMonth)
-          .map(({ month, endBalance }) => {
-            const ms = moment(month, "YYYY-MM").valueOf();
-            return [ms, endBalance];
-          });
-
-        // Prepend the seam point so the line connects to the past data
-        const data = seamPoint ? [seamPoint, ...futureData] : futureData;
+        const data = plan.months.map(({ month, startBalance, endBalance }) => {
+          const ms = moment(month, "YYYY-MM").valueOf();
+          return [ms, endBalance];
+        });
 
         return {
           name: plan.info.title || 'Plan',
@@ -203,11 +194,11 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
         <div><span>Paid Off</span><b>{(percentPaidOff * 100).toFixed(1)}%</b></div>
         <div><span>Int. Ratio</span><b>{totalPaid > 0 ? `${(totalInterestPaid / totalPaid * 100).toFixed(1)}%` : '0%'}</b></div>
       </div>
-      <div style={{ flexGrow: 1, width: '100%', overflow: 'hidden' }}>
+      <div style={{ flexGrow: 1, width: '100%', minHeight: zoomable ? undefined : '250px' }}>
       <HighchartsReact
       highcharts={Highcharts}
       options={options}
-      containerProps={{ style: { width: '100%', height: 'calc(100% - 2rem)' } }}
+      containerProps={{ style: { width: '100%', height: '100%' } }}
       />
       </div>
       </div>
