@@ -100,11 +100,10 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
     const options = {
       chart: {
       backgroundColor: "transparent",
-      style: { fontFamily: "sans-serif", marginBottom: '2rem' },
+      style: { fontFamily: "sans-serif" },
       zoomType: zoomable ? 'x' : undefined,
       panning: zoomable ? { enabled: true, type: 'x' } : undefined,
       panKey: zoomable ? 'shift' : undefined,
-      height: zoomable ? 350 : undefined,
       },
       credits: { enabled: false },
       ...(zoomable && { resetZoomButton: { theme: { fill: '#333', stroke: '#555', style: { color: '#ccc' } } } }),
@@ -182,8 +181,12 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
 
 
     
+    // In the dashboard grid: budget-block is ~50vh, h2 is ~2rem, summary is ~3.5rem
+    // In the drawer: zoomable mode uses a fixed 350px height
+    const chartHeight = zoomable ? '350px' : 'calc(100% - 4rem)';
+
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' }}>
+      <div style={{ height: '100%', overflow: 'hidden' }}>
       <div className="mortgage-summary-grid">
         <div><span>Paid</span><b>{formatAsCurrency(totalPaid, "K")}</b></div>
         <div><span>Balance</span><b>{formatAsCurrency(-balance, "K")}</b></div>
@@ -194,7 +197,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
         <div><span>Paid Off</span><b>{(percentPaidOff * 100).toFixed(1)}%</b></div>
         <div><span>Int. Ratio</span><b>{totalPaid > 0 ? `${(totalInterestPaid / totalPaid * 100).toFixed(1)}%` : '0%'}</b></div>
       </div>
-      <div style={{ flexGrow: 1, width: '100%', minHeight: zoomable ? undefined : '250px' }}>
+      <div style={{ width: '100%', height: chartHeight }}>
       <HighchartsReact
       highcharts={Highcharts}
       options={options}
