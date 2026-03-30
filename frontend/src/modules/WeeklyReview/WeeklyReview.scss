@@ -20,7 +20,9 @@
 
 .weekly-review-grid {
   flex: 1;
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(2, 1fr);
   gap: 8px;
   padding: 16px 16px 8px;
   min-height: 0;
