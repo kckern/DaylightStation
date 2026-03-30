@@ -37,9 +37,8 @@ export default function Upcoming() {
   const [isMoving, setIsMoving] = useState(false);
   const reloadData = () => {
     DaylightAPI("/api/v1/home/events").then(events => {
-      // Rotate events and ensure at least 5 items
+      // Rotate events
       events = [...events.slice(-1), ...events.slice(0, -1)];
-      while (events.length < 5) events = [...events, ...events];
 
       // Map API events to desired format
       const itemsFromAPI = events.map(event => ({
@@ -74,17 +73,25 @@ export default function Upcoming() {
 
 
 
-      // Remove old, removed items and add new items
-      const items = [
-        ...listItems,
-        ...itemsFromAPI.filter(newItem => !listItems.some(existingItem => existingItem.id === newItem.id))
-      ]
-        .filter(item => 
+      // Merge: keep existing items still present in API, add new ones
+      const apiIds = new Set(itemsFromAPI.map(item => item.id));
+      const kept = listItems.filter(item => apiIds.has(item.id));
+      const added = itemsFromAPI.filter(newItem => !listItems.some(existing => existing.id === newItem.id));
+      const items = [...kept, ...added]
+        .filter(item =>
           (item.type === "todoist" || item.type === "clickup") || moment(item.time).isAfter(moment())
         )
         .sort((a, b) => new Date(a.time) - new Date(b.time));
 
-      setListItems(items);
+      // Pad to at least 5 display items with unique keys
+      let display = [...items];
+      let round = 0;
+      while (display.length < 5) {
+        round++;
+        display = [...display, ...items.map((item, i) => ({ ...item, id: `${item.id}_pad${round}_${i}` }))];
+      }
+
+      setListItems(display);
     });
   };
 
