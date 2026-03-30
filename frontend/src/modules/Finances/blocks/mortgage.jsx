@@ -176,7 +176,13 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       ]
     };
 
-    const { totalPaid,totalPrincipalPaid,totalInterestPaid,monthlyRent,monthlyEquity,percentPaidOff,balance } = mortgage;
+    const { totalPaid,totalPrincipalPaid,totalInterestPaid,monthlyRent,monthlyEquity,percentPaidOff,balance,mortgageStartValue } = mortgage;
+    // Historical plan gives total expected interest based on actual payment pace
+    const historicalPlan = mortgage.paymentPlans?.find(p => p.info.id === 'historical') || mortgage.paymentPlans?.[0];
+    const totalExpectedInterest = (historicalPlan?.info?.totalInterest || 0) + totalInterestPaid;
+    const totalExpectedCost = mortgageStartValue + totalExpectedInterest;
+    const principalPctOff = mortgageStartValue > 0 ? (totalPrincipalPaid / mortgageStartValue * 100) : 0;
+    const totalPctOff = totalExpectedCost > 0 ? (totalPaid / totalExpectedCost * 100) : 0;
 
 
 
@@ -190,12 +196,14 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       <div className="mortgage-summary-grid">
         <div><span>Paid</span><b>{formatAsCurrency(totalPaid, "K")}</b></div>
         <div><span>Balance</span><b>{formatAsCurrency(-balance, "K")}</b></div>
+        <div><span>Total Cost</span><b style={{ color: '#888' }}>{formatAsCurrency(totalExpectedCost, "K")}</b></div>
         <div><span>Principal</span><b>{formatAsCurrency(totalPrincipalPaid, "K")}</b></div>
         <div><span>Interest</span><b style={{ color: '#ff9800' }}>{formatAsCurrency(totalInterestPaid, "K")}</b></div>
         <div><span>Equity/mo</span><b>{formatAsCurrency(monthlyEquity, "K")}</b></div>
         <div><span>Rent/mo</span><b>{formatAsCurrency(monthlyRent, "K")}</b></div>
-        <div><span>Paid Off</span><b>{(percentPaidOff * 100).toFixed(1)}%</b></div>
         <div><span>Int. Ratio</span><b>{totalPaid > 0 ? `${(totalInterestPaid / totalPaid * 100).toFixed(1)}%` : '0%'}</b></div>
+        <div><span>Principal %</span><b>{principalPctOff.toFixed(1)}%</b></div>
+        <div><span>Total %</span><b>{totalPctOff.toFixed(1)}%</b></div>
       </div>
       <div style={{ width: '100%', height: chartHeight }}>
       <HighchartsReact
