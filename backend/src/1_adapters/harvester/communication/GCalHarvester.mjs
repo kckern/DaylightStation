@@ -259,6 +259,7 @@ export class GCalHarvester extends IHarvester {
    */
   async #fetchEvents(calendar, calendars, timeMin, timeMax, includeCalendarName) {
     const events = [];
+    const seenIds = new Set();
 
     for (const cal of calendars) {
       const { data } = await calendar.events.list({
@@ -271,7 +272,12 @@ export class GCalHarvester extends IHarvester {
 
       const calendarName = includeCalendarName ? (cal.summary || cal.id) : null;
       const formatted = data.items.map(event => this.#formatEvent(event, calendarName));
-      events.push(...formatted);
+      for (const event of formatted) {
+        if (!seenIds.has(event.id)) {
+          seenIds.add(event.id);
+          events.push(event);
+        }
+      }
     }
 
     return events;
