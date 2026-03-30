@@ -101,7 +101,8 @@ export function createApiRouter(config) {
     '/test': 'test',  // Test infrastructure (dev/test only)
     '/launch': 'launch',
     '/sync': 'sync',
-    '/prewarm': 'prewarm'
+    '/prewarm': 'prewarm',
+    '/weekly-review': 'weekly-review'
   };
 
   // Mount each router at its path
