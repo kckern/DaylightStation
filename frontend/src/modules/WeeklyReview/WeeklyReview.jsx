@@ -2,17 +2,20 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import getLogger from '@/lib/logging/Logger.js';
 import { DaylightAPI } from '@/lib/api.mjs';
 import DayColumn from './components/DayColumn.jsx';
+import DayDetail from './components/DayDetail.jsx';
 import RecordingBar from './components/RecordingBar.jsx';
 import { useAudioRecorder } from './hooks/useAudioRecorder.js';
 import './WeeklyReview.scss';
 
 const logger = getLogger().child({ component: 'weekly-review' });
+const COLS = 4;
 
 export default function WeeklyReview() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [focusedDay, setFocusedDay] = useState(0);
+  const [selectedDay, setSelectedDay] = useState(null);
   const [uploading, setUploading] = useState(false);
   const containerRef = useRef(null);
   const uploadStartRef = useRef(null);
@@ -71,26 +74,55 @@ export default function WeeklyReview() {
     fetchBootstrap();
   }, []);
 
+  // Pacman grid navigation
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (!data?.days) return;
+      const total = data.days.length;
+
+      // Day detail view has its own nav
+      if (selectedDay !== null) {
+        switch (e.key) {
+          case 'Escape':
+          case 'Backspace':
+            e.preventDefault();
+            setSelectedDay(null);
+            logger.debug('day-detail.close');
+            break;
+          case 'ArrowLeft':
+            e.preventDefault();
+            setSelectedDay(prev => (prev - 1 + total) % total);
+            break;
+          case 'ArrowRight':
+            e.preventDefault();
+            setSelectedDay(prev => (prev + 1) % total);
+            break;
+        }
+        return;
+      }
+
       switch (e.key) {
         case 'ArrowLeft':
           e.preventDefault();
-          setFocusedDay(prev => Math.max(0, prev - 1));
+          setFocusedDay(prev => (prev - 1 + total) % total);
           break;
         case 'ArrowRight':
           e.preventDefault();
-          setFocusedDay(prev => Math.min(data.days.length - 1, prev + 1));
+          setFocusedDay(prev => (prev + 1) % total);
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          setFocusedDay(prev => (prev - COLS + total) % total);
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          setFocusedDay(prev => (prev + COLS) % total);
           break;
         case 'Enter':
         case ' ':
           e.preventDefault();
-          if (isRecording) {
-            stopRecording();
-          } else {
-            startRecording();
-          }
+          logger.info('day-detail.open', { day: focusedDay, date: data.days[focusedDay]?.date });
+          setSelectedDay(focusedDay);
           break;
       }
     };
@@ -100,7 +132,7 @@ export default function WeeklyReview() {
       container.addEventListener('keydown', handleKeyDown);
       return () => container.removeEventListener('keydown', handleKeyDown);
     }
-  }, [data, isRecording, startRecording, stopRecording]);
+  }, [data, selectedDay, focusedDay]);
 
   useEffect(() => {
     containerRef.current?.focus();
@@ -129,16 +161,25 @@ export default function WeeklyReview() {
 
   return (
     <div className="weekly-review" ref={containerRef} tabIndex={0}>
-      <div className="weekly-review-grid">
-        {data.days.map((day, i) => (
-          <DayColumn
-            key={day.date}
-            day={day}
-            isFocused={i === focusedDay}
-            isToday={day.date === todayStr}
-          />
-        ))}
-      </div>
+      {selectedDay !== null ? (
+        <DayDetail
+          day={data.days[selectedDay]}
+          isToday={data.days[selectedDay]?.date === todayStr}
+          onClose={() => setSelectedDay(null)}
+        />
+      ) : (
+        <div className="weekly-review-grid">
+          {data.days.map((day, i) => (
+            <DayColumn
+              key={day.date}
+              day={day}
+              isFocused={i === focusedDay}
+              isToday={day.date === todayStr}
+              onClick={() => { setSelectedDay(i); setFocusedDay(i); }}
+            />
+          ))}
+        </div>
+      )}
 
       <RecordingBar
         weekLabel={weekLabel}
