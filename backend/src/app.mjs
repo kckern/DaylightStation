@@ -1959,7 +1959,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     );
 
     const weeklyReviewCalendarAdapter = new WeeklyReviewCalendarAdapter(
-      { householdId },
+      { householdId, defaultUser: configService.getHeadOfHousehold?.() || 'kckern' },
       { userDataService, logger: rootLogger.child({ module: 'weekly-review-calendar' }) }
     );
 
