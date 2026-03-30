@@ -327,6 +327,10 @@ export class FitnessSession {
       FitnessTimeline.validateSeriesLengths(timebase, series)
     );
 
+    // Kiosk mode gate: only kiosk clients create sessions.
+    // Non-kiosk browsers (e.g. laptop open in background) observe but don't auto-start.
+    this._kioskMode = false;
+
     // Pre-session buffer to avoid ghost sessions from spurious single pings
     this._preSessionBuffer = [];
     this._bufferThresholdMet = false;
@@ -468,6 +472,10 @@ export class FitnessSession {
     if (!result.handled && payload.deviceId) {
       this.recordDeviceActivity(payload, { rawPayload: payload });
     }
+  }
+
+  setKioskMode(isKiosk) {
+    this._kioskMode = !!isKiosk;
   }
 
   _log(type, payload = {}) {
@@ -1291,6 +1299,10 @@ export class FitnessSession {
   ensureStarted(options = {}) {
     const { force = false, reason = 'unknown' } = options;
     if (this.sessionId) return false;
+    if (!this._kioskMode && !force) {
+      this._log('ensure_started_blocked', { reason: 'not_kiosk', requestReason: reason });
+      return false;
+    }
     if (!force && !this._bufferThresholdMet) {
       this._log('ensure_started_blocked', { reason: 'pre_session_threshold_not_met', requestReason: reason });
       return false;

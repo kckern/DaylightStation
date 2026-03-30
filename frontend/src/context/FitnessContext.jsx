@@ -117,7 +117,7 @@ export const useFitnessPlaylist = () => {
 export const useFitness = useFitnessContext;
 
 // Provider component
-export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQueue: propPlayQueue, setFitnessPlayQueue: propSetPlayQueue }) => {
+export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQueue: propPlayQueue, setFitnessPlayQueue: propSetPlayQueue, kioskMode = false }) => {
   const FITNESS_DEBUG = false;
   
   // UI State
@@ -241,6 +241,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const fitnessSessionRef = useRef(new FitnessSession());
   const usersConfigRef = useRef({});
   
+  // Sync kiosk mode to session — only kiosk clients auto-start sessions
+  useEffect(() => {
+    fitnessSessionRef.current?.setKioskMode(kioskMode);
+  }, [kioskMode]);
+
   // MEMORY LEAK FIX: Cleanup session on provider unmount
   useEffect(() => {
     return () => {
