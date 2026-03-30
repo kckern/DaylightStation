@@ -14,6 +14,7 @@ import { useScreenSubscriptions } from './subscriptions/useScreenSubscriptions.j
 import { useScreenCommands } from './commands/useScreenCommands.js';
 import { MenuNavigationProvider, useMenuNavigationContext } from '../context/MenuNavigationContext.jsx';
 import { parseAutoplayParams } from '../lib/parseAutoplayParams.js';
+import { getApp } from '../lib/appRegistry.js';
 import { bindBackButton, enableGlobalKeyCapture } from '../lib/fkb.js';
 import getLogger from '../lib/logging/Logger.js';
 
@@ -46,19 +47,29 @@ function ScreenAutoplay() {
     const pathname = window.location.pathname;
     const search = window.location.search;
 
-    // Path-based submenu: /screens/living-room/fhe → push menu:fhe
+    // Path-based navigation: /screens/living-room/weekly-review or /screens/living-room/fhe
     const pathMatch = pathname.match(/\/screens?\/[^/]+\/(.+)/);
     if (pathMatch) {
       const subPath = pathMatch[1];
       const logger = getLogger().child({ component: 'ScreenAutoplay' });
       logger.info('screen-autoplay.path', { subPath });
 
-      // Push submenu onto nav stack after a brief delay for the menu widget to mount
-      setTimeout(() => {
-        push({ type: 'menu', props: { list: { contentId: `menu:${subPath}` } } });
-      }, 500);
+      // Check app registry first — if subPath is a registered app, open it as overlay
+      const appEntry = getApp(subPath);
+      if (appEntry) {
+        logger.info('screen-autoplay.app', { app: subPath });
+        setTimeout(() => {
+          const bus = getActionBus();
+          bus.emit('menu:open', { menuId: subPath });
+        }, 500);
+      } else {
+        // Otherwise treat as submenu
+        setTimeout(() => {
+          push({ type: 'menu', props: { list: { contentId: `menu:${subPath}` } } });
+        }, 500);
+      }
 
-      // Clean URL: /screens/living-room/fhe → /screens/living-room
+      // Clean URL to prevent re-trigger
       const cleanPath = pathname.replace(/\/[^/]+$/, '');
       window.history.replaceState({}, '', cleanPath);
       return;
