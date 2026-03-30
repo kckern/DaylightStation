@@ -8,6 +8,7 @@ import Weight from '../../modules/Health/Weight.jsx';
 import EntropyPanel from '../../modules/Entropy/EntropyPanel.jsx';
 import { PianoVisualizer } from '../../modules/Piano/index.js';
 import MenuWidget from './MenuWidget.jsx';
+import WeeklyReview from '../../modules/WeeklyReview/WeeklyReview.jsx';
 
 export function registerBuiltinWidgets() {
   const registry = getWidgetRegistry();
@@ -20,5 +21,6 @@ export function registerBuiltinWidgets() {
   registry.register('entropy', EntropyPanel);
   registry.register('piano', PianoVisualizer);
   registry.register('menu', MenuWidget);
+  registry.register('weekly-review', WeeklyReview);
   return registry;
 }
