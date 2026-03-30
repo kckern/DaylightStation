@@ -1,29 +1,36 @@
 import moment from "moment";
 import { formatAsCurrency } from "../blocks";
-import { Tabs, Badge, Table } from "@mantine/core";
+import { Tabs, Badge, Table, Select, TextInput } from "@mantine/core";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
-
-
+import { useState, useMemo } from 'react';
 
 
 
 export function BudgetMortgage({ setDrawerContent, mortgage }) {
   const { accountId } = mortgage;
-  const handleClick = ()=>{
+
+  const openDrawer = (tab = 'amortization') => {
+    setDrawerContent({
+      meta: { title: 'Mortgage Details' },
+      jsx: <MortgageDrawer mortgage={mortgage} defaultTab={tab} />
+    });
+  };
+
+  const handleTitleClick = () => {
     window.open(`https://www.buxfer.com/account?id=${accountId}`, "_blank");
-  }
+  };
 
-    return (
-      <div className="budget-block">
-      <h2 onClick={handleClick} style={{ cursor: 'pointer' }}>Mortgage</h2>
-      <MortgageChart mortgage={mortgage} />
+  return (
+    <div className="budget-block">
+      <h2 onClick={handleTitleClick} style={{ cursor: 'pointer' }}>Mortgage</h2>
+      <div onClick={() => openDrawer('amortization')} style={{ cursor: 'pointer' }}>
+        <MortgageChart mortgage={mortgage} />
       </div>
-    );
-  }
+    </div>
+  );
+}
 
-  import { useMemo } from 'react';
-  
   export default function MortgageChart({ mortgage }) {
     if (!mortgage?.amortization && !mortgage?.transactions) return null;
 
@@ -220,66 +227,276 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
     );
   }
 
-  function MortgageDrawer({ paymentPlans }) {
+  function MortgageDrawer({ mortgage, defaultTab = 'amortization' }) {
+    const [selectedPlanId, setSelectedPlanId] = useState(
+      mortgage.paymentPlans[0]?.info?.id || null
+    );
 
-    return <pre>
-        {JSON.stringify(paymentPlans, null, 2)}
-    </pre>
+    const selectedPlan = mortgage.paymentPlans.find(p => p.info.id === selectedPlanId);
+
+    const lastAmortMonth = mortgage.amortization?.length
+      ? mortgage.amortization[mortgage.amortization.length - 1].month
+      : null;
+
+    const futureMonths = selectedPlan?.months
+      .filter(m => !lastAmortMonth || m.month > lastAmortMonth)
+      .map(m => ({
+        month: m.month,
+        effectiveRate: mortgage.interestRate,
+        openingBalance: m.startBalance,
+        interestAccrued: m.interestAccrued,
+        payments: m.payments,
+        totalPaid: m.amountPaid,
+        principalPaid: m.amountPaid - m.interestAccrued,
+        closingBalance: m.endBalance,
+        cumulativeInterest: null,
+        isFuture: true
+      })) || [];
+
+    const combinedMonths = [
+      ...(mortgage.amortization || []).map(m => ({ ...m, isFuture: false })),
+      ...futureMonths
+    ];
+
+    return (
+      <Tabs defaultValue={defaultTab}>
+        <Tabs.List>
+          <Tabs.Tab value="amortization">Amortization</Tabs.Tab>
+          <Tabs.Tab value="comparison">Plan Comparison</Tabs.Tab>
+          <Tabs.Tab value="costOfCapital">Cost of Capital</Tabs.Tab>
+        </Tabs.List>
+
+        <Tabs.Panel value="amortization" pt="md">
+          <div style={{ marginBottom: '1rem' }}>
+            <Select
+              label="Payment Plan"
+              data={mortgage.paymentPlans.map(p => ({ value: p.info.id, label: p.info.title }))}
+              value={selectedPlanId}
+              onChange={setSelectedPlanId}
+              style={{ maxWidth: 300 }}
+            />
+          </div>
+          <AmortizationTable months={combinedMonths} />
+        </Tabs.Panel>
+
+        <Tabs.Panel value="comparison" pt="md">
+          <PlanComparisonTable paymentPlans={mortgage.paymentPlans} />
+        </Tabs.Panel>
+
+        <Tabs.Panel value="costOfCapital" pt="md">
+          <CostOfCapitalCalculator mortgage={mortgage} />
+        </Tabs.Panel>
+      </Tabs>
+    );
   }
 
-
-  function  MortgageTable ({events}) {
-
-
-    return <table style={{width: '100%'}} className="mortgage-table">
-    <thead>
-        <tr>
+  function AmortizationTable({ months }) {
+    return (
+      <table style={{ width: '100%' }} className="mortgage-table">
+        <thead>
+          <tr>
             <th>Date</th>
             <th>Opening Balance</th>
-            <th>Interest Rate</th>
-            <th>Accrued Interest</th>
+            <th>Interest</th>
             <th>Payments</th>
             <th>Closing Balance</th>
-        </tr>
-    </thead>
-    <tbody className="mortgage-table-body">
-        {events.reduce((acc, {date, openingBalance, effectiveRate, accruedInterest, payments, closingBalance}) => {
-            // Add the main event row
-            const paymentCount = payments.length;
-            const extraPaymentAmount = paymentCount > 1 ? payments.slice(1).reduce((acc, val) => acc + val, 0) : 0;
-            const balanceAfterFirstPayment =closingBalance + extraPaymentAmount;
-            const month = moment(date).format('MMMM');
-            const className = month === 'January' ? 'new-year' : '';
+            <th>Cumulative Interest</th>
+          </tr>
+        </thead>
+        <tbody className="mortgage-table-body">
+          {months.map((record) => {
+            const monthLabel = moment(record.month, 'YYYY-MM').format('MMMM YYYY');
+            const isJanuary = record.month.endsWith('-01');
+            const className = [
+              isJanuary ? 'new-year' : '',
+              record.isFuture ? 'future-month' : ''
+            ].filter(Boolean).join(' ');
 
-            acc.push(   
-                <tr key={`${date}-main`} className={className}>
-                    <td style={{textAlign: 'right'}} ><Badge  color="gray">{moment(date).format('MMMM YYYY')}</Badge></td>
-                    <td>{formatAsCurrency(openingBalance)}</td>
-                    <td style={{textAlign: 'center'}}
-                    ><Badge>{(effectiveRate * 100).toFixed(2)}%</Badge></td>
-                    <td>{formatAsCurrency(accruedInterest)}</td>
-                    <td>{payments.length > 0 ? formatAsCurrency(payments[0]) : ''}</td>
-                    <td>{formatAsCurrency(balanceAfterFirstPayment)}</td>
-                </tr>
+            const rows = [];
+            rows.push(
+              <tr key={`${record.month}-main`} className={className}>
+                <td style={{ textAlign: 'right' }}>
+                  <Badge color={record.isFuture ? 'blue' : 'gray'}>{monthLabel}</Badge>
+                </td>
+                <td>{formatAsCurrency(record.openingBalance)}</td>
+                <td style={{ color: '#c00' }}>{formatAsCurrency(record.interestAccrued)}</td>
+                <td>{record.payments?.length > 0 ? formatAsCurrency(record.payments[0]) : ''}</td>
+                <td>{formatAsCurrency(record.closingBalance)}</td>
+                <td>{record.cumulativeInterest != null ? formatAsCurrency(record.cumulativeInterest) : ''}</td>
+              </tr>
             );
-            
-            // Add rows for additional payments
-            let runningBalance = balanceAfterFirstPayment;
-            for (let i = 1; i < payments.length; i++) {
-                const thisClosingBalance = runningBalance - payments[i];
-                acc.push(
-                    <tr key={`${date}-payment-${i}`}>
-                        <td colSpan={4}/>
-                        <td>{formatAsCurrency(payments[i])}</td>
-                        <td>{formatAsCurrency(thisClosingBalance)}</td>
-                    </tr>
+
+            if (record.payments?.length > 1) {
+              let runningBal = record.openingBalance + record.interestAccrued - record.payments[0];
+              for (let i = 1; i < record.payments.length; i++) {
+                runningBal -= record.payments[i];
+                rows.push(
+                  <tr key={`${record.month}-payment-${i}`}>
+                    <td colSpan={3} />
+                    <td>{formatAsCurrency(record.payments[i])}</td>
+                    <td>{formatAsCurrency(runningBal)}</td>
+                    <td />
+                  </tr>
                 );
-                runningBalance = thisClosingBalance;
+              }
             }
-        
-        
-            return acc;
-        }, [])}
-    </tbody>
-</table>
+
+            return rows;
+          })}
+        </tbody>
+      </table>
+    );
+  }
+
+  function PlanComparisonTable({ paymentPlans }) {
+    const maxInterest = Math.max(...paymentPlans.map(p => p.info.totalInterest));
+
+    return (
+      <table style={{ width: '100%' }} className="mortgage-table">
+        <thead>
+          <tr>
+            <th>Plan</th>
+            <th>Payoff Date</th>
+            <th>Total Paid</th>
+            <th>Total Interest</th>
+            <th>Interest Saved</th>
+            <th>Monthly Budget</th>
+          </tr>
+        </thead>
+        <tbody className="mortgage-table-body">
+          {paymentPlans.map((plan) => {
+            const { info } = plan;
+            const saved = maxInterest - info.totalInterest;
+            return (
+              <tr key={info.id}>
+                <td>
+                  <b>{info.title}</b>
+                  {info.subtitle && <div style={{ fontSize: '0.8em', color: '#888' }}>{info.subtitle}</div>}
+                </td>
+                <td>{info.payoffDate}</td>
+                <td>{formatAsCurrency(info.totalPaid, "K")}</td>
+                <td>{formatAsCurrency(info.totalInterest, "K")}</td>
+                <td style={{ color: saved > 0 ? '#4caf50' : 'inherit' }}>
+                  {saved > 0 ? formatAsCurrency(saved, "K") : '—'}
+                </td>
+                <td>{formatAsCurrency(info.annualBudget / 12)}/mo</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    );
+  }
+
+  function CostOfCapitalCalculator({ mortgage }) {
+    const [amount, setAmount] = useState(1000);
+    const commonAmounts = [1000, 5000, 10000, 25000, 50000];
+
+    const calculateCost = (extraAmount, plan) => {
+      const currentBalance = mortgage.balance;
+      const rate = mortgage.interestRate;
+
+      const baseInterest = plan.info.totalInterest;
+      const baseMonths = plan.info.totalPayments;
+
+      let balance = currentBalance + extraAmount;
+      let totalInterest = 0;
+      let months = 0;
+      const monthlyRate = rate / 12;
+
+      while (balance > 0.01 && months < 1000) {
+        const interest = balance * monthlyRate;
+        totalInterest += interest;
+        balance += interest;
+
+        let payment = plan.months[months]?.amountPaid || plan.months[plan.months.length - 1]?.amountPaid || 0;
+        if (payment > balance) payment = balance;
+        balance -= payment;
+        months++;
+      }
+
+      const additionalInterest = Math.round((totalInterest - baseInterest) * 100) / 100;
+      const trueCost = extraAmount + additionalInterest;
+      const multiplier = trueCost / extraAmount;
+      const delayMonths = months - baseMonths;
+
+      return { additionalInterest, trueCost, multiplier, delayMonths };
+    };
+
+    return (
+      <div>
+        <div style={{ marginBottom: '1.5rem' }}>
+          <TextInput
+            label="Amount to evaluate"
+            type="number"
+            value={amount}
+            onChange={(e) => setAmount(parseFloat(e.target.value) || 0)}
+            leftSection="$"
+            style={{ maxWidth: 200 }}
+          />
+        </div>
+
+        {mortgage.paymentPlans.map(plan => {
+          const cost = calculateCost(amount, plan);
+          return (
+            <div key={plan.info.id} style={{
+              marginBottom: '1rem',
+              padding: '1rem',
+              border: '1px solid #333',
+              borderRadius: '8px'
+            }}>
+              <div style={{ fontSize: '1.2em', marginBottom: '0.5rem' }}>
+                <b>{formatAsCurrency(amount)}</b> spent today costs you{' '}
+                <b style={{ color: '#ff9800' }}>{formatAsCurrency(cost.trueCost)}</b>
+                <span style={{ color: '#888', marginLeft: '0.5rem' }}>({plan.info.title})</span>
+              </div>
+              <table style={{ width: '100%', maxWidth: 400 }}>
+                <tbody>
+                  <tr>
+                    <td style={{ color: '#888' }}>Additional interest:</td>
+                    <td style={{ color: '#c00' }}>{formatAsCurrency(cost.additionalInterest)}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ color: '#888' }}>Cost multiplier:</td>
+                    <td>{cost.multiplier.toFixed(3)}×</td>
+                  </tr>
+                  <tr>
+                    <td style={{ color: '#888' }}>Payoff delay:</td>
+                    <td>+{cost.delayMonths} month{cost.delayMonths !== 1 ? 's' : ''}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          );
+        })}
+
+        <h3 style={{ marginTop: '2rem' }}>Quick Reference</h3>
+        <table style={{ width: '100%' }} className="mortgage-table">
+          <thead>
+            <tr>
+              <th>Amount</th>
+              {mortgage.paymentPlans.map(p => (
+                <th key={p.info.id}>{p.info.title}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="mortgage-table-body">
+            {commonAmounts.map(amt => (
+              <tr key={amt}>
+                <td>{formatAsCurrency(amt)}</td>
+                {mortgage.paymentPlans.map(plan => {
+                  const cost = calculateCost(amt, plan);
+                  return (
+                    <td key={plan.info.id}>
+                      +{formatAsCurrency(cost.additionalInterest)}{' '}
+                      <span style={{ color: '#888' }}>({cost.multiplier.toFixed(2)}×)</span>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
   }

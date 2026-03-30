@@ -404,3 +404,11 @@ button.reload{
 .txn-menu-item:hover {
   background: #2a2a4e !important;
 }
+
+.mortgage-table-body tr.future-month td {
+  background-color: #1a2a3a;
+  color: #8ab4f8;
+}
+.mortgage-table-body tr.future-month:nth-child(odd) td {
+  background-color: #1a2a3a;
+}
