@@ -109,6 +109,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       ...(zoomable && { resetZoomButton: { theme: { fill: '#333', stroke: '#555', style: { color: '#ccc' } } } }),
       title: { text: null },
       legend: { enabled: true, itemStyle: { color: '#ccc' } },
+      tooltip: { xDateFormat: '%b %Y' },
       xAxis: {
       type: "datetime",
       min: months[0].valueOf(),
@@ -132,14 +133,16 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       yAxis: {
         title: { text: null },
         max: maxY,
-        tickInterval: 25000,
+        tickInterval: 100000,
+        minorTickInterval: 25000,
         labels: {
           formatter() {
             return `$${(this.value / 1000).toFixed(0)}k`;
           },
           style: { color: '#999' }
         },
-        gridLineColor: "#444",
+        gridLineColor: "#666",
+        minorGridLineColor: "#333",
       },
       plotOptions: {
       series: {
@@ -195,7 +198,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       <div style={{ height: '100%', overflow: 'hidden' }}>
       <div className="mortgage-summary-grid">
         <div><span>Paid</span><b>{formatAsCurrency(totalPaid, "K")}</b></div>
-        <div><span>Balance</span><b>{formatAsCurrency(-balance, "K")}</b></div>
+        <div><span>Balance</span><b>{formatAsCurrency(balance, "K")}</b></div>
         <div><span>Total Cost</span><b style={{ color: '#888' }}>{formatAsCurrency(totalExpectedCost, "K")}</b></div>
         <div><span>Principal</span><b>{formatAsCurrency(totalPrincipalPaid, "K")}</b></div>
         <div><span>Interest</span><b style={{ color: '#ff9800' }}>{formatAsCurrency(totalInterestPaid, "K")}</b></div>
