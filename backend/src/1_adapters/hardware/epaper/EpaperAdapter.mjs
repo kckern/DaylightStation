@@ -11,8 +11,7 @@
  * @module adapters/hardware/epaper
  */
 
-import { CanvasRenderer, loadImage } from '#system/canvas/index.mjs';
-import { drawRect, drawCenteredText, drawDashedLine } from '#system/canvas/drawingUtils.mjs';
+import { render as einkRender } from '#rendering/eink/index.mjs';
 
 const DISPLAY_WIDTH = 1600;
 const DISPLAY_HEIGHT = 1200;
@@ -33,11 +32,15 @@ const PALETTE = {
 /**
  * @typedef {Object} EpaperConfig
  * @property {string} fontDir - Path to fonts directory
+ * @property {string} [baseUrl] - Backend base URL for data fetching
+ * @property {Object} [screenConfig] - Eink screen layout/data/theme config
  * @property {Function} [dataProvider] - Async function returning dashboard data
  */
 
 export class EpaperAdapter {
-  #renderer;
+  #fontDir;
+  #baseUrl;
+  #screenConfig;
   #dataProvider;
   #logger;
   #lastRender = null;
@@ -50,11 +53,10 @@ export class EpaperAdapter {
    */
   constructor(config, deps = {}) {
     this.#logger = deps.logger || console;
+    this.#fontDir = config.fontDir;
+    this.#baseUrl = config.baseUrl || 'http://localhost:3112';
+    this.#screenConfig = config.screenConfig || null;
     this.#dataProvider = config.dataProvider || null;
-    this.#renderer = new CanvasRenderer({
-      fontDir: config.fontDir,
-      logger: this.#logger
-    });
   }
 
   isConfigured() {
@@ -72,33 +74,32 @@ export class EpaperAdapter {
 
   /**
    * Render the dashboard and return a PNG buffer.
-   * @param {Object} [data] - Dashboard data (overrides dataProvider)
+   * @param {Object} [data] - Dashboard data (overrides data fetching)
    * @returns {Promise<Buffer>} PNG image buffer
    */
   async render(data) {
     const startTime = Date.now();
 
-    if (!data && this.#dataProvider) {
-      data = await this.#dataProvider();
+    // Build screen config, using provided data or fetching via DataResolver
+    const screenConfig = this.#screenConfig || EpaperAdapter.defaultScreenConfig();
+    const options = {
+      baseUrl: this.#baseUrl,
+      fontDir: this.#fontDir,
+    };
+
+    if (data) {
+      options.dataOverride = data;
+    } else if (this.#dataProvider) {
+      options.dataOverride = await this.#dataProvider();
     }
 
-    const { canvas, ctx } = this.#renderer.createWithContext(DISPLAY_WIDTH, DISPLAY_HEIGHT);
-
-    // -- Background --
-    ctx.fillStyle = PALETTE.white;
-    ctx.fillRect(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
-
-    // -- Placeholder layout --
-    // TODO: Replace with real dashboard sections once data sources are decided
-    this.#drawPlaceholder(ctx, data || {});
-
-    const buffer = canvas.toBuffer('image/png');
+    const buffer = await einkRender(screenConfig, options);
     this.#lastRender = buffer;
     this.#lastRenderTime = Date.now();
 
     this.#logger.info?.('epaper.rendered', {
       durationMs: Date.now() - startTime,
-      sizeBytes: buffer.length
+      sizeBytes: buffer.length,
     });
 
     return buffer;
@@ -113,6 +114,14 @@ export class EpaperAdapter {
   }
 
   /**
+   * Set or replace the screen config.
+   * @param {Object} config - Eink screen layout/data/theme config
+   */
+  setScreenConfig(config) {
+    this.#screenConfig = config;
+  }
+
+  /**
    * Set or replace the data provider function.
    * @param {Function} provider - Async function returning dashboard data
    */
@@ -120,76 +129,34 @@ export class EpaperAdapter {
     this.#dataProvider = provider;
   }
 
-  // ============================================================================
-  // Private - Dashboard Layout
-  // ============================================================================
-
-  #drawPlaceholder(ctx, data) {
-    const margin = 40;
-    const headerHeight = 120;
-
-    // Header bar
-    drawRect(ctx, {
-      x: 0, y: 0,
-      width: DISPLAY_WIDTH, height: headerHeight,
-      fillColor: PALETTE.black
-    });
-
-    // Title
-    ctx.font = 'bold 64px sans-serif';
-    ctx.fillStyle = PALETTE.white;
-    ctx.fillText('DaylightStation', margin, 80);
-
-    // Date
-    const now = new Date();
-    const dateStr = now.toLocaleDateString('en-US', {
-      weekday: 'long', month: 'long', day: 'numeric'
-    });
-    ctx.font = '40px sans-serif';
-    const dateWidth = ctx.measureText(dateStr).width;
-    ctx.fillText(dateStr, DISPLAY_WIDTH - dateWidth - margin, 80);
-
-    // Divider
-    drawDashedLine(ctx, {
-      x1: margin, y: headerHeight + 20,
-      x2: DISPLAY_WIDTH - margin,
-      color: PALETTE.black,
-      lineWidth: 2,
-      dashPattern: [8, 8]
-    });
-
-    // Content placeholder
-    const contentY = headerHeight + 60;
-    ctx.fillStyle = PALETTE.black;
-    ctx.font = '36px sans-serif';
-    ctx.fillText('Dashboard content goes here', margin, contentY + 40);
-    ctx.font = '28px sans-serif';
-    ctx.fillStyle = '#666';
-    ctx.fillText('Configure data sources to populate this display', margin, contentY + 90);
-
-    // Color swatch preview (useful for calibrating the display)
-    const swatchY = DISPLAY_HEIGHT - 200;
-    const swatchSize = 100;
-    const swatchGap = 30;
-    const colors = Object.entries(PALETTE);
-    const totalSwatchWidth = colors.length * swatchSize + (colors.length - 1) * swatchGap;
-    let swatchX = (DISPLAY_WIDTH - totalSwatchWidth) / 2;
-
-    for (const [name, color] of colors) {
-      drawRect(ctx, {
-        x: swatchX, y: swatchY,
-        width: swatchSize, height: swatchSize,
-        fillColor: color
-      });
-      drawCenteredText(ctx, {
-        text: name,
-        x: swatchX + swatchSize / 2,
-        y: swatchY + swatchSize + 30,
-        font: '22px sans-serif',
-        color: PALETTE.black
-      });
-      swatchX += swatchSize + swatchGap;
-    }
+  /**
+   * Default screen config: header + weather panel.
+   */
+  static defaultScreenConfig() {
+    return {
+      width: DISPLAY_WIDTH,
+      height: DISPLAY_HEIGHT,
+      layout: {
+        direction: 'column',
+        children: [
+          { widget: 'header', basis: 100 },
+          { widget: 'weather', grow: 1 },
+        ],
+      },
+      data: {
+        weather: { source: '/api/v1/home/weather' },
+      },
+      theme: {
+        bg: PALETTE.white,
+        fg: PALETTE.black,
+        headerBg: PALETTE.black,
+        headerFg: PALETTE.white,
+        red: PALETTE.red,
+        yellow: PALETTE.yellow,
+        blue: PALETTE.blue,
+        green: PALETTE.green,
+      },
+    };
   }
 }
 
