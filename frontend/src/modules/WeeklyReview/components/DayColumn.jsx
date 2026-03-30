@@ -1,8 +1,9 @@
 import React from 'react';
 import PhotoWall from './PhotoWall.jsx';
 
-export default function DayColumn({ day, isFocused, isToday }) {
+export default function DayColumn({ day, isFocused, isToday, onClick }) {
   const dateNum = new Date(`${day.date}T12:00:00Z`).getDate();
+  const dayName = new Date(`${day.date}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long' });
   const columnClass = [
     'day-column',
     isFocused && 'day-column--focused',
@@ -10,12 +11,11 @@ export default function DayColumn({ day, isFocused, isToday }) {
     day.photoCount === 0 && 'day-column--empty',
   ].filter(Boolean).join(' ');
 
-  const dayName = new Date(`${day.date}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long' });
-
   return (
     <div
       className={columnClass}
       style={{ flex: day.columnWeight }}
+      onClick={onClick}
     >
       <div className="day-header">
         <span className="day-label">{day.label}</span>
