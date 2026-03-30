@@ -60,6 +60,7 @@ export class WeeklyReviewService {
 
     fs.mkdirSync(audioDir, { recursive: true });
     fs.writeFileSync(audioPath, buffer);
+    this.#logger.info?.('weekly-review.recording.audio-saved', { week, path: audioPath, bytes: buffer.length });
 
     // Transcribe
     const transcribeStart = Date.now();
@@ -89,11 +90,14 @@ export class WeeklyReviewService {
       JSON.stringify(transcriptData, null, 2)
     );
 
+    this.#logger.info?.('weekly-review.recording.transcript-saved', { week, path: path.join(transcriptDir, 'transcript.yml') });
+
     // Save manifest
     fs.writeFileSync(
       path.join(transcriptDir, 'manifest.yml'),
       JSON.stringify({ week, generatedAt: new Date().toISOString(), duration }, null, 2)
     );
+    this.#logger.info?.('weekly-review.recording.manifest-saved', { week });
 
     this.#logger.info?.('weekly-review.recording.saved', { week, duration, transcriptLength: transcriptClean?.length });
 
@@ -106,10 +110,12 @@ export class WeeklyReviewService {
       if (fs.existsSync(transcriptPath)) {
         const content = fs.readFileSync(transcriptPath, 'utf-8');
         const data = JSON.parse(content);
+        this.#logger.debug?.('weekly-review.recording-status.found', { week, recordedAt: data.recordedAt, duration: data.duration });
         return { exists: true, recordedAt: data.recordedAt, duration: data.duration };
       }
-    } catch {
-      // No recording yet
+      this.#logger.debug?.('weekly-review.recording-status.none', { week });
+    } catch (err) {
+      this.#logger.warn?.('weekly-review.recording-status.error', { week, error: err.message });
     }
     return { exists: false };
   }
