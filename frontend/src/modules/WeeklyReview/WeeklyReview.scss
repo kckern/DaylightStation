@@ -113,6 +113,7 @@
 .photo-wall {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+  grid-auto-rows: 1fr;
   gap: 4px;
   height: 100%;
 
@@ -125,13 +126,19 @@
   }
 }
 
-.photo-wall-empty {
+.day-empty-content {
   display: flex;
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: #555;
-  font-style: italic;
+  opacity: 0.3;
+
+  .day-empty-name {
+    font-size: 1.4rem;
+    font-weight: 300;
+    color: #888;
+    letter-spacing: 0.05em;
+  }
 }
 
 .photo-hero {
@@ -168,7 +175,7 @@
   border-radius: 4px;
   overflow: hidden;
   flex: 1;
-  min-height: 30px;
+  min-height: 0;
 
   img {
     width: 100%;
