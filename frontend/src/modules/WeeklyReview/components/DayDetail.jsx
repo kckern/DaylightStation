@@ -1,5 +1,8 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { createMediaTransportAdapter } from '@/lib/Player/mediaTransportAdapter.js';
+import getLogger from '@/lib/logging/Logger.js';
+
+const logger = getLogger().child({ component: 'weekly-review-day-detail' });
 
 const formatTime = (time) => {
   if (!time) return '';
@@ -12,14 +15,33 @@ function MiniVideoPlayer({ src, onClose }) {
 
   useEffect(() => {
     transport.current = createMediaTransportAdapter({ mediaRef: videoRef });
-  }, []);
+    logger.info('video.player-open', { src });
+    return () => logger.info('video.player-close');
+  }, [src]);
 
-  const handleToggle = useCallback(() => {
-    transport.current?.toggle();
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+
+    const onPlay = () => logger.debug('video.play');
+    const onPause = () => logger.debug('video.pause');
+    const onEnded = () => logger.info('video.ended');
+    const onError = (e) => logger.error('video.error', { error: el.error?.message || 'unknown' });
+
+    el.addEventListener('play', onPlay);
+    el.addEventListener('pause', onPause);
+    el.addEventListener('ended', onEnded);
+    el.addEventListener('error', onError);
+    return () => {
+      el.removeEventListener('play', onPlay);
+      el.removeEventListener('pause', onPause);
+      el.removeEventListener('ended', onEnded);
+      el.removeEventListener('error', onError);
+    };
   }, []);
 
   return (
-    <div className="mini-video-overlay" onClick={onClose}>
+    <div className="mini-video-overlay" onClick={() => { logger.info('video.overlay-dismiss'); onClose(); }}>
       <div className="mini-video-container" onClick={e => e.stopPropagation()}>
         <video
           ref={videoRef}
@@ -29,7 +51,7 @@ function MiniVideoPlayer({ src, onClose }) {
           playsInline
           className="mini-video-player"
         />
-        <button className="mini-video-close" onClick={onClose}>✕</button>
+        <button className="mini-video-close" onClick={() => { logger.info('video.close-button'); onClose(); }}>✕</button>
       </div>
     </div>
   );
@@ -48,19 +70,36 @@ export default function DayDetail({ day, isToday, onClose }) {
   const hasPhotos = day.photos?.length > 0;
   const hasCalendar = day.calendar?.length > 0;
   const hasSessions = day.sessions?.length > 0;
+  const videoCount = day.photos?.filter(p => p.type === 'video').length || 0;
+  const imageCount = (day.photoCount || 0) - videoCount;
+
+  useEffect(() => {
+    logger.info('day-detail.open', {
+      date: day.date,
+      isToday,
+      imageCount,
+      videoCount,
+      calendarCount: day.calendar?.length || 0,
+      sessionCount: day.sessions?.length || 0,
+    });
+    return () => logger.info('day-detail.close', { date: day.date });
+  }, [day.date]);
 
   const handleMediaClick = useCallback((photo) => {
     if (photo.type === 'video') {
+      logger.info('media.video-click', { id: photo.id, date: day.date });
       setActiveVideo(photo.original);
+    } else {
+      logger.debug('media.image-click', { id: photo.id, date: day.date });
     }
-  }, []);
+  }, [day.date]);
 
   return (
     <div className={`day-detail${isToday ? ' day-detail--today' : ''}`}>
       {/* Header */}
       <div className="day-detail-header">
         <h2 className="day-detail-title">{fullDate}</h2>
-        <button className="day-detail-close" onClick={onClose}>✕</button>
+        <button className="day-detail-close" onClick={() => { logger.info('day-detail.close-button', { date: day.date }); onClose(); }}>✕</button>
       </div>
 
       <div className="day-detail-body">
@@ -110,7 +149,8 @@ export default function DayDetail({ day, isToday, onClose }) {
           <div className="day-detail-section">
             <h3 className="day-detail-section-title">Summary</h3>
             <div className="day-detail-stats">
-              <div className="stat">{day.photoCount} photos</div>
+              <div className="stat">{imageCount} photos</div>
+              {videoCount > 0 && <div className="stat">{videoCount} videos</div>}
               <div className="stat">{day.calendar?.length || 0} events</div>
             </div>
           </div>
@@ -150,7 +190,7 @@ export default function DayDetail({ day, isToday, onClose }) {
       {activeVideo && (
         <MiniVideoPlayer
           src={activeVideo}
-          onClose={() => setActiveVideo(null)}
+          onClose={() => { logger.info('video.close', { date: day.date }); setActiveVideo(null); }}
         />
       )}
     </div>

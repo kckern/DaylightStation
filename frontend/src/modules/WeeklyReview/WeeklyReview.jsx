@@ -23,18 +23,32 @@ export default function WeeklyReview() {
 
   useEffect(() => {
     logger.info('mount');
+    return () => logger.info('unmount');
   }, []);
 
   useEffect(() => {
-    logger.debug('focus-day', { day: focusedDay });
+    logger.debug('state.focus-day', { day: focusedDay });
   }, [focusedDay]);
+
+  useEffect(() => {
+    logger.debug('state.selected-day', { selectedDay });
+  }, [selectedDay]);
+
+  useEffect(() => {
+    logger.debug('state.uploading', { uploading });
+  }, [uploading]);
+
+  useEffect(() => {
+    logger.debug('state.has-interacted', { hasInteracted });
+  }, [hasInteracted]);
 
   const handleRecordingComplete = useCallback(async ({ audioBase64, mimeType, duration }) => {
     if (!data?.week) return;
     setUploading(true);
     uploadStartRef.current = Date.now();
+    const payloadSizeKb = Math.round(audioBase64.length / 1024);
     try {
-      logger.info('recording.uploading', { week: data.week, duration });
+      logger.info('recording.uploading', { week: data.week, duration, payloadSizeKb });
       const result = await DaylightAPI('/api/v1/weekly-review/recording', {
         audioBase64,
         mimeType,
@@ -42,13 +56,14 @@ export default function WeeklyReview() {
         duration,
       }, 'POST');
       const uploadMs = Date.now() - uploadStartRef.current;
-      logger.info('recording.complete', { week: data.week, ok: result.ok, uploadMs });
+      logger.info('recording.upload-complete', { week: data.week, ok: result.ok, uploadMs, payloadSizeKb });
       setData(prev => ({
         ...prev,
         recording: { exists: true, recordedAt: new Date().toISOString(), duration },
       }));
     } catch (err) {
-      logger.error('recording.upload-failed', { error: err.message });
+      const uploadMs = Date.now() - uploadStartRef.current;
+      logger.error('recording.upload-failed', { error: err.message, uploadMs, payloadSizeKb });
     } finally {
       setUploading(false);
     }
@@ -58,6 +73,17 @@ export default function WeeklyReview() {
     isRecording, duration: recordingDuration, micLevel, silenceWarning,
     error: recorderError, startRecording, stopRecording,
   } = useAudioRecorder({ onRecordingComplete: handleRecordingComplete });
+
+  // Log recording state changes
+  useEffect(() => {
+    logger.info('state.is-recording', { isRecording });
+  }, [isRecording]);
+
+  useEffect(() => {
+    if (recorderError) {
+      logger.error('state.recorder-error', { error: recorderError });
+    }
+  }, [recorderError]);
 
   // Auto-start recording on first non-back interaction
   const ensureRecording = useCallback(() => {
@@ -71,11 +97,22 @@ export default function WeeklyReview() {
   }, [hasInteracted, isRecording, startRecording]);
 
   useEffect(() => {
+    logger.info('bootstrap.fetching');
     const fetchBootstrap = async () => {
       try {
         const result = await DaylightAPI('/api/v1/weekly-review/bootstrap');
         setData(result);
-        logger.info('bootstrap.loaded', { week: result.week, dayCount: result.days?.length });
+        const totalPhotos = result.days?.reduce((s, d) => s + (d.photoCount || 0), 0) || 0;
+        const totalEvents = result.days?.reduce((s, d) => s + (d.calendar?.length || 0), 0) || 0;
+        const daysWithPhotos = result.days?.filter(d => d.photoCount > 0).length || 0;
+        logger.info('bootstrap.loaded', {
+          week: result.week,
+          dayCount: result.days?.length,
+          totalPhotos,
+          totalEvents,
+          daysWithPhotos,
+          hasExistingRecording: result.recording?.exists,
+        });
       } catch (err) {
         logger.error('bootstrap.failed', { error: err.message });
         setError(err.message);
@@ -98,18 +135,29 @@ export default function WeeklyReview() {
           case 'Escape':
           case 'Backspace':
             e.preventDefault();
+            logger.info('nav.day-detail-close', { fromDay: selectedDay });
             setSelectedDay(null);
-            logger.debug('day-detail.close');
             break;
           case 'ArrowLeft':
             e.preventDefault();
             ensureRecording();
-            setSelectedDay(prev => (prev - 1 + total) % total);
+            setSelectedDay(prev => {
+              const next = (prev - 1 + total) % total;
+              logger.info('nav.day-detail-prev', { from: prev, to: next, date: data.days[next]?.date });
+              return next;
+            });
             break;
           case 'ArrowRight':
             e.preventDefault();
             ensureRecording();
-            setSelectedDay(prev => (prev + 1) % total);
+            setSelectedDay(prev => {
+              const next = (prev + 1) % total;
+              logger.info('nav.day-detail-next', { from: prev, to: next, date: data.days[next]?.date });
+              return next;
+            });
+            break;
+          default:
+            logger.debug('nav.day-detail-key-ignored', { key: e.key });
             break;
         }
         return;
@@ -119,33 +167,52 @@ export default function WeeklyReview() {
         case 'ArrowLeft':
           e.preventDefault();
           ensureRecording();
-          setFocusedDay(prev => (prev - 1 + total) % total);
+          setFocusedDay(prev => {
+            const next = (prev - 1 + total) % total;
+            logger.debug('nav.grid-left', { from: prev, to: next });
+            return next;
+          });
           break;
         case 'ArrowRight':
           e.preventDefault();
           ensureRecording();
-          setFocusedDay(prev => (prev + 1) % total);
+          setFocusedDay(prev => {
+            const next = (prev + 1) % total;
+            logger.debug('nav.grid-right', { from: prev, to: next });
+            return next;
+          });
           break;
         case 'ArrowUp':
           e.preventDefault();
           ensureRecording();
-          setFocusedDay(prev => (prev - COLS + total) % total);
+          setFocusedDay(prev => {
+            const next = (prev - COLS + total) % total;
+            logger.debug('nav.grid-up', { from: prev, to: next });
+            return next;
+          });
           break;
         case 'ArrowDown':
           e.preventDefault();
           ensureRecording();
-          setFocusedDay(prev => (prev + COLS) % total);
+          setFocusedDay(prev => {
+            const next = (prev + COLS) % total;
+            logger.debug('nav.grid-down', { from: prev, to: next });
+            return next;
+          });
           break;
         case 'Enter':
         case ' ':
           e.preventDefault();
           ensureRecording();
-          logger.info('day-detail.open', { day: focusedDay, date: data.days[focusedDay]?.date });
+          logger.info('nav.day-detail-open', { day: focusedDay, date: data.days[focusedDay]?.date, photoCount: data.days[focusedDay]?.photoCount });
           setSelectedDay(focusedDay);
           break;
         case 'Escape':
         case 'Backspace':
-          // Back keys don't trigger recording
+          logger.info('nav.back', { key: e.key });
+          break;
+        default:
+          logger.debug('nav.grid-key-ignored', { key: e.key });
           break;
       }
     };
@@ -190,7 +257,7 @@ export default function WeeklyReview() {
         <DayDetail
           day={data.days[selectedDay]}
           isToday={data.days[selectedDay]?.date === todayStr}
-          onClose={() => setSelectedDay(null)}
+          onClose={() => { logger.info('nav.day-detail-close-button'); setSelectedDay(null); }}
         />
       ) : (
         <div className="weekly-review-grid">
@@ -200,7 +267,12 @@ export default function WeeklyReview() {
               day={day}
               isFocused={i === focusedDay}
               isToday={day.date === todayStr}
-              onClick={() => { ensureRecording(); setSelectedDay(i); setFocusedDay(i); }}
+              onClick={() => {
+                logger.info('nav.day-click', { day: i, date: day.date, photoCount: day.photoCount });
+                ensureRecording();
+                setSelectedDay(i);
+                setFocusedDay(i);
+              }}
             />
           ))}
         </div>
@@ -215,8 +287,8 @@ export default function WeeklyReview() {
         uploading={uploading}
         existingRecording={data.recording}
         error={recorderError}
-        onStart={startRecording}
-        onStop={stopRecording}
+        onStart={() => { logger.info('recording.manual-start'); startRecording(); }}
+        onStop={() => { logger.info('recording.manual-stop'); stopRecording(); }}
       />
     </div>
   );
