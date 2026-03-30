@@ -366,6 +366,40 @@ describe('MortgageCalculator', () => {
     });
   });
 
+  describe('reconstructAmortization', () => {
+    test('reconstructs monthly interest for a simple 3-month scenario', () => {
+      // $100,000 loan at 6% annual, 3 months of $1,000 payments
+      // Month 1: interest = 100000 * 0.06/12 = 500, balance = 100000 + 500 - 1000 = 99500
+      // Month 2: interest = 99500 * 0.06/12 = 497.50, balance = 99500 + 497.50 - 1000 = 98997.50
+      // Month 3: interest = 98997.50 * 0.06/12 = 494.99, balance = 98997.50 + 494.99 - 1000 = 98492.49
+      const result = calculator.reconstructAmortization({
+        mortgageStartValue: 100000,
+        interestRate: 0.06,
+        startDate: '2026-01-01',
+        transactions: [
+          { date: '2026-01-15', amount: 1000 },
+          { date: '2026-02-15', amount: 1000 },
+          { date: '2026-03-15', amount: 1000 },
+        ],
+        currentBalance: -98492.49,
+        asOfDate: '2026-03-31'
+      });
+
+      expect(result).toHaveLength(3);
+      expect(result[0].month).toBe('2026-01');
+      expect(result[0].openingBalance).toBe(100000);
+      expect(result[0].interestAccrued).toBeCloseTo(500, 0);
+      expect(result[0].totalPaid).toBe(1000);
+      expect(result[0].principalPaid).toBeCloseTo(500, 0);
+      expect(result[0].closingBalance).toBeCloseTo(99500, 0);
+      expect(result[0].cumulativeInterest).toBeCloseTo(500, 0);
+      expect(result[0].effectiveRate).toBe(0.06);
+
+      expect(result[2].closingBalance).toBeCloseTo(98492.49, 0);
+      expect(result[2].cumulativeInterest).toBeCloseTo(1492.49, 0);
+    });
+  });
+
   describe('edge cases', () => {
     test('handles zero interest rate', () => {
       const result = calculator.calculatePaymentPlans({
