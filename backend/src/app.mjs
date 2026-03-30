@@ -142,6 +142,12 @@ import { YtDlpAdapter } from '#adapters/media/YtDlpAdapter.mjs';
 // Content composition use case
 import { ComposePresentationUseCase } from './3_applications/content/usecases/ComposePresentationUseCase.mjs';
 
+// Weekly Review domain
+import { WeeklyReviewImmichAdapter } from './1_adapters/weekly-review/WeeklyReviewImmichAdapter.mjs';
+import { WeeklyReviewCalendarAdapter } from './1_adapters/weekly-review/WeeklyReviewCalendarAdapter.mjs';
+import { WeeklyReviewService } from './3_applications/weekly-review/WeeklyReviewService.mjs';
+import { createWeeklyReviewRouter } from './4_api/v1/routers/weekly-review.mjs';
+
 // Harvest domain (data collection)
 import { createHarvestRouter } from './4_api/v1/routers/harvest.mjs';
 
@@ -1942,6 +1948,52 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     syncService,
     logger: rootLogger.child({ module: 'sync-api' })
   });
+
+  // === Weekly Review ===
+  if (immichConfig) {
+    const { ImmichClient } = await import('#adapters/content/gallery/immich/ImmichClient.mjs');
+    const wrImmichClient = new ImmichClient(immichConfig, { httpClient: axios });
+    const weeklyReviewImmichAdapter = new WeeklyReviewImmichAdapter(
+      { priorityPeople: [], proxyPath: '/api/v1/proxy/immich' },
+      { client: wrImmichClient, logger: rootLogger.child({ module: 'weekly-review-immich' }) }
+    );
+
+    const weeklyReviewCalendarAdapter = new WeeklyReviewCalendarAdapter(
+      { householdId },
+      { userDataService, logger: rootLogger.child({ module: 'weekly-review-calendar' }) }
+    );
+
+    const weeklyReviewService = new WeeklyReviewService(
+      { dataPath: dataBasePath, mediaPath: mediaBasePath },
+      {
+        immichAdapter: weeklyReviewImmichAdapter,
+        calendarData: weeklyReviewCalendarAdapter,
+        transcriptionService: sharedAiGateway ? {
+          transcribe: async (buffer, opts) => {
+            const raw = await sharedAiGateway.transcribe(buffer, {
+              filename: 'weekly-review.webm',
+              contentType: opts.mimeType,
+              prompt: opts.prompt,
+            });
+            const clean = await sharedAiGateway.chat(
+              [
+                { role: 'system', content: 'Clean up this family conversation transcript. Fix spelling, grammar, and punctuation. Preserve the natural conversational tone. Do not add or remove content.' },
+                { role: 'user', content: raw },
+              ],
+              { temperature: 0.2, maxTokens: 4000 }
+            );
+            return { transcriptRaw: raw, transcriptClean: clean };
+          },
+        } : null,
+        logger: rootLogger.child({ module: 'weekly-review' }),
+      }
+    );
+
+    v1Routers['weekly-review'] = createWeeklyReviewRouter({
+      weeklyReviewService,
+      logger: rootLogger.child({ module: 'weekly-review-api' }),
+    });
+  }
 
   // ==========================================================================
   // Mount API v1 Router
