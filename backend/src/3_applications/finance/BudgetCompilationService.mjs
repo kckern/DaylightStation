@@ -54,6 +54,7 @@ export class BudgetCompilationService {
     // Load all required data
     const accountBalances = this.#financeStore.getAccountBalances(householdId) || [];
     const mortgageTransactions = this.#financeStore.getMortgageTransactions(householdId) || [];
+    const mortgageStatements = this.#financeStore.getMortgageStatements(householdId);
 
     // Load and merge all transactions across budget periods
     const rawTransactions = this.#loadAllTransactions(budgetStartDates, householdId);
@@ -66,7 +67,7 @@ export class BudgetCompilationService {
     this.#applyPairAdjustments(transactions, pairs);
 
     // Calculate mortgage status
-    const mortgage = this.#compileMortgage(mortgageConfig, accountBalances, mortgageTransactions);
+    const mortgage = this.#compileMortgage(mortgageConfig, accountBalances, mortgageTransactions, mortgageStatements);
 
     // Compile each budget period
     const budgets = {};
@@ -785,7 +786,7 @@ export class BudgetCompilationService {
   /**
    * Compile mortgage status
    */
-  #compileMortgage(config, accountBalances, transactions) {
+  #compileMortgage(config, accountBalances, transactions, statementData) {
     if (!config) return null;
 
     const balance = accountBalances
@@ -796,6 +797,7 @@ export class BudgetCompilationService {
       config,
       balance,
       transactions,
+      statementData,
       asOfDate: new Date()
     });
   }
