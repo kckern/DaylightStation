@@ -27,6 +27,19 @@ const WMO_DESC = {
 function cToF(c) { return Math.round(c * 9 / 5 + 32); }
 function plural(n, word) { return `${n} ${word}${n === 1 ? '' : 's'}`; }
 
+/** Parse local time from Immich's localDateTime (has Z but is actually local time) */
+function parseLocalTime(isoStr) {
+  if (!isoStr) return null;
+  const match = isoStr.match(/T(\d{2}):(\d{2})/);
+  if (!match) return null;
+  let h = parseInt(match[1], 10);
+  const m = match[2];
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  if (h === 0) h = 12;
+  else if (h > 12) h -= 12;
+  return `${h}:${m} ${ampm}`;
+}
+
 function formatTime12(timeStr) {
   if (!timeStr) return '';
   return timeStr;
@@ -77,25 +90,41 @@ function MiniVideoPlayer({ src, onClose }) {
 function buildTimeline(day) {
   const items = [];
 
+  /** Convert "H:MM AM/PM" to 24h "HH:MM" for sorting */
+  function to24h(timeStr) {
+    if (!timeStr || timeStr === 'All day') return '00:00';
+    const match = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+    if (!match) return '99:99';
+    let h = parseInt(match[1], 10);
+    const m = match[2];
+    const ampm = match[3].toUpperCase();
+    if (ampm === 'PM' && h !== 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+    return `${String(h).padStart(2, '0')}:${m}`;
+  }
+
   // Calendar events
   for (const event of (day.calendar || [])) {
-    const sortKey = event.time || (event.allDay ? '00:00' : '99:99');
     items.push({
       type: 'calendar',
       time: event.allDay ? 'All day' : event.time,
       endTime: event.endTime,
       label: event.summary,
-      sortKey,
+      sortKey: to24h(event.time) || (event.allDay ? '00:00' : '99:99'),
     });
   }
 
-  // Fitness sessions
+  // Fitness sessions — extract time from sessionId (YYYYMMDDHHmmss)
   for (const session of (day.fitness || [])) {
-    const startMs = session.startTime;
     let timeStr = '';
-    if (startMs) {
-      const d = new Date(typeof startMs === 'number' ? startMs : startMs);
-      timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    let sortKey = '99:99';
+    if (session.sessionId && session.sessionId.length >= 12) {
+      const hh = parseInt(session.sessionId.slice(8, 10), 10);
+      const mm = session.sessionId.slice(10, 12);
+      const ampm = hh >= 12 ? 'PM' : 'AM';
+      const h12 = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh;
+      timeStr = `${h12}:${mm} ${ampm}`;
+      sortKey = `${String(hh).padStart(2, '0')}:${mm}`;
     }
     const durationMin = session.durationMs ? Math.round(session.durationMs / 60000) : null;
     const title = session.media?.primary?.showTitle || session.media?.primary?.title || 'Workout';
@@ -103,21 +132,25 @@ function buildTimeline(day) {
       type: 'fitness',
       time: timeStr,
       label: `${title}${durationMin ? ` (${durationMin} min)` : ''}`,
-      sortKey: timeStr || '99:99',
+      sortKey,
+      thumbnail: session.media?.primary?.contentId || null,
+      participants: session.participants,
     });
   }
 
-  // Photo sessions
+  // Photo sessions — include first photo thumbnail
   for (const session of (day.sessions || [])) {
+    // Find a photo from this session
+    const sessionPhotos = (day.photos || []).filter(p => p.sessionIndex === session.index);
     items.push({
       type: 'photo',
       time: session.timeRange || '',
       label: plural(session.count, 'photo'),
-      sortKey: session.timeRange?.split(' – ')[0] || '99:99',
+      sortKey: to24h(session.timeRange?.split(' – ')[0]) || '99:99',
+      thumbnail: sessionPhotos[0]?.thumbnail || null,
     });
   }
 
-  // Sort by time
   items.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
   return items;
 }
@@ -211,7 +244,15 @@ export default function DayDetail({ day, isToday, onClose }) {
                     <div className="timeline-content">
                       <span className="timeline-time">{item.time}{item.endTime ? ` – ${item.endTime}` : ''}</span>
                       <span className="timeline-label">{item.label}</span>
+                      {item.participants && Object.keys(item.participants).length > 0 && (
+                        <span className="timeline-people">{Object.values(item.participants).map(p => p.displayName).join(', ')}</span>
+                      )}
                     </div>
+                    {item.thumbnail && (
+                      <div className="timeline-thumb">
+                        <img src={item.thumbnail} alt="" loading="lazy" />
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -245,11 +286,9 @@ export default function DayDetail({ day, isToday, onClose }) {
         {/* Photo/Video Gallery */}
         <div className="day-detail-gallery">
           {hasPhotos ? (
-            <div className="day-detail-photos">
+            <div className="day-detail-photos" data-count={Math.min(day.photos.length, 7)}>
               {day.photos.map(photo => {
-                const timeLabel = photo.takenAt
-                  ? new Date(photo.takenAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-                  : null;
+                const timeLabel = parseLocalTime(photo.takenAt);
                 return (
                   <div
                     key={photo.id}
