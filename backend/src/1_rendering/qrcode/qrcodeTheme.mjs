@@ -27,11 +27,11 @@ export const qrcodeTheme = {
   },
 
   label: {
-    height: 70,
-    fontSize: 16,
-    sublabelFontSize: 12,
+    height: 80,
+    fontSize: 20,
+    sublabelFontSize: 15,
     fontFamily: 'system-ui, -apple-system, sans-serif',
-    lineSpacing: 22,
+    lineSpacing: 24,
     color: '#ffffff',
     sublabelColor: '#cccccc',
   },
