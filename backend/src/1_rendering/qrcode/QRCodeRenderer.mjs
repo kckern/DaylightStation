@@ -59,6 +59,7 @@ function renderCoverLayout(data, options, theme) {
   const label = options.label || null;
   const sublabel = options.sublabel || null;
   const coverData = options.coverData;
+  const logoData = options.logoData || null;
   const optionBadges = options.optionBadges || [];
 
   // Generate QR matrix
@@ -91,9 +92,13 @@ function renderCoverLayout(data, options, theme) {
   parts.push(`<defs><clipPath id="${coverClipId}"><rect x="${coverX}" y="${coverY}" width="${coverWidth}" height="${size}" rx="8"/></clipPath></defs>`);
   parts.push(`<image href="${escapeAttr(coverData)}" x="${coverX}" y="${coverY}" width="${coverWidth}" height="${size}" clip-path="url(#${coverClipId})" preserveAspectRatio="xMidYMid slice"/>`);
 
-  // QR code (right side, no logo masking)
+  // QR code (right side, with center logo if provided)
   const qrX = margin + coverWidth + gap;
   const qrY = margin;
+  const centerX = size / 2;
+  const centerY = size / 2;
+  const logoRadius = logoData ? (size * theme.logo.sizeRatio) / 2 : 0;
+
   parts.push(`<g transform="translate(${qrX}, ${qrY})">`);
 
   // Render data modules
@@ -104,6 +109,13 @@ function renderCoverLayout(data, options, theme) {
 
       const x = col * moduleSize + moduleSize / 2;
       const y = row * moduleSize + moduleSize / 2;
+
+      // Skip modules inside logo mask
+      if (logoRadius > 0) {
+        const dx = x - centerX;
+        const dy = y - centerY;
+        if (Math.sqrt(dx * dx + dy * dy) < logoRadius + theme.logo.padding) continue;
+      }
 
       if (style === 'dots') {
         const r = (moduleSize / 2) * theme.qr.dotScale;
@@ -120,6 +132,17 @@ function renderCoverLayout(data, options, theme) {
   renderFinderPattern(parts, 0, 0, moduleSize, fg, bg);
   renderFinderPattern(parts, 0, moduleCount - 7, moduleSize, fg, bg);
   renderFinderPattern(parts, moduleCount - 7, 0, moduleSize, fg, bg);
+
+  // Center logo in QR
+  if (logoData) {
+    const logoSize = logoRadius * 2;
+    const logoX = centerX - logoRadius;
+    const logoY = centerY - logoRadius;
+
+    parts.push(`<circle cx="${centerX.toFixed(2)}" cy="${centerY.toFixed(2)}" r="${(logoRadius + theme.logo.padding).toFixed(2)}" fill="${bg}"/>`);
+    parts.push(`<defs><clipPath id="cover-logo-clip"><circle cx="${centerX.toFixed(2)}" cy="${centerY.toFixed(2)}" r="${logoRadius.toFixed(2)}"/></clipPath></defs>`);
+    parts.push(`<image href="${escapeAttr(logoData)}" x="${logoX.toFixed(2)}" y="${logoY.toFixed(2)}" width="${logoSize.toFixed(2)}" height="${logoSize.toFixed(2)}" clip-path="url(#cover-logo-clip)" preserveAspectRatio="xMidYMid slice"/>`);
+  }
 
   parts.push('</g>');
 
