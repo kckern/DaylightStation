@@ -69,9 +69,14 @@ export function createCatalogRouter(config) {
         const results = await Promise.all(batch.map(async (item) => {
           try {
             const params = new URLSearchParams();
-            params.set('content', item.id);
+            params.set('queue', item.id);
             if (screen) params.set('screen', screen);
-            if (optionStr) params.set('options', optionStr);
+            if (optionStr) {
+              for (const opt of optionStr.split('+')) {
+                const [k, v] = opt.split('=');
+                params.set(k, v || '');
+              }
+            }
 
             const qrUrl = `${baseUrl}/api/v1/qrcode?${params}`;
             const qrRes = await fetch(qrUrl);
