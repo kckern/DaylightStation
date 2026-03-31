@@ -38,10 +38,14 @@ export function useScreenCommands(wsConfig, actionBus, screenId) {
     const bus = busRef.current;
     if (!bus) return;
 
-    // Device targeting — ignore commands meant for a different device
-    if (data.targetDevice && g.device && data.targetDevice !== g.device) {
-      logger().debug('commands.ignored-target', { targetDevice: data.targetDevice, myDevice: g.device });
-      return;
+    // Device targeting — ignore commands meant for a different device.
+    // If message has targetDevice but this screen has no device configured, reject it
+    // (a targeted command should only be processed by a screen that can verify it's the target).
+    if (data.targetDevice) {
+      if (!g.device || data.targetDevice !== g.device) {
+        logger().debug('commands.ignored-target', { targetDevice: data.targetDevice, myDevice: g.device || 'none' });
+        return;
+      }
     }
 
     // Screen targeting — ignore commands meant for a different screen
@@ -162,14 +166,17 @@ export function useScreenCommands(wsConfig, actionBus, screenId) {
     logger().debug('commands.unhandled', { keys: Object.keys(data) });
   }, []);
 
-  // Subscribe using a predicate filter - only messages that look like commands
+  // Subscribe using a predicate filter - only messages that look like commands.
+  // When disabled (no websocket.commands config), use a reject-all predicate
+  // instead of null — null/undefined means wildcard (receive everything).
+  const REJECT_ALL = () => false;
   const filter = enabled
     ? (msg) => !!(msg.menu || msg.action || msg.playback || msg.play || msg.queue
         || msg.plex || msg.contentId || msg.hymn || msg.scripture || msg.talk
         || msg.primary || msg.media || msg.playlist || msg.files || msg.poem
         || msg.source === 'barcode'
         || msg.shader || msg.volume != null || msg.rate != null)
-    : null;
+    : REJECT_ALL;
 
   useWebSocketSubscription(filter, handleMessage, [handleMessage]);
 }
