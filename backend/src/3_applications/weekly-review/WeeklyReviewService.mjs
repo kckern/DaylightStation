@@ -85,10 +85,37 @@ export class WeeklyReviewService {
     if (!this.#weatherStore) return {};
     const result = {};
     try {
+      // First try history files
       for (const date of dates) {
         const snapshot = await this.#weatherStore.loadDate(date);
         if (snapshot) {
           result[date] = snapshot;
+        }
+      }
+
+      // For dates without history, derive from current hourly forecast data
+      const missingDates = dates.filter(d => !result[d]);
+      if (missingDates.length > 0) {
+        const current = await this.#weatherStore.load();
+        if (current?.hourly?.length > 0) {
+          for (const date of missingDates) {
+            const dayHours = current.hourly.filter(h => h.time?.startsWith(date));
+            if (dayHours.length > 0) {
+              const temps = dayHours.map(h => h.temp);
+              // Pick the mid-day code (noon-ish) or first available
+              const midday = dayHours.find(h => h.time?.includes(' 12:')) || dayHours[Math.floor(dayHours.length / 2)];
+              result[date] = {
+                date,
+                temp: midday.temp,
+                feel: midday.feel,
+                code: midday.code,
+                cloud: midday.cloud,
+                precip: Math.max(...dayHours.map(h => h.precip || 0)),
+                high: Math.max(...temps),
+                low: Math.min(...temps),
+              };
+            }
+          }
         }
       }
     } catch (err) {
