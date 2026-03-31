@@ -223,6 +223,54 @@ describe('BarcodePayload', () => {
     });
   });
 
+  describe('content options', () => {
+    it('parses boolean option with +', () => {
+      const payload = BarcodePayload.parse(
+        { barcode: 'plex:595104+shuffle', timestamp: '2026-03-30T01:00:00Z', device: 'scanner-1' },
+        KNOWN_ACTIONS
+      );
+      expect(payload.contentId).toBe('plex:595104');
+      expect(payload.options).toEqual({ shuffle: true });
+    });
+
+    it('parses key=value option', () => {
+      const payload = BarcodePayload.parse(
+        { barcode: 'plex:595104+shader=dark', timestamp: '2026-03-30T01:00:00Z', device: 'scanner-1' },
+        KNOWN_ACTIONS
+      );
+      expect(payload.contentId).toBe('plex:595104');
+      expect(payload.options).toEqual({ shader: 'dark' });
+    });
+
+    it('parses multiple options', () => {
+      const payload = BarcodePayload.parse(
+        { barcode: 'plex:595104+shuffle+shader=dark+volume=10', timestamp: '2026-03-30T01:00:00Z', device: 'scanner-1' },
+        KNOWN_ACTIONS
+      );
+      expect(payload.contentId).toBe('plex:595104');
+      expect(payload.options).toEqual({ shuffle: true, shader: 'dark', volume: '10' });
+    });
+
+    it('works with screen and action prefixes', () => {
+      const payload = BarcodePayload.parse(
+        { barcode: 'office;queue;plex;595104+shuffle+continuous', timestamp: '2026-03-30T01:00:00Z', device: 'scanner-1' },
+        KNOWN_ACTIONS
+      );
+      expect(payload.contentId).toBe('plex:595104');
+      expect(payload.targetScreen).toBe('office');
+      expect(payload.action).toBe('queue');
+      expect(payload.options).toEqual({ shuffle: true, continuous: true });
+    });
+
+    it('returns null options when no + present', () => {
+      const payload = BarcodePayload.parse(
+        { barcode: 'plex:12345', timestamp: '2026-03-30T01:00:00Z', device: 'scanner-1' },
+        KNOWN_ACTIONS
+      );
+      expect(payload.options).toBeNull();
+    });
+  });
+
   describe('toJSON', () => {
     it('serializes all fields', () => {
       const payload = BarcodePayload.parse(
@@ -235,6 +283,7 @@ describe('BarcodePayload', () => {
         action: 'queue',
         command: null,
         commandArg: null,
+        options: null,
         targetScreen: 'office',
         device: 'scanner-1',
         timestamp: '2026-03-30T01:00:00Z',

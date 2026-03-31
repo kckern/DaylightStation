@@ -113,8 +113,10 @@ export function useScreenCommands(wsConfig, actionBus) {
     if (data.source === 'barcode' && data.contentId) {
       const actionMap = { queue: 'media:queue', play: 'media:play', open: 'menu:open' };
       const busAction = actionMap[data.action] || 'media:queue';
-      logger().info('commands.barcode', { action: busAction, contentId: data.contentId, device: data.device });
-      bus.emit(busAction, { contentId: data.contentId });
+      // Pass through content options (shuffle, shader, volume, continuous)
+      const { action: _a, contentId, source: _s, device: _d, topic: _t, timestamp: _ts, ...contentOptions } = data;
+      logger().info('commands.barcode', { action: busAction, contentId, device: data.device, options: contentOptions });
+      bus.emit(busAction, { contentId, ...contentOptions });
       return;
     }
 
