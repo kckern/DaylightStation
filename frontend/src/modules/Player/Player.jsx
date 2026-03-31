@@ -113,7 +113,8 @@ const Player = forwardRef(function Player(props, ref) {
     playbackRate: queuePlaybackRate,
     playQueue,
     advance,
-    queueAudio
+    queueAudio,
+    originalQueueLength
   } = useQueueController({ play, queue, clear, shuffle: props?.shuffle });
 
   const hasNextQueueItem = useMemo(() => (
@@ -841,6 +842,7 @@ const Player = forwardRef(function Player(props, ref) {
     playerType,
     queuePosition,
     queueLength: isQueue ? playQueue?.length ?? 0 : 0,
+    originalQueueLength: isQueue ? originalQueueLength : 0,
     ignoreKeys,
     keyboardOverrides,
     onProgress: props.onProgress,
