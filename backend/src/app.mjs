@@ -1331,11 +1331,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { createQRCodeRenderer } = await import('#rendering/qrcode/QRCodeRenderer.mjs');
   const { createQRCodeRouter } = await import('./4_api/v1/routers/qrcode.mjs');
   const qrcodeRenderer = createQRCodeRenderer({ mediaPath: mediaBasePath });
+  // Resolve default barcode target screen from devices config
+  const _qrDevices = (configService.getHouseholdDevices(householdId)?.devices) || {};
+  const _qrDefaultScreen = Object.values(_qrDevices)
+    .find(d => d.type === 'barcode-scanner')?.target_screen || null;
+
   v1Routers.qrcode = createQRCodeRouter({
     renderer: qrcodeRenderer,
     contentIdResolver: contentServices.contentIdResolver,
     mediaPath: mediaBasePath,
     defaultLogoPath: `${mediaBasePath}/img/buttons/play.svg`,
+    defaultScreen: _qrDefaultScreen,
     logger: rootLogger.child({ module: 'qrcode' }),
   });
 
