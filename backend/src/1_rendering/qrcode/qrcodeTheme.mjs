@@ -28,8 +28,8 @@ export const qrcodeTheme = {
 
   label: {
     height: 80,
-    fontSize: 20,
-    sublabelFontSize: 15,
+    fontSize: 26,
+    sublabelFontSize: 19,
     fontFamily: 'system-ui, -apple-system, sans-serif',
     lineSpacing: 24,
     color: '#ffffff',
