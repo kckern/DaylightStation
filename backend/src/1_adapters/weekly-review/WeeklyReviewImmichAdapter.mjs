@@ -136,13 +136,31 @@ export class WeeklyReviewImmichAdapter {
     return 0;
   }
 
+  /**
+   * Parse local time from Immich's localDateTime string.
+   * Immich appends Z but the time is actually local — don't let Date interpret as UTC.
+   */
+  #parseLocalTime(isoStr) {
+    // "2026-03-25T09:01:00.000Z" → extract "09:01"
+    const match = isoStr?.match(/T(\d{2}):(\d{2})/);
+    if (!match) return null;
+    let h = parseInt(match[1], 10);
+    const m = match[2];
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    if (h === 0) h = 12;
+    else if (h > 12) h -= 12;
+    return `${h}:${m} ${ampm}`;
+  }
+
   #formatTimeRange(session) {
     if (session.length === 0) return '';
-    const times = session.map(s => new Date(s.asset.localDateTime));
-    const earliest = new Date(Math.min(...times));
-    const latest = new Date(Math.max(...times));
-    const fmt = (d) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    if (earliest.getTime() === latest.getTime()) return fmt(earliest);
-    return `${fmt(earliest)} – ${fmt(latest)}`;
+    const sorted = [...session].sort((a, b) =>
+      a.asset.localDateTime.localeCompare(b.asset.localDateTime)
+    );
+    const earliest = this.#parseLocalTime(sorted[0].asset.localDateTime);
+    const latest = this.#parseLocalTime(sorted[sorted.length - 1].asset.localDateTime);
+    if (!earliest) return '';
+    if (earliest === latest) return earliest;
+    return `${earliest} – ${latest}`;
   }
 }
