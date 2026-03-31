@@ -1,6 +1,19 @@
 import React, { useMemo } from 'react';
 
+function parseLocalTime(isoStr) {
+  if (!isoStr) return null;
+  const match = isoStr.match(/T(\d{2}):(\d{2})/);
+  if (!match) return null;
+  let h = parseInt(match[1], 10);
+  const m = match[2];
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  if (h === 0) h = 12;
+  else if (h > 12) h -= 12;
+  return `${h}:${m} ${ampm}`;
+}
+
 function MediaThumb({ photo, style }) {
+  const timeLabel = parseLocalTime(photo.takenAt);
   return (
     <div
       className={`photo-thumb${photo.type === 'video' ? ' photo-thumb--video' : ''}`}
@@ -8,9 +21,7 @@ function MediaThumb({ photo, style }) {
     >
       <img src={photo.thumbnail} alt="" loading="lazy" />
       {photo.type === 'video' && <span className="video-badge">▶</span>}
-      {photo.people?.length > 0 && (
-        <div className="photo-people">{photo.people.join(', ')}</div>
-      )}
+      {timeLabel && <span className="photo-time-overlay">{timeLabel}</span>}
     </div>
   );
 }
