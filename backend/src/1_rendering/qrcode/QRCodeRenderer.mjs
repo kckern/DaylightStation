@@ -104,7 +104,7 @@ function renderCoverLayout(data, options, theme) {
 
   // Label area
   if (label) {
-    renderLabelBox(parts, { totalWidth, frame, innerH, labelHeight, padding, label, sublabel, optionBadges, theme });
+    renderLabelBox(parts, { totalWidth, totalHeight, frame, innerH, labelHeight, padding, label, sublabel, optionBadges, theme });
   }
 
   parts.push('</svg>');
@@ -171,7 +171,7 @@ function renderCenteredLayout(data, options, theme) {
 
   // Label area
   if (label) {
-    renderLabelBox(parts, { totalWidth, frame, innerH, labelHeight, padding, label, sublabel, optionBadges, theme });
+    renderLabelBox(parts, { totalWidth, totalHeight, frame, innerH, labelHeight, padding, label, sublabel, optionBadges, theme });
   }
 
   parts.push('</svg>');
@@ -180,7 +180,7 @@ function renderCenteredLayout(data, options, theme) {
 
 // ─── Shared Helpers ─────────────────────────────────────────────
 
-function renderLabelBox(parts, { totalWidth, frame, innerH, labelHeight, padding, label, sublabel, optionBadges, theme }) {
+function renderLabelBox(parts, { totalWidth, totalHeight, frame, innerH, labelHeight, padding, label, sublabel, optionBadges, theme }) {
   const boxGap = 4;
   const boxX = frame;
   const boxY = frame + innerH + boxGap;
