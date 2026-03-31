@@ -22,18 +22,18 @@ export const qrcodeTheme = {
 
   frame: {
     borderRadius: 12,
-    strokeWidth: 2,
-    strokeColor: '#333333',
+    width: 32,           // Frame thickness (2rem = 32px)
+    color: '#333333',    // Frame fill color
   },
 
   label: {
-    height: 60,
+    height: 70,
     fontSize: 16,
     sublabelFontSize: 12,
     fontFamily: 'system-ui, -apple-system, sans-serif',
-    lineSpacing: 20,
-    color: '#000000',
-    sublabelColor: '#666666',
+    lineSpacing: 22,
+    color: '#ffffff',
+    sublabelColor: '#cccccc',
   },
 
   badge: {

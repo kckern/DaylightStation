@@ -2,8 +2,10 @@
  * QRCodeRenderer - Generates styled SVG QR codes.
  *
  * Two layouts:
- * - **Cover layout** (when coverData provided): cover image left, QR right, labels full width below
- * - **Centered layout** (default): QR with optional center logo, labels below
+ * - **Cover layout** (when coverData provided): cover image left, QR right, labels in frame below
+ * - **Centered layout** (default): QR with optional center logo, labels in frame below
+ *
+ * Both layouts use a thick colored frame with white content area inset.
  *
  * @module rendering/qrcode/QRCodeRenderer
  */
@@ -20,25 +22,8 @@ import { qrcodeTheme } from './qrcodeTheme.mjs';
 export function createQRCodeRenderer(config = {}) {
   const theme = qrcodeTheme;
 
-  /**
-   * Render a QR code as an SVG string.
-   * @param {string} data - Data to encode
-   * @param {Object} [options]
-   * @param {number} [options.size] - QR code size in pixels
-   * @param {string} [options.style='dots'] - 'dots' or 'squares'
-   * @param {string} [options.fg] - Foreground color
-   * @param {string} [options.bg] - Background color
-   * @param {string} [options.label] - Primary label text
-   * @param {string} [options.sublabel] - Secondary label text
-   * @param {string|false} [options.logoData] - Base64 data URI for center logo (centered layout)
-   * @param {boolean} [options.logo=true] - Enable/disable logo area masking
-   * @param {string} [options.coverData] - Base64 data URI for cover image (triggers side-by-side layout)
-   * @param {string[]} [options.optionBadges] - SVG path strings for option badges
-   * @returns {string} SVG markup
-   */
   function renderSvg(data, options = {}) {
     const coverData = options.coverData || null;
-
     if (coverData) {
       return renderCoverLayout(data, options, theme);
     }
@@ -48,14 +33,15 @@ export function createQRCodeRenderer(config = {}) {
   return { renderSvg };
 }
 
-// ─── Cover Layout: image left, QR right, labels full width ──────
+// ─── Cover Layout: image left, QR right, labels in frame ────────
 
 function renderCoverLayout(data, options, theme) {
   const size = options.size || theme.qr.size;
   const style = options.style || 'dots';
   const fg = options.fg || theme.colors.foreground;
   const bg = options.bg || theme.colors.background;
-  const margin = theme.qr.margin;
+  const padding = theme.qr.margin;
+  const frame = theme.frame.width;
   const label = options.label || null;
   const sublabel = options.sublabel || null;
   const coverData = options.coverData;
@@ -68,105 +54,75 @@ function renderCoverLayout(data, options, theme) {
   const moduleCount = modules.size;
   const moduleSize = size / moduleCount;
 
-  // Layout: cover and QR side by side, same height
-  // coverAspect = width/height ratio (e.g., 0.68 for portrait poster)
+  // Layout dimensions
   const coverAspect = options.coverAspect || 1;
   const coverWidth = Math.round(size * coverAspect);
-  const gap = margin;
-  const totalWidth = margin + coverWidth + gap + size + margin;
+  const gap = padding;
+  const contentWidth = coverWidth + gap + size;
   const labelHeight = label ? theme.label.height : 0;
-  const totalHeight = margin + size + margin + labelHeight;
+
+  const totalWidth = frame + padding + contentWidth + padding + frame;
+  const totalHeight = frame + padding + size + padding + labelHeight + frame;
 
   const parts = [];
 
   // SVG header
   parts.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${totalWidth}" height="${totalHeight}" viewBox="0 0 ${totalWidth} ${totalHeight}">`);
 
-  // Frame background
-  parts.push(`<rect width="${totalWidth}" height="${totalHeight}" rx="${theme.frame.borderRadius}" fill="${bg}" stroke="${theme.frame.strokeColor}" stroke-width="${theme.frame.strokeWidth}"/>`);
+  // Outer frame (dark rectangle)
+  parts.push(`<rect width="${totalWidth}" height="${totalHeight}" rx="${theme.frame.borderRadius}" fill="${theme.frame.color}"/>`);
 
-  // Cover image (left side, rounded corners)
-  const coverX = margin;
-  const coverY = margin;
-  const coverClipId = 'cover-clip';
-  parts.push(`<defs><clipPath id="${coverClipId}"><rect x="${coverX}" y="${coverY}" width="${coverWidth}" height="${size}" rx="8"/></clipPath></defs>`);
-  parts.push(`<image href="${escapeAttr(coverData)}" x="${coverX}" y="${coverY}" width="${coverWidth}" height="${size}" clip-path="url(#${coverClipId})" preserveAspectRatio="xMidYMid slice"/>`);
+  // Inner white content area
+  const innerX = frame;
+  const innerY = frame;
+  const innerW = totalWidth - frame * 2;
+  const innerH = padding + size + padding;
+  parts.push(`<rect x="${innerX}" y="${innerY}" width="${innerW}" height="${innerH}" rx="${theme.frame.borderRadius - 4}" fill="${bg}"/>`);
 
-  // QR code (right side, with center logo if provided)
-  const qrX = margin + coverWidth + gap;
-  const qrY = margin;
+  // Cover image (left side)
+  const coverX = frame + padding;
+  const coverY = frame + padding;
+  parts.push(`<defs><clipPath id="cover-clip"><rect x="${coverX}" y="${coverY}" width="${coverWidth}" height="${size}" rx="8"/></clipPath></defs>`);
+  parts.push(`<image href="${escapeAttr(coverData)}" x="${coverX}" y="${coverY}" width="${coverWidth}" height="${size}" clip-path="url(#cover-clip)" preserveAspectRatio="xMidYMid slice"/>`);
+
+  // QR code (right side)
+  const qrX = frame + padding + coverWidth + gap;
+  const qrY = frame + padding;
   const centerX = size / 2;
   const centerY = size / 2;
   const logoRadius = logoData ? (size * theme.logo.sizeRatio) / 2 : 0;
 
   parts.push(`<g transform="translate(${qrX}, ${qrY})">`);
-
-  // Render data modules
-  for (let row = 0; row < moduleCount; row++) {
-    for (let col = 0; col < moduleCount; col++) {
-      if (!modules.get(row, col)) continue;
-      if (isFinderPattern(row, col, moduleCount)) continue;
-
-      const x = col * moduleSize + moduleSize / 2;
-      const y = row * moduleSize + moduleSize / 2;
-
-      // Skip modules inside logo mask
-      if (logoRadius > 0) {
-        const dx = x - centerX;
-        const dy = y - centerY;
-        if (Math.sqrt(dx * dx + dy * dy) < logoRadius + theme.logo.padding) continue;
-      }
-
-      if (style === 'dots') {
-        const r = (moduleSize / 2) * theme.qr.dotScale;
-        parts.push(`<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r.toFixed(2)}" fill="${fg}"/>`);
-      } else {
-        const rectSize = moduleSize * theme.qr.dotScale;
-        const offset = (moduleSize - rectSize) / 2;
-        parts.push(`<rect class="module" x="${(col * moduleSize + offset).toFixed(2)}" y="${(row * moduleSize + offset).toFixed(2)}" width="${rectSize.toFixed(2)}" height="${rectSize.toFixed(2)}" fill="${fg}"/>`);
-      }
-    }
-  }
-
-  // Finder patterns
+  renderQRModules(parts, modules, moduleCount, moduleSize, size, style, fg, bg, theme, logoRadius, centerX, centerY);
   renderFinderPattern(parts, 0, 0, moduleSize, fg, bg);
   renderFinderPattern(parts, 0, moduleCount - 7, moduleSize, fg, bg);
   renderFinderPattern(parts, moduleCount - 7, 0, moduleSize, fg, bg);
-
-  // Center logo in QR
   if (logoData) {
-    const logoSize = logoRadius * 2;
-    const logoX = centerX - logoRadius;
-    const logoY = centerY - logoRadius;
-
-    parts.push(`<circle cx="${centerX.toFixed(2)}" cy="${centerY.toFixed(2)}" r="${(logoRadius + theme.logo.padding).toFixed(2)}" fill="${bg}"/>`);
-    parts.push(`<defs><clipPath id="cover-logo-clip"><circle cx="${centerX.toFixed(2)}" cy="${centerY.toFixed(2)}" r="${logoRadius.toFixed(2)}"/></clipPath></defs>`);
-    parts.push(`<image href="${escapeAttr(logoData)}" x="${logoX.toFixed(2)}" y="${logoY.toFixed(2)}" width="${logoSize.toFixed(2)}" height="${logoSize.toFixed(2)}" clip-path="url(#cover-logo-clip)" preserveAspectRatio="xMidYMid slice"/>`);
+    renderLogo(parts, logoData, centerX, centerY, logoRadius, theme, bg, 'cover-logo-clip');
   }
-
   parts.push('</g>');
 
-  // Label area (full width, below both cover and QR)
+  // Label area (in the frame, below white area)
   if (label) {
-    // Vertically center labels within the label area
-    const textBlockHeight = sublabel ? theme.label.fontSize + theme.label.lineSpacing : theme.label.fontSize;
-    const labelAreaTop = margin + size;
-    const labelY = labelAreaTop + (labelHeight - textBlockHeight) / 2 + theme.label.fontSize;
+    const dividerY = frame + innerH;
+    parts.push(`<line x1="${frame}" y1="${dividerY}" x2="${totalWidth - frame}" y2="${dividerY}" stroke="${theme.label.sublabelColor}" stroke-width="1" opacity="0.4"/>`);
 
-    // Title — centered
+    const labelAreaTop = dividerY;
+    const labelAreaHeight = labelHeight + frame;
+    const textBlockHeight = sublabel ? theme.label.fontSize + theme.label.lineSpacing : theme.label.fontSize;
+    const labelY = labelAreaTop + (labelAreaHeight - textBlockHeight) / 2 + theme.label.fontSize;
+
     parts.push(`<text x="${totalWidth / 2}" y="${labelY}" text-anchor="middle" font-family="${theme.label.fontFamily}" font-size="${theme.label.fontSize}" font-weight="bold" fill="${theme.label.color}">${escapeXml(label)}</text>`);
 
-    // Sublabel — centered below title
     if (sublabel) {
       const sublabelY = labelY + theme.label.lineSpacing;
       parts.push(`<text x="${totalWidth / 2}" y="${sublabelY}" text-anchor="middle" font-family="${theme.label.fontFamily}" font-size="${theme.label.sublabelFontSize}" fill="${theme.label.sublabelColor}">${escapeXml(sublabel)}</text>`);
     }
 
-    // Option badges — far right
     if (optionBadges.length > 0) {
       const badgeY = labelY;
       optionBadges.forEach((pathData, i) => {
-        const bx = totalWidth - margin - (optionBadges.length - i) * (theme.badge.iconSize + theme.badge.gap);
+        const bx = totalWidth - frame - padding - (optionBadges.length - i) * (theme.badge.iconSize + theme.badge.gap);
         parts.push(`<g transform="translate(${bx}, ${badgeY - theme.badge.iconSize}) scale(${(theme.badge.iconSize / 24).toFixed(3)})"><path d="${pathData}" fill="${theme.label.sublabelColor}"/></g>`);
       });
     }
@@ -183,7 +139,8 @@ function renderCenteredLayout(data, options, theme) {
   const style = options.style || 'dots';
   const fg = options.fg || theme.colors.foreground;
   const bg = options.bg || theme.colors.background;
-  const margin = theme.qr.margin;
+  const padding = theme.qr.margin;
+  const frame = theme.frame.width;
   const logoEnabled = options.logo !== false;
   const logoData = options.logoData || null;
   const label = options.label || null;
@@ -196,12 +153,10 @@ function renderCenteredLayout(data, options, theme) {
   const moduleCount = modules.size;
   const moduleSize = size / moduleCount;
 
-  // Calculate SVG dimensions
-  const totalWidth = size + margin * 2;
   const labelHeight = label ? theme.label.height : 0;
-  const totalHeight = size + margin * 2 + labelHeight;
+  const totalWidth = frame + padding + size + padding + frame;
+  const totalHeight = frame + padding + size + padding + labelHeight + frame;
 
-  // Logo mask area (center circle)
   const logoRadius = logoEnabled ? (size * theme.logo.sizeRatio) / 2 : 0;
   const centerX = size / 2;
   const centerY = size / 2;
@@ -211,64 +166,40 @@ function renderCenteredLayout(data, options, theme) {
   // SVG header
   parts.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${totalWidth}" height="${totalHeight}" viewBox="0 0 ${totalWidth} ${totalHeight}">`);
 
-  // Frame background
-  parts.push(`<rect width="${totalWidth}" height="${totalHeight}" rx="${theme.frame.borderRadius}" fill="${bg}" stroke="${theme.frame.strokeColor}" stroke-width="${theme.frame.strokeWidth}"/>`);
+  // Outer frame
+  parts.push(`<rect width="${totalWidth}" height="${totalHeight}" rx="${theme.frame.borderRadius}" fill="${theme.frame.color}"/>`);
 
-  // QR code group (offset by margin)
-  parts.push(`<g transform="translate(${margin}, ${margin})">`);
+  // Inner white area
+  const innerX = frame;
+  const innerY = frame;
+  const innerW = totalWidth - frame * 2;
+  const innerH = padding + size + padding;
+  parts.push(`<rect x="${innerX}" y="${innerY}" width="${innerW}" height="${innerH}" rx="${theme.frame.borderRadius - 4}" fill="${bg}"/>`);
 
-  // Render data modules
-  for (let row = 0; row < moduleCount; row++) {
-    for (let col = 0; col < moduleCount; col++) {
-      if (!modules.get(row, col)) continue;
-      if (isFinderPattern(row, col, moduleCount)) continue;
-
-      const x = col * moduleSize + moduleSize / 2;
-      const y = row * moduleSize + moduleSize / 2;
-
-      // Skip modules inside logo mask
-      if (logoEnabled) {
-        const dx = x - centerX;
-        const dy = y - centerY;
-        if (Math.sqrt(dx * dx + dy * dy) < logoRadius + theme.logo.padding) continue;
-      }
-
-      if (style === 'dots') {
-        const r = (moduleSize / 2) * theme.qr.dotScale;
-        parts.push(`<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r.toFixed(2)}" fill="${fg}"/>`);
-      } else {
-        const rectSize = moduleSize * theme.qr.dotScale;
-        const offset = (moduleSize - rectSize) / 2;
-        parts.push(`<rect class="module" x="${(col * moduleSize + offset).toFixed(2)}" y="${(row * moduleSize + offset).toFixed(2)}" width="${rectSize.toFixed(2)}" height="${rectSize.toFixed(2)}" fill="${fg}"/>`);
-      }
-    }
-  }
-
-  // Finder patterns
+  // QR code
+  parts.push(`<g transform="translate(${frame + padding}, ${frame + padding})">`);
+  renderQRModules(parts, modules, moduleCount, moduleSize, size, style, fg, bg, theme, logoEnabled ? logoRadius : 0, centerX, centerY);
   renderFinderPattern(parts, 0, 0, moduleSize, fg, bg);
   renderFinderPattern(parts, 0, moduleCount - 7, moduleSize, fg, bg);
   renderFinderPattern(parts, moduleCount - 7, 0, moduleSize, fg, bg);
 
-  // Logo
   if (logoEnabled && logoData) {
-    const logoSize = logoRadius * 2;
-    const logoX = centerX - logoRadius;
-    const logoY = centerY - logoRadius;
-
-    parts.push(`<circle cx="${centerX.toFixed(2)}" cy="${centerY.toFixed(2)}" r="${(logoRadius + theme.logo.padding).toFixed(2)}" fill="${bg}"/>`);
-    parts.push(`<defs><clipPath id="logo-clip"><circle cx="${centerX.toFixed(2)}" cy="${centerY.toFixed(2)}" r="${logoRadius.toFixed(2)}"/></clipPath></defs>`);
-    parts.push(`<image href="${escapeAttr(logoData)}" x="${logoX.toFixed(2)}" y="${logoY.toFixed(2)}" width="${logoSize.toFixed(2)}" height="${logoSize.toFixed(2)}" clip-path="url(#logo-clip)" preserveAspectRatio="xMidYMid slice"/>`);
+    renderLogo(parts, logoData, centerX, centerY, logoRadius, theme, bg, 'logo-clip');
   } else if (logoEnabled) {
     parts.push(`<circle cx="${centerX.toFixed(2)}" cy="${centerY.toFixed(2)}" r="${(logoRadius + theme.logo.padding).toFixed(2)}" fill="${bg}"/>`);
   }
-
   parts.push('</g>');
 
-  // Label area
+  // Label area (in the frame)
   if (label) {
+    const dividerY = frame + innerH;
+    parts.push(`<line x1="${frame}" y1="${dividerY}" x2="${totalWidth - frame}" y2="${dividerY}" stroke="${theme.label.sublabelColor}" stroke-width="1" opacity="0.4"/>`);
+
+    const labelAreaTop = dividerY;
+    const labelAreaHeight = labelHeight + frame;
     const textBlockHeight = sublabel ? theme.label.fontSize + theme.label.lineSpacing : theme.label.fontSize;
-    const labelAreaTop = size + margin * 2;
-    const labelY = labelAreaTop + (labelHeight - textBlockHeight) / 2 + theme.label.fontSize;
+    const labelY = labelAreaTop + (labelAreaHeight - textBlockHeight) / 2 + theme.label.fontSize;
+
     parts.push(`<text x="${totalWidth / 2}" y="${labelY}" text-anchor="middle" font-family="${theme.label.fontFamily}" font-size="${theme.label.fontSize}" font-weight="bold" fill="${theme.label.color}">${escapeXml(label)}</text>`);
 
     if (sublabel) {
@@ -291,6 +222,43 @@ function renderCenteredLayout(data, options, theme) {
 }
 
 // ─── Shared Helpers ─────────────────────────────────────────────
+
+function renderQRModules(parts, modules, moduleCount, moduleSize, size, style, fg, bg, theme, logoRadius, centerX, centerY) {
+  for (let row = 0; row < moduleCount; row++) {
+    for (let col = 0; col < moduleCount; col++) {
+      if (!modules.get(row, col)) continue;
+      if (isFinderPattern(row, col, moduleCount)) continue;
+
+      const x = col * moduleSize + moduleSize / 2;
+      const y = row * moduleSize + moduleSize / 2;
+
+      if (logoRadius > 0) {
+        const dx = x - centerX;
+        const dy = y - centerY;
+        if (Math.sqrt(dx * dx + dy * dy) < logoRadius + theme.logo.padding) continue;
+      }
+
+      if (style === 'dots') {
+        const r = (moduleSize / 2) * theme.qr.dotScale;
+        parts.push(`<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r.toFixed(2)}" fill="${fg}"/>`);
+      } else {
+        const rectSize = moduleSize * theme.qr.dotScale;
+        const offset = (moduleSize - rectSize) / 2;
+        parts.push(`<rect class="module" x="${(col * moduleSize + offset).toFixed(2)}" y="${(row * moduleSize + offset).toFixed(2)}" width="${rectSize.toFixed(2)}" height="${rectSize.toFixed(2)}" fill="${fg}"/>`);
+      }
+    }
+  }
+}
+
+function renderLogo(parts, logoData, centerX, centerY, logoRadius, theme, bg, clipId) {
+  const logoSize = logoRadius * 2;
+  const logoX = centerX - logoRadius;
+  const logoY = centerY - logoRadius;
+
+  parts.push(`<circle cx="${centerX.toFixed(2)}" cy="${centerY.toFixed(2)}" r="${(logoRadius + theme.logo.padding).toFixed(2)}" fill="${bg}"/>`);
+  parts.push(`<defs><clipPath id="${clipId}"><circle cx="${centerX.toFixed(2)}" cy="${centerY.toFixed(2)}" r="${logoRadius.toFixed(2)}"/></clipPath></defs>`);
+  parts.push(`<image href="${escapeAttr(logoData)}" x="${logoX.toFixed(2)}" y="${logoY.toFixed(2)}" width="${logoSize.toFixed(2)}" height="${logoSize.toFixed(2)}" clip-path="url(#${clipId})" preserveAspectRatio="xMidYMid slice"/>`);
+}
 
 function isFinderPattern(row, col, moduleCount) {
   if (row < 7 && col < 7) return true;
