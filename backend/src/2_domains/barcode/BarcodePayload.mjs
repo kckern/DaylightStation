@@ -64,6 +64,9 @@ export class BarcodePayload {
       // Two prefixes: screen then action
       targetScreen = prefixes[0];
       action = prefixes[1];
+    } else if (prefixes.length > 2) {
+      // Too many segments — reject as invalid
+      return null;
     }
     // prefixes.length === 0: just source:id, no overrides
 
