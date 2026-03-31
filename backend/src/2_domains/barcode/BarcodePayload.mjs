@@ -15,6 +15,11 @@
  *   screen:source:id             → screen + contentId
  *   screen:action:source:id      → screen + action + contentId
  *
+ * **Content options** (appended to ID with `+`):
+ *   plex:595104+shuffle          → contentId plex:595104, options { shuffle: true }
+ *   plex:595104+shader=dark      → contentId plex:595104, options { shader: 'dark' }
+ *   plex:595104+shuffle+shader=dark → multiple options
+ *
  * Delimiters are forgiving — colon, semicolon, or space all work.
  * Dashes are NOT treated as delimiters (they appear in screen names like `living-room`).
  *
@@ -29,16 +34,18 @@ export class BarcodePayload {
   #action;
   #command;
   #commandArg;
+  #options;
   #targetScreen;
   #device;
   #timestamp;
 
-  constructor({ type, contentId, action, command, commandArg, targetScreen, device, timestamp }) {
+  constructor({ type, contentId, action, command, commandArg, options, targetScreen, device, timestamp }) {
     this.#type = type;
     this.#contentId = contentId;
     this.#action = action;
     this.#command = command;
     this.#commandArg = commandArg;
+    this.#options = options;
     this.#targetScreen = targetScreen;
     this.#device = device;
     this.#timestamp = timestamp;
@@ -49,6 +56,7 @@ export class BarcodePayload {
   get action() { return this.#action; }
   get command() { return this.#command; }
   get commandArg() { return this.#commandArg; }
+  get options() { return this.#options; }
   get targetScreen() { return this.#targetScreen; }
   get device() { return this.#device; }
   get timestamp() { return this.#timestamp; }
@@ -65,8 +73,28 @@ export class BarcodePayload {
 
     if (!barcode || !device) return null;
 
+    // Extract options (everything after first +)
+    let options = null;
+    let barcodePart = barcode;
+    const plusIdx = barcode.indexOf('+');
+    if (plusIdx !== -1) {
+      const optStr = barcode.slice(plusIdx + 1);
+      barcodePart = barcode.slice(0, plusIdx);
+      options = {};
+      for (const part of optStr.split('+')) {
+        if (!part) continue;
+        const eqIdx = part.indexOf('=');
+        if (eqIdx !== -1) {
+          options[part.slice(0, eqIdx)] = part.slice(eqIdx + 1);
+        } else {
+          options[part] = true;
+        }
+      }
+      if (Object.keys(options).length === 0) options = null;
+    }
+
     // Normalize delimiters: semicolons and spaces become colons
-    const normalized = barcode.replace(/[; ]/g, ':');
+    const normalized = barcodePart.replace(/[; ]/g, ':');
     const segments = normalized.split(':');
 
     const common = { device, timestamp: timestamp || null };
@@ -81,6 +109,7 @@ export class BarcodePayload {
           action: null,
           command: cmdResult.command,
           commandArg: cmdResult.arg,
+          options: null,
           targetScreen: cmdResult.screen,
           ...common,
         });
@@ -115,6 +144,7 @@ export class BarcodePayload {
       action,
       command: null,
       commandArg: null,
+      options,
       targetScreen,
       ...common,
     });
@@ -156,6 +186,7 @@ export class BarcodePayload {
       action: this.#action,
       command: this.#command,
       commandArg: this.#commandArg,
+      options: this.#options,
       targetScreen: this.#targetScreen,
       device: this.#device,
       timestamp: this.#timestamp,

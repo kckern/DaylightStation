@@ -121,6 +121,7 @@ export class BarcodeScanService {
     this.#broadcastEvent(targetScreen, {
       action,
       contentId: payload.contentId,
+      ...(payload.options || {}),
       source: 'barcode',
       device: payload.device,
     });
