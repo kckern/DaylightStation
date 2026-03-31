@@ -121,25 +121,32 @@ export default function WeeklyReview({ dispatch }) {
       if (!isRecording && !hasRecorded) {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
+          e.stopPropagation();
           logger.info('recording.key-start');
           startRecording();
         } else if (e.key === 'Escape' || e.key === 'Backspace') {
-          e.preventDefault();
+          // Let it bubble — framework will exit the widget
           logger.info('nav.exit-widget', { key: e.key });
-          if (dispatch) dispatch('escape');
         }
         return;
       }
 
-      // Not recording but has recorded (stopped/uploading): lock nav, ignore keys.
+      // Not recording but has recorded (stopped/uploading): block everything.
       if (!isRecording && hasRecorded) {
+        e.preventDefault();
+        e.stopPropagation();
         return;
+      }
+
+      // From here on, we're recording — always capture escape/back ourselves.
+      if (e.key === 'Escape' || e.key === 'Backspace') {
+        e.preventDefault();
+        e.stopPropagation();
       }
 
       // Stop confirmation dialog is showing
       if (showStopConfirm) {
         if (e.key === 'Escape' || e.key === 'Backspace') {
-          e.preventDefault();
           setShowStopConfirm(false);
         }
         return;
@@ -150,7 +157,6 @@ export default function WeeklyReview({ dispatch }) {
         switch (e.key) {
           case 'Escape':
           case 'Backspace':
-            e.preventDefault();
             logger.info('nav.day-detail-close', { fromDay: selectedDay });
             setSelectedDay(null);
             break;
@@ -217,7 +223,6 @@ export default function WeeklyReview({ dispatch }) {
           break;
         case 'Escape':
         case 'Backspace':
-          e.preventDefault();
           // Grid + recording: show stop confirmation
           logger.info('nav.back-show-confirm', { key: e.key });
           setShowStopConfirm(true);
