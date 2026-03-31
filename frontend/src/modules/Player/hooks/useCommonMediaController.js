@@ -1190,12 +1190,13 @@ export function useCommonMediaController({
       mediaEl.volume = adjustedVolume;
       
       // Loop logic:
-      // - Only loop the element when queue length is 1 (single item queue)
-      // - For queue length > 1, let the queue behavior handle looping
-      // - For queue length 0 (no queue), loop if continuous flag is set, OR loop short videos (<20s)
-      // Derive queue length from meta.queueLength if available (set by parent queue controller)
+      // - Loop single-item queues (originalQueueLength === 1) — these are intentional single plays
+      // - Do NOT loop the last remaining item in a multi-item queue (let it end naturally)
+      // - For non-queue (queueLength 0), loop if continuous flag is set, OR loop short videos (<20s)
       const queueLength = meta.queueLength || 0;
-      const shouldLoopElement = queueLength === 1 || 
+      const originalQueueLength = meta.originalQueueLength || 0;
+      const isSingleItemQueue = queueLength === 1 && originalQueueLength <= 1;
+      const shouldLoopElement = isSingleItemQueue ||
                                  (queueLength === 0 && meta.continuous) ||
                                  (queueLength === 0 && isVideo && duration < 20);
       

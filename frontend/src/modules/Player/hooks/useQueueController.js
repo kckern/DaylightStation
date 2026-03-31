@@ -280,6 +280,7 @@ export function useQueueController({ play, queue, clear, shuffle }) {
     setQueue,
     advance,
     queuePosition,
-    queueAudio
+    queueAudio,
+    originalQueueLength: originalQueue.length
   };
 }
