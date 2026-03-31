@@ -1335,7 +1335,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     renderer: qrcodeRenderer,
     contentIdResolver: contentServices.contentIdResolver,
     mediaPath: mediaBasePath,
-    defaultLogoPath: `${mediaBasePath}/img/favicon.ico`,
+    defaultLogoPath: `${mediaBasePath}/img/bw/logo.png`,
     logger: rootLogger.child({ module: 'qrcode' }),
   });
 

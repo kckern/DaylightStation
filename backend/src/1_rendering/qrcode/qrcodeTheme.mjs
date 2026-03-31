@@ -23,7 +23,7 @@ export const qrcodeTheme = {
   frame: {
     borderRadius: 12,
     strokeWidth: 2,
-    strokeColor: '#e0e0e0',
+    strokeColor: '#333333',
   },
 
   label: {
