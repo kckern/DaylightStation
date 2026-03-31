@@ -361,6 +361,23 @@ export class WebSocketEventBus {
   }
 
   /**
+   * Count external WS clients subscribed to a topic (or wildcard).
+   * @param {string} topic - Topic to check
+   * @returns {number}
+   */
+  getTopicSubscriberCount(topic) {
+    let count = 0;
+    for (const [, { ws, meta }] of this.#clients) {
+      if (ws.readyState === ws.OPEN) {
+        if (meta.subscriptions.has(topic) || meta.subscriptions.has('*')) {
+          count++;
+        }
+      }
+    }
+    return count;
+  }
+
+  /**
    * Get all topics with internal subscribers
    * @returns {string[]}
    */
