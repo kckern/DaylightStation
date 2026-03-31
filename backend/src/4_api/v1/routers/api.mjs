@@ -103,7 +103,8 @@ export function createApiRouter(config) {
     '/sync': 'sync',
     '/prewarm': 'prewarm',
     '/weekly-review': 'weekly-review',
-    '/qrcode': 'qrcode'
+    '/qrcode': 'qrcode',
+    '/catalog': 'catalog'
   };
 
   // Mount each router at its path

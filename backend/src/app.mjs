@@ -1345,6 +1345,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'qrcode' }),
   });
 
+  // Catalog PDF router
+  const { createCatalogRouter } = await import('./4_api/v1/routers/catalog.mjs');
+  v1Routers.catalog = createCatalogRouter({
+    port: Number(process.env.PORT || 3111),
+    logger: rootLogger.child({ module: 'catalog' }),
+  });
+
   // Nutribot report renderer (canvas-based PNG generation)
   let nutribotReportRenderer = null;
   try {

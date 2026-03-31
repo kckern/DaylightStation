@@ -1,8 +1,8 @@
 {
   "dependencies": {
     "@extractus/article-extractor": "^8.0.20",
-    "qrcode": "^1.5.4",
     "@mastra/core": "^1.0.4",
+    "@resvg/resvg-js": "^2.6.2",
     "@tabler/icons-react": "^3.36.1",
     "adm-zip": "^0.5.16",
     "ajv": "^8.18.0",
@@ -30,9 +30,12 @@
     "openai-gpt-token-counter": "^1.1.1",
     "openmeteo": "^1.1.5",
     "pdfjs-dist": "^5.4.624",
+    "pdfkit": "^0.18.0",
+    "qrcode": "^1.5.4",
     "react-flip-move": "^3.0.5",
     "smartquotes": "^2.3.2",
     "string-similarity": "^4.0.4",
+    "svg-to-pdfkit": "^0.1.8",
     "winston": "^3.18.3",
     "winston-loggly-bulk": "^3.3.3",
     "yaml": "^2.8.2",
