@@ -1,10 +1,10 @@
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 
 let client = null;
 
 function getClient() {
   if (!client) {
-    client = new Anthropic();
+    client = new OpenAI();
   }
   return client;
 }
@@ -61,10 +61,10 @@ export function parseResponse(text) {
 }
 
 export async function analyzeContactSheet(contactSheetPng, pageCount, categories, opts = {}) {
-  const model = opts.model || process.env.VISION_MODEL || 'claude-sonnet-4-20250514';
+  const model = opts.model || process.env.VISION_MODEL || 'gpt-4o';
   const prompt = buildPrompt(pageCount, categories);
 
-  const response = await getClient().messages.create({
+  const response = await getClient().chat.completions.create({
     model,
     max_tokens: 4096,
     messages: [
@@ -72,11 +72,9 @@ export async function analyzeContactSheet(contactSheetPng, pageCount, categories
         role: 'user',
         content: [
           {
-            type: 'image',
-            source: {
-              type: 'base64',
-              media_type: 'image/png',
-              data: contactSheetPng.toString('base64'),
+            type: 'image_url',
+            image_url: {
+              url: `data:image/png;base64,${contactSheetPng.toString('base64')}`,
             },
           },
           { type: 'text', text: prompt },
@@ -85,19 +83,21 @@ export async function analyzeContactSheet(contactSheetPng, pageCount, categories
     ],
   });
 
-  const text = response.content[0]?.text;
+  const text = response.choices[0]?.message?.content;
   if (!text) throw new Error('Empty response from vision LLM');
 
   return parseResponse(text);
 }
 
 export async function analyzeDetailPages(pageBuffers, pageNumbers, categories, opts = {}) {
-  const model = opts.model || process.env.VISION_MODEL || 'claude-sonnet-4-20250514';
+  const model = opts.model || process.env.VISION_MODEL || 'gpt-4o';
 
   const imageContent = pageBuffers.map((buf, i) => ([
     {
-      type: 'image',
-      source: { type: 'base64', media_type: 'image/jpeg', data: buf.toString('base64') },
+      type: 'image_url',
+      image_url: {
+        url: `data:image/jpeg;base64,${buf.toString('base64')}`,
+      },
     },
     { type: 'text', text: `This is page ${pageNumbers[i]}.` },
   ])).flat();
@@ -113,13 +113,13 @@ Respond with ONLY valid JSON:
   ]
 }`;
 
-  const response = await getClient().messages.create({
+  const response = await getClient().chat.completions.create({
     model,
     max_tokens: 4096,
     messages: [{ role: 'user', content: [...imageContent, { type: 'text', text: prompt }] }],
   });
 
-  const text = response.content[0]?.text;
+  const text = response.choices[0]?.message?.content;
   if (!text) throw new Error('Empty response from detail vision LLM');
 
   return parseResponse(text);
