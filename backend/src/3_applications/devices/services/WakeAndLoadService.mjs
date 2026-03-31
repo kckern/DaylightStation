@@ -251,10 +251,10 @@ export class WakeAndLoadService {
     // If the screen is already loaded (warm prepare) and WS subscribers exist,
     // try delivering content via WebSocket for an instant, no-refresh switch.
     const warmPrepare = !coldWake && hasContentQuery && !!this.#eventBus;
+    const subscriberCount = warmPrepare ? this.#eventBus.getTopicSubscriberCount(topic) : 0;
     let wsDelivered = false;
 
     if (warmPrepare) {
-      const subscriberCount = this.#eventBus.getTopicSubscriberCount(topic);
       this.#logger.info?.('wake-and-load.load.ws-check', { deviceId, topic, subscriberCount });
 
       if (subscriberCount > 0) {
@@ -287,7 +287,7 @@ export class WakeAndLoadService {
     // --- FKB loadURL (primary or fallback) ---
     if (!wsDelivered) {
       const wsSkipReason = warmPrepare
-        ? (this.#eventBus.getTopicSubscriberCount(topic) === 0 ? 'no-subscribers' : undefined)
+        ? (subscriberCount === 0 ? 'no-subscribers' : undefined)
         : (coldWake ? 'cold-restart' : undefined);
 
       const loadResult = await device.loadContent(screenPath, contentQuery);
