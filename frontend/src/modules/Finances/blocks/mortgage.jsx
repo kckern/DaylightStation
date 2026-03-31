@@ -117,7 +117,9 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       tickInterval: 365.25 * 24 * 3600 * 1000, // one year
       minorTickInterval: 30 * 24 * 3600 * 1000,
       gridLineWidth: 1,
+      gridLineColor: "#444",
       minorGridLineWidth: 0.5,
+      minorGridLineColor: "#333",
       labels: {
         rotation: -45,
         style: { color: '#999', fontSize: '10px' }
@@ -142,7 +144,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
           style: { color: '#999' }
         },
         gridLineColor: "#666",
-        minorGridLineColor: "#333",
+        minorGridLineColor: "#444",
       },
       plotOptions: {
       series: {
