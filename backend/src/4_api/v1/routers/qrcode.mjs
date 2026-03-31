@@ -14,6 +14,7 @@ import fs from 'fs';
 import path from 'path';
 import imageSize from 'image-size';
 import { KNOWN_COMMANDS } from '#domains/barcode/BarcodeCommandMap.mjs';
+import { ContentExpression } from '#domains/content/ContentExpression.mjs';
 
 const COMMAND_ICON_MAP = {
   pause: 'pause.svg',
@@ -34,9 +35,9 @@ const OPTION_ICON_MAP = {
   continuous: 'continuous.svg',
 };
 
-const ACTION_KEYS = ['queue', 'play', 'open'];
-const KNOWN_PARAMS = new Set([
-  ...ACTION_KEYS, 'data', 'content', 'options', 'screen',
+/** Query params that are display/rendering concerns, not content expression keys */
+const DISPLAY_PARAMS = new Set([
+  'data', 'content', 'options',
   'label', 'sublabel', 'logo', 'size', 'style', 'fg', 'bg',
 ]);
 
@@ -74,7 +75,31 @@ export function createQRCodeRouter(config) {
       } = req.query;
 
       // Check for action-based params first
-      const actionParams = parseActionParams(req.query, defaultScreen);
+      // Filter out display params so ContentExpression only sees action/screen/options
+      const exprQuery = {};
+      for (const [key, value] of Object.entries(req.query)) {
+        if (!DISPLAY_PARAMS.has(key)) exprQuery[key] = value;
+      }
+      const expr = ContentExpression.fromQuery(exprQuery);
+      const actionParams = expr.action ? (() => {
+        const options = Object.keys(expr.options).filter(k => expr.options[k] === true);
+
+        // Build encoded barcode string without default screen
+        const encodeExpr = new ContentExpression({
+          screen: (expr.screen && expr.screen !== defaultScreen) ? expr.screen : null,
+          action: expr.action,
+          contentId: expr.contentId,
+          options: expr.options,
+        });
+
+        return {
+          action: expr.action,
+          contentId: expr.contentId,
+          screen: expr.screen || defaultScreen,
+          options,
+          encodeData: encodeExpr.toString(),
+        };
+      })() : null;
 
       if (!data && !content && !actionParams) {
         return res.status(400).json({ error: 'Provide an action (queue, play, open), "content", or "data" query param' });
@@ -247,51 +272,6 @@ function loadDefaultLogo(logoPath) {
   } catch {
     return null;
   }
-}
-
-/**
- * Parse action-based query params into content resolution inputs.
- * Detects queue/play/open action, extracts bare-key options, builds encode string.
- *
- * @param {Object} query - Express req.query
- * @param {string|null} defaultScreen - Default screen from devices.yml
- * @returns {{ action, contentId, screen, options, encodeData } | null}
- */
-function parseActionParams(query, defaultScreen) {
-  let action = null;
-  let contentId = null;
-
-  for (const key of ACTION_KEYS) {
-    if (query[key] != null && query[key] !== '') {
-      action = key;
-      contentId = query[key];
-      break;
-    }
-  }
-
-  if (!action) return null;
-
-  // Extract bare-key options (query params not in KNOWN_PARAMS with empty/missing value)
-  const options = [];
-  for (const [key, value] of Object.entries(query)) {
-    if (KNOWN_PARAMS.has(key)) continue;
-    if (value === '' || value === undefined) {
-      options.push(key);
-    }
-  }
-
-  // Determine screen: explicit param > default from config
-  const screen = query.screen || null;
-
-  // Build encoded barcode string: [screen:]action:contentId[+opt1+opt2]
-  let encodeData = `${action}:${contentId}`;
-  if (options.length > 0) encodeData += `+${options.join('+')}`;
-  // Only prepend screen if explicitly provided and differs from default
-  if (screen && screen !== defaultScreen) {
-    encodeData = `${screen}:${encodeData}`;
-  }
-
-  return { action, contentId, screen: screen || defaultScreen, options, encodeData };
 }
 
 async function resolveContent({ contentId, options, screen, contentIdResolver, mediaPath, logger }) {

@@ -14,6 +14,7 @@ import express from 'express';
 import PDFDocument from 'pdfkit';
 import SVGtoPDF from 'svg-to-pdfkit';
 import { Resvg } from '@resvg/resvg-js';
+import { ContentExpression } from '#domains/content/ContentExpression.mjs';
 
 const PAGE_WIDTH = 612;   // US Letter
 const PAGE_HEIGHT = 792;
@@ -37,7 +38,13 @@ export function createCatalogRouter(config) {
   router.get('/:source/:id', async (req, res) => {
     try {
       const { source, id } = req.params;
-      const { screen, options } = req.query;
+
+      // Parse screen and bare-key options from query via ContentExpression
+      const expr = ContentExpression.fromQuery(req.query);
+      const screen = expr.screen;
+      const optionStr = Object.entries(expr.options)
+        .map(([k, v]) => v === true ? k : `${k}=${v}`)
+        .join('+') || null;
 
       // 1. Fetch list
       const listUrl = `${baseUrl}/api/v1/list/${source}/${id}`;
@@ -64,7 +71,7 @@ export function createCatalogRouter(config) {
             const params = new URLSearchParams();
             params.set('content', item.id);
             if (screen) params.set('screen', screen);
-            if (options) params.set('options', options);
+            if (optionStr) params.set('options', optionStr);
 
             const qrUrl = `${baseUrl}/api/v1/qrcode?${params}`;
             const qrRes = await fetch(qrUrl);
