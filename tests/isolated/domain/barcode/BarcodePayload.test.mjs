@@ -104,6 +104,45 @@ describe('BarcodePayload', () => {
     });
   });
 
+  describe('delimiter normalization', () => {
+    it('parses semicolon-delimited barcodes', () => {
+      const payload = BarcodePayload.parse(
+        { barcode: 'office;plex;12345', timestamp: '2026-03-30T01:00:00Z', device: 'scanner-1' },
+        KNOWN_ACTIONS
+      );
+      expect(payload.contentId).toBe('plex:12345');
+      expect(payload.targetScreen).toBe('office');
+    });
+
+    it('parses space-delimited barcodes', () => {
+      const payload = BarcodePayload.parse(
+        { barcode: 'play plex 12345', timestamp: '2026-03-30T01:00:00Z', device: 'scanner-1' },
+        KNOWN_ACTIONS
+      );
+      expect(payload.contentId).toBe('plex:12345');
+      expect(payload.action).toBe('play');
+    });
+
+    it('parses mixed delimiters', () => {
+      const payload = BarcodePayload.parse(
+        { barcode: 'office;play:plex:12345', timestamp: '2026-03-30T01:00:00Z', device: 'scanner-1' },
+        KNOWN_ACTIONS
+      );
+      expect(payload.contentId).toBe('plex:12345');
+      expect(payload.action).toBe('play');
+      expect(payload.targetScreen).toBe('office');
+    });
+
+    it('preserves dashes in screen names (not a delimiter)', () => {
+      const payload = BarcodePayload.parse(
+        { barcode: 'living-room;plex;12345', timestamp: '2026-03-30T01:00:00Z', device: 'scanner-1' },
+        KNOWN_ACTIONS
+      );
+      expect(payload.contentId).toBe('plex:12345');
+      expect(payload.targetScreen).toBe('living-room');
+    });
+  });
+
   describe('toJSON', () => {
     it('serializes all fields', () => {
       const payload = BarcodePayload.parse(
