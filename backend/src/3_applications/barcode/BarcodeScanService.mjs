@@ -110,6 +110,7 @@ export class BarcodeScanService {
       contentId: payload.contentId,
       targetScreen,
       action,
+      options: payload.options,
       device: payload.device,
     });
 

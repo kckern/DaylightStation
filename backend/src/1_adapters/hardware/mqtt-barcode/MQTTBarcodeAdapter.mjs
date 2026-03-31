@@ -210,6 +210,7 @@ export class MQTTBarcodeAdapter {
         contentId: payload.contentId,
         command: payload.command,
         action: payload.action,
+        options: payload.options,
         targetScreen: payload.targetScreen,
         device: payload.device,
       });
