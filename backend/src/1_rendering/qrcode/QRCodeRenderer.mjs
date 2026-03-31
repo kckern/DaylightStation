@@ -185,7 +185,7 @@ function renderLabelBox(parts, { totalWidth, frame, innerH, labelHeight, padding
   const boxX = frame;
   const boxY = frame + innerH + boxGap;
   const boxW = totalWidth - frame * 2;
-  const boxH = labelHeight + frame - boxGap;
+  const boxH = totalHeight - boxY - frame;
   const boxRadius = 8;
 
   // White rounded box
