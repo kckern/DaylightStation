@@ -247,56 +247,103 @@ export class WakeAndLoadService {
     const screenPath = device.screenPath || '/tv';
     const hasContentQuery = Object.keys(contentQuery).length > 0;
 
-    // Try URL load first (includes retries in FullyKioskContentAdapter)
-    const loadResult = await device.loadContent(screenPath, contentQuery);
-    result.steps.load = loadResult;
+    // --- WS-first delivery ---
+    // If the screen is already loaded (warm prepare) and WS subscribers exist,
+    // try delivering content via WebSocket for an instant, no-refresh switch.
+    const warmPrepare = !coldWake && hasContentQuery && !!this.#eventBus;
+    let wsDelivered = false;
 
-    if (loadResult.ok) {
-      this.#emitProgress(topic, 'load', 'done');
-    } else if (hasContentQuery) {
-      // --- WebSocket Fallback ---
-      // URL load failed but there IS content to deliver. The screen may already
-      // be loaded at the base URL (without query params). Send the content
-      // command via WebSocket so the screen's useScreenCommands handler can
-      // pick it up and trigger playback.
-      this.#logger.warn?.('wake-and-load.load.urlFailed-tryingWsFallback', {
-        deviceId, error: loadResult.error, contentQuery
-      });
-      this.#emitProgress(topic, 'load', 'retrying', { method: 'websocket' });
+    if (warmPrepare) {
+      const subscriberCount = this.#eventBus.getTopicSubscriberCount(topic);
+      this.#logger.info?.('wake-and-load.load.ws-check', { deviceId, topic, subscriberCount });
 
-      // Ensure the screen has time to load the base URL before sending WS
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      if (subscriberCount > 0) {
+        try {
+          // Broadcast content command
+          this.#broadcast({ topic, ...contentQuery });
 
-      // Load the base URL first if it hasn't loaded yet
-      const baseLoadResult = await device.loadContent(screenPath, {});
-      if (baseLoadResult.ok) {
-        this.#logger.info?.('wake-and-load.load.baseUrlLoaded', { deviceId });
+          // Wait for ack from the screen
+          const ackStart = Date.now();
+          await this.#eventBus.waitForMessage(
+            (msg) => msg.type === 'content-ack' && msg.screen === deviceId,
+            4000
+          );
+
+          const ackMs = Date.now() - ackStart;
+          this.#logger.info?.('wake-and-load.load.ws-ack', { deviceId, ackMs });
+
+          result.steps.load = { ok: true, method: 'websocket', ackMs };
+          wsDelivered = true;
+          this.#emitProgress(topic, 'load', 'done', { method: 'websocket' });
+        } catch (err) {
+          this.#logger.warn?.('wake-and-load.load.ws-failed', { deviceId, error: err.message });
+          // Fall through to FKB loadURL
+        }
+      } else {
+        this.#logger.info?.('wake-and-load.load.ws-skipped', { deviceId, reason: 'no-subscribers' });
       }
+    }
 
-      // Give the screen framework time to mount and subscribe to WS
-      await new Promise(resolve => setTimeout(resolve, 2000));
+    // --- FKB loadURL (primary or fallback) ---
+    if (!wsDelivered) {
+      const wsSkipReason = warmPrepare
+        ? (this.#eventBus.getTopicSubscriberCount(topic) === 0 ? 'no-subscribers' : undefined)
+        : (coldWake ? 'cold-restart' : undefined);
 
-      // Broadcast content command via WebSocket
-      this.#broadcast({ ...contentQuery });
-      this.#logger.info?.('wake-and-load.load.wsFallbackSent', {
-        deviceId, contentQuery
-      });
+      const loadResult = await device.loadContent(screenPath, contentQuery);
 
-      result.steps.load = {
-        ok: true,
-        method: 'websocket-fallback',
-        urlError: loadResult.error,
-        note: 'URL load failed; content delivered via WebSocket command'
-      };
-      this.#emitProgress(topic, 'load', 'done', { method: 'websocket-fallback' });
-    } else {
-      // No content query — just a plain screen load that failed
-      this.#emitProgress(topic, 'load', 'failed', { error: loadResult.error });
-      this.#logger.error?.('wake-and-load.load.failed', { deviceId, error: loadResult.error });
-      result.error = loadResult.error;
-      result.failedStep = 'load';
-      result.totalElapsedMs = Date.now() - startTime;
-      return result;
+      if (loadResult.ok) {
+        result.steps.load = {
+          ...loadResult,
+          ...(wsSkipReason ? { wsSkipped: wsSkipReason } : {}),
+          ...(warmPrepare && !wsSkipReason ? { method: 'fkb-fallback', wsError: 'ack-timeout' } : {})
+        };
+        this.#emitProgress(topic, 'load', 'done');
+      } else if (hasContentQuery) {
+        // --- WebSocket Fallback (existing) ---
+        // URL load failed but there IS content to deliver. The screen may already
+        // be loaded at the base URL (without query params). Send the content
+        // command via WebSocket so the screen's useScreenCommands handler can
+        // pick it up and trigger playback.
+        this.#logger.warn?.('wake-and-load.load.urlFailed-tryingWsFallback', {
+          deviceId, error: loadResult.error, contentQuery
+        });
+        this.#emitProgress(topic, 'load', 'retrying', { method: 'websocket' });
+
+        // Ensure the screen has time to load the base URL before sending WS
+        await new Promise(resolve => setTimeout(resolve, 3000));
+
+        // Load the base URL first if it hasn't loaded yet
+        const baseLoadResult = await device.loadContent(screenPath, {});
+        if (baseLoadResult.ok) {
+          this.#logger.info?.('wake-and-load.load.baseUrlLoaded', { deviceId });
+        }
+
+        // Give the screen framework time to mount and subscribe to WS
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Broadcast content command via WebSocket
+        this.#broadcast({ ...contentQuery });
+        this.#logger.info?.('wake-and-load.load.wsFallbackSent', {
+          deviceId, contentQuery
+        });
+
+        result.steps.load = {
+          ok: true,
+          method: 'websocket-fallback',
+          urlError: loadResult.error,
+          note: 'URL load failed; content delivered via WebSocket command'
+        };
+        this.#emitProgress(topic, 'load', 'done', { method: 'websocket-fallback' });
+      } else {
+        // No content query — just a plain screen load that failed
+        this.#emitProgress(topic, 'load', 'failed', { error: loadResult.error });
+        this.#logger.error?.('wake-and-load.load.failed', { deviceId, error: loadResult.error });
+        result.error = loadResult.error;
+        result.failedStep = 'load';
+        result.totalElapsedMs = Date.now() - startTime;
+        return result;
+      }
     }
 
     // --- All steps passed ---
