@@ -1239,7 +1239,22 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // Create gatekeeper with auto-approve (strategies from config in future)
     const gatekeeper = new BarcodeGatekeeper([autoApprove]);
 
+    // Build screen topic → display on_script map for TV wake
+    const haGateway = householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null;
+    const screenDisplayScripts = {};
+    for (const [, device] of Object.entries(devices)) {
+      const topic = device.content_control?.topic;
+      const displays = device.device_control?.displays;
+      if (topic && displays) {
+        const scripts = Object.values(displays)
+          .filter(d => d.on_script)
+          .map(d => d.on_script);
+        if (scripts.length > 0) screenDisplayScripts[topic] = scripts;
+      }
+    }
+
     // Create scan service
+    const barcodeLogger = rootLogger.child({ module: 'barcode' });
     const barcodeScanService = new BarcodeScanService({
       gatekeeper,
       deviceConfig: scannerDeviceConfig,
@@ -1249,7 +1264,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         actions: barcodeConfig.actions || ['queue', 'play', 'open'],
       },
       commandResolver: resolveCommand,
-      logger: rootLogger.child({ module: 'barcode' }),
+      onContentApproved: async (targetScreen) => {
+        const scripts = screenDisplayScripts[targetScreen];
+        if (!scripts || !haGateway) return;
+        for (const scriptId of scripts) {
+          try {
+            await haGateway.callService('script', 'turn_on', { entity_id: scriptId });
+            barcodeLogger.info?.('barcode.display.on', { targetScreen, scriptId });
+          } catch (err) {
+            barcodeLogger.warn?.('barcode.display.onFailed', { targetScreen, scriptId, error: err.message });
+          }
+        }
+      },
+      logger: barcodeLogger,
     });
 
     // Wire adapter callback

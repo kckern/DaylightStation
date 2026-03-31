@@ -13,6 +13,7 @@ export class BarcodeScanService {
   #broadcastEvent;
   #pipelineConfig;
   #commandResolver;
+  #onContentApproved;
   #logger;
 
   /**
@@ -30,6 +31,7 @@ export class BarcodeScanService {
     this.#broadcastEvent = deps.broadcastEvent;
     this.#pipelineConfig = deps.pipelineConfig;
     this.#commandResolver = deps.commandResolver;
+    this.#onContentApproved = deps.onContentApproved || null;
     this.#logger = deps.logger || console;
   }
 
@@ -110,6 +112,11 @@ export class BarcodeScanService {
       action,
       device: payload.device,
     });
+
+    // Turn on displays for the target screen (fire-and-forget)
+    if (this.#onContentApproved) {
+      this.#onContentApproved(targetScreen).catch(() => {});
+    }
 
     this.#broadcastEvent(targetScreen, {
       action,
