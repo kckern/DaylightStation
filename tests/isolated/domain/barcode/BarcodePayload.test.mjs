@@ -94,6 +94,14 @@ describe('BarcodePayload', () => {
       );
       expect(payload).toBeNull();
     });
+
+    it('returns null for too many segments (5+)', () => {
+      const payload = BarcodePayload.parse(
+        { barcode: 'extra:living-room:queue:plex:12345', timestamp: '2026-03-30T01:00:00Z', device: 'scanner-1' },
+        KNOWN_ACTIONS
+      );
+      expect(payload).toBeNull();
+    });
   });
 
   describe('toJSON', () => {
