@@ -79,6 +79,7 @@ export class BarcodeScanService {
       ...wsPayload,
       source: 'barcode',
       device: payload.device,
+      targetScreen,
     });
   }
 
@@ -125,6 +126,7 @@ export class BarcodeScanService {
       ...(payload.options || {}),
       source: 'barcode',
       device: payload.device,
+      targetScreen,
     });
   }
 }
