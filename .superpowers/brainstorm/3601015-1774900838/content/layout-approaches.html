@@ -1,0 +1,181 @@
+<h2>Family Weekly Review — Layout Approaches</h2>
+<p class="subtitle">How should the 8-day grid and recording controls be arranged?</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Timeline Strip + Photo Wall</h3>
+      <p>Horizontal day strip across top (8 columns, scrollable). Selecting a day fills the main area below with that day's photo wall (hero + thumbnails). Calendar events shown as small badges/chips on the day strip. Recording controls float in a corner panel.</p>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-body" style="padding:12px">
+          <!-- Day strip -->
+          <div style="display:flex;gap:4px;margin-bottom:10px">
+            <div style="flex:1;background:#2a4a6a;border-radius:6px;padding:8px;text-align:center;font-size:0.75rem;border:2px solid #4da6ff">
+              <div style="font-weight:700">Sun 23</div>
+              <div style="font-size:0.65rem;color:#99ccff;margin-top:2px">3 photos</div>
+              <div style="font-size:0.55rem;background:#3a5a3a;border-radius:3px;padding:1px 4px;margin-top:3px">Soccer</div>
+            </div>
+            <div style="flex:1;background:#333;border-radius:6px;padding:8px;text-align:center;font-size:0.75rem">
+              <div style="font-weight:700">Mon 24</div>
+              <div style="font-size:0.65rem;color:#888;margin-top:2px">1 photo</div>
+            </div>
+            <div style="flex:1;background:#333;border-radius:6px;padding:8px;text-align:center;font-size:0.75rem">
+              <div style="font-weight:700">Tue 25</div>
+              <div style="font-size:0.65rem;color:#888;margin-top:2px">7 photos</div>
+            </div>
+            <div style="flex:1;background:#333;border-radius:6px;padding:8px;text-align:center;font-size:0.75rem">
+              <div style="font-weight:700">Wed 26</div>
+              <div style="font-size:0.65rem;color:#888;margin-top:2px">—</div>
+            </div>
+            <div style="flex:1;background:#333;border-radius:6px;padding:8px;text-align:center;font-size:0.75rem">
+              <div style="font-weight:700">Thu 27</div>
+              <div style="font-size:0.65rem;color:#888;margin-top:2px">2 photos</div>
+            </div>
+            <div style="flex:1;background:#333;border-radius:6px;padding:8px;text-align:center;font-size:0.75rem">
+              <div style="font-weight:700">Fri 28</div>
+              <div style="font-size:0.65rem;color:#888;margin-top:2px">12 photos</div>
+              <div style="font-size:0.55rem;background:#3a5a3a;border-radius:3px;padding:1px 4px;margin-top:3px">Birthday</div>
+            </div>
+            <div style="flex:1;background:#333;border-radius:6px;padding:8px;text-align:center;font-size:0.75rem">
+              <div style="font-weight:700">Sat 29</div>
+              <div style="font-size:0.65rem;color:#888;margin-top:2px">5 photos</div>
+            </div>
+            <div style="flex:1;background:#444;border-radius:6px;padding:8px;text-align:center;font-size:0.75rem;border:1px solid #555">
+              <div style="font-weight:700;color:#aaffaa">Today</div>
+              <div style="font-size:0.65rem;color:#888;margin-top:2px">—</div>
+            </div>
+          </div>
+          <!-- Photo wall for selected day -->
+          <div style="display:grid;grid-template-columns:2fr 1fr 1fr;grid-template-rows:1fr 1fr;gap:6px;flex:1;min-height:120px">
+            <div style="background:#4a6a4a;border-radius:6px;grid-row:span 2;display:flex;align-items:center;justify-content:center;font-size:0.8rem;color:#aaffaa">Hero Photo</div>
+            <div style="background:#3a4a5a;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:0.65rem">thumb</div>
+            <div style="background:#3a4a5a;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:0.65rem">thumb</div>
+            <div style="background:#3a4a5a;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:0.65rem">thumb</div>
+            <div style="background:#3a4a5a;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:0.65rem">thumb</div>
+          </div>
+          <!-- Record button -->
+          <div style="position:absolute;bottom:16px;right:16px;background:#c0392b;color:white;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:1.2rem;box-shadow:0 2px 8px rgba(0,0,0,0.4)">●</div>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:8px">
+        <div class="pros"><h4>Pros</h4><ul><li>Focus on one day at a time — good for narration prompts</li><li>Day strip gives week overview at a glance</li><li>Photo wall fills screen nicely</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Requires navigation between days</li><li>Empty days feel sparse</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Full Week Grid — All Days Visible</h3>
+      <p>8 columns side by side, each showing that day's content vertically. Each column has a day header, calendar chips, and a masonry-style photo stack. Columns auto-size based on content density. Recording controls in a persistent bottom bar.</p>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-body" style="padding:12px">
+          <div style="display:flex;gap:4px;height:180px">
+            <div style="flex:1.5;background:#2a2a2a;border-radius:6px;padding:6px;display:flex;flex-direction:column;gap:3px;border:1px solid #444">
+              <div style="text-align:center;font-size:0.65rem;font-weight:700;padding:3px;background:#3a3a3a;border-radius:3px">Sun 23</div>
+              <div style="font-size:0.5rem;background:#3a5a3a;border-radius:3px;padding:2px 4px;text-align:center">Soccer</div>
+              <div style="flex:2;background:#4a6a4a;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:0.55rem">photo</div>
+              <div style="flex:1;background:#3a4a5a;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:0.55rem">photo</div>
+            </div>
+            <div style="flex:0.8;background:#2a2a2a;border-radius:6px;padding:6px;display:flex;flex-direction:column;gap:3px;border:1px solid #444">
+              <div style="text-align:center;font-size:0.65rem;font-weight:700;padding:3px;background:#3a3a3a;border-radius:3px">Mon</div>
+              <div style="flex:1;background:#3a4a5a;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:0.55rem">photo</div>
+            </div>
+            <div style="flex:2;background:#2a2a2a;border-radius:6px;padding:6px;display:flex;flex-direction:column;gap:3px;border:1px solid #444">
+              <div style="text-align:center;font-size:0.65rem;font-weight:700;padding:3px;background:#3a3a3a;border-radius:3px">Tue 25</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px;flex:1">
+                <div style="background:#4a6a4a;border-radius:4px;grid-row:span 2;display:flex;align-items:center;justify-content:center;font-size:0.55rem">hero</div>
+                <div style="background:#3a4a5a;border-radius:4px;font-size:0.55rem;display:flex;align-items:center;justify-content:center">th</div>
+                <div style="background:#3a4a5a;border-radius:4px;font-size:0.55rem;display:flex;align-items:center;justify-content:center">th</div>
+              </div>
+            </div>
+            <div style="flex:0.5;background:#2a2a2a;border-radius:6px;padding:6px;display:flex;flex-direction:column;gap:3px;border:1px solid #333;opacity:0.5">
+              <div style="text-align:center;font-size:0.65rem;font-weight:700;padding:3px;background:#3a3a3a;border-radius:3px">Wed</div>
+              <div style="flex:1;display:flex;align-items:center;justify-content:center;font-size:0.55rem;color:#555">—</div>
+            </div>
+            <div style="flex:1;background:#2a2a2a;border-radius:6px;padding:6px;display:flex;flex-direction:column;gap:3px;border:1px solid #444">
+              <div style="text-align:center;font-size:0.65rem;font-weight:700;padding:3px;background:#3a3a3a;border-radius:3px">Thu</div>
+              <div style="flex:1;background:#3a4a5a;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:0.55rem">photo</div>
+              <div style="flex:1;background:#3a4a5a;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:0.55rem">photo</div>
+            </div>
+            <div style="flex:2.5;background:#2a2a2a;border-radius:6px;padding:6px;display:flex;flex-direction:column;gap:3px;border:1px solid #555">
+              <div style="text-align:center;font-size:0.65rem;font-weight:700;padding:3px;background:#3a5a3a;border-radius:3px;color:#aaffaa">Fri 28</div>
+              <div style="font-size:0.5rem;background:#5a4a2a;border-radius:3px;padding:2px 4px;text-align:center">Birthday!</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:1fr 1fr;gap:3px;flex:1">
+                <div style="background:#4a6a4a;border-radius:4px;grid-column:span 2;grid-row:span 2;display:flex;align-items:center;justify-content:center;font-size:0.55rem">hero</div>
+                <div style="background:#3a4a5a;border-radius:4px;font-size:0.5rem;display:flex;align-items:center;justify-content:center">th</div>
+                <div style="background:#3a4a5a;border-radius:4px;font-size:0.5rem;display:flex;align-items:center;justify-content:center">th</div>
+              </div>
+            </div>
+            <div style="flex:1.5;background:#2a2a2a;border-radius:6px;padding:6px;display:flex;flex-direction:column;gap:3px;border:1px solid #444">
+              <div style="text-align:center;font-size:0.65rem;font-weight:700;padding:3px;background:#3a3a3a;border-radius:3px">Sat</div>
+              <div style="flex:1;background:#4a6a4a;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:0.55rem">hero</div>
+              <div style="display:flex;gap:2px;height:30%">
+                <div style="flex:1;background:#3a4a5a;border-radius:4px;font-size:0.5rem;display:flex;align-items:center;justify-content:center">th</div>
+                <div style="flex:1;background:#3a4a5a;border-radius:4px;font-size:0.5rem;display:flex;align-items:center;justify-content:center">th</div>
+              </div>
+            </div>
+            <div style="flex:0.5;background:#2a2a2a;border-radius:6px;padding:6px;display:flex;flex-direction:column;gap:3px;border:1px solid #555">
+              <div style="text-align:center;font-size:0.65rem;font-weight:700;padding:3px;background:#2a4a2a;border-radius:3px;color:#aaffaa">Today</div>
+              <div style="flex:1;display:flex;align-items:center;justify-content:center;font-size:0.55rem;color:#555">—</div>
+            </div>
+          </div>
+          <!-- Bottom bar -->
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;padding:6px 10px;background:#2a2a2a;border-radius:6px;border:1px solid #444">
+            <div style="font-size:0.65rem;color:#888">Week of Mar 23 – 30</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="font-size:0.6rem;color:#888">0:00</div>
+              <div style="background:#c0392b;color:white;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:0.9rem">●</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:8px">
+        <div class="pros"><h4>Pros</h4><ul><li>Entire week visible — great for free-form narration</li><li>Content density adapts per day automatically</li><li>No navigation needed — everything is there</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Columns can get thin on busy weeks</li><li>Less photo detail visible at a glance</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Scrolling Timeline Wall</h3>
+      <p>Vertical or horizontal scroll through the week as one continuous stream. Days separated by date headers. Photos flow in a masonry/Pinterest-style layout. Calendar events inline as styled cards. Recording controls sticky in corner. Like scrolling through a visual diary.</p>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-body" style="padding:12px;max-height:200px;overflow:hidden">
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="font-size:0.7rem;font-weight:700;padding:4px 8px;background:#3a3a3a;border-radius:4px;border-left:3px solid #4da6ff">Sunday, Mar 23</div>
+            <div style="display:flex;gap:4px;height:60px">
+              <div style="font-size:0.5rem;background:#3a5a3a;border-radius:4px;padding:4px 8px;display:flex;align-items:center;width:80px;flex-shrink:0">Soccer 10am</div>
+              <div style="flex:2;background:#4a6a4a;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:0.6rem">hero photo</div>
+              <div style="flex:1;background:#3a4a5a;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:0.55rem">thumb</div>
+              <div style="flex:1;background:#3a4a5a;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:0.55rem">thumb</div>
+            </div>
+            <div style="font-size:0.7rem;font-weight:700;padding:4px 8px;background:#3a3a3a;border-radius:4px;border-left:3px solid #4da6ff">Monday, Mar 24</div>
+            <div style="display:flex;gap:4px;height:40px">
+              <div style="flex:1;background:#3a4a5a;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:0.55rem">photo</div>
+            </div>
+            <div style="font-size:0.7rem;font-weight:700;padding:4px 8px;background:#3a3a3a;border-radius:4px;border-left:3px solid #4da6ff">Tuesday, Mar 25</div>
+            <div style="display:flex;gap:4px;height:70px">
+              <div style="flex:2;background:#4a6a4a;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:0.6rem">hero</div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:3px">
+                <div style="flex:1;background:#3a4a5a;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:0.5rem">th</div>
+                <div style="flex:1;background:#3a4a5a;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:0.5rem">th</div>
+              </div>
+            </div>
+            <div style="opacity:0.4;text-align:center;font-size:0.6rem;padding:4px">↓ scroll for more ↓</div>
+          </div>
+          <!-- Sticky record button -->
+          <div style="position:absolute;bottom:16px;right:16px;background:#c0392b;color:white;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:1.2rem;box-shadow:0 2px 8px rgba(0,0,0,0.4)">●</div>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:8px">
+        <div class="pros"><h4>Pros</h4><ul><li>Photos can be large and detailed</li><li>Natural "scroll through the week" feel</li><li>Adapts well to varying content density</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Scrolling on Shield TV with keyboard is clunky</li><li>Can't see the full week at once</li><li>Harder to get week-at-a-glance sense</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>

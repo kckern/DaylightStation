@@ -1,0 +1,14 @@
+[Unit]
+Description=Audio Router — HDMI/USB sink switching on TV power state
+After=graphical.target pipewire.service
+
+[Service]
+Type=simple
+ExecStart=/opt/audio-router/src/audio-router.sh
+Restart=always
+RestartSec=5
+
+EnvironmentFile=-/etc/default/audio-router
+
+[Install]
+WantedBy=multi-user.target

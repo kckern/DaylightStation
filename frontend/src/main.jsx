@@ -6,7 +6,6 @@ import '@mantine/core/styles.css';
 import { WebSocketProvider } from './contexts/WebSocketContext.jsx';
 import RootApp from './Apps/RootApp.jsx';
 import HomeApp from './Apps/HomeApp.jsx';
-import OfficeApp from './Apps/OfficeApp.jsx';
 import TVApp from './Apps/TVApp.jsx';
 import FinanceApp from './Apps/FinanceApp.jsx';
 import HealthApp from './Apps/HealthApp.jsx';
@@ -73,22 +72,8 @@ configurePlaybackLogger({
   level: 'debug'
 });
 
-// Wrapper component for OfficeApp with WebSocket
-const OfficeAppWithWebSocket = () => (
-  <WebSocketProvider>
-    <OfficeApp />
-  </WebSocketProvider>
-);
-
-// OfficeApp with piano game pre-selected via URL
-const OfficeAppWithPianoGame = () => {
-  const { gameId } = useParams();
-  return (
-    <WebSocketProvider>
-      <OfficeApp initialGame={gameId || null} />
-    </WebSocketProvider>
-  );
-};
+// Legacy /office routes redirect to screen-framework
+const OfficeRedirect = () => <Navigate to="/screen/office" replace />;
 
 // Wrapper component for TVApp with app parameter
 const TVAppWithParams = () => {
@@ -134,9 +119,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <Routes>
         <Route path="/" element={<AdminApp />} />
         <Route path="/home" element={<HomeApp />} />
-        <Route path="/office" element={<OfficeAppWithWebSocket />} />
-        <Route path="/office/piano/:gameId" element={<OfficeAppWithPianoGame />} />
-        <Route path="/office/piano" element={<OfficeAppWithPianoGame />} />
+        <Route path="/office" element={<OfficeRedirect />} />
+        <Route path="/office/*" element={<OfficeRedirect />} />
         <Route path="/budget" element={<FinanceApp />} />
         <Route path="/finances" element={<FinanceApp />} />
         <Route path="/tv/app/:app" element={<TVAppWithParams />} />
