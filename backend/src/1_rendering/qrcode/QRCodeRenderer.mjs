@@ -124,15 +124,14 @@ function renderCoverLayout(data, options, theme) {
   // Label area (full width, below both cover and QR)
   if (label) {
     const labelY = margin + size + theme.label.fontSize + 8;
-    const labelX = margin + 8;
 
-    // Title — left-aligned
-    parts.push(`<text x="${labelX}" y="${labelY}" font-family="${theme.label.fontFamily}" font-size="${theme.label.fontSize}" font-weight="bold" fill="${theme.label.color}">${escapeXml(label)}</text>`);
+    // Title — centered
+    parts.push(`<text x="${totalWidth / 2}" y="${labelY}" text-anchor="middle" font-family="${theme.label.fontFamily}" font-size="${theme.label.fontSize}" font-weight="bold" fill="${theme.label.color}">${escapeXml(label)}</text>`);
 
-    // Sublabel — left-aligned below title
+    // Sublabel — centered below title
     if (sublabel) {
       const sublabelY = labelY + theme.label.lineSpacing;
-      parts.push(`<text x="${labelX}" y="${sublabelY}" font-family="${theme.label.fontFamily}" font-size="${theme.label.sublabelFontSize}" fill="${theme.label.sublabelColor}">${escapeXml(sublabel)}</text>`);
+      parts.push(`<text x="${totalWidth / 2}" y="${sublabelY}" text-anchor="middle" font-family="${theme.label.fontFamily}" font-size="${theme.label.sublabelFontSize}" fill="${theme.label.sublabelColor}">${escapeXml(sublabel)}</text>`);
     }
 
     // Option badges — far right
