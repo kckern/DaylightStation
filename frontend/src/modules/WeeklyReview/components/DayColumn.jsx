@@ -16,8 +16,10 @@ function cToF(c) {
 }
 
 export default function DayColumn({ day, isFocused, isToday, onClick }) {
-  const dateNum = new Date(`${day.date}T12:00:00Z`).getDate();
-  const dayName = new Date(`${day.date}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long' });
+  const dt = new Date(`${day.date}T12:00:00Z`);
+  const dateNum = dt.getDate();
+  const monthAbbr = dt.toLocaleDateString('en-US', { month: 'short' });
+  const dayName = dt.toLocaleDateString('en-US', { weekday: 'long' });
   const hasContent = day.photoCount > 0 || day.fitness?.length > 0;
   const columnClass = [
     'day-column',
@@ -37,6 +39,7 @@ export default function DayColumn({ day, isFocused, isToday, onClick }) {
       <div className="day-header">
         <span className="day-label">{day.label}</span>
         <span className="day-date">{dateNum}</span>
+        <span className="day-month">{monthAbbr}</span>
         {weather && (
           <span className="day-weather">
             <span className="weather-icon">{WMO_ICONS[weather.code] || '🌡'}</span>
