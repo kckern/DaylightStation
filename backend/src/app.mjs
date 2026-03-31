@@ -1327,6 +1327,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'gratitude-api' })
   });
 
+  // QR Code renderer and router
+  const { createQRCodeRenderer } = await import('#rendering/qrcode/QRCodeRenderer.mjs');
+  const { createQRCodeRouter } = await import('./4_api/v1/routers/qrcode.mjs');
+  const qrcodeRenderer = createQRCodeRenderer({ mediaPath: mediaBasePath });
+  v1Routers.qrcode = createQRCodeRouter({
+    renderer: qrcodeRenderer,
+    contentIdResolver: contentServices.contentIdResolver,
+    mediaPath: mediaBasePath,
+    defaultLogoPath: `${mediaBasePath}/img/favicon.ico`,
+    logger: rootLogger.child({ module: 'qrcode' }),
+  });
+
   // Nutribot report renderer (canvas-based PNG generation)
   let nutribotReportRenderer = null;
   try {
