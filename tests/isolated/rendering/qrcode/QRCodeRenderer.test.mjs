@@ -87,4 +87,56 @@ describe('QRCodeRenderer', () => {
       expect(heightWith).toBeGreaterThan(heightNo);
     });
   });
+
+  describe('cover layout', () => {
+    it('uses wider SVG when coverData is provided', () => {
+      const svgCentered = renderer.renderSvg('test-data');
+      const svgCover = renderer.renderSvg('test-data', {
+        coverData: 'data:image/png;base64,iVBOR',
+        label: 'Album Title',
+      });
+      const widthCentered = parseInt(svgCentered.match(/width="(\d+)"/)[1]);
+      const widthCover = parseInt(svgCover.match(/width="(\d+)"/)[1]);
+      expect(widthCover).toBeGreaterThan(widthCentered);
+    });
+
+    it('embeds cover image element', () => {
+      const svg = renderer.renderSvg('test-data', {
+        coverData: 'data:image/jpeg;base64,ABCDEF',
+        label: 'Test',
+      });
+      expect(svg).toContain('<image');
+      expect(svg).toContain('data:image/jpeg;base64,ABCDEF');
+    });
+
+    it('does not mask center modules (no logo area)', () => {
+      // Cover layout should have more dots than centered layout with logo
+      const svgCover = renderer.renderSvg('test-data-long-string-12345', {
+        coverData: 'data:image/png;base64,iVBOR',
+      });
+      const svgCentered = renderer.renderSvg('test-data-long-string-12345');
+      const dotsCover = (svgCover.match(/<circle/g) || []).length;
+      const dotsCentered = (svgCentered.match(/<circle/g) || []).length;
+      expect(dotsCover).toBeGreaterThanOrEqual(dotsCentered);
+    });
+
+    it('includes label and sublabel', () => {
+      const svg = renderer.renderSvg('test-data', {
+        coverData: 'data:image/png;base64,iVBOR',
+        label: 'My Album',
+        sublabel: 'Artist Name',
+      });
+      expect(svg).toContain('My Album');
+      expect(svg).toContain('Artist Name');
+    });
+
+    it('renders option badges on far right', () => {
+      const svg = renderer.renderSvg('test-data', {
+        coverData: 'data:image/png;base64,iVBOR',
+        label: 'Test',
+        optionBadges: ['M5 5L10 10'],
+      });
+      expect(svg).toContain('M5 5L10 10');
+    });
+  });
 });

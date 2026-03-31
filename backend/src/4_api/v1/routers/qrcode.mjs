@@ -74,6 +74,7 @@ export function createQRCodeRouter(config) {
       let label = labelOverride || null;
       let sublabel = sublabelOverride || null;
       let logoData = null;
+      let coverData = null;
       let optionBadges = [];
       const size = sizeParam ? parseInt(sizeParam, 10) : undefined;
 
@@ -91,7 +92,8 @@ export function createQRCodeRouter(config) {
         encodeData = result.encodeData;
         if (!label) label = result.label;
         if (!sublabel) sublabel = result.sublabel;
-        if (result.logoData) logoData = result.logoData;
+        // Content thumbnails use cover layout (side-by-side)
+        if (result.logoData) coverData = result.logoData;
         optionBadges = result.optionBadges || [];
 
       } else {
@@ -130,6 +132,7 @@ export function createQRCodeRouter(config) {
         label,
         sublabel,
         logoData: logoParam === 'false' ? false : logoData,
+        coverData: coverData,
         logo: logoParam !== 'false',
         optionBadges,
       });
