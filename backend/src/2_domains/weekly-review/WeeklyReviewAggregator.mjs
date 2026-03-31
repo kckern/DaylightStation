@@ -3,7 +3,7 @@
 const MIN_COLUMN_WEIGHT = 0.5;
 
 export class WeeklyReviewAggregator {
-  static aggregate(photoDays, calendarDays) {
+  static aggregate(photoDays, calendarDays, fitnessByDate = {}, weatherByDate = {}) {
     const calendarByDate = new Map();
     for (const day of calendarDays) {
       calendarByDate.set(day.date, day.events || []);
@@ -24,6 +24,8 @@ export class WeeklyReviewAggregator {
         photos: photoDay.photos,
         photoCount: photoDay.photoCount,
         sessions: photoDay.sessions,
+        fitness: fitnessByDate[photoDay.date] || [],
+        weather: weatherByDate[photoDay.date] || null,
         columnWeight,
       };
     });

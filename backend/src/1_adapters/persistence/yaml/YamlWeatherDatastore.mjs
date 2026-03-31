@@ -14,6 +14,7 @@
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const WEATHER_PATH = 'common/weather';
+const HISTORY_PREFIX = 'history/weather';
 
 export class YamlWeatherDatastore {
   #dataService;
@@ -41,7 +42,7 @@ export class YamlWeatherDatastore {
   }
 
   /**
-   * Save weather data
+   * Save weather data (current + daily history snapshot)
    * @param {Object} data - Weather data to save
    */
   async save(data) {
@@ -50,11 +51,36 @@ export class YamlWeatherDatastore {
     if (!result) {
       this.#logger.error?.('weather.store.save.failed', { householdId: this.#householdId });
     }
+
+    // Save daily history snapshot (one per day, overwritten throughout the day)
+    if (data.current) {
+      const dateStr = data.current.time?.slice(0, 10);
+      if (dateStr) {
+        const historyPath = `${HISTORY_PREFIX}/${dateStr}`;
+        const existing = this.#dataService.household.read(historyPath, this.#householdId);
+        const snapshot = {
+          date: dateStr,
+          temp: data.current.temp,
+          feel: data.current.feel,
+          code: data.current.code,
+          cloud: data.current.cloud,
+          precip: data.current.precip,
+          aqi: data.current.aqi,
+          updatedAt: data.now,
+          // Keep high/low across all snapshots for the day
+          high: Math.max(data.current.temp, existing?.high ?? -Infinity),
+          low: Math.min(data.current.temp, existing?.low ?? Infinity),
+        };
+        this.#dataService.household.write(historyPath, snapshot, this.#householdId);
+        this.#logger.debug?.('weather.store.history-saved', { date: dateStr, temp: snapshot.temp });
+      }
+    }
+
     return result;
   }
 
   /**
-   * Load weather data
+   * Load current weather data
    * @returns {Object|null} Weather data or null if not found
    */
   async load() {
@@ -63,6 +89,15 @@ export class YamlWeatherDatastore {
       this.#logger.debug?.('weather.store.load.notFound', { householdId: this.#householdId });
     }
     return data;
+  }
+
+  /**
+   * Load weather history for a specific date
+   * @param {string} date - YYYY-MM-DD
+   * @returns {Object|null} Daily weather snapshot or null
+   */
+  async loadDate(date) {
+    return this.#dataService.household.read(`${HISTORY_PREFIX}/${date}`, this.#householdId);
   }
 }
 
