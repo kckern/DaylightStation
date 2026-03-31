@@ -10,6 +10,7 @@ to an MQTT broker.
 import os
 import sys
 import json
+import glob
 import select
 import signal
 import logging
@@ -84,6 +85,74 @@ def keycode_to_char(keycode, shifted):
     return _SHIFT_MAP.get(keycode)
 
 
+# ── SNAPI ACK (suppress triple-beep after scan) ─────────────────
+#
+# Zebra/Symbol scanners in USB HID Keyboard mode still run SNAPI status
+# handshaking by default. After transmitting scan data, the scanner waits
+# for a host ACK via a HID output report on a secondary hidraw interface.
+# If no ACK arrives, the scanner triple-beeps (transmission error).
+#
+# The ACK is byte 0x02 written to the scanner's hidraw device.
+# We find the hidraw by matching the same USB vendor:product (05e0:1200).
+
+SYMBOL_VID = '05e0'
+SYMBOL_PID = '1200'
+SNAPI_ACK = bytes([0x02])
+
+
+def find_hidraw_for_scanner():
+    """Find the hidraw device node for the Symbol scanner's SNAPI interface."""
+    for hidraw in sorted(glob.glob('/sys/class/hidraw/hidraw*')):
+        try:
+            # Resolve the device path to find the USB vid/pid
+            uevent_path = os.path.join(os.path.realpath(hidraw), 'device', 'uevent')
+            if not os.path.exists(uevent_path):
+                continue
+            with open(uevent_path) as f:
+                uevent = f.read()
+            # Look for HID_ID line: HID_ID=0003:000005E0:00001200
+            for line in uevent.splitlines():
+                if line.startswith('HID_ID='):
+                    parts = line.split('=')[1].split(':')
+                    if len(parts) >= 3:
+                        vid = parts[1].lstrip('0').lower() or '0'
+                        pid = parts[2].lstrip('0').lower() or '0'
+                        if vid == SYMBOL_VID and pid == SYMBOL_PID:
+                            dev_name = os.path.basename(hidraw)
+                            dev_path = f'/dev/{dev_name}'
+                            if os.path.exists(dev_path):
+                                log.info('Found SNAPI hidraw: %s', dev_path)
+                                return dev_path
+        except (OSError, IndexError):
+            continue
+    return None
+
+
+def open_snapi_device():
+    """Open the SNAPI hidraw device for writing ACKs. Returns file descriptor or None."""
+    path = find_hidraw_for_scanner()
+    if not path:
+        log.warning('SNAPI hidraw device not found — scanner may triple-beep after scans')
+        return None
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_NONBLOCK)
+        log.info('SNAPI ACK enabled via %s', path)
+        return fd
+    except OSError as e:
+        log.warning('Cannot open SNAPI device %s: %s — scanner may triple-beep', path, e)
+        return None
+
+
+def send_snapi_ack(fd):
+    """Send ACK byte to scanner's SNAPI interface to suppress post-scan error beep."""
+    if fd is None:
+        return
+    try:
+        os.write(fd, SNAPI_ACK)
+    except OSError as e:
+        log.debug('SNAPI ACK write failed: %s', e)
+
+
 # ── Device discovery ─────────────────────────────────────────────
 
 def find_scanner_device():
@@ -149,6 +218,9 @@ def run():
     device.grab()
     log.info('Exclusive grab acquired on %s', device.path)
 
+    # Open SNAPI hidraw for ACK responses (suppresses triple-beep)
+    snapi_fd = open_snapi_device()
+
     client = create_mqtt_client()
 
     buffer = []
@@ -160,6 +232,11 @@ def run():
             device.ungrab()
         except OSError:
             pass
+        if snapi_fd is not None:
+            try:
+                os.close(snapi_fd)
+            except OSError:
+                pass
         client.loop_stop()
         client.disconnect()
         sys.exit(0)
@@ -180,6 +257,7 @@ def run():
                 if buffer:
                     barcode = ''.join(buffer)
                     publish_barcode(client, barcode)
+                    send_snapi_ack(snapi_fd)
                     buffer.clear()
                 continue
 
@@ -203,6 +281,7 @@ def run():
                     if buffer:
                         barcode = ''.join(buffer)
                         publish_barcode(client, barcode)
+                        send_snapi_ack(snapi_fd)
                         buffer.clear()
                     continue
 
