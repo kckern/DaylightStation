@@ -10,8 +10,10 @@ to an MQTT broker.
 import os
 import sys
 import json
+import select
 import signal
 import logging
+import time
 from datetime import datetime, timezone
 
 import evdev
@@ -25,6 +27,7 @@ DEVICE_NAME_MATCH = os.environ.get('SCANNER_DEVICE_NAME', 'Symbol')
 MQTT_HOST = os.environ.get('MQTT_HOST', 'localhost')
 MQTT_PORT = int(os.environ.get('MQTT_PORT', '1883'))
 MQTT_TOPIC = os.environ.get('MQTT_TOPIC', 'daylight/scanner/barcode')
+SCAN_TIMEOUT = float(os.environ.get('SCAN_TIMEOUT', '0.15'))  # seconds of silence to flush buffer
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
 
 logging.basicConfig(
@@ -164,35 +167,48 @@ def run():
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
 
-    log.info('Listening for scans...')
+    log.info('Listening for scans (timeout=%.0fms)...', SCAN_TIMEOUT * 1000)
 
     try:
-        for event in device.read_loop():
-            if event.type != ecodes.EV_KEY:
-                continue
+        while True:
+            # Wait for events, with timeout to flush buffer
+            timeout = SCAN_TIMEOUT if buffer else None
+            r, _, _ = select.select([device.fd], [], [], timeout)
 
-            key_event = evdev.categorize(event)
-
-            # Track shift state
-            if key_event.scancode in (ecodes.KEY_LEFTSHIFT, ecodes.KEY_RIGHTSHIFT):
-                shifted = key_event.keystate in (key_event.key_down, key_event.key_hold)
-                continue
-
-            # Only process key-down events
-            if key_event.keystate != key_event.key_down:
-                continue
-
-            # Enter = end of barcode
-            if key_event.scancode == ecodes.KEY_ENTER:
+            # Timeout with pending buffer = end of barcode
+            if not r:
                 if buffer:
                     barcode = ''.join(buffer)
                     publish_barcode(client, barcode)
                     buffer.clear()
                 continue
 
-            char = keycode_to_char(key_event.scancode, shifted)
-            if char:
-                buffer.append(char)
+            for event in device.read():
+                if event.type != ecodes.EV_KEY:
+                    continue
+
+                key_event = evdev.categorize(event)
+
+                # Track shift state
+                if key_event.scancode in (ecodes.KEY_LEFTSHIFT, ecodes.KEY_RIGHTSHIFT):
+                    shifted = key_event.keystate in (key_event.key_down, key_event.key_hold)
+                    continue
+
+                # Only process key-down events
+                if key_event.keystate != key_event.key_down:
+                    continue
+
+                # Enter = end of barcode (some scanners send it)
+                if key_event.scancode == ecodes.KEY_ENTER:
+                    if buffer:
+                        barcode = ''.join(buffer)
+                        publish_barcode(client, barcode)
+                        buffer.clear()
+                    continue
+
+                char = keycode_to_char(key_event.scancode, shifted)
+                if char:
+                    buffer.append(char)
 
     except OSError as e:
         log.error('Device read error (unplugged?): %s', e)
