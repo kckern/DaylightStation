@@ -69,3 +69,17 @@ describe('WebSocketEventBus.waitForMessage', () => {
     expect(bus._messageHandlerCount).toBe(handlerCountBefore);
   });
 });
+
+describe('WebSocketEventBus.getTopicSubscriberCount', () => {
+  let bus;
+  let mockLogger;
+
+  beforeEach(() => {
+    mockLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    bus = new WebSocketEventBus({ logger: mockLogger });
+  });
+
+  it('should return 0 when no clients are connected', () => {
+    expect(bus.getTopicSubscriberCount('living-room')).toBe(0);
+  });
+});
