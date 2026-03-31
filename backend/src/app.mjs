@@ -142,6 +142,11 @@ import { YtDlpAdapter } from '#adapters/media/YtDlpAdapter.mjs';
 // Content composition use case
 import { ComposePresentationUseCase } from './3_applications/content/usecases/ComposePresentationUseCase.mjs';
 
+// Barcode scanner pipeline
+import { BarcodeGatekeeper } from '#domains/barcode/BarcodeGatekeeper.mjs';
+import { autoApprove } from '#domains/barcode/strategies/AutoApproveStrategy.mjs';
+import { BarcodeScanService } from './3_applications/barcode/BarcodeScanService.mjs';
+
 // Weekly Review domain
 import { WeeklyReviewImmichAdapter } from './1_adapters/weekly-review/WeeklyReviewImmichAdapter.mjs';
 import { WeeklyReviewCalendarAdapter } from './1_adapters/weekly-review/WeeklyReviewCalendarAdapter.mjs';
@@ -1185,6 +1190,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       model: 'tts-1',
       defaultVoice: 'alloy'
     },
+    barcode: {
+      host: mqtt.host,
+      port: mqtt.port || 1883,
+      topic: (configService.getHouseholdAppConfig(householdId, 'barcode') || {}).topic || 'daylight/scanner/barcode',
+      knownActions: (configService.getHouseholdAppConfig(householdId, 'barcode') || {}).actions || ['queue', 'play', 'open'],
+    },
     onMqttMessage: (payload) => {
       // Broadcast MQTT sensor messages to WebSocket clients
       broadcastEvent({ topic: 'sensor', ...payload });
@@ -1209,10 +1220,53 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     rootLogger.warn?.('mqtt.disabled', { reason: 'MQTT configured but adapter not initialized' });
   }
 
+  // Initialize barcode scanner MQTT adapter
+  if (enableMqtt && hardwareAdapters.barcodeAdapter?.isConfigured()) {
+    const barcodeConfig = configService.getHouseholdAppConfig(householdId, 'barcode') || {};
+    const devicesConfig = configService.getHouseholdAppConfig(householdId, 'devices') || {};
+
+    // Build scanner device map (filter to barcode-scanner type)
+    const scannerDeviceConfig = {};
+    const devices = devicesConfig.devices || devicesConfig;
+    for (const [id, device] of Object.entries(devices)) {
+      if (device.type === 'barcode-scanner') {
+        scannerDeviceConfig[id] = device;
+      }
+    }
+
+    // Create gatekeeper with auto-approve (strategies from config in future)
+    const gatekeeper = new BarcodeGatekeeper([autoApprove]);
+
+    // Create scan service
+    const barcodeScanService = new BarcodeScanService({
+      gatekeeper,
+      deviceConfig: scannerDeviceConfig,
+      broadcastEvent: (topic, payload) => broadcastEvent({ topic, ...payload }),
+      pipelineConfig: {
+        default_action: barcodeConfig.default_action || 'queue',
+        actions: barcodeConfig.actions || ['queue', 'play', 'open'],
+      },
+      logger: rootLogger.child({ module: 'barcode' }),
+    });
+
+    // Wire adapter callback
+    hardwareAdapters.barcodeAdapter.setScanCallback((payload) => {
+      barcodeScanService.handle(payload);
+    });
+
+    if (hardwareAdapters.barcodeAdapter.init()) {
+      rootLogger.info('barcode.mqtt.initialized', {
+        topic: hardwareAdapters.barcodeAdapter.getStatus().topic,
+        scanners: Object.keys(scannerDeviceConfig),
+      });
+    }
+  }
+
   rootLogger.info('hardware.initialized', {
     printer: hardwareAdapters.printerAdapter?.isConfigured() || false,
     tts: hardwareAdapters.ttsAdapter?.isConfigured() || false,
-    mqtt: hardwareAdapters.mqttAdapter?.isConfigured() || false
+    mqtt: hardwareAdapters.mqttAdapter?.isConfigured() || false,
+    barcode: hardwareAdapters.barcodeAdapter?.isConfigured() || false
   });
 
   // Gratitude domain router - gratitude card canvas renderer

@@ -94,6 +94,7 @@ import { createDeviceRouter } from '#api/v1/routers/device.mjs';
 import { ThermalPrinterAdapter } from '#adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs';
 import { TTSAdapter } from '#adapters/hardware/tts/TTSAdapter.mjs';
 import { MQTTSensorAdapter } from '#adapters/hardware/mqtt-sensor/MQTTSensorAdapter.mjs';
+import { MQTTBarcodeAdapter } from '#adapters/hardware/mqtt-barcode/MQTTBarcodeAdapter.mjs';
 
 // Proxy infrastructure imports
 import { ProxyService } from './proxy/ProxyService.mjs';
@@ -1786,10 +1787,28 @@ export function createHardwareAdapters(config) {
     );
   }
 
+  // MQTT barcode adapter (optional)
+  let barcodeAdapter = null;
+  if (config.barcode?.host && config.barcode?.topic) {
+    barcodeAdapter = new MQTTBarcodeAdapter(
+      {
+        host: config.barcode.host,
+        port: config.barcode.port,
+        topic: config.barcode.topic,
+      },
+      {
+        knownActions: config.barcode.knownActions || [],
+        onScan: config.onBarcodeScan,
+        logger,
+      }
+    );
+  }
+
   return {
     printerAdapter,
     ttsAdapter,
-    mqttAdapter
+    mqttAdapter,
+    barcodeAdapter
   };
 }
 
