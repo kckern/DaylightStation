@@ -244,7 +244,7 @@ export class WebSocketEventBus {
       }
     }
 
-    this.#logger.debug?.('eventbus.broadcast', {
+    this.#logger.info?.('eventbus.broadcast', {
       topic,
       sentCount,
       clientCount: this.#clients.size
@@ -427,7 +427,7 @@ export class WebSocketEventBus {
     this.#clients.set(clientId, { ws, meta });
     this.#metrics.clientsConnected++;
 
-    this.#logger.debug?.('eventbus.client_connected', { clientId, ip: meta.ip });
+    this.#logger.info?.('eventbus.client_connected', { clientId, ip: meta.ip, userAgent: meta.userAgent });
 
     // Notify handlers
     for (const handler of this.#connectionHandlers) {
@@ -498,6 +498,7 @@ export class WebSocketEventBus {
     switch (action) {
       case 'subscribe':
         this.subscribeClient(clientId, targetTopics);
+        this.#logger.info?.('eventbus.client_subscribed', { clientId, topics: targetTopics });
         break;
       case 'unsubscribe':
         this.unsubscribeClient(clientId, targetTopics);
@@ -526,7 +527,7 @@ export class WebSocketEventBus {
     this.#clients.delete(clientId);
     this.#metrics.clientsDisconnected++;
 
-    this.#logger.debug?.('eventbus.client_disconnected', { clientId });
+    this.#logger.info?.('eventbus.client_disconnected', { clientId });
 
     // Notify handlers
     for (const handler of this.#disconnectionHandlers) {
