@@ -257,3 +257,49 @@ sudo docker logs daylight-station 2>&1 | grep barcode
 # barcode.unknownDevice     — scanner not in devices.yml
 # barcode.unknownCommand    — command not in COMMAND_MAP
 ```
+
+---
+
+## QR Code Generation
+
+Generate styled SVG QR codes for barcode cards via the API. Supports raw data encoding, content metadata resolution with auto-generated labels/thumbnails, and command icon auto-detection.
+
+### API
+
+```bash
+# Raw mode — encode any string
+curl "http://localhost:3111/api/v1/qrcode?data=office;plex;595104+shuffle&label=My+Album"
+
+# Content mode — auto-resolve metadata (title, thumbnail, artist)
+curl "http://localhost:3111/api/v1/qrcode?content=plex:595084&screen=office&options=shuffle"
+
+# Command auto-detect — uses matching icon as logo
+curl "http://localhost:3111/api/v1/qrcode?data=pause"
+curl "http://localhost:3111/api/v1/qrcode?data=office;volume;30"
+```
+
+Response: `Content-Type: image/svg+xml` with all images base64-embedded (works for print, PDF, and screen).
+
+### Parameters
+
+| Param | Default | Description |
+|-------|---------|-------------|
+| `data` | — | Raw string to encode |
+| `content` | — | ContentId to resolve metadata |
+| `options` | — | Content options (`shuffle`, `shader=dark`) |
+| `screen` | — | Screen prefix to prepend |
+| `label` | auto | Override label text |
+| `sublabel` | auto | Override sublabel text |
+| `logo` | favicon | Logo path or `false` to disable |
+| `size` | 300 | QR size in pixels |
+| `style` | dots | `dots` (circles) or `squares` |
+| `fg` | #000 | Foreground color |
+| `bg` | #fff | Background color |
+
+### Architecture
+
+| File | Purpose |
+|------|---------|
+| `backend/src/1_rendering/qrcode/QRCodeRenderer.mjs` | SVG renderer — dots, finder patterns, logo, frame, labels |
+| `backend/src/1_rendering/qrcode/qrcodeTheme.mjs` | Theme constants |
+| `backend/src/4_api/v1/routers/qrcode.mjs` | Express router — raw/content/command modes |
