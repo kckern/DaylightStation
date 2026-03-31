@@ -12,6 +12,7 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
+import imageSize from 'image-size';
 import { KNOWN_COMMANDS } from '#domains/barcode/BarcodeCommandMap.mjs';
 
 const COMMAND_ICON_MAP = {
@@ -75,6 +76,7 @@ export function createQRCodeRouter(config) {
       let sublabel = sublabelOverride || null;
       let logoData = null;
       let coverData = null;
+      let coverAspect = 1;
       let optionBadges = [];
       const size = sizeParam ? parseInt(sizeParam, 10) : undefined;
 
@@ -93,7 +95,10 @@ export function createQRCodeRouter(config) {
         if (!label) label = result.label;
         if (!sublabel) sublabel = result.sublabel;
         // Content thumbnails use cover layout (side-by-side)
-        if (result.logoData) coverData = result.logoData;
+        if (result.logoData) {
+          coverData = result.logoData;
+          coverAspect = result.coverAspect || 1;
+        }
         optionBadges = result.optionBadges || [];
 
       } else {
@@ -133,6 +138,7 @@ export function createQRCodeRouter(config) {
         sublabel,
         logoData: logoParam === 'false' ? false : logoData,
         coverData: coverData,
+        coverAspect: coverAspect,
         logo: logoParam !== 'false',
         optionBadges,
       });
@@ -216,6 +222,7 @@ async function resolveContent({ contentId, options, screen, contentIdResolver, m
   let label = null;
   let sublabel = null;
   let logoData = null;
+  let coverAspect = 1;
   let optionBadges = [];
 
   // Build encode string with screen prefix and options
@@ -228,7 +235,7 @@ async function resolveContent({ contentId, options, screen, contentIdResolver, m
   }
 
   if (!contentIdResolver) {
-    return { encodeData, label, sublabel, logoData, optionBadges };
+    return { encodeData, label, sublabel, logoData, coverAspect, optionBadges };
   }
 
   try {
@@ -277,14 +284,18 @@ async function resolveContent({ contentId, options, screen, contentIdResolver, m
 
     const thumbUrl = item.thumbnail || meta.thumbnail;
     if (thumbUrl) {
-      logoData = await fetchThumbnailAsBase64(thumbUrl, logger);
+      const thumbResult = await fetchThumbnailAsBase64(thumbUrl, logger);
+      if (thumbResult) {
+        logoData = thumbResult.dataUri;
+        coverAspect = thumbResult.aspect;
+      }
     }
 
   } catch (err) {
     logger.warn?.('qrcode.content.error', { contentId, error: err.message });
   }
 
-  return { encodeData, label, sublabel, logoData, optionBadges };
+  return { encodeData, label, sublabel, logoData, coverAspect, optionBadges };
 }
 
 async function fetchThumbnailAsBase64(url, logger) {
@@ -296,7 +307,18 @@ async function fetchThumbnailAsBase64(url, logger) {
 
     const buffer = Buffer.from(await response.arrayBuffer());
     const contentType = response.headers.get('content-type') || 'image/jpeg';
-    return `data:${contentType};base64,${buffer.toString('base64')}`;
+    const dataUri = `data:${contentType};base64,${buffer.toString('base64')}`;
+
+    // Detect aspect ratio from image buffer
+    let aspect = 1;
+    try {
+      const dims = imageSize(buffer);
+      if (dims.width && dims.height) {
+        aspect = dims.width / dims.height;
+      }
+    } catch { /* default to square */ }
+
+    return { dataUri, aspect };
   } catch (err) {
     logger.debug?.('qrcode.thumbnail.fetchFailed', { url, error: err.message });
     return null;

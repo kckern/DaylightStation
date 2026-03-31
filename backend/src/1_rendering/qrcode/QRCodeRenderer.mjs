@@ -68,7 +68,9 @@ function renderCoverLayout(data, options, theme) {
   const moduleSize = size / moduleCount;
 
   // Layout: cover and QR side by side, same height
-  const coverWidth = size;
+  // coverAspect = width/height ratio (e.g., 0.68 for portrait poster)
+  const coverAspect = options.coverAspect || 1;
+  const coverWidth = Math.round(size * coverAspect);
   const gap = margin;
   const totalWidth = margin + coverWidth + gap + size + margin;
   const labelHeight = label ? theme.label.height : 0;
@@ -123,7 +125,10 @@ function renderCoverLayout(data, options, theme) {
 
   // Label area (full width, below both cover and QR)
   if (label) {
-    const labelY = margin + size + theme.label.fontSize + 8;
+    // Vertically center labels within the label area
+    const textBlockHeight = sublabel ? theme.label.fontSize + theme.label.lineSpacing : theme.label.fontSize;
+    const labelAreaTop = margin + size;
+    const labelY = labelAreaTop + (labelHeight - textBlockHeight) / 2 + theme.label.fontSize;
 
     // Title — centered
     parts.push(`<text x="${totalWidth / 2}" y="${labelY}" text-anchor="middle" font-family="${theme.label.fontFamily}" font-size="${theme.label.fontSize}" font-weight="bold" fill="${theme.label.color}">${escapeXml(label)}</text>`);
@@ -238,7 +243,9 @@ function renderCenteredLayout(data, options, theme) {
 
   // Label area
   if (label) {
-    const labelY = size + margin * 2 + theme.label.fontSize + 4;
+    const textBlockHeight = sublabel ? theme.label.fontSize + theme.label.lineSpacing : theme.label.fontSize;
+    const labelAreaTop = size + margin * 2;
+    const labelY = labelAreaTop + (labelHeight - textBlockHeight) / 2 + theme.label.fontSize;
     parts.push(`<text x="${totalWidth / 2}" y="${labelY}" text-anchor="middle" font-family="${theme.label.fontFamily}" font-size="${theme.label.fontSize}" font-weight="bold" fill="${theme.label.color}">${escapeXml(label)}</text>`);
 
     if (sublabel) {
