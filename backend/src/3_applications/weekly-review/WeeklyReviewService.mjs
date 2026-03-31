@@ -7,14 +7,20 @@ export class WeeklyReviewService {
   #mediaPath;
   #immichAdapter;
   #calendarData;
+  #sessionService;
+  #weatherStore;
+  #householdId;
   #transcriptionService;
   #logger;
 
   constructor(config = {}, deps = {}) {
     this.#dataPath = config.dataPath;
     this.#mediaPath = config.mediaPath;
+    this.#householdId = config.householdId;
     this.#immichAdapter = deps.immichAdapter;
     this.#calendarData = deps.calendarData;
+    this.#sessionService = deps.sessionService;
+    this.#weatherStore = deps.weatherStore;
     this.#transcriptionService = deps.transcriptionService;
     this.#logger = deps.logger || console;
   }
@@ -26,12 +32,20 @@ export class WeeklyReviewService {
 
     this.#logger.info?.('weekly-review.bootstrap', { week: start });
 
-    const [photoDays, calendarDays] = await Promise.all([
+    // Build date list for the week
+    const dates = [];
+    for (let d = new Date(`${start}T00:00:00Z`); d.toISOString().slice(0, 10) < end; d.setDate(d.getDate() + 1)) {
+      dates.push(d.toISOString().slice(0, 10));
+    }
+
+    const [photoDays, calendarDays, fitnessByDate, weatherByDate] = await Promise.all([
       this.#immichAdapter.getPhotosForDateRange(start, end),
       this.#calendarData.getEventsForDateRange(start, end),
+      this.#fetchFitnessSessions(dates),
+      this.#fetchWeatherHistory(dates),
     ]);
 
-    const { days } = WeeklyReviewAggregator.aggregate(photoDays, calendarDays);
+    const { days } = WeeklyReviewAggregator.aggregate(photoDays, calendarDays, fitnessByDate, weatherByDate);
     const recording = this.#getRecordingStatus(start);
 
     this.#logger.info?.('weekly-review.bootstrap.complete', {
@@ -42,6 +56,45 @@ export class WeeklyReviewService {
     });
 
     return { week: start, days, recording };
+  }
+
+  async #fetchFitnessSessions(dates) {
+    if (!this.#sessionService) return {};
+    const result = {};
+    try {
+      for (const date of dates) {
+        const sessions = await this.#sessionService.listSessionsByDate(date, this.#householdId);
+        if (sessions?.length > 0) {
+          result[date] = sessions.map(s => ({
+            sessionId: s.sessionId,
+            startTime: s.startTime,
+            durationMs: s.durationMs,
+            participants: s.participants,
+            media: s.media,
+            totalCoins: s.totalCoins,
+          }));
+        }
+      }
+    } catch (err) {
+      this.#logger.warn?.('weekly-review.fitness.error', { error: err.message });
+    }
+    return result;
+  }
+
+  async #fetchWeatherHistory(dates) {
+    if (!this.#weatherStore) return {};
+    const result = {};
+    try {
+      for (const date of dates) {
+        const snapshot = await this.#weatherStore.loadDate(date);
+        if (snapshot) {
+          result[date] = snapshot;
+        }
+      }
+    } catch (err) {
+      this.#logger.warn?.('weekly-review.weather.error', { error: err.message });
+    }
+    return result;
   }
 
   async saveRecording({ audioBase64, mimeType, week, duration }) {

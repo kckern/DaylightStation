@@ -130,6 +130,27 @@ export default function DayDetail({ day, isToday, onClose }) {
             )}
           </div>
 
+          {day.fitness?.length > 0 && (
+            <div className="day-detail-section">
+              <h3 className="day-detail-section-title">Fitness</h3>
+              <div className="day-detail-fitness">
+                {day.fitness.map((session, i) => {
+                  const durationMin = session.durationMs ? Math.round(session.durationMs / 60000) : null;
+                  const title = session.media?.primary?.showTitle || session.media?.primary?.title || 'Workout';
+                  const participants = Object.values(session.participants || {}).map(p => p.displayName);
+                  return (
+                    <div key={i} className="day-detail-fitness-session">
+                      <div className="fitness-session-title">{title}</div>
+                      {durationMin && <div className="fitness-session-detail">{durationMin} min</div>}
+                      {participants.length > 0 && <div className="fitness-session-detail">{participants.join(', ')}</div>}
+                      {session.totalCoins > 0 && <div className="fitness-session-detail">{session.totalCoins} coins</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {hasSessions && (
             <div className="day-detail-section">
               <h3 className="day-detail-section-title">Photo Sessions</h3>
@@ -152,6 +173,7 @@ export default function DayDetail({ day, isToday, onClose }) {
               <div className="stat">{imageCount} photos</div>
               {videoCount > 0 && <div className="stat">{videoCount} videos</div>}
               <div className="stat">{day.calendar?.length || 0} events</div>
+              {day.fitness?.length > 0 && <div className="stat">{day.fitness.length} workouts</div>}
             </div>
           </div>
         </div>

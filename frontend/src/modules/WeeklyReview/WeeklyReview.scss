@@ -1,4 +1,5 @@
 .weekly-review {
+  position: relative;
   width: 100%;
   height: 100%;
   display: flex;
@@ -7,12 +8,6 @@
   color: #e0e0e0;
   outline: none;
   overflow: hidden;
-  transition: filter 0.5s ease, opacity 0.5s ease;
-
-  &--dimmed {
-    filter: brightness(0.4);
-    opacity: 0.7;
-  }
 
   &--loading,
   &--error {
@@ -21,6 +16,128 @@
     justify-content: center;
     font-size: 1.4rem;
     color: #888;
+  }
+}
+
+// === Init Overlay (before recording starts) ===
+
+.weekly-review-init-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.init-overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.init-record-btn {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: 3px solid #e53935;
+  background: rgba(229, 57, 53, 0.15);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease, transform 0.15s ease;
+
+  &:hover {
+    background: rgba(229, 57, 53, 0.3);
+    transform: scale(1.05);
+  }
+
+  .init-record-dot {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #e53935;
+  }
+}
+
+.init-record-label {
+  font-size: 1.1rem;
+  color: #ccc;
+  font-weight: 400;
+  text-align: center;
+  max-width: 300px;
+}
+
+.init-existing-badge {
+  font-size: 0.85rem;
+  color: #4caf50;
+  background: rgba(76, 175, 80, 0.12);
+  padding: 4px 12px;
+  border-radius: 6px;
+}
+
+// === Stop Confirmation Overlay ===
+
+.weekly-review-confirm-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.confirm-dialog {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 32px 40px;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 12px;
+}
+
+.confirm-message {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.confirm-btn {
+  padding: 10px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+
+  &--continue {
+    background: #3a5a3a;
+    color: #aaffaa;
+
+    &:hover {
+      background: #4a6a4a;
+    }
+  }
+
+  &--save {
+    background: #c0392b;
+    color: white;
+
+    &:hover {
+      background: #e74c3c;
+    }
   }
 }
 
@@ -80,6 +197,23 @@
   }
 }
 
+.day-weather {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+
+  .weather-icon {
+    font-size: 0.8rem;
+  }
+
+  .weather-temp {
+    font-size: 0.7rem;
+    color: #aaa;
+    font-weight: 500;
+  }
+}
+
 .day-calendar {
   display: flex;
   flex-direction: column;
@@ -98,6 +232,40 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+
+  .chip-time {
+    font-weight: 700;
+    opacity: 0.7;
+    margin-right: 4px;
+  }
+}
+
+.day-fitness {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0 6px 4px;
+  flex-shrink: 0;
+}
+
+.fitness-chip {
+  font-size: 0.6rem;
+  background: #3a3a5a;
+  color: #bbbbff;
+  border-radius: 4px;
+  padding: 2px 6px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  .fitness-icon {
+    margin-right: 3px;
+  }
+
+  .fitness-people {
+    opacity: 0.6;
+  }
 }
 
 .day-photos {
@@ -109,18 +277,9 @@
 
 .photo-wall {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
-  grid-auto-rows: 1fr;
   gap: 4px;
   height: 100%;
-
-  &--with-hero {
-    display: grid;
-    grid-template-columns: 2fr 1fr;
-    grid-template-rows: 1fr;
-    gap: 4px;
-    height: 100%;
-  }
+  min-height: 0;
 }
 
 .day-empty-content {
@@ -136,17 +295,36 @@
     color: #888;
     letter-spacing: 0.05em;
   }
+
+  &.day-empty-weather {
+    flex-direction: column;
+    gap: 4px;
+    opacity: 0.5;
+
+    .weather-big-icon {
+      font-size: 2.5rem;
+    }
+
+    .weather-big-temp {
+      font-size: 1rem;
+      color: #aaa;
+      font-weight: 500;
+    }
+  }
 }
 
-.photo-hero {
-  position: relative;
-  border-radius: 6px;
+.photo-thumb {
+  border-radius: 4px;
   overflow: hidden;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
 
   img {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    display: block;
   }
 
   .photo-people {
@@ -158,27 +336,6 @@
     background: rgba(0, 0, 0, 0.6);
     font-size: 0.6rem;
     color: #ddd;
-  }
-}
-
-.photo-thumbs {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  overflow: hidden;
-}
-
-.photo-thumb {
-  border-radius: 4px;
-  overflow: hidden;
-  flex: 1;
-  min-height: 0;
-  position: relative;
-
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
   }
 
   &--video {
@@ -431,6 +588,31 @@
   .event-calendar {
     font-size: 0.7rem;
     color: #666;
+    margin-top: 2px;
+  }
+}
+
+.day-detail-fitness {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.day-detail-fitness-session {
+  padding: 8px 10px;
+  background: #2a2a3a;
+  border-radius: 6px;
+  border-left: 3px solid #7b68ee;
+
+  .fitness-session-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #e0e0e0;
+  }
+
+  .fitness-session-detail {
+    font-size: 0.8rem;
+    color: #aaa;
     margin-top: 2px;
   }
 }
