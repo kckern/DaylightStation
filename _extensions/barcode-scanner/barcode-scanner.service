@@ -1,0 +1,24 @@
+[Unit]
+Description=Barcode Scanner → MQTT Bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/barcode-scanner
+ExecStart=/opt/barcode-scanner/venv/bin/python src/scanner.py
+Restart=always
+RestartSec=3
+
+# Environment — override via /etc/default/barcode-scanner
+EnvironmentFile=-/etc/default/barcode-scanner
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/dev/input
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
