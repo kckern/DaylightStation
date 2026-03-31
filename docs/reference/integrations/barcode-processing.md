@@ -292,6 +292,28 @@ The barcode scanner publishes to `daylight/scanner/barcode`. The backend subscri
 | `BarcodeScanService` | `backend/src/3_applications/barcode/BarcodeScanService.mjs` | Orchestrator — resolves context, runs gatekeeper, broadcasts |
 | `useScreenCommands` | `frontend/src/screen-framework/commands/useScreenCommands.js` | Maps barcode WS messages to ActionBus events |
 
+### Command Barcodes
+
+Control playback, volume, and display without loading content.
+
+| Barcode | Effect |
+|---------|--------|
+| `pause` | Pause playback |
+| `play` | Resume playback |
+| `next` | Next track |
+| `prev` | Previous track |
+| `ffw` | Fast forward |
+| `rew` | Rewind |
+| `stop` | Dismiss player |
+| `off` | Sleep display |
+| `blackout` | Blackout shader |
+| `volume:30` | Set volume to 30 |
+| `speed:1.5` | Set playback speed to 1.5x |
+
+Prefix with screen name to target: `office:pause`, `living-room:volume:20`.
+
+Commands skip the gatekeeper — no approval needed for playback controls. The command map is defined in `backend/src/2_domains/barcode/BarcodeCommandMap.mjs`.
+
 ### Configuration
 
 - **Pipeline config:** `data/household/config/barcode.yml` — topic, default action, gatekeeper policies
@@ -300,9 +322,13 @@ The barcode scanner publishes to `daylight/scanner/barcode`. The backend subscri
 ### Testing
 
 ```bash
-# Publish a test barcode via MQTT
+# Publish a content barcode via MQTT
 mosquitto_pub -h localhost -t "daylight/scanner/barcode" \
   -m '{"barcode":"plex:12345","timestamp":"2026-03-30T12:00:00Z","device":"symbol-scanner"}'
+
+# Publish a command barcode
+mosquitto_pub -h localhost -t "daylight/scanner/barcode" \
+  -m '{"barcode":"office:pause","timestamp":"2026-03-30T12:00:00Z","device":"symbol-scanner"}'
 
 # UPC food scanning still works via direct API
 curl "http://localhost:3111/api/v1/nutribot/upc?user=kckern&upc=749826002019"
