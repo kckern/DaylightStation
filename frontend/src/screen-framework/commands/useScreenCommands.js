@@ -44,6 +44,12 @@ export function useScreenCommands(wsConfig, actionBus, screenId) {
       return;
     }
 
+    // Screen targeting — ignore commands meant for a different screen
+    if (data.targetScreen && screenIdRef.current && data.targetScreen !== screenIdRef.current) {
+      logger().debug('commands.ignored-screen', { targetScreen: data.targetScreen, myScreen: screenIdRef.current });
+      return;
+    }
+
     // Ignore playback_state broadcasts — these are status updates, not commands.
     // Without this, the broadcast loop re-triggers media:play for already-playing content.
     if (data.topic === 'playback_state') return;
