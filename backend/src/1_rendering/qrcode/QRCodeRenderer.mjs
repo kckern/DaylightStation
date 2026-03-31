@@ -102,30 +102,9 @@ function renderCoverLayout(data, options, theme) {
   }
   parts.push('</g>');
 
-  // Label area (in the frame, below white area)
+  // Label area
   if (label) {
-    const dividerY = frame + innerH;
-    parts.push(`<line x1="${frame}" y1="${dividerY}" x2="${totalWidth - frame}" y2="${dividerY}" stroke="${theme.label.sublabelColor}" stroke-width="1" opacity="0.4"/>`);
-
-    const labelAreaTop = dividerY;
-    const labelAreaHeight = labelHeight + frame;
-    const textBlockHeight = sublabel ? theme.label.fontSize + theme.label.lineSpacing : theme.label.fontSize;
-    const labelY = labelAreaTop + (labelAreaHeight - textBlockHeight) / 2 + theme.label.fontSize;
-
-    parts.push(`<text x="${totalWidth / 2}" y="${labelY}" text-anchor="middle" font-family="${theme.label.fontFamily}" font-size="${theme.label.fontSize}" font-weight="bold" fill="${theme.label.color}">${escapeXml(label)}</text>`);
-
-    if (sublabel) {
-      const sublabelY = labelY + theme.label.lineSpacing;
-      parts.push(`<text x="${totalWidth / 2}" y="${sublabelY}" text-anchor="middle" font-family="${theme.label.fontFamily}" font-size="${theme.label.sublabelFontSize}" fill="${theme.label.sublabelColor}">${escapeXml(sublabel)}</text>`);
-    }
-
-    if (optionBadges.length > 0) {
-      const badgeY = labelY;
-      optionBadges.forEach((pathData, i) => {
-        const bx = totalWidth - frame - padding - (optionBadges.length - i) * (theme.badge.iconSize + theme.badge.gap);
-        parts.push(`<g transform="translate(${bx}, ${badgeY - theme.badge.iconSize}) scale(${(theme.badge.iconSize / 24).toFixed(3)})"><path d="${pathData}" fill="${theme.label.sublabelColor}"/></g>`);
-      });
-    }
+    renderLabelBox(parts, { totalWidth, frame, innerH, labelHeight, padding, label, sublabel, optionBadges, theme });
   }
 
   parts.push('</svg>');
@@ -190,31 +169,9 @@ function renderCenteredLayout(data, options, theme) {
   }
   parts.push('</g>');
 
-  // Label area (in the frame)
+  // Label area
   if (label) {
-    const dividerY = frame + innerH;
-    parts.push(`<line x1="${frame}" y1="${dividerY}" x2="${totalWidth - frame}" y2="${dividerY}" stroke="${theme.label.sublabelColor}" stroke-width="1" opacity="0.4"/>`);
-
-    const labelAreaTop = dividerY;
-    const labelAreaHeight = labelHeight + frame;
-    const textBlockHeight = sublabel ? theme.label.fontSize + theme.label.lineSpacing : theme.label.fontSize;
-    const labelY = labelAreaTop + (labelAreaHeight - textBlockHeight) / 2 + theme.label.fontSize;
-
-    parts.push(`<text x="${totalWidth / 2}" y="${labelY}" text-anchor="middle" font-family="${theme.label.fontFamily}" font-size="${theme.label.fontSize}" font-weight="bold" fill="${theme.label.color}">${escapeXml(label)}</text>`);
-
-    if (sublabel) {
-      const sublabelY = labelY + theme.label.lineSpacing;
-      parts.push(`<text x="${totalWidth / 2}" y="${sublabelY}" text-anchor="middle" font-family="${theme.label.fontFamily}" font-size="${theme.label.sublabelFontSize}" fill="${theme.label.sublabelColor}">${escapeXml(sublabel)}</text>`);
-    }
-
-    if (optionBadges.length > 0) {
-      const badgeY = labelY + (sublabel ? theme.label.lineSpacing : 0) + 4;
-      const badgeStartX = totalWidth / 2 + 40;
-      optionBadges.forEach((pathData, i) => {
-        const bx = badgeStartX + i * (theme.badge.iconSize + theme.badge.gap);
-        parts.push(`<g transform="translate(${bx}, ${badgeY - theme.badge.iconSize}) scale(${(theme.badge.iconSize / 24).toFixed(3)})"><path d="${pathData}" fill="${theme.label.sublabelColor}"/></g>`);
-      });
-    }
+    renderLabelBox(parts, { totalWidth, frame, innerH, labelHeight, padding, label, sublabel, optionBadges, theme });
   }
 
   parts.push('</svg>');
@@ -222,6 +179,38 @@ function renderCenteredLayout(data, options, theme) {
 }
 
 // ─── Shared Helpers ─────────────────────────────────────────────
+
+function renderLabelBox(parts, { totalWidth, frame, innerH, labelHeight, padding, label, sublabel, optionBadges, theme }) {
+  const boxMargin = 8;
+  const boxX = frame + boxMargin;
+  const boxY = frame + innerH + boxMargin;
+  const boxW = totalWidth - frame * 2 - boxMargin * 2;
+  const boxH = labelHeight + frame - boxMargin * 2;
+  const boxRadius = 8;
+
+  // White rounded box
+  parts.push(`<rect x="${boxX}" y="${boxY}" width="${boxW}" height="${boxH}" rx="${boxRadius}" fill="#ffffff"/>`);
+
+  // Text centered within the box
+  const textBlockHeight = sublabel ? theme.label.fontSize + theme.label.lineSpacing : theme.label.fontSize;
+  const labelY = boxY + (boxH - textBlockHeight) / 2 + theme.label.fontSize;
+
+  parts.push(`<text x="${totalWidth / 2}" y="${labelY}" text-anchor="middle" font-family="${theme.label.fontFamily}" font-size="${theme.label.fontSize}" font-weight="bold" fill="#000000">${escapeXml(label)}</text>`);
+
+  if (sublabel) {
+    const sublabelY = labelY + theme.label.lineSpacing;
+    parts.push(`<text x="${totalWidth / 2}" y="${sublabelY}" text-anchor="middle" font-family="${theme.label.fontFamily}" font-size="${theme.label.sublabelFontSize}" fill="#666666">${escapeXml(sublabel)}</text>`);
+  }
+
+  // Option badges — far right inside box
+  if (optionBadges.length > 0) {
+    const badgeY = labelY;
+    optionBadges.forEach((pathData, i) => {
+      const bx = boxX + boxW - padding - (optionBadges.length - i) * (theme.badge.iconSize + theme.badge.gap);
+      parts.push(`<g transform="translate(${bx}, ${badgeY - theme.badge.iconSize}) scale(${(theme.badge.iconSize / 24).toFixed(3)})"><path d="${pathData}" fill="#666666"/></g>`);
+    });
+  }
+}
 
 function renderQRModules(parts, modules, moduleCount, moduleSize, size, style, fg, bg, theme, logoRadius, centerX, centerY) {
   for (let row = 0; row < moduleCount; row++) {
