@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react';
 import { useWebSocketSubscription } from '../../hooks/useWebSocket.js';
 import getLogger from '../../lib/logging/Logger.js';
+import { wsService } from '../../services/WebSocketService.js';
 
 let _logger;
 function logger() {
@@ -23,12 +24,14 @@ const LEGACY_COLLECTION_KEYS = ['hymn', 'scripture', 'talk', 'primary', 'poem'];
  * @param {object} wsConfig - The `websocket:` block from screen YAML config
  * @param {object} actionBus - ActionBus instance to emit events on
  */
-export function useScreenCommands(wsConfig, actionBus) {
+export function useScreenCommands(wsConfig, actionBus, screenId) {
   const enabled = wsConfig?.commands === true;
   const guardrailsRef = useRef(wsConfig?.guardrails || {});
   guardrailsRef.current = wsConfig?.guardrails || {};
   const busRef = useRef(actionBus);
   busRef.current = actionBus;
+  const screenIdRef = useRef(screenId);
+  screenIdRef.current = screenId;
 
   const handleMessage = useCallback((data) => {
     const g = guardrailsRef.current;
@@ -117,6 +120,9 @@ export function useScreenCommands(wsConfig, actionBus) {
       const { action: _a, contentId, source: _s, device: _d, topic: _t, timestamp: _ts, ...contentOptions } = data;
       logger().info('commands.barcode', { action: busAction, contentId, device: data.device, options: contentOptions });
       bus.emit(busAction, { contentId, ...contentOptions });
+      if (busAction !== 'menu:open') {
+        wsService.send({ type: 'content-ack', screen: screenIdRef.current, timestamp: Date.now() });
+      }
       return;
     }
 
@@ -136,6 +142,8 @@ export function useScreenCommands(wsConfig, actionBus) {
       const action = Object.keys(data).includes('queue') ? 'media:queue' : 'media:play';
       logger().info('commands.content', { action, contentRef });
       bus.emit(action, { contentId: contentRef });
+      // Acknowledge content delivery so the backend knows WS succeeded
+      wsService.send({ type: 'content-ack', screen: screenIdRef.current, timestamp: Date.now() });
       return;
     }
 
