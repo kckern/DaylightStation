@@ -81,6 +81,15 @@ export function useScreenCommands(wsConfig, actionBus) {
       return;
     }
 
+    // Barcode scan
+    if (data.source === 'barcode' && data.contentId) {
+      const actionMap = { queue: 'media:queue', play: 'media:play', open: 'menu:open' };
+      const busAction = actionMap[data.action] || 'media:queue';
+      logger().info('commands.barcode', { action: busAction, contentId: data.contentId, device: data.device });
+      bus.emit(busAction, { contentId: data.contentId });
+      return;
+    }
+
     // Content reference extraction
     let contentRef = null;
     for (const key of LEGACY_COLLECTION_KEYS) {
@@ -107,7 +116,8 @@ export function useScreenCommands(wsConfig, actionBus) {
   const filter = enabled
     ? (msg) => !!(msg.menu || msg.action || msg.playback || msg.play || msg.queue
         || msg.plex || msg.contentId || msg.hymn || msg.scripture || msg.talk
-        || msg.primary || msg.media || msg.playlist || msg.files || msg.poem)
+        || msg.primary || msg.media || msg.playlist || msg.files || msg.poem
+        || msg.source === 'barcode')
     : null;
 
   useWebSocketSubscription(filter, handleMessage, [handleMessage]);
