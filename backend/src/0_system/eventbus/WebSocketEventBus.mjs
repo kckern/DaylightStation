@@ -521,6 +521,77 @@ export class WebSocketEventBus {
     }
   }
 
+  // ===========================================================================
+  // One-Shot Message Waiting
+  // ===========================================================================
+
+  /**
+   * Wait for a single incoming client message matching a predicate.
+   * Returns a promise that resolves with the message or rejects on timeout.
+   *
+   * @param {Function} predicate - (message) => boolean
+   * @param {number} timeoutMs - Timeout in milliseconds
+   * @returns {Promise<Object>} The matching message
+   */
+  waitForMessage(predicate, timeoutMs) {
+    return new Promise((resolve, reject) => {
+      let timer;
+      const handler = (_clientId, message) => {
+        try {
+          if (!predicate(message)) return;
+        } catch {
+          return; // predicate threw — skip this message
+        }
+        clearTimeout(timer);
+        this.#removeMessageHandler(handler);
+        resolve(message);
+      };
+
+      this.#messageHandlers.push(handler);
+
+      timer = setTimeout(() => {
+        this.#removeMessageHandler(handler);
+        reject(new Error(`waitForMessage timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+    });
+  }
+
+  /**
+   * Remove a specific message handler.
+   * @private
+   */
+  #removeMessageHandler(handler) {
+    const idx = this.#messageHandlers.indexOf(handler);
+    if (idx !== -1) this.#messageHandlers.splice(idx, 1);
+  }
+
+  /**
+   * Inject a client message for testing. Only available in non-production.
+   * @param {string} clientId
+   * @param {Object} message
+   */
+  _testInjectClientMessage(clientId, message) {
+    for (const handler of this.#messageHandlers) {
+      try {
+        handler(clientId, message);
+      } catch (err) {
+        this.#logger.error?.('eventbus.test_inject_error', { error: err.message });
+      }
+    }
+  }
+
+  /**
+   * Get message handler count (for testing cleanup verification).
+   * @returns {number}
+   */
+  get _messageHandlerCount() {
+    return this.#messageHandlers.length;
+  }
+
+  // ===========================================================================
+  // Direct Client Messaging
+  // ===========================================================================
+
   /**
    * Send message to a specific client
    * @param {string} clientId - Client ID
