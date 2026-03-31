@@ -95,6 +95,7 @@ import { ThermalPrinterAdapter } from '#adapters/hardware/thermal-printer/Therma
 import { TTSAdapter } from '#adapters/hardware/tts/TTSAdapter.mjs';
 import { MQTTSensorAdapter } from '#adapters/hardware/mqtt-sensor/MQTTSensorAdapter.mjs';
 import { MQTTBarcodeAdapter } from '#adapters/hardware/mqtt-barcode/MQTTBarcodeAdapter.mjs';
+import { KNOWN_COMMANDS } from '#domains/barcode/BarcodeCommandMap.mjs';
 
 // Proxy infrastructure imports
 import { ProxyService } from './proxy/ProxyService.mjs';
@@ -1798,6 +1799,7 @@ export function createHardwareAdapters(config) {
       },
       {
         knownActions: config.barcode.knownActions || [],
+        knownCommands: config.barcode.knownCommands || [],
         onScan: config.onBarcodeScan,
         logger,
       }

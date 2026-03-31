@@ -146,6 +146,7 @@ import { ComposePresentationUseCase } from './3_applications/content/usecases/Co
 import { BarcodeGatekeeper } from '#domains/barcode/BarcodeGatekeeper.mjs';
 import { autoApprove } from '#domains/barcode/strategies/AutoApproveStrategy.mjs';
 import { BarcodeScanService } from './3_applications/barcode/BarcodeScanService.mjs';
+import { KNOWN_COMMANDS, resolveCommand } from '#domains/barcode/BarcodeCommandMap.mjs';
 
 // Weekly Review domain
 import { WeeklyReviewImmichAdapter } from './1_adapters/weekly-review/WeeklyReviewImmichAdapter.mjs';
@@ -1195,6 +1196,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       port: mqtt.port || 1883,
       topic: (configService.getHouseholdAppConfig(householdId, 'barcode') || {}).topic || 'daylight/scanner/barcode',
       knownActions: (configService.getHouseholdAppConfig(householdId, 'barcode') || {}).actions || ['queue', 'play', 'open'],
+      knownCommands: KNOWN_COMMANDS,
     },
     onMqttMessage: (payload) => {
       // Broadcast MQTT sensor messages to WebSocket clients
@@ -1246,6 +1248,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         default_action: barcodeConfig.default_action || 'queue',
         actions: barcodeConfig.actions || ['queue', 'play', 'open'],
       },
+      commandResolver: resolveCommand,
       logger: rootLogger.child({ module: 'barcode' }),
     });
 
