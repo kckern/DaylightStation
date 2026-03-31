@@ -24,6 +24,7 @@ export class MQTTBarcodeAdapter {
   #topic;
   #client;
   #knownActions;
+  #knownCommands;
   #reconnectAttempts;
   #reconnectTimeout;
   #isShuttingDown;
@@ -67,6 +68,7 @@ export class MQTTBarcodeAdapter {
     this.#topic = config.topic || 'daylight/scanner/barcode';
     this.#client = null;
     this.#knownActions = options.knownActions || [];
+    this.#knownCommands = options.knownCommands || [];
     this.#reconnectAttempts = 0;
     this.#reconnectTimeout = null;
     this.#isShuttingDown = false;
@@ -197,14 +199,16 @@ export class MQTTBarcodeAdapter {
         return;
       }
 
-      const payload = BarcodePayload.parse(data, this.#knownActions);
+      const payload = BarcodePayload.parse(data, this.#knownActions, this.#knownCommands);
       if (!payload) {
         this.#logger.warn?.('barcode.mqtt.invalidBarcode', { barcode: data.barcode });
         return;
       }
 
       this.#logger.info?.('barcode.mqtt.scan', {
+        type: payload.type,
         contentId: payload.contentId,
+        command: payload.command,
         action: payload.action,
         targetScreen: payload.targetScreen,
         device: payload.device,
