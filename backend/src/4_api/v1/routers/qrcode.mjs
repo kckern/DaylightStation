@@ -359,7 +359,18 @@ async function resolveContent({ contentId, options, screen, contentIdResolver, m
         sublabel = meta.parentTitle || null;
     }
 
-    const thumbUrl = item.thumbnail || meta.thumbnail;
+    let thumbUrl = item.thumbnail || meta.thumbnail;
+
+    // Fallback: for containers without thumbnails, try first child's thumbnail
+    if (!thumbUrl && item.itemType === 'container' && resolved.adapter.getList) {
+      try {
+        const children = await resolved.adapter.getList(resolved.localId);
+        if (children?.length > 0) {
+          thumbUrl = children[0].thumbnail;
+        }
+      } catch { /* best effort */ }
+    }
+
     if (thumbUrl) {
       const thumbResult = await fetchThumbnailAsBase64(thumbUrl, logger);
       if (thumbResult) {
