@@ -143,6 +143,86 @@ describe('BarcodePayload', () => {
     });
   });
 
+  describe('command barcodes', () => {
+    const KNOWN_COMMANDS = ['pause', 'play', 'next', 'prev', 'ffw', 'rew', 'stop', 'off', 'blackout', 'volume', 'speed'];
+
+    it('parses a bare command (1 segment)', () => {
+      const payload = BarcodePayload.parse(
+        { barcode: 'pause', timestamp: '2026-03-30T01:00:00Z', device: 'scanner-1' },
+        KNOWN_ACTIONS, KNOWN_COMMANDS
+      );
+      expect(payload.type).toBe('command');
+      expect(payload.command).toBe('pause');
+      expect(payload.commandArg).toBeNull();
+      expect(payload.targetScreen).toBeNull();
+      expect(payload.contentId).toBeNull();
+    });
+
+    it('parses screen:command (2 segments, second is command)', () => {
+      const payload = BarcodePayload.parse(
+        { barcode: 'office:pause', timestamp: '2026-03-30T01:00:00Z', device: 'scanner-1' },
+        KNOWN_ACTIONS, KNOWN_COMMANDS
+      );
+      expect(payload.type).toBe('command');
+      expect(payload.command).toBe('pause');
+      expect(payload.targetScreen).toBe('office');
+      expect(payload.commandArg).toBeNull();
+    });
+
+    it('parses command:arg (2 segments, first is command)', () => {
+      const payload = BarcodePayload.parse(
+        { barcode: 'volume:30', timestamp: '2026-03-30T01:00:00Z', device: 'scanner-1' },
+        KNOWN_ACTIONS, KNOWN_COMMANDS
+      );
+      expect(payload.type).toBe('command');
+      expect(payload.command).toBe('volume');
+      expect(payload.commandArg).toBe('30');
+      expect(payload.targetScreen).toBeNull();
+    });
+
+    it('parses screen:command:arg (3 segments)', () => {
+      const payload = BarcodePayload.parse(
+        { barcode: 'office:volume:30', timestamp: '2026-03-30T01:00:00Z', device: 'scanner-1' },
+        KNOWN_ACTIONS, KNOWN_COMMANDS
+      );
+      expect(payload.type).toBe('command');
+      expect(payload.command).toBe('volume');
+      expect(payload.commandArg).toBe('30');
+      expect(payload.targetScreen).toBe('office');
+    });
+
+    it('parses semicolon-delimited commands', () => {
+      const payload = BarcodePayload.parse(
+        { barcode: 'office;pause', timestamp: '2026-03-30T01:00:00Z', device: 'scanner-1' },
+        KNOWN_ACTIONS, KNOWN_COMMANDS
+      );
+      expect(payload.type).toBe('command');
+      expect(payload.command).toBe('pause');
+      expect(payload.targetScreen).toBe('office');
+    });
+
+    it('falls through to content for 4+ segments even if play is a command', () => {
+      const payload = BarcodePayload.parse(
+        { barcode: 'office:play:plex:12345', timestamp: '2026-03-30T01:00:00Z', device: 'scanner-1' },
+        KNOWN_ACTIONS, KNOWN_COMMANDS
+      );
+      expect(payload.type).toBe('content');
+      expect(payload.contentId).toBe('plex:12345');
+      expect(payload.action).toBe('play');
+      expect(payload.targetScreen).toBe('office');
+    });
+
+    it('preserves dashes in screen names for commands', () => {
+      const payload = BarcodePayload.parse(
+        { barcode: 'living-room;blackout', timestamp: '2026-03-30T01:00:00Z', device: 'scanner-1' },
+        KNOWN_ACTIONS, KNOWN_COMMANDS
+      );
+      expect(payload.type).toBe('command');
+      expect(payload.command).toBe('blackout');
+      expect(payload.targetScreen).toBe('living-room');
+    });
+  });
+
   describe('toJSON', () => {
     it('serializes all fields', () => {
       const payload = BarcodePayload.parse(
@@ -150,8 +230,11 @@ describe('BarcodePayload', () => {
         KNOWN_ACTIONS
       );
       expect(payload.toJSON()).toEqual({
+        type: 'content',
         contentId: 'plex:12345',
         action: 'queue',
+        command: null,
+        commandArg: null,
         targetScreen: 'office',
         device: 'scanner-1',
         timestamp: '2026-03-30T01:00:00Z',
