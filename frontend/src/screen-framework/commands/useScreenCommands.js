@@ -74,10 +74,38 @@ export function useScreenCommands(wsConfig, actionBus) {
       return;
     }
 
+    // Sleep (display off)
+    if (data.action === 'sleep') {
+      logger().info('commands.sleep');
+      bus.emit('display:sleep', {});
+      return;
+    }
+
     // Playback control
     if (data.playback) {
       logger().info('commands.playback', { command: data.playback });
       bus.emit('media:playback', { command: data.playback });
+      return;
+    }
+
+    // Shader control
+    if (data.shader) {
+      logger().info('commands.shader', { shader: data.shader });
+      bus.emit('display:shader', { shader: data.shader });
+      return;
+    }
+
+    // Volume control
+    if (data.volume != null) {
+      logger().info('commands.volume', { level: data.volume });
+      bus.emit('display:volume', { level: data.volume });
+      return;
+    }
+
+    // Playback rate
+    if (data.rate != null) {
+      logger().info('commands.rate', { rate: data.rate });
+      bus.emit('media:rate', { rate: data.rate });
       return;
     }
 
@@ -117,7 +145,8 @@ export function useScreenCommands(wsConfig, actionBus) {
     ? (msg) => !!(msg.menu || msg.action || msg.playback || msg.play || msg.queue
         || msg.plex || msg.contentId || msg.hymn || msg.scripture || msg.talk
         || msg.primary || msg.media || msg.playlist || msg.files || msg.poem
-        || msg.source === 'barcode')
+        || msg.source === 'barcode'
+        || msg.shader || msg.volume != null || msg.rate != null)
     : null;
 
   useWebSocketSubscription(filter, handleMessage, [handleMessage]);
