@@ -23,7 +23,7 @@ export const qrcodeTheme = {
   frame: {
     borderRadius: 12,
     width: 32,           // Frame thickness (2rem = 32px)
-    color: '#333333',    // Frame fill color
+    color: '#aaaaaa',    // Frame fill color
   },
 
   label: {
