@@ -1552,6 +1552,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     haGateway: homeAutomationAdapters.haGateway,
     devicesConfig: devicesConfig.devices || {},
     broadcast: broadcastEvent,
+    eventBus,
     prewarmService,
     logger: rootLogger.child({ module: 'wake-and-load' })
   });
