@@ -121,9 +121,9 @@ function ScreenAutoplay() {
  *
  * This is a renderless component (returns null).
  */
-function ScreenCommandHandler({ wsConfig }) {
+function ScreenCommandHandler({ wsConfig, screenId }) {
   const bus = useMemo(() => getActionBus(), []);
-  useScreenCommands(wsConfig, bus);
+  useScreenCommands(wsConfig, bus, screenId);
   return null;
 }
 
@@ -259,7 +259,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
             <ScreenOverlayProvider>
               <ScreenAutoplay />
               <ScreenActionHandler actions={config.actions} />
-              <ScreenCommandHandler wsConfig={config.websocket} />
+              <ScreenCommandHandler wsConfig={config.websocket} screenId={screenId} />
               <ScreenSubscriptionHandler subscriptions={config.subscriptions} />
               <ScreenProvider config={config.layout}>
                 <PanelRenderer />
