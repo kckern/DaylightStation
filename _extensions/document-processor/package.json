@@ -8,7 +8,7 @@
     "start": "node src/watcher.mjs",
     "dev": "node --watch src/watcher.mjs",
     "process": "node src/cli.mjs process",
-    "test": "node --test src/**/*.test.mjs"
+    "test": "node --test src/images.test.mjs src/vision.test.mjs src/pdf.test.mjs src/integration.test.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
