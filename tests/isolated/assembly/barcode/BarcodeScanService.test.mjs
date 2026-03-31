@@ -3,8 +3,10 @@ import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import { BarcodeScanService } from '../../../../backend/src/3_applications/barcode/BarcodeScanService.mjs';
 import { BarcodePayload } from '#domains/barcode/BarcodePayload.mjs';
 import { BarcodeGatekeeper } from '#domains/barcode/BarcodeGatekeeper.mjs';
+import { resolveCommand } from '#domains/barcode/BarcodeCommandMap.mjs';
 
 const KNOWN_ACTIONS = ['queue', 'play', 'open'];
+const KNOWN_COMMANDS = ['pause', 'play', 'next', 'prev', 'ffw', 'rew', 'stop', 'off', 'blackout', 'volume', 'speed'];
 
 const logger = {
   info: jest.fn(),
@@ -16,7 +18,7 @@ const logger = {
 function makePayload(barcode, device = 'scanner-1') {
   return BarcodePayload.parse(
     { barcode, timestamp: '2026-03-30T01:00:00Z', device },
-    KNOWN_ACTIONS
+    KNOWN_ACTIONS, KNOWN_COMMANDS
   );
 }
 
@@ -47,6 +49,7 @@ describe('BarcodeScanService', () => {
       deviceConfig: overrides.deviceConfig || deviceConfig,
       broadcastEvent: overrides.broadcastEvent || broadcastEvent,
       pipelineConfig: overrides.pipelineConfig || pipelineConfig,
+      commandResolver: overrides.commandResolver || resolveCommand,
       logger,
     });
   }
@@ -126,6 +129,76 @@ describe('BarcodeScanService', () => {
       expect(logger.warn).toHaveBeenCalledWith(
         'barcode.unknownDevice',
         expect.objectContaining({ device: 'unknown-scanner' })
+      );
+    });
+  });
+
+  describe('handle — command barcodes', () => {
+    it('broadcasts playback command to default screen', async () => {
+      const service = createService();
+      await service.handle(makePayload('pause'));
+
+      expect(broadcastEvent).toHaveBeenCalledWith('office', {
+        playback: 'pause',
+        source: 'barcode',
+        device: 'scanner-1',
+      });
+    });
+
+    it('broadcasts command to barcode-specified screen', async () => {
+      const service = createService();
+      await service.handle(makePayload('office:pause'));
+
+      expect(broadcastEvent).toHaveBeenCalledWith('office', {
+        playback: 'pause',
+        source: 'barcode',
+        device: 'scanner-1',
+      });
+    });
+
+    it('broadcasts parameterized command', async () => {
+      const service = createService();
+      await service.handle(makePayload('volume:30'));
+
+      expect(broadcastEvent).toHaveBeenCalledWith('office', {
+        volume: 30,
+        source: 'barcode',
+        device: 'scanner-1',
+      });
+    });
+
+    it('broadcasts screen:command:arg', async () => {
+      const service = createService();
+      await service.handle(makePayload('office:speed:1.5'));
+
+      expect(broadcastEvent).toHaveBeenCalledWith('office', {
+        rate: 1.5,
+        source: 'barcode',
+        device: 'scanner-1',
+      });
+    });
+
+    it('skips gatekeeper for commands', async () => {
+      const denyGatekeeper = new BarcodeGatekeeper([
+        async () => ({ approved: false, reason: 'deny all' }),
+      ]);
+      const service = createService({ gatekeeper: denyGatekeeper });
+      await service.handle(makePayload('pause'));
+
+      // Command still broadcasts despite deny-all gatekeeper
+      expect(broadcastEvent).toHaveBeenCalled();
+    });
+
+    it('logs warning for unknown commands', async () => {
+      const service = createService({
+        commandResolver: () => null,
+      });
+      await service.handle(makePayload('pause'));
+
+      expect(broadcastEvent).not.toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalledWith(
+        'barcode.unknownCommand',
+        expect.objectContaining({ command: 'pause' })
       );
     });
   });
