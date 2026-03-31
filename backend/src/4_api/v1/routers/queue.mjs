@@ -2,19 +2,7 @@
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
-
-function parseQueueQuery(query = {}) {
-  const shuffleRaw = query.shuffle;
-  const limitRaw = query.limit;
-
-  const shuffle = shuffleRaw === true || shuffleRaw === 'true' || shuffleRaw === '1';
-  const limit = Number.parseInt(limitRaw, 10);
-
-  return {
-    shuffle,
-    limit: Number.isFinite(limit) && limit > 0 ? limit : null
-  };
-}
+import { ContentExpression } from '#domains/content/ContentExpression.mjs';
 
 export function toQueueItem(item) {
   const qi = {
@@ -98,7 +86,11 @@ export function createQueueRouter(config) {
       path: rawPath
     });
 
-    const { shuffle, limit } = parseQueueQuery(req.query);
+    const expr = ContentExpression.fromQuery(req.query);
+    const shuffle = expr.options.shuffle === true || expr.options.shuffle === 'true' || expr.options.shuffle === '1';
+    const limitRaw = expr.options.limit;
+    const limitParsed = Number.parseInt(limitRaw, 10);
+    const limit = Number.isFinite(limitParsed) && limitParsed > 0 ? limitParsed : null;
 
     // Resolve through ContentIdResolver (handles aliases, prefixes, exact matches)
     let resolved = contentIdResolver.resolve(compoundId);
