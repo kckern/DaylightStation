@@ -28,6 +28,8 @@
  *
  * @module domains/barcode/BarcodePayload
  */
+import { ContentExpression } from '#domains/content/ContentExpression.mjs';
+
 export class BarcodePayload {
   #type;
   #contentId;
@@ -73,25 +75,9 @@ export class BarcodePayload {
 
     if (!barcode || !device) return null;
 
-    // Extract options (everything after first +)
-    let options = null;
-    let barcodePart = barcode;
+    // Strip options for command detection (commands don't use options)
     const plusIdx = barcode.indexOf('+');
-    if (plusIdx !== -1) {
-      const optStr = barcode.slice(plusIdx + 1);
-      barcodePart = barcode.slice(0, plusIdx);
-      options = {};
-      for (const part of optStr.split('+')) {
-        if (!part) continue;
-        const eqIdx = part.indexOf('=');
-        if (eqIdx !== -1) {
-          options[part.slice(0, eqIdx)] = part.slice(eqIdx + 1);
-        } else {
-          options[part] = true;
-        }
-      }
-      if (Object.keys(options).length === 0) options = null;
-    }
+    const barcodePart = plusIdx !== -1 ? barcode.slice(0, plusIdx) : barcode;
 
     // Normalize delimiters: semicolons and spaces become colons
     const normalized = barcodePart.replace(/[; ]/g, ':');
@@ -116,36 +102,23 @@ export class BarcodePayload {
       }
     }
 
-    // ── Content parsing (2-4 segments) ─────────────────────────────
-    if (segments.length < 2) return null;
+    // ── Content parsing via ContentExpression ──────────────────────
+    // Reject barcodes with too many segments (5+) before delegating
+    if (segments.length > 4) return null;
 
-    const contentId = segments.slice(-2).join(':');
-    const prefixes = segments.slice(0, -2);
+    const expr = ContentExpression.fromString(barcode, knownActions);
+    if (!expr.contentId) return null;
 
-    let action = null;
-    let targetScreen = null;
-
-    if (prefixes.length === 1) {
-      if (knownActions.includes(prefixes[0])) {
-        action = prefixes[0];
-      } else {
-        targetScreen = prefixes[0];
-      }
-    } else if (prefixes.length === 2) {
-      targetScreen = prefixes[0];
-      action = prefixes[1];
-    } else if (prefixes.length > 2) {
-      return null;
-    }
+    const options = Object.keys(expr.options).length > 0 ? expr.options : null;
 
     return new BarcodePayload({
       type: 'content',
-      contentId,
-      action,
+      contentId: expr.contentId,
+      action: expr.action,
       command: null,
       commandArg: null,
       options,
-      targetScreen,
+      targetScreen: expr.screen,
       ...common,
     });
   }
