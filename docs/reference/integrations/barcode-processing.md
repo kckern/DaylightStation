@@ -269,16 +269,41 @@ getGenerateDailyReport() // Compile daily nutrition summary
 
 ---
 
-## Current Gap: MQTT → Nutribot
+## MQTT → Screen Pipeline
 
-The barcode scanner publishes to `daylight/scanner/barcode`, but the backend does not yet subscribe to that topic and route scans to `LogFoodFromUPC`. The existing `MQTTSensorAdapter` handles vibration sensor payloads, not barcode payloads.
+The barcode scanner publishes to `daylight/scanner/barcode`. The backend subscribes via `MQTTBarcodeAdapter`, parses the barcode string, runs it through the `BarcodeGatekeeper`, and broadcasts to the target screen via WebSocket.
 
-To close the loop, one of:
-- Add a barcode-specific MQTT subscriber in the backend that calls the direct UPC API endpoint
-- Extend `MQTTSensorAdapter` to detect barcode payloads and route to the nutribot input router
-- Add an EventBus subscriber that listens for `daylight/scanner/barcode` events
+### Barcode String Formats
 
-For now, scans can be tested via the direct API:
+| Format | Example | Screen | Action | ContentId |
+|--------|---------|--------|--------|-----------|
+| `source:id` | `plex:12345` | from device config | from pipeline config | `plex:12345` |
+| `action:source:id` | `queue:plex:12345` | from device config | `queue` | `plex:12345` |
+| `screen:action:source:id` | `office:play:plex:12345` | `office` | `play` | `plex:12345` |
+
+### Pipeline Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| `MQTTBarcodeAdapter` | `backend/src/1_adapters/hardware/mqtt-barcode/MQTTBarcodeAdapter.mjs` | MQTT subscription, message validation, barcode parsing |
+| `BarcodePayload` | `backend/src/2_domains/barcode/BarcodePayload.mjs` | Value object — parses barcode string into contentId, action, screen |
+| `BarcodeGatekeeper` | `backend/src/2_domains/barcode/BarcodeGatekeeper.mjs` | Strategy-based approve/deny evaluation |
+| `AutoApproveStrategy` | `backend/src/2_domains/barcode/strategies/AutoApproveStrategy.mjs` | Default strategy — approve everything |
+| `BarcodeScanService` | `backend/src/3_applications/barcode/BarcodeScanService.mjs` | Orchestrator — resolves context, runs gatekeeper, broadcasts |
+| `useScreenCommands` | `frontend/src/screen-framework/commands/useScreenCommands.js` | Maps barcode WS messages to ActionBus events |
+
+### Configuration
+
+- **Pipeline config:** `data/household/config/barcode.yml` — topic, default action, gatekeeper policies
+- **Scanner devices:** `data/household/config/devices.yml` — per-scanner target screen and policy group
+
+### Testing
+
 ```bash
+# Publish a test barcode via MQTT
+mosquitto_pub -h localhost -t "daylight/scanner/barcode" \
+  -m '{"barcode":"plex:12345","timestamp":"2026-03-30T12:00:00Z","device":"symbol-scanner"}'
+
+# UPC food scanning still works via direct API
 curl "http://localhost:3111/api/v1/nutribot/upc?user=kckern&upc=749826002019"
 ```
