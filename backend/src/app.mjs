@@ -1223,11 +1223,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Initialize barcode scanner MQTT adapter
   if (enableMqtt && hardwareAdapters.barcodeAdapter?.isConfigured()) {
     const barcodeConfig = configService.getHouseholdAppConfig(householdId, 'barcode') || {};
-    const devicesConfig = configService.getHouseholdAppConfig(householdId, 'devices') || {};
+    const devicesConfig = configService.getHouseholdDevices(householdId) || {};
 
     // Build scanner device map (filter to barcode-scanner type)
     const scannerDeviceConfig = {};
-    const devices = devicesConfig.devices || devicesConfig;
+    const devices = devicesConfig.devices || {};
     for (const [id, device] of Object.entries(devices)) {
       if (device.type === 'barcode-scanner') {
         scannerDeviceConfig[id] = device;
