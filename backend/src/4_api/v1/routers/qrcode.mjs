@@ -34,6 +34,12 @@ const OPTION_ICON_MAP = {
   continuous: 'continuous.svg',
 };
 
+const ACTION_KEYS = ['queue', 'play', 'open'];
+const KNOWN_PARAMS = new Set([
+  ...ACTION_KEYS, 'data', 'content', 'options', 'screen',
+  'label', 'sublabel', 'logo', 'size', 'style', 'fg', 'bg',
+]);
+
 /**
  * @param {Object} config
  * @param {Object} config.renderer - QRCodeRenderer instance with renderSvg()
@@ -43,7 +49,7 @@ const OPTION_ICON_MAP = {
  * @param {Object} [config.logger]
  */
 export function createQRCodeRouter(config) {
-  const { renderer, contentIdResolver, mediaPath, defaultLogoPath, logger = console } = config;
+  const { renderer, contentIdResolver, mediaPath, defaultLogoPath, defaultScreen, logger = console } = config;
   const router = express.Router();
 
   const buttonsDir = path.join(mediaPath, 'img/buttons');
@@ -67,8 +73,11 @@ export function createQRCodeRouter(config) {
         bg,
       } = req.query;
 
-      if (!data && !content) {
-        return res.status(400).json({ error: 'Either "data" or "content" query param is required' });
+      // Check for action-based params first
+      const actionParams = parseActionParams(req.query, defaultScreen);
+
+      if (!data && !content && !actionParams) {
+        return res.status(400).json({ error: 'Provide an action (queue, play, open), "content", or "data" query param' });
       }
 
       let encodeData;
@@ -80,7 +89,30 @@ export function createQRCodeRouter(config) {
       let optionBadges = [];
       const size = sizeParam ? parseInt(sizeParam, 10) : undefined;
 
-      if (content) {
+      if (actionParams) {
+        // ── Action mode ──────────────────────────────────
+        encodeData = actionParams.encodeData;
+
+        // Resolve content metadata (thumbnail, labels)
+        const result = await resolveContent({
+          contentId: actionParams.contentId,
+          options: actionParams.options.join('+') || null,
+          screen: null, // screen is already baked into encodeData
+          contentIdResolver,
+          mediaPath,
+          logger,
+        });
+
+        // Use resolved labels but keep our own encodeData
+        if (!label) label = result.label;
+        if (!sublabel) sublabel = result.sublabel;
+        if (result.logoData) {
+          coverData = result.logoData;
+          coverAspect = result.coverAspect || 1;
+        }
+        optionBadges = result.optionBadges || [];
+
+      } else if (content) {
         // ── Content mode ──────────────────────────────────
         const result = await resolveContent({
           contentId: content,
@@ -215,6 +247,51 @@ function loadDefaultLogo(logoPath) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Parse action-based query params into content resolution inputs.
+ * Detects queue/play/open action, extracts bare-key options, builds encode string.
+ *
+ * @param {Object} query - Express req.query
+ * @param {string|null} defaultScreen - Default screen from devices.yml
+ * @returns {{ action, contentId, screen, options, encodeData } | null}
+ */
+function parseActionParams(query, defaultScreen) {
+  let action = null;
+  let contentId = null;
+
+  for (const key of ACTION_KEYS) {
+    if (query[key] != null && query[key] !== '') {
+      action = key;
+      contentId = query[key];
+      break;
+    }
+  }
+
+  if (!action) return null;
+
+  // Extract bare-key options (query params not in KNOWN_PARAMS with empty/missing value)
+  const options = [];
+  for (const [key, value] of Object.entries(query)) {
+    if (KNOWN_PARAMS.has(key)) continue;
+    if (value === '' || value === undefined) {
+      options.push(key);
+    }
+  }
+
+  // Determine screen: explicit param > default from config
+  const screen = query.screen || null;
+
+  // Build encoded barcode string: [screen:]action:contentId[+opt1+opt2]
+  let encodeData = `${action}:${contentId}`;
+  if (options.length > 0) encodeData += `+${options.join('+')}`;
+  // Only prepend screen if explicitly provided and differs from default
+  if (screen && screen !== defaultScreen) {
+    encodeData = `${screen}:${encodeData}`;
+  }
+
+  return { action, contentId, screen: screen || defaultScreen, options, encodeData };
 }
 
 async function resolveContent({ contentId, options, screen, contentIdResolver, mediaPath, logger }) {
