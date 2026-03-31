@@ -1,0 +1,301 @@
+/**
+ * QR Code API Router
+ *
+ * Generates styled SVG QR codes with three modes:
+ * - Raw: encode any string
+ * - Content: resolve contentId metadata for label/logo
+ * - Command: auto-detect barcode commands, use matching icon
+ *
+ * @module api/v1/routers/qrcode
+ */
+
+import express from 'express';
+import fs from 'fs';
+import path from 'path';
+import { KNOWN_COMMANDS } from '#domains/barcode/BarcodeCommandMap.mjs';
+
+const COMMAND_ICON_MAP = {
+  pause: 'pause.svg',
+  play: 'play.svg',
+  next: 'next.svg',
+  prev: 'prev.svg',
+  ffw: 'ffw.svg',
+  rew: 'rew.svg',
+  stop: 'stop.svg',
+  off: 'off.svg',
+  blackout: 'blackout.svg',
+  volume: 'vol_up.svg',
+  speed: 'speed.svg',
+};
+
+const OPTION_ICON_MAP = {
+  shuffle: 'shuffle.svg',
+  continuous: 'continuous.svg',
+};
+
+/**
+ * @param {Object} config
+ * @param {Object} config.renderer - QRCodeRenderer instance with renderSvg()
+ * @param {Object} [config.contentIdResolver] - ContentIdResolver for content mode
+ * @param {string} config.mediaPath - Path to media directory
+ * @param {string} [config.defaultLogoPath] - Path to default logo (favicon)
+ * @param {Object} [config.logger]
+ */
+export function createQRCodeRouter(config) {
+  const { renderer, contentIdResolver, mediaPath, defaultLogoPath, logger = console } = config;
+  const router = express.Router();
+
+  const buttonsDir = path.join(mediaPath, 'img/buttons');
+
+  /**
+   * GET /api/v1/qrcode
+   */
+  router.get('/', async (req, res) => {
+    try {
+      const {
+        data,
+        content,
+        options: optionsStr,
+        screen,
+        label: labelOverride,
+        sublabel: sublabelOverride,
+        logo: logoParam,
+        size: sizeParam,
+        style,
+        fg,
+        bg,
+      } = req.query;
+
+      if (!data && !content) {
+        return res.status(400).json({ error: 'Either "data" or "content" query param is required' });
+      }
+
+      let encodeData;
+      let label = labelOverride || null;
+      let sublabel = sublabelOverride || null;
+      let logoData = null;
+      let optionBadges = [];
+      const size = sizeParam ? parseInt(sizeParam, 10) : undefined;
+
+      if (content) {
+        // ── Content mode ──────────────────────────────────
+        const result = await resolveContent({
+          contentId: content,
+          options: optionsStr,
+          screen,
+          contentIdResolver,
+          mediaPath,
+          logger,
+        });
+
+        encodeData = result.encodeData;
+        if (!label) label = result.label;
+        if (!sublabel) sublabel = result.sublabel;
+        if (result.logoData) logoData = result.logoData;
+        optionBadges = result.optionBadges || [];
+
+      } else {
+        // ── Raw / Command mode ────────────────────────────
+        encodeData = data;
+
+        // Normalize delimiters for command detection
+        const normalized = data.replace(/[; ]/g, ':');
+        const segments = normalized.split(':');
+
+        // Check for command auto-detect
+        const commandMatch = detectCommand(segments);
+        if (commandMatch) {
+          if (!label) label = commandMatch.label;
+          logoData = loadCommandIcon(commandMatch.command, buttonsDir);
+        }
+
+        // Check for option badges in raw data
+        const plusIdx = data.indexOf('+');
+        if (plusIdx !== -1) {
+          const opts = data.slice(plusIdx + 1).split('+').filter(Boolean);
+          optionBadges = loadOptionBadges(opts, buttonsDir);
+        }
+      }
+
+      // Load default logo if none resolved
+      if (logoData === null && logoParam !== 'false') {
+        logoData = loadDefaultLogo(defaultLogoPath || path.join(mediaPath, 'img/favicon.ico'));
+      }
+
+      const svg = renderer.renderSvg(encodeData, {
+        size,
+        style,
+        fg,
+        bg,
+        label,
+        sublabel,
+        logoData: logoParam === 'false' ? false : logoData,
+        logo: logoParam !== 'false',
+        optionBadges,
+      });
+
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      res.send(svg);
+
+    } catch (err) {
+      logger.error?.('qrcode.render.failed', { error: err.message });
+      res.status(500).json({ error: 'QR code generation failed' });
+    }
+  });
+
+  return router;
+}
+
+// ─── Helpers ─────────────────────────────────────────────
+
+function detectCommand(segments) {
+  if (segments.length === 1 && KNOWN_COMMANDS.includes(segments[0])) {
+    return { command: segments[0], label: segments[0].toUpperCase() };
+  }
+  if (segments.length === 2) {
+    if (KNOWN_COMMANDS.includes(segments[0])) {
+      return { command: segments[0], label: `${segments[0].toUpperCase()} ${segments[1]}` };
+    }
+    if (KNOWN_COMMANDS.includes(segments[1])) {
+      return { command: segments[1], label: segments[1].toUpperCase() };
+    }
+  }
+  if (segments.length === 3 && KNOWN_COMMANDS.includes(segments[1])) {
+    return { command: segments[1], label: `${segments[1].toUpperCase()} ${segments[2]}` };
+  }
+  return null;
+}
+
+function loadCommandIcon(command, buttonsDir) {
+  const iconFile = COMMAND_ICON_MAP[command];
+  if (!iconFile) return null;
+  const iconPath = path.join(buttonsDir, iconFile);
+  try {
+    const svgContent = fs.readFileSync(iconPath, 'utf-8');
+    return `data:image/svg+xml;base64,${Buffer.from(svgContent).toString('base64')}`;
+  } catch {
+    return null;
+  }
+}
+
+function loadOptionBadges(opts, buttonsDir) {
+  const badges = [];
+  for (const opt of opts) {
+    const key = opt.split('=')[0];
+    const iconFile = OPTION_ICON_MAP[key];
+    if (!iconFile) continue;
+    const iconPath = path.join(buttonsDir, iconFile);
+    try {
+      const svgContent = fs.readFileSync(iconPath, 'utf-8');
+      const pathMatch = svgContent.match(/<path[^>]*d="([^"]*)"[^>]*\/>/);
+      if (pathMatch) badges.push(pathMatch[1]);
+    } catch {
+      // Skip missing icons
+    }
+  }
+  return badges;
+}
+
+function loadDefaultLogo(logoPath) {
+  try {
+    const buf = fs.readFileSync(logoPath);
+    const ext = path.extname(logoPath).slice(1);
+    const mime = ext === 'ico' ? 'image/x-icon' : ext === 'svg' ? 'image/svg+xml' : `image/${ext}`;
+    return `data:${mime};base64,${buf.toString('base64')}`;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveContent({ contentId, options, screen, contentIdResolver, mediaPath, logger }) {
+  let encodeData = contentId;
+  let label = null;
+  let sublabel = null;
+  let logoData = null;
+  let optionBadges = [];
+
+  // Build encode string with screen prefix and options
+  if (screen) encodeData = `${screen}:${encodeData}`;
+  if (options) {
+    encodeData = `${encodeData}+${options}`;
+    const opts = options.split('+').filter(Boolean);
+    const buttonsDir = path.join(mediaPath, 'img/buttons');
+    optionBadges = loadOptionBadges(opts, buttonsDir);
+  }
+
+  if (!contentIdResolver) {
+    return { encodeData, label, sublabel, logoData, optionBadges };
+  }
+
+  try {
+    const resolved = contentIdResolver.resolve(contentId);
+    if (!resolved?.adapter) {
+      logger.warn?.('qrcode.content.unresolved', { contentId });
+      return { encodeData, label, sublabel, logoData, optionBadges };
+    }
+
+    const item = await resolved.adapter.getItem(resolved.localId);
+    if (!item) {
+      logger.warn?.('qrcode.content.notFound', { contentId });
+      return { encodeData, label, sublabel, logoData, optionBadges };
+    }
+
+    const meta = item.metadata || {};
+    const type = meta.type || item.itemType || 'unknown';
+
+    switch (type) {
+      case 'movie':
+        label = item.title;
+        sublabel = meta.year ? String(meta.year) : null;
+        break;
+      case 'episode':
+        label = meta.grandparentTitle || item.title;
+        sublabel = meta.parentIndex != null && meta.itemIndex != null
+          ? `S${String(meta.parentIndex).padStart(2, '0')}E${String(meta.itemIndex).padStart(2, '0')} — ${item.title}`
+          : item.title;
+        break;
+      case 'track':
+        label = meta.album || meta.parentTitle || item.title;
+        sublabel = meta.artist || meta.grandparentTitle || null;
+        break;
+      case 'album':
+        label = item.title;
+        sublabel = meta.artist || meta.grandparentTitle || meta.parentTitle || null;
+        break;
+      case 'artist':
+        label = item.title;
+        sublabel = meta.librarySectionTitle || null;
+        break;
+      default:
+        label = item.title;
+        sublabel = meta.parentTitle || null;
+    }
+
+    const thumbUrl = item.thumbnail || meta.thumbnail;
+    if (thumbUrl) {
+      logoData = await fetchThumbnailAsBase64(thumbUrl, logger);
+    }
+
+  } catch (err) {
+    logger.warn?.('qrcode.content.error', { contentId, error: err.message });
+  }
+
+  return { encodeData, label, sublabel, logoData, optionBadges };
+}
+
+async function fetchThumbnailAsBase64(url, logger) {
+  try {
+    const baseUrl = `http://localhost:${process.env.PORT || 3111}`;
+    const fullUrl = url.startsWith('/') ? `${baseUrl}${url}` : url;
+    const response = await fetch(fullUrl);
+    if (!response.ok) return null;
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    return `data:${contentType};base64,${buffer.toString('base64')}`;
+  } catch (err) {
+    logger.debug?.('qrcode.thumbnail.fetchFailed', { url, error: err.message });
+    return null;
+  }
+}
