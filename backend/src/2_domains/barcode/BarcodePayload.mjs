@@ -1,11 +1,15 @@
 /**
  * BarcodePayload - Value object for parsed barcode scan data.
  *
- * Parses barcode strings in these formats (right-to-left, last two segments are always source:id):
+ * Parses barcode strings in these formats (right-to-left, last two segments are always source:id).
+ * Delimiters are forgiving — colon, semicolon, or space all work:
  *   source:id                    → contentId only
- *   action:source:id             → action + contentId (action must be in known list)
- *   screen:source:id             → screen + contentId (first segment not a known action)
- *   screen:action:source:id      → screen + action + contentId
+ *   action;source;id             → action + contentId
+ *   screen source id             → screen + contentId
+ *
+ * Delimiters are normalized to colons before parsing. The contentId is always
+ * reconstructed with a colon (source:id) regardless of input delimiter.
+ * Dashes are NOT treated as delimiters (they appear in screen names like `living-room`).
  *
  * If a three-segment barcode's first segment is not a known action, it's treated as a screen name.
  *
@@ -43,7 +47,9 @@ export class BarcodePayload {
 
     if (!barcode || !device) return null;
 
-    const segments = barcode.split(':');
+    // Normalize delimiters: semicolons and spaces become colons
+    const normalized = barcode.replace(/[; ]/g, ':');
+    const segments = normalized.split(':');
     if (segments.length < 2) return null;
 
     // Last two segments are always source:id
