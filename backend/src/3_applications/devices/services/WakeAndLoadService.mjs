@@ -259,8 +259,8 @@ export class WakeAndLoadService {
 
       if (subscriberCount > 0) {
         try {
-          // Broadcast content command
-          this.#broadcast({ topic, ...contentQuery });
+          // Broadcast content command (targeted to this device)
+          this.#broadcast({ topic, targetDevice: deviceId, ...contentQuery });
 
           // Wait for ack from the screen
           const ackStart = Date.now();
@@ -322,8 +322,8 @@ export class WakeAndLoadService {
         // Give the screen framework time to mount and subscribe to WS
         await new Promise(resolve => setTimeout(resolve, 2000));
 
-        // Broadcast content command via WebSocket
-        this.#broadcast({ ...contentQuery });
+        // Broadcast content command via WebSocket (targeted to this device)
+        this.#broadcast({ targetDevice: deviceId, ...contentQuery });
         this.#logger.info?.('wake-and-load.load.wsFallbackSent', {
           deviceId, contentQuery
         });
