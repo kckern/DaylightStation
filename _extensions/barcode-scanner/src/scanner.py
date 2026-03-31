@@ -35,12 +35,6 @@ log = logging.getLogger('barcode-scanner')
 
 # ── Keycode → character mapping ──────────────────────────────────
 
-# evdev KEY_* codes for digits and common barcode characters
-KEY_MAP = {}
-# 0-9: KEY_1(2)..KEY_0(11)
-for i in range(10):
-    code = ecodes.ecodes.get(f'KEY_{i}', ecodes.ecodes.get(f'KEY_{(i + 1) % 10}'))
-# Build from ecodes directly
 _SHIFT_MAP = {
     ecodes.KEY_1: '1', ecodes.KEY_2: '2', ecodes.KEY_3: '3',
     ecodes.KEY_4: '4', ecodes.KEY_5: '5', ecodes.KEY_6: '6',
