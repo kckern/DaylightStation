@@ -1,0 +1,2 @@
+# Restart barcode-scanner service when Symbol scanner is plugged in
+ACTION=="add", SUBSYSTEM=="input", ATTRS{idVendor}=="05e0", ATTRS{idProduct}=="1200", TAG+="systemd", ENV{SYSTEMD_WANTS}="barcode-scanner.service"
