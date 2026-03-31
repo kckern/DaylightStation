@@ -20,6 +20,7 @@ node_modules/*
 *.sh
 !docker/entrypoint.sh
 !cli/scripts/*.sh
+!_extensions/document-processor/src/post-consume.sh
 docker.local.sh
 known_hosts
 /_extentions/fitness/node_modules
