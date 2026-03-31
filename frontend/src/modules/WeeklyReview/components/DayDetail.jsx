@@ -2,6 +2,15 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { createMediaTransportAdapter } from '@/lib/Player/mediaTransportAdapter.js';
 import getLogger from '@/lib/logging/Logger.js';
 
+/** Build a Plex thumbnail URL from a contentId like "plex:12345" */
+function plexThumbUrl(contentId) {
+  if (!contentId) return null;
+  const match = contentId.match(/^plex:(\d+)$/);
+  if (!match) return null;
+  const plexId = match[1];
+  return `/api/v1/proxy/plex/photo/:/transcode?width=120&height=120&minSize=1&upscale=1&url=/library/metadata/${plexId}/thumb/${Date.now()}`;
+}
+
 const logger = getLogger().child({ component: 'weekly-review-day-detail' });
 
 const WMO_ICONS = {
@@ -133,7 +142,7 @@ function buildTimeline(day) {
       time: timeStr,
       label: `${title}${durationMin ? ` (${durationMin} min)` : ''}`,
       sortKey,
-      thumbnail: session.media?.primary?.contentId || null,
+      thumbnail: plexThumbUrl(session.media?.primary?.grandparentId) || plexThumbUrl(session.media?.primary?.contentId) || null,
       participants: session.participants,
     });
   }
@@ -293,9 +302,10 @@ export default function DayDetail({ day, isToday, onClose }) {
                   <div
                     key={photo.id}
                     className={`day-detail-photo${photo.type === 'video' ? ' day-detail-photo--video' : ''}`}
+                    style={{ backgroundImage: `url(${photo.thumbnail})` }}
                     onClick={() => handleMediaClick(photo)}
                   >
-                    <img src={photo.thumbnail} alt="" loading="lazy" />
+                    <img src={photo.original} alt="" loading="lazy" />
                     {photo.type === 'video' && (
                       <div className="day-detail-video-play">▶</div>
                     )}
