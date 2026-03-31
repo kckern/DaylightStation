@@ -16,6 +16,7 @@ export class WakeAndLoadService {
   #deviceService;
   #readinessPolicy;
   #broadcast;
+  #eventBus;
   #prewarmService;
   #logger;
 
@@ -24,6 +25,7 @@ export class WakeAndLoadService {
    * @param {Object} deps.deviceService - DeviceService for device lookup
    * @param {Object} deps.readinessPolicy - DisplayReadinessPolicy instance
    * @param {Function} deps.broadcast - broadcastEvent(payload) function
+   * @param {Object} [deps.eventBus] - EventBus instance for WS-first delivery (optional)
    * @param {Object} [deps.prewarmService] - TranscodePrewarmService (optional)
    * @param {Object} [deps.logger]
    */
@@ -34,6 +36,7 @@ export class WakeAndLoadService {
     this.#deviceService = deps.deviceService;
     this.#readinessPolicy = deps.readinessPolicy;
     this.#broadcast = deps.broadcast;
+    this.#eventBus = deps.eventBus || null;
     this.#prewarmService = deps.prewarmService || null;
     this.#logger = deps.logger || console;
   }
