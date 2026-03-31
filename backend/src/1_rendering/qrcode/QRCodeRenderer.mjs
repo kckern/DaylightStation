@@ -181,11 +181,11 @@ function renderCenteredLayout(data, options, theme) {
 // ─── Shared Helpers ─────────────────────────────────────────────
 
 function renderLabelBox(parts, { totalWidth, frame, innerH, labelHeight, padding, label, sublabel, optionBadges, theme }) {
-  const boxMargin = 8;
-  const boxX = frame + boxMargin;
-  const boxY = frame + innerH + boxMargin;
-  const boxW = totalWidth - frame * 2 - boxMargin * 2;
-  const boxH = labelHeight + frame - boxMargin * 2;
+  const boxGap = 4;
+  const boxX = frame;
+  const boxY = frame + innerH + boxGap;
+  const boxW = totalWidth - frame * 2;
+  const boxH = labelHeight + frame - boxGap;
   const boxRadius = 8;
 
   // White rounded box
