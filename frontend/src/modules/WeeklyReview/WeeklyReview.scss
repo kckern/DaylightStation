@@ -598,58 +598,10 @@
   }
 }
 
-.day-detail-fitness {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.day-detail-fitness-session {
-  padding: 8px 10px;
-  background: #2a2a3a;
-  border-radius: 6px;
-  border-left: 3px solid #7b68ee;
-
-  .fitness-session-title {
-    font-size: 0.95rem;
-    font-weight: 600;
-    color: #e0e0e0;
-  }
-
-  .fitness-session-detail {
-    font-size: 0.8rem;
-    color: #aaa;
-    margin-top: 2px;
-  }
-}
-
 .day-detail-empty {
   font-size: 0.85rem;
   color: #555;
   font-style: italic;
-}
-
-.day-detail-sessions {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.day-detail-session {
-  display: flex;
-  justify-content: space-between;
-  padding: 6px 8px;
-  background: #2a2a3a;
-  border-radius: 4px;
-  font-size: 0.8rem;
-
-  .session-count {
-    color: #99ccff;
-  }
-
-  .session-time {
-    color: #888;
-  }
 }
 
 .day-detail-stats {
@@ -662,19 +614,161 @@
   }
 }
 
-// Photo gallery in day detail
+// === Weather in day detail ===
+
+.day-detail-weather-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  margin-right: 16px;
+
+  .weather-badge-icon {
+    font-size: 1.3rem;
+  }
+
+  .weather-badge-temps {
+    font-size: 0.9rem;
+    color: #aaa;
+  }
+}
+
+.day-detail-weather {
+  .weather-main {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .weather-icon-lg {
+    font-size: 2rem;
+  }
+
+  .weather-temps {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .weather-high {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #e0e0e0;
+  }
+
+  .weather-low {
+    font-size: 0.85rem;
+    color: #888;
+  }
+
+  .weather-desc {
+    font-size: 0.8rem;
+    color: #aaa;
+    margin-top: 4px;
+  }
+
+  .weather-detail {
+    font-size: 0.75rem;
+    color: #666;
+    margin-top: 2px;
+  }
+}
+
+// === Timeline ===
+
+.day-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  position: relative;
+  padding-left: 14px;
+
+  // Vertical line
+  &::before {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 4px;
+    bottom: 4px;
+    width: 2px;
+    background: #444;
+  }
+}
+
+.timeline-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 5px 0;
+  position: relative;
+
+  .timeline-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 3px;
+    position: relative;
+    z-index: 1;
+  }
+
+  &--calendar .timeline-dot { background: #4caf50; }
+  &--fitness .timeline-dot { background: #7b68ee; }
+  &--photo .timeline-dot { background: #4da6ff; }
+
+  .timeline-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+
+  .timeline-time {
+    font-size: 0.7rem;
+    color: #888;
+  }
+
+  .timeline-label {
+    font-size: 0.8rem;
+    color: #ccc;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+// === People tags ===
+
+.day-detail-people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.person-tag {
+  font-size: 0.75rem;
+  background: #333;
+  color: #ccc;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+// Photo gallery in day detail — fills available space
 .day-detail-gallery {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
   padding: 16px;
+  display: flex;
+  flex-direction: column;
 }
 
 .day-detail-photos {
+  flex: 1;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  grid-auto-rows: 180px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-auto-rows: 1fr;
   gap: 8px;
+  min-height: 0;
 }
 
 .day-detail-photo {
@@ -687,21 +781,35 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+    display: block;
   }
 
-  .day-detail-photo-people {
+  .day-detail-photo-meta {
     position: absolute;
     bottom: 0;
     left: 0;
     right: 0;
     padding: 4px 8px;
-    background: rgba(0, 0, 0, 0.7);
-    font-size: 0.75rem;
-    color: #ddd;
-  }
+    background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 6px;
 
-  &:hover {
-    box-shadow: 0 0 0 2px #4da6ff;
+    .photo-time {
+      font-size: 0.7rem;
+      color: #ccc;
+      font-weight: 600;
+    }
+
+    .photo-people {
+      font-size: 0.7rem;
+      color: #aaa;
+      text-align: right;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
   }
 }
 
@@ -723,11 +831,6 @@
     font-size: 1.4rem;
     color: white;
     pointer-events: none;
-    transition: background 0.2s ease;
-  }
-
-  &:hover .day-detail-video-play {
-    background: rgba(77, 166, 255, 0.8);
   }
 }
 
