@@ -1,0 +1,22 @@
+services:
+  document-processor:
+    build: .
+    container_name: document-processor
+    restart: unless-stopped
+    volumes:
+      - ${DROPBOX_DOCUMENTS}/_Inbox:/data/_Inbox
+      - ${DROPBOX_DOCUMENTS}/_Processing:/data/_Processing
+      - ${DROPBOX_DOCUMENTS}/_Ready:/data/_Ready
+      - ${DROPBOX_DOCUMENTS}/_Pending:/data/_Pending
+    env_file:
+      - .env
+    ports:
+      - "8190:8190"
+    networks:
+      kckern-net:
+        aliases:
+          - document-processor
+
+networks:
+  kckern-net:
+    external: true
