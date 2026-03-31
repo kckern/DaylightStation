@@ -394,7 +394,13 @@ async function fetchThumbnailAsBase64(url, logger) {
     if (!response.ok) return null;
 
     const buffer = Buffer.from(await response.arrayBuffer());
-    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    if (buffer.length === 0) return null;
+
+    // Detect actual image type from magic bytes (proxy may return wrong content-type)
+    let contentType = response.headers.get('content-type') || 'image/jpeg';
+    if (buffer[0] === 0x89 && buffer[1] === 0x50) contentType = 'image/png';
+    else if (buffer[0] === 0xFF && buffer[1] === 0xD8) contentType = 'image/jpeg';
+
     const dataUri = `data:${contentType};base64,${buffer.toString('base64')}`;
 
     // Detect aspect ratio from image buffer
