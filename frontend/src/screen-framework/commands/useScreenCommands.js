@@ -38,6 +38,12 @@ export function useScreenCommands(wsConfig, actionBus, screenId) {
     const bus = busRef.current;
     if (!bus) return;
 
+    // Device targeting — ignore commands meant for a different device
+    if (data.targetDevice && g.device && data.targetDevice !== g.device) {
+      logger().debug('commands.ignored-target', { targetDevice: data.targetDevice, myDevice: g.device });
+      return;
+    }
+
     // Ignore playback_state broadcasts — these are status updates, not commands.
     // Without this, the broadcast loop re-triggers media:play for already-playing content.
     if (data.topic === 'playback_state') return;

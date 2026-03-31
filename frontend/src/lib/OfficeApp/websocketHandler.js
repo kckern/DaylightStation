@@ -79,6 +79,12 @@ export const createWebSocketHandler = (callbacks) => {
   } = callbacks;
 
   return (data) => {
+    // GUARDRAIL: Reject commands targeted at a different device
+    if (data.targetDevice && data.targetDevice !== 'office-tv') {
+      logger.debug('office.websocket.ignored_target', { targetDevice: data.targetDevice });
+      return;
+    }
+
     // GUARDRAIL: Reject sensor telemetry and non-office messages that may have leaked through
     const BLOCKED_TOPICS = ['vibration', 'fitness', 'sensor', 'telemetry', 'logging'];
     if (data.topic && BLOCKED_TOPICS.includes(data.topic)) {
