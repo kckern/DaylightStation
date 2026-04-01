@@ -326,7 +326,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
                     <span className="session-detail__memo-text">{memo.transcript}</span>
                   </div>
                 ))}
-                {header.stravaNotes && (
+                {header.stravaNotes && !header.voiceMemos?.length && (
                   <div className="session-detail__memo">
                     <span className="session-detail__memo-icon">{'\uD83D\uDCDD'}</span>
                     <span className="session-detail__memo-text">{header.stravaNotes}</span>
