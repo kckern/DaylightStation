@@ -2073,11 +2073,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       { userDataService, logger: rootLogger.child({ module: 'weekly-review-calendar' }) }
     );
 
+    // Weather history store for weekly review (reads daily snapshots)
+    const { YamlWeatherDatastore } = await import('#adapters/persistence/yaml/YamlWeatherDatastore.mjs');
+    const wrWeatherStore = new YamlWeatherDatastore({
+      dataService,
+      configService,
+      logger: rootLogger.child({ module: 'weekly-review-weather' }),
+    });
+
     const weeklyReviewService = new WeeklyReviewService(
-      { dataPath: dataBasePath, mediaPath: mediaBasePath },
+      { dataPath: dataBasePath, mediaPath: mediaBasePath, householdId },
       {
         immichAdapter: weeklyReviewImmichAdapter,
         calendarData: weeklyReviewCalendarAdapter,
+        sessionService: fitnessServices?.sessionService || null,
+        weatherStore: wrWeatherStore,
         transcriptionService: sharedAiGateway ? {
           transcribe: async (buffer, opts) => {
             const raw = await sharedAiGateway.transcribe(buffer, {
