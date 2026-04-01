@@ -10,14 +10,15 @@ import './WeeklyReview.scss';
 const logger = getLogger().child({ component: 'weekly-review' });
 const COLS = 4;
 
-export default function WeeklyReview() {
+export default function WeeklyReview({ dispatch }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [focusedDay, setFocusedDay] = useState(0);
   const [selectedDay, setSelectedDay] = useState(null);
   const [uploading, setUploading] = useState(false);
-  const [hasInteracted, setHasInteracted] = useState(false);
+  const [hasRecorded, setHasRecorded] = useState(false);
+  const [showStopConfirm, setShowStopConfirm] = useState(false);
   const containerRef = useRef(null);
   const uploadStartRef = useRef(null);
 
@@ -37,10 +38,6 @@ export default function WeeklyReview() {
   useEffect(() => {
     logger.debug('state.uploading', { uploading });
   }, [uploading]);
-
-  useEffect(() => {
-    logger.debug('state.has-interacted', { hasInteracted });
-  }, [hasInteracted]);
 
   const handleRecordingComplete = useCallback(async ({ audioBase64, mimeType, duration }) => {
     if (!data?.week) return;
@@ -74,9 +71,10 @@ export default function WeeklyReview() {
     error: recorderError, startRecording, stopRecording,
   } = useAudioRecorder({ onRecordingComplete: handleRecordingComplete });
 
-  // Log recording state changes
+  // Track when recording starts
   useEffect(() => {
     logger.info('state.is-recording', { isRecording });
+    if (isRecording) setHasRecorded(true);
   }, [isRecording]);
 
   useEffect(() => {
@@ -85,16 +83,6 @@ export default function WeeklyReview() {
     }
   }, [recorderError]);
 
-  // Auto-start recording on first non-back interaction
-  const ensureRecording = useCallback(() => {
-    if (!hasInteracted) {
-      setHasInteracted(true);
-      if (!isRecording) {
-        logger.info('recording.auto-start');
-        startRecording();
-      }
-    }
-  }, [hasInteracted, isRecording, startRecording]);
 
   useEffect(() => {
     logger.info('bootstrap.fetching');
@@ -129,18 +117,51 @@ export default function WeeklyReview() {
       if (!data?.days) return;
       const total = data.days.length;
 
-      // Day detail view has its own nav
+      // Not recording and never started: init screen. Enter starts, Escape exits.
+      if (!isRecording && !hasRecorded) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          e.stopPropagation();
+          logger.info('recording.key-start');
+          startRecording();
+        } else if (e.key === 'Escape' || e.key === 'Backspace') {
+          // Let it bubble — framework will exit the widget
+          logger.info('nav.exit-widget', { key: e.key });
+        }
+        return;
+      }
+
+      // Not recording but has recorded (stopped/uploading): block everything.
+      if (!isRecording && hasRecorded) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+
+      // From here on, we're recording — always capture escape/back ourselves.
+      if (e.key === 'Escape' || e.key === 'Backspace') {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+
+      // Stop confirmation dialog is showing
+      if (showStopConfirm) {
+        if (e.key === 'Escape' || e.key === 'Backspace') {
+          setShowStopConfirm(false);
+        }
+        return;
+      }
+
+      // Day detail view: back closes detail
       if (selectedDay !== null) {
         switch (e.key) {
           case 'Escape':
           case 'Backspace':
-            e.preventDefault();
             logger.info('nav.day-detail-close', { fromDay: selectedDay });
             setSelectedDay(null);
             break;
           case 'ArrowLeft':
             e.preventDefault();
-            ensureRecording();
             setSelectedDay(prev => {
               const next = (prev - 1 + total) % total;
               logger.info('nav.day-detail-prev', { from: prev, to: next, date: data.days[next]?.date });
@@ -149,7 +170,6 @@ export default function WeeklyReview() {
             break;
           case 'ArrowRight':
             e.preventDefault();
-            ensureRecording();
             setSelectedDay(prev => {
               const next = (prev + 1) % total;
               logger.info('nav.day-detail-next', { from: prev, to: next, date: data.days[next]?.date });
@@ -157,7 +177,6 @@ export default function WeeklyReview() {
             });
             break;
           default:
-            logger.debug('nav.day-detail-key-ignored', { key: e.key });
             break;
         }
         return;
@@ -166,7 +185,6 @@ export default function WeeklyReview() {
       switch (e.key) {
         case 'ArrowLeft':
           e.preventDefault();
-          ensureRecording();
           setFocusedDay(prev => {
             const next = (prev - 1 + total) % total;
             logger.debug('nav.grid-left', { from: prev, to: next });
@@ -175,7 +193,6 @@ export default function WeeklyReview() {
           break;
         case 'ArrowRight':
           e.preventDefault();
-          ensureRecording();
           setFocusedDay(prev => {
             const next = (prev + 1) % total;
             logger.debug('nav.grid-right', { from: prev, to: next });
@@ -184,7 +201,6 @@ export default function WeeklyReview() {
           break;
         case 'ArrowUp':
           e.preventDefault();
-          ensureRecording();
           setFocusedDay(prev => {
             const next = (prev - COLS + total) % total;
             logger.debug('nav.grid-up', { from: prev, to: next });
@@ -193,7 +209,6 @@ export default function WeeklyReview() {
           break;
         case 'ArrowDown':
           e.preventDefault();
-          ensureRecording();
           setFocusedDay(prev => {
             const next = (prev + COLS) % total;
             logger.debug('nav.grid-down', { from: prev, to: next });
@@ -203,16 +218,16 @@ export default function WeeklyReview() {
         case 'Enter':
         case ' ':
           e.preventDefault();
-          ensureRecording();
           logger.info('nav.day-detail-open', { day: focusedDay, date: data.days[focusedDay]?.date, photoCount: data.days[focusedDay]?.photoCount });
           setSelectedDay(focusedDay);
           break;
         case 'Escape':
         case 'Backspace':
-          logger.info('nav.back', { key: e.key });
+          // Grid + recording: show stop confirmation
+          logger.info('nav.back-show-confirm', { key: e.key });
+          setShowStopConfirm(true);
           break;
         default:
-          logger.debug('nav.grid-key-ignored', { key: e.key });
           break;
       }
     };
@@ -222,7 +237,7 @@ export default function WeeklyReview() {
       container.addEventListener('keydown', handleKeyDown);
       return () => container.removeEventListener('keydown', handleKeyDown);
     }
-  }, [data, selectedDay, focusedDay, ensureRecording]);
+  }, [data, selectedDay, focusedDay, isRecording, hasRecorded, showStopConfirm, startRecording, stopRecording, dispatch]);
 
   useEffect(() => {
     containerRef.current?.focus();
@@ -249,10 +264,25 @@ export default function WeeklyReview() {
     return <div className="weekly-review weekly-review--error">Failed to load: {error}</div>;
   }
 
-  const dimmed = !isRecording;
-
   return (
-    <div className={`weekly-review${dimmed ? ' weekly-review--dimmed' : ''}`} ref={containerRef} tabIndex={0}>
+    <div className="weekly-review" ref={containerRef} tabIndex={0}>
+      {/* Init overlay — only before first recording */}
+      {!isRecording && !hasRecorded && (
+        <div className="weekly-review-init-overlay" onClick={() => { logger.info('recording.overlay-start'); startRecording(); }}>
+          <div className="init-overlay-content">
+            <button className="init-record-btn" onClick={(e) => { e.stopPropagation(); logger.info('recording.overlay-btn-start'); startRecording(); }}>
+              <span className="init-record-dot" />
+            </button>
+            <div className="init-record-label">Press to start recording your weekly review</div>
+            {data.recording?.exists && (
+              <div className="init-existing-badge">
+                Previous recording: {Math.floor(data.recording.duration / 60)}:{String(data.recording.duration % 60).padStart(2, '0')}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {selectedDay !== null ? (
         <DayDetail
           day={data.days[selectedDay]}
@@ -268,13 +298,36 @@ export default function WeeklyReview() {
               isFocused={i === focusedDay}
               isToday={day.date === todayStr}
               onClick={() => {
+                if (!isRecording) return;
                 logger.info('nav.day-click', { day: i, date: day.date, photoCount: day.photoCount });
-                ensureRecording();
                 setSelectedDay(i);
                 setFocusedDay(i);
               }}
             />
           ))}
+        </div>
+      )}
+
+      {/* Stop confirmation overlay */}
+      {showStopConfirm && (
+        <div className="weekly-review-confirm-overlay">
+          <div className="confirm-dialog">
+            <div className="confirm-message">End weekly review recording?</div>
+            <div className="confirm-actions">
+              <button
+                className="confirm-btn confirm-btn--continue"
+                onClick={() => { logger.info('recording.confirm-continue'); setShowStopConfirm(false); }}
+              >
+                Continue Recording
+              </button>
+              <button
+                className="confirm-btn confirm-btn--save"
+                onClick={() => { logger.info('recording.confirm-save'); setShowStopConfirm(false); stopRecording(); }}
+              >
+                Save &amp; Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -288,7 +341,7 @@ export default function WeeklyReview() {
         existingRecording={data.recording}
         error={recorderError}
         onStart={() => { logger.info('recording.manual-start'); startRecording(); }}
-        onStop={() => { logger.info('recording.manual-stop'); stopRecording(); }}
+        onStop={() => { logger.info('recording.manual-stop'); setShowStopConfirm(true); }}
       />
     </div>
   );
