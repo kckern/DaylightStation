@@ -9,6 +9,7 @@ export default function NutritionCard({ nutrition, onRefresh, onClick }) {
   const [inputState, setInputState] = useState('idle'); // idle | parsing | review
   const [inputText, setInputText] = useState('');
   const [reviewItems, setReviewItems] = useState([]);
+  const [acceptCallbackData, setAcceptCallbackData] = useState(null);
   const [recentCatalog, setRecentCatalog] = useState([]);
 
   // Load recent catalog for quick-add chips
@@ -32,23 +33,37 @@ export default function NutritionCard({ nutrition, onRefresh, onClick }) {
         type: 'text',
         content: inputText.trim(),
       }, 'POST');
-      const items = result?.items || result?.messages || [];
-      setReviewItems(items);
+      const messages = result?.messages || [];
+      setReviewItems(messages);
+      // Extract the accept callback data from the first message's choices
+      const choices = messages[0]?.choices?.flat?.() || [];
+      const acceptChoice = choices.find(c => c.text?.includes('Accept'));
+      setAcceptCallbackData(acceptChoice?.callback_data || null);
       setInputState('review');
-      logger.info('nutrition.input.parsed', { itemCount: items.length });
+      logger.info('nutrition.input.parsed', { itemCount: messages.length, hasAcceptCallback: !!acceptChoice });
     } catch (err) {
       logger.error('nutrition.input.failed', { error: err?.message });
       setInputState('idle');
     }
   }, [inputText]);
 
-  const handleAccept = useCallback(() => {
-    logger.info('nutrition.input.accepted', { itemCount: reviewItems.length });
+  const handleAccept = useCallback(async () => {
+    logger.info('nutrition.input.accepted', { itemCount: reviewItems.length, hasCallback: !!acceptCallbackData });
+    if (acceptCallbackData) {
+      try {
+        await DaylightAPI('/api/v1/health/nutrition/callback', {
+          callbackData: acceptCallbackData,
+        }, 'POST');
+      } catch (err) {
+        logger.warn('nutrition.input.accept_callback_failed', { error: err?.message });
+      }
+    }
     setInputText('');
     setReviewItems([]);
+    setAcceptCallbackData(null);
     setInputState('idle');
     onRefresh?.();
-  }, [onRefresh, reviewItems.length, logger]);
+  }, [onRefresh, reviewItems.length, acceptCallbackData, logger]);
 
   const handleUndo = useCallback(() => {
     logger.info('nutrition.input.undone');

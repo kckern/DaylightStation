@@ -74,9 +74,9 @@ test.describe('Health Dashboard', () => {
     const input = nutritionCard.locator('input[placeholder="Log food..."]');
     await expect(input).toBeVisible();
 
-    // Click card header area to drill down
-    const titleArea = nutritionCard.locator('text=Nutrition').first();
-    await titleArea.click();
+    // Click the stats area (calories) to drill down — input area doesn't navigate
+    const statsArea = nutritionCard.locator('.dashboard-stat-value').first();
+    await statsArea.click();
 
     // Should show detail view or back button
     const backButton = page.locator('.health-detail__back');
