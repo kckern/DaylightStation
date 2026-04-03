@@ -108,8 +108,8 @@ export default function NutritionCard({ nutrition, onRefresh, onClick }) {
   const cals = nutrition?.calories;
 
   return (
-    <DashboardCard title="Nutrition" icon="🍽️" onClick={onClick}>
-      <Stack gap={4} align="center">
+    <DashboardCard title="Nutrition" icon="🍽️">
+      <Stack gap={4} align="center" onClick={onClick} style={{ cursor: 'pointer' }}>
         <Title order={2} className="dashboard-stat-value">
           {cals != null ? Math.round(cals) : '—'}
         </Title>
