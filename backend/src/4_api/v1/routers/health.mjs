@@ -24,7 +24,7 @@ import { nowDate } from '#system/utils/time.mjs';
  * @returns {express.Router}
  */
 export function createHealthRouter(config) {
-  const { healthService, healthStore, configService, nutriListStore, dashboardService, logger = console } = config;
+  const { healthService, healthStore, configService, nutriListStore, dashboardService, catalogService, logger = console } = config;
   const router = express.Router();
 
   // JSON parsing middleware
@@ -432,6 +432,69 @@ export function createHealthRouter(config) {
         res.status(500).json({ error: 'Failed to delete nutrilist item' });
       }
     }));
+  }
+
+  // ==========================================================================
+  // Food Catalog Endpoints
+  // ==========================================================================
+
+  if (catalogService) {
+
+    /**
+     * GET /api/v1/health/nutrition/catalog - Search food catalog
+     * Query: q (search string), limit (default 10)
+     */
+    router.get('/nutrition/catalog', asyncHandler(async (req, res) => {
+      const { q, limit } = req.query;
+      const userId = getDefaultUsername();
+      if (!q) {
+        return res.status(400).json({ error: 'q query param required' });
+      }
+      const results = await catalogService.search(q, userId, parseInt(limit) || 10);
+      return res.json({ items: results.map(e => e.toJSON()), count: results.length });
+    }));
+
+    /**
+     * GET /api/v1/health/nutrition/catalog/recent - Recent catalog entries
+     * Query: limit (default 10)
+     */
+    router.get('/nutrition/catalog/recent', asyncHandler(async (req, res) => {
+      const userId = getDefaultUsername();
+      const limit = parseInt(req.query.limit) || 10;
+      const results = await catalogService.getRecent(userId, limit);
+      return res.json({ items: results.map(e => e.toJSON()), count: results.length });
+    }));
+
+    /**
+     * POST /api/v1/health/nutrition/catalog/quickadd - Quick-add a catalog entry
+     * Body: { catalogEntryId }
+     */
+    router.post('/nutrition/catalog/quickadd', asyncHandler(async (req, res) => {
+      const { catalogEntryId } = req.body;
+      if (!catalogEntryId) {
+        return res.status(400).json({ error: 'catalogEntryId is required' });
+      }
+      const userId = getDefaultUsername();
+      try {
+        const item = await catalogService.quickAdd(catalogEntryId, userId);
+        return res.json({ logged: true, item });
+      } catch (err) {
+        logger.error?.('health.catalog.quickadd.error', { catalogEntryId, error: err.message });
+        return res.status(404).json({ error: err.message });
+      }
+    }));
+
+    /**
+     * POST /api/v1/health/nutrition/catalog/backfill - Seed catalog from existing data
+     * Body: { daysBack } (default 90)
+     */
+    router.post('/nutrition/catalog/backfill', asyncHandler(async (req, res) => {
+      const daysBack = parseInt(req.body.daysBack) || 90;
+      const userId = getDefaultUsername();
+      const result = await catalogService.backfill(userId, daysBack);
+      return res.json(result);
+    }));
+
   }
 
   // ==========================================================================
