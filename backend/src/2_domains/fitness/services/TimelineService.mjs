@@ -299,7 +299,7 @@ export function mergeTimelines(source, target, gapTicks = 0) {
     mergedSeries[key] = [...paddedSrc, ...gap, ...paddedTgt];
   }
 
-  // Merge events — adjust target event timestamps are already absolute, just combine and sort
+  // Merge events — timestamps are already absolute, just combine and sort
   const sourceEvents = Array.isArray(source.events) ? source.events : [];
   const targetEvents = Array.isArray(target.events) ? target.events : [];
   const mergedEvents = [...sourceEvents, ...targetEvents].sort((a, b) => {
@@ -312,8 +312,7 @@ export function mergeTimelines(source, target, gapTicks = 0) {
     series: mergedSeries,
     events: mergedEvents,
     interval_seconds: source.interval_seconds || target.interval_seconds || 5,
-    tick_count: totalTicks,
-    encoding: 'rle'
+    tick_count: totalTicks
   };
 }
 
