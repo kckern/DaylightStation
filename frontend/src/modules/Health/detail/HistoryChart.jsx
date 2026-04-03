@@ -9,6 +9,11 @@ const RANGES = [
   { key: '2yr', label: '2 Years' },
 ];
 
+function toTimestamp(dateStr) {
+  if (!dateStr) return null;
+  return new Date(dateStr + 'T12:00:00Z').getTime();
+}
+
 function buildChartData(history, range) {
   let entries;
   switch (range) {
@@ -29,22 +34,24 @@ function buildChartData(history, range) {
       entries = history.daily || [];
   }
 
-  // Sort by date ascending
-  entries = entries
-    .map(e => ({
-      date: e.date || e.startDate,
-      weight: typeof e.weight === 'number' ? e.weight : e.weight?.lbs || null,
-      calories: typeof e.nutrition === 'object' ? e.nutrition?.calories : null,
-      workoutMinutes: e.workouts?.totalMinutes ?? (
-        Array.isArray(e.workouts)
-          ? e.workouts.reduce((t, w) => t + (w.duration || 0), 0)
-          : 0
-      ),
-    }))
-    .filter(e => e.date)
-    .sort((a, b) => a.date.localeCompare(b.date));
-
-  return entries;
+  return entries
+    .map(e => {
+      const date = e.date || e.startDate;
+      const ts = toTimestamp(date);
+      if (!ts) return null;
+      return {
+        ts,
+        weight: typeof e.weight === 'number' ? e.weight : (e.weight?.lbs ?? null),
+        calories: typeof e.nutrition === 'object' ? (e.nutrition?.calories ?? null) : null,
+        workoutMinutes: e.workouts?.totalMinutes ?? (
+          Array.isArray(e.workouts)
+            ? e.workouts.reduce((t, w) => t + (w.duration || 0), 0)
+            : 0
+        ),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.ts - b.ts);
 }
 
 export default function HistoryChart({ history }) {
@@ -52,7 +59,7 @@ export default function HistoryChart({ history }) {
 
   const chartOptions = useMemo(() => {
     const data = buildChartData(history, range);
-    const categories = data.map(d => d.date);
+    if (!data.length) return null;
 
     return {
       chart: {
@@ -61,30 +68,26 @@ export default function HistoryChart({ history }) {
       },
       title: { text: null },
       xAxis: {
-        categories,
+        type: 'datetime',
         labels: {
           style: { color: '#999', fontSize: '10px' },
-          step: Math.max(1, Math.floor(categories.length / 10)),
           rotation: -45,
         },
         lineColor: 'rgba(255,255,255,0.1)',
       },
       yAxis: [
         {
-          // Left: Weight
           title: { text: 'Weight (lbs)', style: { color: '#7cb5ec' } },
           labels: { style: { color: '#7cb5ec' } },
           gridLineColor: 'rgba(255,255,255,0.05)',
         },
         {
-          // Right: Calories
           title: { text: 'Calories', style: { color: '#f7a35c' } },
           labels: { style: { color: '#f7a35c' } },
           opposite: true,
           gridLineColor: 'transparent',
         },
         {
-          // Far right: Workout minutes
           title: { text: 'Workout (min)', style: { color: '#90ed7d' } },
           labels: { style: { color: '#90ed7d' } },
           opposite: true,
@@ -96,18 +99,16 @@ export default function HistoryChart({ history }) {
           name: 'Weight',
           type: 'spline',
           yAxis: 0,
-          data: data.map(d => d.weight),
+          data: data.filter(d => d.weight != null).map(d => [d.ts, d.weight]),
           color: '#7cb5ec',
-          connectNulls: true,
           marker: { radius: 2 },
         },
         {
           name: 'Calories',
           type: 'line',
           yAxis: 1,
-          data: data.map(d => d.calories),
+          data: data.filter(d => d.calories != null).map(d => [d.ts, d.calories]),
           color: '#f7a35c',
-          connectNulls: true,
           marker: { radius: 1 },
           dashStyle: 'ShortDash',
         },
@@ -115,9 +116,10 @@ export default function HistoryChart({ history }) {
           name: 'Workout',
           type: 'column',
           yAxis: 2,
-          data: data.map(d => d.workoutMinutes || 0),
+          data: data.filter(d => d.workoutMinutes > 0).map(d => [d.ts, d.workoutMinutes]),
           color: 'rgba(144, 237, 125, 0.5)',
           borderWidth: 0,
+          pointWidth: range === '2yr' ? 8 : range === '6mo' ? 4 : 3,
         },
       ],
       legend: {
@@ -132,6 +134,8 @@ export default function HistoryChart({ history }) {
       credits: { enabled: false },
     };
   }, [history, range]);
+
+  if (!chartOptions) return null;
 
   return (
     <div>
