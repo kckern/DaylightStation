@@ -524,6 +524,25 @@ export function createHealthRouter(config) {
         return res.status(500).json({ error: err.message });
       }
     }));
+
+    /**
+     * POST /api/v1/health/nutrition/callback - Process Accept/Revise/Discard callback
+     * Body: { callbackData: string, messageId?: string }
+     */
+    router.post('/nutrition/callback', asyncHandler(async (req, res) => {
+      const userId = getDefaultUsername();
+      const { callbackData, messageId } = req.body;
+      if (!callbackData) {
+        return res.status(400).json({ error: 'callbackData is required' });
+      }
+      try {
+        const result = await webNutribotAdapter.processCallback({ callbackData, userId, messageId });
+        return res.json(result);
+      } catch (err) {
+        logger.error?.('health.nutrition.callback.error', { error: err.message });
+        return res.status(500).json({ error: err.message });
+      }
+    }));
   }
 
   // ==========================================================================

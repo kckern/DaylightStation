@@ -131,6 +131,50 @@ export class WebNutribotAdapter {
    *
    * @private
    */
+  /**
+   * Process a callback action (Accept, Revise, Discard) from the web UI.
+   *
+   * @param {Object} input
+   * @param {string} input.callbackData - JSON callback data from the button (e.g., '{"cmd":"a","id":"..."}')
+   * @param {string} input.userId - Username
+   * @param {string} [input.messageId] - Message ID the callback refers to
+   * @returns {Promise<Object>} Captured response
+   */
+  async processCallback(input) {
+    const { callbackData, userId, messageId } = input;
+    const conversationId = `web:${userId}`;
+
+    const event = {
+      conversationId,
+      userId,
+      platform: 'web',
+      platformUserId: userId,
+      messageId: messageId || null,
+      payload: {
+        callbackData,
+      },
+    };
+
+    const captured = { messages: [], photos: [], logged: false };
+    const responseContext = this.#createCaptureContext(captured);
+
+    this.#getLogger().debug?.('web-nutribot.callback', { userId, callbackData });
+
+    try {
+      await this.#inputRouter.handleCallback(event, responseContext);
+    } catch (err) {
+      this.#getLogger().error?.('web-nutribot.callback.error', { userId, error: err.message });
+      throw err;
+    }
+
+    return {
+      messages: captured.messages,
+      photos: captured.photos,
+      logged: captured.logged,
+      responseText: captured.messages[captured.messages.length - 1]?.text || null,
+    };
+  }
+
   #createCaptureContext(captured) {
     let nextId = 1;
     const makeId = () => `web_msg_${nextId++}`;
