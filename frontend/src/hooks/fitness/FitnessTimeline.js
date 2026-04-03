@@ -58,6 +58,21 @@ export class FitnessTimeline {
     this.events = [];
   }
 
+  /**
+   * Pad all existing series with null values to simulate a gap.
+   * Used when resuming a session after an interruption.
+   * @param {number} count - Number of null ticks to append
+   */
+  padWithNulls(count) {
+    if (!Number.isFinite(count) || count <= 0) return;
+    for (const key of Object.keys(this.series)) {
+      for (let i = 0; i < count; i++) {
+        this.series[key].push(null);
+      }
+    }
+    this.timebase.tickCount += count;
+  }
+
   setIntervalMs(intervalMs) {
     this.timebase.intervalMs = this._normalizeInterval(intervalMs);
   }
