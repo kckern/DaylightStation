@@ -919,6 +919,7 @@ export class PersistenceManager {
         ...(endReadable ? { end: endReadable } : {}),
         ...(durationSeconds != null ? { duration_seconds: durationSeconds } : {})
       },
+      finalized: !!sessionData.finalized,
       participants
     };
 
