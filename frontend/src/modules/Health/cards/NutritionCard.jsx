@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Text, Title, Stack, Badge, Group, TextInput, Button, Skeleton } from '@mantine/core';
 import { DashboardCard } from '../../Fitness/widgets/_shared/DashboardCard';
 import { DaylightAPI } from '../../../lib/api.mjs';
+import getLogger from '../../../lib/logging/Logger.js';
 
 export default function NutritionCard({ nutrition, onRefresh, onClick }) {
+  const logger = useMemo(() => getLogger().child({ component: 'NutritionCard' }), []);
   const [inputState, setInputState] = useState('idle'); // idle | parsing | review
   const [inputText, setInputText] = useState('');
   const [reviewItems, setReviewItems] = useState([]);
@@ -12,50 +14,60 @@ export default function NutritionCard({ nutrition, onRefresh, onClick }) {
   // Load recent catalog for quick-add chips
   useEffect(() => {
     DaylightAPI('/api/v1/health/nutrition/catalog/recent?limit=5')
-      .then(res => setRecentCatalog(res?.items || []))
-      .catch(() => {});
+      .then(res => {
+        setRecentCatalog(res?.items || []);
+        logger.debug('nutrition.catalog.loaded', { count: res?.items?.length || 0 });
+      })
+      .catch(err => {
+        logger.warn('nutrition.catalog.load_failed', { error: err?.message });
+      });
   }, [inputState]); // refresh after input cycle
 
   const handleSubmit = useCallback(async () => {
     if (!inputText.trim()) return;
     setInputState('parsing');
+    logger.info('nutrition.input.submit', { text: inputText.trim() });
     try {
       const result = await DaylightAPI('/api/v1/health/nutrition/input', {
         type: 'text',
         content: inputText.trim(),
       }, 'POST');
-      // Items are already logged by the API
-      setReviewItems(result?.items || result?.messages || []);
+      const items = result?.items || result?.messages || [];
+      setReviewItems(items);
       setInputState('review');
+      logger.info('nutrition.input.parsed', { itemCount: items.length });
     } catch (err) {
+      logger.error('nutrition.input.failed', { error: err?.message });
       setInputState('idle');
     }
   }, [inputText]);
 
   const handleAccept = useCallback(() => {
+    logger.info('nutrition.input.accepted', { itemCount: reviewItems.length });
     setInputText('');
     setReviewItems([]);
     setInputState('idle');
     onRefresh?.();
-  }, [onRefresh]);
+  }, [onRefresh, reviewItems.length, logger]);
 
   const handleUndo = useCallback(() => {
-    // For v1, just dismiss — items already logged
+    logger.info('nutrition.input.undone');
     setInputText('');
     setReviewItems([]);
     setInputState('idle');
-  }, []);
+  }, [logger]);
 
   const handleQuickAdd = useCallback(async (entryId) => {
     try {
       await DaylightAPI('/api/v1/health/nutrition/catalog/quickadd', {
         catalogEntryId: entryId,
       }, 'POST');
+      logger.info('nutrition.quickadd.success', { catalogEntryId: entryId });
       onRefresh?.();
     } catch (err) {
-      // silent fail
+      logger.warn('nutrition.quickadd.failed', { catalogEntryId: entryId, error: err?.message });
     }
-  }, [onRefresh]);
+  }, [onRefresh, logger]);
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'Enter') handleSubmit();
