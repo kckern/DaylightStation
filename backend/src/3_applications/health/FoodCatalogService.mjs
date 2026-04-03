@@ -84,7 +84,9 @@ export class FoodCatalogService {
     const { randomUUID } = await import('crypto');
     const item = {
       uuid: randomUUID(),
-      label: entry.name,
+      userId,
+      item: entry.name,
+      name: entry.name,
       calories: entry.nutrients.calories,
       protein: entry.nutrients.protein,
       carbs: entry.nutrients.carbs,
@@ -94,9 +96,10 @@ export class FoodCatalogService {
       amount: 1,
       color: 'yellow',
       date: today,
+      log_uuid: 'QUICKADD',
     };
 
-    await this.#nutriListStore.create(userId, item);
+    await this.#nutriListStore.saveMany([item]);
     entry.recordUsage();
     await this.#catalogStore.save(entry, userId);
 
