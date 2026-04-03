@@ -166,7 +166,7 @@ async function main() {
 
   server.on('request', (req, res) => {
     // Root health check - bypasses ALL routing (always works)
-    if (req.url === '/health' || req.url === '/api/v1/health' || req.url === '/api/v1/health/live') {
+    if (req.url === '/healthz' || req.url === '/api/v1/health/live') {
       return sendHealthResponse(res, 'main');
     }
 
