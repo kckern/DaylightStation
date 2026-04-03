@@ -50,7 +50,7 @@ test.describe('Nutrition Input Flow', () => {
     const input = page.locator('input[placeholder="Log food..."]');
     await expect(input).toBeVisible({ timeout: 5000 });
 
-    // Type a test food entry
+    // Fill and submit
     await input.fill('1 boiled egg');
     await input.press('Enter');
 
