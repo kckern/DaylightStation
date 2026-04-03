@@ -113,17 +113,15 @@ test.describe('Nutrition Input Flow', () => {
     // Wait for the refresh to complete
     await page.waitForTimeout(2000);
 
-    // Verify via API
+    // Verify via API — check for new items by UUID comparison
     const afterRes = await request.get(`${API_URL}/health/nutrilist`);
     const afterData = await afterRes.json();
-    const countAfter = afterData.count || 0;
+    const beforeUuids = new Set((beforeData.data || []).map(i => i.uuid));
+    const newItems = (afterData.data || []).filter(i => !beforeUuids.has(i.uuid));
 
-    expect(countAfter).toBeGreaterThan(countBefore);
+    expect(newItems.length).toBeGreaterThan(0);
 
     // Track new items for cleanup
-    const newItems = (afterData.data || []).filter(item =>
-      !(beforeData.data || []).some(b => b.uuid === item.uuid)
-    );
     for (const item of newItems) {
       createdUuids.push(item.uuid);
     }
