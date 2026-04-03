@@ -263,6 +263,60 @@ export function prepareTimelineForStorage(timeline) {
   return result;
 }
 
+/**
+ * Merge two timelines by concatenating series with a null-filled gap.
+ * Source timeline comes first (earlier), target second (later).
+ * Both timelines must be in decoded (raw array) form.
+ *
+ * @param {Object} source - Earlier timeline (decoded series, events)
+ * @param {Object} target - Later timeline (decoded series, events)
+ * @param {number} gapTicks - Number of null ticks to insert between source and target
+ * @returns {Object} Merged timeline with combined series, events, and updated metadata
+ */
+export function mergeTimelines(source, target, gapTicks = 0) {
+  const sourceSeries = source.series || {};
+  const targetSeries = target.series || {};
+  const allKeys = new Set([...Object.keys(sourceSeries), ...Object.keys(targetSeries)]);
+
+  const sourceTickCount = source.tick_count || 0;
+  const targetTickCount = target.tick_count || 0;
+  const totalTicks = sourceTickCount + gapTicks + targetTickCount;
+
+  const gap = gapTicks > 0 ? new Array(gapTicks).fill(null) : [];
+  const mergedSeries = {};
+
+  for (const key of allKeys) {
+    const srcArr = sourceSeries[key] || [];
+    const tgtArr = targetSeries[key] || [];
+    // Pad source to sourceTickCount if short
+    const paddedSrc = srcArr.length < sourceTickCount
+      ? [...srcArr, ...new Array(sourceTickCount - srcArr.length).fill(null)]
+      : srcArr;
+    // Pad target to targetTickCount if short
+    const paddedTgt = tgtArr.length < targetTickCount
+      ? [...tgtArr, ...new Array(targetTickCount - tgtArr.length).fill(null)]
+      : tgtArr;
+    mergedSeries[key] = [...paddedSrc, ...gap, ...paddedTgt];
+  }
+
+  // Merge events — adjust target event timestamps are already absolute, just combine and sort
+  const sourceEvents = Array.isArray(source.events) ? source.events : [];
+  const targetEvents = Array.isArray(target.events) ? target.events : [];
+  const mergedEvents = [...sourceEvents, ...targetEvents].sort((a, b) => {
+    const tsA = a?.timestamp || 0;
+    const tsB = b?.timestamp || 0;
+    return tsA - tsB;
+  });
+
+  return {
+    series: mergedSeries,
+    events: mergedEvents,
+    interval_seconds: source.interval_seconds || target.interval_seconds || 5,
+    tick_count: totalTicks,
+    encoding: 'rle'
+  };
+}
+
 export default {
   decodeSeries,
   encodeSeries,
@@ -273,5 +327,6 @@ export default {
   parseToUnixMs,
   formatTimestamp,
   prepareTimelineForApi,
-  prepareTimelineForStorage
+  prepareTimelineForStorage,
+  mergeTimelines
 };
