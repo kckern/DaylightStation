@@ -30,7 +30,8 @@ export class Session {
     session = null,
     summary = null,   // Session summary (computed by frontend, preserved through persistence)
     strava = null,     // Strava activity metadata (name, type, sportType, etc.)
-    strava_notes = null // Manually-entered Strava notes pulled back via reconciliation
+    strava_notes = null, // Manually-entered Strava notes pulled back via reconciliation
+    finalized = false
   }) {
     // Normalize sessionId to SessionId value object
     this.sessionId = sessionId instanceof SessionId ? sessionId : new SessionId(sessionId);
@@ -52,6 +53,7 @@ export class Session {
     this.summary = summary;
     this.strava = strava;
     this.strava_notes = strava_notes;
+    this.finalized = !!finalized;
   }
 
   /**
@@ -278,6 +280,9 @@ export class Session {
 
     // Strava notes (manually-entered descriptions pulled back via reconciliation)
     if (this.strava_notes) result.strava_notes = this.strava_notes;
+
+    // Finalized flag — true when user explicitly ended the session
+    if (this.finalized) result.finalized = this.finalized;
 
     // Entities (participation segments)
     if (this.entities.length > 0) result.entities = this.entities;
