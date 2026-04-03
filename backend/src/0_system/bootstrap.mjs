@@ -183,6 +183,7 @@ import { createAgentsRouter } from '#api/v1/routers/agents.mjs';
 // Health domain + application imports
 import { AggregateHealthUseCase } from '#apps/health/AggregateHealthUseCase.mjs';
 import { ReconciliationProcessor } from '#apps/health/ReconciliationProcessor.mjs';
+import { HealthDashboardUseCase } from '#apps/health/HealthDashboardUseCase.mjs';
 import { YamlHealthDatastore } from '#adapters/persistence/yaml/YamlHealthDatastore.mjs';
 import { createHealthRouter } from '#api/v1/routers/health.mjs';
 import { createHealthDashboardRouter } from '#api/v1/routers/health-dashboard.mjs';
@@ -2453,6 +2454,9 @@ export function createHealthServices(config) {
  * @param {Object} config
  * @param {Object} config.healthServices - Services from createHealthServices
  * @param {Object} config.configService - ConfigService for user lookup
+ * @param {Object} [config.sessionService] - SessionService for fitness session history
+ * @param {Object} [config.entropyService] - EntropyService for data freshness
+ * @param {Object} [config.lifePlanRepository] - ILifePlanRepository for goal data
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
@@ -2460,13 +2464,26 @@ export function createHealthApiRouter(config) {
   const {
     healthServices,
     configService,
+    sessionService = null,
+    entropyService = null,
+    lifePlanRepository = null,
     logger = console
   } = config;
+
+  const dashboardService = new HealthDashboardUseCase({
+    healthService: healthServices.healthService,
+    healthStore: healthServices.healthStore,
+    sessionService,
+    entropyService,
+    lifePlanRepository,
+    logger,
+  });
 
   return createHealthRouter({
     healthService: healthServices.healthService,
     healthStore: healthServices.healthStore,
     nutriListStore: healthServices.nutriListStore,
+    dashboardService,
     configService,
     logger
   });
