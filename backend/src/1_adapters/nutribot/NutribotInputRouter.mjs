@@ -465,6 +465,11 @@ export class NutribotInputRouter extends BaseInputRouter {
    * @returns {string}
    */
   #resolveUserId(event) {
+    // Direct userId (web adapter provides the resolved username directly)
+    if (event.userId && !event.userId.includes(':')) {
+      return event.userId;
+    }
+
     // Prefer domain identity service
     if (this.#userIdentityService && event.platform && event.platformUserId) {
       const username = this.#userIdentityService.resolveUsername(event.platform, event.platformUserId);
