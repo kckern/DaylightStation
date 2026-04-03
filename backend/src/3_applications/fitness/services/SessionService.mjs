@@ -6,7 +6,7 @@
  */
 
 import { Session } from '#domains/fitness/entities/Session.mjs';
-import { prepareTimelineForApi, prepareTimelineForStorage } from '#domains/fitness/services/TimelineService.mjs';
+import { prepareTimelineForApi, prepareTimelineForStorage, decodeSeries, mergeTimelines } from '#domains/fitness/services/TimelineService.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
 /**
@@ -281,6 +281,155 @@ export class SessionService {
     session.replaceTimeline(prepareTimelineForStorage(session.timeline));
     await this.sessionStore.save(session, this.resolveHouseholdId(householdId));
     return session;
+  }
+
+  /**
+   * Find a resumable session for the given content ID.
+   * A session is resumable if:
+   * - Same date (today)
+   * - Same media.primary.contentId
+   * - Ended less than maxGapMs ago
+   *
+   * @param {string} contentId - Media content ID (e.g., "plex:674227")
+   * @param {string} householdId - Household ID
+   * @param {Object} [options]
+   * @param {number} [options.maxGapMs=1800000] - Max gap in ms (default 30 min)
+   * @returns {Promise<{resumable: boolean, session?: Object, finalized?: boolean}>}
+   */
+  async findResumable(contentId, householdId, { maxGapMs = 30 * 60 * 1000 } = {}) {
+    if (!contentId) return { resumable: false };
+    const hid = this.resolveHouseholdId(householdId);
+    const today = new Date().toISOString().split('T')[0];
+    const now = Date.now();
+
+    let sessions;
+    try {
+      sessions = await this.sessionStore.findByDate(today, hid);
+    } catch {
+      return { resumable: false };
+    }
+
+    if (!Array.isArray(sessions) || sessions.length === 0) return { resumable: false };
+
+    // Filter: same contentId, ended within maxGapMs
+    const candidates = sessions.filter(s => {
+      const mediaId = s.media?.primary?.contentId
+        || s.contentId
+        || null;
+      if (mediaId !== contentId) return false;
+
+      // Must have an endTime (session is over, not active)
+      const endTime = typeof s.endTime === 'number' ? s.endTime
+        : (s.startTime && s.durationMs ? s.startTime + s.durationMs : null);
+      if (!endTime) return false;
+
+      return (now - endTime) < maxGapMs;
+    });
+
+    if (candidates.length === 0) return { resumable: false };
+
+    // Take the most recent by endTime
+    candidates.sort((a, b) => {
+      const endA = typeof a.endTime === 'number' ? a.endTime : (a.startTime + (a.durationMs || 0));
+      const endB = typeof b.endTime === 'number' ? b.endTime : (b.startTime + (b.durationMs || 0));
+      return endB - endA;
+    });
+
+    const match = candidates[0];
+    const sessionId = match.sessionId || match.session?.id;
+
+    // Load full session data for the frontend to hydrate from
+    const fullSession = await this.getSession(sessionId, hid, { decodeTimeline: true });
+    if (!fullSession) return { resumable: false };
+
+    return {
+      resumable: true,
+      session: fullSession.toJSON(),
+      finalized: !!fullSession.finalized
+    };
+  }
+
+  /**
+   * Merge source session into target session.
+   * Source timeline is prepended to target's with null-filled gap.
+   * Source session file is deleted after merge.
+   *
+   * @param {string} sourceSessionId - Session to merge from (earlier)
+   * @param {string} targetSessionId - Session to merge into (later, keeps its ID)
+   * @param {string} householdId - Household ID
+   * @returns {Promise<Object>} Merged session
+   */
+  async mergeSessions(sourceSessionId, targetSessionId, householdId) {
+    const hid = this.resolveHouseholdId(householdId);
+    const srcId = Session.sanitizeSessionId(sourceSessionId);
+    const tgtId = Session.sanitizeSessionId(targetSessionId);
+    if (!srcId || !tgtId) {
+      throw new ValidationError('Both sourceSessionId and targetSessionId are required');
+    }
+
+    const source = await this.getSession(srcId, hid, { decodeTimeline: true });
+    const target = await this.getSession(tgtId, hid, { decodeTimeline: true });
+    if (!source) throw new EntityNotFoundError('Session', srcId);
+    if (!target) throw new EntityNotFoundError('Session', tgtId);
+
+    // Determine which is earlier
+    const srcStart = source.startTime;
+    const tgtStart = target.startTime;
+    const [earlier, later] = srcStart <= tgtStart ? [source, target] : [target, source];
+
+    // Calculate gap ticks
+    const earlierEnd = earlier.endTime || (earlier.startTime + (earlier.durationMs || 0));
+    const laterStart = later.startTime;
+    const intervalMs = (earlier.timeline?.interval_seconds || 5) * 1000;
+    const gapMs = Math.max(0, laterStart - earlierEnd);
+    const gapTicks = Math.floor(gapMs / intervalMs);
+
+    // Merge timelines (both already decoded from getSession with decodeTimeline: true)
+    const merged = mergeTimelines(earlier.timeline, later.timeline, gapTicks);
+
+    // Update target with merged data
+    target.startTime = earlier.startTime;
+    target.durationMs = (target.endTime || Date.now()) - earlier.startTime;
+    target.replaceTimeline(prepareTimelineForStorage(merged));
+
+    // Merge participants (union, target wins on conflict)
+    if (earlier.participants && typeof earlier.participants === 'object') {
+      for (const [key, val] of Object.entries(earlier.participants)) {
+        if (!target.participants[key]) {
+          target.participants[key] = val;
+        }
+      }
+    }
+
+    // Merge v3 events at root level
+    if (Array.isArray(earlier.events) && earlier.events.length > 0) {
+      target.events = [...earlier.events, ...(target.events || [])].sort(
+        (a, b) => (a?.timestamp || 0) - (b?.timestamp || 0)
+      );
+    }
+
+    // Merge treasureBox coins
+    if (earlier.treasureBox && target.treasureBox) {
+      target.treasureBox.totalCoins = (target.treasureBox.totalCoins || 0)
+        + (earlier.treasureBox.totalCoins || 0);
+    } else if (earlier.treasureBox && !target.treasureBox) {
+      target.treasureBox = earlier.treasureBox;
+    }
+
+    // Update session block timestamps
+    if (target.session) {
+      target.session.duration_seconds = Math.round(target.durationMs / 1000);
+    }
+
+    // Merge strava (target wins)
+    if (!target.strava && earlier.strava) target.strava = earlier.strava;
+    if (!target.strava_notes && earlier.strava_notes) target.strava_notes = earlier.strava_notes;
+
+    // Save merged target, delete source
+    await this.sessionStore.save(target, hid);
+    await this.sessionStore.delete(srcId, hid);
+
+    return target;
   }
 
   /**
