@@ -6,7 +6,7 @@
  */
 
 import { Session } from '#domains/fitness/entities/Session.mjs';
-import { prepareTimelineForApi, prepareTimelineForStorage, decodeSeries, mergeTimelines } from '#domains/fitness/services/TimelineService.mjs';
+import { prepareTimelineForApi, prepareTimelineForStorage, mergeTimelines } from '#domains/fitness/services/TimelineService.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
 /**
@@ -299,7 +299,9 @@ export class SessionService {
   async findResumable(contentId, householdId, { maxGapMs = 30 * 60 * 1000 } = {}) {
     if (!contentId) return { resumable: false };
     const hid = this.resolveHouseholdId(householdId);
-    const today = new Date().toISOString().split('T')[0];
+    // Use local date (not UTC) since session dates are stored in local time
+    const now_ = new Date();
+    const today = `${now_.getFullYear()}-${String(now_.getMonth() + 1).padStart(2, '0')}-${String(now_.getDate()).padStart(2, '0')}`;
     const now = Date.now();
 
     let sessions;
