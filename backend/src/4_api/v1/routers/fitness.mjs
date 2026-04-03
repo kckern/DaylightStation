@@ -19,6 +19,8 @@
  * - GET  /api/fitness/zone_led/status - Get LED controller status
  * - GET  /api/fitness/zone_led/metrics - Get LED controller metrics
  * - POST /api/fitness/zone_led/reset - Reset LED controller state
+ * - GET  /api/fitness/resumable - Check for resumable session by contentId
+ * - POST /api/fitness/sessions/merge - Merge two sessions into one
  * - GET  /api/fitness/receipt/:sessionId - Get fitness receipt PNG
  * - POST /api/fitness/simulate - Start fitness simulation
  * - DELETE /api/fitness/simulate - Stop running simulation
@@ -358,6 +360,58 @@ export function createFitnessRouter(config) {
       return res.status(500).json({ error: 'Failed to delete session' });
     }
   });
+
+  /**
+   * GET /api/fitness/resumable - Check if a resumable session exists
+   * Query params:
+   * - contentId: media content ID (required)
+   * - household: household ID
+   */
+  router.get('/resumable', asyncHandler(async (req, res) => {
+    const { contentId, household } = req.query;
+    if (!contentId) {
+      return res.status(400).json({ error: 'contentId query param required' });
+    }
+    try {
+      const result = await sessionService.findResumable(contentId, household);
+      return res.json(result);
+    } catch (err) {
+      logger.error?.('fitness.resumable.error', { contentId, error: err?.message });
+      return res.status(500).json({ error: 'Failed to check resumable session' });
+    }
+  }));
+
+  /**
+   * POST /api/fitness/sessions/merge - Merge two sessions
+   * Body: { sourceSessionId, targetSessionId, household }
+   */
+  router.post('/sessions/merge', asyncHandler(async (req, res) => {
+    const { sourceSessionId, targetSessionId, household } = req.body;
+    if (!sourceSessionId || !targetSessionId) {
+      return res.status(400).json({ error: 'sourceSessionId and targetSessionId are required' });
+    }
+    try {
+      const merged = await sessionService.mergeSessions(sourceSessionId, targetSessionId, household);
+      logger.info?.('fitness.sessions.merged', {
+        sourceSessionId,
+        targetSessionId,
+        mergedId: merged.sessionId?.toString()
+      });
+      return res.json({
+        merged: true,
+        sessionId: merged.sessionId?.toString(),
+        startTime: merged.startTime,
+        endTime: merged.endTime,
+        durationMs: merged.durationMs
+      });
+    } catch (err) {
+      logger.error?.('fitness.sessions.merge.error', {
+        sourceSessionId, targetSessionId, error: err?.message
+      });
+      const status = err.name === 'EntityNotFoundError' ? 404 : 500;
+      return res.status(status).json({ error: err.message || 'Failed to merge sessions' });
+    }
+  }));
 
   /**
    * GET /api/fitness/receipt/:sessionId - Get fitness receipt as PNG
