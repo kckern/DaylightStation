@@ -24,7 +24,7 @@ import { nowDate } from '#system/utils/time.mjs';
  * @returns {express.Router}
  */
 export function createHealthRouter(config) {
-  const { healthService, healthStore, configService, nutriListStore, dashboardService, catalogService, logger = console } = config;
+  const { healthService, healthStore, configService, nutriListStore, dashboardService, catalogService, webNutribotAdapter, logger = console } = config;
   const router = express.Router();
 
   // JSON parsing middleware
@@ -495,6 +495,35 @@ export function createHealthRouter(config) {
       return res.json(result);
     }));
 
+  }
+
+  // ==========================================================================
+  // Nutrition Input Endpoint (Web → Nutribot Pipeline)
+  // ==========================================================================
+
+  if (webNutribotAdapter) {
+    /**
+     * POST /health/nutrition/input
+     * Submit a nutrition input from the web UI directly into the nutribot pipeline.
+     *
+     * Body:
+     *   - type: "text" | "voice" | "image" | "barcode" (required)
+     *   - content: text string or barcode/UPC value (for text/barcode types)
+     */
+    router.post('/nutrition/input', asyncHandler(async (req, res) => {
+      const userId = getDefaultUsername();
+      const { type, content } = req.body;
+      if (!type) {
+        return res.status(400).json({ error: 'type is required (text, voice, image, barcode)' });
+      }
+      try {
+        const result = await webNutribotAdapter.process({ type, content, userId });
+        return res.json(result);
+      } catch (err) {
+        logger.error?.('health.nutrition.input.error', { type, error: err.message });
+        return res.status(500).json({ error: err.message });
+      }
+    }));
   }
 
   // ==========================================================================
