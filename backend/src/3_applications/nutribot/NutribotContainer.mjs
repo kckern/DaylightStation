@@ -56,6 +56,7 @@ export class NutribotContainer {
   #foodIconsString;
   #reconciliationReader;
   #healthStore;
+  #catalogService;
 
   // Use Cases (lazy-loaded)
   #logFoodFromImage;
@@ -115,6 +116,7 @@ export class NutribotContainer {
     this.#reconciliationReader = options.reconciliationReader || null;
     this.#agentOrchestrator = options.agentOrchestrator || null;
     this.#healthStore = options.healthStore || null;
+    this.#catalogService = options.catalogService || null;
   }
 
   // ==================== Config Getter ====================
@@ -195,6 +197,7 @@ export class NutribotContainer {
         foodIconsString: this.#foodIconsString,
         logger: this.#logger,
         reconciliationReader: this.#reconciliationReader,
+        catalogService: this.#catalogService,
       });
     }
     return this.#logFoodFromImage;
@@ -211,6 +214,7 @@ export class NutribotContainer {
         foodIconsString: this.#foodIconsString,
         logger: this.#logger,
         reconciliationReader: this.#reconciliationReader,
+        catalogService: this.#catalogService,
       });
     }
     return this.#logFoodFromText;
@@ -240,6 +244,7 @@ export class NutribotContainer {
         foodIconsString: this.#foodIconsString,
         logger: this.#logger,
         barcodeGenerator: this.#barcodeGenerator,
+        catalogService: this.#catalogService,
       });
     }
     return this.#logFoodFromUPC;

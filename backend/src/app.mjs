@@ -764,6 +764,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'media-api' }),
   });
 
+  // Lazy proxy for webNutribotAdapter — filled after nutribot services are created below
+  const webNutribotAdapterProxy = {
+    process: (...args) => webNutribotAdapterProxy._delegate?.process?.(...args)
+      ?? Promise.reject(new Error('webNutribotAdapter not yet initialized')),
+    _delegate: null,
+  };
+
   // Health domain router
   v1Routers.health = createHealthApiRouter({
     healthServices,
@@ -771,6 +778,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     sessionService: fitnessServices.sessionService,
     entropyService: entropyServices.entropyService,
     lifePlanRepository: lifeplanResult.container.getLifePlanStore(),
+    catalogService: healthServices.catalogService,
+    webNutribotAdapter: webNutribotAdapterProxy,
     logger: rootLogger.child({ module: 'health-api' })
   });
 
@@ -1686,12 +1695,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     nutribotConfig,
     reconciliationReader: healthServices.reconciliationReader,
     healthStore: healthServices.healthStore,
+    catalogService: healthServices.catalogService,
     // Lazy proxy: agentOrchestrator is created later in createAgentsApiRouter
     agentOrchestrator: { runAssignment: (...args) => v1Routers.agents?.orchestrator?.runAssignment(...args) },
     logger: rootLogger.child({ module: 'nutribot' })
   });
 
-  v1Routers.nutribot = createNutribotApiRouter({
+  const nutribotApiResult = createNutribotApiRouter({
     nutribotServices,
     userResolver,
     userIdentityService,
@@ -1702,6 +1712,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     gateway: nutribotTelegramAdapter,
     logger: rootLogger.child({ module: 'nutribot-api' })
   });
+  v1Routers.nutribot = nutribotApiResult.router;
+  // Wire real adapter into the proxy now that it's available
+  webNutribotAdapterProxy._delegate = nutribotApiResult.webNutribotAdapter;
 
   // Journalist application
   const journalistConfig = configService.getAppConfig('journalist') || {};

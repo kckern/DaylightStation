@@ -184,7 +184,10 @@ import { createAgentsRouter } from '#api/v1/routers/agents.mjs';
 import { AggregateHealthUseCase } from '#apps/health/AggregateHealthUseCase.mjs';
 import { ReconciliationProcessor } from '#apps/health/ReconciliationProcessor.mjs';
 import { HealthDashboardUseCase } from '#apps/health/HealthDashboardUseCase.mjs';
+import { FoodCatalogService } from '#apps/health/FoodCatalogService.mjs';
 import { YamlHealthDatastore } from '#adapters/persistence/yaml/YamlHealthDatastore.mjs';
+import { YamlFoodCatalogDatastore } from '#adapters/persistence/yaml/YamlFoodCatalogDatastore.mjs';
+import { WebNutribotAdapter } from '#adapters/nutribot/WebNutribotAdapter.mjs';
 import { createHealthRouter } from '#api/v1/routers/health.mjs';
 import { createHealthDashboardRouter } from '#api/v1/routers/health-dashboard.mjs';
 
@@ -2239,6 +2242,7 @@ export async function createNutribotServices(config) {
     nutribotConfig: rawNutribotConfig = {},
     reconciliationReader,
     healthStore = null,
+    catalogService = null,
     agentOrchestrator = null,
     logger = console
   } = config;
@@ -2309,6 +2313,7 @@ export async function createNutribotServices(config) {
     foodIconsString,
     reconciliationReader,
     healthStore,
+    catalogService,
     agentOrchestrator,
     logger
   });
@@ -2364,7 +2369,10 @@ export function createNutribotApiRouter(config) {
       })
     : null;
 
-  return createNutribotRouter(nutribotServices.nutribotContainer, {
+  // Web adapter — captures responses instead of sending via Telegram
+  const webNutribotAdapter = new WebNutribotAdapter({ inputRouter, logger });
+
+  const router = createNutribotRouter(nutribotServices.nutribotContainer, {
     webhookHandler,
     telegramIdentityAdapter,
     defaultMember: config.defaultMember,
@@ -2373,6 +2381,8 @@ export function createNutribotApiRouter(config) {
     gateway,
     logger
   });
+
+  return { router, webNutribotAdapter };
 }
 
 // =============================================================================
@@ -2441,11 +2451,20 @@ export function createHealthServices(config) {
     } catch { return null; }
   };
 
+  // Food catalog persistence + service
+  const catalogStore = new YamlFoodCatalogDatastore({ dataService, logger });
+  const catalogService = new FoodCatalogService({
+    catalogStore,
+    nutriListStore,
+    logger,
+  });
+
   return {
     healthStore,
     healthService,
     nutriListStore,
     reconciliationReader,
+    catalogService,
   };
 }
 
@@ -2467,6 +2486,8 @@ export function createHealthApiRouter(config) {
     sessionService = null,
     entropyService = null,
     lifePlanRepository = null,
+    catalogService = null,
+    webNutribotAdapter = null,
     logger = console
   } = config;
 
@@ -2485,6 +2506,8 @@ export function createHealthApiRouter(config) {
     nutriListStore: healthServices.nutriListStore,
     dashboardService,
     configService,
+    catalogService,
+    webNutribotAdapter,
     logger
   });
 }
