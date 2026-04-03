@@ -178,9 +178,24 @@ export class FitnessTreasureBox {
   }
 
   /**
+   * Restore TreasureBox state from saved session data (for session resume).
+   * @param {Object} saved - { totalCoins, buckets }
+   */
+  restore(saved) {
+    if (!saved) return;
+    if (typeof saved.totalCoins === 'number') {
+      this.totalCoins = saved.totalCoins;
+    }
+    if (saved.buckets && typeof saved.buckets === 'object') {
+      this.buckets = { ...saved.buckets };
+    }
+    this._log('restored', { totalCoins: this.totalCoins, buckets: Object.keys(this.buckets) });
+  }
+
+  /**
   * Compatibility: Set the active session entity for a device.
   * Strict mode does not use entityId for accounting, but we keep this for legacy callers.
-   * 
+   *
    * @param {string} deviceId - Heart rate device ID
    * @param {string} entityId - Session entity ID to receive HR data
    */
