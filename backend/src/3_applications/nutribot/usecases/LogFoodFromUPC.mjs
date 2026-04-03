@@ -22,6 +22,7 @@ export class LogFoodFromUPC {
   #encodeCallback;
   #foodIconsString;
   #barcodeGenerator;
+  #catalogService;
 
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
@@ -37,6 +38,7 @@ export class LogFoodFromUPC {
     this.#encodeCallback = deps.encodeCallback || ((cmd, data) => JSON.stringify({ cmd, ...data }));
     this.#foodIconsString = deps.foodIconsString || 'apple banana bread cheese chicken default';
     this.#barcodeGenerator = deps.barcodeGenerator; // Optional: for generating barcode images
+    this.#catalogService = deps.catalogService || null;
   }
 
   /**
@@ -177,6 +179,22 @@ export class LogFoodFromUPC {
       // 7. Save NutriLog
       if (this.#foodLogStore) {
         await this.#foodLogStore.save(nutriLog);
+      }
+
+      // 7b. Record food item in catalog for quick-add
+      if (this.#catalogService) {
+        try {
+          await this.#catalogService.recordUsage({
+            name: foodItem.label,
+            calories: foodItem.calories,
+            protein: foodItem.protein,
+            carbs: foodItem.carbs,
+            fat: foodItem.fat,
+            source: 'nutritionix',
+          }, userId);
+        } catch (err) {
+          this.#logger.warn?.('nutribot.catalog.record_failed', { name: foodItem.label, error: err.message });
+        }
       }
 
       // 8. Build portion selection message
