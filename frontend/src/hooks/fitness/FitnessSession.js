@@ -280,7 +280,10 @@ export class FitnessSession {
     this.activeDeviceIds = new Set();
     this.eventLog = [];
     this._saveTriggered = false;
-    
+    this._finalized = false;
+    this._pendingResumePrompt = null;
+    this._onResumePrompt = null;
+
     // Track users whose data was transferred to another identity (should be excluded from charts)
     this._transferredUsers = new Set();
     this._transferVersion = 0; // Incremented on each transfer to trigger re-renders
@@ -1134,7 +1137,9 @@ export class FitnessSession {
       threshold: this._preSessionThreshold || 3,
       firstIds: this._preSessionBuffer.slice(0, 3).map((s) => s?.deviceId || s?.id || null)
     });
-    const started = this.ensureStarted({ reason: 'buffer_threshold_met' });
+    // Check for resumable session before starting
+    this._startWithResumeCheck('buffer_threshold_met');
+    const started = !!this.sessionId;
     this._bufferThresholdMet = false;
     this._preSessionBuffer = [];
     return started;
@@ -1294,6 +1299,182 @@ export class FitnessSession {
     if (name) return String(name);
     if (cadenceKey) return cadenceKey;
     return null;
+  }
+
+  /**
+   * Check if there's a resumable session for the given content.
+   * @param {string} contentId - Media content ID
+   * @returns {Promise<{resumable: boolean, session?: Object, finalized?: boolean}>}
+   */
+  async _checkResumable(contentId) {
+    if (!contentId) return { resumable: false };
+    try {
+      const resp = await DaylightAPI.get(`api/v1/fitness/resumable?contentId=${encodeURIComponent(contentId)}`);
+      return resp || { resumable: false };
+    } catch (err) {
+      getLogger().warn('fitness.session.resumable_check_failed', { contentId, error: err?.message });
+      return { resumable: false };
+    }
+  }
+
+  /**
+   * Hydrate session state from a previous session's data (for resume).
+   * @param {Object} sessionData - Full session data from the API
+   */
+  _hydrateFromSession(sessionData) {
+    const sessionId = sessionData.sessionId || sessionData.session?.id;
+    if (!sessionId) return false;
+
+    const now = Date.now();
+
+    // Set session identity
+    this.sessionTimestamp = String(sessionId).replace(/^fs_/, '');
+    this.sessionId = sessionId.startsWith('fs_') ? sessionId : `fs_${sessionId}`;
+    this.startTime = typeof sessionData.startTime === 'number'
+      ? sessionData.startTime
+      : now;
+    this.endTime = null;
+    this.lastActivityTime = now;
+
+    // Create timeline with original start time
+    this.timeline = new FitnessTimeline(this.startTime, this.timebase.intervalMs || 5000);
+
+    // Restore timeline series from the saved session
+    const savedTimeline = sessionData.timeline || {};
+    const savedSeries = savedTimeline.series || {};
+    const savedTickCount = savedTimeline.tick_count || savedTimeline.timebase?.tickCount || 0;
+
+    // Set tick count to match saved data
+    this.timeline.timebase.tickCount = savedTickCount;
+
+    // Restore series data
+    for (const [key, values] of Object.entries(savedSeries)) {
+      if (Array.isArray(values)) {
+        this.timeline.series[key] = [...values];
+      }
+    }
+
+    // Restore events
+    const savedEvents = savedTimeline.events || sessionData.events || [];
+    if (Array.isArray(savedEvents)) {
+      this.timeline.events = [...savedEvents];
+    }
+
+    // Calculate gap and pad with nulls
+    const previousEndTime = typeof sessionData.endTime === 'number'
+      ? sessionData.endTime
+      : (this.startTime + (sessionData.durationMs || 0));
+    const gapMs = Math.max(0, now - previousEndTime);
+    const intervalMs = this.timeline.timebase.intervalMs || 5000;
+    const gapTicks = Math.floor(gapMs / intervalMs);
+
+    if (gapTicks > 0) {
+      this.timeline.padWithNulls(gapTicks);
+    }
+
+    // Restore treasureBox
+    if (sessionData.treasureBox) {
+      if (!this.treasureBox) {
+        this.treasureBox = new FitnessTreasureBox(this);
+      }
+      this.treasureBox.restore(sessionData.treasureBox);
+    }
+
+    getLogger().info('fitness.session.resumed', {
+      sessionId: this.sessionId,
+      previousEndTime,
+      gapMs,
+      gapTicks,
+      restoredTickCount: savedTickCount,
+      restoredSeriesKeys: Object.keys(savedSeries).length
+    });
+
+    return true;
+  }
+
+  /**
+   * Start a session, checking for a resumable one first.
+   * Fire-and-forget — if a resumable session is found after the sync start,
+   * it will hydrate the session state asynchronously.
+   * @param {string} reason - Start reason
+   */
+  async _startWithResumeCheck(reason) {
+    const contentId = this._getCurrentContentId();
+
+    if (!contentId) {
+      if (!this.sessionId) this.ensureStarted({ reason, force: true });
+      return;
+    }
+
+    const result = await this._checkResumable(contentId);
+
+    if (!result.resumable) {
+      if (!this.sessionId) this.ensureStarted({ reason, force: true });
+      return;
+    }
+
+    if (result.finalized) {
+      // Session was explicitly ended — needs user prompt
+      this._pendingResumePrompt = result.session;
+      this._notifyResumePromptNeeded(result.session);
+      return;
+    }
+
+    // Auto-resume silently
+    this.ensureStarted({ reason: 'resumed', force: true });
+    this._hydrateFromSession(result.session);
+  }
+
+  /**
+   * Get the current primary content ID from active media.
+   * @returns {string|null}
+   */
+  _getCurrentContentId() {
+    const playlist = this.snapshot?.mediaPlaylists?.video;
+    if (Array.isArray(playlist) && playlist.length > 0) {
+      return playlist[0]?.contentId || playlist[0]?.id || null;
+    }
+    return null;
+  }
+
+  /**
+   * Notify listeners that a resume prompt is needed.
+   * @param {Object} sessionData - The resumable session data
+   */
+  _notifyResumePromptNeeded(sessionData) {
+    if (this._onResumePrompt) {
+      this._onResumePrompt(sessionData);
+    }
+  }
+
+  /**
+   * Register callback for resume prompt events.
+   * @param {Function} callback - Called with session data when resume prompt is needed
+   * @returns {Function} Unsubscribe function
+   */
+  onResumePrompt(callback) {
+    this._onResumePrompt = callback;
+    return () => { this._onResumePrompt = null; };
+  }
+
+  /**
+   * Accept resume — hydrate from the pending session.
+   */
+  acceptResume() {
+    if (!this._pendingResumePrompt) return false;
+    this.ensureStarted({ reason: 'resumed_after_prompt', force: true });
+    this._hydrateFromSession(this._pendingResumePrompt);
+    this._pendingResumePrompt = null;
+    return true;
+  }
+
+  /**
+   * Decline resume — start a fresh session.
+   */
+  declineResume() {
+    this._pendingResumePrompt = null;
+    this.ensureStarted({ reason: 'fresh_after_decline', force: true });
+    return true;
   }
 
   ensureStarted(options = {}) {
@@ -1825,6 +2006,9 @@ export class FitnessSession {
 
     const now = Date.now();
     this.endTime = now;
+
+    // Mark as finalized when user explicitly ends (not timeout/empty_roster)
+    this._finalized = (reason === 'manual' || reason === 'user_initiated');
 
     // DEBUG: Capture stack trace to identify what's triggering early session ends (throttled: first 5 only)
     const durationMs = this.endTime - this.startTime;
@@ -2532,6 +2716,7 @@ export class FitnessSession {
           startTime,
           endTime: derivedEndTime,
           durationMs,
+          finalized: this._finalized,
           roster: this.roster.length > 0 ? this.roster : (this._lastKnownGoodRoster || []),
           deviceAssignments,
           entities,
