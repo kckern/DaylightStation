@@ -36,11 +36,11 @@ test.describe('Nutrition Input Flow', () => {
     }
   });
 
-  test('inline text input shows parsed food in review state', async ({ page, request }) => {
-    // Get nutrilist count before
+  test('inline text input logs food end-to-end', async ({ page, request }) => {
+    // Get nutrilist UUIDs before
     const beforeRes = await request.get(`${API_URL}/health/nutrilist`);
     const beforeData = await beforeRes.json();
-    const countBefore = beforeData.count || 0;
+    const beforeUuids = new Set((beforeData.data || []).map(i => i.uuid));
 
     // Navigate to health dashboard
     await page.goto(HEALTH_URL, { waitUntil: 'networkidle' });
@@ -55,27 +55,27 @@ test.describe('Nutrition Input Flow', () => {
     await input.press('Enter');
 
     // Should transition through parsing → review state with Accept/Undo buttons
-    // (parsing may be too fast to catch "Analyzing..." so we just wait for Accept)
     const acceptBtn = page.locator('button', { hasText: 'Accept' });
-    await expect(acceptBtn).toBeVisible({ timeout: 30000 }); // AI parsing can be slow
-
-    // Undo button should also be visible
+    await expect(acceptBtn).toBeVisible({ timeout: 30000 });
     await expect(page.locator('button', { hasText: 'Undo' })).toBeVisible();
 
     // Accept the items
     await acceptBtn.click();
 
     // Should return to idle state — input should be visible again
-    await expect(input).toBeVisible({ timeout: 5000 });
+    await expect(input).toBeVisible({ timeout: 10000 });
 
-    // Note: The Accept callback flow (web → NutribotInputRouter → AcceptFoodLog)
-    // requires conversation state persistence across calls. Track any new items for cleanup.
+    // Wait for the accept callback to complete (it generates a report image)
+    await page.waitForTimeout(3000);
+
+    // Verify items were actually saved to nutrilist
     const afterRes = await request.get(`${API_URL}/health/nutrilist`);
     const afterData = await afterRes.json();
+    const newItems = (afterData.data || []).filter(i => !beforeUuids.has(i.uuid));
 
-    const newItems = (afterData.data || []).filter(item =>
-      !(beforeData.data || []).some(b => b.uuid === item.uuid)
-    );
+    expect(newItems.length).toBeGreaterThan(0);
+
+    // Track new items for cleanup
     for (const item of newItems) {
       createdUuids.push(item.uuid);
     }
