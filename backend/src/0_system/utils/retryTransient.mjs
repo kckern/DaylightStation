@@ -1,8 +1,27 @@
+// Raw error codes that indicate transient network issues (DNS, connection, timeout)
+const TRANSIENT_CODES = new Set([
+  'ECONNRESET', 'ENOTFOUND', 'ETIMEDOUT', 'ECONNREFUSED',
+  'EAI_AGAIN', 'EPIPE', 'EHOSTUNREACH', 'ENETUNREACH'
+]);
+
+/**
+ * Check if an error is transient (retryable).
+ * Supports both HttpError (isTransient flag) and raw network errors (code check).
+ */
+function isTransientError(error) {
+  if (error.isTransient) return true;
+  // Raw axios/node errors carry code on error or error.cause
+  const code = error.code || error.cause?.code;
+  if (code && TRANSIENT_CODES.has(code)) return true;
+  return false;
+}
+
 /**
  * Retry a function on transient errors with exponential backoff.
  *
- * Only retries when error.isTransient === true (e.g. HttpError from
- * network timeouts, connection resets, 429s, 5xx).
+ * Retries when error.isTransient === true (HttpError from network timeouts,
+ * connection resets, 429s, 5xx) OR when the raw error code indicates a
+ * transient network issue (EAI_AGAIN, ECONNRESET, etc.).
  *
  * @param {() => Promise<T>} fn - Async function to execute
  * @param {Object} [options]
@@ -20,7 +39,7 @@ export async function retryTransient(fn, options = {}) {
       return await fn();
     } catch (error) {
       const isLast = attempt === maxAttempts;
-      if (!error.isTransient || isLast) {
+      if (!isTransientError(error) || isLast) {
         throw error;
       }
 
