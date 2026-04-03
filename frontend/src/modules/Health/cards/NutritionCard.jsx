@@ -123,7 +123,7 @@ export default function NutritionCard({ nutrition, onRefresh, onClick }) {
         )}
       </Stack>
 
-      <div className="nutrition-input" onClick={(e) => e.stopPropagation()}>
+      <div className="nutrition-input" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
         <TextInput
           placeholder="Log food..."
           size="xs"
