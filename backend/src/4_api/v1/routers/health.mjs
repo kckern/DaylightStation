@@ -24,7 +24,7 @@ import { nowDate } from '#system/utils/time.mjs';
  * @returns {express.Router}
  */
 export function createHealthRouter(config) {
-  const { healthService, healthStore, configService, nutriListStore, logger = console } = config;
+  const { healthService, healthStore, configService, nutriListStore, dashboardService, logger = console } = config;
   const router = express.Router();
 
   // JSON parsing middleware
@@ -231,9 +231,26 @@ export function createHealthRouter(config) {
         'POST /nutrilist - Create nutrilist item',
         'PUT /nutrilist/:uuid - Update nutrilist item',
         'DELETE /nutrilist/:uuid - Delete nutrilist item',
-        'GET /status - This endpoint'
+        'GET /status - This endpoint',
+        'GET /dashboard - Unified health dashboard (today, history, goals, recency)'
       ]
     });
+  }));
+
+  /**
+   * GET /health/dashboard - Unified health dashboard
+   * Query params:
+   *   - userId: username (optional, defaults to head of household)
+   */
+  router.get('/dashboard', asyncHandler(async (req, res) => {
+    if (!dashboardService) {
+      return res.status(501).json({ error: 'Dashboard service not configured' });
+    }
+    const userId = req.query.userId || getDefaultUsername();
+    logger.debug?.('health.dashboard.request', { userId });
+
+    const dashboard = await dashboardService.execute(userId);
+    return res.json(dashboard);
   }));
 
   // ==========================================================================
