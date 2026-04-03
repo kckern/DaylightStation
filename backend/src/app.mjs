@@ -768,6 +768,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.health = createHealthApiRouter({
     healthServices,
     configService,
+    sessionService: fitnessServices.sessionService,
+    entropyService: entropyServices.entropyService,
+    lifePlanRepository: lifeplanResult.container.getLifePlanStore(),
     logger: rootLogger.child({ module: 'health-api' })
   });
 
