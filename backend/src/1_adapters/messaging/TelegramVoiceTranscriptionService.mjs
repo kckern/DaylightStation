@@ -85,13 +85,26 @@ export class TelegramVoiceTranscriptionService extends ITranscriptionService {
       // Determine format from URL
       const ext = this.#resolveExtension(audioUrl);
 
-      // Transcribe via OpenAI Whisper
-      const text = await this.#openaiAdapter.transcribe(audioBuffer, {
-        filename: `voice.${ext}`,
-        contentType: `audio/${ext === 'oga' ? 'ogg' : ext}`,
-        language: options.language,
-        prompt: options.prompt
-      });
+      // Transcribe via OpenAI Whisper (with retry for transient network errors)
+      const text = await retryTransient(
+        () => this.#openaiAdapter.transcribe(audioBuffer, {
+          filename: `voice.${ext}`,
+          contentType: `audio/${ext === 'oga' ? 'ogg' : ext}`,
+          language: options.language,
+          prompt: options.prompt
+        }),
+        {
+          maxAttempts: 3,
+          baseDelay: 2000,
+          onRetry: (attempt, error) => {
+            this.#logger.warn?.('telegram-voice.transcribe.retry', {
+              attempt,
+              error: error.message,
+              code: error.code || error.cause?.code,
+            });
+          },
+        },
+      );
 
       this.#logger.debug?.('telegram-voice.transcribe.success', {
         textLength: text?.length
