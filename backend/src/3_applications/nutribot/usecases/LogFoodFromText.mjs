@@ -41,6 +41,7 @@ export class LogFoodFromText {
   #encodeCallback;
   #foodIconsString;
   #reconciliationReader;
+  #catalogService;
 
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
@@ -55,6 +56,7 @@ export class LogFoodFromText {
     this.#encodeCallback = deps.encodeCallback || ((cmd, data) => JSON.stringify({ cmd, ...data }));
     this.#foodIconsString = deps.foodIconsString || 'apple banana bread cheese chicken default';
     this.#reconciliationReader = deps.reconciliationReader || null;
+    this.#catalogService = deps.catalogService || null;
   }
 
   /**
@@ -258,6 +260,24 @@ export class LogFoodFromText {
       // 5. Save NutriLog
       if (this.#foodLogStore) {
         await this.#foodLogStore.save(nutriLog);
+      }
+
+      // 5b. Record food items in catalog for quick-add
+      if (this.#catalogService) {
+        for (const item of foodItems) {
+          try {
+            await this.#catalogService.recordUsage({
+              name: item.label,
+              calories: item.calories,
+              protein: item.protein,
+              carbs: item.carbs,
+              fat: item.fat,
+              source: 'nutritionix',
+            }, userId);
+          } catch (err) {
+            this.#logger.warn?.('nutribot.catalog.record_failed', { name: item.label, error: err.message });
+          }
+        }
       }
 
       // 6. Update message with date header, food list, and buttons

@@ -24,6 +24,7 @@ export class LogFoodFromImage {
   #foodIconsString;
   #imageProcessor;
   #reconciliationReader;
+  #catalogService;
 
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
@@ -39,6 +40,7 @@ export class LogFoodFromImage {
     this.#foodIconsString = deps.foodIconsString || 'apple banana bread cheese chicken default';
     this.#imageProcessor = deps.imageProcessor; // Optional: for downloading/processing images
     this.#reconciliationReader = deps.reconciliationReader || null;
+    this.#catalogService = deps.catalogService || null;
   }
 
   /**
@@ -247,6 +249,24 @@ export class LogFoodFromImage {
       // 8. Save NutriLog
       if (this.#foodLogStore) {
         await this.#foodLogStore.save(nutriLog);
+      }
+
+      // 8b. Record food items in catalog for quick-add
+      if (this.#catalogService) {
+        for (const item of foodItems) {
+          try {
+            await this.#catalogService.recordUsage({
+              name: item.label,
+              calories: item.calories,
+              protein: item.protein,
+              carbs: item.carbs,
+              fat: item.fat,
+              source: 'nutritionix',
+            }, userId);
+          } catch (err) {
+            this.#logger.warn?.('nutribot.catalog.record_failed', { name: item.label, error: err.message });
+          }
+        }
       }
 
       // 9. Update photo caption with food list + action buttons
