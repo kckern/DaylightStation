@@ -768,6 +768,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const webNutribotAdapterProxy = {
     process: (...args) => webNutribotAdapterProxy._delegate?.process?.(...args)
       ?? Promise.reject(new Error('webNutribotAdapter not yet initialized')),
+    processCallback: (...args) => webNutribotAdapterProxy._delegate?.processCallback?.(...args)
+      ?? Promise.reject(new Error('webNutribotAdapter not yet initialized')),
     _delegate: null,
   };
 
