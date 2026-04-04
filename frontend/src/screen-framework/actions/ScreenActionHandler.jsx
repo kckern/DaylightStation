@@ -88,21 +88,37 @@ export function ScreenActionHandler({ actions = {} }) {
   }, [showOverlay, dismissOverlay, actions]);
 
   // --- Media play/queue ---
+  const lastMediaRef = useRef(null);
+  const MEDIA_DEDUP_WINDOW_MS = 3000;
+
+  const isMediaDuplicate = useCallback((contentId) => {
+    const now = Date.now();
+    if (contentId && contentId === lastMediaRef.current?.contentId
+        && now - lastMediaRef.current.ts < MEDIA_DEDUP_WINDOW_MS) {
+      logger().debug('media.duplicate-suppressed', { contentId, windowMs: MEDIA_DEDUP_WINDOW_MS });
+      return true;
+    }
+    lastMediaRef.current = { contentId, ts: now };
+    return false;
+  }, []);
+
   const handleMediaPlay = useCallback((payload) => {
-    dismissOverlay(); // clear any stale player overlay first
+    if (isMediaDuplicate(payload.contentId)) return;
+    dismissOverlay();
     showOverlay(Player, {
       play: { contentId: payload.contentId, ...payload },
       clear: () => dismissOverlay(),
     });
-  }, [showOverlay, dismissOverlay]);
+  }, [showOverlay, dismissOverlay, isMediaDuplicate]);
 
   const handleMediaQueue = useCallback((payload) => {
-    dismissOverlay(); // clear any stale player overlay first
+    if (isMediaDuplicate(payload.contentId)) return;
+    dismissOverlay();
     showOverlay(Player, {
       queue: { contentId: payload.contentId, ...payload },
       clear: () => dismissOverlay(),
     });
-  }, [showOverlay, dismissOverlay]);
+  }, [showOverlay, dismissOverlay, isMediaDuplicate]);
 
   // --- Media playback controls ---
   const handleMediaPlayback = useCallback((payload) => {
