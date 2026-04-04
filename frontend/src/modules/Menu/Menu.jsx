@@ -911,6 +911,119 @@ function MenuItems({
     return () => window.removeEventListener("keydown", handler);
   }, [columns, navigateTo]);
 
+  // --- Gamepad API polling (physical game controllers) ---
+  useEffect(() => {
+    let rafId;
+    const prevButtons = {};
+    const prevAxes = {};
+    const AXIS_THRESHOLD = 0.5;
+    const REPEAT_DELAY = 400;
+    const REPEAT_INTERVAL = 120;
+    const holdTimers = {};
+    let selectCooldown = false;
+
+    function clearHold(key) {
+      if (holdTimers[key]) { clearTimeout(holdTimers[key]); delete holdTimers[key]; }
+    }
+
+    function navDir(dir) {
+      const cur = activeIndexRef.current;
+      const len = itemsRef.current.length;
+      if (!len) return;
+      let next;
+      if (dir === 'up') next = (cur - columns + len) % len;
+      else if (dir === 'down') next = (cur + columns) % len;
+      else if (dir === 'left') next = (cur - 1 + len) % len;
+      else next = (cur + 1) % len;
+      navigateTo(next);
+    }
+
+    function poll() {
+      const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+      for (const gp of gamepads) {
+        if (!gp) continue;
+        const id = gp.index;
+        if (!prevButtons[id]) prevButtons[id] = new Array(gp.buttons.length).fill(false);
+        if (!prevAxes[id]) prevAxes[id] = new Array(gp.axes.length).fill(0);
+
+        const pressed = (i) => gp.buttons[i]?.pressed;
+        const wasPressed = (i) => prevButtons[id][i];
+        const justPressed = (i) => pressed(i) && !wasPressed(i);
+        const justReleased = (i) => !pressed(i) && wasPressed(i);
+
+        // D-pad: 12=Up, 13=Down, 14=Left, 15=Right
+        const dirMap = { 12: 'up', 13: 'down', 14: 'left', 15: 'right' };
+        for (const [btn, dir] of Object.entries(dirMap)) {
+          const b = parseInt(btn);
+          if (justPressed(b)) {
+            navDir(dir);
+            clearHold(`btn${b}`);
+            holdTimers[`btn${b}`] = setTimeout(function repeat() {
+              navDir(dir);
+              holdTimers[`btn${b}`] = setTimeout(repeat, REPEAT_INTERVAL);
+            }, REPEAT_DELAY);
+          }
+          if (justReleased(b)) clearHold(`btn${b}`);
+        }
+
+        // Analog stick
+        const stickDirs = [
+          { axis: 0, positive: true, dir: 'right', key: 'axisR' },
+          { axis: 0, positive: false, dir: 'left', key: 'axisL' },
+          { axis: 1, positive: true, dir: 'down', key: 'axisD' },
+          { axis: 1, positive: false, dir: 'up', key: 'axisU' },
+        ];
+        for (const { axis, positive, dir, key } of stickDirs) {
+          const val = gp.axes[axis] || 0;
+          const prevVal = prevAxes[id][axis] || 0;
+          const active = positive ? val > AXIS_THRESHOLD : val < -AXIS_THRESHOLD;
+          const wasActive = positive ? prevVal > AXIS_THRESHOLD : prevVal < -AXIS_THRESHOLD;
+          if (active && !wasActive) {
+            navDir(dir);
+            clearHold(key);
+            holdTimers[key] = setTimeout(function repeat() {
+              navDir(dir);
+              holdTimers[key] = setTimeout(repeat, REPEAT_INTERVAL);
+            }, REPEAT_DELAY);
+          }
+          if (!active && wasActive) clearHold(key);
+        }
+
+        // A button (0) = select
+        if (justPressed(0) && !selectCooldown) {
+          selectCooldown = true;
+          setTimeout(() => { selectCooldown = false; }, 300);
+          const idx = activeIndexRef.current;
+          const curItems = itemsRef.current;
+          logger.info('menu.gamepad-select', {
+            gamepad: gp.id, index: idx, title: curItems[idx]?.label,
+          });
+          setSelectedIndex(idx, findKeyForItem(curItems[idx]));
+          onSelectRef.current?.(curItems[idx]);
+        }
+
+        // B button (1) = back
+        if (justPressed(1)) {
+          logger.info('menu.gamepad-back', { gamepad: gp.id });
+          handleCloseRef.current?.();
+        }
+
+        // Save state
+        for (let i = 0; i < gp.buttons.length; i++) prevButtons[id][i] = pressed(i);
+        for (let i = 0; i < gp.axes.length; i++) prevAxes[id][i] = gp.axes[i];
+      }
+      rafId = requestAnimationFrame(poll);
+    }
+
+    rafId = requestAnimationFrame(poll);
+    logger.debug('menu.gamepad-polling.started');
+    return () => {
+      cancelAnimationFrame(rafId);
+      Object.keys(holdTimers).forEach(clearHold);
+      logger.debug('menu.gamepad-polling.stopped');
+    };
+  }, [columns, navigateTo, setSelectedIndex, findKeyForItem, logger]);
+
   /**
    * Optional countdown timer to auto-select.
    */
