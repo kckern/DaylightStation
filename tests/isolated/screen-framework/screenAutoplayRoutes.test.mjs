@@ -7,7 +7,8 @@ import { describe, test, expect } from '@jest/globals';
 function resolveScreenRoute(subPath, routes) {
   if (routes?.[subPath]) {
     const { contentId, ...routeProps } = routes[subPath];
-    return { type: 'menu', props: { list: { contentId }, ...routeProps } };
+    // routeProps go INSIDE list — MenuStack passes props.list to TVMenu, dropping siblings
+    return { type: 'menu', props: { list: { contentId, ...routeProps } } };
   }
   return { type: 'menu', props: { list: { contentId: `menu:${subPath}` } } };
 }
@@ -18,11 +19,11 @@ describe('resolveScreenRoute', () => {
     music: { contentId: 'menu:music' },
   };
 
-  test('matched route uses contentId and spreads extra props', () => {
+  test('matched route puts contentId and extra props inside list object', () => {
     const result = resolveScreenRoute('games', routes);
     expect(result).toEqual({
       type: 'menu',
-      props: { list: { contentId: 'retroarch/launchable' }, menuStyle: 'arcade' },
+      props: { list: { contentId: 'retroarch/launchable', menuStyle: 'arcade' } },
     });
   });
 

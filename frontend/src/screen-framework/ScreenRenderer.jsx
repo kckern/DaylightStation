@@ -64,10 +64,12 @@ function ScreenAutoplay({ routes }) {
         }, 500);
       } else if (routes?.[subPath]) {
         // Route defined in screen config — use its content ID and props
+        // Props like menuStyle go INSIDE the list object — MenuStack passes
+        // props.list to TVMenu, dropping any sibling properties.
         const { contentId, ...routeProps } = routes[subPath];
         logger.info('screen-autoplay.route', { subPath, contentId });
         setTimeout(() => {
-          push({ type: 'menu', props: { list: { contentId }, ...routeProps } });
+          push({ type: 'menu', props: { list: { contentId, ...routeProps } } });
         }, 500);
       } else {
         // Default: treat suffix as menu name
