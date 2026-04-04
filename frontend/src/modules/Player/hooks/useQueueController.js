@@ -81,8 +81,9 @@ export function useQueueController({ play, queue, clear, shuffle }) {
     }
 
     let isCancelled = false;
+    let isCompleted = false;
     sourceSignatureRef.current = nextSignature;
-    if (contentRef) _signatureCache.set(contentRef, nextSignature);
+    // Cache write deferred to after successful API completion (see below)
 
     async function initQueue() {
       let newQueue = [];
@@ -162,9 +163,11 @@ export function useQueueController({ play, queue, clear, shuffle }) {
       }
 
       if (!isCancelled) {
+        if (contentRef) _signatureCache.set(contentRef, nextSignature);
         setQueue(validQueue);
         setOriginalQueue(validQueue);
         setQueueAudio(fetchedAudio);
+        isCompleted = true;
       }
     }
     initQueue().catch((error) => {
@@ -180,6 +183,12 @@ export function useQueueController({ play, queue, clear, shuffle }) {
 
     return () => {
       isCancelled = true;
+      if (!isCompleted) {
+        // Only clear cache if the API call didn't complete successfully.
+        // If it did complete, the cache entry is valid and should persist.
+        if (contentRef) _signatureCache.delete(contentRef);
+        sourceSignatureRef.current = null;
+      }
     };
   }, [play, queue, isShuffle, contentRef]);
 
@@ -280,7 +289,6 @@ export function useQueueController({ play, queue, clear, shuffle }) {
     setQueue,
     advance,
     queuePosition,
-    queueAudio,
-    originalQueueLength: originalQueue.length
+    queueAudio
   };
 }

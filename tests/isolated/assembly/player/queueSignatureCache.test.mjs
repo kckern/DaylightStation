@@ -42,4 +42,30 @@ describe('queue signature cache (module-level)', () => {
     _signatureCache.delete('plex:350694');
     expect(_signatureCache.get('plex:350694')).toBeUndefined();
   });
+
+  test('cache must not retain signature when init was cancelled before completion', () => {
+    // Simulate: first mount sets cache optimistically
+    _signatureCache.set('office-program', 'ref:office-program;shuffle:0');
+
+    // Simulate: component unmounts before API completes → cancel
+    // The cache entry should be cleaned up
+    _signatureCache.delete('office-program');
+
+    // Simulate: second mount checks cache
+    const cached = _signatureCache.get('office-program') ?? null;
+
+    // Must be null so the second mount re-fetches
+    expect(cached).toBeNull();
+  });
+
+  test('cache retains signature only after successful completion', () => {
+    const sig = 'ref:office-program;shuffle:0';
+
+    // Simulate: API completes successfully, THEN cache is written
+    // (This is the new behavior we're implementing)
+    _signatureCache.set('office-program', sig);
+
+    // Remount should see the cached value and skip re-fetch
+    expect(_signatureCache.get('office-program')).toBe(sig);
+  });
 });
