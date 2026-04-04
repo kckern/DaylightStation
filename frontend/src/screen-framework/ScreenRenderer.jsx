@@ -40,7 +40,7 @@ const AUTOPLAY_ACTIONS = ['play', 'queue', 'playlist', 'random', 'display', 'rea
  *
  * Runs once on mount, then cleans the URL to prevent re-triggering on reload.
  */
-function ScreenAutoplay() {
+function ScreenAutoplay({ routes }) {
   const { push } = useMenuNavigationContext();
 
   useEffect(() => {
@@ -62,8 +62,15 @@ function ScreenAutoplay() {
           const bus = getActionBus();
           bus.emit('menu:open', { menuId: subPath });
         }, 500);
+      } else if (routes?.[subPath]) {
+        // Route defined in screen config — use its content ID and props
+        const { contentId, ...routeProps } = routes[subPath];
+        logger.info('screen-autoplay.route', { subPath, contentId });
+        setTimeout(() => {
+          push({ type: 'menu', props: { list: { contentId }, ...routeProps } });
+        }, 500);
       } else {
-        // Otherwise treat as submenu
+        // Default: treat suffix as menu name
         setTimeout(() => {
           push({ type: 'menu', props: { list: { contentId: `menu:${subPath}` } } });
         }, 500);
@@ -257,7 +264,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
         }}>
           <MenuNavigationProvider>
             <ScreenOverlayProvider>
-              <ScreenAutoplay />
+              <ScreenAutoplay routes={config.routes} />
               <ScreenActionHandler actions={config.actions} />
               <ScreenCommandHandler wsConfig={config.websocket} screenId={screenId} />
               <ScreenSubscriptionHandler subscriptions={config.subscriptions} />
