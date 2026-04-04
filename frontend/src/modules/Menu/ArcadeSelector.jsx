@@ -224,6 +224,122 @@ export function ArcadeSelector({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
 
+  // --- Gamepad API polling (physical game controllers) ---
+  useEffect(() => {
+    if (!items.length) return;
+    let rafId;
+    const prevButtons = {};
+    const prevAxes = {};
+    const AXIS_THRESHOLD = 0.5;
+    const REPEAT_DELAY = 400; // ms before first repeat
+    const REPEAT_INTERVAL = 120; // ms between repeats
+    const holdTimers = {};
+
+    function clearHold(key) {
+      if (holdTimers[key]) { clearTimeout(holdTimers[key]); delete holdTimers[key]; }
+    }
+
+    function startHold(key, action) {
+      clearHold(key);
+      holdTimers[key] = setTimeout(function repeat() {
+        action();
+        holdTimers[key] = setTimeout(repeat, REPEAT_INTERVAL);
+      }, REPEAT_DELAY);
+    }
+
+    function poll() {
+      const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+      for (const gp of gamepads) {
+        if (!gp) continue;
+        const id = gp.index;
+        if (!prevButtons[id]) prevButtons[id] = new Array(gp.buttons.length).fill(false);
+        if (!prevAxes[id]) prevAxes[id] = new Array(gp.axes.length).fill(0);
+
+        // Button mapping (standard gamepad layout):
+        //   0=A (select), 1=B (back), 12=DpadUp, 13=DpadDown, 14=DpadLeft, 15=DpadRight
+        const pressed = (i) => gp.buttons[i]?.pressed;
+        const wasPressed = (i) => prevButtons[id][i];
+        const justPressed = (i) => pressed(i) && !wasPressed(i);
+        const justReleased = (i) => !pressed(i) && wasPressed(i);
+
+        // D-pad directions
+        const dirMap = { 12: 'up', 13: 'down', 14: 'left', 15: 'right' };
+        for (const [btn, dir] of Object.entries(dirMap)) {
+          const b = parseInt(btn);
+          if (justPressed(b)) {
+            const next = findNearest(selectedIndex, dir);
+            if (next >= 0) setSelectedIndex(next, findKeyForItem(items[next]));
+            startHold(`btn${b}`, () => {
+              const cur = selectedIndex;
+              const n = findNearest(cur, dir);
+              if (n >= 0) setSelectedIndex(n, findKeyForItem(items[n]));
+            });
+          }
+          if (justReleased(b)) clearHold(`btn${b}`);
+        }
+
+        // Analog stick → d-pad (axes 0=leftX, 1=leftY)
+        const axisDir = (axis, positive) => {
+          const val = gp.axes[axis] || 0;
+          const prevVal = prevAxes[id][axis] || 0;
+          const now = positive ? val > AXIS_THRESHOLD : val < -AXIS_THRESHOLD;
+          const was = positive ? prevVal > AXIS_THRESHOLD : prevVal < -AXIS_THRESHOLD;
+          return { active: now, justActivated: now && !was, justDeactivated: !now && was };
+        };
+
+        const stickDirs = [
+          { axis: 0, positive: true, dir: 'right', key: 'axisR' },
+          { axis: 0, positive: false, dir: 'left', key: 'axisL' },
+          { axis: 1, positive: true, dir: 'down', key: 'axisD' },
+          { axis: 1, positive: false, dir: 'up', key: 'axisU' },
+        ];
+        for (const { axis, positive, dir, key } of stickDirs) {
+          const state = axisDir(axis, positive);
+          if (state.justActivated) {
+            const next = findNearest(selectedIndex, dir);
+            if (next >= 0) setSelectedIndex(next, findKeyForItem(items[next]));
+            startHold(key, () => {
+              const n = findNearest(selectedIndex, dir);
+              if (n >= 0) setSelectedIndex(n, findKeyForItem(items[n]));
+            });
+          }
+          if (state.justDeactivated) clearHold(key);
+        }
+
+        // A button (0) = select
+        if (justPressed(0) && !selectCooldownRef.current) {
+          selectCooldownRef.current = true;
+          setTimeout(() => { selectCooldownRef.current = false; }, 300);
+          const selected = items[selectedIndex];
+          logger.info('arcade.gamepad-select', {
+            gamepad: gp.id, index: selectedIndex,
+            title: selected?.label,
+          });
+          onSelect?.(selected);
+        }
+
+        // B button (1) = back
+        if (justPressed(1)) {
+          logger.info('arcade.gamepad-back', { gamepad: gp.id });
+          handleClose();
+        }
+
+        // Save state for next frame
+        for (let i = 0; i < gp.buttons.length; i++) prevButtons[id][i] = pressed(i);
+        for (let i = 0; i < gp.axes.length; i++) prevAxes[id][i] = gp.axes[i];
+      }
+      rafId = requestAnimationFrame(poll);
+    }
+
+    rafId = requestAnimationFrame(poll);
+    logger.debug('gamepad-polling.started');
+    return () => {
+      cancelAnimationFrame(rafId);
+      Object.keys(holdTimers).forEach(clearHold);
+      logger.debug('gamepad-polling.stopped');
+    };
+  }, [items, selectedIndex, findNearest, setSelectedIndex, findKeyForItem, onSelect, handleClose, logger]);
+
   // --- Selection restoration on items change ---
   useEffect(() => {
     if (!items.length) return;
