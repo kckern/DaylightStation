@@ -115,8 +115,8 @@ def find_hidraw_for_scanner():
                 if line.startswith('HID_ID='):
                     parts = line.split('=')[1].split(':')
                     if len(parts) >= 3:
-                        vid = parts[1].lstrip('0').lower() or '0'
-                        pid = parts[2].lstrip('0').lower() or '0'
+                        vid = parts[1][-4:].lower()
+                        pid = parts[2][-4:].lower()
                         if vid == SYMBOL_VID and pid == SYMBOL_PID:
                             dev_name = os.path.basename(hidraw)
                             dev_path = f'/dev/{dev_name}'
