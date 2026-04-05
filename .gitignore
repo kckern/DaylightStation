@@ -72,3 +72,7 @@ tests/output/
 frontend/src/lib/audio/vendor/
 !frontend/src/lib/audio/build-speex-aec.sh
 .claude/worktrees/
+/_extensions/document-processor/node_modules
+/_extensions/musicozy/__pycache__
+_extensions/musicozy/README.md
+_extensions/musicozy/devices.json
