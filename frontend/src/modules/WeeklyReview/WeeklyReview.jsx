@@ -58,6 +58,7 @@ export default function WeeklyReview({ dispatch }) {
         ...prev,
         recording: { exists: true, recordedAt: new Date().toISOString(), duration },
       }));
+      dispatch('escape');
     } catch (err) {
       const uploadMs = Date.now() - uploadStartRef.current;
       logger.error('recording.upload-failed', { error: err.message, uploadMs, payloadSizeKb });
