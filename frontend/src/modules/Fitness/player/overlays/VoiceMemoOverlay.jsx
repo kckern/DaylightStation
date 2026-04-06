@@ -286,6 +286,7 @@ const VoiceMemoOverlay = ({
   const handleRetryTranscription = useCallback(async () => {
     if (!retryTranscription || !hasAudioBlob) return;
     const memoId = currentMemo?.memoId || overlayState?.memoId;
+    setRecorderError(null);
     setRetrying(true);
     setRetryError(null);
     setAutoAcceptCancelled(true);
@@ -299,11 +300,12 @@ const VoiceMemoOverlay = ({
       logVoiceMemo('retry-transcription-success', { memoId, newMemoId: newMemo?.memoId });
     } catch (err) {
       setRetryError(err?.message || 'Retry failed');
+      setRecorderError({ message: err?.message || 'Retry failed', retryable: true });
       logVoiceMemo('retry-transcription-failed', { memoId, error: err?.message }, { level: 'warn' });
     } finally {
       setRetrying(false);
     }
-  }, [retryTranscription, hasAudioBlob, currentMemo?.memoId, overlayState?.memoId, logVoiceMemo, onReplaceMemo]);
+  }, [retryTranscription, hasAudioBlob, currentMemo?.memoId, overlayState?.memoId, logVoiceMemo, onReplaceMemo, setRecorderError]);
 
   const handleClose = useCallback(() => {
     const wasRecording = isRecording;
@@ -788,8 +790,10 @@ const VoiceMemoOverlay = ({
 
                   {isRecorderErrored ? (
                     <div className="voice-memo-overlay__retry-row">
-                      {recorderErrorRetryable ? (
-                        <button type="button" className="voice-memo-overlay__btn" onClick={handleStartRedoRecording}>Retry</button>
+                      {recorderErrorRetryable && hasAudioBlob ? (
+                        <button type="button" className="voice-memo-overlay__btn" onClick={handleRetryTranscription}>Retry</button>
+                      ) : recorderErrorRetryable ? (
+                        <button type="button" className="voice-memo-overlay__btn" onClick={handleStartRedoRecording}>Re-record</button>
                       ) : null}
                       <button type="button" className="voice-memo-overlay__btn voice-memo-overlay__btn--ghost" onClick={handleClose}>Discard</button>
                     </div>
