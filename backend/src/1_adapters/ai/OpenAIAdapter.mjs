@@ -7,6 +7,7 @@
 
 import { IAIGateway } from '#apps/common/ports/IAIGateway.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { retryTransient } from '#system/utils/retryTransient.mjs';
 
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
 
@@ -510,9 +511,24 @@ export class OpenAIAdapter extends IAIGateway {
     this.metrics.requestCount++;
 
     try {
-      const response = await this._makeFormRequest(
-        `${OPENAI_API_BASE}/audio/transcriptions`,
-        form
+      const response = await retryTransient(
+        () => this._makeFormRequest(
+          `${OPENAI_API_BASE}/audio/transcriptions`,
+          form
+        ),
+        {
+          maxAttempts: 3,
+          baseDelay: 2000,
+          onRetry: (attempt, error) => {
+            this.metrics.retryCount++;
+            this.logger.warn?.('openai.transcribe.retry', {
+              attempt,
+              error: error.message,
+              code: error.code || error.cause?.code,
+              audioSize: audioBuffer.length
+            });
+          }
+        }
       );
 
       this.logger.debug?.('openai.transcribe.response', {
