@@ -364,6 +364,9 @@ const useVoiceMemoRecorder = ({
         }
       };
 
+      // Stash payload immediately so retry works even if upload fails
+      lastAudioPayloadRef.current = payload;
+
       const resp = await Promise.race([
         DaylightAPI('api/v1/fitness/voice_memo', payload, 'POST'),
         timeoutPromise
@@ -394,9 +397,6 @@ const useVoiceMemoRecorder = ({
         });
         return;
       }
-
-      // Stash audio payload for retry transcription
-      lastAudioPayloadRef.current = payload;
 
       if (memo && onMemoCaptured) {
         onMemoCaptured(memo);
