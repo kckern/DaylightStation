@@ -7,11 +7,6 @@ import { DashboardToolFactory } from './tools/DashboardToolFactory.mjs';
 import { ReconciliationToolFactory } from './tools/ReconciliationToolFactory.mjs';
 import { MessagingChannelToolFactory } from './tools/MessagingChannelToolFactory.mjs';
 import { DailyDashboard } from './assignments/DailyDashboard.mjs';
-import { MorningBrief } from './assignments/MorningBrief.mjs';
-import { NoteReview } from './assignments/NoteReview.mjs';
-import { EndOfDayReport } from './assignments/EndOfDayReport.mjs';
-import { WeeklyDigest } from './assignments/WeeklyDigest.mjs';
-import { ExerciseReaction } from './assignments/ExerciseReaction.mjs';
 import { systemPrompt } from './prompts/system.mjs';
 
 export class HealthCoachAgent extends BaseAgent {
@@ -40,63 +35,20 @@ export class HealthCoachAgent extends BaseAgent {
 
     // Existing assignment
     this.registerAssignment(new DailyDashboard());
-
-    // New assignments
-    this.registerAssignment(new MorningBrief());
-    this.registerAssignment(new NoteReview());
-    this.registerAssignment(new EndOfDayReport());
-    this.registerAssignment(new WeeklyDigest());
-    this.registerAssignment(new ExerciseReaction());
   }
 
   async runAssignment(assignmentId, opts = {}) {
-    // Inject default userId from config if not provided (e.g., scheduler trigger)
     if (!opts.userId) {
       opts.userId = this.deps.configService?.getHeadOfHousehold?.() || 'default';
     }
     const result = await super.runAssignment(assignmentId, opts);
 
-    // Existing: persist dashboard
     if (assignmentId === 'daily-dashboard' && result) {
       const writeTool = this.getTools().find(t => t.name === 'write_dashboard');
       if (writeTool) {
         const today = new Date().toISOString().split('T')[0];
         await writeTool.execute({ userId: opts.userId, date: today, dashboard: result });
       }
-    }
-
-    // Deliver coaching messages via messaging channel
-    const coachingAssignments = ['morning-brief', 'note-review', 'end-of-day-report', 'weekly-digest', 'exercise-reaction'];
-    if (coachingAssignments.includes(assignmentId) && result?.should_send) {
-      const today = new Date().toISOString().split('T')[0];
-      const coachingMeta = { assignmentId, userId: opts.userId, date: today, textLength: result.text?.length };
-
-      // 1. Deliver via messaging channel
-      const sendTool = this.getTools().find(t => t.name === 'send_channel_message');
-      if (sendTool) {
-        const deliveryResult = await sendTool.execute({ text: result.text, parseMode: result.parse_mode || 'HTML' });
-        this.deps.logger?.info?.('coaching.delivered', { ...coachingMeta, success: deliveryResult?.success, messageId: deliveryResult?.messageId, error: deliveryResult?.error });
-      } else {
-        this.deps.logger?.warn?.('coaching.delivery.noTool', { ...coachingMeta, toolCount: this.getTools().length, toolNames: this.getTools().map(t => t.name) });
-      }
-
-      // 2. Persist to YAML history
-      const noteTool = this.getTools().find(t => t.name === 'log_coaching_note');
-      if (noteTool) {
-        const persistResult = await noteTool.execute({
-          userId: opts.userId,
-          date: today,
-          note: { type: assignmentId, text: result.text },
-        });
-        this.deps.logger?.info?.('coaching.persisted', { ...coachingMeta, success: persistResult?.success, error: persistResult?.error });
-      } else {
-        this.deps.logger?.warn?.('coaching.persist.noTool', coachingMeta);
-      }
-
-      // 3. Log the full coaching message for traceability
-      this.deps.logger?.info?.('coaching.message', { ...coachingMeta, text: result.text, parseMode: result.parse_mode });
-    } else if (coachingAssignments.includes(assignmentId) && !result?.should_send) {
-      this.deps.logger?.debug?.('coaching.suppressed', { assignmentId, userId: opts.userId, reason: 'should_send=false' });
     }
 
     return result;
