@@ -150,26 +150,10 @@ export class AcceptFoodLog {
               date: nutriLog.meal?.date || nutriLog.date,
               responseContext,
             });
-
-            // Agent coaching commentary on end-of-day report (fire-and-forget)
-            if (this.#agentOrchestrator) {
-              this.#agentOrchestrator.runAssignment('health-coach', 'end-of-day-report', {
-                userId,
-                context: { conversationId },
-              }).catch(e => this.#logger.warn?.('acceptLog.endOfDayReport.error', { error: e.message }));
-            }
           }
         } catch (e) {
           this.#logger.warn?.('acceptLog.autoreport.error', { error: e.message });
         }
-      }
-
-      // Fire NoteReview — agent decides whether to speak (fire-and-forget)
-      if (this.#agentOrchestrator) {
-        this.#agentOrchestrator.runAssignment('health-coach', 'note-review', {
-          userId,
-          context: { conversationId },
-        }).catch(e => this.#logger.warn?.('acceptLog.noteReview.error', { error: e.message }));
       }
 
       return {
