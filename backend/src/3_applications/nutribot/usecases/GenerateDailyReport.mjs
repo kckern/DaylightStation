@@ -20,6 +20,7 @@ export class GenerateDailyReport {
   #logger;
   #encodeCallback;
   #reportRenderer;
+  #coachingOrchestrator;
 
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
@@ -35,6 +36,7 @@ export class GenerateDailyReport {
     this.#logger = deps.logger || console;
     this.#encodeCallback = deps.encodeCallback || ((cmd, data) => JSON.stringify({ cmd, ...data }));
     this.#reportRenderer = deps.reportRenderer; // Optional: for generating PNG reports
+    this.#coachingOrchestrator = deps.coachingOrchestrator || null;
   }
 
   /**
@@ -61,7 +63,7 @@ export class GenerateDailyReport {
   async execute(input) {
     const { userId, conversationId, forceRegenerate = false, messageId: triggerMessageId, responseContext } = input;
     const date = input.date || this.#getTodayDate(userId);
-    const anchorDateForHistory = this.#getTodayDate(userId);
+    const anchorDateForHistory = date;
 
     this.#logger.debug?.('report.generate.start', { userId, date, forceRegenerate, hasResponseContext: !!responseContext });
 
@@ -243,6 +245,16 @@ export class GenerateDailyReport {
         } catch (e) {
           this.#logger.warn?.('report.saveState.error', { error: e.message });
         }
+      }
+
+      // 13. Send coaching commentary (fire-and-forget)
+      if (this.#coachingOrchestrator) {
+        this.#coachingOrchestrator.sendPostReport({
+          userId,
+          conversationId,
+          date,
+          totals,
+        }).catch(e => this.#logger.warn?.('report.coaching.error', { error: e.message }));
       }
 
       this.#logger.info?.('report.generate.success', { userId, date, messageId, itemCount: summary.itemCount });
