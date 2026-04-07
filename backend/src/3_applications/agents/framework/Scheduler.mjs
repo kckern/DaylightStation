@@ -14,6 +14,7 @@ export class Scheduler {
   #intervalId = null;
   #intervalMs;
   #running = false;
+  #recentRuns = new Map(); // key: jobKey:dateHour → timestamp
 
   constructor({ logger = console, intervalMs = 30_000 }) {
     this.#logger = logger;
@@ -96,16 +97,29 @@ export class Scheduler {
 
     try {
       const now = new Date();
+      // Prune old dedup keys (older than 2 hours)
+      const pruneThreshold = now.getTime() - 2 * 60 * 60 * 1000;
+      for (const [key, ts] of this.#recentRuns) {
+        if (ts < pruneThreshold) this.#recentRuns.delete(key);
+      }
+
       for (const [jobKey, job] of this.#jobs) {
         if (this.#isDue(job, now)) {
+          // Idempotency guard: skip if already ran this hour
+          const dateHour = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T${String(now.getHours()).padStart(2, '0')}`;
+          const dedupKey = `${jobKey}:${dateHour}`;
+          if (this.#recentRuns.has(dedupKey)) {
+            this.#logger.debug?.('scheduler.dedup.skipped', { jobKey, dedupKey });
+            continue;
+          }
+
           job.lastRun = now;
+          this.#recentRuns.set(dedupKey, now.getTime());
           this.#logger.info?.('scheduler.trigger', { jobKey });
           try {
             if (job.handler) {
-              // Plain task (registered via registerTask)
               await job.handler();
             } else {
-              // Agent assignment (registered via registerAgent)
               await job.orchestrator.runAssignment(
                 job.agentId,
                 job.assignmentId,
