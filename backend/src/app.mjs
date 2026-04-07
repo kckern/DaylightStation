@@ -1237,6 +1237,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }
 
   // Initialize barcode scanner MQTT adapter
+  let barcodeScanServiceRef = null;
   if (enableMqtt && hardwareAdapters.barcodeAdapter?.isConfigured()) {
     const barcodeConfig = configService.getHouseholdAppConfig(householdId, 'barcode') || {};
     const devicesConfig = configService.getHouseholdDevices(householdId) || {};
@@ -1272,7 +1273,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const barcodeScanService = new BarcodeScanService({
       gatekeeper,
       deviceConfig: scannerDeviceConfig,
-      broadcastEvent: (topic, payload) => broadcastEvent({ topic, ...payload }),
+      broadcastEvent: (topic, payload) => broadcastEvent({ topic, ...payload }) || 0,
       pipelineConfig: {
         default_action: barcodeConfig.default_action || 'queue',
         actions: barcodeConfig.actions || ['queue', 'play', 'open'],
@@ -1292,6 +1293,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       },
       logger: barcodeLogger,
     });
+
+    barcodeScanServiceRef = barcodeScanService;
 
     // Wire adapter callback
     hardwareAdapters.barcodeAdapter.setScanCallback((payload) => {
@@ -1584,6 +1587,24 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'wake-and-load' })
   });
 
+  // Wire barcode → load fallback (TV off case)
+  if (barcodeScanServiceRef) {
+    // Build screen → deviceId map from devices config
+    const screenToDevice = {};
+    for (const [id, device] of Object.entries((devicesConfig.devices || {}))) {
+      const screenPath = device.screen_path; // e.g. "/screen/living-room"
+      if (screenPath) {
+        const screenName = screenPath.replace(/^\/screen\//, '');
+        screenToDevice[screenName] = id;
+      }
+    }
+    barcodeScanServiceRef.setLoadFallback(async (targetScreen, query) => {
+      const deviceId = screenToDevice[targetScreen];
+      if (!deviceId) return;
+      return wakeAndLoadService.execute(deviceId, query);
+    });
+  }
+
   v1Routers.device = createDeviceApiRouter({
     deviceServices,
     wakeAndLoadService,
@@ -1799,7 +1820,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Agents application router
-  v1Routers.agents = createAgentsApiRouter({
+  v1Routers.agents = await createAgentsApiRouter({
     logger: rootLogger.child({ module: 'agents-api' }),
     healthStore: healthServices.healthStore,
     healthService: healthServices.healthService,
@@ -1815,6 +1836,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // extractChatId splits on '_' and takes last segment, so just pass raw chatId
     // TODO: derive chatId from user identity mapping instead of hardcoding
     conversationId: '575596036',
+    nutriListStore: healthServices.nutriListStore,
     lifeplanServices: {
       container: lifeplanResult.container,
       services: lifeplanResult.services,

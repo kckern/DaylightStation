@@ -171,6 +171,7 @@ import { createHomebotRouter } from '#api/v1/routers/homebot.mjs';
 // Agents application imports
 import { AgentOrchestrator, EchoAgent, Scheduler } from '#apps/agents/index.mjs';
 import { HealthCoachAgent } from '#apps/agents/health-coach/index.mjs';
+import { CoachingOrchestrator, CoachingCommentaryService } from '#apps/coaching/index.mjs';
 import { PagedMediaTocAgent } from '#apps/agents/paged-media-toc/index.mjs';
 import { KomgaClient } from '#adapters/content/readable/komga/KomgaClient.mjs';
 import { KomgaPagedMediaAdapter } from '#adapters/komga/KomgaPagedMediaAdapter.mjs';
@@ -1022,7 +1023,7 @@ export function broadcastEvent(payload) {
   }
 
   const topic = payload.topic || 'legacy';
-  eventBusInstance.broadcast(topic, payload);
+  return eventBusInstance.broadcast(topic, payload) || 0;
 }
 
 /**
@@ -2694,7 +2695,7 @@ export function createCalendarApiRouter(config) {
  * @param {string} [config.conversationId] - Nutribot Telegram chat conversation ID (health coach)
  * @returns {express.Router}
  */
-export function createAgentsApiRouter(config) {
+export async function createAgentsApiRouter(config) {
   const {
     logger = console,
     healthStore,
@@ -2708,6 +2709,7 @@ export function createAgentsApiRouter(config) {
     httpClient,
     messagingGateway = null,
     conversationId = null,
+    nutriListStore = null,
   } = config;
 
   // Mastra reads API keys from process.env — bridge from ConfigService
@@ -2747,6 +2749,47 @@ export function createAgentsApiRouter(config) {
       messagingGateway,
       conversationId: conversationId ?? configService?.getNutribotConversationId?.() ?? null,
     });
+  }
+
+  // Create coaching orchestrator (new template-driven system)
+  let coachingOrchestrator = null;
+  if (healthStore && messagingGateway) {
+    const { Agent } = await import('@mastra/core/agent');
+    const commentaryAgentFactory = () => new Agent({
+      name: 'health-coach-commentary',
+      instructions: CoachingCommentaryService.SYSTEM_PROMPT,
+      model: 'openai/gpt-4o-mini',
+    });
+
+    const commentaryService = new CoachingCommentaryService({
+      agentFactory: commentaryAgentFactory,
+      logger,
+    });
+
+    coachingOrchestrator = new CoachingOrchestrator({
+      commentaryService,
+      messagingGateway,
+      healthStore,
+      nutriListStore,
+      config: configService,
+      logger,
+    });
+  }
+
+  // Register scheduler tasks for coaching orchestrator
+  if (coachingOrchestrator && scheduler) {
+    const coachingConversationId = conversationId ?? configService?.getNutribotConversationId?.() ?? null;
+    const coachingUserId = configService?.getHeadOfHousehold?.() || 'default';
+
+    if (coachingConversationId) {
+      scheduler.registerTask('coaching:morning-brief', '0 10 * * *', async () => {
+        await coachingOrchestrator.sendMorningBrief({ userId: coachingUserId, conversationId: coachingConversationId });
+      });
+
+      scheduler.registerTask('coaching:weekly-digest', '0 19 * * 0', async () => {
+        await coachingOrchestrator.sendWeeklyDigest({ userId: coachingUserId, conversationId: coachingConversationId });
+      });
+    }
   }
 
   // Register paged-media-toc agent (requires AI gateway + paged media server access)
@@ -2811,6 +2854,8 @@ export function createAgentsApiRouter(config) {
   router.orchestrator = agentOrchestrator;
   // Expose scheduler for cross-domain task registration (e.g., journalist morning debrief)
   router.scheduler = scheduler;
+  // Expose coaching orchestrator for direct invocations (e.g., post-report hook)
+  router.coachingOrchestrator = coachingOrchestrator;
   return router;
 }
 
