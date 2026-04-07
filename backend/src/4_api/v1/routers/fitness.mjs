@@ -844,14 +844,22 @@ export function createFitnessRouter(config) {
           enrichmentService.handleEvent(event);
         }
 
-        // Trigger HealthCoachAgent exercise reaction (fire-and-forget)
-        // The assignment itself guards on calorie threshold (>200 cal)
-        if (adapter.shouldEnrich?.(event)) {
+        // Trigger coaching exercise reaction (fire-and-forget)
+        if (adapter.shouldEnrich?.(event) && event.calories > 200) {
           const userId = event.ownerId;
-          agentOrchestrator?.runAssignment('health-coach', 'exercise-reaction', {
-            userId,
-            context: { activity: event },
-          }).catch(err => logger.warn?.('strava.exerciseReaction.error', { error: err.message }));
+          const coachingOrchestrator = router.coachingOrchestrator;
+          const coachingConversationId = configService?.getNutribotConversationId?.() || null;
+          if (coachingOrchestrator && coachingConversationId) {
+            coachingOrchestrator.sendExerciseReaction({
+              userId,
+              conversationId: coachingConversationId,
+              activity: {
+                type: event.type || 'Workout',
+                durationMin: Math.round((event.duration || 0) / 60),
+                caloriesBurned: event.calories || 0,
+              },
+            }).catch(err => logger.warn?.('strava.exerciseReaction.error', { error: err.message }));
+          }
         }
 
         return res.status(200).json({ ok: true });
