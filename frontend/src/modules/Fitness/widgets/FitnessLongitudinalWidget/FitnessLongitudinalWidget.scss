@@ -1,0 +1,134 @@
+// frontend/src/modules/Fitness/widgets/FitnessLongitudinalWidget/FitnessLongitudinalWidget.scss
+
+.longitudinal-widget {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+}
+
+.longitudinal-skeleton {
+  height: 100%;
+}
+
+// ─── Panel ─────────────────────────────────────────
+
+.longitudinal-panel {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  flex: 1;
+}
+
+.longitudinal-panel__header {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.longitudinal-panel__header-sub {
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.longitudinal-panel__labels {
+  display: flex;
+  margin-bottom: 2px;
+}
+
+.longitudinal-panel__col-label {
+  flex: 1;
+  text-align: center;
+  font-size: 7px;
+  color: rgba(255, 255, 255, 0.25);
+}
+
+// ─── Sparkline Row ────────────────────────────────
+
+.sparkline-row {
+  display: flex;
+  align-items: flex-end;
+  height: 28px;
+  margin-bottom: 2px;
+
+  &--center-zero {
+    align-items: center;
+    height: 32px;
+  }
+}
+
+.sparkline-row__label {
+  width: 80px;
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.4);
+  padding-right: 8px;
+  text-align: right;
+  align-self: center;
+  flex-shrink: 0;
+}
+
+.sparkline-row__bars {
+  flex: 1;
+  display: flex;
+  gap: 1px;
+  align-items: flex-end;
+  height: 100%;
+  position: relative;
+}
+
+.sparkline-row--center-zero .sparkline-row__bars {
+  align-items: center;
+}
+
+.sparkline-row__zero-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.sparkline-row__col {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  cursor: pointer;
+
+  &--selected {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 2px;
+  }
+}
+
+.sparkline-row--center-zero .sparkline-row__col {
+  justify-content: center;
+}
+
+.sparkline-row__bar {
+  border-radius: 1px 1px 0 0;
+  min-height: 2px;
+  transition: height 0.2s;
+
+  &--empty {
+    height: 2px;
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  &--neg {
+    border-radius: 0 0 1px 1px;
+    margin-top: 1px;
+  }
+
+  &--pos {
+    border-radius: 1px 1px 0 0;
+    margin-bottom: 1px;
+    align-self: flex-end;
+    margin-top: auto;
+  }
+}
