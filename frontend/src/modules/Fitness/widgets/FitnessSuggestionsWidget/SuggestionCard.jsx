@@ -19,6 +19,13 @@ export default function SuggestionCard({ suggestion, onPlay, onBrowse }) {
 
   return (
     <div className={`suggestion-card suggestion-card--${type}${isMuted ? ' suggestion-card--muted' : ''}`}>
+      {/* Mini poster — overlays card, anchored bottom-left */}
+      {poster && (
+        <div className="suggestion-card__mini-poster">
+          <img src={poster} alt="" onError={(e) => { e.target.style.display = 'none'; }} />
+        </div>
+      )}
+
       {/* Image area — click to play */}
       <div
         className="suggestion-card__image"
@@ -47,11 +54,6 @@ export default function SuggestionCard({ suggestion, onPlay, onBrowse }) {
         tabIndex={0}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onBrowse?.(suggestion); }}
       >
-        {poster && (
-          <div className="suggestion-card__mini-poster">
-            <img src={poster} alt="" onError={(e) => { e.target.style.display = 'none'; }} />
-          </div>
-        )}
         <div className="suggestion-card__body-text">
           <div className="suggestion-card__title-desc">
             <span className="suggestion-card__title">{title}</span>
