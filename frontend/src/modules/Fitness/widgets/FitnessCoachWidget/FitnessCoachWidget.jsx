@@ -84,10 +84,49 @@ function CoachCard({ coach, liveNutrition, onCtaAction }) {
   );
 }
 
+function LongitudinalDayCard({ data }) {
+  return (
+    <DashboardCard className="dashboard-card--coach">
+      <Text size="sm" fw={700} mb="xs">{new Date(data.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</Text>
+      <Stack gap={4}>
+        <Text size="xs" c="dimmed">Exercise: {data.exerciseMinutes} min</Text>
+        <Text size="xs" c="dimmed">Burned: {data.caloriesBurned} cal</Text>
+        {data.steps != null && <Text size="xs" c="dimmed">Steps: {data.steps.toLocaleString()}</Text>}
+        {data.protein != null && <Text size="xs" c="dimmed">Protein: {data.protein}g</Text>}
+        {data.calorieBalance != null && <Text size="xs" c="dimmed">Balance: {data.calorieBalance > 0 ? '+' : ''}{data.calorieBalance} cal</Text>}
+      </Stack>
+    </DashboardCard>
+  );
+}
+
+function LongitudinalWeekCard({ data }) {
+  return (
+    <DashboardCard className="dashboard-card--coach">
+      <Text size="sm" fw={700} mb="xs">{data.label} — {new Date(data.weekEnd + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</Text>
+      <Stack gap={4}>
+        {data.avgWeight != null && <Text size="xs" c="dimmed">Avg Weight: {data.avgWeight} lb</Text>}
+        {data.weightCalorieBalance != null && <Text size="xs" c="dimmed">Wt Balance: {data.weightCalorieBalance > 0 ? '+' : ''}{Math.round(data.weightCalorieBalance)}/day</Text>}
+        <Text size="xs" c="dimmed">Exercise: {data.exerciseCalories.toLocaleString()} cal</Text>
+        {data.avgExerciseHr != null && <Text size="xs" c="dimmed">Avg HR: {Math.round(data.avgExerciseHr)} bpm</Text>}
+      </Stack>
+    </DashboardCard>
+  );
+}
+
 export default function FitnessCoachWidget() {
   const dashboard = useScreenData('dashboard');
   const nutrition = useScreenData('nutrition');
-  const { onCtaAction } = useFitnessScreen();
+  const { onCtaAction, longitudinalSelection } = useFitnessScreen();
+
+  // Longitudinal drill-down takes priority
+  if (longitudinalSelection?.data) {
+    if (longitudinalSelection.type === 'day') {
+      return <LongitudinalDayCard data={longitudinalSelection.data} />;
+    }
+    if (longitudinalSelection.type === 'week') {
+      return <LongitudinalWeekCard data={longitudinalSelection.data} />;
+    }
+  }
 
   if (!dashboard?.dashboard?.coach) return null;
 
