@@ -10,7 +10,7 @@ const BADGE_STYLES = {
 
 export default function SuggestionCard({ suggestion, onPlay, onBrowse }) {
   const { type, title, showTitle, description, thumbnail,
-          durationMinutes, progress, reason } = suggestion;
+          durationMinutes, progress, reason, poster } = suggestion;
 
   const badge = BADGE_STYLES[type] || BADGE_STYLES.discovery;
   const isMuted = type === 'resume' || type === 'favorite' || type === 'discovery';
@@ -47,27 +47,34 @@ export default function SuggestionCard({ suggestion, onPlay, onBrowse }) {
         tabIndex={0}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onBrowse?.(suggestion); }}
       >
-        <div className="suggestion-card__title-desc">
-          <span className="suggestion-card__title">{title}</span>
-          {description && <>{' — '}<span className="suggestion-card__desc-inline">{description}</span></>}
-        </div>
-
-        {type === 'resume' && progress && (
-          <div className="suggestion-card__progress">
-            <div className="suggestion-card__progress-bar">
-              <div className="suggestion-card__progress-fill" style={{ width: `${progress.percent}%` }} />
-            </div>
-            <span className="suggestion-card__progress-text">{progress.percent}%</span>
+        {poster && (
+          <div className="suggestion-card__mini-poster">
+            <img src={poster} alt="" onError={(e) => { e.target.style.display = 'none'; }} />
           </div>
         )}
+        <div className="suggestion-card__body-text">
+          <div className="suggestion-card__title-desc">
+            <span className="suggestion-card__title">{title}</span>
+            {description && <>{' — '}<span className="suggestion-card__desc-inline">{description}</span></>}
+          </div>
 
-        {type === 'memorable' && reason && (
-          <div className="suggestion-card__metric">{reason}</div>
-        )}
+          {type === 'resume' && progress && (
+            <div className="suggestion-card__progress">
+              <div className="suggestion-card__progress-bar">
+                <div className="suggestion-card__progress-fill" style={{ width: `${progress.percent}%` }} />
+              </div>
+              <span className="suggestion-card__progress-text">{progress.percent}%</span>
+            </div>
+          )}
 
-        {type === 'discovery' && reason && (
-          <div className="suggestion-card__reason">{reason}</div>
-        )}
+          {type === 'memorable' && reason && (
+            <div className="suggestion-card__metric">{reason}</div>
+          )}
+
+          {type === 'discovery' && reason && (
+            <div className="suggestion-card__reason">{reason}</div>
+          )}
+        </div>
       </div>
     </div>
   );
