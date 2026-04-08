@@ -536,11 +536,29 @@ export function createFitnessRouter(config) {
 
   /**
    * POST /api/fitness/save_session - Save session data
+   * Respects session_write_whitelist in fitness config — if set, only matching
+   * user-agent substrings are allowed to write. Empty or absent = allow all.
    */
   router.post('/save_session', async (req, res) => {
     const { sessionData, household } = req.body;
     if (!sessionData) {
       return res.status(400).json({ error: 'Session data is required' });
+    }
+
+    // Check session write whitelist
+    const fitnessConfig = fitnessConfigService?.loadRawConfig?.(household);
+    const whitelist = fitnessConfig?.session_write_whitelist;
+    if (Array.isArray(whitelist) && whitelist.length > 0) {
+      const ua = req.headers['user-agent'] || '';
+      const allowed = whitelist.some(pattern => ua.includes(pattern));
+      if (!allowed) {
+        logger.warn?.('fitness.sessions.save.blocked', {
+          reason: 'client not in session_write_whitelist',
+          userAgent: ua,
+          sessionId: sessionData?.sessionId,
+        });
+        return res.status(403).json({ error: 'Client not authorized to write sessions' });
+      }
     }
 
     try {
