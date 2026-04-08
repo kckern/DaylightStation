@@ -24,7 +24,7 @@ import { nowDate } from '#system/utils/time.mjs';
  * @returns {express.Router}
  */
 export function createHealthRouter(config) {
-  const { healthService, healthStore, configService, nutriListStore, dashboardService, catalogService, webNutribotAdapter, logger = console } = config;
+  const { healthService, healthStore, configService, nutriListStore, dashboardService, catalogService, webNutribotAdapter, longitudinalService, logger = console } = config;
   const router = express.Router();
 
   // JSON parsing middleware
@@ -81,6 +81,16 @@ export function createHealthRouter(config) {
       message: 'Daily health data retrieved successfully',
       data: healthData
     });
+  }));
+
+  /**
+   * GET /health/longitudinal
+   * Get longitudinal (30-day daily + 26-week weekly) aggregated health data
+   */
+  router.get('/longitudinal', asyncHandler(async (req, res) => {
+    const username = req.query.userId || getDefaultUsername();
+    const result = await longitudinalService.aggregate(username);
+    res.json(result);
   }));
 
   /**

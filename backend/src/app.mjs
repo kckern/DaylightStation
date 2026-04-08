@@ -778,6 +778,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     healthServices,
     configService,
     sessionService: fitnessServices.sessionService,
+    sessionDatastore: fitnessServices.sessionStore,
     entropyService: entropyServices.entropyService,
     lifePlanRepository: lifeplanResult.container.getLifePlanStore(),
     catalogService: healthServices.catalogService,
