@@ -46,10 +46,14 @@ export class DiscoveryStrategy {
     lapsedThreshold.setDate(lapsedThreshold.getDate() - lapsedDays);
     const lapsedThresholdStr = lapsedThreshold.toISOString().split('T')[0];
 
+    // Exclude specific show IDs from discovery
+    const excludeShowIds = new Set((cfg.discovery_exclude_shows || []).map(String));
+
     // Classify shows
     const lapsed = [];
     const fresh = [];
     for (const show of allShows) {
+      if (excludeShowIds.has(show.id)) continue;
       const compoundId = `plex:${show.id}`;
       const lastDone = lastDoneMap.get(compoundId);
       if (lastDone && lastDone < lapsedThresholdStr) {
