@@ -240,6 +240,66 @@ data:
           basis: "25%"
 ```
 
+## Suggestion Card Refinements
+
+These changes apply to the existing `FitnessSuggestionsWidget` cards, implemented alongside the longitudinal panels.
+
+### Mini Show Poster
+
+Every suggestion card displays a mini show poster in the bottom-left corner of the metadata area, overlapping into the thumbnail above.
+
+**Positioning:**
+- Flush left edge of card (no left margin — poster IS the left edge)
+- Flush bottom edge of card (no bottom margin — poster IS the bottom edge)
+- Extends upward past the metadata/thumbnail boundary into the episode thumbnail (negative top margin / absolute positioning)
+- Rounded only on top-right corner (`border-radius: 0 6px 0 0` since bottom-left is the card's own `border-radius`)
+- Subtle shadow (`box-shadow: 2px -2px 8px rgba(0,0,0,0.5)`) for depth
+
+**Dimensions:**
+- Width: 38px
+- Height: determined by the fixed metadata height — poster fills from card bottom up to ~16px above the metadata boundary
+- The poster uses `object-fit: cover` for the show poster image
+
+**Fixed metadata height:**
+The metadata area (below the thumbnail) has a fixed height regardless of content (title length, description lines, progress bar presence). This ensures the poster is always the same size and always anchored consistently. Content that doesn't fill the space simply leaves room; content is never truncated differently per card.
+
+**Text layout:**
+- All text content has `padding-left: 46px` to clear the poster (38px poster + 8px gap)
+- Title + description in a single `-webkit-line-clamp: 3` block
+- Additional metadata lines (suffer score, progress bar, "last done") below the clamped block
+
+**Duration badge:**
+Scooted up slightly (e.g., `bottom: 20px` instead of `bottom: 6px`) to avoid overlapping with the poster's upward encroachment into the thumbnail area.
+
+### Show Navigation with Episode Pre-Selection
+
+Clicking the metadata area of a suggestion card navigates to the show's episode browser with the specific episode pre-selected.
+
+**Frontend:** The `onBrowse` handler already passes `episodeId` to `onNavigate`:
+```javascript
+onNavigate({ type: 'show', id: localShowId, episodeId: suggestion.contentId })
+```
+
+**Receiving end:** The fitness show browser (`FitnessShow` / `SessionBrowserApp`) needs to accept an `episodeId` parameter and auto-scroll/highlight that episode when it loads. This may require:
+- Passing `episodeId` through the navigation context
+- The show browser reading the parameter on mount and scrolling to + selecting that episode
+
+If the show browser doesn't currently support episode pre-selection, add it as part of this implementation.
+
+### Strategy Priority Reorder
+
+The suggestion strategy execution order changes to prioritize resume over next-up:
+
+```
+1. ResumeStrategy     → partial playhead episodes (highest priority — active work)
+2. NextUpStrategy     → next unwatched episode from recent programs (max 4)
+3. FavoriteStrategy   → configured favorites (deduped against above)
+4. MemorableStrategy  → high-impact past episodes (max 2, shuffled from top 10)
+5. DiscoveryStrategy  → fills remaining slots
+```
+
+This requires updating the strategy array order in `bootstrap.mjs` where `FitnessSuggestionService` is instantiated.
+
 ## Edge Cases
 
 - **Missing data days:** Bars render as empty/minimal height. Null values show as gaps.
