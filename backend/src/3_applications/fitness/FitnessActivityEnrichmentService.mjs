@@ -611,6 +611,106 @@ export class FitnessActivityEnrichmentService {
   _addToCooldown(activityId) {
     this.#cooldown.set(String(activityId), Date.now() + COOLDOWN_TTL_MS);
   }
+
+  /**
+   * Re-enrich a Strava activity description after a voice memo is added.
+   * Loads the session from disk, injects the new memo into timeline events,
+   * rebuilds the description, and pushes to Strava if it changed.
+   *
+   * Fire-and-forget — callers should .catch() errors.
+   *
+   * @param {string} sessionId - Session ID (YYYYMMDDHHmmss format)
+   * @param {Object} newMemo - Transcribed memo object from VoiceMemoTranscriptionService
+   * @param {string} newMemo.transcriptClean - Cleaned transcript text
+   * @param {number} [newMemo.startedAt] - Memo start timestamp (epoch ms)
+   * @param {number} [newMemo.durationSeconds] - Memo duration
+   */
+  async reEnrichDescription(sessionId, newMemo) {
+    if (!sessionId || !newMemo?.transcriptClean) return;
+
+    // Derive date directory from sessionId (first 8 chars = YYYYMMDD)
+    const dateStr = `${sessionId.slice(0, 4)}-${sessionId.slice(4, 6)}-${sessionId.slice(6, 8)}`;
+    const filePath = path.join(this.#fitnessHistoryDir, dateStr, `${sessionId}.yml`);
+    const session = loadYamlSafe(filePath);
+
+    if (!session) {
+      this.#logger.debug?.('strava.voice_memo_backfill.no_session', { sessionId, filePath });
+      return;
+    }
+
+    // Extract activityId from session
+    const activityId = this.#extractActivityId(session);
+    if (!activityId) {
+      this.#logger.debug?.('strava.voice_memo_backfill.no_activity_id', { sessionId });
+      return;
+    }
+
+    // Inject the new memo into a copy of timeline events (session on disk doesn't have it yet)
+    const augmentedSession = {
+      ...session,
+      timeline: {
+        ...session.timeline,
+        events: [
+          ...(session.timeline?.events || []),
+          {
+            timestamp: newMemo.startedAt || Date.now(),
+            type: 'voice_memo',
+            data: {
+              transcript: newMemo.transcriptClean,
+              duration_seconds: newMemo.durationSeconds || 0,
+            },
+          },
+        ],
+      },
+    };
+
+    // Read warmup config
+    const fitnessConfig = this.#configService.getAppConfig('fitness');
+    const plex = fitnessConfig?.plex || {};
+    const warmupConfig = {
+      warmup_labels: plex.warmup_labels || [],
+      warmup_description_tags: plex.warmup_description_tags || [],
+      warmup_title_patterns: plex.warmup_title_patterns || [],
+    };
+
+    // Build fresh description with the new memo included
+    const enrichment = buildStravaDescription(augmentedSession, {}, warmupConfig);
+    if (!enrichment?.description) {
+      this.#logger.debug?.('strava.voice_memo_backfill.no_description', { sessionId, activityId });
+      return;
+    }
+
+    // Ensure auth
+    await this._ensureAuth();
+
+    // Fetch current Strava activity to compare
+    const currentActivity = await this.#stravaClient.getActivity(activityId);
+    if (currentActivity?.description?.trim() === enrichment.description.trim()) {
+      this.#logger.debug?.('strava.voice_memo_backfill.unchanged', { sessionId, activityId });
+      return;
+    }
+
+    // Push description only
+    await this.#stravaClient.updateActivity(activityId, { description: enrichment.description });
+
+    this.#logger.info?.('strava.voice_memo_backfill.pushed', {
+      sessionId,
+      activityId,
+      descriptionLength: enrichment.description.length,
+    });
+  }
+
+  /**
+   * Extract a Strava activityId from session data.
+   * @private
+   */
+  #extractActivityId(session) {
+    if (session.strava?.activityId) return String(session.strava.activityId);
+    for (const participant of Object.values(session.participants || {})) {
+      if (participant?.strava?.activityId) return String(participant.strava.activityId);
+    }
+    return null;
+  }
 }
 
 export default FitnessActivityEnrichmentService;
