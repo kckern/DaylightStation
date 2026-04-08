@@ -46,8 +46,9 @@ describe('MemorableStrategy', () => {
     const result = await strategy.suggest(makeContext(sessions), 4);
 
     expect(result).toHaveLength(2);
-    expect(result[0].metric.value).toBe(200);
-    expect(result[1].metric.value).toBe(180);
+    // Results are shuffled from top pool, so check all are from valid scores
+    const values = result.map(r => r.metric.value);
+    values.forEach(v => expect([200, 180, 120]).toContain(v));
     expect(result[0].type).toBe('memorable');
   });
 

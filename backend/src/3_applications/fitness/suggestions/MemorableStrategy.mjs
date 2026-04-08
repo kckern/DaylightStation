@@ -57,14 +57,28 @@ export class MemorableStrategy {
 
     const ranked = this.#ranker.rank(sessions);
 
-    // Dedup by episode contentId — only first occurrence
+    // Take top N candidates, dedup by episode, then shuffle and pick
+    const poolSize = cfg.memorable_pool_size ?? 10;
+    const deduped = [];
     const seen = new Set();
-    const results = [];
     for (const session of ranked) {
-      if (results.length >= max) break;
+      if (deduped.length >= poolSize) break;
       const cid = session.media.primary.contentId;
       if (seen.has(cid)) continue;
       seen.add(cid);
+      deduped.push(session);
+    }
+
+    // Shuffle the pool so we don't always show the same top entries
+    for (let i = deduped.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [deduped[i], deduped[j]] = [deduped[j], deduped[i]];
+    }
+
+    const results = [];
+    for (const session of deduped) {
+      if (results.length >= max) break;
+      const cid = session.media.primary.contentId;
 
       const showId = session.media.primary.grandparentId;
       const localShowId = showId?.replace(/^plex:/, '');
