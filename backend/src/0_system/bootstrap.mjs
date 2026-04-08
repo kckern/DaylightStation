@@ -961,8 +961,8 @@ export function createFitnessApiRouter(config) {
   // Create suggestion strategies and orchestrator
   const fitnessSuggestionService = new FitnessSuggestionService({
     strategies: [
-      new NextUpStrategy(),
       new ResumeStrategy(),
+      new NextUpStrategy(),
       new FavoriteStrategy(),
       new MemorableStrategy(),
       new DiscoveryStrategy(),
