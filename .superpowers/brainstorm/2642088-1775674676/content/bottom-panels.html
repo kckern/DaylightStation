@@ -1,0 +1,183 @@
+<h2>Bottom Panels — Longitudinal View</h2>
+<p class="subtitle">Sparkline bar grids with row labels. 30-day daily + 6-month weekly + coaching placeholder.</p>
+
+<div class="mockup">
+  <div class="mockup-header">Below Suggestions Grid — Full Width</div>
+  <div class="mockup-body" style="padding: 12px; background: #12122a; display: flex; gap: 10px;">
+
+    <!-- Left 75%: Two stacked grids -->
+    <div style="flex: 3; display: flex; flex-direction: column; gap: 10px;">
+
+      <!-- 30-Day Daily Grid -->
+      <div style="background: rgba(255,255,255,0.04); border-radius: 10px; padding: 10px 12px; border: 1px solid rgba(255,255,255,0.08);">
+        <div style="font-size: 10px; color: rgba(255,255,255,0.5); font-weight: 600; letter-spacing: 0.05em; margin-bottom: 8px;">PAST 30 DAYS</div>
+
+        <!-- Date headers -->
+        <div style="display: flex; gap: 1px; margin-left: 90px; margin-bottom: 4px;">
+          <script>
+            // Generate date labels
+            const dates30 = [];
+            for (let i = 29; i >= 0; i--) {
+              const d = new Date(); d.setDate(d.getDate() - i);
+              dates30.push(d.getDate());
+            }
+            document.currentScript.parentElement.innerHTML = dates30.map((d, i) =>
+              i % 7 === 0 ? `<div style="flex:1;text-align:center;font-size:7px;color:rgba(255,255,255,0.25);">${d}</div>` :
+              `<div style="flex:1;"></div>`
+            ).join('');
+          </script>
+        </div>
+
+        <!-- Row: Exercise Minutes -->
+        <div style="display: flex; align-items: flex-end; height: 28px; margin-bottom: 3px;">
+          <div style="width: 90px; font-size: 9px; color: rgba(255,255,255,0.4); padding-right: 8px; text-align: right; align-self: center;">Exercise Min</div>
+          <div style="flex: 1; display: flex; gap: 1px; align-items: flex-end; height: 100%;">
+            <script>
+              const exMins = [0,45,30,0,60,25,0,0,35,50,0,40,0,30,45,0,0,55,30,0,45,0,60,35,0,0,40,50,30,45];
+              document.currentScript.parentElement.innerHTML = exMins.map(v => {
+                const h = v ? Math.max(4, (v/60)*100) + '%' : '0';
+                const bg = v ? 'rgba(34,139,230,0.6)' : 'rgba(255,255,255,0.03)';
+                return `<div style="flex:1;height:${h};background:${bg};border-radius:1px 1px 0 0;min-height:${v?4:2}px;" title="${v} min"></div>`;
+              }).join('');
+            </script>
+          </div>
+        </div>
+
+        <!-- Row: Calories Burned -->
+        <div style="display: flex; align-items: flex-end; height: 28px; margin-bottom: 3px;">
+          <div style="width: 90px; font-size: 9px; color: rgba(255,255,255,0.4); padding-right: 8px; text-align: right; align-self: center;">Cals Burned</div>
+          <div style="flex: 1; display: flex; gap: 1px; align-items: flex-end; height: 100%;">
+            <script>
+              const cals = [0,380,250,0,520,180,0,0,290,420,0,350,0,240,380,0,0,470,260,0,390,0,510,300,0,0,340,430,250,380];
+              document.currentScript.parentElement.innerHTML = cals.map(v => {
+                const h = v ? Math.max(4, (v/550)*100) + '%' : '0';
+                const bg = v ? 'rgba(200,80,40,0.6)' : 'rgba(255,255,255,0.03)';
+                return `<div style="flex:1;height:${h};background:${bg};border-radius:1px 1px 0 0;min-height:${v?4:2}px;" title="${v} cal"></div>`;
+              }).join('');
+            </script>
+          </div>
+        </div>
+
+        <!-- Row: Steps -->
+        <div style="display: flex; align-items: flex-end; height: 28px; margin-bottom: 3px;">
+          <div style="width: 90px; font-size: 9px; color: rgba(255,255,255,0.4); padding-right: 8px; text-align: right; align-self: center;">Steps</div>
+          <div style="flex: 1; display: flex; gap: 1px; align-items: flex-end; height: 100%;">
+            <script>
+              const steps = [6200,8900,7500,5100,12000,9800,4200,3800,7600,11200,5500,8400,6100,7200,9500,4800,3500,10800,7900,5200,9100,6800,11500,8200,4500,3900,8600,10500,7100,9300];
+              document.currentScript.parentElement.innerHTML = steps.map(v => {
+                const h = Math.max(4, (v/13000)*100) + '%';
+                const bg = v > 10000 ? 'rgba(80,200,120,0.6)' : 'rgba(80,200,120,0.35)';
+                return `<div style="flex:1;height:${h};background:${bg};border-radius:1px 1px 0 0;min-height:4px;" title="${v.toLocaleString()} steps"></div>`;
+              }).join('');
+            </script>
+          </div>
+        </div>
+
+        <!-- Row: Protein -->
+        <div style="display: flex; align-items: flex-end; height: 28px; margin-bottom: 3px;">
+          <div style="width: 90px; font-size: 9px; color: rgba(255,255,255,0.4); padding-right: 8px; text-align: right; align-self: center;">Protein (g)</div>
+          <div style="flex: 1; display: flex; gap: 1px; align-items: flex-end; height: 100%;">
+            <script>
+              const protein = [120,145,130,90,155,140,80,75,135,150,95,142,88,128,148,82,70,158,132,85,145,100,160,138,78,72,140,152,125,143];
+              document.currentScript.parentElement.innerHTML = protein.map(v => {
+                const h = Math.max(4, (v/170)*100) + '%';
+                const bg = v >= 130 ? 'rgba(180,140,255,0.6)' : 'rgba(180,140,255,0.3)';
+                return `<div style="flex:1;height:${h};background:${bg};border-radius:1px 1px 0 0;min-height:4px;" title="${v}g"></div>`;
+              }).join('');
+            </script>
+          </div>
+        </div>
+
+        <!-- Row: Caloric +/- (nutrition-based) -->
+        <div style="display: flex; align-items: center; height: 32px;">
+          <div style="width: 90px; font-size: 9px; color: rgba(255,255,255,0.4); padding-right: 8px; text-align: right;">Cal +/−</div>
+          <div style="flex: 1; display: flex; gap: 1px; align-items: center; height: 100%; position: relative;">
+            <!-- Zero line -->
+            <div style="position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: rgba(255,255,255,0.1);"></div>
+            <script>
+              const deficit = [-400,-200,-350,100,-500,-250,200,300,-300,-450,150,-280,250,-320,-380,280,350,-480,-270,220,-350,180,-520,-300,250,320,-290,-420,-260,-360];
+              document.currentScript.parentElement.innerHTML = deficit.map(v => {
+                const pct = Math.min(Math.abs(v)/600, 1) * 45;
+                const isDeficit = v < 0;
+                const bg = isDeficit ? 'rgba(80,200,120,0.5)' : 'rgba(200,80,40,0.4)';
+                if (isDeficit) {
+                  return `<div style="flex:1;display:flex;flex-direction:column;height:100%;justify-content:center;"><div style="height:${pct}%;background:${bg};border-radius:0 0 1px 1px;margin-top:1px;" title="${v} cal"></div></div>`;
+                } else {
+                  return `<div style="flex:1;display:flex;flex-direction:column;height:100%;justify-content:center;align-items:stretch;"><div style="height:${pct}%;background:${bg};border-radius:1px 1px 0 0;margin-bottom:1px;align-self:stretch;margin-top:auto;" title="+${v} cal"></div></div>`;
+                }
+              }).join('');
+            </script>
+          </div>
+        </div>
+      </div>
+
+      <!-- 6-Month Weekly Grid -->
+      <div style="background: rgba(255,255,255,0.04); border-radius: 10px; padding: 10px 12px; border: 1px solid rgba(255,255,255,0.08);">
+        <div style="font-size: 10px; color: rgba(255,255,255,0.5); font-weight: 600; letter-spacing: 0.05em; margin-bottom: 8px;">PAST 6 MONTHS <span style="font-weight: 400; color: rgba(255,255,255,0.25);">· weekly</span></div>
+
+        <!-- Row: Avg Daily Cal +/- (weight-based) -->
+        <div style="display: flex; align-items: center; height: 32px; margin-bottom: 3px;">
+          <div style="width: 90px; font-size: 9px; color: rgba(255,255,255,0.4); padding-right: 8px; text-align: right;">Wt Cal +/−</div>
+          <div style="flex: 1; display: flex; gap: 2px; align-items: center; height: 100%; position: relative;">
+            <div style="position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: rgba(255,255,255,0.1);"></div>
+            <script>
+              const wkDef = [-350,-200,-500,-280,-420,-150,100,-380,-300,-450,-200,-320,50,-400,-250,-500,-180,-350,-280,-420,-100,-300,-450,-200,-380,-300];
+              document.currentScript.parentElement.innerHTML = wkDef.map(v => {
+                const pct = Math.min(Math.abs(v)/600, 1) * 45;
+                const isD = v < 0;
+                const bg = isD ? 'rgba(80,200,120,0.5)' : 'rgba(200,80,40,0.4)';
+                return isD
+                  ? `<div style="flex:1;display:flex;flex-direction:column;height:100%;justify-content:center;"><div style="height:${pct}%;background:${bg};border-radius:0 0 1px 1px;margin-top:1px;" title="${v}/day"></div></div>`
+                  : `<div style="flex:1;display:flex;flex-direction:column;height:100%;justify-content:center;"><div style="height:${pct}%;background:${bg};border-radius:1px 1px 0 0;margin-bottom:1px;margin-top:auto;" title="+${v}/day"></div></div>`;
+              }).join('');
+            </script>
+          </div>
+        </div>
+
+        <!-- Row: Weekly Exercise Cals -->
+        <div style="display: flex; align-items: flex-end; height: 28px; margin-bottom: 3px;">
+          <div style="width: 90px; font-size: 9px; color: rgba(255,255,255,0.4); padding-right: 8px; text-align: right; align-self: center;">Exer Cal/wk</div>
+          <div style="flex: 1; display: flex; gap: 2px; align-items: flex-end; height: 100%;">
+            <script>
+              const wkCals = [2200,1800,3100,2500,2800,1500,900,2600,2100,3200,1900,2400,800,2900,2000,3400,1700,2300,2600,2800,1200,2100,3000,1800,2500,2200];
+              document.currentScript.parentElement.innerHTML = wkCals.map(v => {
+                const h = Math.max(4, (v/3500)*100) + '%';
+                return `<div style="flex:1;height:${h};background:rgba(200,80,40,0.5);border-radius:1px 1px 0 0;min-height:4px;" title="${v} cal/wk"></div>`;
+              }).join('');
+            </script>
+          </div>
+        </div>
+
+        <!-- Row: Avg Exercise HR -->
+        <div style="display: flex; align-items: flex-end; height: 28px;">
+          <div style="width: 90px; font-size: 9px; color: rgba(255,255,255,0.4); padding-right: 8px; text-align: right; align-self: center;">Avg HR</div>
+          <div style="flex: 1; display: flex; gap: 2px; align-items: flex-end; height: 100%;">
+            <script>
+              const wkHr = [138,142,135,140,145,130,125,141,137,148,133,139,120,143,136,150,132,138,141,144,128,135,147,134,140,138];
+              document.currentScript.parentElement.innerHTML = wkHr.map(v => {
+                const h = Math.max(4, ((v-110)/50)*100) + '%';
+                const bg = v >= 140 ? 'rgba(255,100,100,0.5)' : 'rgba(255,100,100,0.3)';
+                return `<div style="flex:1;height:${h};background:${bg};border-radius:1px 1px 0 0;min-height:4px;" title="${v} bpm"></div>`;
+              }).join('');
+            </script>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right 25%: Coaching placeholder -->
+    <div style="flex: 1; background: rgba(255,255,255,0.04); border-radius: 10px; padding: 16px; border: 1px solid rgba(255,255,255,0.08); display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 280px;">
+      <div style="font-size: 32px; opacity: 0.2; margin-bottom: 12px;">🏋️</div>
+      <div style="font-size: 11px; color: rgba(255,255,255,0.3); text-align: center; font-weight: 600;">FITNESS COACHING</div>
+      <div style="font-size: 9px; color: rgba(255,255,255,0.2); text-align: center; margin-top: 4px;">Coming soon</div>
+    </div>
+
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top: 16px;">
+  <strong>Layout:</strong> 30-day daily sparklines (5 rows) on top, 6-month weekly sparklines (3 rows) below, coaching panel on the right.
+  Caloric +/− uses a center-zero axis (green below = deficit, red above = surplus).
+  All other rows grow upward from baseline.
+</p>

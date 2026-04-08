@@ -1,0 +1,126 @@
+<h2>Suggestion Card — Mini Poster Peek</h2>
+<p class="subtitle">Show poster flush left/bottom in metadata area, peeks up into thumbnail. 3 lines for next-up, existing lines for others.</p>
+
+<div class="mockup">
+  <div class="mockup-header">Card Variants</div>
+  <div class="mockup-body" style="padding: 20px; background: #12122a; display: flex; gap: 16px; flex-wrap: wrap;">
+
+    <!-- NEXT UP card -->
+    <div style="width: 240px; background: rgba(255,255,255,0.06); border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); position: relative;">
+      <!-- Episode thumbnail -->
+      <div style="height: 100px; background: linear-gradient(135deg, #2a1a3a, #1a2a4a); position: relative; overflow: hidden;">
+        <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;">
+          <span style="font-size: 11px; color: rgba(255,255,255,0.2);">Episode Thumbnail</span>
+        </div>
+        <div style="position: absolute; top: 6px; left: 6px; background: rgba(34,139,230,0.85); color: white; font-size: 8px; padding: 2px 5px; border-radius: 3px; font-weight: 600;">NEXT UP</div>
+        <!-- Duration scooted up to make room for poster peek -->
+        <div style="position: absolute; bottom: 16px; left: 6px; background: rgba(0,0,0,0.7); color: white; font-size: 9px; padding: 2px 5px; border-radius: 3px;">33m</div>
+        <div style="position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,0.7); color: rgba(255,255,255,0.7); font-size: 8px; padding: 2px 5px; border-radius: 3px;">1d ago</div>
+      </div>
+
+      <!-- Metadata area with poster -->
+      <div style="position: relative; padding: 5px 8px 6px 8px; min-height: 52px;">
+        <!-- Mini poster — flush left, flush bottom, peeks up -->
+        <div style="position: absolute; left: 0; bottom: 0; width: 36px; height: 60px; border-radius: 0 6px 0 10px; overflow: hidden; box-shadow: 2px -2px 6px rgba(0,0,0,0.4);">
+          <div style="width: 100%; height: 100%; background: linear-gradient(135deg, #3a2a1a, #2a1a3a); display: flex; align-items: center; justify-content: center;">
+            <span style="font-size: 7px; color: rgba(255,255,255,0.3); writing-mode: vertical-lr;">Poster</span>
+          </div>
+        </div>
+        <!-- Text content, offset for poster -->
+        <div style="margin-left: 42px;">
+          <div style="font-size: 10px; line-height: 1.35; color: rgba(255,255,255,0.3); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">
+            <span style="font-weight: 600; color: #e0e0e0;">Steady State Cardio 4</span> — Take a break from your weights and tune in to this low-impact steady-state cardio designed for zone 2 endurance building
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TOP EFFORT card -->
+    <div style="width: 240px; background: rgba(255,255,255,0.04); border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06); position: relative;">
+      <div style="height: 100px; background: linear-gradient(135deg, #3a1a1a, #2a1a2a); position: relative; overflow: hidden;">
+        <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;">
+          <span style="font-size: 11px; color: rgba(255,255,255,0.2);">Episode Thumbnail</span>
+        </div>
+        <div style="position: absolute; top: 6px; left: 6px; background: rgba(200,80,40,0.8); color: white; font-size: 8px; padding: 2px 5px; border-radius: 3px; font-weight: 600;">TOP EFFORT</div>
+        <div style="position: absolute; bottom: 16px; left: 6px; background: rgba(0,0,0,0.7); color: white; font-size: 9px; padding: 2px 5px; border-radius: 3px;">39m</div>
+      </div>
+
+      <div style="position: relative; padding: 5px 8px 6px 8px; min-height: 52px;">
+        <div style="position: absolute; left: 0; bottom: 0; width: 36px; height: 60px; border-radius: 0 6px 0 10px; overflow: hidden; box-shadow: 2px -2px 6px rgba(0,0,0,0.4);">
+          <div style="width: 100%; height: 100%; background: linear-gradient(135deg, #2a1a1a, #1a1a2a); display: flex; align-items: center; justify-content: center;">
+            <span style="font-size: 7px; color: rgba(255,255,255,0.3); writing-mode: vertical-lr;">Poster</span>
+          </div>
+        </div>
+        <div style="margin-left: 42px;">
+          <div style="font-size: 10px; line-height: 1.35; color: rgba(255,255,255,0.3); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">
+            <span style="font-weight: 600; color: #e0e0e0;">20 Min Boxing Class</span> — An intense boxing session with combos and burnout rounds
+          </div>
+          <div style="font-size: 8px; color: rgba(200,80,40,0.8); margin-top: 2px; font-weight: 600;">Suffer 47 — Jan 22 (77d ago)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TRY THIS card -->
+    <div style="width: 240px; background: rgba(255,255,255,0.04); border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06); position: relative;">
+      <div style="height: 100px; background: linear-gradient(135deg, #1a2a1a, #1a1a2a); position: relative; overflow: hidden;">
+        <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;">
+          <span style="font-size: 11px; color: rgba(255,255,255,0.2);">Episode Thumbnail</span>
+        </div>
+        <div style="position: absolute; top: 6px; left: 6px; background: rgba(80,160,80,0.7); color: white; font-size: 8px; padding: 2px 5px; border-radius: 3px; font-weight: 600;">TRY THIS</div>
+        <div style="position: absolute; bottom: 16px; left: 6px; background: rgba(0,0,0,0.7); color: white; font-size: 9px; padding: 2px 5px; border-radius: 3px;">35m</div>
+      </div>
+
+      <div style="position: relative; padding: 5px 8px 6px 8px; min-height: 52px;">
+        <div style="position: absolute; left: 0; bottom: 0; width: 36px; height: 60px; border-radius: 0 6px 0 10px; overflow: hidden; box-shadow: 2px -2px 6px rgba(0,0,0,0.4);">
+          <div style="width: 100%; height: 100%; background: linear-gradient(135deg, #1a2a1a, #1a1a3a); display: flex; align-items: center; justify-content: center;">
+            <span style="font-size: 7px; color: rgba(255,255,255,0.3); writing-mode: vertical-lr;">Poster</span>
+          </div>
+        </div>
+        <div style="margin-left: 42px;">
+          <div style="font-size: 10px; line-height: 1.35; color: rgba(255,255,255,0.3); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">
+            <span style="font-weight: 600; color: #e0e0e0;">Kettlebell Cleans</span> — Master the foundations of kettlebell technique
+          </div>
+          <div style="font-size: 8px; color: rgba(255,255,255,0.3); margin-top: 2px;">Last done 41 days ago</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RESUME card -->
+    <div style="width: 240px; background: rgba(255,255,255,0.04); border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06); position: relative;">
+      <div style="height: 100px; background: linear-gradient(135deg, #1a2a2a, #1a3a3a); position: relative; overflow: hidden;">
+        <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;">
+          <span style="font-size: 11px; color: rgba(255,255,255,0.2);">Episode Thumbnail</span>
+        </div>
+        <div style="position: absolute; top: 6px; left: 6px; background: rgba(200,160,40,0.85); color: white; font-size: 8px; padding: 2px 5px; border-radius: 3px; font-weight: 600;">RESUME</div>
+        <div style="position: absolute; bottom: 16px; left: 6px; background: rgba(0,0,0,0.7); color: white; font-size: 9px; padding: 2px 5px; border-radius: 3px;">126m</div>
+        <div style="position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,0.7); color: rgba(255,255,255,0.7); font-size: 8px; padding: 2px 5px; border-radius: 3px;">3d ago</div>
+      </div>
+
+      <div style="position: relative; padding: 5px 8px 6px 8px; min-height: 52px;">
+        <div style="position: absolute; left: 0; bottom: 0; width: 36px; height: 60px; border-radius: 0 6px 0 10px; overflow: hidden; box-shadow: 2px -2px 6px rgba(0,0,0,0.4);">
+          <div style="width: 100%; height: 100%; background: linear-gradient(135deg, #1a2a2a, #1a1a3a); display: flex; align-items: center; justify-content: center;">
+            <span style="font-size: 7px; color: rgba(255,255,255,0.3); writing-mode: vertical-lr;">Poster</span>
+          </div>
+        </div>
+        <div style="margin-left: 42px;">
+          <div style="font-size: 10px; line-height: 1.35; color: rgba(255,255,255,0.3); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">
+            <span style="font-weight: 600; color: #e0e0e0;">Mario Kart World</span> — Immerse yourself in a vibrant, interconnected racing experience
+          </div>
+          <div style="display: flex; align-items: center; gap: 4px; margin-top: 2px;">
+            <div style="flex: 1; height: 3px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden;">
+              <div style="width: 55%; height: 100%; background: rgba(200,160,40,0.7); border-radius: 2px;"></div>
+            </div>
+            <span style="font-size: 8px; color: rgba(255,255,255,0.35);">55%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top: 16px;">
+  Mini poster: 36px wide, flush left + flush bottom of the card (no margin). Peeks ~8px above the thumbnail/metadata boundary.
+  Rounded only on the top-right corner (border-radius: 0 6px 0 10px). Text content has left margin to clear the poster.
+  Duration badge scooted up slightly to avoid poster overlap. All card types get the poster treatment.
+</p>
