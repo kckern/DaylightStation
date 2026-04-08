@@ -34,6 +34,9 @@ export default function SuggestionCard({ suggestion, onPlay, onBrowse }) {
         {durationMinutes != null && (
           <span className="suggestion-card__duration">{durationMinutes}m</span>
         )}
+        {recency && (
+          <span className="suggestion-card__recency-overlay">{recency}</span>
+        )}
       </div>
 
       {/* Body area — click to browse show with episode selected */}
@@ -46,7 +49,6 @@ export default function SuggestionCard({ suggestion, onPlay, onBrowse }) {
       >
         <div className="suggestion-card__title-desc">
           <span className="suggestion-card__title">{title}</span>
-          {recency && <span className="suggestion-card__recency">{' · '}{recency}</span>}
           {description && <>{' — '}<span className="suggestion-card__desc-inline">{description}</span></>}
         </div>
 

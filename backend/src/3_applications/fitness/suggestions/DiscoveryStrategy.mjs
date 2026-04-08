@@ -85,7 +85,13 @@ export class DiscoveryStrategy {
       }
     }
 
-    // Resolve one episode per selected show
+    // Labels to exclude (governed labels like KidsFun + explicit exclusions)
+    const excludeLabels = new Set([
+      ...(fitnessConfig?.plex?.governed_labels || []),
+      ...(cfg.discovery_exclude_labels || []),
+    ]);
+
+    // Resolve one episode per selected show, filtering by labels
     const results = [];
     for (const show of selected) {
       let episodeData;
@@ -96,6 +102,12 @@ export class DiscoveryStrategy {
       }
 
       const episodes = episodeData.items || [];
+      if (episodes.length === 0) continue;
+
+      // Check if show has excluded labels (check first episode's labels as proxy)
+      const showLabels = episodes[0]?.metadata?.labels || [];
+      if (showLabels.some(l => excludeLabels.has(l))) continue;
+
       const nextUnwatched = episodes.find(ep => !ep.isWatched);
       const ep = nextUnwatched || episodes[Math.floor(Math.random() * episodes.length)];
       if (!ep) continue;
