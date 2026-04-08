@@ -7,6 +7,7 @@ import { readBinary, getBasename, fileExists } from '#system/utils/FileIO.mjs';
 import { TelegramChatRef } from '../telegram/TelegramChatRef.mjs';
 import { ConversationId } from '#domains/messaging/value-objects/ConversationId.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { retryTransient } from '#system/utils/retryTransient.mjs';
 
 const TELEGRAM_API_BASE = 'https://api.telegram.org/bot';
 
@@ -39,34 +40,47 @@ export class TelegramAdapter {
   async callApi(method, params = {}, httpMethod = 'POST') {
     const url = `${TELEGRAM_API_BASE}${this.token}/${method}`;
 
-    try {
-      let response;
-      if (httpMethod === 'GET') {
-        const queryString = new URLSearchParams(params).toString();
-        const fullUrl = queryString ? `${url}?${queryString}` : url;
-        response = await this.httpClient.get(fullUrl);
-      } else {
-        response = await this.httpClient.post(url, params);
-      }
+    return retryTransient(async () => {
+      try {
+        let response;
+        if (httpMethod === 'GET') {
+          const queryString = new URLSearchParams(params).toString();
+          const fullUrl = queryString ? `${url}?${queryString}` : url;
+          response = await this.httpClient.get(fullUrl);
+        } else {
+          response = await this.httpClient.post(url, params);
+        }
 
-      const data = response.data || response;
-      if (!data.ok) {
-        this.metrics.errors++;
-        this.logger.error?.('telegram.api.error', { method, error: data.description });
-        const apiError = new Error(data.description || 'Unknown messaging API error');
-        apiError._isApiError = true;
-        throw apiError;
-      }
+        const data = response.data || response;
+        if (!data.ok) {
+          this.metrics.errors++;
+          this.logger.error?.('telegram.api.error', { method, error: data.description });
+          const apiError = new Error(data.description || 'Unknown messaging API error');
+          apiError._isApiError = true;
+          throw apiError;
+        }
 
-      return data.result;
-    } catch (error) {
-      // Only increment errors for network-level failures (not already-handled API errors)
-      if (!error._isApiError) {
-        this.metrics.errors++;
-        this.logger.error?.('telegram.api.error', { method, error: error.message });
+        return data.result;
+      } catch (error) {
+        // Only increment errors for network-level failures (not already-handled API errors)
+        if (!error._isApiError) {
+          this.metrics.errors++;
+          this.logger.error?.('telegram.api.error', { method, error: error.message });
+        }
+        throw error;
       }
-      throw error;
-    }
+    }, {
+      maxAttempts: 3,
+      baseDelay: 500,
+      onRetry: (attempt, error) => {
+        this.logger.warn?.('telegram.api.retry', {
+          method,
+          attempt,
+          error: error.message,
+          code: error.code || error.cause?.code
+        });
+      }
+    });
   }
 
   // ============ IMessagingGateway Implementation ============

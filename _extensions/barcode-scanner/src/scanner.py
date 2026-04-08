@@ -208,35 +208,18 @@ def publish_barcode(client, barcode):
 
 # ── Main loop ────────────────────────────────────────────────────
 
+RECONNECT_DELAY = float(os.environ.get('RECONNECT_DELAY', '2'))       # initial delay
+MAX_RECONNECT_DELAY = float(os.environ.get('MAX_RECONNECT_DELAY', '60'))  # cap
+
+
 def run():
-    device = find_scanner_device()
-    if not device:
-        log.error('Scanner device not found (path=%s, name_match=%s)', DEVICE_PATH, DEVICE_NAME_MATCH)
-        sys.exit(1)
-
-    # Grab exclusive access — suppresses keyboard passthrough
-    device.grab()
-    log.info('Exclusive grab acquired on %s', device.path)
-
-    # Open SNAPI hidraw for ACK responses (suppresses triple-beep)
-    snapi_fd = open_snapi_device()
-
     client = create_mqtt_client()
-
-    buffer = []
-    shifted = False
+    _shutting_down = False
 
     def shutdown(signum, frame):
+        nonlocal _shutting_down
+        _shutting_down = True
         log.info('Shutting down (signal %d)', signum)
-        try:
-            device.ungrab()
-        except OSError:
-            pass
-        if snapi_fd is not None:
-            try:
-                os.close(snapi_fd)
-            except OSError:
-                pass
         client.loop_stop()
         client.disconnect()
         sys.exit(0)
@@ -244,40 +227,38 @@ def run():
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
 
-    log.info('Listening for scans (timeout=%.0fms)...', SCAN_TIMEOUT * 1000)
+    delay = RECONNECT_DELAY
 
-    try:
-        while True:
-            # Wait for events, with timeout to flush buffer
-            timeout = SCAN_TIMEOUT if buffer else None
-            r, _, _ = select.select([device.fd], [], [], timeout)
+    while not _shutting_down:
+        device = find_scanner_device()
+        if not device:
+            log.warning('Scanner not found, retrying in %.0fs...', delay)
+            time.sleep(delay)
+            delay = min(delay * 2, MAX_RECONNECT_DELAY)
+            continue
 
-            # Timeout with pending buffer = end of barcode
-            if not r:
-                if buffer:
-                    barcode = ''.join(buffer)
-                    publish_barcode(client, barcode)
-                    send_snapi_ack(snapi_fd)
-                    buffer.clear()
-                continue
+        try:
+            device.grab()
+            log.info('Exclusive grab acquired on %s', device.path)
+        except OSError as e:
+            log.warning('Cannot grab device: %s, retrying in %.0fs...', e, delay)
+            time.sleep(delay)
+            delay = min(delay * 2, MAX_RECONNECT_DELAY)
+            continue
 
-            for event in device.read():
-                if event.type != ecodes.EV_KEY:
-                    continue
+        snapi_fd = open_snapi_device()
+        buffer = []
+        shifted = False
+        delay = RECONNECT_DELAY  # reset backoff on successful connect
 
-                key_event = evdev.categorize(event)
+        log.info('Listening for scans (timeout=%.0fms)...', SCAN_TIMEOUT * 1000)
 
-                # Track shift state
-                if key_event.scancode in (ecodes.KEY_LEFTSHIFT, ecodes.KEY_RIGHTSHIFT):
-                    shifted = key_event.keystate in (key_event.key_down, key_event.key_hold)
-                    continue
+        try:
+            while not _shutting_down:
+                timeout = SCAN_TIMEOUT if buffer else None
+                r, _, _ = select.select([device.fd], [], [], timeout)
 
-                # Only process key-down events
-                if key_event.keystate != key_event.key_down:
-                    continue
-
-                # Enter = end of barcode (some scanners send it)
-                if key_event.scancode == ecodes.KEY_ENTER:
+                if not r:
                     if buffer:
                         barcode = ''.join(buffer)
                         publish_barcode(client, barcode)
@@ -285,15 +266,50 @@ def run():
                         buffer.clear()
                     continue
 
-                char = keycode_to_char(key_event.scancode, shifted)
-                if char:
-                    buffer.append(char)
+                for event in device.read():
+                    if event.type != ecodes.EV_KEY:
+                        continue
 
-    except OSError as e:
-        log.error('Device read error (unplugged?): %s', e)
-        client.loop_stop()
-        client.disconnect()
-        sys.exit(1)
+                    key_event = evdev.categorize(event)
+
+                    if key_event.scancode in (ecodes.KEY_LEFTSHIFT, ecodes.KEY_RIGHTSHIFT):
+                        shifted = key_event.keystate in (key_event.key_down, key_event.key_hold)
+                        continue
+
+                    if key_event.keystate != key_event.key_down:
+                        continue
+
+                    if key_event.scancode == ecodes.KEY_ENTER:
+                        if buffer:
+                            barcode = ''.join(buffer)
+                            publish_barcode(client, barcode)
+                            send_snapi_ack(snapi_fd)
+                            buffer.clear()
+                        continue
+
+                    char = keycode_to_char(key_event.scancode, shifted)
+                    if char:
+                        buffer.append(char)
+
+        except OSError as e:
+            log.warning('Device disconnected: %s — will reconnect in %.0fs', e, delay)
+        finally:
+            try:
+                device.ungrab()
+            except OSError:
+                pass
+            if snapi_fd is not None:
+                try:
+                    os.close(snapi_fd)
+                except OSError:
+                    pass
+
+        if not _shutting_down:
+            time.sleep(delay)
+            delay = min(delay * 2, MAX_RECONNECT_DELAY)
+
+    client.loop_stop()
+    client.disconnect()
 
 
 if __name__ == '__main__':

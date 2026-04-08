@@ -57,6 +57,7 @@ export class ResumeStrategy {
           showId: show.showId,
           title: ep.title,
           showTitle: show.showTitle,
+          description: ep.metadata?.summary || null,
           thumbnail: ep.thumbnail || `/api/v1/display/plex/${ep.localId}`,
           poster: `/api/v1/content/plex/image/${localId}`,
           durationMinutes: ep.duration ? Math.round(ep.duration / 60) : null,

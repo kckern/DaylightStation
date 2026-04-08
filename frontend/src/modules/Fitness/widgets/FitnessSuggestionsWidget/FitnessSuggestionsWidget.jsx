@@ -33,27 +33,26 @@ export default function FitnessSuggestionsWidget() {
   const rawData = useScreenData('suggestions');
   const { onPlay, onNavigate } = useFitnessScreen();
 
-  const handleClick = useCallback((suggestion) => {
-    if (suggestion.action === 'browse' && onNavigate) {
-      const { localId } = parseContentId(suggestion.showId);
-      onNavigate({ type: 'show', id: localId });
-      return;
-    }
+  const handlePlay = useCallback((suggestion) => {
+    if (!onPlay) return;
+    const { source, localId } = parseContentId(suggestion.contentId);
+    onPlay({
+      id: localId,
+      contentSource: source,
+      type: 'episode',
+      title: suggestion.title,
+      videoUrl: DaylightMediaPath(`api/v1/play/${source}/${localId}`),
+      image: DaylightMediaPath(suggestion.thumbnail?.replace(/^\//, '') || `api/v1/display/${source}/${localId}`),
+      duration: suggestion.durationMinutes,
+      ...(suggestion.progress ? { resumePosition: suggestion.progress.playhead } : {}),
+    });
+  }, [onPlay]);
 
-    if (suggestion.action === 'play' && onPlay) {
-      const { source, localId } = parseContentId(suggestion.contentId);
-      onPlay({
-        id: localId,
-        contentSource: source,
-        type: 'episode',
-        title: suggestion.title,
-        videoUrl: DaylightMediaPath(`api/v1/play/${source}/${localId}`),
-        image: DaylightMediaPath(suggestion.thumbnail?.replace(/^\//, '') || `api/v1/display/${source}/${localId}`),
-        duration: suggestion.durationMinutes,
-        ...(suggestion.progress ? { resumePosition: suggestion.progress.playhead } : {}),
-      });
-    }
-  }, [onPlay, onNavigate]);
+  const handleBrowse = useCallback((suggestion) => {
+    if (!onNavigate) return;
+    const { localId } = parseContentId(suggestion.showId);
+    onNavigate({ type: 'show', id: localId, episodeId: suggestion.contentId });
+  }, [onNavigate]);
 
   if (rawData === null) return <SuggestionsGridSkeleton />;
 
@@ -63,7 +62,7 @@ export default function FitnessSuggestionsWidget() {
   return (
     <div className="suggestions-grid">
       {suggestions.map((s, i) => (
-        <SuggestionCard key={s.contentId || i} suggestion={s} onClick={handleClick} />
+        <SuggestionCard key={s.contentId || i} suggestion={s} onPlay={handlePlay} onBrowse={handleBrowse} />
       ))}
     </div>
   );

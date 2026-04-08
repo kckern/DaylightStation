@@ -1,6 +1,10 @@
 import path from 'path';
 import fs from 'fs';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { WeeklyReviewAggregator } from '../../2_domains/weekly-review/WeeklyReviewAggregator.mjs';
+
+const execFileAsync = promisify(execFile);
 
 export class WeeklyReviewService {
   #dataPath;
@@ -135,12 +139,28 @@ export class WeeklyReviewService {
     // Save audio to media volume
     const ext = mimeType === 'audio/ogg' ? 'ogg' : 'webm';
     this.#logger.debug?.('weekly-review.recording.file', { week, bytes: buffer.length, ext });
-    const audioDir = path.join(this.#mediaPath, 'weekly-review', week);
-    const audioPath = path.join(audioDir, `recording.${ext}`);
+    const now = new Date();
+    const localDate = now.toLocaleDateString('en-CA', { timeZone: process.env.TZ || 'UTC' });
+    const localTime = now.toLocaleTimeString('en-GB', { timeZone: process.env.TZ || 'UTC', hour12: false }).replace(/:/g, '-');
+    const audioDir = path.join(this.#mediaPath, 'weekly-review', localDate);
+    const audioPath = path.join(audioDir, `recording-${localDate}-${localTime}.${ext}`);
 
     fs.mkdirSync(audioDir, { recursive: true });
     fs.writeFileSync(audioPath, buffer);
     this.#logger.info?.('weekly-review.recording.audio-saved', { week, path: audioPath, bytes: buffer.length });
+
+    // Convert to mp3
+    const mp3Path = audioPath.replace(/\.\w+$/, '.mp3');
+    try {
+      const convertStart = Date.now();
+      await execFileAsync('ffmpeg', ['-i', audioPath, '-y', '-codec:a', 'libmp3lame', '-q:a', '4', mp3Path]);
+      const mp3Size = fs.statSync(mp3Path).size;
+      this.#logger.info?.('weekly-review.recording.mp3-converted', {
+        week, mp3Path, mp3SizeKb: Math.round(mp3Size / 1024), durationMs: Date.now() - convertStart,
+      });
+    } catch (err) {
+      this.#logger.error?.('weekly-review.recording.mp3-failed', { error: err.message });
+    }
 
     // Transcribe
     const transcribeStart = Date.now();
@@ -204,7 +224,11 @@ export class WeeklyReviewService {
     const now = new Date();
     const daysAgo = new Date(now);
     daysAgo.setDate(now.getDate() - 7);
-    return daysAgo.toISOString().slice(0, 10);
+    // Use locale-aware formatting to respect TZ env var
+    const year = daysAgo.toLocaleString('en-CA', { year: 'numeric', timeZone: process.env.TZ || 'UTC' });
+    const month = daysAgo.toLocaleString('en-CA', { month: '2-digit', timeZone: process.env.TZ || 'UTC' });
+    const day = daysAgo.toLocaleString('en-CA', { day: '2-digit', timeZone: process.env.TZ || 'UTC' });
+    return `${year}-${month}-${day}`;
   }
 
   #addDays(dateStr, days) {

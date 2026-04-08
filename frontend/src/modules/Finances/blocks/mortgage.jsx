@@ -100,7 +100,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
     const options = {
       chart: {
       backgroundColor: "transparent",
-      style: { fontFamily: "sans-serif" },
+      style: { fontFamily: "sans-serif", marginBottom: '2rem' },
       zoomType: zoomable ? 'x' : undefined,
       panning: zoomable ? { enabled: true, type: 'x' } : undefined,
       panKey: zoomable ? 'shift' : undefined,

@@ -249,6 +249,8 @@ export class WebSocketEventBus {
       sentCount,
       clientCount: this.#clients.size
     });
+
+    return sentCount;
   }
 
   // ===========================================================================

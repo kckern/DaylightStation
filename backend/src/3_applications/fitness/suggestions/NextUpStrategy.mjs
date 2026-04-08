@@ -48,6 +48,7 @@ export class NextUpStrategy {
         showId: show.showId,
         title: nextEp.title,
         showTitle: show.showTitle,
+        description: nextEp.metadata?.summary || null,
         thumbnail: nextEp.thumbnail || `/api/v1/display/plex/${nextEp.localId}`,
         poster: `/api/v1/content/plex/image/${localId}`,
         durationMinutes: nextEp.duration ? Math.round(nextEp.duration / 60) : null,

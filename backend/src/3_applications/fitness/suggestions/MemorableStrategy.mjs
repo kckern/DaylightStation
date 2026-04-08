@@ -17,7 +17,9 @@ export class SufferScoreRanker {
   getReason(session) {
     const d = new Date(session.date + 'T12:00:00');
     const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    return `Highest suffer score — ${dateStr}`;
+    const days = Math.round((new Date() - d) / 86400000);
+    const ago = days === 0 ? 'today' : days === 1 ? '1 day ago' : `${days} days ago`;
+    return `Suffer ${session.maxSufferScore} — ${dateStr} (${ago})`;
   }
 }
 

@@ -234,7 +234,15 @@ export class BudgetCompilationService {
       paycheckDatesThisMonth = paycheckDatesThisMonth.filter(d => d >= cutoff);
     }
 
-    const paychecks = paycheckDatesThisMonth.map(date => ({ date, amount: paycheckAmount }));
+    const paychecks = paycheckDatesThisMonth.map(date => ({
+      date,
+      amount: paycheckAmount,
+      description: 'Anticipated Paycheck',
+      transactionType: 'income',
+      tagNames: ['Income'],
+      tag: 'Income',
+      flag: 'Anticipated'
+    }));
     const payCheckIncomeAmount = paychecks.reduce((acc, p) => acc + p.amount, 0);
     const paycheckCountThisMonth = paychecks.length;
 
@@ -242,13 +250,57 @@ export class BudgetCompilationService {
     const extraIncomeTransactions = this.#getExtraIncomeForMonth(incomeConfig.extra, month, cutoff);
     const extraIncomeAmount = extraIncomeTransactions.reduce((acc, t) => acc + t.amount, 0);
 
-    const income = payCheckIncomeAmount + extraIncomeAmount;
-    const incomeTransactions = [...paychecks, ...extraIncomeTransactions].sort(
+    // Calculate RSU vesting income for this month
+    const rsuConfig = incomeConfig.rsu;
+    const rsuVestsThisMonth = (rsuConfig?.vests || []).filter(v => v.date === month);
+    const defaultWithholdingRate = rsuConfig?.withholdingRate ?? 0;
+
+    const rsuIncomeTransactions = rsuVestsThisMonth.map(vest => ({
+      date: `${vest.date}-01`,
+      amount: this.#round(vest.shares * vest.price),
+      description: 'Anticipated RSU Vesting',
+      transactionType: 'income',
+      tagNames: ['Income'],
+      tag: 'Income',
+      flag: 'Anticipated'
+    }));
+    const rsuIncomeAmount = rsuIncomeTransactions.reduce((acc, t) => acc + t.amount, 0);
+
+    const income = payCheckIncomeAmount + extraIncomeAmount + rsuIncomeAmount;
+    const incomeTransactions = [...paychecks, ...extraIncomeTransactions, ...rsuIncomeTransactions].sort(
       (a, b) => a.date.localeCompare(b.date)
     );
 
     // Calculate monthly expenses
     const monthlyCategories = this.#calculateMonthlyCategories(monthly, month, cutoff, paycheckCountThisMonth);
+
+    // Add RSU tax withholding to Taxes category
+    for (const vest of rsuVestsThisMonth) {
+      const gross = this.#round(vest.shares * vest.price);
+      const rate = vest.withholdingRate ?? defaultWithholdingRate;
+      const taxAmount = this.#round(gross * rate);
+      if (taxAmount > 0) {
+        if (!monthlyCategories['Taxes']) {
+          monthlyCategories['Taxes'] = { amount: 0, credits: 0, debits: 0, transactions: [] };
+        }
+        if (!monthlyCategories['Taxes'].transactions) {
+          monthlyCategories['Taxes'].transactions = [];
+        }
+        monthlyCategories['Taxes'].amount = this.#round(monthlyCategories['Taxes'].amount + taxAmount);
+        monthlyCategories['Taxes'].debits = this.#round(monthlyCategories['Taxes'].debits + taxAmount);
+        monthlyCategories['Taxes'].transactions.push({
+          date: `${vest.date}-01`,
+          amount: taxAmount,
+          expenseAmount: taxAmount,
+          description: 'Anticipated RSU Withholding',
+          transactionType: 'expense',
+          tagNames: ['Taxes'],
+          tag: 'Taxes',
+          flag: 'Anticipated'
+        });
+      }
+    }
+
     const categorySpending = Object.values(monthlyCategories).reduce((acc, { amount }) => acc + amount, 0);
 
     const dayToDaySpending = dayToDay.amount;
@@ -257,6 +309,7 @@ export class BudgetCompilationService {
 
     return {
       income,
+      rsuIncome: rsuIncomeAmount,
       incomeTransactions,
       monthlyCategories,
       monthlySpending,
@@ -383,26 +436,21 @@ export class BudgetCompilationService {
 
     const endOfMonth = this.#getEndOfMonth(month);
 
-    // Calculate anticipated income
+    // Calculate anticipated income using individual future transactions
     const anticipatedIncome = parseFloat(futureData.income) - parseFloat(pastData.nonBonusIncome || 0);
     currentData.income = parseFloat(pastData.income) + anticipatedIncome;
 
+    // Use granular future income transactions instead of a single lump sum
+    const anticipatedIncomeTransactions = futureData.incomeTransactions.filter(txn => txn.flag === 'Anticipated');
     currentData.incomeTransactions = [
       ...pastData.incomeTransactions,
-      {
-        date: endOfMonth,
-        transactionType: 'income',
-        amount: anticipatedIncome,
-        description: 'Anticipated Income',
-        tagNames: ['Income'],
-        tag: 'Income',
-        flag: 'Anticipated'
-      }
+      ...anticipatedIncomeTransactions
     ];
 
-    // Add anticipated taxes
-    const anticipatedTaxRate = 0.2; // Default tax rate
-    const anticipatedTaxAmount = this.#round(anticipatedIncome * anticipatedTaxRate);
+    // Add anticipated taxes on salary only — RSU taxes flow through monthly categories merge
+    const anticipatedTaxRate = config.income?.salary?.withholdingRate ?? 0.2;
+    const salaryAnticipatedIncome = anticipatedIncome - (futureData.rsuIncome || 0);
+    const anticipatedTaxAmount = this.#round(salaryAnticipatedIncome * anticipatedTaxRate);
 
     if (anticipatedTaxAmount > 0) {
       if (!currentData.monthlyCategories['Taxes']) {
@@ -415,7 +463,7 @@ export class BudgetCompilationService {
         transactionType: 'expense',
         amount: anticipatedTaxAmount,
         expenseAmount: anticipatedTaxAmount,
-        description: 'Anticipated Withholding',
+        description: 'Anticipated Taxes',
         tagNames: ['Taxes'],
         tag: 'Taxes',
         flag: 'Anticipated'
@@ -869,7 +917,15 @@ export class BudgetCompilationService {
       }
       if (datesInMonth.length === 0) return acc;
 
-      const transactions = datesInMonth.map(date => ({ date, amount, description }));
+      const transactions = datesInMonth.map(date => ({
+        date,
+        amount,
+        description: `Anticipated ${description || 'Extra Income'}`,
+        transactionType: 'income',
+        tagNames: ['Income'],
+        tag: 'Income',
+        flag: 'Anticipated'
+      }));
       return [...acc, ...transactions];
     }, []);
   }

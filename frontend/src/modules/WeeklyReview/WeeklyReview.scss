@@ -126,8 +126,10 @@
     background: #3a5a3a;
     color: #aaffaa;
 
-    &:hover {
+    &:hover, &.focused {
       background: #4a6a4a;
+      outline: 3px solid #aaffaa;
+      outline-offset: 2px;
     }
   }
 
@@ -135,8 +137,10 @@
     background: #c0392b;
     color: white;
 
-    &:hover {
+    &:hover, &.focused {
       background: #e74c3c;
+      outline: 3px solid #ffffff;
+      outline-offset: 2px;
     }
   }
 }

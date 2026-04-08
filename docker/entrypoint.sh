@@ -42,6 +42,18 @@ if [ -d "/usr/src/app/data" ]; then
     fi
 fi
 
+# Fix media volume ownership
+if [ -d "/usr/src/app/media" ]; then
+    BAD_FILES=$(find /usr/src/app/media -not -user node 2>/dev/null | head -1)
+    if [ -n "$BAD_FILES" ]; then
+        echo "[Entrypoint] Fixing media directory ownership..."
+        find /usr/src/app/media -not -user node -exec chown node:node {} +
+        echo "[Entrypoint] Media ownership fix complete"
+    else
+        echo "[Entrypoint] Media directory ownership OK"
+    fi
+fi
+
 # Drop privileges and start app
 cd backend
 exec su-exec node forever index.js

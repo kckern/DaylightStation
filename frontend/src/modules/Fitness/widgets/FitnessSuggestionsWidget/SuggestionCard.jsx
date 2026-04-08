@@ -8,29 +8,29 @@ const BADGE_STYLES = {
   discovery:  { bg: 'rgba(80,160,80,0.7)',   label: 'TRY THIS' },
 };
 
-export default function SuggestionCard({ suggestion, onClick }) {
-  const { type, title, showTitle, thumbnail, poster, orientation,
-          durationMinutes, progress, metric, reason, action } = suggestion;
+export default function SuggestionCard({ suggestion, onPlay, onBrowse }) {
+  const { type, title, showTitle, description, thumbnail, poster,
+          durationMinutes, progress, reason } = suggestion;
 
   const badge = BADGE_STYLES[type] || BADGE_STYLES.discovery;
-  const isPortrait = orientation === 'portrait';
-  const imgSrc = isPortrait ? poster : thumbnail;
   const isMuted = type === 'resume' || type === 'favorite' || type === 'discovery';
 
   return (
-    <div
-      className={`suggestion-card suggestion-card--${type}${isMuted ? ' suggestion-card--muted' : ''}`}
-      onClick={() => onClick?.(suggestion)}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onClick?.(suggestion); }}
-    >
-      <div className={`suggestion-card__image${isPortrait ? ' suggestion-card__image--portrait' : ''}`}>
-        <img
-          src={imgSrc}
-          alt=""
-          onError={(e) => { e.target.style.display = 'none'; }}
-        />
+    <div className={`suggestion-card suggestion-card--${type}${isMuted ? ' suggestion-card--muted' : ''}`}>
+      {/* Image area — click to play */}
+      <div
+        className="suggestion-card__image"
+        onClick={() => onPlay?.(suggestion)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onPlay?.(suggestion); }}
+      >
+        <div className="suggestion-card__thumb">
+          <img src={thumbnail} alt="" onError={(e) => { e.target.style.display = 'none'; }} />
+        </div>
+        <div className="suggestion-card__poster">
+          <img src={poster} alt="" onError={(e) => { e.target.style.display = 'none'; }} />
+        </div>
         <span className="suggestion-card__badge" style={{ background: badge.bg }}>
           {badge.label}
         </span>
@@ -39,36 +39,40 @@ export default function SuggestionCard({ suggestion, onClick }) {
         )}
       </div>
 
-      <div className="suggestion-card__body">
+      {/* Body area — click to browse show with episode selected */}
+      <div
+        className="suggestion-card__body"
+        onClick={() => onBrowse?.(suggestion)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onBrowse?.(suggestion); }}
+      >
         {showTitle && showTitle !== title && (
           <div className="suggestion-card__show-title">{showTitle}</div>
         )}
-        <div className="suggestion-card__title">{title}</div>
+
+        <div className="suggestion-card__title-row">
+          <span className="suggestion-card__title">{title}</span>
+          {(type === 'next_up' || type === 'resume') && suggestion.lastSessionDate && (
+            <span className="suggestion-card__recency">{formatRecency(suggestion.lastSessionDate)}</span>
+          )}
+        </div>
+
+        {description && (
+          <div className="suggestion-card__description">{description}</div>
+        )}
 
         {type === 'resume' && progress && (
           <div className="suggestion-card__progress">
             <div className="suggestion-card__progress-bar">
-              <div
-                className="suggestion-card__progress-fill"
-                style={{ width: `${progress.percent}%` }}
-              />
+              <div className="suggestion-card__progress-fill" style={{ width: `${progress.percent}%` }} />
             </div>
             <span className="suggestion-card__progress-text">{progress.percent}%</span>
           </div>
         )}
 
-        {type === 'memorable' && metric && (
-          <div className="suggestion-card__metric">
-            {metric.label}: {metric.value}
-          </div>
-        )}
-
-        {type === 'favorite' && action === 'browse' && (
-          <div className="suggestion-card__browse">Browse episodes →</div>
-        )}
-
-        {(type === 'next_up' || type === 'resume') && suggestion.lastSessionDate && (
-          <div className="suggestion-card__recency">{formatRecency(suggestion.lastSessionDate)}</div>
+        {type === 'memorable' && reason && (
+          <div className="suggestion-card__metric">{reason}</div>
         )}
 
         {type === 'discovery' && reason && (
@@ -85,6 +89,6 @@ function formatRecency(dateStr) {
   const d = new Date(dateStr + 'T12:00:00');
   const days = Math.round((now - d) / 86400000);
   if (days === 0) return 'Today';
-  if (days === 1) return '1 day ago';
-  return `${days} days ago`;
+  if (days === 1) return '1d ago';
+  return `${days}d ago`;
 }

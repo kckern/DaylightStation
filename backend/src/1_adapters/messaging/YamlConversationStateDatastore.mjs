@@ -76,15 +76,16 @@ export class YamlConversationStateDatastore extends IConversationStateDatastore 
    * @private
    */
   #resolveUsername(conversationId) {
-    // conversationId format: "telegram:{botId}_{userId}" or "telegram:{userId}"
+    // conversationId format: "telegram:b{botId}_c{chatId}" or "telegram:{userId}"
     if (!conversationId?.startsWith('telegram:')) {
       this.#logger.warn?.('conversation.state.unknown_platform', { conversationId });
       return null;
     }
-    
+
     const identifier = conversationId.substring('telegram:'.length);
-    // Extract userId (may have botId_ prefix)
-    const userId = identifier.includes('_') ? identifier.split('_')[1] : identifier;
+    // Parse structured format b{botId}_c{chatId}, stripping prefixes to get raw chatId
+    const structured = identifier.match(/^b[^_]+_c(.+)$/);
+    const userId = structured ? structured[1] : identifier;
     
     const username = this.#userResolver.resolveUser('telegram', userId);
     if (!username) {

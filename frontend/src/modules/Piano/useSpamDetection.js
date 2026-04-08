@@ -9,7 +9,7 @@ import {
 // ─── Constants ────────────────────────────────────────────────
 
 const BLACKOUT_KEY = 'piano-spam-blackout';
-const BLACKOUT_DURATION_MS = 5 * 60 * 1000;    // 5 minutes
+const BLACKOUT_DURATION_MS = 90 * 1000;          // 90 seconds
 const WARNING_DISPLAY_MS = 3000;                 // 3 seconds
 const ESCALATION_WINDOW_MS = 60000;              // 60 seconds
 const STRIKES_TO_BLACKOUT = 3;

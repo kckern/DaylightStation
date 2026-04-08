@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import getLogger from '../lib/logging/Logger.js';
 
 let _navLogger;
@@ -33,6 +33,18 @@ export function MenuNavigationProvider({ children, onBackAtRoot }) {
 
   // Current depth (derived from stack length)
   const depth = stack.length;
+
+  // Pop guard: when set, pop() calls this instead of popping.
+  // Guard returns true to allow pop, false to block it.
+  const popGuardRef = useRef(null);
+
+  const setPopGuard = useCallback((guardFn) => {
+    popGuardRef.current = guardFn;
+  }, []);
+
+  const clearPopGuard = useCallback(() => {
+    popGuardRef.current = null;
+  }, []);
   
   /**
    * Push new content onto the stack
@@ -53,6 +65,12 @@ export function MenuNavigationProvider({ children, onBackAtRoot }) {
    * @returns {boolean} Whether pop was successful (false if at root)
    */
   const pop = useCallback(() => {
+    // If a pop guard is set, let it handle the back action
+    if (popGuardRef.current) {
+      const allowed = popGuardRef.current();
+      navLogger().info('nav.pop-guarded', { allowed });
+      if (!allowed) return false;
+    }
     setStack(prev => {
       navLogger().info('nav.pop', { stackLength: prev.length, types: prev.map(s => s.type) });
       if (prev.length === 0) {
@@ -147,6 +165,8 @@ export function MenuNavigationProvider({ children, onBackAtRoot }) {
     pop,
     reset,
     replace,
+    setPopGuard,
+    clearPopGuard,
 
     // Bug 04 fix: Refetch counter for data invalidation
     refetchCounter,
