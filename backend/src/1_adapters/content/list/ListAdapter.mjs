@@ -755,7 +755,7 @@ export class ListAdapter {
     if (!items || items.length === 0) return null;
     if (items.length === 1) return items[0];
 
-    const storagePath = (adapter.getStoragePath ? await adapter.getStoragePath(child.id) : null) || child.source || 'files';
+    const storagePath = (adapter.getStoragePath ? await adapter.getStoragePath(canonicalId) : null) || child.source || 'files';
 
     if (!this.mediaProgressMemory) {
       return items[0];
