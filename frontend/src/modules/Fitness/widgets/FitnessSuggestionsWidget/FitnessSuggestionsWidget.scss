@@ -97,30 +97,36 @@
 
 // Poster is a direct child of .suggestion-card (not inside body),
 // anchored to the card's bottom-left, overlapping into the thumbnail above.
+// Height is body (72px) + 20px spill = 92px. Width is 2:3 ratio = ~61px,
+// but we cap at 38px wide so height = 57px natural. To force spill we
+// set an explicit height larger than the body.
 .suggestion-card__mini-poster {
   position: absolute;
   left: 0;
   bottom: 0;
   width: 38px;
+  height: 92px;          // taller than body (72px), spills 20px into thumbnail
   z-index: 5;
   border-radius: 0 6px 0 10px;
   overflow: hidden;
   box-shadow: 2px -2px 8px rgba(0, 0, 0, 0.5);
-  pointer-events: none;  // clicks pass through to image/body areas beneath
+  pointer-events: none;
 
   img {
-    width: 38px;
-    height: auto;        // natural aspect ratio — no cropping
+    width: 100%;
+    height: 100%;
+    object-fit: cover;     // fill the tall container, crop sides if needed
+    object-position: top;  // keep top of poster visible (title/face)
     display: block;
   }
 }
 
 .suggestion-card__body-text {
-  padding: 5px 8px 6px 46px;
+  padding: 4px 8px 4px 46px;
   height: 100%;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 .suggestion-card__recency {
