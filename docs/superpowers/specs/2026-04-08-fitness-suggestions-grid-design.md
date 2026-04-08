@@ -25,10 +25,10 @@ Replace the current right panel of the fitness home screen (weight, upnext, nutr
 
 ### 3. Favorites (type: `favorite`)
 
-- **Source:** Show IDs listed in `fitness.yml` under `suggestions.favorites`
+- **Source:** Content IDs listed in `fitness.yml` under `suggestions.favorites` (can be show IDs or episode IDs)
 - **Max:** Number of configured favorites
-- **Action:** `browse` — clicking navigates to the show's episode browser (FitnessShow)
-- **Display:** Show poster (portrait orientation), show title, "Browse episodes →"
+- **Action:** `browse` for shows (navigates to episode browser), `play` for episodes (starts player)
+- **Display:** Poster (portrait) for shows, thumbnail (landscape) for episodes. Show title, and "Browse episodes →" for shows or episode title for episodes.
 - **Dedup:** If a favorite show already has a `next_up` or `resume` card, the favorite card is skipped
 
 ### 4. Memorable (type: `memorable`)
@@ -259,7 +259,7 @@ Replaces `FitnessUpNextWidget`. Registered as `fitness:suggestions` in the widge
 
 Cards with `orientation: "portrait"` display the show poster in a taller aspect ratio (2:3). Cards with `orientation: "landscape"` display the episode thumbnail in a wider aspect ratio (~16:9). The grid handles mixed orientations — portrait cards are the same grid cell width but the image area is taller.
 
-**How orientation is determined:** `favorite` cards always use `portrait` (they show the program poster). All other types default to `landscape` (episode thumbnail). The backend sets this field based on card type — no Plex metadata inspection needed.
+**How orientation is determined:** Based on the content being displayed, not the card type. Cards pointing to a show (program-level) use `portrait` (show poster). Cards pointing to an episode use `landscape` (episode thumbnail). This applies uniformly — a `favorite` pointing to a show is portrait, a `discovery` card surfacing a show is also portrait, while a `next_up` card with a specific episode is landscape.
 
 ## Edge Cases
 
