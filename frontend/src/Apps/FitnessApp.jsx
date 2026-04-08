@@ -42,6 +42,7 @@ const FitnessApp = () => {
   const [currentView, setCurrentView] = useState('menu'); // 'screen', 'menu', 'users', 'show', 'module'
   const [activeCollection, setActiveCollection] = useState(null);
   const [selectedShow, setSelectedShow] = useState(null);
+  const [selectedEpisodeId, setSelectedEpisodeId] = useState(null);
   const [activeModule, setActiveModule] = useState(null); // { id, ...manifest }
   const [activeScreen, setActiveScreen] = useState(null); // screen_id from screens config
   const [fitnessPlayQueue, setFitnessPlayQueue] = useState([]);
@@ -845,6 +846,7 @@ const FitnessApp = () => {
         // Extract local ID from contentId or legacy plex key
         const showId = String(target.contentId || target.plex || target.id).replace(/^[a-z]+:/i, '');
         setSelectedShow(showId);
+        setSelectedEpisodeId(target.episodeId || null);
         setCurrentView('show');
         navigate(`/fitness/show/${showId}`, { replace: true });
         break;
@@ -1204,6 +1206,7 @@ const FitnessApp = () => {
                 {currentView === 'show' && selectedShow && (
                   <FitnessShow
                     showId={selectedShow}
+                    episodeId={selectedEpisodeId}
                     onBack={handleBackToMenu}
                     viewportRef={viewportRef}
                     setFitnessPlayQueue={setFitnessPlayQueue}

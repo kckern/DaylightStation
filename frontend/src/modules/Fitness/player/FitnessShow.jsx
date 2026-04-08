@@ -205,7 +205,7 @@ const deriveResumeMeta = (episode) => {
   };
 };
 
-const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQueue, onPlay }) => {
+const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack, viewportRef, setFitnessPlayQueue, onPlay }) => {
   // Parse showId - strip any prefix (e.g., "plex:662027" -> "662027")
   // The fitness API assumes plex source, so we only need the numeric ID
   const showId = rawShowId?.replace(/^[a-z]+:/i, '') || rawShowId;
@@ -299,9 +299,13 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
         setMusicAutoEnabled(hasNoMusicLabel);
       }
       
-      // Auto-select first episode if available
+      // Auto-select pre-specified episode or fall back to first
       if (response.items && response.items.length > 0) {
-        setSelectedEpisode(response.items[0]);
+        const preSelectLocalId = preSelectEpisodeId?.replace(/^[a-z]+:/i, '');
+        const preSelected = preSelectLocalId
+          ? response.items.find(ep => ep.localId === preSelectLocalId || ep.id === preSelectEpisodeId)
+          : null;
+        setSelectedEpisode(preSelected || response.items[0]);
       }
     } catch (err) {
       console.error('🎬 ERROR: Error fetching show data:', err);
@@ -313,7 +317,7 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- setMusicAutoEnabled is stable
-  }, [showId, nomusicLabelSet, plexConfig]);
+  }, [showId, preSelectEpisodeId, nomusicLabelSet, plexConfig]);
 
   useEffect(() => {
     fetchShowData();
