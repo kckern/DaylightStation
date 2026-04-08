@@ -75,6 +75,7 @@ export class MemorableStrategy {
       [deduped[i], deduped[j]] = [deduped[j], deduped[i]];
     }
 
+    const { contentAdapter } = context;
     const results = [];
     for (const session of deduped) {
       if (results.length >= max) break;
@@ -83,6 +84,15 @@ export class MemorableStrategy {
       const showId = session.media.primary.grandparentId;
       const localShowId = showId?.replace(/^plex:/, '');
 
+      // Fetch episode metadata for description
+      let description = null;
+      if (contentAdapter) {
+        try {
+          const item = await contentAdapter.getItem(cid);
+          description = item?.metadata?.summary || null;
+        } catch { /* proceed without description */ }
+      }
+
       results.push({
         type: 'memorable',
         action: 'play',
@@ -90,6 +100,7 @@ export class MemorableStrategy {
         showId: showId || cid,
         title: session.media.primary.title,
         showTitle: session.media.primary.showTitle,
+        description,
         thumbnail: `/api/v1/display/plex/${cid.replace(/^plex:/, '')}`,
         poster: localShowId ? `/api/v1/content/plex/image/${localShowId}` : null,
         durationMinutes: session.durationMs ? Math.round(session.durationMs / 60000) : null,

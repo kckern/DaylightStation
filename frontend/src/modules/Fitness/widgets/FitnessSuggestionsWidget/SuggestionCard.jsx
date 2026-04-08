@@ -9,11 +9,13 @@ const BADGE_STYLES = {
 };
 
 export default function SuggestionCard({ suggestion, onPlay, onBrowse }) {
-  const { type, title, showTitle, description, thumbnail, poster,
+  const { type, title, showTitle, description, thumbnail,
           durationMinutes, progress, reason } = suggestion;
 
   const badge = BADGE_STYLES[type] || BADGE_STYLES.discovery;
   const isMuted = type === 'resume' || type === 'favorite' || type === 'discovery';
+  const recency = (type === 'next_up' || type === 'resume') && suggestion.lastSessionDate
+    ? formatRecency(suggestion.lastSessionDate) : null;
 
   return (
     <div className={`suggestion-card suggestion-card--${type}${isMuted ? ' suggestion-card--muted' : ''}`}>
@@ -25,12 +27,7 @@ export default function SuggestionCard({ suggestion, onPlay, onBrowse }) {
         tabIndex={0}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onPlay?.(suggestion); }}
       >
-        <div className="suggestion-card__thumb">
-          <img src={thumbnail} alt="" onError={(e) => { e.target.style.display = 'none'; }} />
-        </div>
-        <div className="suggestion-card__poster">
-          <img src={poster} alt="" onError={(e) => { e.target.style.display = 'none'; }} />
-        </div>
+        <img src={thumbnail} alt="" onError={(e) => { e.target.style.display = 'none'; }} />
         <span className="suggestion-card__badge" style={{ background: badge.bg }}>
           {badge.label}
         </span>
@@ -47,20 +44,11 @@ export default function SuggestionCard({ suggestion, onPlay, onBrowse }) {
         tabIndex={0}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onBrowse?.(suggestion); }}
       >
-        {showTitle && showTitle !== title && (
-          <div className="suggestion-card__show-title">{showTitle}</div>
-        )}
-
-        <div className="suggestion-card__title-row">
+        <div className="suggestion-card__title-desc">
           <span className="suggestion-card__title">{title}</span>
-          {(type === 'next_up' || type === 'resume') && suggestion.lastSessionDate && (
-            <span className="suggestion-card__recency">{formatRecency(suggestion.lastSessionDate)}</span>
-          )}
+          {recency && <span className="suggestion-card__recency">{' · '}{recency}</span>}
+          {description && <>{' — '}<span className="suggestion-card__desc-inline">{description}</span></>}
         </div>
-
-        {description && (
-          <div className="suggestion-card__description">{description}</div>
-        )}
 
         {type === 'resume' && progress && (
           <div className="suggestion-card__progress">
