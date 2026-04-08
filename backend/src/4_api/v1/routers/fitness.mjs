@@ -86,6 +86,7 @@ export function createFitnessRouter(config) {
     providerWebhookAdapters = {},
     enrichmentService = null,
     agentOrchestrator = null,
+    fitnessSuggestionService = null,
     logger = console
   } = config;
 
@@ -358,6 +359,21 @@ export function createFitnessRouter(config) {
     } catch (err) {
       logger.error?.('fitness.sessions.delete.error', { sessionId, error: err?.message });
       return res.status(500).json({ error: 'Failed to delete session' });
+    }
+  });
+
+  // ─── Suggestions Grid ────────────────────────────────────
+  router.get('/suggestions', async (req, res) => {
+    const { gridSize, household } = req.query;
+    try {
+      const result = await fitnessSuggestionService.getSuggestions({
+        gridSize: gridSize ? parseInt(gridSize, 10) : undefined,
+        householdId: household,
+      });
+      return res.json(result);
+    } catch (err) {
+      logger.error?.('fitness.suggestions.error', { error: err?.message });
+      return res.status(500).json({ error: 'Failed to generate suggestions' });
     }
   });
 

@@ -73,6 +73,12 @@ import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
 import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs';
 import { ScreenshotService } from '#apps/fitness/services/ScreenshotService.mjs';
 import { createFitnessRouter } from '#api/v1/routers/fitness.mjs';
+import { FitnessSuggestionService } from '../3_applications/fitness/suggestions/FitnessSuggestionService.mjs';
+import { NextUpStrategy } from '../3_applications/fitness/suggestions/NextUpStrategy.mjs';
+import { ResumeStrategy } from '../3_applications/fitness/suggestions/ResumeStrategy.mjs';
+import { FavoriteStrategy } from '../3_applications/fitness/suggestions/FavoriteStrategy.mjs';
+import { MemorableStrategy } from '../3_applications/fitness/suggestions/MemorableStrategy.mjs';
+import { DiscoveryStrategy } from '../3_applications/fitness/suggestions/DiscoveryStrategy.mjs';
 
 // Home automation imports
 import { TVControlAdapter } from '#adapters/home-automation/tv/TVControlAdapter.mjs';
@@ -952,6 +958,24 @@ export function createFitnessApiRouter(config) {
     logger
   });
 
+  // Create suggestion strategies and orchestrator
+  const fitnessSuggestionService = new FitnessSuggestionService({
+    strategies: [
+      new NextUpStrategy(),
+      new ResumeStrategy(),
+      new FavoriteStrategy(),
+      new MemorableStrategy(),
+      new DiscoveryStrategy(),
+    ],
+    sessionService: fitnessServices.sessionService,
+    sessionDatastore: fitnessServices.sessionStore,
+    fitnessConfigService,
+    fitnessPlayableService,
+    contentAdapter: fitnessContentAdapter,
+    contentQueryService,
+    logger,
+  });
+
   return createFitnessRouter({
     sessionService: fitnessServices.sessionService,
     zoneLedController: fitnessServices.ambientLedController,
@@ -960,6 +984,7 @@ export function createFitnessApiRouter(config) {
     fitnessConfigService,
     fitnessPlayableService,
     fitnessContentAdapter,
+    fitnessSuggestionService,
     userService,
     configService,
     contentRegistry,  // Still needed for playlist thumbnail enrichment
