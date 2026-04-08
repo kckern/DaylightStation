@@ -1,5 +1,17 @@
 // FitnessSessionsWidget — session list, rows, posters, metadata, voice memos
 
+// --- Skeleton Loading ---
+
+.session-row--skeleton {
+  pointer-events: none;
+
+  .session-row__info {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
 // --- Date Headers ---
 
 .session-date-header {

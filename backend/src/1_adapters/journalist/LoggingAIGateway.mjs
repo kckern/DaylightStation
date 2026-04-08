@@ -8,6 +8,7 @@
 
 import { nowTs24 } from '#system/utils/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { retryTransient } from '#system/utils/retryTransient.mjs';
 
 /**
  * AI Gateway wrapper that logs calls
@@ -51,8 +52,21 @@ export class LoggingAIGateway {
     const startTime = Date.now();
 
     try {
-      // Call the actual AI gateway
-      const response = await this.#aiGateway.chat(messages, options);
+      // Call the actual AI gateway (retry on transient network errors like DNS failures)
+      const response = await retryTransient(
+        () => this.#aiGateway.chat(messages, options),
+        {
+          maxAttempts: 3,
+          baseDelay: 1000,
+          onRetry: (attempt, error) => {
+            this.#logger?.warn?.('journalist.gpt.retry', {
+              attempt,
+              error: error.message,
+              username: this.#username,
+            });
+          },
+        },
+      );
 
       // Log the interaction
       this.#logInteraction(messages, response, options, startTime, null);

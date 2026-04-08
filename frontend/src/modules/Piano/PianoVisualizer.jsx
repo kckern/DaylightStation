@@ -12,6 +12,7 @@ import { usePianoConfig } from './usePianoConfig.js';
 import { useInactivityTimer } from './useInactivityTimer.js';
 import { useSessionTracking } from './useSessionTracking.js';
 import { useSpamDetection } from './useSpamDetection.js';
+import { useScreenOverlay } from '../../screen-framework/overlays/ScreenOverlayProvider.jsx';
 
 const formatDuration = (seconds) => {
   const mins = Math.floor(seconds / 60);
@@ -31,6 +32,15 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
 
   const { inactivityState, countdownProgress } = useInactivityTimer(activeNotes, noteHistory, isFullscreenGame, onClose);
   const { sessionDuration } = useSessionTracking(noteHistory);
+
+  // Block escape/back while a game is actively playing
+  const { registerEscapeInterceptor, unregisterEscapeInterceptor } = useScreenOverlay();
+  useEffect(() => {
+    if (isFullscreenGame) {
+      registerEscapeInterceptor(() => true); // block all escapes during game
+      return () => unregisterEscapeInterceptor();
+    }
+  }, [isFullscreenGame, registerEscapeInterceptor, unregisterEscapeInterceptor]);
 
   // Configure root logger so child components using getLogger() directly
   // also get sessionLog: true (routes their events to the JSONL session file)

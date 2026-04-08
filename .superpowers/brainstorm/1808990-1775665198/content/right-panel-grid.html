@@ -1,0 +1,101 @@
+<h2>Flexible Grid — Priority by Novelty</h2>
+<p class="subtitle">Next-up episodes lead, resume and favorites are smaller and secondary</p>
+
+<div class="mockup">
+  <div class="mockup-header">Right Panel — Fitness Home</div>
+  <div class="mockup-body" style="padding: 16px; background: #12122a;">
+
+    <!-- Next Up row — large cards, these are the stars -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px;">
+
+      <!-- Next up cards — prominent -->
+      <div style="background: rgba(255,255,255,0.06); border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1);">
+        <div style="height: 120px; background: linear-gradient(135deg, #2a1a3a, #1a2a4a); display: flex; align-items: center; justify-content: center; position: relative;">
+          <span style="font-size: 32px;">🏋️</span>
+          <div style="position: absolute; top: 8px; left: 8px; background: rgba(34,139,230,0.8); color: white; font-size: 10px; padding: 2px 6px; border-radius: 3px; font-weight: 600;">UP NEXT</div>
+          <div style="position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.7); color: white; font-size: 10px; padding: 2px 6px; border-radius: 3px;">30 min</div>
+        </div>
+        <div style="padding: 10px;">
+          <div style="font-size: 11px; color: rgba(255,255,255,0.4); margin-bottom: 2px;">Dig Deeper 30</div>
+          <div style="font-size: 14px; color: #e0e0e0; font-weight: 600;">Episode 8: Total Body</div>
+          <div style="font-size: 11px; color: rgba(255,255,255,0.35); margin-top: 4px;">Last done 2 days ago</div>
+        </div>
+      </div>
+
+      <div style="background: rgba(255,255,255,0.06); border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1);">
+        <div style="height: 120px; background: linear-gradient(135deg, #1a2a1a, #2a3a1a); display: flex; align-items: center; justify-content: center; position: relative;">
+          <span style="font-size: 32px;">💪</span>
+          <div style="position: absolute; top: 8px; left: 8px; background: rgba(34,139,230,0.8); color: white; font-size: 10px; padding: 2px 6px; border-radius: 3px; font-weight: 600;">UP NEXT</div>
+          <div style="position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.7); color: white; font-size: 10px; padding: 2px 6px; border-radius: 3px;">45 min</div>
+        </div>
+        <div style="padding: 10px;">
+          <div style="font-size: 11px; color: rgba(255,255,255,0.4); margin-bottom: 2px;">P90X</div>
+          <div style="font-size: 14px; color: #e0e0e0; font-weight: 600;">Episode 22: Legs & Back</div>
+          <div style="font-size: 11px; color: rgba(255,255,255,0.35); margin-top: 4px;">Last done 4 days ago</div>
+        </div>
+      </div>
+
+      <div style="background: rgba(255,255,255,0.06); border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1);">
+        <div style="height: 120px; background: linear-gradient(135deg, #2a2a1a, #3a2a1a); display: flex; align-items: center; justify-content: center; position: relative;">
+          <span style="font-size: 32px;">⚡</span>
+          <div style="position: absolute; top: 8px; left: 8px; background: rgba(34,139,230,0.8); color: white; font-size: 10px; padding: 2px 6px; border-radius: 3px; font-weight: 600;">UP NEXT</div>
+          <div style="position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.7); color: white; font-size: 10px; padding: 2px 6px; border-radius: 3px;">10 min</div>
+        </div>
+        <div style="padding: 10px;">
+          <div style="font-size: 11px; color: rgba(255,255,255,0.4); margin-bottom: 2px;">10 Minute Muscle</div>
+          <div style="font-size: 14px; color: #e0e0e0; font-weight: 600;">Episode 5: Arms</div>
+          <div style="font-size: 11px; color: rgba(255,255,255,0.35); margin-top: 4px;">Last done 1 day ago</div>
+        </div>
+      </div>
+
+      <div style="background: rgba(255,255,255,0.06); border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1);">
+        <div style="height: 120px; background: linear-gradient(135deg, #1a1a2a, #2a1a3a); display: flex; align-items: center; justify-content: center; position: relative;">
+          <span style="font-size: 32px;">🔥</span>
+          <div style="position: absolute; top: 8px; left: 8px; background: rgba(34,139,230,0.8); color: white; font-size: 10px; padding: 2px 6px; border-radius: 3px; font-weight: 600;">UP NEXT</div>
+          <div style="position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.7); color: white; font-size: 10px; padding: 2px 6px; border-radius: 3px;">35 min</div>
+        </div>
+        <div style="padding: 10px;">
+          <div style="font-size: 11px; color: rgba(255,255,255,0.4); margin-bottom: 2px;">Generation Next</div>
+          <div style="font-size: 14px; color: #e0e0e0; font-weight: 600;">Episode 12: Core Work</div>
+          <div style="font-size: 11px; color: rgba(255,255,255,0.35); margin-top: 4px;">Last done 3 days ago</div>
+        </div>
+      </div>
+
+      <!-- Resume — same grid, slightly muted -->
+      <div style="background: rgba(255,255,255,0.04); border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06);">
+        <div style="height: 120px; background: linear-gradient(135deg, #1a2a2a, #1a3a3a); display: flex; align-items: center; justify-content: center; position: relative;">
+          <span style="font-size: 32px;">🎮</span>
+          <div style="position: absolute; top: 8px; left: 8px; background: rgba(200,160,40,0.8); color: white; font-size: 10px; padding: 2px 6px; border-radius: 3px; font-weight: 600;">RESUME</div>
+          <div style="position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.7); color: white; font-size: 10px; padding: 2px 6px; border-radius: 3px;">47:32 left</div>
+        </div>
+        <div style="padding: 10px;">
+          <div style="font-size: 11px; color: rgba(255,255,255,0.4); margin-bottom: 2px;">Video Game Cycling</div>
+          <div style="font-size: 14px; color: #e0e0e0; font-weight: 600;">Ep 14: Mario Kart DLC</div>
+          <div style="font-size: 11px; color: rgba(255,255,255,0.35); margin-top: 4px;">
+            <span style="display:inline-block; width: 60px; height: 3px; background: rgba(255,255,255,0.1); border-radius: 2px; vertical-align: middle; position: relative; margin-right: 4px;">
+              <span style="position:absolute; left:0; top:0; width: 55%; height: 100%; background: rgba(200,160,40,0.7); border-radius: 2px;"></span>
+            </span>
+            55%
+          </div>
+        </div>
+      </div>
+
+      <!-- Favorite — slightly muted, no episode info -->
+      <div style="background: rgba(255,255,255,0.04); border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06);">
+        <div style="height: 120px; background: linear-gradient(135deg, #2a1a2a, #1a1a3a); display: flex; align-items: center; justify-content: center; position: relative;">
+          <span style="font-size: 32px;">���</span>
+          <div style="position: absolute; top: 8px; left: 8px; background: rgba(120,120,120,0.6); color: white; font-size: 10px; padding: 2px 6px; border-radius: 3px; font-weight: 600;">FAVORITE</div>
+        </div>
+        <div style="padding: 10px;">
+          <div style="font-size: 14px; color: #e0e0e0; font-weight: 600;">Video Game Cycling</div>
+          <div style="font-size: 11px; color: rgba(100,150,200,0.7); margin-top: 4px;">Browse episodes →</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top: 20px;">
+  <strong>Key ideas:</strong> All cards live in one flexible grid. "Up next" cards are visually brighter (stronger border, blue badge). Resume and favorite cards are slightly muted (dimmer border, amber/gray badge). The grid reflows naturally — 4 next-up cards might fill 2 rows, with resume/favorites tucked at the end. No section headers needed — the badge + visual weight does the grouping.
+</p>

@@ -1,13 +1,30 @@
 // tests/unit/suite/fitness/suggestions/FavoriteStrategy.test.mjs
 import { FavoriteStrategy } from '../../../../../backend/src/3_applications/fitness/suggestions/FavoriteStrategy.mjs';
 
-function makeContext(favorites = [], contentItems = {}) {
+function makeEpisode(id, index, { isWatched = false, summary = null } = {}) {
+  return {
+    id: `plex:${id}`,
+    localId: String(id),
+    title: `Episode ${index}`,
+    duration: 1800,
+    isWatched,
+    metadata: { type: 'episode', grandparentTitle: 'Test Show', itemIndex: index, summary },
+    thumbnail: `/api/v1/display/plex/${id}`,
+  };
+}
+
+function makeContext(favorites = [], contentItems = {}, playablesByShow = {}) {
   return {
     fitnessConfig: {
       suggestions: { favorites },
     },
     contentAdapter: {
       getItem: async (compoundId) => contentItems[compoundId] || null,
+    },
+    fitnessPlayableService: {
+      getPlayableEpisodes: async (showId) => ({
+        items: playablesByShow[showId] || [],
+      }),
     },
   };
 }
@@ -20,59 +37,66 @@ describe('FavoriteStrategy', () => {
     expect(result).toEqual([]);
   });
 
-  test('returns show-level favorite with browse action', async () => {
-    const ctx = makeContext([12345], {
-      'plex:12345': {
-        id: 'plex:12345',
-        localId: '12345',
-        title: 'Video Game Cycling',
-        metadata: { type: 'show' },
-        thumbnail: '/api/v1/content/plex/image/12345',
-      }
-    });
+  test('resolves next unwatched episode from favorite show', async () => {
+    const ctx = makeContext(
+      [12345],
+      { 'plex:12345': { title: 'Game Cycling', metadata: { type: 'show' } } },
+      { '12345': [
+        makeEpisode(1001, 1, { isWatched: true }),
+        makeEpisode(1002, 2, { isWatched: false }),
+        makeEpisode(1003, 3, { isWatched: false }),
+      ]}
+    );
     const result = await strategy.suggest(ctx, 4);
 
     expect(result).toHaveLength(1);
     expect(result[0].type).toBe('favorite');
-    expect(result[0].action).toBe('browse');
-    expect(result[0].orientation).toBe('portrait');
-    expect(result[0].showTitle).toBe('Video Game Cycling');
+    expect(result[0].action).toBe('play');
+    expect(result[0].contentId).toBe('plex:1002');
+    expect(result[0].showTitle).toBe('Game Cycling');
+    expect(result[0].orientation).toBe('landscape');
   });
 
-  test('returns episode-level favorite with play action', async () => {
-    const ctx = makeContext([67890], {
-      'plex:67890': {
-        id: 'plex:67890',
-        localId: '67890',
-        title: 'Ep 5: Best Ride',
-        duration: 2400,
-        metadata: {
-          type: 'episode',
-          grandparentId: 'plex:12345',
-          grandparentTitle: 'VG Cycling',
-        },
-        thumbnail: '/api/v1/display/plex/67890',
-      }
-    });
+  test('picks random episode when all are watched', async () => {
+    const ctx = makeContext(
+      [12345],
+      { 'plex:12345': { title: 'Done Show', metadata: { type: 'show' } } },
+      { '12345': [
+        makeEpisode(1001, 1, { isWatched: true }),
+        makeEpisode(1002, 2, { isWatched: true }),
+      ]}
+    );
     const result = await strategy.suggest(ctx, 4);
 
     expect(result).toHaveLength(1);
     expect(result[0].action).toBe('play');
-    expect(result[0].orientation).toBe('landscape');
+    expect(['plex:1001', 'plex:1002']).toContain(result[0].contentId);
   });
 
-  test('skips favorites that fail to resolve', async () => {
-    const ctx = makeContext([99999], {});
+  test('skips favorites with no episodes', async () => {
+    const ctx = makeContext(
+      [99999],
+      { 'plex:99999': { title: 'Empty Show', metadata: { type: 'show' } } },
+      { '99999': [] }
+    );
     const result = await strategy.suggest(ctx, 4);
     expect(result).toEqual([]);
   });
 
   test('respects remainingSlots', async () => {
-    const ctx = makeContext([100, 200, 300], {
-      'plex:100': { id: 'plex:100', localId: '100', title: 'A', metadata: { type: 'show' } },
-      'plex:200': { id: 'plex:200', localId: '200', title: 'B', metadata: { type: 'show' } },
-      'plex:300': { id: 'plex:300', localId: '300', title: 'C', metadata: { type: 'show' } },
-    });
+    const ctx = makeContext(
+      [100, 200, 300],
+      {
+        'plex:100': { title: 'A', metadata: { type: 'show' } },
+        'plex:200': { title: 'B', metadata: { type: 'show' } },
+        'plex:300': { title: 'C', metadata: { type: 'show' } },
+      },
+      {
+        '100': [makeEpisode(1001, 1)],
+        '200': [makeEpisode(2001, 1)],
+        '300': [makeEpisode(3001, 1)],
+      }
+    );
     const result = await strategy.suggest(ctx, 2);
     expect(result).toHaveLength(2);
   });

@@ -13,6 +13,182 @@ const blobToBase64 = (blob) => new Promise((resolve, reject) => {
 const LEVEL_SAMPLE_INTERVAL_MS = 50;
 const SILENCE_WARNING_MS = 5000;
 
+// --- AudioBridge helpers (Shield TV USB mic via native sideload) ---
+
+const BRIDGE_URL = 'ws://localhost:8765';
+const BRIDGE_TIMEOUT_MS = 1500;
+
+/**
+ * Attempt to get a MediaStream from the native AudioBridge.
+ * Resolves with a MediaStream if the bridge connects and starts sending PCM.
+ * Rejects if connection fails or times out — caller should fall back to getUserMedia.
+ */
+function getBridgeStream() {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      ws.close();
+      reject(new Error('AudioBridge timeout'));
+    }, BRIDGE_TIMEOUT_MS);
+
+    const ws = new WebSocket(BRIDGE_URL);
+    ws.binaryType = 'arraybuffer';
+
+    ws.onopen = () => {
+      // Connected — wait for format header in onmessage
+    };
+
+    ws.onmessage = async (event) => {
+      if (typeof event.data !== 'string') return;
+      clearTimeout(timeout);
+
+      let format;
+      try {
+        format = JSON.parse(event.data);
+      } catch {
+        ws.close();
+        return reject(new Error('AudioBridge bad header'));
+      }
+
+      if (format.error) {
+        ws.close();
+        return reject(new Error(`AudioBridge error: ${format.error}`));
+      }
+
+      try {
+        const stream = await buildBridgeStream(ws, format);
+        resolve(stream);
+      } catch (err) {
+        ws.close();
+        reject(err);
+      }
+    };
+
+    ws.onerror = () => {
+      clearTimeout(timeout);
+      reject(new Error('AudioBridge unavailable'));
+    };
+
+    ws.onclose = (e) => {
+      if (e.code !== 1000) {
+        clearTimeout(timeout);
+        reject(new Error('AudioBridge closed'));
+      }
+    };
+  });
+}
+
+async function buildBridgeStream(ws, format) {
+  const sampleRate = format.sampleRate || 48000;
+  const ctx = new AudioContext({ sampleRate });
+
+  if (ctx.state === 'suspended') await ctx.resume();
+
+  const processorSource = `
+class BridgeProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this._ring = new Float32Array(${sampleRate});
+    this._writePos = 0;
+    this._readPos = 0;
+    this._count = 0;
+    this.port.onmessage = (e) => {
+      if (!e.data) return;
+      const int16 = new Int16Array(e.data);
+      const cap = this._ring.length;
+      for (let i = 0; i < int16.length; i++) {
+        this._ring[this._writePos] = int16[i] / 32768;
+        this._writePos = (this._writePos + 1) % cap;
+      }
+      this._count = Math.min(this._count + int16.length, cap);
+    };
+  }
+  process(inputs, outputs) {
+    const ch = outputs[0][0];
+    if (!ch) return true;
+    const needed = ch.length;
+    const cap = this._ring.length;
+    const avail = Math.min(this._count, needed);
+    for (let i = 0; i < avail; i++) {
+      ch[i] = this._ring[this._readPos];
+      this._readPos = (this._readPos + 1) % cap;
+    }
+    this._count -= avail;
+    return true;
+  }
+}
+registerProcessor('bridge-recorder-processor', BridgeProcessor);`;
+
+  const blob = new Blob([processorSource], { type: 'application/javascript' });
+  const blobUrl = URL.createObjectURL(blob);
+  try {
+    await ctx.audioWorklet.addModule(blobUrl);
+  } finally {
+    URL.revokeObjectURL(blobUrl);
+  }
+
+  const workletNode = new AudioWorkletNode(ctx, 'bridge-recorder-processor');
+  const destination = ctx.createMediaStreamDestination();
+  workletNode.connect(destination);
+
+  // Diagnostic: track WS data flow
+  let wsFrames = 0;
+  let wsTotalBytes = 0;
+  let wsMaxAmp = 0;
+  let wsTextMsgs = 0;
+  let wsOtherMsgs = 0;
+
+  ws.onmessage = (event) => {
+    if (event.data instanceof ArrayBuffer) {
+      wsFrames++;
+      wsTotalBytes += event.data.byteLength;
+      const samples = new Int16Array(event.data);
+      for (let i = 0; i < samples.length; i += 64) {
+        const amp = Math.abs(samples[i]) / 32768;
+        if (amp > wsMaxAmp) wsMaxAmp = amp;
+      }
+      workletNode.port.postMessage(event.data, [event.data]);
+    } else if (typeof event.data === 'string') {
+      wsTextMsgs++;
+      logger.info('recorder.bridge-unexpected-text', { data: event.data.slice(0, 200) });
+    } else {
+      wsOtherMsgs++;
+      logger.info('recorder.bridge-unexpected-msg', { type: typeof event.data, constructor: event.data?.constructor?.name });
+    }
+  };
+
+  ws.onerror = (e) => {
+    logger.error('recorder.bridge-ws-error', { readyState: ws.readyState });
+  };
+
+  ws.onclose = (e) => {
+    logger.warn('recorder.bridge-ws-closed', { code: e.code, reason: e.reason, wasClean: e.wasClean, wsFrames });
+  };
+
+  // Log bridge pipeline stats after 2 seconds
+  setTimeout(() => {
+    logger.info('recorder.bridge-pipeline-stats', {
+      wsFrames,
+      wsTotalBytes,
+      wsMaxAmp: Math.round(wsMaxAmp * 1000) / 1000,
+      wsTextMsgs,
+      wsOtherMsgs,
+      wsReadyState: ws.readyState,
+      ctxState: ctx.state,
+      ctxSampleRate: ctx.sampleRate,
+      trackState: destination.stream.getAudioTracks()[0]?.readyState,
+    });
+  }, 2000);
+
+  const stream = destination.stream;
+  stream._bridgeCtx = ctx;
+  stream._bridgeWorklet = workletNode;
+  stream._bridgeWs = ws;
+
+  return stream;
+}
+
+// --- Hook ---
+
 export function useAudioRecorder({ onRecordingComplete }) {
   const [isRecording, setIsRecording] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -37,11 +213,17 @@ export function useAudioRecorder({ onRecordingComplete }) {
     logger.debug('recorder.cleanup');
     if (timerRef.current) clearInterval(timerRef.current);
     if (levelRafRef.current) cancelAnimationFrame(levelRafRef.current);
-    if (audioContextRef.current) {
-      audioContextRef.current.close().catch(() => {});
-      audioContextRef.current = null;
-    }
     if (streamRef.current) {
+      if (streamRef.current._bridgeWs) {
+        streamRef.current._bridgeWs.close();
+      }
+      if (streamRef.current._bridgeCtx) {
+        // Bridge ctx is shared with level monitor — close once here
+        streamRef.current._bridgeCtx.close().catch(() => {});
+        if (audioContextRef.current === streamRef.current._bridgeCtx) {
+          audioContextRef.current = null;
+        }
+      }
       const trackCount = streamRef.current.getTracks().length;
       streamRef.current.getTracks().forEach(t => t.stop());
       streamRef.current = null;
@@ -57,7 +239,8 @@ export function useAudioRecorder({ onRecordingComplete }) {
 
   const startLevelMonitor = useCallback((stream) => {
     try {
-      const audioContext = new AudioContext();
+      // Reuse bridge AudioContext if available (cross-context MediaStreamSource is silent)
+      const audioContext = stream._bridgeCtx || new AudioContext();
       const analyser = audioContext.createAnalyser();
       analyser.fftSize = 256;
       const source = audioContext.createMediaStreamSource(stream);
@@ -129,8 +312,17 @@ export function useAudioRecorder({ onRecordingComplete }) {
       setError(null);
       setSilenceWarning(false);
 
-      logger.debug('recorder.requesting-mic');
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Try AudioBridge first (Shield TV USB mic), fall back to getUserMedia
+      let stream;
+      try {
+        logger.debug('recorder.trying-bridge');
+        stream = await getBridgeStream();
+        logger.info('recorder.bridge-acquired');
+      } catch (bridgeErr) {
+        logger.info('recorder.bridge-unavailable', { reason: bridgeErr.message });
+        logger.debug('recorder.requesting-mic');
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
       streamRef.current = stream;
 
       const tracks = stream.getAudioTracks();
@@ -141,7 +333,7 @@ export function useAudioRecorder({ onRecordingComplete }) {
         muted: t.muted,
         readyState: t.readyState,
       }));
-      logger.info('recorder.mic-acquired', { trackCount: tracks.length, tracks: trackInfo });
+      logger.info('recorder.mic-acquired', { trackCount: tracks.length, tracks: trackInfo, bridge: !!stream._bridgeWs });
 
       const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
       mediaRecorderRef.current = recorder;

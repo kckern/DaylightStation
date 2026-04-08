@@ -61,7 +61,33 @@ function formatDate(dateStr) {
 
 // ─── Sessions Card ─────────────────────────────────────────
 
-function SessionsCard({ sessions, onSessionClick, selectedSessionId }) {
+function SessionsCardSkeleton() {
+  return (
+    <DashboardCard title="Recent Sessions" className="dashboard-card--workouts">
+      <Stack gap="xs">
+        <div className="skeleton shimmer" style={{ height: 14, width: 100, borderRadius: 4 }} />
+        {[0, 1, 2].map(i => (
+          <div key={i} className="session-row session-row--skeleton">
+            <div className="session-row__top">
+              <div className="session-poster skeleton shimmer" />
+              <div className="session-row__info">
+                <div className="skeleton shimmer" style={{ height: 12, width: '60%', borderRadius: 3 }} />
+                <div className="skeleton shimmer" style={{ height: 10, width: '80%', borderRadius: 3 }} />
+                <div className="skeleton shimmer" style={{ height: 10, width: '40%', borderRadius: 3 }} />
+              </div>
+            </div>
+          </div>
+        ))}
+      </Stack>
+    </DashboardCard>
+  );
+}
+
+function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) {
+  if (loading) {
+    return <SessionsCardSkeleton />;
+  }
+
   if (!sessions || sessions.length === 0) {
     return (
       <DashboardCard title="Recent Sessions" className="dashboard-card--workouts">
@@ -265,6 +291,7 @@ export default function FitnessSessionsWidget() {
   const revertRef = useRef(null);
   const containerRef = useRef(null);
 
+  const loading = rawSessions === null;
   const sessions = rawSessions?.sessions || [];
 
   const handleSessionClick = useCallback((sessionId) => {
@@ -300,6 +327,7 @@ export default function FitnessSessionsWidget() {
     <div ref={containerRef}>
       <SessionsCard
         sessions={sessions}
+        loading={loading}
         onSessionClick={handleSessionClick}
         selectedSessionId={selectedSessionId}
       />

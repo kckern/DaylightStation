@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
 import { DaylightAPI } from '@/lib/api.mjs';
+import MenuNavigationContext from '@/context/MenuNavigationContext.jsx';
 import DayColumn from './components/DayColumn.jsx';
 import DayDetail from './components/DayDetail.jsx';
 import RecordingBar from './components/RecordingBar.jsx';
@@ -10,7 +11,7 @@ import './WeeklyReview.scss';
 const logger = getLogger().child({ component: 'weekly-review' });
 const COLS = 4;
 
-export default function WeeklyReview({ dispatch }) {
+export default function WeeklyReview({ dispatch, dismiss }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -19,8 +20,10 @@ export default function WeeklyReview({ dispatch }) {
   const [uploading, setUploading] = useState(false);
   const [hasRecorded, setHasRecorded] = useState(false);
   const [showStopConfirm, setShowStopConfirm] = useState(false);
+  const [confirmFocus, setConfirmFocus] = useState(0); // 0=continue, 1=save
   const containerRef = useRef(null);
   const uploadStartRef = useRef(null);
+  const menuNav = React.useContext(MenuNavigationContext);
 
   useEffect(() => {
     logger.info('mount');
@@ -58,7 +61,8 @@ export default function WeeklyReview({ dispatch }) {
         ...prev,
         recording: { exists: true, recordedAt: new Date().toISOString(), duration },
       }));
-      dispatch('escape');
+      if (typeof dispatch === 'function') dispatch('escape');
+      else if (typeof dismiss === 'function') dismiss();
     } catch (err) {
       const uploadMs = Date.now() - uploadStartRef.current;
       logger.error('recording.upload-failed', { error: err.message, uploadMs, payloadSizeKb });
@@ -147,8 +151,21 @@ export default function WeeklyReview({ dispatch }) {
 
       // Stop confirmation dialog is showing
       if (showStopConfirm) {
+        e.preventDefault();
+        e.stopPropagation();
         if (e.key === 'Escape' || e.key === 'Backspace') {
           setShowStopConfirm(false);
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          setConfirmFocus(prev => prev === 0 ? 1 : 0);
+        } else if (e.key === 'Enter' || e.key === ' ') {
+          if (confirmFocus === 0) {
+            logger.info('recording.confirm-continue');
+            setShowStopConfirm(false);
+          } else {
+            logger.info('recording.confirm-save');
+            setShowStopConfirm(false);
+            stopRecording();
+          }
         }
         return;
       }
@@ -226,6 +243,7 @@ export default function WeeklyReview({ dispatch }) {
         case 'Backspace':
           // Grid + recording: show stop confirmation
           logger.info('nav.back-show-confirm', { key: e.key });
+          setConfirmFocus(0);
           setShowStopConfirm(true);
           break;
         default:
@@ -238,11 +256,61 @@ export default function WeeklyReview({ dispatch }) {
       container.addEventListener('keydown', handleKeyDown);
       return () => container.removeEventListener('keydown', handleKeyDown);
     }
-  }, [data, selectedDay, focusedDay, isRecording, hasRecorded, showStopConfirm, startRecording, stopRecording, dispatch]);
+  }, [data, selectedDay, focusedDay, isRecording, hasRecorded, showStopConfirm, confirmFocus, startRecording, stopRecording, dispatch]);
 
   useEffect(() => {
     containerRef.current?.focus();
   }, [loading]);
+
+  // Pop guard: prevent MenuNavigationContext from popping the app while recording.
+  // Handles remote Back button (FKB/Shield popstate) and any other pop() caller.
+  const selectedDayRef = useRef(selectedDay);
+  selectedDayRef.current = selectedDay;
+  const showStopConfirmRef = useRef(showStopConfirm);
+  showStopConfirmRef.current = showStopConfirm;
+  const isRecordingRef = useRef(isRecording);
+  isRecordingRef.current = isRecording;
+  const hasRecordedRef = useRef(hasRecorded);
+  hasRecordedRef.current = hasRecorded;
+
+  useEffect(() => {
+    if (!menuNav?.setPopGuard) return;
+    if (!isRecording && !uploading) {
+      menuNav.clearPopGuard();
+      return;
+    }
+
+    menuNav.setPopGuard(() => {
+      logger.info('nav.pop-guard', {
+        isRecording: isRecordingRef.current,
+        uploading,
+        selectedDay: selectedDayRef.current,
+        showStopConfirm: showStopConfirmRef.current,
+      });
+
+      if (uploading) {
+        // Upload in progress — block completely
+        return false;
+      }
+
+      if (showStopConfirmRef.current) {
+        setShowStopConfirm(false);
+        return false;
+      }
+
+      if (selectedDayRef.current !== null) {
+        setSelectedDay(null);
+        return false;
+      }
+
+      // At grid level while recording — show stop confirmation
+      setConfirmFocus(0);
+      setShowStopConfirm(true);
+      return false;
+    });
+
+    return () => menuNav.clearPopGuard();
+  }, [isRecording, uploading, menuNav]);
 
   const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
@@ -316,13 +384,13 @@ export default function WeeklyReview({ dispatch }) {
             <div className="confirm-message">End weekly review recording?</div>
             <div className="confirm-actions">
               <button
-                className="confirm-btn confirm-btn--continue"
+                className={`confirm-btn confirm-btn--continue${confirmFocus === 0 ? ' focused' : ''}`}
                 onClick={() => { logger.info('recording.confirm-continue'); setShowStopConfirm(false); }}
               >
                 Continue Recording
               </button>
               <button
-                className="confirm-btn confirm-btn--save"
+                className={`confirm-btn confirm-btn--save${confirmFocus === 1 ? ' focused' : ''}`}
                 onClick={() => { logger.info('recording.confirm-save'); setShowStopConfirm(false); stopRecording(); }}
               >
                 Save &amp; Close

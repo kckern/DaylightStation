@@ -1,0 +1,223 @@
+<h2>Full Design — Fitness Suggestions Grid</h2>
+<p class="subtitle">Review each section. Click to flag anything that needs changes.</p>
+
+<!-- API Contract -->
+<div class="section">
+  <h3>1. API Contract</h3>
+  <div style="background: rgba(255,255,255,0.04); border-radius: 8px; padding: 16px; font-family: monospace; font-size: 12px; line-height: 1.7; color: #ccc;">
+    <span style="color: #6a6;">GET /api/v1/fitness/suggestions?gridSize=8</span><br><br>
+    <span style="color: #888;">// Response</span><br>
+    {<br>
+    &nbsp;&nbsp;suggestions: [<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;{<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;type: <span style="color:#6af;">"next_up"</span> | <span style="color:#6af;">"resume"</span> | <span style="color:#6af;">"favorite"</span> | <span style="color:#6af;">"discovery"</span> | <span style="color:#6af;">"memorable"</span>,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;action: <span style="color:#6af;">"play"</span> | <span style="color:#6af;">"browse"</span>,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;contentId: <span style="color:#6af;">"plex:674227"</span>, &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#888;">// episode (play) or show (browse)</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;showId: <span style="color:#6af;">"plex:12345"</span>, &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#888;">// always present</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;title: <span style="color:#6af;">"Episode 8: Total Body"</span>,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;showTitle: <span style="color:#6af;">"Dig Deeper 30"</span>,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;thumbnail: <span style="color:#6af;">"/api/v1/display/plex/674227"</span>,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;poster: <span style="color:#6af;">"/api/v1/display/plex/12345"</span>,&nbsp;<span style="color:#888;">// show poster (portrait)</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;durationMinutes: <span style="color:#fa0;">30</span>,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;orientation: <span style="color:#6af;">"landscape"</span> | <span style="color:#6af;">"portrait"</span>,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#888;">// type-specific fields:</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;lastSessionDate: <span style="color:#6af;">"2026-04-06"</span>,&nbsp;&nbsp;<span style="color:#888;">// next_up, resume</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;progress: { percent: <span style="color:#fa0;">55</span>, remaining: <span style="color:#6af;">"47:32"</span> },&nbsp;<span style="color:#888;">// resume only</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;metric: { label: <span style="color:#6af;">"Suffer Score"</span>, value: <span style="color:#fa0;">180</span> },&nbsp;<span style="color:#888;">// memorable only</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;reason: <span style="color:#6af;">"Highest suffer score — Mar 12"</span>&nbsp;<span style="color:#888;">// memorable, discovery</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;},<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#888;">// ... up to gridSize items, pre-sorted</span><br>
+    &nbsp;&nbsp;]<br>
+    }
+  </div>
+</div>
+
+<!-- Backend Architecture -->
+<div class="section">
+  <h3>2. Backend — Strategy Pipeline</h3>
+  <div style="background: rgba(255,255,255,0.04); border-radius: 8px; padding: 16px; font-size: 13px; color: #ccc; line-height: 1.8;">
+    <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+      <div style="flex: 1; min-width: 200px; background: rgba(34,139,230,0.15); border: 1px solid rgba(34,139,230,0.3); border-radius: 6px; padding: 12px;">
+        <div style="font-weight: 700; color: #6af; margin-bottom: 6px;">SuggestionOrchestrator</div>
+        <div style="font-size: 11px; color: #aaa;">
+          • Receives gridSize from request<br>
+          • Runs strategies in priority order<br>
+          • Enforces per-type max limits<br>
+          • Fills remaining slots with discovery<br>
+          • Returns unified sorted array
+        </div>
+      </div>
+      <div style="flex: 1; min-width: 200px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 12px;">
+        <div style="font-weight: 700; color: #e0e0e0; margin-bottom: 6px;">Strategies (priority order)</div>
+        <div style="font-size: 11px; color: #aaa;">
+          1. <span style="color:#6af;">NextUpStrategy</span> — max 4, lookback configurable<br>
+          2. <span style="color:#ca6;">ResumeStrategy</span> — partial playhead + Resumable label<br>
+          3. <span style="color:#888;">FavoriteStrategy</span> — from config, show-level<br>
+          4. <span style="color:#c6a;">MemorableStrategy</span> — pluggable ranker (suffer score)<br>
+          5. <span style="color:#6a6;">DiscoveryStrategy</span> — lapsed weighted + random, fills remaining
+        </div>
+      </div>
+    </div>
+    <div style="margin-top: 12px; font-size: 11px; color: #888;">
+      Each strategy implements: <code style="color:#ccc;">async suggest(context, remainingSlots) → Suggestion[]</code><br>
+      Context contains: recent sessions, fitness config, household ID, content adapter
+    </div>
+  </div>
+</div>
+
+<!-- Config -->
+<div class="section">
+  <h3>3. Config — fitness.yml additions</h3>
+  <div style="background: rgba(255,255,255,0.04); border-radius: 8px; padding: 16px; font-family: monospace; font-size: 12px; line-height: 1.7; color: #ccc;">
+    <span style="color:#888;"># New section in fitness.yml</span><br>
+    <span style="color:#e0e0e0;">suggestions:</span><br>
+    &nbsp;&nbsp;<span style="color:#e0e0e0;">grid_size:</span> <span style="color:#fa0;">8</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#888;"># total cards to fill (2 rows × ~4)</span><br>
+    &nbsp;&nbsp;<span style="color:#e0e0e0;">lookback_days:</span> <span style="color:#fa0;">10</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#888;"># how far back for "recent" programs</span><br>
+    &nbsp;&nbsp;<span style="color:#e0e0e0;">next_up_max:</span> <span style="color:#fa0;">4</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#888;"># hard cap on next-up cards</span><br>
+    &nbsp;&nbsp;<span style="color:#e0e0e0;">memorable_lookback_days:</span> <span style="color:#fa0;">90</span>&nbsp;&nbsp;<span style="color:#888;"># window for memorable episodes</span><br>
+    &nbsp;&nbsp;<span style="color:#e0e0e0;">memorable_max:</span> <span style="color:#fa0;">2</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#888;"># max memorable cards</span><br>
+    &nbsp;&nbsp;<span style="color:#e0e0e0;">discovery_lapsed_days:</span> <span style="color:#fa0;">30</span>&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#888;"># "haven't done in X days" threshold</span><br>
+    &nbsp;&nbsp;<span style="color:#e0e0e0;">discovery_lapsed_weight:</span> <span style="color:#fa0;">0.7</span>&nbsp;<span style="color:#888;"># 70% lapsed, 30% true random</span><br>
+    &nbsp;&nbsp;<span style="color:#e0e0e0;">favorites:</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#888;"># evergreen shows</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;- <span style="color:#fa0;">12345</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#888;"># Video Game Cycling show ID</span><br>
+  </div>
+</div>
+
+<!-- Grid Mockup -->
+<div class="section">
+  <h3>4. UI — Two-Row Grid with Portrait/Landscape Mix</h3>
+  <div class="mockup">
+    <div class="mockup-header">Right Panel — Always 2 Full Rows</div>
+    <div class="mockup-body" style="padding: 16px; background: #12122a;">
+      <div style="display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: auto auto; gap: 10px;">
+
+        <!-- Row 1: Up Next cards (landscape thumbnails) -->
+        <div style="background: rgba(255,255,255,0.06); border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.12);">
+          <div style="height: 100px; background: linear-gradient(135deg, #2a1a3a, #1a2a4a); display: flex; align-items: center; justify-content: center; position: relative;">
+            <span style="font-size: 28px;">🏋️</span>
+            <div style="position: absolute; top: 6px; left: 6px; background: rgba(34,139,230,0.85); color: white; font-size: 9px; padding: 2px 5px; border-radius: 3px; font-weight: 600;">NEXT UP</div>
+            <div style="position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,0.7); color: white; font-size: 9px; padding: 2px 5px; border-radius: 3px;">30m</div>
+          </div>
+          <div style="padding: 8px;">
+            <div style="font-size: 10px; color: rgba(255,255,255,0.4);">Dig Deeper 30</div>
+            <div style="font-size: 12px; color: #e0e0e0; font-weight: 600;">Ep 8: Total Body</div>
+            <div style="font-size: 9px; color: rgba(255,255,255,0.3); margin-top: 2px;">2 days ago</div>
+          </div>
+        </div>
+
+        <div style="background: rgba(255,255,255,0.06); border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.12);">
+          <div style="height: 100px; background: linear-gradient(135deg, #1a2a1a, #2a3a1a); display: flex; align-items: center; justify-content: center; position: relative;">
+            <span style="font-size: 28px;">💪</span>
+            <div style="position: absolute; top: 6px; left: 6px; background: rgba(34,139,230,0.85); color: white; font-size: 9px; padding: 2px 5px; border-radius: 3px; font-weight: 600;">NEXT UP</div>
+            <div style="position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,0.7); color: white; font-size: 9px; padding: 2px 5px; border-radius: 3px;">45m</div>
+          </div>
+          <div style="padding: 8px;">
+            <div style="font-size: 10px; color: rgba(255,255,255,0.4);">P90X</div>
+            <div style="font-size: 12px; color: #e0e0e0; font-weight: 600;">Ep 22: Legs & Back</div>
+            <div style="font-size: 9px; color: rgba(255,255,255,0.3); margin-top: 2px;">4 days ago</div>
+          </div>
+        </div>
+
+        <div style="background: rgba(255,255,255,0.06); border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.12);">
+          <div style="height: 100px; background: linear-gradient(135deg, #2a2a1a, #3a2a1a); display: flex; align-items: center; justify-content: center; position: relative;">
+            <span style="font-size: 28px;">⚡</span>
+            <div style="position: absolute; top: 6px; left: 6px; background: rgba(34,139,230,0.85); color: white; font-size: 9px; padding: 2px 5px; border-radius: 3px; font-weight: 600;">NEXT UP</div>
+            <div style="position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,0.7); color: white; font-size: 9px; padding: 2px 5px; border-radius: 3px;">10m</div>
+          </div>
+          <div style="padding: 8px;">
+            <div style="font-size: 10px; color: rgba(255,255,255,0.4);">10 Minute Muscle</div>
+            <div style="font-size: 12px; color: #e0e0e0; font-weight: 600;">Ep 5: Arms</div>
+            <div style="font-size: 9px; color: rgba(255,255,255,0.3); margin-top: 2px;">1 day ago</div>
+          </div>
+        </div>
+
+        <div style="background: rgba(255,255,255,0.06); border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.12);">
+          <div style="height: 100px; background: linear-gradient(135deg, #1a1a2a, #2a1a3a); display: flex; align-items: center; justify-content: center; position: relative;">
+            <span style="font-size: 28px;">🔥</span>
+            <div style="position: absolute; top: 6px; left: 6px; background: rgba(34,139,230,0.85); color: white; font-size: 9px; padding: 2px 5px; border-radius: 3px; font-weight: 600;">NEXT UP</div>
+            <div style="position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,0.7); color: white; font-size: 9px; padding: 2px 5px; border-radius: 3px;">35m</div>
+          </div>
+          <div style="padding: 8px;">
+            <div style="font-size: 10px; color: rgba(255,255,255,0.4);">Generation Next</div>
+            <div style="font-size: 12px; color: #e0e0e0; font-weight: 600;">Ep 12: Core Work</div>
+            <div style="font-size: 9px; color: rgba(255,255,255,0.3); margin-top: 2px;">3 days ago</div>
+          </div>
+        </div>
+
+        <!-- Row 2: Mixed — resume (portrait), favorite (portrait), memorable, discovery -->
+        <div style="background: rgba(255,255,255,0.04); border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.07);">
+          <div style="height: 100px; background: linear-gradient(135deg, #1a2a2a, #1a3a3a); display: flex; align-items: center; justify-content: center; position: relative;">
+            <span style="font-size: 28px;">🎮</span>
+            <div style="position: absolute; top: 6px; left: 6px; background: rgba(200,160,40,0.85); color: white; font-size: 9px; padding: 2px 5px; border-radius: 3px; font-weight: 600;">RESUME</div>
+          </div>
+          <div style="padding: 8px;">
+            <div style="font-size: 10px; color: rgba(255,255,255,0.4);">VG Cycling</div>
+            <div style="font-size: 12px; color: #e0e0e0; font-weight: 600;">Ep 14: Mario Kart</div>
+            <div style="font-size: 9px; color: rgba(255,255,255,0.3); margin-top: 3px;">
+              <span style="display:inline-block; width: 50px; height: 3px; background: rgba(255,255,255,0.1); border-radius: 2px; vertical-align: middle; position: relative; margin-right: 3px;">
+                <span style="position:absolute; left:0; top:0; width: 55%; height: 100%; background: rgba(200,160,40,0.7); border-radius: 2px;"></span>
+              </span>
+              55%
+            </div>
+          </div>
+        </div>
+
+        <div style="background: rgba(255,255,255,0.04); border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.07);">
+          <div style="height: 100px; background: linear-gradient(135deg, #2a1a2a, #1a1a3a); display: flex; align-items: center; justify-content: center; position: relative;">
+            <span style="font-size: 28px;">⭐</span>
+            <div style="position: absolute; top: 6px; left: 6px; background: rgba(120,120,120,0.7); color: white; font-size: 9px; padding: 2px 5px; border-radius: 3px; font-weight: 600;">FAVORITE</div>
+          </div>
+          <div style="padding: 8px;">
+            <div style="font-size: 12px; color: #e0e0e0; font-weight: 600;">Video Game Cycling</div>
+            <div style="font-size: 9px; color: rgba(100,150,200,0.8); margin-top: 2px;">Browse episodes →</div>
+          </div>
+        </div>
+
+        <div style="background: rgba(255,255,255,0.04); border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.07);">
+          <div style="height: 100px; background: linear-gradient(135deg, #3a1a1a, #2a1a2a); display: flex; align-items: center; justify-content: center; position: relative;">
+            <span style="font-size: 28px;">🏆</span>
+            <div style="position: absolute; top: 6px; left: 6px; background: rgba(200,80,40,0.8); color: white; font-size: 9px; padding: 2px 5px; border-radius: 3px; font-weight: 600;">TOP EFFORT</div>
+          </div>
+          <div style="padding: 8px;">
+            <div style="font-size: 10px; color: rgba(255,255,255,0.4);">Insanity Max</div>
+            <div style="font-size: 12px; color: #e0e0e0; font-weight: 600;">Ep 3: Sweat Fest</div>
+            <div style="font-size: 9px; color: rgba(200,80,40,0.7); margin-top: 2px;">Suffer: 180 — Mar 12</div>
+          </div>
+        </div>
+
+        <div style="background: rgba(255,255,255,0.04); border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.07);">
+          <div style="height: 100px; background: linear-gradient(135deg, #1a2a1a, #1a1a2a); display: flex; align-items: center; justify-content: center; position: relative;">
+            <span style="font-size: 28px;">🎲</span>
+            <div style="position: absolute; top: 6px; left: 6px; background: rgba(80,160,80,0.7); color: white; font-size: 9px; padding: 2px 5px; border-radius: 3px; font-weight: 600;">TRY THIS</div>
+          </div>
+          <div style="padding: 8px;">
+            <div style="font-size: 10px; color: rgba(255,255,255,0.4);">Body Beast</div>
+            <div style="font-size: 12px; color: #e0e0e0; font-weight: 600;">Ep 1: Chest & Tris</div>
+            <div style="font-size: 9px; color: rgba(255,255,255,0.3); margin-top: 2px;">Last done 45 days ago</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Fill Logic -->
+<div class="section">
+  <h3>5. Grid Fill Algorithm</h3>
+  <div style="background: rgba(255,255,255,0.04); border-radius: 8px; padding: 16px; font-size: 13px; color: #ccc; line-height: 1.8;">
+    <div style="font-family: monospace; font-size: 12px;">
+      <span style="color:#888;">// Priority order — earlier strategies get first claim on slots</span><br>
+      1. <span style="color:#6af;">NextUpStrategy</span> → fills up to <span style="color:#fa0;">min(available, 4)</span><br>
+      2. <span style="color:#ca6;">ResumeStrategy</span> → fills up to <span style="color:#fa0;">min(available, remaining)</span><br>
+      3. <span style="color:#888;">FavoriteStrategy</span> → fills up to <span style="color:#fa0;">min(configured, remaining)</span><br>
+      4. <span style="color:#c6a;">MemorableStrategy</span> → fills up to <span style="color:#fa0;">min(2, remaining)</span><br>
+      5. <span style="color:#6a6;">DiscoveryStrategy</span> → fills <span style="color:#fa0;">all remaining slots</span><br>
+      <br>
+      <span style="color:#888;">// Dedup: no show appears twice (next_up and favorite for same show → keep next_up)</span><br>
+      <span style="color:#888;">// If a favorite show also has a next_up episode, the next_up wins and favorite is skipped</span>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top: 16px;">Does this design capture what you had in mind? Flag anything that needs adjustment.</p>

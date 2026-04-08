@@ -1,0 +1,67 @@
+<h2>Right Panel Layout</h2>
+<p class="subtitle">How should the three suggestion types be organized in the right area?</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Unified Feed</h3>
+      <p>All three types mixed into a single scrollable list, ordered by priority (resume first, then next-up, then evergreen). Each card shows its type via a subtle label. Simple, no sections to manage.</p>
+      <div style="margin-top: 12px; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 8px; font-family: monospace; font-size: 12px; line-height: 1.8; color: #999;">
+        ┌─────────────────────────────┐<br>
+        │ ▶ Resume: VG Cycling Ep 14  │ ← partial playhead<br>
+        │   <span style="color:#6a6">47:32 remaining</span>              │<br>
+        ├─────────────────────────────┤<br>
+        │ ▶ Next: Dig Deeper 30 Ep 8  │ ← next unwatched<br>
+        │   <span style="color:#aaa">Last session: 2 days ago</span>    │<br>
+        ├──────��──────────────────────┤<br>
+        �� ▶ Next: P90X Ep 22          │<br>
+        │   <span style="color:#aaa">Last session: 5 days ago</span>    │<br>
+        ├─────────────────────────────┤<br>
+        │ 🎮 Video Game Cycling       │ ← evergreen<br>
+        │   <span style="color:#69c">Browse episodes →</span>          ��<br>
+        └───���─────────────────────────┘
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Grouped Sections</h3>
+      <p>Three distinct sections with headers: "Pick Up Where You Left Off", "Up Next", and "Favorites". Each section has its own visual treatment. More structured, easier to scan.</p>
+      <div style="margin-top: 12px; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 8px; font-family: monospace; font-size: 12px; line-height: 1.8; color: #999;">
+        <span style="color:#e0e0e0; font-weight: bold;">PICK UP WHERE YOU LEFT OFF</span><br>
+        │ ▶ VG Cycling Ep 14 — 47:32 left │<br>
+        <br>
+        <span style="color:#e0e0e0; font-weight: bold;">UP NEXT</span><br>
+        │ ▶ Dig Deeper 30 — Ep 8          │<br>
+        │ ▶ P90X — Ep 22                  │<br>
+        │ ▶ 10 Min Muscle — Ep 5          │<br>
+        <br>
+        <span style="color:#e0e0e0; font-weight: bold;">FAVORITES</span><br>
+        │ 🎮 Video Game Cycling            │<br>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Hero + Grid</h3>
+      <p>The top suggestion (highest priority resume or next-up) gets a large "hero" card with poster art and a big play button. Below it, remaining suggestions shown as a compact grid of thumbnails. Evergreen favorites are a row at the bottom.</p>
+      <div style="margin-top: 12px; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 8px; font-family: monospace; font-size: 12px; line-height: 1.8; color: #999;">
+        ┌──────────────────────────────────┐<br>
+        │&nbsp;&nbsp;&nbsp;🖼️ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;��<br>
+        │&nbsp;&nbsp;&nbsp;VG Cycling Ep 14&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+        │&nbsp;&nbsp;&nbsp;Resume — 47:32 left&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[ ▶ ]│<br>
+        └──────────────────────────────────���<br>
+        ┌────────┐ ┌────────┐ ┌────────┐<br>
+        │Dig Deep│ │ P90X  &nbsp;│ │10MinMus│<br>
+        │ Ep 8 &nbsp;&nbsp;│ │ Ep 22 &nbsp;│ │ Ep 5 &nbsp;&nbsp;│<br>
+        └────────┘ └────────┘ ���────────┘<br>
+        <span style="color:#69c;">★ Video Game Cycling → Browse</span>
+      </div>
+    </div>
+  </div>
+</div>

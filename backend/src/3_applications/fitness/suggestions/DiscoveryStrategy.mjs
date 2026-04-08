@@ -111,6 +111,7 @@ export class DiscoveryStrategy {
         showId: `plex:${show.id}`,
         title: ep.title,
         showTitle: show.title,
+        description: ep.metadata?.summary || null,
         thumbnail: ep.thumbnail || `/api/v1/display/plex/${ep.localId}`,
         poster: `/api/v1/content/plex/image/${show.id}`,
         durationMinutes: ep.duration ? Math.round(ep.duration / 60) : null,

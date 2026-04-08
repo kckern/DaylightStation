@@ -14,6 +14,7 @@ export class BarcodeScanService {
   #pipelineConfig;
   #commandResolver;
   #onContentApproved;
+  #loadFallback;
   #logger;
 
   /**
@@ -32,7 +33,16 @@ export class BarcodeScanService {
     this.#pipelineConfig = deps.pipelineConfig;
     this.#commandResolver = deps.commandResolver;
     this.#onContentApproved = deps.onContentApproved || null;
+    this.#loadFallback = null;
     this.#logger = deps.logger || console;
+  }
+
+  /**
+   * Set a fallback loader for when WS broadcast may not reach the screen
+   * (e.g., TV off / FKB not running). Called with (deviceId, query).
+   */
+  setLoadFallback(fn) {
+    this.#loadFallback = fn;
   }
 
   /**
@@ -120,7 +130,7 @@ export class BarcodeScanService {
       this.#onContentApproved(targetScreen).catch(() => {});
     }
 
-    this.#broadcastEvent(targetScreen, {
+    const sentCount = this.#broadcastEvent(targetScreen, {
       action,
       contentId: payload.contentId,
       ...(payload.options || {}),
@@ -128,5 +138,15 @@ export class BarcodeScanService {
       device: payload.device,
       targetScreen,
     });
+
+    // Load fallback: only if WS broadcast reached nobody (TV off / FKB not loaded).
+    // When sentCount > 0, the screen is listening and will handle it via WS.
+    if (this.#loadFallback && sentCount === 0) {
+      this.#logger.info?.('barcode.loadFallback.triggered', { targetScreen, sentCount });
+      const query = { [action]: payload.contentId, ...(payload.options || {}) };
+      this.#loadFallback(targetScreen, query).catch(err => {
+        this.#logger.warn?.('barcode.loadFallback.failed', { targetScreen, error: err.message });
+      });
+    }
   }
 }
