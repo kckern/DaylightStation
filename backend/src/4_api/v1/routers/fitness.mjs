@@ -602,6 +602,16 @@ export function createFitnessRouter(config) {
         }
       });
 
+      // Fire-and-forget: backfill Strava description with the new voice memo
+      if (sessionId && memo?.transcriptClean && memo.transcriptClean !== '[No Memo]' && enrichmentService) {
+        enrichmentService.reEnrichDescription(sessionId, memo).catch(err => {
+          logger.warn?.('strava.voice_memo_backfill.failed', {
+            sessionId,
+            error: err?.message,
+          });
+        });
+      }
+
       return res.json({ ok: true, memo });
     } catch (e) {
       logger.error?.('fitness.voice_memo.error', { error: e.message });
