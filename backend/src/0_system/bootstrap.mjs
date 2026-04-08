@@ -192,6 +192,7 @@ import { AggregateHealthUseCase } from '#apps/health/AggregateHealthUseCase.mjs'
 import { ReconciliationProcessor } from '#apps/health/ReconciliationProcessor.mjs';
 import { HealthDashboardUseCase } from '#apps/health/HealthDashboardUseCase.mjs';
 import { FoodCatalogService } from '#apps/health/FoodCatalogService.mjs';
+import { LongitudinalAggregationService } from '../3_applications/health/LongitudinalAggregationService.mjs';
 import { YamlHealthDatastore } from '#adapters/persistence/yaml/YamlHealthDatastore.mjs';
 import { YamlFoodCatalogDatastore } from '#adapters/persistence/yaml/YamlFoodCatalogDatastore.mjs';
 import { WebNutribotAdapter } from '#adapters/nutribot/WebNutribotAdapter.mjs';
@@ -2510,6 +2511,7 @@ export function createHealthApiRouter(config) {
     healthServices,
     configService,
     sessionService = null,
+    sessionDatastore = null,
     entropyService = null,
     lifePlanRepository = null,
     catalogService = null,
@@ -2526,11 +2528,17 @@ export function createHealthApiRouter(config) {
     logger,
   });
 
+  const longitudinalService = new LongitudinalAggregationService({
+    sessionDatastore,
+    healthStore: healthServices.healthStore,
+  });
+
   return createHealthRouter({
     healthService: healthServices.healthService,
     healthStore: healthServices.healthStore,
     nutriListStore: healthServices.nutriListStore,
     dashboardService,
+    longitudinalService,
     configService,
     catalogService,
     webNutribotAdapter,
