@@ -8,7 +8,7 @@
 export class NextUpStrategy {
   async suggest(context, remainingSlots) {
     const { recentSessions, fitnessConfig, fitnessPlayableService } = context;
-    const max = Math.min(fitnessConfig?.suggestions?.next_up_max ?? 4, remainingSlots);
+    const max = remainingSlots;
     if (max <= 0) return [];
 
     // Build warmup/filler detection from config
