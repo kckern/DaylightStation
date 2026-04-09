@@ -11,13 +11,28 @@ export class NextUpStrategy {
     const max = Math.min(fitnessConfig?.suggestions?.next_up_max ?? 4, remainingSlots);
     if (max <= 0) return [];
 
+    // Build warmup/filler detection from config
+    const warmupPatterns = (fitnessConfig?.plex?.warmup_title_patterns || [])
+      .map(p => new RegExp(p, 'i'));
+    const minDuration = fitnessConfig?.suggestions?.discovery_min_duration_seconds ?? 600;
+
     // Extract distinct shows, most-recent-session first
-    // Sort by startTime descending to ensure most recent session wins per show
+    // Skip sessions where the episode was supplementary (warmup, cooldown, intro, short filler)
     const sortedSessions = [...recentSessions].sort((a, b) => (b.startTime ?? 0) - (a.startTime ?? 0));
     const showMap = new Map();
     for (const session of sortedSessions) {
       const gid = session.media?.primary?.grandparentId;
       if (!gid || showMap.has(gid)) continue;
+
+      // Check if the played episode was supplementary
+      const epTitle = (session.media.primary.title || '').toLowerCase();
+      const sessionDurSec = (session.durationMs || 0) / 1000;
+      const isFiller =
+        (sessionDurSec > 0 && sessionDurSec < minDuration) ||
+        warmupPatterns.some(re => re.test(epTitle)) ||
+        /\bintro\b/i.test(epTitle);
+      if (isFiller) continue;
+
       showMap.set(gid, {
         showId: gid,
         showTitle: session.media.primary.showTitle,
