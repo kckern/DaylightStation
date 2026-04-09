@@ -112,8 +112,40 @@ export class DiscoveryStrategy {
       const showLabels = episodes[0]?.metadata?.labels || [];
       if (showLabels.some(l => excludeLabels.has(l))) continue;
 
-      const nextUnwatched = episodes.find(ep => !ep.isWatched);
-      const ep = nextUnwatched || episodes[Math.floor(Math.random() * episodes.length)];
+      // Filter out supplementary episodes (warmups, cooldowns, intros, filler)
+      const warmupPatterns = (fitnessConfig?.plex?.warmup_title_patterns || [])
+        .map(p => new RegExp(p, 'i'));
+      const descTags = new Set(
+        (fitnessConfig?.plex?.warmup_description_tags || []).map(t => t.toLowerCase())
+      );
+      const minDuration = cfg.discovery_min_duration_seconds ?? 600; // 10 minutes
+
+      const substantive = episodes.filter(ep => {
+        const title = (ep.title || '').toLowerCase();
+        const idx = ep.metadata?.itemIndex;
+        const seasonIdx = ep.metadata?.parentIndex;
+        const dur = ep.duration || 0;
+
+        // Season 0 or episode 0 = supplementary
+        if (seasonIdx === 0 || idx === 0) return false;
+        // Too short
+        if (dur > 0 && dur < minDuration) return false;
+        // Title matches warmup/cooldown/stretch/intro patterns
+        if (warmupPatterns.some(re => re.test(title))) return false;
+        if (/\bintro\b/i.test(title)) return false;
+        // Description tags
+        const summary = (ep.metadata?.summary || '').toLowerCase();
+        if ([...descTags].some(tag => summary.includes(tag))) return false;
+        // Warmup/Cooldown labels on the episode itself
+        const epLabels = (ep.metadata?.labels || []).map(l => l.toLowerCase());
+        if (epLabels.some(l => l === 'warmup' || l === 'cooldown')) return false;
+
+        return true;
+      });
+
+      const pool = substantive.length > 0 ? substantive : episodes;
+      const nextUnwatched = pool.find(ep => !ep.isWatched);
+      const ep = nextUnwatched || pool[Math.floor(Math.random() * pool.length)];
       if (!ep) continue;
 
       const daysSince = show.lastDone
