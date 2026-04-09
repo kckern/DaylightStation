@@ -8,7 +8,7 @@ const BADGE_STYLES = {
   discovery:  { bg: 'rgba(80,160,80,0.7)',   label: 'TRY THIS' },
 };
 
-export default function SuggestionCard({ suggestion, onPlay, onBrowse }) {
+export default function SuggestionCard({ suggestion, onPlay, onBrowse, transitionClass = '' }) {
   const { type, title, showTitle, description, thumbnail,
           durationMinutes, progress, reason, poster } = suggestion;
 
@@ -18,7 +18,7 @@ export default function SuggestionCard({ suggestion, onPlay, onBrowse }) {
     ? formatRecency(suggestion.lastSessionDate) : null;
 
   return (
-    <div className={`suggestion-card suggestion-card--${type}${isMuted ? ' suggestion-card--muted' : ''}`}>
+    <div className={`suggestion-card suggestion-card--${type}${isMuted ? ' suggestion-card--muted' : ''}${transitionClass ? ` ${transitionClass}` : ''}`}>
       {/* Mini poster — overlays card, anchored bottom-left, clicks browse */}
       {poster && (
         <div
