@@ -197,3 +197,25 @@
   font-size: 8px;
   color: rgba(255, 255, 255, 0.35);
 }
+
+// ─── Card Swap Transitions ───────────────────────────
+
+.suggestion-card--spent {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.suggestion-card--fading-out {
+  opacity: 0;
+  transition: opacity 500ms ease-out;
+  pointer-events: none;
+}
+
+.suggestion-card--fading-in {
+  animation: suggestion-fade-in 500ms ease-in forwards;
+}
+
+@keyframes suggestion-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
