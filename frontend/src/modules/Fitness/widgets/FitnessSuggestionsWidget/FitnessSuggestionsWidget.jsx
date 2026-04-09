@@ -51,7 +51,7 @@ export default function FitnessSuggestionsWidget() {
   const handleBrowse = useCallback((suggestion) => {
     if (!onNavigate) return;
     const { localId } = parseContentId(suggestion.showId);
-    onNavigate({ type: 'show', id: localId, episodeId: suggestion.contentId });
+    onNavigate('show', { id: localId, episodeId: suggestion.contentId });
   }, [onNavigate]);
 
   if (rawData === null) return <SuggestionsGridSkeleton />;
