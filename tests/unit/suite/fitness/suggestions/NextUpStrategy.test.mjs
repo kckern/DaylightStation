@@ -149,4 +149,31 @@ describe('NextUpStrategy', () => {
     expect(result[0].showTitle).toBe('Show A');
     expect(result[1].showTitle).toBe('Show B');
   });
+
+  test('returns all candidates when remainingSlots exceeds next_up_max', async () => {
+    const sessions = [
+      makeSession('100', 'Show A', '1001', 'Ep 1', '2026-04-06'),
+      makeSession('200', 'Show B', '2001', 'Ep 1', '2026-04-05'),
+      makeSession('300', 'Show C', '3001', 'Ep 1', '2026-04-04'),
+      makeSession('400', 'Show D', '4001', 'Ep 1', '2026-04-03'),
+      makeSession('500', 'Show E', '5001', 'Ep 1', '2026-04-02'),
+      makeSession('600', 'Show F', '6001', 'Ep 1', '2026-04-01'),
+    ];
+    const playables = {};
+    for (const s of sessions) {
+      const showId = s.media.primary.grandparentId.replace('plex:', '');
+      playables[showId] = [
+        makeEpisode(parseInt(showId) * 10 + 1, 1, { isWatched: true }),
+        makeEpisode(parseInt(showId) * 10 + 2, 2, { isWatched: false }),
+      ];
+    }
+    // Create context with default next_up_max of 4
+    const ctx = makeContext(sessions, playables);
+    // Request 8 remaining slots — should return all 6 shows since strategy no longer caps internally
+    const result = await strategy.suggest(ctx, 8);
+    expect(result).toHaveLength(6);
+    expect(result.map(r => r.showTitle)).toEqual([
+      'Show A', 'Show B', 'Show C', 'Show D', 'Show E', 'Show F'
+    ]);
+  });
 });
