@@ -48,10 +48,11 @@ describe('FitnessSuggestionService', () => {
     const result = await service.getSuggestions({ gridSize: 6 });
 
     expect(result.suggestions).toHaveLength(6);
+    // Top row: next_up left, resume right
     expect(result.suggestions[0].type).toBe('next_up');
     expect(result.suggestions[1].type).toBe('next_up');
-    expect(result.suggestions[2].type).toBe('resume');
-    expect(result.suggestions[3].type).toBe('discovery');
+    expect(result.suggestions[2].type).toBe('discovery');
+    expect(result.suggestions[3].type).toBe('resume');
   });
 
   test('deduplicates by showId — earlier strategy wins', async () => {
@@ -86,5 +87,42 @@ describe('FitnessSuggestionService', () => {
     const service = makeService(strategies);
     const result = await service.getSuggestions({ gridSize: 4 });
     expect(result.suggestions).toEqual([]);
+  });
+
+  test('returns overflow candidates beyond grid size', async () => {
+    const strategies = [
+      stubStrategy('next_up', ['100', '200', '300', '400', '500', '600']),
+      stubStrategy('discovery', ['700', '800', '900', '1000']),
+    ];
+    const service = makeService(strategies);
+    const result = await service.getSuggestions({ gridSize: 4 });
+
+    expect(result.suggestions).toHaveLength(4);
+    expect(result.overflow).toBeDefined();
+    expect(result.overflow.length).toBeGreaterThan(0);
+    expect(result.overflow.some(c => c.type === 'next_up')).toBe(true);
+    const visibleShowIds = new Set(result.suggestions.map(s => s.showId));
+    for (const card of result.overflow) {
+      expect(visibleShowIds.has(card.showId)).toBe(false);
+    }
+  });
+
+  test('overflow is capped at 4 cards', async () => {
+    const ids = Array.from({ length: 20 }, (_, i) => String(1000 + i));
+    const strategies = [stubStrategy('next_up', ids)];
+    const service = makeService(strategies);
+    const result = await service.getSuggestions({ gridSize: 4 });
+
+    expect(result.suggestions).toHaveLength(4);
+    expect(result.overflow.length).toBeLessThanOrEqual(4);
+  });
+
+  test('overflow is empty when no excess candidates', async () => {
+    const strategies = [stubStrategy('next_up', ['100', '200'])];
+    const service = makeService(strategies);
+    const result = await service.getSuggestions({ gridSize: 4 });
+
+    expect(result.suggestions).toHaveLength(2);
+    expect(result.overflow).toEqual([]);
   });
 });
