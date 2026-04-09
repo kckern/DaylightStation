@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { useScreenData } from '@/screen-framework/data/ScreenDataProvider.jsx';
 import { useFitnessScreen } from '@/modules/Fitness/FitnessScreenProvider.jsx';
 import { DaylightMediaPath } from '@/lib/api.mjs';
@@ -31,10 +31,86 @@ function SuggestionsGridSkeleton() {
 
 export default function FitnessSuggestionsWidget() {
   const rawData = useScreenData('suggestions');
-  const { onPlay, onNavigate } = useFitnessScreen();
+  const { onPlay, onNavigate, lastPlayedContentId, setLastPlayedContentId } = useFitnessScreen();
+
+  // Local mutable state for visible cards and overflow
+  const [visibleCards, setVisibleCards] = useState([]);
+  const [overflow, setOverflow] = useState([]);
+  const [spentContentId, setSpentContentId] = useState(null);
+  const [fadingOut, setFadingOut] = useState(null);
+  const [fadingIn, setFadingIn] = useState(null);
+  const swapTimerRef = useRef(null);
+
+  // Sync from server data when it arrives or refreshes
+  useEffect(() => {
+    if (!rawData) return;
+    setVisibleCards(rawData.suggestions || []);
+    setOverflow(rawData.overflow || []);
+    // Clear any in-progress swap state on full refresh
+    setSpentContentId(null);
+    setFadingOut(null);
+    setFadingIn(null);
+  }, [rawData]);
+
+  // Detect when we return from playing (lastPlayedContentId was set, player closed)
+  useEffect(() => {
+    if (!lastPlayedContentId) return;
+    const isVisible = visibleCards.some(c => c.contentId === lastPlayedContentId);
+    if (!isVisible) {
+      setLastPlayedContentId(null);
+      return;
+    }
+
+    // Capture the contentId in a local variable for use in closures
+    const playedId = lastPlayedContentId;
+
+    // Mark the card as spent (renders at 50% opacity immediately)
+    setSpentContentId(playedId);
+    setLastPlayedContentId(null);
+
+    // After 1s beat, start fade-out
+    swapTimerRef.current = setTimeout(() => {
+      setFadingOut(playedId);
+
+      // After 500ms fade-out, swap the card
+      swapTimerRef.current = setTimeout(() => {
+        setVisibleCards(prev => {
+          const idx = prev.findIndex(c => c.contentId === playedId);
+          if (idx === -1) return prev;
+
+          // Pick replacement from overflow
+          const visibleShowIds = new Set(prev.map(c => c.showId));
+          const replacement = overflow.find(c => !visibleShowIds.has(c.showId));
+
+          if (replacement) {
+            setOverflow(ov => ov.filter(c => c.contentId !== replacement.contentId));
+            setFadingIn(replacement.contentId);
+            const next = [...prev];
+            next[idx] = replacement;
+            return next;
+          }
+          // No replacement — remove the card
+          return prev.filter((_, i) => i !== idx);
+        });
+
+        setSpentContentId(null);
+        setFadingOut(null);
+
+        // After 500ms fade-in, clear fading-in state
+        swapTimerRef.current = setTimeout(() => {
+          setFadingIn(null);
+        }, 500);
+      }, 500);
+    }, 1000);
+
+    return () => clearTimeout(swapTimerRef.current);
+  }, [lastPlayedContentId]);
 
   const handlePlay = useCallback((suggestion) => {
     if (!onPlay) return;
+    // Track which card was played for swap-on-return
+    setLastPlayedContentId?.(suggestion.contentId);
+
     const { source, localId } = parseContentId(suggestion.contentId);
     onPlay({
       id: localId,
@@ -46,7 +122,7 @@ export default function FitnessSuggestionsWidget() {
       duration: suggestion.durationMinutes,
       ...(suggestion.progress ? { resumePosition: suggestion.progress.playhead } : {}),
     });
-  }, [onPlay]);
+  }, [onPlay, setLastPlayedContentId]);
 
   const handleBrowse = useCallback((suggestion) => {
     if (!onNavigate) return;
@@ -55,15 +131,30 @@ export default function FitnessSuggestionsWidget() {
   }, [onNavigate]);
 
   if (rawData === null) return <SuggestionsGridSkeleton />;
-
-  const suggestions = rawData?.suggestions || [];
-  if (suggestions.length === 0) return null;
+  if (visibleCards.length === 0) return null;
 
   return (
     <div className="suggestions-grid">
-      {suggestions.map((s, i) => (
-        <SuggestionCard key={s.contentId || i} suggestion={s} onPlay={handlePlay} onBrowse={handleBrowse} />
-      ))}
+      {visibleCards.map((s, i) => {
+        let cardClass = '';
+        if (s.contentId === spentContentId && s.contentId !== fadingOut) {
+          cardClass = 'suggestion-card--spent';
+        } else if (s.contentId === fadingOut) {
+          cardClass = 'suggestion-card--fading-out';
+        } else if (s.contentId === fadingIn) {
+          cardClass = 'suggestion-card--fading-in';
+        }
+
+        return (
+          <SuggestionCard
+            key={s.contentId || i}
+            suggestion={s}
+            onPlay={handlePlay}
+            onBrowse={handleBrowse}
+            transitionClass={cardClass}
+          />
+        );
+      })}
     </div>
   );
 }
