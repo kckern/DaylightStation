@@ -13,13 +13,15 @@ export function FitnessScreenProvider({ onPlay, onNavigate, onCtaAction, childre
   const [scrollToDate, setScrollToDate] = useState(null);
   const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [longitudinalSelection, setLongitudinalSelection] = useState(null);
+  const [lastPlayedContentId, setLastPlayedContentId] = useState(null);
 
   const value = useMemo(() => ({
     onPlay, onNavigate, onCtaAction,
     scrollToDate, setScrollToDate,
     selectedSessionId, setSelectedSessionId,
     longitudinalSelection, setLongitudinalSelection,
-  }), [onPlay, onNavigate, onCtaAction, scrollToDate, selectedSessionId, longitudinalSelection]);
+    lastPlayedContentId, setLastPlayedContentId,
+  }), [onPlay, onNavigate, onCtaAction, scrollToDate, selectedSessionId, longitudinalSelection, lastPlayedContentId]);
 
   return (
     <FitnessScreenContext.Provider value={value}>
@@ -39,6 +41,7 @@ export function useFitnessScreen() {
       scrollToDate: null, setScrollToDate: () => {},
       selectedSessionId: null, setSelectedSessionId: () => {},
       longitudinalSelection: null, setLongitudinalSelection: () => {},
+      lastPlayedContentId: null, setLastPlayedContentId: () => {},
     };
   }
   return ctx;
