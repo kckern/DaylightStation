@@ -19,9 +19,15 @@ export default function SuggestionCard({ suggestion, onPlay, onBrowse }) {
 
   return (
     <div className={`suggestion-card suggestion-card--${type}${isMuted ? ' suggestion-card--muted' : ''}`}>
-      {/* Mini poster — overlays card, anchored bottom-left */}
+      {/* Mini poster — overlays card, anchored bottom-left, clicks browse */}
       {poster && (
-        <div className="suggestion-card__mini-poster">
+        <div
+          className="suggestion-card__mini-poster"
+          onClick={() => onBrowse?.(suggestion)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onBrowse?.(suggestion); }}
+        >
           <img src={poster} alt="" onError={(e) => { e.target.style.display = 'none'; }} />
         </div>
       )}
