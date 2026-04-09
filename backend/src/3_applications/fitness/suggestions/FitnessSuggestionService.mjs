@@ -65,11 +65,14 @@ export class FitnessSuggestionService {
     };
 
     // Run strategies in order, dedup by showId
-    const results = [];
+    // Collect beyond gridSize into overflow for client-side card replacement
+    const OVERFLOW_CAP = 4;
+    const allCards = [];
     const usedShowIds = new Set();
+    const maxCollect = slots + OVERFLOW_CAP;
 
     for (const strategy of this.#strategies) {
-      const remaining = slots - results.length;
+      const remaining = maxCollect - allCards.length;
       if (remaining <= 0) break;
 
       let cards;
@@ -84,13 +87,25 @@ export class FitnessSuggestionService {
       }
 
       for (const card of cards) {
-        if (results.length >= slots) break;
+        if (allCards.length >= maxCollect) break;
         if (card.showId && usedShowIds.has(card.showId)) continue;
-        results.push(card);
+        allCards.push(card);
         if (card.showId) usedShowIds.add(card.showId);
       }
     }
 
-    return { suggestions: results };
+    const results = allCards.slice(0, slots);
+    const overflow = allCards.slice(slots, slots + OVERFLOW_CAP);
+
+    // Reorder top row: next_up cards left, resume cards right
+    const topRow = results.slice(0, 4);
+    const bottomRow = results.slice(4);
+    topRow.sort((a, b) => {
+      const aResume = a.type === 'resume' ? 1 : 0;
+      const bResume = b.type === 'resume' ? 1 : 0;
+      return aResume - bResume;
+    });
+
+    return { suggestions: [...topRow, ...bottomRow], overflow };
   }
 }
