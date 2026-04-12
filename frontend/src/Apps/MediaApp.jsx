@@ -11,7 +11,7 @@ import PlayerPanel from '../modules/Media/PlayerPanel.jsx';
 import MiniPlayer from '../modules/Media/MiniPlayer.jsx';
 import Toast from '../modules/Media/Toast.jsx';
 import { recordPlay, updateProgress } from '../hooks/media/useMediaHistory.js';
-import { CastTargetProvider } from '../modules/Media/useCastTarget.js';
+import { CastTargetProvider } from '../modules/Media/useCastTarget.jsx';
 import CastTargetChip from '../modules/Media/CastTargetChip.jsx';
 import CastTargetPanel from '../modules/Media/CastTargetPanel.jsx';
 import './MediaApp.scss';

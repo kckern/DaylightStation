@@ -1,6 +1,6 @@
 // frontend/src/modules/Media/CastPopover.jsx
 import React, { useState, useEffect, useRef } from 'react';
-import { useCastTarget } from './useCastTarget.js';
+import { useCastTarget } from './useCastTarget.jsx';
 
 const CastPopover = ({ contentId, isCollection, open, onClose, anchorRef }) => {
   const { device, settings, castToTarget } = useCastTarget();

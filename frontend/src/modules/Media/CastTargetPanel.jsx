@@ -1,7 +1,7 @@
 // frontend/src/modules/Media/CastTargetPanel.jsx
 import React, { useMemo, useEffect, useRef } from 'react';
 import { useDeviceMonitor } from '../../hooks/media/useDeviceMonitor.js';
-import { useCastTarget } from './useCastTarget.js';
+import { useCastTarget } from './useCastTarget.jsx';
 import getLogger from '../../lib/logging/Logger.js';
 
 const SHADER_OPTIONS = [

@@ -1,7 +1,7 @@
 // frontend/src/modules/Media/CastButton.jsx
 import React, { useState, useCallback, useMemo, useRef } from 'react';
 import getLogger from '../../lib/logging/Logger.js';
-import { useCastTarget } from './useCastTarget.js';
+import { useCastTarget } from './useCastTarget.jsx';
 import DevicePicker from './DevicePicker.jsx';
 import CastPopover from './CastPopover.jsx';
 
