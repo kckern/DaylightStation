@@ -3,7 +3,7 @@ import React, { useMemo } from 'react';
 import { useDeviceMonitor } from '../../hooks/media/useDeviceMonitor.js';
 import getLogger from '../../lib/logging/Logger.js';
 
-const DevicePicker = ({ open, onClose, contentId, onCastStarted }) => {
+const DevicePicker = ({ open, onClose, contentId, onCastStarted, onDevicePicked }) => {
   const logger = useMemo(() => getLogger().child({ component: 'DevicePicker' }), []);
   const { devices, playbackStates } = useDeviceMonitor();
 
@@ -13,6 +13,15 @@ const DevicePicker = ({ open, onClose, contentId, onCastStarted }) => {
   );
 
   const handleCast = async (deviceId) => {
+    const deviceObj = castableDevices.find(d => d.id === deviceId);
+
+    // If onDevicePicked is provided, delegate to it (target-aware flow)
+    if (onDevicePicked) {
+      onDevicePicked(deviceId, deviceObj);
+      return;
+    }
+
+    // Legacy flow — direct cast
     logger.info('cast.start', { deviceId, contentId });
     onCastStarted?.(deviceId);
     try {
