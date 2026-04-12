@@ -1,4 +1,4 @@
-// frontend/src/modules/Media/useCastTarget.js
+// frontend/src/modules/Media/useCastTarget.jsx
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { wsService } from '../../services/WebSocketService';
 import getLogger from '../../lib/logging/Logger.js';
@@ -63,7 +63,7 @@ export function CastTargetProvider({ children }) {
     setDevice(dev);
     setSettings(prev => ({
       shader: initialSettings.shader ?? prev.shader,
-      volume: initialSettings.volume ?? prev.volume,
+      volume: initialSettings.volume ?? prev.volume ?? dev.defaultVolume ?? 50,
     }));
     setStatus('idle');
     setCurrentStep(null);
