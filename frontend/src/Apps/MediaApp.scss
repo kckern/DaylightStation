@@ -1980,10 +1980,12 @@
 }
 
 .cast-popover {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  right: 0;
-  width: 280px;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 300px;
+  max-width: 90vw;
   background: #252540;
   border: 1px solid #3a3a5a;
   border-radius: 10px;
