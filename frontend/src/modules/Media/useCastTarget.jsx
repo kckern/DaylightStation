@@ -132,6 +132,19 @@ export function CastTargetProvider({ children }) {
     castToTarget(contentId, perCastOptions);
   }, [castToTarget]);
 
+  // Live volume control — adjusts device volume without re-casting
+  const setDeviceVolume = useCallback(async (level) => {
+    if (!device) return;
+    const clamped = Math.max(0, Math.min(100, level));
+    logger.info('cast-target.volume', { deviceId: device.id, level: clamped });
+    updateSettings({ volume: clamped });
+    try {
+      await fetch(`/api/v1/device/${device.id}/volume/${clamped}`);
+    } catch (err) {
+      logger.warn('cast-target.volume.error', { deviceId: device.id, error: err.message });
+    }
+  }, [device, logger, updateSettings]);
+
   const value = useMemo(() => ({
     device,
     settings,
@@ -144,7 +157,8 @@ export function CastTargetProvider({ children }) {
     clearTarget,
     castToTarget,
     retry,
-  }), [device, settings, status, currentStep, error, selectDevice, updateSettings, clearTarget, castToTarget, retry]);
+    setDeviceVolume,
+  }), [device, settings, status, currentStep, error, selectDevice, updateSettings, clearTarget, castToTarget, retry, setDeviceVolume]);
 
   return (
     <CastTargetContext.Provider value={value}>

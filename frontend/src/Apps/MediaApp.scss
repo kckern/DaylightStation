@@ -1762,8 +1762,48 @@
   flex-shrink: 0;
 }
 
+.cast-target-chip__main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+
 .cast-target-chip__name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
-.cast-target-chip__arrow { color: #666; font-size: 10px; }
+
+.cast-target-chip__volume {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  padding-left: 6px;
+}
+
+.cast-target-chip__vol-btn {
+  background: none;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 0 4px;
+  line-height: 1;
+  &:hover { color: #c4bbf0; }
+  &:active { color: #7c6fe0; }
+}
+
+.cast-target-chip__vol-level {
+  font-size: 10px;
+  color: #666;
+  min-width: 18px;
+  text-align: center;
+}
 
 .cast-target-chip__pulse {
   animation: chip-pulse 1.2s ease-in-out infinite;
@@ -2021,12 +2061,26 @@
   color: #fff;
   border: none;
   border-radius: 8px;
-  font-size: 14px;
-  font-weight: 600;
   cursor: pointer;
-  letter-spacing: 0.5px;
   transition: background 0.15s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
 
   &:hover { background: #6b5fcc; }
   &:active { background: #5a4fbb; }
+}
+
+.cast-popover__cast-label {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.cast-popover__cast-config {
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.8;
+  letter-spacing: 0.3px;
 }

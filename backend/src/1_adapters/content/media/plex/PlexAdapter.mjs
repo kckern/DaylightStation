@@ -1778,12 +1778,15 @@ export class PlexAdapter {
       const rawLibraryId = query.libraryId || query['plex.libraryId'] || undefined;
       const libraryIds = rawLibraryId ? String(rawLibraryId).split(',').map(s => s.trim()) : [undefined];
 
-      // Execute hub search (multiple libraries if comma-separated)
-      const allResults = await Promise.all(
-        libraryIds.map(libId =>
-          this.client.hubSearch(query.text, { limit: query.take || 50, libraryId: libId })
-        )
-      );
+      // Execute hub search + playlist search in parallel
+      const [allResults, playlists] = await Promise.all([
+        Promise.all(
+          libraryIds.map(libId =>
+            this.client.hubSearch(query.text, { limit: query.take || 50, libraryId: libId })
+          )
+        ),
+        this._searchPlaylists(query.text),
+      ]);
       let items = allResults.flatMap(r => r.results || []);
 
       // Plex hub search leaks results from other libraries even with sectionId.
@@ -1813,12 +1816,15 @@ export class PlexAdapter {
         items = items.slice(query.skip);
       }
 
-      // ── Tier 1 (fast): hubSearch only, top-level types, no hydration ──
+      // ── Tier 1 (fast): hubSearch + playlists, top-level types, no hydration ──
       if (tier === 1) {
         const topLevelTypes = ['show', 'movie', 'artist', 'album', 'collection'];
         const filtered = items.filter(item => topLevelTypes.includes(item.type));
         const converted = filtered.map(item => this._hubResultToListableItem(item));
-        return { items: converted, total: converted.length };
+
+        // Playlists first — they're curated content the user actively wants
+        const combined = [...playlists, ...converted];
+        return { items: combined, total: combined.length };
       }
 
       // ── Tier 2 (full): playlists, collections, hydration ──

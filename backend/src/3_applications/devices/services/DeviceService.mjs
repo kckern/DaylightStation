@@ -107,6 +107,7 @@ export class DeviceService {
     return Array.from(this.#devices.entries()).map(([id, device]) => ({
       id,
       type: device.type,
+      defaultVolume: device.defaultVolume,
       capabilities: device.getCapabilities()
     }));
   }
