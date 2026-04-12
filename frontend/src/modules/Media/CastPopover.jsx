@@ -35,19 +35,17 @@ const CastPopover = ({ contentId, isCollection, open, onClose, anchorRef }) => {
     onClose();
   };
 
-  const settingsSummary = [
-    settings.shader ? `${settings.shader}` : null,
-    settings.volume != null ? `vol ${settings.volume}` : null,
-  ].filter(Boolean).join(' · ');
+  // Build config tags that will show on the button
+  const configTags = [];
+  if (shuffle) configTags.push('shuffle');
+  if (repeat) configTags.push('repeat');
+  if (settings.shader) configTags.push(settings.shader);
+  if (settings.volume != null) configTags.push(`vol ${settings.volume}`);
 
   return (
     <div className="cast-popover" ref={popoverRef}>
       <div className="cast-popover__header">
-        <span className="cast-popover__label">Sending to</span>
-        <span className="cast-popover__device">{device.name}</span>
-        {settingsSummary && (
-          <span className="cast-popover__settings">{settingsSummary}</span>
-        )}
+        <span className="cast-popover__device">{device.name || device.id}</span>
       </div>
 
       {isCollection && (
@@ -74,7 +72,12 @@ const CastPopover = ({ contentId, isCollection, open, onClose, anchorRef }) => {
       )}
 
       <button className="cast-popover__cast-btn" onClick={handleCast}>
-        &#x25B6; Cast Now
+        <span className="cast-popover__cast-label">&#x25B6; Cast Now</span>
+        {configTags.length > 0 && (
+          <span className="cast-popover__cast-config">
+            {configTags.join(' · ')}
+          </span>
+        )}
       </button>
     </div>
   );
