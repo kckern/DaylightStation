@@ -203,7 +203,7 @@ const ContentDetailView = ({ contentId, onTitleResolved }) => {
             {isContainer && (
               <button className="action-btn" onClick={handleShuffle}>&#8652; Shuffle</button>
             )}
-            <CastButton contentId={contentId} className="action-btn" />
+            <CastButton contentId={contentId} isCollection={isContainer} className="action-btn" />
           </div>
         </div>
       </div>
