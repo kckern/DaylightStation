@@ -11,12 +11,17 @@ import PlayerPanel from '../modules/Media/PlayerPanel.jsx';
 import MiniPlayer from '../modules/Media/MiniPlayer.jsx';
 import Toast from '../modules/Media/Toast.jsx';
 import { recordPlay, updateProgress } from '../hooks/media/useMediaHistory.js';
+import { CastTargetProvider } from '../modules/Media/useCastTarget.js';
+import CastTargetChip from '../modules/Media/CastTargetChip.jsx';
+import CastTargetPanel from '../modules/Media/CastTargetPanel.jsx';
 import './MediaApp.scss';
 
 const MediaApp = () => {
   return (
     <MediaAppProvider>
-      <MediaAppInner />
+      <CastTargetProvider>
+        <MediaAppInner />
+      </CastTargetProvider>
     </MediaAppProvider>
   );
 };
@@ -29,6 +34,9 @@ const MediaAppInner = () => {
   usePlaybackBroadcast(playerRef, queue.currentItem);
   const logger = useMemo(() => getLogger().child({ app: 'media', sessionLog: true }), []);
   const urlCommand = useMediaUrlParams();
+
+  // Cast target panel
+  const [castPanelOpen, setCastPanelOpen] = useState(false);
 
   // Playback state (shared between PlayerPanel and MiniPlayer)
   const [playbackState, setPlaybackState] = useState({
@@ -233,6 +241,12 @@ const MediaAppInner = () => {
   return (
     <div className="App media-app">
       <div className={`media-panels media-panels--active-${activePanel}`}>
+        {/* Cast Target (floats over panels) */}
+        <div className="media-cast-target-bar">
+          <CastTargetChip onClick={() => setCastPanelOpen(o => !o)} />
+          <CastTargetPanel open={castPanelOpen} onClose={() => setCastPanelOpen(false)} />
+        </div>
+
         {/* Panel 1: Search/Home (left) */}
         <div className={`media-panel media-panel--search ${activePanel === 'search' ? 'media-panel--active' : ''}`}>
           <SearchHomePanel />
