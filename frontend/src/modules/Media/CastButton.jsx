@@ -39,7 +39,7 @@ const CastButton = ({ contentId, isCollection = false, className = '' }) => {
   if (!contentId) return null;
 
   return (
-    <span className="cast-btn-wrapper" style={{ position: 'relative' }}>
+    <span className="cast-btn-wrapper">
       <button
         ref={btnRef}
         className={`cast-btn ${className}`}
