@@ -1,6 +1,6 @@
 // frontend/src/modules/Media/CastTargetChip.jsx
 import React, { useMemo } from 'react';
-import { useCastTarget } from './useCastTarget.js';
+import { useCastTarget } from './useCastTarget.jsx';
 import getLogger from '../../lib/logging/Logger.js';
 
 const CastTargetChip = ({ onClick }) => {
