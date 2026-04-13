@@ -767,8 +767,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Livestream engine
   const { ChannelManager } = await import('./3_applications/livestream/ChannelManager.mjs');
+  const programsBasePath = `${configService.getDataDir()}/household/apps/livestream/programs`;
   const channelManager = new ChannelManager({
     mediaBasePath,
+    programsBasePath,
     broadcastEvent: (topic, payload) => eventBus.broadcast(topic, payload),
     logger: rootLogger.child({ module: 'livestream' }),
   });
