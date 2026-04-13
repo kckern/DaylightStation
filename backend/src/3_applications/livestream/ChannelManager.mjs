@@ -1,4 +1,5 @@
 import { PassThrough } from 'stream';
+import path from 'path';
 import { StreamChannel } from '../../2_domains/livestream/StreamChannel.mjs';
 import { SourceFeeder } from '../../2_domains/livestream/SourceFeeder.mjs';
 import { FFmpegStreamAdapter } from '../../1_adapters/livestream/FFmpegStreamAdapter.mjs';
@@ -78,8 +79,9 @@ export class ChannelManager {
 
   forcePlay(name, file) {
     const { channel, feeder } = this.#getEntry(name);
+    const resolved = this.#resolvePath(file);
     channel.setCurrentTrack(file);
-    feeder.playFile(file);
+    feeder.playFile(resolved);
     this.#logger.info?.('livestream.force', { channel: name, file });
     this.#broadcast(name);
   }
@@ -168,7 +170,7 @@ export class ChannelManager {
     switch (action.type) {
       case 'play':
         entry.channel.setCurrentTrack(action.file);
-        entry.feeder.playFile(action.file);
+        entry.feeder.playFile(this.#resolvePath(action.file));
         break;
       case 'queue':
         entry.channel.enqueueAll(action.files);
@@ -179,7 +181,7 @@ export class ChannelManager {
           timeout: action.timeout,
           default: action.default,
         });
-        if (action.prompt) entry.feeder.playFile(action.prompt);
+        if (action.prompt) entry.feeder.playFile(this.#resolvePath(action.prompt));
         if (action.timeout) {
           setTimeout(() => {
             if (entry.runner?.isWaitingForInput) this.sendInput(name, null);
@@ -206,7 +208,7 @@ export class ChannelManager {
     const next = channel.dequeue();
     if (next) {
       channel.setCurrentTrack(next);
-      feeder.playFile(next);
+      feeder.playFile(this.#resolvePath(next));
       this.#broadcast(name);
     } else {
       this.#startAmbient(name);
@@ -219,7 +221,7 @@ export class ChannelManager {
     if (ambient === 'silence' || !ambient) {
       feeder.playSilence();
     } else if (ambient.startsWith('file:')) {
-      feeder.playAmbientLoop(ambient.slice(5));
+      feeder.playAmbientLoop(this.#resolvePath(ambient.slice(5)));
     } else {
       feeder.playSilence();
     }
@@ -235,6 +237,17 @@ export class ChannelManager {
     const entry = this.#channels.get(name);
     if (!entry) throw new Error(`Channel "${name}" not found`);
     return entry;
+  }
+
+  /**
+   * Resolve a file path — if relative, prepend mediaBasePath.
+   * @private
+   */
+  #resolvePath(filePath) {
+    if (!filePath) return filePath;
+    if (path.isAbsolute(filePath)) return filePath;
+    // Resolve relative to app root (one level above backend/)
+    return path.resolve('..', filePath);
   }
 }
 
