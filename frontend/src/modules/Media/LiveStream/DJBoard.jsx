@@ -7,24 +7,34 @@ const DJBoard = ({ channel, onBack }) => {
   const [status, setStatus] = useState(null);
 
   const refresh = useCallback(async () => {
-    const data = await DaylightAPI(`/api/v1/livestream/${channel}`);
-    setStatus(data);
+    try {
+      const data = await DaylightAPI(`/api/v1/livestream/${channel}`);
+      setStatus(data);
+    } catch (err) {
+      console.error('DJBoard refresh error:', err.message);
+    }
   }, [channel]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
   useEffect(() => {
-    const ws = new WebSocket(`ws://${location.host}/ws`);
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'bus_command', action: 'subscribe', topics: [`livestream:${channel}`] }));
-    };
-    ws.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data);
-        if (msg.topic === `livestream:${channel}`) setStatus(msg);
-      } catch {}
-    };
-    return () => ws.close();
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    let ws;
+    try {
+      ws = new WebSocket(`${proto}://${location.host}/ws`);
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: 'bus_command', action: 'subscribe', topics: [`livestream:${channel}`] }));
+      };
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.topic === `livestream:${channel}`) setStatus(msg);
+        } catch {}
+      };
+    } catch (err) {
+      console.error('DJBoard WebSocket error:', err.message);
+    }
+    return () => ws?.close();
   }, [channel]);
 
   const queueFile = async () => {

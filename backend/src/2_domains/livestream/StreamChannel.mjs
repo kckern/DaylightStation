@@ -83,6 +83,7 @@ export class StreamChannel {
       activeProgram: this.#activeProgram,
       waitingForInput: this.#waitingForInput,
       listenerCount: this.#listenerCount,
+      soundboard: this.#soundboard,
     };
   }
 }
