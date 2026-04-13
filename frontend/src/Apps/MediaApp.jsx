@@ -14,7 +14,6 @@ import { recordPlay, updateProgress } from '../hooks/media/useMediaHistory.js';
 import { CastTargetProvider } from '../modules/Media/useCastTarget.jsx';
 import CastTargetChip from '../modules/Media/CastTargetChip.jsx';
 import CastTargetPanel from '../modules/Media/CastTargetPanel.jsx';
-import ChannelList from '../modules/Media/LiveStream/ChannelList.jsx';
 import './MediaApp.scss';
 
 const MediaApp = () => {
@@ -218,7 +217,6 @@ const MediaAppInner = () => {
     if (location.pathname.startsWith('/media/play')) return 'player';
     if (location.pathname.startsWith('/media/view/')) return 'browser';
     if (location.pathname.startsWith('/media/search/')) return 'search';
-    if (location.pathname.startsWith('/media/livestream')) return 'livestream';
     return 'search'; // default: search/home
   }, [location.pathname]);
 
@@ -271,10 +269,6 @@ const MediaAppInner = () => {
           />
         </div>
 
-        {/* Panel 4: LiveStream DJ Board */}
-        <div className={`media-panel media-panel--livestream ${activePanel === 'livestream' ? 'media-panel--active' : ''}`}>
-          <ChannelList />
-        </div>
       </div>
 
       {/* MiniPlayer: visible on mobile/tablet when player panel is not active */}
