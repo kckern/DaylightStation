@@ -152,6 +152,7 @@ export class DiscoveryStrategy {
         ? Math.round((today - new Date(show.lastDone + 'T12:00:00')) / 86400000)
         : null;
 
+      const infoLabels = episodeData.info?.labels || showLabels;
       results.push({
         type: 'discovery',
         action: 'play',
@@ -164,6 +165,7 @@ export class DiscoveryStrategy {
         poster: `/api/v1/content/plex/image/${show.id}`,
         durationMinutes: ep.duration ? Math.round(ep.duration / 60) : null,
         orientation: 'landscape',
+        labels: infoLabels,
         reason: daysSince != null ? `Last done ${daysSince} days ago` : 'New to you',
       });
     }

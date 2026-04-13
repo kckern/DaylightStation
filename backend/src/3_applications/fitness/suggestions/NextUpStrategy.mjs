@@ -55,6 +55,7 @@ export class NextUpStrategy {
       const nextEp = (episodeData.items || []).find(ep => !ep.isWatched);
       if (!nextEp) continue;
 
+      const showLabels = episodeData.info?.labels || [];
       const isShow = nextEp.metadata?.type === 'show';
       results.push({
         type: 'next_up',
@@ -68,6 +69,7 @@ export class NextUpStrategy {
         poster: `/api/v1/content/plex/image/${localId}`,
         durationMinutes: nextEp.duration ? Math.round(nextEp.duration / 60) : null,
         orientation: isShow ? 'portrait' : 'landscape',
+        labels: showLabels,
         lastSessionDate: show.lastSessionDate,
       });
     }

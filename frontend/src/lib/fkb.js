@@ -106,9 +106,15 @@ export function onResume(callback) {
 }
 
 /**
- * Bind FKB's hardware back button to dispatch a keydown Escape event.
+ * Bind FKB's hardware back button to trigger a browser history back.
  * Without this, FKB intercepts the back button and opens its own sidebar
  * instead of passing it to the WebView.
+ *
+ * Uses history.back() so the popstate trap in MenuNavigationContext handles
+ * navigation — including pop guards (e.g. recording-in-progress confirmation).
+ * This is more reliable than synthetic keyboard events, which only fire on
+ * window and don't reach component-level keydown listeners.
+ *
  * Call once at app startup.
  */
 let _backBound = false;
@@ -116,9 +122,7 @@ export function bindBackButton() {
   if (_backBound || !isFKBAvailable()) return;
   fully.bind('onBackButton', () => {
     logger().info('fkb.backButton');
-    window.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true
-    }));
+    window.history.back();
   });
   _backBound = true;
 }

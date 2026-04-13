@@ -245,6 +245,7 @@ export class WakeAndLoadService {
     this.#logger.info?.('wake-and-load.load.start', { deviceId, query: contentQuery });
 
     const screenPath = device.screenPath || '/tv';
+    const screenName = screenPath.replace(/^\/screen\//, '');
     const hasContentQuery = Object.keys(contentQuery).length > 0;
 
     // --- WS-first delivery ---
@@ -262,10 +263,10 @@ export class WakeAndLoadService {
           // Broadcast content command (targeted to this device)
           this.#broadcast({ topic, targetDevice: deviceId, ...contentQuery });
 
-          // Wait for ack from the screen
+          // Wait for ack from the screen (frontend sends screen name, not device ID)
           const ackStart = Date.now();
           await this.#eventBus.waitForMessage(
-            (msg) => msg.type === 'content-ack' && msg.screen === deviceId,
+            (msg) => msg.type === 'content-ack' && msg.screen === screenName,
             4000
           );
 

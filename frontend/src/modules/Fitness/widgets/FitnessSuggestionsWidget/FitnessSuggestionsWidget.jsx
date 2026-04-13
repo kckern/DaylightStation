@@ -120,6 +120,7 @@ export default function FitnessSuggestionsWidget() {
       videoUrl: DaylightMediaPath(`api/v1/play/${source}/${localId}`),
       image: DaylightMediaPath(suggestion.thumbnail?.replace(/^\//, '') || `api/v1/display/${source}/${localId}`),
       duration: suggestion.durationMinutes,
+      labels: suggestion.labels || [],
       ...(suggestion.progress ? { resumePosition: suggestion.progress.playhead } : {}),
     });
   }, [onPlay, setLastPlayedContentId]);

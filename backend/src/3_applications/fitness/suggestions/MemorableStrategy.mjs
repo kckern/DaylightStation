@@ -84,13 +84,20 @@ export class MemorableStrategy {
       const showId = session.media.primary.grandparentId;
       const localShowId = showId?.replace(/^plex:/, '');
 
-      // Fetch episode metadata for description
+      // Fetch episode metadata for description + show-level labels for governance
       let description = null;
+      let showLabels = [];
       if (contentAdapter) {
         try {
           const item = await contentAdapter.getItem(cid);
           description = item?.metadata?.summary || null;
         } catch { /* proceed without description */ }
+        if (localShowId && contentAdapter.getContainerInfo) {
+          try {
+            const info = await contentAdapter.getContainerInfo(showId);
+            showLabels = info?.labels || [];
+          } catch { /* proceed without labels */ }
+        }
       }
 
       results.push({
@@ -105,6 +112,7 @@ export class MemorableStrategy {
         poster: localShowId ? `/api/v1/content/plex/image/${localShowId}` : null,
         durationMinutes: session.durationMs ? Math.round(session.durationMs / 60000) : null,
         orientation: 'landscape',
+        labels: showLabels,
         metric: this.#ranker.getMetric(session),
         reason: this.#ranker.getReason(session),
       });
