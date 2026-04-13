@@ -1,0 +1,158 @@
+<h2>Design: Cast Action Flow</h2>
+<p class="subtitle">Section 3 of 4 — What happens when you tap cast on content</p>
+
+<div class="section">
+  <h3>Cast Button Behavior</h3>
+  <p style="color:#888;">Today's CastButton opens DevicePicker and immediately fires. New behavior depends on whether a target is set.</p>
+
+  <div class="split">
+    <div class="mockup">
+      <div class="mockup-header">No Target Set → Old Flow</div>
+      <div class="mockup-body" style="background:#121220; padding:16px;">
+        <div style="color:#888; font-size:13px; margin-bottom:12px;">Tap 📡 on content:</div>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <div style="background:#1e1e35; border-radius:6px; padding:10px; color:#ccc; font-size:12px;">
+            1. Opens DevicePicker modal
+          </div>
+          <div style="color:#444; text-align:center;">↓</div>
+          <div style="background:#1e1e35; border-radius:6px; padding:10px; color:#ccc; font-size:12px;">
+            2. Pick device → sets it as target
+          </div>
+          <div style="color:#444; text-align:center;">↓</div>
+          <div style="background:#1e1e35; border-radius:6px; padding:10px; color:#ccc; font-size:12px;">
+            3. Shows per-cast options (below)
+          </div>
+          <div style="color:#444; text-align:center;">↓</div>
+          <div style="background:#2a1f4e; border-radius:6px; padding:10px; color:#c4bbf0; font-size:12px;">
+            4. Fires to device
+          </div>
+        </div>
+        <p style="color:#555; font-size:11px; margin-top:10px;">Falls back to the old modal flow, but now the device sticks as your target for subsequent casts.</p>
+      </div>
+    </div>
+    <div class="mockup">
+      <div class="mockup-header">Target Active → Fast Path</div>
+      <div class="mockup-body" style="background:#121220; padding:16px;">
+        <div style="color:#888; font-size:13px; margin-bottom:12px;">Tap 📡 on content:</div>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <div style="background:#2a1f4e; border:1px solid #7c6fe055; border-radius:6px; padding:10px; color:#c4bbf0; font-size:12px;">
+            1. Inline popover with per-cast options
+          </div>
+          <div style="color:#444; text-align:center;">↓</div>
+          <div style="background:#2a1f4e; border-radius:6px; padding:10px; color:#c4bbf0; font-size:12px;">
+            2. Tap "Cast" → fires to target device
+          </div>
+        </div>
+        <p style="color:#555; font-size:11px; margin-top:10px;">Skip device selection entirely. Device settings (shader, volume) already configured via header. Just confirm per-cast options and go.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Per-Cast Popover</h3>
+  <p style="color:#888;">Small popover anchored to the cast button. Shows only playback-level options — the device stuff is already handled.</p>
+
+  <div class="mockup">
+    <div class="mockup-header">Content Card + Cast Popover</div>
+    <div class="mockup-body" style="background:#121220; padding:16px;">
+      <!-- Content card -->
+      <div style="background:#1a1a30; border-radius:8px; padding:12px; display:flex; gap:12px; align-items:center; margin-bottom:8px;">
+        <div style="width:60px; height:60px; background:#2a2a45; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:24px; flex-shrink:0;">🎬</div>
+        <div style="flex:1; min-width:0;">
+          <div style="color:#e0dbff; font-size:14px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Planet Earth III</div>
+          <div style="color:#666; font-size:12px;">Playlist · 8 episodes</div>
+        </div>
+        <div style="color:#7c6fe0; font-size:20px; padding:8px; cursor:pointer; background:#2a1f4e; border-radius:6px; border:1px solid #7c6fe0;">📡</div>
+      </div>
+
+      <!-- Popover -->
+      <div style="background:#252540; border:1px solid #3a3a5a; border-radius:10px; padding:14px; margin-left:40px; position:relative; box-shadow:0 4px 16px rgba(0,0,0,0.4);">
+        <!-- Arrow -->
+        <div style="position:absolute; top:-6px; right:24px; width:12px; height:12px; background:#252540; border-top:1px solid #3a3a5a; border-left:1px solid #3a3a5a; transform:rotate(45deg);"></div>
+
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+          <span style="color:#888; font-size:11px;">Sending to</span>
+          <span style="color:#c4bbf0; font-size:12px; font-weight:500;">Living Room TV</span>
+          <span style="color:#555; font-size:11px;">🌙 night · vol 40</span>
+        </div>
+
+        <div style="display:flex; gap:12px; margin-bottom:14px;">
+          <!-- Shuffle toggle -->
+          <div style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+            <div style="width:36px; height:20px; background:#7c6fe0; border-radius:10px; position:relative; transition:0.2s;">
+              <div style="width:16px; height:16px; background:#fff; border-radius:50%; position:absolute; top:2px; right:2px;"></div>
+            </div>
+            <span style="color:#ccc; font-size:12px;">Shuffle</span>
+          </div>
+          <!-- Repeat toggle -->
+          <div style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+            <div style="width:36px; height:20px; background:#333; border-radius:10px; position:relative;">
+              <div style="width:16px; height:16px; background:#666; border-radius:50%; position:absolute; top:2px; left:2px;"></div>
+            </div>
+            <span style="color:#666; font-size:12px;">Repeat</span>
+          </div>
+        </div>
+
+        <button style="width:100%; padding:10px; background:#7c6fe0; color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; letter-spacing:0.5px;">
+          ▶ Cast Now
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Single Item vs. Playlist</h3>
+  <p style="color:#888;">Popover adapts to content type. Single video = no shuffle/repeat (just cast). Playlist/collection = shows toggles.</p>
+  <div class="split">
+    <div class="mockup">
+      <div class="mockup-header">Single Item (Movie/Episode)</div>
+      <div class="mockup-body" style="background:#121220; padding:16px;">
+        <div style="background:#252540; border-radius:10px; padding:14px;">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+            <span style="color:#888; font-size:11px;">Sending to</span>
+            <span style="color:#c4bbf0; font-size:12px;">Living Room TV</span>
+          </div>
+          <button style="width:100%; padding:10px; background:#7c6fe0; color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:600;">
+            ▶ Cast Now
+          </button>
+        </div>
+        <p style="color:#555; font-size:11px; margin-top:8px;">No toggles needed — just confirm and go.</p>
+      </div>
+    </div>
+    <div class="mockup">
+      <div class="mockup-header">Playlist / Collection</div>
+      <div class="mockup-body" style="background:#121220; padding:16px;">
+        <div style="background:#252540; border-radius:10px; padding:14px;">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+            <span style="color:#888; font-size:11px;">Sending to</span>
+            <span style="color:#c4bbf0; font-size:12px;">Living Room TV</span>
+          </div>
+          <div style="display:flex; gap:12px; margin-bottom:14px;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <div style="width:36px; height:20px; background:#7c6fe0; border-radius:10px; position:relative;">
+                <div style="width:16px; height:16px; background:#fff; border-radius:50%; position:absolute; top:2px; right:2px;"></div>
+              </div>
+              <span style="color:#ccc; font-size:12px;">Shuffle</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <div style="width:36px; height:20px; background:#333; border-radius:10px; position:relative;">
+                <div style="width:16px; height:16px; background:#666; border-radius:50%; position:absolute; top:2px; left:2px;"></div>
+              </div>
+              <span style="color:#666; font-size:12px;">Repeat</span>
+            </div>
+          </div>
+          <button style="width:100%; padding:10px; background:#7c6fe0; color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:600;">
+            ▶ Cast Now
+          </button>
+        </div>
+        <p style="color:#555; font-size:11px; margin-top:8px;">Shuffle &amp; repeat toggles for multi-item content.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top:24px; padding:16px; background:#1a1a2e; border-radius:8px; border-left:3px solid #7c6fe0;">
+  <p style="color:#aaa; margin:0;">Does this cast action flow work? Last section will cover the progress/feedback experience during the wake-and-load sequence.</p>
+</div>

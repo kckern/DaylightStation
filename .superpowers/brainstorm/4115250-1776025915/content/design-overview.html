@@ -1,0 +1,67 @@
+<h2>Design: Cast Target in Header</h2>
+<p class="subtitle">Section 1 of 4 — Overall flow and component map</p>
+
+<div class="section">
+  <h3>The Flow</h3>
+  <div style="display:flex; gap:12px; flex-wrap:wrap; margin:16px 0;">
+    <div style="background:#1a1a2e; border-radius:8px; padding:16px; flex:1; min-width:200px; border-top:3px solid #444;">
+      <div style="color:#888; font-size:11px; text-transform:uppercase; letter-spacing:1px;">1. Set Target</div>
+      <p style="color:#ccc; font-size:14px; margin:8px 0 0;">Tap cast icon in header → dropdown panel opens → pick device → set shader &amp; volume → panel closes</p>
+    </div>
+    <div style="color:#444; display:flex; align-items:center; font-size:24px;">→</div>
+    <div style="background:#1a1a2e; border-radius:8px; padding:16px; flex:1; min-width:200px; border-top:3px solid #7c6fe0;">
+      <div style="color:#7c6fe0; font-size:11px; text-transform:uppercase; letter-spacing:1px;">2. Browse</div>
+      <p style="color:#ccc; font-size:14px; margin:8px 0 0;">Header now shows active device chip. Browse content as usual — search, playlists, detail views</p>
+    </div>
+    <div style="color:#444; display:flex; align-items:center; font-size:24px;">→</div>
+    <div style="background:#1a1a2e; border-radius:8px; padding:16px; flex:1; min-width:200px; border-top:3px solid #4caf50;">
+      <div style="color:#4caf50; font-size:11px; text-transform:uppercase; letter-spacing:1px;">3. Cast</div>
+      <p style="color:#ccc; font-size:14px; margin:8px 0 0;">Tap cast button on any content → quick per-cast toggles (shuffle/repeat) → fires to device with target settings</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Component Map</h3>
+  <div style="background:#0d0d1a; border-radius:8px; padding:20px; font-family:monospace; font-size:13px; color:#ccc; line-height:2;">
+    <div style="color:#7c6fe0; font-weight:bold;">MediaApp (existing)</div>
+    <div style="padding-left:20px;">
+      <div>├─ <span style="color:#fff;">Header</span> (existing — search bar, nav)</div>
+      <div style="padding-left:20px;">
+        <div>├─ <span style="color:#4caf50; font-weight:bold;">CastTargetChip</span> <span style="color:#666;">← NEW — device icon+name, tap to open panel</span></div>
+        <div>└─ <span style="color:#4caf50; font-weight:bold;">CastTargetPanel</span> <span style="color:#666;">← NEW — dropdown with device list + shader/volume</span></div>
+      </div>
+      <div>├─ <span style="color:#fff;">ContentBrowser</span> (existing)</div>
+      <div style="padding-left:20px;">
+        <div>└─ <span style="color:#f0ad4e;">CastButton</span> <span style="color:#666;">← MODIFIED — reads target context, shows per-cast toggles</span></div>
+      </div>
+      <div>├─ <span style="color:#fff;">ContentDetailView</span> (existing)</div>
+      <div style="padding-left:20px;">
+        <div>└─ <span style="color:#f0ad4e;">CastButton</span> <span style="color:#666;">← same modification</span></div>
+      </div>
+      <div>└─ <span style="color:#4caf50; font-weight:bold;">useCastTarget()</span> <span style="color:#666;">← NEW hook — manages target device + settings in context</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>State Shape</h3>
+  <div style="background:#0d0d1a; border-radius:8px; padding:16px; font-family:monospace; font-size:13px; color:#ccc;">
+    <pre style="margin:0; color:#ccc;">castTarget: {
+  device: {
+    id: 'livingroom-tv',
+    name: 'Living Room TV',
+    type: 'shield-tv',
+    capabilities: { contentControl, deviceControl, osControl }
+  },
+  settings: {
+    shader: 'night',    <span style="color:#666;">// device-level default</span>
+    volume: 40          <span style="color:#666;">// device-level default</span>
+  }
+} | null              <span style="color:#666;">// null = no target set</span></pre>
+  </div>
+</div>
+
+<div style="margin-top:24px; padding:16px; background:#1a1a2e; border-radius:8px; border-left:3px solid #7c6fe0;">
+  <p style="color:#aaa; margin:0;">Does this overall flow and component structure look right? I'll go into the header UI details next.</p>
+</div>

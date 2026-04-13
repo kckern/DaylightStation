@@ -1,0 +1,129 @@
+<h2>Design: Header UI States</h2>
+<p class="subtitle">Section 2 of 4 — What the cast target looks like in the header</p>
+
+<div class="section">
+  <h3>State 1: No Target Set</h3>
+  <p style="color:#888;">Dimmed cast icon sits at the right edge of the header. Unobtrusive but discoverable.</p>
+  <div class="mockup">
+    <div class="mockup-header">Header — No Target</div>
+    <div class="mockup-body" style="background:#121220; padding:12px 16px; display:flex; align-items:center; gap:12px;">
+      <span style="font-size:18px;">🔍</span>
+      <div style="flex:1; background:#1e1e35; border-radius:6px; padding:8px 12px; color:#666; font-size:13px;">Search media...</div>
+      <div style="color:#444; font-size:20px; cursor:pointer; padding:4px 8px; border-radius:6px; border:1px dashed #333;" title="Set cast target">
+        📡
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>State 2: Target Active</h3>
+  <p style="color:#888;">Cast icon replaced by a compact chip — device name + active indicator. Tap to change.</p>
+  <div class="mockup">
+    <div class="mockup-header">Header — Target Set</div>
+    <div class="mockup-body" style="background:#121220; padding:12px 16px; display:flex; align-items:center; gap:12px;">
+      <span style="font-size:18px;">🔍</span>
+      <div style="flex:1; background:#1e1e35; border-radius:6px; padding:8px 12px; color:#666; font-size:13px;">Search media...</div>
+      <div style="display:flex; align-items:center; gap:6px; background:#2a1f4e; padding:6px 12px; border-radius:20px; cursor:pointer; border:1px solid #7c6fe055;">
+        <span style="width:8px; height:8px; background:#4caf50; border-radius:50%; display:inline-block;"></span>
+        <span style="color:#c4bbf0; font-size:12px; font-weight:500;">Living Room</span>
+        <span style="color:#666; font-size:10px;">▾</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>State 3: Panel Open</h3>
+  <p style="color:#888;">Tapping the chip opens a dropdown panel anchored to the header. Device list on top, settings for the selected device below.</p>
+  <div class="mockup">
+    <div class="mockup-header">Header — Panel Open</div>
+    <div class="mockup-body" style="background:#121220; padding:0;">
+      <!-- Header -->
+      <div style="padding:12px 16px; display:flex; align-items:center; gap:12px; border-bottom:1px solid #1e1e35;">
+        <span style="font-size:18px;">🔍</span>
+        <div style="flex:1; background:#1e1e35; border-radius:6px; padding:8px 12px; color:#666; font-size:13px;">Search media...</div>
+        <div style="display:flex; align-items:center; gap:6px; background:#3a2f6e; padding:6px 12px; border-radius:20px; border:1px solid #7c6fe0;">
+          <span style="width:8px; height:8px; background:#4caf50; border-radius:50%; display:inline-block;"></span>
+          <span style="color:#e0dbff; font-size:12px; font-weight:600;">Living Room</span>
+          <span style="color:#aaa; font-size:10px;">▴</span>
+        </div>
+      </div>
+      <!-- Panel -->
+      <div style="background:#1a1a30; border-bottom:2px solid #7c6fe044; padding:16px;">
+        <!-- Device List -->
+        <div style="font-size:11px; color:#666; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">Devices</div>
+        <div style="display:flex; gap:8px; margin-bottom:16px;">
+          <div style="background:#2a1f4e; border:1px solid #7c6fe0; border-radius:8px; padding:10px 14px; display:flex; align-items:center; gap:8px; cursor:pointer;">
+            <span style="font-size:16px;">📺</span>
+            <div>
+              <div style="color:#e0dbff; font-size:13px; font-weight:500;">Living Room</div>
+              <div style="color:#666; font-size:10px;">Shield TV</div>
+            </div>
+          </div>
+          <div style="background:#1e1e35; border:1px solid #2a2a45; border-radius:8px; padding:10px 14px; display:flex; align-items:center; gap:8px; cursor:pointer;">
+            <span style="font-size:16px;">🖥️</span>
+            <div>
+              <div style="color:#999; font-size:13px; font-weight:500;">Office</div>
+              <div style="color:#555; font-size:10px;">Linux PC</div>
+            </div>
+          </div>
+          <div style="background:#1e1e35; border:1px solid #2a2a45; border-radius:8px; padding:10px 14px; display:flex; align-items:center; gap:8px; cursor:pointer; opacity:0.5;">
+            <span style="font-size:16px;">🔊</span>
+            <div>
+              <div style="color:#999; font-size:13px; font-weight:500;">Kitchen</div>
+              <div style="color:#555; font-size:10px;">Audio only</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Settings -->
+        <div style="font-size:11px; color:#666; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">Settings for Living Room</div>
+        <div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
+          <!-- Shader -->
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="color:#888; font-size:12px;">Shader</span>
+            <div style="display:flex; gap:4px;">
+              <span style="background:#1e1e35; padding:4px 10px; border-radius:4px; font-size:11px; color:#666; cursor:pointer;">off</span>
+              <span style="background:#1e1e35; padding:4px 10px; border-radius:4px; font-size:11px; color:#666; cursor:pointer;">focused</span>
+              <span style="background:#3a2f6e; padding:4px 10px; border-radius:4px; font-size:11px; color:#c4bbf0; cursor:pointer; border:1px solid #7c6fe055;">night</span>
+              <span style="background:#1e1e35; padding:4px 10px; border-radius:4px; font-size:11px; color:#666; cursor:pointer;">dark</span>
+            </div>
+          </div>
+          <!-- Volume -->
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="color:#888; font-size:12px;">Vol</span>
+            <div style="width:100px; height:4px; background:#1e1e35; border-radius:2px; position:relative;">
+              <div style="width:40%; height:100%; background:#7c6fe0; border-radius:2px;"></div>
+              <div style="position:absolute; top:-4px; left:40%; width:12px; height:12px; background:#c4bbf0; border-radius:50%; transform:translateX(-50%);"></div>
+            </div>
+            <span style="color:#888; font-size:11px;">40</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Capability-Aware Config</h3>
+  <p style="color:#888;">Settings adapt based on device type. Audio-only devices hide shader. Kiosks might hide volume. The panel only shows what's relevant.</p>
+  <div style="display:flex; gap:12px; flex-wrap:wrap;">
+    <div style="background:#1a1a2e; border-radius:8px; padding:12px 16px; flex:1; min-width:180px;">
+      <div style="color:#7c6fe0; font-size:12px; font-weight:500; margin-bottom:4px;">📺 Screen Device</div>
+      <div style="color:#888; font-size:11px;">Shader ✓ &nbsp; Volume ✓</div>
+    </div>
+    <div style="background:#1a1a2e; border-radius:8px; padding:12px 16px; flex:1; min-width:180px;">
+      <div style="color:#7c6fe0; font-size:12px; font-weight:500; margin-bottom:4px;">🔊 Audio Device</div>
+      <div style="color:#888; font-size:11px;">Shader ✗ &nbsp; Volume ✓</div>
+    </div>
+    <div style="background:#1a1a2e; border-radius:8px; padding:12px 16px; flex:1; min-width:180px;">
+      <div style="color:#7c6fe0; font-size:12px; font-weight:500; margin-bottom:4px;">📱 Mobile</div>
+      <div style="color:#888; font-size:11px;">Shader ✗ &nbsp; Volume ✗</div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top:24px; padding:16px; background:#1a1a2e; border-radius:8px; border-left:3px solid #7c6fe0;">
+  <p style="color:#aaa; margin:0;">Does this header UI feel right? Next up: the per-cast experience (what happens when you tap cast on a piece of content).</p>
+</div>
