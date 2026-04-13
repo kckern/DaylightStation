@@ -35,12 +35,15 @@ export class ResumeStrategy {
         continue;
       }
 
+      // Check show-level labels (from getContainerInfo), not episode-level
+      const showLabels = episodeData.info?.labels || [];
+      const isResumable = showLabels.some(l =>
+        resumableLabels.some(rl => rl.toLowerCase() === l.toLowerCase())
+      );
+      if (!isResumable) continue;
+
       for (const ep of episodeData.items || []) {
         if (results.length >= remainingSlots) break;
-
-        const labels = ep.metadata?.labels || [];
-        const isResumable = labels.some(l => resumableLabels.includes(l));
-        if (!isResumable) continue;
 
         const percent = ep.watchProgress ?? 0;
         if (percent <= 0 || ep.isWatched) continue;
@@ -62,6 +65,7 @@ export class ResumeStrategy {
           poster: `/api/v1/content/plex/image/${localId}`,
           durationMinutes: ep.duration ? Math.round(ep.duration / 60) : null,
           orientation: isShowLevel ? 'portrait' : 'landscape',
+          labels: showLabels,
           lastSessionDate: show.lastSessionDate,
           progress: {
             percent,

@@ -12,7 +12,7 @@ function parseLocalTime(isoStr) {
   return `${h}:${m} ${ampm}`;
 }
 
-function MediaThumb({ photo, style }) {
+function MediaThumb({ photo, style, overflow }) {
   const timeLabel = parseLocalTime(photo.takenAt);
   return (
     <div
@@ -21,7 +21,8 @@ function MediaThumb({ photo, style }) {
     >
       <img src={photo.thumbnail} alt="" loading="lazy" />
       {photo.type === 'video' && <span className="video-badge">▶</span>}
-      {timeLabel && <span className="photo-time-overlay">{timeLabel}</span>}
+      {overflow > 0 && <span className="photo-overflow-badge">+{overflow}</span>}
+      {timeLabel && !overflow && <span className="photo-time-overlay">{timeLabel}</span>}
     </div>
   );
 }
@@ -124,10 +125,14 @@ function computeLayout(photos) {
   };
 }
 
+const MAX_THUMBS = 9;
+
 export default function PhotoWall({ photos }) {
   const layout = useMemo(() => {
     if (!photos || photos.length === 0) return null;
-    return computeLayout(photos);
+    const visible = photos.length > MAX_THUMBS ? photos.slice(0, MAX_THUMBS) : photos;
+    const overflow = photos.length > MAX_THUMBS ? photos.length - MAX_THUMBS : 0;
+    return { ...computeLayout(visible), overflow };
   }, [photos]);
 
   if (!layout) {
@@ -136,8 +141,13 @@ export default function PhotoWall({ photos }) {
 
   return (
     <div className="photo-wall" style={layout.gridStyle}>
-      {layout.items.map(({ photo, style }) => (
-        <MediaThumb key={photo.id} photo={photo} style={style} />
+      {layout.items.map(({ photo, style }, i) => (
+        <MediaThumb
+          key={photo.id}
+          photo={photo}
+          style={style}
+          overflow={i === layout.items.length - 1 ? layout.overflow : 0}
+        />
       ))}
     </div>
   );

@@ -3,10 +3,14 @@
  *
  * Handles two payload types:
  * - **content**: resolve screen/action → gatekeeper → broadcast contentId
+ *   → wait for screen ack → fall back to direct device load if no ack
  * - **command**: resolve screen → look up command map → broadcast (skip gatekeeper)
  *
  * @module applications/barcode/BarcodeScanService
  */
+
+const ACK_TIMEOUT_MS = 2000;
+
 export class BarcodeScanService {
   #gatekeeper;
   #deviceConfig;
@@ -15,6 +19,7 @@ export class BarcodeScanService {
   #commandResolver;
   #onContentApproved;
   #loadFallback;
+  #waitForAck;
   #logger;
 
   /**
@@ -24,6 +29,7 @@ export class BarcodeScanService {
    * @param {Function} deps.broadcastEvent - (topic, payload) => void
    * @param {Object} deps.pipelineConfig - { default_action, actions }
    * @param {Function} deps.commandResolver - (command, arg) => wsPayload|null
+   * @param {Function} [deps.waitForAck] - (predicate, timeoutMs) => Promise - waits for a client message
    * @param {Object} [deps.logger]
    */
   constructor(deps) {
@@ -33,13 +39,15 @@ export class BarcodeScanService {
     this.#pipelineConfig = deps.pipelineConfig;
     this.#commandResolver = deps.commandResolver;
     this.#onContentApproved = deps.onContentApproved || null;
+    this.#waitForAck = deps.waitForAck || null;
     this.#loadFallback = null;
     this.#logger = deps.logger || console;
   }
 
   /**
-   * Set a fallback loader for when WS broadcast may not reach the screen
-   * (e.g., TV off / FKB not running). Called with (deviceId, query).
+   * Set a fallback loader for when the screen doesn't acknowledge
+   * the WS broadcast (TV off / FKB not running / stale connection).
+   * Called with (targetScreen, query).
    */
   setLoadFallback(fn) {
     this.#loadFallback = fn;
@@ -130,7 +138,8 @@ export class BarcodeScanService {
       this.#onContentApproved(targetScreen).catch(() => {});
     }
 
-    const sentCount = this.#broadcastEvent(targetScreen, {
+    // Broadcast content via WS to the target screen
+    this.#broadcastEvent(targetScreen, {
       action,
       contentId: payload.contentId,
       ...(payload.options || {}),
@@ -139,14 +148,32 @@ export class BarcodeScanService {
       targetScreen,
     });
 
-    // Load fallback: only if WS broadcast reached nobody (TV off / FKB not loaded).
-    // When sentCount > 0, the screen is listening and will handle it via WS.
-    if (this.#loadFallback && sentCount === 0) {
-      this.#logger.info?.('barcode.loadFallback.triggered', { targetScreen, sentCount });
+    // Wait for the screen to acknowledge it's handling the content.
+    // If no ack arrives within the timeout, the screen isn't active —
+    // fall back to the full wake-and-load cycle (FKB loadURL).
+    if (this.#loadFallback) {
       const query = { [action]: payload.contentId, ...(payload.options || {}) };
-      this.#loadFallback(targetScreen, query).catch(err => {
-        this.#logger.warn?.('barcode.loadFallback.failed', { targetScreen, error: err.message });
-      });
+
+      if (this.#waitForAck) {
+        try {
+          await this.#waitForAck(
+            (msg) => msg.type === 'content-ack' && msg.screen === targetScreen,
+            ACK_TIMEOUT_MS
+          );
+          this.#logger.info?.('barcode.ack.received', { targetScreen });
+        } catch {
+          this.#logger.info?.('barcode.ack.timeout', { targetScreen, timeoutMs: ACK_TIMEOUT_MS });
+          this.#loadFallback(targetScreen, query).catch(err => {
+            this.#logger.warn?.('barcode.loadFallback.failed', { targetScreen, error: err.message });
+          });
+        }
+      } else {
+        // No ack mechanism available — trigger fallback immediately
+        this.#logger.info?.('barcode.loadFallback.noAck', { targetScreen });
+        this.#loadFallback(targetScreen, query).catch(err => {
+          this.#logger.warn?.('barcode.loadFallback.failed', { targetScreen, error: err.message });
+        });
+      }
     }
   }
 }

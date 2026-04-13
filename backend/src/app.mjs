@@ -1280,6 +1280,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         actions: barcodeConfig.actions || ['queue', 'play', 'open'],
       },
       commandResolver: resolveCommand,
+      waitForAck: (predicate, timeoutMs) => eventBus.waitForMessage(predicate, timeoutMs),
       onContentApproved: async (targetScreen) => {
         const scripts = screenDisplayScripts[targetScreen];
         if (!scripts || !haGateway) return;

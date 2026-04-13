@@ -38,7 +38,7 @@ function makeEpisode(id, index, { isWatched = false, percent = 0, playhead = 0, 
   };
 }
 
-function makeContext(sessions, playablesByShow = {}, config = {}) {
+function makeContext(sessions, playablesByShow = {}, config = {}, showLabels = {}) {
   return {
     recentSessions: sessions,
     fitnessConfig: {
@@ -49,7 +49,7 @@ function makeContext(sessions, playablesByShow = {}, config = {}) {
       getPlayableEpisodes: async (showId) => ({
         items: playablesByShow[showId] || [],
         parents: null,
-        info: null,
+        info: showLabels[showId] ? { labels: showLabels[showId] } : null,
       }),
     },
   };
@@ -67,10 +67,11 @@ describe('ResumeStrategy', () => {
     const sessions = [makeSession('100', 'VG Cycling', '1001', 'Ep 14', '2026-04-06')];
     const playables = {
       '100': [
-        makeEpisode(1001, 14, { percent: 55, playhead: 1980, duration: 3600, labels: ['Resumable'] }),
+        makeEpisode(1001, 14, { percent: 55, playhead: 1980, duration: 3600 }),
       ]
     };
-    const ctx = makeContext(sessions, playables);
+    const showLabels = { '100': ['resumable'] };
+    const ctx = makeContext(sessions, playables, {}, showLabels);
     const result = await strategy.suggest(ctx, 4);
 
     expect(result).toHaveLength(1);
@@ -83,7 +84,7 @@ describe('ResumeStrategy', () => {
     const sessions = [makeSession('100', 'Regular Show', '1001', 'Ep 5', '2026-04-06')];
     const playables = {
       '100': [
-        makeEpisode(1001, 5, { percent: 40, playhead: 720, duration: 1800, labels: [] }),
+        makeEpisode(1001, 5, { percent: 40, playhead: 720, duration: 1800 }),
       ]
     };
     const ctx = makeContext(sessions, playables);
@@ -95,10 +96,11 @@ describe('ResumeStrategy', () => {
     const sessions = [makeSession('100', 'VG Cycling', '1001', 'Ep 14', '2026-04-06')];
     const playables = {
       '100': [
-        makeEpisode(1001, 14, { isWatched: true, percent: 100, playhead: 3600, duration: 3600, labels: ['Resumable'] }),
+        makeEpisode(1001, 14, { isWatched: true, percent: 100, playhead: 3600, duration: 3600 }),
       ]
     };
-    const ctx = makeContext(sessions, playables);
+    const showLabels = { '100': ['resumable'] };
+    const ctx = makeContext(sessions, playables, {}, showLabels);
     const result = await strategy.suggest(ctx, 4);
     expect(result).toEqual([]);
   });

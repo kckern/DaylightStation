@@ -40,6 +40,7 @@ export class FavoriteStrategy {
       const nextUnwatched = episodes.find(ep => !ep.isWatched);
       const ep = nextUnwatched || episodes[Math.floor(Math.random() * episodes.length)];
 
+      const showLabels = episodeData.info?.labels || [];
       results.push({
         type: 'favorite',
         action: 'play',
@@ -52,6 +53,7 @@ export class FavoriteStrategy {
         poster: `/api/v1/content/plex/image/${localId}`,
         durationMinutes: ep.duration ? Math.round(ep.duration / 60) : null,
         orientation: 'landscape',
+        labels: showLabels,
       });
     }
 

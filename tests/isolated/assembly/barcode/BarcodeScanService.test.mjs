@@ -50,6 +50,7 @@ describe('BarcodeScanService', () => {
       broadcastEvent: overrides.broadcastEvent || broadcastEvent,
       pipelineConfig: overrides.pipelineConfig || pipelineConfig,
       commandResolver: overrides.commandResolver || resolveCommand,
+      waitForAck: overrides.waitForAck || null,
       logger,
     });
   }
@@ -64,6 +65,7 @@ describe('BarcodeScanService', () => {
         contentId: 'plex:12345',
         source: 'barcode',
         device: 'scanner-1',
+        targetScreen: 'office',
       });
     });
 
@@ -76,6 +78,7 @@ describe('BarcodeScanService', () => {
         contentId: 'plex:12345',
         source: 'barcode',
         device: 'scanner-1',
+        targetScreen: 'office',
       });
     });
 
@@ -88,6 +91,7 @@ describe('BarcodeScanService', () => {
         contentId: 'plex:12345',
         source: 'barcode',
         device: 'scanner-1',
+        targetScreen: 'living-room',
       });
     });
 
@@ -100,6 +104,7 @@ describe('BarcodeScanService', () => {
         contentId: 'plex:12345',
         source: 'barcode',
         device: 'scanner-1',
+        targetScreen: 'living-room',
       });
     });
   });
@@ -142,6 +147,7 @@ describe('BarcodeScanService', () => {
         playback: 'pause',
         source: 'barcode',
         device: 'scanner-1',
+        targetScreen: 'office',
       });
     });
 
@@ -153,6 +159,7 @@ describe('BarcodeScanService', () => {
         playback: 'pause',
         source: 'barcode',
         device: 'scanner-1',
+        targetScreen: 'office',
       });
     });
 
@@ -164,6 +171,7 @@ describe('BarcodeScanService', () => {
         volume: 30,
         source: 'barcode',
         device: 'scanner-1',
+        targetScreen: 'office',
       });
     });
 
@@ -175,6 +183,7 @@ describe('BarcodeScanService', () => {
         rate: 1.5,
         source: 'barcode',
         device: 'scanner-1',
+        targetScreen: 'office',
       });
     });
 
@@ -200,6 +209,75 @@ describe('BarcodeScanService', () => {
         'barcode.unknownCommand',
         expect.objectContaining({ command: 'pause' })
       );
+    });
+  });
+
+  describe('handle — ack-based fallback', () => {
+    it('does not trigger fallback when screen acks', async () => {
+      const waitForAck = jest.fn().mockResolvedValue({ type: 'content-ack', screen: 'office' });
+      const loadFallback = jest.fn().mockResolvedValue();
+      const service = createService({ waitForAck });
+      service.setLoadFallback(loadFallback);
+
+      await service.handle(makePayload('plex:12345'));
+
+      expect(waitForAck).toHaveBeenCalledWith(expect.any(Function), 2000);
+      expect(loadFallback).not.toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith('barcode.ack.received', { targetScreen: 'office' });
+    });
+
+    it('triggers fallback when ack times out', async () => {
+      const waitForAck = jest.fn().mockRejectedValue(new Error('waitForMessage timed out'));
+      const loadFallback = jest.fn().mockResolvedValue();
+      const service = createService({ waitForAck });
+      service.setLoadFallback(loadFallback);
+
+      await service.handle(makePayload('plex:12345'));
+
+      expect(waitForAck).toHaveBeenCalled();
+      expect(loadFallback).toHaveBeenCalledWith('office', { queue: 'plex:12345' });
+      expect(logger.info).toHaveBeenCalledWith('barcode.ack.timeout', { targetScreen: 'office', timeoutMs: 2000 });
+    });
+
+    it('triggers fallback immediately when no waitForAck is provided', async () => {
+      const loadFallback = jest.fn().mockResolvedValue();
+      const service = createService({ waitForAck: null });
+      service.setLoadFallback(loadFallback);
+
+      await service.handle(makePayload('plex:12345'));
+
+      expect(loadFallback).toHaveBeenCalledWith('office', { queue: 'plex:12345' });
+      expect(logger.info).toHaveBeenCalledWith('barcode.loadFallback.noAck', { targetScreen: 'office' });
+    });
+
+    it('ack predicate matches correct screen', async () => {
+      let capturedPredicate;
+      const waitForAck = jest.fn().mockImplementation((pred) => {
+        capturedPredicate = pred;
+        return Promise.resolve();
+      });
+      const service = createService({ waitForAck });
+      service.setLoadFallback(jest.fn().mockResolvedValue());
+
+      await service.handle(makePayload('living-room:plex:12345'));
+
+      // Predicate should match ack for living-room
+      expect(capturedPredicate({ type: 'content-ack', screen: 'living-room' })).toBe(true);
+      // Predicate should NOT match ack for a different screen
+      expect(capturedPredicate({ type: 'content-ack', screen: 'office' })).toBe(false);
+      // Predicate should NOT match non-ack messages
+      expect(capturedPredicate({ type: 'other', screen: 'living-room' })).toBe(false);
+    });
+
+    it('passes content options through to fallback query', async () => {
+      const waitForAck = jest.fn().mockRejectedValue(new Error('timeout'));
+      const loadFallback = jest.fn().mockResolvedValue();
+      const service = createService({ waitForAck });
+      service.setLoadFallback(loadFallback);
+
+      await service.handle(makePayload('plex:12345+shuffle'));
+
+      expect(loadFallback).toHaveBeenCalledWith('office', { queue: 'plex:12345', shuffle: true });
     });
   });
 });
