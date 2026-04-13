@@ -2,6 +2,7 @@ import { PassThrough } from 'stream';
 import { StreamChannel } from '../../2_domains/livestream/StreamChannel.mjs';
 import { SourceFeeder } from '../../2_domains/livestream/SourceFeeder.mjs';
 import { FFmpegStreamAdapter } from '../../1_adapters/livestream/FFmpegStreamAdapter.mjs';
+import { ProgramRunner } from '../../2_domains/livestream/ProgramRunner.mjs';
 
 /**
  * ChannelManager — application service for livestream channels.
@@ -12,11 +13,13 @@ import { FFmpegStreamAdapter } from '../../1_adapters/livestream/FFmpegStreamAda
 export class ChannelManager {
   #channels = new Map();    // name → { channel, adapter, feeder, runner }
   #mediaBasePath;
+  #programsBasePath;
   #broadcastEvent;
   #logger;
 
-  constructor({ mediaBasePath, broadcastEvent, logger = console }) {
+  constructor({ mediaBasePath, programsBasePath, broadcastEvent, logger = console }) {
     this.#mediaBasePath = mediaBasePath;
+    this.#programsBasePath = programsBasePath;
     this.#broadcastEvent = broadcastEvent;
     this.#logger = logger;
   }
@@ -100,9 +103,14 @@ export class ChannelManager {
   }
 
   sendInput(name, choice) {
-    const { channel } = this.#getEntry(name);
-    // ProgramRunner integration wired in Task 9
-    this.#logger.info?.('livestream.input', { channel: name, choice });
+    const entry = this.#getEntry(name);
+    if (!entry.runner || !entry.runner.isWaitingForInput) {
+      this.#logger.warn?.('livestream.input.no_program', { channel: name, choice });
+      return;
+    }
+    entry.channel.setWaitingForInput(false);
+    const action = entry.runner.receiveInput(choice);
+    this.#executeAction(name, action);
     this.#broadcast(name);
   }
 
@@ -128,9 +136,73 @@ export class ChannelManager {
     return [...this.#channels.values()].map(({ channel }) => channel.toJSON());
   }
 
+  async startProgram(name, programName, programDef) {
+    const entry = this.#getEntry(name);
+    if (programDef.type === 'yaml') {
+      const fs = await import('fs');
+      const yaml = await import('js-yaml');
+      const path = await import('path');
+      const fullPath = path.default.join(this.#programsBasePath, programDef.path);
+      const content = fs.default.readFileSync(fullPath, 'utf8');
+      const program = yaml.default.load(content);
+      const runner = new ProgramRunner(program);
+      entry.runner = runner;
+      entry.channel.setProgram(programName);
+      const action = runner.start();
+      this.#executeAction(name, action);
+    }
+    this.#broadcast(name);
+  }
+
+  stopProgram(name) {
+    const entry = this.#getEntry(name);
+    entry.runner = null;
+    entry.channel.setProgram(null);
+    entry.channel.setWaitingForInput(false);
+    this.stopPlayback(name);
+  }
+
+  #executeAction(name, action) {
+    const entry = this.#channels.get(name);
+    if (!entry) return;
+    switch (action.type) {
+      case 'play':
+        entry.channel.setCurrentTrack(action.file);
+        entry.feeder.playFile(action.file);
+        break;
+      case 'queue':
+        entry.channel.enqueueAll(action.files);
+        if (entry.channel.status === 'idle') this.#feedNext(name);
+        break;
+      case 'wait_for_input':
+        entry.channel.setWaitingForInput(true, {
+          timeout: action.timeout,
+          default: action.default,
+        });
+        if (action.prompt) entry.feeder.playFile(action.prompt);
+        if (action.timeout) {
+          setTimeout(() => {
+            if (entry.runner?.isWaitingForInput) this.sendInput(name, null);
+          }, action.timeout * 1000);
+        }
+        break;
+      case 'stop':
+        entry.runner = null;
+        entry.channel.setProgram(null);
+        this.#startAmbient(name);
+        break;
+    }
+    this.#broadcast(name);
+  }
+
   #feedNext(name) {
     if (!this.#channels.has(name)) return;
-    const { channel, feeder } = this.#channels.get(name);
+    const { channel, feeder, runner } = this.#channels.get(name);
+    if (runner && !runner.isFinished && !runner.isWaitingForInput) {
+      const action = runner.advance();
+      this.#executeAction(name, action);
+      return;
+    }
     const next = channel.dequeue();
     if (next) {
       channel.setCurrentTrack(next);
