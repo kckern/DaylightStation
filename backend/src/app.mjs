@@ -96,6 +96,7 @@ import { createDevProxy, errorHandlerMiddleware } from './0_system/http/middlewa
 import { createEventBusRouter } from './4_api/v1/routers/admin/eventbus.mjs';
 import { createAdminRouter } from './4_api/v1/routers/admin/index.mjs';
 import { createMediaRouter } from './4_api/v1/routers/media.mjs';
+import { createLivestreamRouter } from './4_api/v1/routers/livestream.mjs';
 
 // Homeline call state tracking
 import { handleSignalingMessage } from '#apps/homeline/CallStateService.mjs';
@@ -762,6 +763,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService,
     broadcastEvent: (topic, payload) => eventBus.broadcast(topic, payload),
     logger: rootLogger.child({ module: 'media-api' }),
+  });
+
+  // Livestream engine
+  const { ChannelManager } = await import('./3_applications/livestream/ChannelManager.mjs');
+  const channelManager = new ChannelManager({
+    mediaBasePath,
+    broadcastEvent: (topic, payload) => eventBus.broadcast(topic, payload),
+    logger: rootLogger.child({ module: 'livestream' }),
+  });
+
+  v1Routers.livestream = createLivestreamRouter({
+    channelManager,
+    logger: rootLogger.child({ module: 'livestream-api' }),
   });
 
   // Lazy proxy for webNutribotAdapter — filled after nutribot services are created below
