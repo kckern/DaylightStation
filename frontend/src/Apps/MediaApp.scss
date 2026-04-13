@@ -48,16 +48,6 @@
   @include tablet-only { display: none; }
 }
 
-.media-panel--livestream {
-  // Livestream takes full width — hide other panels when active
-  grid-column: 1 / -1;
-}
-
-.media-panels--active-livestream {
-  .media-panel:not(.media-panel--livestream) {
-    display: none;
-  }
-}
 
 // ── Search/Home Panel ──────────────────────────────────────────
 .search-home-panel {

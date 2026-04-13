@@ -1,5 +1,14 @@
 // frontend/src/modules/Media/LiveStream/LiveStream.scss
 
+.livestream-app {
+  background: #0a0a0a;
+  color: #e0e0e0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
 .livestream-channels {
   padding: 1rem;
   display: flex;
