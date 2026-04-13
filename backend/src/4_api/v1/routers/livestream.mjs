@@ -142,18 +142,27 @@ export function createLivestreamRouter(config) {
     res.json(channelManager.getStatus(req.params.channel));
   });
 
-  // ── Program control (placeholder — wired in Task 9) ───────────────
+  // ── Program control ─────────────────────────────────────────────────
 
   router.post('/:channel/program/start', asyncHandler(async (req, res) => {
     const { program } = req.body;
     if (!program) return res.status(400).json({ error: 'program name is required' });
-    logger.info?.('livestream.program.start.request', { channel: req.params.channel, program });
-    res.json({ ok: true, message: 'Program support coming in next phase' });
+    try {
+      const programDef = req.body.definition || { type: 'yaml', path: `${program}.yml` };
+      await channelManager.startProgram(req.params.channel, program, programDef);
+      res.json(channelManager.getStatus(req.params.channel));
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
   }));
 
   router.post('/:channel/program/stop', (req, res) => {
-    logger.info?.('livestream.program.stop.request', { channel: req.params.channel });
-    res.json({ ok: true, message: 'Program support coming in next phase' });
+    try {
+      channelManager.stopProgram(req.params.channel);
+      res.json(channelManager.getStatus(req.params.channel));
+    } catch (err) {
+      res.status(404).json({ error: err.message });
+    }
   });
 
   // ── Button input ──────────────────────────────────────────────────
