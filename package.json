@@ -15,6 +15,7 @@
     "escpos": "^3.0.0-alpha.6",
     "escpos-network": "^3.0.0-alpha.5",
     "highcharts-more": "^0.1.7",
+    "hls.js": "^1.6.16",
     "html-entities": "^2.6.0",
     "image-size": "^2.0.2",
     "is-json": "^2.0.1",
