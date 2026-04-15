@@ -134,12 +134,41 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    position: relative;
 
     img, video {
       max-width: 100vw;
       max-height: 100vh;
       object-fit: contain;
       pointer-events: none; // let container handle events
+    }
+  }
+
+  // -- Live warmup: low-res preview with blur/grayscale → sharp/color --
+  &__preview {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+    // Start blurred + grayscale, animate to sharp + color over 3s
+    filter: blur(8px) grayscale(100%);
+    animation: camera-warmup 3s ease-out forwards;
+  }
+
+  &__live-video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.8s ease-in;
+
+    &.ready {
+      opacity: 1;
     }
   }
 
@@ -244,4 +273,11 @@
 @keyframes viewport-loading-pulse {
   0%, 100% { background: rgba(0, 0, 0, 0.8); }
   50% { background: rgba(20, 20, 20, 0.9); }
+}
+
+@keyframes camera-warmup {
+  0%   { filter: blur(8px) grayscale(100%); }
+  40%  { filter: blur(4px) grayscale(60%); }
+  70%  { filter: blur(2px) grayscale(30%); }
+  100% { filter: blur(0px) grayscale(0%); }
 }

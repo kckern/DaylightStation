@@ -74,12 +74,14 @@ export class ReolinkCameraAdapter {
    * Fetch a live snapshot JPEG from the camera.
    * Returns a { buffer, contentType } object or null on failure.
    */
-  async fetchSnapshot(id) {
+  async fetchSnapshot(id, { width, height } = {}) {
     const cam = this.#cameras.get(id);
     if (!cam) return null;
 
-    const snapUrl = `https://${cam.host}/cgi-bin/api.cgi?` +
-      new URLSearchParams({ cmd: 'Snap', channel: '0', user: cam.username, password: cam.password });
+    const params = { cmd: 'Snap', channel: '0', user: cam.username, password: cam.password };
+    if (width) params.width = String(width);
+    if (height) params.height = String(height);
+    const snapUrl = `https://${cam.host}/cgi-bin/api.cgi?` + new URLSearchParams(params);
 
     const t0 = Date.now();
     try {
