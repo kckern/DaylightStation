@@ -119,4 +119,51 @@ test.describe('HomeApp Camera Feed', () => {
     await liveBtn.click();
     await expect(liveBtn).toHaveText('Live');
   }, 45000);
+
+  test('camera state endpoint returns detection data', async () => {
+    const res = await fetch(`${BASE}/api/v1/camera/driveway-camera/state`);
+    expect(res.ok).toBe(true);
+    const data = await res.json();
+    expect(data).toHaveProperty('detections');
+    expect(data).toHaveProperty('motion');
+    expect(Array.isArray(data.detections)).toBe(true);
+    expect(typeof data.motion).toBe('boolean');
+    console.log('Detection state:', JSON.stringify(data));
+  });
+
+  test('clicking snapshot opens fullscreen viewport', async ({ page }) => {
+    await page.goto(`${BASE}/home`, { waitUntil: 'domcontentloaded' });
+
+    // Wait for snapshot to load
+    const img = page.locator('.camera-feed img');
+    await expect(img).toBeVisible({ timeout: 30000 });
+
+    // Click the image to open viewport
+    await img.click();
+
+    // Viewport overlay should appear
+    const viewport = page.locator('.camera-viewport');
+    await expect(viewport).toBeVisible({ timeout: 3000 });
+
+    // Should have close button and hints bar
+    await expect(page.locator('.camera-viewport__close')).toBeVisible();
+    await expect(page.locator('.camera-viewport__hints')).toBeVisible();
+
+    // Close with Esc
+    await page.keyboard.press('Escape');
+    await expect(viewport).not.toBeVisible({ timeout: 2000 });
+  }, 60000);
+
+  test('controls endpoint returns camera controls', async () => {
+    const res = await fetch(`${BASE}/api/v1/camera/driveway-camera/controls`);
+    expect(res.ok).toBe(true);
+    const data = await res.json();
+    expect(data).toHaveProperty('controls');
+    expect(Array.isArray(data.controls)).toBe(true);
+    const types = data.controls.map(c => c.type);
+    console.log('Camera controls:', JSON.stringify(data.controls));
+    // Should have floodlight and siren from HA config
+    expect(types).toContain('light');
+    expect(types).toContain('siren');
+  });
 });
