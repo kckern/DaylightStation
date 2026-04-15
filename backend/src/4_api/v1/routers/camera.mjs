@@ -94,6 +94,40 @@ export function createCameraRouter({ cameraService, logger = console }) {
     res.json({ stopped: true, cameraId: id });
   });
 
+  /** GET /api/v1/camera/:id/state — AI detection + motion state */
+  router.get('/:id/state', asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    if (!cameraService.hasCamera(id)) {
+      return res.status(404).json({ error: 'Camera not found', cameraId: id });
+    }
+    const state = await cameraService.getDetectionState(id);
+    res.json(state);
+  }));
+
+  /** GET /api/v1/camera/:id/controls — list available controls */
+  router.get('/:id/controls', asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    if (!cameraService.hasCamera(id)) {
+      return res.status(404).json({ error: 'Camera not found', cameraId: id });
+    }
+    const controls = await cameraService.listControls(id);
+    res.json({ controls });
+  }));
+
+  /** POST /api/v1/camera/:id/controls/:controlId — execute a control */
+  router.post('/:id/controls/:controlId', asyncHandler(async (req, res) => {
+    const { id, controlId } = req.params;
+    const { action } = req.body || {};
+    if (!cameraService.hasCamera(id)) {
+      return res.status(404).json({ error: 'Camera not found', cameraId: id });
+    }
+    if (!action || !['on', 'off', 'trigger'].includes(action)) {
+      return res.status(400).json({ error: 'Invalid action. Must be on, off, or trigger.' });
+    }
+    const result = await cameraService.executeControl(id, controlId, action);
+    res.json(result);
+  }));
+
   return router;
 }
 

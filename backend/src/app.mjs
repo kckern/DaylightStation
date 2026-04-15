@@ -1635,6 +1635,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { createCameraServices } = await import('#apps/camera/index.mjs');
   const { cameraService } = createCameraServices({
     householdId,
+    haGateway: homeAutomationAdapters.haGateway,
     logger: rootLogger.child({ module: 'camera' }),
   });
 
