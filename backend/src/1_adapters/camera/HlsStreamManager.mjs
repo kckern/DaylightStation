@@ -53,10 +53,7 @@ export class HlsStreamManager {
     const proc = spawn('ffmpeg', [
       '-rtsp_transport', 'tcp',
       '-i', rtspUrl,
-      '-c:v', 'libx264',
-      '-preset', 'ultrafast',
-      '-tune', 'zerolatency',
-      '-g', '30',
+      '-c:v', 'copy',
       '-c:a', 'aac',
       '-f', 'hls',
       '-hls_time', '2',
