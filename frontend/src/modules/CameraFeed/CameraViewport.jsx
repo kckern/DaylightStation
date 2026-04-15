@@ -52,7 +52,7 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc, detections
   const imageSrc = mode === 'snapshot' ? snapshotSrc : liveSrc;
   const isLoading = !imageSrc;
 
-  const { x, y, zoom, lastZoomTime, handlers, reset, MIN_ZOOM } = usePanZoom({
+  const { x, y, zoom, lastZoomTime, handlers, reset, panTo, getDims, MIN_ZOOM } = usePanZoom({
     containerRef,
     contentWidth: contentDims.w,
     contentHeight: contentDims.h,
@@ -107,6 +107,45 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc, detections
   }, [logger, mode]);
 
   const activeDetections = detections.filter(d => d.active);
+
+  // Minimap click/drag: convert minimap position to pan coordinates
+  const minimapRef = useRef(null);
+  const minimapDragRef = useRef(false);
+
+  const minimapPositionToPan = useCallback((clientX, clientY) => {
+    const el = minimapRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    // Normalized position (0-1) within the minimap
+    const normX = (clientX - rect.left) / rect.width;
+    const normY = (clientY - rect.top) / rect.height;
+    // Convert to pan: center of minimap = pan(0,0), edges = max pan
+    const d = getDims();
+    const scaledW = d.contentW * zoom;
+    const scaledH = d.contentH * zoom;
+    const newX = (0.5 - normX) * scaledW;
+    const newY = (0.5 - normY) * scaledH;
+    panTo(newX, newY);
+  }, [getDims, zoom, panTo]);
+
+  const onMinimapPointerDown = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.target.setPointerCapture(e.pointerId);
+    minimapDragRef.current = true;
+    minimapPositionToPan(e.clientX, e.clientY);
+  }, [minimapPositionToPan]);
+
+  const onMinimapPointerMove = useCallback((e) => {
+    if (!minimapDragRef.current) return;
+    e.stopPropagation();
+    minimapPositionToPan(e.clientX, e.clientY);
+  }, [minimapPositionToPan]);
+
+  const onMinimapPointerUp = useCallback((e) => {
+    minimapDragRef.current = false;
+    e.stopPropagation();
+  }, []);
 
   // Minimap viewport rect
   const minimapViewport = (() => {
@@ -186,9 +225,16 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc, detections
         </div>
       </div>
 
-      {/* Minimap */}
+      {/* Minimap — click/drag to navigate */}
       {zoom > MIN_ZOOM && (
-        <div className="camera-viewport__minimap">
+        <div
+          className="camera-viewport__minimap"
+          ref={minimapRef}
+          onPointerDown={onMinimapPointerDown}
+          onPointerMove={onMinimapPointerMove}
+          onPointerUp={onMinimapPointerUp}
+          onPointerCancel={onMinimapPointerUp}
+        >
           <div className="camera-viewport__minimap-bg">
             {imageSrc && <img src={imageSrc} alt="" draggable={false} />}
           </div>

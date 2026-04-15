@@ -41,11 +41,26 @@ export class ReolinkStateAdapter {
     if (!cam) return { detections: [], motion: false };
 
     try {
-      const token = await this.#getToken(cameraId, cam);
-      const results = await this.#apiCall(cam.host, token, [
-        { cmd: 'GetAiState', action: 0, param: { channel: 0 } },
-        { cmd: 'GetMdState', action: 0, param: { channel: 0 } },
-      ]);
+      let token = await this.#getToken(cameraId, cam);
+      let results;
+      try {
+        results = await this.#apiCall(cam.host, token, [
+          { cmd: 'GetAiState', action: 0, param: { channel: 0 } },
+          { cmd: 'GetMdState', action: 0, param: { channel: 0 } },
+        ]);
+      } catch (err) {
+        if (err.message === 'Token expired') {
+          // Clear stale token and retry with fresh login
+          this.#tokens.delete(cameraId);
+          token = await this.#getToken(cameraId, cam);
+          results = await this.#apiCall(cam.host, token, [
+            { cmd: 'GetAiState', action: 0, param: { channel: 0 } },
+            { cmd: 'GetMdState', action: 0, param: { channel: 0 } },
+          ]);
+        } else {
+          throw err;
+        }
+      }
 
       const aiState = results.find(r => r.cmd === 'GetAiState');
       const mdState = results.find(r => r.cmd === 'GetMdState');
@@ -110,9 +125,8 @@ export class ReolinkStateAdapter {
         res.on('end', () => {
           try {
             const json = JSON.parse(Buffer.concat(chunks).toString());
-            // Handle token expiry — clear cache so next call re-authenticates
+            // Handle token expiry — caller is responsible for clearing cache and retrying
             if (Array.isArray(json) && json[0]?.error?.rspCode === -6) {
-              this.#tokens.delete(host); // force re-login
               reject(new Error('Token expired'));
               return;
             }

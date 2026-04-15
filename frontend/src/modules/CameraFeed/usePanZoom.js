@@ -195,5 +195,14 @@ export default function usePanZoom({ containerRef, contentWidth = 1, contentHeig
     onDoubleClick,
   };
 
-  return { x: state.x, y: state.y, zoom: state.zoom, lastZoomTime, handlers, reset, zoomIn, zoomOut, MIN_ZOOM, MAX_ZOOM };
+  /** Set absolute pan position (for minimap click/drag) */
+  const panTo = useCallback((newX, newY) => {
+    const bounds = getBounds();
+    dispatch({ type: 'set', values: {
+      x: clamp(newX, bounds.minX, bounds.maxX),
+      y: clamp(newY, bounds.minY, bounds.maxY),
+    }});
+  }, [getBounds]);
+
+  return { x: state.x, y: state.y, zoom: state.zoom, lastZoomTime, handlers, reset, zoomIn, zoomOut, panTo, getDims, MIN_ZOOM, MAX_ZOOM };
 }
