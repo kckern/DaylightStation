@@ -6,6 +6,7 @@ import MenuStack from '../../modules/Menu/MenuStack.jsx';
 import Player from '../../modules/Player/Player.jsx';
 import AppContainer from '../../modules/AppContainer/AppContainer.jsx';
 import { getApp } from '../../lib/appRegistry.js';
+import { getWidgetRegistry } from '../widgets/registry.js';
 import getLogger from '../../lib/logging/Logger.js';
 
 let _logger;
@@ -289,6 +290,20 @@ export function ScreenActionHandler({ actions = {} }) {
     dismissOverlay();
   }, [dismissOverlay, hasOverlay, actions]);
 
+  // --- Overlay: show a registered widget by name ---
+  const handleDisplayOverlay = useCallback((payload) => {
+    const { overlayId } = payload || {};
+    if (!overlayId) return;
+    const Component = getWidgetRegistry().get(overlayId);
+    if (!Component) {
+      logger().warn('action.overlay.notFound', { overlayId });
+      return;
+    }
+    logger().info('action.overlay.show', { overlayId });
+    showOverlay(Component, {}, { mode: 'fullscreen' });
+  }, [showOverlay]);
+
+  useScreenAction('display:overlay', handleDisplayOverlay);
   useScreenAction('menu:open', handleMenuOpen);
   useScreenAction('media:play', handleMediaPlay);
   useScreenAction('media:queue', handleMediaQueue);
