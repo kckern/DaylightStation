@@ -1,5 +1,6 @@
 // frontend/src/modules/CameraFeed/CameraViewport.jsx
 import { useRef, useState, useEffect, useMemo, useCallback } from 'react';
+import Hls from 'hls.js';
 import usePanZoom from './usePanZoom.js';
 import CameraControls from './CameraControls.jsx';
 import { getChildLogger } from '../../lib/logging/singleton.js';
@@ -25,32 +26,58 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc, detections
   const hintTimer = useRef(null);
   const zoomTimer = useRef(null);
 
-  // For live mode, fetch a snapshot as a still frame for the viewport
-  const [liveSrc, setLiveSrc] = useState(null);
+  // Live mode: HLS video via hls.js
+  const liveVideoRef = useRef(null);
+  const [liveReady, setLiveReady] = useState(false);
   useEffect(() => {
     if (mode !== 'live') return;
-    let active = true;
-    const url = `/api/v1/camera/${cameraId}/snap?t=${Date.now()}`;
-    fetch(url)
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.blob();
-      })
-      .then(blob => {
-        if (active) setLiveSrc(URL.createObjectURL(blob));
-      })
-      .catch(err => logger.warn?.('viewport.liveSnapError', { error: err.message }));
+    const video = liveVideoRef.current;
+    if (!video) return;
+
+    const playlistUrl = `/api/v1/camera/${cameraId}/live/stream.m3u8`;
+    logger.info?.('viewport.hls.start', { url: playlistUrl });
+
+    if (!Hls.isSupported()) {
+      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = playlistUrl;
+        video.play().catch(() => {});
+        video.addEventListener('playing', () => setLiveReady(true), { once: true });
+        return () => {
+          video.src = '';
+          fetch(`/api/v1/camera/${cameraId}/live`, { method: 'DELETE' }).catch(() => {});
+        };
+      }
+      logger.error?.('viewport.hls.unsupported');
+      return;
+    }
+
+    const hls = new Hls({ enableWorker: true, liveSyncDurationCount: 1, liveMaxLatencyDurationCount: 3 });
+    hls.loadSource(playlistUrl);
+    hls.attachMedia(video);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
+    hls.on(Hls.Events.ERROR, (event, data) => {
+      logger.warn?.('viewport.hls.error', { type: data.type, details: data.details, fatal: data.fatal });
+    });
+    video.addEventListener('playing', () => {
+      setLiveReady(true);
+      logger.info?.('viewport.hls.playing');
+    }, { once: true });
+
+    // Get video dimensions once metadata loads
+    video.addEventListener('loadedmetadata', () => {
+      if (video.videoWidth && video.videoHeight) {
+        setContentDims({ w: video.videoWidth, h: video.videoHeight });
+      }
+    }, { once: true });
+
     return () => {
-      active = false;
-      setLiveSrc(prev => {
-        if (prev) URL.revokeObjectURL(prev);
-        return null;
-      });
+      hls.destroy();
+      fetch(`/api/v1/camera/${cameraId}/live`, { method: 'DELETE' }).catch(() => {});
+      logger.info?.('viewport.hls.stop');
     };
   }, [cameraId, mode, logger]);
 
-  const imageSrc = mode === 'snapshot' ? snapshotSrc : liveSrc;
-  const isLoading = !imageSrc;
+  const isLoading = mode === 'live' ? !liveReady : !snapshotSrc;
 
   const { x, y, zoom, lastZoomTime, handlers, reset, panTo, getDims, MIN_ZOOM } = usePanZoom({
     containerRef,
@@ -213,14 +240,24 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc, detections
           </div>
         )}
         <div className="camera-viewport__media" style={transformStyle}>
-          {imageSrc && (
-            <img
-              ref={mediaRef}
-              src={imageSrc}
-              alt={`${cameraId} viewport`}
-              onLoad={onMediaLoad}
-              draggable={false}
+          {mode === 'live' ? (
+            <video
+              ref={liveVideoRef}
+              muted
+              autoPlay
+              playsInline
+              style={{ pointerEvents: 'none' }}
             />
+          ) : (
+            snapshotSrc && (
+              <img
+                ref={mediaRef}
+                src={snapshotSrc}
+                alt={`${cameraId} viewport`}
+                onLoad={onMediaLoad}
+                draggable={false}
+              />
+            )
           )}
         </div>
       </div>
@@ -236,7 +273,8 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc, detections
           onPointerCancel={onMinimapPointerUp}
         >
           <div className="camera-viewport__minimap-bg">
-            {imageSrc && <img src={imageSrc} alt="" draggable={false} />}
+            {mode === 'snapshot' && snapshotSrc && <img src={snapshotSrc} alt="" draggable={false} />}
+            {mode === 'live' && <div style={{ width: '100%', height: '100%', background: '#222' }} />}
           </div>
           {minimapViewport && <div className="camera-viewport__minimap-viewport" style={minimapViewport} />}
         </div>
