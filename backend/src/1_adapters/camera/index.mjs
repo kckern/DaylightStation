@@ -1,6 +1,7 @@
 export { ReolinkCameraAdapter } from './ReolinkCameraAdapter.mjs';
 export { ReolinkStateAdapter } from './ReolinkStateAdapter.mjs';
 export { HlsStreamManager } from './HlsStreamManager.mjs';
+export { HomeAssistantControlAdapter } from './HomeAssistantControlAdapter.mjs';
 
 import { configService } from '#system/config/index.mjs';
 import { ReolinkCameraAdapter } from './ReolinkCameraAdapter.mjs';
