@@ -1,16 +1,28 @@
 .camera-feed {
   position: relative;
   width: 100%;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 32 / 9;
   background: #111;
   border-radius: 8px;
   overflow: hidden;
+  cursor: pointer;
 
   img, video {
     width: 100%;
     height: 100%;
     object-fit: contain;
     display: block;
+  }
+
+  &--loading {
+    cursor: default;
+  }
+
+  &__skeleton {
+    position: absolute;
+    inset: 0;
+    background: #111;
+    animation: camera-skeleton-pulse 1.5s ease-in-out infinite;
   }
 
   &__error {
@@ -22,4 +34,31 @@
     color: #666;
     font-size: 0.9rem;
   }
+
+  &__badges {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    display: flex;
+    gap: 4px;
+    z-index: 1;
+  }
+
+  &__badge {
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: capitalize;
+    transition: opacity 0.3s;
+
+    &--person { background: rgba(59, 130, 246, 0.4); color: #93bbfd; }
+    &--vehicle { background: rgba(245, 158, 11, 0.4); color: #fbbf24; }
+    &--animal { background: rgba(34, 197, 94, 0.4); color: #86efac; }
+  }
+}
+
+@keyframes camera-skeleton-pulse {
+  0%, 100% { background: #111; }
+  50% { background: #1a1a1a; }
 }
