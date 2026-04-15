@@ -53,11 +53,14 @@ export class HlsStreamManager {
     const proc = spawn('ffmpeg', [
       '-rtsp_transport', 'tcp',
       '-i', rtspUrl,
-      '-c:v', 'copy',
+      '-c:v', 'libx264',
+      '-preset', 'ultrafast',
+      '-tune', 'zerolatency',
+      '-g', '30',
       '-c:a', 'aac',
       '-f', 'hls',
       '-hls_time', '2',
-      '-hls_list_size', '3',
+      '-hls_list_size', '5',
       '-hls_flags', 'delete_segments+append_list',
       playlistPath
     ], { stdio: ['ignore', 'ignore', 'pipe'] });

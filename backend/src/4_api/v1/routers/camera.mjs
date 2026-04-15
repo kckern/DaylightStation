@@ -41,11 +41,12 @@ export function createCameraRouter({ cameraService, logger = console }) {
 
     try {
       const dir = await cameraService.startStream(id);
+      const playlist = await fs.promises.readFile(`${dir}/stream.m3u8`, 'utf8');
       res.set({
         'Content-Type': 'application/vnd.apple.mpegurl',
         'Cache-Control': 'no-cache',
       });
-      res.sendFile(`${dir}/stream.m3u8`);
+      res.send(playlist);
     } catch (err) {
       logger.error?.('camera.live.playlistError', { cameraId: id, error: err.message });
       if (!res.headersSent) {
@@ -77,11 +78,13 @@ export function createCameraRouter({ cameraService, logger = console }) {
       return res.status(404).json({ error: 'Segment not found', segment });
     }
 
+    const segmentData = await fs.promises.readFile(segmentPath);
     res.set({
       'Content-Type': 'video/mp2t',
+      'Content-Length': segmentData.length,
       'Cache-Control': 'public, max-age=60',
     });
-    res.sendFile(segmentPath);
+    res.send(segmentData);
   }));
 
   // DELETE /:id/live — stop a live stream
