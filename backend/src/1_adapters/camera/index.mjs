@@ -1,4 +1,5 @@
 export { ReolinkCameraAdapter } from './ReolinkCameraAdapter.mjs';
+export { ReolinkStateAdapter } from './ReolinkStateAdapter.mjs';
 export { HlsStreamManager } from './HlsStreamManager.mjs';
 
 import { configService } from '#system/config/index.mjs';
