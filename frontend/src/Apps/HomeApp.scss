@@ -1,106 +1,47 @@
 .home-app {
-  height: 100vh;
-  width: 100%;
-  padding: 1rem;
-  box-sizing: border-box;
-  background: #1a1a2e;
-  color: #fff;
-  overflow: hidden; /* Prevent global scroll */
+  .home-container {
+    padding: 1rem;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
 
-  .dashboard-grid {
+  .home-cameras {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 1.5rem;
-    height: 100%;
-    width: 100%;
-  }
+    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+    gap: 1rem;
 
-  .dashboard-column {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    height: 100%;
-    min-width: 0; /* Flexbox trick for text truncation */
-    overflow: hidden; /* Contain children */
-
-    /* Individual column scroll behaviors */
-    &.column-history {
-      overflow-y: hidden; /* The card inside will handle scrolling */
-    }
-
-    &.column-metrics {
-      /* Weight is fixed, Nutrition takes rest */
-    }
-
-    &.column-interactions {
-      /* UpNext fixed, Coach takes rest */
-    }
-  }
-
-  /* 
-     Override/Enhance Dashboard Cards for full height usage 
-  */
-  .dashboard-card {
-    background: rgba(30, 30, 50, 0.6);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    backdrop-filter: blur(10px);
-    display: flex;
-    flex-direction: column;
-
-    &.full-height {
-      flex: 1;
-      min-height: 0;
+    &__card {
+      background: #1a1a1a;
+      border-radius: 10px;
       overflow: hidden;
+    }
 
-      .mantine-Stack-root {
-        flex: 1;
-        overflow-y: auto;
-        padding-right: 0.5rem; /* Space for scrollbar */
-        
-        /* Thin scrollbar for webkit */
-        &::-webkit-scrollbar {
-          width: 6px;
-        }
-        &::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        &::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.2);
-          border-radius: 3px;
-        }
+    &__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.5rem 0.75rem;
+    }
+
+    &__label {
+      font-size: 0.85rem;
+      color: #aaa;
+      text-transform: capitalize;
+    }
+
+    &__toggle {
+      background: #333;
+      color: #ccc;
+      border: none;
+      border-radius: 4px;
+      padding: 0.25rem 0.75rem;
+      cursor: pointer;
+      font-size: 0.8rem;
+
+      &.active {
+        background: #c0392b;
+        color: #fff;
       }
     }
   }
-
-  /* Specific tweaks for widgets in this layout */
-  .dashboard-card--workouts {
-    height: 100%;
-  }
-
-  .dashboard-card--nutrition {
-    flex: 1;
-    min-height: 0;
-  }
-
-  .dashboard-card--coach {
-    flex: 1;
-    min-height: 0;
-  }
-
-  /* Responsive Fallback (optional, if window gets too small) */
-  @media (max-width: 1000px) {
-    height: auto;
-    overflow-y: auto;
-    
-    .dashboard-grid {
-      grid-template-columns: 1fr;
-      height: auto;
-    }
-
-    .dashboard-column {
-      height: auto;
-      overflow: visible;
-    }
-  }
 }
-
