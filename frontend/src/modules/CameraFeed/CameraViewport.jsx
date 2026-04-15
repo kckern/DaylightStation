@@ -42,8 +42,8 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc, detections
         if (!active) return;
         const url = URL.createObjectURL(blob);
         setPreviewSrc(url);
-        setPreviewPhase('preview');
-        logger.info?.('viewport.preview.loaded', { durationMs: Math.round(performance.now() - t0), sizeBytes: blob.size });
+        // Phase stays 'loading' until img onLoad fires — prevents black flash
+        logger.info?.('viewport.preview.fetched', { durationMs: Math.round(performance.now() - t0), sizeBytes: blob.size });
       })
       .catch(err => logger.warn?.('viewport.preview.error', { error: err.message }));
     return () => {
@@ -261,7 +261,7 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc, detections
         {...handlers}
         style={{ cursor: zoom > MIN_ZOOM ? 'grab' : 'default' }}
       >
-        {mode === 'live' && previewPhase === 'loading' && (
+        {mode === 'live' && (previewPhase === 'loading') && (
           <div className="camera-viewport__loading">
             <span className="camera-viewport__loading-text">Loading camera...</span>
           </div>
@@ -272,11 +272,16 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc, detections
               {/* Low-res preview: blur+grayscale → sharp+color animation */}
               {previewSrc && previewPhase !== 'live' && (
                 <img
-                  className="camera-viewport__preview"
+                  className={`camera-viewport__preview ${previewPhase === 'preview' ? 'visible' : ''}`}
                   src={previewSrc}
                   alt=""
                   draggable={false}
-                  onLoad={onMediaLoad}
+                  onLoad={(e) => {
+                    onMediaLoad(e);
+                    setPreviewPhase('preview');
+                    logger.info?.('viewport.warmup.previewRendered');
+                  }}
+                  onAnimationEnd={() => logger.info?.('viewport.warmup.animationComplete')}
                 />
               )}
               {/* HLS video — fades in over the preview */}
@@ -286,6 +291,9 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc, detections
                 muted
                 autoPlay
                 playsInline
+                onTransitionEnd={() => {
+                  if (liveReady) logger.info?.('viewport.warmup.crossfadeComplete');
+                }}
               />
             </>
           ) : (
