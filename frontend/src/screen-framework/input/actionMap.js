@@ -10,6 +10,7 @@ const ACTION_MAP = {
   shader:   ()       => ({ action: 'display:shader', payload: {} }),
   sleep:    ()       => ({ action: 'display:sleep', payload: {} }),
   rate:     ()       => ({ action: 'media:rate', payload: {} }),
+  overlay:  (params) => ({ action: 'display:overlay', payload: { overlayId: params } }),
 };
 
 export function translateAction(functionName, params) {

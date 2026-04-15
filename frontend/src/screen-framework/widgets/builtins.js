@@ -9,6 +9,7 @@ import EntropyPanel from '../../modules/Entropy/EntropyPanel.jsx';
 import { PianoVisualizer } from '../../modules/Piano/index.js';
 import MenuWidget from './MenuWidget.jsx';
 import WeeklyReview from '../../modules/WeeklyReview/WeeklyReview.jsx';
+import CameraOverlay from '../../modules/CameraFeed/CameraOverlay.jsx';
 
 export function registerBuiltinWidgets() {
   const registry = getWidgetRegistry();
@@ -22,5 +23,6 @@ export function registerBuiltinWidgets() {
   registry.register('piano', PianoVisualizer);
   registry.register('menu', MenuWidget);
   registry.register('weekly-review', WeeklyReview);
+  registry.register('camera', CameraOverlay);
   return registry;
 }
