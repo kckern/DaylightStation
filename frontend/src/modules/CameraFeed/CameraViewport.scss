@@ -1,0 +1,222 @@
+// frontend/src/modules/CameraFeed/CameraViewport.scss
+.camera-viewport {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.95);
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+
+  // -- Top bar --
+  &__top-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 60px 12px 16px;
+    background: linear-gradient(180deg, rgba(0,0,0,0.7), transparent);
+    pointer-events: none;
+  }
+
+  &__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #ddd;
+    font-size: 14px;
+    font-weight: 500;
+    text-transform: capitalize;
+  }
+
+  &__status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #4a4;
+  }
+
+  &__live-badge {
+    color: #888;
+    font-size: 11px;
+    font-weight: 400;
+  }
+
+  &__detections {
+    display: flex;
+    gap: 6px;
+  }
+
+  &__detection-badge {
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: capitalize;
+
+    &--person { background: rgba(59, 130, 246, 0.3); color: #93bbfd; }
+    &--vehicle { background: rgba(245, 158, 11, 0.3); color: #fbbf24; }
+    &--animal { background: rgba(34, 197, 94, 0.3); color: #86efac; }
+  }
+
+  // -- Close button --
+  &__close {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    z-index: 3;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(0,0,0,0.5);
+    color: #aaa;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    &:hover { background: rgba(255,255,255,0.1); color: #fff; }
+  }
+
+  // -- Zoom indicator --
+  &__zoom-indicator {
+    position: absolute;
+    top: 52px;
+    right: 16px;
+    z-index: 2;
+    background: rgba(0,0,0,0.6);
+    color: #999;
+    font-size: 12px;
+    font-family: monospace;
+    padding: 2px 8px;
+    border-radius: 4px;
+    opacity: 0;
+    transition: opacity 0.3s;
+
+    &.visible { opacity: 1; }
+  }
+
+  // -- Main viewport container --
+  &__container {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: none; // prevent browser pan/zoom
+  }
+
+  &__media {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    img, video {
+      max-width: 100vw;
+      max-height: 100vh;
+      object-fit: contain;
+      pointer-events: none; // let container handle events
+    }
+  }
+
+  // -- Minimap --
+  &__minimap {
+    position: absolute;
+    bottom: 48px;
+    right: 16px;
+    z-index: 2;
+    width: 140px;
+    height: 40px;
+    border-radius: 4px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(0,0,0,0.6);
+    overflow: hidden;
+  }
+
+  &__minimap-bg {
+    width: 100%;
+    height: 100%;
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0.5;
+    }
+  }
+
+  &__minimap-viewport {
+    position: absolute;
+    border: 1.5px solid rgba(255,255,255,0.6);
+    background: rgba(255,255,255,0.05);
+    border-radius: 2px;
+  }
+
+  // -- Camera controls --
+  &__controls {
+    position: absolute;
+    bottom: 48px;
+    left: 16px;
+    z-index: 2;
+    display: flex;
+    gap: 8px;
+  }
+
+  &__control-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(0,0,0,0.5);
+    color: #888;
+    font-size: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+
+    &:hover { background: rgba(255,255,255,0.1); }
+
+    &--light.active { background: rgba(255,200,50,0.3); color: #fbbf24; border-color: rgba(255,200,50,0.3); }
+    &--siren.confirming { background: rgba(220,38,38,0.3); border-color: rgba(220,38,38,0.5); animation: pulse-red 0.5s infinite alternate; }
+  }
+
+  &__confirm-label {
+    position: absolute;
+    left: 48px;
+    white-space: nowrap;
+    font-size: 11px;
+    color: #ef4444;
+    font-weight: 500;
+  }
+
+  // -- Hints bar --
+  &__hints {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 2;
+    text-align: center;
+    padding: 10px 16px;
+    background: linear-gradient(0deg, rgba(0,0,0,0.7), transparent);
+    color: #666;
+    font-size: 12px;
+    opacity: 0;
+    transition: opacity 0.3s;
+
+    &.visible { opacity: 1; }
+  }
+}
+
+@keyframes pulse-red {
+  from { border-color: rgba(220,38,38,0.3); }
+  to { border-color: rgba(220,38,38,0.8); }
+}
