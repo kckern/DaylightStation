@@ -24,7 +24,7 @@ export class CameraService {
 
   listCameras() { return this.#gateway.listCameras(); }
   hasCamera(cameraId) { return this.#gateway.getCamera(cameraId) !== null; }
-  async getSnapshot(cameraId) { return this.#gateway.fetchSnapshot(cameraId); }
+  async getSnapshot(cameraId, options) { return this.#gateway.fetchSnapshot(cameraId, options); }
 
   async startStream(cameraId) {
     const rtspUrl = this.#gateway.getStreamUrl(cameraId, 'sub');

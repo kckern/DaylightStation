@@ -19,7 +19,10 @@ export function createCameraRouter({ cameraService, logger = console }) {
       return res.status(404).json({ error: 'Camera not found', cameraId: id });
     }
 
-    const snapshot = await cameraService.getSnapshot(id);
+    const opts = {};
+    if (req.query.width) opts.width = parseInt(req.query.width);
+    if (req.query.height) opts.height = parseInt(req.query.height);
+    const snapshot = await cameraService.getSnapshot(id, opts);
     if (!snapshot) {
       return res.status(502).json({ error: 'Camera unreachable', cameraId: id });
     }

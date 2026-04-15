@@ -26,6 +26,32 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc, detections
   const hintTimer = useRef(null);
   const zoomTimer = useRef(null);
 
+  // Live mode warmup: fetch low-res preview immediately, then start HLS
+  const [previewSrc, setPreviewSrc] = useState(null);
+  const [previewPhase, setPreviewPhase] = useState('loading'); // loading | preview | live
+  useEffect(() => {
+    if (mode !== 'live') return;
+    let active = true;
+    const t0 = performance.now();
+    fetch(`/api/v1/camera/${cameraId}/snap?width=640&height=180&t=${Date.now()}`)
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.blob();
+      })
+      .then(blob => {
+        if (!active) return;
+        const url = URL.createObjectURL(blob);
+        setPreviewSrc(url);
+        setPreviewPhase('preview');
+        logger.info?.('viewport.preview.loaded', { durationMs: Math.round(performance.now() - t0), sizeBytes: blob.size });
+      })
+      .catch(err => logger.warn?.('viewport.preview.error', { error: err.message }));
+    return () => {
+      active = false;
+      setPreviewSrc(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
+    };
+  }, [cameraId, mode, logger]);
+
   // Live mode: HLS video via hls.js
   const liveVideoRef = useRef(null);
   const [liveReady, setLiveReady] = useState(false);
@@ -60,6 +86,7 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc, detections
     });
     video.addEventListener('playing', () => {
       setLiveReady(true);
+      setPreviewPhase('live');
       logger.info?.('viewport.hls.playing');
     }, { once: true });
 
@@ -234,20 +261,33 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc, detections
         {...handlers}
         style={{ cursor: zoom > MIN_ZOOM ? 'grab' : 'default' }}
       >
-        {isLoading && (
+        {mode === 'live' && previewPhase === 'loading' && (
           <div className="camera-viewport__loading">
             <span className="camera-viewport__loading-text">Loading camera...</span>
           </div>
         )}
         <div className="camera-viewport__media" style={transformStyle}>
           {mode === 'live' ? (
-            <video
-              ref={liveVideoRef}
-              muted
-              autoPlay
-              playsInline
-              style={{ pointerEvents: 'none' }}
-            />
+            <>
+              {/* Low-res preview: blur+grayscale → sharp+color animation */}
+              {previewSrc && previewPhase !== 'live' && (
+                <img
+                  className="camera-viewport__preview"
+                  src={previewSrc}
+                  alt=""
+                  draggable={false}
+                  onLoad={onMediaLoad}
+                />
+              )}
+              {/* HLS video — fades in over the preview */}
+              <video
+                ref={liveVideoRef}
+                className={`camera-viewport__live-video ${liveReady ? 'ready' : ''}`}
+                muted
+                autoPlay
+                playsInline
+              />
+            </>
           ) : (
             snapshotSrc && (
               <img
@@ -260,6 +300,11 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc, detections
             )
           )}
         </div>
+        {mode === 'snapshot' && !snapshotSrc && (
+          <div className="camera-viewport__loading">
+            <span className="camera-viewport__loading-text">Loading camera...</span>
+          </div>
+        )}
       </div>
 
       {/* Minimap — click/drag to navigate */}
