@@ -14,3 +14,15 @@ export {
   assertStreamAdapter,
   createNoOpStreamAdapter
 } from './IStreamAdapter.mjs';
+
+export {
+  isCameraStateGateway,
+  assertCameraStateGateway,
+  createNoOpCameraStateGateway
+} from './ICameraStateGateway.mjs';
+
+export {
+  isCameraControlGateway,
+  assertCameraControlGateway,
+  createNoOpCameraControlGateway
+} from './ICameraControlGateway.mjs';
