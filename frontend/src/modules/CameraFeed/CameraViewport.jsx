@@ -50,6 +50,7 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc, detections
   }, [cameraId, mode, logger]);
 
   const imageSrc = mode === 'snapshot' ? snapshotSrc : liveSrc;
+  const isLoading = !imageSrc;
 
   const { x, y, zoom, lastZoomTime, handlers, reset, MIN_ZOOM } = usePanZoom({
     containerRef,
@@ -167,6 +168,11 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc, detections
         {...handlers}
         style={{ cursor: zoom > MIN_ZOOM ? 'grab' : 'default' }}
       >
+        {isLoading && (
+          <div className="camera-viewport__loading">
+            <span className="camera-viewport__loading-text">Loading camera...</span>
+          </div>
+        )}
         <div className="camera-viewport__media" style={transformStyle}>
           {imageSrc && (
             <img

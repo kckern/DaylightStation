@@ -81,6 +81,7 @@ export class ReolinkCameraAdapter {
     const snapUrl = `https://${cam.host}/cgi-bin/api.cgi?` +
       new URLSearchParams({ cmd: 'Snap', channel: '0', user: cam.username, password: cam.password });
 
+    const t0 = Date.now();
     try {
       const buffer = await new Promise((resolve, reject) => {
         const req = https.get(snapUrl, { rejectUnauthorized: false, timeout: 30000 }, (res) => {
@@ -97,9 +98,12 @@ export class ReolinkCameraAdapter {
         req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
       });
 
+      const durationMs = Date.now() - t0;
+      this.#logger.info?.('camera.snapshot.ok', { id, durationMs, sizeBytes: buffer.length });
       return { buffer, contentType: 'image/jpeg' };
     } catch (err) {
-      this.#logger.error?.('camera.snapshot.error', { id, error: err.message });
+      const durationMs = Date.now() - t0;
+      this.#logger.error?.('camera.snapshot.error', { id, error: err.message, durationMs });
       return null;
     }
   }

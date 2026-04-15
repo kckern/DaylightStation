@@ -63,6 +63,24 @@
     &--animal { background: rgba(34, 197, 94, 0.3); color: #86efac; }
   }
 
+  // -- Loading state --
+  &__loading {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.8);
+    animation: viewport-loading-pulse 2s ease-in-out infinite;
+  }
+
+  &__loading-text {
+    color: #666;
+    font-size: 1rem;
+    letter-spacing: 0.02em;
+  }
+
   // -- Close button --
   &__close {
     position: absolute;
@@ -219,4 +237,9 @@
 @keyframes pulse-red {
   from { border-color: rgba(220,38,38,0.3); }
   to { border-color: rgba(220,38,38,0.8); }
+}
+
+@keyframes viewport-loading-pulse {
+  0%, 100% { background: rgba(0, 0, 0, 0.8); }
+  50% { background: rgba(20, 20, 20, 0.9); }
 }
