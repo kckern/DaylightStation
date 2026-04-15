@@ -97,6 +97,7 @@ import { createEventBusRouter } from './4_api/v1/routers/admin/eventbus.mjs';
 import { createAdminRouter } from './4_api/v1/routers/admin/index.mjs';
 import { createMediaRouter } from './4_api/v1/routers/media.mjs';
 import { createLivestreamRouter } from './4_api/v1/routers/livestream.mjs';
+import { createCameraRouter } from './4_api/v1/routers/camera.mjs';
 
 // Homeline call state tracking
 import { handleSignalingMessage } from '#apps/homeline/CallStateService.mjs';
@@ -1628,6 +1629,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     wakeAndLoadService,
     configService,
     logger: rootLogger.child({ module: 'device-api' })
+  });
+
+  // Camera feeds
+  const { createCameraServices } = await import('#apps/camera/index.mjs');
+  const { cameraService } = createCameraServices({
+    householdId,
+    logger: rootLogger.child({ module: 'camera' }),
+  });
+
+  v1Routers.camera = createCameraRouter({
+    cameraService,
+    logger: rootLogger.child({ module: 'camera-api' }),
   });
 
   const { createPrewarmRouter } = await import('./4_api/v1/routers/prewarm.mjs');
