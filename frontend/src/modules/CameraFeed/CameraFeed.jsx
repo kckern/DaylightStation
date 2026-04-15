@@ -15,10 +15,15 @@ export default function CameraFeed({ cameraId, mode = 'snapshot', interval = 300
     const poll = async () => {
       try {
         const res = await fetch(`/api/v1/camera/${cameraId}/state`);
-        if (!res.ok) return;
+        if (!res.ok) {
+          logger.debug('detection.poll.httpError', { status: res.status });
+          return;
+        }
         const data = await res.json();
         if (active) setDetections(data.detections || []);
-      } catch { /* ignore */ }
+      } catch (err) {
+        logger.debug('detection.poll.error', { error: err.message });
+      }
     };
     poll();
     const timer = setInterval(poll, 2000);
@@ -56,12 +61,19 @@ function SnapshotPoller({ cameraId, interval, logger, onError, detections, onCli
     setLoading(true);
     logger.info('snapshot.start', { interval });
 
+    let consecutiveFailures = 0;
+    let pollCount = 0;
+
     const poll = async () => {
+      const t0 = performance.now();
+      pollCount++;
+      const isFirst = pollCount === 1;
       try {
         const url = `/api/v1/camera/${cameraId}/snap?t=${Date.now()}`;
         const res = await fetch(url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const blob = await res.blob();
+        const durationMs = Math.round(performance.now() - t0);
         if (!active) return;
         const objectUrl = URL.createObjectURL(blob);
         setSrc(prev => {
@@ -70,8 +82,19 @@ function SnapshotPoller({ cameraId, interval, logger, onError, detections, onCli
         });
         setLoading(false);
         setError(false);
+        if (isFirst) {
+          logger.info('snapshot.firstLoad', { durationMs, sizeBytes: blob.size });
+        } else {
+          logger.debug('snapshot.poll', { durationMs, sizeBytes: blob.size, pollCount });
+        }
+        if (consecutiveFailures > 0) {
+          logger.info('snapshot.recovered', { afterFailures: consecutiveFailures });
+        }
+        consecutiveFailures = 0;
       } catch (err) {
-        logger.warn('snapshot.error', { error: err.message });
+        const durationMs = Math.round(performance.now() - t0);
+        consecutiveFailures++;
+        logger.warn('snapshot.error', { error: err.message, durationMs, consecutiveFailures, pollCount });
         setError(true);
         setLoading(false);
         onError?.(err);
@@ -107,7 +130,11 @@ function SnapshotPoller({ cameraId, interval, logger, onError, detections, onCli
       style={aspectRatio ? { aspectRatio } : undefined}
       onClick={src ? onClickImage : undefined}
     >
-      {loading && !src && <div className="camera-feed__skeleton" />}
+      {loading && !src && (
+        <div className="camera-feed__skeleton">
+          <span className="camera-feed__skeleton-text">Loading camera...</span>
+        </div>
+      )}
       {src && <img src={src} alt={`${cameraId} snapshot`} onLoad={onImgLoad} draggable={false} />}
       {error && !src && !loading && <div className="camera-feed__error">Camera unavailable</div>}
       {activeDetections.length > 0 && (
@@ -123,10 +150,12 @@ function SnapshotPoller({ cameraId, interval, logger, onError, detections, onCli
 
 function HlsPlayer({ cameraId, logger, onError, detections, onClickImage }) {
   const videoRef = useRef(null);
+  const [hlsLoading, setHlsLoading] = useState(true);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+    setHlsLoading(true);
 
     const playlistUrl = `/api/v1/camera/${cameraId}/live/stream.m3u8`;
     logger.info('hls.start', { url: playlistUrl });
@@ -152,17 +181,39 @@ function HlsPlayer({ cameraId, logger, onError, detections, onClickImage }) {
       liveMaxLatencyDurationCount: 3,
     });
 
+    const hlsStartTime = performance.now();
+
     hls.loadSource(playlistUrl);
     hls.attachMedia(video);
-    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+    hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
+      const durationMs = Math.round(performance.now() - hlsStartTime);
+      logger.info('hls.manifestParsed', { durationMs, levels: data.levels?.length });
       video.play().catch(() => {});
     });
+    hls.on(Hls.Events.FRAG_LOADED, (event, data) => {
+      logger.debug('hls.fragLoaded', { sn: data.frag.sn, durationMs: Math.round(data.stats.loading.end - data.stats.loading.start), sizeBytes: data.stats.total });
+    });
     hls.on(Hls.Events.ERROR, (event, data) => {
-      logger.warn('hls.error', { type: data.type, details: data.details, fatal: data.fatal });
+      logger.warn('hls.error', { type: data.type, details: data.details, fatal: data.fatal, url: data.url });
       if (data.fatal) onError?.(new Error(data.details));
     });
 
+    // Video element lifecycle
+    const onPlaying = () => {
+      setHlsLoading(false);
+      const durationMs = Math.round(performance.now() - hlsStartTime);
+      logger.info('hls.playing', { durationMs, currentTime: video.currentTime });
+    };
+    const onWaiting = () => logger.debug('hls.buffering', { currentTime: video.currentTime });
+    const onStalled = () => logger.warn('hls.stalled', { currentTime: video.currentTime, readyState: video.readyState });
+
+    video.addEventListener('playing', onPlaying, { once: true });
+    video.addEventListener('waiting', onWaiting);
+    video.addEventListener('stalled', onStalled);
+
     return () => {
+      video.removeEventListener('waiting', onWaiting);
+      video.removeEventListener('stalled', onStalled);
       hls.destroy();
       fetch(`/api/v1/camera/${cameraId}/live`, { method: 'DELETE' }).catch(() => {});
       logger.info('hls.stop');
@@ -173,6 +224,11 @@ function HlsPlayer({ cameraId, logger, onError, detections, onClickImage }) {
 
   return (
     <div className="camera-feed camera-feed--live" onClick={onClickImage}>
+      {hlsLoading && (
+        <div className="camera-feed__skeleton">
+          <span className="camera-feed__skeleton-text">Starting live stream...</span>
+        </div>
+      )}
       <video ref={videoRef} muted autoPlay playsInline />
       {activeDetections.length > 0 && (
         <div className="camera-feed__badges">

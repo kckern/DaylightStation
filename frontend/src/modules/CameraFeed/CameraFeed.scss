@@ -21,8 +21,17 @@
   &__skeleton {
     position: absolute;
     inset: 0;
-    background: #111;
-    animation: camera-skeleton-pulse 1.5s ease-in-out infinite;
+    background: #151515;
+    animation: camera-skeleton-pulse 2s ease-in-out infinite;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__skeleton-text {
+    color: #555;
+    font-size: 0.85rem;
+    letter-spacing: 0.02em;
   }
 
   &__error {
@@ -59,6 +68,6 @@
 }
 
 @keyframes camera-skeleton-pulse {
-  0%, 100% { background: #111; }
-  50% { background: #1a1a1a; }
+  0%, 100% { background: #151515; }
+  50% { background: #222; }
 }
