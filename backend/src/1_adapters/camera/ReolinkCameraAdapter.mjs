@@ -83,7 +83,7 @@ export class ReolinkCameraAdapter {
 
     try {
       const buffer = await new Promise((resolve, reject) => {
-        const req = https.get(snapUrl, { rejectUnauthorized: false, timeout: 10000 }, (res) => {
+        const req = https.get(snapUrl, { rejectUnauthorized: false, timeout: 30000 }, (res) => {
           if (res.statusCode !== 200) {
             res.resume();
             reject(new Error(`HTTP ${res.statusCode}`));

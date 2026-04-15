@@ -72,17 +72,18 @@ function HlsPlayer({ cameraId, logger, onError }) {
     const playlistUrl = `/api/v1/camera/${cameraId}/live/stream.m3u8`;
     logger.info('hls.start', { url: playlistUrl });
 
-    if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = playlistUrl;
-      video.play().catch(() => {});
-      return () => {
-        video.src = '';
-        fetch(`/api/v1/camera/${cameraId}/live`, { method: 'DELETE' }).catch(() => {});
-        logger.info('hls.stop');
-      };
-    }
-
+    // Prefer hls.js over native — Chrome returns truthy for canPlayType
+    // but can't play HLS natively. Only fall back to native for true Safari.
     if (!Hls.isSupported()) {
+      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = playlistUrl;
+        video.play().catch(() => {});
+        return () => {
+          video.src = '';
+          fetch(`/api/v1/camera/${cameraId}/live`, { method: 'DELETE' }).catch(() => {});
+          logger.info('hls.stop');
+        };
+      }
       logger.error('hls.unsupported');
       onError?.(new Error('HLS not supported in this browser'));
       return;
