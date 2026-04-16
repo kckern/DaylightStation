@@ -62,6 +62,7 @@ export function useMediaResilience({
   waitKey,
   onStateChange,
   onReload,
+  onExhausted,       // NEW: called when all recovery attempts are exhausted
   configOverrides,
   controllerRef,
   plexId,
@@ -151,6 +152,9 @@ export function useMediaResilience({
         attempts: tracker.count, maxAttempts
       });
       actions.setStatus(STATUS.exhausted);
+      if (typeof onExhausted === 'function') {
+        onExhausted({ reason, attempts: tracker.count, waitKey });
+      }
       return;
     }
 
@@ -170,7 +174,7 @@ export function useMediaResilience({
         seekToIntentMs: (targetTimeSeconds || playbackHealth.lastProgressSeconds || seconds || initialStart || 0) * 1000
       });
     }
-  }, [actions, logWaitKey, meta, onReload, playbackHealth.lastProgressSeconds, recoveryCooldownMs, recoveryCooldownBackoffMultiplier, maxAttempts, seconds, statusRef, targetTimeSeconds, initialStart, waitKey, playbackSessionKey]);
+  }, [actions, logWaitKey, meta, onReload, onExhausted, playbackHealth.lastProgressSeconds, recoveryCooldownMs, recoveryCooldownBackoffMultiplier, maxAttempts, seconds, statusRef, targetTimeSeconds, initialStart, waitKey, playbackSessionKey]);
 
   const retryFromExhausted = useCallback(() => {
     _clearTracker(playbackSessionKey);
