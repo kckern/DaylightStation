@@ -20,7 +20,10 @@ jest.unstable_mockModule('../../../../frontend/src/modules/Fitness/domain/types.
   ParticipantStatus: { ACTIVE: 'ACTIVE', INACTIVE: 'INACTIVE' },
 }));
 
-const { ParticipantRoster } = await import('../../../../frontend/src/hooks/fitness/ParticipantRoster.js');
+let ParticipantRoster;
+beforeAll(async () => {
+  ({ ParticipantRoster } = await import('../../../../frontend/src/hooks/fitness/ParticipantRoster.js'));
+});
 
 describe('ParticipantRoster.getActiveParticipantState()', () => {
   let roster;

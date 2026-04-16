@@ -11,7 +11,10 @@ jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
   getLogger: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn, debug: mockDebug, error: mockError })
 }));
 
-const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
+let GovernanceEngine;
+beforeAll(async () => {
+  ({ GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js'));
+});
 
 const ZONE_RANK_MAP = { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 };
 const ZONE_INFO_MAP = {
@@ -32,11 +35,17 @@ const createMockSession = (roster = []) => ({
 
 describe('Governance transition tightness', () => {
   beforeEach(() => {
+    jest.useFakeTimers();
     mockSampled.mockClear();
     mockInfo.mockClear();
     mockWarn.mockClear();
     mockDebug.mockClear();
     mockError.mockClear();
+  });
+
+  afterEach(() => {
+    jest.runOnlyPendingTimers();
+    jest.useRealTimers();
   });
 
   test('lockRows has entries when participants exist and requirements unsatisfied', () => {
@@ -147,9 +156,26 @@ describe('Governance transition tightness', () => {
       }
     });
 
-    // configure() calls evaluate() internally which sets up initial state.
-    // The pre-populated requirements are built during that first evaluate.
-    // We check state immediately after configure — no second evaluate needed.
+    // configure() calls evaluate() internally, but the first evaluate with zero
+    // participants short-circuits (already pending + empty roster). Pre-population
+    // happens when transitioning FROM participants TO zero participants.
+    // Force pre-population by first evaluating with a participant, then without.
+    engine.evaluate({
+      activeParticipants: ['user-1'],
+      userZoneMap: { 'user-1': 'active' },
+      zoneRankMap: ZONE_RANK_MAP,
+      zoneInfoMap: ZONE_INFO_MAP,
+      totalCount: 1
+    });
+    // Now remove participant — triggers the pre-populate path
+    engine.evaluate({
+      activeParticipants: [],
+      userZoneMap: {},
+      zoneRankMap: ZONE_RANK_MAP,
+      zoneInfoMap: ZONE_INFO_MAP,
+      totalCount: 0
+    });
+
     const state = engine.state;
 
     expect(state.requirements.length).toBeGreaterThan(0);

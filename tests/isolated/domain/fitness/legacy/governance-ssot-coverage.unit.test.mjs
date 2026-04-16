@@ -11,7 +11,10 @@ jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
   getLogger: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn, debug: mockDebug, error: mockError })
 }));
 
-const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
+let GovernanceEngine;
+beforeAll(async () => {
+  ({ GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js'));
+});
 
 // Zone data now arrives pre-populated in userZoneMap
 // (GovernanceEngine no longer does second-pass enrichment via getParticipantProfile)

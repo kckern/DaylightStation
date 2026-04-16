@@ -1,17 +1,22 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, jest, beforeAll } from '@jest/globals';
 
-vi.mock('#frontend/lib/logging/Logger.js', () => ({
+jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({
-    debug: vi.fn(), info: vi.fn(), warn: vi.fn(),
-    error: vi.fn(), sampled: vi.fn(), child: vi.fn().mockReturnThis()
+    debug: jest.fn(), info: jest.fn(), warn: jest.fn(),
+    error: jest.fn(), sampled: jest.fn(), child: jest.fn().mockReturnThis()
   }),
   getLogger: () => ({
-    debug: vi.fn(), info: vi.fn(), warn: vi.fn(),
-    error: vi.fn(), sampled: vi.fn(), child: vi.fn().mockReturnThis()
+    debug: jest.fn(), info: jest.fn(), warn: jest.fn(),
+    error: jest.fn(), sampled: jest.fn(), child: jest.fn().mockReturnThis()
   })
 }));
 
-const { FitnessTreasureBox } = await import('#frontend/hooks/fitness/TreasureBox.js');
+let FitnessTreasureBox;
+
+beforeAll(async () => {
+  const module = await import('#frontend/hooks/fitness/TreasureBox.js');
+  FitnessTreasureBox = module.FitnessTreasureBox;
+});
 
 const GLOBAL_ZONES = [
   { id: 'cool', name: 'Cool', min: 0, color: 'blue', coins: 0 },
@@ -31,18 +36,18 @@ const SOREN_ZONE_CONFIG = [
 
 function createMockZoneProfileStore(profiles = {}) {
   return {
-    getProfile: vi.fn((userId) => {
+    getProfile: jest.fn((userId) => {
       const config = profiles[userId];
       if (!config) return null;
       return { id: userId, zoneConfig: config };
     }),
-    getZoneState: vi.fn(() => null),
+    getZoneState: jest.fn(() => null),
   };
 }
 
 function createTreasureBox(zoneProfileStore = null) {
   const mockSession = {
-    _log: vi.fn(),
+    _log: jest.fn(),
     startTime: Date.now(),
     timebase: { startAbsMs: Date.now(), intervalMs: 5000, intervalCount: 0 },
     timeline: { series: {} },

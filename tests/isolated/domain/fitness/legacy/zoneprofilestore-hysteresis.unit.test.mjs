@@ -11,7 +11,10 @@ jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
   getLogger: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn, debug: mockDebug, error: mockError })
 }));
 
-const { ZoneProfileStore } = await import('#frontend/hooks/fitness/ZoneProfileStore.js');
+let ZoneProfileStore;
+beforeAll(async () => {
+  ({ ZoneProfileStore } = await import('#frontend/hooks/fitness/ZoneProfileStore.js'));
+});
 
 const ZONE_CONFIG = [
   { id: 'cool', name: 'Cool', min: 0, color: 'gray', coins: 0 },
@@ -110,7 +113,9 @@ describe('ZoneProfileStore hysteresis', () => {
 
     // Warm stays stable for 3000ms (HYSTERESIS_STABILITY_MS)
     mockTime += 3000;
-    store.syncFromUsers([makeUser('user-1', 140)]);
+    // Use a slightly different HR to invalidate the per-user input cache
+    // (same HR + same committed zone = cache hit, skipping hysteresis re-check)
+    store.syncFromUsers([makeUser('user-1', 141)]);
     // Now raw warm has been stable for 3100ms (since t+100) ≥ 3000ms → commits
     expect(store.getProfile('user-1').currentZoneId).toBe('warm');
   });
