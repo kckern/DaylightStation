@@ -90,13 +90,17 @@ export class UserService {
         }
       }
 
-      // Attach HR device ID if mapped
+      // Attach HR device IDs if mapped (user may have multiple monitors)
       if (deviceMappings.heart_rate) {
+        const matched = [];
         for (const [deviceId, userId] of Object.entries(deviceMappings.heart_rate)) {
           if (userId === username) {
-            hydrated.hr = parseInt(deviceId, 10);
-            break;
+            matched.push(parseInt(deviceId, 10));
           }
+        }
+        if (matched.length > 0) {
+          hydrated.hr = matched[0]; // backwards compat
+          hydrated.hr_device_ids = matched;
         }
       }
 
@@ -139,13 +143,16 @@ export class UserService {
           console.warn(`[UserService] Family/friend user missing 'id' field (name: "${user.name}") — skipping`);
           return null;
         }
-        // Attach HR device ID from devices.heart_rate mapping (same as primary users)
+        // Attach HR device IDs from devices.heart_rate mapping (user may have multiple monitors)
         if (deviceMappings.heart_rate && !user.hr) {
+          const matched = [];
           for (const [deviceId, userId] of Object.entries(deviceMappings.heart_rate)) {
             if (userId === user.id) {
-              user = { ...user, hr: parseInt(deviceId, 10) };
-              break;
+              matched.push(parseInt(deviceId, 10));
             }
+          }
+          if (matched.length > 0) {
+            user = { ...user, hr: matched[0], hr_device_ids: matched };
           }
         }
         return user;
