@@ -2857,7 +2857,7 @@ export class FitnessSession {
       if (!entry) return;
       const slug = entry.occupantSlug || null;
       const user = slug ? this.userManager.getUser(slug) : null;
-      const deviceMatches = user?.ownsHrDevice?.(entry.deviceId) || (user?.hrDeviceId ? String(user.hrDeviceId) === entry.deviceId : false);
+      const deviceMatches = user?.ownsHrDevice?.(entry.deviceId) ?? false;
       if (!user || !deviceMatches) {
         // DEBUG: Log each removal (always - these are critical)
         console.error(`🗑️ LEDGER_REMOVE: device=${entry.deviceId}, slug=${slug}, reason=${!user ? 'user-missing' : 'device-mismatch'}`, {
@@ -2897,8 +2897,8 @@ export class FitnessSession {
         }, { severity: 'warn' });
         return;
       }
-      const ownsDevice = user.ownsHrDevice?.(entry.deviceId) || (user.hrDeviceId ? String(user.hrDeviceId) === entry.deviceId : false);
-      if (user.hrDeviceIds?.size > 0 && !ownsDevice) {
+      const ownsDevice = user?.ownsHrDevice?.(entry.deviceId) ?? false;
+      if (user?.hrDeviceIds?.size > 0 && !ownsDevice) {
         mismatches.push({ type: 'device-mismatch', deviceId: entry.deviceId, occupantSlug: slug, hrDeviceIds: [...(user.hrDeviceIds || [])] });
         this.eventJournal?.log('LEDGER_RECONCILE_WARN', {
           deviceId: entry.deviceId,
