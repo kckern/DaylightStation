@@ -96,7 +96,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
   const [anchor, setAnchor] = useState('right');
   const {
     heartRateDevices = [],
-    allDevices = [],
+    rpmDevices = [],
     getUserByDevice,
     userCurrentZones,
     zones,
@@ -173,13 +173,8 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
 
   const rpmItems = useMemo(() => {
     const cadenceConfig = deviceConfiguration?.cadence || {};
-    // Filter RPM devices from allDevices (same approach as FitnessUsers)
-    const allRpmDevices = allDevices.filter(d =>
-      d.type === 'cadence' || d.type === 'stationary_bike' ||
-      d.type === 'ab_roller' || d.type === 'jumprope'
-    );
 
-    return allRpmDevices.map((device) => {
+    return rpmDevices.map((device) => {
       const isJumprope = device.type === 'jumprope';
       const equipmentConfig = isJumprope
         ? (equipment.find((e) => e.ble === device.deviceId) || equipmentMap[String(device.deviceId)])
@@ -203,7 +198,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
         overlayBg
       };
     });
-  }, [allDevices, equipmentMap, equipment, deviceConfiguration?.cadence]);
+  }, [rpmDevices, equipmentMap, equipment, deviceConfiguration?.cadence]);
 
   const handleToggleAnchor = useCallback((event) => {
     if (event) {
