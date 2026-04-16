@@ -108,11 +108,20 @@ export function createFitnessRouter(config) {
     hydratedData._household = householdId;
 
     // Enrich music playlists with thumbnails from content source
+    // Use a timeout so the config endpoint still returns when the content source is unreachable
     const playlists = hydratedData?.plex?.music_playlists;
     if (Array.isArray(playlists) && playlists.length > 0 && contentRegistry) {
       const contentSource = hydratedData?.content_source || 'plex';
       const adapter = contentRegistry.get(contentSource);
-      hydratedData.plex.music_playlists = await fitnessConfigService.enrichPlaylistThumbnails(playlists, adapter);
+      const ENRICH_TIMEOUT_MS = 1500;
+      try {
+        hydratedData.plex.music_playlists = await Promise.race([
+          fitnessConfigService.enrichPlaylistThumbnails(playlists, adapter),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('thumbnail enrichment timeout')), ENRICH_TIMEOUT_MS))
+        ]);
+      } catch (err) {
+        logger.warn?.('fitness.config.thumbnail-enrichment-failed', { error: err.message });
+      }
     }
 
     res.json(hydratedData);
