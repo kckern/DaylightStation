@@ -1,1 +1,1 @@
-export { default } from './FullscreenVitalsOverlay';
+export { default, default as FullscreenVitalsOverlay } from './FullscreenVitalsOverlay';
