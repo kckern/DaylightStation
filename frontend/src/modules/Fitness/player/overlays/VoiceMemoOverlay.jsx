@@ -8,6 +8,7 @@ import './VoiceMemoOverlay.scss';
 import { playbackLog } from '@/modules/Player/lib/playbackLogger.js';
 import { getDaylightLogger } from '@/lib/logging/singleton.js';
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
+import { resolveDismissAction } from './voiceMemoOverlayUtils.js';
 
 // Auto-accept countdown for review mode
 const VOICE_MEMO_AUTO_ACCEPT_MS = 8000;
@@ -560,9 +561,15 @@ const VoiceMemoOverlay = ({
     }
     // Only close if clicking directly on backdrop, not on panel or its children
     if (e.target === overlayRef.current) {
-      handleClose();
+      const action = resolveDismissAction('backdrop', recorderState);
+      if (action === 'stop_and_transcribe') {
+        logVoiceMemo('backdrop-stop-and-transcribe', { recorderState });
+        stopRecording();
+      } else {
+        handleClose();
+      }
     }
-  }, [handleClose, logVoiceMemo]);
+  }, [handleClose, logVoiceMemo, recorderState, stopRecording]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -570,7 +577,13 @@ const VoiceMemoOverlay = ({
     const onKeyDown = (e) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        handleClose();
+        const action = resolveDismissAction('escape', recorderState);
+        if (action === 'stop_and_transcribe') {
+          logVoiceMemo('escape-stop-and-transcribe', { recorderState });
+          stopRecording();
+        } else {
+          handleClose();
+        }
       }
       if (overlayState.mode === 'redo' && isRecording && (e.key === ' ' || e.key === 'Spacebar')) {
         e.preventDefault();
@@ -579,7 +592,7 @@ const VoiceMemoOverlay = ({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [overlayState?.open, overlayState?.mode, isRecording, handleClose, stopRecording]);
+  }, [overlayState?.open, overlayState?.mode, isRecording, handleClose, stopRecording, recorderState, logVoiceMemo]);
 
   if (!overlayState?.open) {
     return null;
