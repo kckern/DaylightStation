@@ -535,9 +535,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     if (device.type !== 'heart_rate') return null;
     const deviceKey = String(device.deviceId);
     const participantEntry = participantByHrId.get(deviceKey) || participantsByDevice.get(deviceKey) || null;
-    const userObj = typeof getUserByDevice === 'function'
-      ? getUserByDevice(deviceKey)
-      : registeredUsers.find(u => u.hrDeviceIds?.includes(deviceKey) || String(u.hrDeviceId) === deviceKey);
+    const userObj = getUserByDevice?.(deviceKey) || null;
     const canonicalName = resolveCanonicalUserName(device.deviceId, participantEntry?.name || userObj?.name);
 
     // ZoneProfileStore is the SSOT — synchronously updated on every HR event
@@ -890,9 +888,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                 ? (participantByHrId.get(deviceIdStr) || participantsByDevice.get(deviceIdStr) || null)
                 : null;
               const resolvedUser = isHeartRate
-                ? (typeof getUserByDevice === 'function'
-                    ? getUserByDevice(deviceIdStr)
-                    : registeredUsers.find(u => u.hrDeviceIds?.includes(deviceIdStr) || String(u.hrDeviceId) === deviceIdStr))
+                ? (getUserByDevice?.(deviceIdStr) || null)
                 : null;
               const canonicalUserName = isHeartRate
                 ? resolveCanonicalUserName(deviceIdStr, guestAssignment?.occupantName || guestAssignment?.metadata?.name || participantEntry?.name || resolvedUser?.name || null)
