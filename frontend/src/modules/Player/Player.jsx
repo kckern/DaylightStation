@@ -604,6 +604,28 @@ const Player = forwardRef(function Player(props, ref) {
     });
   }, [scheduleSinglePlayerRemount, mediaAccess, transportAdapter, playerType, isQueue, advance, clear, currentMediaGuid, resolvedWaitKey, activeSource, resolvedMeta]);
 
+  const handleResilienceExhausted = useCallback(({ reason, attempts, waitKey: exhaustedWaitKey }) => {
+    if (isQueue && hasNextQueueItem) {
+      playbackLog('resilience-exhausted-auto-skip', {
+        reason,
+        attempts,
+        waitKey: exhaustedWaitKey,
+        action: 'advance',
+        queueRemaining: playQueue?.length ?? 0
+      }, { level: 'warn' });
+      advance();
+    } else {
+      playbackLog('resilience-exhausted-dismiss', {
+        reason,
+        attempts,
+        waitKey: exhaustedWaitKey,
+        action: isQueue ? 'queue-end' : 'clear',
+        queueRemaining: playQueue?.length ?? 0
+      }, { level: 'warn' });
+      clear();
+    }
+  }, [isQueue, hasNextQueueItem, advance, clear, playQueue]);
+
   // Self-contained formats (titlecard, etc.) have no media element —
   // suppress the resilience overlay which would never exit startup.
   const isSelfContainedFormat = effectiveMeta?.format === 'titlecard';
@@ -628,6 +650,7 @@ const Player = forwardRef(function Player(props, ref) {
     diagnosticsProvider: transportAdapter.readDiagnostics,
     onStateChange: compositeAwareOnState,
     onReload: handleResilienceReload,
+    onExhausted: handleResilienceExhausted,
     configOverrides: resolvedResilience.config,
     controllerRef: resilienceControllerRef,
     plexId,
