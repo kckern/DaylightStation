@@ -143,7 +143,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
       .map((device) => {
         const user = typeof getUserByDevice === 'function'
           ? getUserByDevice(device.deviceId)
-          : allUsers.find((u) => String(u.hrDeviceId) === String(device.deviceId));
+          : allUsers.find((u) => u.hrDeviceIds?.includes(String(device.deviceId)) || String(u.hrDeviceId) === String(device.deviceId));
         const zoneInfo = resolveUserZone(user?.name, device, { userCurrentZones, zones, usersConfigRaw });
         const profileSlug = getProfileSlug(user);
         const avatarSrc = DaylightMediaPath(`/static/img/users/${profileSlug}`);

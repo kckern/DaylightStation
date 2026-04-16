@@ -11,7 +11,11 @@ export class User {
     this.id = configuredId ? String(configuredId) : String(name).toLowerCase().replace(/\s+/g, '_');
     this.name = name;
     this.birthyear = birthyear;
-    this.hrDeviceId = hrDeviceId;
+    // Multi-device support: hrDeviceIds is the source of truth (Set of string IDs)
+    // hrDeviceId is a getter for backwards compat (returns first ID or null)
+    this.hrDeviceIds = new Set();
+    if (hrDeviceId) this.hrDeviceIds.add(String(hrDeviceId));
+    this._pendingHR = new Map(); // deviceId → { hr, ts } for multi-device arbitration
     this.cadenceDeviceId = cadenceDeviceId;
     this.groupLabel = groupLabel || null; // e.g., "Dad", "Mom", etc.
     this.source = source || null; // e.g., "Primary", "Secondary", "Guest"
@@ -29,6 +33,23 @@ export class User {
       sessionStartTime: null,
       totalWorkoutTime: 0
     };
+  }
+
+  // Backwards-compat getter/setter — returns first device ID or null
+  get hrDeviceId() {
+    if (this.hrDeviceIds.size === 0) return null;
+    return this.hrDeviceIds.values().next().value;
+  }
+  set hrDeviceId(val) {
+    if (val === null) {
+      this.hrDeviceIds.clear();
+    } else {
+      this.hrDeviceIds.add(String(val));
+    }
+  }
+
+  ownsHrDevice(deviceId) {
+    return this.hrDeviceIds.has(String(deviceId));
   }
 
   #createZoneBuckets() {
@@ -158,8 +179,29 @@ export class User {
 
     switch (device.type) {
       case 'heart_rate':
-        if (String(device.deviceId) === String(this.hrDeviceId)) {
-          this.#updateHeartRateData(device.heartRate);
+        if (this.ownsHrDevice(device.deviceId)) {
+          // Multi-device arbitration: when user has multiple HR monitors,
+          // store each device's latest reading and use the lowest as canon
+          // (lowest reading is most accurate — high readings are often sensor error)
+          const devId = String(device.deviceId);
+          const now = Date.now();
+          const STALE_MS = 10000; // drop readings older than 10s
+          this._pendingHR.set(devId, { hr: device.heartRate, ts: now });
+
+          if (this.hrDeviceIds.size > 1) {
+            // Prune stale entries
+            for (const [id, entry] of this._pendingHR) {
+              if (now - entry.ts > STALE_MS) this._pendingHR.delete(id);
+            }
+            // Pick the lowest non-zero HR across active devices
+            let canonHR = Infinity;
+            for (const entry of this._pendingHR.values()) {
+              if (entry.hr > 0 && entry.hr < canonHR) canonHR = entry.hr;
+            }
+            this.#updateHeartRateData(canonHR === Infinity ? device.heartRate : canonHR);
+          } else {
+            this.#updateHeartRateData(device.heartRate);
+          }
         }
         break;
       case 'cadence':
@@ -302,13 +344,15 @@ export class UserManager {
       'config.profileId': config.profileId
     });
     const birthYear = config.birth_year ?? config.birthyear ?? config.birthYear ?? null;
+    // Support multiple HR device IDs (hr_device_ids array) or single (hr/hr_device_id)
+    const hrDeviceIds = config.hr_device_ids ?? null;
     const hrDeviceId = config.hr_device_id ?? config.hr ?? config.hrDeviceId ?? config.deviceId ?? null;
     const cadenceDeviceId = config.cadence_device_id ?? config.cadence ?? config.cadenceDeviceId ?? null;
     const groupLabel = config.group_label ?? config.groupLabel ?? null;
     const source = config.source ?? null;
     const category = config.category ?? null;
     const avatarUrl = config.avatar_url ?? config.avatarUrl ?? null;
-    
+
     if (!this.users.has(resolvedUserId)) {
       const user = new User(config.name, birthYear, hrDeviceId, cadenceDeviceId, {
         id: resolvedUserId,
@@ -319,11 +363,16 @@ export class UserManager {
         category,
         avatarUrl
       });
+      // If backend sent multiple device IDs, add them all
+      if (Array.isArray(hrDeviceIds)) {
+        for (const id of hrDeviceIds) user.hrDeviceIds.add(String(id));
+      }
       getLogger().warn('usermanager.user_created', {
         configName: config.name,
         userId: user.id,
         userName: user.name,
         resolvedUserId,
+        hrDeviceIds: [...user.hrDeviceIds],
         hasZoneOverrides: !!config.zones,
         zoneOverrides: config.zones || null,
         userZoneConfigLength: user.zoneConfig?.length || 0
@@ -332,7 +381,11 @@ export class UserManager {
     } else {
       // Update existing user config if needed
       const user = this.users.get(resolvedUserId);
-      user.hrDeviceId = hrDeviceId ?? user.hrDeviceId;
+      if (Array.isArray(hrDeviceIds)) {
+        for (const id of hrDeviceIds) user.hrDeviceIds.add(String(id));
+      } else if (hrDeviceId) {
+        user.hrDeviceIds.add(String(hrDeviceId));
+      }
       user.cadenceDeviceId = cadenceDeviceId ?? user.cadenceDeviceId;
       user.groupLabel = groupLabel ?? user.groupLabel;
       user.source = source ?? user.source;
@@ -418,13 +471,13 @@ export class UserManager {
 
     // Ensure no other user claims this device (fix for flickering/ghost users)
     for (const user of this.users.values()) {
-      if (String(user.hrDeviceId) === key && user.id !== guestId) {
-        console.log('[UserManager] Unclaiming device from previous user:', {
+      if (user.ownsHrDevice(key) && user.id !== guestId) {
+        getLogger().info('usermanager.unclaim_device', {
           deviceId: key,
           previousUser: user.name,
           newUser: guestName
         });
-        user.hrDeviceId = null;
+        user.hrDeviceIds.delete(key);
       }
     }
 
@@ -436,7 +489,7 @@ export class UserManager {
       occupantType
     });
     if (guestUser) {
-      guestUser.hrDeviceId = key;
+      guestUser.hrDeviceIds.add(key);
       // Clear stale HR from previous session/device to prevent phantom data
       // leaking into MetricsRecorder via the ?? coalesce fallback
       if (guestUser.currentData) {
@@ -481,7 +534,7 @@ export class UserManager {
 
     // Check registered users for direct device ID match
     for (const user of this.users.values()) {
-      if ((user.hrDeviceId && String(user.hrDeviceId) === idStr) || 
+      if (user.ownsHrDevice(idStr) ||
           (user.cadenceDeviceId && String(user.cadenceDeviceId) === idStr)) {
         return user;
       }
@@ -552,8 +605,8 @@ export class UserManager {
     if (zones && Array.isArray(this._defaultZones)) {
       user.zoneConfig = buildZoneConfig(this._defaultZones, zones);
     }
-    if (deviceId && !user.hrDeviceId) {
-      user.hrDeviceId = String(deviceId);
+    if (deviceId && user.hrDeviceIds.size === 0) {
+      user.hrDeviceIds.add(String(deviceId));
       // Clear stale HR from previous session/device to prevent phantom data
       if (user.currentData) {
         user.currentData.heartRate = null;
@@ -573,6 +626,7 @@ export class UserManager {
       category: user.category || user.source || null,
       avatarUrl: user.avatarUrl || null,
       hrDeviceId: user.hrDeviceId ? String(user.hrDeviceId) : null,
+      hrDeviceIds: [...user.hrDeviceIds],
       cadenceDeviceId: user.cadenceDeviceId ? String(user.cadenceDeviceId) : null
     };
   }
@@ -620,8 +674,8 @@ export class UserManager {
     this.users.forEach((user) => {
       const descriptor = this.#buildUserDescriptor(user);
       if (!descriptor) return;
-      if (descriptor.hrDeviceId) {
-        owners.heartRate.set(descriptor.hrDeviceId, descriptor);
+      for (const devId of user.hrDeviceIds) {
+        owners.heartRate.set(devId, descriptor);
       }
       if (descriptor.cadenceDeviceId) {
         owners.cadence.set(descriptor.cadenceDeviceId, descriptor);

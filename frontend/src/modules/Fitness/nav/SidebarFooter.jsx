@@ -86,8 +86,10 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
   const hrOwnerMap = React.useMemo(() => {
     const map = {};
     participantRoster.forEach((participant) => {
-      if (participant?.hrDeviceId !== undefined && participant?.hrDeviceId !== null) {
-        map[String(participant.hrDeviceId)] = participant.name;
+      // Support multiple HR device IDs per user
+      const deviceIds = participant?.hrDeviceIds || (participant?.hrDeviceId != null ? [participant.hrDeviceId] : []);
+      for (const devId of deviceIds) {
+        map[String(devId)] = participant.name;
       }
     });
     if (participantsByDevice && typeof participantsByDevice.forEach === 'function') {
@@ -100,8 +102,9 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
     }
     if (Object.keys(map).length === 0 && usersConfigRaw) {
       const addFrom = (arr) => Array.isArray(arr) && arr.forEach(cfg => {
-        if (cfg && (cfg.hr !== undefined && cfg.hr !== null)) {
-          map[String(cfg.hr)] = cfg.name;
+        if (cfg) {
+          const ids = cfg.hr_device_ids || (cfg.hr != null ? [cfg.hr] : []);
+          for (const id of ids) map[String(id)] = cfg.name;
         }
       });
       addFrom(usersConfigRaw.primary);
@@ -118,8 +121,10 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
       const profileId = participant.profileId
         || participant.id
         || getConfiguredProfileId(participant?.name);
-      if (participant?.hrDeviceId !== undefined && participant?.hrDeviceId !== null) {
-        const normalized = String(participant.hrDeviceId);
+      // Support multiple HR device IDs per user
+      const deviceIds = participant?.hrDeviceIds || (participant?.hrDeviceId != null ? [participant.hrDeviceId] : []);
+      for (const devId of deviceIds) {
+        const normalized = String(devId);
         map[normalized] = profileId || 'user';
         participantMap.set(normalized, participant);
       }
