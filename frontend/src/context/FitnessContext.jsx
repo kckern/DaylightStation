@@ -1590,18 +1590,16 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   const participantLookupByDevice = React.useMemo(() => {
     const map = new Map();
-    const addKey = (key, entry) => {
-      if (key === undefined || key === null) return;
-      const normalized = String(key);
-      if (!normalized) return;
-      if (!map.has(normalized)) {
-        map.set(normalized, entry);
-      }
-    };
     participantRoster.forEach((entry) => {
       if (!entry) return;
-      const primaryKey = entry.hrDeviceId ?? entry.deviceId ?? entry.device_id ?? entry.antDeviceId ?? entry.device?.id ?? entry.device?.deviceId;
-      addKey(primaryKey, entry);
+      // Index ALL device IDs for this participant, not just the primary
+      const allIds = entry.hrDeviceIds || [entry.hrDeviceId].filter(Boolean);
+      for (const id of allIds) {
+        const normalized = String(id);
+        if (normalized && !map.has(normalized)) {
+          map.set(normalized, entry);
+        }
+      }
     });
     return map;
   }, [participantRoster]);
@@ -1627,7 +1625,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       const data = user.currentData || {};
       
       const deviceId = user.hrDeviceId ? String(user.hrDeviceId) : null;
-      const ledgerEntry = deviceId ? deviceAssignmentMap.get(deviceId) : null;
+      const allDeviceIds = user.hrDeviceIds ? [...user.hrDeviceIds] : (deviceId ? [deviceId] : []);
+      // Check if ANY of the user's devices have a ledger entry (guest detection)
+      // Note: O(n*m) where n=users, m=devices per user — acceptable for <10 users with <5 devices each
+      const ledgerEntry = allDeviceIds.reduce((found, id) => found || deviceAssignmentMap.get(id), null);
       const isGuest = Boolean(ledgerEntry);
       const source = isGuest ? 'Guest' : 'Primary';
       const displayLabel = getDisplayLabel(user.name, { userId: user.id });
@@ -1836,6 +1837,13 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     if (key === undefined || key === null) return null;
     const manager = session?.userManager;
     if (!manager) return null;
+    // Priority 1: ownership index (O(1) lookup, includes all registered devices)
+    const idx = manager.deviceOwnershipIndex;
+    if (idx) {
+      const owner = idx.getOwner(key);
+      if (owner) return manager.getUser(owner.id) || null;
+    }
+    // Priority 2: existing resolution (handles ledger/guest assignments with side effects)
     if (typeof manager.getUserByDeviceId === 'function') {
       return manager.getUserByDeviceId(key) || null;
     }
