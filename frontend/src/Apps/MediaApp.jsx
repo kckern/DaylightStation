@@ -134,8 +134,13 @@ const MediaAppInner = () => {
       stallRef.current = { time: playbackState.currentTime, since: now };
       return;
     }
-    // Time hasn't changed — check if stalled long enough
-    if (prev.since > 0 && now - prev.since > 30000) {
+    // Time hasn't changed — arm the timer if not already armed
+    if (prev.since === 0) {
+      stallRef.current = { time: prev.time, since: now };
+      return;
+    }
+    // Check if stalled long enough
+    if (now - prev.since > 30000) {
       logger.warn('media-app.stall-recovery', {
         contentId: queue.currentItem.contentId,
         stalledAt: playbackState.currentTime,
