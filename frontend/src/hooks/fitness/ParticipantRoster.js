@@ -243,7 +243,7 @@ export class ParticipantRoster {
    */
   getFullRoster() {
     const deviceRoster = this.getRoster(); // Current behavior - active devices only
-    const deviceIds = new Set(deviceRoster.map(e => e.hrDeviceId));
+    const deviceIds = new Set(deviceRoster.flatMap(e => e.hrDeviceIds || [e.hrDeviceId].filter(Boolean)));
     
     // Add ledger entries for devices not currently broadcasting
     const ledgerEntries = this._userManager?.assignmentLedger?.snapshot?.() || [];
@@ -260,6 +260,7 @@ export class ParticipantRoster {
         baseUserName: entry.metadata?.baseUserName || null,
         isGuest: (entry.occupantType || 'guest') === 'guest',
         hrDeviceId: entry.deviceId,
+        hrDeviceIds: [String(entry.deviceId)], // Ghost entries only have one known device
         heartRate: null,
         zoneId: null,
         zoneColor: null,
@@ -441,6 +442,7 @@ export class ParticipantRoster {
       baseUserName,
       isGuest,
       hrDeviceId: deviceId,
+      hrDeviceIds: mappedUser?.hrDeviceIds ? [...mappedUser.hrDeviceIds] : [String(deviceId)], // Snapshot of user's devices at entry creation — may be stale mid-session
       heartRate: resolvedHeartRate,
       zoneId: zoneInfo?.zoneId || null,
       zoneColor: zoneInfo?.color || null,
