@@ -2,9 +2,10 @@ import { jest } from '@jest/globals';
 
 const mockInfo = jest.fn();
 const mockSampled = jest.fn();
+const mockWarn = jest.fn();
 jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
-  default: () => ({ info: mockInfo, sampled: mockSampled, error: jest.fn() }),
-  getLogger: () => ({ info: mockInfo, sampled: mockSampled, error: jest.fn() })
+  default: () => ({ info: mockInfo, sampled: mockSampled, error: jest.fn(), warn: mockWarn }),
+  getLogger: () => ({ info: mockInfo, sampled: mockSampled, error: jest.fn(), warn: mockWarn })
 }));
 
 describe('tick timer logging', () => {

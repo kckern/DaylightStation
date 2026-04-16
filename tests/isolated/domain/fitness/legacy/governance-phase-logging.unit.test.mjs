@@ -8,7 +8,10 @@ jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
   getLogger: () => ({ sampled: mockSampled, info: mockInfo })
 }));
 
-const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
+let GovernanceEngine;
+beforeAll(async () => {
+  ({ GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js'));
+});
 
 describe('governance phase change logging', () => {
   beforeEach(() => {

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { buildBeatsSeries, getZoneCoinRate, buildSegments } from '#frontend/modules/Fitness/FitnessModules/lib/chartHelpers.js';
+import { describe, it, expect, beforeAll } from '@jest/globals';
+import { buildBeatsSeries, getZoneCoinRate, buildSegments } from '#frontend/modules/Fitness/lib/chartHelpers.js';
 import { ZoneColors } from '#frontend/modules/Fitness/domain/types.js';
 import { ZONE_COLORS } from '#frontend/modules/Fitness/shared/constants/fitness.js';
 
@@ -121,8 +121,14 @@ describe('buildSegments + enforceZoneSlopes — blue zone flatness (O7)', () => 
 });
 
 describe('ZONE_SYMBOL_MAP completeness (O6)', () => {
+  let PersistenceManager;
+
+  beforeAll(async () => {
+    const module = await import('#frontend/hooks/fitness/PersistenceManager.js');
+    PersistenceManager = module.PersistenceManager;
+  });
+
   it('abbreviates rest and fire zones', async () => {
-    const { PersistenceManager } = await import('#frontend/hooks/fitness/PersistenceManager.js');
     const pm = new PersistenceManager({ persistApi: () => Promise.resolve() });
 
     const encoded = pm._runLengthEncode('zone_id', ['rest', 'cool', 'active', 'warm', 'hot', 'fire']);

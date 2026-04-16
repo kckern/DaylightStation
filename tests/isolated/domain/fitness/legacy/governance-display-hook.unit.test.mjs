@@ -1,5 +1,8 @@
 import { jest } from '@jest/globals';
 
+// Provide window global for api.mjs which references window.location at module scope
+globalThis.window = { location: { origin: 'http://localhost:3111', protocol: 'http:', host: 'localhost:3111' } };
+
 // Mock React hooks for unit testing
 const mockUseMemo = jest.fn((fn) => fn());
 jest.unstable_mockModule('react', () => ({
@@ -7,15 +10,12 @@ jest.unstable_mockModule('react', () => ({
   default: { useMemo: mockUseMemo }
 }));
 
-// Mock api.mjs to avoid window reference in Node test environment
-jest.unstable_mockModule('#frontend/lib/api.mjs', () => ({
-  DaylightMediaPath: (p) => p,
-  default: {}
-}));
-
-const { resolveGovernanceDisplay } = await import(
-  '#frontend/modules/Fitness/hooks/useGovernanceDisplay.js'
-);
+let resolveGovernanceDisplay;
+beforeAll(async () => {
+  ({ resolveGovernanceDisplay } = await import(
+    '#frontend/modules/Fitness/hooks/useGovernanceDisplay.js'
+  ));
+});
 
 // Realistic zone sequence matching DEFAULT_ZONE_CONFIG thresholds
 const FULL_ZONE_SEQUENCE = [

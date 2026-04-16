@@ -13,6 +13,7 @@ module.exports = {
     '^#api/(.*)$': '<rootDir>/backend/src/4_api/$1',
     '^#backend/(.*)$': '<rootDir>/backend/$1',
     '^#frontend/(.*)$': '<rootDir>/frontend/src/$1',
+    '^@/(.*)$': '<rootDir>/frontend/src/$1',
     '^#extensions/(.*)$': '<rootDir>/_extensions/$1',
     '^#fixtures/(.*)$': '<rootDir>/tests/_fixtures/$1',
     '^#testlib/(.*)$': '<rootDir>/tests/_lib/$1',
@@ -35,7 +36,7 @@ module.exports = {
     '/tests/runtime/',           // Playwright handles these
     '/tests/integration/external/', // External API tests require credentials - run explicitly
     '/tests/_archive/',          // Archived tests
-    // Note: .worktrees exclusion removed - it prevented tests from running inside worktrees
+    '\\.worktrees/',             // Worktree copies — run tests from within the worktree itself
   ],
   // Coverage configuration
   collectCoverageFrom: [

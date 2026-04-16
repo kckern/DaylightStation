@@ -23,7 +23,10 @@ jest.unstable_mockModule('#frontend/lib/api.mjs', () => ({
   api: { get: jest.fn(), post: jest.fn() }
 }));
 
-const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
+let GovernanceEngine;
+beforeAll(async () => {
+  ({ GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js'));
+});
 
 const createMockSession = ({ participantState, roster, zoneProfileStore } = {}) => ({
   getActiveParticipantState: jest.fn().mockReturnValue(
