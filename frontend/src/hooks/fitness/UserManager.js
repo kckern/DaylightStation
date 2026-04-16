@@ -1,5 +1,6 @@
 import { resolveDisplayLabel, buildZoneConfig, deriveZoneProgressSnapshot } from './types.js';
 import getLogger from '../../lib/logging/Logger.js';
+import { DeviceOwnershipIndex } from './DeviceOwnershipIndex.js';
 
 export class User {
   constructor(name, birthyear, hrDeviceId = null, cadenceDeviceId = null, options = {}) {
@@ -300,6 +301,17 @@ export class UserManager {
     this._defaultZones = null;
     this.assignmentLedger = null;
     this._onLedgerChange = null;
+    this._ownershipIndex = new DeviceOwnershipIndex();
+  }
+
+  get deviceOwnershipIndex() {
+    return this._ownershipIndex;
+  }
+
+  _rebuildOwnershipIndex() {
+    this._ownershipIndex.rebuild(
+      Array.from(this.users.values())
+    );
   }
 
   configure(usersConfig, globalZones) {
@@ -397,6 +409,7 @@ export class UserManager {
       }
       // Could update zones here too
     }
+    this._rebuildOwnershipIndex();
     return this.users.get(resolvedUserId);
   }
 
@@ -496,6 +509,7 @@ export class UserManager {
         guestUser.currentData.heartRate = null;
       }
     }
+    this._rebuildOwnershipIndex();
     return payload;
   }
 
