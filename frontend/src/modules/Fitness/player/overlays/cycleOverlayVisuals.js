@@ -162,4 +162,44 @@ export function polarToCartesian(cx, cy, r, angle) {
   };
 }
 
+/**
+ * getBoosterAvatarSlots(boostingUsers, overlaySize)
+ *
+ * Returns up to 4 avatar slots positioned at the four quadrants (NE, SE, SW, NW)
+ * around the perimeter of a square overlay. Each slot carries the user id,
+ * the uppercase first-letter initial, and an inline style with `top`/`left`
+ * pixel values suitable for `position: absolute`.
+ *
+ * Contract:
+ *   - boostingUsers: string[]  (non-arrays or empty → [])
+ *   - overlaySize:  number px  (default 220)
+ *   - Caps at 4 entries; no overflow indicator (YAGNI).
+ *   - Order:  [0]=NE, [1]=SE, [2]=SW, [3]=NW
+ *
+ * @param {string[]} boostingUsers
+ * @param {number} [overlaySize=220]
+ * @returns {Array<{ id: string, initial: string, style: { top: string, left: string } }>}
+ */
+export function getBoosterAvatarSlots(boostingUsers, overlaySize = 220) {
+  if (!Array.isArray(boostingUsers) || boostingUsers.length === 0) return [];
+  const positions = [
+    { top: 8, left: overlaySize - 32 },                 // NE
+    { top: overlaySize - 32, left: overlaySize - 32 },  // SE
+    { top: overlaySize - 32, left: 8 },                 // SW
+    { top: 8, left: 8 }                                 // NW
+  ];
+  return boostingUsers.slice(0, 4).map((uid, i) => {
+    const idStr = typeof uid === 'string' ? uid : String(uid ?? '');
+    const firstChar = idStr.length > 0 ? idStr.charAt(0).toUpperCase() : '?';
+    return {
+      id: idStr,
+      initial: firstChar || '?',
+      style: {
+        top: `${positions[i].top}px`,
+        left: `${positions[i].left}px`
+      }
+    };
+  });
+}
+
 export default getCycleOverlayVisuals;

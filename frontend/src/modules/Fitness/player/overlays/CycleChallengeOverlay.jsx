@@ -3,13 +3,14 @@ import PropTypes from 'prop-types';
 import {
   getCycleOverlayVisuals,
   polarToCartesian,
-  rpmToAngle
+  rpmToAngle,
+  getBoosterAvatarSlots
 } from './cycleOverlayVisuals.js';
 import getLogger from '@/lib/logging/Logger.js';
 import './CycleChallengeOverlay.scss';
 
 /**
- * CycleChallengeOverlay (Tasks 21 + 22).
+ * CycleChallengeOverlay (Tasks 21 + 22 + 23).
  *
  * Circular ~220px widget that visualises the active cycle challenge:
  *   - Outer status ring (color + opacity from cycleState / dimFactor)
@@ -18,10 +19,11 @@ import './CycleChallengeOverlay.scss';
  *   - Target RPM sign anchored to the hi-rpm tick on the gauge arc (Task 22)
  *   - Rider avatar centered, name below
  *   - Segment counter pill bottom center (e.g. "2 / 4")
+ *   - Up to 4 booster avatars at the corners (NE/SE/SW/NW) (Task 23)
+ *   - Boost multiplier pill (×2.5) below the rider name when >1.0 (Task 23)
  *   - Position cycling (top / middle / bottom) on background tap, localStorage persisted
  *
- * Not in this task: booster avatars (Task 23), swap modal (Task 24),
- * FitnessPlayer integration (Task 26).
+ * Not in this task: swap modal (Task 24), FitnessPlayer integration (Task 26).
  */
 
 const CYCLE_VIEWBOX_SIZE = 220;
@@ -270,6 +272,17 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
     '--cycle-ring-circumference': `${CYCLE_RING_CIRCUMFERENCE}px`
   };
 
+  // --- Boosters + boost multiplier (Task 23) --------------------------------
+  const boosters = getBoosterAvatarSlots(
+    Array.isArray(challenge.boostingUsers) ? challenge.boostingUsers : [],
+    CYCLE_VIEWBOX_SIZE
+  );
+  const rawMultiplier = Number.isFinite(challenge.boostMultiplier)
+    ? challenge.boostMultiplier
+    : 1;
+  const showBoostBadge = rawMultiplier > 1;
+  const boostText = `×${rawMultiplier.toFixed(1)}`;
+
   const classNames = ['cycle-challenge-overlay', `cycle-challenge-overlay--pos-${position}`];
   if (challenge.cycleState) {
     classNames.push(`cycle-challenge-overlay--state-${String(challenge.cycleState).toLowerCase()}`);
@@ -421,6 +434,26 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
       >
         {segmentLabel}
       </div>
+
+      {boosters.map((b) => (
+        <div
+          key={`booster-${b.id}`}
+          className="cycle-challenge-overlay__booster"
+          style={b.style}
+          aria-label={`Booster: ${b.id}`}
+        >
+          {b.initial}
+        </div>
+      ))}
+
+      {showBoostBadge && (
+        <div
+          className="cycle-challenge-overlay__boost-badge"
+          aria-label={`Boost multiplier ${boostText}`}
+        >
+          {boostText}
+        </div>
+      )}
     </div>
   );
 };
@@ -441,7 +474,9 @@ CycleChallengeOverlay.propTypes = {
       id: PropTypes.string,
       name: PropTypes.string
     }),
-    swapAllowed: PropTypes.bool
+    swapAllowed: PropTypes.bool,
+    boostingUsers: PropTypes.arrayOf(PropTypes.string),
+    boostMultiplier: PropTypes.number
   }),
   onRequestSwap: PropTypes.func
 };
