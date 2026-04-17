@@ -14,11 +14,10 @@ import './CameraRenderer.scss';
  * @param {Object} props
  * @param {string} props.cameraId
  * @param {boolean} [props.crop=true] - 16:9 cover crop vs uncropped contain
- * @param {boolean} [props.interactive=false] - click-to-center, drag-to-pan, mini-nav, fullscreen
- * @param {function} [props.onFullscreen] - fullscreen button callback (interactive only)
+ * @param {boolean} [props.interactive=false] - click-to-center, drag-to-pan
  * @param {function} [props.onError] - error callback
  */
-export default function CameraRenderer({ cameraId, crop = true, interactive = false, onFullscreen, onError }) {
+export default function CameraRenderer({ cameraId, crop = true, interactive = false, onError }) {
   const logger = useMemo(() => getChildLogger({ component: 'CameraRenderer', cameraId }), [cameraId]);
   const videoRef = useRef(null);
   const containerRef = useRef(null);
@@ -39,6 +38,7 @@ export default function CameraRenderer({ cameraId, crop = true, interactive = fa
 
   // --- Pan state (interactive mode) ---
   const [objectPosition, setObjectPosition] = useState('50% 50%');
+  const [panAnimating, setPanAnimating] = useState(false);
   const dragging = useRef(false);
   const lastPointer = useRef({ x: 0, y: 0 });
 
@@ -46,6 +46,7 @@ export default function CameraRenderer({ cameraId, crop = true, interactive = fa
     if (!interactive || !crop) return;
     if (e.button !== 0) return;
     dragging.current = true;
+    setPanAnimating(false);
     lastPointer.current = { x: e.clientX, y: e.clientY };
     e.currentTarget.setPointerCapture(e.pointerId);
   }, [interactive, crop]);
@@ -98,13 +99,12 @@ export default function CameraRenderer({ cameraId, crop = true, interactive = fa
 
   const handleClick = useCallback((e) => {
     if (!interactive || !crop) return;
-    // If the user dragged, don't treat as a click-to-center
-    // (pointerup already fired, dragging is false, but we can check movement)
     const container = containerRef.current;
     if (!container) return;
     const rect = container.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
+    setPanAnimating(true);
     setObjectPosition(`${x.toFixed(1)}% ${y.toFixed(1)}%`);
   }, [interactive, crop]);
 
@@ -124,7 +124,10 @@ export default function CameraRenderer({ cameraId, crop = true, interactive = fa
   // --- Render ---
   const activeDetections = detections.filter(d => d.active);
   const showPreview = src && !liveReady;
-  const posStyle = crop ? { objectPosition } : undefined;
+  const posStyle = crop ? {
+    objectPosition,
+    transition: panAnimating ? 'object-position 0.3s ease-out' : 'none',
+  } : undefined;
 
   const className = [
     'camera-renderer',
@@ -186,107 +189,6 @@ export default function CameraRenderer({ cameraId, crop = true, interactive = fa
         </div>
       )}
 
-      {/* Interactive chrome */}
-      {interactive && (src || liveReady) && onFullscreen && (
-        <button className="camera-renderer__fullscreen" onClick={onFullscreen} title="Fullscreen">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M1 1h5V0H0v6h1V1zm14 0h-5V0h6v6h-1V1zM1 15h5v1H0v-6h1v5zm14 0h-5v1h6v-6h-1v5z"/>
-          </svg>
-        </button>
-      )}
-
-      {interactive && src && naturalSize.w > 0 && (
-        <MiniNav
-          src={src}
-          naturalWidth={naturalSize.w}
-          naturalHeight={naturalSize.h}
-          objectPosition={objectPosition}
-          onPan={setObjectPosition}
-        />
-      )}
-    </div>
-  );
-}
-
-// --- MiniNav (moved from CameraFeed.jsx) ---
-
-function MiniNav({ src, naturalWidth, naturalHeight, objectPosition, onPan }) {
-  const navRef = useRef(null);
-
-  const getViewportStyle = useCallback(() => {
-    if (!naturalWidth || !naturalHeight) return { display: 'none' };
-
-    const containerRatio = 16 / 9;
-    const imageRatio = naturalWidth / naturalHeight;
-
-    let visibleW, visibleH;
-    if (imageRatio > containerRatio) {
-      visibleW = containerRatio / imageRatio;
-      visibleH = 1;
-    } else {
-      visibleW = 1;
-      visibleH = imageRatio / containerRatio;
-    }
-
-    const [pxStr, pyStr] = (objectPosition || '50% 50%').split(' ');
-    const px = parseFloat(pxStr) / 100;
-    const py = parseFloat(pyStr) / 100;
-
-    const maxOffsetX = 1 - visibleW;
-    const maxOffsetY = 1 - visibleH;
-    const left = px * maxOffsetX;
-    const top = py * maxOffsetY;
-
-    return {
-      left: `${left * 100}%`,
-      top: `${top * 100}%`,
-      width: `${visibleW * 100}%`,
-      height: `${visibleH * 100}%`,
-    };
-  }, [naturalWidth, naturalHeight, objectPosition]);
-
-  const handleNav = useCallback((e) => {
-    const nav = navRef.current;
-    if (!nav) return;
-    const rect = nav.getBoundingClientRect();
-    const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
-    onPan(`${(x * 100).toFixed(1)}% ${(y * 100).toFixed(1)}%`);
-  }, [onPan]);
-
-  const dragRef = useRef(false);
-
-  const onPointerDown = useCallback((e) => {
-    e.stopPropagation();
-    dragRef.current = true;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    handleNav(e);
-  }, [handleNav]);
-
-  const onPointerMove = useCallback((e) => {
-    if (dragRef.current) { e.stopPropagation(); handleNav(e); }
-  }, [handleNav]);
-
-  const onPointerUp = useCallback((e) => {
-    e.stopPropagation();
-    dragRef.current = false;
-  }, []);
-
-  const containerRatio = 16 / 9;
-  const imageRatio = naturalWidth / naturalHeight;
-  const needsNav = imageRatio > containerRatio * 1.05 || imageRatio < containerRatio * 0.95;
-  if (!needsNav) return null;
-
-  return (
-    <div
-      className="camera-renderer__nav"
-      ref={navRef}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-    >
-      <img src={src} alt="" draggable={false} />
-      <div className="camera-renderer__nav-viewport" style={getViewportStyle()} />
     </div>
   );
 }
