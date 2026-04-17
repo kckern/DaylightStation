@@ -454,6 +454,91 @@ export class GovernanceEngine {
     const activeChallenge = state.activeChallenge;
     if (!activeChallenge) return null;
 
+    // Cycle challenge branch: emit cycle-shaped snapshot with rider, phases,
+    // ramp/init/phase progress, dim factor, boost info, and swap eligibility.
+    if (activeChallenge.type === 'cycle') {
+      const phase = activeChallenge.generatedPhases?.[activeChallenge.currentPhaseIndex] || null;
+      const cadenceEntry = this._latestInputs?.equipmentCadenceMap?.[activeChallenge.equipment];
+      const currentRpm = cadenceEntry?.rpm || 0;
+
+      // Dim factor only applies during maintain when RPM is in [lo, hi) band
+      let dimFactor = 0;
+      if (activeChallenge.cycleState === 'maintain' && phase
+          && currentRpm >= phase.loRpm && currentRpm < phase.hiRpm) {
+        dimFactor = (phase.hiRpm - currentRpm) / (phase.hiRpm - phase.loRpm);
+      }
+
+      // Reuse the boost helper for consistent behaviour with _evaluateCycleChallenge
+      const { multiplier, contributors } = this._computeBoostMultiplier(activeChallenge, {
+        activeParticipants: this._latestInputs?.activeParticipants || [],
+        userZoneMap: this._latestInputs?.userZoneMap || {}
+      });
+
+      // Swap is allowed only during init or the very first ramp (phase 0)
+      const swapAllowed = activeChallenge.cycleState === 'init'
+        || (activeChallenge.cycleState === 'ramp' && activeChallenge.currentPhaseIndex === 0);
+
+      // Eligible swap targets = equipment whitelist minus current rider minus
+      // users still on cooldown
+      const swapEligibleUsers = this._getEligibleUsers(activeChallenge.equipment)
+        .filter((uid) => {
+          if (uid === activeChallenge.rider) return false;
+          const until = this._cycleCooldowns?.[uid];
+          return !until || until <= now;
+        });
+
+      const riderName = this.session?.getParticipantProfile?.(activeChallenge.rider)?.name
+        || activeChallenge.rider;
+
+      const phases = Array.isArray(activeChallenge.generatedPhases)
+        ? activeChallenge.generatedPhases
+        : [];
+      const allPhasesProgress = phases.map((p, i) => {
+        if (i < activeChallenge.currentPhaseIndex) return 1.0;
+        if (i > activeChallenge.currentPhaseIndex) return 0.0;
+        const total = (p?.maintainSeconds || 0) * 1000;
+        if (!total) return 0;
+        return Math.min(1.0, (activeChallenge.phaseProgressMs || 0) / total);
+      });
+
+      const phaseProgressPct = phase && phase.maintainSeconds
+        ? Math.min(1.0, (activeChallenge.phaseProgressMs || 0) / (phase.maintainSeconds * 1000))
+        : 0;
+
+      const rampTotalMs = phase ? (phase.rampSeconds || 0) * 1000 : 0;
+      const rampRemainingMs = phase
+        ? Math.max(0, rampTotalMs - (activeChallenge.rampElapsedMs || 0))
+        : 0;
+
+      const initTotalMs = activeChallenge.initTotalMs || 0;
+      const initRemainingMs = Math.max(0, initTotalMs - (activeChallenge.initElapsedMs || 0));
+
+      return {
+        id: activeChallenge.id,
+        type: 'cycle',
+        status: activeChallenge.status,
+        rider: { id: activeChallenge.rider, name: riderName },
+        cycleState: activeChallenge.cycleState,
+        currentPhaseIndex: activeChallenge.currentPhaseIndex,
+        totalPhases: activeChallenge.totalPhases,
+        currentPhase: phase ? { ...phase } : null,
+        generatedPhases: phases.map((p) => ({ ...p })),
+        currentRpm,
+        phaseProgressPct,
+        allPhasesProgress,
+        rampRemainingMs,
+        rampTotalMs,
+        initRemainingMs,
+        initTotalMs,
+        dimFactor,
+        boostMultiplier: multiplier,
+        boostingUsers: contributors,
+        lockReason: activeChallenge.lockReason || null,
+        swapAllowed,
+        swapEligibleUsers
+      };
+    }
+
     const expiresAt = Number.isFinite(activeChallenge.expiresAt) ? activeChallenge.expiresAt : null;
     const startedAt = Number.isFinite(activeChallenge.startedAt) ? activeChallenge.startedAt : null;
     const remainingSeconds = expiresAt != null
