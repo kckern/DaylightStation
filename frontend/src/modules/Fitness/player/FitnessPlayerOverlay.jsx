@@ -1,12 +1,15 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import { useRenderProfiler } from '@/hooks/fitness/useRenderProfiler.js';
 import { ChallengeOverlay, useChallengeOverlays } from './overlays/ChallengeOverlay.jsx';
+import { CycleChallengeOverlay } from './overlays/CycleChallengeOverlay.jsx';
+import CycleRiderSwapModal from './overlays/CycleRiderSwapModal.jsx';
 import GovernanceStateOverlay from './overlays/GovernanceStateOverlay.jsx';
 import { useGovernanceDisplay } from '@/modules/Fitness/hooks/useGovernanceDisplay.js';
 import FullscreenVitalsOverlay from './overlays/FullscreenVitalsOverlay.jsx';
 import FitnessModuleContainer from './FitnessModuleContainer.jsx';
+import getLogger from '@/lib/logging/Logger.js';
 import './overlays/FitnessAppOverlay.scss';
 
 const normalizeChallengeStatusForLogging = (status) => {
@@ -59,8 +62,54 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
   );
   const isGovernanceLocked = governanceDisplay?.status === 'locked';
   const activeChallenge = governanceState?.challenge || null;
+  const isCycleChallenge = activeChallenge?.type === 'cycle';
   const challengeEventRef = useRef({ id: null, status: null });
   const wasPlayingBeforeOverlayRef = useRef(false);
+
+  // Task 26: Local swap modal open state + engine-backed confirm handler.
+  // Engine is reached via fitnessSessionInstance (session).governanceEngine —
+  // same pattern used by triggerChallengeNow in FitnessContext.
+  const [isSwapModalOpen, setSwapModalOpen] = useState(false);
+  const cycleLogger = useMemo(
+    () => getLogger().child({ component: 'fitness-player-overlay.cycle' }),
+    []
+  );
+
+  const handleRequestSwap = useCallback(() => {
+    cycleLogger.info('swap-modal-open-request', {
+      riderId: activeChallenge?.rider?.id || null
+    });
+    setSwapModalOpen(true);
+  }, [activeChallenge, cycleLogger]);
+
+  const handleCloseSwap = useCallback(() => {
+    setSwapModalOpen(false);
+  }, []);
+
+  const handleConfirmSwap = useCallback((riderId) => {
+    const engine = sessionInstance?.governanceEngine;
+    if (engine && typeof engine.swapCycleRider === 'function') {
+      const result = engine.swapCycleRider(riderId);
+      cycleLogger.info('swap-confirm', {
+        riderId,
+        success: Boolean(result?.success),
+        reason: result?.reason || null
+      });
+    } else {
+      cycleLogger.warn('swap-confirm-no-engine', { riderId });
+    }
+    // Close modal regardless — the snapshot will re-render with the new rider
+    // (or keep the current one if the engine rejected the swap).
+    setSwapModalOpen(false);
+  }, [sessionInstance, cycleLogger]);
+
+  // Close the swap modal if the cycle challenge ends or the swap window closes.
+  useEffect(() => {
+    if (!isSwapModalOpen) return;
+    if (!isCycleChallenge || !activeChallenge?.swapAllowed) {
+      setSwapModalOpen(false);
+    }
+  }, [isSwapModalOpen, isCycleChallenge, activeChallenge?.swapAllowed]);
 
   // Pause video when voice memo overlay opens
   useEffect(() => {
@@ -119,12 +168,31 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
     challengeEventRef.current = { id: challengeId, status };
   }, [sessionInstance, activeChallenge]);
 
-  const challengeOverlay = currentChallengeOverlay?.show && !isGovernanceLocked
+  // Zone challenge overlays are suppressed for cycle-type challenges — the
+  // cycle UI owns the challenge affordance (ring, gauge, swap). Without this
+  // gate, ChallengeOverlay would attempt to render zone-shaped fields
+  // (zoneLabel, requiredCount, metUsers) against a cycle snapshot.
+  const challengeOverlay = currentChallengeOverlay?.show && !isGovernanceLocked && !isCycleChallenge
     ? <ChallengeOverlay overlay={currentChallengeOverlay} />
     : null;
-  const nextChallengeOverlay = upcomingChallengeOverlay?.show && !isGovernanceLocked
+  const nextChallengeOverlay = upcomingChallengeOverlay?.show && !isGovernanceLocked && !isCycleChallenge
     ? <ChallengeOverlay overlay={upcomingChallengeOverlay} />
     : null;
+
+  // Cycle overlay shows for any active cycle challenge except the locked
+  // branch, which is owned by GovernanceStateOverlay (Task 25 lock panel).
+  const cycleOverlay = isCycleChallenge
+    && activeChallenge?.cycleState !== 'locked'
+    && activeChallenge?.status !== 'success'
+    && activeChallenge?.status !== 'failed'
+    ? (
+      <CycleChallengeOverlay
+        challenge={activeChallenge}
+        onRequestSwap={handleRequestSwap}
+      />
+    )
+    : null;
+
   const primaryOverlay = governanceDisplay?.show ? (
     <GovernanceStateOverlay display={governanceDisplay} />
   ) : null;
@@ -134,6 +202,8 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
     voiceMemoOverlayOpen ||
     challengeOverlay ||
     (!challengeOverlay && nextChallengeOverlay) ||
+    cycleOverlay ||
+    isSwapModalOpen ||
     showFullscreenVitals
   );
 
@@ -145,10 +215,22 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
     <>
       {challengeOverlay}
       {!challengeOverlay && nextChallengeOverlay}
+      {cycleOverlay}
       {primaryOverlay}
       {showFullscreenVitals ? (
         <FullscreenVitalsOverlay visible={showFullscreenVitals} />
       ) : null}
+      <CycleRiderSwapModal
+        isOpen={isSwapModalOpen}
+        currentRider={activeChallenge?.rider || null}
+        eligibleUsers={
+          Array.isArray(activeChallenge?.swapEligibleUsers)
+            ? activeChallenge.swapEligibleUsers
+            : []
+        }
+        onConfirm={handleConfirmSwap}
+        onClose={handleCloseSwap}
+      />
       {fitnessCtx.overlayApp && (
         <div className="fitness-app-overlay-wrapper">
           <FitnessModuleContainer
