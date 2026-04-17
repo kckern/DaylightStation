@@ -204,6 +204,33 @@
     letter-spacing: 0.06em;
   }
 
+  // RPM pill variant (used in cycle-challenge lock panel).
+  // Shares the base pill shape/sizing; monospace + tabular width makes the
+  // RPM number easy to read quickly when it's changing rapidly.
+  &__pill--rpm {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-weight: 700;
+    min-width: 90px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  // Cycle-lock row: single-row layout for the rider. Inherits grid from
+  // the base &__row, but we tweak the grid template since there's only
+  // one participant (the rider) and we want their row to look centered.
+  &__row--cycle {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.25fr) minmax(0, 1.25fr);
+  }
+
+  &--cycle {
+    .governance-lock__avatar-initials {
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: #f8fafc;
+      letter-spacing: 0.04em;
+    }
+  }
+
   &__row--header &__cell {
     justify-content: flex-start;
   }
