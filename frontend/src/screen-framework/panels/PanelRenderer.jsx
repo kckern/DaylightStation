@@ -13,7 +13,7 @@ function themeVars(theme) {
 
 function flexItemStyle(node) {
   return {
-    flexGrow: node.grow ?? 1,
+    flexGrow: node.grow ?? 0,
     flexShrink: node.shrink ?? 1,
     flexBasis: node.basis || 'auto',
     overflow: node.overflow || undefined,
