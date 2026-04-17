@@ -1,22 +1,27 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
-import { getCycleOverlayVisuals } from './cycleOverlayVisuals.js';
+import {
+  getCycleOverlayVisuals,
+  polarToCartesian,
+  rpmToAngle
+} from './cycleOverlayVisuals.js';
 import getLogger from '@/lib/logging/Logger.js';
 import './CycleChallengeOverlay.scss';
 
 /**
- * CycleChallengeOverlay (Task 21 skeleton).
+ * CycleChallengeOverlay (Tasks 21 + 22).
  *
  * Circular ~220px widget that visualises the active cycle challenge:
  *   - Outer status ring (color + opacity from cycleState / dimFactor)
  *   - Outer ring doubles as phase progress sweep (stroke-dashoffset)
- *   - Target RPM sign at top (anchors the hi_rpm tick — RPM gauge comes in Task 22)
+ *   - RPM gauge arc (top hemisphere) with tick marks, hi/lo markers, needle (Task 22)
+ *   - Target RPM sign anchored to the hi-rpm tick on the gauge arc (Task 22)
  *   - Rider avatar centered, name below
  *   - Segment counter pill bottom center (e.g. "2 / 4")
  *   - Position cycling (top / middle / bottom) on background tap, localStorage persisted
  *
- * Not in this task: RPM gauge arc (Task 22), booster avatars (Task 23),
- * swap modal (Task 24), FitnessPlayer integration (Task 26).
+ * Not in this task: booster avatars (Task 23), swap modal (Task 24),
+ * FitnessPlayer integration (Task 26).
  */
 
 const CYCLE_VIEWBOX_SIZE = 220;
@@ -24,6 +29,16 @@ const CYCLE_RING_RADIUS = 100;
 const CYCLE_RING_CIRCUMFERENCE = 2 * Math.PI * CYCLE_RING_RADIUS;
 const CYCLE_RING_CENTER = CYCLE_VIEWBOX_SIZE / 2;
 const CYCLE_RING_STROKE_WIDTH = 8;
+
+// RPM gauge geometry — top hemisphere inside the outer ring.
+const CYCLE_GAUGE_RADIUS = 80;
+const CYCLE_GAUGE_MAX_RPM = 120;
+const CYCLE_GAUGE_TICK_STEP = 10;
+const CYCLE_GAUGE_TICK_INNER_OFFSET = 4; // inward from arc
+const CYCLE_GAUGE_TICK_OUTER_OFFSET = 2; // outward from arc
+const CYCLE_GAUGE_HILO_INNER_OFFSET = 6;
+const CYCLE_GAUGE_HILO_OUTER_OFFSET = 6;
+const CYCLE_GAUGE_TARGET_OFFSET = 18; // px outward from arc for the target label anchor
 
 const CYCLE_POSITION_KEY = 'fitness.cycleChallengeOverlay.position';
 const CYCLE_POSITION_ORDER = ['top', 'middle', 'bottom'];
@@ -152,6 +167,101 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
 
   const progressOffset = CYCLE_RING_CIRCUMFERENCE * (1 - phaseProgress);
 
+  // --- RPM gauge geometry (Task 22) -----------------------------------------
+  const hiRpm = Number.isFinite(challenge.currentPhase?.hiRpm)
+    ? challenge.currentPhase.hiRpm
+    : null;
+  const loRpm = Number.isFinite(challenge.currentPhase?.loRpm)
+    ? challenge.currentPhase.loRpm
+    : null;
+  const currentRpm = Number.isFinite(challenge.currentRpm)
+    ? challenge.currentRpm
+    : 0;
+
+  const gaugeTicks = [];
+  for (let rpm = 0; rpm <= CYCLE_GAUGE_MAX_RPM; rpm += CYCLE_GAUGE_TICK_STEP) {
+    const angle = rpmToAngle(rpm, CYCLE_GAUGE_MAX_RPM);
+    const inner = polarToCartesian(
+      CYCLE_RING_CENTER,
+      CYCLE_RING_CENTER,
+      CYCLE_GAUGE_RADIUS - CYCLE_GAUGE_TICK_INNER_OFFSET,
+      angle
+    );
+    const outer = polarToCartesian(
+      CYCLE_RING_CENTER,
+      CYCLE_RING_CENTER,
+      CYCLE_GAUGE_RADIUS + CYCLE_GAUGE_TICK_OUTER_OFFSET,
+      angle
+    );
+    gaugeTicks.push({ rpm, inner, outer });
+  }
+
+  const arcStart = polarToCartesian(
+    CYCLE_RING_CENTER,
+    CYCLE_RING_CENTER,
+    CYCLE_GAUGE_RADIUS,
+    Math.PI
+  );
+  const arcEnd = polarToCartesian(
+    CYCLE_RING_CENTER,
+    CYCLE_RING_CENTER,
+    CYCLE_GAUGE_RADIUS,
+    2 * Math.PI
+  );
+  const arcPath =
+    `M ${arcStart.x} ${arcStart.y} ` +
+    `A ${CYCLE_GAUGE_RADIUS} ${CYCLE_GAUGE_RADIUS} 0 0 1 ${arcEnd.x} ${arcEnd.y}`;
+
+  const hiAngle = hiRpm != null ? rpmToAngle(hiRpm, CYCLE_GAUGE_MAX_RPM) : null;
+  const loAngle = loRpm != null ? rpmToAngle(loRpm, CYCLE_GAUGE_MAX_RPM) : null;
+
+  const hiTickInner = hiAngle != null
+    ? polarToCartesian(
+        CYCLE_RING_CENTER, CYCLE_RING_CENTER,
+        CYCLE_GAUGE_RADIUS - CYCLE_GAUGE_HILO_INNER_OFFSET, hiAngle
+      )
+    : null;
+  const hiTickOuter = hiAngle != null
+    ? polarToCartesian(
+        CYCLE_RING_CENTER, CYCLE_RING_CENTER,
+        CYCLE_GAUGE_RADIUS + CYCLE_GAUGE_HILO_OUTER_OFFSET, hiAngle
+      )
+    : null;
+  const loTickInner = loAngle != null
+    ? polarToCartesian(
+        CYCLE_RING_CENTER, CYCLE_RING_CENTER,
+        CYCLE_GAUGE_RADIUS - CYCLE_GAUGE_HILO_INNER_OFFSET, loAngle
+      )
+    : null;
+  const loTickOuter = loAngle != null
+    ? polarToCartesian(
+        CYCLE_RING_CENTER, CYCLE_RING_CENTER,
+        CYCLE_GAUGE_RADIUS + CYCLE_GAUGE_HILO_OUTER_OFFSET, loAngle
+      )
+    : null;
+
+  const needleAngle = rpmToAngle(currentRpm, CYCLE_GAUGE_MAX_RPM);
+  const needleTip = polarToCartesian(
+    CYCLE_RING_CENTER,
+    CYCLE_RING_CENTER,
+    CYCLE_GAUGE_RADIUS,
+    needleAngle
+  );
+  const atHi = hiRpm != null && currentRpm >= hiRpm;
+
+  // Target label anchor — sits just outside the hi-rpm tick on the arc.
+  // Fallback (no hi) is top-center at the same radial offset.
+  const targetAnchorAngle = hiAngle != null ? hiAngle : 1.5 * Math.PI;
+  const targetAnchor = polarToCartesian(
+    CYCLE_RING_CENTER,
+    CYCLE_RING_CENTER,
+    CYCLE_GAUGE_RADIUS + CYCLE_GAUGE_TARGET_OFFSET,
+    targetAnchorAngle
+  );
+  // Convert viewBox coords to percentages for CSS positioning.
+  const targetLeftPct = (targetAnchor.x / CYCLE_VIEWBOX_SIZE) * 100;
+  const targetTopPct = (targetAnchor.y / CYCLE_VIEWBOX_SIZE) * 100;
+
   const ringStyle = {
     stroke: ringColor,
     strokeDasharray: `${CYCLE_RING_CIRCUMFERENCE}px`,
@@ -206,10 +316,85 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
           style={ringStyle}
           transform={`rotate(-90 ${CYCLE_RING_CENTER} ${CYCLE_RING_CENTER})`}
         />
+
+        {/* --- RPM gauge arc (Task 22) ---------------------------------- */}
+        <g className="cycle-challenge-overlay__gauge" aria-hidden="true">
+          <path
+            className="cycle-challenge-overlay__gauge-arc"
+            d={arcPath}
+            fill="none"
+            stroke="rgba(255,255,255,0.15)"
+            strokeWidth="2"
+          />
+
+          {gaugeTicks.map((tick) => (
+            <line
+              key={`tick-${tick.rpm}`}
+              className="cycle-challenge-overlay__gauge-tick"
+              x1={tick.inner.x}
+              y1={tick.inner.y}
+              x2={tick.outer.x}
+              y2={tick.outer.y}
+              stroke="rgba(255,255,255,0.35)"
+              strokeWidth="1"
+            />
+          ))}
+
+          {loAngle !== null && (
+            <line
+              className="cycle-challenge-overlay__gauge-tick-lo"
+              x1={loTickInner.x}
+              y1={loTickInner.y}
+              x2={loTickOuter.x}
+              y2={loTickOuter.y}
+              stroke="#ef4444"
+              strokeWidth="3"
+              strokeLinecap="round"
+            />
+          )}
+
+          {hiAngle !== null && (
+            <line
+              className="cycle-challenge-overlay__gauge-tick-hi"
+              x1={hiTickInner.x}
+              y1={hiTickInner.y}
+              x2={hiTickOuter.x}
+              y2={hiTickOuter.y}
+              stroke="#22c55e"
+              strokeWidth="3"
+              strokeLinecap="round"
+            />
+          )}
+
+          <line
+            className={`cycle-needle${atHi ? ' cycle-needle--at-hi' : ''}`}
+            x1={CYCLE_RING_CENTER}
+            y1={CYCLE_RING_CENTER}
+            x2={needleTip.x}
+            y2={needleTip.y}
+            stroke={atHi ? '#22c55e' : '#e2e8f0'}
+            strokeWidth="2.5"
+            strokeLinecap="round"
+          />
+          <circle
+            className="cycle-needle-hub"
+            cx={CYCLE_RING_CENTER}
+            cy={CYCLE_RING_CENTER}
+            r={3}
+            fill={atHi ? '#22c55e' : '#e2e8f0'}
+          />
+        </g>
       </svg>
 
       {targetRpm !== null && (
-        <div className="cycle-challenge-overlay__target" aria-label={`Target RPM ${targetRpm}`}>
+        <div
+          className="cycle-challenge-overlay__target"
+          aria-label={`Target RPM ${targetRpm}`}
+          style={{
+            left: `${targetLeftPct}%`,
+            top: `${targetTopPct}%`
+          }}
+        >
           <span className="cycle-challenge-overlay__target-value">{targetRpm}</span>
           <span className="cycle-challenge-overlay__target-unit">RPM</span>
         </div>

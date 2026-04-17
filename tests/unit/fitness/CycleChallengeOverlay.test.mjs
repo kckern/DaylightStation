@@ -13,11 +13,15 @@ import { describe, it, expect, beforeAll } from '@jest/globals';
 
 let getCycleOverlayVisuals;
 let CYCLE_OVERLAY_RING_COLORS;
+let rpmToAngle;
+let polarToCartesian;
 
 beforeAll(async () => {
   const mod = await import('#frontend/modules/Fitness/player/overlays/cycleOverlayVisuals.js');
   getCycleOverlayVisuals = mod.getCycleOverlayVisuals;
   CYCLE_OVERLAY_RING_COLORS = mod.CYCLE_OVERLAY_RING_COLORS;
+  rpmToAngle = mod.rpmToAngle;
+  polarToCartesian = mod.polarToCartesian;
 });
 
 describe('getCycleOverlayVisuals', () => {
@@ -154,5 +158,81 @@ describe('getCycleOverlayVisuals', () => {
 
   it('visible result has positionValid=true', () => {
     expect(getCycleOverlayVisuals({ type: 'cycle', cycleState: 'init' }).positionValid).toBe(true);
+  });
+});
+
+describe('cycleOverlayVisuals — gauge geometry', () => {
+  it('rpm 0 maps to angle π (left edge)', () => {
+    expect(rpmToAngle(0, 120)).toBeCloseTo(Math.PI);
+  });
+
+  it('rpm equal to gaugeMax maps to angle 2π (right edge)', () => {
+    expect(rpmToAngle(120, 120)).toBeCloseTo(2 * Math.PI);
+  });
+
+  it('rpm halfway maps to angle 1.5π (top)', () => {
+    expect(rpmToAngle(60, 120)).toBeCloseTo(1.5 * Math.PI);
+  });
+
+  it('clamps rpm above gaugeMax', () => {
+    expect(rpmToAngle(200, 120)).toBeCloseTo(2 * Math.PI);
+  });
+
+  it('clamps rpm below 0', () => {
+    expect(rpmToAngle(-10, 120)).toBeCloseTo(Math.PI);
+  });
+
+  it('treats non-finite rpm as 0 (pinned to left edge)', () => {
+    expect(rpmToAngle(NaN, 120)).toBeCloseTo(Math.PI);
+    expect(rpmToAngle(undefined, 120)).toBeCloseTo(Math.PI);
+  });
+
+  it('invalid gaugeMax returns left edge (fail-safe)', () => {
+    expect(rpmToAngle(50, 0)).toBeCloseTo(Math.PI);
+    expect(rpmToAngle(50, -10)).toBeCloseTo(Math.PI);
+    expect(rpmToAngle(50, NaN)).toBeCloseTo(Math.PI);
+  });
+
+  it('scales linearly for intermediate rpm values', () => {
+    // 30 rpm on a 120 max → 1/4 of the way → π + π/4 = 1.25π
+    expect(rpmToAngle(30, 120)).toBeCloseTo(1.25 * Math.PI);
+    // 90 rpm on a 120 max → 3/4 of the way → π + 3π/4 = 1.75π
+    expect(rpmToAngle(90, 120)).toBeCloseTo(1.75 * Math.PI);
+  });
+
+  it('polarToCartesian: angle π at R=10 gives (-10, 0) offset', () => {
+    const { x, y } = polarToCartesian(100, 100, 10, Math.PI);
+    expect(x).toBeCloseTo(90);
+    expect(y).toBeCloseTo(100);
+  });
+
+  it('polarToCartesian: angle 1.5π at R=10 gives (0, -10) offset (SVG top)', () => {
+    const { x, y } = polarToCartesian(100, 100, 10, 1.5 * Math.PI);
+    expect(x).toBeCloseTo(100);
+    expect(y).toBeCloseTo(90);
+  });
+
+  it('polarToCartesian: angle 2π at R=10 gives (+10, 0) offset (right)', () => {
+    const { x, y } = polarToCartesian(100, 100, 10, 2 * Math.PI);
+    expect(x).toBeCloseTo(110);
+    expect(y).toBeCloseTo(100);
+  });
+
+  it('polarToCartesian: origin shifts correctly', () => {
+    const { x, y } = polarToCartesian(0, 0, 5, Math.PI);
+    expect(x).toBeCloseTo(-5);
+    expect(y).toBeCloseTo(0);
+  });
+
+  it('gauge geometry composes: rpm → angle → point stays on top hemisphere', () => {
+    const cx = 110;
+    const cy = 110;
+    const r = 80;
+    // For any rpm in [0, gaugeMax], y of the resulting point should be <= cy.
+    for (let rpm = 0; rpm <= 120; rpm += 15) {
+      const angle = rpmToAngle(rpm, 120);
+      const { y } = polarToCartesian(cx, cy, r, angle);
+      expect(y).toBeLessThanOrEqual(cy + 1e-9);
+    }
   });
 });

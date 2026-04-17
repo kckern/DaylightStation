@@ -120,4 +120,46 @@ export function getCycleOverlayVisuals(challenge) {
 
 export const CYCLE_OVERLAY_RING_COLORS = RING_COLORS;
 
+/**
+ * rpmToAngle(rpm, gaugeMax)
+ *
+ * Maps an RPM value to a radian angle on the top-hemisphere gauge arc.
+ *
+ * The gauge arc sweeps the TOP half of the overlay (from 9-o'clock through
+ * 12-o'clock to 3-o'clock). In standard math convention with SVG's y-flipped
+ * axis:
+ *   - rpm=0         → angle = π            (left edge)
+ *   - rpm=gaugeMax  → angle = 2π           (right edge)
+ *   - rpm=halfway   → angle = 1.5π         (top center)
+ *
+ * With SVG's y-down convention, sin(θ) > 0 means y below cy; sin(θ) < 0 means
+ * y above cy. For θ ∈ (π, 2π), sin(θ) < 0 so the points render above cy,
+ * which is what we want (top hemisphere).
+ *
+ * Clamps rpm to [0, gaugeMax] so out-of-range values pin to the endpoints
+ * rather than wrapping around.
+ */
+export function rpmToAngle(rpm, gaugeMax) {
+  if (!Number.isFinite(gaugeMax) || gaugeMax <= 0) return Math.PI;
+  const numeric = Number.isFinite(rpm) ? rpm : 0;
+  const clamped = Math.max(0, Math.min(gaugeMax, numeric));
+  return Math.PI + (clamped / gaugeMax) * Math.PI;
+}
+
+/**
+ * polarToCartesian(cx, cy, r, angle)
+ *
+ * Converts a polar coordinate (center + radius + angle in radians) into a
+ * cartesian { x, y } point. Uses standard math convention: angle 0 points
+ * along +x, angle π/2 along +y (which in SVG's y-down coords renders BELOW
+ * the center). The overlay uses angles in (π, 2π) so points land above the
+ * center — see rpmToAngle for the gauge-arc geometry.
+ */
+export function polarToCartesian(cx, cy, r, angle) {
+  return {
+    x: cx + r * Math.cos(angle),
+    y: cy + r * Math.sin(angle)
+  };
+}
+
 export default getCycleOverlayVisuals;

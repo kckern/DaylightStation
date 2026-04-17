@@ -46,12 +46,14 @@
     filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.4));
   }
 
-  // --- Target RPM sign (top) ---------------------------------------------
+  // --- Target RPM sign (anchored to hi-rpm tick on gauge arc, Task 22) ----
+  // Position is set inline via computed left/top percentages (viewBox coords
+  // converted to %). The translate(-50%, -50%) centers the label on that
+  // anchor point. Falls back to top-center when hi_rpm is missing (handled
+  // by the component — it anchors at angle 1.5π).
   &__target {
     position: absolute;
-    top: clamp(6px, calc(var(--cycle-overlay-diameter) * 0.045), 14px);
-    left: 50%;
-    transform: translateX(-50%);
+    transform: translate(-50%, -50%);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -59,6 +61,7 @@
     text-align: center;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
     pointer-events: none;
+    transition: left 0.4s ease, top 0.4s ease;
   }
 
   &__target-value {
@@ -202,6 +205,50 @@
     .cycle-challenge-overlay__target-value {
       color: #fed7aa;
     }
+  }
+
+  // --- RPM gauge (Task 22) ------------------------------------------------
+  &__gauge {
+    pointer-events: none;
+  }
+
+  &__gauge-arc {
+    // Stroked directly via attributes (color + width); this class is available
+    // for overrides (e.g. per-state tinting if needed later).
+  }
+
+  &__gauge-tick {
+    // Minor tick — 10-RPM interval.
+  }
+
+  &__gauge-tick-hi,
+  &__gauge-tick-lo {
+    // Major ticks — drop a subtle shadow so they stand out over the arc.
+    filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.55));
+  }
+
+  .cycle-needle {
+    transition: x2 0.18s ease, y2 0.18s ease, stroke 0.2s ease;
+  }
+
+  .cycle-needle--at-hi {
+    filter: drop-shadow(0 0 4px rgba(34, 197, 94, 0.8));
+    animation: cycle-needle-pulse 1.4s ease-in-out infinite;
+  }
+
+  .cycle-needle-hub {
+    // Central hub — solid dot at the needle pivot for a mechanical look.
+    pointer-events: none;
+  }
+}
+
+@keyframes cycle-needle-pulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 4px rgba(34, 197, 94, 0.8));
+  }
+  50% {
+    filter: drop-shadow(0 0 10px rgba(34, 197, 94, 1));
   }
 }
 
