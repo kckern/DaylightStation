@@ -1,4 +1,5 @@
 import { DaylightAPI } from '../../../lib/api.mjs';
+import { playbackLog } from './playbackLogger.js';
 
 /**
  * Fetch media information from API
@@ -32,20 +33,30 @@ export async function fetchMediaInfo({ contentId, plex, media, shuffle, maxVideo
   if (session !== undefined && session !== null) queryCommon.session = session;
   if (resume === false) queryCommon.resume = 'false';
 
-  if (shuffle) {
-    const url = buildUrl(`api/v1/play/${effectiveContentId}/shuffle`, queryCommon);
-    const playResponse = await DaylightAPI(url);
-    if (playResponse) {
-      return { ...playResponse, assetId: playResponse.assetId || playResponse.id };
+  try {
+    if (shuffle) {
+      const url = buildUrl(`api/v1/play/${effectiveContentId}/shuffle`, queryCommon);
+      const playResponse = await DaylightAPI(url);
+      if (playResponse) {
+        return { ...playResponse, assetId: playResponse.assetId || playResponse.id };
+      }
+      return null;
     }
-    return null;
-  }
 
-  const url = buildUrl(`api/v1/play/${effectiveContentId}`, queryCommon);
-  const playResponse = await DaylightAPI(url);
-  // Map resume_position → seconds so VideoPlayer/AudioPlayer can seek on load
-  if (playResponse.resume_position !== undefined && playResponse.seconds === undefined) {
-    playResponse.seconds = playResponse.resume_position;
+    const url = buildUrl(`api/v1/play/${effectiveContentId}`, queryCommon);
+    const playResponse = await DaylightAPI(url);
+    // Map resume_position → seconds so VideoPlayer/AudioPlayer can seek on load
+    if (playResponse.resume_position !== undefined && playResponse.seconds === undefined) {
+      playResponse.seconds = playResponse.resume_position;
+    }
+    return { ...playResponse, assetId: playResponse.assetId || playResponse.id };
+  } catch (error) {
+    playbackLog('fetch-media-failed', {
+      contentId: effectiveContentId,
+      shuffle: !!shuffle,
+      error: error?.message,
+      httpStatus: error?.message?.match(/^HTTP (\d+)/)?.[1],
+    }, { level: 'error' });
+    throw error; // re-throw so caller still handles it
   }
-  return { ...playResponse, assetId: playResponse.assetId || playResponse.id };
 }

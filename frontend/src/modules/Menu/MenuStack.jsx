@@ -29,8 +29,19 @@ function LoadingFallback() {
  * @param {React.RefObject} [props.playerRef] - Optional ref forwarded to Player for playback broadcast
  */
 export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
-  const { currentContent, depth, push, pop } = useMenuNavigationContext();
+  const { currentContent, depth, push, pop, reset } = useMenuNavigationContext();
   const { registerEscapeInterceptor, unregisterEscapeInterceptor } = useScreenOverlay();
+
+  // Reset navigation state when rootMenu changes (including initial mount).
+  // Without this, the nav stack from a previous menu persists — e.g., auto-selected
+  // content (player) from menu A stays as currentContent when menu B opens.
+  const prevRootMenuRef = React.useRef(null);
+  React.useEffect(() => {
+    if (rootMenu !== prevRootMenuRef.current) {
+      reset();
+      prevRootMenuRef.current = rootMenu;
+    }
+  }, [rootMenu, reset]);
 
   // Register escape interceptor: pop navigation stack before overlay dismisses
   useEffect(() => {
@@ -95,8 +106,10 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
       // Log playback intent - user initiated playback from menu
       const logger = getLogger();
       const media = selection.play || selection.queue?.[0] || selection;
+      const contentId = media.contentId || media.plex || media.media || media.assetId || media.key || media.id;
       logger.info('playback.intent', {
-        title: media.title || media.name || media.label,
+        contentId,
+        title: media.title || media.name || media.label || selection.label,
         artist: media.artist,
         album: media.album,
         grandparentTitle: media.grandparentTitle,

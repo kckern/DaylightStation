@@ -112,10 +112,12 @@ export function createQueueRouter(config) {
     const resolvedSource = resolved?.source ?? parsedSource;
 
     if (!adapter) {
+      logger.warn?.('queue.source.unknown', { compoundId, source: resolvedSource, ip: req.ip });
       return res.status(404).json({ error: `Unknown source: ${resolvedSource}` });
     }
 
     if (!adapter.resolvePlayables) {
+      logger.warn?.('queue.source.no_playables', { compoundId, source: resolvedSource, ip: req.ip });
       return res.status(400).json({
         error: 'Source does not support queue resolution',
         source: resolvedSource
