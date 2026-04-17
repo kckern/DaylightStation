@@ -10,12 +10,18 @@ import { useState, useEffect, useMemo } from 'react';
 import { getChildLogger } from '../../lib/logging/singleton.js';
 import CameraRenderer from './CameraRenderer.jsx';
 
-export default function CameraOverlay({ dismiss, crop = true }) {
+export default function CameraOverlay({ dismiss, crop = true, cameraId: propCameraId }) {
   const logger = useMemo(() => getChildLogger({ component: 'CameraOverlay' }), []);
-  const [camera, setCamera] = useState(null);
+  const [camera, setCamera] = useState(propCameraId ? { id: propCameraId } : null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    // If cameraId was passed as prop, skip fetch
+    if (propCameraId) {
+      logger.info('cameraOverlay.direct', { cameraId: propCameraId });
+      return;
+    }
+
     fetch('/api/v1/camera')
       .then(r => r.json())
       .then(data => {
@@ -32,7 +38,7 @@ export default function CameraOverlay({ dismiss, crop = true }) {
         setError('Failed to load cameras');
         logger.error('cameraOverlay.fetchError', { error: err.message });
       });
-  }, [logger]);
+  }, [logger, propCameraId]);
 
   if (error) {
     return (
