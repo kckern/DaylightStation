@@ -25,10 +25,12 @@ const EntropyPanel = () => {
   }, []);
 
   if (loading) {
+    const defaultCols = 3;
+    const defaultItems = 9;
     return (
       <div className="entropy-panel">
-        <div className="entropy-grid" style={{ gridTemplateColumns: `repeat(4, 1fr)` }}>
-          {Array.from({ length: 12 }).map((_, i) => (
+        <div className="entropy-grid" style={{ gridTemplateColumns: `repeat(${defaultCols}, 1fr)` }}>
+          {Array.from({ length: defaultItems }).map((_, i) => (
             <div key={i} className="entropy-item skeleton">
               <div className="item-icon" />
               <div className="item-value" />
