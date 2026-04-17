@@ -150,7 +150,12 @@ export const normalizeRequirements = (rawReqs, comparator = compareSeverity, opt
 };
 
 export class GovernanceEngine {
-  constructor(session = null) {
+  constructor(session = null, options = {}) {
+    // Injectable clock and RNG for deterministic testing.
+    // Defaults preserve existing behavior (Date.now / Math.random).
+    this._now = typeof options.now === 'function' ? options.now : () => Date.now();
+    this._random = typeof options.random === 'function' ? options.random : () => Math.random();
+
     this.session = session;  // Reference to FitnessSession for direct roster access
     this.config = {};
     this.policies = [];
