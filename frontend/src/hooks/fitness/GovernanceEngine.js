@@ -1298,6 +1298,7 @@ export class GovernanceEngine {
    * @param {Record<string, number>} params.zoneRankMap - Map zoneId -> rank (higher is more intense)
    * @param {Record<string, Object>} params.zoneInfoMap - Map zoneId -> zone metadata
    * @param {number} params.totalCount - Total number of active participants
+   * @param {Object.<string, {rpm: number, connected: boolean}>} input.equipmentCadenceMap - Latest cadence reading per equipment id. Default: {}.
    */
   evaluate({ activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, hrInactiveUsers, equipmentCadenceMap } = {}) {
     // Tag which code path triggered this evaluation (for prod log diagnostics)
