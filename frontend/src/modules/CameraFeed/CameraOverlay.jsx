@@ -1,22 +1,20 @@
 // frontend/src/modules/CameraFeed/CameraOverlay.jsx
 /**
- * CameraOverlay — screen overlay wrapper for CameraFeed.
+ * CameraOverlay — screen overlay wrapper for CameraRenderer.
  *
- * Designed for the screen framework overlay system. Fetches the camera list,
- * renders a fullscreen CameraViewport for the first available camera in live mode.
- * Receives `dismiss` prop from the overlay provider.
+ * Designed for the screen framework overlay system (kiosk/signage).
+ * Fetches the camera list, renders a non-interactive CameraRenderer
+ * for the first available camera.
  */
 import { useState, useEffect, useMemo } from 'react';
 import { getChildLogger } from '../../lib/logging/singleton.js';
-import CameraViewport from './CameraViewport.jsx';
+import CameraRenderer from './CameraRenderer.jsx';
 
-export default function CameraOverlay({ dismiss }) {
+export default function CameraOverlay({ dismiss, crop = true }) {
   const logger = useMemo(() => getChildLogger({ component: 'CameraOverlay' }), []);
   const [camera, setCamera] = useState(null);
-  const [detections, setDetections] = useState([]);
   const [error, setError] = useState(null);
 
-  // Fetch first available camera
   useEffect(() => {
     fetch('/api/v1/camera')
       .then(r => r.json())
@@ -36,23 +34,6 @@ export default function CameraOverlay({ dismiss }) {
       });
   }, [logger]);
 
-  // Poll detection state
-  useEffect(() => {
-    if (!camera) return;
-    let active = true;
-    const poll = async () => {
-      try {
-        const res = await fetch(`/api/v1/camera/${camera.id}/state`);
-        if (!res.ok) return;
-        const data = await res.json();
-        if (active) setDetections(data.detections || []);
-      } catch { /* ignore */ }
-    };
-    poll();
-    const timer = setInterval(poll, 2000);
-    return () => { active = false; clearInterval(timer); };
-  }, [camera]);
-
   if (error) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#666' }}>
@@ -69,12 +50,5 @@ export default function CameraOverlay({ dismiss }) {
     );
   }
 
-  return (
-    <CameraViewport
-      cameraId={camera.id}
-      mode="live"
-      detections={detections}
-      onClose={dismiss}
-    />
-  );
+  return <CameraRenderer cameraId={camera.id} crop={crop} />;
 }
