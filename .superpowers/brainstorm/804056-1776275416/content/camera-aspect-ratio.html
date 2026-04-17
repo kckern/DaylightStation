@@ -1,0 +1,59 @@
+<h2>Camera Feed: Aspect Ratio Handling</h2>
+<p class="subtitle">Your dual-lens panoramic camera outputs ~32:9 (7680x2160). Currently it's crammed into a 16:9 box with huge black bars. How should we handle this?</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#111;padding:0;overflow:hidden;height:200px;display:flex;align-items:center;justify-content:center;">
+      <!-- Current: 16:9 container, image letterboxed -->
+      <div style="position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#000;">
+        <div style="width:95%;height:40%;background:linear-gradient(90deg,#1a3a2a,#2a4a3a,#1a3a2a);border-radius:2px;position:relative;">
+          <div style="position:absolute;left:15%;top:20%;width:8%;height:60%;background:rgba(255,200,50,0.3);border-radius:2px;"></div>
+          <div style="position:absolute;left:60%;top:15%;width:12%;height:70%;background:rgba(100,150,200,0.2);border-radius:2px;"></div>
+          <div style="font-size:9px;color:#666;position:absolute;bottom:2px;right:4px;">7680x2160</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Native Aspect Ratio</h3>
+      <p>Let the container match the camera's ~32:9 ratio. Full image visible, no black bars. Wide strip across the page.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#111;padding:0;overflow:hidden;height:200px;display:flex;align-items:center;justify-content:center;">
+      <!-- Cropped: 16:9 container, image fills, center crop -->
+      <div style="position:relative;width:100%;height:100%;background:#000;overflow:hidden;">
+        <div style="width:200%;height:100%;background:linear-gradient(90deg,#1a3a2a,#2a4a3a,#3a5a4a,#2a4a3a,#1a3a2a);position:absolute;left:-50%;top:0;">
+          <div style="position:absolute;left:40%;top:20%;width:5%;height:60%;background:rgba(255,200,50,0.3);border-radius:2px;"></div>
+          <div style="position:absolute;left:55%;top:15%;width:6%;height:70%;background:rgba(100,150,200,0.2);border-radius:2px;"></div>
+        </div>
+        <div style="position:absolute;inset:0;border:2px dashed rgba(255,255,255,0.15);pointer-events:none;"></div>
+        <div style="font-size:9px;color:#666;position:absolute;bottom:2px;right:4px;">center crop</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. 16:9 Crop + Pan/Zoom</h3>
+      <p>Default view crops to 16:9 center. Click-drag to pan across the full panorama. Scroll/pinch to zoom. Fills the card nicely.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#111;padding:0;overflow:hidden;height:200px;display:flex;align-items:center;justify-content:center;">
+      <!-- Split: two 16:9 halves side by side -->
+      <div style="display:flex;gap:4px;width:95%;height:80%;">
+        <div style="flex:1;background:linear-gradient(90deg,#1a3a2a,#2a4a3a);border-radius:2px;position:relative;overflow:hidden;">
+          <div style="position:absolute;left:30%;top:20%;width:15%;height:60%;background:rgba(255,200,50,0.3);border-radius:2px;"></div>
+          <div style="font-size:8px;color:#555;position:absolute;bottom:2px;left:4px;">Left lens</div>
+        </div>
+        <div style="flex:1;background:linear-gradient(90deg,#2a4a3a,#1a3a2a);border-radius:2px;position:relative;overflow:hidden;">
+          <div style="position:absolute;left:40%;top:15%;width:15%;height:70%;background:rgba(100,150,200,0.2);border-radius:2px;"></div>
+          <div style="font-size:8px;color:#555;position:absolute;bottom:2px;left:4px;">Right lens</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. Split Dual-Lens View</h3>
+      <p>Show left and right halves as two separate 16:9 panels. Each can be zoomed independently. Acknowledges the dual-lens nature.</p>
+    </div>
+  </div>
+</div>
