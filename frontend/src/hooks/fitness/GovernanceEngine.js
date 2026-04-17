@@ -513,6 +513,44 @@ export class GovernanceEngine {
       const initTotalMs = activeChallenge.initTotalMs || 0;
       const initRemainingMs = Math.max(0, initTotalMs - (activeChallenge.initElapsedMs || 0));
 
+      // Edge-triggered audio cue emission. We track the last-seen (cycleState,
+      // status, currentPhaseIndex) on the active challenge itself — since each
+      // challenge gets a fresh object, a new challenge will naturally emit
+      // cycle_challenge_init on its first snapshot.
+      //
+      // Priority (highest first): success > locked > phase_complete. The init
+      // cue is only emitted on the first snapshot we ever see of the challenge.
+      let cycleAudioCue = null;
+      const priorState = activeChallenge._lastAudioCueState;
+      const priorPhase = activeChallenge._lastAudioCuePhase;
+      const priorStatus = activeChallenge._lastAudioCueStatus;
+
+      if (priorState === undefined) {
+        // First snapshot of this challenge
+        cycleAudioCue = 'cycle_challenge_init';
+      } else if (activeChallenge.status === 'success' && priorStatus !== 'success') {
+        cycleAudioCue = 'cycle_success';
+      } else if (activeChallenge.cycleState === 'locked' && priorState !== 'locked') {
+        cycleAudioCue = 'cycle_locked';
+      } else if (priorPhase !== undefined && activeChallenge.currentPhaseIndex > priorPhase) {
+        cycleAudioCue = 'cycle_phase_complete';
+      }
+
+      // Update trackers for next snapshot
+      activeChallenge._lastAudioCueState = activeChallenge.cycleState;
+      activeChallenge._lastAudioCuePhase = activeChallenge.currentPhaseIndex;
+      activeChallenge._lastAudioCueStatus = activeChallenge.status;
+
+      if (cycleAudioCue) {
+        getLogger().debug('governance.cycle.audio_cue_emitted', {
+          challengeId: activeChallenge.id,
+          cue: cycleAudioCue,
+          cycleState: activeChallenge.cycleState,
+          status: activeChallenge.status,
+          currentPhaseIndex: activeChallenge.currentPhaseIndex
+        });
+      }
+
       return {
         id: activeChallenge.id,
         type: 'cycle',
@@ -535,7 +573,8 @@ export class GovernanceEngine {
         boostingUsers: contributors,
         lockReason: activeChallenge.lockReason || null,
         swapAllowed,
-        swapEligibleUsers
+        swapEligibleUsers,
+        cycleAudioCue
       };
     }
 
