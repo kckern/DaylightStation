@@ -1,9 +1,10 @@
 // frontend/src/modules/CameraFeed/CameraViewport.jsx
 import { useRef, useState, useEffect, useMemo, useCallback } from 'react';
-import Hls from 'hls.js';
 import usePanZoom from './usePanZoom.js';
 import CameraControls from './CameraControls.jsx';
 import { getChildLogger } from '../../lib/logging/singleton.js';
+import useSnapshotFetch from './useSnapshotFetch.js';
+import useHlsStream from './useHlsStream.js';
 import './CameraViewport.scss';
 
 /**
@@ -16,7 +17,7 @@ import './CameraViewport.scss';
  * @param {{ type: string, active: boolean }[]} props.detections
  * @param {Function} props.onClose
  */
-export default function CameraViewport({ cameraId, mode, snapshotSrc, detections = [], onClose }) {
+export default function CameraViewport({ cameraId, mode, snapshotSrc: externalSnapshotSrc, detections = [], onClose }) {
   const logger = useMemo(() => getChildLogger({ component: 'CameraViewport', cameraId }), [cameraId]);
   const containerRef = useRef(null);
   const mediaRef = useRef(null);
@@ -26,85 +27,34 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc, detections
   const hintTimer = useRef(null);
   const zoomTimer = useRef(null);
 
-  // Live mode warmup: fetch low-res preview immediately, then start HLS
-  const [previewSrc, setPreviewSrc] = useState(null);
+  // Snapshot fetch hook — active only in live mode (for warmup preview)
+  const { src: fetchedSrc, naturalSize, onImgLoad } = useSnapshotFetch(
+    mode === 'live' ? cameraId : null,
+    logger,
+  );
+  const previewSrc = mode === 'live' ? fetchedSrc : null;
+  const snapshotSrc = mode === 'snapshot' ? (externalSnapshotSrc || fetchedSrc) : null;
   const [previewPhase, setPreviewPhase] = useState('loading'); // loading | preview | live
-  useEffect(() => {
-    if (mode !== 'live') return;
-    let active = true;
-    const t0 = performance.now();
-    fetch(`/api/v1/camera/${cameraId}/snap?width=640&height=180&t=${Date.now()}`)
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.blob();
-      })
-      .then(blob => {
-        if (!active) return;
-        const url = URL.createObjectURL(blob);
-        setPreviewSrc(url);
-        // Phase stays 'loading' until img onLoad fires — prevents black flash
-        logger.info?.('viewport.preview.fetched', { durationMs: Math.round(performance.now() - t0), sizeBytes: blob.size });
-      })
-      .catch(err => logger.warn?.('viewport.preview.error', { error: err.message }));
-    return () => {
-      active = false;
-      setPreviewSrc(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
-    };
-  }, [cameraId, mode, logger]);
 
-  // Live mode: HLS video via hls.js
+  // HLS stream hook — active only in live mode
   const liveVideoRef = useRef(null);
-  const [liveReady, setLiveReady] = useState(false);
+  const { ready: liveReady, videoSize } = useHlsStream(
+    mode === 'live' ? cameraId : null,
+    liveVideoRef,
+    logger,
+  );
+
   useEffect(() => {
-    if (mode !== 'live') return;
-    const video = liveVideoRef.current;
-    if (!video) return;
+    if (liveReady) setPreviewPhase('live');
+  }, [liveReady]);
 
-    const playlistUrl = `/api/v1/camera/${cameraId}/live/stream.m3u8`;
-    logger.info?.('viewport.hls.start', { url: playlistUrl });
+  // Update content dimensions from HLS video size or snapshot natural size
+  useEffect(() => {
+    if (liveReady && videoSize.w) setContentDims(videoSize);
+    else if (naturalSize.w) setContentDims(naturalSize);
+  }, [liveReady, videoSize, naturalSize]);
 
-    if (!Hls.isSupported()) {
-      if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = playlistUrl;
-        video.play().catch(() => {});
-        video.addEventListener('playing', () => setLiveReady(true), { once: true });
-        return () => {
-          video.src = '';
-          fetch(`/api/v1/camera/${cameraId}/live`, { method: 'DELETE' }).catch(() => {});
-        };
-      }
-      logger.error?.('viewport.hls.unsupported');
-      return;
-    }
-
-    const hls = new Hls({ enableWorker: true, liveSyncDurationCount: 1, liveMaxLatencyDurationCount: 3 });
-    hls.loadSource(playlistUrl);
-    hls.attachMedia(video);
-    hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
-    hls.on(Hls.Events.ERROR, (event, data) => {
-      logger.warn?.('viewport.hls.error', { type: data.type, details: data.details, fatal: data.fatal });
-    });
-    video.addEventListener('playing', () => {
-      setLiveReady(true);
-      setPreviewPhase('live');
-      logger.info?.('viewport.hls.playing');
-    }, { once: true });
-
-    // Get video dimensions once metadata loads
-    video.addEventListener('loadedmetadata', () => {
-      if (video.videoWidth && video.videoHeight) {
-        setContentDims({ w: video.videoWidth, h: video.videoHeight });
-      }
-    }, { once: true });
-
-    return () => {
-      hls.destroy();
-      fetch(`/api/v1/camera/${cameraId}/live`, { method: 'DELETE' }).catch(() => {});
-      logger.info?.('viewport.hls.stop');
-    };
-  }, [cameraId, mode, logger]);
-
-  const isLoading = mode === 'live' ? !liveReady : !snapshotSrc;
+  const isLoading = mode === 'live' ? !liveReady && !previewSrc : !snapshotSrc;
 
   const { x, y, zoom, lastZoomTime, handlers, reset, panTo, getDims, MIN_ZOOM } = usePanZoom({
     containerRef,
@@ -277,6 +227,7 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc, detections
                   alt=""
                   draggable={false}
                   onLoad={(e) => {
+                    onImgLoad(e);
                     onMediaLoad(e);
                     setPreviewPhase('preview');
                     logger.info?.('viewport.warmup.previewRendered');
