@@ -22,6 +22,40 @@ const normalizeZoneId = (value) => {
 
 const normalizeName = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
 
+// Cycle challenge config helpers (Task 5) ----------------------------------------
+// normalizeCycleRange: scalar N -> [N, N], array [a, b] -> [min(a,b), max(a,b)] (finite only), else defaultRange.
+const normalizeCycleRange = (value, defaultRange) => {
+  if (Array.isArray(value) && value.length >= 2) {
+    const a = Number(value[0]);
+    const b = Number(value[1]);
+    if (Number.isFinite(a) && Number.isFinite(b)) {
+      return [Math.min(a, b), Math.max(a, b)];
+    }
+  }
+  if (Number.isFinite(Number(value))) {
+    const n = Number(value);
+    return [n, n];
+  }
+  return [defaultRange[0], defaultRange[1]];
+};
+
+// parseCycleExplicitPhases: snake_case array -> camelCase array; null if not array/empty.
+const parseCycleExplicitPhases = (arr) => {
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  const mapped = arr
+    .map((phase) => {
+      if (!phase || typeof phase !== 'object') return null;
+      return {
+        hiRpm: Number(phase.hi_rpm ?? phase.hiRpm),
+        loRpm: Number(phase.lo_rpm ?? phase.loRpm),
+        rampSeconds: Number(phase.ramp_seconds ?? phase.rampSeconds),
+        maintainSeconds: Number(phase.maintain_seconds ?? phase.maintainSeconds)
+      };
+    })
+    .filter(Boolean);
+  return mapped.length ? mapped : null;
+};
+
 const scoreRequirement = (req, { zoneRankMap } = {}) => {
   const rankMap = zoneRankMap || {};
   const zoneId = normalizeZoneId(req?.zone || req?.zoneLabel);
@@ -625,6 +659,79 @@ export class GovernanceEngine {
           const selections = selectionList
             .map((selectionValue, selectionIndex) => {
               if (!selectionValue || typeof selectionValue !== 'object') return null;
+
+              // Cycle challenge selection branch — distinct shape from zone/vibration
+              if (selectionValue.type === 'cycle') {
+                const selectionId = `${policyId}_${index}_${selectionIndex}`;
+                const equipment = selectionValue.equipment;
+                if (!equipment || typeof equipment !== 'string' || !equipment.trim()) {
+                  getLogger().warn('governance.cycle.config_rejected', {
+                    selectionId,
+                    reason: 'missing_equipment'
+                  });
+                  return null;
+                }
+
+                const weight = Number(selectionValue.weight ?? 1);
+                const normalizedSequenceType = String(selectionValue.sequence_type ?? 'random').toLowerCase();
+                const hiRpmRange = normalizeCycleRange(selectionValue.hi_rpm_range, [50, 90]);
+                const segmentCount = normalizeCycleRange(selectionValue.segment_count, [3, 5]);
+                const segmentDurationSeconds = normalizeCycleRange(selectionValue.segment_duration_seconds, [20, 45]);
+                const rampSeconds = normalizeCycleRange(selectionValue.ramp_seconds, [10, 20]);
+                const explicitPhases = parseCycleExplicitPhases(selectionValue.phases);
+                const usingExplicitPhases = !!(explicitPhases && explicitPhases.length);
+
+                // Warn if both explicit phases and procedural fields provided
+                if (usingExplicitPhases) {
+                  const hasProcedural = selectionValue.hi_rpm_range !== undefined
+                    || selectionValue.segment_count !== undefined;
+                  if (hasProcedural) {
+                    getLogger().warn('governance.cycle.config_explicit_overrides_procedural', {
+                      selectionId,
+                      equipment: String(equipment),
+                      explicitPhaseCount: explicitPhases.length
+                    });
+                  }
+                }
+
+                const cycleSelection = {
+                  id: selectionId,
+                  type: 'cycle',
+                  label: selectionValue.label || selectionValue.name || null,
+                  weight: Number.isFinite(weight) && weight > 0 ? weight : 1,
+                  equipment: String(equipment),
+                  userCooldownSeconds: Number(selectionValue.user_cooldown_seconds ?? 600),
+                  loRpmRatio: Number(selectionValue.lo_rpm_ratio ?? 0.75),
+                  sequenceType: normalizedSequenceType,
+                  init: {
+                    minRpm: Number(selectionValue.init?.min_rpm ?? 30),
+                    timeAllowedSeconds: Number(selectionValue.init?.time_allowed_seconds ?? 60)
+                  },
+                  hiRpmRange,
+                  segmentCount,
+                  segmentDurationSeconds,
+                  rampSeconds,
+                  explicitPhases,
+                  boost: {
+                    zoneMultipliers: { ...(selectionValue.boost?.zone_multipliers || {}) },
+                    maxTotalMultiplier: Number(selectionValue.boost?.max_total_multiplier ?? 3.0)
+                  }
+                };
+
+                getLogger().info('governance.cycle.config_parsed', {
+                  selectionId,
+                  equipment: cycleSelection.equipment,
+                  sequenceType: cycleSelection.sequenceType,
+                  segmentCountRange: cycleSelection.segmentCount,
+                  hiRpmRange: cycleSelection.hiRpmRange,
+                  loRpmRatio: cycleSelection.loRpmRatio,
+                  userCooldownSeconds: cycleSelection.userCooldownSeconds,
+                  usingExplicitPhases
+                });
+
+                return cycleSelection;
+              }
+
               const zone = selectionValue.zone || selectionValue.zoneId || selectionValue.zone_id;
               const vibration = selectionValue.vibration;
 
@@ -651,8 +758,6 @@ export class GovernanceEngine {
               };
             })
             .filter(Boolean);
-
-          if (!selections.length) return null;
 
           const challengeMinParticipants = Number(challengeValue.minParticipants ?? challengeValue.min_participants);
 
