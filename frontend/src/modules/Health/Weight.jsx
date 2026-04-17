@@ -48,7 +48,7 @@ export default function Weight() {
                         </tr>
                     </tbody>
                 </table>
-                <div style={{height: '160px', marginTop: '20px'}}>
+                <div>
                     <div className="skeleton rect" style={{width: '100%', height: '100%'}}></div>
                 </div>
             </div>
