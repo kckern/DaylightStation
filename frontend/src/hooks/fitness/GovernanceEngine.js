@@ -297,6 +297,20 @@ export class GovernanceEngine {
   }
 
   /**
+   * Get eligible users (whitelist) for a piece of equipment from the session catalog.
+   * Used to determine which participants are allowed to ride a given cycle.
+   * @param {string} equipmentId - Equipment identifier (e.g. 'cycle_ace')
+   * @returns {string[]} Copy of the eligible_users array, or [] if not found/no list
+   */
+  _getEligibleUsers(equipmentId) {
+    if (!equipmentId) return [];
+    const catalog = this.session?._deviceRouter?.getEquipmentCatalog?.() || [];
+    const entry = catalog.find(e => e.id === equipmentId);
+    if (!entry || !Array.isArray(entry.eligible_users)) return [];
+    return [...entry.eligible_users];
+  }
+
+  /**
    * Check if a challenge zone is achievable given current participant HR.
    * Used to prevent starting structurally impossible challenges.
    * @param {string} targetZone - Zone the challenge requires
