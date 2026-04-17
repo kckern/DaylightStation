@@ -30,7 +30,6 @@ function ToastWrapper({ Component, props, timeout, onDismiss }) {
 
 export function ScreenOverlayProvider({ children }) {
   const [fullscreen, setFullscreen] = useState(null);
-  const [pip, setPip] = useState(null);
   const [toasts, setToasts] = useState([]);
   const escapeInterceptorRef = useRef(null);
 
@@ -52,8 +51,6 @@ export function ScreenOverlayProvider({ children }) {
         }
         return { Component, props, priority };
       });
-    } else if (mode === 'pip') {
-      setPip({ Component, props, position });
     } else if (mode === 'toast') {
       const id = ++toastIdCounter;
       setToasts((prev) => [...prev, { id, Component, props, timeout }]);
@@ -63,8 +60,6 @@ export function ScreenOverlayProvider({ children }) {
   const dismissOverlay = useCallback((mode = 'fullscreen') => {
     if (mode === 'fullscreen') {
       setFullscreen(null);
-    } else if (mode === 'pip') {
-      setPip(null);
     } else if (mode === 'toast') {
       setToasts([]);
     }
@@ -76,19 +71,12 @@ export function ScreenOverlayProvider({ children }) {
 
   const hasOverlay = fullscreen !== null;
 
-  const pipPositionClass = pip ? `screen-overlay--pip-${pip.position || 'top-right'}` : '';
-
   return (
     <ScreenOverlayContext.Provider value={{ showOverlay, dismissOverlay, hasOverlay, registerEscapeInterceptor, unregisterEscapeInterceptor, escapeInterceptorRef }}>
       {children}
       {fullscreen && (
         <div className="screen-overlay--fullscreen">
           <fullscreen.Component {...fullscreen.props} dismiss={() => dismissOverlay('fullscreen')} />
-        </div>
-      )}
-      {pip && (
-        <div className={`screen-overlay--pip ${pipPositionClass}`}>
-          <pip.Component {...pip.props} dismiss={() => dismissOverlay('pip')} />
         </div>
       )}
       {toasts.length > 0 && (

@@ -19,34 +19,6 @@
   background: #111111;
 }
 
-/* PiP overlay - floats in corner */
-.screen-overlay--pip {
-  position: absolute;
-  z-index: 1001;
-  width: 320px;
-  height: 240px;
-}
-
-.screen-overlay--pip-top-right {
-  top: 16px;
-  right: 16px;
-}
-
-.screen-overlay--pip-top-left {
-  top: 16px;
-  left: 16px;
-}
-
-.screen-overlay--pip-bottom-right {
-  bottom: 16px;
-  right: 16px;
-}
-
-.screen-overlay--pip-bottom-left {
-  bottom: 16px;
-  left: 16px;
-}
-
 /* Toast stack - stackable notifications */
 .screen-overlay--toast-stack {
   position: absolute;
