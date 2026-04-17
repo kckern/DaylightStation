@@ -36,9 +36,11 @@ function logger() {
  * @param {object} options - Optional config
  * @param {boolean} options.hasOverlay - Whether an overlay is currently active (for guard checks)
  */
-export function useScreenSubscriptions(subscriptions, showOverlay, dismissOverlay, widgetRegistry, { hasOverlay = false } = {}) {
+export function useScreenSubscriptions(subscriptions, showOverlay, dismissOverlay, widgetRegistry, { hasOverlay = false, pip = null } = {}) {
   const hasOverlayRef = useRef(hasOverlay);
   hasOverlayRef.current = hasOverlay;
+  const pipRef = useRef(pip);
+  pipRef.current = pip;
   // Normalize entries once; stable across renders unless config changes
   const entries = useMemo(() => {
     if (!subscriptions || typeof subscriptions !== 'object') return [];
@@ -49,6 +51,7 @@ export function useScreenSubscriptions(subscriptions, showOverlay, dismissOverla
       mode: cfg?.response?.mode ?? 'fullscreen',
       priority: cfg?.response?.priority ?? undefined,
       timeout: cfg?.response?.timeout ?? undefined,
+      pipConfig: cfg?.response?.pip ?? null,
       dismissEvent: cfg?.dismiss?.event ?? null,
       dismissInactivity: cfg?.dismiss?.inactivity ?? null,
       guard: cfg?.guard ?? null,
@@ -88,8 +91,12 @@ export function useScreenSubscriptions(subscriptions, showOverlay, dismissOverla
 
       // Check dismiss event first
       if (entry.dismissEvent && eventName === entry.dismissEvent) {
-        logger().debug('subscription.dismiss', { topic: entry.topic, dismissEvent: eventName });
-        dismissOverlay(entry.mode);
+        logger().debug('subscription.dismiss', { topic: entry.topic, dismissEvent: eventName, mode: entry.mode });
+        if (entry.mode === 'pip' && pipRef.current) {
+          pipRef.current.dismiss();
+        } else {
+          dismissOverlay(entry.mode);
+        }
         // Clear any running inactivity timer for this topic
         if (inactivityTimers.current[entry.topic]) {
           clearTimeout(inactivityTimers.current[entry.topic]);
@@ -138,23 +145,31 @@ export function useScreenSubscriptions(subscriptions, showOverlay, dismissOverla
       // Show the overlay — include onClose/onSessionEnd mapped to dismissOverlay
       // so components like PianoVisualizer get the callbacks they expect
       const dismissFn = () => dismissOverlay(entry.mode);
-      logger().info('subscription.show-overlay', { topic: entry.topic, overlay: entry.overlay, mode: entry.mode, event: eventName });
-      showOverlay(Component, { ...data, onClose: dismissFn, onSessionEnd: dismissFn }, {
-        mode: entry.mode,
-        priority: entry.priority,
-        timeout: entry.timeout,
-      });
+      if (entry.mode === 'pip' && pipRef.current) {
+        // Route to PipManager — it owns the dismiss timer
+        const pipDismissFn = () => pipRef.current?.dismiss();
+        logger().info('subscription.show-pip', { topic: entry.topic, overlay: entry.overlay, event: eventName });
+        pipRef.current.show(Component, { ...data, onClose: pipDismissFn, onSessionEnd: pipDismissFn }, entry.pipConfig || {});
+        // PipManager owns the timeout — skip subscription-level inactivity timer
+      } else {
+        logger().info('subscription.show-overlay', { topic: entry.topic, overlay: entry.overlay, mode: entry.mode, event: eventName });
+        showOverlay(Component, { ...data, onClose: dismissFn, onSessionEnd: dismissFn }, {
+          mode: entry.mode,
+          priority: entry.priority,
+          timeout: entry.timeout,
+        });
 
-      // Start inactivity timer if configured
-      if (entry.dismissInactivity != null && entry.dismissInactivity > 0) {
-        // Clear any existing timer for this topic
-        if (inactivityTimers.current[entry.topic]) {
-          clearTimeout(inactivityTimers.current[entry.topic]);
+        // Start inactivity timer if configured
+        if (entry.dismissInactivity != null && entry.dismissInactivity > 0) {
+          // Clear any existing timer for this topic
+          if (inactivityTimers.current[entry.topic]) {
+            clearTimeout(inactivityTimers.current[entry.topic]);
+          }
+          inactivityTimers.current[entry.topic] = setTimeout(() => {
+            dismissOverlay(entry.mode);
+            delete inactivityTimers.current[entry.topic];
+          }, entry.dismissInactivity * 1000);
         }
-        inactivityTimers.current[entry.topic] = setTimeout(() => {
-          dismissOverlay(entry.mode);
-          delete inactivityTimers.current[entry.topic];
-        }, entry.dismissInactivity * 1000);
       }
     }
 
