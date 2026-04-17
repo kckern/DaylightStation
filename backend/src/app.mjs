@@ -1641,6 +1641,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   v1Routers.camera = createCameraRouter({
     cameraService,
+    broadcastEvent,
     logger: rootLogger.child({ module: 'camera-api' }),
   });
 

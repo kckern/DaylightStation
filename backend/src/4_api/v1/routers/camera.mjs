@@ -3,7 +3,7 @@ import express from 'express';
 import fs from 'fs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 
-export function createCameraRouter({ cameraService, logger = console }) {
+export function createCameraRouter({ cameraService, broadcastEvent, logger = console }) {
   const router = express.Router();
 
   // GET / — list cameras
@@ -130,6 +130,24 @@ export function createCameraRouter({ cameraService, logger = console }) {
     const result = await cameraService.executeControl(id, controlId, action);
     res.json(result);
   }));
+
+  // POST /:id/event — webhook for external events (e.g., HA doorbell ring)
+  router.post('/:id/event', (req, res) => {
+    const { id } = req.params;
+    if (!cameraService.hasCamera(id)) {
+      return res.status(404).json({ error: 'Camera not found', cameraId: id });
+    }
+
+    const { event } = req.body || {};
+    if (!event) {
+      return res.status(400).json({ error: 'Missing event field' });
+    }
+
+    const topic = req.body.topic || 'doorbell';
+    logger.info?.('camera.event', { cameraId: id, event, topic });
+    broadcastEvent({ topic, event, cameraId: id });
+    res.json({ broadcast: true, topic, event, cameraId: id });
+  });
 
   return router;
 }
