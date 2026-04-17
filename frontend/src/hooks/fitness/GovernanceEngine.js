@@ -2354,6 +2354,30 @@ export class GovernanceEngine {
     return { multiplier: Math.max(1.0, total), contributors };
   }
 
+  /**
+   * Compute the minimum zone rank required by a policy's base_requirement
+   * for a rider to be considered "satisfying" the base requirement themselves.
+   *
+   * base_requirement is a map of zone -> rule (e.g. { active: 'all', hot: 'some' }).
+   * For a rider to satisfy ALL requirements they must be at >= rank(highest zone).
+   * Returns 0 when no finite rank can be derived (effectively always satisfied).
+   *
+   * @param {Object} baseRequirement - Policy baseRequirement map (zone -> rule).
+   * @returns {number} - Minimum zone rank the rider must meet.
+   */
+  _getBaseRequirementMinRank(baseRequirement) {
+    if (!baseRequirement || typeof baseRequirement !== 'object') return 0;
+    let maxRank = 0;
+    Object.keys(baseRequirement).forEach((key) => {
+      if (key === 'grace_period_seconds') return;
+      const rank = this._getZoneRank(key);
+      if (Number.isFinite(rank) && rank > maxRank) {
+        maxRank = rank;
+      }
+    });
+    return maxRank;
+  }
+
   _evaluateChallenges(activePolicy, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, evalContext = null) {
     const now = this._now();
     const challengeConfig = Array.isArray(activePolicy.challenges) && activePolicy.challenges.length
@@ -2418,7 +2442,8 @@ export class GovernanceEngine {
       const challengeZone = payload.selection.zone ? String(payload.selection.zone).toLowerCase() : null;
       const timeLimitSeconds = payload.selection.timeAllowedSeconds;
       const requiredCount = this._normalizeRequiredCount(payload.selection.rule, totalCount, activeParticipants);
-      
+      const selectionType = payload.selection.type || (payload.selection.vibration ? 'vibration' : 'zone');
+
       this.challengeState.nextChallenge = {
         configId: challengeConfig.id,
         selectionId: payload.selection.id,
@@ -2428,7 +2453,11 @@ export class GovernanceEngine {
         requiredCount,
         timeLimitSeconds,
         cursorIndex: payload.cursorIndex ?? null,
-        scheduledFor: scheduledForTs
+        scheduledFor: scheduledForTs,
+        type: selectionType,
+        // Keep the normalized selection object around so start/evaluate branches
+        // (especially cycle) can access equipment, phase config, boost, etc.
+        selection: payload.selection
       };
       return this.challengeState.nextChallenge;
     };
@@ -2509,6 +2538,47 @@ export class GovernanceEngine {
         this.challengeState.forceStartRequest = null;
         this._schedulePulse(null);
         return false;
+      }
+
+      // Cycle challenge branch — distinct lifecycle (RPM-driven phases), so it
+      // bypasses the zone-feasibility check (which is specific to HR zones) and
+      // delegates construction to _startCycleChallenge. If no rider is
+      // available, treat as a skipped-infeasible case and re-queue.
+      if (preview.type === 'cycle' && preview.selection) {
+        const cycleActive = this._startCycleChallenge(preview.selection, {
+          policyId: activePolicy.id,
+          policyName: this.challengeState.activePolicyName,
+          configId: challengeConfig.id
+        });
+        if (!cycleActive) {
+          const nextDelay = this._pickIntervalMs?.(challengeConfig.intervalRangeSeconds) || 60000;
+          queueNextChallenge(nextDelay);
+          this._schedulePulse(50);
+          return false;
+        }
+
+        this.challengeState.activeChallenge = cycleActive;
+        this.challengeState.nextChallenge = null;
+        this.challengeState.nextChallengeAt = null;
+        this.challengeState.nextChallengeRemainingMs = null;
+        this.challengeState.videoLocked = false;
+
+        if (challengeConfig.selectionType === 'cyclic' && Number.isInteger(preview.cursorIndex)) {
+          this.challengeState.selectionCursor[challengeConfig.id] = preview.cursorIndex;
+        }
+
+        this.challengeState.forceStartRequest = null;
+
+        getLogger().debug('governance.cycle.dispatched', {
+          challengeId: cycleActive.id,
+          equipment: cycleActive.equipment,
+          rider: cycleActive.rider,
+          forced
+        });
+
+        // Short pulse so next tick progresses cycle state (init timeout etc.).
+        this._schedulePulse(250);
+        return true;
       }
 
       // Feasibility check: don't start challenges participants can't reach
@@ -2660,6 +2730,81 @@ export class GovernanceEngine {
         this.challengeState.videoLocked = false;
       } else {
         const challenge = this.challengeState.activeChallenge;
+
+        // Cycle challenge branch — RPM-driven state machine. Skips the
+        // zone-specific pending/expiry/summary flow entirely.
+        if (challenge.type === 'cycle') {
+          const cadenceEntry = this._latestInputs?.equipmentCadenceMap?.[challenge.equipment];
+          const rpmVal = Number(cadenceEntry?.rpm);
+          const equipmentRpm = Number.isFinite(rpmVal) ? rpmVal : 0;
+
+          const riderZone = userZoneMap?.[challenge.rider];
+          const riderRank = this._getZoneRank(riderZone) ?? 0;
+          const baseReqMinRank = this._getBaseRequirementMinRank(activePolicy.baseRequirement);
+          const baseReqSatisfiedForRider = riderRank >= baseReqMinRank;
+          const baseReqSatisfiedGlobal = this.phase === 'unlocked';
+
+          const ctx = {
+            equipmentRpm,
+            activeParticipants,
+            userZoneMap,
+            baseReqSatisfiedForRider,
+            baseReqSatisfiedGlobal
+          };
+
+          this._evaluateCycleChallenge(challenge, ctx);
+
+          // Success: record history, clear, schedule next (mirrors zone success).
+          if (challenge.status === 'success') {
+            if (!challenge.historyRecorded) {
+              this.challengeState.challengeHistory.push({
+                id: challenge.id,
+                status: 'success',
+                type: 'cycle',
+                equipment: challenge.equipment,
+                rider: challenge.rider,
+                startedAt: challenge.startedAt,
+                completedAt: challenge.completedAt || now,
+                selectionLabel: challenge.selectionLabel || null
+              });
+              if (this.challengeState.challengeHistory.length > 20) {
+                this.challengeState.challengeHistory.splice(
+                  0,
+                  this.challengeState.challengeHistory.length - 20
+                );
+              }
+              challenge.historyRecorded = true;
+            }
+            this.challengeState.videoLocked = false;
+
+            getLogger().info('governance.cycle.completed', {
+              id: challenge.id,
+              equipment: challenge.equipment,
+              rider: challenge.rider,
+              durationMs: (challenge.completedAt || now) - challenge.startedAt
+            });
+
+            const nextDelay = this._pickIntervalMs(challengeConfig.intervalRangeSeconds);
+            queueNextChallenge(nextDelay);
+            this._schedulePulse(50);
+            return;
+          }
+
+          // Locked cycleState: drive lock screen but keep the challenge alive
+          // so rider can recover (handled by _evaluateCycleChallenge next tick).
+          if (challenge.cycleState === 'locked') {
+            this.challengeState.videoLocked = true;
+            this._schedulePulse(250);
+            return;
+          }
+
+          // Otherwise (init / ramp / maintain): challenge is progressing.
+          this.challengeState.videoLocked = false;
+          const nextPulseMs = challenge.cycleState === 'maintain' ? 200 : 500;
+          this._schedulePulse(nextPulseMs);
+          return;
+        }
+
         if (challenge.status === 'pending') {
           if (!isGreenPhase) {
             if (!challenge.pausedAt) {
