@@ -124,16 +124,18 @@ export default function Upcoming() {
         <div className="upcoming">
             <div className="main-panel">
                 <div className="main-panel-items">
-                    <div className="main-panel-item noslide">
+                    <div className="main-panel-item noslide" style={{flexGrow: 0}}>
                         <h2><div className="skeleton text" style={{width: '50%', height: '1.8rem', margin: '0 auto'}}></div></h2>
                         <h3><div className="skeleton text" style={{width: '40%', height: '1.5rem', margin: '0 auto'}}></div></h3>
-                        <p><div className="skeleton text" style={{width: '60%', height: '3rem'}}></div></p>
+                        <div style={{padding: '1rem', textAlign: 'center'}}>
+                            <div className="skeleton text" style={{width: '60%', height: '3rem', margin: '0 auto'}}></div>
+                        </div>
                     </div>
                 </div>
             </div>
             <div className="list-panel">
                 <div className="list-panel-items">
-                    {Array.from({length: 4}).map((_, i) => (
+                    {Array.from({length: 6}).map((_, i) => (
                         <div key={i} className="list-panel-item" style={{display: 'flex', alignItems: 'center', gap: '0.5ex'}}>
                             <div className="skeleton rect" style={{width: '60px', height: '24px', borderRadius: '12px', flexShrink: 0}}></div>
                             <div className="skeleton text" style={{flex: 1, height: '1.2rem'}}></div>
