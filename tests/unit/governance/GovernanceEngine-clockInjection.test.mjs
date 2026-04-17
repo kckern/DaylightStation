@@ -28,4 +28,13 @@ describe('GovernanceEngine clock/random injection', () => {
     expect(r).toBeGreaterThanOrEqual(0);
     expect(r).toBeLessThan(1);
   });
+
+  it('all internal timing uses injected now() (no Date.now leakage)', () => {
+    let mockTime = 10000;
+    const engine = new GovernanceEngine(null, { now: () => mockTime });
+    engine._lastEvaluationTs = null;
+    engine._schedulePulse(500);
+    mockTime = 99999999;
+    expect(engine._now()).toBe(99999999);
+  });
 });

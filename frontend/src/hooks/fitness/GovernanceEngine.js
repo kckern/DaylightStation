@@ -328,10 +328,10 @@ export class GovernanceEngine {
         phase: this.phase,
         // Use getter so duration is calculated at access time, not at update time
         get warningDuration() {
-          return self._warningStartTime ? Date.now() - self._warningStartTime : 0;
+          return self._warningStartTime ? self._now() - self._warningStartTime : 0;
         },
         get lockDuration() {
-          return self._lockStartTime ? Date.now() - self._lockStartTime : 0;
+          return self._lockStartTime ? self._now() - self._lockStartTime : 0;
         },
         activeChallenge: this.challengeState?.activeChallenge?.id || null,
         activeChallengeZone: this.challengeState?.activeChallenge?.zone || null,
@@ -352,7 +352,7 @@ export class GovernanceEngine {
    */
   _logZoneChanges(userZoneMap, zoneInfoMap) {
     const logger = getLogger();
-    const now = Date.now();
+    const now = this._now();
     let hasZoneChange = false;
 
     for (const [userId, newZone] of Object.entries(userZoneMap)) {
@@ -503,7 +503,7 @@ export class GovernanceEngine {
       totalCount: Number.isFinite(payload.totalCount) ? payload.totalCount : activeParticipants.length,
       hrInactiveUsers: Array.isArray(payload.hrInactiveUsers) ? [...payload.hrInactiveUsers] : []
     };
-    this._lastEvaluationTs = Date.now();
+    this._lastEvaluationTs = this._now();
 
     // Update global state on each evaluation
     this._updateGlobalState();
@@ -696,7 +696,7 @@ export class GovernanceEngine {
   _setPhase(newPhase, evalContext = null) {
     if (this.phase !== newPhase) {
       const oldPhase = this.phase;
-      const now = Date.now();
+      const now = this._now();
       this.phase = newPhase;
       this._invalidateStateCache(); // Invalidate cache on phase change
 
@@ -934,10 +934,10 @@ export class GovernanceEngine {
   _pauseTimers() {
     if (this._timersPaused) return;
     this._timersPaused = true;
-    this._pausedAt = Date.now();
+    this._pausedAt = this._now();
 
     if (this.meta?.deadline) {
-      this._remainingMs = Math.max(0, this.meta.deadline - Date.now());
+      this._remainingMs = Math.max(0, this.meta.deadline - this._now());
     }
 
     getLogger().info('governance.timers_paused', {
@@ -956,10 +956,10 @@ export class GovernanceEngine {
     this._timersPaused = false;
 
     if (this._remainingMs > 0 && this.meta) {
-      this.meta.deadline = Date.now() + this._remainingMs;
+      this.meta.deadline = this._now() + this._remainingMs;
     }
 
-    const pauseDuration = this._pausedAt ? Date.now() - this._pausedAt : 0;
+    const pauseDuration = this._pausedAt ? this._now() - this._pausedAt : 0;
     this._pausedAt = null;
 
     getLogger().info('governance.timers_resumed', {
@@ -1149,7 +1149,7 @@ export class GovernanceEngine {
    * Cache is invalidated after throttle period OR when evaluate() is called.
    */
   _getCachedState() {
-    const now = Date.now();
+    const now = this._now();
     const cacheAge = now - this._stateCacheTs;
     const watcherCount = Array.isArray(this._latestInputs.activeParticipants)
       ? this._latestInputs.activeParticipants.length
@@ -1195,7 +1195,7 @@ export class GovernanceEngine {
   }
 
   _composeState() {
-    const now = Date.now();
+    const now = this._now();
     const summary = this.requirementSummary || {};
     const watchers = Array.isArray(this._latestInputs.activeParticipants)
       ? [...this._latestInputs.activeParticipants]
@@ -1303,7 +1303,7 @@ export class GovernanceEngine {
       return;
     }
 
-    const now = Date.now();
+    const now = this._now();
     const hasGovernanceRules = (this._governedLabelSet.size + this._governedTypeSet.size) > 0;
 
     // Use canonical participant state from ParticipantRoster (SSOT).
@@ -1819,12 +1819,12 @@ export class GovernanceEngine {
     if (!Array.isArray(rangeSeconds) || rangeSeconds.length < 2) return 180000;
     const min = rangeSeconds[0];
     const max = rangeSeconds[1];
-    const randomSeconds = Math.floor(Math.random() * (max - min + 1)) + min;
+    const randomSeconds = Math.floor(this._random() * (max - min + 1)) + min;
     return randomSeconds * 1000;
   }
 
   _evaluateChallenges(activePolicy, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, evalContext = null) {
-    const now = Date.now();
+    const now = this._now();
     const challengeConfig = Array.isArray(activePolicy.challenges) && activePolicy.challenges.length
       ? activePolicy.challenges[0]
       : null;
@@ -1870,7 +1870,7 @@ export class GovernanceEngine {
           });
           // Shuffle
           for (let i = bag.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
+            const j = Math.floor(this._random() * (i + 1));
             [bag[i], bag[j]] = [bag[j], bag[i]];
           }
         }
@@ -2365,7 +2365,7 @@ export class GovernanceEngine {
   // Public method to trigger a challenge manually
   triggerChallenge(payload) {
       this.challengeState.forceStartRequest = {
-          requestedAt: Date.now(),
+          requestedAt: this._now(),
           payload: payload ? { ...payload } : null
       };
       this._triggerPulse();
