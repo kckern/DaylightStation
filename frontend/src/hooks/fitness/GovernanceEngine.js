@@ -2269,7 +2269,47 @@ export class GovernanceEngine {
       return;
     }
 
-    // locked branch added in Task 12
+    if (active.cycleState === 'locked') {
+      const phase = active.generatedPhases[active.currentPhaseIndex];
+      if (active.lockReason === 'init') {
+        if (ctx.equipmentRpm >= active.selection.init.minRpm) {
+          const prevLockReason = active.lockReason;
+          active.cycleState = 'init';
+          active.initElapsedMs = 0;
+          active.lockReason = null;
+          getLogger().info('governance.cycle.state_transition', {
+            challengeId: active.id, from: 'locked', to: 'init',
+            currentPhaseIndex: active.currentPhaseIndex, rider: active.rider,
+            currentRpm: ctx.equipmentRpm, reason: 'recovered_from_init_lock'
+          });
+          getLogger().info('governance.cycle.recovered', {
+            challengeId: active.id, fromLockReason: prevLockReason,
+            currentRpm: ctx.equipmentRpm, resumeState: 'init',
+            lockDurationMs: null
+          });
+        }
+        return;
+      }
+      if (active.lockReason === 'ramp' || active.lockReason === 'maintain') {
+        if (ctx.equipmentRpm >= phase.hiRpm) {
+          const prevLockReason = active.lockReason;
+          active.cycleState = 'maintain';
+          if (prevLockReason === 'ramp') active.phaseProgressMs = 0;
+          active.lockReason = null;
+          getLogger().info('governance.cycle.state_transition', {
+            challengeId: active.id, from: 'locked', to: 'maintain',
+            currentPhaseIndex: active.currentPhaseIndex, rider: active.rider,
+            currentRpm: ctx.equipmentRpm, reason: `recovered_from_${prevLockReason}_lock`
+          });
+          getLogger().info('governance.cycle.recovered', {
+            challengeId: active.id, fromLockReason: prevLockReason,
+            currentRpm: ctx.equipmentRpm, resumeState: 'maintain',
+            lockDurationMs: null
+          });
+        }
+        return;
+      }
+    }
   }
 
   _computeBoostMultiplier(active, ctx) {
