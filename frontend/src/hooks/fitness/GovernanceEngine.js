@@ -40,6 +40,7 @@ const normalizeCycleRange = (value, defaultRange) => {
 };
 
 // parseCycleExplicitPhases: snake_case array -> camelCase array; null if not array/empty.
+// Drops phases where any numeric field is NaN/non-finite (e.g., `{}` or `{ hi_rpm: 'garbage' }`).
 const parseCycleExplicitPhases = (arr) => {
   if (!Array.isArray(arr) || arr.length === 0) return null;
   const mapped = arr
@@ -52,7 +53,13 @@ const parseCycleExplicitPhases = (arr) => {
         maintainSeconds: Number(phase.maintain_seconds ?? phase.maintainSeconds)
       };
     })
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter((p) =>
+      Number.isFinite(p.hiRpm)
+      && Number.isFinite(p.loRpm)
+      && Number.isFinite(p.rampSeconds)
+      && Number.isFinite(p.maintainSeconds)
+    );
   return mapped.length ? mapped : null;
 };
 
@@ -684,7 +691,9 @@ export class GovernanceEngine {
                 // Warn if both explicit phases and procedural fields provided
                 if (usingExplicitPhases) {
                   const hasProcedural = selectionValue.hi_rpm_range !== undefined
-                    || selectionValue.segment_count !== undefined;
+                    || selectionValue.segment_count !== undefined
+                    || selectionValue.segment_duration_seconds !== undefined
+                    || selectionValue.ramp_seconds !== undefined;
                   if (hasProcedural) {
                     getLogger().warn('governance.cycle.config_explicit_overrides_procedural', {
                       selectionId,
@@ -694,18 +703,35 @@ export class GovernanceEngine {
                   }
                 }
 
+                // Guard numeric fields against NaN from malformed YAML (e.g., "ten" instead of 10).
+                // `??` only catches null/undefined; Number("ten") = NaN leaks through without Number.isFinite check.
+                const rawUserCooldown = Number(selectionValue.user_cooldown_seconds ?? 600);
+                const userCooldownSeconds = Number.isFinite(rawUserCooldown) && rawUserCooldown > 0 ? rawUserCooldown : 600;
+
+                const rawLoRpmRatio = Number(selectionValue.lo_rpm_ratio ?? 0.75);
+                const loRpmRatio = Number.isFinite(rawLoRpmRatio) && rawLoRpmRatio > 0 ? rawLoRpmRatio : 0.75;
+
+                const rawInitMinRpm = Number(selectionValue.init?.min_rpm ?? 30);
+                const initMinRpm = Number.isFinite(rawInitMinRpm) && rawInitMinRpm > 0 ? rawInitMinRpm : 30;
+
+                const rawInitTimeAllowed = Number(selectionValue.init?.time_allowed_seconds ?? 60);
+                const initTimeAllowedSeconds = Number.isFinite(rawInitTimeAllowed) && rawInitTimeAllowed > 0 ? rawInitTimeAllowed : 60;
+
+                const rawBoostMaxTotal = Number(selectionValue.boost?.max_total_multiplier ?? 3.0);
+                const boostMaxTotalMultiplier = Number.isFinite(rawBoostMaxTotal) && rawBoostMaxTotal > 0 ? rawBoostMaxTotal : 3.0;
+
                 const cycleSelection = {
                   id: selectionId,
                   type: 'cycle',
                   label: selectionValue.label || selectionValue.name || null,
                   weight: Number.isFinite(weight) && weight > 0 ? weight : 1,
                   equipment: String(equipment),
-                  userCooldownSeconds: Number(selectionValue.user_cooldown_seconds ?? 600),
-                  loRpmRatio: Number(selectionValue.lo_rpm_ratio ?? 0.75),
+                  userCooldownSeconds,
+                  loRpmRatio,
                   sequenceType: normalizedSequenceType,
                   init: {
-                    minRpm: Number(selectionValue.init?.min_rpm ?? 30),
-                    timeAllowedSeconds: Number(selectionValue.init?.time_allowed_seconds ?? 60)
+                    minRpm: initMinRpm,
+                    timeAllowedSeconds: initTimeAllowedSeconds
                   },
                   hiRpmRange,
                   segmentCount,
@@ -714,7 +740,7 @@ export class GovernanceEngine {
                   explicitPhases,
                   boost: {
                     zoneMultipliers: { ...(selectionValue.boost?.zone_multipliers || {}) },
-                    maxTotalMultiplier: Number(selectionValue.boost?.max_total_multiplier ?? 3.0)
+                    maxTotalMultiplier: boostMaxTotalMultiplier
                   }
                 };
 
