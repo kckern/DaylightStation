@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=400">
-  <title>HR Simulation Panel</title>
+  <title>Fitness Simulation Panel</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -43,9 +43,22 @@
       display: flex;
       gap: 12px;
       margin-bottom: 8px;
+      flex-wrap: wrap;
     }
     .gov-status span {
       font-size: 12px;
+    }
+    .gov-cycle-info {
+      background: #1e1e1e;
+      border-radius: 4px;
+      padding: 8px;
+      margin-bottom: 8px;
+      font-size: 11px;
+      color: #ccc;
+      line-height: 1.5;
+    }
+    .gov-cycle-info strong {
+      color: #f39c12;
     }
     .btn-row {
       display: flex;
@@ -163,12 +176,117 @@
       border-radius: 3px;
       margin-left: 6px;
     }
+
+    /* Equipment (cycling) — orange accent to distinguish from HR devices */
+    .equipment-list {
+      max-height: none;
+      overflow-y: auto;
+    }
+    .equipment-tile {
+      background: #2a2a2a;
+      border-radius: 6px;
+      padding: 10px;
+      margin-bottom: 8px;
+      border-left: 3px solid #f39c12;
+    }
+    .equipment-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .equipment-name {
+      font-weight: 500;
+    }
+    .equipment-rpm {
+      font-family: monospace;
+      font-size: 14px;
+      color: #f39c12;
+    }
+    .equipment-rpm.inactive { color: #666; }
+    .equipment-eligible {
+      font-size: 10px;
+      color: #888;
+      margin-bottom: 8px;
+    }
+    .rpm-slider-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .rpm-slider {
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 6px;
+      border-radius: 3px;
+      background: #444;
+      outline: none;
+      accent-color: #f39c12;
+    }
+    .rpm-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #f39c12;
+      cursor: pointer;
+      border: 2px solid #c97a0a;
+    }
+    .rpm-slider::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #f39c12;
+      cursor: pointer;
+      border: 2px solid #c97a0a;
+    }
+    .rpm-value {
+      font-family: monospace;
+      font-size: 13px;
+      min-width: 64px;
+      text-align: right;
+      color: #f39c12;
+    }
+    .rpm-quick-row {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 8px;
+    }
+    .rpm-quick-btn {
+      flex: 1;
+      font-size: 11px;
+      padding: 4px 2px;
+      background: #3b2a12;
+    }
+    .rpm-quick-btn:hover { background: #553d1a; }
+
+    .cycle-ctrl {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .cycle-ctrl select {
+      background: #1e1e1e;
+      color: #e0e0e0;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 6px;
+      font-size: 12px;
+    }
+    .cycle-ctrl .btn-row button {
+      flex: 1;
+      background: #5a3d10;
+    }
+    .cycle-ctrl .btn-row button:hover { background: #7a5418; }
   </style>
 </head>
 <body>
   <div id="app">
     <h1>
-      HR Simulation Panel
+      Fitness Simulation Panel
       <button onclick="window.close()">X</button>
     </h1>
     <div id="content">Loading...</div>
@@ -176,10 +294,12 @@
 
   <script>
     let controller = null;
-    // Track slider values per device so render() preserves them during drags
+    // Track HR slider values per device so render() preserves them during drags
     const sliderValues = {};
-    // Track which slider is being actively dragged (suppress render overwrites)
     let activeSlider = null;
+    // Track RPM slider values per equipment so render() preserves them during drags
+    const equipmentSliderValues = {};
+    let activeEquipmentSlider = null;
 
     function init() {
       if (!window.opener) {
@@ -208,23 +328,40 @@
 
       const devices = controller.getDevices();
       const govState = controller.getGovernanceState();
+      const equipment = (controller.getEquipment?.() || []);
 
       let html = '';
 
+      // ---------------------------------------------------------------------
       // Governance section
+      // ---------------------------------------------------------------------
       html += `<div class="section">
         <div class="section-title">Governance</div>
         <div class="gov-status">
           <span>Phase: ${govState.phase || 'none'}</span>
-          <span>Challenge: ${govState.activeChallenge ? govState.activeChallenge.targetZone : 'none'}</span>
-        </div>
-        <div class="btn-row">
+          <span>Challenge: ${govState.activeChallenge ? (govState.activeChallenge.targetZone || govState.activeChallenge.type || 'active') : 'none'}</span>
+        </div>`;
+
+      // Show active cycle challenge details if present in window.__fitnessGovernance
+      const cycleInfo = readCycleChallengeInfo();
+      if (cycleInfo) {
+        html += `<div class="gov-cycle-info">
+          <div><strong>Cycle Challenge</strong> — ${escapeHtml(cycleInfo.equipment || 'equipment')}</div>
+          <div>Rider: ${escapeHtml(cycleInfo.riderId || '—')} · State: ${escapeHtml(cycleInfo.cycleState || '—')}</div>
+          <div>Phase ${cycleInfo.currentPhaseIndex ?? '—'} / ${cycleInfo.totalPhases ?? '—'} · Progress: ${cycleInfo.phaseProgressPct ?? 0}%</div>
+          <div>RPM: ${cycleInfo.currentRpm ?? '—'}</div>
+        </div>`;
+      }
+
+      html += `<div class="btn-row">
           <button onclick="toggleGovernance()">${govState.phase ? 'Disable Gov' : 'Enable Gov'}</button>
           <button onclick="triggerChallenge()" ${!govState.phase ? 'disabled' : ''}>Trigger Challenge</button>
         </div>
       </div>`;
 
+      // ---------------------------------------------------------------------
       // Bulk actions
+      // ---------------------------------------------------------------------
       html += `<div class="section">
         <div class="section-title">Bulk Actions</div>
         <div class="btn-row">
@@ -234,9 +371,11 @@
         </div>
       </div>`;
 
-      // Device list
+      // ---------------------------------------------------------------------
+      // HR device list
+      // ---------------------------------------------------------------------
       html += `<div class="section">
-        <div class="section-title">Devices (${devices.length})</div>
+        <div class="section-title">HR Devices (${devices.length})</div>
         <div class="device-list">`;
 
       for (const d of devices) {
@@ -244,7 +383,6 @@
         const hrClass = d.isActive ? '' : 'inactive';
         const autoLabel = d.autoMode ? `<span class="auto-indicator">${d.autoMode}</span>` : '';
 
-        // Use tracked slider value if actively dragging, else current HR or 80
         const sliderHR = (activeSlider === d.deviceId)
           ? (sliderValues[d.deviceId] || d.currentHR || 80)
           : (d.currentHR || sliderValues[d.deviceId] || 80);
@@ -254,7 +392,7 @@
 
         html += `<div class="device">
           <div class="device-header">
-            <span class="device-name">${d.name} (${d.deviceId})${autoLabel}</span>
+            <span class="device-name">${escapeHtml(d.name)} (${escapeHtml(d.deviceId)})${autoLabel}</span>
             <span class="device-hr ${hrClass}">${hrDisplay}</span>
           </div>
           <div class="hr-slider-row">
@@ -286,7 +424,108 @@
 
       html += '</div></div>';
 
+      // ---------------------------------------------------------------------
+      // Equipment (cycling)
+      // ---------------------------------------------------------------------
+      html += `<div class="section">
+        <div class="section-title">Equipment — Cycling (${equipment.length})</div>
+        <div class="equipment-list">`;
+
+      if (equipment.length === 0) {
+        html += `<div style="color:#666;font-size:11px;padding:8px">No cycle-capable equipment in session catalog.</div>`;
+      }
+
+      for (const e of equipment) {
+        const rpmDisplay = e.currentRpm != null ? `${e.currentRpm} rpm` : '-- rpm';
+        const rpmClass = e.isActive ? '' : 'inactive';
+
+        const sliderRpm = (activeEquipmentSlider === e.equipmentId)
+          ? (equipmentSliderValues[e.equipmentId] ?? e.currentRpm ?? 0)
+          : (e.currentRpm ?? equipmentSliderValues[e.equipmentId] ?? 0);
+        equipmentSliderValues[e.equipmentId] = sliderRpm;
+
+        const eligible = (e.eligibleUsers || []).join(', ') || '—';
+
+        html += `<div class="equipment-tile">
+          <div class="equipment-header">
+            <span class="equipment-name">${escapeHtml(e.name)} <span style="color:#888;font-size:10px">(${escapeHtml(e.equipmentId)} / cad:${escapeHtml(e.cadenceDeviceId)})</span></span>
+            <span class="equipment-rpm ${rpmClass}">${rpmDisplay}</span>
+          </div>
+          <div class="equipment-eligible">eligible: ${escapeHtml(eligible)}</div>
+          <div class="rpm-slider-row">
+            <span style="font-size:10px;color:#666">0</span>
+            <input type="range" class="rpm-slider" min="0" max="150" value="${sliderRpm}"
+                   id="rpm-slider-${e.equipmentId}"
+                   oninput="onRpmSliderInput('${e.equipmentId}', this.value)"
+                   onchange="onRpmSliderChange('${e.equipmentId}', this.value)"
+                   onmousedown="activeEquipmentSlider='${e.equipmentId}'"
+                   onmouseup="activeEquipmentSlider=null"
+                   ontouchstart="activeEquipmentSlider='${e.equipmentId}'"
+                   ontouchend="activeEquipmentSlider=null">
+            <span class="rpm-value" id="rpm-val-${e.equipmentId}">${sliderRpm} rpm</span>
+          </div>
+          <div class="rpm-quick-row">
+            ${[0, 40, 60, 80, 100].map(v =>
+              `<button class="rpm-quick-btn" onclick="setRpmQuick('${e.equipmentId}', ${v})">${v}</button>`
+            ).join('')}
+            <button class="rpm-quick-btn danger" onclick="stopEquipment('${e.equipmentId}')">stop</button>
+          </div>
+        </div>`;
+      }
+
+      html += '</div></div>';
+
+      // ---------------------------------------------------------------------
+      // Cycle Challenge controls
+      // ---------------------------------------------------------------------
+      html += `<div class="section">
+        <div class="section-title">Cycle Challenge</div>
+        <div class="cycle-ctrl">
+          <select id="cycle-selection-picker" onchange="updateRiderPicker()"></select>
+          <select id="cycle-rider-picker"></select>
+          <div class="btn-row">
+            <button onclick="triggerCycleChallenge()">Trigger Cycle</button>
+            <button onclick="swapCycleRider()">Swap Rider</button>
+          </div>
+        </div>
+      </div>`;
+
       document.getElementById('content').innerHTML = html;
+
+      // Re-populate dropdowns after DOM replace
+      updateCycleSelectionPicker();
+    }
+
+    function escapeHtml(str) {
+      if (str == null) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function readCycleChallengeInfo() {
+      try {
+        const gov = window.opener?.__fitnessGovernance;
+        if (!gov) return null;
+        if (!gov.activeChallenge) return null;
+        // Convention: if engine exposes cycleState on window, surface it
+        if (gov.activeChallengeType && gov.activeChallengeType !== 'cycle') return null;
+        if (!gov.cycleState && !gov.currentRpm && !gov.riderId) return null;
+        return {
+          equipment: gov.activeChallengeEquipment || gov.equipment || null,
+          riderId: gov.riderId || null,
+          cycleState: gov.cycleState || null,
+          currentPhaseIndex: gov.currentPhaseIndex ?? null,
+          totalPhases: gov.totalPhases ?? null,
+          currentRpm: gov.currentRpm ?? null,
+          phaseProgressPct: gov.phaseProgressPct ?? null
+        };
+      } catch (_) {
+        return null;
+      }
     }
 
     function getZoneColor(zone) {
@@ -300,7 +539,9 @@
       return colors[zone] || '#888';
     }
 
-    // Slider: live preview (updates label only, sends HR on every input for responsiveness)
+    // ---------------------------------------------------------------------
+    // HR slider handlers
+    // ---------------------------------------------------------------------
     function onSliderInput(deviceId, value) {
       const hr = parseInt(value, 10);
       sliderValues[deviceId] = hr;
@@ -310,11 +551,9 @@
         label.textContent = hr + ' bpm';
         label.style.color = getZoneColor(zone);
       }
-      // Send HR on every input tick for real-time feedback
       controller.setHR(deviceId, hr);
     }
 
-    // Slider: final value on release
     function onSliderChange(deviceId, value) {
       const hr = parseInt(value, 10);
       sliderValues[deviceId] = hr;
@@ -322,34 +561,13 @@
       controller.setHR(deviceId, hr);
     }
 
-    // Actions
-    function setZone(deviceId, zone) {
-      controller.setZone(deviceId, zone);
-    }
-
-    function startAuto(deviceId) {
-      controller.startAuto(deviceId);
-    }
-
-    function startSession(deviceId) {
-      controller.startAutoSession(deviceId);
-    }
-
-    function stopDevice(deviceId) {
-      controller.stopDevice(deviceId);
-    }
-
-    function activateAll(zone) {
-      controller.activateAll(zone);
-    }
-
-    function autoSessionAll() {
-      controller.startAutoSessionAll();
-    }
-
-    function stopAll() {
-      controller.stopAll();
-    }
+    function setZone(deviceId, zone) { controller.setZone(deviceId, zone); }
+    function startAuto(deviceId) { controller.startAuto(deviceId); }
+    function startSession(deviceId) { controller.startAutoSession(deviceId); }
+    function stopDevice(deviceId) { controller.stopDevice(deviceId); }
+    function activateAll(zone) { controller.activateAll(zone); }
+    function autoSessionAll() { controller.startAutoSessionAll(); }
+    function stopAll() { controller.stopAll(); }
 
     function toggleGovernance() {
       const state = controller.getGovernanceState();
@@ -364,6 +582,94 @@
     function triggerChallenge() {
       controller.triggerChallenge({ targetZone: 'hot' });
       render();
+    }
+
+    // ---------------------------------------------------------------------
+    // RPM / equipment handlers
+    // ---------------------------------------------------------------------
+    function onRpmSliderInput(equipmentId, value) {
+      const rpm = parseInt(value, 10);
+      equipmentSliderValues[equipmentId] = rpm;
+      const label = document.getElementById('rpm-val-' + equipmentId);
+      if (label) label.textContent = rpm + ' rpm';
+      controller.setRpm(equipmentId, rpm);
+    }
+
+    function onRpmSliderChange(equipmentId, value) {
+      const rpm = parseInt(value, 10);
+      equipmentSliderValues[equipmentId] = rpm;
+      activeEquipmentSlider = null;
+      controller.setRpm(equipmentId, rpm);
+    }
+
+    function setRpmQuick(equipmentId, rpm) {
+      controller.setRpm(equipmentId, rpm);
+      const slider = document.getElementById('rpm-slider-' + equipmentId);
+      if (slider) slider.value = rpm;
+      const label = document.getElementById('rpm-val-' + equipmentId);
+      if (label) label.textContent = rpm + ' rpm';
+      equipmentSliderValues[equipmentId] = rpm;
+      render();
+    }
+
+    function stopEquipment(equipmentId) {
+      controller.stopEquipment(equipmentId);
+      equipmentSliderValues[equipmentId] = 0;
+      render();
+    }
+
+    function triggerCycleChallenge() {
+      const sel = document.getElementById('cycle-selection-picker')?.value;
+      const riderRaw = document.getElementById('cycle-rider-picker')?.value;
+      if (!sel) { alert('Pick a cycle selection'); return; }
+      const result = controller.triggerCycleChallenge({
+        selectionId: sel,
+        riderId: riderRaw || undefined
+      });
+      if (!result?.success) {
+        alert(`Trigger failed: ${result?.reason || 'unknown'}`);
+      }
+      render();
+    }
+
+    function swapCycleRider() {
+      const riderId = document.getElementById('cycle-rider-picker')?.value;
+      if (!riderId) { alert('Pick a rider to swap to'); return; }
+      const result = controller.swapCycleRider(riderId, { force: true });
+      if (!result?.success) {
+        alert(`Swap failed: ${result?.reason || 'unknown'}`);
+      }
+      render();
+    }
+
+    function updateCycleSelectionPicker() {
+      const selections = controller.listCycleSelections?.() || [];
+      const picker = document.getElementById('cycle-selection-picker');
+      if (!picker) return;
+      const current = picker.value;
+      picker.innerHTML = selections.length
+        ? selections.map(s =>
+            `<option value="${escapeHtml(s.id)}">${escapeHtml(s.label || s.id)} (${escapeHtml(s.equipment || '')})</option>`
+          ).join('')
+        : '<option value="">(no cycle selections)</option>';
+      if (current && selections.some(s => s.id === current)) picker.value = current;
+      updateRiderPicker();
+    }
+
+    function updateRiderPicker() {
+      const sel = document.getElementById('cycle-selection-picker')?.value;
+      const picker = document.getElementById('cycle-rider-picker');
+      if (!picker) return;
+      const selections = controller.listCycleSelections?.() || [];
+      const match = selections.find(s => s.id === sel);
+      const equipment = match
+        ? (controller.getEquipment?.() || []).find(e => e.equipmentId === match.equipment)
+        : null;
+      const riders = equipment?.eligibleUsers || [];
+      const current = picker.value;
+      picker.innerHTML = '<option value="">Random rider</option>' +
+        riders.map(r => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join('');
+      if (current && (current === '' || riders.includes(current))) picker.value = current;
     }
 
     // Initialize
