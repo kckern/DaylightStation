@@ -1970,6 +1970,66 @@ export class GovernanceEngine {
     return randomSeconds * 1000;
   }
 
+  _pickInRange([min, max]) {
+    if (min === max) return min;
+    return Math.floor(this._random() * (max - min + 1)) + min;
+  }
+
+  _generateCyclePhases(selection) {
+    if (Array.isArray(selection.explicitPhases) && selection.explicitPhases.length) {
+      const phases = selection.explicitPhases.map(p => ({ ...p }));
+      getLogger().info('governance.cycle.phases_generated', {
+        selectionId: selection.id,
+        sequenceType: selection.sequenceType,
+        phaseCount: phases.length,
+        phases: phases.map(({ hiRpm, loRpm, rampSeconds, maintainSeconds }) => ({
+          hiRpm, loRpm, rampSeconds, maintainSeconds
+        }))
+      });
+      return phases;
+    }
+    const count = this._pickInRange(selection.segmentCount);
+    const [minHi, maxHi] = selection.hiRpmRange;
+    let hiValues;
+    switch (selection.sequenceType) {
+      case 'progressive':
+      case 'regressive': {
+        const span = maxHi - minHi;
+        const stepBase = count > 1 ? span / (count - 1) : 0;
+        hiValues = Array.from({ length: count }, (_, i) => {
+          const jitter = (this._random() - 0.5) * 0.1 * span; // ±5%
+          return Math.round(minHi + stepBase * i + jitter);
+        });
+        if (selection.sequenceType === 'regressive') hiValues.reverse();
+        break;
+      }
+      case 'constant': {
+        const v = this._pickInRange([minHi, maxHi]);
+        hiValues = Array(count).fill(v);
+        break;
+      }
+      case 'random':
+      default:
+        hiValues = Array.from({ length: count }, () => this._pickInRange([minHi, maxHi]));
+    }
+    const ratio = selection.loRpmRatio ?? 0.75;
+    const phases = hiValues.map(hiRpm => ({
+      hiRpm: Math.max(1, Math.min(300, hiRpm)),
+      loRpm: Math.round(hiRpm * ratio),
+      rampSeconds: this._pickInRange(selection.rampSeconds),
+      maintainSeconds: this._pickInRange(selection.segmentDurationSeconds)
+    }));
+    getLogger().info('governance.cycle.phases_generated', {
+      selectionId: selection.id,
+      sequenceType: selection.sequenceType,
+      phaseCount: phases.length,
+      phases: phases.map(({ hiRpm, loRpm, rampSeconds, maintainSeconds }) => ({
+        hiRpm, loRpm, rampSeconds, maintainSeconds
+      }))
+    });
+    return phases;
+  }
+
   _evaluateChallenges(activePolicy, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, evalContext = null) {
     const now = this._now();
     const challengeConfig = Array.isArray(activePolicy.challenges) && activePolicy.challenges.length
