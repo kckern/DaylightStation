@@ -1705,4 +1705,23 @@ dash-video {
   }
 }
 
+/* =============================================================================
+   Cycle Challenge Video Dim (Task 20)
+   Progressive video degradation driven by --cycle-dim CSS custom property
+   (value in [0..1]) that the GovernanceEngine emits as challenge.dimFactor
+   during cycle maintain state. The FitnessPlayer root gets the `cycle-dim`
+   class only while the challenge is actively dimming, so this filter chain
+   costs nothing in normal playback.
+   ============================================================================= */
+.fitness-player.cycle-dim video,
+.fitness-player.cycle-dim dash-video,
+.fitness-player.cycle-dim .video-player {
+  filter:
+    brightness(calc(1 - var(--cycle-dim, 0) * 0.4))
+    grayscale(calc(var(--cycle-dim, 0) * 1))
+    sepia(calc(var(--cycle-dim, 0) * 0.4))
+    blur(calc(var(--cycle-dim, 0) * 4px));
+  transition: filter 0.3s ease;
+}
+
 }
