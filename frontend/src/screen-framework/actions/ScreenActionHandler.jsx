@@ -312,6 +312,18 @@ export function ScreenActionHandler({ actions = {} }) {
     showOverlay(Component, {}, { mode: 'fullscreen' });
   }, [showOverlay]);
 
+  // --- PIP doorbell (simulate doorbell event via webhook) ---
+  const handlePipDoorbell = useCallback(() => {
+    logger().info('pip.action.doorbell');
+    DaylightAPI('api/v1/camera/doorbell/event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'ring' }),
+    }).catch((err) => {
+      logger().warn('pip.doorbell.error', { error: err.message });
+    });
+  }, []);
+
   // --- PIP promote ---
   const handlePipPromote = useCallback(() => {
     if (pip.state !== 'visible') return;
@@ -327,6 +339,7 @@ export function ScreenActionHandler({ actions = {} }) {
   }, [pip]);
 
   useScreenAction('display:overlay', handleDisplayOverlay);
+  useScreenAction('pip:doorbell', handlePipDoorbell);
   useScreenAction('pip:promote', handlePipPromote);
   useScreenAction('pip:dismiss', handlePipDismiss);
   useScreenAction('menu:open', handleMenuOpen);

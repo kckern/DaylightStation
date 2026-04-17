@@ -11,6 +11,7 @@ const ACTION_MAP = {
   sleep:    ()       => ({ action: 'display:sleep', payload: {} }),
   rate:     ()       => ({ action: 'media:rate', payload: {} }),
   overlay:  (params) => ({ action: 'display:overlay', payload: { overlayId: params } }),
+  doorbell: ()       => ({ action: 'pip:doorbell', payload: {} }),
 };
 
 export function translateAction(functionName, params) {
