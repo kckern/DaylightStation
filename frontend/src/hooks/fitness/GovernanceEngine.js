@@ -225,6 +225,11 @@ export class GovernanceEngine {
       challengeHistory: []
     };
 
+    // Per-user cooldown map for cycle challenges. Keys are user IDs; values are
+    // expiry timestamps (ms). A user is ineligible to be picked as rider until
+    // their stored expiry has passed. Populated on challenge completion/failure.
+    this._cycleCooldowns = {};
+
     this.requirementSummary = {
       policyId: null,
       targetUserCount: null,
@@ -2042,6 +2047,88 @@ export class GovernanceEngine {
       }))
     });
     return phases;
+  }
+
+  /**
+   * Start a cycle challenge: pick a rider from equipment's eligible users (minus
+   * those still on cooldown), generate phases, and build the initial activeChallenge
+   * object in the 'init' cycleState. Returns null if no rider can be picked.
+   *
+   * This method does NOT mutate challengeState.activeChallenge — that wiring is
+   * performed by the evaluator in a later task. It simply produces the structure.
+   *
+   * @param {Object} selection - Normalized cycle selection (from _normalizePolicies)
+   * @param {Object} [ctx] - Context fields: { policyId, policyName, configId }
+   * @returns {Object|null} activeChallenge object or null when no rider available
+   */
+  _startCycleChallenge(selection, ctx = {}) {
+    const eligible = this._getEligibleUsers(selection.equipment);
+    if (!eligible.length) {
+      getLogger().info('governance.cycle.start_skipped', {
+        equipment: selection.equipment,
+        reason: 'no_eligible_users',
+        eligibleCount: 0,
+        onCooldownCount: 0
+      });
+      return null;
+    }
+    const now = this._now();
+    const filtered = eligible.filter(uid => {
+      const until = this._cycleCooldowns[uid];
+      return !until || until <= now;
+    });
+    if (!filtered.length) {
+      getLogger().info('governance.cycle.start_skipped', {
+        equipment: selection.equipment,
+        reason: 'all_on_cooldown',
+        eligibleCount: eligible.length,
+        onCooldownCount: eligible.length
+      });
+      return null;
+    }
+    const rider = filtered[Math.floor(this._random() * filtered.length)];
+    const phases = this._generateCyclePhases(selection);
+    const initTotalMs = Math.max(0, Number(selection?.init?.timeAllowedSeconds) || 0) * 1000;
+    const active = {
+      id: `${selection.id}_${now}`,
+      type: 'cycle',
+      selectionId: selection.id,
+      selectionLabel: selection.label || null,
+      configId: ctx.configId || null,
+      policyId: ctx.policyId || null,
+      policyName: ctx.policyName || null,
+      equipment: selection.equipment,
+      rider,
+      ridersUsed: [rider],
+      generatedPhases: phases,
+      totalPhases: phases.length,
+      currentPhaseIndex: 0,
+      cycleState: 'init',
+      status: 'pending',
+      startedAt: now,
+      initStartedAt: now,
+      initElapsedMs: 0,
+      initTotalMs,
+      rampElapsedMs: 0,
+      phaseProgressMs: 0,
+      totalLockEventsCount: 0,
+      totalBoostedMs: 0,
+      boostContributors: new Set(),
+      lockReason: null,
+      pausedAt: null,
+      pausedRemainingMs: null,
+      selection
+    };
+    getLogger().info('governance.cycle.started', {
+      challengeId: active.id,
+      equipment: selection.equipment,
+      rider,
+      eligibleUsers: eligible,
+      riderPool: filtered,
+      totalPhases: phases.length,
+      initTotalMs: active.initTotalMs
+    });
+    return active;
   }
 
   _evaluateChallenges(activePolicy, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, evalContext = null) {
