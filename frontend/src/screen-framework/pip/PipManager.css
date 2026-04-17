@@ -1,0 +1,29 @@
+.pip-container {
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.pip-container--visible {
+  transform: translate(0, 0);
+  opacity: 1;
+}
+
+.pip-container--entering {
+  opacity: 0;
+}
+
+/* Slide-in origins by position */
+.pip-container--from-bottom-right {
+  transform: translate(100%, 100%);
+}
+
+.pip-container--from-bottom-left {
+  transform: translate(-100%, 100%);
+}
+
+.pip-container--from-top-right {
+  transform: translate(100%, -100%);
+}
+
+.pip-container--from-top-left {
+  transform: translate(-100%, -100%);
+}
