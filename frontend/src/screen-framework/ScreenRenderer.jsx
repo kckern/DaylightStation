@@ -148,8 +148,9 @@ function ScreenCommandHandler({ wsConfig, screenId }) {
  */
 function ScreenSubscriptionHandler({ subscriptions }) {
   const { showOverlay, dismissOverlay, hasOverlay } = useScreenOverlay();
+  const pip = usePip();
   const registry = useMemo(() => getWidgetRegistry(), []);
-  useScreenSubscriptions(subscriptions, showOverlay, dismissOverlay, registry, { hasOverlay });
+  useScreenSubscriptions(subscriptions, showOverlay, dismissOverlay, registry, { hasOverlay, pip });
   return null;
 }
 
