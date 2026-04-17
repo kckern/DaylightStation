@@ -2131,6 +2131,59 @@ export class GovernanceEngine {
     return active;
   }
 
+  _evaluateCycleChallenge(active, ctx) {
+    const now = this._now();
+    const dt = Number.isFinite(active._lastCycleTs) ? now - active._lastCycleTs : 0;
+    active._lastCycleTs = now;
+
+    // Pause gate (stub for now — Task 13 implements pause logic)
+    // if (ctx.baseReqSatisfiedGlobal === false) { return; }
+
+    if (active.cycleState === 'init') {
+      active.initElapsedMs += dt;
+      if (active.initElapsedMs >= active.initTotalMs) {
+        const prev = active.cycleState;
+        active.cycleState = 'locked';
+        active.lockReason = 'init';
+        active.totalLockEventsCount += 1;
+        getLogger().info('governance.cycle.state_transition', {
+          challengeId: active.id,
+          from: prev,
+          to: 'locked',
+          currentPhaseIndex: active.currentPhaseIndex,
+          rider: active.rider,
+          currentRpm: ctx.equipmentRpm,
+          reason: 'init_timeout'
+        });
+        getLogger().info('governance.cycle.locked', {
+          challengeId: active.id,
+          lockReason: 'init',
+          phaseIndex: active.currentPhaseIndex,
+          currentRpm: ctx.equipmentRpm,
+          threshold: active.selection.init.minRpm,
+          totalLockEventsCount: active.totalLockEventsCount
+        });
+        return;
+      }
+      if (ctx.equipmentRpm >= active.selection.init.minRpm && ctx.baseReqSatisfiedForRider) {
+        const prev = active.cycleState;
+        active.cycleState = 'ramp';
+        active.rampElapsedMs = 0;
+        getLogger().info('governance.cycle.state_transition', {
+          challengeId: active.id,
+          from: prev,
+          to: 'ramp',
+          currentPhaseIndex: active.currentPhaseIndex,
+          rider: active.rider,
+          currentRpm: ctx.equipmentRpm
+        });
+      }
+      return;
+    }
+
+    // ramp / maintain / locked branches added in Tasks 10, 11, 12
+  }
+
   _evaluateChallenges(activePolicy, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, evalContext = null) {
     const now = this._now();
     const challengeConfig = Array.isArray(activePolicy.challenges) && activePolicy.challenges.length
