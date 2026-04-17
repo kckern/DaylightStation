@@ -315,11 +315,7 @@ export function ScreenActionHandler({ actions = {} }) {
   // --- PIP doorbell (simulate doorbell event via webhook) ---
   const handlePipDoorbell = useCallback(() => {
     logger().info('pip.action.doorbell');
-    DaylightAPI('api/v1/camera/doorbell/event', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event: 'ring' }),
-    }).catch((err) => {
+    DaylightAPI('api/v1/camera/doorbell/event', { event: 'ring' }).catch((err) => {
       logger().warn('pip.doorbell.error', { error: err.message });
     });
   }, []);
