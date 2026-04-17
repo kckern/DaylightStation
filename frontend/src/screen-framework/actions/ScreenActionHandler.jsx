@@ -87,7 +87,7 @@ export function ScreenActionHandler({ actions = {} }) {
     }
     currentMenuRef.current = menuId;
     const menuTimeout = actions?.menu?.timeout ?? 0;
-    showOverlay(MenuStack, { rootMenu: menuId, MENU_TIMEOUT: menuTimeout });
+    showOverlay(MenuStack, { rootMenu: menuId, MENU_TIMEOUT: menuTimeout }, { priority: 'high' });
   }, [showOverlay, dismissOverlay, actions]);
 
   // --- Media play/queue ---
