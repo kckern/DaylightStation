@@ -124,18 +124,18 @@ export default function Upcoming() {
         <div className="upcoming">
             <div className="main-panel">
                 <div className="main-panel-items">
-                    <div className="main-panel-item skeleton-container" style={{padding: '20px'}}>
-                        <div className="skeleton text" style={{width: '40%', height: '1.5rem'}}></div>
-                        <div className="skeleton text" style={{width: '30%', height: '1.2rem'}}></div>
-                        <div className="skeleton text" style={{width: '80%', height: '3rem', marginTop: '1rem'}}></div>
+                    <div className="main-panel-item noslide">
+                        <h2><div className="skeleton text" style={{width: '50%', height: '1.8rem', margin: '0 auto'}}></div></h2>
+                        <h3><div className="skeleton text" style={{width: '40%', height: '1.5rem', margin: '0 auto'}}></div></h3>
+                        <p><div className="skeleton text" style={{width: '60%', height: '3rem'}}></div></p>
                     </div>
                 </div>
             </div>
             <div className="list-panel">
                 <div className="list-panel-items">
                     {Array.from({length: 4}).map((_, i) => (
-                        <div key={i} className="list-panel-item skeleton-container" style={{display: 'flex', alignItems: 'center', padding: '10px'}}>
-                            <div className="skeleton rect" style={{width: '60px', height: '24px', borderRadius: '12px', marginRight: '10px'}}></div>
+                        <div key={i} className="list-panel-item" style={{display: 'flex', alignItems: 'center', gap: '0.5ex'}}>
+                            <div className="skeleton rect" style={{width: '60px', height: '24px', borderRadius: '12px', flexShrink: 0}}></div>
                             <div className="skeleton text" style={{flex: 1, height: '1.2rem'}}></div>
                         </div>
                     ))}
