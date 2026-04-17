@@ -2212,7 +2212,79 @@ export class GovernanceEngine {
       return;
     }
 
-    // maintain / locked branches added in Tasks 11, 12
+    if (active.cycleState === 'maintain') {
+      const phase = active.generatedPhases[active.currentPhaseIndex];
+      if (ctx.equipmentRpm < phase.loRpm) {
+        active.cycleState = 'locked';
+        active.lockReason = 'maintain';
+        active.totalLockEventsCount += 1;
+        getLogger().info('governance.cycle.state_transition', {
+          challengeId: active.id, from: 'maintain', to: 'locked',
+          currentPhaseIndex: active.currentPhaseIndex, rider: active.rider,
+          currentRpm: ctx.equipmentRpm, reason: 'below_lo'
+        });
+        getLogger().info('governance.cycle.locked', {
+          challengeId: active.id, lockReason: 'maintain', phaseIndex: active.currentPhaseIndex,
+          currentRpm: ctx.equipmentRpm, threshold: phase.loRpm,
+          totalLockEventsCount: active.totalLockEventsCount
+        });
+        return;
+      }
+      if (ctx.equipmentRpm >= phase.hiRpm) {
+        const { multiplier, contributors } = this._computeBoostMultiplier(active, ctx);
+        const progressAdd = dt * multiplier;
+        active.phaseProgressMs += progressAdd;
+        if (multiplier > 1.0) {
+          active.totalBoostedMs += (progressAdd - dt);
+          contributors.forEach(u => active.boostContributors.add(u));
+        }
+        if (active.phaseProgressMs >= phase.maintainSeconds * 1000) {
+          const prev = active.currentPhaseIndex;
+          if (active.currentPhaseIndex + 1 >= active.generatedPhases.length) {
+            active.status = 'success';
+            active.completedAt = now;
+            getLogger().info('governance.cycle.state_transition', {
+              challengeId: active.id, from: 'maintain', to: 'success',
+              currentPhaseIndex: prev, rider: active.rider,
+              currentRpm: ctx.equipmentRpm
+            });
+          } else {
+            active.currentPhaseIndex += 1;
+            active.cycleState = 'ramp';
+            active.rampElapsedMs = 0;
+            active.phaseProgressMs = 0;
+            getLogger().info('governance.cycle.phase_advanced', {
+              challengeId: active.id, fromPhaseIndex: prev, toPhaseIndex: active.currentPhaseIndex,
+              elapsedMs: phase.maintainSeconds * 1000, boostedMs: Math.round(active.totalBoostedMs)
+            });
+            getLogger().info('governance.cycle.state_transition', {
+              challengeId: active.id, from: 'maintain', to: 'ramp',
+              currentPhaseIndex: active.currentPhaseIndex, rider: active.rider,
+              currentRpm: ctx.equipmentRpm, reason: 'phase_complete'
+            });
+          }
+        }
+      }
+      // between lo and hi: progress paused, no state change
+      return;
+    }
+
+    // locked branch added in Task 12
+  }
+
+  _computeBoostMultiplier(active, ctx) {
+    const mults = active.selection?.boost?.zoneMultipliers || {};
+    const cap = active.selection?.boost?.maxTotalMultiplier || 3.0;
+    const participants = ctx.activeParticipants || [];
+    let sum = 0;
+    const contributors = [];
+    participants.forEach(uid => {
+      const z = ctx.userZoneMap?.[uid];
+      const m = z && mults[z];
+      if (m) { sum += m; contributors.push(uid); }
+    });
+    const total = Math.min(1.0 + sum, cap);
+    return { multiplier: Math.max(1.0, total), contributors };
   }
 
   _evaluateChallenges(activePolicy, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, evalContext = null) {
