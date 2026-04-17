@@ -26,6 +26,7 @@ export function PipManager({ config: screenPipConfig, children }) {
   const [content, setContent] = useState(null); // { Component, props, config }
   const [animating, setAnimating] = useState(false); // for slide-in/out
   const timerRef = useRef(null);
+  const dismissAnimRef = useRef(null); // dismiss animation timeout
   const contentRef = useRef(null); // for promote() to access current content
   const dismissRef = useRef(null); // stable ref for timer callback
 
@@ -52,6 +53,19 @@ export function PipManager({ config: screenPipConfig, children }) {
   }, [clearTimer]);
 
   const show = useCallback((Component, props = {}, callConfig = {}) => {
+    // Ignore show while fullscreen — user must dismiss fullscreen first
+    if (state === 'fullscreen') {
+      logger().debug('pip.show-while-fullscreen-ignored');
+      return;
+    }
+
+    // Cancel any pending dismiss animation
+    if (dismissAnimRef.current) {
+      clearTimeout(dismissAnimRef.current);
+      dismissAnimRef.current = null;
+      setAnimating(false);
+    }
+
     const merged = mergeConfig(callConfig);
     const newContent = { Component, props, config: merged };
     contentRef.current = newContent;
@@ -89,7 +103,8 @@ export function PipManager({ config: screenPipConfig, children }) {
     logger().info('pip.dismiss');
     setAnimating(true);
     // Let CSS slide-out transition play, then clean up
-    setTimeout(() => {
+    dismissAnimRef.current = setTimeout(() => {
+      dismissAnimRef.current = null;
       setState('idle');
       setContent(null);
       contentRef.current = null;
