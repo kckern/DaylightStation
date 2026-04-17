@@ -209,7 +209,8 @@ export class GovernanceEngine {
       userZoneMap: {},
       zoneRankMap: {},
       zoneInfoMap: {},
-      totalCount: 0
+      totalCount: 0,
+      equipmentCadenceMap: {}
     };
     this._lastEvaluationTs = null;
 
@@ -501,7 +502,10 @@ export class GovernanceEngine {
       zoneRankMap: { ...(payload.zoneRankMap || {}) },
       zoneInfoMap,
       totalCount: Number.isFinite(payload.totalCount) ? payload.totalCount : activeParticipants.length,
-      hrInactiveUsers: Array.isArray(payload.hrInactiveUsers) ? [...payload.hrInactiveUsers] : []
+      hrInactiveUsers: Array.isArray(payload.hrInactiveUsers) ? [...payload.hrInactiveUsers] : [],
+      equipmentCadenceMap: payload.equipmentCadenceMap && typeof payload.equipmentCadenceMap === 'object'
+        ? { ...payload.equipmentCadenceMap }
+        : {}
     };
     this._lastEvaluationTs = this._now();
 
@@ -1107,12 +1111,14 @@ export class GovernanceEngine {
     // Preserve zone maps that were seeded during configure()
     const preservedZoneRankMap = this._latestInputs?.zoneRankMap || {};
     const preservedZoneInfoMap = this._latestInputs?.zoneInfoMap || {};
+    const preservedEquipmentCadenceMap = this._latestInputs?.equipmentCadenceMap || {};
     this._latestInputs = {
       activeParticipants: [],
       userZoneMap: {},
       zoneRankMap: preservedZoneRankMap,
       zoneInfoMap: preservedZoneInfoMap,
-      totalCount: 0
+      totalCount: 0,
+      equipmentCadenceMap: preservedEquipmentCadenceMap
     };
     this._lastEvaluationTs = null;
     this._timersPaused = false;
@@ -1293,7 +1299,7 @@ export class GovernanceEngine {
    * @param {Record<string, Object>} params.zoneInfoMap - Map zoneId -> zone metadata
    * @param {number} params.totalCount - Total number of active participants
    */
-  evaluate({ activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, hrInactiveUsers } = {}) {
+  evaluate({ activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, hrInactiveUsers, equipmentCadenceMap } = {}) {
     // Tag which code path triggered this evaluation (for prod log diagnostics)
     this._lastEvaluatePath = activeParticipants ? 'snapshot' : 'pulse';
 
@@ -1371,6 +1377,11 @@ export class GovernanceEngine {
     if (zoneInfoMap && Object.keys(zoneInfoMap).length > 0) {
       this._latestInputs.zoneInfoMap = zoneInfoMap;
     }
+    // Capture equipmentCadenceMap early so it survives no-media/no-participant early-exit paths.
+    // Store verbatim; missing map becomes empty object.
+    this._latestInputs.equipmentCadenceMap = equipmentCadenceMap && typeof equipmentCadenceMap === 'object'
+      ? { ...equipmentCadenceMap }
+      : {};
 
     // Build evalContext so _setPhase logging reads current data (not stale _latestInputs)
     const evalContext = { userZoneMap, zoneRankMap, zoneInfoMap, activeParticipants };
@@ -1458,7 +1469,10 @@ export class GovernanceEngine {
         zoneRankMap: zoneRankMap || {},
         zoneInfoMap: zoneInfoMap || {},
         totalCount: totalCount || 0,
-        hrInactiveUsers: Array.isArray(hrInactiveUsers) ? [...hrInactiveUsers] : []
+        hrInactiveUsers: Array.isArray(hrInactiveUsers) ? [...hrInactiveUsers] : [],
+        equipmentCadenceMap: equipmentCadenceMap && typeof equipmentCadenceMap === 'object'
+          ? { ...equipmentCadenceMap }
+          : {}
       };
       this._invalidateStateCache();
       // No polling needed here - governance is reactive via TreasureBox mutation callback
@@ -1574,7 +1588,8 @@ export class GovernanceEngine {
       zoneRankMap,
       zoneInfoMap,
       totalCount,
-      hrInactiveUsers
+      hrInactiveUsers,
+      equipmentCadenceMap
     });
     
     // Invalidate state cache after evaluation completes
