@@ -3046,4 +3046,103 @@ export class GovernanceEngine {
       };
       this._triggerPulse();
   }
+
+  /**
+   * Swap the rider on the currently active cycle challenge.
+   *
+   * Swap is only allowed in a narrow window:
+   *   - cycleState === 'init', OR
+   *   - cycleState === 'ramp' AND currentPhaseIndex === 0 (i.e. phase-1 ramp)
+   *
+   * Rejected if:
+   *   - there is no active cycle challenge
+   *   - swap window is closed
+   *   - riderId not in equipment's eligible_users
+   *   - rider is on cooldown (unless { force: true })
+   *
+   * On success, updates active.rider, appends to ridersUsed (unique), resets
+   * cycleState to 'init' and all in-phase timers, stamps a fresh initStartedAt.
+   *
+   * @param {string} riderId - Target rider user ID
+   * @param {{ force?: boolean }} [options] - force: bypass cooldown check
+   * @returns {{ success: boolean, reason?: string }}
+   */
+  swapCycleRider(riderId, { force = false } = {}) {
+    const active = this.challengeState.activeChallenge;
+    if (!active || active.type !== 'cycle') {
+      getLogger().info('governance.cycle.swap_requested', {
+        challengeId: active?.id || null,
+        fromRider: active?.rider || null,
+        toRider: riderId,
+        cycleState: active?.cycleState || null,
+        force,
+        accepted: false,
+        rejectionReason: 'no_active_cycle_challenge'
+      });
+      return { success: false, reason: 'no active cycle challenge' };
+    }
+    const allowed = active.cycleState === 'init'
+      || (active.cycleState === 'ramp' && active.currentPhaseIndex === 0);
+    if (!allowed) {
+      getLogger().info('governance.cycle.swap_requested', {
+        challengeId: active.id,
+        fromRider: active.rider,
+        toRider: riderId,
+        cycleState: active.cycleState,
+        force,
+        accepted: false,
+        rejectionReason: 'swap_window_closed'
+      });
+      return { success: false, reason: 'swap window closed' };
+    }
+    const eligible = this._getEligibleUsers(active.equipment);
+    if (!eligible.includes(riderId)) {
+      getLogger().info('governance.cycle.swap_requested', {
+        challengeId: active.id,
+        fromRider: active.rider,
+        toRider: riderId,
+        cycleState: active.cycleState,
+        force,
+        accepted: false,
+        rejectionReason: 'not_eligible'
+      });
+      return { success: false, reason: 'rider not eligible for this equipment' };
+    }
+    const now = this._now();
+    if (!force && this._cycleCooldowns[riderId] && this._cycleCooldowns[riderId] > now) {
+      getLogger().info('governance.cycle.swap_requested', {
+        challengeId: active.id,
+        fromRider: active.rider,
+        toRider: riderId,
+        cycleState: active.cycleState,
+        force,
+        accepted: false,
+        rejectionReason: 'on_cooldown'
+      });
+      return { success: false, reason: 'rider on cooldown' };
+    }
+    const fromRider = active.rider;
+    active.rider = riderId;
+    if (!active.ridersUsed.includes(riderId)) active.ridersUsed.push(riderId);
+    active.cycleState = 'init';
+    active.initElapsedMs = 0;
+    active.initStartedAt = now;
+    active.rampElapsedMs = 0;
+    active.phaseProgressMs = 0;
+    getLogger().info('governance.cycle.swap_requested', {
+      challengeId: active.id,
+      fromRider,
+      toRider: riderId,
+      cycleState: active.cycleState,
+      force,
+      accepted: true
+    });
+    getLogger().info('governance.cycle.swap_completed', {
+      challengeId: active.id,
+      fromRider,
+      toRider: riderId,
+      ridersUsed: [...active.ridersUsed]
+    });
+    return { success: true };
+  }
 }
