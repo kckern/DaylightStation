@@ -1,0 +1,216 @@
+.cycle-challenge-overlay {
+  --cycle-overlay-edge: clamp(12px, min(4vw, 4%), 40px);
+  --cycle-overlay-size: clamp(160px, min(22vw, 16vh), 240px);
+  --cycle-overlay-diameter: var(--cycle-overlay-size);
+  --cycle-overlay-translate: 0;
+
+  position: absolute;
+  top: var(--cycle-overlay-edge);
+  left: var(--cycle-overlay-edge);
+  z-index: calc(var(--fitness-parent-overlay-z, 60));
+  width: var(--cycle-overlay-diameter);
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  background: rgba(11, 18, 28, 0.82);
+  color: #f1f5f9;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(16px);
+  pointer-events: auto;
+  user-select: none;
+  cursor: pointer;
+  outline: none;
+  box-sizing: border-box;
+  transform: translateY(var(--cycle-overlay-translate)) scale(var(--fitness-overlay-scale, 1));
+  transform-origin: top left;
+  transition: transform 0.25s ease, opacity 0.2s ease, top 0.4s ease, bottom 0.4s ease;
+
+  &:focus-visible {
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.35), 0 24px 48px rgba(0, 0, 0, 0.45);
+  }
+
+  // --- Outer ring SVG -----------------------------------------------------
+  &__ring {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  &__ring-track {
+    stroke: rgba(255, 255, 255, 0.08);
+  }
+
+  &__ring-progress {
+    transition: stroke-dashoffset 0.3s ease, stroke 0.3s ease, opacity 0.3s ease;
+    filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.4));
+  }
+
+  // --- Target RPM sign (top) ---------------------------------------------
+  &__target {
+    position: absolute;
+    top: clamp(6px, calc(var(--cycle-overlay-diameter) * 0.045), 14px);
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1;
+    text-align: center;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+    pointer-events: none;
+  }
+
+  &__target-value {
+    font-size: clamp(1.4rem, calc(var(--cycle-overlay-diameter) * 0.16), 2rem);
+    font-weight: 700;
+    color: #f1f5f9;
+    letter-spacing: 0.02em;
+  }
+
+  &__target-unit {
+    font-size: clamp(0.55rem, calc(var(--cycle-overlay-diameter) * 0.05), 0.7rem);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: rgba(226, 232, 240, 0.75);
+    margin-top: 1px;
+  }
+
+  // --- Rider avatar (center) ---------------------------------------------
+  &__avatar {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: clamp(56px, calc(var(--cycle-overlay-diameter) * 0.32), 80px);
+    height: clamp(56px, calc(var(--cycle-overlay-diameter) * 0.32), 80px);
+    border-radius: 50%;
+    background: rgba(15, 23, 42, 0.85);
+    color: #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    font-size: clamp(1.1rem, calc(var(--cycle-overlay-diameter) * 0.13), 1.7rem);
+    font-weight: 700;
+    cursor: default;
+    padding: 0;
+    outline: none;
+    transition: border-color 0.2s ease, transform 0.2s ease;
+
+    &.is-clickable {
+      cursor: pointer;
+
+      &:hover {
+        border-color: rgba(255, 255, 255, 0.7);
+      }
+
+      &:active {
+        transform: translate(-50%, -50%) scale(0.96);
+      }
+    }
+
+    &:focus-visible {
+      border-color: rgba(59, 130, 246, 0.75);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4);
+    }
+
+    &:disabled {
+      cursor: default;
+      opacity: 0.85;
+    }
+  }
+
+  &__avatar-initials {
+    pointer-events: none;
+    line-height: 1;
+  }
+
+  &__rider-name {
+    position: absolute;
+    top: calc(50% + clamp(32px, calc(var(--cycle-overlay-diameter) * 0.22), 52px));
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: clamp(0.65rem, calc(var(--cycle-overlay-diameter) * 0.055), 0.8rem);
+    color: #cbd5e1;
+    text-align: center;
+    white-space: nowrap;
+    max-width: 75%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  }
+
+  // --- Segment counter pill (bottom) --------------------------------------
+  &__segment-counter {
+    position: absolute;
+    bottom: clamp(8px, calc(var(--cycle-overlay-diameter) * 0.06), 16px);
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.8);
+    color: #e2e8f0;
+    font-size: clamp(0.65rem, calc(var(--cycle-overlay-diameter) * 0.055), 0.8rem);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  // --- Position variants (top / middle / bottom) --------------------------
+  &--pos-top {
+    top: var(--cycle-overlay-edge);
+    bottom: auto;
+    --cycle-overlay-translate: 0;
+  }
+
+  &--pos-middle {
+    top: 50%;
+    bottom: auto;
+    --cycle-overlay-translate: -50%;
+  }
+
+  &--pos-bottom {
+    top: auto;
+    bottom: var(--cycle-overlay-edge);
+    --cycle-overlay-translate: 0;
+  }
+
+  // --- State variants -----------------------------------------------------
+  &--state-locked {
+    .cycle-challenge-overlay__target-value {
+      color: #fecaca;
+    }
+  }
+
+  &--state-maintain {
+    .cycle-challenge-overlay__target-value {
+      color: #bbf7d0;
+    }
+  }
+
+  &--dim-pulse {
+    // When in the orange dim band, animate a subtle pulse on the ring
+    // to draw attention. Muted so it doesn't compete with content.
+    .cycle-challenge-overlay__ring-progress {
+      animation: cycle-challenge-overlay-dim-pulse 1.6s ease-in-out infinite;
+    }
+
+    .cycle-challenge-overlay__target-value {
+      color: #fed7aa;
+    }
+  }
+}
+
+@keyframes cycle-challenge-overlay-dim-pulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 6px rgba(249, 115, 22, 0.35));
+  }
+  50% {
+    filter: drop-shadow(0 0 12px rgba(249, 115, 22, 0.6));
+  }
+}
