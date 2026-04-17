@@ -4,6 +4,7 @@ import { DaylightMediaPath } from '@/lib/api.mjs';
 import { getLogger } from '@/lib/logging/Logger.js';
 import { useDeadlineCountdown } from '@/modules/Fitness/shared';
 import GovernanceAudioPlayer from './GovernanceAudioPlayer.jsx';
+import { computeCycleLockPanelData } from './cycleLockPanelData.js';
 import './GovernanceStateOverlay.scss';
 
 const TOTAL_NOTCHES = 56;
@@ -397,6 +398,71 @@ const GovernanceStateOverlay = ({ display, overlay = null, lockRows = [], warnin
             notches={countdownNotches}
             rows={display.rows}
           />
+        </>
+      );
+    }
+
+    // Cycle challenge locked: render rider-centric RPM lock panel.
+    // The rider's HR zone (used for avatar/pill tinting) is looked up from
+    // the display rows by rider id when available, else defaults to 'cool'.
+    const cycleChallenge = display?.challenge || null;
+    const riderId = cycleChallenge?.rider?.id || null;
+    const riderRow = riderId && Array.isArray(display?.rows)
+      ? display.rows.find((r) => r?.userId === riderId || r?.key === riderId || r?.id === riderId)
+      : null;
+    const riderZone = riderRow?.currentZone?.id || null;
+    const cycleLockData = computeCycleLockPanelData(cycleChallenge, riderZone);
+
+    if (cycleLockData) {
+      const riderDisplayName =
+        cycleLockData.rider?.name || cycleLockData.rider?.id || '?';
+      const riderInitial =
+        (riderDisplayName && riderDisplayName[0]
+          ? riderDisplayName[0].toUpperCase()
+          : '?');
+      const zoneClass = `zone-${cycleLockData.zone}`;
+
+      return (
+        <>
+          <GovernanceAudioPlayer trackKey={audioTrackKey} />
+          <div className="governance-overlay governance-overlay--locked">
+            <div className="governance-overlay__panel governance-lock governance-lock--cycle">
+              <div className="governance-lock__title">{cycleLockData.title}</div>
+              <p className="governance-lock__message">{cycleLockData.instruction}</p>
+              <div className="governance-lock__table" role="table" aria-label="Cycle unlock requirements">
+                <div className="governance-lock__row governance-lock__row--cycle" role="row">
+                  <div className="governance-lock__cell governance-lock__cell--chip" role="cell">
+                    <div className="governance-lock__chip">
+                      <div className={`governance-lock__avatar ${zoneClass}`}>
+                        <span className="governance-lock__avatar-initials">{riderInitial}</span>
+                      </div>
+                      <div className="governance-lock__chip-text">
+                        <span className="governance-lock__chip-name">{riderDisplayName}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="governance-lock__cell" role="cell">
+                    <span className={`governance-lock__pill governance-lock__pill--rpm ${zoneClass}`}>
+                      {cycleLockData.currentRpm} RPM
+                    </span>
+                  </div>
+                  <div className="governance-lock__cell" role="cell">
+                    <span className="governance-lock__pill governance-lock__pill--rpm governance-lock__pill--target">
+                      {cycleLockData.targetRpm} RPM
+                    </span>
+                  </div>
+                  <div className="governance-lock__progress" aria-hidden="true">
+                    <div className="governance-lock__progress-track">
+                      <div
+                        className="governance-lock__progress-fill"
+                        style={{ transform: `scaleX(${cycleLockData.progress})` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </>
       );
     }

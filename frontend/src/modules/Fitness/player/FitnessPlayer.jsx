@@ -19,6 +19,7 @@ import HRSimTrigger from '@/modules/Fitness/nav/HRSimTrigger.jsx';
 import { useVolumeSync } from '@/modules/Fitness/hooks/useVolumeSync.js';
 import { useRenderProfiler } from '@/hooks/fitness/useRenderProfiler.js';
 import { getLogger } from '@/lib/logging/Logger.js';
+import { computeCycleDimStyle } from './cycleDimStyle.js';
 
 // Helper function to generate Plex thumbnail URLs for specific timestamps
 const generateThumbnailUrl = (plexObj, timeInSeconds) => {
@@ -1507,9 +1508,20 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false 
   }, [allowLoadingOverlayFullscreen, toggleFullscreen, shouldBlockFullscreenToggle, logFitnessEvent]);
 
   const reloadTargetSeconds = Math.max(0, lastKnownTimeRef.current || currentTime || 0);
+
+  // Cycle challenge video-dim wiring (Task 20). Derive a CSS custom property
+  // + optional `cycle-dim` class from the governance snapshot's `challenge`
+  // field; the SCSS filter chain reads `--cycle-dim` to progressively
+  // degrade the video during a maintain-state cycle challenge.
+  const cycleDim = useMemo(
+    () => computeCycleDimStyle(effectiveGovernanceState?.challenge),
+    [effectiveGovernanceState?.challenge]
+  );
   const playerRootClasses = useMemo(() => {
-    return [`fitness-player`, `mode-${playerMode}`].join(' ');
-  }, [playerMode]);
+    const classes = [`fitness-player`, `mode-${playerMode}`];
+    if (cycleDim.className) classes.push(cycleDim.className);
+    return classes.join(' ');
+  }, [playerMode, cycleDim.className]);
 
   const hasActiveItem = Boolean(currentItem && enhancedCurrentItem && playObject);
   const playerKey = hasActiveItem
@@ -1642,6 +1654,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false 
         contentRef={contentRef}
         mainRef={mainPlayerRef}
         onRootPointerDownCapture={handleRootPointerDownCapture}
+        style={cycleDim.style}
       >
         {mainContent}
       </FitnessPlayerFrame>
