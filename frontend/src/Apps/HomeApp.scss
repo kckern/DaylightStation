@@ -28,5 +28,20 @@
       color: #aaa;
       text-transform: capitalize;
     }
+
+    &__fullscreen {
+      background: none;
+      border: none;
+      color: #555;
+      cursor: pointer;
+      padding: 2px;
+      display: flex;
+      align-items: center;
+      transition: color 0.15s;
+
+      &:hover {
+        color: #fff;
+      }
+    }
   }
 }
