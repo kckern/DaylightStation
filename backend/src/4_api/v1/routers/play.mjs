@@ -220,6 +220,7 @@ export function createPlayRouter(config) {
       const resolved = contentIdResolver.resolve(compoundId);
 
       if (!resolved?.adapter) {
+        logger.warn?.('play.source.unknown', { compoundId, source, rawPath, ip: req.ip });
         return res.status(404).json({ error: `Unknown source: ${source}` });
       }
 
@@ -262,6 +263,13 @@ export function createPlayRouter(config) {
       // Get single item using resolver's localId
       const item = await adapter.getItem(finalLocalId);
       if (!item) {
+        logger.warn?.('play.item.not_found', {
+          compoundId,
+          resolvedSource: finalSource,
+          resolvedLocalId: finalLocalId,
+          adapterSource: adapter.source,
+          ip: req.ip
+        });
         return res.status(404).json({ error: 'Item not found', source: finalSource, localId: finalLocalId });
       }
 

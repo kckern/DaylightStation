@@ -171,9 +171,19 @@ export function useQueueController({ play, queue, clear, shuffle }) {
       }
     }
     initQueue().catch((error) => {
+      // Parse structured error from API response (format: "HTTP 404: Not Found - {json}")
+      let apiError = null;
+      const dashIdx = error?.message?.indexOf(' - ');
+      if (dashIdx > -1) {
+        try { apiError = JSON.parse(error.message.slice(dashIdx + 3)); } catch {}
+      }
       playbackLog('queue-init-failed', {
         contentRef,
-        error: error?.message
+        error: error?.message,
+        apiSource: apiError?.source,
+        apiLocalId: apiError?.localId,
+        apiDetail: apiError?.error,
+        httpStatus: error?.message?.match(/^HTTP (\d+)/)?.[1],
       }, { level: 'error' });
       if (!isCancelled) {
         sourceSignatureRef.current = previousSignature;
