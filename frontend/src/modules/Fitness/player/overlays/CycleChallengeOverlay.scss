@@ -240,6 +240,59 @@
     // Central hub — solid dot at the needle pivot for a mechanical look.
     pointer-events: none;
   }
+
+  // --- Booster avatars + boost multiplier badge (Task 23) -----------------
+  // Booster avatars: small pips at the four outer corners (NE, SE, SW, NW)
+  // showing who is currently contributing boost. Positions are inline
+  // (viewBox 220px). When the overlay scales via --cycle-overlay-size, the
+  // transform on the root scales these along with everything else.
+  &__booster {
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: rgba(249, 115, 22, 0.25);
+    border: 1.5px solid #f97316;
+    color: #fed7aa;
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 6px rgba(249, 115, 22, 0.6);
+    pointer-events: none;
+    line-height: 1;
+  }
+
+  // Boost multiplier pill — positioned under the rider name, pulses to
+  // draw attention. Only rendered when boostMultiplier > 1.0.
+  &__boost-badge {
+    position: absolute;
+    top: calc(50% + 62px);
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 2px 8px;
+    border-radius: 8px;
+    background: rgba(249, 115, 22, 0.9);
+    color: #1e293b;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-shadow: none;
+    animation: cycle-boost-pulse 1.2s ease-in-out infinite;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+}
+
+@keyframes cycle-boost-pulse {
+  0%,
+  100% {
+    transform: translateX(-50%) scale(1);
+  }
+  50% {
+    transform: translateX(-50%) scale(1.08);
+  }
 }
 
 @keyframes cycle-needle-pulse {

@@ -15,6 +15,7 @@ let getCycleOverlayVisuals;
 let CYCLE_OVERLAY_RING_COLORS;
 let rpmToAngle;
 let polarToCartesian;
+let getBoosterAvatarSlots;
 
 beforeAll(async () => {
   const mod = await import('#frontend/modules/Fitness/player/overlays/cycleOverlayVisuals.js');
@@ -22,6 +23,7 @@ beforeAll(async () => {
   CYCLE_OVERLAY_RING_COLORS = mod.CYCLE_OVERLAY_RING_COLORS;
   rpmToAngle = mod.rpmToAngle;
   polarToCartesian = mod.polarToCartesian;
+  getBoosterAvatarSlots = mod.getBoosterAvatarSlots;
 });
 
 describe('getCycleOverlayVisuals', () => {
@@ -234,5 +236,93 @@ describe('cycleOverlayVisuals — gauge geometry', () => {
       const { y } = polarToCartesian(cx, cy, r, angle);
       expect(y).toBeLessThanOrEqual(cy + 1e-9);
     }
+  });
+});
+
+describe('getBoosterAvatarSlots', () => {
+  it('returns empty array for empty/null input', () => {
+    expect(getBoosterAvatarSlots([])).toEqual([]);
+    expect(getBoosterAvatarSlots(null)).toEqual([]);
+  });
+
+  it('returns empty array for undefined input', () => {
+    expect(getBoosterAvatarSlots(undefined)).toEqual([]);
+  });
+
+  it('returns empty array for non-array input', () => {
+    expect(getBoosterAvatarSlots('felix')).toEqual([]);
+    expect(getBoosterAvatarSlots(42)).toEqual([]);
+    expect(getBoosterAvatarSlots({})).toEqual([]);
+  });
+
+  it('returns one avatar at NE position', () => {
+    const slots = getBoosterAvatarSlots(['felix']);
+    expect(slots.length).toBe(1);
+    expect(slots[0].id).toBe('felix');
+    expect(slots[0].initial).toBe('F');
+  });
+
+  it('uppercases the first character of the id for the initial', () => {
+    const slots = getBoosterAvatarSlots(['alice']);
+    expect(slots[0].initial).toBe('A');
+  });
+
+  it('caps at 4 boosters', () => {
+    const slots = getBoosterAvatarSlots(['a', 'b', 'c', 'd', 'e', 'f']);
+    expect(slots.length).toBe(4);
+    expect(slots.map((s) => s.id)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('positions 4 boosters in NE, SE, SW, NW order', () => {
+    const slots = getBoosterAvatarSlots(['a', 'b', 'c', 'd'], 220);
+    // NE: top small, left large
+    expect(parseInt(slots[0].style.top, 10)).toBeLessThan(50);
+    expect(parseInt(slots[0].style.left, 10)).toBeGreaterThan(150);
+    // SE: top large, left large
+    expect(parseInt(slots[1].style.top, 10)).toBeGreaterThan(150);
+    expect(parseInt(slots[1].style.left, 10)).toBeGreaterThan(150);
+    // SW: top large, left small
+    expect(parseInt(slots[2].style.top, 10)).toBeGreaterThan(150);
+    expect(parseInt(slots[2].style.left, 10)).toBeLessThan(50);
+    // NW: top small, left small
+    expect(parseInt(slots[3].style.top, 10)).toBeLessThan(50);
+    expect(parseInt(slots[3].style.left, 10)).toBeLessThan(50);
+  });
+
+  it('defaults overlaySize to 220 when omitted', () => {
+    const slots = getBoosterAvatarSlots(['a', 'b']);
+    // NE: top 8, left 220-32 = 188
+    expect(slots[0].style.top).toBe('8px');
+    expect(slots[0].style.left).toBe('188px');
+    // SE: top 188, left 188
+    expect(slots[1].style.top).toBe('188px');
+    expect(slots[1].style.left).toBe('188px');
+  });
+
+  it('scales positions with custom overlaySize', () => {
+    const slots = getBoosterAvatarSlots(['a'], 300);
+    // NE at size 300 → left = 300 - 32 = 268
+    expect(slots[0].style.left).toBe('268px');
+    expect(slots[0].style.top).toBe('8px');
+  });
+
+  it('handles empty-string id gracefully', () => {
+    const slots = getBoosterAvatarSlots(['']);
+    expect(slots.length).toBe(1);
+    expect(slots[0].initial).toBe('?');
+  });
+
+  it('returns style with px units (strings)', () => {
+    const slots = getBoosterAvatarSlots(['x']);
+    expect(typeof slots[0].style.top).toBe('string');
+    expect(typeof slots[0].style.left).toBe('string');
+    expect(slots[0].style.top.endsWith('px')).toBe(true);
+    expect(slots[0].style.left.endsWith('px')).toBe(true);
+  });
+
+  it('preserves id verbatim (no case change to id, only initial)', () => {
+    const slots = getBoosterAvatarSlots(['KCKern']);
+    expect(slots[0].id).toBe('KCKern');
+    expect(slots[0].initial).toBe('K');
   });
 });
