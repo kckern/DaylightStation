@@ -1,11 +1,8 @@
 /**
  * Office Screen Skeleton Sizing Test
  *
- * Holds API endpoints to keep widgets in skeleton state, measures their bounding boxes,
- * then releases APIs and measures hydrated dimensions.
- *
- * Verifies that skeleton loaders occupy roughly the same space as hydrated content
- * to prevent layout shift.
+ * Holds widget API endpoints to keep widgets in skeleton state, measures bounding
+ * boxes, then releases and compares against hydrated dimensions.
  *
  * Usage:
  *   npx playwright test tests/live/flow/screen/office-skeleton-sizing.runtime.test.mjs --headed
@@ -14,45 +11,67 @@
 import { test, expect } from '@playwright/test';
 import { FRONTEND_URL } from '#fixtures/runtime/urls.mjs';
 
-// Height ratio tolerance — skeleton height should be within this range of hydrated.
-// Width tolerances are looser because flex columns rebalance when content loads.
-// The important thing is that widgets aren't collapsing to zero or exploding.
-const MIN_HEIGHT_RATIO = 0.25;
-const MAX_HEIGHT_RATIO = 3.0;
-const MIN_WIDTH_RATIO = 0.25;
-const MAX_WIDTH_RATIO = 3.0;
+// Skeleton should be within this range of hydrated size
+const MIN_RATIO = 0.80;
+const MAX_RATIO = 1.20;
 
-// Widgets to measure and the API endpoints that gate their loading
+// Widgets to measure and the API endpoints that gate their loading.
+// Patterns must NOT match /api/v1/screens/* (the config endpoint).
 const WIDGET_CONFIGS = [
-  { name: 'weight', selector: '.weight', api: '**/api/v1/lifelog/weight' },
-  { name: 'finance', selector: '.finance', api: '**/api/v1/finance/data/daytoday' },
-  { name: 'upcoming', selector: '.upcoming', api: '**/api/v1/home/events' },
-  { name: 'entropy', selector: '.entropy-panel', api: '**/api/v1/home/entropy' },
+  { name: 'weight', selector: '.weight', api: /\/api\/v1\/lifelog\/weight/ },
+  { name: 'finance', selector: '.finance', api: /\/api\/v1\/finance\/data\/daytoday/ },
+  { name: 'upcoming', selector: '.upcoming', api: /\/api\/v1\/home\/events/ },
+  { name: 'entropy', selector: '.entropy-panel', api: /\/api\/v1\/home\/entropy/ },
 ];
 
 /**
- * Measure bounding box of a widget's screen-widget wrapper.
- * The wrapper is the flex participant — it controls how much space the widget
- * occupies in the layout. We find the widget by its inner selector, then
- * measure the closest .screen-widget ancestor.
+ * Measure all widgets: inner content element AND parent screen-widget wrapper.
  */
-async function measureWidget(page, selector) {
-  return page.evaluate((sel) => {
-    const inner = document.querySelector(sel);
-    if (!inner) return null;
-    // Measure the screen-widget wrapper (flex participant), not the inner content
-    const wrapper = inner.closest('.screen-widget') || inner;
-    const rect = wrapper.getBoundingClientRect();
-    return { width: rect.width, height: rect.height, top: rect.top, left: rect.left };
-  }, selector);
+async function measureAll(page) {
+  return page.evaluate((configs) => {
+    const results = {};
+    for (const { name, selector } of configs) {
+      const inner = document.querySelector(selector);
+      if (!inner) {
+        results[name] = null;
+        continue;
+      }
+      const wrapper = inner.closest('.screen-widget');
+      const innerRect = inner.getBoundingClientRect();
+      const wrapperRect = wrapper ? wrapper.getBoundingClientRect() : null;
+
+      results[name] = {
+        inner: { w: Math.round(innerRect.width), h: Math.round(innerRect.height) },
+        wrapper: wrapperRect ? { w: Math.round(wrapperRect.width), h: Math.round(wrapperRect.height) } : null,
+        innerFills: {
+          width: wrapperRect ? Math.round(innerRect.width / wrapperRect.width * 100) : 0,
+          height: wrapperRect ? Math.round(innerRect.height / wrapperRect.height * 100) : 0,
+        },
+      };
+    }
+
+    // Also measure the layout areas (columns)
+    const areas = document.querySelectorAll('.screen-area');
+    results._areas = Array.from(areas).map((a, i) => {
+      const r = a.getBoundingClientRect();
+      const s = window.getComputedStyle(a);
+      return {
+        index: i,
+        w: Math.round(r.width), h: Math.round(r.height),
+        grow: s.flexGrow, basis: s.flexBasis,
+      };
+    });
+
+    return results;
+  }, WIDGET_CONFIGS.map(c => ({ name: c.name, selector: c.selector })));
 }
 
 test.describe.serial('Office Screen Skeleton Sizing', () => {
   /** @type {import('@playwright/test').Page} */
   let page;
   const resolvers = {};
-  const skeletonDims = {};
-  const hydratedDims = {};
+  let skeletonState = null;
+  let hydratedState = null;
 
   test.beforeAll(async ({ browser }) => {
     const context = await browser.newContext({
@@ -60,7 +79,8 @@ test.describe.serial('Office Screen Skeleton Sizing', () => {
     });
     page = await context.newPage();
 
-    // Set up API interception — hold all widget APIs
+    // Set up API interception BEFORE navigation — use regex patterns
+    // so they don't accidentally match the /api/v1/screens/office config endpoint.
     for (const config of WIDGET_CONFIGS) {
       const holdPromise = new Promise(resolve => {
         resolvers[config.name] = resolve;
@@ -76,66 +96,75 @@ test.describe.serial('Office Screen Skeleton Sizing', () => {
     if (page) await page.close();
   });
 
-  test('navigate to office screen and wait for layout', async () => {
+  test('navigate and measure skeleton state', async () => {
     await page.goto(`${FRONTEND_URL}/screen/office`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.screen-root', { timeout: 15000 });
-    // Let the layout stabilize with skeletons rendered
-    await page.waitForTimeout(1000);
-  });
+    await page.waitForTimeout(1500);
 
-  test('measure skeleton dimensions', async () => {
+    // Screenshot skeleton state
+    await page.screenshot({ path: 'test-results/skeleton-state.png' });
+
+    skeletonState = await measureAll(page);
+
+    console.log('\n=== SKELETON STATE ===');
+    console.log('Areas:', JSON.stringify(skeletonState._areas));
     for (const config of WIDGET_CONFIGS) {
-      const dims = await measureWidget(page, config.selector);
-      skeletonDims[config.name] = dims;
-
-      if (dims) {
-        console.log(`  SKELETON ${config.name}: ${dims.width.toFixed(0)}x${dims.height.toFixed(0)}px`);
-      } else {
-        console.log(`  SKELETON ${config.name}: NOT FOUND`);
-      }
+      const m = skeletonState[config.name];
+      if (!m) { console.log(`  ${config.name}: NOT FOUND`); continue; }
+      console.log(`  ${config.name}: wrapper=${m.wrapper?.w}x${m.wrapper?.h}  inner=${m.inner.w}x${m.inner.h}  fills=${m.innerFills.width}%w ${m.innerFills.height}%h`);
     }
   });
 
-  test('release APIs and measure hydrated dimensions', async () => {
-    // Release all APIs
+  test('release APIs and measure hydrated state', async () => {
     for (const config of WIDGET_CONFIGS) {
       if (resolvers[config.name]) resolvers[config.name]();
     }
 
-    // Wait for all widgets to hydrate
     await page.waitForTimeout(5000);
 
-    for (const config of WIDGET_CONFIGS) {
-      const dims = await measureWidget(page, config.selector);
-      hydratedDims[config.name] = dims;
+    await page.screenshot({ path: 'test-results/hydrated-state.png' });
 
-      if (dims) {
-        console.log(`  HYDRATED ${config.name}: ${dims.width.toFixed(0)}x${dims.height.toFixed(0)}px`);
-      } else {
-        console.log(`  HYDRATED ${config.name}: NOT FOUND`);
-      }
+    hydratedState = await measureAll(page);
+
+    console.log('\n=== HYDRATED STATE ===');
+    console.log('Areas:', JSON.stringify(hydratedState._areas));
+    for (const config of WIDGET_CONFIGS) {
+      const m = hydratedState[config.name];
+      if (!m) { console.log(`  ${config.name}: NOT FOUND`); continue; }
+      console.log(`  ${config.name}: wrapper=${m.wrapper?.w}x${m.wrapper?.h}  inner=${m.inner.w}x${m.inner.h}  fills=${m.innerFills.width}%w ${m.innerFills.height}%h`);
     }
   });
 
-  test('skeleton and hydrated sizes are within tolerance', async () => {
-    for (const config of WIDGET_CONFIGS) {
-      const skeleton = skeletonDims[config.name];
-      const hydrated = hydratedDims[config.name];
+  test('skeleton vs hydrated wrapper sizes within 80-120%', async () => {
+    console.log('\n=== COMPARISON ===');
+    const failures = [];
 
-      if (!skeleton || !hydrated) {
+    for (const config of WIDGET_CONFIGS) {
+      const sk = skeletonState?.[config.name];
+      const hy = hydratedState?.[config.name];
+      if (!sk?.wrapper || !hy?.wrapper) {
         console.log(`  SKIP ${config.name}: missing measurements`);
         continue;
       }
 
-      const widthRatio = skeleton.width / hydrated.width;
-      const heightRatio = skeleton.height / hydrated.height;
+      const wRatio = sk.wrapper.w / hy.wrapper.w;
+      const hRatio = sk.wrapper.h / hy.wrapper.h;
+      const wOk = wRatio >= MIN_RATIO && wRatio <= MAX_RATIO;
+      const hOk = hRatio >= MIN_RATIO && hRatio <= MAX_RATIO;
 
-      console.log(`  ${config.name}: width ${(widthRatio * 100).toFixed(0)}%, height ${(heightRatio * 100).toFixed(0)}%`);
+      console.log(`  ${wOk && hOk ? 'PASS' : 'FAIL'} ${config.name}: ${sk.wrapper.w}x${sk.wrapper.h} → ${hy.wrapper.w}x${hy.wrapper.h}  (w=${(wRatio*100).toFixed(0)}% h=${(hRatio*100).toFixed(0)}%)`);
 
-      expect(widthRatio, `${config.name} width ratio ${widthRatio.toFixed(2)}`).toBeGreaterThanOrEqual(MIN_WIDTH_RATIO);
-      expect(widthRatio, `${config.name} width ratio ${widthRatio.toFixed(2)}`).toBeLessThanOrEqual(MAX_WIDTH_RATIO);
-      expect(heightRatio, `${config.name} height ratio ${heightRatio.toFixed(2)}`).toBeGreaterThanOrEqual(MIN_HEIGHT_RATIO);
-      expect(heightRatio, `${config.name} height ratio ${heightRatio.toFixed(2)}`).toBeLessThanOrEqual(MAX_HEIGHT_RATIO);
+      if (!wOk) failures.push(`${config.name} width: ${(wRatio*100).toFixed(0)}% (want ${MIN_RATIO*100}-${MAX_RATIO*100}%)`);
+      if (!hOk) failures.push(`${config.name} height: ${(hRatio*100).toFixed(0)}% (want ${MIN_RATIO*100}-${MAX_RATIO*100}%)`);
+    }
+
+    if (failures.length > 0) {
+      console.log(`\n  FAILURES:`);
+      for (const f of failures) console.log(`    - ${f}`);
+    }
+
+    for (const f of failures) {
+      expect.soft(false, f).toBe(true);
     }
   });
 });
