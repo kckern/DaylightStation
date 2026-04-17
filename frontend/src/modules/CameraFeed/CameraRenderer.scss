@@ -1,0 +1,187 @@
+// frontend/src/modules/CameraFeed/CameraRenderer.scss
+.camera-renderer {
+  position: relative;
+  width: 100%;
+  background: #111;
+  border-radius: 8px;
+  overflow: hidden;
+
+  &--crop {
+    aspect-ratio: 16 / 9;
+
+    img, video {
+      object-fit: cover;
+    }
+  }
+
+  &--contain {
+    img, video {
+      object-fit: contain;
+    }
+  }
+
+  img, video {
+    width: 100%;
+    height: 100%;
+    display: block;
+    pointer-events: none;
+  }
+
+  // --- Warmup: snapshot preview ---
+  &__preview {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    filter: blur(8px) grayscale(100%);
+    pointer-events: none;
+
+    &.visible {
+      opacity: 1;
+      animation: camera-warmup 3s ease-out forwards;
+    }
+  }
+
+  // --- Live video crossfade ---
+  &__live {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    transition: opacity 0.8s ease-in;
+    pointer-events: none;
+
+    &.ready {
+      opacity: 1;
+    }
+  }
+
+  // --- Loading / error states ---
+  &__skeleton {
+    position: absolute;
+    inset: 0;
+    background: #151515;
+    animation: camera-skeleton-pulse 2s ease-in-out infinite;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__skeleton-text {
+    color: #555;
+    font-size: 0.85rem;
+    letter-spacing: 0.02em;
+  }
+
+  &__error {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #666;
+    font-size: 0.9rem;
+  }
+
+  // --- Detection badges ---
+  &__badges {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    display: flex;
+    gap: 4px;
+    z-index: 1;
+  }
+
+  &__badge {
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: capitalize;
+    transition: opacity 0.3s;
+
+    &--person { background: rgba(59, 130, 246, 0.4); color: #93bbfd; }
+    &--vehicle { background: rgba(245, 158, 11, 0.4); color: #fbbf24; }
+    &--animal { background: rgba(34, 197, 94, 0.4); color: #86efac; }
+  }
+
+  // --- Interactive chrome (only when interactive) ---
+  &__fullscreen {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 28px;
+    height: 28px;
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    color: rgba(255, 255, 255, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 2;
+    padding: 0;
+    transition: background 0.15s, color 0.15s;
+
+    &:hover {
+      background: rgba(0, 0, 0, 0.75);
+      color: #fff;
+    }
+  }
+
+  &__nav {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    width: 80px;
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    overflow: hidden;
+    cursor: grab;
+    z-index: 2;
+    user-select: none;
+
+    &:active { cursor: grabbing; }
+
+    img {
+      width: 100%;
+      height: auto;
+      object-fit: contain;
+      display: block;
+      pointer-events: none;
+    }
+  }
+
+  &__nav-viewport {
+    position: absolute;
+    border: 1.5px solid rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.08);
+    pointer-events: none;
+  }
+
+  // --- Interactive: drag cursor ---
+  &--interactive {
+    &.camera-renderer--crop {
+      cursor: grab;
+
+      &:active { cursor: grabbing; }
+    }
+  }
+}
+
+@keyframes camera-warmup {
+  0%   { filter: blur(8px) grayscale(100%); }
+  40%  { filter: blur(4px) grayscale(60%); }
+  70%  { filter: blur(2px) grayscale(30%); }
+  100% { filter: blur(0px) grayscale(0%); }
+}
+
+@keyframes camera-skeleton-pulse {
+  0%, 100% { background: #151515; }
+  50% { background: #222; }
+}
