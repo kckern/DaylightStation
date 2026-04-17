@@ -5,6 +5,7 @@ import { PanelRenderer } from './panels/PanelRenderer.jsx';
 import { ScreenDataProvider } from './data/ScreenDataProvider.jsx';
 import { ScreenProvider } from './providers/ScreenProvider.jsx';
 import { ScreenOverlayProvider, useScreenOverlay } from './overlays/ScreenOverlayProvider.jsx';
+import { PipManager, usePip } from './pip/PipManager.jsx';
 import { registerBuiltinWidgets } from './widgets/builtins.js';
 import { getActionBus } from './input/ActionBus.js';
 import { createInputManager } from './input/InputManager.js';
@@ -266,13 +267,15 @@ export function ScreenRenderer({ screenId: propScreenId }) {
         }}>
           <MenuNavigationProvider>
             <ScreenOverlayProvider>
-              <ScreenAutoplay routes={config.routes} />
-              <ScreenActionHandler actions={config.actions} />
-              <ScreenCommandHandler wsConfig={config.websocket} screenId={screenId} />
-              <ScreenSubscriptionHandler subscriptions={config.subscriptions} />
-              <ScreenProvider config={config.layout}>
-                <PanelRenderer />
-              </ScreenProvider>
+              <PipManager config={config.pip}>
+                <ScreenAutoplay routes={config.routes} />
+                <ScreenActionHandler actions={config.actions} />
+                <ScreenCommandHandler wsConfig={config.websocket} screenId={screenId} />
+                <ScreenSubscriptionHandler subscriptions={config.subscriptions} />
+                <ScreenProvider config={config.layout}>
+                  <PanelRenderer />
+                </ScreenProvider>
+              </PipManager>
             </ScreenOverlayProvider>
           </MenuNavigationProvider>
         </div>
