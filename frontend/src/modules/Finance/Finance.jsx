@@ -86,8 +86,30 @@ export function FinanceChart()
 
   if(!monthData || Object.keys(monthData).length === 0) {
       return (
-          <div style={{width: '100%', height: '240px', position: 'relative'}}>
-              <div className="skeleton rect" style={{width: '100%', height: '100%'}}></div>
+          <div className="finance">
+              <table style={{width: "100%", borderCollapse: "collapse"}}>
+                  <thead style={{textAlign: "left"}}>
+                      <tr>
+                          {Array.from({length: 4}).map((_, i) => (
+                              <th key={i} style={{border: "1px solid black", width: "20%", padding: "8px"}}>
+                                  <div className="skeleton text" style={{width: '70%', height: '0.8rem'}}></div>
+                              </th>
+                          ))}
+                      </tr>
+                  </thead>
+                  <tbody>
+                      <tr>
+                          {Array.from({length: 4}).map((_, i) => (
+                              <td key={i} style={{border: "1px solid black", padding: "8px"}}>
+                                  <div className="skeleton text" style={{width: '60%', height: '1.2rem'}}></div>
+                              </td>
+                          ))}
+                      </tr>
+                  </tbody>
+              </table>
+              <div className="budget-block-content">
+                  <div className="skeleton rect" style={{width: '100%', height: '100%'}}></div>
+              </div>
           </div>
       )
   }

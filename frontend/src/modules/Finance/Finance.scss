@@ -1,4 +1,10 @@
 
+.finance {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
 .finance table{
     margin-bottom: 1rem;
     background-color: #FFFFFF22;
@@ -21,6 +27,11 @@
     font-size: 0.8rem;
     font-size: 1.2rem;
     font-weight: bold;
+}
+
+.finance .budget-block-content {
+  flex-grow: 1;
+  position: relative;
 }
 
 .finance .highcharts-xaxis .highcharts-axis-line{
