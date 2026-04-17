@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react';
 import { useScreenAction } from '../input/useScreenAction.js';
 import { useScreenOverlay } from '../overlays/ScreenOverlayProvider.jsx';
+import { usePip } from '../pip/PipManager.jsx';
 import { DaylightAPI } from '../../lib/api.mjs';
 import MenuStack from '../../modules/Menu/MenuStack.jsx';
 import Player from '../../modules/Player/Player.jsx';
@@ -36,6 +37,7 @@ function logger() {
  */
 export function ScreenActionHandler({ actions = {} }) {
   const { showOverlay, dismissOverlay, hasOverlay, escapeInterceptorRef } = useScreenOverlay();
+  const pip = usePip();
   const shaderRef = useRef(null);
   const prevShaderOpacity = useRef(null);
 
@@ -244,6 +246,13 @@ export function ScreenActionHandler({ actions = {} }) {
       }
     }
 
+    // Second priority: dismiss PIP if visible
+    if (pip.hasPip) {
+      logger().debug('escape.pip-dismiss', {});
+      pip.dismiss();
+      return;
+    }
+
     const shaderActive = shaderRef.current && parseFloat(shaderRef.current.style.opacity) > 0;
 
     // Configurable fallback chain from YAML actions.escape
@@ -288,7 +297,7 @@ export function ScreenActionHandler({ actions = {} }) {
     logger().debug('escape.default', { hadShader: false, dismissed: hasOverlay });
     currentMenuRef.current = null;
     dismissOverlay();
-  }, [dismissOverlay, hasOverlay, actions]);
+  }, [dismissOverlay, hasOverlay, actions, pip]);
 
   // --- Overlay: show a registered widget by name ---
   const handleDisplayOverlay = useCallback((payload) => {
@@ -303,7 +312,23 @@ export function ScreenActionHandler({ actions = {} }) {
     showOverlay(Component, {}, { mode: 'fullscreen' });
   }, [showOverlay]);
 
+  // --- PIP promote ---
+  const handlePipPromote = useCallback(() => {
+    if (pip.state !== 'visible') return;
+    logger().info('pip.action.promote');
+    pip.promote();
+  }, [pip]);
+
+  // --- PIP dismiss ---
+  const handlePipDismiss = useCallback(() => {
+    if (!pip.hasPip) return;
+    logger().info('pip.action.dismiss');
+    pip.dismiss();
+  }, [pip]);
+
   useScreenAction('display:overlay', handleDisplayOverlay);
+  useScreenAction('pip:promote', handlePipPromote);
+  useScreenAction('pip:dismiss', handlePipDismiss);
   useScreenAction('menu:open', handleMenuOpen);
   useScreenAction('media:play', handleMediaPlay);
   useScreenAction('media:queue', handleMediaQueue);
