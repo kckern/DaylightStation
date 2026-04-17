@@ -2133,11 +2133,38 @@ export class GovernanceEngine {
 
   _evaluateCycleChallenge(active, ctx) {
     const now = this._now();
+
+    // Pause gate: base requirement failing globally → freeze all cycle timers
+    if (ctx.baseReqSatisfiedGlobal === false) {
+      if (active._pausedAt == null) {
+        active._pausedAt = now;
+        getLogger().info('governance.cycle.paused_by_base_req', {
+          challengeId: active.id,
+          cycleState: active.cycleState,
+          frozenFields: {
+            initElapsedMs: active.initElapsedMs,
+            rampElapsedMs: active.rampElapsedMs,
+            phaseProgressMs: active.phaseProgressMs
+          }
+        });
+      }
+      active._lastCycleTs = now; // consume dt so resume tick computes correctly
+      return;
+    }
+
+    // Resume edge: emit log with duration
+    if (active._pausedAt != null) {
+      const pausedDurationMs = now - active._pausedAt;
+      getLogger().info('governance.cycle.resumed_after_base_req', {
+        challengeId: active.id,
+        cycleState: active.cycleState,
+        pausedDurationMs
+      });
+      active._pausedAt = null;
+    }
+
     const dt = Number.isFinite(active._lastCycleTs) ? now - active._lastCycleTs : 0;
     active._lastCycleTs = now;
-
-    // Pause gate (stub for now — Task 13 implements pause logic)
-    // if (ctx.baseReqSatisfiedGlobal === false) { return; }
 
     if (active.cycleState === 'init') {
       active.initElapsedMs += dt;
