@@ -2158,20 +2158,40 @@ export class GovernanceEngine {
       return null;
     }
     const now = this._now();
-    const filtered = eligible.filter(uid => {
-      const until = this._cycleCooldowns[uid];
-      return !until || until <= now;
-    });
-    if (!filtered.length) {
-      getLogger().info('governance.cycle.start_skipped', {
-        equipment: selection.equipment,
-        reason: 'all_on_cooldown',
-        eligibleCount: eligible.length,
-        onCooldownCount: eligible.length
+    let rider;
+    let riderPool;
+    if (ctx.forceRiderId) {
+      // Admin/manual trigger path: bypass cooldown filter + random pick. Caller is expected
+      // to have verified eligibility, but double-check here defensively.
+      if (!eligible.includes(ctx.forceRiderId)) {
+        getLogger().info('governance.cycle.start_skipped', {
+          equipment: selection.equipment,
+          reason: 'force_rider_not_eligible',
+          forceRiderId: ctx.forceRiderId,
+          eligibleCount: eligible.length,
+          onCooldownCount: 0
+        });
+        return null;
+      }
+      rider = ctx.forceRiderId;
+      riderPool = [ctx.forceRiderId];
+    } else {
+      const filtered = eligible.filter(uid => {
+        const until = this._cycleCooldowns[uid];
+        return !until || until <= now;
       });
-      return null;
+      if (!filtered.length) {
+        getLogger().info('governance.cycle.start_skipped', {
+          equipment: selection.equipment,
+          reason: 'all_on_cooldown',
+          eligibleCount: eligible.length,
+          onCooldownCount: eligible.length
+        });
+        return null;
+      }
+      rider = filtered[Math.floor(this._random() * filtered.length)];
+      riderPool = filtered;
     }
-    const rider = filtered[Math.floor(this._random() * filtered.length)];
     const phases = this._generateCyclePhases(selection);
     const initTotalMs = Math.max(0, Number(selection?.init?.timeAllowedSeconds) || 0) * 1000;
     const active = {
@@ -2209,7 +2229,8 @@ export class GovernanceEngine {
       equipment: selection.equipment,
       rider,
       eligibleUsers: eligible,
-      riderPool: filtered,
+      riderPool,
+      forced: Boolean(ctx.forceRiderId),
       totalPhases: phases.length,
       initTotalMs: active.initTotalMs
     });
@@ -3160,13 +3181,120 @@ export class GovernanceEngine {
 
   }
   
-  // Public method to trigger a challenge manually
+  // Public method to trigger a challenge manually.
+  //
+  // Two shapes are supported:
+  //
+  //   1. Cycle challenge trigger (admin/manual firing):
+  //        { type: 'cycle', selectionId, riderId? }
+  //      - Finds the cycle selection by its normalized ID
+  //        (format `${policyId}_${challengeIdx}_${selectionIdx}`).
+  //      - If `riderId` is provided, forces that rider (bypasses the per-user
+  //        cooldown + random pick in `_startCycleChallenge`). Caller must pass
+  //        a userId that appears in the equipment's `eligible_users`.
+  //      - On success, sets `challengeState.activeChallenge` directly and
+  //        returns `{ success: true, challengeId }`.
+  //      - On failure returns `{ success: false, reason }` where reason is
+  //        one of: 'selection_not_found', 'rider_not_eligible',
+  //        'failed_to_start'.
+  //
+  //   2. Legacy zone/vibration trigger (any other payload shape):
+  //      - Sets `challengeState.forceStartRequest` and kicks a pulse so the
+  //        main `_evaluateChallenges` loop picks it up and schedules/starts a
+  //        challenge the normal way. Returns undefined (unchanged behavior).
   triggerChallenge(payload) {
-      this.challengeState.forceStartRequest = {
-          requestedAt: this._now(),
-          payload: payload ? { ...payload } : null
-      };
+    if (payload && payload.type === 'cycle') {
+      const selectionId = payload.selectionId;
+      // Find the cycle selection by ID in the active, normalized policies.
+      let cycleSelection = null;
+      let matchingPolicyId = null;
+      let matchingPolicyName = null;
+      for (const policy of (this.policies || [])) {
+        for (const challenge of (policy.challenges || [])) {
+          const found = (challenge.selections || []).find(s => s.id === selectionId && s.type === 'cycle');
+          if (found) {
+            cycleSelection = found;
+            matchingPolicyId = policy.id || policy.policyId || null;
+            matchingPolicyName = policy.name || policy.label || null;
+            break;
+          }
+        }
+        if (cycleSelection) break;
+      }
+
+      if (!cycleSelection) {
+        getLogger().info('governance.cycle.triggered_manually', {
+          selectionId: selectionId || null,
+          riderId: payload.riderId || null,
+          force: false,
+          accepted: false,
+          rejectionReason: 'selection_not_found'
+        });
+        return { success: false, reason: 'selection_not_found' };
+      }
+
+      if (payload.riderId) {
+        const eligible = this._getEligibleUsers(cycleSelection.equipment);
+        if (!eligible.includes(payload.riderId)) {
+          getLogger().info('governance.cycle.triggered_manually', {
+            selectionId,
+            riderId: payload.riderId,
+            equipment: cycleSelection.equipment,
+            force: true,
+            accepted: false,
+            rejectionReason: 'rider_not_eligible'
+          });
+          return { success: false, reason: 'rider_not_eligible' };
+        }
+      }
+
+      const active = this._startCycleChallenge(cycleSelection, {
+        forceRiderId: payload.riderId || null,
+        policyId: matchingPolicyId,
+        policyName: matchingPolicyName,
+        configId: null
+      });
+
+      if (!active) {
+        getLogger().info('governance.cycle.triggered_manually', {
+          selectionId,
+          riderId: payload.riderId || null,
+          force: Boolean(payload.riderId),
+          accepted: false,
+          rejectionReason: 'failed_to_start'
+        });
+        return { success: false, reason: 'failed_to_start' };
+      }
+
+      this.challengeState.activeChallenge = active;
+
+      getLogger().info('governance.cycle.triggered_manually', {
+        selectionId,
+        riderId: active.rider,
+        challengeId: active.id,
+        equipment: cycleSelection.equipment,
+        force: Boolean(payload.riderId),
+        accepted: true
+      });
+
+      return { success: true, challengeId: active.id };
+    }
+
+    // Legacy path — zone/vibration and any other non-cycle payloads.
+    this.challengeState.forceStartRequest = {
+      requestedAt: this._now(),
+      payload: payload ? { ...payload } : null
+    };
+    // Wrap pulse so malformed payloads (e.g., missing `.selection`) don't throw
+    // out of the public trigger method — the payload remains queued on
+    // challengeState.forceStartRequest and will be evaluated on the next tick.
+    try {
       this._triggerPulse();
+    } catch (err) {
+      getLogger().warn('governance.triggerChallenge.pulse_error', {
+        error: err?.message || String(err)
+      });
+    }
   }
 
   /**
