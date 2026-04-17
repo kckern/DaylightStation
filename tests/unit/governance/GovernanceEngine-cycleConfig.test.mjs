@@ -117,4 +117,55 @@ describe('GovernanceEngine cycle config parsing', () => {
     });
     expect(policies[0].challenges[0].selections).toHaveLength(0);  // filtered out
   });
+
+  it('rejects malformed numeric fields with silent fallback to defaults', () => {
+    const policies = engine._normalizePolicies({
+      default: {
+        base_requirement: [{ active: 'all' }],
+        challenges: [{
+          interval: [60, 60],
+          selections: [{
+            type: 'cycle',
+            equipment: 'cycle_ace',
+            hi_rpm_range: [50, 90],
+            segment_count: [3, 5],
+            segment_duration_seconds: [20, 45],
+            ramp_seconds: 15,
+            user_cooldown_seconds: 'ten',       // bad
+            lo_rpm_ratio: 'nope',                // bad
+            init: { min_rpm: 'abc' },           // bad
+            boost: { max_total_multiplier: {} }, // bad
+            time_allowed: 999
+          }]
+        }]
+      }
+    });
+    const sel = policies[0].challenges[0].selections[0];
+    expect(sel.userCooldownSeconds).toBe(600);    // default
+    expect(sel.loRpmRatio).toBe(0.75);            // default
+    expect(sel.init.minRpm).toBe(30);             // default
+    expect(sel.boost.maxTotalMultiplier).toBe(3.0); // default
+  });
+
+  it('drops malformed explicit phases', () => {
+    const policies = engine._normalizePolicies({
+      default: {
+        base_requirement: [{ active: 'all' }],
+        challenges: [{
+          interval: [60, 60],
+          selections: [{
+            type: 'cycle',
+            equipment: 'cycle_ace',
+            phases: [
+              { hi_rpm: 60, lo_rpm: 45, ramp_seconds: 15, maintain_seconds: 30 },
+              { hi_rpm: 'garbage' }  // should be dropped
+            ],
+            time_allowed: 999
+          }]
+        }]
+      }
+    });
+    const sel = policies[0].challenges[0].selections[0];
+    expect(sel.explicitPhases).toHaveLength(1);
+  });
 });
