@@ -113,7 +113,10 @@ describe('GovernanceEngine cycle challenge dispatch', () => {
     // dt from tick 4 (103500) to now (106000) = 2500ms > 2000ms at 1x multiplier
     nowValue = 106000;
     tick(engine, nowValue, { zone: 'warm', rpm: 65 });
-    expect(engine.challengeState.activeChallenge?.status).toBe('success');
+    const history = engine.challengeState.challengeHistory;
+    expect(history.at(-1)?.status).toBe('success');
+    expect(history.at(-1)?.type).toBe('cycle');
+    expect(engine.challengeState.activeChallenge).toBeNull();
   });
 
   it('does not dispatch cycle when media is not governed', () => {

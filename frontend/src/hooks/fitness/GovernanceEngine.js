@@ -2754,18 +2754,39 @@ export class GovernanceEngine {
 
           this._evaluateCycleChallenge(challenge, ctx);
 
-          // Success: record history, clear, schedule next (mirrors zone success).
+          // Success: record history, apply cooldowns, clear, schedule next.
           if (challenge.status === 'success') {
             if (!challenge.historyRecorded) {
+              const completedAt = challenge.completedAt || now;
+              const cooldownMs = (challenge.selection?.userCooldownSeconds || 600) * 1000;
+              const ridersUsed = Array.isArray(challenge.ridersUsed)
+                ? [...challenge.ridersUsed]
+                : (challenge.rider ? [challenge.rider] : []);
+              const boostContributors = challenge.boostContributors
+                ? [...challenge.boostContributors]
+                : [];
+              const totalBoostedMs = Math.round(challenge.totalBoostedMs || 0);
+              const totalLockEventsCount = challenge.totalLockEventsCount || 0;
+
+              ridersUsed.forEach(uid => {
+                this._cycleCooldowns[uid] = now + cooldownMs;
+              });
+
               this.challengeState.challengeHistory.push({
                 id: challenge.id,
-                status: 'success',
                 type: 'cycle',
+                status: 'success',
+                startedAt: challenge.startedAt,
+                completedAt,
+                selectionLabel: challenge.selectionLabel || null,
                 equipment: challenge.equipment,
                 rider: challenge.rider,
-                startedAt: challenge.startedAt,
-                completedAt: challenge.completedAt || now,
-                selectionLabel: challenge.selectionLabel || null
+                ridersUsed,
+                totalPhases: challenge.totalPhases,
+                phasesCompleted: challenge.totalPhases,
+                totalLockEventsCount,
+                totalBoostedMs,
+                boostContributors
               });
               if (this.challengeState.challengeHistory.length > 20) {
                 this.challengeState.challengeHistory.splice(
@@ -2774,15 +2795,31 @@ export class GovernanceEngine {
                 );
               }
               challenge.historyRecorded = true;
-            }
-            this.challengeState.videoLocked = false;
 
-            getLogger().info('governance.cycle.completed', {
-              id: challenge.id,
-              equipment: challenge.equipment,
-              rider: challenge.rider,
-              durationMs: (challenge.completedAt || now) - challenge.startedAt
-            });
+              getLogger().info('governance.cycle.completed', {
+                challengeId: challenge.id,
+                status: 'success',
+                rider: challenge.rider,
+                ridersUsed,
+                totalPhases: challenge.totalPhases,
+                phasesCompleted: challenge.totalPhases,
+                totalLockEventsCount,
+                totalBoostedMs,
+                boostContributors,
+                durationMs: completedAt - challenge.startedAt
+              });
+
+              ridersUsed.forEach(uid => {
+                getLogger().info('governance.cycle.cooldown_applied', {
+                  rider: uid,
+                  cooldownUntilMs: this._cycleCooldowns[uid],
+                  trigger: 'success'
+                });
+              });
+            }
+
+            this.challengeState.activeChallenge = null;
+            this.challengeState.videoLocked = false;
 
             const nextDelay = this._pickIntervalMs(challengeConfig.intervalRangeSeconds);
             queueNextChallenge(nextDelay);
@@ -3144,5 +3181,73 @@ export class GovernanceEngine {
       ridersUsed: [...active.ridersUsed]
     });
     return { success: true };
+  }
+
+  /**
+   * Abandon the currently active cycle challenge (e.g. session ending, user
+   * explicitly gives up). Records an 'abandoned' history entry, applies
+   * cooldowns to every rider that participated, clears the active challenge,
+   * and releases the video lock. No-op if there is no active challenge or if
+   * the active challenge is not a cycle.
+   */
+  abandonActiveChallenge() {
+    const active = this.challengeState.activeChallenge;
+    if (!active || active.type !== 'cycle') return;
+    const now = this._now();
+    const cooldownMs = (active.selection?.userCooldownSeconds || 600) * 1000;
+    const ridersUsed = Array.isArray(active.ridersUsed) ? [...active.ridersUsed] : [];
+    const boostContributors = active.boostContributors ? [...active.boostContributors] : [];
+    const totalBoostedMs = Math.round(active.totalBoostedMs || 0);
+    const totalLockEventsCount = active.totalLockEventsCount || 0;
+
+    ridersUsed.forEach(uid => {
+      this._cycleCooldowns[uid] = now + cooldownMs;
+    });
+
+    this.challengeState.challengeHistory.push({
+      id: active.id,
+      type: 'cycle',
+      status: 'abandoned',
+      startedAt: active.startedAt,
+      completedAt: now,
+      selectionLabel: active.selectionLabel || null,
+      equipment: active.equipment,
+      rider: active.rider,
+      ridersUsed,
+      totalPhases: active.totalPhases,
+      phasesCompleted: active.currentPhaseIndex,
+      totalLockEventsCount,
+      totalBoostedMs,
+      boostContributors
+    });
+    if (this.challengeState.challengeHistory.length > 20) {
+      this.challengeState.challengeHistory.splice(
+        0,
+        this.challengeState.challengeHistory.length - 20
+      );
+    }
+
+    getLogger().info('governance.cycle.completed', {
+      challengeId: active.id,
+      status: 'abandoned',
+      rider: active.rider,
+      ridersUsed,
+      totalPhases: active.totalPhases,
+      phasesCompleted: active.currentPhaseIndex,
+      totalLockEventsCount,
+      totalBoostedMs,
+      boostContributors,
+      durationMs: now - active.startedAt
+    });
+    ridersUsed.forEach(uid => {
+      getLogger().info('governance.cycle.cooldown_applied', {
+        rider: uid,
+        cooldownUntilMs: this._cycleCooldowns[uid],
+        trigger: 'abandoned'
+      });
+    });
+
+    this.challengeState.activeChallenge = null;
+    this.challengeState.videoLocked = false;
   }
 }
