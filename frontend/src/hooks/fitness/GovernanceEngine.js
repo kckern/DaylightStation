@@ -2181,7 +2181,38 @@ export class GovernanceEngine {
       return;
     }
 
-    // ramp / maintain / locked branches added in Tasks 10, 11, 12
+    if (active.cycleState === 'ramp') {
+      const phase = active.generatedPhases[active.currentPhaseIndex];
+      active.rampElapsedMs += dt;
+      if (ctx.equipmentRpm >= phase.hiRpm) {
+        active.cycleState = 'maintain';
+        active.phaseProgressMs = 0;
+        getLogger().info('governance.cycle.state_transition', {
+          challengeId: active.id, from: 'ramp', to: 'maintain',
+          currentPhaseIndex: active.currentPhaseIndex, rider: active.rider,
+          currentRpm: ctx.equipmentRpm
+        });
+        return;
+      }
+      if (active.rampElapsedMs >= phase.rampSeconds * 1000) {
+        active.cycleState = 'locked';
+        active.lockReason = 'ramp';
+        active.totalLockEventsCount += 1;
+        getLogger().info('governance.cycle.state_transition', {
+          challengeId: active.id, from: 'ramp', to: 'locked',
+          currentPhaseIndex: active.currentPhaseIndex, rider: active.rider,
+          currentRpm: ctx.equipmentRpm, reason: 'ramp_timeout'
+        });
+        getLogger().info('governance.cycle.locked', {
+          challengeId: active.id, lockReason: 'ramp', phaseIndex: active.currentPhaseIndex,
+          currentRpm: ctx.equipmentRpm, threshold: phase.hiRpm,
+          totalLockEventsCount: active.totalLockEventsCount
+        });
+      }
+      return;
+    }
+
+    // maintain / locked branches added in Tasks 11, 12
   }
 
   _evaluateChallenges(activePolicy, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, evalContext = null) {
