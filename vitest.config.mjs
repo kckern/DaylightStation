@@ -8,6 +8,7 @@ export default {
   resolve: {
     alias: {
       '#frontend': path.resolve(__dirname, 'frontend/src'),
+      '@shared-contracts': path.resolve(__dirname, 'shared/contracts'),
       '@testing-library/react': path.join(frontendNodeModules, '@testing-library/react'),
       '@testing-library/jest-dom': path.join(frontendNodeModules, '@testing-library/jest-dom'),
       'react': path.join(frontendNodeModules, 'react'),
