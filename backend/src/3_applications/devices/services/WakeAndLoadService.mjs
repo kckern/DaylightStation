@@ -11,10 +11,17 @@
  * option on `execute`/`run`; otherwise a UUID is generated and used for every
  * event belonging to that run plus the final result.
  *
+ * Adopt mode (spec §4.7): when invoked with `adoptSnapshot`, the service runs
+ * the normal wake steps (power → verify → volume → prepare) but skips
+ * transcode prewarm and replaces the final `load` step with an
+ * `adopt-snapshot` command dispatched through SessionControlService. Requires
+ * `sessionControlService` injection.
+ *
  * @module applications/devices/services
  */
 
 import { randomUUID } from 'node:crypto';
+import { buildCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
 
 const STEPS = ['power', 'verify', 'volume', 'prepare', 'prewarm', 'load'];
 const VOLUME_TIMEOUT_MS = 3000;
@@ -25,6 +32,7 @@ export class WakeAndLoadService {
   #broadcast;
   #eventBus;
   #prewarmService;
+  #sessionControlService;
   #logger;
 
   /**
@@ -34,6 +42,7 @@ export class WakeAndLoadService {
    * @param {Function} deps.broadcast - broadcastEvent(payload) function
    * @param {Object} [deps.eventBus] - EventBus instance for WS-first delivery (optional)
    * @param {Object} [deps.prewarmService] - TranscodePrewarmService (optional)
+   * @param {Object} [deps.sessionControlService] - ISessionControl for adopt-snapshot (optional)
    * @param {Object} [deps.logger]
    */
   /** @type {Map<string, Promise<Object>>} In-flight wake-and-load per device */
@@ -45,6 +54,7 @@ export class WakeAndLoadService {
     this.#broadcast = deps.broadcast;
     this.#eventBus = deps.eventBus || null;
     this.#prewarmService = deps.prewarmService || null;
+    this.#sessionControlService = deps.sessionControlService || null;
     this.#logger = deps.logger || console;
   }
 
@@ -58,6 +68,9 @@ export class WakeAndLoadService {
    * @param {Object} [options]
    * @param {string} [options.dispatchId] - Correlator surfaced on every wake-progress event.
    *   If omitted, a UUID is generated and shared across all events for this run.
+   * @param {Object} [options.adoptSnapshot] - If present, run the wake steps but replace
+   *   the final `load` step with an `adopt-snapshot` command dispatched via
+   *   SessionControlService (Hand Off / §4.7). Skips transcode prewarm.
    * @returns {Promise<Object>} - Result with per-step outcomes + dispatchId
    */
   async execute(deviceId, query = {}, options = {}) {
@@ -87,10 +100,21 @@ export class WakeAndLoadService {
     const dispatchId = typeof options.dispatchId === 'string' && options.dispatchId.length > 0
       ? options.dispatchId
       : randomUUID();
+    const adoptSnapshot = options.adoptSnapshot ?? null;
+    const isAdopt = !!adoptSnapshot;
     const device = this.#deviceService.get(deviceId);
 
     if (!device) {
       return { ok: false, error: 'Device not found', deviceId, dispatchId };
+    }
+
+    if (isAdopt && !this.#sessionControlService) {
+      return {
+        ok: false,
+        error: 'Session control not configured for adopt-snapshot',
+        deviceId,
+        dispatchId,
+      };
     }
 
     const result = {
@@ -235,8 +259,10 @@ export class WakeAndLoadService {
     }
 
     // --- Step 5: Pre-warm transcode (best-effort) ---
+    // Skipped entirely on adopt path — the snapshot already describes the
+    // intended media; no queue resolution or transcode needed.
     let prewarmResult = null;
-    if (this.#prewarmService && contentQuery.queue) {
+    if (!isAdopt && this.#prewarmService && contentQuery.queue) {
       this.#emitProgress(topic, dispatchId, 'prewarm', 'running');
       this.#logger.info?.('wake-and-load.prewarm.start', { deviceId, dispatchId, queue: contentQuery.queue });
 
@@ -261,14 +287,67 @@ export class WakeAndLoadService {
       }
       this.#emitProgress(topic, dispatchId, 'prewarm', 'done');
     } else {
-      result.steps.prewarm = { skipped: true, reason: contentQuery.queue ? 'no service' : 'no queue' };
+      const reason = isAdopt
+        ? 'adopt-mode'
+        : (contentQuery.queue ? 'no service' : 'no queue');
+      result.steps.prewarm = { skipped: true, reason };
     }
 
-    // --- Step 6: Load Content ---
+    // --- Step 6: Load Content (or Adopt) ---
+    const screenPath = device.screenPath || '/tv';
+
+    if (isAdopt) {
+      this.#emitProgress(topic, dispatchId, 'load', 'running', { method: 'adopt-snapshot' });
+      this.#logger.info?.('wake-and-load.adopt.start', { deviceId, dispatchId });
+
+      const envelope = buildCommandEnvelope({
+        targetDevice: deviceId,
+        command: 'adopt-snapshot',
+        commandId: dispatchId,
+        params: { snapshot: adoptSnapshot, autoplay: true },
+      });
+
+      const adoptResult = await this.#sessionControlService.sendCommand(envelope);
+      if (adoptResult && adoptResult.ok === true) {
+        result.steps.load = { ok: true, method: 'adopt-snapshot', commandId: dispatchId };
+        this.#emitProgress(topic, dispatchId, 'load', 'done', { method: 'adopt-snapshot' });
+        this.#logger.info?.('wake-and-load.adopt.done', { deviceId, dispatchId });
+      } else {
+        const errMsg = adoptResult?.error || 'adopt-snapshot failed';
+        this.#emitProgress(topic, dispatchId, 'load', 'failed', {
+          error: errMsg,
+          code: adoptResult?.code,
+        });
+        this.#logger.error?.('wake-and-load.adopt.failed', {
+          deviceId, dispatchId, error: errMsg, code: adoptResult?.code,
+        });
+        result.steps.load = {
+          ok: false,
+          method: 'adopt-snapshot',
+          error: errMsg,
+          code: adoptResult?.code,
+        };
+        result.error = errMsg;
+        result.failedStep = 'load';
+        result.totalElapsedMs = Date.now() - startTime;
+        return result;
+      }
+
+      // Adopt completed — fall through to the "All steps passed" block.
+      result.ok = true;
+      result.canProceed = true;
+      result.coldWake = coldWake;
+      result.cameraAvailable = cameraAvailable;
+      result.totalElapsedMs = Date.now() - startTime;
+      this.#logger.info?.('wake-and-load.complete', {
+        deviceId, dispatchId, totalElapsedMs: result.totalElapsedMs, mode: 'adopt',
+      });
+      return result;
+    }
+
     this.#emitProgress(topic, dispatchId, 'load', 'running');
     this.#logger.info?.('wake-and-load.load.start', { deviceId, dispatchId, query: contentQuery });
 
-    const screenPath = device.screenPath || '/tv';
     const screenName = screenPath.replace(/^\/screen\//, '');
     const hasContentQuery = Object.keys(contentQuery).length > 0;
 

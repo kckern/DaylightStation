@@ -18,6 +18,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { hasActiveCall, forceEndCall } from '#apps/homeline/CallStateService.mjs';
 import { buildErrorBody, ERROR_CODES } from '#shared-contracts/media/errors.mjs';
 import { buildCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
+import { validateSessionSnapshot } from '#shared-contracts/media/shapes.mjs';
 import {
   TRANSPORT_ACTIONS,
   QUEUE_OPS,
@@ -26,6 +27,27 @@ import {
   isQueueOp,
   isRepeatMode,
 } from '#shared-contracts/media/commands.mjs';
+
+// Idempotency cache for POST /load?mode=adopt — dispatchId → cached result.
+// TTL = 60s; keyed per router-factory instance so tests get fresh state.
+const ADOPT_IDEMPOTENCY_TTL_MS = 60_000;
+
+function stableStringify(value) {
+  // Stable, recursive JSON serialization — sorts object keys so that
+  // logically equal bodies fingerprint the same regardless of JSON key order.
+  const seen = new WeakSet();
+  function walk(v) {
+    if (v === null || typeof v !== 'object') return v;
+    if (seen.has(v)) return null;
+    seen.add(v);
+    if (Array.isArray(v)) return v.map(walk);
+    const keys = Object.keys(v).sort();
+    const out = {};
+    for (const k of keys) out[k] = walk(v[k]);
+    return out;
+  }
+  return JSON.stringify(walk(value));
+}
 
 /**
  * Map a SessionControlService.sendCommand result to an HTTP response.
@@ -640,6 +662,106 @@ export function createDeviceRouter(config) {
     });
 
     res.status(status).json(result);
+  }));
+
+  /**
+   * POST /device/:deviceId/load
+   *
+   * Accepts an adopt-snapshot Hand Off payload (§4.7):
+   *   Body: { mode: 'adopt', snapshot: SessionSnapshot, dispatchId: string }
+   *
+   *   200: { ...wakeResult, adopted: true, dispatchId }
+   *   400: missing/invalid dispatchId or snapshot
+   *   500: WakeAndLoadService not configured
+   *
+   * Idempotency: the same dispatchId with the same body within 60s returns
+   * the cached prior result without re-running the wake orchestration. A
+   * same-dispatchId, different-body request within the window is treated
+   * as a new request (and therefore re-runs); the assumption is that
+   * callers generate fresh dispatchIds per intent.
+   */
+  const adoptIdempotency = new Map(); // dispatchId -> { recordedAt, bodyHash, result }
+
+  function evictExpiredAdopt(now) {
+    for (const [k, v] of adoptIdempotency) {
+      if (now - v.recordedAt > ADOPT_IDEMPOTENCY_TTL_MS) adoptIdempotency.delete(k);
+    }
+  }
+
+  router.post('/:deviceId/load', asyncHandler(async (req, res) => {
+    const { deviceId } = req.params;
+    const body = req.body || {};
+
+    if (body.mode !== 'adopt') {
+      return res.status(400).json(buildErrorBody({
+        error: 'POST /device/:id/load currently only supports mode: "adopt"',
+        code: 'VALIDATION',
+      }));
+    }
+
+    if (!wakeAndLoadService) {
+      return res.status(500).json({ ok: false, error: 'WakeAndLoadService not configured' });
+    }
+
+    const { snapshot, dispatchId } = body;
+
+    if (!isNonEmptyString(dispatchId)) {
+      return res.status(400).json(buildErrorBody({
+        error: 'dispatchId required (non-empty string)',
+        code: 'VALIDATION',
+      }));
+    }
+
+    const validation = validateSessionSnapshot(snapshot);
+    if (!validation.valid) {
+      return res.status(400).json(buildErrorBody({
+        error: `Invalid snapshot: ${validation.errors[0]}`,
+        code: 'VALIDATION',
+        details: validation.errors,
+      }));
+    }
+
+    // Idempotency check.
+    const now = Date.now();
+    evictExpiredAdopt(now);
+    const bodyHash = stableStringify({ snapshot, deviceId });
+    const cached = adoptIdempotency.get(dispatchId);
+    if (cached && cached.bodyHash === bodyHash) {
+      logger.info?.('device.router.load.adopt.idempotent', { deviceId, dispatchId });
+      return res.status(cached.statusCode).json(cached.body);
+    }
+
+    logger.info?.('device.router.load.adopt.start', { deviceId, dispatchId });
+
+    const result = await wakeAndLoadService.execute(
+      deviceId,
+      {},
+      { dispatchId, adoptSnapshot: snapshot },
+    );
+
+    const statusCode = result.error === 'Device not found'
+      ? 404
+      : (result.ok ? 200 : 502);
+
+    const responseBody = {
+      ...result,
+      adopted: result.ok === true,
+      dispatchId,
+    };
+
+    // Cache the response so a retry with the same dispatchId + body replays.
+    adoptIdempotency.set(dispatchId, {
+      recordedAt: now,
+      bodyHash,
+      statusCode,
+      body: responseBody,
+    });
+
+    logger.info?.('device.router.load.adopt.complete', {
+      deviceId, dispatchId, ok: result.ok, failedStep: result.failedStep,
+    });
+
+    return res.status(statusCode).json(responseBody);
   }));
 
   /**

@@ -1659,7 +1659,7 @@ export function createDeviceApiRouter(config) {
  * @returns {{ wakeAndLoadService: WakeAndLoadService }}
  */
 export function createWakeAndLoadService(config) {
-  const { deviceService, haGateway, devicesConfig, broadcast, eventBus, prewarmService, logger = console } = config;
+  const { deviceService, haGateway, devicesConfig, broadcast, eventBus, prewarmService, sessionControlService, logger = console } = config;
 
   // Build sensor map from device config: deviceId -> state_sensor entity
   const sensorMap = {};
@@ -1693,6 +1693,7 @@ export function createWakeAndLoadService(config) {
     broadcast,
     eventBus,
     prewarmService,
+    sessionControlService,
     logger
   });
 
