@@ -18,6 +18,23 @@ vi.mock('./SearchProvider.jsx', () => ({
   useSearchContext: vi.fn(() => scopeCtx),
 }));
 
+const controller = {
+  queue: {
+    playNow: vi.fn(),
+    add: vi.fn(),
+    playNext: vi.fn(),
+    addUpNext: vi.fn(),
+  },
+};
+vi.mock('../session/useSessionController.js', () => ({
+  useSessionController: vi.fn(() => controller),
+}));
+
+const navCtx = { push: vi.fn() };
+vi.mock('../shell/NavProvider.jsx', () => ({
+  useNav: vi.fn(() => navCtx),
+}));
+
 import { SearchBar } from './SearchBar.jsx';
 
 beforeEach(() => {
