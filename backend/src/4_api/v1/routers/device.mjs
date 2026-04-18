@@ -153,11 +153,10 @@ export function createDeviceRouter(config) {
     const device = deviceService.get(deviceId);
 
     if (!device) {
-      return res.status(404).json({
-        ok: false,
+      return res.status(404).json(buildErrorBody({
         error: 'Device not found',
-        deviceId
-      });
+        code: ERROR_CODES.DEVICE_NOT_FOUND,
+      }));
     }
 
     const state = await device.getState();
@@ -553,11 +552,10 @@ export function createDeviceRouter(config) {
     const device = deviceService.get(deviceId);
 
     if (!device) {
-      return res.status(404).json({
-        ok: false,
+      return res.status(404).json(buildErrorBody({
         error: 'Device not found',
-        deviceId
-      });
+        code: ERROR_CODES.DEVICE_NOT_FOUND,
+      }));
     }
 
     logger.info?.('device.router.powerOn', { deviceId, display });
@@ -575,21 +573,21 @@ export function createDeviceRouter(config) {
     const device = deviceService.get(deviceId);
 
     if (!device) {
-      return res.status(404).json({
-        ok: false,
+      return res.status(404).json(buildErrorBody({
         error: 'Device not found',
-        deviceId
-      });
+        code: ERROR_CODES.DEVICE_NOT_FOUND,
+      }));
     }
 
     // Guard: block power-off during active videocall unless ?force=true
     if (hasActiveCall(deviceId) && force !== 'true') {
       logger.info?.('device.router.powerOff.blocked', { deviceId, reason: 'active-videocall' });
-      return res.status(409).json({
-        ok: false,
+      const body = buildErrorBody({
         error: 'Active videocall in progress',
-        hint: 'Use ?force=true to override'
+        code: ERROR_CODES.DEVICE_BUSY,
       });
+      body.hint = 'Use ?force=true to override';
+      return res.status(409).json(body);
     }
 
     if (force === 'true' && hasActiveCall(deviceId)) {
@@ -612,11 +610,10 @@ export function createDeviceRouter(config) {
     const device = deviceService.get(deviceId);
 
     if (!device) {
-      return res.status(404).json({
-        ok: false,
+      return res.status(404).json(buildErrorBody({
         error: 'Device not found',
-        deviceId
-      });
+        code: ERROR_CODES.DEVICE_NOT_FOUND,
+      }));
     }
 
     logger.info?.('device.router.toggle', { deviceId, display });
@@ -640,7 +637,9 @@ export function createDeviceRouter(config) {
     logger.info?.('device.router.load.start', { deviceId, query });
 
     if (!wakeAndLoadService) {
-      return res.status(500).json({ ok: false, error: 'WakeAndLoadService not configured' });
+      return res.status(500).json(buildErrorBody({
+        error: 'WakeAndLoadService not configured',
+      }));
     }
 
     const result = await wakeAndLoadService.execute(deviceId, query);
@@ -761,7 +760,10 @@ export function createDeviceRouter(config) {
 
     const device = deviceService.get(deviceId);
     if (!device) {
-      return res.status(404).json({ ok: false, error: 'Device not found' });
+      return res.status(404).json(buildErrorBody({
+        error: 'Device not found',
+        code: ERROR_CODES.DEVICE_NOT_FOUND,
+      }));
     }
 
     const result = await device.reboot();
@@ -784,7 +786,10 @@ export function createDeviceRouter(config) {
 
     const device = deviceService.get(deviceId);
     if (!device) {
-      return res.status(404).json({ ok: false, error: 'Device not found' });
+      return res.status(404).json(buildErrorBody({
+        error: 'Device not found',
+        code: ERROR_CODES.DEVICE_NOT_FOUND,
+      }));
     }
 
     // Step 1: Try FKB force-stop + restart via ADB
@@ -808,7 +813,11 @@ export function createDeviceRouter(config) {
         await new Promise(r => setTimeout(r, 60_000));
       } catch (err) {
         logger.error?.('device.router.recover.power-cycle.failed', { deviceId, error: err.message });
-        return res.json({ ok: false, error: 'Recovery failed: ' + err.message, method: 'power-cycle' });
+        const body = buildErrorBody({
+          error: 'Recovery failed: ' + err.message,
+        });
+        body.method = 'power-cycle';
+        return res.status(502).json(body);
       }
     } else {
       // Wait for FKB to restart after ADB reboot
@@ -844,19 +853,16 @@ export function createDeviceRouter(config) {
     const device = deviceService.get(deviceId);
 
     if (!device) {
-      return res.status(404).json({
-        ok: false,
+      return res.status(404).json(buildErrorBody({
         error: 'Device not found',
-        deviceId
-      });
+        code: ERROR_CODES.DEVICE_NOT_FOUND,
+      }));
     }
 
     if (!device.hasCapability('volume')) {
-      return res.status(400).json({
-        ok: false,
+      return res.status(400).json(buildErrorBody({
         error: 'Device does not support volume control',
-        deviceId
-      });
+      }));
     }
 
     logger.info?.('device.router.volume', { deviceId, level });
@@ -884,19 +890,16 @@ export function createDeviceRouter(config) {
     const device = deviceService.get(deviceId);
 
     if (!device) {
-      return res.status(404).json({
-        ok: false,
+      return res.status(404).json(buildErrorBody({
         error: 'Device not found',
-        deviceId
-      });
+        code: ERROR_CODES.DEVICE_NOT_FOUND,
+      }));
     }
 
     if (!device.hasCapability('audioDevice')) {
-      return res.status(400).json({
-        ok: false,
+      return res.status(400).json(buildErrorBody({
         error: 'Device does not support audio device control',
-        deviceId
-      });
+      }));
     }
 
     logger.info?.('device.router.audio', { deviceId, audioDevice });
