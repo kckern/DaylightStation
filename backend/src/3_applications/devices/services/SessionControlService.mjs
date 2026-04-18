@@ -179,6 +179,102 @@ export class SessionControlService {
   }
 
   /**
+   * Claim the device for "Take Over" — stops the current session atomically
+   * (spec §4.6). Captures the current snapshot first so the caller can offer
+   * "Restore previous session" later.
+   *
+   * Algorithm:
+   *   1. Read last-known snapshot. If device is offline or unknown, return
+   *      DEVICE_OFFLINE without publishing anything.
+   *   2. Build a transport/stop envelope with the caller-supplied commandId
+   *      and dispatch via `sendCommand`.
+   *   3. On ack success → return `{ ok: true, commandId, snapshot, stoppedAt }`.
+   *   4. On ack failure → propagate the ack error. `lastKnown` is stamped
+   *      on offline-style failures for client context.
+   *
+   * Atomicity note: if the stop command fails at the ack layer, the device
+   * state is (by assumption) unchanged — the service has not modified any
+   * session config. A future enhancement may re-advertise the captured
+   * snapshot as a `reason: 'initial'` state broadcast if telemetry shows
+   * clients getting confused about the "did it or didn't it" case; for v1
+   * we skip that because the client can re-read with GET /session.
+   *
+   * @param {string} deviceId
+   * @param {{ commandId: string }} opts
+   * @returns {Promise<
+   *   | { ok: true,  commandId: string, snapshot: Object, stoppedAt: string }
+   *   | { ok: false, code: string, error: string, lastKnown?: Object }
+   * >}
+   */
+  async claim(deviceId, opts = {}) {
+    const commandId = opts?.commandId;
+    if (typeof commandId !== 'string' || commandId.length === 0) {
+      return {
+        ok: false,
+        code: 'VALIDATION',
+        error: 'commandId required',
+      };
+    }
+
+    // 1. Capture snapshot.
+    const captured = this.getSnapshot(deviceId);
+    if (!captured || captured.online === false) {
+      this.#logger.warn?.('session-control.claim.offline', {
+        deviceId,
+        commandId,
+        hasRecord: !!captured,
+      });
+      return {
+        ok: false,
+        code: ERROR_CODES.DEVICE_OFFLINE,
+        error: 'Device offline or unknown',
+        lastKnown: captured?.snapshot ?? null,
+      };
+    }
+
+    // 2. Dispatch transport/stop.
+    const envelope = {
+      type: 'command',
+      targetDevice: deviceId,
+      command: 'transport',
+      commandId,
+      params: { action: 'stop' },
+      ts: new Date(this.#clock.now()).toISOString(),
+    };
+
+    const ack = await this.sendCommand(envelope);
+    if (!ack || ack.ok !== true) {
+      this.#logger.warn?.('session-control.claim.stop_failed', {
+        deviceId,
+        commandId,
+        code: ack?.code,
+        error: ack?.error,
+      });
+      // Propagate the failure as-is. Ensure lastKnown is present so clients
+      // can still restore the prior state context if they want to retry.
+      const result = {
+        ok: false,
+        code: ack?.code || 'UNKNOWN',
+        error: ack?.error || 'Stop command failed',
+      };
+      if (ack && ack.lastKnown !== undefined) {
+        result.lastKnown = ack.lastKnown;
+      } else {
+        result.lastKnown = captured.snapshot;
+      }
+      return result;
+    }
+
+    this.#logger.info?.('session-control.claim.ok', { deviceId, commandId });
+    return {
+      ok: true,
+      commandId,
+      snapshot: captured.snapshot,
+      stoppedAt: new Date(this.#clock.now()).toISOString(),
+    };
+  }
+
+  /**
    * Wait for the next `device-state:<deviceId>` broadcast whose snapshot
    * satisfies the predicate. Resolves with the snapshot, rejects on timeout.
    *

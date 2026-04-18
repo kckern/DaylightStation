@@ -377,6 +377,103 @@ describe('SessionControlService', () => {
     });
   });
 
+  describe('claim — atomic Take Over', () => {
+    it('happy path: returns { ok, snapshot, stoppedAt } after stop ack success', async () => {
+      // Liveness already returns online + a snapshot in beforeEach.
+      const promise = service.claim('tv-1', { commandId: 'claim-1' });
+      await Promise.resolve();
+
+      // A transport/stop command should have been published.
+      expect(bus.broadcast).toHaveBeenCalledTimes(1);
+      const [topic, envelope] = bus.broadcast.mock.calls[0];
+      expect(topic).toBe(SCREEN_COMMAND_TOPIC('tv-1'));
+      expect(envelope).toMatchObject({
+        type: 'command',
+        targetDevice: 'tv-1',
+        command: 'transport',
+        commandId: 'claim-1',
+        params: { action: 'stop' },
+      });
+      expect(typeof envelope.ts).toBe('string');
+
+      // Deliver the ack.
+      bus._deliver(DEVICE_ACK_TOPIC('tv-1'), {
+        deviceId: 'tv-1',
+        commandId: 'claim-1',
+        ok: true,
+        appliedAt: 'now',
+      });
+
+      const result = await promise;
+      expect(result.ok).toBe(true);
+      expect(result.commandId).toBe('claim-1');
+      expect(result.snapshot).toBeTruthy();
+      expect(result.snapshot.sessionId).toBe('sess-1');
+      expect(typeof result.stoppedAt).toBe('string');
+    });
+
+    it('offline: returns DEVICE_OFFLINE without publishing when liveness says offline', async () => {
+      const offlineSnap = makeSessionSnapshot({ state: 'idle' });
+      liveness = makeLiveness({
+        deviceId: 'tv-1',
+        snapshot: offlineSnap,
+        online: false,
+      });
+      service = new SessionControlService({
+        eventBus: bus,
+        livenessService: liveness,
+        logger,
+        clock,
+      });
+
+      const result = await service.claim('tv-1', { commandId: 'claim-1' });
+
+      expect(result.ok).toBe(false);
+      expect(result.code).toBe(ERROR_CODES.DEVICE_OFFLINE);
+      expect(result.lastKnown).toBe(offlineSnap);
+      expect(bus.broadcast).not.toHaveBeenCalled();
+    });
+
+    it('no record: returns DEVICE_OFFLINE with null lastKnown', async () => {
+      liveness = makeLiveness(null);
+      service = new SessionControlService({
+        eventBus: bus,
+        livenessService: liveness,
+        logger,
+        clock,
+      });
+
+      const result = await service.claim('tv-1', { commandId: 'claim-1' });
+
+      expect(result.ok).toBe(false);
+      expect(result.code).toBe(ERROR_CODES.DEVICE_OFFLINE);
+      expect(result.lastKnown).toBeNull();
+      expect(bus.broadcast).not.toHaveBeenCalled();
+    });
+
+    it('stop ack refusal: propagates DEVICE_REFUSED with lastKnown', async () => {
+      const promise = service.claim('tv-1', { commandId: 'claim-ref' });
+      await Promise.resolve();
+
+      // Simulate timeout → ack never arrives → service returns DEVICE_REFUSED.
+      vi.advanceTimersByTime(5000);
+
+      const result = await promise;
+      expect(result.ok).toBe(false);
+      expect(result.code).toBe(ERROR_CODES.DEVICE_REFUSED);
+      // lastKnown stamped from captured snapshot so client can restore.
+      expect(result.lastKnown).toBeTruthy();
+      expect(result.lastKnown.sessionId).toBe('sess-1');
+    });
+
+    it('rejects missing commandId', async () => {
+      const result = await service.claim('tv-1', {});
+      expect(result.ok).toBe(false);
+      expect(result.code).toBe('VALIDATION');
+      expect(bus.broadcast).not.toHaveBeenCalled();
+    });
+  });
+
   describe('waitForStateChange', () => {
     it('resolves when predicate matches an incoming snapshot', async () => {
       const p = service.waitForStateChange(
