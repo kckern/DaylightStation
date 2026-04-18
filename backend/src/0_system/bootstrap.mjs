@@ -90,6 +90,11 @@ import { HaSensorDisplayPowerCheck } from '#adapters/home-automation/HaSensorDis
 import { DisplayReadinessPolicy, createNoOpDisplayPowerCheck } from '#domains/home-automation/index.mjs';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
 import { TranscodePrewarmService } from '#apps/devices/services/TranscodePrewarmService.mjs';
+import {
+  createDeviceLivenessService as createDeviceLivenessServiceFactory,
+  getDeviceLivenessService as getDeviceLivenessServiceInstance,
+  stopDeviceLivenessService as stopDeviceLivenessServiceInstance,
+} from './bootstrap/deviceLiveness.mjs';
 
 // Device registry imports
 import { DeviceService } from '#apps/devices/services/DeviceService.mjs';
@@ -1064,6 +1069,19 @@ export async function restartEventBus() {
 
   await eventBusInstance.restart();
 }
+
+// =============================================================================
+// DeviceLivenessService Bootstrap
+// =============================================================================
+//
+// Delegates to ./bootstrap/deviceLiveness.mjs so unit tests can exercise the
+// wiring without pulling the full bootstrap module (which eagerly imports
+// every adapter in the app).
+//
+
+export const createDeviceLivenessService = createDeviceLivenessServiceFactory;
+export const getDeviceLivenessService    = getDeviceLivenessServiceInstance;
+export const stopDeviceLivenessService   = stopDeviceLivenessServiceInstance;
 
 // =============================================================================
 // Finance Domain Bootstrap
