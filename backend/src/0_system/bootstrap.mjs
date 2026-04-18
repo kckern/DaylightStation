@@ -1634,6 +1634,7 @@ export function createDeviceApiRouter(config) {
   const {
     deviceServices,
     wakeAndLoadService,
+    sessionControlService,
     configService,
     logger = console
   } = config;
@@ -1641,6 +1642,7 @@ export function createDeviceApiRouter(config) {
   return createDeviceRouter({
     deviceService: deviceServices.deviceService,
     wakeAndLoadService,
+    sessionControlService,
     configService,
     logger
   });
