@@ -1,7 +1,6 @@
 /**
  * Parse URL search params into an autoplay command.
  *
- * Extracted from TVApp.jsx for reuse by MediaApp and other apps.
  * Each app passes its own supported actions list.
  *
  * @param {string} searchString - URL search string (e.g., '?play=hymn:198&volume=50')

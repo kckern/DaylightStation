@@ -8,7 +8,6 @@ import { MenuSkeleton } from "../modules/Menu/MenuSkeleton";
 import { getChildLogger } from "../lib/logging/singleton.js";
 import { useViewportProbe } from "../hooks/useViewportProbe.js";
 import { parseAutoplayParams } from "../lib/parseAutoplayParams.js";
-import { usePlaybackBroadcast } from '../hooks/media/usePlaybackBroadcast.js';
 
 const TV_ACTIONS = ['play', 'queue', 'playlist', 'random', 'display', 'read', 'open', 'app', 'launch', 'list'];
 
@@ -34,22 +33,6 @@ function TVAppContent({ rootMenu, autoplay, appParam, logger }) {
   const { push, pop, currentContent } = useMenuNavigationContext();
   const [autoplayed, setAutoplayed] = useState(false);
   const playerRef = useRef(null);
-
-  const broadcastItem = useMemo(() => {
-    if (!currentContent) return null;
-    if (currentContent.type !== 'player' && currentContent.type !== 'composite') return null;
-    const contentProps = currentContent.props || {};
-    const item = contentProps.play || (contentProps.queue && contentProps.queue[0]) || null;
-    if (!item) return null;
-    return {
-      contentId: item.contentId ?? item.plex ?? item.assetId ?? null,
-      title: item.title ?? item.label ?? item.name ?? null,
-      format: item.format ?? item.mediaType ?? item.type ?? null,
-      thumbnail: item.thumbnail ?? item.image ?? null,
-    };
-  }, [currentContent]);
-
-  usePlaybackBroadcast(playerRef, broadcastItem);
 
   // Handle autoplay on mount
   useEffect(() => {
