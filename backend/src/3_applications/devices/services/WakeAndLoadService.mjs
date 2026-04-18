@@ -6,8 +6,22 @@
  *
  * Steps: power_on -> verify_display -> set_volume -> prepare_content -> load_content
  *
+ * Events published on `homeline:<deviceId>` carry a `dispatchId` correlator
+ * (per technical spec §9.9). Callers may pass their own via the `dispatchId`
+ * option on `execute`/`run`; otherwise a UUID is generated and used for every
+ * event belonging to that run plus the final result.
+ *
+ * Adopt mode (spec §4.7): when invoked with `adoptSnapshot`, the service runs
+ * the normal wake steps (power → verify → volume → prepare) but skips
+ * transcode prewarm and replaces the final `load` step with an
+ * `adopt-snapshot` command dispatched through SessionControlService. Requires
+ * `sessionControlService` injection.
+ *
  * @module applications/devices/services
  */
+
+import { randomUUID } from 'node:crypto';
+import { buildCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
 
 const STEPS = ['power', 'verify', 'volume', 'prepare', 'prewarm', 'load'];
 const VOLUME_TIMEOUT_MS = 3000;
@@ -18,6 +32,7 @@ export class WakeAndLoadService {
   #broadcast;
   #eventBus;
   #prewarmService;
+  #sessionControlService;
   #logger;
 
   /**
@@ -27,6 +42,7 @@ export class WakeAndLoadService {
    * @param {Function} deps.broadcast - broadcastEvent(payload) function
    * @param {Object} [deps.eventBus] - EventBus instance for WS-first delivery (optional)
    * @param {Object} [deps.prewarmService] - TranscodePrewarmService (optional)
+   * @param {Object} [deps.sessionControlService] - ISessionControl for adopt-snapshot (optional)
    * @param {Object} [deps.logger]
    */
   /** @type {Map<string, Promise<Object>>} In-flight wake-and-load per device */
@@ -38,6 +54,7 @@ export class WakeAndLoadService {
     this.#broadcast = deps.broadcast;
     this.#eventBus = deps.eventBus || null;
     this.#prewarmService = deps.prewarmService || null;
+    this.#sessionControlService = deps.sessionControlService || null;
     this.#logger = deps.logger || console;
   }
 
@@ -47,34 +64,63 @@ export class WakeAndLoadService {
    * the first is in-flight returns the first call's result.
    *
    * @param {string} deviceId - Target device
-   * @param {Object} query - Query params for content loading (e.g., { open: 'videocall/id' })
-   * @returns {Promise<Object>} - Result with per-step outcomes
+   * @param {Object} [query] - Query params for content loading (e.g., { open: 'videocall/id' })
+   * @param {Object} [options]
+   * @param {string} [options.dispatchId] - Correlator surfaced on every wake-progress event.
+   *   If omitted, a UUID is generated and shared across all events for this run.
+   * @param {Object} [options.adoptSnapshot] - If present, run the wake steps but replace
+   *   the final `load` step with an `adopt-snapshot` command dispatched via
+   *   SessionControlService (Hand Off / §4.7). Skips transcode prewarm.
+   * @returns {Promise<Object>} - Result with per-step outcomes + dispatchId
    */
-  async execute(deviceId, query = {}) {
+  async execute(deviceId, query = {}, options = {}) {
     if (this.#inflight.has(deviceId)) {
       this.#logger.info?.('wake-and-load.deduplicated', { deviceId });
       return this.#inflight.get(deviceId);
     }
 
-    const promise = this.#executeInner(deviceId, query).finally(() => {
+    const promise = this.#executeInner(deviceId, query, options).finally(() => {
       this.#inflight.delete(deviceId);
     });
     this.#inflight.set(deviceId, promise);
     return promise;
   }
 
-  async #executeInner(deviceId, query = {}) {
+  /**
+   * Alias for `execute` — spec uses "run" terminology (§4.7). Both entry points
+   * share the same dedup cache and option surface.
+   */
+  async run(deviceId, query = {}, options = {}) {
+    return this.execute(deviceId, query, options);
+  }
+
+  async #executeInner(deviceId, query = {}, options = {}) {
     const startTime = Date.now();
     const topic = `homeline:${deviceId}`;
+    const dispatchId = typeof options.dispatchId === 'string' && options.dispatchId.length > 0
+      ? options.dispatchId
+      : randomUUID();
+    const adoptSnapshot = options.adoptSnapshot ?? null;
+    const isAdopt = !!adoptSnapshot;
     const device = this.#deviceService.get(deviceId);
 
     if (!device) {
-      return { ok: false, error: 'Device not found', deviceId };
+      return { ok: false, error: 'Device not found', deviceId, dispatchId };
+    }
+
+    if (isAdopt && !this.#sessionControlService) {
+      return {
+        ok: false,
+        error: 'Session control not configured for adopt-snapshot',
+        deviceId,
+        dispatchId,
+      };
     }
 
     const result = {
       ok: false,
       deviceId,
+      dispatchId,
       steps: {},
       canProceed: false,
       allowOverride: false,
@@ -83,24 +129,24 @@ export class WakeAndLoadService {
     };
 
     // --- Step 1: Power On ---
-    this.#emitProgress(topic, 'power', 'running');
-    this.#logger.info?.('wake-and-load.power.start', { deviceId });
+    this.#emitProgress(topic, dispatchId, 'power', 'running');
+    this.#logger.info?.('wake-and-load.power.start', { deviceId, dispatchId });
 
     const powerResult = await device.powerOn();
     result.steps.power = powerResult;
 
     if (!powerResult.ok) {
-      this.#emitProgress(topic, 'power', 'failed', { error: powerResult.error });
-      this.#logger.error?.('wake-and-load.power.failed', { deviceId, error: powerResult.error });
+      this.#emitProgress(topic, dispatchId, 'power', 'failed', { error: powerResult.error });
+      this.#logger.error?.('wake-and-load.power.failed', { deviceId, dispatchId, error: powerResult.error });
       result.error = powerResult.error;
       result.failedStep = 'power';
       result.totalElapsedMs = Date.now() - startTime;
       return result;
     }
 
-    this.#emitProgress(topic, 'power', 'done', { verified: powerResult.verified });
+    this.#emitProgress(topic, dispatchId, 'power', 'done', { verified: powerResult.verified });
     this.#logger.info?.('wake-and-load.power.done', {
-      deviceId, verified: powerResult.verified, elapsedMs: powerResult.elapsedMs
+      deviceId, dispatchId, verified: powerResult.verified, elapsedMs: powerResult.elapsedMs
     });
 
     // --- Step 2: Verify Display ---
@@ -112,19 +158,19 @@ export class WakeAndLoadService {
 
     if (alreadyVerified || noSensor) {
       const skipReason = alreadyVerified ? 'power_on_verified' : 'no_sensor';
-      this.#emitProgress(topic, 'verify', 'done', { skipped: skipReason });
-      this.#logger.info?.('wake-and-load.verify.skipped', { deviceId, reason: skipReason });
+      this.#emitProgress(topic, dispatchId, 'verify', 'done', { skipped: skipReason });
+      this.#logger.info?.('wake-and-load.verify.skipped', { deviceId, dispatchId, reason: skipReason });
       result.steps.verify = { ready: true, skipped: skipReason };
     } else {
-      this.#emitProgress(topic, 'verify', 'running');
-      this.#logger.info?.('wake-and-load.verify.start', { deviceId });
+      this.#emitProgress(topic, dispatchId, 'verify', 'running');
+      this.#logger.info?.('wake-and-load.verify.start', { deviceId, dispatchId });
 
       const readiness = await this.#readinessPolicy.isReady(deviceId);
       result.steps.verify = readiness;
 
       if (!readiness.ready) {
-        this.#emitProgress(topic, 'verify', 'failed', { reason: readiness.reason });
-        this.#logger.warn?.('wake-and-load.verify.failed', { deviceId, reason: readiness.reason });
+        this.#emitProgress(topic, dispatchId, 'verify', 'failed', { reason: readiness.reason });
+        this.#logger.warn?.('wake-and-load.verify.failed', { deviceId, dispatchId, reason: readiness.reason });
         result.failedStep = 'verify';
         result.error = 'Display did not turn on';
         result.allowOverride = true; // Phone can choose "Connect anyway"
@@ -132,16 +178,16 @@ export class WakeAndLoadService {
         return result;
       }
 
-      this.#emitProgress(topic, 'verify', 'done');
-      this.#logger.info?.('wake-and-load.verify.done', { deviceId });
+      this.#emitProgress(topic, dispatchId, 'verify', 'done');
+      this.#logger.info?.('wake-and-load.verify.done', { deviceId, dispatchId });
     }
 
     // --- Step 3: Set Volume ---
     const volumeLevel = query.volume != null ? Number(query.volume) : device.defaultVolume;
 
     if (volumeLevel != null && device.hasCapability('volume')) {
-      this.#emitProgress(topic, 'volume', 'running');
-      this.#logger.info?.('wake-and-load.volume.start', { deviceId, level: volumeLevel });
+      this.#emitProgress(topic, dispatchId, 'volume', 'running');
+      this.#logger.info?.('wake-and-load.volume.start', { deviceId, dispatchId, level: volumeLevel });
 
       try {
         const volumeResult = await Promise.race([
@@ -149,17 +195,18 @@ export class WakeAndLoadService {
           new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), VOLUME_TIMEOUT_MS))
         ]);
         result.steps.volume = volumeResult;
-        this.#emitProgress(topic, 'volume', 'done', { level: volumeLevel });
-        this.#logger.info?.('wake-and-load.volume.done', { deviceId, level: volumeLevel, ok: volumeResult.ok });
+        this.#emitProgress(topic, dispatchId, 'volume', 'done', { level: volumeLevel });
+        this.#logger.info?.('wake-and-load.volume.done', { deviceId, dispatchId, level: volumeLevel, ok: volumeResult.ok });
       } catch (err) {
         result.steps.volume = { ok: false, error: err.message };
-        this.#emitProgress(topic, 'volume', 'done', { warning: err.message });
-        this.#logger.warn?.('wake-and-load.volume.failed', { deviceId, level: volumeLevel, error: err.message });
+        this.#emitProgress(topic, dispatchId, 'volume', 'done', { warning: err.message });
+        this.#logger.warn?.('wake-and-load.volume.failed', { deviceId, dispatchId, level: volumeLevel, error: err.message });
       }
     } else {
       result.steps.volume = { skipped: true };
       this.#logger.debug?.('wake-and-load.volume.skipped', {
         deviceId,
+        dispatchId,
         reason: volumeLevel == null ? 'no_volume_param' : 'no_volume_capability'
       });
     }
@@ -169,23 +216,23 @@ export class WakeAndLoadService {
     delete contentQuery.volume;
 
     // --- Step 4: Prepare Content ---
-    this.#emitProgress(topic, 'prepare', 'running');
-    this.#logger.info?.('wake-and-load.prepare.start', { deviceId });
+    this.#emitProgress(topic, dispatchId, 'prepare', 'running');
+    this.#logger.info?.('wake-and-load.prepare.start', { deviceId, dispatchId });
 
     const prepResult = await device.prepareForContent();
     result.steps.prepare = prepResult;
 
     if (!prepResult.ok) {
-      this.#emitProgress(topic, 'prepare', 'failed', { error: prepResult.error });
-      this.#logger.error?.('wake-and-load.prepare.failed', { deviceId, error: prepResult.error });
+      this.#emitProgress(topic, dispatchId, 'prepare', 'failed', { error: prepResult.error });
+      this.#logger.error?.('wake-and-load.prepare.failed', { deviceId, dispatchId, error: prepResult.error });
       result.error = prepResult.error;
       result.failedStep = 'prepare';
       result.totalElapsedMs = Date.now() - startTime;
       return result;
     }
 
-    this.#emitProgress(topic, 'prepare', 'done');
-    this.#logger.info?.('wake-and-load.prepare.done', { deviceId });
+    this.#emitProgress(topic, dispatchId, 'prepare', 'done');
+    this.#logger.info?.('wake-and-load.prepare.done', { deviceId, dispatchId });
 
     const coldWake = !!prepResult.coldRestart;
     const cameraAvailable = prepResult.cameraAvailable !== false;
@@ -200,21 +247,24 @@ export class WakeAndLoadService {
       if (postPreparePower.ok && postPreparePower.wasPoweredOff) {
         this.#logger.warn?.('wake-and-load.power.re-verified', {
           deviceId,
+          dispatchId,
           reason: 'tv-powered-off-during-prepare',
           elapsedMs: postPreparePower.elapsedMs
         });
         result.steps.powerRecheck = { restarted: true, elapsedMs: postPreparePower.elapsedMs };
       } else {
-        this.#logger.debug?.('wake-and-load.power.still-on', { deviceId });
+        this.#logger.debug?.('wake-and-load.power.still-on', { deviceId, dispatchId });
         result.steps.powerRecheck = { restarted: false };
       }
     }
 
     // --- Step 5: Pre-warm transcode (best-effort) ---
+    // Skipped entirely on adopt path — the snapshot already describes the
+    // intended media; no queue resolution or transcode needed.
     let prewarmResult = null;
-    if (this.#prewarmService && contentQuery.queue) {
-      this.#emitProgress(topic, 'prewarm', 'running');
-      this.#logger.info?.('wake-and-load.prewarm.start', { deviceId, queue: contentQuery.queue });
+    if (!isAdopt && this.#prewarmService && contentQuery.queue) {
+      this.#emitProgress(topic, dispatchId, 'prewarm', 'running');
+      this.#logger.info?.('wake-and-load.prewarm.start', { deviceId, dispatchId, queue: contentQuery.queue });
 
       try {
         prewarmResult = await this.#prewarmService.prewarm(contentQuery.queue, {
@@ -225,26 +275,79 @@ export class WakeAndLoadService {
           contentQuery.prewarmContentId = prewarmResult.contentId;
           result.steps.prewarm = { ok: true, contentId: prewarmResult.contentId };
           this.#logger.info?.('wake-and-load.prewarm.done', {
-            deviceId, contentId: prewarmResult.contentId, token: prewarmResult.token
+            deviceId, dispatchId, contentId: prewarmResult.contentId, token: prewarmResult.token
           });
         } else {
           result.steps.prewarm = { skipped: true, reason: 'not applicable' };
-          this.#logger.debug?.('wake-and-load.prewarm.skipped', { deviceId, reason: 'not applicable' });
+          this.#logger.debug?.('wake-and-load.prewarm.skipped', { deviceId, dispatchId, reason: 'not applicable' });
         }
       } catch (err) {
         result.steps.prewarm = { ok: false, error: err.message };
-        this.#logger.warn?.('wake-and-load.prewarm.failed', { deviceId, error: err.message });
+        this.#logger.warn?.('wake-and-load.prewarm.failed', { deviceId, dispatchId, error: err.message });
       }
-      this.#emitProgress(topic, 'prewarm', 'done');
+      this.#emitProgress(topic, dispatchId, 'prewarm', 'done');
     } else {
-      result.steps.prewarm = { skipped: true, reason: contentQuery.queue ? 'no service' : 'no queue' };
+      const reason = isAdopt
+        ? 'adopt-mode'
+        : (contentQuery.queue ? 'no service' : 'no queue');
+      result.steps.prewarm = { skipped: true, reason };
     }
 
-    // --- Step 6: Load Content ---
-    this.#emitProgress(topic, 'load', 'running');
-    this.#logger.info?.('wake-and-load.load.start', { deviceId, query: contentQuery });
-
+    // --- Step 6: Load Content (or Adopt) ---
     const screenPath = device.screenPath || '/tv';
+
+    if (isAdopt) {
+      this.#emitProgress(topic, dispatchId, 'load', 'running', { method: 'adopt-snapshot' });
+      this.#logger.info?.('wake-and-load.adopt.start', { deviceId, dispatchId });
+
+      const envelope = buildCommandEnvelope({
+        targetDevice: deviceId,
+        command: 'adopt-snapshot',
+        commandId: dispatchId,
+        params: { snapshot: adoptSnapshot, autoplay: true },
+      });
+
+      const adoptResult = await this.#sessionControlService.sendCommand(envelope);
+      if (adoptResult && adoptResult.ok === true) {
+        result.steps.load = { ok: true, method: 'adopt-snapshot', commandId: dispatchId };
+        this.#emitProgress(topic, dispatchId, 'load', 'done', { method: 'adopt-snapshot' });
+        this.#logger.info?.('wake-and-load.adopt.done', { deviceId, dispatchId });
+      } else {
+        const errMsg = adoptResult?.error || 'adopt-snapshot failed';
+        this.#emitProgress(topic, dispatchId, 'load', 'failed', {
+          error: errMsg,
+          code: adoptResult?.code,
+        });
+        this.#logger.error?.('wake-and-load.adopt.failed', {
+          deviceId, dispatchId, error: errMsg, code: adoptResult?.code,
+        });
+        result.steps.load = {
+          ok: false,
+          method: 'adopt-snapshot',
+          error: errMsg,
+          code: adoptResult?.code,
+        };
+        result.error = errMsg;
+        result.failedStep = 'load';
+        result.totalElapsedMs = Date.now() - startTime;
+        return result;
+      }
+
+      // Adopt completed — fall through to the "All steps passed" block.
+      result.ok = true;
+      result.canProceed = true;
+      result.coldWake = coldWake;
+      result.cameraAvailable = cameraAvailable;
+      result.totalElapsedMs = Date.now() - startTime;
+      this.#logger.info?.('wake-and-load.complete', {
+        deviceId, dispatchId, totalElapsedMs: result.totalElapsedMs, mode: 'adopt',
+      });
+      return result;
+    }
+
+    this.#emitProgress(topic, dispatchId, 'load', 'running');
+    this.#logger.info?.('wake-and-load.load.start', { deviceId, dispatchId, query: contentQuery });
+
     const screenName = screenPath.replace(/^\/screen\//, '');
     const hasContentQuery = Object.keys(contentQuery).length > 0;
 
@@ -256,7 +359,7 @@ export class WakeAndLoadService {
     let wsDelivered = false;
 
     if (warmPrepare) {
-      this.#logger.info?.('wake-and-load.load.ws-check', { deviceId, topic, subscriberCount });
+      this.#logger.info?.('wake-and-load.load.ws-check', { deviceId, dispatchId, topic, subscriberCount });
 
       if (subscriberCount > 0) {
         try {
@@ -271,17 +374,17 @@ export class WakeAndLoadService {
           );
 
           const ackMs = Date.now() - ackStart;
-          this.#logger.info?.('wake-and-load.load.ws-ack', { deviceId, ackMs });
+          this.#logger.info?.('wake-and-load.load.ws-ack', { deviceId, dispatchId, ackMs });
 
           result.steps.load = { ok: true, method: 'websocket', ackMs };
           wsDelivered = true;
-          this.#emitProgress(topic, 'load', 'done', { method: 'websocket' });
+          this.#emitProgress(topic, dispatchId, 'load', 'done', { method: 'websocket' });
         } catch (err) {
-          this.#logger.warn?.('wake-and-load.load.ws-failed', { deviceId, error: err.message });
+          this.#logger.warn?.('wake-and-load.load.ws-failed', { deviceId, dispatchId, error: err.message });
           // Fall through to FKB loadURL
         }
       } else {
-        this.#logger.info?.('wake-and-load.load.ws-skipped', { deviceId, reason: 'no-subscribers' });
+        this.#logger.info?.('wake-and-load.load.ws-skipped', { deviceId, dispatchId, reason: 'no-subscribers' });
       }
     }
 
@@ -299,7 +402,7 @@ export class WakeAndLoadService {
           ...(wsSkipReason ? { wsSkipped: wsSkipReason } : {}),
           ...(warmPrepare && !wsSkipReason ? { method: 'fkb-fallback', wsError: 'ack-timeout' } : {})
         };
-        this.#emitProgress(topic, 'load', 'done');
+        this.#emitProgress(topic, dispatchId, 'load', 'done');
       } else if (hasContentQuery) {
         // --- WebSocket Fallback (existing) ---
         // URL load failed but there IS content to deliver. The screen may already
@@ -307,9 +410,9 @@ export class WakeAndLoadService {
         // command via WebSocket so the screen's useScreenCommands handler can
         // pick it up and trigger playback.
         this.#logger.warn?.('wake-and-load.load.urlFailed-tryingWsFallback', {
-          deviceId, error: loadResult.error, contentQuery
+          deviceId, dispatchId, error: loadResult.error, contentQuery
         });
-        this.#emitProgress(topic, 'load', 'retrying', { method: 'websocket' });
+        this.#emitProgress(topic, dispatchId, 'load', 'retrying', { method: 'websocket' });
 
         // Ensure the screen has time to load the base URL before sending WS
         await new Promise(resolve => setTimeout(resolve, 3000));
@@ -317,7 +420,7 @@ export class WakeAndLoadService {
         // Load the base URL first if it hasn't loaded yet
         const baseLoadResult = await device.loadContent(screenPath, {});
         if (baseLoadResult.ok) {
-          this.#logger.info?.('wake-and-load.load.baseUrlLoaded', { deviceId });
+          this.#logger.info?.('wake-and-load.load.baseUrlLoaded', { deviceId, dispatchId });
         }
 
         // Give the screen framework time to mount and subscribe to WS
@@ -326,7 +429,7 @@ export class WakeAndLoadService {
         // Broadcast content command via WebSocket (targeted to this device)
         this.#broadcast({ targetDevice: deviceId, ...contentQuery });
         this.#logger.info?.('wake-and-load.load.wsFallbackSent', {
-          deviceId, contentQuery
+          deviceId, dispatchId, contentQuery
         });
 
         result.steps.load = {
@@ -335,11 +438,11 @@ export class WakeAndLoadService {
           urlError: loadResult.error,
           note: 'URL load failed; content delivered via WebSocket command'
         };
-        this.#emitProgress(topic, 'load', 'done', { method: 'websocket-fallback' });
+        this.#emitProgress(topic, dispatchId, 'load', 'done', { method: 'websocket-fallback' });
       } else {
         // No content query — just a plain screen load that failed
-        this.#emitProgress(topic, 'load', 'failed', { error: loadResult.error });
-        this.#logger.error?.('wake-and-load.load.failed', { deviceId, error: loadResult.error });
+        this.#emitProgress(topic, dispatchId, 'load', 'failed', { error: loadResult.error });
+        this.#logger.error?.('wake-and-load.load.failed', { deviceId, dispatchId, error: loadResult.error });
         result.error = loadResult.error;
         result.failedStep = 'load';
         result.totalElapsedMs = Date.now() - startTime;
@@ -355,7 +458,7 @@ export class WakeAndLoadService {
     result.totalElapsedMs = Date.now() - startTime;
 
     this.#logger.info?.('wake-and-load.complete', {
-      deviceId, totalElapsedMs: result.totalElapsedMs
+      deviceId, dispatchId, totalElapsedMs: result.totalElapsedMs
     });
 
     return result;
@@ -365,10 +468,11 @@ export class WakeAndLoadService {
    * Emit a progress event over WebSocket.
    * @private
    */
-  #emitProgress(topic, step, status, extra = {}) {
+  #emitProgress(topic, dispatchId, step, status, extra = {}) {
     this.#broadcast({
       topic,
       type: 'wake-progress',
+      dispatchId,
       step,
       status,
       steps: STEPS,

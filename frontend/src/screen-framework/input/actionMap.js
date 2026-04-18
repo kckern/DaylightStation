@@ -10,6 +10,13 @@ const ACTION_MAP = {
   shader:   ()       => ({ action: 'display:shader', payload: {} }),
   sleep:    ()       => ({ action: 'display:sleep', payload: {} }),
   rate:     ()       => ({ action: 'media:rate', payload: {} }),
+  // Structured-envelope media actions — dispatched from useScreenCommands via
+  // WebSocket; no keyboard bindings (not human-input-driven).
+  'media:seek-abs':      (params) => ({ action: 'media:seek-abs', payload: params ?? {} }),
+  'media:seek-rel':      (params) => ({ action: 'media:seek-rel', payload: params ?? {} }),
+  'media:queue-op':      (params) => ({ action: 'media:queue-op', payload: params ?? {} }),
+  'media:config-set':    (params) => ({ action: 'media:config-set', payload: params ?? {} }),
+  'media:adopt-snapshot':(params) => ({ action: 'media:adopt-snapshot', payload: params ?? {} }),
 };
 
 export function translateAction(functionName, params) {

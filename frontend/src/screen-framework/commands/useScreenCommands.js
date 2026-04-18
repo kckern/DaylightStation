@@ -1,7 +1,7 @@
 import { useCallback, useRef } from 'react';
 import { useWebSocketSubscription } from '../../hooks/useWebSocket.js';
 import getLogger from '../../lib/logging/Logger.js';
-import { wsService } from '../../services/WebSocketService.js';
+import { validateCommandEnvelope } from '@shared-contracts/media/envelopes.mjs';
 
 let _logger;
 function logger() {
@@ -9,20 +9,20 @@ function logger() {
   return _logger;
 }
 
-const CONTENT_KEYS = ['contentId', 'play', 'queue', 'plex', 'media', 'playlist', 'files'];
-const LEGACY_COLLECTION_KEYS = ['hymn', 'scripture', 'talk', 'primary', 'poem'];
-
 /**
- * useScreenCommands - YAML-driven WebSocket command handler for screen-framework.
+ * useScreenCommands - structured-envelope WebSocket command handler.
  *
- * Subscribes to WS messages that look like remote commands (menu, reset, playback,
- * content loading) and translates them into ActionBus events.
+ * Consumes CommandEnvelope messages (media foundation §6.2) delivered over
+ * WebSocket and dispatches them onto the ActionBus. Flat-shape legacy messages
+ * (e.g. `{ playback: 'play' }`, `{ play: 'contentId' }`) are rejected — they
+ * were replaced in the Phase 1 hard cutover.
  *
  * Enabled by `websocket.commands: true` in the screen YAML config.
- * Guardrails (blocked topics/sources) are also YAML-driven.
+ * Guardrails (device, blocked_topics, blocked_sources) are YAML-driven.
  *
- * @param {object} wsConfig - The `websocket:` block from screen YAML config
- * @param {object} actionBus - ActionBus instance to emit events on
+ * @param {object} wsConfig   - The `websocket:` block from screen YAML config
+ * @param {object} actionBus  - ActionBus instance to emit events on
+ * @param {string} screenId   - This screen's id; used for targetScreen matching
  */
 export function useScreenCommands(wsConfig, actionBus, screenId) {
   const enabled = wsConfig?.commands === true;
@@ -38,25 +38,30 @@ export function useScreenCommands(wsConfig, actionBus, screenId) {
     const bus = busRef.current;
     if (!bus) return;
 
-    // Device targeting — ignore commands meant for a different device.
-    // If message has targetDevice but this screen has no device configured, reject it
-    // (a targeted command should only be processed by a screen that can verify it's the target).
+    // Ignore playback_state broadcasts — status updates, not commands.
+    if (data.topic === 'playback_state') return;
+
+    // Device targeting — if the envelope names a targetDevice, it must match
+    // this screen's configured device.
     if (data.targetDevice) {
       if (!g.device || data.targetDevice !== g.device) {
-        logger().debug('commands.ignored-target', { targetDevice: data.targetDevice, myDevice: g.device || 'none' });
+        logger().debug('commands.ignored-target', {
+          targetDevice: data.targetDevice,
+          myDevice: g.device || 'none',
+        });
         return;
       }
     }
 
-    // Screen targeting — ignore commands meant for a different screen
+    // Screen targeting — if the envelope names a targetScreen, it must match
+    // this hook's screenId.
     if (data.targetScreen && screenIdRef.current && data.targetScreen !== screenIdRef.current) {
-      logger().debug('commands.ignored-screen', { targetScreen: data.targetScreen, myScreen: screenIdRef.current });
+      logger().debug('commands.ignored-screen', {
+        targetScreen: data.targetScreen,
+        myScreen: screenIdRef.current,
+      });
       return;
     }
-
-    // Ignore playback_state broadcasts — these are status updates, not commands.
-    // Without this, the broadcast loop re-triggers media:play for already-playing content.
-    if (data.topic === 'playback_state') return;
 
     // Guardrails
     if (data.topic && g.blocked_topics?.includes(data.topic)) {
@@ -67,116 +72,110 @@ export function useScreenCommands(wsConfig, actionBus, screenId) {
       logger().debug('commands.blocked-source', { source: data.source });
       return;
     }
-    if (data.equipmentId || data.deviceId || data.data?.vibration !== undefined) {
-      logger().debug('commands.blocked-sensor');
+
+    // Validate the structured envelope — reject anything that isn't a
+    // well-formed CommandEnvelope (§6.2). This explicitly blocks all flat
+    // legacy shapes such as `{ playback: 'play' }` or `{ play: 'plex:1' }`.
+    const validation = validateCommandEnvelope(data);
+    if (!validation.valid) {
+      logger().debug('commands.envelope-invalid', { errors: validation.errors });
       return;
     }
 
-    // Menu
-    if (data.menu) {
-      logger().info('commands.menu', { menuId: data.menu });
-      bus.emit('menu:open', { menuId: data.menu });
+    const { command, commandId, params = {} } = data;
+
+    if (command === 'transport') {
+      const { action, value } = params;
+      logger().info('commands.transport', { commandId, params });
+      if (action === 'seekAbs') {
+        bus.emit('media:seek-abs', { value, commandId });
+        return;
+      }
+      if (action === 'seekRel') {
+        bus.emit('media:seek-rel', { value, commandId });
+        return;
+      }
+      // play | pause | stop | skipNext | skipPrev
+      bus.emit('media:playback', { command: action, commandId });
       return;
     }
 
-    // Reset (dismiss overlay)
-    if (data.action === 'reset') {
-      logger().info('commands.reset');
-      bus.emit('escape', {});
+    if (command === 'queue') {
+      logger().info('commands.queue', { commandId, params });
+      bus.emit('media:queue-op', { ...params, commandId });
       return;
     }
 
-    // Reload (hard page refresh — server sends no-cache on HTML)
-    if (data.action === 'reload') {
-      logger().info('commands.reload');
-      window.location.reload();
-      return;
-    }
-
-    // Sleep (display off)
-    if (data.action === 'sleep') {
-      logger().info('commands.sleep');
-      bus.emit('display:sleep', {});
-      return;
-    }
-
-    // Playback control
-    if (data.playback) {
-      logger().info('commands.playback', { command: data.playback });
-      bus.emit('media:playback', { command: data.playback });
-      return;
-    }
-
-    // Shader control
-    if (data.shader) {
-      logger().info('commands.shader', { shader: data.shader });
-      bus.emit('display:shader', { shader: data.shader });
-      return;
-    }
-
-    // Volume control
-    if (data.volume != null) {
-      logger().info('commands.volume', { level: data.volume });
-      bus.emit('display:volume', { level: data.volume });
-      return;
-    }
-
-    // Playback rate
-    if (data.rate != null) {
-      logger().info('commands.rate', { rate: data.rate });
-      bus.emit('media:rate', { rate: data.rate });
-      return;
-    }
-
-    // Barcode scan
-    if (data.source === 'barcode' && data.contentId) {
-      const actionMap = { queue: 'media:queue', play: 'media:play', open: 'menu:open' };
-      const busAction = actionMap[data.action] || 'media:queue';
-      // Pass through content options (shuffle, shader, volume, continuous)
-      const { action: _a, contentId, source: _s, device: _d, topic: _t, timestamp: _ts, ...contentOptions } = data;
-      logger().info('commands.barcode', { action: busAction, contentId, device: data.device, options: contentOptions });
-      bus.emit(busAction, { contentId, ...contentOptions });
-      if (busAction !== 'menu:open') {
-        wsService.send({ type: 'content-ack', screen: screenIdRef.current, timestamp: Date.now() });
+    if (command === 'config') {
+      const { setting, value } = params;
+      logger().info('commands.config', { commandId, params });
+      bus.emit('media:config-set', { setting, value, commandId });
+      // Back-compat: also emit the legacy UX events so existing visual
+      // consumers (shader, volume display) keep working without rewiring.
+      if (setting === 'shader') {
+        bus.emit('display:shader', { shader: value });
+      } else if (setting === 'volume') {
+        bus.emit('display:volume', { level: value });
       }
       return;
     }
 
-    // Content reference extraction
-    let contentRef = null;
-    for (const key of LEGACY_COLLECTION_KEYS) {
-      if (data[key] != null) { contentRef = `${key}:${data[key]}`; break; }
-    }
-    if (!contentRef) {
-      for (const key of CONTENT_KEYS) {
-        const val = data[key];
-        if (val != null && typeof val !== 'object') { contentRef = String(val); break; }
-      }
-    }
-
-    if (contentRef) {
-      const action = Object.keys(data).includes('queue') ? 'media:queue' : 'media:play';
-      logger().info('commands.content', { action, contentRef });
-      bus.emit(action, { contentId: contentRef });
-      // Acknowledge content delivery so the backend knows WS succeeded
-      wsService.send({ type: 'content-ack', screen: screenIdRef.current, timestamp: Date.now() });
+    if (command === 'adopt-snapshot') {
+      const { snapshot, autoplay } = params;
+      logger().info('commands.adopt-snapshot', { commandId, params });
+      bus.emit('media:adopt-snapshot', {
+        snapshot,
+        autoplay: autoplay ?? true,
+        commandId,
+      });
       return;
     }
 
-    logger().debug('commands.unhandled', { keys: Object.keys(data) });
+    if (command === 'system') {
+      const { action } = params;
+      logger().info('commands.system', { commandId, params });
+      if (action === 'reset') {
+        bus.emit('escape', {});
+        return;
+      }
+      if (action === 'reload') {
+        // Terminal — no ActionBus emit.
+        window.location.reload();
+        return;
+      }
+      if (action === 'sleep') {
+        bus.emit('display:sleep', {});
+        return;
+      }
+      if (action === 'wake') {
+        // `display:wake` is not yet in the actionMap. Emit it anyway — if no
+        // one is listening, ActionBus will just have no handlers. Log debug
+        // so we know this path is exercised.
+        logger().debug('commands.system-wake', { commandId });
+        bus.emit('display:wake', {});
+        return;
+      }
+      // Unhandled system action — validator should have caught this, but be
+      // defensive.
+      logger().warn('commands.system-unhandled', { action });
+      return;
+    }
+
+    // Unreachable if validation is correct.
+    logger().warn('commands.unhandled-kind', { command });
   }, []);
 
-  // Subscribe using a predicate filter - only messages that look like commands.
-  // When disabled (no websocket.commands config), use a reject-all predicate
-  // instead of null — null/undefined means wildcard (receive everything).
+  // Subscribe with a predicate filter — only accept well-formed
+  // CommandEnvelopes. When disabled, reject everything (we can't pass `null`
+  // because that means wildcard = receive everything).
   const REJECT_ALL = () => false;
-  const filter = enabled
-    ? (msg) => !!(msg.menu || msg.action || msg.playback || msg.play || msg.queue
-        || msg.plex || msg.contentId || msg.hymn || msg.scripture || msg.talk
-        || msg.primary || msg.media || msg.playlist || msg.files || msg.poem
-        || msg.source === 'barcode'
-        || msg.shader || msg.volume != null || msg.rate != null)
-    : REJECT_ALL;
+  const ACCEPT_ENVELOPES = (msg) => {
+    if (!msg || typeof msg !== 'object') return false;
+    if (msg.topic === 'playback_state') return true; // swallow in handler
+    if (msg.type !== 'command') return false;
+    return validateCommandEnvelope(msg).valid;
+  };
+  const filter = enabled ? ACCEPT_ENVELOPES : REJECT_ALL;
 
   useWebSocketSubscription(filter, handleMessage, [handleMessage]);
 }
