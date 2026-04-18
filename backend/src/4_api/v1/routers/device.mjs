@@ -16,18 +16,27 @@
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { hasActiveCall, forceEndCall } from '#apps/homeline/CallStateService.mjs';
+import { buildErrorBody, ERROR_CODES } from '#shared-contracts/media/errors.mjs';
 
 /**
  * Create device router
  * @param {Object} config
  * @param {import('#apps/devices/services/DeviceService.mjs').DeviceService} config.deviceService
+ * @param {Object} [config.wakeAndLoadService]
+ * @param {Object} [config.sessionControlService] - ISessionControl implementation
  * @param {import('#system/config/index.mjs').ConfigService} [config.configService]
  * @param {Object} [config.logger]
  * @returns {express.Router}
  */
 export function createDeviceRouter(config) {
   const router = express.Router();
-  const { deviceService, wakeAndLoadService, configService, logger = console } = config;
+  const {
+    deviceService,
+    wakeAndLoadService,
+    sessionControlService,
+    configService,
+    logger = console,
+  } = config;
 
   // ===========================================================================
   // Device Config
@@ -81,6 +90,59 @@ export function createDeviceRouter(config) {
       ok: true,
       ...state
     });
+  }));
+
+  // ===========================================================================
+  // Session
+  // ===========================================================================
+
+  /**
+   * GET /device/:deviceId/session
+   * Return the current SessionSnapshot for a device.
+   *
+   *   - 200 with the SessionSnapshot when online + non-idle
+   *   - 204 (no content) when online + idle + empty queue
+   *   - 503 with { offline: true, lastKnown, lastSeenAt } when offline
+   *   - 404 when no record / unknown device
+   *   - 501 when sessionControlService isn't configured
+   */
+  router.get('/:deviceId/session', asyncHandler(async (req, res) => {
+    if (!sessionControlService) {
+      return res.status(501).json(buildErrorBody({
+        error: 'Session control not configured',
+      }));
+    }
+
+    const { deviceId } = req.params;
+    const result = sessionControlService.getSnapshot(deviceId);
+
+    if (result === null || result === undefined) {
+      return res.status(404).json(buildErrorBody({
+        error: 'Device not found',
+        code: ERROR_CODES.DEVICE_NOT_FOUND,
+      }));
+    }
+
+    if (!result.online) {
+      return res.status(503).json({
+        offline: true,
+        lastKnown: result.snapshot,
+        lastSeenAt: result.lastSeenAt,
+      });
+    }
+
+    const snap = result.snapshot;
+    const isIdle = snap
+      && snap.state === 'idle'
+      && snap.currentItem === null
+      && Array.isArray(snap.queue?.items)
+      && snap.queue.items.length === 0;
+
+    if (isIdle) {
+      return res.status(204).end();
+    }
+
+    return res.status(200).json(snap);
   }));
 
   // ===========================================================================
