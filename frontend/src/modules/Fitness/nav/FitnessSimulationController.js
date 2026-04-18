@@ -18,6 +18,10 @@ export class FitnessSimulationController {
     // Per-device state tracking
     this.deviceState = new Map(); // deviceId -> { beatCount, autoInterval, autoMode, lastHR }
 
+    // Per-equipment state tracking (cycling / cadence)
+    // equipmentId -> { startTime, lastRpm, lastSent, cumulativeRevs }
+    this._equipmentState = new Map();
+
     // Governance override state
     this.governanceOverride = null;
     this.challengeState = null;
@@ -109,6 +113,207 @@ export class FitnessSimulationController {
    */
   getActiveDevices() {
     return this.getDevices().filter(d => d.isActive);
+  }
+
+  // =========================================================================
+  // Equipment / cycling (cadence) simulation
+  // =========================================================================
+
+  /**
+   * Get or create per-equipment state entry
+   */
+  _getOrCreateEquipmentState(equipmentId) {
+    const id = String(equipmentId);
+    if (!this._equipmentState.has(id)) {
+      this._equipmentState.set(id, {
+        startTime: Date.now(),
+        lastRpm: null,
+        lastSent: null,
+        cumulativeRevs: 0
+      });
+    }
+    return this._equipmentState.get(id);
+  }
+
+  /**
+   * Look up the equipment catalog via the session's device router.
+   * Returns an array of raw catalog entries (or []) so callers can filter/map.
+   */
+  _getEquipmentCatalog() {
+    const session = this.getSession?.();
+    const catalog = session?._deviceRouter?.getEquipmentCatalog?.();
+    return Array.isArray(catalog) ? catalog : [];
+  }
+
+  /**
+   * List equipment that carry a cadence device (i.e. simulatable bikes).
+   *
+   * Returns: Array<{
+   *   equipmentId, name, type, cadenceDeviceId, currentRpm,
+   *   isActive, eligibleUsers: string[]
+   * }>
+   */
+  getEquipment() {
+    const catalog = this._getEquipmentCatalog();
+    const now = Date.now();
+    return catalog
+      .filter(entry => entry && entry.cadence != null)
+      .map(entry => {
+        const equipmentId = entry.id;
+        const cadenceDeviceId = String(entry.cadence);
+        const state = this._equipmentState.get(String(equipmentId)) || {};
+        return {
+          equipmentId,
+          name: entry.name || entry.label || equipmentId,
+          type: entry.type || null,
+          cadenceDeviceId,
+          currentRpm: state.lastRpm != null ? state.lastRpm : null,
+          isActive: state.lastRpm != null && state.lastSent != null
+            && (now - state.lastSent) < 5000,
+          eligibleUsers: Array.isArray(entry.eligible_users)
+            ? [...entry.eligible_users]
+            : []
+        };
+      });
+  }
+
+  /**
+   * Build an ANT+ cadence (CAD profile) message in the shape
+   * expected by the WebSocket -> DeviceManager pipeline.
+   */
+  _buildCadenceMessage(cadenceDeviceId, rpm, state) {
+    const now = Date.now();
+    const elapsedSeconds = Math.max(0, (now - (state.startTime || now)) / 1000);
+
+    // Track cumulative revolutions from the last send rather than
+    // recomputing from elapsed time, so RPM changes are honored.
+    if (state.lastSent && state.lastRpm != null) {
+      const deltaSec = (now - state.lastSent) / 1000;
+      state.cumulativeRevs += deltaSec * (state.lastRpm / 60);
+    }
+    state.lastRpm = rpm;
+    state.lastSent = now;
+
+    const numericId = parseInt(cadenceDeviceId, 10) || 0;
+
+    return {
+      topic: 'fitness',
+      source: 'fitness-simulator',
+      type: 'ant',
+      timestamp: new Date().toISOString(),
+      profile: 'CAD',
+      deviceId: String(cadenceDeviceId),
+      dongleIndex: 0,
+      data: {
+        ManId: 255,
+        SerialNumber: numericId,
+        HwVersion: 5,
+        SwVersion: 1,
+        ModelNum: 3,
+        BatteryLevel: 100,
+        BatteryVoltage: 4.2,
+        BatteryStatus: 'Good',
+        DeviceID: numericId,
+        Channel: 1,
+        CadenceEventTime: Math.floor(elapsedSeconds * 1024) % 65536,
+        CumulativeCadenceRevolutionCount: Math.floor(state.cumulativeRevs) % 65536,
+        CalculatedCadence: rpm,
+        OperatingTime: Math.floor(elapsedSeconds * 1000)
+      }
+    };
+  }
+
+  /**
+   * Set the cadence (RPM) for a piece of equipment.
+   * Emits an ANT+ CAD message via the WebSocket transport and updates state.
+   */
+  setRpm(equipmentId, rpm) {
+    if (typeof rpm !== 'number' || !isFinite(rpm) || rpm < 0 || rpm > 200) {
+      return { ok: false, error: `RPM out of range (0-200): ${rpm}`, equipmentId, rpm };
+    }
+
+    const catalog = this._getEquipmentCatalog();
+    const entry = catalog.find(e => e && e.id === equipmentId);
+    if (!entry) {
+      return { ok: false, error: `Unknown equipment: ${equipmentId}`, equipmentId, rpm };
+    }
+    if (entry.cadence == null) {
+      return { ok: false, error: `Equipment has no cadence device: ${equipmentId}`, equipmentId, rpm };
+    }
+
+    const state = this._getOrCreateEquipmentState(equipmentId);
+    const cadenceDeviceId = String(entry.cadence);
+    const message = this._buildCadenceMessage(cadenceDeviceId, Math.round(rpm), state);
+    this.wsService?.send?.(message);
+    this._notifyStateChange();
+    return { ok: true, rpm: Math.round(rpm), equipmentId };
+  }
+
+  /**
+   * Clear equipment state so it registers as inactive.
+   * No message is sent — staleness (>5s since lastSent) will zero it naturally.
+   */
+  stopEquipment(equipmentId) {
+    const state = this._getOrCreateEquipmentState(equipmentId);
+    state.lastRpm = null;
+    state.lastSent = null;
+    this._notifyStateChange();
+    return { ok: true, equipmentId };
+  }
+
+  /**
+   * Trigger a cycle challenge via the live governance engine.
+   * Returns the engine's result verbatim, or an error if the engine isn't reachable.
+   */
+  triggerCycleChallenge({ selectionId, riderId } = {}) {
+    const engine = this.getSession?.()?.governanceEngine;
+    if (!engine?.triggerChallenge) {
+      return { success: false, reason: 'engine_unavailable' };
+    }
+    return engine.triggerChallenge({
+      type: 'cycle',
+      selectionId,
+      ...(riderId ? { riderId } : {})
+    });
+  }
+
+  /**
+   * Swap the rider on an active cycle challenge.
+   */
+  swapCycleRider(riderId, { force = false } = {}) {
+    const engine = this.getSession?.()?.governanceEngine;
+    if (!engine?.swapCycleRider) {
+      return { success: false, reason: 'engine_unavailable' };
+    }
+    return engine.swapCycleRider(riderId, { force });
+  }
+
+  /**
+   * Enumerate cycle selections from the active policy set so the panel
+   * can populate a dropdown.
+   *
+   * Returns: Array<{ id, label, equipment }>
+   */
+  listCycleSelections() {
+    const engine = this.getSession?.()?.governanceEngine;
+    const policies = Array.isArray(engine?.policies) ? engine.policies : [];
+    const out = [];
+    for (const policy of policies) {
+      const challenges = Array.isArray(policy?.challenges) ? policy.challenges : [];
+      for (const challenge of challenges) {
+        const selections = Array.isArray(challenge?.selections) ? challenge.selections : [];
+        for (const sel of selections) {
+          if (sel && sel.type === 'cycle') {
+            out.push({
+              id: sel.id,
+              label: sel.label || sel.id,
+              equipment: sel.equipment || null
+            });
+          }
+        }
+      }
+    }
+    return out;
   }
 
   /**
@@ -761,6 +966,7 @@ export class FitnessSimulationController {
       }
     }
     this.deviceState.clear();
+    this._equipmentState.clear();
 
     // Clear challenge timers
     if (this.challengeState?.timer) {
