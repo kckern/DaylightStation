@@ -65,3 +65,25 @@ describe('LocalSessionProvider', () => {
     expect(screen.getByText(/state=paused;item=plex:99/)).toBeInTheDocument();
   });
 });
+
+describe('LocalSessionProvider — URL + broadcast wiring', () => {
+  it('processes ?play=... on mount', () => {
+    const origDescriptor = Object.getOwnPropertyDescriptor(window, 'location');
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, search: '?play=plex-main:77' },
+      configurable: true,
+    });
+    try {
+      render(
+        <ClientIdentityProvider>
+          <LocalSessionProvider>
+            <Probe />
+          </LocalSessionProvider>
+        </ClientIdentityProvider>
+      );
+      expect(screen.getByText(/item=plex-main:77/)).toBeInTheDocument();
+    } finally {
+      if (origDescriptor) Object.defineProperty(window, 'location', origDescriptor);
+    }
+  });
+});

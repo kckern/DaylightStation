@@ -10,6 +10,22 @@ import {
 } from './persistence.js';
 import { wsService } from '../../../services/WebSocketService.js';
 import mediaLog from '../logging/mediaLog.js';
+import { useSessionController } from './useSessionController.js';
+import { useUrlCommand } from '../externalControl/useUrlCommand.js';
+import { usePlaybackStateBroadcast } from '../shared/usePlaybackStateBroadcast.js';
+
+function UrlAndBroadcastMount() {
+  const { clientId, displayName } = useClientIdentity();
+  const controller = useSessionController('local');
+  useUrlCommand(controller);
+  usePlaybackStateBroadcast({
+    send: (data) => wsService.send(data),
+    clientId,
+    displayName,
+    snapshot: controller.snapshot,
+  });
+  return null;
+}
 
 export function LocalSessionProvider({ children }) {
   const { clientId } = useClientIdentity();
@@ -61,6 +77,7 @@ export function LocalSessionProvider({ children }) {
 
   return (
     <LocalSessionContext.Provider value={value}>
+      <UrlAndBroadcastMount />
       {children}
       <HiddenPlayerMount />
     </LocalSessionContext.Provider>
