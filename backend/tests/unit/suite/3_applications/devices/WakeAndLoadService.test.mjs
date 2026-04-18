@@ -328,4 +328,108 @@ describe('WakeAndLoadService', () => {
     });
   });
 
+  describe('adopt-snapshot mode (§4.7)', () => {
+    function makeSnapshot() {
+      return {
+        sessionId: 'sess-1',
+        state: 'playing',
+        currentItem: { contentId: 'plex/123', format: 'video', title: 'Test' },
+        position: 42,
+        queue: { items: [], currentIndex: -1, upNextCount: 0 },
+        config: { shuffle: false, repeat: 'off', shader: null, volume: 50, playbackRate: 1.0 },
+        meta: { ownerId: 'tv-1', updatedAt: '2026-04-17T00:00:00.000Z' },
+      };
+    }
+
+    it('replaces the load step with an adopt-snapshot command on adopt mode', async () => {
+      const device = createMockDevice({
+        prepareForContent: vi.fn(async () => ({ ok: true, coldRestart: false })),
+        loadContent: vi.fn(async () => { throw new Error('must not be called on adopt'); }),
+      });
+      const sessionControlService = {
+        sendCommand: vi.fn(async () => ({ ok: true, commandId: 'disp-xyz', appliedAt: 'now' })),
+      };
+      const service = new WakeAndLoadService({
+        deviceService: createMockDeviceService(device),
+        readinessPolicy: createMockReadinessPolicy(),
+        broadcast: mockBroadcast,
+        sessionControlService,
+        logger: mockLogger,
+      });
+
+      const snapshot = makeSnapshot();
+      const result = await service.execute(
+        'living-room',
+        {},
+        { dispatchId: 'disp-xyz', adoptSnapshot: snapshot },
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.dispatchId).toBe('disp-xyz');
+      expect(result.steps.load).toMatchObject({ ok: true, method: 'adopt-snapshot', commandId: 'disp-xyz' });
+      expect(device.loadContent).not.toHaveBeenCalled();
+      expect(sessionControlService.sendCommand).toHaveBeenCalledTimes(1);
+      const envelope = sessionControlService.sendCommand.mock.calls[0][0];
+      expect(envelope).toMatchObject({
+        type: 'command',
+        command: 'adopt-snapshot',
+        targetDevice: 'living-room',
+        commandId: 'disp-xyz',
+        params: { snapshot, autoplay: true },
+      });
+
+      const loadProgress = mockBroadcast.mock.calls
+        .map((args) => args[0])
+        .filter((p) => p && p.type === 'wake-progress' && p.step === 'load');
+      expect(loadProgress.some((p) => p.method === 'adopt-snapshot' && p.status === 'done')).toBe(true);
+    });
+
+    it('returns a configuration error when adopt is requested without sessionControlService', async () => {
+      const device = createMockDevice();
+      const service = new WakeAndLoadService({
+        deviceService: createMockDeviceService(device),
+        readinessPolicy: createMockReadinessPolicy(),
+        broadcast: mockBroadcast,
+        logger: mockLogger,
+        // no sessionControlService
+      });
+
+      const result = await service.execute(
+        'living-room',
+        {},
+        { dispatchId: 'd1', adoptSnapshot: makeSnapshot() },
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/adopt-snapshot/);
+      expect(result.dispatchId).toBe('d1');
+    });
+
+    it('propagates an adopt-snapshot ack failure to the result', async () => {
+      const device = createMockDevice({
+        prepareForContent: vi.fn(async () => ({ ok: true, coldRestart: false })),
+      });
+      const sessionControlService = {
+        sendCommand: vi.fn(async () => ({ ok: false, code: 'DEVICE_REFUSED', error: 'refused' })),
+      };
+      const service = new WakeAndLoadService({
+        deviceService: createMockDeviceService(device),
+        readinessPolicy: createMockReadinessPolicy(),
+        broadcast: mockBroadcast,
+        sessionControlService,
+        logger: mockLogger,
+      });
+
+      const result = await service.execute(
+        'living-room',
+        {},
+        { dispatchId: 'd-fail', adoptSnapshot: makeSnapshot() },
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.failedStep).toBe('load');
+      expect(result.steps.load).toMatchObject({ ok: false, method: 'adopt-snapshot', code: 'DEVICE_REFUSED' });
+      expect(result.dispatchId).toBe('d-fail');
+    });
+  });
 });
