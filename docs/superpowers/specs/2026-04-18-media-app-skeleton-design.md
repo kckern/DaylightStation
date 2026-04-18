@@ -615,7 +615,7 @@ Explicitly deferred or handled elsewhere:
 
 Items the plan will resolve:
 
-- `<HomeView>` config source — extended `/media/config` or v1 hardcoded paths?
-- Exact WS client singleton name/API (the existing one at `frontend/src/lib/ws.js` or equivalent is referenced but not yet read into this design).
+- ~~`<HomeView>` config source — extended `/media/config` or v1 hardcoded paths?~~ **Resolved in P2:** uses existing `/api/v1/media/config` `browse` entries as the source of card labels and derived paths. No extended endpoint needed.
+- ~~Exact WS client singleton name/API~~ **Resolved in P1:** `wsService` at `frontend/src/services/WebSocketService.js` (`.send` / `.subscribe(filter, cb) → unsubscribe` / `.onStatusChange`).
 - Whether `PeekProvider` pauses local on entry by default (C5.6 is "MAY" — configurable or implicit?).
 - Exact `client-ack:<clientId>` topic shape — the contract covers `client-control:<clientId>` (inbound) but the ack topic is an implicit pair. Confirm with the contract author or propose an addition.
