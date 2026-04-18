@@ -452,6 +452,46 @@ export function createDeviceRouter(config) {
   }));
 
   /**
+   * POST /device/:deviceId/session/claim
+   * Atomic "Take Over" — stops the current session and captures the
+   * snapshot for later "Restore" (§4.6).
+   *
+   *   Body: { commandId }
+   *
+   *   200: { ok: true, commandId, snapshot, stoppedAt }
+   *   400: missing/invalid commandId
+   *   409: device offline (body has lastKnown)
+   *   502: device refused / ack timeout
+   *   501: session control not configured
+   */
+  router.post('/:deviceId/session/claim', asyncHandler(async (req, res) => {
+    if (!requireSessionControl(sessionControlService, res)) return;
+
+    const { deviceId } = req.params;
+    const { commandId } = req.body || {};
+
+    if (!isNonEmptyString(commandId)) {
+      return res.status(400).json(buildErrorBody({
+        error: 'commandId required (non-empty string)',
+        code: 'VALIDATION',
+      }));
+    }
+
+    logger.info?.('device.router.session.claim', { deviceId, commandId });
+    const result = await sessionControlService.claim(deviceId, { commandId });
+
+    if (result && result.ok === true) {
+      return res.status(200).json({
+        ok: true,
+        commandId: result.commandId ?? commandId,
+        snapshot: result.snapshot,
+        stoppedAt: result.stoppedAt,
+      });
+    }
+    return mapSendCommandResult(result, res);
+  }));
+
+  /**
    * PUT /device/:deviceId/session/volume
    * Set playback volume (§4.5).
    *
