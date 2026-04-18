@@ -243,6 +243,10 @@ Returns a snapshot of the remote surface's current session state.
 **Consistency requirement.** The returned snapshot MUST reflect state
 already broadcast on `device-state:<id>` (§7) within 500ms.
 
+**Verified by:**
+- `backend/tests/unit/suite/4_api/v1/routers/device.session.test.mjs` — all response codes + consistency-with-liveness
+- `backend/tests/unit/suite/4_api/v1/routers/device.session.integration.test.mjs` — end-to-end round trip
+
 ### 4.2 Device history — **Deferred** (see §3, C4.3)
 
 ### 4.3 `POST /api/v1/device/:id/session/transport`
@@ -263,6 +267,11 @@ Drives transport on the remote session.
 
 Retrying with the same `commandId` within 60s MUST be a no-op.
 
+**Verified by:**
+- `backend/tests/unit/suite/4_api/v1/routers/device.session-transport.test.mjs` — request validation + result mapping
+- `backend/tests/unit/suite/4_api/v1/routers/device.session.integration.test.mjs` — envelope dispatch + ack round trip
+- `backend/tests/unit/suite/3_applications/devices/SessionControlService.test.mjs` — idempotency (replay + conflict)
+
 ### 4.4 `POST /api/v1/device/:id/session/queue/:op`
 
 Mutates the remote session's queue.
@@ -281,6 +290,10 @@ Mutates the remote session's queue.
 
 **Response (200):** `{ ok: true, commandId, queue: QueueSnapshot }`
 
+**Verified by:**
+- `backend/tests/unit/suite/4_api/v1/routers/device.session-queue.test.mjs` — per-op validation for all 8 ops
+- `shared/contracts/media/envelopes.test.mjs` — envelope validator accepts each op shape
+
 ### 4.5 Session configuration setters
 
 | Endpoint | Body |
@@ -289,6 +302,9 @@ Mutates the remote session's queue.
 | `PUT /api/v1/device/:id/session/repeat` | `{ mode: "off" \| "one" \| "all", commandId }` |
 | `PUT /api/v1/device/:id/session/shader` | `{ shader: string \| null, commandId }` |
 | `PUT /api/v1/device/:id/session/volume` | `{ level: int 0-100, commandId }` |
+
+**Verified by:**
+- `backend/tests/unit/suite/4_api/v1/routers/device.session-config.test.mjs` — all four PUTs: validation + config envelope shape
 
 ### 4.6 `POST /api/v1/device/:id/session/claim`
 
@@ -310,6 +326,11 @@ Atomic Take Over: stops the remote session and returns its snapshot.
 snapshot is captured *and* the remote is stopped, or neither. On partial
 failure, server MUST restore the remote's prior state and return 502
 (`ATOMICITY_VIOLATION`).
+
+**Verified by:**
+- `backend/tests/unit/suite/4_api/v1/routers/device.session-claim.test.mjs` — router-level validation + mapping
+- `backend/tests/unit/suite/4_api/v1/routers/device.session-claim.integration.test.mjs` — happy + refused paths; liveness cache unchanged on refusal
+- `backend/tests/unit/suite/3_applications/devices/SessionControlService.test.mjs` — claim algorithm (snapshot-then-stop)
 
 ### 4.7 `POST /api/v1/device/:id/load` (amended)
 
@@ -334,6 +355,11 @@ Content-Type: application/json
 
 **Idempotency (C9.8).** Repeating a dispatch with the same `dispatchId`
 within 60s MUST be a no-op.
+
+**Verified by:**
+- `backend/tests/unit/suite/4_api/v1/routers/device.load-adopt.test.mjs` — adopt body validation + idempotency-conflict mapping
+- `backend/tests/unit/suite/3_applications/devices/DispatchIdempotencyService.test.mjs` — 60s TTL cache semantics
+- `backend/tests/unit/suite/3_applications/devices/WakeAndLoadService.test.mjs` — adoptSnapshot wake path
 
 ### 4.8 Multi-target dispatch
 
@@ -382,6 +408,12 @@ shape consumed by `useScreenCommands`):
 - `commandId` is required. The device MUST ack every valid command on
   `device-ack:<deviceId>`.
 - Retried commands with the same `commandId` within 60s MUST be idempotent.
+
+**Verified by:**
+- `shared/contracts/media/envelopes.test.mjs` — `validateCommandEnvelope` covers all five command kinds + per-kind param validation
+- `shared/contracts/media/commands.test.mjs` — enum guards for transport/queue/config/system actions
+- `frontend/src/screen-framework/publishers/useCommandAckPublisher.test.jsx` — device ack publication on ActionBus completion
+- `frontend/src/screen-framework/commands/useScreenCommands.test.jsx` — structured envelope consumer
 
 #### 6.2.1 `command: "transport"`
 ```json
@@ -442,6 +474,11 @@ into the envelope.
 Acks MUST be sent within 5 seconds of receiving the command. For long
 operations, ack indicates acceptance; completion observable via state feed.
 
+**Verified by:**
+- `shared/contracts/media/envelopes.test.mjs` — `buildCommandAck` + `validateCommandAck`
+- `frontend/src/screen-framework/publishers/useCommandAckPublisher.test.jsx` — ActionBus completion → ack emission
+- `backend/tests/unit/suite/3_applications/devices/SessionControlService.test.mjs` — ack timeout → DEVICE_REFUSED
+
 ### 6.4 Published topic — device state
 
 Hybrid model:
@@ -462,6 +499,13 @@ Payload:
   "ts": "<ISO-8601>"
 }
 ```
+
+**Verified by:**
+- `shared/contracts/media/envelopes.test.mjs` — `buildDeviceStateBroadcast` + `validateDeviceStateBroadcast`
+- `frontend/src/screen-framework/publishers/useSessionStatePublisher.test.jsx` — reactive + heartbeat + debounce
+- `frontend/src/screen-framework/publishers/SessionSource.test.js` — source factory contract
+- `backend/tests/unit/suite/3_applications/devices/DeviceLivenessService.test.mjs` — last-snapshot cache + replay on subscribe
+- `backend/tests/unit/suite/3_applications/devices/DeviceLiveness.integration.test.mjs` — end-to-end reason:offline + reason:initial synthesis
 
 ### 6.5 Required screen-framework additions
 
@@ -500,6 +544,11 @@ Unknown fields MUST be ignored.
 | `playback_state` | broadcast | controller app | `PlaybackStateBroadcast` | Local (browser) session heartbeat. |
 | `client-control:<clientId>` | backend → controller app | external systems | `CommandEnvelope` (§6.2) targeted at `clientId` | Inbound commands targeting this browser's local session (C8.4). |
 
+**Verified by:**
+- `shared/contracts/media/topics.test.mjs` — topic constructors + `parseDeviceTopic`
+- `backend/tests/unit/suite/0_system/eventbus/WebSocketEventBus.routing.test.mjs` — per-device topic routing
+- `backend/tests/unit/suite/0_system/eventbus/WebSocketEventBus.clientControl.test.mjs` — identity-scoped client-control routing
+
 ### 7.3 Subscription lifecycle
 
 - Controller subscribes to `device-state:<id>` and `device-ack:<id>` for
@@ -515,6 +564,11 @@ Backend tracks heartbeats per device. When a device misses heartbeats
 >15 seconds, backend emits one synthesized `device-state:<id>` message with
 `reason: "offline"` and the last known snapshot. On reconnect, backend
 emits `reason: "initial"` with a fresh snapshot.
+
+**Verified by:**
+- `backend/tests/unit/suite/3_applications/devices/DeviceLivenessService.test.mjs` — timer-driven offline + re-online synthesis (unit)
+- `backend/tests/unit/suite/3_applications/devices/DeviceLiveness.integration.test.mjs` — end-to-end against the real event bus
+- `backend/tests/unit/suite/0_system/eventbus/WebSocketEventBus.routing.test.mjs` — last-snapshot replay on subscribe
 
 ---
 
@@ -541,6 +595,11 @@ by it.
 ---
 
 ## 9. Canonical Data Shapes
+
+**Verified by:**
+- `shared/contracts/media/shapes.test.mjs` — validators for `PlayableItem` (§9.1), `SessionSnapshot` (§9.2), `QueueSnapshot` (§9.3), `QueueItem` (§9.4)
+- `shared/contracts/media/envelopes.test.mjs` — validators for `DeviceStateBroadcast` (§9.7), `CommandAck` (§9.8), `PlaybackStateBroadcast` (§9.10), `CommandEnvelope` (§9.11)
+- `shared/contracts/media/commands.test.mjs` — enum membership for session state + repeat mode + command kinds
 
 ### 9.1 `PlayableItem`
 Shape returned by `GET /api/v1/play/:source/*`. Authoritative definition:
@@ -725,6 +784,13 @@ All diagnostic output via `frontend/src/lib/logging/`. Event names use
 dot-delimited namespaces. Every event SHOULD include `clientId`,
 `sessionId`, and (when relevant) `deviceId` / `dispatchId` / `commandId`.
 
+> Backend-side events are not asserted by tests (they are a convention).
+> The backing services that emit them are covered by the tests linked
+> under the corresponding §4/§6/§7 subsections — notably
+> `SessionControlService.test.mjs` (peek.command-ack equivalents),
+> `DeviceLivenessService.test.mjs` (ws.stale equivalents), and
+> `WakeAndLoadService.test.mjs` (dispatch.step / dispatch.succeeded).
+
 ### 10.1 Required events
 
 | Event | Level | Emitted when | Key fields |
@@ -848,6 +914,11 @@ All 4xx/5xx JSON responses from the APIs defined in §2 and §4 MUST use:
 | `WAKE_FAILED` | 502 | Dispatch failed at a step; `failedStep` identifies which. |
 | `ATOMICITY_VIOLATION` | 502 | `claim` or atomic op failed to restore state. |
 | `IDEMPOTENCY_CONFLICT` | 409 | Repeated command ID with different payload. |
+
+**Verified by:**
+- `shared/contracts/media/errors.test.mjs` — `ERROR_CODES` frozen + `buildErrorBody` shape
+- `backend/tests/unit/suite/4_api/v1/routers/device.session-transport.test.mjs` — DEVICE_OFFLINE (409), DEVICE_REFUSED (502) mapping
+- `backend/tests/unit/suite/4_api/v1/routers/device.load-adopt.test.mjs` — IDEMPOTENCY_CONFLICT (409) mapping
 
 ### 12.3 App behavior
 
