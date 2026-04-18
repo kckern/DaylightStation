@@ -250,4 +250,82 @@ describe('WakeAndLoadService', () => {
       expect(device.loadContent).toHaveBeenCalled();
     });
   });
+
+  describe('dispatchId propagation (§9.9)', () => {
+    it('uses the provided dispatchId on every wake-progress event and on the result', async () => {
+      const device = createMockDevice();
+      const service = new WakeAndLoadService({
+        deviceService: createMockDeviceService(device),
+        readinessPolicy: createMockReadinessPolicy(),
+        broadcast: mockBroadcast,
+        logger: mockLogger,
+      });
+
+      const customId = 'disp-abc-123';
+      const result = await service.execute(
+        'living-room',
+        { queue: 'morning-program' },
+        { dispatchId: customId },
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.dispatchId).toBe(customId);
+
+      const progressCalls = mockBroadcast.mock.calls
+        .map((args) => args[0])
+        .filter((p) => p && p.type === 'wake-progress');
+
+      expect(progressCalls.length).toBeGreaterThan(0);
+      for (const call of progressCalls) {
+        expect(call.dispatchId).toBe(customId);
+      }
+    });
+
+    it('generates a UUID when no dispatchId is provided, and reuses it for all events', async () => {
+      const device = createMockDevice();
+      const service = new WakeAndLoadService({
+        deviceService: createMockDeviceService(device),
+        readinessPolicy: createMockReadinessPolicy(),
+        broadcast: mockBroadcast,
+        logger: mockLogger,
+      });
+
+      const result = await service.execute('living-room', { queue: 'morning-program' });
+
+      expect(result.ok).toBe(true);
+      expect(typeof result.dispatchId).toBe('string');
+      expect(result.dispatchId.length).toBeGreaterThan(0);
+
+      const progressCalls = mockBroadcast.mock.calls
+        .map((args) => args[0])
+        .filter((p) => p && p.type === 'wake-progress');
+
+      expect(progressCalls.length).toBeGreaterThan(0);
+      const first = progressCalls[0].dispatchId;
+      for (const call of progressCalls) {
+        expect(call.dispatchId).toBe(first);
+      }
+      expect(first).toBe(result.dispatchId);
+    });
+
+    it('exposes run() as an alias for execute()', async () => {
+      const device = createMockDevice();
+      const service = new WakeAndLoadService({
+        deviceService: createMockDeviceService(device),
+        readinessPolicy: createMockReadinessPolicy(),
+        broadcast: mockBroadcast,
+        logger: mockLogger,
+      });
+
+      const result = await service.run(
+        'living-room',
+        { queue: 'morning-program' },
+        { dispatchId: 'run-path' },
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.dispatchId).toBe('run-path');
+    });
+  });
+
 });
