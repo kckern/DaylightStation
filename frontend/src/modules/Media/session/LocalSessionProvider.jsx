@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect } from 'react';
+import React, { createContext, useContext, useMemo, useEffect, useState } from 'react';
 import { LocalSessionContext } from './LocalSessionContext.js';
 import { LocalSessionAdapter } from './LocalSessionAdapter.js';
 import { useClientIdentity } from './ClientIdentityProvider.jsx';
@@ -13,6 +13,13 @@ import mediaLog from '../logging/mediaLog.js';
 import { useSessionController } from './useSessionController.js';
 import { useUrlCommand } from '../externalControl/useUrlCommand.js';
 import { usePlaybackStateBroadcast } from '../shared/usePlaybackStateBroadcast.js';
+
+export const PlayerHostContext = createContext(null);
+const PlayerHostSetterContext = createContext(() => {});
+
+export function usePlayerHostSetter() {
+  return useContext(PlayerHostSetterContext);
+}
 
 function UrlAndBroadcastMount() {
   const { clientId, displayName } = useClientIdentity();
@@ -73,13 +80,19 @@ export function LocalSessionProvider({ children }) {
     };
   }, [adapter, clientId]);
 
+  const [playerHostEl, setPlayerHostEl] = useState(null);
+
   const value = useMemo(() => ({ adapter }), [adapter]);
 
   return (
     <LocalSessionContext.Provider value={value}>
-      <UrlAndBroadcastMount />
-      {children}
-      <HiddenPlayerMount />
+      <PlayerHostContext.Provider value={playerHostEl}>
+        <PlayerHostSetterContext.Provider value={setPlayerHostEl}>
+          <UrlAndBroadcastMount />
+          {children}
+          <HiddenPlayerMount />
+        </PlayerHostSetterContext.Provider>
+      </PlayerHostContext.Provider>
     </LocalSessionContext.Provider>
   );
 }

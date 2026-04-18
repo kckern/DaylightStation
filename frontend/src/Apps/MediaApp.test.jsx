@@ -9,6 +9,14 @@ vi.mock('../services/WebSocketService.js', () => ({
   wsService: { send: vi.fn(), subscribe: vi.fn(() => () => {}), onStatusChange: vi.fn(() => () => {}) },
   default: { send: vi.fn(), subscribe: vi.fn(() => () => {}), onStatusChange: vi.fn(() => () => {}) },
 }));
+vi.mock('../lib/api.mjs', () => ({
+  DaylightAPI: vi.fn(async (path) => {
+    if (path === 'api/v1/media/config') {
+      return { browse: [], searchScopes: [{ label: 'All', key: 'all', params: 'take=50' }] };
+    }
+    return {};
+  }),
+}));
 
 import MediaApp from './MediaApp.jsx';
 

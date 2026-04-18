@@ -1,6 +1,8 @@
 import React, { useContext, useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import Player from '../../Player/Player.jsx';
 import { LocalSessionContext } from './LocalSessionContext.js';
+import { PlayerHostContext } from './LocalSessionProvider.jsx';
 
 const POSITION_PERSIST_INTERVAL_S = 5; // Spec §11.3: persist position every ≥5s while playing
 
@@ -70,13 +72,16 @@ export function HiddenPlayerMount() {
     return { ...currentItem };
   }, [currentItem]);
 
+  const hostEl = useContext(PlayerHostContext);
+
   if (!playProp) return null;
 
-  return (
+  const tree = (
     <div className="media-player-host">
       <Player play={playProp} clear={onClear} onProgress={onProgress} />
     </div>
   );
+  return hostEl ? createPortal(tree, hostEl) : tree;
 }
 
 export default HiddenPlayerMount;

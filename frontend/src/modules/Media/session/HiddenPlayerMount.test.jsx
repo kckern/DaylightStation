@@ -133,3 +133,44 @@ describe('HiddenPlayerMount', () => {
     expect(adapter.onPlayerStateChange).toHaveBeenCalledWith('playing');
   });
 });
+
+import { PlayerHostContext } from './LocalSessionProvider.jsx';
+
+describe('HiddenPlayerMount — portal host', () => {
+  it('renders into the provided host element when context supplies one', () => {
+    playerPropsLog.length = 0;
+    const adapter = mockAdapter({
+      currentItem: { contentId: 'plex:1', format: 'video' },
+      state: 'loading',
+    });
+    const host = document.createElement('div');
+    host.setAttribute('data-testid', 'custom-host');
+    document.body.appendChild(host);
+
+    render(
+      <LocalSessionContext.Provider value={{ adapter }}>
+        <PlayerHostContext.Provider value={host}>
+          <HiddenPlayerMount />
+        </PlayerHostContext.Provider>
+      </LocalSessionContext.Provider>
+    );
+    expect(host.querySelector('[data-testid="player-stub"]')).not.toBeNull();
+    document.body.removeChild(host);
+  });
+
+  it('renders inline when host is null', () => {
+    playerPropsLog.length = 0;
+    const adapter = mockAdapter({
+      currentItem: { contentId: 'plex:1', format: 'video' },
+      state: 'loading',
+    });
+    const { container } = render(
+      <LocalSessionContext.Provider value={{ adapter }}>
+        <PlayerHostContext.Provider value={null}>
+          <HiddenPlayerMount />
+        </PlayerHostContext.Provider>
+      </LocalSessionContext.Provider>
+    );
+    expect(container.querySelector('[data-testid="player-stub"]')).not.toBeNull();
+  });
+});
