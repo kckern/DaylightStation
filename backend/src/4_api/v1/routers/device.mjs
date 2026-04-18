@@ -27,27 +27,10 @@ import {
   isQueueOp,
   isRepeatMode,
 } from '#shared-contracts/media/commands.mjs';
-
-// Idempotency cache for POST /load?mode=adopt — dispatchId → cached result.
-// TTL = 60s; keyed per router-factory instance so tests get fresh state.
-const ADOPT_IDEMPOTENCY_TTL_MS = 60_000;
-
-function stableStringify(value) {
-  // Stable, recursive JSON serialization — sorts object keys so that
-  // logically equal bodies fingerprint the same regardless of JSON key order.
-  const seen = new WeakSet();
-  function walk(v) {
-    if (v === null || typeof v !== 'object') return v;
-    if (seen.has(v)) return null;
-    seen.add(v);
-    if (Array.isArray(v)) return v.map(walk);
-    const keys = Object.keys(v).sort();
-    const out = {};
-    for (const k of keys) out[k] = walk(v[k]);
-    return out;
-  }
-  return JSON.stringify(walk(value));
-}
+import {
+  DispatchIdempotencyService,
+  IdempotencyConflictError,
+} from '#apps/devices/services/DispatchIdempotencyService.mjs';
 
 /**
  * Map a SessionControlService.sendCommand result to an HTTP response.
@@ -110,6 +93,9 @@ function isNonEmptyString(v) {
  * @param {import('#apps/devices/services/DeviceService.mjs').DeviceService} config.deviceService
  * @param {Object} [config.wakeAndLoadService]
  * @param {Object} [config.sessionControlService] - ISessionControl implementation
+ * @param {import('#apps/devices/services/DispatchIdempotencyService.mjs').DispatchIdempotencyService} [config.dispatchIdempotencyService]
+ *   - Dispatch-level idempotency cache. One is constructed per router instance
+ *     if not injected (useful for tests; bootstrap should inject a shared one).
  * @param {import('#system/config/index.mjs').ConfigService} [config.configService]
  * @param {Object} [config.logger]
  * @returns {express.Router}
@@ -120,6 +106,9 @@ export function createDeviceRouter(config) {
     deviceService,
     wakeAndLoadService,
     sessionControlService,
+    dispatchIdempotencyService = new DispatchIdempotencyService({
+      logger: config?.logger || undefined,
+    }),
     configService,
     logger = console,
   } = config;
@@ -672,22 +661,15 @@ export function createDeviceRouter(config) {
    *
    *   200: { ...wakeResult, adopted: true, dispatchId }
    *   400: missing/invalid dispatchId or snapshot
+   *   409: same dispatchId previously observed with a different body (conflict)
    *   500: WakeAndLoadService not configured
    *
    * Idempotency: the same dispatchId with the same body within 60s returns
    * the cached prior result without re-running the wake orchestration. A
-   * same-dispatchId, different-body request within the window is treated
-   * as a new request (and therefore re-runs); the assumption is that
-   * callers generate fresh dispatchIds per intent.
+   * same-dispatchId, different-body request within the window is a
+   * conflict (IDEMPOTENCY_CONFLICT). Callers generate fresh dispatchIds
+   * per intent. Delegated to DispatchIdempotencyService.
    */
-  const adoptIdempotency = new Map(); // dispatchId -> { recordedAt, bodyHash, result }
-
-  function evictExpiredAdopt(now) {
-    for (const [k, v] of adoptIdempotency) {
-      if (now - v.recordedAt > ADOPT_IDEMPOTENCY_TTL_MS) adoptIdempotency.delete(k);
-    }
-  }
-
   router.post('/:deviceId/load', asyncHandler(async (req, res) => {
     const { deviceId } = req.params;
     const body = req.body || {};
@@ -700,7 +682,9 @@ export function createDeviceRouter(config) {
     }
 
     if (!wakeAndLoadService) {
-      return res.status(500).json({ ok: false, error: 'WakeAndLoadService not configured' });
+      return res.status(500).json(buildErrorBody({
+        error: 'WakeAndLoadService not configured',
+      }));
     }
 
     const { snapshot, dispatchId } = body;
@@ -721,47 +705,49 @@ export function createDeviceRouter(config) {
       }));
     }
 
-    // Idempotency check.
-    const now = Date.now();
-    evictExpiredAdopt(now);
-    const bodyHash = stableStringify({ snapshot, deviceId });
-    const cached = adoptIdempotency.get(dispatchId);
-    if (cached && cached.bodyHash === bodyHash) {
-      logger.info?.('device.router.load.adopt.idempotent', { deviceId, dispatchId });
-      return res.status(cached.statusCode).json(cached.body);
-    }
-
     logger.info?.('device.router.load.adopt.start', { deviceId, dispatchId });
 
-    const result = await wakeAndLoadService.execute(
-      deviceId,
-      {},
-      { dispatchId, adoptSnapshot: snapshot },
-    );
+    let cached;
+    try {
+      cached = await dispatchIdempotencyService.runWithIdempotency(
+        dispatchId,
+        { snapshot, deviceId },
+        async () => {
+          const result = await wakeAndLoadService.execute(
+            deviceId,
+            {},
+            { dispatchId, adoptSnapshot: snapshot },
+          );
 
-    const statusCode = result.error === 'Device not found'
-      ? 404
-      : (result.ok ? 200 : 502);
+          const statusCode = result.error === 'Device not found'
+            ? 404
+            : (result.ok ? 200 : 502);
 
-    const responseBody = {
-      ...result,
-      adopted: result.ok === true,
-      dispatchId,
-    };
+          const responseBody = {
+            ...result,
+            adopted: result.ok === true,
+            dispatchId,
+          };
 
-    // Cache the response so a retry with the same dispatchId + body replays.
-    adoptIdempotency.set(dispatchId, {
-      recordedAt: now,
-      bodyHash,
-      statusCode,
-      body: responseBody,
-    });
+          logger.info?.('device.router.load.adopt.complete', {
+            deviceId, dispatchId, ok: result.ok, failedStep: result.failedStep,
+          });
 
-    logger.info?.('device.router.load.adopt.complete', {
-      deviceId, dispatchId, ok: result.ok, failedStep: result.failedStep,
-    });
+          return { statusCode, body: responseBody };
+        },
+      );
+    } catch (err) {
+      if (err instanceof IdempotencyConflictError) {
+        logger.warn?.('device.router.load.adopt.conflict', { deviceId, dispatchId });
+        return res.status(409).json(buildErrorBody({
+          error: err.message,
+          code: ERROR_CODES.IDEMPOTENCY_CONFLICT,
+        }));
+      }
+      throw err;
+    }
 
-    return res.status(statusCode).json(responseBody);
+    return res.status(cached.statusCode).json(cached.body);
   }));
 
   /**

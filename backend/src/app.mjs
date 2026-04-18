@@ -54,6 +54,7 @@ import {
   createDeviceServices,
   createDeviceApiRouter,
   createWakeAndLoadService,
+  createDispatchIdempotencyService,
   createTranscodePrewarmService,
   createHardwareAdapters,
   createProxyService,
@@ -1632,9 +1633,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
   }
 
+  // Shared dispatch-level idempotency cache for multi-step HTTP dispatches
+  // (e.g. POST /api/v1/device/:id/load?mode=adopt).
+  const { dispatchIdempotencyService } = createDispatchIdempotencyService({
+    logger: rootLogger.child({ module: 'dispatch-idempotency' })
+  });
+
   v1Routers.device = createDeviceApiRouter({
     deviceServices,
     wakeAndLoadService,
+    dispatchIdempotencyService,
     configService,
     logger: rootLogger.child({ module: 'device-api' })
   });
