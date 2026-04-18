@@ -18,6 +18,7 @@ vi.mock('../../../lib/api.mjs', () => ({
 
 import { ClientIdentityProvider, CLIENT_ID_KEY } from '../session/ClientIdentityProvider.jsx';
 import { LocalSessionProvider } from '../session/LocalSessionProvider.jsx';
+import { SearchProvider } from '../search/SearchProvider.jsx';
 import { MediaAppShell } from './MediaAppShell.jsx';
 
 describe('MediaAppShell', () => {
@@ -30,7 +31,9 @@ describe('MediaAppShell', () => {
     render(
       <ClientIdentityProvider>
         <LocalSessionProvider>
-          <MediaAppShell />
+          <SearchProvider>
+            <MediaAppShell />
+          </SearchProvider>
         </LocalSessionProvider>
       </ClientIdentityProvider>
     );
@@ -55,7 +58,9 @@ describe('MediaAppShell', () => {
     render(
       <ClientIdentityProvider>
         <LocalSessionProvider>
-          <MediaAppShell />
+          <SearchProvider>
+            <MediaAppShell />
+          </SearchProvider>
         </LocalSessionProvider>
       </ClientIdentityProvider>
     );
