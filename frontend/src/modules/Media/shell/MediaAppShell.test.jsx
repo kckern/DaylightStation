@@ -9,9 +9,16 @@ vi.mock('../../../services/WebSocketService.js', () => ({
   wsService: { send: vi.fn(), subscribe: vi.fn(() => () => {}), onStatusChange: vi.fn(() => () => {}) },
   default: { send: vi.fn(), subscribe: vi.fn(() => () => {}), onStatusChange: vi.fn(() => () => {}) },
 }));
+vi.mock('../../../lib/api.mjs', () => ({
+  DaylightAPI: vi.fn(async (path) => {
+    if (path === 'api/v1/media/config') return { browse: [], searchScopes: [] };
+    return {};
+  }),
+}));
 
 import { ClientIdentityProvider, CLIENT_ID_KEY } from '../session/ClientIdentityProvider.jsx';
 import { LocalSessionProvider } from '../session/LocalSessionProvider.jsx';
+import { SearchProvider } from '../search/SearchProvider.jsx';
 import { MediaAppShell } from './MediaAppShell.jsx';
 
 describe('MediaAppShell', () => {
@@ -24,7 +31,9 @@ describe('MediaAppShell', () => {
     render(
       <ClientIdentityProvider>
         <LocalSessionProvider>
-          <MediaAppShell />
+          <SearchProvider>
+            <MediaAppShell />
+          </SearchProvider>
         </LocalSessionProvider>
       </ClientIdentityProvider>
     );
@@ -49,11 +58,15 @@ describe('MediaAppShell', () => {
     render(
       <ClientIdentityProvider>
         <LocalSessionProvider>
-          <MediaAppShell />
+          <SearchProvider>
+            <MediaAppShell />
+          </SearchProvider>
         </LocalSessionProvider>
       </ClientIdentityProvider>
     );
 
+    // Home view is default now; navigate to NowPlaying via the MiniPlayer title button
+    fireEvent.click(screen.getByTestId('mini-player-open-nowplaying'));
     expect(screen.getByText(/now playing.*plex:42/i)).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('session-reset-btn'));
     expect(screen.queryByText(/now playing.*plex:42/i)).not.toBeInTheDocument();
