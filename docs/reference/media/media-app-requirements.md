@@ -34,6 +34,14 @@ The app unifies five concurrent, non-mutually-exclusive capabilities on one surf
 - **Personalization.** No watchlists, no recommendations, no history-based ranking.
 - **Content authoring or catalog management.** Read-only against the Play/Queue/
   Display APIs.
+- **LiveStream channel administration.** Creating, configuring, or programming
+  livestream channels (the DJBoard / per-channel queue and transport admin at
+  `/media/channels/*`) is a separate surface. The Media App consumes channels
+  as content sources but MUST NOT expose channel CRUD or DJ-side controls.
+- **Camera / surveillance UI.** Pan/zoom, detection overlays, PTZ controls, and
+  other camera-specific affordances belong to the CameraFeed module. The Media
+  App may *tune in* to a camera feed as content but MUST NOT reimplement
+  surveillance-oriented controls.
 
 ---
 
@@ -47,6 +55,25 @@ Any object resolvable to a playable by the Play API — identified by a content 
 (e.g., `plex-main:12345`, `hymn-library:198`, `app:webcam`,
 `composite:app:screensaver,plex-main:99`). Items have a `format` that determines
 how they render, but the Media App is format-agnostic.
+
+### Live vs. On-Demand Content
+Most content is **on-demand** — finite duration, seekable, resumable. Some
+content is **live** — livestream audio channels, camera feeds, and similar
+always-on sources. Live content is a first-class content source (discoverable,
+queueable, castable, peekable), but session semantics degrade:
+
+- No duration; progress/position indicators MUST render as "live" (or hide).
+- No seek, no scrub, no skip-within-item; transport collapses to play/pause/stop.
+- No resume-on-reload position restore; reloading a live item means re-joining
+  the stream at "now."
+- Position-tolerance requirements (e.g., C7.3 hand-off within 2s) do not apply.
+- Stall detection (C9.3) uses a live-content-specific threshold or is suppressed
+  in favor of the renderer's own reconnection behavior.
+
+The app detects live content via a `PlayableItem.isLive` flag (or equivalent
+format metadata — contract in the technical doc) and adapts affordances
+accordingly. Format-specific rendering remains the responsibility of the
+Playable Format Registry.
 
 ### Playback Surface
 A physical place where content can render. Two kinds:
