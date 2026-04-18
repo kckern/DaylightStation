@@ -14,6 +14,7 @@ import FitnessApp from './Apps/FitnessApp.jsx';
 import FeedApp from './Apps/FeedApp.jsx';
 import AdminApp from './Apps/AdminApp.jsx';
 import CallApp from './Apps/CallApp.jsx';
+import MediaApp from './Apps/MediaApp.jsx';
 import LiveStreamApp from './Apps/LiveStreamApp.jsx';
 import Blank from './modules/Blank/Blank.jsx';
 import SetupWizard from './modules/Auth/SetupWizard.jsx';
@@ -125,6 +126,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/finances" element={<FinanceApp />} />
         <Route path="/tv/app/:app" element={<TVAppWithParams />} />
         <Route path="/tv" element={<TVApp />} />
+        <Route path="/media" element={<MediaApp />} />
         <Route path="/media/channels/*" element={<LiveStreamApp />} />
         <Route path="/health" element={<HealthApp />} />
         <Route path="/fitness/*" element={<FitnessApp />} />
