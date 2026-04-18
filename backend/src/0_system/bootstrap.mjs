@@ -90,6 +90,7 @@ import { HaSensorDisplayPowerCheck } from '#adapters/home-automation/HaSensorDis
 import { DisplayReadinessPolicy, createNoOpDisplayPowerCheck } from '#domains/home-automation/index.mjs';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
 import { TranscodePrewarmService } from '#apps/devices/services/TranscodePrewarmService.mjs';
+import { DispatchIdempotencyService } from '#apps/devices/services/DispatchIdempotencyService.mjs';
 import {
   createDeviceLivenessService as createDeviceLivenessServiceFactory,
   getDeviceLivenessService as getDeviceLivenessServiceInstance,
@@ -1635,6 +1636,7 @@ export function createDeviceApiRouter(config) {
     deviceServices,
     wakeAndLoadService,
     sessionControlService,
+    dispatchIdempotencyService,
     configService,
     logger = console
   } = config;
@@ -1643,6 +1645,7 @@ export function createDeviceApiRouter(config) {
     deviceService: deviceServices.deviceService,
     wakeAndLoadService,
     sessionControlService,
+    dispatchIdempotencyService,
     configService,
     logger
   });
@@ -1698,6 +1701,25 @@ export function createWakeAndLoadService(config) {
   });
 
   return { wakeAndLoadService };
+}
+
+/**
+ * Create the DispatchIdempotencyService used by multi-step HTTP dispatches
+ * (e.g. POST /api/v1/device/:id/load?mode=adopt). Shared across the device
+ * router so retries dedupe regardless of how many router instances exist.
+ *
+ * @param {Object} [config]
+ * @param {number} [config.ttlMs=60000]
+ * @param {Object} [config.logger]
+ * @returns {{ dispatchIdempotencyService: DispatchIdempotencyService }}
+ */
+export function createDispatchIdempotencyService(config = {}) {
+  const { ttlMs, logger } = config;
+  const dispatchIdempotencyService = new DispatchIdempotencyService({
+    ttlMs,
+    logger,
+  });
+  return { dispatchIdempotencyService };
 }
 
 /**

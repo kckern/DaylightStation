@@ -166,6 +166,25 @@ describe('POST /device/:deviceId/load (mode: adopt)', () => {
     expect(res2.body).toEqual(res1.body);
   });
 
+  it('returns 409 IDEMPOTENCY_CONFLICT when same dispatchId used with different body', async () => {
+    const body1 = { mode: 'adopt', snapshot: makeSnapshot({ position: 10 }), dispatchId: 'd-conflict' };
+    const body2 = { mode: 'adopt', snapshot: makeSnapshot({ position: 20 }), dispatchId: 'd-conflict' };
+
+    const res1 = makeRes();
+    await handler(buildReq(body1), res1, vi.fn());
+    expect(res1.statusCode).toBe(200);
+
+    const res2 = makeRes();
+    await handler(buildReq(body2), res2, vi.fn());
+    expect(res2.statusCode).toBe(409);
+    expect(res2.body).toMatchObject({
+      ok: false,
+      code: 'IDEMPOTENCY_CONFLICT',
+    });
+    // Conflict detected before re-running the orchestration.
+    expect(wakeAndLoadService.execute).toHaveBeenCalledTimes(1);
+  });
+
   it('returns 500 when wakeAndLoadService is not configured', async () => {
     const r = createDeviceRouter({ deviceService, wakeAndLoadService: undefined, logger });
     const h = findHandler(r, '/:deviceId/load', 'post');
