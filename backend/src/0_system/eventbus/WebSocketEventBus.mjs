@@ -33,6 +33,10 @@ export class WebSocketEventBus {
   // Internal pub/sub
   #subscribers = new Map(); // topic -> handler[]
 
+  // Pattern-matched subscribers (run on every publish). Each entry is
+  // `{ predicate: (topic) => bool, handler: (payload, topic) => void }`.
+  #patternSubscribers = [];
+
   // External client tracking
   #clients = new Map(); // clientId -> { ws, meta }
 
@@ -211,6 +215,42 @@ export class WebSocketEventBus {
         this.#logger.error?.('eventbus.handler_error', { topic, error: err.message });
       }
     }
+
+    // Pattern subscribers run on every publish (e.g. DeviceLivenessService
+    // listening to all device-state:* topics).
+    for (const { predicate, handler } of this.#patternSubscribers) {
+      let match = false;
+      try {
+        match = !!predicate(topic);
+      } catch (err) {
+        this.#logger.error?.('eventbus.pattern_predicate_error', { topic, error: err.message });
+        continue;
+      }
+      if (!match) continue;
+      try {
+        handler(payload, topic);
+      } catch (err) {
+        this.#logger.error?.('eventbus.pattern_handler_error', { topic, error: err.message });
+      }
+    }
+  }
+
+  /**
+   * Subscribe to any topic matching a predicate. Predicate receives the
+   * topic string; return true to deliver. Use sparingly — pattern
+   * subscribers run on every publish.
+   *
+   * @param {(topic: string) => boolean} predicate
+   * @param {(payload: object, topic: string) => void} handler
+   * @returns {Function} Unsubscribe function
+   */
+  subscribePattern(predicate, handler) {
+    const entry = { predicate, handler };
+    this.#patternSubscribers.push(entry);
+    return () => {
+      const idx = this.#patternSubscribers.indexOf(entry);
+      if (idx !== -1) this.#patternSubscribers.splice(idx, 1);
+    };
   }
 
   /**
