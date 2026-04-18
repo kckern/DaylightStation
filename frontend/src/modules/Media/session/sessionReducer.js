@@ -21,9 +21,20 @@ function touch(snapshot, patch) {
     meta: {
       ...snapshot.meta,
       ...(patch.meta || {}),
-      updatedAt: new Date().toISOString(),
+      updatedAt: nextUpdatedAt(snapshot.meta?.updatedAt),
     },
   };
+}
+
+// ISO strings only have ms resolution — when reductions happen faster than
+// 1ms apart, two `new Date().toISOString()` calls can return the same value.
+// Ensure strictly increasing timestamps by bumping 1ms when we'd otherwise
+// collide with the previous value.
+function nextUpdatedAt(prev) {
+  const nowMs = Date.now();
+  const prevMs = prev ? Date.parse(prev) : NaN;
+  const ms = Number.isFinite(prevMs) && prevMs >= nowMs ? prevMs + 1 : nowMs;
+  return new Date(ms).toISOString();
 }
 
 export function reduce(snapshot, action) {
