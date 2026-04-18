@@ -21,10 +21,8 @@ import { buildCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
 import {
   TRANSPORT_ACTIONS,
   QUEUE_OPS,
-  REPEAT_MODES,
   isTransportAction,
   isQueueOp,
-  isRepeatMode,
 } from '#shared-contracts/media/commands.mjs';
 
 /**
@@ -247,6 +245,96 @@ export function createDeviceRouter(config) {
     });
 
     logger.info?.('device.router.session.transport', { deviceId, action, commandId });
+    const result = await sessionControlService.sendCommand(envelope);
+    return mapSendCommandResult(result, res);
+  }));
+
+  /**
+   * POST /device/:deviceId/session/queue/:op
+   * Mutate the remote session's queue (§4.4).
+   *
+   *   :op ∈ QUEUE_OPS
+   *   Body varies per op — validated here, then the envelope validator
+   *   double-checks via SessionControlService.
+   */
+  router.post('/:deviceId/session/queue/:op', asyncHandler(async (req, res) => {
+    if (!requireSessionControl(sessionControlService, res)) return;
+
+    const { deviceId, op } = req.params;
+    const body = req.body || {};
+    const { contentId, queueItemId, from, to, items, clearRest, commandId } = body;
+
+    if (!isQueueOp(op)) {
+      return res.status(400).json(buildErrorBody({
+        error: `Unknown queue op "${op}"; must be one of: ${QUEUE_OPS.join(', ')}`,
+        code: 'VALIDATION',
+      }));
+    }
+    if (!isNonEmptyString(commandId)) {
+      return res.status(400).json(buildErrorBody({
+        error: 'commandId required (non-empty string)',
+      }));
+    }
+
+    switch (op) {
+      case 'play-now':
+      case 'play-next':
+      case 'add-up-next':
+      case 'add':
+        if (!isNonEmptyString(contentId)) {
+          return res.status(400).json(buildErrorBody({
+            error: `contentId required (non-empty string) for op "${op}"`,
+          }));
+        }
+        break;
+      case 'remove':
+      case 'jump':
+        if (!isNonEmptyString(queueItemId)) {
+          return res.status(400).json(buildErrorBody({
+            error: `queueItemId required (non-empty string) for op "${op}"`,
+          }));
+        }
+        break;
+      case 'reorder': {
+        const hasFromTo = isNonEmptyString(from) && isNonEmptyString(to);
+        const hasItems = Array.isArray(items) && items.length > 0
+          && items.every(isNonEmptyString);
+        if (!hasFromTo && !hasItems) {
+          return res.status(400).json(buildErrorBody({
+            error: 'reorder requires either (from + to) or a non-empty items array of strings',
+          }));
+        }
+        break;
+      }
+      case 'clear':
+        // No additional fields required.
+        break;
+      default:
+        // isQueueOp already gated this; guard-rail only.
+        return res.status(400).json(buildErrorBody({
+          error: `Unhandled queue op "${op}"`,
+        }));
+    }
+
+    // Build params with only the fields relevant to this op. The envelope
+    // validator will ignore unknown fields, but keeping the envelope tight
+    // makes idempotency fingerprints stable + debuggable.
+    const params = { op };
+    if (contentId !== undefined) params.contentId = contentId;
+    if (queueItemId !== undefined) params.queueItemId = queueItemId;
+    if (from !== undefined) params.from = from;
+    if (to !== undefined) params.to = to;
+    if (items !== undefined) params.items = items;
+    if (clearRest !== undefined) params.clearRest = clearRest;
+
+    const envelope = buildCommandEnvelope({
+      targetDevice: deviceId,
+      command: 'queue',
+      commandId,
+      params,
+    });
+
+    logger.info?.('device.router.session.queue', { deviceId, op, commandId });
     const result = await sessionControlService.sendCommand(envelope);
     return mapSendCommandResult(result, res);
   }));
