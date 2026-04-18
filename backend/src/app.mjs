@@ -54,6 +54,7 @@ import {
   createDeviceServices,
   createDeviceApiRouter,
   createWakeAndLoadService,
+  createDispatchIdempotencyService,
   createTranscodePrewarmService,
   createHardwareAdapters,
   createProxyService,
@@ -69,6 +70,7 @@ import {
   createStaticApiRouter,
   createCalendarApiRouter,
   createEventBus,
+  createDeviceLivenessService,
   broadcastEvent,
   createHarvesterServices,
   createAgentsApiRouter,
@@ -348,6 +350,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     httpServer: server,
     path: '/ws',
     logger: rootLogger
+  });
+
+  // DeviceLivenessService — caches last-known device-state snapshots and
+  // synthesizes `offline` broadcasts when heartbeats stop. Also wires
+  // itself into the event bus so new subscribers get a replayed snapshot.
+  createDeviceLivenessService({
+    eventBus,
+    logger: rootLogger.child({ module: 'device-liveness' })
   });
 
   // Register message handlers for incoming client messages
@@ -1624,9 +1634,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
   }
 
+  // Shared dispatch-level idempotency cache for multi-step HTTP dispatches
+  // (e.g. POST /api/v1/device/:id/load?mode=adopt).
+  const { dispatchIdempotencyService } = createDispatchIdempotencyService({
+    logger: rootLogger.child({ module: 'dispatch-idempotency' })
+  });
+
   v1Routers.device = createDeviceApiRouter({
     deviceServices,
     wakeAndLoadService,
+    dispatchIdempotencyService,
     configService,
     logger: rootLogger.child({ module: 'device-api' })
   });

@@ -27,3 +27,9 @@ export {
   assertDeviceLauncher,
   createNoOpDeviceLauncher
 } from './IDeviceLauncher.mjs';
+
+export {
+  isSessionControl,
+  assertSessionControl,
+  createNoOpSessionControl
+} from './ISessionControl.mjs';

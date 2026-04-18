@@ -58,8 +58,61 @@ describe('actionMap', () => {
       });
     });
 
+    it('should translate media:seek-abs with payload', () => {
+      expect(translateAction('media:seek-abs', { value: 42, commandId: 'c1' })).toEqual({
+        action: 'media:seek-abs', payload: { value: 42, commandId: 'c1' }
+      });
+    });
+
+    it('should translate media:seek-rel with payload', () => {
+      expect(translateAction('media:seek-rel', { value: -10, commandId: 'c2' })).toEqual({
+        action: 'media:seek-rel', payload: { value: -10, commandId: 'c2' }
+      });
+    });
+
+    it('should translate media:queue-op with payload', () => {
+      expect(translateAction('media:queue-op', { op: 'clear', commandId: 'c3' })).toEqual({
+        action: 'media:queue-op', payload: { op: 'clear', commandId: 'c3' }
+      });
+    });
+
+    it('should translate media:config-set with payload', () => {
+      expect(translateAction('media:config-set', { setting: 'shuffle', value: true, commandId: 'c4' })).toEqual({
+        action: 'media:config-set', payload: { setting: 'shuffle', value: true, commandId: 'c4' }
+      });
+    });
+
+    it('should translate media:adopt-snapshot with payload', () => {
+      const snapshot = { sessionId: 's1', state: 'idle' };
+      expect(translateAction('media:adopt-snapshot', { snapshot, autoplay: true, commandId: 'c5' })).toEqual({
+        action: 'media:adopt-snapshot', payload: { snapshot, autoplay: true, commandId: 'c5' }
+      });
+    });
+
+    it('should default payload to {} for structured-envelope actions with no params', () => {
+      expect(translateAction('media:seek-abs')).toEqual({
+        action: 'media:seek-abs', payload: {}
+      });
+    });
+
     it('should return null for unknown function', () => {
       expect(translateAction('unknown', 'params')).toBeNull();
+    });
+  });
+
+  describe('ACTION_MAP registration', () => {
+    it('registers the five structured-envelope media actions', () => {
+      expect(ACTION_MAP).toHaveProperty('media:seek-abs');
+      expect(ACTION_MAP).toHaveProperty('media:seek-rel');
+      expect(ACTION_MAP).toHaveProperty('media:queue-op');
+      expect(ACTION_MAP).toHaveProperty('media:config-set');
+      expect(ACTION_MAP).toHaveProperty('media:adopt-snapshot');
+    });
+
+    it('preserves the existing keyboard-bound actions', () => {
+      for (const name of ['menu', 'play', 'queue', 'playback', 'escape', 'volume', 'shader', 'sleep', 'rate']) {
+        expect(ACTION_MAP).toHaveProperty(name);
+      }
     });
   });
 

@@ -297,6 +297,7 @@ export class FitnessSession {
     this.eventJournal = new EventJournal();
     this.treasureBox = null; // Instantiated on start
     this._vibrationTrackers = new Map(); // equipmentId -> VibrationActivityTracker
+    this._equipmentById = new Map(); // equipmentId -> equipment config entry (cycle challenge reverse lookup)
     this._deviceHrSampleCount = new Map(); // deviceId -> count for startup discard
 
     // Session Entity Registry - tracks participation segments per device assignment
@@ -989,6 +990,18 @@ export class FitnessSession {
     // Delegate to DeviceEventRouter for unified equipment lookups
     this._deviceRouter.setEquipmentCatalog(equipmentList);
     this.initVibrationTrackers(equipmentList);
+
+    // Build a minimal equipmentId -> entry lookup used by accessors such as
+    // getEquipmentCadence. The router already keeps cadence-id -> entry maps,
+    // but not the reverse (equipmentId -> cadence device id) that the cycle
+    // challenge needs.
+    this._equipmentById.clear();
+    if (Array.isArray(equipmentList)) {
+      equipmentList.forEach((entry) => {
+        if (!entry || entry.id == null) return;
+        this._equipmentById.set(String(entry.id).trim(), entry);
+      });
+    }
   }
 
   /**
@@ -1028,6 +1041,55 @@ export class FitnessSession {
    */
   getVibrationTracker(equipmentId) {
     return this._vibrationTrackers.get(String(equipmentId)) || null;
+  }
+
+  /**
+   * Get the current cadence (RPM) reading for a piece of equipment.
+   *
+   * Resolves the equipment entry from the catalog, finds the ANT+ cadence
+   * device associated with it, and reads the latest sample from the
+   * DeviceManager. Staleness is guarded against FITNESS_TIMEOUTS.rpmZero —
+   * readings older than that window are treated as disconnected.
+   *
+   * Contract:
+   *   - unknown / missing equipmentId                     -> { rpm: 0, connected: false }
+   *   - equipment in catalog but no sample yet            -> { rpm: 0, connected: false }
+   *   - reading older than FITNESS_TIMEOUTS.rpmZero       -> { rpm: 0, connected: false }
+   *   - fresh reading                                      -> { rpm: <number>, connected: true }
+   *
+   * @param {string|number} equipmentId
+   * @returns {{ rpm: number, connected: boolean }}
+   */
+  getEquipmentCadence(equipmentId) {
+    const disconnected = { rpm: 0, connected: false };
+    if (equipmentId == null) return disconnected;
+    const key = String(equipmentId).trim();
+    if (!key) return disconnected;
+
+    const equipment = this._equipmentById.get(key);
+    if (!equipment) return disconnected;
+
+    const cadenceRef = equipment.cadence;
+    if (cadenceRef == null) return disconnected;
+    const cadenceDeviceId = String(cadenceRef).trim();
+    if (!cadenceDeviceId) return disconnected;
+
+    const device = this.deviceManager?.getDevice(cadenceDeviceId);
+    if (!device) return disconnected;
+
+    const rpmRaw = device.cadence;
+    if (!Number.isFinite(rpmRaw)) return disconnected;
+
+    // Staleness check — mirrors DeviceManager.pruneStaleDevices' rpmZero logic
+    // so readers see "disconnected" even between prune cycles.
+    const { rpmZero } = this._getTimeouts();
+    const lastActivity = Number.isFinite(device.lastSignificantActivity)
+      ? device.lastSignificantActivity
+      : (Number.isFinite(device.lastSeen) ? device.lastSeen : null);
+    if (lastActivity == null) return disconnected;
+    if (Date.now() - lastActivity > rpmZero) return disconnected;
+
+    return { rpm: rpmRaw, connected: true };
   }
 
   /**
