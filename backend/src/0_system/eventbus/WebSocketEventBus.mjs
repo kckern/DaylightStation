@@ -15,6 +15,14 @@
 import { WebSocketServer } from 'ws';
 import { nowTs, nowTs24 } from '../utils/index.mjs';
 import crypto from 'crypto';
+import { parseDeviceTopic, PLAYBACK_STATE_TOPIC } from '#shared-contracts/media/topics.mjs';
+import {
+  buildDeviceStateBroadcast,
+  validateCommandEnvelope,
+} from '#shared-contracts/media/envelopes.mjs';
+
+// client-control:<clientId> topic prefix — delivered per connection identity.
+const CLIENT_CONTROL_PREFIX = 'client-control:';
 
 /**
  * @typedef {import('./IEventBus.mjs').ClientMeta} ClientMeta
@@ -30,6 +38,10 @@ export class WebSocketEventBus {
 
   // Internal pub/sub
   #subscribers = new Map(); // topic -> handler[]
+
+  // Pattern-matched subscribers (run on every publish). Each entry is
+  // `{ predicate: (topic) => bool, handler: (payload, topic) => void }`.
+  #patternSubscribers = [];
 
   // External client tracking
   #clients = new Map(); // clientId -> { ws, meta }
@@ -48,14 +60,52 @@ export class WebSocketEventBus {
     clientsDisconnected: 0
   };
 
+  // Optional DeviceLivenessService used for last-snapshot replay on subscribe
+  #livenessService = null;
+
   /**
    * @param {Object} [options]
    * @param {string} [options.path='/ws'] - WebSocket path
    * @param {Object} [options.logger] - Logger instance
+   * @param {Object} [options.livenessService] - DeviceLivenessService for snapshot replay
    */
   constructor(options = {}) {
     this.#path = options.path || '/ws';
     this.#logger = options.logger || console;
+    this.#livenessService = options.livenessService || null;
+  }
+
+  /**
+   * Inject or replace the DeviceLivenessService (used for snapshot replay).
+   * Lets bootstrap wire the service after both are constructed.
+   * @param {Object|null} svc
+   */
+  setLivenessService(svc) {
+    this.#livenessService = svc || null;
+  }
+
+  /**
+   * @returns {Object|null}
+   */
+  getLivenessService() {
+    return this.#livenessService;
+  }
+
+  /**
+   * Test seam: replace the client pool with a custom Map-like. Only for tests.
+   * Accepts a Map where values are `{ ws, meta }`.
+   * @param {Map} clients
+   */
+  _testSetClientPool(clients) {
+    this.#clients = clients;
+  }
+
+  /**
+   * Test seam: force the WebSocket server reference to a truthy value so
+   * broadcast() doesn't short-circuit on missing server. Only for tests.
+   */
+  _testSetServerAttached() {
+    if (!this.#wss) this.#wss = /** @type {any} */ ({ __test: true });
   }
 
   // ===========================================================================
@@ -171,6 +221,42 @@ export class WebSocketEventBus {
         this.#logger.error?.('eventbus.handler_error', { topic, error: err.message });
       }
     }
+
+    // Pattern subscribers run on every publish (e.g. DeviceLivenessService
+    // listening to all device-state:* topics).
+    for (const { predicate, handler } of this.#patternSubscribers) {
+      let match = false;
+      try {
+        match = !!predicate(topic);
+      } catch (err) {
+        this.#logger.error?.('eventbus.pattern_predicate_error', { topic, error: err.message });
+        continue;
+      }
+      if (!match) continue;
+      try {
+        handler(payload, topic);
+      } catch (err) {
+        this.#logger.error?.('eventbus.pattern_handler_error', { topic, error: err.message });
+      }
+    }
+  }
+
+  /**
+   * Subscribe to any topic matching a predicate. Predicate receives the
+   * topic string; return true to deliver. Use sparingly — pattern
+   * subscribers run on every publish.
+   *
+   * @param {(topic: string) => boolean} predicate
+   * @param {(payload: object, topic: string) => void} handler
+   * @returns {Function} Unsubscribe function
+   */
+  subscribePattern(predicate, handler) {
+    const entry = { predicate, handler };
+    this.#patternSubscribers.push(entry);
+    return () => {
+      const idx = this.#patternSubscribers.indexOf(entry);
+      if (idx !== -1) this.#patternSubscribers.splice(idx, 1);
+    };
   }
 
   /**
@@ -208,12 +294,29 @@ export class WebSocketEventBus {
   // ===========================================================================
 
   /**
-   * Broadcast event to external clients and publish internally
+   * Broadcast event to external clients and publish internally.
+   *
+   * Routing rules:
+   * - `device-state:<id>`, `device-ack:<id>`, `homeline:<id>`: deliver only to
+   *   subscribers of that exact topic (or wildcard).
+   * - `screen:<id>`: deliver only to the WS client identified as that device;
+   *   if connection identity isn't tracked (current state; Task 4.1 adds it),
+   *   fall back to subscribers of that exact topic.
+   * - `client-control:<clientId>`: deliver only to the WS connection
+   *   identified as that clientId. Identity is not yet tracked (Task 4.1),
+   *   so this currently logs a warn and drops.
+   * - `playback_state` (broadcast): deliver to all subscribers of that topic
+   *   or to wildcard subscribers.
+   * - Unknown topic prefixes with no internal subscribers: log
+   *   `bus.topic.unknown` and drop external delivery. Legacy topics that
+   *   already have internal subscribers continue to deliver to wildcard
+   *   subscribers for backward compatibility.
+   *
    * @param {string} topic - Event topic
    * @param {Object} payload - Event payload
    */
   broadcast(topic, payload) {
-    // Publish internally first
+    // Publish internally first (always — internal handlers are topic-exact).
     this.publish(topic, payload);
 
     // Broadcast to WebSocket clients
@@ -231,16 +334,121 @@ export class WebSocketEventBus {
     };
     const msg = JSON.stringify(message);
 
-    let sentCount = 0;
-    for (const [clientId, { ws, meta }] of this.#clients) {
-      if (ws.readyState === ws.OPEN) {
-        const subs = meta.subscriptions;
+    const parsed = parseDeviceTopic(topic);
 
-        // Send if client subscribes to topic or has wildcard
+    // Per-device topics: deliver to that device's topic subscribers only.
+    if (parsed) {
+      const { kind } = parsed;
+      let sentCount = 0;
+
+      if (kind === 'screen') {
+        // Prefer direct delivery to the identified connection (Task 4.1).
+        // Until connection identity is tracked, fall back to topic subscribers.
+        for (const [, { ws, meta }] of this.#clients) {
+          if (ws.readyState !== ws.OPEN) continue;
+          if (meta.subscriptions.has(topic)) {
+            ws.send(msg);
+            sentCount++;
+          }
+        }
+      } else {
+        for (const [, { ws, meta }] of this.#clients) {
+          if (ws.readyState !== ws.OPEN) continue;
+          const subs = meta.subscriptions;
+          if (subs.has(topic) || subs.has('*')) {
+            ws.send(msg);
+            sentCount++;
+          }
+        }
+      }
+
+      this.#logger.debug?.('eventbus.broadcast.device', {
+        topic, kind, deviceId: parsed.deviceId, sentCount
+      });
+      return sentCount;
+    }
+
+    // client-control:<clientId>: identity-routed. Delivered only to the one
+    // connection whose identity matches the parsed clientId (set by an
+    // `identify` message from the client). Envelope must validate against
+    // the command contract — otherwise drop with a warn so malformed
+    // relays don't poison the stream.
+    if (typeof topic === 'string' && topic.startsWith(CLIENT_CONTROL_PREFIX)) {
+      const targetClientId = topic.slice(CLIENT_CONTROL_PREFIX.length);
+      if (!targetClientId) {
+        this.#logger.warn?.('client-control.invalid-topic', { topic });
+        return 0;
+      }
+
+      const validation = validateCommandEnvelope(payload);
+      if (!validation.valid) {
+        this.#logger.warn?.('client-control.envelope-invalid', {
+          topic,
+          clientId: targetClientId,
+          error: validation.errors[0],
+        });
+        return 0;
+      }
+
+      let delivered = 0;
+      for (const [, { ws, meta }] of this.#clients) {
+        if (meta?.clientId !== targetClientId) continue;
+        if (ws.readyState !== ws.OPEN) continue;
+        ws.send(msg);
+        delivered++;
+      }
+      if (delivered === 0) {
+        this.#logger.debug?.('client-control.no-client', {
+          topic,
+          clientId: targetClientId,
+        });
+      }
+      return delivered;
+    }
+
+    // playback_state is a full broadcast topic.
+    if (topic === PLAYBACK_STATE_TOPIC) {
+      let sentCount = 0;
+      for (const [, { ws, meta }] of this.#clients) {
+        if (ws.readyState !== ws.OPEN) continue;
+        const subs = meta.subscriptions;
         if (subs.has(topic) || subs.has('*')) {
           ws.send(msg);
           sentCount++;
         }
+      }
+      this.#logger.debug?.('eventbus.broadcast.playback_state', {
+        topic, sentCount
+      });
+      return sentCount;
+    }
+
+    // Legacy topics: if anyone subscribes to this exact topic, deliver.
+    // Wildcard clients also continue to receive. For topics with no
+    // subscribers and no internal handlers, warn and drop.
+    const hasInternalSubscribers = this.#subscribers.has(topic)
+      && (this.#subscribers.get(topic) || []).length > 0;
+    let hasExternalSubscribers = false;
+    for (const [, { ws, meta }] of this.#clients) {
+      if (ws.readyState !== ws.OPEN) continue;
+      if (meta.subscriptions.has(topic) || meta.subscriptions.has('*')) {
+        hasExternalSubscribers = true;
+        break;
+      }
+    }
+
+    if (!hasInternalSubscribers && !hasExternalSubscribers) {
+      this.#logger.warn?.('bus.topic.unknown', { topic });
+      return 0;
+    }
+
+    let sentCount = 0;
+    for (const [, { ws, meta }] of this.#clients) {
+      if (ws.readyState !== ws.OPEN) continue;
+      const subs = meta.subscriptions;
+      if (subs.has(topic) || subs.has('*')) {
+        ws.send(msg);
+        sentCount++;
       }
     }
 
@@ -272,6 +480,60 @@ export class WebSocketEventBus {
     }
 
     this.#logger.debug?.('eventbus.client_subscribed', { clientId, topics: topicList });
+
+    // Replay last known device-state snapshot to the new subscriber.
+    for (const topic of topicList) {
+      this.#maybeReplayDeviceState(client, topic);
+    }
+  }
+
+  /**
+   * Replay the last known device-state snapshot to a newly-subscribing
+   * client. If no livenessService is wired, or no snapshot exists yet, this
+   * is a no-op.
+   *
+   * @param {{ ws: object, meta: object }} client
+   * @param {string} topic
+   * @private
+   */
+  #maybeReplayDeviceState(client, topic) {
+    const parsed = parseDeviceTopic(topic);
+    if (!parsed || parsed.kind !== 'device-state') return;
+
+    const liveness = this.#livenessService;
+    if (!liveness || typeof liveness.getLastSnapshot !== 'function') {
+      this.#logger.debug?.('eventbus.replay.no_liveness', { topic });
+      return;
+    }
+
+    const cached = liveness.getLastSnapshot(parsed.deviceId);
+    if (!cached || !cached.snapshot) {
+      this.#logger.debug?.('eventbus.replay.no_snapshot', { topic });
+      return;
+    }
+
+    try {
+      const envelope = buildDeviceStateBroadcast({
+        deviceId: parsed.deviceId,
+        snapshot: cached.snapshot,
+        reason: 'initial',
+        ts: cached.lastSeenAt,
+      });
+      // Envelope sets `topic: 'device-state'` (kind), but on the wire we
+      // want the full topic string `device-state:<id>` so clients route it.
+      const message = { ...envelope, topic, timestamp: nowTs() };
+
+      if (client.ws?.readyState === client.ws?.OPEN) {
+        client.ws.send(JSON.stringify(message));
+        this.#logger.debug?.('eventbus.replay.sent', {
+          topic, deviceId: parsed.deviceId,
+        });
+      }
+    } catch (err) {
+      this.#logger.warn?.('eventbus.replay.error', {
+        topic, error: err?.message,
+      });
+    }
   }
 
   /**
@@ -479,12 +741,55 @@ export class WebSocketEventBus {
       return;
     }
 
+    // Handle identity registration — clients send `{ type: 'identify', clientId }`
+    // to claim a stable identity used for `client-control:<id>` routing.
+    if (message.type === 'identify') {
+      this.#handleIdentify(clientId, message);
+      return;
+    }
+
     // Notify message handlers
     for (const handler of this.#messageHandlers) {
       try {
         handler(clientId, message);
       } catch (err) {
         this.#logger.error?.('eventbus.message_handler_error', { error: err.message });
+      }
+    }
+  }
+
+  /**
+   * Handle client identity registration. Records `clientId` on the client's
+   * meta so `client-control:<id>` broadcasts can route to the specific
+   * connection. Sends back an `identify_ack` for confirmation.
+   *
+   * @private
+   */
+  #handleIdentify(connectionId, message) {
+    const identity = message?.clientId;
+    if (typeof identity !== 'string' || identity.length === 0) {
+      this.#logger.warn?.('eventbus.identify_invalid', { connectionId });
+      return;
+    }
+    const client = this.#clients.get(connectionId);
+    if (!client) return;
+
+    client.meta.clientId = identity;
+    this.#logger.info?.('eventbus.client_identified', {
+      connectionId,
+      clientId: identity,
+    });
+
+    if (client.ws.readyState === client.ws.OPEN) {
+      try {
+        client.ws.send(JSON.stringify({
+          type: 'identify_ack',
+          clientId: identity,
+        }));
+      } catch (err) {
+        this.#logger.error?.('eventbus.identify_ack_error', {
+          connectionId, error: err?.message,
+        });
       }
     }
   }
@@ -598,6 +903,18 @@ export class WebSocketEventBus {
         this.#logger.error?.('eventbus.test_inject_error', { error: err.message });
       }
     }
+  }
+
+  /**
+   * Test seam: route a raw incoming message through the full message handler
+   * pipeline (including `bus_command` and `identify` handling). Unlike
+   * `_testInjectClientMessage`, this exercises internal handlers too.
+   * @param {string} clientId
+   * @param {Object} message
+   */
+  _testHandleIncomingMessage(clientId, message) {
+    const raw = typeof message === 'string' ? message : JSON.stringify(message);
+    this.#handleMessage(clientId, raw);
   }
 
   /**

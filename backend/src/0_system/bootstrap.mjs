@@ -90,6 +90,12 @@ import { HaSensorDisplayPowerCheck } from '#adapters/home-automation/HaSensorDis
 import { DisplayReadinessPolicy, createNoOpDisplayPowerCheck } from '#domains/home-automation/index.mjs';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
 import { TranscodePrewarmService } from '#apps/devices/services/TranscodePrewarmService.mjs';
+import { DispatchIdempotencyService } from '#apps/devices/services/DispatchIdempotencyService.mjs';
+import {
+  createDeviceLivenessService as createDeviceLivenessServiceFactory,
+  getDeviceLivenessService as getDeviceLivenessServiceInstance,
+  stopDeviceLivenessService as stopDeviceLivenessServiceInstance,
+} from './bootstrap/deviceLiveness.mjs';
 
 // Device registry imports
 import { DeviceService } from '#apps/devices/services/DeviceService.mjs';
@@ -1066,6 +1072,19 @@ export async function restartEventBus() {
 }
 
 // =============================================================================
+// DeviceLivenessService Bootstrap
+// =============================================================================
+//
+// Delegates to ./bootstrap/deviceLiveness.mjs so unit tests can exercise the
+// wiring without pulling the full bootstrap module (which eagerly imports
+// every adapter in the app).
+//
+
+export const createDeviceLivenessService = createDeviceLivenessServiceFactory;
+export const getDeviceLivenessService    = getDeviceLivenessServiceInstance;
+export const stopDeviceLivenessService   = stopDeviceLivenessServiceInstance;
+
+// =============================================================================
 // Finance Domain Bootstrap
 // =============================================================================
 
@@ -1616,6 +1635,8 @@ export function createDeviceApiRouter(config) {
   const {
     deviceServices,
     wakeAndLoadService,
+    sessionControlService,
+    dispatchIdempotencyService,
     configService,
     logger = console
   } = config;
@@ -1623,6 +1644,8 @@ export function createDeviceApiRouter(config) {
   return createDeviceRouter({
     deviceService: deviceServices.deviceService,
     wakeAndLoadService,
+    sessionControlService,
+    dispatchIdempotencyService,
     configService,
     logger
   });
@@ -1639,7 +1662,7 @@ export function createDeviceApiRouter(config) {
  * @returns {{ wakeAndLoadService: WakeAndLoadService }}
  */
 export function createWakeAndLoadService(config) {
-  const { deviceService, haGateway, devicesConfig, broadcast, eventBus, prewarmService, logger = console } = config;
+  const { deviceService, haGateway, devicesConfig, broadcast, eventBus, prewarmService, sessionControlService, logger = console } = config;
 
   // Build sensor map from device config: deviceId -> state_sensor entity
   const sensorMap = {};
@@ -1673,10 +1696,30 @@ export function createWakeAndLoadService(config) {
     broadcast,
     eventBus,
     prewarmService,
+    sessionControlService,
     logger
   });
 
   return { wakeAndLoadService };
+}
+
+/**
+ * Create the DispatchIdempotencyService used by multi-step HTTP dispatches
+ * (e.g. POST /api/v1/device/:id/load?mode=adopt). Shared across the device
+ * router so retries dedupe regardless of how many router instances exist.
+ *
+ * @param {Object} [config]
+ * @param {number} [config.ttlMs=60000]
+ * @param {Object} [config.logger]
+ * @returns {{ dispatchIdempotencyService: DispatchIdempotencyService }}
+ */
+export function createDispatchIdempotencyService(config = {}) {
+  const { ttlMs, logger } = config;
+  const dispatchIdempotencyService = new DispatchIdempotencyService({
+    ttlMs,
+    logger,
+  });
+  return { dispatchIdempotencyService };
 }
 
 /**

@@ -101,13 +101,16 @@ export function errorHandlerMiddleware(options = {}) {
 
 /**
  * Async handler wrapper
- * Wraps async route handlers to catch errors
+ * Wraps async route handlers to catch errors. Returns the internal promise
+ * so unit tests can await full completion — Express ignores middleware
+ * return values.
+ *
  * @param {Function} fn - Async route handler
  * @returns {Function} Wrapped handler
  */
 export function asyncHandler(fn) {
   return (req, res, next) => {
-    Promise.resolve(fn(req, res, next)).catch(next);
+    return Promise.resolve(fn(req, res, next)).catch(next);
   };
 }
 

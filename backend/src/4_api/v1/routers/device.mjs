@@ -16,18 +16,102 @@
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { hasActiveCall, forceEndCall } from '#apps/homeline/CallStateService.mjs';
+import { buildErrorBody, ERROR_CODES } from '#shared-contracts/media/errors.mjs';
+import { buildCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
+import { validateSessionSnapshot } from '#shared-contracts/media/shapes.mjs';
+import {
+  TRANSPORT_ACTIONS,
+  QUEUE_OPS,
+  REPEAT_MODES,
+  isTransportAction,
+  isQueueOp,
+  isRepeatMode,
+} from '#shared-contracts/media/commands.mjs';
+import {
+  DispatchIdempotencyService,
+  IdempotencyConflictError,
+} from '#apps/devices/services/DispatchIdempotencyService.mjs';
+
+/**
+ * Map a SessionControlService.sendCommand result to an HTTP response.
+ *
+ * - ok: true                         → 200 pass-through of the ack payload
+ * - INVALID_ENVELOPE                 → 400
+ * - DEVICE_NOT_FOUND                 → 404
+ * - DEVICE_OFFLINE                   → 409 (includes lastKnown)
+ * - IDEMPOTENCY_CONFLICT             → 409
+ * - DEVICE_REFUSED                   → 502
+ * - any other ok:false               → 502
+ *
+ * @param {Object} result - The sendCommand result envelope.
+ * @param {import('express').Response} res
+ */
+function mapSendCommandResult(result, res) {
+  if (result && result.ok === true) {
+    return res.status(200).json(result);
+  }
+  const code = result?.code;
+  const error = result?.error || 'Command failed';
+
+  if (code === 'INVALID_ENVELOPE') {
+    return res.status(400).json(buildErrorBody({ error, code }));
+  }
+  if (code === ERROR_CODES.DEVICE_NOT_FOUND) {
+    return res.status(404).json(buildErrorBody({ error, code }));
+  }
+  if (code === ERROR_CODES.DEVICE_OFFLINE) {
+    const body = buildErrorBody({ error, code });
+    if (result.lastKnown !== undefined) body.lastKnown = result.lastKnown;
+    return res.status(409).json(body);
+  }
+  if (code === ERROR_CODES.IDEMPOTENCY_CONFLICT) {
+    return res.status(409).json(buildErrorBody({ error, code }));
+  }
+  if (code === ERROR_CODES.DEVICE_REFUSED) {
+    return res.status(502).json(buildErrorBody({ error, code }));
+  }
+  return res.status(502).json(buildErrorBody({ error, code }));
+}
+
+function requireSessionControl(sessionControlService, res) {
+  if (!sessionControlService) {
+    res.status(501).json(buildErrorBody({
+      error: 'Session control not configured',
+    }));
+    return false;
+  }
+  return true;
+}
+
+function isNonEmptyString(v) {
+  return typeof v === 'string' && v.length > 0;
+}
 
 /**
  * Create device router
  * @param {Object} config
  * @param {import('#apps/devices/services/DeviceService.mjs').DeviceService} config.deviceService
+ * @param {Object} [config.wakeAndLoadService]
+ * @param {Object} [config.sessionControlService] - ISessionControl implementation
+ * @param {import('#apps/devices/services/DispatchIdempotencyService.mjs').DispatchIdempotencyService} [config.dispatchIdempotencyService]
+ *   - Dispatch-level idempotency cache. One is constructed per router instance
+ *     if not injected (useful for tests; bootstrap should inject a shared one).
  * @param {import('#system/config/index.mjs').ConfigService} [config.configService]
  * @param {Object} [config.logger]
  * @returns {express.Router}
  */
 export function createDeviceRouter(config) {
   const router = express.Router();
-  const { deviceService, wakeAndLoadService, configService, logger = console } = config;
+  const {
+    deviceService,
+    wakeAndLoadService,
+    sessionControlService,
+    dispatchIdempotencyService = new DispatchIdempotencyService({
+      logger: config?.logger || undefined,
+    }),
+    configService,
+    logger = console,
+  } = config;
 
   // ===========================================================================
   // Device Config
@@ -69,11 +153,10 @@ export function createDeviceRouter(config) {
     const device = deviceService.get(deviceId);
 
     if (!device) {
-      return res.status(404).json({
-        ok: false,
+      return res.status(404).json(buildErrorBody({
         error: 'Device not found',
-        deviceId
-      });
+        code: ERROR_CODES.DEVICE_NOT_FOUND,
+      }));
     }
 
     const state = await device.getState();
@@ -81,6 +164,378 @@ export function createDeviceRouter(config) {
       ok: true,
       ...state
     });
+  }));
+
+  // ===========================================================================
+  // Session
+  // ===========================================================================
+
+  /**
+   * GET /device/:deviceId/session
+   * Return the current SessionSnapshot for a device.
+   *
+   *   - 200 with the SessionSnapshot when online + non-idle
+   *   - 204 (no content) when online + idle + empty queue
+   *   - 503 with { offline: true, lastKnown, lastSeenAt } when offline
+   *   - 404 when no record / unknown device
+   *   - 501 when sessionControlService isn't configured
+   */
+  router.get('/:deviceId/session', asyncHandler(async (req, res) => {
+    if (!sessionControlService) {
+      return res.status(501).json(buildErrorBody({
+        error: 'Session control not configured',
+      }));
+    }
+
+    const { deviceId } = req.params;
+    const result = sessionControlService.getSnapshot(deviceId);
+
+    if (result === null || result === undefined) {
+      return res.status(404).json(buildErrorBody({
+        error: 'Device not found',
+        code: ERROR_CODES.DEVICE_NOT_FOUND,
+      }));
+    }
+
+    if (!result.online) {
+      return res.status(503).json({
+        offline: true,
+        lastKnown: result.snapshot,
+        lastSeenAt: result.lastSeenAt,
+      });
+    }
+
+    const snap = result.snapshot;
+    const isIdle = snap
+      && snap.state === 'idle'
+      && snap.currentItem === null
+      && Array.isArray(snap.queue?.items)
+      && snap.queue.items.length === 0;
+
+    if (isIdle) {
+      return res.status(204).end();
+    }
+
+    return res.status(200).json(snap);
+  }));
+
+  /**
+   * POST /device/:deviceId/session/transport
+   * Drive transport on the remote session (§4.3).
+   *
+   *   Body: { action, value?, commandId }
+   */
+  router.post('/:deviceId/session/transport', asyncHandler(async (req, res) => {
+    if (!requireSessionControl(sessionControlService, res)) return;
+
+    const { deviceId } = req.params;
+    const body = req.body || {};
+    const { action, value, commandId } = body;
+
+    if (!isNonEmptyString(commandId)) {
+      return res.status(400).json(buildErrorBody({
+        error: 'commandId required (non-empty string)',
+      }));
+    }
+    if (!isTransportAction(action)) {
+      return res.status(400).json(buildErrorBody({
+        error: `action must be one of: ${TRANSPORT_ACTIONS.join(', ')}`,
+      }));
+    }
+    if ((action === 'seekAbs' || action === 'seekRel')
+        && !(typeof value === 'number' && Number.isFinite(value))) {
+      return res.status(400).json(buildErrorBody({
+        error: `value must be a finite number for action "${action}"`,
+      }));
+    }
+
+    const envelope = buildCommandEnvelope({
+      targetDevice: deviceId,
+      command: 'transport',
+      commandId,
+      params: { action, ...(value !== undefined ? { value } : {}) },
+    });
+
+    logger.info?.('device.router.session.transport', { deviceId, action, commandId });
+    const result = await sessionControlService.sendCommand(envelope);
+    return mapSendCommandResult(result, res);
+  }));
+
+  /**
+   * POST /device/:deviceId/session/queue/:op
+   * Mutate the remote session's queue (§4.4).
+   *
+   *   :op ∈ QUEUE_OPS
+   *   Body varies per op — validated here, then the envelope validator
+   *   double-checks via SessionControlService.
+   */
+  router.post('/:deviceId/session/queue/:op', asyncHandler(async (req, res) => {
+    if (!requireSessionControl(sessionControlService, res)) return;
+
+    const { deviceId, op } = req.params;
+    const body = req.body || {};
+    const { contentId, queueItemId, from, to, items, clearRest, commandId } = body;
+
+    if (!isQueueOp(op)) {
+      return res.status(400).json(buildErrorBody({
+        error: `Unknown queue op "${op}"; must be one of: ${QUEUE_OPS.join(', ')}`,
+        code: 'VALIDATION',
+      }));
+    }
+    if (!isNonEmptyString(commandId)) {
+      return res.status(400).json(buildErrorBody({
+        error: 'commandId required (non-empty string)',
+      }));
+    }
+
+    switch (op) {
+      case 'play-now':
+      case 'play-next':
+      case 'add-up-next':
+      case 'add':
+        if (!isNonEmptyString(contentId)) {
+          return res.status(400).json(buildErrorBody({
+            error: `contentId required (non-empty string) for op "${op}"`,
+          }));
+        }
+        break;
+      case 'remove':
+      case 'jump':
+        if (!isNonEmptyString(queueItemId)) {
+          return res.status(400).json(buildErrorBody({
+            error: `queueItemId required (non-empty string) for op "${op}"`,
+          }));
+        }
+        break;
+      case 'reorder': {
+        const hasFromTo = isNonEmptyString(from) && isNonEmptyString(to);
+        const hasItems = Array.isArray(items) && items.length > 0
+          && items.every(isNonEmptyString);
+        if (!hasFromTo && !hasItems) {
+          return res.status(400).json(buildErrorBody({
+            error: 'reorder requires either (from + to) or a non-empty items array of strings',
+          }));
+        }
+        break;
+      }
+      case 'clear':
+        // No additional fields required.
+        break;
+      default:
+        // isQueueOp already gated this; guard-rail only.
+        return res.status(400).json(buildErrorBody({
+          error: `Unhandled queue op "${op}"`,
+        }));
+    }
+
+    // Build params with only the fields relevant to this op. The envelope
+    // validator will ignore unknown fields, but keeping the envelope tight
+    // makes idempotency fingerprints stable + debuggable.
+    const params = { op };
+    if (contentId !== undefined) params.contentId = contentId;
+    if (queueItemId !== undefined) params.queueItemId = queueItemId;
+    if (from !== undefined) params.from = from;
+    if (to !== undefined) params.to = to;
+    if (items !== undefined) params.items = items;
+    if (clearRest !== undefined) params.clearRest = clearRest;
+
+    const envelope = buildCommandEnvelope({
+      targetDevice: deviceId,
+      command: 'queue',
+      commandId,
+      params,
+    });
+
+    logger.info?.('device.router.session.queue', { deviceId, op, commandId });
+    const result = await sessionControlService.sendCommand(envelope);
+    return mapSendCommandResult(result, res);
+  }));
+
+  /**
+   * PUT /device/:deviceId/session/shuffle
+   * Toggle shuffle mode on the remote session (§4.5).
+   *
+   *   Body: { enabled: bool, commandId }
+   */
+  router.put('/:deviceId/session/shuffle', asyncHandler(async (req, res) => {
+    if (!requireSessionControl(sessionControlService, res)) return;
+
+    const { deviceId } = req.params;
+    const { enabled, commandId } = req.body || {};
+
+    if (!isNonEmptyString(commandId)) {
+      return res.status(400).json(buildErrorBody({
+        error: 'commandId required (non-empty string)',
+      }));
+    }
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json(buildErrorBody({
+        error: 'enabled must be a boolean',
+      }));
+    }
+
+    const envelope = buildCommandEnvelope({
+      targetDevice: deviceId,
+      command: 'config',
+      commandId,
+      params: { setting: 'shuffle', value: enabled },
+    });
+
+    logger.info?.('device.router.session.shuffle', { deviceId, enabled, commandId });
+    const result = await sessionControlService.sendCommand(envelope);
+    return mapSendCommandResult(result, res);
+  }));
+
+  /**
+   * PUT /device/:deviceId/session/repeat
+   * Set repeat mode on the remote session (§4.5).
+   *
+   *   Body: { mode: "off" | "one" | "all", commandId }
+   */
+  router.put('/:deviceId/session/repeat', asyncHandler(async (req, res) => {
+    if (!requireSessionControl(sessionControlService, res)) return;
+
+    const { deviceId } = req.params;
+    const { mode, commandId } = req.body || {};
+
+    if (!isNonEmptyString(commandId)) {
+      return res.status(400).json(buildErrorBody({
+        error: 'commandId required (non-empty string)',
+      }));
+    }
+    if (!isRepeatMode(mode)) {
+      return res.status(400).json(buildErrorBody({
+        error: `mode must be one of: ${REPEAT_MODES.join(', ')}`,
+      }));
+    }
+
+    const envelope = buildCommandEnvelope({
+      targetDevice: deviceId,
+      command: 'config',
+      commandId,
+      params: { setting: 'repeat', value: mode },
+    });
+
+    logger.info?.('device.router.session.repeat', { deviceId, mode, commandId });
+    const result = await sessionControlService.sendCommand(envelope);
+    return mapSendCommandResult(result, res);
+  }));
+
+  /**
+   * PUT /device/:deviceId/session/shader
+   * Set the playback shader (§4.5).
+   *
+   *   Body: { shader: string | null, commandId }
+   */
+  router.put('/:deviceId/session/shader', asyncHandler(async (req, res) => {
+    if (!requireSessionControl(sessionControlService, res)) return;
+
+    const { deviceId } = req.params;
+    const body = req.body || {};
+    const { commandId } = body;
+    // Distinguish null (clear) from missing. `hasOwnProperty` stays true
+    // for explicit nulls but false for omitted keys.
+    const hasShader = Object.prototype.hasOwnProperty.call(body, 'shader');
+    const shader = body.shader;
+
+    if (!isNonEmptyString(commandId)) {
+      return res.status(400).json(buildErrorBody({
+        error: 'commandId required (non-empty string)',
+      }));
+    }
+    if (!hasShader || (shader !== null && typeof shader !== 'string')) {
+      return res.status(400).json(buildErrorBody({
+        error: 'shader must be a string or null',
+      }));
+    }
+
+    const envelope = buildCommandEnvelope({
+      targetDevice: deviceId,
+      command: 'config',
+      commandId,
+      params: { setting: 'shader', value: shader },
+    });
+
+    logger.info?.('device.router.session.shader', { deviceId, shader, commandId });
+    const result = await sessionControlService.sendCommand(envelope);
+    return mapSendCommandResult(result, res);
+  }));
+
+  /**
+   * POST /device/:deviceId/session/claim
+   * Atomic "Take Over" — stops the current session and captures the
+   * snapshot for later "Restore" (§4.6).
+   *
+   *   Body: { commandId }
+   *
+   *   200: { ok: true, commandId, snapshot, stoppedAt }
+   *   400: missing/invalid commandId
+   *   409: device offline (body has lastKnown)
+   *   502: device refused / ack timeout
+   *   501: session control not configured
+   */
+  router.post('/:deviceId/session/claim', asyncHandler(async (req, res) => {
+    if (!requireSessionControl(sessionControlService, res)) return;
+
+    const { deviceId } = req.params;
+    const { commandId } = req.body || {};
+
+    if (!isNonEmptyString(commandId)) {
+      return res.status(400).json(buildErrorBody({
+        error: 'commandId required (non-empty string)',
+        code: 'VALIDATION',
+      }));
+    }
+
+    logger.info?.('device.router.session.claim', { deviceId, commandId });
+    const result = await sessionControlService.claim(deviceId, { commandId });
+
+    if (result && result.ok === true) {
+      return res.status(200).json({
+        ok: true,
+        commandId: result.commandId ?? commandId,
+        snapshot: result.snapshot,
+        stoppedAt: result.stoppedAt,
+      });
+    }
+    return mapSendCommandResult(result, res);
+  }));
+
+  /**
+   * PUT /device/:deviceId/session/volume
+   * Set playback volume (§4.5).
+   *
+   *   Body: { level: int 0-100, commandId }
+   */
+  router.put('/:deviceId/session/volume', asyncHandler(async (req, res) => {
+    if (!requireSessionControl(sessionControlService, res)) return;
+
+    const { deviceId } = req.params;
+    const { level, commandId } = req.body || {};
+
+    if (!isNonEmptyString(commandId)) {
+      return res.status(400).json(buildErrorBody({
+        error: 'commandId required (non-empty string)',
+      }));
+    }
+    if (typeof level !== 'number'
+        || !Number.isInteger(level)
+        || level < 0 || level > 100) {
+      return res.status(400).json(buildErrorBody({
+        error: 'level must be an integer between 0 and 100',
+      }));
+    }
+
+    const envelope = buildCommandEnvelope({
+      targetDevice: deviceId,
+      command: 'config',
+      commandId,
+      params: { setting: 'volume', value: level },
+    });
+
+    logger.info?.('device.router.session.volume', { deviceId, level, commandId });
+    const result = await sessionControlService.sendCommand(envelope);
+    return mapSendCommandResult(result, res);
   }));
 
   // ===========================================================================
@@ -97,11 +552,10 @@ export function createDeviceRouter(config) {
     const device = deviceService.get(deviceId);
 
     if (!device) {
-      return res.status(404).json({
-        ok: false,
+      return res.status(404).json(buildErrorBody({
         error: 'Device not found',
-        deviceId
-      });
+        code: ERROR_CODES.DEVICE_NOT_FOUND,
+      }));
     }
 
     logger.info?.('device.router.powerOn', { deviceId, display });
@@ -119,21 +573,21 @@ export function createDeviceRouter(config) {
     const device = deviceService.get(deviceId);
 
     if (!device) {
-      return res.status(404).json({
-        ok: false,
+      return res.status(404).json(buildErrorBody({
         error: 'Device not found',
-        deviceId
-      });
+        code: ERROR_CODES.DEVICE_NOT_FOUND,
+      }));
     }
 
     // Guard: block power-off during active videocall unless ?force=true
     if (hasActiveCall(deviceId) && force !== 'true') {
       logger.info?.('device.router.powerOff.blocked', { deviceId, reason: 'active-videocall' });
-      return res.status(409).json({
-        ok: false,
+      const body = buildErrorBody({
         error: 'Active videocall in progress',
-        hint: 'Use ?force=true to override'
+        code: ERROR_CODES.DEVICE_BUSY,
       });
+      body.hint = 'Use ?force=true to override';
+      return res.status(409).json(body);
     }
 
     if (force === 'true' && hasActiveCall(deviceId)) {
@@ -156,11 +610,10 @@ export function createDeviceRouter(config) {
     const device = deviceService.get(deviceId);
 
     if (!device) {
-      return res.status(404).json({
-        ok: false,
+      return res.status(404).json(buildErrorBody({
         error: 'Device not found',
-        deviceId
-      });
+        code: ERROR_CODES.DEVICE_NOT_FOUND,
+      }));
     }
 
     logger.info?.('device.router.toggle', { deviceId, display });
@@ -184,7 +637,9 @@ export function createDeviceRouter(config) {
     logger.info?.('device.router.load.start', { deviceId, query });
 
     if (!wakeAndLoadService) {
-      return res.status(500).json({ ok: false, error: 'WakeAndLoadService not configured' });
+      return res.status(500).json(buildErrorBody({
+        error: 'WakeAndLoadService not configured',
+      }));
     }
 
     const result = await wakeAndLoadService.execute(deviceId, query);
@@ -198,6 +653,103 @@ export function createDeviceRouter(config) {
   }));
 
   /**
+   * POST /device/:deviceId/load
+   *
+   * Accepts an adopt-snapshot Hand Off payload (§4.7):
+   *   Body: { mode: 'adopt', snapshot: SessionSnapshot, dispatchId: string }
+   *
+   *   200: { ...wakeResult, adopted: true, dispatchId }
+   *   400: missing/invalid dispatchId or snapshot
+   *   409: same dispatchId previously observed with a different body (conflict)
+   *   500: WakeAndLoadService not configured
+   *
+   * Idempotency: the same dispatchId with the same body within 60s returns
+   * the cached prior result without re-running the wake orchestration. A
+   * same-dispatchId, different-body request within the window is a
+   * conflict (IDEMPOTENCY_CONFLICT). Callers generate fresh dispatchIds
+   * per intent. Delegated to DispatchIdempotencyService.
+   */
+  router.post('/:deviceId/load', asyncHandler(async (req, res) => {
+    const { deviceId } = req.params;
+    const body = req.body || {};
+
+    if (body.mode !== 'adopt') {
+      return res.status(400).json(buildErrorBody({
+        error: 'POST /device/:id/load currently only supports mode: "adopt"',
+        code: 'VALIDATION',
+      }));
+    }
+
+    if (!wakeAndLoadService) {
+      return res.status(500).json(buildErrorBody({
+        error: 'WakeAndLoadService not configured',
+      }));
+    }
+
+    const { snapshot, dispatchId } = body;
+
+    if (!isNonEmptyString(dispatchId)) {
+      return res.status(400).json(buildErrorBody({
+        error: 'dispatchId required (non-empty string)',
+        code: 'VALIDATION',
+      }));
+    }
+
+    const validation = validateSessionSnapshot(snapshot);
+    if (!validation.valid) {
+      return res.status(400).json(buildErrorBody({
+        error: `Invalid snapshot: ${validation.errors[0]}`,
+        code: 'VALIDATION',
+        details: validation.errors,
+      }));
+    }
+
+    logger.info?.('device.router.load.adopt.start', { deviceId, dispatchId });
+
+    let cached;
+    try {
+      cached = await dispatchIdempotencyService.runWithIdempotency(
+        dispatchId,
+        { snapshot, deviceId },
+        async () => {
+          const result = await wakeAndLoadService.execute(
+            deviceId,
+            {},
+            { dispatchId, adoptSnapshot: snapshot },
+          );
+
+          const statusCode = result.error === 'Device not found'
+            ? 404
+            : (result.ok ? 200 : 502);
+
+          const responseBody = {
+            ...result,
+            adopted: result.ok === true,
+            dispatchId,
+          };
+
+          logger.info?.('device.router.load.adopt.complete', {
+            deviceId, dispatchId, ok: result.ok, failedStep: result.failedStep,
+          });
+
+          return { statusCode, body: responseBody };
+        },
+      );
+    } catch (err) {
+      if (err instanceof IdempotencyConflictError) {
+        logger.warn?.('device.router.load.adopt.conflict', { deviceId, dispatchId });
+        return res.status(409).json(buildErrorBody({
+          error: err.message,
+          code: ERROR_CODES.IDEMPOTENCY_CONFLICT,
+        }));
+      }
+      throw err;
+    }
+
+    return res.status(cached.statusCode).json(cached.body);
+  }));
+
+  /**
    * POST /device/:deviceId/reboot
    * Reboot the device via ADB. Fire-and-forget — device disconnects during reboot.
    */
@@ -208,7 +760,10 @@ export function createDeviceRouter(config) {
 
     const device = deviceService.get(deviceId);
     if (!device) {
-      return res.status(404).json({ ok: false, error: 'Device not found' });
+      return res.status(404).json(buildErrorBody({
+        error: 'Device not found',
+        code: ERROR_CODES.DEVICE_NOT_FOUND,
+      }));
     }
 
     const result = await device.reboot();
@@ -231,7 +786,10 @@ export function createDeviceRouter(config) {
 
     const device = deviceService.get(deviceId);
     if (!device) {
-      return res.status(404).json({ ok: false, error: 'Device not found' });
+      return res.status(404).json(buildErrorBody({
+        error: 'Device not found',
+        code: ERROR_CODES.DEVICE_NOT_FOUND,
+      }));
     }
 
     // Step 1: Try FKB force-stop + restart via ADB
@@ -255,7 +813,11 @@ export function createDeviceRouter(config) {
         await new Promise(r => setTimeout(r, 60_000));
       } catch (err) {
         logger.error?.('device.router.recover.power-cycle.failed', { deviceId, error: err.message });
-        return res.json({ ok: false, error: 'Recovery failed: ' + err.message, method: 'power-cycle' });
+        const body = buildErrorBody({
+          error: 'Recovery failed: ' + err.message,
+        });
+        body.method = 'power-cycle';
+        return res.status(502).json(body);
       }
     } else {
       // Wait for FKB to restart after ADB reboot
@@ -285,25 +847,31 @@ export function createDeviceRouter(config) {
   /**
    * GET /device/:deviceId/volume/:level
    * Set volume (0-100, +, -, mute, unmute)
+   *
+   * @deprecated Use `PUT /api/v1/device/:id/session/volume` (§4.5) — this
+   * legacy endpoint bypasses the session control layer and cannot produce
+   * an ack or a structured session snapshot update. Kept for backward
+   * compatibility; emits `device.volume.deprecated` on every call.
    */
   router.get('/:deviceId/volume/:level', asyncHandler(async (req, res) => {
     const { deviceId, level } = req.params;
+    logger.warn?.('device.volume.deprecated', {
+      deviceId,
+      note: 'Use PUT /api/v1/device/:id/session/volume instead',
+    });
     const device = deviceService.get(deviceId);
 
     if (!device) {
-      return res.status(404).json({
-        ok: false,
+      return res.status(404).json(buildErrorBody({
         error: 'Device not found',
-        deviceId
-      });
+        code: ERROR_CODES.DEVICE_NOT_FOUND,
+      }));
     }
 
     if (!device.hasCapability('volume')) {
-      return res.status(400).json({
-        ok: false,
+      return res.status(400).json(buildErrorBody({
         error: 'Device does not support volume control',
-        deviceId
-      });
+      }));
     }
 
     logger.info?.('device.router.volume', { deviceId, level });
@@ -331,19 +899,16 @@ export function createDeviceRouter(config) {
     const device = deviceService.get(deviceId);
 
     if (!device) {
-      return res.status(404).json({
-        ok: false,
+      return res.status(404).json(buildErrorBody({
         error: 'Device not found',
-        deviceId
-      });
+        code: ERROR_CODES.DEVICE_NOT_FOUND,
+      }));
     }
 
     if (!device.hasCapability('audioDevice')) {
-      return res.status(400).json({
-        ok: false,
+      return res.status(400).json(buildErrorBody({
         error: 'Device does not support audio device control',
-        deviceId
-      });
+      }));
     }
 
     logger.info?.('device.router.audio', { deviceId, audioDevice });
