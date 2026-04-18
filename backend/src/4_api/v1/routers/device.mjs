@@ -847,9 +847,18 @@ export function createDeviceRouter(config) {
   /**
    * GET /device/:deviceId/volume/:level
    * Set volume (0-100, +, -, mute, unmute)
+   *
+   * @deprecated Use `PUT /api/v1/device/:id/session/volume` (§4.5) — this
+   * legacy endpoint bypasses the session control layer and cannot produce
+   * an ack or a structured session snapshot update. Kept for backward
+   * compatibility; emits `device.volume.deprecated` on every call.
    */
   router.get('/:deviceId/volume/:level', asyncHandler(async (req, res) => {
     const { deviceId, level } = req.params;
+    logger.warn?.('device.volume.deprecated', {
+      deviceId,
+      note: 'Use PUT /api/v1/device/:id/session/volume instead',
+    });
     const device = deviceService.get(deviceId);
 
     if (!device) {

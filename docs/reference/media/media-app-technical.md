@@ -186,10 +186,11 @@ Dispatches content to a remote surface.
 }
 ```
 
-#### `GET /api/v1/device/:id/volume/:level`
-Live volume on a remote surface without re-dispatch. **Superseded by
-§4.5** (`PUT /api/v1/device/:id/session/volume`); retained for backward
-compatibility only.
+#### `GET /api/v1/device/:id/volume/:level` *(deprecated)*
+Live volume on a remote surface without re-dispatch. **Deprecated** — use
+§4.5 `PUT /api/v1/device/:id/session/volume` instead. The handler is
+retained for backward compatibility and emits a `device.volume.deprecated`
+warn on every call.
 
 ---
 
