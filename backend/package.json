@@ -25,7 +25,7 @@
     "#rendering/*": "./src/1_rendering/*",
     "#apps/*": "./src/3_applications/*",
     "#api/*": "./src/4_api/*",
-    "#shared-contracts/*": "../shared/contracts/*"
+    "#shared-contracts/*": "./shared/contracts/*"
   },
   "dependencies": {
     "@doist/todoist-api-typescript": "^3.0.2",
