@@ -16,7 +16,13 @@ import { WebSocketServer } from 'ws';
 import { nowTs, nowTs24 } from '../utils/index.mjs';
 import crypto from 'crypto';
 import { parseDeviceTopic, PLAYBACK_STATE_TOPIC } from '#shared-contracts/media/topics.mjs';
-import { buildDeviceStateBroadcast } from '#shared-contracts/media/envelopes.mjs';
+import {
+  buildDeviceStateBroadcast,
+  validateCommandEnvelope,
+} from '#shared-contracts/media/envelopes.mjs';
+
+// client-control:<clientId> topic prefix — delivered per connection identity.
+const CLIENT_CONTROL_PREFIX = 'client-control:';
 
 /**
  * @typedef {import('./IEventBus.mjs').ClientMeta} ClientMeta
@@ -362,14 +368,42 @@ export class WebSocketEventBus {
       return sentCount;
     }
 
-    // client-control:<clientId>: identity-routed. Needs connection identity
-    // (Task 4.1); drop with a warn until then.
-    if (typeof topic === 'string' && topic.startsWith('client-control:')) {
-      this.#logger.warn?.('bus.topic.client_control_unrouted', {
-        topic,
-        note: 'client-control requires per-connection identity; see Task 4.1'
-      });
-      return 0;
+    // client-control:<clientId>: identity-routed. Delivered only to the one
+    // connection whose identity matches the parsed clientId (set by an
+    // `identify` message from the client). Envelope must validate against
+    // the command contract — otherwise drop with a warn so malformed
+    // relays don't poison the stream.
+    if (typeof topic === 'string' && topic.startsWith(CLIENT_CONTROL_PREFIX)) {
+      const targetClientId = topic.slice(CLIENT_CONTROL_PREFIX.length);
+      if (!targetClientId) {
+        this.#logger.warn?.('client-control.invalid-topic', { topic });
+        return 0;
+      }
+
+      const validation = validateCommandEnvelope(payload);
+      if (!validation.valid) {
+        this.#logger.warn?.('client-control.envelope-invalid', {
+          topic,
+          clientId: targetClientId,
+          error: validation.errors[0],
+        });
+        return 0;
+      }
+
+      let delivered = 0;
+      for (const [, { ws, meta }] of this.#clients) {
+        if (meta?.clientId !== targetClientId) continue;
+        if (ws.readyState !== ws.OPEN) continue;
+        ws.send(msg);
+        delivered++;
+      }
+      if (delivered === 0) {
+        this.#logger.debug?.('client-control.no-client', {
+          topic,
+          clientId: targetClientId,
+        });
+      }
+      return delivered;
     }
 
     // playback_state is a full broadcast topic.
@@ -707,12 +741,55 @@ export class WebSocketEventBus {
       return;
     }
 
+    // Handle identity registration — clients send `{ type: 'identify', clientId }`
+    // to claim a stable identity used for `client-control:<id>` routing.
+    if (message.type === 'identify') {
+      this.#handleIdentify(clientId, message);
+      return;
+    }
+
     // Notify message handlers
     for (const handler of this.#messageHandlers) {
       try {
         handler(clientId, message);
       } catch (err) {
         this.#logger.error?.('eventbus.message_handler_error', { error: err.message });
+      }
+    }
+  }
+
+  /**
+   * Handle client identity registration. Records `clientId` on the client's
+   * meta so `client-control:<id>` broadcasts can route to the specific
+   * connection. Sends back an `identify_ack` for confirmation.
+   *
+   * @private
+   */
+  #handleIdentify(connectionId, message) {
+    const identity = message?.clientId;
+    if (typeof identity !== 'string' || identity.length === 0) {
+      this.#logger.warn?.('eventbus.identify_invalid', { connectionId });
+      return;
+    }
+    const client = this.#clients.get(connectionId);
+    if (!client) return;
+
+    client.meta.clientId = identity;
+    this.#logger.info?.('eventbus.client_identified', {
+      connectionId,
+      clientId: identity,
+    });
+
+    if (client.ws.readyState === client.ws.OPEN) {
+      try {
+        client.ws.send(JSON.stringify({
+          type: 'identify_ack',
+          clientId: identity,
+        }));
+      } catch (err) {
+        this.#logger.error?.('eventbus.identify_ack_error', {
+          connectionId, error: err?.message,
+        });
       }
     }
   }
@@ -826,6 +903,18 @@ export class WebSocketEventBus {
         this.#logger.error?.('eventbus.test_inject_error', { error: err.message });
       }
     }
+  }
+
+  /**
+   * Test seam: route a raw incoming message through the full message handler
+   * pipeline (including `bus_command` and `identify` handling). Unlike
+   * `_testInjectClientMessage`, this exercises internal handlers too.
+   * @param {string} clientId
+   * @param {Object} message
+   */
+  _testHandleIncomingMessage(clientId, message) {
+    const raw = typeof message === 'string' ? message : JSON.stringify(message);
+    this.#handleMessage(clientId, raw);
   }
 
   /**

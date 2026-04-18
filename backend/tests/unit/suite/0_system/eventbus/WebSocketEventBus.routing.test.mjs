@@ -139,15 +139,21 @@ describe('WebSocketEventBus routing — per-device topics', () => {
     expect(clientTv1.ws.send).not.toHaveBeenCalled();
   });
 
-  it('client-control:<clientId> is dropped with a warn (identity not yet tracked; Task 4.1)', () => {
+  it('client-control:<clientId> with an invalid envelope is dropped with envelope-invalid warn', () => {
+    // Task 4.1: client-control routing now validates the envelope and
+    // delivers only to identified connections. An envelope that is not a
+    // valid command envelope is dropped with a targeted warn.
     bus.broadcast(CLIENT_CONTROL_TOPIC('phone-1'), { payload: 'noop' });
 
     expect(clientTv1.ws.send).not.toHaveBeenCalled();
     expect(clientTv2.ws.send).not.toHaveBeenCalled();
     expect(clientWildcard.ws.send).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledWith(
-      'bus.topic.client_control_unrouted',
-      expect.objectContaining({ topic: CLIENT_CONTROL_TOPIC('phone-1') }),
+      'client-control.envelope-invalid',
+      expect.objectContaining({
+        topic: CLIENT_CONTROL_TOPIC('phone-1'),
+        clientId: 'phone-1',
+      }),
     );
   });
 
