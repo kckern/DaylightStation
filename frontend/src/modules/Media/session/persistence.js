@@ -11,12 +11,31 @@ function serialize(snapshot, { wasPlayingOnUnload } = {}) {
   });
 }
 
+function truncatePastPlayed(snapshot) {
+  const { items, currentIndex } = snapshot.queue;
+  if (currentIndex <= 0) return snapshot; // nothing to truncate
+  const trimmed = items.slice(currentIndex);
+  return {
+    ...snapshot,
+    queue: { ...snapshot.queue, items: trimmed, currentIndex: 0 },
+  };
+}
+
 export function writePersistedSession(snapshot, { wasPlayingOnUnload } = {}) {
-  const payload = serialize(snapshot, { wasPlayingOnUnload });
+  const firstPayload = serialize(snapshot, { wasPlayingOnUnload });
   try {
-    localStorage.setItem(PERSIST_KEY, payload);
+    localStorage.setItem(PERSIST_KEY, firstPayload);
     return { ok: true };
   } catch (err) {
+    if (err?.name === 'QuotaExceededError' || /quota/i.test(err?.message || '')) {
+      const truncated = truncatePastPlayed(snapshot);
+      try {
+        localStorage.setItem(PERSIST_KEY, serialize(truncated, { wasPlayingOnUnload }));
+        return { ok: true, truncated: true };
+      } catch (err2) {
+        return { ok: false, error: err2 };
+      }
+    }
     return { ok: false, error: err };
   }
 }

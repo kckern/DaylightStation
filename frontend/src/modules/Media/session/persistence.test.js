@@ -51,3 +51,58 @@ describe('persistence', () => {
     expect(readPersistedSession()).toBeNull();
   });
 });
+
+describe('persistence — schema + quota', () => {
+  beforeEach(() => { localStorage.clear(); });
+
+  it("returns 'schema-mismatch' when stored version does not match", () => {
+    localStorage.setItem(PERSIST_KEY, JSON.stringify({ schemaVersion: 99, snapshot: {} }));
+    expect(readPersistedSession()).toBe('schema-mismatch');
+  });
+
+  it('returns null on corrupt JSON', () => {
+    localStorage.setItem(PERSIST_KEY, '{not-json');
+    expect(readPersistedSession()).toBeNull();
+  });
+
+  it('truncates past-played items and retries on QuotaExceededError', () => {
+    const snap = {
+      sessionId: 's2',
+      state: 'playing',
+      currentItem: { contentId: 'plex:2', format: 'video' },
+      position: 0,
+      queue: {
+        items: [
+          { queueItemId: 'a', contentId: 'p:a', priority: 'queue' },
+          { queueItemId: 'b', contentId: 'p:b', priority: 'queue' },
+          { queueItemId: 'c', contentId: 'p:c', priority: 'queue' },
+        ],
+        currentIndex: 2,
+        upNextCount: 0,
+      },
+      config: { shuffle: false, repeat: 'off', shader: null, volume: 50, playbackRate: 1 },
+      meta: { ownerId: 'c1', updatedAt: 'x' },
+    };
+
+    let callCount = 0;
+    const originalSetItem = window.localStorage.setItem;
+    vi.spyOn(window.localStorage, 'setItem').mockImplementation(function (k, v) {
+      callCount += 1;
+      if (callCount === 1) {
+        const err = new Error('Quota exceeded');
+        err.name = 'QuotaExceededError';
+        throw err;
+      }
+      return originalSetItem.call(this, k, v);
+    });
+
+    const result = writePersistedSession(snap, { wasPlayingOnUnload: true });
+    expect(result.ok).toBe(true);
+    expect(callCount).toBe(2);
+    const loaded = readPersistedSession();
+    expect(loaded.snapshot.queue.items).toHaveLength(1); // a, b truncated
+    expect(loaded.snapshot.queue.items[0].queueItemId).toBe('c');
+    expect(loaded.snapshot.queue.currentIndex).toBe(0);
+    vi.restoreAllMocks();
+  });
+});
