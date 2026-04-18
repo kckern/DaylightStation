@@ -21,8 +21,10 @@ import { buildCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
 import {
   TRANSPORT_ACTIONS,
   QUEUE_OPS,
+  REPEAT_MODES,
   isTransportAction,
   isQueueOp,
+  isRepeatMode,
 } from '#shared-contracts/media/commands.mjs';
 
 /**
@@ -335,6 +337,153 @@ export function createDeviceRouter(config) {
     });
 
     logger.info?.('device.router.session.queue', { deviceId, op, commandId });
+    const result = await sessionControlService.sendCommand(envelope);
+    return mapSendCommandResult(result, res);
+  }));
+
+  /**
+   * PUT /device/:deviceId/session/shuffle
+   * Toggle shuffle mode on the remote session (§4.5).
+   *
+   *   Body: { enabled: bool, commandId }
+   */
+  router.put('/:deviceId/session/shuffle', asyncHandler(async (req, res) => {
+    if (!requireSessionControl(sessionControlService, res)) return;
+
+    const { deviceId } = req.params;
+    const { enabled, commandId } = req.body || {};
+
+    if (!isNonEmptyString(commandId)) {
+      return res.status(400).json(buildErrorBody({
+        error: 'commandId required (non-empty string)',
+      }));
+    }
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json(buildErrorBody({
+        error: 'enabled must be a boolean',
+      }));
+    }
+
+    const envelope = buildCommandEnvelope({
+      targetDevice: deviceId,
+      command: 'config',
+      commandId,
+      params: { setting: 'shuffle', value: enabled },
+    });
+
+    logger.info?.('device.router.session.shuffle', { deviceId, enabled, commandId });
+    const result = await sessionControlService.sendCommand(envelope);
+    return mapSendCommandResult(result, res);
+  }));
+
+  /**
+   * PUT /device/:deviceId/session/repeat
+   * Set repeat mode on the remote session (§4.5).
+   *
+   *   Body: { mode: "off" | "one" | "all", commandId }
+   */
+  router.put('/:deviceId/session/repeat', asyncHandler(async (req, res) => {
+    if (!requireSessionControl(sessionControlService, res)) return;
+
+    const { deviceId } = req.params;
+    const { mode, commandId } = req.body || {};
+
+    if (!isNonEmptyString(commandId)) {
+      return res.status(400).json(buildErrorBody({
+        error: 'commandId required (non-empty string)',
+      }));
+    }
+    if (!isRepeatMode(mode)) {
+      return res.status(400).json(buildErrorBody({
+        error: `mode must be one of: ${REPEAT_MODES.join(', ')}`,
+      }));
+    }
+
+    const envelope = buildCommandEnvelope({
+      targetDevice: deviceId,
+      command: 'config',
+      commandId,
+      params: { setting: 'repeat', value: mode },
+    });
+
+    logger.info?.('device.router.session.repeat', { deviceId, mode, commandId });
+    const result = await sessionControlService.sendCommand(envelope);
+    return mapSendCommandResult(result, res);
+  }));
+
+  /**
+   * PUT /device/:deviceId/session/shader
+   * Set the playback shader (§4.5).
+   *
+   *   Body: { shader: string | null, commandId }
+   */
+  router.put('/:deviceId/session/shader', asyncHandler(async (req, res) => {
+    if (!requireSessionControl(sessionControlService, res)) return;
+
+    const { deviceId } = req.params;
+    const body = req.body || {};
+    const { commandId } = body;
+    // Distinguish null (clear) from missing. `hasOwnProperty` stays true
+    // for explicit nulls but false for omitted keys.
+    const hasShader = Object.prototype.hasOwnProperty.call(body, 'shader');
+    const shader = body.shader;
+
+    if (!isNonEmptyString(commandId)) {
+      return res.status(400).json(buildErrorBody({
+        error: 'commandId required (non-empty string)',
+      }));
+    }
+    if (!hasShader || (shader !== null && typeof shader !== 'string')) {
+      return res.status(400).json(buildErrorBody({
+        error: 'shader must be a string or null',
+      }));
+    }
+
+    const envelope = buildCommandEnvelope({
+      targetDevice: deviceId,
+      command: 'config',
+      commandId,
+      params: { setting: 'shader', value: shader },
+    });
+
+    logger.info?.('device.router.session.shader', { deviceId, shader, commandId });
+    const result = await sessionControlService.sendCommand(envelope);
+    return mapSendCommandResult(result, res);
+  }));
+
+  /**
+   * PUT /device/:deviceId/session/volume
+   * Set playback volume (§4.5).
+   *
+   *   Body: { level: int 0-100, commandId }
+   */
+  router.put('/:deviceId/session/volume', asyncHandler(async (req, res) => {
+    if (!requireSessionControl(sessionControlService, res)) return;
+
+    const { deviceId } = req.params;
+    const { level, commandId } = req.body || {};
+
+    if (!isNonEmptyString(commandId)) {
+      return res.status(400).json(buildErrorBody({
+        error: 'commandId required (non-empty string)',
+      }));
+    }
+    if (typeof level !== 'number'
+        || !Number.isInteger(level)
+        || level < 0 || level > 100) {
+      return res.status(400).json(buildErrorBody({
+        error: 'level must be an integer between 0 and 100',
+      }));
+    }
+
+    const envelope = buildCommandEnvelope({
+      targetDevice: deviceId,
+      command: 'config',
+      commandId,
+      params: { setting: 'volume', value: level },
+    });
+
+    logger.info?.('device.router.session.volume', { deviceId, level, commandId });
     const result = await sessionControlService.sendCommand(envelope);
     return mapSendCommandResult(result, res);
   }));
