@@ -15,6 +15,8 @@
 import { WebSocketServer } from 'ws';
 import { nowTs, nowTs24 } from '../utils/index.mjs';
 import crypto from 'crypto';
+import { parseDeviceTopic, PLAYBACK_STATE_TOPIC } from '#shared-contracts/media/topics.mjs';
+import { buildDeviceStateBroadcast } from '#shared-contracts/media/envelopes.mjs';
 
 /**
  * @typedef {import('./IEventBus.mjs').ClientMeta} ClientMeta
@@ -48,14 +50,52 @@ export class WebSocketEventBus {
     clientsDisconnected: 0
   };
 
+  // Optional DeviceLivenessService used for last-snapshot replay on subscribe
+  #livenessService = null;
+
   /**
    * @param {Object} [options]
    * @param {string} [options.path='/ws'] - WebSocket path
    * @param {Object} [options.logger] - Logger instance
+   * @param {Object} [options.livenessService] - DeviceLivenessService for snapshot replay
    */
   constructor(options = {}) {
     this.#path = options.path || '/ws';
     this.#logger = options.logger || console;
+    this.#livenessService = options.livenessService || null;
+  }
+
+  /**
+   * Inject or replace the DeviceLivenessService (used for snapshot replay).
+   * Lets bootstrap wire the service after both are constructed.
+   * @param {Object|null} svc
+   */
+  setLivenessService(svc) {
+    this.#livenessService = svc || null;
+  }
+
+  /**
+   * @returns {Object|null}
+   */
+  getLivenessService() {
+    return this.#livenessService;
+  }
+
+  /**
+   * Test seam: replace the client pool with a custom Map-like. Only for tests.
+   * Accepts a Map where values are `{ ws, meta }`.
+   * @param {Map} clients
+   */
+  _testSetClientPool(clients) {
+    this.#clients = clients;
+  }
+
+  /**
+   * Test seam: force the WebSocket server reference to a truthy value so
+   * broadcast() doesn't short-circuit on missing server. Only for tests.
+   */
+  _testSetServerAttached() {
+    if (!this.#wss) this.#wss = /** @type {any} */ ({ __test: true });
   }
 
   // ===========================================================================
@@ -208,12 +248,29 @@ export class WebSocketEventBus {
   // ===========================================================================
 
   /**
-   * Broadcast event to external clients and publish internally
+   * Broadcast event to external clients and publish internally.
+   *
+   * Routing rules:
+   * - `device-state:<id>`, `device-ack:<id>`, `homeline:<id>`: deliver only to
+   *   subscribers of that exact topic (or wildcard).
+   * - `screen:<id>`: deliver only to the WS client identified as that device;
+   *   if connection identity isn't tracked (current state; Task 4.1 adds it),
+   *   fall back to subscribers of that exact topic.
+   * - `client-control:<clientId>`: deliver only to the WS connection
+   *   identified as that clientId. Identity is not yet tracked (Task 4.1),
+   *   so this currently logs a warn and drops.
+   * - `playback_state` (broadcast): deliver to all subscribers of that topic
+   *   or to wildcard subscribers.
+   * - Unknown topic prefixes with no internal subscribers: log
+   *   `bus.topic.unknown` and drop external delivery. Legacy topics that
+   *   already have internal subscribers continue to deliver to wildcard
+   *   subscribers for backward compatibility.
+   *
    * @param {string} topic - Event topic
    * @param {Object} payload - Event payload
    */
   broadcast(topic, payload) {
-    // Publish internally first
+    // Publish internally first (always — internal handlers are topic-exact).
     this.publish(topic, payload);
 
     // Broadcast to WebSocket clients
@@ -231,16 +288,93 @@ export class WebSocketEventBus {
     };
     const msg = JSON.stringify(message);
 
-    let sentCount = 0;
-    for (const [clientId, { ws, meta }] of this.#clients) {
-      if (ws.readyState === ws.OPEN) {
-        const subs = meta.subscriptions;
+    const parsed = parseDeviceTopic(topic);
 
-        // Send if client subscribes to topic or has wildcard
+    // Per-device topics: deliver to that device's topic subscribers only.
+    if (parsed) {
+      const { kind } = parsed;
+      let sentCount = 0;
+
+      if (kind === 'screen') {
+        // Prefer direct delivery to the identified connection (Task 4.1).
+        // Until connection identity is tracked, fall back to topic subscribers.
+        for (const [, { ws, meta }] of this.#clients) {
+          if (ws.readyState !== ws.OPEN) continue;
+          if (meta.subscriptions.has(topic)) {
+            ws.send(msg);
+            sentCount++;
+          }
+        }
+      } else {
+        for (const [, { ws, meta }] of this.#clients) {
+          if (ws.readyState !== ws.OPEN) continue;
+          const subs = meta.subscriptions;
+          if (subs.has(topic) || subs.has('*')) {
+            ws.send(msg);
+            sentCount++;
+          }
+        }
+      }
+
+      this.#logger.debug?.('eventbus.broadcast.device', {
+        topic, kind, deviceId: parsed.deviceId, sentCount
+      });
+      return sentCount;
+    }
+
+    // client-control:<clientId>: identity-routed. Needs connection identity
+    // (Task 4.1); drop with a warn until then.
+    if (typeof topic === 'string' && topic.startsWith('client-control:')) {
+      this.#logger.warn?.('bus.topic.client_control_unrouted', {
+        topic,
+        note: 'client-control requires per-connection identity; see Task 4.1'
+      });
+      return 0;
+    }
+
+    // playback_state is a full broadcast topic.
+    if (topic === PLAYBACK_STATE_TOPIC) {
+      let sentCount = 0;
+      for (const [, { ws, meta }] of this.#clients) {
+        if (ws.readyState !== ws.OPEN) continue;
+        const subs = meta.subscriptions;
         if (subs.has(topic) || subs.has('*')) {
           ws.send(msg);
           sentCount++;
         }
+      }
+      this.#logger.debug?.('eventbus.broadcast.playback_state', {
+        topic, sentCount
+      });
+      return sentCount;
+    }
+
+    // Legacy topics: if anyone subscribes to this exact topic, deliver.
+    // Wildcard clients also continue to receive. For topics with no
+    // subscribers and no internal handlers, warn and drop.
+    const hasInternalSubscribers = this.#subscribers.has(topic)
+      && (this.#subscribers.get(topic) || []).length > 0;
+    let hasExternalSubscribers = false;
+    for (const [, { ws, meta }] of this.#clients) {
+      if (ws.readyState !== ws.OPEN) continue;
+      if (meta.subscriptions.has(topic) || meta.subscriptions.has('*')) {
+        hasExternalSubscribers = true;
+        break;
+      }
+    }
+
+    if (!hasInternalSubscribers && !hasExternalSubscribers) {
+      this.#logger.warn?.('bus.topic.unknown', { topic });
+      return 0;
+    }
+
+    let sentCount = 0;
+    for (const [, { ws, meta }] of this.#clients) {
+      if (ws.readyState !== ws.OPEN) continue;
+      const subs = meta.subscriptions;
+      if (subs.has(topic) || subs.has('*')) {
+        ws.send(msg);
+        sentCount++;
       }
     }
 
