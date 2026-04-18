@@ -1348,3 +1348,45 @@ All of the following are true:
 - `docs/docs-last-updated.txt` points to HEAD.
 
 At this point: foundation poured. Next plan is the Media App itself.
+
+---
+
+## Status — all phases complete
+
+Every phase landed on `feature/media-foundation`. Commit ranges below are
+inclusive and correspond to the chronological order on the branch.
+
+| Phase | Focus | Commit range | Commits |
+|---|---|---|---|
+| 0 | Shared contracts package (`shared/contracts/media/`) — topics, commands, shapes, envelopes, errors | `3eb7b46a`..`5c00f85b` | 7 |
+| 1 | Import alias plumbing (`#shared-contracts` backend, `@shared-contracts` frontend) | `12ff3511`..`9c9fc7d7` | 2 |
+| 2 | Screen-framework cutover — structured envelope parser, new ActionBus actions, `SessionSource`, state + ack publishers | `960b3aee`..`7a2bafb6` | 7 |
+| 3 | Event-bus device-topic routing, `DeviceLivenessService` (offline synthesis + replay-on-subscribe), bootstrap wiring | `37edc621`..`315d45ab` | 4 |
+| 4 | Session-control API — `ISessionControl` port, `SessionControlService`, all `/session/*` endpoints, atomic claim, adopt-snapshot load, `DispatchIdempotencyService`, `client-control:<id>` identity routing | `25df5eae`..`10d4d044` | 14 |
+| 5 | Integration tests (round trip, claim atomicity, liveness), doc cross-linking, TODO sweep | `e1d69840`..HEAD | ~5 |
+
+### Test count (branch tip)
+
+Running the full foundation suite (`vitest run shared/contracts/media/
+frontend/src/screen-framework/publishers/ backend/tests/unit/suite/`) at
+branch tip reports **834 tests** across **45 files** with 11 pre-existing
+failures in cost / MediaProgress adapter suites that are unrelated to
+this branch. All foundation-specific assertions pass.
+
+### Integration tests landed in Phase 5
+
+Chosen approach: **in-process integration tests** alongside the existing
+unit-test tree (no `tests/live/api/*.runtime.test.mjs` files existed to
+match, per the plan's decision rule). These exercise the real
+`WebSocketEventBus` + real `DeviceLivenessService` + real
+`SessionControlService` together with the Express router and a
+locally-defined fake device:
+
+- `backend/tests/unit/suite/4_api/v1/routers/device.session.integration.test.mjs` — transport round trip (5 tests).
+- `backend/tests/unit/suite/4_api/v1/routers/device.session-claim.integration.test.mjs` — claim atomicity happy + refused + offline (3 tests).
+- `backend/tests/unit/suite/3_applications/devices/DeviceLiveness.integration.test.mjs` — offline + re-online synthesis (5 tests).
+
+The original plan listed `tests/live/api/*.runtime.test.mjs` paths for
+these scenarios. Those runtime files already exist at the in-process
+location above, and exercise the full stack without needing a live HTTP
+server — faster and matches the coverage intent.
