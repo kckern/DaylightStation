@@ -24,21 +24,24 @@ test.describe('MediaApp — P1 foundation', () => {
 
   test('resumes a persisted session after reload', async ({ page }) => {
     await page.goto('/media?play=plex-main:99999');
-    await expect(page.getByText(/plex-main:99999/)).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('heading', { name: /Now Playing: plex-main:99999/i })).toBeVisible({ timeout: 10000 });
 
     // Navigate to a bare URL — no autoplay param
     await page.goto('/media');
     // The persisted session should re-hydrate and show the same current item
-    await expect(page.getByText(/plex-main:99999/)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('heading', { name: /Now Playing: plex-main:99999/i })).toBeVisible({ timeout: 5000 });
   });
 
   test('reset clears the persisted session', async ({ page }) => {
     await page.goto('/media?play=plex-main:abcd');
-    await expect(page.getByText(/plex-main:abcd/)).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('heading', { name: /Now Playing: plex-main:abcd/i })).toBeVisible({ timeout: 10000 });
     await page.getByTestId('session-reset-btn').click();
-    await expect(page.getByText(/now playing: nothing/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Now Playing: nothing/i })).toBeVisible();
 
     const persisted = await page.evaluate(() => localStorage.getItem('media-app.session'));
-    expect(persisted).toBeNull();
+    // After reset, the adapter writes a fresh idle snapshot — key exists but currentItem is null
+    const parsed = persisted ? JSON.parse(persisted) : null;
+    expect(parsed?.snapshot?.currentItem).toBeNull();
+    expect(parsed?.snapshot?.state).toBe('idle');
   });
 });
