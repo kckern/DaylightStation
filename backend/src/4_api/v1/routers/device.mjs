@@ -17,6 +17,70 @@ import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { hasActiveCall, forceEndCall } from '#apps/homeline/CallStateService.mjs';
 import { buildErrorBody, ERROR_CODES } from '#shared-contracts/media/errors.mjs';
+import { buildCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
+import {
+  TRANSPORT_ACTIONS,
+  QUEUE_OPS,
+  REPEAT_MODES,
+  isTransportAction,
+  isQueueOp,
+  isRepeatMode,
+} from '#shared-contracts/media/commands.mjs';
+
+/**
+ * Map a SessionControlService.sendCommand result to an HTTP response.
+ *
+ * - ok: true                         → 200 pass-through of the ack payload
+ * - INVALID_ENVELOPE                 → 400
+ * - DEVICE_NOT_FOUND                 → 404
+ * - DEVICE_OFFLINE                   → 409 (includes lastKnown)
+ * - IDEMPOTENCY_CONFLICT             → 409
+ * - DEVICE_REFUSED                   → 502
+ * - any other ok:false               → 502
+ *
+ * @param {Object} result - The sendCommand result envelope.
+ * @param {import('express').Response} res
+ */
+function mapSendCommandResult(result, res) {
+  if (result && result.ok === true) {
+    return res.status(200).json(result);
+  }
+  const code = result?.code;
+  const error = result?.error || 'Command failed';
+
+  if (code === 'INVALID_ENVELOPE') {
+    return res.status(400).json(buildErrorBody({ error, code }));
+  }
+  if (code === ERROR_CODES.DEVICE_NOT_FOUND) {
+    return res.status(404).json(buildErrorBody({ error, code }));
+  }
+  if (code === ERROR_CODES.DEVICE_OFFLINE) {
+    const body = buildErrorBody({ error, code });
+    if (result.lastKnown !== undefined) body.lastKnown = result.lastKnown;
+    return res.status(409).json(body);
+  }
+  if (code === ERROR_CODES.IDEMPOTENCY_CONFLICT) {
+    return res.status(409).json(buildErrorBody({ error, code }));
+  }
+  if (code === ERROR_CODES.DEVICE_REFUSED) {
+    return res.status(502).json(buildErrorBody({ error, code }));
+  }
+  return res.status(502).json(buildErrorBody({ error, code }));
+}
+
+function requireSessionControl(sessionControlService, res) {
+  if (!sessionControlService) {
+    res.status(501).json(buildErrorBody({
+      error: 'Session control not configured',
+    }));
+    return false;
+  }
+  return true;
+}
+
+function isNonEmptyString(v) {
+  return typeof v === 'string' && v.length > 0;
+}
 
 /**
  * Create device router
@@ -143,6 +207,48 @@ export function createDeviceRouter(config) {
     }
 
     return res.status(200).json(snap);
+  }));
+
+  /**
+   * POST /device/:deviceId/session/transport
+   * Drive transport on the remote session (§4.3).
+   *
+   *   Body: { action, value?, commandId }
+   */
+  router.post('/:deviceId/session/transport', asyncHandler(async (req, res) => {
+    if (!requireSessionControl(sessionControlService, res)) return;
+
+    const { deviceId } = req.params;
+    const body = req.body || {};
+    const { action, value, commandId } = body;
+
+    if (!isNonEmptyString(commandId)) {
+      return res.status(400).json(buildErrorBody({
+        error: 'commandId required (non-empty string)',
+      }));
+    }
+    if (!isTransportAction(action)) {
+      return res.status(400).json(buildErrorBody({
+        error: `action must be one of: ${TRANSPORT_ACTIONS.join(', ')}`,
+      }));
+    }
+    if ((action === 'seekAbs' || action === 'seekRel')
+        && !(typeof value === 'number' && Number.isFinite(value))) {
+      return res.status(400).json(buildErrorBody({
+        error: `value must be a finite number for action "${action}"`,
+      }));
+    }
+
+    const envelope = buildCommandEnvelope({
+      targetDevice: deviceId,
+      command: 'transport',
+      commandId,
+      params: { action, ...(value !== undefined ? { value } : {}) },
+    });
+
+    logger.info?.('device.router.session.transport', { deviceId, action, commandId });
+    const result = await sessionControlService.sendCommand(envelope);
+    return mapSendCommandResult(result, res);
   }));
 
   // ===========================================================================
