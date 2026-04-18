@@ -446,6 +446,60 @@ export class WebSocketEventBus {
     }
 
     this.#logger.debug?.('eventbus.client_subscribed', { clientId, topics: topicList });
+
+    // Replay last known device-state snapshot to the new subscriber.
+    for (const topic of topicList) {
+      this.#maybeReplayDeviceState(client, topic);
+    }
+  }
+
+  /**
+   * Replay the last known device-state snapshot to a newly-subscribing
+   * client. If no livenessService is wired, or no snapshot exists yet, this
+   * is a no-op.
+   *
+   * @param {{ ws: object, meta: object }} client
+   * @param {string} topic
+   * @private
+   */
+  #maybeReplayDeviceState(client, topic) {
+    const parsed = parseDeviceTopic(topic);
+    if (!parsed || parsed.kind !== 'device-state') return;
+
+    const liveness = this.#livenessService;
+    if (!liveness || typeof liveness.getLastSnapshot !== 'function') {
+      this.#logger.debug?.('eventbus.replay.no_liveness', { topic });
+      return;
+    }
+
+    const cached = liveness.getLastSnapshot(parsed.deviceId);
+    if (!cached || !cached.snapshot) {
+      this.#logger.debug?.('eventbus.replay.no_snapshot', { topic });
+      return;
+    }
+
+    try {
+      const envelope = buildDeviceStateBroadcast({
+        deviceId: parsed.deviceId,
+        snapshot: cached.snapshot,
+        reason: 'initial',
+        ts: cached.lastSeenAt,
+      });
+      // Envelope sets `topic: 'device-state'` (kind), but on the wire we
+      // want the full topic string `device-state:<id>` so clients route it.
+      const message = { ...envelope, topic, timestamp: nowTs() };
+
+      if (client.ws?.readyState === client.ws?.OPEN) {
+        client.ws.send(JSON.stringify(message));
+        this.#logger.debug?.('eventbus.replay.sent', {
+          topic, deviceId: parsed.deviceId,
+        });
+      }
+    } catch (err) {
+      this.#logger.warn?.('eventbus.replay.error', {
+        topic, error: err?.message,
+      });
+    }
   }
 
   /**

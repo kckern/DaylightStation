@@ -172,3 +172,92 @@ describe('WebSocketEventBus routing — per-device topics', () => {
     expect(fitness.ws.send).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('WebSocketEventBus — device-state replay on subscribe', () => {
+  function installClient(bus, clientId, client) {
+    const pool = new Map();
+    pool.set(clientId, client);
+    bus._testSetClientPool(pool);
+  }
+
+  it('replays the last snapshot (reason=initial) to a new subscriber of device-state:<id>', () => {
+    const liveness = {
+      getLastSnapshot: vi.fn((deviceId) =>
+        deviceId === 'tv-1'
+          ? {
+              snapshot: { status: 'playing', position: 42 },
+              lastSeenAt: '2026-04-17T00:00:00.000Z',
+              online: true,
+            }
+          : null,
+      ),
+    };
+    const { bus } = makeBus();
+    bus.setLivenessService(liveness);
+
+    // Install a client first so subscribeClient can find it.
+    const client = makeClient();
+    installClient(bus, 'phone-1', client);
+
+    bus.subscribeClient('phone-1', [DEVICE_STATE_TOPIC('tv-1')]);
+
+    expect(liveness.getLastSnapshot).toHaveBeenCalledWith('tv-1');
+    expect(client.ws.send).toHaveBeenCalledTimes(1);
+    const sentArg = client.ws.send.mock.calls[0][0];
+    const parsed = JSON.parse(sentArg);
+    expect(parsed.topic).toBe(DEVICE_STATE_TOPIC('tv-1'));
+    expect(parsed.deviceId).toBe('tv-1');
+    expect(parsed.reason).toBe('initial');
+    expect(parsed.snapshot).toMatchObject({ status: 'playing', position: 42 });
+  });
+
+  it('does nothing when livenessService has no snapshot for the device', () => {
+    const liveness = { getLastSnapshot: vi.fn(() => null) };
+    const { bus } = makeBus();
+    bus.setLivenessService(liveness);
+
+    const client = makeClient();
+    installClient(bus, 'phone-1', client);
+
+    bus.subscribeClient('phone-1', [DEVICE_STATE_TOPIC('tv-1')]);
+
+    expect(liveness.getLastSnapshot).toHaveBeenCalledWith('tv-1');
+    expect(client.ws.send).not.toHaveBeenCalled();
+  });
+
+  it('skips replay when no livenessService is wired (legacy bootstrap)', () => {
+    const { bus } = makeBus();
+    // intentionally no setLivenessService
+
+    const client = makeClient();
+    installClient(bus, 'phone-1', client);
+
+    bus.subscribeClient('phone-1', [DEVICE_STATE_TOPIC('tv-1')]);
+
+    expect(client.ws.send).not.toHaveBeenCalled();
+  });
+
+  it('only replays for device-state:<id> — other device topics do not trigger replay', () => {
+    const liveness = {
+      getLastSnapshot: vi.fn(() => ({
+        snapshot: { status: 'playing' },
+        lastSeenAt: '2026-04-17T00:00:00.000Z',
+        online: true,
+      })),
+    };
+    const { bus } = makeBus();
+    bus.setLivenessService(liveness);
+
+    const client = makeClient();
+    installClient(bus, 'phone-1', client);
+
+    bus.subscribeClient('phone-1', [
+      HOMELINE_TOPIC('tv-1'),
+      DEVICE_ACK_TOPIC('tv-1'),
+      SCREEN_COMMAND_TOPIC('tv-1'),
+    ]);
+
+    expect(liveness.getLastSnapshot).not.toHaveBeenCalled();
+    expect(client.ws.send).not.toHaveBeenCalled();
+  });
+});
