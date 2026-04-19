@@ -4,6 +4,18 @@ import { useNav } from '../shell/NavProvider.jsx';
 import { resultToQueueInput } from './resultToQueueInput.js';
 import { CastButton } from '../cast/CastButton.jsx';
 
+function thumbnailSrc(row) {
+  if (row.thumbnail && typeof row.thumbnail === 'string' && row.thumbnail.length > 0) return row.thumbnail;
+  const id = row.id ?? row.itemId;
+  if (!id) return null;
+  // Use the display API, which returns a thumbnail or placeholder SVG for any content ID.
+  // id is <source>:<localId>; /display/:source/* expects the path separator form.
+  const [source, ...rest] = String(id).split(':');
+  if (!source || rest.length === 0) return null;
+  const localId = rest.join(':');
+  return `/api/v1/display/${encodeURIComponent(source)}/${localId}`;
+}
+
 export function SearchResults({ results = [], pending = [], isSearching = false }) {
   const { queue } = useSessionController('local');
   const { push } = useNav();
@@ -28,8 +40,18 @@ export function SearchResults({ results = [], pending = [], isSearching = false 
       {results.map((row) => {
         const id = row.id ?? row.itemId;
         if (!id) return null;
+        const thumb = thumbnailSrc(row);
         return (
           <li key={id} data-testid={`result-row-${id}`}>
+            {thumb && (
+              <img
+                className="media-result-thumb"
+                src={thumb}
+                alt=""
+                loading="lazy"
+                onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
+              />
+            )}
             <button
               data-testid={`result-open-${id}`}
               onClick={() => push('detail', { contentId: id })}

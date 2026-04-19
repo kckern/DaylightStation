@@ -16,6 +16,36 @@ export function HiddenPlayerMount() {
   const hasStartedRef = useRef(false);
   const stallTimerRef = useRef(null);
   const stallStartedAtRef = useRef(null);
+  const playerRef = useRef(null);
+
+  // Wire adapter transport to the Player imperative API
+  useEffect(() => {
+    adapter.setPlayerCallbacks({
+      onPlayRequest: () => playerRef.current?.play?.(),
+      onPauseRequest: () => playerRef.current?.pause?.(),
+      onSeekRequest: (t) => playerRef.current?.seek?.(t),
+    });
+    return () => {
+      adapter.setPlayerCallbacks({
+        onPlayRequest: () => {},
+        onPauseRequest: () => {},
+        onSeekRequest: () => {},
+      });
+    };
+  }, [adapter]);
+
+  // Track volume so we can sync it to the media element as the user adjusts it
+  const [volume, setVolume] = useState(() => adapter.getSnapshot().config?.volume ?? 100);
+  useEffect(() => {
+    return adapter.subscribe((snap) => {
+      const next = snap.config?.volume ?? 100;
+      setVolume((prev) => (prev === next ? prev : next));
+    });
+  }, [adapter]);
+  useEffect(() => {
+    const el = playerRef.current?.getMediaElement?.() ?? null;
+    if (el) el.volume = Math.max(0, Math.min(1, volume / 100));
+  }, [volume]);
 
   useEffect(() => () => {
     if (stallTimerRef.current) {
@@ -133,7 +163,7 @@ export function HiddenPlayerMount() {
       style={hiddenStyle}
       aria-hidden={hidden ? 'true' : 'false'}
     >
-      <Player play={playProp} clear={onClear} onProgress={onProgress} />
+      <Player ref={playerRef} play={playProp} clear={onClear} onProgress={onProgress} />
     </div>
   );
   return hostEl ? createPortal(tree, hostEl) : tree;
