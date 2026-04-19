@@ -2,7 +2,7 @@ import React from 'react';
 import { useCastTarget } from './useCastTarget.js';
 import { useDispatch } from './useDispatch.js';
 
-export function CastButton({ contentId, queue }) {
+export function CastButton({ contentId, queue, onAction }) {
   const { targetIds, mode } = useCastTarget();
   const { dispatchToTarget } = useDispatch();
   const id = contentId ?? queue;
@@ -14,6 +14,7 @@ export function CastButton({ contentId, queue }) {
     if (contentId) params.play = contentId;
     else if (queue) params.queue = queue;
     dispatchToTarget(params);
+    onAction?.();
   };
 
   return (

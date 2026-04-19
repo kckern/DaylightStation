@@ -48,6 +48,7 @@ test.describe('MediaApp — P1 foundation', () => {
     await expect(page.getByTestId('mini-player-open-nowplaying')).toBeVisible({ timeout: 10000 });
 
     await page.getByTestId('session-reset-btn').click();
+    await page.getByTestId('confirm-ok').click();
     // After reset, mini-player shows Idle again
     await expect(page.getByTestId('media-mini-player')).toHaveText(/idle/i);
 

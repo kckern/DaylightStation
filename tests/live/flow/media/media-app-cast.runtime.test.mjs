@@ -37,4 +37,20 @@ test.describe('MediaApp — P4 cast', () => {
     const anyRow = page.locator('[data-testid^="dispatch-row-"]').first();
     await expect(anyRow).toBeVisible({ timeout: 10000 });
   });
+
+  test('Escape closes the cast popover', async ({ page }) => {
+    await page.goto('/media');
+    await page.getByTestId('cast-target-chip').click();
+    await expect(page.getByTestId('cast-popover')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('cast-popover')).toBeHidden({ timeout: 2000 });
+  });
+
+  test('outside click closes the cast popover', async ({ page }) => {
+    await page.goto('/media');
+    await page.getByTestId('cast-target-chip').click();
+    await expect(page.getByTestId('cast-popover')).toBeVisible();
+    await page.locator('[data-testid="media-canvas"]').click({ position: { x: 400, y: 400 } });
+    await expect(page.getByTestId('cast-popover')).toBeHidden({ timeout: 2000 });
+  });
 });
