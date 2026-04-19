@@ -48,16 +48,17 @@
   -moz-osx-font-smoothing: grayscale;
 
   *, *::before, *::after { box-sizing: border-box; }
-  /* Reset *unclassed* buttons only; classed buttons supply their own visuals. */
-  button:not([class]) {
+  /* Zero-specificity baseline reset so classed rules always win. */
+  :where(button) {
+    appearance: none;
+    -webkit-appearance: none;
     font: inherit;
     color: inherit;
-    background: none;
+    background: transparent;
     border: none;
     padding: 0;
     cursor: pointer;
   }
-  button[class] { font: inherit; cursor: pointer; }
   input, select, textarea { font: inherit; color: inherit; }
   h1, h2, h3, h4, h5, h6, p, ul, ol, li { margin: 0; padding: 0; }
   ul, ol { list-style: none; }
