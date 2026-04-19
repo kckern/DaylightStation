@@ -48,7 +48,8 @@
   -moz-osx-font-smoothing: grayscale;
 
   *, *::before, *::after { box-sizing: border-box; }
-  button {
+  /* Reset *unclassed* buttons only; classed buttons supply their own visuals. */
+  button:not([class]) {
     font: inherit;
     color: inherit;
     background: none;
@@ -56,6 +57,7 @@
     padding: 0;
     cursor: pointer;
   }
+  button[class] { font: inherit; cursor: pointer; }
   input, select, textarea { font: inherit; color: inherit; }
   h1, h2, h3, h4, h5, h6, p, ul, ol, li { margin: 0; padding: 0; }
   ul, ol { list-style: none; }
@@ -244,9 +246,8 @@ ul.media-search-results > li {
   grid-column: 3;
   display: inline-flex;
   gap: 4px;
-  opacity: 0;
+  opacity: 0.35;
   transition: opacity 120ms ease;
-  pointer-events: none;
 
   button {
     padding: 5px 10px;
@@ -269,7 +270,6 @@ ul.media-search-results > li {
 ul.media-search-results > li:hover .media-result-actions,
 ul.media-search-results > li:focus-within .media-result-actions {
   opacity: 1;
-  pointer-events: auto;
 }
 
 /* "Searching…" text state (div, not ul) */
