@@ -822,12 +822,7 @@ function ContentSearchCombobox({ value, onChange }) {
       setSearchResults([]);
       return;
     }
-    // Don't search backend when user is refining within loaded browse items (e.g. hymn: 113)
-    const prefix = value?.split(':')[0];
-    if (prefix && debouncedSearch.startsWith(prefix + ':') && browseItems.length > 0) {
-      log.debug('search.skip.local_filter', { debouncedSearch, prefix, browseItemCount: browseItems.length });
-      return;
-    }
+    // Always dispatch backend search — local filter in render handles instant response while in flight.
 
     let cancelled = false;
 
