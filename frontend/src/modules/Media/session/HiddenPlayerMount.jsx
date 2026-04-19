@@ -76,8 +76,29 @@ export function HiddenPlayerMount() {
 
   if (!playProp) return null;
 
+  // The Player lives in the same <div.media-player-host> in both modes —
+  // only the styling changes and (when a view claims the host) whether
+  // React portals the subtree. Keeping the tree shape identical across the
+  // transition preserves the Player instance, so audio/video doesn't
+  // remount when the user navigates between Home/Browse and NowPlaying.
+  const hidden = !hostEl;
+  const hiddenStyle = hidden
+    ? {
+        position: 'fixed',
+        left: '-10000px',
+        top: 0,
+        width: '1px',
+        height: '1px',
+        overflow: 'hidden',
+        pointerEvents: 'none',
+      }
+    : null;
   const tree = (
-    <div className="media-player-host">
+    <div
+      className={hidden ? 'media-player-host media-player-host--hidden' : 'media-player-host'}
+      style={hiddenStyle}
+      aria-hidden={hidden ? 'true' : 'false'}
+    >
       <Player play={playProp} clear={onClear} onProgress={onProgress} />
     </div>
   );
