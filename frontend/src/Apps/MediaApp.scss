@@ -1057,6 +1057,31 @@ div.media-search-results {
   }
 }
 
+.now-playing-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.now-playing-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg);
+  background: var(--bg-card);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--r);
+  transition: background 120ms ease, border-color 120ms ease;
+
+  &:hover {
+    background: var(--bg-hover);
+    border-color: var(--brand);
+  }
+}
+
 /* =========================================================================
    Responsive — compact dock at narrow widths
    ========================================================================= */
