@@ -90,6 +90,7 @@ describe('MediaAppShell', () => {
     fireEvent.click(screen.getByTestId('mini-player-open-nowplaying'));
     expect(screen.getByText(/now playing.*plex:42/i)).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('session-reset-btn'));
+    fireEvent.click(screen.getByTestId('confirm-ok'));
     expect(screen.queryByText(/now playing.*plex:42/i)).not.toBeInTheDocument();
   });
 });

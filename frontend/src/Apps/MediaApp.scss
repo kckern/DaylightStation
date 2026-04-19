@@ -1109,6 +1109,68 @@ div.media-search-results {
   }
 }
 
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fade-in 120ms ease both;
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.confirm-dialog {
+  min-width: 320px;
+  max-width: 440px;
+  padding: 20px 22px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--r-lg);
+  box-shadow: 0 24px 60px -10px rgba(0, 0, 0, 0.8);
+  color: var(--fg);
+
+  &__title {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  &__message {
+    font-size: 14px;
+    color: var(--fg-2);
+    margin-bottom: 20px;
+  }
+  &__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+}
+.confirm-btn {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg);
+  background: var(--bg-card);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--r);
+  cursor: pointer;
+  transition: all 120ms ease;
+
+  &:hover { background: var(--bg-hover); border-color: rgba(255, 255, 255, 0.2); }
+
+  &--danger {
+    background: var(--danger);
+    border-color: var(--danger);
+    color: #fff;
+    font-weight: 600;
+    &:hover { filter: brightness(1.1); border-color: var(--danger); }
+  }
+}
+
 /* =========================================================================
    Responsive — compact dock at narrow widths
    ========================================================================= */
