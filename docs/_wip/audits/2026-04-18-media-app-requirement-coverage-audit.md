@@ -172,14 +172,14 @@ Actual states map to the 9 states in the spec exactly: `idle, ready, loading, pl
 
 ## Top gaps (prioritized)
 
-1. **C9.3 stall detection is a stub.** State exists, but no timer or Player-signal wiring triggers it; auto-advance-on-stall (a hard MUST) does not function. **Highest-priority fix.**
-2. **C7.3 position tolerance is un-enforced.** Hand Off and Take Over carry position in the snapshot but never validate `|remote.position − local.position| ≤ 2 s` post-transfer. Silent SLA violation.
-3. **Live content awareness is absent.** No `isLive` branching anywhere; progress/seek/stall/duration all treat live feeds as on-demand. Requires Player contract surfacing and UI adaptation.
-4. **C9.8 dispatch idempotency gap.** No dedup window on identical `{targetIds, play/queue, mode}` dispatches within a short interval; double-clicks can double-queue or re-trigger wake sequences.
-5. **C10.5 scrub/seek logging missing.** High-frequency user actions are silent rather than sampled. Meets the letter of "no unbounded logs" but misses the spirit of "observable but rate-limited."
-6. **N5.3 format-option asymmetry.** Adopt dispatches carry format-specific options via snapshot; non-adopt dispatches rely on bespoke `dispatchUrl` query building. Future format extensions may behave differently across the two paths.
-7. **C4.3 remote history is explicitly deferred.** Tracked, not a regression — but needs a design pass that respects N2.1 (no unbounded client cache) before implementation.
-8. **N1.1 first-paint baseline unmeasured.** `HomeView` blocks on `/api/v1/media/config`; no cache, no fallback. Should be measured on a warm-cache local-network run.
+1. ~~**C9.3 stall detection is a stub.**~~ **CLOSED** 2026-04-18 (this branch) — wired end-to-end: `HiddenPlayerMount` detects 10 s of continuous `stalled=true` from the Player's `onProgress` payload and fires `adapter.onPlayerStalled({ stalledMs })`; the adapter logs `mediaLog.playbackStallAutoAdvanced` and delegates to `_advance('stall-auto-advance')`. Tests cover the fire path, stall-recovery cancel, unmount cancel, and item-change cancel.
+2. **C7.3 position tolerance is un-enforced.** **PARTIALLY CLOSED** 2026-04-18 — Take Over direction wired: `useTakeOver` schedules a 1.5 s drift check against the claimed snapshot position; violations > 2 s log `mediaLog.takeoverDrift`. **Hand Off direction still open** — requires correlating dispatch success with the target device's per-device state feed; out of scope for this pass, tracked as follow-up. Known trade-off: the `setTimeout` is not cleared on unmount, which is harmless because the adapter reference is stable.
+3. **Live content awareness is absent.** No `isLive` branching anywhere; progress/seek/stall/duration all treat live feeds as on-demand. Requires Player contract surfacing and UI adaptation. Needs brainstorming before planning — UX decisions required (seek bar shape, duration display, stall threshold for live).
+4. ~~**C9.8 dispatch idempotency gap.**~~ **CLOSED** 2026-04-18 — `DispatchProvider` holds a 5 s dedup window keyed by `{sorted targetIds, play/queue/adopt, mode}`. Identical dispatches within the window short-circuit to the original `dispatchIds` and emit `mediaLog.dispatchDeduplicated`. **Caveat:** `retryLast` participates in the cache (does NOT bypass it) — this is an intentional deviation from the plan's original "retry bypasses dedup" intent. In practice, retry-within-window is almost always accidental; retries after the window fire fresh. If explicit retry-bypass is later required, pass `{ skipDedup: true }` through `dispatchToTarget` or clear the cache entry in `retryLast`.
+5. ~~**C10.5 scrub/seek logging missing.**~~ **CLOSED** 2026-04-18 — `mediaLog.transportCommand` sampled at 60/min; emitted from local `transport.seekAbs` and `transport.seekRel` (both events distinguishable by the `action` field; `seekRel` emits first with user intent, then delegates to `seekAbs` which emits the resolved absolute target).
+6. **C4.3 Remote history is explicitly deferred.** Tracked, not a regression — but needs a design pass that respects N2.1 (no unbounded client cache) before implementation.
+7. **N5.3 Format-Specific Options Dispatch** asymmetry — adopt mode carries options through snapshot, non-adopt builds via `dispatchUrl.js`. Different code paths → future-extension risk. Design spike recommended.
+8. **N1.1 Performance Baseline** unmeasured. `HomeView` blocks on `/api/v1/media/config` with no cache.  Should be measured on a warm-cache local-network run.
 
 ---
 
