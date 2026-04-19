@@ -4,17 +4,50 @@ import { useSessionController } from '../session/useSessionController.js';
 import { useNav } from '../shell/NavProvider.jsx';
 import { resultToQueueInput } from '../search/resultToQueueInput.js';
 
+function splitPath(path) {
+  if (!path) return [];
+  return String(path).split('/').filter(Boolean);
+}
+
 export function BrowseView({ path, modifiers, take = 50 }) {
   const { items, total, loading, error, loadMore } = useListBrowse(path, { modifiers, take });
   const { queue } = useSessionController('local');
-  const { push } = useNav();
+  const { push, replace } = useNav();
+
+  const segments = splitPath(path);
 
   if (loading) return <div data-testid="browse-view-loading">Loading…</div>;
   if (error) return <div data-testid="browse-view-error">{error.message}</div>;
 
   return (
     <div data-testid="browse-view" className="browse-view">
-      <h2>{path}</h2>
+      <nav className="browse-breadcrumb" aria-label="Breadcrumb">
+        <button
+          data-testid="browse-crumb-home"
+          className="browse-crumb browse-crumb--home"
+          onClick={() => replace('home', {})}
+        >
+          Home
+        </button>
+        {segments.map((seg, idx) => {
+          const pathUpToHere = segments.slice(0, idx + 1).join('/');
+          const isLast = idx === segments.length - 1;
+          return (
+            <React.Fragment key={pathUpToHere}>
+              <span className="browse-crumb-sep" aria-hidden="true">/</span>
+              <button
+                data-testid={`browse-crumb-${idx}`}
+                className={`browse-crumb${isLast ? ' browse-crumb--current' : ''}`}
+                onClick={() => { if (!isLast) replace('browse', { path: pathUpToHere, modifiers }); }}
+                aria-current={isLast ? 'page' : undefined}
+                disabled={isLast}
+              >
+                {seg}
+              </button>
+            </React.Fragment>
+          );
+        })}
+      </nav>
       <ul>
         {items.map((row) => {
           const id = row.id ?? row.itemId;

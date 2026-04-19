@@ -610,13 +610,41 @@ div.media-search-results {
 .browse-view {
   animation: view-enter 200ms ease both;
 
-  > h2 {
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--fg-3);
-    padding-bottom: 14px;
-    margin-bottom: 12px;
+  .browse-breadcrumb {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 2px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
     border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .browse-crumb {
+    padding: 6px 10px;
+    color: var(--fg-2);
+    background: transparent;
+    border: none;
+    border-radius: var(--r-sm);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color 100ms ease, background 100ms ease;
+
+    &:hover:not(:disabled) {
+      color: var(--fg);
+      background: var(--bg-hover);
+    }
+    &--current {
+      color: var(--fg);
+      cursor: default;
+    }
+    &--home { color: var(--fg); }
+  }
+  .browse-crumb-sep {
+    color: var(--fg-3);
+    padding: 0 2px;
+    font-weight: 400;
   }
 
   ul {
