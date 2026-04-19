@@ -14,6 +14,7 @@
 
 import escpos from 'escpos';
 import Network from 'escpos-network';
+import { createConnection } from 'net';
 import { createCanvas, loadImage } from 'canvas';
 import { configService } from '#system/config/index.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
@@ -103,8 +104,13 @@ export class ThermalPrinterAdapter {
   }
 
   /**
-   * Ping printer to check if it's reachable
-   * @returns {Promise<{success: boolean, latency?: number, error?: string}>}
+   * Ping printer to check if it's reachable.
+   *
+   * Opens a raw TCP connection and closes it immediately. NEVER writes any
+   * bytes — this is important because raw port 9100 is ESC/POS, and any
+   * unsolicited bytes would be spooled and printed as garbage.
+   *
+   * @returns {Promise<{success: boolean, latency?: number, error?: string, configured: boolean}>}
    */
   async ping() {
     if (!this.#host) {
@@ -112,44 +118,67 @@ export class ThermalPrinterAdapter {
     }
 
     const startTime = Date.now();
-    const device = new Network(this.#host, this.#port);
+    const host = this.#host;
+    const port = this.#port;
+    const timeout = this.#timeout;
 
     return new Promise((resolve) => {
-      const timeoutId = setTimeout(() => {
-        resolve({
+      const socket = createConnection({ host, port });
+      let settled = false;
+      let timeoutHandle = null;
+
+      const finish = (result) => {
+        if (settled) return;
+        settled = true;
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        try { socket.destroy(); } catch { /* noop */ }
+        resolve(result);
+      };
+
+      socket.setTimeout(timeout);
+
+      // Independent timeout guard — the socket's own setTimeout may not
+      // fire in all environments (e.g. mocked sockets in unit tests), so
+      // we enforce the bound ourselves too.
+      timeoutHandle = setTimeout(() => {
+        finish({
           success: false,
           error: 'Connection timeout',
-          host: this.#host,
-          port: this.#port,
+          host, port,
           latency: Date.now() - startTime,
-          configured: true
+          configured: true,
         });
-      }, this.#timeout);
+      }, timeout);
 
-      device.open((error) => {
-        clearTimeout(timeoutId);
-        const latency = Date.now() - startTime;
-
-        if (error) {
-          resolve({
-            success: false,
-            error: error.message || 'Connection failed',
-            host: this.#host,
-            port: this.#port,
-            latency,
-            configured: true
-          });
-          return;
-        }
-
-        device.close();
-        resolve({
+      socket.once('connect', () => {
+        // Close cleanly WITHOUT writing anything.
+        try { socket.end(); } catch { /* noop */ }
+        finish({
           success: true,
           message: 'Printer is reachable',
-          host: this.#host,
-          port: this.#port,
-          latency,
-          configured: true
+          host, port,
+          latency: Date.now() - startTime,
+          configured: true,
+        });
+      });
+
+      socket.once('timeout', () => {
+        finish({
+          success: false,
+          error: 'Connection timeout',
+          host, port,
+          latency: Date.now() - startTime,
+          configured: true,
+        });
+      });
+
+      socket.once('error', (err) => {
+        finish({
+          success: false,
+          error: err.message || 'Connection failed',
+          host, port,
+          latency: Date.now() - startTime,
+          configured: true,
         });
       });
     });
