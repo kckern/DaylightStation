@@ -12,13 +12,15 @@ export function PeekPanel({ deviceId }) {
   const ctl = useSessionController({ deviceId });
   const snap = ctl.snapshot;
 
-  if (!snap) return <div data-testid="peek-panel">Peek: no state for {deviceId}</div>;
+  const stateLabel = snap?.state ?? 'unknown';
+  const itemLabel = snap?.currentItem?.title ?? snap?.currentItem?.contentId ?? 'nothing';
+  const volume = snap?.config?.volume ?? 50;
 
   return (
     <div data-testid="peek-panel" className="peek-panel">
       <h2>Peek: {deviceId}</h2>
-      <div>state: {snap.state}</div>
-      <div>item: {snap.currentItem?.title ?? snap.currentItem?.contentId ?? 'nothing'}</div>
+      <div>state: {stateLabel}</div>
+      <div>item: {itemLabel}</div>
       <div className="peek-transport">
         <button data-testid="peek-play" onClick={ctl.transport.play}>Play</button>
         <button data-testid="peek-pause" onClick={ctl.transport.pause}>Pause</button>
@@ -28,12 +30,12 @@ export function PeekPanel({ deviceId }) {
       </div>
       <div className="peek-config">
         <label>
-          Volume: {snap.config?.volume ?? 50}
+          Volume: {volume}
           <input
             type="range"
             min="0"
             max="100"
-            value={snap.config?.volume ?? 50}
+            value={volume}
             onChange={(e) => ctl.config.setVolume(Number(e.target.value))}
             data-testid="peek-volume"
           />
