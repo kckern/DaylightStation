@@ -12,12 +12,14 @@ vi.mock('../../../services/WebSocketService.js', () => ({
 vi.mock('../../../lib/api.mjs', () => ({
   DaylightAPI: vi.fn(async (path) => {
     if (path === 'api/v1/media/config') return { browse: [], searchScopes: [] };
+    if (path === 'api/v1/device/config') return { devices: {} };
     return {};
   }),
 }));
 
 import { ClientIdentityProvider, CLIENT_ID_KEY } from '../session/ClientIdentityProvider.jsx';
 import { LocalSessionProvider } from '../session/LocalSessionProvider.jsx';
+import { FleetProvider } from '../fleet/FleetProvider.jsx';
 import { SearchProvider } from '../search/SearchProvider.jsx';
 import { MediaAppShell } from './MediaAppShell.jsx';
 
@@ -31,9 +33,11 @@ describe('MediaAppShell', () => {
     render(
       <ClientIdentityProvider>
         <LocalSessionProvider>
-          <SearchProvider>
-            <MediaAppShell />
-          </SearchProvider>
+          <FleetProvider>
+            <SearchProvider>
+              <MediaAppShell />
+            </SearchProvider>
+          </FleetProvider>
         </LocalSessionProvider>
       </ClientIdentityProvider>
     );
@@ -58,9 +62,11 @@ describe('MediaAppShell', () => {
     render(
       <ClientIdentityProvider>
         <LocalSessionProvider>
-          <SearchProvider>
-            <MediaAppShell />
-          </SearchProvider>
+          <FleetProvider>
+            <SearchProvider>
+              <MediaAppShell />
+            </SearchProvider>
+          </FleetProvider>
         </LocalSessionProvider>
       </ClientIdentityProvider>
     );
