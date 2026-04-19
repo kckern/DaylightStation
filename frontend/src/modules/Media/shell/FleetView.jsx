@@ -1,5 +1,6 @@
 import React from 'react';
 import { useFleetContext } from '../fleet/FleetProvider.jsx';
+import { useNav } from './NavProvider.jsx';
 
 function stateLabel(entry) {
   if (!entry) return 'unknown';
@@ -15,6 +16,7 @@ function currentItemLabel(entry) {
 
 export function FleetView() {
   const { devices, byDevice, loading, error } = useFleetContext();
+  const { push } = useNav();
 
   if (loading) return <div data-testid="fleet-loading">Loading fleet…</div>;
   if (error) return <div data-testid="fleet-error">{error.message}</div>;
@@ -33,6 +35,13 @@ export function FleetView() {
               <div className="fleet-card-state">{stateLabel(entry)}</div>
               <div className="fleet-card-item">{currentItemLabel(entry)}</div>
               {entry?.isStale && <span className="fleet-card-stale">stale</span>}
+              <button
+                data-testid={`fleet-peek-${d.id}`}
+                onClick={() => push('peek', { deviceId: d.id })}
+                className="fleet-peek-btn"
+              >
+                Peek
+              </button>
             </li>
           );
         })}
