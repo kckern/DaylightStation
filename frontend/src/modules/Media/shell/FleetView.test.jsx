@@ -11,6 +11,10 @@ vi.mock('./NavProvider.jsx', () => ({
   useNav: vi.fn(() => ({ push: vi.fn(), pop: vi.fn(), replace: vi.fn(), view: 'fleet', params: {}, depth: 1 })),
 }));
 
+vi.mock('../peek/useTakeOver.js', () => ({
+  useTakeOver: vi.fn(() => vi.fn(async () => ({ ok: true }))),
+}));
+
 import { FleetView } from './FleetView.jsx';
 
 beforeEach(() => {
