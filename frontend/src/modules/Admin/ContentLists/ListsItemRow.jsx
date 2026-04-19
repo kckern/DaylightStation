@@ -374,9 +374,11 @@ function buildSubtitle(item) {
 }
 
 // Shimmer Avatar - shows shimmer placeholder while image loads
-function ShimmerAvatar({ src, size = 36, radius = 'sm', color, children, ...props }) {
+function ShimmerAvatar({ src, size = 36, radius = 'sm', color, children, onLoadEvent, ...props }) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
+  const log = useMemo(() => adminLog('ShimmerAvatar'), []);
+  const loadStartRef = useRef(0);
 
   // Reset state when src changes
   useEffect(() => {
@@ -390,11 +392,23 @@ function ShimmerAvatar({ src, size = 36, radius = 'sm', color, children, ...prop
       setError(true);
       return;
     }
+    loadStartRef.current = performance.now();
+    log.debug('image.load.start', { src });
     const img = new Image();
-    img.onload = () => setLoaded(true);
-    img.onerror = () => setError(true);
+    img.onload = () => {
+      const durationMs = Math.round(performance.now() - loadStartRef.current);
+      log.info('image.load.end', { src, durationMs });
+      setLoaded(true);
+      onLoadEvent?.({ ok: true, src, durationMs });
+    };
+    img.onerror = () => {
+      const durationMs = Math.round(performance.now() - loadStartRef.current);
+      log.warn('image.load.error', { src, durationMs });
+      setError(true);
+      onLoadEvent?.({ ok: false, src, durationMs });
+    };
     img.src = src;
-  }, [src]);
+  }, [src, log, onLoadEvent]);
 
   // No src or error - show fallback avatar with optional color
   if (!src || error) {
@@ -410,6 +424,7 @@ function ShimmerAvatar({ src, size = 36, radius = 'sm', color, children, ...prop
     return (
       <div
         className="avatar-shimmer"
+        data-shimmer-src={src}
         style={{
           width: size,
           height: size,
