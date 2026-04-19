@@ -14,6 +14,9 @@ vi.mock('../lib/api.mjs', () => ({
     if (path === 'api/v1/media/config') {
       return { browse: [], searchScopes: [{ label: 'All', key: 'all', params: 'take=50' }] };
     }
+    if (path === 'api/v1/device/config') {
+      return { devices: {} };
+    }
     return {};
   }),
 }));
