@@ -5,12 +5,18 @@ import { useEffect } from 'react';
  * Usage:
  *   const ref = useRef(null);
  *   useDismissable(ref, { open, onDismiss });
+ *
+ * The keydown listener runs in the capture phase and calls
+ * stopImmediatePropagation() so that other document-level Escape handlers
+ * (e.g. a view-level "press Esc to go back") do not also fire while an
+ * overlay is open.
  */
 export function useDismissable(ref, { open, onDismiss }) {
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e) => {
       if (e.key === 'Escape') {
+        e.stopImmediatePropagation();
         e.stopPropagation();
         onDismiss?.();
       }
@@ -21,10 +27,10 @@ export function useDismissable(ref, { open, onDismiss }) {
       if (e.target instanceof Node && node.contains(e.target)) return;
       onDismiss?.();
     };
-    document.addEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
     document.addEventListener('pointerdown', onPointer, true);
     return () => {
-      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('keydown', onKey, true);
       document.removeEventListener('pointerdown', onPointer, true);
     };
   }, [ref, open, onDismiss]);
