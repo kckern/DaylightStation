@@ -18,7 +18,6 @@ export function SearchBar() {
 
   return (
     <div data-testid="media-search-bar" className="media-search-bar">
-      <span className="media-search-bar__glyph" aria-hidden="true">⌕</span>
       <select
         data-testid="media-search-scope"
         value={currentScopeKey ?? ''}
@@ -32,7 +31,7 @@ export function SearchBar() {
         data-testid="media-search-input"
         value={value}
         onChange={onChange}
-        placeholder="Search the catalog…"
+        placeholder="Search"
       />
       {value.length >= 2 && (
         <SearchResults results={results} pending={pending} isSearching={isSearching} />
