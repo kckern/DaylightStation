@@ -49,4 +49,18 @@ describe('useDismissable', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onDismiss).not.toHaveBeenCalled();
   });
+
+  it('stops sibling document Escape handlers from firing when open', () => {
+    const onDismiss = vi.fn();
+    const sibling = vi.fn();
+    document.addEventListener('keydown', sibling); // bubble-phase sibling on document
+    try {
+      render(<Host open onDismiss={onDismiss} />);
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(onDismiss).toHaveBeenCalledTimes(1);
+      expect(sibling).not.toHaveBeenCalled();
+    } finally {
+      document.removeEventListener('keydown', sibling);
+    }
+  });
 });
