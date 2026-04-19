@@ -7,6 +7,10 @@ vi.mock('../fleet/FleetProvider.jsx', () => ({
   useFleetContext: vi.fn(() => fleetCtx),
 }));
 
+vi.mock('./NavProvider.jsx', () => ({
+  useNav: vi.fn(() => ({ push: vi.fn(), pop: vi.fn(), replace: vi.fn(), view: 'fleet', params: {}, depth: 1 })),
+}));
+
 import { FleetView } from './FleetView.jsx';
 
 beforeEach(() => {
