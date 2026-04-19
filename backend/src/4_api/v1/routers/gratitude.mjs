@@ -33,7 +33,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * @param {Object} config.configService - ConfigService for household data
  * @param {import('#apps/gratitude/services/GratitudeHouseholdService.mjs').GratitudeHouseholdService} config.gratitudeHouseholdService - Household helpers
  * @param {Function} config.broadcastToWebsockets - WebSocket broadcast function
- * @param {Object} [config.printerAdapter] - ThermalPrinterAdapter for card printing
+ * @param {Object} config.printerRegistry - ThermalPrinterRegistry for resolving per-location printer adapters
  * @param {Function} [config.createGratitudeCardCanvas] - Function to create gratitude card canvas
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
@@ -44,7 +44,7 @@ export function createGratitudeRouter(config) {
     configService,
     gratitudeHouseholdService,
     broadcastToWebsockets,
-    printerAdapter,
+    printerRegistry,
     createGratitudeCardCanvas,
     logger = console
   } = config;
@@ -457,7 +457,7 @@ export function createGratitudeRouter(config) {
    * Note: The createGratitudeCardCanvas function returns selectedIds that were
    * included in the generated card, which are then marked as printed.
    */
-  router.get('/card/print', asyncHandler(async (req, res) => {
+  router.get('/card/print/:location?', asyncHandler(async (req, res) => {
     if (!createGratitudeCardCanvas) {
       return res.status(501).json({
         error: 'Gratitude card generation not configured',
@@ -465,11 +465,11 @@ export function createGratitudeRouter(config) {
       });
     }
 
-    if (!printerAdapter) {
-      return res.status(501).json({
-        error: 'Printer not configured',
-        success: false
-      });
+    let printerAdapter;
+    try {
+      printerAdapter = printerRegistry.resolve(req.params.location);
+    } catch (err) {
+      return res.status(404).json({ error: err.message, success: false });
     }
 
     const householdId = getHouseholdId(req);

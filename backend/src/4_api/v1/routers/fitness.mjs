@@ -82,7 +82,7 @@ export function createFitnessRouter(config) {
     transcriptionService,
     screenshotService,
     createReceiptCanvas,
-    printerAdapter,
+    printerRegistry,
     providerWebhookAdapters = {},
     enrichmentService = null,
     agentOrchestrator = null,
@@ -470,12 +470,15 @@ export function createFitnessRouter(config) {
    * Query params:
    *   - upsidedown: 'true'/'false' (default: true for print)
    */
-  router.get('/receipt/:sessionId/print', async (req, res) => {
+  router.get('/receipt/:sessionId/print/:location?', async (req, res) => {
     if (!createReceiptCanvas) {
       return res.status(501).json({ error: 'Receipt renderer not configured' });
     }
-    if (!printerAdapter) {
-      return res.status(501).json({ error: 'Printer not configured' });
+    let printerAdapter;
+    try {
+      printerAdapter = printerRegistry.resolve(req.params.location);
+    } catch (err) {
+      return res.status(404).json({ error: err.message });
     }
     const { sessionId } = req.params;
     const upsidedown = req.query.upsidedown !== 'false'; // default true for print
