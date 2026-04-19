@@ -51,6 +51,7 @@ export function DispatchProvider({ children }) {
     if (cached && Date.now() - cached.ts < DEDUP_WINDOW_MS) {
       mediaLog.dispatchDeduplicated({
         targetIds,
+        contentId: play ?? queue ?? 'adopt',
         mode: mode ?? 'transfer',
         windowMs: DEDUP_WINDOW_MS,
         firstDispatchIds: cached.dispatchIds,

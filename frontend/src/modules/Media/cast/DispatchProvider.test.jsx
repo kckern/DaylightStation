@@ -127,4 +127,13 @@ describe('DispatchProvider — idempotency', () => {
     await act(async () => { screen.getByTestId('fire').click(); });
     expect(apiMock).toHaveBeenCalledTimes(2);
   });
+
+  it('treats exactly 5000ms as outside the window (strict <)', async () => {
+    render(<DispatchProvider><Probe /></DispatchProvider>);
+    await act(async () => { screen.getByTestId('fire').click(); });
+    await act(async () => { vi.advanceTimersByTime(5000); });
+    await act(async () => { screen.getByTestId('fire').click(); });
+    // 5000 - 0 = 5000, which is NOT < 5000, so the second dispatch should fire.
+    expect(apiMock).toHaveBeenCalledTimes(2);
+  });
 });
