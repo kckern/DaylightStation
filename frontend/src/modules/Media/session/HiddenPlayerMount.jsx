@@ -42,10 +42,24 @@ export function HiddenPlayerMount() {
       setVolume((prev) => (prev === next ? prev : next));
     });
   }, [adapter]);
+  // Sync volume to the media element. Retry briefly because the element
+  // may not exist yet when the effect first runs (Player is still mounting).
   useEffect(() => {
-    const el = playerRef.current?.getMediaElement?.() ?? null;
-    if (el) el.volume = Math.max(0, Math.min(1, volume / 100));
-  }, [volume]);
+    let cancelled = false;
+    const target = Math.max(0, Math.min(1, volume / 100));
+    const apply = () => {
+      const el = playerRef.current?.getMediaElement?.();
+      if (el) {
+        try { el.volume = target; } catch { /* ignore */ }
+        return true;
+      }
+      return false;
+    };
+    if (apply()) return () => {};
+    const id = setInterval(() => { if (cancelled || apply()) clearInterval(id); }, 200);
+    const timeout = setTimeout(() => clearInterval(id), 5000);
+    return () => { cancelled = true; clearInterval(id); clearTimeout(timeout); };
+  }, [volume, currentItem?.contentId]);
 
   useEffect(() => () => {
     if (stallTimerRef.current) {
@@ -131,6 +145,9 @@ export function HiddenPlayerMount() {
   }, [adapter]);
 
   // Stable play prop across re-renders of the same item.
+  // Volume changes are applied imperatively (below) rather than through
+  // the play prop, so the Player instance is not remounted on every
+  // volume tick.
   const playProp = useMemo(() => {
     if (!currentItem) return null;
     return { ...currentItem };
