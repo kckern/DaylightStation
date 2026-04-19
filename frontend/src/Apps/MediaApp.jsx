@@ -1,5 +1,6 @@
 // frontend/src/Apps/MediaApp.jsx
 import React from 'react';
+import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import { ClientIdentityProvider } from '../modules/Media/session/ClientIdentityProvider.jsx';
 import { LocalSessionProvider } from '../modules/Media/session/LocalSessionProvider.jsx';
 import { FleetProvider } from '../modules/Media/fleet/FleetProvider.jsx';
@@ -11,6 +12,7 @@ import { MediaAppShell } from '../modules/Media/shell/MediaAppShell.jsx';
 import './MediaApp.scss';
 
 export default function MediaApp() {
+  useDocumentTitle('Media');
   return (
     <ClientIdentityProvider>
       <LocalSessionProvider>
