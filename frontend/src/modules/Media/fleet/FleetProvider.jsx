@@ -42,6 +42,16 @@ export function FleetProvider({ children }) {
     return unsub;
   }, []);
 
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        refresh();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [refresh]);
+
   const value = useMemo(
     () => ({ devices, byDevice: fleetState.byDevice, loading, error, refresh }),
     [devices, fleetState.byDevice, loading, error, refresh]

@@ -116,4 +116,26 @@ describe('FleetProvider', () => {
     act(() => { statusListener?.({ connected: false }); });
     await waitFor(() => expect(screen.getByText(/stale=true/)).toBeInTheDocument());
   });
+
+  describe('FleetProvider — visibility refresh', () => {
+    it('refetches device config when the tab becomes visible', async () => {
+      apiMock
+        .mockResolvedValueOnce({ devices: { 'a': { type: 'shield-tv', content_control: { x: 1 } } } })
+        .mockResolvedValueOnce({
+          devices: {
+            'a': { type: 'shield-tv', content_control: { x: 1 } },
+            'b': { type: 'linux-pc', content_control: { x: 1 } },
+          },
+        });
+
+      render(<FleetProvider><Probe /></FleetProvider>);
+      await waitFor(() => expect(screen.getByText(/devices=a;/)).toBeInTheDocument());
+      expect(apiMock).toHaveBeenCalledTimes(1);
+
+      Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+      act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+      await waitFor(() => expect(apiMock).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(screen.getByText(/devices=a,b;/)).toBeInTheDocument());
+    });
+  });
 });
