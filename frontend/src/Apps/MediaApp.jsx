@@ -8,6 +8,7 @@ import { CastTargetProvider } from '../modules/Media/cast/CastTargetProvider.jsx
 import { DispatchProvider } from '../modules/Media/cast/DispatchProvider.jsx';
 import { SearchProvider } from '../modules/Media/search/SearchProvider.jsx';
 import { MediaAppShell } from '../modules/Media/shell/MediaAppShell.jsx';
+import './MediaApp.scss';
 
 export default function MediaApp() {
   return (
@@ -18,7 +19,9 @@ export default function MediaApp() {
             <CastTargetProvider>
               <DispatchProvider>
                 <SearchProvider>
-                  <MediaAppShell />
+                  <div className="media-app" data-theme="console">
+                    <MediaAppShell />
+                  </div>
                 </SearchProvider>
               </DispatchProvider>
             </CastTargetProvider>
