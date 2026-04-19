@@ -1,6 +1,6 @@
 import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, act } from '@testing-library/react';
 import { LocalSessionContext } from './LocalSessionContext.js';
 
 // Stub Player to capture props
@@ -131,6 +131,118 @@ describe('HiddenPlayerMount', () => {
     expect(adapter.onPlayerStateChange).not.toHaveBeenCalled();
     onProgress({ currentTime: 0.4, paused: false });
     expect(adapter.onPlayerStateChange).toHaveBeenCalledWith('playing');
+  });
+});
+
+describe('HiddenPlayerMount — stall detection', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('calls adapter.onPlayerStalled after STALL_THRESHOLD_MS of continuous stalled=true', () => {
+    playerPropsLog.length = 0;
+    const adapter = mockAdapter({
+      currentItem: { contentId: 'plex:1', format: 'video' },
+      state: 'playing',
+    });
+    adapter.onPlayerStalled = vi.fn();
+    render(
+      <LocalSessionContext.Provider value={{ adapter }}>
+        <HiddenPlayerMount />
+      </LocalSessionContext.Provider>
+    );
+    const onProgress = playerPropsLog[0].onProgress;
+
+    act(() => { onProgress({ currentTime: 10, paused: false, stalled: true }); });
+    act(() => { vi.advanceTimersByTime(5000); });
+    expect(adapter.onPlayerStalled).not.toHaveBeenCalled();
+
+    act(() => { vi.advanceTimersByTime(5500); }); // cumulative 10.5s
+    expect(adapter.onPlayerStalled).toHaveBeenCalledTimes(1);
+    expect(adapter.onPlayerStalled.mock.calls[0][0]).toMatchObject({ stalledMs: expect.any(Number) });
+  });
+
+  it('clears the pending stall timer when stalled becomes false', () => {
+    playerPropsLog.length = 0;
+    const adapter = mockAdapter({
+      currentItem: { contentId: 'plex:1', format: 'video' },
+      state: 'playing',
+    });
+    adapter.onPlayerStalled = vi.fn();
+    render(
+      <LocalSessionContext.Provider value={{ adapter }}>
+        <HiddenPlayerMount />
+      </LocalSessionContext.Provider>
+    );
+    const onProgress = playerPropsLog[0].onProgress;
+
+    act(() => { onProgress({ currentTime: 10, paused: false, stalled: true }); });
+    act(() => { vi.advanceTimersByTime(5000); });
+    act(() => { onProgress({ currentTime: 12, paused: false, stalled: false }); });
+    act(() => { vi.advanceTimersByTime(10000); });
+
+    expect(adapter.onPlayerStalled).not.toHaveBeenCalled();
+  });
+
+  it('cancels the pending stall timer on unmount', () => {
+    playerPropsLog.length = 0;
+    const adapter = mockAdapter({
+      currentItem: { contentId: 'plex:1', format: 'video' },
+      state: 'playing',
+    });
+    adapter.onPlayerStalled = vi.fn();
+    const { unmount } = render(
+      <LocalSessionContext.Provider value={{ adapter }}>
+        <HiddenPlayerMount />
+      </LocalSessionContext.Provider>
+    );
+    const onProgress = playerPropsLog[0].onProgress;
+
+    act(() => { onProgress({ currentTime: 10, paused: false, stalled: true }); });
+    act(() => { vi.advanceTimersByTime(5000); });
+    unmount();
+    act(() => { vi.advanceTimersByTime(10000); });
+
+    expect(adapter.onPlayerStalled).not.toHaveBeenCalled();
+  });
+
+  it('cancels the pending stall timer when the current item changes', () => {
+    playerPropsLog.length = 0;
+    const subs = new Set();
+    let currentSnapshot = {
+      currentItem: { contentId: 'plex:1', format: 'video' },
+      state: 'playing',
+    };
+    const adapter = {
+      onPlayerEnded: vi.fn(),
+      onPlayerError: vi.fn(),
+      onPlayerStateChange: vi.fn(),
+      onPlayerProgress: vi.fn(),
+      onPlayerStalled: vi.fn(),
+      getSnapshot: () => currentSnapshot,
+      subscribe: (fn) => { subs.add(fn); return () => subs.delete(fn); },
+    };
+    render(
+      <LocalSessionContext.Provider value={{ adapter }}>
+        <HiddenPlayerMount />
+      </LocalSessionContext.Provider>
+    );
+    const onProgress = playerPropsLog[0].onProgress;
+
+    act(() => { onProgress({ currentTime: 10, paused: false, stalled: true }); });
+    act(() => { vi.advanceTimersByTime(5000); });
+
+    // Simulate item change — update snapshot + notify subscribers
+    act(() => {
+      currentSnapshot = {
+        currentItem: { contentId: 'plex:2', format: 'video' },
+        state: 'loading',
+      };
+      for (const sub of subs) sub(currentSnapshot);
+    });
+
+    act(() => { vi.advanceTimersByTime(10000); });
+
+    expect(adapter.onPlayerStalled).not.toHaveBeenCalled();
   });
 });
 
