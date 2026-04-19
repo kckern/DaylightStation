@@ -12,6 +12,7 @@ import { wsService } from '../../../services/WebSocketService.js';
 import mediaLog from '../logging/mediaLog.js';
 import { useSessionController } from './useSessionController.js';
 import { useUrlCommand } from '../externalControl/useUrlCommand.js';
+import { useExternalControl } from '../externalControl/useExternalControl.js';
 import { usePlaybackStateBroadcast } from '../shared/usePlaybackStateBroadcast.js';
 
 export const PlayerHostContext = createContext(null);
@@ -25,6 +26,7 @@ function UrlAndBroadcastMount() {
   const { clientId, displayName } = useClientIdentity();
   const controller = useSessionController('local');
   useUrlCommand(controller);
+  useExternalControl();
   usePlaybackStateBroadcast({
     send: (data) => wsService.send(data),
     clientId,
