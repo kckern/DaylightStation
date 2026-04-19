@@ -19,6 +19,10 @@ vi.mock('../shell/NavProvider.jsx', () => ({
   useNav: vi.fn(() => navCtx),
 }));
 
+vi.mock('../cast/CastButton.jsx', () => ({
+  CastButton: ({ contentId }) => <button data-testid={`cast-button-${contentId}`}>Cast</button>,
+}));
+
 import { SearchResults } from './SearchResults.jsx';
 
 beforeEach(() => {

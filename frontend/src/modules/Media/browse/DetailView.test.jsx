@@ -12,6 +12,10 @@ vi.mock('../session/useSessionController.js', () => ({
   useSessionController: vi.fn(() => controller),
 }));
 
+vi.mock('../cast/CastButton.jsx', () => ({
+  CastButton: ({ contentId }) => <button data-testid={`cast-button-${contentId}`}>Cast</button>,
+}));
+
 import { DetailView } from './DetailView.jsx';
 
 beforeEach(() => {
