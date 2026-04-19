@@ -5,6 +5,7 @@ import { LocalSessionContext } from './LocalSessionContext.js';
 import { PlayerHostContext } from './LocalSessionProvider.jsx';
 
 const POSITION_PERSIST_INTERVAL_S = 5; // Spec §11.3: persist position every ≥5s while playing
+const STALL_THRESHOLD_MS = 10_000; // Spec C9.3: persistent stall = no progress 10s while unpaused
 
 export function HiddenPlayerMount() {
   const ctx = useContext(LocalSessionContext);
@@ -13,6 +14,15 @@ export function HiddenPlayerMount() {
   const [currentItem, setCurrentItem] = useState(() => adapter.getSnapshot().currentItem);
   const lastPersistedPosition = useRef(0);
   const hasStartedRef = useRef(false);
+  const stallTimerRef = useRef(null);
+  const stallStartedAtRef = useRef(null);
+
+  useEffect(() => () => {
+    if (stallTimerRef.current) {
+      clearTimeout(stallTimerRef.current);
+      stallTimerRef.current = null;
+    }
+  }, []);
 
   // Subscribe to adapter but only re-render when currentItem identity changes.
   // Position/state/config changes don't remount the Player — critical because
@@ -39,6 +49,11 @@ export function HiddenPlayerMount() {
   useEffect(() => {
     lastPersistedPosition.current = 0;
     hasStartedRef.current = false;
+    if (stallTimerRef.current) {
+      clearTimeout(stallTimerRef.current);
+      stallTimerRef.current = null;
+      stallStartedAtRef.current = null;
+    }
   }, [currentItem?.contentId]);
 
   const onClear = useCallback(() => adapter.onPlayerEnded(), [adapter]);
@@ -57,6 +72,24 @@ export function HiddenPlayerMount() {
     if (!hasStartedRef.current && !isPaused) {
       hasStartedRef.current = true;
       adapter.onPlayerStateChange('playing');
+    }
+
+    const isStalled = typeof payload === 'object' && payload !== null
+      ? !!payload.stalled : false;
+    if (isStalled && !isPaused) {
+      if (!stallTimerRef.current) {
+        stallStartedAtRef.current = Date.now();
+        stallTimerRef.current = setTimeout(() => {
+          const stalledMs = Date.now() - (stallStartedAtRef.current ?? Date.now());
+          stallTimerRef.current = null;
+          stallStartedAtRef.current = null;
+          adapter.onPlayerStalled({ stalledMs });
+        }, STALL_THRESHOLD_MS);
+      }
+    } else if (stallTimerRef.current) {
+      clearTimeout(stallTimerRef.current);
+      stallTimerRef.current = null;
+      stallStartedAtRef.current = null;
     }
 
     const delta = Math.abs(positionSeconds - lastPersistedPosition.current);
