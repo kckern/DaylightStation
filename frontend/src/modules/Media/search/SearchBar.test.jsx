@@ -18,6 +18,10 @@ vi.mock('./SearchProvider.jsx', () => ({
   useSearchContext: vi.fn(() => scopeCtx),
 }));
 
+vi.mock('../cast/CastButton.jsx', () => ({
+  CastButton: ({ contentId }) => <button data-testid={`cast-button-${contentId}`}>Cast</button>,
+}));
+
 const controller = {
   queue: {
     playNow: vi.fn(),
