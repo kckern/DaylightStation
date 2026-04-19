@@ -2,6 +2,7 @@ import React from 'react';
 import { useSessionController } from '../session/useSessionController.js';
 import { useNav } from '../shell/NavProvider.jsx';
 import { resultToQueueInput } from './resultToQueueInput.js';
+import { CastButton } from '../cast/CastButton.jsx';
 
 export function SearchResults({ results = [], pending = [], isSearching = false }) {
   const { queue } = useSessionController('local');
@@ -41,6 +42,7 @@ export function SearchResults({ results = [], pending = [], isSearching = false 
               <button data-testid={`result-play-next-${id}`} onClick={handle(row, 'playNext')}>Play Next</button>
               <button data-testid={`result-upnext-${id}`} onClick={handle(row, 'addUpNext')}>Up Next</button>
               <button data-testid={`result-add-${id}`} onClick={handle(row, 'add')}>Add</button>
+              <CastButton contentId={id} />
             </span>
           </li>
         );
