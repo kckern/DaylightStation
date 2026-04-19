@@ -16,7 +16,6 @@ import escpos from 'escpos';
 import Network from 'escpos-network';
 import { createConnection } from 'net';
 import { createCanvas, loadImage } from 'canvas';
-import { configService } from '#system/config/index.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { fileExists } from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
@@ -917,19 +916,6 @@ export class ThermalPrinterAdapter {
 
     return status;
   }
-}
-
-/**
- * Create a ThermalPrinterAdapter from environment config
- * @param {Object} [options]
- * @returns {ThermalPrinterAdapter}
- */
-export function createThermalPrinterAdapter(options = {}) {
-  const adapterConfig = configService.getAdapterConfig('thermal_printer') || {};
-  const host = adapterConfig.host;
-  const port = adapterConfig.port || 9100;
-
-  return new ThermalPrinterAdapter({ host, port }, options);
 }
 
 export default ThermalPrinterAdapter;
