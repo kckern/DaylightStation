@@ -1,5 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { LocalSessionAdapter } from './LocalSessionAdapter.js';
+import mediaLog from '../logging/mediaLog.js';
+
+vi.mock('../logging/mediaLog.js', () => {
+  const fns = [
+    'mounted','unmounted','sessionCreated','sessionReset','sessionResumed',
+    'sessionStateChange','sessionPersisted','queueMutated','playbackStarted',
+    'playbackStalled','playbackStallAutoAdvanced','playbackError','playbackAdvanced',
+    'searchIssued','searchResultChunk','searchCompleted','dispatchInitiated',
+    'dispatchStep','dispatchSucceeded','dispatchFailed','dispatchDeduplicated',
+    'peekEntered','peekExited','peekCommand','peekCommandAck',
+    'takeoverInitiated','takeoverSucceeded','takeoverFailed','takeoverDrift',
+    'handoffInitiated','handoffSucceeded','handoffFailed',
+    'wsConnected','wsDisconnected','wsReconnected','wsStale',
+    'externalControlReceived','externalControlRejected','urlCommandProcessed',
+    'urlCommandIgnored','transportCommand',
+  ];
+  const stub = {};
+  for (const k of fns) stub[k] = vi.fn();
+  return { default: stub, mediaLog: stub };
+});
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 function makeDeps() {
   return {
@@ -160,5 +184,32 @@ describe('LocalSessionAdapter — player event handlers', () => {
     a.queue.add({ contentId: 'b', format: 'video' });
     a.onPlayerError({ message: 'boom', code: 'E_X' });
     expect(a.getSnapshot().currentItem?.contentId).toBe('b');
+  });
+});
+
+describe('LocalSessionAdapter.onPlayerStalled', () => {
+  it('transitions state to stalled, logs, and advances to the next queue item', () => {
+    const a = new LocalSessionAdapter(makeDeps());
+    // Seed a 2-item queue and currentIndex=0
+    a.queue.playNow({ contentId: 'p:1', format: 'video', title: 'A', duration: 60 });
+    a.queue.add({ contentId: 'p:2', format: 'video', title: 'B', duration: 60 });
+    a._dispatch({ type: 'PLAYER_STATE', playerState: 'playing' });
+
+    a.onPlayerStalled({ stalledMs: 10500 });
+
+    expect(mediaLog.playbackStallAutoAdvanced).toHaveBeenCalledTimes(1);
+    expect(mediaLog.playbackStallAutoAdvanced.mock.calls[0][0]).toMatchObject({
+      stalledMs: 10500,
+      contentId: 'p:1',
+    });
+    // Auto-advance landed on p:2
+    expect(a.getSnapshot().currentItem.contentId).toBe('p:2');
+  });
+
+  it('is a no-op when no current item exists', () => {
+    const a = new LocalSessionAdapter(makeDeps());
+    a.onPlayerStalled({ stalledMs: 10500 });
+    expect(mediaLog.playbackStallAutoAdvanced).not.toHaveBeenCalled();
+    expect(a.getSnapshot().state).toBe('idle');
   });
 });

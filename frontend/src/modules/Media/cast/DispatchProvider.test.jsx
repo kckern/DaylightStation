@@ -106,3 +106,34 @@ describe('DispatchProvider', () => {
     expect(stopSpy).not.toHaveBeenCalled();
   });
 });
+
+describe('DispatchProvider — idempotency', () => {
+  beforeEach(() => { vi.useFakeTimers(); apiMock.mockResolvedValue({ ok: true, totalElapsedMs: 1 }); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('deduplicates identical dispatches within the 5s window', async () => {
+    render(<DispatchProvider><Probe /></DispatchProvider>);
+    await act(async () => { screen.getByTestId('fire').click(); });
+    await act(async () => { vi.advanceTimersByTime(1000); });
+    await act(async () => { screen.getByTestId('fire').click(); });
+    // Still only one HTTP call
+    expect(apiMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-fires the dispatch after the window elapses', async () => {
+    render(<DispatchProvider><Probe /></DispatchProvider>);
+    await act(async () => { screen.getByTestId('fire').click(); });
+    await act(async () => { vi.advanceTimersByTime(6000); });
+    await act(async () => { screen.getByTestId('fire').click(); });
+    expect(apiMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('treats exactly 5000ms as outside the window (strict <)', async () => {
+    render(<DispatchProvider><Probe /></DispatchProvider>);
+    await act(async () => { screen.getByTestId('fire').click(); });
+    await act(async () => { vi.advanceTimersByTime(5000); });
+    await act(async () => { screen.getByTestId('fire').click(); });
+    // 5000 - 0 = 5000, which is NOT < 5000, so the second dispatch should fire.
+    expect(apiMock).toHaveBeenCalledTimes(2);
+  });
+});

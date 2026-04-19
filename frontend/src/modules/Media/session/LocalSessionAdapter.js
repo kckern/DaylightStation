@@ -2,6 +2,7 @@ import { createIdleSessionSnapshot } from '@shared-contracts/media/shapes.mjs';
 import { reduce } from './sessionReducer.js';
 import * as qOps from './queueOps.js';
 import { pickNextQueueItem } from './advancement.js';
+import mediaLog from '../logging/mediaLog.js';
 
 function defaultUuid() {
   try {
@@ -59,10 +60,13 @@ export class LocalSessionAdapter {
         this._dispatch({ type: 'RESET' });
       },
       seekAbs: (seconds) => {
+        mediaLog.transportCommand({ action: 'seekAbs', value: seconds, target: 'local' });
         this._playerCallbacks.onSeekRequest?.(seconds);
         this._dispatch({ type: 'UPDATE_POSITION', position: seconds });
       },
       seekRel: (delta) => {
+        // Emits two transport events: seekRel (user intent) + seekAbs (resolved absolute target).
+        mediaLog.transportCommand({ action: 'seekRel', value: delta, target: 'local' });
         const current = this._snapshot.position ?? 0;
         this.transport.seekAbs(Math.max(0, current + delta));
       },
@@ -169,6 +173,18 @@ export class LocalSessionAdapter {
   onPlayerError({ message, code } = {}) {
     this._dispatch({ type: 'ITEM_ERROR', error: message ?? 'unknown', code: code ?? null });
     this._advance('item-error');
+  }
+
+  onPlayerStalled({ stalledMs } = {}) {
+    const current = this._snapshot.currentItem;
+    if (!current) return;
+    mediaLog.playbackStallAutoAdvanced({
+      sessionId: this._snapshot.sessionId,
+      contentId: current.contentId,
+      stalledMs: Number.isFinite(stalledMs) ? stalledMs : null,
+    });
+    this._dispatch({ type: 'PLAYER_STATE', playerState: 'stalled' });
+    this._advance('stall-auto-advance');
   }
 
   onPlayerStateChange(state) {

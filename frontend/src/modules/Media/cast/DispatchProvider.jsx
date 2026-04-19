@@ -17,9 +17,18 @@ function isHomelineMsg(msg) {
   return !!msg && typeof msg.topic === 'string' && msg.topic.startsWith('homeline:');
 }
 
+const DEDUP_WINDOW_MS = 5000;
+
+function buildDedupKey({ targetIds, play, queue, mode }) {
+  const ids = [...targetIds].sort().join(',');
+  const content = play ?? queue ?? 'adopt';
+  return `${ids}|${content}|${mode ?? 'transfer'}`;
+}
+
 export function DispatchProvider({ children }) {
   const [state, dispatch] = useReducer(reduceDispatch, initialDispatchState);
   const lastAttemptRef = useRef(null);
+  const dedupCacheRef = useRef(new Map());
   const localController = useSessionController('local');
   const controllerRef = useRef(localController);
   useEffect(() => { controllerRef.current = localController; }, [localController]);
@@ -36,6 +45,20 @@ export function DispatchProvider({ children }) {
 
   const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot }) => {
     if (!Array.isArray(targetIds) || targetIds.length === 0) return [];
+
+    const key = buildDedupKey({ targetIds, play, queue, mode });
+    const cached = dedupCacheRef.current.get(key);
+    if (cached && Date.now() - cached.ts < DEDUP_WINDOW_MS) {
+      mediaLog.dispatchDeduplicated({
+        targetIds,
+        contentId: play ?? queue ?? 'adopt',
+        mode: mode ?? 'transfer',
+        windowMs: DEDUP_WINDOW_MS,
+        firstDispatchIds: cached.dispatchIds,
+      });
+      return cached.dispatchIds;
+    }
+
     const isAdopt = mode === 'adopt';
     const contentId = play ?? queue ?? (isAdopt ? (snapshot?.currentItem?.contentId ?? 'adopt-snapshot') : null);
     const dispatchIds = [];
@@ -72,6 +95,8 @@ export function DispatchProvider({ children }) {
           mediaLog.dispatchFailed({ dispatchId, error: err?.message });
         });
     }
+
+    dedupCacheRef.current.set(key, { ts: Date.now(), dispatchIds });
     return dispatchIds;
   }, []);
 
