@@ -8,15 +8,13 @@ function thumbnailSrc(row) {
   if (row.thumbnail && typeof row.thumbnail === 'string' && row.thumbnail.length > 0) return row.thumbnail;
   const id = row.id ?? row.itemId;
   if (!id) return null;
-  // Use the display API, which returns a thumbnail or placeholder SVG for any content ID.
-  // id is <source>:<localId>; /display/:source/* expects the path separator form.
   const [source, ...rest] = String(id).split(':');
   if (!source || rest.length === 0) return null;
   const localId = rest.join(':');
   return `/api/v1/display/${encodeURIComponent(source)}/${localId}`;
 }
 
-export function SearchResults({ results = [], pending = [], isSearching = false }) {
+export function SearchResults({ results = [], pending = [], isSearching = false, onAction }) {
   const { queue } = useSessionController('local');
   const { push } = useNav();
 
@@ -33,6 +31,7 @@ export function SearchResults({ results = [], pending = [], isSearching = false 
     else if (action === 'add') queue.add(input);
     else if (action === 'playNext') queue.playNext(input);
     else if (action === 'addUpNext') queue.addUpNext(input);
+    onAction?.();
   };
 
   return (
@@ -54,7 +53,7 @@ export function SearchResults({ results = [], pending = [], isSearching = false 
             )}
             <button
               data-testid={`result-open-${id}`}
-              onClick={() => push('detail', { contentId: id })}
+              onClick={() => { onAction?.(); push('detail', { contentId: id }); }}
               className="media-result-title"
             >
               {row.title ?? id}
@@ -64,7 +63,7 @@ export function SearchResults({ results = [], pending = [], isSearching = false 
               <button data-testid={`result-play-next-${id}`} onClick={handle(row, 'playNext')}>Play Next</button>
               <button data-testid={`result-upnext-${id}`} onClick={handle(row, 'addUpNext')}>Up Next</button>
               <button data-testid={`result-add-${id}`} onClick={handle(row, 'add')}>Add</button>
-              <CastButton contentId={id} />
+              <CastButton contentId={id} onAction={onAction} />
             </span>
           </li>
         );

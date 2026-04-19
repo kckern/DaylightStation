@@ -1,9 +1,9 @@
-// frontend/src/modules/Media/shell/NowPlayingView.jsx
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useSessionController } from '../session/useSessionController.js';
 import { usePlayerHost } from '../session/usePlayerHost.js';
 import { useFleetContext } from '../fleet/FleetProvider.jsx';
 import { useHandOff } from '../cast/useHandOff.js';
+import { useNav } from './NavProvider.jsx';
 
 export function NowPlayingView() {
   const { snapshot } = useSessionController('local');
@@ -14,6 +14,23 @@ export function NowPlayingView() {
   const handOff = useHandOff();
   const [targetId, setTargetId] = useState('');
   const [mode, setMode] = useState('transfer');
+  const { pop, depth } = useNav();
+
+  const goBack = () => {
+    if (depth > 1) pop();
+    else window.history.back?.();
+  };
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        goBack();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [depth, pop]);
 
   const onHandOff = () => {
     if (!targetId) return;
@@ -22,6 +39,16 @@ export function NowPlayingView() {
 
   return (
     <div data-testid="now-playing-view">
+      <div className="now-playing-toolbar">
+        <button
+          data-testid="now-playing-back"
+          className="now-playing-back-btn"
+          onClick={goBack}
+          aria-label="Back"
+        >
+          ← Back
+        </button>
+      </div>
       <h2>Now Playing: {item?.contentId ?? 'nothing'}</h2>
       <div>state: {snapshot.state}</div>
       <div>position: {Math.round(snapshot.position ?? 0)}s</div>
