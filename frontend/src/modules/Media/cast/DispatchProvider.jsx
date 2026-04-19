@@ -34,11 +34,12 @@ export function DispatchProvider({ children }) {
     return unsub;
   }, []);
 
-  const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle }) => {
+  const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot }) => {
     if (!Array.isArray(targetIds) || targetIds.length === 0) return [];
-    const contentId = play ?? queue;
+    const isAdopt = mode === 'adopt';
+    const contentId = play ?? queue ?? (isAdopt ? (snapshot?.currentItem?.contentId ?? 'adopt-snapshot') : null);
     const dispatchIds = [];
-    lastAttemptRef.current = { targetIds, play, queue, mode, shader, volume, shuffle };
+    lastAttemptRef.current = { targetIds, play, queue, mode, shader, volume, shuffle, snapshot };
 
     for (const deviceId of targetIds) {
       const dispatchId = uuid();
@@ -46,8 +47,10 @@ export function DispatchProvider({ children }) {
       dispatch({ type: 'INITIATED', dispatchId, deviceId, contentId, mode: mode ?? 'transfer' });
       mediaLog.dispatchInitiated({ dispatchId, deviceId, contentId, mode });
 
-      const url = buildDispatchUrl({ deviceId, play, queue, dispatchId, shader, volume, shuffle });
-      DaylightAPI(url)
+      const httpPromise = isAdopt
+        ? DaylightAPI(`api/v1/device/${deviceId}/load`, { dispatchId, snapshot, mode: 'adopt' }, 'POST')
+        : DaylightAPI(buildDispatchUrl({ deviceId, play, queue, dispatchId, shader, volume, shuffle }));
+      httpPromise
         .then((res) => {
           if (res?.ok) {
             dispatch({ type: 'SUCCEEDED', dispatchId, totalElapsedMs: res.totalElapsedMs ?? null });
