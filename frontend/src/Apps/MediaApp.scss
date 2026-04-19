@@ -399,18 +399,17 @@ div.media-search-results {
     &:hover { background: var(--bg-hover); border-color: var(--border-mid); }
   }
 
-  [data-testid='mini-pause'],
-  [data-testid='mini-play'] {
-    width: 32px;
-    height: 32px;
+  [data-testid='mini-toggle'] {
+    width: 36px;
+    height: 36px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: transparent;
+    background: var(--bg-card);
     border: 1px solid var(--border-mid);
     border-radius: var(--r);
-    color: var(--fg-2);
-    font-size: 11px;
+    color: var(--fg);
+    font-size: 12px;
     transition: all 100ms ease;
 
     &:hover {
