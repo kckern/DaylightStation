@@ -1974,8 +1974,15 @@ function ContentSearchCombobox({ value, onChange }) {
           style={{ overflowY: 'auto' }}
           ref={optionsRef}
           onScroll={(e) => {
-            if (!pagination || loadingMore || isActiveSearch) return;
             const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+            log.sampled?.('scroll.position', {
+              scrollTop: Math.round(scrollTop),
+              scrollHeight,
+              clientHeight,
+              itemCount: displayItems.length,
+            }, { maxPerMinute: 12, aggregate: true });
+
+            if (!pagination || loadingMore || isActiveSearch) return;
             if (pagination.hasAfter && scrollHeight - scrollTop - clientHeight < 50) {
               // Load more after
               const offset = pagination.offset + pagination.window;
