@@ -20,6 +20,7 @@ vi.mock('../../../lib/api.mjs', () => ({
 import { ClientIdentityProvider, CLIENT_ID_KEY } from '../session/ClientIdentityProvider.jsx';
 import { LocalSessionProvider } from '../session/LocalSessionProvider.jsx';
 import { FleetProvider } from '../fleet/FleetProvider.jsx';
+import { PeekProvider } from '../peek/PeekProvider.jsx';
 import { CastTargetProvider } from '../cast/CastTargetProvider.jsx';
 import { DispatchProvider } from '../cast/DispatchProvider.jsx';
 import { SearchProvider } from '../search/SearchProvider.jsx';
@@ -36,13 +37,15 @@ describe('MediaAppShell', () => {
       <ClientIdentityProvider>
         <LocalSessionProvider>
           <FleetProvider>
-            <CastTargetProvider>
-              <DispatchProvider>
-                <SearchProvider>
-                  <MediaAppShell />
-                </SearchProvider>
-              </DispatchProvider>
-            </CastTargetProvider>
+            <PeekProvider>
+              <CastTargetProvider>
+                <DispatchProvider>
+                  <SearchProvider>
+                    <MediaAppShell />
+                  </SearchProvider>
+                </DispatchProvider>
+              </CastTargetProvider>
+            </PeekProvider>
           </FleetProvider>
         </LocalSessionProvider>
       </ClientIdentityProvider>
@@ -69,13 +72,15 @@ describe('MediaAppShell', () => {
       <ClientIdentityProvider>
         <LocalSessionProvider>
           <FleetProvider>
-            <CastTargetProvider>
-              <DispatchProvider>
-                <SearchProvider>
-                  <MediaAppShell />
-                </SearchProvider>
-              </DispatchProvider>
-            </CastTargetProvider>
+            <PeekProvider>
+              <CastTargetProvider>
+                <DispatchProvider>
+                  <SearchProvider>
+                    <MediaAppShell />
+                  </SearchProvider>
+                </DispatchProvider>
+              </CastTargetProvider>
+            </PeekProvider>
           </FleetProvider>
         </LocalSessionProvider>
       </ClientIdentityProvider>

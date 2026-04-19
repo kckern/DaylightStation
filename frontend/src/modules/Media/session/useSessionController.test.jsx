@@ -1,7 +1,9 @@
 import React from 'react';
 import { describe, it, expect } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
+import { vi } from 'vitest';
 import { LocalSessionContext } from './LocalSessionContext.js';
+import { PeekContext } from '../peek/PeekProvider.jsx';
 import { useSessionController } from './useSessionController.js';
 
 function makeAdapter() {
@@ -41,10 +43,29 @@ describe('useSessionController', () => {
     expect(result.current.snapshot.config.volume).toBe(77);
   });
 
-  it('throws for unsupported target in P1', () => {
+  it('routes {deviceId} targets through PeekProvider getAdapter', () => {
+    const fakeAdapter = {
+      getSnapshot: () => ({ state: 'playing', config: { volume: 60 } }),
+      transport: { play: vi.fn() },
+      queue: {}, config: {}, lifecycle: {}, portability: {},
+    };
     const wrapper = ({ children }) => (
-      <LocalSessionContext.Provider value={{ adapter: makeAdapter() }}>{children}</LocalSessionContext.Provider>
+      <PeekContext.Provider value={{ getAdapter: () => fakeAdapter, activePeeks: new Map(), enterPeek: vi.fn(), exitPeek: vi.fn() }}>
+        {children}
+      </PeekContext.Provider>
     );
-    expect(() => renderHook(() => useSessionController({ deviceId: 'x' }), { wrapper })).toThrow(/not implemented/i);
+    const { result } = renderHook(() => useSessionController({ deviceId: 'lr' }), { wrapper });
+    expect(result.current.snapshot.state).toBe('playing');
+    expect(typeof result.current.transport.play).toBe('function');
+  });
+
+  it('returns null snapshot when remote adapter is not yet known', () => {
+    const wrapper = ({ children }) => (
+      <PeekContext.Provider value={{ getAdapter: () => null, activePeeks: new Map(), enterPeek: vi.fn(), exitPeek: vi.fn() }}>
+        {children}
+      </PeekContext.Provider>
+    );
+    const { result } = renderHook(() => useSessionController({ deviceId: 'ghost' }), { wrapper });
+    expect(result.current.snapshot).toBeNull();
   });
 });

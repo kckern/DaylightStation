@@ -6,6 +6,7 @@ import { HomeView } from '../browse/HomeView.jsx';
 import { BrowseView } from '../browse/BrowseView.jsx';
 import { DetailView } from '../browse/DetailView.jsx';
 import { FleetView } from './FleetView.jsx';
+import { PeekPanel } from './PeekPanel.jsx';
 
 function renderView(view, params) {
   switch (view) {
@@ -14,6 +15,7 @@ function renderView(view, params) {
     case 'detail': return <DetailView contentId={params.contentId} />;
     case 'nowPlaying': return <NowPlayingView />;
     case 'fleet': return <FleetView />;
+    case 'peek': return <PeekPanel deviceId={params.deviceId} />;
     default: return <HomeView />;
   }
 }
