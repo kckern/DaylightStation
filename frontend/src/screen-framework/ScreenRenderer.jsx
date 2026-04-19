@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
+import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import { DaylightAPI } from '../lib/api.mjs';
 import { PanelRenderer } from './panels/PanelRenderer.jsx';
 import { ScreenDataProvider } from './data/ScreenDataProvider.jsx';
@@ -175,6 +176,7 @@ function ScreenSubscriptionHandler({ subscriptions }) {
  * Fetches YAML config, sets up theme + data + input, renders panel tree.
  */
 export function ScreenRenderer({ screenId: propScreenId }) {
+  useDocumentTitle('Screen');
   const params = useParams();
   const screenId = propScreenId || params.screenId;
 

@@ -1,11 +1,13 @@
 // frontend/src/modules/Auth/SetupWizard.jsx
 import { useState } from 'react';
+import useDocumentTitle from '../../hooks/useDocumentTitle.js';
 import { Stack, TextInput, PasswordInput, Button, Text, Title, Paper, Stepper, Group } from '@mantine/core';
 import { DaylightAPI } from '../../lib/api.mjs';
 import { setToken } from '../../lib/auth.js';
 import './Auth.scss';
 
 export default function SetupWizard({ onComplete }) {
+  useDocumentTitle('Setup');
   const [step, setStep] = useState(0);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
