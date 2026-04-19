@@ -12,12 +12,6 @@ function cardKey(entry) {
   return `${entry.source}-${entry.mediaType ?? 'all'}`;
 }
 
-function cardSlug(entry) {
-  const parts = [entry.source];
-  if (entry.mediaType) parts.push(entry.mediaType);
-  return parts.filter(Boolean).join(' · ');
-}
-
 export function HomeView() {
   const [browse, setBrowse] = useState(null);
   const [error, setError] = useState(null);
@@ -41,16 +35,14 @@ export function HomeView() {
     <div data-testid="home-view" className="home-view">
       <h1>Media</h1>
       <div className="home-cards">
-        {browse.map((entry, i) => (
+        {browse.map((entry) => (
           <button
             key={cardKey(entry)}
             data-testid={`home-card-${cardKey(entry)}`}
             onClick={() => push('browse', { path: cardPath(entry) })}
             className="home-card"
           >
-            <span className="home-card__index">{String(i + 1).padStart(2, '0')}</span>
-            <span className="home-card__label">{entry.label}</span>
-            <span className="home-card__slug">{cardSlug(entry)}</span>
+            {entry.label}
           </button>
         ))}
       </div>
