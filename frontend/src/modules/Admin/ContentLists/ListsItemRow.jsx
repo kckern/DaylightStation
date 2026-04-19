@@ -23,6 +23,7 @@ import ConfigIndicators from './ConfigIndicators.jsx';
 import ProgressDisplay from './ProgressDisplay.jsx';
 import { getCacheEntry, setCacheEntry, hasCacheEntry } from './siblingsCache.js';
 import { useListsContext } from './ListsContext.js';
+import { resolveDisplayItems } from './contentSearchLogic.js';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import ImagePickerModal from './ImagePickerModal.jsx';
 import AdminPreviewPlayer from '../Preview/AdminPreviewPlayer.jsx';
@@ -839,12 +840,7 @@ function ContentSearchCombobox({ value, onChange }) {
       setSearchResults([]);
       return;
     }
-    // Don't search backend when user is refining within loaded browse items (e.g. hymn: 113)
-    const prefix = value?.split(':')[0];
-    if (prefix && debouncedSearch.startsWith(prefix + ':') && browseItems.length > 0) {
-      log.debug('search.skip.local_filter', { debouncedSearch, prefix, browseItemCount: browseItems.length });
-      return;
-    }
+    // Always dispatch backend search — local filter in render handles instant response while in flight.
 
     let cancelled = false;
 
@@ -1489,20 +1485,36 @@ function ContentSearchCombobox({ value, onChange }) {
   // When searchQuery matches the original value, we're browsing (not searching)
   const isActiveSearch = searchQuery.length >= 2 && searchQuery !== value;
 
-  // When browseItems are loaded and user refines with same source prefix, filter locally
   const sourcePrefix = value?.split(':')[0];
+  const { items: displayItems, mode: displayMode } = resolveDisplayItems({
+    isActiveSearch,
+    searchQuery,
+    sourcePrefix,
+    browseItems,
+    searchResults,
+  });
+  // Kept for downstream checks that reference these locals
   const queryMatchesSource = sourcePrefix && searchQuery.startsWith(sourcePrefix + ':');
+  const canFilterLocally = displayMode === 'local';
   const localFilterQuery = queryMatchesSource ? searchQuery.split(':').slice(1).join(':').trim() : '';
-  const canFilterLocally = browseItems.length > 0 && queryMatchesSource && isActiveSearch;
 
-  const displayItems = canFilterLocally
-    ? browseItems.filter(item => {
-        if (!localFilterQuery) return true;
-        const q = localFilterQuery.toLowerCase();
-        const num = item.value?.split(':')[1]?.trim();
-        return (num && num.startsWith(q)) || item.title?.toLowerCase().includes(q);
-      })
-    : isActiveSearch ? searchResults : browseItems;
+  const lastDisplayModeRef = useRef(null);
+  useEffect(() => {
+    if (!isActiveSearch) {
+      lastDisplayModeRef.current = null;
+      return;
+    }
+    if (lastDisplayModeRef.current !== displayMode) {
+      log.debug('display.mode', {
+        query: searchQuery,
+        mode: displayMode,
+        itemCount: displayItems.length,
+        browseItemCount: browseItems.length,
+        searchResultCount: searchResults.length,
+      });
+      lastDisplayModeRef.current = displayMode;
+    }
+  }, [displayMode, isActiveSearch, searchQuery, displayItems.length, browseItems.length, searchResults.length, log]);
 
   // Commit freeform text + fire auto-resolve search
   const AUTO_RESOLVE_TIMEOUT_MS = 15000;
