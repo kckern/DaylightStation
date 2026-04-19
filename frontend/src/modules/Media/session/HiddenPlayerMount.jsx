@@ -80,10 +80,11 @@ export function HiddenPlayerMount() {
       if (!stallTimerRef.current) {
         stallStartedAtRef.current = Date.now();
         stallTimerRef.current = setTimeout(() => {
-          const stalledMs = Date.now() - (stallStartedAtRef.current ?? Date.now());
+          const startedAt = stallStartedAtRef.current;
           stallTimerRef.current = null;
           stallStartedAtRef.current = null;
-          adapter.onPlayerStalled({ stalledMs });
+          if (startedAt == null) return; // invariant: every arm sets stallStartedAtRef
+          adapter.onPlayerStalled({ stalledMs: Date.now() - startedAt });
         }, STALL_THRESHOLD_MS);
       }
     } else if (stallTimerRef.current) {

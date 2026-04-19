@@ -182,6 +182,68 @@ describe('HiddenPlayerMount — stall detection', () => {
 
     expect(adapter.onPlayerStalled).not.toHaveBeenCalled();
   });
+
+  it('cancels the pending stall timer on unmount', () => {
+    playerPropsLog.length = 0;
+    const adapter = mockAdapter({
+      currentItem: { contentId: 'plex:1', format: 'video' },
+      state: 'playing',
+    });
+    adapter.onPlayerStalled = vi.fn();
+    const { unmount } = render(
+      <LocalSessionContext.Provider value={{ adapter }}>
+        <HiddenPlayerMount />
+      </LocalSessionContext.Provider>
+    );
+    const onProgress = playerPropsLog[0].onProgress;
+
+    act(() => { onProgress({ currentTime: 10, paused: false, stalled: true }); });
+    act(() => { vi.advanceTimersByTime(5000); });
+    unmount();
+    act(() => { vi.advanceTimersByTime(10000); });
+
+    expect(adapter.onPlayerStalled).not.toHaveBeenCalled();
+  });
+
+  it('cancels the pending stall timer when the current item changes', () => {
+    playerPropsLog.length = 0;
+    const subs = new Set();
+    let currentSnapshot = {
+      currentItem: { contentId: 'plex:1', format: 'video' },
+      state: 'playing',
+    };
+    const adapter = {
+      onPlayerEnded: vi.fn(),
+      onPlayerError: vi.fn(),
+      onPlayerStateChange: vi.fn(),
+      onPlayerProgress: vi.fn(),
+      onPlayerStalled: vi.fn(),
+      getSnapshot: () => currentSnapshot,
+      subscribe: (fn) => { subs.add(fn); return () => subs.delete(fn); },
+    };
+    render(
+      <LocalSessionContext.Provider value={{ adapter }}>
+        <HiddenPlayerMount />
+      </LocalSessionContext.Provider>
+    );
+    const onProgress = playerPropsLog[0].onProgress;
+
+    act(() => { onProgress({ currentTime: 10, paused: false, stalled: true }); });
+    act(() => { vi.advanceTimersByTime(5000); });
+
+    // Simulate item change — update snapshot + notify subscribers
+    act(() => {
+      currentSnapshot = {
+        currentItem: { contentId: 'plex:2', format: 'video' },
+        state: 'loading',
+      };
+      for (const sub of subs) sub(currentSnapshot);
+    });
+
+    act(() => { vi.advanceTimersByTime(10000); });
+
+    expect(adapter.onPlayerStalled).not.toHaveBeenCalled();
+  });
 });
 
 import { PlayerHostContext } from './LocalSessionProvider.jsx';
