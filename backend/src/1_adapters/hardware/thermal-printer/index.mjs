@@ -4,3 +4,4 @@
  */
 
 export { ThermalPrinterAdapter, createThermalPrinterAdapter } from './ThermalPrinterAdapter.mjs';
+export { ThermalPrinterRegistry } from './ThermalPrinterRegistry.mjs';
