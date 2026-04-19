@@ -2,6 +2,7 @@ import React from 'react';
 import { useContentInfo } from './useContentInfo.js';
 import { useSessionController } from '../session/useSessionController.js';
 import { resultToQueueInput } from '../search/resultToQueueInput.js';
+import { CastButton } from '../cast/CastButton.jsx';
 
 export function DetailView({ contentId }) {
   const { info, loading, error } = useContentInfo(contentId);
@@ -25,6 +26,7 @@ export function DetailView({ contentId }) {
         <button data-testid="detail-play-next" onClick={() => queue.playNext(input)}>Play Next</button>
         <button data-testid="detail-up-next" onClick={() => queue.addUpNext(input)}>Up Next</button>
         <button data-testid="detail-add" onClick={() => queue.add(input)}>Add to Queue</button>
+        <CastButton contentId={contentId} />
       </div>
     </div>
   );
