@@ -44,3 +44,29 @@ describe('mediaLog', () => {
       expect.objectContaining({ param: 'play', value: 'plex:1' }));
   });
 });
+
+describe('mediaLog — gap-fill events', () => {
+  it('exposes playbackStallAutoAdvanced as a warn emitter', () => {
+    expect(typeof mediaLog.playbackStallAutoAdvanced).toBe('function');
+    mediaLog.playbackStallAutoAdvanced({ sessionId: 's', contentId: 'p:1', stalledMs: 10500 });
+    // Smoke: must not throw
+  });
+
+  it('exposes takeoverDrift as a warn emitter', () => {
+    expect(typeof mediaLog.takeoverDrift).toBe('function');
+    mediaLog.takeoverDrift({ deviceId: 'lr', expected: 120, actual: 115.2, driftSeconds: 4.8 });
+  });
+
+  it('exposes dispatchDeduplicated as an info emitter', () => {
+    expect(typeof mediaLog.dispatchDeduplicated).toBe('function');
+    mediaLog.dispatchDeduplicated({ keyHash: 'abc', targetIds: ['lr'], windowMs: 5000 });
+  });
+
+  it('exposes transportCommand as a sampled emitter (seek-safe)', () => {
+    expect(typeof mediaLog.transportCommand).toBe('function');
+    for (let i = 0; i < 200; i += 1) {
+      mediaLog.transportCommand({ action: 'seekAbs', value: i, target: 'local' });
+    }
+    // No throw; sampling handled by Logger.
+  });
+});

@@ -37,6 +37,7 @@ export const mediaLog = {
   queueMutated:           debug('queue.mutated'),
   playbackStarted:        info('playback.started'),
   playbackStalled:        warn('playback.stalled'),
+  playbackStallAutoAdvanced: warn('playback.stall-auto-advanced'),
   playbackError:          error('playback.error'),
   playbackAdvanced:       info('playback.advanced'),
   searchIssued:           debug('search.issued'),
@@ -46,6 +47,7 @@ export const mediaLog = {
   dispatchStep:           sampled('dispatch.step', { maxPerMinute: 30, aggregate: true }),
   dispatchSucceeded:      info('dispatch.succeeded'),
   dispatchFailed:         warn('dispatch.failed'),
+  dispatchDeduplicated:      info('dispatch.deduplicated'),
   peekEntered:            info('peek.entered'),
   peekExited:             info('peek.exited'),
   peekCommand:            debug('peek.command'),
@@ -53,6 +55,7 @@ export const mediaLog = {
   takeoverInitiated:      info('takeover.initiated'),
   takeoverSucceeded:      info('takeover.succeeded'),
   takeoverFailed:         warn('takeover.failed'),
+  takeoverDrift:             warn('takeover.drift'),
   handoffInitiated:       info('handoff.initiated'),
   handoffSucceeded:       info('handoff.succeeded'),
   handoffFailed:          warn('handoff.failed'),
@@ -64,6 +67,7 @@ export const mediaLog = {
   externalControlRejected:warn('external-control.rejected'),
   urlCommandProcessed:    info('url-command.processed'),
   urlCommandIgnored:      debug('url-command.ignored'),
+  transportCommand:          sampled('transport.command', { maxPerMinute: 60, aggregate: true }),
 };
 
 export default mediaLog;
