@@ -14,19 +14,19 @@ import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 
 /**
- * Resolve the adapter for a request. Throws with a 404-shaped message
- * when the location is unknown.
+ * Resolve the adapter for a request. Returns the adapter on success, or
+ * sends a 404 response and returns null when the location is unknown.
  * @param {import('#adapters/hardware/thermal-printer/ThermalPrinterRegistry.mjs').ThermalPrinterRegistry} registry
  * @param {express.Request} req
+ * @param {express.Response} res
+ * @returns {import('#adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs').ThermalPrinterAdapter | null}
  */
-function resolveAdapter(registry, req) {
-  const name = req.params.location;
+function resolveAdapter(registry, req, res) {
   try {
-    return registry.resolve(name);
+    return registry.resolve(req.params.location);
   } catch (err) {
-    const e = new Error(err.message);
-    e.statusCode = 404;
-    throw e;
+    res.status(404).json({ success: false, error: err.message });
+    return null;
   }
 }
 
@@ -63,19 +63,22 @@ export function createPrinterRouter(config) {
   });
 
   router.get('/ping/:location?', asyncHandler(async (req, res) => {
-    const adapter = resolveAdapter(printerRegistry, req);
+    const adapter = resolveAdapter(printerRegistry, req, res);
+    if (!adapter) return;
     const result = await adapter.ping();
     const statusCode = result.success ? 200 : (result.configured ? 503 : 501);
     res.status(statusCode).json(result);
   }));
 
   router.get('/status/:location?', asyncHandler(async (req, res) => {
-    const adapter = resolveAdapter(printerRegistry, req);
+    const adapter = resolveAdapter(printerRegistry, req, res);
+    if (!adapter) return;
     res.json(await adapter.getStatus());
   }));
 
   router.post('/text/:location?', asyncHandler(async (req, res) => {
-    const adapter = resolveAdapter(printerRegistry, req);
+    const adapter = resolveAdapter(printerRegistry, req, res);
+    if (!adapter) return;
     const { text, options = {} } = req.body;
     if (!text) return res.status(400).json({ error: 'Text is required' });
     const printJob = adapter.createTextPrint(text, options);
@@ -84,7 +87,8 @@ export function createPrinterRouter(config) {
   }));
 
   router.post('/image/:location?', asyncHandler(async (req, res) => {
-    const adapter = resolveAdapter(printerRegistry, req);
+    const adapter = resolveAdapter(printerRegistry, req, res);
+    if (!adapter) return;
     const { path, options = {} } = req.body;
     if (!path) return res.status(400).json({ error: 'Image path is required' });
     const printJob = adapter.createImagePrint(path, options);
@@ -93,7 +97,8 @@ export function createPrinterRouter(config) {
   }));
 
   router.post('/receipt/:location?', asyncHandler(async (req, res) => {
-    const adapter = resolveAdapter(printerRegistry, req);
+    const adapter = resolveAdapter(printerRegistry, req, res);
+    if (!adapter) return;
     const receiptData = req.body;
     if (!receiptData) return res.status(400).json({ error: 'Receipt data is required' });
     const printJob = adapter.createReceiptPrint(receiptData);
@@ -102,7 +107,8 @@ export function createPrinterRouter(config) {
   }));
 
   router.post('/table/:location?', asyncHandler(async (req, res) => {
-    const adapter = resolveAdapter(printerRegistry, req);
+    const adapter = resolveAdapter(printerRegistry, req, res);
+    if (!adapter) return;
     const tableData = req.body;
     if (!tableData?.headers && (!tableData?.rows || tableData.rows.length === 0)) {
       return res.status(400).json({ error: 'Table must have either headers or rows with data' });
@@ -113,7 +119,8 @@ export function createPrinterRouter(config) {
   }));
 
   router.post('/print/:location?', asyncHandler(async (req, res) => {
-    const adapter = resolveAdapter(printerRegistry, req);
+    const adapter = resolveAdapter(printerRegistry, req, res);
+    if (!adapter) return;
     const printJob = req.body;
     if (!printJob?.items) return res.status(400).json({ error: 'Valid print object with items array is required' });
     const success = await adapter.print(printJob);
@@ -121,7 +128,8 @@ export function createPrinterRouter(config) {
   }));
 
   router.get('/feed-button/:location?', asyncHandler(async (req, res) => {
-    const adapter = resolveAdapter(printerRegistry, req);
+    const adapter = resolveAdapter(printerRegistry, req, res);
+    if (!adapter) return;
     const status = await adapter.getStatus();
     res.json({
       success: status.success,
@@ -131,14 +139,16 @@ export function createPrinterRouter(config) {
   }));
 
   router.get('/feed-button/on/:location?', asyncHandler(async (req, res) => {
-    const adapter = resolveAdapter(printerRegistry, req);
+    const adapter = resolveAdapter(printerRegistry, req, res);
+    if (!adapter) return;
     const printJob = adapter.setFeedButton(true);
     const success = await adapter.print(printJob);
     res.json({ success, message: success ? 'Feed button enabled successfully' : 'Feed button enable failed', enabled: true });
   }));
 
   router.get('/feed-button/off/:location?', asyncHandler(async (req, res) => {
-    const adapter = resolveAdapter(printerRegistry, req);
+    const adapter = resolveAdapter(printerRegistry, req, res);
+    if (!adapter) return;
     const printJob = adapter.setFeedButton(false);
     const success = await adapter.print(printJob);
     res.json({ success, message: success ? 'Feed button disabled successfully' : 'Feed button disable failed', enabled: false });

@@ -102,6 +102,7 @@ import { createEventBusRouter } from './4_api/v1/routers/admin/eventbus.mjs';
 import { createAdminRouter } from './4_api/v1/routers/admin/index.mjs';
 import { createMediaRouter } from './4_api/v1/routers/media.mjs';
 import { createLivestreamRouter } from './4_api/v1/routers/livestream.mjs';
+import { createPrinterRouter } from './4_api/v1/routers/printer.mjs';
 
 // Homeline call state tracking
 import { handleSignalingMessage } from '#apps/homeline/CallStateService.mjs';
@@ -1402,6 +1403,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     createGratitudeCardCanvas,
     printerRegistry: hardwareAdapters.printerRegistry,
     logger: rootLogger.child({ module: 'gratitude-api' })
+  });
+
+  // Printer router — thermal printer control, multi-printer via :location? URL segment
+  v1Routers.printer = createPrinterRouter({
+    printerRegistry: hardwareAdapters.printerRegistry,
+    logger: rootLogger.child({ module: 'printer-api' })
   });
 
   // QR Code renderer and router
