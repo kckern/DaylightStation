@@ -30,6 +30,7 @@ import Displayer from '../../Displayer/Displayer.jsx';
 import AppContainer from '../../AppContainer/AppContainer.jsx';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
 import { ACTION_OPTIONS } from './listConstants.js';
+import { shouldRunScrollToHighlighted } from './comboboxScroll.js';
 
 // Lazy admin logger with session logging enabled
 let _adminLog;
@@ -760,6 +761,7 @@ function ContentSearchCombobox({ value, onChange }) {
   const scrollAnimRef = useRef(null);
   const autoResolveRef = useRef(null);
   const userNavigatedRef = useRef(false);
+  const paginationInFlightRef = useRef(false);
 
   // Cleanup blur timeout and auto-resolve on unmount
   useEffect(() => {
@@ -1616,12 +1618,31 @@ function ContentSearchCombobox({ value, onChange }) {
     }
   };
 
-  // VS Code file-picker scroll: no scroll while item is visible, ease-snap
-  // to nearest edge when it goes off-screen, instant jump + flash on pac-man wrap.
+  // Minimal scroll behavior: only nudge when a navigation option changes,
+  // not when the list grows due to pagination.
   useEffect(() => {
     if (scrollAnimRef.current) cancelAnimationFrame(scrollAnimRef.current);
 
-    if (highlightedIdx < 0 || !optionsRef.current) {
+    const decision = shouldRunScrollToHighlighted({
+      highlightedIdx,
+      prevIdx: prevIdxRef.current,
+      paginationInFlight: paginationInFlightRef.current,
+    });
+
+    if (decision.reason === 'pagination') {
+      log.debug('scroll.skip.pagination', { highlightedIdx, prevIdx: prevIdxRef.current });
+      paginationInFlightRef.current = false;
+      prevIdxRef.current = highlightedIdx;
+      return;
+    }
+
+    if (!decision.run) {
+      // Skip for no-highlight, initial-render, or no-change cases.
+      prevIdxRef.current = highlightedIdx;
+      return;
+    }
+
+    if (!optionsRef.current) {
       prevIdxRef.current = highlightedIdx;
       return;
     }
@@ -1636,13 +1657,6 @@ function ContentSearchCombobox({ value, onChange }) {
 
     const prevIdx = prevIdxRef.current;
     const itemCount = opts.length;
-
-    // On initial render (prevIdx === -1), skip edge-snap entirely —
-    // scrollOptionIntoView handles initial positioning via rAF.
-    if (prevIdx === -1) {
-      prevIdxRef.current = highlightedIdx;
-      return;
-    }
 
     // Detect pac-man wrap
     const isWrap = (prevIdx === itemCount - 1 && highlightedIdx === 0)
@@ -1975,12 +1989,21 @@ function ContentSearchCombobox({ value, onChange }) {
           style={{ overflowY: 'auto' }}
           ref={optionsRef}
           onScroll={(e) => {
-            if (!pagination || loadingMore || isActiveSearch) return;
             const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+            log.sampled?.('scroll.position', {
+              scrollTop: Math.round(scrollTop),
+              scrollHeight,
+              clientHeight,
+              itemCount: displayItems.length,
+            }, { maxPerMinute: 12, aggregate: true });
+
+            if (!pagination || loadingMore || isActiveSearch) return;
             if (pagination.hasAfter && scrollHeight - scrollTop - clientHeight < 50) {
               // Load more after
               const offset = pagination.offset + pagination.window;
               setLoadingMore(true);
+              paginationInFlightRef.current = true;
+              log.debug('pagination.load_more.after', { offset, window: pagination.window });
               fetchSiblingsPage(value, contentInfo, offset, 21).then(result => {
                 if (result) {
                   setBrowseItems(prev => [...prev, ...result.items]);
@@ -1999,6 +2022,8 @@ function ContentSearchCombobox({ value, onChange }) {
               const limit = Math.min(21, pagination.offset);
               if (limit <= 0) return;
               setLoadingMore(true);
+              paginationInFlightRef.current = true;
+              log.debug('pagination.load_more.before', { newOffset, limit });
               const prevScrollHeight = e.currentTarget.scrollHeight;
               fetchSiblingsPage(value, contentInfo, newOffset, limit).then(result => {
                 if (result) {
