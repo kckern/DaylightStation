@@ -1,6 +1,7 @@
 import React from 'react';
 import { useFleetContext } from '../fleet/FleetProvider.jsx';
 import { useNav } from './NavProvider.jsx';
+import { useTakeOver } from '../peek/useTakeOver.js';
 
 function stateLabel(entry) {
   if (!entry) return 'unknown';
@@ -17,6 +18,7 @@ function currentItemLabel(entry) {
 export function FleetView() {
   const { devices, byDevice, loading, error } = useFleetContext();
   const { push } = useNav();
+  const takeOver = useTakeOver();
 
   if (loading) return <div data-testid="fleet-loading">Loading fleet…</div>;
   if (error) return <div data-testid="fleet-error">{error.message}</div>;
@@ -41,6 +43,13 @@ export function FleetView() {
                 className="fleet-peek-btn"
               >
                 Peek
+              </button>
+              <button
+                data-testid={`fleet-takeover-${d.id}`}
+                onClick={() => takeOver(d.id)}
+                className="fleet-takeover-btn"
+              >
+                Take Over
               </button>
             </li>
           );
