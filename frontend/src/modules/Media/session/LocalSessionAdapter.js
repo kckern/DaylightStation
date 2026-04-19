@@ -65,6 +65,7 @@ export class LocalSessionAdapter {
         this._dispatch({ type: 'UPDATE_POSITION', position: seconds });
       },
       seekRel: (delta) => {
+        // Emits two transport events: seekRel (user intent) + seekAbs (resolved absolute target).
         mediaLog.transportCommand({ action: 'seekRel', value: delta, target: 'local' });
         const current = this._snapshot.position ?? 0;
         this.transport.seekAbs(Math.max(0, current + delta));
@@ -180,7 +181,7 @@ export class LocalSessionAdapter {
     mediaLog.playbackStallAutoAdvanced({
       sessionId: this._snapshot.sessionId,
       contentId: current.contentId,
-      stalledMs: typeof stalledMs === 'number' ? stalledMs : null,
+      stalledMs: Number.isFinite(stalledMs) ? stalledMs : null,
     });
     this._dispatch({ type: 'PLAYER_STATE', playerState: 'stalled' });
     this._advance('stall-auto-advance');
