@@ -297,6 +297,7 @@ function useFetchMenuData(listInput, refreshToken = 0) {
 
   useEffect(() => {
     let canceled = false;
+    setLoaded(false);
 
     async function fetchData(target, config) {
       // Append recent_on_top config, using "+" to join if there are other configs

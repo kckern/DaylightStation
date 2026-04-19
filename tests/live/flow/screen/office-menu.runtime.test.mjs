@@ -199,6 +199,38 @@ test.describe('Office Screen Menu', () => {
     await dismissOverlay(sharedPage);
   });
 
+  test('switching menus after auto-select resets stack (no cross-menu state leakage)', async () => {
+    // Open menu g (music), let auto-select fire (pushes content onto stack)
+    await sharedPage.keyboard.press('g');
+    await sharedPage.waitForSelector('.screen-overlay--fullscreen', { timeout: 5000 });
+    await sharedPage.waitForSelector('.menu-item:not(.menu-item-skeleton)', { timeout: 10000 });
+
+    // Wait for auto-select (3s MENU_TIMEOUT)
+    await sharedPage.waitForTimeout(3500);
+
+    // After auto-select, content should be pushed onto the stack (player, submenu, etc.)
+    // Verify the overlay is still present (content was pushed, not just dismissed)
+    expect(await sharedPage.locator('.screen-overlay--fullscreen').count()).toBe(1);
+
+    // Now press a DIFFERENT menu key (h = movie) — this should reset the stack
+    // and show the movie menu at its root, not the stale content from music
+    await sharedPage.keyboard.press('h');
+    await sharedPage.waitForSelector('.menu-item:not(.menu-item-skeleton)', { timeout: 10000 });
+    await sharedPage.waitForTimeout(500);
+
+    // The new menu should show its own root items with a proper header
+    const title = await getMenuTitle(sharedPage);
+    expect(title).toBeTruthy();
+    // It should NOT be the music menu title
+    expect(title).not.toMatch(/music/i);
+
+    // The first item should be active (index 0)
+    const indexOnNewMenu = await getActiveIndex(sharedPage);
+    expect(indexOnNewMenu, 'Selection from previous menu leaked into new menu').toBe(0);
+
+    await dismissOverlay(sharedPage);
+  });
+
   test('menu items have images or gradient placeholders', async () => {
     await sharedPage.keyboard.press('g');
     await sharedPage.waitForSelector('.screen-overlay--fullscreen', { timeout: 5000 });
