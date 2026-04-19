@@ -30,6 +30,7 @@ import Displayer from '../../Displayer/Displayer.jsx';
 import AppContainer from '../../AppContainer/AppContainer.jsx';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
 import { ACTION_OPTIONS } from './listConstants.js';
+import { shouldRunScrollToHighlighted } from './comboboxScroll.js';
 
 // Lazy admin logger with session logging enabled
 let _adminLog;
@@ -1602,12 +1603,31 @@ function ContentSearchCombobox({ value, onChange }) {
     }
   };
 
-  // VS Code file-picker scroll: no scroll while item is visible, ease-snap
-  // to nearest edge when it goes off-screen, instant jump + flash on pac-man wrap.
+  // Minimal scroll behavior: only nudge when a navigation option changes,
+  // not when the list grows due to pagination.
   useEffect(() => {
     if (scrollAnimRef.current) cancelAnimationFrame(scrollAnimRef.current);
 
-    if (highlightedIdx < 0 || !optionsRef.current) {
+    const decision = shouldRunScrollToHighlighted({
+      highlightedIdx,
+      prevIdx: prevIdxRef.current,
+      paginationInFlight: paginationInFlightRef.current,
+    });
+
+    if (decision.reason === 'pagination') {
+      log.debug('scroll.skip.pagination', { highlightedIdx, prevIdx: prevIdxRef.current });
+      paginationInFlightRef.current = false;
+      prevIdxRef.current = highlightedIdx;
+      return;
+    }
+
+    if (!decision.run) {
+      // Skip for no-highlight, initial-render, or no-change cases.
+      prevIdxRef.current = highlightedIdx;
+      return;
+    }
+
+    if (!optionsRef.current) {
       prevIdxRef.current = highlightedIdx;
       return;
     }
@@ -1622,13 +1642,6 @@ function ContentSearchCombobox({ value, onChange }) {
 
     const prevIdx = prevIdxRef.current;
     const itemCount = opts.length;
-
-    // On initial render (prevIdx === -1), skip edge-snap entirely —
-    // scrollOptionIntoView handles initial positioning via rAF.
-    if (prevIdx === -1) {
-      prevIdxRef.current = highlightedIdx;
-      return;
-    }
 
     // Detect pac-man wrap
     const isWrap = (prevIdx === itemCount - 1 && highlightedIdx === 0)
