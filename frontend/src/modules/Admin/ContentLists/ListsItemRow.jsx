@@ -2990,4 +2990,4 @@ function InsertRowButton({ onInsert }) {
 }
 
 export default ListsItemRow;
-export { EmptyItemRow, InsertRowButton };
+export { EmptyItemRow, InsertRowButton, ShimmerAvatar };
