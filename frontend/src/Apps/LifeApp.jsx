@@ -5,6 +5,7 @@ import { IconDashboard, IconTimeline, IconTarget, IconHeart, IconBrain, IconDiam
 import '@mantine/core/styles.css';
 import { configure } from '../lib/logging/Logger.js';
 import { getChildLogger } from '../lib/logging/singleton.js';
+import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import { Dashboard } from '../modules/Life/views/now/Dashboard.jsx';
 import { LogBrowser } from '../modules/Life/views/log/LogBrowser.jsx';
 import { LogDayDetail } from '../modules/Life/views/log/LogDayDetail.jsx';
@@ -48,6 +49,7 @@ const CeremonyRoute = () => {
 };
 
 const LifeApp = () => {
+  useDocumentTitle('Life');
   const logger = useMemo(() => getChildLogger({ app: 'life' }), []);
   const navigate = useNavigate();
   const location = useLocation();

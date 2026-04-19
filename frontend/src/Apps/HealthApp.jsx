@@ -6,8 +6,10 @@ import { DaylightAPI } from '../lib/api.mjs';
 import { getChildLogger } from '../lib/logging/singleton.js';
 import HealthHub from '../modules/Health/HealthHub';
 import HealthDetail from '../modules/Health/HealthDetail';
+import useDocumentTitle from '../hooks/useDocumentTitle.js';
 
 const HealthApp = () => {
+  useDocumentTitle('Health');
   const logger = useMemo(() => getChildLogger({ app: 'health' }), []);
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);

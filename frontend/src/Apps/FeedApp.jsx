@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Routes, Route, NavLink, Navigate, Outlet, useParams, useLocation } from 'react-router-dom';
 import { MantineProvider } from '@mantine/core';
 import '@mantine/core/styles.css';
+import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import Headlines from '../modules/Feed/Headlines/Headlines.jsx';
 import Scroll from '../modules/Feed/Scroll/Scroll.jsx';
 import Reader from '../modules/Feed/Reader/Reader.jsx';
@@ -144,6 +145,7 @@ function FeedLayout() {
 }
 
 const FeedApp = () => {
+  useDocumentTitle('Feed');
   return (
     <MantineProvider>
       <FeedPlayerProvider>
