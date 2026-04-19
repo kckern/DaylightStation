@@ -1481,6 +1481,24 @@ function ContentSearchCombobox({ value, onChange }) {
   const canFilterLocally = displayMode === 'local';
   const localFilterQuery = queryMatchesSource ? searchQuery.split(':').slice(1).join(':').trim() : '';
 
+  const lastDisplayModeRef = useRef(null);
+  useEffect(() => {
+    if (!isActiveSearch) {
+      lastDisplayModeRef.current = null;
+      return;
+    }
+    if (lastDisplayModeRef.current !== displayMode) {
+      log.debug('display.mode', {
+        query: searchQuery,
+        mode: displayMode,
+        itemCount: displayItems.length,
+        browseItemCount: browseItems.length,
+        searchResultCount: searchResults.length,
+      });
+      lastDisplayModeRef.current = displayMode;
+    }
+  }, [displayMode, isActiveSearch, searchQuery, displayItems.length, browseItems.length, searchResults.length, log]);
+
   // Commit freeform text + fire auto-resolve search
   const AUTO_RESOLVE_TIMEOUT_MS = 15000;
   // INVARIANT: Always save freeform text. Never gate on availableResults.
