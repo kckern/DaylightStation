@@ -2660,9 +2660,9 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
       </div>
 
       <div className="col-icon" onClick={() => { log.info('image_picker.open', { index: item.index }); setImagePickerOpen(true); }}>
-        <Avatar src={rowThumbnail} size={28} radius="sm">
+        <ShimmerAvatar src={rowThumbnail} size={28} radius="sm">
           {item.label ? item.label.charAt(0).toUpperCase() : '#'}
-        </Avatar>
+        </ShimmerAvatar>
       </div>
       <ImagePickerModal
         opened={imagePickerOpen}
