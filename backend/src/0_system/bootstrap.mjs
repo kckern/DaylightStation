@@ -103,7 +103,7 @@ import { DeviceFactory } from '#apps/devices/services/DeviceFactory.mjs';
 import { createDeviceRouter } from '#api/v1/routers/device.mjs';
 
 // Hardware adapter imports
-import { ThermalPrinterAdapter } from '#adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs';
+// Note: ThermalPrinterAdapter/Registry are constructed directly in app.mjs; bootstrap no longer imports them.
 import { TTSAdapter } from '#adapters/hardware/tts/TTSAdapter.mjs';
 import { MQTTSensorAdapter } from '#adapters/hardware/mqtt-sensor/MQTTSensorAdapter.mjs';
 import { MQTTBarcodeAdapter } from '#adapters/hardware/mqtt-barcode/MQTTBarcodeAdapter.mjs';
@@ -932,7 +932,7 @@ export function createFitnessApiRouter(config) {
     contentRegistry,
     contentQueryService,
     createReceiptCanvas,
-    printerAdapter,
+    printerRegistry,
     providerWebhookAdapters,
     enrichmentService,
     logger = console
@@ -996,7 +996,7 @@ export function createFitnessApiRouter(config) {
     configService,
     contentRegistry,  // Still needed for playlist thumbnail enrichment
     createReceiptCanvas,
-    printerAdapter,
+    printerRegistry,
     providerWebhookAdapters,
     enrichmentService,
     logger
@@ -1761,21 +1761,6 @@ export function createTranscodePrewarmService(config) {
 // =============================================================================
 
 /**
- * Create thermal printer adapter
- * @param {Object} config
- * @param {string} config.host - Printer IP address
- * @param {number} [config.port=9100] - Printer port
- * @param {number} [config.timeout=5000] - Connection timeout
- * @param {boolean} [config.upsideDown=true] - Upside-down mode
- * @param {Object} [config.logger] - Logger instance
- * @returns {ThermalPrinterAdapter}
- */
-export function createThermalPrinterAdapter(config) {
-  const { logger = console, ...printerConfig } = config;
-  return new ThermalPrinterAdapter(printerConfig, { logger });
-}
-
-/**
  * Create TTS adapter
  * @param {Object} config
  * @param {string} config.apiKey - OpenAI API key
@@ -1806,10 +1791,13 @@ export function createMQTTSensorAdapterInstance(config) {
 
 /**
  * Create hardware adapters
+ *
+ * Note: thermal printer adapters are managed by a ThermalPrinterRegistry built
+ * directly in app.mjs (supports multiple printers by location) and attached to
+ * the returned object as `printerRegistry`. This helper only constructs the
+ * other hardware adapters.
+ *
  * @param {Object} config
- * @param {Object} [config.printer] - Printer configuration
- * @param {string} [config.printer.host] - Printer IP address
- * @param {number} [config.printer.port] - Printer port
  * @param {Object} [config.tts] - TTS configuration
  * @param {string} [config.tts.apiKey] - OpenAI API key
  * @param {Object} [config.mqtt] - MQTT configuration
@@ -1818,24 +1806,10 @@ export function createMQTTSensorAdapterInstance(config) {
  * @param {Function} [config.onMqttMessage] - MQTT message callback
  * @param {Object} [config.httpClient] - HTTP client for API requests
  * @param {Object} [config.logger] - Logger instance
- * @returns {Object} Hardware adapters
+ * @returns {Object} Hardware adapters (ttsAdapter, mqttAdapter, barcodeAdapter)
  */
 export function createHardwareAdapters(config) {
   const { logger = console, httpClient } = config;
-
-  // Thermal printer adapter (optional)
-  let printerAdapter = null;
-  if (config.printer?.host) {
-    printerAdapter = new ThermalPrinterAdapter(
-      {
-        host: config.printer.host,
-        port: config.printer.port,
-        timeout: config.printer.timeout,
-        upsideDown: config.printer.upsideDown
-      },
-      { logger }
-    );
-  }
 
   // TTS adapter (optional - requires OpenAI API key and httpClient)
   let ttsAdapter = null;
@@ -1882,7 +1856,6 @@ export function createHardwareAdapters(config) {
   }
 
   return {
-    printerAdapter,
     ttsAdapter,
     mqttAdapter,
     barcodeAdapter
@@ -1925,7 +1898,7 @@ export function createGratitudeServices(config) {
  * @param {Object} config.gratitudeServices - Services from createGratitudeServices
  * @param {Object} config.configService - ConfigService for household lookup
  * @param {Function} config.broadcastToWebsockets - WebSocket broadcast function
- * @param {Object} [config.printerAdapter] - ThermalPrinterAdapter for card printing
+ * @param {Object} [config.printerRegistry] - ThermalPrinterRegistry for resolving per-location printers
  * @param {Function} [config.createGratitudeCardCanvas] - Function to generate gratitude card canvas
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
@@ -1935,7 +1908,7 @@ export function createGratitudeApiRouter(config) {
     gratitudeServices,
     configService,
     broadcastToWebsockets,
-    printerAdapter,
+    printerRegistry,
     createGratitudeCardCanvas,
     logger = console
   } = config;
@@ -1951,7 +1924,7 @@ export function createGratitudeApiRouter(config) {
     configService,
     gratitudeHouseholdService,
     broadcastToWebsockets,
-    printerAdapter,
+    printerRegistry,
     createGratitudeCardCanvas,
     logger
   });
