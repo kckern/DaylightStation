@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { useLiveSearch } from './useLiveSearch.js';
 import { useSearchContext } from './SearchProvider.jsx';
 import { SearchResults } from './SearchResults.jsx';
+import { useDismissable } from '../../../hooks/useDismissable.js';
 
 export function SearchBar() {
   const { scopes, currentScopeKey, currentScope, setScopeKey } = useSearchContext();
@@ -9,6 +10,16 @@ export function SearchBar() {
     scopeParams: currentScope?.params ?? '',
   });
   const [value, setValue] = useState('');
+  const rootRef = useRef(null);
+
+  const isOpen = value.length >= 2;
+
+  const close = useCallback(() => {
+    setValue('');
+    setQuery('');
+  }, [setQuery]);
+
+  useDismissable(rootRef, { open: isOpen, onDismiss: close });
 
   const onChange = (e) => {
     const next = e.target.value;
@@ -17,7 +28,7 @@ export function SearchBar() {
   };
 
   return (
-    <div data-testid="media-search-bar" className="media-search-bar">
+    <div data-testid="media-search-bar" className="media-search-bar" ref={rootRef}>
       <select
         data-testid="media-search-scope"
         value={currentScopeKey ?? ''}
@@ -33,8 +44,8 @@ export function SearchBar() {
         onChange={onChange}
         placeholder="Search"
       />
-      {value.length >= 2 && (
-        <SearchResults results={results} pending={pending} isSearching={isSearching} />
+      {isOpen && (
+        <SearchResults results={results} pending={pending} isSearching={isSearching} onAction={close} />
       )}
     </div>
   );
