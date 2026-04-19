@@ -93,6 +93,9 @@ import { loadRoutingConfig } from './0_system/routing/index.mjs';
 // UPC Gateway for barcode lookups
 import { UPCGateway } from '#adapters/nutribot/UPCGateway.mjs';
 
+// Thermal printer registry (multi-printer support)
+import { ThermalPrinterAdapter, ThermalPrinterRegistry } from '#adapters/hardware/thermal-printer/index.mjs';
+
 // HTTP middleware
 import { createDevProxy, errorHandlerMiddleware } from './0_system/http/middleware/index.mjs';
 import { createEventBusRouter } from './4_api/v1/routers/admin/eventbus.mjs';
@@ -100,6 +103,7 @@ import { createAdminRouter } from './4_api/v1/routers/admin/index.mjs';
 import { createMediaRouter } from './4_api/v1/routers/media.mjs';
 import { createLivestreamRouter } from './4_api/v1/routers/livestream.mjs';
 import { createCameraRouter } from './4_api/v1/routers/camera.mjs';
+import { createPrinterRouter } from './4_api/v1/routers/printer.mjs';
 
 // Homeline call state tracking
 import { handleSignalingMessage } from '#apps/homeline/CallStateService.mjs';
@@ -1199,9 +1203,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'calendar-api' })
   });
 
-  // Hardware adapters (printer, TTS, MQTT sensors)
-  const printerAdapterConfig = configService.getAdapterConfig('thermal_printer') || {};
-  const printerUrl = configService.resolveServiceUrl('thermal_printer');
+  // Hardware adapters (printer registry, TTS, MQTT sensors)
   const mqttUrl = configService.resolveServiceUrl('mqtt');
   const ttsApiKey = configService.getSecret('OPENAI_API_KEY') || '';
 
@@ -1213,16 +1215,44 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       return { host: parsed.hostname, port: parsed.port ? parseInt(parsed.port, 10) : null };
     } catch { return { host: null, port: null }; }
   };
-  const printer = parseUrl(printerUrl);
   const mqtt = parseUrl(mqttUrl);
 
+  // Build thermal printer registry from adapters.yml (multi-printer support)
+  const hardwareLogger = rootLogger.child({ module: 'hardware' });
+  const adaptersConfig = configService.getAllAdapterConfigs() || {};
+  const printersConfig = adaptersConfig.thermal_printers || {};
+  const printerDefaults = adaptersConfig.thermal_printer_defaults || {};
+
+  const printerRegistry = new ThermalPrinterRegistry();
+  for (const [name, cfg] of Object.entries(printersConfig)) {
+    if (!cfg?.host) {
+      hardwareLogger.warn('thermalPrinter.skipNoHost', { name });
+      continue;
+    }
+    const adapter = new ThermalPrinterAdapter(
+      {
+        host: cfg.host,
+        port: cfg.port || 9100,
+        timeout: cfg.timeout ?? printerDefaults.timeout ?? 5000,
+        encoding: cfg.encoding ?? printerDefaults.encoding ?? 'utf8',
+        upsideDown: cfg.upsideDown ?? printerDefaults.upsideDown ?? true,
+      },
+      { logger: hardwareLogger }
+    );
+    printerRegistry.register(name, adapter, { isDefault: cfg.default === true });
+  }
+
+  const registeredPrinters = printerRegistry.list();
+  if (registeredPrinters.length > 0) {
+    const summary = registeredPrinters
+      .map(p => `${p.name} (${p.host}:${p.port}${p.isDefault ? ', default' : ''})`)
+      .join(', ');
+    hardwareLogger.info('thermalPrinter.registered', { count: registeredPrinters.length, summary });
+  } else {
+    hardwareLogger.warn('thermalPrinter.noneConfigured');
+  }
+
   const hardwareAdapters = createHardwareAdapters({
-    printer: {
-      host: printerAdapterConfig.host || printer.host || '',
-      port: printerAdapterConfig.port || printer.port || 9100,
-      timeout: printerAdapterConfig.timeout || 5000,
-      upsideDown: printerAdapterConfig.upsideDown !== false
-    },
     mqtt: {
       host: mqtt.host || '',
       port: mqtt.port || 1883,
@@ -1244,8 +1274,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // Broadcast MQTT sensor messages to WebSocket clients
       broadcastEvent({ topic: 'sensor', ...payload });
     },
-    logger: rootLogger.child({ module: 'hardware' })
+    logger: hardwareLogger
   });
+
+  // Attach the printer registry so routers can resolve printers by location
+  hardwareAdapters.printerRegistry = printerRegistry;
 
   // Initialize MQTT sensor adapter if configured and enabled
   if (enableMqtt && hardwareAdapters.mqttAdapter?.isConfigured()) {
@@ -1339,7 +1372,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }
 
   rootLogger.info('hardware.initialized', {
-    printer: hardwareAdapters.printerAdapter?.isConfigured() || false,
+    printers: printerRegistry.list(),
     tts: hardwareAdapters.ttsAdapter?.isConfigured() || false,
     mqtt: hardwareAdapters.mqttAdapter?.isConfigured() || false,
     barcode: hardwareAdapters.barcodeAdapter?.isConfigured() || false
@@ -1369,8 +1402,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService,
     broadcastToWebsockets: broadcastEvent,
     createGratitudeCardCanvas,
-    printerAdapter: hardwareAdapters.printerAdapter,
+    printerRegistry: hardwareAdapters.printerRegistry,
     logger: rootLogger.child({ module: 'gratitude-api' })
+  });
+
+  // Printer router — thermal printer control, multi-printer via :location? URL segment
+  v1Routers.printer = createPrinterRouter({
+    printerRegistry: hardwareAdapters.printerRegistry,
+    logger: rootLogger.child({ module: 'printer-api' })
   });
 
   // QR Code renderer and router
@@ -1525,7 +1564,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     contentRegistry,
     contentQueryService: contentServices.contentQueryService,
     createReceiptCanvas: createFitnessReceiptCanvas,
-    printerAdapter: hardwareAdapters.printerAdapter,
+    printerRegistry: hardwareAdapters.printerRegistry,
     providerWebhookAdapters,
     enrichmentService: stravaEnrichmentService,
     logger: rootLogger.child({ module: 'fitness-api' })
