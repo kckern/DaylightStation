@@ -745,6 +745,7 @@ function ContentSearchCombobox({ value, onChange }) {
   const scrollAnimRef = useRef(null);
   const autoResolveRef = useRef(null);
   const userNavigatedRef = useRef(false);
+  const paginationInFlightRef = useRef(false);
 
   // Cleanup blur timeout and auto-resolve on unmount
   useEffect(() => {
@@ -1966,6 +1967,8 @@ function ContentSearchCombobox({ value, onChange }) {
               // Load more after
               const offset = pagination.offset + pagination.window;
               setLoadingMore(true);
+              paginationInFlightRef.current = true;
+              log.debug('pagination.load_more.after', { offset, window: pagination.window });
               fetchSiblingsPage(value, contentInfo, offset, 21).then(result => {
                 if (result) {
                   setBrowseItems(prev => [...prev, ...result.items]);
@@ -1984,6 +1987,8 @@ function ContentSearchCombobox({ value, onChange }) {
               const limit = Math.min(21, pagination.offset);
               if (limit <= 0) return;
               setLoadingMore(true);
+              paginationInFlightRef.current = true;
+              log.debug('pagination.load_more.before', { newOffset, limit });
               const prevScrollHeight = e.currentTarget.scrollHeight;
               fetchSiblingsPage(value, contentInfo, newOffset, limit).then(result => {
                 if (result) {
