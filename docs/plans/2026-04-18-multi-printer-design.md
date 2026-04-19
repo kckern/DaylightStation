@@ -1,7 +1,7 @@
 # Multi-Printer Support — Design
 
 **Date:** 2026-04-18
-**Status:** Design validated, ready for implementation
+**Status:** Implemented 2026-04-18 — merged in 34226a99 + 260048fb
 
 ## Problem
 
