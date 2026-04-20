@@ -3,6 +3,7 @@ import { Text, Skeleton } from '@mantine/core';
 import { getWidgetRegistry } from '@/screen-framework/widgets/registry.js';
 import { useScreen } from '@/screen-framework/providers/ScreenProvider.jsx';
 import { useFitnessScreen } from '@/modules/Fitness/FitnessScreenProvider.jsx';
+import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import FitnessTimeline from './FitnessTimeline.jsx';
 import SportIcon from '../_shared/SportIcon.jsx';
 import RouteMap from './RouteMap.jsx';
@@ -136,37 +137,14 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   const [deleting, setDeleting] = useState(false);
   const { restore } = useScreen();
   const { onNavigate } = useFitnessScreen() || {};
+  const fitnessCtx = useFitnessContext();
   const posterRef = useRef(null);
   const [posterWidth, setPosterWidth] = useState(0);
 
-  const handleDelete = useCallback(async () => {
-    if (!sessionId || deleting) return;
-    setDeleting(true);
-    try {
-      const res = await fetch(`/api/v1/fitness/sessions/${sessionId}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error(`${res.status}`);
-      restore('right-area');
-    } catch (err) {
-      setDeleting(false);
-      setError(`Delete failed: ${err.message}`);
-    }
-  }, [sessionId, deleting, restore]);
-
-  useLayoutEffect(() => {
-    const el = posterRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(([entry]) => {
-      setPosterWidth(Math.round(entry.contentRect.width));
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [loading]);
-
-  useEffect(() => {
+  const fetchSession = useCallback(() => {
     if (!sessionId) return;
     setLoading(true);
     setError(null);
-
     fetch(`/api/v1/fitness/sessions/${sessionId}`)
       .then((res) => {
         if (!res.ok) throw new Error(`${res.status}`);
@@ -181,6 +159,41 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
         setLoading(false);
       });
   }, [sessionId]);
+
+  const handleDelete = useCallback(async () => {
+    if (!sessionId || deleting) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/v1/fitness/sessions/${sessionId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`${res.status}`);
+      restore('right-area');
+    } catch (err) {
+      setDeleting(false);
+      setError(`Delete failed: ${err.message}`);
+    }
+  }, [sessionId, deleting, restore]);
+
+  const handleAddVoiceMemo = useCallback(() => {
+    if (!sessionId) return;
+    fitnessCtx?.openVoiceMemoCapture?.(null, {
+      sessionId,
+      onComplete: () => fetchSession()
+    });
+  }, [sessionId, fitnessCtx, fetchSession]);
+
+  useLayoutEffect(() => {
+    const el = posterRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      setPosterWidth(Math.round(entry.contentRect.width));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [loading]);
+
+  useEffect(() => {
+    fetchSession();
+  }, [fetchSession]);
 
   const header = useMemo(() => {
     if (!sessionData) return null;
@@ -355,6 +368,12 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
               disabled={deleting}
               title="Delete session"
             >{deleting ? '...' : '\u2715'}</button>
+            <button
+              className="session-detail__add-memo"
+              onPointerDown={(e) => { e.preventDefault(); handleAddVoiceMemo(); }}
+              title="Add voice memo to this session"
+              aria-label="Add voice memo"
+            >{'\uD83C\uDF99'}</button>
             {sessionId && (
               <code
                 className="session-detail__session-id"
@@ -372,6 +391,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
           <div className="session-detail__thumb session-detail__thumb--strava-stats">
             <button className="session-detail__close" onClick={() => restore('right-area')} title="Close">&times;</button>
             <button className="session-detail__delete" onClick={handleDelete} disabled={deleting} title="Delete session">{deleting ? '...' : '\u2715'}</button>
+            <button className="session-detail__add-memo" onPointerDown={(e) => { e.preventDefault(); handleAddVoiceMemo(); }} title="Add voice memo to this session" aria-label="Add voice memo">{'\uD83C\uDF99'}</button>
             <div className="session-detail__strava-stats">
               {sessionData.strava.distance > 0 && (
                 <div className="session-detail__stat">
@@ -412,6 +432,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
           <div className="session-detail__thumb session-detail__thumb--placeholder">
             <button className="session-detail__close" onClick={() => restore('right-area')} title="Close">&times;</button>
             <button className="session-detail__delete" onClick={handleDelete} disabled={deleting} title="Delete session">{deleting ? '...' : '\u2715'}</button>
+            <button className="session-detail__add-memo" onPointerDown={(e) => { e.preventDefault(); handleAddVoiceMemo(); }} title="Add voice memo to this session" aria-label="Add voice memo">{'\uD83C\uDF99'}</button>
           </div>
         )}
       </div>

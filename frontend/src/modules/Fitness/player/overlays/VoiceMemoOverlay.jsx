@@ -112,6 +112,11 @@ const VoiceMemoOverlay = ({
   const pauseMusicPlayer = fitnessCtx?.pauseMusicPlayer;
   const resumeMusicPlayer = fitnessCtx?.resumeMusicPlayer;
 
+  // If the overlay was opened for a historical session (retroactive memo from
+  // FitnessSessionDetailWidget), overlayState.sessionId overrides the default
+  // active-session id passed in as a prop.
+  const effectiveSessionId = overlayState?.sessionId || sessionId;
+
   const logVoiceMemo = useCallback((event, payload = {}, options = {}) => {
     playbackLog('voice-memo', {
       event,
@@ -120,12 +125,12 @@ const VoiceMemoOverlay = ({
       level: options.level || 'info',
       context: {
         source: 'VoiceMemoOverlay',
-        sessionId: sessionId || null,
+        sessionId: effectiveSessionId || null,
         ...(options.context || {})
       },
       tags: options.tags || undefined
     });
-  }, [sessionId]);
+  }, [effectiveSessionId]);
 
   const sortedMemos = useMemo(() => {
     return voiceMemos.slice().sort((a, b) => {
@@ -236,8 +241,25 @@ const VoiceMemoOverlay = ({
     }
 
     const targetId = overlayState?.memoId;
-    logVoiceMemo('overlay-redo-captured', { memoId: targetId || memo.memoId || null });
-    const stored = targetId ? (onReplaceMemo?.(targetId, memo) || memo) : (onAddMemo?.(memo) || memo);
+    // Retroactive memo attached to a historical (non-active) session: skip
+    // onAddMemo (which would pollute the active session's in-memory memo
+    // list). The backend has already persisted the memo under the correct
+    // sessionId; the onComplete callback will refresh the detail view.
+    const isRetroactive = Boolean(overlayState?.sessionId)
+      && overlayState.sessionId !== sessionId;
+    logVoiceMemo('overlay-redo-captured', {
+      memoId: targetId || memo.memoId || null,
+      retroactive: isRetroactive,
+      historicalSessionId: isRetroactive ? String(overlayState.sessionId) : null
+    });
+    let stored;
+    if (isRetroactive) {
+      stored = memo;
+    } else if (targetId) {
+      stored = onReplaceMemo?.(targetId, memo) || memo;
+    } else {
+      stored = onAddMemo?.(memo) || memo;
+    }
     const nextTarget = stored || memo;
     if (nextTarget) {
       // 4C: Pass fromRecording: true to enable auto-accept for post-recording review
@@ -245,7 +267,7 @@ const VoiceMemoOverlay = ({
     } else {
       onClose?.();
     }
-  }, [logVoiceMemo, onAddMemo, onClose, onOpenReview, onReplaceMemo, overlayState?.memoId, overlayState?.open]);
+  }, [logVoiceMemo, onAddMemo, onClose, onOpenReview, onReplaceMemo, overlayState?.memoId, overlayState?.open, overlayState?.sessionId, sessionId]);
 
   const [recorderState, setRecorderState] = useState('idle'); // idle|recording|processing|ready|error
   const [retrying, setRetrying] = useState(false);
@@ -262,7 +284,7 @@ const VoiceMemoOverlay = ({
     retryTranscription,
     hasAudioBlob
   } = useVoiceMemoRecorder({
-    sessionId,
+    sessionId: effectiveSessionId,
     playerRef,
     preferredMicrophoneId,
     onMemoCaptured: handleRedoCaptured,
