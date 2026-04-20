@@ -535,6 +535,7 @@ const Player = forwardRef(function Player(props, ref) {
       forceDocumentReload: forceDocReload,
       forceFullReload,
       seekToIntentMs,
+      refreshUrl,
       meta: _ignoredMeta,
       ...rest
     } = options || {};
@@ -551,7 +552,7 @@ const Player = forwardRef(function Player(props, ref) {
     if (typeof mediaAccess.hardReset === 'function') {
       hardResetInvoked = true;
       try {
-        mediaAccess.hardReset({ seekToSeconds: seekSeconds });
+        mediaAccess.hardReset({ seekToSeconds: seekSeconds, refreshUrl: Boolean(refreshUrl) });
       } catch (error) {
         hardResetErrored = true;
       }
@@ -589,6 +590,7 @@ const Player = forwardRef(function Player(props, ref) {
           seekSeconds,
           guid: currentMediaGuid,
           remountNonce: remountInfoRef.current?.nonce ?? 0,
+          refreshUrl: Boolean(refreshUrl),
           ...conditions
         }
       });
