@@ -11,6 +11,7 @@ import {
   LogFoodFromText,
   LogFoodFromVoice,
   LogFoodFromUPC,
+  RetryImageDetection,
   AcceptFoodLog,
   DiscardFoodLog,
   ReviseFoodLog,
@@ -60,6 +61,7 @@ export class NutribotContainer {
 
   // Use Cases (lazy-loaded)
   #logFoodFromImage;
+  #retryImageDetection;
   #logFoodFromText;
   #logFoodFromVoice;
   #logFoodFromUPC;
@@ -248,6 +250,18 @@ export class NutribotContainer {
       });
     }
     return this.#logFoodFromUPC;
+  }
+
+  getRetryImageDetection() {
+    if (!this.#retryImageDetection) {
+      this.#retryImageDetection = new RetryImageDetection({
+        conversationStateStore: this.#conversationStateStore,
+        logFoodFromImage: this.getLogFoodFromImage(),
+        messagingGateway: this.getMessagingGateway(),
+        logger: this.#logger,
+      });
+    }
+    return this.#retryImageDetection;
   }
 
   // ==================== Food Log Action Use Cases ====================
