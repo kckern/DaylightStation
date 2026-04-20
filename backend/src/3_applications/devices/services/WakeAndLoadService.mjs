@@ -22,6 +22,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { buildCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
+import { resolveContentId } from '../contentIdKeys.mjs';
 
 const STEPS = ['power', 'verify', 'volume', 'prepare', 'prewarm', 'load'];
 const VOLUME_TIMEOUT_MS = 3000;
@@ -366,20 +367,11 @@ export class WakeAndLoadService {
           // Resolve contentId from the query using the same priority order as
           // WebSocketContentAdapter. If nothing resolves, skip WS-first and let
           // the FKB URL fallback handle it.
-          const contentIdKeys = ['queue', 'play', 'plex', 'hymn', 'primary', 'scripture', 'contentId'];
-          let resolvedContentId = null;
-          let resolvedKey = null;
-          for (const k of contentIdKeys) {
-            if (typeof contentQuery[k] === 'string' && contentQuery[k].length > 0) {
-              resolvedContentId = contentQuery[k];
-              resolvedKey = k;
-              break;
-            }
-          }
-          if (!resolvedContentId) {
+          const resolved = resolveContentId(contentQuery);
+          if (!resolved) {
             throw new Error('ws-first.no-contentId');
           }
-
+          const { contentId: resolvedContentId, resolvedKey } = resolved;
           const opts = { ...contentQuery };
           delete opts[resolvedKey];
 
@@ -459,11 +451,29 @@ export class WakeAndLoadService {
         // Give the screen framework time to mount and subscribe to WS
         await new Promise(resolve => setTimeout(resolve, 2000));
 
-        // Broadcast content command via WebSocket (targeted to this device)
-        this.#broadcast({ targetDevice: deviceId, ...contentQuery });
-        this.#logger.info?.('wake-and-load.load.wsFallbackSent', {
-          deviceId, dispatchId, contentQuery
-        });
+        // Broadcast content command via CommandEnvelope (targeted to this device).
+        const fbResolved = resolveContentId(contentQuery);
+        if (!fbResolved) {
+          this.#logger.warn?.('wake-and-load.load.wsFallback.no-contentId', {
+            deviceId, dispatchId, queryKeys: Object.keys(contentQuery),
+          });
+        } else {
+          const { contentId: fbContentId, resolvedKey: fbResolvedKey } = fbResolved;
+          const fbOpts = { ...contentQuery };
+          delete fbOpts[fbResolvedKey];
+
+          // Reuse dispatchId as commandId (same rationale as the WS-first path).
+          const fbEnvelope = buildCommandEnvelope({
+            targetDevice: deviceId,
+            command: 'queue',
+            commandId: dispatchId,
+            params: { ...fbOpts, op: 'play-now', contentId: fbContentId },
+          });
+          this.#broadcast({ topic, ...fbEnvelope });
+          this.#logger.info?.('wake-and-load.load.wsFallbackSent', {
+            deviceId, dispatchId, contentId: fbContentId,
+          });
+        }
 
         result.steps.load = {
           ok: true,
