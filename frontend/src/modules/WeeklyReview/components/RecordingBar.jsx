@@ -17,6 +17,9 @@ export default function RecordingBar({
   error,
   onStart,
   onStop,
+  syncStatus,
+  pendingCount,
+  lastAckedAt,
 }) {
   const vuBars = useMemo(() => {
     const count = 20;
@@ -46,6 +49,15 @@ export default function RecordingBar({
               ))}
             </div>
           </>
+        )}
+
+        {(syncStatus || pendingCount > 0) && (
+          <div className={`sync-badge sync-badge--${syncStatus || 'idle'}`}>
+            {syncStatus === 'syncing' && `Syncing… (${pendingCount} pending)`}
+            {syncStatus === 'offline' && `Offline — ${pendingCount} saved locally`}
+            {syncStatus === 'saved' && lastAckedAt && `Saved · ${Math.round((Date.now() - lastAckedAt) / 1000)}s ago`}
+            {syncStatus === 'idle' && pendingCount > 0 && `Queued (${pendingCount})`}
+          </div>
         )}
 
         {error && <span className="recording-error">{error}</span>}
