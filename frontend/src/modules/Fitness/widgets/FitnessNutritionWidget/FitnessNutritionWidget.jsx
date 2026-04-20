@@ -3,6 +3,7 @@ import { Text, Group, Stack, Badge, Skeleton } from '@mantine/core';
 import { useScreenData } from '@/screen-framework/data/ScreenDataProvider.jsx';
 import { DashboardCard } from '../_shared/DashboardCard.jsx';
 import './FitnessNutritionWidget.scss';
+import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
 
 function parseNutritionHistory(raw) {
   if (!raw?.data || typeof raw.data !== 'object') return [];
@@ -20,8 +21,7 @@ function parseNutritionHistory(raw) {
 
 function formatDateShort(dateStr) {
   if (!dateStr) return '';
-  const d = new Date(dateStr + 'T12:00:00');
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  return formatFitnessDate(dateStr + 'T12:00:00');
 }
 
 export default function FitnessNutritionWidget() {

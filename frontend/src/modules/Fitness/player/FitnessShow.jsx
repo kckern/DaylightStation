@@ -5,17 +5,16 @@ import './FitnessShow.scss';
 import { useFitness } from '@/context/FitnessContext.jsx';
 import moment from 'moment';
 import { buildVirtualSeasons } from '@/modules/Fitness/lib/playlistVirtualSeasons.js';
+import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
 
 const formatWatchedDate = (dateString) => {
   try {
     const parsed = moment(dateString, 'YYYY-MM-DD hh:mm:ssa');
     const today = moment();
     const yesterday = moment().subtract(1, 'days');
-    
     if (parsed.isSame(today, 'day')) return 'Today';
     if (parsed.isSame(yesterday, 'day')) return 'Yesterday';
-    if (parsed.year() === today.year()) return parsed.format('ddd D MMM');
-    return parsed.format('MMM D, YYYY');
+    return formatFitnessDate(parsed.toDate());
   } catch (e) {
     return '';
   }
