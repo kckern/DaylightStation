@@ -41,7 +41,12 @@ export class RetryImageDetection {
 
     const { imageData, retryMessageId } = flowState;
 
-    await this.#conversationStateStore.clear(conversationId);
+    try {
+      await this.#conversationStateStore.clear(conversationId);
+    } catch (e) {
+      this.#logger.warn?.('retryImage.clearState.failed', { conversationId, error: e.message });
+      // Continue — the new LogFoodFromImage flow will overwrite state anyway
+    }
 
     if (retryMessageId) {
       try {

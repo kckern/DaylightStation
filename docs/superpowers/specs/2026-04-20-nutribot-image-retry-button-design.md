@@ -170,7 +170,6 @@ Wired into `NutribotContainer` with a factory method `getRetryImageDetection()` 
 Add to the `handleCallback` switch (after existing `'p'` and `'ra'` cases):
 
 ```js
-case 'ir':
 case CallbackActions.RETRY_IMAGE: {
   const useCase = this.container.getRetryImageDetection();
   return await useCase.execute({
