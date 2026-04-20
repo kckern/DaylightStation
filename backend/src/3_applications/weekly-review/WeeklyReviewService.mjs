@@ -216,8 +216,25 @@ export class WeeklyReviewService {
     fs.mkdirSync(draftDir, { recursive: true });
 
     let meta = { sessionId, week, seq: -1, totalBytes: 0, startedAt: new Date().toISOString() };
-    if (fs.existsSync(metaPath)) {
-      try { meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8')); } catch {}
+    const metaExists = fs.existsSync(metaPath);
+    if (metaExists) {
+      try { meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8')); } catch (err) {
+        this.#logger.error?.('weekly-review.chunk.meta-corrupt', { sessionId, metaPath, error: err.message });
+        if (fs.existsSync(draftPath) && fs.statSync(draftPath).size > 0) {
+          throw new Error('draft present but meta unreadable — refusing to proceed');
+        }
+      }
+    }
+
+    // C1: reconcile draft file size against meta.totalBytes — heals desync from prior partial writes
+    if (fs.existsSync(draftPath)) {
+      const actualSize = fs.statSync(draftPath).size;
+      if (actualSize !== meta.totalBytes) {
+        this.#logger.warn?.('weekly-review.chunk.desync-recovery', {
+          sessionId, seq, metaTotalBytes: meta.totalBytes, actualDraftBytes: actualSize,
+        });
+        fs.truncateSync(draftPath, meta.totalBytes);
+      }
     }
 
     if (seq === meta.seq) {
@@ -228,11 +245,21 @@ export class WeeklyReviewService {
       throw new Error(`out-of-order chunk: expected ${meta.seq + 1}, got ${seq}`);
     }
 
-    fs.appendFileSync(draftPath, buffer);
+    // I2: seq=0 with no prior meta — truncate any stale draft from a previous broken session
+    if (seq === 0 && !metaExists) {
+      fs.writeFileSync(draftPath, buffer);
+    } else {
+      fs.appendFileSync(draftPath, buffer);
+    }
+
     meta.seq = seq;
     meta.totalBytes += buffer.length;
     meta.updatedAt = new Date().toISOString();
-    fs.writeFileSync(metaPath, JSON.stringify(meta));
+
+    // C1: atomic meta update — write to .tmp then rename (POSIX rename is atomic)
+    const metaTmpPath = `${metaPath}.tmp`;
+    fs.writeFileSync(metaTmpPath, JSON.stringify(meta));
+    fs.renameSync(metaTmpPath, metaPath);
 
     this.#logger.info?.('weekly-review.chunk.appended', {
       sessionId, seq, bytes: buffer.length, totalBytes: meta.totalBytes, week,
