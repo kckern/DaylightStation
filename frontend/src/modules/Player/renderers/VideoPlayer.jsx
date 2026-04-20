@@ -64,19 +64,36 @@ export function VideoPlayer({
   const [isAdapting, setIsAdapting] = useState(false);
   const [adaptMessage, setAdaptMessage] = useState(undefined);
   const displayReadyLoggedRef = useRef(false);
+
+  // Track resilienceBridge in a ref so the watchdog's onEscalate closure
+  // (captured at first render) can always reach the current bridge instance.
+  // The bridge identity changes on every render (Player.jsx passes an inline
+  // arrow for onRequestRecovery), so a direct closure capture would go stale.
+  const resilienceBridgeRef = useRef(resilienceBridge);
+  useEffect(() => {
+    resilienceBridgeRef.current = resilienceBridge;
+  });
+
+  // Track unmount state so the watchdog can bail if a late dash.js error
+  // fires after the component has been torn down.
+  const unmountedRef = useRef(false);
+  useEffect(() => () => { unmountedRef.current = true; }, []);
+
   const staleSessionWatchdogRef = useRef(null);
   if (!staleSessionWatchdogRef.current) {
     staleSessionWatchdogRef.current = createStaleSessionWatchdog({
       threshold: 3,
       windowMs: 10000,
       onEscalate: ({ errorCount, windowMs: wMs }) => {
+        if (unmountedRef.current) return;
         playbackLog('playback.stale-session-detected', {
           errorCount,
           windowMs: wMs,
           action: 'escalating-to-resilience-recovery'
         }, { level: 'warn' });
-        if (typeof resilienceBridge?.requestRecovery === 'function') {
-          resilienceBridge.requestRecovery({ reason: 'stale-session-detected' });
+        const bridge = resilienceBridgeRef.current;
+        if (typeof bridge?.requestRecovery === 'function') {
+          bridge.requestRecovery({ reason: 'stale-session-detected' });
         }
       }
     });

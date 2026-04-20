@@ -568,5 +568,6 @@ SinglePlayer.propTypes = {
   suppressLocalOverlay: PropTypes.bool,
   maxVideoBitrate: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   maxResolution: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
-  upscaleEffects: PropTypes.oneOf(['auto', 'blur-only', 'crt-only', 'aggressive', 'none'])
+  upscaleEffects: PropTypes.oneOf(['auto', 'blur-only', 'crt-only', 'aggressive', 'none']),
+  onRequestRecovery: PropTypes.func
 };
