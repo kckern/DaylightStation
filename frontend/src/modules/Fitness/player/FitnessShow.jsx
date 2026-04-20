@@ -540,11 +540,15 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
   }, []);
 
   const handlePlayEpisode = async (episode, sourceEl = null, event = null) => {
-  // play episode (debug removed)
-    // If source element provided, require full visibility before play
+    // Play vs. Scroll mutual exclusion (FRD Q2 item 4.2).
+    // If a tap would cause the episode list to scroll (item partially off-screen),
+    // suppress playback on THIS tap — only scroll. A second tap, now with the
+    // episode fully visible, runs the play. `scrollIntoViewIfNeeded` returns
+    // didScroll:true only when it triggered a scroll > 1px (see line 504), so
+    // already-visible items always pass through.
     if (sourceEl) {
       const { didScroll } = scrollIntoViewIfNeeded(sourceEl, { axis: 'y', margin: 8 });
-      if (didScroll) return; // wait for second tap
+      if (didScroll) return;
     }
 
     // Interaction Isolation: Prevent the gesture from leaking to the next view
