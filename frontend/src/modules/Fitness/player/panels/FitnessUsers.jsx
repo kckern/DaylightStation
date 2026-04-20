@@ -634,7 +634,24 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     const rpmDevicesCopy = [...rpmDevices];
     const otherDevices = [...equipmentDevices];
 
-    // HR: Sort by raw zone rank (matches displayed card color), then by zone progress
+    // HR sort (primary = raw zone rank, secondary = HR-within-zone %).
+    //
+    // Both keys read LIVE (non-hysteresis-smoothed) state:
+    //   - getRawZoneId() reads participantEntry.rawZoneId — the live zone
+    //     derived directly from current HR, bypassing the committed-zone
+    //     hysteresis that ZoneProfileStore applies for governance stability.
+    //   - lookupZoneProgress(name).progress is computed in types.js against
+    //     the LIVE zone's rangeMin/rangeMax (see calculateZoneProgress at
+    //     types.js:290-331), so it's already HR-within-zone %.
+    //
+    // KNOWN VISUAL INCONSISTENCY: a user's card COLOR (zoneClass on line
+    // ~1009) is driven by the COMMITTED zoneId (hysteresis-smoothed). When
+    // the raw zone and committed zone disagree (briefly, at zone boundaries),
+    // the card color and progress bar fill come from different zone ranges.
+    // Sort stays correct vs. live HR but the visual grouping can look odd.
+    // Fixing this end-to-end requires either (a) removing the hysteresis,
+    // (b) using the raw zone for card color too, or (c) driving the bar off
+    // the committed zone. All three are bigger than this ticket.
     hrDevices.sort((a, b) => {
       const aZone = getRawZoneId(a);
       const bZone = getRawZoneId(b);
@@ -642,7 +659,6 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
       const bRank = bZone ? zoneRankMap[bZone] : -1;
       if (bRank !== aRank) return bRank - aRank;
 
-      // Secondary sort: zone progress (normalized within zone)
       const aName = resolveCanonicalUserName(a.deviceId);
       const bName = resolveCanonicalUserName(b.deviceId);
       const aProgress = lookupZoneProgress(aName)?.progress ?? 0;
