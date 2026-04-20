@@ -4,6 +4,11 @@ import { DaylightMediaPath } from '@/lib/api.mjs';
 import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from './TouchVolumeButtons.jsx';
 import '../FitnessSidebar.scss';
 
+// Auto-close behavior for quick-action settings: flash the selected control
+// briefly so the user sees their tap was registered, then dismiss the menu.
+const ACK_FLASH_MS = 300;
+const ACK_CLOSE_MS = 400;
+
 // Note: slugifyId has been removed - we now use explicit IDs from config
 
 const FitnessSidebarMenu = ({
@@ -86,10 +91,34 @@ const FitnessSidebarMenu = ({
     [videoVolume?.volume]
   );
 
+  // Tracks which control is mid-ack-flash. After ACK_CLOSE_MS we call onClose.
+  const [flashingId, setFlashingId] = React.useState(null);
+  const ackTimerRef = React.useRef(null);
+  const closeTimerRef = React.useRef(null);
+  React.useEffect(() => () => {
+    if (ackTimerRef.current) clearTimeout(ackTimerRef.current);
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+  }, []);
+
+  const ackSelection = React.useCallback((id) => {
+    setFlashingId(id);
+    if (ackTimerRef.current) clearTimeout(ackTimerRef.current);
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    ackTimerRef.current = setTimeout(() => {
+      setFlashingId(null);
+      ackTimerRef.current = null;
+    }, ACK_FLASH_MS);
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = null;
+      onClose?.();
+    }, ACK_CLOSE_MS);
+  }, [onClose]);
+
   const handleVideoLevelSelect = React.useCallback((level) => {
     const next = linearVolumeFromLevel(level);
     videoVolume?.setVolume?.(next);
-  }, [videoVolume]);
+    ackSelection('video-volume');
+  }, [videoVolume, ackSelection]);
 
   const handleReloadPage = () => {
     if (typeof window !== 'undefined') {
@@ -231,6 +260,22 @@ const FitnessSidebarMenu = ({
 
   const handleToggle = (component) => {
     onToggleVisibility(component);
+    ackSelection(component);
+  };
+
+  const handleChartToggle = () => {
+    onToggleChart?.();
+    ackSelection('chart');
+  };
+
+  const handleMusicToggle = () => {
+    onToggleMusic?.();
+    ackSelection('music');
+  };
+
+  const handleBoostSelect = (level) => {
+    setBoost(level);
+    ackSelection(`boost-${level}`);
   };
 
   const handleAssignGuest = (option) => {
@@ -267,7 +312,7 @@ const FitnessSidebarMenu = ({
 
         <h4>Media Visibility</h4>
         <div
-          className="menu-item toggle-item"
+          className={`menu-item toggle-item${flashingId === 'sidebarCam' ? ' is-ack-flash' : ''}`}
           onPointerDown={() => handleToggle('sidebarCam')}
         >
           <span>📹 Sidebar Webcam</span>
@@ -282,8 +327,8 @@ const FitnessSidebarMenu = ({
         </div>
 
         <div
-          className="menu-item toggle-item"
-          onPointerDown={() => onToggleChart?.()}
+          className={`menu-item toggle-item${flashingId === 'chart' ? ' is-ack-flash' : ''}`}
+          onPointerDown={handleChartToggle}
         >
           <span>📈 Fitness Chart</span>
           <label className="toggle-switch">
@@ -296,9 +341,10 @@ const FitnessSidebarMenu = ({
           </label>
         </div>
 
-        <div className="menu-item toggle-item"
-         onPointerDown={() => handleToggle('treasureBox')}
-         >
+        <div
+          className={`menu-item toggle-item${flashingId === 'treasureBox' ? ' is-ack-flash' : ''}`}
+          onPointerDown={() => handleToggle('treasureBox')}
+        >
           <span>💰 Treasure Box</span>
           <label className="toggle-switch">
             <input
@@ -310,8 +356,9 @@ const FitnessSidebarMenu = ({
           </label>
         </div>
 
-        <div className="menu-item toggle-item" 
-          onPointerDown={() => onToggleMusic?.()}
+        <div
+          className={`menu-item toggle-item${flashingId === 'music' ? ' is-ack-flash' : ''}`}
+          onPointerDown={handleMusicToggle}
         >
           <span>🎵 Music</span>
           <label className="toggle-switch">
@@ -355,8 +402,8 @@ const FitnessSidebarMenu = ({
               <button
                 key={level}
                 type="button"
-                className={`boost-btn ${boostLevel === level ? 'active' : ''}`}
-                onClick={() => setBoost(level)}
+                className={`boost-btn ${boostLevel === level ? 'active' : ''}${flashingId === `boost-${level}` ? ' is-ack-flash' : ''}`}
+                onPointerDown={() => handleBoostSelect(level)}
                 disabled={!videoMediaAvailable}
               >
                 {level}x

@@ -2617,7 +2617,7 @@
             align-items: center;
             cursor: default;
             gap: 0.5rem;
-            
+
             span {
               flex: 1;
               min-width: 0;
@@ -2625,6 +2625,10 @@
               text-overflow: ellipsis;
               white-space: nowrap;
             }
+          }
+
+          &.is-ack-flash {
+            animation: fitness-menu-ack-flash 300ms ease-out;
           }
 
           &.playlist-dropdown {
@@ -3968,9 +3972,19 @@
       box-shadow: 0 0 10px rgba(0, 123, 255, 0.3);
     }
 
+    &.is-ack-flash {
+      animation: fitness-menu-ack-flash 300ms ease-out;
+    }
+
     &:disabled {
       opacity: 0.5;
       cursor: not-allowed;
     }
   }
+}
+
+@keyframes fitness-menu-ack-flash {
+  0%   { background: rgba(255, 255, 255, 0.15); }
+  40%  { background: rgba(255, 255, 255, 0.55); }
+  100% { background: rgba(255, 255, 255, 0.15); }
 }
