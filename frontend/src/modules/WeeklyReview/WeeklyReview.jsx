@@ -24,6 +24,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [confirmFocus, setConfirmFocus] = useState(0); // 0=continue, 1=save
   const [resumeDraft, setResumeDraft] = useState(null); // { sessionId, source: 'server'|'local', totalBytes?, lastSavedAt, chunkCount? }
+  const [finalizeError, setFinalizeError] = useState(null);
   const containerRef = useRef(null);
   const uploadStartRef = useRef(null);
   const menuNav = React.useContext(MenuNavigationContext);
@@ -36,10 +37,11 @@ export default function WeeklyReview({ dispatch, dismiss }) {
 
   const weekForUploader = data?.week || '0000-00-00';
   const uploader = useChunkUploader({ sessionId: sessionIdRef.current, week: weekForUploader });
+  const { enqueue: uploaderEnqueue, flushNow: uploaderFlushNow, beaconFlush: uploaderBeaconFlush, status: uploaderStatus, pendingCount: uploaderPendingCount, lastAckedAt: uploaderLastAckedAt } = uploader;
 
   const handleChunk = useCallback(async ({ seq, blob }) => {
-    await uploader.enqueue({ seq, blob });
-  }, [uploader]);
+    await uploaderEnqueue({ seq, blob });
+  }, [uploaderEnqueue]);
 
   const {
     isRecording, duration: recordingDuration, micLevel, silenceWarning,
@@ -51,14 +53,15 @@ export default function WeeklyReview({ dispatch, dismiss }) {
     setUploading(true);
     uploadStartRef.current = Date.now();
     try {
+      setFinalizeError(null);
       const deadline = Date.now() + 30_000;
-      uploader.flushNow();
-      while (uploader.pendingCount > 0 && Date.now() < deadline) {
+      uploaderFlushNow();
+      while (uploaderPendingCount > 0 && Date.now() < deadline) {
         await new Promise(r => setTimeout(r, 500));
-        uploader.flushNow();
+        uploaderFlushNow();
       }
-      if (uploader.pendingCount > 0) {
-        logger.warn('recording.finalize-with-pending', { pending: uploader.pendingCount, sessionId: sessionIdRef.current });
+      if (uploaderPendingCount > 0) {
+        logger.warn('recording.finalize-with-pending', { pending: uploaderPendingCount, sessionId: sessionIdRef.current });
       }
       logger.info('recording.finalize-request', { sessionId: sessionIdRef.current, week: data.week });
       const result = await DaylightAPI('/api/v1/weekly-review/recording/finalize', {
@@ -73,10 +76,12 @@ export default function WeeklyReview({ dispatch, dismiss }) {
       else if (typeof dismiss === 'function') dismiss();
     } catch (err) {
       logger.error('recording.finalize-failed', { sessionId: sessionIdRef.current, error: err.message });
+      finalizeTriggeredRef.current = false; // allow retry
+      setFinalizeError(err.message);
     } finally {
       setUploading(false);
     }
-  }, [data?.week, recordingDuration, uploader, dispatch, dismiss]);
+  }, [data?.week, recordingDuration, uploaderFlushNow, uploaderPendingCount, dispatch, dismiss]);
 
   useEffect(() => {
     logger.info('mount');
@@ -187,11 +192,32 @@ export default function WeeklyReview({ dispatch, dismiss }) {
           const CHUNK = 0x8000;
           for (let i = 0; i < bytes.length; i += CHUNK) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
           const chunkBase64 = btoa(bin);
-          await DaylightAPI('/api/v1/weekly-review/recording/chunk', { sessionId: resumeDraft.sessionId, seq: row.seq, week: data.week, chunkBase64 }, 'POST');
+          // Retry with backoff: 500ms, 1s, 2s
+          let lastErr = null;
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              await DaylightAPI('/api/v1/weekly-review/recording/chunk', { sessionId: resumeDraft.sessionId, seq: row.seq, week: data.week, chunkBase64 }, 'POST');
+              lastErr = null;
+              break;
+            } catch (err) {
+              lastErr = err;
+              logger.warn('recording.resume.chunk-retry', { seq: row.seq, attempt, error: err.message });
+              if (attempt < 2) await new Promise(r => setTimeout(r, 500 * (1 << attempt)));
+            }
+          }
+          if (lastErr) throw new Error(`chunk ${row.seq} failed after 3 retries: ${lastErr.message}`);
         }
       }
+      let estimatedDuration = 0;
+      if (resumeDraft.source === 'local') {
+        // chunkCount * 5 seconds per chunk
+        estimatedDuration = (resumeDraft.chunkCount || 0) * 5;
+      } else if (resumeDraft.source === 'server') {
+        // Server drafts: estimate from totalBytes and typical opus bitrate ~24kbps (3000 bytes/sec)
+        estimatedDuration = Math.round((resumeDraft.totalBytes || 0) / 3000);
+      }
       await DaylightAPI('/api/v1/weekly-review/recording/finalize', {
-        sessionId: resumeDraft.sessionId, week: data.week, duration: 0,
+        sessionId: resumeDraft.sessionId, week: data.week, duration: estimatedDuration,
       }, 'POST');
       await deleteLocalSession(resumeDraft.sessionId);
       setResumeDraft(null);
@@ -218,9 +244,9 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   // Pagehide/beforeunload beacon flush
   useEffect(() => {
     const handlePageHide = () => {
-      if (isRecording || uploader.pendingCount > 0) {
-        logger.info('recording.pagehide-beacon', { pending: uploader.pendingCount, isRecording });
-        uploader.beaconFlush();
+      if (isRecording || uploaderPendingCount > 0) {
+        logger.info('recording.pagehide-beacon', { pending: uploaderPendingCount, isRecording });
+        uploaderBeaconFlush();
       }
     };
     window.addEventListener('pagehide', handlePageHide);
@@ -229,7 +255,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
       window.removeEventListener('pagehide', handlePageHide);
       window.removeEventListener('beforeunload', handlePageHide);
     };
-  }, [isRecording, uploader]);
+  }, [isRecording, uploaderPendingCount, uploaderBeaconFlush]);
 
   // Pacman grid navigation
   useEffect(() => {
@@ -251,8 +277,8 @@ export default function WeeklyReview({ dispatch, dismiss }) {
         return;
       }
 
-      // Not recording but has recorded (stopped/uploading): block everything.
-      if (!isRecording && hasRecorded) {
+      // Not recording but has recorded (stopped/uploading): block everything UNLESS the error dialog is showing.
+      if (!isRecording && hasRecorded && !finalizeError) {
         e.preventDefault();
         e.stopPropagation();
         return;
@@ -371,7 +397,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
       container.addEventListener('keydown', handleKeyDown);
       return () => container.removeEventListener('keydown', handleKeyDown);
     }
-  }, [data, selectedDay, focusedDay, isRecording, hasRecorded, showStopConfirm, confirmFocus, startRecording, stopRecording, dispatch]);
+  }, [data, selectedDay, focusedDay, isRecording, hasRecorded, finalizeError, showStopConfirm, confirmFocus, startRecording, stopRecording, dispatch]);
 
   useEffect(() => {
     containerRef.current?.focus();
@@ -508,6 +534,23 @@ export default function WeeklyReview({ dispatch, dismiss }) {
         </div>
       )}
 
+      {/* Finalize error dialog — shown when upload/finalize fails after recording stops */}
+      {finalizeError && !isRecording && (
+        <div className="weekly-review-confirm-overlay">
+          <div className="confirm-dialog">
+            <div className="confirm-message">
+              Save failed: {finalizeError}
+              <br/>
+              <small>Your recording is safe — stored locally and on the server.</small>
+            </div>
+            <div className="confirm-actions">
+              <button className="confirm-btn confirm-btn--save" onClick={() => { setFinalizeError(null); finalizeTriggeredRef.current = false; finalizeRecording(); }}>Retry</button>
+              <button className="confirm-btn confirm-btn--continue" onClick={() => { setFinalizeError(null); if (typeof dispatch === 'function') dispatch('escape'); else if (typeof dismiss === 'function') dismiss(); }}>Exit (save later)</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Stop confirmation overlay */}
       {showStopConfirm && (
         <div className="weekly-review-confirm-overlay">
@@ -542,9 +585,9 @@ export default function WeeklyReview({ dispatch, dismiss }) {
         error={recorderError}
         onStart={() => { logger.info('recording.manual-start'); startRecording(); }}
         onStop={() => { logger.info('recording.manual-stop'); setShowStopConfirm(true); }}
-        syncStatus={uploader.status}
-        pendingCount={uploader.pendingCount}
-        lastAckedAt={uploader.lastAckedAt}
+        syncStatus={uploaderStatus}
+        pendingCount={uploaderPendingCount}
+        lastAckedAt={uploaderLastAckedAt}
       />
     </div>
   );
