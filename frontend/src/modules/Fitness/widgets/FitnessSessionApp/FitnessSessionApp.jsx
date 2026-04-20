@@ -5,6 +5,9 @@ import FitnessSidebar from '@/modules/Fitness/player/FitnessSidebar.jsx';
 import CameraViewApp from '../CameraViewApp/index.jsx';
 import FitnessChart from '../FitnessChart/index.jsx';
 import { FullscreenVitalsOverlay } from '@/modules/Fitness/shared/integrations';
+import { useFitnessContext } from '@/context/FitnessContext.jsx';
+import { DaylightAPI } from '@/lib/api.mjs';
+import getLogger from '@/lib/logging/Logger.js';
 import './FitnessSessionApp.scss';
 
 /**
@@ -26,7 +29,45 @@ const FitnessSessionApp = ({ mode = 'standalone', onClose, config = {}, onMount 
   } = useFitnessModule('fitness_session');
   
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [endingSession, setEndingSession] = useState(false);
+  const [endError, setEndError] = useState(null);
   const sidebarRef = useRef(null);
+  const fitnessCtx = useFitnessContext();
+  const activeSessionId = fitnessCtx?.fitnessSessionInstance?.sessionId || null;
+  const logger = React.useMemo(() => getLogger().child({ component: 'FitnessSessionApp' }), []);
+
+  const handleEndSession = useCallback(async (e) => {
+    // Don't let the tap also toggle fullscreen
+    e.stopPropagation();
+    e.preventDefault();
+    if (!activeSessionId) {
+      logger.warn('fitness.end-session.no-active-session');
+      return;
+    }
+    if (endingSession) return;
+    const confirmed = typeof window !== 'undefined'
+      ? window.confirm('End this fitness session? Subsequent heart-rate readings will start a new session.')
+      : true;
+    if (!confirmed) return;
+    setEndingSession(true);
+    setEndError(null);
+    try {
+      await DaylightAPI(
+        `api/v1/fitness/sessions/${activeSessionId}/end`,
+        { endTime: Date.now() },
+        'POST'
+      );
+      logger.info('fitness.end-session.ok', { sessionId: String(activeSessionId) });
+    } catch (err) {
+      logger.error('fitness.end-session.failed', {
+        sessionId: String(activeSessionId),
+        error: err?.message
+      });
+      setEndError(err?.message || 'Failed to end session');
+    } finally {
+      setEndingSession(false);
+    }
+  }, [activeSessionId, endingSession, logger]);
 
   // Notify container when mounted
   useEffect(() => {
@@ -80,6 +121,22 @@ const FitnessSessionApp = ({ mode = 'standalone', onClose, config = {}, onMount 
       >
         <div className="fitness-session-app__chart">
           <FitnessChart mode="standalone" onClose={() => {}} />
+          {activeSessionId && !isFullscreen && (
+            <button
+              type="button"
+              className="fitness-session-app__end-session"
+              onPointerDown={handleEndSession}
+              disabled={endingSession}
+              title="Force end the current session so it won't auto-merge with the next workout"
+            >
+              {endingSession ? 'Ending…' : 'End Session'}
+            </button>
+          )}
+          {endError && !isFullscreen && (
+            <div className="fitness-session-app__end-error" role="alert">
+              {endError}
+            </div>
+          )}
         </div>
         <FullscreenVitalsOverlay visible={isFullscreen} />
       </div>

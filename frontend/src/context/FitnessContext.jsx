@@ -956,7 +956,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'list', memoId: null });
   }, [emitVoiceMemoTelemetry, setVoiceMemoOverlayStateGuarded]);
 
-  const openVoiceMemoCapture = React.useCallback((memoOrId, { autoAccept = false, fromFitnessVideoEnd = false, onComplete } = {}) => {
+  const openVoiceMemoCapture = React.useCallback((memoOrId, { autoAccept = false, fromFitnessVideoEnd = false, onComplete, sessionId: overrideSessionId = null } = {}) => {
     // Pause video and music when opening voice memo overlay
     setVideoPlayerPaused(true);
     musicPlayerRef.current?.pause?.();
@@ -973,7 +973,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
             autoAccept: false,
             fromFitnessVideoEnd: false,
             startedAt: Date.now(),
-            onComplete: onComplete || null
+            onComplete: onComplete || null,
+            sessionId: overrideSessionId
           });
         } else {
           setVoiceMemoOverlayStateGuarded(VOICE_MEMO_OVERLAY_INITIAL);
@@ -988,9 +989,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       autoAccept, // 4B: Pass autoAccept option for 15-minute rule
       fromFitnessVideoEnd, // Show "How did it go?" vs "How is it going?"
       startedAt: Date.now(),
-      onComplete: onComplete || null // Fix 5: Store onComplete callback
+      onComplete: onComplete || null, // Fix 5: Store onComplete callback
+      // Override when attaching a memo to a HISTORICAL session (retroactive) —
+      // otherwise VoiceMemoOverlay falls back to the active session's id.
+      sessionId: overrideSessionId
     });
-    logVoiceMemo('overlay-open-capture', { memoId: id || null, autoAccept, fromFitnessVideoEnd });
+    logVoiceMemo('overlay-open-capture', { memoId: id || null, autoAccept, fromFitnessVideoEnd, overrideSessionId: overrideSessionId || null });
     emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'capture', memoId: id || null, autoAccept, fromFitnessVideoEnd });
   }, [emitVoiceMemoTelemetry, getVoiceMemoById, setVoiceMemoOverlayStateGuarded, setVideoPlayerPaused, voiceMemos]);
 

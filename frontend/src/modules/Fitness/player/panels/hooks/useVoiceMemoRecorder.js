@@ -606,7 +606,10 @@ const useVoiceMemoRecorder = ({
       retryAbortRef.current = null;
     }
     lastAudioPayloadRef.current = null;
-    cancelledRef.current = false;
+    // Unmount is a cancel: force any still-pending MediaRecorder.onstop handler
+    // to discard its chunks instead of uploading. Resetting to false here caused
+    // a race where onstop fired after cleanup and proceeded to upload the audio.
+    cancelledRef.current = true;
 
     try {
       mediaRecorderRef.current?.stop();
