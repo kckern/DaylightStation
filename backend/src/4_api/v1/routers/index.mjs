@@ -35,6 +35,7 @@ export { createNutritionRouter } from './nutrition.mjs';
 
 // Domain routers - Home & Automation
 export { createHomeAutomationRouter } from './homeAutomation.mjs';
+export { createHomeDashboardRouter } from './home-dashboard.mjs';
 export { createDeviceRouter } from './device.mjs';
 export { createEpaperRouter } from './epaper.mjs';
 export { createPrinterRouter } from './printer.mjs';

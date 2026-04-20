@@ -88,6 +88,9 @@ import { RemoteExecAdapter } from '#adapters/home-automation/remote-exec/RemoteE
 import { createHomeAutomationRouter } from '#api/v1/routers/homeAutomation.mjs';
 import { HaSensorDisplayPowerCheck } from '#adapters/home-automation/HaSensorDisplayPowerCheck.mjs';
 import { DisplayReadinessPolicy, createNoOpDisplayPowerCheck } from '#domains/home-automation/index.mjs';
+import { HomeAutomationContainer } from '#apps/home-automation/HomeAutomationContainer.mjs';
+import { YamlHomeDashboardConfigRepository } from '#adapters/persistence/yaml/YamlHomeDashboardConfigRepository.mjs';
+import { createHomeDashboardRouter } from '#api/v1/routers/home-dashboard.mjs';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
 import { TranscodePrewarmService } from '#apps/devices/services/TranscodePrewarmService.mjs';
 import { DispatchIdempotencyService } from '#apps/devices/services/DispatchIdempotencyService.mjs';
@@ -1562,6 +1565,42 @@ export function createHomeAutomationApiRouter(config) {
     eventAggregationService,
     logger
   });
+}
+
+/**
+ * Create the home-dashboard Express router for /api/v1/home-dashboard.
+ *
+ * Composes the YAML config repository and the HomeAutomationContainer,
+ * then produces a thin Express router. Returns `null` when `haGateway`
+ * is unavailable (HA not configured) — caller should skip mounting.
+ *
+ * @param {Object} config
+ * @param {Object} [config.haGateway] - Home Assistant gateway
+ * @param {Object} config.configService - ConfigService for household resolution
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {import('express').Router|null}
+ */
+export function createHomeDashboardApiRouter(config) {
+  const { haGateway, configService, logger = console } = config;
+
+  if (!haGateway) {
+    logger.warn?.('home.dashboard.disabled', { reason: 'no haGateway' });
+    return null;
+  }
+
+  const configRepository = new YamlHomeDashboardConfigRepository({
+    dataService,
+    configService,
+    logger,
+  });
+
+  const container = new HomeAutomationContainer({
+    configRepository,
+    haGateway,
+    logger,
+  });
+
+  return createHomeDashboardRouter({ container, logger });
 }
 
 // =============================================================================
