@@ -79,4 +79,69 @@ describe('WeeklyReviewService.appendChunk', () => {
       service.appendChunk({ sessionId: 'sess-defg', seq: 0, week: '2026/04/12', buffer: Buffer.from('X') })
     ).rejects.toThrow(/invalid week/i);
   });
+
+  it('rejects empty buffer', async () => {
+    await expect(
+      service.appendChunk({ sessionId: 'sess-aaaa', seq: 0, week: '2026-04-12', buffer: Buffer.alloc(0) })
+    ).rejects.toThrow(/buffer required/i);
+  });
+
+  it('rejects non-Buffer input', async () => {
+    await expect(
+      service.appendChunk({ sessionId: 'sess-aaaa', seq: 0, week: '2026-04-12', buffer: 'not-a-buffer' })
+    ).rejects.toThrow(/buffer required/i);
+  });
+
+  it('rejects negative seq', async () => {
+    await expect(
+      service.appendChunk({ sessionId: 'sess-aaaa', seq: -1, week: '2026-04-12', buffer: Buffer.from('X') })
+    ).rejects.toThrow(/invalid seq/i);
+  });
+
+  it('rejects non-integer seq', async () => {
+    await expect(
+      service.appendChunk({ sessionId: 'sess-aaaa', seq: 1.5, week: '2026-04-12', buffer: Buffer.from('X') })
+    ).rejects.toThrow(/invalid seq/i);
+  });
+
+  it('rejects NaN seq', async () => {
+    await expect(
+      service.appendChunk({ sessionId: 'sess-aaaa', seq: NaN, week: '2026-04-12', buffer: Buffer.from('X') })
+    ).rejects.toThrow(/invalid seq/i);
+  });
+
+  it('recovers from draft/meta desync by truncating to meta.totalBytes', async () => {
+    await service.appendChunk({ sessionId: 'sess-aaaa', seq: 0, week: '2026-04-12', buffer: Buffer.from('AAA') });
+    // Simulate desync: manually append extra bytes to the draft file without updating meta
+    const draftPath = path.join(tmpDataPath, 'household', 'common', 'weekly-review', '2026-04-12', '.drafts', 'sess-aaaa.webm');
+    fs.appendFileSync(draftPath, Buffer.from('GARBAGE'));
+    // Now incoming seq 1 should trigger desync recovery, truncate draft back to 3 bytes, then append
+    const r = await service.appendChunk({ sessionId: 'sess-aaaa', seq: 1, week: '2026-04-12', buffer: Buffer.from('BBB') });
+    expect(r.ok).toBe(true);
+    expect(r.totalBytes).toBe(6);
+    expect(fs.readFileSync(draftPath).toString()).toBe('AAABBB');
+  });
+
+  it('refuses to append when meta is corrupt and draft is non-empty', async () => {
+    await service.appendChunk({ sessionId: 'sess-aaaa', seq: 0, week: '2026-04-12', buffer: Buffer.from('AAA') });
+    // Corrupt the meta file
+    const metaPath = path.join(tmpDataPath, 'household', 'common', 'weekly-review', '2026-04-12', '.drafts', 'sess-aaaa.meta.json');
+    fs.writeFileSync(metaPath, '{ this is not valid json');
+    await expect(
+      service.appendChunk({ sessionId: 'sess-aaaa', seq: 1, week: '2026-04-12', buffer: Buffer.from('BBB') })
+    ).rejects.toThrow(/meta unreadable/i);
+  });
+
+  it('truncates stale draft when starting a new session (seq=0, no meta)', async () => {
+    // Seed a stale draft with no meta file
+    const draftDir = path.join(tmpDataPath, 'household', 'common', 'weekly-review', '2026-04-12', '.drafts');
+    fs.mkdirSync(draftDir, { recursive: true });
+    const draftPath = path.join(draftDir, 'sess-fresh00.webm');
+    fs.writeFileSync(draftPath, Buffer.from('STALE-GARBAGE'));
+    // Start a new session with seq 0
+    const r = await service.appendChunk({ sessionId: 'sess-fresh00', seq: 0, week: '2026-04-12', buffer: Buffer.from('FRESH') });
+    expect(r.ok).toBe(true);
+    expect(r.totalBytes).toBe(5);
+    expect(fs.readFileSync(draftPath).toString()).toBe('FRESH');
+  });
 });
