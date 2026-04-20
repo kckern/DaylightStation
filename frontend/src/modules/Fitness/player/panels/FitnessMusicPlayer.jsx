@@ -372,6 +372,29 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     });
   };
 
+  // Auto-collapse expanded controls after 15s of inactivity. Any pointer
+  // interaction inside the expanded panel resets the timer.
+  const INACTIVITY_MS = 15_000;
+  const inactivityTimerRef = useRef(null);
+  const scheduleCollapse = useCallback(() => {
+    if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+    inactivityTimerRef.current = setTimeout(() => {
+      setControlsOpen(false);
+      inactivityTimerRef.current = null;
+    }, INACTIVITY_MS);
+  }, []);
+  const cancelCollapse = useCallback(() => {
+    if (inactivityTimerRef.current) {
+      clearTimeout(inactivityTimerRef.current);
+      inactivityTimerRef.current = null;
+    }
+  }, []);
+  useEffect(() => {
+    if (controlsOpen) scheduleCollapse();
+    else cancelCollapse();
+    return cancelCollapse;
+  }, [controlsOpen, scheduleCollapse, cancelCollapse]);
+
   const handlePlaylistButtonClick = (e) => {
     if (e && typeof e.preventDefault === 'function') {
       e.preventDefault();
@@ -538,7 +561,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
               </div>
 
               {controlsOpen && (
-          <div className="music-player-expanded">
+          <div className="music-player-expanded" onPointerDownCapture={scheduleCollapse}>
 
             <div className="expanded-section">
               {isVideoAvailable && (
@@ -551,7 +574,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
                       controlId="video-volume"
                       currentLevel={videoDisplayLevel}
                       disabled={!isVideoAvailable}
-                      onSelect={handleVideoLevelSelect}
+                      onSelect={(level) => { handleVideoLevelSelect(level); scheduleCollapse(); }}
                     />
                   </div>
                 </div>
@@ -565,7 +588,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
               controlId="music-volume"
               currentLevel={musicDisplayLevel}
               disabled={!musicMediaAvailable}
-              onSelect={handleMusicLevelSelect}
+              onSelect={(level) => { handleMusicLevelSelect(level); scheduleCollapse(); }}
             />
                 </div>
               </div>
@@ -573,9 +596,9 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
             <div className="expanded-section">
               {playlists.length > 0 ? (
                 <>
-                  <button 
+                  <button
                     className="current-playlist-button"
-                    onPointerDown={handlePlaylistButtonClick}
+                    onPointerDown={(e) => { handlePlaylistButtonClick(e); scheduleCollapse(); }}
                   >
                     <span className="playlist-icon">🎵</span>
                     <span className="playlist-name">
