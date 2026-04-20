@@ -1427,6 +1427,27 @@
       box-shadow: 0 2px 6px rgba(0,0,0,0.45);
     }
 
+    /* Compact variant applied when 5+ users are present so the full roster
+       fits the viewport without scrolling. Shrinks padding, gap, and avatar. */
+    .fitness-device.card-compact {
+      &.card-horizontal {
+        gap: 8px;
+        padding: 4px 8px;
+        .card-avatar { width: 36px; height: 36px; }
+        .device-info .device-name { font-size: 0.85rem; }
+        .device-info .device-stats .device-value { font-size: 0.95rem; }
+      }
+      &.card-vertical {
+        padding: 8px 10px 10px;
+        .card-avatar {
+          width: 84px;
+          height: 84px;
+          margin: 2px 0 8px 0;
+        }
+        .device-info .device-name { font-size: 0.95rem; }
+      }
+    }
+
     .fitness-device.card-vertical .card-avatar {
       width: 128px;
       height: 128px;
