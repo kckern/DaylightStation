@@ -632,7 +632,7 @@ const Player = forwardRef(function Player(props, ref) {
   // suppress the resilience overlay which would never exit startup.
   const isSelfContainedFormat = effectiveMeta?.format === 'titlecard';
 
-  const { overlayProps, state: resilienceState, onStartupSignal, cancelDeadline } = useMediaResilience({
+  const { overlayProps, state: resilienceState, onStartupSignal, cancelDeadline, requestRecovery } = useMediaResilience({
     getMediaEl: transportAdapter.getMediaEl,
     meta: effectiveMeta,
     maxVideoBitrate: effectiveMeta?.maxVideoBitrate
@@ -876,6 +876,11 @@ const Player = forwardRef(function Player(props, ref) {
     onRegisterMediaAccess: handleRegisterMediaAccess,
     onRegisterResilienceBridge: handleRegisterResilienceBridge,
     onStartupSignal,
+    onRequestRecovery: (payload) => {
+      if (typeof requestRecovery === 'function') {
+        requestRecovery(payload?.reason);
+      }
+    },
     seekToIntentSeconds: targetTimeSeconds,
     onSeekRequestConsumed: handleSeekRequestConsumed,
     remountDiagnostics: remountState.context,

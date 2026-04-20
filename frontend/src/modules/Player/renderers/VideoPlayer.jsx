@@ -8,6 +8,7 @@ import { useRenderFpsMonitor } from '../hooks/useRenderFpsMonitor.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
 import { playbackLog } from '../lib/playbackLogger.js';
 import { cleanupDashElement } from '../lib/dashCleanup.js';
+import { createStaleSessionWatchdog } from '../lib/staleSessionWatchdog.js';
 
 /**
  * Append or replace a cache-buster query param on a URL.
@@ -63,7 +64,24 @@ export function VideoPlayer({
   const [isAdapting, setIsAdapting] = useState(false);
   const [adaptMessage, setAdaptMessage] = useState(undefined);
   const displayReadyLoggedRef = useRef(false);
-  
+  const staleSessionWatchdogRef = useRef(null);
+  if (!staleSessionWatchdogRef.current) {
+    staleSessionWatchdogRef.current = createStaleSessionWatchdog({
+      threshold: 3,
+      windowMs: 10000,
+      onEscalate: ({ errorCount, windowMs: wMs }) => {
+        playbackLog('playback.stale-session-detected', {
+          errorCount,
+          windowMs: wMs,
+          action: 'escalating-to-resilience-recovery'
+        }, { level: 'warn' });
+        if (typeof resilienceBridge?.requestRecovery === 'function') {
+          resilienceBridge.requestRecovery({ reason: 'stale-session-detected' });
+        }
+      }
+    });
+  }
+
   const {
     isDash,
     containerRef,
@@ -313,6 +331,7 @@ export function VideoPlayer({
           type: e?.data?.type,
           duration: e?.data?.mediaPresentationDuration
         });
+        staleSessionWatchdogRef.current?.reset();
       });
 
       // Stream initialized
@@ -396,7 +415,10 @@ export function VideoPlayer({
       });
 
       // Playback events
-      api.on('playbackStarted', () => dashLog.info('dash.playback-started'));
+      api.on('playbackStarted', () => {
+        dashLog.info('dash.playback-started');
+        staleSessionWatchdogRef.current?.reset();
+      });
       api.on('playbackSeeking', (e) => dashLog.info('dash.seeking', { seekTime: e?.seekTime }));
       api.on('playbackSeeked', () => dashLog.info('dash.seeked'));
       api.on('playbackWaiting', () => dashLog.warn('dash.waiting'));
@@ -404,11 +426,14 @@ export function VideoPlayer({
 
       // Errors — critical
       api.on('error', (e) => {
+        const code = e?.error?.code;
+        const message = e?.error?.message?.substring(0, 200);
         dashLog.error('dash.error', {
-          error: e?.error?.code,
-          message: e?.error?.message?.substring(0, 200),
+          error: code,
+          message,
           data: e?.error?.data ? JSON.stringify(e.error.data).substring(0, 300) : null
         });
+        staleSessionWatchdogRef.current?.recordError({ code, message });
       });
 
       // Quality/representation changes
@@ -626,6 +651,7 @@ VideoPlayer.propTypes = {
     onRegisterMediaAccess: PropTypes.func,
     seekToIntentSeconds: PropTypes.number,
     onSeekRequestConsumed: PropTypes.func,
-    onStartupSignal: PropTypes.func
+    onStartupSignal: PropTypes.func,
+    requestRecovery: PropTypes.func
   })
 };
