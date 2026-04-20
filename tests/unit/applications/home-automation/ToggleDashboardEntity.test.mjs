@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ToggleDashboardEntity } from '#apps/home-automation/usecases/ToggleDashboardEntity.mjs';
+import { AuthorizationError } from '#system/utils/errors/index.mjs';
 
 const config = {
   summary: { scenes: [] },
@@ -40,9 +41,12 @@ describe('ToggleDashboardEntity', () => {
     expect(callService).toHaveBeenCalledWith('light', 'toggle', { entity_id: 'light.lr_main' });
   });
 
-  it('rejects entity not in YAML whitelist', async () => {
+  it('rejects entity not in YAML whitelist with AuthorizationError', async () => {
     const callService = vi.fn();
     const uc = makeUC({ callService });
+    // Message still matches /not on dashboard/i; now also typed for HTTP 403 mapping.
+    await expect(uc.execute({ entityId: 'light.hacker', desiredState: 'on' }))
+      .rejects.toThrow(AuthorizationError);
     await expect(uc.execute({ entityId: 'light.hacker', desiredState: 'on' }))
       .rejects.toThrow(/not on dashboard/i);
     expect(callService).not.toHaveBeenCalled();

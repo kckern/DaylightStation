@@ -1,3 +1,5 @@
+import { AuthorizationError } from '#system/utils/errors/index.mjs';
+
 const VALID_STATES = new Set(['on', 'off', 'toggle']);
 
 export class ToggleDashboardEntity {
@@ -19,9 +21,7 @@ export class ToggleDashboardEntity {
     }
     const config = await this.#configRepository.load();
     if (!this.#isAllowed(config, entityId)) {
-      const err = new Error(`Entity ${entityId} is not on dashboard`);
-      err.status = 403;
-      throw err;
+      throw new AuthorizationError(`Entity ${entityId} is not on dashboard`, { entityId });
     }
     const domain = entityId.split('.')[0];
     const service = desiredState === 'toggle' ? 'toggle'

@@ -7,6 +7,7 @@ export {
   DomainError,
   ValidationError,
   NotFoundError,
+  AuthorizationError,
   ConflictError,
   BusinessRuleError,
   isDomainError,

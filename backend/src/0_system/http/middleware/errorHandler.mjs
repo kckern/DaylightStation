@@ -10,6 +10,7 @@ import {
   DomainError,
   ValidationError,
   NotFoundError,
+  AuthorizationError,
   InfrastructureError,
 } from '../../utils/errors/index.mjs';
 
@@ -22,6 +23,7 @@ const logger = createLogger({ source: 'middleware', app: 'http' });
  */
 function getHttpStatus(error) {
   if (error instanceof ValidationError) return 400;
+  if (error instanceof AuthorizationError) return 403;
   if (error instanceof NotFoundError) return 404;
   if (error instanceof DomainError) return 422;
   if (error instanceof InfrastructureError) return 503;

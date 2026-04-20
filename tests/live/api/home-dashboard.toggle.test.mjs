@@ -58,7 +58,9 @@ describe('POST /api/v1/home-dashboard/toggle', () => {
       }),
     });
 
-    // Whitelist violations MUST return 403 per ToggleDashboardEntity contract.
+    // Whitelist violations MUST return 403. ToggleDashboardEntity throws
+    // AuthorizationError (backend/src/0_system/utils/errors/DomainError.mjs),
+    // which errorHandlerMiddleware maps to HTTP 403.
     expect(res.status).toBe(403);
   });
 });
