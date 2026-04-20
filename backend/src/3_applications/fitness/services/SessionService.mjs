@@ -313,8 +313,12 @@ export class SessionService {
 
     if (!Array.isArray(sessions) || sessions.length === 0) return { resumable: false };
 
-    // Filter: same contentId, ended within maxGapMs
+    // Filter: same contentId, ended within maxGapMs, not explicitly finalized.
+    // A finalized session was ended by the user via POST /sessions/:id/end — a
+    // "clean split" — and must not be offered for auto-merge.
     const candidates = sessions.filter(s => {
+      if (s.finalized) return false;
+
       const mediaId = s.media?.primary?.contentId
         || s.contentId
         || null;
@@ -373,6 +377,15 @@ export class SessionService {
     const target = await this.getSession(tgtId, hid, { decodeTimeline: true });
     if (!source) throw new EntityNotFoundError('Session', srcId);
     if (!target) throw new EntityNotFoundError('Session', tgtId);
+
+    // Refuse to merge if either side was explicitly finalized. That flag is
+    // set when the user hits "End Session" and means "do not auto-merge."
+    if (source.finalized || target.finalized) {
+      throw new ValidationError(
+        'Cannot merge a finalized session',
+        { code: 'SESSION_FINALIZED', sourceFinalized: !!source.finalized, targetFinalized: !!target.finalized }
+      );
+    }
 
     // Determine which is earlier
     const srcStart = source.startTime;

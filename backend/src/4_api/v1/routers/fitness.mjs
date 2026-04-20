@@ -387,6 +387,39 @@ export function createFitnessRouter(config) {
   });
 
   /**
+   * POST /api/fitness/sessions/:sessionId/end - Explicitly end a session.
+   *
+   * A "clean split" — marks the session finalized so it won't be offered
+   * for resume or auto-merged with a subsequent workout. Any HR readings
+   * after this call belong to a new session.
+   *
+   * Body (optional): { endTime?: number, household?: string }
+   */
+  router.post('/sessions/:sessionId/end', asyncHandler(async (req, res) => {
+    const { sessionId } = req.params;
+    const { household } = req.body || {};
+    const endTime = Number.isFinite(req.body?.endTime) ? req.body.endTime : Date.now();
+    try {
+      const session = await sessionService.endSession(sessionId, household, endTime);
+      logger.info?.('fitness.sessions.finalized', {
+        sessionId,
+        endTime,
+        durationMs: session.durationMs
+      });
+      return res.json({
+        finalized: true,
+        sessionId: session.sessionId?.toString(),
+        endTime: session.endTime,
+        durationMs: session.durationMs
+      });
+    } catch (err) {
+      const code = err?.name === 'EntityNotFoundError' ? 404 : 500;
+      logger.error?.('fitness.sessions.end.error', { sessionId, error: err?.message });
+      return res.status(code).json({ error: err?.message || 'Failed to end session' });
+    }
+  }));
+
+  /**
    * GET /api/fitness/resumable - Check if a resumable session exists
    * Query params:
    * - contentId: media content ID (required)
