@@ -6,6 +6,7 @@ import { useFitness } from '@/context/FitnessContext.jsx';
 import moment from 'moment';
 import { buildVirtualSeasons } from '@/modules/Fitness/lib/playlistVirtualSeasons.js';
 import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
+import getLogger from '@/lib/logging/Logger.js';
 
 const formatWatchedDate = (dateString) => {
   try {
@@ -730,6 +731,13 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
     ? info.type.trim().toLowerCase()
     : (typeof info?.contentType === 'string' ? info.contentType.trim().toLowerCase() : '');
 
+  // Lock icon (rendered at show-title-row) is driven by this flag.
+  // A show is governed when EITHER:
+  //   (a) its `type`/`contentType` is in governed_types (broad: every show of that
+  //       type gets the lock — config with e.g. `governed_types: ["show"]` will
+  //       lock every show), OR
+  //   (b) any of its labels are in governed_labels (per-item gating via tags).
+  // If "lock appears globally", audit governed_types in the fitness config first.
   const isGovernedShow = useMemo(() => {
     const typeGoverned = governedTypeSet.size > 0 && showType ? governedTypeSet.has(showType) : false;
     if (typeGoverned) return true;
@@ -739,6 +747,23 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
     }
     return false;
   }, [governedTypeSet, showType, governedLabelSet, showLabelSet]);
+
+  // Diagnostic: log each show-lock evaluation so a "global lock" report can be
+  // root-caused from the session log (look for fitness.show-lock-eval events,
+  // inspect governedTypes vs showType — a broad governed_types config is the
+  // most common cause of unexpected locks).
+  useEffect(() => {
+    if (!info?.title) return;
+    const logger = getLogger().child({ component: 'FitnessShow' });
+    logger.debug('fitness.show-lock-eval', {
+      title: info.title,
+      showType,
+      governedTypes: Array.from(governedTypeSet),
+      showLabels: Array.from(showLabelSet),
+      governedLabels: Array.from(governedLabelSet),
+      result: isGovernedShow
+    });
+  }, [info?.title, showType, governedTypeSet, showLabelSet, governedLabelSet, isGovernedShow]);
 
   // Derive seasons from parentsMap (backend groups object) with fallback to per-episode fields
   const seasons = useMemo(() => {
