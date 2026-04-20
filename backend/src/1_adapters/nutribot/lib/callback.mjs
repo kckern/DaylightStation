@@ -38,5 +38,6 @@ export const CallbackActions = {
   CANCEL_REVISION: 'cancel_revision',
   DATE_SELECT: 'date_select',
   PORTION_ADJUST: 'portion_adjust',
-  CONFIRM_ALL: 'confirm_all'
+  CONFIRM_ALL: 'confirm_all',
+  RETRY_IMAGE: 'retry_image'
 };
