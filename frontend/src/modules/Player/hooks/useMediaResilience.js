@@ -13,6 +13,19 @@ export { RESILIENCE_STATUS } from './useResilienceState.js';
 
 const STATUS = RESILIENCE_STATUS;
 
+// Reasons where the dash.js MPD manifest is almost certainly stale
+// (Plex transcode session died during startup). These warrant a fresh
+// fetch of the stream URL rather than a same-src reload.
+const URL_REFRESH_REASONS = new Set([
+  'startup-deadline-exceeded',
+  'startup-deadline-exceeded-after-warmup',
+  'stale-session-detected'
+]);
+
+export function shouldRefreshUrlForReason(reason) {
+  return URL_REFRESH_REASONS.has(reason);
+}
+
 // Stable no-op function to avoid creating new function references on each render
 const NOOP = () => {};
 
