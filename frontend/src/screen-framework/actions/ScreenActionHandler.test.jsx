@@ -79,6 +79,42 @@ describe('ScreenActionHandler', () => {
     expect(getByTestId('player')).toBeTruthy();
   });
 
+  it('mounts Player overlay on media:queue-op with op=play-now', () => {
+    const { getByTestId, queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+
+    expect(queryByTestId('player')).toBeNull();
+
+    act(() => getActionBus().emit('media:queue-op', {
+      op: 'play-now',
+      contentId: 'plex:777',
+      shader: 'dark',
+      shuffle: true,
+      commandId: 'cmd-abc',
+    }));
+
+    expect(getByTestId('player')).toBeTruthy();
+  });
+
+  it('ignores media:queue-op with non play-now op (logs debug)', () => {
+    const { queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+
+    act(() => getActionBus().emit('media:queue-op', {
+      op: 'clear',
+      commandId: 'cmd-xyz',
+    }));
+
+    expect(queryByTestId('player')).toBeNull();
+    expect(queryByTestId('menu-stack')).toBeNull();
+  });
+
   it('dismisses overlay on escape action when no overlay is active', () => {
     const { queryByTestId } = render(
       <ScreenOverlayProvider>
