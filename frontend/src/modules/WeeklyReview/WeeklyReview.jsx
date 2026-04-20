@@ -24,7 +24,9 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [confirmFocus, setConfirmFocus] = useState(0); // 0=continue, 1=save
   const [resumeDraft, setResumeDraft] = useState(null); // { sessionId, source: 'server'|'local', totalBytes?, lastSavedAt, chunkCount? }
+  const [resumeFocus, setResumeFocus] = useState(0); // I1: 0=Finalize, 1=Discard
   const [finalizeError, setFinalizeError] = useState(null);
+  const [errorFocus, setErrorFocus] = useState(0); // I2: 0=Retry, 1=Exit
   const [focusRow, setFocusRow] = useState('grid'); // 'grid' | 'bar'
   const [barFocus, setBarFocus] = useState(0); // when focusRow='bar': 0=Save, 1=Cancel (future)
   const containerRef = useRef(null);
@@ -39,7 +41,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
 
   const weekForUploader = data?.week || '0000-00-00';
   const uploader = useChunkUploader({ sessionId: sessionIdRef.current, week: weekForUploader });
-  const { enqueue: uploaderEnqueue, flushNow: uploaderFlushNow, beaconFlush: uploaderBeaconFlush, status: uploaderStatus, pendingCount: uploaderPendingCount, lastAckedAt: uploaderLastAckedAt } = uploader;
+  const { enqueue: uploaderEnqueue, flushNow: uploaderFlushNow, beaconFlush: uploaderBeaconFlush, status: uploaderStatus, pendingCount: uploaderPendingCount, pendingCountRef: uploaderPendingCountRef, lastAckedAt: uploaderLastAckedAt } = uploader;
 
   const handleChunk = useCallback(async ({ seq, blob }) => {
     await uploaderEnqueue({ seq, blob });
@@ -58,12 +60,13 @@ export default function WeeklyReview({ dispatch, dismiss }) {
       setFinalizeError(null);
       const deadline = Date.now() + 30_000;
       uploaderFlushNow();
-      while (uploaderPendingCount > 0 && Date.now() < deadline) {
+      // C1: Use ref-backed count — React state snapshot would be stale inside this async loop
+      while (uploaderPendingCountRef.current > 0 && Date.now() < deadline) {
         await new Promise(r => setTimeout(r, 500));
         uploaderFlushNow();
       }
-      if (uploaderPendingCount > 0) {
-        logger.warn('recording.finalize-with-pending', { pending: uploaderPendingCount, sessionId: sessionIdRef.current });
+      if (uploaderPendingCountRef.current > 0) {
+        logger.warn('recording.finalize-with-pending', { pending: uploaderPendingCountRef.current, sessionId: sessionIdRef.current });
       }
       logger.info('recording.finalize-request', { sessionId: sessionIdRef.current, week: data.week });
       const result = await DaylightAPI('/api/v1/weekly-review/recording/finalize', {
@@ -83,7 +86,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
     } finally {
       setUploading(false);
     }
-  }, [data?.week, recordingDuration, uploaderFlushNow, uploaderPendingCount, dispatch, dismiss]);
+  }, [data?.week, recordingDuration, uploaderFlushNow, uploaderPendingCountRef, dispatch, dismiss]);
 
   useEffect(() => {
     logger.info('mount');
@@ -265,9 +268,54 @@ export default function WeeklyReview({ dispatch, dismiss }) {
       if (!data?.days) return;
       const total = data.days.length;
 
+      // I1: Resume-draft keyboard nav — must be checked BEFORE init-overlay branch
+      if (resumeDraft && !isRecording && !hasRecorded) {
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          setResumeFocus(prev => prev === 0 ? 1 : 0);
+          return;
+        }
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          if (resumeFocus === 0) finalizePriorDraft();
+          else discardPriorDraft();
+          return;
+        }
+        if (e.key === 'Escape' || e.key === 'Backspace') {
+          // Don't auto-discard on Escape — overlay requires explicit choice
+          e.preventDefault();
+          return;
+        }
+        return;
+      }
+
+      // I2: Finalize-error keyboard nav — must be checked BEFORE the block-all branch
+      if (finalizeError && !isRecording) {
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          setErrorFocus(prev => prev === 0 ? 1 : 0);
+          return;
+        }
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          if (errorFocus === 0) {
+            setFinalizeError(null);
+            finalizeTriggeredRef.current = false;
+            finalizeRecording();
+          } else {
+            setFinalizeError(null);
+            if (typeof dispatch === 'function') dispatch('escape');
+            else if (typeof dismiss === 'function') dismiss();
+          }
+          return;
+        }
+        return;
+      }
+
       // Not recording and never started: init screen. Enter starts, Escape exits.
       if (!isRecording && !hasRecorded) {
-        if (e.key === 'Enter' || e.key === ' ') {
+        // I1: Gate Enter-to-start on !resumeDraft so draft overlay isn't bypassed
+        if (!resumeDraft && (e.key === 'Enter' || e.key === ' ')) {
           e.preventDefault();
           e.stopPropagation();
           logger.info('recording.key-start');
@@ -442,7 +490,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
       container.addEventListener('keydown', handleKeyDown);
       return () => container.removeEventListener('keydown', handleKeyDown);
     }
-  }, [data, selectedDay, focusedDay, focusRow, barFocus, isRecording, hasRecorded, finalizeError, showStopConfirm, confirmFocus, startRecording, stopRecording, dispatch]);
+  }, [data, selectedDay, focusedDay, focusRow, barFocus, isRecording, hasRecorded, finalizeError, errorFocus, showStopConfirm, confirmFocus, resumeDraft, resumeFocus, finalizePriorDraft, discardPriorDraft, finalizeRecording, startRecording, stopRecording, dispatch, dismiss]);
 
   useEffect(() => {
     containerRef.current?.focus();
@@ -551,8 +599,8 @@ export default function WeeklyReview({ dispatch, dismiss }) {
               <small>{resumeDraft.source === 'server' ? `Server draft · ${Math.round((resumeDraft.totalBytes || 0) / 1024)} KB` : `Local-only draft · ${resumeDraft.chunkCount || 0} chunks`}</small>
             </div>
             <div className="confirm-actions">
-              <button className="confirm-btn confirm-btn--save" onClick={finalizePriorDraft}>Finalize Previous</button>
-              <button className="confirm-btn confirm-btn--continue" onClick={discardPriorDraft}>Discard</button>
+              <button className={`confirm-btn confirm-btn--save${resumeFocus === 0 ? ' focused' : ''}`} onClick={finalizePriorDraft}>Finalize Previous</button>
+              <button className={`confirm-btn confirm-btn--continue${resumeFocus === 1 ? ' focused' : ''}`} onClick={discardPriorDraft}>Discard</button>
             </div>
           </div>
         </div>
@@ -593,8 +641,8 @@ export default function WeeklyReview({ dispatch, dismiss }) {
               <small>Your recording is safe — stored locally and on the server.</small>
             </div>
             <div className="confirm-actions">
-              <button className="confirm-btn confirm-btn--save" onClick={() => { setFinalizeError(null); finalizeTriggeredRef.current = false; finalizeRecording(); }}>Retry</button>
-              <button className="confirm-btn confirm-btn--continue" onClick={() => { setFinalizeError(null); if (typeof dispatch === 'function') dispatch('escape'); else if (typeof dismiss === 'function') dismiss(); }}>Exit (save later)</button>
+              <button className={`confirm-btn confirm-btn--save${errorFocus === 0 ? ' focused' : ''}`} onClick={() => { setFinalizeError(null); finalizeTriggeredRef.current = false; finalizeRecording(); }}>Retry</button>
+              <button className={`confirm-btn confirm-btn--continue${errorFocus === 1 ? ' focused' : ''}`} onClick={() => { setFinalizeError(null); if (typeof dispatch === 'function') dispatch('escape'); else if (typeof dismiss === 'function') dismiss(); }}>Exit (save later)</button>
             </div>
           </div>
         </div>

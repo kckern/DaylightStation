@@ -31,6 +31,7 @@ export function useChunkUploader({ sessionId, week }) {
   const [ackedSeq, setAckedSeq] = useState(-1);
 
   const queueRef = useRef([]);     // in-memory { seq, blob } queue
+  const pendingCountRef = useRef(0); // C1: ref-backed count for finalize drain loop (avoids stale closure)
   const busyRef = useRef(false);
   const backoffRef = useRef(1000);
   const aliveRef = useRef(true);
@@ -89,6 +90,7 @@ export function useChunkUploader({ sessionId, week }) {
       setAckedSeq(next.seq);
       setLastAckedAt(Date.now());
       setPendingCount(queueRef.current.length);
+      pendingCountRef.current = queueRef.current.length; // C1: keep ref in sync
       logger().info('chunk.uploaded', { sessionId, seq: next.seq, pending: queueRef.current.length });
       busyRef.current = false;
       if (aliveRef.current) drain();
@@ -112,6 +114,7 @@ export function useChunkUploader({ sessionId, week }) {
     // This prevents tail chunks from being missed if stop/finalize drains immediately.
     queueRef.current.push({ seq, blob });
     setPendingCount(queueRef.current.length);
+    pendingCountRef.current = queueRef.current.length; // C1: keep ref in sync
     // I3: Start base64 encoding in background so beaconFlush has it synchronously ready
     blobToBase64(blob).then(b64 => {
       base64CacheRef.current.set(seq, b64);
@@ -191,6 +194,7 @@ export function useChunkUploader({ sessionId, week }) {
       }
       queueRef.current = deduped;
       setPendingCount(queueRef.current.length);
+      pendingCountRef.current = queueRef.current.length; // C1: keep ref in sync
       drain();
       return { recovered: unuploaded.length };
     } catch (err) {
@@ -206,6 +210,7 @@ export function useChunkUploader({ sessionId, week }) {
     recoverLocal,
     status,
     pendingCount,
+    pendingCountRef, // C1: ref-backed count for finalize drain loop
     lastAckedAt,
     ackedSeq,
   };
