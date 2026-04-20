@@ -20,6 +20,9 @@ export default function RecordingBar({
   syncStatus,
   pendingCount,
   lastAckedAt,
+  isFocused,
+  canSave,
+  onSave,
 }) {
   const vuBars = useMemo(() => {
     const count = 20;
@@ -73,6 +76,16 @@ export default function RecordingBar({
             ● Record
           </button>
         )}
+
+        <button
+          className={`recording-bar__save ${isFocused ? 'focused' : ''} ${canSave ? 'can-save' : ''}`}
+          onClick={onSave}
+          disabled={!canSave}
+          aria-label="Save and finish recording"
+        >
+          <span className="recording-bar__save-icon" aria-hidden="true">■</span>
+          <span className="recording-bar__save-label">Save Recording</span>
+        </button>
       </div>
     </div>
   );

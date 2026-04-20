@@ -25,6 +25,8 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   const [confirmFocus, setConfirmFocus] = useState(0); // 0=continue, 1=save
   const [resumeDraft, setResumeDraft] = useState(null); // { sessionId, source: 'server'|'local', totalBytes?, lastSavedAt, chunkCount? }
   const [finalizeError, setFinalizeError] = useState(null);
+  const [focusRow, setFocusRow] = useState('grid'); // 'grid' | 'bar'
+  const [barFocus, setBarFocus] = useState(0); // when focusRow='bar': 0=Save, 1=Cancel (future)
   const containerRef = useRef(null);
   const uploadStartRef = useRef(null);
   const menuNav = React.useContext(MenuNavigationContext);
@@ -284,6 +286,16 @@ export default function WeeklyReview({ dispatch, dismiss }) {
         return;
       }
 
+      // Global save shortcut — works from any focus state
+      if (isRecording && (e.key === 's' || e.key === 'S' || e.key === 'MediaStop' || e.key === 'MediaPlayPause')) {
+        e.preventDefault();
+        e.stopPropagation();
+        logger.info('nav.save-shortcut', { key: e.key });
+        setShowStopConfirm(false);
+        stopRecording();
+        return;
+      }
+
       // From here on, we're recording — always capture escape/back ourselves.
       if (e.key === 'Escape' || e.key === 'Backspace') {
         e.preventDefault();
@@ -341,6 +353,26 @@ export default function WeeklyReview({ dispatch, dismiss }) {
         return;
       }
 
+      if (focusRow === 'bar') {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          e.stopPropagation();
+          logger.info('nav.bar-save-pressed');
+          stopRecording();
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          setFocusRow('grid');
+          return;
+        }
+        if (e.key === 'Escape' || e.key === 'Backspace') {
+          e.preventDefault();
+          setFocusRow('grid');
+          return;
+        }
+      }
+
       switch (e.key) {
         case 'ArrowLeft':
           e.preventDefault();
@@ -358,22 +390,35 @@ export default function WeeklyReview({ dispatch, dismiss }) {
             return next;
           });
           break;
-        case 'ArrowUp':
+        case 'ArrowUp': {
           e.preventDefault();
-          setFocusedDay(prev => {
-            const next = (prev - COLS + total) % total;
-            logger.debug('nav.grid-up', { from: prev, to: next });
-            return next;
-          });
+          if (focusRow === 'bar') {
+            setFocusRow('grid');
+            logger.info('nav.focus-grid');
+          } else {
+            setFocusedDay(prev => {
+              const next = (prev - COLS + total) % total;
+              logger.debug('nav.grid-up', { from: prev, to: next });
+              return next;
+            });
+          }
           break;
-        case 'ArrowDown':
+        }
+        case 'ArrowDown': {
           e.preventDefault();
-          setFocusedDay(prev => {
-            const next = (prev + COLS) % total;
-            logger.debug('nav.grid-down', { from: prev, to: next });
-            return next;
-          });
+          if (focusRow === 'grid' && focusedDay >= COLS) {
+            setFocusRow('bar');
+            setBarFocus(0);
+            logger.info('nav.focus-bar');
+          } else if (focusRow === 'grid') {
+            setFocusedDay(prev => {
+              const next = (prev + COLS) % total;
+              logger.debug('nav.grid-down', { from: prev, to: next });
+              return next;
+            });
+          }
           break;
+        }
         case 'Enter':
         case ' ':
           e.preventDefault();
@@ -397,7 +442,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
       container.addEventListener('keydown', handleKeyDown);
       return () => container.removeEventListener('keydown', handleKeyDown);
     }
-  }, [data, selectedDay, focusedDay, isRecording, hasRecorded, finalizeError, showStopConfirm, confirmFocus, startRecording, stopRecording, dispatch]);
+  }, [data, selectedDay, focusedDay, focusRow, barFocus, isRecording, hasRecorded, finalizeError, showStopConfirm, confirmFocus, startRecording, stopRecording, dispatch]);
 
   useEffect(() => {
     containerRef.current?.focus();
@@ -483,7 +528,11 @@ export default function WeeklyReview({ dispatch, dismiss }) {
             <button className="init-record-btn" onClick={(e) => { e.stopPropagation(); logger.info('recording.overlay-btn-start'); startRecording(); }}>
               <span className="init-record-dot" />
             </button>
-            <div className="init-record-label">Press to start recording your weekly review</div>
+            <div className="init-record-label">
+              Press to start recording.
+              <br />
+              <small>Press <kbd>S</kbd> or focus the green Save button to finish.</small>
+            </div>
             {data.recording?.exists && (
               <div className="init-existing-badge">
                 Previous recording: {Math.floor(data.recording.duration / 60)}:{String(data.recording.duration % 60).padStart(2, '0')}
@@ -588,6 +637,12 @@ export default function WeeklyReview({ dispatch, dismiss }) {
         syncStatus={uploaderStatus}
         pendingCount={uploaderPendingCount}
         lastAckedAt={uploaderLastAckedAt}
+        isFocused={focusRow === 'bar'}
+        canSave={isRecording}
+        onSave={() => {
+          logger.info('nav.bar-save-clicked');
+          stopRecording();
+        }}
       />
     </div>
   );
