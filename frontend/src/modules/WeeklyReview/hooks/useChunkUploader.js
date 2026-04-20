@@ -108,23 +108,8 @@ export function useChunkUploader({ sessionId, week }) {
   }, [sessionId, week]);
 
   const enqueue = useCallback(async ({ seq, blob }) => {
-    // I1: Retry putChunk up to 3 attempts before giving up
-    let saved = false;
-    for (let attempt = 0; attempt < 3 && !saved; attempt++) {
-      try {
-        await putChunk({ sessionId, seq, week, blob, uploaded: false });
-        saved = true;
-        logger().info('chunk.saved-local', { sessionId, seq, bytes: blob.size, attempt });
-      } catch (err) {
-        if (attempt === 2) {
-          logger().error('chunk.save-local-failed-final', { sessionId, seq, error: err.message });
-        } else {
-          logger().warn('chunk.save-local-retry', { sessionId, seq, attempt, error: err.message });
-          await new Promise(r => setTimeout(r, 100 * (attempt + 1)));
-        }
-      }
-    }
-    // Still add to queue — in-memory blob is last copy if IndexedDB totally failed
+    // M7: Synchronously push to in-memory queue FIRST — queue is authoritative for pending state.
+    // This prevents tail chunks from being missed if stop/finalize drains immediately.
     queueRef.current.push({ seq, blob });
     setPendingCount(queueRef.current.length);
     // I3: Start base64 encoding in background so beaconFlush has it synchronously ready
@@ -136,6 +121,23 @@ export function useChunkUploader({ sessionId, week }) {
         base64CacheRef.current.delete(oldestSeq);
       }
     }).catch(err => logger().warn('chunk.b64-precompute-failed', { seq, error: err.message }));
+    // Layer 2 durability: write to IndexedDB with retry (parallel to queue work)
+    (async () => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          await putChunk({ sessionId, seq, week, blob, uploaded: false });
+          logger().info('chunk.saved-local', { sessionId, seq, bytes: blob.size, attempt });
+          return;
+        } catch (err) {
+          if (attempt === 2) {
+            logger().error('chunk.save-local-failed-final', { sessionId, seq, error: err.message });
+          } else {
+            logger().warn('chunk.save-local-retry', { sessionId, seq, attempt, error: err.message });
+            await new Promise(r => setTimeout(r, 100 * (attempt + 1)));
+          }
+        }
+      }
+    })();
     drain();
   }, [sessionId, week, drain]);
 
