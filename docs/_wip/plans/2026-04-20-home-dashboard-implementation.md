@@ -10,14 +10,32 @@
 
 **Design source:** `docs/_wip/plans/2026-04-20-home-dashboard-design.md` (read first; this plan assumes those decisions).
 
-**Before starting:** Per CLAUDE.md this should live in a git worktree. Create one:
+---
 
-```bash
-git worktree add .worktrees/home-dashboard -b feat/home-dashboard
-cd .worktrees/home-dashboard
-```
+## Execution progress
 
-Each task commits. Tests go first (TDD). Don't batch phases.
+Worktree: `.worktrees/home-dashboard`, branch `feat/home-dashboard`.
+
+| Phase | Tasks | Status | Commits |
+|---|---|---|---|
+| A — Port + HA adapter | A1, A2, A3 | ✅ Complete (2026-04-20) | `7796f7f0`, `106a042c`, `a4d5cef9` |
+| B — Config repository | B1, B2, B3 | ⏳ Next |  |
+| C — Use cases + container | C1–C7 | Pending |  |
+| D — API router + bootstrap | D1, D2, D3 | Pending |  |
+| E — Frontend hook | E1 | Pending |  |
+| F — Room cards | F1–F5 | Pending |  |
+| G — Home summary | G1–G5 | Pending |  |
+| H — Camera integration | H1 | Pending |  |
+| I — Polish + flow test | I1, I2 | Pending |  |
+
+**Phase A notes for subsequent work:**
+- The worktree has no `node_modules`. Run vitest via the main worktree's binary: `/Users/kckern/Documents/GitHub/DaylightStation/frontend/node_modules/.bin/vitest` (the main worktree's root also has `node_modules/.bin/vitest`). Alternative: `cd .worktrees/home-dashboard && ln -s ../../node_modules node_modules` before running tests.
+- All Phase A tests pass (7/7). Gateway port (`IHomeAutomationGateway`) now requires `getStates` and `getHistory`; the noop gateway returns empty Maps from both; `HomeAssistantAdapter` implements both with a 60s response cache for history keyed on `(sinceIso, sorted entityIds)`.
+- Code-quality reviewer flagged minor polish items that are safe to defer: add an error-path test for `getHistory` (httpClient rejects → empty Map + logged); swap the `sinceIso` guard from plain `Error` to `InfrastructureError` from `#system/utils/errors` for file-level consistency; add a one-line comment on `#historyCache` noting the expected keyspace bound. Non-blocking; fold into Phase I polish if desired.
+
+---
+
+**Before starting each task:** Worktree already exists — `cd .worktrees/home-dashboard`. Each task commits. Tests go first (TDD). Don't batch phases.
 
 ---
 
