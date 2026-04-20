@@ -30,6 +30,7 @@ export class WeeklyReviewService {
   }
 
   async bootstrap(weekStart) {
+    this.sweepStaleDrafts().catch(err => this.#logger.warn?.('weekly-review.sweep.failed', { error: err.message }));
     const start = weekStart || this.#defaultWeekStart();
     const end = this.#addDays(start, 7);
     const bootstrapStart = Date.now();
@@ -202,6 +203,202 @@ export class WeeklyReviewService {
     this.#logger.info?.('weekly-review.recording.saved', { week, duration, transcriptLength: transcriptClean?.length });
 
     return { ok: true, transcript: { raw: transcriptRaw, clean: transcriptClean, duration } };
+  }
+
+  async appendChunk({ sessionId, seq, week, buffer }) {
+    if (!this.#isValidSessionId(sessionId)) throw new Error(`invalid sessionId: ${sessionId}`);
+    if (!this.#isValidWeek(week)) throw new Error(`invalid week: ${week}`);
+    if (typeof seq !== 'number' || seq < 0 || !Number.isInteger(seq)) throw new Error(`invalid seq: ${seq}`);
+    if (!Buffer.isBuffer(buffer) || buffer.length === 0) throw new Error('buffer required');
+
+    const draftDir = path.join(this.#dataPath, 'household', 'common', 'weekly-review', week, '.drafts');
+    const draftPath = path.join(draftDir, `${sessionId}.webm`);
+    const metaPath = path.join(draftDir, `${sessionId}.meta.json`);
+    fs.mkdirSync(draftDir, { recursive: true });
+
+    let meta = { sessionId, week, seq: -1, totalBytes: 0, startedAt: new Date().toISOString() };
+    const metaExists = fs.existsSync(metaPath);
+    if (metaExists) {
+      try { meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8')); } catch (err) {
+        this.#logger.error?.('weekly-review.chunk.meta-corrupt', { sessionId, metaPath, error: err.message });
+        if (fs.existsSync(draftPath) && fs.statSync(draftPath).size > 0) {
+          throw new Error('draft present but meta unreadable — refusing to proceed');
+        }
+      }
+    }
+
+    // C1: reconcile draft file size against meta.totalBytes — heals desync from prior partial writes
+    if (fs.existsSync(draftPath)) {
+      const actualSize = fs.statSync(draftPath).size;
+      if (actualSize !== meta.totalBytes) {
+        this.#logger.warn?.('weekly-review.chunk.desync-recovery', {
+          sessionId, seq, metaTotalBytes: meta.totalBytes, actualDraftBytes: actualSize,
+        });
+        fs.truncateSync(draftPath, meta.totalBytes);
+      }
+    }
+
+    if (seq === meta.seq) {
+      this.#logger.warn?.('weekly-review.chunk.duplicate', { sessionId, seq });
+      return { ok: true, duplicate: true, bytesWritten: 0, totalBytes: meta.totalBytes, nextSeq: meta.seq + 1 };
+    }
+    if (seq !== meta.seq + 1) {
+      throw new Error(`out-of-order chunk: expected ${meta.seq + 1}, got ${seq}`);
+    }
+
+    // I2: seq=0 with no prior meta — truncate any stale draft from a previous broken session
+    if (seq === 0 && !metaExists) {
+      fs.writeFileSync(draftPath, buffer);
+    } else {
+      fs.appendFileSync(draftPath, buffer);
+    }
+
+    meta.seq = seq;
+    meta.totalBytes += buffer.length;
+    meta.updatedAt = new Date().toISOString();
+
+    // C1: atomic meta update — write to .tmp then rename (POSIX rename is atomic)
+    const metaTmpPath = `${metaPath}.tmp`;
+    fs.writeFileSync(metaTmpPath, JSON.stringify(meta));
+    fs.renameSync(metaTmpPath, metaPath);
+
+    this.#logger.info?.('weekly-review.chunk.appended', {
+      sessionId, seq, bytes: buffer.length, totalBytes: meta.totalBytes, week,
+    });
+    return { ok: true, bytesWritten: buffer.length, totalBytes: meta.totalBytes, nextSeq: seq + 1 };
+  }
+
+  async listDrafts(week) {
+    if (!this.#isValidWeek(week)) throw new Error(`invalid week: ${week}`);
+    const draftDir = path.join(this.#dataPath, 'household', 'common', 'weekly-review', week, '.drafts');
+    if (!fs.existsSync(draftDir)) return [];
+
+    const entries = fs.readdirSync(draftDir);
+    const metaFiles = entries.filter(n => n.endsWith('.meta.json'));
+    const drafts = [];
+    for (const name of metaFiles) {
+      try {
+        const meta = JSON.parse(fs.readFileSync(path.join(draftDir, name), 'utf-8'));
+        drafts.push({
+          sessionId: meta.sessionId,
+          week: meta.week,
+          seq: meta.seq,
+          totalBytes: meta.totalBytes,
+          startedAt: meta.startedAt,
+          updatedAt: meta.updatedAt,
+        });
+      } catch (err) {
+        this.#logger.warn?.('weekly-review.listDrafts.meta-parse-failed', { name, error: err.message });
+      }
+    }
+    return drafts;
+  }
+
+  async finalizeDraft({ sessionId, week, duration }) {
+    if (!this.#isValidSessionId(sessionId)) throw new Error(`invalid sessionId: ${sessionId}`);
+    if (!this.#isValidWeek(week)) throw new Error(`invalid week: ${week}`);
+
+    const draftDir = path.join(this.#dataPath, 'household', 'common', 'weekly-review', week, '.drafts');
+    const draftPath = path.join(draftDir, `${sessionId}.webm`);
+    const metaPath = path.join(draftDir, `${sessionId}.meta.json`);
+    if (!fs.existsSync(draftPath)) throw new Error(`draft not found: ${sessionId}`);
+
+    this.#logger.info?.('weekly-review.finalize.start', { sessionId, week, duration });
+    const buffer = fs.readFileSync(draftPath);
+
+    // Move audio to final media location
+    const now = new Date();
+    const localDate = now.toLocaleDateString('en-CA', { timeZone: process.env.TZ || 'UTC' });
+    const localTime = now.toLocaleTimeString('en-GB', { timeZone: process.env.TZ || 'UTC', hour12: false }).replace(/:/g, '-');
+    const audioDir = path.join(this.#mediaPath, 'weekly-review', localDate);
+    const audioPath = path.join(audioDir, `recording-${localDate}-${localTime}.webm`);
+    fs.mkdirSync(audioDir, { recursive: true });
+    fs.writeFileSync(audioPath, buffer);
+    this.#logger.info?.('weekly-review.finalize.audio-saved', { sessionId, path: audioPath, bytes: buffer.length });
+
+    // Convert to mp3 (best-effort, matches saveRecording behavior)
+    const mp3Path = audioPath.replace(/\.\w+$/, '.mp3');
+    try {
+      await execFileAsync('ffmpeg', ['-i', audioPath, '-y', '-codec:a', 'libmp3lame', '-q:a', '4', mp3Path]);
+      this.#logger.info?.('weekly-review.finalize.mp3-converted', { mp3Path });
+    } catch (err) {
+      this.#logger.error?.('weekly-review.finalize.mp3-failed', { error: err.message });
+    }
+
+    // Transcribe
+    const { transcriptRaw, transcriptClean } = await this.#transcriptionService.transcribe(buffer, {
+      mimeType: 'audio/webm',
+      prompt: 'Family weekly review. Members discuss their week: activities, events, feelings, and memories.',
+    });
+
+    // Save transcript + manifest (same format as saveRecording)
+    const transcriptDir = path.join(this.#dataPath, 'household', 'common', 'weekly-review', week);
+    fs.mkdirSync(transcriptDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(transcriptDir, 'transcript.yml'),
+      JSON.stringify({ week, recordedAt: new Date().toISOString(), duration, transcriptRaw, transcriptClean }, null, 2)
+    );
+    fs.writeFileSync(
+      path.join(transcriptDir, 'manifest.yml'),
+      JSON.stringify({ week, generatedAt: new Date().toISOString(), duration }, null, 2)
+    );
+
+    // Delete draft
+    fs.unlinkSync(draftPath);
+    if (fs.existsSync(metaPath)) fs.unlinkSync(metaPath);
+
+    this.#logger.info?.('weekly-review.finalize.complete', { sessionId, week, duration });
+    return { ok: true, transcript: { raw: transcriptRaw, clean: transcriptClean, duration } };
+  }
+
+  async sweepStaleDrafts({ maxAgeDays = 30 } = {}) {
+    const baseDir = path.join(this.#dataPath, 'household', 'common', 'weekly-review');
+    if (!fs.existsSync(baseDir)) return { deleted: [] };
+    const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+    const deleted = [];
+    for (const week of fs.readdirSync(baseDir)) {
+      const draftDir = path.join(baseDir, week, '.drafts');
+      if (!fs.existsSync(draftDir)) continue;
+      for (const name of fs.readdirSync(draftDir)) {
+        if (!name.endsWith('.meta.json')) continue;
+        const metaPath = path.join(draftDir, name);
+        try {
+          const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+          const ts = Date.parse(meta.updatedAt || meta.startedAt);
+          if (Number.isFinite(ts) && ts < cutoff) {
+            const draftPath = path.join(draftDir, `${meta.sessionId}.webm`);
+            if (fs.existsSync(draftPath)) fs.unlinkSync(draftPath);
+            fs.unlinkSync(metaPath);
+            deleted.push(meta.sessionId);
+          }
+        } catch (err) {
+          this.#logger.warn?.('weekly-review.sweep.meta-parse-failed', { name, error: err.message });
+        }
+      }
+    }
+    if (deleted.length > 0) this.#logger.info?.('weekly-review.sweep.deleted', { count: deleted.length, sessionIds: deleted });
+    return { deleted };
+  }
+
+  async discardDraft({ sessionId, week }) {
+    if (!this.#isValidSessionId(sessionId)) throw new Error(`invalid sessionId: ${sessionId}`);
+    if (!this.#isValidWeek(week)) throw new Error(`invalid week: ${week}`);
+    const draftDir = path.join(this.#dataPath, 'household', 'common', 'weekly-review', week, '.drafts');
+    const draftPath = path.join(draftDir, `${sessionId}.webm`);
+    const metaPath = path.join(draftDir, `${sessionId}.meta.json`);
+    let existed = false;
+    if (fs.existsSync(draftPath)) { fs.unlinkSync(draftPath); existed = true; }
+    if (fs.existsSync(metaPath)) { fs.unlinkSync(metaPath); existed = true; }
+    this.#logger.info?.('weekly-review.draft.discarded', { sessionId, week, existed });
+    return { ok: true, existed };
+  }
+
+  #isValidSessionId(id) {
+    return typeof id === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(id);
+  }
+
+  #isValidWeek(week) {
+    return typeof week === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(week);
   }
 
   #getRecordingStatus(week) {

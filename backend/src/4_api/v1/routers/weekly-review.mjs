@@ -55,5 +55,71 @@ export function createWeeklyReviewRouter(config) {
     }
   });
 
+  router.post('/recording/chunk', async (req, res) => {
+    const startMs = Date.now();
+    try {
+      const { sessionId, seq, week, chunkBase64 } = req.body || {};
+      if (!chunkBase64 || typeof chunkBase64 !== 'string') {
+        return res.status(400).json({ ok: false, error: 'chunkBase64 required' });
+      }
+      if (!sessionId || !week || typeof seq !== 'number') {
+        return res.status(400).json({ ok: false, error: 'sessionId, seq, week required' });
+      }
+      const buffer = Buffer.from(chunkBase64, 'base64');
+      const result = await weeklyReviewService.appendChunk({ sessionId, seq, week, buffer });
+      logger.info?.('weekly-review.api.chunk.response', {
+        sessionId, seq, week, bytes: buffer.length, totalBytes: result.totalBytes, duplicate: !!result.duplicate, durationMs: Date.now() - startMs,
+      });
+      res.json(result);
+    } catch (err) {
+      const msg = err.message || 'unknown';
+      const status = /out-of-order/i.test(msg) ? 409 : /invalid/i.test(msg) ? 400 : 500;
+      logger.error?.('weekly-review.api.chunk.error', { error: msg, status, durationMs: Date.now() - startMs });
+      res.status(status).json({ ok: false, error: msg });
+    }
+  });
+
+  router.get('/recording/drafts', async (req, res) => {
+    try {
+      const { week } = req.query;
+      if (!week) return res.status(400).json({ ok: false, error: 'week required' });
+      const drafts = await weeklyReviewService.listDrafts(week);
+      res.json({ ok: true, drafts });
+    } catch (err) {
+      logger.error?.('weekly-review.api.drafts-list.error', { error: err.message });
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  router.post('/recording/finalize', async (req, res) => {
+    const startMs = Date.now();
+    try {
+      const { sessionId, week, duration } = req.body || {};
+      if (!sessionId || !week) return res.status(400).json({ ok: false, error: 'sessionId and week required' });
+      const result = await weeklyReviewService.finalizeDraft({ sessionId, week, duration });
+      logger.info?.('weekly-review.api.finalize.response', {
+        sessionId, week, durationMs: Date.now() - startMs, transcriptCleanLength: result.transcript?.clean?.length,
+      });
+      res.json(result);
+    } catch (err) {
+      const status = /not found/i.test(err.message) ? 404 : 500;
+      logger.error?.('weekly-review.api.finalize.error', { error: err.message, status, durationMs: Date.now() - startMs });
+      res.status(status).json({ ok: false, error: err.message });
+    }
+  });
+
+  router.delete('/recording/drafts/:sessionId', async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+      const { week } = req.query;
+      if (!week) return res.status(400).json({ ok: false, error: 'week required' });
+      const result = await weeklyReviewService.discardDraft({ sessionId, week });
+      res.json(result);
+    } catch (err) {
+      logger.error?.('weekly-review.api.discard.error', { error: err.message });
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
   return router;
 }
