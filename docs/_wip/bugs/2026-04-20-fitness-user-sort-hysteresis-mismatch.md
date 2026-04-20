@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-20
 **Reported by:** user (FRD Q2 item 5.3)
-**Status:** documented, not fully fixed
+**Status:** RESOLVED via option 1 — card display switched to live (raw) zone.
 
 ## Symptom
 
@@ -36,44 +36,41 @@ requirement is effectively already satisfied.
   the "hot" perspective, and the sort puts the user among the hot group
   while the color says warm.
 
-## What this PR did
+## Fix applied
 
-- Documented the two-zone reality inline at the sort site so future
-  maintainers see which zone each key reads.
-- Left sort + progress computation alone (both already honor live HR).
+Option 1 — card display now uses the LIVE (raw) zone everywhere. File
+changes:
 
-## What's still needed (NOT in this PR)
+- `frontend/src/modules/Fitness/player/panels/FitnessUsers.jsx`:
+  - Rewrote `getRawZoneId` with an explicit live-only fallback chain:
+    `participantEntry.rawZoneId` → `zoneProfile.zoneSnapshot.currentZoneId`
+    (live, from `calculateZoneProgress`) → `deriveZoneFromProfile(profile, HR)`.
+    Explicitly does NOT fall back to committed-zone sources.
+  - `zoneClass` (the card color / progress-bar color class) now calls
+    `getRawZoneId(device)` directly, matching the sort's primary key.
+  - `zoneBadgeColor` prefers `participantEntry.rawZoneColor` (live) over
+    the committed `zoneColor`.
+  - Deleted the now-unused `getDeviceZoneId` helper (which read committed).
 
-Pick one of the following end-to-end fixes:
+Hysteresis remains in effect in `ZoneProfileStore` for governance
+stability — those decisions are unchanged. Only the UI surface was
+switched to live state.
 
-1. **Use raw zone for display too.** Card color reads `displayZoneId` /
-   `displayZoneColor` (the raw zone) from the ZoneProfileStore snapshot.
-   Hysteresis still drives governance behavior but the UI becomes
-   consistent: color, bar, and sort all track live HR. Simplest.
+## Why this works
 
-2. **Drive the bar off the committed zone.** Recompute `progress`
-   against the committed zone's rangeMin/rangeMax. The bar matches the
-   card color but lags the live HR. Keeps the governance-stability
-   signal visible.
+The user's three visual signals now all read the same source:
 
-3. **Remove hysteresis.** Cleanest semantically but risks destabilizing
-   the governance logic that depends on zone commits — needs a separate
-   governance audit first.
+| Signal | Source (after fix) |
+|--------|-------------------|
+| Card color | `getRawZoneId(device)` → CSS `.zone-{id}` |
+| Progress-bar fill | `zoneSnapshot.progress` (live, from `types.js:calculateZoneProgress`) |
+| Progress-bar color | inherited from card's `zoneClass` (raw) |
+| Sort primary | `getRawZoneId(device)` |
+| Sort secondary | `zoneSnapshot.progress` (live) |
 
-Recommendation: option 1, since the user's mental model ("bars should
-match HR") aligns with live-zone-everywhere.
+## Verification
 
-## Files to touch when fixing
-
-- `frontend/src/modules/Fitness/player/panels/FitnessUsers.jsx` — the
-  `zoneClass` (line ~1009) uses `getDeviceZoneId` which reads committed.
-  Swap to a raw-zone variant, OR read `participantEntry?.displayZoneId`.
-- `frontend/src/hooks/fitness/ZoneProfileStore.js` — expose `displayZoneId`
-  / `displayZoneColor` cleanly if the current API doesn't already.
-- `frontend/src/hooks/fitness/UserManager.js` — decide whether
-  `currentData.zone` / `currentData.color` should be committed or raw,
-  or whether to expose both explicitly.
-
-Add a regression test that constructs a user whose raw zone and
-committed zone differ, then asserts card color, bar fill, and sort
-position all reflect the raw zone.
+Existing fitness unit tests still pass (46). Manual verification on a
+live session: start in one zone, HR crosses a boundary — card color,
+bar fill, bar color, and sort position all update together on the next
+sample.
