@@ -11,8 +11,7 @@
 import { randomUUID } from 'node:crypto';
 import { buildCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-
-const CONTENT_ID_KEYS = ['queue', 'play', 'plex', 'hymn', 'primary', 'scripture', 'contentId'];
+import { CONTENT_ID_KEYS, resolveContentId } from '../../3_applications/devices/contentIdKeys.mjs';
 
 export class WebSocketContentAdapter {
   #topic;
@@ -53,27 +52,22 @@ export class WebSocketContentAdapter {
     const startTime = Date.now();
     this.#metrics.loads++;
 
-    let contentId = null;
-    let resolvedFromKey = null;
-    for (const key of CONTENT_ID_KEYS) {
-      if (typeof query[key] === 'string' && query[key].length > 0) {
-        contentId = query[key];
-        resolvedFromKey = key;
-        break;
-      }
-    }
+    const resolved = resolveContentId(query);
 
-    if (!contentId) {
+    if (!resolved) {
       this.#metrics.errors++;
       const error = `WebSocketContentAdapter.load: no contentId could be resolved from query keys ${CONTENT_ID_KEYS.join(', ')}`;
       this.#logger.error?.('websocket.load.missing-contentId', {
-        topic: this.#topic, deviceId: this.#deviceId, queryKeys: Object.keys(query),
+        topic: this.#topic,
+        deviceId: this.#deviceId,
+        queryKeys: Object.keys(query),
       });
       return { ok: false, topic: this.#topic, error };
     }
 
+    const { contentId, resolvedKey } = resolved;
     const options = { ...query };
-    delete options[resolvedFromKey];
+    delete options[resolvedKey];
 
     try {
       const commandId = randomUUID();
