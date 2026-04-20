@@ -14,18 +14,21 @@ import { cleanupDashElement } from '../lib/dashCleanup.js';
  * Used by hardReset to force dash.js to re-fetch the MPD manifest,
  * which causes the backend proxy to mint a fresh Plex transcode session.
  * Works on absolute and relative URLs. Idempotent with respect to an
- * existing _refresh param.
+ * existing _refresh param. Preserves URL fragments (#anchor).
  */
 export function appendRefreshParam(url, nonce) {
   if (!url) return url;
+  const hashIndex = url.indexOf('#');
+  const base = hashIndex >= 0 ? url.slice(0, hashIndex) : url;
+  const hash = hashIndex >= 0 ? url.slice(hashIndex) : '';
   // Strip any existing _refresh=<value>, whether it's the first/middle/last param.
   // After stripping, also clean up an orphaned '?' or trailing '&'.
-  const stripped = url
-    .replace(/([?&])_refresh=[^&]*&/g, '$1')          // middle or first-of-many
-    .replace(/[?&]_refresh=[^&]*$/g, '')              // last
-    .replace(/\?$/, '');                              // orphaned '?' after strip
+  const stripped = base
+    .replace(/([?&])_refresh=[^&]*&/g, '$1')  // middle or first-of-many
+    .replace(/[?&]_refresh=[^&]*$/g, '')       // last
+    .replace(/\?$/, '');                        // orphaned '?' after strip
   const sep = stripped.includes('?') ? '&' : '?';
-  return `${stripped}${sep}_refresh=${nonce}`;
+  return `${stripped}${sep}_refresh=${nonce}${hash}`;
 }
 
 /**
@@ -168,12 +171,16 @@ export function VideoPlayer({
           });
         } catch (err) {
           playbackLog('playback.stream-url-refresh-failed', {
-            message: err?.message
+            message: err?.message,
+            previousSrc: currentSrc
           }, { level: 'warn' });
         }
       } else {
         playbackLog('playback.stream-url-refresh-skipped', {
-          reason: 'no-current-src'
+          reason: 'no-current-src',
+          hasContainer: !!container,
+          hasMediaEl: !!getMediaEl(),
+          tagName: container?.tagName || null
         }, { level: 'warn' });
       }
     }

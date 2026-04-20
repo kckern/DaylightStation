@@ -42,4 +42,24 @@ describe('appendRefreshParam', () => {
     expect(appendRefreshParam(null, 1)).toBe(null);
     expect(appendRefreshParam(undefined, 1)).toBe(undefined);
   });
+
+  it('preserves URL fragment without existing query', () => {
+    expect(appendRefreshParam('https://h.test/s#section', 99))
+      .toBe('https://h.test/s?_refresh=99#section');
+  });
+
+  it('preserves URL fragment with existing query', () => {
+    expect(appendRefreshParam('https://h.test/s?foo=bar#section', 99))
+      .toBe('https://h.test/s?foo=bar&_refresh=99#section');
+  });
+
+  it('preserves URL fragment while replacing middle _refresh', () => {
+    expect(appendRefreshParam('https://h.test/s?_refresh=111&foo=bar#section', 222))
+      .toBe('https://h.test/s?foo=bar&_refresh=222#section');
+  });
+
+  it('preserves URL fragment while replacing last _refresh', () => {
+    expect(appendRefreshParam('https://h.test/s?foo=bar&_refresh=111#section', 222))
+      .toBe('https://h.test/s?foo=bar&_refresh=222#section');
+  });
 });
