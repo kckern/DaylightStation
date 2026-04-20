@@ -531,54 +531,20 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
 
   const canonicalZones = CONFIG.zone.canonical;
   const zoneRankMap = CONFIG.zone.rankMap;
-  const getDeviceZoneId = (device) => {
-    if (device.type !== 'heart_rate') return null;
-    const deviceKey = String(device.deviceId);
-    const participantEntry = participantByHrId.get(deviceKey) || participantsByDevice.get(deviceKey) || null;
-    const userObj = getUserByDevice?.(deviceKey) || null;
-    const canonicalName = resolveCanonicalUserName(device.deviceId, participantEntry?.name || userObj?.name);
-
-    // ZoneProfileStore is the SSOT — synchronously updated on every HR event
-    const profileName = canonicalName || participantEntry?.name || userObj?.name;
-    const zoneProfile = resolveZoneProfile(profileName);
-    let zoneId = null;
-
-    if (zoneProfile?.currentZoneId) {
-      zoneId = String(zoneProfile.currentZoneId).toLowerCase();
-    } else if (zoneProfile?.zoneSnapshot?.currentZoneId) {
-      zoneId = String(zoneProfile.zoneSnapshot.currentZoneId).toLowerCase();
-    } else if (zoneProfile) {
-      const hrValue = Number(device?.heartRate);
-      if (Number.isFinite(hrValue) && hrValue > 0) {
-        const derivedId = deriveZoneFromProfile(zoneProfile, hrValue);
-        if (derivedId) {
-          zoneId = String(derivedId).toLowerCase();
-        }
-      }
-    }
-
-    // Fallback to vitals/participant only when ZoneProfileStore has no data
-    if (!zoneId) {
-      const vitals = canonicalName && typeof getUserVitals === 'function' ? getUserVitals(canonicalName) : null;
-      if (vitals?.zoneId) {
-        zoneId = String(vitals.zoneId).toLowerCase();
-      } else if (vitals?.zoneColor) {
-        const mapped = colorToZoneId[String(vitals.zoneColor).toLowerCase()] || null;
-        if (mapped) {
-          zoneId = String(mapped).toLowerCase();
-        }
-      }
-      if (!zoneId && participantEntry?.zoneId) {
-        zoneId = String(participantEntry.zoneId).toLowerCase();
-      }
-    }
-
-    if (!zoneId) return null;
-    return canonicalZones.includes(zoneId) ? zoneId : null;
-  };
-
-  // Raw zone for sorting — matches the displayed card color (real-time HR zone)
-  // rather than the committed zone (hysteresis-delayed for governance stability).
+  // Live (raw) zone — reflects current HR, bypassing the ZoneProfileStore
+  // hysteresis that smooths the committed zone for governance stability.
+  // Used for BOTH sort and card display so the card color, progress bar,
+  // and sort order all track the user's actual HR together.
+  //
+  // Fallback chain:
+  //   1. participantEntry.rawZoneId   (populated by ParticipantRoster from
+  //                                    TreasureBox baseline = live HR)
+  //   2. zoneProfile.zoneSnapshot.currentZoneId  (live snapshot from
+  //      types.js calculateZoneProgress, which picks zone from live HR
+  //      before hysteresis runs)
+  //   3. derive from current HR using deriveZoneFromProfile
+  // Intentionally does NOT fall back to getDeviceZoneId, whose first two
+  // branches return the COMMITTED (hysteresis-smoothed) zone.
   const getRawZoneId = (device) => {
     if (device.type !== 'heart_rate') return null;
     const deviceKey = String(device.deviceId);
@@ -586,9 +552,27 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     const rawId = participantEntry?.rawZoneId;
     if (rawId) {
       const normalized = String(rawId).toLowerCase();
-      return canonicalZones.includes(normalized) ? normalized : null;
+      if (canonicalZones.includes(normalized)) return normalized;
     }
-    return getDeviceZoneId(device);
+    // Fallback: ask the zone profile for the live (non-smoothed) zone
+    const userObj = getUserByDevice?.(deviceKey) || null;
+    const canonicalName = resolveCanonicalUserName(device.deviceId, participantEntry?.name || userObj?.name);
+    const zoneProfile = resolveZoneProfile(canonicalName || participantEntry?.name || userObj?.name);
+    if (zoneProfile?.zoneSnapshot?.currentZoneId) {
+      const snapId = String(zoneProfile.zoneSnapshot.currentZoneId).toLowerCase();
+      if (canonicalZones.includes(snapId)) return snapId;
+    }
+    if (zoneProfile) {
+      const hrValue = Number(device?.heartRate);
+      if (Number.isFinite(hrValue) && hrValue > 0) {
+        const derived = deriveZoneFromProfile(zoneProfile, hrValue);
+        if (derived) {
+          const normalized = String(derived).toLowerCase();
+          if (canonicalZones.includes(normalized)) return normalized;
+        }
+      }
+    }
+    return null;
   };
 
   const pickTextColor = (bg) => {
@@ -634,7 +618,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     const rpmDevicesCopy = [...rpmDevices];
     const otherDevices = [...equipmentDevices];
 
-    // HR sort (primary = raw zone rank, secondary = HR-within-zone %).
+    // HR sort (primary = live zone rank, secondary = HR-within-zone %).
     //
     // Both keys read LIVE (non-hysteresis-smoothed) state:
     //   - getRawZoneId() reads participantEntry.rawZoneId — the live zone
@@ -642,16 +626,12 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     //     hysteresis that ZoneProfileStore applies for governance stability.
     //   - lookupZoneProgress(name).progress is computed in types.js against
     //     the LIVE zone's rangeMin/rangeMax (see calculateZoneProgress at
-    //     types.js:290-331), so it's already HR-within-zone %.
+    //     types.js:290-331), so it's HR-within-zone %.
     //
-    // KNOWN VISUAL INCONSISTENCY: a user's card COLOR (zoneClass on line
-    // ~1009) is driven by the COMMITTED zoneId (hysteresis-smoothed). When
-    // the raw zone and committed zone disagree (briefly, at zone boundaries),
-    // the card color and progress bar fill come from different zone ranges.
-    // Sort stays correct vs. live HR but the visual grouping can look odd.
-    // Fixing this end-to-end requires either (a) removing the hysteresis,
-    // (b) using the raw zone for card color too, or (c) driving the bar off
-    // the committed zone. All three are bigger than this ticket.
+    // The card display (zoneClass below) also reads getRawZoneId, so color,
+    // progress-bar fill, and sort order all track current HR together.
+    // Hysteresis remains in effect for governance decisions (committed zone)
+    // but no longer leaks into the UI.
     hrDevices.sort((a, b) => {
       const aZone = getRawZoneId(a);
       const bZone = getRawZoneId(b);
@@ -971,11 +951,14 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                   hasGuestAssignment: !!guestAssignment
                 });
               }
-              // Prefer raw zone (real-time, matches displayed HR) over committed (hysteresis-delayed)
-              const zoneIdForGrouping = isHeartRate ? (participantEntry?.rawZoneId || getDeviceZoneId(device)) : null;
+              // Use the LIVE (raw) zone for card display so the card color,
+              // progress bar fill, and sort order all track current HR
+              // together. Hysteresis is still applied for governance
+              // (committed zone) but the UI surfaces live state.
+              const zoneIdForGrouping = isHeartRate ? getRawZoneId(device) : null;
               const zoneClass = zoneIdForGrouping ? `zone-${zoneIdForGrouping}` : 'no-zone';
               const zoneBadgeColor = zoneIdForGrouping
-                ? (userVitalsEntry?.zoneColor || participantEntry?.rawZoneColor || participantEntry?.zoneColor || progressInfo?.zoneColor || zoneColorMap[zoneIdForGrouping] || null)
+                ? (participantEntry?.rawZoneColor || userVitalsEntry?.zoneColor || participantEntry?.zoneColor || progressInfo?.zoneColor || zoneColorMap[zoneIdForGrouping] || null)
                 : null;
               const readableZone = zoneIdForGrouping
                 ? zoneIdForGrouping.charAt(0).toUpperCase() + zoneIdForGrouping.slice(1)
