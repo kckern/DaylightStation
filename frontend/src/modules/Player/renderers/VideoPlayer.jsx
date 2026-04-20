@@ -10,6 +10,25 @@ import { playbackLog } from '../lib/playbackLogger.js';
 import { cleanupDashElement } from '../lib/dashCleanup.js';
 
 /**
+ * Append or replace a cache-buster query param on a URL.
+ * Used by hardReset to force dash.js to re-fetch the MPD manifest,
+ * which causes the backend proxy to mint a fresh Plex transcode session.
+ * Works on absolute and relative URLs. Idempotent with respect to an
+ * existing _refresh param.
+ */
+export function appendRefreshParam(url, nonce) {
+  if (!url) return url;
+  // Strip any existing _refresh=<value>, whether it's the first/middle/last param.
+  // After stripping, also clean up an orphaned '?' or trailing '&'.
+  const stripped = url
+    .replace(/([?&])_refresh=[^&]*&/g, '$1')          // middle or first-of-many
+    .replace(/[?&]_refresh=[^&]*$/g, '')              // last
+    .replace(/\?$/, '');                              // orphaned '?' after strip
+  const sep = stripped.includes('?') ? '&' : '?';
+  return `${stripped}${sep}_refresh=${nonce}`;
+}
+
+/**
  * Video player component for playing video content (including DASH video)
  */
 export function VideoPlayer({
@@ -125,10 +144,40 @@ export function VideoPlayer({
   // Hard reset: seek to position, reload, and resume playback.
   // Uses getMediaEl to traverse shadow DOM for dash-video,
   // falling back to containerRef for native video/audio.
-  const hardReset = useCallback(({ seekToSeconds } = {}) => {
+  const hardReset = useCallback(({ seekToSeconds, refreshUrl = false } = {}) => {
     const target = getMediaEl() || containerRef.current;
     if (!target) return;
     const normalized = Number.isFinite(seekToSeconds) ? Math.max(0, seekToSeconds) : 0;
+
+    // When the resilience state machine signals the URL may be stale
+    // (Plex transcode session likely dead), mutate the <dash-video>
+    // container's src BEFORE load(). The attribute change triggers
+    // dash.js to re-fetch the MPD manifest, and the backend proxy
+    // mints a fresh transcode session on that fresh call.
+    if (refreshUrl) {
+      const container = containerRef.current;
+      const currentSrc = container?.getAttribute?.('src');
+      if (currentSrc) {
+        const nextSrc = appendRefreshParam(currentSrc, Date.now());
+        try {
+          container.setAttribute('src', nextSrc);
+          playbackLog('playback.stream-url-refreshed', {
+            previousSrc: currentSrc,
+            nextSrc,
+            reason: 'hard-reset-with-refresh'
+          });
+        } catch (err) {
+          playbackLog('playback.stream-url-refresh-failed', {
+            message: err?.message
+          }, { level: 'warn' });
+        }
+      } else {
+        playbackLog('playback.stream-url-refresh-skipped', {
+          reason: 'no-current-src'
+        }, { level: 'warn' });
+      }
+    }
+
     try { target.currentTime = normalized; } catch (_) {}
     target.load?.();
     const p = target.play?.();
