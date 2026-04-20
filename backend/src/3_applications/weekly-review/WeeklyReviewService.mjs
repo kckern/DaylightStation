@@ -293,6 +293,63 @@ export class WeeklyReviewService {
     return drafts;
   }
 
+  async finalizeDraft({ sessionId, week, duration }) {
+    if (!this.#isValidSessionId(sessionId)) throw new Error(`invalid sessionId: ${sessionId}`);
+    if (!this.#isValidWeek(week)) throw new Error(`invalid week: ${week}`);
+
+    const draftDir = path.join(this.#dataPath, 'household', 'common', 'weekly-review', week, '.drafts');
+    const draftPath = path.join(draftDir, `${sessionId}.webm`);
+    const metaPath = path.join(draftDir, `${sessionId}.meta.json`);
+    if (!fs.existsSync(draftPath)) throw new Error(`draft not found: ${sessionId}`);
+
+    this.#logger.info?.('weekly-review.finalize.start', { sessionId, week, duration });
+    const buffer = fs.readFileSync(draftPath);
+
+    // Move audio to final media location
+    const now = new Date();
+    const localDate = now.toLocaleDateString('en-CA', { timeZone: process.env.TZ || 'UTC' });
+    const localTime = now.toLocaleTimeString('en-GB', { timeZone: process.env.TZ || 'UTC', hour12: false }).replace(/:/g, '-');
+    const audioDir = path.join(this.#mediaPath, 'weekly-review', localDate);
+    const audioPath = path.join(audioDir, `recording-${localDate}-${localTime}.webm`);
+    fs.mkdirSync(audioDir, { recursive: true });
+    fs.writeFileSync(audioPath, buffer);
+    this.#logger.info?.('weekly-review.finalize.audio-saved', { sessionId, path: audioPath, bytes: buffer.length });
+
+    // Convert to mp3 (best-effort, matches saveRecording behavior)
+    const mp3Path = audioPath.replace(/\.\w+$/, '.mp3');
+    try {
+      await execFileAsync('ffmpeg', ['-i', audioPath, '-y', '-codec:a', 'libmp3lame', '-q:a', '4', mp3Path]);
+      this.#logger.info?.('weekly-review.finalize.mp3-converted', { mp3Path });
+    } catch (err) {
+      this.#logger.error?.('weekly-review.finalize.mp3-failed', { error: err.message });
+    }
+
+    // Transcribe
+    const { transcriptRaw, transcriptClean } = await this.#transcriptionService.transcribe(buffer, {
+      mimeType: 'audio/webm',
+      prompt: 'Family weekly review. Members discuss their week: activities, events, feelings, and memories.',
+    });
+
+    // Save transcript + manifest (same format as saveRecording)
+    const transcriptDir = path.join(this.#dataPath, 'household', 'common', 'weekly-review', week);
+    fs.mkdirSync(transcriptDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(transcriptDir, 'transcript.yml'),
+      JSON.stringify({ week, recordedAt: new Date().toISOString(), duration, transcriptRaw, transcriptClean }, null, 2)
+    );
+    fs.writeFileSync(
+      path.join(transcriptDir, 'manifest.yml'),
+      JSON.stringify({ week, generatedAt: new Date().toISOString(), duration }, null, 2)
+    );
+
+    // Delete draft
+    fs.unlinkSync(draftPath);
+    if (fs.existsSync(metaPath)) fs.unlinkSync(metaPath);
+
+    this.#logger.info?.('weekly-review.finalize.complete', { sessionId, week, duration });
+    return { ok: true, transcript: { raw: transcriptRaw, clean: transcriptClean, duration } };
+  }
+
   async discardDraft({ sessionId, week }) {
     if (!this.#isValidSessionId(sessionId)) throw new Error(`invalid sessionId: ${sessionId}`);
     if (!this.#isValidWeek(week)) throw new Error(`invalid week: ${week}`);
