@@ -307,12 +307,42 @@ export class LogFoodFromImage {
         imageUrl: imageData?.url?.substring(0, 120),
       });
 
+      let retryStateWritten = false;
+      if (photoMsgId && this.#conversationStateStore) {
+        try {
+          await this.#conversationStateStore.set(conversationId, {
+            activeFlow: 'image_retry',
+            flowState: {
+              imageData: {
+                fileId: imageData?.fileId,
+                url: imageData?.url,
+              },
+              retryMessageId: photoMsgId,
+            },
+          });
+          retryStateWritten = true;
+        } catch (e) {
+          this.#logger.warn?.('logImage.retryState.failed', {
+            conversationId,
+            error: e.message,
+          });
+        }
+      }
+
       // Update the status photo so the user isn't left hanging
       if (photoMsgId) {
+        const updatePayload = retryStateWritten
+          ? {
+              caption: '❌ Sorry, I had trouble analyzing this image. Tap 🔄 Retry to try again, or describe the food instead.',
+              choices: [[{ text: '🔄 Retry', callback_data: this.#encodeCallback('ir', {}) }]],
+              inline: true,
+            }
+          : {
+              caption: '❌ Sorry, I had trouble analyzing this image. Please try again or describe the food instead.',
+            };
+
         try {
-          await messaging.updateMessage(photoMsgId, {
-            caption: '❌ Sorry, I had trouble analyzing this image. Please try again or describe the food instead.',
-          });
+          await messaging.updateMessage(photoMsgId, updatePayload);
         } catch (e) {
           this.#logger.debug?.('logImage.updateError.failed', { error: e.message });
         }
