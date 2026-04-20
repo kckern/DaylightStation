@@ -184,6 +184,7 @@ export function useMediaResilience({
         reason,
         meta,
         waitKey,
+        refreshUrl: shouldRefreshUrlForReason(reason),
         seekToIntentMs: (targetTimeSeconds || playbackHealth.lastProgressSeconds || seconds || initialStart || 0) * 1000
       });
     }
@@ -196,7 +197,7 @@ export function useMediaResilience({
     actions.setStatus(STATUS.recovering);
     playbackLog('resilience-retry-from-exhausted', { waitKey: logWaitKey, seekToIntentMs: seekMs });
     if (typeof onReload === 'function') {
-      onReload({ reason: 'user-retry-exhausted', meta, waitKey, seekToIntentMs: seekMs });
+      onReload({ reason: 'user-retry-exhausted', meta, waitKey, refreshUrl: true, seekToIntentMs: seekMs });
     }
   }, [actions, consumeTargetTimeSeconds, logWaitKey, meta, onReload, playbackSessionKey, waitKey, targetTimeSeconds, playbackHealth.lastProgressSeconds, seconds, initialStart]);
 
@@ -525,6 +526,9 @@ export function useMediaResilience({
     overlayProps,
     state: resilienceState,
     onStartupSignal: NOOP, // Stable reference to avoid re-render cascades
-    cancelDeadline
+    cancelDeadline,
+    ...(process.env.NODE_ENV !== 'production' && {
+      _testTriggerRecovery: triggerRecovery
+    })
   };
 }
