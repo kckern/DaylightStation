@@ -72,4 +72,47 @@ This document captures every change made under `frontend/src/modules/Player/**` 
 
 ---
 
+## Stale Transcode Session Recovery
+
+When a Plex transcode session dies during startup, the MPD manifest cached
+by dash.js still points at the dead session UUID and segment fetches 404
+forever. The recovery pipeline handles this with three coordinated pieces:
+
+1. **Fast detection** — `lib/staleSessionWatchdog.js` factory counts
+   `dash.error` code-28 events in a 10s sliding window. At 3 errors, it
+   fires `stale-session-detected` into the resilience state machine,
+   escalating *before* the 15s startup deadline would have fired.
+
+2. **URL refresh on reload** — when `useMediaResilience.triggerRecovery`
+   is called with a reason for which `shouldRefreshUrlForReason(reason)`
+   returns true (startup-deadline variants + `stale-session-detected`),
+   the `refreshUrl:true` flag propagates through:
+
+   `useMediaResilience.onReload` → `Player.handleResilienceReload` →
+   `mediaAccess.hardReset({ seekToSeconds, refreshUrl:true })` →
+   `VideoPlayer.hardReset` appends `?_refresh=<Date.now()>` to the
+   `<dash-video>` `src` attribute → dash.js re-fetches MPD → backend
+   proxy mints a fresh Plex transcode session.
+
+3. **Exhaustion surface** — after `maxAttempts` recovery cycles
+   (default 5), the state machine enters `exhausted` and
+   `PlayerOverlayLoading` renders a retry button wired to
+   `retryFromExhausted`, which clears the tracker and restarts the
+   pipeline.
+
+### Observability events
+
+| Event | Level | When |
+|---|---|---|
+| `playback.stale-session-detected` | warn | Watchdog crossed its threshold |
+| `playback.stream-url-refreshed` | info | `src` was cache-busted and load() called; payload has `previousSrc`, `nextSrc` |
+| `playback.stream-url-refresh-skipped` | warn | No `src` attribute was available to refresh |
+| `playback.stream-url-refresh-failed` | warn | `setAttribute` threw; payload has `previousSrc`, error `message` |
+| `resilience-recovery-exhausted` | info | All attempts consumed; payload includes `urlRefreshesAttempted` |
+
+See `docs/runbooks/fitness-player-recovery.md` for operator-facing
+troubleshooting.
+
+---
+
 Please update this README as further adjustments land so reviewers can continue to trace intent, benefits, and remaining concerns.
