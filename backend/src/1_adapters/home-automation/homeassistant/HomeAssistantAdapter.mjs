@@ -95,6 +95,35 @@ export class HomeAssistantAdapter {
   }
 
   /**
+   * Batch read of current state for a list of entities.
+   * Single HTTP call to /api/states, filtered locally.
+   * @param {string[]} entityIds
+   * @returns {Promise<Map<string, DeviceState>>}
+   */
+  async getStates(entityIds) {
+    if (!Array.isArray(entityIds) || entityIds.length === 0) return new Map();
+
+    try {
+      const response = await this.#apiGet('/api/states');
+      const wanted = new Set(entityIds);
+      const out = new Map();
+      for (const entry of response || []) {
+        if (!wanted.has(entry.entity_id)) continue;
+        out.set(entry.entity_id, {
+          entityId:    entry.entity_id,
+          state:       entry.state,
+          attributes:  entry.attributes || {},
+          lastChanged: entry.last_changed,
+        });
+      }
+      return out;
+    } catch (error) {
+      this.#logger.error?.('ha.getStates.error', { error: error.message });
+      return new Map();
+    }
+  }
+
+  /**
    * Call a service on Home Assistant
    * @param {string} domain - Service domain (e.g., 'light', 'switch', 'script')
    * @param {string} service - Service name (e.g., 'turn_on', 'toggle')
