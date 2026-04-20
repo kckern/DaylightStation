@@ -11,7 +11,7 @@
 import { randomUUID } from 'node:crypto';
 import { buildCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import { CONTENT_ID_KEYS, resolveContentId } from '../../3_applications/devices/contentIdKeys.mjs';
+import { CONTENT_ID_KEYS, resolveContentId } from '#apps/devices/contentIdKeys.mjs';
 
 export class WebSocketContentAdapter {
   #topic;
