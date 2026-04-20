@@ -91,6 +91,15 @@ export function VideoPlayer({
           windowMs: wMs,
           action: 'escalating-to-resilience-recovery'
         }, { level: 'warn' });
+        if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+          window.__fitnessRecoveryEvents = window.__fitnessRecoveryEvents || [];
+          window.__fitnessRecoveryEvents.push({
+            event: 'playback.stale-session-detected',
+            ts: Date.now(),
+            errorCount,
+            windowMs: wMs
+          });
+        }
         const bridge = resilienceBridgeRef.current;
         if (typeof bridge?.requestRecovery === 'function') {
           bridge.requestRecovery({ reason: 'stale-session-detected' });
@@ -204,6 +213,15 @@ export function VideoPlayer({
             nextSrc,
             reason: 'hard-reset-with-refresh'
           });
+          if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+            window.__fitnessRecoveryEvents = window.__fitnessRecoveryEvents || [];
+            window.__fitnessRecoveryEvents.push({
+              event: 'playback.stream-url-refreshed',
+              ts: Date.now(),
+              previousSrc: currentSrc,
+              nextSrc
+            });
+          }
         } catch (err) {
           playbackLog('playback.stream-url-refresh-failed', {
             message: err?.message,
