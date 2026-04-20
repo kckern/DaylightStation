@@ -81,7 +81,9 @@ export class WebSocketContentAdapter {
         targetDevice: this.#deviceId,
         command: 'queue',
         commandId,
-        params: { op: 'play-now', contentId, ...options },
+        // Spread options FIRST so a caller-supplied `op` or `contentId` can't
+        // clobber the canonical values we set below.
+        params: { ...options, op: 'play-now', contentId },
       });
 
       this.#logger.info?.('websocket.load', {

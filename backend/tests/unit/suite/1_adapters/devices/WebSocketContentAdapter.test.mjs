@@ -59,4 +59,19 @@ describe('WebSocketContentAdapter', () => {
     const [, payload] = wsBus.broadcast.mock.calls[0];
     expect(result.commandId).toBe(payload.commandId);
   });
+
+  it('load() canonical op/contentId cannot be clobbered by stray query keys', async () => {
+    // Caller accidentally supplies `op` or `contentId` alongside a higher-priority
+    // content key. The adapter must keep its canonical values.
+    await adapter.load('/tv', {
+      queue: 'office-program',
+      op: 'play-next',          // should NOT overwrite 'play-now'
+      contentId: 'bogus',       // should NOT overwrite 'office-program'
+      shader: 'dark',
+    });
+    const [, payload] = wsBus.broadcast.mock.calls[0];
+    expect(payload.params.op).toBe('play-now');
+    expect(payload.params.contentId).toBe('office-program');
+    expect(payload.params.shader).toBe('dark');
+  });
 });
