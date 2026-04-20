@@ -14,6 +14,9 @@ export { LogFoodFromVoice } from './LogFoodFromVoice.mjs';
 export { LogFoodFromUPC } from './LogFoodFromUPC.mjs';
 export { SelectUPCPortion } from './SelectUPCPortion.mjs';
 
+// Image Retry
+export { RetryImageDetection } from './RetryImageDetection.mjs';
+
 // Revision Flow
 export { ReviseFoodLog } from './ReviseFoodLog.mjs';
 export { ProcessRevisionInput } from './ProcessRevisionInput.mjs';
