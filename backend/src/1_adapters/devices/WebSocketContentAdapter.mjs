@@ -2,129 +2,133 @@
  * WebSocketContentAdapter - Content control via WebSocket broadcast
  *
  * Implements IContentControl port for devices connected via WebSocket.
- * Sends load commands to specific topics that devices subscribe to.
+ * Broadcasts structured CommandEnvelopes (shared-contracts §6.2) to a topic
+ * the target device is subscribed to.
  *
  * @module adapters/devices
  */
 
+import { randomUUID } from 'node:crypto';
+import { buildCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+
+const CONTENT_ID_KEYS = ['queue', 'play', 'plex', 'hymn', 'primary', 'scripture', 'contentId'];
 
 export class WebSocketContentAdapter {
   #topic;
+  #deviceId;
   #wsBus;
   #daylightHost;
   #logger;
   #metrics;
 
-  /**
-   * @param {Object} config
-   * @param {string} config.topic - WebSocket topic to broadcast to
-   * @param {string} config.daylightHost - Base URL for content loading
-   * @param {Object} deps
-   * @param {Object} deps.wsBus - WebSocket broadcast service
-   * @param {Object} [deps.logger]
-   */
   constructor(config, deps = {}) {
     if (!deps.wsBus) {
       throw new InfrastructureError('WebSocketContentAdapter requires wsBus', {
         code: 'MISSING_DEPENDENCY',
-        dependency: 'wsBus'
+        dependency: 'wsBus',
+      });
+    }
+    if (!config?.deviceId) {
+      throw new InfrastructureError('WebSocketContentAdapter requires deviceId', {
+        code: 'MISSING_CONFIG',
+        field: 'deviceId',
       });
     }
 
     this.#topic = config.topic;
+    this.#deviceId = config.deviceId;
     this.#wsBus = deps.wsBus;
     this.#daylightHost = config.daylightHost;
     this.#logger = deps.logger || console;
 
-    this.#metrics = {
-      startedAt: Date.now(),
-      loads: 0,
-      errors: 0
-    };
+    this.#metrics = { startedAt: Date.now(), loads: 0, errors: 0 };
   }
 
-  // =============================================================================
-  // IContentControl Implementation
-  // =============================================================================
-
-  /**
-   * Prepare device for content loading
-   * For WebSocket devices, this is typically a no-op
-   * @returns {Promise<Object>}
-   */
   async prepareForContent() {
-    // WebSocket devices are always ready if connected
     return { ok: true };
   }
 
-  /**
-   * Load content by broadcasting to WebSocket topic
-   * @param {string} path - Path to load
-   * @param {Object} [query] - Query parameters
-   * @returns {Promise<Object>}
-   */
   async load(path, query = {}) {
     const startTime = Date.now();
     this.#metrics.loads++;
 
+    let contentId = null;
+    let resolvedFromKey = null;
+    for (const key of CONTENT_ID_KEYS) {
+      if (typeof query[key] === 'string' && query[key].length > 0) {
+        contentId = query[key];
+        resolvedFromKey = key;
+        break;
+      }
+    }
+
+    if (!contentId) {
+      this.#metrics.errors++;
+      const error = `WebSocketContentAdapter.load: no contentId could be resolved from query keys ${CONTENT_ID_KEYS.join(', ')}`;
+      this.#logger.error?.('websocket.load.missing-contentId', {
+        topic: this.#topic, deviceId: this.#deviceId, queryKeys: Object.keys(query),
+      });
+      return { ok: false, topic: this.#topic, error };
+    }
+
+    const options = { ...query };
+    delete options[resolvedFromKey];
+
     try {
-      // Build payload — spread query params at top level so the
-      // frontend websocketHandler can detect keys (play, queue, hymn, etc.)
-      const payload = {
-        ...query,
-        timestamp: Date.now()
-      };
+      const commandId = randomUUID();
+      const envelope = buildCommandEnvelope({
+        targetDevice: this.#deviceId,
+        command: 'queue',
+        commandId,
+        params: { op: 'play-now', contentId, ...options },
+      });
 
-      this.#logger.info?.('websocket.load', { topic: this.#topic, payload });
+      this.#logger.info?.('websocket.load', {
+        topic: this.#topic,
+        deviceId: this.#deviceId,
+        commandId,
+        contentId,
+        optionKeys: Object.keys(options),
+      });
 
-      // Broadcast to topic
-      await this.#wsBus.broadcast(this.#topic, payload);
+      await this.#wsBus.broadcast(this.#topic, envelope);
 
       return {
         ok: true,
         topic: this.#topic,
-        url: payload.url,
-        loadTimeMs: Date.now() - startTime
+        commandId,
+        loadTimeMs: Date.now() - startTime,
       };
     } catch (error) {
       this.#metrics.errors++;
-      this.#logger.error?.('websocket.load.error', { topic: this.#topic, error: error.message });
-      return {
-        ok: false,
+      this.#logger.error?.('websocket.load.error', {
         topic: this.#topic,
-        error: error.message
-      };
+        deviceId: this.#deviceId,
+        error: error.message,
+      });
+      return { ok: false, topic: this.#topic, error: error.message };
     }
   }
 
-  /**
-   * Get content control status
-   * @returns {Promise<Object>}
-   */
   async getStatus() {
-    // Check if any clients are subscribed to this topic
     const subscribers = this.#wsBus.getSubscribers?.(this.#topic) || [];
-
     return {
       ready: subscribers.length > 0,
       provider: 'websocket',
       topic: this.#topic,
-      subscriberCount: subscribers.length
+      subscriberCount: subscribers.length,
     };
   }
 
-  /**
-   * Get adapter metrics
-   * @returns {Object}
-   */
   getMetrics() {
     return {
       provider: 'websocket',
       topic: this.#topic,
+      deviceId: this.#deviceId,
       uptime: Date.now() - this.#metrics.startedAt,
       loads: this.#metrics.loads,
-      errors: this.#metrics.errors
+      errors: this.#metrics.errors,
     };
   }
 }
