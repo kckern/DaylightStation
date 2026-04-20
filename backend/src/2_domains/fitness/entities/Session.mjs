@@ -128,7 +128,13 @@ export class Session {
   }
 
   /**
-   * End the session
+   * End the session.
+   *
+   * Sets endTime, computes durationMs, and marks the session `finalized`
+   * so it won't be offered for resume or auto-merged into a later
+   * workout. A "finalized" session is a clean split — subsequent HR
+   * readings belong to a new session.
+   *
    * @param {number} endTime - End timestamp in milliseconds (required)
    */
   end(endTime) {
@@ -137,6 +143,7 @@ export class Session {
     }
     this.endTime = endTime;
     this.durationMs = this.getDurationMs();
+    this.finalized = true;
   }
 
   /**

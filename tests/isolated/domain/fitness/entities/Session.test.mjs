@@ -129,6 +129,11 @@ describe('Session', () => {
       expect(session.durationMs).toBe(3600000);
     });
 
+    test('marks session finalized so it cannot be auto-merged', () => {
+      session.end(session.startTime + 1000);
+      expect(session.finalized).toBe(true);
+    });
+
     test('throws when endTime is missing', () => {
       expect(() => session.end()).toThrow('endTime required');
     });

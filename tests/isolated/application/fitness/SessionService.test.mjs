@@ -409,6 +409,19 @@ describe('SessionService', () => {
       expect(session.durationMs).toBe(3600000);
     });
 
+    test('marks session finalized (clean split) after endSession', async () => {
+      mockStore.findById.mockResolvedValue({
+        sessionId: '20260111120000',
+        startTime: 1736596800000,
+        endTime: null,
+        roster: [],
+        timeline: { series: {}, events: [] }
+      });
+
+      const session = await service.endSession('20260111120000', 'test-hid', 1736600400000);
+      expect(session.finalized).toBe(true);
+    });
+
     test('throws for nonexistent session', async () => {
       mockStore.findById.mockResolvedValue(null);
       await expect(service.endSession('20260111120000', 'test-hid', 1736600400000))
@@ -418,6 +431,91 @@ describe('SessionService', () => {
     test('throws when endTime is missing', async () => {
       await expect(service.endSession('20260111120000', 'test-hid'))
         .rejects.toThrow('endTime is required');
+    });
+  });
+
+  describe('findResumable — finalized guard', () => {
+    test('excludes finalized sessions from resumable candidates', async () => {
+      const now = Date.now();
+      mockStore.findByDate.mockResolvedValue([
+        {
+          sessionId: '20260111120000',
+          startTime: now - 60_000,
+          endTime: now - 10_000,
+          durationMs: 50_000,
+          finalized: true,
+          media: { primary: { contentId: 'plex:123' } }
+        }
+      ]);
+
+      const result = await service.findResumable('plex:123', 'test-hid');
+      expect(result).toEqual({ resumable: false });
+    });
+
+    test('still returns non-finalized session within gap window', async () => {
+      const now = Date.now();
+      const nonFinalized = {
+        sessionId: '20260111120000',
+        startTime: now - 60_000,
+        endTime: now - 10_000,
+        durationMs: 50_000,
+        finalized: false,
+        media: { primary: { contentId: 'plex:123' } },
+        timeline: { series: {}, events: [] }
+      };
+      mockStore.findByDate.mockResolvedValue([nonFinalized]);
+      mockStore.findById.mockResolvedValue(nonFinalized);
+
+      const result = await service.findResumable('plex:123', 'test-hid');
+      expect(result.resumable).toBe(true);
+    });
+  });
+
+  describe('mergeSessions — finalized guard', () => {
+    test('refuses to merge when source is finalized', async () => {
+      mockStore.findById
+        .mockResolvedValueOnce({
+          sessionId: '20260111100000',
+          startTime: 1736586000000,
+          endTime: 1736589600000,
+          finalized: true,
+          roster: [],
+          timeline: { series: {}, events: [] }
+        })
+        .mockResolvedValueOnce({
+          sessionId: '20260111120000',
+          startTime: 1736596800000,
+          endTime: null,
+          finalized: false,
+          roster: [],
+          timeline: { series: {}, events: [] }
+        });
+
+      await expect(service.mergeSessions('20260111100000', '20260111120000', 'test-hid'))
+        .rejects.toThrow(/finalized/);
+    });
+
+    test('refuses to merge when target is finalized', async () => {
+      mockStore.findById
+        .mockResolvedValueOnce({
+          sessionId: '20260111100000',
+          startTime: 1736586000000,
+          endTime: 1736589600000,
+          finalized: false,
+          roster: [],
+          timeline: { series: {}, events: [] }
+        })
+        .mockResolvedValueOnce({
+          sessionId: '20260111120000',
+          startTime: 1736596800000,
+          endTime: 1736600400000,
+          finalized: true,
+          roster: [],
+          timeline: { series: {}, events: [] }
+        });
+
+      await expect(service.mergeSessions('20260111100000', '20260111120000', 'test-hid'))
+        .rejects.toThrow(/finalized/);
     });
   });
 

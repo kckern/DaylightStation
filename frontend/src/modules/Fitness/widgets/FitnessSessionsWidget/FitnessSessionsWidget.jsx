@@ -7,6 +7,7 @@ import { useFitnessScreen } from '@/modules/Fitness/FitnessScreenProvider.jsx';
 import SportIcon, { formatSportType } from '../_shared/SportIcon.jsx';
 import MiniRouteMap from './MiniRouteMap.jsx';
 import './FitnessSessionsWidget.scss';
+import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
 
 const CoinIcon = ({ size = 12 }) => (
   <svg width={size} height={size} viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
@@ -55,8 +56,7 @@ function formatDate(dateStr) {
   const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
   if (dateStr === todayStr) return 'Today';
   if (dateStr === yesterdayStr) return 'Yesterday';
-  const d = new Date(dateStr + 'T12:00:00');
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  return formatFitnessDate(dateStr + 'T12:00:00');
 }
 
 // ─── Sessions Card ─────────────────────────────────────────

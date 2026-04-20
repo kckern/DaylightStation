@@ -5,17 +5,17 @@ import './FitnessShow.scss';
 import { useFitness } from '@/context/FitnessContext.jsx';
 import moment from 'moment';
 import { buildVirtualSeasons } from '@/modules/Fitness/lib/playlistVirtualSeasons.js';
+import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
+import getLogger from '@/lib/logging/Logger.js';
 
 const formatWatchedDate = (dateString) => {
   try {
     const parsed = moment(dateString, 'YYYY-MM-DD hh:mm:ssa');
     const today = moment();
     const yesterday = moment().subtract(1, 'days');
-    
     if (parsed.isSame(today, 'day')) return 'Today';
     if (parsed.isSame(yesterday, 'day')) return 'Yesterday';
-    if (parsed.year() === today.year()) return parsed.format('ddd D MMM');
-    return parsed.format('MMM D, YYYY');
+    return formatFitnessDate(parsed.toDate());
   } catch (e) {
     return '';
   }
@@ -540,11 +540,15 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
   }, []);
 
   const handlePlayEpisode = async (episode, sourceEl = null, event = null) => {
-  // play episode (debug removed)
-    // If source element provided, require full visibility before play
+    // Play vs. Scroll mutual exclusion (FRD Q2 item 4.2).
+    // If a tap would cause the episode list to scroll (item partially off-screen),
+    // suppress playback on THIS tap — only scroll. A second tap, now with the
+    // episode fully visible, runs the play. `scrollIntoViewIfNeeded` returns
+    // didScroll:true only when it triggered a scroll > 1px (see line 504), so
+    // already-visible items always pass through.
     if (sourceEl) {
       const { didScroll } = scrollIntoViewIfNeeded(sourceEl, { axis: 'y', margin: 8 });
-      if (didScroll) return; // wait for second tap
+      if (didScroll) return;
     }
 
     // Interaction Isolation: Prevent the gesture from leaking to the next view
@@ -731,6 +735,13 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
     ? info.type.trim().toLowerCase()
     : (typeof info?.contentType === 'string' ? info.contentType.trim().toLowerCase() : '');
 
+  // Lock icon (rendered at show-title-row) is driven by this flag.
+  // A show is governed when EITHER:
+  //   (a) its `type`/`contentType` is in governed_types (broad: every show of that
+  //       type gets the lock — config with e.g. `governed_types: ["show"]` will
+  //       lock every show), OR
+  //   (b) any of its labels are in governed_labels (per-item gating via tags).
+  // If "lock appears globally", audit governed_types in the fitness config first.
   const isGovernedShow = useMemo(() => {
     const typeGoverned = governedTypeSet.size > 0 && showType ? governedTypeSet.has(showType) : false;
     if (typeGoverned) return true;
@@ -740,6 +751,23 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
     }
     return false;
   }, [governedTypeSet, showType, governedLabelSet, showLabelSet]);
+
+  // Diagnostic: log each show-lock evaluation so a "global lock" report can be
+  // root-caused from the session log (look for fitness.show-lock-eval events,
+  // inspect governedTypes vs showType — a broad governed_types config is the
+  // most common cause of unexpected locks).
+  useEffect(() => {
+    if (!info?.title) return;
+    const logger = getLogger().child({ component: 'FitnessShow' });
+    logger.debug('fitness.show-lock-eval', {
+      title: info.title,
+      showType,
+      governedTypes: Array.from(governedTypeSet),
+      showLabels: Array.from(showLabelSet),
+      governedLabels: Array.from(governedLabelSet),
+      result: isGovernedShow
+    });
+  }, [info?.title, showType, governedTypeSet, showLabelSet, governedLabelSet, isGovernedShow]);
 
   // Derive seasons from parentsMap (backend groups object) with fallback to per-episode fields
   const seasons = useMemo(() => {
