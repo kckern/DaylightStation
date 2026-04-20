@@ -1,0 +1,21 @@
+.climate-readout {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+
+  &__temp {
+    font-size: 1.75rem;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  &__hum {
+    font-size: 0.85rem;
+    opacity: 0.7;
+  }
+
+  &--unavailable {
+    opacity: 0.5;
+    font-size: 1.25rem;
+  }
+}
