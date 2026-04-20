@@ -267,6 +267,32 @@ export class WeeklyReviewService {
     return { ok: true, bytesWritten: buffer.length, totalBytes: meta.totalBytes, nextSeq: seq + 1 };
   }
 
+  async listDrafts(week) {
+    if (!this.#isValidWeek(week)) throw new Error(`invalid week: ${week}`);
+    const draftDir = path.join(this.#dataPath, 'household', 'common', 'weekly-review', week, '.drafts');
+    if (!fs.existsSync(draftDir)) return [];
+
+    const entries = fs.readdirSync(draftDir);
+    const metaFiles = entries.filter(n => n.endsWith('.meta.json'));
+    const drafts = [];
+    for (const name of metaFiles) {
+      try {
+        const meta = JSON.parse(fs.readFileSync(path.join(draftDir, name), 'utf-8'));
+        drafts.push({
+          sessionId: meta.sessionId,
+          week: meta.week,
+          seq: meta.seq,
+          totalBytes: meta.totalBytes,
+          startedAt: meta.startedAt,
+          updatedAt: meta.updatedAt,
+        });
+      } catch (err) {
+        this.#logger.warn?.('weekly-review.listDrafts.meta-parse-failed', { name, error: err.message });
+      }
+    }
+    return drafts;
+  }
+
   #isValidSessionId(id) {
     return typeof id === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(id);
   }
