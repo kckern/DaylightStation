@@ -16,3 +16,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-03-05 | feat/media-ux-remediation | 0c0d7241 | 35-fix UX remediation from media player design audit - merged to main |
 | 2026-03-06 | fix/session-data-loss | e82baca6 | Fix fitness session data loss on HR device disconnect - merged to main |
 | 2026-04-18 | feature/multi-printer-support | 070a5da7 | Multi-printer support (upstairs + downstairs) with byte-free ping - merged to main |
+| 2026-04-20 | feature/fitness-frd-q2 | f11d483e | FRD Q2 implementation (10 items: voice memos, settings UI, governance, date fmt, end-session, challenge, user cards, hysteresis) - merged to main |
