@@ -204,6 +204,50 @@ export class WeeklyReviewService {
     return { ok: true, transcript: { raw: transcriptRaw, clean: transcriptClean, duration } };
   }
 
+  async appendChunk({ sessionId, seq, week, buffer }) {
+    if (!this.#isValidSessionId(sessionId)) throw new Error(`invalid sessionId: ${sessionId}`);
+    if (!this.#isValidWeek(week)) throw new Error(`invalid week: ${week}`);
+    if (typeof seq !== 'number' || seq < 0 || !Number.isInteger(seq)) throw new Error(`invalid seq: ${seq}`);
+    if (!Buffer.isBuffer(buffer) || buffer.length === 0) throw new Error('buffer required');
+
+    const draftDir = path.join(this.#dataPath, 'household', 'common', 'weekly-review', week, '.drafts');
+    const draftPath = path.join(draftDir, `${sessionId}.webm`);
+    const metaPath = path.join(draftDir, `${sessionId}.meta.json`);
+    fs.mkdirSync(draftDir, { recursive: true });
+
+    let meta = { sessionId, week, seq: -1, totalBytes: 0, startedAt: new Date().toISOString() };
+    if (fs.existsSync(metaPath)) {
+      try { meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8')); } catch {}
+    }
+
+    if (seq === meta.seq) {
+      this.#logger.warn?.('weekly-review.chunk.duplicate', { sessionId, seq });
+      return { ok: true, duplicate: true, bytesWritten: 0, totalBytes: meta.totalBytes, nextSeq: meta.seq + 1 };
+    }
+    if (seq !== meta.seq + 1) {
+      throw new Error(`out-of-order chunk: expected ${meta.seq + 1}, got ${seq}`);
+    }
+
+    fs.appendFileSync(draftPath, buffer);
+    meta.seq = seq;
+    meta.totalBytes += buffer.length;
+    meta.updatedAt = new Date().toISOString();
+    fs.writeFileSync(metaPath, JSON.stringify(meta));
+
+    this.#logger.info?.('weekly-review.chunk.appended', {
+      sessionId, seq, bytes: buffer.length, totalBytes: meta.totalBytes, week,
+    });
+    return { ok: true, bytesWritten: buffer.length, totalBytes: meta.totalBytes, nextSeq: seq + 1 };
+  }
+
+  #isValidSessionId(id) {
+    return typeof id === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(id);
+  }
+
+  #isValidWeek(week) {
+    return typeof week === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(week);
+  }
+
   #getRecordingStatus(week) {
     try {
       const transcriptPath = path.join(this.#dataPath, 'household', 'common', 'weekly-review', week, 'transcript.yml');
