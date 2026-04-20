@@ -1005,8 +1005,8 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                       })()
                     )}
                   </div>
-                  <div 
-                    className={`fitness-device ${isHeartRate ? 'clickable' : ''} ${isHeartRate && layoutMode === 'vert' ? CONFIG.layout.cards.vertical.cardClass : CONFIG.layout.cards.horizontal.cardClass} ${getDeviceColor(device)} ${isInactive ? 'inactive' : 'active'} ${isCountdownActive ? 'countdown-active' : ''} ${zoneClass}`}
+                  <div
+                    className={`fitness-device ${isHeartRate ? 'clickable' : ''} ${isHeartRate && layoutMode === 'vert' ? CONFIG.layout.cards.vertical.cardClass : CONFIG.layout.cards.horizontal.cardClass} ${getDeviceColor(device)} ${isInactive ? 'inactive' : 'active'} ${isCountdownActive ? 'countdown-active' : ''} ${zoneClass} ${hrCounts.candidate >= 5 ? 'card-compact' : ''}`}
                     title={`${UI_LABELS.DEVICE_TOOLTIP_PREFIX} ${deviceName} (${device.deviceId}) - ${formatTimeAgo(device.lastSeen)}`}
                     role={isHeartRate ? 'button' : undefined}
                     tabIndex={isHeartRate ? 0 : undefined}
