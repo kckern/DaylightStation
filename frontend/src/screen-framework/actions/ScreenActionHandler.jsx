@@ -26,6 +26,7 @@ function logger() {
  *   menu:open       - Opens MenuStack as a fullscreen overlay
  *   media:play      - Opens Player with a single content item
  *   media:queue     - Opens Player with a queued content item
+ *   media:queue-op  - Queue ops (play-now mounts Player; others logged as unhandled)
  *   media:playback  - Play/pause, prev, next, fwd, rew on active media
  *   media:rate      - Cycle playback speed (1x → 1.5x → 2x)
  *   display:volume  - Volume up/down/mute via API
