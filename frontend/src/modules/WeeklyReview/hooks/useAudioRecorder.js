@@ -186,9 +186,13 @@ export function useAudioRecorder({ onChunk }) {
         const seq = seqRef.current++;
         logger.info('recorder.chunk-emitted', { seq, bytes: e.data.size });
         if (onChunk) {
-          Promise.resolve(onChunk({ seq, blob: e.data })).catch(err => {
-            logger.error('recorder.onChunk-failed', { seq, error: err.message });
-          });
+          try {
+            Promise.resolve(onChunk({ seq, blob: e.data })).catch(err => {
+              logger.error('recorder.onChunk-failed', { seq, error: err.message });
+            });
+          } catch (err) {
+            logger.error('recorder.onChunk-threw', { seq, error: err.message });
+          }
         }
       };
       recorder.onerror = (e) => logger.error('recorder.media-recorder-error', { error: e.error?.message || 'unknown' });
