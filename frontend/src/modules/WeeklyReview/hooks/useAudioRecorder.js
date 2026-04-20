@@ -1,7 +1,12 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
 
-const logger = getLogger().child({ component: 'weekly-review-recorder' });
+// I3: Lazy logger — avoids import-time timing issues
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'weekly-review-recorder' });
+  return _logger;
+}
 
 const LEVEL_SAMPLE_INTERVAL_MS = 50;
 const SILENCE_WARNING_MS = 5000;
@@ -67,7 +72,7 @@ registerProcessor('bridge-recorder-processor', BridgeProcessor);`;
   ws.onmessage = (event) => {
     if (event.data instanceof ArrayBuffer) workletNode.port.postMessage(event.data, [event.data]);
   };
-  ws.onclose = (e) => logger.warn('recorder.bridge-ws-closed', { code: e.code, reason: e.reason });
+  ws.onclose = (e) => logger().warn('recorder.bridge-ws-closed', { code: e.code, reason: e.reason });
   const stream = destination.stream;
   stream._bridgeCtx = ctx; stream._bridgeWorklet = workletNode; stream._bridgeWs = ws;
   return stream;
@@ -144,7 +149,7 @@ export function useAudioRecorder({ onChunk }) {
             if (!silenceStartRef.current) silenceStartRef.current = now;
             if (now - silenceStartRef.current > SILENCE_WARNING_MS) {
               setSilenceWarning(prev => {
-                if (!prev) logger.warn('recorder.silence-warning', { silenceDurationMs: Math.round(now - silenceStartRef.current) });
+                if (!prev) logger().warn('recorder.silence-warning', { silenceDurationMs: Math.round(now - silenceStartRef.current) });
                 return true;
               });
             }
@@ -157,12 +162,12 @@ export function useAudioRecorder({ onChunk }) {
       };
       levelRafRef.current = requestAnimationFrame(sample);
     } catch (err) {
-      logger.warn('recorder.level-monitor-failed', { error: err.message });
+      logger().warn('recorder.level-monitor-failed', { error: err.message });
     }
   }, []);
 
   const startRecording = useCallback(async () => {
-    logger.info('recorder.start-requested');
+    logger().info('recorder.start-requested');
     try {
       setError(null);
       setSilenceWarning(false);
@@ -171,9 +176,9 @@ export function useAudioRecorder({ onChunk }) {
       let stream;
       try {
         stream = await getBridgeStream();
-        logger.info('recorder.bridge-acquired');
+        logger().info('recorder.bridge-acquired');
       } catch (bridgeErr) {
-        logger.info('recorder.bridge-unavailable', { reason: bridgeErr.message });
+        logger().info('recorder.bridge-unavailable', { reason: bridgeErr.message });
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
       streamRef.current = stream;
@@ -184,20 +189,20 @@ export function useAudioRecorder({ onChunk }) {
       recorder.ondataavailable = (e) => {
         if (!e.data || e.data.size === 0) return;
         const seq = seqRef.current++;
-        logger.info('recorder.chunk-emitted', { seq, bytes: e.data.size });
+        logger().info('recorder.chunk-emitted', { seq, bytes: e.data.size });
         if (onChunk) {
           try {
             Promise.resolve(onChunk({ seq, blob: e.data })).catch(err => {
-              logger.error('recorder.onChunk-failed', { seq, error: err.message });
+              logger().error('recorder.onChunk-failed', { seq, error: err.message });
             });
           } catch (err) {
-            logger.error('recorder.onChunk-threw', { seq, error: err.message });
+            logger().error('recorder.onChunk-threw', { seq, error: err.message });
           }
         }
       };
-      recorder.onerror = (e) => logger.error('recorder.media-recorder-error', { error: e.error?.message || 'unknown' });
+      recorder.onerror = (e) => logger().error('recorder.media-recorder-error', { error: e.error?.message || 'unknown' });
       recorder.onstop = () => {
-        logger.info('recorder.stopped', { duration: Math.round((Date.now() - startTimeRef.current) / 1000) });
+        logger().info('recorder.stopped', { duration: Math.round((Date.now() - startTimeRef.current) / 1000) });
         cleanup();
         setIsRecording(false);
         setMicLevel(0);
@@ -214,9 +219,9 @@ export function useAudioRecorder({ onChunk }) {
         setDuration(Math.round((Date.now() - startTimeRef.current) / 1000));
       }, 1000);
 
-      logger.info('recorder.started', { mimeType: 'audio/webm', chunkIntervalMs: CHUNK_INTERVAL_MS });
+      logger().info('recorder.started', { mimeType: 'audio/webm', chunkIntervalMs: CHUNK_INTERVAL_MS });
     } catch (err) {
-      logger.error('recorder.start-failed', { error: err.message, name: err.name });
+      logger().error('recorder.start-failed', { error: err.message, name: err.name });
       setError(`Microphone error: ${err.message}`);
       cleanup();
     }
@@ -224,7 +229,7 @@ export function useAudioRecorder({ onChunk }) {
 
   const stopRecording = useCallback(() => {
     const state = mediaRecorderRef.current?.state;
-    logger.info('recorder.stop-requested', { recorderState: state });
+    logger().info('recorder.stop-requested', { recorderState: state });
     if (mediaRecorderRef.current && state === 'recording') {
       // Force final dataavailable before stop, so tail audio is captured
       try { mediaRecorderRef.current.requestData(); } catch {}
