@@ -30,6 +30,7 @@ export class WeeklyReviewService {
   }
 
   async bootstrap(weekStart) {
+    this.sweepStaleDrafts().catch(err => this.#logger.warn?.('weekly-review.sweep.failed', { error: err.message }));
     const start = weekStart || this.#defaultWeekStart();
     const end = this.#addDays(start, 7);
     const bootstrapStart = Date.now();
@@ -348,6 +349,35 @@ export class WeeklyReviewService {
 
     this.#logger.info?.('weekly-review.finalize.complete', { sessionId, week, duration });
     return { ok: true, transcript: { raw: transcriptRaw, clean: transcriptClean, duration } };
+  }
+
+  async sweepStaleDrafts({ maxAgeDays = 30 } = {}) {
+    const baseDir = path.join(this.#dataPath, 'household', 'common', 'weekly-review');
+    if (!fs.existsSync(baseDir)) return { deleted: [] };
+    const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+    const deleted = [];
+    for (const week of fs.readdirSync(baseDir)) {
+      const draftDir = path.join(baseDir, week, '.drafts');
+      if (!fs.existsSync(draftDir)) continue;
+      for (const name of fs.readdirSync(draftDir)) {
+        if (!name.endsWith('.meta.json')) continue;
+        const metaPath = path.join(draftDir, name);
+        try {
+          const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+          const ts = Date.parse(meta.updatedAt || meta.startedAt);
+          if (Number.isFinite(ts) && ts < cutoff) {
+            const draftPath = path.join(draftDir, `${meta.sessionId}.webm`);
+            if (fs.existsSync(draftPath)) fs.unlinkSync(draftPath);
+            fs.unlinkSync(metaPath);
+            deleted.push(meta.sessionId);
+          }
+        } catch (err) {
+          this.#logger.warn?.('weekly-review.sweep.meta-parse-failed', { name, error: err.message });
+        }
+      }
+    }
+    if (deleted.length > 0) this.#logger.info?.('weekly-review.sweep.deleted', { count: deleted.length, sessionIds: deleted });
+    return { deleted };
   }
 
   async discardDraft({ sessionId, week }) {

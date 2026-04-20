@@ -233,4 +233,23 @@ describe('WeeklyReviewService.appendChunk', () => {
       ).rejects.toThrow(/draft not found/i);
     });
   });
+
+  describe('draft cleanup', () => {
+    it('sweeps drafts older than 30 days on bootstrap', async () => {
+      await service.appendChunk({ sessionId: 'sess-old00000', seq: 0, week: '2026-04-12', buffer: Buffer.from('X') });
+      const metaPath = path.join(tmpDataPath, 'household', 'common', 'weekly-review', '2026-04-12', '.drafts', 'sess-old00000.meta.json');
+      const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+      meta.updatedAt = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString();
+      fs.writeFileSync(metaPath, JSON.stringify(meta));
+
+      const swept = await service.sweepStaleDrafts({ maxAgeDays: 30 });
+      expect(swept.deleted).toContain('sess-old00000');
+    });
+
+    it('does not sweep recent drafts', async () => {
+      await service.appendChunk({ sessionId: 'sess-fresh000', seq: 0, week: '2026-04-12', buffer: Buffer.from('X') });
+      const swept = await service.sweepStaleDrafts({ maxAgeDays: 30 });
+      expect(swept.deleted).not.toContain('sess-fresh000');
+    });
+  });
 });
