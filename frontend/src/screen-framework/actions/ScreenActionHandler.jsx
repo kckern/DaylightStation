@@ -123,6 +123,24 @@ export function ScreenActionHandler({ actions = {} }) {
     });
   }, [showOverlay, dismissOverlay, isMediaDuplicate]);
 
+  // --- Queue ops (envelope command=queue) ---
+  // For `op: play-now`, mount the Player with the contentId (same as media:queue).
+  // Other ops (add, play-next, remove, clear, jump, reorder) will be wired when
+  // the Media App ships queue manipulation UI.
+  const handleMediaQueueOp = useCallback((payload) => {
+    const op = payload?.op;
+    if (op === 'play-now') {
+      if (isMediaDuplicate(payload.contentId)) return;
+      dismissOverlay();
+      showOverlay(Player, {
+        queue: { contentId: payload.contentId, ...payload },
+        clear: () => dismissOverlay(),
+      });
+      return;
+    }
+    logger().debug('media.queue-op.unhandled', { op, contentId: payload?.contentId });
+  }, [showOverlay, dismissOverlay, isMediaDuplicate]);
+
   // --- Media playback controls ---
   const handleMediaPlayback = useCallback((payload) => {
     const idleMode = actions?.playback?.when_idle || 'dispatch';
@@ -341,6 +359,7 @@ export function ScreenActionHandler({ actions = {} }) {
   useScreenAction('menu:open', handleMenuOpen);
   useScreenAction('media:play', handleMediaPlay);
   useScreenAction('media:queue', handleMediaQueue);
+  useScreenAction('media:queue-op', handleMediaQueueOp);
   useScreenAction('media:playback', handleMediaPlayback);
   useScreenAction('media:rate', handleMediaRate);
   useScreenAction('display:volume', handleVolume);
