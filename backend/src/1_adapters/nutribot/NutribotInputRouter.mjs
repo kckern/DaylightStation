@@ -136,6 +136,7 @@ export class NutribotInputRouter extends BaseInputRouter {
       a: CallbackActions.ACCEPT_LOG,
       r: CallbackActions.REVISE_ITEM,
       x: CallbackActions.REJECT_LOG,
+      ir: CallbackActions.RETRY_IMAGE,
     };
     if (legacyActionMap[action]) {
       action = legacyActionMap[action];
@@ -194,6 +195,14 @@ export class NutribotInputRouter extends BaseInputRouter {
           userId: this.#resolveUserId(event),
           conversationId: event.conversationId,
           messageId: event.messageId,
+          responseContext,
+        });
+      }
+      case CallbackActions.RETRY_IMAGE: {
+        const useCase = this.container.getRetryImageDetection();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
           responseContext,
         });
       }
