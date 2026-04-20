@@ -363,13 +363,46 @@ export class WakeAndLoadService {
 
       if (subscriberCount > 0) {
         try {
-          // Broadcast content command (targeted to this device)
-          this.#broadcast({ topic, targetDevice: deviceId, ...contentQuery });
+          // Resolve contentId from the query using the same priority order as
+          // WebSocketContentAdapter. If nothing resolves, skip WS-first and let
+          // the FKB URL fallback handle it.
+          const contentIdKeys = ['queue', 'play', 'plex', 'hymn', 'primary', 'scripture', 'contentId'];
+          let resolvedContentId = null;
+          let resolvedKey = null;
+          for (const k of contentIdKeys) {
+            if (typeof contentQuery[k] === 'string' && contentQuery[k].length > 0) {
+              resolvedContentId = contentQuery[k];
+              resolvedKey = k;
+              break;
+            }
+          }
+          if (!resolvedContentId) {
+            throw new Error('ws-first.no-contentId');
+          }
 
-          // Wait for ack from the screen (frontend sends screen name, not device ID)
+          const opts = { ...contentQuery };
+          delete opts[resolvedKey];
+
+          // Reuse dispatchId as commandId — matches the adopt-snapshot pattern
+          // a few lines up and keeps all correlated logs tied to one id.
+          const envelope = buildCommandEnvelope({
+            targetDevice: deviceId,
+            command: 'queue',
+            commandId: dispatchId,
+            // Spread opts first so a caller-supplied op or contentId can't
+            // clobber the canonical values.
+            params: { ...opts, op: 'play-now', contentId: resolvedContentId },
+          });
+          this.#broadcast({ topic, ...envelope });
+
+          // Wait for device-ack from useCommandAckPublisher (frontend emits
+          // this once the command reaches a handler).
           const ackStart = Date.now();
           await this.#eventBus.waitForMessage(
-            (msg) => msg.type === 'content-ack' && msg.screen === screenName,
+            (msg) =>
+              msg?.topic === 'device-ack' &&
+              msg?.deviceId === deviceId &&
+              msg?.commandId === dispatchId,
             4000
           );
 
