@@ -6,6 +6,8 @@ import DayColumn from './components/DayColumn.jsx';
 import DayDetail from './components/DayDetail.jsx';
 import RecordingBar from './components/RecordingBar.jsx';
 import { useAudioRecorder } from './hooks/useAudioRecorder.js';
+import { useChunkUploader } from './hooks/useChunkUploader.js';
+import { deleteSession as deleteLocalSession, listSessions as listLocalSessions, getChunksForSession } from './hooks/chunkDb.js';
 import './WeeklyReview.scss';
 
 const logger = getLogger().child({ component: 'weekly-review' });
@@ -21,9 +23,60 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   const [hasRecorded, setHasRecorded] = useState(false);
   const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [confirmFocus, setConfirmFocus] = useState(0); // 0=continue, 1=save
+  const [resumeDraft, setResumeDraft] = useState(null); // { sessionId, source: 'server'|'local', totalBytes?, lastSavedAt, chunkCount? }
   const containerRef = useRef(null);
   const uploadStartRef = useRef(null);
   const menuNav = React.useContext(MenuNavigationContext);
+
+  // Durable recording pipeline: stable sessionId per mount+week.
+  const sessionIdRef = useRef(null);
+  if (!sessionIdRef.current) {
+    sessionIdRef.current = (crypto?.randomUUID?.() || `sess-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+  }
+
+  const weekForUploader = data?.week || '0000-00-00';
+  const uploader = useChunkUploader({ sessionId: sessionIdRef.current, week: weekForUploader });
+
+  const handleChunk = useCallback(async ({ seq, blob }) => {
+    await uploader.enqueue({ seq, blob });
+  }, [uploader]);
+
+  const {
+    isRecording, duration: recordingDuration, micLevel, silenceWarning,
+    error: recorderError, startRecording, stopRecording,
+  } = useAudioRecorder({ onChunk: handleChunk });
+
+  const finalizeRecording = useCallback(async () => {
+    if (!data?.week) return;
+    setUploading(true);
+    uploadStartRef.current = Date.now();
+    try {
+      const deadline = Date.now() + 30_000;
+      uploader.flushNow();
+      while (uploader.pendingCount > 0 && Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 500));
+        uploader.flushNow();
+      }
+      if (uploader.pendingCount > 0) {
+        logger.warn('recording.finalize-with-pending', { pending: uploader.pendingCount, sessionId: sessionIdRef.current });
+      }
+      logger.info('recording.finalize-request', { sessionId: sessionIdRef.current, week: data.week });
+      const result = await DaylightAPI('/api/v1/weekly-review/recording/finalize', {
+        sessionId: sessionIdRef.current,
+        week: data.week,
+        duration: recordingDuration,
+      }, 'POST');
+      logger.info('recording.finalize-complete', { sessionId: sessionIdRef.current, ok: result.ok });
+      await deleteLocalSession(sessionIdRef.current).catch(err => logger.warn('recording.local-cleanup-failed', { error: err.message }));
+      setData(prev => ({ ...prev, recording: { exists: true, recordedAt: new Date().toISOString(), duration: recordingDuration } }));
+      if (typeof dispatch === 'function') dispatch('escape');
+      else if (typeof dismiss === 'function') dismiss();
+    } catch (err) {
+      logger.error('recording.finalize-failed', { sessionId: sessionIdRef.current, error: err.message });
+    } finally {
+      setUploading(false);
+    }
+  }, [data?.week, recordingDuration, uploader, dispatch, dismiss]);
 
   useEffect(() => {
     logger.info('mount');
@@ -42,52 +95,26 @@ export default function WeeklyReview({ dispatch, dismiss }) {
     logger.debug('state.uploading', { uploading });
   }, [uploading]);
 
-  const handleRecordingComplete = useCallback(async ({ audioBase64, mimeType, duration }) => {
-    if (!data?.week) return;
-    setUploading(true);
-    uploadStartRef.current = Date.now();
-    const payloadSizeKb = Math.round(audioBase64.length / 1024);
-    try {
-      logger.info('recording.uploading', { week: data.week, duration, payloadSizeKb });
-      const result = await DaylightAPI('/api/v1/weekly-review/recording', {
-        audioBase64,
-        mimeType,
-        week: data.week,
-        duration,
-      }, 'POST');
-      const uploadMs = Date.now() - uploadStartRef.current;
-      logger.info('recording.upload-complete', { week: data.week, ok: result.ok, uploadMs, payloadSizeKb });
-      setData(prev => ({
-        ...prev,
-        recording: { exists: true, recordedAt: new Date().toISOString(), duration },
-      }));
-      if (typeof dispatch === 'function') dispatch('escape');
-      else if (typeof dismiss === 'function') dismiss();
-    } catch (err) {
-      const uploadMs = Date.now() - uploadStartRef.current;
-      logger.error('recording.upload-failed', { error: err.message, uploadMs, payloadSizeKb });
-    } finally {
-      setUploading(false);
-    }
-  }, [data?.week]);
-
-  const {
-    isRecording, duration: recordingDuration, micLevel, silenceWarning,
-    error: recorderError, startRecording, stopRecording,
-  } = useAudioRecorder({ onRecordingComplete: handleRecordingComplete });
-
   // Track when recording starts
   useEffect(() => {
     logger.info('state.is-recording', { isRecording });
     if (isRecording) setHasRecorded(true);
   }, [isRecording]);
 
+  // When recorder finishes (stop pressed), drain uploads and finalize.
+  const finalizeTriggeredRef = useRef(false);
+  useEffect(() => {
+    if (!isRecording && hasRecorded && !finalizeTriggeredRef.current) {
+      finalizeTriggeredRef.current = true;
+      finalizeRecording();
+    }
+  }, [isRecording, hasRecorded, finalizeRecording]);
+
   useEffect(() => {
     if (recorderError) {
       logger.error('state.recorder-error', { error: recorderError });
     }
   }, [recorderError]);
-
 
   useEffect(() => {
     logger.info('bootstrap.fetching');
@@ -115,6 +142,94 @@ export default function WeeklyReview({ dispatch, dismiss }) {
     };
     fetchBootstrap();
   }, []);
+
+  // Mount-time draft recovery: check server and local IndexedDB for unfinalized sessions.
+  useEffect(() => {
+    if (!data?.week) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const serverResp = await DaylightAPI(`/api/v1/weekly-review/recording/drafts?week=${data.week}`);
+        const serverDraft = (serverResp.drafts || [])
+          .filter(d => d.sessionId !== sessionIdRef.current)
+          .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))[0];
+        if (serverDraft && !cancelled) {
+          logger.info('recording.resume-candidate.server', serverDraft);
+          setResumeDraft({ sessionId: serverDraft.sessionId, source: 'server', totalBytes: serverDraft.totalBytes, lastSavedAt: serverDraft.updatedAt });
+          return;
+        }
+        const localSessions = await listLocalSessions();
+        const localDraft = localSessions
+          .filter(s => s.week === data.week && s.sessionId !== sessionIdRef.current && s.unuploadedCount > 0)
+          .sort((a, b) => b.lastSavedAt - a.lastSavedAt)[0];
+        if (localDraft && !cancelled) {
+          logger.info('recording.resume-candidate.local', localDraft);
+          setResumeDraft({ sessionId: localDraft.sessionId, source: 'local', totalBytes: null, lastSavedAt: new Date(localDraft.lastSavedAt).toISOString(), chunkCount: localDraft.chunkCount });
+        }
+      } catch (err) {
+        logger.warn('recording.resume-check-failed', { error: err.message });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [data?.week]);
+
+  const finalizePriorDraft = useCallback(async () => {
+    if (!resumeDraft?.sessionId || !data?.week) return;
+    try {
+      logger.info('recording.resume.finalize', { sessionId: resumeDraft.sessionId, source: resumeDraft.source });
+      if (resumeDraft.source === 'local') {
+        const rows = await getChunksForSession(resumeDraft.sessionId);
+        for (const row of rows) {
+          if (row.uploaded) continue;
+          const buf = await row.blob.arrayBuffer();
+          const bytes = new Uint8Array(buf);
+          let bin = '';
+          const CHUNK = 0x8000;
+          for (let i = 0; i < bytes.length; i += CHUNK) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+          const chunkBase64 = btoa(bin);
+          await DaylightAPI('/api/v1/weekly-review/recording/chunk', { sessionId: resumeDraft.sessionId, seq: row.seq, week: data.week, chunkBase64 }, 'POST');
+        }
+      }
+      await DaylightAPI('/api/v1/weekly-review/recording/finalize', {
+        sessionId: resumeDraft.sessionId, week: data.week, duration: 0,
+      }, 'POST');
+      await deleteLocalSession(resumeDraft.sessionId);
+      setResumeDraft(null);
+      const fresh = await DaylightAPI('/api/v1/weekly-review/bootstrap');
+      setData(fresh);
+    } catch (err) {
+      logger.error('recording.resume.finalize-failed', { error: err.message });
+    }
+  }, [resumeDraft, data?.week]);
+
+  const discardPriorDraft = useCallback(async () => {
+    if (!resumeDraft?.sessionId || !data?.week) return;
+    try {
+      if (resumeDraft.source === 'server') {
+        await DaylightAPI(`/api/v1/weekly-review/recording/drafts/${resumeDraft.sessionId}?week=${data.week}`, {}, 'DELETE');
+      }
+      await deleteLocalSession(resumeDraft.sessionId);
+      setResumeDraft(null);
+    } catch (err) {
+      logger.error('recording.resume.discard-failed', { error: err.message });
+    }
+  }, [resumeDraft, data?.week]);
+
+  // Pagehide/beforeunload beacon flush
+  useEffect(() => {
+    const handlePageHide = () => {
+      if (isRecording || uploader.pendingCount > 0) {
+        logger.info('recording.pagehide-beacon', { pending: uploader.pendingCount, isRecording });
+        uploader.beaconFlush();
+      }
+    };
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('beforeunload', handlePageHide);
+    return () => {
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('beforeunload', handlePageHide);
+    };
+  }, [isRecording, uploader]);
 
   // Pacman grid navigation
   useEffect(() => {
@@ -352,6 +467,22 @@ export default function WeeklyReview({ dispatch, dismiss }) {
         </div>
       )}
 
+      {/* Resume-draft overlay — shown after bootstrap if an unfinalized draft exists */}
+      {resumeDraft && !isRecording && !hasRecorded && (
+        <div className="weekly-review-confirm-overlay">
+          <div className="confirm-dialog">
+            <div className="confirm-message">
+              A previous recording was not finalized.<br/>
+              <small>{resumeDraft.source === 'server' ? `Server draft · ${Math.round((resumeDraft.totalBytes || 0) / 1024)} KB` : `Local-only draft · ${resumeDraft.chunkCount || 0} chunks`}</small>
+            </div>
+            <div className="confirm-actions">
+              <button className="confirm-btn confirm-btn--save" onClick={finalizePriorDraft}>Finalize Previous</button>
+              <button className="confirm-btn confirm-btn--continue" onClick={discardPriorDraft}>Discard</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {selectedDay !== null ? (
         <DayDetail
           day={data.days[selectedDay]}
@@ -411,6 +542,9 @@ export default function WeeklyReview({ dispatch, dismiss }) {
         error={recorderError}
         onStart={() => { logger.info('recording.manual-start'); startRecording(); }}
         onStop={() => { logger.info('recording.manual-stop'); setShowStopConfirm(true); }}
+        syncStatus={uploader.status}
+        pendingCount={uploader.pendingCount}
+        lastAckedAt={uploader.lastAckedAt}
       />
     </div>
   );
