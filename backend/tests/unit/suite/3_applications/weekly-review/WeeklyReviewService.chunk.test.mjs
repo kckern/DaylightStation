@@ -186,4 +186,51 @@ describe('WeeklyReviewService.appendChunk', () => {
       expect(result.existed).toBe(false);
     });
   });
+
+  describe('finalizeDraft', () => {
+    it('moves draft to final location, transcribes, saves transcript & manifest, deletes draft', async () => {
+      // seed transcription service
+      const fakeTranscribe = {
+        transcribe: async (buf, opts) => ({
+          transcriptRaw: `raw for ${buf.length} bytes`,
+          transcriptClean: 'clean',
+        }),
+      };
+      service = new WeeklyReviewService(
+        { dataPath: tmpDataPath, mediaPath: tmpMediaPath, householdId: 'h' },
+        { logger: noopLogger, transcriptionService: fakeTranscribe }
+      );
+
+      await service.appendChunk({ sessionId: 'sess-aaaaaaaa', seq: 0, week: '2026-04-12', buffer: Buffer.from('ONE') });
+      await service.appendChunk({ sessionId: 'sess-aaaaaaaa', seq: 1, week: '2026-04-12', buffer: Buffer.from('TWO') });
+
+      const result = await service.finalizeDraft({ sessionId: 'sess-aaaaaaaa', week: '2026-04-12', duration: 10 });
+      expect(result.ok).toBe(true);
+      expect(result.transcript.raw).toBe('raw for 6 bytes');
+      expect(result.transcript.clean).toBe('clean');
+
+      // Draft is gone
+      const drafts = await service.listDrafts('2026-04-12');
+      expect(drafts).toHaveLength(0);
+
+      // Transcript written
+      const tPath = path.join(tmpDataPath, 'household', 'common', 'weekly-review', '2026-04-12', 'transcript.yml');
+      expect(fs.existsSync(tPath)).toBe(true);
+      const tData = JSON.parse(fs.readFileSync(tPath, 'utf-8'));
+      expect(tData.week).toBe('2026-04-12');
+      expect(tData.duration).toBe(10);
+      expect(tData.transcriptClean).toBe('clean');
+
+      // Audio moved to mediaPath
+      const audioFiles = fs.readdirSync(path.join(tmpMediaPath, 'weekly-review'), { recursive: true })
+        .filter(n => typeof n === 'string' && n.endsWith('.webm'));
+      expect(audioFiles.length).toBe(1);
+    });
+
+    it('fails if draft does not exist', async () => {
+      await expect(
+        service.finalizeDraft({ sessionId: 'sess-missing', week: '2026-04-12', duration: 0 })
+      ).rejects.toThrow(/draft not found/i);
+    });
+  });
 });
