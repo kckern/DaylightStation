@@ -7,6 +7,7 @@ import FitnessTimeline from './FitnessTimeline.jsx';
 import SportIcon from '../_shared/SportIcon.jsx';
 import RouteMap from './RouteMap.jsx';
 import './FitnessSessionDetailWidget.scss';
+import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
 
 const CoinIcon = ({ size = 12 }) => (
   <svg width={size} height={size} viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
@@ -41,8 +42,7 @@ function formatTime(startTime, timezone) {
 
 function formatDate(dateStr) {
   if (!dateStr) return '';
-  const d = new Date(dateStr + 'T12:00:00');
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  return formatFitnessDate(dateStr + 'T12:00:00');
 }
 
 function FitText({ children, maxSize = 2.4, minSize = 0.8, wrapBelow = 1.3, breakOn, className }) {
