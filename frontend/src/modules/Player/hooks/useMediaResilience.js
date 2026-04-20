@@ -35,16 +35,22 @@ const NOOP = () => {};
 // bypassing the cooldown check and creating an infinite remount loop.
 const _recoveryTracker = new Map();
 function _getTracker(key) {
-  if (!key) return { count: 0, lastAt: 0 };
-  return _recoveryTracker.get(key) || { count: 0, lastAt: 0 };
+  if (!key) return { count: 0, lastAt: 0, urlRefreshCount: 0 };
+  return _recoveryTracker.get(key) || { count: 0, lastAt: 0, urlRefreshCount: 0 };
 }
 function _recordRecovery(key) {
   if (!key) return 0;
-  const entry = _recoveryTracker.get(key) || { count: 0, lastAt: 0 };
+  const entry = _recoveryTracker.get(key) || { count: 0, lastAt: 0, urlRefreshCount: 0 };
   entry.count += 1;
   entry.lastAt = Date.now();
   _recoveryTracker.set(key, entry);
   return entry.count;
+}
+function _recordUrlRefresh(key) {
+  if (!key) return;
+  const entry = _recoveryTracker.get(key) || { count: 0, lastAt: 0, urlRefreshCount: 0 };
+  entry.urlRefreshCount = (entry.urlRefreshCount || 0) + 1;
+  _recoveryTracker.set(key, entry);
 }
 function _clearTracker(key) {
   if (key) _recoveryTracker.delete(key);
@@ -162,7 +168,8 @@ export function useMediaResilience({
     if (tracker.count >= maxAttempts) {
       playbackLog('resilience-recovery-exhausted', {
         reason, waitKey: logWaitKey,
-        attempts: tracker.count, maxAttempts
+        attempts: tracker.count, maxAttempts,
+        urlRefreshesAttempted: tracker.urlRefreshCount || 0
       });
       actions.setStatus(STATUS.exhausted);
       if (typeof onExhausted === 'function') {
@@ -172,6 +179,9 @@ export function useMediaResilience({
     }
 
     const attempt = _recordRecovery(playbackSessionKey);
+    if (shouldRefreshUrlForReason(reason)) {
+      _recordUrlRefresh(playbackSessionKey);
+    }
     playbackLog('resilience-recovery', {
       reason, waitKey: logWaitKey,
       status: statusRef.current, attempt, maxAttempts,
