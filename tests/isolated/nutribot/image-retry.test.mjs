@@ -70,6 +70,10 @@ describe('RetryImageDetection', () => {
     expect(deps.conversationStateStore.clear).toHaveBeenCalledWith('telegram:conv-1');
     expect(deps.responseContext.deleteMessage).toHaveBeenCalledWith('photo-msg-1');
 
+    const clearOrder = deps.conversationStateStore.clear.mock.invocationCallOrder[0];
+    const deleteOrder = deps.responseContext.deleteMessage.mock.invocationCallOrder[0];
+    expect(clearOrder).toBeLessThan(deleteOrder);
+
     expect(deps.logFoodFromImage.execute).toHaveBeenCalledTimes(1);
     const [input] = deps.logFoodFromImage.execute.mock.calls[0];
     expect(input.imageData).toEqual({ fileId: 'tg-file-abc' });
