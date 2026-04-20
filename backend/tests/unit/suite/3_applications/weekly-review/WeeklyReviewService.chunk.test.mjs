@@ -166,4 +166,24 @@ describe('WeeklyReviewService.appendChunk', () => {
       expect(byId['sess-bbbbbbbb'].seq).toBe(0);
     });
   });
+
+  describe('discardDraft', () => {
+    it('removes the draft and meta file', async () => {
+      await service.appendChunk({ sessionId: 'sess-aaaaaaaa', seq: 0, week: '2026-04-12', buffer: Buffer.from('data') });
+      const before = await service.listDrafts('2026-04-12');
+      expect(before).toHaveLength(1);
+
+      const result = await service.discardDraft({ sessionId: 'sess-aaaaaaaa', week: '2026-04-12' });
+      expect(result.ok).toBe(true);
+
+      const after = await service.listDrafts('2026-04-12');
+      expect(after).toHaveLength(0);
+    });
+
+    it('is a no-op when draft does not exist', async () => {
+      const result = await service.discardDraft({ sessionId: 'sess-missing', week: '2026-04-12' });
+      expect(result.ok).toBe(true);
+      expect(result.existed).toBe(false);
+    });
+  });
 });

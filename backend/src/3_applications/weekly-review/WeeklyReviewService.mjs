@@ -293,6 +293,19 @@ export class WeeklyReviewService {
     return drafts;
   }
 
+  async discardDraft({ sessionId, week }) {
+    if (!this.#isValidSessionId(sessionId)) throw new Error(`invalid sessionId: ${sessionId}`);
+    if (!this.#isValidWeek(week)) throw new Error(`invalid week: ${week}`);
+    const draftDir = path.join(this.#dataPath, 'household', 'common', 'weekly-review', week, '.drafts');
+    const draftPath = path.join(draftDir, `${sessionId}.webm`);
+    const metaPath = path.join(draftDir, `${sessionId}.meta.json`);
+    let existed = false;
+    if (fs.existsSync(draftPath)) { fs.unlinkSync(draftPath); existed = true; }
+    if (fs.existsSync(metaPath)) { fs.unlinkSync(metaPath); existed = true; }
+    this.#logger.info?.('weekly-review.draft.discarded', { sessionId, week, existed });
+    return { ok: true, existed };
+  }
+
   #isValidSessionId(id) {
     return typeof id === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(id);
   }
