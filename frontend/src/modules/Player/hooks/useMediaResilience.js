@@ -527,6 +527,7 @@ export function useMediaResilience({
     state: resilienceState,
     onStartupSignal: NOOP, // Stable reference to avoid re-render cascades
     cancelDeadline,
+    requestRecovery: triggerRecovery,
     ...(process.env.NODE_ENV !== 'production' && {
       _testTriggerRecovery: triggerRecovery
     })

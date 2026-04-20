@@ -23,6 +23,7 @@ export function SinglePlayer(props = {}) {
     onRegisterMediaAccess,
     onRegisterResilienceBridge,
     onStartupSignal,
+    onRequestRecovery,
     seekToIntentSeconds = null,
     onSeekRequestConsumed,
     remountDiagnostics,
@@ -374,6 +375,7 @@ export function SinglePlayer(props = {}) {
     onSeekRequestConsumed,
     remountDiagnostics,
     onStartupSignal,
+    requestRecovery: typeof onRequestRecovery === 'function' ? onRequestRecovery : null,
     // New: accessor registration for children
     registerAccessors: ({ getMediaEl, getContainerEl }) => {
       mediaAccessorsRef.current = {
@@ -384,7 +386,7 @@ export function SinglePlayer(props = {}) {
     // New: accessors that delegate to registered functions
     getMediaEl: () => mediaAccessorsRef.current.getMediaEl(),
     getContainerEl: () => mediaAccessorsRef.current.getContainerEl()
-  }), [onPlaybackMetrics, onRegisterMediaAccess, seekToIntentSeconds, onSeekRequestConsumed, remountDiagnostics, onStartupSignal]);
+  }), [onPlaybackMetrics, onRegisterMediaAccess, seekToIntentSeconds, onSeekRequestConsumed, remountDiagnostics, onStartupSignal, onRequestRecovery]);
 
   // Register the resilienceBridge with the parent Player component
   useEffect(() => {
