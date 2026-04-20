@@ -144,4 +144,26 @@ describe('WeeklyReviewService.appendChunk', () => {
     expect(r.totalBytes).toBe(5);
     expect(fs.readFileSync(draftPath).toString()).toBe('FRESH');
   });
+
+  describe('listDrafts', () => {
+    it('returns empty when no drafts exist', async () => {
+      const drafts = await service.listDrafts('2026-04-12');
+      expect(drafts).toEqual([]);
+    });
+
+    it('lists all drafts with metadata', async () => {
+      await service.appendChunk({ sessionId: 'sess-aaaaaaaa', seq: 0, week: '2026-04-12', buffer: Buffer.from('X'.repeat(100)) });
+      await service.appendChunk({ sessionId: 'sess-aaaaaaaa', seq: 1, week: '2026-04-12', buffer: Buffer.from('Y'.repeat(200)) });
+      await service.appendChunk({ sessionId: 'sess-bbbbbbbb', seq: 0, week: '2026-04-12', buffer: Buffer.from('Z'.repeat(50)) });
+
+      const drafts = await service.listDrafts('2026-04-12');
+      const byId = Object.fromEntries(drafts.map(d => [d.sessionId, d]));
+
+      expect(drafts).toHaveLength(2);
+      expect(byId['sess-aaaaaaaa'].totalBytes).toBe(300);
+      expect(byId['sess-aaaaaaaa'].seq).toBe(1);
+      expect(byId['sess-bbbbbbbb'].totalBytes).toBe(50);
+      expect(byId['sess-bbbbbbbb'].seq).toBe(0);
+    });
+  });
 });
