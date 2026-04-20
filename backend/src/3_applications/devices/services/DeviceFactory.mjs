@@ -71,7 +71,7 @@ export class DeviceFactory {
 
     // Build content_control capability
     if (deviceConfig.content_control) {
-      capabilities.contentControl = this.#buildContentControl(deviceConfig.content_control, deviceConfig.camera_check);
+      capabilities.contentControl = this.#buildContentControl(deviceId, deviceConfig.content_control, deviceConfig.camera_check);
     }
 
     return new Device(
@@ -138,7 +138,7 @@ export class DeviceFactory {
    * Build content control adapter
    * @private
    */
-  #buildContentControl(config, cameraCheck) {
+  #buildContentControl(deviceId, config, cameraCheck) {
     const provider = config.provider;
 
     if (provider === 'fully-kiosk') {
@@ -212,6 +212,7 @@ export class DeviceFactory {
       return new WebSocketContentAdapter(
         {
           topic: config.topic,
+          deviceId,
           daylightHost: this.#daylightHost
         },
         { wsBus: this.#wsBus, logger: this.#logger }
