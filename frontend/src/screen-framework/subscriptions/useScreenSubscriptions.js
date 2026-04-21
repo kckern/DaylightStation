@@ -52,6 +52,8 @@ export function useScreenSubscriptions(subscriptions, showOverlay, dismissOverla
       priority: cfg?.response?.priority ?? undefined,
       timeout: cfg?.response?.timeout ?? undefined,
       pipConfig: cfg?.response?.pip ?? null,
+      panelConfig: cfg?.response?.panel ?? null,
+      target: cfg?.response?.target ?? null,
       dismissEvent: cfg?.dismiss?.event ?? null,
       dismissInactivity: cfg?.dismiss?.inactivity ?? null,
       guard: cfg?.guard ?? null,
@@ -145,11 +147,18 @@ export function useScreenSubscriptions(subscriptions, showOverlay, dismissOverla
       // Show the overlay — include onClose/onSessionEnd mapped to dismissOverlay
       // so components like PianoVisualizer get the callbacks they expect
       const dismissFn = () => dismissOverlay(entry.mode);
-      if (entry.mode === 'pip' && pipRef.current) {
+      if ((entry.mode === 'pip' || entry.mode === 'panel') && pipRef.current) {
         // Route to PipManager — it owns the dismiss timer
         const pipDismissFn = () => pipRef.current?.dismiss();
-        logger().info('subscription.show-pip', { topic: entry.topic, overlay: entry.overlay, event: eventName });
-        pipRef.current.show(Component, { ...data, onClose: pipDismissFn, onSessionEnd: pipDismissFn }, entry.pipConfig || {});
+        const surfaceConfig = entry.mode === 'panel'
+          ? { mode: 'panel', target: entry.target, ...(entry.panelConfig || {}) }
+          : { mode: 'corner', ...(entry.pipConfig || {}) };
+        if (entry.mode === 'panel') {
+          logger().info('subscription.show-panel', { topic: entry.topic, overlay: entry.overlay, target: entry.target, event: eventName });
+        } else {
+          logger().info('subscription.show-pip', { topic: entry.topic, overlay: entry.overlay, event: eventName });
+        }
+        pipRef.current.show(Component, { ...data, onClose: pipDismissFn, onSessionEnd: pipDismissFn }, surfaceConfig);
         // PipManager owns the timeout — skip subscription-level inactivity timer
       } else {
         logger().info('subscription.show-overlay', { topic: entry.topic, overlay: entry.overlay, mode: entry.mode, event: eventName });

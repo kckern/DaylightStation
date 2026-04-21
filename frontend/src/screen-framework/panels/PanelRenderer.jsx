@@ -1,7 +1,8 @@
 // frontend/src/screen-framework/panels/PanelRenderer.jsx
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { getWidgetRegistry } from '../widgets/registry.js';
 import { useScreen } from '../providers/ScreenProvider.jsx';
+import { usePip } from '../pip/PipManager.jsx';
 import './PanelRenderer.css';
 
 function themeVars(theme) {
@@ -78,9 +79,23 @@ function ContainerNode({ node, depth, nodeType }) {
   // The parent can opt out with `fullPanel: false`.
   const allowFullPanel = node.fullPanel !== false;
 
+  // Slot registration: if this container declares an `id`, register its DOM
+  // node with PipManager so panel-mode takeovers can portal into it.
+  const containerRef = useRef(null);
+  const { registerSlot, unregisterSlot } = usePip();
+  useEffect(() => {
+    if (!node.id) return;
+    const el = containerRef.current;
+    if (!el) return;
+    registerSlot(node.id, el);
+    return () => unregisterSlot(node.id);
+  }, [node.id, registerSlot, unregisterSlot]);
+
   return (
     <div
+      ref={containerRef}
       className={className}
+      data-slot-id={node.id || undefined}
       style={{
         flexDirection: node.direction || 'row',
         justifyContent: node.justify || undefined,
@@ -130,6 +145,13 @@ export function PanelRenderer({
 
   // --- Root node (depth 0) ---
   if (depth === 0) {
+    // Widget at root: render as a widget leaf, not as a container.
+    // Preserves the pre-refactor contract where PanelRenderer dispatched by
+    // node shape. The real screen layout always passes a container at root,
+    // so production behavior is unaffected.
+    if (node.widget) {
+      return <WidgetNode node={node} fullPanel={false} />;
+    }
     const theme = themeVars(node.theme);
     return (
       <div
