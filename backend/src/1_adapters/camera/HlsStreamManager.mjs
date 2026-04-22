@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { spawn as defaultSpawn } from 'child_process';
 import { mkdir, rm, access } from 'fs/promises';
 import os from 'os';
 import path from 'path';
@@ -18,15 +18,17 @@ const PLAYLIST_TIMEOUT_MS = 15_000;
  * Streams auto-stop after 30 seconds of inactivity (no touch/ensureStream calls).
  */
 export class HlsStreamManager {
-  /** @type {Map<string, { proc: import('child_process').ChildProcess, dir: string, timer: NodeJS.Timeout }>} */
+  /** @type {Map<string, { proc: import('child_process').ChildProcess, dir: string, timer: NodeJS.Timeout, readyPromise: Promise<void> }>} */
   #streams = new Map();
   #logger;
+  #spawn;
 
   /**
-   * @param {{ logger?: object }} options
+   * @param {{ logger?: object, spawn?: Function }} options
    */
-  constructor({ logger = console } = {}) {
+  constructor({ logger = console, spawn = defaultSpawn } = {}) {
     this.#logger = logger;
+    this.#spawn = spawn;
   }
 
   /**
@@ -42,42 +44,55 @@ export class HlsStreamManager {
     const existing = this.#streams.get(streamId);
     if (existing) {
       this.#resetTimer(streamId);
+      // Dedup: every caller (first or Nth) awaits the same playlist-ready promise
+      // before the adapter resolves. This guarantees the router's subsequent
+      // readFile of stream.m3u8 will not race with ffmpeg's first write.
+      await existing.readyPromise;
       return existing.dir;
     }
 
     const dir = path.join(os.tmpdir(), 'camera', streamId);
-    await mkdir(dir, { recursive: true });
-
     const playlistPath = path.join(dir, 'stream.m3u8');
 
-    const proc = spawn('ffmpeg', [
-      '-rtsp_transport', 'tcp',
-      '-i', rtspUrl,
-      '-c:v', 'copy',
-      '-c:a', 'aac',
-      '-f', 'hls',
-      '-hls_time', '2',
-      '-hls_list_size', '5',
-      '-hls_flags', 'delete_segments+append_list',
-      playlistPath
-    ], { stdio: ['ignore', 'ignore', 'pipe'] });
-
-    proc.stderr.on('data', (chunk) => {
-      this.#logger.debug?.('hls.ffmpeg.stderr', { streamId, message: chunk.toString().trim() });
-    });
-
-    proc.on('exit', (code, signal) => {
-      this.#logger.debug?.('hls.ffmpeg.exit', { streamId, code, signal });
-      this.#cleanup(streamId);
-    });
-
-    const entry = { proc, dir, timer: null };
+    // Register the entry synchronously (before any await) so that concurrent
+    // callers hitting ensureStream within the same tick see the existing entry
+    // and await the same readyPromise rather than spawning a second ffmpeg.
+    let resolveReady, rejectReady;
+    const readyPromise = new Promise((res, rej) => { resolveReady = res; rejectReady = rej; });
+    const entry = { proc: null, dir, timer: null, readyPromise };
     this.#streams.set(streamId, entry);
     this.#resetTimer(streamId);
 
     try {
+      await mkdir(dir, { recursive: true });
+
+      const proc = this.#spawn('ffmpeg', [
+        '-rtsp_transport', 'tcp',
+        '-i', rtspUrl,
+        '-c:v', 'copy',
+        '-c:a', 'aac',
+        '-f', 'hls',
+        '-hls_time', '2',
+        '-hls_list_size', '5',
+        '-hls_flags', 'delete_segments+append_list',
+        playlistPath
+      ], { stdio: ['ignore', 'ignore', 'pipe'] });
+
+      entry.proc = proc;
+
+      proc.stderr.on('data', (chunk) => {
+        this.#logger.debug?.('hls.ffmpeg.stderr', { streamId, message: chunk.toString().trim() });
+      });
+
+      proc.on('exit', (code, signal) => {
+        this.#logger.debug?.('hls.ffmpeg.exit', { streamId, code, signal });
+        this.#cleanup(streamId);
+      });
+
       await this.#waitForPlaylist(playlistPath, PLAYLIST_TIMEOUT_MS);
+      resolveReady();
     } catch (err) {
+      rejectReady(err);
       this.stop(streamId);
       throw err;
     }
