@@ -61,4 +61,27 @@ describe('HlsStreamManager — concurrent ensureStream dedup', () => {
 
     manager.stopAll();
   });
+
+  test('lone-caller setup failure rejects cleanly without unhandled rejection', async () => {
+    // Track unhandled rejections during the test.
+    const unhandled = [];
+    const handler = (reason) => unhandled.push(reason);
+    process.on('unhandledRejection', handler);
+
+    // brokenSpawn throws synchronously — forces the try/catch to call rejectReady(err)
+    // then throw err. The caller's own await handles the throw; the no-op
+    // readyPromise.catch(() => {}) must absorb the parallel rejection so Node
+    // never sees it as unhandled.
+    const brokenSpawn = () => { throw new Error('spawn failed'); };
+    const manager2 = new HlsStreamManager({ spawn: brokenSpawn });
+    await expect(manager2.ensureStream('broken', 'rtsp://fake')).rejects.toThrow('spawn failed');
+
+    // Allow microtasks (the rejection propagation) to drain before asserting.
+    await new Promise((r) => setImmediate(r));
+
+    process.off('unhandledRejection', handler);
+    expect(unhandled).toEqual([]);  // readyPromise.catch(()=>{}) must have absorbed it.
+
+    manager2.stopAll();
+  });
 });

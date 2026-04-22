@@ -18,7 +18,7 @@ const PLAYLIST_TIMEOUT_MS = 15_000;
  * Streams auto-stop after 30 seconds of inactivity (no touch/ensureStream calls).
  */
 export class HlsStreamManager {
-  /** @type {Map<string, { proc: import('child_process').ChildProcess, dir: string, timer: NodeJS.Timeout, readyPromise: Promise<void> }>} */
+  /** @type {Map<string, { proc: import('child_process').ChildProcess | null, dir: string, timer: NodeJS.Timeout, readyPromise: Promise<void> }>} */
   #streams = new Map();
   #logger;
   #spawn;
@@ -59,6 +59,10 @@ export class HlsStreamManager {
     // and await the same readyPromise rather than spawning a second ffmpeg.
     let resolveReady, rejectReady;
     const readyPromise = new Promise((res, rej) => { resolveReady = res; rejectReady = rej; });
+    // Prevent an UnhandledPromiseRejection when the first/lone caller's setup
+    // fails and no one else is awaiting readyPromise. Concurrent callers still
+    // see the rejection through their own `await existing.readyPromise`.
+    readyPromise.catch(() => {});
     const entry = { proc: null, dir, timer: null, readyPromise };
     this.#streams.set(streamId, entry);
     this.#resetTimer(streamId);
