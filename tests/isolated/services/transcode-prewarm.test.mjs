@@ -70,7 +70,7 @@ describe('TranscodePrewarmService', () => {
       const svc = buildService();
       const result = await svc.prewarm(CONTENT_REF);
 
-      expect(result).not.toBeNull();
+      expect(result.status).toBe('ok');
       expect(result).toHaveProperty('token');
       expect(result).toHaveProperty('contentId', CONTENT_ID);
       expect(typeof result.token).toBe('string');
@@ -88,7 +88,7 @@ describe('TranscodePrewarmService', () => {
       expect(httpClient.get).toHaveBeenCalledWith(DASH_URL);
     });
 
-    test('returns null for non-Plex content', async () => {
+    test('returns skipped status for non-Plex content', async () => {
       const adapter = mockAdapter();
       const contentIdResolver = mockContentIdResolver({
         resolved: {
@@ -106,19 +106,19 @@ describe('TranscodePrewarmService', () => {
       const svc = buildService({ contentIdResolver, queueService });
       const result = await svc.prewarm('youtube:vid123');
 
-      expect(result).toBeNull();
+      expect(result).toEqual(expect.objectContaining({ status: 'skipped', reason: 'not plex' }));
     });
 
-    test('returns null when adapter resolution fails (no resolvePlayables)', async () => {
+    test('returns skipped status when adapter resolution fails (no resolvePlayables)', async () => {
       const adapter = mockAdapter({ resolvePlayables: false });
       const contentIdResolver = mockContentIdResolver({ adapter });
       const svc = buildService({ contentIdResolver });
       const result = await svc.prewarm(CONTENT_REF);
 
-      expect(result).toBeNull();
+      expect(result).toEqual(expect.objectContaining({ status: 'skipped', reason: 'no adapter' }));
     });
 
-    test('returns null when loadMediaUrl fails', async () => {
+    test('returns failed status when loadMediaUrl returns null', async () => {
       const adapter = {
         resolvePlayables: jest.fn().mockResolvedValue([
           { contentId: CONTENT_ID, ratingKey: RATING_KEY, source: 'plex' },
@@ -129,7 +129,10 @@ describe('TranscodePrewarmService', () => {
       const svc = buildService({ contentIdResolver });
       const result = await svc.prewarm(CONTENT_REF);
 
-      expect(result).toBeNull();
+      expect(result).toEqual(expect.objectContaining({
+        status: 'failed',
+        reason: 'loadMediaUrl returned null',
+      }));
     });
   });
 

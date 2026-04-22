@@ -21,7 +21,7 @@ export class TranscodePrewarmService {
       const resolved = this.#contentIdResolver.resolve(contentRef);
       if (!resolved?.adapter?.resolvePlayables) {
         this.#logger.debug?.('prewarm.skip', { contentRef, reason: 'no adapter' });
-        return null;
+        return { status: 'skipped', reason: 'no adapter' };
       }
 
       const finalId = `${resolved.source}:${resolved.localId}`;
@@ -32,14 +32,14 @@ export class TranscodePrewarmService {
 
       if (!items?.length) {
         this.#logger.debug?.('prewarm.skip', { contentRef, reason: 'empty queue' });
-        return null;
+        return { status: 'skipped', reason: 'empty queue' };
       }
 
       const first = items[0];
       const isPlex = first.source === 'plex' || first.contentId?.startsWith('plex:');
       if (!isPlex || !resolved.adapter.loadMediaUrl) {
         this.#logger.debug?.('prewarm.skip', { contentRef, reason: 'not plex', source: first.source });
-        return null;
+        return { status: 'skipped', reason: 'not plex' };
       }
 
       const startOffset = first.resumePosition || first.playhead || 0;
@@ -47,7 +47,7 @@ export class TranscodePrewarmService {
       const dashUrl = await resolved.adapter.loadMediaUrl(ratingKey, 0, { startOffset });
       if (!dashUrl) {
         this.#logger.warn?.('prewarm.failed', { contentRef, reason: 'loadMediaUrl returned null' });
-        return null;
+        return { status: 'failed', reason: 'loadMediaUrl returned null' };
       }
 
       this.#fetchMpd(dashUrl).catch(err => {
@@ -60,10 +60,10 @@ export class TranscodePrewarmService {
       this.#scheduleCleanup(token);
 
       this.#logger.info?.('prewarm.success', { contentRef, contentId, token });
-      return { token, contentId };
+      return { status: 'ok', token, contentId };
     } catch (err) {
       this.#logger.warn?.('prewarm.error', { contentRef, error: err.message });
-      return null;
+      return { status: 'failed', reason: 'exception', error: err.message };
     }
   }
 

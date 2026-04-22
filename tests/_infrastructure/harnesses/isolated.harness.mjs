@@ -7,7 +7,7 @@ import { parseArgs, findTestFiles, runJest, printSummary, COLORS } from './base.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ISOLATED_DIR = path.resolve(__dirname, '../../isolated');
 const ROOT_DIR = path.resolve(__dirname, '../../..');
-const JEST_TARGETS = ['domain', 'adapter', 'flow', 'contract', 'assembly'];
+const JEST_TARGETS = ['domain', 'adapter', 'flow', 'contract', 'assembly', 'application'];
 const VITEST_TARGETS = ['modules'];
 const TARGETS = [...JEST_TARGETS, ...VITEST_TARGETS];
 

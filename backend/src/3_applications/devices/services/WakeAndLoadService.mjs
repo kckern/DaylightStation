@@ -271,16 +271,29 @@ export class WakeAndLoadService {
         prewarmResult = await this.#prewarmService.prewarm(contentQuery.queue, {
           shuffle: contentQuery.shuffle === '1' || contentQuery.shuffle === 'true'
         });
-        if (prewarmResult) {
+        if (prewarmResult?.status === 'ok') {
           contentQuery.prewarmToken = prewarmResult.token;
           contentQuery.prewarmContentId = prewarmResult.contentId;
           result.steps.prewarm = { ok: true, contentId: prewarmResult.contentId };
           this.#logger.info?.('wake-and-load.prewarm.done', {
             deviceId, dispatchId, contentId: prewarmResult.contentId, token: prewarmResult.token
           });
+        } else if (prewarmResult?.status === 'failed') {
+          result.steps.prewarm = { ok: false, reason: prewarmResult.reason, error: prewarmResult.error };
+          this.#logger.warn?.('wake-and-load.prewarm.failed', {
+            deviceId, dispatchId, reason: prewarmResult.reason, error: prewarmResult.error
+          });
+        } else if (prewarmResult?.status === 'skipped') {
+          result.steps.prewarm = { skipped: true, reason: prewarmResult.reason || 'unknown' };
+          this.#logger.debug?.('wake-and-load.prewarm.skipped', {
+            deviceId, dispatchId, reason: prewarmResult.reason || 'unknown'
+          });
         } else {
-          result.steps.prewarm = { skipped: true, reason: 'not applicable' };
-          this.#logger.debug?.('wake-and-load.prewarm.skipped', { deviceId, dispatchId, reason: 'not applicable' });
+          // Unknown/malformed return — treat as failure rather than hiding it
+          result.steps.prewarm = { ok: false, reason: 'unknown-status', raw: prewarmResult };
+          this.#logger.warn?.('wake-and-load.prewarm.unknown-status', {
+            deviceId, dispatchId, raw: prewarmResult
+          });
         }
       } catch (err) {
         result.steps.prewarm = { ok: false, error: err.message };
