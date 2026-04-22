@@ -24,7 +24,10 @@ import { randomUUID } from 'node:crypto';
 import { buildCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
 import { resolveContentId } from '../contentIdKeys.mjs';
 
-const STEPS = ['power', 'verify', 'volume', 'prepare', 'prewarm', 'load'];
+// Note: 'playback' is an optional trailing step emitted only by the playback
+// watchdog (after load). Not in the sequential flow; frontend consumers may
+// treat it as an out-of-band event.
+const STEPS = ['power', 'verify', 'volume', 'prepare', 'prewarm', 'load', 'playback'];
 const VOLUME_TIMEOUT_MS = 3000;
 
 export class WakeAndLoadService {
@@ -517,6 +520,14 @@ export class WakeAndLoadService {
       deviceId, dispatchId, totalElapsedMs: result.totalElapsedMs
     });
 
+    // Arm the playback watchdog — non-blocking. The response returns now;
+    // the watchdog fires asynchronously if playback never starts.
+    if (result.ok && !isAdopt && contentQuery.queue) {
+      this.#armPlaybackWatchdog({
+        deviceId, dispatchId, topic, contentQuery
+      });
+    }
+
     return result;
   }
 
@@ -534,6 +545,76 @@ export class WakeAndLoadService {
       steps: STEPS,
       ...extra
     });
+  }
+
+  /**
+   * After a successful load, subscribe to playback.log events for N seconds.
+   * If none arrive for the loaded content, log + broadcast a timeout so the
+   * phone UI (or an ops dashboard) can surface the silent failure.
+   *
+   * Non-blocking: the load() response has already been returned to the caller;
+   * this runs asynchronously in the background.
+   *
+   * @private
+   */
+  #armPlaybackWatchdog({ deviceId, dispatchId, topic, contentQuery, timeoutMs = 90_000 }) {
+    if (!this.#eventBus || typeof this.#eventBus.subscribe !== 'function') return;
+
+    // Extract a content identifier for watchdog matching.
+    // Preference order: prewarmContentId (set by Task 2 when Plex prewarm
+    // resolves a named queue to an actual content id) > explicit contentId
+    // > raw queue/play/list values (which are only useful when they already
+    // look like content ids, e.g. queue=plex:1).
+    const expectedContentId =
+      contentQuery.prewarmContentId
+      || contentQuery.contentId
+      || contentQuery.queue
+      || contentQuery.play
+      || contentQuery.list;
+    if (!expectedContentId) return;
+
+    let resolved = false;
+    let timer = null;
+    let unsubscribe = null;
+
+    const cleanup = () => {
+      resolved = true;
+      if (timer) clearTimeout(timer);
+      if (unsubscribe) unsubscribe();
+    };
+
+    unsubscribe = this.#eventBus.subscribe('playback.log', (payload) => {
+      if (resolved) return;
+      const incoming = payload?.contentId;
+      if (!incoming) return;
+      // Match if the incoming contentId equals, or is a hierarchical
+      // descendant/ancestor of the expected id. Using `:` as a boundary
+      // prevents false positives with numeric Plex IDs (e.g. `plex:1` vs
+      // `plex:12`), while preserving matches like `plex:1` vs `plex:1:episode`.
+      const matches =
+        incoming === expectedContentId ||
+        incoming.startsWith(`${expectedContentId}:`) ||
+        expectedContentId.startsWith(`${incoming}:`);
+      if (matches) {
+        cleanup();
+        this.#logger.info?.('wake-and-load.playback.confirmed', {
+          deviceId, dispatchId, contentId: incoming
+        });
+      }
+    });
+
+    timer = setTimeout(() => {
+      if (resolved) return;
+      cleanup();
+      this.#logger.warn?.('wake-and-load.playback.timeout', {
+        deviceId, dispatchId, expectedContentId, timeoutMs
+      });
+      this.#emitProgress(topic, dispatchId, 'playback', 'timeout', {
+        expectedContentId, timeoutMs
+      });
+    }, timeoutMs);
+
+    if (timer.unref) timer.unref();
   }
 }
 
