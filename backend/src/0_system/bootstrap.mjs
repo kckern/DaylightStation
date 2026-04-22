@@ -727,7 +727,7 @@ export function createMediaProgressMemory(config) {
  * @returns {Object} Router configuration
  */
 export function createApiRouters(config) {
-  const { registry, mediaProgressMemory, progressSyncService, progressSyncSources, loadFile, saveFile, cacheBasePath, dataPath, mediaBasePath, proxyService, retroarchProxy, composePresentationUseCase, configService, prefixAliases = {}, savedQueryService = null, logger = console } = config;
+  const { registry, mediaProgressMemory, progressSyncService, progressSyncSources, loadFile, saveFile, cacheBasePath, dataPath, mediaBasePath, proxyService, retroarchProxy, composePresentationUseCase, configService, prefixAliases = {}, savedQueryService = null, eventBus = null, logger = console } = config;
 
   // Register prefix aliases (e.g., hymn → singalong:hymn) from config
   // This enables the content API to resolve aliased prefixes via registry.resolveFromPrefix()
@@ -787,7 +787,7 @@ export function createApiRouters(config) {
       content: createContentRouter(registry, mediaProgressMemory, { loadFile, saveFile, cacheBasePath, composePresentationUseCase, contentQueryService, configService, logger, aliasResolver }),
       proxy: createProxyRouter({ registry, proxyService, mediaBasePath, dataPath, retroarchProxy, logger }),
       localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath, mediaProgressMemory }),
-      play: createPlayRouter({ registry, mediaProgressMemory, playResponseService, contentQueryService, contentIdResolver, progressSyncService, progressSyncSources, logger }),
+      play: createPlayRouter({ registry, mediaProgressMemory, playResponseService, contentQueryService, contentIdResolver, progressSyncService, progressSyncSources, eventBus, logger }),
       list: createListRouter({ registry, loadFile, configService, contentQueryService, contentIdResolver, menuMemoryPath: configService.getHouseholdPath('history/menu_memory'), logger }),
       siblings: createSiblingsRouter({ siblingsService, contentIdResolver, logger }),
       queue: createQueueRouter({ contentIdResolver, queueService: new QueueService({ mediaProgressMemory }), logger }),

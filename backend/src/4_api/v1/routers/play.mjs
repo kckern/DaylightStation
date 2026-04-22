@@ -23,7 +23,7 @@ import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
  * @returns {express.Router}
  */
 export function createPlayRouter(config) {
-  const { registry, mediaProgressMemory, playResponseService, contentQueryService, contentIdResolver, progressSyncSources, progressSyncService, logger = console } = config;
+  const { registry, mediaProgressMemory, playResponseService, contentQueryService, contentIdResolver, progressSyncSources, progressSyncService, eventBus = null, logger = console } = config;
   const router = express.Router();
 
   // ==========================================================================
@@ -147,6 +147,24 @@ export function createPlayRouter(config) {
         playhead: normalizedSeconds,
         storagePath
       });
+
+      // Broadcast playback.log so backend watchdogs (e.g. WakeAndLoadService)
+      // can observe that the device is actively playing.
+      if (eventBus?.publish) {
+        try {
+          eventBus.publish('playback.log', {
+            contentId: compoundId,
+            type,
+            assetId,
+            percent: normalizedPercent,
+            playhead: normalizedSeconds,
+            storagePath,
+            timestamp: Date.now()
+          });
+        } catch (err) {
+          logger.warn?.('play.log.broadcast_failed', { error: err.message });
+        }
+      }
 
       res.json({
         response: {
