@@ -639,6 +639,78 @@ describe('PlexAdapter', () => {
   });
 });
 
+describe('loadMediaUrl error logging', () => {
+  test('logs structured warning when metadata is missing', async () => {
+    const warn = jest.fn();
+    const logger = { debug: jest.fn(), info: jest.fn(), warn, error: jest.fn() };
+    const mockClient = {
+      get: jest.fn(),
+      post: jest.fn(),
+      getMetadata: jest.fn().mockResolvedValue({ MediaContainer: {} }),
+    };
+    const adapter = new PlexAdapter(
+      { host: 'http://localhost:32400', token: 't' },
+      { httpClient: mockClient, logger }
+    );
+    // replace internal client so getMetadata returns empty
+    adapter.client = mockClient;
+
+    const result = await adapter.loadMediaUrl('999999');
+
+    expect(result).toBeNull();
+    expect(warn).toHaveBeenCalledWith(
+      'plex.loadMediaUrl.metadataMissing',
+      expect.objectContaining({ ratingKey: '999999' })
+    );
+  });
+
+  test('logs structured warning on non-playable type', async () => {
+    const warn = jest.fn();
+    const logger = { debug: jest.fn(), info: jest.fn(), warn, error: jest.fn() };
+    const mockClient = {
+      get: jest.fn(), post: jest.fn(),
+      getMetadata: jest.fn().mockResolvedValue({
+        MediaContainer: { Metadata: [{ ratingKey: '1', type: 'show' }] }
+      }),
+    };
+    const adapter = new PlexAdapter(
+      { host: 'http://localhost:32400', token: 't' },
+      { httpClient: mockClient, logger }
+    );
+    adapter.client = mockClient;
+
+    const result = await adapter.loadMediaUrl('1');
+
+    expect(result).toBeNull();
+    expect(warn).toHaveBeenCalledWith(
+      'plex.loadMediaUrl.nonPlayableType',
+      expect.objectContaining({ type: 'show' })
+    );
+  });
+
+  test('logs structured error when exception is thrown', async () => {
+    const errorLog = jest.fn();
+    const logger = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: errorLog };
+    const mockClient = {
+      get: jest.fn(), post: jest.fn(),
+      getMetadata: jest.fn().mockRejectedValue(new Error('boom')),
+    };
+    const adapter = new PlexAdapter(
+      { host: 'http://localhost:32400', token: 't' },
+      { httpClient: mockClient, logger }
+    );
+    adapter.client = mockClient;
+
+    const result = await adapter.loadMediaUrl('1');
+
+    expect(result).toBeNull();
+    expect(errorLog).toHaveBeenCalledWith(
+      'plex.loadMediaUrl.exception',
+      expect.objectContaining({ ratingKey: '1', error: 'boom' })
+    );
+  });
+});
+
 describe('PlexClient', () => {
   let mockHttpClient;
 
