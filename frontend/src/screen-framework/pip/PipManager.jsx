@@ -21,7 +21,7 @@ const DEFAULTS = {
 };
 
 export function PipManager({ config: screenPipConfig, children }) {
-  const { showOverlay, dismissOverlay } = useScreenOverlay();
+  const { showOverlay, dismissOverlay, hasOverlay } = useScreenOverlay();
 
   const [state, setState] = useState('idle'); // idle | visible | fullscreen
   const [content, setContent] = useState(null); // { Component, props, config, mode, target? }
@@ -82,8 +82,18 @@ export function PipManager({ config: screenPipConfig, children }) {
       setAnimating(false);
     }
 
-    const mode = callConfig.mode === 'panel' ? 'panel' : 'corner';
+    let mode = callConfig.mode === 'panel' ? 'panel' : 'corner';
     const merged = mergeConfig(callConfig);
+
+    // Fall back to corner when panel is requested but the slot is occluded by a fullscreen overlay.
+    if (mode === 'panel' && hasOverlay) {
+      logger().info('pip.panel-fallback-to-corner', {
+        target: callConfig.target,
+        reason: 'fullscreen-active',
+        timeout: merged.timeout,
+      });
+      mode = 'corner';
+    }
 
     if (mode === 'panel') {
       const target = callConfig.target;
@@ -119,7 +129,7 @@ export function PipManager({ config: screenPipConfig, children }) {
         requestAnimationFrame(() => setAnimating(false));
       });
     }
-  }, [state, mergeConfig, startTimer]);
+  }, [state, mergeConfig, startTimer, hasOverlay]);
 
   const dismiss = useCallback(() => {
     if (state === 'idle') return;
