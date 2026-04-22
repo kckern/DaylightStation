@@ -271,23 +271,67 @@ export class FullyKioskContentAdapter {
         const result = await this.#sendCommand('loadURL', { url: fullUrl });
 
         if (result.ok) {
-          this.#logger.info?.('fullykiosk.load.success', {
+          this.#logger.info?.('fullykiosk.load.acknowledged', {
             fullUrl,
             attempt,
             loadTimeMs: Date.now() - startTime
           });
-          return {
-            ok: true,
-            url: fullUrl,
+
+          // Verify the WebView actually navigated. FKB acknowledges loadURL on
+          // receipt, not on completion — poll currentUrl to confirm.
+          const verification = await this.#verifyLoadedUrl(fullUrl);
+
+          if (verification.verified) {
+            this.#logger.info?.('fullykiosk.load.success', {
+              fullUrl,
+              attempt,
+              loadTimeMs: Date.now() - startTime,
+              verified: true
+            });
+            return {
+              ok: true,
+              url: fullUrl,
+              attempt,
+              verified: true,
+              loadTimeMs: Date.now() - startTime
+            };
+          }
+
+          // If FKB reports currentUrl as undefined but the command was accepted,
+          // treat as unverified success (don't block playback on a known FKB quirk).
+          if (verification.currentUrl == null) {
+            this.#logger.warn?.('fullykiosk.load.unverified', {
+              fullUrl,
+              reason: verification.reason,
+              loadTimeMs: Date.now() - startTime
+            });
+            return {
+              ok: true,
+              url: fullUrl,
+              attempt,
+              verified: false,
+              loadTimeMs: Date.now() - startTime,
+              warning: 'FKB did not report currentUrl'
+            };
+          }
+
+          // Real mismatch — FKB was reachable but the WebView is showing a different
+          // page. Fall through to retry (the original incident was resolved by a
+          // subsequent loadURL getting through).
+          lastError = `URL mismatch: got ${verification.currentUrl}, expected ${fullUrl}`;
+          this.#logger.warn?.('fullykiosk.load.urlMismatch', {
+            fullUrl,
+            actualUrl: verification.currentUrl,
             attempt,
             loadTimeMs: Date.now() - startTime
-          };
+          });
+          // Continue retry loop via natural fall-through (no break / no return)
+        } else {
+          lastError = result.error;
+          this.#logger.warn?.('fullykiosk.load.attemptFailed', {
+            fullUrl, attempt, maxRetries: MAX_LOAD_RETRIES, error: result.error
+          });
         }
-
-        lastError = result.error;
-        this.#logger.warn?.('fullykiosk.load.attemptFailed', {
-          fullUrl, attempt, maxRetries: MAX_LOAD_RETRIES, error: result.error
-        });
       } catch (error) {
         lastError = error.message;
         this.#logger.warn?.('fullykiosk.load.attemptException', {
@@ -498,6 +542,58 @@ export class FullyKioskContentAdapter {
       const appResult = await this.#sendCommand('startApplication', { package: pkg });
       this.#logger.info?.('fullykiosk.prepareForContent.companionApp', { pkg, ok: appResult.ok });
     }
+  }
+
+  /**
+   * Poll FKB deviceInfo.currentUrl until it matches the expected URL.
+   * FKB's loadURL REST call is fire-and-forget — HTTP 200 means "received",
+   * not "rendered". This closes the verification gap.
+   *
+   * Returns:
+   *   { verified: true }                    — currentUrl matched within budget
+   *   { verified: false, reason: '...' }    — timed out or never set
+   *
+   * @private
+   * @param {string} expectedUrl - URL passed to loadURL
+   * @param {Object} [opts]
+   * @param {number} [opts.timeoutMs=10000] - Total poll budget
+   * @param {number} [opts.intervalMs=500]  - Delay between polls
+   * @returns {Promise<{verified: boolean, currentUrl?: string, reason?: string}>}
+   */
+  async #verifyLoadedUrl(expectedUrl, { timeoutMs = 10_000, intervalMs = 500 } = {}) {
+    const normalize = (url) => {
+      if (typeof url !== 'string') return null;
+      let normalized = url.trim();
+      try {
+        // Decode percent-encoding so queue=plex%3A1 and queue=plex:1 compare equal.
+        // FKB often reports currentUrl with URL params decoded.
+        normalized = decodeURIComponent(normalized);
+      } catch {
+        // Malformed encoding — use original
+      }
+      return normalized.replace(/\/$/, '').toLowerCase();
+    };
+    const target = normalize(expectedUrl);
+    const deadline = Date.now() + timeoutMs;
+    let lastSeen = null;
+
+    while (Date.now() < deadline) {
+      const info = await this.#sendCommand('getDeviceInfo');
+      if (info.ok) {
+        const current = info.data?.currentUrl;
+        lastSeen = current;
+        if (current && normalize(current) === target) {
+          return { verified: true, currentUrl: current };
+        }
+      }
+      await new Promise(r => setTimeout(r, intervalMs));
+    }
+
+    return {
+      verified: false,
+      currentUrl: lastSeen,
+      reason: lastSeen == null ? 'currentUrl never populated' : 'currentUrl did not match'
+    };
   }
 
   /**
