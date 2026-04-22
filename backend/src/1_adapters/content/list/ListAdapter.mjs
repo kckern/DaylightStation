@@ -770,8 +770,7 @@ export class ListAdapter {
 
     // First pass: find any in-progress item
     for (const item of items) {
-      const mediaKey = item.localId || item.id.split(':')[1];
-      const state = progressMap.get(mediaKey);
+      const state = progressMap.get(item.id);
       const percent = state?.percent || 0;
       if (percent > 1 && percent < 90) {
         return item;
@@ -780,8 +779,7 @@ export class ListAdapter {
 
     // Second pass: find first unwatched item
     for (const item of items) {
-      const mediaKey = item.localId || item.id.split(':')[1];
-      const state = progressMap.get(mediaKey);
+      const state = progressMap.get(item.id);
       const percent = state?.percent || 0;
       if (percent < 90) {
         return item;
