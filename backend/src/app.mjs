@@ -556,6 +556,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     prefixAliases,
     singalong: singalongConfig,
     savedQueryService,
+    eventBus,
     logger: rootLogger.child({ module: 'content' })
   });
 
