@@ -289,7 +289,7 @@ function PipPanelPortal({ slotNode, dismissing, Component, componentProps, dismi
   }, [dismissing]);
 
   return (
-    <div ref={wrapperRef} className="pip-panel" style={{ position: 'absolute', inset: 0, zIndex: 1001 }}>
+    <div ref={wrapperRef} className="pip-panel" style={{ position: 'absolute', inset: 'var(--screen-panel-padding, 1rem)', zIndex: 1001 }}>
       <div className="pip-panel-chrome">
         <Component {...componentProps} dismiss={dismiss} />
       </div>
