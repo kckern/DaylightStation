@@ -45,6 +45,7 @@ export class PlexAdapter {
     this.proxyPath = config.proxyPath || '/api/v1/proxy/plex';
     this.mediaProgressMemory = config.mediaProgressMemory || null;
     this.mediaKeyResolver = config.mediaKeyResolver || null;
+    this.logger = deps.logger || console;
   }
 
   /**
@@ -1638,13 +1639,19 @@ export class PlexAdapter {
         ratingKey = String(itemOrKey).replace(/^plex:/, '');
         const data = await this.client.getMetadata(ratingKey);
         itemData = data?.MediaContainer?.Metadata?.[0];
-        if (!itemData) return null;
+        if (!itemData) {
+          this.logger.warn?.('plex.loadMediaUrl.metadataMissing', { ratingKey });
+          return null;
+        }
       } else {
         itemData = itemOrKey;
         ratingKey = itemData?.ratingKey || itemData?.plex;
       }
 
-      if (!itemData || !ratingKey) return null;
+      if (!itemData || !ratingKey) {
+        this.logger.warn?.('plex.loadMediaUrl.metadataMissing', { ratingKey });
+        return null;
+      }
 
       const { type } = itemData;
       const mediaType = this._determineMediaType(type);
@@ -1653,7 +1660,7 @@ export class PlexAdapter {
       if (!['movie', 'episode', 'track', 'clip'].includes(type)) {
         // For shows/seasons/albums, would need to select a child item
         // This is handled by loadPlayableItemFromKey in the legacy code
-        console.warn('[PlexAdapter] loadMediaUrl called with non-playable type:', type);
+        this.logger.warn?.('plex.loadMediaUrl.nonPlayableType', { ratingKey, type });
         return null;
       }
 
@@ -1675,7 +1682,7 @@ export class PlexAdapter {
 
         const mediaKey = itemData?.Media?.[0]?.Part?.[0]?.key;
         if (!mediaKey) {
-          console.error('[PlexAdapter] Media key not found for audio item');
+          this.logger.warn?.('plex.loadMediaUrl.audioMediaKeyMissing', { ratingKey });
           return null;
         }
 
@@ -1692,7 +1699,10 @@ export class PlexAdapter {
       });
 
       if (!decisionResult.success) {
-        console.warn('[PlexAdapter] Decision failed, falling back to transcode URL');
+        this.logger.warn?.('plex.loadMediaUrl.decisionFailed', {
+          ratingKey,
+          reason: decisionResult.error || 'unknown'
+        });
         const { sessionIdentifier, clientIdentifier } = decisionResult;
         return this._buildTranscodeUrl(
           ratingKey,
@@ -1723,7 +1733,13 @@ export class PlexAdapter {
         startOffset
       );
     } catch (error) {
-      console.error('[PlexAdapter] loadMediaUrl error:', error.message);
+      this.logger.error?.('plex.loadMediaUrl.exception', {
+        ratingKey: typeof itemOrKey === 'string' || typeof itemOrKey === 'number'
+          ? String(itemOrKey).replace(/^plex:/, '')
+          : itemOrKey?.ratingKey,
+        error: error.message,
+        stack: error.stack
+      });
       return null;
     }
   }
