@@ -252,6 +252,49 @@ function buildAcceptDeps(nutriLog) {
   };
 }
 
+describe('End-to-end: Thu log → Fri accept → Sat revision', () => {
+  afterEach(() => resetClock());
+
+  it('keeps date as Thursday through the full lifecycle', async () => {
+    // User logs food Thursday afternoon
+    mockClock(new Date('2026-04-16T19:00:00Z')); // Thu 12:00 PT
+    const deps = buildTextDeps(
+      aiJson('2026-04-16'),        // Initial log AI response — Thursday
+      aiJson('2026-04-16', [       // Revision AI response (pinned to Thu, user said no date)
+        { name: 'Peas', noom_color: 'green', quantity: 1, unit: 'g', grams: 100, calories: 50, protein: 3, carbs: 9, fat: 0 },
+        { name: 'Banana', noom_color: 'yellow', quantity: 1, unit: 'g', grams: 100, calories: 90, protein: 1, carbs: 23, fat: 0 },
+      ]),
+    );
+    const textUseCase = new LogFoodFromText(deps);
+    await textUseCase.execute({
+      userId: 'u1', conversationId: 'c1', text: 'I had peas',
+      messageId: 'm1', responseContext: deps.responseContext,
+    });
+    expect(deps.getSavedLog().meal.date).toBe('2026-04-16');
+
+    // User revises on Saturday
+    mockClock(new Date('2026-04-18T19:00:00Z')); // Sat 12:00 PT
+    deps.conversationStateStore.get.mockResolvedValue({
+      activeFlow: 'revision',
+      flowState: { pendingLogUuid: deps.getSavedLog().id, originalMessageId: 'orig' },
+    });
+    await textUseCase.execute({
+      userId: 'u1', conversationId: 'c1', text: 'add a banana',
+      messageId: 'm2', responseContext: deps.responseContext,
+    });
+    expect(deps.getSavedLog().meal.date).toBe('2026-04-16'); // still Thursday
+
+    // Accept on Saturday
+    deps.conversationStateStore.get.mockResolvedValue(null);
+    const acceptDeps = buildAcceptDeps(deps.getSavedLog());
+    const acceptUseCase = new AcceptFoodLog(acceptDeps);
+    await acceptUseCase.execute({
+      userId: 'u1', conversationId: 'c1', logUuid: deps.getSavedLog().id,
+    });
+    expect(acceptDeps.savedItemDates).toEqual(['2026-04-16', '2026-04-16']); // both items bucketed to Thu
+  });
+});
+
 describe('NutriLog.updateDate', () => {
   it('updates meal.date and does not leak a top-level date field', () => {
     const log = NutriLog.create({
