@@ -139,7 +139,13 @@ export class WakeAndLoadService {
     const powerResult = await device.powerOn();
     result.steps.power = powerResult;
 
-    if (!powerResult.ok) {
+    // Three outcomes to distinguish:
+    //   1. ok:false, no verifyFailed -> script dispatch failed. Fatal.
+    //   2. ok:false, verifyFailed:true -> script dispatched, sensor didn't confirm
+    //      within adapter budget. Non-fatal: fall through to verify step, which
+    //      gets a second chance via DisplayReadinessPolicy.isReady().
+    //   3. ok:true -> proceed normally.
+    if (!powerResult.ok && !powerResult.verifyFailed) {
       this.#emitProgress(topic, dispatchId, 'power', 'failed', { error: powerResult.error });
       this.#logger.error?.('wake-and-load.power.failed', { deviceId, dispatchId, error: powerResult.error });
       result.error = powerResult.error;
@@ -148,10 +154,17 @@ export class WakeAndLoadService {
       return result;
     }
 
-    this.#emitProgress(topic, dispatchId, 'power', 'done', { verified: powerResult.verified });
-    this.#logger.info?.('wake-and-load.power.done', {
-      deviceId, dispatchId, verified: powerResult.verified, elapsedMs: powerResult.elapsedMs
-    });
+    if (!powerResult.ok && powerResult.verifyFailed) {
+      this.#emitProgress(topic, dispatchId, 'power', 'unverified', { error: powerResult.error });
+      this.#logger.warn?.('wake-and-load.power.unverified', {
+        deviceId, dispatchId, error: powerResult.error, elapsedMs: powerResult.elapsedMs
+      });
+    } else {
+      this.#emitProgress(topic, dispatchId, 'power', 'done', { verified: powerResult.verified });
+      this.#logger.info?.('wake-and-load.power.done', {
+        deviceId, dispatchId, verified: powerResult.verified, elapsedMs: powerResult.elapsedMs
+      });
+    }
 
     // --- Step 2: Verify Display ---
     // Skip redundant check if powerOn already confirmed the display is on,
