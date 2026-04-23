@@ -35,4 +35,22 @@ describe('deriveLogDate', () => {
     const log = { createdAt: '2020-01-01 00:00:00' };
     expect(deriveLogDate(log, 'America/Los_Angeles')).toBe('2020-01-01');
   });
+
+  it('slices createdAt prefix without timezone reprojection (late-evening case)', () => {
+    // createdAt stored in user-local time as "YYYY-MM-DD HH:mm:ss" — slicing must NOT
+    // Date-parse-then-reproject, which would flip the day for late-evening times when
+    // the server's system TZ differs from the user's TZ.
+    const log = { createdAt: '2026-04-16 23:30:00' };
+    expect(deriveLogDate(log, 'America/Los_Angeles')).toBe('2026-04-16');
+  });
+
+  it('slices createdAt prefix for early-morning case (day does not flip backward)', () => {
+    const log = { createdAt: '2026-04-16 02:00:00' };
+    expect(deriveLogDate(log, 'America/Los_Angeles')).toBe('2026-04-16');
+  });
+
+  it('falls through to createdAt when meal.date is malformed (not YYYY-MM-DD)', () => {
+    const log = { meal: { date: '2026/04/16' }, createdAt: '2026-04-17 10:00:00' };
+    expect(deriveLogDate(log, 'America/Los_Angeles')).toBe('2026-04-17');
+  });
 });

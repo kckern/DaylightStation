@@ -10,10 +10,13 @@
  *
  * @param {object} log - A NutriLog or its JSON representation. Must expose
  *                       `meal` (possibly missing `date`) and `createdAt`.
- * @param {string} timezone - IANA timezone used for formatting createdAt fallback.
+ * @param {string} timezone - IANA timezone. Reserved for future use; the current
+ *                       createdAt fallback slices the already-local date prefix
+ *                       and does not reproject via the runtime TZ (see note below).
  * @returns {string} Date in YYYY-MM-DD format.
  * @throws {Error} If neither meal.date nor a parseable createdAt exists.
  */
+// eslint-disable-next-line no-unused-vars
 export function deriveLogDate(log, timezone = 'America/Los_Angeles') {
   const mealDate = log?.meal?.date;
   if (typeof mealDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(mealDate)) {
@@ -22,15 +25,13 @@ export function deriveLogDate(log, timezone = 'America/Los_Angeles') {
 
   const createdAt = log?.createdAt;
   if (typeof createdAt === 'string' && createdAt.length >= 10) {
-    // Handle both "2026-04-16 12:00:00" and "2026-04-16T19:00:00Z"
-    const parsed = new Date(createdAt.replace(' ', 'T'));
-    if (!isNaN(parsed.getTime())) {
-      return parsed.toLocaleDateString('en-CA', { timeZone: timezone });
-    }
-    // Or just slice if it's already a local date string
-    const sliced = createdAt.slice(0, 10);
-    if (/^\d{4}-\d{2}-\d{2}$/.test(sliced)) {
-      return sliced;
+    // Project stores createdAt as "YYYY-MM-DD HH:mm:ss" (user-local time, no TZ marker)
+    // or occasionally as ISO "YYYY-MM-DDTHH:mm:ssZ". In both formats, the leading 10
+    // characters are the date portion. Slice it directly — never Date-parse-then-reproject,
+    // which would silently shift the day if the server's system TZ differs from the user's.
+    const prefix = createdAt.slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(prefix) && (createdAt[10] === ' ' || createdAt[10] === 'T' || createdAt.length === 10)) {
+      return prefix;
     }
   }
 
