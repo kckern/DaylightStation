@@ -251,3 +251,19 @@ function buildAcceptDeps(nutriLog) {
     logger: { info: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: jest.fn() },
   };
 }
+
+describe('NutriLog.updateDate', () => {
+  it('updates meal.date and does not leak a top-level date field', () => {
+    const log = NutriLog.create({
+      userId: 'u1', conversationId: 'c1', text: 'peas',
+      items: [{ label: 'Peas', grams: 100, color: 'green', calories: 50, unit: 'g', amount: 100 }],
+      meal: { date: '2026-04-16', time: 'afternoon' },
+      timestamp: new Date('2026-04-16T19:00:00Z'),
+    });
+    const updated = log.updateDate('2026-04-15', 'evening', new Date('2026-04-16T20:00:00Z'));
+    const json = updated.toJSON();
+    expect(json.meal.date).toBe('2026-04-15');
+    expect(json.meal.time).toBe('evening');
+    expect(json.date).toBeUndefined(); // no stray top-level date
+  });
+});
