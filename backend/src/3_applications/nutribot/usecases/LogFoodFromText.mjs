@@ -214,7 +214,7 @@ export class LogFoodFromText {
       this.#logger.debug?.('logText.aiResponse', { conversationId, response: response?.substring?.(0, 500) });
 
       // 3. Parse response into food items and date — same pin
-      const { items: foodItems, date: aiDate } = this.#parseFoodResponse(response, asOfDateForRevision);
+      const { items: foodItems, date: aiDate, time: aiTime } = this.#parseFoodResponse(response, asOfDateForRevision);
 
       this.#logger.debug?.('logText.parsed', {
         conversationId,
@@ -233,7 +233,7 @@ export class LogFoodFromText {
           pendingLogUuid,
           foodItems,
           logDate,
-          aiTime: this.#parseFoodResponse(response).time,
+          aiTime,
           statusMsgId,
           originalMessageId,
           messageId,
