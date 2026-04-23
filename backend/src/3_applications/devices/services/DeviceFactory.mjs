@@ -91,19 +91,32 @@ export class DeviceFactory {
       return null;
     }
 
-    // Transform display config for adapter
+    // Transform display config for adapter.
+    // Preserve powerOnRetries so IR-controlled displays (slow power-on) can override
+    // the default retry count. state_sensor drives verify polling.
     const displays = {};
     for (const [displayId, displayConfig] of Object.entries(config.displays)) {
       displays[displayId] = {
         on_script: displayConfig.on_script,
         off_script: displayConfig.off_script,
         volume_script: displayConfig.volume_script,
-        state_sensor: displayConfig.state_sensor
+        state_sensor: displayConfig.state_sensor,
+        ...(displayConfig.powerOnRetries != null && { powerOnRetries: displayConfig.powerOnRetries }),
       };
     }
 
+    // Device-level wait options apply to every display's verify-poll loop.
+    // Omit if absent so the adapter's defaults (8s timeout / 1.5s poll) apply.
+    const adapterConfig = { displays };
+    if (config.powerOnWaitOptions) {
+      adapterConfig.powerOnWaitOptions = config.powerOnWaitOptions;
+    }
+    if (config.waitOptions) {
+      adapterConfig.waitOptions = config.waitOptions;
+    }
+
     return new HomeAssistantDeviceAdapter(
-      { displays },
+      adapterConfig,
       { gateway: this.#haGateway, logger: this.#logger }
     );
   }
