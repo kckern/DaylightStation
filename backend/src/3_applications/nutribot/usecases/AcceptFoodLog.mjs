@@ -6,6 +6,7 @@
  */
 
 import { formatFoodList, formatDateHeader } from '#domains/nutrition/entities/formatters.mjs';
+import { deriveLogDate } from '../lib/deriveLogDate.mjs';
 
 /**
  * Accept food log use case
@@ -89,9 +90,11 @@ export class AcceptFoodLog {
 
       // 4. Add items to nutrilist
       if (this.#nutriListStore && nutriLog.items?.length > 0) {
-        const now = new Date();
-        const fallbackDate = now.toISOString().split('T')[0];
-        const logDate = nutriLog.meal?.date || nutriLog.date || fallbackDate;
+        const timezone = this.#config?.getDefaultTimezone?.() || 'America/Los_Angeles';
+        const logDate = deriveLogDate(
+          typeof nutriLog.toJSON === 'function' ? nutriLog.toJSON() : nutriLog,
+          timezone,
+        );
 
         this.#logger.debug?.('acceptLog.savingToNutrilist', { logUuid, logDate });
 
@@ -113,7 +116,16 @@ export class AcceptFoodLog {
       // 6. Update message to show accepted status
       if (messageId) {
         try {
-          const logDate = nutriLog.meal?.date || nutriLog.date;
+          const timezone = this.#config?.getDefaultTimezone?.() || 'America/Los_Angeles';
+          let logDate = null;
+          try {
+            logDate = deriveLogDate(
+              typeof nutriLog.toJSON === 'function' ? nutriLog.toJSON() : nutriLog,
+              timezone,
+            );
+          } catch (e) {
+            this.#logger.warn?.('acceptLog.dateHeader.deriveFailed', { error: e.message });
+          }
           const dateHeader = logDate ? formatDateHeader(logDate, { now: new Date() }).replace('🕒', '✅') : '';
           const foodList = formatFoodList(nutriLog.items || []);
 
@@ -144,10 +156,20 @@ export class AcceptFoodLog {
           this.#logger.debug?.('acceptLog.autoreport.pendingCheck', { userId, pendingCount: pending.length });
           if (pending.length === 0) {
             await new Promise(resolve => setTimeout(resolve, 300));
+            const timezone = this.#config?.getDefaultTimezone?.() || 'America/Los_Angeles';
+            let reportDate;
+            try {
+              reportDate = deriveLogDate(
+                typeof nutriLog.toJSON === 'function' ? nutriLog.toJSON() : nutriLog,
+                timezone,
+              );
+            } catch {
+              reportDate = undefined;
+            }
             await this.#generateDailyReport.execute({
               userId,
               conversationId,
-              date: nutriLog.meal?.date || nutriLog.date,
+              date: reportDate,
               responseContext,
             });
           }
