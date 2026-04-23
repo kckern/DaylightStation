@@ -10,14 +10,13 @@
  *
  * @param {object} log - A NutriLog or its JSON representation. Must expose
  *                       `meal` (possibly missing `date`) and `createdAt`.
- * @param {string} timezone - IANA timezone. Reserved for future use; the current
+ * @param {string} [_timezone] - IANA timezone. Reserved for future use; the current
  *                       createdAt fallback slices the already-local date prefix
  *                       and does not reproject via the runtime TZ (see note below).
  * @returns {string} Date in YYYY-MM-DD format.
  * @throws {Error} If neither meal.date nor a parseable createdAt exists.
  */
-// eslint-disable-next-line no-unused-vars
-export function deriveLogDate(log, timezone = 'America/Los_Angeles') {
+export function deriveLogDate(log, _timezone = 'America/Los_Angeles') {
   const mealDate = log?.meal?.date;
   if (typeof mealDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(mealDate)) {
     return mealDate;

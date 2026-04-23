@@ -190,6 +190,9 @@ export class LogFoodFromText {
         }
       }
 
+      // Defensive: under current control flow the short-circuit at isRevisionMode + pendingLogUuid
+      // returns before this point. Kept so that if #handleRevision (legacy fallback) is ever
+      // invoked, the AI prompt is still pinned to the original log's date.
       // If this path reaches here in revision mode (short-circuit didn't fire),
       // pin the prompt to the existing log's date to prevent date drift.
       let asOfDateForRevision = null;
