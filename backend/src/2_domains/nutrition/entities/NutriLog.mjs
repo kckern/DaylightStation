@@ -365,7 +365,6 @@ export class NutriLog {
     const json = this.toJSON();
     return new NutriLog({
       ...json,
-      date,
       meal: {
         ...json.meal,
         date,
