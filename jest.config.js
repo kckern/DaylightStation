@@ -36,7 +36,7 @@ module.exports = {
     '/tests/runtime/',           // Playwright handles these
     '/tests/integration/external/', // External API tests require credentials - run explicitly
     '/tests/_archive/',          // Archived tests
-    '\\.worktrees/',             // Worktree copies — run tests from within the worktree itself
+    '<rootDir>/\\.worktrees/',   // Only ignore the main repo's .worktrees/, not tests within a worktree
   ],
   // Coverage configuration
   collectCoverageFrom: [
