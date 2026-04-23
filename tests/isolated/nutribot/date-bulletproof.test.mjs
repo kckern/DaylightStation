@@ -5,7 +5,7 @@
  * of entry-day, accept-day, revision-day, and user text.
  */
 
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { describe, it, expect, afterEach, jest } from '@jest/globals';
 import { LogFoodFromText } from '#apps/nutribot/usecases/LogFoodFromText.mjs';
 import { AcceptFoodLog } from '#apps/nutribot/usecases/AcceptFoodLog.mjs';
 import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
@@ -177,7 +177,7 @@ describe('Date bulletproofing — revision', () => {
     mockClock(THU_NOON_PT);
     const deps = buildTextDeps(
       aiJson('2026-04-16'), // initial
-      aiJson('2026-04-17', [ // revision — AI would default to "today" if prompt says today=Fri
+      aiJson('2026-04-16', [ // revision — AI correctly defaults to pinned "today" = Thu
         { name: 'Peas', noom_color: 'green', quantity: 1, unit: 'g', grams: 100, calories: 50, protein: 3, carbs: 9, fat: 0 },
         { name: 'Banana', noom_color: 'yellow', quantity: 1, unit: 'g', grams: 100, calories: 90, protein: 1, carbs: 23, fat: 0 },
       ]),
