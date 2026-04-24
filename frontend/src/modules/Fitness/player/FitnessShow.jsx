@@ -262,11 +262,13 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
       setLoading(true);
       // Fitness API assumes plex source - no need to specify it in URL
       const response = await DaylightAPI(`/api/v1/fitness/show/${showId}/playable`);
-      // If this is a playlist, create virtual seasons for pagination
+      // If this is a playlist, create virtual seasons for pagination and
+      // sort episodes by rating DESC so the top-starred ones appear first.
       if (response.info?.type === 'playlist') {
         const pageSize = plexConfig?.playlist_episodes_per_season || 20;
         const { parents, items: taggedItems } = buildVirtualSeasons(response.items || [], pageSize, {
-          resolveShowImage: (gpId) => ContentDisplayUrl(gpId)
+          resolveShowImage: (gpId) => ContentDisplayUrl(gpId),
+          sortByRating: true
         });
         response.parents = parents;
         response.items = taggedItems;
