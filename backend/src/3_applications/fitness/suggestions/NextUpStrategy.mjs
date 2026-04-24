@@ -4,6 +4,16 @@
  *
  * Priority: most recently done show first.
  * Max: configurable via suggestions.next_up_max (default 4).
+ *
+ * Label-based filtering:
+ *   - Shows whose show-level labels match plex.deprioritized_labels
+ *     (e.g. KidsFun) are hidden from the Next Up list, UNLESS the show
+ *     also carries a plex.resumable_labels label (e.g. Resumable) — the
+ *     canonical signal that "there's actual watch-progress the user
+ *     cares about here" (mirrors ResumeStrategy).
+ *   - Label comparison is case-insensitive because session-persisted
+ *     labels are lowercase while the config uses CamelCase (mirrors
+ *     selectPrimaryMedia's buildDeprioritizedChecker).
  */
 export class NextUpStrategy {
   async suggest(context, remainingSlots) {
@@ -15,6 +25,12 @@ export class NextUpStrategy {
     const warmupPatterns = (fitnessConfig?.plex?.warmup_title_patterns || [])
       .map(p => new RegExp(p, 'i'));
     const minDuration = fitnessConfig?.suggestions?.discovery_min_duration_seconds ?? 600;
+
+    // Normalize deprioritized + resumable label sets once (lowercased)
+    const deprioritizedLowered = (fitnessConfig?.plex?.deprioritized_labels || [])
+      .map(l => String(l).toLowerCase());
+    const resumableLowered = (fitnessConfig?.plex?.resumable_labels || ['Resumable'])
+      .map(l => String(l).toLowerCase());
 
     // Extract distinct shows, most-recent-session first
     // Skip sessions where the episode was supplementary (warmup, cooldown, intro, short filler)
@@ -56,6 +72,15 @@ export class NextUpStrategy {
       if (!nextEp) continue;
 
       const showLabels = episodeData.info?.labels || [];
+
+      // Apply the deprioritized filter with the Resumable override.
+      if (deprioritizedLowered.length) {
+        const labelsLowered = showLabels.map(l => String(l).toLowerCase());
+        const isDeprioritized = deprioritizedLowered.some(l => labelsLowered.includes(l));
+        const isResumable = resumableLowered.some(l => labelsLowered.includes(l));
+        if (isDeprioritized && !isResumable) continue;
+      }
+
       const isShow = nextEp.metadata?.type === 'show';
       results.push({
         type: 'next_up',
