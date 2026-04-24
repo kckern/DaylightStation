@@ -42,6 +42,9 @@ export function buildParticipantDisplayMap(profiles, roster) {
       zoneId: profile?.currentZoneId || rosterEntry?.zoneId || null,
       zoneName: profile?.currentZoneName || null,
       zoneColor: profile?.currentZoneColor || rosterEntry?.zoneColor || null,
+      zoneIndex: Number.isFinite(profile?.zoneSnapshot?.zoneIndex)
+        ? profile.zoneSnapshot.zoneIndex
+        : null,
       progress: profile?.progress ?? null,
       targetHeartRate: profile?.targetHeartRate ?? null,
       zoneSequence: profile?.zoneSequence || [],
