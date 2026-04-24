@@ -6,11 +6,20 @@ import React from 'react';
  * HRSimTrigger
  *
  * Small gear button to open HR Simulation Panel.
- * Only renders on localhost.
+ * Renders on localhost OR in a Chrome browser (desktop dev/daily-driver).
+ * Other browsers (Safari, Firefox) on non-localhost hosts do not see it.
  */
 export function HRSimTrigger() {
+  if (typeof window === 'undefined') return null;
   const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-  if (!isLocalhost) return null;
+  // Chrome / Chromium detection — exclude Edge, Opera, Brave-derivative UAs
+  // that include "Chrome" in their UA string.
+  const ua = window.navigator?.userAgent || '';
+  const isChrome = /Chrome\//.test(ua)
+    && !/Edg\//.test(ua)      // Edge
+    && !/OPR\//.test(ua)      // Opera
+    && !/SamsungBrowser/.test(ua);
+  if (!isLocalhost && !isChrome) return null;
 
   const openPanel = () => {
     window.open('/sim-panel.html', 'sim-panel', 'width=400,height=500');
