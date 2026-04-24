@@ -271,8 +271,10 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
         </div>
       )}
 
-      {/* Music Player */}
-      {musicEnabled && (
+      {/* Music Player — always visible on the standalone chart view (mode='cam')
+          since there's no video to mix with; gated by user's musicEnabled
+          preference in full-player mode. */}
+      {(musicEnabled || mode === 'cam') && (
         <div className="fitness-sidebar-music">
           <FitnessMusicPlayer
             ref={musicPlayerRef}
