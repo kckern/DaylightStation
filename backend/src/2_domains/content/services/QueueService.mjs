@@ -42,6 +42,16 @@ const WAIT_LOOKAHEAD_DAYS = 2;
 const WATCHED_THRESHOLD = 90;
 
 /**
+ * Items shorter than this duration use a lower watched threshold.
+ * Why: short readalongs / SFX / interstitials commonly stop a few
+ * seconds before the natural end (next program slot fires, user moves
+ * on). The standard 90% gate leaves them stuck in "in progress" forever
+ * at e.g. 71%, causing the same item to be re-served every cycle.
+ */
+const SHORT_DURATION_THRESHOLD_S = 60;
+const SHORT_WATCHED_THRESHOLD = 70;
+
+/**
  * QueueService handles play vs queue logic with watch state awareness.
  *
  * Key distinction:
@@ -172,11 +182,29 @@ export class QueueService {
    * @returns {Array} Filtered items (new array, original unchanged)
    */
   static filterByWatched(items) {
-    return items.filter(item => {
-      if (item.watched) return false;
-      if ((item.percent || 0) >= WATCHED_THRESHOLD) return false;
-      return true;
-    });
+    return items.filter(item => !this.isWatched(item));
+  }
+
+  /**
+   * Decide whether an item is "watched" (consumed enough that we shouldn't
+   * re-serve it as in-progress or unwatched).
+   *
+   * Rule:
+   *   - explicit `watched` flag wins
+   *   - items shorter than SHORT_DURATION_THRESHOLD_S use SHORT_WATCHED_THRESHOLD
+   *   - everything else uses WATCHED_THRESHOLD
+   *
+   * @param {Object} item - Item with optional `watched`, `duration` (seconds), `percent`
+   * @returns {boolean}
+   */
+  static isWatched(item) {
+    if (item?.watched) return true;
+    const percent = item?.percent || 0;
+    const duration = item?.duration;
+    const threshold = (duration && duration < SHORT_DURATION_THRESHOLD_S)
+      ? SHORT_WATCHED_THRESHOLD
+      : WATCHED_THRESHOLD;
+    return percent >= threshold;
   }
 
   /**

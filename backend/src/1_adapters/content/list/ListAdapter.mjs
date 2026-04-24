@@ -13,6 +13,7 @@ import {
 } from '#system/utils/FileIO.mjs';
 import { normalizeListItem, extractContentId, normalizeListConfig } from './listConfigNormalizer.mjs';
 import { getCurrentDate } from '#system/utils/time.mjs';
+import { QueueService } from '#domains/content/services/QueueService.mjs';
 
 // Threshold for considering an item "watched" (90%)
 const WATCHED_THRESHOLD = 90;
@@ -768,11 +769,13 @@ export class ListAdapter {
       progressMap.set(p.contentId, p);
     }
 
-    // First pass: find any in-progress item
+    // First pass: find any in-progress item.
+    // Uses QueueService.isWatched (duration-aware) so a 28s poem stuck at
+    // 71% isn't treated as in-progress forever — see SHORT_WATCHED_THRESHOLD.
     for (const item of items) {
       const state = progressMap.get(item.id);
       const percent = state?.percent || 0;
-      if (percent > 1 && percent < 90) {
+      if (percent > 1 && !QueueService.isWatched({ duration: item.duration, percent })) {
         return item;
       }
     }
@@ -781,7 +784,7 @@ export class ListAdapter {
     for (const item of items) {
       const state = progressMap.get(item.id);
       const percent = state?.percent || 0;
-      if (percent < 90) {
+      if (!QueueService.isWatched({ duration: item.duration, percent })) {
         return item;
       }
     }
