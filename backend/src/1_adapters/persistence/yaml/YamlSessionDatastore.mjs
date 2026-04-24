@@ -120,6 +120,58 @@ export class YamlSessionDatastore extends ISessionDatastore {
   }
 
   /**
+   * Append a retroactive voice memo to a historical session's YAML.
+   *
+   * Writes to BOTH `summary.voiceMemos` (the read path's primary source)
+   * and `timeline.events` (the fallback source) so the memo survives
+   * regardless of which surface a later reader consults. This is a narrow
+   * read-modify-write on the raw YAML — it intentionally skips the Session-
+   * entity normalization path that `save()` uses, to avoid reshaping other
+   * fields while adding a single memo.
+   *
+   * @param {string} sessionId
+   * @param {string} householdId
+   * @param {{ transcriptClean?: string, transcriptRaw?: string, durationSeconds?: number, createdAt?: string, memoId?: string }} memo
+   * @returns {Promise<Object|null>} The appended memo, or null if session not found.
+   */
+  async appendVoiceMemo(sessionId, householdId, memo) {
+    const paths = this.getStoragePaths(sessionId, householdId);
+    if (!paths) return null;
+    const data = loadYamlSafe(paths.sessionFilePath);
+    if (!data) return null;
+
+    const transcript = memo?.transcriptClean || memo?.transcriptRaw || '';
+    if (!transcript) return null;
+
+    const canonicalMemo = {
+      transcript,
+      durationSeconds: Number.isFinite(memo?.durationSeconds) ? memo.durationSeconds : 0,
+      createdAt: memo?.createdAt || new Date().toISOString(),
+      ...(memo?.memoId ? { memoId: String(memo.memoId) } : {}),
+    };
+
+    if (!data.summary || typeof data.summary !== 'object') data.summary = {};
+    if (!Array.isArray(data.summary.voiceMemos)) data.summary.voiceMemos = [];
+    data.summary.voiceMemos.push(canonicalMemo);
+
+    if (!data.timeline || typeof data.timeline !== 'object') data.timeline = {};
+    if (!Array.isArray(data.timeline.events)) data.timeline.events = [];
+    data.timeline.events.push({
+      type: 'voice_memo',
+      timestamp: Date.now(),
+      data: {
+        transcript: canonicalMemo.transcript,
+        durationSeconds: canonicalMemo.durationSeconds,
+        retroactive: true,
+        ...(canonicalMemo.memoId ? { memoId: canonicalMemo.memoId } : {}),
+      },
+    });
+
+    saveYaml(paths.sessionFilePath, data);
+    return canonicalMemo;
+  }
+
+  /**
    * Find session by ID
    * @param {string} sessionId
    * @param {string} householdId

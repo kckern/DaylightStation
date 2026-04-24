@@ -682,6 +682,39 @@ export function createFitnessRouter(config) {
         }
       });
 
+      // Retroactive persistence: when the memo targets a session that has
+      // already ended, write it into the session YAML so it shows up in the
+      // session-list API. For active sessions we SKIP this — the frontend's
+      // voiceMemoManager persists on the next tick save and a backend write
+      // here would race / double up.
+      if (sessionId && memo?.transcriptClean && memo.transcriptClean !== '[No Memo]' && sessionService?.appendVoiceMemo) {
+        try {
+          const existing = await sessionService.getSession(sessionId, householdId, { decodeTimeline: false });
+          const endMs = existing?.endTime
+            || (existing?.session?.end ? Date.parse(existing.session.end) : null);
+          const isEnded = Boolean(endMs) && endMs < Date.now();
+          if (isEnded) {
+            const appended = await sessionService.appendVoiceMemo(sessionId, householdId, {
+              transcriptClean: memo.transcriptClean,
+              transcriptRaw: memo.transcriptRaw,
+              durationSeconds: memo.durationSeconds,
+              createdAt: memo.createdAt,
+              memoId: memo.memoId,
+            });
+            logger.info?.('fitness.voice_memo.retroactive_persisted', {
+              sessionId,
+              householdId,
+              success: Boolean(appended),
+            });
+          }
+        } catch (persistErr) {
+          logger.warn?.('fitness.voice_memo.retroactive_persist_failed', {
+            sessionId,
+            error: persistErr?.message,
+          });
+        }
+      }
+
       // Fire-and-forget: backfill Strava description with the new voice memo
       if (sessionId && memo?.transcriptClean && memo.transcriptClean !== '[No Memo]' && enrichmentService) {
         enrichmentService.reEnrichDescription(sessionId, memo).catch(err => {
