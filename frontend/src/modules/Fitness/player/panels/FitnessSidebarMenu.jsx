@@ -7,7 +7,7 @@ import '../FitnessSidebar.scss';
 // Auto-close behavior for quick-action settings: flash the selected control
 // briefly so the user sees their tap was registered, then dismiss the menu.
 const ACK_FLASH_MS = 300;
-const ACK_CLOSE_MS = 400;
+const MENU_IDLE_CLOSE_MS = 5000;
 
 // Note: slugifyId has been removed - we now use explicit IDs from config
 
@@ -91,7 +91,8 @@ const FitnessSidebarMenu = ({
     [videoVolume?.volume]
   );
 
-  // Tracks which control is mid-ack-flash. After ACK_CLOSE_MS we call onClose.
+  // Tracks which control is mid-ack-flash. The menu auto-closes after
+  // MENU_IDLE_CLOSE_MS of no pointer/key/change activity inside its root.
   const [flashingId, setFlashingId] = React.useState(null);
   const ackTimerRef = React.useRef(null);
   const closeTimerRef = React.useRef(null);
@@ -100,19 +101,30 @@ const FitnessSidebarMenu = ({
     if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
   }, []);
 
+  const scheduleIdleClose = React.useCallback(() => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = null;
+      onClose?.();
+    }, MENU_IDLE_CLOSE_MS);
+  }, [onClose]);
+
   const ackSelection = React.useCallback((id) => {
     setFlashingId(id);
     if (ackTimerRef.current) clearTimeout(ackTimerRef.current);
-    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
     ackTimerRef.current = setTimeout(() => {
       setFlashingId(null);
       ackTimerRef.current = null;
     }, ACK_FLASH_MS);
-    closeTimerRef.current = setTimeout(() => {
-      closeTimerRef.current = null;
-      onClose?.();
-    }, ACK_CLOSE_MS);
-  }, [onClose]);
+    scheduleIdleClose();
+  }, [scheduleIdleClose]);
+
+  const rootInteractionHandlers = React.useMemo(() => ({
+    onPointerDown: scheduleIdleClose,
+    onTouchStart: scheduleIdleClose,
+    onKeyDown: scheduleIdleClose,
+    onChange: scheduleIdleClose,
+  }), [scheduleIdleClose]);
 
   const handleVideoLevelSelect = React.useCallback((level) => {
     const next = linearVolumeFromLevel(level);
@@ -518,7 +530,10 @@ const FitnessSidebarMenu = ({
   const isGuestMode = mode === 'guest';
 
   return (
-    <div className={`fitness-sidebar-menu ${isGuestMode ? 'guest-mode' : ''}`}>
+    <div
+      className={`fitness-sidebar-menu ${isGuestMode ? 'guest-mode' : ''}`}
+      {...rootInteractionHandlers}
+    >
       <div className="sidebar-menu-header">
         <h3>{isGuestMode ? 'Assign Guest' : 'Settings'}</h3>
         <button className="close-btn" onClick={onClose}>✕</button>
