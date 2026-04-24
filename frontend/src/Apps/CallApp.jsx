@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { DaylightAPI } from '../lib/api.mjs';
+import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import { useMediaDevices } from '../modules/Input/hooks/useMediaDevices';
 import { useWebcamStream } from '../modules/Input/hooks/useWebcamStream';
 import { useWebRTCPeer } from '../modules/Input/hooks/useWebRTCPeer';
@@ -74,6 +75,7 @@ function WakeStepper({ progress }) {
 }
 
 export default function CallApp() {
+  useDocumentTitle('Call');
   const logger = useMemo(() => getLogger().child({ component: 'CallApp' }), []);
   const {
     videoDevices,

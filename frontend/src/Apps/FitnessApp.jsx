@@ -3,6 +3,7 @@ import { MantineProvider, Paper, Title, Group, Text, Alert, Grid } from '@mantin
 import '@mantine/core/styles.css';
 import "./FitnessApp.scss";
 import { DaylightAPI, DaylightMediaPath } from '../lib/api.mjs';
+import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import FitnessMenu from '../modules/Fitness/nav/FitnessMenu.jsx';
 import FitnessNavbar from '../modules/Fitness/nav/FitnessNavbar.jsx';
 import FitnessShow from '../modules/Fitness/player/FitnessShow.jsx';
@@ -28,6 +29,7 @@ import '../modules/Fitness/index.js';
 registerBuiltinWidgets();
 
 const FitnessApp = () => {
+  useDocumentTitle('Fitness');
   // NOTE: This app targets a large touchscreen TV device. To reduce perceived latency
   // all interactive controls inside the Fitness modules use onPointerDown instead of onClick.
   // onClick fires after pointerup + potential capture delays; pointerDown gives immediate
