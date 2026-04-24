@@ -14,6 +14,11 @@ export class FitnessSuggestionService {
   #contentQueryService;
   #logger;
 
+  // Cache for exclude_collections → showIds resolution. Collections change
+  // rarely (user curates them manually), so a TTL of a few minutes is fine.
+  #excludedCache = null; // { key: string, at: number, ids: Set<string> }
+  static #EXCLUDED_TTL_MS = 5 * 60 * 1000;
+
   constructor({
     strategies,
     sessionService,
@@ -32,6 +37,51 @@ export class FitnessSuggestionService {
     this.#contentAdapter = contentAdapter;
     this.#contentQueryService = contentQueryService;
     this.#logger = logger;
+  }
+
+  /**
+   * Resolve `suggestions.exclude_collections` to a Set of show-id strings.
+   * Each entry is a Plex collection ID or playlist ID. Children can be shows
+   * (containers) or episodes — either way we pull the show (grandparent) id.
+   *
+   * Cached with a short TTL so repeated suggestion calls don't hammer Plex.
+   *
+   * @param {Array<string|number>} excludeCollections
+   * @returns {Promise<Set<string>>} show IDs (no `plex:` prefix)
+   * @private
+   */
+  async #getExcludedShowIds(excludeCollections) {
+    const key = JSON.stringify(excludeCollections || []);
+    const now = Date.now();
+    if (this.#excludedCache && this.#excludedCache.key === key
+        && now - this.#excludedCache.at < FitnessSuggestionService.#EXCLUDED_TTL_MS) {
+      return this.#excludedCache.ids;
+    }
+    const ids = new Set();
+    if (Array.isArray(excludeCollections) && excludeCollections.length
+        && this.#contentAdapter?.getList) {
+      for (const cid of excludeCollections) {
+        try {
+          const items = await this.#contentAdapter.getList(String(cid));
+          for (const item of items || []) {
+            // Episodes carry grandparentRatingKey/grandparentId on metadata.
+            // Shows (containers) have the show id in their own localId/id.
+            const raw = item?.metadata?.grandparentRatingKey
+              ?? item?.metadata?.grandparentId
+              ?? item?.localId
+              ?? (typeof item?.id === 'string' ? item.id : null);
+            if (raw == null) continue;
+            const sid = String(raw).replace(/^plex:/, '');
+            if (sid) ids.add(sid);
+          }
+        } catch (err) {
+          this.#logger.warn?.('suggestions.exclude-collection-resolve-failed',
+            { collectionId: cid, error: err?.message });
+        }
+      }
+    }
+    this.#excludedCache = { key, at: now, ids };
+    return ids;
   }
 
   async getSuggestions({ gridSize, householdId } = {}) {
@@ -53,6 +103,13 @@ export class FitnessSuggestionService {
       this.#logger.warn?.('suggestions.sessions-fetch-failed', { error: err?.message });
     }
 
+    // Resolve shows excluded via exclude_collections (Plex collection/playlist
+    // membership). Applies to NextUp + Discovery; Resume / Favorite / Memorable
+    // honor their own explicit signals so they still surface these.
+    const excludedShowIds = await this.#getExcludedShowIds(
+      fitnessConfig?.suggestions?.exclude_collections
+    );
+
     // Build shared context
     const context = {
       recentSessions,
@@ -62,6 +119,7 @@ export class FitnessSuggestionService {
       contentAdapter: this.#contentAdapter,
       contentQueryService: this.#contentQueryService,
       sessionDatastore: this.#sessionDatastore,
+      excludedShowIds,
     };
 
     // Run strategies in order, dedup by showId

@@ -6,7 +6,7 @@
 export class DiscoveryStrategy {
   async suggest(context, remainingSlots) {
     if (remainingSlots <= 0) return [];
-    const { fitnessConfig, fitnessPlayableService, sessionDatastore, householdId } = context;
+    const { fitnessConfig, fitnessPlayableService, sessionDatastore, householdId, excludedShowIds } = context;
     const cfg = fitnessConfig?.suggestions || {};
     const lapsedDays = cfg.discovery_lapsed_days ?? 30;
     const lapsedWeight = cfg.discovery_lapsed_weight ?? 0.7;
@@ -46,8 +46,14 @@ export class DiscoveryStrategy {
     lapsedThreshold.setDate(lapsedThreshold.getDate() - lapsedDays);
     const lapsedThresholdStr = lapsedThreshold.toISOString().split('T')[0];
 
-    // Exclude specific show IDs from discovery
-    const excludeShowIds = new Set((cfg.discovery_exclude_shows || []).map(String));
+    // Exclude specific show IDs from discovery. Unions:
+    //   - suggestions.discovery_exclude_shows (legacy, per-show list)
+    //   - excludedShowIds from FitnessSuggestionService, resolved from
+    //     suggestions.exclude_collections (Plex collection/playlist membership)
+    const excludeShowIds = new Set([
+      ...((cfg.discovery_exclude_shows || []).map(String)),
+      ...((excludedShowIds instanceof Set ? [...excludedShowIds] : []).map(String)),
+    ]);
 
     // Classify shows
     const lapsed = [];
