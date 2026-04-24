@@ -115,4 +115,53 @@ describe('ScreenDataProvider', () => {
 
     vi.useRealTimers();
   });
+
+  it('exposes useScreenDataRefetch() which re-fetches a single key', async () => {
+    let callCount = 0;
+    mockFetch.mockImplementation(() => {
+      callCount += 1;
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ temp: 70 + callCount }),
+      });
+    });
+
+    const sources = { weather: { source: '/api/v1/home/weather', refresh: 0 } };
+    const { useScreenDataRefetch } = await import('./ScreenDataProvider.jsx');
+
+    const { result } = renderHook(
+      () => ({ data: useScreenData('weather'), refetch: useScreenDataRefetch() }),
+      { wrapper: wrapper(sources) }
+    );
+
+    await waitFor(() => { expect(result.current.data).toEqual({ temp: 71 }); });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    await act(async () => { await result.current.refetch('weather'); });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    await waitFor(() => { expect(result.current.data).toEqual({ temp: 72 }); });
+  });
+
+  it('refetch is a no-op for an unknown key', async () => {
+    mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ temp: 72 }) });
+    const sources = { weather: { source: '/api/v1/home/weather', refresh: 0 } };
+    const { useScreenDataRefetch } = await import('./ScreenDataProvider.jsx');
+    const { result } = renderHook(() => useScreenDataRefetch(), { wrapper: wrapper(sources) });
+    await waitFor(() => { expect(mockFetch).toHaveBeenCalledTimes(1); });
+    await act(async () => { await result.current('unknown-key'); });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('refetch identity is stable across store updates', async () => {
+    mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ temp: 72 }) });
+    const sources = { weather: { source: '/api/v1/home/weather', refresh: 0 } };
+    const { useScreenDataRefetch } = await import('./ScreenDataProvider.jsx');
+    const { result } = renderHook(
+      () => ({ data: useScreenData('weather'), refetch: useScreenDataRefetch() }),
+      { wrapper: wrapper(sources) }
+    );
+    const firstRefetch = result.current.refetch;
+    await waitFor(() => { expect(result.current.data).toEqual({ temp: 72 }); });
+    expect(result.current.refetch).toBe(firstRefetch);
+  });
 });
