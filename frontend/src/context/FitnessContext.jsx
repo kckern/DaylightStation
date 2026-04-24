@@ -1273,11 +1273,18 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, []);
 
   // ═══════════════════════════════════════════════════════════════
-  // HR Simulation Controller (localhost only)
+  // HR Simulation Controller (localhost or Chrome browser)
+  // Gate mirrors HRSimTrigger.jsx so the sim panel popup that opens
+  // /sim-panel.html can actually find window.__fitnessSimController.
   // ═══════════════════════════════════════════════════════════════
   useEffect(() => {
     const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-    if (!isLocalhost) return;
+    const ua = window.navigator?.userAgent || '';
+    const isChrome = /Chrome\//.test(ua)
+      && !/Edg\//.test(ua)
+      && !/OPR\//.test(ua)
+      && !/SamsungBrowser/.test(ua);
+    if (!isLocalhost && !isChrome) return;
 
     let controller = null;
 
