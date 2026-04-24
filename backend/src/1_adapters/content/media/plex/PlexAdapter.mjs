@@ -605,6 +605,11 @@ export class PlexAdapter {
       grandparentTitle: item.grandparentTitle,
       librarySectionID: item.librarySectionID || null,
       librarySectionTitle: item.librarySectionTitle || null,
+      // Rating fields (prefer user's personal rating, fall back to global/audience).
+      // Surfaced to the API via toListItem → item.rating / item.userRating, used
+      // e.g. by playlist virtual-season sort in FitnessShow.
+      rating: item.userRating ?? item.rating ?? item.audienceRating ?? null,
+      userRating: item.userRating ?? null,
       // Episode-specific properties for FitnessShow compatibility
       plex: item.ratingKey,
       key: item.ratingKey,
