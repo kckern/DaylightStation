@@ -31,6 +31,10 @@ import {
   shouldPreferGroupLabels
 } from '../hooks/fitness/DisplayNameResolver.js';
 
+// Developer-only flag for the Fitness app. Gates debug-only UI and logging.
+// Must remain `false` on main; flip locally when needed.
+export const FITNESS_DEBUG = false;
+
 // Create context
 const FitnessContext = createContext(null);
 
@@ -119,8 +123,6 @@ export const useFitness = useFitnessContext;
 
 // Provider component
 export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQueue: propPlayQueue, setFitnessPlayQueue: propSetPlayQueue, kioskMode = false }) => {
-  const FITNESS_DEBUG = false;
-  
   // UI State
   const [selectedPlaylistId, setSelectedPlaylistId] = useState(null);
   const [musicAutoEnabledState, setMusicAutoEnabledState] = useState(false);
