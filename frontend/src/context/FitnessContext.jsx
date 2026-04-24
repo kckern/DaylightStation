@@ -1494,6 +1494,15 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return buildParticipantDisplayMap(profiles, roster);
   }, [session, version]);
 
+  // Persisted session participants metadata — used by the FitnessChart legend
+  // to hydrate names/avatars for offline (historical) participants whose live
+  // ZoneProfileStore profile is gone.
+  const sessionParticipantsMeta = React.useMemo(() => {
+    const meta = session?.snapshot?.usersMeta;
+    if (!(meta instanceof Map)) return new Map();
+    return meta;
+  }, [session, version]);
+
   // ==========================================================================
   // Phase 3 SSOT: Participant Domain Entities
   // ==========================================================================
@@ -2256,6 +2265,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     usersConfigRaw: usersConfig,
     participantRoster,
     participantDisplayMap,
+    sessionParticipantsMeta,
     // Phase 1 SSOT: Canonical participant list - USE THIS instead of filtering devices
     activeHeartRateParticipants,
     participantsByDevice: participantLookupByDevice,
