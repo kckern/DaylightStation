@@ -46,7 +46,12 @@ export class ResumeStrategy {
         if (results.length >= remainingSlots) break;
 
         const percent = ep.watchProgress ?? 0;
-        if (percent <= 0 || ep.isWatched) continue;
+        // For Resumable shows we replay intentionally, so we can't trust
+        // ep.isWatched (which stays true forever once Plex viewCount or a
+        // local completedAt stamp is set). Use the current playhead percent
+        // instead: surface if it's in the "middle" of a replay, skip if the
+        // user has already almost finished this session's play.
+        if (percent <= 0 || percent >= 95) continue;
 
         const remainingSec = ep.duration - (ep.watchSeconds || 0);
         const remainingMin = Math.floor(remainingSec / 60);

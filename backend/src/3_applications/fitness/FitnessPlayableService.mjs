@@ -138,10 +138,12 @@ export class FitnessPlayableService {
     const percent = item.percent ?? 0;
     const duration = item.duration ?? 0;
 
-    // Plex viewCount >= 1 means the item was fully watched at least once.
+    // Ever-completed gate: either Plex scrobbled it (viewCount >= 1) or we
+    // stamped completedAt locally when the watched threshold was first crossed.
     // This prevents the sequential-show lock gate from resetting when a user
-    // replays an earlier episode (which resets playhead/percent in Plex).
-    const everCompleted = (item.metadata?.viewCount ?? 0) >= 1;
+    // replays an earlier episode (which resets playhead/percent).
+    const everCompleted = (item.metadata?.viewCount ?? 0) >= 1
+      || !!item.completedAt;
 
     return {
       ...item,

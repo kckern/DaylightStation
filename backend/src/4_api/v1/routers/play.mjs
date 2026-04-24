@@ -113,6 +113,13 @@ export function createPlayRouter(config) {
         ? Math.round((normalizedSeconds / estimatedDuration) * 100)
         : 0;
 
+      // Stamp completedAt the first time watched-threshold (>=90%) is crossed.
+      // Once stamped, it is never cleared, so a later rewatch from the start
+      // cannot revert the item to "in progress."
+      const COMPLETION_THRESHOLD_PERCENT = 90;
+      const completedAt = existingState?.completedAt
+        || (statePercent >= COMPLETION_THRESHOLD_PERCENT ? nowTs24() : null);
+
       // Create updated media progress via domain entity
       const newState = new MediaProgress({
         contentId: compoundId,
@@ -121,7 +128,8 @@ export function createPlayRouter(config) {
         percent: statePercent,
         playCount: (existingState?.playCount ?? 0) + (!existingState || normalizedSeconds < (existingState.playhead || 0) ? 1 : 0),
         lastPlayed: nowTs24(),
-        watchTime: newWatchTime > 0 ? Number(newWatchTime.toFixed(3)) : 0
+        watchTime: newWatchTime > 0 ? Number(newWatchTime.toFixed(3)) : 0,
+        completedAt
       });
 
       // Persist state
