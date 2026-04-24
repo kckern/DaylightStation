@@ -1,11 +1,15 @@
 /**
  * Select the primary media item from a session's media array.
  *
- * Filters out audio and warmup videos, then picks longest duration.
- * Falls back to longest video overall if all are filtered out.
+ * Filters out audio, then warmup videos AND deprioritized videos (e.g. kids
+ * content). Picks longest of the survivors by durationMs. Falls back to
+ * longest video overall if every video is filtered out.
  *
  * @param {Array} mediaItems - Media summary objects from buildSessionSummary
- * @param {Object} [warmupConfig] - { warmup_labels, warmup_description_tags, warmup_title_patterns }
+ * @param {Object} [config] - {
+ *   warmup_labels, warmup_description_tags, warmup_title_patterns,
+ *   deprioritized_labels
+ * }
  * @returns {Object|null} The selected primary media item
  */
 
@@ -15,37 +19,52 @@ const BUILTIN_TITLE_PATTERNS = [
   /stretch/i,
 ];
 
-export function selectPrimaryMedia(mediaItems, warmupConfig) {
+/**
+ * Build the selection config object that selectPrimaryMedia accepts,
+ * from a fitness `plex` config block.
+ *
+ * Single source of truth for the shape — every call site that needs a
+ * selection config should go through this helper.
+ */
+export function buildSelectionConfig(plex) {
+  const p = plex || {};
+  return {
+    warmup_labels: p.warmup_labels || [],
+    warmup_description_tags: p.warmup_description_tags || [],
+    warmup_title_patterns: p.warmup_title_patterns || [],
+    deprioritized_labels: p.deprioritized_labels || [],
+  };
+}
+
+export function selectPrimaryMedia(mediaItems, config) {
   if (!Array.isArray(mediaItems) || mediaItems.length === 0) return null;
 
   // Step 1: Filter out audio
   const videos = mediaItems.filter(m => m.mediaType !== 'audio');
   if (videos.length === 0) return null;
 
-  // Step 2: Build warmup matchers
+  // Step 2: Build skip-predicate combining warmup + deprioritized rules
   const titlePatterns = [...BUILTIN_TITLE_PATTERNS];
-  if (warmupConfig?.warmup_title_patterns?.length) {
-    for (const p of warmupConfig.warmup_title_patterns) {
+  if (config?.warmup_title_patterns?.length) {
+    for (const p of config.warmup_title_patterns) {
       try { titlePatterns.push(new RegExp(p, 'i')); } catch { /* skip invalid regex */ }
     }
   }
-  const descTags = warmupConfig?.warmup_description_tags || [];
-  const warmupLabels = warmupConfig?.warmup_labels || [];
+  const descTags = config?.warmup_description_tags || [];
+  const warmupLabels = config?.warmup_labels || [];
+  const deprioritizedLabels = config?.deprioritized_labels || [];
 
   function isWarmup(item) {
-    // Check labels
     if (warmupLabels.length && Array.isArray(item.labels)) {
       for (const label of warmupLabels) {
         if (item.labels.includes(label)) return true;
       }
     }
-    // Check description tags
     if (descTags.length && item.description) {
       for (const tag of descTags) {
         if (item.description.includes(tag)) return true;
       }
     }
-    // Check title patterns
     if (item.title) {
       for (const re of titlePatterns) {
         if (re.test(item.title)) return true;
@@ -54,10 +73,23 @@ export function selectPrimaryMedia(mediaItems, warmupConfig) {
     return false;
   }
 
-  // Step 3: Filter warmups, pick longest
-  const candidates = videos.filter(v => !isWarmup(v));
+  // Pre-lowercase config labels once for case-insensitive matching (session
+  // events persist labels lowercased; config uses CamelCase).
+  const deprioritizedLowered = deprioritizedLabels.map(l => String(l).toLowerCase());
 
-  const pool = candidates.length > 0 ? candidates : videos; // fallback
+  function isDeprioritized(item) {
+    if (!deprioritizedLowered.length || !Array.isArray(item.labels)) return false;
+    const itemLowered = item.labels.map(l => String(l).toLowerCase());
+    for (const label of deprioritizedLowered) {
+      if (itemLowered.includes(label)) return true;
+    }
+    return false;
+  }
+
+  // Step 3: Drop warmup + deprioritized, pick longest. Fall back to all videos.
+  const candidates = videos.filter(v => !isWarmup(v) && !isDeprioritized(v));
+  const pool = candidates.length > 0 ? candidates : videos;
+
   return pool.reduce((best, item) =>
     (item.durationMs || 0) > (best.durationMs || 0) ? item : best
   );

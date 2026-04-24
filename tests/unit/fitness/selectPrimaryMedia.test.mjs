@@ -14,6 +14,7 @@ const defaultConfig = {
   warmup_labels: ['Warmup', 'Cooldown'],
   warmup_description_tags: ['[Warmup]', '[Cooldown]', '[Stretch]'],
   warmup_title_patterns: ['warm[\\s-]?up', 'cool[\\s-]?down', 'stretch', 'recovery'],
+  deprioritized_labels: ['KidsFun'],
 };
 
 // ─── Tests ───
@@ -152,5 +153,42 @@ describe('selectPrimaryMedia', () => {
     ];
     const result = selectPrimaryMedia(items, defaultConfig);
     expect(result.title).toBe('Shoulders 2');
+  });
+
+  test('filters out deprioritized by labels — workout wins over longer kids video', () => {
+    // Session-persisted labels are lowercase (kidsfun); config is CamelCase (KidsFun).
+    // The matcher must compare case-insensitively.
+    const items = [
+      vid('Mario Kart World', 763000, { labels: ['kidsfun', 'resumable', 'sequential'] }),
+      vid('Lower Body Workout', 675000, { labels: ['nomusic'] }),
+    ];
+    expect(selectPrimaryMedia(items, defaultConfig).title).toBe('Lower Body Workout');
+  });
+
+  test('falls back to longest deprioritized when only deprioritized + audio', () => {
+    const items = [
+      vid('Mario Kart World', 763000, { labels: ['kidsfun'] }),
+      vid('Danny Go Dance', 500000, { labels: ['kidsfun'] }),
+      audio('Workout Mix', 999999),
+    ];
+    expect(selectPrimaryMedia(items, defaultConfig).title).toBe('Mario Kart World');
+  });
+
+  test('combined skip — warmup + deprioritized + workout, workout wins', () => {
+    const items = [
+      vid('Ten minute warm-up', 600000),
+      vid('Mario Kart World', 763000, { labels: ['kidsfun'] }),
+      vid('Real Workout', 500000),
+    ];
+    expect(selectPrimaryMedia(items, defaultConfig).title).toBe('Real Workout');
+  });
+
+  test('deprioritized matching is case-insensitive (CamelCase config vs lowercase labels)', () => {
+    const items = [
+      vid('Mario Kart World', 763000, { labels: ['kidsfun'] }),
+      vid('Real Workout', 500000),
+    ];
+    // defaultConfig has deprioritized_labels: ['KidsFun'] — must still match 'kidsfun'.
+    expect(selectPrimaryMedia(items, defaultConfig).title).toBe('Real Workout');
   });
 });

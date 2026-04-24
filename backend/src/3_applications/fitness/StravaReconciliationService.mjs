@@ -14,6 +14,7 @@ import path from 'path';
 import moment from 'moment-timezone';
 import { loadYamlSafe, listYamlFiles, dirExists, saveYaml } from '#system/utils/FileIO.mjs';
 import { buildStravaDescription } from '../../1_adapters/fitness/buildStravaDescription.mjs';
+import { buildSelectionConfig } from '../../1_adapters/fitness/selectPrimaryMedia.mjs';
 
 const RECONCILE_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
 const INTER_SESSION_DELAY_MS = 200;
@@ -47,11 +48,7 @@ export class StravaReconciliationService {
     const plex = fitnessConfig?.plex || {};
     const lookbackDays = plex.reconciliation_lookback_days ?? DEFAULT_LOOKBACK_DAYS;
     const tz = this.#configService?.getTimezone?.() || 'America/Los_Angeles';
-    const warmupConfig = {
-      warmup_labels: plex.warmup_labels || [],
-      warmup_description_tags: plex.warmup_description_tags || [],
-      warmup_title_patterns: plex.warmup_title_patterns || [],
-    };
+    const selectionConfig = buildSelectionConfig(plex);
 
     const dates = this.#buildDateRange(lookbackDays, tz);
     this.#logger.info?.('strava.reconciliation.start', { lookbackDays, dates: dates.length });
@@ -86,7 +83,7 @@ export class StravaReconciliationService {
           if (!activity) continue;
 
           // Pass 1: Session → Strava (re-enrichment)
-          const didEnrich = await this.#pass1SessionToStrava(session, activity, warmupConfig);
+          const didEnrich = await this.#pass1SessionToStrava(session, activity, selectionConfig);
           if (didEnrich) enriched++;
 
           // Pass 2: Strava → Session (pull notes)
@@ -128,12 +125,12 @@ export class StravaReconciliationService {
    * Pass 1: Re-enrich Strava activities that were missed or have stale descriptions.
    * @returns {boolean} Whether an update was pushed to Strava
    */
-  async #pass1SessionToStrava(session, activity, warmupConfig) {
+  async #pass1SessionToStrava(session, activity, selectionConfig) {
     const hasEmDash = activity.name?.includes('\u2014');
     const descEmpty = !activity.description?.trim();
 
     // Build what we would enrich with
-    const enrichment = buildStravaDescription(session, {}, warmupConfig);
+    const enrichment = buildStravaDescription(session, {}, selectionConfig);
     if (!enrichment) return false;
 
     const updatePayload = {};
@@ -158,7 +155,7 @@ export class StravaReconciliationService {
       } else {
         // Both set — check if description is stale
         // Re-run buildStravaDescription with empty currentActivity to get fresh output
-        const freshEnrichment = buildStravaDescription(session, {}, warmupConfig);
+        const freshEnrichment = buildStravaDescription(session, {}, selectionConfig);
         if (freshEnrichment?.description && freshEnrichment.description !== activity.description) {
           updatePayload.description = freshEnrichment.description;
         }

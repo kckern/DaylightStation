@@ -23,6 +23,7 @@ import path from 'path';
 import moment from 'moment-timezone';
 import { loadYamlSafe, listYamlFiles, dirExists, saveYaml } from '#system/utils/FileIO.mjs';
 import { buildStravaDescription } from '../../1_adapters/fitness/buildStravaDescription.mjs';
+import { buildSelectionConfig } from '../../1_adapters/fitness/selectPrimaryMedia.mjs';
 import { userService } from '#system/config/index.mjs';
 import { buildStravaSessionTimeline } from '../../2_domains/fitness/services/StravaSessionBuilder.mjs';
 import { encodeSingleSeries } from '../../2_domains/fitness/services/TimelineService.mjs';
@@ -211,17 +212,11 @@ export class FitnessActivityEnrichmentService {
         });
       }
 
-      // Read warmup config for primary media selection
-      const fitnessConfig = this.#configService.getAppConfig('fitness');
-      const plex = fitnessConfig?.plex || {};
-      const warmupConfig = {
-        warmup_labels: plex.warmup_labels || [],
-        warmup_description_tags: plex.warmup_description_tags || [],
-        warmup_title_patterns: plex.warmup_title_patterns || [],
-      };
+      // Build selection config for primary media selection
+      const selectionConfig = buildSelectionConfig(this.#configService.getAppConfig('fitness')?.plex);
 
       // Build enrichment payload
-      const enrichment = buildStravaDescription(session, currentActivity, warmupConfig);
+      const enrichment = buildStravaDescription(session, currentActivity, selectionConfig);
       if (!enrichment) {
         this.#logger.info?.('strava.enrichment.nothing_to_enrich', { activityId });
         this.#jobStore.update(activityId, {
@@ -664,17 +659,11 @@ export class FitnessActivityEnrichmentService {
       },
     };
 
-    // Read warmup config
-    const fitnessConfig = this.#configService.getAppConfig('fitness');
-    const plex = fitnessConfig?.plex || {};
-    const warmupConfig = {
-      warmup_labels: plex.warmup_labels || [],
-      warmup_description_tags: plex.warmup_description_tags || [],
-      warmup_title_patterns: plex.warmup_title_patterns || [],
-    };
+    // Build selection config for primary media selection
+    const selectionConfig = buildSelectionConfig(this.#configService.getAppConfig('fitness')?.plex);
 
     // Build fresh description with the new memo included
-    const enrichment = buildStravaDescription(augmentedSession, {}, warmupConfig);
+    const enrichment = buildStravaDescription(augmentedSession, {}, selectionConfig);
     if (!enrichment?.description) {
       this.#logger.debug?.('strava.voice_memo_backfill.no_description', { sessionId, activityId });
       return;
