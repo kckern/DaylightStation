@@ -17,7 +17,7 @@
  */
 export class NextUpStrategy {
   async suggest(context, remainingSlots) {
-    const { recentSessions, fitnessConfig, fitnessPlayableService } = context;
+    const { recentSessions, fitnessConfig, fitnessPlayableService, excludedShowIds } = context;
     const max = remainingSlots;
     if (max <= 0) return [];
 
@@ -32,6 +32,11 @@ export class NextUpStrategy {
     const resumableLowered = (fitnessConfig?.plex?.resumable_labels || ['Resumable'])
       .map(l => String(l).toLowerCase());
 
+    // Shows excluded via suggestions.exclude_collections (collection/playlist
+    // membership — e.g. the "Stretch" playlist+collection should never surface
+    // as Next Up even if a recent session used one of those episodes).
+    const excluded = excludedShowIds instanceof Set ? excludedShowIds : new Set();
+
     // Extract distinct shows, most-recent-session first
     // Skip sessions where the episode was supplementary (warmup, cooldown, intro, short filler)
     const sortedSessions = [...recentSessions].sort((a, b) => (b.startTime ?? 0) - (a.startTime ?? 0));
@@ -39,6 +44,10 @@ export class NextUpStrategy {
     for (const session of sortedSessions) {
       const gid = session.media?.primary?.grandparentId;
       if (!gid || showMap.has(gid)) continue;
+
+      // Skip shows that are members of excluded collections/playlists
+      const bareGid = String(gid).replace(/^plex:/, '');
+      if (excluded.has(bareGid)) continue;
 
       // Check if the played episode was supplementary
       const epTitle = (session.media.primary.title || '').toLowerCase();

@@ -38,7 +38,7 @@ function makeEpisode(id, index, { isWatched = false, percent = 0, playhead = 0, 
   };
 }
 
-function makeContext(sessions, playablesByShow = {}, config = {}, labelsByShow = {}) {
+function makeContext(sessions, playablesByShow = {}, config = {}, labelsByShow = {}, excludedShowIds = null) {
   return {
     recentSessions: sessions,
     fitnessConfig: {
@@ -55,6 +55,7 @@ function makeContext(sessions, playablesByShow = {}, config = {}, labelsByShow =
         return { items, parents: null, info: { labels } };
       }
     },
+    excludedShowIds: excludedShowIds instanceof Set ? excludedShowIds : new Set(excludedShowIds || []),
   };
 }
 
@@ -245,5 +246,45 @@ describe('NextUpStrategy', () => {
     const ctx = makeContext(sessions, playables, {}, labels);
     const result = await strategy.suggest(ctx, 4);
     expect(result).toEqual([]);
+  });
+
+  test('excludedShowIds filters out shows in excluded collections/playlists', async () => {
+    // Shows 100 and 200 both have recent sessions, but 100 is in an excluded
+    // collection (e.g. the "Stretch" playlist). Only 200 should surface.
+    const sessions = [
+      makeSession('100', 'LIIFT4 Stretch', '1001', 'Ep 1', '2026-04-06'),
+      makeSession('200', 'Shoulders & Arms', '2001', 'Ep 1', '2026-04-05'),
+    ];
+    const playables = {
+      '100': [makeEpisode(1001, 1, { isWatched: true }), makeEpisode(1002, 2)],
+      '200': [makeEpisode(2001, 1, { isWatched: true }), makeEpisode(2002, 2)],
+    };
+    const excluded = new Set(['100']);
+    const ctx = makeContext(sessions, playables, {}, {}, excluded);
+    const result = await strategy.suggest(ctx, 4);
+    expect(result).toHaveLength(1);
+    expect(result[0].showTitle).toBe('Shoulders & Arms');
+  });
+
+  test('excludedShowIds matches both bare and plex:-prefixed grandparent ids', async () => {
+    // grandparentId in session YAML is `plex:100`; exclude set stores bare ids.
+    const sessions = [makeSession('100', 'Stretch Show', '1001', 'Ep 1', '2026-04-06')];
+    const playables = {
+      '100': [makeEpisode(1001, 1, { isWatched: true }), makeEpisode(1002, 2)],
+    };
+    const excluded = new Set(['100']);
+    const ctx = makeContext(sessions, playables, {}, {}, excluded);
+    const result = await strategy.suggest(ctx, 4);
+    expect(result).toEqual([]);
+  });
+
+  test('empty excludedShowIds is a no-op', async () => {
+    const sessions = [makeSession('100', 'Shoulders', '1001', 'Ep 1', '2026-04-06')];
+    const playables = {
+      '100': [makeEpisode(1001, 1, { isWatched: true }), makeEpisode(1002, 2)],
+    };
+    const ctx = makeContext(sessions, playables, {}, {}, new Set());
+    const result = await strategy.suggest(ctx, 4);
+    expect(result).toHaveLength(1);
   });
 });
