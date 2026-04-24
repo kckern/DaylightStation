@@ -14,6 +14,7 @@ import { resolveMediaIdentity, resolveContentId, normalizeDuration } from '@/mod
 import { resolvePause, PAUSE_REASON } from '@/modules/Player/utils/pauseArbiter.js';
 import FitnessChart from '@/modules/Fitness/widgets/FitnessChart/index.jsx';
 import FitnessChartBackButton from './FitnessChartBackButton.jsx';
+import { resolvePostEpisodeRedirect } from './postEpisodeRedirect.js';
 import { useMediaAmplifier } from '@/modules/Fitness/components/useMediaAmplifier.js';
 import { FitnessPlayerFrame } from './frames';
 import HRSimTrigger from '@/modules/Fitness/nav/HRSimTrigger.jsx';
@@ -120,7 +121,7 @@ const DEFAULT_SIDEBAR = 250;
 
 const FITNESS_MAX_VIDEO_BITRATE = null;
 
-const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false }) => {
+const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false, onSessionEndRedirect = null }) => {
   useRenderProfiler('FitnessPlayer');
   const logger = useMemo(() => getLogger().child({ component: 'FitnessPlayer' }), []);
   const mainPlayerRef = useRef(null);
@@ -902,6 +903,18 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false 
   const executeClose = useCallback(() => {
     statusUpdateRef.current.endSent = true;
     postEpisodeStatus({ naturalEnd: false, reason: 'close' });
+
+    const redirect = resolvePostEpisodeRedirect({
+      hasActiveSession: Boolean(fitnessSessionInstance?.sessionId)
+    });
+    if (redirect && typeof onSessionEndRedirect === 'function') {
+      try {
+        onSessionEndRedirect(redirect);
+      } catch (err) {
+        console.error('[FitnessPlayer] onSessionEndRedirect failed', err);
+      }
+    }
+
     if (setQueue) {
       setQueue([]);
     }
@@ -911,7 +924,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false 
     }
     setCurrentItem(null);
     pendingCloseRef.current = false;
-  }, [postEpisodeStatus, setQueue, currentItem?.grandparentId]);
+  }, [postEpisodeStatus, setQueue, currentItem?.grandparentId, fitnessSessionInstance?.sessionId, onSessionEndRedirect]);
 
   const handleClose = () => {
     // Note: media_end is logged by the useEffect cleanup when currentMediaIdentity changes to null
