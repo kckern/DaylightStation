@@ -110,39 +110,81 @@ export class ParticipantRoster {
       return [];
     }
 
-    const roster = [];
     const heartRateDevices = this._deviceManager.getAllDevices().filter(d => d.type === 'heart_rate');
 
-    // Build zone lookup (TreasureBox baseline + ZoneProfileStore committed zones)
+    // Zone lookup (TreasureBox baseline + ZoneProfileStore committed zones)
     const zoneLookup = this._buildZoneLookup();
 
-    // Determine if we should prefer group labels (2+ PRESENT participants)
-    // Count devices that would produce a card:
-    // 1. type === 'heart_rate'
-    // 2. Not marked as inactive (no inactiveSince)
-    // NOTE: We intentionally do NOT require heartRate > 0 here.
-    // The trigger for preferring group labels must match the trigger for
-    // card visibility. If a card appears, names should switch immediately.
-    const presentHeartRateDevices = heartRateDevices.filter(d => !d.inactiveSince);
-    const preferGroupLabels = presentHeartRateDevices.length > 1;
+    // Group devices by their user UUID. Devices with no mapped user and no
+    // ledger assignment are emitted under a synthetic per-device key so they
+    // still render as anonymous-rider cards.
+    const devicesByUserId = new Map(); // userId → Device[]
+    const anonymousDevices = [];       // no user, no ledger
 
-    // DEBUG: Log device count and preferGroupLabels decision
+    for (const device of heartRateDevices) {
+      const deviceId = String(device.id || device.deviceId);
+      const mappedUser = this._userManager.resolveUserForDevice(deviceId);
+      const ledgerEntry = this._userManager?.assignmentLedger?.get?.(deviceId) || null;
+      const ledgerName = ledgerEntry?.occupantName || ledgerEntry?.metadata?.name || null;
+
+      if (mappedUser?.id) {
+        const bucket = devicesByUserId.get(mappedUser.id);
+        if (bucket) bucket.push(device);
+        else devicesByUserId.set(mappedUser.id, [device]);
+      } else if (ledgerName) {
+        // Guest/ledger assignment — keyed by device ID (ledger is always 1:1).
+        devicesByUserId.set(`ledger:${deviceId}`, [device]);
+      } else {
+        // Truly anonymous — no user, no ledger. Preserve current drop-anon
+        // behavior (_buildRosterEntry returns null when no participantName).
+        anonymousDevices.push(device);
+      }
+    }
+
+    // preferGroupLabels must reflect USER presence, not DEVICE count.
+    // Count unique users with at least one active (broadcasting) device.
+    let presentUserCount = 0;
+    for (const devices of devicesByUserId.values()) {
+      if (devices.some(d => !d.inactiveSince)) presentUserCount += 1;
+    }
+    const preferGroupLabels = presentUserCount > 1;
+
     getLogger().debug('participant.roster.build', {
       heartRateDeviceCount: heartRateDevices.length,
-      presentHeartRateDeviceCount: presentHeartRateDevices.length,
+      userCount: devicesByUserId.size,
+      presentUserCount,
+      anonymousDeviceCount: anonymousDevices.length,
       preferGroupLabels,
-      deviceIds: heartRateDevices.map(d => String(d.id || d.deviceId)),
-      presentDeviceIds: presentHeartRateDevices.map(d => String(d.id || d.deviceId))
     });
 
-    heartRateDevices.forEach((device) => {
+    const roster = [];
+
+    // Emit one entry per user UUID (or per ledger device).
+    for (const [, devices] of devicesByUserId) {
+      // Primary device: first active, else first owned. Drives legacy
+      // entry.hrDeviceId and entry.isActive / entry.inactiveSince.
+      const active = devices.filter(d => !d.inactiveSince);
+      const primary = active.length > 0 ? active[0] : devices[0];
+      const entry = this._buildRosterEntry(primary, zoneLookup, {
+        preferGroupLabels,
+        ownedDevices: devices,
+      });
+      if (entry) {
+        roster.push(entry);
+        if (entry.id) this._historicalParticipants.add(entry.id);
+      }
+    }
+
+    // Emit truly-anonymous device entries unchanged (will be dropped inside
+    // _buildRosterEntry because no participantName resolves — preserves the
+    // previous contract explicitly).
+    for (const device of anonymousDevices) {
       const entry = this._buildRosterEntry(device, zoneLookup, { preferGroupLabels });
       if (entry) {
         roster.push(entry);
-        // Track historical participant by ID
         if (entry.id) this._historicalParticipants.add(entry.id);
       }
-    });
+    }
 
     return roster;
   }
@@ -350,9 +392,13 @@ export class ParticipantRoster {
   _buildRosterEntry(device, zoneLookup, options = {}) {
     if (!device || device.id == null) return null;
 
-    const { preferGroupLabels = false } = options;
+    const { preferGroupLabels = false, ownedDevices = null } = options;
     const deviceId = String(device.id);
-    const heartRate = Number.isFinite(device.heartRate) ? Math.round(device.heartRate) : null;
+    // HR aggregation: when the user owns multiple devices, UserManager's
+    // updateFromDevice has already applied min-HR arbitration and written
+    // the result to user.currentData.heartRate. Prefer that value; fall back
+    // to the primary device's raw reading for the single-device path.
+    let rawHeartRate = Number.isFinite(device.heartRate) ? Math.round(device.heartRate) : null;
 
     // Resolve participant name from guest assignment or user mapping
     const guestEntry = this._userManager?.assignmentLedger?.get?.(deviceId) || null;
@@ -386,7 +432,12 @@ export class ParticipantRoster {
     const registryStartTime = entityId ? this._session?.entityRegistry?.get?.(entityId)?.startTime : null;
     let entityStartTime = registryStartTime || guestEntry?.updatedAt || null;
 
-    const resolvedHeartRate = heartRate;
+    // Prefer the user's aggregated HR (min-HR arbitration across owned
+    // devices). Fall back to the primary device's raw reading.
+    const aggregatedHR = Number.isFinite(mappedUser?.currentData?.heartRate)
+      ? Math.round(mappedUser.currentData.heartRate)
+      : null;
+    const resolvedHeartRate = aggregatedHR != null ? aggregatedHR : rawHeartRate;
 
     const isGuest = guestEntry
       ? (guestEntry.occupantType === 'guest')
@@ -424,9 +475,25 @@ export class ParticipantRoster {
       ? this._activityMonitor.getStatus(userId)
       : ParticipantStatus.ACTIVE;
 
-    // SINGLE SOURCE OF TRUTH: isActive comes directly from DeviceManager's inactiveSince
-    // This is the authoritative field that ALL consumers should use for avatar visibility
-    const isActive = !device.inactiveSince;
+    // SINGLE SOURCE OF TRUTH: isActive is true when ANY owned device is
+    // broadcasting. The `primary` device passed in by getRoster is already
+    // chosen to be an active one when possible, so !device.inactiveSince
+    // captures that — but for safety, also scan ownedDevices explicitly
+    // when the group-by-user path supplies them.
+    const isActive = Array.isArray(ownedDevices) && ownedDevices.length > 0
+      ? ownedDevices.some(d => !d.inactiveSince)
+      : !device.inactiveSince;
+    // inactiveSince: pick the most-recent inactiveSince when ALL devices are
+    // inactive, else null (i.e. isActive=true means no inactiveSince).
+    let resolvedInactiveSince = device.inactiveSince || null;
+    if (Array.isArray(ownedDevices) && ownedDevices.length > 0 && !isActive) {
+      resolvedInactiveSince = ownedDevices
+        .map(d => d.inactiveSince)
+        .filter(ts => ts != null)
+        .reduce((max, ts) => (ts > max ? ts : max), 0) || null;
+    } else if (Array.isArray(ownedDevices) && ownedDevices.length > 0 && isActive) {
+      resolvedInactiveSince = null;
+    }
     
     // (Consolidated above)
 
@@ -441,8 +508,16 @@ export class ParticipantRoster {
       entityStartTime, // Phase 5: When this entity started (for session duration display)
       baseUserName,
       isGuest,
-      hrDeviceId: deviceId,
-      hrDeviceIds: mappedUser?.hrDeviceIds ? [...mappedUser.hrDeviceIds] : [String(deviceId)], // Snapshot of user's devices at entry creation — may be stale mid-session
+      hrDeviceId: deviceId, // Primary device (first active, else first owned) — legacy singular key
+      // Full device list. Prefer the authoritative source (user's hrDeviceIds
+      // Set from UserManager). Fall back to the ownedDevices array the caller
+      // passed in (covers the rare case of a user hydrated without the Set).
+      // Final fallback: just the primary device ID.
+      hrDeviceIds: mappedUser?.hrDeviceIds && mappedUser.hrDeviceIds.size > 0
+        ? [...mappedUser.hrDeviceIds].map(String)
+        : (Array.isArray(ownedDevices) && ownedDevices.length > 0
+            ? ownedDevices.map(d => String(d.id || d.deviceId))
+            : [String(deviceId)]),
       heartRate: resolvedHeartRate,
       zoneId: zoneInfo?.zoneId || null,
       zoneColor: zoneInfo?.color || null,
@@ -451,7 +526,7 @@ export class ParticipantRoster {
       avatarUrl: isGuest ? null : mappedUser?.avatarUrl || null,
       status,
       isActive, // SINGLE SOURCE OF TRUTH for avatar visibility
-      inactiveSince: device.inactiveSince || null, // Pass through for debugging
+      inactiveSince: resolvedInactiveSince, // Null when any owned device is active; else latest inactiveSince across all owned devices
       hrInactive: mappedUser?.currentData?.hrInactive ?? true
     };
 
