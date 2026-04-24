@@ -1638,6 +1638,7 @@ export function createDeviceApiRouter(config) {
     sessionControlService,
     dispatchIdempotencyService,
     configService,
+    loadFile,
     logger = console
   } = config;
 
@@ -1647,6 +1648,7 @@ export function createDeviceApiRouter(config) {
     sessionControlService,
     dispatchIdempotencyService,
     configService,
+    loadFile,
     logger
   });
 }

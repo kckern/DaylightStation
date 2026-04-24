@@ -110,8 +110,50 @@ export function createDeviceRouter(config) {
       logger: config?.logger || undefined,
     }),
     configService,
+    loadFile,
     logger = console,
   } = config;
+
+  /**
+   * Pre-flight guard for `GET /:deviceId/load`.
+   *
+   * A device may declare `input: { keyboard_id, required: true }` to insist the
+   * corresponding keymap is non-empty before we dispatch content. If that
+   * guard is set and the keymap has zero entries, we refuse the load — the
+   * user would otherwise be served a video they have no way to stop (the
+   * frontend NumpadAdapter silently drops keystrokes when the keymap is
+   * empty). The check is cheap (one YAML read already cached by loadFile).
+   *
+   * Returns `{ ok: true }` when the load may proceed, or
+   * `{ ok: false, error, keyboardId }` when it must not.
+   */
+  function checkInputPrecondition(deviceId) {
+    if (!configService?.getDeviceConfig) return { ok: true };
+    const deviceConfig = configService.getDeviceConfig(deviceId);
+    const inputCfg = deviceConfig?.input;
+    if (!inputCfg?.required || !inputCfg?.keyboard_id) return { ok: true };
+
+    if (typeof loadFile !== 'function') {
+      return {
+        ok: false,
+        error: 'input precondition cannot be verified (loadFile not wired)',
+        keyboardId: inputCfg.keyboard_id,
+      };
+    }
+
+    const keyboardData = loadFile('config/keyboard') || [];
+    const normalize = (s) => s?.replace(/\s+/g, '').toLowerCase();
+    const target = normalize(inputCfg.keyboard_id);
+    const entries = keyboardData.filter(k => normalize(k.folder) === target && k.key && k.function);
+    if (entries.length === 0) {
+      return {
+        ok: false,
+        error: `input device '${inputCfg.keyboard_id}' has no keymap entries`,
+        keyboardId: inputCfg.keyboard_id,
+      };
+    }
+    return { ok: true, keymapSize: entries.length };
+  }
 
   // ===========================================================================
   // Device Config
@@ -640,6 +682,20 @@ export function createDeviceRouter(config) {
       return res.status(500).json(buildErrorBody({
         error: 'WakeAndLoadService not configured',
       }));
+    }
+
+    const inputCheck = checkInputPrecondition(deviceId);
+    if (!inputCheck.ok) {
+      logger.error?.('device.router.load.input-precondition-failed', {
+        deviceId, keyboardId: inputCheck.keyboardId, error: inputCheck.error,
+      });
+      return res.status(503).json({
+        ok: false,
+        deviceId,
+        failedStep: 'input',
+        error: inputCheck.error,
+        keyboardId: inputCheck.keyboardId,
+      });
     }
 
     const result = await wakeAndLoadService.execute(deviceId, query);

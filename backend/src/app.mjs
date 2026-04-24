@@ -1685,6 +1685,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     wakeAndLoadService,
     dispatchIdempotencyService,
     configService,
+    loadFile,
     logger: rootLogger.child({ module: 'device-api' })
   });
 
