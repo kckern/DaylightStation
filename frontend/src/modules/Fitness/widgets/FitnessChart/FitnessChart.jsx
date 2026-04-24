@@ -17,6 +17,7 @@ import { compareLegendEntries } from './layout/utils/sort.js';
 import { createChartDataSource } from './sessionDataAdapter.js';
 import { resolveHistoricalParticipant } from './resolveHistoricalParticipant.js';
 export { resolveHistoricalParticipant } from './resolveHistoricalParticipant.js';
+import { computeHistorySnapshotAction } from './historyMode.js';
 
 const DEFAULT_CHART_WIDTH = 420;
 const DEFAULT_CHART_HEIGHT = 390;
@@ -919,17 +920,26 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 	const [persisted, setPersisted] = useState(null);
 	const [useLogScale, setUseLogScale] = useState(true);
 	const [focusedUserId, setFocusedUserId] = useState(null);
+	// Issue C — History Mode. When the live session ends (sessionId -> null) we
+	// FREEZE the persisted snapshot on screen indefinitely instead of clearing it.
+	const [historyMode, setHistoryMode] = useState(false);
 
-	// MEMORY LEAK FIX: Clear persisted chart data when session ends
-	// This prevents stale chart snapshots from lingering in memory
+	// Issue C — History Mode. On a true session swap we clear; on `string -> null`
+	// (endSession/empty_roster) we flip into history mode and keep the snapshot.
 	const lastPersistedSessionRef = useRef(sessionId);
 	useEffect(() => {
-		if (lastPersistedSessionRef.current !== sessionId) {
-			lastPersistedSessionRef.current = sessionId;
+		const prev = lastPersistedSessionRef.current;
+		if (prev === sessionId) return;
+		const { action } = computeHistorySnapshotAction(prev, sessionId, isHistorical);
+		lastPersistedSessionRef.current = sessionId;
+		if (action === 'clear') {
 			setPersisted(null);
 			setFocusedUserId(null);
+			setHistoryMode(false);
+		} else if (action === 'enter-history') {
+			setHistoryMode(true);
 		}
-	}, [sessionId]);
+	}, [sessionId, isHistorical]);
 
 	const minDataValue = useMemo(() => {
 		const vals = allEntries.flatMap((e) => e.beats || []).filter((v) => Number.isFinite(v));
@@ -1229,9 +1239,21 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
     }[mode] || 'chart-layout-sidebar';
 
 	return (
-		<div className={`fitness-chart ${layoutClass}`} ref={containerRef}>
-			{!hasData && !persisted && !isHistorical && <div className="race-chart-panel__empty">Timeline warming up…</div>}
-			{!hasData && !persisted && isHistorical && <div className="race-chart-panel__empty">No timeline data for this session</div>}
+		<div
+			className={`fitness-chart ${layoutClass}${historyMode ? ' fitness-chart--history-mode' : ''}`}
+			ref={containerRef}
+		>
+			{historyMode && (
+				<div className="race-chart__history-overlay" role="status" aria-live="polite">
+					Session Ended
+				</div>
+			)}
+			{!hasData && !persisted && !isHistorical && !historyMode && (
+				<div className="race-chart-panel__empty">Timeline warming up…</div>
+			)}
+			{!hasData && !persisted && isHistorical && (
+				<div className="race-chart-panel__empty">No timeline data for this session</div>
+			)}
 			{(hasData || persisted) && allEntries.length > 1 && (
 				<button
 					className={`race-chart__scale-toggle${useLogScale ? ' race-chart__scale-toggle--log' : ''}`}
