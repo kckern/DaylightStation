@@ -17,7 +17,6 @@ import FitnessChartBackButton from './FitnessChartBackButton.jsx';
 import { resolvePostEpisodeRedirect } from './postEpisodeRedirect.js';
 import { useMediaAmplifier } from '@/modules/Fitness/components/useMediaAmplifier.js';
 import { FitnessPlayerFrame } from './frames';
-import HRSimTrigger from '@/modules/Fitness/nav/HRSimTrigger.jsx';
 import { useVolumeSync } from '@/modules/Fitness/hooks/useVolumeSync.js';
 import { useRenderProfiler } from '@/hooks/fitness/useRenderProfiler.js';
 import { getLogger } from '@/lib/logging/Logger.js';
@@ -1673,7 +1672,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       >
         {mainContent}
       </FitnessPlayerFrame>
-      <HRSimTrigger />
+      {/* HRSimTrigger moved to FitnessApp top level so it's visible across
+          the whole fitness app, not just when a video is playing. */}
     </>
   );
 };

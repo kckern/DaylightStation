@@ -8,6 +8,7 @@ import FitnessMenu from '../modules/Fitness/nav/FitnessMenu.jsx';
 import FitnessNavbar from '../modules/Fitness/nav/FitnessNavbar.jsx';
 import FitnessShow from '../modules/Fitness/player/FitnessShow.jsx';
 import FitnessPlayer from '../modules/Fitness/player/FitnessPlayer.jsx';
+import HRSimTrigger from '../modules/Fitness/nav/HRSimTrigger.jsx';
 import FitnessModuleContainer from '../modules/Fitness/player/FitnessModuleContainer.jsx';
 import { VolumeProvider } from '../modules/Fitness/nav/VolumeProvider.jsx';
 import { FitnessProvider } from '../context/FitnessContext.jsx';
@@ -1078,6 +1079,10 @@ const FitnessApp = () => {
           kioskMode={kioskUI}
         >
           <GlobalOverlays />
+          {/* HR simulation panel trigger — available across the entire fitness
+              app (history, suggestions, chart, menu, player). Self-gated to
+              localhost or Chrome UA; hidden everywhere else. */}
+          <HRSimTrigger />
           <div className={`fitness-app-container ${kioskUI ? 'kiosk-ui' : ''}`}>
             <div className="fitness-app-viewport" style={{ position: 'relative', height: '100%' }} ref={viewportRef}>
               {loading && (
