@@ -10,6 +10,7 @@ import { ValidationError } from '../../core/errors/index.mjs';
  * @property {number} [playCount=0] - Number of times started
  * @property {string} [lastPlayed] - ISO timestamp of last play
  * @property {number} [watchTime=0] - Total seconds spent watching
+ * @property {string|null} [completedAt] - Timestamp of first completion (never cleared once set)
  * @property {Object} [bookmark] - Position recovery bookmark (auto-expires after 7 days)
  * @property {number} [now] - Current time in ms (for bookmark expiry check; avoids impure Date.now())
  */
@@ -30,6 +31,7 @@ export class MediaProgress {
     this.playCount = props.playCount ?? 0;
     this.lastPlayed = props.lastPlayed ?? null;
     this.watchTime = props.watchTime ?? 0;
+    this.completedAt = props.completedAt ?? null;
     this._storedPercent = props.percent ?? null;
 
     // Bookmark for position recovery (optional, expires after 7 days)
