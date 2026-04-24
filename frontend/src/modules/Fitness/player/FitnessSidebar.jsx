@@ -9,6 +9,8 @@ import FitnessVideo from './panels/FitnessVideo.jsx';
 import FitnessVoiceMemo from './panels/FitnessVoiceMemo.jsx';
 import FitnessMusicPlayer from './panels/FitnessMusicPlayer.jsx';
 import FitnessGovernance from './panels/FitnessGovernance.jsx';
+import { DaylightAPI } from '@/lib/api.mjs';
+import { buildEndSessionRequest } from './endSessionRequest.js';
 import './FitnessSidebar.scss';
 import './panels/FitnessGovernance.scss';
 
@@ -29,6 +31,7 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
   const {
     treasureBox,
     fitnessSession,
+    fitnessSessionInstance,
     selectedPlaylistId,
     governanceState,
     usersConfigRaw,
@@ -44,6 +47,31 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
     musicPlayerRef
   } = fitnessContext;
   const menuOpen = menuState.open;
+
+  const [endingSession, setEndingSession] = useState(false);
+  const [endSessionError, setEndSessionError] = useState(null);
+  const activeSessionId = fitnessSessionInstance?.sessionId || null;
+
+  const handleEndSession = React.useCallback(async (event) => {
+    event?.stopPropagation?.();
+    event?.preventDefault?.();
+    const req = buildEndSessionRequest(activeSessionId);
+    if (!req) return;
+    if (endingSession) return;
+    const confirmed = typeof window !== 'undefined'
+      ? window.confirm('End this fitness session? Subsequent heart-rate readings will start a new session.')
+      : true;
+    if (!confirmed) return;
+    setEndingSession(true);
+    setEndSessionError(null);
+    try {
+      await DaylightAPI(req.path, req.body, req.method);
+    } catch (err) {
+      setEndSessionError(err?.message || 'Failed to end session');
+    } finally {
+      setEndingSession(false);
+    }
+  }, [activeSessionId, endingSession]);
   const guestCandidates = React.useMemo(() => {
     const tag = (list, category) => (Array.isArray(list) ? list.map(item => ({ ...item, category })) : []);
     const family = tag(usersConfigRaw?.family, 'Family');
@@ -287,6 +315,24 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
             videoVolume={videoVolume}
           />
         </>
+      )}
+
+      {activeSessionId && (
+        <div className="fitness-sidebar-end-session-slot">
+          {endSessionError && (
+            <div className="fitness-sidebar-end-session-error" role="alert">{endSessionError}</div>
+          )}
+          <button
+            type="button"
+            className="fitness-sidebar-end-session"
+            onPointerDown={handleEndSession}
+            disabled={endingSession}
+            aria-label="End current fitness session"
+            title="Force end the current session so it won't auto-merge with the next workout"
+          >
+            {endingSession ? 'Ending…' : 'End Session'}
+          </button>
+        </div>
       )}
     </div>
   );
