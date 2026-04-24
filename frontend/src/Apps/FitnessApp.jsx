@@ -1255,6 +1255,19 @@ const FitnessApp = () => {
                   setPlayQueue={setFitnessPlayQueue}
                   viewportRef={viewportRef}
                   nogovern={nogovern}
+                  onSessionEndRedirect={(redirect) => {
+                    if (!redirect) return;
+                    if (redirect.clearActiveModule) setActiveModule(null);
+                    if (redirect.clearActiveCollection) setActiveCollection(null);
+                    if (redirect.clearSelectedShow) {
+                      setSelectedShow(null);
+                      setSelectedEpisodeId(null);
+                    }
+                    setCurrentView(redirect.view);
+                    if (redirect.view === 'users') {
+                      navigate('/fitness/users', { replace: true });
+                    }
+                  }}
                 />
               </div>
             )}
