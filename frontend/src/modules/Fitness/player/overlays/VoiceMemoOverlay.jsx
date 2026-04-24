@@ -233,18 +233,6 @@ const VoiceMemoOverlay = ({
       return;
     }
 
-    // Check if transcript indicates no meaningful content - auto-redo
-    const transcript = (memo.transcriptClean || memo.transcriptRaw || '').trim().toLowerCase();
-    const isNoMemo = transcript === '[no memo]' || transcript === 'no memo' || transcript === 'no memo.' || transcript.includes('[no memo]');
-    if (isNoMemo) {
-      logVoiceMemo('overlay-redo-auto-retry', { reason: 'no-memo-transcript', transcript, memoId: memo.memoId || null });
-      // Reset state so recording auto-starts again
-      autoStartRef.current = false;
-      setRecorderState('idle');
-      // Stay in redo mode - recording will auto-start via useLayoutEffect
-      return;
-    }
-
     const targetId = overlayState?.memoId;
     // Retroactive memo attached to a historical (non-active) session: skip
     // onAddMemo (which would pollute the active session's in-memory memo
@@ -252,6 +240,22 @@ const VoiceMemoOverlay = ({
     // sessionId; the onComplete callback will refresh the detail view.
     const isRetroactive = Boolean(overlayState?.sessionId)
       && overlayState.sessionId !== sessionId;
+
+    // Check if transcript indicates no meaningful content - auto-redo.
+    // NOT applicable to retroactive capture: that's a one-shot user action
+    // and the GPT classifier can false-positive (e.g. "Additional Memo." →
+    // "[No Memo]"), which would trap the user in a recording loop. Surface
+    // the transcript in the review UI instead and let them Redo manually.
+    const transcript = (memo.transcriptClean || memo.transcriptRaw || '').trim().toLowerCase();
+    const isNoMemo = transcript === '[no memo]' || transcript === 'no memo' || transcript === 'no memo.' || transcript.includes('[no memo]');
+    if (isNoMemo && !isRetroactive) {
+      logVoiceMemo('overlay-redo-auto-retry', { reason: 'no-memo-transcript', transcript, memoId: memo.memoId || null });
+      // Reset state so recording auto-starts again
+      autoStartRef.current = false;
+      setRecorderState('idle');
+      // Stay in redo mode - recording will auto-start via useLayoutEffect
+      return;
+    }
     logVoiceMemo('overlay-redo-captured', {
       memoId: targetId || memo.memoId || null,
       retroactive: isRetroactive,
