@@ -43,6 +43,38 @@ describe('buildParticipantDisplayMap', () => {
     expect(entry.progress).toBe(0.65);
   });
 
+  test('surfaces zoneIndex from profile.zoneSnapshot for sort keys', () => {
+    const profiles = [
+      {
+        id: 'warm-user',
+        name: 'Warm User',
+        displayName: 'Warm User',
+        heartRate: 140,
+        currentZoneId: 'warm',
+        currentZoneColor: '#eab308',
+        progress: 0.8,
+        zoneSnapshot: { zoneIndex: 2 }
+      }
+    ];
+    const roster = [{ id: 'warm-user', name: 'Warm User' }];
+    const map = buildParticipantDisplayMap(profiles, roster);
+    const entry = map.get('warm user');
+    expect(entry).toBeDefined();
+    expect(entry.zoneIndex).toBe(2);
+    expect(entry.progress).toBe(0.8);
+  });
+
+  test('falls back to null zoneIndex when zoneSnapshot is missing', () => {
+    const profiles = [
+      { id: 'no-snap', name: 'No Snap', displayName: 'No Snap', progress: null }
+    ];
+    const roster = [{ id: 'no-snap', name: 'No Snap' }];
+    const map = buildParticipantDisplayMap(profiles, roster);
+    const entry = map.get('no snap');
+    expect(entry).toBeDefined();
+    expect(entry.zoneIndex).toBeNull();
+  });
+
   test('zone data comes from ZoneProfileStore (stabilized), not raw', () => {
     const map = buildParticipantDisplayMap(mockProfiles, mockRoster);
     const entry = map.get('user one');
