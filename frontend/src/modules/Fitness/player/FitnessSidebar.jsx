@@ -251,6 +251,26 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
         </div>
       )}
 
+      {/* End Session button — sits directly above the Music Player section
+          so it's visually prominent yet not floating over other content. */}
+      {activeSessionId && (
+        <div className="fitness-sidebar-end-session-panel">
+          {endSessionError && (
+            <div className="fitness-sidebar-end-session-error" role="alert">{endSessionError}</div>
+          )}
+          <button
+            type="button"
+            className="fitness-sidebar-end-session"
+            onPointerDown={handleEndSession}
+            disabled={endingSession}
+            aria-label="End current fitness session"
+            title="Force end the current session so it won't auto-merge with the next workout"
+          >
+            {endingSession ? 'Ending…' : 'End Session'}
+          </button>
+        </div>
+      )}
+
       {/* Music Player */}
       {musicEnabled && (
         <div className="fitness-sidebar-music">
@@ -317,23 +337,6 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
         </>
       )}
 
-      {activeSessionId && (
-        <div className="fitness-sidebar-end-session-slot">
-          {endSessionError && (
-            <div className="fitness-sidebar-end-session-error" role="alert">{endSessionError}</div>
-          )}
-          <button
-            type="button"
-            className="fitness-sidebar-end-session"
-            onPointerDown={handleEndSession}
-            disabled={endingSession}
-            aria-label="End current fitness session"
-            title="Force end the current session so it won't auto-merge with the next workout"
-          >
-            {endingSession ? 'Ending…' : 'End Session'}
-          </button>
-        </div>
-      )}
     </div>
   );
 });

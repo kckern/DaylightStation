@@ -28,55 +28,6 @@
     background: #0a0a0f;
   }
 
-  &__music {
-    position: absolute;
-    top: 12px;
-    left: 12px;
-    z-index: 8;
-    max-width: min(360px, 40%);
-    pointer-events: auto;
-  }
-
-  &__end-session {
-    position: absolute;
-    bottom: 16px;
-    right: 16px;
-    z-index: 10;
-    padding: 0.5rem 1rem;
-    background: rgba(220, 53, 69, 0.92);
-    color: #fff;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 8px;
-    font-size: 0.9rem;
-    font-weight: 600;
-    cursor: pointer;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
-    transition: background 0.15s ease, box-shadow 0.15s ease;
-
-    &:hover:not(:disabled) {
-      background: rgba(220, 53, 69, 1);
-      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5);
-    }
-
-    &:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-  }
-
-  &__end-error {
-    position: absolute;
-    bottom: 60px;
-    right: 16px;
-    z-index: 10;
-    padding: 0.4rem 0.75rem;
-    background: rgba(220, 53, 69, 0.95);
-    color: #fff;
-    border-radius: 6px;
-    font-size: 0.8rem;
-    max-width: 260px;
-  }
-
   &__sidebar {
     flex: 0 0 30%;
     width: 30%;
@@ -127,10 +78,6 @@
       .fitness-session-app__chart {
         height: 100%;
         width: 100%;
-
-        .fitness-session-app__music {
-          display: none;
-        }
       }
     }
 
