@@ -12,7 +12,7 @@ export { ScreenRenderer } from './ScreenRenderer.jsx';
 export { PanelRenderer } from './panels/PanelRenderer.jsx';
 
 // Data coordination
-export { ScreenDataProvider, useScreenData } from './data/ScreenDataProvider.jsx';
+export { ScreenDataProvider, useScreenData, useScreenDataRefetch } from './data/ScreenDataProvider.jsx';
 
 // Overlay system
 export { ScreenOverlayProvider, useScreenOverlay } from './overlays/ScreenOverlayProvider.jsx';
