@@ -104,4 +104,38 @@ describe('ResumeStrategy', () => {
     const result = await strategy.suggest(ctx, 4);
     expect(result).toEqual([]);
   });
+
+  test('surfaces partially-replayed episode on resumable show even when ever-completed (isWatched=true)', async () => {
+    // Motivating case: user replays a previously-completed episode for a fresh
+    // workout. Plex viewCount >= 1 keeps isWatched sticky, but today's playhead
+    // is low → the show should still appear as a resume card.
+    const sessions = [makeSession('100', 'VG Cycling', '1001', 'F-Zero', '2026-04-23')];
+    const playables = {
+      '100': [
+        makeEpisode(1001, 1, { isWatched: true, percent: 6, playhead: 175, duration: 2966 }),
+      ]
+    };
+    const showLabels = { '100': ['resumable'] };
+    const ctx = makeContext(sessions, playables, {}, showLabels);
+    const result = await strategy.suggest(ctx, 4);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].type).toBe('resume');
+    expect(result[0].progress.percent).toBe(6);
+  });
+
+  test('skips episode watched today past 95%', async () => {
+    // Edge of the replay rule: if the user has already gotten past 95%,
+    // don't nag them to "resume" the last sliver.
+    const sessions = [makeSession('100', 'VG Cycling', '1001', 'F-Zero', '2026-04-23')];
+    const playables = {
+      '100': [
+        makeEpisode(1001, 1, { isWatched: true, percent: 97, playhead: 2877, duration: 2966 }),
+      ]
+    };
+    const showLabels = { '100': ['resumable'] };
+    const ctx = makeContext(sessions, playables, {}, showLabels);
+    const result = await strategy.suggest(ctx, 4);
+    expect(result).toEqual([]);
+  });
 });
