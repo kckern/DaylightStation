@@ -28,7 +28,7 @@ export class NumpadAdapter {
       }
     }
 
-    logger().info('numpad.attach', { keyboardId: this.keyboardId, keymapSize: this.keymap ? Object.keys(this.keymap).length : 0 });
+    logger().info('numpad.attach', { keyboardId: this.keyboardId, keymapSize: this.keymap ? Object.keys(this.keymap).length : 0, healthy: this.isHealthy() });
 
     this.handler = (event) => {
       if (!this.keymap) return;
@@ -72,5 +72,15 @@ export class NumpadAdapter {
     }
     this.keymap = null;
     logger().debug('numpad.destroy', {});
+  }
+
+  /**
+   * True if the adapter is actually capable of handling input —
+   * keymap loaded AND non-empty. A successful attach() with a failed
+   * or empty keymap fetch reports false so callers can keep fallback
+   * paths (e.g. failsafe reload key) armed.
+   */
+  isHealthy() {
+    return !!this.keymap && Object.keys(this.keymap).length > 0;
   }
 }

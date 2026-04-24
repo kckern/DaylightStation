@@ -183,12 +183,15 @@ export function ScreenRenderer({ screenId: propScreenId }) {
   const [error, setError] = useState(null);
   const inputHealthyRef = React.useRef(false);
 
-  // Failsafe: digit 4 always reloads if the input system hasn't attached
+  // Failsafe: digit 4 always reloads if the input system isn't actually handling input.
+  // "Handling" means the adapter attached AND (where relevant) its keymap actually loaded.
+  // If the keymap fetch failed or returned empty, NumpadAdapter silently drops every
+  // keystroke — the failsafe must stay armed in that case so the user can escape.
   useEffect(() => {
     const failsafe = (e) => {
       const key = e.key || e.code?.replace(/^(Digit|Numpad)/, '');
       if (key !== '4') return;
-      if (inputHealthyRef.current) return; // NumpadAdapter is handling input
+      if (inputHealthyRef.current) return;
       window.location.reload();
     };
     window.addEventListener('keydown', failsafe);
@@ -220,8 +223,28 @@ export function ScreenRenderer({ screenId: propScreenId }) {
   useEffect(() => {
     if (!config?.input) return;
     const manager = createInputManager(getActionBus(), config.input);
-    inputHealthyRef.current = true;
+
+    // The adapter's attach() is async (keymap fetch). Wait for it to complete,
+    // then set inputHealthy only if the adapter reports itself healthy.
+    // Adapters without isHealthy() fall back to "attached = healthy" (unchanged
+    // behavior for KeyboardAdapter/GamepadAdapter).
+    let cancelled = false;
+    manager.ready
+      .then(() => {
+        if (cancelled) return;
+        const adapter = manager.adapter;
+        const healthy = typeof adapter?.isHealthy === 'function'
+          ? adapter.isHealthy()
+          : true;
+        inputHealthyRef.current = healthy;
+      })
+      .catch(() => {
+        if (cancelled) return;
+        inputHealthyRef.current = false;
+      });
+
     return () => {
+      cancelled = true;
       manager.destroy();
       inputHealthyRef.current = false;
     };

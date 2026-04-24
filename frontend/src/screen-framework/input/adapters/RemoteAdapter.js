@@ -79,4 +79,13 @@ export class RemoteAdapter {
     this.keymap = null;
     logger().debug('remote.destroy', {});
   }
+
+  /**
+   * True once the handler is wired — RemoteAdapter's built-in nav keys
+   * (arrows / Enter / Escape) work regardless of whether the keymap
+   * fetch succeeded, so an attached adapter is always usable.
+   */
+  isHealthy() {
+    return !!this.handler;
+  }
 }
