@@ -1,5 +1,6 @@
 // frontend/src/modules/Auth/InviteAccept.jsx
 import { useState, useEffect } from 'react';
+import useDocumentTitle from '../../hooks/useDocumentTitle.js';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Stack, TextInput, Button, Text, Title, Paper, Alert, Loader, Center } from '@mantine/core';
 import { PasswordInput } from '@mantine/core';
@@ -8,6 +9,7 @@ import { setToken } from '../../lib/auth.js';
 import './Auth.scss';
 
 export default function InviteAccept() {
+  useDocumentTitle('Invite');
   const { token } = useParams();
   const navigate = useNavigate();
   const [invite, setInvite] = useState(null);

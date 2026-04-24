@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Button, MantineProvider, Select, TextInput } from '@mantine/core';
+import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import { BudgetHoldings,  BudgetSpending} from '../modules/Finances/blocks.jsx';
 import { BudgetMortgage } from '../modules/Finances/blocks/mortgage.jsx';
 import { BudgetCashFlow } from '../modules/Finances/blocks/monthly.jsx';
@@ -44,6 +45,7 @@ const syncPayroll = async (token) => {
 
 
 export default function App() {
+  useDocumentTitle('Finances');
   const [budgetData, setBudgetData] = useState(null);
   const [mortgageData, setMortgageData] = useState(null);
   useEffect(() => {

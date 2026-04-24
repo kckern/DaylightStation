@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import "./TVApp.scss";
 import { DaylightAPI } from "../lib/api.mjs";
+import useDocumentTitle from "../hooks/useDocumentTitle.js";
 import { MenuNavigationProvider, useMenuNavigationContext } from "../context/MenuNavigationContext";
 import { MenuStack } from "../modules/Menu/MenuStack";
 import { PlayerOverlayLoading } from "../modules/Player/Player";
@@ -84,6 +85,7 @@ function TVAppContent({ rootMenu, autoplay, appParam, logger }) {
 }
 
 export default function TVApp({ appParam }) {
+  useDocumentTitle('TV');
   const [list, setList] = useState(null);
   const logger = useMemo(() => getChildLogger({ app: 'tv' }), []);
 

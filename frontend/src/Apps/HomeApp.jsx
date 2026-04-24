@@ -2,8 +2,10 @@ import { useMemo, useState, useEffect } from 'react';
 import './HomeApp.scss';
 import { getChildLogger } from '../lib/logging/singleton.js';
 import CameraFeed from '../modules/CameraFeed/CameraFeed.jsx';
+import useDocumentTitle from '../hooks/useDocumentTitle.js';
 
 function HomeApp() {
+  useDocumentTitle('Home');
   const logger = useMemo(() => getChildLogger({ app: 'home' }), []);
   const [cameras, setCameras] = useState([]);
 

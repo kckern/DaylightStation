@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { MantineProvider, createTheme } from '@mantine/core';
 import getLogger from '../lib/logging/Logger.js';
+import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import AdminLayout from '../modules/Admin/AdminLayout.jsx';
 import ListsIndex from '../modules/Admin/ContentLists/ListsIndex.jsx';
 import ListsFolder from '../modules/Admin/ContentLists/ListsFolder.jsx';
@@ -119,6 +120,7 @@ const theme = createTheme({
 });
 
 function AdminApp() {
+  useDocumentTitle('Admin');
   const logger = useMemo(() => getLogger().child({ app: 'admin', sessionLog: true }), []);
 
   React.useEffect(() => {
