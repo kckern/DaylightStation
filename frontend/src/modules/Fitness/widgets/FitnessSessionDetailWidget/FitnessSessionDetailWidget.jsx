@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallba
 import { Text, Skeleton } from '@mantine/core';
 import { getWidgetRegistry } from '@/screen-framework/widgets/registry.js';
 import { useScreen } from '@/screen-framework/providers/ScreenProvider.jsx';
+import { useScreenDataRefetch } from '@/screen-framework/data/ScreenDataProvider.jsx';
 import { useFitnessScreen } from '@/modules/Fitness/FitnessScreenProvider.jsx';
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import FitnessTimeline from './FitnessTimeline.jsx';
@@ -136,6 +137,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   const [error, setError] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const { restore } = useScreen();
+  const refetchScreenData = useScreenDataRefetch();
   const { onNavigate } = useFitnessScreen() || {};
   const fitnessCtx = useFitnessContext();
   const posterRef = useRef(null);
@@ -166,12 +168,13 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
     try {
       const res = await fetch(`/api/v1/fitness/sessions/${sessionId}`, { method: 'DELETE' });
       if (!res.ok) throw new Error(`${res.status}`);
+      await refetchScreenData?.('sessions');
       restore('right-area');
     } catch (err) {
       setDeleting(false);
       setError(`Delete failed: ${err.message}`);
     }
-  }, [sessionId, deleting, restore]);
+  }, [sessionId, deleting, restore, refetchScreenData]);
 
   const handleAddVoiceMemo = useCallback(() => {
     if (!sessionId) return;
