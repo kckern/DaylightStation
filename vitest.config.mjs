@@ -11,6 +11,7 @@ export default {
       '@shared-contracts': path.resolve(__dirname, 'shared/contracts'),
       '@testing-library/react': path.join(frontendNodeModules, '@testing-library/react'),
       '@testing-library/jest-dom': path.join(frontendNodeModules, '@testing-library/jest-dom'),
+      '@mantine/core': path.join(frontendNodeModules, '@mantine/core'),
       'react': path.join(frontendNodeModules, 'react'),
       'react-dom': path.join(frontendNodeModules, 'react-dom'),
     },
