@@ -60,6 +60,14 @@ const STRATEGIES = {
     filter: ['watched'],
     sort: 'date_desc_priority',
     pick: 'first'
+  },
+  rotation: {
+    // Shuffle through unwatched items, never repeating until the cycle exhausts.
+    // Pair with allowFallback:true at call-site to recycle the pool when empty.
+    // Use case: poetry slot in a daily program — pick a random unread poem each day.
+    filter: ['watched'],
+    sort: 'random',
+    pick: 'first'
   }
 };
 
