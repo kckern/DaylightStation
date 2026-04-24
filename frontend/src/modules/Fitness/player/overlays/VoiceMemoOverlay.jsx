@@ -615,7 +615,11 @@ const VoiceMemoOverlay = ({
           handleClose();
         }
       }
-      if (overlayState.mode === 'redo' && isRecording && (e.key === ' ' || e.key === 'Spacebar')) {
+      if (overlayState.mode === 'redo' && isRecording
+          && (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Enter')) {
+        // Enter is the desktop equivalent of tapping Stop on a touch device.
+        // Without this, a default-button "submit" from Chrome can click the
+        // focused Cancel control and discard the recording unsaved.
         e.preventDefault();
         stopRecording();
       }
