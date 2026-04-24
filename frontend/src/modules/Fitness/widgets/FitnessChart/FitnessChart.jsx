@@ -15,6 +15,8 @@ import { ParticipantStatus, getZoneColor, isBroadcasting } from '@/modules/Fitne
 import { LayoutManager } from './layout';
 import { compareLegendEntries } from './layout/utils/sort.js';
 import { createChartDataSource } from './sessionDataAdapter.js';
+import { resolveHistoricalParticipant } from './resolveHistoricalParticipant.js';
+export { resolveHistoricalParticipant } from './resolveHistoricalParticipant.js';
 
 const DEFAULT_CHART_WIDTH = 420;
 const DEFAULT_CHART_HEIGHT = 390;
@@ -282,7 +284,7 @@ const findFirstFiniteAfter = (arr = [], index) => {
  * @param {string} [options.sessionId] - Session ID to clear cache when session changes (memory leak fix)
  */
 const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticipantIds = [], options = {}) => {
-	const { activityMonitor, zoneConfig, sessionId } = options;
+	const { activityMonitor, zoneConfig, sessionId, resolveHistorical } = options;
 	const { entries: presentEntries } = useRaceChartData(roster, getSeries, timebase, { activityMonitor, zoneConfig });
 	const [participantCache, setParticipantCache] = useState({});
 	// Track which historical IDs we've already processed to avoid re-processing on every render
@@ -353,11 +355,14 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 				// Get lastValue at the determined lastIndex
 				const lastValue = lastIndex >= 0 && Number.isFinite(beats[lastIndex]) ? beats[lastIndex] : null;
 
+				const hydrated = typeof resolveHistorical === 'function'
+					? resolveHistorical(slug)
+					: { name: slug, avatarUrl: null, profileId: slug };
 				next[slug] = {
 					id: slug,
-					name: slug,
-					profileId: slug,
-					avatarUrl: null,
+					name: hydrated.name || slug,
+					profileId: hydrated.profileId || slug,
+					avatarUrl: hydrated.avatarUrl || null,
 					color: getZoneColor(null),
 					beats,
 					segments,
@@ -813,12 +818,19 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 	// Pass activityMonitor for centralized activity tracking (Phase 2)
 	// Pass zoneConfig for zone-based slope enforcement (fixes sawtooth pattern)
 	// Pass sessionId to clear cache on session change (memory leak fix)
+	const resolveHistorical = useCallback((slug) => {
+		return resolveHistoricalParticipant(slug, {
+			displayMap: participantDisplayMap,
+			sessionMeta: sessionParticipantsMeta
+		});
+	}, [participantDisplayMap, sessionParticipantsMeta]);
+
 	const { allEntries, presentEntries, absentEntries, dropoutMarkers, maxValue, maxIndex } = useRaceChartWithHistory(
 		chartParticipants,
 		chartGetSeries,
 		chartTimebase,
 		chartHistorical,
-		{ activityMonitor: chartActivityMonitor, zoneConfig: chartZoneConfig, sessionId: chartSessionId }
+		{ activityMonitor: chartActivityMonitor, zoneConfig: chartZoneConfig, sessionId: chartSessionId, resolveHistorical }
 	);
 
 	// TELEMETRY: Expose chart stats for memory leak profiling
