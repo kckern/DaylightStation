@@ -224,6 +224,26 @@ export class SessionService {
    * @param {Object} sessionData - Raw session data (v2 or v3 format)
    * @param {string} householdId - Household ID
    */
+  /**
+   * Append a voice memo to a historical session's persisted YAML.
+   *
+   * Used by the /voice_memo route when the target session is no longer
+   * actively running (retroactive capture from the session-history
+   * detail view). For an actively running session, the frontend's
+   * voiceMemoManager handles in-memory persistence and the next tick
+   * save writes to YAML — so the route skips this call in that case
+   * to avoid double-writes / races.
+   *
+   * @param {string} sessionId
+   * @param {string} householdId
+   * @param {Object} memo
+   * @returns {Promise<Object|null>}
+   */
+  async appendVoiceMemo(sessionId, householdId, memo) {
+    const hid = this.resolveHouseholdId(householdId);
+    return this.sessionStore.appendVoiceMemo(sessionId, hid, memo);
+  }
+
   async saveSession(sessionData, householdId) {
     const hid = this.resolveHouseholdId(householdId);
 
