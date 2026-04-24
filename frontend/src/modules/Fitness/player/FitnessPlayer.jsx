@@ -13,6 +13,7 @@ import { useFitnessVolumeControls } from '@/modules/Fitness/nav/useFitnessVolume
 import { resolveMediaIdentity, resolveContentId, normalizeDuration } from '@/modules/Player/utils/mediaIdentity.js';
 import { resolvePause, PAUSE_REASON } from '@/modules/Player/utils/pauseArbiter.js';
 import FitnessChart from '@/modules/Fitness/widgets/FitnessChart/index.jsx';
+import FitnessChartBackButton from './FitnessChartBackButton.jsx';
 import { useMediaAmplifier } from '@/modules/Fitness/components/useMediaAmplifier.js';
 import { FitnessPlayerFrame } from './frames';
 import HRSimTrigger from '@/modules/Fitness/nav/HRSimTrigger.jsx';
@@ -1555,6 +1556,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false 
       ) : null}
       {showChart && govStatus !== 'locked' && govStatus !== 'pending' && (
         <div className="fitness-chart-overlay">
+          <FitnessChartBackButton onReturn={() => setShowChart(false)} />
           <FitnessChart mode="sidebar" onClose={() => {}} />
         </div>
       )}
