@@ -38,17 +38,21 @@ function makeEpisode(id, index, { isWatched = false, percent = 0, playhead = 0, 
   };
 }
 
-function makeContext(sessions, playablesByShow = {}, config = {}) {
+function makeContext(sessions, playablesByShow = {}, config = {}, labelsByShow = {}) {
   return {
     recentSessions: sessions,
     fitnessConfig: {
       suggestions: { next_up_max: 4, ...config },
-      plex: { resumable_labels: ['Resumable'] },
+      plex: {
+        resumable_labels: ['Resumable'],
+        deprioritized_labels: ['KidsFun'],
+      },
     },
     fitnessPlayableService: {
       getPlayableEpisodes: async (showId) => {
         const items = playablesByShow[showId] || [];
-        return { items, parents: null, info: null };
+        const labels = labelsByShow[showId] || [];
+        return { items, parents: null, info: { labels } };
       }
     },
   };
@@ -175,5 +179,71 @@ describe('NextUpStrategy', () => {
     expect(result.map(r => r.showTitle)).toEqual([
       'Show A', 'Show B', 'Show C', 'Show D', 'Show E', 'Show F'
     ]);
+  });
+
+  test('filters out shows whose next-up has a deprioritized label', async () => {
+    // Would You Rather Workout style — kidsfun only, no resumable progress.
+    const sessions = [
+      makeSession('100', 'PE Bowman', '1001', 'Ep 1', '2026-04-06'),
+    ];
+    const playables = {
+      '100': [
+        makeEpisode(1001, 1, { isWatched: true }),
+        makeEpisode(1002, 2, { isWatched: false }),
+      ],
+    };
+    const labels = { '100': ['kidsfun'] };
+    const ctx = makeContext(sessions, playables, {}, labels);
+    const result = await strategy.suggest(ctx, 4);
+    expect(result).toEqual([]);
+  });
+
+  test('keeps deprioritized shows that ALSO have a resumable label', async () => {
+    // Daytona USA style — kidsfun + resumable; the resumable tag wins.
+    const sessions = [
+      makeSession('100', 'Game Cycling', '1001', 'Ep 1', '2026-04-06'),
+    ];
+    const playables = {
+      '100': [
+        makeEpisode(1001, 1, { isWatched: true }),
+        makeEpisode(1002, 2, { isWatched: false }),
+      ],
+    };
+    const labels = { '100': ['kidsfun', 'resumable', 'sequential'] };
+    const ctx = makeContext(sessions, playables, {}, labels);
+    const result = await strategy.suggest(ctx, 4);
+    expect(result).toHaveLength(1);
+    expect(result[0].contentId).toBe('plex:1002');
+    expect(result[0].labels).toEqual(['kidsfun', 'resumable', 'sequential']);
+  });
+
+  test('regular (non-deprioritized) shows are unaffected by the filter', async () => {
+    const sessions = [
+      makeSession('100', 'P90X Generation Next', '1001', 'Ep 1', '2026-04-06'),
+      makeSession('200', 'Body by Yoga', '2001', 'Ep 1', '2026-04-05'),
+    ];
+    const playables = {
+      '100': [makeEpisode(1001, 1, { isWatched: true }), makeEpisode(1002, 2)],
+      '200': [makeEpisode(2001, 1, { isWatched: true }), makeEpisode(2002, 2)],
+    };
+    const labels = { '100': [], '200': ['nomusic'] };
+    const ctx = makeContext(sessions, playables, {}, labels);
+    const result = await strategy.suggest(ctx, 4);
+    expect(result).toHaveLength(2);
+    expect(result.map(r => r.showTitle)).toEqual(['P90X Generation Next', 'Body by Yoga']);
+  });
+
+  test('deprioritized label matching is case-insensitive', async () => {
+    // Config: 'KidsFun' (CamelCase). Session/API: 'kidsfun' (lowercase).
+    const sessions = [
+      makeSession('100', 'PE Bowman', '1001', 'Ep 1', '2026-04-06'),
+    ];
+    const playables = {
+      '100': [makeEpisode(1001, 1, { isWatched: true }), makeEpisode(1002, 2)],
+    };
+    const labels = { '100': ['KIDSFUN'] }; // upper-case from a hypothetical source
+    const ctx = makeContext(sessions, playables, {}, labels);
+    const result = await strategy.suggest(ctx, 4);
+    expect(result).toEqual([]);
   });
 });
