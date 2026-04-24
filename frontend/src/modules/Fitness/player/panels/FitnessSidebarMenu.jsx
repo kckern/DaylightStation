@@ -1,7 +1,8 @@
 import React from 'react';
-import { useFitnessContext } from '@/context/FitnessContext.jsx';
+import { useFitnessContext, FITNESS_DEBUG } from '@/context/FitnessContext.jsx';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from './TouchVolumeButtons.jsx';
+import DebugMicButton from './DebugMicButton.jsx';
 import '../FitnessSidebar.scss';
 
 // Auto-close behavior for quick-action settings: flash the selected control
@@ -318,6 +319,7 @@ const FitnessSidebarMenu = ({
         <button type="button" className="menu-item action-item" onClick={handleReloadPage}>
           <span>🔄 Reload App</span>
         </button>
+        {FITNESS_DEBUG && <DebugMicButton />}
       </div>
 
       <div className="menu-section">
