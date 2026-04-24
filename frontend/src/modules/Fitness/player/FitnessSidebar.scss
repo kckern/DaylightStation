@@ -1150,20 +1150,21 @@
     }
   }
 
-  .fitness-sidebar-end-session-slot {
-    position: absolute;
-    bottom: 8px;
-    right: 8px;
-    z-index: 90;
+  .fitness-sidebar-end-session-panel {
+    // In-flow sibling section: sits directly above the music player in the
+    // vertical sidebar stack. No absolute positioning, no overlap hazard.
     display: flex;
     flex-direction: column;
-    align-items: flex-end;
+    align-items: stretch;
     gap: 6px;
-    pointer-events: auto;
+    padding: 0 8px;
+    margin: 6px 0;
+    flex-shrink: 0;
   }
 
   .fitness-sidebar-end-session {
-    padding: 0.45rem 0.9rem;
+    padding: 0.55rem 0.9rem;
+    width: 100%;
     background: rgba(220, 53, 69, 0.92);
     color: #fff;
     border: 1px solid rgba(255, 255, 255, 0.18);
@@ -1174,8 +1175,12 @@
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
     transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
 
+    &:hover:not(:disabled) {
+      background: rgba(220, 53, 69, 1);
+    }
+
     &:active:not(:disabled) {
-      transform: scale(0.97);
+      transform: scale(0.98);
     }
 
     &:disabled {
@@ -1190,7 +1195,6 @@
     color: #fff;
     border-radius: 6px;
     font-size: 0.75rem;
-    max-width: 220px;
     line-height: 1.2;
   }
 
