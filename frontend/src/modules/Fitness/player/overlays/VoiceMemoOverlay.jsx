@@ -141,10 +141,15 @@ const VoiceMemoOverlay = ({
   }, [voiceMemos]);
 
   const currentMemo = useMemo(() => {
+    // Retroactive memos are passed inline via overlayState.memo because the
+    // backend response doesn't mint a memoId (so voiceMemos lookup misses).
+    if (overlayState?.memo && typeof overlayState.memo === 'object') {
+      return overlayState.memo;
+    }
     if (!overlayState?.memoId) return null;
     const targetId = String(overlayState.memoId);
     return voiceMemos.find((memo) => memo && String(memo.memoId) === targetId) || null;
-  }, [overlayState?.memoId, voiceMemos]);
+  }, [overlayState?.memo, overlayState?.memoId, voiceMemos]);
 
   const [autoAcceptProgress, setAutoAcceptProgress] = useState(0);
   // Fix 6 (bugbash 4C.5): Track if user cancelled auto-accept via interaction
@@ -253,13 +258,12 @@ const VoiceMemoOverlay = ({
       historicalSessionId: isRetroactive ? String(overlayState.sessionId) : null
     });
     // Retroactive path: the backend persisted the memo under the historical
-    // session; the backend response often lacks a memoId, so routing through
-    // openVoiceMemoReview (which requires an id) silently no-ops and leaves
-    // the overlay stuck in 'redo' mode — useLayoutEffect then auto-restarts
-    // recording, creating a loop. Close directly; onComplete refreshes the
-    // session-detail view where the user can see their memo.
+    // session; the backend response lacks a memoId, but openVoiceMemoReview
+    // now accepts an inline memo object so the user still gets the review
+    // step (see transcript, Keep to confirm). Redo/Delete stay disabled for
+    // retroactive since there's no id to target.
     if (isRetroactive) {
-      onClose?.();
+      onOpenReview?.(memo, { autoAccept: false, fromRecording: true });
       return;
     }
     let stored;

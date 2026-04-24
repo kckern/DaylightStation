@@ -905,7 +905,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // Allow optimistic review opens when we have the memo object, even if it hasn't landed in voiceMemos yet.
     const isObject = memoOrId && typeof memoOrId === 'object';
     const id = isObject ? memoOrId.memoId : memoOrId;
-    if (!id) return;
+
+    // Retroactive memos from historical sessions arrive as an object with no
+    // memoId (backend doesn't mint one). Allow review in that case by storing
+    // the memo payload directly in overlay state — the overlay's currentMemo
+    // hook falls back to this when voiceMemos lookup misses.
+    if (!id && !isObject) return;
 
     // 4C: Default autoAccept to true for post-recording reviews (not from list)
     const resolvedAutoAccept = autoAccept !== undefined ? autoAccept : (fromRecording || isObject);
@@ -931,12 +936,14 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     setVoiceMemoOverlayStateGuarded({
       open: true,
       mode: 'review',
-      memoId: id,
+      memoId: id || null,
+      // Stash the memo payload for review when no memoId exists (retroactive).
+      memo: isObject && !id ? memoOrId : null,
       autoAccept: resolvedAutoAccept,
       startedAt: Date.now()
     });
-    logVoiceMemo('overlay-open-review', { memoId: id, autoAccept: resolvedAutoAccept });
-    emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'review', memoId: id, autoAccept: resolvedAutoAccept });
+    logVoiceMemo('overlay-open-review', { memoId: id || null, autoAccept: resolvedAutoAccept, hasInlineMemo: Boolean(isObject && !id) });
+    emitVoiceMemoTelemetry('voice_memo_overlay_show', { mode: 'review', memoId: id || null, autoAccept: resolvedAutoAccept });
   }, [emitVoiceMemoTelemetry, getVoiceMemoById, setVoiceMemoOverlayStateGuarded, voiceMemos]);
 
   const openVoiceMemoList = React.useCallback(() => {
