@@ -17,6 +17,7 @@ export const CANONICAL_FIELDS = Object.freeze([
   'playCount',
   'lastPlayed',
   'watchTime',
+  'completedAt',
   'bookmark'
 ]);
 
@@ -61,6 +62,7 @@ export function serializeMediaProgress(entity) {
     lastPlayed: entity.lastPlayed,
     watchTime: entity.watchTime
   };
+  if (entity.completedAt) json.completedAt = entity.completedAt;
   if (entity.bookmark) json.bookmark = entity.bookmark;
   return json;
 }

@@ -761,6 +761,7 @@ export class ContentQueryService {
         // Preserve undefined/null for watchTime so classifier can handle missing data
         watchTime: progress.watchTime > 0 ? progress.watchTime : undefined,
         lastPlayed: progress.lastPlayed ?? null,
+        completedAt: progress.completedAt ?? null,
         watched: percent >= 90,
         // Set priority to in_progress if partially watched (unless already set)
         priority: isInProgress && !item.priority ? 'in_progress' : item.priority
