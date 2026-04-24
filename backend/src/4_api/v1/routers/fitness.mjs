@@ -15,6 +15,7 @@
  * - POST /api/fitness/save_session - Save session data
  * - POST /api/fitness/save_screenshot - Save session screenshot
  * - POST /api/fitness/voice_memo - Transcribe voice memo
+ * - POST /api/fitness/debug/voice-memo - Debug: save raw audio to data/_debug/
  * - POST /api/fitness/zone_led - Sync ambient LED state
  * - GET  /api/fitness/zone_led/status - Get LED controller status
  * - GET  /api/fitness/zone_led/metrics - Get LED controller metrics
@@ -695,6 +696,53 @@ export function createFitnessRouter(config) {
     } catch (e) {
       logger.error?.('fitness.voice_memo.error', { error: e.message });
       return res.status(500).json({ ok: false, error: e.message || 'voice memo failure' });
+    }
+  });
+
+  /**
+   * POST /api/fitness/debug/voice-memo — Developer-only raw audio memo dump.
+   *
+   * DEBUG ONLY. Saves the raw webm blob under <dataDir>/_debug/voice_memos/
+   * using an ISO timestamp as the filename. Intentionally independent of
+   * the workout voice-memo system: NO transcription, NO sessionId linkage,
+   * NO Strava enrichment, NO session context capture.
+   */
+  router.post('/debug/voice-memo', async (req, res) => {
+    try {
+      const { audioBase64 } = req.body || {};
+      if (!audioBase64 || typeof audioBase64 !== 'string') {
+        return res.status(400).json({ ok: false, error: 'audioBase64 required' });
+      }
+
+      const base64Data = audioBase64.replace(/^data:[^;]+;base64,/, '');
+      const buffer = Buffer.from(base64Data, 'base64');
+      if (!buffer.length) {
+        return res.status(400).json({ ok: false, error: 'Failed to decode audio data' });
+      }
+
+      const savedAt = Date.now();
+      const iso = new Date(savedAt).toISOString().replace(/:/g, '-');
+      const filename = `${iso}.webm`;
+
+      const dataDir = configService.getDataDir();
+      const debugDir = path.join(dataDir, '_debug', 'voice_memos');
+      const filePath = path.join(debugDir, filename);
+
+      // writeBinary handles mkdirSync({ recursive: true }) internally.
+      writeBinary(filePath, buffer);
+
+      logger.debug?.('fitness.debug_voice_memo.saved', { filename, size: buffer.length });
+
+      return res.json({
+        ok: true,
+        path: filePath,
+        filename,
+        size: buffer.length,
+        savedAt,
+      });
+    } catch (e) {
+      logger.error?.('fitness.debug_voice_memo.error', { error: e.message });
+      return res.status(500).json({ ok: false, error: e.message || 'debug voice memo failure' });
     }
   });
 
