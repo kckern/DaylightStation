@@ -252,10 +252,18 @@ const VoiceMemoOverlay = ({
       retroactive: isRetroactive,
       historicalSessionId: isRetroactive ? String(overlayState.sessionId) : null
     });
-    let stored;
+    // Retroactive path: the backend persisted the memo under the historical
+    // session; the backend response often lacks a memoId, so routing through
+    // openVoiceMemoReview (which requires an id) silently no-ops and leaves
+    // the overlay stuck in 'redo' mode — useLayoutEffect then auto-restarts
+    // recording, creating a loop. Close directly; onComplete refreshes the
+    // session-detail view where the user can see their memo.
     if (isRetroactive) {
-      stored = memo;
-    } else if (targetId) {
+      onClose?.();
+      return;
+    }
+    let stored;
+    if (targetId) {
       stored = onReplaceMemo?.(targetId, memo) || memo;
     } else {
       stored = onAddMemo?.(memo) || memo;
