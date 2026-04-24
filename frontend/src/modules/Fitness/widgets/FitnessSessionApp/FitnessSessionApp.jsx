@@ -4,6 +4,7 @@ import useFitnessModule from '@/modules/Fitness/player/useFitnessModule';
 import FitnessSidebar from '@/modules/Fitness/player/FitnessSidebar.jsx';
 import CameraViewApp from '../CameraViewApp/index.jsx';
 import FitnessChart from '../FitnessChart/index.jsx';
+import FitnessMusicPlayer from '@/modules/Fitness/player/panels/FitnessMusicPlayer.jsx';
 import { FullscreenVitalsOverlay } from '@/modules/Fitness/shared/integrations';
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import { DaylightAPI } from '@/lib/api.mjs';
@@ -120,6 +121,15 @@ const FitnessSessionApp = ({ mode = 'standalone', onClose, config = {}, onMount 
         onClick={toggleFullscreen}
       >
         <div className="fitness-session-app__chart">
+          {/* F2: Music player is a default, persistent component on the chart. */}
+          <div className="fitness-session-app__music">
+            <FitnessMusicPlayer
+              ref={fitnessCtx?.musicPlayerRef}
+              selectedPlaylistId={fitnessCtx?.selectedPlaylistId}
+              videoPlayerRef={null}
+              videoVolume={null}
+            />
+          </div>
           <FitnessChart mode="standalone" onClose={() => {}} />
           {activeSessionId && !isFullscreen && (
             <button
