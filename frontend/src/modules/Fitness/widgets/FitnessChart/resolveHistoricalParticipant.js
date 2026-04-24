@@ -6,6 +6,14 @@
  *   2. sessionParticipantsMeta.get(slug) — persisted session metadata
  *   3. Capitalized slug as last resort
  *
+ * Avatar URL uses the canonical `api/v1/static/img/users/<slug>` path that
+ * DaylightMediaPath produces for the live path — the server only serves
+ * avatars from this route, so the legacy `/static/img/users/...` URL 404s
+ * and causes broken images for dropped-out participants. We inline the
+ * path form (no DaylightMediaPath call) to keep this helper pure/node-
+ * testable; the browser resolves the relative path against the same
+ * origin as the live-path avatars.
+ *
  * Extracted to a `.js` file (not `FitnessChart.jsx`) so jest can import it
  * without needing a JSX transform.
  *
@@ -33,7 +41,10 @@ export const resolveHistoricalParticipant = (slug, sources = {}) => {
 	else if (metaEntry?.displayName && String(metaEntry.displayName).trim()) name = metaEntry.displayName;
 	else if (metaEntry?.name && String(metaEntry.name).trim()) name = metaEntry.name;
 
-	const avatarUrl = dmEntry?.avatarSrc || `/static/img/users/${key}`;
+	// Prefer the zone-profile-backed avatarSrc (already a fully-formed URL).
+	// Otherwise derive from the slug using the canonical `api/v1/static/img/`
+	// path — matches what DaylightMediaPath produces so the server serves it.
+	const avatarUrl = dmEntry?.avatarSrc || `api/v1/static/img/users/${key}`;
 
 	return {
 		name,
