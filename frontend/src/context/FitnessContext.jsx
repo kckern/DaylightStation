@@ -13,6 +13,7 @@ import { playbackLog } from '../modules/Player/lib/playbackLogger.js';
 import getLogger from '../lib/logging/Logger.js';
 import { getModuleManifest } from '../modules/Fitness/index.js';
 import { VIBRATION_CONSTANTS } from '../modules/Fitness/widgets/VibrationApp/constants.js';
+import { buildSelectionConfig } from '../hooks/fitness/selectPrimaryMedia.js';
 
 // Phase 3 SSOT: Domain model imports
 import ParticipantFactory from '../modules/Fitness/domain/ParticipantFactory.js';
@@ -490,15 +491,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     };
   }, [fitnessConfiguration]);
 
-  // Pass warmup config to persistence manager for primary media selection
+  // Pass selection config to persistence manager for primary media selection
   useEffect(() => {
     const pm = fitnessSessionRef.current?._persistenceManager;
     if (pm && plexConfig) {
-      pm.setWarmupConfig({
-        warmup_labels: plexConfig.warmup_labels || [],
-        warmup_description_tags: plexConfig.warmup_description_tags || [],
-        warmup_title_patterns: plexConfig.warmup_title_patterns || [],
-      });
+      pm.setWarmupConfig(buildSelectionConfig(plexConfig));
     }
   }, [plexConfig]);
 
