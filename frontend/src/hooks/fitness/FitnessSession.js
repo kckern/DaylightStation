@@ -381,7 +381,18 @@ export class FitnessSession {
       firstAntSeen: false,
       lastAntLogTs: 0
     };
-    
+
+    // Tick rate telemetry (investigating tick rate anomaly - 2026-01-20)
+    this._tickTelemetry = {
+      ingestCalls: 0,
+      maybeTickCalls: 0,
+      actualTicks: 0,
+      loopIterationsTotal: 0,
+      lastLogAt: 0,
+      logIntervalMs: 30000, // Log every 30 seconds
+      windowStart: Date.now()
+    };
+
     // Ghost session detection - now also in SessionLifecycle but keeping for compatibility
     this._emptyRosterStartTime = null;
     this._lastKnownGoodRoster = null;
@@ -624,6 +635,10 @@ export class FitnessSession {
     const startedNow = this._maybeStartSessionFromBuffer(bufferCheckPayload, now);
     if (!this.sessionId) return;
     if (startedNow) this._log('session_started', { sessionId: this.sessionId, reason: 'buffer_threshold_met' });
+
+    // Tick telemetry: track ingest rate
+    this._tickTelemetry.ingestCalls++;
+
     this._maybeTickTimeline(deviceData?.timestamp || now);
   }
 
@@ -2730,6 +2745,10 @@ export class FitnessSession {
     if (!Number.isFinite(lastTick)) {
       lastTick = targetTimestamp;
     }
+
+    // Tick telemetry: track call rate
+    this._tickTelemetry.maybeTickCalls++;
+
     const maxIterations = 1000;
     let iterations = 0;
     while ((targetTimestamp - lastTick) >= interval && iterations < maxIterations) {
@@ -2737,7 +2756,56 @@ export class FitnessSession {
       this._collectTimelineTick({ timestamp: nextTickTimestamp });
       lastTick = this.timeline.timebase?.lastTickTimestamp ?? nextTickTimestamp;
       iterations += 1;
+      this._tickTelemetry.actualTicks++;
     }
+
+    // Track loop iterations (even if 0)
+    this._tickTelemetry.loopIterationsTotal += iterations;
+
+    // Periodic telemetry logging
+    this._maybeLogTickTelemetry(targetTimestamp);
+  }
+
+  _maybeLogTickTelemetry(now = Date.now()) {
+    const tel = this._tickTelemetry;
+    if ((now - tel.lastLogAt) < tel.logIntervalMs) return;
+
+    const windowMs = now - tel.windowStart;
+    const windowSec = windowMs / 1000;
+
+    // Calculate rates
+    const ingestRate = windowSec > 0 ? (tel.ingestCalls / windowSec).toFixed(1) : 0;
+    const maybeTickRate = windowSec > 0 ? (tel.maybeTickCalls / windowSec).toFixed(1) : 0;
+    const actualTickRate = windowSec > 0 ? (tel.actualTicks / windowSec).toFixed(1) : 0;
+    const avgLoopIter = tel.maybeTickCalls > 0
+      ? (tel.loopIterationsTotal / tel.maybeTickCalls).toFixed(2)
+      : 0;
+
+    const tickCount = this.timeline?.timebase?.tickCount || 0;
+    const expectedTickRate = (1000 / (this.timeline?.timebase?.intervalMs || 5000)).toFixed(2);
+
+    getLogger().warn('fitness.tick_telemetry', {
+      sessionId: this.sessionId,
+      windowSec: windowSec.toFixed(0),
+      ingestCalls: tel.ingestCalls,
+      ingestRate: `${ingestRate}/sec`,
+      maybeTickCalls: tel.maybeTickCalls,
+      maybeTickRate: `${maybeTickRate}/sec`,
+      actualTicks: tel.actualTicks,
+      actualTickRate: `${actualTickRate}/sec`,
+      expectedTickRate: `${expectedTickRate}/sec`,
+      avgLoopIterations: avgLoopIter,
+      tickCount,
+      anomaly: parseFloat(actualTickRate) > parseFloat(expectedTickRate) * 2 ? 'HIGH_TICK_RATE' : null
+    });
+
+    // Reset counters for next window
+    tel.ingestCalls = 0;
+    tel.maybeTickCalls = 0;
+    tel.actualTicks = 0;
+    tel.loopIterationsTotal = 0;
+    tel.windowStart = now;
+    tel.lastLogAt = now;
   }
 
   get isActive() {
