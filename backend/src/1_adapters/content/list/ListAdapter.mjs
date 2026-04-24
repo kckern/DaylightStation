@@ -14,6 +14,7 @@ import {
 import { normalizeListItem, extractContentId, normalizeListConfig } from './listConfigNormalizer.mjs';
 import { getCurrentDate } from '#system/utils/time.mjs';
 import { QueueService } from '#domains/content/services/QueueService.mjs';
+import { ItemSelectionService } from '#domains/content/services/ItemSelectionService.mjs';
 
 // Threshold for considering an item "watched" (90%)
 const WATCHED_THRESHOLD = 90;
@@ -793,6 +794,43 @@ export class ListAdapter {
     return items[0];
   }
 
+  /**
+   * Pick playables via an explicit ItemSelectionService strategy.
+   * Used by program slots that declare `strategy:` in YAML — e.g.
+   * `strategy: rotation` for shuffle-without-repeat.
+   *
+   * Enriches items with watch-state percent so `filter: ['watched']`
+   * (used by rotation, freshvideo, etc.) actually filters.
+   *
+   * @param {string} strategyName
+   * @param {Object} resolved - { adapter, localId } from registry.resolve
+   * @param {Object} child - { id, source } describing the source prefix
+   * @returns {Promise<Array>}
+   * @private
+   */
+  async _pickViaStrategy(strategyName, resolved, child) {
+    const { adapter } = resolved;
+    const canonicalId = `${adapter.source}:${resolved.localId}`;
+    const allItems = await adapter.resolvePlayables(canonicalId);
+    if (!allItems?.length) return [];
+
+    let enriched = allItems;
+    if (this.mediaProgressMemory) {
+      const storagePath = (adapter.getStoragePath ? await adapter.getStoragePath(canonicalId) : null)
+        || child.source
+        || 'files';
+      const allProgress = await this.mediaProgressMemory.getAll(storagePath);
+      const map = new Map(allProgress.map(p => [p.contentId, p]));
+      enriched = allItems.map(it => ({ ...it, percent: map.get(it.id)?.percent || 0 }));
+    }
+
+    return ItemSelectionService.select(
+      enriched,
+      { now: new Date() },
+      { strategy: strategyName, allowFallback: true }
+    );
+  }
+
   // ─── List building ─────────────────────────────────────────────────
 
   /**
@@ -1236,7 +1274,15 @@ export class ListAdapter {
           // Programs with play action: pick ONE "next up" item per slot
           const colonIdx = input.indexOf(':');
           const child = { id: input, source: colonIdx !== -1 ? input.substring(0, colonIdx) : 'files' };
-          tasks.push(() => this._getNextPlayableFromChild(child, resolved).then(item => item ? [item] : []));
+          if (item.strategy && resolved.adapter.resolvePlayables) {
+            // Slot opted into an explicit selection strategy — bypass the
+            // default in-progress / first-unwatched cascade and let
+            // ItemSelectionService apply the named strategy. allowFallback
+            // recycles the pool when fully watched so the slot never goes empty.
+            tasks.push(() => this._pickViaStrategy(item.strategy, resolved, child));
+          } else {
+            tasks.push(() => this._getNextPlayableFromChild(child, resolved).then(item => item ? [item] : []));
+          }
         } else {
           // Queue action (programs) or menus: return ALL playables
           if (resolved.adapter.resolvePlayables) {
