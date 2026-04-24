@@ -238,3 +238,48 @@ describe('ParticipantRoster.getRoster — dual-device aggregation', () => {
     expect(roster[0].displayLabel).toBe('User_4');
   });
 });
+
+// ─── Integration: real UserManager + DeviceManager + ParticipantRoster ─────
+
+const { UserManager } = await import('#frontend/hooks/fitness/UserManager.js');
+const { DeviceManager } = await import('#frontend/hooks/fitness/DeviceManager.js');
+
+describe('ParticipantRoster — integration with real UserManager min-HR arbitration', () => {
+  it('user_4 with 3 HR monitors → ONE entry, HR = minimum across devices', () => {
+    const userManager = new UserManager();
+    userManager.registerUser({
+      id: 'user_4',
+      name: 'User_4',
+      birth_year: 1984,
+      hr_device_ids: [28676, 10366, 20991],
+    });
+
+    const deviceManager = new DeviceManager();
+    const t = Date.now();
+    [28676, 10366, 20991].forEach((id) => {
+      deviceManager.registerDevice({
+        id: String(id), type: 'heart_rate', heartRate: null, lastSeen: t
+      });
+    });
+
+    // Send readings: spurious-high 150 on the "bad" device, real 105 and 100
+    // on the other two. Min-HR arbitration must pick 100.
+    const user_4 = userManager.getUser('user_4');
+    user_4.updateFromDevice({ type: 'heart_rate', deviceId: '28676', heartRate: 150 });
+    user_4.updateFromDevice({ type: 'heart_rate', deviceId: '10366', heartRate: 105 });
+    user_4.updateFromDevice({ type: 'heart_rate', deviceId: '20991', heartRate: 100 });
+    // Mirror readings into DeviceManager so roster sees device.heartRate.
+    deviceManager.registerDevice({ id: '28676', type: 'heart_rate', heartRate: 150, lastSeen: t });
+    deviceManager.registerDevice({ id: '10366', type: 'heart_rate', heartRate: 105, lastSeen: t });
+    deviceManager.registerDevice({ id: '20991', type: 'heart_rate', heartRate: 100, lastSeen: t });
+
+    const roster = new ParticipantRoster();
+    roster.configure({ deviceManager, userManager });
+    const out = roster.getRoster();
+
+    expect(out).toHaveLength(1);
+    expect(out[0].name).toBe('User_4');
+    expect(out[0].heartRate).toBe(100);
+    expect(out[0].hrDeviceIds.sort()).toEqual(['10366', '20991', '28676']);
+  });
+});
