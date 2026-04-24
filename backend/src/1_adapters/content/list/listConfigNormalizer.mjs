@@ -112,6 +112,7 @@ export function normalizeListItem(item) {
   if (item.shader != null) result.shader = item.shader;
   if (item.days != null) result.days = item.days;
   if (item.applySchedule != null) result.applySchedule = item.applySchedule;
+  if (item.strategy != null) result.strategy = item.strategy;
 
   return result;
 }
