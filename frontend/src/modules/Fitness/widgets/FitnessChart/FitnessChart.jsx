@@ -13,6 +13,7 @@ import {
 import { CHART_MARGIN, MIN_VISIBLE_TICKS, MIN_GAP_DURATION_FOR_DASHED_MS } from '@/modules/Fitness/lib/chartConstants.js';
 import { ParticipantStatus, getZoneColor, isBroadcasting } from '@/modules/Fitness/domain';
 import { LayoutManager } from './layout';
+import { compareLegendEntries } from './layout/utils/sort.js';
 import { createChartDataSource } from './sessionDataAdapter.js';
 
 const DEFAULT_CHART_WIDTH = 420;
@@ -744,7 +745,9 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 		registerLifecycle,
 		activityMonitor,  // Phase 2 - centralized activity tracking
 		zoneConfig,       // Zone config for coin rate lookup (fixes sawtooth)
-		sessionId         // Session ID for cache cleanup on session change
+		sessionId,        // Session ID for cache cleanup on session change
+		participantDisplayMap,     // SSoT for name/avatar/progress/zoneIndex per participant
+		sessionParticipantsMeta    // Persisted session meta (for offline hydration — Issue A)
 	} = useFitnessModule('fitness_chart');
 
 	// Historical mode: use static session data instead of live module data
@@ -1178,13 +1181,25 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 
 	const filterEntries = useMemo(() => {
 		if (allEntries.length <= 1) return [];
-		return allEntries.map(entry => ({
-			id: entry.id,
-			name: entry.name || 'Unknown',
-			color: entry.color || '#9ca3af',
-			avatarUrl: entry.avatarUrl,
-		}));
-	}, [allEntries]);
+		const slugify = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+		const enriched = allEntries.map(entry => {
+			const displayEntry = participantDisplayMap?.get(slugify(entry.id))
+				|| participantDisplayMap?.get(slugify(entry.profileId))
+				|| participantDisplayMap?.get(slugify(entry.name))
+				|| null;
+			return {
+				id: entry.id,
+				name: entry.name || 'Unknown',
+				color: entry.color || '#9ca3af',
+				avatarUrl: entry.avatarUrl,
+				zoneIndex: displayEntry?.zoneIndex ?? null,
+				progress: displayEntry?.progress ?? null,
+				heartRate: displayEntry?.heartRate ?? null,
+			};
+		});
+		enriched.sort(compareLegendEntries);
+		return enriched;
+	}, [allEntries, participantDisplayMap]);
 
 	useEffect(() => {
 		if (allEntries.length <= 1) {

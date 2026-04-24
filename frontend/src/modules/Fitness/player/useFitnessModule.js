@@ -92,6 +92,8 @@ const useFitnessModule = (moduleId) => {
     // Participants & vitals
     participants: fitnessCtx.participantRoster,
     userVitalsMap: fitnessCtx.userVitals,
+    participantDisplayMap: fitnessCtx.participantDisplayMap,
+    sessionParticipantsMeta: fitnessCtx.sessionParticipantsMeta,
     userCurrentZones: fitnessCtx.userCurrentZones,
     // Historical participants (all users who have ever been in session, including those who left)
     // Fix 8: Use memoized value instead of calling getHistoricalParticipants() on each render
