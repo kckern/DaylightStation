@@ -99,7 +99,7 @@ describe('solveSingleBand', () => {
   test('returns valid=false when computed rowH would be non-positive', () => {
     // Force gaps > W: 5 tiles at gap=300 → 4 gaps = 1200 > W=1000
     const out = solveSingleBand([1, 1, 1, 1, 1], 1000, 300);
-    expect(out.valid).toBe(false);
+    expect(out).toEqual({ rowH: 0, valid: false });
   });
 });
 
@@ -156,6 +156,6 @@ describe('solveDoubleBand', () => {
     const out = solveDoubleBand({
       tallRatio: 2, upperRatios: [1, 1], lowerRatios: [1, 1], W: 100, gap: 80,
     });
-    expect(out.valid).toBe(false);
+    expect(out).toEqual({ valid: false, H_pair: 0, w_t: 0, upper_h: 0, lower_h: 0 });
   });
 });
