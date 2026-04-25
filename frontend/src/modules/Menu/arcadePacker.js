@@ -166,11 +166,13 @@ export function packLayout({
       }
     }
 
+    // Keep the absolute-best across all attempts. (Earlier code break-ed on
+    // the first valid attempt, which silently turned the Monte Carlo into a
+    // single-shuffle search — the additional shuffles never ran.)
     if (attemptBest && attemptScore > bestScore) {
       bestScore = attemptScore;
       bestPlacements = attemptBest;
       bestMeta = { attempt, ...attemptMeta };
-      break;
     }
   }
 
