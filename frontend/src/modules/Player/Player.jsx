@@ -322,12 +322,24 @@ const Player = forwardRef(function Player(props, ref) {
       autoplayBlocked: !!access.autoplayBlocked,
       onAutoplayResolved: typeof access.onAutoplayResolved === 'function' ? access.onAutoplayResolved : null
     };
-    setMediaAccess(newMediaAccess);
-    mediaAccessRef.current = newMediaAccess;
-    // Test hook for contract tests
-    if (typeof window !== 'undefined' && window.__TEST_CAPTURE_METRICS__) {
-      window.__TEST_MEDIA_ACCESS__ = newMediaAccess;
-    }
+    setMediaAccess((prev) => {
+      const unchanged = Boolean(prev)
+        && prev.getMediaEl === newMediaAccess.getMediaEl
+        && prev.hardReset === newMediaAccess.hardReset
+        && prev.fetchVideoInfo === newMediaAccess.fetchVideoInfo
+        && prev.nudgePlayback === newMediaAccess.nudgePlayback
+        && prev.getTroubleDiagnostics === newMediaAccess.getTroubleDiagnostics
+        && prev.autoplayBlocked === newMediaAccess.autoplayBlocked
+        && prev.onAutoplayResolved === newMediaAccess.onAutoplayResolved;
+
+      const resolved = unchanged ? prev : newMediaAccess;
+      mediaAccessRef.current = resolved;
+      // Test hook for contract tests
+      if (typeof window !== 'undefined' && window.__TEST_CAPTURE_METRICS__) {
+        window.__TEST_MEDIA_ACCESS__ = resolved;
+      }
+      return resolved;
+    });
   }, []);
 
   const handleRegisterResilienceBridge = useCallback((bridge) => {
@@ -688,17 +700,28 @@ const Player = forwardRef(function Player(props, ref) {
     currentItemVolume ?? queueVolume ?? sessionVolume ?? 1
   );
 
-  useEffect(() => {
-    if (Number.isFinite(effectiveVolume)) {
-      setSessionVolume(effectiveVolume);
-    }
-  }, [effectiveVolume, setSessionVolume]);
+  const hasExternalVolume = currentItemVolume != null || queueVolume != null;
+  const hasExternalPlaybackRate = currentItemPlaybackRate != null || queuePlaybackRate != null;
 
   useEffect(() => {
-    if (Number.isFinite(effectivePlaybackRate)) {
-      setSessionPlaybackRate(effectivePlaybackRate);
+    if (!hasExternalVolume || !Number.isFinite(effectiveVolume)) {
+      return;
     }
-  }, [effectivePlaybackRate, setSessionPlaybackRate]);
+    if (sessionVolume === effectiveVolume) {
+      return;
+    }
+    setSessionVolume(effectiveVolume);
+  }, [effectiveVolume, hasExternalVolume, sessionVolume, setSessionVolume]);
+
+  useEffect(() => {
+    if (!hasExternalPlaybackRate || !Number.isFinite(effectivePlaybackRate)) {
+      return;
+    }
+    if (sessionPlaybackRate === effectivePlaybackRate) {
+      return;
+    }
+    setSessionPlaybackRate(effectivePlaybackRate);
+  }, [effectivePlaybackRate, hasExternalPlaybackRate, sessionPlaybackRate, setSessionPlaybackRate]);
 
   // Get shader from the current item, falling back to queue/play level, then default
   // Looped videos default to 'focused' shader (hides progress bar) unless explicitly set

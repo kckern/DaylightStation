@@ -184,6 +184,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const inputHealthyRef = React.useRef(false);
+  const screenRootRef = React.useRef(null);
 
   // Failsafe: digit 4 always reloads if the input system isn't actually handling input.
   // "Handling" means the adapter attached AND (where relevant) its keymap actually loaded.
@@ -199,6 +200,45 @@ export function ScreenRenderer({ screenId: propScreenId }) {
     window.addEventListener('keydown', failsafe);
     return () => window.removeEventListener('keydown', failsafe);
   }, []);
+
+  // Focus probe: if the document loses focus, attempt to recover so keyboard input
+  // from remotes/keyboards continues to route through the screen input adapters.
+  useEffect(() => {
+    const focusLogger = getLogger().child({ component: 'ScreenRenderer', screenId });
+    const probeFocus = (reason) => {
+      if (typeof document.hasFocus !== 'function') return;
+      if (document.visibilityState === 'hidden') return;
+      if (document.hasFocus()) return;
+
+      window.focus?.();
+      if (!document.hasFocus()) {
+        const fallbackTarget = screenRootRef.current || document.body || document.documentElement;
+        fallbackTarget?.focus?.();
+      }
+
+      focusLogger.sampled(
+        'screen.focus-probe',
+        { reason, recovered: document.hasFocus() },
+        { maxPerMinute: 12, aggregate: true }
+      );
+    };
+
+    probeFocus('mount');
+    const onBlur = () => probeFocus('blur');
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'hidden') probeFocus('visibilitychange');
+    };
+    const timer = window.setInterval(() => probeFocus('interval'), 2000);
+
+    window.addEventListener('blur', onBlur);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('blur', onBlur);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [screenId]);
 
   // Fetch screen configuration
   useEffect(() => {
@@ -299,7 +339,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
   return (
     <ScreenDataProvider sources={config.data}>
       {viewport(
-        <div className={`screen-root screen-root--${screenId}`} style={{
+        <div ref={screenRootRef} tabIndex={-1} className={`screen-root screen-root--${screenId}`} style={{
           width: res ? `${res.width}px` : '100%',
           height: res ? `${res.height}px` : '100%',
           display: 'flex',

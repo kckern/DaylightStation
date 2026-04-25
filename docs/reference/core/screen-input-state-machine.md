@@ -162,6 +162,16 @@ The menu item gets selected at the same instant the overlay is dismissed. May ca
 **Capture phase listeners fire first.** Sleep wake correctly intercepts before others.
 Bubble phase: NumpadAdapter and Menu.jsx both fire — order depends on registration order, but both execute.
 
+## Focus Retention Probe
+
+`ScreenRenderer` now runs a `document.hasFocus()` probe to keep kiosk input reliable:
+
+- Trigger points: mount, `window.blur`, `document.visibilitychange`, and a 2s interval.
+- Recovery path: call `window.focus()`; if still unfocused, focus the `.screen-root` fallback node.
+- Logging: sampled `screen.focus-probe` events record recovery success without log spam.
+
+This prevents the common kiosk failure mode where the page silently drops keyboard/remote input after focus drift.
+
 ---
 
 ## Correct Flow After Fixes
@@ -197,6 +207,7 @@ After the fix, the synthetic Enter dispatched by `handleMenuOpen` (navigate mode
 | File | Role |
 |------|------|
 | `frontend/src/screen-framework/input/adapters/NumpadAdapter.js` | Key → ActionBus translation (needs propagation fix) |
+| `frontend/src/screen-framework/ScreenRenderer.jsx` | Focus retention probe (`document.hasFocus`) and fallback focus recovery |
 | `frontend/src/screen-framework/actions/ScreenActionHandler.jsx` | ActionBus → overlay/effect dispatch |
 | `frontend/src/screen-framework/overlays/ScreenOverlayProvider.jsx` | Overlay state management |
 | `frontend/src/modules/Menu/Menu.jsx:618-663` | Menu keydown handler + window listener |

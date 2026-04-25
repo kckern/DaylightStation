@@ -13,6 +13,7 @@ import paperBackground from "../../../assets/backgrounds/paper.jpg";
 import { useMediaKeyboardHandler } from '../../../lib/Player/useMediaKeyboardHandler.js';
 import { useDynamicDimensions } from '../../../lib/Player/useDynamicDimensions.js';
 import { useMediaReporter } from '../hooks/useMediaReporter.js';
+  import { playbackLog } from '../lib/playbackLogger.js';
   
   /**
    * ContentScroller (superclass)
@@ -46,6 +47,7 @@ import { useMediaReporter } from '../hooks/useMediaReporter.js';
     assetId,
     title,ready,
     subtitle,
+    subsubtitle,
     mainMediaUrl,
     isVideo = false,
     mainVolume = 1,
@@ -156,13 +158,37 @@ import { useMediaReporter } from '../hooks/useMediaReporter.js';
     // Logger for media progress
     const lastLoggedTimeRef = useRef(Date.now());
 
+    const resolvePlayLogType = useCallback((candidateType, candidateAssetId) => {
+      if (typeof candidateAssetId === 'string' && candidateAssetId.includes(':')) {
+        return candidateAssetId.split(':')[0] || candidateType;
+      }
+      if (candidateType === 'scriptures' || candidateType === 'poetry' || candidateType === 'talk') {
+        return 'readalong';
+      }
+      return candidateType;
+    }, []);
+
     const logTime = async (type, assetId, percent, title) => {
       const now = Date.now();
       const timeSinceLastLog = now - lastLoggedTimeRef.current;
       if (timeSinceLastLog > 10000 && parseFloat(percent) > 0) {
-      lastLoggedTimeRef.current = now;
       const seconds = Math.round((duration * percent) / 100);
-      await DaylightAPI(`api/v1/play/log`, { title, type, assetId, seconds, percent: Math.round(percent), listId });
+      if (!assetId || seconds < 10) {
+        return;
+      }
+      const logType = resolvePlayLogType(type, assetId);
+      lastLoggedTimeRef.current = now;
+      try {
+        await DaylightAPI(`api/v1/play/log`, { title, type: logType, assetId, seconds, percent: Math.round(percent), listId });
+      } catch (error) {
+        playbackLog('play.log.failed', {
+          type: logType,
+          assetId,
+          seconds,
+          percent: Math.round(percent),
+          message: error?.message || 'unknown'
+        }, { level: 'warn' });
+      }
       }
     };
 
@@ -179,7 +205,7 @@ import { useMediaReporter } from '../hooks/useMediaReporter.js';
 
       mainEl.addEventListener('timeupdate', onTimeUpdate);
       return () => mainEl.removeEventListener('timeupdate', onTimeUpdate);
-    }, [mainMediaUrl, duration, title]);
+    }, [mainMediaUrl, duration, title, type, assetId, listId, resolvePlayLogType]);
 
   
     // Keep time and progress in sync while playing
@@ -297,6 +323,8 @@ import { useMediaReporter } from '../hooks/useMediaReporter.js';
     const renderedContent = parseContent
       ? parseContent(contentData)
       : (contentData || []).map((line, idx) => <p key={idx}>{line}</p>);
+
+    const headerMeta = [subtitle, subsubtitle].filter(Boolean).join(' • ');
    
     // Final transform for scrolling with safeguards against jitter
     const yOffset = useMemo(() => {
@@ -331,6 +359,9 @@ import { useMediaReporter } from '../hooks/useMediaReporter.js';
         {title && (
           <header className={`scroller-header${currentSection ? ' has-section' : ''}`}>
             <span className="scroller-header-title">{title}</span>
+            {headerMeta && (
+              <span className="scroller-header-subtitle">{headerMeta}</span>
+            )}
             {currentSection && (
               <span key={currentSection} className="scroller-header-section">
                 {currentSection}

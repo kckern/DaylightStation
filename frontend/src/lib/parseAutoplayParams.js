@@ -14,6 +14,16 @@ const CONFIG_KEYS = [
   'prewarmToken', 'prewarmContentId'
 ];
 
+const BOOLEAN_CONFIG_KEYS = new Set(['shuffle', 'continuous', 'repeat', 'loop']);
+
+function parseBooleanParam(rawValue) {
+  if (rawValue === '' || rawValue == null) return true;
+  const value = String(rawValue).toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(value)) return true;
+  if (['0', 'false', 'no', 'off'].includes(value)) return false;
+  return Boolean(rawValue);
+}
+
 function toContentId(value) {
   if (/^[a-z]+:.+$/i.test(value)) return value;
   if (/^\d+$/.test(value)) return `plex:${value}`;
@@ -57,10 +67,17 @@ export function parseAutoplayParams(searchString, supportedActions) {
           queue: { contentId: toContentId(queryEntries[configKey]) },
           shuffle: true
         };
+      } else if (BOOLEAN_CONFIG_KEYS.has(configKey)) {
+        config[configKey] = parseBooleanParam(queryEntries[configKey]);
       } else {
         config[configKey] = queryEntries[configKey];
       }
     }
+  }
+
+  // Backward-compatible alias: loop uses the same behavior as continuous.
+  if (config.loop != null && config.continuous == null) {
+    config.continuous = Boolean(config.loop);
   }
 
   // Parse advance as structured object
