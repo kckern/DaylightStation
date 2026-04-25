@@ -763,4 +763,21 @@ describe('scoreLayout', () => {
     expect(out.tallAreaFrac).toBeCloseTo(0.8, 3);
     expect(out.score).toBeLessThan(0);
   });
+
+  test('asymmetric balance: under-allocation gets full balanceTerm', () => {
+    // 2 of 4 items are tall (50% count) but they only occupy 40% of area.
+    // Under symmetric balance this would penalize 0.1; asymmetric gives 1.0.
+    const placements = [
+      { idx: 0, x: 0, y: 0, w: 200, h: 100 },     // tall, area=20000
+      { idx: 1, x: 200, y: 0, w: 200, h: 100 },   // tall, area=20000
+      { idx: 2, x: 400, y: 0, w: 300, h: 100 },   // normal, area=30000
+      { idx: 3, x: 700, y: 0, w: 300, h: 100 },   // normal, area=30000
+    ];
+    const tallSet = new Set([0, 1]);
+    const out = scoreLayout({ placements, tallSet, N: 4, W: 1000, H: 100 });
+    expect(out.tallAreaFrac).toBeCloseTo(0.4, 3);
+    expect(out.tallCountFrac).toBe(0.5);
+    // Under-allocated (0.4 < 0.5) → balanceTerm = 1 - max(0, -0.1) = 1.0
+    expect(out.balanceTerm).toBeCloseTo(1.0, 3);
+  });
 });
