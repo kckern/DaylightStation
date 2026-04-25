@@ -8,13 +8,17 @@ function logger() {
   return _logger;
 }
 
+// Button indices follow W3C Standard Gamepad mapping. The 8Bitdo SN30 Pro
+// reports `mapping: ""` (non-standard) on Shield TV but empirically uses
+// Standard indices for A (0) and the d-pad (12-15) — verified via
+// gamepad.button-pressed logs. See plan: gamepad-input-reliability.
 const BUTTON_MAP = {
-  0:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // A
-  1:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // B
-  2:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // X
-  3:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // Y
-  4:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // LB
-  5:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // RB
+  0:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // A — confirm
+  1:  { key: 'Escape',     action: 'escape',   payload: {},                        repeats: false }, // B — back
+  2:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // X — also confirm (any face button confirms)
+  3:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // Y — also confirm
+  4:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // L1
+  5:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // R1
   8:  { key: 'Escape',     action: 'escape',   payload: {},                        repeats: false }, // Select
   9:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // Start
   12: { key: 'ArrowUp',    action: 'navigate',  payload: { direction: 'up' },      repeats: true },
