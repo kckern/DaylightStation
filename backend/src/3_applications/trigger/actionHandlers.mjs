@@ -53,6 +53,12 @@ export const actionHandlers = {
     return device.loadContent(path, query);
   },
 
+  clear: async (intent, { deviceService }) => {
+    const device = deviceService.get(intent.target);
+    if (!device) throw new Error(`Unknown target device: ${intent.target}`);
+    return device.clearContent();
+  },
+
   scene: async (intent, { haGateway }) =>
     haGateway.callService('scene', 'turn_on', { entity_id: intent.scene }),
 
