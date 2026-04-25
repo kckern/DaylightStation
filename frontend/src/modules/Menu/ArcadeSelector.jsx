@@ -10,6 +10,7 @@ import { DaylightMediaPath, ContentDisplayUrl } from "../../lib/api.mjs";
 import MenuNavigationContext from "../../context/MenuNavigationContext";
 import getLogger from "../../lib/logging/Logger.js";
 import { packLayout } from "./arcadePacker.js";
+import { RetryImg } from "./RetryImg.jsx";
 import "./ArcadeSelector.scss";
 
 /**
@@ -329,8 +330,8 @@ export function ArcadeSelector({
         <div className="arcade-selector__hero-art" ref={heroArtRef} key={selectedIndex}>
           {heroImage && (
             <>
-              <img className="arcade-selector__hero-bg" src={heroImage} alt="" aria-hidden="true" />
-              <img className="arcade-selector__hero-img" src={heroImage} alt={currentItem.label} />
+              <RetryImg className="arcade-selector__hero-bg" src={heroImage} alt="" />
+              <RetryImg className="arcade-selector__hero-img" src={heroImage} alt={currentItem.label} />
             </>
           )}
         </div>
@@ -375,14 +376,11 @@ export function ArcadeSelector({
                 backgroundColor: `hsl(${hue}, 40%, 20%)`,
               }}
             >
-              {resolveImage(items[tile.idx]) ? (
-                <img
-                  src={resolveImage(items[tile.idx])}
-                  alt={items[tile.idx].label}
-                />
-              ) : (
-                <span className="arcade-selector__navmap-placeholder" />
-              )}
+              <RetryImg
+                src={resolveImage(items[tile.idx])}
+                alt={items[tile.idx].label}
+                fallback={<span className="arcade-selector__navmap-placeholder" />}
+              />
             </div>
           );
         })}
