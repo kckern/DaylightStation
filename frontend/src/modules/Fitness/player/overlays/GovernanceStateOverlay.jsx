@@ -5,6 +5,7 @@ import { getLogger } from '@/lib/logging/Logger.js';
 import { useDeadlineCountdown } from '@/modules/Fitness/shared';
 import GovernanceAudioPlayer from './GovernanceAudioPlayer.jsx';
 import { computeCycleLockPanelData } from './cycleLockPanelData.js';
+import CompletionCountBlocks from './CompletionCountBlocks.jsx';
 import './GovernanceStateOverlay.scss';
 
 const TOTAL_NOTCHES = 56;
@@ -248,16 +249,20 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
     return resolved;
   }, [challenge, activeRequirement, targetCount]);
 
-  const countBlocks = useMemo(() => {
-    if (!Number.isFinite(targetCount) || targetCount <= 0) return [];
-    const completed = Math.min(targetCount, Math.max(0, actualCount));
-    return Array.from({ length: targetCount }, (_, index) => ({
-      id: index + 1,
-      complete: index < completed
-    }));
-  }, [targetCount, actualCount]);
+  const metUsers = useMemo(() => {
+    const challengeMetUsers = Array.isArray(challenge?.metUsers)
+      ? challenge.metUsers.filter(Boolean)
+      : [];
+    if (challengeMetUsers.length > 0) {
+      return challengeMetUsers;
+    }
+    return Array.isArray(activeRequirement?.metUsers)
+      ? activeRequirement.metUsers.filter(Boolean)
+      : [];
+  }, [challenge, activeRequirement]);
+
   const hasTargetCount = Number.isFinite(targetCount) && targetCount > 0;
-  const showCountBlocks = !isInitPoolEmpty && hasTargetCount && countBlocks.length > 0;
+  const showCountBlocks = !isInitPoolEmpty && hasTargetCount;
 
   const summaryMain = useMemo(() => {
     if (isInitPoolEmpty) {
@@ -405,23 +410,16 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
     <div className={`governance-overlay governance-overlay--${status}`}>
       <div className="governance-overlay__panel governance-lock governance-lock--wide">
         <div className={`governance-lock__header${showCountBlocks ? '' : ' governance-lock__header--summary-only'}`}>
-            {showCountBlocks ? (
-            <div
-              className="governance-lock__count-blocks"
-              role="meter"
-              aria-label={`Exit criteria progress ${actualCount} of ${targetCount}`}
-              aria-valuemin={0}
-              aria-valuemax={targetCount}
-              aria-valuenow={actualCount}
-            >
-              {countBlocks.map((block) => (
-                <span
-                  key={block.id}
-                  className={`governance-lock__count-block${block.complete ? ' governance-lock__count-block--complete' : ''}`}
-                  aria-hidden="true"
-                />
-              ))}
-            </div>
+          {showCountBlocks ? (
+            <CompletionCountBlocks
+              targetCount={targetCount}
+              actualCount={actualCount}
+              metUsers={metUsers}
+              containerClassName="governance-lock__count-blocks"
+              blockClassName="governance-lock__count-block"
+              completeBlockClassName="governance-lock__count-block--complete"
+              ariaLabel={`Exit criteria progress ${actualCount} of ${targetCount}`}
+            />
           ) : null}
           <div className="governance-lock__summary">
             <p className="governance-lock__summary-main">{summaryMain}</p>
@@ -557,7 +555,8 @@ const GovernanceStateOverlay = ({ display, overlay = null, lockRows = [], warnin
 
   const effectiveStatus = useNewPath
     ? (display.status || '')
-    : (typeof overlay?.status === 'string' ? overlay.status.toLowerCase() : '');
+    : (typeof overlay?.status === 'string' ? overlay.status : '');
+  const normalizedStatus = String(effectiveStatus || '').toLowerCase();
   const effectiveShow = useNewPath ? display.show : Boolean(overlay?.show);
   const effectiveCategory = useNewPath ? null : (overlay?.category || null);
 
@@ -571,12 +570,17 @@ const GovernanceStateOverlay = ({ display, overlay = null, lockRows = [], warnin
   // Determine which audio track to play (or null for none)
   const audioTrackKey = useMemo(() => {
     if (!effectiveShow) return null;
-    // Legacy path uses category check; new path just uses status
-    if (!useNewPath && effectiveCategory !== 'governance') return null;
-    if (effectiveStatus === 'pending') return 'init';
-    if (effectiveStatus === 'locked') return 'locked';
+    const isGovernanceOverlay = useNewPath
+      ? Boolean(display?.videoLocked) || normalizedStatus === 'pending' || normalizedStatus === 'warning' || normalizedStatus === 'locked' || normalizedStatus === 'challenge-failed'
+      : effectiveCategory === 'governance' || effectiveCategory === 'governance-warning-progress';
+    if (!isGovernanceOverlay) return null;
+    if (normalizedStatus === 'warning') return null;
+    if (normalizedStatus === 'pending') return 'init';
+    if (normalizedStatus === 'locked' || normalizedStatus === 'challenge-failed') return 'locked';
+    // Fallback: if governance is actively locking video but status string is missing/unexpected.
+    if (useNewPath && display?.videoLocked) return 'locked';
     return null;
-  }, [effectiveShow, effectiveCategory, effectiveStatus, useNewPath]);
+  }, [effectiveShow, useNewPath, effectiveCategory, normalizedStatus, display?.videoLocked]);
 
   if (!effectiveShow) {
     return null;
@@ -584,7 +588,7 @@ const GovernanceStateOverlay = ({ display, overlay = null, lockRows = [], warnin
 
   // New path: dispatch on status
   if (useNewPath) {
-    if (effectiveStatus === 'warning') {
+    if (normalizedStatus === 'warning') {
       return (
         <>
           <GovernanceAudioPlayer trackKey={audioTrackKey} />

@@ -103,12 +103,21 @@
     border: 1px solid rgba(248, 250, 252, 0.35);
     box-shadow: inset 0 0 10px rgba(15, 23, 42, 0.4);
     transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(0.62rem, var(--challenge-overlay-diameter) * 0.065, 1rem);
+    font-weight: 700;
+    line-height: 1;
+    text-transform: uppercase;
+    color: rgba(248, 250, 252, 0.92);
   
 
     &--complete {
       background: #ffffff;
       border-color: rgba(255, 255, 255, 0.85);
       box-shadow: 0 6px 18px rgba(255, 255, 255, 0.35), inset 0 0 12px rgba(203, 213, 225, 0.4);
+      color: rgba(15, 23, 42, 0.92);
     }
   }
 

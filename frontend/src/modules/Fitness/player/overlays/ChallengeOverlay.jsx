@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
+import CompletionCountBlocks from './CompletionCountBlocks.jsx';
 import './ChallengeOverlay.scss';
 
 const CHALLENGE_VIEWBOX_SIZE = 220;
@@ -367,6 +368,7 @@ export const ChallengeOverlay = ({ overlay }) => {
 		title,
 		requiredCount,
 		actualCount,
+		metUsers,
 		statusLabel,
 		timeLabel,
 		countdownPaused,
@@ -453,13 +455,7 @@ export const ChallengeOverlay = ({ overlay }) => {
 	const normalizedTarget = Number.isFinite(requiredCount) ? Math.max(0, requiredCount) : 0;
 	const normalizedActual = Number.isFinite(actualCount) ? Math.max(0, actualCount) : 0;
 	const clampedActual = normalizedTarget > 0 ? Math.min(normalizedTarget, normalizedActual) : normalizedActual;
-	const countBlocks = normalizedTarget > 0
-		? Array.from({ length: normalizedTarget }, (_, index) => ({
-			id: index + 1,
-			complete: index < clampedActual
-		}))
-		: [];
-	const showCountBlocks = variant !== 'upcoming' && countBlocks.length > 0;
+	const showCountBlocks = variant !== 'upcoming' && normalizedTarget > 0;
 	const countAriaLabel = showCountBlocks
 		? `Challenge completion ${clampedActual} of ${normalizedTarget}`
 		: undefined;
@@ -505,25 +501,15 @@ export const ChallengeOverlay = ({ overlay }) => {
 				<div className="challenge-overlay__meta">
 					<div className="challenge-overlay__title">{normalizedTitle}</div>
 					{showCountBlocks && (
-						<div
-							className="challenge-overlay__count-blocks"
-							role="meter"
-							aria-label={countAriaLabel}
-							aria-valuemin={0}
-							aria-valuemax={normalizedTarget}
-							aria-valuenow={clampedActual}
-						>
-							{countBlocks.map((block) => (
-								<span
-									key={block.id}
-									className={[
-										'challenge-overlay__count-block',
-										block.complete ? 'challenge-overlay__count-block--complete' : null
-									].filter(Boolean).join(' ')}
-									aria-hidden="true"
-								/>
-							))}
-						</div>
+						<CompletionCountBlocks
+							targetCount={normalizedTarget}
+							actualCount={normalizedActual}
+							metUsers={Array.isArray(metUsers) ? metUsers : []}
+							containerClassName="challenge-overlay__count-blocks"
+							blockClassName="challenge-overlay__count-block"
+							completeBlockClassName="challenge-overlay__count-block--complete"
+							ariaLabel={countAriaLabel}
+						/>
 					)}
 				</div>
 				<div className="challenge-overlay__time-block" aria-label={timeAriaLabel} role="timer">
@@ -542,6 +528,7 @@ ChallengeOverlay.propTypes = {
 		title: PropTypes.string,
 		requiredCount: PropTypes.number,
 		actualCount: PropTypes.number,
+		metUsers: PropTypes.array,
 		progress: PropTypes.number,
 		statusLabel: PropTypes.string,
 		timeLabel: PropTypes.string,
