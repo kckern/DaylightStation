@@ -166,15 +166,20 @@ export function solveDoubleBand({ tallRatio, upperRatios, lowerRatios, W, gap })
 }
 
 // Greedy: walk `order`. For each tall index, open a double band and pull
-// subsequent normal indices to fill upper/lower halves until both sides hit
-// `minPerRow` width consumption (estimated at refH). For each normal index,
-// extend the current single band until adding the next tile would overflow W.
+// subsequent normal indices to fill upper/lower halves until adding the next
+// item would exceed `widthBudget` (estimated using `refH`). For each normal
+// index, extend the current single band until adding the next tile would
+// overflow W.
 //
 // Constraints (initial implementation):
 //   - At most ONE tall tile per double band.
 //   - Both upper and lower halves must contain >= 1 normal tile, otherwise
 //     the tall is emitted as a single-band tile.
-//   - Upper/lower split alternates so |n_u - n_l| <= 1.
+//   - Upper/lower split alternates by count so |n_u - n_l| <= 1. (Width-
+//     balanced splitting is a future improvement; revisit if Task 8 visual
+//     review shows visible asymmetry.)
+//   - Trailing-merge only handles the LAST band — mid-stream short singles
+//     stay short. Revisit if Task 8 finds them ugly.
 export function buildBands({
   itemRatios,
   order,
@@ -197,6 +202,11 @@ export function buildBands({
 
     if (isTall(idx)) {
       // Estimate this tall's width when sharing a 2-row band of ~ 2*refH.
+      // NOTE: this is a low estimate — the closed-form `solveDoubleBand` will
+      // typically yield H_pair (and therefore w_t) larger than this guess, so
+      // the actual upper_h / lower_h shrink below refH. If Task 8 visual
+      // review shows starved half-rows or maxRowPct rejections, raise the
+      // guess (e.g. 2.5 * refH + gap) or iteratively re-solve.
       const pairHeightGuess = 2 * refH + gap;
       const tallW = widthAt(idx, pairHeightGuess);
       const widthBudget = W - tallW - gap;
