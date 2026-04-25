@@ -18,10 +18,11 @@ const BUTTON_MAP = {
   1:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // B
   2:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // X
   3:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // Y
-  // Back: Select button + R1 + L2. (Start still confirms; L1 still confirms.)
-  4:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // L1
-  5:  { key: 'Escape',     action: 'escape',   payload: {},                        repeats: false }, // R1 — back
-  6:  { key: 'Escape',     action: 'escape',   payload: {},                        repeats: false }, // L2 — back
+  // Back: L1 + R2 + Select. Enter: R1 + L2 + Start.
+  4:  { key: 'Escape',     action: 'escape',   payload: {},                        repeats: false }, // L1 — back
+  5:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // R1
+  6:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // L2
+  7:  { key: 'Escape',     action: 'escape',   payload: {},                        repeats: false }, // R2 — back
   8:  { key: 'Escape',     action: 'escape',   payload: {},                        repeats: false }, // Select — back
   9:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // Start
   12: { key: 'ArrowUp',    action: 'navigate',  payload: { direction: 'up' },      repeats: true },
