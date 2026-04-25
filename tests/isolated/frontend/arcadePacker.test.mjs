@@ -1,5 +1,5 @@
 import { describe, test, expect } from '@jest/globals';
-import { packLayout, classifyItems, solveSingleBand, solveDoubleBand, solveTripleBand, buildBands, renderBands } from '../../../frontend/src/modules/Menu/arcadePacker.js';
+import { packLayout, classifyItems, solveSingleBand, solveDoubleBand, solveTripleBand, buildBands, renderBands, scoreLayout, DEFAULT_TALL_AREA_CAP } from '../../../frontend/src/modules/Menu/arcadePacker.js';
 
 // Deterministic LCG so attempts/shuffle/mirror are reproducible.
 function seededRandom(seed = 1) {
@@ -673,5 +673,94 @@ describe('solveTripleBand', () => {
       valid: false, H_triple: 0, w_t: 0,
       tall1_h: 0, tall2_h: 0, top_h: 0, mid_h: 0, bot_h: 0,
     });
+  });
+});
+
+describe('scoreLayout', () => {
+  test('perfect fill + perfect balance returns positive composite', () => {
+    const placements = [
+      { idx: 0, x: 0, y: 0, w: 250, h: 100 },
+      { idx: 1, x: 250, y: 0, w: 250, h: 100 },
+      { idx: 2, x: 500, y: 0, w: 250, h: 100 },
+      { idx: 3, x: 750, y: 0, w: 250, h: 100 },
+    ];
+    const tallSet = new Set();
+    const out = scoreLayout({ placements, tallSet, N: 4, W: 1000, H: 100 });
+    expect(out.fillRatio).toBeCloseTo(1.0, 3);
+    expect(out.tallAreaFrac).toBeCloseTo(0, 3);
+    expect(out.tallCountFrac).toBeCloseTo(0, 3);
+    expect(out.balanceTerm).toBeCloseTo(1.0, 3);
+    expect(out.capPenalty).toBe(0);
+    expect(out.score).toBeGreaterThan(0);
+  });
+
+  test('balanced talls (area% == count%) maximize balanceTerm', () => {
+    const placements = [
+      { idx: 0, x: 0, y: 0, w: 250, h: 200 },
+      { idx: 1, x: 250, y: 0, w: 250, h: 200 },
+      { idx: 2, x: 500, y: 0, w: 250, h: 200 },
+      { idx: 3, x: 750, y: 0, w: 250, h: 200 },
+    ];
+    const tallSet = new Set([0, 1]);
+    const out = scoreLayout({ placements, tallSet, N: 4, W: 1000, H: 200 });
+    expect(out.tallAreaFrac).toBeCloseTo(0.5, 3);
+    expect(out.tallCountFrac).toBe(0.5);
+    expect(out.balanceTerm).toBeCloseTo(1.0, 3);
+    expect(out.capPenalty).toBe(0);
+  });
+
+  test('over-allocation triggers cap penalty', () => {
+    const placements = [
+      { idx: 0, x: 0, y: 0, w: 600, h: 200 },
+      { idx: 1, x: 0, y: 200, w: 333, h: 100 },
+      { idx: 2, x: 333, y: 200, w: 333, h: 100 },
+      { idx: 3, x: 666, y: 200, w: 334, h: 100 },
+    ];
+    const tallSet = new Set([0]);
+    const out = scoreLayout({ placements, tallSet, N: 4, W: 1000, H: 300 });
+    expect(out.tallAreaFrac).toBeCloseTo(0.4, 3);
+    expect(out.capPenalty).toBe(0);
+  });
+
+  test('exceeding hard cap produces penalty proportional to overshoot', () => {
+    const placements = [
+      { idx: 0, x: 0, y: 0, w: 600, h: 600 },
+      { idx: 1, x: 600, y: 0, w: 400, h: 600 },
+    ];
+    const tallSet = new Set([0]);
+    const out = scoreLayout({ placements, tallSet, N: 2, W: 1000, H: 600 });
+    expect(out.tallAreaFrac).toBeCloseTo(0.6, 3);
+    expect(out.capPenalty).toBeCloseTo(0.1, 3);
+    expect(out.score).toBeLessThan(out.fillRatio + out.balanceTerm);
+  });
+
+  test('overflow (totalH > H) penalizes fillRatio via inversion', () => {
+    const placements = [
+      { idx: 0, x: 0, y: 0, w: 1000, h: 800 },
+    ];
+    const tallSet = new Set();
+    const out = scoreLayout({ placements, tallSet, N: 1, W: 1000, H: 400 });
+    expect(out.fillRatio).toBeCloseTo(0.5, 3);
+  });
+
+  test('uses default constants when weights/cap not provided', () => {
+    const placements = [{ idx: 0, x: 0, y: 0, w: 100, h: 100 }];
+    const tallSet = new Set();
+    const out = scoreLayout({ placements, tallSet, N: 1, W: 100, H: 100 });
+    expect(out.score).toBeCloseTo(2, 3);
+  });
+
+  test('respects custom weights and cap', () => {
+    const placements = [
+      { idx: 0, x: 0, y: 0, w: 800, h: 1000 },
+      { idx: 1, x: 800, y: 0, w: 200, h: 1000 },
+    ];
+    const tallSet = new Set([0]);
+    const out = scoreLayout({
+      placements, tallSet, N: 2, W: 1000, H: 1000,
+      fillWeight: 2, balanceWeight: 0.5, capWeight: 100, areaCap: 0.4,
+    });
+    expect(out.tallAreaFrac).toBeCloseTo(0.8, 3);
+    expect(out.score).toBeLessThan(0);
   });
 });

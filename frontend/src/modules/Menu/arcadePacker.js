@@ -6,6 +6,11 @@ const DEFAULT_MAX_ROW_PCT = 0.25;
 const DEFAULT_MAX_ATTEMPTS = 20;
 const DEFAULT_MIN_PER_ROW = 3;
 
+export const DEFAULT_TALL_AREA_CAP = 0.5;
+export const DEFAULT_FILL_WEIGHT = 1.0;
+export const DEFAULT_BALANCE_WEIGHT = 1.0;
+export const DEFAULT_CAP_PENALTY = 10.0;
+
 // Solve a band's pre-scale dimensions using the same primitives renderBands
 // uses internally. Returns { rowH } for singles or { H_pair, upper_h, lower_h }
 // for doubles, plus a `valid` flag. Used by packLayout to perform the
@@ -682,4 +687,36 @@ export function renderBands({ bands, itemRatios, W, H, gap }) {
   }
 
   return { valid: true, placements };
+}
+
+export function scoreLayout({
+  placements,
+  tallSet,
+  N,
+  W,
+  H,
+  fillWeight = DEFAULT_FILL_WEIGHT,
+  balanceWeight = DEFAULT_BALANCE_WEIGHT,
+  capWeight = DEFAULT_CAP_PENALTY,
+  areaCap = DEFAULT_TALL_AREA_CAP,
+}) {
+  const renderedTotalH = placements.reduce((m, p) => Math.max(m, p.y + p.h), 0);
+  const rawFillRatio = renderedTotalH / H;
+  const fillRatio = rawFillRatio <= 1 ? rawFillRatio : 1 / rawFillRatio;
+
+  const totalArea = W * H;
+  const tallArea = placements.reduce(
+    (s, p) => s + (tallSet.has(p.idx) ? p.w * p.h : 0),
+    0,
+  );
+  const tallAreaFrac = tallArea / totalArea;
+  const tallCountFrac = N > 0 ? tallSet.size / N : 0;
+  const balanceTerm = 1 - Math.abs(tallAreaFrac - tallCountFrac);
+  const capPenalty = Math.max(0, tallAreaFrac - areaCap);
+
+  const score = fillWeight * fillRatio + balanceWeight * balanceTerm - capWeight * capPenalty;
+
+  return {
+    score, fillRatio, tallAreaFrac, tallCountFrac, balanceTerm, capPenalty, renderedTotalH,
+  };
 }
