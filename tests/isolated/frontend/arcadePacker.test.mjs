@@ -1,6 +1,5 @@
 import { describe, test, expect } from '@jest/globals';
-import { packLayout } from '../../../frontend/src/modules/Menu/arcadePacker.js';
-import { classifyItems } from '../../../frontend/src/modules/Menu/arcadePacker.js';
+import { packLayout, classifyItems, solveSingleBand } from '../../../frontend/src/modules/Menu/arcadePacker.js';
 
 // Deterministic LCG so attempts/shuffle/mirror are reproducible.
 function seededRandom(seed = 1) {
@@ -72,5 +71,34 @@ describe('classifyItems', () => {
 
   test('handles empty input', () => {
     expect(classifyItems([])).toEqual({ tallIndices: [], normalIndices: [] });
+  });
+});
+
+describe('solveSingleBand', () => {
+  test('three squares fill width 1000, gap 10 → rowH=(1000-20)/3', () => {
+    const out = solveSingleBand([1, 1, 1], 1000, 10);
+    expect(out.valid).toBe(true);
+    expect(out.rowH).toBeCloseTo((1000 - 20) / 3, 6); // 326.666…
+  });
+
+  test('mixed ratios solve correctly', () => {
+    // ratios 0.5, 1.0, 2.0 → Σ(1/r) = 2 + 1 + 0.5 = 3.5
+    const out = solveSingleBand([0.5, 1.0, 2.0], 1000, 10);
+    expect(out.rowH).toBeCloseTo((1000 - 20) / 3.5, 6);
+  });
+
+  test('single tile: rowH = W * ratio', () => {
+    const out = solveSingleBand([1.5], 600, 10);
+    expect(out.rowH).toBeCloseTo(600 * 1.5, 6);
+  });
+
+  test('returns valid=false when ratios is empty', () => {
+    expect(solveSingleBand([], 1000, 10)).toEqual({ rowH: 0, valid: false });
+  });
+
+  test('returns valid=false when computed rowH would be non-positive', () => {
+    // Force gaps > W: 5 tiles at gap=300 → 4 gaps = 1200 > W=1000
+    const out = solveSingleBand([1, 1, 1, 1, 1], 1000, 300);
+    expect(out.valid).toBe(false);
   });
 });
