@@ -175,7 +175,7 @@ A new component `frontend/src/modules/Player/components/OnDeckCard.jsx`. Rendere
 Spec:
 
 - **Square**: width = thumbnail width (~6 em on default chrome). Thumbnail aspect 1:1 occupies most of the card.
-- **Title strip** along the bottom: 1 line, truncate with ellipsis by default; CSS marquee animation only when text overflows the strip.
+- **Title strip** along the bottom: 1 line, truncate with ellipsis (`text-overflow: ellipsis`). *Marquee-on-overflow deferred to v2* — requires JS measurement (ResizeObserver), not needed for kid use case (most story titles fit).
 - **Top-left icon**: `▶▶` (or equivalent — small dark chip overlaid on the thumbnail). No text label.
 - **Chrome**: 1 px border `rgba(255,255,255,0.18)`, dark translucent backdrop, subtle box shadow.
 - **Position**: absolutely positioned bottom-right with 1 em offset.
@@ -238,3 +238,4 @@ Loaded via the existing config loader; surfaced to the Player overlay through sc
 - Multi-slot on-deck (a stack of "next 3 up") — explicitly rejected to keep the kid-tap UX simple.
 - Predictive/AI-driven on-deck (e.g., "you usually pick this next"). YAGNI.
 - Voice-modality NFC parity — the trigger is modality-agnostic; voice will work the day a `voice` modality lands without code changes.
+- Marquee-on-overflow title animation — pure CSS ellipsis is sufficient for v1; marquee requires JS measurement and adds complexity for marginal benefit.
