@@ -9,7 +9,6 @@ import React, {
 import { DaylightMediaPath, ContentDisplayUrl } from "../../lib/api.mjs";
 import MenuNavigationContext from "../../context/MenuNavigationContext";
 import getLogger from "../../lib/logging/Logger.js";
-import { getActiveGamepads } from "../../screen-framework/input/gamepadFiltering.js";
 import "./ArcadeSelector.scss";
 
 /**
@@ -225,137 +224,9 @@ export function ArcadeSelector({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
 
-  // --- Gamepad API polling (physical game controllers) ---
-  // All mutable state accessed via refs to avoid restarting the rAF loop on every
-  // selection change. The loop starts once on mount and runs until unmount.
-  const gamepadStateRef = useRef({
-    selectedIndex: 0,
-    items: [],
-    findNearest: null,
-    setSelectedIndex: null,
-    findKeyForItem: null,
-    onSelect: null,
-    handleClose: null,
-  });
-
-  // Keep ref in sync with latest values
-  useEffect(() => {
-    gamepadStateRef.current = {
-      selectedIndex, items, findNearest, setSelectedIndex,
-      findKeyForItem, onSelect, handleClose,
-    };
-  });
-
-  useEffect(() => {
-    if (!items.length) return;
-    let rafId;
-    const prevButtons = {};
-    const prevAxes = {};
-    const AXIS_THRESHOLD = 0.5;
-    const REPEAT_DELAY = 400;
-    const REPEAT_INTERVAL = 120;
-    const holdTimers = {};
-
-    function clearHold(key) {
-      if (holdTimers[key]) { clearTimeout(holdTimers[key]); delete holdTimers[key]; }
-    }
-
-    function navigate(dir) {
-      const s = gamepadStateRef.current;
-      const next = s.findNearest(s.selectedIndex, dir);
-      if (next >= 0) s.setSelectedIndex(next, s.findKeyForItem(s.items[next]));
-    }
-
-    function poll() {
-      const gamepads = getActiveGamepads();
-      const s = gamepadStateRef.current;
-
-      for (const gp of gamepads) {
-        const id = gp.index;
-        // Seed from live state on first observation: a button held when this
-        // component mounts (e.g. user is still holding A from the previous
-        // menu's confirm) must NOT register as a fresh press.
-        if (!prevButtons[id]) {
-          prevButtons[id] = gp.buttons.map(b => !!b?.pressed);
-          prevAxes[id] = Array.from(gp.axes);
-          continue; // skip edge detection this frame; state recorded.
-        }
-
-        const pressed = (i) => gp.buttons[i]?.pressed;
-        const wasPressed = (i) => prevButtons[id][i];
-        const justPressed = (i) => pressed(i) && !wasPressed(i);
-        const justReleased = (i) => !pressed(i) && wasPressed(i);
-
-        // D-pad: 12=Up, 13=Down, 14=Left, 15=Right
-        const dirMap = { 12: 'up', 13: 'down', 14: 'left', 15: 'right' };
-        for (const [btn, dir] of Object.entries(dirMap)) {
-          const b = parseInt(btn);
-          if (justPressed(b)) {
-            navigate(dir);
-            clearHold(`btn${b}`);
-            holdTimers[`btn${b}`] = setTimeout(function repeat() {
-              navigate(dir);
-              holdTimers[`btn${b}`] = setTimeout(repeat, REPEAT_INTERVAL);
-            }, REPEAT_DELAY);
-          }
-          if (justReleased(b)) clearHold(`btn${b}`);
-        }
-
-        // Analog stick → d-pad (axes 0=leftX, 1=leftY)
-        const stickDirs = [
-          { axis: 0, positive: true, dir: 'right', key: 'axisR' },
-          { axis: 0, positive: false, dir: 'left', key: 'axisL' },
-          { axis: 1, positive: true, dir: 'down', key: 'axisD' },
-          { axis: 1, positive: false, dir: 'up', key: 'axisU' },
-        ];
-        for (const { axis, positive, dir, key } of stickDirs) {
-          const val = gp.axes[axis] || 0;
-          const prevVal = prevAxes[id][axis] || 0;
-          const active = positive ? val > AXIS_THRESHOLD : val < -AXIS_THRESHOLD;
-          const wasActive = positive ? prevVal > AXIS_THRESHOLD : prevVal < -AXIS_THRESHOLD;
-          if (active && !wasActive) {
-            navigate(dir);
-            clearHold(key);
-            holdTimers[key] = setTimeout(function repeat() {
-              navigate(dir);
-              holdTimers[key] = setTimeout(repeat, REPEAT_INTERVAL);
-            }, REPEAT_DELAY);
-          }
-          if (!active && wasActive) clearHold(key);
-        }
-
-        // A button (0) = select
-        if (justPressed(0) && !selectCooldownRef.current) {
-          selectCooldownRef.current = true;
-          setTimeout(() => { selectCooldownRef.current = false; }, 300);
-          const selected = s.items[s.selectedIndex];
-          logger.info('arcade.gamepad-select', {
-            gamepad: gp.id, index: s.selectedIndex, title: selected?.label,
-          });
-          s.onSelect?.(selected);
-        }
-
-        // B button (1) = back
-        if (justPressed(1)) {
-          logger.info('arcade.gamepad-back', { gamepad: gp.id });
-          s.handleClose();
-        }
-
-        // Save state for next frame
-        for (let i = 0; i < gp.buttons.length; i++) prevButtons[id][i] = pressed(i);
-        for (let i = 0; i < gp.axes.length; i++) prevAxes[id][i] = gp.axes[i];
-      }
-      rafId = requestAnimationFrame(poll);
-    }
-
-    rafId = requestAnimationFrame(poll);
-    logger.debug('gamepad-polling.started');
-    return () => {
-      cancelAnimationFrame(rafId);
-      Object.keys(holdTimers).forEach(clearHold);
-      logger.debug('gamepad-polling.stopped');
-    };
-  }, [items.length, logger]); // Only restart when items appear/disappear or on unmount
+  // Gamepad input now flows through GamepadAdapter (single source of truth):
+  // it dispatches synthetic Enter / Escape / Arrow* keydown events that
+  // handleKeyDown above already handles. No per-component polling needed.
 
   // --- Selection restoration on items change ---
   useEffect(() => {
