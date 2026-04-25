@@ -261,11 +261,23 @@ export function buildBands({
   W,
   gap,
   minPerRow,
+  tripleCount = 0,
+  doubleCount = Infinity,
 }) {
   const { tallIndices } = classifyItems(itemRatios, tallThreshold);
   const tallSet = new Set(tallIndices);
   const isTall = (i) => tallSet.has(i);
   const widthAt = (i, h) => h / itemRatios[i];
+
+  // Talls are consumed in encounter order: first 2*tripleCount form triples
+  // (paired greedily), next doubleCount form doubles, rest become singles.
+  // "Explicit mode" — caller specified band counts. We then skip-over talls
+  // when filling wings and reserve normals for downstream bands. In default
+  // mode (no caller args) we preserve legacy contiguous-only packing so the
+  // pre-feature callers behave identically.
+  const explicitMode = tripleCount > 0 || doubleCount !== Infinity;
+  let triplesRemaining = tripleCount;
+  let doublesRemaining = doubleCount;
 
   const bands = [];
   let i = 0;
@@ -274,54 +286,196 @@ export function buildBands({
     const idx = order[i];
 
     if (isTall(idx)) {
-      // Estimate this tall's width when sharing a 2-row band of ~ 2*refH.
-      // NOTE: this is a low estimate — the closed-form `solveDoubleBand` will
-      // typically yield H_pair (and therefore w_t) larger than this guess, so
-      // the actual upper_h / lower_h shrink below refH. If Task 8 visual
-      // review shows starved half-rows or maxRowPct rejections, raise the
-      // guess (e.g. 2.5 * refH + gap) or iteratively re-solve.
-      const pairHeightGuess = 2 * refH + gap;
-      const tallW = widthAt(idx, pairHeightGuess);
-      const widthBudget = W - tallW - gap;
-
-      if (widthBudget <= 0) {
-        bands.push({ type: 'single', items: [idx] });
-        i++;
-        continue;
-      }
-
-      const upper = [];
-      const lower = [];
-      let uW = 0;
-      let lW = 0;
-      let j = i + 1;
-      while (j < order.length) {
-        const cand = order[j];
-        if (isTall(cand)) break;
-        const w = widthAt(cand, refH);
-        const target = upper.length <= lower.length ? 'upper' : 'lower';
-        if (target === 'upper') {
-          const next = uW + (upper.length > 0 ? gap : 0) + w;
-          if (next > widthBudget) break;
-          upper.push(cand);
-          uW = next;
-        } else {
-          const next = lW + (lower.length > 0 ? gap : 0) + w;
-          if (next > widthBudget) break;
-          lower.push(cand);
-          lW = next;
+      // 1) Try to form a TRIPLE if budget allows AND the next tall in `order`
+      //    is also adjacent (i.e., reachable without crossing other talls).
+      if (triplesRemaining > 0) {
+        // Find the next tall after idx (skipping any normals in between for now).
+        let nextTallJ = -1;
+        for (let k = i + 1; k < order.length; k++) {
+          if (isTall(order[k])) { nextTallJ = k; break; }
         }
-        j++;
+        if (nextTallJ !== -1) {
+          // Estimate band height for sizing wing widths. A triple is roughly
+          // 3 row-equivalents tall, so guess ~ 3 * refH + 2 * gap.
+          const tripleHeightGuess = 3 * refH + 2 * gap;
+          const r1 = itemRatios[idx];
+          const r2 = itemRatios[order[nextTallJ]];
+          // Tall width if pair shared height = tripleHeightGuess − gap (one inter-tall gap).
+          // For each tall: h = tallHeight, w = h/r. Stacked heights sum = guess − gap.
+          // Pin same width: w_t = (guess − gap) / (r1 + r2).
+          const w_t_guess = (tripleHeightGuess - gap) / (r1 + r2);
+          const widthBudget = W - w_t_guess - gap;
+          if (widthBudget > 0) {
+            // Fill the 3 rows from normals reachable in `order` past the two
+            // talls. Walk forward from i+1, skipping the second tall and any
+            // intervening talls (those will be handled by their own bands
+            // afterward); only normals feed the wing.
+            //
+            // Reservation: downstream doubles need ≥2 normals each (one upper +
+            // one lower). Don't drain so many normals that subsequent doubles
+            // can't form. We also leave 1 normal per remaining tall so single
+            // tall fallbacks don't completely starve.
+            const totalNormalsAhead = (() => {
+              let n = 0;
+              for (let k = i + 1; k < order.length; k++) {
+                if (k === nextTallJ) continue;
+                if (!isTall(order[k])) n++;
+              }
+              return n;
+            })();
+            // Count downstream talls — used to bound how many doubles can
+            // actually form (Infinity default doesn't translate to real demand).
+            const tallsAhead = (() => {
+              let n = 0;
+              for (let k = i + 1; k < order.length; k++) {
+                if (k === nextTallJ) continue;
+                if (isTall(order[k])) n++;
+              }
+              return n;
+            })();
+            const realisticDoubles = Math.min(doublesRemaining, tallsAhead);
+            const reserveForDoubles = 2 * realisticDoubles;
+            const tripleNormalCap = Math.max(3, totalNormalsAhead - reserveForDoubles);
+
+            const top = [], mid = [], bot = [];
+            const widths = [0, 0, 0];
+            const arrs = [top, mid, bot];
+            const consumedNormals = new Set();
+            for (let k = i + 1; k < order.length; k++) {
+              if (k === nextTallJ) continue;
+              const cand = order[k];
+              if (isTall(cand)) continue; // skip downstream talls — they're handled later
+              if (consumedNormals.size >= tripleNormalCap) break;
+              let target = 0;
+              if (arrs[1].length < arrs[target].length) target = 1;
+              if (arrs[2].length < arrs[target].length) target = 2;
+              const w = widthAt(cand, refH);
+              const next = widths[target] + (arrs[target].length > 0 ? gap : 0) + w;
+              if (next > widthBudget) break;
+              arrs[target].push(cand);
+              widths[target] = next;
+              consumedNormals.add(cand);
+            }
+            if (top.length >= 1 && mid.length >= 1 && bot.length >= 1) {
+              bands.push({
+                type: 'triple',
+                talls: [idx, order[nextTallJ]],
+                top, mid, bot,
+              });
+              triplesRemaining--;
+              // Rebuild `order`: drop the two talls plus the consumed normals.
+              // Items outside this triple keep their relative order.
+              const remaining = [];
+              for (let k = i + 1; k < order.length; k++) {
+                if (k === nextTallJ) continue;
+                if (consumedNormals.has(order[k])) continue;
+                remaining.push(order[k]);
+              }
+              order.splice(i, order.length - i, ...remaining);
+              continue; // re-enter loop at the same i, which now holds the next item
+            }
+          }
+        }
+        // Triple did not form; fall through to double / single handling.
       }
 
-      if (upper.length >= 1 && lower.length >= 1) {
-        bands.push({ type: 'double', talls: [idx], upper, lower });
-        i = j;
-      } else {
-        // Couldn't fill both halves — keep the tall as a single tile.
-        bands.push({ type: 'single', items: [idx] });
-        i++;
+      // 2) Try to form a DOUBLE if budget allows.
+      if (doublesRemaining > 0) {
+        const pairHeightGuess = 2 * refH + gap;
+        const tallW = widthAt(idx, pairHeightGuess);
+        const widthBudget = W - tallW - gap;
+        if (widthBudget > 0) {
+          if (!explicitMode) {
+            // Legacy path: pull contiguous normals after the tall, stop on
+            // either tall or width exhaustion. No order mutation.
+            const upper = [];
+            const lower = [];
+            let uW = 0;
+            let lW = 0;
+            let j = i + 1;
+            while (j < order.length) {
+              const cand = order[j];
+              if (isTall(cand)) break;
+              const w = widthAt(cand, refH);
+              const target = upper.length <= lower.length ? 'upper' : 'lower';
+              if (target === 'upper') {
+                const next = uW + (upper.length > 0 ? gap : 0) + w;
+                if (next > widthBudget) break;
+                upper.push(cand);
+                uW = next;
+              } else {
+                const next = lW + (lower.length > 0 ? gap : 0) + w;
+                if (next > widthBudget) break;
+                lower.push(cand);
+                lW = next;
+              }
+              j++;
+            }
+            if (upper.length >= 1 && lower.length >= 1) {
+              bands.push({ type: 'double', talls: [idx], upper, lower });
+              doublesRemaining--;
+              i = j;
+              continue;
+            }
+          } else {
+            // Explicit mode: skip downstream talls when filling, reserve
+            // 2 normals for each remaining double-after-this so they don't
+            // starve when talls cluster.
+            let totalNormalsAhead = 0;
+            let tallsAhead = 0;
+            for (let k = i + 1; k < order.length; k++) {
+              if (isTall(order[k])) tallsAhead++;
+              else totalNormalsAhead++;
+            }
+            const realisticFutureDoubles = Math.min(
+              doublesRemaining - 1,
+              tallsAhead,
+            );
+            const reserveForFutureDoubles = 2 * Math.max(0, realisticFutureDoubles);
+            const doubleNormalCap = Math.max(2, totalNormalsAhead - reserveForFutureDoubles);
+
+            const upper = [];
+            const lower = [];
+            let uW = 0;
+            let lW = 0;
+            const consumedNormals = new Set();
+            for (let k = i + 1; k < order.length; k++) {
+              const cand = order[k];
+              if (isTall(cand)) continue;
+              if (consumedNormals.size >= doubleNormalCap) break;
+              const w = widthAt(cand, refH);
+              const target = upper.length <= lower.length ? 'upper' : 'lower';
+              if (target === 'upper') {
+                const next = uW + (upper.length > 0 ? gap : 0) + w;
+                if (next > widthBudget) break;
+                upper.push(cand);
+                uW = next;
+              } else {
+                const next = lW + (lower.length > 0 ? gap : 0) + w;
+                if (next > widthBudget) break;
+                lower.push(cand);
+                lW = next;
+              }
+              consumedNormals.add(cand);
+            }
+            if (upper.length >= 1 && lower.length >= 1) {
+              bands.push({ type: 'double', talls: [idx], upper, lower });
+              doublesRemaining--;
+              const remaining = [];
+              for (let k = i + 1; k < order.length; k++) {
+                if (consumedNormals.has(order[k])) continue;
+                remaining.push(order[k]);
+              }
+              order.splice(i, order.length - i, ...remaining);
+              continue;
+            }
+          }
+        }
       }
+
+      // 3) Fallback: tall as a single tile.
+      bands.push({ type: 'single', items: [idx] });
+      i++;
       continue;
     }
 
