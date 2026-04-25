@@ -24,29 +24,29 @@ export class TriggerDispatchService {
     this.#logger = logger;
   }
 
-  async handleTrigger(location, type, value, options = {}) {
+  async handleTrigger(location, modality, value, options = {}) {
     const startedAt = Date.now();
     const dispatchId = randomUUID();
     const normalizedValue = String(value || '').toLowerCase();
     const locationConfig = this.#config[location];
 
     if (!locationConfig) {
-      this.#logger.warn?.('trigger.fired', { location, type, value: normalizedValue, registered: false, error: 'location-not-found' });
-      return { ok: false, code: 'LOCATION_NOT_FOUND', error: `Unknown location: ${location}`, location, type, value: normalizedValue, dispatchId };
+      this.#logger.warn?.('trigger.fired', { location, modality, value: normalizedValue, registered: false, error: 'location-not-found' });
+      return { ok: false, code: 'LOCATION_NOT_FOUND', error: `Unknown location: ${location}`, location, modality, value: normalizedValue, dispatchId };
     }
 
     if (locationConfig.auth_token && locationConfig.auth_token !== options.token) {
-      this.#logger.warn?.('trigger.fired', { location, type, value: normalizedValue, error: 'auth-failed' });
-      return { ok: false, code: 'AUTH_FAILED', error: 'Authentication failed', location, type, value: normalizedValue, dispatchId };
+      this.#logger.warn?.('trigger.fired', { location, modality, value: normalizedValue, error: 'auth-failed' });
+      return { ok: false, code: 'AUTH_FAILED', error: 'Authentication failed', location, modality, value: normalizedValue, dispatchId };
     }
 
     const valueEntry = locationConfig.entries?.[normalizedValue];
-    const baseLog = { location, type, value: normalizedValue, registered: !!valueEntry, dispatchId };
+    const baseLog = { location, modality, value: normalizedValue, registered: !!valueEntry, dispatchId };
 
     if (!valueEntry) {
       this.#logger.info?.('trigger.fired', { ...baseLog, error: 'trigger-not-registered' });
-      this.#emit(location, type, baseLog);
-      return { ok: false, code: 'TRIGGER_NOT_REGISTERED', error: `Trigger not registered: ${normalizedValue}`, location, type, value: normalizedValue, dispatchId };
+      this.#emit(location, modality, baseLog);
+      return { ok: false, code: 'TRIGGER_NOT_REGISTERED', error: `Trigger not registered: ${normalizedValue}`, location, modality, value: normalizedValue, dispatchId };
     }
 
     let intent;
@@ -55,15 +55,15 @@ export class TriggerDispatchService {
       intent.dispatchId = dispatchId;
     } catch (err) {
       this.#logger.error?.('trigger.fired', { ...baseLog, error: err.message });
-      this.#emit(location, type, { ...baseLog, ok: false, error: err.message });
-      return { ok: false, code: 'INVALID_INTENT', error: err.message, location, type, value: normalizedValue, dispatchId };
+      this.#emit(location, modality, { ...baseLog, ok: false, error: err.message });
+      return { ok: false, code: 'INVALID_INTENT', error: err.message, location, modality, value: normalizedValue, dispatchId };
     }
 
-    const summary = { location, type, value: normalizedValue, action: intent.action, target: intent.target, dispatchId };
+    const summary = { location, modality, value: normalizedValue, action: intent.action, target: intent.target, dispatchId };
 
     if (options.dryRun) {
       this.#logger.info?.('trigger.fired', { ...baseLog, action: intent.action, target: intent.target, dryRun: true });
-      this.#emit(location, type, { ...summary, dryRun: true });
+      this.#emit(location, modality, { ...summary, dryRun: true });
       return { ok: true, dryRun: true, ...summary, intent };
     }
 
@@ -71,21 +71,22 @@ export class TriggerDispatchService {
       const dispatchResult = await dispatchAction(intent, this.#deps);
       const elapsedMs = Date.now() - startedAt;
       this.#logger.info?.('trigger.fired', { ...baseLog, action: intent.action, target: intent.target, ok: true, elapsedMs });
-      this.#emit(location, type, { ...summary, ok: true });
+      this.#emit(location, modality, { ...summary, ok: true });
       return { ok: true, ...summary, dispatch: dispatchResult, elapsedMs };
     } catch (err) {
       const elapsedMs = Date.now() - startedAt;
       const code = err instanceof UnknownActionError ? 'UNKNOWN_ACTION' : 'DISPATCH_FAILED';
       this.#logger.error?.('trigger.fired', { ...baseLog, action: intent.action, target: intent.target, ok: false, error: err.message, code, elapsedMs });
-      this.#emit(location, type, { ...summary, ok: false, error: err.message });
+      this.#emit(location, modality, { ...summary, ok: false, error: err.message });
       return { ok: false, code, error: err.message, ...summary, elapsedMs };
     }
   }
 
-  #emit(location, type, payload) {
-    // Spread `payload` first so its `type` (the modality) is overwritten by the
-    // event-kind `type: 'trigger.fired'` that subscribers listen for.
-    this.#broadcast({ topic: `trigger:${location}:${type}`, ...payload, type: 'trigger.fired' });
+  #emit(location, modality, payload) {
+    // Payload's `modality` field is the trigger source (nfc, barcode, etc.).
+    // The outer `type` is the event kind ('trigger.fired') that subscribers
+    // listen for. Topic stays `trigger:<location>:<modality>` as a routing key.
+    this.#broadcast({ topic: `trigger:${location}:${modality}`, ...payload, type: 'trigger.fired' });
   }
 }
 
