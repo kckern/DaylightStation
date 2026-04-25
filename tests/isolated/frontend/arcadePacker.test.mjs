@@ -640,6 +640,48 @@ describe('packLayout (band-based)', () => {
     expect(foundTriple).toBe(true);
   });
 
+  test('GUARDRAIL: returns SOMETHING even when strict maxRowPct rejects every variant (H=1080 high-density)', () => {
+    // The case the T5 implementer flagged: 6 talls + 18 normals at H=1080.
+    // Pre-scale maxRowPct=0.25 (cap=270h) makes the strict check reject every
+    // variant — but the grid MUST still render. Fallback should produce a
+    // valid (possibly scaled-down) layout instead of returning [].
+    const itemRatios = [...Array(6).fill(1.5), ...Array(18).fill(0.7)];
+    const placements = packLayout({
+      itemRatios, W: 1152, H: 1080, random: () => 0.5,
+    });
+    expect(placements.length).toBe(itemRatios.length);
+    // Every tile placed within the container (scale-down OK).
+    for (const p of placements) {
+      expect(p.w).toBeGreaterThan(0);
+      expect(p.h).toBeGreaterThan(0);
+    }
+  });
+
+  test('GUARDRAIL: returns SOMETHING for pathologically narrow container', () => {
+    // Narrow container makes single-tile rows tall; strict check rejects all.
+    // Fallback must still place every item.
+    const itemRatios = [1.0, 1.5, 0.7, 1.0, 1.6, 0.8];
+    const placements = packLayout({
+      itemRatios, W: 200, H: 800, random: () => 0.5,
+    });
+    expect(placements.length).toBe(itemRatios.length);
+  });
+
+  test('GUARDRAIL: 16:7 viewport renders the grid (W=1152, H=840)', () => {
+    // The user's repro: opening the kiosk in a 16:7 aspect window. Navmap
+    // is the left ~60% of viewport, so W≈1152, H=840. With 26 mixed-aspect
+    // tiles the strict pre-scale rejection wipes out every variant; fallback
+    // must produce a layout (real prod data shape).
+    const itemRatios = [
+      ...Array(22).fill(0.7),       // 22 N64 landscape
+      1.398, 1.399, 1.406, 1.428,   // 4 marginally tall
+    ];
+    const placements = packLayout({
+      itemRatios, W: 1152, H: 840, random: () => 0.5,
+    });
+    expect(placements.length).toBe(itemRatios.length);
+  });
+
   test('low-tall-density inputs prefer doubles (no unnecessary triples)', () => {
     // 1 tall + 25 normals — too few talls to need a triple. Doubles or
     // singles only.
