@@ -1,5 +1,5 @@
 import { describe, test, expect } from '@jest/globals';
-import { packLayout, classifyItems, solveSingleBand, solveDoubleBand, buildBands } from '../../../frontend/src/modules/Menu/arcadePacker.js';
+import { packLayout, classifyItems, solveSingleBand, solveDoubleBand, buildBands, renderBands } from '../../../frontend/src/modules/Menu/arcadePacker.js';
 
 // Deterministic LCG so attempts/shuffle/mirror are reproducible.
 function seededRandom(seed = 1) {
@@ -249,5 +249,58 @@ describe('buildBands', () => {
     const d = bands.find(b => b.type === 'double');
     expect(d.upper).toEqual([1, 3]);
     expect(d.lower).toEqual([2, 4]);
+  });
+});
+
+describe('renderBands', () => {
+  test('single band: emits placements that fill W exactly', () => {
+    const bands = [{ type: 'single', items: [0, 1, 2] }];
+    const itemRatios = [1, 1, 1];
+    const result = renderBands({ bands, itemRatios, W: 1000, H: 600, gap: 10 });
+    expect(result.valid).toBe(true);
+    expect(result.placements).toHaveLength(3);
+    const lastTile = result.placements[2];
+    expect(lastTile.x + lastTile.w).toBeCloseTo(1000, 3);
+  });
+
+  test('double band: tall spans both rows, non-tall tiles fill remaining width per row', () => {
+    const bands = [{ type: 'double', talls: [0], upper: [1, 2], lower: [3, 4] }];
+    const itemRatios = [2, 1, 1, 1, 1];
+    const result = renderBands({ bands, itemRatios, W: 1000, H: 700, gap: 10 });
+    expect(result.valid).toBe(true);
+    const tall = result.placements.find(p => p.idx === 0);
+    const upperTiles = [1, 2].map(i => result.placements.find(p => p.idx === i));
+    const lowerTiles = [3, 4].map(i => result.placements.find(p => p.idx === i));
+
+    // Tall height = upper_h + gap + lower_h (top-to-bottom span)
+    const upperBottom = upperTiles[0].y + upperTiles[0].h;
+    const lowerTop = lowerTiles[0].y;
+    expect(lowerTop).toBeCloseTo(upperBottom + 10, 3);
+    expect(tall.y).toBeCloseTo(upperTiles[0].y, 3);
+    expect(tall.y + tall.h).toBeCloseTo(lowerTiles[0].y + lowerTiles[0].h, 3);
+
+    // Upper row width fills to W
+    expect(upperTiles[1].x + upperTiles[1].w).toBeCloseTo(1000, 3);
+    // Lower row width fills to W
+    expect(lowerTiles[1].x + lowerTiles[1].w).toBeCloseTo(1000, 3);
+  });
+
+  test('scales down when bands\' total height exceeds H', () => {
+    // Tiny H forces scale-down
+    const bands = [
+      { type: 'single', items: [0, 1] },
+      { type: 'single', items: [2, 3] },
+    ];
+    const itemRatios = [1, 1, 1, 1];
+    const result = renderBands({ bands, itemRatios, W: 1000, H: 100, gap: 10 });
+    expect(result.valid).toBe(true);
+    const lastY = Math.max(...result.placements.map(p => p.y + p.h));
+    expect(lastY).toBeLessThanOrEqual(100 + 0.01);
+  });
+
+  test('returns valid=false if any band fails to solve', () => {
+    const bands = [{ type: 'double', talls: [0], upper: [], lower: [1] }];
+    const result = renderBands({ bands, itemRatios: [2, 1], W: 1000, H: 700, gap: 10 });
+    expect(result.valid).toBe(false);
   });
 });
