@@ -70,16 +70,14 @@ describe('getActiveGamepads', () => {
     expect(result[0].id).toBe('8Bitdo SN30 Pro (Vendor: 2dc8 Product: 6101)');
   });
 
-  test('dedupes the same physical controller enumerated twice', () => {
+  test('returns all plausible gamepads (no id-based dedupe; same-id devices kept)', () => {
     global.navigator.getGamepads = () => [
       fakePad(),
-      fakePad(), // same id — duplicate slot
+      fakePad(), // same id — could be a phantom OR a real second identical controller
       fakePad({ id: 'Some Other Controller' }),
     ];
     const result = getActiveGamepads();
-    expect(result).toHaveLength(2);
-    const ids = result.map(g => g.id);
-    expect(ids).toContain('8Bitdo SN30 Pro (Vendor: 2dc8 Product: 6101)');
-    expect(ids).toContain('Some Other Controller');
+    // Both same-id entries kept; phantom suppression is GamepadAdapter's job.
+    expect(result).toHaveLength(3);
   });
 });
