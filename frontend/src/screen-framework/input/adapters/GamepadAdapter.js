@@ -155,7 +155,9 @@ export class GamepadAdapter {
       const pressed = gp.buttons[idx] && gp.buttons[idx].pressed;
       const wasPressed = !!this._prevButtons[`unmapped_${idx}`];
       if (pressed && !wasPressed) {
-        logger().warn('gamepad.unmapped-button', { buttonIndex: idx, gamepadId: gp.id });
+        logger().info('gamepad.button-pressed', {
+          buttonIndex: idx, mapped: false, gamepadId: gp.id,
+        });
       }
       this._prevButtons[`unmapped_${idx}`] = pressed;
     }
@@ -179,7 +181,11 @@ export class GamepadAdapter {
   }
 
   _emit(mapping, buttonIndex) {
-    logger().debug('gamepad.emit', { key: mapping.key, action: mapping.action, buttonIndex: buttonIndex ?? null });
+    if (buttonIndex != null) {
+      logger().info('gamepad.button-pressed', {
+        buttonIndex, mapped: true, key: mapping.key, action: mapping.action,
+      });
+    }
 
     // Emit to ActionBus for useScreenAction consumers
     this.actionBus.emit(mapping.action, mapping.payload);
