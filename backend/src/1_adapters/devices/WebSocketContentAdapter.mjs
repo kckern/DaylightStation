@@ -10,10 +10,9 @@
 
 import { randomUUID } from 'node:crypto';
 import { buildCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
+import { isLoadContentQueueOp } from '#shared-contracts/media/commands.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { CONTENT_ID_KEYS, resolveContentId } from '#apps/devices/contentIdKeys.mjs';
-
-const ALLOWED_OPS = new Set(['play-now', 'play-next', 'add-up-next', 'add']);
 
 export class WebSocketContentAdapter {
   #topic;
@@ -68,9 +67,9 @@ export class WebSocketContentAdapter {
     }
 
     const { contentId, resolvedKey } = resolved;
-    const requestedOp = typeof query.op === 'string' && ALLOWED_OPS.has(query.op)
-      ? query.op
-      : 'play-now';
+    // op and contentId are stripped from `options` above; the canonical values
+    // here cannot be clobbered by stray query keys.
+    const requestedOp = isLoadContentQueueOp(query.op) ? query.op : 'play-now';
 
     const options = { ...query };
     delete options[resolvedKey];
