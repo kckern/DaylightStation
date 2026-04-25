@@ -695,6 +695,17 @@ function MenuItems({
   const handleCloseRef = useRef(handleClose);
   handleCloseRef.current = handleClose;
 
+  // Refs so the gamepad polling effect can see current callbacks/values
+  // without restarting on every selection change. Restarting would reset
+  // prevButtons/selectCooldown and re-fire a still-held A press.
+  const setSelectedIndexRef = useRef(null);
+  setSelectedIndexRef.current = setSelectedIndex;
+  const findKeyForItemRef = useRef(null);
+  findKeyForItemRef.current = findKeyForItem;
+  const navigateToRef = useRef(null); // assigned after navigateTo is declared below
+  const columnsRef = useRef(columns);
+  columnsRef.current = columns;
+
   /**
    * Cache item positions after initial render to avoid forced layout reads during navigation.
    * Positions are measured once, then navigation uses cached values — zero DOM queries.
@@ -795,6 +806,7 @@ function MenuItems({
       nextIndex, didScroll,
     }, { maxPerMinute: 10 });
   }, [containerRef, columns, buildLayoutCache]);
+  navigateToRef.current = navigateTo;
 
   // Restore or reset scroll + active index when items change or on (re-)mount.
   // If the context has a saved selection for this depth, restore to it (back navigation).
@@ -913,10 +925,15 @@ function MenuItems({
   }, [columns, navigateTo]);
 
   // --- Gamepad API polling (physical game controllers) ---
+  // Effect deps are intentionally empty — all callbacks/values come from refs
+  // updated each render. If the effect restarted on every selection change,
+  // its closure state (prevButtons, selectCooldown) would reset, and a
+  // still-held A press would re-fire on the next frame.
   useEffect(() => {
     let rafId;
     const prevButtons = {};
     const prevAxes = {};
+    const seeded = new Set(); // gamepads that have been seeded from live state
     const AXIS_THRESHOLD = 0.5;
     const REPEAT_DELAY = 400;
     const REPEAT_INTERVAL = 120;
@@ -931,12 +948,13 @@ function MenuItems({
       const cur = activeIndexRef.current;
       const len = itemsRef.current.length;
       if (!len) return;
+      const cols = columnsRef.current;
       let next;
-      if (dir === 'up') next = (cur - columns + len) % len;
-      else if (dir === 'down') next = (cur + columns) % len;
+      if (dir === 'up') next = (cur - cols + len) % len;
+      else if (dir === 'down') next = (cur + cols) % len;
       else if (dir === 'left') next = (cur - 1 + len) % len;
       else next = (cur + 1) % len;
-      navigateTo(next);
+      navigateToRef.current?.(next);
     }
 
     function poll() {
@@ -944,8 +962,17 @@ function MenuItems({
       for (const gp of gamepads) {
         if (!gp) continue;
         const id = gp.index;
-        if (!prevButtons[id]) prevButtons[id] = new Array(gp.buttons.length).fill(false);
-        if (!prevAxes[id]) prevAxes[id] = new Array(gp.axes.length).fill(0);
+
+        // Seed from live state on first observation of this gamepad.
+        // Treats any button held at mount as "already pressed" so it does
+        // not register as a fresh press until released and pressed again.
+        if (!seeded.has(id)) {
+          prevButtons[id] = gp.buttons.map(b => !!b?.pressed);
+          prevAxes[id] = Array.from(gp.axes);
+          seeded.add(id);
+          // Skip edge detection for this frame; just record state.
+          continue;
+        }
 
         const pressed = (i) => gp.buttons[i]?.pressed;
         const wasPressed = (i) => prevButtons[id][i];
@@ -999,7 +1026,7 @@ function MenuItems({
           logger.info('menu.gamepad-select', {
             gamepad: gp.id, index: idx, title: curItems[idx]?.label,
           });
-          setSelectedIndex(idx, findKeyForItem(curItems[idx]));
+          setSelectedIndexRef.current?.(idx, findKeyForItemRef.current?.(curItems[idx]));
           onSelectRef.current?.(curItems[idx]);
         }
 
@@ -1023,7 +1050,7 @@ function MenuItems({
       Object.keys(holdTimers).forEach(clearHold);
       logger.debug('menu.gamepad-polling.stopped');
     };
-  }, [columns, navigateTo, setSelectedIndex, findKeyForItem, logger]);
+  }, [logger]);
 
   /**
    * Optional countdown timer to auto-select.
