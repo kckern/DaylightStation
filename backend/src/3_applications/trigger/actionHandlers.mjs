@@ -1,13 +1,13 @@
 /**
- * Pluggable action-handler registry for NFC scans.
- * @module applications/nfc/actionHandlers
+ * Pluggable action-handler registry for trigger dispatches.
+ * @module applications/trigger/actionHandlers
  */
 
 import { randomUUID } from 'node:crypto';
 
 export class UnknownActionError extends Error {
   constructor(action) {
-    super(`Unknown NFC action: ${action}`);
+    super(`Unknown trigger action: ${action}`);
     this.name = 'UnknownActionError';
     this.action = action;
   }

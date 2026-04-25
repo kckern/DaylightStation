@@ -53,7 +53,7 @@ import {
   createHomeAutomationApiRouter,
   createDeviceServices,
   createDeviceApiRouter,
-  createNfcApiRouter,
+  createTriggerApiRouter,
   createWakeAndLoadService,
   createDispatchIdempotencyService,
   createTranscodePrewarmService,
@@ -1690,17 +1690,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'device-api' })
   });
 
-  // NFC reader/tag dispatch
-  const { router: nfcRouter } = createNfcApiRouter({
+  // Trigger dispatch (NFC modality source: apps/nfc/config.yml)
+  const { router: triggerRouter } = createTriggerApiRouter({
     deviceServices,
     wakeAndLoadService,
     haGateway: homeAutomationAdapters.haGateway,
     contentIdResolver: contentServices.contentIdResolver,
     broadcast: broadcastEvent,
     loadFile,
-    logger: rootLogger.child({ module: 'nfc' }),
+    logger: rootLogger.child({ module: 'trigger' }),
   });
-  v1Routers.nfc = nfcRouter;
+  v1Routers.trigger = triggerRouter;
 
   // Camera feeds
   const { createCameraServices } = await import('#apps/camera/index.mjs');

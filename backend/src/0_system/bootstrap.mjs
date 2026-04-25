@@ -102,10 +102,10 @@ import { DeviceService } from '#apps/devices/services/DeviceService.mjs';
 import { DeviceFactory } from '#apps/devices/services/DeviceFactory.mjs';
 import { createDeviceRouter } from '#api/v1/routers/device.mjs';
 
-// NFC domain + application imports
-import { parseNfcConfig } from '#domains/nfc/NfcConfig.mjs';
-import { NfcService } from '#apps/nfc/NfcService.mjs';
-import { createNfcRouter } from '#api/v1/routers/nfc.mjs';
+// Trigger domain + application imports
+import { parseTriggerConfig } from '#domains/trigger/TriggerConfig.mjs';
+import { TriggerDispatchService } from '#apps/trigger/TriggerDispatchService.mjs';
+import { createTriggerRouter } from '#api/v1/routers/trigger.mjs';
 
 // Hardware adapter imports
 // Note: ThermalPrinterAdapter/Registry are constructed directly in app.mjs; bootstrap no longer imports them.
@@ -1659,12 +1659,18 @@ export function createDeviceApiRouter(config) {
 }
 
 /**
- * Create NFC application service + API router
+ * Create Trigger application service + API router
  *
- * NFC ties together the device dispatch surface (wakeAndLoadService for play,
- * deviceService for raw control, haGateway for HA scripts) with reader/tag
- * config loaded from `data/household[-{hid}]/apps/nfc/config.yml` (or
- * equivalent) via the supplied loadFile helper.
+ * Trigger ties together the device dispatch surface (wakeAndLoadService for
+ * play, deviceService for raw control, haGateway for HA scripts) with the
+ * location-rooted trigger registry. The NFC modality source lives in
+ * `data/household[-{hid}]/apps/nfc/config.yml`. Future modalities (barcode,
+ * voice) feed the same registry under different `type` slots.
+ *
+ * Bootstrap is tolerant of stale/legacy YAML shapes: a parse failure logs a
+ * warning and yields an empty registry (all triggers 404 with
+ * LOCATION_NOT_FOUND). This keeps the rest of the API healthy while operators
+ * migrate the file.
  *
  * @param {Object} config
  * @param {Object} config.deviceServices - Services from createDeviceServices
@@ -1674,9 +1680,9 @@ export function createDeviceApiRouter(config) {
  * @param {Function} config.broadcast - WebSocket broadcast function (broadcastEvent)
  * @param {Function} config.loadFile - Helper that loads YAML files relative to household dir
  * @param {Object} [config.logger] - Logger instance
- * @returns {{ nfcService: NfcService, router: import('express').Router }}
+ * @returns {{ triggerDispatchService: TriggerDispatchService, router: import('express').Router }}
  */
-export function createNfcApiRouter(config) {
+export function createTriggerApiRouter(config) {
   const {
     deviceServices,
     wakeAndLoadService,
@@ -1687,10 +1693,16 @@ export function createNfcApiRouter(config) {
     logger = console,
   } = config;
 
-  const nfcConfig = parseNfcConfig(loadFile('config/nfc'));
+  let triggerConfig;
+  try {
+    triggerConfig = parseTriggerConfig(loadFile('config/nfc'));
+  } catch (err) {
+    logger.warn?.('trigger.config.parse.failed', { error: err.message });
+    triggerConfig = {};
+  }
 
-  const nfcService = new NfcService({
-    config: nfcConfig,
+  const triggerDispatchService = new TriggerDispatchService({
+    config: triggerConfig,
     contentIdResolver,
     wakeAndLoadService,
     haGateway,
@@ -1699,9 +1711,9 @@ export function createNfcApiRouter(config) {
     logger,
   });
 
-  const router = createNfcRouter({ nfcService, logger });
+  const router = createTriggerRouter({ triggerDispatchService, logger });
 
-  return { nfcService, router };
+  return { triggerDispatchService, router };
 }
 
 /**

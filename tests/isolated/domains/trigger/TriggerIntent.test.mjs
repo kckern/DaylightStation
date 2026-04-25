@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { resolveIntent } from '../../../../backend/src/2_domains/nfc/NfcIntent.mjs';
+import { resolveIntent } from '../../../../backend/src/2_domains/trigger/TriggerIntent.mjs';
 
 function makeResolver(knownPrefixes) {
   return {
@@ -12,11 +12,11 @@ function makeResolver(knownPrefixes) {
 }
 
 describe('resolveIntent', () => {
-  const reader = { target: 'livingroom-tv', action: 'queue', location: 'livingroom' };
+  const locationConfig = { target: 'livingroom-tv', action: 'queue', location: 'livingroom' };
   const resolver = makeResolver(['plex', 'hymn']);
 
-  it('expands single-content-prefix shorthand using reader defaults', () => {
-    const intent = resolveIntent(reader, { plex: 620707 }, resolver);
+  it('expands single-content-prefix shorthand using location defaults', () => {
+    const intent = resolveIntent(locationConfig, { plex: 620707 }, resolver);
     expect(intent).toEqual({
       action: 'queue',
       target: 'livingroom-tv',
@@ -25,8 +25,8 @@ describe('resolveIntent', () => {
     });
   });
 
-  it('uses tag-level overrides for action and target', () => {
-    const intent = resolveIntent(reader, {
+  it('uses entry-level overrides for action and target', () => {
+    const intent = resolveIntent(locationConfig, {
       action: 'play',
       target: 'kitchen-speaker',
       content: 'hymn:166',
@@ -41,7 +41,7 @@ describe('resolveIntent', () => {
   });
 
   it('passes through home-automation action params', () => {
-    const intent = resolveIntent(reader, {
+    const intent = resolveIntent(locationConfig, {
       action: 'scene',
       scene: 'scene.movie_night',
     }, resolver);
@@ -54,7 +54,7 @@ describe('resolveIntent', () => {
   });
 
   it('passes generic ha-service fields through', () => {
-    const intent = resolveIntent(reader, {
+    const intent = resolveIntent(locationConfig, {
       action: 'ha-service',
       service: 'light.turn_off',
       entity: 'light.livingroom',
@@ -66,7 +66,7 @@ describe('resolveIntent', () => {
 
   it('treats {plex: ...} as shorthand even when target/action also present (override semantics)', () => {
     const intent = resolveIntent(
-      reader,
+      locationConfig,
       { plex: 620707, target: 'office-tv' },
       resolver
     );
@@ -77,7 +77,7 @@ describe('resolveIntent', () => {
 
   it('does not expand non-content keys as shorthand', () => {
     const intent = resolveIntent(
-      reader,
+      locationConfig,
       { action: 'open', path: '/menu' },
       resolver
     );
@@ -86,30 +86,30 @@ describe('resolveIntent', () => {
     expect(intent.content).toBeUndefined();
   });
 
-  it('throws when reader is missing', () => {
+  it('throws when locationConfig is missing', () => {
     expect(() => resolveIntent(null, { plex: 1 }, resolver))
-      .toThrow(/reader/i);
+      .toThrow(/locationConfig/i);
   });
 
-  it('throws when tag is missing', () => {
-    expect(() => resolveIntent(reader, null, resolver))
-      .toThrow(/tag/i);
+  it('throws when valueEntry is missing', () => {
+    expect(() => resolveIntent(locationConfig, null, resolver))
+      .toThrow(/valueEntry/i);
   });
 
   it('coerces numeric content values to strings', () => {
-    const intent = resolveIntent(reader, { plex: 620707 }, resolver);
+    const intent = resolveIntent(locationConfig, { plex: 620707 }, resolver);
     expect(intent.content).toBe('plex:620707');
     expect(typeof intent.content).toBe('string');
   });
 
   it('does not expand shorthand with unknown content prefix', () => {
-    const intent = resolveIntent(reader, { vimeo: 12345 }, resolver);
+    const intent = resolveIntent(locationConfig, { vimeo: 12345 }, resolver);
     expect(intent.content).toBeUndefined();
     expect(intent.params.vimeo).toBe(12345);
   });
 
   it('does not expand shorthand when multiple candidate keys are present', () => {
-    const intent = resolveIntent(reader, { plex: 1, hymn: 2 }, resolver);
+    const intent = resolveIntent(locationConfig, { plex: 1, hymn: 2 }, resolver);
     expect(intent.content).toBeUndefined();
     expect(intent.params.plex).toBe(1);
     expect(intent.params.hymn).toBe(2);

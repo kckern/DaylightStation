@@ -1,5 +1,5 @@
 import { describe, it, expect, jest } from '@jest/globals';
-import { actionHandlers, UnknownActionError, dispatchAction } from '../../../../backend/src/3_applications/nfc/actionHandlers.mjs';
+import { actionHandlers, UnknownActionError, dispatchAction } from '../../../../backend/src/3_applications/trigger/actionHandlers.mjs';
 
 describe('actionHandlers', () => {
   it('queue calls wakeAndLoadService with queue=<content>', async () => {
