@@ -23,11 +23,23 @@ function solveBandRaw(band, itemRatios, W, gap) {
     const r = solveSingleBand(ratios, W, gap);
     return { valid: r.valid, rowH: r.rowH };
   }
-  const tallRatio = itemRatios[band.talls[0]];
-  const upperRatios = band.upper.map(i => itemRatios[i]);
-  const lowerRatios = band.lower.map(i => itemRatios[i]);
-  const r = solveDoubleBand({ tallRatio, upperRatios, lowerRatios, W, gap });
-  return { valid: r.valid, H_pair: r.H_pair, upper_h: r.upper_h, lower_h: r.lower_h };
+  if (band.type === 'double') {
+    const tallRatio = itemRatios[band.talls[0]];
+    const upperRatios = band.upper.map(i => itemRatios[i]);
+    const lowerRatios = band.lower.map(i => itemRatios[i]);
+    const r = solveDoubleBand({ tallRatio, upperRatios, lowerRatios, W, gap });
+    return { valid: r.valid, H_pair: r.H_pair, upper_h: r.upper_h, lower_h: r.lower_h };
+  }
+  // triple
+  const tallRatios = [itemRatios[band.talls[0]], itemRatios[band.talls[1]]];
+  const topRatios = band.top.map(i => itemRatios[i]);
+  const midRatios = band.mid.map(i => itemRatios[i]);
+  const botRatios = band.bot.map(i => itemRatios[i]);
+  const r = solveTripleBand({ tallRatios, topRatios, midRatios, botRatios, W, gap });
+  return {
+    valid: r.valid, H_triple: r.H_triple,
+    top_h: r.top_h, mid_h: r.mid_h, bot_h: r.bot_h,
+  };
 }
 
 export function packLayout({
@@ -39,6 +51,10 @@ export function packLayout({
   maxAttempts = DEFAULT_MAX_ATTEMPTS,
   minPerRow = DEFAULT_MIN_PER_ROW,
   tallThreshold = DEFAULT_TALL_THRESHOLD,
+  fillWeight = DEFAULT_FILL_WEIGHT,
+  balanceWeight = DEFAULT_BALANCE_WEIGHT,
+  capWeight = DEFAULT_CAP_PENALTY,
+  areaCap = DEFAULT_TALL_AREA_CAP,
   random = Math.random,
   logger = null,
 } = {}) {
@@ -51,11 +67,13 @@ export function packLayout({
   }
   const N = itemRatios.length;
   const maxAllowedRowH = H * maxRowPct;
-  const tallCount = itemRatios.filter(r => r > tallThreshold).length;
+  const { tallIndices } = classifyItems(itemRatios, tallThreshold);
+  const tallSet = new Set(tallIndices);
+  const K = tallIndices.length;
 
   logInfo('pack.start', {
     N, W, H, gap, maxRowPct, maxAllowedRowH: Math.round(maxAllowedRowH),
-    tallThreshold, tallCount,
+    tallThreshold, K,
   });
 
   let bestPlacements = null;
@@ -63,16 +81,12 @@ export function packLayout({
   let bestMeta = null;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const order = itemRatios.map((_, i) => i);
-    for (let i = order.length - 1; i > 0; i--) {
+    const baseOrder = itemRatios.map((_, i) => i);
+    for (let i = baseOrder.length - 1; i > 0; i--) {
       const j = Math.floor(random() * (i + 1));
-      [order[i], order[j]] = [order[j], order[i]];
+      [baseOrder[i], baseOrder[j]] = [baseOrder[j], baseOrder[i]];
     }
 
-    // Cap at N (worst case: one tile per row) AND at H/30 (no row smaller than
-    // a thumbnail). The legacy `ceil(N/2)` cap was masked by the buggy post-
-    // scale maxRowPct check; with the pre-scale check restored, we must let
-    // the sweep go higher to find narrow-enough refH values.
     const maxRows = Math.min(N, Math.floor(H / 30));
     let attemptBest = null;
     let attemptScore = -Infinity;
@@ -81,76 +95,87 @@ export function packLayout({
     for (let targetRows = 2; targetRows <= maxRows; targetRows++) {
       const refH = (H - (targetRows - 1) * gap) / targetRows;
 
-      const bands = buildBands({
-        itemRatios, order, tallThreshold, refH, W, gap, minPerRow,
-      });
+      // Sweep (tripleCount, doubleCount) variants. With K talls:
+      //   t triples + d doubles + s singles where 2t + d + s = K.
+      // We enumerate all valid (t, d) pairs.
+      for (let t = 0; t <= Math.floor(K / 2); t++) {
+        for (let d = 0; d <= K - 2 * t; d++) {
+          // Fresh order copy per variant — buildBands may splice the array.
+          const order = baseOrder.slice();
+          const bands = buildBands({
+            itemRatios, order, tallThreshold, refH, W, gap, minPerRow,
+            tripleCount: t, doubleCount: d,
+          });
 
-      // Pre-scale solve: get raw heights for the maxRowPct check.
-      const solved = bands.map(b => solveBandRaw(b, itemRatios, W, gap));
-      if (solved.some(s => !s.valid)) {
-        log('pack.targetRows.skip', { targetRows, refH: +refH.toFixed(1), reason: 'invalid-solve' });
-        continue;
-      }
+          // Pre-scale solve for maxRowPct rejection.
+          const solved = bands.map(b => solveBandRaw(b, itemRatios, W, gap));
+          if (solved.some(s => !s.valid)) {
+            log('pack.variant.skip', { targetRows, t, d, reason: 'invalid-solve' });
+            continue;
+          }
+          const violates = bands.some((band, i) => {
+            if (band.type === 'single') return solved[i].rowH > maxAllowedRowH;
+            if (band.type === 'double') {
+              return solved[i].upper_h > maxAllowedRowH || solved[i].lower_h > maxAllowedRowH;
+            }
+            // triple
+            return solved[i].top_h > maxAllowedRowH
+              || solved[i].mid_h > maxAllowedRowH
+              || solved[i].bot_h > maxAllowedRowH;
+          });
+          if (violates) {
+            log('pack.variant.reject', { targetRows, t, d, reason: 'row-too-tall' });
+            continue;
+          }
 
-      // Reject if any non-tall row exceeds maxRowPct of H (PRE-scale).
-      // Tall tiles in double bands are allowed to exceed it — that's the point.
-      const violates = bands.some((band, i) => {
-        if (band.type === 'single') return solved[i].rowH > maxAllowedRowH;
-        return solved[i].upper_h > maxAllowedRowH || solved[i].lower_h > maxAllowedRowH;
-      });
-      if (violates) {
-        const maxRowH = Math.round(Math.max(...solved.map(s =>
-          s.rowH ?? Math.max(s.upper_h ?? 0, s.lower_h ?? 0)
-        )));
-        log('pack.targetRows.reject', {
-          targetRows, refH: +refH.toFixed(1), maxRowH, maxAllowedRowH: Math.round(maxAllowedRowH),
-          reason: 'row-too-tall',
-        });
-        continue;
-      }
+          const rendered = renderBands({ bands, itemRatios, W, H, gap });
+          if (!rendered.valid) {
+            log('pack.variant.skip', { targetRows, t, d, reason: 'render-invalid' });
+            continue;
+          }
 
-      const rendered = renderBands({ bands, itemRatios, W, H, gap });
-      if (!rendered.valid) {
-        log('pack.targetRows.skip', { targetRows, refH: +refH.toFixed(1), reason: 'render-invalid' });
-        continue;
-      }
+          const sc = scoreLayout({
+            placements: rendered.placements, tallSet, N, W, H,
+            fillWeight, balanceWeight, capWeight, areaCap,
+          });
 
-      // totalH from solved bands (pre-scale) tells us whether scale-down was
-      // applied; renderedTotalH (post-scale) reports the actual placed range.
-      const rawTotalH = solved.reduce((s, b) => s + (b.rowH ?? b.H_pair), 0)
-        + (solved.length - 1) * gap;
-      const renderedTotalH = rendered.placements.reduce(
-        (m, p) => Math.max(m, p.y + p.h), 0,
-      );
-      const fillRatio = renderedTotalH / H;
-      const score = fillRatio <= 1 ? fillRatio : 1 / fillRatio;
+          const tripleCount = bands.filter(b => b.type === 'triple').length;
+          const doubleCount = bands.filter(b => b.type === 'double').length;
+          const singleCount = bands.filter(b => b.type === 'single').length;
+          log('pack.variant.candidate', {
+            targetRows, t, d,
+            tripleCount, doubleCount, singleCount,
+            fillRatio: +sc.fillRatio.toFixed(3),
+            tallAreaFrac: +sc.tallAreaFrac.toFixed(3),
+            balanceTerm: +sc.balanceTerm.toFixed(3),
+            capPenalty: +sc.capPenalty.toFixed(3),
+            score: +sc.score.toFixed(3),
+          });
 
-      const singleCount = bands.filter(b => b.type === 'single').length;
-      const doubleCount = bands.filter(b => b.type === 'double').length;
-      log('pack.targetRows.candidate', {
-        targetRows, refH: +refH.toFixed(1), bands: bands.length, singleCount, doubleCount,
-        rawTotalH: Math.round(rawTotalH), renderedTotalH: Math.round(renderedTotalH),
-        scaleApplied: rawTotalH > H, fillRatio: +fillRatio.toFixed(3), score: +score.toFixed(3),
-      });
-
-      if (score > attemptScore) {
-        attemptScore = score;
-        attemptBest = rendered.placements;
-        attemptMeta = { targetRows, bands: bands.length, singleCount, doubleCount,
-          rawTotalH: Math.round(rawTotalH), renderedTotalH: Math.round(renderedTotalH) };
+          if (sc.score > attemptScore) {
+            attemptScore = sc.score;
+            attemptBest = rendered.placements;
+            attemptMeta = {
+              targetRows, t, d, tripleCount, doubleCount, singleCount,
+              fillRatio: +sc.fillRatio.toFixed(3),
+              tallAreaFrac: +sc.tallAreaFrac.toFixed(3),
+              score: +sc.score.toFixed(3),
+            };
+          }
+        }
       }
     }
 
     if (attemptBest && attemptScore > bestScore) {
       bestScore = attemptScore;
       bestPlacements = attemptBest;
-      bestMeta = { attempt, ...attemptMeta, score: +attemptScore.toFixed(3) };
+      bestMeta = { attempt, ...attemptMeta };
       break;
     }
   }
 
   if (!bestPlacements) {
-    logInfo('pack.fail', { N, W, H, reason: 'no-valid-layout-across-attempts' });
+    logInfo('pack.fail', { N, W, H, K, reason: 'no-valid-layout-across-attempts' });
     return [];
   }
 

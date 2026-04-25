@@ -604,6 +604,65 @@ describe('packLayout (band-based)', () => {
   test('returns empty array on empty input', () => {
     expect(packLayout({ itemRatios: [], W: 1000, H: 600 })).toEqual([]);
   });
+
+  test('packs at least one triple band when many tall items would dominate via doubles', () => {
+    // 6 talls + 18 normals (25% tall by count). With doubles, talls might
+    // consume ~40-50% of area. The optimizer should pick a layout with at
+    // least one triple band to balance.
+    // NOTE: H=1500 (vs the more constrained 1080) gives the maxRowPct=0.25
+    // pre-scale rejection enough room to admit valid layouts at this tall
+    // density. At 1080 the input is mathematically infeasible — every variant
+    // produces some row > 270h before scale-down.
+    const itemRatios = [
+      ...Array(6).fill(1.5),
+      ...Array(18).fill(0.7),
+    ];
+    let foundTriple = false;
+    for (let seed = 1; seed <= 30; seed++) {
+      const placements = packLayout({
+        itemRatios, W: 1152, H: 1500, random: seededRandom(seed),
+      });
+      if (!placements.length) continue;
+      // Triple-detection heuristic: in a triple, two talls share the same x
+      // and have ~equal width.
+      const tallCandidates = placements.filter(p => itemRatios[p.idx] > 1.1);
+      const tallByX = new Map();
+      for (const t of tallCandidates) {
+        const key = Math.round(t.x / 5) * 5;
+        if (!tallByX.has(key)) tallByX.set(key, []);
+        tallByX.get(key).push(t);
+      }
+      for (const tiles of tallByX.values()) {
+        if (tiles.length >= 2) { foundTriple = true; break; }
+      }
+      if (foundTriple) break;
+    }
+    expect(foundTriple).toBe(true);
+  });
+
+  test('low-tall-density inputs prefer doubles (no unnecessary triples)', () => {
+    // 1 tall + 25 normals — too few talls to need a triple. Doubles or
+    // singles only.
+    const itemRatios = [1.5, ...Array(25).fill(0.7)];
+    let triplesEverFormed = false;
+    for (let seed = 1; seed <= 10; seed++) {
+      const placements = packLayout({
+        itemRatios, W: 1152, H: 1080, random: seededRandom(seed),
+      });
+      if (!placements.length) continue;
+      const tallCandidates = placements.filter(p => itemRatios[p.idx] > 1.1);
+      const tallByX = new Map();
+      for (const t of tallCandidates) {
+        const key = Math.round(t.x / 5) * 5;
+        if (!tallByX.has(key)) tallByX.set(key, []);
+        tallByX.get(key).push(t);
+      }
+      for (const tiles of tallByX.values()) {
+        if (tiles.length >= 2) { triplesEverFormed = true; break; }
+      }
+    }
+    expect(triplesEverFormed).toBe(false);
+  });
 });
 
 describe('solveTripleBand', () => {
