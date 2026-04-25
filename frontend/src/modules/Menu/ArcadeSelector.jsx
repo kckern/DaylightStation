@@ -178,14 +178,19 @@ export function ArcadeSelector({
       const isBack = key === "Escape" || key === "GoBack" || key === "BrowserBack"
         || key === "GamepadSelect" || e.keyCode === 4;  // Android KEYCODE_BACK = 4
       const isArrow = key.startsWith("Arrow");
-      const isModifier = key === "Shift" || key === "Control" || key === "Alt" || key === "Meta" || key === "Tab";
-
-      if (isModifier) return;
+      // Explicit allow-list. Previously this branch was "any non-back/non-arrow
+      // /non-modifier", which let ghost Android keydowns (key="Unidentified")
+      // trigger an auto-select when RetroArch released input grab on quit.
+      const isSelect = key === "Enter" || key === " " || key === "Spacebar"
+        || key === "GamepadA" || key === "GamepadB"
+        || key === "GamepadStart" || key === "MediaPlayPause"
+        || key === "Select"               // Shield TV DPAD_CENTER
+        || e.keyCode === 23;              // Android KEYCODE_DPAD_CENTER
 
       // Log all meaningful key events (sampled to avoid flood)
       if (!isArrow) {
         logger.sampled('arcade.keydown', {
-          key, code: e.code, keyCode: e.keyCode, isBack,
+          key, code: e.code, keyCode: e.keyCode, isBack, isSelect,
           repeat: e.repeat, currentIndex: selectedIndex, itemCount: items.length,
         }, { maxPerMinute: 30 });
       }
@@ -199,8 +204,7 @@ export function ArcadeSelector({
           e.preventDefault();
           logger.info('arcade.back', { key, code: e.code, keyCode: e.keyCode, currentIndex: selectedIndex });
           handleClose();
-      } else {
-          // Any non-navigation, non-back, non-modifier key is select
+      } else if (isSelect) {
           e.preventDefault();
           // Guard: ignore key repeat and rapid duplicate events.
           if (e.repeat || selectCooldownRef.current) return;
@@ -215,6 +219,7 @@ export function ArcadeSelector({
           });
           onSelect?.(selected);
       }
+      // else: silently ignore — including key === "Unidentified" ghost events.
     },
     [items, selectedIndex, layout, tilePos, findNearest, onSelect, handleClose, setSelectedIndex, findKeyForItem, logger]
   );
