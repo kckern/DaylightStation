@@ -22,6 +22,15 @@ export const SESSION_STATES = Object.freeze([
   'buffering', 'stalled', 'ended', 'error',
 ]);
 
+// Subset of QUEUE_OPS that maps to "load content into player".
+// Used by WebSocketContentAdapter and WakeAndLoadService to validate
+// caller-supplied `op` values before broadcast.
+export const LOAD_CONTENT_QUEUE_OPS = Object.freeze([
+  'play-now', 'play-next', 'add-up-next', 'add',
+]);
+
+export const isLoadContentQueueOp = (v) => LOAD_CONTENT_QUEUE_OPS.includes(v);
+
 export const isCommandKind     = (v) => COMMAND_KINDS.includes(v);
 export const isTransportAction = (v) => TRANSPORT_ACTIONS.includes(v);
 export const isQueueOp         = (v) => QUEUE_OPS.includes(v);

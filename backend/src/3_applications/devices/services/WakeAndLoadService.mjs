@@ -22,9 +22,8 @@
 
 import { randomUUID } from 'node:crypto';
 import { buildCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
+import { isLoadContentQueueOp } from '#shared-contracts/media/commands.mjs';
 import { resolveContentId } from '../contentIdKeys.mjs';
-
-const ALLOWED_QUEUE_OPS = new Set(['play-now', 'play-next', 'add-up-next', 'add']);
 
 // Note: 'playback' is an optional trailing step emitted only by the playback
 // watchdog (after load). Not in the sequential flow; frontend consumers may
@@ -403,11 +402,13 @@ export class WakeAndLoadService {
             throw new Error('ws-first.no-contentId');
           }
           const { contentId: resolvedContentId, resolvedKey } = resolved;
-          const requestedOp = ALLOWED_QUEUE_OPS.has(contentQuery.op) ? contentQuery.op : 'play-now';
+          const requestedOp = isLoadContentQueueOp(contentQuery.op) ? contentQuery.op : 'play-now';
           const passThroughOpts = { ...contentQuery };
           delete passThroughOpts[resolvedKey];
           delete passThroughOpts.op;
 
+          // op and contentId are stripped from `options` above; the canonical values
+          // here cannot be clobbered by stray query keys.
           // Reuse dispatchId as commandId — matches the adopt-snapshot pattern
           // a few lines up and keeps all correlated logs tied to one id.
           const envelope = buildCommandEnvelope({
@@ -490,11 +491,13 @@ export class WakeAndLoadService {
           });
         } else {
           const { contentId: fbContentId, resolvedKey: fbResolvedKey } = fbResolved;
-          const fbOp = ALLOWED_QUEUE_OPS.has(contentQuery.op) ? contentQuery.op : 'play-now';
+          const fbOp = isLoadContentQueueOp(contentQuery.op) ? contentQuery.op : 'play-now';
           const fbPassThrough = { ...contentQuery };
           delete fbPassThrough[fbResolvedKey];
           delete fbPassThrough.op;
 
+          // op and contentId are stripped from `options` above; the canonical values
+          // here cannot be clobbered by stray query keys.
           // Reuse dispatchId as commandId (same rationale as the WS-first path).
           const fbEnvelope = buildCommandEnvelope({
             targetDevice: deviceId,
