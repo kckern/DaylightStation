@@ -281,3 +281,75 @@ export function buildBands({
 
   return bands;
 }
+
+export function renderBands({ bands, itemRatios, W, H, gap }) {
+  // Phase 1: solve each band, collect heights.
+  const solved = [];
+  for (const band of bands) {
+    if (band.type === 'single') {
+      const ratios = band.items.map(i => itemRatios[i]);
+      const r = solveSingleBand(ratios, W, gap);
+      if (!r.valid) return { valid: false, placements: [] };
+      solved.push({ band, rowH: r.rowH, height: r.rowH });
+    } else {
+      const tallRatio = itemRatios[band.talls[0]];
+      const upperRatios = band.upper.map(i => itemRatios[i]);
+      const lowerRatios = band.lower.map(i => itemRatios[i]);
+      const r = solveDoubleBand({ tallRatio, upperRatios, lowerRatios, W, gap });
+      if (!r.valid) return { valid: false, placements: [] };
+      solved.push({
+        band,
+        H_pair: r.H_pair, w_t: r.w_t, upper_h: r.upper_h, lower_h: r.lower_h,
+        height: r.H_pair,
+      });
+    }
+  }
+
+  const totalH = solved.reduce((s, b) => s + b.height, 0) + (solved.length - 1) * gap;
+  const scale = totalH > H ? H / totalH : 1;
+  // When scaling down, scale inter-band gaps too so the total still fits H.
+  const interBandGap = gap * scale;
+
+  const placements = [];
+  let y = scale === 1 ? (H - totalH) / 2 : 0;
+
+  for (const s of solved) {
+    if (s.band.type === 'single') {
+      const rowH = s.rowH * scale;
+      // For scale<1, center each row horizontally to mirror legacy behavior.
+      const tilesW = s.band.items.reduce((sum, i) => sum + rowH / itemRatios[i], 0)
+        + (s.band.items.length - 1) * gap;
+      let x = scale < 1 ? (W - tilesW) / 2 : 0;
+      for (const idx of s.band.items) {
+        const w = rowH / itemRatios[idx];
+        placements.push({ idx, x, y, w, h: rowH });
+        x += w + gap;
+      }
+      y += rowH + interBandGap;
+    } else {
+      const upper_h = s.upper_h * scale;
+      const lower_h = s.lower_h * scale;
+      const w_t = s.w_t * scale;
+      const tallIdx = s.band.talls[0];
+      // Tall tile on the left, then non-tall tiles fill the rest.
+      placements.push({ idx: tallIdx, x: 0, y, w: w_t, h: upper_h + gap + lower_h });
+
+      let xu = w_t + gap;
+      for (const idx of s.band.upper) {
+        const w = upper_h / itemRatios[idx];
+        placements.push({ idx, x: xu, y, w, h: upper_h });
+        xu += w + gap;
+      }
+      let xl = w_t + gap;
+      const yLower = y + upper_h + gap;
+      for (const idx of s.band.lower) {
+        const w = lower_h / itemRatios[idx];
+        placements.push({ idx, x: xl, y: yLower, w, h: lower_h });
+        xl += w + gap;
+      }
+      y += upper_h + gap + lower_h + interBandGap;
+    }
+  }
+
+  return { valid: true, placements };
+}
