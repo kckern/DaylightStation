@@ -21,56 +21,6 @@ function bboxOf(placements) {
   return { w, h, aspect: h > 0 ? w / h : Infinity };
 }
 
-// Final guardrail: the rendered placements' bounding box must be square or
-// landscape. A tall outer perimeter means the layout would visually overflow
-// the container's natural shape, so we reject the candidate and let the
-// search keep going.
-function isLandscapeOrSquare(placements) {
-  return bboxOf(placements).aspect >= 1;
-}
-
-// Uniform-cell grid that mirrors the container's aspect ratio. Used as the
-// final brute fallback when nothing else produces a valid layout, and as the
-// hard guarantor at exit when even the singles-only fallback returns a tall
-// layout. Always lands every tile somewhere; bbox is at most container aspect
-// (so landscape if container is landscape) by construction.
-function gridFallback(itemRatios, W, H, gap) {
-  const N = itemRatios.length;
-  if (N === 0) return [];
-  // cols × rows ≈ N, with cols/rows ≈ W/H so the grid mirrors container shape.
-  const containerAspect = W / Math.max(H, 1);
-  let cols = Math.max(1, Math.round(Math.sqrt(N * containerAspect)));
-  let rows = Math.ceil(N / cols);
-  // For landscape containers, never let rows exceed cols — otherwise the cell
-  // grid itself becomes tall regardless of tile aspects.
-  if (W >= H && cols < rows) {
-    cols = rows;
-    rows = Math.ceil(N / cols);
-  }
-  const cellW = (W - (cols - 1) * gap) / cols;
-  const cellH = (H - (rows - 1) * gap) / rows;
-  const placements = [];
-  for (let i = 0; i < N; i++) {
-    const r = itemRatios[i];
-    const col = i % cols;
-    const row = Math.floor(i / cols);
-    // Fit tile inside cell preserving its h/w ratio (r = h/w).
-    let tw = cellW;
-    let th = tw * r;
-    if (th > cellH) {
-      th = cellH;
-      tw = th / r;
-    }
-    placements.push({
-      idx: i,
-      x: col * (cellW + gap) + (cellW - tw) / 2,
-      y: row * (cellH + gap) + (cellH - th) / 2,
-      w: tw,
-      h: th,
-    });
-  }
-  return placements;
-}
 
 const DEFAULT_GAP = 3;
 const DEFAULT_MAX_ROW_PCT = 0.25;
@@ -147,9 +97,12 @@ export function packLayout({
     tallThreshold, K,
   });
 
-  let bestPlacements = null;
-  let bestScore = -Infinity;
-  let bestMeta = null;
+  // Dual-tracker: bestLandscape wins if ANY landscape variant exists across
+  // all 20 Monte Carlo attempts × all (targetRows, t, d) variants. Only if
+  // EVERY single variant comes out tall do we fall back to bestAny — and even
+  // then we keep the optimal-spaced band layout, never a rigid grid.
+  let bestLandscape = null, bestLandscapeScore = -Infinity, bestLandscapeMeta = null;
+  let bestAny = null, bestAnyScore = -Infinity, bestAnyMeta = null;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const baseOrder = itemRatios.map((_, i) => i);
@@ -159,9 +112,6 @@ export function packLayout({
     }
 
     const maxRows = Math.min(N, Math.floor(H / 30));
-    let attemptBest = null;
-    let attemptScore = -Infinity;
-    let attemptMeta = null;
 
     for (let targetRows = 2; targetRows <= maxRows; targetRows++) {
       const refH = (H - (targetRows - 1) * gap) / targetRows;
@@ -204,70 +154,75 @@ export function packLayout({
             log('pack.variant.skip', { targetRows, t, d, reason: 'render-invalid' });
             continue;
           }
-          {
-            const bbox = bboxOf(rendered.placements);
-            if (bbox.aspect < 1) {
-              log('pack.variant.reject', {
-                targetRows, t, d, reason: 'bbox-tall',
-                bboxW: +bbox.w.toFixed(1), bboxH: +bbox.h.toFixed(1),
-                bboxAspect: +bbox.aspect.toFixed(3),
-              });
-              continue;
-            }
-          }
 
           const sc = scoreLayout({
             placements: rendered.placements, tallSet, N, W, H,
             fillWeight, balanceWeight, capWeight, areaCap,
           });
+          const bbox = bboxOf(rendered.placements);
+          const isLandscape = bbox.aspect >= 1;
 
           const tripleCount = bands.filter(b => b.type === 'triple').length;
           const doubleCount = bands.filter(b => b.type === 'double').length;
           const singleCount = bands.filter(b => b.type === 'single').length;
           log('pack.variant.candidate', {
-            targetRows, t, d,
+            attempt, targetRows, t, d,
             tripleCount, doubleCount, singleCount,
             fillRatio: +sc.fillRatio.toFixed(3),
             tallAreaFrac: +sc.tallAreaFrac.toFixed(3),
             balanceTerm: +sc.balanceTerm.toFixed(3),
             capPenalty: +sc.capPenalty.toFixed(3),
             score: +sc.score.toFixed(3),
+            bboxAspect: +bbox.aspect.toFixed(3),
+            isLandscape,
           });
 
-          if (sc.score > attemptScore) {
-            attemptScore = sc.score;
-            attemptBest = rendered.placements;
-            attemptMeta = {
-              targetRows, t, d, tripleCount, doubleCount, singleCount,
-              fillRatio: +sc.fillRatio.toFixed(3),
-              tallAreaFrac: +sc.tallAreaFrac.toFixed(3),
-              score: +sc.score.toFixed(3),
-            };
+          const variantMeta = {
+            attempt, targetRows, t, d, tripleCount, doubleCount, singleCount,
+            fillRatio: +sc.fillRatio.toFixed(3),
+            tallAreaFrac: +sc.tallAreaFrac.toFixed(3),
+            score: +sc.score.toFixed(3),
+            bboxAspect: +bbox.aspect.toFixed(3),
+          };
+
+          if (isLandscape && sc.score > bestLandscapeScore) {
+            bestLandscapeScore = sc.score;
+            bestLandscape = rendered.placements;
+            bestLandscapeMeta = variantMeta;
+          }
+          if (sc.score > bestAnyScore) {
+            bestAnyScore = sc.score;
+            bestAny = rendered.placements;
+            bestAnyMeta = variantMeta;
           }
         }
       }
     }
-
-    // Keep the absolute-best across all attempts. (Earlier code break-ed on
-    // the first valid attempt, which silently turned the Monte Carlo into a
-    // single-shuffle search — the additional shuffles never ran.)
-    if (attemptBest && attemptScore > bestScore) {
-      bestScore = attemptScore;
-      bestPlacements = attemptBest;
-      bestMeta = { attempt, ...attemptMeta };
-    }
   }
 
-  // Guardrail fallback: if the strict pre-scale maxRowPct check rejected
-  // every variant (happens at unusual aspect ratios — e.g. 16:7 viewports
-  // or high tall-density inputs at H=1080), retry without that rejection.
-  // renderBands' scale-down still keeps tiles inside the container; the
-  // result may not be visually optimal, but the grid ALWAYS shows.
+  // Prefer landscape; else accept the best-scoring tall band layout. The
+  // packing structure (bands, sizing) stays optimal either way.
+  let bestPlacements = null;
+  let bestMeta = null;
+  if (bestLandscape) {
+    bestPlacements = bestLandscape;
+    bestMeta = bestLandscapeMeta;
+  } else if (bestAny) {
+    bestPlacements = bestAny;
+    bestMeta = { ...bestAnyMeta, tallAccepted: true };
+    logger?.warn?.('pack.tall-accepted', {
+      reason: 'no-landscape-variant',
+      ...bestAnyMeta,
+    });
+  }
+
+  // Singles-only fallback: only fires if the strict variant search produced
+  // ZERO valid candidates (every variant failed pre-scale validation). Same
+  // dual-tracker pattern: prefer landscape, accept tall as second choice.
   if (!bestPlacements) {
     logInfo('pack.fallback.start', { N, W, H, K, reason: 'no-strict-layout' });
-    let fallbackBest = null;
-    let fallbackBestScore = -Infinity;
-    let fallbackBestMeta = null;
+    let fbLandscape = null, fbLandscapeScore = -Infinity, fbLandscapeMeta = null;
+    let fbAny = null, fbAnyScore = -Infinity, fbAnyMeta = null;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const baseOrder = itemRatios.map((_, i) => i);
       for (let i = baseOrder.length - 1; i > 0; i--) {
@@ -277,8 +232,6 @@ export function packLayout({
       const maxRows = Math.min(N, Math.max(2, Math.floor(H / 30)));
       for (let targetRows = 2; targetRows <= maxRows; targetRows++) {
         const refH = (H - (targetRows - 1) * gap) / targetRows;
-        // Singles-only in fallback — keeps geometry simplest and most
-        // likely to render cleanly under aggressive scale-down.
         const order = baseOrder.slice();
         const bands = buildBands({
           itemRatios, order, tallThreshold, refH, W, gap, minPerRow,
@@ -288,31 +241,52 @@ export function packLayout({
         if (solved.some(s => !s.valid)) continue;
         const rendered = renderBands({ bands, itemRatios, W, H, gap });
         if (!rendered.valid) continue;
-        if (!isLandscapeOrSquare(rendered.placements)) continue;
         const sc = scoreLayout({
           placements: rendered.placements, tallSet, N, W, H,
           fillWeight, balanceWeight, capWeight, areaCap,
         });
-        if (sc.score > fallbackBestScore) {
-          fallbackBestScore = sc.score;
-          fallbackBest = rendered.placements;
-          fallbackBestMeta = { attempt, targetRows, score: +sc.score.toFixed(3),
-            fillRatio: +sc.fillRatio.toFixed(3) };
+        const bbox = bboxOf(rendered.placements);
+        const isLandscape = bbox.aspect >= 1;
+        const meta = { attempt, targetRows, score: +sc.score.toFixed(3),
+          fillRatio: +sc.fillRatio.toFixed(3), bboxAspect: +bbox.aspect.toFixed(3) };
+        if (isLandscape && sc.score > fbLandscapeScore) {
+          fbLandscapeScore = sc.score;
+          fbLandscape = rendered.placements;
+          fbLandscapeMeta = meta;
+        }
+        if (sc.score > fbAnyScore) {
+          fbAnyScore = sc.score;
+          fbAny = rendered.placements;
+          fbAnyMeta = meta;
         }
       }
     }
-    if (fallbackBest) {
-      bestPlacements = fallbackBest;
-      bestMeta = { fallback: 'singles-only', ...fallbackBestMeta };
+    if (fbLandscape) {
+      bestPlacements = fbLandscape;
+      bestMeta = { fallback: 'singles-only', ...fbLandscapeMeta };
       logInfo('pack.fallback.success', bestMeta);
+    } else if (fbAny) {
+      bestPlacements = fbAny;
+      bestMeta = { fallback: 'singles-only', tallAccepted: true, ...fbAnyMeta };
+      logger?.warn?.('pack.tall-accepted', {
+        reason: 'singles-fallback-no-landscape',
+        ...fbAnyMeta,
+      });
     } else {
-      // Last resort: uniform-cell grid mirroring container aspect. Replaces
-      // the legacy "one tile per row at H/N" brute path which produced near-
-      // zero aspect bboxes (the 2026-04-25 prod regression). This path is
-      // landscape-by-construction for landscape containers.
+      // True last resort: original single-column brute. Visually poor but
+      // every tile renders. Should be effectively impossible to reach now
+      // that the dual-tracker accepts ANY valid render in the strict and
+      // singles-only paths.
       logInfo('pack.fallback.brute', { N, W, H });
-      bestPlacements = gridFallback(itemRatios, W, H, gap);
-      bestMeta = { fallback: 'grid', N };
+      const rowH = H / N;
+      bestPlacements = itemRatios.map((r, idx) => ({
+        idx,
+        x: (W - rowH / r) / 2,
+        y: idx * rowH,
+        w: rowH / r,
+        h: rowH,
+      }));
+      bestMeta = { fallback: 'brute-force-singles', N };
     }
   }
 
@@ -325,22 +299,10 @@ export function packLayout({
     });
   }
 
-  // FINAL GATE: defense-in-depth. No matter which path produced bestPlacements,
-  // if the bbox came out taller than wide, replace with the grid fallback.
-  // Logged loudly so prod can flag the case for follow-up tuning.
-  let finalBbox = bboxOf(bestPlacements);
-  if (finalBbox.aspect < 1) {
-    logger?.warn?.('pack.guardrail.replaced', {
-      reason: 'bbox-tall',
-      bboxW: +finalBbox.w.toFixed(1), bboxH: +finalBbox.h.toFixed(1),
-      bboxAspect: +finalBbox.aspect.toFixed(3),
-      previousMeta: bestMeta,
-    });
-    bestPlacements = gridFallback(itemRatios, W, H, gap);
-    bestMeta = { ...bestMeta, guardrailReplaced: true };
-    finalBbox = bboxOf(bestPlacements);
-  }
-
+  // Observability — every pack.done emits the final outer-bbox dims so prod
+  // can verify the guardrail's effect from logs alone. tall outputs are also
+  // separately warn-logged at pack.tall-accepted above.
+  const finalBbox = bboxOf(bestPlacements);
   logInfo('pack.done', {
     ...bestMeta,
     mirrorH, mirrorV,
