@@ -312,9 +312,10 @@ export function ArcadeSelector({
       itemRatios,
       W: nav.clientWidth,
       H: nav.clientHeight,
+      logger: logger.child({ subcomponent: 'packer' }),
     });
     if (placements.length) setLayout(placements);
-  }, [items.length, itemRatios]);
+  }, [items.length, itemRatios, logger]);
 
   const currentItem = items[selectedIndex] || {};
   const heroImage = resolveImage(currentItem);

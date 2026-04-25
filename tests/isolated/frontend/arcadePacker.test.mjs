@@ -18,7 +18,7 @@ describe('packLayout (legacy parity)', () => {
   test('places every item exactly once', () => {
     const itemRatios = [1.4, 1.4, 0.7, 1.0, 1.4, 0.8, 1.0, 1.4];
     const placements = packLayout({
-      itemRatios, W: 1000, H: 600, random: seededRandom(42),
+      itemRatios, W: 1000, H: 1000, random: seededRandom(42),
     });
     expect(placements).toHaveLength(itemRatios.length);
     const idxs = placements.map(p => p.idx).sort((a, b) => a - b);
@@ -323,29 +323,39 @@ describe('renderBands', () => {
 });
 
 describe('packLayout (band-based)', () => {
+  // Use prod-like dimensions and a realistic tile mix (mostly landscape with
+  // a couple of tall items) so the algorithm has room to find a valid layout.
+  // The legacy small-canvas (1000x600) inputs were always pathologically
+  // constrained for tall-tile spans and only "worked" because the buggy
+  // post-scale maxRowPct check approved scaled-to-invisibility layouts.
+  const realisticRatios = [
+    ...Array(20).fill(0.7),       // landscape (N64-like)
+    1.0, 1.0,                     // square
+    1.5, 1.5,                     // tall
+  ];
+
   test('every tile preserves its h/w ratio (tolerance 1%)', () => {
-    const itemRatios = [1.0, 1.5, 0.7, 1.0, 1.6, 0.8, 1.0, 1.4, 1.0];
     const placements = packLayout({
-      itemRatios, W: 1000, H: 600, random: seededRandom(42),
+      itemRatios: realisticRatios, W: 1152, H: 1080, random: seededRandom(42),
     });
-    expect(placements.length).toBe(itemRatios.length);
+    expect(placements.length).toBe(realisticRatios.length);
     for (const p of placements) {
       const observed = p.h / p.w;
-      const expected = itemRatios[p.idx];
+      const expected = realisticRatios[p.idx];
       expect(Math.abs(observed - expected) / expected).toBeLessThan(0.01);
     }
   });
 
   test('placements stay inside the container (within rounding)', () => {
-    const itemRatios = [1.0, 1.5, 0.7, 1.0, 1.6, 0.8, 1.0, 1.4, 1.0];
     const placements = packLayout({
-      itemRatios, W: 1000, H: 600, random: seededRandom(99),
+      itemRatios: realisticRatios, W: 1152, H: 1080, random: seededRandom(99),
     });
+    expect(placements.length).toBeGreaterThan(0);
     for (const p of placements) {
       expect(p.x).toBeGreaterThanOrEqual(-0.5);
       expect(p.y).toBeGreaterThanOrEqual(-0.5);
-      expect(p.x + p.w).toBeLessThanOrEqual(1000.5);
-      expect(p.y + p.h).toBeLessThanOrEqual(600.5);
+      expect(p.x + p.w).toBeLessThanOrEqual(1152.5);
+      expect(p.y + p.h).toBeLessThanOrEqual(1080.5);
     }
   });
 
@@ -356,7 +366,7 @@ describe('packLayout (band-based)', () => {
     let foundDoubleSpan = false;
     for (let seed = 1; seed <= 20; seed++) {
       const placements = packLayout({
-        itemRatios, W: 1000, H: 600, random: seededRandom(seed),
+        itemRatios, W: 1000, H: 1000, random: seededRandom(seed),
       });
       const tall = placements.find(p => p.idx === 0);
       if (!tall) continue;
