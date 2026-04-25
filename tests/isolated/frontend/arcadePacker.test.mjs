@@ -703,6 +703,28 @@ describe('packLayout (band-based)', () => {
     }
   });
 
+  test('GUARDRAIL: prod scenario (N=26, 576x540 navmap) NEVER produces tall bbox', () => {
+    // Repro of 2026-04-25 prod incident: strict packer rejected every variant
+    // (bbox-tall + row-too-tall), singles-only fallback also failed, brute
+    // fallback fired and stacked all 26 tiles in one column producing a near-
+    // zero aspect bbox. The brute path bypassed the guardrail entirely.
+    const itemRatios = [
+      ...Array(22).fill(0.7),       // landscape thumbs (N64-style)
+      1.398, 1.399, 1.406, 1.428,   // marginal-tall (Mario Tennis etc.)
+    ];
+    for (let seed = 1; seed <= 30; seed++) {
+      const placements = packLayout({
+        itemRatios, W: 576, H: 540, random: seededRandom(seed),
+      });
+      expect(placements.length).toBe(itemRatios.length);
+      const left = Math.min(...placements.map(p => p.x));
+      const right = Math.max(...placements.map(p => p.x + p.w));
+      const top = Math.min(...placements.map(p => p.y));
+      const bottom = Math.max(...placements.map(p => p.y + p.h));
+      expect(right - left).toBeGreaterThanOrEqual(bottom - top);
+    }
+  });
+
   test('low-tall-density inputs prefer doubles (no unnecessary triples)', () => {
     // 1 tall + 25 normals — too few talls to need a triple. Doubles or
     // singles only.
