@@ -711,7 +711,11 @@ export function scoreLayout({
   );
   const tallAreaFrac = tallArea / totalArea;
   const tallCountFrac = N > 0 ? tallSet.size / N : 0;
-  const balanceTerm = 1 - Math.abs(tallAreaFrac - tallCountFrac);
+  // Asymmetric: only OVER-allocation (talls eating more area than their item
+  // share) hurts the score. Under-allocation (talls successfully smaller than
+  // their count would suggest) is the desired outcome — give it the maximum
+  // balanceTerm of 1.0 instead of penalizing it.
+  const balanceTerm = 1 - Math.max(0, tallAreaFrac - tallCountFrac);
   const capPenalty = Math.max(0, tallAreaFrac - areaCap);
 
   const score = fillWeight * fillRatio + balanceWeight * balanceTerm - capWeight * capPenalty;
