@@ -134,3 +134,11 @@ export function classifyItems(itemRatios, threshold = DEFAULT_TALL_THRESHOLD) {
   });
   return { tallIndices, normalIndices };
 }
+
+export function solveSingleBand(ratios, W, gap) {
+  if (!ratios.length) return { rowH: 0, valid: false };
+  const gaps = (ratios.length - 1) * gap;
+  const invSum = ratios.reduce((s, r) => s + 1 / r, 0);
+  const rowH = (W - gaps) / invSum;
+  return { rowH, valid: rowH > 0 };
+}
