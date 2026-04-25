@@ -14,6 +14,7 @@ export function packLayout({
   maxRowPct = DEFAULT_MAX_ROW_PCT,
   maxAttempts = DEFAULT_MAX_ATTEMPTS,
   minPerRow = DEFAULT_MIN_PER_ROW,
+  tallThreshold = DEFAULT_TALL_THRESHOLD,
   random = Math.random,
 } = {}) {
   if (!itemRatios?.length || W <= 0 || H <= 0) return [];
@@ -22,10 +23,10 @@ export function packLayout({
   let bestScore = -Infinity;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const shuffled = itemRatios.map((_, i) => i);
-    for (let i = shuffled.length - 1; i > 0; i--) {
+    const order = itemRatios.map((_, i) => i);
+    for (let i = order.length - 1; i > 0; i--) {
       const j = Math.floor(random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      [order[i], order[j]] = [order[j], order[i]];
     }
 
     const maxRows = Math.min(Math.ceil(N / 2), Math.floor(H / 30));
@@ -34,72 +35,36 @@ export function packLayout({
 
     for (let targetRows = 2; targetRows <= maxRows; targetRows++) {
       const refH = (H - (targetRows - 1) * gap) / targetRows;
-      const rows = [];
-      let row = [];
-      let rowW = 0;
-      for (const idx of shuffled) {
-        const tw = refH / itemRatios[idx];
-        if (row.length > 0 && rowW + gap + tw > W) {
-          rows.push(row);
-          row = [idx];
-          rowW = tw;
-        } else {
-          rowW += (row.length > 0 ? gap : 0) + tw;
-          row.push(idx);
-        }
-      }
-      if (row.length) rows.push(row);
 
-      while (rows.length > 1 && rows[rows.length - 1].length < minPerRow) {
-        const last = rows.pop();
-        rows[rows.length - 1].push(...last);
-      }
-
-      const rowData = rows.map(indices => {
-        const gaps = (indices.length - 1) * gap;
-        const invSum = indices.reduce((s, i) => s + 1 / itemRatios[i], 0);
-        return { indices, rowH: (W - gaps) / invSum };
+      const bands = buildBands({
+        itemRatios, order, tallThreshold, refH, W, gap, minPerRow,
       });
+      const rendered = renderBands({ bands, itemRatios, W, H, gap });
+      if (!rendered.valid) continue;
 
-      const maxRowH = H * maxRowPct;
-      if (rowData.some(r => r.rowH > maxRowH)) continue;
+      // Reject if any non-tall row exceeds maxRowPct of H. Tall tiles in
+      // double bands are allowed to exceed it — that's the whole point.
+      const maxAllowed = H * maxRowPct;
+      const violates = bands.some(band => {
+        if (band.type === 'single') {
+          const rowH = rendered.placements.find(p => band.items.includes(p.idx)).h;
+          return rowH > maxAllowed;
+        }
+        const upperH = rendered.placements.find(p => p.idx === band.upper[0]).h;
+        const lowerH = rendered.placements.find(p => p.idx === band.lower[0]).h;
+        return upperH > maxAllowed || lowerH > maxAllowed;
+      });
+      if (violates) continue;
 
-      const totalH = rowData.reduce((s, r) => s + r.rowH, 0) + (rowData.length - 1) * gap;
+      const totalH = rendered.placements.reduce(
+        (m, p) => Math.max(m, p.y + p.h), 0,
+      );
       const fillRatio = totalH / H;
       const score = fillRatio <= 1 ? fillRatio : 1 / fillRatio;
 
       if (score > attemptScore) {
         attemptScore = score;
-        const placements = [];
-        if (totalH > H) {
-          const s = H / totalH;
-          let y = 0;
-          for (const { indices, rowH } of rowData) {
-            const sh = rowH * s;
-            const rowTotalW = indices.reduce((sum, i) => sum + sh / itemRatios[i], 0)
-              + (indices.length - 1) * gap;
-            let x = (W - rowTotalW) / 2;
-            for (const idx of indices) {
-              const w = sh / itemRatios[idx];
-              placements.push({ idx, x, y, w, h: sh });
-              x += w + gap;
-            }
-            y += sh + gap;
-          }
-        } else {
-          const pad = (H - totalH) / 2;
-          let y = pad;
-          for (const { indices, rowH } of rowData) {
-            let x = 0;
-            for (const idx of indices) {
-              const w = rowH / itemRatios[idx];
-              placements.push({ idx, x, y, w, h: rowH });
-              x += w + gap;
-            }
-            y += rowH + gap;
-          }
-        }
-        attemptBest = placements;
+        attemptBest = rendered.placements;
       }
     }
 

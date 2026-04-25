@@ -321,3 +321,55 @@ describe('renderBands', () => {
     expect(tall.y + tall.h).toBeCloseTo(lowerT.y + lowerT.h, 3);
   });
 });
+
+describe('packLayout (band-based)', () => {
+  test('every tile preserves its h/w ratio (tolerance 1%)', () => {
+    const itemRatios = [1.0, 1.5, 0.7, 1.0, 1.6, 0.8, 1.0, 1.4, 1.0];
+    const placements = packLayout({
+      itemRatios, W: 1000, H: 600, random: seededRandom(42),
+    });
+    expect(placements.length).toBe(itemRatios.length);
+    for (const p of placements) {
+      const observed = p.h / p.w;
+      const expected = itemRatios[p.idx];
+      expect(Math.abs(observed - expected) / expected).toBeLessThan(0.01);
+    }
+  });
+
+  test('placements stay inside the container (within rounding)', () => {
+    const itemRatios = [1.0, 1.5, 0.7, 1.0, 1.6, 0.8, 1.0, 1.4, 1.0];
+    const placements = packLayout({
+      itemRatios, W: 1000, H: 600, random: seededRandom(99),
+    });
+    for (const p of placements) {
+      expect(p.x).toBeGreaterThanOrEqual(-0.5);
+      expect(p.y).toBeGreaterThanOrEqual(-0.5);
+      expect(p.x + p.w).toBeLessThanOrEqual(1000.5);
+      expect(p.y + p.h).toBeLessThanOrEqual(600.5);
+    }
+  });
+
+  test('a tall tile spans the height of two normal tiles in the same band', () => {
+    // Force a list where index 0 is tall and the rest are normal,
+    // and we expect the packer to land it in a double band.
+    const itemRatios = [1.6, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+    let foundDoubleSpan = false;
+    for (let seed = 1; seed <= 20; seed++) {
+      const placements = packLayout({
+        itemRatios, W: 1000, H: 600, random: seededRandom(seed),
+      });
+      const tall = placements.find(p => p.idx === 0);
+      if (!tall) continue;
+      // A tall in a double band has h roughly equal to (2 * normal_h + gap).
+      // Find a normal tile that overlaps the tall vertically.
+      const overlapping = placements.filter(p => p.idx !== 0
+        && p.y >= tall.y - 1 && p.y + p.h <= tall.y + tall.h + 1);
+      if (overlapping.length >= 2) { foundDoubleSpan = true; break; }
+    }
+    expect(foundDoubleSpan).toBe(true);
+  });
+
+  test('returns empty array on empty input', () => {
+    expect(packLayout({ itemRatios: [], W: 1000, H: 600 })).toEqual([]);
+  });
+});
