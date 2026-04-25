@@ -176,9 +176,68 @@ export function packLayout({
     }
   }
 
+  // Guardrail fallback: if the strict pre-scale maxRowPct check rejected
+  // every variant (happens at unusual aspect ratios — e.g. 16:7 viewports
+  // or high tall-density inputs at H=1080), retry without that rejection.
+  // renderBands' scale-down still keeps tiles inside the container; the
+  // result may not be visually optimal, but the grid ALWAYS shows.
   if (!bestPlacements) {
-    logInfo('pack.fail', { N, W, H, K, reason: 'no-valid-layout-across-attempts' });
-    return [];
+    logInfo('pack.fallback.start', { N, W, H, K, reason: 'no-strict-layout' });
+    let fallbackBest = null;
+    let fallbackBestScore = -Infinity;
+    let fallbackBestMeta = null;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const baseOrder = itemRatios.map((_, i) => i);
+      for (let i = baseOrder.length - 1; i > 0; i--) {
+        const j = Math.floor(random() * (i + 1));
+        [baseOrder[i], baseOrder[j]] = [baseOrder[j], baseOrder[i]];
+      }
+      const maxRows = Math.min(N, Math.max(2, Math.floor(H / 30)));
+      for (let targetRows = 2; targetRows <= maxRows; targetRows++) {
+        const refH = (H - (targetRows - 1) * gap) / targetRows;
+        // Singles-only in fallback — keeps geometry simplest and most
+        // likely to render cleanly under aggressive scale-down.
+        const order = baseOrder.slice();
+        const bands = buildBands({
+          itemRatios, order, tallThreshold, refH, W, gap, minPerRow,
+          tripleCount: 0, doubleCount: 0,
+        });
+        const solved = bands.map(b => solveBandRaw(b, itemRatios, W, gap));
+        if (solved.some(s => !s.valid)) continue;
+        const rendered = renderBands({ bands, itemRatios, W, H, gap });
+        if (!rendered.valid) continue;
+        const sc = scoreLayout({
+          placements: rendered.placements, tallSet, N, W, H,
+          fillWeight, balanceWeight, capWeight, areaCap,
+        });
+        if (sc.score > fallbackBestScore) {
+          fallbackBestScore = sc.score;
+          fallbackBest = rendered.placements;
+          fallbackBestMeta = { attempt, targetRows, score: +sc.score.toFixed(3),
+            fillRatio: +sc.fillRatio.toFixed(3) };
+        }
+      }
+    }
+    if (fallbackBest) {
+      bestPlacements = fallbackBest;
+      bestMeta = { fallback: 'singles-only', ...fallbackBestMeta };
+      logInfo('pack.fallback.success', bestMeta);
+    } else {
+      // Last resort: brute force one tile per row at H/N each. This always
+      // produces valid placements as long as W > 0 and H > 0 (already
+      // checked at the top).
+      logInfo('pack.fallback.brute', { N, W, H });
+      const rowH = H / N;
+      const placements = itemRatios.map((r, idx) => ({
+        idx,
+        x: (W - rowH / r) / 2,
+        y: idx * rowH,
+        w: rowH / r,
+        h: rowH,
+      }));
+      bestPlacements = placements;
+      bestMeta = { fallback: 'brute-force-singles', N };
+    }
   }
 
   const mirrorH = random() < 0.5;
