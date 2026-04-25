@@ -13,7 +13,17 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
   const preferGroupLabels = options?.preferGroupLabels ?? false;
   if (!govState?.isGoverned) return null;
 
-  const { status, requirements, challenge, deadline, gracePeriodTotal, videoLocked, hrInactiveUsers } = govState;
+  const {
+    status,
+    requirements,
+    challenge,
+    deadline,
+    gracePeriodTotal,
+    videoLocked,
+    hrInactiveUsers,
+    activeUserCount
+  } = govState;
+  const normalizedRequirements = Array.isArray(requirements) ? requirements : [];
 
   if (status === 'unlocked') {
     return { show: false, status, rows: [] };
@@ -26,7 +36,7 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
   const hrInactiveSet = new Set((hrInactiveUsers || []).map(normalize));
 
   // Base requirements
-  (requirements || []).forEach((req) => {
+  normalizedRequirements.forEach((req) => {
     if (req.satisfied) return;
     const targetZoneId = req.zone || null;
     (req.missingUsers || []).forEach((userId) => {
@@ -111,6 +121,8 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
     gracePeriodTotal: gracePeriodTotal || null,
     videoLocked: videoLocked || false,
     challenge: challenge || null,
+    requirements: normalizedRequirements,
+    activeUserCount: Number.isFinite(activeUserCount) ? Math.max(0, Math.round(activeUserCount)) : null,
     rows
   };
 }

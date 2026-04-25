@@ -314,13 +314,6 @@ const FitnessSidebarMenu = ({
   const renderSettings = () => (
     <>
 
-      <div className="menu-section">
-        <h4>Quick Actions</h4>
-        <button type="button" className="menu-item action-item" onClick={handleReloadPage}>
-          <span>🔄 Reload App</span>
-        </button>
-        {FITNESS_DEBUG && <DebugMicButton />}
-      </div>
 
       <div className="menu-section">
 
@@ -340,20 +333,7 @@ const FitnessSidebarMenu = ({
           </label>
         </div>
 
-        <div
-          className={`menu-item toggle-item${flashingId === 'chart' ? ' is-ack-flash' : ''}`}
-          onPointerDown={handleChartToggle}
-        >
-          <span>📈 Fitness Chart</span>
-          <label className="toggle-switch">
-            <input
-              type="checkbox"
-              checked={showChart}
-              readOnly
-            />
-            <span className="toggle-slider"></span>
-          </label>
-        </div>
+
 
         <div
           className={`menu-item toggle-item${flashingId === 'treasureBox' ? ' is-ack-flash' : ''}`}

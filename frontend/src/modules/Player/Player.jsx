@@ -876,6 +876,12 @@ const Player = forwardRef(function Player(props, ref) {
     </>
   ) : null;
 
+  const handleRequestRecovery = useCallback((payload = {}) => {
+    if (typeof requestRecovery === 'function') {
+      requestRecovery(payload?.reason);
+    }
+  }, [requestRecovery]);
+
   const playerProps = {
     advance: isQueue ? advance : singleAdvance,
     clear,
@@ -899,11 +905,7 @@ const Player = forwardRef(function Player(props, ref) {
     onRegisterMediaAccess: handleRegisterMediaAccess,
     onRegisterResilienceBridge: handleRegisterResilienceBridge,
     onStartupSignal,
-    onRequestRecovery: (payload) => {
-      if (typeof requestRecovery === 'function') {
-        requestRecovery(payload?.reason);
-      }
-    },
+    onRequestRecovery: handleRequestRecovery,
     seekToIntentSeconds: targetTimeSeconds,
     onSeekRequestConsumed: handleSeekRequestConsumed,
     remountDiagnostics: remountState.context,

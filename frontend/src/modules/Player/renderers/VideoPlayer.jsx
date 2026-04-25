@@ -187,6 +187,46 @@ export function VideoPlayer({
   // Track whether the browser has blocked autoplay (NotAllowedError).
   // Surfaced via resilienceBridge so Player.jsx can render the click-to-play overlay.
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
+  const autoplayBlockedRef = useRef(false);
+  useEffect(() => {
+    autoplayBlockedRef.current = autoplayBlocked;
+  }, [autoplayBlocked]);
+
+  const handleAutoplayResolved = useCallback(() => {
+    // Guard: ignore if already resolving (prevents AbortError flood from rapid taps)
+    if (!autoplayBlockedRef.current) return;
+    setAutoplayBlocked(false); // Dismiss overlay immediately
+
+    // Clear any pending seek intent — after autoplay block, the video should
+    // play from its current position (0:00) rather than seeking to resume position.
+    resilienceBridgeRef.current?.onSeekRequestConsumed?.();
+
+    // Called from user gesture context (tap/key overlay).
+    // <dash-video> is a web component with no play() method — must use the
+    // inner <video> from shadow DOM directly.
+    const el = containerRef.current;
+    const inner = el?.shadowRoot?.querySelector('video, audio') || el;
+    if (!inner) {
+      playbackLog('autoplay-blocked-retry-no-element', {}, { level: 'warn' });
+      return;
+    }
+
+    const p = inner.play?.();
+    if (p && typeof p.then === 'function') {
+      p.then(() => {
+        playbackLog('autoplay-blocked-resolved', { method: 'user-gesture' });
+      }).catch((err) => {
+        if (err?.name === 'NotAllowedError') {
+          setAutoplayBlocked(true);
+          playbackLog('autoplay-blocked-retry-failed', { error: 'NotAllowedError' }, { level: 'warn' });
+        } else {
+          playbackLog('autoplay-blocked-retry-failed', { error: err?.name || err?.message }, { level: 'warn' });
+        }
+      });
+    } else {
+      playbackLog('autoplay-blocked-retry-no-play-method', { tagName: inner?.tagName }, { level: 'warn' });
+    }
+  }, [containerRef]);
 
   // Hard reset: seek to position, reload, and resume playback.
   // Uses getMediaEl to traverse shadow DOM for dash-video,
@@ -263,49 +303,18 @@ export function VideoPlayer({
         hardReset,
         fetchVideoInfo: fetchVideoInfo || null,
         autoplayBlocked,
-        onAutoplayResolved: () => {
-          // Guard: ignore if already resolving (prevents AbortError flood from rapid taps)
-          if (!autoplayBlocked) return;
-          setAutoplayBlocked(false); // Dismiss overlay immediately
-
-          // Clear any pending seek intent — after autoplay block, the video should
-          // play from its current position (0:00) rather than seeking to resume position.
-          resilienceBridge?.onSeekRequestConsumed?.();
-
-          // Called from user gesture context (tap/key overlay).
-          // <dash-video> is a web component with no play() method — must use the
-          // inner <video> from shadow DOM directly.
-          const el = containerRef.current;
-          const inner = el?.shadowRoot?.querySelector('video, audio') || el;
-          if (!inner) {
-            playbackLog('autoplay-blocked-retry-no-element', {}, { level: 'warn' });
-            return;
-          }
-
-          const p = inner.play?.();
-          if (p && typeof p.then === 'function') {
-            p.then(() => {
-              playbackLog('autoplay-blocked-resolved', { method: 'user-gesture' });
-            }).catch((err) => {
-              if (err?.name === 'NotAllowedError') {
-                setAutoplayBlocked(true);
-                playbackLog('autoplay-blocked-retry-failed', { error: 'NotAllowedError' }, { level: 'warn' });
-              } else {
-                playbackLog('autoplay-blocked-retry-failed', { error: err?.name || err?.message }, { level: 'warn' });
-              }
-            });
-          } else {
-            playbackLog('autoplay-blocked-retry-no-play-method', { tagName: inner?.tagName }, { level: 'warn' });
-          }
-        }
+        onAutoplayResolved: handleAutoplayResolved
       });
     }
+  }, [resilienceBridge, getMediaEl, getContainerEl, hardReset, fetchVideoInfo, autoplayBlocked, handleAutoplayResolved]);
+
+  useEffect(() => {
     return () => {
-      if (typeof resilienceBridge?.onRegisterMediaAccess === 'function') {
-        resilienceBridge.onRegisterMediaAccess({});
+      if (typeof resilienceBridgeRef.current?.onRegisterMediaAccess === 'function') {
+        resilienceBridgeRef.current.onRegisterMediaAccess({});
       }
     };
-  }, [resilienceBridge, getMediaEl, getContainerEl, hardReset, fetchVideoInfo, autoplayBlocked]);
+  }, []);
 
   // Clean up DASH resources on unmount to prevent SourceBuffer orphans.
   useEffect(() => {

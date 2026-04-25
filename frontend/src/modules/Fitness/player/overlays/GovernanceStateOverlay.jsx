@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useEffect } from 'react';
+import React, { useMemo, useRef, useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import { getLogger } from '@/lib/logging/Logger.js';
@@ -8,6 +8,7 @@ import { computeCycleLockPanelData } from './cycleLockPanelData.js';
 import './GovernanceStateOverlay.scss';
 
 const TOTAL_NOTCHES = 56;
+const ROW_GROW_ANIMATION_MS = 220;
 
 const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ countdown, countdownTotal, notches, rows, offenders }) {
   // Use notches directly from the per-notch interval timer when available,
@@ -108,13 +109,40 @@ GovernanceWarningOverlay.propTypes = {
   offenders: PropTypes.array
 };
 
+function normalizeRequiredCountFromRule(rule, totalCount) {
+  if (!Number.isFinite(totalCount) || totalCount < 0) return null;
+  const normalizedTotal = Math.max(0, Math.round(totalCount));
+  if (normalizedTotal === 0) return 0;
+  if (typeof rule === 'number' && Number.isFinite(rule)) {
+    return Math.min(normalizedTotal, Math.max(0, Math.round(rule)));
+  }
+  if (typeof rule !== 'string') return null;
+  const normalizedRule = rule.trim().toLowerCase();
+  if (normalizedRule === 'all') return normalizedTotal;
+  if (normalizedRule === 'majority' || normalizedRule === 'most') {
+    return Math.max(1, Math.ceil(normalizedTotal * 0.5));
+  }
+  if (normalizedRule === 'some') {
+    return Math.max(1, Math.ceil(normalizedTotal * 0.3));
+  }
+  if (normalizedRule === 'any') return normalizedTotal > 0 ? 1 : 0;
+  return null;
+}
+
 const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ display, overlay, lockRows = [] }) {
   // Support both new (display) and legacy (overlay + lockRows) format
   const status = display?.status || overlay?.status || 'unknown';
   const title = overlay?.title || 'Video Locked';
-  const primaryMessage = Array.isArray(overlay?.descriptions) && overlay.descriptions.length > 0
+  const overlayPrimaryMessage = Array.isArray(overlay?.descriptions) && overlay.descriptions.length > 0
     ? overlay.descriptions[0]
-    : 'Meet these conditions to unlock playback.';
+    : null;
+  const requirements = Array.isArray(display?.requirements)
+    ? display.requirements
+    : (Array.isArray(overlay?.requirements) ? overlay.requirements : []);
+  const challenge = display?.challenge || null;
+  const activeUserCount = Number.isFinite(display?.activeUserCount)
+    ? Math.max(0, Math.round(display.activeUserCount))
+    : null;
   const unsortedRows = (display ? display.rows : lockRows) || [];
   // Sort by progress descending — closest to meeting target bubbles to top
   const rows = useMemo(() => {
@@ -126,18 +154,133 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
     });
   }, [unsortedRows]);
   const hasRows = rows.length > 0;
-  const isCompact = rows.length > 6;
-  const showTableHeader = !isCompact;
 
-  // Exit criteria: show how many participants need to meet the target
-  const challenge = display?.challenge || null;
-  const requiredCount = challenge ? challenge.requiredCount : null;
-  const exitCriteriaLabel = useMemo(() => {
-    if (!hasRows || requiredCount == null || !Number.isFinite(requiredCount)) return null;
-    if (requiredCount >= rows.length) return null; // all required — no need to specify
-    const targetZoneName = challenge?.zoneLabel || challenge?.zone || 'target';
-    return `${requiredCount} of ${rows.length} need to reach ${targetZoneName}`;
-  }, [hasRows, requiredCount, rows.length, challenge]);
+  const [animatedRows, setAnimatedRows] = useState(() =>
+    rows.map((row) => ({ row, phase: 'stable' }))
+  );
+
+  // Keep removed rows around briefly so they can animate out.
+  useEffect(() => {
+    setAnimatedRows((prev) => {
+      const prevByKey = new Map(prev.map((entry) => [entry.row.key, entry]));
+      const nextKeys = new Set(rows.map((row) => row.key));
+
+      const nextEntries = rows.map((row) => {
+        const previous = prevByKey.get(row.key);
+        if (!previous || previous.phase === 'exit') {
+          return { row, phase: 'enter' };
+        }
+        return { row, phase: previous.phase === 'enter' ? 'enter' : 'stable' };
+      });
+
+      const existingExitEntries = prev.filter(
+        (entry) => entry.phase === 'exit' && !nextKeys.has(entry.row.key)
+      );
+
+      const newExitEntries = prev
+        .filter((entry) => !nextKeys.has(entry.row.key) && entry.phase !== 'exit')
+        .map((entry) => ({ row: entry.row, phase: 'exit' }));
+
+      return [...nextEntries, ...existingExitEntries, ...newExitEntries];
+    });
+  }, [rows]);
+
+  useEffect(() => {
+    if (!animatedRows.some((entry) => entry.phase === 'enter')) return undefined;
+    const timer = setTimeout(() => {
+      setAnimatedRows((prev) =>
+        prev.map((entry) => (entry.phase === 'enter' ? { ...entry, phase: 'stable' } : entry))
+      );
+    }, ROW_GROW_ANIMATION_MS);
+    return () => clearTimeout(timer);
+  }, [animatedRows]);
+
+  useEffect(() => {
+    if (!animatedRows.some((entry) => entry.phase === 'exit')) return undefined;
+    const timer = setTimeout(() => {
+      setAnimatedRows((prev) => prev.filter((entry) => entry.phase !== 'exit'));
+    }, ROW_GROW_ANIMATION_MS);
+    return () => clearTimeout(timer);
+  }, [animatedRows]);
+
+  const hasAnimatedRows = animatedRows.length > 0;
+  const isInitPoolEmpty = !hasRows && (!Number.isFinite(activeUserCount) || activeUserCount <= 0);
+  const panelTitle = isInitPoolEmpty ? null : title;
+  const primaryMessage = isInitPoolEmpty
+    ? null
+    : (overlayPrimaryMessage || 'Meet these conditions to unlock playback.');
+
+  const activeRequirement = useMemo(() => {
+    if (!requirements.length) return null;
+    return requirements.find((req) => req && !req.satisfied) || requirements[0] || null;
+  }, [requirements]);
+
+  const targetZoneName = challenge?.zoneLabel
+    || challenge?.zone
+    || activeRequirement?.zoneLabel
+    || activeRequirement?.zone
+    || 'target';
+
+  const targetCount = useMemo(() => {
+    if (Number.isFinite(challenge?.requiredCount)) {
+      return Math.max(0, Math.round(challenge.requiredCount));
+    }
+    if (Number.isFinite(activeRequirement?.requiredCount)) {
+      return Math.max(0, Math.round(activeRequirement.requiredCount));
+    }
+    if (Number.isFinite(activeUserCount)) {
+      return normalizeRequiredCountFromRule(activeRequirement?.rule, activeUserCount);
+    }
+    return null;
+  }, [challenge, activeRequirement, activeUserCount]);
+
+  const actualCount = useMemo(() => {
+    const challengeActual = Number.isFinite(challenge?.actualCount)
+      ? Math.max(0, Math.round(challenge.actualCount))
+      : null;
+    const requirementActual = Number.isFinite(activeRequirement?.actualCount)
+      ? Math.max(0, Math.round(activeRequirement.actualCount))
+      : null;
+    const resolved = challengeActual ?? requirementActual ?? 0;
+    if (Number.isFinite(targetCount)) {
+      return Math.min(targetCount, resolved);
+    }
+    return resolved;
+  }, [challenge, activeRequirement, targetCount]);
+
+  const countBlocks = useMemo(() => {
+    if (!Number.isFinite(targetCount) || targetCount <= 0) return [];
+    const completed = Math.min(targetCount, Math.max(0, actualCount));
+    return Array.from({ length: targetCount }, (_, index) => ({
+      id: index + 1,
+      complete: index < completed
+    }));
+  }, [targetCount, actualCount]);
+  const hasTargetCount = Number.isFinite(targetCount) && targetCount > 0;
+  const showCountBlocks = !isInitPoolEmpty && hasTargetCount && countBlocks.length > 0;
+
+  const summaryMain = useMemo(() => {
+    if (isInitPoolEmpty) {
+      return 'No participants connected';
+    }
+    if (hasTargetCount) {
+      return `${actualCount} of ${targetCount} in ${targetZoneName}`;
+    }
+    if (Number.isFinite(activeUserCount) && activeUserCount > 0) {
+      return `${activeUserCount} participant${activeUserCount === 1 ? '' : 's'} in pool`;
+    }
+    return 'Waiting for participant data...';
+  }, [isInitPoolEmpty, hasTargetCount, targetCount, actualCount, targetZoneName, activeUserCount]);
+
+  const summarySub = useMemo(() => {
+    if (isInitPoolEmpty) {
+      return 'Start a participant or connect an HR sensor to continue.';
+    }
+    if (Number.isFinite(activeUserCount) && hasTargetCount) {
+      return `${activeUserCount} participant${activeUserCount === 1 ? '' : 's'} in pool`;
+    }
+    return null;
+  }, [isInitPoolEmpty, activeUserCount, hasTargetCount]);
 
   // Log when "Waiting for participant data" renders (rate-limited)
   const lastWaitingLogRef = useRef(0);
@@ -150,13 +293,40 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
           status,
           displayRowCount: display?.rows?.length ?? -1,
           lockRowCount: lockRows?.length ?? -1,
+          requirementCount: requirements.length,
           hasDisplay: !!display
         }, { maxPerMinute: 6 });
       }
     }
-  }, [hasRows, status, display, lockRows]);
+  }, [hasRows, status, display, lockRows, requirements]);
 
-  const renderProgressBlock = (row, variant = 'default') => {
+  const frozenCurrentByRowRef = useRef(new Map());
+  const frozenSnapshotKeyRef = useRef(null);
+  const freezeSnapshotKey = `${status}|${challenge?.id || display?.deadline || overlay?.deadline || 'none'}`;
+
+  useEffect(() => {
+    const freezeActive = status === 'pending' || status === 'locked';
+    if (!freezeActive) {
+      frozenCurrentByRowRef.current.clear();
+      frozenSnapshotKeyRef.current = null;
+      return;
+    }
+
+    if (frozenSnapshotKeyRef.current !== freezeSnapshotKey) {
+      frozenCurrentByRowRef.current.clear();
+      frozenSnapshotKeyRef.current = freezeSnapshotKey;
+    }
+
+    rows.forEach((row) => {
+      if (!row?.key || frozenCurrentByRowRef.current.has(row.key)) return;
+      frozenCurrentByRowRef.current.set(row.key, {
+        zoneId: row.currentZone?.id || null,
+        label: row.currentZone?.name || row.currentLabel || 'No signal'
+      });
+    });
+  }, [status, freezeSnapshotKey, rows]);
+
+  const renderProgressBlock = (row) => {
     // Support both formats: progress (new) and progressPercent (legacy)
     const rawProgress = row.progress ?? row.progressPercent ?? null;
     if (rawProgress == null) return null;
@@ -164,7 +334,7 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
     const percentValue = Math.round(clamped * 100);
     const widthPercent = Number.isFinite(percentValue) ? Math.max(0, percentValue) : 0;
     const showIndicator = widthPercent > 0;
-    const progressClass = `governance-lock__progress${variant === 'compact' ? ' governance-lock__progress--compact' : ''}`;
+    const progressClass = 'governance-lock__progress governance-lock__progress--inline';
     const intermediateZones = Array.isArray(row.intermediateZones) ? row.intermediateZones : [];
     const currentColor = row.currentZone?.color || 'rgba(148, 163, 184, 0.6)';
     const targetColor = row.targetZone?.color || 'rgba(34, 197, 94, 0.85)';
@@ -233,24 +403,48 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
 
   return (
     <div className={`governance-overlay governance-overlay--${status}`}>
-      <div className={`governance-overlay__panel governance-lock${isCompact ? ' governance-lock--compact' : ''}`}>
-        <div className="governance-lock__title">{title}</div>
-        {primaryMessage ? (
-          <p className="governance-lock__message">{primaryMessage}</p>
-        ) : null}
-        {exitCriteriaLabel ? (
-          <p className="governance-lock__exit-criteria">{exitCriteriaLabel}</p>
-        ) : null}
-        <div className="governance-lock__table" role="table" aria-label="Unlock requirements">
-          {showTableHeader ? (
-            <div className="governance-lock__row governance-lock__row--header" role="row">
-              <div className="governance-lock__cell governance-lock__cell--head" role="columnheader">Participant</div>
-              <div className="governance-lock__cell governance-lock__cell--head" role="columnheader">Current</div>
-              <div className="governance-lock__cell governance-lock__cell--head" role="columnheader">Target</div>
+      <div className="governance-overlay__panel governance-lock governance-lock--wide">
+        <div className={`governance-lock__header${showCountBlocks ? '' : ' governance-lock__header--summary-only'}`}>
+            {showCountBlocks ? (
+            <div
+              className="governance-lock__count-blocks"
+              role="meter"
+              aria-label={`Exit criteria progress ${actualCount} of ${targetCount}`}
+              aria-valuemin={0}
+              aria-valuemax={targetCount}
+              aria-valuenow={actualCount}
+            >
+              {countBlocks.map((block) => (
+                <span
+                  key={block.id}
+                  className={`governance-lock__count-block${block.complete ? ' governance-lock__count-block--complete' : ''}`}
+                  aria-hidden="true"
+                />
+              ))}
             </div>
           ) : null}
-          {hasRows ? rows.map((row) => {
-            const currentClass = row.currentZone?.id ? `zone-${row.currentZone.id}` : 'zone-none';
+          <div className="governance-lock__summary">
+            <p className="governance-lock__summary-main">{summaryMain}</p>
+            {summarySub ? <p className="governance-lock__summary-sub">{summarySub}</p> : null}
+          </div>
+        </div>
+
+          {panelTitle ? <div className="governance-lock__title">{panelTitle}</div> : null}
+          {primaryMessage ? (
+            <p className="governance-lock__message governance-lock__message--compact">{primaryMessage}</p>
+          ) : null}
+
+        <div
+          className={`governance-lock__table${isInitPoolEmpty ? ' governance-lock__table--init' : ''}`}
+          role="table"
+          aria-label="Unlock requirements"
+        >
+            {hasAnimatedRows ? animatedRows.map((entry) => {
+            const row = entry.row;
+            const frozenCurrent = frozenCurrentByRowRef.current.get(row.key) || null;
+            const frozenCurrentZoneId = frozenCurrent?.zoneId || row.currentZone?.id || null;
+            const frozenCurrentLabel = frozenCurrent?.label || row.currentZone?.name || row.currentLabel || 'No signal';
+            const currentClass = frozenCurrentZoneId ? `zone-${frozenCurrentZoneId}` : 'zone-none';
             const targetClass = row.targetZone?.id ? `zone-${row.targetZone.id}` : 'zone-none';
             const chip = (
               <div className="governance-lock__chip">
@@ -266,46 +460,45 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
                     }}
                   />
                 </div>
-                <div className="governance-lock__chip-text">
+                <div className="governance-lock__chip-text governance-lock__chip-text--inline">
                   <span className="governance-lock__chip-name">{row.displayName || row.displayLabel || row.name}</span>
                   <span className="governance-lock__chip-meta">{renderChipMeta(row)}</span>
                 </div>
               </div>
             );
 
-            if (isCompact) {
               return (
-                <div className="governance-lock__row governance-lock__row--compact" role="row" key={row.key}>
-                  <div className="governance-lock__compact-chip" role="cell">
-                    {chip}
-                  </div>
-                  {renderProgressBlock(row, 'compact')}
-                </div>
-              );
-            }
-
-            return (
-              <div className="governance-lock__row" role="row" key={row.key}>
-                <div className="governance-lock__cell governance-lock__cell--chip" role="cell">
+              <div
+                className={`governance-lock__row${entry.phase === 'enter' ? ' governance-lock__row--grow-in' : ''}${entry.phase === 'exit' ? ' governance-lock__row--grow-out' : ''}`}
+                role="row"
+                key={row.key}
+              >
+                <div className="governance-lock__identity" role="cell">
                   {chip}
                 </div>
-                <div className="governance-lock__cell" role="cell">
+                <div className="governance-lock__metric" role="cell">
                   <span className={`governance-lock__pill ${currentClass}`}>
-                    {row.currentZone?.name || row.currentLabel || 'No signal'}
+                    {frozenCurrentLabel}
                   </span>
                 </div>
-                <div className="governance-lock__cell" role="cell">
+                <div className="governance-lock__metric governance-lock__metric--progress" role="cell">
+                  {renderProgressBlock(row)}
+                </div>
+                <div className="governance-lock__metric" role="cell">
                   <span className={`governance-lock__pill governance-lock__pill--target ${targetClass}`}>
                     {row.targetZone?.name || row.targetLabel || 'Target'}
                   </span>
                 </div>
-                {renderProgressBlock(row)}
               </div>
             );
-          }) : (
-            <div className="governance-lock__row governance-lock__row--empty" role="row">
-              <div className="governance-lock__cell governance-lock__cell--empty" role="cell">
-                Waiting for participant data...
+            }) : isInitPoolEmpty ? (
+              <div className="governance-lock__init" role="note" aria-live="polite">
+                <p className="governance-lock__init-title">Waiting for first participant...</p>
+              </div>
+            ) : (
+              <div className="governance-lock__row governance-lock__row--empty" role="row">
+                <div className="governance-lock__metric governance-lock__metric--empty" role="cell">
+                  Collecting participant vitals...
               </div>
             </div>
           )}
@@ -318,12 +511,15 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
 GovernancePanelOverlay.propTypes = {
   display: PropTypes.shape({
     status: PropTypes.string,
-    rows: PropTypes.array
+    rows: PropTypes.array,
+    requirements: PropTypes.array,
+    activeUserCount: PropTypes.number
   }),
   overlay: PropTypes.shape({
     status: PropTypes.string,
     title: PropTypes.string,
-    descriptions: PropTypes.arrayOf(PropTypes.string)
+    descriptions: PropTypes.arrayOf(PropTypes.string),
+    requirements: PropTypes.array
   }),
   lockRows: PropTypes.array
 };
@@ -518,6 +714,8 @@ GovernanceStateOverlay.propTypes = {
     deadline: PropTypes.number,
     gracePeriodTotal: PropTypes.number,
     rows: PropTypes.array,
+    requirements: PropTypes.array,
+    activeUserCount: PropTypes.number,
     challenge: PropTypes.object,
     videoLocked: PropTypes.bool
   }),

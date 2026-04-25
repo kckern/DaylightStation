@@ -525,7 +525,7 @@ dash-video {
       z-index: var(--fitness-parent-overlay-z, 60);
       text-align: center;
 
-      &__panel {
+      &__panel:not(.governance-lock--wide) {
         max-width: min(520px, 100%);
         width: 100%;
         background: rgba(17, 24, 39, 0.78);
