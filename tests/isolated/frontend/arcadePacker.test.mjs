@@ -303,4 +303,21 @@ describe('renderBands', () => {
     const result = renderBands({ bands, itemRatios: [2, 1], W: 1000, H: 700, gap: 10 });
     expect(result.valid).toBe(false);
   });
+
+  test('double band stays inside H when scaled down', () => {
+    // One double band: tall r=2 + 2 squares each in upper/lower.
+    // Naturally H_pair = 660 at W=1000, gap=10. Pin H=300 to force scale ~ 0.45.
+    const bands = [{ type: 'double', talls: [0], upper: [1, 2], lower: [3, 4] }];
+    const itemRatios = [2, 1, 1, 1, 1];
+    const result = renderBands({ bands, itemRatios, W: 1000, H: 300, gap: 10 });
+    expect(result.valid).toBe(true);
+    const lastY = Math.max(...result.placements.map(p => p.y + p.h));
+    expect(lastY).toBeLessThanOrEqual(300 + 0.01);
+    // Tall tile should still span the full pair vertically (top of upper to bottom of lower).
+    const tall = result.placements.find(p => p.idx === 0);
+    const upperT = result.placements.find(p => p.idx === 1);
+    const lowerT = result.placements.find(p => p.idx === 3);
+    expect(tall.y).toBeCloseTo(upperT.y, 3);
+    expect(tall.y + tall.h).toBeCloseTo(lowerT.y + lowerT.h, 3);
+  });
 });

@@ -330,24 +330,39 @@ export function renderBands({ bands, itemRatios, W, H, gap }) {
       const upper_h = s.upper_h * scale;
       const lower_h = s.lower_h * scale;
       const w_t = s.w_t * scale;
+      const innerGap = gap * scale; // intra-band gaps scale uniformly with rows
       const tallIdx = s.band.talls[0];
-      // Tall tile on the left, then non-tall tiles fill the rest.
-      placements.push({ idx: tallIdx, x: 0, y, w: w_t, h: upper_h + gap + lower_h });
 
-      let xu = w_t + gap;
+      // After scaling, the band's total width is scale*W. Center it horizontally
+      // when scale < 1 (matches the single-band horizontal-centering behavior).
+      const upperRowW = w_t + innerGap
+        + s.band.upper.reduce((sum, i) => sum + upper_h / itemRatios[i], 0)
+        + Math.max(0, s.band.upper.length - 1) * innerGap;
+      const lowerRowW = w_t + innerGap
+        + s.band.lower.reduce((sum, i) => sum + lower_h / itemRatios[i], 0)
+        + Math.max(0, s.band.lower.length - 1) * innerGap;
+      const bandW = Math.max(upperRowW, lowerRowW);
+      const xOffset = scale < 1 ? (W - bandW) / 2 : 0;
+
+      // Tall tile on the left, then non-tall tiles fill the rest.
+      placements.push({
+        idx: tallIdx, x: xOffset, y, w: w_t, h: upper_h + innerGap + lower_h,
+      });
+
+      let xu = xOffset + w_t + innerGap;
       for (const idx of s.band.upper) {
         const w = upper_h / itemRatios[idx];
         placements.push({ idx, x: xu, y, w, h: upper_h });
-        xu += w + gap;
+        xu += w + innerGap;
       }
-      let xl = w_t + gap;
-      const yLower = y + upper_h + gap;
+      let xl = xOffset + w_t + innerGap;
+      const yLower = y + upper_h + innerGap;
       for (const idx of s.band.lower) {
         const w = lower_h / itemRatios[idx];
         placements.push({ idx, x: xl, y: yLower, w, h: lower_h });
-        xl += w + gap;
+        xl += w + innerGap;
       }
-      y += upper_h + gap + lower_h + interBandGap;
+      y += upper_h + innerGap + lower_h + interBandGap;
     }
   }
 
