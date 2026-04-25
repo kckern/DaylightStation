@@ -231,6 +231,15 @@ export function useQueueController({ play, queue, clear, shuffle }) {
   }, [play, queue, isShuffle, contentRef]);
 
   const advance = useCallback((step = 1) => {
+    // On-deck has priority when advancing forward.
+    if (step > 0 && onDeck) {
+      setQueue((prev) => {
+        const rest = prev.length > 0 ? prev.slice(1) : prev;
+        return [onDeck, ...rest];
+      });
+      setOnDeckState(null);
+      return;
+    }
     setQueue((prevQueue) => {
       if (prevQueue.length > 1) {
         if (step < 0) {
@@ -290,7 +299,7 @@ export function useQueueController({ play, queue, clear, shuffle }) {
       clear();
       return [];
     });
-  }, [clear, isContinuous, originalQueue]);
+  }, [clear, isContinuous, originalQueue, onDeck]);
 
   // Removed: Escape key auto-clear handler (audit #13) — queue destruction should be explicit
 
