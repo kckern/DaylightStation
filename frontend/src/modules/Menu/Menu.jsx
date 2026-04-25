@@ -14,6 +14,7 @@ import { MenuSkeleton } from "./MenuSkeleton";
 import { ArcadeSelector } from "./ArcadeSelector";
 import { isFKBAvailable } from '../../lib/fkb.js';
 import { useMenuPerfMonitor } from './hooks/useMenuPerfMonitor.js';
+import { getActiveGamepads } from '../../screen-framework/input/gamepadFiltering.js';
 
 /**
  * Logs a menu selection to the server.
@@ -958,9 +959,8 @@ function MenuItems({
     }
 
     function poll() {
-      const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+      const gamepads = getActiveGamepads();
       for (const gp of gamepads) {
-        if (!gp) continue;
         const id = gp.index;
 
         // Seed from live state on first observation of this gamepad.
