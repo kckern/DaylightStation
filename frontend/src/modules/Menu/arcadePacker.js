@@ -264,6 +264,10 @@ export function buildBands({
   tripleCount = 0,
   doubleCount = Infinity,
 }) {
+  // Defensive copy: explicit-mode triple/double formation rewrites `order`
+  // in-place to remove consumed normals. Cloning at entry makes the function
+  // safe to call with any caller-owned array.
+  order = order.slice();
   const { tallIndices } = classifyItems(itemRatios, tallThreshold);
   const tallSet = new Set(tallIndices);
   const isTall = (i) => tallSet.has(i);
