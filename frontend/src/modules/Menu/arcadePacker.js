@@ -1,12 +1,11 @@
 // Pure layout primitives for ArcadeSelector. No React, no DOM.
 // `random` is injectable so callers (and tests) can control determinism.
 
-// Final guardrail: the rendered placements' bounding box must be square or
-// landscape. A tall outer perimeter means the layout would visually overflow
-// the container's natural shape, so we reject the candidate and let the
-// search keep going.
-function isLandscapeOrSquare(placements) {
-  if (!placements?.length) return true;
+// Compute the outer bounding box of a placement set. Logged on every
+// pack.done so prod can verify the final grid aspect; aspect < 1 means the
+// layout rendered taller than wide (the failure mode the guardrail prevents).
+function bboxOf(placements) {
+  if (!placements?.length) return { w: 0, h: 0, aspect: 1 };
   let left = Infinity;
   let right = -Infinity;
   let top = Infinity;
@@ -17,7 +16,60 @@ function isLandscapeOrSquare(placements) {
     if (p.y < top) top = p.y;
     if (p.y + p.h > bottom) bottom = p.y + p.h;
   }
-  return (right - left) >= (bottom - top);
+  const w = right - left;
+  const h = bottom - top;
+  return { w, h, aspect: h > 0 ? w / h : Infinity };
+}
+
+// Final guardrail: the rendered placements' bounding box must be square or
+// landscape. A tall outer perimeter means the layout would visually overflow
+// the container's natural shape, so we reject the candidate and let the
+// search keep going.
+function isLandscapeOrSquare(placements) {
+  return bboxOf(placements).aspect >= 1;
+}
+
+// Uniform-cell grid that mirrors the container's aspect ratio. Used as the
+// final brute fallback when nothing else produces a valid layout, and as the
+// hard guarantor at exit when even the singles-only fallback returns a tall
+// layout. Always lands every tile somewhere; bbox is at most container aspect
+// (so landscape if container is landscape) by construction.
+function gridFallback(itemRatios, W, H, gap) {
+  const N = itemRatios.length;
+  if (N === 0) return [];
+  // cols × rows ≈ N, with cols/rows ≈ W/H so the grid mirrors container shape.
+  const containerAspect = W / Math.max(H, 1);
+  let cols = Math.max(1, Math.round(Math.sqrt(N * containerAspect)));
+  let rows = Math.ceil(N / cols);
+  // For landscape containers, never let rows exceed cols — otherwise the cell
+  // grid itself becomes tall regardless of tile aspects.
+  if (W >= H && cols < rows) {
+    cols = rows;
+    rows = Math.ceil(N / cols);
+  }
+  const cellW = (W - (cols - 1) * gap) / cols;
+  const cellH = (H - (rows - 1) * gap) / rows;
+  const placements = [];
+  for (let i = 0; i < N; i++) {
+    const r = itemRatios[i];
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    // Fit tile inside cell preserving its h/w ratio (r = h/w).
+    let tw = cellW;
+    let th = tw * r;
+    if (th > cellH) {
+      th = cellH;
+      tw = th / r;
+    }
+    placements.push({
+      idx: i,
+      x: col * (cellW + gap) + (cellW - tw) / 2,
+      y: row * (cellH + gap) + (cellH - th) / 2,
+      w: tw,
+      h: th,
+    });
+  }
+  return placements;
 }
 
 const DEFAULT_GAP = 3;
@@ -152,9 +204,16 @@ export function packLayout({
             log('pack.variant.skip', { targetRows, t, d, reason: 'render-invalid' });
             continue;
           }
-          if (!isLandscapeOrSquare(rendered.placements)) {
-            log('pack.variant.reject', { targetRows, t, d, reason: 'bbox-tall' });
-            continue;
+          {
+            const bbox = bboxOf(rendered.placements);
+            if (bbox.aspect < 1) {
+              log('pack.variant.reject', {
+                targetRows, t, d, reason: 'bbox-tall',
+                bboxW: +bbox.w.toFixed(1), bboxH: +bbox.h.toFixed(1),
+                bboxAspect: +bbox.aspect.toFixed(3),
+              });
+              continue;
+            }
           }
 
           const sc = scoreLayout({
@@ -247,20 +306,13 @@ export function packLayout({
       bestMeta = { fallback: 'singles-only', ...fallbackBestMeta };
       logInfo('pack.fallback.success', bestMeta);
     } else {
-      // Last resort: brute force one tile per row at H/N each. This always
-      // produces valid placements as long as W > 0 and H > 0 (already
-      // checked at the top).
+      // Last resort: uniform-cell grid mirroring container aspect. Replaces
+      // the legacy "one tile per row at H/N" brute path which produced near-
+      // zero aspect bboxes (the 2026-04-25 prod regression). This path is
+      // landscape-by-construction for landscape containers.
       logInfo('pack.fallback.brute', { N, W, H });
-      const rowH = H / N;
-      const placements = itemRatios.map((r, idx) => ({
-        idx,
-        x: (W - rowH / r) / 2,
-        y: idx * rowH,
-        w: rowH / r,
-        h: rowH,
-      }));
-      bestPlacements = placements;
-      bestMeta = { fallback: 'brute-force-singles', N };
+      bestPlacements = gridFallback(itemRatios, W, H, gap);
+      bestMeta = { fallback: 'grid', N };
     }
   }
 
@@ -272,7 +324,30 @@ export function packLayout({
       if (mirrorV) p.y = H - p.y - p.h;
     });
   }
-  logInfo('pack.done', { ...bestMeta, mirrorH, mirrorV });
+
+  // FINAL GATE: defense-in-depth. No matter which path produced bestPlacements,
+  // if the bbox came out taller than wide, replace with the grid fallback.
+  // Logged loudly so prod can flag the case for follow-up tuning.
+  let finalBbox = bboxOf(bestPlacements);
+  if (finalBbox.aspect < 1) {
+    logger?.warn?.('pack.guardrail.replaced', {
+      reason: 'bbox-tall',
+      bboxW: +finalBbox.w.toFixed(1), bboxH: +finalBbox.h.toFixed(1),
+      bboxAspect: +finalBbox.aspect.toFixed(3),
+      previousMeta: bestMeta,
+    });
+    bestPlacements = gridFallback(itemRatios, W, H, gap);
+    bestMeta = { ...bestMeta, guardrailReplaced: true };
+    finalBbox = bboxOf(bestPlacements);
+  }
+
+  logInfo('pack.done', {
+    ...bestMeta,
+    mirrorH, mirrorV,
+    bboxW: +finalBbox.w.toFixed(1),
+    bboxH: +finalBbox.h.toFixed(1),
+    bboxAspect: +finalBbox.aspect.toFixed(3),
+  });
   return bestPlacements;
 }
 
