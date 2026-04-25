@@ -1,5 +1,6 @@
 import { describe, test, expect } from '@jest/globals';
 import { packLayout } from '../../../frontend/src/modules/Menu/arcadePacker.js';
+import { classifyItems } from '../../../frontend/src/modules/Menu/arcadePacker.js';
 
 // Deterministic LCG so attempts/shuffle/mirror are reproducible.
 function seededRandom(seed = 1) {
@@ -46,5 +47,30 @@ describe('packLayout (legacy parity)', () => {
       const expected = itemRatios[p.idx];
       expect(Math.abs(observed - expected) / expected).toBeLessThan(0.01);
     }
+  });
+});
+
+describe('classifyItems', () => {
+  test('splits indices by ratio threshold (default 1.4)', () => {
+    const ratios = [0.7, 1.0, 1.4, 1.5, 2.0, 0.5];
+    const { tallIndices, normalIndices } = classifyItems(ratios);
+    expect(tallIndices).toEqual([3, 4]);
+    expect(normalIndices).toEqual([0, 1, 2, 5]);
+  });
+
+  test('uses custom threshold when provided', () => {
+    const ratios = [1.0, 1.2, 1.4];
+    const { tallIndices, normalIndices } = classifyItems(ratios, 1.1);
+    expect(tallIndices).toEqual([1, 2]);
+    expect(normalIndices).toEqual([0]);
+  });
+
+  test('treats threshold as exclusive lower bound (>, not >=)', () => {
+    const { tallIndices } = classifyItems([1.4, 1.4001], 1.4);
+    expect(tallIndices).toEqual([1]);
+  });
+
+  test('handles empty input', () => {
+    expect(classifyItems([])).toEqual({ tallIndices: [], normalIndices: [] });
   });
 });

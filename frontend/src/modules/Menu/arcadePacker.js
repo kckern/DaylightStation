@@ -122,3 +122,15 @@ export function packLayout({
   }
   return bestPlacements;
 }
+
+export const DEFAULT_TALL_THRESHOLD = 1.4;
+
+export function classifyItems(itemRatios, threshold = DEFAULT_TALL_THRESHOLD) {
+  const tallIndices = [];
+  const normalIndices = [];
+  itemRatios.forEach((r, i) => {
+    if (r > threshold) tallIndices.push(i);
+    else normalIndices.push(i);
+  });
+  return { tallIndices, normalIndices };
+}
