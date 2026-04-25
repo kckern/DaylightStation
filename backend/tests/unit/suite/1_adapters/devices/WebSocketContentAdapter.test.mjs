@@ -86,7 +86,7 @@ describe('WebSocketContentAdapter', () => {
     expect(payload.params.op).toBe('play-now');
   });
 
-  it('load() rejects unknown ops as falling back to play-now (defensive)', async () => {
+  it('load() falls back to play-now when query.op is unknown', async () => {
     await adapter.load('/tv', { queue: 'plex:642120', op: 'banana' });
     const [, payload] = wsBus.broadcast.mock.calls[0];
     expect(payload.params.op).toBe('play-now');
