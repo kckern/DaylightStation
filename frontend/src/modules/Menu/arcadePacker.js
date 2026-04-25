@@ -522,7 +522,7 @@ export function renderBands({ bands, itemRatios, W, H, gap }) {
       const r = solveSingleBand(ratios, W, gap);
       if (!r.valid) return { valid: false, placements: [] };
       solved.push({ band, rowH: r.rowH, height: r.rowH });
-    } else {
+    } else if (band.type === 'double') {
       const tallRatio = itemRatios[band.talls[0]];
       const upperRatios = band.upper.map(i => itemRatios[i]);
       const lowerRatios = band.lower.map(i => itemRatios[i]);
@@ -532,6 +532,20 @@ export function renderBands({ bands, itemRatios, W, H, gap }) {
         band,
         H_pair: r.H_pair, w_t: r.w_t, upper_h: r.upper_h, lower_h: r.lower_h,
         height: r.H_pair,
+      });
+    } else { // triple
+      const tallRatios = [itemRatios[band.talls[0]], itemRatios[band.talls[1]]];
+      const topRatios = band.top.map(i => itemRatios[i]);
+      const midRatios = band.mid.map(i => itemRatios[i]);
+      const botRatios = band.bot.map(i => itemRatios[i]);
+      const r = solveTripleBand({ tallRatios, topRatios, midRatios, botRatios, W, gap });
+      if (!r.valid) return { valid: false, placements: [] };
+      solved.push({
+        band,
+        H_triple: r.H_triple, w_t: r.w_t,
+        tall1_h: r.tall1_h, tall2_h: r.tall2_h,
+        top_h: r.top_h, mid_h: r.mid_h, bot_h: r.bot_h,
+        height: r.H_triple,
       });
     }
   }
@@ -543,16 +557,12 @@ export function renderBands({ bands, itemRatios, W, H, gap }) {
 
   const placements = [];
   let y = scale === 1 ? (H - totalH) / 2 : 0;
-  // Alternate the side that holds the tall tile across consecutive double
-  // bands so spans don't all cluster on one edge. First double goes left,
-  // second goes right, third left, etc. (Random mirror in packLayout adds
-  // another coin-flip on top of this, so the visual entropy compounds.)
-  let doubleBandIndex = 0;
+  // Counter for both doubles and triples — they share the alternation cycle.
+  let bigBandIndex = 0;
 
   for (const s of solved) {
     if (s.band.type === 'single') {
       const rowH = s.rowH * scale;
-      // For scale<1, center each row horizontally to mirror legacy behavior.
       const tilesW = s.band.items.reduce((sum, i) => sum + rowH / itemRatios[i], 0)
         + (s.band.items.length - 1) * gap;
       let x = scale < 1 ? (W - tilesW) / 2 : 0;
@@ -562,17 +572,15 @@ export function renderBands({ bands, itemRatios, W, H, gap }) {
         x += w + gap;
       }
       y += rowH + interBandGap;
-    } else {
+    } else if (s.band.type === 'double') {
       const upper_h = s.upper_h * scale;
       const lower_h = s.lower_h * scale;
       const w_t = s.w_t * scale;
-      const innerGap = gap * scale; // intra-band gaps scale uniformly with rows
+      const innerGap = gap * scale;
       const tallIdx = s.band.talls[0];
-      const tallOnLeft = doubleBandIndex % 2 === 0;
-      doubleBandIndex++;
+      const tallOnLeft = bigBandIndex % 2 === 0;
+      bigBandIndex++;
 
-      // After scaling, the band's total width is scale*W. Center it horizontally
-      // when scale < 1 (matches the single-band horizontal-centering behavior).
       const upperRowW = w_t + innerGap
         + s.band.upper.reduce((sum, i) => sum + upper_h / itemRatios[i], 0)
         + Math.max(0, s.band.upper.length - 1) * innerGap;
@@ -582,16 +590,11 @@ export function renderBands({ bands, itemRatios, W, H, gap }) {
       const bandW = Math.max(upperRowW, lowerRowW);
       const xOffset = scale < 1 ? (W - bandW) / 2 : 0;
 
-      // Tall on left or right, with non-tall row tiles filling the opposite
-      // side. Geometry is symmetric so the math is identical either way.
       const tallX = tallOnLeft ? xOffset : xOffset + bandW - w_t;
       placements.push({
         idx: tallIdx, x: tallX, y, w: w_t, h: upper_h + innerGap + lower_h,
       });
 
-      // Non-tall tiles start where the tall ISN'T. If tall is on the left,
-      // they begin at tall.right + innerGap. If tall is on the right, they
-      // begin at xOffset (the band's left edge).
       const nonTallStartX = tallOnLeft ? xOffset + w_t + innerGap : xOffset;
 
       let xu = nonTallStartX;
@@ -608,6 +611,59 @@ export function renderBands({ bands, itemRatios, W, H, gap }) {
         xl += w + innerGap;
       }
       y += upper_h + innerGap + lower_h + interBandGap;
+    } else { // triple
+      const top_h = s.top_h * scale;
+      const mid_h = s.mid_h * scale;
+      const bot_h = s.bot_h * scale;
+      const tall1_h = s.tall1_h * scale;
+      const tall2_h = s.tall2_h * scale;
+      const w_t = s.w_t * scale;
+      const innerGap = gap * scale;
+      const [tall1Idx, tall2Idx] = s.band.talls;
+      const tallOnLeft = bigBandIndex % 2 === 0;
+      bigBandIndex++;
+
+      // Compute band's effective width = w_t + gap + widest of (top/mid/bot rows).
+      const rowW = (rowArr, rowH) => w_t + innerGap
+        + rowArr.reduce((sum, i) => sum + rowH / itemRatios[i], 0)
+        + Math.max(0, rowArr.length - 1) * innerGap;
+      const bandW = Math.max(rowW(s.band.top, top_h), rowW(s.band.mid, mid_h), rowW(s.band.bot, bot_h));
+      const xOffset = scale < 1 ? (W - bandW) / 2 : 0;
+
+      const tallX = tallOnLeft ? xOffset : xOffset + bandW - w_t;
+
+      // Stacked talls: tall1 on top, tall2 directly below with innerGap.
+      placements.push({ idx: tall1Idx, x: tallX, y, w: w_t, h: tall1_h });
+      placements.push({
+        idx: tall2Idx, x: tallX, y: y + tall1_h + innerGap, w: w_t, h: tall2_h,
+      });
+
+      const nonTallStartX = tallOnLeft ? xOffset + w_t + innerGap : xOffset;
+
+      // top row
+      let xt = nonTallStartX;
+      for (const idx of s.band.top) {
+        const w = top_h / itemRatios[idx];
+        placements.push({ idx, x: xt, y, w, h: top_h });
+        xt += w + innerGap;
+      }
+      // mid row
+      let xm = nonTallStartX;
+      const yMid = y + top_h + innerGap;
+      for (const idx of s.band.mid) {
+        const w = mid_h / itemRatios[idx];
+        placements.push({ idx, x: xm, y: yMid, w, h: mid_h });
+        xm += w + innerGap;
+      }
+      // bot row
+      let xb = nonTallStartX;
+      const yBot = y + top_h + innerGap + mid_h + innerGap;
+      for (const idx of s.band.bot) {
+        const w = bot_h / itemRatios[idx];
+        placements.push({ idx, x: xb, y: yBot, w, h: bot_h });
+        xb += w + innerGap;
+      }
+      y += top_h + innerGap + mid_h + innerGap + bot_h + interBandGap;
     }
   }
 
