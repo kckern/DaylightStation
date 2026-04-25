@@ -420,6 +420,17 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     }
   }, [setMusicOverride, musicEnabled, setGlobalPlaylistId]);
 
+  const handleEmptyStatePlaylistOpen = useCallback((event) => {
+    event?.stopPropagation?.();
+    event?.preventDefault?.();
+    // In chart/cam mode users may land here with music disabled and no other
+    // obvious affordance; enable music before opening playlist picker.
+    if (!musicEnabled && setMusicOverride) {
+      setMusicOverride(true);
+    }
+    setPlaylistModalOpen(true);
+  }, [musicEnabled, setMusicOverride]);
+
   const handleInfoTap = (e) => {
     e.stopPropagation();
     e.preventDefault();
@@ -459,12 +470,47 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
 
   // If no playlist is selected, show a message
   if (!selectedPlaylistId) {
+    const hasPlaylists = playlists.length > 0;
     return (
       <div className="fitness-music-player-container">
         <div className="music-player-empty">
           <div className="empty-icon">🎵</div>
-          <div className="empty-text">Choose a playlist to get started</div>
+          <div className="empty-copy">
+            <div className="empty-text">{musicEnabled ? 'Choose a playlist to get started' : 'Music is currently off'}</div>
+            {hasPlaylists ? (
+              <button
+                type="button"
+                className="empty-cta"
+                onClick={handleEmptyStatePlaylistOpen}
+              >
+                {musicEnabled ? 'Select Playlist' : 'Enable + Select Playlist'}
+              </button>
+            ) : (
+              <div className="empty-subtext">No playlists configured.</div>
+            )}
+          </div>
         </div>
+        {hasPlaylists && (
+          <FitnessPlaylistSelector
+            playlists={playlists}
+            selectedPlaylistId={selectedPlaylistId}
+            isOpen={playlistModalOpen}
+            onSelect={(id) => {
+              if (!id) {
+                setPlaylistModalOpen(false);
+                return;
+              }
+              if (!musicEnabled && setMusicOverride) {
+                setMusicOverride(true);
+              }
+              if (setGlobalPlaylistId) {
+                setGlobalPlaylistId(id);
+              }
+              setPlaylistModalOpen(false);
+            }}
+            onClose={() => setPlaylistModalOpen(false)}
+          />
+        )}
       </div>
     );
   }
