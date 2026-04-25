@@ -463,6 +463,85 @@ describe('renderBands', () => {
     // Second tall on the right edge: tall2.x + tall2.w ≈ W.
     expect(tall2.x + tall2.w).toBeCloseTo(1000, 1);
   });
+
+  test('triple band: stacked talls span full vertical extent + 3 rows fill width', () => {
+    const bands = [{
+      type: 'triple', talls: [0, 1],
+      top: [2, 3], mid: [4, 5], bot: [6, 7],
+    }];
+    const itemRatios = [1.5, 1.5, 1, 1, 1, 1, 1, 1];
+    const result = renderBands({ bands, itemRatios, W: 1000, H: 1100, gap: 10 });
+    expect(result.valid).toBe(true);
+
+    const tall1 = result.placements.find(p => p.idx === 0);
+    const tall2 = result.placements.find(p => p.idx === 1);
+    const topT = result.placements.find(p => p.idx === 2);
+    const midT = result.placements.find(p => p.idx === 4);
+    const botT = result.placements.find(p => p.idx === 6);
+
+    // Talls share x and width.
+    expect(tall1.x).toBeCloseTo(tall2.x, 1);
+    expect(tall1.w).toBeCloseTo(tall2.w, 1);
+
+    // tall2 is directly below tall1 with one gap between them.
+    expect(tall2.y).toBeCloseTo(tall1.y + tall1.h + 10, 1);
+
+    // Triple's vertical extent matches stacked talls.
+    expect(tall2.y + tall2.h).toBeCloseTo(botT.y + botT.h, 1);
+    expect(tall1.y).toBeCloseTo(topT.y, 1);
+
+    // 3 rows of normals at three distinct y positions.
+    expect(topT.y).toBeLessThan(midT.y);
+    expect(midT.y).toBeLessThan(botT.y);
+
+    // Each row fills width: rightmost tile's right edge ≈ W.
+    const rowEnd = (idx) => {
+      const tile = result.placements.find(p => p.idx === idx);
+      return tile.x + tile.w;
+    };
+    expect(rowEnd(3)).toBeCloseTo(1000, 1);
+    expect(rowEnd(5)).toBeCloseTo(1000, 1);
+    expect(rowEnd(7)).toBeCloseTo(1000, 1);
+  });
+
+  test('triple band stays inside H when scaled down', () => {
+    const bands = [{
+      type: 'triple', talls: [0, 1],
+      top: [2, 3], mid: [4, 5], bot: [6, 7],
+    }];
+    const itemRatios = [1.5, 1.5, 1, 1, 1, 1, 1, 1];
+    const result = renderBands({ bands, itemRatios, W: 1000, H: 400, gap: 10 });
+    expect(result.valid).toBe(true);
+    const lastY = Math.max(...result.placements.map(p => p.y + p.h));
+    expect(lastY).toBeLessThanOrEqual(400 + 0.01);
+  });
+
+  test('alternation: triple + double + triple → talls land left, right, left', () => {
+    const bands = [
+      { type: 'triple', talls: [0, 1], top: [10, 11], mid: [12, 13], bot: [14, 15] },
+      { type: 'double', talls: [2], upper: [16, 17], lower: [18, 19] },
+      { type: 'triple', talls: [3, 4], top: [20, 21], mid: [22, 23], bot: [24, 25] },
+    ];
+    const itemRatios = Array(26).fill(1);
+    itemRatios[0] = itemRatios[1] = itemRatios[2] = itemRatios[3] = itemRatios[4] = 1.5;
+    const result = renderBands({ bands, itemRatios, W: 1000, H: 3000, gap: 10 });
+    expect(result.valid).toBe(true);
+    const tall0 = result.placements.find(p => p.idx === 0);   // first triple, tall on LEFT
+    const tall2 = result.placements.find(p => p.idx === 2);   // second band (double), tall on RIGHT
+    const tall3 = result.placements.find(p => p.idx === 3);   // third band (triple), tall on LEFT
+    expect(tall0.x).toBeCloseTo(0, 1);
+    expect(tall2.x + tall2.w).toBeCloseTo(1000, 1);
+    expect(tall3.x).toBeCloseTo(0, 1);
+  });
+
+  test('returns valid=false when triple solver fails', () => {
+    const bands = [{
+      type: 'triple', talls: [0, 1],
+      top: [], mid: [2], bot: [3],
+    }];
+    const result = renderBands({ bands, itemRatios: [1.5, 1.5, 1, 1], W: 1000, H: 1000, gap: 10 });
+    expect(result.valid).toBe(false);
+  });
 });
 
 describe('packLayout (band-based)', () => {
