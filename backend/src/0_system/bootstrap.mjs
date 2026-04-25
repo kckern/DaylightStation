@@ -1695,7 +1695,7 @@ export function createTriggerApiRouter(config) {
 
   let triggerConfig;
   try {
-    triggerConfig = parseTriggerConfig(loadFile('config/nfc'), 'nfc');
+    triggerConfig = parseTriggerConfig(loadFile('config/nfc'));
   } catch (err) {
     logger.warn?.('trigger.config.parse.failed', { error: err.message });
     triggerConfig = {};
