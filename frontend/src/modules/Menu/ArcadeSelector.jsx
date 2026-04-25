@@ -9,6 +9,7 @@ import React, {
 import { DaylightMediaPath, ContentDisplayUrl } from "../../lib/api.mjs";
 import MenuNavigationContext from "../../context/MenuNavigationContext";
 import getLogger from "../../lib/logging/Logger.js";
+import { packLayout } from "./arcadePacker.js";
 import "./ArcadeSelector.scss";
 
 /**
@@ -309,130 +310,12 @@ export function ArcadeSelector({
   useEffect(() => {
     const nav = navmapRef.current;
     if (!nav || !items.length) return;
-    const H = nav.clientHeight;
-    const W = nav.clientWidth;
-    const N = items.length;
-    const GAP = 3;
-
-    const MAX_ROW_PCT = 0.25; // no single row may exceed 25% of container height
-    const MAX_ATTEMPTS = 20;
-    let bestPlacements = null;
-    let bestScore = -Infinity;
-
-    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      // Shuffle item indices (Fisher-Yates)
-      const shuffled = items.map((_, i) => i);
-      for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-      }
-
-      // Try different reference heights to find the best vertical fill
-      const maxRows = Math.min(Math.ceil(N / 2), Math.floor(H / 30));
-      let attemptBestPlacements = null;
-      let attemptBestScore = -Infinity;
-      let attemptValid = false;
-
-      for (let targetRows = 2; targetRows <= maxRows; targetRows++) {
-        const refH = (H - (targetRows - 1) * GAP) / targetRows;
-
-        // Pack into rows greedily at reference height
-        const rows = [];
-        let row = [];
-        let rowW = 0;
-        for (const idx of shuffled) {
-          const tw = refH / itemRatios[idx];
-          if (row.length > 0 && rowW + GAP + tw > W) {
-            rows.push(row);
-            row = [idx];
-            rowW = tw;
-          } else {
-            rowW += (row.length > 0 ? GAP : 0) + tw;
-            row.push(idx);
-          }
-        }
-        if (row.length) rows.push(row);
-
-        // Merge short last row into previous to prevent runaway sizes
-        const MIN_PER_ROW = 3;
-        while (rows.length > 1 && rows[rows.length - 1].length < MIN_PER_ROW) {
-          const lastRow = rows.pop();
-          rows[rows.length - 1].push(...lastRow);
-        }
-
-        // Compute justified row heights (each row fills W exactly)
-        const rowData = rows.map(indices => {
-          const gaps = (indices.length - 1) * GAP;
-          const invRatioSum = indices.reduce((s, idx) => s + 1 / itemRatios[idx], 0);
-          const rowH = (W - gaps) / invRatioSum;
-          return { indices, rowH };
-        });
-
-        // Reject if any row exceeds max height
-        const maxRowH = H * MAX_ROW_PCT;
-        if (rowData.some(r => r.rowH > maxRowH)) continue;
-
-        const totalH = rowData.reduce((s, r) => s + r.rowH, 0) + (rowData.length - 1) * GAP;
-        const fillRatio = totalH / H;
-        const score = fillRatio <= 1 ? fillRatio : 1 / fillRatio;
-
-        if (score > attemptBestScore) {
-          attemptBestScore = score;
-          attemptValid = true;
-          const placements = [];
-
-          if (totalH > H) {
-            const s = H / totalH;
-            let y = 0;
-            for (const { indices, rowH } of rowData) {
-              const sh = rowH * s;
-              const rowTotalW = indices.reduce((sum, idx) => sum + sh / itemRatios[idx], 0)
-                + (indices.length - 1) * GAP;
-              let x = (W - rowTotalW) / 2;
-              for (const idx of indices) {
-                const w = sh / itemRatios[idx];
-                placements.push({ idx, x, y, w, h: sh });
-                x += w + GAP;
-              }
-              y += sh + GAP;
-            }
-          } else {
-            const pad = (H - totalH) / 2;
-            let y = pad;
-            for (const { indices, rowH } of rowData) {
-              let x = 0;
-              for (const idx of indices) {
-                const w = rowH / itemRatios[idx];
-                placements.push({ idx, x, y, w, h: rowH });
-                x += w + GAP;
-              }
-              y += rowH + GAP;
-            }
-          }
-          attemptBestPlacements = placements;
-        }
-      }
-
-      // Keep the best valid layout across all attempts
-      if (attemptValid && attemptBestScore > bestScore) {
-        bestScore = attemptBestScore;
-        bestPlacements = attemptBestPlacements;
-        break; // found a valid layout, no need to retry
-      }
-    }
-
-    if (bestPlacements) {
-      // Random mirror/flip — use container dimensions to preserve centering
-      const mirrorH = Math.random() < 0.5;
-      const mirrorV = Math.random() < 0.5;
-      if (mirrorH || mirrorV) {
-        bestPlacements.forEach(p => {
-          if (mirrorH) p.x = W - p.x - p.w;
-          if (mirrorV) p.y = H - p.y - p.h;
-        });
-      }
-      setLayout(bestPlacements);
-    }
+    const placements = packLayout({
+      itemRatios,
+      W: nav.clientWidth,
+      H: nav.clientHeight,
+    });
+    if (placements.length) setLayout(placements);
   }, [items.length, itemRatios]);
 
   const currentItem = items[selectedIndex] || {};
