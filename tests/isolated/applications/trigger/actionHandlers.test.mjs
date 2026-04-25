@@ -91,6 +91,35 @@ describe('actionHandlers', () => {
     )).rejects.toThrow(/requires params\.path/);
   });
 
+  it('play-next calls wakeAndLoadService with op=play-next and play-next=<content>', async () => {
+    const wakeAndLoadService = { execute: jest.fn().mockResolvedValue({ ok: true }) };
+    const intent = { action: 'play-next', target: 'livingroom-tv', content: 'plex:642120', params: { volume: 60 } };
+    await actionHandlers['play-next'](intent, { wakeAndLoadService });
+    expect(wakeAndLoadService.execute).toHaveBeenCalledWith(
+      'livingroom-tv',
+      { 'play-next': 'plex:642120', op: 'play-next', volume: 60 },
+      expect.objectContaining({ dispatchId: expect.any(String) })
+    );
+  });
+
+  it('play-next: canonical play-next key wins over user-supplied params', async () => {
+    const wakeAndLoadService = { execute: jest.fn().mockResolvedValue({ ok: true }) };
+    const intent = { action: 'play-next', target: 't', content: 'plex:1', params: { 'play-next': 'hijack', op: 'banana' } };
+    await actionHandlers['play-next'](intent, { wakeAndLoadService });
+    expect(wakeAndLoadService.execute).toHaveBeenCalledWith(
+      't',
+      expect.objectContaining({ 'play-next': 'plex:1', op: 'play-next' }),
+      expect.any(Object)
+    );
+  });
+
+  it('dispatchAction routes play-next to the play-next handler', async () => {
+    const wakeAndLoadService = { execute: jest.fn().mockResolvedValue({ ok: true }) };
+    const intent = { action: 'play-next', target: 't', content: 'plex:1', params: {} };
+    await dispatchAction(intent, { wakeAndLoadService });
+    expect(wakeAndLoadService.execute).toHaveBeenCalled();
+  });
+
   describe('dispatchAction', () => {
     it('routes to the matching handler', async () => {
       const wakeAndLoadService = { execute: jest.fn().mockResolvedValue({ ok: true }) };
