@@ -102,6 +102,11 @@ import { DeviceService } from '#apps/devices/services/DeviceService.mjs';
 import { DeviceFactory } from '#apps/devices/services/DeviceFactory.mjs';
 import { createDeviceRouter } from '#api/v1/routers/device.mjs';
 
+// NFC domain + application imports
+import { parseNfcConfig } from '#domains/nfc/NfcConfig.mjs';
+import { NfcService } from '#apps/nfc/NfcService.mjs';
+import { createNfcRouter } from '#api/v1/routers/nfc.mjs';
+
 // Hardware adapter imports
 // Note: ThermalPrinterAdapter/Registry are constructed directly in app.mjs; bootstrap no longer imports them.
 import { TTSAdapter } from '#adapters/hardware/tts/TTSAdapter.mjs';
@@ -1651,6 +1656,52 @@ export function createDeviceApiRouter(config) {
     loadFile,
     logger
   });
+}
+
+/**
+ * Create NFC application service + API router
+ *
+ * NFC ties together the device dispatch surface (wakeAndLoadService for play,
+ * deviceService for raw control, haGateway for HA scripts) with reader/tag
+ * config loaded from `data/household[-{hid}]/apps/nfc/config.yml` (or
+ * equivalent) via the supplied loadFile helper.
+ *
+ * @param {Object} config
+ * @param {Object} config.deviceServices - Services from createDeviceServices
+ * @param {Object} config.wakeAndLoadService - From createWakeAndLoadService
+ * @param {Object} [config.haGateway] - Home Assistant gateway (optional, but required for ha-script actions)
+ * @param {Object} config.contentIdResolver - From content services (used by resolveIntent)
+ * @param {Function} config.broadcast - WebSocket broadcast function (broadcastEvent)
+ * @param {Function} config.loadFile - Helper that loads YAML files relative to household dir
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {{ nfcService: NfcService, router: import('express').Router }}
+ */
+export function createNfcApiRouter(config) {
+  const {
+    deviceServices,
+    wakeAndLoadService,
+    haGateway,
+    contentIdResolver,
+    broadcast,
+    loadFile,
+    logger = console,
+  } = config;
+
+  const nfcConfig = parseNfcConfig(loadFile('config/nfc'));
+
+  const nfcService = new NfcService({
+    config: nfcConfig,
+    contentIdResolver,
+    wakeAndLoadService,
+    haGateway,
+    deviceService: deviceServices.deviceService,
+    broadcast,
+    logger,
+  });
+
+  const router = createNfcRouter({ nfcService, logger });
+
+  return { nfcService, router };
 }
 
 /**
