@@ -40,7 +40,7 @@ export class TriggerDispatchService {
       return { ok: false, code: 'AUTH_FAILED', error: 'Authentication failed', location, modality, value: normalizedValue, dispatchId };
     }
 
-    const valueEntry = locationConfig.entries?.[normalizedValue];
+    const valueEntry = locationConfig.entries?.[modality]?.[normalizedValue];
     const baseLog = { location, modality, value: normalizedValue, registered: !!valueEntry, dispatchId };
 
     if (!valueEntry) {

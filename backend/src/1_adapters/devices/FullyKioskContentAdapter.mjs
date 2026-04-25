@@ -364,6 +364,26 @@ export class FullyKioskContentAdapter {
   }
 
   /**
+   * Navigate FKB to its configured Start URL.
+   *
+   * Sends FKB's `loadStartURL` REST command, which returns the WebView to
+   * whatever the user has configured as the kiosk Start URL. Used to "clear"
+   * the screen back to the kiosk home state without waking or rebooting the
+   * device.
+   *
+   * @returns {Promise<{ok: boolean, error?: string}>}
+   */
+  async loadStartUrl() {
+    this.#logger.info?.('fullykiosk.loadStartUrl.start', { host: this.#host });
+    const result = await this.#sendCommand('loadStartURL');
+    if (!result.ok) {
+      this.#logger.warn?.('fullykiosk.loadStartUrl.failed', { error: result.error });
+      return { ok: false, error: result.error || 'loadStartURL failed' };
+    }
+    return { ok: true };
+  }
+
+  /**
    * Get content control status
    * @returns {Promise<Object>}
    */

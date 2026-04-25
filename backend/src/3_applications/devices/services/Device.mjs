@@ -220,6 +220,31 @@ export class Device {
   }
 
   /**
+   * Clear content by loading the device's configured Start URL.
+   *
+   * Delegates to `contentControl.loadStartUrl()` to return the device to its
+   * kiosk/home state without rebooting or powering off. Used by the trigger
+   * action handler to "clear" the screen on tag-off events.
+   *
+   * @returns {Promise<Object>}
+   */
+  async clearContent() {
+    this.#logger.info?.('device.clearContent.start', { id: this.#id, hasContentControl: !!this.#contentControl });
+    if (!this.#contentControl) {
+      this.#logger.warn?.('device.clearContent.noContentControl', { id: this.#id });
+      return { ok: false, error: 'No content control configured' };
+    }
+    if (typeof this.#contentControl.loadStartUrl !== 'function') {
+      this.#logger.warn?.('device.clearContent.notSupported', { id: this.#id });
+      return { ok: false, error: 'Content control does not support clear (loadStartUrl not implemented)' };
+    }
+
+    const result = await this.#contentControl.loadStartUrl();
+    this.#logger.info?.('device.clearContent.done', { id: this.#id, ok: result.ok });
+    return result;
+  }
+
+  /**
    * Get device state
    * @returns {Promise<Object>}
    */

@@ -331,4 +331,55 @@ describe('FullyKioskContentAdapter', () => {
       );
     });
   });
+
+  describe('loadStartUrl', () => {
+    it('should send cmd=loadStartURL to the FKB host:port', async () => {
+      const httpClient = createMockHttpClient();
+      const adapter = new FullyKioskContentAdapter(defaultConfig, { httpClient, logger: mockLogger });
+
+      const result = await adapter.loadStartUrl();
+
+      expect(result.ok).toBe(true);
+
+      // Verify exactly one loadStartURL call was made
+      const calls = httpClient.get.mock.calls.map(c => c[0]);
+      const loadStartUrlCalls = calls.filter(u => u.includes('cmd=loadStartURL'));
+      expect(loadStartUrlCalls).toHaveLength(1);
+
+      // Verify URL targets the configured host:port and includes password
+      const url = loadStartUrlCalls[0];
+      expect(url).toContain('http://10.0.0.11:2323/');
+      expect(url).toContain('cmd=loadStartURL');
+      expect(url).toContain('password=testpass');
+    });
+
+    it('should return {ok: false} when FKB returns non-2xx', async () => {
+      const httpClient = createMockHttpClient({
+        loadStartURL: { status: 500, data: 'Internal Server Error' },
+      });
+      const adapter = new FullyKioskContentAdapter(defaultConfig, { httpClient, logger: mockLogger });
+
+      const result = await adapter.loadStartUrl();
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toBeDefined();
+    });
+
+    it('should return {ok: false} when httpClient throws (e.g., ECONNREFUSED)', async () => {
+      const httpClient = {
+        get: vi.fn(async (url) => {
+          if (url.includes('cmd=loadStartURL')) {
+            throw new Error('ECONNREFUSED');
+          }
+          return { status: 200, data: '{}' };
+        }),
+      };
+      const adapter = new FullyKioskContentAdapter(defaultConfig, { httpClient, logger: mockLogger });
+
+      const result = await adapter.loadStartUrl();
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toBeDefined();
+    });
+  });
 });
