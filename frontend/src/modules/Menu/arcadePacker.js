@@ -164,3 +164,110 @@ export function solveDoubleBand({ tallRatio, upperRatios, lowerRatios, W, gap })
   if (!valid) return { valid: false, H_pair: 0, w_t: 0, upper_h: 0, lower_h: 0 };
   return { valid, H_pair, w_t, upper_h, lower_h };
 }
+
+// Greedy: walk `order`. For each tall index, open a double band and pull
+// subsequent normal indices to fill upper/lower halves until both sides hit
+// `minPerRow` width consumption (estimated at refH). For each normal index,
+// extend the current single band until adding the next tile would overflow W.
+//
+// Constraints (initial implementation):
+//   - At most ONE tall tile per double band.
+//   - Both upper and lower halves must contain >= 1 normal tile, otherwise
+//     the tall is emitted as a single-band tile.
+//   - Upper/lower split alternates so |n_u - n_l| <= 1.
+export function buildBands({
+  itemRatios,
+  order,
+  tallThreshold,
+  refH,
+  W,
+  gap,
+  minPerRow,
+}) {
+  const { tallIndices } = classifyItems(itemRatios, tallThreshold);
+  const tallSet = new Set(tallIndices);
+  const isTall = (i) => tallSet.has(i);
+  const widthAt = (i, h) => h / itemRatios[i];
+
+  const bands = [];
+  let i = 0;
+
+  while (i < order.length) {
+    const idx = order[i];
+
+    if (isTall(idx)) {
+      // Estimate this tall's width when sharing a 2-row band of ~ 2*refH.
+      const pairHeightGuess = 2 * refH + gap;
+      const tallW = widthAt(idx, pairHeightGuess);
+      const widthBudget = W - tallW - gap;
+
+      if (widthBudget <= 0) {
+        bands.push({ type: 'single', items: [idx] });
+        i++;
+        continue;
+      }
+
+      const upper = [];
+      const lower = [];
+      let uW = 0;
+      let lW = 0;
+      let j = i + 1;
+      while (j < order.length) {
+        const cand = order[j];
+        if (isTall(cand)) break;
+        const w = widthAt(cand, refH);
+        const target = upper.length <= lower.length ? 'upper' : 'lower';
+        if (target === 'upper') {
+          const next = uW + (upper.length > 0 ? gap : 0) + w;
+          if (next > widthBudget) break;
+          upper.push(cand);
+          uW = next;
+        } else {
+          const next = lW + (lower.length > 0 ? gap : 0) + w;
+          if (next > widthBudget) break;
+          lower.push(cand);
+          lW = next;
+        }
+        j++;
+      }
+
+      if (upper.length >= 1 && lower.length >= 1) {
+        bands.push({ type: 'double', talls: [idx], upper, lower });
+        i = j;
+      } else {
+        // Couldn't fill both halves — keep the tall as a single tile.
+        bands.push({ type: 'single', items: [idx] });
+        i++;
+      }
+      continue;
+    }
+
+    // Normal: greedy single-band packing at refH.
+    const items = [idx];
+    let rowW = widthAt(idx, refH);
+    let j = i + 1;
+    while (j < order.length) {
+      const cand = order[j];
+      if (isTall(cand)) break;
+      const w = widthAt(cand, refH);
+      if (rowW + gap + w > W) break;
+      rowW += gap + w;
+      items.push(cand);
+      j++;
+    }
+    bands.push({ type: 'single', items });
+    i = j;
+  }
+
+  // Merge tiny trailing single bands (parity with the legacy behavior).
+  while (bands.length > 1) {
+    const last = bands[bands.length - 1];
+    if (last.type !== 'single' || last.items.length >= minPerRow) break;
+    const prev = bands[bands.length - 2];
+    if (prev.type !== 'single') break;
+    prev.items.push(...last.items);
+    bands.pop();
+  }
+
+  return bands;
+}

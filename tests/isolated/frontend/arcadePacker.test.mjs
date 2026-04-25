@@ -1,5 +1,5 @@
 import { describe, test, expect } from '@jest/globals';
-import { packLayout, classifyItems, solveSingleBand, solveDoubleBand } from '../../../frontend/src/modules/Menu/arcadePacker.js';
+import { packLayout, classifyItems, solveSingleBand, solveDoubleBand, buildBands } from '../../../frontend/src/modules/Menu/arcadePacker.js';
 
 // Deterministic LCG so attempts/shuffle/mirror are reproducible.
 function seededRandom(seed = 1) {
@@ -157,5 +157,81 @@ describe('solveDoubleBand', () => {
       tallRatio: 2, upperRatios: [1, 1], lowerRatios: [1, 1], W: 100, gap: 80,
     });
     expect(out).toEqual({ valid: false, H_pair: 0, w_t: 0, upper_h: 0, lower_h: 0 });
+  });
+});
+
+describe('buildBands', () => {
+  test('all-normal items produce only single bands', () => {
+    const itemRatios = [1.0, 1.0, 0.7, 1.0, 0.8];
+    const bands = buildBands({
+      itemRatios,
+      order: [0, 1, 2, 3, 4],
+      tallThreshold: 1.4,
+      refH: 200,
+      W: 1000,
+      gap: 10,
+      minPerRow: 3,
+    });
+    expect(bands.every(b => b.type === 'single')).toBe(true);
+    const placedIdxs = bands.flatMap(b => b.items).sort((a, b) => a - b);
+    expect(placedIdxs).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  test('a tall item creates a double band with balanced upper/lower', () => {
+    const itemRatios = [1.0, 1.0, 1.5, 1.0, 1.0]; // index 2 is tall
+    const bands = buildBands({
+      itemRatios,
+      order: [2, 0, 1, 3, 4],
+      tallThreshold: 1.4,
+      refH: 200,
+      W: 1000,
+      gap: 10,
+      minPerRow: 3,
+    });
+    const doubles = bands.filter(b => b.type === 'double');
+    expect(doubles).toHaveLength(1);
+    expect(doubles[0].talls).toEqual([2]);
+    // |upper| - |lower| <= 1
+    expect(Math.abs(doubles[0].upper.length - doubles[0].lower.length)).toBeLessThanOrEqual(1);
+  });
+
+  test('every input index appears exactly once across all bands', () => {
+    const itemRatios = [1.0, 1.5, 0.7, 1.0, 1.6, 0.8, 1.0, 1.4, 1.0];
+    const bands = buildBands({
+      itemRatios,
+      order: itemRatios.map((_, i) => i),
+      tallThreshold: 1.4,
+      refH: 200,
+      W: 1000,
+      gap: 10,
+      minPerRow: 3,
+    });
+    const seen = new Set();
+    for (const b of bands) {
+      const ids = b.type === 'double'
+        ? [...b.talls, ...b.upper, ...b.lower]
+        : b.items;
+      for (const id of ids) {
+        expect(seen.has(id)).toBe(false);
+        seen.add(id);
+      }
+    }
+    expect(seen.size).toBe(itemRatios.length);
+  });
+
+  test('tall item with no normals available falls back to single band', () => {
+    const itemRatios = [2.0]; // only one tall
+    const bands = buildBands({
+      itemRatios,
+      order: [0],
+      tallThreshold: 1.4,
+      refH: 200,
+      W: 1000,
+      gap: 10,
+      minPerRow: 1,
+    });
+    expect(bands).toHaveLength(1);
+    expect(bands[0].type).toBe('single');
+    expect(bands[0].items).toEqual([0]);
   });
 });
