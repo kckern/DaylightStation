@@ -14,7 +14,6 @@ import { MenuSkeleton } from "./MenuSkeleton";
 import { ArcadeSelector } from "./ArcadeSelector";
 import { isFKBAvailable } from '../../lib/fkb.js';
 import { useMenuPerfMonitor } from './hooks/useMenuPerfMonitor.js';
-import { getActiveGamepads } from '../../screen-framework/input/gamepadFiltering.js';
 
 /**
  * Logs a menu selection to the server.
@@ -696,17 +695,6 @@ function MenuItems({
   const handleCloseRef = useRef(handleClose);
   handleCloseRef.current = handleClose;
 
-  // Refs so the gamepad polling effect can see current callbacks/values
-  // without restarting on every selection change. Restarting would reset
-  // prevButtons/selectCooldown and re-fire a still-held A press.
-  const setSelectedIndexRef = useRef(null);
-  setSelectedIndexRef.current = setSelectedIndex;
-  const findKeyForItemRef = useRef(null);
-  findKeyForItemRef.current = findKeyForItem;
-  const navigateToRef = useRef(null); // assigned after navigateTo is declared below
-  const columnsRef = useRef(columns);
-  columnsRef.current = columns;
-
   /**
    * Cache item positions after initial render to avoid forced layout reads during navigation.
    * Positions are measured once, then navigation uses cached values — zero DOM queries.
@@ -807,7 +795,6 @@ function MenuItems({
       nextIndex, didScroll,
     }, { maxPerMinute: 10 });
   }, [containerRef, columns, buildLayoutCache]);
-  navigateToRef.current = navigateTo;
 
   // Restore or reset scroll + active index when items change or on (re-)mount.
   // If the context has a saved selection for this depth, restore to it (back navigation).
@@ -925,132 +912,9 @@ function MenuItems({
     return () => window.removeEventListener("keydown", handler);
   }, [columns, navigateTo]);
 
-  // --- Gamepad API polling (physical game controllers) ---
-  // Effect deps are intentionally empty — all callbacks/values come from refs
-  // updated each render. If the effect restarted on every selection change,
-  // its closure state (prevButtons, selectCooldown) would reset, and a
-  // still-held A press would re-fire on the next frame.
-  useEffect(() => {
-    let rafId;
-    const prevButtons = {};
-    const prevAxes = {};
-    const seeded = new Set(); // gamepads that have been seeded from live state
-    const AXIS_THRESHOLD = 0.5;
-    const REPEAT_DELAY = 400;
-    const REPEAT_INTERVAL = 120;
-    const holdTimers = {};
-    let selectCooldown = false;
-
-    function clearHold(key) {
-      if (holdTimers[key]) { clearTimeout(holdTimers[key]); delete holdTimers[key]; }
-    }
-
-    function navDir(dir) {
-      const cur = activeIndexRef.current;
-      const len = itemsRef.current.length;
-      if (!len) return;
-      const cols = columnsRef.current;
-      let next;
-      if (dir === 'up') next = (cur - cols + len) % len;
-      else if (dir === 'down') next = (cur + cols) % len;
-      else if (dir === 'left') next = (cur - 1 + len) % len;
-      else next = (cur + 1) % len;
-      navigateToRef.current?.(next);
-    }
-
-    function poll() {
-      const gamepads = getActiveGamepads();
-      for (const gp of gamepads) {
-        const id = gp.index;
-
-        // Seed from live state on first observation of this gamepad.
-        // Treats any button held at mount as "already pressed" so it does
-        // not register as a fresh press until released and pressed again.
-        if (!seeded.has(id)) {
-          prevButtons[id] = gp.buttons.map(b => !!b?.pressed);
-          prevAxes[id] = Array.from(gp.axes);
-          seeded.add(id);
-          // Skip edge detection for this frame; just record state.
-          continue;
-        }
-
-        const pressed = (i) => gp.buttons[i]?.pressed;
-        const wasPressed = (i) => prevButtons[id][i];
-        const justPressed = (i) => pressed(i) && !wasPressed(i);
-        const justReleased = (i) => !pressed(i) && wasPressed(i);
-
-        // D-pad: 12=Up, 13=Down, 14=Left, 15=Right
-        const dirMap = { 12: 'up', 13: 'down', 14: 'left', 15: 'right' };
-        for (const [btn, dir] of Object.entries(dirMap)) {
-          const b = parseInt(btn);
-          if (justPressed(b)) {
-            navDir(dir);
-            clearHold(`btn${b}`);
-            holdTimers[`btn${b}`] = setTimeout(function repeat() {
-              navDir(dir);
-              holdTimers[`btn${b}`] = setTimeout(repeat, REPEAT_INTERVAL);
-            }, REPEAT_DELAY);
-          }
-          if (justReleased(b)) clearHold(`btn${b}`);
-        }
-
-        // Analog stick
-        const stickDirs = [
-          { axis: 0, positive: true, dir: 'right', key: 'axisR' },
-          { axis: 0, positive: false, dir: 'left', key: 'axisL' },
-          { axis: 1, positive: true, dir: 'down', key: 'axisD' },
-          { axis: 1, positive: false, dir: 'up', key: 'axisU' },
-        ];
-        for (const { axis, positive, dir, key } of stickDirs) {
-          const val = gp.axes[axis] || 0;
-          const prevVal = prevAxes[id][axis] || 0;
-          const active = positive ? val > AXIS_THRESHOLD : val < -AXIS_THRESHOLD;
-          const wasActive = positive ? prevVal > AXIS_THRESHOLD : prevVal < -AXIS_THRESHOLD;
-          if (active && !wasActive) {
-            navDir(dir);
-            clearHold(key);
-            holdTimers[key] = setTimeout(function repeat() {
-              navDir(dir);
-              holdTimers[key] = setTimeout(repeat, REPEAT_INTERVAL);
-            }, REPEAT_DELAY);
-          }
-          if (!active && wasActive) clearHold(key);
-        }
-
-        // A button (0) = select
-        if (justPressed(0) && !selectCooldown) {
-          selectCooldown = true;
-          setTimeout(() => { selectCooldown = false; }, 300);
-          const idx = activeIndexRef.current;
-          const curItems = itemsRef.current;
-          logger.info('menu.gamepad-select', {
-            gamepad: gp.id, index: idx, title: curItems[idx]?.label,
-          });
-          setSelectedIndexRef.current?.(idx, findKeyForItemRef.current?.(curItems[idx]));
-          onSelectRef.current?.(curItems[idx]);
-        }
-
-        // B button (1) = back
-        if (justPressed(1)) {
-          logger.info('menu.gamepad-back', { gamepad: gp.id });
-          handleCloseRef.current?.();
-        }
-
-        // Save state
-        for (let i = 0; i < gp.buttons.length; i++) prevButtons[id][i] = pressed(i);
-        for (let i = 0; i < gp.axes.length; i++) prevAxes[id][i] = gp.axes[i];
-      }
-      rafId = requestAnimationFrame(poll);
-    }
-
-    rafId = requestAnimationFrame(poll);
-    logger.debug('menu.gamepad-polling.started');
-    return () => {
-      cancelAnimationFrame(rafId);
-      Object.keys(holdTimers).forEach(clearHold);
-      logger.debug('menu.gamepad-polling.stopped');
-    };
-  }, [logger]);
+  // Gamepad input now flows through GamepadAdapter (single source of truth):
+  // it dispatches synthetic Enter / Escape / Arrow* keydown events that
+  // the keydown handler above already responds to. No per-component polling.
 
   /**
    * Optional countdown timer to auto-select.
