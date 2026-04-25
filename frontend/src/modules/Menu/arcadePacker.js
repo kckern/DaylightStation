@@ -140,7 +140,8 @@ export function solveSingleBand(ratios, W, gap) {
   const gaps = (ratios.length - 1) * gap;
   const invSum = ratios.reduce((s, r) => s + 1 / r, 0);
   const rowH = (W - gaps) / invSum;
-  return { rowH, valid: rowH > 0 };
+  if (rowH <= 0) return { rowH: 0, valid: false };
+  return { rowH, valid: true };
 }
 
 export function solveDoubleBand({ tallRatio, upperRatios, lowerRatios, W, gap }) {
@@ -160,5 +161,6 @@ export function solveDoubleBand({ tallRatio, upperRatios, lowerRatios, W, gap })
   const lower_h = (W - w_t - g_l * gap) / S_l;
 
   const valid = H_pair > 0 && w_t > 0 && upper_h > 0 && lower_h > 0;
+  if (!valid) return { valid: false, H_pair: 0, w_t: 0, upper_h: 0, lower_h: 0 };
   return { valid, H_pair, w_t, upper_h, lower_h };
 }
