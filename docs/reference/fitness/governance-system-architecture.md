@@ -294,6 +294,14 @@ FitnessPlayerOverlay renders
             [Avatar] [Name] [Current: Cool ●] ━━━━━━━▶ [Target: Active ●]
 ```
 
+Current lock overlay behavior (2026-04 redesign):
+
+- The lock panel uses a wide, horizontal layout (16:9 target envelope) to prioritize per-participant row density.
+- Each participant renders in a single row: avatar/name, current pill, progress track, target pill.
+- The header includes challenge completion blocks (dark when incomplete, bright when complete) plus summary text (`actual/target` and participant pool size when available).
+- The `current` pill is frozen when lock/pending starts and remains static until the lock snapshot changes, preventing distracting mid-lock zone label jumps.
+- When the participant pool is empty, the overlay switches to an explicit waiting state (no `0 of 0` challenge summary and no "Meet these conditions" copy), with actionable guidance to connect/start participants.
+
 ---
 
 ## SSoT Boundaries
