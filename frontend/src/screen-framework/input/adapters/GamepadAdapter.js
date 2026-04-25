@@ -35,6 +35,12 @@ const STICK_DEADZONE = 0.5;
 const REPEAT_INITIAL_MS = 400;
 const REPEAT_INTERVAL_MS = 120;
 
+// When the same gamepad id reports the same button transition within this
+// window we treat it as a phantom enumeration of one device, not two real
+// users pressing the same button. Two distinct users can't realistically
+// hit the same button simultaneously inside ~50ms.
+const SAME_ID_DUPLICATE_WINDOW_MS = 50;
+
 const STICK_DIRECTIONS = [
   { axis: 0, threshold: -STICK_DEADZONE, key: 'ArrowLeft',  action: 'navigate', payload: { direction: 'left' } },
   { axis: 0, threshold:  STICK_DEADZONE, key: 'ArrowRight', action: 'navigate', payload: { direction: 'right' } },
@@ -47,9 +53,19 @@ export class GamepadAdapter {
     this.actionBus = actionBus;
     this.preferredIndex = gamepadIndex;
     this._rafId = null;
-    this._prevButtons = {};
-    this._prevStick = {};
+    // All per-gamepad state keyed by gp.index (unique across navigator slots).
+    // _seeded[idx] = true once we've recorded the initial button state for
+    // that gamepad — held buttons at observation time do NOT register as
+    // fresh presses.
+    this._prevButtons = {};   // { [gpIndex]: { [btnIdx|`unmapped_${i}`]: bool } }
+    this._prevStick = {};     // { [gpIndex]: { [stickKey]: bool } }
+    this._seeded = {};        // { [gpIndex]: true }
+    // Repeat timers keyed by `${gpIndex}__${key}` so two controllers' holds
+    // don't trample each other.
     this._repeatTimers = {};
+    // Suppresses phantom-enumeration double-fires: a press from the same id
+    // within the dedupe window is dropped. Keyed by `${gpId}__${key}`.
+    this._lastFireById = {};
     this._onConnected = null;
     this._onDisconnected = null;
   }
@@ -70,12 +86,14 @@ export class GamepadAdapter {
     window.addEventListener('gamepadconnected', this._onConnected);
     window.addEventListener('gamepaddisconnected', this._onDisconnected);
 
-    // If a gamepad is already connected, start polling immediately
-    const existing = this._findGamepad();
-    if (existing) {
-      logger().info('gamepad.already-connected', {
-        index: existing.index, id: existing.id, buttons: existing.buttons.length, axes: existing.axes.length, mapping: existing.mapping,
-      });
+    // If any gamepad is already connected, start polling immediately
+    const existing = getActiveGamepads();
+    if (existing.length > 0) {
+      for (const gp of existing) {
+        logger().info('gamepad.already-connected', {
+          index: gp.index, id: gp.id, buttons: gp.buttons.length, axes: gp.axes.length, mapping: gp.mapping,
+        });
+      }
       this._startPolling();
     }
     logger().debug('gamepad.attach', { preferredIndex: this.preferredIndex });
@@ -94,18 +112,12 @@ export class GamepadAdapter {
     this._clearAllRepeats();
     this._prevButtons = {};
     this._prevStick = {};
+    this._seeded = {};
+    this._lastFireById = {};
   }
 
-  _findGamepad() {
-    const gamepads = getActiveGamepads();
-    if (this.preferredIndex !== null) {
-      // preferredIndex refers to the raw navigator slot; honour it only if
-      // the slot corresponds to a real gamepad after filtering.
-      const all = navigator.getGamepads ? navigator.getGamepads() : [];
-      const preferred = all[this.preferredIndex];
-      if (preferred && gamepads.find(g => g.id === preferred.id)) return preferred;
-    }
-    return gamepads[0] || null;
+  _hasAnyGamepad() {
+    return getActiveGamepads().length > 0;
   }
 
   _startPolling() {
@@ -125,49 +137,87 @@ export class GamepadAdapter {
   }
 
   _handleDisconnect(e) {
-    this._clearAllRepeats();
-    this._prevButtons = {};
-    this._prevStick = {};
-
-    // If we still have another gamepad, keep polling; otherwise stop
-    if (!this._findGamepad()) {
+    // Drop state for the disconnected gamepad only — leave others' state intact.
+    const idx = e?.gamepad?.index;
+    if (idx != null) {
+      delete this._prevButtons[idx];
+      delete this._prevStick[idx];
+      delete this._seeded[idx];
+      // Stop any repeats this gamepad owned.
+      for (const key of Object.keys(this._repeatTimers)) {
+        if (key.startsWith(`${idx}__`)) this._stopRepeat(key);
+      }
+    }
+    if (!this._hasAnyGamepad()) {
+      this._clearAllRepeats();
       this._stopPolling();
     }
   }
 
   _pollGamepad() {
-    const gp = this._findGamepad();
-    if (!gp) return;
+    const gamepads = getActiveGamepads();
+    for (const gp of gamepads) {
+      this._pollOne(gp);
+    }
+  }
+
+  _pollOne(gp) {
+    const gpIdx = gp.index;
+
+    // Seed from live state on first observation: any held button at mount
+    // does NOT register as a fresh press until released and pressed again.
+    if (!this._seeded[gpIdx]) {
+      const seedButtons = {};
+      for (let i = 0; i < gp.buttons.length; i++) {
+        seedButtons[i] = !!gp.buttons[i]?.pressed;
+        seedButtons[`unmapped_${i}`] = !!gp.buttons[i]?.pressed;
+      }
+      this._prevButtons[gpIdx] = seedButtons;
+      const seedStick = {};
+      for (const dir of STICK_DIRECTIONS) {
+        const value = gp.axes[dir.axis] || 0;
+        const active = dir.threshold < 0 ? value < dir.threshold : value > dir.threshold;
+        seedStick[`stick_${dir.key}`] = active;
+      }
+      this._prevStick[gpIdx] = seedStick;
+      this._seeded[gpIdx] = true;
+      return; // skip edge detection for this frame
+    }
+
+    const prev = this._prevButtons[gpIdx];
+    const prevStick = this._prevStick[gpIdx];
 
     // --- Mapped buttons ---
     for (const [indexStr, mapping] of Object.entries(BUTTON_MAP)) {
       const idx = Number(indexStr);
       const pressed = gp.buttons[idx] && gp.buttons[idx].pressed;
-      const wasPressed = !!this._prevButtons[idx];
+      const wasPressed = !!prev[idx];
+      const repeatKey = `${gpIdx}__btn${idx}`;
 
       if (pressed && !wasPressed) {
-        this._emit(mapping, idx);
-        if (mapping.repeats) {
-          this._startRepeat(idx, mapping);
+        if (this._claimFire(gp.id, `btn${idx}`)) {
+          this._emit(mapping, idx);
+          if (mapping.repeats) this._startRepeat(repeatKey, mapping);
         }
       } else if (!pressed && wasPressed) {
-        this._stopRepeat(idx);
+        this._stopRepeat(repeatKey);
       }
 
-      this._prevButtons[idx] = pressed;
+      prev[idx] = pressed;
     }
 
     // --- Unmapped buttons (log for diagnostics) ---
     for (let idx = 0; idx < gp.buttons.length; idx++) {
       if (BUTTON_MAP[idx]) continue; // already handled
       const pressed = gp.buttons[idx] && gp.buttons[idx].pressed;
-      const wasPressed = !!this._prevButtons[`unmapped_${idx}`];
-      if (pressed && !wasPressed) {
+      const key = `unmapped_${idx}`;
+      const wasPressed = !!prev[key];
+      if (pressed && !wasPressed && this._claimFire(gp.id, key)) {
         logger().debug('gamepad.button-pressed', {
           buttonIndex: idx, mapped: false, gamepadId: gp.id,
         });
       }
-      this._prevButtons[`unmapped_${idx}`] = pressed;
+      prev[key] = pressed;
     }
 
     // --- Left analog stick ---
@@ -175,17 +225,35 @@ export class GamepadAdapter {
       const value = gp.axes[dir.axis] || 0;
       const active = dir.threshold < 0 ? value < dir.threshold : value > dir.threshold;
       const stickKey = `stick_${dir.key}`;
-      const wasActive = !!this._prevStick[stickKey];
+      const wasActive = !!prevStick[stickKey];
+      const repeatKey = `${gpIdx}__${stickKey}`;
 
       if (active && !wasActive) {
-        this._emit(dir);
-        this._startRepeat(stickKey, dir);
+        if (this._claimFire(gp.id, stickKey)) {
+          this._emit(dir);
+          this._startRepeat(repeatKey, dir);
+        }
       } else if (!active && wasActive) {
-        this._stopRepeat(stickKey);
+        this._stopRepeat(repeatKey);
       }
 
-      this._prevStick[stickKey] = active;
+      prevStick[stickKey] = active;
     }
+  }
+
+  /**
+   * Phantom-enumeration suppression: returns true if this (id, key) hasn't
+   * fired within the dedupe window. The same physical 8Bitdo enumerated at
+   * two indices on Shield TV mirrors button state — both indices observe
+   * the press in the same frame and would fire twice without this guard.
+   */
+  _claimFire(gamepadId, key) {
+    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const fireKey = `${gamepadId}__${key}`;
+    const lastFire = this._lastFireById[fireKey] || 0;
+    if (now - lastFire < SAME_ID_DUPLICATE_WINDOW_MS) return false;
+    this._lastFireById[fireKey] = now;
+    return true;
   }
 
   _emit(mapping, buttonIndex) {
