@@ -256,6 +256,108 @@ describe('buildBands', () => {
     expect(d.upper).toEqual([1, 3]);
     expect(d.lower).toEqual([2, 4]);
   });
+
+  test('emits a triple band when tripleCount=1 and two adjacent talls are available', () => {
+    // 2 talls then 6 normals — should pair both talls into a triple with
+    // 6 normals split across top/mid/bot (2 each, by alternating fill).
+    const itemRatios = [1.5, 1.5, 1, 1, 1, 1, 1, 1];
+    const bands = buildBands({
+      itemRatios,
+      order: [0, 1, 2, 3, 4, 5, 6, 7],
+      tallThreshold: 1.1,
+      refH: 200,
+      W: 1000,
+      gap: 10,
+      minPerRow: 1,
+      tripleCount: 1,
+      doubleCount: 0,
+    });
+    const triples = bands.filter(b => b.type === 'triple');
+    expect(triples).toHaveLength(1);
+    expect(triples[0].talls).toEqual([0, 1]);
+    // All 6 normal indices placed across top/mid/bot
+    const normalsPlaced = [...triples[0].top, ...triples[0].mid, ...triples[0].bot].sort();
+    expect(normalsPlaced).toEqual([2, 3, 4, 5, 6, 7]);
+    // Each row non-empty
+    expect(triples[0].top.length).toBeGreaterThan(0);
+    expect(triples[0].mid.length).toBeGreaterThan(0);
+    expect(triples[0].bot.length).toBeGreaterThan(0);
+  });
+
+  test('mixed: tripleCount=1, doubleCount=1, remainder as singles', () => {
+    // 4 talls, 6 normals. Expect: 1 triple (consumes 2 talls, ~3 normals),
+    // 1 double (consumes 1 tall, ~2 normals), 1 single tall, rest as singles.
+    const itemRatios = [1.5, 1.5, 1.5, 1.5, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7];
+    const bands = buildBands({
+      itemRatios,
+      order: itemRatios.map((_, i) => i),
+      tallThreshold: 1.1,
+      refH: 200,
+      W: 1000,
+      gap: 10,
+      minPerRow: 1,
+      tripleCount: 1,
+      doubleCount: 1,
+    });
+    const triples = bands.filter(b => b.type === 'triple');
+    const doubles = bands.filter(b => b.type === 'double');
+    expect(triples).toHaveLength(1);
+    expect(doubles).toHaveLength(1);
+    // Triple consumed talls 0 and 1
+    expect(triples[0].talls).toEqual([0, 1]);
+    // Double consumed tall 2 (next tall after triple)
+    expect(doubles[0].talls).toEqual([2]);
+    // Tall 3 became a single
+    const singleBands = bands.filter(b => b.type === 'single');
+    const tall3InSingle = singleBands.some(b => b.items.includes(3));
+    expect(tall3InSingle).toBe(true);
+  });
+
+  test('default behavior (no tripleCount/doubleCount specified) matches legacy: all talls try doubles', () => {
+    // Same input as the existing "balanced upper/lower" test
+    const itemRatios = [1.0, 1.0, 1.5, 1.0, 1.0];
+    const bands = buildBands({
+      itemRatios,
+      order: [2, 0, 1, 3, 4],
+      tallThreshold: 1.4,
+      refH: 200,
+      W: 1000,
+      gap: 10,
+      minPerRow: 3,
+      // tripleCount and doubleCount omitted — defaults preserve legacy behavior
+    });
+    const doubles = bands.filter(b => b.type === 'double');
+    const triples = bands.filter(b => b.type === 'triple');
+    expect(triples).toHaveLength(0);
+    expect(doubles).toHaveLength(1);
+  });
+
+  test('triple falls back if normal supply between talls is insufficient', () => {
+    // 2 adjacent talls but only 2 normals after — needs ≥3 normals (one per row).
+    const itemRatios = [1.5, 1.5, 1, 1];
+    const bands = buildBands({
+      itemRatios,
+      order: [0, 1, 2, 3],
+      tallThreshold: 1.1,
+      refH: 200,
+      W: 1000,
+      gap: 10,
+      minPerRow: 1,
+      tripleCount: 1,
+      doubleCount: 0,
+    });
+    // Triple cannot form (only 2 normals available, need ≥3 for top/mid/bot).
+    // Algorithm falls back: the requested triple becomes (1 double + 1 single)
+    // OR (2 singles) — either is acceptable. The invariant is no triple band.
+    expect(bands.filter(b => b.type === 'triple')).toHaveLength(0);
+    // All 4 indices still placed
+    const allIndices = bands.flatMap(b => {
+      if (b.type === 'single') return b.items;
+      if (b.type === 'double') return [...b.talls, ...b.upper, ...b.lower];
+      return [...b.talls, ...b.top, ...b.mid, ...b.bot];
+    }).sort();
+    expect(allIndices).toEqual([0, 1, 2, 3]);
+  });
 });
 
 describe('renderBands', () => {
