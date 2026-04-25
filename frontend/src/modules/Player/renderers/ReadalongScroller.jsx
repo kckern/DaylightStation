@@ -112,6 +112,8 @@ export function ReadalongScroller({
 
   const title = renderer?.extractTitle ? renderer.extractTitle(data) : data.title;
   const subtitle = renderer?.extractSubtitle ? renderer.extractSubtitle(data) : data.subtitle;
+  const subsubtitle = data?.metadata?.prescription
+    || (data?.metadata?.condition ? `Prescription: ${data.metadata.condition}` : null);
   // Determine CSS type from backend data, with fallback for verse content
   const rawCssType = data.type || data.metadata?.cssType || renderer?.cssType
     || (data.content?.type === 'verses' ? 'scriptures' : null)
@@ -156,6 +158,7 @@ export function ReadalongScroller({
         title={title}
         assetId={data.id || contentId}
         subtitle={subtitle}
+        subsubtitle={subsubtitle}
         mainMediaUrl={isVideo ? data.videoUrl : data.mediaUrl}
         isVideo={isVideo}
         mainVolume={mainVolume}

@@ -95,6 +95,11 @@ export function usePlaybackHealth({
   const [progressSignal, setProgressSignal] = useState(DEFAULT_PROGRESS_STATE);
   const [bufferRunwayMs, setBufferRunwayMs] = useState(null);
 
+  const getMediaElRef = useRef(getMediaEl);
+  useEffect(() => {
+    getMediaElRef.current = getMediaEl;
+  }, [getMediaEl]);
+
   const deltaThreshold = useMemo(
     () => Math.max(0.01, Math.min(0.05, epsilonSeconds / 2)),
     [epsilonSeconds]
@@ -166,10 +171,14 @@ export function usePlaybackHealth({
   }, []);
 
   const updateElementSignals = useCallback((patch) => {
-    setElementSignals((prev) => ({
-      ...prev,
-      ...patch
-    }));
+    setElementSignals((prev) => {
+      const next = {
+        ...prev,
+        ...patch
+      };
+      const changed = Object.keys(next).some((key) => next[key] !== prev[key]);
+      return changed ? next : prev;
+    });
   }, []);
 
   useEffect(() => {
@@ -187,7 +196,7 @@ export function usePlaybackHealth({
   }, [seconds, deltaThreshold, recordProgress]);
 
   useEffect(() => {
-    const mediaEl = typeof getMediaEl === 'function' ? getMediaEl() : null;
+    const mediaEl = typeof getMediaElRef.current === 'function' ? getMediaElRef.current() : null;
     if (!mediaEl) {
       setElementSignals(DEFAULT_SIGNALS);
       setBufferRunwayMs(null);
@@ -210,7 +219,7 @@ export function usePlaybackHealth({
 
     const safeSetBufferRunway = (value) => {
       if (!destroyed) {
-        setBufferRunwayMs(value);
+        setBufferRunwayMs((prev) => (prev === value ? prev : value));
       }
     };
 
@@ -300,7 +309,7 @@ export function usePlaybackHealth({
       mediaEl.removeEventListener('ended', handleEnded);
       bufferEvents.forEach((eventName) => mediaEl.removeEventListener(eventName, updateBufferRunway));
     };
-  }, [getMediaEl, waitKey, recordProgress, updateElementSignals, logHealthEvent]);
+  }, [waitKey, recordProgress, updateElementSignals, logHealthEvent]);
 
   useEffect(() => {
     if (mediaType !== 'video' && mediaType !== 'dash_video') {
@@ -308,7 +317,7 @@ export function usePlaybackHealth({
       return () => {};
     }
 
-    const mediaEl = typeof getMediaEl === 'function' ? getMediaEl() : null;
+    const mediaEl = typeof getMediaElRef.current === 'function' ? getMediaElRef.current() : null;
     if (!mediaEl) {
       setFrameInfo(NO_FRAME_INFO);
       return () => {};
@@ -325,13 +334,21 @@ export function usePlaybackHealth({
         return;
       }
       const progressed = Number.isFinite(lastTotal) && Number(metrics.total) > lastTotal;
-      setFrameInfo({
-        supported: true,
-        advancing: progressed,
-        total: metrics.total,
-        dropped: metrics.dropped,
-        corrupted: metrics.corrupted,
-        lastSampleAt: Date.now()
+      setFrameInfo((prev) => {
+        const next = {
+          supported: true,
+          advancing: progressed,
+          total: metrics.total,
+          dropped: metrics.dropped,
+          corrupted: metrics.corrupted,
+          lastSampleAt: Date.now()
+        };
+        const changed = prev.supported !== next.supported
+          || prev.advancing !== next.advancing
+          || prev.total !== next.total
+          || prev.dropped !== next.dropped
+          || prev.corrupted !== next.corrupted;
+        return changed ? next : prev;
       });
       if (progressed) {
         recordProgress('frame', { details: metrics });
@@ -349,7 +366,7 @@ export function usePlaybackHealth({
         clearInterval(intervalId);
       }
     };
-  }, [getMediaEl, mediaType, playerFlavor, waitKey, recordProgress]);
+  }, [mediaType, playerFlavor, waitKey, recordProgress]);
 
   return useMemo(() => ({
     progressToken: progressSignal.progressToken,
