@@ -557,7 +557,12 @@ export function renderBands({ bands, itemRatios, W, H, gap }) {
 
   const placements = [];
   let y = scale === 1 ? (H - totalH) / 2 : 0;
-  // Counter for both doubles and triples — they share the alternation cycle.
+  // Alternate the side that holds the tall tile(s) across consecutive big
+  // bands (doubles AND triples share one cycle) so spans don't all cluster
+  // on one edge. First big band → tall on LEFT, second → RIGHT, third →
+  // LEFT, etc. The random mirror in packLayout adds another coin-flip on
+  // top of this, so the visual entropy compounds. The single-band branch
+  // does NOT bump this counter (singles have no tall to alternate).
   let bigBandIndex = 0;
 
   for (const s of solved) {
@@ -581,6 +586,12 @@ export function renderBands({ bands, itemRatios, W, H, gap }) {
       const tallOnLeft = bigBandIndex % 2 === 0;
       bigBandIndex++;
 
+      // After scaling, the band's total width is scale*W. Center it
+      // horizontally when scale<1 (matches the single-band centering
+      // behavior). bandW = max(upperRowW, lowerRowW) is the band's
+      // effective horizontal extent including the tall column + the
+      // widest non-tall row + their separator gap. Geometry is symmetric:
+      // tall on left or right uses the same math, just an x-position flip.
       const upperRowW = w_t + innerGap
         + s.band.upper.reduce((sum, i) => sum + upper_h / itemRatios[i], 0)
         + Math.max(0, s.band.upper.length - 1) * innerGap;
@@ -595,6 +606,9 @@ export function renderBands({ bands, itemRatios, W, H, gap }) {
         idx: tallIdx, x: tallX, y, w: w_t, h: upper_h + innerGap + lower_h,
       });
 
+      // Non-tall row tiles start where the tall ISN'T. Tall on left →
+      // they start after tall.right + innerGap. Tall on right → they
+      // start at the band's left edge (xOffset).
       const nonTallStartX = tallOnLeft ? xOffset + w_t + innerGap : xOffset;
 
       let xu = nonTallStartX;
