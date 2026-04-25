@@ -1,6 +1,25 @@
 // Pure layout primitives for ArcadeSelector. No React, no DOM.
 // `random` is injectable so callers (and tests) can control determinism.
 
+// Final guardrail: the rendered placements' bounding box must be square or
+// landscape. A tall outer perimeter means the layout would visually overflow
+// the container's natural shape, so we reject the candidate and let the
+// search keep going.
+function isLandscapeOrSquare(placements) {
+  if (!placements?.length) return true;
+  let left = Infinity;
+  let right = -Infinity;
+  let top = Infinity;
+  let bottom = -Infinity;
+  for (const p of placements) {
+    if (p.x < left) left = p.x;
+    if (p.x + p.w > right) right = p.x + p.w;
+    if (p.y < top) top = p.y;
+    if (p.y + p.h > bottom) bottom = p.y + p.h;
+  }
+  return (right - left) >= (bottom - top);
+}
+
 const DEFAULT_GAP = 3;
 const DEFAULT_MAX_ROW_PCT = 0.25;
 const DEFAULT_MAX_ATTEMPTS = 20;
@@ -133,6 +152,10 @@ export function packLayout({
             log('pack.variant.skip', { targetRows, t, d, reason: 'render-invalid' });
             continue;
           }
+          if (!isLandscapeOrSquare(rendered.placements)) {
+            log('pack.variant.reject', { targetRows, t, d, reason: 'bbox-tall' });
+            continue;
+          }
 
           const sc = scoreLayout({
             placements: rendered.placements, tallSet, N, W, H,
@@ -206,6 +229,7 @@ export function packLayout({
         if (solved.some(s => !s.valid)) continue;
         const rendered = renderBands({ bands, itemRatios, W, H, gap });
         if (!rendered.valid) continue;
+        if (!isLandscapeOrSquare(rendered.placements)) continue;
         const sc = scoreLayout({
           placements: rendered.placements, tallSet, N, W, H,
           fillWeight, balanceWeight, capWeight, areaCap,

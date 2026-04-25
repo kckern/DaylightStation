@@ -682,6 +682,27 @@ describe('packLayout (band-based)', () => {
     expect(placements.length).toBe(itemRatios.length);
   });
 
+  test('GUARDRAIL: final bounding box is square or wider (never taller than wide) for landscape containers', () => {
+    // The packer is allowed to leave vertical empty space; what it MUST NOT
+    // do is hand back a layout whose outer perimeter is taller than wide.
+    const itemRatios = [
+      ...Array(20).fill(0.7),
+      1.0, 1.0,
+      1.5, 1.5,
+    ];
+    for (let seed = 1; seed <= 30; seed++) {
+      const placements = packLayout({
+        itemRatios, W: 1152, H: 1080, random: seededRandom(seed),
+      });
+      expect(placements.length).toBe(itemRatios.length);
+      const left = Math.min(...placements.map(p => p.x));
+      const right = Math.max(...placements.map(p => p.x + p.w));
+      const top = Math.min(...placements.map(p => p.y));
+      const bottom = Math.max(...placements.map(p => p.y + p.h));
+      expect(right - left).toBeGreaterThanOrEqual(bottom - top);
+    }
+  });
+
   test('low-tall-density inputs prefer doubles (no unnecessary triples)', () => {
     // 1 tall + 25 normals — too few talls to need a triple. Doubles or
     // singles only.
