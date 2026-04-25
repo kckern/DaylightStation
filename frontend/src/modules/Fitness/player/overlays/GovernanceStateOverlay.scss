@@ -5,6 +5,8 @@
   --governance-overlay-panel-max-w: calc(var(--governance-overlay-avail-w) * 0.9);
   --governance-overlay-panel-h-driven-w: calc((var(--governance-overlay-avail-h) * 16) / 9);
   --governance-overlay-panel-w: min(var(--governance-overlay-panel-max-w), var(--governance-overlay-panel-h-driven-w));
+  --governance-lock-row-min-h: clamp(54px, 8.8vh, 64px);
+  --governance-lock-table-min-h: calc((var(--governance-lock-row-min-h) * 2) + 1px);
   position: absolute;
   inset: 0;
   display: flex;
@@ -42,12 +44,6 @@
     }
   }
 
-  &--locked {
-    .governance-overlay__panel {
-      background: rgba(127, 29, 29, 0.4);
-      border-color: rgba(248, 113, 113, 0.4);
-    }
-  }
 }
 
 @keyframes governance-row-grow-in {
@@ -117,11 +113,20 @@
     background: rgba(10, 10, 18, 0.9);
     border: 1px solid rgba(248, 250, 252, 0.4);
     box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(0.52rem, 0.9vw, 0.68rem);
+    font-weight: 700;
+    line-height: 1;
+    text-transform: uppercase;
+    color: rgba(248, 250, 252, 0.92);
 
     &--complete {
       background: #f8fafc;
       border-color: rgba(255, 255, 255, 0.95);
       box-shadow: 0 4px 12px rgba(255, 255, 255, 0.28), inset 0 0 8px rgba(203, 213, 225, 0.45);
+      color: rgba(15, 23, 42, 0.9);
     }
   }
 
@@ -188,12 +193,11 @@
     background: rgba(15, 23, 42, 0.65);
     margin-top: clamp(4px, 0.9vw, 8px);
     flex: 0 0 auto;
-    min-height: auto;
+    min-height: var(--governance-lock-table-min-h);
     overflow-y: auto;
 
     &--init {
       flex: 1 1 auto;
-      min-height: 0;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -240,7 +244,7 @@
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     align-items: center;
     column-gap: clamp(8px, 1vw, 14px);
-    min-height: clamp(54px, 8.8vh, 64px);
+    min-height: var(--governance-lock-row-min-h);
     padding: clamp(8px, 1vw, 12px) clamp(10px, 1.4vw, 16px);
     transform-origin: center;
     will-change: transform, opacity;
