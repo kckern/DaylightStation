@@ -1,44 +1,54 @@
 /**
- * Trigger config parser + validator.
+ * Trigger config parser + validator (multi-modality).
  *
  * Parses a location-rooted YAML shape into a normalized registry consumed by
  * TriggerDispatchService. Each top-level key is a location (e.g. `livingroom`,
  * `office`); each location declares default `target` + `action`, an optional
- * `auth_token`, and modality-specific entries (currently `tags` for nfc).
+ * `auth_token`, and one or more modality-specific entries blocks.
  *
- * Future modality types map to other entries keys:
- *   nfc    → tags
- *   barcode→ codes
- *   voice  → keywords
+ * Modality → YAML entries-key mapping:
+ *   nfc     → tags
+ *   barcode → codes
+ *   voice   → keywords
+ *   state   → states
+ *
+ * The parser performs a single pass over the YAML. Modalities present in the
+ * YAML are added to the location's `entries` object; modalities absent from
+ * the YAML do NOT appear there (no empty buckets).
+ *
+ * Output shape:
+ *
+ *   {
+ *     [location]: {
+ *       target: string,
+ *       action: string|undefined,
+ *       auth_token: string|null,
+ *       entries: {
+ *         [modality]: { [valueLowercased]: <entry-object> }
+ *       }
+ *     }
+ *   }
  *
  * @module domains/trigger/TriggerConfig
  */
 
 import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
 
-const ENTRIES_KEY_BY_TYPE = {
+export const ENTRIES_KEY_BY_TYPE = {
   nfc: 'tags',
   barcode: 'codes',
   voice: 'keywords',
+  state: 'states',
 };
 
 function isPlainObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
 
-export function parseTriggerConfig(raw, type) {
-  if (typeof type !== 'string' || type.length === 0) {
-    throw new ValidationError('type is required', { code: 'MISSING_TYPE' });
-  }
-
+export function parseTriggerConfig(raw) {
   if (!raw) return {};
   if (!isPlainObject(raw)) {
     throw new ValidationError('trigger config must be an object', { code: 'INVALID_CONFIG_ROOT' });
-  }
-
-  const entriesKey = ENTRIES_KEY_BY_TYPE[type];
-  if (!entriesKey) {
-    throw new ValidationError(`Unknown trigger type: ${type}`, { code: 'UNKNOWN_TRIGGER_TYPE', field: type });
   }
 
   const out = {};
@@ -51,15 +61,20 @@ export function parseTriggerConfig(raw, type) {
     }
 
     const entries = {};
-    const rawEntries = locConfig[entriesKey] || {};
-    if (!isPlainObject(rawEntries)) {
-      throw new ValidationError(`location "${location}" ${entriesKey} must be an object`, { code: 'INVALID_ENTRIES', field: location });
-    }
-    for (const [value, entry] of Object.entries(rawEntries)) {
-      if (!isPlainObject(entry)) {
-        throw new ValidationError(`${entriesKey.slice(0, -1)} "${value}" must be an object`, { code: 'INVALID_ENTRY', field: value });
+    for (const [modality, entriesKey] of Object.entries(ENTRIES_KEY_BY_TYPE)) {
+      if (!(entriesKey in locConfig)) continue;
+      const rawEntries = locConfig[entriesKey];
+      if (!isPlainObject(rawEntries)) {
+        throw new ValidationError(`location "${location}" ${entriesKey} must be an object`, { code: 'INVALID_ENTRIES', field: location });
       }
-      entries[value.toLowerCase()] = entry;
+      const modalityEntries = {};
+      for (const [value, entry] of Object.entries(rawEntries)) {
+        if (!isPlainObject(entry)) {
+          throw new ValidationError(`${entriesKey.slice(0, -1)} "${value}" must be an object`, { code: 'INVALID_ENTRY', field: value });
+        }
+        modalityEntries[value.toLowerCase()] = entry;
+      }
+      entries[modality] = modalityEntries;
     }
 
     out[location] = {
