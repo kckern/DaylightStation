@@ -142,3 +142,23 @@ export function solveSingleBand(ratios, W, gap) {
   const rowH = (W - gaps) / invSum;
   return { rowH, valid: rowH > 0 };
 }
+
+export function solveDoubleBand({ tallRatio, upperRatios, lowerRatios, W, gap }) {
+  if (!upperRatios.length || !lowerRatios.length) {
+    return { valid: false, H_pair: 0, w_t: 0, upper_h: 0, lower_h: 0 };
+  }
+  const S_t = 1 / tallRatio;
+  const S_u = upperRatios.reduce((s, r) => s + 1 / r, 0);
+  const S_l = lowerRatios.reduce((s, r) => s + 1 / r, 0);
+  const K = 1 / S_u + 1 / S_l;
+  const g_u = upperRatios.length; // 1 gap to tall + (n_u - 1) inter-tile = n_u
+  const g_l = lowerRatios.length;
+
+  const H_pair = (W * K - gap * (g_u / S_u + g_l / S_l - 1)) / (1 + S_t * K);
+  const w_t = H_pair / tallRatio;
+  const upper_h = (W - w_t - g_u * gap) / S_u;
+  const lower_h = (W - w_t - g_l * gap) / S_l;
+
+  const valid = H_pair > 0 && w_t > 0 && upper_h > 0 && lower_h > 0;
+  return { valid, H_pair, w_t, upper_h, lower_h };
+}

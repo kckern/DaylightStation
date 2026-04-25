@@ -1,5 +1,5 @@
 import { describe, test, expect } from '@jest/globals';
-import { packLayout, classifyItems, solveSingleBand } from '../../../frontend/src/modules/Menu/arcadePacker.js';
+import { packLayout, classifyItems, solveSingleBand, solveDoubleBand } from '../../../frontend/src/modules/Menu/arcadePacker.js';
 
 // Deterministic LCG so attempts/shuffle/mirror are reproducible.
 function seededRandom(seed = 1) {
@@ -99,6 +99,63 @@ describe('solveSingleBand', () => {
   test('returns valid=false when computed rowH would be non-positive', () => {
     // Force gaps > W: 5 tiles at gap=300 → 4 gaps = 1200 > W=1000
     const out = solveSingleBand([1, 1, 1, 1, 1], 1000, 300);
+    expect(out.valid).toBe(false);
+  });
+});
+
+describe('solveDoubleBand', () => {
+  test('symmetric worked example: tall r=2, two squares above and below, W=1000, gap=10', () => {
+    const out = solveDoubleBand({
+      tallRatio: 2,
+      upperRatios: [1, 1],
+      lowerRatios: [1, 1],
+      W: 1000,
+      gap: 10,
+    });
+    expect(out.valid).toBe(true);
+    expect(out.H_pair).toBeCloseTo(660, 4);
+    expect(out.w_t).toBeCloseTo(330, 4);
+    expect(out.upper_h).toBeCloseTo(325, 4);
+    expect(out.lower_h).toBeCloseTo(325, 4);
+  });
+
+  test('upper and lower rows each fill exactly W (within rounding)', () => {
+    const out = solveDoubleBand({
+      tallRatio: 1.5,
+      upperRatios: [0.5],
+      lowerRatios: [1, 1, 1],
+      W: 1000,
+      gap: 10,
+    });
+    expect(out.valid).toBe(true);
+    // upper: w_t + gap + (upper_h / 0.5) === W
+    expect(out.w_t + 10 + out.upper_h / 0.5).toBeCloseTo(1000, 3);
+    // lower: w_t + gap + 3*(lower_h) + 2*gap === W
+    expect(out.w_t + 10 + 3 * out.lower_h + 20).toBeCloseTo(1000, 3);
+    // pair geometry
+    expect(out.upper_h + 10 + out.lower_h).toBeCloseTo(out.H_pair, 3);
+    expect(out.w_t).toBeCloseTo(out.H_pair / 1.5, 3);
+  });
+
+  test('valid=false when upperRatios is empty (degenerate)', () => {
+    const out = solveDoubleBand({
+      tallRatio: 1.5, upperRatios: [], lowerRatios: [1, 1], W: 1000, gap: 10,
+    });
+    expect(out.valid).toBe(false);
+  });
+
+  test('valid=false when lowerRatios is empty (degenerate)', () => {
+    const out = solveDoubleBand({
+      tallRatio: 1.5, upperRatios: [1, 1], lowerRatios: [], W: 1000, gap: 10,
+    });
+    expect(out.valid).toBe(false);
+  });
+
+  test('valid=false when computed dimensions are non-positive', () => {
+    // Crank gap so high that all derived heights collapse
+    const out = solveDoubleBand({
+      tallRatio: 2, upperRatios: [1, 1], lowerRatios: [1, 1], W: 100, gap: 80,
+    });
     expect(out.valid).toBe(false);
   });
 });
