@@ -208,6 +208,36 @@ export function solveDoubleBand({ tallRatio, upperRatios, lowerRatios, W, gap })
   return { valid, H_pair, w_t, upper_h, lower_h };
 }
 
+export function solveTripleBand({ tallRatios, topRatios, midRatios, botRatios, W, gap }) {
+  if (!topRatios.length || !midRatios.length || !botRatios.length) {
+    return { valid: false, H_triple: 0, w_t: 0, tall1_h: 0, tall2_h: 0, top_h: 0, mid_h: 0, bot_h: 0 };
+  }
+  const [r_t1, r_t2] = tallRatios;
+  const S_top = topRatios.reduce((s, r) => s + 1 / r, 0);
+  const S_mid = midRatios.reduce((s, r) => s + 1 / r, 0);
+  const S_bot = botRatios.reduce((s, r) => s + 1 / r, 0);
+  const K = 1 / S_top + 1 / S_mid + 1 / S_bot;
+  const n_top = topRatios.length;
+  const n_mid = midRatios.length;
+  const n_bot = botRatios.length;
+  const G = n_top / S_top + n_mid / S_mid + n_bot / S_bot;
+  const R = r_t1 + r_t2;
+
+  const w_t = (W * K - gap * (G - 1)) / (R + K);
+  const tall1_h = w_t * r_t1;
+  const tall2_h = w_t * r_t2;
+  const top_h = (W - w_t - n_top * gap) / S_top;
+  const mid_h = (W - w_t - n_mid * gap) / S_mid;
+  const bot_h = (W - w_t - n_bot * gap) / S_bot;
+  const H_triple = top_h + mid_h + bot_h + 2 * gap;
+
+  const valid = w_t > 0 && tall1_h > 0 && tall2_h > 0 && top_h > 0 && mid_h > 0 && bot_h > 0;
+  if (!valid) {
+    return { valid: false, H_triple: 0, w_t: 0, tall1_h: 0, tall2_h: 0, top_h: 0, mid_h: 0, bot_h: 0 };
+  }
+  return { valid, H_triple, w_t, tall1_h, tall2_h, top_h, mid_h, bot_h };
+}
+
 // Greedy: walk `order`. For each tall index, open a double band and pull
 // subsequent normal indices to fill upper/lower halves until adding the next
 // item would exceed `widthBudget` (estimated using `refH`). For each normal

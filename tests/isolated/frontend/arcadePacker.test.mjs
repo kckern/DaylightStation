@@ -1,5 +1,5 @@
 import { describe, test, expect } from '@jest/globals';
-import { packLayout, classifyItems, solveSingleBand, solveDoubleBand, buildBands, renderBands } from '../../../frontend/src/modules/Menu/arcadePacker.js';
+import { packLayout, classifyItems, solveSingleBand, solveDoubleBand, solveTripleBand, buildBands, renderBands } from '../../../frontend/src/modules/Menu/arcadePacker.js';
 
 // Deterministic LCG so attempts/shuffle/mirror are reproducible.
 function seededRandom(seed = 1) {
@@ -404,5 +404,75 @@ describe('packLayout (band-based)', () => {
 
   test('returns empty array on empty input', () => {
     expect(packLayout({ itemRatios: [], W: 1000, H: 600 })).toEqual([]);
+  });
+});
+
+describe('solveTripleBand', () => {
+  test('symmetric case: r_t1=r_t2=1.5, three rows of 2 squares, W=1000, gap=10', () => {
+    const out = solveTripleBand({
+      tallRatios: [1.5, 1.5],
+      topRatios: [1, 1], midRatios: [1, 1], botRatios: [1, 1],
+      W: 1000, gap: 10,
+    });
+    expect(out.valid).toBe(true);
+    expect(out.w_t).toBeCloseTo(328.89, 1);
+    expect(out.tall1_h).toBeCloseTo(493.33, 1);
+    expect(out.tall2_h).toBeCloseTo(493.33, 1);
+    expect(out.top_h).toBeCloseTo(325.56, 1);
+    expect(out.mid_h).toBeCloseTo(325.56, 1);
+    expect(out.bot_h).toBeCloseTo(325.56, 1);
+    expect(out.tall1_h + 10 + out.tall2_h).toBeCloseTo(out.H_triple, 2);
+  });
+
+  test('asymmetric tall ratios shift the seam off-center', () => {
+    const out = solveTripleBand({
+      tallRatios: [1.0, 2.0],
+      topRatios: [1, 1], midRatios: [1, 1], botRatios: [1, 1],
+      W: 1000, gap: 10,
+    });
+    expect(out.valid).toBe(true);
+    expect(out.w_t).toBeGreaterThan(0);
+    expect(out.tall2_h / out.tall1_h).toBeCloseTo(2.0, 3);
+    expect(out.tall1_h + 10 + out.tall2_h).toBeCloseTo(out.H_triple, 2);
+    const checkRow = (rowH, n) => out.w_t + 10 + n * rowH + (n - 1) * 10;
+    expect(checkRow(out.top_h, 2)).toBeCloseTo(1000, 2);
+    expect(checkRow(out.mid_h, 2)).toBeCloseTo(1000, 2);
+    expect(checkRow(out.bot_h, 2)).toBeCloseTo(1000, 2);
+  });
+
+  test('valid=false when any normal row is empty', () => {
+    const out1 = solveTripleBand({
+      tallRatios: [1.5, 1.5],
+      topRatios: [], midRatios: [1], botRatios: [1],
+      W: 1000, gap: 10,
+    });
+    expect(out1).toEqual({
+      valid: false, H_triple: 0, w_t: 0,
+      tall1_h: 0, tall2_h: 0, top_h: 0, mid_h: 0, bot_h: 0,
+    });
+    const out2 = solveTripleBand({
+      tallRatios: [1.5, 1.5],
+      topRatios: [1], midRatios: [], botRatios: [1],
+      W: 1000, gap: 10,
+    });
+    expect(out2.valid).toBe(false);
+    const out3 = solveTripleBand({
+      tallRatios: [1.5, 1.5],
+      topRatios: [1], midRatios: [1], botRatios: [],
+      W: 1000, gap: 10,
+    });
+    expect(out3.valid).toBe(false);
+  });
+
+  test('valid=false when computed dimensions are non-positive', () => {
+    const out = solveTripleBand({
+      tallRatios: [1.5, 1.5],
+      topRatios: [1, 1], midRatios: [1, 1], botRatios: [1, 1],
+      W: 100, gap: 60,
+    });
+    expect(out).toEqual({
+      valid: false, H_triple: 0, w_t: 0,
+      tall1_h: 0, tall2_h: 0, top_h: 0, mid_h: 0, bot_h: 0,
+    });
   });
 });
