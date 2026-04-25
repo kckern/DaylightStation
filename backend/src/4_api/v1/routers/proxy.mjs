@@ -318,9 +318,10 @@ export function createProxyRouter(config) {
 
   /**
    * GET /proxy/retroarch/thumbnail/*
-   * Proxy RetroArch game thumbnails from X-plore WiFi File Manager.
-   * Path: /proxy/retroarch/thumbnail/{consoleId}/{slug}.png
-   * Fetches from X-plore: {baseUrl}{thumbnailsPath}/{path}?cmd=file
+   * Proxy RetroArch game thumbnails from X-plore WiFi File Manager,
+   * with a permanent on-disk cache. First request per thumbnail fetches
+   * from X-plore (with one retry); subsequent requests stream from disk.
+   * Failures return 503 (no-store) so the client can retry.
    */
   router.get('/retroarch/thumbnail/*', asyncHandler(async (req, res) => {
     if (!retroarchProxy) {
@@ -332,33 +333,67 @@ export function createProxyRouter(config) {
       return res.status(400).json({ error: 'No thumbnail path specified' });
     }
 
-    // Security: reject path traversal
     if (thumbPath.includes('..')) {
       return res.status(403).json({ error: 'Path traversal not allowed' });
     }
 
-    const { baseUrl, thumbnailsPath } = retroarchProxy;
-    const xploreUrl = `${baseUrl}${thumbnailsPath}/${thumbPath}`;
+    const { baseUrl, thumbnailsPath, retryDelayMs = 1500 } = retroarchProxy;
 
-    try {
-      const response = await fetch(xploreUrl + '?cmd=file', {
-        signal: AbortSignal.timeout(10000),
-      });
+    const cacheFile = mediaBasePath
+      ? nodePath.join(mediaBasePath, 'img', 'retroarch', 'thumbs', thumbPath)
+      : null;
 
-      if (!response.ok) {
-        return sendPlaceholderSvg(res);
-      }
-
+    if (cacheFile && fs.existsSync(cacheFile)) {
+      const ext = nodePath.extname(cacheFile).toLowerCase();
+      const mimeType = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png';
       res.set({
-        'Content-Type': response.headers.get('content-type') || 'image/png',
-        'Cache-Control': 'public, max-age=86400',
+        'Content-Type': mimeType,
+        'Cache-Control': 'public, max-age=31536000, immutable',
+        'X-Cache': 'HIT',
       });
-      const buffer = Buffer.from(await response.arrayBuffer());
-      res.send(buffer);
-    } catch (err) {
-      logger.warn?.('proxy.retroarch.thumbnail.error', { path: thumbPath, error: err.message });
-      sendPlaceholderSvg(res);
+      return fs.createReadStream(cacheFile).pipe(res);
     }
+
+    const xploreUrl = `${baseUrl}${thumbnailsPath}/${thumbPath}?cmd=file`;
+    const attemptFetch = async () => {
+      const response = await fetch(xploreUrl, { signal: AbortSignal.timeout(10000) });
+      if (!response.ok) throw new Error(`xplore HTTP ${response.status}`);
+      return {
+        contentType: response.headers.get('content-type') || 'image/png',
+        buffer: Buffer.from(await response.arrayBuffer()),
+      };
+    };
+
+    let result;
+    try {
+      result = await attemptFetch();
+    } catch (firstErr) {
+      logger.warn?.('proxy.retroarch.thumbnail.retry', { path: thumbPath, error: firstErr.message });
+      try {
+        await new Promise(r => setTimeout(r, retryDelayMs));
+        result = await attemptFetch();
+      } catch (secondErr) {
+        logger.warn?.('proxy.retroarch.thumbnail.failed', { path: thumbPath, error: secondErr.message });
+        res.set('Cache-Control', 'no-store');
+        return res.status(503).json({ error: 'Thumbnail upstream unavailable' });
+      }
+    }
+
+    if (cacheFile) {
+      try {
+        await fs.promises.mkdir(nodePath.dirname(cacheFile), { recursive: true });
+        await fs.promises.writeFile(cacheFile, result.buffer);
+      } catch (writeErr) {
+        logger.warn?.('proxy.retroarch.thumbnail.cacheWrite', { path: thumbPath, error: writeErr.message });
+      }
+    }
+
+    res.set({
+      'Content-Type': result.contentType,
+      'Cache-Control': 'public, max-age=31536000, immutable',
+      'X-Cache': 'MISS',
+    });
+    res.send(result.buffer);
   }));
 
   /**
