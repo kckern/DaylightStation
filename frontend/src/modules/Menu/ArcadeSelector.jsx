@@ -9,6 +9,7 @@ import React, {
 import { DaylightMediaPath, ContentDisplayUrl } from "../../lib/api.mjs";
 import MenuNavigationContext from "../../context/MenuNavigationContext";
 import getLogger from "../../lib/logging/Logger.js";
+import { getActiveGamepads } from "../../screen-framework/input/gamepadFiltering.js";
 import "./ArcadeSelector.scss";
 
 /**
@@ -266,14 +267,19 @@ export function ArcadeSelector({
     }
 
     function poll() {
-      const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+      const gamepads = getActiveGamepads();
       const s = gamepadStateRef.current;
 
       for (const gp of gamepads) {
-        if (!gp) continue;
         const id = gp.index;
-        if (!prevButtons[id]) prevButtons[id] = new Array(gp.buttons.length).fill(false);
-        if (!prevAxes[id]) prevAxes[id] = new Array(gp.axes.length).fill(0);
+        // Seed from live state on first observation: a button held when this
+        // component mounts (e.g. user is still holding A from the previous
+        // menu's confirm) must NOT register as a fresh press.
+        if (!prevButtons[id]) {
+          prevButtons[id] = gp.buttons.map(b => !!b?.pressed);
+          prevAxes[id] = Array.from(gp.axes);
+          continue; // skip edge detection this frame; state recorded.
+        }
 
         const pressed = (i) => gp.buttons[i]?.pressed;
         const wasPressed = (i) => prevButtons[id][i];
