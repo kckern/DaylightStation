@@ -234,4 +234,20 @@ describe('buildBands', () => {
     expect(bands[0].type).toBe('single');
     expect(bands[0].items).toEqual([0]);
   });
+
+  test('alternation puts indices into upper/lower in interleaved order', () => {
+    // tall at 0, then 4 normals — 1st goes upper, 2nd lower, 3rd upper, 4th lower.
+    const bands = buildBands({
+      itemRatios: [1.5, 1, 1, 1, 1],
+      order: [0, 1, 2, 3, 4],
+      tallThreshold: 1.4,
+      refH: 50,
+      W: 1000,
+      gap: 10,
+      minPerRow: 1,
+    });
+    const d = bands.find(b => b.type === 'double');
+    expect(d.upper).toEqual([1, 3]);
+    expect(d.lower).toEqual([2, 4]);
+  });
 });
