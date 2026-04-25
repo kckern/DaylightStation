@@ -13,13 +13,16 @@ function logger() {
 // Standard indices for A (0) and the d-pad (12-15) — verified via
 // gamepad.button-pressed logs. See plan: gamepad-input-reliability.
 const BUTTON_MAP = {
-  0:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // A — confirm
-  1:  { key: 'Escape',     action: 'escape',   payload: {},                        repeats: false }, // B — back
-  2:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // X — also confirm (any face button confirms)
-  3:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // Y — also confirm
+  // Face buttons all confirm (arcade-style any-button-selects).
+  0:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // A
+  1:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // B
+  2:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // X
+  3:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // Y
+  // Back: Select button + R1 + L2. (Start still confirms; L1 still confirms.)
   4:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // L1
-  5:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // R1
-  8:  { key: 'Escape',     action: 'escape',   payload: {},                        repeats: false }, // Select
+  5:  { key: 'Escape',     action: 'escape',   payload: {},                        repeats: false }, // R1 — back
+  6:  { key: 'Escape',     action: 'escape',   payload: {},                        repeats: false }, // L2 — back
+  8:  { key: 'Escape',     action: 'escape',   payload: {},                        repeats: false }, // Select — back
   9:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // Start
   12: { key: 'ArrowUp',    action: 'navigate',  payload: { direction: 'up' },      repeats: true },
   13: { key: 'ArrowDown',  action: 'navigate',  payload: { direction: 'down' },    repeats: true },
