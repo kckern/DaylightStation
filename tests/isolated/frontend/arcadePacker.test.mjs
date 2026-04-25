@@ -358,6 +358,24 @@ describe('buildBands', () => {
     }).sort();
     expect(allIndices).toEqual([0, 1, 2, 3]);
   });
+
+  test('does not mutate the caller\'s order array (explicit mode)', () => {
+    const itemRatios = [1.5, 1.5, 1, 1, 1, 1, 1, 1];
+    const order = [0, 1, 2, 3, 4, 5, 6, 7];
+    const orderCopy = order.slice();
+    buildBands({
+      itemRatios,
+      order,
+      tallThreshold: 1.1,
+      refH: 200,
+      W: 1000,
+      gap: 10,
+      minPerRow: 1,
+      tripleCount: 1,
+      doubleCount: 0,
+    });
+    expect(order).toEqual(orderCopy);
+  });
 });
 
 describe('renderBands', () => {
