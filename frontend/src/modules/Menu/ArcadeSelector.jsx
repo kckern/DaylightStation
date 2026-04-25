@@ -297,11 +297,9 @@ export function ArcadeSelector({
     return () => logger.debug("unmounted");
   }, [logger, items.length]);
 
-  // --- Navmap layout: justified rows with area-conscious packing ---
-  // Tiles are packed into rows where each row fills the container width exactly.
-  // Different row counts are tried to find the best vertical fill.
-  // Sorting by ratio (with jitter) groups similar-sized tiles together,
-  // which minimizes area variance within rows.
+  // --- Navmap layout: delegated to packLayout (see arcadePacker.js) ---
+  // Justified rows where each row fills the container width exactly. Tall
+  // (portrait) tiles can span two adjacent rows via the band-based pipeline.
   const itemRatios = useMemo(() =>
     items.map(item => item.thumbRatio || item.metadata?.thumbRatio || 0.75),
     [items]
