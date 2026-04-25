@@ -125,12 +125,22 @@ export function ScreenActionHandler({ actions = {} }) {
   }, [showOverlay, dismissOverlay, isMediaDuplicate]);
 
   // --- Queue ops (envelope command=queue) ---
-  // For `op: play-now`, mount the Player with the contentId (same as media:queue).
-  // Other ops (add, play-next, remove, clear, jump, reorder) will be wired when
-  // the Media App ships queue manipulation UI.
+  // --- Queue ops (envelope command=queue) ---
+  // Both play-now and play-next share the same active-vs-idle routing.
+  // Active player → dispatch event; the running Player handles in-place
+  // swap (play-now) or on-deck push (play-next), preserving queue state.
+  // Idle player → mount a fresh Player overlay.
   const handleMediaQueueOp = useCallback((payload) => {
     const op = payload?.op;
-    if (op === 'play-now') {
+
+    if (op === 'play-now' || op === 'play-next') {
+      const playerActive = !!document.querySelector(
+        '.audio-player, .video-player audio, .video-player video, dash-video'
+      );
+      if (playerActive) {
+        window.dispatchEvent(new CustomEvent('player:queue-op', { detail: { op, ...payload } }));
+        return;
+      }
       if (isMediaDuplicate(payload.contentId)) return;
       dismissOverlay();
       showOverlay(Player, {
@@ -139,6 +149,7 @@ export function ScreenActionHandler({ actions = {} }) {
       });
       return;
     }
+
     logger().debug('media.queue-op.unhandled', { op, contentId: payload?.contentId });
   }, [showOverlay, dismissOverlay, isMediaDuplicate]);
 

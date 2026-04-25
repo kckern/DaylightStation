@@ -16,6 +16,9 @@ import { resolveMediaIdentity } from './utils/mediaIdentity.js';
 import { useMediaTransportAdapter } from './hooks/transport/useMediaTransportAdapter.js';
 import { guardedReload } from '../../lib/reloadGuard.js';
 import { shouldSkipResilienceReload } from './lib/shouldSkipResilienceReload.js';
+import { OnDeckCard } from './components/OnDeckCard.jsx';
+import { usePlayerConfig } from './hooks/usePlayerConfig.js';
+import { DaylightAPI } from '../../lib/api.mjs';
 
 const REMOUNT_BACKOFF_BASE_MS = 1000;
 const REMOUNT_BACKOFF_FACTOR = 1.5;
@@ -113,8 +116,14 @@ const Player = forwardRef(function Player(props, ref) {
     playbackRate: queuePlaybackRate,
     playQueue,
     advance,
-    queueAudio
+    queueAudio,
+    onDeck,
+    onDeckFlashKey,
+    pushOnDeck,
+    flashOnDeck,
+    playNow,
   } = useQueueController({ play, queue, clear, shuffle: props?.shuffle });
+  const { onDeck: onDeckCfg } = usePlayerConfig();
 
   const hasNextQueueItem = useMemo(() => (
     isQueue
@@ -861,6 +870,61 @@ const Player = forwardRef(function Player(props, ref) {
 
   useEffect(() => () => clearRemountTimer(), [clearRemountTimer]);
 
+  // --- On-deck: handle player:queue-op events from ScreenActionHandler ---
+  useEffect(() => {
+    const handleQueueOp = async (e) => {
+      const { op, contentId } = e.detail || {};
+      if (!contentId) return;
+      if (op !== 'play-now' && op !== 'play-next') return;
+
+      let info;
+      try {
+        info = await DaylightAPI(`api/v1/play/${contentId}`);
+      } catch (err) {
+        // Without a mediaUrl we can't safely play. Bail out rather than push
+        // a half-built item that will fail at the renderer.
+        return;
+      }
+      const item = {
+        ...info,
+        id: info.id || info.contentId || contentId,
+        contentId,
+        thumbnail: info.thumbnail || `/api/v1/display/${contentId}`,
+        title: info.title || contentId,
+      };
+
+      if (op === 'play-now') {
+        playNow(item);
+        return;
+      }
+
+      // op === 'play-next' below
+
+      // Dedup: same content as currently-playing → flash, no replace
+      const current = playQueue[0];
+      if (current && (current.contentId === contentId || current.id === contentId)) {
+        flashOnDeck();
+        return;
+      }
+      // Dedup: same content as on-deck → flash, no replace
+      if (onDeck && (onDeck.contentId === contentId || onDeck.id === contentId)) {
+        flashOnDeck();
+        return;
+      }
+      pushOnDeck(item, { displaceToQueue: !!onDeckCfg?.displace_to_queue });
+
+      // Preempt window: if current item has been playing < preempt_seconds, advance immediately
+      const el = exposedMediaRef.current;
+      const elapsed = el?.currentTime ?? 0;
+      if (Number.isFinite(elapsed) && elapsed < (onDeckCfg?.preempt_seconds || 0)) {
+        advance();
+      }
+    };
+
+    window.addEventListener('player:queue-op', handleQueueOp);
+    return () => window.removeEventListener('player:queue-op', handleQueueOp);
+  }, [playQueue, onDeck, onDeckCfg, advance, pushOnDeck, flashOnDeck, playNow]);
+
   const suppressOverlaysForBlackout = effectiveShader === 'blackout';
 
   const overlayElements = (overlayProps && !isSelfContainedFormat) ? (
@@ -981,6 +1045,7 @@ const Player = forwardRef(function Player(props, ref) {
       )}
       {overlayElements}
       {mainContent}
+      <OnDeckCard key={onDeckFlashKey} item={onDeck} flashKey={onDeckFlashKey} />
     </div>
   );
 });

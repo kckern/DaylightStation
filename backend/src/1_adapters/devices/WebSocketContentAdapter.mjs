@@ -10,6 +10,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { buildCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
+import { isLoadContentQueueOp } from '#shared-contracts/media/commands.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { CONTENT_ID_KEYS, resolveContentId } from '#apps/devices/contentIdKeys.mjs';
 
@@ -66,8 +67,13 @@ export class WebSocketContentAdapter {
     }
 
     const { contentId, resolvedKey } = resolved;
+    // op and contentId are stripped from `options` above; the canonical values
+    // here cannot be clobbered by stray query keys.
+    const requestedOp = isLoadContentQueueOp(query.op) ? query.op : 'play-now';
+
     const options = { ...query };
     delete options[resolvedKey];
+    delete options.op; // strip — we set canonical op below
 
     try {
       const commandId = randomUUID();
@@ -75,9 +81,7 @@ export class WebSocketContentAdapter {
         targetDevice: this.#deviceId,
         command: 'queue',
         commandId,
-        // Spread options FIRST so a caller-supplied `op` or `contentId` can't
-        // clobber the canonical values we set below.
-        params: { ...options, op: 'play-now', contentId },
+        params: { ...options, op: requestedOp, contentId },
       });
 
       this.#logger.info?.('websocket.load', {
