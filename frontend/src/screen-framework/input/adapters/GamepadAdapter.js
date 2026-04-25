@@ -1,5 +1,6 @@
 // frontend/src/screen-framework/input/adapters/GamepadAdapter.js
 import getLogger from '../../../lib/logging/Logger.js';
+import { getActiveGamepads } from '../gamepadFiltering.js';
 
 let _logger;
 function logger() {
@@ -88,14 +89,15 @@ export class GamepadAdapter {
   }
 
   _findGamepad() {
-    const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
-    if (this.preferredIndex !== null && gamepads[this.preferredIndex]) {
-      return gamepads[this.preferredIndex];
+    const gamepads = getActiveGamepads();
+    if (this.preferredIndex !== null) {
+      // preferredIndex refers to the raw navigator slot; honour it only if
+      // the slot corresponds to a real gamepad after filtering.
+      const all = navigator.getGamepads ? navigator.getGamepads() : [];
+      const preferred = all[this.preferredIndex];
+      if (preferred && gamepads.find(g => g.id === preferred.id)) return preferred;
     }
-    for (const gp of gamepads) {
-      if (gp) return gp;
-    }
-    return null;
+    return gamepads[0] || null;
   }
 
   _startPolling() {
