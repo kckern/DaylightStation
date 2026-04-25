@@ -14,6 +14,8 @@
  * @module domains/trigger/TriggerConfig
  */
 
+import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
+
 const ENTRIES_KEY_BY_TYPE = {
   nfc: 'tags',
   barcode: 'codes',
@@ -24,34 +26,38 @@ function isPlainObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
 
-export function parseTriggerConfig(raw, type = 'nfc') {
+export function parseTriggerConfig(raw, type) {
+  if (typeof type !== 'string' || type.length === 0) {
+    throw new ValidationError('type is required', { code: 'MISSING_TYPE' });
+  }
+
   if (!raw) return {};
   if (!isPlainObject(raw)) {
-    throw new Error('trigger config must be an object');
+    throw new ValidationError('trigger config must be an object', { code: 'INVALID_CONFIG_ROOT' });
   }
 
   const entriesKey = ENTRIES_KEY_BY_TYPE[type];
   if (!entriesKey) {
-    throw new Error(`Unknown trigger type: ${type}`);
+    throw new ValidationError(`Unknown trigger type: ${type}`, { code: 'UNKNOWN_TRIGGER_TYPE', field: type });
   }
 
   const out = {};
   for (const [location, locConfig] of Object.entries(raw)) {
     if (!isPlainObject(locConfig)) {
-      throw new Error(`location "${location}" must be an object`);
+      throw new ValidationError(`location "${location}" must be an object`, { code: 'INVALID_LOCATION', field: location });
     }
     if (typeof locConfig.target !== 'string' || locConfig.target.length === 0) {
-      throw new Error(`location "${location}" must declare a target device (string)`);
+      throw new ValidationError(`location "${location}" must declare a target device (string)`, { code: 'MISSING_TARGET', field: location });
     }
 
     const entries = {};
     const rawEntries = locConfig[entriesKey] || {};
     if (!isPlainObject(rawEntries)) {
-      throw new Error(`location "${location}" ${entriesKey} must be an object`);
+      throw new ValidationError(`location "${location}" ${entriesKey} must be an object`, { code: 'INVALID_ENTRIES', field: location });
     }
     for (const [value, entry] of Object.entries(rawEntries)) {
       if (!isPlainObject(entry)) {
-        throw new Error(`${entriesKey.slice(0, -1)} "${value}" must be an object`);
+        throw new ValidationError(`${entriesKey.slice(0, -1)} "${value}" must be an object`, { code: 'INVALID_ENTRY', field: value });
       }
       entries[value.toLowerCase()] = entry;
     }

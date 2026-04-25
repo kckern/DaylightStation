@@ -4,7 +4,12 @@
  * @module domains/trigger/TriggerIntent
  */
 
-const RESERVED_KEYS = new Set([
+import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
+
+/**
+ * Keys reserved for first-class intent fields. Action handlers consume these by name; any other tag-level key flows into intent.params.
+ */
+export const RESERVED_KEYS = new Set([
   'action', 'target', 'content',
   'scene', 'service', 'entity', 'data',
 ]);
@@ -19,8 +24,8 @@ function expandShorthand(valueEntry, contentIdResolver) {
 }
 
 export function resolveIntent(locationConfig, valueEntry, contentIdResolver) {
-  if (!locationConfig) throw new Error('locationConfig is required');
-  if (!valueEntry) throw new Error('valueEntry is required');
+  if (!locationConfig) throw new ValidationError('locationConfig is required', { code: 'MISSING_LOCATION_CONFIG' });
+  if (!valueEntry) throw new ValidationError('valueEntry is required', { code: 'MISSING_VALUE_ENTRY' });
 
   const action = valueEntry.action ?? locationConfig.action;
   const target = valueEntry.target ?? locationConfig.target;
