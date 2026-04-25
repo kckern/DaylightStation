@@ -93,7 +93,7 @@ export function createApiRouter(config) {
     '/agents': 'agents',
     '/dev': 'dev',
     '/device': 'device',
-    '/nfc': 'nfc',
+    '/trigger': 'trigger',
     '/canvas': 'canvas',
     '/auth': 'auth',
     '/admin': 'admin',
