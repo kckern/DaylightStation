@@ -9,6 +9,7 @@
 export const CONTENT_ID_KEYS = Object.freeze([
   'queue',
   'play',
+  'play-next',
   'plex',
   'hymn',
   'primary',
