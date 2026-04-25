@@ -161,7 +161,12 @@ export function packLayout({
   return bestPlacements;
 }
 
-export const DEFAULT_TALL_THRESHOLD = 1.4;
+// Anything taller than a square (h/w > 1.1, with a small buffer for thumbs
+// that measure slightly off from a true square) is treated as a "tall" tile
+// and becomes a candidate for spanning two rows. Marginal-portrait items like
+// Mario Tennis (~1.398) and Mario Kart Double Dash (~1.4) stand out visually
+// against landscape neighbors and benefit from the span treatment.
+export const DEFAULT_TALL_THRESHOLD = 1.1;
 
 export function classifyItems(itemRatios, threshold = DEFAULT_TALL_THRESHOLD) {
   const tallIndices = [];
@@ -350,6 +355,11 @@ export function renderBands({ bands, itemRatios, W, H, gap }) {
 
   const placements = [];
   let y = scale === 1 ? (H - totalH) / 2 : 0;
+  // Alternate the side that holds the tall tile across consecutive double
+  // bands so spans don't all cluster on one edge. First double goes left,
+  // second goes right, third left, etc. (Random mirror in packLayout adds
+  // another coin-flip on top of this, so the visual entropy compounds.)
+  let doubleBandIndex = 0;
 
   for (const s of solved) {
     if (s.band.type === 'single') {
@@ -370,6 +380,8 @@ export function renderBands({ bands, itemRatios, W, H, gap }) {
       const w_t = s.w_t * scale;
       const innerGap = gap * scale; // intra-band gaps scale uniformly with rows
       const tallIdx = s.band.talls[0];
+      const tallOnLeft = doubleBandIndex % 2 === 0;
+      doubleBandIndex++;
 
       // After scaling, the band's total width is scale*W. Center it horizontally
       // when scale < 1 (matches the single-band horizontal-centering behavior).
@@ -382,18 +394,25 @@ export function renderBands({ bands, itemRatios, W, H, gap }) {
       const bandW = Math.max(upperRowW, lowerRowW);
       const xOffset = scale < 1 ? (W - bandW) / 2 : 0;
 
-      // Tall tile on the left, then non-tall tiles fill the rest.
+      // Tall on left or right, with non-tall row tiles filling the opposite
+      // side. Geometry is symmetric so the math is identical either way.
+      const tallX = tallOnLeft ? xOffset : xOffset + bandW - w_t;
       placements.push({
-        idx: tallIdx, x: xOffset, y, w: w_t, h: upper_h + innerGap + lower_h,
+        idx: tallIdx, x: tallX, y, w: w_t, h: upper_h + innerGap + lower_h,
       });
 
-      let xu = xOffset + w_t + innerGap;
+      // Non-tall tiles start where the tall ISN'T. If tall is on the left,
+      // they begin at tall.right + innerGap. If tall is on the right, they
+      // begin at xOffset (the band's left edge).
+      const nonTallStartX = tallOnLeft ? xOffset + w_t + innerGap : xOffset;
+
+      let xu = nonTallStartX;
       for (const idx of s.band.upper) {
         const w = upper_h / itemRatios[idx];
         placements.push({ idx, x: xu, y, w, h: upper_h });
         xu += w + innerGap;
       }
-      let xl = xOffset + w_t + innerGap;
+      let xl = nonTallStartX;
       const yLower = y + upper_h + innerGap;
       for (const idx of s.band.lower) {
         const w = lower_h / itemRatios[idx];

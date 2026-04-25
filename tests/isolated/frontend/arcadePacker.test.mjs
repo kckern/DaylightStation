@@ -15,10 +15,15 @@ describe('packLayout (legacy parity)', () => {
     expect(packLayout({ itemRatios: [], W: 1000, H: 600 })).toEqual([]);
   });
 
+  // These three tests exercise the LEGACY single-band-only path. They pin
+  // tallThreshold above any input ratio so no double bands are ever formed,
+  // matching the pre-feature behavior they were originally written against.
+  const NO_TALLS = { tallThreshold: 999 };
+
   test('places every item exactly once', () => {
     const itemRatios = [1.4, 1.4, 0.7, 1.0, 1.4, 0.8, 1.0, 1.4];
     const placements = packLayout({
-      itemRatios, W: 1000, H: 1000, random: seededRandom(42),
+      itemRatios, W: 1000, H: 600, random: seededRandom(42), ...NO_TALLS,
     });
     expect(placements).toHaveLength(itemRatios.length);
     const idxs = placements.map(p => p.idx).sort((a, b) => a - b);
@@ -28,7 +33,7 @@ describe('packLayout (legacy parity)', () => {
   test('every tile has positive width and height', () => {
     const itemRatios = [1.4, 1.4, 0.7, 1.0, 1.4, 0.8, 1.0, 1.4];
     const placements = packLayout({
-      itemRatios, W: 1000, H: 600, random: seededRandom(7),
+      itemRatios, W: 1000, H: 600, random: seededRandom(7), ...NO_TALLS,
     });
     for (const p of placements) {
       expect(p.w).toBeGreaterThan(0);
@@ -39,7 +44,7 @@ describe('packLayout (legacy parity)', () => {
   test('respects each tile\'s ratio (h/w within 1% of input ratio)', () => {
     const itemRatios = [1.4, 1.4, 0.7, 1.0, 1.4, 0.8, 1.0, 1.4];
     const placements = packLayout({
-      itemRatios, W: 1000, H: 600, random: seededRandom(5),
+      itemRatios, W: 1000, H: 600, random: seededRandom(5), ...NO_TALLS,
     });
     for (const p of placements) {
       const observed = p.h / p.w;
@@ -50,11 +55,12 @@ describe('packLayout (legacy parity)', () => {
 });
 
 describe('classifyItems', () => {
-  test('splits indices by ratio threshold (default 1.4)', () => {
+  test('splits indices by ratio threshold (default 1.1 — taller-than-square + buffer)', () => {
     const ratios = [0.7, 1.0, 1.4, 1.5, 2.0, 0.5];
     const { tallIndices, normalIndices } = classifyItems(ratios);
-    expect(tallIndices).toEqual([3, 4]);
-    expect(normalIndices).toEqual([0, 1, 2, 5]);
+    // Default threshold is 1.1 (exclusive), so 1.0 stays normal; 1.4/1.5/2.0 are tall.
+    expect(tallIndices).toEqual([2, 3, 4]);
+    expect(normalIndices).toEqual([0, 1, 5]);
   });
 
   test('uses custom threshold when provided', () => {
@@ -319,6 +325,23 @@ describe('renderBands', () => {
     const lowerT = result.placements.find(p => p.idx === 3);
     expect(tall.y).toBeCloseTo(upperT.y, 3);
     expect(tall.y + tall.h).toBeCloseTo(lowerT.y + lowerT.h, 3);
+  });
+
+  test('alternates tall-tile side across consecutive double bands', () => {
+    // Two double bands. First should put tall on LEFT, second on RIGHT.
+    const bands = [
+      { type: 'double', talls: [0], upper: [1, 2], lower: [3, 4] },
+      { type: 'double', talls: [5], upper: [6, 7], lower: [8, 9] },
+    ];
+    const itemRatios = [2, 1, 1, 1, 1, 2, 1, 1, 1, 1];
+    const result = renderBands({ bands, itemRatios, W: 1000, H: 1500, gap: 10 });
+    expect(result.valid).toBe(true);
+    const tall1 = result.placements.find(p => p.idx === 0);
+    const tall2 = result.placements.find(p => p.idx === 5);
+    // First tall on the left edge.
+    expect(tall1.x).toBeCloseTo(0, 1);
+    // Second tall on the right edge: tall2.x + tall2.w ≈ W.
+    expect(tall2.x + tall2.w).toBeCloseTo(1000, 1);
   });
 });
 
