@@ -28,7 +28,7 @@ export class YamlTriggerConfigRepository {
   #writeChain = Promise.resolve();
 
   constructor({ saveFile } = {}) {
-    this.#saveFile = saveFile || null;
+    this.#saveFile = typeof saveFile === 'function' ? saveFile : null;
   }
 
   /**
