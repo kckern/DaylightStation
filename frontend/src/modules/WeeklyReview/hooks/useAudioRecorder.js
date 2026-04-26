@@ -83,6 +83,7 @@ export function useAudioRecorder({ onChunk }) {
   const [duration, setDuration] = useState(0);
   const [micLevel, setMicLevel] = useState(0);
   const [silenceWarning, setSilenceWarning] = useState(false);
+  const [firstAudibleFrameSeen, setFirstAudibleFrameSeen] = useState(false);
   const [error, setError] = useState(null);
 
   const mediaRecorderRef = useRef(null);
@@ -96,6 +97,7 @@ export function useAudioRecorder({ onChunk }) {
   const silenceStartRef = useRef(null);
   const peakLevelRef = useRef(0);
   const seqRef = useRef(0);
+  const firstAudibleFrameSeenRef = useRef(false);
 
   const cleanup = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -140,6 +142,11 @@ export function useAudioRecorder({ onChunk }) {
         const db = rms > 0 ? 20 * Math.log10(rms) : -60;
         const normalized = Math.max(0, Math.min(1, (db + 60) / 60));
         if (normalized > peakLevelRef.current) peakLevelRef.current = normalized;
+        if (normalized > 0.02 && !firstAudibleFrameSeenRef.current) {
+          firstAudibleFrameSeenRef.current = true;
+          setFirstAudibleFrameSeen(true);
+          logger().info('recorder.first-audible-frame', { normalized });
+        }
 
         const now = performance.now();
         if (now - lastLevelAtRef.current >= LEVEL_SAMPLE_INTERVAL_MS) {
@@ -171,6 +178,8 @@ export function useAudioRecorder({ onChunk }) {
     try {
       setError(null);
       setSilenceWarning(false);
+      firstAudibleFrameSeenRef.current = false;
+      setFirstAudibleFrameSeen(false);
       seqRef.current = 0;
 
       let stream;
@@ -237,5 +246,5 @@ export function useAudioRecorder({ onChunk }) {
     }
   }, []);
 
-  return { isRecording, duration, micLevel, silenceWarning, error, startRecording, stopRecording };
+  return { isRecording, duration, micLevel, silenceWarning, firstAudibleFrameSeen, error, startRecording, stopRecording };
 }
