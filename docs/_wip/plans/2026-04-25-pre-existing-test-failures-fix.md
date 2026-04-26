@@ -907,7 +907,15 @@ Post-Phase-3: backend  : 1 failed /  846 passed  (847 total,   1 file failed)  f
               ledger instead. Net = 3 fixes for 4 originally-failing tests
               (the plan's "2 manifest tests" was actually 1 — the second
               "Local Media" reference in AdapterRegistry.test.mjs was already
-              correct; that file fails for unrelated @jest/globals reasons).
+              correct; that file fails for an unrelated reason —
+              `adaptersRoot is required` thrown from the constructor when
+              the test passes no adaptersRoot — Phase 6 territory).
+              Phase-6 residuals surfaced while reviewing Phase 3:
+                - tests/isolated/.../filesystem/manifest.test.mjs still has
+                  1 unrelated failure (`Cannot find module 'music-metadata'`
+                  from the adapter-factory test). Not a Phase 3 regression.
+                - tests/isolated/assembly/system/registries/AdapterRegistry.test.mjs
+                  needs `adaptersRoot` to be passed in. Phase 6 triage.
 Post-Phase-4: ??? failed   # frontend logic fixes
 Post-Phase-5: ??? failed   # PiP implementation
 Post-Phase-6: 0 failed     # GOAL
