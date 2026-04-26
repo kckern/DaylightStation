@@ -41,11 +41,6 @@ export function validateConfig(config, dataDir) {
     validateObject(config.system, configSchema.system.properties, 'system', errors);
   }
 
-  // Validate secrets section (optional - may be loaded from system/auth/*.yml instead)
-  if (config.secrets && Object.keys(config.secrets).length > 0) {
-    validateObject(config.secrets, configSchema.secrets.properties, 'secrets', errors);
-  }
-
   // Validate households
   if (!config.households || Object.keys(config.households).length === 0) {
     errors.push({ path: 'households', message: 'at least one household required' });

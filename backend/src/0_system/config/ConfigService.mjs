@@ -12,9 +12,11 @@ import { loadYaml } from '#system/utils/FileIO.mjs';
 
 export class ConfigService {
   #config;
+  #secretsHandler;
 
-  constructor(config) {
+  constructor(config, secretsHandler = null) {
     this.#config = Object.freeze(config);
+    this.#secretsHandler = secretsHandler;
   }
 
   // ─── Secrets ───────────────────────────────────────────────
@@ -25,11 +27,13 @@ export class ConfigService {
    * @deprecated Use getSystemAuth(platform, key) directly
    */
   getSecret(key) {
-    // Check legacy secrets.yml first (backwards compat)
-    const legacyValue = this.#config.secrets?.[key];
-    if (legacyValue) return legacyValue;
+    // Direct lookup: secretsHandler (production) or inline config (tests)
+    const direct = this.#secretsHandler
+      ? this.#secretsHandler.getSecret(key)
+      : this.#config.secrets?.[key];
+    if (direct) return direct;
 
-    // Map legacy keys to systemAuth structure
+    // Map legacy SCREAMING_CASE keys to new systemAuth structure
     const mapping = {
       OPENAI_API_KEY: ['openai', 'api_key'],
       ANTHROPIC_API_KEY: ['anthropic', 'api_key'],
@@ -130,11 +134,21 @@ export class ConfigService {
   getUserAuth(service, username = null) {
     const user = username ?? this.getHeadOfHousehold();
     if (!user) return null;
+
+    if (this.#secretsHandler) {
+      return this.#secretsHandler.getUserAuth(user, service);
+    }
+    // Fallback for tests
     return this.#config.auth?.users?.[user]?.[service] ?? null;
   }
 
   getHouseholdAuth(service, householdId = null) {
     const hid = householdId ?? this.getDefaultHouseholdId();
+
+    if (this.#secretsHandler) {
+      return this.#secretsHandler.getHouseholdAuth(hid, service);
+    }
+    // Fallback for tests
     return this.#config.auth?.households?.[hid]?.[service] ?? null;
   }
 
@@ -453,6 +467,10 @@ export class ConfigService {
    * @returns {string|null} The auth token/credential
    */
   getSystemAuth(platform, key) {
+    if (this.#secretsHandler) {
+      return this.#secretsHandler.getSystemAuth(platform, key);
+    }
+    // Fallback for tests
     return this.#config.systemAuth?.[platform]?.[key] ?? null;
   }
 

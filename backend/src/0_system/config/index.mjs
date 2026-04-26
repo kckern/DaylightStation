@@ -17,24 +17,58 @@
  */
 
 import { ConfigService } from './ConfigService.mjs';
-import { loadConfig } from './configLoader.mjs';
+import { loadConfig, loadSystemConfig } from './configLoader.mjs';
 import { validateConfig, ConfigValidationError } from './configValidator.mjs';
 import { DataService } from './DataService.mjs';
+import { SecretsHandler, YamlSecretsProvider, EncryptedYamlSecretsProvider, VaultSecretsProvider } from '../secrets/index.mjs';
 
 let instance = null;
+
+/**
+ * Create secrets provider based on system config.
+ * Provider type configured in system.yml: secrets.provider
+ *
+ * @param {string} dataDir - Path to data directory
+ * @param {object} systemConfig - Loaded system config
+ * @returns {import('../secrets/ISecretsProvider.mjs').ISecretsProvider}
+ */
+function createSecretsProvider(dataDir, systemConfig) {
+  const providerType = systemConfig.secrets?.provider ?? 'yaml';
+
+  switch (providerType) {
+    case 'yaml':
+      return new YamlSecretsProvider(dataDir);
+    case 'encrypted':
+      return new EncryptedYamlSecretsProvider(dataDir);
+    case 'vault':
+      return new VaultSecretsProvider(systemConfig.secrets?.vault);
+    default:
+      throw new Error(`Unknown secrets provider: ${providerType}`);
+  }
+}
 
 /**
  * Create a ConfigService from files on disk.
  * Loads config, validates against schema, returns service instance.
  *
  * @param {string} dataDir - Path to data directory
- * @returns {ConfigService}
+ * @returns {Promise<ConfigService>}
  * @throws {ConfigValidationError} If config is invalid
  */
-export function createConfigService(dataDir) {
+export async function createConfigService(dataDir) {
+  // 1. Load system config first (determines secrets provider)
+  const systemConfig = loadSystemConfig(dataDir);
+
+  // 2. Initialize secrets handler
+  const secretsProvider = createSecretsProvider(dataDir, systemConfig);
+  await secretsProvider.initialize();
+  const secretsHandler = new SecretsHandler(secretsProvider);
+
+  // 3. Load remaining config (no secrets)
   const config = loadConfig(dataDir);
   validateConfig(config, dataDir);
-  return new ConfigService(config);
+
+  return new ConfigService(config, secretsHandler);
 }
 
 /**
@@ -52,15 +86,15 @@ function setEnvPaths(svc) {
  * Call once at application startup.
  *
  * @param {string} dataDir - Path to data directory
- * @returns {ConfigService}
+ * @returns {Promise<ConfigService>}
  * @throws {Error} If already initialized
  * @throws {ConfigValidationError} If config is invalid
  */
-export function initConfigService(dataDir) {
+export async function initConfigService(dataDir) {
   if (instance) {
     throw new Error('ConfigService already initialized');
   }
-  instance = createConfigService(dataDir);
+  instance = await createConfigService(dataDir);
   setEnvPaths(instance);
   return instance;
 }
@@ -178,5 +212,8 @@ export function resetDataService() {
 }
 
 export { DataService } from './DataService.mjs';
+
+// Secrets module re-exports
+export { SecretsHandler, YamlSecretsProvider, ISecretsProvider } from '../secrets/index.mjs';
 
 export default configService;
