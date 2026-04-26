@@ -36,13 +36,18 @@ const FitnessSidebarMenu = ({
   onToggleChart = null,
   boostLevel,
   setBoost,
-  videoVolume
+  videoVolume,
+  activeSessionId = null,
+  endingSession = false,
+  endSessionError = null,
+  onEndSession = null
 }) => {
   const fitnessContext = useFitnessContext();
   const deviceAssignments = fitnessContext?.deviceAssignments || [];
   const getDeviceAssignment = fitnessContext?.getDeviceAssignment;
   const activeHeartRateParticipants = fitnessContext?.activeHeartRateParticipants || [];
   const [selectedTab, setSelectedTab] = React.useState('friends');
+  const [confirmEndSession, setConfirmEndSession] = React.useState(false);
   const playlists = fitnessContext?.plexConfig?.music_playlists || [];
   const suppressDeviceUntilNextReading = fitnessContext?.suppressDeviceUntilNextReading;
   const hasMusicPlaylists = playlists.length > 0;
@@ -370,6 +375,30 @@ const FitnessSidebarMenu = ({
         )}
       </div>
 
+      {activeSessionId && onEndSession && (
+        <div className="menu-section">
+          <h4>Session</h4>
+          {endSessionError && (
+            <div className="menu-item-subtext fitness-sidebar-end-session-error" role="alert">
+              {endSessionError}
+            </div>
+          )}
+          <button
+            type="button"
+            className="menu-item action-item danger"
+            onPointerDown={() => {
+              setConfirmEndSession(true);
+              ackSelection('end-session');
+            }}
+            disabled={endingSession}
+            aria-label="End current fitness session"
+            title="Force end the current session so it won't auto-merge with the next workout"
+          >
+            {endingSession ? 'Ending…' : '⏹ End Session'}
+          </button>
+        </div>
+      )}
+
       {appMode === 'player' && (
       <div className="menu-section">
         <h4>Video Controls</h4>
@@ -523,6 +552,48 @@ const FitnessSidebarMenu = ({
       <div className="sidebar-menu-content">
         {isGuestMode ? renderGuestAssignment() : renderSettings()}
       </div>
+      {confirmEndSession && (
+        <div
+          className="end-session-confirm-overlay"
+          onClick={() => setConfirmEndSession(false)}
+        >
+          <div
+            className="end-session-confirm-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="end-session-confirm-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="end-session-confirm-title">End this fitness session?</h3>
+            <p>
+              Subsequent heart-rate readings will start a new session.
+            </p>
+            <div className="end-session-confirm-actions">
+              <button
+                type="button"
+                className="end-session-confirm-cancel"
+                onClick={() => setConfirmEndSession(false)}
+                disabled={endingSession}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="end-session-confirm-accept"
+                onClick={(event) => {
+                  setConfirmEndSession(false);
+                  if (typeof onEndSession === 'function') {
+                    onEndSession(event);
+                  }
+                }}
+                disabled={endingSession}
+              >
+                {endingSession ? 'Ending…' : 'End Session'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
