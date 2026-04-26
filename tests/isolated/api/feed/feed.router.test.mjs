@@ -225,7 +225,9 @@ describe('Feed Router', () => {
         freshRSSAdapter: ytMockAdapter,
         headlineService: mockHeadlineService,
         feedAssemblyService: { getNextBatch: vi.fn() },
-        feedContentService: { resolveIcon: vi.fn() },
+        // Production calls feedContentService.resolveIconPath; expose both
+        // names so we don't depend on which one is in flight.
+        feedContentService: { resolveIcon: vi.fn(), resolveIconPath: vi.fn() },
         contentPluginRegistry: registry,
         configService: mockConfigService,
       }));

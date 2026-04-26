@@ -5,6 +5,9 @@ import { buildRoutingTable, matchRoute } from '#backend/src/0_system/routing/Rou
 describe('RouteMatcher', () => {
   describe('buildRoutingTable', () => {
     it('builds table from config routing section', () => {
+      // Production buildRoutingTable now only carries { path, target }; the
+      // shim metadata was removed (see RouteMatcher.mjs:8-18). Object-form
+      // entries still extract the target — the rest of the rule is ignored.
       const routing = {
         '/api/finance': 'new',
         '/api/content': { target: 'new', shim: 'content-v1' },
@@ -13,12 +16,12 @@ describe('RouteMatcher', () => {
       const table = buildRoutingTable(routing);
 
       expect(table).toHaveLength(2);
-      expect(table[0].path).toBe('/api/finance');
-      expect(table[0].target).toBe('new');
-      expect(table[0].shim).toBeNull();
-      expect(table[1].path).toBe('/api/content');
-      expect(table[1].target).toBe('new');
-      expect(table[1].shim).toBe('content-v1');
+      // Sorted by path length descending: /api/content (12) before /api/finance (12),
+      // tie broken by insertion order — exact ordering is unimportant; we just
+      // check both entries are present with their target.
+      const byPath = Object.fromEntries(table.map(t => [t.path, t]));
+      expect(byPath['/api/finance'].target).toBe('new');
+      expect(byPath['/api/content'].target).toBe('new');
     });
 
     it('sorts by path length descending (longest prefix first)', () => {
@@ -82,14 +85,17 @@ describe('RouteMatcher', () => {
       expect(result.matched).toBeNull();
     });
 
-    it('includes shim name when matched route has shim', () => {
+    it('matches object-form routing rules (ignoring removed shim field)', () => {
+      // Production no longer surfaces a shim field on the match result;
+      // assert the matched target instead.
       const table = buildRoutingTable({
         '/api/finance': { target: 'new', shim: 'finance-v1' },
       });
 
       const result = matchRoute('/api/finance/data', table, 'legacy');
 
-      expect(result.shim).toBe('finance-v1');
+      expect(result.target).toBe('new');
+      expect(result.matched).toBe('/api/finance');
     });
   });
 });
