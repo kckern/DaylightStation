@@ -60,14 +60,17 @@ describe('YamlSessionDatastore — strava extraction in findByDate', () => {
 
     const session = sessions[0];
     expect(session.strava).not.toBeNull();
-    expect(session.strava).toEqual({
+    // Production now also surfaces avgHeartrate, elevation, and mapPolyline
+    // (when present) in the strava block. Use objectContaining so this test
+    // stays focused on the canonical fields it cares about.
+    expect(session.strava).toEqual(expect.objectContaining({
       name: 'Morning Ride',
       type: 'Ride',
       sportType: 'MountainBikeRide',
       distance: 25400.5,
       trainer: false,
       hasMap: true,
-    });
+    }));
   });
 
   it('returns strava: null when session YAML has no strava block', async () => {
@@ -113,14 +116,14 @@ describe('YamlSessionDatastore — strava extraction in findByDate', () => {
 
     const sessions = await store.findByDate(DATE);
     expect(sessions).toHaveLength(1);
-    expect(sessions[0].strava).toEqual({
+    expect(sessions[0].strava).toEqual(expect.objectContaining({
       name: 'Treadmill Run',
       type: 'Run',
       sportType: 'Run',
       distance: 5000,
       trainer: true,
       hasMap: false,
-    });
+    }));
   });
 
   it('defaults trainer to true when not specified', async () => {

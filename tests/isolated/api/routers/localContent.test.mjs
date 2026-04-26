@@ -24,10 +24,13 @@ describe('LocalContent API Router', () => {
 
   describe('GET /api/local-content/scripture/:path', () => {
     it('returns scripture with verses', async () => {
+      // Production resolveScripturePath splits 3-part paths
+      // (volume/version/verseId) directly. Use that form so the test stays
+      // hermetic (no scripture-guide / filesystem lookups).
       mockAdapter.getItem.mockResolvedValue({
-        id: 'scripture:cfm/1nephi1',
+        id: 'scripture:bom/sebom/31103',
         title: '1 Nephi 1',
-        mediaUrl: '/proxy/local-content/stream/scripture/cfm/1nephi1',
+        mediaUrl: '/proxy/local-content/stream/scripture/bom/sebom/31103',
         duration: 360,
         metadata: {
           reference: '1 Nephi 1',
@@ -37,19 +40,21 @@ describe('LocalContent API Router', () => {
         }
       });
 
-      const res = await request(app).get('/api/local-content/scripture/cfm/1nephi1');
+      const res = await request(app).get('/api/local-content/scripture/bom/sebom/31103');
 
       expect(res.status).toBe(200);
       expect(res.body.reference).toBe('1 Nephi 1');
       expect(res.body.verses).toHaveLength(1);
       expect(res.body.mediaUrl).toBeDefined();
-      expect(res.body.assetId).toBe('scripture:cfm/1nephi1');
+      expect(res.body.assetId).toBe('bom/sebom/31103');
     });
 
     it('returns 404 for nonexistent scripture', async () => {
       mockAdapter.getItem.mockResolvedValue(null);
 
-      const res = await request(app).get('/api/local-content/scripture/nonexistent');
+      // Use a resolvable 3-part path so we exercise the not-found branch
+      // rather than the 400 invalid-reference branch.
+      const res = await request(app).get('/api/local-content/scripture/bom/sebom/99999');
 
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('Scripture not found');

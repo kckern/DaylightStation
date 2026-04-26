@@ -18,12 +18,16 @@ describe('bootstrap', () => {
     });
 
     it('registers PlexAdapter', () => {
+      // Production now requires httpClient injection to register Plex; the
+      // adapter constructor needs the HTTP transport. Inject a stub.
       const { registry } = createContentRegistry({
         mediaBasePath: '/media',
         plex: {
           host: 'http://localhost:32400',
           token: 'test'
         }
+      }, {
+        httpClient: { get: () => Promise.resolve({ data: {} }) }
       });
 
       const adapter = registry.get('plex');
@@ -46,7 +50,12 @@ describe('bootstrap', () => {
       expect(adapter.source).toBe('local-content');
     });
 
-    it('registers FolderAdapter when watchlistPath provided', () => {
+    it('registers ListAdapter under "watchlist" alias when listDataPath/dataPath provided', () => {
+      // Production no longer ships a stand-alone FolderAdapter for the
+      // 'watchlist' source; ListAdapter (source 'list') is registered as
+      // the alias 'watchlist' via the legacy registry.adapters map only —
+      // not the structured #adapterEntries (see ListAdapter wiring in
+      // backend/src/0_system/bootstrap.mjs:507).
       const { registry } = createContentRegistry({
         mediaBasePath: '/media',
         plex: {
@@ -55,11 +64,13 @@ describe('bootstrap', () => {
         },
         dataPath: '/data',
         watchlistPath: '/data/state/watchlist'
+      }, {
+        httpClient: { get: () => Promise.resolve({ data: {} }) }
       });
 
-      const adapter = registry.get('watchlist');
-      expect(adapter).not.toBeNull();
-      expect(adapter.source).toBe('watchlist');
+      const adapter = registry.adapters.get('watchlist');
+      expect(adapter).toBeDefined();
+      expect(adapter.source).toBe('list');
     });
 
     it('does not register LocalContentAdapter without mediaBasePath', () => {

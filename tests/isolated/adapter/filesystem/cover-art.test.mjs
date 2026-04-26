@@ -5,7 +5,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const fixturesPath = path.resolve(__dirname, '../../_fixtures/media');
+// File lives at tests/isolated/adapter/filesystem/cover-art.test.mjs;
+// shared fixtures are at tests/_fixtures/media — three "..".
+const fixturesPath = path.resolve(__dirname, '../../../_fixtures/media');
 
 describe('FileAdapter.getCoverArt', () => {
   let adapter;

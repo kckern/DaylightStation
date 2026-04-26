@@ -446,12 +446,13 @@ describe('AudiobookshelfAdapter', () => {
         { httpClient: mockHttpClient }
       );
 
+      // Production now returns the structured ContentQueryService shape:
+      // { canonical: [...], specific: [...] } instead of a flat array.
       const capabilities = adapter.getSearchCapabilities();
 
-      expect(capabilities).toContain('text');
-      expect(capabilities).toContain('mediaType');
-      expect(capabilities).toContain('take');
-      expect(capabilities).toContain('skip');
+      expect(capabilities.canonical).toContain('text');
+      expect(capabilities.specific).toContain('narrator');
+      expect(capabilities.specific).toContain('author');
     });
 
     test('search returns audiobooks with mediaType=audio filter', async () => {
@@ -499,32 +500,34 @@ describe('AudiobookshelfAdapter', () => {
     });
 
     test('search filters by text query', async () => {
-      // Mock getLibraries
-      mockHttpClient.get.mockResolvedValueOnce({
-        data: { libraries: [{ id: 'lib-1', name: 'Books' }] }
-      });
-      // Mock getLibraryItems
-      mockHttpClient.get.mockResolvedValueOnce({
-        data: {
-          results: [
-            {
-              id: 'match-1',
-              media: {
-                numAudioFiles: 3,
-                duration: 1800,
-                metadata: { title: 'The Magic Garden' }
-              }
-            },
-            {
-              id: 'no-match',
-              media: {
-                numAudioFiles: 4,
-                duration: 2400,
-                metadata: { title: 'Other Book' }
-              }
-            }
-          ]
+      // Production with text query routes through three high-level client
+      // calls — getLibraries, getAuthors (per library), and searchLibrary
+      // (returns { book: [{libraryItem}] }). Drive them via httpClient.get
+      // routed by URL.
+      mockHttpClient.get.mockImplementation(async (url) => {
+        if (url.endsWith('/api/libraries')) {
+          return { data: { libraries: [{ id: 'lib-1', name: 'Books' }] } };
         }
+        if (url.includes('/api/libraries/lib-1/authors')) {
+          return { data: { authors: [] } };
+        }
+        if (url.includes('/api/libraries/lib-1/search')) {
+          return {
+            data: {
+              book: [{
+                libraryItem: {
+                  id: 'match-1',
+                  media: {
+                    numAudioFiles: 3,
+                    duration: 1800,
+                    metadata: { title: 'The Magic Garden' },
+                  },
+                },
+              }],
+            },
+          };
+        }
+        return { data: {} };
       });
 
       const adapter = new AudiobookshelfAdapter(

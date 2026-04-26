@@ -446,12 +446,16 @@ describe('seenIds dedup', () => {
   }
 
   test('fresh load (no cursor) returns full batch', async () => {
+    // Production filters wire items older than 168h (reddit default). Use
+    // recent timestamps relative to "now" so the age filter doesn't drop
+    // every item.
+    const now = Date.now();
     const adapter = {
       sourceType: 'reddit',
       fetchItems: vi.fn().mockResolvedValue(
         Array.from({ length: 20 }, (_, i) => ({
           id: `reddit:r${i}`, tier: 'wire', source: 'reddit',
-          title: `Post ${i}`, timestamp: new Date(2026, 1, 17, 10 - i).toISOString(),
+          title: `Post ${i}`, timestamp: new Date(now - i * 60_000).toISOString(),
         }))
       ),
     };
@@ -465,9 +469,10 @@ describe('seenIds dedup', () => {
   });
 
   test('continuation (with cursor) prioritises unseen items', async () => {
+    const now = Date.now();
     const items = Array.from({ length: 20 }, (_, i) => ({
       id: `reddit:r${i}`, tier: 'wire', source: 'reddit',
-      title: `Post ${i}`, timestamp: new Date(2026, 1, 17, 10 - i).toISOString(),
+      title: `Post ${i}`, timestamp: new Date(now - i * 60_000).toISOString(),
     }));
     const adapter = {
       sourceType: 'reddit',
