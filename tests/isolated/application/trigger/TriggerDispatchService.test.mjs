@@ -1,5 +1,35 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, test } from 'vitest';
 import { TriggerDispatchService } from '../../../../backend/src/3_applications/trigger/TriggerDispatchService.mjs';
+
+// New registry shape produced by buildTriggerRegistry:
+// { [modality]: { locations: { [location]: { target, action, auth_token, defaults } }, ...modality-specific } }
+const baseRegistry = {
+  nfc: {
+    locations: {
+      livingroom: {
+        target: 'livingroom-tv',
+        action: 'play-next',
+        auth_token: null,
+        defaults: {},
+      },
+    },
+    tags: {
+      '83_8e_68_06': { global: { plex: 620707 }, overrides: {} },
+      '8d_6d_2a_07': { global: { plex: 620708 }, overrides: {} },
+    },
+  },
+  state: {
+    locations: {
+      livingroom: {
+        target: 'livingroom-tv',
+        auth_token: null,
+        states: {
+          off: { action: 'clear' },
+        },
+      },
+    },
+  },
+};
 
 const makeResolver = () => ({ resolve: (id) => /^plex:/.test(id) ? { source: 'plex' } : null });
 
@@ -13,23 +43,18 @@ describe('TriggerDispatchService.handleTrigger', () => {
   beforeEach(() => {
     wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true, dispatchId: 'd1' }) };
     haGateway = { callService: vi.fn().mockResolvedValue({ ok: true }) };
-    deviceService = { get: vi.fn().mockReturnValue({ loadContent: vi.fn().mockResolvedValue({ ok: true }) }) };
+    deviceService = {
+      get: vi.fn().mockReturnValue({
+        loadContent: vi.fn().mockResolvedValue({ ok: true }),
+        clearContent: vi.fn().mockResolvedValue({ ok: true }),
+      }),
+    };
     broadcast = vi.fn();
     logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   });
 
   function makeService(configOverrides = null) {
-    // Production now keys entries by modality first then value, i.e.
-    // entries[modality][value]. See TriggerDispatchService.handleTrigger
-    // (backend/src/3_applications/trigger/TriggerDispatchService.mjs:43).
-    const config = configOverrides || {
-      livingroom: {
-        target: 'livingroom-tv',
-        action: 'queue',
-        auth_token: null,
-        entries: { nfc: { '83_8e_68_06': { plex: 620707 } } },
-      },
-    };
+    const config = configOverrides !== null ? configOverrides : baseRegistry;
     return new TriggerDispatchService({
       config,
       contentIdResolver: makeResolver(),
@@ -41,15 +66,15 @@ describe('TriggerDispatchService.handleTrigger', () => {
     });
   }
 
-  it('returns ok and dispatches a content load for a known trigger', async () => {
+  it('returns ok and dispatches a content load for a known nfc trigger', async () => {
     const service = makeService();
     const result = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06');
     expect(result.ok).toBe(true);
-    expect(result.action).toBe('queue');
+    expect(result.action).toBe('play-next');
     expect(result.target).toBe('livingroom-tv');
     expect(wakeAndLoadService.execute).toHaveBeenCalledWith(
       'livingroom-tv',
-      expect.objectContaining({ queue: 'plex:620707' }),
+      expect.objectContaining({ 'play-next': 'plex:620707', op: 'play-next' }),
       expect.objectContaining({ dispatchId: expect.any(String) })
     );
   });
@@ -77,43 +102,67 @@ describe('TriggerDispatchService.handleTrigger', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('returns 400-ish error for unknown action', async () => {
-    const service = makeService({
-      livingroom: {
-        target: 'livingroom-tv',
-        action: 'queue',
-        auth_token: null,
-        entries: { nfc: { '83_8e_68_06': { action: 'launch-rocket' } } },
+  it('returns UNKNOWN_ACTION for an unknown action handler', async () => {
+    const registry = {
+      nfc: {
+        locations: {
+          livingroom: {
+            target: 'livingroom-tv',
+            action: 'launch-rocket',
+            auth_token: null,
+            defaults: {},
+          },
+        },
+        tags: {
+          '83_8e_68_06': { global: { plex: 620707 }, overrides: {} },
+        },
       },
-    });
+    };
+    const service = makeService(registry);
     const result = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06');
     expect(result.ok).toBe(false);
     expect(result.code).toBe('UNKNOWN_ACTION');
   });
 
   it('rejects when location has auth_token and the request omits it', async () => {
-    const service = makeService({
-      livingroom: {
-        target: 'livingroom-tv',
-        action: 'queue',
-        auth_token: 'secret',
-        entries: { nfc: { '83_8e_68_06': { plex: 620707 } } },
+    const registry = {
+      nfc: {
+        locations: {
+          livingroom: {
+            target: 'livingroom-tv',
+            action: 'play-next',
+            auth_token: 'secret',
+            defaults: {},
+          },
+        },
+        tags: {
+          '83_8e_68_06': { global: { plex: 620707 }, overrides: {} },
+        },
       },
-    });
+    };
+    const service = makeService(registry);
     const result = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06', {});
     expect(result.ok).toBe(false);
     expect(result.code).toBe('AUTH_FAILED');
   });
 
   it('accepts when location auth_token matches', async () => {
-    const service = makeService({
-      livingroom: {
-        target: 'livingroom-tv',
-        action: 'queue',
-        auth_token: 'secret',
-        entries: { nfc: { '83_8e_68_06': { plex: 620707 } } },
+    const registry = {
+      nfc: {
+        locations: {
+          livingroom: {
+            target: 'livingroom-tv',
+            action: 'play-next',
+            auth_token: 'secret',
+            defaults: {},
+          },
+        },
+        tags: {
+          '83_8e_68_06': { global: { plex: 620707 }, overrides: {} },
+        },
       },
-    });
+    };
+    const service = makeService(registry);
     const result = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06', { token: 'secret' });
     expect(result.ok).toBe(true);
   });
@@ -145,22 +194,46 @@ describe('TriggerDispatchService.handleTrigger', () => {
     expect(result.code).toBe('DISPATCH_FAILED');
     expect(result.error).toMatch(/TV unreachable/);
   });
+
+  it('returns UNKNOWN_MODALITY when modality has no slice in config', async () => {
+    const service = makeService();
+    const result = await service.handleTrigger('livingroom', 'voice', 'play_jazz');
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('UNKNOWN_MODALITY');
+  });
+
+  it('dispatches a state trigger (clear action)', async () => {
+    const service = makeService();
+    const result = await service.handleTrigger('livingroom', 'state', 'off');
+    expect(result.ok).toBe(true);
+    expect(result.action).toBe('clear');
+    expect(deviceService.get).toHaveBeenCalledWith('livingroom-tv');
+    const device = deviceService.get.mock.results[0].value;
+    expect(device.clearContent).toHaveBeenCalled();
+  });
 });
 
-const baseConfig = {
-  livingroom: {
-    target: 'livingroom-tv',
-    action: 'play-next',
-    entries: {
-      nfc: {
-        '83_8e_68_06': { plex: '620707' },
+// ---- Debounce tests ----
+
+const debounceRegistry = {
+  nfc: {
+    locations: {
+      livingroom: {
+        target: 'livingroom-tv',
+        action: 'play-next',
+        auth_token: null,
+        defaults: {},
       },
+    },
+    tags: {
+      '83_8e_68_06': { global: { plex: '620707' }, overrides: {} },
+      '8d_6d_2a_07': { global: { plex: '620708' }, overrides: {} },
     },
   },
 };
 
 const makeContentIdResolver = () => ({
-  resolve: (entry) => (entry?.plex ? `plex:${entry.plex}` : null),
+  resolve: (id) => (/^plex:/.test(id) ? { source: 'plex' } : null),
 });
 
 const silentLogger = {
@@ -169,9 +242,9 @@ const silentLogger = {
 
 describe('TriggerDispatchService — debounce', () => {
   test('first scan dispatches; second scan within window is debounced', async () => {
-    const wakeAndLoadService = { execute: jest.fn().mockResolvedValue({ ok: true }) };
+    const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
     const service = new TriggerDispatchService({
-      config: baseConfig,
+      config: debounceRegistry,
       contentIdResolver: makeContentIdResolver(),
       wakeAndLoadService,
       logger: silentLogger,
@@ -190,21 +263,9 @@ describe('TriggerDispatchService — debounce', () => {
   });
 
   test('different tag in same window is NOT debounced', async () => {
-    const wakeAndLoadService = { execute: jest.fn().mockResolvedValue({ ok: true }) };
-    const config = {
-      livingroom: {
-        target: 'livingroom-tv',
-        action: 'play-next',
-        entries: {
-          nfc: {
-            '83_8e_68_06': { plex: '620707' },
-            '8d_6d_2a_07': { plex: '620707' },
-          },
-        },
-      },
-    };
+    const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
     const service = new TriggerDispatchService({
-      config,
+      config: debounceRegistry,
       contentIdResolver: makeContentIdResolver(),
       wakeAndLoadService,
       logger: silentLogger,
@@ -217,10 +278,10 @@ describe('TriggerDispatchService — debounce', () => {
   });
 
   test('scan after window elapses is dispatched normally', async () => {
-    const wakeAndLoadService = { execute: jest.fn().mockResolvedValue({ ok: true }) };
+    const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
     let now = 1_000_000;
     const service = new TriggerDispatchService({
-      config: baseConfig,
+      config: debounceRegistry,
       contentIdResolver: makeContentIdResolver(),
       wakeAndLoadService,
       logger: silentLogger,
@@ -238,9 +299,9 @@ describe('TriggerDispatchService — debounce', () => {
   });
 
   test('dryRun bypasses debounce', async () => {
-    const wakeAndLoadService = { execute: jest.fn().mockResolvedValue({ ok: true }) };
+    const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
     const service = new TriggerDispatchService({
-      config: baseConfig,
+      config: debounceRegistry,
       contentIdResolver: makeContentIdResolver(),
       wakeAndLoadService,
       logger: silentLogger,
@@ -254,9 +315,13 @@ describe('TriggerDispatchService — debounce', () => {
   });
 
   test('failed dispatch clears debounce so user can retry immediately', async () => {
-    const wakeAndLoadService = { execute: jest.fn().mockRejectedValueOnce(new Error('wake-fail')).mockResolvedValueOnce({ ok: true }) };
+    const wakeAndLoadService = {
+      execute: vi.fn()
+        .mockRejectedValueOnce(new Error('wake-fail'))
+        .mockResolvedValueOnce({ ok: true }),
+    };
     const service = new TriggerDispatchService({
-      config: baseConfig,
+      config: debounceRegistry,
       contentIdResolver: makeContentIdResolver(),
       wakeAndLoadService,
       logger: silentLogger,
