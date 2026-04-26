@@ -75,10 +75,12 @@ export class MediaProgress {
   /**
    * Serialize to a plain object using canonical field names.
    * Excludes legacy field aliases (seconds, mediaDuration, time).
+   * Conditionally includes completedAt and bookmark when present (truthy check —
+   * null/undefined are omitted to match the canonical persisted shape).
    * @returns {Object}
    */
   toJSON() {
-    return {
+    const json = {
       contentId: this.contentId,
       playhead: this.playhead,
       duration: this.duration,
@@ -87,6 +89,9 @@ export class MediaProgress {
       lastPlayed: this.lastPlayed,
       watchTime: this.watchTime
     };
+    if (this.completedAt) json.completedAt = this.completedAt;
+    if (this.bookmark) json.bookmark = this.bookmark;
+    return json;
   }
 
 }

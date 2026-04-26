@@ -270,8 +270,94 @@ describe('YamlMediaProgressMemory', () => {
     });
   });
 
+  describe('set/get round-trip preserves completedAt and bookmark', () => {
+    it('should preserve completedAt across set/get round-trip', async () => {
+      const progress = new MediaProgress({
+        contentId: 'plex:674498',
+        playhead: 650,
+        duration: 678,
+        playCount: 1,
+        lastPlayed: '2026-04-20 06:07:44',
+        watchTime: 735,
+        completedAt: '2026-04-20 06:07:44'
+      });
+
+      await memory.set(progress, 'plex/14_fitness');
+      const loaded = await memory.get('plex:674498', 'plex/14_fitness');
+
+      expect(loaded).not.toBeNull();
+      expect(loaded.completedAt).toBe('2026-04-20 06:07:44');
+    });
+
+    it('should preserve bookmark across set/get round-trip', async () => {
+      const bookmark = {
+        playhead: 1234,
+        reason: 'session-start',
+        createdAt: new Date().toISOString()
+      };
+      const progress = new MediaProgress({
+        contentId: 'plex:bookmark-rt',
+        playhead: 1500,
+        duration: 3000,
+        bookmark
+      });
+
+      await memory.set(progress, 'plex/bookmarks');
+      const loaded = await memory.get('plex:bookmark-rt', 'plex/bookmarks');
+
+      expect(loaded).not.toBeNull();
+      expect(loaded.bookmark).toEqual(bookmark);
+    });
+
+    it('should preserve both completedAt and bookmark across set/get round-trip', async () => {
+      const bookmark = {
+        playhead: 600,
+        reason: 'pre-jump',
+        createdAt: new Date().toISOString()
+      };
+      const progress = new MediaProgress({
+        contentId: 'plex:both-fields',
+        playhead: 650,
+        duration: 678,
+        playCount: 2,
+        lastPlayed: '2026-04-20 06:07:44',
+        watchTime: 735,
+        completedAt: '2026-04-20 06:07:44',
+        bookmark
+      });
+
+      await memory.set(progress, 'plex/both');
+      const loaded = await memory.get('plex:both-fields', 'plex/both');
+
+      expect(loaded).not.toBeNull();
+      expect(loaded.completedAt).toBe('2026-04-20 06:07:44');
+      expect(loaded.bookmark).toEqual(bookmark);
+    });
+
+    it('should NOT clobber completedAt when re-persisting an entity built from a prior get', async () => {
+      // Simulates the production read-modify-write cycle where the read-path correctly
+      // hydrates completedAt and the next set() previously dropped it silently.
+      const original = new MediaProgress({
+        contentId: 'plex:retain',
+        playhead: 650,
+        duration: 678,
+        completedAt: '2026-04-20 06:07:44'
+      });
+      await memory.set(original, 'plex/retain');
+
+      const loaded = await memory.get('plex:retain', 'plex/retain');
+      expect(loaded.completedAt).toBe('2026-04-20 06:07:44');
+
+      // Re-persist the loaded entity (mimics play.mjs handing a hydrated entity back to set())
+      await memory.set(loaded, 'plex/retain');
+      const reloaded = await memory.get('plex:retain', 'plex/retain');
+
+      expect(reloaded.completedAt).toBe('2026-04-20 06:07:44');
+    });
+  });
+
   describe('clear()', () => {
-    it('should call deleteYaml with the computed file path', async () => {
+    it('should actually delete the storage file (not silently no-op)', async () => {
       const progress = new MediaProgress({
         contentId: 'movie:clear-test',
         playhead: 100,
@@ -284,10 +370,18 @@ describe('YamlMediaProgressMemory', () => {
       const before = await memory.get('movie:clear-test', 'plex/clear-test');
       expect(before).not.toBeNull();
 
-      // Call clear - note: due to existing implementation detail where _getBasePath
-      // returns path with .yml and deleteYaml adds .yml again, we just verify
-      // the method doesn't throw
-      await expect(memory.clear('plex/clear-test')).resolves.not.toThrow();
+      // The actual on-disk file path
+      const filePath = memory._getBasePath('plex/clear-test');
+      expect(fs.existsSync(filePath)).toBe(true);
+
+      await memory.clear('plex/clear-test');
+
+      // File must be gone (was silently surviving when deleteYaml double-appended .yml)
+      expect(fs.existsSync(filePath)).toBe(false);
+
+      // Subsequent get must return null
+      const after = await memory.get('movie:clear-test', 'plex/clear-test');
+      expect(after).toBeNull();
     });
   });
 
