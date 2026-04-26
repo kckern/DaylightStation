@@ -76,26 +76,30 @@ describe('WeeklyReviewImmichAdapter', () => {
     it('queries Immich with correct date range', async () => {
       await adapter.getPhotosForDateRange('2026-03-23', '2026-03-30');
 
+      // Production no longer narrows by `type: 'IMAGE'` server-side; both
+      // images and videos are pulled and surfaced together (videos carry
+      // `type: 'video'` on the response items).
       expect(mockClient.searchMetadata).toHaveBeenCalledWith(
         expect.objectContaining({
           takenAfter: '2026-03-23T00:00:00.000Z',
           takenBefore: '2026-03-31T00:00:00.000Z',
-          type: 'IMAGE',
         })
       );
     });
 
-    it('filters out non-IMAGE assets', async () => {
+    it('includes VIDEO assets alongside IMAGE assets', async () => {
       const result = await adapter.getPhotosForDateRange('2026-03-23', '2026-03-30');
       const allIds = result.flatMap(day => day.photos.map(p => p.id));
-      expect(allIds).not.toContain('asset-4');
+      // asset-4 is a VIDEO and must now appear in the day's photos list.
+      expect(allIds).toContain('asset-4');
     });
 
-    it('groups photos by date', async () => {
+    it('groups photos+videos by date', async () => {
       const result = await adapter.getPhotosForDateRange('2026-03-23', '2026-03-30');
       const mar23 = result.find(d => d.date === '2026-03-23');
       const mar25 = result.find(d => d.date === '2026-03-25');
-      expect(mar23.photos.length).toBe(3);
+      // mar23 now includes the VIDEO asset (asset-4) → 4 entries
+      expect(mar23.photos.length).toBe(4);
       expect(mar25.photos.length).toBe(2);
     });
 
@@ -117,8 +121,11 @@ describe('WeeklyReviewImmichAdapter', () => {
     it('groups photos into sessions by time proximity', async () => {
       const result = await adapter.getPhotosForDateRange('2026-03-23', '2026-03-30');
       const mar23 = result.find(d => d.date === '2026-03-23');
+      // Day has 4 entries: 14:00 (image), 14:15 (video), 14:30 (image),
+      // 19:00 (image). The 14:* trio falls in one session (within 120-min
+      // gap), 19:00 in a second session. Total = 2 sessions, [3, 1].
       expect(mar23.sessions.length).toBe(2);
-      expect(mar23.sessions[0].count).toBe(2);
+      expect(mar23.sessions[0].count).toBe(3);
       expect(mar23.sessions[1].count).toBe(1);
     });
 
