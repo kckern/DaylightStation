@@ -19,6 +19,36 @@
   background: #111111;
 }
 
+/* PiP overlay - non-blocking sibling of fullscreen, sits above it so it stays visible */
+.screen-overlay--pip {
+  position: absolute;
+  z-index: 1001;
+  background: #111111;
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.screen-overlay--pip-top-right {
+  top: 16px;
+  right: 16px;
+}
+
+.screen-overlay--pip-top-left {
+  top: 16px;
+  left: 16px;
+}
+
+.screen-overlay--pip-bottom-right {
+  bottom: 16px;
+  right: 16px;
+}
+
+.screen-overlay--pip-bottom-left {
+  bottom: 16px;
+  left: 16px;
+}
+
 /* Toast stack - stackable notifications */
 .screen-overlay--toast-stack {
   position: absolute;

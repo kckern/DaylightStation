@@ -31,6 +31,7 @@ function ToastWrapper({ Component, props, timeout, onDismiss }) {
 
 export function ScreenOverlayProvider({ children }) {
   const [fullscreen, setFullscreen] = useState(null);
+  const [pip, setPip] = useState(null);
   const [toasts, setToasts] = useState([]);
   const escapeInterceptorRef = useRef(null);
 
@@ -52,6 +53,8 @@ export function ScreenOverlayProvider({ children }) {
         }
         return { Component, props, priority };
       });
+    } else if (mode === 'pip') {
+      setPip({ Component, props, position });
     } else if (mode === 'toast') {
       const id = ++toastIdCounter;
       setToasts((prev) => [...prev, { id, Component, props, timeout }]);
@@ -61,6 +64,8 @@ export function ScreenOverlayProvider({ children }) {
   const dismissOverlay = useCallback((mode = 'fullscreen') => {
     if (mode === 'fullscreen') {
       setFullscreen(null);
+    } else if (mode === 'pip') {
+      setPip(null);
     } else if (mode === 'toast') {
       setToasts([]);
     }
@@ -70,6 +75,8 @@ export function ScreenOverlayProvider({ children }) {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  // hasOverlay intentionally reflects ONLY fullscreen state — pip is non-blocking
+  // and must not release the menu-suppression gate or report as a blocking overlay.
   const hasOverlay = fullscreen !== null;
 
   // Emit on the ActionBus when a fullscreen overlay first mounts.
@@ -86,6 +93,13 @@ export function ScreenOverlayProvider({ children }) {
       {fullscreen && (
         <div className="screen-overlay--fullscreen">
           <fullscreen.Component {...fullscreen.props} dismiss={() => dismissOverlay('fullscreen')} />
+        </div>
+      )}
+      {pip && (
+        <div
+          className={`screen-overlay--pip screen-overlay--pip-${pip.position || 'top-right'}`}
+        >
+          <pip.Component {...pip.props} dismiss={() => dismissOverlay('pip')} />
         </div>
       )}
       {toasts.length > 0 && (

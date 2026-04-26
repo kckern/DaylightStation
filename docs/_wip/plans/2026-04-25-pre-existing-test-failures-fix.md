@@ -931,7 +931,21 @@ Post-Phase-4: backend  : 1 failed /  846 passed  (847 total,   1 file failed)  f
               so the third test's stack started with detail already on it. Fix
               was a beforeEach in the test file that resets URL via
               window.history.replaceState; production code unchanged.
-Post-Phase-5: ??? failed   # PiP implementation
+Post-Phase-5: backend  : 1 failed /  846 passed  (847 total,   1 file failed)  flat
+              frontend : 11 failed /  724 passed  (735 total,   1 file failed)  -4 fails
+              isolated : 173 failed / 1668 passed (1844 total, 324 files failed)  flat
+              Δ frontend: -4 fails, +1 added test (now 735 total). All four
+              originally-failing PiP tests now pass (renders pip alongside fullscreen,
+              dismissOverlay targets specific mode, hasOverlay reflects only fullscreen
+              state, dismissOverlay for fullscreen does not affect pip or toasts).
+              Added one defensive test ("does NOT emit screen:overlay-mounted when
+              only pip is shown") to lock in the trigger-sequence Phase 1 invariant.
+              Implementation: ScreenOverlayProvider gained a third pip state slot,
+              renders it as a sibling DOM node above fullscreen (z-index 1001),
+              dismissOverlay('pip') only clears pip, hasOverlay still reflects only
+              fullscreen, and the screen:overlay-mounted useEffect is unchanged
+              (still gated on `if (!fullscreen) return` with `[fullscreen]` deps so
+              pip mounts cannot trigger it).
 Post-Phase-6: 0 failed     # GOAL
 ```
 

@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import React from 'react';
 import { ScreenOverlayProvider, useScreenOverlay } from './ScreenOverlayProvider.jsx';
+import { getActionBus } from '../input/ActionBus.js';
 
 function TestWidget() {
   const { showOverlay, dismissOverlay, hasOverlay } = useScreenOverlay();
@@ -322,5 +323,33 @@ describe('ScreenOverlayProvider - Phase 4 slots', () => {
     expect(screen.getByTestId('toast-long-content')).toBeTruthy();
 
     vi.useRealTimers();
+  });
+
+  it('does NOT emit screen:overlay-mounted when only pip is shown', () => {
+    // Defensive guard: pip is non-blocking and must not release the
+    // menu-suppression gate. Only fullscreen overlays may emit overlay-mounted.
+    const handler = vi.fn();
+    const unsubscribe = getActionBus().subscribe('screen:overlay-mounted', handler);
+
+    render(
+      <ScreenOverlayProvider>
+        <SlotTestWidget />
+      </ScreenOverlayProvider>
+    );
+
+    act(() => {
+      screen.getByTestId('show-pip').click();
+    });
+
+    expect(handler).not.toHaveBeenCalled();
+
+    // Sanity-check: a fullscreen overlay still emits.
+    act(() => {
+      screen.getByTestId('show-fullscreen').click();
+    });
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledWith({ mode: 'fullscreen' });
+
+    unsubscribe();
   });
 });
