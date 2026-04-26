@@ -5,7 +5,7 @@ import { AdapterRegistry } from '#backend/src/0_system/registries/AdapterRegistr
 describe('AdapterRegistry', () => {
   describe('discover()', () => {
     test('discovers manifest files and indexes by capability/provider', async () => {
-      const registry = new AdapterRegistry();
+      const registry = new AdapterRegistry({ adaptersRoot: '/fake/adapters' });
 
       // Mock glob to return test manifests
       registry._findManifests = vi.fn().mockResolvedValue([
@@ -43,7 +43,7 @@ describe('AdapterRegistry', () => {
 
   describe('getManifest()', () => {
     test('returns manifest for capability/provider pair', async () => {
-      const registry = new AdapterRegistry();
+      const registry = new AdapterRegistry({ adaptersRoot: '/fake/adapters' });
       registry._findManifests = vi.fn().mockResolvedValue(['/fake/path/plex/manifest.mjs']);
       registry._import = vi.fn().mockResolvedValue({
         default: {
@@ -62,7 +62,7 @@ describe('AdapterRegistry', () => {
     });
 
     test('returns undefined for unknown capability/provider', async () => {
-      const registry = new AdapterRegistry();
+      const registry = new AdapterRegistry({ adaptersRoot: '/fake/adapters' });
       registry._findManifests = vi.fn().mockResolvedValue([]);
       await registry.discover();
 
@@ -72,7 +72,7 @@ describe('AdapterRegistry', () => {
 
   describe('getProviders()', () => {
     test('returns empty array for unknown capability', async () => {
-      const registry = new AdapterRegistry();
+      const registry = new AdapterRegistry({ adaptersRoot: '/fake/adapters' });
       registry._findManifests = vi.fn().mockResolvedValue([]);
       await registry.discover();
 
@@ -80,7 +80,7 @@ describe('AdapterRegistry', () => {
     });
 
     test('returns all providers for a capability', async () => {
-      const registry = new AdapterRegistry();
+      const registry = new AdapterRegistry({ adaptersRoot: '/fake/adapters' });
       registry._findManifests = vi.fn().mockResolvedValue([
         '/fake/path/plex/manifest.mjs',
         '/fake/path/filesystem/manifest.mjs',
@@ -104,7 +104,7 @@ describe('AdapterRegistry', () => {
 
   describe('error handling', () => {
     test('skips manifests missing capability', async () => {
-      const registry = new AdapterRegistry();
+      const registry = new AdapterRegistry({ adaptersRoot: '/fake/adapters' });
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       registry._findManifests = vi.fn().mockResolvedValue(['/fake/path/bad/manifest.mjs']);
@@ -121,7 +121,7 @@ describe('AdapterRegistry', () => {
     });
 
     test('skips manifests missing provider', async () => {
-      const registry = new AdapterRegistry();
+      const registry = new AdapterRegistry({ adaptersRoot: '/fake/adapters' });
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       registry._findManifests = vi.fn().mockResolvedValue(['/fake/path/bad/manifest.mjs']);
@@ -137,7 +137,7 @@ describe('AdapterRegistry', () => {
     });
 
     test('continues loading after manifest import error', async () => {
-      const registry = new AdapterRegistry();
+      const registry = new AdapterRegistry({ adaptersRoot: '/fake/adapters' });
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       registry._findManifests = vi.fn().mockResolvedValue([

@@ -1,12 +1,12 @@
-import { describe, it } from 'node:test';
-import { strict as assert } from 'node:assert';
+import { describe, it, expect } from 'vitest';
+
 import { EndOfDayReport } from '../../../../backend/src/3_applications/agents/health-coach/assignments/EndOfDayReport.mjs';
 
 describe('EndOfDayReport', () => {
   it('has correct static properties', () => {
-    assert.equal(EndOfDayReport.id, 'end-of-day-report');
-    assert.equal(typeof EndOfDayReport.description, 'string');
-    assert.equal(EndOfDayReport.schedule, undefined);
+    expect(EndOfDayReport.id).toBe('end-of-day-report');
+    expect(typeof EndOfDayReport.description).toBe('string');
+    expect(EndOfDayReport.schedule).toBe(undefined);
   });
 
   it('gather calls all 4 expected tools in parallel', async () => {
@@ -32,10 +32,10 @@ describe('EndOfDayReport', () => {
       'workouts',
     ]);
 
-    assert.ok(gathered.todayNutrition);
-    assert.ok(gathered.weight);
-    assert.ok(gathered.workouts);
-    assert.ok(gathered.coachingHistory);
+    expect(gathered.todayNutrition).toBeTruthy();
+    expect(gathered.weight).toBeTruthy();
+    expect(gathered.workouts).toBeTruthy();
+    expect(gathered.coachingHistory).toBeTruthy();
   });
 
   it('gather returns null for missing tools gracefully', async () => {
@@ -50,10 +50,10 @@ describe('EndOfDayReport', () => {
       memory: { serialize: () => '' },
       logger: { warn: () => {}, info: () => {} },
     });
-    assert.ok(gathered.todayNutrition);
-    assert.ok(gathered.weight);
-    assert.equal(gathered.workouts, null);
-    assert.equal(gathered.coachingHistory, null);
+    expect(gathered.todayNutrition).toBeTruthy();
+    expect(gathered.weight).toBeTruthy();
+    expect(gathered.workouts).toBe(null);
+    expect(gathered.coachingHistory).toBe(null);
   });
 
   it('buildPrompt focuses on tracked nutrition vs goals, not implied intake', () => {
@@ -65,14 +65,14 @@ describe('EndOfDayReport', () => {
       coachingHistory:   { history: [] },
     };
     const prompt = report.buildPrompt(gathered, { serialize: () => 'mem' });
-    assert.ok(typeof prompt === 'string');
-    assert.ok(prompt.includes('1800'));
+    expect(typeof prompt === 'string').toBeTruthy();
+    expect(prompt.includes('1800')).toBeTruthy();
     // Should NOT include adjusted nutrition data section or reconciliation data section
-    assert.ok(!prompt.includes('## Adjusted Nutrition'));
-    assert.ok(!prompt.includes('## Reconciliation'));
+    expect(!prompt.includes('## Adjusted Nutrition')).toBeTruthy();
+    expect(!prompt.includes('## Reconciliation')).toBeTruthy();
     // Should instruct coach NOT to mention implied intake
-    assert.ok(prompt.includes('Do NOT mention implied intake'));
-    assert.ok(prompt.length > 100);
+    expect(prompt.includes('Do NOT mention implied intake')).toBeTruthy();
+    expect(prompt.length > 100).toBeTruthy();
   });
 
   it('buildPrompt instructs not to mention implied intake', () => {
@@ -84,15 +84,15 @@ describe('EndOfDayReport', () => {
       coachingHistory:   null,
     };
     const prompt = report.buildPrompt(gathered, { serialize: () => '' });
-    assert.ok(prompt.includes('Do NOT mention implied intake'));
+    expect(prompt.includes('Do NOT mention implied intake')).toBeTruthy();
   });
 
   it('getOutputSchema returns coachingMessageSchema', () => {
     const report = new EndOfDayReport();
     const schema = report.getOutputSchema();
-    assert.ok(schema.properties.should_send);
-    assert.ok(schema.properties.text);
-    assert.equal(schema.required[0], 'should_send');
+    expect(schema.properties.should_send).toBeTruthy();
+    expect(schema.properties.text).toBeTruthy();
+    expect(schema.required[0]).toBe('should_send');
   });
 
   it('act is a no-op (no memory updates)', async () => {

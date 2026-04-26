@@ -1,12 +1,12 @@
-import { describe, it, mock } from 'node:test';
-import { strict as assert } from 'node:assert';
+import { describe, it, expect, vi } from 'vitest';
+
 import { WeeklyDigest } from '../../../../backend/src/3_applications/agents/health-coach/assignments/WeeklyDigest.mjs';
 
 describe('WeeklyDigest', () => {
   it('has correct static properties', () => {
-    assert.equal(WeeklyDigest.id, 'weekly-digest');
-    assert.equal(WeeklyDigest.schedule, '0 19 * * 0');
-    assert.equal(typeof WeeklyDigest.description, 'string');
+    expect(WeeklyDigest.id).toBe('weekly-digest');
+    expect(WeeklyDigest.schedule).toBe('0 19 * * 0');
+    expect(typeof WeeklyDigest.description).toBe('string');
   });
 
   it('gather calls all 5 expected tools (including long-term weight)', async () => {
@@ -25,12 +25,12 @@ describe('WeeklyDigest', () => {
       logger: { warn: () => {}, info: () => {} },
     });
 
-    assert.deepEqual(calls.sort(), ['goals', 'nutrition', 'reconciliation:84', 'weight:14', 'weight:84']);
-    assert.ok(gathered.reconciliation);
-    assert.ok(gathered.weight);
-    assert.ok(gathered.weightLongTerm);
-    assert.ok(gathered.nutritionHistory);
-    assert.ok(gathered.goals);
+    expect(calls.sort()).toEqual(['goals', 'nutrition', 'reconciliation:84', 'weight:14', 'weight:84']);
+    expect(gathered.reconciliation).toBeTruthy();
+    expect(gathered.weight).toBeTruthy();
+    expect(gathered.weightLongTerm).toBeTruthy();
+    expect(gathered.nutritionHistory).toBeTruthy();
+    expect(gathered.goals).toBeTruthy();
   });
 
   it('buildPrompt includes weekly trend data and long-term context', () => {
@@ -43,8 +43,8 @@ describe('WeeklyDigest', () => {
       goals:            { goals: { calories: 2000, protein: 150 } },
     };
     const prompt = digest.buildPrompt(gathered, { serialize: () => 'mem-content' });
-    assert.ok(typeof prompt === 'string');
-    assert.ok(prompt.length > 100);
+    expect(typeof prompt === 'string').toBeTruthy();
+    expect(prompt.length > 100).toBeTruthy();
     assert.ok(prompt.includes('1900') || prompt.includes('nutrition'));
     assert.ok(prompt.includes('mem-content'));
     assert.ok(prompt.includes('long-term') || prompt.includes('12 week'));
@@ -52,21 +52,21 @@ describe('WeeklyDigest', () => {
 
   it('act sets last_weekly_digest in memory with 7-day TTL', async () => {
     const digest = new WeeklyDigest();
-    const memory = { set: mock.fn() };
+    const memory = { set: vi.fn() };
     await digest.act({ should_send: true, text: 'Weekly summary.' }, { memory, userId: 'kckern', logger: { info: () => {} } });
 
-    assert.equal(memory.set.mock.calls.length, 1);
-    assert.equal(memory.set.mock.calls[0].arguments[0], 'last_weekly_digest');
-    const opts = memory.set.mock.calls[0].arguments[2];
+    expect(memory.set.mock.calls.length).toBe(1);
+    expect(memory.set.mock.calls[0][0]).toBe('last_weekly_digest');
+    const opts = memory.set.mock.calls[0][2];
     // TTL should be 7 days in ms
-    assert.equal(opts?.ttl, 7 * 24 * 60 * 60 * 1000);
+    expect(opts?.ttl).toBe(7 * 24 * 60 * 60 * 1000);
   });
 
   it('getOutputSchema returns coachingMessageSchema', () => {
     const digest = new WeeklyDigest();
     const schema = digest.getOutputSchema();
-    assert.ok(schema.properties.should_send);
-    assert.ok(schema.properties.text);
-    assert.equal(schema.required[0], 'should_send');
+    expect(schema.properties.should_send).toBeTruthy();
+    expect(schema.properties.text).toBeTruthy();
+    expect(schema.required[0]).toBe('should_send');
   });
 });
