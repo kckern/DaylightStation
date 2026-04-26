@@ -2,6 +2,29 @@
 import { vi } from 'vitest';
 import { OpenAIAdapter } from '#adapters/ai/OpenAIAdapter.mjs';
 
+// Translate legacy fetch() mock responses ({ ok, status, json, headers })
+// into the httpClient.post() shape expected by production ({ status, data, headers }).
+// Keeps the existing test cases working without rewriting every mock.
+function translateFetchToPostShape(fetchResponse) {
+  return Promise.resolve(fetchResponse).then(async (r) => {
+    const data = r.json ? await r.json() : undefined;
+    const status = r.status ?? (r.ok ? 200 : 500);
+    // Production's _makeRequest reads headers via plain-object [key.toLowerCase()],
+    // so flatten any get()-style header objects into a plain dict here.
+    let headers = r.headers || {};
+    if (typeof headers.get === 'function') {
+      // Try a few common header names that the test mocks return
+      const flat = {};
+      for (const k of ['retry-after', 'content-type', 'x-ratelimit-remaining']) {
+        const v = headers.get(k);
+        if (v !== undefined && v !== null) flat[k] = v;
+      }
+      headers = flat;
+    }
+    return { status, data, headers };
+  });
+}
+
 describe('OpenAIAdapter', () => {
   let adapter;
   let mockHttpClient;
@@ -9,7 +32,17 @@ describe('OpenAIAdapter', () => {
 
   beforeEach(() => {
     mockHttpClient = {
-      fetch: vi.fn()
+      fetch: vi.fn(),
+      get: vi.fn(),
+      post: vi.fn().mockImplementation((url, body, options) => {
+        // Re-dispatch through the legacy fetch mock so tests can keep using mockHttpClient.fetch
+        const fetchOpts = {
+          method: 'POST',
+          headers: options?.headers,
+          body: typeof body === 'string' ? body : JSON.stringify(body),
+        };
+        return translateFetchToPostShape(mockHttpClient.fetch(url, fetchOpts));
+      }),
     };
 
     mockLogger = {
@@ -34,8 +67,9 @@ describe('OpenAIAdapter', () => {
     });
 
     test('initializes with defaults', () => {
-      const a = new OpenAIAdapter({ apiKey: 'test' });
-      expect(a.model).toBe('gpt-4o');
+      const a = new OpenAIAdapter({ apiKey: 'test' }, { httpClient: mockHttpClient });
+      // Production default model bumped from gpt-4o to gpt-4.1
+      expect(a.model).toBe('gpt-4.1');
       expect(a.maxTokens).toBe(1000);
       expect(a.isConfigured()).toBe(true);
     });
@@ -45,7 +79,7 @@ describe('OpenAIAdapter', () => {
         apiKey: 'test',
         model: 'gpt-3.5-turbo',
         maxTokens: 500
-      });
+      }, { httpClient: mockHttpClient });
       expect(a.model).toBe('gpt-3.5-turbo');
       expect(a.maxTokens).toBe(500);
     });
@@ -237,7 +271,7 @@ describe('OpenAIAdapter', () => {
 
   describe('retry helpers', () => {
     test('sleep delays for specified milliseconds', async () => {
-      const testAdapter = new OpenAIAdapter({ apiKey: 'test-key' });
+      const testAdapter = new OpenAIAdapter({ apiKey: 'test-key' }, { httpClient: mockHttpClient });
       const start = Date.now();
       await testAdapter._testSleep(50);
       const elapsed = Date.now() - start;
@@ -386,12 +420,14 @@ describe('OpenAIAdapter', () => {
         { apiKey: 'test-key' },
         {
           httpClient: {
-            fetch: () => {
+            // Production calls .post(); first call rejects to simulate transient failure
+            post: async () => {
               callCount++;
               if (callCount === 1) {
-                return Promise.reject(new Error('fetch failed'));
+                throw new Error('fetch failed');
               }
-              return Promise.resolve(mockResponse);
+              const data = await mockResponse.json();
+              return { status: 200, data, headers: {} };
             }
           }
         }
