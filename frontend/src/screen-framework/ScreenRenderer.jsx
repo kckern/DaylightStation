@@ -20,6 +20,8 @@ import { parseAutoplayParams } from '../lib/parseAutoplayParams.js';
 import { getApp } from '../lib/appRegistry.js';
 import { bindBackButton, enableGlobalKeyCapture } from '../lib/fkb.js';
 import getLogger from '../lib/logging/Logger.js';
+import { useInitialActionGate } from './hooks/useInitialActionGate.js';
+import { ActionLoadingShell } from './ActionLoadingShell.jsx';
 
 // Register built-ins on module load
 registerBuiltinWidgets();
@@ -170,6 +172,20 @@ export function ScreenRenderer({ screenId: propScreenId }) {
   const [error, setError] = useState(null);
   const inputHealthyRef = React.useRef(false);
   const screenRootRef = React.useRef(null);
+
+  // Initial-only menu-flash suppression gate. If the URL had ?play=/?queue=/etc
+  // on first mount, suppress the YAML layout until an overlay opens or 5s lapse.
+  const { suppressLayout, releaseGate } = useInitialActionGate(
+    typeof window !== 'undefined' ? window.location.search : '',
+  );
+
+  // Release the gate as soon as ScreenOverlayProvider mounts a fullscreen overlay.
+  useEffect(() => {
+    if (!suppressLayout) return undefined;
+    const bus = getActionBus();
+    const unsub = bus.subscribe('screen:overlay-mounted', () => releaseGate());
+    return () => unsub?.();
+  }, [suppressLayout, releaseGate]);
 
   // Failsafe: digit 4 always reloads if the input system isn't actually handling input.
   // "Handling" means the adapter attached AND (where relevant) its keymap actually loaded.
@@ -341,7 +357,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
                 <ScreenSessionPublishers wsConfig={config.websocket} />
                 <ScreenSubscriptionHandler subscriptions={config.subscriptions} />
                 <ScreenProvider config={config.layout}>
-                  <PanelRenderer />
+                  {suppressLayout ? <ActionLoadingShell /> : <PanelRenderer />}
                 </ScreenProvider>
               </PipManager>
             </ScreenOverlayProvider>

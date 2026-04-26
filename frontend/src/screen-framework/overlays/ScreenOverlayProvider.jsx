@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { getActionBus } from '../input/ActionBus.js';
 import './ScreenOverlayProvider.css';
 
 const ScreenOverlayContext = createContext(null);
@@ -70,6 +71,14 @@ export function ScreenOverlayProvider({ children }) {
   }, []);
 
   const hasOverlay = fullscreen !== null;
+
+  // Emit on the ActionBus when a fullscreen overlay first mounts.
+  // Used by useInitialActionGate to release the menu-flash suppression
+  // gate as soon as the player (or any other overlay) takes over the screen.
+  useEffect(() => {
+    if (!fullscreen) return;
+    getActionBus().emit('screen:overlay-mounted', { mode: 'fullscreen' });
+  }, [fullscreen]);
 
   return (
     <ScreenOverlayContext.Provider value={{ showOverlay, dismissOverlay, hasOverlay, registerEscapeInterceptor, unregisterEscapeInterceptor, escapeInterceptorRef }}>
