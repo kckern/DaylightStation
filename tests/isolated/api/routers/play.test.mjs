@@ -61,16 +61,45 @@ describe('Play API Router', () => {
       set: vi.fn().mockResolvedValue(undefined),
     };
     const mockPlayResponseService = {
-      getWatchState: vi.fn().mockResolvedValue(null),
-      toPlayResponse: vi.fn((item) => ({
-        id: item.id,
-        assetId: item.id,
-        mediaUrl: item.mediaUrl,
-        mediaType: item.mediaType,
-        title: item.title,
-        duration: item.duration,
-        resumable: item.resumable ?? false,
-      })),
+      getWatchState: vi.fn(async (item) => {
+        // Production now sources watch state via playResponseService; bridge
+        // through to mockWatchStore so existing test cases that stub
+        // mockWatchStore.get continue to drive resume_position behavior.
+        return await mockWatchStore.get(item.id);
+      }),
+      toPlayResponse: vi.fn((item, watchState) => {
+        const colon = item.id.indexOf(':');
+        const source = colon >= 0 ? item.id.substring(0, colon) : null;
+        const localId = colon >= 0 ? item.id.substring(colon + 1) : item.id;
+        const out = {
+          id: item.id,
+          assetId: item.id,
+          mediaUrl: item.mediaUrl,
+          mediaType: item.mediaType,
+          title: item.title,
+          duration: item.duration,
+          resumable: item.resumable ?? false,
+        };
+        if (watchState?.playhead != null) out.resume_position = watchState.playhead;
+        // Mirror the production response shape that includes a per-source
+        // identifier alias (e.g. plex: '12345').
+        if (source) out[source] = localId;
+        return out;
+      }),
+    };
+
+    // Production play router routes through ContentIdResolver. Provide a
+    // minimal resolver that mirrors the registry-based lookup the test
+    // setup expects.
+    const mockContentIdResolver = {
+      resolve: vi.fn((compoundId) => {
+        const colon = compoundId.indexOf(':');
+        const source = colon >= 0 ? compoundId.substring(0, colon) : compoundId;
+        const localId = colon >= 0 ? compoundId.substring(colon + 1) : '';
+        const adapter = mockRegistry.get(source);
+        if (!adapter) return null;
+        return { adapter, localId, source };
+      })
     };
 
     app = express();
@@ -79,6 +108,7 @@ describe('Play API Router', () => {
       watchStore: mockWatchStore,
       mediaProgressMemory: mockMediaProgressMemory,
       playResponseService: mockPlayResponseService,
+      contentIdResolver: mockContentIdResolver,
     }));
   });
 

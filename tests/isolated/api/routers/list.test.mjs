@@ -57,8 +57,25 @@ describe('List API Router', () => {
       })
     };
 
+    // Production list router routes through ContentIdResolver, not the
+    // adapter registry directly. Provide a minimal resolver that mimics
+    // the prefix-based lookup expected by the route handler.
+    const mockContentIdResolver = {
+      resolve: vi.fn((compoundId) => {
+        const colon = compoundId.indexOf(':');
+        const source = colon >= 0 ? compoundId.substring(0, colon) : compoundId;
+        const localId = colon >= 0 ? compoundId.substring(colon + 1) : '';
+        const adapter = mockRegistry.get(source);
+        if (!adapter) return null;
+        return { adapter, localId, source };
+      })
+    };
+
     app = express();
-    app.use('/api/list', createListRouter({ registry: mockRegistry }));
+    app.use('/api/list', createListRouter({
+      registry: mockRegistry,
+      contentIdResolver: mockContentIdResolver,
+    }));
   });
 
   describe('GET /api/list/:source/*', () => {
