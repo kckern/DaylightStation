@@ -348,8 +348,10 @@ describe('PlexAdapter', () => {
           };
         });
 
-        // ratingMin 4 = Plex rating 8+ (normalized: rating/2)
-        const result = await adapter.search({ text: 'test', ratingMin: 4 });
+        // ratingMin 4 = Plex rating 8+ (normalized: rating/2). Tier 2 hits the
+        // hydrated path that applies the rating filter — tier 1 skips item
+        // hydration entirely.
+        const result = await adapter.search({ text: 'test', ratingMin: 4, tier: 2 });
 
         expect(result.items.length).toBe(1);
         expect(result.items[0].id).toBe('plex:1');
@@ -378,7 +380,7 @@ describe('PlexAdapter', () => {
           };
         });
 
-        const result = await adapter.search({ text: 'test', tags: ['fitness'] });
+        const result = await adapter.search({ text: 'test', tags: ['fitness'], tier: 2 });
 
         expect(result.items.length).toBe(1);
         expect(result.items[0].id).toBe('plex:1');
@@ -506,7 +508,11 @@ describe('PlexAdapter', () => {
       expect(result).toHaveLength(1);
     });
 
-    test('filters playlists by plex.libraryName (exact match)', async () => {
+    test('filters playlists by plex.libraryName (audio playlists for "Music")', async () => {
+      // Production special-cases the "Music"/"music" libraryName to filter
+      // by playlistType === 'audio' (since playlists don't carry
+      // librarySectionTitle reliably). All audio playlists pass; the video
+      // playlist is excluded.
       mockClient.getContainer.mockResolvedValue({
         MediaContainer: {
           Metadata: [
@@ -522,8 +528,8 @@ describe('PlexAdapter', () => {
         'plex.libraryName': 'Music'
       });
 
-      expect(result).toHaveLength(1);
-      expect(result[0].title).toBe('Rock Hits');
+      expect(result).toHaveLength(2);
+      expect(result.map(r => r.title)).toEqual(['Rock Hits', 'Lectures']);
     });
 
     test('filters playlists by plex.libraryName (case-insensitive)', async () => {
@@ -543,11 +549,14 @@ describe('PlexAdapter', () => {
       expect(result).toHaveLength(1);
     });
 
-    test('falls back to contains match if no exact match', async () => {
+    test('falls back to librarySectionTitle contains match for non-special libraryName', async () => {
+      // The "Music"/"video"/etc. names are special-cased on playlistType.
+      // Other names fall through to librarySectionTitle exact-then-contains
+      // matching — exercise the contains fallback with a custom library name.
       mockClient.getContainer.mockResolvedValue({
         MediaContainer: {
           Metadata: [
-            { ratingKey: '1', title: 'Jazz', type: 'playlist', playlistType: 'audio', librarySectionTitle: 'My Music Library' },
+            { ratingKey: '1', title: 'Jazz', type: 'playlist', playlistType: 'audio', librarySectionTitle: 'My Lectures Library' },
             { ratingKey: '2', title: 'Podcasts', type: 'playlist', playlistType: 'audio', librarySectionTitle: 'Spoken Word' }
           ]
         }
@@ -555,7 +564,7 @@ describe('PlexAdapter', () => {
 
       const result = await adapter.getList({
         from: 'playlist:',
-        'plex.libraryName': 'Music'
+        'plex.libraryName': 'Lectures'
       });
 
       expect(result).toHaveLength(1);

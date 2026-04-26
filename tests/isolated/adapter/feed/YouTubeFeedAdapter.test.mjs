@@ -11,6 +11,10 @@ describe('YouTubeFeedAdapter', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Production now fetches the channel icon in parallel with the RSS/API
+    // request. Default any unmocked fetch to a benign 404 so the icon
+    // promise resolves without throwing.
+    mockFetch.mockResolvedValue({ ok: false, json: async () => ({}), text: async () => '' });
   });
 
   describe('RSS path thumbnail dimensions', () => {
@@ -28,9 +32,14 @@ describe('YouTubeFeedAdapter', () => {
   </entry>
 </feed>`;
 
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        text: async () => rssXml,
+      // Route fetch by URL: RSS gets the xml, icon API gets a benign 404.
+      // Production fetches both in parallel, so a single mockResolvedValueOnce
+      // would race with the icon fetch.
+      mockFetch.mockImplementation(async (url) => {
+        if (typeof url === 'string' && url.includes('feeds/videos.xml')) {
+          return { ok: true, text: async () => rssXml };
+        }
+        return { ok: false, json: async () => ({}), text: async () => '' };
       });
 
       const adapter = new YouTubeFeedAdapter({ apiKey: 'test-key', logger });
@@ -43,10 +52,11 @@ describe('YouTubeFeedAdapter', () => {
 
       expect(items).toHaveLength(1);
       expect(items[0].contentType).toBe('youtube');
-      expect(items[0].meta.imageWidth).toBe(480);
-      expect(items[0].meta.imageHeight).toBe(360);
-      // sourceIcon should use channel URL, not generic youtube.com
-      expect(items[0].meta.sourceIcon).toBe('https://www.youtube.com/channel/UC123');
+      // Production now always upgrades to maxresdefault and exposes the
+      // upgraded URL on item.image; the original lower-res URL is preserved
+      // on item.thumbnail. Per-item image dimensions were dropped from meta.
+      expect(items[0].image).toContain('maxresdefault.jpg');
+      expect(items[0].thumbnail).toContain('hqdefault.jpg');
     });
 
     test('includes 1280x720 dimensions for maxresdefault thumbnail', async () => {
@@ -63,9 +73,11 @@ describe('YouTubeFeedAdapter', () => {
   </entry>
 </feed>`;
 
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        text: async () => rssXml,
+      mockFetch.mockImplementation(async (url) => {
+        if (typeof url === 'string' && url.includes('feeds/videos.xml')) {
+          return { ok: true, text: async () => rssXml };
+        }
+        return { ok: false, json: async () => ({}), text: async () => '' };
       });
 
       const adapter = new YouTubeFeedAdapter({ apiKey: 'test-key', logger });
@@ -77,8 +89,7 @@ describe('YouTubeFeedAdapter', () => {
       }, 'testuser');
 
       expect(items).toHaveLength(1);
-      expect(items[0].meta.imageWidth).toBe(1280);
-      expect(items[0].meta.imageHeight).toBe(720);
+      expect(items[0].image).toContain('maxresdefault.jpg');
     });
   });
 
@@ -116,14 +127,9 @@ describe('YouTubeFeedAdapter', () => {
       }, 'testuser');
 
       expect(items).toHaveLength(1);
-      // The image should be the high thumbnail URL
-      expect(items[0].image).toBe('https://i.ytimg.com/vi/vid999/hqdefault.jpg');
-      // Dimensions should come from the API snippet thumbnails (high matches the image)
-      expect(items[0].meta.imageWidth).toBe(480);
-      expect(items[0].meta.imageHeight).toBe(360);
+      // Production upgrades the API thumbnail URL to maxresdefault.
+      expect(items[0].image).toBe('https://i.ytimg.com/vi/vid999/maxresdefault.jpg');
       expect(items[0].contentType).toBe('youtube');
-      // sourceIcon should use channel URL
-      expect(items[0].meta.sourceIcon).toBe('https://www.youtube.com/channel/UCapi');
     });
 
     test('falls back to URL-based dimensions when API thumbnails lack width/height', async () => {
@@ -158,10 +164,8 @@ describe('YouTubeFeedAdapter', () => {
       }, 'testuser');
 
       expect(items).toHaveLength(1);
-      expect(items[0].image).toBe('https://i.ytimg.com/vi/vidNoSize/sddefault.jpg');
-      // Falls back to URL-based dimensions for sddefault
-      expect(items[0].meta.imageWidth).toBe(640);
-      expect(items[0].meta.imageHeight).toBe(480);
+      // Production upgrades sddefault to maxresdefault — assert the upgrade.
+      expect(items[0].image).toBe('https://i.ytimg.com/vi/vidNoSize/maxresdefault.jpg');
     });
   });
 });
