@@ -1,0 +1,15 @@
+# tests/_fixtures/local-content/scripture/cfm/test-chapter.yaml
+reference: "1 Nephi 1"
+volume: "bom"
+chapter: 1
+duration: 360
+mediaFile: "cfm/1nephi1.mp3"
+verses:
+  - num: 1
+    text: "I, Nephi, having been born of goodly parents..."
+    start: 0
+    end: 15
+  - num: 2
+    text: "Yea, I make a record in the language of my father..."
+    start: 15
+    end: 30

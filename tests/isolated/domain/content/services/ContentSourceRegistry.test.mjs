@@ -5,12 +5,14 @@ import { ContentSourceRegistry } from '#domains/content/services/ContentSourceRe
 describe('ContentSourceRegistry', () => {
   let registry;
 
+  // validateAdapter now requires resolveSiblings on every registered adapter
   const mockPlexAdapter = {
     source: 'plex',
     prefixes: [{ prefix: 'plex' }],
     getItem: async () => null,
     getList: async () => [],
-    resolvePlayables: async () => []
+    resolvePlayables: async () => [],
+    resolveSiblings: async () => null,
   };
 
   const mockMediaAdapter = {
@@ -21,7 +23,8 @@ describe('ContentSourceRegistry', () => {
     ],
     getItem: async () => null,
     getList: async () => [],
-    resolvePlayables: async () => []
+    resolvePlayables: async () => [],
+    resolveSiblings: async () => null,
   };
 
   beforeEach(() => {
@@ -69,7 +72,8 @@ describe('ContentSourceRegistry', () => {
       prefixes: [{ prefix: 'hymn', idTransform: (id) => `songs/${id}` }],
       getItem: async () => null,
       getList: async () => [],
-      resolvePlayables: async () => []
+      resolvePlayables: async () => [],
+      resolveSiblings: async () => null,
     };
 
     registry.register(adapterWithTransform);
@@ -103,7 +107,8 @@ describe('ContentSourceRegistry', () => {
       prefixes: [{ prefix: 'immich' }],
       getItem: async () => null,
       getList: async () => [],
-      resolvePlayables: async () => []
+      resolvePlayables: async () => [],
+      resolveSiblings: async () => null,
     };
 
     const mockImmichFamilyAdapter = {
@@ -111,7 +116,8 @@ describe('ContentSourceRegistry', () => {
       prefixes: [{ prefix: 'immich-family' }],
       getItem: async () => null,
       getList: async () => [],
-      resolvePlayables: async () => []
+      resolvePlayables: async () => [],
+      resolveSiblings: async () => null,
     };
 
     const mockAbsAdapter = {
@@ -119,7 +125,8 @@ describe('ContentSourceRegistry', () => {
       prefixes: [{ prefix: 'abs' }],
       getItem: async () => null,
       getList: async () => [],
-      resolvePlayables: async () => []
+      resolvePlayables: async () => [],
+      resolveSiblings: async () => null,
     };
 
     test('registers adapter with category metadata', () => {

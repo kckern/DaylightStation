@@ -32,9 +32,15 @@ describe('FitnessSyncerAdapter', () => {
       post: vi.fn(),
     };
 
+    // Production renamed methods: get → load, set → save. Keep old names as aliases
+    // so existing test bodies can still use mockAuthStore.get/.set without rewriting each call.
+    const get = vi.fn();
+    const set = vi.fn();
     mockAuthStore = {
-      get: vi.fn(),
-      set: vi.fn(),
+      get,
+      set,
+      load: get,
+      save: set,
     };
 
     mockLogger = {
@@ -196,7 +202,10 @@ describe('FitnessSyncerAdapter', () => {
 
       await adapter.getAccessToken();
 
+      // Production save signature: save(username, 'fitsync', data) — first arg is undefined
+      // since no username is passed in this test invocation.
       expect(mockAuthStore.set).toHaveBeenCalledWith(
+        undefined,
         'fitsync',
         expect.objectContaining({
           access_token: 'new-access-token',
@@ -486,8 +495,9 @@ describe('FitnessSyncerAdapter', () => {
       await adapter.getAccessToken();
 
       // Check that the stored expires_at is about 55 minutes from now (3600 - 300 seconds)
+      // Production save signature: save(username, 'fitsync', data) — so data is at index 2
       const setCall = mockAuthStore.set.mock.calls[0];
-      const storedData = setCall[1];
+      const storedData = setCall[2];
       const expectedExpiry = Date.now() + (3600 - 300) * 1000; // 55 minutes
 
       // Allow 1 second tolerance for test execution time

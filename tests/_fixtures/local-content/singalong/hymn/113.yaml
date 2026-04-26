@@ -1,0 +1,23 @@
+# tests/_fixtures/local-content/songs/hymn/113.yaml
+title: "Our Savior's Love"
+number: 113
+collection: "hymn"
+duration: 180
+mediaFile: "hymns/113.mp3"
+verses:
+  - num: 1
+    lines:
+      - "Our Savior's love shines like the sun"
+      - "With perfect light"
+    start: 0
+    end: 45
+  - num: 2
+    lines:
+      - "The Spirit, voice of goodness, whispers"
+      - "To our hearts"
+    start: 45
+    end: 90
+lyrics: |
+  Our Savior's love shines like the sun
+  With perfect light
+  ...

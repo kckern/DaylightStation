@@ -1,0 +1,21 @@
+title: "Test Poem"
+author: "Test Author"
+condition: "sleep"
+also_suitable_for:
+  - "calm"
+  - "peace"
+duration: 120
+mediaFile: "poetry/remedy/01.mp3"
+verses:
+  - stanza: 1
+    lines:
+      - "The first line of verse"
+      - "The second line"
+    start: 0
+    end: 30
+  - stanza: 2
+    lines:
+      - "Another stanza begins"
+      - "And continues here"
+    start: 30
+    end: 60
