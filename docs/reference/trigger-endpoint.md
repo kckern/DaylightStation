@@ -2,6 +2,8 @@
 
 Generic HTTP entry point for any physical input device (NFC reader, barcode scanner, voice mic, button, door sensor, biometric reader). The reader fires a single GET; the server resolves the `(location, type, value)` tuple against a registry and dispatches a configured action.
 
+**Config layout:** Trigger configs live under `data/household/config/triggers/<modality>/`. See [`trigger/schema.md`](./trigger/schema.md) for the full schema reference.
+
 ## URL Shape
 
 ```
@@ -49,60 +51,78 @@ Successful response shape:
 }
 ```
 
-## Config File
+## Config Files
 
-`data/household/config/nfc.yml` (the NFC modality file; future modalities live in their own files — see below). Bootstrap is permissive: if the file is missing or malformed, a warning is logged and the registry is empty — every trigger returns 404 `LOCATION_NOT_FOUND`, but the rest of the app boots normally.
+Config is split across two files per modality under `data/household/config/triggers/`. Bootstrap is permissive: missing or malformed files log a warning and produce an empty registry — every trigger returns 404 `LOCATION_NOT_FOUND`, but the rest of the app boots normally.
 
-Location-rooted shape:
+**`triggers/nfc/locations.yml`** — reader locations and per-reader defaults:
 
 ```yaml
 livingroom:
-  target: tv                 # default device for this location (required)
-  action: play               # default action for this location
+  target: livingroom-tv      # device that receives the resolved load command (required)
+  action: play               # default action for tags scanned at this reader
   auth_token: s3cret         # optional; if set, ?token=… must match
-  tags:                      # entries key for type=nfc (barcode → codes, voice → keywords)
-    "04a1b2c3d4":
-      plex: 12345            # shorthand: resolves via ContentIdResolver to "plex:12345"
-    "04ffeeddcc":
-      action: scene
-      scene: scene.movie_night
-    "04112233aa":
-      action: open
-      target: kitchen-display
-      path: /weather
 office:
-  target: monitor
+  target: office-monitor
   action: queue
-  tags:
-    "04beefcafe":
-      content: youtube:dQw4w9WgXcQ
 ```
 
-Per-tag entries inherit `target` and `action` from the location and may override either. Reserved keys: `action`, `target`, `content`, `scene`, `service`, `entity`, `data`. Any other key becomes a member of `intent.params`. If exactly one non-reserved key is present and no explicit `content`, that key is treated as a content prefix and joined as `prefix:value` (e.g. `plex: 12345` → `content: "plex:12345"`).
+**`triggers/nfc/tags.yml`** — universal tag registry (tags recognized at any reader):
+
+```yaml
+"04a1b2c3d4":
+  plex: 12345                # shorthand: resolves to content: "plex:12345"
+"04ffeeddcc":
+  action: scene
+  scene: scene.movie_night
+"04112233aa":
+  action: open
+  target: kitchen-display
+  path: /weather
+  livingroom:                # per-reader override (key must match a reader ID)
+    shader: blackout
+"04beefcafe":
+  content: youtube:dQw4w9WgXcQ
+```
+
+Per-tag entries inherit `target` and `action` from the matching location and may override either. Reserved keys: `action`, `target`, `content`, `scene`, `service`, `entity`, `data`. Any other scalar key becomes a load-query param. If exactly one non-reserved scalar key is present and no explicit `content`, that key is treated as a content prefix joined as `prefix:value` (e.g. `plex: 12345` → `content: "plex:12345"`). Object-valued keys are treated as per-reader override blocks — the key must match a registered reader ID or a `ValidationError` is thrown.
+
+See [`trigger/schema.md`](./trigger/schema.md) for the complete field reference and disambiguation rules.
 
 ## Adding a New Tag
 
-Append under the location's entries map:
+Append to `triggers/nfc/tags.yml`:
 
 ```yaml
-livingroom:
-  tags:
-    "04newtaguid":
-      plex: 67890
+"04newtaguid":
+  plex: 67890
+```
+
+The tag is recognized at every reader listed in `nfc/locations.yml`. To override behavior at a specific reader, add a per-reader block:
+
+```yaml
+"04newtaguid":
+  plex: 67890
+  office:                    # only applies when scanned at the office reader
+    shader: focused
 ```
 
 ## Adding a New Location
 
-Add a top-level key with a `target` (required) and optional `action`/`auth_token`:
+Add a top-level entry to `triggers/nfc/locations.yml` with a `target` (required) and optional `action`/`auth_token`:
 
 ```yaml
 frontdoor:
   target: doorbell-display
   action: scene
   auth_token: door-secret
-  tags:
-    "04doorkey1":
-      scene: scene.welcome_home
+```
+
+Then add any tags for that reader in `triggers/nfc/tags.yml` (using per-reader override blocks if the behavior differs from other readers):
+
+```yaml
+"04doorkey1":
+  scene: scene.welcome_home
 ```
 
 ## Action Types
@@ -133,4 +153,4 @@ curl "http://homeserver.local:3111/api/v1/trigger/livingroom/nfc/04a1b2c3d4?dryR
 
 ## Future Modalities
 
-`barcode`, `voice`, etc. are reserved `type` values for when those readers come online. Each lives in its own YAML file (`barcode.yml`, `voice.yml`) and feeds the same location-rooted registry under a different entries key (`codes` for barcode, `keywords` for voice — see `ENTRIES_KEY_BY_TYPE` in `TriggerConfig.mjs`).
+`barcode`, `voice`, etc. are reserved `type` values for when those readers come online. Each modality lives in its own subdirectory under `triggers/` (e.g. `triggers/barcode/`, `triggers/voice/`) with its own `locations.yml` and modality-specific registry file. See [`trigger/schema.md`](./trigger/schema.md) for the layout conventions.
