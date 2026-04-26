@@ -154,7 +154,11 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
    * @returns {Promise<void>}
    */
   async clear(storagePath) {
-    const basePath = this._getBasePath(storagePath);
+    // _getBasePath returns a path with .yml appended (idempotent with saveYaml/loadYamlSafe).
+    // deleteYaml unconditionally appends .yml, so we strip the extension here to avoid
+    // silently no-op'ing on a non-existent .yml.yml target.
+    const fullPath = this._getBasePath(storagePath);
+    const basePath = fullPath.replace(/\.ya?ml$/, '');
     deleteYaml(basePath);
   }
 

@@ -365,5 +365,52 @@ describe('MediaProgress', () => {
         watchTime: 0
       });
     });
+
+    it('should include completedAt in serialization when present', () => {
+      const progress = new MediaProgress({
+        contentId: 'plex:674498',
+        playhead: 650,
+        duration: 678,
+        playCount: 1,
+        lastPlayed: '2026-04-20 06:07:44',
+        watchTime: 735,
+        completedAt: '2026-04-20 06:07:44'
+      });
+
+      const json = progress.toJSON();
+
+      expect(json.completedAt).toBe('2026-04-20 06:07:44');
+    });
+
+    it('should include bookmark in serialization when present', () => {
+      const bookmark = {
+        playhead: 1234,
+        reason: 'session-start',
+        createdAt: new Date().toISOString()
+      };
+      const progress = new MediaProgress({
+        contentId: 'plex:111',
+        playhead: 1500,
+        duration: 3000,
+        bookmark
+      });
+
+      const json = progress.toJSON();
+
+      expect(json.bookmark).toEqual(bookmark);
+    });
+
+    it('should NOT include completedAt or bookmark when not set', () => {
+      const progress = new MediaProgress({
+        contentId: 'movie:no-extras',
+        playhead: 100,
+        duration: 200
+      });
+
+      const json = progress.toJSON();
+
+      expect(json).not.toHaveProperty('completedAt');
+      expect(json).not.toHaveProperty('bookmark');
+    });
   });
 });
