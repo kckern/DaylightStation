@@ -265,7 +265,7 @@ describe('FullyKioskContentAdapter', () => {
         ([cmd]) => cmd.includes('/dev/video') || cmd.includes('/dev/camera')
       );
       expect(camCalls.length).toBe(0);
-      expect(result.cameraAvailable).toBe(false);
+      expect(result.cameraAvailable).toBeNull();
       expect(result.cameraSkipped).toBe(true);
       expect(mockLogger.info).toHaveBeenCalledWith(
         'fullykiosk.prepareForContent.cameraCheck.skipped',

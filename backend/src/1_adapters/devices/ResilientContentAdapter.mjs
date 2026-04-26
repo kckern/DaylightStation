@@ -22,6 +22,11 @@ export class ResilientContentAdapter {
   #launchActivity;
   #logger;
   #metrics;
+  // Cache of the most recent options passed to prepareForContent(). The load()
+  // recovery path replays prepareForContent after ADB recovery; without this
+  // cache, that retry would silently drop options like skipCameraCheck and
+  // re-run prepare with default behavior.
+  #lastPrepareOptions = {};
 
   /**
    * @param {Object} config
@@ -54,6 +59,8 @@ export class ResilientContentAdapter {
    * @returns {Promise<Object>}
    */
   async prepareForContent(options = {}) {
+    // Cache so the load() retry path can replay these same options post-recovery.
+    this.#lastPrepareOptions = options;
     const result = await this.#primary.prepareForContent(options);
 
     if (result.ok) return result;
@@ -124,9 +131,11 @@ export class ResilientContentAdapter {
       };
     }
 
-    // Retry: prepare + load
+    // Retry: prepare + load. Replay the last prepareForContent options so
+    // flags like skipCameraCheck stay consistent across the original call
+    // and the post-recovery retry.
     this.#logger.info?.('resilient.load.retrying', { path });
-    const prepResult = await this.#primary.prepareForContent();
+    const prepResult = await this.#primary.prepareForContent(this.#lastPrepareOptions);
     if (!prepResult.ok) {
       this.#logger.error?.('resilient.load.retryPrepareFailed', { error: prepResult.error });
       return {

@@ -255,7 +255,15 @@ export class WakeAndLoadService {
     this.#logger.info?.('wake-and-load.prepare.done', { deviceId, dispatchId });
 
     const coldWake = !!prepResult.coldRestart;
-    const cameraAvailable = prepResult.cameraAvailable !== false;
+    // cameraAvailable propagation:
+    //   - true:  camera verified present
+    //   - false: camera verified missing/unreachable (gate camera-required flows)
+    //   - null:  not checked (skipCameraCheck) — consumers must NOT treat as failure
+    // When the adapter skipped the check, surface null so downstream callers can
+    // distinguish "we didn't look" from "camera doesn't work".
+    const cameraAvailable = prepResult.cameraSkipped
+      ? null
+      : prepResult.cameraAvailable !== false;
 
     // --- Step 4b: Re-verify TV power ---
     // The prepare phase can take 20-30s (ADB reconnect, companion apps, FKB
