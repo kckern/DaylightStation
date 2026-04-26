@@ -1,18 +1,18 @@
 // tests/unit/infrastructure/proxy/ProxyService.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { ProxyService } from '#backend/src/0_system/proxy/ProxyService.mjs';
 
 describe('ProxyService', () => {
   let proxyService;
   const mockLogger = {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn()
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn()
   };
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     proxyService = new ProxyService({ logger: mockLogger });
   });
 
@@ -140,8 +140,8 @@ describe('ProxyService', () => {
     test('returns 404 for unknown service', async () => {
       const mockReq = { url: '/test' };
       const mockRes = {
-        status: jest.fn().mockReturnThis(),
-        json: jest.fn()
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn()
       };
 
       await proxyService.proxy('unknown', mockReq, mockRes);
@@ -159,8 +159,8 @@ describe('ProxyService', () => {
 
       const mockReq = { url: '/test' };
       const mockRes = {
-        status: jest.fn().mockReturnThis(),
-        json: jest.fn()
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn()
       };
 
       await proxyService.proxy('test', mockReq, mockRes);

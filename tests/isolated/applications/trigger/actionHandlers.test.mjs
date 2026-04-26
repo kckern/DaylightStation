@@ -1,9 +1,9 @@
-import { describe, it, expect, jest } from '@jest/globals';
+import { describe, it, expect, vi } from 'vitest';
 import { actionHandlers, UnknownActionError, dispatchAction } from '../../../../backend/src/3_applications/trigger/actionHandlers.mjs';
 
 describe('actionHandlers', () => {
   it('queue calls wakeAndLoadService with queue=<content>', async () => {
-    const wakeAndLoadService = { execute: jest.fn().mockResolvedValue({ ok: true, dispatchId: 'd1' }) };
+    const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true, dispatchId: 'd1' }) };
     const intent = { action: 'queue', target: 'livingroom-tv', content: 'plex:620707', params: { volume: 60 } };
     await actionHandlers.queue(intent, { wakeAndLoadService });
     expect(wakeAndLoadService.execute).toHaveBeenCalledWith(
@@ -14,7 +14,7 @@ describe('actionHandlers', () => {
   });
 
   it('play calls wakeAndLoadService with play=<content>', async () => {
-    const wakeAndLoadService = { execute: jest.fn().mockResolvedValue({ ok: true }) };
+    const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
     const intent = { action: 'play', target: 'office-tv', content: 'hymn:166', params: {} };
     await actionHandlers.play(intent, { wakeAndLoadService });
     expect(wakeAndLoadService.execute).toHaveBeenCalledWith(
@@ -25,7 +25,7 @@ describe('actionHandlers', () => {
   });
 
   it('canonical queue/play key wins over user-supplied params (no clobber)', async () => {
-    const wakeAndLoadService = { execute: jest.fn().mockResolvedValue({ ok: true }) };
+    const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
     const intent = { action: 'queue', target: 't', content: 'plex:1', params: { queue: 'hijack' } };
     await actionHandlers.queue(intent, { wakeAndLoadService });
     expect(wakeAndLoadService.execute).toHaveBeenCalledWith(
@@ -36,7 +36,7 @@ describe('actionHandlers', () => {
   });
 
   it('scene calls haGateway.callService with scene.turn_on', async () => {
-    const haGateway = { callService: jest.fn().mockResolvedValue({ ok: true }) };
+    const haGateway = { callService: vi.fn().mockResolvedValue({ ok: true }) };
     const intent = { action: 'scene', scene: 'scene.movie_night', params: {} };
     await actionHandlers.scene(intent, { haGateway });
     expect(haGateway.callService).toHaveBeenCalledWith(
@@ -45,7 +45,7 @@ describe('actionHandlers', () => {
   });
 
   it('ha-service calls haGateway.callService with parsed domain.service', async () => {
-    const haGateway = { callService: jest.fn().mockResolvedValue({ ok: true }) };
+    const haGateway = { callService: vi.fn().mockResolvedValue({ ok: true }) };
     const intent = {
       action: 'ha-service',
       service: 'light.turn_off',
@@ -62,13 +62,13 @@ describe('actionHandlers', () => {
   it('ha-service throws on malformed service string', async () => {
     await expect(actionHandlers['ha-service'](
       { action: 'ha-service', service: 'no-dot', params: {} },
-      { haGateway: { callService: jest.fn() } }
+      { haGateway: { callService: vi.fn() } }
     )).rejects.toThrow(/Invalid ha-service/);
   });
 
   it('open calls device.loadContent with the path', async () => {
-    const device = { loadContent: jest.fn().mockResolvedValue({ ok: true }) };
-    const deviceService = { get: jest.fn().mockReturnValue(device) };
+    const device = { loadContent: vi.fn().mockResolvedValue({ ok: true }) };
+    const deviceService = { get: vi.fn().mockReturnValue(device) };
     const intent = { action: 'open', target: 'livingroom-tv', params: { path: '/menu' } };
     await actionHandlers.open(intent, { deviceService });
     expect(deviceService.get).toHaveBeenCalledWith('livingroom-tv');
@@ -76,7 +76,7 @@ describe('actionHandlers', () => {
   });
 
   it('open throws when device is unknown', async () => {
-    const deviceService = { get: jest.fn().mockReturnValue(undefined) };
+    const deviceService = { get: vi.fn().mockReturnValue(undefined) };
     await expect(actionHandlers.open(
       { action: 'open', target: 'no-such', params: { path: '/x' } },
       { deviceService }
@@ -84,7 +84,7 @@ describe('actionHandlers', () => {
   });
 
   it('open throws when path is missing', async () => {
-    const deviceService = { get: jest.fn().mockReturnValue({ loadContent: jest.fn() }) };
+    const deviceService = { get: vi.fn().mockReturnValue({ loadContent: vi.fn() }) };
     await expect(actionHandlers.open(
       { action: 'open', target: 't', params: {} },
       { deviceService }
@@ -92,7 +92,7 @@ describe('actionHandlers', () => {
   });
 
   it('play-next calls wakeAndLoadService with op=play-next and play-next=<content>', async () => {
-    const wakeAndLoadService = { execute: jest.fn().mockResolvedValue({ ok: true }) };
+    const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
     const intent = { action: 'play-next', target: 'livingroom-tv', content: 'plex:642120', params: { volume: 60 } };
     await actionHandlers['play-next'](intent, { wakeAndLoadService });
     expect(wakeAndLoadService.execute).toHaveBeenCalledWith(
@@ -103,7 +103,7 @@ describe('actionHandlers', () => {
   });
 
   it('play-next: canonical play-next key wins over user-supplied params', async () => {
-    const wakeAndLoadService = { execute: jest.fn().mockResolvedValue({ ok: true }) };
+    const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
     const intent = { action: 'play-next', target: 't', content: 'plex:1', params: { 'play-next': 'hijack', op: 'banana' } };
     await actionHandlers['play-next'](intent, { wakeAndLoadService });
     expect(wakeAndLoadService.execute).toHaveBeenCalledWith(
@@ -114,7 +114,7 @@ describe('actionHandlers', () => {
   });
 
   it('dispatchAction routes play-next to the play-next handler', async () => {
-    const wakeAndLoadService = { execute: jest.fn().mockResolvedValue({ ok: true }) };
+    const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
     const intent = { action: 'play-next', target: 't', content: 'plex:1', params: {} };
     await dispatchAction(intent, { wakeAndLoadService });
     expect(wakeAndLoadService.execute).toHaveBeenCalled();
@@ -122,7 +122,7 @@ describe('actionHandlers', () => {
 
   describe('dispatchAction', () => {
     it('routes to the matching handler', async () => {
-      const wakeAndLoadService = { execute: jest.fn().mockResolvedValue({ ok: true }) };
+      const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
       const intent = { action: 'queue', target: 't', content: 'plex:1', params: {} };
       await dispatchAction(intent, { wakeAndLoadService });
       expect(wakeAndLoadService.execute).toHaveBeenCalled();

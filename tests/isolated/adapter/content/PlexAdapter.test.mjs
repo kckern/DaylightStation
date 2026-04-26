@@ -1,10 +1,10 @@
 // tests/unit/adapters/content/PlexAdapter.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { PlexAdapter } from '#adapters/content/media/plex/PlexAdapter.mjs';
 import { PlexClient } from '#adapters/content/media/plex/PlexClient.mjs';
 
 // Helper to create mock httpClient
-const createMockHttpClient = () => ({ get: jest.fn(), post: jest.fn() });
+const createMockHttpClient = () => ({ get: vi.fn(), post: vi.fn() });
 
 describe('PlexAdapter', () => {
   describe('constructor', () => {
@@ -54,7 +54,7 @@ describe('PlexAdapter', () => {
 
       // Mock the client
       adapter.client = {
-        getMetadata: jest.fn().mockResolvedValue({
+        getMetadata: vi.fn().mockResolvedValue({
           ratingKey: '12345',
           title: 'Test Movie',
           type: 'movie',
@@ -83,7 +83,7 @@ describe('PlexAdapter', () => {
       );
 
       adapter.client = {
-        getMetadata: jest.fn().mockResolvedValue(null)
+        getMetadata: vi.fn().mockResolvedValue(null)
       };
 
       const result = await adapter.getMetadata('99999');
@@ -97,7 +97,7 @@ describe('PlexAdapter', () => {
       );
 
       adapter.client = {
-        getMetadata: jest.fn().mockRejectedValue(new Error('Network error'))
+        getMetadata: vi.fn().mockRejectedValue(new Error('Network error'))
       };
 
       const result = await adapter.getMetadata('12345');
@@ -113,14 +113,14 @@ describe('PlexAdapter', () => {
       );
 
       // Mock getContainerInfo and getList
-      adapter.getContainerInfo = jest.fn().mockResolvedValue({
+      adapter.getContainerInfo = vi.fn().mockResolvedValue({
         title: 'Season 1',
         image: '/thumb/123',
         type: 'season',
         childCount: 10
       });
 
-      adapter.getList = jest.fn().mockResolvedValue([
+      adapter.getList = vi.fn().mockResolvedValue([
         { id: 'plex:1', title: 'Episode 1' },
         { id: 'plex:2', title: 'Episode 2' }
       ]);
@@ -139,8 +139,8 @@ describe('PlexAdapter', () => {
         { httpClient: createMockHttpClient() }
       );
 
-      adapter.getContainerInfo = jest.fn().mockResolvedValue(null);
-      adapter.getList = jest.fn().mockResolvedValue([]);
+      adapter.getContainerInfo = vi.fn().mockResolvedValue(null);
+      adapter.getList = vi.fn().mockResolvedValue([]);
 
       const result = await adapter.getContainerWithChildren('plex:99999');
       expect(result).toBeNull();
@@ -152,11 +152,11 @@ describe('PlexAdapter', () => {
         { httpClient: createMockHttpClient() }
       );
 
-      adapter.getContainerInfo = jest.fn().mockResolvedValue({
+      adapter.getContainerInfo = vi.fn().mockResolvedValue({
         title: 'Empty Season',
         type: 'season'
       });
-      adapter.getList = jest.fn().mockResolvedValue(null);
+      adapter.getList = vi.fn().mockResolvedValue(null);
 
       const result = await adapter.getContainerWithChildren('plex:123');
       expect(result.container.title).toBe('Empty Season');
@@ -201,14 +201,14 @@ describe('PlexAdapter', () => {
         );
 
         // Mock hubSearch
-        adapter.client.hubSearch = jest.fn().mockResolvedValue({
+        adapter.client.hubSearch = vi.fn().mockResolvedValue({
           results: [
             { ratingKey: '12345', title: 'Test Movie', type: 'movie', year: 2024 }
           ]
         });
 
         // Mock getItem for full metadata
-        adapter.getItem = jest.fn().mockResolvedValue({
+        adapter.getItem = vi.fn().mockResolvedValue({
           id: 'plex:12345',
           source: 'plex',
           title: 'Test Movie',
@@ -231,7 +231,7 @@ describe('PlexAdapter', () => {
           { httpClient: createMockHttpClient() }
         );
 
-        adapter.client.hubSearch = jest.fn().mockResolvedValue({
+        adapter.client.hubSearch = vi.fn().mockResolvedValue({
           results: [
             { ratingKey: '1', title: 'Action Movie', type: 'movie' },
             { ratingKey: '2', title: 'TV Show', type: 'show' },
@@ -255,7 +255,7 @@ describe('PlexAdapter', () => {
           { httpClient: createMockHttpClient() }
         );
 
-        adapter.client.hubSearch = jest.fn().mockResolvedValue({
+        adapter.client.hubSearch = vi.fn().mockResolvedValue({
           results: [
             { ratingKey: '1', title: 'Movie', type: 'movie' },
             { ratingKey: '2', title: 'Jazz Album', type: 'album' },
@@ -278,7 +278,7 @@ describe('PlexAdapter', () => {
           { httpClient: createMockHttpClient() }
         );
 
-        adapter.client.hubSearch = jest.fn().mockResolvedValue({
+        adapter.client.hubSearch = vi.fn().mockResolvedValue({
           results: [
             { ratingKey: '1', title: 'Movie', type: 'movie' },
             { ratingKey: '2', title: 'Song', type: 'track' },
@@ -286,7 +286,7 @@ describe('PlexAdapter', () => {
           ]
         });
 
-        adapter.getItem = jest.fn().mockImplementation(async (id) => ({
+        adapter.getItem = vi.fn().mockImplementation(async (id) => ({
           id: `plex:${id}`,
           source: 'plex',
           title: `Item ${id}`,
@@ -305,14 +305,14 @@ describe('PlexAdapter', () => {
           { httpClient: createMockHttpClient() }
         );
 
-        adapter.client.hubSearch = jest.fn().mockResolvedValue({
+        adapter.client.hubSearch = vi.fn().mockResolvedValue({
           results: [
             { ratingKey: '1', title: 'Movie', type: 'movie' },
             { ratingKey: '2', title: 'Song', type: 'track' }
           ]
         });
 
-        adapter.getItem = jest.fn().mockImplementation(async (id) => ({
+        adapter.getItem = vi.fn().mockImplementation(async (id) => ({
           id: `plex:${id}`,
           source: 'plex',
           title: `Item ${id}`,
@@ -331,14 +331,14 @@ describe('PlexAdapter', () => {
           { httpClient: createMockHttpClient() }
         );
 
-        adapter.client.hubSearch = jest.fn().mockResolvedValue({
+        adapter.client.hubSearch = vi.fn().mockResolvedValue({
           results: [
             { ratingKey: '1', title: 'High Rated', type: 'movie' },
             { ratingKey: '2', title: 'Low Rated', type: 'movie' }
           ]
         });
 
-        adapter.getItem = jest.fn().mockImplementation(async (id) => {
+        adapter.getItem = vi.fn().mockImplementation(async (id) => {
           const ratings = { '1': 9, '2': 3 }; // Plex 0-10 scale
           return {
             id: `plex:${id}`,
@@ -361,14 +361,14 @@ describe('PlexAdapter', () => {
           { httpClient: createMockHttpClient() }
         );
 
-        adapter.client.hubSearch = jest.fn().mockResolvedValue({
+        adapter.client.hubSearch = vi.fn().mockResolvedValue({
           results: [
             { ratingKey: '1', title: 'Tagged Movie', type: 'movie' },
             { ratingKey: '2', title: 'Untagged Movie', type: 'movie' }
           ]
         });
 
-        adapter.getItem = jest.fn().mockImplementation(async (id) => {
+        adapter.getItem = vi.fn().mockImplementation(async (id) => {
           const labels = { '1': ['fitness', 'workout'], '2': [] };
           return {
             id: `plex:${id}`,
@@ -390,7 +390,7 @@ describe('PlexAdapter', () => {
           { httpClient: createMockHttpClient() }
         );
 
-        adapter.client.hubSearch = jest.fn().mockResolvedValue({ results: [] });
+        adapter.client.hubSearch = vi.fn().mockResolvedValue({ results: [] });
 
         await adapter.search({ text: 'test', take: 25 });
 
@@ -403,7 +403,7 @@ describe('PlexAdapter', () => {
           { httpClient: createMockHttpClient() }
         );
 
-        adapter.client.hubSearch = jest.fn().mockResolvedValue({
+        adapter.client.hubSearch = vi.fn().mockResolvedValue({
           results: [
             { ratingKey: '1', title: 'First', type: 'movie' },
             { ratingKey: '2', title: 'Second', type: 'movie' },
@@ -411,7 +411,7 @@ describe('PlexAdapter', () => {
           ]
         });
 
-        adapter.getItem = jest.fn().mockImplementation(async (id) => ({
+        adapter.getItem = vi.fn().mockImplementation(async (id) => ({
           id: `plex:${id}`,
           source: 'plex',
           title: `Movie ${id}`,
@@ -431,7 +431,7 @@ describe('PlexAdapter', () => {
           { httpClient: createMockHttpClient() }
         );
 
-        adapter.client.hubSearch = jest.fn().mockRejectedValue(new Error('Network error'));
+        adapter.client.hubSearch = vi.fn().mockRejectedValue(new Error('Network error'));
 
         const result = await adapter.search({ text: 'test' });
 
@@ -445,7 +445,7 @@ describe('PlexAdapter', () => {
           { httpClient: createMockHttpClient() }
         );
 
-        adapter.client.hubSearch = jest.fn().mockResolvedValue({
+        adapter.client.hubSearch = vi.fn().mockResolvedValue({
           results: [
             { ratingKey: '1', title: 'TV Show', type: 'show', key: '/library/metadata/1/children' }
           ]
@@ -465,15 +465,15 @@ describe('PlexAdapter', () => {
     let mockHttpClient;
 
     beforeEach(() => {
-      mockHttpClient = { get: jest.fn(), post: jest.fn() };
+      mockHttpClient = { get: vi.fn(), post: vi.fn() };
       adapter = new PlexAdapter(
         { host: 'http://localhost:32400', token: 'test-token' },
         { httpClient: mockHttpClient }
       );
 
       mockClient = {
-        getContainer: jest.fn(),
-        getMetadata: jest.fn()
+        getContainer: vi.fn(),
+        getMetadata: vi.fn()
       };
       adapter.client = mockClient;
     });
@@ -588,14 +588,14 @@ describe('PlexAdapter', () => {
     let mockHttpClient;
 
     beforeEach(() => {
-      mockHttpClient = { get: jest.fn(), post: jest.fn() };
+      mockHttpClient = { get: vi.fn(), post: vi.fn() };
       adapter = new PlexAdapter(
         { host: 'http://localhost:32400', token: 'test-token' },
         { httpClient: mockHttpClient }
       );
       mockClient = {
-        getContainer: jest.fn(),
-        getMetadata: jest.fn()
+        getContainer: vi.fn(),
+        getMetadata: vi.fn()
       };
       adapter.client = mockClient;
     });
@@ -641,12 +641,12 @@ describe('PlexAdapter', () => {
 
 describe('loadMediaUrl error logging', () => {
   test('logs structured warning when metadata is missing', async () => {
-    const warn = jest.fn();
-    const logger = { debug: jest.fn(), info: jest.fn(), warn, error: jest.fn() };
+    const warn = vi.fn();
+    const logger = { debug: vi.fn(), info: vi.fn(), warn, error: vi.fn() };
     const mockClient = {
-      get: jest.fn(),
-      post: jest.fn(),
-      getMetadata: jest.fn().mockResolvedValue({ MediaContainer: {} }),
+      get: vi.fn(),
+      post: vi.fn(),
+      getMetadata: vi.fn().mockResolvedValue({ MediaContainer: {} }),
     };
     const adapter = new PlexAdapter(
       { host: 'http://localhost:32400', token: 't' },
@@ -665,11 +665,11 @@ describe('loadMediaUrl error logging', () => {
   });
 
   test('logs structured warning on non-playable type', async () => {
-    const warn = jest.fn();
-    const logger = { debug: jest.fn(), info: jest.fn(), warn, error: jest.fn() };
+    const warn = vi.fn();
+    const logger = { debug: vi.fn(), info: vi.fn(), warn, error: vi.fn() };
     const mockClient = {
-      get: jest.fn(), post: jest.fn(),
-      getMetadata: jest.fn().mockResolvedValue({
+      get: vi.fn(), post: vi.fn(),
+      getMetadata: vi.fn().mockResolvedValue({
         MediaContainer: { Metadata: [{ ratingKey: '1', type: 'show' }] }
       }),
     };
@@ -689,11 +689,11 @@ describe('loadMediaUrl error logging', () => {
   });
 
   test('logs structured error when exception is thrown', async () => {
-    const errorLog = jest.fn();
-    const logger = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: errorLog };
+    const errorLog = vi.fn();
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: errorLog };
     const mockClient = {
-      get: jest.fn(), post: jest.fn(),
-      getMetadata: jest.fn().mockRejectedValue(new Error('boom')),
+      get: vi.fn(), post: vi.fn(),
+      getMetadata: vi.fn().mockRejectedValue(new Error('boom')),
     };
     const adapter = new PlexAdapter(
       { host: 'http://localhost:32400', token: 't' },
@@ -715,7 +715,7 @@ describe('PlexClient', () => {
   let mockHttpClient;
 
   beforeEach(() => {
-    mockHttpClient = { get: jest.fn(), post: jest.fn() };
+    mockHttpClient = { get: vi.fn(), post: vi.fn() };
   });
 
   describe('constructor', () => {

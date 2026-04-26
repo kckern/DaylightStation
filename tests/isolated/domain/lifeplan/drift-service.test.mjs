@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { DriftService } from '#apps/lifeplan/services/DriftService.mjs';
 import { LifePlan } from '#domains/lifeplan/entities/LifePlan.mjs';
 import { CadenceService } from '#domains/lifeplan/services/CadenceService.mjs';
@@ -20,21 +20,21 @@ describe('DriftService', () => {
 
   beforeEach(() => {
     mockStore = {
-      load: jest.fn().mockReturnValue(plan),
-      save: jest.fn(),
+      load: vi.fn().mockReturnValue(plan),
+      save: vi.fn(),
     };
 
     mockMetrics = {
-      getLatest: jest.fn().mockReturnValue({ alignment_score: 0.85 }),
-      saveSnapshot: jest.fn(),
-      getHistory: jest.fn().mockReturnValue([
+      getLatest: vi.fn().mockReturnValue({ alignment_score: 0.85 }),
+      saveSnapshot: vi.fn(),
+      getHistory: vi.fn().mockReturnValue([
         { date: '2025-06-01', correlation: 0.9 },
         { date: '2025-06-08', correlation: 0.85 },
       ]),
     };
 
     mockAggregator = {
-      aggregateRange: jest.fn().mockResolvedValue({
+      aggregateRange: vi.fn().mockResolvedValue({
         days: {
           '2025-06-15': {
             sources: {

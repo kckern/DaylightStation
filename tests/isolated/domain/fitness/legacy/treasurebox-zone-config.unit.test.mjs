@@ -10,36 +10,36 @@
  * - False governance warnings (empty zoneRankMap)
  */
 
-import { jest, describe, it, expect, beforeAll, beforeEach, afterEach } from '@jest/globals';
+import { vi, describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 
 // Mock the logger to avoid console noise
-jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
+vi.mock('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
-    sampled: jest.fn()
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    sampled: vi.fn()
   }),
   getLogger: () => ({
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
-    sampled: jest.fn()
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    sampled: vi.fn()
   })
 }));
 
 // Mock DaylightAPI to prevent network calls
-jest.unstable_mockModule('#frontend/lib/api.mjs', () => ({
+vi.mock('#frontend/lib/api.mjs', () => ({
   DaylightAPI: {
-    postFitnessSession: jest.fn().mockResolvedValue({ success: true }),
-    postSessionSnapshot: jest.fn().mockResolvedValue({ success: true })
+    postFitnessSession: vi.fn().mockResolvedValue({ success: true }),
+    postSessionSnapshot: vi.fn().mockResolvedValue({ success: true })
   }
 }));
 
 // Mock moment-timezone to avoid timezone issues in tests
-jest.unstable_mockModule('moment-timezone', () => {
+vi.mock('moment-timezone', () => {
   const moment = (val) => ({
     tz: () => ({ format: () => '2024-01-01 12:00:00 pm' }),
     format: () => '2024-01-01 12:00:00 pm'

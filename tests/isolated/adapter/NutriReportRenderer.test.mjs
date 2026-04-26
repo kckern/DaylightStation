@@ -8,7 +8,7 @@
  * having actual gram values in the source data.
  */
 
-import { describe, it, expect, beforeAll } from '@jest/globals';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { NutriReportRenderer } from '../../../backend/src/1_adapters/nutribot/rendering/NutriReportRenderer.mjs';
 import path from 'path';
 

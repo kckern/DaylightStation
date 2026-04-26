@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import createLogRouter from '#api/v1/routers/life/log.mjs';
@@ -31,9 +31,9 @@ describe('Life Log API Router', () => {
 
   beforeEach(() => {
     mockAggregator = {
-      aggregate: jest.fn().mockResolvedValue(singleDayResult),
-      aggregateRange: jest.fn().mockResolvedValue(rangeResult),
-      getAvailableSources: jest.fn().mockReturnValue(['strava', 'calendar', 'weight', 'github']),
+      aggregate: vi.fn().mockResolvedValue(singleDayResult),
+      aggregateRange: vi.fn().mockResolvedValue(rangeResult),
+      getAvailableSources: vi.fn().mockReturnValue(['strava', 'calendar', 'weight', 'github']),
     };
 
     const router = createLogRouter({ aggregator: mockAggregator });

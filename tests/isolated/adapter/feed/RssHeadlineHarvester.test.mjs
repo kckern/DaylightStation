@@ -1,5 +1,5 @@
 // tests/isolated/adapter/feed/RssHeadlineHarvester.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { RssHeadlineHarvester } from '#adapters/feed/RssHeadlineHarvester.mjs';
 
 describe('RssHeadlineHarvester', () => {
@@ -31,7 +31,7 @@ describe('RssHeadlineHarvester', () => {
 
   beforeEach(() => {
     mockRssParser = {
-      parseURL: jest.fn().mockResolvedValue(fakeFeed),
+      parseURL: vi.fn().mockResolvedValue(fakeFeed),
     };
     harvester = new RssHeadlineHarvester({ rssParser: mockRssParser });
   });

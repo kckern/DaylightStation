@@ -1,19 +1,19 @@
 // tests/isolated/services/MediaQueueService.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { MediaQueue } from '#domains/media/entities/MediaQueue.mjs';
 
 // --- Helpers ---
 
 const mockStore = () => ({
-  load: jest.fn().mockResolvedValue(null),
-  save: jest.fn().mockResolvedValue(undefined),
+  load: vi.fn().mockResolvedValue(null),
+  save: vi.fn().mockResolvedValue(undefined),
 });
 
 const mockLogger = () => ({
-  info: jest.fn(),
-  debug: jest.fn(),
-  warn: jest.fn(),
-  error: jest.fn(),
+  info: vi.fn(),
+  debug: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
 });
 
 /**

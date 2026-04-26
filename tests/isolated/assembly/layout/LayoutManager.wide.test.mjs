@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { LayoutManager } from '#frontend/modules/Fitness/FitnessModules/modules/FitnessChart/layout/LayoutManager.js';
 import { createPRNG, generateScenario, detectAnomalies, CHART_DEFAULTS } from './testUtils.mjs';
 import fs from 'fs';

@@ -1,14 +1,14 @@
 // tests/isolated/adapter/proxy/KomgaProxyAdapter.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { KomgaProxyAdapter } from '#adapters/proxy/KomgaProxyAdapter.mjs';
 import { isProxyAdapter } from '#system/proxy/IProxyAdapter.mjs';
 
 describe('KomgaProxyAdapter', () => {
   const mockLogger = {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn()
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn()
   };
 
   describe('constructor', () => {

@@ -1,13 +1,13 @@
 // tests/unit/adapters/proxy/PlexProxyAdapter.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { PlexProxyAdapter } from '#adapters/proxy/PlexProxyAdapter.mjs';
 
 describe('PlexProxyAdapter', () => {
   const mockLogger = {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn()
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn()
   };
 
   describe('constructor', () => {

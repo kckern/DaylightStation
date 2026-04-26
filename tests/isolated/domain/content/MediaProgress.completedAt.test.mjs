@@ -1,5 +1,5 @@
 // tests/isolated/domain/content/MediaProgress.completedAt.test.mjs
-import { describe, test, expect } from '@jest/globals';
+import { describe, test, expect } from 'vitest';
 import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
 
 describe('MediaProgress.completedAt', () => {

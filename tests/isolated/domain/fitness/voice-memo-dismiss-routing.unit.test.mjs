@@ -1,5 +1,5 @@
 // tests/isolated/domain/fitness/voice-memo-dismiss-routing.unit.test.mjs
-import { describe, test, expect } from '@jest/globals';
+import { describe, test, expect } from 'vitest';
 
 /**
  * dismissAction: 'backdrop' | 'escape' | 'close_button' | 'discard_button'

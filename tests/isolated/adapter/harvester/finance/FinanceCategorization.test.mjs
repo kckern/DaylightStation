@@ -5,7 +5,7 @@
  * and processes untagged transactions using AI.
  */
 
-import { jest, describe, it, expect, beforeEach } from '@jest/globals';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { TransactionCategorizationService } from '#backend/src/3_applications/finance/TransactionCategorizationService.mjs';
 
 describe('FinanceCategorization', () => {
@@ -51,22 +51,22 @@ describe('FinanceCategorization', () => {
 
   beforeEach(() => {
     mockAIGateway = {
-      chatWithJson: jest.fn()
+      chatWithJson: vi.fn()
     };
 
     mockTransactionSource = {
-      updateTransaction: jest.fn().mockResolvedValue({ success: true })
+      updateTransaction: vi.fn().mockResolvedValue({ success: true })
     };
 
     mockFinanceStore = {
-      getCategorizationConfig: jest.fn().mockReturnValue(realCategorizationConfig)
+      getCategorizationConfig: vi.fn().mockReturnValue(realCategorizationConfig)
     };
 
     mockLogger = {
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
-      debug: jest.fn()
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn()
     };
 
     service = new TransactionCategorizationService({

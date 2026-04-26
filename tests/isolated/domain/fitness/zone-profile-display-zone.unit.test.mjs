@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from '@jest/globals';
+import { describe, test, expect, beforeEach } from 'vitest';
 import { ZoneProfileStore } from '../../../../frontend/src/hooks/fitness/ZoneProfileStore.js';
 
 const ZONE_CONFIG = [

@@ -1,4 +1,4 @@
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createMediaRouter } from '#backend/src/4_api/v1/routers/media.mjs';
@@ -35,26 +35,26 @@ describe('Media Queue Router', () => {
 
   beforeEach(() => {
     mockMediaQueueService = {
-      load: jest.fn().mockResolvedValue(fakeQueue),
-      replace: jest.fn().mockResolvedValue(undefined),
-      addItems: jest.fn().mockResolvedValue([
+      load: vi.fn().mockResolvedValue(fakeQueue),
+      replace: vi.fn().mockResolvedValue(undefined),
+      addItems: vi.fn().mockResolvedValue([
         { queueId: 'new1', contentId: 'plex:300', title: 'Song C' },
       ]),
-      removeItem: jest.fn().mockResolvedValue(fakeQueue),
-      reorder: jest.fn().mockResolvedValue(fakeQueue),
-      setPosition: jest.fn().mockResolvedValue(fakeQueue),
-      updateState: jest.fn().mockResolvedValue(fakeQueue),
-      clear: jest.fn().mockResolvedValue(fakeQueue),
-      advance: jest.fn().mockResolvedValue(fakeQueue),
+      removeItem: vi.fn().mockResolvedValue(fakeQueue),
+      reorder: vi.fn().mockResolvedValue(fakeQueue),
+      setPosition: vi.fn().mockResolvedValue(fakeQueue),
+      updateState: vi.fn().mockResolvedValue(fakeQueue),
+      clear: vi.fn().mockResolvedValue(fakeQueue),
+      advance: vi.fn().mockResolvedValue(fakeQueue),
     };
 
-    mockBroadcastEvent = jest.fn();
-    mockContentIdResolver = jest.fn();
+    mockBroadcastEvent = vi.fn();
+    mockContentIdResolver = vi.fn();
     mockLogger = {
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
-      debug: jest.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
     };
 
     app = express();

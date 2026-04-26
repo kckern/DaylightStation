@@ -1,6 +1,6 @@
 // tests/unit/applications/journalist/JournalistContainer.test.mjs
-import { describe, it, expect, beforeEach } from '@jest/globals';
-import { jest } from '@jest/globals';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { vi } from 'vitest';
 import { JournalistContainer } from '#backend/src/3_applications/journalist/JournalistContainer.mjs';
 
 describe('JournalistContainer', () => {
@@ -15,44 +15,44 @@ describe('JournalistContainer', () => {
 
   beforeEach(() => {
     mockMessagingGateway = {
-      sendMessage: jest.fn(),
-      sendPhoto: jest.fn(),
-      editMessage: jest.fn(),
-      deleteMessage: jest.fn(),
+      sendMessage: vi.fn(),
+      sendPhoto: vi.fn(),
+      editMessage: vi.fn(),
+      deleteMessage: vi.fn(),
     };
     mockAIGateway = {
-      chat: jest.fn(),
-      complete: jest.fn(),
-      transcribe: jest.fn(),
+      chat: vi.fn(),
+      complete: vi.fn(),
+      transcribe: vi.fn(),
     };
     mockConversationStateStore = {
-      get: jest.fn(),
-      set: jest.fn(),
-      delete: jest.fn(),
-      clear: jest.fn(),
+      get: vi.fn(),
+      set: vi.fn(),
+      delete: vi.fn(),
+      clear: vi.fn(),
     };
     mockJournalEntryRepository = {
-      save: jest.fn(),
-      findByDate: jest.fn(),
-      findRecent: jest.fn(),
+      save: vi.fn(),
+      findByDate: vi.fn(),
+      findRecent: vi.fn(),
     };
     mockMessageQueueRepository = {
-      add: jest.fn(),
-      peek: jest.fn(),
-      remove: jest.fn(),
+      add: vi.fn(),
+      peek: vi.fn(),
+      remove: vi.fn(),
     };
     mockQuizRepository = {
-      getRandomQuestion: jest.fn(),
-      recordAnswer: jest.fn(),
+      getRandomQuestion: vi.fn(),
+      recordAnswer: vi.fn(),
     };
     mockUserResolver = {
-      resolve: jest.fn(),
+      resolve: vi.fn(),
     };
     mockLogger = {
-      info: jest.fn(),
-      error: jest.fn(),
-      debug: jest.fn(),
-      warn: jest.fn(),
+      info: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+      warn: vi.fn(),
     };
   });
 

@@ -1,14 +1,14 @@
 // tests/unit/fitness/treasurebox-pruning.unit.test.mjs
-import { jest, describe, test, expect, beforeAll } from '@jest/globals';
+import { vi, describe, test, expect, beforeAll } from 'vitest';
 
 // Mock logger
-jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
+vi.mock('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
-    child: jest.fn().mockReturnThis()
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    child: vi.fn().mockReturnThis()
   })
 }));
 

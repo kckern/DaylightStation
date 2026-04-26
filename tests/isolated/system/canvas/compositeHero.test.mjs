@@ -1,4 +1,4 @@
-import { jest, describe, test, expect } from '@jest/globals';
+import { vi, describe, test, expect } from 'vitest';
 import { createCanvas } from 'canvas';
 import { compositeHeroImage } from '../../../../backend/src/0_system/canvas/compositeHero.mjs';
 

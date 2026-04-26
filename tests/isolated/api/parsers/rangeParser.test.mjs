@@ -1,5 +1,5 @@
 // tests/isolated/api/parsers/rangeParser.test.mjs
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { parseDuration, parseTime, parseRange } from '#api/v1/parsers/rangeParser.mjs';
 
 describe('rangeParser', () => {

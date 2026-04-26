@@ -1,11 +1,11 @@
 // tests/isolated/domain/fitness/GuestAssignmentService.unit.test.mjs
-import { jest, describe, test, expect, beforeEach } from '@jest/globals';
+import { vi, describe, test, expect, beforeEach } from 'vitest';
 
 // Mock logger
-const mockWarn = jest.fn();
-jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
-  default: () => ({ warn: mockWarn, info: jest.fn(), debug: jest.fn(), error: jest.fn() }),
-  getLogger: () => ({ warn: mockWarn, info: jest.fn(), debug: jest.fn(), error: jest.fn() })
+const mockWarn = vi.fn();
+vi.mock('#frontend/lib/logging/Logger.js', () => ({
+  default: () => ({ warn: mockWarn, info: vi.fn(), debug: vi.fn(), error: vi.fn() }),
+  getLogger: () => ({ warn: mockWarn, info: vi.fn(), debug: vi.fn(), error: vi.fn() })
 }));
 
 describe('GuestAssignmentService', () => {
@@ -13,7 +13,7 @@ describe('GuestAssignmentService', () => {
   let validateGuestAssignmentPayload;
 
   beforeEach(async () => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     const module = await import('#frontend/hooks/fitness/GuestAssignmentService.js');
     GuestAssignmentService = module.GuestAssignmentService;
     validateGuestAssignmentPayload = module.validateGuestAssignmentPayload;
@@ -23,16 +23,16 @@ describe('GuestAssignmentService', () => {
     test('should preserve baseUserName from assignment payload, not overwrite with guest name', () => {
       // Arrange: Alice owns device, Bob is being assigned as guest
       const mockLedger = {
-        get: jest.fn().mockReturnValue(null),
+        get: vi.fn().mockReturnValue(null),
         entries: new Map()
       };
       const mockUserManager = {
-        assignGuest: jest.fn()
+        assignGuest: vi.fn()
       };
       const mockSession = {
         userManager: mockUserManager,
-        createSessionEntity: jest.fn().mockReturnValue({ entityId: 'entity-123' }),
-        eventJournal: { log: jest.fn() }
+        createSessionEntity: vi.fn().mockReturnValue({ entityId: 'entity-123' }),
+        eventJournal: { log: vi.fn() }
       };
 
       const service = new GuestAssignmentService({ session: mockSession, ledger: mockLedger });
@@ -57,17 +57,17 @@ describe('GuestAssignmentService', () => {
 
     test('should preserve baseUserName through chain of guest swaps (A->B->C)', () => {
       // Arrange
-      const mockUserManager = { assignGuest: jest.fn() };
+      const mockUserManager = { assignGuest: vi.fn() };
       const mockSession = {
         userManager: mockUserManager,
-        createSessionEntity: jest.fn().mockReturnValue({ entityId: 'entity-456' }),
-        endSessionEntity: jest.fn(),
-        eventJournal: { log: jest.fn() }
+        createSessionEntity: vi.fn().mockReturnValue({ entityId: 'entity-456' }),
+        endSessionEntity: vi.fn(),
+        eventJournal: { log: vi.fn() }
       };
 
       // Simulate ledger with Bob currently assigned (baseUserName=Alice)
       const mockLedger = {
-        get: jest.fn().mockReturnValue({
+        get: vi.fn().mockReturnValue({
           deviceId: 'device-1',
           metadata: { profileId: 'bob-123', baseUserName: 'Alice' },
           occupantId: 'bob-123',
@@ -110,14 +110,14 @@ describe('GuestAssignmentService', () => {
       ]);
 
       const mockLedger = {
-        get: jest.fn().mockReturnValue(null),
+        get: vi.fn().mockReturnValue(null),
         entries: existingEntries
       };
-      const mockUserManager = { assignGuest: jest.fn() };
+      const mockUserManager = { assignGuest: vi.fn() };
       const mockSession = {
         userManager: mockUserManager,
-        createSessionEntity: jest.fn(),
-        eventJournal: { log: jest.fn() }
+        createSessionEntity: vi.fn(),
+        eventJournal: { log: vi.fn() }
       };
 
       const service = new GuestAssignmentService({ session: mockSession, ledger: mockLedger });
@@ -147,14 +147,14 @@ describe('GuestAssignmentService', () => {
       ]);
 
       const mockLedger = {
-        get: jest.fn().mockReturnValue(null),
+        get: vi.fn().mockReturnValue(null),
         entries: existingEntries
       };
-      const mockUserManager = { assignGuest: jest.fn() };
+      const mockUserManager = { assignGuest: vi.fn() };
       const mockSession = {
         userManager: mockUserManager,
-        createSessionEntity: jest.fn().mockReturnValue({ entityId: 'entity-new' }),
-        eventJournal: { log: jest.fn() }
+        createSessionEntity: vi.fn().mockReturnValue({ entityId: 'entity-new' }),
+        eventJournal: { log: vi.fn() }
       };
 
       const service = new GuestAssignmentService({ session: mockSession, ledger: mockLedger });
@@ -183,14 +183,14 @@ describe('GuestAssignmentService', () => {
       ]);
 
       const mockLedger = {
-        get: jest.fn().mockReturnValue(existingEntries.get('device-1')),
+        get: vi.fn().mockReturnValue(existingEntries.get('device-1')),
         entries: existingEntries
       };
-      const mockUserManager = { assignGuest: jest.fn() };
+      const mockUserManager = { assignGuest: vi.fn() };
       const mockSession = {
         userManager: mockUserManager,
-        createSessionEntity: jest.fn().mockReturnValue({ entityId: 'entity-new' }),
-        eventJournal: { log: jest.fn() }
+        createSessionEntity: vi.fn().mockReturnValue({ entityId: 'entity-new' }),
+        eventJournal: { log: vi.fn() }
       };
 
       const service = new GuestAssignmentService({ session: mockSession, ledger: mockLedger });

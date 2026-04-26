@@ -1,5 +1,5 @@
 // tests/assembly/bootstrap-yaml.assembly.test.mjs
-import { describe, it, expect, beforeAll } from '@jest/globals';
+import { describe, it, expect, beforeAll } from 'vitest';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';

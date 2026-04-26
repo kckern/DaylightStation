@@ -1,5 +1,5 @@
 // tests/unit/fitness/fitness-simulate-api.unit.test.mjs
-import { describe, test, expect } from '@jest/globals';
+import { describe, test, expect } from 'vitest';
 
 describe('Fitness Simulation API', () => {
   const BACKEND_URL = 'http://localhost:3112';

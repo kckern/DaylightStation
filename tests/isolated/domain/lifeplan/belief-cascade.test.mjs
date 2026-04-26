@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { BeliefCascadeProcessor } from '#domains/lifeplan/services/BeliefCascadeProcessor.mjs';
 import { Belief } from '#domains/lifeplan/entities/Belief.mjs';
 import { Value } from '#domains/lifeplan/entities/Value.mjs';

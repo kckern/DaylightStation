@@ -9,7 +9,7 @@
  * Run with: npm run test:unit -- --testPathPattern=cancel-during-recording
  */
 
-import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 /**
  * Simulates the cancel logic from handleClose in VoiceMemoOverlay.jsx
@@ -98,8 +98,8 @@ describe('Voice Memo Cancel During Recording', () => {
   describe('Bug Reproduction: Cancel while actively recording', () => {
     it('should NOT call onMemoCaptured when user cancels during recording', () => {
       const recorder = createMockRecorder();
-      const setRecorderState = jest.fn();
-      const onClose = jest.fn();
+      const setRecorderState = vi.fn();
+      const onClose = vi.fn();
 
       // Scenario: User is RECORDING (not yet processing)
       const isRecording = true;
@@ -149,8 +149,8 @@ describe('Voice Memo Cancel During Recording', () => {
         recorderState: 'recording',
         cancelUpload: trackedCancelUpload,
         stopRecording: trackedStopRecording,
-        setRecorderState: jest.fn(),
-        onClose: jest.fn()
+        setRecorderState: vi.fn(),
+        onClose: vi.fn()
       });
 
       // cancelUpload should be called BEFORE stopRecording
@@ -176,8 +176,8 @@ describe('Voice Memo Cancel During Recording', () => {
       recorder.state.isRecording = false;
       recorder.state.uploading = true;
 
-      const setRecorderState = jest.fn();
-      const onClose = jest.fn();
+      const setRecorderState = vi.fn();
+      const onClose = vi.fn();
 
       // Scenario: Recording stopped, now PROCESSING (uploading)
       simulateHandleClose({

@@ -1,5 +1,5 @@
 // tests/isolated/api/device-api-router-config.test.mjs
-import { describe, test, expect, jest } from '@jest/globals';
+import { describe, test, expect, vi } from 'vitest';
 import { createDeviceRouter } from '../../../backend/src/4_api/v1/routers/device.mjs';
 import express from 'express';
 import request from 'supertest';
@@ -20,7 +20,7 @@ describe('createDeviceRouter - configService forwarding', () => {
     };
 
     const mockConfigService = {
-      getHouseholdDevices: jest.fn().mockReturnValue(mockDeviceConfig)
+      getHouseholdDevices: vi.fn().mockReturnValue(mockDeviceConfig)
     };
 
     const mockDeviceService = {

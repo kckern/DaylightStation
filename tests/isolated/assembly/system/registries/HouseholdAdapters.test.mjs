@@ -1,4 +1,4 @@
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { HouseholdAdapters } from '#backend/src/0_system/registries/HouseholdAdapters.mjs';
 
 describe('HouseholdAdapters', () => {

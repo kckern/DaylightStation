@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { BeliefSignalDetector } from '#adapters/lifeplan/signals/BeliefSignalDetector.mjs';
 import { LifeEventSignalDetector } from '#adapters/lifeplan/signals/LifeEventSignalDetector.mjs';
 

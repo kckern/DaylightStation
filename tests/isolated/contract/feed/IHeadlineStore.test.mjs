@@ -1,5 +1,5 @@
 // tests/isolated/contract/feed/IHeadlineStore.test.mjs
-import { describe, test, expect } from '@jest/globals';
+import { describe, test, expect } from 'vitest';
 import { IHeadlineStore } from '#apps/feed/ports/IHeadlineStore.mjs';
 
 describe('IHeadlineStore contract', () => {

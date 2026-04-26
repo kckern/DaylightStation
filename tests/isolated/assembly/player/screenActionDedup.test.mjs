@@ -1,4 +1,4 @@
-import { jest, describe, test, expect, beforeEach } from '@jest/globals';
+import { vi, describe, test, expect, beforeEach } from 'vitest';
 
 describe('ScreenActionHandler media deduplication', () => {
   const DEDUP_WINDOW_MS = 3000;

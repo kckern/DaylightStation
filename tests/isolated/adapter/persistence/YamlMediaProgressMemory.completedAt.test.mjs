@@ -1,5 +1,5 @@
 // tests/isolated/adapter/persistence/YamlMediaProgressMemory.completedAt.test.mjs
-import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';

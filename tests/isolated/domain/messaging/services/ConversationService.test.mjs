@@ -1,5 +1,5 @@
 // tests/unit/domains/messaging/services/ConversationService.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { ConversationService } from '#domains/messaging/services/ConversationService.mjs';
 
 describe('ConversationService', () => {
@@ -9,19 +9,19 @@ describe('ConversationService', () => {
 
   beforeEach(() => {
     mockStore = {
-      save: jest.fn(),
-      findById: jest.fn(),
-      findByParticipants: jest.fn(),
-      findByParticipant: jest.fn(),
-      findActive: jest.fn(),
-      delete: jest.fn()
+      save: vi.fn(),
+      findById: vi.fn(),
+      findByParticipants: vi.fn(),
+      findByParticipant: vi.fn(),
+      findActive: vi.fn(),
+      delete: vi.fn()
     };
 
     mockLogger = {
-      debug: jest.fn(),
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn()
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn()
     };
 
     service = new ConversationService({

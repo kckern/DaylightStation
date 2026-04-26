@@ -1,5 +1,5 @@
 // tests/isolated/application/feed/HeadlineService.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { HeadlineService } from '#apps/feed/services/HeadlineService.mjs';
 
 describe('HeadlineService', () => {
@@ -25,13 +25,13 @@ describe('HeadlineService', () => {
 
   beforeEach(() => {
     mockStore = {
-      loadSource: jest.fn().mockResolvedValue(null),
-      saveSource: jest.fn().mockResolvedValue(true),
-      loadAllSources: jest.fn().mockResolvedValue({}),
-      pruneOlderThan: jest.fn().mockResolvedValue(0),
+      loadSource: vi.fn().mockResolvedValue(null),
+      saveSource: vi.fn().mockResolvedValue(true),
+      loadAllSources: vi.fn().mockResolvedValue({}),
+      pruneOlderThan: vi.fn().mockResolvedValue(0),
     };
     mockHarvester = {
-      harvest: jest.fn().mockResolvedValue({
+      harvest: vi.fn().mockResolvedValue({
         source: 'cnn',
         label: 'CNN',
         lastHarvest: new Date().toISOString(),
@@ -44,7 +44,7 @@ describe('HeadlineService', () => {
     };
     mockDataService = {
       user: {
-        read: jest.fn().mockReturnValue(userConfig),
+        read: vi.fn().mockReturnValue(userConfig),
       },
     };
     service = new HeadlineService({
@@ -118,7 +118,7 @@ describe('HeadlineService', () => {
 
     beforeEach(() => {
       mockWebContentGateway = {
-        extractReadableContent: jest.fn().mockResolvedValue({
+        extractReadableContent: vi.fn().mockResolvedValue({
           title: 'Article Title',
           content: 'body text',
           wordCount: 2,
@@ -143,7 +143,7 @@ describe('HeadlineService', () => {
     });
 
     function buildServiceWithAdapter(feedConfig) {
-      const ds = { user: { read: jest.fn().mockReturnValue(feedConfig || singleSourceConfig) } };
+      const ds = { user: { read: vi.fn().mockReturnValue(feedConfig || singleSourceConfig) } };
       return new HeadlineService({
         headlineStore: mockStore,
         harvester: mockHarvester,
@@ -319,7 +319,7 @@ describe('HeadlineService', () => {
 
     test('strips generic placeholder images from RSS harvest results', async () => {
       // No webContentGateway — use the default service (no enrichment)
-      const ds = { user: { read: jest.fn().mockReturnValue(singleSourceConfig) } };
+      const ds = { user: { read: vi.fn().mockReturnValue(singleSourceConfig) } };
       const svc = new HeadlineService({
         headlineStore: mockStore,
         harvester: mockHarvester,

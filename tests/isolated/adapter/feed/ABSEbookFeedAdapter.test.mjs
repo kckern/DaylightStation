@@ -1,5 +1,5 @@
 // tests/isolated/adapter/feed/ABSEbookFeedAdapter.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import os from 'os';
 import fs from 'fs';
 import path from 'path';
@@ -8,13 +8,13 @@ import { ABSEbookFeedAdapter } from '#adapters/feed/sources/ABSEbookFeedAdapter.
 
 // Mock absClient
 const mockAbsClient = {
-  getLibraryItems: jest.fn(),
-  getItem: jest.fn(),
+  getLibraryItems: vi.fn(),
+  getItem: vi.fn(),
   host: 'https://abs.example.com',
 };
 
 // Mock global fetch for EPUB downloads
-const mockFetch = jest.fn();
+const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
 // Temp dir for cache (replaces mockDataService)
@@ -26,7 +26,7 @@ function createAdapter(overrides = {}) {
     token: 'test-token',
     mediaDir: tmpDir,
     webUrl: 'https://abs.example.com',
-    logger: { warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
+    logger: { warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
     ...overrides,
   });
 }
@@ -82,7 +82,7 @@ function mockFetchEpub(epubBuffer) {
 
 describe('ABSEbookFeedAdapter', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'abs-test-'));
   });
 
@@ -575,7 +575,7 @@ describe('ABSEbookFeedAdapter', () => {
 
     mockFetchEpub(epubBuffer);
 
-    const onProgress = jest.fn();
+    const onProgress = vi.fn();
     const adapter = createAdapter();
 
     await adapter.prefetchAll(

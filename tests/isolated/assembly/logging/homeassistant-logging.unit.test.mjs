@@ -1,4 +1,4 @@
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { initializeLogging, resetLogging, getDispatcher } from '#backend/lib/logging/dispatcher.js';
 
 describe('home assistant logging', () => {
@@ -7,7 +7,7 @@ describe('home assistant logging', () => {
   beforeEach(() => {
     resetLogging();
     initializeLogging({ defaultLevel: 'debug' });
-    dispatchSpy = jest.spyOn(getDispatcher(), 'dispatch');
+    dispatchSpy = vi.spyOn(getDispatcher(), 'dispatch');
   });
 
   afterEach(() => {

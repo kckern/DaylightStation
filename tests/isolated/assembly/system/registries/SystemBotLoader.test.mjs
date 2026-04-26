@@ -1,5 +1,5 @@
 // tests/unit/suite/system/registries/SystemBotLoader.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { SystemBotLoader } from '#backend/src/0_system/registries/SystemBotLoader.mjs';
 
 /**
@@ -11,14 +11,14 @@ function createMockConfigService({
   householdPlatforms = {}
 } = {}) {
   return {
-    getSystemConfig: jest.fn((name) => {
+    getSystemConfig: vi.fn((name) => {
       if (name === 'bots') return botsConfig;
       return null;
     }),
-    getSystemAuth: jest.fn((platform, appName) => {
+    getSystemAuth: vi.fn((platform, appName) => {
       return systemAuth[platform]?.[appName] ?? null;
     }),
-    getHouseholdMessagingPlatform: jest.fn((householdId, appName) => {
+    getHouseholdMessagingPlatform: vi.fn((householdId, appName) => {
       return householdPlatforms[householdId]?.[appName] ?? null;
     }),
   };
@@ -46,12 +46,12 @@ function createMockAdapterFactories() {
 function createMockDeps() {
   return {
     httpClient: {
-      get: jest.fn(),
-      post: jest.fn(),
-      postForm: jest.fn(),
+      get: vi.fn(),
+      post: vi.fn(),
+      postForm: vi.fn(),
     },
     transcriptionService: {
-      transcribeUrl: jest.fn(),
+      transcribeUrl: vi.fn(),
     },
   };
 }
@@ -61,10 +61,10 @@ describe('SystemBotLoader', () => {
 
   beforeEach(() => {
     mockLogger = {
-      warn: jest.fn(),
-      info: jest.fn(),
-      debug: jest.fn(),
-      error: jest.fn(),
+      warn: vi.fn(),
+      info: vi.fn(),
+      debug: vi.fn(),
+      error: vi.fn(),
     };
   });
 

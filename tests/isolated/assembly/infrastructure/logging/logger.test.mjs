@@ -1,5 +1,5 @@
 // tests/unit/infrastructure/logging/logger.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { createLogger } from '#backend/src/0_system/logging/logger.mjs';
 import {
   initializeLogging,
@@ -18,7 +18,7 @@ describe('createLogger', () => {
 
   describe('when dispatcher not initialized', () => {
     test('falls back to console output', () => {
-      const stdoutWrite = jest.spyOn(process.stdout, 'write').mockImplementation(() => {});
+      const stdoutWrite = vi.spyOn(process.stdout, 'write').mockImplementation(() => {});
       const logger = createLogger({ app: 'test' });
 
       logger.info('test.event', { data: 1 });
@@ -28,7 +28,7 @@ describe('createLogger', () => {
     });
 
     test('writes errors to stderr', () => {
-      const stderrWrite = jest.spyOn(process.stderr, 'write').mockImplementation(() => {});
+      const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => {});
       const logger = createLogger({ app: 'test' });
 
       logger.error('test.error', { data: 1 });
@@ -44,7 +44,7 @@ describe('createLogger', () => {
 
     beforeEach(() => {
       dispatcher = initializeLogging({ defaultLevel: 'debug' });
-      mockTransport = { name: 'mock', send: jest.fn() };
+      mockTransport = { name: 'mock', send: vi.fn() };
       dispatcher.addTransport(mockTransport);
     });
 
@@ -135,7 +135,7 @@ describe('createLogger', () => {
 
     beforeEach(() => {
       dispatcher = initializeLogging({ defaultLevel: 'debug' });
-      mockTransport = { name: 'mock', send: jest.fn() };
+      mockTransport = { name: 'mock', send: vi.fn() };
       dispatcher.addTransport(mockTransport);
     });
 

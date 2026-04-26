@@ -1,4 +1,4 @@
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 
 // Provide window global for api.mjs which references window.location at module scope
 globalThis.window = { location: { origin: 'http://localhost:3111', protocol: 'http:', host: 'localhost:3111' } };

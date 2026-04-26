@@ -1,10 +1,10 @@
-import { describe, it, expect, jest } from '@jest/globals';
+import { describe, it, expect, vi } from 'vitest';
 
 describe('TreasureBox zone update', () => {
   it('should prefer committed zone from ZoneProfileStore over raw zone', () => {
     // Simulate: raw zone is 'active', committed (hysteresis) zone is 'warm'
     const mockZoneProfileStore = {
-      getZoneState: jest.fn((userId) => {
+      getZoneState: vi.fn((userId) => {
         if (userId === 'alan') return { zoneId: 'warm', zoneName: 'Warm', zoneColor: '#ffaa00' };
         return null;
       })
@@ -22,7 +22,7 @@ describe('TreasureBox zone update', () => {
 
   it('should fall back to raw zone when ZoneProfileStore has no data', () => {
     const mockZoneProfileStore = {
-      getZoneState: jest.fn(() => null)
+      getZoneState: vi.fn(() => null)
     };
 
     const rawZone = { id: 'active', name: 'Active', color: '#00cc00', min: 100 };

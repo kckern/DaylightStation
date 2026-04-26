@@ -1,5 +1,5 @@
 // tests/isolated/contract/canvas/ports/ICanvasEventSource.test.mjs
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { validateEventSource } from '../../../../../backend/src/3_applications/canvas/ports/ICanvasEventSource.mjs';
 
 describe('ICanvasEventSource contract', () => {

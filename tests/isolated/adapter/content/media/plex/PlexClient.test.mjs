@@ -1,12 +1,12 @@
 // tests/unit/adapters/content/media/plex/PlexClient.test.mjs
-import { describe, it, expect, beforeEach, jest, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 
 describe('PlexClient', () => {
   let mockFetch;
   let originalFetch;
 
   beforeEach(() => {
-    mockFetch = jest.fn();
+    mockFetch = vi.fn();
     originalFetch = global.fetch;
     global.fetch = mockFetch;
   });

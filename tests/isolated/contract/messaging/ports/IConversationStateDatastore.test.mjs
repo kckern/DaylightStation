@@ -1,5 +1,5 @@
 // tests/unit/domains/messaging/ports/IConversationStateDatastore.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 
 describe('IConversationStateDatastore interface', () => {
   it('should define required methods', async () => {

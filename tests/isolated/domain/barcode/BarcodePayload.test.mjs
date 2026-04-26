@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { BarcodePayload } from '#domains/barcode/BarcodePayload.mjs';
 
 const KNOWN_ACTIONS = ['queue', 'play', 'open'];

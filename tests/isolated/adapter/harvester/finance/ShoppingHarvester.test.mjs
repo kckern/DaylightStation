@@ -1,5 +1,5 @@
 // tests/unit/adapters/harvester/finance/ShoppingHarvester.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 
 describe('ShoppingHarvester', () => {
   let ShoppingHarvester;
@@ -60,9 +60,9 @@ describe('ShoppingHarvester', () => {
   };
 
   beforeEach(async () => {
-    jest.resetModules();
-    jest.useFakeTimers();
-    jest.setSystemTime(new Date('2026-01-13T12:00:00Z'));
+    vi.resetModules();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-13T12:00:00Z'));
 
     const module = await import('#adapters/harvester/finance/ShoppingHarvester.mjs');
     ShoppingHarvester = module.ShoppingHarvester;
@@ -73,33 +73,33 @@ describe('ShoppingHarvester', () => {
     mockGmail = {
       users: {
         messages: {
-          list: jest.fn(),
-          get: jest.fn(),
+          list: vi.fn(),
+          get: vi.fn(),
         },
       },
     };
 
-    mockGmailClientFactory = jest.fn().mockResolvedValue(mockGmail);
+    mockGmailClientFactory = vi.fn().mockResolvedValue(mockGmail);
 
     mockAiGateway = {
-      chatWithJson: jest.fn(),
+      chatWithJson: vi.fn(),
     };
 
     mockLifelogStore = {
-      load: jest.fn(),
-      save: jest.fn(),
+      load: vi.fn(),
+      save: vi.fn(),
     };
 
     mockConfigService = {
-      getUserHouseholdId: jest.fn(),
-      getHouseholdConfig: jest.fn(),
+      getUserHouseholdId: vi.fn(),
+      getHouseholdConfig: vi.fn(),
     };
 
     mockLogger = {
-      debug: jest.fn(),
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
     };
 
     harvester = new ShoppingHarvester({
@@ -113,7 +113,7 @@ describe('ShoppingHarvester', () => {
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   describe('constructor', () => {

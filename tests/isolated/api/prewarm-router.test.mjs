@@ -1,11 +1,11 @@
-import { describe, test, expect, jest } from '@jest/globals';
+import { describe, test, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createPrewarmRouter } from '../../../backend/src/4_api/v1/routers/prewarm.mjs';
 
 describe('prewarm router', () => {
   const mockPrewarmService = {
-    redeem: jest.fn()
+    redeem: vi.fn()
   };
 
   const app = express();

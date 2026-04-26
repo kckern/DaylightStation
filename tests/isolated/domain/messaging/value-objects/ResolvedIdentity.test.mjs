@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { ResolvedIdentity } from '#domains/messaging/value-objects/ResolvedIdentity.mjs';
 import { ConversationId } from '#domains/messaging/value-objects/ConversationId.mjs';
 

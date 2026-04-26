@@ -1,5 +1,5 @@
 // tests/unit/adapters/harvester/fitness/StravaHarvester.test.mjs
-import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
@@ -14,34 +14,34 @@ describe('StravaHarvester', () => {
 
   beforeEach(() => {
     mockStravaClient = {
-      refreshToken: jest.fn(),
-      getActivities: jest.fn(),
-      getActivityStreams: jest.fn()
+      refreshToken: vi.fn(),
+      getActivities: vi.fn(),
+      getActivityStreams: vi.fn()
     };
 
     mockLifelogStore = {
-      load: jest.fn().mockResolvedValue({}),
-      save: jest.fn().mockResolvedValue(undefined)
+      load: vi.fn().mockResolvedValue({}),
+      save: vi.fn().mockResolvedValue(undefined)
     };
 
     mockAuthStore = {
-      get: jest.fn(),
-      set: jest.fn()
+      get: vi.fn(),
+      set: vi.fn()
     };
 
     mockConfigService = {
-      getUserAuth: jest.fn().mockReturnValue({ token: 'test-token', refresh: 'refresh-token' }),
-      getEnv: jest.fn(),
-      getSecret: jest.fn(),
-      getMediaDir: jest.fn().mockReturnValue('/tmp/test-media'),
-      getUserDir: jest.fn().mockImplementation((u) => `/tmp/test-users/${u}`)
+      getUserAuth: vi.fn().mockReturnValue({ token: 'test-token', refresh: 'refresh-token' }),
+      getEnv: vi.fn(),
+      getSecret: vi.fn(),
+      getMediaDir: vi.fn().mockReturnValue('/tmp/test-media'),
+      getUserDir: vi.fn().mockImplementation((u) => `/tmp/test-users/${u}`)
     };
 
     mockLogger = {
-      info: jest.fn(),
-      error: jest.fn(),
-      debug: jest.fn(),
-      warn: jest.fn()
+      info: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+      warn: vi.fn()
     };
   });
 

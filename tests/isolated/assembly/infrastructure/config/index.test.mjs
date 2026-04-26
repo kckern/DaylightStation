@@ -3,7 +3,7 @@
  * 
  * Tests factory functions, singleton pattern, and re-exports.
  */
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 describe('Config Infrastructure Index', () => {
   let configModule;

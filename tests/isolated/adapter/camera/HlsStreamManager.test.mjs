@@ -1,5 +1,5 @@
 // tests/isolated/adapter/camera/HlsStreamManager.test.mjs
-import { describe, test, expect, afterEach } from '@jest/globals';
+import { describe, test, expect, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import os from 'os';
 import path from 'path';

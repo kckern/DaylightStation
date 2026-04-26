@@ -1,5 +1,5 @@
 // tests/unit/adapters/ai/AnthropicAdapter.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { AnthropicAdapter } from '#adapters/ai/AnthropicAdapter.mjs';
 
 describe('AnthropicAdapter', () => {
@@ -9,14 +9,14 @@ describe('AnthropicAdapter', () => {
 
   beforeEach(() => {
     mockHttpClient = {
-      fetch: jest.fn()
+      fetch: vi.fn()
     };
 
     mockLogger = {
-      debug: jest.fn(),
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn()
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn()
     };
 
     adapter = new AnthropicAdapter(

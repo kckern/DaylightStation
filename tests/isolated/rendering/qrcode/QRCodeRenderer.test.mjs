@@ -1,5 +1,5 @@
 // tests/isolated/rendering/qrcode/QRCodeRenderer.test.mjs
-import { describe, it, expect, beforeAll } from '@jest/globals';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { createQRCodeRenderer } from '../../../../backend/src/1_rendering/qrcode/QRCodeRenderer.mjs';
 
 describe('QRCodeRenderer', () => {

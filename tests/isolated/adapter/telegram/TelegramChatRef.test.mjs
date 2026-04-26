@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { TelegramChatRef } from '#adapters/telegram/TelegramChatRef.mjs';
 
 describe('TelegramChatRef', () => {

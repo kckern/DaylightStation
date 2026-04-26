@@ -1,4 +1,4 @@
-import { describe, it, expect, jest } from '@jest/globals';
+import { describe, it, expect, vi } from 'vitest';
 
 describe('FitnessSession end() coin capture ordering', () => {
   it('captures treasureBox summary BEFORE reset clears state', () => {
@@ -11,7 +11,7 @@ describe('FitnessSession end() coin capture ordering', () => {
           buckets: { ...this.buckets },
         };
       },
-      stop: jest.fn(),
+      stop: vi.fn(),
       reset() {
         this.totalCoins = 0;
         this.buckets = {};

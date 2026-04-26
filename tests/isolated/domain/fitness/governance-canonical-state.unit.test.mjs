@@ -3,24 +3,24 @@
  * getActiveParticipantState() method instead of rebuilding its own
  * participant list from session.roster.
  */
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mockDebug = jest.fn();
-const mockWarn = jest.fn();
-const mockSampled = jest.fn();
+const mockDebug = vi.fn();
+const mockWarn = vi.fn();
+const mockSampled = vi.fn();
 const mockLogger = {
-  debug: mockDebug, warn: mockWarn, info: jest.fn(),
-  error: jest.fn(), sampled: mockSampled, child: () => mockLogger
+  debug: mockDebug, warn: mockWarn, info: vi.fn(),
+  error: vi.fn(), sampled: mockSampled, child: () => mockLogger
 };
 
-jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
+vi.mock('#frontend/lib/logging/Logger.js', () => ({
   default: () => mockLogger,
   getLogger: () => mockLogger
 }));
 
-jest.unstable_mockModule('#frontend/lib/api.mjs', () => ({
-  default: { get: jest.fn(), post: jest.fn() },
-  api: { get: jest.fn(), post: jest.fn() }
+vi.mock('#frontend/lib/api.mjs', () => ({
+  default: { get: vi.fn(), post: vi.fn() },
+  api: { get: vi.fn(), post: vi.fn() }
 }));
 
 let GovernanceEngine;
@@ -29,13 +29,13 @@ beforeAll(async () => {
 });
 
 const createMockSession = ({ participantState, roster, zoneProfileStore } = {}) => ({
-  getActiveParticipantState: jest.fn().mockReturnValue(
+  getActiveParticipantState: vi.fn().mockReturnValue(
     participantState || { participants: [], zoneMap: {}, totalCount: 0 }
   ),
   roster: roster ?? [],
   zoneProfileStore: zoneProfileStore || { getProfile: () => null },
   treasureBox: null,
-  getParticipantProfile: jest.fn().mockReturnValue(null)
+  getParticipantProfile: vi.fn().mockReturnValue(null)
 });
 
 describe('GovernanceEngine canonical state consumption', () => {
@@ -90,9 +90,9 @@ describe('GovernanceEngine canonical state consumption', () => {
   });
 
   it('does NOT read session.roster when getActiveParticipantState is available', () => {
-    const rosterAccessor = jest.fn().mockReturnValue([]);
+    const rosterAccessor = vi.fn().mockReturnValue([]);
     mockSession = {
-      getActiveParticipantState: jest.fn().mockReturnValue({
+      getActiveParticipantState: vi.fn().mockReturnValue({
         participants: ['alice'],
         zoneMap: { alice: 'active' },
         totalCount: 1
@@ -100,7 +100,7 @@ describe('GovernanceEngine canonical state consumption', () => {
       get roster() { rosterAccessor(); return []; },
       zoneProfileStore: { getProfile: () => null },
       treasureBox: null,
-      getParticipantProfile: jest.fn().mockReturnValue(null)
+      getParticipantProfile: vi.fn().mockReturnValue(null)
     };
 
     engine = new GovernanceEngine(mockSession);

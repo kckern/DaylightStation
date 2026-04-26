@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { calculateRpmProgress, getRpmZoneColor } from '#frontend/modules/Fitness/player/panels/RealtimeCards/rpmUtils.mjs';
 
 describe('RpmDeviceAvatar utilities', () => {

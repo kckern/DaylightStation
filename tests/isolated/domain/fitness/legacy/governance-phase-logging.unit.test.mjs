@@ -1,9 +1,9 @@
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 
 // Mock logger
-const mockSampled = jest.fn();
-const mockInfo = jest.fn();
-jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
+const mockSampled = vi.fn();
+const mockInfo = vi.fn();
+vi.mock('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({ sampled: mockSampled, info: mockInfo }),
   getLogger: () => ({ sampled: mockSampled, info: mockInfo })
 }));

@@ -1,14 +1,14 @@
-import { jest, describe, test, expect, beforeEach } from '@jest/globals';
+import { vi, describe, test, expect, beforeEach } from 'vitest';
 import { ImmichAdapter } from '#adapters/content/gallery/immich/ImmichAdapter.mjs';
 
 describe('ImmichAdapter', () => {
   const mockHttpClient = {
-    get: jest.fn(),
-    post: jest.fn()
+    get: vi.fn(),
+    post: vi.fn()
   };
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('constructor', () => {

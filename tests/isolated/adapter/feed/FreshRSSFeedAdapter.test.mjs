@@ -1,5 +1,5 @@
 // tests/isolated/adapter/feed/FreshRSSFeedAdapter.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { FreshRSSFeedAdapter } from '#adapters/feed/FreshRSSFeedAdapter.mjs';
 
 describe('FreshRSSFeedAdapter', () => {
@@ -11,10 +11,10 @@ describe('FreshRSSFeedAdapter', () => {
   const apiKey = 'test-api-key-123';
 
   beforeEach(() => {
-    mockFetch = jest.fn();
+    mockFetch = vi.fn();
     mockDataService = {
       user: {
-        read: jest.fn().mockReturnValue({ key: apiKey }),
+        read: vi.fn().mockReturnValue({ key: apiKey }),
       },
     };
     adapter = new FreshRSSFeedAdapter({

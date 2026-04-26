@@ -1,5 +1,5 @@
 // tests/isolated/domain/weekly-review/WeeklyReviewAggregator.test.mjs
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { WeeklyReviewAggregator } from '../../../../backend/src/2_domains/weekly-review/WeeklyReviewAggregator.mjs';
 
 describe('WeeklyReviewAggregator', () => {

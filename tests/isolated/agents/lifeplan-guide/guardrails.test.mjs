@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { systemPrompt } from '#apps/agents/lifeplan-guide/prompts/system.mjs';
 
 describe('LifeplanGuide Guardrails', () => {

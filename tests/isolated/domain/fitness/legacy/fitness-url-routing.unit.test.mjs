@@ -1,5 +1,5 @@
 // tests/unit/fitness/fitness-url-routing.unit.test.mjs
-import { describe, test, expect } from '@jest/globals';
+import { describe, test, expect } from 'vitest';
 
 /**
  * This test validates our understanding of how React Router patterns work.

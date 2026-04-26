@@ -1,5 +1,5 @@
 // tests/unit/suite/api/middleware/householdResolver.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { householdResolver, matchPatterns } from '#backend/src/4_api/middleware/householdResolver.mjs';
 
 describe('householdResolver middleware', () => {
@@ -10,15 +10,15 @@ describe('householdResolver middleware', () => {
 
   beforeEach(() => {
     mockConfigService = {
-      householdExists: jest.fn().mockReturnValue(true),
-      getHousehold: jest.fn().mockReturnValue({ name: 'Test Household' }),
+      householdExists: vi.fn().mockReturnValue(true),
+      getHousehold: vi.fn().mockReturnValue({ name: 'Test Household' }),
     };
     mockReq = { headers: {} };
     mockRes = {
-      status: jest.fn().mockReturnThis(),
-      json: jest.fn(),
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
     };
-    mockNext = jest.fn();
+    mockNext = vi.fn();
   });
 
   describe('explicit domain mapping', () => {

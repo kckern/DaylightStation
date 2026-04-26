@@ -1,5 +1,5 @@
 // tests/unit/adapters/harvester/fitness/WithingsHarvester.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 
 describe('WithingsHarvester', () => {
   let WithingsHarvester;
@@ -13,7 +13,7 @@ describe('WithingsHarvester', () => {
 
   beforeEach(async () => {
     // Reset modules to ensure clean state
-    jest.resetModules();
+    vi.resetModules();
 
     // Import fresh module
     const module = await import('#adapters/harvester/fitness/WithingsHarvester.mjs');
@@ -24,23 +24,23 @@ describe('WithingsHarvester', () => {
 
     // Setup mocks
     mockHttpClient = {
-      get: jest.fn(),
-      post: jest.fn()
+      get: vi.fn(),
+      post: vi.fn()
     };
 
     mockLifelogStore = {
-      save: jest.fn().mockResolvedValue(undefined),
-      load: jest.fn().mockResolvedValue(null)
+      save: vi.fn().mockResolvedValue(undefined),
+      load: vi.fn().mockResolvedValue(null)
     };
 
     mockAuthStore = {
-      save: jest.fn().mockResolvedValue(undefined),
-      load: jest.fn().mockResolvedValue(null)
+      save: vi.fn().mockResolvedValue(undefined),
+      load: vi.fn().mockResolvedValue(null)
     };
 
     mockConfigService = {
-      getUserAuth: jest.fn().mockReturnValue({ refresh: 'test-refresh-token' }),
-      getSecret: jest.fn().mockImplementation((key) => {
+      getUserAuth: vi.fn().mockReturnValue({ refresh: 'test-refresh-token' }),
+      getSecret: vi.fn().mockImplementation((key) => {
         const secrets = {
           WITHINGS_CLIENT_ID: 'test-client-id',
           WITHINGS_CLIENT_SECRET: 'test-client-secret',
@@ -51,10 +51,10 @@ describe('WithingsHarvester', () => {
     };
 
     mockLogger = {
-      debug: jest.fn(),
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn()
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn()
     };
 
     harvester = new WithingsHarvester({

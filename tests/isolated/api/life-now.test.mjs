@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import createNowRouter from '#api/v1/routers/life/now.mjs';
@@ -28,16 +28,16 @@ describe('Life Now API Router', () => {
 
   beforeEach(() => {
     mockAlignmentService = {
-      computeAlignment: jest.fn().mockReturnValue(alignmentResult),
+      computeAlignment: vi.fn().mockReturnValue(alignmentResult),
     };
 
     mockDriftService = {
-      getLatestSnapshot: jest.fn().mockReturnValue({ correlation: 0.65, status: 'drifting' }),
-      getHistory: jest.fn().mockReturnValue([
+      getLatestSnapshot: vi.fn().mockReturnValue({ correlation: 0.65, status: 'drifting' }),
+      getHistory: vi.fn().mockReturnValue([
         { date: '2025-06-01', correlation: 0.9 },
         { date: '2025-06-08', correlation: 0.65 },
       ]),
-      computeAndSave: jest.fn().mockResolvedValue({ correlation: 0.72, status: 'drifting' }),
+      computeAndSave: vi.fn().mockResolvedValue({ correlation: 0.72, status: 'drifting' }),
     };
 
     const router = createNowRouter({

@@ -5,40 +5,40 @@
  * - LogFoodFromImage catch path: writes retry state and attaches retry button on hard failure.
  */
 
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { RetryImageDetection } from '#apps/nutribot/usecases/RetryImageDetection.mjs';
 
 function buildRetryDeps(overrides = {}) {
   const conversationStateStore = {
-    get: jest.fn().mockResolvedValue({
+    get: vi.fn().mockResolvedValue({
       activeFlow: 'image_retry',
       flowState: {
         imageData: { fileId: 'tg-file-abc' },
         retryMessageId: 'photo-msg-1',
       },
     }),
-    clear: jest.fn().mockResolvedValue({}),
+    clear: vi.fn().mockResolvedValue({}),
   };
 
   const logFoodFromImage = {
-    execute: jest.fn().mockResolvedValue({ success: true, nutrilogUuid: 'uuid-1', messageId: 'new-photo-2', itemCount: 1 }),
+    execute: vi.fn().mockResolvedValue({ success: true, nutrilogUuid: 'uuid-1', messageId: 'new-photo-2', itemCount: 1 }),
   };
 
   const messagingGateway = {
-    sendMessage: jest.fn().mockResolvedValue({ messageId: 'gw-msg-1' }),
-    deleteMessage: jest.fn().mockResolvedValue({}),
+    sendMessage: vi.fn().mockResolvedValue({ messageId: 'gw-msg-1' }),
+    deleteMessage: vi.fn().mockResolvedValue({}),
   };
 
   const responseContext = {
-    sendMessage: jest.fn().mockResolvedValue({ messageId: 'ctx-msg-1' }),
-    deleteMessage: jest.fn().mockResolvedValue({}),
+    sendMessage: vi.fn().mockResolvedValue({ messageId: 'ctx-msg-1' }),
+    deleteMessage: vi.fn().mockResolvedValue({}),
   };
 
   const logger = {
-    info: jest.fn(),
-    debug: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
   };
 
   return {
@@ -182,41 +182,41 @@ import { LogFoodFromImage } from '#apps/nutribot/usecases/LogFoodFromImage.mjs';
 
 function buildImageDeps(overrides = {}) {
   const messagingGateway = {
-    sendMessage: jest.fn().mockResolvedValue({ messageId: 'gw-msg-1' }),
-    sendPhoto: jest.fn().mockResolvedValue({ messageId: 'photo-msg-1' }),
-    updateMessage: jest.fn().mockResolvedValue({}),
-    deleteMessage: jest.fn().mockResolvedValue({}),
-    getFileUrl: jest.fn().mockResolvedValue(null), // force use of fileId fallback
+    sendMessage: vi.fn().mockResolvedValue({ messageId: 'gw-msg-1' }),
+    sendPhoto: vi.fn().mockResolvedValue({ messageId: 'photo-msg-1' }),
+    updateMessage: vi.fn().mockResolvedValue({}),
+    deleteMessage: vi.fn().mockResolvedValue({}),
+    getFileUrl: vi.fn().mockResolvedValue(null), // force use of fileId fallback
   };
 
   const aiGateway = {
-    chatWithImage: jest.fn().mockRejectedValue(new Error('getaddrinfo EAI_AGAIN api.openai.com')),
+    chatWithImage: vi.fn().mockRejectedValue(new Error('getaddrinfo EAI_AGAIN api.openai.com')),
   };
 
   const foodLogStore = {
-    findByUuid: jest.fn().mockResolvedValue(null),
-    save: jest.fn().mockResolvedValue({}),
+    findByUuid: vi.fn().mockResolvedValue(null),
+    save: vi.fn().mockResolvedValue({}),
   };
 
   const conversationStateStore = {
-    get: jest.fn().mockResolvedValue(null),
-    set: jest.fn().mockResolvedValue({}),
-    clear: jest.fn().mockResolvedValue({}),
+    get: vi.fn().mockResolvedValue(null),
+    set: vi.fn().mockResolvedValue({}),
+    clear: vi.fn().mockResolvedValue({}),
   };
 
   const responseContext = {
-    sendMessage: jest.fn().mockResolvedValue({ messageId: 'ctx-msg-1' }),
-    sendPhoto: jest.fn().mockResolvedValue({ messageId: 'photo-msg-1' }),
-    updateMessage: jest.fn().mockResolvedValue({}),
-    deleteMessage: jest.fn().mockResolvedValue({}),
-    getFileUrl: jest.fn().mockResolvedValue(null),
+    sendMessage: vi.fn().mockResolvedValue({ messageId: 'ctx-msg-1' }),
+    sendPhoto: vi.fn().mockResolvedValue({ messageId: 'photo-msg-1' }),
+    updateMessage: vi.fn().mockResolvedValue({}),
+    deleteMessage: vi.fn().mockResolvedValue({}),
+    getFileUrl: vi.fn().mockResolvedValue(null),
   };
 
   const logger = {
-    info: jest.fn(),
-    debug: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
   };
 
   return {

@@ -1,5 +1,5 @@
 // tests/unit/adapters/media-cover-art.unit.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { FileAdapter } from '#adapters/content/media/files/FileAdapter.mjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -20,7 +20,7 @@ describe('FileAdapter.getCoverArt', () => {
   });
 
   test('returns null when no picture in metadata', async () => {
-    adapter._parseFile = jest.fn().mockResolvedValue({
+    adapter._parseFile = vi.fn().mockResolvedValue({
       common: {
         title: 'Test Song',
         artist: 'Test Artist'
@@ -33,7 +33,7 @@ describe('FileAdapter.getCoverArt', () => {
   });
 
   test('returns null when picture array is empty', async () => {
-    adapter._parseFile = jest.fn().mockResolvedValue({
+    adapter._parseFile = vi.fn().mockResolvedValue({
       common: {
         picture: []
       }
@@ -45,7 +45,7 @@ describe('FileAdapter.getCoverArt', () => {
 
   test('returns buffer and mimeType when picture exists', async () => {
     const testImageData = new Uint8Array([0x89, 0x50, 0x4E, 0x47]); // PNG magic bytes
-    adapter._parseFile = jest.fn().mockResolvedValue({
+    adapter._parseFile = vi.fn().mockResolvedValue({
       common: {
         picture: [{
           data: testImageData,
@@ -66,7 +66,7 @@ describe('FileAdapter.getCoverArt', () => {
     const firstImageData = new Uint8Array([0xFF, 0xD8, 0xFF, 0xE0]); // JPEG magic bytes
     const secondImageData = new Uint8Array([0x89, 0x50, 0x4E, 0x47]); // PNG magic bytes
 
-    adapter._parseFile = jest.fn().mockResolvedValue({
+    adapter._parseFile = vi.fn().mockResolvedValue({
       common: {
         picture: [
           { data: firstImageData, format: 'image/jpeg' },
@@ -83,21 +83,21 @@ describe('FileAdapter.getCoverArt', () => {
   });
 
   test('returns null on parse error', async () => {
-    adapter._parseFile = jest.fn().mockRejectedValue(new Error('Cannot parse file'));
+    adapter._parseFile = vi.fn().mockRejectedValue(new Error('Cannot parse file'));
 
     const result = await adapter.getCoverArt('audio/test.mp3');
     expect(result).toBeNull();
   });
 
   test('handles undefined common object gracefully', async () => {
-    adapter._parseFile = jest.fn().mockResolvedValue({});
+    adapter._parseFile = vi.fn().mockResolvedValue({});
 
     const result = await adapter.getCoverArt('audio/test.mp3');
     expect(result).toBeNull();
   });
 
   test('handles null metadata gracefully', async () => {
-    adapter._parseFile = jest.fn().mockResolvedValue(null);
+    adapter._parseFile = vi.fn().mockResolvedValue(null);
 
     const result = await adapter.getCoverArt('audio/test.mp3');
     expect(result).toBeNull();

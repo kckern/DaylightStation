@@ -1,5 +1,5 @@
 // tests/unit/applications/journalist/usecases/HandleSlashCommand.test.mjs
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 describe('HandleSlashCommand', () => {
   let HandleSlashCommand;
@@ -14,15 +14,15 @@ describe('HandleSlashCommand', () => {
   beforeEach(async () => {
     // Reset mocks
     mockInitiateJournalPrompt = {
-      execute: jest.fn().mockResolvedValue({ success: true, action: 'journal_prompt' }),
+      execute: vi.fn().mockResolvedValue({ success: true, action: 'journal_prompt' }),
     };
 
     mockGenerateTherapistAnalysis = {
-      execute: jest.fn().mockResolvedValue({ success: true, action: 'therapist_analysis' }),
+      execute: vi.fn().mockResolvedValue({ success: true, action: 'therapist_analysis' }),
     };
 
     mockGenerateMorningDebrief = {
-      execute: jest.fn().mockResolvedValue({
+      execute: vi.fn().mockResolvedValue({
         date: '2024-01-15',
         summary: 'Yesterday was productive',
         categories: [],
@@ -31,19 +31,19 @@ describe('HandleSlashCommand', () => {
     };
 
     mockSendMorningDebrief = {
-      execute: jest.fn().mockResolvedValue({ success: true, messageId: 'debrief-msg-123' }),
+      execute: vi.fn().mockResolvedValue({ success: true, messageId: 'debrief-msg-123' }),
     };
 
     mockMessagingGateway = {
-      sendMessage: jest.fn().mockResolvedValue({ messageId: 'sent-msg-123' }),
-      deleteMessage: jest.fn().mockResolvedValue(undefined),
+      sendMessage: vi.fn().mockResolvedValue({ messageId: 'sent-msg-123' }),
+      deleteMessage: vi.fn().mockResolvedValue(undefined),
     };
 
     mockLogger = {
-      info: jest.fn(),
-      debug: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
+      info: vi.fn(),
+      debug: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
     };
 
     // Dynamic import after mocks are set up

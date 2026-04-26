@@ -1,4 +1,4 @@
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -227,7 +227,7 @@ describe('ingestion integration', () => {
   test('ingestFrontendLogs writes to session file when sessionLog context is set', () => {
     // Set up dispatcher (required for ingestion)
     initializeLogging({ defaultLevel: 'debug' });
-    const mockTransport = { name: 'mock', send: jest.fn() };
+    const mockTransport = { name: 'mock', send: vi.fn() };
     getDispatcher().addTransport(mockTransport);
 
     // Set up session file transport

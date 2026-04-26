@@ -1,18 +1,18 @@
 // tests/unit/infrastructure/eventbus/WebSocketEventBus.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { WebSocketEventBus } from '#backend/src/0_system/eventbus/WebSocketEventBus.mjs';
 
 describe('WebSocketEventBus', () => {
   let bus;
   const mockLogger = {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn()
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn()
   };
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     bus = new WebSocketEventBus({ logger: mockLogger, path: '/ws' });
   });
 
@@ -75,15 +75,15 @@ describe('WebSocketEventBus', () => {
 
   describe('publish (internal only)', () => {
     test('calls subscriber with payload', () => {
-      const handler = jest.fn();
+      const handler = vi.fn();
       bus.subscribe('topic1', handler);
       bus.publish('topic1', { data: 'test' });
       expect(handler).toHaveBeenCalledWith({ data: 'test' }, 'topic1');
     });
 
     test('calls all subscribers for topic', () => {
-      const handler1 = jest.fn();
-      const handler2 = jest.fn();
+      const handler1 = vi.fn();
+      const handler2 = vi.fn();
       bus.subscribe('topic1', handler1);
       bus.subscribe('topic1', handler2);
       bus.publish('topic1', 'data');
@@ -92,15 +92,15 @@ describe('WebSocketEventBus', () => {
     });
 
     test('does not call subscribers for other topics', () => {
-      const handler = jest.fn();
+      const handler = vi.fn();
       bus.subscribe('topic1', handler);
       bus.publish('topic2', 'data');
       expect(handler).not.toHaveBeenCalled();
     });
 
     test('continues if handler throws', () => {
-      const handler1 = jest.fn(() => { throw new Error('fail'); });
-      const handler2 = jest.fn();
+      const handler1 = vi.fn(() => { throw new Error('fail'); });
+      const handler2 = vi.fn();
       bus.subscribe('topic1', handler1);
       bus.subscribe('topic1', handler2);
       bus.publish('topic1', 'data');

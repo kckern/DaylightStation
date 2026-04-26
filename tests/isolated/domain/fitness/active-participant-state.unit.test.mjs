@@ -2,21 +2,21 @@
  * Tests ParticipantRoster.getActiveParticipantState() — the canonical method
  * for "who is participating and what zone are they in?"
  */
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mockDebug = jest.fn();
-const mockWarn = jest.fn();
-jest.unstable_mockModule('../../../../frontend/src/lib/logging/Logger.js', () => ({
-  default: () => ({ debug: mockDebug, warn: mockWarn, info: jest.fn(), error: jest.fn(), sampled: jest.fn() }),
-  getLogger: () => ({ debug: mockDebug, warn: mockWarn, info: jest.fn(), error: jest.fn(), sampled: jest.fn() }),
+const mockDebug = vi.fn();
+const mockWarn = vi.fn();
+vi.mock('../../../../frontend/src/lib/logging/Logger.js', () => ({
+  default: () => ({ debug: mockDebug, warn: mockWarn, info: vi.fn(), error: vi.fn(), sampled: vi.fn() }),
+  getLogger: () => ({ debug: mockDebug, warn: mockWarn, info: vi.fn(), error: vi.fn(), sampled: vi.fn() }),
   __esModule: true,
 }));
 
-jest.unstable_mockModule('../../../../frontend/src/hooks/fitness/types.js', () => ({
+vi.mock('../../../../frontend/src/hooks/fitness/types.js', () => ({
   resolveDisplayLabel: ({ name }) => name,
 }));
 
-jest.unstable_mockModule('../../../../frontend/src/modules/Fitness/domain/types.js', () => ({
+vi.mock('../../../../frontend/src/modules/Fitness/domain/types.js', () => ({
   ParticipantStatus: { ACTIVE: 'ACTIVE', INACTIVE: 'INACTIVE' },
 }));
 

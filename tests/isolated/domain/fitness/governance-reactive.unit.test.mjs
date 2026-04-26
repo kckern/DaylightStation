@@ -1,11 +1,11 @@
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 
 // Mock logger
-const mockDebug = jest.fn();
-const mockSampled = jest.fn();
-const mockInfo = jest.fn();
-const mockWarn = jest.fn();
-jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
+const mockDebug = vi.fn();
+const mockSampled = vi.fn();
+const mockInfo = vi.fn();
+const mockWarn = vi.fn();
+vi.mock('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({ debug: mockDebug, sampled: mockSampled, info: mockInfo, warn: mockWarn }),
   getLogger: () => ({ debug: mockDebug, sampled: mockSampled, info: mockInfo, warn: mockWarn })
 }));
@@ -20,7 +20,7 @@ describe('GovernanceEngine reactive evaluation', () => {
   let mockSession;
 
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     mockDebug.mockClear();
     mockSampled.mockClear();
     mockInfo.mockClear();
@@ -28,14 +28,14 @@ describe('GovernanceEngine reactive evaluation', () => {
 
     mockSession = {
       roster: [],
-      treasureBox: { setGovernanceCallback: jest.fn() },
-      logEvent: jest.fn()
+      treasureBox: { setGovernanceCallback: vi.fn() },
+      logEvent: vi.fn()
     };
     engine = new GovernanceEngine(mockSession);
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   test('notifyZoneChange schedules debounced evaluation', () => {
@@ -47,7 +47,7 @@ describe('GovernanceEngine reactive evaluation', () => {
     });
 
     // Spy AFTER configure (which also calls evaluate)
-    const evaluateSpy = jest.spyOn(engine, 'evaluate');
+    const evaluateSpy = vi.spyOn(engine, 'evaluate');
 
     engine.notifyZoneChange('kckern', { fromZone: 'cool', toZone: 'active' });
 
@@ -55,7 +55,7 @@ describe('GovernanceEngine reactive evaluation', () => {
     expect(evaluateSpy).not.toHaveBeenCalled();
 
     // Fast forward past debounce period
-    jest.advanceTimersByTime(150);
+    vi.advanceTimersByTime(150);
 
     expect(evaluateSpy).toHaveBeenCalled();
   });
@@ -67,20 +67,20 @@ describe('GovernanceEngine reactive evaluation', () => {
     });
 
     // Spy AFTER configure (which also calls evaluate)
-    const evaluateSpy = jest.spyOn(engine, 'evaluate');
+    const evaluateSpy = vi.spyOn(engine, 'evaluate');
 
     // Rapid zone changes
     engine.notifyZoneChange('kckern', { fromZone: 'cool', toZone: 'active' });
-    jest.advanceTimersByTime(30);
+    vi.advanceTimersByTime(30);
     engine.notifyZoneChange('felix', { fromZone: 'warm', toZone: 'hot' });
-    jest.advanceTimersByTime(30);
+    vi.advanceTimersByTime(30);
     engine.notifyZoneChange('kckern', { fromZone: 'active', toZone: 'warm' });
 
     // Still within debounce, no evaluate yet
     expect(evaluateSpy).not.toHaveBeenCalled();
 
     // Fast forward past debounce
-    jest.advanceTimersByTime(150);
+    vi.advanceTimersByTime(150);
 
     // Should only have evaluated once despite 3 notifications
     expect(evaluateSpy).toHaveBeenCalledTimes(1);
@@ -115,17 +115,17 @@ describe('GovernanceEngine reactive evaluation', () => {
     // Reset before debounce completes
     engine.reset();
 
-    const evaluateSpy = jest.spyOn(engine, 'evaluate');
+    const evaluateSpy = vi.spyOn(engine, 'evaluate');
 
     // Advance past debounce period
-    jest.advanceTimersByTime(150);
+    vi.advanceTimersByTime(150);
 
     // The scheduled evaluate should have been canceled
     expect(evaluateSpy).not.toHaveBeenCalled();
   });
 
   test('_logZoneChanges triggers notifyZoneChange on zone transition', () => {
-    const notifySpy = jest.spyOn(engine, 'notifyZoneChange');
+    const notifySpy = vi.spyOn(engine, 'notifyZoneChange');
 
     // Set up previous zone map
     engine._previousUserZoneMap = { user1: 'cool' };
@@ -140,7 +140,7 @@ describe('GovernanceEngine reactive evaluation', () => {
   });
 
   test('_logZoneChanges does not trigger for same zone', () => {
-    const notifySpy = jest.spyOn(engine, 'notifyZoneChange');
+    const notifySpy = vi.spyOn(engine, 'notifyZoneChange');
 
     // Set up previous zone map
     engine._previousUserZoneMap = { user1: 'warm' };
@@ -155,7 +155,7 @@ describe('GovernanceEngine reactive evaluation', () => {
   });
 
   test('_logZoneChanges does not trigger for new users (no previous zone)', () => {
-    const notifySpy = jest.spyOn(engine, 'notifyZoneChange');
+    const notifySpy = vi.spyOn(engine, 'notifyZoneChange');
 
     // Empty previous zone map (new user)
     engine._previousUserZoneMap = {};

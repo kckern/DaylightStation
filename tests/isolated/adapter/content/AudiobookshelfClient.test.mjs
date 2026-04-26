@@ -1,14 +1,14 @@
-import { jest, describe, test, expect, beforeEach } from '@jest/globals';
+import { vi, describe, test, expect, beforeEach } from 'vitest';
 import { AudiobookshelfClient } from '#adapters/content/readable/audiobookshelf/AudiobookshelfClient.mjs';
 
 describe('AudiobookshelfClient', () => {
   const mockHttpClient = {
-    get: jest.fn(),
-    patch: jest.fn()
+    get: vi.fn(),
+    patch: vi.fn()
   };
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('constructor', () => {

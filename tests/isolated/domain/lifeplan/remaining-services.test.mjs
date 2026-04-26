@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { RuleMatchingService } from '#domains/lifeplan/services/RuleMatchingService.mjs';
 import { ProgressCalculator } from '#domains/lifeplan/services/ProgressCalculator.mjs';
 import { LifeEventProcessor } from '#domains/lifeplan/services/LifeEventProcessor.mjs';

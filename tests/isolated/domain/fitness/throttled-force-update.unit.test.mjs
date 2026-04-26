@@ -1,4 +1,4 @@
-import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 describe('batchedForceUpdate throttle', () => {
   let forceUpdateCount;
@@ -10,7 +10,7 @@ describe('batchedForceUpdate throttle', () => {
     scheduledCallback = null;
 
     // Mock requestAnimationFrame
-    global.requestAnimationFrame = jest.fn((cb) => { scheduledCallback = cb; return 1; });
+    global.requestAnimationFrame = vi.fn((cb) => { scheduledCallback = cb; return 1; });
 
     // Simulate the throttled batchedForceUpdate logic
     const MIN_UPDATE_INTERVAL_MS = 250;
@@ -50,11 +50,11 @@ describe('batchedForceUpdate throttle', () => {
       // Otherwise: update already scheduled or throttle timer already pending — drop
     };
 
-    jest.useFakeTimers();
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
     delete global.requestAnimationFrame;
   });
 
@@ -83,7 +83,7 @@ describe('batchedForceUpdate throttle', () => {
     expect(forceUpdateCount).toBe(1);
 
     // Advance 250ms
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     batchedForceUpdate();
     // Should schedule new RAF
@@ -98,7 +98,7 @@ describe('batchedForceUpdate throttle', () => {
         scheduledCallback();
         scheduledCallback = null;
       }
-      jest.advanceTimersByTime(50); // 50ms between calls
+      vi.advanceTimersByTime(50); // 50ms between calls
     }
 
     // At 250ms throttle, expect ~4 actual updates in 1 second

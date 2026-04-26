@@ -1,5 +1,5 @@
 // tests/unit/infrastructure/routing/ShimMetrics.test.mjs
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ShimMetrics } from '#backend/src/0_system/routing/ShimMetrics.mjs';
 
 describe('ShimMetrics', () => {
@@ -7,12 +7,12 @@ describe('ShimMetrics', () => {
 
   beforeEach(() => {
     metrics = new ShimMetrics();
-    jest.useFakeTimers();
-    jest.setSystemTime(new Date('2026-01-12T12:00:00Z'));
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-12T12:00:00Z'));
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   describe('record', () => {
@@ -55,7 +55,7 @@ describe('ShimMetrics', () => {
       const firstTimestamp = metrics.getReport()[0].lastSeen;
 
       // Advance time by 1 hour
-      jest.setSystemTime(new Date('2026-01-12T13:00:00Z'));
+      vi.setSystemTime(new Date('2026-01-12T13:00:00Z'));
       metrics.record('content-v1');
 
       const secondTimestamp = metrics.getReport()[0].lastSeen;
@@ -73,7 +73,7 @@ describe('ShimMetrics', () => {
       metrics.record('content-v1');
 
       // Advance time by 3 days
-      jest.setSystemTime(new Date('2026-01-15T12:00:00Z'));
+      vi.setSystemTime(new Date('2026-01-15T12:00:00Z'));
 
       const report = metrics.getReport();
       expect(report[0].daysSinceLastUse).toBe(3);

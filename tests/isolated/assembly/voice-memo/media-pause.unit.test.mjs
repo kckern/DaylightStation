@@ -7,7 +7,7 @@
  * Run with: npm run test:unit -- --testPathPattern=voice-memo
  */
 
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   resolvePlaybackState,
   pauseMediaIfNeeded,
@@ -101,7 +101,7 @@ describe('Voice Memo Media Pause', () => {
     });
 
     it('calls pause() when video is playing (getPlaybackState API)', () => {
-      const pause = jest.fn();
+      const pause = vi.fn();
       const playerRef = {
         current: {
           getPlaybackState: () => ({ isPaused: false }),
@@ -116,7 +116,7 @@ describe('Voice Memo Media Pause', () => {
     });
 
     it('does NOT call pause() when video is already paused', () => {
-      const pause = jest.fn();
+      const pause = vi.fn();
       const playerRef = {
         current: {
           getPlaybackState: () => ({ isPaused: true }),
@@ -132,7 +132,7 @@ describe('Voice Memo Media Pause', () => {
 
     // NEW TEST: Handle native video element
     it('calls pause() on native video element (uses .paused property)', () => {
-      const pause = jest.fn();
+      const pause = vi.fn();
       const playerRef = {
         current: {
           paused: false, // native property
@@ -147,7 +147,7 @@ describe('Voice Memo Media Pause', () => {
     });
 
     it('does NOT call pause() on native paused video', () => {
-      const pause = jest.fn();
+      const pause = vi.fn();
       const playerRef = {
         current: {
           paused: true, // native says already paused
@@ -163,7 +163,7 @@ describe('Voice Memo Media Pause', () => {
 
     // NEW TEST: Handle MediaController API
     it('calls pause() via getMediaController() if direct pause missing', () => {
-      const controllerPause = jest.fn();
+      const controllerPause = vi.fn();
       const playerRef = {
         current: {
           paused: false,
@@ -182,7 +182,7 @@ describe('Voice Memo Media Pause', () => {
 
   describe('resumeMediaIfNeeded', () => {
     it('does nothing when wasPlayingRef is false', () => {
-      const play = jest.fn();
+      const play = vi.fn();
       const playerRef = {
         current: { play }
       };
@@ -194,7 +194,7 @@ describe('Voice Memo Media Pause', () => {
     });
 
     it('calls play() when wasPlayingRef is true', () => {
-      const play = jest.fn();
+      const play = vi.fn();
       const playerRef = {
         current: { play }
       };
@@ -215,7 +215,7 @@ describe('Voice Memo Media Pause', () => {
     });
 
     it('calls play() via getMediaController() if direct play missing', () => {
-      const controllerPlay = jest.fn();
+      const controllerPlay = vi.fn();
       const playerRef = {
         current: {
           getMediaController: () => ({

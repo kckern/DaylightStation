@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import createNotificationRouter from '#api/v1/routers/notification.mjs';
@@ -16,15 +16,15 @@ describe('Notification API Router', () => {
 
   beforeEach(() => {
     mockNotificationService = {
-      getPending: jest.fn().mockReturnValue([
+      getPending: vi.fn().mockReturnValue([
         { intent: { title: 'Test', body: 'Body' }, timestamp: '2025-06-01T10:00:00Z' },
       ]),
-      dismiss: jest.fn().mockReturnValue(true),
+      dismiss: vi.fn().mockReturnValue(true),
     };
 
     mockPreferenceStore = {
-      load: jest.fn().mockResolvedValue(new NotificationPreference(prefConfig)),
-      save: jest.fn().mockResolvedValue(undefined),
+      load: vi.fn().mockResolvedValue(new NotificationPreference(prefConfig)),
+      save: vi.fn().mockResolvedValue(undefined),
     };
 
     const router = createNotificationRouter({

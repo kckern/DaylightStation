@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { TelegramIdentityAdapter } from '#adapters/messaging/TelegramIdentityAdapter.mjs';
 import { UserIdentityService } from '#domains/messaging/services/UserIdentityService.mjs';
 

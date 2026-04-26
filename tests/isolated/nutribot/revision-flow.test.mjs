@@ -9,7 +9,7 @@
  * - Calls AI once with revision-aware prompt
  */
 
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { LogFoodFromText } from '#apps/nutribot/usecases/LogFoodFromText.mjs';
 import { ProcessRevisionInput } from '../../../backend/src/3_applications/nutribot/usecases/ProcessRevisionInput.mjs';
 
@@ -79,46 +79,46 @@ function buildExistingLog() {
 
 function buildDeps(overrides = {}) {
   const messagingGateway = {
-    sendMessage: jest.fn().mockResolvedValue({ messageId: 'new-msg-1' }),
-    updateMessage: jest.fn().mockResolvedValue({}),
-    deleteMessage: jest.fn().mockResolvedValue({}),
+    sendMessage: vi.fn().mockResolvedValue({ messageId: 'new-msg-1' }),
+    updateMessage: vi.fn().mockResolvedValue({}),
+    deleteMessage: vi.fn().mockResolvedValue({}),
   };
 
   const aiGateway = {
-    chat: jest.fn().mockResolvedValue(DOUBLED_AI_RESPONSE),
+    chat: vi.fn().mockResolvedValue(DOUBLED_AI_RESPONSE),
   };
 
   const foodLogStore = {
-    findByUuid: jest.fn().mockResolvedValue(buildExistingLog()),
-    save: jest.fn().mockResolvedValue({}),
+    findByUuid: vi.fn().mockResolvedValue(buildExistingLog()),
+    save: vi.fn().mockResolvedValue({}),
   };
 
   const conversationStateStore = {
-    get: jest.fn().mockResolvedValue({
+    get: vi.fn().mockResolvedValue({
       activeFlow: 'revision',
       flowState: {
         pendingLogUuid: 'log-uuid-123',
         originalMessageId: 'orig-msg-42',
       },
     }),
-    clear: jest.fn().mockResolvedValue({}),
+    clear: vi.fn().mockResolvedValue({}),
   };
 
   const responseContext = {
-    sendMessage: jest.fn().mockResolvedValue({ messageId: 'ctx-msg-1' }),
-    updateMessage: jest.fn().mockResolvedValue({}),
-    deleteMessage: jest.fn().mockResolvedValue({}),
-    createStatusIndicator: jest.fn().mockResolvedValue({
+    sendMessage: vi.fn().mockResolvedValue({ messageId: 'ctx-msg-1' }),
+    updateMessage: vi.fn().mockResolvedValue({}),
+    deleteMessage: vi.fn().mockResolvedValue({}),
+    createStatusIndicator: vi.fn().mockResolvedValue({
       messageId: 'status-msg-1',
-      finish: jest.fn().mockResolvedValue({}),
+      finish: vi.fn().mockResolvedValue({}),
     }),
   };
 
   const logger = {
-    info: jest.fn(),
-    debug: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
   };
 
   return {
@@ -300,40 +300,40 @@ describe('LogFoodFromText — revision short-circuit', () => {
 describe('ProcessRevisionInput — responseContext', () => {
   it('should use responseContext for message operations when available', async () => {
     const mockResponseContext = {
-      updateMessage: jest.fn().mockResolvedValue({}),
-      deleteMessage: jest.fn().mockResolvedValue({}),
-      sendMessage: jest.fn().mockResolvedValue({ messageId: 'msg' }),
+      updateMessage: vi.fn().mockResolvedValue({}),
+      deleteMessage: vi.fn().mockResolvedValue({}),
+      sendMessage: vi.fn().mockResolvedValue({ messageId: 'msg' }),
     };
 
     const mockGateway = {
-      sendMessage: jest.fn(),
-      updateMessage: jest.fn(),
-      deleteMessage: jest.fn(),
+      sendMessage: vi.fn(),
+      updateMessage: vi.fn(),
+      deleteMessage: vi.fn(),
     };
 
     const mockStateStore = {
-      get: jest.fn().mockResolvedValue({
+      get: vi.fn().mockResolvedValue({
         activeFlow: 'revision',
         flowState: { pendingLogUuid: 'log-1', originalMessageId: 'orig-msg' },
       }),
-      set: jest.fn().mockResolvedValue({}),
-      clear: jest.fn().mockResolvedValue({}),
+      set: vi.fn().mockResolvedValue({}),
+      clear: vi.fn().mockResolvedValue({}),
     };
 
     const mockAi = {
-      chat: jest.fn().mockResolvedValue(JSON.stringify({
+      chat: vi.fn().mockResolvedValue(JSON.stringify({
         items: [{ name: 'Doubled Peas', noom_color: 'green', quantity: 1, unit: 'g', grams: 480, calories: 400, protein: 26, carbs: 72, fat: 2 }],
       })),
     };
 
     const mockLogStore = {
-      findByUuid: jest.fn().mockResolvedValue({
+      findByUuid: vi.fn().mockResolvedValue({
         id: 'log-1',
         items: [{ label: 'Peas', grams: 240, calories: 200, protein: 13, carbs: 36, fat: 1 }],
         meal: { date: '2026-03-22' },
         metadata: { source: 'text' },
       }),
-      updateItems: jest.fn().mockResolvedValue({}),
+      updateItems: vi.fn().mockResolvedValue({}),
     };
 
     const useCase = new ProcessRevisionInput({
@@ -341,7 +341,7 @@ describe('ProcessRevisionInput — responseContext', () => {
       aiGateway: mockAi,
       foodLogStore: mockLogStore,
       conversationStateStore: mockStateStore,
-      logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     });
 
     await useCase.execute({

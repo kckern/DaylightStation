@@ -1,5 +1,5 @@
 // tests/isolated/api/routers/canvas.test.mjs
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createCanvasRouter } from '../../../../backend/src/4_api/v1/routers/canvas.mjs';
@@ -10,15 +10,15 @@ describe('Canvas API', () => {
 
   beforeEach(() => {
     mockCanvasService = {
-      getCurrent: jest.fn().mockResolvedValue({
+      getCurrent: vi.fn().mockResolvedValue({
         id: 'canvas:test',
         title: 'Test Art',
         imageUrl: '/api/v1/canvas/image/test',
         category: 'landscapes',
         frameStyle: 'classic',
       }),
-      startRotation: jest.fn().mockResolvedValue(undefined),
-      stopRotation: jest.fn(),
+      startRotation: vi.fn().mockResolvedValue(undefined),
+      stopRotation: vi.fn(),
     };
 
     const router = createCanvasRouter({ canvasService: mockCanvasService });

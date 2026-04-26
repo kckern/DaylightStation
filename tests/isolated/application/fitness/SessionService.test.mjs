@@ -1,5 +1,5 @@
 // tests/isolated/domain/fitness/services/SessionService.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { SessionService } from '#apps/fitness/services/SessionService.mjs';
 
 describe('SessionService', () => {
@@ -8,14 +8,14 @@ describe('SessionService', () => {
 
   beforeEach(() => {
     mockStore = {
-      save: jest.fn(),
-      findById: jest.fn(),
-      findByDate: jest.fn(),
-      listDates: jest.fn(),
-      findInRange: jest.fn(),
-      findActive: jest.fn(),
-      delete: jest.fn(),
-      getStoragePaths: jest.fn().mockReturnValue({
+      save: vi.fn(),
+      findById: vi.fn(),
+      findByDate: vi.fn(),
+      listDates: vi.fn(),
+      findInRange: vi.fn(),
+      findActive: vi.fn(),
+      delete: vi.fn(),
+      getStoragePaths: vi.fn().mockReturnValue({
         sessionDate: '2026-01-11',
         sessionsDir: '/data/sessions/2026-01-11',
         sessionFilePath: '/data/sessions/2026-01-11/20260111120000.yml',

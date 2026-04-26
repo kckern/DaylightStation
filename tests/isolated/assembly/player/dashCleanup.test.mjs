@@ -1,28 +1,28 @@
-import { jest, describe, test, expect } from '@jest/globals';
+import { vi, describe, test, expect } from 'vitest';
 import { cleanupDashElement } from '#frontend/modules/Player/lib/dashCleanup.js';
 
 describe('cleanupDashElement', () => {
   test('calls destroy() on element if available', () => {
-    const el = { destroy: jest.fn(), shadowRoot: null };
+    const el = { destroy: vi.fn(), shadowRoot: null };
     cleanupDashElement(el);
     expect(el.destroy).toHaveBeenCalled();
   });
 
   test('calls reset() if destroy() not available', () => {
-    const el = { reset: jest.fn(), shadowRoot: null };
+    const el = { reset: vi.fn(), shadowRoot: null };
     cleanupDashElement(el);
     expect(el.reset).toHaveBeenCalled();
   });
 
   test('pauses and clears src on inner media element', () => {
     const innerVideo = {
-      pause: jest.fn(),
-      removeAttribute: jest.fn(),
-      load: jest.fn(),
+      pause: vi.fn(),
+      removeAttribute: vi.fn(),
+      load: vi.fn(),
       src: 'http://example.com/video.mpd'
     };
     const el = {
-      shadowRoot: { querySelector: jest.fn(() => innerVideo) }
+      shadowRoot: { querySelector: vi.fn(() => innerVideo) }
     };
     cleanupDashElement(el);
     expect(el.shadowRoot.querySelector).toHaveBeenCalledWith('video, audio');
@@ -32,16 +32,16 @@ describe('cleanupDashElement', () => {
   });
 
   test('revokes blob URL on inner media element', () => {
-    const revokeObjectURL = jest.fn();
+    const revokeObjectURL = vi.fn();
     global.URL = { revokeObjectURL };
     const innerVideo = {
-      pause: jest.fn(),
-      removeAttribute: jest.fn(),
-      load: jest.fn(),
+      pause: vi.fn(),
+      removeAttribute: vi.fn(),
+      load: vi.fn(),
       src: 'blob:http://localhost/abc123'
     };
     const el = {
-      shadowRoot: { querySelector: jest.fn(() => innerVideo) }
+      shadowRoot: { querySelector: vi.fn(() => innerVideo) }
     };
     cleanupDashElement(el);
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:http://localhost/abc123');
@@ -54,7 +54,7 @@ describe('cleanupDashElement', () => {
   });
 
   test('does not throw if shadowRoot.querySelector returns null', () => {
-    const el = { shadowRoot: { querySelector: jest.fn(() => null) } };
+    const el = { shadowRoot: { querySelector: vi.fn(() => null) } };
     expect(() => cleanupDashElement(el)).not.toThrow();
   });
 });

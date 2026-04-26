@@ -1,5 +1,5 @@
 // tests/unit/adapters/ai/OpenAIAdapter.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { OpenAIAdapter } from '#adapters/ai/OpenAIAdapter.mjs';
 
 describe('OpenAIAdapter', () => {
@@ -9,14 +9,14 @@ describe('OpenAIAdapter', () => {
 
   beforeEach(() => {
     mockHttpClient = {
-      fetch: jest.fn()
+      fetch: vi.fn()
     };
 
     mockLogger = {
-      debug: jest.fn(),
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn()
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn()
     };
 
     adapter = new OpenAIAdapter(
@@ -323,7 +323,7 @@ describe('OpenAIAdapter', () => {
 
     describe('retryWithBackoff', () => {
       test('returns result on first success', async () => {
-        const fn = jest.fn().mockResolvedValue('success');
+        const fn = vi.fn().mockResolvedValue('success');
         const result = await adapter._testRetryWithBackoff(fn);
         expect(result).toBe('success');
         expect(fn).toHaveBeenCalledTimes(1);
@@ -331,7 +331,7 @@ describe('OpenAIAdapter', () => {
 
       test('retries on retryable error and succeeds', async () => {
         const error = new Error('fetch failed');
-        const fn = jest.fn()
+        const fn = vi.fn()
           .mockRejectedValueOnce(error)
           .mockResolvedValue('success');
 
@@ -342,7 +342,7 @@ describe('OpenAIAdapter', () => {
 
       test('throws after max attempts exhausted', async () => {
         const error = new Error('fetch failed');
-        const fn = jest.fn().mockRejectedValue(error);
+        const fn = vi.fn().mockRejectedValue(error);
 
         await expect(adapter._testRetryWithBackoff(fn, { maxAttempts: 2, baseDelay: 10 }))
           .rejects.toThrow('fetch failed');
@@ -352,7 +352,7 @@ describe('OpenAIAdapter', () => {
       test('does not retry non-retryable errors', async () => {
         const error = new Error('bad request');
         error.status = 400;
-        const fn = jest.fn().mockRejectedValue(error);
+        const fn = vi.fn().mockRejectedValue(error);
 
         await expect(adapter._testRetryWithBackoff(fn))
           .rejects.toThrow('bad request');
@@ -361,7 +361,7 @@ describe('OpenAIAdapter', () => {
 
       test('increments retryCount metric on retry', async () => {
         const error = new Error('fetch failed');
-        const fn = jest.fn()
+        const fn = vi.fn()
           .mockRejectedValueOnce(error)
           .mockResolvedValue('success');
 

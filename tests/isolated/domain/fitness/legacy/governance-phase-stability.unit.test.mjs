@@ -1,12 +1,12 @@
-import { describe, test, expect, jest, beforeEach } from '@jest/globals';
+import { describe, test, expect, vi, beforeEach } from 'vitest';
 
 // Mock logger to suppress logging noise during tests
-const mockSampled = jest.fn();
-const mockInfo = jest.fn();
-const mockWarn = jest.fn();
-const mockDebug = jest.fn();
-const mockError = jest.fn();
-jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
+const mockSampled = vi.fn();
+const mockInfo = vi.fn();
+const mockWarn = vi.fn();
+const mockDebug = vi.fn();
+const mockError = vi.fn();
+vi.mock('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn, debug: mockDebug, error: mockError }),
   getLogger: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn, debug: mockDebug, error: mockError })
 }));
@@ -22,7 +22,7 @@ describe('GovernanceEngine phase stability', () => {
     const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
 
     const session = {
-      zoneProfileStore: { getProfile: jest.fn() },
+      zoneProfileStore: { getProfile: vi.fn() },
       roster: [],
       treasureBox: null
     };
@@ -91,7 +91,7 @@ describe('GovernanceEngine phase stability', () => {
   test('TreasureBox zone changes do not trigger governance evaluation', async () => {
     const { FitnessTreasureBox } = await import('#frontend/hooks/fitness/TreasureBox.js');
 
-    const mockSession = { _log: jest.fn() };
+    const mockSession = { _log: vi.fn() };
     const box = new FitnessTreasureBox(mockSession);
 
     // Setup zones
@@ -104,7 +104,7 @@ describe('GovernanceEngine phase stability', () => {
     });
 
     // Set a governance callback (should be ignored now)
-    const governanceCallback = jest.fn();
+    const governanceCallback = vi.fn();
     box.setGovernanceCallback(governanceCallback);
 
     // Record HR readings that would have triggered zone changes

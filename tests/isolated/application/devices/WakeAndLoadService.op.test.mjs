@@ -1,8 +1,8 @@
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
 
 function makeLogger() {
-  return { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+  return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
 
 function makeDevice(overrides = {}) {
@@ -10,11 +10,11 @@ function makeDevice(overrides = {}) {
     id: 'tv',
     screenPath: '/screen/tv',
     defaultVolume: 10,
-    hasCapability: jest.fn().mockReturnValue(false),
-    powerOn: jest.fn().mockResolvedValue({ ok: true, verified: true, elapsedMs: 50 }),
-    setVolume: jest.fn().mockResolvedValue({ ok: true }),
-    prepareForContent: jest.fn().mockResolvedValue({ ok: true, coldRestart: false, cameraAvailable: true }),
-    loadContent: jest.fn().mockResolvedValue({ ok: true }),
+    hasCapability: vi.fn().mockReturnValue(false),
+    powerOn: vi.fn().mockResolvedValue({ ok: true, verified: true, elapsedMs: 50 }),
+    setVolume: vi.fn().mockResolvedValue({ ok: true }),
+    prepareForContent: vi.fn().mockResolvedValue({ ok: true, coldRestart: false, cameraAvailable: true }),
+    loadContent: vi.fn().mockResolvedValue({ ok: true }),
     ...overrides,
   };
 }
@@ -26,23 +26,23 @@ describe('WakeAndLoadService op pass-through', () => {
   let eventBus;
 
   beforeEach(() => {
-    broadcast = jest.fn();
+    broadcast = vi.fn();
     eventBus = {
       // Return 1 subscriber so WS-first path activates
-      getTopicSubscriberCount: jest.fn().mockReturnValue(1),
+      getTopicSubscriberCount: vi.fn().mockReturnValue(1),
       // Simulate a device-ack arriving promptly
-      waitForMessage: jest.fn().mockResolvedValue({
+      waitForMessage: vi.fn().mockResolvedValue({
         topic: 'device-ack',
         deviceId: 'tv',
         commandId: 'd',
         ok: true,
       }),
-      subscribe: jest.fn().mockReturnValue(() => {}),
+      subscribe: vi.fn().mockReturnValue(() => {}),
     };
     device = makeDevice();
     svc = new WakeAndLoadService({
-      deviceService: { get: jest.fn().mockReturnValue(device) },
-      readinessPolicy: { isReady: jest.fn().mockResolvedValue({ ready: true }) },
+      deviceService: { get: vi.fn().mockReturnValue(device) },
+      readinessPolicy: { isReady: vi.fn().mockResolvedValue({ ready: true }) },
       broadcast,
       eventBus,
       logger: makeLogger(),

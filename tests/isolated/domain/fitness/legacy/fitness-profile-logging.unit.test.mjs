@@ -1,11 +1,11 @@
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 
 // Mock logger before any dynamic imports
-const mockSampled = jest.fn();
-const mockInfo = jest.fn();
-const mockWarn = jest.fn();
-const mockError = jest.fn();
-const mockChild = jest.fn(() => ({
+const mockSampled = vi.fn();
+const mockInfo = vi.fn();
+const mockWarn = vi.fn();
+const mockError = vi.fn();
+const mockChild = vi.fn(() => ({
   sampled: mockSampled,
   info: mockInfo,
   warn: mockWarn,
@@ -13,7 +13,7 @@ const mockChild = jest.fn(() => ({
   child: mockChild
 }));
 
-jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
+vi.mock('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({
     sampled: mockSampled,
     info: mockInfo,

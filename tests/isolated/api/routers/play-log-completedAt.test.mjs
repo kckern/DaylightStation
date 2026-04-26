@@ -1,24 +1,24 @@
 // tests/isolated/api/routers/play-log-completedAt.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createPlayRouter } from '#api/v1/routers/play.mjs';
 
 function makeLogger() {
-  return { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+  return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
 
 function makeApp({ existingState = null, setSpy }) {
   const mockAdapter = {
-    getStoragePath: jest.fn().mockResolvedValue('plex/14_fitness'),
-    getItem: jest.fn().mockResolvedValue({ metadata: { title: 'Upper Body', duration: 678000 } })
+    getStoragePath: vi.fn().mockResolvedValue('plex/14_fitness'),
+    getItem: vi.fn().mockResolvedValue({ metadata: { title: 'Upper Body', duration: 678000 } })
   };
   const mockRegistry = {
-    get: jest.fn().mockReturnValue(mockAdapter),
+    get: vi.fn().mockReturnValue(mockAdapter),
     adapters: new Map()
   };
   const mockMediaProgress = {
-    get: jest.fn().mockResolvedValue(existingState),
+    get: vi.fn().mockResolvedValue(existingState),
     set: setSpy
   };
   const app = express();
@@ -36,7 +36,7 @@ function makeApp({ existingState = null, setSpy }) {
 
 describe('/play/log stamps completedAt when watched threshold is crossed', () => {
   test('stamps completedAt when percent >= 90 and no prior completedAt', async () => {
-    const setSpy = jest.fn().mockResolvedValue(undefined);
+    const setSpy = vi.fn().mockResolvedValue(undefined);
     const app = makeApp({ existingState: null, setSpy });
 
     await request(app)
@@ -51,7 +51,7 @@ describe('/play/log stamps completedAt when watched threshold is crossed', () =>
   });
 
   test('does not stamp completedAt when percent < 90', async () => {
-    const setSpy = jest.fn().mockResolvedValue(undefined);
+    const setSpy = vi.fn().mockResolvedValue(undefined);
     const app = makeApp({ existingState: null, setSpy });
 
     await request(app)
@@ -64,7 +64,7 @@ describe('/play/log stamps completedAt when watched threshold is crossed', () =>
   });
 
   test('preserves existing completedAt on subsequent logs even if percent drops', async () => {
-    const setSpy = jest.fn().mockResolvedValue(undefined);
+    const setSpy = vi.fn().mockResolvedValue(undefined);
     const existing = {
       contentId: 'plex:674498',
       playhead: 678,

@@ -1,4 +1,4 @@
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WeeklyReviewService } from '../../../../backend/src/3_applications/weekly-review/WeeklyReviewService.mjs';
 
 describe('WeeklyReviewService', () => {
@@ -21,20 +21,20 @@ describe('WeeklyReviewService', () => {
 
   beforeEach(() => {
     mockImmichAdapter = {
-      getPhotosForDateRange: jest.fn().mockResolvedValue(PHOTO_DAYS),
+      getPhotosForDateRange: vi.fn().mockResolvedValue(PHOTO_DAYS),
     };
     mockCalendarData = {
-      getEventsForDateRange: jest.fn().mockResolvedValue([
+      getEventsForDateRange: vi.fn().mockResolvedValue([
         { date: '2026-03-23', events: [{ summary: 'Soccer', time: '10:00', calendar: 'family' }] },
       ]),
     };
     mockTranscriptionService = {
-      transcribe: jest.fn().mockResolvedValue({
+      transcribe: vi.fn().mockResolvedValue({
         transcriptRaw: 'raw text',
         transcriptClean: 'Clean text.',
       }),
     };
-    mockLogger = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    mockLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
     service = new WeeklyReviewService({
       dataPath: '/tmp/test-data',

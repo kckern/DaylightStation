@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { RenphoJumpropeDecoder } from '#extensions/fitness/src/decoders/jumprope.mjs';
 
 describe('RenphoJumpropeDecoder', () => {

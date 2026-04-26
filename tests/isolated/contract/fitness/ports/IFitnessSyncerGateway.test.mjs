@@ -1,5 +1,5 @@
 // tests/unit/domains/fitness/ports/IFitnessSyncerGateway.test.mjs
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import {
   IFitnessSyncerGateway,
   isFitnessSyncerGateway,

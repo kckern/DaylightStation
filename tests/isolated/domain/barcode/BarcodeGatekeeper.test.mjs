@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { BarcodeGatekeeper } from '#domains/barcode/BarcodeGatekeeper.mjs';
 import { autoApprove } from '#domains/barcode/strategies/AutoApproveStrategy.mjs';
 

@@ -1,5 +1,5 @@
 // tests/isolated/application/feed/ContentPluginRegistry.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { IContentPlugin } from '#apps/feed/plugins/IContentPlugin.mjs';
 import { ContentPluginRegistry } from '#apps/feed/services/ContentPluginRegistry.mjs';
 

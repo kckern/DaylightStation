@@ -1,20 +1,20 @@
 // tests/isolated/application/content/ContentQueryService.completedAt.test.mjs
-import { describe, test, expect, jest } from '@jest/globals';
+import { describe, test, expect, vi } from 'vitest';
 import { ContentQueryService } from '#apps/content/ContentQueryService.mjs';
 
 describe('ContentQueryService.enrichWithWatchState propagates completedAt', () => {
   test('enriched item carries completedAt from stored progress', async () => {
     const mockAdapter = {
       source: 'plex',
-      getStoragePath: jest.fn().mockResolvedValue('plex/14_fitness'),
+      getStoragePath: vi.fn().mockResolvedValue('plex/14_fitness'),
     };
     const mockRegistry = {
-      get: jest.fn().mockReturnValue(mockAdapter),
-      list: jest.fn(() => []),
-      resolveSource: jest.fn(() => [])
+      get: vi.fn().mockReturnValue(mockAdapter),
+      list: vi.fn(() => []),
+      resolveSource: vi.fn(() => [])
     };
     const mockMemory = {
-      getAll: jest.fn().mockResolvedValue([
+      getAll: vi.fn().mockResolvedValue([
         {
           contentId: 'plex:674498',
           playhead: 40,
@@ -26,7 +26,7 @@ describe('ContentQueryService.enrichWithWatchState propagates completedAt', () =
           completedAt: '2026-04-20 06:07:44'
         }
       ]),
-      getAllFromAllLibraries: jest.fn().mockResolvedValue([])
+      getAllFromAllLibraries: vi.fn().mockResolvedValue([])
     };
     const service = new ContentQueryService({
       registry: mockRegistry,
@@ -42,15 +42,15 @@ describe('ContentQueryService.enrichWithWatchState propagates completedAt', () =
   test('enriched item has completedAt=null when progress has no completedAt', async () => {
     const mockAdapter = {
       source: 'plex',
-      getStoragePath: jest.fn().mockResolvedValue('plex/14_fitness'),
+      getStoragePath: vi.fn().mockResolvedValue('plex/14_fitness'),
     };
     const mockRegistry = {
-      get: jest.fn().mockReturnValue(mockAdapter),
-      list: jest.fn(() => []),
-      resolveSource: jest.fn(() => [])
+      get: vi.fn().mockReturnValue(mockAdapter),
+      list: vi.fn(() => []),
+      resolveSource: vi.fn(() => [])
     };
     const mockMemory = {
-      getAll: jest.fn().mockResolvedValue([
+      getAll: vi.fn().mockResolvedValue([
         {
           contentId: 'plex:100',
           playhead: 40,
@@ -62,7 +62,7 @@ describe('ContentQueryService.enrichWithWatchState propagates completedAt', () =
           completedAt: null
         }
       ]),
-      getAllFromAllLibraries: jest.fn().mockResolvedValue([])
+      getAllFromAllLibraries: vi.fn().mockResolvedValue([])
     };
     const service = new ContentQueryService({
       registry: mockRegistry,

@@ -1,5 +1,5 @@
 // tests/unit/applications/journalist/usecases/HandleDebriefResponse.test.mjs
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 describe('HandleDebriefResponse', () => {
   let HandleDebriefResponse;
@@ -14,33 +14,33 @@ describe('HandleDebriefResponse', () => {
   beforeEach(async () => {
     // Reset mocks
     mockMessagingGateway = {
-      sendMessage: jest.fn().mockResolvedValue({ messageId: 'sent-msg-123' }),
-      updateKeyboard: jest.fn().mockResolvedValue(undefined),
+      sendMessage: vi.fn().mockResolvedValue({ messageId: 'sent-msg-123' }),
+      updateKeyboard: vi.fn().mockResolvedValue(undefined),
     };
 
     mockConversationStateStore = {
-      get: jest.fn().mockResolvedValue(null),
-      set: jest.fn().mockResolvedValue(undefined),
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue(undefined),
     };
 
     mockDebriefRepository = {
-      getRecentDebriefs: jest.fn().mockResolvedValue([]),
+      getRecentDebriefs: vi.fn().mockResolvedValue([]),
     };
 
     mockJournalEntryRepository = {
-      saveMessage: jest.fn().mockResolvedValue(undefined),
-      deleteMessage: jest.fn().mockResolvedValue(undefined),
+      saveMessage: vi.fn().mockResolvedValue(undefined),
+      deleteMessage: vi.fn().mockResolvedValue(undefined),
     };
 
     mockUserResolver = {
-      resolveUsername: jest.fn().mockReturnValue('testuser'),
+      resolveUsername: vi.fn().mockReturnValue('testuser'),
     };
 
     mockLogger = {
-      info: jest.fn(),
-      debug: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
+      info: vi.fn(),
+      debug: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
     };
 
     // Dynamic import after mocks are set up

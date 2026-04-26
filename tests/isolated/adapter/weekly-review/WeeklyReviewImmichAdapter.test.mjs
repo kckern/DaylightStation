@@ -1,5 +1,5 @@
 // tests/isolated/adapter/weekly-review/WeeklyReviewImmichAdapter.test.mjs
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WeeklyReviewImmichAdapter } from '../../../../backend/src/1_adapters/weekly-review/WeeklyReviewImmichAdapter.mjs';
 
 describe('WeeklyReviewImmichAdapter', () => {
@@ -48,13 +48,13 @@ describe('WeeklyReviewImmichAdapter', () => {
 
   beforeEach(() => {
     mockClient = {
-      searchMetadata: jest.fn().mockResolvedValue({ items: MOCK_ASSETS, total: MOCK_ASSETS.length }),
+      searchMetadata: vi.fn().mockResolvedValue({ items: MOCK_ASSETS, total: MOCK_ASSETS.length }),
     };
     mockLogger = {
-      debug: jest.fn(),
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
     };
     adapter = new WeeklyReviewImmichAdapter({
       priorityPeople: ['Felix', 'Alan', 'Soren', 'Milo'],
