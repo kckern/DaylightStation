@@ -1,11 +1,12 @@
 // tests/isolated/adapter/proxy/RedditImageProxyAdapter.test.mjs
+import { vi } from 'vitest';
 import { RedditImageProxyAdapter } from '#adapters/proxy/RedditImageProxyAdapter.mjs';
 
 describe('RedditImageProxyAdapter', () => {
   let adapter;
 
   beforeEach(() => {
-    adapter = new RedditImageProxyAdapter({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } });
+    adapter = new RedditImageProxyAdapter({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } });
   });
 
   describe('getServiceName', () => {
