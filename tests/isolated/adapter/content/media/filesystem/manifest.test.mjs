@@ -5,7 +5,7 @@ describe('Media Manifest', () => {
   test('has required fields', () => {
     expect(manifest.provider).toBe('files');
     expect(manifest.capability).toBe('media');
-    expect(manifest.displayName).toBe('Local Filesystem');
+    expect(manifest.displayName).toBe('Local Media');
   });
 
   test('adapter factory returns FileAdapter class', async () => {
