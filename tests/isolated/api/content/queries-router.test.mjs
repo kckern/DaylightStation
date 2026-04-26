@@ -27,20 +27,23 @@ describe('Queries CRUD Router', () => {
   });
 
   it('GET / lists all queries', async () => {
+    // Production now normalizes flat {type, sources} configs into a composite
+    // shape: { title, items: [{ source, filters }] }. Inspect items[0] for
+    // the original source/filters mapping.
     const res = await request(app).get('/api/v1/queries');
     expect(res.status).toBe(200);
     expect(res.body).toBeInstanceOf(Array);
     expect(res.body.length).toBeGreaterThan(0);
     expect(res.body[0].name).toBe('dailynews');
-    expect(res.body[0].source).toBe('freshvideo');
+    expect(res.body[0].items[0].source).toBe('freshvideo');
   });
 
   it('GET /:name returns a single query', async () => {
     const res = await request(app).get('/api/v1/queries/dailynews');
     expect(res.status).toBe(200);
     expect(res.body.name).toBe('dailynews');
-    expect(res.body.source).toBe('freshvideo');
-    expect(res.body.filters.sources).toEqual(['news/cnn', 'news/az']);
+    expect(res.body.items[0].source).toBe('freshvideo');
+    expect(res.body.items[0].filters.sources).toEqual(['news/cnn', 'news/az']);
   });
 
   it('GET /:name returns 404 for unknown query', async () => {
@@ -54,12 +57,12 @@ describe('Queries CRUD Router', () => {
       .send({ type: 'freshvideo', sources: ['teded', 'science'] });
     expect(res.status).toBe(200);
     expect(res.body.name).toBe('morning');
-    expect(res.body.source).toBe('freshvideo');
+    expect(res.body.items[0].source).toBe('freshvideo');
 
     // Verify it persisted
     const get = await request(app).get('/api/v1/queries/morning');
     expect(get.status).toBe(200);
-    expect(get.body.filters.sources).toEqual(['teded', 'science']);
+    expect(get.body.items[0].filters.sources).toEqual(['teded', 'science']);
   });
 
   it('POST /:name rejects missing type', async () => {

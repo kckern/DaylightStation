@@ -1,9 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { FreshVideoAdapter } from '#adapters/content/freshvideo/FreshVideoAdapter.mjs';
 
-// Helper: create mock FileAdapter that returns video items for a folder
+// Helper: create mock FileAdapter that returns video items for a folder.
+// Production now stamps a show.jpg thumbnail by joining
+// fileAdapter.mediaBasePath — provide a fake base so path.join doesn't throw.
 function makeMockFileAdapter(items) {
   return {
+    mediaBasePath: '/fake/media',
     getList: vi.fn(async () => items.map(f => ({ localId: f, itemType: 'leaf' }))),
     getItem: vi.fn(async (localId) => ({
       id: `files:${localId}`,
@@ -17,9 +20,12 @@ function makeMockFileAdapter(items) {
 }
 
 function makeMockProgress(watchedKeys = []) {
+  // Production keys progress lookup by item.id (the compound "files:..." form),
+  // not the bare localId. Match either form so callers can supply either.
+  const keys = new Set(watchedKeys.flatMap(k => [k, `files:${k}`]));
   return {
     get: vi.fn(async (key) => {
-      const percent = watchedKeys.includes(key) ? 95 : 0;
+      const percent = keys.has(key) ? 95 : 0;
       return { percent };
     }),
   };

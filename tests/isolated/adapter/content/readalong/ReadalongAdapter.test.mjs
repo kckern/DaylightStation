@@ -71,6 +71,16 @@ describe('ReadalongAdapter', () => {
       });
       findMediaFileByPrefix.mockReturnValue('/mock/media/readalong/scripture/bom/sebom/34541.mp3');
 
+      // Production dynamically imports the resolver module by name; the
+      // import path doesn't resolve in test scope. Pre-register a stub
+      // resolver on the adapter so _loadResolver short-circuits to it.
+      adapter.resolvers.scripture = {
+        resolve: (itemPath /*, collectionPath, opts */) => ({
+          textPath: `bom/${itemPath}`,
+          audioPath: `bom/sebom/${itemPath}`,
+        }),
+      };
+
       const item = await adapter.getItem('scripture/alma-32');
 
       expect(item.metadata.category).toBe('readalong');
@@ -289,12 +299,15 @@ describe('ReadalongAdapter', () => {
       expect(adapter.getStoragePath('talks/ldsgc202410')).toBe('readalong');
     });
 
-    it('returns scriptures as storage key for scripture', () => {
-      loadContainedYaml.mockImplementation((_dir, name) => {
-        if (name === 'manifest') return { storagePath: 'scriptures' };
-        return null;
+    it('returns scriptures as storage key for scripture (via storagePaths injection)', () => {
+      // Production no longer reads manifest.storagePath; it relies on the
+      // injected storagePaths map. Construct a fresh adapter with the map.
+      const scopedAdapter = new ReadalongAdapter({
+        dataPath: '/data',
+        mediaPath: '/media',
+        storagePaths: { scripture: 'scriptures' },
       });
-      expect(adapter.getStoragePath('scripture/bom')).toBe('scriptures');
+      expect(scopedAdapter.getStoragePath('scripture/bom')).toBe('scriptures');
     });
   });
 
@@ -343,7 +356,8 @@ describe('ReadalongAdapter', () => {
         id: 'readalong:scripture/bom',
         source: 'readalong',
         title: 'bom',
-        itemType: 'container'
+        itemType: 'container',
+        thumbnail: null,
       });
     });
 
