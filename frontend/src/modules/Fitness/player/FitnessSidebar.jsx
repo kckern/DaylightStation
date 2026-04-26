@@ -58,10 +58,6 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
     const req = buildEndSessionRequest(activeSessionId);
     if (!req) return;
     if (endingSession) return;
-    const confirmed = typeof window !== 'undefined'
-      ? window.confirm('End this fitness session? Subsequent heart-rate readings will start a new session.')
-      : true;
-    if (!confirmed) return;
     setEndingSession(true);
     setEndSessionError(null);
     try {
@@ -216,9 +212,6 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
 
   return (
     <div className={`fitness-sidebar-container fitness-sidebar-mode-${mode}`}>
-      {/* Mini cam slot when chart is in main view */}
-
-
       {/* Treasure Box */}
       {visibility.treasureBox && (
         <div
@@ -251,26 +244,6 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
         </div>
       )}
 
-      {/* End Session button — sits directly above the Music Player section
-          so it's visually prominent yet not floating over other content. */}
-      {activeSessionId && (
-        <div className="fitness-sidebar-end-session-panel">
-          {endSessionError && (
-            <div className="fitness-sidebar-end-session-error" role="alert">{endSessionError}</div>
-          )}
-          <button
-            type="button"
-            className="fitness-sidebar-end-session"
-            onPointerDown={handleEndSession}
-            disabled={endingSession}
-            aria-label="End current fitness session"
-            title="Force end the current session so it won't auto-merge with the next workout"
-          >
-            {endingSession ? 'Ending…' : 'End Session'}
-          </button>
-        </div>
-      )}
-
       {/* Music Player — always visible on the standalone chart view (mode='cam')
           since there's no video to mix with; gated by user's musicEnabled
           preference in full-player mode. */}
@@ -288,8 +261,8 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
       {/* Combined Video + Voice Memo Controls */}
       {(visibility.video || visibility.voiceMemo) && mode === 'player' && (
         <div className="fitness-sidebar-media">
-          <FitnessVoiceMemo 
-            minimal 
+          <FitnessVoiceMemo
+            minimal
             menuOpen={menuOpen}
             onToggleMenu={() => {
               if (menuOpen && menuState.mode === 'settings') {
@@ -301,6 +274,31 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
             playerRef={playerRef}
             preferredMicrophoneId={preferredMicrophoneId}
           />
+        </div>
+      )}
+
+      {mode === 'cam' && (
+        <div className="fitness-sidebar-media">
+          <div className="media-controls-container">
+            {miniCamContent && (
+              <div className="media-video-section">{miniCamContent}</div>
+            )}
+            <div className="media-button-panel">
+              <button
+                className="media-config-btn"
+                onClick={() => {
+                  if (menuOpen && menuState.mode === 'settings') {
+                    setMenuState({ open: false, mode: 'settings', target: null });
+                  } else {
+                    openSettingsMenu();
+                  }
+                }}
+                title="Open menu"
+              >
+                ⋮
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -335,6 +333,10 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
             boostLevel={boostLevel}
             setBoost={setBoost}
             videoVolume={videoVolume}
+            activeSessionId={activeSessionId}
+            endingSession={endingSession}
+            endSessionError={endSessionError}
+            onEndSession={handleEndSession}
           />
         </>
       )}

@@ -3799,8 +3799,8 @@
     flex: 1;
     padding: 8px;
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    grid-template-rows: repeat(2, auto);
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    grid-auto-rows: min-content;
     gap: 8px;
     justify-content: center;
     overflow: hidden;
@@ -3859,7 +3859,9 @@
 
     .playlist-thumb {
       width: 100%;
+      max-width: 96px;
       aspect-ratio: 1;
+      margin: 0 auto;
       border-radius: 6px;
       overflow: hidden;
       flex-shrink: 0;
@@ -4105,4 +4107,84 @@
   0%   { background: rgba(255, 255, 255, 0.15); }
   40%  { background: rgba(255, 255, 255, 0.55); }
   100% { background: rgba(255, 255, 255, 0.15); }
+}
+
+.end-session-confirm-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  backdrop-filter: blur(2px);
+}
+
+.end-session-confirm-modal {
+  background: #1f1f23;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+  padding: 1.25rem 1.25rem 1rem;
+  max-width: 320px;
+  width: 100%;
+  color: white;
+
+  h3 {
+    margin: 0 0 0.5rem;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #ff6b6b;
+  }
+
+  p {
+    margin: 0 0 1.25rem;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    color: rgba(255, 255, 255, 0.75);
+  }
+
+  .end-session-confirm-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+  }
+
+  button {
+    border: none;
+    border-radius: 6px;
+    padding: 0.55rem 1rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.05s ease;
+
+    &:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    &:active:not(:disabled) {
+      transform: scale(0.97);
+    }
+  }
+
+  .end-session-confirm-cancel {
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.9);
+
+    &:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.15);
+    }
+  }
+
+  .end-session-confirm-accept {
+    background: #c92a2a;
+    color: white;
+
+    &:hover:not(:disabled) {
+      background: #e03131;
+    }
+  }
 }

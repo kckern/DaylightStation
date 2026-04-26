@@ -1,14 +1,17 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import '../FitnessSidebar.scss';
 
-const GRID_SIZE = 6; // 3x2 grid
+const DEFAULT_PAGE_SIZE = 6;
+const VISIBLE_ROWS = 2;
 
 const FitnessPlaylistSelector = ({ playlists, selectedPlaylistId, onSelect, onClose, isOpen }) => {
   const panelRef = useRef(null);
+  const gridRef = useRef(null);
   const [dragOffset, setDragOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const dragStartY = useRef(0);
 
   // Build full list with "No Music" as first item
@@ -23,39 +26,65 @@ const FitnessPlaylistSelector = ({ playlists, selectedPlaylistId, onSelect, onCl
   ];
 
   const totalItems = allItems.length;
-  const totalPages = Math.ceil(totalItems / GRID_SIZE);
+  // First page holds (pageSize - 1) real items (last slot is "next" if needed),
+  // subsequent middle pages hold (pageSize - 2) (prev + next reserved).
+  const itemsAfterFirstPage = Math.max(1, pageSize - 2);
+  const totalPages = totalItems <= pageSize
+    ? 1
+    : 1 + Math.ceil((totalItems - (pageSize - 1)) / itemsAfterFirstPage);
   const hasMultiplePages = totalPages > 1;
   const isFirstPage = page === 0;
   const isLastPage = page >= totalPages - 1;
+
+  // Reset to first page if pagination collapsed past current selection
+  useEffect(() => {
+    if (page > 0 && page >= totalPages) {
+      setPage(Math.max(0, totalPages - 1));
+    }
+  }, [page, totalPages]);
+
+  // Track rendered column count so each "page" matches the visible grid width
+  useEffect(() => {
+    if (!isOpen || !gridRef.current || typeof window === 'undefined') return undefined;
+    const measure = () => {
+      const grid = gridRef.current;
+      if (!grid) return;
+      const computed = window.getComputedStyle(grid);
+      const colsValue = computed.gridTemplateColumns || '';
+      const cols = colsValue.split(' ').filter(Boolean).length;
+      if (cols > 0) {
+        const next = cols * VISIBLE_ROWS;
+        setPageSize((prev) => (prev === next ? prev : next));
+      }
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(gridRef.current);
+    return () => ro.disconnect();
+  }, [isOpen]);
 
   // Calculate visible items for current page
   const getVisibleItems = () => {
     const items = [];
 
     if (!hasMultiplePages) {
-      // No pagination needed - show all items
       return allItems;
     }
 
-    // Calculate slots available for actual items
     const hasPrev = !isFirstPage;
     const hasNext = !isLastPage;
     const reservedSlots = (hasPrev ? 1 : 0) + (hasNext ? 1 : 0);
-    const itemSlots = GRID_SIZE - reservedSlots;
+    const itemSlots = Math.max(1, pageSize - reservedSlots);
 
-    // Calculate start index
     let startIdx;
     if (isFirstPage) {
       startIdx = 0;
     } else {
-      // First page shows 5 items (slot 6 is next)
-      // Subsequent pages show 4 items (slot 1 is prev, slot 6 is next, unless last page)
-      startIdx = 5 + (page - 1) * 4;
+      startIdx = (pageSize - 1) + (page - 1) * itemsAfterFirstPage;
     }
 
     const pageItems = allItems.slice(startIdx, startIdx + itemSlots);
 
-    // Build grid with nav buttons
     if (hasPrev) {
       items.push({ isNavPrev: true });
     }
@@ -131,8 +160,7 @@ const FitnessPlaylistSelector = ({ playlists, selectedPlaylistId, onSelect, onCl
           </span>
         </div>
 
-        {/* 3x3 Grid */}
-        <div className="playlist-panel-grid">
+        <div className="playlist-panel-grid" ref={gridRef}>
           {visibleItems.map((item, idx) => {
             if (item.isNavPrev) {
               return (
