@@ -14,7 +14,7 @@ import { ScreenActionHandler } from './actions/ScreenActionHandler.jsx';
 import { getWidgetRegistry } from './widgets/registry.js';
 import { useScreenSubscriptions } from './subscriptions/useScreenSubscriptions.js';
 import { useScreenCommands } from './commands/useScreenCommands.js';
-import { SessionPublishers } from './publishers/SessionPublishers.jsx';
+import { ScreenSessionPublishers } from './ScreenSessionPublishers.jsx';
 import { MenuNavigationProvider, useMenuNavigationContext } from '../context/MenuNavigationContext.jsx';
 import { parseAutoplayParams } from '../lib/parseAutoplayParams.js';
 import { getApp } from '../lib/appRegistry.js';
@@ -137,21 +137,6 @@ function ScreenCommandHandler({ wsConfig, screenId }) {
   const bus = useMemo(() => getActionBus(), []);
   useScreenCommands(wsConfig, bus, screenId);
   return null;
-}
-
-/**
- * ScreenSessionPublishers - Mounts the session-state and command-ack
- * publishers when `websocket.publishState: true` in the screen YAML config.
- *
- * Renders nothing. No-ops when `publishState` is false/absent or when no
- * device id is configured under `guardrails.device`.
- */
-function ScreenSessionPublishers({ wsConfig }) {
-  const bus = useMemo(() => getActionBus(), []);
-  if (wsConfig?.publishState !== true) return null;
-  const deviceId = wsConfig?.guardrails?.device;
-  if (!deviceId) return null;
-  return <SessionPublishers deviceId={deviceId} actionBus={bus} />;
 }
 
 /**
