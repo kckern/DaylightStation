@@ -1,5 +1,5 @@
 // tests/isolated/api/routers/fitness-debug-voice-memo.test.mjs
-import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import fs from 'fs';
@@ -18,7 +18,7 @@ describe('POST /api/v1/fitness/debug/voice-memo', () => {
       getDataDir: () => tmpDataDir,
     };
     const router = createFitnessRouter({
-      sessionService: { getStoragePaths: jest.fn() },
+      sessionService: { getStoragePaths: vi.fn() },
       zoneLedController: null,
       userService: { hydrateFitnessConfig: (d) => d },
       configService,
@@ -79,13 +79,13 @@ describe('POST /api/v1/fitness/debug/voice-memo', () => {
   });
 
   it('does NOT attach sessionId or trigger Strava enrichment', async () => {
-    const enrichmentService = { reEnrichDescription: jest.fn() };
+    const enrichmentService = { reEnrichDescription: vi.fn() };
     const configService = {
       getDefaultHouseholdId: () => 'default',
       getDataDir: () => tmpDataDir,
     };
     const router = createFitnessRouter({
-      sessionService: { getStoragePaths: jest.fn() },
+      sessionService: { getStoragePaths: vi.fn() },
       zoneLedController: null,
       userService: { hydrateFitnessConfig: (d) => d },
       configService,

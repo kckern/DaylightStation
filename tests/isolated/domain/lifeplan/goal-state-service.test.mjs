@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { GoalStateService } from '#domains/lifeplan/services/GoalStateService.mjs';
 import { Goal } from '#domains/lifeplan/entities/Goal.mjs';
 import { Dependency } from '#domains/lifeplan/entities/Dependency.mjs';

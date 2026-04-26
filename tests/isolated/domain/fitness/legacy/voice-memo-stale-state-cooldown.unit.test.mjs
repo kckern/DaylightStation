@@ -1,12 +1,12 @@
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 
 describe('VoiceMemoOverlay stale state cooldown', () => {
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   test('should not reset stale state within 500ms cooldown period', () => {

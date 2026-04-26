@@ -1,5 +1,5 @@
 // tests/isolated/contract/canvas/ports/ICanvasScheduler.test.mjs
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { validateScheduler } from '../../../../../backend/src/3_applications/canvas/ports/ICanvasScheduler.mjs';
 
 describe('ICanvasScheduler contract', () => {

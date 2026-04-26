@@ -1,8 +1,8 @@
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
 
 function makeLogger() {
-  return { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+  return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
 
 // Minimal EventBus double implementing subscribe + publish
@@ -42,9 +42,9 @@ function makeDevice(overrides = {}) {
 
 describe('WakeAndLoadService playback watchdog', () => {
   test('broadcasts timeout event when no playback.log arrives within 90s', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     const logger = makeLogger();
-    const broadcast = jest.fn();
+    const broadcast = vi.fn();
     const eventBus = makeEventBus();
     const device = makeDevice();
     const svc = new WakeAndLoadService({
@@ -59,7 +59,7 @@ describe('WakeAndLoadService playback watchdog', () => {
     expect(result.ok).toBe(true);
 
     // Watchdog running — advance 90s
-    await jest.advanceTimersByTimeAsync(90_000);
+    await vi.advanceTimersByTimeAsync(90_000);
     await Promise.resolve(); // flush microtasks
 
     expect(broadcast).toHaveBeenCalledWith(
@@ -74,13 +74,13 @@ describe('WakeAndLoadService playback watchdog', () => {
       'wake-and-load.playback.timeout',
       expect.objectContaining({ deviceId: 'living-room' })
     );
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   test('cancels watchdog when playback.log arrives for the loaded content', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     const logger = makeLogger();
-    const broadcast = jest.fn();
+    const broadcast = vi.fn();
     const eventBus = makeEventBus();
     const device = makeDevice();
     const svc = new WakeAndLoadService({
@@ -95,10 +95,10 @@ describe('WakeAndLoadService playback watchdog', () => {
     expect(result.ok).toBe(true);
 
     // Playback event arrives after 30s
-    await jest.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(30_000);
     eventBus.publish('playback.log', { contentId: 'plex:1', playhead: 5 });
 
-    await jest.advanceTimersByTimeAsync(70_000);
+    await vi.advanceTimersByTimeAsync(70_000);
     await Promise.resolve();
 
     // timeout log should NOT have been emitted
@@ -110,13 +110,13 @@ describe('WakeAndLoadService playback watchdog', () => {
       'wake-and-load.playback.confirmed',
       expect.objectContaining({ deviceId: 'living-room', contentId: 'plex:1' })
     );
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   test('uses prewarmContentId when queue is a playlist name', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     const logger = makeLogger();
-    const broadcast = jest.fn();
+    const broadcast = vi.fn();
     const eventBus = makeEventBus();
     // Simulate the prewarm service resolving a named queue to a contentId.
     // The Task 2 flow sets contentQuery.prewarmContentId = resolved plex id.
@@ -125,7 +125,7 @@ describe('WakeAndLoadService playback watchdog', () => {
       loadContent: async () => ({ ok: true, url: '/screen/living-room?queue=morning-program' })
     });
     const prewarmService = {
-      prewarm: jest.fn().mockResolvedValue({
+      prewarm: vi.fn().mockResolvedValue({
         status: 'ok',
         token: 'tok',
         contentId: 'plex:12345'
@@ -144,9 +144,9 @@ describe('WakeAndLoadService playback watchdog', () => {
     expect(result.ok).toBe(true);
 
     // /play/log broadcasts the real content id, not the queue name
-    await jest.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(10_000);
     eventBus.publish('playback.log', { contentId: 'plex:12345', playhead: 3 });
-    await jest.advanceTimersByTimeAsync(100_000);
+    await vi.advanceTimersByTimeAsync(100_000);
 
     expect(logger.warn).not.toHaveBeenCalledWith(
       'wake-and-load.playback.timeout',
@@ -156,13 +156,13 @@ describe('WakeAndLoadService playback watchdog', () => {
       'wake-and-load.playback.confirmed',
       expect.objectContaining({ contentId: 'plex:12345' })
     );
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   test('does not falsely confirm plex:12 when expecting plex:1', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     const logger = makeLogger();
-    const broadcast = jest.fn();
+    const broadcast = vi.fn();
     const eventBus = makeEventBus();
     const device = makeDevice();
     const svc = new WakeAndLoadService({
@@ -177,7 +177,7 @@ describe('WakeAndLoadService playback watchdog', () => {
 
     // Different content finishes playing — must NOT confirm
     eventBus.publish('playback.log', { contentId: 'plex:12', playhead: 5 });
-    await jest.advanceTimersByTimeAsync(90_000);
+    await vi.advanceTimersByTimeAsync(90_000);
 
     // Timeout SHOULD fire because plex:12 is not plex:1
     expect(logger.warn).toHaveBeenCalledWith(
@@ -188,16 +188,16 @@ describe('WakeAndLoadService playback watchdog', () => {
       'wake-and-load.playback.confirmed',
       expect.any(Object)
     );
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   test('skips watchdog when queue param is missing', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     const logger = makeLogger();
-    const broadcast = jest.fn();
+    const broadcast = vi.fn();
     const eventBus = makeEventBus();
     const device = makeDevice();
-    const subscribeSpy = jest.spyOn(eventBus, 'subscribe');
+    const subscribeSpy = vi.spyOn(eventBus, 'subscribe');
 
     const svc = new WakeAndLoadService({
       deviceService: { get: () => device },
@@ -208,10 +208,10 @@ describe('WakeAndLoadService playback watchdog', () => {
     });
 
     await svc.execute('living-room', {}); // no queue
-    await jest.advanceTimersByTimeAsync(120_000);
+    await vi.advanceTimersByTimeAsync(120_000);
 
     // With no content to track, don't arm the watchdog at all.
     expect(subscribeSpy).not.toHaveBeenCalled();
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 });

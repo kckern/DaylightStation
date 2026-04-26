@@ -1,16 +1,16 @@
 // tests/isolated/adapter/feed/RedditFeedAdapter.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { RedditFeedAdapter } from '#adapters/feed/sources/RedditFeedAdapter.mjs';
 
 describe('RedditFeedAdapter — preview dimensions', () => {
   let adapter;
-  const mockLogger = { warn: jest.fn(), info: jest.fn(), error: jest.fn() };
+  const mockLogger = { warn: vi.fn(), info: vi.fn(), error: vi.fn() };
   const mockDataService = {
-    user: { read: jest.fn().mockReturnValue(null) },
+    user: { read: vi.fn().mockReturnValue(null) },
   };
 
   beforeEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
     mockLogger.warn.mockClear();
     adapter = new RedditFeedAdapter({ dataService: mockDataService, logger: mockLogger });
   });
@@ -20,7 +20,7 @@ describe('RedditFeedAdapter — preview dimensions', () => {
   });
 
   function mockRedditResponse(posts) {
-    global.fetch = jest.fn().mockResolvedValue({
+    global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({
         data: {

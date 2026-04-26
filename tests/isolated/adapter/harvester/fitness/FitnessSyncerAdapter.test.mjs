@@ -1,5 +1,5 @@
 // tests/unit/adapters/harvester/fitness/FitnessSyncerAdapter.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 
 describe('FitnessSyncerAdapter', () => {
   let FitnessSyncerAdapter;
@@ -20,28 +20,28 @@ describe('FitnessSyncerAdapter', () => {
   };
 
   beforeEach(async () => {
-    jest.resetModules();
-    jest.useFakeTimers();
-    jest.setSystemTime(new Date('2026-01-13T12:00:00Z'));
+    vi.resetModules();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-13T12:00:00Z'));
 
     const module = await import('#adapters/harvester/fitness/FitnessSyncerAdapter.mjs');
     FitnessSyncerAdapter = module.FitnessSyncerAdapter;
 
     mockHttpClient = {
-      get: jest.fn(),
-      post: jest.fn(),
+      get: vi.fn(),
+      post: vi.fn(),
     };
 
     mockAuthStore = {
-      get: jest.fn(),
-      set: jest.fn(),
+      get: vi.fn(),
+      set: vi.fn(),
     };
 
     mockLogger = {
-      debug: jest.fn(),
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
     };
 
     adapter = new FitnessSyncerAdapter({
@@ -54,7 +54,7 @@ describe('FitnessSyncerAdapter', () => {
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   describe('constructor', () => {
@@ -246,7 +246,7 @@ describe('FitnessSyncerAdapter', () => {
       await adapter.getAccessToken();
 
       // Now simulate expiry and failure
-      jest.advanceTimersByTime(2 * 60 * 60 * 1000); // 2 hours
+      vi.advanceTimersByTime(2 * 60 * 60 * 1000); // 2 hours
 
       mockAuthStore.get.mockResolvedValue({
         refresh: 'test-refresh-token',
@@ -374,7 +374,7 @@ describe('FitnessSyncerAdapter', () => {
       expect(adapter.isInCooldown()).toBe(true);
 
       // Advance time past cooldown
-      jest.advanceTimersByTime(6 * 60 * 1000); // 6 minutes
+      vi.advanceTimersByTime(6 * 60 * 1000); // 6 minutes
 
       // Record success
       adapter.recordSuccess();

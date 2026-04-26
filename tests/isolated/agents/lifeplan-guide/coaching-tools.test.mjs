@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { CoachingToolFactory } from '#apps/agents/lifeplan-guide/tools/CoachingToolFactory.mjs';
 
 describe('CoachingToolFactory', () => {

@@ -1,5 +1,5 @@
 // tests/unit/applications/homebot/AssignItemToUser.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 
 describe('AssignItemToUser', () => {
   let useCase;
@@ -11,15 +11,15 @@ describe('AssignItemToUser', () => {
 
   beforeEach(async () => {
     // Reset modules to clear any cached instances
-    jest.resetModules();
+    vi.resetModules();
 
     mockMessagingGateway = {
-      updateMessage: jest.fn().mockResolvedValue(undefined),
-      deleteMessage: jest.fn().mockResolvedValue(undefined)
+      updateMessage: vi.fn().mockResolvedValue(undefined),
+      deleteMessage: vi.fn().mockResolvedValue(undefined)
     };
 
     mockStateStore = {
-      get: jest.fn().mockResolvedValue({
+      get: vi.fn().mockResolvedValue({
         activeFlow: 'gratitude_input',
         flowState: {
           items: [
@@ -30,29 +30,29 @@ describe('AssignItemToUser', () => {
           confirmationMessageId: 'msg123'
         }
       }),
-      delete: jest.fn().mockResolvedValue(undefined)
+      delete: vi.fn().mockResolvedValue(undefined)
     };
 
     mockGratitudeService = {
-      addSelections: jest.fn().mockResolvedValue([
+      addSelections: vi.fn().mockResolvedValue([
         { id: 'sel1', userId: 'user1', item: { id: 'item1', text: 'Good health' } },
         { id: 'sel2', userId: 'user1', item: { id: 'item2', text: 'Family' } }
       ])
     };
 
     mockHouseholdService = {
-      getHouseholdId: jest.fn().mockReturnValue('household123'),
-      getMemberByUsername: jest.fn().mockReturnValue({
+      getHouseholdId: vi.fn().mockReturnValue('household123'),
+      getMemberByUsername: vi.fn().mockReturnValue({
         username: 'user1',
         displayName: 'User One'
       })
     };
 
     mockLogger = {
-      info: jest.fn(),
-      debug: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn()
+      info: vi.fn(),
+      debug: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn()
     };
 
     const { AssignItemToUser } = await import('#backend/src/3_applications/homebot/usecases/AssignItemToUser.mjs');

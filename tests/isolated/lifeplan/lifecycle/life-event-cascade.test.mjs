@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { LifeplanSimulation } from '../../../_lib/lifeplan-simulation.mjs';
 
 describe('Life Event Cascade', () => {

@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { CANONICAL_FIELDS } from '#adapters/persistence/yaml/mediaProgressSchema.mjs';
 
 describe('mediaProgressSchema — bookmark support', () => {

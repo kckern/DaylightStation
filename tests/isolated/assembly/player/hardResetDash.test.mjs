@@ -1,4 +1,4 @@
-import { jest, describe, test, expect } from '@jest/globals';
+import { vi, describe, test, expect } from 'vitest';
 
 describe('hardReset for dash-video', () => {
   test('should use getMediaEl (shadow DOM) not containerRef directly', () => {
@@ -6,11 +6,11 @@ describe('hardReset for dash-video', () => {
     // not use containerRef.current which is the <dash-video> host element.
     const innerVideo = {
       currentTime: 50,
-      load: jest.fn(),
-      play: jest.fn(() => Promise.resolve())
+      load: vi.fn(),
+      play: vi.fn(() => Promise.resolve())
     };
-    const getMediaEl = jest.fn(() => innerVideo);
-    const containerEl = { currentTime: 0, load: jest.fn(), play: jest.fn(() => Promise.resolve()) };
+    const getMediaEl = vi.fn(() => innerVideo);
+    const containerEl = { currentTime: 0, load: vi.fn(), play: vi.fn(() => Promise.resolve()) };
 
     // Simulate hardReset using getMediaEl
     const mediaEl = getMediaEl();
@@ -27,11 +27,11 @@ describe('hardReset for dash-video', () => {
   });
 
   test('falls back to containerRef if getMediaEl returns null', () => {
-    const getMediaEl = jest.fn(() => null);
+    const getMediaEl = vi.fn(() => null);
     const containerEl = {
       currentTime: 0,
-      load: jest.fn(),
-      play: jest.fn(() => Promise.resolve())
+      load: vi.fn(),
+      play: vi.fn(() => Promise.resolve())
     };
 
     const mediaEl = getMediaEl();
@@ -47,8 +47,8 @@ describe('hardReset for dash-video', () => {
 
 describe('handleResilienceReload remount gating', () => {
   test('skips remount when hardReset is invoked without error', () => {
-    const scheduleSinglePlayerRemount = jest.fn();
-    const hardReset = jest.fn(); // does not throw
+    const scheduleSinglePlayerRemount = vi.fn();
+    const hardReset = vi.fn(); // does not throw
 
     let hardResetInvoked = false;
     let hardResetErrored = false;
@@ -65,8 +65,8 @@ describe('handleResilienceReload remount gating', () => {
   });
 
   test('proceeds to remount when hardReset throws', () => {
-    const scheduleSinglePlayerRemount = jest.fn();
-    const hardReset = jest.fn(() => { throw new Error('fail'); });
+    const scheduleSinglePlayerRemount = vi.fn();
+    const hardReset = vi.fn(() => { throw new Error('fail'); });
 
     let hardResetInvoked = false;
     let hardResetErrored = false;
@@ -83,7 +83,7 @@ describe('handleResilienceReload remount gating', () => {
   });
 
   test('proceeds to remount when hardReset is unavailable', () => {
-    const scheduleSinglePlayerRemount = jest.fn();
+    const scheduleSinglePlayerRemount = vi.fn();
     const hardReset = null;
 
     let hardResetInvoked = false;

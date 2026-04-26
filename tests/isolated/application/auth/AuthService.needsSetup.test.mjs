@@ -1,22 +1,22 @@
 // tests/isolated/application/auth/AuthService.needsSetup.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { AuthService } from '#backend/src/3_applications/auth/AuthService.mjs';
 
 describe('AuthService.needsSetup()', () => {
   function buildService({ profiles = new Map(), loginData = {} } = {}) {
     const dataService = {
       user: {
-        read: jest.fn((path, username) => loginData[username] ?? null),
-        write: jest.fn(),
+        read: vi.fn((path, username) => loginData[username] ?? null),
+        write: vi.fn(),
       },
-      system: { read: jest.fn(), write: jest.fn() },
-      household: { read: jest.fn(), write: jest.fn() },
+      system: { read: vi.fn(), write: vi.fn() },
+      household: { read: vi.fn(), write: vi.fn() },
     };
     const configService = {
-      getAllUserProfiles: jest.fn(() => profiles),
-      getDefaultHouseholdId: jest.fn(() => 'default'),
+      getAllUserProfiles: vi.fn(() => profiles),
+      getDefaultHouseholdId: vi.fn(() => 'default'),
     };
-    return new AuthService({ dataService, configService, logger: { info: jest.fn() } });
+    return new AuthService({ dataService, configService, logger: { info: vi.fn() } });
   }
 
   test('returns true when no profiles exist', () => {

@@ -1,5 +1,5 @@
 // tests/assembly/config-service.assembly.test.mjs
-import { describe, it, expect, beforeAll } from '@jest/globals';
+import { describe, it, expect, beforeAll } from 'vitest';
 import path from 'path';
 import { fileURLToPath } from 'url';
 

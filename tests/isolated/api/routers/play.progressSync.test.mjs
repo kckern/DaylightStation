@@ -1,5 +1,5 @@
 // tests/isolated/api/routers/play.progressSync.test.mjs
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createPlayRouter } from '#api/v1/routers/play.mjs';
@@ -11,8 +11,8 @@ import { createPlayRouter } from '#api/v1/routers/play.mjs';
 function createStubRegistry() {
   const absAdapter = {
     source: 'abs',
-    getStoragePath: jest.fn(async () => 'abs'),
-    getItem: jest.fn(async (localId) => ({
+    getStoragePath: vi.fn(async () => 'abs'),
+    getItem: vi.fn(async (localId) => ({
       id: `abs:${localId}`,
       mediaUrl: `/api/v1/proxy/abs/stream/${localId}`,
       mediaType: 'audio',
@@ -24,14 +24,14 @@ function createStubRegistry() {
     }))
   };
   return {
-    get: jest.fn((source) => source === 'abs' ? absAdapter : null),
+    get: vi.fn((source) => source === 'abs' ? absAdapter : null),
     _absAdapter: absAdapter
   };
 }
 
 function createStubContentIdResolver(registry) {
   return {
-    resolve: jest.fn((compoundId) => {
+    resolve: vi.fn((compoundId) => {
       const colonIdx = compoundId.indexOf(':');
       if (colonIdx < 0) return null;
       const source = compoundId.slice(0, colonIdx);
@@ -44,15 +44,15 @@ function createStubContentIdResolver(registry) {
 
 function createStubMediaProgressMemory() {
   return {
-    get: jest.fn(async () => null),
-    set: jest.fn(async () => {})
+    get: vi.fn(async () => null),
+    set: vi.fn(async () => {})
   };
 }
 
 function createStubProgressSyncService() {
   return {
-    reconcileOnPlay: jest.fn(async () => null),
-    onProgressUpdate: jest.fn()
+    reconcileOnPlay: vi.fn(async () => null),
+    onProgressUpdate: vi.fn()
   };
 }
 
@@ -76,7 +76,7 @@ describe('Play router — ProgressSyncService integration', () => {
     mediaProgressMemory = createStubMediaProgressMemory();
     progressSyncService = createStubProgressSyncService();
     progressSyncSources = new Set(['abs']);
-    logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   });
 
   // =========================================================================
@@ -155,8 +155,8 @@ describe('Play router — ProgressSyncService integration', () => {
       // Create a plex stub for the registry
       const plexAdapter = {
         source: 'plex',
-        getStoragePath: jest.fn(async () => 'plex'),
-        getItem: jest.fn(async () => ({
+        getStoragePath: vi.fn(async () => 'plex'),
+        getItem: vi.fn(async () => ({
           id: 'plex:99999',
           mediaUrl: '/api/v1/proxy/plex/stream/99999',
           mediaType: 'video',

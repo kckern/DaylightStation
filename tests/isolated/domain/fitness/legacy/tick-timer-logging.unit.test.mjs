@@ -1,11 +1,11 @@
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 
-const mockInfo = jest.fn();
-const mockSampled = jest.fn();
-const mockWarn = jest.fn();
-jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
-  default: () => ({ info: mockInfo, sampled: mockSampled, error: jest.fn(), warn: mockWarn }),
-  getLogger: () => ({ info: mockInfo, sampled: mockSampled, error: jest.fn(), warn: mockWarn })
+const mockInfo = vi.fn();
+const mockSampled = vi.fn();
+const mockWarn = vi.fn();
+vi.mock('#frontend/lib/logging/Logger.js', () => ({
+  default: () => ({ info: mockInfo, sampled: mockSampled, error: vi.fn(), warn: mockWarn }),
+  getLogger: () => ({ info: mockInfo, sampled: mockSampled, error: vi.fn(), warn: mockWarn })
 }));
 
 describe('tick timer logging', () => {

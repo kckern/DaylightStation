@@ -9,7 +9,7 @@
  * 4. Infrastructure can be properly disabled
  */
 
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 
 describe('Infrastructure Ownership', () => {
   describe('EventBus Singleton', () => {
@@ -17,12 +17,12 @@ describe('Infrastructure Ownership', () => {
 
     beforeEach(async () => {
       // Reset module cache to get fresh singleton
-      jest.resetModules();
+      vi.resetModules();
       bootstrap = await import('#backend/src/0_system/bootstrap.mjs');
     });
 
     afterEach(() => {
-      jest.resetModules();
+      vi.resetModules();
     });
 
     it('getEventBus returns null before initialization', () => {
@@ -32,13 +32,13 @@ describe('Infrastructure Ownership', () => {
 
     it('createEventBus returns same instance on second call', async () => {
       const mockServer = {
-        on: jest.fn()
+        on: vi.fn()
       };
       const mockLogger = {
-        info: jest.fn(),
-        warn: jest.fn(),
-        error: jest.fn(),
-        debug: jest.fn()
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn()
       };
 
       // First call creates instance
@@ -64,13 +64,13 @@ describe('Infrastructure Ownership', () => {
 
     it('getEventBus returns instance after initialization', async () => {
       const mockServer = {
-        on: jest.fn()
+        on: vi.fn()
       };
       const mockLogger = {
-        info: jest.fn(),
-        warn: jest.fn(),
-        error: jest.fn(),
-        debug: jest.fn()
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn()
       };
 
       await bootstrap.createEventBus({
@@ -89,16 +89,16 @@ describe('Infrastructure Ownership', () => {
     let bootstrap;
 
     beforeEach(async () => {
-      jest.resetModules();
+      vi.resetModules();
       bootstrap = await import('#backend/src/0_system/bootstrap.mjs');
     });
 
     afterEach(() => {
-      jest.resetModules();
+      vi.resetModules();
     });
 
     it('logs warning when EventBus not initialized', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       bootstrap.broadcastEvent({ topic: 'test', data: 'test' });
 
@@ -108,13 +108,13 @@ describe('Infrastructure Ownership', () => {
 
     it('broadcasts to EventBus when initialized', async () => {
       const mockServer = {
-        on: jest.fn()
+        on: vi.fn()
       };
       const mockLogger = {
-        info: jest.fn(),
-        warn: jest.fn(),
-        error: jest.fn(),
-        debug: jest.fn()
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn()
       };
 
       const eventBus = await bootstrap.createEventBus({
@@ -124,7 +124,7 @@ describe('Infrastructure Ownership', () => {
       });
 
       // Spy on broadcast
-      const broadcastSpy = jest.spyOn(eventBus, 'broadcast');
+      const broadcastSpy = vi.spyOn(eventBus, 'broadcast');
 
       bootstrap.broadcastEvent({ topic: 'sensor', data: { temp: 72 } });
 
@@ -133,13 +133,13 @@ describe('Infrastructure Ownership', () => {
 
     it('uses "legacy" as default topic if none provided', async () => {
       const mockServer = {
-        on: jest.fn()
+        on: vi.fn()
       };
       const mockLogger = {
-        info: jest.fn(),
-        warn: jest.fn(),
-        error: jest.fn(),
-        debug: jest.fn()
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn()
       };
 
       const eventBus = await bootstrap.createEventBus({
@@ -148,7 +148,7 @@ describe('Infrastructure Ownership', () => {
         logger: mockLogger
       });
 
-      const broadcastSpy = jest.spyOn(eventBus, 'broadcast');
+      const broadcastSpy = vi.spyOn(eventBus, 'broadcast');
 
       bootstrap.broadcastEvent({ data: 'test' });
 
@@ -225,12 +225,12 @@ describe('Infrastructure Ownership', () => {
 
   describe('Load Order Verification', () => {
     it('first backend to create EventBus owns it', async () => {
-      jest.resetModules();
+      vi.resetModules();
       const bootstrap = await import('#backend/src/0_system/bootstrap.mjs');
 
-      const mockServer = { on: jest.fn() };
-      const logger1 = { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() };
-      const logger2 = { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() };
+      const mockServer = { on: vi.fn() };
+      const logger1 = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+      const logger2 = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 
       // First caller creates and owns EventBus
       const eventBus1 = await bootstrap.createEventBus({

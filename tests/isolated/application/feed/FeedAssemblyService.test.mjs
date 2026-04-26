@@ -1,5 +1,5 @@
 // tests/isolated/application/feed/FeedAssemblyService.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { FeedAssemblyService } from '#apps/feed/services/FeedAssemblyService.mjs';
 import { FeedPoolManager } from '#apps/feed/services/FeedPoolManager.mjs';
 
@@ -36,10 +36,10 @@ describe('FeedAssemblyService scroll config integration', () => {
 
   beforeEach(() => {
     mockScrollConfigLoader = {
-      load: jest.fn().mockReturnValue(defaultScrollConfig),
+      load: vi.fn().mockReturnValue(defaultScrollConfig),
     };
     mockTierAssemblyService = {
-      assemble: jest.fn().mockImplementation((items) => ({ items, hasMore: false })),
+      assemble: vi.fn().mockImplementation((items) => ({ items, hasMore: false })),
     };
   });
 
@@ -58,7 +58,7 @@ describe('FeedAssemblyService scroll config integration', () => {
       sourceAdapters: adapters,
       scrollConfigLoader: mockScrollConfigLoader,
       tierAssemblyService: mockTierAssemblyService,
-      logger: { info: jest.fn(), warn: jest.fn() },
+      logger: { info: vi.fn(), warn: vi.fn() },
       ...overrides,
     });
   }
@@ -72,11 +72,11 @@ describe('FeedAssemblyService scroll config integration', () => {
   test('filters query configs to sources listed in scroll config', async () => {
     const mockAdapter = {
       sourceType: 'reddit',
-      fetchItems: jest.fn().mockResolvedValue([makeExternalItem('reddit', 'r1')]),
+      fetchItems: vi.fn().mockResolvedValue([makeExternalItem('reddit', 'r1')]),
     };
     const mockHealthAdapter = {
       sourceType: 'health',
-      fetchItems: jest.fn().mockResolvedValue([makeGroundingItem('health', 'h1')]),
+      fetchItems: vi.fn().mockResolvedValue([makeGroundingItem('health', 'h1')]),
     };
 
     mockScrollConfigLoader.load.mockReturnValue({
@@ -106,7 +106,7 @@ describe('FeedAssemblyService scroll config integration', () => {
   test('fetches ALL sources when scroll config sources is empty object', async () => {
     const mockAdapter = {
       sourceType: 'reddit',
-      fetchItems: jest.fn().mockResolvedValue([]),
+      fetchItems: vi.fn().mockResolvedValue([]),
     };
 
     mockScrollConfigLoader.load.mockReturnValue({
@@ -141,7 +141,7 @@ describe('FeedAssemblyService scroll config integration', () => {
   test('delegates to TierAssemblyService for assembly', async () => {
     const mockAdapter = {
       sourceType: 'reddit',
-      fetchItems: jest.fn().mockResolvedValue([
+      fetchItems: vi.fn().mockResolvedValue([
         makeExternalItem('reddit', 'r1'),
         makeExternalItem('reddit', 'r2'),
       ]),
@@ -168,7 +168,7 @@ describe('FeedAssemblyService scroll config integration', () => {
 
     const mockAdapter = {
       sourceType: 'reddit',
-      fetchItems: jest.fn().mockResolvedValue(
+      fetchItems: vi.fn().mockResolvedValue(
         Array.from({ length: 10 }, (_, i) => makeExternalItem('reddit', `r${i}`))
       ),
     };
@@ -190,7 +190,7 @@ describe('FeedAssemblyService scroll config integration', () => {
 
     const mockAdapter = {
       sourceType: 'reddit',
-      fetchItems: jest.fn().mockResolvedValue(
+      fetchItems: vi.fn().mockResolvedValue(
         Array.from({ length: 10 }, (_, i) => makeExternalItem('reddit', `r${i}`))
       ),
     };
@@ -207,20 +207,20 @@ describe('FeedAssemblyService scroll config integration', () => {
   test('focus mode filters external items to focused source', async () => {
     const redditAdapter = {
       sourceType: 'reddit',
-      fetchItems: jest.fn().mockResolvedValue([
+      fetchItems: vi.fn().mockResolvedValue([
         { ...makeExternalItem('reddit', 'r1'), meta: { subreddit: 'science', sourceName: 'reddit' } },
         { ...makeExternalItem('reddit', 'r2'), meta: { subreddit: 'tech', sourceName: 'reddit' } },
       ]),
     };
     const headlinesAdapter = {
       sourceType: 'headlines',
-      fetchItems: jest.fn().mockResolvedValue([
+      fetchItems: vi.fn().mockResolvedValue([
         makeExternalItem('headline', 'h1'),
       ]),
     };
     const weatherAdapter = {
       sourceType: 'weather',
-      fetchItems: jest.fn().mockResolvedValue([
+      fetchItems: vi.fn().mockResolvedValue([
         makeGroundingItem('weather', 'w1', 3),
       ]),
     };
@@ -250,7 +250,7 @@ describe('FeedAssemblyService scroll config integration', () => {
   test('focus mode with subsource filters to specific subsource', async () => {
     const redditAdapter = {
       sourceType: 'reddit',
-      fetchItems: jest.fn().mockResolvedValue([
+      fetchItems: vi.fn().mockResolvedValue([
         { ...makeExternalItem('reddit', 'r1'), meta: { subreddit: 'science', sourceName: 'reddit' } },
         { ...makeExternalItem('reddit', 'r2'), meta: { subreddit: 'tech', sourceName: 'reddit' } },
       ]),
@@ -285,10 +285,10 @@ describe('image dimensions passthrough', () => {
 
   beforeEach(() => {
     mockScrollConfigLoader = {
-      load: jest.fn().mockReturnValue(defaultScrollConfig),
+      load: vi.fn().mockReturnValue(defaultScrollConfig),
     };
     mockTierAssemblyService = {
-      assemble: jest.fn().mockImplementation((items) => ({ items, hasMore: false })),
+      assemble: vi.fn().mockImplementation((items) => ({ items, hasMore: false })),
     };
   });
 
@@ -307,7 +307,7 @@ describe('image dimensions passthrough', () => {
       sourceAdapters: adapters,
       scrollConfigLoader: mockScrollConfigLoader,
       tierAssemblyService: mockTierAssemblyService,
-      logger: { info: jest.fn(), warn: jest.fn() },
+      logger: { info: vi.fn(), warn: vi.fn() },
       ...overrides,
     });
   }
@@ -315,7 +315,7 @@ describe('image dimensions passthrough', () => {
   test('passes through imageWidth/imageHeight from adapter meta', async () => {
     const mockAdapter = {
       sourceType: 'reddit',
-      fetchItems: jest.fn().mockResolvedValue([{
+      fetchItems: vi.fn().mockResolvedValue([{
         id: 'reddit:abc',
         tier: 'wire',
         source: 'reddit',
@@ -341,7 +341,7 @@ describe('image dimensions passthrough', () => {
   test('passes through headline imageWidth/imageHeight from item', async () => {
     const headlineAdapter = {
       sourceType: 'headlines',
-      fetchItems: jest.fn().mockResolvedValue([{
+      fetchItems: vi.fn().mockResolvedValue([{
         id: 'headline:cnn-breaking',
         tier: 'wire',
         source: 'headline',
@@ -367,7 +367,7 @@ describe('image dimensions passthrough', () => {
   test('FreshRSS items get probed image dimensions', async () => {
     const freshrssAdapter = {
       sourceType: 'freshrss',
-      fetchItems: jest.fn().mockResolvedValue([{
+      fetchItems: vi.fn().mockResolvedValue([{
         id: 'freshrss:item1',
         tier: 'wire',
         source: 'freshrss',
@@ -410,10 +410,10 @@ describe('seenIds dedup', () => {
 
   beforeEach(() => {
     mockScrollConfigLoader = {
-      load: jest.fn().mockReturnValue(defaultScrollConfig),
+      load: vi.fn().mockReturnValue(defaultScrollConfig),
     };
     mockTierAssemblyService = {
-      assemble: jest.fn().mockImplementation((items, config, opts) => {
+      assemble: vi.fn().mockImplementation((items, config, opts) => {
         const limit = opts?.effectiveLimit || 15;
         // Mirror real TierAssemblyService: prefer unseen items, seen as fallback
         const sorted = [
@@ -440,7 +440,7 @@ describe('seenIds dedup', () => {
       sourceAdapters: adapters,
       scrollConfigLoader: mockScrollConfigLoader,
       tierAssemblyService: mockTierAssemblyService,
-      logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn() },
+      logger: { info: vi.fn(), warn: vi.fn(), debug: vi.fn() },
       ...overrides,
     });
   }
@@ -448,7 +448,7 @@ describe('seenIds dedup', () => {
   test('fresh load (no cursor) returns full batch', async () => {
     const adapter = {
       sourceType: 'reddit',
-      fetchItems: jest.fn().mockResolvedValue(
+      fetchItems: vi.fn().mockResolvedValue(
         Array.from({ length: 20 }, (_, i) => ({
           id: `reddit:r${i}`, tier: 'wire', source: 'reddit',
           title: `Post ${i}`, timestamp: new Date(2026, 1, 17, 10 - i).toISOString(),
@@ -471,7 +471,7 @@ describe('seenIds dedup', () => {
     }));
     const adapter = {
       sourceType: 'reddit',
-      fetchItems: jest.fn().mockResolvedValue(items),
+      fetchItems: vi.fn().mockResolvedValue(items),
     };
     const service = createService(
       [{ type: 'reddit', _filename: 'reddit.yml' }],
@@ -501,7 +501,7 @@ describe('seenIds dedup', () => {
     }));
     const adapter = {
       sourceType: 'reddit',
-      fetchItems: jest.fn().mockResolvedValue(items),
+      fetchItems: vi.fn().mockResolvedValue(items),
     };
     const service = createService(
       [{ type: 'reddit', _filename: 'reddit.yml' }],
@@ -521,7 +521,7 @@ describe('padding', () => {
 
   beforeEach(() => {
     mockTierAssemblyService = {
-      assemble: jest.fn().mockImplementation((items, config, opts) => {
+      assemble: vi.fn().mockImplementation((items, config, opts) => {
         const limit = opts?.effectiveLimit || 10;
         return { items: items.slice(0, limit), hasMore: items.length > limit };
       }),
@@ -541,9 +541,9 @@ describe('padding', () => {
       entropyService: null,
       queryConfigs,
       sourceAdapters: adapters,
-      scrollConfigLoader: overrides.scrollConfigLoader || { load: jest.fn() },
+      scrollConfigLoader: overrides.scrollConfigLoader || { load: vi.fn() },
       tierAssemblyService: mockTierAssemblyService,
-      logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn() },
+      logger: { info: vi.fn(), warn: vi.fn(), debug: vi.fn() },
       ...overrides,
     });
   }
@@ -564,13 +564,13 @@ describe('padding', () => {
       },
     };
     const mockScrollConfigLoader = {
-      load: jest.fn().mockReturnValue(paddingScrollConfig),
+      load: vi.fn().mockReturnValue(paddingScrollConfig),
     };
 
     // Only 3 wire items available, but 10 photos for padding
     const wireAdapter = {
       sourceType: 'reddit',
-      fetchItems: jest.fn().mockResolvedValue(
+      fetchItems: vi.fn().mockResolvedValue(
         Array.from({ length: 3 }, (_, i) => ({
           id: `reddit:r${i}`, tier: 'wire', source: 'reddit',
           title: `Post ${i}`, timestamp: new Date().toISOString(),
@@ -579,7 +579,7 @@ describe('padding', () => {
     };
     const photoAdapter = {
       sourceType: 'photos',
-      fetchItems: jest.fn().mockResolvedValue(
+      fetchItems: vi.fn().mockResolvedValue(
         Array.from({ length: 10 }, (_, i) => ({
           id: `photo:p${i}`, tier: 'scrapbook', source: 'photos',
           title: `Photo ${i}`, timestamp: new Date().toISOString(),
@@ -625,10 +625,10 @@ describe('selection tracking integration', () => {
 
   beforeEach(() => {
     mockScrollConfigLoader = {
-      load: jest.fn().mockReturnValue(defaultScrollConfig),
+      load: vi.fn().mockReturnValue(defaultScrollConfig),
     };
     mockTierAssemblyService = {
-      assemble: jest.fn().mockImplementation((items, config, opts) => {
+      assemble: vi.fn().mockImplementation((items, config, opts) => {
         return { items, hasMore: false };
       }),
     };
@@ -649,21 +649,21 @@ describe('selection tracking integration', () => {
       sourceAdapters: adapters,
       scrollConfigLoader: mockScrollConfigLoader,
       tierAssemblyService: mockTierAssemblyService,
-      logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn() },
+      logger: { info: vi.fn(), warn: vi.fn(), debug: vi.fn() },
       ...overrides,
     });
   }
 
   test('passes selectionCounts to tier assembly and increments after batch', async () => {
     const mockTrackingStore = {
-      getAll: jest.fn().mockResolvedValue(new Map([
+      getAll: vi.fn().mockResolvedValue(new Map([
         ['abc123', { count: 5, last: '2026-02-17T00:00:00Z' }],
       ])),
-      incrementBatch: jest.fn().mockResolvedValue(undefined),
+      incrementBatch: vi.fn().mockResolvedValue(undefined),
     };
     const adapter = {
       sourceType: 'reddit',
-      fetchItems: jest.fn().mockResolvedValue([
+      fetchItems: vi.fn().mockResolvedValue([
         { id: 'headline:abc123', tier: 'wire', source: 'headline', title: 'H1', timestamp: new Date().toISOString() },
         { id: 'reddit:xyz', tier: 'wire', source: 'reddit', title: 'R1', timestamp: new Date().toISOString() },
       ]),
@@ -697,7 +697,7 @@ describe('selection tracking integration', () => {
   test('works without selectionTrackingStore (backwards compat)', async () => {
     const adapter = {
       sourceType: 'reddit',
-      fetchItems: jest.fn().mockResolvedValue([
+      fetchItems: vi.fn().mockResolvedValue([
         { id: 'reddit:xyz', tier: 'wire', source: 'reddit', title: 'R1', timestamp: new Date().toISOString() },
       ]),
     };

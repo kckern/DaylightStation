@@ -4,7 +4,7 @@
  * TDD tests for the YAML-based media queue persistence adapter.
  */
 
-import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';

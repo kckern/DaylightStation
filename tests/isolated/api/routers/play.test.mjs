@@ -1,5 +1,5 @@
 // tests/unit/api/routers/play.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createPlayRouter } from '#backend/src/4_api/v1/routers/play.mjs';
@@ -14,7 +14,7 @@ describe('Play API Router', () => {
   beforeEach(() => {
     mockMediaAdapter = {
       name: 'files',
-      getItem: jest.fn().mockResolvedValue({
+      getItem: vi.fn().mockResolvedValue({
         id: 'files:audio/test.mp3',
         title: 'Test Song',
         mediaType: 'audio',
@@ -22,13 +22,13 @@ describe('Play API Router', () => {
         duration: 180,
         resumable: false
       }),
-      getStoragePath: jest.fn().mockReturnValue('files'),
-      resolvePlayables: jest.fn()
+      getStoragePath: vi.fn().mockReturnValue('files'),
+      resolvePlayables: vi.fn()
     };
 
     mockPlexAdapter = {
       name: 'plex',
-      getItem: jest.fn().mockResolvedValue({
+      getItem: vi.fn().mockResolvedValue({
         id: 'plex:12345',
         title: 'Test Movie',
         mediaType: 'video',
@@ -36,12 +36,12 @@ describe('Play API Router', () => {
         duration: 7200,
         resumable: true
       }),
-      getStoragePath: jest.fn().mockReturnValue('plex'),
-      resolvePlayables: jest.fn()
+      getStoragePath: vi.fn().mockReturnValue('plex'),
+      resolvePlayables: vi.fn()
     };
 
     mockRegistry = {
-      get: jest.fn((name) => {
+      get: vi.fn((name) => {
         if (name === 'files') return mockMediaAdapter;
         if (name === 'plex') return mockPlexAdapter;
         return null;
@@ -49,8 +49,8 @@ describe('Play API Router', () => {
     };
 
     mockWatchStore = {
-      get: jest.fn().mockResolvedValue(null),
-      set: jest.fn().mockResolvedValue(undefined)
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue(undefined)
     };
 
     app = express();

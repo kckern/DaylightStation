@@ -1,4 +1,4 @@
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { YamlSelectionTrackingStore } from '../../../../backend/src/1_adapters/persistence/yaml/YamlSelectionTrackingStore.mjs';
 
 describe('YamlSelectionTrackingStore', () => {
@@ -10,8 +10,8 @@ describe('YamlSelectionTrackingStore', () => {
     storedData = null;
     mockDataService = {
       user: {
-        read: jest.fn(() => storedData),
-        write: jest.fn((path, data) => { storedData = data; return true; }),
+        read: vi.fn(() => storedData),
+        write: vi.fn((path, data) => { storedData = data; return true; }),
       },
     };
     store = new YamlSelectionTrackingStore({ dataService: mockDataService });

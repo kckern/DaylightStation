@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { isPlausibleGamepad, getActiveGamepads } from '../../../../../frontend/src/screen-framework/input/gamepadFiltering.js';
 
 const fakePad = (overrides = {}) => ({

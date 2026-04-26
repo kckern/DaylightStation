@@ -1,5 +1,5 @@
 // tests/isolated/flow/content/ComposePresentationUseCase.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 
 describe('ComposePresentationUseCase', () => {
   let useCase;
@@ -9,12 +9,12 @@ describe('ComposePresentationUseCase', () => {
   let mockLogger;
 
   beforeEach(async () => {
-    jest.resetModules();
+    vi.resetModules();
 
     // Mock Plex adapter - returns video or audio items based on ID
     mockPlexAdapter = {
       source: 'plex',
-      getItem: jest.fn().mockImplementation(async (id) => {
+      getItem: vi.fn().mockImplementation(async (id) => {
         // IDs ending in 'a' are audio, others are video
         const isAudio = id.endsWith('a');
         return {
@@ -32,7 +32,7 @@ describe('ComposePresentationUseCase', () => {
     // Mock Immich adapter - returns images
     mockImmichAdapter = {
       source: 'immich',
-      getItem: jest.fn().mockImplementation(async (id) => ({
+      getItem: vi.fn().mockImplementation(async (id) => ({
         id: `immich:${id}`,
         source: 'immich',
         title: `Photo ${id}`,
@@ -44,7 +44,7 @@ describe('ComposePresentationUseCase', () => {
 
     // Mock registry
     mockContentSourceRegistry = {
-      getAdapter: jest.fn().mockImplementation((provider) => {
+      getAdapter: vi.fn().mockImplementation((provider) => {
         if (provider === 'plex') return mockPlexAdapter;
         if (provider === 'immich') return mockImmichAdapter;
         return null;
@@ -52,10 +52,10 @@ describe('ComposePresentationUseCase', () => {
     };
 
     mockLogger = {
-      info: jest.fn(),
-      debug: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn()
+      info: vi.fn(),
+      debug: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn()
     };
 
     const { ComposePresentationUseCase } = await import(

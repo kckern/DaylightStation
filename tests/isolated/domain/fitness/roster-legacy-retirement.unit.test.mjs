@@ -1,31 +1,31 @@
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock logger BEFORE importing modules (matches existing roster-zone-source pattern)
-jest.unstable_mockModule('../../../../frontend/src/lib/logging/Logger.js', () => ({
+vi.mock('../../../../frontend/src/lib/logging/Logger.js', () => ({
   default: () => ({
-    debug: jest.fn(),
-    warn: jest.fn(),
-    info: jest.fn(),
-    error: jest.fn(),
-    sampled: jest.fn(),
+    debug: vi.fn(),
+    warn: vi.fn(),
+    info: vi.fn(),
+    error: vi.fn(),
+    sampled: vi.fn(),
   }),
   getLogger: () => ({
-    debug: jest.fn(),
-    warn: jest.fn(),
-    info: jest.fn(),
-    error: jest.fn(),
-    sampled: jest.fn(),
+    debug: vi.fn(),
+    warn: vi.fn(),
+    info: vi.fn(),
+    error: vi.fn(),
+    sampled: vi.fn(),
   }),
   __esModule: true,
 }));
 
 // Mock resolveDisplayLabel
-jest.unstable_mockModule('../../../../frontend/src/hooks/fitness/types.js', () => ({
+vi.mock('../../../../frontend/src/hooks/fitness/types.js', () => ({
   resolveDisplayLabel: ({ name }) => name,
 }));
 
 // Mock ParticipantStatus
-jest.unstable_mockModule('../../../../frontend/src/modules/Fitness/domain/types.js', () => ({
+vi.mock('../../../../frontend/src/modules/Fitness/domain/types.js', () => ({
   ParticipantStatus: { ACTIVE: 'ACTIVE', INACTIVE: 'INACTIVE' },
 }));
 

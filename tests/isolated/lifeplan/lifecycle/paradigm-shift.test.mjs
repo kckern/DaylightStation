@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { LifeplanSimulation } from '../../../_lib/lifeplan-simulation.mjs';
 
 describe('Paradigm Shift: Foundational Belief Refutation', () => {

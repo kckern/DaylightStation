@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { GoalState, GOAL_TRANSITIONS } from '#domains/lifeplan/value-objects/GoalState.mjs';
 import { BeliefState, BELIEF_TRANSITIONS } from '#domains/lifeplan/value-objects/BeliefState.mjs';
 import { AlignmentState } from '#domains/lifeplan/value-objects/AlignmentState.mjs';

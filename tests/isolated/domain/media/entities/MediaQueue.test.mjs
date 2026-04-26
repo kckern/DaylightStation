@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from '@jest/globals';
+import { describe, test, expect, beforeEach } from 'vitest';
 import { MediaQueue, ADDED_FROM } from '#domains/media/entities/MediaQueue.mjs';
 import { QueueFullError } from '#domains/media/errors.mjs';
 

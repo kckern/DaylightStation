@@ -1,5 +1,5 @@
 // tests/unit/adapters/finance/BuxferAdapter.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { BuxferAdapter } from '#adapters/finance/BuxferAdapter.mjs';
 
 describe('BuxferAdapter', () => {
@@ -14,15 +14,15 @@ describe('BuxferAdapter', () => {
 
   beforeEach(() => {
     mockHttpClient = {
-      get: jest.fn(),
-      post: jest.fn()
+      get: vi.fn(),
+      post: vi.fn()
     };
 
     mockLogger = {
-      debug: jest.fn(),
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn()
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn()
     };
 
     adapter = new BuxferAdapter(
@@ -453,7 +453,7 @@ describe('BuxferAdapter', () => {
       adapter.tokenExpiresAt = Date.now() + 3600000;
 
       mockAiGateway = {
-        categorize: jest.fn()
+        categorize: vi.fn()
       };
     });
 

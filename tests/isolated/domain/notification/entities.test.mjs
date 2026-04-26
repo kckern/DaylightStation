@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { NotificationIntent } from '#domains/notification/entities/NotificationIntent.mjs';
 import { NotificationPreference } from '#domains/notification/entities/NotificationPreference.mjs';
 

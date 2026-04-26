@@ -1,5 +1,5 @@
 // tests/unit/api/routers/list.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createListRouter, toListItem } from '#backend/src/4_api/v1/routers/list.mjs';
@@ -13,7 +13,7 @@ describe('List API Router', () => {
   beforeEach(() => {
     mockWatchlistAdapter = {
       name: 'watchlist',
-      getList: jest.fn().mockResolvedValue({
+      getList: vi.fn().mockResolvedValue({
         id: 'watchlist:Morning Program',
         title: 'Morning Program',
         children: [
@@ -21,12 +21,12 @@ describe('List API Router', () => {
           { id: 'talk:general/talk1', title: 'Talk One', itemType: 'leaf' }
         ]
       }),
-      getItem: jest.fn().mockResolvedValue({
+      getItem: vi.fn().mockResolvedValue({
         id: 'watchlist:Morning Program',
         title: 'Morning Program',
         metadata: { itemCount: 2 }
       }),
-      resolvePlayables: jest.fn().mockResolvedValue([
+      resolvePlayables: vi.fn().mockResolvedValue([
         { id: 'plex:12345', title: 'Show One', mediaUrl: '/proxy/plex/stream/12345' },
         { id: 'talk:general/talk1', title: 'Talk One', mediaUrl: '/proxy/local-content/stream/talk/general/talk1' }
       ])
@@ -34,23 +34,23 @@ describe('List API Router', () => {
 
     mockPlexAdapter = {
       name: 'plex',
-      getList: jest.fn().mockResolvedValue([
+      getList: vi.fn().mockResolvedValue([
         { id: 'plex:12345', title: 'Episode 1', itemType: 'leaf' },
         { id: 'plex:12346', title: 'Episode 2', itemType: 'leaf' }
       ]),
-      getItem: jest.fn().mockResolvedValue({
+      getItem: vi.fn().mockResolvedValue({
         id: 'plex:12345',
         title: 'TV Show',
         thumbnail: '/proxy/plex/thumb/12345'
       }),
-      resolvePlayables: jest.fn().mockResolvedValue([
+      resolvePlayables: vi.fn().mockResolvedValue([
         { id: 'plex:12345', title: 'Episode 1', mediaUrl: '/proxy/plex/stream/12345' },
         { id: 'plex:12346', title: 'Episode 2', mediaUrl: '/proxy/plex/stream/12346' }
       ])
     };
 
     mockRegistry = {
-      get: jest.fn((name) => {
+      get: vi.fn((name) => {
         if (name === 'watchlist') return mockWatchlistAdapter;
         if (name === 'plex') return mockPlexAdapter;
         return null;

@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { resolveProgressConflict } from '#domains/content/services/resolveProgressConflict.mjs';
 
 describe('resolveProgressConflict', () => {

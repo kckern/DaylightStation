@@ -1,5 +1,5 @@
 // tests/unit/domains/finance/services/MortgageService.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { MortgageService } from '#domains/finance/services/MortgageService.mjs';
 
 describe('MortgageService', () => {
@@ -8,9 +8,9 @@ describe('MortgageService', () => {
 
   beforeEach(() => {
     mockStore = {
-      findById: jest.fn(),
-      findAll: jest.fn(),
-      save: jest.fn()
+      findById: vi.fn(),
+      findAll: vi.fn(),
+      save: vi.fn()
     };
     service = new MortgageService({ mortgageStore: mockStore });
   });
@@ -84,7 +84,7 @@ describe('MortgageService', () => {
         interestRate: 6,
         monthlyPayment: 1200,
         currentBalance: 200000,
-        getRemainingMonths: jest.fn().mockReturnValue(12)
+        getRemainingMonths: vi.fn().mockReturnValue(12)
       };
 
       const schedule = service.calculateAmortizationSchedule(mortgage, 12);
@@ -101,7 +101,7 @@ describe('MortgageService', () => {
         interestRate: 6,
         monthlyPayment: 2000,
         currentBalance: 100000,
-        getRemainingMonths: jest.fn().mockReturnValue(60)
+        getRemainingMonths: vi.fn().mockReturnValue(60)
       };
 
       const schedule = service.calculateAmortizationSchedule(mortgage, null, asOfDate);
@@ -114,7 +114,7 @@ describe('MortgageService', () => {
         interestRate: 6,
         monthlyPayment: 2000,
         currentBalance: 100000,
-        getRemainingMonths: jest.fn().mockReturnValue(60)
+        getRemainingMonths: vi.fn().mockReturnValue(60)
       };
 
       const schedule = service.calculateAmortizationSchedule(mortgage, 12);

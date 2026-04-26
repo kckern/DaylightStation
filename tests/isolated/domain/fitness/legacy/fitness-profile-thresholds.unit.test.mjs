@@ -1,4 +1,4 @@
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 
 describe('FitnessApp profile warning thresholds', () => {
   test('heap growth warning threshold should be 20MB (not 30MB)', () => {

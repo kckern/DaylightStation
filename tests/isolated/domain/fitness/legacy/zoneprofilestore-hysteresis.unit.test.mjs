@@ -1,12 +1,12 @@
-import { jest, describe, test, expect, beforeEach, afterEach } from '@jest/globals';
+import { vi, describe, test, expect, beforeEach, afterEach } from 'vitest';
 
 // Mock logger
-const mockSampled = jest.fn();
-const mockInfo = jest.fn();
-const mockWarn = jest.fn();
-const mockDebug = jest.fn();
-const mockError = jest.fn();
-jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
+const mockSampled = vi.fn();
+const mockInfo = vi.fn();
+const mockWarn = vi.fn();
+const mockDebug = vi.fn();
+const mockError = vi.fn();
+vi.mock('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn, debug: mockDebug, error: mockError }),
   getLogger: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn, debug: mockDebug, error: mockError })
 }));

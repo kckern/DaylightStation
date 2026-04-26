@@ -1,5 +1,5 @@
 // tests/unit/adapters/messaging/YamlConversationStateDatastore.test.mjs
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { YamlConversationStateDatastore } from '#adapters/messaging/YamlConversationStateDatastore.mjs';
 import path from 'path';
 import fs from 'fs/promises';

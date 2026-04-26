@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { resolveIntent } from '../../../../backend/src/2_domains/trigger/TriggerIntent.mjs';
 
 function makeResolver(knownPrefixes) {

@@ -1,16 +1,16 @@
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { TranscodePrewarmService } from '#apps/devices/services/TranscodePrewarmService.mjs';
 
 function makeLogger() {
-  return { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+  return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
 
 describe('TranscodePrewarmService return shape', () => {
   test('returns { status: "skipped", reason: "no adapter" } when resolver has no adapter', async () => {
     const svc = new TranscodePrewarmService({
       contentIdResolver: { resolve: () => ({ adapter: null }) },
-      queueService: { resolveQueue: jest.fn() },
-      httpClient: { get: jest.fn() },
+      queueService: { resolveQueue: vi.fn() },
+      httpClient: { get: vi.fn() },
       logger: makeLogger()
     });
     const result = await svc.prewarm('plex:1');
@@ -23,11 +23,11 @@ describe('TranscodePrewarmService return shape', () => {
         resolve: () => ({
           source: 'plex',
           localId: '1',
-          adapter: { resolvePlayables: jest.fn().mockResolvedValue([]) }
+          adapter: { resolvePlayables: vi.fn().mockResolvedValue([]) }
         })
       },
-      queueService: { resolveQueue: jest.fn().mockResolvedValue([]) },
-      httpClient: { get: jest.fn() },
+      queueService: { resolveQueue: vi.fn().mockResolvedValue([]) },
+      httpClient: { get: vi.fn() },
       logger: makeLogger()
     });
     const result = await svc.prewarm('plex:1');
@@ -40,11 +40,11 @@ describe('TranscodePrewarmService return shape', () => {
         resolve: () => ({
           source: 'poem',
           localId: 'remedy',
-          adapter: { resolvePlayables: jest.fn(), loadMediaUrl: null }
+          adapter: { resolvePlayables: vi.fn(), loadMediaUrl: null }
         })
       },
-      queueService: { resolveQueue: jest.fn().mockResolvedValue([{ source: 'poem', contentId: 'poem:remedy/01' }]) },
-      httpClient: { get: jest.fn() },
+      queueService: { resolveQueue: vi.fn().mockResolvedValue([{ source: 'poem', contentId: 'poem:remedy/01' }]) },
+      httpClient: { get: vi.fn() },
       logger: makeLogger()
     });
     const result = await svc.prewarm('poem:remedy');
@@ -58,13 +58,13 @@ describe('TranscodePrewarmService return shape', () => {
           source: 'plex',
           localId: '1',
           adapter: {
-            resolvePlayables: jest.fn().mockResolvedValue([{ contentId: 'plex:1', source: 'plex' }]),
-            loadMediaUrl: jest.fn().mockResolvedValue(null)
+            resolvePlayables: vi.fn().mockResolvedValue([{ contentId: 'plex:1', source: 'plex' }]),
+            loadMediaUrl: vi.fn().mockResolvedValue(null)
           }
         })
       },
-      queueService: { resolveQueue: jest.fn().mockResolvedValue([{ source: 'plex', contentId: 'plex:1' }]) },
-      httpClient: { get: jest.fn() },
+      queueService: { resolveQueue: vi.fn().mockResolvedValue([{ source: 'plex', contentId: 'plex:1' }]) },
+      httpClient: { get: vi.fn() },
       logger: makeLogger()
     });
     const result = await svc.prewarm('plex:1');
@@ -81,13 +81,13 @@ describe('TranscodePrewarmService return shape', () => {
           source: 'plex',
           localId: '1',
           adapter: {
-            resolvePlayables: jest.fn().mockResolvedValue([{ contentId: 'plex:1', source: 'plex' }]),
-            loadMediaUrl: jest.fn().mockResolvedValue('https://example/mpd')
+            resolvePlayables: vi.fn().mockResolvedValue([{ contentId: 'plex:1', source: 'plex' }]),
+            loadMediaUrl: vi.fn().mockResolvedValue('https://example/mpd')
           }
         })
       },
-      queueService: { resolveQueue: jest.fn().mockResolvedValue([{ source: 'plex', contentId: 'plex:1' }]) },
-      httpClient: { get: jest.fn().mockResolvedValue({}) },
+      queueService: { resolveQueue: vi.fn().mockResolvedValue([{ source: 'plex', contentId: 'plex:1' }]) },
+      httpClient: { get: vi.fn().mockResolvedValue({}) },
       logger: makeLogger()
     });
     const result = await svc.prewarm('plex:1');
@@ -99,8 +99,8 @@ describe('TranscodePrewarmService return shape', () => {
   test('returns { status: "failed", reason: "exception" } on thrown error', async () => {
     const svc = new TranscodePrewarmService({
       contentIdResolver: { resolve: () => { throw new Error('boom'); } },
-      queueService: { resolveQueue: jest.fn() },
-      httpClient: { get: jest.fn() },
+      queueService: { resolveQueue: vi.fn() },
+      httpClient: { get: vi.fn() },
       logger: makeLogger()
     });
     const result = await svc.prewarm('plex:1');

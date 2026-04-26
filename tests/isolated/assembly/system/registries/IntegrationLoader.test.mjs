@@ -1,5 +1,5 @@
 // tests/unit/suite/system/registries/IntegrationLoader.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { IntegrationLoader } from '#backend/src/0_system/registries/IntegrationLoader.mjs';
 import { HouseholdAdapters } from '#backend/src/0_system/registries/HouseholdAdapters.mjs';
 
@@ -9,10 +9,10 @@ import { HouseholdAdapters } from '#backend/src/0_system/registries/HouseholdAda
  */
 function createMockConfigService({ integrationsConfig = {}, auth = {}, serviceUrls = {}, secrets = {} } = {}) {
   return {
-    getIntegrationsConfig: jest.fn((householdId) => integrationsConfig),
-    getHouseholdAuth: jest.fn((provider, householdId) => auth[provider] ?? null),
-    resolveServiceUrl: jest.fn((provider) => serviceUrls[provider] ?? null),
-    getSecret: jest.fn((key) => secrets[key] ?? null),
+    getIntegrationsConfig: vi.fn((householdId) => integrationsConfig),
+    getHouseholdAuth: vi.fn((provider, householdId) => auth[provider] ?? null),
+    resolveServiceUrl: vi.fn((provider) => serviceUrls[provider] ?? null),
+    getSecret: vi.fn((key) => secrets[key] ?? null),
   };
 }
 
@@ -22,13 +22,13 @@ describe('IntegrationLoader', () => {
 
   beforeEach(() => {
     mockRegistry = {
-      getManifest: jest.fn(),
+      getManifest: vi.fn(),
     };
     mockLogger = {
-      warn: jest.fn(),
-      info: jest.fn(),
-      debug: jest.fn(),
-      error: jest.fn(),
+      warn: vi.fn(),
+      info: vi.fn(),
+      debug: vi.fn(),
+      error: vi.fn(),
     };
   });
 
@@ -247,7 +247,7 @@ describe('IntegrationLoader', () => {
         integrationsConfig: null,
       });
       // Override to return null instead of the object
-      mockConfigService.getIntegrationsConfig = jest.fn(() => null);
+      mockConfigService.getIntegrationsConfig = vi.fn(() => null);
 
       const loader = new IntegrationLoader({
         registry: mockRegistry,
@@ -632,7 +632,7 @@ describe('IntegrationLoader', () => {
         }
       };
 
-      const mockHttpClient = { get: jest.fn() };
+      const mockHttpClient = { get: vi.fn() };
 
       mockRegistry.getManifest.mockReturnValue({
         provider: 'plex',

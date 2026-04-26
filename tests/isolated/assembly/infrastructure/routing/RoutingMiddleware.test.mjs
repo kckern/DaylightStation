@@ -1,5 +1,5 @@
 // tests/unit/infrastructure/routing/RoutingMiddleware.test.mjs
-import { describe, it, expect, beforeEach, jest, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import {
   createRoutingMiddleware,
   wrapResponseWithShim,
@@ -16,18 +16,18 @@ describe('RoutingMiddleware', () => {
   let mockRes;
 
   beforeEach(() => {
-    legacyApp = jest.fn((req, res, next) => res.json({ source: 'legacy' }));
-    newApp = jest.fn((req, res, next) => res.json({ source: 'new' }));
+    legacyApp = vi.fn((req, res, next) => res.json({ source: 'legacy' }));
+    newApp = vi.fn((req, res, next) => res.json({ source: 'new' }));
 
     shims = {
       'content-v1': {
-        transform: jest.fn((data) => ({ ...data, transformed: true })),
+        transform: vi.fn((data) => ({ ...data, transformed: true })),
       },
     };
 
     logger = {
-      info: jest.fn(),
-      error: jest.fn(),
+      info: vi.fn(),
+      error: vi.fn(),
     };
 
     metrics = new ShimMetrics();
@@ -38,9 +38,9 @@ describe('RoutingMiddleware', () => {
     };
 
     mockRes = {
-      setHeader: jest.fn(),
-      json: jest.fn(),
-      status: jest.fn().mockReturnThis(),
+      setHeader: vi.fn(),
+      json: vi.fn(),
+      status: vi.fn().mockReturnThis(),
     };
   });
 
@@ -63,7 +63,7 @@ describe('RoutingMiddleware', () => {
       });
 
       mockReq.path = '/api/legacy/data';
-      const next = jest.fn();
+      const next = vi.fn();
       middleware(mockReq, mockRes, next);
 
       expect(legacyApp).toHaveBeenCalledWith(mockReq, mockRes, next);
@@ -88,7 +88,7 @@ describe('RoutingMiddleware', () => {
       });
 
       mockReq.path = '/api/new/data';
-      const next = jest.fn();
+      const next = vi.fn();
       middleware(mockReq, mockRes, next);
 
       expect(newApp).toHaveBeenCalledWith(mockReq, mockRes, next);
@@ -113,7 +113,7 @@ describe('RoutingMiddleware', () => {
       });
 
       mockReq.path = '/api/unknown/endpoint';
-      const next = jest.fn();
+      const next = vi.fn();
       middleware(mockReq, mockRes, next);
 
       expect(legacyApp).toHaveBeenCalledWith(mockReq, mockRes, next);
@@ -136,7 +136,7 @@ describe('RoutingMiddleware', () => {
       });
 
       mockReq.path = '/api/something';
-      const next = jest.fn();
+      const next = vi.fn();
       middleware(mockReq, mockRes, next);
 
       expect(mockRes.setHeader).toHaveBeenCalledWith('x-served-by', 'new');
@@ -160,7 +160,7 @@ describe('RoutingMiddleware', () => {
       });
 
       mockReq.path = '/api/content';
-      const next = jest.fn();
+      const next = vi.fn();
       middleware(mockReq, mockRes, next);
 
       // Call the wrapped json to trigger shim recording
@@ -174,7 +174,7 @@ describe('RoutingMiddleware', () => {
 
   describe('wrapResponseWithShim', () => {
     it('transforms json response using shim', () => {
-      const originalJson = jest.fn();
+      const originalJson = vi.fn();
       mockRes.json = originalJson;
 
       const shim = {
@@ -207,7 +207,7 @@ describe('RoutingMiddleware', () => {
     });
 
     it('returns untransformed data on shim error', () => {
-      const originalJson = jest.fn();
+      const originalJson = vi.fn();
       mockRes.json = originalJson;
 
       const shim = {

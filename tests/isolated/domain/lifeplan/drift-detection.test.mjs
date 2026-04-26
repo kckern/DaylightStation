@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { ValueDriftCalculator } from '#domains/lifeplan/services/ValueDriftCalculator.mjs';
 import { Value } from '#domains/lifeplan/entities/Value.mjs';
 

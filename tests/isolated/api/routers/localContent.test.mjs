@@ -1,5 +1,5 @@
 // tests/unit/api/routers/localContent.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createLocalContentRouter } from '#backend/src/4_api/v1/routers/localContent.mjs';
@@ -11,11 +11,11 @@ describe('LocalContent API Router', () => {
   beforeEach(() => {
     mockAdapter = {
       name: 'local-content',
-      getItem: jest.fn()
+      getItem: vi.fn()
     };
 
     const mockRegistry = {
-      get: jest.fn().mockReturnValue(mockAdapter)
+      get: vi.fn().mockReturnValue(mockAdapter)
     };
 
     app = express();
@@ -190,7 +190,7 @@ describe('LocalContent API Router', () => {
   describe('error handling', () => {
     it('returns 500 when adapter not configured', async () => {
       const mockRegistry = {
-        get: jest.fn().mockReturnValue(null)
+        get: vi.fn().mockReturnValue(null)
       };
 
       const errorApp = express();

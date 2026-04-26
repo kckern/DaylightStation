@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { PersistenceManager } from '#frontend/hooks/fitness/PersistenceManager.js';
 
 describe('PersistenceManager v3 integration', () => {

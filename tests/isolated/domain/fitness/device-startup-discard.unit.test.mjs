@@ -1,4 +1,4 @@
-import { describe, it, expect, jest } from '@jest/globals';
+import { describe, it, expect, vi } from 'vitest';
 
 describe('device startup HR discard', () => {
   const STARTUP_DISCARD_COUNT = 3; // Discard first 3 HR readings per device

@@ -2,7 +2,7 @@
  * YamlFinanceDatastore Tests
  */
 
-import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { YamlFinanceDatastore } from '#adapters/persistence/yaml/YamlFinanceDatastore.mjs';
 import fs from 'fs';
 import path from 'path';

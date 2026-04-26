@@ -1,5 +1,5 @@
 // tests/isolated/adapter/content/canvas/ImmichCanvasAdapter.test.mjs
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ImmichCanvasAdapter } from '../../../../../backend/src/1_adapters/content/canvas/immich/ImmichCanvasAdapter.mjs';
 
 describe('ImmichCanvasAdapter', () => {
@@ -8,11 +8,11 @@ describe('ImmichCanvasAdapter', () => {
 
   beforeEach(() => {
     mockClient = {
-      getAlbums: jest.fn().mockResolvedValue([
+      getAlbums: vi.fn().mockResolvedValue([
         { id: 'album-1', albumName: 'Landscapes', assetCount: 5 },
         { id: 'album-2', albumName: 'Abstract', assetCount: 3 },
       ]),
-      getAlbum: jest.fn().mockResolvedValue({
+      getAlbum: vi.fn().mockResolvedValue({
         id: 'album-1',
         albumName: 'Landscapes',
         assets: [
@@ -20,7 +20,7 @@ describe('ImmichCanvasAdapter', () => {
           { id: 'asset-2', originalFileName: 'mountain.jpg', type: 'IMAGE', exifInfo: {} },
         ],
       }),
-      getAsset: jest.fn().mockResolvedValue({
+      getAsset: vi.fn().mockResolvedValue({
         id: 'asset-1',
         originalFileName: 'sunset.jpg',
         type: 'IMAGE',

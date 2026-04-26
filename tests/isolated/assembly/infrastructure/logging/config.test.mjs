@@ -1,5 +1,5 @@
 // tests/unit/infrastructure/logging/config.test.mjs
-import { jest, beforeEach, afterEach } from '@jest/globals';
+import { vi, beforeEach, afterEach } from 'vitest';
 import {
   loadLoggingConfig,
   resetLoggingConfig,

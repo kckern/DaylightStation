@@ -1,5 +1,5 @@
 // tests/isolated/adapter/feed/FreshRSSSourceAdapter.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { FreshRSSSourceAdapter } from '#adapters/feed/sources/FreshRSSSourceAdapter.mjs';
 
 describe('FreshRSSSourceAdapter', () => {
@@ -8,8 +8,8 @@ describe('FreshRSSSourceAdapter', () => {
 
   beforeEach(() => {
     mockFreshRSSAdapter = {
-      getItems: jest.fn().mockResolvedValue({ items: [], continuation: null }),
-      markRead: jest.fn().mockResolvedValue(undefined),
+      getItems: vi.fn().mockResolvedValue({ items: [], continuation: null }),
+      markRead: vi.fn().mockResolvedValue(undefined),
     };
     adapter = new FreshRSSSourceAdapter({
       freshRSSAdapter: mockFreshRSSAdapter,
@@ -73,7 +73,7 @@ describe('FreshRSSSourceAdapter', () => {
 
     test('skips pass 2 when capped unread fills totalLimit', async () => {
       const mockConfigService = {
-        getAppConfig: jest.fn().mockReturnValue({
+        getAppConfig: vi.fn().mockReturnValue({
           reader: { unread_per_source: 6, total_limit: 6, max_unread_per_feed: 3 },
         }),
       };
@@ -128,7 +128,7 @@ describe('FreshRSSSourceAdapter', () => {
 
     test('caps unread items per feed to prevent one feed from dominating', async () => {
       const mockConfigService = {
-        getAppConfig: jest.fn().mockReturnValue({
+        getAppConfig: vi.fn().mockReturnValue({
           reader: { unread_per_source: 20, total_limit: 100, max_unread_per_feed: 2 },
         }),
       };
@@ -164,7 +164,7 @@ describe('FreshRSSSourceAdapter', () => {
 
     test('reads limits from configService when provided', async () => {
       const mockConfigService = {
-        getAppConfig: jest.fn().mockReturnValue({
+        getAppConfig: vi.fn().mockReturnValue({
           reader: { unread_per_source: 5, total_limit: 10, max_unread_per_feed: 2 },
         }),
       };

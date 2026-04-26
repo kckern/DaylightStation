@@ -1,5 +1,5 @@
 // tests/unit/domains/finance/services/BudgetService.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { BudgetService } from '#domains/finance/services/BudgetService.mjs';
 
 describe('BudgetService', () => {
@@ -9,13 +9,13 @@ describe('BudgetService', () => {
 
   beforeEach(() => {
     mockBudgetStore = {
-      findAll: jest.fn(),
-      findById: jest.fn(),
-      save: jest.fn(),
-      delete: jest.fn()
+      findAll: vi.fn(),
+      findById: vi.fn(),
+      save: vi.fn(),
+      delete: vi.fn()
     };
     mockTransactionSource = {
-      findByCategory: jest.fn()
+      findByCategory: vi.fn()
     };
     service = new BudgetService({
       budgetStore: mockBudgetStore,

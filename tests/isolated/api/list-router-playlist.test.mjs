@@ -1,4 +1,4 @@
-import { describe, test, expect, jest, beforeEach } from '@jest/globals';
+import { describe, test, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createListRouter } from '#backend/src/4_api/v1/routers/list.mjs';
@@ -16,13 +16,13 @@ describe('list router playlist-as-show', () => {
   beforeEach(() => {
     // Mock adapter with playlist behavior
     mockAdapter = {
-      getList: jest.fn(),
-      getItem: jest.fn(),
-      getContainerInfo: jest.fn()
+      getList: vi.fn(),
+      getItem: vi.fn(),
+      getContainerInfo: vi.fn()
     };
 
     mockContentIdResolver = {
-      resolve: jest.fn().mockReturnValue({
+      resolve: vi.fn().mockReturnValue({
         adapter: mockAdapter,
         localId: '450234',
         source: 'plex'
@@ -32,7 +32,7 @@ describe('list router playlist-as-show', () => {
     const router = createListRouter({
       registry: {},
       contentIdResolver: mockContentIdResolver,
-      logger: { info: jest.fn(), warn: jest.fn() }
+      logger: { info: vi.fn(), warn: vi.fn() }
     });
 
     app = express();

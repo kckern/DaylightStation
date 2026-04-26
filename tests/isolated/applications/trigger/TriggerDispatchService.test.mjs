@@ -1,4 +1,4 @@
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TriggerDispatchService } from '../../../../backend/src/3_applications/trigger/TriggerDispatchService.mjs';
 
 const makeResolver = () => ({ resolve: (id) => /^plex:/.test(id) ? { source: 'plex' } : null });
@@ -11,11 +11,11 @@ describe('TriggerDispatchService.handleTrigger', () => {
   let logger;
 
   beforeEach(() => {
-    wakeAndLoadService = { execute: jest.fn().mockResolvedValue({ ok: true, dispatchId: 'd1' }) };
-    haGateway = { callService: jest.fn().mockResolvedValue({ ok: true }) };
-    deviceService = { get: jest.fn().mockReturnValue({ loadContent: jest.fn().mockResolvedValue({ ok: true }) }) };
-    broadcast = jest.fn();
-    logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() };
+    wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true, dispatchId: 'd1' }) };
+    haGateway = { callService: vi.fn().mockResolvedValue({ ok: true }) };
+    deviceService = { get: vi.fn().mockReturnValue({ loadContent: vi.fn().mockResolvedValue({ ok: true }) }) };
+    broadcast = vi.fn();
+    logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   });
 
   function makeService(configOverrides = null) {

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterAll } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import { YamlLifePlanStore } from '#adapters/persistence/yaml/YamlLifePlanStore.mjs';
 import { YamlLifeplanMetricsStore } from '#adapters/persistence/yaml/YamlLifeplanMetricsStore.mjs';
 import { YamlCeremonyRecordStore } from '#adapters/persistence/yaml/YamlCeremonyRecordStore.mjs';

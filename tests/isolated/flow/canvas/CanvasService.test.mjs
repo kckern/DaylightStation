@@ -1,5 +1,5 @@
 // tests/isolated/flow/canvas/CanvasService.test.mjs
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CanvasService } from '../../../../backend/src/3_applications/canvas/services/CanvasService.mjs';
 
 describe('CanvasService', () => {
@@ -14,43 +14,43 @@ describe('CanvasService', () => {
   beforeEach(() => {
     mockContentSource = {
       source: 'test',
-      list: jest.fn().mockResolvedValue([
+      list: vi.fn().mockResolvedValue([
         { id: '1', category: 'landscapes', tags: ['morning'] },
         { id: '2', category: 'abstract', tags: ['evening'] },
       ]),
     };
 
     mockSelectionService = {
-      selectForContext: jest.fn().mockImplementation((items) => items),
-      pickNext: jest.fn().mockImplementation((pool) => pool[0]),
-      buildContextFilters: jest.fn().mockReturnValue({ tags: [], categories: [] }),
+      selectForContext: vi.fn().mockImplementation((items) => items),
+      pickNext: vi.fn().mockImplementation((pool) => pool[0]),
+      buildContextFilters: vi.fn().mockReturnValue({ tags: [], categories: [] }),
     };
 
     mockScheduler = {
-      scheduleRotation: jest.fn(),
-      resetTimer: jest.fn(),
-      cancelRotation: jest.fn(),
+      scheduleRotation: vi.fn(),
+      resetTimer: vi.fn(),
+      cancelRotation: vi.fn(),
     };
 
     mockEventSource = {
-      onMotionDetected: jest.fn(),
-      onContextTrigger: jest.fn(),
-      onManualAdvance: jest.fn(),
+      onMotionDetected: vi.fn(),
+      onContextTrigger: vi.fn(),
+      onManualAdvance: vi.fn(),
     };
 
     mockContextProvider = {
-      getContext: jest.fn().mockResolvedValue({
+      getContext: vi.fn().mockResolvedValue({
         timeSlot: 'morning',
         calendarTags: [],
         deviceConfig: {},
         options: { mode: 'random', interval: 300 },
       }),
-      getTimeSlot: jest.fn().mockReturnValue('morning'),
+      getTimeSlot: vi.fn().mockReturnValue('morning'),
     };
 
     mockHistoryStore = {
-      getShownHistory: jest.fn().mockResolvedValue([]),
-      recordShown: jest.fn().mockResolvedValue(undefined),
+      getShownHistory: vi.fn().mockResolvedValue([]),
+      recordShown: vi.fn().mockResolvedValue(undefined),
     };
 
     service = new CanvasService({

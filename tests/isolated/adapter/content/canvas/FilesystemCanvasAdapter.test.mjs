@@ -1,5 +1,5 @@
 // tests/isolated/adapter/content/canvas/FilesystemCanvasAdapter.test.mjs
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { FilesystemCanvasAdapter } from '../../../../../backend/src/1_adapters/content/canvas/filesystem/FilesystemCanvasAdapter.mjs';
 
 describe('FilesystemCanvasAdapter', () => {
@@ -9,14 +9,14 @@ describe('FilesystemCanvasAdapter', () => {
 
   beforeEach(() => {
     mockFs = {
-      readdirSync: jest.fn(),
-      statSync: jest.fn(),
-      existsSync: jest.fn().mockReturnValue(true),
-      readFileSync: jest.fn(),
+      readdirSync: vi.fn(),
+      statSync: vi.fn(),
+      existsSync: vi.fn().mockReturnValue(true),
+      readFileSync: vi.fn(),
     };
 
     mockExifReader = {
-      load: jest.fn().mockReturnValue({
+      load: vi.fn().mockReturnValue({
         Artist: { value: 'Test Artist' },
         DateTimeOriginal: { value: '2020:01:15 10:30:00' },
         ImageDescription: { value: 'Test description' },
@@ -121,12 +121,12 @@ describe('FilesystemCanvasAdapter', () => {
   describe('resolveDisplayables', () => {
     it('returns all images in a category folder', async () => {
       const mockFs = {
-        existsSync: jest.fn().mockReturnValue(true),
-        readdirSync: jest.fn()
+        existsSync: vi.fn().mockReturnValue(true),
+        readdirSync: vi.fn()
           .mockReturnValueOnce(['religious']) // categories
           .mockReturnValueOnce(['nativity.jpg', 'sheep.jpg']), // files in religious
-        statSync: jest.fn().mockReturnValue({ isDirectory: () => true }),
-        readFileSync: jest.fn(),
+        statSync: vi.fn().mockReturnValue({ isDirectory: () => true }),
+        readFileSync: vi.fn(),
       };
 
       const adapter = new FilesystemCanvasAdapter(
@@ -142,10 +142,10 @@ describe('FilesystemCanvasAdapter', () => {
 
     it('returns single item when given full path', async () => {
       const mockFs = {
-        existsSync: jest.fn().mockReturnValue(true),
-        readdirSync: jest.fn().mockReturnValue(['nativity.jpg']),
-        statSync: jest.fn().mockReturnValue({ isDirectory: () => false }),
-        readFileSync: jest.fn(),
+        existsSync: vi.fn().mockReturnValue(true),
+        readdirSync: vi.fn().mockReturnValue(['nativity.jpg']),
+        statSync: vi.fn().mockReturnValue({ isDirectory: () => false }),
+        readFileSync: vi.fn(),
       };
 
       const adapter = new FilesystemCanvasAdapter(

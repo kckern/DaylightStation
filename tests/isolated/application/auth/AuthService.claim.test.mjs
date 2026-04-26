@@ -1,5 +1,5 @@
 // tests/isolated/application/auth/AuthService.claim.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { AuthService } from '#backend/src/3_applications/auth/AuthService.mjs';
 
 describe('AuthService.claim()', () => {
@@ -7,21 +7,21 @@ describe('AuthService.claim()', () => {
     const written = {};
     const dataService = {
       user: {
-        read: jest.fn((path, username) => {
+        read: vi.fn((path, username) => {
           if (path === 'profile') return profiles.get(username) ?? null;
           if (path === 'auth/login') return loginData[username] ?? null;
           return null;
         }),
-        write: jest.fn((path, data, username) => { written[`${username}/${path}`] = data; }),
+        write: vi.fn((path, data, username) => { written[`${username}/${path}`] = data; }),
       },
-      system: { read: jest.fn(), write: jest.fn() },
-      household: { read: jest.fn(), write: jest.fn() },
+      system: { read: vi.fn(), write: vi.fn() },
+      household: { read: vi.fn(), write: vi.fn() },
     };
     const configService = {
-      getAllUserProfiles: jest.fn(() => profiles),
-      getDefaultHouseholdId: jest.fn(() => 'default'),
+      getAllUserProfiles: vi.fn(() => profiles),
+      getDefaultHouseholdId: vi.fn(() => 'default'),
     };
-    const svc = new AuthService({ dataService, configService, logger: { info: jest.fn() } });
+    const svc = new AuthService({ dataService, configService, logger: { info: vi.fn() } });
     return { svc, dataService, written };
   }
 

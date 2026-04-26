@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { BeliefEvaluator } from '#domains/lifeplan/services/BeliefEvaluator.mjs';
 import { Belief } from '#domains/lifeplan/entities/Belief.mjs';
 import { frozenClock } from '../../../_lib/clock-helper.mjs';

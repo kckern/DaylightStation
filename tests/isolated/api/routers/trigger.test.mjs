@@ -1,4 +1,4 @@
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createTriggerRouter } from '../../../../backend/src/4_api/v1/routers/trigger.mjs';
@@ -8,11 +8,11 @@ describe('createTriggerRouter', () => {
   let app;
 
   beforeEach(() => {
-    triggerDispatchService = { handleTrigger: jest.fn() };
+    triggerDispatchService = { handleTrigger: vi.fn() };
     app = express();
     app.use('/api/v1/trigger', createTriggerRouter({
       triggerDispatchService,
-      logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     }));
   });
 

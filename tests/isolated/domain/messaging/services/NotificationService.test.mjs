@@ -1,5 +1,5 @@
 // tests/unit/domains/messaging/services/NotificationService.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { NotificationService } from '#domains/messaging/services/NotificationService.mjs';
 
 describe('NotificationService', () => {
@@ -9,12 +9,12 @@ describe('NotificationService', () => {
 
   beforeEach(() => {
     mockStore = {
-      save: jest.fn(),
-      findById: jest.fn(),
-      findByRecipient: jest.fn()
+      save: vi.fn(),
+      findById: vi.fn(),
+      findByRecipient: vi.fn()
     };
     mockChannel = {
-      send: jest.fn()
+      send: vi.fn()
     };
     service = new NotificationService({
       notificationStore: mockStore,
@@ -107,7 +107,7 @@ describe('NotificationService', () => {
 
   describe('registerChannel', () => {
     test('adds channel adapter', () => {
-      const emailAdapter = { send: jest.fn() };
+      const emailAdapter = { send: vi.fn() };
       service.registerChannel('email', emailAdapter);
       expect(service.channels.email).toBe(emailAdapter);
     });

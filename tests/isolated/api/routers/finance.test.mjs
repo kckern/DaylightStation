@@ -1,5 +1,5 @@
 // tests/unit/api/routers/finance.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createFinanceRouter } from '#backend/src/4_api/v1/routers/finance.mjs';
@@ -64,59 +64,59 @@ describe('Finance API Router', () => {
 
   beforeEach(() => {
     mockBuxferAdapter = {
-      isConfigured: jest.fn().mockReturnValue(true),
-      getMetrics: jest.fn().mockReturnValue({
+      isConfigured: vi.fn().mockReturnValue(true),
+      getMetrics: vi.fn().mockReturnValue({
         uptime: { ms: 1000, formatted: '0h 0m 1s' },
         totals: { requests: 10, errors: 0 },
         authenticated: true
       }),
-      getAccountBalances: jest.fn().mockResolvedValue([
+      getAccountBalances: vi.fn().mockResolvedValue([
         { toJSON: () => ({ id: 1, name: 'Checking', balance: 5000 }) }
       ]),
-      findByCategory: jest.fn().mockResolvedValue([]),
-      findByAccount: jest.fn().mockResolvedValue([]),
-      findInRange: jest.fn().mockResolvedValue([]),
-      updateTransaction: jest.fn().mockResolvedValue({ success: true })
+      findByCategory: vi.fn().mockResolvedValue([]),
+      findByAccount: vi.fn().mockResolvedValue([]),
+      findInRange: vi.fn().mockResolvedValue([]),
+      updateTransaction: vi.fn().mockResolvedValue({ success: true })
     };
 
     mockFinanceStore = {
-      getBudgetConfig: jest.fn().mockReturnValue(testFinanceConfig),
-      getCompiledFinances: jest.fn().mockReturnValue(testFinancesData),
-      getAccountBalances: jest.fn().mockReturnValue(testAccountBalances),
-      getTransactions: jest.fn().mockReturnValue(testTransactions),
-      listBudgetPeriods: jest.fn().mockReturnValue(['2026-01-01']),
-      getMemos: jest.fn().mockReturnValue({ '1': 'Test memo' }),
-      saveMemo: jest.fn()
+      getBudgetConfig: vi.fn().mockReturnValue(testFinanceConfig),
+      getCompiledFinances: vi.fn().mockReturnValue(testFinancesData),
+      getAccountBalances: vi.fn().mockReturnValue(testAccountBalances),
+      getTransactions: vi.fn().mockReturnValue(testTransactions),
+      listBudgetPeriods: vi.fn().mockReturnValue(['2026-01-01']),
+      getMemos: vi.fn().mockReturnValue({ '1': 'Test memo' }),
+      saveMemo: vi.fn()
     };
 
     mockHarvestService = {
-      harvest: jest.fn().mockResolvedValue({
+      harvest: vi.fn().mockResolvedValue({
         status: 'success',
         details: { budgetPeriods: [], accountBalances: 2 }
       })
     };
 
     mockCompilationService = {
-      compile: jest.fn().mockResolvedValue({
+      compile: vi.fn().mockResolvedValue({
         budgets: { '2026-01-01': {} },
         mortgage: {}
       })
     };
 
     mockCategorizationService = {
-      categorize: jest.fn().mockResolvedValue({ processed: [], failed: [], skipped: [] }),
-      preview: jest.fn().mockResolvedValue({ suggestions: [], failed: [] })
+      categorize: vi.fn().mockResolvedValue({ processed: [], failed: [], skipped: [] }),
+      preview: vi.fn().mockResolvedValue({ suggestions: [], failed: [] })
     };
 
     mockConfigService = {
-      getDefaultHouseholdId: jest.fn().mockReturnValue('default')
+      getDefaultHouseholdId: vi.fn().mockReturnValue('default')
     };
 
     mockLogger = {
-      debug: jest.fn(),
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn()
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn()
     };
 
     const router = createFinanceRouter({

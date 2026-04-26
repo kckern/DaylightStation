@@ -1,5 +1,5 @@
 // tests/unit/suite/system/registries/AdapterRegistry.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { AdapterRegistry } from '#backend/src/0_system/registries/AdapterRegistry.mjs';
 
 describe('AdapterRegistry', () => {
@@ -8,13 +8,13 @@ describe('AdapterRegistry', () => {
       const registry = new AdapterRegistry();
 
       // Mock glob to return test manifests
-      registry._findManifests = jest.fn().mockResolvedValue([
+      registry._findManifests = vi.fn().mockResolvedValue([
         '/fake/path/plex/manifest.mjs',
         '/fake/path/openai/manifest.mjs',
       ]);
 
       // Mock dynamic import
-      registry._import = jest.fn()
+      registry._import = vi.fn()
         .mockResolvedValueOnce({
           default: {
             provider: 'plex',
@@ -44,8 +44,8 @@ describe('AdapterRegistry', () => {
   describe('getManifest()', () => {
     test('returns manifest for capability/provider pair', async () => {
       const registry = new AdapterRegistry();
-      registry._findManifests = jest.fn().mockResolvedValue(['/fake/path/plex/manifest.mjs']);
-      registry._import = jest.fn().mockResolvedValue({
+      registry._findManifests = vi.fn().mockResolvedValue(['/fake/path/plex/manifest.mjs']);
+      registry._import = vi.fn().mockResolvedValue({
         default: {
           provider: 'plex',
           capability: 'media',
@@ -63,7 +63,7 @@ describe('AdapterRegistry', () => {
 
     test('returns undefined for unknown capability/provider', async () => {
       const registry = new AdapterRegistry();
-      registry._findManifests = jest.fn().mockResolvedValue([]);
+      registry._findManifests = vi.fn().mockResolvedValue([]);
       await registry.discover();
 
       expect(registry.getManifest('unknown', 'fake')).toBeUndefined();
@@ -73,7 +73,7 @@ describe('AdapterRegistry', () => {
   describe('getProviders()', () => {
     test('returns empty array for unknown capability', async () => {
       const registry = new AdapterRegistry();
-      registry._findManifests = jest.fn().mockResolvedValue([]);
+      registry._findManifests = vi.fn().mockResolvedValue([]);
       await registry.discover();
 
       expect(registry.getProviders('unknown')).toEqual([]);
@@ -81,11 +81,11 @@ describe('AdapterRegistry', () => {
 
     test('returns all providers for a capability', async () => {
       const registry = new AdapterRegistry();
-      registry._findManifests = jest.fn().mockResolvedValue([
+      registry._findManifests = vi.fn().mockResolvedValue([
         '/fake/path/plex/manifest.mjs',
         '/fake/path/filesystem/manifest.mjs',
       ]);
-      registry._import = jest.fn()
+      registry._import = vi.fn()
         .mockResolvedValueOnce({
           default: { provider: 'plex', capability: 'media', displayName: 'Plex' }
         })
@@ -105,10 +105,10 @@ describe('AdapterRegistry', () => {
   describe('error handling', () => {
     test('skips manifests missing capability', async () => {
       const registry = new AdapterRegistry();
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-      registry._findManifests = jest.fn().mockResolvedValue(['/fake/path/bad/manifest.mjs']);
-      registry._import = jest.fn().mockResolvedValue({
+      registry._findManifests = vi.fn().mockResolvedValue(['/fake/path/bad/manifest.mjs']);
+      registry._import = vi.fn().mockResolvedValue({
         default: { provider: 'bad', displayName: 'Bad Manifest' } // missing capability
       });
 
@@ -122,10 +122,10 @@ describe('AdapterRegistry', () => {
 
     test('skips manifests missing provider', async () => {
       const registry = new AdapterRegistry();
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-      registry._findManifests = jest.fn().mockResolvedValue(['/fake/path/bad/manifest.mjs']);
-      registry._import = jest.fn().mockResolvedValue({
+      registry._findManifests = vi.fn().mockResolvedValue(['/fake/path/bad/manifest.mjs']);
+      registry._import = vi.fn().mockResolvedValue({
         default: { capability: 'media', displayName: 'Bad Manifest' } // missing provider
       });
 
@@ -138,13 +138,13 @@ describe('AdapterRegistry', () => {
 
     test('continues loading after manifest import error', async () => {
       const registry = new AdapterRegistry();
-      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-      registry._findManifests = jest.fn().mockResolvedValue([
+      registry._findManifests = vi.fn().mockResolvedValue([
         '/fake/path/broken/manifest.mjs',
         '/fake/path/good/manifest.mjs',
       ]);
-      registry._import = jest.fn()
+      registry._import = vi.fn()
         .mockRejectedValueOnce(new Error('Import failed'))
         .mockResolvedValueOnce({
           default: { provider: 'good', capability: 'media', displayName: 'Good' }
@@ -166,7 +166,7 @@ describe('AdapterRegistry', () => {
     test('accepts custom adaptersRoot', async () => {
       const registry = new AdapterRegistry({ adaptersRoot: '/custom/path' });
       // The custom path is used internally, we can verify via _findManifests calls
-      registry._findManifests = jest.fn().mockResolvedValue([]);
+      registry._findManifests = vi.fn().mockResolvedValue([]);
       await registry.discover();
 
       expect(registry._findManifests).toHaveBeenCalledWith('/custom/path');

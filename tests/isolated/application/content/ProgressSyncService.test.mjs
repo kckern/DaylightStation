@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, jest, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { ProgressSyncService } from '#apps/content/services/ProgressSyncService.mjs';
 import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
 
@@ -6,26 +6,26 @@ import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
 
 function createMockRemoteProgressProvider() {
   return {
-    getProgress: jest.fn(),
-    updateProgress: jest.fn(),
+    getProgress: vi.fn(),
+    updateProgress: vi.fn(),
   };
 }
 
 function createMockMediaProgressMemory() {
   const store = new Map();
   return {
-    get: jest.fn(async (contentId) => store.get(contentId) || null),
-    set: jest.fn(async (state, storagePath) => store.set(state.contentId, state)),
+    get: vi.fn(async (contentId) => store.get(contentId) || null),
+    set: vi.fn(async (state, storagePath) => store.set(state.contentId, state)),
     _store: store,
   };
 }
 
 function createMockLogger() {
   return {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
   };
 }
 
@@ -74,13 +74,13 @@ describe('ProgressSyncService', () => {
   let service, remoteProgressProvider, mediaProgressMemory, logger;
 
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     ({ service, remoteProgressProvider, mediaProgressMemory, logger } = createService());
   });
 
   afterEach(() => {
     service.dispose();
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   // ── reconcileOnPlay ──────────────────────────────────────────────

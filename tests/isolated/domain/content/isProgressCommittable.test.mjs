@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { isProgressCommittable } from '#domains/content/services/isProgressCommittable.mjs';
 
 describe('isProgressCommittable', () => {

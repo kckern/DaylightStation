@@ -1,5 +1,5 @@
 // tests/isolated/adapter/feed/YamlHeadlineCacheStore.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { YamlHeadlineCacheStore } from '#adapters/persistence/yaml/YamlHeadlineCacheStore.mjs';
 
 describe('YamlHeadlineCacheStore', () => {
@@ -9,8 +9,8 @@ describe('YamlHeadlineCacheStore', () => {
   beforeEach(() => {
     mockDataService = {
       user: {
-        read: jest.fn(),
-        write: jest.fn(() => true),
+        read: vi.fn(),
+        write: vi.fn(() => true),
       },
     };
     store = new YamlHeadlineCacheStore({ dataService: mockDataService });

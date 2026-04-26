@@ -2,7 +2,7 @@
  * BudgetCompilationService Tests
  */
 
-import { jest, describe, it, expect, beforeEach } from '@jest/globals';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { BudgetCompilationService } from '#backend/src/3_applications/finance/BudgetCompilationService.mjs';
 
 describe('BudgetCompilationService', () => {
@@ -91,19 +91,19 @@ describe('BudgetCompilationService', () => {
 
   beforeEach(() => {
     mockFinanceStore = {
-      getBudgetConfig: jest.fn().mockReturnValue(mockBudgetConfig),
-      getTransactions: jest.fn().mockReturnValue(mockTransactions),
-      getAccountBalances: jest.fn().mockReturnValue(mockAccountBalances),
-      getMortgageTransactions: jest.fn().mockReturnValue(mockMortgageTransactions),
-      applyMemos: jest.fn().mockImplementation(txns => txns),
-      saveCompiledFinances: jest.fn()
+      getBudgetConfig: vi.fn().mockReturnValue(mockBudgetConfig),
+      getTransactions: vi.fn().mockReturnValue(mockTransactions),
+      getAccountBalances: vi.fn().mockReturnValue(mockAccountBalances),
+      getMortgageTransactions: vi.fn().mockReturnValue(mockMortgageTransactions),
+      applyMemos: vi.fn().mockImplementation(txns => txns),
+      saveCompiledFinances: vi.fn()
     };
 
     mockLogger = {
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
-      debug: jest.fn()
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn()
     };
 
     service = new BudgetCompilationService({

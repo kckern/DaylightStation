@@ -1,12 +1,12 @@
-import { jest, describe, test, expect, beforeEach, afterEach } from '@jest/globals';
+import { vi, describe, test, expect, beforeEach, afterEach } from 'vitest';
 
 // Mock logger
-const mockSampled = jest.fn();
-const mockInfo = jest.fn();
-const mockWarn = jest.fn();
-const mockDebug = jest.fn();
-const mockError = jest.fn();
-jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
+const mockSampled = vi.fn();
+const mockInfo = vi.fn();
+const mockWarn = vi.fn();
+const mockDebug = vi.fn();
+const mockError = vi.fn();
+vi.mock('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn, debug: mockDebug, error: mockError }),
   getLogger: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn, debug: mockDebug, error: mockError })
 }));
@@ -19,7 +19,7 @@ beforeAll(async () => {
 // Zone data now arrives pre-populated in userZoneMap
 // (GovernanceEngine no longer does second-pass enrichment via getParticipantProfile)
 const createMockSession = ({ getParticipantProfile } = {}) => ({
-  zoneProfileStore: { getProfile: jest.fn() },
+  zoneProfileStore: { getProfile: vi.fn() },
   roster: [],
   treasureBox: null,
   ...(getParticipantProfile ? { getParticipantProfile } : {})
@@ -303,7 +303,7 @@ describe('GovernanceEngine SSoT coverage', () => {
 
     test('challenge success sets videoLocked=false and records history', () => {
       // Provide getParticipantProfile for challenge feasibility checks
-      const mockGetProfile = jest.fn().mockReturnValue({
+      const mockGetProfile = vi.fn().mockReturnValue({
         id: 'user-1', currentZoneId: 'active', heartRate: 110, zoneConfig: DEFAULT_ZONE_CONFIG
       });
       const engine = new GovernanceEngine(createMockSession({ getParticipantProfile: mockGetProfile }));
@@ -350,7 +350,7 @@ describe('GovernanceEngine SSoT coverage', () => {
     });
 
     test('challenge failure sets videoLocked=true and phase=locked', () => {
-      const mockGetProfile = jest.fn().mockReturnValue({
+      const mockGetProfile = vi.fn().mockReturnValue({
         id: 'user-1', currentZoneId: 'active', heartRate: 110, zoneConfig: DEFAULT_ZONE_CONFIG
       });
       const engine = new GovernanceEngine(createMockSession({ getParticipantProfile: mockGetProfile }));
@@ -397,7 +397,7 @@ describe('GovernanceEngine SSoT coverage', () => {
     });
 
     test('failed challenge recovers when user meets zone after failure', () => {
-      const mockGetProfile = jest.fn().mockReturnValue({
+      const mockGetProfile = vi.fn().mockReturnValue({
         id: 'user-1', currentZoneId: 'active', heartRate: 110, zoneConfig: DEFAULT_ZONE_CONFIG
       });
       const engine = new GovernanceEngine(createMockSession({ getParticipantProfile: mockGetProfile }));
@@ -481,7 +481,7 @@ describe('GovernanceEngine SSoT coverage', () => {
     });
 
     test('videoLocked transitions: false -> true on failure, true -> false on recovery', () => {
-      const mockGetProfile = jest.fn().mockReturnValue({
+      const mockGetProfile = vi.fn().mockReturnValue({
         id: 'user-1', currentZoneId: 'active', heartRate: 110, zoneConfig: DEFAULT_ZONE_CONFIG
       });
       const engine = new GovernanceEngine(createMockSession({ getParticipantProfile: mockGetProfile }));

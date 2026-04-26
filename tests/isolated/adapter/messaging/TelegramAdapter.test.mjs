@@ -1,5 +1,5 @@
 // tests/unit/adapters/messaging/TelegramAdapter.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { TelegramAdapter } from '#adapters/messaging/TelegramAdapter.mjs';
 
 describe('TelegramAdapter', () => {
@@ -9,15 +9,15 @@ describe('TelegramAdapter', () => {
 
   beforeEach(() => {
     mockHttpClient = {
-      get: jest.fn(),
-      post: jest.fn()
+      get: vi.fn(),
+      post: vi.fn()
     };
 
     mockLogger = {
-      debug: jest.fn(),
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn()
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn()
     };
 
     adapter = new TelegramAdapter({

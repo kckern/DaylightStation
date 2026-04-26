@@ -1,5 +1,5 @@
 // tests/unit/applications/journalist/usecases/quiz.test.mjs
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 describe('Quiz Use Cases', () => {
   // Shared mocks
@@ -16,7 +16,7 @@ describe('Quiz Use Cases', () => {
     choices: ['Great', 'Good', 'Okay', 'Not great'],
     lastAsked: null,
     hasBeenAsked: false,
-    markAsked: jest.fn().mockReturnValue({
+    markAsked: vi.fn().mockReturnValue({
       uuid: 'question-uuid-1',
       category: 'daily',
       question: 'How are you feeling today?',
@@ -29,27 +29,27 @@ describe('Quiz Use Cases', () => {
 
   beforeEach(() => {
     mockMessagingGateway = {
-      sendMessage: jest.fn().mockResolvedValue({ messageId: 'sent-msg-123' }),
-      updateMessage: jest.fn().mockResolvedValue(undefined),
-      deleteMessage: jest.fn().mockResolvedValue(undefined),
+      sendMessage: vi.fn().mockResolvedValue({ messageId: 'sent-msg-123' }),
+      updateMessage: vi.fn().mockResolvedValue(undefined),
+      deleteMessage: vi.fn().mockResolvedValue(undefined),
     };
 
     mockQuizRepository = {
-      loadQuestions: jest.fn().mockResolvedValue([]),
-      recordAnswer: jest.fn().mockResolvedValue(undefined),
+      loadQuestions: vi.fn().mockResolvedValue([]),
+      recordAnswer: vi.fn().mockResolvedValue(undefined),
     };
 
     mockMessageQueueRepository = {
-      saveToQueue: jest.fn().mockResolvedValue(undefined),
-      loadUnsentQueue: jest.fn().mockResolvedValue([]),
-      markSent: jest.fn().mockResolvedValue(undefined),
+      saveToQueue: vi.fn().mockResolvedValue(undefined),
+      loadUnsentQueue: vi.fn().mockResolvedValue([]),
+      markSent: vi.fn().mockResolvedValue(undefined),
     };
 
     mockLogger = {
-      info: jest.fn(),
-      debug: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
+      info: vi.fn(),
+      debug: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
     };
   });
 
@@ -458,14 +458,14 @@ describe('Quiz Use Cases', () => {
       HandleQuizAnswer = module.HandleQuizAnswer;
 
       mockRecordQuizAnswer = {
-        execute: jest.fn().mockResolvedValue({
+        execute: vi.fn().mockResolvedValue({
           success: true,
           answerUuid: 'answer-uuid-123',
         }),
       };
 
       mockAdvanceToNextQuizQuestion = {
-        execute: jest.fn().mockResolvedValue({
+        execute: vi.fn().mockResolvedValue({
           success: true,
           action: 'next_question',
           questionUuid: 'next-question-uuid',
@@ -670,7 +670,7 @@ describe('Quiz Use Cases', () => {
       AdvanceToNextQuizQuestion = module.AdvanceToNextQuizQuestion;
 
       mockInitiateJournalPrompt = {
-        execute: jest.fn().mockResolvedValue({ success: true }),
+        execute: vi.fn().mockResolvedValue({ success: true }),
       };
     });
 

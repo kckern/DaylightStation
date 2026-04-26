@@ -7,7 +7,7 @@
  * 2. Image-based logs use caption instead of text when updating
  * 3. Logging uses correct field names (label not name)
  */
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach } from 'vitest';
 
 // Import the components under test
 import { UnifiedEventRouter } from '#backend/_legacy/chatbots/application/routing/UnifiedEventRouter.mjs';

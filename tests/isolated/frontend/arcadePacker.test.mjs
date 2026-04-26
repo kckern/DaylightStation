@@ -1,4 +1,4 @@
-import { describe, test, expect } from '@jest/globals';
+import { describe, test, expect } from 'vitest';
 import { packLayout, classifyItems, solveSingleBand, solveDoubleBand, solveTripleBand, buildBands, renderBands, scoreLayout, DEFAULT_TALL_AREA_CAP } from '../../../frontend/src/modules/Menu/arcadePacker.js';
 
 // Deterministic LCG so attempts/shuffle/mirror are reproducible.

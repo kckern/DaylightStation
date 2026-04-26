@@ -1,5 +1,5 @@
 // tests/isolated/services/transcode-prewarm.test.mjs
-import { describe, test, expect, jest, beforeEach } from '@jest/globals';
+import { describe, test, expect, vi, beforeEach } from 'vitest';
 import { TranscodePrewarmService } from '../../../backend/src/3_applications/devices/services/TranscodePrewarmService.mjs';
 
 // --- Helpers ---
@@ -12,10 +12,10 @@ const CONTENT_REF = `plex:${RATING_KEY}`;
 function mockAdapter({ resolvePlayables = true, loadMediaUrl = true } = {}) {
   return {
     resolvePlayables: resolvePlayables
-      ? jest.fn().mockResolvedValue([{ contentId: CONTENT_ID, ratingKey: RATING_KEY, source: 'plex' }])
+      ? vi.fn().mockResolvedValue([{ contentId: CONTENT_ID, ratingKey: RATING_KEY, source: 'plex' }])
       : undefined,
     loadMediaUrl: loadMediaUrl
-      ? jest.fn().mockResolvedValue(DASH_URL)
+      ? vi.fn().mockResolvedValue(DASH_URL)
       : undefined,
   };
 }
@@ -28,28 +28,28 @@ function mockContentIdResolver(opts = {}) {
     adapter,
   };
   return {
-    resolve: jest.fn().mockReturnValue(resolved),
+    resolve: vi.fn().mockReturnValue(resolved),
   };
 }
 
 function mockQueueService() {
   return {
-    resolveQueue: jest.fn().mockImplementation(async (items) => items),
+    resolveQueue: vi.fn().mockImplementation(async (items) => items),
   };
 }
 
 function mockHttpClient() {
   return {
-    get: jest.fn().mockResolvedValue({ status: 200 }),
+    get: vi.fn().mockResolvedValue({ status: 200 }),
   };
 }
 
 function mockLogger() {
   return {
-    debug: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
   };
 }
 
@@ -99,7 +99,7 @@ describe('TranscodePrewarmService', () => {
       });
       // resolveQueue returns item with non-plex source
       const queueService = {
-        resolveQueue: jest.fn().mockResolvedValue([
+        resolveQueue: vi.fn().mockResolvedValue([
           { contentId: 'youtube:vid123', source: 'youtube' },
         ]),
       };
@@ -120,10 +120,10 @@ describe('TranscodePrewarmService', () => {
 
     test('returns failed status when loadMediaUrl returns null', async () => {
       const adapter = {
-        resolvePlayables: jest.fn().mockResolvedValue([
+        resolvePlayables: vi.fn().mockResolvedValue([
           { contentId: CONTENT_ID, ratingKey: RATING_KEY, source: 'plex' },
         ]),
-        loadMediaUrl: jest.fn().mockResolvedValue(null),
+        loadMediaUrl: vi.fn().mockResolvedValue(null),
       };
       const contentIdResolver = mockContentIdResolver({ adapter });
       const svc = buildService({ contentIdResolver });

@@ -1,4 +1,4 @@
-import { jest, describe, test, expect, beforeEach } from '@jest/globals';
+import { vi, describe, test, expect, beforeEach } from 'vitest';
 
 // We test the cache logic directly — no React rendering needed
 describe('queue signature cache (module-level)', () => {

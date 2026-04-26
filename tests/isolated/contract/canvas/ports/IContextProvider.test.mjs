@@ -1,5 +1,5 @@
 // tests/isolated/contract/canvas/ports/IContextProvider.test.mjs
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { validateContextProvider } from '../../../../../backend/src/3_applications/canvas/ports/IContextProvider.mjs';
 
 describe('IContextProvider contract', () => {

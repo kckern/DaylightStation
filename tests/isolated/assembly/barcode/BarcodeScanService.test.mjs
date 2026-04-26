@@ -1,5 +1,5 @@
 // tests/isolated/assembly/barcode/BarcodeScanService.test.mjs
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { BarcodeScanService } from '../../../../backend/src/3_applications/barcode/BarcodeScanService.mjs';
 import { BarcodePayload } from '#domains/barcode/BarcodePayload.mjs';
 import { BarcodeGatekeeper } from '#domains/barcode/BarcodeGatekeeper.mjs';
@@ -9,10 +9,10 @@ const KNOWN_ACTIONS = ['queue', 'play', 'open'];
 const KNOWN_COMMANDS = ['pause', 'play', 'next', 'prev', 'ffw', 'rew', 'stop', 'off', 'blackout', 'volume', 'speed'];
 
 const logger = {
-  info: jest.fn(),
-  warn: jest.fn(),
-  error: jest.fn(),
-  debug: jest.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
 };
 
 function makePayload(barcode, device = 'scanner-1') {
@@ -29,7 +29,7 @@ describe('BarcodeScanService', () => {
   let pipelineConfig;
 
   beforeEach(() => {
-    broadcastEvent = jest.fn();
+    broadcastEvent = vi.fn();
     gatekeeper = new BarcodeGatekeeper([]); // auto-approve (no strategies)
     deviceConfig = {
       'scanner-1': { type: 'barcode-scanner', target_screen: 'office', policy_group: 'default' },
@@ -214,8 +214,8 @@ describe('BarcodeScanService', () => {
 
   describe('handle — ack-based fallback', () => {
     it('does not trigger fallback when screen acks', async () => {
-      const waitForAck = jest.fn().mockResolvedValue({ type: 'content-ack', screen: 'office' });
-      const loadFallback = jest.fn().mockResolvedValue();
+      const waitForAck = vi.fn().mockResolvedValue({ type: 'content-ack', screen: 'office' });
+      const loadFallback = vi.fn().mockResolvedValue();
       const service = createService({ waitForAck });
       service.setLoadFallback(loadFallback);
 
@@ -227,8 +227,8 @@ describe('BarcodeScanService', () => {
     });
 
     it('triggers fallback when ack times out', async () => {
-      const waitForAck = jest.fn().mockRejectedValue(new Error('waitForMessage timed out'));
-      const loadFallback = jest.fn().mockResolvedValue();
+      const waitForAck = vi.fn().mockRejectedValue(new Error('waitForMessage timed out'));
+      const loadFallback = vi.fn().mockResolvedValue();
       const service = createService({ waitForAck });
       service.setLoadFallback(loadFallback);
 
@@ -240,7 +240,7 @@ describe('BarcodeScanService', () => {
     });
 
     it('triggers fallback immediately when no waitForAck is provided', async () => {
-      const loadFallback = jest.fn().mockResolvedValue();
+      const loadFallback = vi.fn().mockResolvedValue();
       const service = createService({ waitForAck: null });
       service.setLoadFallback(loadFallback);
 
@@ -252,12 +252,12 @@ describe('BarcodeScanService', () => {
 
     it('ack predicate matches correct screen', async () => {
       let capturedPredicate;
-      const waitForAck = jest.fn().mockImplementation((pred) => {
+      const waitForAck = vi.fn().mockImplementation((pred) => {
         capturedPredicate = pred;
         return Promise.resolve();
       });
       const service = createService({ waitForAck });
-      service.setLoadFallback(jest.fn().mockResolvedValue());
+      service.setLoadFallback(vi.fn().mockResolvedValue());
 
       await service.handle(makePayload('living-room:plex:12345'));
 
@@ -270,8 +270,8 @@ describe('BarcodeScanService', () => {
     });
 
     it('passes content options through to fallback query', async () => {
-      const waitForAck = jest.fn().mockRejectedValue(new Error('timeout'));
-      const loadFallback = jest.fn().mockResolvedValue();
+      const waitForAck = vi.fn().mockRejectedValue(new Error('timeout'));
+      const loadFallback = vi.fn().mockResolvedValue();
       const service = createService({ waitForAck });
       service.setLoadFallback(loadFallback);
 

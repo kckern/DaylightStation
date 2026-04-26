@@ -10,15 +10,15 @@
  * - Task 2: TreasureBox configured with zones on updateSnapshot()
  * - Task 3: GovernanceEngine falls back to cached zoneRankMap
  */
-import { jest, describe, test, expect, beforeEach } from '@jest/globals';
+import { vi, describe, test, expect, beforeEach } from 'vitest';
 
 // Mock logger to suppress logging noise during tests
-const mockSampled = jest.fn();
-const mockInfo = jest.fn();
-const mockWarn = jest.fn();
-const mockDebug = jest.fn();
-const mockError = jest.fn();
-jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
+const mockSampled = vi.fn();
+const mockInfo = vi.fn();
+const mockWarn = vi.fn();
+const mockDebug = vi.fn();
+const mockError = vi.fn();
+vi.mock('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn, debug: mockDebug, error: mockError }),
   getLogger: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn, debug: mockDebug, error: mockError })
 }));
@@ -52,7 +52,7 @@ describe('Governance + TreasureBox Zone Integration', () => {
     expect(baseConfig.length).toBe(3);
 
     // Create TreasureBox and configure from ZoneProfileStore (simulating ensureStarted fix)
-    const mockSession = { _log: jest.fn() };
+    const mockSession = { _log: vi.fn() };
     const treasureBox = new FitnessTreasureBox(mockSession);
     treasureBox.configure({ zones: baseConfig });
 
@@ -71,7 +71,7 @@ describe('Governance + TreasureBox Zone Integration', () => {
       { id: 'active', name: 'Active', min: 100, color: 'green', coins: 1 },
     ];
 
-    const mockSession = { _log: jest.fn() };
+    const mockSession = { _log: vi.fn() };
     const treasureBox = new FitnessTreasureBox(mockSession);
     treasureBox.configure({ zones: zoneConfig });
 
@@ -93,7 +93,7 @@ describe('Governance + TreasureBox Zone Integration', () => {
     const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
 
     const session = {
-      zoneProfileStore: { getProfile: jest.fn() },
+      zoneProfileStore: { getProfile: vi.fn() },
       roster: [{ id: 'user1', isActive: true, zoneId: 'warm' }],
       treasureBox: null
     };
@@ -145,7 +145,7 @@ describe('Governance + TreasureBox Zone Integration', () => {
     const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
 
     const session = {
-      zoneProfileStore: { getProfile: jest.fn() },
+      zoneProfileStore: { getProfile: vi.fn() },
       roster: [{ id: 'user1', isActive: true }],
       treasureBox: null
     };
@@ -206,10 +206,10 @@ describe('Governance + TreasureBox Zone Integration', () => {
 
     // Session provides getActiveParticipantState for no-arg evaluate() calls
     const session = {
-      zoneProfileStore: { getProfile: jest.fn() },
+      zoneProfileStore: { getProfile: vi.fn() },
       roster: [{ id: 'user1', isActive: true, zoneId: 'active' }],
       treasureBox: null,
-      getActiveParticipantState: jest.fn().mockReturnValue({
+      getActiveParticipantState: vi.fn().mockReturnValue({
         participants: ['user1'],
         zoneMap: { user1: 'active' },
         totalCount: 1

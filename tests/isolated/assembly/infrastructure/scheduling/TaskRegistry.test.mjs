@@ -1,5 +1,5 @@
 // tests/unit/infrastructure/scheduling/TaskRegistry.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { TaskRegistry } from '#backend/src/0_system/scheduling/TaskRegistry.mjs';
 
 describe('TaskRegistry', () => {
@@ -52,7 +52,7 @@ describe('TaskRegistry', () => {
 
   describe('execute', () => {
     test('executes task handler', async () => {
-      const handler = jest.fn();
+      const handler = vi.fn();
       registry.register('task', { handler });
       await registry.execute('task');
       expect(handler).toHaveBeenCalled();

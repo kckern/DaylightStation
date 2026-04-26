@@ -1,10 +1,10 @@
-import { jest, describe, test, expect } from '@jest/globals';
+import { vi, describe, test, expect } from 'vitest';
 
 describe('autoplay blocked detection', () => {
   test('NotAllowedError from play() signals autoplay blocked', () => {
     let blocked = false;
     const target = {
-      play: jest.fn(() => Promise.reject({ name: 'NotAllowedError' }))
+      play: vi.fn(() => Promise.reject({ name: 'NotAllowedError' }))
     };
 
     const p = target.play();
@@ -20,7 +20,7 @@ describe('autoplay blocked detection', () => {
   test('AbortError from play() does NOT signal autoplay blocked', () => {
     let blocked = false;
     const target = {
-      play: jest.fn(() => Promise.reject({ name: 'AbortError' }))
+      play: vi.fn(() => Promise.reject({ name: 'AbortError' }))
     };
 
     const p = target.play();
@@ -36,7 +36,7 @@ describe('autoplay blocked detection', () => {
   test('successful play() clears autoplay blocked', () => {
     let blocked = true;
     const target = {
-      play: jest.fn(() => Promise.resolve())
+      play: vi.fn(() => Promise.resolve())
     };
 
     const p = target.play();
@@ -49,7 +49,7 @@ describe('autoplay blocked detection', () => {
 
   test('user gesture retry calls play() and resolves', async () => {
     const target = {
-      play: jest.fn(() => Promise.resolve())
+      play: vi.fn(() => Promise.resolve())
     };
     let resolved = false;
     const onResolved = () => { resolved = true; };

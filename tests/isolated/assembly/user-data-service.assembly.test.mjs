@@ -1,5 +1,5 @@
 // tests/assembly/user-data-service.assembly.test.mjs
-import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';

@@ -2,7 +2,7 @@
  * TransactionCategorizationService Tests
  */
 
-import { jest, describe, it, expect, beforeEach } from '@jest/globals';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { TransactionCategorizationService } from '#backend/src/3_applications/finance/TransactionCategorizationService.mjs';
 
 describe('TransactionCategorizationService', () => {
@@ -24,22 +24,22 @@ describe('TransactionCategorizationService', () => {
 
   beforeEach(() => {
     mockAIGateway = {
-      chatWithJson: jest.fn()
+      chatWithJson: vi.fn()
     };
 
     mockTransactionSource = {
-      updateTransaction: jest.fn().mockResolvedValue({ success: true })
+      updateTransaction: vi.fn().mockResolvedValue({ success: true })
     };
 
     mockFinanceStore = {
-      getCategorizationConfig: jest.fn().mockReturnValue(mockCategorizationConfig)
+      getCategorizationConfig: vi.fn().mockReturnValue(mockCategorizationConfig)
     };
 
     mockLogger = {
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
-      debug: jest.fn()
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn()
     };
 
     service = new TransactionCategorizationService({

@@ -1,5 +1,5 @@
 // tests/unit/domains/journaling/services/JournalService.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { JournalService } from '#domains/journaling/services/JournalService.mjs';
 
 describe('JournalService', () => {
@@ -8,12 +8,12 @@ describe('JournalService', () => {
 
   beforeEach(() => {
     mockStore = {
-      save: jest.fn(),
-      findById: jest.fn(),
-      findByUserAndDate: jest.fn(),
-      findByUserInRange: jest.fn(),
-      findByUserAndTag: jest.fn(),
-      delete: jest.fn()
+      save: vi.fn(),
+      findById: vi.fn(),
+      findByUserAndDate: vi.fn(),
+      findByUserInRange: vi.fn(),
+      findByUserAndTag: vi.fn(),
+      delete: vi.fn()
     };
 
     service = new JournalService({ journalStore: mockStore });

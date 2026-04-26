@@ -1,5 +1,5 @@
 // tests/unit/adapters/content/FileAdapter.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { FileAdapter } from '#adapters/content/media/files/FileAdapter.mjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -80,7 +80,7 @@ describe('FileAdapter', () => {
       });
 
       // Inject mock for parseFile to simulate ID3 tags
-      adapter._parseFile = jest.fn().mockResolvedValue({
+      adapter._parseFile = vi.fn().mockResolvedValue({
         common: {
           title: 'Test Song',
           artist: 'Test Artist',
@@ -106,7 +106,7 @@ describe('FileAdapter', () => {
         mediaBasePath: fixturesPath
       });
 
-      adapter._parseFile = jest.fn().mockResolvedValue({ common: {} });
+      adapter._parseFile = vi.fn().mockResolvedValue({ common: {} });
 
       const item = await adapter.getItem('audio/test.mp3');
 
@@ -120,7 +120,7 @@ describe('FileAdapter', () => {
         mediaBasePath: fixturesPath
       });
 
-      adapter._parseFile = jest.fn().mockRejectedValue(new Error('Parse error'));
+      adapter._parseFile = vi.fn().mockRejectedValue(new Error('Parse error'));
 
       const item = await adapter.getItem('audio/test.mp3');
 
@@ -134,7 +134,7 @@ describe('FileAdapter', () => {
         mediaBasePath: fixturesPath
       });
 
-      adapter._parseFile = jest.fn().mockResolvedValue({
+      adapter._parseFile = vi.fn().mockResolvedValue({
         common: { artist: 'Test Artist' }
       });
 
@@ -155,7 +155,7 @@ describe('FileAdapter', () => {
       const adapter = new FileAdapter({ mediaBasePath: fixturesPath });
 
       const mockImageData = new Uint8Array(1024); // 1KB image
-      adapter._parseFile = jest.fn().mockResolvedValue({
+      adapter._parseFile = vi.fn().mockResolvedValue({
         common: {
           picture: [{
             format: 'image/jpeg',
@@ -174,7 +174,7 @@ describe('FileAdapter', () => {
     test('should return null for invalid MIME type', async () => {
       const adapter = new FileAdapter({ mediaBasePath: fixturesPath });
 
-      adapter._parseFile = jest.fn().mockResolvedValue({
+      adapter._parseFile = vi.fn().mockResolvedValue({
         common: {
           picture: [{
             format: 'image/bmp', // Not in VALID_IMAGE_TYPES
@@ -192,7 +192,7 @@ describe('FileAdapter', () => {
 
       // Create data larger than 10MB limit
       const hugeData = new Uint8Array(11 * 1024 * 1024);
-      adapter._parseFile = jest.fn().mockResolvedValue({
+      adapter._parseFile = vi.fn().mockResolvedValue({
         common: {
           picture: [{
             format: 'image/jpeg',
@@ -208,7 +208,7 @@ describe('FileAdapter', () => {
     test('should return null for file without cover art', async () => {
       const adapter = new FileAdapter({ mediaBasePath: fixturesPath });
 
-      adapter._parseFile = jest.fn().mockResolvedValue({
+      adapter._parseFile = vi.fn().mockResolvedValue({
         common: {}
       });
 
@@ -218,9 +218,9 @@ describe('FileAdapter', () => {
 
     test('should log warning on parse error', async () => {
       const adapter = new FileAdapter({ mediaBasePath: fixturesPath });
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-      adapter._parseFile = jest.fn().mockRejectedValue(new Error('Parse failed'));
+      adapter._parseFile = vi.fn().mockRejectedValue(new Error('Parse failed'));
 
       const result = await adapter.getCoverArt('audio/test.mp3');
 

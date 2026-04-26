@@ -1,4 +1,4 @@
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import {
   PROVIDER_CAPABILITY_MAP,
   CAPABILITY_KEYS,

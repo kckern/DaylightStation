@@ -1,5 +1,5 @@
 // tests/unit/domains/nutrition/services/FoodLogService.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { FoodLogService } from '#domains/nutrition/services/FoodLogService.mjs';
 import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
 
@@ -36,16 +36,16 @@ describe('FoodLogService', () => {
 
   beforeEach(() => {
     mockStore = {
-      save: jest.fn((log) => Promise.resolve(log)),
-      findById: jest.fn(),
-      findAll: jest.fn(),
-      findByDate: jest.fn(),
-      findByDateRange: jest.fn(),
-      findPending: jest.fn(),
-      findAccepted: jest.fn(),
-      delete: jest.fn(),
-      count: jest.fn(),
-      getDailySummary: jest.fn(),
+      save: vi.fn((log) => Promise.resolve(log)),
+      findById: vi.fn(),
+      findAll: vi.fn(),
+      findByDate: vi.fn(),
+      findByDateRange: vi.fn(),
+      findPending: vi.fn(),
+      findAccepted: vi.fn(),
+      delete: vi.fn(),
+      count: vi.fn(),
+      getDailySummary: vi.fn(),
     };
 
     service = new FoodLogService({ foodLogStore: mockStore });

@@ -1,4 +1,4 @@
-import { jest, describe, test, expect } from '@jest/globals';
+import { vi, describe, test, expect } from 'vitest';
 
 describe('transport capability check timing', () => {
   test('should not warn immediately on mount (grace period)', () => {

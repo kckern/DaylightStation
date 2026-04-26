@@ -1,13 +1,13 @@
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MQTTBarcodeAdapter } from '#adapters/hardware/mqtt-barcode/MQTTBarcodeAdapter.mjs';
 
 const KNOWN_ACTIONS = ['queue', 'play', 'open'];
 
 const logger = {
-  info: jest.fn(),
-  warn: jest.fn(),
-  error: jest.fn(),
-  debug: jest.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
 };
 
 describe('MQTTBarcodeAdapter', () => {

@@ -1,11 +1,11 @@
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 
 // Provide window global for api.mjs which references window.location at module scope
 globalThis.window = { location: { origin: 'http://localhost:3111', protocol: 'http:', host: 'localhost:3111' } };
 
 // Mock React hooks for unit testing
-const mockUseMemo = jest.fn((fn) => fn());
-jest.unstable_mockModule('react', () => ({
+const mockUseMemo = vi.fn((fn) => fn());
+vi.mock('react', () => ({
   useMemo: mockUseMemo,
   default: { useMemo: mockUseMemo }
 }));

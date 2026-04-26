@@ -1,15 +1,15 @@
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { PlexFeedAdapter } from '#adapters/feed/sources/PlexFeedAdapter.mjs';
 import { probeImageDimensions } from '#system/utils/probeImageDimensions.mjs';
 
-jest.mock('#system/utils/probeImageDimensions.mjs', () => ({
-  probeImageDimensions: jest.fn().mockResolvedValue(null),
+vi.mock('#system/utils/probeImageDimensions.mjs', () => ({
+  probeImageDimensions: vi.fn().mockResolvedValue(null),
 }));
 
 function makeMockRegistry(items) {
   return {
     get: () => ({
-      getList: jest.fn().mockResolvedValue(items),
+      getList: vi.fn().mockResolvedValue(items),
     }),
   };
 }
@@ -27,7 +27,7 @@ function makeItems(count) {
 }
 
 describe('PlexFeedAdapter', () => {
-  const logger = { warn: jest.fn(), debug: jest.fn(), info: jest.fn() };
+  const logger = { warn: vi.fn(), debug: vi.fn(), info: vi.fn() };
 
   test('sourceType is plex', () => {
     const adapter = new PlexFeedAdapter({ logger });
@@ -37,7 +37,7 @@ describe('PlexFeedAdapter', () => {
   describe('parentIds weighted selection', () => {
     test('fetches from all weighted parentIds', async () => {
       const mockItems = makeItems(5);
-      const mockGetList = jest.fn().mockResolvedValue(mockItems);
+      const mockGetList = vi.fn().mockResolvedValue(mockItems);
       const registry = { get: () => ({ getList: mockGetList }) };
 
       const adapter = new PlexFeedAdapter({ contentRegistry: registry, logger });
@@ -112,7 +112,7 @@ describe('PlexFeedAdapter', () => {
 
     test('falls back to single parentId when parentIds absent', async () => {
       const mockItems = makeItems(2);
-      const mockGetList = jest.fn().mockResolvedValue(mockItems);
+      const mockGetList = vi.fn().mockResolvedValue(mockItems);
       const registry = { get: () => ({ getList: mockGetList }) };
       const adapter = new PlexFeedAdapter({ contentRegistry: registry, logger });
 

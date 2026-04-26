@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { NotificationService } from '#apps/notification/NotificationService.mjs';
 import { NotificationIntent } from '#domains/notification/entities/NotificationIntent.mjs';
 import { NotificationPreference } from '#domains/notification/entities/NotificationPreference.mjs';
@@ -26,15 +26,15 @@ describe('NotificationService routing', () => {
   beforeEach(() => {
     appAdapter = {
       channel: 'app',
-      send: jest.fn().mockResolvedValue({ delivered: true, channelId: 'app-1' }),
+      send: vi.fn().mockResolvedValue({ delivered: true, channelId: 'app-1' }),
     };
     telegramAdapter = {
       channel: 'telegram',
-      send: jest.fn().mockResolvedValue({ delivered: true, channelId: 'tg-1' }),
+      send: vi.fn().mockResolvedValue({ delivered: true, channelId: 'tg-1' }),
     };
     emailAdapter = {
       channel: 'email',
-      send: jest.fn().mockResolvedValue({ delivered: false, error: 'not configured' }),
+      send: vi.fn().mockResolvedValue({ delivered: false, error: 'not configured' }),
     };
 
     service = new NotificationService({

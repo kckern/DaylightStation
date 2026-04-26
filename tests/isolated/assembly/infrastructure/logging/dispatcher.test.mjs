@@ -1,5 +1,5 @@
 // tests/unit/infrastructure/logging/dispatcher.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import {
   LogDispatcher,
   LEVEL_PRIORITY,
@@ -47,13 +47,13 @@ describe('LogDispatcher', () => {
 
   describe('addTransport', () => {
     test('adds valid transport', () => {
-      const transport = { name: 'test', send: jest.fn() };
+      const transport = { name: 'test', send: vi.fn() };
       dispatcher.addTransport(transport);
       expect(dispatcher.getTransportNames()).toContain('test');
     });
 
     test('throws for transport without name', () => {
-      expect(() => dispatcher.addTransport({ send: jest.fn() }))
+      expect(() => dispatcher.addTransport({ send: vi.fn() }))
         .toThrow('Invalid transport');
     });
 
@@ -65,7 +65,7 @@ describe('LogDispatcher', () => {
 
   describe('removeTransport', () => {
     test('removes transport by name', () => {
-      const transport = { name: 'test', send: jest.fn() };
+      const transport = { name: 'test', send: vi.fn() };
       dispatcher.addTransport(transport);
       dispatcher.removeTransport('test');
       expect(dispatcher.getTransportNames()).not.toContain('test');
@@ -74,8 +74,8 @@ describe('LogDispatcher', () => {
 
   describe('dispatch', () => {
     test('sends event to all transports', () => {
-      const send1 = jest.fn();
-      const send2 = jest.fn();
+      const send1 = vi.fn();
+      const send2 = vi.fn();
       dispatcher.addTransport({ name: 't1', send: send1 });
       dispatcher.addTransport({ name: 't2', send: send2 });
 
@@ -90,7 +90,7 @@ describe('LogDispatcher', () => {
     });
 
     test('filters events below threshold', () => {
-      const send = jest.fn();
+      const send = vi.fn();
       dispatcher.addTransport({ name: 'test', send });
 
       dispatcher.dispatch({
@@ -104,7 +104,7 @@ describe('LogDispatcher', () => {
     });
 
     test('drops invalid events', () => {
-      const send = jest.fn();
+      const send = vi.fn();
       dispatcher.addTransport({ name: 'test', send });
 
       dispatcher.dispatch({ data: {} }); // Missing event name
@@ -113,7 +113,7 @@ describe('LogDispatcher', () => {
     });
 
     test('increments sent metric', () => {
-      dispatcher.addTransport({ name: 'test', send: jest.fn() });
+      dispatcher.addTransport({ name: 'test', send: vi.fn() });
       dispatcher.dispatch({ event: 'test', level: 'info' });
       expect(dispatcher.getMetrics().sent).toBe(1);
     });

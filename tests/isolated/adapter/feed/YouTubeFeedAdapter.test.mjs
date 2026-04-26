@@ -1,16 +1,16 @@
 // tests/isolated/adapter/feed/YouTubeFeedAdapter.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { YouTubeFeedAdapter } from '#adapters/feed/sources/YouTubeFeedAdapter.mjs';
 
 // Mock fetch globally
-const mockFetch = jest.fn();
+const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
 describe('YouTubeFeedAdapter', () => {
-  const logger = { warn: jest.fn(), info: jest.fn(), debug: jest.fn(), error: jest.fn() };
+  const logger = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('RSS path thumbnail dimensions', () => {

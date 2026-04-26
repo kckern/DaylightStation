@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { CeremonyService } from '#apps/lifeplan/services/CeremonyService.mjs';
 import { CeremonyScheduler } from '#system/scheduling/CeremonyScheduler.mjs';
 import { frozenClock } from '../../../_lib/clock-helper.mjs';
@@ -35,16 +35,16 @@ describe('CeremonyService', () => {
 
   beforeEach(() => {
     mockLifePlanStore = {
-      load: jest.fn().mockReturnValue(mockPlan),
-      save: jest.fn(),
+      load: vi.fn().mockReturnValue(mockPlan),
+      save: vi.fn(),
     };
     mockCeremonyRecordStore = {
-      hasRecord: jest.fn().mockReturnValue(false),
-      saveRecord: jest.fn(),
-      getRecords: jest.fn().mockReturnValue([]),
+      hasRecord: vi.fn().mockReturnValue(false),
+      saveRecord: vi.fn(),
+      getRecords: vi.fn().mockReturnValue([]),
     };
     mockCadenceService = {
-      resolve: jest.fn().mockReturnValue({
+      resolve: vi.fn().mockReturnValue({
         unit: { periodId: '2025-U165', alias: 'Day 165' },
         cycle: { periodId: '2025-C24', alias: 'Cycle 24' },
       }),
@@ -103,13 +103,13 @@ describe('CeremonyScheduler', () => {
 
   beforeEach(() => {
     mockCeremonyService = {
-      getCeremonyContent: jest.fn().mockReturnValue({ type: 'unit_intention' }),
+      getCeremonyContent: vi.fn().mockReturnValue({ type: 'unit_intention' }),
     };
     mockNotificationService = {
-      send: jest.fn(),
+      send: vi.fn(),
     };
     mockLifePlanStore = {
-      load: jest.fn().mockReturnValue({
+      load: vi.fn().mockReturnValue({
         ceremonies: {
           unit_intention: { enabled: true },
           cycle_retro: { enabled: true },
@@ -118,14 +118,14 @@ describe('CeremonyScheduler', () => {
       }),
     };
     mockCeremonyRecordStore = {
-      hasRecord: jest.fn().mockReturnValue(false),
+      hasRecord: vi.fn().mockReturnValue(false),
     };
     mockCadenceService = {
-      resolve: jest.fn().mockReturnValue({
+      resolve: vi.fn().mockReturnValue({
         unit: { periodId: '2025-U165' },
         cycle: { periodId: '2025-C24' },
       }),
-      isCeremonyDue: jest.fn().mockReturnValue(true),
+      isCeremonyDue: vi.fn().mockReturnValue(true),
     };
 
     scheduler = new CeremonyScheduler({

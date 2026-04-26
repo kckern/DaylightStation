@@ -1,5 +1,5 @@
 // tests/isolated/application/feed/ScrollConfigLoader.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { ScrollConfigLoader } from '#apps/feed/services/ScrollConfigLoader.mjs';
 
 describe('ScrollConfigLoader', () => {
@@ -9,7 +9,7 @@ describe('ScrollConfigLoader', () => {
   beforeEach(() => {
     mockDataService = {
       user: {
-        read: jest.fn().mockReturnValue(null),
+        read: vi.fn().mockReturnValue(null),
       },
     };
     loader = new ScrollConfigLoader({ dataService: mockDataService });

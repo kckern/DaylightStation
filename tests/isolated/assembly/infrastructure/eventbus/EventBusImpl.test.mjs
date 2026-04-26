@@ -1,5 +1,5 @@
 // tests/unit/infrastructure/eventbus/EventBusImpl.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { EventBusImpl } from '#backend/src/0_system/eventbus/EventBusImpl.mjs';
 
 describe('EventBusImpl', () => {
@@ -49,15 +49,15 @@ describe('EventBusImpl', () => {
 
   describe('publish', () => {
     test('calls subscriber with payload', () => {
-      const handler = jest.fn();
+      const handler = vi.fn();
       bus.subscribe('topic1', handler);
       bus.publish('topic1', { data: 'test' });
       expect(handler).toHaveBeenCalledWith({ data: 'test' }, 'topic1');
     });
 
     test('calls all subscribers for topic', () => {
-      const handler1 = jest.fn();
-      const handler2 = jest.fn();
+      const handler1 = vi.fn();
+      const handler2 = vi.fn();
       bus.subscribe('topic1', handler1);
       bus.subscribe('topic1', handler2);
       bus.publish('topic1', 'data');
@@ -66,15 +66,15 @@ describe('EventBusImpl', () => {
     });
 
     test('does not call subscribers for other topics', () => {
-      const handler = jest.fn();
+      const handler = vi.fn();
       bus.subscribe('topic1', handler);
       bus.publish('topic2', 'data');
       expect(handler).not.toHaveBeenCalled();
     });
 
     test('continues if handler throws', () => {
-      const handler1 = jest.fn(() => { throw new Error('fail'); });
-      const handler2 = jest.fn();
+      const handler1 = vi.fn(() => { throw new Error('fail'); });
+      const handler2 = vi.fn();
       bus.subscribe('topic1', handler1);
       bus.subscribe('topic1', handler2);
       bus.publish('topic1', 'data');
@@ -84,15 +84,15 @@ describe('EventBusImpl', () => {
 
   describe('addAdapter', () => {
     test('broadcasts to adapters on publish', () => {
-      const adapter = { broadcast: jest.fn() };
+      const adapter = { broadcast: vi.fn() };
       bus.addAdapter(adapter);
       bus.publish('topic1', { data: 'test' });
       expect(adapter.broadcast).toHaveBeenCalledWith('topic1', { data: 'test' });
     });
 
     test('broadcasts to multiple adapters', () => {
-      const adapter1 = { broadcast: jest.fn() };
-      const adapter2 = { broadcast: jest.fn() };
+      const adapter1 = { broadcast: vi.fn() };
+      const adapter2 = { broadcast: vi.fn() };
       bus.addAdapter(adapter1);
       bus.addAdapter(adapter2);
       bus.publish('topic1', 'data');
@@ -102,7 +102,7 @@ describe('EventBusImpl', () => {
 
     test('continues if adapter throws', () => {
       const adapter1 = { broadcast: () => { throw new Error('fail'); } };
-      const adapter2 = { broadcast: jest.fn() };
+      const adapter2 = { broadcast: vi.fn() };
       bus.addAdapter(adapter1);
       bus.addAdapter(adapter2);
       bus.publish('topic1', 'data');

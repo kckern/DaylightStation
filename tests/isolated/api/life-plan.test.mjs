@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import createPlanRouter from '#api/v1/routers/life/plan.mjs';
@@ -28,8 +28,8 @@ describe('Life Plan API Router', () => {
     });
 
     mockStore = {
-      load: jest.fn().mockReturnValue(testPlan),
-      save: jest.fn(),
+      load: vi.fn().mockReturnValue(testPlan),
+      save: vi.fn(),
     };
 
     const router = createPlanRouter({

@@ -1,5 +1,5 @@
 // tests/isolated/api/device-route-mounted.test.mjs
-import { describe, test, expect } from '@jest/globals';
+import { describe, test, expect } from 'vitest';
 import { createApiRouter } from '../../../backend/src/4_api/v1/routers/api.mjs';
 import express from 'express';
 import request from 'supertest';

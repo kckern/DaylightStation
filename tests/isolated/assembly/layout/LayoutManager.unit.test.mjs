@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { LayoutManager } from '#frontend/modules/Fitness/FitnessModules/modules/FitnessChart/layout/LayoutManager.js';
 import { CHART_DEFAULTS, createPRNG, generateAvatars, generateClusteredAvatars, detectAnomalies } from './testUtils.mjs';
 

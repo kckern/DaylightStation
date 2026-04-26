@@ -1,5 +1,5 @@
 // tests/unit/fitness/fitness-timeline-pruning.unit.test.mjs
-import { describe, test, expect, beforeEach } from '@jest/globals';
+import { describe, test, expect, beforeEach } from 'vitest';
 import { FitnessTimeline } from '#frontend/hooks/fitness/FitnessTimeline.js';
 
 /**

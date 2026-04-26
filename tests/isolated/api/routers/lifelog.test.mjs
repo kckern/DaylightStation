@@ -1,19 +1,19 @@
 // tests/unit/api/routers/lifelog.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 
 // Mock the LifelogAggregator
 const mockAggregator = {
-  aggregate: jest.fn(),
-  getAvailableSources: jest.fn()
+  aggregate: vi.fn(),
+  getAvailableSources: vi.fn()
 };
 
 describe('lifelog router', () => {
   let app;
 
   beforeEach(async () => {
-    jest.resetModules();
+    vi.resetModules();
     mockAggregator.aggregate.mockReset();
     mockAggregator.getAvailableSources.mockReset();
     const { createLifelogRouter } = await import('#backend/src/4_api/v1/routers/lifelog.mjs');

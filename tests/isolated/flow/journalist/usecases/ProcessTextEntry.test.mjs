@@ -1,5 +1,5 @@
 // tests/unit/applications/journalist/usecases/ProcessTextEntry.test.mjs
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 describe('ProcessTextEntry', () => {
   let ProcessTextEntry;
@@ -14,34 +14,34 @@ describe('ProcessTextEntry', () => {
   beforeEach(async () => {
     // Reset mocks
     mockMessagingGateway = {
-      sendMessage: jest.fn().mockResolvedValue({ messageId: 'sent-msg-123' }),
+      sendMessage: vi.fn().mockResolvedValue({ messageId: 'sent-msg-123' }),
     };
 
     mockAiGateway = {
-      chat: jest.fn(),
+      chat: vi.fn(),
     };
 
     mockJournalEntryRepository = {
-      saveMessage: jest.fn().mockResolvedValue(undefined),
-      getMessageHistory: jest.fn().mockResolvedValue([]),
+      saveMessage: vi.fn().mockResolvedValue(undefined),
+      getMessageHistory: vi.fn().mockResolvedValue([]),
     };
 
     mockMessageQueueRepository = {
-      add: jest.fn().mockResolvedValue(undefined),
-      peek: jest.fn().mockResolvedValue(null),
-      remove: jest.fn().mockResolvedValue(undefined),
+      add: vi.fn().mockResolvedValue(undefined),
+      peek: vi.fn().mockResolvedValue(null),
+      remove: vi.fn().mockResolvedValue(undefined),
     };
 
     mockConversationStateStore = {
-      get: jest.fn().mockResolvedValue(null),
-      set: jest.fn().mockResolvedValue(undefined),
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue(undefined),
     };
 
     mockLogger = {
-      info: jest.fn(),
-      debug: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
+      info: vi.fn(),
+      debug: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
     };
 
     // Dynamic import after mocks are set up
@@ -557,7 +557,7 @@ describe('ProcessTextEntry', () => {
 
     it('should return empty history when repository has no getMessageHistory', async () => {
       const repoWithoutHistory = {
-        saveMessage: jest.fn(),
+        saveMessage: vi.fn(),
         // No getMessageHistory method
       };
 

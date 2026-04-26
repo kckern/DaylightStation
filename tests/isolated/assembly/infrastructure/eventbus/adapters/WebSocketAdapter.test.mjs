@@ -1,5 +1,5 @@
 // tests/unit/infrastructure/eventbus/adapters/WebSocketAdapter.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { WebSocketAdapter } from '#backend/src/0_system/eventbus/adapters/WebSocketAdapter.mjs';
 
 describe('WebSocketAdapter', () => {
@@ -8,9 +8,9 @@ describe('WebSocketAdapter', () => {
 
   beforeEach(() => {
     mockLogger = {
-      warn: jest.fn(),
-      debug: jest.fn(),
-      error: jest.fn()
+      warn: vi.fn(),
+      debug: vi.fn(),
+      error: vi.fn()
     };
     adapter = new WebSocketAdapter({ logger: mockLogger });
   });
@@ -21,7 +21,7 @@ describe('WebSocketAdapter', () => {
     });
 
     test('accepts custom broadcast function', () => {
-      const mockFn = jest.fn();
+      const mockFn = vi.fn();
       const adapterWithFn = new WebSocketAdapter({ broadcastFn: mockFn });
       expect(adapterWithFn.broadcastFn).toBe(mockFn);
     });
@@ -29,7 +29,7 @@ describe('WebSocketAdapter', () => {
 
   describe('setBroadcastFunction', () => {
     test('sets the broadcast function', () => {
-      const mockFn = jest.fn();
+      const mockFn = vi.fn();
       adapter.setBroadcastFunction(mockFn);
       expect(adapter.broadcastFn).toBe(mockFn);
     });
@@ -50,7 +50,7 @@ describe('WebSocketAdapter', () => {
     });
 
     test('calls broadcastFn with formatted message', () => {
-      const mockFn = jest.fn();
+      const mockFn = vi.fn();
       adapter.setBroadcastFunction(mockFn);
 
       adapter.broadcast('fitness', { revolutions: 100 });
@@ -65,12 +65,12 @@ describe('WebSocketAdapter', () => {
     test('broadcasts to WebSocket clients when wss is set', () => {
       const mockClient1 = {
         readyState: 1, // OPEN
-        send: jest.fn(),
+        send: vi.fn(),
         _busMeta: { subscriptions: new Set(['*']) }
       };
       const mockClient2 = {
         readyState: 1,
-        send: jest.fn(),
+        send: vi.fn(),
         _busMeta: { subscriptions: new Set(['fitness']) }
       };
       const mockWss = {
@@ -87,12 +87,12 @@ describe('WebSocketAdapter', () => {
     test('respects topic subscriptions', () => {
       const mockClient1 = {
         readyState: 1,
-        send: jest.fn(),
+        send: vi.fn(),
         _busMeta: { subscriptions: new Set(['fitness']) }
       };
       const mockClient2 = {
         readyState: 1,
-        send: jest.fn(),
+        send: vi.fn(),
         _busMeta: { subscriptions: new Set(['midi']) }
       };
       const mockWss = {
@@ -109,7 +109,7 @@ describe('WebSocketAdapter', () => {
     test('skips clients that are not open', () => {
       const mockClient = {
         readyState: 3, // CLOSED
-        send: jest.fn(),
+        send: vi.fn(),
         _busMeta: { subscriptions: new Set(['*']) }
       };
       const mockWss = {

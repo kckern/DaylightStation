@@ -1,12 +1,12 @@
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 
 // Polyfill browser globals for Node.js test environment
 globalThis.requestAnimationFrame = globalThis.requestAnimationFrame || ((cb) => setTimeout(cb, 0));
 globalThis.cancelAnimationFrame = globalThis.cancelAnimationFrame || ((id) => clearTimeout(id));
 
 // Mock the shared transport before importing Logger
-const mockSend = jest.fn();
-jest.unstable_mockModule('#frontend/lib/logging/sharedTransport.js', () => ({
+const mockSend = vi.fn();
+vi.mock('#frontend/lib/logging/sharedTransport.js', () => ({
   getSharedWsTransport: () => ({ send: mockSend })
 }));
 

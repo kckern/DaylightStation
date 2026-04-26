@@ -5,10 +5,10 @@
  * Uses mocked fetch responses - no actual API calls.
  */
 
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 
 // Mock fetch globally before importing the gateway
-const mockFetch = jest.fn();
+const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
 const { GoogleImageSearchGateway } = await import('#backend/_legacy/chatbots/infrastructure/gateways/GoogleImageSearchGateway.mjs');
@@ -19,7 +19,7 @@ describe('GoogleImageSearchGateway', () => {
   const mockCseId = 'test-cse-id';
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     gateway = new GoogleImageSearchGateway({
       apiKey: mockApiKey,
       cseId: mockCseId,

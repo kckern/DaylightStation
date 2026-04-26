@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { UserResolver } from '#backend/src/0_system/users/UserResolver.mjs';
 
 describe('UserResolver', () => {

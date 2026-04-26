@@ -1,26 +1,26 @@
 // tests/isolated/adapter/feed/KomgaFeedAdapter.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { KomgaFeedAdapter } from '#adapters/feed/sources/KomgaFeedAdapter.mjs';
 
 // Mock dataService
 const mockDataService = {
   household: {
-    read: jest.fn().mockReturnValue(null),
-    write: jest.fn(),
+    read: vi.fn().mockReturnValue(null),
+    write: vi.fn(),
   },
 };
 
 // Shared mock client — hoisted so all tests can use it
 const mockClient = {
   host: 'http://localhost:25600',
-  getBooks: jest.fn(),
+  getBooks: vi.fn(),
 };
 
 describe('KomgaFeedAdapter', () => {
-  const logger = { warn: jest.fn(), debug: jest.fn(), error: jest.fn() };
+  const logger = { warn: vi.fn(), debug: vi.fn(), error: vi.fn() };
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockDataService.household.read.mockReturnValue(null);
     mockClient.getBooks.mockReset();
   });

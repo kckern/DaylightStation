@@ -1,4 +1,4 @@
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { createLogger } from '#backend/lib/logging/logger.js';
 import { initializeLogging, resetLogging, getDispatcher } from '#backend/lib/logging/dispatcher.js';
 
@@ -8,7 +8,7 @@ describe('sampled logging', () => {
   beforeEach(() => {
     resetLogging();
     initializeLogging({ defaultLevel: 'debug' });
-    dispatchSpy = jest.spyOn(getDispatcher(), 'dispatch');
+    dispatchSpy = vi.spyOn(getDispatcher(), 'dispatch');
   });
 
   afterEach(() => {
@@ -50,13 +50,13 @@ describe('sampled logging', () => {
     expect(dispatchSpy).toHaveBeenCalledTimes(20);
 
     // Simulate window expiry by manipulating time
-    jest.useFakeTimers();
-    jest.setSystemTime(Date.now() + 61_000);
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.now() + 61_000);
 
     // Log one more to trigger flush
     logger.sampled('test.event', { count: 1, topic: 'fitness' }, { maxPerMinute: 20 });
 
-    jest.useRealTimers();
+    vi.useRealTimers();
 
     // Should have: 20 sampled + 1 aggregate + 1 new = 22
     expect(dispatchSpy).toHaveBeenCalledTimes(22);
@@ -79,10 +79,10 @@ describe('sampled logging', () => {
     }
 
     // Trigger flush
-    jest.useFakeTimers();
-    jest.setSystemTime(Date.now() + 61_000);
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.now() + 61_000);
     logger.sampled('test.event', { topic: 'final' }, { maxPerMinute: 20 });
-    jest.useRealTimers();
+    vi.useRealTimers();
 
     const aggregateCall = dispatchSpy.mock.calls[20][0];
     const topicCounts = aggregateCall.data.aggregated.topic;

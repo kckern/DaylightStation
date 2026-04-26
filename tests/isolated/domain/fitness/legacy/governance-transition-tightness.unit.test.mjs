@@ -1,12 +1,12 @@
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 
 // Mock logger with all required methods
-const mockSampled = jest.fn();
-const mockInfo = jest.fn();
-const mockWarn = jest.fn();
-const mockDebug = jest.fn();
-const mockError = jest.fn();
-jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
+const mockSampled = vi.fn();
+const mockInfo = vi.fn();
+const mockWarn = vi.fn();
+const mockDebug = vi.fn();
+const mockError = vi.fn();
+vi.mock('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn, debug: mockDebug, error: mockError }),
   getLogger: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn, debug: mockDebug, error: mockError })
 }));
@@ -28,14 +28,14 @@ const ZONE_INFO_MAP = {
 // Zone data now arrives pre-populated in userZoneMap
 // (GovernanceEngine no longer does second-pass enrichment via getParticipantProfile)
 const createMockSession = (roster = []) => ({
-  zoneProfileStore: { getProfile: jest.fn() },
+  zoneProfileStore: { getProfile: vi.fn() },
   roster,
   treasureBox: null
 });
 
 describe('Governance transition tightness', () => {
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     mockSampled.mockClear();
     mockInfo.mockClear();
     mockWarn.mockClear();
@@ -44,8 +44,8 @@ describe('Governance transition tightness', () => {
   });
 
   afterEach(() => {
-    jest.runOnlyPendingTimers();
-    jest.useRealTimers();
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
   });
 
   test('lockRows has entries when participants exist and requirements unsatisfied', () => {

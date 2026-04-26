@@ -1,5 +1,5 @@
 // tests/isolated/frontend/pose/poseActions.unit.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { createActionDetector, createCustomActionDetector } from '../../../../frontend/src/modules/Fitness/lib/pose/poseActions.js';
 
 const JUMPING_JACK = {
@@ -216,7 +216,7 @@ describe('createActionDetector — sustained (hold)', () => {
 
 describe('createCustomActionDetector', () => {
   test('calls detect with position, history, and timestamp', () => {
-    const detectFn = jest.fn(() => ({ active: true, customField: 42 }));
+    const detectFn = vi.fn(() => ({ active: true, customField: 42 }));
     const det = createCustomActionDetector({
       id: 'custom',
       detect: detectFn,

@@ -1,4 +1,4 @@
-import { describe, test, expect } from '@jest/globals';
+import { describe, test, expect } from 'vitest';
 import { resolvePause, PAUSE_REASON } from '../../../../../frontend/src/modules/Player/utils/pauseArbiter.js';
 
 describe('Governance video pause contract', () => {

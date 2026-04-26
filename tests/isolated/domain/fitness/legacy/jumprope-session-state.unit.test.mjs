@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { JumpropeSessionState } from '#frontend/hooks/fitness/JumpropeSessionState.js';
 
 describe('JumpropeSessionState', () => {
@@ -6,11 +6,11 @@ describe('JumpropeSessionState', () => {
 
   beforeEach(() => {
     state = new JumpropeSessionState('test-device');
-    jest.useFakeTimers();
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   describe('baseline tracking', () => {
@@ -36,7 +36,7 @@ describe('JumpropeSessionState', () => {
       const baseTime = Date.now();
 
       state.ingest(0, baseTime);
-      jest.advanceTimersByTime(10000);
+      vi.advanceTimersByTime(10000);
       const result = state.ingest(100, baseTime + 10000);
 
       expect(result.rpm).toBe(600);
@@ -48,7 +48,7 @@ describe('JumpropeSessionState', () => {
       state.ingest(0, baseTime);
       state.ingest(50, baseTime + 5000);
 
-      jest.advanceTimersByTime(15000);
+      vi.advanceTimersByTime(15000);
       const result = state.ingest(150, baseTime + 15000);
 
       expect(result.rpm).toBeGreaterThan(0);
@@ -59,7 +59,7 @@ describe('JumpropeSessionState', () => {
       state.ingest(0, baseTime);
       state.ingest(50, baseTime + 5000);
 
-      jest.advanceTimersByTime(20000);
+      vi.advanceTimersByTime(20000);
       const rpm = state.deriveRPM();
       expect(rpm).toBe(0);
     });
@@ -70,7 +70,7 @@ describe('JumpropeSessionState', () => {
       state.ingest(0, baseTime);
       state.ingest(30, baseTime + 1000);
 
-      jest.advanceTimersByTime(4000);
+      vi.advanceTimersByTime(4000);
       const rpm = state.deriveRPM();
       expect(rpm).toBe(0);
     });

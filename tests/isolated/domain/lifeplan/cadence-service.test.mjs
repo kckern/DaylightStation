@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { CadenceService } from '#domains/lifeplan/services/CadenceService.mjs';
 
 describe('CadenceService', () => {

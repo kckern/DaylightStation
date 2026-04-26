@@ -1,8 +1,8 @@
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 
 // Mock the shared transport before importing Logger
-const mockSend = jest.fn();
-jest.unstable_mockModule('#frontend/lib/logging/sharedTransport.js', () => ({
+const mockSend = vi.fn();
+vi.mock('#frontend/lib/logging/sharedTransport.js', () => ({
   getSharedWsTransport: () => ({ send: mockSend })
 }));
 
@@ -55,12 +55,12 @@ describe('frontend sampled logging', () => {
       child.sampled('test.agg.event', { count: 1 }, { maxPerMinute: 20 });
     }
 
-    jest.useFakeTimers();
-    jest.setSystemTime(Date.now() + 61_000);
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.now() + 61_000);
 
     child.sampled('test.agg.event', { count: 1 }, { maxPerMinute: 20 });
 
-    jest.useRealTimers();
+    vi.useRealTimers();
 
     // Find the aggregated event
     const aggCall = mockSend.mock.calls.find(c => c[0].event === 'test.agg.event.aggregated');
@@ -78,12 +78,12 @@ describe('frontend sampled logging', () => {
 
     expect(mockSend).toHaveBeenCalledTimes(20);
 
-    jest.useFakeTimers();
-    jest.setSystemTime(Date.now() + 61_000);
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.now() + 61_000);
 
     logger.sampled('test.event', { count: 1, topic: 'fitness' }, { maxPerMinute: 20 });
 
-    jest.useRealTimers();
+    vi.useRealTimers();
 
     // 20 sampled + 1 aggregate + 1 new = 22
     expect(mockSend).toHaveBeenCalledTimes(22);

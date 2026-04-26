@@ -1,5 +1,5 @@
 // tests/unit/applications/homebot/HomeBotEventRouter.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 
 describe('HomeBotEventRouter', () => {
   let router;
@@ -12,20 +12,20 @@ describe('HomeBotEventRouter', () => {
 
   beforeEach(async () => {
     // Create mock use cases
-    mockProcessGratitudeInput = { execute: jest.fn().mockResolvedValue({ success: true }) };
-    mockAssignItemToUser = { execute: jest.fn().mockResolvedValue({ success: true }) };
-    mockToggleCategory = { execute: jest.fn().mockResolvedValue({ success: true }) };
-    mockCancelGratitudeInput = { execute: jest.fn().mockResolvedValue({ success: true }) };
+    mockProcessGratitudeInput = { execute: vi.fn().mockResolvedValue({ success: true }) };
+    mockAssignItemToUser = { execute: vi.fn().mockResolvedValue({ success: true }) };
+    mockToggleCategory = { execute: vi.fn().mockResolvedValue({ success: true }) };
+    mockCancelGratitudeInput = { execute: vi.fn().mockResolvedValue({ success: true }) };
 
     // Create mock container with async getters
     mockContainer = {
-      getProcessGratitudeInput: jest.fn().mockResolvedValue(mockProcessGratitudeInput),
-      getAssignItemToUser: jest.fn().mockResolvedValue(mockAssignItemToUser),
-      getToggleCategory: jest.fn().mockResolvedValue(mockToggleCategory),
-      getCancelGratitudeInput: jest.fn().mockResolvedValue(mockCancelGratitudeInput)
+      getProcessGratitudeInput: vi.fn().mockResolvedValue(mockProcessGratitudeInput),
+      getAssignItemToUser: vi.fn().mockResolvedValue(mockAssignItemToUser),
+      getToggleCategory: vi.fn().mockResolvedValue(mockToggleCategory),
+      getCancelGratitudeInput: vi.fn().mockResolvedValue(mockCancelGratitudeInput)
     };
 
-    mockLogger = { debug: jest.fn(), warn: jest.fn() };
+    mockLogger = { debug: vi.fn(), warn: vi.fn() };
 
     const { HomeBotEventRouter } = await import('#backend/src/3_applications/homebot/bot/HomeBotEventRouter.mjs');
     router = new HomeBotEventRouter(mockContainer, { logger: mockLogger });

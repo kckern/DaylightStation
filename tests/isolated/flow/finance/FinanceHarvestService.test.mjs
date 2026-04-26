@@ -2,7 +2,7 @@
  * FinanceHarvestService Tests
  */
 
-import { jest, describe, it, expect, beforeEach } from '@jest/globals';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { FinanceHarvestService } from '#backend/src/3_applications/finance/FinanceHarvestService.mjs';
 
 describe('FinanceHarvestService', () => {
@@ -45,31 +45,31 @@ describe('FinanceHarvestService', () => {
 
   beforeEach(() => {
     mockTransactionSource = {
-      getTransactions: jest.fn().mockResolvedValue(mockTransactions),
-      getAccounts: jest.fn().mockResolvedValue(mockAccounts)
+      getTransactions: vi.fn().mockResolvedValue(mockTransactions),
+      getAccounts: vi.fn().mockResolvedValue(mockAccounts)
     };
 
     mockFinanceStore = {
-      getBudgetConfig: jest.fn().mockReturnValue(mockBudgetConfig),
-      saveTransactions: jest.fn(),
-      saveAccountBalances: jest.fn(),
-      saveMortgageTransactions: jest.fn(),
-      getTransactions: jest.fn().mockReturnValue(mockTransactions)
+      getBudgetConfig: vi.fn().mockReturnValue(mockBudgetConfig),
+      saveTransactions: vi.fn(),
+      saveAccountBalances: vi.fn(),
+      saveMortgageTransactions: vi.fn(),
+      getTransactions: vi.fn().mockReturnValue(mockTransactions)
     };
 
     mockCategorizationService = {
-      categorize: jest.fn().mockResolvedValue({ processed: [], failed: [] })
+      categorize: vi.fn().mockResolvedValue({ processed: [], failed: [] })
     };
 
     mockCompilationService = {
-      compile: jest.fn().mockResolvedValue({ budgets: {}, mortgage: {} })
+      compile: vi.fn().mockResolvedValue({ budgets: {}, mortgage: {} })
     };
 
     mockLogger = {
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
-      debug: jest.fn()
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn()
     };
 
     service = new FinanceHarvestService({

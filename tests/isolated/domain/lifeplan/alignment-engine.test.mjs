@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { AlignmentService } from '#apps/lifeplan/services/AlignmentService.mjs';
 import { LifePlan } from '#domains/lifeplan/entities/LifePlan.mjs';
 import { CadenceService } from '#domains/lifeplan/services/CadenceService.mjs';
@@ -28,10 +28,10 @@ describe('AlignmentService', () => {
     ],
   });
 
-  const mockStore = { load: jest.fn().mockReturnValue(plan) };
+  const mockStore = { load: vi.fn().mockReturnValue(plan) };
 
   const mockMetrics = {
-    getLatest: jest.fn().mockReturnValue({
+    getLatest: vi.fn().mockReturnValue({
       correlation: 0.65,
       status: 'drifting',
       allocation: { health: 0.3, family: 0.4, craft: 0.3 },
@@ -39,7 +39,7 @@ describe('AlignmentService', () => {
   };
 
   const mockCeremonyStore = {
-    getRecords: jest.fn().mockReturnValue([
+    getRecords: vi.fn().mockReturnValue([
       { type: 'cycle_retro', date: '2025-06-08' },
     ]),
   };

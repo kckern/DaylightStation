@@ -1,5 +1,5 @@
 // tests/unit/infrastructure/eventbus/adapters/MqttAdapter.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { MqttAdapter } from '#backend/src/0_system/eventbus/adapters/MqttAdapter.mjs';
 
 describe('MqttAdapter', () => {
@@ -9,13 +9,13 @@ describe('MqttAdapter', () => {
 
   beforeEach(() => {
     mockLogger = {
-      warn: jest.fn(),
-      debug: jest.fn(),
-      error: jest.fn()
+      warn: vi.fn(),
+      debug: vi.fn(),
+      error: vi.fn()
     };
     mockClient = {
       connected: true,
-      publish: jest.fn((topic, message, options, callback) => {
+      publish: vi.fn((topic, message, options, callback) => {
         if (callback) callback(null);
       })
     };
@@ -98,7 +98,7 @@ describe('MqttAdapter', () => {
     });
 
     test('logs error on publish failure', () => {
-      mockClient.publish = jest.fn((topic, message, options, callback) => {
+      mockClient.publish = vi.fn((topic, message, options, callback) => {
         callback(new Error('Connection failed'));
       });
       adapter.setClient(mockClient);

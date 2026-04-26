@@ -1,18 +1,18 @@
 // tests/isolated/adapter/feed/ImmichFeedAdapter.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 import { ImmichFeedAdapter } from '#adapters/feed/sources/ImmichFeedAdapter.mjs';
 
 describe('ImmichFeedAdapter', () => {
-  const logger = { warn: jest.fn(), debug: jest.fn(), error: jest.fn() };
+  const logger = { warn: vi.fn(), debug: vi.fn(), error: vi.fn() };
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('fetchItems image dimensions', () => {
     test('includes imageWidth and imageHeight in meta when viewable has dimensions', async () => {
       const mockContentQueryService = {
-        search: jest.fn().mockResolvedValue({
+        search: vi.fn().mockResolvedValue({
           items: [
             { id: 'immich:asset1', localId: 'asset1', metadata: {} },
           ],
@@ -20,7 +20,7 @@ describe('ImmichFeedAdapter', () => {
       };
 
       const mockImmichContent = {
-        getViewable: jest.fn().mockResolvedValue({
+        getViewable: vi.fn().mockResolvedValue({
           width: 4032,
           height: 3024,
           metadata: {
@@ -29,8 +29,8 @@ describe('ImmichFeedAdapter', () => {
             people: [],
           },
         }),
-        search: jest.fn(),
-        getRandomMemories: jest.fn(),
+        search: vi.fn(),
+        getRandomMemories: vi.fn(),
       };
 
       const contentRegistry = new Map();
@@ -54,7 +54,7 @@ describe('ImmichFeedAdapter', () => {
 
     test('does not include imageWidth/imageHeight when viewable lacks dimensions', async () => {
       const mockContentQueryService = {
-        search: jest.fn().mockResolvedValue({
+        search: vi.fn().mockResolvedValue({
           items: [
             { id: 'immich:asset2', localId: 'asset2', metadata: {} },
           ],
@@ -62,15 +62,15 @@ describe('ImmichFeedAdapter', () => {
       };
 
       const mockImmichContent = {
-        getViewable: jest.fn().mockResolvedValue({
+        getViewable: vi.fn().mockResolvedValue({
           metadata: {
             capturedAt: '2025-06-15T10:30:00.000Z',
             exif: { city: 'Portland' },
             people: [],
           },
         }),
-        search: jest.fn(),
-        getRandomMemories: jest.fn(),
+        search: vi.fn(),
+        getRandomMemories: vi.fn(),
       };
 
       const contentRegistry = new Map();
@@ -96,21 +96,21 @@ describe('ImmichFeedAdapter', () => {
   describe('fetchItems title with face tags', () => {
     test('title shows people and location when both available', async () => {
       const mockContentQueryService = {
-        search: jest.fn().mockResolvedValue({
+        search: vi.fn().mockResolvedValue({
           items: [{ id: 'immich:a1', localId: 'a1', metadata: {} }],
         }),
       };
 
       const mockImmichContent = {
-        getViewable: jest.fn().mockResolvedValue({
+        getViewable: vi.fn().mockResolvedValue({
           metadata: {
             capturedAt: '2025-06-15T10:30:00.000Z',
             exif: { city: 'New York City' },
             people: ['Bob', 'Bill', 'Biff'],
           },
         }),
-        search: jest.fn(),
-        getRandomMemories: jest.fn(),
+        search: vi.fn(),
+        getRandomMemories: vi.fn(),
       };
 
       const contentRegistry = new Map();
@@ -135,21 +135,21 @@ describe('ImmichFeedAdapter', () => {
 
     test('title shows only people when no location', async () => {
       const mockContentQueryService = {
-        search: jest.fn().mockResolvedValue({
+        search: vi.fn().mockResolvedValue({
           items: [{ id: 'immich:a2', localId: 'a2', metadata: {} }],
         }),
       };
 
       const mockImmichContent = {
-        getViewable: jest.fn().mockResolvedValue({
+        getViewable: vi.fn().mockResolvedValue({
           metadata: {
             capturedAt: '2025-06-15T10:30:00.000Z',
             exif: {},
             people: ['Alice', 'Bob'],
           },
         }),
-        search: jest.fn(),
-        getRandomMemories: jest.fn(),
+        search: vi.fn(),
+        getRandomMemories: vi.fn(),
       };
 
       const contentRegistry = new Map();
@@ -171,21 +171,21 @@ describe('ImmichFeedAdapter', () => {
 
     test('title shows time-of-day in location when no people', async () => {
       const mockContentQueryService = {
-        search: jest.fn().mockResolvedValue({
+        search: vi.fn().mockResolvedValue({
           items: [{ id: 'immich:a3', localId: 'a3', metadata: {} }],
         }),
       };
 
       const mockImmichContent = {
-        getViewable: jest.fn().mockResolvedValue({
+        getViewable: vi.fn().mockResolvedValue({
           metadata: {
             capturedAt: '2025-06-15T17:30:00.000Z',
             exif: { city: 'Seattle' },
             people: [],
           },
         }),
-        search: jest.fn(),
-        getRandomMemories: jest.fn(),
+        search: vi.fn(),
+        getRandomMemories: vi.fn(),
       };
 
       const contentRegistry = new Map();
@@ -208,21 +208,21 @@ describe('ImmichFeedAdapter', () => {
 
     test('title uses day and time of day when no people or location', async () => {
       const mockContentQueryService = {
-        search: jest.fn().mockResolvedValue({
+        search: vi.fn().mockResolvedValue({
           items: [{ id: 'immich:a4', localId: 'a4', metadata: {} }],
         }),
       };
 
       const mockImmichContent = {
-        getViewable: jest.fn().mockResolvedValue({
+        getViewable: vi.fn().mockResolvedValue({
           metadata: {
             capturedAt: '2025-06-15T10:30:00.000Z',
             exif: {},
             people: [],
           },
         }),
-        search: jest.fn(),
-        getRandomMemories: jest.fn(),
+        search: vi.fn(),
+        getRandomMemories: vi.fn(),
       };
 
       const contentRegistry = new Map();
@@ -245,20 +245,20 @@ describe('ImmichFeedAdapter', () => {
 
     test('title falls back to Memory when no people, location, or date', async () => {
       const mockContentQueryService = {
-        search: jest.fn().mockResolvedValue({
+        search: vi.fn().mockResolvedValue({
           items: [{ id: 'immich:a6', localId: 'a6', metadata: {} }],
         }),
       };
 
       const mockImmichContent = {
-        getViewable: jest.fn().mockResolvedValue({
+        getViewable: vi.fn().mockResolvedValue({
           metadata: {
             exif: {},
             people: [],
           },
         }),
-        search: jest.fn(),
-        getRandomMemories: jest.fn(),
+        search: vi.fn(),
+        getRandomMemories: vi.fn(),
       };
 
       const contentRegistry = new Map();
@@ -280,21 +280,21 @@ describe('ImmichFeedAdapter', () => {
 
     test('single person shows just name without commas', async () => {
       const mockContentQueryService = {
-        search: jest.fn().mockResolvedValue({
+        search: vi.fn().mockResolvedValue({
           items: [{ id: 'immich:a5', localId: 'a5', metadata: {} }],
         }),
       };
 
       const mockImmichContent = {
-        getViewable: jest.fn().mockResolvedValue({
+        getViewable: vi.fn().mockResolvedValue({
           metadata: {
             capturedAt: '2025-06-15T10:30:00.000Z',
             exif: { city: 'Portland' },
             people: ['Alice'],
           },
         }),
-        search: jest.fn(),
-        getRandomMemories: jest.fn(),
+        search: vi.fn(),
+        getRandomMemories: vi.fn(),
       };
 
       const contentRegistry = new Map();

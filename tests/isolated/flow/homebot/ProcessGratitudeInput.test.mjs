@@ -1,5 +1,5 @@
 // tests/unit/applications/homebot/ProcessGratitudeInput.test.mjs
-import { jest } from '@jest/globals';
+import { vi } from 'vitest';
 
 describe('ProcessGratitudeInput', () => {
   let useCase;
@@ -10,21 +10,21 @@ describe('ProcessGratitudeInput', () => {
 
   beforeEach(async () => {
     mockMessagingGateway = {
-      sendMessage: jest.fn().mockResolvedValue({ messageId: 'msg123' }),
-      updateMessage: jest.fn().mockResolvedValue(undefined)
+      sendMessage: vi.fn().mockResolvedValue({ messageId: 'msg123' }),
+      updateMessage: vi.fn().mockResolvedValue(undefined)
     };
     mockAiGateway = {
-      chatWithJson: jest.fn().mockResolvedValue({
+      chatWithJson: vi.fn().mockResolvedValue({
         items: [{ text: 'Good health' }, { text: 'Family' }],
         category: 'gratitude'
       })
     };
     mockStateStore = {
-      set: jest.fn().mockResolvedValue(undefined),
-      get: jest.fn().mockResolvedValue(null)
+      set: vi.fn().mockResolvedValue(undefined),
+      get: vi.fn().mockResolvedValue(null)
     };
     mockHouseholdService = {
-      getMembers: jest.fn().mockResolvedValue([
+      getMembers: vi.fn().mockResolvedValue([
         { username: 'user1', displayName: 'User One' }
       ])
     };
@@ -35,7 +35,7 @@ describe('ProcessGratitudeInput', () => {
       aiGateway: mockAiGateway,
       conversationStateStore: mockStateStore,
       householdService: mockHouseholdService,
-      logger: { info: jest.fn(), debug: jest.fn(), error: jest.fn() }
+      logger: { info: vi.fn(), debug: vi.fn(), error: vi.fn() }
     });
   });
 

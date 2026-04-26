@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { Value } from '#domains/lifeplan/entities/Value.mjs';
 
 describe('Value Entity', () => {

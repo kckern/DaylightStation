@@ -1,19 +1,19 @@
 // tests/isolated/application/fitness/FitnessPlayableService.completedAt.test.mjs
-import { describe, test, expect, jest } from '@jest/globals';
+import { describe, test, expect, vi } from 'vitest';
 import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs';
 
 function makeService({ items, classifyResult = 'in_progress' } = {}) {
   const fakeAdapter = {
-    resolvePlayables: jest.fn().mockResolvedValue(items),
-    getContainerInfo: jest.fn().mockResolvedValue(null),
-    getItem: jest.fn().mockResolvedValue(null),
+    resolvePlayables: vi.fn().mockResolvedValue(items),
+    getContainerInfo: vi.fn().mockResolvedValue(null),
+    getItem: vi.fn().mockResolvedValue(null),
   };
   return new FitnessPlayableService({
     fitnessConfigService: { loadRawConfig: () => ({}) },
     contentAdapter: fakeAdapter,
     contentQueryService: null,
     createProgressClassifier: () => ({ classify: () => classifyResult }),
-    logger: { info: jest.fn(), warn: jest.fn() }
+    logger: { info: vi.fn(), warn: vi.fn() }
   });
 }
 

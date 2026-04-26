@@ -1,4 +1,4 @@
-import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 describe('FitnessSession._startTickTimer guard', () => {
   let session;
@@ -14,9 +14,9 @@ describe('FitnessSession._startTickTimer guard', () => {
       _tickTimerStartedAt: 0,
       _tickTimerTickCount: 0,
       timeline: { timebase: { intervalMs: 5000 } },
-      _collectTimelineTick: jest.fn(),
-      _checkEmptyRosterTimeout: jest.fn(),
-      _logTickTimerHealth: jest.fn(),
+      _collectTimelineTick: vi.fn(),
+      _checkEmptyRosterTimeout: vi.fn(),
+      _logTickTimerHealth: vi.fn(),
     };
 
     // Replicate _stopTickTimer logic

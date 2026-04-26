@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { FeedbackService } from '#apps/lifeplan/services/FeedbackService.mjs';
 import { RetroService } from '#apps/lifeplan/services/RetroService.mjs';
 
@@ -18,8 +18,8 @@ describe('FeedbackService', () => {
   beforeEach(() => {
     mockPlan.feedback = [];
     mockLifePlanStore = {
-      load: jest.fn().mockReturnValue(mockPlan),
-      save: jest.fn(),
+      load: vi.fn().mockReturnValue(mockPlan),
+      save: vi.fn(),
     };
 
     service = new FeedbackService({ lifePlanStore: mockLifePlanStore });
@@ -98,16 +98,16 @@ describe('RetroService', () => {
 
   beforeEach(() => {
     mockLifePlanStore = {
-      load: jest.fn().mockReturnValue(mockPlan),
+      load: vi.fn().mockReturnValue(mockPlan),
     };
     mockFeedbackService = {
-      getFeedback: jest.fn().mockReturnValue([
+      getFeedback: vi.fn().mockReturnValue([
         { text: 'Good week', sentiment: 'positive' },
         { text: 'Struggling', sentiment: 'friction' },
       ]),
     };
     mockDriftService = {
-      getLatestSnapshot: jest.fn().mockReturnValue({ correlation: 0.75, status: 'drifting' }),
+      getLatestSnapshot: vi.fn().mockReturnValue({ correlation: 0.75, status: 'drifting' }),
     };
 
     service = new RetroService({

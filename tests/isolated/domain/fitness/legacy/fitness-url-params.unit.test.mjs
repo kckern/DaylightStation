@@ -1,5 +1,5 @@
 // tests/unit/fitness/fitness-url-params.unit.test.mjs
-import { describe, test, expect } from '@jest/globals';
+import { describe, test, expect } from 'vitest';
 
 /**
  * Unit tests for fitness URL parsing utilities.
