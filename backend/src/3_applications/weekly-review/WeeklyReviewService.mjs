@@ -303,8 +303,15 @@ export class WeeklyReviewService {
     const metaPath = path.join(draftDir, `${sessionId}.meta.json`);
     if (!fs.existsSync(draftPath)) throw new Error(`draft not found: ${sessionId}`);
 
-    this.#logger.info?.('weekly-review.finalize.start', { sessionId, week, duration });
-    const buffer = fs.readFileSync(draftPath);
+    // Atomically rename so concurrent chunk-writes hit a fresh draft.
+    // This makes repeat-finalize calls within the same session safe — each call
+    // processes the bytes accumulated since the previous finalize.
+    const stamp = Date.now();
+    const processingPath = path.join(draftDir, `${sessionId}.processing-${stamp}.webm`);
+    fs.renameSync(draftPath, processingPath);
+
+    this.#logger.info?.('weekly-review.finalize.start', { sessionId, week, duration, processingPath });
+    const buffer = fs.readFileSync(processingPath);
 
     // Move audio to final media location
     const now = new Date();
@@ -343,9 +350,10 @@ export class WeeklyReviewService {
       JSON.stringify({ week, generatedAt: new Date().toISOString(), duration }, null, 2)
     );
 
-    // Delete draft
-    fs.unlinkSync(draftPath);
-    if (fs.existsSync(metaPath)) fs.unlinkSync(metaPath);
+    // Delete the processing snapshot. The metadata file may be re-created by
+    // concurrent chunk writes — leave it alone; the next finalize will manage it.
+    fs.unlinkSync(processingPath);
+    if (fs.existsSync(metaPath) && !fs.existsSync(draftPath)) fs.unlinkSync(metaPath);
 
     this.#logger.info?.('weekly-review.finalize.complete', { sessionId, week, duration });
     return { ok: true, transcript: { raw: transcriptRaw, clean: transcriptClean, duration } };
