@@ -44,7 +44,7 @@ export function parseNfcLocations(raw) {
 
     out[locationId] = {
       target: locConfig.target,
-      action: locConfig.action,
+      action: locConfig.action ?? null,
       auth_token: locConfig.auth_token ?? null,
       defaults,
     };
