@@ -80,6 +80,45 @@ Inside the tag body (and inside any per-reader override block), these keys are c
 
 ---
 
+## Unknown tag capture (lifecycle)
+
+A tag's lifecycle is **derived from its YAML fields**, not stored as a flag. `NfcResolver.resolve` returns `null` for any tag with no actionable field (`content`, `scene`, `service`, `entity`), so the dispatcher routes such scans into the unknown-tag handler:
+
+| State | YAML shape | Behavior on scan |
+|---|---|---|
+| 0 — never seen | (no entry) | Backend creates placeholder with `scanned_at: "..."`, sends iOS/Android push (if `notify_unknown:` set), broadcasts `registered: false` |
+| 1 — placeholder, no reply yet | `{ scanned_at: "..." }` | Backend re-sends push (if configured); placeholder write is idempotent. Subject to the 3 s debounce window. |
+| 2 — reply received, awaiting promotion | `{ scanned_at: "...", note: "..." }` | Silent — broadcast still fires for observer dashboards; no push, no write |
+| 3 — promoted to a real tag | `{ plex: 12345, ... }` (or `scene:`, `service:`, etc.) | Normal dispatch — never enters this flow |
+
+**Fields:**
+
+- `scanned_at` (string, quoted) — set by the backend on the **first** scan that creates the entry, in container-local format `"YYYY-MM-DD HH:MM:SS"` (sv-SE locale). **Never updated** after creation.
+- `note` (string) — set by `PUT /api/v1/trigger/<location>/nfc/<uid>/note` when the user submits an Android/iOS Companion REPLY. Overwrites on each PUT (last reply wins). Ignored by `NfcResolver.resolve`.
+
+**Promotion** is "add an intent field" (`plex`, `scene`, `service`, etc.) by editing the YAML directly. The leftover `scanned_at:` and `note:` are harmless and may be hand-cleaned at the user's discretion.
+
+**`notify_unknown` field on `nfc/locations.yml`:**
+
+```yaml
+livingroom:
+  target: livingroom-tv
+  action: play-next
+  notify_unknown: mobile_app_kc_phone   # optional — HA notify service name
+```
+
+When set, the backend calls `haGateway.callService('notify', <value>, { title, message, data: { actions: [{ action: "NFC_REPLY|<location>|<uid>", behavior: "textInput", title: "Add note", ... }] } })` on every state-0 or state-1 scan. The action ID encodes location + UID so the HA reply automation is stateless.
+
+When omitted/null: the placeholder is still written and the broadcast still fires; only the push notification is skipped.
+
+**HA-side wiring** (lives at `/_includes/rest_commands/nfc.yaml` and `/_includes/automations/nfc_unknown_tag_reply.yaml` on the HA host):
+- `rest_command.nfc_set_note` issues the `PUT …/note` to the backend.
+- `nfc_unknown_tag_reply` automation listens for `mobile_app_notification_action` events whose `action` starts with `NFC_REPLY|`, parses out location + uid, and calls the rest_command with the user's `reply_text`.
+
+**Caveat**: the YAML round-trip via `js-yaml` strips top-of-file comments. The first placeholder write to `tags.yml` removes any header comment block. The schema documented here is the canonical source.
+
+---
+
 ## `triggers/state/locations.yml`
 
 ```yaml

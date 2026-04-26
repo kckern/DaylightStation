@@ -234,14 +234,9 @@ Subscribed dashboards become a free observability surface for the trigger system
 
 ## Reloading the Registry
 
-The trigger config is parsed once at boot from `data/household/config/triggers/`. To pick up edits without restarting the container:
+The trigger config is parsed once at boot from `data/household/config/triggers/`. There is **no in-process reload endpoint** today — picking up edits requires restarting the container (`sudo docker stop daylight-station && sudo docker rm daylight-station && sudo deploy-daylight`).
 
-```bash
-curl -X POST http://localhost:3111/api/v1/trigger/reload
-# → { "ok": true, "locations": ["livingroom"], "tagCount": 1 }
-```
-
-If the YAML fails to parse, the endpoint returns 400 with the error and **leaves the existing in-memory registry intact** — a bad edit cannot blank out a working registry.
+If the YAML fails to parse at boot, the registry falls back to an empty shape (`{ nfc: { locations: {}, tags: {} }, state: { locations: {} } }`) and the failure is logged as `trigger.config.parse.failed` — the API stays up but no triggers will resolve.
 
 ## Files
 
