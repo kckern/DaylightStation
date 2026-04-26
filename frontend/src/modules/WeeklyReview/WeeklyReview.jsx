@@ -39,7 +39,6 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   const [focusRow, setFocusRow] = useState('main');            // 'main' | 'bar'
   const [preflightFailed, setPreflightFailed] = useState(false);
   const [preflightFocus, setPreflightFocus] = useState(0);     // 0=Retry, 1=Exit
-  // eslint-disable-next-line no-unused-vars -- setDisconnectModal wired in Task 12
   const [disconnectModal, setDisconnectModal] = useState(null);
 
   const containerRef = useRef(null);
@@ -63,7 +62,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   const {
     isRecording, duration: recordingDuration, micLevel, silenceWarning,
     error: recorderError, startRecording, stopRecording,
-    firstAudibleFrameSeen, disconnected, reconnect, // eslint-disable-line no-unused-vars -- disconnected/reconnect wired in Task 12
+    firstAudibleFrameSeen, disconnected, reconnect,
   } = useAudioRecorder({ onChunk: handleChunk });
 
   const preflightStatus = preflightFailed
@@ -205,6 +204,42 @@ export default function WeeklyReview({ dispatch, dismiss }) {
     }, 10000);
     return () => clearTimeout(timer);
   }, [firstAudibleFrameSeen, isRecording]);
+
+  // Task 12: Disconnect detection — attempt bounded reconnect, then force-finalize and exit.
+  const disconnectFiredRef = useRef(false);
+  useEffect(() => {
+    if (!disconnected) {
+      disconnectFiredRef.current = false;
+      return;
+    }
+    if (disconnectFiredRef.current) return;
+    disconnectFiredRef.current = true;
+    (async () => {
+      logger.warn('disconnect.detected');
+      setDisconnectModal({ phase: 'reconnecting' });
+      const ok = await reconnect();
+      if (ok) {
+        logger.info('disconnect.recovered');
+        setDisconnectModal(null);
+        return;
+      }
+      logger.warn('disconnect.reconnect-failed-finalizing');
+      setDisconnectModal({ phase: 'finalizing' });
+      try {
+        uploaderFlushNow();
+        await DaylightAPI('/api/v1/weekly-review/recording/finalize', {
+          sessionId: sessionIdRef.current, week: data?.week, duration: recordingDuration,
+        }, 'POST');
+        await deleteLocalSession(sessionIdRef.current).catch(() => {});
+        setDisconnectModal(null);
+        onExitWidget();
+      } catch (err) {
+        logger.error('disconnect.finalize-failed', { error: err.message });
+        setDisconnectModal(null);
+        setFinalizeError(err.message);
+      }
+    })();
+  }, [disconnected, reconnect, uploaderFlushNow, data?.week, recordingDuration, onExitWidget]);
 
   // Mount-time draft recovery: check server and local IndexedDB for unfinalized sessions.
   useEffect(() => {
@@ -660,6 +695,22 @@ export default function WeeklyReview({ dispatch, dismiss }) {
               >
                 Save &amp; Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Disconnect modal — shown when mic drops; blocks input while reconnecting or finalizing */}
+      {disconnectModal && (
+        <div className="weekly-review-confirm-overlay">
+          <div className="confirm-dialog">
+            <div className="confirm-message">
+              {disconnectModal.phase === 'reconnecting' && (
+                <>Microphone dropped — reconnecting…<br/><small>Please hold tight.</small></>
+              )}
+              {disconnectModal.phase === 'finalizing' && (
+                <>Microphone disconnected.<br/><small>Saving your recording…</small></>
+              )}
             </div>
           </div>
         </div>
