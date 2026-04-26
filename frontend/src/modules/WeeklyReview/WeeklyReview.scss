@@ -1023,3 +1023,162 @@
   &--saved   { background: rgba(76, 175, 80, 0.3); }
   &--idle    { background: rgba(255, 255, 255, 0.1); }
 }
+
+// ---- Task 16: Pre-flight overlay, fullscreen image, mic indicator, upload flash ----
+
+.weekly-review-preflight-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 12, 18, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+
+  .preflight-content {
+    text-align: center;
+    color: #f0f4f8;
+    padding: 2rem 3rem;
+    max-width: 32rem;
+  }
+
+  .preflight-mic-pulse {
+    font-size: 4rem;
+    animation: mic-pulse 1.2s ease-in-out infinite;
+  }
+
+  .preflight-mic-error { font-size: 4rem; }
+
+  .preflight-title { font-size: 1.5rem; font-weight: 600; margin: 1rem 0 0.5rem; }
+  .preflight-subtitle { color: #aab2c0; }
+  .preflight-actions { display: flex; gap: 1rem; justify-content: center; margin-top: 1.5rem; }
+  .preflight-btn {
+    padding: 0.6rem 1.5rem;
+    border-radius: 0.4rem;
+    border: 1px solid #4a5060;
+    background: transparent;
+    color: #f0f4f8;
+    cursor: pointer;
+    &--primary { background: #2a7a8a; border-color: #2a7a8a; }
+  }
+}
+
+@keyframes mic-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.15); opacity: 0.6; }
+}
+
+.weekly-review-fullscreen-image {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+
+  .fullscreen-image-img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+  .fullscreen-image-overlay {
+    position: absolute;
+    bottom: 1rem;
+    left: 1rem;
+    right: 1rem;
+    color: #f0f4f8;
+    background: linear-gradient(transparent, rgba(0,0,0,0.7));
+    padding: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+  .fullscreen-image-day { font-size: 1.2rem; font-weight: 600; }
+  .fullscreen-image-index { font-size: 0.95rem; color: #c0c8d0; }
+  .fullscreen-image-people { font-size: 0.9rem; color: #8aa0b8; }
+}
+
+.mic-indicator {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.3rem;
+  margin-left: 0.5rem;
+  &--live { background: #1f5d36; color: #c0e8d0; }
+  &--lost { background: #6d1f1f; color: #ffc0c0; animation: mic-lost-flash 0.6s ease-in-out infinite; }
+}
+@keyframes mic-lost-flash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.upload-flash {
+  font-size: 0.85rem;
+  color: #c0e8d0;
+  margin-left: 0.5rem;
+  animation: upload-flash-fade 1.2s ease-out;
+}
+@keyframes upload-flash-fade {
+  0% { opacity: 0; }
+  20% { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+
+// ---- Task 18: Fixed-width treatment for dynamic text (no jitter) ----
+
+.weekly-review,
+.weekly-review * {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+.recording-timer {
+  display: inline-block;
+  min-width: 4ch;
+  text-align: right;
+}
+
+.fullscreen-image-index {
+  display: inline-block;
+  min-width: 6ch;
+  text-align: right;
+}
+
+.mic-indicator {
+  min-width: 5.5ch;
+  text-align: center;
+}
+
+.sync-badge {
+  display: inline-block;
+  min-width: 16ch;
+  text-align: left;
+}
+
+.upload-flash {
+  display: inline-block;
+  min-width: 9ch;
+  text-align: left;
+}
+
+.vu-meter {
+  display: inline-block;
+  width: 8rem;
+  flex-shrink: 0;
+}
+
+.existing-badge {
+  display: inline-block;
+  min-width: 12ch;
+  text-align: left;
+}
+
+.recording-error {
+  display: inline-block;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
