@@ -180,12 +180,13 @@ export function ScreenRenderer({ screenId: propScreenId }) {
   );
 
   // Release the gate as soon as ScreenOverlayProvider mounts a fullscreen overlay.
+  // Subscribe unconditionally so ActionBus never sees overlay-mounted as unhandled —
+  // calling releaseGate() after the gate is already released is a React no-op.
   useEffect(() => {
-    if (!suppressLayout) return undefined;
     const bus = getActionBus();
     const unsub = bus.subscribe('screen:overlay-mounted', () => releaseGate());
     return () => unsub?.();
-  }, [suppressLayout, releaseGate]);
+  }, [releaseGate]);
 
   // Failsafe: digit 4 always reloads if the input system isn't actually handling input.
   // "Handling" means the adapter attached AND (where relevant) its keymap actually loaded.

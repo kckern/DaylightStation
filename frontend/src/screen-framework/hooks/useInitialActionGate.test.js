@@ -54,4 +54,14 @@ describe('useInitialActionGate', () => {
     rerender({ s: '?play=plex:1' });
     expect(result.current.suppressLayout).toBe(false); // initial-only
   });
+
+  it('does not release suppression when search changes to empty mid-session', () => {
+    const { result, rerender } = renderHook(
+      ({ s }) => useInitialActionGate(s),
+      { initialProps: { s: '?play=plex:1' } },
+    );
+    expect(result.current.suppressLayout).toBe(true);
+    rerender({ s: '' });
+    expect(result.current.suppressLayout).toBe(true);
+  });
 });
