@@ -588,4 +588,70 @@ describe('ScreenActionHandler', () => {
       document.body.removeChild(video);
     });
   });
+
+  it('media:queue-op op=play-next with no active player mounts a fresh Player', () => {
+    const { getByTestId, queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+    expect(queryByTestId('player')).toBeNull();
+    act(() => getActionBus().emit('media:queue-op', { op: 'play-next', contentId: 'plex:1' }));
+    expect(getByTestId('player')).toBeTruthy();
+  });
+
+  it('media:queue-op op=play-next with an active audio player dispatches player:queue-op event', () => {
+    const dummy = document.createElement('div');
+    dummy.className = 'audio-player';
+    document.body.appendChild(dummy);
+
+    const handler = vi.fn();
+    window.addEventListener('player:queue-op', handler);
+
+    render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+    act(() => getActionBus().emit('media:queue-op', { op: 'play-next', contentId: 'plex:1' }));
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler.mock.calls[0][0].detail).toMatchObject({ op: 'play-next', contentId: 'plex:1' });
+
+    window.removeEventListener('player:queue-op', handler);
+    dummy.remove();
+  });
+
+  it('media:queue-op op=play-now with no active player mounts a fresh Player', () => {
+    const { getByTestId, queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+    expect(queryByTestId('player')).toBeNull();
+    act(() => getActionBus().emit('media:queue-op', { op: 'play-now', contentId: 'plex:1' }));
+    expect(getByTestId('player')).toBeTruthy();
+  });
+
+  it('media:queue-op op=play-now with an active audio player dispatches player:queue-op (in-place swap)', () => {
+    const dummy = document.createElement('div');
+    dummy.className = 'audio-player';
+    document.body.appendChild(dummy);
+
+    const handler = vi.fn();
+    window.addEventListener('player:queue-op', handler);
+
+    render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+    act(() => getActionBus().emit('media:queue-op', { op: 'play-now', contentId: 'plex:2' }));
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler.mock.calls[0][0].detail).toMatchObject({ op: 'play-now', contentId: 'plex:2' });
+
+    window.removeEventListener('player:queue-op', handler);
+    dummy.remove();
+  });
 });

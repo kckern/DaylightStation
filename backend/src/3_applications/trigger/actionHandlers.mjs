@@ -36,6 +36,13 @@ export const actionHandlers = {
       buildLoadOptions(intent)
     ),
 
+  'play-next': async (intent, { wakeAndLoadService }) =>
+    wakeAndLoadService.execute(
+      intent.target,
+      { ...(intent.params || {}), 'play-next': intent.content, op: 'play-next' },
+      buildLoadOptions(intent)
+    ),
+
   open: async (intent, { deviceService }) => {
     const device = deviceService.get(intent.target);
     if (!device) throw new Error(`Unknown target device: ${intent.target}`);
