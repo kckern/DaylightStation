@@ -18,6 +18,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // eslint-disable-next-line no-unused-vars -- setUploading kept; Task 14 may revive or remove it
   const [uploading, setUploading] = useState(false);
   const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [confirmFocus, setConfirmFocus] = useState(0); // 0=continue, 1=save
@@ -26,6 +27,8 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   const [resumeFocus, setResumeFocus] = useState(0); // I1: 0=Finalize, 1=Discard
   const [finalizeError, setFinalizeError] = useState(null);
   const [errorFocus, setErrorFocus] = useState(0); // I2: 0=Retry, 1=Exit
+  const [uploadInFlight, setUploadInFlight] = useState(false);
+  const lastUploadAtRef = useRef(0);
 
   // Task 8: viewLevel state machine — replaces selectedDay/focusedDay/focusRow/barFocus
   const [viewLevel, setViewLevel] = useState('toc');           // 'toc' | 'day' | 'fullscreen'
@@ -40,7 +43,6 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   const [disconnectModal, setDisconnectModal] = useState(null);
 
   const containerRef = useRef(null);
-  const uploadStartRef = useRef(null);
   const autoStartRef = useRef(false);
   const menuNav = React.useContext(MenuNavigationContext);
 
@@ -81,10 +83,41 @@ export default function WeeklyReview({ dispatch, dismiss }) {
     stopRecording();
   }, [stopRecording]);
 
-  // Task 11 will define onEnterUpload fully. Stub for now.
-  const onEnterUpload = useCallback(() => {
-    logger.info('upload.enter-stub', { sessionId: sessionIdRef.current });
-  }, []);
+  // Task 11: Enter triggers finalize while recording continues.
+  const onEnterUpload = useCallback(async () => {
+    if (uploadInFlight) {
+      logger.info('upload.skip-in-flight');
+      return;
+    }
+    if (Date.now() - lastUploadAtRef.current < 1000) {
+      logger.info('upload.skip-debounced');
+      return;
+    }
+    if (!data?.week) return;
+    lastUploadAtRef.current = Date.now();
+    setUploadInFlight(true);
+    try {
+      logger.info('upload.finalize-request', { sessionId: sessionIdRef.current, week: data.week });
+      uploaderFlushNow();
+      // Wait briefly for in-memory queue to drain before finalize. Don't block forever — server tolerates partial.
+      const drainDeadline = Date.now() + 3000;
+      while (uploaderPendingCountRef.current > 0 && Date.now() < drainDeadline) {
+        await new Promise(r => setTimeout(r, 200));
+        uploaderFlushNow();
+      }
+      await DaylightAPI('/api/v1/weekly-review/recording/finalize', {
+        sessionId: sessionIdRef.current,
+        week: data.week,
+        duration: recordingDuration,
+      }, 'POST');
+      logger.info('upload.finalize-complete');
+    } catch (err) {
+      logger.warn('upload.finalize-failed', { error: err.message });
+      // Non-blocking — just toast on the bar; pipeline continues.
+    } finally {
+      setUploadInFlight(false);
+    }
+  }, [data?.week, recordingDuration, uploaderFlushNow, uploaderPendingCountRef, uploadInFlight]);
 
   const onPreflightRetry = useCallback(() => {
     setPreflightFailed(false);
@@ -103,42 +136,6 @@ export default function WeeklyReview({ dispatch, dismiss }) {
     setShowStopConfirm(true);
   }, [viewLevel, focusRow]);
 
-  const finalizeRecording = useCallback(async () => {
-    if (!data?.week) return;
-    setUploading(true);
-    uploadStartRef.current = Date.now();
-    try {
-      setFinalizeError(null);
-      const deadline = Date.now() + 30_000;
-      uploaderFlushNow();
-      // C1: Use ref-backed count — React state snapshot would be stale inside this async loop
-      while (uploaderPendingCountRef.current > 0 && Date.now() < deadline) {
-        await new Promise(r => setTimeout(r, 500));
-        uploaderFlushNow();
-      }
-      if (uploaderPendingCountRef.current > 0) {
-        logger.warn('recording.finalize-with-pending', { pending: uploaderPendingCountRef.current, sessionId: sessionIdRef.current });
-      }
-      logger.info('recording.finalize-request', { sessionId: sessionIdRef.current, week: data.week });
-      const result = await DaylightAPI('/api/v1/weekly-review/recording/finalize', {
-        sessionId: sessionIdRef.current,
-        week: data.week,
-        duration: recordingDuration,
-      }, 'POST');
-      logger.info('recording.finalize-complete', { sessionId: sessionIdRef.current, ok: result.ok });
-      await deleteLocalSession(sessionIdRef.current).catch(err => logger.warn('recording.local-cleanup-failed', { error: err.message }));
-      setData(prev => ({ ...prev, recording: { exists: true, recordedAt: new Date().toISOString(), duration: recordingDuration } }));
-      if (typeof dispatch === 'function') dispatch('escape');
-      else if (typeof dismiss === 'function') dismiss();
-    } catch (err) {
-      logger.error('recording.finalize-failed', { sessionId: sessionIdRef.current, error: err.message });
-      finalizeTriggeredRef.current = false; // allow retry
-      setFinalizeError(err.message);
-    } finally {
-      setUploading(false);
-    }
-  }, [data?.week, recordingDuration, uploaderFlushNow, uploaderPendingCountRef, dispatch, dismiss]);
-
   useEffect(() => {
     logger.info('mount');
     return () => logger.info('unmount');
@@ -152,10 +149,6 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   useEffect(() => {
     logger.info('state.is-recording', { isRecording });
   }, [isRecording]);
-
-  // When recorder finishes (stop pressed), drain uploads and finalize.
-  // Task 10 will wire up automatic recording start + finalize trigger.
-  const finalizeTriggeredRef = useRef(false);
 
   useEffect(() => {
     if (recorderError) {
@@ -537,7 +530,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
 
   useEffect(() => {
     if (!menuNav?.setPopGuard) return;
-    if (!isRecording && !uploading) {
+    if (!isRecording && !uploadInFlight) {
       menuNav.clearPopGuard();
       return;
     }
@@ -545,12 +538,12 @@ export default function WeeklyReview({ dispatch, dismiss }) {
     menuNav.setPopGuard(() => {
       logger.info('nav.pop-guard', {
         isRecording: isRecordingRef.current,
-        uploading,
+        uploadInFlight: uploadInFlight,
         viewLevel: viewLevelRef.current,
         showStopConfirm: showStopConfirmRef.current,
       });
 
-      if (uploading) return false; // Task 11 will swap to uploadInFlight
+      if (uploadInFlight) return false;
 
       if (showStopConfirmRef.current) { setShowStopConfirm(false); return false; }
       if (viewLevelRef.current === 'fullscreen') { setViewLevel('day'); return false; }
@@ -561,7 +554,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
     });
 
     return () => menuNav.clearPopGuard();
-  }, [isRecording, uploading, menuNav]);
+  }, [isRecording, uploadInFlight, menuNav]);
 
   const weekLabel = useMemo(() => {
     if (!data?.days?.length) return '';
@@ -642,7 +635,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
               <small>Your recording is safe — stored locally and on the server.</small>
             </div>
             <div className="confirm-actions">
-              <button className={`confirm-btn confirm-btn--save${errorFocus === 0 ? ' focused' : ''}`} onClick={() => { setFinalizeError(null); finalizeTriggeredRef.current = false; finalizeRecording(); }}>Retry</button>
+              <button className={`confirm-btn confirm-btn--save${errorFocus === 0 ? ' focused' : ''}`} onClick={() => { setFinalizeError(null); onEnterUpload(); }}>Retry</button>
               <button className={`confirm-btn confirm-btn--continue${errorFocus === 1 ? ' focused' : ''}`} onClick={() => { setFinalizeError(null); if (typeof dispatch === 'function') dispatch('escape'); else if (typeof dismiss === 'function') dismiss(); }}>Exit (save later)</button>
             </div>
           </div>
@@ -690,6 +683,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
         micLevel={micLevel}
         silenceWarning={silenceWarning}
         uploading={uploading}
+        uploadInFlight={uploadInFlight}
         existingRecording={data.recording}
         error={recorderError}
         onStart={() => { logger.info('recording.manual-start'); startRecording(); }}
