@@ -1,0 +1,8 @@
+.motion-badge {
+  text-transform: none;
+  letter-spacing: 0;
+
+  &--unavailable {
+    opacity: 0.6;
+  }
+}
