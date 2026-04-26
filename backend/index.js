@@ -66,7 +66,7 @@ async function main() {
 
   // Initialize ConfigService singleton (loads all YAML configs)
   try {
-    initConfigService(dataDir);
+    await initConfigService(dataDir);
     console.log(`[Bootstrap] ConfigService initialized from ${dataDir}`);
   } catch (err) {
     if (err instanceof ConfigValidationError) {
