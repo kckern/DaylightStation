@@ -39,3 +39,5 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-04-25 | feature/secrets-handler | b4dd630dc | SecretsHandler abstraction (ISecretsProvider + Yaml/EncryptedYaml/Vault providers) - merged to main |
 | 2026-04-25 | feat/on-deck | 3c1556255 | Unified screen-actions routing for play-now/play-next (already in main) - cleaned up |
 | 2026-04-26 | backup/arcade-work-pre-pull | 444854d05 | Pre-pull snapshot of arcadePacker work; same commits already on main (different SHAs) plus main has newer arcadePacker fixes - obsolete, dropped |
+| 2026-04-26 | fix/office-program-envelope-migration | 8d3e9c1a0 | Office program envelope migration; every commit subject duplicated on main, no unique work - obsolete, dropped |
+| 2026-04-26 | feature/stale-session-recovery | 31785c43f | Stale-session recovery; every commit subject duplicated on main, no unique work - obsolete, dropped |
