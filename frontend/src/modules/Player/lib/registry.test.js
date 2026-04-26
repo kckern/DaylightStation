@@ -56,7 +56,9 @@ describe('playable format registry', () => {
       expect(formats).toContain('app');
       expect(formats).toContain('readable_paged');
       expect(formats).toContain('readable_flow');
-      expect(formats.length).toBe(5);
+      expect(formats).toContain('slideshow');
+      expect(formats).toContain('titlecard');
+      expect(formats.length).toBe(7);
     });
   });
 });
