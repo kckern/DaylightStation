@@ -54,7 +54,7 @@ async function main() {
 
   // Initialize ConfigService v2
   try {
-    initConfigService(dataDir);
+    await initConfigService(dataDir);
     console.log('[Config] ConfigService initialized');
   } catch (err) {
     if (err instanceof ConfigValidationError) {

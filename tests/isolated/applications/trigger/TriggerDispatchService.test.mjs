@@ -146,3 +146,129 @@ describe('TriggerDispatchService.handleTrigger', () => {
     expect(result.error).toMatch(/TV unreachable/);
   });
 });
+
+const baseConfig = {
+  livingroom: {
+    target: 'livingroom-tv',
+    action: 'play-next',
+    entries: {
+      nfc: {
+        '83_8e_68_06': { plex: '620707' },
+      },
+    },
+  },
+};
+
+const makeContentIdResolver = () => ({
+  resolve: (entry) => (entry?.plex ? `plex:${entry.plex}` : null),
+});
+
+const silentLogger = {
+  info: () => {}, warn: () => {}, error: () => {}, debug: () => {},
+};
+
+describe('TriggerDispatchService — debounce', () => {
+  test('first scan dispatches; second scan within window is debounced', async () => {
+    const wakeAndLoadService = { execute: jest.fn().mockResolvedValue({ ok: true }) };
+    const service = new TriggerDispatchService({
+      config: baseConfig,
+      contentIdResolver: makeContentIdResolver(),
+      wakeAndLoadService,
+      logger: silentLogger,
+      debounceWindowMs: 3000,
+    });
+
+    const first = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06');
+    expect(first.ok).toBe(true);
+    expect(first.debounced).toBeUndefined();
+    expect(wakeAndLoadService.execute).toHaveBeenCalledTimes(1);
+
+    const second = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06');
+    expect(second.ok).toBe(true);
+    expect(second.debounced).toBe(true);
+    expect(wakeAndLoadService.execute).toHaveBeenCalledTimes(1); // unchanged
+  });
+
+  test('different tag in same window is NOT debounced', async () => {
+    const wakeAndLoadService = { execute: jest.fn().mockResolvedValue({ ok: true }) };
+    const config = {
+      livingroom: {
+        target: 'livingroom-tv',
+        action: 'play-next',
+        entries: {
+          nfc: {
+            '83_8e_68_06': { plex: '620707' },
+            '8d_6d_2a_07': { plex: '620707' },
+          },
+        },
+      },
+    };
+    const service = new TriggerDispatchService({
+      config,
+      contentIdResolver: makeContentIdResolver(),
+      wakeAndLoadService,
+      logger: silentLogger,
+      debounceWindowMs: 3000,
+    });
+
+    await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06');
+    await service.handleTrigger('livingroom', 'nfc', '8d_6d_2a_07');
+    expect(wakeAndLoadService.execute).toHaveBeenCalledTimes(2);
+  });
+
+  test('scan after window elapses is dispatched normally', async () => {
+    const wakeAndLoadService = { execute: jest.fn().mockResolvedValue({ ok: true }) };
+    let now = 1_000_000;
+    const service = new TriggerDispatchService({
+      config: baseConfig,
+      contentIdResolver: makeContentIdResolver(),
+      wakeAndLoadService,
+      logger: silentLogger,
+      debounceWindowMs: 3000,
+      clock: () => now,
+    });
+
+    await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06');
+    expect(wakeAndLoadService.execute).toHaveBeenCalledTimes(1);
+
+    now += 3500; // past window
+    const result = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06');
+    expect(result.debounced).toBeUndefined();
+    expect(wakeAndLoadService.execute).toHaveBeenCalledTimes(2);
+  });
+
+  test('dryRun bypasses debounce', async () => {
+    const wakeAndLoadService = { execute: jest.fn().mockResolvedValue({ ok: true }) };
+    const service = new TriggerDispatchService({
+      config: baseConfig,
+      contentIdResolver: makeContentIdResolver(),
+      wakeAndLoadService,
+      logger: silentLogger,
+      debounceWindowMs: 3000,
+    });
+
+    await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06');
+    const dry = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06', { dryRun: true });
+    expect(dry.dryRun).toBe(true);
+    expect(dry.debounced).toBeUndefined();
+  });
+
+  test('failed dispatch clears debounce so user can retry immediately', async () => {
+    const wakeAndLoadService = { execute: jest.fn().mockRejectedValueOnce(new Error('wake-fail')).mockResolvedValueOnce({ ok: true }) };
+    const service = new TriggerDispatchService({
+      config: baseConfig,
+      contentIdResolver: makeContentIdResolver(),
+      wakeAndLoadService,
+      logger: silentLogger,
+      debounceWindowMs: 3000,
+    });
+
+    const first = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06');
+    expect(first.ok).toBe(false);
+
+    const second = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06');
+    expect(second.ok).toBe(true);
+    expect(second.debounced).toBeUndefined();
+    expect(wakeAndLoadService.execute).toHaveBeenCalledTimes(2);
+  });
+});
