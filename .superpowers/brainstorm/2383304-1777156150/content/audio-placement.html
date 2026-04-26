@@ -1,0 +1,202 @@
+<h2>On-deck placement on the AudioPlayer chrome</h2>
+<p class="subtitle">Scope: AudioPlayer only for v1 (video deferred). Cover art on left, audio-info column on right (header / timing / footer). On-deck card integrates into this existing chrome &mdash; no floating overlay.</p>
+
+<style>
+  .audio-mock {
+    aspect-ratio: 16 / 9;
+    background: linear-gradient(135deg, #1a1f2e 0%, #2a3447 100%);
+    border-radius: 6px;
+    overflow: hidden;
+    color: #f0f0f0;
+    font-family: system-ui, -apple-system, sans-serif;
+    display: grid;
+    grid-template-columns: 1fr 1.2fr;
+    position: relative;
+  }
+  .audio-mock .progress {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: rgba(255,255,255,0.15);
+  }
+  .audio-mock .progress::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    width: 35%;
+    background: #fff;
+  }
+  .audio-mock .cover-col {
+    background: linear-gradient(140deg, #c5b078 0%, #8b7944 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75em;
+    color: rgba(0,0,0,0.45);
+    letter-spacing: 0.1em;
+    position: relative;
+  }
+  .audio-mock .info-col {
+    padding: 1.4em 1.2em;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.4em;
+  }
+  .audio-mock .info-col .header {
+    font-size: 0.7em;
+    opacity: 0.7;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .audio-mock .info-col .timing {
+    font-size: 0.65em;
+    opacity: 0.55;
+    font-variant-numeric: tabular-nums;
+  }
+  .audio-mock .info-col .footer-title {
+    font-size: 1em;
+    font-weight: 600;
+  }
+
+  .ondeck {
+    display: flex;
+    gap: 0.6em;
+    align-items: center;
+    padding: 0.5em 0.7em;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 4px;
+    background: rgba(255,255,255,0.05);
+    font-size: 0.7em;
+  }
+  .ondeck .thumb {
+    width: 2em;
+    height: 2em;
+    background: #6a8caf;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .ondeck .label {
+    display: block;
+    font-size: 0.7em;
+    opacity: 0.55;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.15em;
+  }
+  .ondeck .title {
+    font-weight: 600;
+  }
+
+  /* Variant A: in info column, below footer-title */
+  .pos-info-bottom { margin-top: 0.8em; }
+
+  /* Variant B: below cover image, in cover column */
+  .pos-cover-below {
+    position: absolute;
+    bottom: 0.6em; left: 0.6em; right: 0.6em;
+    background: rgba(0,0,0,0.55);
+    border-color: rgba(255,255,255,0.2);
+    color: #f0f0f0;
+  }
+
+  /* Variant C: full-width strip across bottom of mock */
+  .pos-bottom-strip {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    background: rgba(0,0,0,0.6);
+    border: none;
+    border-top: 1px solid rgba(255,255,255,0.12);
+    border-radius: 0;
+    padding: 0.5em 1em;
+    justify-content: flex-end;
+  }
+
+  .cards .card { padding: 0; overflow: hidden; }
+  .cards .card .card-image { padding: 1em; background: #0f131c; }
+  .cards .card .card-body { padding: 1em; }
+  .cards .card .card-body p { margin: 0.3em 0 0 0; opacity: 0.7; font-size: 0.85em; }
+</style>
+
+<div class="cards">
+
+  <div class="card" data-choice="info-col" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="audio-mock">
+        <div class="progress"></div>
+        <div class="cover-col">COVER ART</div>
+        <div class="info-col">
+          <div class="header">Brothers Grimm &mdash; Stories</div>
+          <div class="timing">4:12 / 13:30</div>
+          <div class="footer-title">Goldilocks &amp; the Three Bears</div>
+          <div class="ondeck pos-info-bottom">
+            <div class="thumb"></div>
+            <div>
+              <span class="label">Up Next</span>
+              <span class="title">The Three Pigs</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Inside the audio-info column</h3>
+      <p>On-deck card sits below the title, in the same vertical stack as header/timing/footer. Reads as &ldquo;part of the metadata.&rdquo; Closest to existing AudioPlayer structure.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="cover-overlay" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="audio-mock">
+        <div class="progress"></div>
+        <div class="cover-col">
+          COVER ART
+          <div class="ondeck pos-cover-below">
+            <div class="thumb"></div>
+            <div>
+              <span class="label">Up Next</span>
+              <span class="title">The Three Pigs</span>
+            </div>
+          </div>
+        </div>
+        <div class="info-col">
+          <div class="header">Brothers Grimm &mdash; Stories</div>
+          <div class="timing">4:12 / 13:30</div>
+          <div class="footer-title">Goldilocks &amp; the Three Bears</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. Overlaid on the cover (bottom of cover column)</h3>
+      <p>Card sits on the bottom of the album-art tile. Spatial association: &ldquo;the next album art is right here.&rdquo; Slightly obscures cover; visual weight balanced with cover.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="bottom-strip" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="audio-mock">
+        <div class="progress"></div>
+        <div class="cover-col">COVER ART</div>
+        <div class="info-col">
+          <div class="header">Brothers Grimm &mdash; Stories</div>
+          <div class="timing">4:12 / 13:30</div>
+          <div class="footer-title">Goldilocks &amp; the Three Bears</div>
+        </div>
+        <div class="ondeck pos-bottom-strip">
+          <div class="thumb"></div>
+          <div>
+            <span class="label">Up Next</span>
+            <span class="title">The Three Pigs</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. Bottom strip across full width</h3>
+      <p>Persistent footer band. Most prominent of the three; eats some screen real estate but unmissable. Right-aligned content keeps it out of the cover&rsquo;s way.</p>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top: 1em;">All three keep the original preference: thumbnail + track name only, no extra metadata.</p>

@@ -1,0 +1,109 @@
+<h2>Backend pipeline for <code>play-next</code></h2>
+<p class="subtitle">No new architectural layers &mdash; existing trigger pipeline, existing WS-first delivery in WakeAndLoadService, existing CommandEnvelope contract. The diagram shows what changes.</p>
+
+<style>
+  .flow {
+    background: #f7f7f7;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 1.5em;
+    font-family: 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 0.85em;
+    line-height: 1.7;
+    overflow-x: auto;
+  }
+  .flow .step {
+    display: flex;
+    gap: 1em;
+    align-items: flex-start;
+    margin-bottom: 0.6em;
+  }
+  .flow .lane {
+    min-width: 9em;
+    color: #6a8caf;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.75em;
+    letter-spacing: 0.05em;
+    padding-top: 0.2em;
+  }
+  .flow .arrow { color: #6a8caf; margin-right: 0.5em; }
+  .flow .change {
+    background: #fff8d6;
+    padding: 0.1em 0.45em;
+    border-radius: 3px;
+    border: 1px solid #e8d96a;
+  }
+  .flow .same {
+    color: #888;
+    font-style: italic;
+  }
+  .flow .branch {
+    background: #fff;
+    border-left: 3px solid #6a8caf;
+    padding: 0.4em 0.8em;
+    margin: 0.4em 0 0.4em 9em;
+  }
+  .flow .branch .label {
+    text-transform: uppercase;
+    font-size: 0.75em;
+    color: #6a8caf;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.3em;
+    font-weight: 600;
+  }
+  .flow code { background: rgba(0,0,0,0.06); padding: 0.05em 0.3em; border-radius: 3px; }
+
+  .legend {
+    display: flex;
+    gap: 1.5em;
+    margin-top: 1em;
+    font-size: 0.85em;
+  }
+  .legend > div { display: flex; align-items: center; gap: 0.4em; }
+  .legend .swatch { width: 1em; height: 1em; border-radius: 3px; border: 1px solid #ccc; }
+</style>
+
+<div class="flow">
+  <div class="step"><div class="lane">ESP32</div><div><span class="arrow">&rarr;</span> <code>GET /api/v1/trigger/livingroom/nfc/04kid1</code></div></div>
+  <div class="step"><div class="lane">trigger router</div><div class="same">unchanged &mdash; routes to TriggerDispatchService</div></div>
+  <div class="step"><div class="lane">resolveIntent</div><div class="same">unchanged &mdash; passes <code>action</code> through (no allowlist in domain layer)</div></div>
+  <div class="step"><div class="lane">actionHandlers</div><div><span class="change">NEW: <code>'play-next'</code> entry</span> &mdash; calls <code>wakeAndLoadService.execute(target, &#123; ...params, op: 'play-next', play-next: content &#125;)</code></div></div>
+  <div class="step"><div class="lane">WakeAndLoadSvc</div><div>steps 1&ndash;5 (power, verify, volume, prepare, prewarm) <span class="same">unchanged</span></div></div>
+
+  <div class="branch">
+    <div class="label">step 6 &mdash; load: warm + has subscribers (WS-first path)</div>
+    line 415 currently hardcodes <code>op: 'play-now'</code> &rarr;
+    <span class="change">read from <code>query.op</code> (default <code>'play-now'</code>, can be <code>'play-next'</code>)</span>
+  </div>
+  <div class="branch">
+    <div class="label">step 6 &mdash; load: cold or no subscribers (FKB URL fallback)</div>
+    URL builds from <code>query</code> &mdash; <span class="change"><code>play-next=...</code> param</span> tells the freshly-mounting Player to put it on-deck.<br>
+    But on cold wake there's nothing to be next-to: the Player auto-promotes the on-deck item to current (state-machine edge a).
+  </div>
+  <div class="branch">
+    <div class="label">step 6b &mdash; WS fallback path (line 499)</div>
+    Same hardcode &rarr; <span class="change">parameterize</span>
+  </div>
+
+  <div class="step" style="margin-top: 1em;"><div class="lane">WS broadcast</div><div>topic <code>livingroom-tv</code>, envelope <code>&#123; command: 'queue', params: &#123; op: 'play-next', contentId: '...' &#125; &#125;</code></div></div>
+  <div class="step"><div class="lane">screen handler</div><div><span class="change">NEW path in <code>handleMediaQueueOp</code></span>: <code>op: 'play-next'</code> &rarr; check if Player overlay active</div></div>
+
+  <div class="branch">
+    <div class="label">if no Player overlay</div>
+    behave like <code>play-now</code> &mdash; mount fresh Player. Auto-promote (idle has nothing to be &ldquo;next&rdquo; to).
+  </div>
+  <div class="branch">
+    <div class="label">if Player overlay active</div>
+    dispatch <code>window.dispatchEvent('player:queue-op', &#123; op, contentId, ... &#125;)</code> &mdash; Player listens, sets on-deck.<br>
+    Within Player: 15s-preempt window check, dedup against currently-playing, replace on-deck slot.
+  </div>
+
+</div>
+
+<div class="legend">
+  <div><span class="swatch" style="background: #fff8d6; border-color: #e8d96a;"></span> change</div>
+  <div><span class="swatch" style="background: #f7f7f7;"></span> existing path, unchanged</div>
+</div>
+
+<p class="subtitle" style="margin-top: 1.5em;">Touches: <code>actionHandlers.mjs</code>, <code>WakeAndLoadService.mjs</code> (2 lines parameterized), <code>WebSocketContentAdapter.mjs</code> (1 line parameterized), <code>ScreenActionHandler.jsx</code> (extend the queue-op handler), Player &mdash; new on-deck slot in queue controller + new card component.</p>
