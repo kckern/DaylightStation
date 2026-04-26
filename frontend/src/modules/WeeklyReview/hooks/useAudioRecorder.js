@@ -315,6 +315,14 @@ export function useAudioRecorder({ onChunk }) {
         logger().info('recorder.chunk-emitted-after-reconnect', { seq, bytes: e.data.size });
         onChunk?.({ seq, blob: e.data });
       };
+      recorder.onerror = (e) => logger().error('recorder.media-recorder-error-after-reconnect', { error: e.error?.message || 'unknown' });
+      recorder.onstop = () => {
+        logger().info('recorder.stopped-after-reconnect', { duration: Math.round((Date.now() - startTimeRef.current) / 1000) });
+        cleanup();
+        setIsRecording(false);
+        setMicLevel(0);
+        setSilenceWarning(false);
+      };
       recorder.start(5000);
       setDisconnected(false);
       logger().info('recorder.reconnect-success');
@@ -323,7 +331,7 @@ export function useAudioRecorder({ onChunk }) {
       logger().error('recorder.reconnect-failed', { error: err.message });
       return false;
     }
-  }, [onChunk]);
+  }, [onChunk, cleanup]);
 
   return { isRecording, duration, micLevel, silenceWarning, firstAudibleFrameSeen, disconnected, error, startRecording, stopRecording, reconnect };
 }
