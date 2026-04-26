@@ -59,4 +59,11 @@ describe('parseNfcLocations', () => {
     });
     expect(result.kitchen.auth_token).toBeNull();
   });
+
+  it('defaults action to null when omitted', () => {
+    const result = parseNfcLocations({
+      kitchen: { target: 'kitchen-display' },
+    });
+    expect(result.kitchen.action).toBeNull();
+  });
 });
