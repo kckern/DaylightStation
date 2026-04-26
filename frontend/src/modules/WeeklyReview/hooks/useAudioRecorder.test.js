@@ -80,4 +80,21 @@ describe('useAudioRecorder', () => {
 
     expect(result.current.firstAudibleFrameSeen).toBe(true);
   });
+
+  it('exposes disconnected=true when audio track ends', async () => {
+    const trackHandlers = {};
+    global.navigator.mediaDevices.getUserMedia = vi.fn(async () => {
+      const track = {
+        kind: 'audio', readyState: 'live', stop: vi.fn(),
+        addEventListener: (ev, fn) => { trackHandlers[ev] = fn; },
+      };
+      return { getTracks: () => [track], getAudioTracks: () => [track] };
+    });
+    const { result } = renderHook(() => useAudioRecorder({ onChunk: () => {} }));
+    expect(result.current.disconnected).toBe(false);
+    await act(async () => { await result.current.startRecording(); });
+    expect(result.current.disconnected).toBe(false);
+    await act(async () => { trackHandlers.ended?.(); });
+    expect(result.current.disconnected).toBe(true);
+  });
 });

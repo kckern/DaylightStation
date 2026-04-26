@@ -84,6 +84,7 @@ export function useAudioRecorder({ onChunk }) {
   const [micLevel, setMicLevel] = useState(0);
   const [silenceWarning, setSilenceWarning] = useState(false);
   const [firstAudibleFrameSeen, setFirstAudibleFrameSeen] = useState(false);
+  const [disconnected, setDisconnected] = useState(false);
   const [error, setError] = useState(null);
 
   const mediaRecorderRef = useRef(null);
@@ -180,6 +181,7 @@ export function useAudioRecorder({ onChunk }) {
       setSilenceWarning(false);
       firstAudibleFrameSeenRef.current = false;
       setFirstAudibleFrameSeen(false);
+      setDisconnected(false);
       seqRef.current = 0;
 
       let stream;
@@ -191,6 +193,29 @@ export function useAudioRecorder({ onChunk }) {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
       streamRef.current = stream;
+
+      // Wire disconnect detection: track ended (mic removed/permission revoked)
+      // or AudioBridge WS closing with non-1000 code mid-recording.
+      const tracks = stream.getAudioTracks?.() || [];
+      for (const track of tracks) {
+        if (track.addEventListener) {
+          track.addEventListener('ended', () => {
+            logger().warn('recorder.track-ended');
+            setDisconnected(true);
+          });
+        }
+      }
+      if (stream._bridgeWs) {
+        const ws = stream._bridgeWs;
+        const prevOnClose = ws.onclose;
+        ws.onclose = (e) => {
+          if (typeof prevOnClose === 'function') prevOnClose(e);
+          if (e.code !== 1000) {
+            logger().warn('recorder.bridge-ws-disconnect', { code: e.code });
+            setDisconnected(true);
+          }
+        };
+      }
 
       const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
       mediaRecorderRef.current = recorder;
@@ -246,5 +271,5 @@ export function useAudioRecorder({ onChunk }) {
     }
   }, []);
 
-  return { isRecording, duration, micLevel, silenceWarning, firstAudibleFrameSeen, error, startRecording, stopRecording };
+  return { isRecording, duration, micLevel, silenceWarning, firstAudibleFrameSeen, disconnected, error, startRecording, stopRecording };
 }
