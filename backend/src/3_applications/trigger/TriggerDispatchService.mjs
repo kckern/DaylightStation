@@ -263,7 +263,7 @@ export class TriggerDispatchService {
       data: {
         actions: [{
           action: `NFC_REPLY|${location}|${uid}`,
-          title: 'Submit',
+          title: 'Add note',
           behavior: 'textInput',
           textInputButtonTitle: 'Save',
           textInputPlaceholder: 'Tag name',
