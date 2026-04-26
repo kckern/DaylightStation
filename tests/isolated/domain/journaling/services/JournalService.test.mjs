@@ -5,6 +5,11 @@ import { JournalService } from '#domains/journaling/services/JournalService.mjs'
 describe('JournalService', () => {
   let service;
   let mockStore;
+  // Production now requires explicit timestamp arguments (DDD: services
+  // never reach for the wall clock themselves). Use a fixed ISO timestamp
+  // throughout for determinism.
+  const TS = '2026-01-11T12:00:00.000Z';
+  const NOW_MS = new Date(TS).getTime();
 
   beforeEach(() => {
     mockStore = {
@@ -25,7 +30,7 @@ describe('JournalService', () => {
         userId: 'user-1',
         date: '2026-01-11',
         content: 'Today was great'
-      });
+      }, TS);
 
       expect(entry.id).toMatch(/^journal-/);
       expect(entry.userId).toBe('user-1');
@@ -38,7 +43,7 @@ describe('JournalService', () => {
         id: 'custom-id',
         userId: 'user-1',
         date: '2026-01-11'
-      });
+      }, TS);
 
       expect(entry.id).toBe('custom-id');
     });
@@ -96,7 +101,7 @@ describe('JournalService', () => {
 
       const entry = await service.updateEntry('entry-123', {
         content: 'Updated'
-      });
+      }, TS);
 
       expect(entry.content).toBe('Updated');
       expect(mockStore.save).toHaveBeenCalled();
@@ -114,7 +119,7 @@ describe('JournalService', () => {
 
       const entry = await service.updateEntry('entry-123', {
         mood: 'great'
-      });
+      }, TS);
 
       expect(entry.mood).toBe('great');
     });
@@ -123,7 +128,7 @@ describe('JournalService', () => {
       mockStore.findById.mockResolvedValue(null);
 
       await expect(
-        service.updateEntry('nonexistent', { content: 'test' })
+        service.updateEntry('nonexistent', { content: 'test' }, TS)
       ).rejects.toThrow('Entry not found');
     });
   });
@@ -182,8 +187,9 @@ describe('JournalService', () => {
 
   describe('generateId', () => {
     test('generates unique IDs', () => {
-      const id1 = service.generateId();
-      const id2 = service.generateId();
+      // Production now requires explicit nowMs (no wall-clock reach).
+      const id1 = service.generateId(NOW_MS);
+      const id2 = service.generateId(NOW_MS);
 
       expect(id1).toMatch(/^journal-/);
       expect(id1).not.toBe(id2);

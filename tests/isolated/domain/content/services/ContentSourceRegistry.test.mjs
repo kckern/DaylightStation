@@ -90,10 +90,21 @@ describe('ContentSourceRegistry', () => {
     expect(registry.canResolve('unknown:123')).toBe(false);
   });
 
-  test('resolve falls back to files for ID without colon', () => {
-    registry.register(mockMediaAdapter);
+  test('resolve falls back to media adapter for ID without colon', () => {
+    // Production fallback now keys on the "media" source name, not "files"
+    // (see ContentSourceRegistry.resolve at backend/src/2_domains/content/
+    // services/ContentSourceRegistry.mjs:188-192).
+    const mediaDefaultAdapter = {
+      source: 'media',
+      prefixes: [{ prefix: 'media' }, { prefix: 'files' }],
+      getItem: async () => null,
+      getList: async () => [],
+      resolvePlayables: async () => [],
+      resolveSiblings: async () => null,
+    };
+    registry.register(mediaDefaultAdapter);
     const result = registry.resolve('audio/song.mp3');
-    expect(result.adapter).toBe(mockMediaAdapter);
+    expect(result.adapter).toBe(mediaDefaultAdapter);
     expect(result.localId).toBe('audio/song.mp3');
   });
 

@@ -33,9 +33,11 @@ describe('ConversationService', () => {
   describe('createConversation', () => {
     test('creates and saves conversation', async () => {
       const nowMs = Date.now();
+      const timestamp = new Date(nowMs).toISOString();
       const conv = await service.createConversation({
         participants: ['user-1', 'user-2'],
         nowMs,
+        timestamp,
         metadata: { topic: 'test' }
       });
 
@@ -95,7 +97,8 @@ describe('ConversationService', () => {
       mockStore.findByParticipants.mockResolvedValue(null);
 
       const nowMs = Date.now();
-      const conv = await service.getOrCreateConversation(['user-1', 'user-2'], nowMs);
+      const timestamp = new Date(nowMs).toISOString();
+      const conv = await service.getOrCreateConversation(['user-1', 'user-2'], nowMs, timestamp);
 
       expect(conv.id).toMatch(/^conv-/);
       expect(mockStore.save).toHaveBeenCalled();
@@ -115,7 +118,7 @@ describe('ConversationService', () => {
         senderId: 'user-1',
         content: 'Hello',
         type: 'text'
-      });
+      }, '2026-01-11T12:00:00.000Z');
 
       expect(message.content).toBe('Hello');
       expect(message.conversationId).toBe('conv-123');
@@ -126,7 +129,7 @@ describe('ConversationService', () => {
       mockStore.findById.mockResolvedValue(null);
 
       await expect(
-        service.addMessage('nonexistent', { senderId: 'user-1', content: 'Hi' })
+        service.addMessage('nonexistent', { senderId: 'user-1', content: 'Hi' }, '2026-01-11T12:00:00.000Z')
       ).rejects.toThrow('Conversation not found');
     });
   });
@@ -219,6 +222,8 @@ describe('ConversationService', () => {
   });
 
   describe('archiveConversation', () => {
+    const archiveTimestamp = '2026-01-11T13:00:00.000Z';
+
     test('marks conversation as archived', async () => {
       mockStore.findById.mockResolvedValue({
         id: 'conv-123',
@@ -227,7 +232,7 @@ describe('ConversationService', () => {
         metadata: {}
       });
 
-      const conv = await service.archiveConversation('conv-123');
+      const conv = await service.archiveConversation('conv-123', archiveTimestamp);
 
       expect(conv.metadata.archived).toBe(true);
       expect(conv.metadata.archivedAt).toBeDefined();
@@ -237,7 +242,7 @@ describe('ConversationService', () => {
     test('throws for nonexistent conversation', async () => {
       mockStore.findById.mockResolvedValue(null);
 
-      await expect(service.archiveConversation('nonexistent')).rejects.toThrow('not found');
+      await expect(service.archiveConversation('nonexistent', archiveTimestamp)).rejects.toThrow('not found');
     });
   });
 

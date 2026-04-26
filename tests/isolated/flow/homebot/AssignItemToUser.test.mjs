@@ -42,6 +42,9 @@ describe('AssignItemToUser', () => {
 
     mockHouseholdService = {
       getHouseholdId: vi.fn().mockReturnValue('household123'),
+      // Production now resolves the display name via getMemberDisplayName(null,
+      // username); fall back to username when no member found.
+      getMemberDisplayName: vi.fn().mockResolvedValue('User One'),
       getMemberByUsername: vi.fn().mockReturnValue({
         username: 'user1',
         displayName: 'User One'
@@ -122,7 +125,9 @@ describe('AssignItemToUser', () => {
       // Should get household ID
       expect(mockHouseholdService.getHouseholdId).toHaveBeenCalled();
 
-      // Should save items to gratitude service
+      // Should save items to gratitude service.
+      // Production now derives a timestamp via nowTs24() when no timezone is
+      // provided, instead of forwarding undefined to the gratitude service.
       expect(mockGratitudeService.addSelections).toHaveBeenCalledWith(
         'household123',
         'gratitude',
@@ -131,7 +136,7 @@ describe('AssignItemToUser', () => {
           { id: 'item1', text: 'Good health' },
           { id: 'item2', text: 'Family' }
         ],
-        undefined // timezone
+        expect.any(String)
       );
 
       // Should update the message to show success
@@ -202,7 +207,7 @@ describe('AssignItemToUser', () => {
         username: 'user1'
       });
 
-      expect(mockHouseholdService.getMemberByUsername).toHaveBeenCalledWith('user1');
+      expect(mockHouseholdService.getMemberDisplayName).toHaveBeenCalledWith(null, 'user1');
       expect(mockMessagingGateway.updateMessage).toHaveBeenCalledWith(
         'telegram:123',
         'msg123',
@@ -211,6 +216,7 @@ describe('AssignItemToUser', () => {
     });
 
     it('should fallback to username when display name not available', async () => {
+      mockHouseholdService.getMemberDisplayName.mockResolvedValue(null);
       mockHouseholdService.getMemberByUsername.mockReturnValue(null);
 
       await useCase.execute({
@@ -246,7 +252,7 @@ describe('AssignItemToUser', () => {
         'hopes',
         'user1',
         [{ id: 'item1', text: 'Learn guitar' }],
-        undefined
+        expect.any(String)
       );
     });
 
