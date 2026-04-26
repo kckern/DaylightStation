@@ -21,6 +21,8 @@ function mockAdapter(snapshot) {
     onPlayerError: vi.fn(),
     onPlayerStateChange: vi.fn(),
     onPlayerProgress: vi.fn(),
+    onPlayerStalled: vi.fn(),
+    setPlayerCallbacks: vi.fn(),
     getSnapshot: () => snapshot,
     subscribe: (fn) => { subs.add(fn); return () => subs.delete(fn); },
   };
@@ -218,6 +220,7 @@ describe('HiddenPlayerMount — stall detection', () => {
       onPlayerStateChange: vi.fn(),
       onPlayerProgress: vi.fn(),
       onPlayerStalled: vi.fn(),
+      setPlayerCallbacks: vi.fn(),
       getSnapshot: () => currentSnapshot,
       subscribe: (fn) => { subs.add(fn); return () => subs.delete(fn); },
     };

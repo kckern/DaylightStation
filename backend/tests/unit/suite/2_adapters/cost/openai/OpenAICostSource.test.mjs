@@ -86,8 +86,8 @@ describe('OpenAICostSource', () => {
 
       expect(categories).toHaveLength(3);
       expect(categories[0]).toBeInstanceOf(CostCategory);
-      expect(categories[0].toString()).toBe('ai/openai/gpt-4o/chat');
-      expect(categories[1].toString()).toBe('ai/openai/gpt-4o-mini/chat');
+      expect(categories[0].toString()).toBe('ai/openai/gpt-4.1/chat');
+      expect(categories[1].toString()).toBe('ai/openai/gpt-4.1-mini/chat');
       expect(categories[2].toString()).toBe('ai/openai/whisper/transcription');
     });
   });
