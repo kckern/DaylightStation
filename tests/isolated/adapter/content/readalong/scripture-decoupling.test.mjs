@@ -40,42 +40,33 @@ describe('ReadalongAdapter – scripture decoupling', () => {
 
   // ---------- Spot 1: getStoragePath ----------
 
-  describe('getStoragePath (manifest.storagePath)', () => {
-    it('returns manifest.storagePath when present', () => {
-      loadContainedYaml.mockImplementation((_dir, name) => {
-        if (name === 'manifest') return { storagePath: 'scriptures' };
-        return null;
-      });
+  describe('getStoragePath (storagePaths injection)', () => {
+    // Production now resolves storagePath via the injected `storagePaths`
+    // map instead of reading manifest.storagePath. The injection happens at
+    // construction; no per-call YAML read.
 
-      expect(adapter.getStoragePath('readalong:scripture/bom')).toBe('scriptures');
+    it('returns scoped storagePath from injected map for scripture', () => {
+      const scopedAdapter = new ReadalongAdapter({
+        dataPath: '/mock/data', mediaPath: '/mock/media',
+        storagePaths: { scripture: 'scriptures' },
+      });
+      expect(scopedAdapter.getStoragePath('readalong:scripture/bom')).toBe('scriptures');
     });
 
-    it('returns "readalong" when manifest has no storagePath', () => {
-      loadContainedYaml.mockImplementation((_dir, name) => {
-        if (name === 'manifest') return {};
-        return null;
-      });
-
+    it('returns "readalong" when no map entry for the collection', () => {
       expect(adapter.getStoragePath('readalong:talks/ldsgc')).toBe('readalong');
-    });
-
-    it('returns "readalong" when no manifest exists', () => {
-      loadContainedYaml.mockReturnValue(null);
-
-      expect(adapter.getStoragePath('readalong:poetry/haiku')).toBe('readalong');
     });
 
     it('returns "readalong" when id is undefined', () => {
       expect(adapter.getStoragePath()).toBe('readalong');
     });
 
-    it('works for hypothetical non-scripture collection with custom storagePath', () => {
-      loadContainedYaml.mockImplementation((_dir, name) => {
-        if (name === 'manifest') return { storagePath: 'custom-store' };
-        return null;
+    it('honors a custom storagePath for an arbitrary collection', () => {
+      const scopedAdapter = new ReadalongAdapter({
+        dataPath: '/mock/data', mediaPath: '/mock/media',
+        storagePaths: { custom: 'custom-store' },
       });
-
-      expect(adapter.getStoragePath('readalong:custom/item1')).toBe('custom-store');
+      expect(scopedAdapter.getStoragePath('readalong:custom/item1')).toBe('custom-store');
     });
   });
 
