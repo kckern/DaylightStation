@@ -113,6 +113,15 @@ export class NfcResolver {
     if (merged.entity !== undefined) intent.entity = merged.entity;
     if (merged.data !== undefined) intent.data = merged.data;
 
+    // A tag is dispatchable only if it has at least one actionable field.
+    // Tags with only metadata (scanned_at, note, etc.) resolve to no intent
+    // so the dispatcher routes them to the unknown-tag capture flow.
+    const hasDispatchable = intent.content !== undefined
+      || intent.scene !== undefined
+      || intent.service !== undefined
+      || intent.entity !== undefined;
+    if (!hasDispatchable) return null;
+
     return intent;
   }
 }
