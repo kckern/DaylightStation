@@ -171,11 +171,62 @@ export class TriggerDispatchService {
     }
   }
 
-  #emit(location, modality, payload) {
+  #emit(location, modality, payload, type = 'trigger.fired') {
     // Payload's `modality` field is the trigger source (nfc, barcode, etc.).
-    // The outer `type` is the event kind ('trigger.fired') that subscribers
-    // listen for. Topic stays `trigger:<location>:<modality>` as a routing key.
-    this.#broadcast({ topic: `trigger:${location}:${modality}`, ...payload, type: 'trigger.fired' });
+    // The outer `type` is the event kind that subscribers listen for.
+    // Topic stays `trigger:<location>:<modality>` as a routing key.
+    this.#broadcast({ topic: `trigger:${location}:${modality}`, ...payload, type });
+  }
+
+  /**
+   * Set the freeform `note:` field on a tag entry. Idempotent upsert via
+   * the injected tagWriter. Used by the iOS Companion REPLY action that
+   * routes through HA → PUT /api/v1/trigger/<loc>/<modality>/<value>/note.
+   *
+   * @param {string} location
+   * @param {string} modality   only 'nfc' supported today
+   * @param {string} value      tag UID (will be lowercased)
+   * @param {string} note       freeform user-supplied name (1..200 chars)
+   * @param {Object} [options]
+   * @param {string} [options.token] auth token for the location, if configured
+   */
+  async setNote(location, modality, value, note, options = {}) {
+    if (modality !== 'nfc') {
+      return { ok: false, code: 'UNSUPPORTED_MODALITY', error: `setNote only supports nfc modality (got "${modality}")` };
+    }
+
+    const locationConfig = this.#config?.nfc?.locations?.[location];
+    if (!locationConfig) {
+      return { ok: false, code: 'LOCATION_NOT_FOUND', error: `Unknown location: ${location}` };
+    }
+
+    const authToken = locationConfig.auth_token ?? null;
+    if (authToken && authToken !== options.token) {
+      return { ok: false, code: 'AUTH_FAILED', error: 'Authentication failed' };
+    }
+
+    if (typeof note !== 'string' || note.length === 0 || note.length > 200) {
+      return { ok: false, code: 'INVALID_NOTE', error: 'note must be a non-empty string of at most 200 characters' };
+    }
+
+    if (!this.#tagWriter) {
+      return { ok: false, code: 'NOTE_WRITE_FAILED', error: 'tagWriter not configured' };
+    }
+
+    const normalizedValue = String(value).toLowerCase();
+    const scannedAtIfNew = this.#formatScannedAt(this.#clock());
+
+    try {
+      const result = await this.#tagWriter.setNfcNote(normalizedValue, note, scannedAtIfNew);
+      this.#emit(location, modality, {
+        location, modality, value: normalizedValue, note,
+      }, 'trigger.note_set');
+      this.#logger.info?.('trigger.note_set', { location, modality, value: normalizedValue, created: result.created });
+      return { ok: true, location, modality, value: normalizedValue, note, created: result.created };
+    } catch (err) {
+      this.#logger.error?.('trigger.note_set.failed', { location, modality, value: normalizedValue, error: err.message });
+      return { ok: false, code: 'NOTE_WRITE_FAILED', error: err.message };
+    }
   }
 
   /**
