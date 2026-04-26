@@ -129,11 +129,6 @@ export class TriggerDispatchService {
       return { ok: false, code, error: err.message, location, modality, value: normalizedValue, dispatchId };
     }
 
-    // NFC tags with only metadata (e.g. scanned_at placeholder, note) and no
-    // resolvable content are treated as unresolved — they fall through to
-    // #handleUnknownNfc so the user receives the naming prompt.
-    if (modality === 'nfc' && intent && intent.content === undefined) intent = null;
-
     const baseLog = { location, modality, value: normalizedValue, registered: !!intent, dispatchId };
 
     if (!intent) {
