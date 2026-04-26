@@ -60,18 +60,35 @@ describe('WebSocketContentAdapter', () => {
     expect(result.commandId).toBe(payload.commandId);
   });
 
-  it('load() canonical op/contentId cannot be clobbered by stray query keys', async () => {
-    // Caller accidentally supplies `op` or `contentId` alongside a higher-priority
-    // content key. The adapter must keep its canonical values.
+  it('load() canonical contentId cannot be clobbered by stray query keys', async () => {
     await adapter.load('/tv', {
       queue: 'office-program',
-      op: 'play-next',          // should NOT overwrite 'play-now'
-      contentId: 'bogus',       // should NOT overwrite 'office-program'
+      contentId: 'bogus',
       shader: 'dark',
     });
     const [, payload] = wsBus.broadcast.mock.calls[0];
-    expect(payload.params.op).toBe('play-now');
     expect(payload.params.contentId).toBe('office-program');
     expect(payload.params.shader).toBe('dark');
+  });
+
+  it('load() honors query.op when provided (e.g. play-next)', async () => {
+    const result = await adapter.load('/tv', { queue: 'plex:642120', op: 'play-next' });
+    expect(result.ok).toBe(true);
+    const [, payload] = wsBus.broadcast.mock.calls[0];
+    expect(payload.command).toBe('queue');
+    expect(payload.params.op).toBe('play-next');
+    expect(payload.params.contentId).toBe('plex:642120');
+  });
+
+  it('load() defaults op to play-now when query.op is absent', async () => {
+    await adapter.load('/tv', { queue: 'plex:642120' });
+    const [, payload] = wsBus.broadcast.mock.calls[0];
+    expect(payload.params.op).toBe('play-now');
+  });
+
+  it('load() falls back to play-now when query.op is unknown', async () => {
+    await adapter.load('/tv', { queue: 'plex:642120', op: 'banana' });
+    const [, payload] = wsBus.broadcast.mock.calls[0];
+    expect(payload.params.op).toBe('play-now');
   });
 });

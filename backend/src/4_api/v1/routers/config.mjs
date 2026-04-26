@@ -13,6 +13,11 @@ import path from 'path';
 import { loadYaml } from '#system/utils/FileIO.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 
+const PLAYER_ON_DECK_DEFAULTS = Object.freeze({
+  preempt_seconds: 15,
+  displace_to_queue: false,
+});
+
 /**
  * Create Config API router
  *
@@ -70,6 +75,49 @@ export function createConfigRouter(config) {
   }));
 
   /**
+   * GET /api/v1/config/player
+   * Load player runtime config from data/household/config/player.yml
+   *
+   * Response format:
+   * {
+   *   "on_deck": {
+   *     "preempt_seconds": 15,
+   *     "displace_to_queue": false
+   *   }
+   * }
+   */
+  router.get('/player', asyncHandler(async (req, res) => {
+    const configPath = path.join(dataPath, 'household', 'config', 'player');
+
+    logger.debug?.('config.player.request', { configPath });
+
+    let raw;
+    try {
+      raw = loadYaml(configPath);
+    } catch (error) {
+      logger.warn?.('config.player.load-failed', { error });
+      return res.json({ on_deck: { ...PLAYER_ON_DECK_DEFAULTS } });
+    }
+
+    const rawOnDeck = raw?.on_deck ?? {};
+
+    const preemptRaw = rawOnDeck.preempt_seconds;
+    const preemptNum = Number(preemptRaw);
+    const preempt_seconds = (preemptRaw !== undefined && Number.isFinite(preemptNum))
+      ? Math.min(600, Math.max(0, preemptNum))
+      : PLAYER_ON_DECK_DEFAULTS.preempt_seconds;
+
+    const displaceRaw = rawOnDeck.displace_to_queue;
+    const displace_to_queue = typeof displaceRaw === 'boolean'
+      ? displaceRaw
+      : PLAYER_ON_DECK_DEFAULTS.displace_to_queue;
+
+    logger.info?.('config.player.loaded', { preempt_seconds, displace_to_queue });
+
+    res.json({ on_deck: { preempt_seconds, displace_to_queue } });
+  }));
+
+  /**
    * GET /api/v1/config/status
    * Config router status endpoint
    */
@@ -79,6 +127,7 @@ export function createConfigRouter(config) {
       timestamp: Date.now(),
       endpoints: [
         'GET /content-prefixes - Get legacy content prefix mapping',
+        'GET /player - Get player runtime config',
         'GET /status - This endpoint'
       ]
     });

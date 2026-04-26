@@ -22,6 +22,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { buildCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
+import { isLoadContentQueueOp } from '#shared-contracts/media/commands.mjs';
 import { resolveContentId } from '../contentIdKeys.mjs';
 import { contentRequiresCamera } from './contentRequiresCamera.mjs';
 
@@ -412,18 +413,20 @@ export class WakeAndLoadService {
             throw new Error('ws-first.no-contentId');
           }
           const { contentId: resolvedContentId, resolvedKey } = resolved;
-          const opts = { ...contentQuery };
-          delete opts[resolvedKey];
+          const requestedOp = isLoadContentQueueOp(contentQuery.op) ? contentQuery.op : 'play-now';
+          const passThroughOpts = { ...contentQuery };
+          delete passThroughOpts[resolvedKey];
+          delete passThroughOpts.op;
 
+          // op and contentId are stripped from `options` above; the canonical values
+          // here cannot be clobbered by stray query keys.
           // Reuse dispatchId as commandId — matches the adopt-snapshot pattern
           // a few lines up and keeps all correlated logs tied to one id.
           const envelope = buildCommandEnvelope({
             targetDevice: deviceId,
             command: 'queue',
             commandId: dispatchId,
-            // Spread opts first so a caller-supplied op or contentId can't
-            // clobber the canonical values.
-            params: { ...opts, op: 'play-now', contentId: resolvedContentId },
+            params: { ...passThroughOpts, op: requestedOp, contentId: resolvedContentId },
           });
           this.#broadcast({ topic, ...envelope });
 
@@ -503,15 +506,19 @@ export class WakeAndLoadService {
           });
         } else {
           const { contentId: fbContentId, resolvedKey: fbResolvedKey } = fbResolved;
-          const fbOpts = { ...contentQuery };
-          delete fbOpts[fbResolvedKey];
+          const fbOp = isLoadContentQueueOp(contentQuery.op) ? contentQuery.op : 'play-now';
+          const fbPassThrough = { ...contentQuery };
+          delete fbPassThrough[fbResolvedKey];
+          delete fbPassThrough.op;
 
+          // op and contentId are stripped from `options` above; the canonical values
+          // here cannot be clobbered by stray query keys.
           // Reuse dispatchId as commandId (same rationale as the WS-first path).
           const fbEnvelope = buildCommandEnvelope({
             targetDevice: deviceId,
             command: 'queue',
             commandId: dispatchId,
-            params: { ...fbOpts, op: 'play-now', contentId: fbContentId },
+            params: { ...fbPassThrough, op: fbOp, contentId: fbContentId },
           });
           this.#broadcast({ topic, ...fbEnvelope });
           this.#logger.info?.('wake-and-load.load.wsFallbackSent', {
