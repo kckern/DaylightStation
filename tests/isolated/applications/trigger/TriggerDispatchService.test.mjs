@@ -19,12 +19,15 @@ describe('TriggerDispatchService.handleTrigger', () => {
   });
 
   function makeService(configOverrides = null) {
+    // Production now keys entries by modality first then value, i.e.
+    // entries[modality][value]. See TriggerDispatchService.handleTrigger
+    // (backend/src/3_applications/trigger/TriggerDispatchService.mjs:43).
     const config = configOverrides || {
       livingroom: {
         target: 'livingroom-tv',
         action: 'queue',
         auth_token: null,
-        entries: { '83_8e_68_06': { plex: 620707 } },
+        entries: { nfc: { '83_8e_68_06': { plex: 620707 } } },
       },
     };
     return new TriggerDispatchService({
@@ -80,7 +83,7 @@ describe('TriggerDispatchService.handleTrigger', () => {
         target: 'livingroom-tv',
         action: 'queue',
         auth_token: null,
-        entries: { '83_8e_68_06': { action: 'launch-rocket' } },
+        entries: { nfc: { '83_8e_68_06': { action: 'launch-rocket' } } },
       },
     });
     const result = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06');
@@ -94,7 +97,7 @@ describe('TriggerDispatchService.handleTrigger', () => {
         target: 'livingroom-tv',
         action: 'queue',
         auth_token: 'secret',
-        entries: { '83_8e_68_06': { plex: 620707 } },
+        entries: { nfc: { '83_8e_68_06': { plex: 620707 } } },
       },
     });
     const result = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06', {});
@@ -108,7 +111,7 @@ describe('TriggerDispatchService.handleTrigger', () => {
         target: 'livingroom-tv',
         action: 'queue',
         auth_token: 'secret',
-        entries: { '83_8e_68_06': { plex: 620707 } },
+        entries: { nfc: { '83_8e_68_06': { plex: 620707 } } },
       },
     });
     const result = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06', { token: 'secret' });
