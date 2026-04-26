@@ -28,6 +28,7 @@ export class TriggerDispatchService {
   #config;
   #contentIdResolver;
   #deps;
+  #tagWriter;
   #broadcast;
   #logger;
   #recentDispatches;   // Map<key, timestampMs>
@@ -40,6 +41,7 @@ export class TriggerDispatchService {
     wakeAndLoadService,
     haGateway,
     deviceService,
+    tagWriter = null,           // NEW
     broadcast,
     logger = console,
     debounceWindowMs = 3000,
@@ -48,6 +50,7 @@ export class TriggerDispatchService {
     this.#config = config || {};
     this.#contentIdResolver = contentIdResolver;
     this.#deps = { wakeAndLoadService, haGateway, deviceService };
+    this.#tagWriter = tagWriter;
     this.#broadcast = broadcast || (() => {});
     this.#logger = logger;
     this.#recentDispatches = new Map();
@@ -126,11 +129,22 @@ export class TriggerDispatchService {
       return { ok: false, code, error: err.message, location, modality, value: normalizedValue, dispatchId };
     }
 
+    // NFC tags with only metadata (e.g. scanned_at placeholder, note) and no
+    // resolvable content are treated as unresolved — they fall through to
+    // #handleUnknownNfc so the user receives the naming prompt.
+    if (modality === 'nfc' && intent && intent.content === undefined) intent = null;
+
     const baseLog = { location, modality, value: normalizedValue, registered: !!intent, dispatchId };
 
     if (!intent) {
+      if (modality === 'nfc') {
+        await this.#handleUnknownNfc(location, normalizedValue, locationConfig);
+      }
       this.#logger.info?.('trigger.fired', { ...baseLog, error: 'trigger-not-registered' });
       this.#emit(location, modality, baseLog);
+      // Extend debounce to the unknown branch so HA's 2-3 duplicate fires
+      // per physical tap collapse to a single placeholder write + notify.
+      this.#recentDispatches.set(debounceKey, this.#clock());
       return { ok: false, code: 'TRIGGER_NOT_REGISTERED', error: `Trigger not registered: ${normalizedValue}`, location, modality, value: normalizedValue, dispatchId };
     }
 
@@ -167,6 +181,58 @@ export class TriggerDispatchService {
     // The outer `type` is the event kind ('trigger.fired') that subscribers
     // listen for. Topic stays `trigger:<location>:<modality>` as a routing key.
     this.#broadcast({ topic: `trigger:${location}:${modality}`, ...payload, type: 'trigger.fired' });
+  }
+
+  /**
+   * Handle a scan of an NFC tag that didn't resolve. Lifecycle is derived
+   * from the current YAML entry (no explicit pending flag). Notification
+   * failures are logged but never fail the GET response.
+   *
+   * - state 0 (no entry):           write placeholder + notify (if configured)
+   * - state 1 (placeholder, no note): notify (if configured), no write
+   * - state 2 (has note, no intent): silent (caller already broadcasts)
+   *
+   * State 3 is unreachable here — the resolver would have produced an intent.
+   */
+  async #handleUnknownNfc(location, uid, locationConfig) {
+    const entry = this.#config?.nfc?.tags?.[uid];
+    const hasNote = typeof entry?.global?.note === 'string' && entry.global.note.length > 0;
+    if (entry && hasNote) return;
+
+    if (this.#tagWriter) {
+      try {
+        await this.#tagWriter.upsertNfcPlaceholder(uid, this.#formatScannedAt(this.#clock()));
+        this.#logger.debug?.('trigger.placeholder_created', { location, uid });
+      } catch (err) {
+        this.#logger.error?.('trigger.placeholder.failed', { location, uid, error: err.message });
+      }
+    }
+
+    const notifyService = locationConfig.notify_unknown;
+    if (!notifyService) return;
+
+    const payload = {
+      title: `Unknown NFC tag at ${location}`,
+      message: `Tap to name tag ${uid}`,
+      data: {
+        actions: [{
+          action: `NFC_REPLY|${location}|${uid}`,
+          title: 'Submit',
+          behavior: 'textInput',
+          textInputButtonTitle: 'Save',
+          textInputPlaceholder: 'Tag name',
+        }],
+      },
+    };
+    try {
+      await this.#deps.haGateway.callService('notify', notifyService, payload);
+    } catch (err) {
+      this.#logger.error?.('trigger.notify.failed', { location, uid, service: notifyService, error: err.message });
+    }
+  }
+
+  #formatScannedAt(ms) {
+    return new Date(ms).toLocaleString('sv-SE', { hour12: false });
   }
 }
 
