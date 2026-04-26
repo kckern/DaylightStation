@@ -29,7 +29,7 @@ describe('YamlFinanceDatastore', () => {
     testDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'finance-store-test-'));
 
     // Create directory structure
-    const financesPath = path.join(testDataRoot, 'household', 'apps', 'finances');
+    const financesPath = path.join(testDataRoot, 'household', 'common', 'finances');
     fs.mkdirSync(financesPath, { recursive: true });
 
     // Write test config file
@@ -67,12 +67,12 @@ describe('YamlFinanceDatastore', () => {
   describe('getBasePath', () => {
     it('returns correct path for default household', () => {
       const basePath = store.getBasePath();
-      expect(basePath).toBe(path.join(testDataRoot, 'household', 'apps', 'finances'));
+      expect(basePath).toBe(path.join(testDataRoot, 'household', 'common', 'finances'));
     });
 
     it('returns correct path for specified household', () => {
       const basePath = store.getBasePath('other');
-      expect(basePath).toBe(path.join(testDataRoot, 'household-other', 'apps', 'finances'));
+      expect(basePath).toBe(path.join(testDataRoot, 'household-other', 'common', 'finances'));
     });
   });
 
