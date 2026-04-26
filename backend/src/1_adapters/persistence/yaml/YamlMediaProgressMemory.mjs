@@ -9,7 +9,7 @@ import {
 } from '#system/utils/FileIO.mjs';
 import { IMediaProgressMemory } from '#apps/content/ports/IMediaProgressMemory.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import { validateCanonicalSchema, LEGACY_TO_CANONICAL, serializeMediaProgress } from './mediaProgressSchema.mjs';
+import { validateCanonicalSchema, LEGACY_TO_CANONICAL } from './mediaProgressSchema.mjs';
 
 /**
  * YAML-based media progress persistence
@@ -35,20 +35,16 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
    * @returns {string}
    */
   _getBasePath(storagePath) {
-    // Guard against undefined storagePath
-    if (!storagePath) {
-      return `${this.basePath}/default`;
-    }
     // Sanitize each path segment but preserve directory structure
-    const safePath = storagePath
+    const safePath = (storagePath || '')
       .split('/')
       .filter(segment => segment.length > 0)  // Remove empty segments
       .map(segment => segment.replace(/[^a-zA-Z0-9-_]/g, '_'))
       .join('/');
     // Default to 'default' if path is empty after sanitization
     const finalPath = safePath || 'default';
-    // Return path WITHOUT extension - FileIO adds .yml automatically
-    return `${this.basePath}/${finalPath}`;
+    // Explicit .yml extension — keep adapter and FileIO in sync regardless of dotted segments
+    return `${this.basePath}/${finalPath}.yml`;
   }
 
   /**
@@ -118,9 +114,10 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
    */
   async set(state, storagePath) {
     const data = this._readFile(storagePath);
-    const { contentId, ...rest } = serializeMediaProgress(state);
+    // Use the entity's canonical serialization — preserves any legacy fields for validation visibility
+    const { contentId, ...rest } = state.toJSON();
 
-    // Validate schema before writing
+    // Validate schema before writing — warn but still persist (non-blocking)
     const validation = validateCanonicalSchema(rest);
     if (!validation.valid) {
       console.warn(
