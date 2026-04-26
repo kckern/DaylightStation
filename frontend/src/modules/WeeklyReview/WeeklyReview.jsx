@@ -23,8 +23,6 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [confirmFocus, setConfirmFocus] = useState(0); // 0=continue, 1=save
   const [resumeDraft, setResumeDraft] = useState(null); // { sessionId, source: 'server'|'local', totalBytes?, lastSavedAt, chunkCount? }
-  // eslint-disable-next-line no-unused-vars -- Task 13 removes Discard affordances; setResumeFocus will be deleted then
-  const [resumeFocus, setResumeFocus] = useState(0); // I1: 0=Finalize, 1=Discard
   const [finalizeError, setFinalizeError] = useState(null);
   const [errorFocus, setErrorFocus] = useState(0); // I2: 0=Retry, 1=Exit
   const [uploadInFlight, setUploadInFlight] = useState(false);
@@ -321,19 +319,6 @@ export default function WeeklyReview({ dispatch, dismiss }) {
     }
   }, [resumeDraft, data?.week]);
 
-  const discardPriorDraft = useCallback(async () => {
-    if (!resumeDraft?.sessionId || !data?.week) return;
-    try {
-      if (resumeDraft.source === 'server') {
-        await DaylightAPI(`/api/v1/weekly-review/recording/drafts/${resumeDraft.sessionId}?week=${data.week}`, {}, 'DELETE');
-      }
-      await deleteLocalSession(resumeDraft.sessionId);
-      setResumeDraft(null);
-    } catch (err) {
-      logger.error('recording.resume.discard-failed', { error: err.message });
-    }
-  }, [resumeDraft, data?.week]);
-
   // Pagehide/beforeunload beacon flush
   useEffect(() => {
     const handlePageHide = () => {
@@ -621,8 +606,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
               <small>{resumeDraft.source === 'server' ? `Server draft · ${Math.round((resumeDraft.totalBytes || 0) / 1024)} KB` : `Local-only draft · ${resumeDraft.chunkCount || 0} chunks`}</small>
             </div>
             <div className="confirm-actions">
-              <button className={`confirm-btn confirm-btn--save${resumeFocus === 0 ? ' focused' : ''}`} onClick={finalizePriorDraft}>Finalize Previous</button>
-              <button className={`confirm-btn confirm-btn--continue${resumeFocus === 1 ? ' focused' : ''}`} onClick={discardPriorDraft}>Discard</button>
+              <button className="confirm-btn confirm-btn--save focused" onClick={finalizePriorDraft}>Finalize Previous</button>
             </div>
           </div>
         </div>
