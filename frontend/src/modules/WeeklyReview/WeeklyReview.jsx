@@ -5,7 +5,6 @@ import MenuNavigationContext from '@/context/MenuNavigationContext.jsx';
 import DayColumn from './components/DayColumn.jsx';
 import DayDetail from './components/DayDetail.jsx';
 import FullscreenImage from './components/FullscreenImage.jsx';
-// eslint-disable-next-line no-unused-vars -- Task 10 wires this up
 import PreFlightOverlay from './components/PreFlightOverlay.jsx';
 import RecordingBar from './components/RecordingBar.jsx';
 import { useAudioRecorder } from './hooks/useAudioRecorder.js';
@@ -37,14 +36,12 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   const [focusRow, setFocusRow] = useState('main');            // 'main' | 'bar'
   const [preflightFailed, setPreflightFailed] = useState(false);
   const [preflightFocus, setPreflightFocus] = useState(0);     // 0=Retry, 1=Exit
-  const preflightStatus = preflightFailed
-    ? 'failed'
-    : 'acquiring'; // Task 10 will update this to factor in firstAudibleFrameSeen
-  // eslint-disable-next-line no-unused-vars -- setPreflightStatus stub for Task 10 wiring
+  // eslint-disable-next-line no-unused-vars -- setDisconnectModal wired in Task 12
   const [disconnectModal, setDisconnectModal] = useState(null);
 
   const containerRef = useRef(null);
   const uploadStartRef = useRef(null);
+  const autoStartRef = useRef(false);
   const menuNav = React.useContext(MenuNavigationContext);
 
   // Durable recording pipeline: stable sessionId per mount+week.
@@ -64,7 +61,12 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   const {
     isRecording, duration: recordingDuration, micLevel, silenceWarning,
     error: recorderError, startRecording, stopRecording,
+    firstAudibleFrameSeen, disconnected, reconnect, // eslint-disable-line no-unused-vars -- disconnected/reconnect wired in Task 12
   } = useAudioRecorder({ onChunk: handleChunk });
+
+  const preflightStatus = preflightFailed
+    ? 'failed'
+    : (firstAudibleFrameSeen ? 'ok' : 'acquiring');
 
   // Task 9 callbacks — declared after useAudioRecorder so stopRecording is in scope.
   // Some are stubs; Tasks 10–12 will wire them up fully.
@@ -84,8 +86,12 @@ export default function WeeklyReview({ dispatch, dismiss }) {
     logger.info('upload.enter-stub', { sessionId: sessionIdRef.current });
   }, []);
 
-  // Task 10 will define onPreflightRetry fully. Stub for now.
-  const onPreflightRetry = useCallback(() => { setPreflightFailed(false); }, []);
+  const onPreflightRetry = useCallback(() => {
+    setPreflightFailed(false);
+    autoStartRef.current = false;
+    stopRecording();
+    setTimeout(() => { autoStartRef.current = true; startRecording(); }, 100);
+  }, [stopRecording, startRecording]);
   const onPreflightExit  = useCallback(() => onExitWidget(), [onExitWidget]);
 
   const onBackPressed = useCallback(() => {
@@ -184,6 +190,28 @@ export default function WeeklyReview({ dispatch, dismiss }) {
     };
     fetchBootstrap();
   }, []);
+
+  useEffect(() => {
+    if (!data || autoStartRef.current) return;
+    autoStartRef.current = true;
+    logger.info('recording.auto-start');
+    startRecording();
+  }, [data, startRecording]);
+
+  useEffect(() => {
+    if (firstAudibleFrameSeen) {
+      setPreflightFailed(false);
+      return;
+    }
+    if (!isRecording) return;
+    const timer = setTimeout(() => {
+      if (!firstAudibleFrameSeen) {
+        logger.warn('recording.preflight-timeout');
+        setPreflightFailed(true);
+      }
+    }, 10000);
+    return () => clearTimeout(timer);
+  }, [firstAudibleFrameSeen, isRecording]);
 
   // Mount-time draft recovery: check server and local IndexedDB for unfinalized sessions.
   useEffect(() => {
@@ -643,6 +671,17 @@ export default function WeeklyReview({ dispatch, dismiss }) {
           </div>
         </div>
       )}
+
+      <PreFlightOverlay
+        status={preflightStatus}
+        onRetry={() => {
+          setPreflightFailed(false);
+          autoStartRef.current = false;
+          stopRecording();
+          setTimeout(() => { autoStartRef.current = true; startRecording(); }, 100);
+        }}
+        onExit={onExitWidget}
+      />
 
       <RecordingBar
         weekLabel={weekLabel}
