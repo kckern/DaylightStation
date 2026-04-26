@@ -897,7 +897,17 @@ Post-Phase-2: backend  : 1 failed /  846 passed  (847 total,   1 file failed)  -
               Δ backend: -11 fails (7 MediaProgress.toJSON + 4 YamlMediaProgressMemory).
               Residual backend failure: OpenAICostSource expects 'gpt-4o' but current
               model registry returns 'gpt-4.1' — unrelated to Phase 2 scope.
-Post-Phase-3: ??? failed   # quick wins
+Post-Phase-3: backend  : 1 failed /  846 passed  (847 total,   1 file failed)  flat
+              frontend : 19 failed /  715 passed  (734 total,   4 files failed)  -2 fails
+              isolated : 173 failed / 1668 passed (1844 total, 324 files failed)  -1 fail
+              Δ frontend: -2 fails (registry count + InputManager null-config).
+              Δ isolated: -1 fail (filesystem manifest displayName test).
+              Plan estimated -4 frontend; the manifest fix lives under
+              tests/isolated/ not frontend/src/, so it lands in the isolated
+              ledger instead. Net = 3 fixes for 4 originally-failing tests
+              (the plan's "2 manifest tests" was actually 1 — the second
+              "Local Media" reference in AdapterRegistry.test.mjs was already
+              correct; that file fails for unrelated @jest/globals reasons).
 Post-Phase-4: ??? failed   # frontend logic fixes
 Post-Phase-5: ??? failed   # PiP implementation
 Post-Phase-6: 0 failed     # GOAL
