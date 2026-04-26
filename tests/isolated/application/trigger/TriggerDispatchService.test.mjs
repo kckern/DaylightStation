@@ -337,3 +337,176 @@ describe('TriggerDispatchService — debounce', () => {
     expect(wakeAndLoadService.execute).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
+  let wakeAndLoadService;
+  let haGateway;
+  let deviceService;
+  let broadcast;
+  let logger;
+  let tagWriter;
+  let now;
+
+  beforeEach(() => {
+    wakeAndLoadService = { execute: vi.fn() };
+    haGateway = { callService: vi.fn().mockResolvedValue({ ok: true }) };
+    deviceService = { get: vi.fn() };
+    broadcast = vi.fn();
+    logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    tagWriter = {
+      upsertNfcPlaceholder: vi.fn().mockResolvedValue({ created: true }),
+      setNfcNote: vi.fn(),
+    };
+    now = 1714137138000; // arbitrary fixed ms
+  });
+
+  function makeRegistry({ tags = {}, notify_unknown = 'mobile_app_kc_phone' } = {}) {
+    return {
+      nfc: {
+        locations: {
+          livingroom: {
+            target: 'livingroom-tv',
+            action: 'play-next',
+            auth_token: null,
+            notify_unknown,
+            defaults: {},
+          },
+        },
+        tags,  // already in parsed { global, overrides } shape
+      },
+      state: { locations: {} },
+    };
+  }
+
+  function makeService(config) {
+    return new TriggerDispatchService({
+      config,
+      contentIdResolver: { resolve: () => null },
+      wakeAndLoadService,
+      haGateway,
+      deviceService,
+      tagWriter,
+      broadcast,
+      logger,
+      clock: () => now,
+    });
+  }
+
+  it('state 0 — first scan: writes placeholder, notifies, returns 404', async () => {
+    const service = makeService(makeRegistry());
+    const result = await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
+
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('TRIGGER_NOT_REGISTERED');
+
+    expect(tagWriter.upsertNfcPlaceholder).toHaveBeenCalledWith(
+      '04_a1_b2_c3',
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/),
+    );
+
+    expect(haGateway.callService).toHaveBeenCalledWith(
+      'notify',
+      'mobile_app_kc_phone',
+      expect.objectContaining({
+        title: expect.stringMatching(/livingroom/i),
+        message: expect.stringContaining('04_a1_b2_c3'),
+        data: expect.objectContaining({
+          actions: [expect.objectContaining({
+            action: 'NFC_REPLY|livingroom|04_a1_b2_c3',
+            behavior: 'textInput',
+          })],
+        }),
+      }),
+    );
+
+    expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({
+      topic: 'trigger:livingroom:nfc',
+      type: 'trigger.fired',
+      registered: false,
+    }));
+  });
+
+  it('state 0 — no notify call when notify_unknown is unset', async () => {
+    const service = makeService(makeRegistry({ notify_unknown: null }));
+    await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
+    expect(tagWriter.upsertNfcPlaceholder).toHaveBeenCalled();
+    expect(haGateway.callService).not.toHaveBeenCalled();
+  });
+
+  it('state 1 — re-scan with placeholder but no note: notifies, no new write', async () => {
+    tagWriter.upsertNfcPlaceholder.mockResolvedValue({ created: false });
+    const registry = makeRegistry({
+      tags: { '04_a1_b2_c3': { global: { scanned_at: '2026-04-26 10:00:00' }, overrides: {} } },
+    });
+    const service = makeService(registry);
+    await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
+
+    // upsert is called but no-ops (returns { created: false })
+    expect(tagWriter.upsertNfcPlaceholder).toHaveBeenCalled();
+    expect(haGateway.callService).toHaveBeenCalledTimes(1);
+  });
+
+  it('state 2 — has note already: silent (no notify, no write)', async () => {
+    const registry = makeRegistry({
+      tags: { '04_a1_b2_c3': {
+        global: { scanned_at: '2026-04-26 10:00:00', note: 'kids movie' },
+        overrides: {},
+      } },
+    });
+    const service = makeService(registry);
+    await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
+
+    expect(tagWriter.upsertNfcPlaceholder).not.toHaveBeenCalled();
+    expect(haGateway.callService).not.toHaveBeenCalled();
+    // Broadcast still fires for observer dashboards:
+    expect(broadcast).toHaveBeenCalled();
+  });
+
+  it('debounce extends to unknown branch: second scan within 3s does not re-notify', async () => {
+    const service = makeService(makeRegistry());
+    await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
+    now += 1500; // 1.5 s later
+    await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
+    expect(haGateway.callService).toHaveBeenCalledTimes(1);
+    expect(tagWriter.upsertNfcPlaceholder).toHaveBeenCalledTimes(1);
+  });
+
+  it('debounce window expiry allows a second notify', async () => {
+    tagWriter.upsertNfcPlaceholder
+      .mockResolvedValueOnce({ created: true })
+      .mockResolvedValueOnce({ created: false });
+    const service = makeService(makeRegistry());
+    await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
+    now += 5000; // 5 s later, past window
+    await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
+    expect(haGateway.callService).toHaveBeenCalledTimes(2);
+  });
+
+  it('notify failure does not change the GET response or skip broadcast', async () => {
+    haGateway.callService.mockRejectedValue(new Error('HA down'));
+    const service = makeService(makeRegistry());
+    const result = await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
+    expect(result.code).toBe('TRIGGER_NOT_REGISTERED');
+    expect(broadcast).toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith('trigger.notify.failed', expect.any(Object));
+  });
+
+  it('non-NFC modality unknown branch does not call tagWriter', async () => {
+    const config = {
+      nfc: { locations: {}, tags: {} },
+      state: {
+        locations: {
+          livingroom: {
+            target: 'livingroom-tv',
+            auth_token: null,
+            states: {},  // empty: any state value will be unregistered
+          },
+        },
+      },
+    };
+    const service = makeService(config);
+    await service.handleTrigger('livingroom', 'state', 'on');
+    expect(tagWriter.upsertNfcPlaceholder).not.toHaveBeenCalled();
+    expect(haGateway.callService).not.toHaveBeenCalled();
+  });
+});
