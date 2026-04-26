@@ -106,7 +106,7 @@ import { DeviceFactory } from '#apps/devices/services/DeviceFactory.mjs';
 import { createDeviceRouter } from '#api/v1/routers/device.mjs';
 
 // Trigger domain + application imports
-import { parseTriggerConfig } from '#domains/trigger/TriggerConfig.mjs';
+import { YamlTriggerConfigRepository } from '#adapters/trigger/YamlTriggerConfigRepository.mjs';
 import { TriggerDispatchService } from '#apps/trigger/TriggerDispatchService.mjs';
 import { createTriggerRouter } from '#api/v1/routers/trigger.mjs';
 
@@ -1734,10 +1734,11 @@ export function createTriggerApiRouter(config) {
 
   let triggerConfig;
   try {
-    triggerConfig = parseTriggerConfig(loadFile('config/nfc'));
+    const triggerConfigRepository = new YamlTriggerConfigRepository();
+    triggerConfig = triggerConfigRepository.loadRegistry({ loadFile });
   } catch (err) {
     logger.warn?.('trigger.config.parse.failed', { error: err.message });
-    triggerConfig = {};
+    triggerConfig = { nfc: { locations: {}, tags: {} }, state: { locations: {} } };
   }
 
   const triggerDispatchService = new TriggerDispatchService({
