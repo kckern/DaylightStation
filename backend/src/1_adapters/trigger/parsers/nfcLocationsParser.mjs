@@ -15,7 +15,7 @@
 
 import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
 
-const RESERVED = new Set(['target', 'action', 'auth_token']);
+const RESERVED = new Set(['target', 'action', 'auth_token', 'notify_unknown']);
 
 function isPlainObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -46,6 +46,7 @@ export function parseNfcLocations(raw) {
       target: locConfig.target,
       action: locConfig.action ?? null,
       auth_token: locConfig.auth_token ?? null,
+      notify_unknown: locConfig.notify_unknown ?? null,
       defaults,
     };
   }
