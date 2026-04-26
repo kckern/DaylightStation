@@ -892,7 +892,11 @@ Post-Phase-1: 207 failed individual tests across 3 suites
               the .mjs+JSX transform issue. Both are infrastructure but exceed
               Phase 1 scope; Phase 6 forensic sweep will need to address them.
 
-Post-Phase-2: ??? failed   # backend should drop by ~11+
+Post-Phase-2: backend  : 1 failed /  846 passed  (847 total,   1 file failed)  -11 fails
+              (frontend + isolated unchanged this phase — Phase 2 is backend-only)
+              Δ backend: -11 fails (7 MediaProgress.toJSON + 4 YamlMediaProgressMemory).
+              Residual backend failure: OpenAICostSource expects 'gpt-4o' but current
+              model registry returns 'gpt-4.1' — unrelated to Phase 2 scope.
 Post-Phase-3: ??? failed   # quick wins
 Post-Phase-4: ??? failed   # frontend logic fixes
 Post-Phase-5: ??? failed   # PiP implementation
