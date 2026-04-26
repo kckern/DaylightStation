@@ -19,7 +19,7 @@ describe('ScrollConfigLoader', () => {
     test('returns defaults when no config/feed exists', () => {
       const config = loader.load('kckern');
       expect(config.batch_size).toBe(15);
-      expect(config.wire_decay_batches).toBe(10);
+      expect(config.wire_decay_half_life).toBe(4);
       expect(config.spacing).toEqual({
         max_consecutive: 1,
         max_consecutive_subsource: 2,

@@ -114,7 +114,8 @@ describe('SessionService', () => {
       const sessions = await service.listSessionsByDate('2026-01-11', 'test-hid');
       expect(sessions).toHaveLength(2);
       expect(sessions[0].sessionId.toString()).toBe('20260111120000');
-      expect(sessions[1].rosterCount).toBe(1);
+      // Method passes through raw store data without enrichment, so roster array is preserved
+      expect(sessions[1].roster).toHaveLength(1);
     });
   });
 

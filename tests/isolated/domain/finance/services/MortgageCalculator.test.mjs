@@ -210,7 +210,8 @@ describe('MortgageCalculator', () => {
       expect(result.balance).toBe(244000);
       expect(result.totalPaid).toBe(6000);
       expect(result.transactions).toHaveLength(3);
-      expect(result.paymentPlans).toHaveLength(1);
+      // Production appends a derived "Historical Pace" plan, so total = configured + 1
+      expect(result.paymentPlans).toHaveLength(2);
     });
 
     test('throws ValidationError when asOfDate is missing', () => {

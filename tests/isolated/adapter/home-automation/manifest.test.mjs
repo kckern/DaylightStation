@@ -3,7 +3,7 @@ import manifest from '#adapters/home-automation/homeassistant/manifest.mjs';
 
 describe('Home Assistant Manifest', () => {
   test('has required fields', () => {
-    expect(manifest.provider).toBe('home_assistant');
+    expect(manifest.provider).toBe('homeassistant');
     expect(manifest.capability).toBe('home_automation');
     expect(manifest.displayName).toBe('Home Assistant');
   });

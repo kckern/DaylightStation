@@ -84,7 +84,7 @@ describe('FreshRSSFeedAdapter', () => {
         }),
       });
 
-      const items = await adapter.getItems('feed/1', 'kckern');
+      const { items } = await adapter.getItems('feed/1', 'kckern');
       expect(items).toHaveLength(1);
       expect(items[0].title).toBe('Test Article');
       expect(items[0].link).toBe('https://example.com/article');
