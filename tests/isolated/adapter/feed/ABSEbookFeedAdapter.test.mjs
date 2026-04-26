@@ -96,11 +96,22 @@ describe('ABSEbookFeedAdapter', () => {
   });
 
   test('returns feed card with chapter title and preview when EPUB has TOC', async () => {
-    const epubBuffer = await buildMockEpub([
-      'Introduction',
-      'The Surprising Power of Atomic Habits',
-      'How Your Habits Shape Your Identity',
-    ]);
+    // Production now serves only books that already have a cached TOC; books
+    // without cache are background-prefetched fire-and-forget and skipped on
+    // the first fetchItems() call. Pre-write the cache so the first call
+    // returns the item synchronously.
+    writeCacheFile('book-123', {
+      bookId: 'book-123',
+      title: 'Atomic Habits',
+      author: 'James Clear',
+      coverWidth: 600,
+      coverHeight: 900,
+      chapters: [
+        { id: 'ch0', title: 'Introduction', preview: 'Content of Introduction.', content: 'Content of Introduction.' },
+        { id: 'ch1', title: 'The Surprising Power of Atomic Habits', preview: 'Content of The Surprising Power of Atomic Habits.', content: 'Content of The Surprising Power of Atomic Habits.' },
+        { id: 'ch2', title: 'How Your Habits Shape Your Identity', preview: 'Content of How Your Habits Shape Your Identity.', content: 'Content of How Your Habits Shape Your Identity.' },
+      ],
+    });
 
     mockAbsClient.getLibraryItems.mockResolvedValueOnce({
       results: [{
@@ -116,8 +127,6 @@ describe('ABSEbookFeedAdapter', () => {
       }],
       total: 1,
     });
-
-    mockFetchEpub(epubBuffer);
 
     const adapter = createAdapter();
 
@@ -274,6 +283,10 @@ describe('ABSEbookFeedAdapter', () => {
       params: { library: 'lib-abc', genres: ['Self-Improvement'] },
     }, 'testuser');
 
+    // EPUB parse + cache write now happens via fire-and-forget background
+    // prefetch — give it a beat to flush.
+    await new Promise(r => setTimeout(r, 200));
+
     const cachedData = readCacheFile('book-new');
     expect(cachedData).toBeTruthy();
     expect(cachedData.bookId).toBe('book-new');
@@ -319,6 +332,8 @@ describe('ABSEbookFeedAdapter', () => {
       params: { library: 'lib-abc', genres: ['Self-Improvement'] },
     }, 'testuser');
 
+    await new Promise(r => setTimeout(r, 200));
+
     const cachedData = readCacheFile('book-fm');
     const titles = cachedData.chapters.map(c => c.title);
     expect(titles).not.toContain('Cover');
@@ -354,6 +369,8 @@ describe('ABSEbookFeedAdapter', () => {
       priority: 5,
       params: { library: 'lib-abc' },
     }, 'testuser');
+
+    await new Promise(r => setTimeout(r, 200));
 
     const cachedData = readCacheFile('book-preview');
     const ch = cachedData.chapters[0];
@@ -422,6 +439,8 @@ describe('ABSEbookFeedAdapter', () => {
       priority: 5,
       params: { library: 'lib-abc' },
     }, 'testuser');
+
+    await new Promise(r => setTimeout(r, 200));
 
     const cachedData = readCacheFile('book-nocover');
     expect(cachedData.coverWidth).toBe(2);
