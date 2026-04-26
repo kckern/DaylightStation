@@ -1,12 +1,27 @@
 /**
  * TriggerDispatchService — orchestrates a single trigger event from API to
- * dispatched action. Modality-agnostic: location-rooted config keyed by
- * `(location, type, value)` where `type` chooses which entries map to read.
+ * dispatched action. Modality-agnostic via ResolverRegistry (domain service).
+ *
+ * Config shape (produced by buildTriggerRegistry):
+ *   { [modality]: <modality-specific registry slice> }
+ *   e.g. {
+ *     nfc:   { locations: { [location]: { target, action, auth_token, defaults } }, tags: { [uid]: { global, overrides } } },
+ *     state: { locations: { [location]: { target, auth_token, states: { [val]: { action } } } } },
+ *   }
+ *
+ * Auth token is looked up per (modality, location) from
+ * config[modality].locations[location].auth_token. This keeps each modality
+ * slice self-contained and avoids cross-modality coupling.
+ *
+ * Layer: APPLICATION (3_applications/trigger). Coordinates auth/debounce
+ * (its own concerns) with domain ResolverRegistry and actionHandlers + WS
+ * broadcast.
+ *
  * @module applications/trigger/TriggerDispatchService
  */
 
 import { randomUUID } from 'node:crypto';
-import { resolveIntent } from '#domains/trigger/TriggerIntent.mjs';
+import { ResolverRegistry, UnknownModalityError } from '#domains/trigger/services/ResolverRegistry.mjs';
 import { dispatchAction, UnknownActionError } from './actionHandlers.mjs';
 
 export class TriggerDispatchService {
@@ -49,18 +64,32 @@ export class TriggerDispatchService {
     }
   }
 
+  #lookupAuthToken(modality, location) {
+    return this.#config?.[modality]?.locations?.[location]?.auth_token ?? null;
+  }
+
   async handleTrigger(location, modality, value, options = {}) {
     const startedAt = this.#clock();
     const dispatchId = randomUUID();
     const normalizedValue = String(value || '').toLowerCase();
-    const locationConfig = this.#config[location];
 
+    // Modality slice check — must come before auth so unknown modalities get
+    // a clear error code rather than a misleading LOCATION_NOT_FOUND.
+    const modalityConfig = this.#config?.[modality];
+    if (!modalityConfig) {
+      this.#logger.warn?.('trigger.fired', { location, modality, value: normalizedValue, registered: false, error: 'unknown-modality' });
+      return { ok: false, code: 'UNKNOWN_MODALITY', error: `Unknown modality: ${modality}`, location, modality, value: normalizedValue, dispatchId };
+    }
+
+    // Location check within the modality slice.
+    const locationConfig = modalityConfig.locations?.[location];
     if (!locationConfig) {
       this.#logger.warn?.('trigger.fired', { location, modality, value: normalizedValue, registered: false, error: 'location-not-found' });
       return { ok: false, code: 'LOCATION_NOT_FOUND', error: `Unknown location: ${location}`, location, modality, value: normalizedValue, dispatchId };
     }
 
-    if (locationConfig.auth_token && locationConfig.auth_token !== options.token) {
+    const authToken = this.#lookupAuthToken(modality, location);
+    if (authToken && authToken !== options.token) {
       this.#logger.warn?.('trigger.fired', { location, modality, value: normalizedValue, error: 'auth-failed' });
       return { ok: false, code: 'AUTH_FAILED', error: 'Authentication failed', location, modality, value: normalizedValue, dispatchId };
     }
@@ -81,25 +110,31 @@ export class TriggerDispatchService {
       }
     }
 
-    const valueEntry = locationConfig.entries?.[modality]?.[normalizedValue];
-    const baseLog = { location, modality, value: normalizedValue, registered: !!valueEntry, dispatchId };
+    let intent;
+    try {
+      intent = ResolverRegistry.resolve({
+        modality,
+        location,
+        value: normalizedValue,
+        registry: this.#config,
+        contentIdResolver: this.#contentIdResolver,
+      });
+    } catch (err) {
+      const code = err instanceof UnknownModalityError ? 'UNKNOWN_MODALITY' : 'INVALID_INTENT';
+      this.#logger.error?.('trigger.fired', { location, modality, value: normalizedValue, error: err.message, dispatchId });
+      this.#emit(location, modality, { location, modality, value: normalizedValue, dispatchId, ok: false, error: err.message });
+      return { ok: false, code, error: err.message, location, modality, value: normalizedValue, dispatchId };
+    }
 
-    if (!valueEntry) {
+    const baseLog = { location, modality, value: normalizedValue, registered: !!intent, dispatchId };
+
+    if (!intent) {
       this.#logger.info?.('trigger.fired', { ...baseLog, error: 'trigger-not-registered' });
       this.#emit(location, modality, baseLog);
       return { ok: false, code: 'TRIGGER_NOT_REGISTERED', error: `Trigger not registered: ${normalizedValue}`, location, modality, value: normalizedValue, dispatchId };
     }
 
-    let intent;
-    try {
-      intent = resolveIntent(locationConfig, valueEntry, this.#contentIdResolver);
-      intent.dispatchId = dispatchId;
-    } catch (err) {
-      this.#logger.error?.('trigger.fired', { ...baseLog, error: err.message });
-      this.#emit(location, modality, { ...baseLog, ok: false, error: err.message });
-      return { ok: false, code: 'INVALID_INTENT', error: err.message, location, modality, value: normalizedValue, dispatchId };
-    }
-
+    intent.dispatchId = dispatchId;
     const summary = { location, modality, value: normalizedValue, action: intent.action, target: intent.target, dispatchId };
 
     if (options.dryRun) {
@@ -111,9 +146,7 @@ export class TriggerDispatchService {
     try {
       const dispatchResult = await dispatchAction(intent, this.#deps);
       const elapsedMs = this.#clock() - startedAt;
-      if (!options.dryRun) {
-        this.#recentDispatches.set(debounceKey, this.#clock());
-      }
+      this.#recentDispatches.set(debounceKey, this.#clock());
       this.#logger.info?.('trigger.fired', { ...baseLog, action: intent.action, target: intent.target, ok: true, elapsedMs });
       this.#emit(location, modality, { ...summary, ok: true });
       return { ok: true, ...summary, dispatch: dispatchResult, elapsedMs };
