@@ -106,10 +106,13 @@ export class ResilientContentAdapter {
    * Load content on device, with ADB recovery on failure
    * @param {string} path
    * @param {Object} [query]
+   * @param {Object} [options] - Forwarded to the primary adapter (e.g.
+   *   `{ verifyAsync: true }`). Additive — primaries that don't recognize a
+   *   given option simply ignore it.
    * @returns {Promise<Object>}
    */
-  async load(path, query = {}) {
-    const result = await this.#primary.load(path, query);
+  async load(path, query = {}, options = {}) {
+    const result = await this.#primary.load(path, query, options);
 
     if (result.ok) return result;
 
@@ -133,7 +136,7 @@ export class ResilientContentAdapter {
 
     // Retry: prepare + load. Replay the last prepareForContent options so
     // flags like skipCameraCheck stay consistent across the original call
-    // and the post-recovery retry.
+    // and the post-recovery retry. Forward the original load options too.
     this.#logger.info?.('resilient.load.retrying', { path });
     const prepResult = await this.#primary.prepareForContent(this.#lastPrepareOptions);
     if (!prepResult.ok) {
@@ -145,7 +148,7 @@ export class ResilientContentAdapter {
       };
     }
 
-    const retryResult = await this.#primary.load(path, query);
+    const retryResult = await this.#primary.load(path, query, options);
 
     if (retryResult.ok) {
       this.#logger.info?.('resilient.load.recoverySuccess', { path });

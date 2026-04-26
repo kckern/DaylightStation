@@ -208,16 +208,19 @@ export class Device {
    * Load content on device
    * @param {string} path - Content path
    * @param {Object} [query] - Query parameters
+   * @param {Object} [options] - Adapter-level options forwarded to
+   *   contentControl.load (e.g. `{ verifyAsync: true }` for fire-and-forget
+   *   FKB URL verification on the wake-and-load path).
    * @returns {Promise<Object>}
    */
-  async loadContent(path, query = {}) {
+  async loadContent(path, query = {}, options = {}) {
     this.#logger.info?.('device.loadContent.start', { id: this.#id, path, query, hasContentControl: !!this.#contentControl });
     if (!this.#contentControl) {
       this.#logger.warn?.('device.loadContent.noContentControl', { id: this.#id });
       return { ok: false, error: 'No content control configured' };
     }
 
-    const result = await this.#contentControl.load(path, query);
+    const result = await this.#contentControl.load(path, query, options);
     this.#logger.info?.('device.loadContent.done', { id: this.#id, path, ok: result.ok, url: result.url });
     return result;
   }
