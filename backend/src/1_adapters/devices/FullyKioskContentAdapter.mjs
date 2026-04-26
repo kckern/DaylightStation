@@ -181,9 +181,14 @@ export class FullyKioskContentAdapter {
 
       // Camera check (runs after either phase) — skip if already timed out
       // or if caller opted out via skipCameraCheck (saves ~4s on non-camera flows).
+      // cameraAvailable semantics: true = verified present, false = verified
+      // missing/unreachable, null = not checked (skipped). The null sentinel is
+      // important so downstream consumers can distinguish "we didn't look" from
+      // "camera doesn't work" — see WakeAndLoadService propagation.
       let cameraAvailable = false;
       let cameraSkipped = false;
       if (skipCameraCheck) {
+        cameraAvailable = null;
         cameraSkipped = true;
         this.#logger.info?.('fullykiosk.prepareForContent.cameraCheck.skipped', {
           reason: 'skipCameraCheck-flag',
