@@ -1,7 +1,8 @@
+import { vi } from 'vitest';
 import { probeImageDimensions } from '#system/utils/probeImageDimensions.mjs';
 
 describe('probeImageDimensions', () => {
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
 
   it('returns width and height for a valid JPEG', async () => {
     // Minimal JPEG: SOI + APP0 marker (2 bytes payload) + SOF0 marker with 100x200 dimensions
@@ -13,7 +14,7 @@ describe('probeImageDimensions', () => {
       0x01, 0x01, 0x00,
     ]);
 
-    global.fetch = jest.fn().mockResolvedValue({
+    global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       body: { [Symbol.asyncIterator]: async function* () { yield sof0; } },
     });
@@ -30,7 +31,7 @@ describe('probeImageDimensions', () => {
     png.writeUInt32BE(640, 16);     // width
     png.writeUInt32BE(480, 20);     // height
 
-    global.fetch = jest.fn().mockResolvedValue({
+    global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       body: { [Symbol.asyncIterator]: async function* () { yield png; } },
     });
@@ -40,14 +41,14 @@ describe('probeImageDimensions', () => {
   });
 
   it('returns null on fetch failure', async () => {
-    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 404 });
+    global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 404 });
     const result = await probeImageDimensions('https://example.com/missing.jpg');
     expect(result).toBeNull();
   });
 
   it('returns null on timeout', async () => {
     // Mock fetch that respects the AbortSignal, like real fetch would
-    global.fetch = jest.fn().mockImplementation((_url, opts) => {
+    global.fetch = vi.fn().mockImplementation((_url, opts) => {
       return new Promise((_resolve, reject) => {
         opts?.signal?.addEventListener('abort', () => {
           reject(new DOMException('The operation was aborted', 'AbortError'));
@@ -60,7 +61,7 @@ describe('probeImageDimensions', () => {
 
   it('returns null for non-image content', async () => {
     const html = Buffer.from('<html><body>Not an image</body></html>');
-    global.fetch = jest.fn().mockResolvedValue({
+    global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       body: { [Symbol.asyncIterator]: async function* () { yield html; } },
     });

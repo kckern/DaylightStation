@@ -1,5 +1,6 @@
 // tests/isolated/assembly/adapters/messaging/TelegramVoiceTranscriptionService.test.mjs
 
+import { vi } from 'vitest';
 import { TelegramVoiceTranscriptionService } from '#backend/src/1_adapters/messaging/TelegramVoiceTranscriptionService.mjs';
 
 describe('TelegramVoiceTranscriptionService', () => {
@@ -10,17 +11,17 @@ describe('TelegramVoiceTranscriptionService', () => {
 
   beforeEach(() => {
     mockOpenai = {
-      transcribe: jest.fn().mockResolvedValue('hello world'),
-      isConfigured: jest.fn().mockReturnValue(true),
+      transcribe: vi.fn().mockResolvedValue('hello world'),
+      isConfigured: vi.fn().mockReturnValue(true),
     };
     mockHttpClient = {
-      downloadBuffer: jest.fn().mockResolvedValue(Buffer.from('audio-data')),
+      downloadBuffer: vi.fn().mockResolvedValue(Buffer.from('audio-data')),
     };
     mockLogger = {
-      debug: jest.fn(),
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
     };
     service = new TelegramVoiceTranscriptionService(
       { openaiAdapter: mockOpenai },
