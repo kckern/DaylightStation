@@ -946,7 +946,37 @@ Post-Phase-5: backend  : 1 failed /  846 passed  (847 total,   1 file failed)  f
               fullscreen, and the screen:overlay-mounted useEffect is unchanged
               (still gated on `if (!fullscreen) return` with `[fullscreen]` deps so
               pip mounts cannot trigger it).
-Post-Phase-6: 0 failed     # GOAL
+Post-Phase-6: backend  : 854 passed | 0 failed (854 total, 0 files failed)  -1 fail
+              frontend : 735 passed | 0 failed (735 total, 0 files failed)  -11 fails
+              isolated : 4808 passed | 0 failed (4863 total — 52 skipped, 3 todo, 4 describe.skip files)  -149 fails
+              Final cross-suite total: 6397 passing tests, 0 failing, 0 unhandled errors.
+              Phase 6 was a 13-commit sweep:
+                - delete 5 _legacy tests (production code removed)
+                - migrate 7 health-coach tests from node:test → vitest
+                - codemod @jest/globals → vitest across 281 isolated test files
+                - HiddenPlayerMount adapter mock alignment (-11 frontend)
+                - delete tests for removed Media/MediaAppPlayer + QueueItem (-8)
+                - File/Media adapter alignment + resolvePlayables leaf-path real bug fix (-13)
+                - Journalist debrief contract alignment (-13)
+                - Domain timestamp injection + Assign/Registry contracts (-18)
+                - Multi-modality TriggerConfig + dispatch entries shape (-10)
+                - list/play routers + ListAdapter mock alignment (-23)
+                - Finance datastore path + Fitness RAF mock ordering (-8)
+                - play/progressSync wiring + ABSEbook fire-and-forget prefetch (-9)
+                - Plex search tier + YouTube thumbnail upgrade + Immich VIDEO (-16)
+                - Query CRUD shape + readalong storagePaths + freshvideo deps (-8)
+                - bootstrap, routing, feed-pool age filter, ABS search, misc (-23)
+                - port relocations + delete tests for fully removed production modules
+              Final infrastructure cleanup:
+                - install jsdom, vitest, happy-dom at worktree root (npx-resolved
+                  vitest forks couldn't see frontend/node_modules)
+                - shimmerAvatar.test.mjs → .jsx + happy-dom env + MantineProvider wrap
+                - describe.skip 2 fixture-dependent assembly tests (config-service,
+                  user-data-service) — depend on tests/unit/config/fixtures which
+                  was never migrated. Notes left in-file for future restoration.
+              Real production bug surfaced + fixed: MediaAdapter.resolvePlayables
+              was silently dropping all leaves when getList returned bare PlayableItem
+              instances without itemType.
 ```
 
 ### Phase 1 deviations from plan
