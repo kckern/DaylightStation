@@ -1,0 +1,32 @@
+<h2>On-Deck Player Feature</h2>
+<p class="subtitle">A single-slot &ldquo;next up&rdquo; lane on the Player so kids can keep scanning NFC tags without disrupting playback or accumulating duplicates.</p>
+
+<div class="section">
+  <span class="label">Topic</span>
+  <p>How a re-tap is ignored, how a new tap replaces the on-deck slot, and how the Player surfaces this visually.</p>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">Conceptual model</div>
+  <div class="mockup-body" style="padding: 1.5em;">
+    <div style="display: flex; gap: 1em; align-items: stretch; font-family: system-ui, -apple-system, sans-serif;">
+      <div style="flex: 1; padding: 1em; border: 1px solid #ccc; border-radius: 6px;">
+        <div style="font-size: 0.75em; opacity: 0.7; text-transform: uppercase;">Now Playing</div>
+        <div style="margin-top: 0.5em; font-weight: 600;">Goldilocks &amp; the Three Bears</div>
+      </div>
+      <div style="font-size: 1.5em; align-self: center;">&rarr;</div>
+      <div style="flex: 1; padding: 1em; border: 2px dashed #6a8caf; border-radius: 6px; background: rgba(106,140,175,0.08);">
+        <div style="font-size: 0.75em; opacity: 0.7; text-transform: uppercase;">On Deck (1 slot)</div>
+        <div style="margin-top: 0.5em; font-weight: 600;">The Three Little Pigs</div>
+        <div style="font-size: 0.75em; opacity: 0.6; margin-top: 0.3em;">latest scan replaces this slot</div>
+      </div>
+      <div style="font-size: 1.5em; align-self: center;">&rarr;</div>
+      <div style="flex: 1; padding: 1em; border: 1px solid #ccc; border-radius: 6px; opacity: 0.7;">
+        <div style="font-size: 0.75em; opacity: 0.7; text-transform: uppercase;">Original Queue</div>
+        <div style="margin-top: 0.5em;">resumes after on-deck</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="text-align: center; margin-top: 1.5em;">Continuing in terminal &mdash; first clarifying question coming next.</p>

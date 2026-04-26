@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
 import { formatFoodList, formatDateHeader } from '#domains/nutrition/entities/formatters.mjs';
 import { repairTruncatedJson } from '../lib/repairJson.mjs';
+import { deriveLogDate } from '../lib/deriveLogDate.mjs';
 
 /**
  * Get current time details for date context in prompts
@@ -25,6 +26,24 @@ function getCurrentTimeDetails(timezone = 'America/Los_Angeles') {
 
   const time = hourOfDay < 12 ? 'morning' : hourOfDay < 17 ? 'midday' : hourOfDay < 21 ? 'evening' : 'night';
 
+  return { today, timezone, dayOfWeek, timeAMPM, hourOfDay, unix, time };
+}
+
+/**
+ * Produce time-details for a pinned date string, emulating getCurrentTimeDetails()
+ * but anchored to the given YYYY-MM-DD instead of the wall clock. Used for revision
+ * prompts so the AI's "today" context matches the ORIGINAL log's creation day.
+ */
+function pinnedTimeDetails(dateStr, timezone = 'America/Los_Angeles') {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  // Noon UTC on the target date — avoids timezone edge cases that could shift the day.
+  const pinned = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  const today = dateStr;
+  const dayOfWeek = pinned.toLocaleDateString('en-US', { weekday: 'long', timeZone: timezone });
+  const timeAMPM = '12:00 PM';
+  const hourOfDay = 12;
+  const unix = Math.floor(pinned.getTime() / 1000);
+  const time = 'midday';
   return { today, timezone, dayOfWeek, timeAMPM, hourOfDay, unix, time };
 }
 
@@ -171,14 +190,34 @@ export class LogFoodFromText {
         }
       }
 
-      const prompt = this.#buildDetectionPrompt(text, portionBoost);
-      this.#logger.debug?.('logText.aiPrompt', { conversationId, text });
+      // Defensive: under current control flow the short-circuit at isRevisionMode + pendingLogUuid
+      // returns before this point. Kept so that if #handleRevision (legacy fallback) is ever
+      // invoked, the AI prompt is still pinned to the original log's date.
+      // If this path reaches here in revision mode (short-circuit didn't fire),
+      // pin the prompt to the existing log's date to prevent date drift.
+      let asOfDateForRevision = null;
+      if (isRevisionMode && pendingLogUuid && this.#foodLogStore) {
+        try {
+          const existing = await this.#foodLogStore.findByUuid(pendingLogUuid, userId);
+          if (existing) {
+            asOfDateForRevision = deriveLogDate(
+              typeof existing.toJSON === 'function' ? existing.toJSON() : existing,
+              this.#getTimezone(),
+            );
+          }
+        } catch (e) {
+          this.#logger.debug?.('logText.asOfDate.deriveFailed', { error: e.message });
+        }
+      }
+
+      const prompt = this.#buildDetectionPrompt(text, portionBoost, asOfDateForRevision);
+      this.#logger.debug?.('logText.aiPrompt', { conversationId, text, asOfDateForRevision });
 
       const response = await this.#aiGateway.chat(prompt, { maxTokens: 4096 });
       this.#logger.debug?.('logText.aiResponse', { conversationId, response: response?.substring?.(0, 500) });
 
-      // 3. Parse response into food items and date
-      const { items: foodItems, date: aiDate } = this.#parseFoodResponse(response);
+      // 3. Parse response into food items and date — same pin
+      const { items: foodItems, date: aiDate, time: aiTime } = this.#parseFoodResponse(response, asOfDateForRevision);
 
       this.#logger.debug?.('logText.parsed', {
         conversationId,
@@ -197,7 +236,7 @@ export class LogFoodFromText {
           pendingLogUuid,
           foodItems,
           logDate,
-          aiTime: this.#parseFoodResponse(response).time,
+          aiTime,
           statusMsgId,
           originalMessageId,
           messageId,
@@ -379,9 +418,14 @@ export class LogFoodFromText {
    * Build detection prompt
    * @private
    */
-  #buildDetectionPrompt(userText, portionBoost = '') {
+  #buildDetectionPrompt(userText, portionBoost = '', asOfDate = null) {
     const timezone = this.#getTimezone();
-    const { today, dayOfWeek, timeAMPM, unix, time } = getCurrentTimeDetails(timezone);
+    const live = getCurrentTimeDetails(timezone);
+    // When pinning the prompt to a specific "as of" date (revision flow), synthesize
+    // the dayOfWeek/timeAMPM context from that date instead of the live wall clock.
+    const { today, dayOfWeek, timeAMPM, unix, time } = asOfDate
+      ? pinnedTimeDetails(asOfDate, timezone)
+      : live;
 
     return [
       {
@@ -436,8 +480,10 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
    * Parse AI response into food items and date
    * @private
    */
-  #parseFoodResponse(response) {
-    const { today } = getCurrentTimeDetails(this.#getTimezone());
+  #parseFoodResponse(response, asOfDate = null) {
+    const { today } = asOfDate
+      ? { today: asOfDate }
+      : getCurrentTimeDetails(this.#getTimezone());
 
     try {
       const jsonMatch = response.match(/\{[\s\S]*\}?/);
@@ -675,12 +721,21 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
     let finalItems;
     let messageToUpdate;
     try {
-      // 4. Call AI with revision-aware prompt
-      const prompt = this.#buildDetectionPrompt(contextualText);
+      // 4. Call AI with revision-aware prompt — PIN "today" to the ORIGINAL log's
+      //    createdAt date. This guarantees that if the user says nothing about
+      //    dates, the AI emits the same date the log already has, and if the user
+      //    says "yesterday", the AI subtracts from the original date (not from
+      //    the revision-day wall clock).
+      const timezone = this.#getTimezone();
+      const originalDate = deriveLogDate(
+        typeof targetLog.toJSON === 'function' ? targetLog.toJSON() : targetLog,
+        timezone,
+      );
+      const prompt = this.#buildDetectionPrompt(contextualText, '', originalDate);
       const response = await this.#aiGateway.chat(prompt, { maxTokens: 4096 });
 
-      // 5. Parse response
-      const { items: revisedItems, date: revisedDate, time: revisedTime } = this.#parseFoodResponse(response);
+      // 5. Parse response — same pin so parse fallback also uses original date
+      const { items: revisedItems, date: revisedDate, time: revisedTime } = this.#parseFoodResponse(response, originalDate);
       finalItems = revisedItems.length > 0 ? revisedItems : targetLog.items || [];
 
       if (finalItems.length === 0) {
@@ -839,11 +894,17 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
       text: '🔍 Processing as revision...',
     });
 
-    // Call AI with contextual prompt
-    const prompt = this.#buildDetectionPrompt(contextualText);
+    // Call AI with contextual prompt — pin "today" to original log's date (same
+    // reasoning as #handleRevisionDirect)
+    const timezone = this.#getTimezone();
+    const originalDate = deriveLogDate(
+      typeof targetLog.toJSON === 'function' ? targetLog.toJSON() : targetLog,
+      timezone,
+    );
+    const prompt = this.#buildDetectionPrompt(contextualText, '', originalDate);
     const response = await this.#aiGateway.chat(prompt, { maxTokens: 4096 });
 
-    const { items: revisedItems, date: revisedDate, time: revisedTime } = this.#parseFoodResponse(response);
+    const { items: revisedItems, date: revisedDate, time: revisedTime } = this.#parseFoodResponse(response, originalDate);
     const finalItems = revisedItems.length > 0 ? revisedItems : targetLog.items || [];
 
     if (finalItems.length === 0) {

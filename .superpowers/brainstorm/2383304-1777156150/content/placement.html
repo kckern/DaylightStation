@@ -1,0 +1,205 @@
+<h2>Where should the &ldquo;on-deck&rdquo; card live on the Player?</h2>
+<p class="subtitle">Pick a placement. Tap the card you like — or scroll down to comment in the terminal. The mock player frame shows a story playing; the dashed-blue card is the on-deck slot.</p>
+
+<style>
+  .player-mock {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    background: linear-gradient(135deg, #2c3e50 0%, #4a6580 70%, #6a8caf 100%);
+    border-radius: 6px;
+    overflow: hidden;
+    color: #fff;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+  .player-title {
+    position: absolute;
+    top: 1em;
+    left: 1em;
+    background: rgba(0,0,0,0.4);
+    padding: 0.4em 0.8em;
+    border-radius: 4px;
+    font-size: 0.8em;
+  }
+  .player-progress {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 3px;
+    background: rgba(255,255,255,0.2);
+  }
+  .player-progress::after {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 30%;
+    background: #fff;
+  }
+  .player-playing {
+    position: absolute;
+    bottom: 0.8em; left: 1em;
+    background: rgba(0,0,0,0.5);
+    padding: 0.5em 0.8em;
+    border-radius: 4px;
+    font-size: 0.75em;
+  }
+
+  .ondeck-card {
+    background: rgba(255,255,255,0.92);
+    color: #1a2733;
+    border: 2px dashed #6a8caf;
+    border-radius: 6px;
+    padding: 0.6em 0.8em;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    font-size: 0.7em;
+  }
+  .ondeck-card .label {
+    display: block;
+    text-transform: uppercase;
+    font-size: 0.65em;
+    letter-spacing: 0.05em;
+    opacity: 0.6;
+    margin-bottom: 0.2em;
+  }
+  .ondeck-card .title {
+    font-weight: 600;
+    font-size: 0.95em;
+  }
+  .ondeck-card.with-thumb {
+    display: flex;
+    gap: 0.6em;
+    align-items: center;
+  }
+  .ondeck-card.with-thumb .thumb {
+    width: 2.4em;
+    height: 2.4em;
+    background: #c5b078;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  .pos-bottom-right { position: absolute; bottom: 1.5em; right: 1em; max-width: 12em; }
+  .pos-top-right { position: absolute; top: 1em; right: 1em; max-width: 11em; }
+  .pos-bottom-bar {
+    position: absolute;
+    bottom: 0.8em; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.65);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.35);
+    box-shadow: none;
+    border-radius: 999px;
+    padding: 0.45em 1em;
+  }
+  .pos-bottom-bar .label { color: rgba(255,255,255,0.7); }
+
+  .pos-rail {
+    position: absolute;
+    bottom: 0.8em; left: 1em;
+    background: rgba(0,0,0,0.55);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.3);
+    box-shadow: none;
+    border-radius: 6px;
+    padding: 0.5em 0.7em;
+    display: flex;
+    gap: 0.5em;
+    align-items: center;
+  }
+  .pos-rail .now {
+    border-right: 1px solid rgba(255,255,255,0.25);
+    padding-right: 0.5em;
+  }
+  .pos-rail .label { color: rgba(255,255,255,0.7); }
+
+  .cards .card { padding: 0; overflow: hidden; }
+  .cards .card .card-image { padding: 1em; background: #1a2733; }
+  .cards .card .card-body { padding: 1em; }
+  .cards .card .card-body p { margin: 0.3em 0 0 0; opacity: 0.7; font-size: 0.85em; }
+</style>
+
+<div class="cards">
+
+  <div class="card" data-choice="bottom-right" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="player-mock">
+        <div class="player-title">Goldilocks &amp; the Three Bears</div>
+        <div class="player-progress"></div>
+        <div class="player-playing">&#9654; 4:12 / 13:30</div>
+        <div class="ondeck-card pos-bottom-right with-thumb">
+          <div class="thumb"></div>
+          <div>
+            <span class="label">Up Next</span>
+            <span class="title">The Three Pigs</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Bottom-right floating card</h3>
+      <p>Persistent card with thumbnail. High visibility, kid-friendly &mdash; clear &ldquo;you queued something!&rdquo; feedback. Slight overlap with progress bar area.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="top-right" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="player-mock">
+        <div class="player-title">Goldilocks &amp; the Three Bears</div>
+        <div class="player-progress"></div>
+        <div class="player-playing">&#9654; 4:12 / 13:30</div>
+        <div class="ondeck-card pos-top-right with-thumb">
+          <div class="thumb"></div>
+          <div>
+            <span class="label">Up Next</span>
+            <span class="title">The Three Pigs</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. Top-right floating card</h3>
+      <p>Same shape, opposite corner. Stays clear of bottom controls. Less in the way of progress/scrubber UI; slightly more aloof.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="bottom-bar" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="player-mock">
+        <div class="player-title">Goldilocks &amp; the Three Bears</div>
+        <div class="player-progress"></div>
+        <div class="ondeck-card pos-bottom-bar">
+          <span class="label">Up Next &middot;</span>
+          <span class="title">The Three Pigs</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. Centered bottom pill</h3>
+      <p>Compact text-only chip. Quiet, subtle, doesn&rsquo;t compete with the title. Less obvious for kids that &ldquo;something&rsquo;s queued&rdquo;.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="rail" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="player-mock">
+        <div class="player-title">Goldilocks &amp; the Three Bears</div>
+        <div class="player-progress"></div>
+        <div class="ondeck-card pos-rail">
+          <div class="now">
+            <div class="label">Now</div>
+            <div class="title">Goldilocks</div>
+          </div>
+          <div>
+            <span class="label">Up Next</span>
+            <span class="title">The Three Pigs</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>D. Bottom-left now-playing rail</h3>
+      <p>Integrates on-deck right next to &ldquo;now playing&rdquo; metadata. One unified strip; reads as a sequence. Loses the &ldquo;floating&rdquo; quality.</p>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top: 1em;">Also &mdash; the label currently reads &ldquo;Up Next&rdquo; in all four. If you&rsquo;d rather use &ldquo;On Deck&rdquo; (your internal term) or &ldquo;Coming Up&rdquo;, mention in the terminal.</p>

@@ -38,3 +38,15 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-04-23 | tick-telemetry | d94db5a45 | Tick rate telemetry for timeline anomaly investigation - folded into main |
 | 2026-04-23 | feature/media-redesign | e55574707 | MediaApp three-panel redesign design + plan docs - folded into main |
 | 2026-04-23 | feature/per-app-document-titles | 46612c308 | Per-app document title (useDocumentTitle hook + Apps/ wiring) - folded into main |
+| 2026-04-25 | feature/secrets-handler | b4dd630dc | SecretsHandler abstraction (ISecretsProvider + Yaml/EncryptedYaml/Vault providers) - merged to main |
+| 2026-04-25 | feat/on-deck | 3c1556255 | Unified screen-actions routing for play-now/play-next (already in main) - cleaned up |
+| 2026-04-26 | backup/arcade-work-pre-pull | 444854d05 | Pre-pull snapshot of arcadePacker work; same commits already on main (different SHAs) plus main has newer arcadePacker fixes - obsolete, dropped |
+| 2026-04-26 | fix/office-program-envelope-migration | 8d3e9c1a0 | Office program envelope migration; every commit subject duplicated on main, no unique work - obsolete, dropped |
+| 2026-04-26 | feature/stale-session-recovery | 31785c43f | Stale-session recovery; every commit subject duplicated on main, no unique work - obsolete, dropped |
+| 2026-04-26 | fix/shield-wake-and-load-reliability | 1cd0dbdeb | Only unique commit was a merge of fix/office-program-envelope-migration (also redundant); main has 38852 more lines - obsolete, dropped |
+| 2026-04-26 | feature/ble-heart-rate | 24585e435 | BLE HR scan/decoder/simulator; main has same work integrated under different SHAs plus 'clear BlueZ GATT cache' fix from 2026-03-09 (branch tip 2026-03-08) - obsolete, dropped |
+| 2026-04-26 | feature/nutribot-date-bulletproof | 92f855883 | deriveLogDate helper, date-integrity datastore guard, AI revision date pinning, regression tests - 11 unique commits cherry-picked clean to main, 41/41 tests pass |
+| 2026-04-26 | fix/audio-nudge-loop | a840c3cd2 | stallStartPlayhead tracking + isRealProgress + extracted stallPipeline helpers (2026-04-19); user judged this a red herring and pivoted to main's softReinit/decoder_reset/buffered-range approach captured in WIP plan added 4h later - dropped, no merge |
+| 2026-04-26 | origin/feature/media-ux-improvements | 697e9569a | Remote-only; ancestor of main, 0 unique commits - deleted from remote |
+| 2026-04-26 | origin/feature/nutribot-coaching-redesign | bc3d73b5f | Remote-only; ancestor of main, 0 unique commits - deleted from remote |
+| 2026-04-26 | origin/feature/content-format-plugins | e2e50177f | Remote-only; 1 unique commit (Todoist REST v2/Sync v9 → API v1 migration) cherry-picked to main as b68cb846b - deleted from remote |

@@ -171,6 +171,17 @@ export class YamlNutriListDatastore extends INutriListDatastore {
   async saveMany(newItems) {
     if (!newItems || newItems.length === 0) return;
 
+    // Date integrity guard — accepting undefined or malformed dates silently
+    // has caused real data to be bucketed to the wrong day. Fail loudly.
+    for (const [i, item] of newItems.entries()) {
+      if (!item.date) {
+        throw new Error(`YamlNutriListDatastore.saveMany: item[${i}] missing date (logId=${item.logId ?? item.log_uuid ?? '?'})`);
+      }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(item.date)) {
+        throw new Error(`YamlNutriListDatastore.saveMany: item[${i}] has malformed date "${item.date}" (expected YYYY-MM-DD)`);
+      }
+    }
+
     const userId = newItems[0].userId || newItems[0].chatId || 'cli-user';
 
     // Validate userId to prevent path traversal or invalid directories

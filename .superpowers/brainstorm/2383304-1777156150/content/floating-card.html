@@ -1,0 +1,174 @@
+<h2>Floating on-deck card &mdash; minimal square spec</h2>
+<p class="subtitle">AudioPlayer chrome is unchanged. The on-deck card floats over the bottom-right corner. Square shape, thumbnail dominant, truncated title strip at bottom, &ldquo;up next&rdquo; icon top-left.</p>
+
+<style>
+  .audio-mock {
+    aspect-ratio: 16 / 9;
+    background: linear-gradient(135deg, #1a1f2e 0%, #2a3447 100%);
+    border-radius: 6px;
+    overflow: hidden;
+    color: #f0f0f0;
+    font-family: system-ui, -apple-system, sans-serif;
+    display: grid;
+    grid-template-columns: 1fr 1.2fr;
+    position: relative;
+  }
+  .audio-mock .progress {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: rgba(255,255,255,0.15);
+  }
+  .audio-mock .progress::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    width: 35%;
+    background: #fff;
+  }
+  .audio-mock .cover-col {
+    background: linear-gradient(140deg, #c5b078 0%, #8b7944 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75em;
+    color: rgba(0,0,0,0.45);
+    letter-spacing: 0.1em;
+  }
+  .audio-mock .info-col {
+    padding: 1.4em 1.2em;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.4em;
+  }
+  .audio-mock .info-col .header {
+    font-size: 0.7em; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .audio-mock .info-col .timing { font-size: 0.65em; opacity: 0.55; font-variant-numeric: tabular-nums; }
+  .audio-mock .info-col .footer-title { font-size: 1em; font-weight: 600; }
+
+  .ondeck-square {
+    position: absolute;
+    bottom: 1em;
+    right: 1em;
+    width: 6.5em;
+    background: rgba(0,0,0,0.55);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 4px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+    color: #f0f0f0;
+    display: flex;
+    flex-direction: column;
+  }
+  .ondeck-square .thumb {
+    aspect-ratio: 1 / 1;
+    background: linear-gradient(135deg, #6a8caf, #3a587a);
+    position: relative;
+  }
+  .ondeck-square .icon {
+    position: absolute;
+    top: 0.25em;
+    left: 0.3em;
+    background: rgba(0,0,0,0.65);
+    color: #fff;
+    font-size: 0.65em;
+    padding: 0.1em 0.35em;
+    border-radius: 2px;
+    letter-spacing: -0.05em;
+    font-weight: 700;
+  }
+  .ondeck-square .title-strip {
+    font-size: 0.65em;
+    padding: 0.35em 0.45em;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    background: rgba(0,0,0,0.35);
+  }
+
+  .ondeck-square.marquee .title-strip span {
+    display: inline-block;
+    animation: marquee 8s linear infinite;
+  }
+  @keyframes marquee {
+    0%, 10% { transform: translateX(0); }
+    90%, 100% { transform: translateX(calc(-100% + 5.5em)); }
+  }
+
+  .split { gap: 1.2em; }
+  .split .mockup-header { background: #0f131c; color: #f0f0f0; }
+
+  .specs {
+    margin-top: 1.5em;
+    background: var(--surface, #f7f7f7);
+    border: 1px solid var(--border, #e0e0e0);
+    border-radius: 6px;
+    padding: 1em 1.2em;
+  }
+  .specs ul { margin: 0.4em 0 0 1.2em; padding: 0; line-height: 1.5; }
+  .specs code {
+    background: rgba(0,0,0,0.07);
+    padding: 0.05em 0.3em;
+    border-radius: 3px;
+    font-size: 0.9em;
+  }
+</style>
+
+<div class="split">
+
+  <div class="mockup">
+    <div class="mockup-header">Truncated title</div>
+    <div class="audio-mock" style="height: 18em;">
+      <div class="progress"></div>
+      <div class="cover-col">COVER ART</div>
+      <div class="info-col">
+        <div class="header">Brothers Grimm &mdash; Stories</div>
+        <div class="timing">4:12 / 13:30</div>
+        <div class="footer-title">Goldilocks &amp; the Three Bears</div>
+      </div>
+      <div class="ondeck-square">
+        <div class="thumb">
+          <div class="icon">&raquo;</div>
+        </div>
+        <div class="title-strip">The Three Pigs</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">Marquee title (long)</div>
+    <div class="audio-mock" style="height: 18em;">
+      <div class="progress"></div>
+      <div class="cover-col">COVER ART</div>
+      <div class="info-col">
+        <div class="header">Brothers Grimm &mdash; Stories</div>
+        <div class="timing">4:12 / 13:30</div>
+        <div class="footer-title">Goldilocks &amp; the Three Bears</div>
+      </div>
+      <div class="ondeck-square marquee">
+        <div class="thumb">
+          <div class="icon">&raquo;</div>
+        </div>
+        <div class="title-strip"><span>The Boy Who Cried Wolf and Other Aesop&rsquo;s Tales</span></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="specs">
+  <strong>Card spec</strong>
+  <ul>
+    <li>Square overall &mdash; <code>width = thumb width</code>; thumb fills full width.</li>
+    <li>Title strip below thumb: truncate (ellipsis) by default; marquee on hover/long titles &mdash; whichever you prefer.</li>
+    <li>Top-left icon: <code>&raquo;</code> for now; happy to swap (<code>&#9193;</code>, <code>&#9197;</code>, etc.).</li>
+    <li>Position: bottom-right corner of the AudioPlayer DOM, absolute-positioned, low offset (1em).</li>
+    <li>Subtle dark chrome with a 1px border. No animation on swap by default; can add a brief fade if useful.</li>
+    <li>AudioPlayer.jsx is unchanged &mdash; the card is a sibling element (or rendered through a small slot).</li>
+  </ul>
+</div>
+
+<p class="subtitle" style="margin-top: 1em;">Truncate vs marquee &mdash; pick one or both. After this, one last scope question in the terminal.</p>

@@ -15,17 +15,42 @@ export class TriggerDispatchService {
   #deps;
   #broadcast;
   #logger;
+  #recentDispatches;   // Map<key, timestampMs>
+  #debounceWindowMs;
+  #clock;
 
-  constructor({ config, contentIdResolver, wakeAndLoadService, haGateway, deviceService, broadcast, logger = console }) {
+  constructor({
+    config,
+    contentIdResolver,
+    wakeAndLoadService,
+    haGateway,
+    deviceService,
+    broadcast,
+    logger = console,
+    debounceWindowMs = 3000,
+    clock = () => Date.now(),
+  }) {
     this.#config = config || {};
     this.#contentIdResolver = contentIdResolver;
     this.#deps = { wakeAndLoadService, haGateway, deviceService };
     this.#broadcast = broadcast || (() => {});
     this.#logger = logger;
+    this.#recentDispatches = new Map();
+    this.#debounceWindowMs = debounceWindowMs;
+    this.#clock = clock;
+  }
+
+  // Map cleanup avoids unbounded growth: every check prunes anything older
+  // than the window. With a small number of triggers per location and a
+  // 3 s window this is effectively O(N_active_keys) per call.
+  #pruneDispatches(now) {
+    for (const [key, ts] of this.#recentDispatches) {
+      if (now - ts > this.#debounceWindowMs) this.#recentDispatches.delete(key);
+    }
   }
 
   async handleTrigger(location, modality, value, options = {}) {
-    const startedAt = Date.now();
+    const startedAt = this.#clock();
     const dispatchId = randomUUID();
     const normalizedValue = String(value || '').toLowerCase();
     const locationConfig = this.#config[location];
@@ -38,6 +63,22 @@ export class TriggerDispatchService {
     if (locationConfig.auth_token && locationConfig.auth_token !== options.token) {
       this.#logger.warn?.('trigger.fired', { location, modality, value: normalizedValue, error: 'auth-failed' });
       return { ok: false, code: 'AUTH_FAILED', error: 'Authentication failed', location, modality, value: normalizedValue, dispatchId };
+    }
+
+    // Per-(location, modality, value) debounce. HA fires `tag_scanned` 2-3
+    // times per physical tap; without this guard each one spawns a fresh
+    // 22-35 s wake-and-load cycle. dryRun requests bypass to keep the
+    // debugging path simple. Failed dispatches reset the entry below so
+    // the user can immediately retry.
+    const debounceKey = `${location}:${modality}:${normalizedValue}`;
+    if (!options.dryRun) {
+      this.#pruneDispatches(startedAt);
+      const lastTs = this.#recentDispatches.get(debounceKey);
+      if (lastTs != null && startedAt - lastTs < this.#debounceWindowMs) {
+        const sinceMs = startedAt - lastTs;
+        this.#logger.info?.('trigger.debounced', { location, modality, value: normalizedValue, sinceMs, windowMs: this.#debounceWindowMs, dispatchId });
+        return { ok: true, debounced: true, location, modality, value: normalizedValue, dispatchId, sinceMs };
+      }
     }
 
     const valueEntry = locationConfig.entries?.[modality]?.[normalizedValue];
@@ -69,12 +110,18 @@ export class TriggerDispatchService {
 
     try {
       const dispatchResult = await dispatchAction(intent, this.#deps);
-      const elapsedMs = Date.now() - startedAt;
+      const elapsedMs = this.#clock() - startedAt;
+      if (!options.dryRun) {
+        this.#recentDispatches.set(debounceKey, this.#clock());
+      }
       this.#logger.info?.('trigger.fired', { ...baseLog, action: intent.action, target: intent.target, ok: true, elapsedMs });
       this.#emit(location, modality, { ...summary, ok: true });
       return { ok: true, ...summary, dispatch: dispatchResult, elapsedMs };
     } catch (err) {
-      const elapsedMs = Date.now() - startedAt;
+      const elapsedMs = this.#clock() - startedAt;
+      // On failure, ensure no debounce entry persists — user should be
+      // able to retry without waiting out the window.
+      this.#recentDispatches.delete(debounceKey);
       const code = err instanceof UnknownActionError ? 'UNKNOWN_ACTION' : 'DISPATCH_FAILED';
       this.#logger.error?.('trigger.fired', { ...baseLog, action: intent.action, target: intent.target, ok: false, error: err.message, code, elapsedMs });
       this.#emit(location, modality, { ...summary, ok: false, error: err.message });
