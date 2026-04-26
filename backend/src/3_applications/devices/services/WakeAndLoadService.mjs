@@ -459,7 +459,11 @@ export class WakeAndLoadService {
         ? (subscriberCount === 0 ? 'no-subscribers' : undefined)
         : (coldWake ? 'cold-restart' : undefined);
 
-      const loadResult = await device.loadContent(screenPath, contentQuery);
+      // verifyAsync: don't block on FKB currentUrl polling. The playback
+      // watchdog (#armPlaybackWatchdog) is the authoritative "user is seeing
+      // media" signal — strictly more useful than currentUrl. The verify
+      // poll runs in the background and just logs the outcome.
+      const loadResult = await device.loadContent(screenPath, contentQuery, { verifyAsync: true });
 
       if (loadResult.ok) {
         result.steps.load = {

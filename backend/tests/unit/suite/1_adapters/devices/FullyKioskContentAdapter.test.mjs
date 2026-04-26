@@ -311,7 +311,18 @@ describe('FullyKioskContentAdapter', () => {
     });
 
     it('should succeed on first attempt when loadURL succeeds', async () => {
-      const httpClient = createMockHttpClient();
+      // getDeviceInfo returns the URL the adapter built, so #verifyLoadedUrl
+      // resolves on its first poll without ever hitting the inter-poll setTimeout
+      // (which would hang under fake timers).
+      const expectedUrl = 'http://localhost:3111/tv/screen?device=shield';
+      const httpClient = {
+        get: vi.fn(async (url) => {
+          if (url.includes('cmd=getDeviceInfo')) {
+            return { status: 200, data: JSON.stringify({ foreground: 'de.ozerov.fully', currentUrl: expectedUrl }) };
+          }
+          return { status: 200, data: '{}' };
+        }),
+      };
       const adapter = new FullyKioskContentAdapter(defaultConfig, { httpClient, logger: mockLogger });
 
       const result = await adapter.load('/tv/screen', { device: 'shield' });
@@ -323,6 +334,7 @@ describe('FullyKioskContentAdapter', () => {
     });
 
     it('should retry and succeed on second attempt after transient failure', async () => {
+      const expectedUrl = 'http://localhost:3111/tv/screen?device=shield';
       let callCount = 0;
       const httpClient = {
         get: vi.fn(async (url) => {
@@ -334,7 +346,8 @@ describe('FullyKioskContentAdapter', () => {
             return { status: 200, data: '{}' };
           }
           if (url.includes('cmd=getDeviceInfo')) {
-            return { status: 200, data: JSON.stringify({ foreground: 'de.ozerov.fully' }) };
+            // Return matching currentUrl so verify resolves on first poll.
+            return { status: 200, data: JSON.stringify({ foreground: 'de.ozerov.fully', currentUrl: expectedUrl }) };
           }
           return { status: 200, data: '{}' };
         }),
@@ -384,6 +397,81 @@ describe('FullyKioskContentAdapter', () => {
         'fullykiosk.load.failed',
         expect.objectContaining({ attempts: 3 })
       );
+    });
+  });
+
+  describe('load verifyAsync option', () => {
+    // Real timers — verifyAsync path must not depend on the fake-timer machinery
+    // used by the load-retry tests above.
+    it('verifyAsync:true returns ok as soon as loadURL is acknowledged (no wait for verify poll)', async () => {
+      // currentUrl never matches — under sync verify this would block ~10s.
+      const httpClient = {
+        get: vi.fn(async (url) => {
+          if (url.includes('cmd=getDeviceInfo')) {
+            return { status: 200, data: JSON.stringify({ foreground: 'de.ozerov.fully', currentUrl: 'about:blank' }) };
+          }
+          return { status: 200, data: '{}' };
+        }),
+      };
+
+      const adapter = new FullyKioskContentAdapter(defaultConfig, { httpClient, logger: mockLogger });
+
+      const start = Date.now();
+      const result = await adapter.load('/tv/screen', { play: 'plex:1' }, { verifyAsync: true });
+      const elapsed = Date.now() - start;
+
+      expect(result.ok).toBe(true);
+      expect(result.verified).toBe('async');
+      // Provably did NOT wait for sync verification (sync would be ~10s minimum).
+      expect(elapsed).toBeLessThan(1000);
+    });
+
+    it('verifyAsync:true logs async-verified on background success', async () => {
+      const expectedUrl = 'http://localhost:3111/tv/screen?play=plex%3A1';
+      const httpClient = {
+        get: vi.fn(async (url) => {
+          if (url.includes('cmd=getDeviceInfo')) {
+            return { status: 200, data: JSON.stringify({ foreground: 'de.ozerov.fully', currentUrl: expectedUrl }) };
+          }
+          return { status: 200, data: '{}' };
+        }),
+      };
+
+      const adapter = new FullyKioskContentAdapter(defaultConfig, { httpClient, logger: mockLogger });
+
+      const result = await adapter.load('/tv/screen', { play: 'plex:1' }, { verifyAsync: true });
+      expect(result.ok).toBe(true);
+      expect(result.verified).toBe('async');
+
+      // Drain the fire-and-forget promise — the success log fires when verify resolves.
+      await new Promise(r => setTimeout(r, 50));
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'fullykiosk.load.async-verified',
+        expect.objectContaining({ verified: expect.objectContaining({ verified: true }) }),
+      );
+    });
+
+    it('default (verifyAsync:false) preserves original sync verification behavior', async () => {
+      // Mock returns a matching currentUrl so #verifyLoadedUrl resolves on the
+      // first poll — no setTimeout needed, so this works under real timers too.
+      const httpClient = {
+        get: vi.fn(async (url) => {
+          if (url.includes('cmd=getDeviceInfo')) {
+            // Use the URL FullyKioskContentAdapter actually constructs:
+            //   `${daylightHost}${path}?${query}`
+            return { status: 200, data: JSON.stringify({ foreground: 'de.ozerov.fully', currentUrl: 'http://localhost:3111/tv/screen?device=shield' }) };
+          }
+          return { status: 200, data: '{}' };
+        }),
+      };
+
+      const adapter = new FullyKioskContentAdapter(defaultConfig, { httpClient, logger: mockLogger });
+
+      const result = await adapter.load('/tv/screen', { device: 'shield' });
+
+      expect(result.ok).toBe(true);
+      expect(result.verified).toBe(true);
+      expect(result.attempt).toBe(1);
     });
   });
 

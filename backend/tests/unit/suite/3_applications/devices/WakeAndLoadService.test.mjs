@@ -49,7 +49,14 @@ describe('WakeAndLoadService', () => {
 
     expect(result.ok).toBe(true);
     expect(result.failedStep).toBeUndefined();
-    expect(device.loadContent).toHaveBeenCalledWith('/screen/living-room', { queue: 'morning-program' });
+    // Phase 4: FKB-fallback load passes verifyAsync:true so the response
+    // doesn't block on the ~10s currentUrl poll (which routinely never
+    // matches on Shield TV). Playback watchdog is the real signal.
+    expect(device.loadContent).toHaveBeenCalledWith(
+      '/screen/living-room',
+      { queue: 'morning-program' },
+      { verifyAsync: true },
+    );
   });
 
   it('should use WebSocket fallback when URL load fails with content query', async () => {

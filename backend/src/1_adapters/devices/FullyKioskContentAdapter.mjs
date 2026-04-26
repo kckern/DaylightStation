@@ -259,9 +259,16 @@ export class FullyKioskContentAdapter {
    *
    * @param {string} path - Path to load
    * @param {Object} [query] - Query parameters
+   * @param {Object} [options]
+   * @param {boolean} [options.verifyAsync=false] - When true, return `ok` as
+   *   soon as `loadURL` is acknowledged and run `#verifyLoadedUrl` as a
+   *   fire-and-forget background task that just logs the outcome. Use on the
+   *   wake-and-load path where the playback watchdog is the authoritative
+   *   confirmation signal — avoids the ~10s `currentUrl` poll that routinely
+   *   never matches on Shield TV.
    * @returns {Promise<Object>}
    */
-  async load(path, query = {}) {
+  async load(path, query = {}, { verifyAsync = false } = {}) {
     const MAX_LOAD_RETRIES = 3;
     const startTime = Date.now();
     this.#metrics.loads++;
@@ -292,6 +299,29 @@ export class FullyKioskContentAdapter {
             attempt,
             loadTimeMs: Date.now() - startTime
           });
+
+          // verifyAsync: fire-and-forget the verification poll, return on ack.
+          // Used by the wake-and-load FKB-fallback path where the playback
+          // watchdog is the real "user is seeing media" signal.
+          if (verifyAsync) {
+            this.#verifyLoadedUrl(fullUrl).then(
+              (verified) => {
+                this.#logger.info?.('fullykiosk.load.async-verified', { fullUrl, verified });
+              },
+              (err) => {
+                this.#logger.warn?.('fullykiosk.load.async-verify-failed', {
+                  fullUrl, error: err?.message
+                });
+              }
+            );
+            return {
+              ok: true,
+              url: fullUrl,
+              attempt,
+              verified: 'async',
+              loadTimeMs: Date.now() - startTime
+            };
+          }
 
           // Verify the WebView actually navigated. FKB acknowledges loadURL on
           // receipt, not on completion — poll currentUrl to confirm.
