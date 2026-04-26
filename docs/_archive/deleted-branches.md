@@ -18,6 +18,7 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-04-18 | feature/multi-printer-support | 070a5da7 | Multi-printer support (upstairs + downstairs) with byte-free ping - merged to main |
 | 2026-04-20 | feature/fitness-frd-q2 | f11d483e | FRD Q2 implementation (10 items: voice memos, settings UI, governance, date fmt, end-session, challenge, user cards, hysteresis) - merged to main |
 | 2026-04-23 | backend-refactor | 73f18f37d | Secondary API (port 3119) toggle support - merged to main |
+| 2026-04-25 | fix/trigger-sequence-2026-04-25 | 596282945 | NFC→playback trigger fixes (F1/F2/F3/F5: ack-publisher gate split, menu-suppression gate, FKB camera-skip, async URL verify) - merged to main |
 | 2026-04-23 | feat/fitness-deprioritized-labels | 8fce35a91 | Deprioritize KidsFun in primary-media selection - merged to main |
 | 2026-04-23 | feature/media-app-p1 | 113be5be0 | Media P1 — Playwright strict-mode selectors + reset assertion - merged to main |
 | 2026-04-23 | feature/media-app-p2 | 814c05ca1 | Media P2 — e2e discovery (search, open detail, play from result) - merged to main |
