@@ -41,3 +41,5 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-04-26 | backup/arcade-work-pre-pull | 444854d05 | Pre-pull snapshot of arcadePacker work; same commits already on main (different SHAs) plus main has newer arcadePacker fixes - obsolete, dropped |
 | 2026-04-26 | fix/office-program-envelope-migration | 8d3e9c1a0 | Office program envelope migration; every commit subject duplicated on main, no unique work - obsolete, dropped |
 | 2026-04-26 | feature/stale-session-recovery | 31785c43f | Stale-session recovery; every commit subject duplicated on main, no unique work - obsolete, dropped |
+| 2026-04-26 | fix/shield-wake-and-load-reliability | 1cd0dbdeb | Only unique commit was a merge of fix/office-program-envelope-migration (also redundant); main has 38852 more lines - obsolete, dropped |
+| 2026-04-26 | feature/ble-heart-rate | 24585e435 | BLE HR scan/decoder/simulator; main has same work integrated under different SHAs plus 'clear BlueZ GATT cache' fix from 2026-03-09 (branch tip 2026-03-08) - obsolete, dropped |
