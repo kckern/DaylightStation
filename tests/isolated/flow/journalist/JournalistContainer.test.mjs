@@ -10,6 +10,7 @@ describe('JournalistContainer', () => {
   let mockJournalEntryRepository;
   let mockMessageQueueRepository;
   let mockQuizRepository;
+  let mockDebriefRepository;
   let mockUserResolver;
   let mockLogger;
 
@@ -44,6 +45,11 @@ describe('JournalistContainer', () => {
     mockQuizRepository = {
       getRandomQuestion: vi.fn(),
       recordAnswer: vi.fn(),
+    };
+    mockDebriefRepository = {
+      getRecentDebriefs: vi.fn().mockResolvedValue([]),
+      getDebriefByDate: vi.fn().mockResolvedValue(null),
+      saveDebrief: vi.fn().mockResolvedValue(undefined),
     };
     mockUserResolver = {
       resolve: vi.fn(),
@@ -99,7 +105,30 @@ describe('JournalistContainer', () => {
       expect(() => container.getAIGateway()).toThrow('aiGateway not configured');
     });
 
-    it('should wrap AI gateway with LoggingAIGateway', () => {
+    it('should wrap AI gateway via loggingAIGatewayFactory when supplied', () => {
+      // Production no longer hardwires LoggingAIGateway; the wrapping is
+      // delegated to an injected factory. When no factory is provided, the
+      // raw aiGateway is returned (verified in the next test).
+      const wrappedSentinel = { chat: vi.fn(), tag: 'wrapped' };
+      const factory = vi.fn(({ aiGateway }) => {
+        expect(aiGateway).toBe(mockAIGateway);
+        return wrappedSentinel;
+      });
+      const container = new JournalistContainer(
+        { username: 'testuser' },
+        {
+          aiGateway: mockAIGateway,
+          loggingAIGatewayFactory: factory,
+          logger: mockLogger,
+        }
+      );
+
+      const wrapped = container.getAIGateway();
+      expect(factory).toHaveBeenCalledOnce();
+      expect(wrapped).toBe(wrappedSentinel);
+    });
+
+    it('should return raw AI gateway when no factory injected', () => {
       const container = new JournalistContainer(
         { username: 'testuser' },
         {
@@ -108,9 +137,8 @@ describe('JournalistContainer', () => {
         }
       );
 
-      const wrapped = container.getAIGateway();
-      expect(wrapped).not.toBe(mockAIGateway);
-      expect(wrapped.constructor.name).toBe('LoggingAIGateway');
+      // Without a loggingAIGatewayFactory, fallback returns the raw gateway
+      expect(container.getAIGateway()).toBe(mockAIGateway);
     });
 
     it('should return same wrapped instance on repeated calls', () => {
@@ -179,6 +207,7 @@ describe('JournalistContainer', () => {
           journalEntryRepository: mockJournalEntryRepository,
           messageQueueRepository: mockMessageQueueRepository,
           quizRepository: mockQuizRepository,
+          debriefRepository: mockDebriefRepository,
           userResolver: mockUserResolver,
           logger: mockLogger,
         }

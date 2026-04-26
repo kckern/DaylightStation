@@ -75,8 +75,16 @@ describe('InitiateDebriefInterview', () => {
       const instance = new InitiateDebriefInterview({
         messagingGateway: mockMessagingGateway,
         aiGateway: mockAiGateway,
+        debriefRepository: mockDebriefRepository,
       });
       expect(instance).toBeInstanceOf(InitiateDebriefInterview);
+    });
+
+    it('should throw if debriefRepository is not provided', () => {
+      expect(() => new InitiateDebriefInterview({
+        messagingGateway: mockMessagingGateway,
+        aiGateway: mockAiGateway,
+      })).toThrow('debriefRepository is required');
     });
 
     it('should create instance with all dependencies', () => {
@@ -525,7 +533,8 @@ describe('InitiateDebriefInterview', () => {
       expect(result.success).toBe(false);
       expect(mockMessagingGateway.sendMessage).toHaveBeenCalledWith(
         'chat-123',
-        'No debrief found to interview about.'
+        'No debrief found to interview about.',
+        undefined
       );
     });
 
@@ -777,6 +786,7 @@ describe('InitiateDebriefInterview', () => {
         debriefDate: '2024-01-15',
         instructions: 'change_subject',
         previousQuestion: 'Old question?',
+        hasResponseContext: false,
       });
     });
 

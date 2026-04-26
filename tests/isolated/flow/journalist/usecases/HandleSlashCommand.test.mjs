@@ -230,6 +230,7 @@ describe('HandleSlashCommand', () => {
       expect(mockGenerateMorningDebrief.execute).toHaveBeenCalledWith({
         username: 'testuser',
         date: null,
+        conversationId: 'chat-123',
       });
       expect(mockSendMorningDebrief.execute).toHaveBeenCalledWith({
         conversationId: 'chat-123',
@@ -251,6 +252,7 @@ describe('HandleSlashCommand', () => {
       expect(mockGenerateMorningDebrief.execute).toHaveBeenCalledWith({
         username: 'unknown', // default fallback when userId not provided
         date: null,
+        conversationId: 'chat-123',
       });
       expect(result.success).toBe(true);
     });
@@ -496,6 +498,7 @@ describe('HandleSlashCommand', () => {
       expect(mockLogger.debug).toHaveBeenCalledWith('command.slash.start', {
         chatId: 'chat-123',
         command: 'prompt',
+        hasResponseContext: false,
       });
     });
 

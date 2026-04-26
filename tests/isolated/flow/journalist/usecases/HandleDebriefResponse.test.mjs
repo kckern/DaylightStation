@@ -29,7 +29,7 @@ describe('HandleDebriefResponse', () => {
 
     mockJournalEntryRepository = {
       saveMessage: vi.fn().mockResolvedValue(undefined),
-      deleteMessage: vi.fn().mockResolvedValue(undefined),
+      delete: vi.fn().mockResolvedValue(undefined),
     };
 
     mockUserResolver = {
@@ -192,7 +192,8 @@ describe('HandleDebriefResponse', () => {
 
       expect(mockMessagingGateway.sendMessage).toHaveBeenCalledWith(
         'chat-123',
-        'No debrief data found.'
+        'No debrief data found.',
+        undefined
       );
     });
 
@@ -219,7 +220,8 @@ describe('HandleDebriefResponse', () => {
 
       expect(mockMessagingGateway.sendMessage).toHaveBeenCalledWith(
         'chat-123',
-        'No detailed data sources available for this debrief.'
+        'No detailed data sources available for this debrief.',
+        undefined
       );
     });
 
@@ -466,13 +468,13 @@ describe('HandleDebriefResponse', () => {
         text: '✅ OK',
       });
 
-      expect(mockJournalEntryRepository.deleteMessage).toHaveBeenCalledWith(
-        'chat-123',
-        'debrief-msg-001'
+      expect(mockJournalEntryRepository.delete).toHaveBeenCalledWith(
+        'debrief-msg-001',
+        'chat-123'
       );
-      expect(mockJournalEntryRepository.deleteMessage).toHaveBeenCalledWith(
-        'chat-123',
-        'details-msg-002'
+      expect(mockJournalEntryRepository.delete).toHaveBeenCalledWith(
+        'details-msg-002',
+        'chat-123'
       );
     });
 
@@ -489,7 +491,7 @@ describe('HandleDebriefResponse', () => {
 
       expect(result.handled).toBe(true);
       expect(result.action).toBe('accept');
-      expect(mockJournalEntryRepository.deleteMessage).not.toHaveBeenCalled();
+      expect(mockJournalEntryRepository.delete).not.toHaveBeenCalled();
     });
 
     it('should log acceptance with date', async () => {
