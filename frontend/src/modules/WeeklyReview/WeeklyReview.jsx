@@ -14,7 +14,6 @@ import { deleteSession as deleteLocalSession, listSessions as listLocalSessions,
 import './WeeklyReview.scss';
 
 const logger = getLogger().child({ component: 'weekly-review' });
-const COLS = 4;
 
 export default function WeeklyReview({ dispatch, dismiss }) {
   const [data, setData] = useState(null);
@@ -24,6 +23,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [confirmFocus, setConfirmFocus] = useState(0); // 0=continue, 1=save
   const [resumeDraft, setResumeDraft] = useState(null); // { sessionId, source: 'server'|'local', totalBytes?, lastSavedAt, chunkCount? }
+  // eslint-disable-next-line no-unused-vars -- Task 13 removes Discard affordances; setResumeFocus will be deleted then
   const [resumeFocus, setResumeFocus] = useState(0); // I1: 0=Finalize, 1=Discard
   const [finalizeError, setFinalizeError] = useState(null);
   const [errorFocus, setErrorFocus] = useState(0); // I2: 0=Retry, 1=Exit
@@ -31,21 +31,17 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   // Task 8: viewLevel state machine — replaces selectedDay/focusedDay/focusRow/barFocus
   const [viewLevel, setViewLevel] = useState('toc');           // 'toc' | 'day' | 'fullscreen'
   const [dayIndex, setDayIndex] = useState(0);                 // always valid once data loads
-  // eslint-disable-next-line no-unused-vars -- Task 9 drives setImageIndex; valid when viewLevel === 'fullscreen'
-  const [imageIndex, setImageIndex] = useState(0);
+  const [imageIndex, setImageIndex] = useState(0);             // valid when viewLevel === 'fullscreen'
 
-  // REMOVED IN TASK 8 — Task 9 will rewrite the consumers
-  const focusedDay = 0;
-  const setFocusedDay = () => {};
-  const selectedDay = null;
-  const setSelectedDay = () => {};
-  const focusRow = 'grid';
-  const setFocusRow = () => {};
-  const barFocus = 0;
-  const setBarFocus = () => {};
-  const hasRecorded = false;
-  // eslint-disable-next-line no-unused-vars -- stub; Task 9+ will remove this
-  const setHasRecorded = () => {};
+  // Task 9: focus row, preflight, and disconnect modal state
+  const [focusRow, setFocusRow] = useState('main');            // 'main' | 'bar'
+  const [preflightFailed, setPreflightFailed] = useState(false);
+  const [preflightFocus, setPreflightFocus] = useState(0);     // 0=Retry, 1=Exit
+  const preflightStatus = preflightFailed
+    ? 'failed'
+    : 'acquiring'; // Task 10 will update this to factor in firstAudibleFrameSeen
+  // eslint-disable-next-line no-unused-vars -- setPreflightStatus stub for Task 10 wiring
+  const [disconnectModal, setDisconnectModal] = useState(null);
 
   const containerRef = useRef(null);
   const uploadStartRef = useRef(null);
@@ -69,6 +65,37 @@ export default function WeeklyReview({ dispatch, dismiss }) {
     isRecording, duration: recordingDuration, micLevel, silenceWarning,
     error: recorderError, startRecording, stopRecording,
   } = useAudioRecorder({ onChunk: handleChunk });
+
+  // Task 9 callbacks — declared after useAudioRecorder so stopRecording is in scope.
+  // Some are stubs; Tasks 10–12 will wire them up fully.
+  const onExitWidget = useCallback(() => {
+    if (typeof dispatch === 'function') dispatch('escape');
+    else if (typeof dismiss === 'function') dismiss();
+  }, [dispatch, dismiss]);
+
+  const onSaveAndExit = useCallback(() => {
+    // Stops the recorder; the existing onstop chain finalizes.
+    // Task 10 will wire up auto-finalize on stop.
+    stopRecording();
+  }, [stopRecording]);
+
+  // Task 11 will define onEnterUpload fully. Stub for now.
+  const onEnterUpload = useCallback(() => {
+    logger.info('upload.enter-stub', { sessionId: sessionIdRef.current });
+  }, []);
+
+  // Task 10 will define onPreflightRetry fully. Stub for now.
+  const onPreflightRetry = useCallback(() => { setPreflightFailed(false); }, []);
+  const onPreflightExit  = useCallback(() => onExitWidget(), [onExitWidget]);
+
+  const onBackPressed = useCallback(() => {
+    // Climb hierarchy at L2/L3; save-confirm modal at L1 TOC.
+    if (focusRow === 'bar') { setFocusRow('main'); return; }
+    if (viewLevel === 'fullscreen') { setViewLevel('day'); return; }
+    if (viewLevel === 'day')        { setViewLevel('toc'); return; }
+    setConfirmFocus(0);
+    setShowStopConfirm(true);
+  }, [viewLevel, focusRow]);
 
   const finalizeRecording = useCallback(async () => {
     if (!data?.week) return;
@@ -121,7 +148,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   }, [isRecording]);
 
   // When recorder finishes (stop pressed), drain uploads and finalize.
-  // hasRecorded is stubbed in Task 8; Task 10 will wire up automatic recording start + finalize trigger.
+  // Task 10 will wire up automatic recording start + finalize trigger.
   const finalizeTriggeredRef = useRef(false);
 
   useEffect(() => {
@@ -267,226 +294,196 @@ export default function WeeklyReview({ dispatch, dismiss }) {
     };
   }, [isRecording, uploaderPendingCount, uploaderBeaconFlush]);
 
-  // Pacman grid navigation
+  // 4-level keyboard navigation hierarchy
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (!data?.days) return;
       const total = data.days.length;
+      const isEnter = e.key === 'Enter' || e.key === ' ';
+      const isBack  = e.key === 'Escape' || e.key === 'Backspace';
 
-      // I1: Resume-draft keyboard nav — must be checked BEFORE init-overlay branch
-      if (resumeDraft && !isRecording && !hasRecorded) {
-        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-          e.preventDefault();
-          setResumeFocus(prev => prev === 0 ? 1 : 0);
-          return;
-        }
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          if (resumeFocus === 0) finalizePriorDraft();
-          else discardPriorDraft();
-          return;
-        }
-        if (e.key === 'Escape' || e.key === 'Backspace') {
-          // Don't auto-discard on Escape — overlay requires explicit choice
-          e.preventDefault();
-          return;
-        }
-        return;
-      }
+      // ---- Overlay-specific handling. These modals override "Enter = upload" ----
 
-      // I2: Finalize-error keyboard nav — must be checked BEFORE the block-all branch
-      if (finalizeError && !isRecording) {
-        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      // Pre-flight: only Back works (to bail). Other keys ignored.
+      if (preflightStatus !== 'ok') {
+        if (isBack) {
           e.preventDefault();
-          setErrorFocus(prev => prev === 0 ? 1 : 0);
+          onExitWidget();
           return;
         }
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          if (errorFocus === 0) {
-            setFinalizeError(null);
-            finalizeTriggeredRef.current = false;
-            finalizeRecording();
-          } else {
-            setFinalizeError(null);
-            if (typeof dispatch === 'function') dispatch('escape');
-            else if (typeof dismiss === 'function') dismiss();
+        // Pre-flight failed has its own Retry/Exit buttons; route L/R + Enter:
+        if (preflightStatus === 'failed') {
+          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            e.preventDefault();
+            setPreflightFocus(prev => prev === 0 ? 1 : 0);
+          } else if (isEnter) {
+            e.preventDefault();
+            if (preflightFocus === 0) onPreflightRetry(); else onPreflightExit();
           }
-          return;
         }
         return;
       }
 
-      // Not recording and never started: init screen. Enter starts, Escape exits.
-      if (!isRecording && !hasRecorded) {
-        // I1: Gate Enter-to-start on !resumeDraft so draft overlay isn't bypassed
-        if (!resumeDraft && (e.key === 'Enter' || e.key === ' ')) {
-          e.preventDefault();
-          e.stopPropagation();
-          logger.info('recording.key-start');
-          startRecording();
-        } else if (e.key === 'Escape' || e.key === 'Backspace') {
-          // Let it bubble — framework will exit the widget
-          logger.info('nav.exit-widget', { key: e.key });
-        }
+      // Disconnect modal: informational while reconnecting/finalizing — swallow all keys.
+      if (disconnectModal) {
+        e.preventDefault();
         return;
       }
 
-      // Not recording but has recorded (stopped/uploading): block everything UNLESS the error dialog is showing.
-      if (!isRecording && hasRecorded && !finalizeError) {
-        e.preventDefault();
-        e.stopPropagation();
-        return;
-      }
-
-      // Global save shortcut — works from any focus state
-      if (isRecording && (e.key === 's' || e.key === 'S' || e.key === 'MediaStop' || e.key === 'MediaPlayPause')) {
-        e.preventDefault();
-        e.stopPropagation();
-        logger.info('nav.save-shortcut', { key: e.key });
-        setShowStopConfirm(false);
-        stopRecording();
-        return;
-      }
-
-      // From here on, we're recording — always capture escape/back ourselves.
-      if (e.key === 'Escape' || e.key === 'Backspace') {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-
-      // Stop confirmation dialog is showing
+      // Stop-confirm modal: existing behavior (L/R toggles focus, Enter activates).
       if (showStopConfirm) {
         e.preventDefault();
-        e.stopPropagation();
-        if (e.key === 'Escape' || e.key === 'Backspace') {
-          setShowStopConfirm(false);
-        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-          setConfirmFocus(prev => prev === 0 ? 1 : 0);
-        } else if (e.key === 'Enter' || e.key === ' ') {
-          if (confirmFocus === 0) {
-            logger.info('recording.confirm-continue');
-            setShowStopConfirm(false);
-          } else {
-            logger.info('recording.confirm-save');
-            setShowStopConfirm(false);
-            stopRecording();
-          }
+        if (isBack) { setShowStopConfirm(false); return; }
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          setConfirmFocus(prev => prev === 0 ? 1 : 0); return;
+        }
+        if (isEnter) {
+          if (confirmFocus === 0) { setShowStopConfirm(false); }
+          else { setShowStopConfirm(false); onSaveAndExit(); }
+          return;
         }
         return;
       }
 
-      // Day detail view: back closes detail
-      if (selectedDay !== null) {
+      // Finalize-error modal: L/R toggles focus, Enter activates Retry / Exit-save-later.
+      if (finalizeError) {
+        e.preventDefault();
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          setErrorFocus(prev => prev === 0 ? 1 : 0); return;
+        }
+        if (isEnter) {
+          if (errorFocus === 0) { setFinalizeError(null); onEnterUpload(); }
+          else {
+            setFinalizeError(null);
+            onExitWidget();
+          }
+          return;
+        }
+        return;
+      }
+
+      // Resume-draft overlay (single-button after Task 13): Enter activates Finalize.
+      if (resumeDraft) {
+        e.preventDefault();
+        if (isEnter) finalizePriorDraft();
+        // No Discard option, no L/R toggle. Back is intentionally a no-op (must explicitly finalize).
+        return;
+      }
+
+      // ---- Bottom recording bar focus ----
+      // focusRow === 'bar' means the user has tabbed down onto the bar. Enter activates Save.
+      if (focusRow === 'bar') {
+        e.preventDefault();
+        if (isEnter) { onSaveAndExit(); return; }
+        if (e.key === 'ArrowUp')   { setFocusRow('main'); return; }
+        if (e.key === 'ArrowDown') { onExitWidget(); return; }
+        if (isBack) { setFocusRow('main'); return; }
+        return;
+      }
+
+      // ---- Main hierarchy: Enter = upload, Back = climb ----
+      if (isEnter) {
+        e.preventDefault();
+        e.stopPropagation();
+        onEnterUpload();
+        return;
+      }
+
+      if (isBack) {
+        e.preventDefault();
+        e.stopPropagation();
+        onBackPressed();
+        return;
+      }
+
+      if (viewLevel === 'fullscreen') {
+        const photos = data.days[dayIndex]?.photos || [];
+        if (photos.length === 0) {
+          // No images — drop straight to day view
+          setViewLevel('day');
+          return;
+        }
         switch (e.key) {
-          case 'Escape':
-          case 'Backspace':
-            logger.info('nav.day-detail-close', { fromDay: selectedDay });
-            setSelectedDay(null);
-            break;
+          case 'ArrowUp':
+            e.preventDefault();
+            setImageIndex(prev => (prev + 1) % photos.length);
+            return;
+          case 'ArrowDown':
+            e.preventDefault();
+            setImageIndex(prev => (prev - 1 + photos.length) % photos.length);
+            return;
           case 'ArrowLeft':
             e.preventDefault();
-            setSelectedDay(prev => {
-              const next = (prev - 1 + total) % total;
-              logger.info('nav.day-detail-prev', { from: prev, to: next, date: data.days[next]?.date });
-              return next;
-            });
-            break;
+            if (dayIndex > 0) {
+              setDayIndex(dayIndex - 1);
+              setImageIndex(0);
+              setViewLevel('day');
+            }
+            return;
           case 'ArrowRight':
             e.preventDefault();
-            setSelectedDay(prev => {
-              const next = (prev + 1) % total;
-              logger.info('nav.day-detail-next', { from: prev, to: next, date: data.days[next]?.date });
-              return next;
-            });
-            break;
-          default:
-            break;
-        }
-        return;
-      }
-
-      if (focusRow === 'bar') {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          e.stopPropagation();
-          logger.info('nav.bar-save-pressed');
-          stopRecording();
-          return;
-        }
-        if (e.key === 'ArrowUp') {
-          e.preventDefault();
-          setFocusRow('grid');
-          return;
-        }
-        if (e.key === 'Escape' || e.key === 'Backspace') {
-          e.preventDefault();
-          setFocusRow('grid');
-          return;
+            if (dayIndex < total - 1) {
+              setDayIndex(dayIndex + 1);
+              setImageIndex(0);
+              setViewLevel('day');
+            }
+            return;
+          default: return;
         }
       }
 
+      if (viewLevel === 'day') {
+        switch (e.key) {
+          case 'ArrowDown':
+            e.preventDefault();
+            setViewLevel('toc');
+            return;
+          case 'ArrowUp':
+            e.preventDefault();
+            if ((data.days[dayIndex]?.photos?.length || 0) > 0) {
+              setImageIndex(0);
+              setViewLevel('fullscreen');
+            }
+            return;
+          case 'ArrowLeft':
+            e.preventDefault();
+            if (dayIndex > 0) setDayIndex(dayIndex - 1);
+            return;
+          case 'ArrowRight':
+            e.preventDefault();
+            if (dayIndex < total - 1) setDayIndex(dayIndex + 1);
+            return;
+          default: return;
+        }
+      }
+
+      // viewLevel === 'toc'
       switch (e.key) {
+        case 'ArrowUp':
+          e.preventDefault();
+          onExitWidget();
+          return;
+        case 'ArrowDown':
+          e.preventDefault();
+          // First Down at TOC focuses the recording bar; only the next Down exits.
+          // This keeps the bar reachable from the keyboard.
+          setFocusRow('bar');
+          return;
         case 'ArrowLeft':
           e.preventDefault();
-          setFocusedDay(prev => {
-            const next = (prev - 1 + total) % total;
-            logger.debug('nav.grid-left', { from: prev, to: next });
-            return next;
-          });
-          break;
+          if (dayIndex > 0) {
+            setDayIndex(dayIndex - 1);
+            setViewLevel('day');
+          }
+          return;
         case 'ArrowRight':
           e.preventDefault();
-          setFocusedDay(prev => {
-            const next = (prev + 1) % total;
-            logger.debug('nav.grid-right', { from: prev, to: next });
-            return next;
-          });
-          break;
-        case 'ArrowUp': {
-          e.preventDefault();
-          if (focusRow === 'bar') {
-            setFocusRow('grid');
-            logger.info('nav.focus-grid');
-          } else {
-            setFocusedDay(prev => {
-              const next = (prev - COLS + total) % total;
-              logger.debug('nav.grid-up', { from: prev, to: next });
-              return next;
-            });
+          if (dayIndex < total - 1) {
+            setDayIndex(dayIndex + 1);
+            setViewLevel('day');
           }
-          break;
-        }
-        case 'ArrowDown': {
-          e.preventDefault();
-          if (focusRow === 'grid' && focusedDay >= COLS) {
-            setFocusRow('bar');
-            setBarFocus(0);
-            logger.info('nav.focus-bar');
-          } else if (focusRow === 'grid') {
-            setFocusedDay(prev => {
-              const next = (prev + COLS) % total;
-              logger.debug('nav.grid-down', { from: prev, to: next });
-              return next;
-            });
-          }
-          break;
-        }
-        case 'Enter':
-        case ' ':
-          e.preventDefault();
-          logger.info('nav.day-detail-open', { day: focusedDay, date: data.days[focusedDay]?.date, photoCount: data.days[focusedDay]?.photoCount });
-          setSelectedDay(focusedDay);
-          break;
-        case 'Escape':
-        case 'Backspace':
-          // Grid + recording: show stop confirmation
-          logger.info('nav.back-show-confirm', { key: e.key });
-          setConfirmFocus(0);
-          setShowStopConfirm(true);
-          break;
-        default:
-          break;
+          return;
+        default: return;
       }
     };
 
@@ -495,19 +492,20 @@ export default function WeeklyReview({ dispatch, dismiss }) {
       container.addEventListener('keydown', handleKeyDown);
       return () => container.removeEventListener('keydown', handleKeyDown);
     }
-  }, [data, selectedDay, focusedDay, focusRow, barFocus, isRecording, hasRecorded, finalizeError, errorFocus, showStopConfirm, confirmFocus, resumeDraft, resumeFocus, finalizePriorDraft, discardPriorDraft, finalizeRecording, startRecording, stopRecording, dispatch, dismiss]);
+  }, [data, viewLevel, dayIndex, imageIndex, focusRow, resumeDraft, finalizeError, showStopConfirm, preflightStatus, preflightFocus, confirmFocus, errorFocus, disconnectModal, finalizePriorDraft, onExitWidget, onSaveAndExit, onEnterUpload, onPreflightRetry, onPreflightExit, onBackPressed]);
 
   useEffect(() => {
     containerRef.current?.focus();
   }, [loading]);
 
-  // Pop guard: prevent MenuNavigationContext from popping the app while recording.
+  // Pop guard: prevent MenuNavigationContext from popping the app while recording or uploading.
   // Handles remote Back button (FKB/Shield popstate) and any other pop() caller.
-  // REMOVED IN TASK 8: selectedDayRef, hasRecordedRef — Task 9 will rewrite pop-guard consumers
   const showStopConfirmRef = useRef(showStopConfirm);
   showStopConfirmRef.current = showStopConfirm;
   const isRecordingRef = useRef(isRecording);
   isRecordingRef.current = isRecording;
+  const viewLevelRef = useRef(viewLevel);
+  viewLevelRef.current = viewLevel;
 
   useEffect(() => {
     if (!menuNav?.setPopGuard) return;
@@ -520,22 +518,15 @@ export default function WeeklyReview({ dispatch, dismiss }) {
       logger.info('nav.pop-guard', {
         isRecording: isRecordingRef.current,
         uploading,
+        viewLevel: viewLevelRef.current,
         showStopConfirm: showStopConfirmRef.current,
       });
 
-      if (uploading) {
-        // Upload in progress — block completely
-        return false;
-      }
+      if (uploading) return false; // Task 11 will swap to uploadInFlight
 
-      if (showStopConfirmRef.current) {
-        setShowStopConfirm(false);
-        return false;
-      }
-
-      // REMOVED IN TASK 8: selectedDay check — Task 9 will replace with viewLevel check
-
-      // At grid level while recording — show stop confirmation
+      if (showStopConfirmRef.current) { setShowStopConfirm(false); return false; }
+      if (viewLevelRef.current === 'fullscreen') { setViewLevel('day'); return false; }
+      if (viewLevelRef.current === 'day')        { setViewLevel('toc'); return false; }
       setConfirmFocus(0);
       setShowStopConfirm(true);
       return false;
@@ -566,7 +557,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   return (
     <div className="weekly-review" ref={containerRef} tabIndex={0}>
       {/* Resume-draft overlay — shown after bootstrap if an unfinalized draft exists */}
-      {resumeDraft && !isRecording && !hasRecorded && (
+      {resumeDraft && !isRecording && (
         <div className="weekly-review-confirm-overlay">
           <div className="confirm-dialog">
             <div className="confirm-message">
