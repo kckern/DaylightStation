@@ -72,6 +72,23 @@ export class MediaProgress {
     return this.playhead > 0 && !this.isWatched();
   }
 
+  /**
+   * Serialize to a plain object using canonical field names.
+   * Excludes legacy field aliases (seconds, mediaDuration, time).
+   * @returns {Object}
+   */
+  toJSON() {
+    return {
+      contentId: this.contentId,
+      playhead: this.playhead,
+      duration: this.duration,
+      percent: this.percent,
+      playCount: this.playCount,
+      lastPlayed: this.lastPlayed,
+      watchTime: this.watchTime
+    };
+  }
+
 }
 
 export default MediaProgress;
