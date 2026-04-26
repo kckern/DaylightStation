@@ -51,6 +51,7 @@ import {
   createGratitudeApiRouter,
   createHomeAutomationAdapters,
   createHomeAutomationApiRouter,
+  createHomeDashboardApiRouter,
   createDeviceServices,
   createDeviceApiRouter,
   createTriggerApiRouter,
@@ -1622,6 +1623,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     eventAggregationService,
     logger: rootLogger.child({ module: 'home-automation-api' })
   });
+
+  // Home-dashboard (unified dashboard API: config/state/history/toggle/scene).
+  // Only mounted when a Home Assistant gateway is available.
+  const homeDashboardRouter = createHomeDashboardApiRouter({
+    haGateway: homeAutomationAdapters.haGateway,
+    configService,
+    logger: rootLogger.child({ module: 'home-dashboard-api' })
+  });
+  if (homeDashboardRouter) {
+    v1Routers['home-dashboard'] = homeDashboardRouter;
+  }
 
   // Device registry domain
   const devicesConfig = configService.getHouseholdDevices(householdId);

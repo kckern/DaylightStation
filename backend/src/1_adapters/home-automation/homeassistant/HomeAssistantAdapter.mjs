@@ -21,6 +21,8 @@ export class HomeAssistantAdapter {
   #logger;
   #httpClient;
   #metrics;
+  #historyCache = new Map(); // key → { expires, data }
+  #HISTORY_TTL_MS = 60_000;
 
   /**
    * @param {Object} config
@@ -91,6 +93,74 @@ export class HomeAssistantAdapter {
     } catch (error) {
       this.#logger.debug?.('ha.getState.error', { entityId, error: error.message });
       return null;
+    }
+  }
+
+  /**
+   * Batch read of current state for a list of entities.
+   * Single HTTP call to /api/states, filtered locally.
+   * @param {string[]} entityIds
+   * @returns {Promise<Map<string, DeviceState>>}
+   */
+  async getStates(entityIds) {
+    if (!Array.isArray(entityIds) || entityIds.length === 0) return new Map();
+
+    try {
+      const response = await this.#apiGet('/api/states');
+      const wanted = new Set(entityIds);
+      const out = new Map();
+      for (const entry of response || []) {
+        if (!wanted.has(entry.entity_id)) continue;
+        out.set(entry.entity_id, {
+          entityId:    entry.entity_id,
+          state:       entry.state,
+          attributes:  entry.attributes || {},
+          lastChanged: entry.last_changed,
+        });
+      }
+      return out;
+    } catch (error) {
+      this.#logger.error?.('ha.getStates.error', { error: error.message });
+      return new Map();
+    }
+  }
+
+  /**
+   * Fetch historical state series for given entities since an ISO timestamp.
+   * Response from HA is an array of arrays; each inner array is one entity's history.
+   * Cached for 60 seconds keyed on (sinceIso, sorted entityIds).
+   * @param {string[]} entityIds
+   * @param {{ sinceIso: string }} options
+   * @returns {Promise<Map<string, Array<{t:string,v:number|string}>>>}
+   */
+  async getHistory(entityIds, { sinceIso } = {}) {
+    if (!Array.isArray(entityIds) || entityIds.length === 0) return new Map();
+    if (!sinceIso) throw new Error('getHistory requires sinceIso');
+
+    const key = `${sinceIso}|${[...entityIds].sort().join(',')}`;
+    const cached = this.#historyCache.get(key);
+    if (cached && cached.expires > Date.now()) return cached.data;
+
+    const filter = entityIds.join(',');
+    const path = `/api/history/period/${encodeURIComponent(sinceIso)}?filter_entity_id=${encodeURIComponent(filter)}&minimal_response`;
+
+    try {
+      const response = await this.#apiGet(path);
+      const out = new Map();
+      for (const series of response || []) {
+        if (!Array.isArray(series) || series.length === 0) continue;
+        const entityId = series[0].entity_id;
+        const points = series.map(s => {
+          const num = Number(s.state);
+          return { t: s.last_changed, v: Number.isFinite(num) ? num : s.state };
+        });
+        out.set(entityId, points);
+      }
+      this.#historyCache.set(key, { expires: Date.now() + this.#HISTORY_TTL_MS, data: out });
+      return out;
+    } catch (error) {
+      this.#logger.error?.('ha.getHistory.error', { error: error.message });
+      return new Map();
     }
   }
 

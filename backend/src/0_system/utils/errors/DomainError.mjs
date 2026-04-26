@@ -125,6 +125,26 @@ export class ConflictError extends DomainError {
 }
 
 /**
+ * Authorization error - caller not permitted to perform the action
+ * (e.g., entity not on a whitelist). Distinct from authentication.
+ * HTTP 403 Forbidden
+ */
+export class AuthorizationError extends DomainError {
+  /** @type {string} Default error code for this class */
+  static defaultCode = 'AUTHORIZATION_ERROR';
+
+  /**
+   * @param {string} message - Error message
+   * @param {object} [context] - Additional context (entity, reason, etc.)
+   */
+  constructor(message, context = {}) {
+    super(message, context);
+    this.name = 'AuthorizationError';
+    this.httpStatus = 403;
+  }
+}
+
+/**
  * Business rule error - domain logic violation
  * HTTP 422 Unprocessable Entity
  */
