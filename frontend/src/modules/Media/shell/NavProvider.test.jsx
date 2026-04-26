@@ -1,5 +1,5 @@
 import React from 'react';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { NavProvider, useNav } from './NavProvider.jsx';
@@ -17,6 +17,11 @@ function Probe() {
 }
 
 describe('NavProvider', () => {
+  // NavProvider hydrates from window.location on mount; reset URL so tests don't bleed state.
+  beforeEach(() => {
+    window.history.replaceState(null, '', '/');
+  });
+
   it('defaults to view="home" with empty params', () => {
     render(<NavProvider><Probe /></NavProvider>);
     expect(screen.getByTestId('view')).toHaveTextContent('home');
