@@ -1,0 +1,21 @@
+summary:
+  weather: true
+  temp_chart:
+    title: "Indoor / Outdoor · 36h"
+    hours: 36
+    series:
+      - { entity: sensor.indoor_temp, label: "Indoor",  color: "#4dabf7" }
+      - { entity: sensor.outdoor_temp, label: "Outdoor", color: "#ffa94d" }
+  energy_chart:
+    title: "Energy · 24h"
+    hours: 24
+    entity: sensor.home_energy_today
+    color: "#63e6be"
+  scenes: []   # fill in real scene IDs after verifying HA has them
+
+rooms:
+  - id: living_room
+    label: "Living Room"
+    icon: "sofa"
+    lights: []
+    climate: {}

@@ -36,7 +36,9 @@ export function isHomeAutomationGateway(obj) {
     obj &&
     typeof obj.getState === 'function' &&
     typeof obj.callService === 'function' &&
-    typeof obj.activateScene === 'function'
+    typeof obj.activateScene === 'function' &&
+    typeof obj.getStates === 'function' &&
+    typeof obj.getHistory === 'function'
   );
 }
 
@@ -59,6 +61,18 @@ export function assertHomeAutomationGateway(obj) {
  * getState(entityId: string): Promise<DeviceState | null>
  *   Get current state of a device/entity.
  *   Returns null if entity not found.
+ *
+ * getStates(entityIds: string[]): Promise<Map<string, DeviceState>>
+ *   Batch-fetch current states for multiple entities in a single call.
+ *   Returns a Map keyed by entityId. Entities not found are omitted from the map.
+ *   Implementations should prefer a single upstream request (e.g. /api/states on
+ *   Home Assistant) over N parallel getState() calls.
+ *
+ * getHistory(entityIds: string[], options: HistoryOptions): Promise<Map<string, HistoryPoint[]>>
+ *   Fetch historical state values for a batch of entities since a given ISO timestamp.
+ *   Returns a Map keyed by entityId -> array of { t: ISO timestamp, v: number|string }
+ *   points ordered ascending by time. Entities without history are omitted.
+ *   Intended for time-series charting on the home dashboard.
  *
  * callService(domain: string, service: string, data?: Object): Promise<ServiceResult>
  *   Call a service on the home automation platform.
@@ -96,6 +110,19 @@ export function assertHomeAutomationGateway(obj) {
  */
 
 /**
+ * History query options for getHistory
+ * @typedef {Object} HistoryOptions
+ * @property {string} sinceIso - ISO timestamp lower bound (inclusive) for history window
+ */
+
+/**
+ * Historical data point for a single entity
+ * @typedef {Object} HistoryPoint
+ * @property {string} t - ISO timestamp of the sample
+ * @property {number|string} v - State value at that timestamp (numeric when parseable)
+ */
+
+/**
  * Wait result from waitForState
  * @typedef {Object} WaitResult
  * @property {boolean} reached - Whether desired state was reached
@@ -111,6 +138,12 @@ export function createNoOpGateway() {
   return {
     async getState(_entityId) {
       return null;
+    },
+    async getStates(_entityIds) {
+      return new Map();
+    },
+    async getHistory(_entityIds, _options) {
+      return new Map();
     },
     async callService(_domain, _service, _data) {
       return { ok: false, error: 'No home automation provider configured' };

@@ -82,6 +82,7 @@ export function createApiRouter(config) {
     '/fitness': 'fitness',
     '/media': 'media',
     '/home': 'home',
+    '/home-dashboard': 'home-dashboard',
     '/nutribot': 'nutribot',
     '/journalist': 'journalist',
     '/homebot': 'homebot',
