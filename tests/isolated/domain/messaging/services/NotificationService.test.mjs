@@ -25,12 +25,13 @@ describe('NotificationService', () => {
   describe('send', () => {
     test('sends and saves notification', async () => {
       const nowMs = Date.now();
+      const timestamp = new Date(nowMs).toISOString();
       const notification = await service.send({
         recipient: 'john',
         channel: 'telegram',
         title: 'Test',
         body: 'Message'
-      }, nowMs);
+      }, nowMs, timestamp);
 
       expect(mockChannel.send).toHaveBeenCalled();
       expect(mockStore.save).toHaveBeenCalled();
@@ -39,12 +40,13 @@ describe('NotificationService', () => {
 
     test('saves without sending if no channel adapter', async () => {
       const nowMs = Date.now();
+      const timestamp = new Date(nowMs).toISOString();
       const notification = await service.send({
         recipient: 'john',
         channel: 'email',
         title: 'Test',
         body: 'Message'
-      }, nowMs);
+      }, nowMs, timestamp);
 
       expect(notification.isSent()).toBe(false);
       expect(mockStore.save).toHaveBeenCalled();
@@ -99,7 +101,7 @@ describe('NotificationService', () => {
         readAt: null
       });
 
-      const notification = await service.markRead('n1');
+      const notification = await service.markRead('n1', '2026-01-11T13:00:00.000Z');
       expect(notification.isRead()).toBe(true);
       expect(mockStore.save).toHaveBeenCalled();
     });
