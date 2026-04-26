@@ -4,6 +4,9 @@ import { DaylightAPI } from '@/lib/api.mjs';
 import MenuNavigationContext from '@/context/MenuNavigationContext.jsx';
 import DayColumn from './components/DayColumn.jsx';
 import DayDetail from './components/DayDetail.jsx';
+import FullscreenImage from './components/FullscreenImage.jsx';
+// eslint-disable-next-line no-unused-vars -- Task 10 wires this up
+import PreFlightOverlay from './components/PreFlightOverlay.jsx';
 import RecordingBar from './components/RecordingBar.jsx';
 import { useAudioRecorder } from './hooks/useAudioRecorder.js';
 import { useChunkUploader } from './hooks/useChunkUploader.js';
@@ -17,18 +20,33 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [focusedDay, setFocusedDay] = useState(0);
-  const [selectedDay, setSelectedDay] = useState(null);
   const [uploading, setUploading] = useState(false);
-  const [hasRecorded, setHasRecorded] = useState(false);
   const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [confirmFocus, setConfirmFocus] = useState(0); // 0=continue, 1=save
   const [resumeDraft, setResumeDraft] = useState(null); // { sessionId, source: 'server'|'local', totalBytes?, lastSavedAt, chunkCount? }
   const [resumeFocus, setResumeFocus] = useState(0); // I1: 0=Finalize, 1=Discard
   const [finalizeError, setFinalizeError] = useState(null);
   const [errorFocus, setErrorFocus] = useState(0); // I2: 0=Retry, 1=Exit
-  const [focusRow, setFocusRow] = useState('grid'); // 'grid' | 'bar'
-  const [barFocus, setBarFocus] = useState(0); // when focusRow='bar': 0=Save, 1=Cancel (future)
+
+  // Task 8: viewLevel state machine — replaces selectedDay/focusedDay/focusRow/barFocus
+  const [viewLevel, setViewLevel] = useState('toc');           // 'toc' | 'day' | 'fullscreen'
+  const [dayIndex, setDayIndex] = useState(0);                 // always valid once data loads
+  // eslint-disable-next-line no-unused-vars -- Task 9 drives setImageIndex; valid when viewLevel === 'fullscreen'
+  const [imageIndex, setImageIndex] = useState(0);
+
+  // REMOVED IN TASK 8 — Task 9 will rewrite the consumers
+  const focusedDay = 0;
+  const setFocusedDay = () => {};
+  const selectedDay = null;
+  const setSelectedDay = () => {};
+  const focusRow = 'grid';
+  const setFocusRow = () => {};
+  const barFocus = 0;
+  const setBarFocus = () => {};
+  const hasRecorded = false;
+  // eslint-disable-next-line no-unused-vars -- stub; Task 9+ will remove this
+  const setHasRecorded = () => {};
+
   const containerRef = useRef(null);
   const uploadStartRef = useRef(null);
   const menuNav = React.useContext(MenuNavigationContext);
@@ -94,31 +112,17 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   }, []);
 
   useEffect(() => {
-    logger.debug('state.focus-day', { day: focusedDay });
-  }, [focusedDay]);
-
-  useEffect(() => {
-    logger.debug('state.selected-day', { selectedDay });
-  }, [selectedDay]);
-
-  useEffect(() => {
     logger.debug('state.uploading', { uploading });
   }, [uploading]);
 
   // Track when recording starts
   useEffect(() => {
     logger.info('state.is-recording', { isRecording });
-    if (isRecording) setHasRecorded(true);
   }, [isRecording]);
 
   // When recorder finishes (stop pressed), drain uploads and finalize.
+  // hasRecorded is stubbed in Task 8; Task 10 will wire up automatic recording start + finalize trigger.
   const finalizeTriggeredRef = useRef(false);
-  useEffect(() => {
-    if (!isRecording && hasRecorded && !finalizeTriggeredRef.current) {
-      finalizeTriggeredRef.current = true;
-      finalizeRecording();
-    }
-  }, [isRecording, hasRecorded, finalizeRecording]);
 
   useEffect(() => {
     if (recorderError) {
@@ -132,6 +136,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
       try {
         const result = await DaylightAPI('/api/v1/weekly-review/bootstrap');
         setData(result);
+        setDayIndex(Math.max(0, (result.days?.length || 1) - 1));
         const totalPhotos = result.days?.reduce((s, d) => s + (d.photoCount || 0), 0) || 0;
         const totalEvents = result.days?.reduce((s, d) => s + (d.calendar?.length || 0), 0) || 0;
         const daysWithPhotos = result.days?.filter(d => d.photoCount > 0).length || 0;
@@ -498,14 +503,11 @@ export default function WeeklyReview({ dispatch, dismiss }) {
 
   // Pop guard: prevent MenuNavigationContext from popping the app while recording.
   // Handles remote Back button (FKB/Shield popstate) and any other pop() caller.
-  const selectedDayRef = useRef(selectedDay);
-  selectedDayRef.current = selectedDay;
+  // REMOVED IN TASK 8: selectedDayRef, hasRecordedRef — Task 9 will rewrite pop-guard consumers
   const showStopConfirmRef = useRef(showStopConfirm);
   showStopConfirmRef.current = showStopConfirm;
   const isRecordingRef = useRef(isRecording);
   isRecordingRef.current = isRecording;
-  const hasRecordedRef = useRef(hasRecorded);
-  hasRecordedRef.current = hasRecorded;
 
   useEffect(() => {
     if (!menuNav?.setPopGuard) return;
@@ -518,7 +520,6 @@ export default function WeeklyReview({ dispatch, dismiss }) {
       logger.info('nav.pop-guard', {
         isRecording: isRecordingRef.current,
         uploading,
-        selectedDay: selectedDayRef.current,
         showStopConfirm: showStopConfirmRef.current,
       });
 
@@ -532,10 +533,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
         return false;
       }
 
-      if (selectedDayRef.current !== null) {
-        setSelectedDay(null);
-        return false;
-      }
+      // REMOVED IN TASK 8: selectedDay check — Task 9 will replace with viewLevel check
 
       // At grid level while recording — show stop confirmation
       setConfirmFocus(0);
@@ -545,8 +543,6 @@ export default function WeeklyReview({ dispatch, dismiss }) {
 
     return () => menuNav.clearPopGuard();
   }, [isRecording, uploading, menuNav]);
-
-  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
   const weekLabel = useMemo(() => {
     if (!data?.days?.length) return '';
@@ -569,27 +565,6 @@ export default function WeeklyReview({ dispatch, dismiss }) {
 
   return (
     <div className="weekly-review" ref={containerRef} tabIndex={0}>
-      {/* Init overlay — only before first recording */}
-      {!isRecording && !hasRecorded && (
-        <div className="weekly-review-init-overlay" onClick={() => { logger.info('recording.overlay-start'); startRecording(); }}>
-          <div className="init-overlay-content">
-            <button className="init-record-btn" onClick={(e) => { e.stopPropagation(); logger.info('recording.overlay-btn-start'); startRecording(); }}>
-              <span className="init-record-dot" />
-            </button>
-            <div className="init-record-label">
-              Press to start recording.
-              <br />
-              <small>Press <kbd>S</kbd> or focus the green Save button to finish.</small>
-            </div>
-            {data.recording?.exists && (
-              <div className="init-existing-badge">
-                Previous recording: {Math.floor(data.recording.duration / 60)}:{String(data.recording.duration % 60).padStart(2, '0')}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Resume-draft overlay — shown after bootstrap if an unfinalized draft exists */}
       {resumeDraft && !isRecording && !hasRecorded && (
         <div className="weekly-review-confirm-overlay">
@@ -606,25 +581,32 @@ export default function WeeklyReview({ dispatch, dismiss }) {
         </div>
       )}
 
-      {selectedDay !== null ? (
+      {/* Task 8: viewLevel-driven render — fullscreen > day > toc */}
+      {viewLevel === 'fullscreen' && data?.days?.[dayIndex] && (() => {
+        const photos = data.days[dayIndex].photos || [];
+        const safeIdx = Math.min(imageIndex, Math.max(0, photos.length - 1));
+        const dt = new Date(`${data.days[dayIndex].date}T12:00:00Z`);
+        const dayLabel = dt.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+        return <FullscreenImage photo={photos[safeIdx]} index={safeIdx} total={photos.length} dayLabel={dayLabel} />;
+      })()}
+
+      {viewLevel === 'day' && data?.days?.[dayIndex] && (
         <DayDetail
-          day={data.days[selectedDay]}
-          isToday={data.days[selectedDay]?.date === todayStr}
-          onClose={() => { logger.info('nav.day-detail-close-button'); setSelectedDay(null); }}
+          day={data.days[dayIndex]}
+          onClose={() => setViewLevel('toc')}
         />
-      ) : (
+      )}
+
+      {viewLevel === 'toc' && (
         <div className="weekly-review-grid">
           {data.days.map((day, i) => (
             <DayColumn
               key={day.date}
               day={day}
-              isFocused={i === focusedDay}
-              isToday={day.date === todayStr}
+              isFocused={i === dayIndex}
               onClick={() => {
-                if (!isRecording) return;
-                logger.info('nav.day-click', { day: i, date: day.date, photoCount: day.photoCount });
-                setSelectedDay(i);
-                setFocusedDay(i);
+                setDayIndex(i);
+                setViewLevel('day');
               }}
             />
           ))}
