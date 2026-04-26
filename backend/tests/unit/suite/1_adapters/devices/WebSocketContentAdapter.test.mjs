@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import WebSocketContentAdapter from '../../../../../src/1_adapters/devices/WebSocketContentAdapter.mjs';
 import { validateCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
 
@@ -7,10 +7,10 @@ describe('WebSocketContentAdapter', () => {
   let adapter;
 
   beforeEach(() => {
-    wsBus = { broadcast: jest.fn().mockResolvedValue(undefined), getSubscribers: jest.fn().mockReturnValue([]) };
+    wsBus = { broadcast: vi.fn().mockResolvedValue(undefined), getSubscribers: vi.fn().mockReturnValue([]) };
     adapter = new WebSocketContentAdapter(
       { topic: 'office', deviceId: 'office-tv', daylightHost: 'http://localhost:3111' },
-      { wsBus, logger: { info: jest.fn(), error: jest.fn() } }
+      { wsBus, logger: { info: vi.fn(), error: vi.fn() } }
     );
   });
 
@@ -43,7 +43,7 @@ describe('WebSocketContentAdapter', () => {
   });
 
   it('load() returns {ok:false} and logs error when no contentId can be resolved', async () => {
-    const logger = { info: jest.fn(), error: jest.fn() };
+    const logger = { info: vi.fn(), error: vi.fn() };
     const a = new WebSocketContentAdapter(
       { topic: 'office', deviceId: 'office-tv' },
       { wsBus, logger }
