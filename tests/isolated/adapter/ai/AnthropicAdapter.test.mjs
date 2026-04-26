@@ -2,6 +2,24 @@
 import { vi } from 'vitest';
 import { AnthropicAdapter } from '#adapters/ai/AnthropicAdapter.mjs';
 
+// Translate legacy fetch() mock responses into httpClient.post() shape (status/data/headers).
+function translateFetchToPostShape(fetchResponse) {
+  return Promise.resolve(fetchResponse).then(async (r) => {
+    const data = r.json ? await r.json() : undefined;
+    const status = r.status ?? (r.ok ? 200 : 500);
+    let headers = r.headers || {};
+    if (typeof headers.get === 'function') {
+      const flat = {};
+      for (const k of ['retry-after', 'content-type', 'x-ratelimit-remaining']) {
+        const v = headers.get(k);
+        if (v !== undefined && v !== null) flat[k] = v;
+      }
+      headers = flat;
+    }
+    return { ok: status >= 200 && status < 300, status, data, headers };
+  });
+}
+
 describe('AnthropicAdapter', () => {
   let adapter;
   let mockHttpClient;
@@ -9,7 +27,16 @@ describe('AnthropicAdapter', () => {
 
   beforeEach(() => {
     mockHttpClient = {
-      fetch: vi.fn()
+      fetch: vi.fn(),
+      get: vi.fn(),
+      post: vi.fn().mockImplementation((url, body, options) => {
+        const fetchOpts = {
+          method: 'POST',
+          headers: options?.headers,
+          body: typeof body === 'string' ? body : JSON.stringify(body),
+        };
+        return translateFetchToPostShape(mockHttpClient.fetch(url, fetchOpts));
+      }),
     };
 
     mockLogger = {
@@ -31,7 +58,7 @@ describe('AnthropicAdapter', () => {
     });
 
     test('initializes with defaults', () => {
-      const a = new AnthropicAdapter({ apiKey: 'test' });
+      const a = new AnthropicAdapter({ apiKey: 'test' }, { httpClient: mockHttpClient });
       expect(a.model).toBe('claude-sonnet-4-20250514');
       expect(a.maxTokens).toBe(1000);
       expect(a.isConfigured()).toBe(true);
@@ -42,7 +69,7 @@ describe('AnthropicAdapter', () => {
         apiKey: 'test',
         model: 'claude-3-haiku-20240307',
         maxTokens: 500
-      });
+      }, { httpClient: mockHttpClient });
       expect(a.model).toBe('claude-3-haiku-20240307');
       expect(a.maxTokens).toBe(500);
     });
