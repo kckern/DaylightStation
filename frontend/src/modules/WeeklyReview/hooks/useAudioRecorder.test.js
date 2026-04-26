@@ -49,4 +49,35 @@ describe('useAudioRecorder', () => {
     await act(async () => { await result.current.startRecording(); });
     expect(result.current.firstAudibleFrameSeen).toBe(false);
   });
+
+  it('sets firstAudibleFrameSeen=true when audible audio is observed by the level monitor', async () => {
+    // Override AudioContext mock so getByteTimeDomainData populates the array
+    // with values that yield normalized > 0.02 (the audible threshold).
+    // 200/128 centered = 0.5625 → rms ≈ 0.5625 → db ≈ -5 → normalized ≈ 0.92.
+    global.AudioContext = class {
+      state = 'running';
+      createAnalyser() {
+        return {
+          fftSize: 256,
+          frequencyBinCount: 128,
+          getByteTimeDomainData: (arr) => {
+            for (let i = 0; i < arr.length; i++) arr[i] = 200;
+          },
+        };
+      }
+      createMediaStreamSource() { return { connect: () => {} }; }
+      resume() { return Promise.resolve(); }
+      close() { return Promise.resolve(); }
+    };
+
+    const { result } = renderHook(() => useAudioRecorder({ onChunk: () => {} }));
+    expect(result.current.firstAudibleFrameSeen).toBe(false);
+
+    await act(async () => { await result.current.startRecording(); });
+
+    // Allow at least one RAF tick (mocked as setTimeout(16)) to drive the level monitor.
+    await act(async () => { await new Promise(r => setTimeout(r, 50)); });
+
+    expect(result.current.firstAudibleFrameSeen).toBe(true);
+  });
 });
