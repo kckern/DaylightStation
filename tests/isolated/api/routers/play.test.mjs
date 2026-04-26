@@ -53,8 +53,33 @@ describe('Play API Router', () => {
       set: vi.fn().mockResolvedValue(undefined)
     };
 
+    // Production refactored play.mjs to delegate response shaping to PlayResponseService and to
+    // require mediaProgressMemory directly. Provide minimal stubs so existing tests pass through.
+    const mockMediaProgressMemory = {
+      get: vi.fn().mockResolvedValue(null),
+      getAll: vi.fn().mockResolvedValue([]),
+      set: vi.fn().mockResolvedValue(undefined),
+    };
+    const mockPlayResponseService = {
+      getWatchState: vi.fn().mockResolvedValue(null),
+      toPlayResponse: vi.fn((item) => ({
+        id: item.id,
+        assetId: item.id,
+        mediaUrl: item.mediaUrl,
+        mediaType: item.mediaType,
+        title: item.title,
+        duration: item.duration,
+        resumable: item.resumable ?? false,
+      })),
+    };
+
     app = express();
-    app.use('/api/play', createPlayRouter({ registry: mockRegistry, watchStore: mockWatchStore }));
+    app.use('/api/play', createPlayRouter({
+      registry: mockRegistry,
+      watchStore: mockWatchStore,
+      mediaProgressMemory: mockMediaProgressMemory,
+      playResponseService: mockPlayResponseService,
+    }));
   });
 
   describe('GET /api/play/:source/*', () => {

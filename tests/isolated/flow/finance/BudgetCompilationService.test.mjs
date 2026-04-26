@@ -97,6 +97,8 @@ describe('BudgetCompilationService', () => {
       getMortgageTransactions: vi.fn().mockReturnValue(mockMortgageTransactions),
       // Production now also queries statement data; default to empty so amortization-only path runs
       getMortgageStatements: vi.fn().mockReturnValue(null),
+      // Production also queries paired-transaction adjustments; empty default is fine
+      getPairs: vi.fn().mockReturnValue([]),
       applyMemos: vi.fn().mockImplementation(txns => txns),
       saveCompiledFinances: vi.fn()
     };

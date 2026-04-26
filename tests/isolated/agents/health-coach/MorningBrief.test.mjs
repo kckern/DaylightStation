@@ -1,12 +1,12 @@
-import { describe, it, mock } from 'node:test';
-import { strict as assert } from 'node:assert';
+import { describe, it, expect, vi } from 'vitest';
+
 import { MorningBrief } from '../../../../backend/src/3_applications/agents/health-coach/assignments/MorningBrief.mjs';
 
 describe('MorningBrief', () => {
   it('has correct static properties', () => {
-    assert.equal(MorningBrief.id, 'morning-brief');
-    assert.equal(MorningBrief.schedule, '0 10 * * *');
-    assert.equal(typeof MorningBrief.description, 'string');
+    expect(MorningBrief.id).toBe('morning-brief');
+    expect(MorningBrief.schedule).toBe('0 10 * * *');
+    expect(typeof MorningBrief.description).toBe('string');
   });
 
   it('gather calls expected tools', async () => {
@@ -19,11 +19,11 @@ describe('MorningBrief', () => {
       { name: 'get_today_nutrition', execute: async (p) => { calls.push('today'); return { logged: false }; } },
     ];
     const gathered = await brief.gather({ tools: mockTools, userId: 'kckern', memory: { serialize: () => '' }, logger: console });
-    assert.deepEqual(calls.sort(), ['goals', 'recon', 'today', 'weight']);
-    assert.ok(gathered.reconciliation);
-    assert.ok(gathered.weight);
-    assert.ok(gathered.goals);
-    assert.ok(gathered.todayNutrition);
+    expect(calls.sort()).toEqual(['goals', 'recon', 'today', 'weight']);
+    expect(gathered.reconciliation).toBeTruthy();
+    expect(gathered.weight).toBeTruthy();
+    expect(gathered.goals).toBeTruthy();
+    expect(gathered.todayNutrition).toBeTruthy();
   });
 
   it('gather returns null for missing tools gracefully', async () => {
@@ -34,10 +34,10 @@ describe('MorningBrief', () => {
       { name: 'get_weight_trend', execute: async () => ({ current: { lbs: 185 } }) },
     ];
     const gathered = await brief.gather({ tools: mockTools, userId: 'kckern', memory: { serialize: () => '' }, logger: { warn: () => {} } });
-    assert.ok(gathered.reconciliation);
-    assert.ok(gathered.weight);
-    assert.equal(gathered.goals, null);
-    assert.equal(gathered.todayNutrition, null);
+    expect(gathered.reconciliation).toBeTruthy();
+    expect(gathered.weight).toBeTruthy();
+    expect(gathered.goals).toBe(null);
+    expect(gathered.todayNutrition).toBe(null);
   });
 
   it('buildPrompt includes reconciliation data', () => {
@@ -49,9 +49,9 @@ describe('MorningBrief', () => {
       todayNutrition: { logged: false },
     };
     const prompt = brief.buildPrompt(gathered, { serialize: () => '' });
-    assert.ok(typeof prompt === 'string');
+    expect(typeof prompt === 'string').toBeTruthy();
     assert.ok(prompt.includes('0.53') || prompt.includes('53'));
-    assert.ok(prompt.length > 100);
+    expect(prompt.length > 100).toBeTruthy();
   });
 
   it('buildPrompt includes date and instructions', () => {
@@ -69,53 +69,52 @@ describe('MorningBrief', () => {
 
   it('act sets last_morning_brief in memory', async () => {
     const brief = new MorningBrief();
-    const memory = { set: mock.fn() };
+    const memory = { set: vi.fn() };
     await brief.act({ should_send: true, text: 'test' }, { memory, userId: 'kckern', logger: console });
-    assert.equal(memory.set.mock.calls.length, 1);
-    assert.equal(memory.set.mock.calls[0].arguments[0], 'last_morning_brief');
+    expect(memory.set.mock.calls.length).toBe(1);
+    expect(memory.set.mock.calls[0][0]).toBe('last_morning_brief');
     // TTL should be 24h in ms
-    const opts = memory.set.mock.calls[0].arguments[2];
-    assert.equal(opts?.ttl, 24 * 60 * 60 * 1000);
+    const opts = memory.set.mock.calls[0][2];
+    expect(opts?.ttl).toBe(24 * 60 * 60 * 1000);
   });
 
   it('act still sets memory when should_send is false', async () => {
     const brief = new MorningBrief();
-    const memory = { set: mock.fn() };
+    const memory = { set: vi.fn() };
     await brief.act({ should_send: false }, { memory, userId: 'kckern', logger: { info: () => {} } });
-    assert.equal(memory.set.mock.calls.length, 1);
-    assert.equal(memory.set.mock.calls[0].arguments[0], 'last_morning_brief');
+    expect(memory.set.mock.calls.length).toBe(1);
+    expect(memory.set.mock.calls[0][0]).toBe('last_morning_brief');
   });
 
   it('getOutputSchema returns coachingMessageSchema', () => {
     const brief = new MorningBrief();
     const schema = brief.getOutputSchema();
-    assert.ok(schema.properties.should_send);
-    assert.ok(schema.properties.text);
-    assert.equal(schema.required[0], 'should_send');
+    expect(schema.properties.should_send).toBeTruthy();
+    expect(schema.properties.text).toBeTruthy();
+    expect(schema.required[0]).toBe('should_send');
   });
 
   it('validate parses valid JSON output', async () => {
     const brief = new MorningBrief();
     const raw = { output: JSON.stringify({ should_send: true, text: 'Hello' }) };
     const result = await brief.validate(raw, {}, { warn: () => {} });
-    assert.equal(result.should_send, true);
-    assert.equal(result.text, 'Hello');
+    expect(result.should_send).toBe(true);
+    expect(result.text).toBe('Hello');
   });
 
   it('validate throws on invalid JSON', async () => {
     const brief = new MorningBrief();
     const raw = { output: 'not json at all' };
-    await assert.rejects(
-      () => brief.validate(raw, {}, { warn: () => {} }),
-      /JSON/i,
-    );
+    await expect(
+      brief.validate(raw, {}, { warn: () => {} }),
+    ).rejects.toThrow(/JSON/i);
   });
 
   it('validate throws when should_send is missing', async () => {
     const brief = new MorningBrief();
     const raw = { output: JSON.stringify({ text: 'Hello' }) };
-    await assert.rejects(
-      () => brief.validate(raw, {}, { warn: () => {} }),
-    );
+    await expect(
+      brief.validate(raw, {}, { warn: () => {} }),
+    ).rejects.toThrow();
   });
 });

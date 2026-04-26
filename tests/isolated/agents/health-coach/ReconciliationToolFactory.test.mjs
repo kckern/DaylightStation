@@ -1,5 +1,5 @@
-import { describe, it, mock } from 'node:test';
-import { strict as assert } from 'node:assert';
+import { describe, it, expect, vi } from 'vitest';
+
 import { ReconciliationToolFactory } from '../../../../backend/src/3_applications/agents/health-coach/tools/ReconciliationToolFactory.mjs';
 
 // Helper: generate a date string N days ago from today
@@ -15,7 +15,7 @@ describe('ReconciliationToolFactory', () => {
   const recentDate = daysAgo(3);
 
   const mockHealthStore = {
-    loadReconciliationData: mock.fn(async () => ({
+    loadReconciliationData: vi.fn(async () => ({
       [matureDate]: {
         tracking_accuracy: 0.53,
         implied_intake: 2015,
@@ -34,7 +34,7 @@ describe('ReconciliationToolFactory', () => {
         exercise_calories: 0,
       },
     })),
-    loadAdjustedNutritionData: mock.fn(async () => ({
+    loadAdjustedNutritionData: vi.fn(async () => ({
       '2026-03-23': {
         calories: 1850,
         protein: 160,
@@ -42,7 +42,7 @@ describe('ReconciliationToolFactory', () => {
         phantom_calories: 230,
       },
     })),
-    loadCoachingData: mock.fn(async () => ({
+    loadCoachingData: vi.fn(async () => ({
       '2026-03-22': [{ message: 'old coaching', timestamp: '2026-03-22T10:00:00Z' }],
     })),
   };
@@ -50,11 +50,11 @@ describe('ReconciliationToolFactory', () => {
   it('creates 3 tools', () => {
     const factory = new ReconciliationToolFactory({ healthStore: mockHealthStore });
     const tools = factory.createTools();
-    assert.equal(tools.length, 3);
+    expect(tools.length).toBe(3);
     const names = tools.map(t => t.name);
-    assert.ok(names.includes('get_reconciliation_summary'));
-    assert.ok(names.includes('get_adjusted_nutrition'));
-    assert.ok(names.includes('get_coaching_history'));
+    expect(names.includes('get_reconciliation_summary')).toBeTruthy();
+    expect(names.includes('get_adjusted_nutrition')).toBeTruthy();
+    expect(names.includes('get_coaching_history')).toBeTruthy();
   });
 
   it('get_reconciliation_summary returns accuracy and days', async () => {
@@ -62,11 +62,11 @@ describe('ReconciliationToolFactory', () => {
     const tools = factory.createTools();
     const tool = tools.find(t => t.name === 'get_reconciliation_summary');
     const result = await tool.execute({ userId: 'kckern', days: 30 });
-    assert.ok(result.avgAccuracy !== undefined);
-    assert.ok(result.days !== undefined);
-    assert.ok(Array.isArray(result.days));
-    assert.ok(result.maturity_note);
-    assert.ok(result.matureDayCount !== undefined);
+    expect(result.avgAccuracy !== undefined).toBeTruthy();
+    expect(result.days !== undefined).toBeTruthy();
+    expect(Array.isArray(result.days)).toBeTruthy();
+    expect(result.maturity_note).toBeTruthy();
+    expect(result.matureDayCount !== undefined).toBeTruthy();
   });
 
   it('redacts implied_intake and tracking_accuracy for recent days (< 14 days old)', async () => {
@@ -79,19 +79,19 @@ describe('ReconciliationToolFactory', () => {
     const mature = result.days.find(d => d.date === matureDate);
 
     // Recent day: should have tracked_calories and exercise_calories, but NOT implied_intake or tracking_accuracy
-    assert.ok(recent, 'recent day should be present');
-    assert.equal(recent.tracked_calories, 580);
-    assert.equal(recent.exercise_calories, 0);
-    assert.equal(recent.implied_intake, undefined, 'implied_intake must be redacted for recent days');
-    assert.equal(recent.tracking_accuracy, undefined, 'tracking_accuracy must be redacted for recent days');
-    assert.equal(recent.calorie_adjustment, undefined, 'calorie_adjustment must be redacted for recent days');
+    expect(recent, 'recent day should be present').toBeTruthy();
+    expect(recent.tracked_calories).toBe(580);
+    expect(recent.exercise_calories).toBe(0);
+    expect(recent.implied_intake).toBeUndefined();
+    expect(recent.tracking_accuracy).toBeUndefined();
+    expect(recent.calorie_adjustment).toBeUndefined();
 
     // Mature day: should have all fields
-    assert.ok(mature, 'mature day should be present');
-    assert.equal(mature.tracked_calories, 1063);
-    assert.equal(mature.implied_intake, 2015);
-    assert.equal(mature.tracking_accuracy, 0.53);
-    assert.equal(mature.calorie_adjustment, 952);
+    expect(mature, 'mature day should be present').toBeTruthy();
+    expect(mature.tracked_calories).toBe(1063);
+    expect(mature.implied_intake).toBe(2015);
+    expect(mature.tracking_accuracy).toBe(0.53);
+    expect(mature.calorie_adjustment).toBe(952);
   });
 
   it('get_adjusted_nutrition returns adjusted data', async () => {
@@ -99,7 +99,7 @@ describe('ReconciliationToolFactory', () => {
     const tools = factory.createTools();
     const tool = tools.find(t => t.name === 'get_adjusted_nutrition');
     const result = await tool.execute({ userId: 'kckern', days: 7 });
-    assert.ok(result.days !== undefined);
+    expect(result.days !== undefined).toBeTruthy();
   });
 
   it('get_coaching_history returns past coaching', async () => {
@@ -107,19 +107,19 @@ describe('ReconciliationToolFactory', () => {
     const tools = factory.createTools();
     const tool = tools.find(t => t.name === 'get_coaching_history');
     const result = await tool.execute({ userId: 'kckern', days: 7 });
-    assert.ok(result.entries !== undefined);
+    expect(result.entries !== undefined).toBeTruthy();
   });
 
   it('handles errors gracefully', async () => {
     const errorStore = {
-      loadReconciliationData: mock.fn(async () => { throw new Error('read fail'); }),
-      loadAdjustedNutritionData: mock.fn(async () => { throw new Error('read fail'); }),
-      loadCoachingData: mock.fn(async () => { throw new Error('read fail'); }),
+      loadReconciliationData: vi.fn(async () => { throw new Error('read fail'); }),
+      loadAdjustedNutritionData: vi.fn(async () => { throw new Error('read fail'); }),
+      loadCoachingData: vi.fn(async () => { throw new Error('read fail'); }),
     };
     const factory = new ReconciliationToolFactory({ healthStore: errorStore });
     const tools = factory.createTools();
     const tool = tools.find(t => t.name === 'get_reconciliation_summary');
     const result = await tool.execute({ userId: 'kckern', days: 7 });
-    assert.ok(result.error);
+    expect(result.error).toBeTruthy();
   });
 });
