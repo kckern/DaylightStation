@@ -163,6 +163,36 @@ export class ResilientContentAdapter {
   }
 
   /**
+   * Return the device to its kiosk start URL with ADB recovery on failure.
+   * Forwards to primary.loadStartUrl() so optional capabilities (FKB) are
+   * not hidden by the wrapper. Mirrors load()'s connection-error recovery.
+   * @returns {Promise<Object>}
+   */
+  async loadStartUrl() {
+    if (typeof this.#primary.loadStartUrl !== 'function') {
+      return { ok: false, error: 'Content control does not support clear (loadStartUrl not implemented)' };
+    }
+
+    const result = await this.#primary.loadStartUrl();
+    if (result.ok) return result;
+    if (!this.#isConnectionError(result.error)) return result;
+
+    this.#logger.warn?.('resilient.loadStartUrl.primaryFailed', {
+      error: result.error,
+      attemptingRecovery: true,
+    });
+
+    const recovered = await this.#attemptRecovery();
+    if (!recovered.ok) {
+      return { ...result, recovery: { attempted: true, error: recovered.error } };
+    }
+
+    this.#logger.info?.('resilient.loadStartUrl.retrying');
+    const retryResult = await this.#primary.loadStartUrl();
+    return { ...retryResult, recovery: { attempted: true, success: retryResult.ok } };
+  }
+
+  /**
    * Get content control status (delegates to primary)
    * @returns {Promise<Object>}
    */
