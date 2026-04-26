@@ -101,6 +101,8 @@ describe('FilesystemCanvasAdapter', () => {
   describe('getItem', () => {
     it('returns DisplayableItem for valid path', async () => {
       mockFs.existsSync.mockReturnValue(true);
+      // Production calls statSync(fullPath).isDirectory() to disambiguate file vs category
+      mockFs.statSync.mockReturnValue({ isDirectory: () => false, isFile: () => true });
 
       const item = await adapter.getItem('canvas:landscapes/sunset.jpg');
 

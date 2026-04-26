@@ -522,11 +522,13 @@ export class TelegramAdapter {
             ? { text: button, callback_data: button }
             : { text: button };
         }
-        // Transform label/data to text/callback_data if needed
-        const text = button.text || button.label;
-        const callback_data = button.callback_data || button.data;
+        // Transform label/data to text/callback_data if needed; preserve passthrough fields like url, web_app
+        const { text: bText, label, callback_data: bCb, data, ...rest } = button;
+        const text = bText || label;
+        const callback_data = bCb || data;
         if (inline) {
-          return { text, callback_data };
+          // Only include callback_data if no `url` (Telegram rejects buttons with both)
+          return rest.url ? { text, ...rest } : { text, callback_data, ...rest };
         }
         return { text };
       })

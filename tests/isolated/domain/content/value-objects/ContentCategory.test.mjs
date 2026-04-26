@@ -55,7 +55,7 @@ describe('ContentCategory', () => {
       expect(ALL_CONTENT_CATEGORIES).toContain('identity');
       expect(ALL_CONTENT_CATEGORIES).toContain('curated');
       expect(ALL_CONTENT_CATEGORIES).toContain('creator');
-      expect(ALL_CONTENT_CATEGORIES).toHaveLength(9);
+      expect(ALL_CONTENT_CATEGORIES).toHaveLength(10);
     });
 
     it('is frozen', () => {

@@ -223,13 +223,14 @@ describe('ImmichAdapter', () => {
 
       const caps = adapter.getSearchCapabilities();
 
-      expect(caps).toContain('text');
-      expect(caps).toContain('people');
-      expect(caps).toContain('dateFrom');
-      expect(caps).toContain('dateTo');
-      expect(caps).toContain('location');
-      expect(caps).toContain('mediaType');
-      expect(caps).toContain('favorites');
+      // Production returns { canonical: [...], specific: [...] } — not a flat array
+      expect(caps.canonical).toContain('text');
+      expect(caps.canonical).toContain('person');
+      expect(caps.canonical).toContain('time');
+      expect(caps.canonical).toContain('mediaType');
+      expect(caps.canonical).toContain('favorites');
+      expect(caps.specific).toContain('location');
+      expect(caps.specific).toContain('tags');
     });
   });
 

@@ -80,7 +80,7 @@ describe('parseAutoplayParams', () => {
 
     test('extracts shuffle from URL params', () => {
       const result = parseAutoplayParams('?play=hymn:198&shuffle=true', ALL_ACTIONS);
-      expect(result.play.shuffle).toBe('true');
+      expect(result.play.shuffle).toBe(true);
     });
 
     test('extracts playbackRate from URL params', () => {

@@ -11,7 +11,7 @@ describe('partitionByWatchStatus', () => {
   };
 
   it('should put items with no progress in unwatched', () => {
-    const items = [{ id: 'plex:1' }, { id: 'plex:2' }];
+    const items = [{ id: 'plex:1', resumable: true }, { id: 'plex:2', resumable: true }];
     const progressMap = new Map();
     const { unwatched, watched } = QueueService.partitionByWatchStatus(items, progressMap, classifier);
     expect(unwatched).toHaveLength(2);
@@ -19,7 +19,12 @@ describe('partitionByWatchStatus', () => {
   });
 
   it('should partition watched items to the end', () => {
-    const items = [{ id: 'plex:1' }, { id: 'plex:2' }, { id: 'plex:3' }];
+    // resumable: true is required for watch classification (non-resumable items always go unwatched)
+    const items = [
+      { id: 'plex:1', resumable: true },
+      { id: 'plex:2', resumable: true },
+      { id: 'plex:3', resumable: true },
+    ];
     const progressMap = new Map([
       ['plex:1', { playhead: 280, duration: 280, percent: 100, playCount: 5 }],
       ['plex:3', { playhead: 250, duration: 280, percent: 89, playCount: 1 }]
@@ -30,7 +35,7 @@ describe('partitionByWatchStatus', () => {
   });
 
   it('should treat in_progress as unwatched', () => {
-    const items = [{ id: 'plex:1' }];
+    const items = [{ id: 'plex:1', resumable: true }];
     const progressMap = new Map([
       ['plex:1', { playhead: 50, duration: 280, percent: 18, playCount: 1, watchTime: 120 }]
     ]);

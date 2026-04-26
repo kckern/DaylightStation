@@ -7,6 +7,14 @@
 import { getDispatcher, isLoggingInitialized } from './dispatcher.mjs';
 import { getSessionFileTransport } from './transports/sessionFile.mjs';
 
+// Local timestamp (same shape as dispatcher's: ISO without trailing Z = local time).
+// Mirrors dispatcher.getLocalTimestamp to avoid an import cycle.
+function getLocalTimestamp() {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60000;
+  return new Date(now - offset).toISOString().slice(0, -1);
+}
+
 /**
  * Process incoming log events from frontend
  * @param {Object} payload - WebSocket or HTTP message payload
