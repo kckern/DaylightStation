@@ -2,7 +2,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const frontendNodeModules = path.resolve(__dirname, 'frontend/node_modules');
+// In worktrees, frontend/node_modules may not exist — fall back to main repo location.
+const frontendNodeModulesLocal = path.resolve(__dirname, 'frontend/node_modules');
+const frontendNodeModulesMain = path.resolve(__dirname, '../../frontend/node_modules');
+import { existsSync } from 'fs';
+const frontendNodeModules = existsSync(frontendNodeModulesLocal) ? frontendNodeModulesLocal : frontendNodeModulesMain;
 
 // Load React plugin from frontend's node_modules (it's not installed at the root).
 const { default: react } = await import(path.join(frontendNodeModules, '@vitejs/plugin-react/dist/index.mjs'));
@@ -13,6 +17,7 @@ export default {
   resolve: {
     alias: {
       '#frontend': path.resolve(__dirname, 'frontend/src'),
+      '@': path.resolve(__dirname, 'frontend/src'),
       '@shared-contracts': path.resolve(__dirname, 'shared/contracts'),
       '@testing-library/react': path.join(frontendNodeModules, '@testing-library/react'),
       '@testing-library/jest-dom': path.join(frontendNodeModules, '@testing-library/jest-dom'),
