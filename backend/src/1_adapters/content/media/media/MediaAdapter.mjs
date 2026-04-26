@@ -569,7 +569,13 @@ export class MediaAdapter {
     const playables = [];
 
     for (const listItem of list) {
-      if (listItem.itemType === 'leaf') {
+      // PlayableItems returned directly by getList (no itemType) are leaf
+      // playables — push them as-is. ListableItems with itemType: 'container'
+      // require recursion. The legacy itemType: 'leaf' branch handles
+      // ListableItems that explicitly mark themselves as leaves.
+      if (listItem?.isPlayable && listItem.isPlayable()) {
+        playables.push(listItem);
+      } else if (listItem.itemType === 'leaf') {
         const localId = listItem.getLocalId();
         const playable = await this.getItem(localId);
         if (playable) playables.push(playable);
