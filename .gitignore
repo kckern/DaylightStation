@@ -76,3 +76,4 @@ frontend/src/lib/audio/vendor/
 /_extensions/musicozy/__pycache__
 _extensions/musicozy/README.md
 _extensions/musicozy/devices.json
+.plex-backups/
