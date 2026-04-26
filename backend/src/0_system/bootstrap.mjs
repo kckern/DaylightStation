@@ -1729,12 +1729,13 @@ export function createTriggerApiRouter(config) {
     contentIdResolver,
     broadcast,
     loadFile,
+    saveFile,
     logger = console,
   } = config;
 
+  const triggerConfigRepository = new YamlTriggerConfigRepository({ saveFile });
   let triggerConfig;
   try {
-    const triggerConfigRepository = new YamlTriggerConfigRepository();
     triggerConfig = triggerConfigRepository.loadRegistry({ loadFile });
   } catch (err) {
     logger.warn?.('trigger.config.parse.failed', { error: err.message });
@@ -1747,6 +1748,7 @@ export function createTriggerApiRouter(config) {
     wakeAndLoadService,
     haGateway,
     deviceService: deviceServices.deviceService,
+    tagWriter: triggerConfigRepository,
     broadcast,
     logger,
   });
