@@ -24,6 +24,7 @@
     "#adapters/*": "./src/1_adapters/*",
     "#rendering/*": "./src/1_rendering/*",
     "#apps/*": "./src/3_applications/*",
+    "#applications/*": "./src/3_applications/*",
     "#api/*": "./src/4_api/*",
     "#shared-contracts/*": "./shared-contracts/*"
   },
