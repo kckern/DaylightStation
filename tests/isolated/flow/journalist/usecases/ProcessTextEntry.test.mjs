@@ -301,6 +301,7 @@ describe('ProcessTextEntry', () => {
 
       expect(mockLogger.debug).toHaveBeenCalledWith('textEntry.process.start', {
         chatId: 'chat-123',
+        hasResponseContext: false,
         textLength: 8,
       });
       expect(mockLogger.info).toHaveBeenCalledWith('textEntry.process.complete', {

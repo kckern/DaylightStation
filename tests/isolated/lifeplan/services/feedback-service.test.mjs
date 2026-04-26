@@ -28,16 +28,16 @@ describe('FeedbackService', () => {
   it('records an observation linked to a goal', () => {
     service.recordObservation('testuser', {
       text: 'Struggled with long run today',
-      element_type: 'goal',
-      element_id: 'g1',
+      related_goals: ['g1'],
       sentiment: 'friction',
     });
 
     expect(mockLifePlanStore.save).toHaveBeenCalled();
     const savedPlan = mockLifePlanStore.save.mock.calls[0][1];
     expect(savedPlan.feedback).toHaveLength(1);
-    expect(savedPlan.feedback[0].element_type).toBe('goal');
-    expect(savedPlan.feedback[0].element_id).toBe('g1');
+    // Production stores related arrays (related_goals/beliefs/rules), not element_type/id
+    expect(savedPlan.feedback[0].related_goals).toEqual(['g1']);
+    expect(savedPlan.feedback[0].content).toBe('Struggled with long run today');
   });
 
   it('records an observation without element link', () => {
@@ -48,7 +48,7 @@ describe('FeedbackService', () => {
 
     const saved = mockLifePlanStore.save.mock.calls[0][1];
     expect(saved.feedback).toHaveLength(1);
-    expect(saved.feedback[0].element_type).toBeUndefined();
+    expect(saved.feedback[0].related_goals).toEqual([]);
   });
 
   it('getFeedback returns entries for a period', () => {

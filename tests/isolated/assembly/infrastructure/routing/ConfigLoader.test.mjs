@@ -50,7 +50,8 @@ routing:
       expect(config.routing['/api/finance'].shim).toBe('finance-data-v1');
     });
 
-    it('throws error for unknown shim reference', () => {
+    it('passes through shim references without validating them', () => {
+      // Production no longer validates shim existence — caller is responsible
       fs.writeFileSync(configPath, `
 default: legacy
 routing:
@@ -58,10 +59,9 @@ routing:
     target: new
     shim: nonexistent-shim
 `);
-      const availableShims = {};
 
-      expect(() => loadRoutingConfig(configPath, availableShims))
-        .toThrow('references unknown shim "nonexistent-shim"');
+      const config = loadRoutingConfig(configPath);
+      expect(config.routing['/api/finance'].shim).toBe('nonexistent-shim');
     });
 
     it('throws error for invalid target', () => {

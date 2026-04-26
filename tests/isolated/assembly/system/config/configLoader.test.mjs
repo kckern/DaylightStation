@@ -85,6 +85,7 @@ describe('loadConfig() system bots and auth', () => {
 
     // Create required directory structure
     fs.mkdirSync(path.join(tempDir, 'system'), { recursive: true });
+    fs.mkdirSync(path.join(tempDir, 'system', 'config'), { recursive: true });
     fs.mkdirSync(path.join(tempDir, 'system', 'auth'), { recursive: true });
   });
 
@@ -106,7 +107,7 @@ homebot:
     bot_id: "789012"
     webhook_path: "/homebot"
 `;
-      fs.writeFileSync(path.join(tempDir, 'system', 'bots.yml'), botsContent);
+      fs.writeFileSync(path.join(tempDir, 'system', 'config', 'bots.yml'), botsContent);
 
       const config = loadConfig(tempDir);
 

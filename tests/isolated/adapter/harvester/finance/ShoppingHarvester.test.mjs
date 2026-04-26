@@ -83,6 +83,7 @@ describe('ShoppingHarvester', () => {
 
     mockAiGateway = {
       chatWithJson: vi.fn(),
+      miniModel: 'gpt-4o-mini',
     };
 
     mockLifelogStore = {

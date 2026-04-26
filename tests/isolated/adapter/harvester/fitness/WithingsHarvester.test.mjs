@@ -256,7 +256,7 @@ describe('WithingsHarvester', () => {
         'testuser',
         'withings',
         expect.objectContaining({
-          refresh: 'new-refresh-token',
+          refresh_token: 'new-refresh-token',
           access_token: 'test-access-token'
         })
       );
