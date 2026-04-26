@@ -5,7 +5,7 @@ import { RemoteAdapter } from './adapters/RemoteAdapter.js';
 import { GamepadAdapter } from './adapters/GamepadAdapter.js';
 
 export function createInputManager(actionBus, inputConfig) {
-  if (!actionBus) {
+  if (!actionBus || !inputConfig) {
     return { adapter: null, ready: Promise.resolve(), destroy() {} };
   }
 
