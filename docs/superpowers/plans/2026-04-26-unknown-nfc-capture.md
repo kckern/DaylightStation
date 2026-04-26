@@ -1620,10 +1620,12 @@ Confirm by reading back:
 sudo docker exec daylight-station sh -c 'cat data/household/config/triggers/nfc/locations.yml'
 ```
 
-- [ ] **Step 3: Reload trigger config in the running container (if container is running)**
+- [ ] **Step 3: Restart the container to pick up the new locations.yml**
+
+There is no in-process reload endpoint. The trigger registry is loaded once at boot:
 
 ```bash
-curl -sS -X POST http://localhost:3111/api/v1/trigger/reload | jq
+sudo docker stop daylight-station && sudo docker rm daylight-station && sudo deploy-daylight
 ```
 
 If you get connection refused (container not running this on host), this step is a no-op — the next container restart picks it up.
@@ -1713,8 +1715,8 @@ sudo docker build -f docker/Dockerfile \
   /opt/Code/DaylightStation
 sudo docker stop daylight-station && sudo docker rm daylight-station
 sudo deploy-daylight
-sleep 5
-curl -sS http://localhost:3111/api/v1/trigger/reload | jq   # confirm boot OK
+sleep 8
+curl -sS http://localhost:3111/api/v1/trigger/livingroom/nfc/__boot_check__ | jq   # confirm boot OK (404 expected)
 ```
 
 - [ ] **Step 2: Trigger an unknown tag scan**

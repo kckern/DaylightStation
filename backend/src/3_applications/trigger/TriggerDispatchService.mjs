@@ -259,7 +259,7 @@ export class TriggerDispatchService {
 
     const payload = {
       title: `Unknown NFC tag at ${location}`,
-      message: `Tap to name tag ${uid}`,
+      message: `Tap "Add note" to name tag ${uid}`,
       data: {
         actions: [{
           action: `NFC_REPLY|${location}|${uid}`,
