@@ -305,8 +305,21 @@ export class FullyKioskContentAdapter {
           // watchdog is the real "user is seeing media" signal.
           if (verifyAsync) {
             this.#verifyLoadedUrl(fullUrl).then(
-              (verified) => {
-                this.#logger.info?.('fullykiosk.load.async-verified', { fullUrl, verified });
+              (verifyResult) => {
+                // Flat shape so dashboards can filter on verified/currentUrl
+                // without digging into a nested object. async-unverified is a
+                // warn so a perpetually-failing FKB stays visible.
+                const isVerified = verifyResult?.verified === true;
+                const event = isVerified
+                  ? 'fullykiosk.load.async-verified'
+                  : 'fullykiosk.load.async-unverified';
+                const level = isVerified ? 'info' : 'warn';
+                this.#logger[level]?.(event, {
+                  fullUrl,
+                  verified: isVerified,
+                  currentUrl: verifyResult?.currentUrl,
+                  reason: verifyResult?.reason,
+                });
               },
               (err) => {
                 this.#logger.warn?.('fullykiosk.load.async-verify-failed', {

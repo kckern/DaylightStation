@@ -43,6 +43,8 @@ export const actionHandlers = {
     if (!path) throw new Error('open action requires params.path');
     const query = { ...intent.params };
     delete query.path;
+    // Sync verify is intentional — open/* paths (videocall, etc.) want the URL
+    // confirmed before returning so callers get a strict signal.
     return device.loadContent(path, query);
   },
 

@@ -54,7 +54,8 @@ export function assertContentControl(obj, context = 'ContentControl') {
  */
 export function createNoOpContentControl() {
   return {
-    load: async () => ({ ok: false, error: 'Content control not configured' }),
+    // eslint-disable-next-line no-unused-vars
+    load: async (_path, _query = {}, _options = {}) => ({ ok: false, error: 'Content control not configured' }),
     getStatus: async () => ({ ready: false, provider: 'none' }),
     // eslint-disable-next-line no-unused-vars
     prepareForContent: async (_options = {}) => ({ ok: true })

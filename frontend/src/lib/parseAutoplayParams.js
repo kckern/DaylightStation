@@ -8,6 +8,18 @@
  * @returns {object|null} Parsed command object or null if no action found
  */
 
+/**
+ * Canonical list of autoplay/initial-action keys. Single source of truth used
+ * by both ScreenAutoplay (parseAutoplayParams supportedActions) and
+ * useInitialActionGate (menu-flash suppression). Keep the two consumers in
+ * sync by importing from here rather than duplicating the array.
+ */
+export const AUTOPLAY_ACTIONS = Object.freeze([
+  'play', 'queue', 'playlist', 'random',
+  'display', 'read', 'open',
+  'app', 'launch', 'list',
+]);
+
 const CONFIG_KEYS = [
   'volume', 'shader', 'playbackRate', 'shuffle', 'continuous',
   'repeat', 'loop', 'overlay', 'advance', 'interval', 'mode', 'frame',

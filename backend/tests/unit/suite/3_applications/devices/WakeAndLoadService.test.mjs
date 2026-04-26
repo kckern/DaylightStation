@@ -84,7 +84,12 @@ describe('WakeAndLoadService', () => {
     expect(result.ok).toBe(true);
     expect(result.steps.load.method).toBe('websocket-fallback');
     expect(result.steps.load.urlError).toBe('socket hang up');
-    expect(mockBroadcast).toHaveBeenCalledWith(expect.objectContaining({ queue: 'morning-program' }));
+    expect(mockBroadcast).toHaveBeenCalledWith(expect.objectContaining({
+      topic: 'homeline:living-room',
+      type: 'command',
+      command: 'queue',
+      params: expect.objectContaining({ op: 'play-now', contentId: 'morning-program' }),
+    }));
   });
 
   it('should fail when URL load fails with no content query', async () => {
@@ -161,7 +166,12 @@ describe('WakeAndLoadService', () => {
       expect(result.ok).toBe(true);
       expect(result.steps.load.method).toBe('websocket');
       expect(result.steps.load.ok).toBe(true);
-      expect(mockBroadcast).toHaveBeenCalledWith(expect.objectContaining({ queue: 'morning-program' }));
+      expect(mockBroadcast).toHaveBeenCalledWith(expect.objectContaining({
+        topic: 'homeline:living-room',
+        type: 'command',
+        command: 'queue',
+        params: expect.objectContaining({ op: 'play-now', contentId: 'morning-program' }),
+      }));
       expect(device.loadContent).not.toHaveBeenCalled();
     });
 
