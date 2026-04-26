@@ -45,3 +45,6 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-04-26 | feature/ble-heart-rate | 24585e435 | BLE HR scan/decoder/simulator; main has same work integrated under different SHAs plus 'clear BlueZ GATT cache' fix from 2026-03-09 (branch tip 2026-03-08) - obsolete, dropped |
 | 2026-04-26 | feature/nutribot-date-bulletproof | 92f855883 | deriveLogDate helper, date-integrity datastore guard, AI revision date pinning, regression tests - 11 unique commits cherry-picked clean to main, 41/41 tests pass |
 | 2026-04-26 | fix/audio-nudge-loop | a840c3cd2 | stallStartPlayhead tracking + isRealProgress + extracted stallPipeline helpers (2026-04-19); user judged this a red herring and pivoted to main's softReinit/decoder_reset/buffered-range approach captured in WIP plan added 4h later - dropped, no merge |
+| 2026-04-26 | origin/feature/media-ux-improvements | 697e9569a | Remote-only; ancestor of main, 0 unique commits - deleted from remote |
+| 2026-04-26 | origin/feature/nutribot-coaching-redesign | bc3d73b5f | Remote-only; ancestor of main, 0 unique commits - deleted from remote |
+| 2026-04-26 | origin/feature/content-format-plugins | e2e50177f | Remote-only; 1 unique commit (Todoist REST v2/Sync v9 → API v1 migration) cherry-picked to main as b68cb846b - deleted from remote |
