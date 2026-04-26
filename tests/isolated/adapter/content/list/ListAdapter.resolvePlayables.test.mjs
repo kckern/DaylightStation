@@ -1,12 +1,16 @@
 // tests/isolated/adapter/content/list/ListAdapter.resolvePlayables.test.mjs
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock FileIO so ListAdapter can be imported without touching the filesystem
+// Mock FileIO so ListAdapter can be imported without touching the filesystem.
+// fileExists / getStats default to "exists" so the cache fast-path in
+// _loadList(listType, name) is taken; tests pre-seed _listCache with the
+// expected normalized shape so loadYaml is never invoked.
 vi.mock('#system/utils/FileIO.mjs', () => ({
   dirExists: vi.fn(() => false),
   listEntries: vi.fn(() => []),
-  fileExists: vi.fn(() => false),
+  fileExists: vi.fn(() => true),
   loadYaml: vi.fn(() => null),
+  getStats: vi.fn(() => ({ mtimeMs: 1 })),
 }));
 
 const { ListAdapter } = await import('#adapters/content/list/ListAdapter.mjs');
@@ -35,14 +39,18 @@ function makeMockRegistry(episodes) {
 }
 
 function makeMockMemory(progressMap = {}) {
+  // Production looks up by item.id which is the compound 'plex:ep1' form
+  // (see _getNextPlayableFromChild). Normalize callers' bare 'ep1' keys to
+  // 'plex:ep1' for the bulk getAll() path.
+  const normalize = (k) => (k.includes(':') ? k : `plex:${k}`);
   return {
     get: vi.fn(async (mediaKey) => {
-      const percent = progressMap[mediaKey] ?? 0;
+      const percent = progressMap[mediaKey] ?? progressMap[normalize(mediaKey)] ?? 0;
       return { percent };
     }),
     getAll: vi.fn(async () => {
       return Object.entries(progressMap).map(([contentId, percent]) => ({
-        contentId,
+        contentId: normalize(contentId),
         percent,
       }));
     }),
@@ -58,9 +66,13 @@ function makeAdapter({ registry, mediaProgressMemory } = {}) {
   return adapter;
 }
 
-/** Build a normalized list cache entry (matches normalizeListConfig output) */
+/** Build a normalized list cache entry (matches normalizeListConfig output).
+ *  Production wraps cached data with mtime so the file-mtime check in
+ *  _loadList can short-circuit. The mocked getStats returns mtimeMs:1, so
+ *  cached entries must be tagged with the same value for cache hits.
+ */
 function makeNormalizedList(items) {
-  return {
+  const data = {
     title: undefined,
     description: undefined,
     image: undefined,
@@ -71,6 +83,7 @@ function makeNormalizedList(items) {
       ...(i.uid ? { uid: i.uid } : {}),
     })) }]
   };
+  return { data, mtime: 1 };
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────
