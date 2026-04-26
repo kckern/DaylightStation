@@ -49,7 +49,7 @@ const dataDir = path.join(baseDir, 'data');
 const configDir = path.join(dataDir, 'system', 'config');
 
 hydrateProcessEnvFromConfigs(configDir);
-initConfigService(dataDir);
+await initConfigService(dataDir);
 
 const dataService = new DataService({ configService });
 const webContent = new WebContentAdapter({});

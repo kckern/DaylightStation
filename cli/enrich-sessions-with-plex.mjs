@@ -35,7 +35,7 @@ const { initConfigService } = await import('#system/config/index.mjs');
 const { loadYamlSafe, saveYaml } = await import('#system/utils/FileIO.mjs');
 
 hydrateProcessEnvFromConfigs(configDir);
-initConfigService(dataDir);
+await initConfigService(dataDir);
 
 // ------------------------------------------------------------------
 // Parse CLI args

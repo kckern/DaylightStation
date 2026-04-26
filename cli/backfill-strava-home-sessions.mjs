@@ -31,7 +31,7 @@ const { YamlLifelogDatastore } = await import('#adapters/harvester/YamlLifelogDa
 const { StravaHarvester } = await import('#adapters/harvester/fitness/StravaHarvester.mjs');
 
 hydrateProcessEnvFromConfigs(configDir);
-initConfigService(dataDir);
+await initConfigService(dataDir);
 
 const daysBack = parseInt(process.argv[2] || '90', 10);
 const username = process.argv[3] || 'kckern';

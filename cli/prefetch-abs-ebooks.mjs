@@ -32,7 +32,7 @@ const { hydrateProcessEnvFromConfigs } = await import('#system/logging/config.mj
 const { initConfigService, configService } = await import('#system/config/index.mjs');
 
 hydrateProcessEnvFromConfigs(configDir);
-initConfigService(dataDir);
+await initConfigService(dataDir);
 
 const { ABSEbookFeedAdapter } = await import('#adapters/feed/sources/ABSEbookFeedAdapter.mjs');
 const { AudiobookshelfClient } = await import('#adapters/content/readable/audiobookshelf/AudiobookshelfClient.mjs');

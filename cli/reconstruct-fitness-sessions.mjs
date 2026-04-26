@@ -45,7 +45,7 @@ const {
 } = await import('#domains/fitness/services/StravaSessionBuilder.mjs');
 
 hydrateProcessEnvFromConfigs(configDir);
-initConfigService(dataDir);
+await initConfigService(dataDir);
 
 // ------------------------------------------------------------------
 // Parse CLI args

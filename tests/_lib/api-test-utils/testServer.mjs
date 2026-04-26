@@ -66,7 +66,7 @@ export async function loadTestConfig() {
   if (configService.isReady()) {
     resetConfigService();
   }
-  initConfigService(dataPath);
+  await initConfigService(dataPath);
 
   // Get Plex config from ConfigService
   const plexAuth = configService.getHouseholdAuth('plex') || {};

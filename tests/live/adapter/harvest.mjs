@@ -352,7 +352,7 @@ async function main() {
 
   // Initialize config
   if (!configService.isReady()) {
-    initConfigService(dataPath);
+    await initConfigService(dataPath);
   }
 
   const username = configService.getHeadOfHousehold();
