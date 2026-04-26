@@ -36,3 +36,5 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-04-23 | tick-telemetry | d94db5a45 | Tick rate telemetry for timeline anomaly investigation - folded into main |
 | 2026-04-23 | feature/media-redesign | e55574707 | MediaApp three-panel redesign design + plan docs - folded into main |
 | 2026-04-23 | feature/per-app-document-titles | 46612c308 | Per-app document title (useDocumentTitle hook + Apps/ wiring) - folded into main |
+| 2026-04-25 | feature/secrets-handler | b4dd630dc | SecretsHandler abstraction (ISecretsProvider + Yaml/EncryptedYaml/Vault providers) - merged to main |
+| 2026-04-25 | feat/on-deck | 3c1556255 | Unified screen-actions routing for play-now/play-next (already in main) - cleaned up |
