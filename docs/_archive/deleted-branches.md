@@ -50,3 +50,7 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-04-26 | origin/feature/media-ux-improvements | 697e9569a | Remote-only; ancestor of main, 0 unique commits - deleted from remote |
 | 2026-04-26 | origin/feature/nutribot-coaching-redesign | bc3d73b5f | Remote-only; ancestor of main, 0 unique commits - deleted from remote |
 | 2026-04-26 | origin/feature/content-format-plugins | e2e50177f | Remote-only; 1 unique commit (Todoist REST v2/Sync v9 → API v1 migration) cherry-picked to main as b68cb846b - deleted from remote |
+| 2026-04-26 | feat/cycle-challenge | 0a28ada16 | Cycle challenge feature (CycleChallengeOverlay in FitnessPlayer, RPM pill, fitness-sim cadence/RPM controls, governance docs) - fully merged to main, branch tip == merge-base, local cleanup |
+| 2026-04-26 | feature/media-ux-improvements (local) | 697e9569a | Already recorded above (row 31 / row 50) as remote-deleted; local ref persisted. Verified ancestor of main, same SHA. Local cleanup. |
+| 2026-04-26 | feature/nutribot-coaching-redesign (local) | bc3d73b5f | Already recorded above (row 32 / row 51) as remote-deleted; local ref persisted. Verified ancestor of main, same SHA. Local cleanup. |
+| 2026-04-26 | feature/content-format-plugins (local) | e2e50177f | Already recorded above (row 52) as remote-deleted with cherry-pick to main b68cb846b; local ref persisted. Patch content verified identical. Local cleanup. |
