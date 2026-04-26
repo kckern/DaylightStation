@@ -72,9 +72,13 @@ export class FullyKioskContentAdapter {
   /**
    * Prepare device for content loading
    * Wakes screen and brings Fully Kiosk to foreground
+   * @param {Object} [options]
+   * @param {boolean} [options.skipCameraCheck=false] - Skip the ~4s camera-availability
+   *   probe. Set true when the inbound content does not require the camera (e.g.
+   *   plex/files playback). See contentRequiresCamera() in the application layer.
    * @returns {Promise<Object>}
    */
-  async prepareForContent() {
+  async prepareForContent({ skipCameraCheck = false } = {}) {
     const startTime = Date.now();
     const MAX_PREPARE_MS = 60_000; // Hard ceiling — never stall longer than 60s
     this.#metrics.prepares++;
@@ -176,8 +180,15 @@ export class FullyKioskContentAdapter {
       }
 
       // Camera check (runs after either phase) — skip if already timed out
+      // or if caller opted out via skipCameraCheck (saves ~4s on non-camera flows).
       let cameraAvailable = false;
-      if (this.#adbAdapter && !checkTimeout('before-camera-check')) {
+      let cameraSkipped = false;
+      if (skipCameraCheck) {
+        cameraSkipped = true;
+        this.#logger.info?.('fullykiosk.prepareForContent.cameraCheck.skipped', {
+          reason: 'skipCameraCheck-flag',
+        });
+      } else if (this.#adbAdapter && !checkTimeout('before-camera-check')) {
         const MAX_CAMERA_ATTEMPTS = 3;
         const CAMERA_RETRY_MS = 2000;
 
@@ -207,7 +218,7 @@ export class FullyKioskContentAdapter {
         cameraAvailable = true;
       }
 
-      return { ok: true, coldRestart, cameraAvailable, elapsedMs: Date.now() - startTime };
+      return { ok: true, coldRestart, cameraAvailable, cameraSkipped, elapsedMs: Date.now() - startTime };
     } catch (error) {
       this.#metrics.errors++;
       this.#logger.error?.('fullykiosk.prepareForContent.exception', { error: error.message, stack: error.stack });

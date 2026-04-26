@@ -50,10 +50,11 @@ export class ResilientContentAdapter {
 
   /**
    * Prepare device for content loading, with ADB recovery on failure
+   * @param {Object} [options] - Forwarded to the primary adapter (e.g. skipCameraCheck).
    * @returns {Promise<Object>}
    */
-  async prepareForContent() {
-    const result = await this.#primary.prepareForContent();
+  async prepareForContent(options = {}) {
+    const result = await this.#primary.prepareForContent(options);
 
     if (result.ok) return result;
 
@@ -78,7 +79,7 @@ export class ResilientContentAdapter {
 
     // Retry primary after recovery
     this.#logger.info?.('resilient.prepareForContent.retrying');
-    const retryResult = await this.#primary.prepareForContent();
+    const retryResult = await this.#primary.prepareForContent(options);
 
     if (retryResult.ok) {
       this.#logger.info?.('resilient.prepareForContent.recoverySuccess');

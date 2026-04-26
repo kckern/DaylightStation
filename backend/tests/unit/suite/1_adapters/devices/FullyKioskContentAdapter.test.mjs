@@ -218,6 +218,61 @@ describe('FullyKioskContentAdapter', () => {
       // No ADB calls — just verify it completes normally
     });
 
+    it('runs the camera check when no skipCameraCheck option is passed (default behavior)', async () => {
+      const httpClient = createMockHttpClient();
+      const mockAdb = {
+        connect: vi.fn(async () => ({ ok: true })),
+        shell: vi.fn(async (cmd) => {
+          if (cmd.includes('/dev/video')) return { ok: true, output: '1' };
+          return { ok: true, output: '' };
+        }),
+        launchActivity: vi.fn(async () => ({ ok: true })),
+      };
+
+      const adapter = new FullyKioskContentAdapter(
+        { ...defaultConfig, launchActivity: 'de.ozerov.fully/.TvActivity' },
+        { httpClient, logger: mockLogger, adbAdapter: mockAdb }
+      );
+      const result = await adapter.prepareForContent();
+
+      const camCalls = mockAdb.shell.mock.calls.filter(
+        ([cmd]) => cmd.includes('/dev/video') || cmd.includes('/dev/camera')
+      );
+      expect(camCalls.length).toBeGreaterThanOrEqual(1);
+      expect(result.cameraAvailable).toBe(true);
+      expect(result.cameraSkipped).toBeFalsy();
+    });
+
+    it('skips the camera check when skipCameraCheck:true is passed', async () => {
+      const httpClient = createMockHttpClient();
+      const mockAdb = {
+        connect: vi.fn(async () => ({ ok: true })),
+        shell: vi.fn(async (cmd) => {
+          // Camera check would return 0 — but we expect it to NOT be called
+          if (cmd.includes('/dev/video')) return { ok: true, output: '0' };
+          return { ok: true, output: '' };
+        }),
+        launchActivity: vi.fn(async () => ({ ok: true })),
+      };
+
+      const adapter = new FullyKioskContentAdapter(
+        { ...defaultConfig, launchActivity: 'de.ozerov.fully/.TvActivity' },
+        { httpClient, logger: mockLogger, adbAdapter: mockAdb }
+      );
+      const result = await adapter.prepareForContent({ skipCameraCheck: true });
+
+      const camCalls = mockAdb.shell.mock.calls.filter(
+        ([cmd]) => cmd.includes('/dev/video') || cmd.includes('/dev/camera')
+      );
+      expect(camCalls.length).toBe(0);
+      expect(result.cameraAvailable).toBe(false);
+      expect(result.cameraSkipped).toBe(true);
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'fullykiosk.prepareForContent.cameraCheck.skipped',
+        expect.objectContaining({ reason: 'skipCameraCheck-flag' })
+      );
+    });
+
     it('should skip mic check and force-stop when ADB connect fails', async () => {
       const httpClient = createMockHttpClient();
       const mockAdb = {

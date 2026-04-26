@@ -187,13 +187,16 @@ export class Device {
 
   /**
    * Prepare device for content loading
+   * @param {Object} [options] - Forwarded to the underlying IContentControl impl.
+   *   See FullyKioskContentAdapter.prepareForContent for supported keys (e.g.
+   *   `skipCameraCheck`).
    * @returns {Promise<Object>}
    */
-  async prepareForContent() {
+  async prepareForContent(options = {}) {
     this.#logger.debug?.('device.prepareForContent.start', { id: this.#id, hasContentControl: !!this.#contentControl });
     // For Fully Kiosk: screenOn + toForeground
     if (this.#contentControl?.prepareForContent) {
-      const result = await this.#contentControl.prepareForContent();
+      const result = await this.#contentControl.prepareForContent(options);
       this.#logger.debug?.('device.prepareForContent.done', { id: this.#id, result });
       return result;
     }
