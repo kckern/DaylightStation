@@ -16,6 +16,7 @@ describe('parseNfcLocations', () => {
       target: 'livingroom-tv',
       action: 'play-next',
       auth_token: null,
+      notify_unknown: null,
       defaults: {},
     });
   });
@@ -65,5 +66,25 @@ describe('parseNfcLocations', () => {
       kitchen: { target: 'kitchen-display' },
     });
     expect(result.kitchen.action).toBeNull();
+  });
+
+  it('extracts notify_unknown as a top-level field, not a default', () => {
+    const result = parseNfcLocations({
+      livingroom: {
+        target: 'livingroom-tv',
+        action: 'play-next',
+        notify_unknown: 'mobile_app_kc_phone',
+        shader: 'default',
+      },
+    });
+    expect(result.livingroom.notify_unknown).toBe('mobile_app_kc_phone');
+    expect(result.livingroom.defaults).toEqual({ shader: 'default' });
+  });
+
+  it('defaults notify_unknown to null when omitted', () => {
+    const result = parseNfcLocations({
+      livingroom: { target: 'livingroom-tv' },
+    });
+    expect(result.livingroom.notify_unknown).toBeNull();
   });
 });
