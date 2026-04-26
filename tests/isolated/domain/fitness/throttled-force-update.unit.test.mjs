@@ -9,7 +9,12 @@ describe('batchedForceUpdate throttle', () => {
     forceUpdateCount = 0;
     scheduledCallback = null;
 
-    // Mock requestAnimationFrame
+    // useFakeTimers() patches global requestAnimationFrame, so install it
+    // BEFORE replacing rAF with our spy — otherwise vitest overwrites our
+    // mock and the assertion fails with "is not a spy".
+    vi.useFakeTimers();
+
+    // Mock requestAnimationFrame (post-useFakeTimers so this wins).
     global.requestAnimationFrame = vi.fn((cb) => { scheduledCallback = cb; return 1; });
 
     // Simulate the throttled batchedForceUpdate logic
@@ -49,8 +54,6 @@ describe('batchedForceUpdate throttle', () => {
       }
       // Otherwise: update already scheduled or throttle timer already pending — drop
     };
-
-    vi.useFakeTimers();
   });
 
   afterEach(() => {
