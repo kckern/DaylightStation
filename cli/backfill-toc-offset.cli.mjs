@@ -44,7 +44,7 @@ const dataDir = join(baseDir, 'data');
 const configDir = join(dataDir, 'system', 'config');
 
 hydrateProcessEnvFromConfigs(configDir);
-initConfigService(dataDir);
+await initConfigService(dataDir);
 
 const dataService = new DataService({ configService });
 

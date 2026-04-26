@@ -18,10 +18,10 @@ import { getDataPath } from '../../_lib/configHelper.mjs';
  * Initialize ConfigService for integration tests.
  * Uses DAYLIGHT_DATA_PATH env var to find real config.
  *
- * @returns {ConfigService}
+ * @returns {Promise<ConfigService>}
  * @throws {Error} If DAYLIGHT_DATA_PATH not set
  */
-export function initTestConfigService() {
+export async function initTestConfigService() {
   const dataDir = getDataPath();
   if (!dataDir) {
     throw new Error(
@@ -34,7 +34,7 @@ export function initTestConfigService() {
     resetConfigService();
   }
 
-  return initConfigService(dataDir);
+  return await initConfigService(dataDir);
 }
 
 /**

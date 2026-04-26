@@ -22,14 +22,14 @@ describe('Cron Jobs Configuration', () => {
   let jobs;
   let registeredHarvesters;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     const dataPath = process.env.DAYLIGHT_DATA_PATH;
     if (!dataPath) {
       throw new Error('DAYLIGHT_DATA_PATH required');
     }
 
     if (!configService.isReady()) {
-      initConfigService(dataPath);
+      await initConfigService(dataPath);
     }
 
     // Load jobs.yml
