@@ -9,7 +9,9 @@ vi.mock('#system/utils/FileIO.mjs', () => ({
   fileExists: vi.fn(() => false),
   dirExists: vi.fn(() => true),
   listDirs: vi.fn(() => []),
-  listYamlFiles: vi.fn(() => [])
+  listYamlFiles: vi.fn(() => []),
+  listEntries: vi.fn(() => []),
+  getStats: vi.fn(() => null),
 }));
 
 // Mock domains/content index for ItemSelectionService
