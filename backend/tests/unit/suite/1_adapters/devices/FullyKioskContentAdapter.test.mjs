@@ -426,7 +426,7 @@ describe('FullyKioskContentAdapter', () => {
       expect(elapsed).toBeLessThan(1000);
     });
 
-    it('verifyAsync:true logs async-verified on background success', async () => {
+    it('verifyAsync:true logs async-verified (flat shape) on background success', async () => {
       const expectedUrl = 'http://localhost:3111/tv/screen?play=plex%3A1';
       const httpClient = {
         get: vi.fn(async (url) => {
@@ -447,8 +447,43 @@ describe('FullyKioskContentAdapter', () => {
       await new Promise(r => setTimeout(r, 50));
       expect(mockLogger.info).toHaveBeenCalledWith(
         'fullykiosk.load.async-verified',
-        expect.objectContaining({ verified: expect.objectContaining({ verified: true }) }),
+        expect.objectContaining({ fullUrl: expectedUrl, verified: true, currentUrl: expectedUrl }),
       );
+    });
+
+    it('verifyAsync:true logs async-unverified (warn) when background verify reports unverified', async () => {
+      // currentUrl never matches the loaded URL — verify will report unverified
+      // after exhausting its 10s poll deadline. Use fake timers to fast-forward.
+      vi.useFakeTimers();
+      try {
+        const httpClient = {
+          get: vi.fn(async (url) => {
+            if (url.includes('cmd=getDeviceInfo')) {
+              return { status: 200, data: JSON.stringify({ foreground: 'de.ozerov.fully', currentUrl: 'about:blank' }) };
+            }
+            return { status: 200, data: '{}' };
+          }),
+        };
+
+        const adapter = new FullyKioskContentAdapter(defaultConfig, { httpClient, logger: mockLogger });
+
+        const loadPromise = adapter.load('/tv/screen', { play: 'plex:1' }, { verifyAsync: true });
+        // load() returns immediately on ack under verifyAsync — no timer wait needed.
+        const result = await loadPromise;
+        expect(result.ok).toBe(true);
+        expect(result.verified).toBe('async');
+
+        // Now advance through the full 10s verify deadline so the fire-and-forget
+        // promise resolves and the async-unverified log fires.
+        await vi.advanceTimersByTimeAsync(11_000);
+
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          'fullykiosk.load.async-unverified',
+          expect.objectContaining({ fullUrl: expect.any(String), verified: false }),
+        );
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('default (verifyAsync:false) preserves original sync verification behavior', async () => {

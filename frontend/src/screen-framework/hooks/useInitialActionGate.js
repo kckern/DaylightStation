@@ -1,15 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { AUTOPLAY_ACTIONS } from '../../lib/parseAutoplayParams.js';
 
 const SAFETY_TIMEOUT_MS = 5000;
-
-// Same canonical action list as ScreenAutoplay (ScreenRenderer.jsx ~line 31).
-// Kept in sync intentionally — the gate must trigger for any param that
-// ScreenAutoplay will eventually act on.
-const GATED_ACTIONS = [
-  'play', 'queue', 'playlist', 'random',
-  'display', 'read', 'open',
-  'app', 'launch', 'list',
-];
 
 // Direct URLSearchParams check — intentionally NOT using parseAutoplayParams
 // because its alias fallback turns ANY unknown key (e.g. ?foo=bar) into a
@@ -19,7 +11,7 @@ function hasGatedActionParam(searchString) {
   const params = new URLSearchParams(
     searchString.startsWith('?') ? searchString.slice(1) : searchString,
   );
-  for (const key of GATED_ACTIONS) {
+  for (const key of AUTOPLAY_ACTIONS) {
     if (params.has(key)) return true;
   }
   return false;

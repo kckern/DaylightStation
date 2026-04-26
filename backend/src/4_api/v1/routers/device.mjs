@@ -31,6 +31,7 @@ import {
   DispatchIdempotencyService,
   IdempotencyConflictError,
 } from '#apps/devices/services/DispatchIdempotencyService.mjs';
+import { contentRequiresCamera } from '#apps/devices/services/contentRequiresCamera.mjs';
 
 /**
  * Map a SessionControlService.sendCommand result to an HTTP response.
@@ -882,7 +883,12 @@ export function createDeviceRouter(config) {
 
     // Step 3: Re-prepare and re-load content
     try {
-      await device.prepareForContent();
+      // Skip the ~4s FKB camera check unless the reload query actually needs
+      // the camera. If there's no reloadQuery (generic recovery), default to
+      // skipping — the cautious path is to leave the camera unprobed and let
+      // the next content request set up what it needs.
+      const skipCameraCheck = reloadQuery ? !contentRequiresCamera(reloadQuery) : true;
+      await device.prepareForContent({ skipCameraCheck });
       if (reloadQuery) {
         const screenPath = device.screenPath || '/tv';
         await device.loadContent(screenPath, reloadQuery);

@@ -16,7 +16,7 @@ import { useScreenSubscriptions } from './subscriptions/useScreenSubscriptions.j
 import { useScreenCommands } from './commands/useScreenCommands.js';
 import { ScreenSessionPublishers } from './ScreenSessionPublishers.jsx';
 import { MenuNavigationProvider, useMenuNavigationContext } from '../context/MenuNavigationContext.jsx';
-import { parseAutoplayParams } from '../lib/parseAutoplayParams.js';
+import { parseAutoplayParams, AUTOPLAY_ACTIONS } from '../lib/parseAutoplayParams.js';
 import { getApp } from '../lib/appRegistry.js';
 import { bindBackButton, enableGlobalKeyCapture } from '../lib/fkb.js';
 import getLogger from '../lib/logging/Logger.js';
@@ -29,8 +29,6 @@ registerBuiltinWidgets();
 bindBackButton();
 // Log all remote button presses for Shield TV audit
 enableGlobalKeyCapture();
-
-const AUTOPLAY_ACTIONS = ['play', 'queue', 'playlist', 'random', 'display', 'read', 'open', 'app', 'launch', 'list'];
 
 /**
  * ScreenAutoplay - Parses URL path suffix and query params into navigation actions.
@@ -175,6 +173,8 @@ export function ScreenRenderer({ screenId: propScreenId }) {
 
   // Initial-only menu-flash suppression gate. If the URL had ?play=/?queue=/etc
   // on first mount, suppress the YAML layout until an overlay opens or 5s lapse.
+  // typeof window guard preserves SSR safety even though this codebase
+  // doesn't currently SSR — keep it defensive.
   const { suppressLayout, releaseGate } = useInitialActionGate(
     typeof window !== 'undefined' ? window.location.search : '',
   );
