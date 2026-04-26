@@ -39,6 +39,14 @@ export const DEFAULT_CAP_PENALTY = 10.0;
 export const DEFAULT_DOUBLE_BONUS = 0.10;
 export const DEFAULT_TRIPLE_BONUS = 0.25;
 
+// When a sparse single band gets clamped to maxRowPct, its tiles no longer
+// span the full row — they're centered with side whitespace. A clamped band
+// that fills less than this fraction of W reads as visibly broken (esp. as a
+// top row), so we reject the variant at validation time. 0.90 lets through
+// rows that fill 90%+ of W (modest centering acceptable) but rejects anything
+// narrower.
+export const DEFAULT_MIN_CLAMPED_FILL = 0.90;
+
 // Solve a band's pre-scale dimensions using the same primitives renderBands
 // uses internally. Returns { rowH } for singles or { H_pair, upper_h, lower_h }
 // for doubles, plus a `valid` flag. Used by packLayout to perform the
@@ -355,13 +363,17 @@ export function classifyItems(itemRatios, threshold = DEFAULT_TALL_THRESHOLD) {
 // `clamped: true` so the renderer centers the tiles with side whitespace
 // instead of inflating them. Without this, sparse bands always trip the
 // row-too-tall cap and the entire variant gets rejected.
-export function solveSingleBand(ratios, W, gap, cap = Infinity) {
+export function solveSingleBand(ratios, W, gap, cap = Infinity, minClampedFill = DEFAULT_MIN_CLAMPED_FILL) {
   if (!ratios.length) return { rowH: 0, valid: false, clamped: false };
   const gaps = (ratios.length - 1) * gap;
   const invSum = ratios.reduce((s, r) => s + 1 / r, 0);
   const stretchedRowH = (W - gaps) / invSum;
   if (stretchedRowH <= 0) return { rowH: 0, valid: false, clamped: false };
   if (stretchedRowH > cap) {
+    const tilesW = cap * invSum + gaps;
+    if (W > 0 && tilesW / W < minClampedFill) {
+      return { rowH: cap, valid: false, clamped: true };
+    }
     return { rowH: cap, valid: cap > 0, clamped: true };
   }
   return { rowH: stretchedRowH, valid: true, clamped: false };
