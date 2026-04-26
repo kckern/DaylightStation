@@ -7,6 +7,7 @@ vi.mock('#system/utils/FileIO.mjs', () => ({
   listEntries: vi.fn(() => ['test-list.yml']),
   fileExists: vi.fn(() => true),
   loadYaml: vi.fn(),
+  getStats: vi.fn(() => ({ mtimeMs: 0 })),
 }));
 
 const FileIO = await import('#system/utils/FileIO.mjs');
