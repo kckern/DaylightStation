@@ -23,6 +23,7 @@
 import { randomUUID } from 'node:crypto';
 import { buildCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
 import { resolveContentId } from '../contentIdKeys.mjs';
+import { contentRequiresCamera } from './contentRequiresCamera.mjs';
 
 // Note: 'playback' is an optional trailing step emitted only by the playback
 // watchdog (after load). Not in the sequential flow; frontend consumers may
@@ -234,9 +235,11 @@ export class WakeAndLoadService {
 
     // --- Step 4: Prepare Content ---
     this.#emitProgress(topic, dispatchId, 'prepare', 'running');
-    this.#logger.info?.('wake-and-load.prepare.start', { deviceId, dispatchId });
+    // Camera check (~4s on cold trigger) only matters for camera-using flows.
+    const skipCameraCheck = !contentRequiresCamera(contentQuery);
+    this.#logger.info?.('wake-and-load.prepare.start', { deviceId, dispatchId, skipCameraCheck });
 
-    const prepResult = await device.prepareForContent();
+    const prepResult = await device.prepareForContent({ skipCameraCheck });
     result.steps.prepare = prepResult;
 
     if (!prepResult.ok) {

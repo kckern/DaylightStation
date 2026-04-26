@@ -44,7 +44,8 @@ export class WebSocketContentAdapter {
     this.#metrics = { startedAt: Date.now(), loads: 0, errors: 0 };
   }
 
-  async prepareForContent() {
+  // eslint-disable-next-line no-unused-vars
+  async prepareForContent(_options = {}) {
     return { ok: true };
   }
 

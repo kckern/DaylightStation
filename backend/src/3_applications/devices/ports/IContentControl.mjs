@@ -56,7 +56,8 @@ export function createNoOpContentControl() {
   return {
     load: async () => ({ ok: false, error: 'Content control not configured' }),
     getStatus: async () => ({ ready: false, provider: 'none' }),
-    prepareForContent: async () => ({ ok: true })
+    // eslint-disable-next-line no-unused-vars
+    prepareForContent: async (_options = {}) => ({ ok: true })
   };
 }
 
