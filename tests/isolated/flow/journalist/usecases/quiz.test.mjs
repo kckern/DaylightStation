@@ -320,7 +320,7 @@ describe('Quiz Use Cases', () => {
     });
 
     describe('execute', () => {
-      it('should return failure when quizRepository is not available', async () => {
+      it('should gracefully skip when quizRepository is not available', async () => {
         useCase = new RecordQuizAnswer({
           logger: mockLogger,
         });
@@ -331,9 +331,11 @@ describe('Quiz Use Cases', () => {
           answer: 'Great',
         });
 
-        expect(result.success).toBe(false);
-        expect(result.error).toBe('Quiz repository not implemented yet');
-        expect(mockLogger.warn).toHaveBeenCalledWith('quiz.recordAnswer.repository-not-available', {
+        // Production gracefully degrades to success+skipped when no quizRepository
+        expect(result.success).toBe(true);
+        expect(result.skipped).toBe(true);
+        expect(result.reason).toBe('quizRepository not configured');
+        expect(mockLogger.debug).toHaveBeenCalledWith('quiz.recordAnswer.repository-not-available', {
           chatId: 'chat-123',
           questionUuid: 'question-uuid-1',
         });

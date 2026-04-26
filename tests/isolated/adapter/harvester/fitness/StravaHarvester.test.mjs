@@ -466,6 +466,11 @@ describe('StravaHarvester', () => {
     });
 
     it('should retry matching for recent summary entries missing homeSessionId', async () => {
+      // Pin clock so the cutoff window stays valid regardless of when the test runs.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-02-16T12:00:00Z'));
+
+      try {
       const dateDir = path.join(tmpDir, '2026-02-15');
       fs.mkdirSync(dateDir, { recursive: true });
 
@@ -521,6 +526,9 @@ describe('StravaHarvester', () => {
       const savedSummary = summarySave[2];
       const entry = savedSummary['2026-02-15'].find(a => a.id === 17418186050);
       expect(entry.homeSessionId).toBe('20260215191250');
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });
