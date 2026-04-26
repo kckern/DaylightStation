@@ -23,6 +23,8 @@ export default function RecordingBar({
   isFocused,
   canSave,
   onSave,
+  micConnected,
+  uploadInFlight,
 }) {
   const vuBars = useMemo(() => {
     const count = 20;
@@ -36,6 +38,9 @@ export default function RecordingBar({
     <div className={barClass}>
       <div className="recording-bar-left">
         <span className="week-label">{weekLabel}</span>
+        <span className={`mic-indicator ${micConnected ? 'mic-indicator--live' : 'mic-indicator--lost'}`}>
+          {micConnected ? '🎤 LIVE' : '🎤 LOST'}
+        </span>
         {!isRecording && existingRecording?.exists && (
           <span className="existing-badge">{formatTime(existingRecording.duration)} recorded</span>
         )}
@@ -86,6 +91,8 @@ export default function RecordingBar({
           <span className="recording-bar__save-icon" aria-hidden="true">■</span>
           <span className="recording-bar__save-label">Save Recording</span>
         </button>
+
+        {uploadInFlight && <span className="upload-flash">Uploading…</span>}
       </div>
     </div>
   );

@@ -719,6 +719,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
         silenceWarning={silenceWarning}
         uploading={uploading}
         uploadInFlight={uploadInFlight}
+        micConnected={isRecording && !disconnected}
         existingRecording={data.recording}
         error={recorderError}
         onStart={() => { logger.info('recording.manual-start'); startRecording(); }}
