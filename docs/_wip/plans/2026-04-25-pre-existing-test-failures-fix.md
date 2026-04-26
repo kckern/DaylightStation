@@ -916,7 +916,21 @@ Post-Phase-3: backend  : 1 failed /  846 passed  (847 total,   1 file failed)  f
                   from the adapter-factory test). Not a Phase 3 regression.
                 - tests/isolated/assembly/system/registries/AdapterRegistry.test.mjs
                   needs `adaptersRoot` to be passed in. Phase 6 triage.
-Post-Phase-4: ??? failed   # frontend logic fixes
+Post-Phase-4: backend  : 1 failed /  846 passed  (847 total,   1 file failed)  flat
+              frontend : 15 failed /  719 passed  (734 total,   2 files failed)  -4 fails
+              isolated : 173 failed / 1668 passed (1844 total, 324 files failed)  flat
+              Δ frontend: -4 fails (3 Tetris dimensions/spawn/bounds + 1 NavProvider
+              pop). Plan estimated -8 to -10 (assumed 4 GridLayout + 2 PanelRenderer
+              still failing). Tasks 4.1 (GridLayout) and 4.4 (PanelRenderer) were
+              SKIPPED — both already passing on entry, presumably cured by Phase 1's
+              jest-dom + React plugin config (verification: GridLayout 4/4 pass,
+              PanelRenderer 7/7 pass before any Phase 4 work).
+              Task 4.3 (NavProvider) root cause was test isolation, not pop logic.
+              The provider hydrates initial stack from window.location, and the
+              preceding "push changes view" test left ?view=detail in the URL —
+              so the third test's stack started with detail already on it. Fix
+              was a beforeEach in the test file that resets URL via
+              window.history.replaceState; production code unchanged.
 Post-Phase-5: ??? failed   # PiP implementation
 Post-Phase-6: 0 failed     # GOAL
 ```
