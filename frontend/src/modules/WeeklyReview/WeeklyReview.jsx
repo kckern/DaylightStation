@@ -702,6 +702,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
 
       <PreFlightOverlay
         status={preflightStatus}
+        focusIndex={preflightFocus}
         onRetry={() => {
           setPreflightFailed(false);
           autoStartRef.current = false;

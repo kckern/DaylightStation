@@ -4,10 +4,11 @@ import React from 'react';
  * Blocks the WeeklyReview UI until the mic is verified.
  * Props:
  *   - status: 'acquiring' | 'failed' | 'ok'
- *   - onRetry: () => void   (called when user picks Retry on failure)
- *   - onExit: () => void    (called when user picks Exit, or presses Back)
+ *   - focusIndex: 0 | 1   (which failed-state button is focused: 0=Retry, 1=Exit)
+ *   - onRetry: () => void
+ *   - onExit:  () => void
  */
-export default function PreFlightOverlay({ status, onRetry, onExit }) {
+export default function PreFlightOverlay({ status, focusIndex = 0, onRetry, onExit }) {
   if (status === 'ok') return null;
 
   return (
@@ -26,8 +27,14 @@ export default function PreFlightOverlay({ status, onRetry, onExit }) {
             <div className="preflight-title">Microphone unavailable</div>
             <div className="preflight-subtitle">Please check the device and try again.</div>
             <div className="preflight-actions">
-              <button className="preflight-btn preflight-btn--primary" onClick={onRetry}>Retry</button>
-              <button className="preflight-btn" onClick={onExit}>Exit</button>
+              <button
+                className={`preflight-btn preflight-btn--primary${focusIndex === 0 ? ' focused' : ''}`}
+                onClick={onRetry}
+              >Retry</button>
+              <button
+                className={`preflight-btn${focusIndex === 1 ? ' focused' : ''}`}
+                onClick={onExit}
+              >Exit</button>
             </div>
           </>
         )}
