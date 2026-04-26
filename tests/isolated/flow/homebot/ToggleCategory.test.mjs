@@ -44,6 +44,7 @@ describe('ToggleCategory', () => {
     useCase = new ToggleCategory({
       messagingGateway: mockMessagingGateway,
       conversationStateStore: mockStateStore,
+      householdService: { getMembers: vi.fn().mockResolvedValue([]) },
       logger: mockLogger
     });
   });
@@ -76,22 +77,30 @@ describe('ToggleCategory', () => {
       // Should get the conversation state
       expect(mockStateStore.get).toHaveBeenCalledWith('telegram:123', 'msg123');
 
-      // Should update state with new category
+      // Production set signature: set(conversationId, state, messageId) — state at index 1
       expect(mockStateStore.set).toHaveBeenCalledWith(
         'telegram:123',
-        'msg123',
         expect.objectContaining({
           flowState: expect.objectContaining({
             category: 'hopes'
           })
-        })
+        }),
+        'msg123'
       );
 
-      // Should update the message to show new category
+      // updateMessage now takes (conversationId, messageId, { text, choices, parseMode })
+      // The category appears in choice labels (✅ Hopes), not necessarily the text itself.
       expect(mockMessagingGateway.updateMessage).toHaveBeenCalledWith(
         'telegram:123',
         'msg123',
-        expect.stringContaining('Hopes')
+        expect.objectContaining({
+          text: expect.stringContaining('hoping'),
+          choices: expect.arrayContaining([
+            expect.arrayContaining([
+              expect.objectContaining({ label: '✅ Hopes' }),
+            ]),
+          ]),
+        })
       );
 
       // Should return success with category info
@@ -116,18 +125,25 @@ describe('ToggleCategory', () => {
 
       expect(mockStateStore.set).toHaveBeenCalledWith(
         'telegram:123',
-        'msg123',
         expect.objectContaining({
           flowState: expect.objectContaining({
             category: 'gratitude'
           })
-        })
+        }),
+        'msg123'
       );
 
       expect(mockMessagingGateway.updateMessage).toHaveBeenCalledWith(
         'telegram:123',
         'msg123',
-        expect.stringContaining('Gratitude')
+        expect.objectContaining({
+          text: expect.stringContaining('grateful'),
+          choices: expect.arrayContaining([
+            expect.arrayContaining([
+              expect.objectContaining({ label: '✅ Gratitude' }),
+            ]),
+          ]),
+        })
       );
 
       expect(result.success).toBe(true);
@@ -146,7 +162,7 @@ describe('ToggleCategory', () => {
       expect(result.success).toBe(false);
       expect(result.error).toContain('state');
 
-      // Should update message to show error
+      // For the error path production sends a plain string instead of an object
       expect(mockMessagingGateway.updateMessage).toHaveBeenCalledWith(
         'telegram:123',
         'msg123',
@@ -196,13 +212,13 @@ describe('ToggleCategory', () => {
       expect(mockMessagingGateway.updateMessage).toHaveBeenCalledWith(
         'telegram:123',
         'msg123',
-        expect.stringMatching(/Good health/)
+        expect.objectContaining({ text: expect.stringMatching(/Good health/) })
       );
 
       expect(mockMessagingGateway.updateMessage).toHaveBeenCalledWith(
         'telegram:123',
         'msg123',
-        expect.stringMatching(/Family/)
+        expect.objectContaining({ text: expect.stringMatching(/Family/) })
       );
     });
 
@@ -247,12 +263,12 @@ describe('ToggleCategory', () => {
 
       expect(mockStateStore.set).toHaveBeenCalledWith(
         'telegram:123',
-        'msg123',
         expect.objectContaining({
           flowState: expect.objectContaining({
             someOtherProperty: 'preserved'
           })
-        })
+        }),
+        'msg123'
       );
     });
   });
