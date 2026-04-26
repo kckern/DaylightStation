@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createPlayRouter } from '#api/v1/routers/play.mjs';
+import { PlayResponseService } from '#apps/content/services/PlayResponseService.mjs';
 
 // ---------------------------------------------------------------------------
 // Minimal stubs
@@ -57,9 +58,18 @@ function createStubProgressSyncService() {
 }
 
 function buildApp(config) {
+  // Production play router shapes responses through PlayResponseService.
+  // Wire a real PlayResponseService over the test's stubs so the
+  // reconcileOnPlay / mediaProgressMemory.get fall-through is exercised
+  // exactly as production runs it.
+  const playResponseService = new PlayResponseService({
+    mediaProgressMemory: config.mediaProgressMemory,
+    progressSyncService: config.progressSyncService || null,
+    progressSyncSources: config.progressSyncSources || new Set(),
+  });
   const app = express();
   app.use(express.json());
-  app.use('/play', createPlayRouter(config));
+  app.use('/play', createPlayRouter({ ...config, playResponseService }));
   return app;
 }
 
