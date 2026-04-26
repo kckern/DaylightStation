@@ -114,15 +114,19 @@ When the message arrives, the handler:
 
 ### 1. NFC tag plays a Plex movie on the TV (canonical)
 
-**`data/household/config/nfc.yml`:**
+**`data/household/config/triggers/nfc/locations.yml`:**
 
 ```yaml
 livingroom:
   target: livingroom-tv
   action: play
-  tags:
-    "04a1b2c3d4":
-      plex: 642120          # shorthand → content: "plex:642120"
+```
+
+**`data/household/config/triggers/nfc/tags.yml`:**
+
+```yaml
+"04a1b2c3d4":
+  plex: 642120          # shorthand → content: "plex:642120"
 ```
 
 **Tap the tag** → ESP32 fires `GET /api/v1/trigger/livingroom/nfc/04a1b2c3d4` → dispatch path runs `wakeAndLoadService.execute('livingroom-tv', { play: 'plex:642120' })`. The TV wakes, FKB navigates to the loader URL, the Player overlay mounts. **No screen subscription needed for this — the action handler does the work.**
@@ -150,16 +154,20 @@ The toast widget receives the full event payload, so it can render `Now playing 
 
 Reuses the existing PIP machinery (same as the doorbell ring example in `living-room.yml`).
 
-**`nfc.yml`:**
+**`data/household/config/triggers/nfc/locations.yml`** (add):
 
 ```yaml
 frontdoor:
   target: kitchen-display
   action: scene
   auth_token: door-secret
-  tags:
-    "04doorkey1":
-      scene: scene.welcome_home
+```
+
+**`data/household/config/triggers/nfc/tags.yml`** (add):
+
+```yaml
+"04doorkey1":
+  scene: scene.welcome_home
 ```
 
 **`living-room.yml`** (add):
@@ -226,7 +234,7 @@ Subscribed dashboards become a free observability surface for the trigger system
 
 ## Reloading the Registry
 
-The trigger config is parsed once at boot. To pick up edits to `nfc.yml` without restarting the container:
+The trigger config is parsed once at boot from `data/household/config/triggers/`. To pick up edits without restarting the container:
 
 ```bash
 curl -X POST http://localhost:3111/api/v1/trigger/reload
@@ -237,15 +245,18 @@ If the YAML fails to parse, the endpoint returns 400 with the error and **leaves
 
 ## Files
 
-- **Domain:** `backend/src/2_domains/trigger/{TriggerConfig,TriggerIntent}.mjs`
-- **Application:** `backend/src/3_applications/trigger/{TriggerDispatchService,actionHandlers}.mjs`
+- **Adapter (parsers + I/O):** `backend/src/1_adapters/trigger/{YamlTriggerConfigRepository,parsers/*}.mjs`
+- **Domain (resolvers):** `backend/src/2_domains/trigger/services/{NfcResolver,StateResolver,ResolverRegistry}.mjs`
+- **Application (dispatcher + actions):** `backend/src/3_applications/trigger/{TriggerDispatchService,actionHandlers}.mjs`
 - **API:** `backend/src/4_api/v1/routers/trigger.mjs`
 - **Bootstrap:** `createTriggerApiRouter` in `backend/src/0_system/bootstrap.mjs`
 - **Screen consumer:** `frontend/src/screen-framework/subscriptions/useScreenSubscriptions.js`
-- **Tests:** `tests/isolated/{domains,applications,api/routers}/trigger*`
+- **Tests:** `tests/isolated/{adapter,domain,application}/trigger/`
+- **Schema reference:** [`schema.md`](./schema.md)
 
 ## See also
 
+- [`schema.md`](./schema.md) — canonical YAML schema, precedence chain, and adding-a-new-modality guide
 - [`../trigger-endpoint.md`](../trigger-endpoint.md) — HTTP contract, status codes, ESP32 firmware contract
 - [`../core/screen-framework.md`](../core/screen-framework.md) — overlay slots, subscription handler, widget registry
 - [`../screen-configs.md`](../screen-configs.md) — full screen YAML reference
