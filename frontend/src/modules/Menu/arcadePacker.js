@@ -31,6 +31,13 @@ export const DEFAULT_TALL_AREA_CAP = 0.5;
 export const DEFAULT_FILL_WEIGHT = 1.0;
 export const DEFAULT_BALANCE_WEIGHT = 1.0;
 export const DEFAULT_CAP_PENALTY = 10.0;
+// Spans (doubles, triples) are visually richer than flat single-band layouts
+// even when their fillRatio is slightly lower. Without these bonuses, a dense
+// 5-row of singles (fillRatio ≈ 0.97) consistently beats a 2-double layout
+// (fillRatio ≈ 0.92). Triples are doubly-bonus because they span 3 rows of
+// normals around 2 stacked talls — strongest visual rhythm.
+export const DEFAULT_DOUBLE_BONUS = 0.10;
+export const DEFAULT_TRIPLE_BONUS = 0.25;
 
 // Solve a band's pre-scale dimensions using the same primitives renderBands
 // uses internally. Returns { rowH } for singles or { H_pair, upper_h, lower_h }
@@ -38,11 +45,11 @@ export const DEFAULT_CAP_PENALTY = 10.0;
 // maxRowPct rejection BEFORE renderBands applies any scale-down — the legacy
 // behavior. (renderBands itself returns post-scale heights, which can mask
 // oversized rows that get hidden by aggressive scale-down.)
-function solveBandRaw(band, itemRatios, W, gap) {
+function solveBandRaw(band, itemRatios, W, gap, singleCap = Infinity) {
   if (band.type === 'single') {
     const ratios = band.items.map(i => itemRatios[i]);
-    const r = solveSingleBand(ratios, W, gap);
-    return { valid: r.valid, rowH: r.rowH };
+    const r = solveSingleBand(ratios, W, gap, singleCap);
+    return { valid: r.valid, rowH: r.rowH, clamped: r.clamped };
   }
   if (band.type === 'double') {
     const tallRatio = itemRatios[band.talls[0]];
@@ -128,8 +135,10 @@ export function packLayout({
             tripleCount: t, doubleCount: d,
           });
 
-          // Pre-scale solve for maxRowPct rejection.
-          const solved = bands.map(b => solveBandRaw(b, itemRatios, W, gap));
+          // Pre-scale solve for maxRowPct rejection. Single bands clamp
+          // their stretched rowH to maxAllowedRowH so sparse rows stop
+          // tanking variants — the renderer centers the clamped tiles.
+          const solved = bands.map(b => solveBandRaw(b, itemRatios, W, gap, maxAllowedRowH));
           if (solved.some(s => !s.valid)) {
             log('pack.variant.skip', { targetRows, t, d, reason: 'invalid-solve' });
             continue;
@@ -149,7 +158,7 @@ export function packLayout({
             continue;
           }
 
-          const rendered = renderBands({ bands, itemRatios, W, H, gap });
+          const rendered = renderBands({ bands, itemRatios, W, H, gap, singleCap: maxAllowedRowH });
           if (!rendered.valid) {
             log('pack.variant.skip', { targetRows, t, d, reason: 'render-invalid' });
             continue;
@@ -165,6 +174,14 @@ export function packLayout({
           const tripleCount = bands.filter(b => b.type === 'triple').length;
           const doubleCount = bands.filter(b => b.type === 'double').length;
           const singleCount = bands.filter(b => b.type === 'single').length;
+          // Span bonus: rewards layouts that actually formed spans, so the
+          // ranking prefers visual rhythm over a dense flat grid when both
+          // are valid. Computed in packLayout (not scoreLayout) because the
+          // scorer only sees placements, not band types.
+          const spanBonus = tripleCount * DEFAULT_TRIPLE_BONUS
+            + doubleCount * DEFAULT_DOUBLE_BONUS;
+          const score = sc.score + spanBonus;
+
           log('pack.variant.candidate', {
             attempt, targetRows, t, d,
             tripleCount, doubleCount, singleCount,
@@ -172,7 +189,8 @@ export function packLayout({
             tallAreaFrac: +sc.tallAreaFrac.toFixed(3),
             balanceTerm: +sc.balanceTerm.toFixed(3),
             capPenalty: +sc.capPenalty.toFixed(3),
-            score: +sc.score.toFixed(3),
+            spanBonus: +spanBonus.toFixed(3),
+            score: +score.toFixed(3),
             bboxAspect: +bbox.aspect.toFixed(3),
             isLandscape,
           });
@@ -181,17 +199,18 @@ export function packLayout({
             attempt, targetRows, t, d, tripleCount, doubleCount, singleCount,
             fillRatio: +sc.fillRatio.toFixed(3),
             tallAreaFrac: +sc.tallAreaFrac.toFixed(3),
-            score: +sc.score.toFixed(3),
+            spanBonus: +spanBonus.toFixed(3),
+            score: +score.toFixed(3),
             bboxAspect: +bbox.aspect.toFixed(3),
           };
 
-          if (isLandscape && sc.score > bestLandscapeScore) {
-            bestLandscapeScore = sc.score;
+          if (isLandscape && score > bestLandscapeScore) {
+            bestLandscapeScore = score;
             bestLandscape = rendered.placements;
             bestLandscapeMeta = variantMeta;
           }
-          if (sc.score > bestAnyScore) {
-            bestAnyScore = sc.score;
+          if (score > bestAnyScore) {
+            bestAnyScore = score;
             bestAny = rendered.placements;
             bestAnyMeta = variantMeta;
           }
@@ -200,18 +219,17 @@ export function packLayout({
     }
   }
 
-  // Prefer landscape; else accept the best-scoring tall band layout. The
-  // packing structure (bands, sizing) stays optimal either way.
+  // Landscape only. A tall-aspect layout (vertical strip) is a worse user
+  // outcome than a uniform grid, so we refuse to accept tall here and let
+  // the emergency grid fire below if no landscape variant exists anywhere.
   let bestPlacements = null;
   let bestMeta = null;
   if (bestLandscape) {
     bestPlacements = bestLandscape;
     bestMeta = bestLandscapeMeta;
   } else if (bestAny) {
-    bestPlacements = bestAny;
-    bestMeta = { ...bestAnyMeta, tallAccepted: true };
-    logger?.warn?.('pack.tall-accepted', {
-      reason: 'no-landscape-variant',
+    logger?.warn?.('pack.tall-rejected', {
+      reason: 'strict-no-landscape',
       ...bestAnyMeta,
     });
   }
@@ -237,9 +255,9 @@ export function packLayout({
           itemRatios, order, tallThreshold, refH, W, gap, minPerRow,
           tripleCount: 0, doubleCount: 0,
         });
-        const solved = bands.map(b => solveBandRaw(b, itemRatios, W, gap));
+        const solved = bands.map(b => solveBandRaw(b, itemRatios, W, gap, maxAllowedRowH));
         if (solved.some(s => !s.valid)) continue;
-        const rendered = renderBands({ bands, itemRatios, W, H, gap });
+        const rendered = renderBands({ bands, itemRatios, W, H, gap, singleCap: maxAllowedRowH });
         if (!rendered.valid) continue;
         const sc = scoreLayout({
           placements: rendered.placements, tallSet, N, W, H,
@@ -265,28 +283,29 @@ export function packLayout({
       bestPlacements = fbLandscape;
       bestMeta = { fallback: 'singles-only', ...fbLandscapeMeta };
       logInfo('pack.fallback.success', bestMeta);
-    } else if (fbAny) {
-      bestPlacements = fbAny;
-      bestMeta = { fallback: 'singles-only', tallAccepted: true, ...fbAnyMeta };
-      logger?.warn?.('pack.tall-accepted', {
-        reason: 'singles-fallback-no-landscape',
-        ...fbAnyMeta,
-      });
     } else {
-      // True last resort: original single-column brute. Visually poor but
-      // every tile renders. Should be effectively impossible to reach now
-      // that the dual-tracker accepts ANY valid render in the strict and
-      // singles-only paths.
-      logInfo('pack.fallback.brute', { N, W, H });
-      const rowH = H / N;
-      bestPlacements = itemRatios.map((r, idx) => ({
-        idx,
-        x: (W - rowH / r) / 2,
-        y: idx * rowH,
-        w: rowH / r,
-        h: rowH,
-      }));
-      bestMeta = { fallback: 'brute-force-singles', N };
+      if (fbAny) {
+        logger?.warn?.('pack.tall-rejected', {
+          reason: 'singles-fallback-no-landscape',
+          ...fbAnyMeta,
+        });
+      }
+      // Last resort: ALL items in ONE row at uniform height, talls treated
+      // as ordinary row members (their natural aspect makes them narrow,
+      // never vertical-strip). Guaranteed landscape — an extremely wide,
+      // short row is far better than a vertical column.
+      const oneRow = solveSingleBand(itemRatios, W, gap);
+      const rowH = oneRow.valid ? oneRow.rowH : H / N;
+      const yCenter = (H - rowH) / 2;
+      let xCursor = 0;
+      bestPlacements = itemRatios.map((r, idx) => {
+        const w = rowH / r;
+        const placement = { idx, x: xCursor, y: yCenter, w, h: rowH };
+        xCursor += w + gap;
+        return placement;
+      });
+      bestMeta = { fallback: 'single-row', N, rowH: +rowH.toFixed(1) };
+      logInfo('pack.fallback.single-row', bestMeta);
     }
   }
 
@@ -330,13 +349,22 @@ export function classifyItems(itemRatios, threshold = DEFAULT_TALL_THRESHOLD) {
   return { tallIndices, normalIndices };
 }
 
-export function solveSingleBand(ratios, W, gap) {
-  if (!ratios.length) return { rowH: 0, valid: false };
+// `cap` (optional) is the maximum allowed row height. When the
+// fill-the-row solve would exceed it (typically because the band is too
+// sparse — 1-3 tiles, or several talls), clamp to `cap` and report
+// `clamped: true` so the renderer centers the tiles with side whitespace
+// instead of inflating them. Without this, sparse bands always trip the
+// row-too-tall cap and the entire variant gets rejected.
+export function solveSingleBand(ratios, W, gap, cap = Infinity) {
+  if (!ratios.length) return { rowH: 0, valid: false, clamped: false };
   const gaps = (ratios.length - 1) * gap;
   const invSum = ratios.reduce((s, r) => s + 1 / r, 0);
-  const rowH = (W - gaps) / invSum;
-  if (rowH <= 0) return { rowH: 0, valid: false };
-  return { rowH, valid: true };
+  const stretchedRowH = (W - gaps) / invSum;
+  if (stretchedRowH <= 0) return { rowH: 0, valid: false, clamped: false };
+  if (stretchedRowH > cap) {
+    return { rowH: cap, valid: cap > 0, clamped: true };
+  }
+  return { rowH: stretchedRowH, valid: true, clamped: false };
 }
 
 export function solveDoubleBand({ tallRatio, upperRatios, lowerRatios, W, gap }) {
@@ -629,9 +657,36 @@ export function buildBands({
         }
       }
 
-      // 3) Fallback: tall as a single tile.
-      bands.push({ type: 'single', items: [idx] });
-      i++;
+      // 3) Fallback: tall couldn't form a span. Merge it into an adjacent
+      //    normal row at refH instead of emitting it as a solo single-band.
+      //    A solo single-band gets stretched to full W by solveSingleBand
+      //    (rowH = W × ratio), which trips maxRowPct on every realistic
+      //    viewport and tanks the entire variant search.
+      const tallW = widthAt(idx, refH);
+      const last = bands[bands.length - 1];
+      if (last && last.type === 'single') {
+        const lastW = last.items.reduce((s, k) => s + widthAt(k, refH), 0)
+          + Math.max(0, last.items.length - 1) * gap;
+        if (lastW + gap + tallW <= W) {
+          last.items.push(idx);
+          i++;
+          continue;
+        }
+      }
+      const fallbackItems = [idx];
+      let fallbackW = tallW;
+      let j = i + 1;
+      while (j < order.length) {
+        const cand = order[j];
+        if (isTall(cand)) break;
+        const w = widthAt(cand, refH);
+        if (fallbackW + gap + w > W) break;
+        fallbackW += gap + w;
+        fallbackItems.push(cand);
+        j++;
+      }
+      bands.push({ type: 'single', items: fallbackItems });
+      i = j;
       continue;
     }
 
@@ -665,15 +720,15 @@ export function buildBands({
   return bands;
 }
 
-export function renderBands({ bands, itemRatios, W, H, gap }) {
+export function renderBands({ bands, itemRatios, W, H, gap, singleCap = Infinity }) {
   // Phase 1: solve each band, collect heights.
   const solved = [];
   for (const band of bands) {
     if (band.type === 'single') {
       const ratios = band.items.map(i => itemRatios[i]);
-      const r = solveSingleBand(ratios, W, gap);
+      const r = solveSingleBand(ratios, W, gap, singleCap);
       if (!r.valid) return { valid: false, placements: [] };
-      solved.push({ band, rowH: r.rowH, height: r.rowH });
+      solved.push({ band, rowH: r.rowH, height: r.rowH, clamped: r.clamped });
     } else if (band.type === 'double') {
       const tallRatio = itemRatios[band.talls[0]];
       const upperRatios = band.upper.map(i => itemRatios[i]);
@@ -722,7 +777,9 @@ export function renderBands({ bands, itemRatios, W, H, gap }) {
       const rowH = s.rowH * scale;
       const tilesW = s.band.items.reduce((sum, i) => sum + rowH / itemRatios[i], 0)
         + (s.band.items.length - 1) * gap;
-      let x = scale < 1 ? (W - tilesW) / 2 : 0;
+      // Clamped bands intentionally don't fill W — center them with side
+      // whitespace. Same for any scale-down case (existing behavior).
+      let x = (scale < 1 || s.clamped) ? (W - tilesW) / 2 : 0;
       for (const idx of s.band.items) {
         const w = rowH / itemRatios[idx];
         placements.push({ idx, x, y, w, h: rowH });
@@ -847,11 +904,18 @@ export function scoreLayout({
   capWeight = DEFAULT_CAP_PENALTY,
   areaCap = DEFAULT_TALL_AREA_CAP,
 }) {
-  const renderedTotalH = placements.reduce((m, p) => Math.max(m, p.y + p.h), 0);
-  const rawFillRatio = renderedTotalH / H;
-  const fillRatio = rawFillRatio <= 1 ? rawFillRatio : 1 / rawFillRatio;
-
+  // fillRatio = total tile pixel area / viewport area, divided by overshoot
+  // when the layout extends past H. Tile-area beats the older max-y+h
+  // formulation because clamped sparse bands have whitespace around their
+  // tiles — that whitespace shouldn't count as fill. The overshoot divisor
+  // preserves the legacy "overflow penalizes fillRatio" contract for
+  // synthetic placements that spill past H without scale-down.
   const totalArea = W * H;
+  const tileArea = placements.reduce((s, p) => s + p.w * p.h, 0);
+  const renderedTotalH = placements.reduce((m, p) => Math.max(m, p.y + p.h), 0);
+  const overshoot = renderedTotalH > H ? renderedTotalH / H : 1;
+  const fillRatio = Math.min(1, tileArea / totalArea) / overshoot;
+
   const tallArea = placements.reduce(
     (s, p) => s + (tallSet.has(p.idx) ? p.w * p.h : 0),
     0,
@@ -868,6 +932,6 @@ export function scoreLayout({
   const score = fillWeight * fillRatio + balanceWeight * balanceTerm - capWeight * capPenalty;
 
   return {
-    score, fillRatio, tallAreaFrac, tallCountFrac, balanceTerm, capPenalty, renderedTotalH,
+    score, fillRatio, tallAreaFrac, tallCountFrac, balanceTerm, capPenalty,
   };
 }

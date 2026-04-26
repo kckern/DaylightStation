@@ -99,13 +99,13 @@ describe('solveSingleBand', () => {
   });
 
   test('returns valid=false when ratios is empty', () => {
-    expect(solveSingleBand([], 1000, 10)).toEqual({ rowH: 0, valid: false });
+    expect(solveSingleBand([], 1000, 10)).toEqual({ rowH: 0, valid: false, clamped: false });
   });
 
   test('returns valid=false when computed rowH would be non-positive', () => {
     // Force gaps > W: 5 tiles at gap=300 → 4 gaps = 1200 > W=1000
     const out = solveSingleBand([1, 1, 1, 1, 1], 1000, 300);
-    expect(out).toEqual({ rowH: 0, valid: false });
+    expect(out).toEqual({ rowH: 0, valid: false, clamped: false });
   });
 });
 
