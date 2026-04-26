@@ -17,10 +17,10 @@ const DATA_DIR = getDataPath();
 describe('LifelogAggregator', () => {
   let username;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     // Initialize config service with real data directory
     resetConfigService();
-    initConfigService(DATA_DIR);
+    await initConfigService(DATA_DIR);
 
     // Get head of household from config (default user)
     username = configService.getHeadOfHousehold();
