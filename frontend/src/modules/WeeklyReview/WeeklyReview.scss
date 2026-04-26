@@ -1182,3 +1182,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+// ---- Task 19: Visible focus indicator on PreFlightOverlay buttons ----
+
+.preflight-btn.focused {
+  outline: 3px solid #ffeb3b;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(255, 235, 59, 0.3);
+}
