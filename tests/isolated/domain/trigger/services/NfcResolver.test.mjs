@@ -162,3 +162,77 @@ describe('NfcResolver', () => {
     expect(result.params.plex).toBeUndefined();
   });
 });
+
+describe('NfcResolver — metadata-only tags', () => {
+  function makeRegistry(tags = {}) {
+    return {
+      locations: {
+        livingroom: {
+          target: 'livingroom-tv',
+          action: 'play-next',
+          defaults: {},
+        },
+      },
+      tags,
+    };
+  }
+  const resolver = { resolve: (id) => /^plex:/.test(id) ? { source: 'plex' } : null };
+
+  it('returns null for a tag with only scanned_at (placeholder, state 1)', () => {
+    const registry = makeRegistry({
+      '04_a1_b2_c3': { global: { scanned_at: '2026-04-26 10:00:00' }, overrides: {} },
+    });
+    const result = NfcResolver.resolve({
+      location: 'livingroom',
+      value: '04_a1_b2_c3',
+      registry,
+      contentIdResolver: resolver,
+    });
+    expect(result).toBeNull();
+  });
+
+  it('returns null for a tag with scanned_at + note (state 2)', () => {
+    const registry = makeRegistry({
+      '04_a1_b2_c3': {
+        global: { scanned_at: '2026-04-26 10:00:00', note: 'kids movie' },
+        overrides: {},
+      },
+    });
+    const result = NfcResolver.resolve({
+      location: 'livingroom',
+      value: '04_a1_b2_c3',
+      registry,
+      contentIdResolver: resolver,
+    });
+    expect(result).toBeNull();
+  });
+
+  it('returns intent for a scene-only tag (no content, state 3)', () => {
+    const registry = makeRegistry({
+      '04doorkey1': { global: { scene: 'scene.welcome_home' }, overrides: {} },
+    });
+    const result = NfcResolver.resolve({
+      location: 'livingroom',
+      value: '04doorkey1',
+      registry,
+      contentIdResolver: resolver,
+    });
+    expect(result).not.toBeNull();
+    expect(result.scene).toBe('scene.welcome_home');
+  });
+
+  it('returns intent for a ha-service tag (no content, state 3)', () => {
+    const registry = makeRegistry({
+      '04light': { global: { service: 'turn_on', entity: 'light.kitchen' }, overrides: {} },
+    });
+    const result = NfcResolver.resolve({
+      location: 'livingroom',
+      value: '04light',
+      registry,
+      contentIdResolver: resolver,
+    });
+    expect(result).not.toBeNull();
+    expect(result.service).toBe('turn_on');
+    expect(result.entity).toBe('light.kitchen');
+  });
+});
