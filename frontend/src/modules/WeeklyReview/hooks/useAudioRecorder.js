@@ -271,5 +271,59 @@ export function useAudioRecorder({ onChunk }) {
     }
   }, []);
 
-  return { isRecording, duration, micLevel, silenceWarning, firstAudibleFrameSeen, disconnected, error, startRecording, stopRecording };
+  const reconnect = useCallback(async () => {
+    logger().info('recorder.reconnect-requested');
+    try {
+      // Tear down only the stream side; keep timer/duration/seq intact so the
+      // recording continues from where it left off.
+      if (streamRef.current) {
+        if (streamRef.current._bridgeWs) {
+          try { streamRef.current._bridgeWs.close(); } catch {}
+        }
+        try { streamRef.current.getTracks().forEach(t => t.stop()); } catch {}
+        streamRef.current = null;
+      }
+      let stream;
+      try {
+        stream = await Promise.race([
+          getBridgeStream(),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('reconnect timeout')), 3000)),
+        ]);
+      } catch {
+        stream = await Promise.race([
+          navigator.mediaDevices.getUserMedia({ audio: true }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('reconnect timeout')), 3000)),
+        ]);
+      }
+      streamRef.current = stream;
+      // Re-wire disconnect detection on new tracks.
+      const tracks = stream.getAudioTracks?.() || [];
+      for (const track of tracks) {
+        if (track.addEventListener) {
+          track.addEventListener('ended', () => {
+            logger().warn('recorder.track-ended-after-reconnect');
+            setDisconnected(true);
+          });
+        }
+      }
+      // Re-attach a fresh MediaRecorder. seqRef continues incrementing.
+      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      mediaRecorderRef.current = recorder;
+      recorder.ondataavailable = (e) => {
+        if (!e.data || e.data.size === 0) return;
+        const seq = seqRef.current++;
+        logger().info('recorder.chunk-emitted-after-reconnect', { seq, bytes: e.data.size });
+        onChunk?.({ seq, blob: e.data });
+      };
+      recorder.start(5000);
+      setDisconnected(false);
+      logger().info('recorder.reconnect-success');
+      return true;
+    } catch (err) {
+      logger().error('recorder.reconnect-failed', { error: err.message });
+      return false;
+    }
+  }, [onChunk]);
+
+  return { isRecording, duration, micLevel, silenceWarning, firstAudibleFrameSeen, disconnected, error, startRecording, stopRecording, reconnect };
 }
