@@ -874,14 +874,49 @@ git commit -m "docs: suite is green — remove obsolete known-failure caveats"
 Track failure counts after each phase. Update IN this file as you go.
 
 ```
-Pre-Phase-1:  731 failed (backend ~16 + frontend ~194 + isolated ~504+infra)
-Post-Phase-1: ??? failed   # expected dramatic drop — most are infra cascade
+Pre-Phase-1:  279 failed individual tests across 3 suites
+              backend  : 11 failed /  775 passed   (786 total, 5 files failed)
+              frontend : 94 failed /  640 passed   (734 total, 29 files failed)
+              isolated : 174 failed / 1667 passed (1844 total, 326 files failed)
+              (note: plan's 731 estimate counted file-load failures as multiple
+              tests; vitest reports them as "no tests" for the file)
+
+Post-Phase-1: 207 failed individual tests across 3 suites
+              backend  : 12 failed /  835 passed  (847 total,   3 files failed)  +61 tests now run
+              frontend : 21 failed /  713 passed  (734 total,   6 files failed)  -73 fails
+              isolated : 174 failed / 1667 passed (1844 total, 327 files failed) flat
+              Δ frontend: -73 fails (~78% reduction). Backend gained tests (cost adapter
+              now loads). Isolated unchanged: dominant residual is widespread
+              `@jest/globals` imports across hundreds of isolated test files (same
+              pattern as Task 1.1, but at scale not anticipated by the plan) plus
+              the .mjs+JSX transform issue. Both are infrastructure but exceed
+              Phase 1 scope; Phase 6 forensic sweep will need to address them.
+
 Post-Phase-2: ??? failed   # backend should drop by ~11+
 Post-Phase-3: ??? failed   # quick wins
 Post-Phase-4: ??? failed   # frontend logic fixes
 Post-Phase-5: ??? failed   # PiP implementation
 Post-Phase-6: 0 failed     # GOAL
 ```
+
+### Phase 1 deviations from plan
+
+- **Task 1.2:** plan predicted only `Invalid Chai property: toBeInTheDocument`. Actual
+  failures included `React is not defined` because the root `vitest.config.mjs` had no
+  React plugin. Fix added `@vitejs/plugin-react` (loaded via dynamic import from
+  `frontend/node_modules`) alongside the `setupFiles` directive.
+- **Task 1.4:** plan said "install jsdom". jsdom 27.0.1 was already installed but
+  failed because it `require()`s parse5 8 (ESM-only) on Node 20.17 (which lacks
+  `require(esm)`). Fix downgraded to `jsdom@^24` (which uses parse5 7 CJS). Install
+  went into `frontend/` (where the test environment loads from), not the root.
+- **Task 1.6:** `scripture-guide` is already installed in all three node_modules
+  trees and the target test passes. No commit needed — task skipped.
+- **Isolated suite stays at 174 fails:** the dominant remaining failure mode is
+  hundreds of isolated test files importing from `@jest/globals` (same pattern as
+  Task 1.1 but not enumerated in the plan). Plus a smaller cluster of `.mjs` files
+  containing JSX (which the React plugin only transforms for `.jsx`/`.tsx`). Both
+  are infrastructure issues but at a scale Phase 1 didn't anticipate. Recommend
+  surfacing as a Phase 6 sweep.
 
 ---
 
