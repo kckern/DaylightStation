@@ -510,3 +510,125 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
     expect(haGateway.callService).not.toHaveBeenCalled();
   });
 });
+
+describe('TriggerDispatchService.setNote', () => {
+  let tagWriter;
+  let broadcast;
+  let logger;
+
+  beforeEach(() => {
+    tagWriter = { setNfcNote: vi.fn().mockResolvedValue({ created: false }) };
+    broadcast = vi.fn();
+    logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+  });
+
+  function makeService({ auth_token = null } = {}) {
+    return new TriggerDispatchService({
+      config: {
+        nfc: {
+          locations: {
+            livingroom: { target: 'livingroom-tv', action: 'play-next', auth_token, notify_unknown: null, defaults: {} },
+          },
+          tags: {},
+        },
+        state: { locations: {} },
+      },
+      contentIdResolver: { resolve: () => null },
+      wakeAndLoadService: { execute: vi.fn() },
+      haGateway: { callService: vi.fn() },
+      deviceService: { get: vi.fn() },
+      tagWriter,
+      broadcast,
+      logger,
+      clock: () => 1714137138000,
+    });
+  }
+
+  it('writes the note via tagWriter and returns ok', async () => {
+    const service = makeService();
+    const result = await service.setNote('livingroom', 'nfc', '04_a1_b2_c3', 'kids favorite');
+    expect(result.ok).toBe(true);
+    expect(tagWriter.setNfcNote).toHaveBeenCalledWith(
+      '04_a1_b2_c3',
+      'kids favorite',
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/),
+    );
+  });
+
+  it('lowercases the value before writing', async () => {
+    const service = makeService();
+    await service.setNote('livingroom', 'nfc', 'AA_BB_CC', 'x');
+    expect(tagWriter.setNfcNote).toHaveBeenCalledWith('aa_bb_cc', 'x', expect.any(String));
+  });
+
+  it('broadcasts trigger.note_set on the location/modality topic', async () => {
+    const service = makeService();
+    await service.setNote('livingroom', 'nfc', '04_a1_b2_c3', 'kids favorite');
+    expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({
+      topic: 'trigger:livingroom:nfc',
+      type: 'trigger.note_set',
+      location: 'livingroom',
+      modality: 'nfc',
+      value: '04_a1_b2_c3',
+      note: 'kids favorite',
+    }));
+  });
+
+  it('returns 400 INVALID_NOTE when note is empty', async () => {
+    const service = makeService();
+    const result = await service.setNote('livingroom', 'nfc', '04', '');
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('INVALID_NOTE');
+    expect(tagWriter.setNfcNote).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 INVALID_NOTE when note exceeds 200 chars', async () => {
+    const service = makeService();
+    const result = await service.setNote('livingroom', 'nfc', '04', 'x'.repeat(201));
+    expect(result.code).toBe('INVALID_NOTE');
+  });
+
+  it('returns 400 INVALID_NOTE when note is not a string', async () => {
+    const service = makeService();
+    const result = await service.setNote('livingroom', 'nfc', '04', 42);
+    expect(result.code).toBe('INVALID_NOTE');
+  });
+
+  it('returns 400 UNSUPPORTED_MODALITY for non-nfc modalities', async () => {
+    const service = makeService();
+    const result = await service.setNote('livingroom', 'state', 'on', 'x');
+    expect(result.code).toBe('UNSUPPORTED_MODALITY');
+  });
+
+  it('returns 404 LOCATION_NOT_FOUND for an unknown location', async () => {
+    const service = makeService();
+    const result = await service.setNote('attic', 'nfc', '04', 'x');
+    expect(result.code).toBe('LOCATION_NOT_FOUND');
+  });
+
+  it('returns 401 AUTH_FAILED when token does not match location auth_token', async () => {
+    const service = makeService({ auth_token: 'secret' });
+    const result = await service.setNote('livingroom', 'nfc', '04', 'x', { token: 'wrong' });
+    expect(result.code).toBe('AUTH_FAILED');
+  });
+
+  it('returns 200 when token matches', async () => {
+    const service = makeService({ auth_token: 'secret' });
+    const result = await service.setNote('livingroom', 'nfc', '04', 'x', { token: 'secret' });
+    expect(result.ok).toBe(true);
+  });
+
+  it('returns 200 when location has no auth_token regardless of provided token', async () => {
+    const service = makeService();
+    const result = await service.setNote('livingroom', 'nfc', '04', 'x', { token: 'anything' });
+    expect(result.ok).toBe(true);
+  });
+
+  it('returns 500 NOTE_WRITE_FAILED if tagWriter throws', async () => {
+    tagWriter.setNfcNote.mockRejectedValue(new Error('disk full'));
+    const service = makeService();
+    const result = await service.setNote('livingroom', 'nfc', '04', 'x');
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('NOTE_WRITE_FAILED');
+  });
+});
