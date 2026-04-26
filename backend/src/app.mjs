@@ -1710,6 +1710,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     contentIdResolver: contentServices.contentIdResolver,
     broadcast: broadcastEvent,
     loadFile,
+    saveFile,
     logger: rootLogger.child({ module: 'trigger' }),
   });
   v1Routers.trigger = triggerRouter;
