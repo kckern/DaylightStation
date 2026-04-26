@@ -4,7 +4,9 @@ import {
   IFitnessSyncerGateway,
   isFitnessSyncerGateway,
   assertFitnessSyncerGateway
-} from '#domains/fitness/ports/IFitnessSyncerGateway.mjs';
+// IFitnessSyncerGateway port was relocated from domains → applications
+// during the DDD layering refactor.
+} from '#apps/fitness/ports/IFitnessSyncerGateway.mjs';
 
 describe('IFitnessSyncerGateway', () => {
   describe('requiredMethods', () => {

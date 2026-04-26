@@ -1,5 +1,7 @@
 // tests/unit/content/ports/IContentSource.test.mjs
-import { validateAdapter, ContentSourceBase } from '#domains/content/ports/IContentSource.mjs';
+// IContentSource port was relocated from domains → applications during the
+// DDD layering refactor. Update import path accordingly.
+import { validateAdapter, ContentSourceBase } from '#apps/content/ports/IContentSource.mjs';
 
 describe('IContentSource port', () => {
   test('validateAdapter rejects invalid adapter', () => {
@@ -13,7 +15,10 @@ describe('IContentSource port', () => {
       prefixes: [{ prefix: 'test' }],
       getItem: async () => null,
       getList: async () => [],
-      resolvePlayables: async () => []
+      resolvePlayables: async () => [],
+      // Production now also requires a resolveSiblings({parent, items}|null)
+      // method on the IContentSource contract.
+      resolveSiblings: async () => null,
     };
 
     expect(() => validateAdapter(validAdapter)).not.toThrow();
