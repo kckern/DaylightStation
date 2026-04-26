@@ -28,9 +28,9 @@ COPY frontend/package*.json ./frontend/
 COPY backend/package*.json ./backend/
 
 # Layer 6: Install all npm dependencies in one layer
-RUN npm ci --include=dev \
-    && cd frontend && npm ci \
-    && cd ../backend && npm ci
+RUN npm ci --include=dev --legacy-peer-deps \
+    && cd frontend && npm ci --legacy-peer-deps \
+    && cd ../backend && npm ci --legacy-peer-deps
 
 # Layer 7: Copy application source (uses .dockerignore)
 COPY --chown=node:node shared/ ./shared/
