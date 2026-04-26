@@ -32,7 +32,7 @@ export class WeeklyReviewService {
   async bootstrap(weekStart) {
     this.sweepStaleDrafts().catch(err => this.#logger.warn?.('weekly-review.sweep.failed', { error: err.message }));
     const start = weekStart || this.#defaultWeekStart();
-    const end = this.#addDays(start, 7);
+    const end = this.#addDays(start, 8);
     const bootstrapStart = Date.now();
 
     this.#logger.info?.('weekly-review.bootstrap', { week: start });
@@ -418,13 +418,14 @@ export class WeeklyReviewService {
   }
 
   #defaultWeekStart() {
+    // Past 8 days, excluding today. Window = [today-8, today-1].
+    const tz = process.env.TZ || 'UTC';
     const now = new Date();
-    const daysAgo = new Date(now);
-    daysAgo.setDate(now.getDate() - 7);
-    // Use locale-aware formatting to respect TZ env var
-    const year = daysAgo.toLocaleString('en-CA', { year: 'numeric', timeZone: process.env.TZ || 'UTC' });
-    const month = daysAgo.toLocaleString('en-CA', { month: '2-digit', timeZone: process.env.TZ || 'UTC' });
-    const day = daysAgo.toLocaleString('en-CA', { day: '2-digit', timeZone: process.env.TZ || 'UTC' });
+    const start = new Date(now);
+    start.setDate(now.getDate() - 8);
+    const year = start.toLocaleString('en-CA', { year: 'numeric', timeZone: tz });
+    const month = start.toLocaleString('en-CA', { month: '2-digit', timeZone: tz });
+    const day = start.toLocaleString('en-CA', { day: '2-digit', timeZone: tz });
     return `${year}-${month}-${day}`;
   }
 
