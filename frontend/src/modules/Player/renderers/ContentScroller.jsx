@@ -348,8 +348,11 @@ import { useMediaReporter } from '../hooks/useMediaReporter.js';
       if (pos.top <= yOffset) current = pos.text;
       else break;
     }
+    if (current && subtitle && current.trim().toLowerCase() === subtitle.trim().toLowerCase()) {
+      return null;
+    }
     return current;
-  }, [yOffset]);
+  }, [yOffset, subtitle]);
 
     return (
       <div className={`content-scroller ${type} ${className} ${shader}${isSeeking ? ' seeking' : ''}`} style={{
