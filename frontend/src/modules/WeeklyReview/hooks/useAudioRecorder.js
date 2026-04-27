@@ -83,6 +83,8 @@ export function useAudioRecorder({ onChunk }) {
   const [duration, setDuration] = useState(0);
   const [micLevel, setMicLevel] = useState(0);
   const [silenceWarning, setSilenceWarning] = useState(false);
+  const [firstAudibleFrameSeen, setFirstAudibleFrameSeen] = useState(false);
+  const [disconnected, setDisconnected] = useState(false);
   const [error, setError] = useState(null);
 
   const mediaRecorderRef = useRef(null);
@@ -96,6 +98,7 @@ export function useAudioRecorder({ onChunk }) {
   const silenceStartRef = useRef(null);
   const peakLevelRef = useRef(0);
   const seqRef = useRef(0);
+  const firstAudibleFrameSeenRef = useRef(false);
 
   const cleanup = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -140,6 +143,11 @@ export function useAudioRecorder({ onChunk }) {
         const db = rms > 0 ? 20 * Math.log10(rms) : -60;
         const normalized = Math.max(0, Math.min(1, (db + 60) / 60));
         if (normalized > peakLevelRef.current) peakLevelRef.current = normalized;
+        if (normalized > 0.02 && !firstAudibleFrameSeenRef.current) {
+          firstAudibleFrameSeenRef.current = true;
+          setFirstAudibleFrameSeen(true);
+          logger().info('recorder.first-audible-frame', { normalized });
+        }
 
         const now = performance.now();
         if (now - lastLevelAtRef.current >= LEVEL_SAMPLE_INTERVAL_MS) {
@@ -171,6 +179,9 @@ export function useAudioRecorder({ onChunk }) {
     try {
       setError(null);
       setSilenceWarning(false);
+      firstAudibleFrameSeenRef.current = false;
+      setFirstAudibleFrameSeen(false);
+      setDisconnected(false);
       seqRef.current = 0;
 
       let stream;
@@ -182,6 +193,29 @@ export function useAudioRecorder({ onChunk }) {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
       streamRef.current = stream;
+
+      // Wire disconnect detection: track ended (mic removed/permission revoked)
+      // or AudioBridge WS closing with non-1000 code mid-recording.
+      const tracks = stream.getAudioTracks?.() || [];
+      for (const track of tracks) {
+        if (track.addEventListener) {
+          track.addEventListener('ended', () => {
+            logger().warn('recorder.track-ended');
+            setDisconnected(true);
+          });
+        }
+      }
+      if (stream._bridgeWs) {
+        const ws = stream._bridgeWs;
+        const prevOnClose = ws.onclose;
+        ws.onclose = (e) => {
+          if (typeof prevOnClose === 'function') prevOnClose(e);
+          if (e.code !== 1000) {
+            logger().warn('recorder.bridge-ws-disconnect', { code: e.code });
+            setDisconnected(true);
+          }
+        };
+      }
 
       const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
       mediaRecorderRef.current = recorder;
@@ -237,5 +271,67 @@ export function useAudioRecorder({ onChunk }) {
     }
   }, []);
 
-  return { isRecording, duration, micLevel, silenceWarning, error, startRecording, stopRecording };
+  const reconnect = useCallback(async () => {
+    logger().info('recorder.reconnect-requested');
+    try {
+      // Tear down only the stream side; keep timer/duration/seq intact so the
+      // recording continues from where it left off.
+      if (streamRef.current) {
+        if (streamRef.current._bridgeWs) {
+          try { streamRef.current._bridgeWs.close(); } catch {}
+        }
+        try { streamRef.current.getTracks().forEach(t => t.stop()); } catch {}
+        streamRef.current = null;
+      }
+      let stream;
+      try {
+        stream = await Promise.race([
+          getBridgeStream(),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('reconnect timeout')), 3000)),
+        ]);
+      } catch {
+        stream = await Promise.race([
+          navigator.mediaDevices.getUserMedia({ audio: true }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('reconnect timeout')), 3000)),
+        ]);
+      }
+      streamRef.current = stream;
+      // Re-wire disconnect detection on new tracks.
+      const tracks = stream.getAudioTracks?.() || [];
+      for (const track of tracks) {
+        if (track.addEventListener) {
+          track.addEventListener('ended', () => {
+            logger().warn('recorder.track-ended-after-reconnect');
+            setDisconnected(true);
+          });
+        }
+      }
+      // Re-attach a fresh MediaRecorder. seqRef continues incrementing.
+      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      mediaRecorderRef.current = recorder;
+      recorder.ondataavailable = (e) => {
+        if (!e.data || e.data.size === 0) return;
+        const seq = seqRef.current++;
+        logger().info('recorder.chunk-emitted-after-reconnect', { seq, bytes: e.data.size });
+        onChunk?.({ seq, blob: e.data });
+      };
+      recorder.onerror = (e) => logger().error('recorder.media-recorder-error-after-reconnect', { error: e.error?.message || 'unknown' });
+      recorder.onstop = () => {
+        logger().info('recorder.stopped-after-reconnect', { duration: Math.round((Date.now() - startTimeRef.current) / 1000) });
+        cleanup();
+        setIsRecording(false);
+        setMicLevel(0);
+        setSilenceWarning(false);
+      };
+      recorder.start(5000);
+      setDisconnected(false);
+      logger().info('recorder.reconnect-success');
+      return true;
+    } catch (err) {
+      logger().error('recorder.reconnect-failed', { error: err.message });
+      return false;
+    }
+  }, [onChunk, cleanup]);
+
+  return { isRecording, duration, micLevel, silenceWarning, firstAudibleFrameSeen, disconnected, error, startRecording, stopRecording, reconnect };
 }
