@@ -17,6 +17,8 @@ describe('parseNfcLocations', () => {
       action: 'play-next',
       auth_token: null,
       notify_unknown: null,
+      end: null,
+      end_location: null,
       defaults: {},
     });
   });
