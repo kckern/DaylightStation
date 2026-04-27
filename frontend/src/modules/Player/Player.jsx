@@ -24,6 +24,10 @@ const REMOUNT_BACKOFF_BASE_MS = 1000;
 const REMOUNT_BACKOFF_FACTOR = 1.5;
 const REMOUNT_BACKOFF_MAX_MS = 45000;
 
+// Shader aliases must match useQueueController's map. Hoisted to module scope
+// so identity is stable across renders (useEffect deps).
+const SHADER_ALIASES = { dark: 'blackout', minimal: 'focused', regular: 'default', screensaver: 'focused' };
+
 const reloadDocument = (reason = 'player-resilience') => {
   guardedReload({
     reason,
@@ -122,6 +126,8 @@ const Player = forwardRef(function Player(props, ref) {
     pushOnDeck,
     flashOnDeck,
     playNow,
+    setShader,
+    setShaderUserCycled,
   } = useQueueController({ play, queue, clear, shuffle: props?.shuffle });
   const { onDeck: onDeckCfg } = usePlayerConfig();
 
@@ -738,10 +744,9 @@ const Player = forwardRef(function Player(props, ref) {
   // Note: short videos (<20s) loop automatically but we can't determine duration at render time
   // Use continuous=true in URL params for short clips that should hide progress bar
   // Shader aliases: legacy names map to canonical shader classes (must match useQueueController)
-  const shaderAliases = { dark: 'blackout', minimal: 'focused', regular: 'default', screensaver: 'focused' };
   const currentItemShader = effectiveMeta?.shader;
   const rawExplicitShader = play?.shader || queue?.shader || currentItemShader;
-  const explicitShader = shaderAliases[rawExplicitShader] ?? rawExplicitShader;
+  const explicitShader = SHADER_ALIASES[rawExplicitShader] ?? rawExplicitShader;
   const willLoop = (isQueue && playQueue?.length === 1) ||
                    (!isQueue && singlePlayerProps?.continuous);
   // Once the user manually cycles the shader (ArrowUp/ArrowDown), their choice takes
@@ -873,7 +878,7 @@ const Player = forwardRef(function Player(props, ref) {
   // --- On-deck: handle player:queue-op events from ScreenActionHandler ---
   useEffect(() => {
     const handleQueueOp = async (e) => {
-      const { op, contentId } = e.detail || {};
+      const { op, contentId, shader: requestedShader } = e.detail || {};
       if (!contentId) return;
       if (op !== 'play-now' && op !== 'play-next') return;
 
@@ -892,6 +897,20 @@ const Player = forwardRef(function Player(props, ref) {
         thumbnail: info.thumbnail || `/api/v1/display/${contentId}`,
         title: info.title || contentId,
       };
+
+      // External queue ops (NFC, voice, button) reset the shader to either the
+      // request's override or 'default'. Without this, the shader sticks to
+      // whatever the original session was launched with (e.g. a kitchen button
+      // that set shader=minimal), which is surprising for users who expect each
+      // NFC scan to behave like a fresh launch.
+      const aliased = SHADER_ALIASES[requestedShader] ?? requestedShader;
+      const targetShader = (aliased && classes.includes(aliased)) ? aliased : 'default';
+      if (targetShader !== queueShader) {
+        setShader(targetShader);
+      }
+      // Mark as override so it beats explicitShader in the effectiveShader
+      // resolution (otherwise play?.shader from the original launch wins).
+      setShaderUserCycled(true);
 
       if (op === 'play-now') {
         playNow(item);
@@ -928,7 +947,7 @@ const Player = forwardRef(function Player(props, ref) {
 
     window.addEventListener('player:queue-op', handleQueueOp);
     return () => window.removeEventListener('player:queue-op', handleQueueOp);
-  }, [playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow]);
+  }, [playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, queueShader, classes, setShader, setShaderUserCycled]);
 
   const suppressOverlaysForBlackout = effectiveShader === 'blackout';
 

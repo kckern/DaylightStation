@@ -328,6 +328,7 @@ export function useQueueController({ play, queue, clear, shuffle }) {
     shader,
     shaderUserCycled,
     setShader,
+    setShaderUserCycled,
     isQueue,
     volume,
     isContinuous,
