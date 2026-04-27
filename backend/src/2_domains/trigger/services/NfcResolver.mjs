@@ -26,6 +26,7 @@ import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
 const RESERVED_KEYS = new Set([
   'action', 'target', 'content',
   'scene', 'service', 'entity', 'data',
+  'end', 'end_location',
 ]);
 
 function expandShorthand(merged, contentIdResolver) {
@@ -86,6 +87,8 @@ export class NfcResolver {
     // first-class on the location, but tag-global/tag-overrides can).
     const action = merged.action ?? locationConfig.action;
     const target = merged.target ?? locationConfig.target;
+    const end = merged.end ?? locationConfig.end;
+    const endLocation = merged.end_location ?? locationConfig.end_location;
 
     // Resolve content. Explicit `content` wins; otherwise expand single-prefix shorthand.
     let content = merged.content;
@@ -112,6 +115,11 @@ export class NfcResolver {
     if (merged.service !== undefined) intent.service = merged.service;
     if (merged.entity !== undefined) intent.entity = merged.entity;
     if (merged.data !== undefined) intent.data = merged.data;
+    // 'nothing' explicitly disables the configured behavior; treat as absent.
+    if (end && end !== 'nothing') {
+      intent.end = end;
+      if (endLocation) intent.endLocation = endLocation;
+    }
 
     // A tag is dispatchable only if it has at least one actionable field.
     // Tags with only metadata (scanned_at, note, etc.) resolve to no intent
