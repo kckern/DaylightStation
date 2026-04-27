@@ -738,15 +738,15 @@ const Player = forwardRef(function Player(props, ref) {
   }, [effectivePlaybackRate, hasExternalPlaybackRate, sessionPlaybackRate, setSessionPlaybackRate]);
 
   // Get shader from the current item, falling back to queue/play level, then default
-  // Looped videos default to 'focused' shader (hides progress bar) unless explicitly set
-  // Loop conditions: single-item queue or continuous flag
-  // Note: short videos (<20s) loop automatically but we can't determine duration at render time
-  // Use continuous=true in URL params for short clips that should hide progress bar
   // Shader aliases: legacy names map to canonical shader classes (must match useQueueController)
   const currentItemShader = effectiveMeta?.shader;
   const rawExplicitShader = play?.shader || queue?.shader || currentItemShader;
   const explicitShader = SHADER_ALIASES[rawExplicitShader] ?? rawExplicitShader;
-  const willLoop = (isQueue && playQueue?.length === 1) ||
+  // willLoop drives the "hide progress bar" shader fallback. It must reflect
+  // *actual* loop intent (continuous flag), not "queue happens to be 1 item" —
+  // every NFC/voice/button launch produces a single-item queue and the user
+  // expects those to render with the default shader and play once.
+  const willLoop = (isQueue && playQueue?.length === 1 && (queue?.continuous || play?.continuous)) ||
                    (!isQueue && singlePlayerProps?.continuous);
   // Once the user manually cycles the shader (ArrowUp/ArrowDown), their choice takes
   // precedence over item-level and queue-level metadata until the queue resets.

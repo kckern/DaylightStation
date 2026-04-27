@@ -143,16 +143,8 @@ export function ScreenActionHandler({ actions = {} }) {
       }
       if (isMediaDuplicate(payload.contentId)) return;
       dismissOverlay();
-      // Force queue.shader so external triggers (NFC, voice, button) launch
-      // with a known shader instead of falling through to Player's
-      // willLoop='focused' fallback for single-track queues. Override wins
-      // when payload.shader is set; otherwise default to 'default'.
       showOverlay(Player, {
-        queue: {
-          contentId: payload.contentId,
-          ...payload,
-          shader: payload.shader || 'default',
-        },
+        queue: { contentId: payload.contentId, ...payload },
         clear: () => dismissOverlay(),
       });
       return;

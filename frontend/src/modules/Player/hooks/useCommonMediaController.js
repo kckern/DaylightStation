@@ -1189,14 +1189,15 @@ export function useCommonMediaController({
       mediaEl.autoplay = true;
       mediaEl.volume = adjustedVolume;
       
-      // Loop logic:
-      // - Only loop the element when queue length is 1 (single item queue)
-      // - For queue length > 1, let the queue behavior handle looping
-      // - For queue length 0 (no queue), loop if continuous flag is set, OR loop short videos (<20s)
-      // Derive queue length from meta.queueLength if available (set by parent queue controller)
+      // Loop logic — set the native HTMLMediaElement.loop attribute when the
+      // caller has *explicitly* opted in. We must NOT loop just because the
+      // queue happens to be one item — most NFC/voice/button launches produce a
+      // single-item queue and the user expects the track to play once and end.
+      // Continuous queues use the queue-controller's continuous-mode logic
+      // (advance() restarts from originalQueue), not the element loop.
       const queueLength = meta.queueLength || 0;
-      const shouldLoopElement = queueLength === 1 || 
-                                 (queueLength === 0 && meta.continuous) ||
+      const shouldLoopElement = !!meta.continuous ||
+                                 !!meta.loop ||
                                  (queueLength === 0 && isVideo && duration < 20);
       
       if (shouldLoopElement) {
