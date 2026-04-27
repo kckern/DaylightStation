@@ -1,15 +1,18 @@
 import { useEffect, useRef } from 'react';
 
 function buildMessage({ clientId, sessionId, displayName, state, currentItem, position, config }) {
+  // Hidden items (e.g. trigger end-behavior side-effect markers) must not appear
+  // in the broadcast — they're internal control items, not media for fleet UIs.
+  const visibleItem = currentItem?.hidden ? null : (currentItem ?? null);
   return {
     topic: 'playback_state',
     clientId,
     sessionId,
     displayName,
     state,
-    currentItem: currentItem ?? null,
+    currentItem: visibleItem,
     position: position ?? 0,
-    duration: currentItem?.duration ?? null,
+    duration: visibleItem?.duration ?? null,
     config: config ?? null,
     ts: new Date().toISOString(),
   };

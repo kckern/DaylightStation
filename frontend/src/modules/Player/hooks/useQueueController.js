@@ -27,7 +27,11 @@ export function useQueueController({ play, queue, clear, shuffle }) {
   const resolvedShader = shaderAliases[rawShader] ?? rawShader;
   const [shader, setShader] = useState(classes.includes(resolvedShader) ? resolvedShader : 'default');
   const [volume] = useState(play?.volume || queue?.volume || 1);
-  const [isContinuous] = useState(!!queue?.continuous || !!play?.continuous || false);
+  // Trigger end-behavior queues must not loop — the marker would re-fire each cycle.
+  const hasEndBehavior = !!(play?.endBehavior || queue?.endBehavior);
+  const [isContinuous] = useState(
+    !hasEndBehavior && (!!queue?.continuous || !!play?.continuous || false)
+  );
   const [playQueue, setQueue] = useState([]);
   const [originalQueue, setOriginalQueue] = useState([]);
   const [isShuffle, setIsShuffle] = useState(!!play?.shuffle || !!queue?.shuffle || !!shuffle || false);
@@ -180,6 +184,23 @@ export function useQueueController({ play, queue, clear, shuffle }) {
         item.contentId || item.play || item.media || item.mediaUrl || item.media_url
         || item.key || item.id || item.plex || item.assetId
       );
+
+      // Trigger end-behavior tail marker — append a synthetic side-effect item
+      // so the player fires the configured behavior (tv-off, clear) when the
+      // queue plays through. See backend sideEffectHandlers.mjs.
+      if (sourceObj.endBehavior && validQueue.length > 0) {
+        validQueue.push({
+          id: `sideeffect:${sourceObj.endBehavior}:${guid()}`,
+          guid: guid(),
+          mediaType: 'trigger/side-effect',
+          behavior: sourceObj.endBehavior,
+          location: sourceObj.endLocation || null,
+          deviceId: sourceObj.endDeviceId || null,
+          duration: 0,
+          hidden: true,
+        });
+      }
+
       if (newQueue.length > 0 && validQueue.length === 0) {
         playbackLog('queue-init-invalid', {
           contentRef,
@@ -304,7 +325,40 @@ export function useQueueController({ play, queue, clear, shuffle }) {
   // Removed: Escape key auto-clear handler (audit #13) — queue destruction should be explicit
 
   const queuePosition = originalQueue.findIndex(item => item.guid === playQueue[0]?.guid);
-  
+
+  // Trigger end-behavior side-effect dispatcher.
+  // When the queue advances onto a virtual side-effect tail item, POST to the
+  // backend (fire-and-forget) and advance past it. Skips media mount entirely.
+  const firedMarkersRef = useRef(new Set());
+  useEffect(() => {
+    const head = playQueue[0];
+    if (!head || head.mediaType !== 'trigger/side-effect') return;
+    if (firedMarkersRef.current.has(head.id)) return;
+    firedMarkersRef.current.add(head.id);
+
+    DaylightAPI('api/v1/trigger/side-effect', {
+      behavior: head.behavior,
+      location: head.location,
+      deviceId: head.deviceId,
+      markerId: head.id,
+    }).catch((err) => {
+      playbackLog('side-effect-post-failed', {
+        markerId: head.id,
+        behavior: head.behavior,
+        error: err?.message,
+      }, { level: 'warn' });
+    });
+
+    playbackLog('side-effect-fired', {
+      markerId: head.id,
+      behavior: head.behavior,
+      location: head.location,
+      deviceId: head.deviceId,
+    }, { level: 'info' });
+
+    advance(1);
+  }, [playQueue, advance]);
+
   const lastLoggedGuidRef = useRef(null);
 
   useEffect(() => {
