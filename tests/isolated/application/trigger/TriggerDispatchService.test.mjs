@@ -477,7 +477,7 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
       .mockResolvedValueOnce({ created: false });
     const service = makeService(makeRegistry());
     await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
-    now += 5000; // 5 s later, past window
+    now += 35000; // 35 s later, past 30 s default window
     await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
     expect(haGateway.callService).toHaveBeenCalledTimes(2);
   });
