@@ -35,6 +35,19 @@ export class TriggerDispatchService {
   #debounceWindowMs;
   #clock;
 
+  // Per-(intent.target) HA automation guard suppression. When a trigger
+  // fires for one of these targets, we disable the named automation for
+  // GUARD_SUPPRESS_DURATION_MS so it doesn't kill the TV mid-wake.
+  // The Zombie Wake Guard fires on `binary_sensor.living_room_tv_state -> on`
+  // and waits 60s before calling script.living_room_tv_off. By disabling
+  // it for 90s when our trigger fires, the wake-and-load cycle (~25s) plus
+  // settling completes before re-enable, and the guard's trigger never sees
+  // the on-edge that would start the kill timer.
+  static #GUARD_AUTOMATIONS_BY_TARGET = {
+    'livingroom-tv': 'automation.living_room_tv_zombie_wake_guard',
+  };
+  static #GUARD_SUPPRESS_DURATION_MS = 90_000;
+
   constructor({
     config,
     contentIdResolver,
@@ -69,6 +82,31 @@ export class TriggerDispatchService {
 
   #lookupAuthToken(modality, location) {
     return this.#config?.[modality]?.locations?.[location]?.auth_token ?? null;
+  }
+
+  // Fire-and-forget HA automation suppression. Disable the guard for the
+  // configured target now, schedule re-enable in GUARD_SUPPRESS_DURATION_MS.
+  // No-op if no haGateway, no mapping, or the target isn't covered.
+  #suppressGuardForTarget(target, dispatchId) {
+    const guardEntity = TriggerDispatchService.#GUARD_AUTOMATIONS_BY_TARGET[target];
+    if (!guardEntity) return;
+    const haGateway = this.#deps.haGateway;
+    if (!haGateway?.callService) return;
+    const durationMs = TriggerDispatchService.#GUARD_SUPPRESS_DURATION_MS;
+    this.#logger.info?.('trigger.guard.suppressed', { target, guardEntity, durationMs, dispatchId });
+    Promise.resolve(haGateway.callService('automation', 'turn_off', {
+      entity_id: guardEntity,
+      stop_actions: true,
+    })).catch((err) => {
+      this.#logger.warn?.('trigger.guard.disable.failed', { target, guardEntity, error: err?.message, dispatchId });
+    });
+    setTimeout(() => {
+      Promise.resolve(haGateway.callService('automation', 'turn_on', {
+        entity_id: guardEntity,
+      })).catch((err) => {
+        this.#logger.warn?.('trigger.guard.enable.failed', { target, guardEntity, error: err?.message, dispatchId });
+      });
+    }, durationMs);
   }
 
   async handleTrigger(location, modality, value, options = {}) {
@@ -160,6 +198,10 @@ export class TriggerDispatchService {
       this.#emit(location, modality, { ...summary, dryRun: true });
       return { ok: true, dryRun: true, ...summary, intent };
     }
+
+    // Suppress the Zombie Wake Guard (or any per-target guard) for the duration
+    // of the wake-and-load cycle. Fire-and-forget — don't block dispatch on it.
+    this.#suppressGuardForTarget(intent.target, dispatchId);
 
     try {
       const dispatchResult = await dispatchAction(intent, this.#deps);
