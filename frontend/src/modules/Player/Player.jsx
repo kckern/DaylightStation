@@ -911,19 +911,24 @@ const Player = forwardRef(function Player(props, ref) {
         flashOnDeck();
         return;
       }
-      pushOnDeck(item, { displaceToQueue: !!onDeckCfg?.displace_to_queue });
-
-      // Preempt window: if current item has been playing < preempt_seconds, advance immediately
+      // Preempt window: if current item just started, replace it in-place.
+      // Going through pushOnDeck + advance() races on React state — advance()
+      // reads onDeck from a stale closure and ends up walking the underlying
+      // queue (e.g. the next track of a multi-track album) instead of jumping
+      // to the just-pushed item.
       const el = exposedMediaRef.current;
       const elapsed = el?.currentTime ?? 0;
       if (Number.isFinite(elapsed) && elapsed < (onDeckCfg?.preempt_seconds || 0)) {
-        advance();
+        playNow(item);
+        return;
       }
+
+      pushOnDeck(item, { displaceToQueue: !!onDeckCfg?.displace_to_queue });
     };
 
     window.addEventListener('player:queue-op', handleQueueOp);
     return () => window.removeEventListener('player:queue-op', handleQueueOp);
-  }, [playQueue, onDeck, onDeckCfg, advance, pushOnDeck, flashOnDeck, playNow]);
+  }, [playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow]);
 
   const suppressOverlaysForBlackout = effectiveShader === 'blackout';
 
