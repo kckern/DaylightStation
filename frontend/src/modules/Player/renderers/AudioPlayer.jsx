@@ -7,6 +7,8 @@ import { getLogger } from '../../../lib/logging/Logger.js';
 import { useImageUpscaleBlur } from '../hooks/useImageUpscaleBlur.js';
 import { useShaderDiagnostics } from '../hooks/useShaderDiagnostics.js';
 
+const logger = getLogger().child({ component: 'AudioPlayer' });
+
 /**
  * Audio player component for playing audio tracks
  */
@@ -122,7 +124,6 @@ export function AudioPlayer({
   // Enhanced blackout diagnostics - log all layer dimensions for prod debugging
   useEffect(() => {
     if (shader !== 'blackout') return;
-    const logger = getLogger();
 
     const logBlackoutDimensions = (trigger = 'mount') => {
       const audioPlayer = audioPlayerRef.current;
@@ -212,9 +213,35 @@ export function AudioPlayer({
     };
   }, [shader]);
 
+  // Mount-time launch params: which shader, volume, queue position, media id, etc.
+  // Re-fires only when the underlying media key changes (i.e. a new track loads),
+  // so this captures the "what did this play start with" snapshot.
+  useEffect(() => {
+    logger.info('mounted', {
+      shader,
+      classes,
+      volume,
+      playbackRate,
+      queuePosition,
+      ignoreKeys,
+      mediaKey: media?.contentId || media?.assetId || media?.key || media?.plex || null,
+      title,
+      artist: effectiveArtist,
+      album: effectiveAlbum,
+      type,
+      hasMediaUrl: !!mediaUrl,
+      startSeconds: media?.seconds ?? 0,
+    });
+  }, [baseMediaKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Track shader transitions independently of mount, since shader can change
+  // mid-playback via cycleThroughClasses or external setShader calls.
+  useEffect(() => {
+    logger.info('shader.applied', { shader, mediaKey: media?.contentId || media?.assetId || null });
+  }, [shader, media?.contentId, media?.assetId]);
+
   // Prod telemetry: cover image loaded
   const handleCoverLoad = useCallback(() => {
-    const logger = getLogger();
     logger.info('playback.cover-loaded', {
       title,
       artist,
