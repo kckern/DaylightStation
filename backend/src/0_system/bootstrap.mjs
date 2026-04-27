@@ -1726,6 +1726,7 @@ export function createTriggerApiRouter(config) {
     deviceServices,
     wakeAndLoadService,
     haGateway,
+    tvControlAdapter = null,
     contentIdResolver,
     broadcast,
     loadFile,
@@ -1753,7 +1754,12 @@ export function createTriggerApiRouter(config) {
     logger,
   });
 
-  const router = createTriggerRouter({ triggerDispatchService, logger });
+  const router = createTriggerRouter({
+    triggerDispatchService,
+    tvControlAdapter,
+    deviceService: deviceServices.deviceService,
+    logger,
+  });
 
   return { triggerDispatchService, router };
 }
