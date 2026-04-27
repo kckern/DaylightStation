@@ -1707,6 +1707,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     deviceServices,
     wakeAndLoadService,
     haGateway: homeAutomationAdapters.haGateway,
+    tvControlAdapter: homeAutomationAdapters.tvAdapter,
     contentIdResolver: contentServices.contentIdResolver,
     broadcast: broadcastEvent,
     loadFile,
