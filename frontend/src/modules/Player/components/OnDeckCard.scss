@@ -1,8 +1,15 @@
-.on-deck-card {
+// Doubled `.on-deck-card.on-deck-card` selector intentionally bumps specificity
+// to (0,2,0) so it beats `.player > div { width:100%; height:100% }` in
+// styles/Player.scss, which would otherwise stretch this overlay to fill the
+// player shell.
+.on-deck-card.on-deck-card {
   position: absolute;
   bottom: 1em;
   right: 1em;
   width: 6.5em;
+  height: auto;
+  max-width: 6.5em;
+  max-height: 50vh;
   background: rgba(0, 0, 0, 0.55);
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 4px;
@@ -13,6 +20,7 @@
   flex-direction: column;
   z-index: 10;
   animation: on-deck-flash 0.4s ease-out;
+  pointer-events: none;
 }
 
 @keyframes on-deck-flash {
@@ -23,9 +31,11 @@
 
 .on-deck-thumb {
   position: relative;
+  width: 100%;
   aspect-ratio: 1 / 1;
   background: linear-gradient(135deg, #6a8caf, #3a587a);
   overflow: hidden;
+  flex: 0 0 auto;
 
   img {
     width: 100%;
@@ -57,4 +67,5 @@
   text-overflow: ellipsis;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(0, 0, 0, 0.35);
+  flex: 0 0 auto;
 }
