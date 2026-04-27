@@ -138,7 +138,12 @@ const Player = forwardRef(function Player(props, ref) {
 
   const activeSource = useMemo(() => {
     if (isQueue && playQueue?.length > 0) {
-      return playQueue[0];
+      const head = playQueue[0];
+      // Trigger end-behavior side-effect markers are not playable. The
+      // useQueueController hook fires the configured behavior (tv-off, clear)
+      // and advances past them on its own.
+      if (head?.mediaType === 'trigger/side-effect') return null;
+      return head;
     }
     if (play && !Array.isArray(play)) {
       return play;
