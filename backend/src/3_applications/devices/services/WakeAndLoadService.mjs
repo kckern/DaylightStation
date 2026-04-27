@@ -234,6 +234,15 @@ export class WakeAndLoadService {
     const contentQuery = { ...query };
     delete contentQuery.volume;
 
+    // Trigger end-behavior — propagate to the frontend via both the WS envelope
+    // params and the URL fallback. The Player appends a virtual side-effect
+    // tail item to the queue when these are present (see useQueueController).
+    if (options.endBehavior && options.endBehavior !== 'nothing') {
+      contentQuery.endBehavior = options.endBehavior;
+      contentQuery.endDeviceId = deviceId;
+      if (options.endLocation) contentQuery.endLocation = options.endLocation;
+    }
+
     // --- Step 4: Prepare Content ---
     this.#emitProgress(topic, dispatchId, 'prepare', 'running');
     // Camera check (~4s on cold trigger) only matters for camera-using flows.
