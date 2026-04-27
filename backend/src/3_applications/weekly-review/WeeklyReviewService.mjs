@@ -32,14 +32,16 @@ export class WeeklyReviewService {
   async bootstrap(weekStart) {
     this.sweepStaleDrafts().catch(err => this.#logger.warn?.('weekly-review.sweep.failed', { error: err.message }));
     const start = weekStart || this.#defaultWeekStart();
-    const end = this.#addDays(start, 8);
+    // end is INCLUSIVE here — the Immich adapter returns days `start..end` inclusive.
+    // For an 8-day window starting at `start` (= today-8), end is `today-1` (yesterday).
+    const end = this.#addDays(start, 7);
     const bootstrapStart = Date.now();
 
     this.#logger.info?.('weekly-review.bootstrap', { week: start });
 
-    // Build date list for the week
+    // Build date list for the week (inclusive of `end` to match the adapter).
     const dates = [];
-    for (let d = new Date(`${start}T00:00:00Z`); d.toISOString().slice(0, 10) < end; d.setDate(d.getDate() + 1)) {
+    for (let d = new Date(`${start}T00:00:00Z`); d.toISOString().slice(0, 10) <= end; d.setDate(d.getDate() + 1)) {
       dates.push(d.toISOString().slice(0, 10));
     }
 
