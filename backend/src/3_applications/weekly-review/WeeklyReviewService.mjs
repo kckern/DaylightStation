@@ -32,7 +32,7 @@ export class WeeklyReviewService {
   async bootstrap(weekStart) {
     this.sweepStaleDrafts().catch(err => this.#logger.warn?.('weekly-review.sweep.failed', { error: err.message }));
     const start = weekStart || this.#defaultWeekStart();
-    const end = this.#addDays(start, 7);
+    const end = this.#addDays(start, 8);
     const bootstrapStart = Date.now();
 
     this.#logger.info?.('weekly-review.bootstrap', { week: start });
@@ -303,8 +303,15 @@ export class WeeklyReviewService {
     const metaPath = path.join(draftDir, `${sessionId}.meta.json`);
     if (!fs.existsSync(draftPath)) throw new Error(`draft not found: ${sessionId}`);
 
-    this.#logger.info?.('weekly-review.finalize.start', { sessionId, week, duration });
-    const buffer = fs.readFileSync(draftPath);
+    // Atomically rename so concurrent chunk-writes hit a fresh draft.
+    // This makes repeat-finalize calls within the same session safe — each call
+    // processes the bytes accumulated since the previous finalize.
+    const stamp = Date.now();
+    const processingPath = path.join(draftDir, `${sessionId}.processing-${stamp}.webm`);
+    fs.renameSync(draftPath, processingPath);
+
+    this.#logger.info?.('weekly-review.finalize.start', { sessionId, week, duration, processingPath });
+    const buffer = fs.readFileSync(processingPath);
 
     // Move audio to final media location
     const now = new Date();
@@ -343,9 +350,10 @@ export class WeeklyReviewService {
       JSON.stringify({ week, generatedAt: new Date().toISOString(), duration }, null, 2)
     );
 
-    // Delete draft
-    fs.unlinkSync(draftPath);
-    if (fs.existsSync(metaPath)) fs.unlinkSync(metaPath);
+    // Delete the processing snapshot. The metadata file may be re-created by
+    // concurrent chunk writes — leave it alone; the next finalize will manage it.
+    fs.unlinkSync(processingPath);
+    if (fs.existsSync(metaPath) && !fs.existsSync(draftPath)) fs.unlinkSync(metaPath);
 
     this.#logger.info?.('weekly-review.finalize.complete', { sessionId, week, duration });
     return { ok: true, transcript: { raw: transcriptRaw, clean: transcriptClean, duration } };
@@ -418,13 +426,14 @@ export class WeeklyReviewService {
   }
 
   #defaultWeekStart() {
+    // Past 8 days, excluding today. Window = [today-8, today-1].
+    const tz = process.env.TZ || 'UTC';
     const now = new Date();
-    const daysAgo = new Date(now);
-    daysAgo.setDate(now.getDate() - 7);
-    // Use locale-aware formatting to respect TZ env var
-    const year = daysAgo.toLocaleString('en-CA', { year: 'numeric', timeZone: process.env.TZ || 'UTC' });
-    const month = daysAgo.toLocaleString('en-CA', { month: '2-digit', timeZone: process.env.TZ || 'UTC' });
-    const day = daysAgo.toLocaleString('en-CA', { day: '2-digit', timeZone: process.env.TZ || 'UTC' });
+    const start = new Date(now);
+    start.setDate(now.getDate() - 8);
+    const year = start.toLocaleString('en-CA', { year: 'numeric', timeZone: tz });
+    const month = start.toLocaleString('en-CA', { month: '2-digit', timeZone: tz });
+    const day = start.toLocaleString('en-CA', { day: '2-digit', timeZone: tz });
     return `${year}-${month}-${day}`;
   }
 

@@ -15,7 +15,7 @@ function cToF(c) {
   return Math.round(c * 9 / 5 + 32);
 }
 
-export default function DayColumn({ day, isFocused, isToday, onClick }) {
+export default function DayColumn({ day, isFocused, onClick }) {
   const dt = new Date(`${day.date}T12:00:00Z`);
   const dateNum = dt.getDate();
   const monthAbbr = dt.toLocaleDateString('en-US', { month: 'short' });
@@ -24,7 +24,6 @@ export default function DayColumn({ day, isFocused, isToday, onClick }) {
   const columnClass = [
     'day-column',
     isFocused && 'day-column--focused',
-    isToday && 'day-column--today',
     !hasContent && 'day-column--empty',
   ].filter(Boolean).join(' ');
 

@@ -164,7 +164,7 @@ function buildTimeline(day) {
   return items;
 }
 
-export default function DayDetail({ day, isToday, onClose }) {
+export default function DayDetail({ day }) {
   const [activeVideo, setActiveVideo] = useState(null);
 
   const date = new Date(`${day.date}T12:00:00Z`);
@@ -193,7 +193,7 @@ export default function DayDetail({ day, isToday, onClose }) {
 
   useEffect(() => {
     logger.info('day-detail.open', {
-      date: day.date, isToday, imageCount, videoCount,
+      date: day.date, imageCount, videoCount,
       calendarCount: day.calendar?.length || 0,
       fitnessCount: day.fitness?.length || 0,
     });
@@ -210,7 +210,7 @@ export default function DayDetail({ day, isToday, onClose }) {
   }, [day.date]);
 
   return (
-    <div className={`day-detail${isToday ? ' day-detail--today' : ''}`}>
+    <div className="day-detail">
       <div className="day-detail-header">
         <h2 className="day-detail-title">{fullDate}</h2>
         {weather && (
@@ -219,7 +219,6 @@ export default function DayDetail({ day, isToday, onClose }) {
             <span className="weather-badge-temps">{cToF(weather.high)}° / {cToF(weather.low)}°</span>
           </div>
         )}
-        <button className="day-detail-close" onClick={() => { logger.info('day-detail.close-button', { date: day.date }); onClose(); }}>✕</button>
       </div>
 
       <div className="day-detail-body">
