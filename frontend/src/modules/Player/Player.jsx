@@ -126,7 +126,6 @@ const Player = forwardRef(function Player(props, ref) {
     pushOnDeck,
     flashOnDeck,
     playNow,
-    setShader,
     setShaderUserCycled,
   } = useQueueController({ play, queue, clear, shuffle: props?.shuffle });
   const { onDeck: onDeckCfg } = usePlayerConfig();
