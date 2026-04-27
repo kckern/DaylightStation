@@ -44,7 +44,7 @@ export class TriggerDispatchService {
     tagWriter = null,           // NEW
     broadcast,
     logger = console,
-    debounceWindowMs = 3000,
+    debounceWindowMs = 30000,
     clock = () => Date.now(),
   }) {
     this.#config = config || {};
@@ -97,11 +97,16 @@ export class TriggerDispatchService {
       return { ok: false, code: 'AUTH_FAILED', error: 'Authentication failed', location, modality, value: normalizedValue, dispatchId };
     }
 
-    // Per-(location, modality, value) debounce. HA fires `tag_scanned` 2-3
-    // times per physical tap; without this guard each one spawns a fresh
-    // 22-35 s wake-and-load cycle. dryRun requests bypass to keep the
-    // debugging path simple. Failed dispatches reset the entry below so
-    // the user can immediately retry.
+    // Per-(location, modality, value) debounce. Two failure modes to guard:
+    //   (a) HA fires `tag_scanned` 2-3 times per physical tap (sub-second).
+    //   (b) Cold-start wake-and-load takes ~25 s with no on-screen feedback,
+    //       so users tap again 16-30 s later. Without this guard each scan
+    //       spawns a parallel 22-35 s wake-and-load cycle and HA reports
+    //       `script.living_room_tv_on: Already running`.
+    // 30 s window covers both. Set the key NOW (before dispatching) so
+    // concurrent in-flight retries are debounced; success refreshes the key
+    // at end (extending the lockout slightly post-success); failure deletes
+    // it so the user can retry immediately. dryRun bypasses entirely.
     const debounceKey = `${location}:${modality}:${normalizedValue}`;
     if (!options.dryRun) {
       this.#pruneDispatches(startedAt);
@@ -111,6 +116,10 @@ export class TriggerDispatchService {
         this.#logger.info?.('trigger.debounced', { location, modality, value: normalizedValue, sinceMs, windowMs: this.#debounceWindowMs, dispatchId });
         return { ok: true, debounced: true, location, modality, value: normalizedValue, dispatchId, sinceMs };
       }
+      // Lock the key now so concurrent retries during the 25-s wake-and-load
+      // window (which won't see the success-side set until we finish) are
+      // properly debounced.
+      this.#recentDispatches.set(debounceKey, startedAt);
     }
 
     let intent;
