@@ -14,7 +14,12 @@ export class UnknownActionError extends Error {
 }
 
 function buildLoadOptions(intent) {
-  return { dispatchId: intent.dispatchId || randomUUID() };
+  const opts = { dispatchId: intent.dispatchId || randomUUID() };
+  if (intent.end) {
+    opts.endBehavior = intent.end;
+    if (intent.endLocation) opts.endLocation = intent.endLocation;
+  }
+  return opts;
 }
 
 function buildLoadQuery(intent, key) {

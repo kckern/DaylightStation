@@ -134,4 +134,43 @@ describe('actionHandlers', () => {
       await expect(promise).rejects.toMatchObject({ action: 'launch-rocket' });
     });
   });
+
+  it('queue forwards intent.end → opts.endBehavior + opts.endLocation', async () => {
+    const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
+    const intent = {
+      action: 'queue', target: 'livingroom-tv', content: 'plex:1',
+      params: {}, end: 'tv-off', endLocation: 'living_room',
+    };
+    await actionHandlers.queue(intent, { wakeAndLoadService });
+    expect(wakeAndLoadService.execute).toHaveBeenCalledWith(
+      'livingroom-tv',
+      { queue: 'plex:1' },
+      expect.objectContaining({
+        dispatchId: expect.any(String),
+        endBehavior: 'tv-off',
+        endLocation: 'living_room',
+      })
+    );
+  });
+
+  it('play-next forwards intent.end → opts.endBehavior', async () => {
+    const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
+    const intent = {
+      action: 'play-next', target: 'livingroom-tv', content: 'plex:2',
+      params: {}, end: 'clear',
+    };
+    await actionHandlers['play-next'](intent, { wakeAndLoadService });
+    const opts = wakeAndLoadService.execute.mock.calls[0][2];
+    expect(opts.endBehavior).toBe('clear');
+    expect(opts.endLocation).toBeUndefined();
+  });
+
+  it('queue without intent.end yields opts without endBehavior', async () => {
+    const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
+    const intent = { action: 'queue', target: 't', content: 'plex:3', params: {} };
+    await actionHandlers.queue(intent, { wakeAndLoadService });
+    const opts = wakeAndLoadService.execute.mock.calls[0][2];
+    expect(opts.endBehavior).toBeUndefined();
+    expect(opts.endLocation).toBeUndefined();
+  });
 });
