@@ -361,6 +361,13 @@ export class WakeAndLoadService {
       }
       if (result.steps.prewarm?.ok !== false) {
         this.#emitProgress(topic, dispatchId, 'prewarm', 'done');
+      } else if (!result.steps.prewarm?.permanent) {
+        // Transient failure: emit done with warning so the frontend
+        // wake-progress hook doesn't leave the step stuck on 'running'.
+        // Permanent failures already emitted 'failed' above and short-circuited.
+        this.#emitProgress(topic, dispatchId, 'prewarm', 'done', {
+          warning: result.steps.prewarm.reason || result.steps.prewarm.error,
+        });
       }
     } else {
       const reason = isAdopt
