@@ -11,8 +11,10 @@ function makeApp(wakeResult) {
       execute: vi.fn().mockResolvedValue(wakeResult),
     },
     deviceService: { get: () => ({ id: 'tv' }), listDevices: () => [] },
-    // configService intentionally omitted — checkInputPrecondition returns ok:true
-    // when configService.getDeviceConfig is unavailable, which is what we want here.
+    // Pin the input-precondition contract: stub configService so the handler's
+    // checkInputPrecondition gets `null` from getDeviceConfig and short-circuits
+    // to ok:true. Avoids relying on a `?.` early-return in production code.
+    configService: { getDeviceConfig: () => null },
     logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   });
   app.use('/api/v1/device', router);

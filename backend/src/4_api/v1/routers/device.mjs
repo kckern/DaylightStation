@@ -702,20 +702,21 @@ export function createDeviceRouter(config) {
     const result = await wakeAndLoadService.execute(deviceId, query);
 
     let status = 200;
+    let extra = null;
     if (result.error === 'Device not found') {
       status = 404;
     } else if (result.failedStep === 'prewarm' && result.permanent === true) {
       status = 422;
       // Tag with a code so callers can branch deterministically. The body
       // already carries failedStep/permanent/error from the orchestrator.
-      result.code = ERROR_CODES.CONTENT_NOT_FOUND;
+      extra = { code: ERROR_CODES.CONTENT_NOT_FOUND };
     }
 
     logger.info?.('device.router.load.complete', {
       deviceId, ok: result.ok, failedStep: result.failedStep, totalElapsedMs: result.totalElapsedMs
     });
 
-    res.status(status).json(result);
+    res.status(status).json(extra ? { ...result, ...extra } : result);
   }));
 
   /**
