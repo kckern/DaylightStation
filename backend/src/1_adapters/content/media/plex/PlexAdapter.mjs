@@ -2002,7 +2002,7 @@ export class PlexAdapter {
           }
         }));
     } catch (err) {
-      this.logger.error?.('plex._searchPlaylists.exception', {
+      this.logger.error?.('plex.searchPlaylists.exception', {
         error: err.message,
         stack: err.stack,
       });
@@ -2058,7 +2058,7 @@ export class PlexAdapter {
 
       return allCollections;
     } catch (err) {
-      this.logger.error?.('plex._searchCollections.exception', {
+      this.logger.error?.('plex.searchCollections.exception', {
         error: err.message,
         stack: err.stack,
       });
@@ -2258,7 +2258,7 @@ export class PlexAdapter {
 
       return smallest;
     } catch (err) {
-      this.logger.error?.('plex._findSmallestCollection.exception', {
+      this.logger.error?.('plex.findSmallestCollection.exception', {
         error: err.message,
         stack: err.stack,
       });
