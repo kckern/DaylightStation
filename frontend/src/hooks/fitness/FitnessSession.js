@@ -1386,7 +1386,7 @@ export class FitnessSession {
   async _checkResumable(contentId) {
     if (!contentId) return { resumable: false };
     try {
-      const resp = await DaylightAPI.get(`api/v1/fitness/resumable?contentId=${encodeURIComponent(contentId)}`);
+      const resp = await DaylightAPI(`api/v1/fitness/resumable?contentId=${encodeURIComponent(contentId)}`);
       return resp || { resumable: false };
     } catch (err) {
       getLogger().warn('fitness.session.resumable_check_failed', { contentId, error: err?.message });
