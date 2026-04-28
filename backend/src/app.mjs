@@ -510,7 +510,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       catalogReader: () => dataService.household.read('shared/retroarch/catalog')
     },
     storagePaths                 // Collection → media_memory filename mapping
-  }, { httpClient: axios, mediaProgressMemory, app, configService });
+  }, { httpClient: axios, mediaProgressMemory, app, configService, logger: rootLogger });
 
   // Create proxy service for content domain (used for media library passthrough)
   const komgaProxyAuth = configService.getHouseholdAuth('komga');
