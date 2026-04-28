@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { wsService } from '../../services/WebSocketService.js';
 import { buildCommandAck } from '@shared-contracts/media/envelopes.mjs';
+import { COMMAND_HANDLER_PRESENCE_TOPIC } from '@shared-contracts/media/topics.mjs';
 import getLogger from '../../lib/logging/Logger.js';
 
 let _logger;
@@ -28,6 +29,7 @@ const ACKED_COMMAND_EVENTS = Object.freeze([
 const ERROR_EVENT = 'command-handler-error';
 
 const DEDUPE_TTL_MS = 60_000;
+const PRESENCE_INTERVAL_MS = 10_000;
 
 /**
  * useCommandAckPublisher - emits CommandAck (§6.3) for every dispatched
@@ -122,8 +124,7 @@ export function useCommandAckPublisher({ deviceId, actionBus } = {}) {
     }
     unsubs.push(bus.subscribe(ERROR_EVENT, errorHandler));
 
-    const PRESENCE_INTERVAL_MS = 10_000;
-    const presenceTopic = `command-handler-presence:${deviceId}`;
+    const presenceTopic = COMMAND_HANDLER_PRESENCE_TOPIC(deviceId);
     const sendPresence = (online) => {
       try {
         wsService.send({
