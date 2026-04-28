@@ -39,6 +39,22 @@ describe('PlexAdapter.loadMediaUrl — failure shape', () => {
     expect(result).toEqual({ url: null, reason: 'transient' });
   });
 
+  it('returns reason="audio-key-missing" when audio Media.Part.key is absent', async () => {
+    client.getMetadata.mockResolvedValue({
+      MediaContainer: { Metadata: [{
+        ratingKey: '42', type: 'track',
+        Media: [{ Part: [{}] }], // no `key` field
+      }] },
+    });
+    const result = await adapter.loadMediaUrl('42', 0, {});
+    expect(result).toEqual({ url: null, reason: 'audio-key-missing' });
+  });
+
+  it('returns reason="metadata-missing" for an object input with no ratingKey', async () => {
+    const result = await adapter.loadMediaUrl({}, 0, {});
+    expect(result).toEqual({ url: null, reason: 'metadata-missing' });
+  });
+
   it('returns { url } on success with no reason field', async () => {
     client.getMetadata.mockResolvedValue({
       MediaContainer: { Metadata: [{

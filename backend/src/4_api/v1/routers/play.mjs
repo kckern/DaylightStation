@@ -213,10 +213,15 @@ export function createPlayRouter(config) {
       if (typeof plexAdapter.getMediaUrl !== 'function') {
         return res.status(501).json({ error: 'Plex adapter does not support media URL retrieval' });
       }
-      mediaUrl = await plexAdapter.getMediaUrl(id, 0, opts);
+      const result = await plexAdapter.getMediaUrl(id, 0, opts);
+      mediaUrl = result?.url ?? null;
 
       if (!mediaUrl) {
-        return res.status(404).json({ error: 'Media URL not found', id });
+        return res.status(404).json({
+          error: 'Media URL not found',
+          id,
+          ...(result?.reason ? { reason: result.reason } : {}),
+        });
       }
 
       // Redirect through proxy (replace plex host with proxy path)
