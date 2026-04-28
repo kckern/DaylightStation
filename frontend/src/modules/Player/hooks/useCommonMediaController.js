@@ -67,6 +67,11 @@ export function useCommonMediaController({
   const lastUpdatedTimeRef = useRef(0);
   // Track last known playback position from timeupdate events
   const lastPlaybackPosRef = useRef(0);
+  // Track last known duration so the unmount cleanup can compute percent
+  const lastDurationRef = useRef(0);
+  // Tracks which assetId was naturally ended (onEnded fired) so unmount cleanup
+  // can skip duplicate logging when the video completed normally
+  const endedAssetRef = useRef(null);
   
   // Track if this is the initial load (for start time application)
   const isInitialLoadRef = useRef(true);
@@ -1005,15 +1010,19 @@ export function useCommonMediaController({
     };
 
     const onDurationChange = () => {
-      setDuration(segDuration || mediaEl.duration);
+      const dur = segDuration || mediaEl.duration;
+      setDuration(dur);
+      if (dur > 0) lastDurationRef.current = dur;
     };
 
     const onEnded = () => {
       const mediaEl = getMediaEl();
       const title = meta.title + (meta.grandparentTitle ? ` (${meta.grandparentTitle} - ${meta.parentTitle})` : '');
-      
+
       lastLoggedTimeRef.current = 0;
-      
+      // Mark this asset as naturally ended so the unmount cleanup skips it
+      endedAssetRef.current = assetId;
+
       // Immediately flag as ended to prevent any recovery attempts
       const s = stallStateRef.current;
       s.hasEnded = true;
@@ -1398,6 +1407,27 @@ export function useCommonMediaController({
     const mediaEl = getMediaEl();
     if (mediaEl && onMediaRef) onMediaRef(mediaEl);
   }, [meta.assetId, onMediaRef, getMediaEl, elementKey]);
+
+  // On asset change or unmount: save final position if playback was interrupted
+  // (onEnded handles natural completion; this captures manual navigation away)
+  useEffect(() => {
+    // Capture values at effect-run time so cleanup has the correct asset's data
+    const capturedAssetId = assetId;
+    const capturedType = type;
+    const capturedMeta = meta;
+    return () => {
+      if (endedAssetRef.current === capturedAssetId) return; // onEnded already logged
+      const pos = lastPlaybackPosRef.current;
+      if (pos < 10) return;
+      const dur = lastDurationRef.current;
+      if (!dur) return;
+      const pct = getProgressPercent(pos, dur);
+      if (parseFloat(pct) <= 0) return;
+      const title = capturedMeta.title + (capturedMeta.grandparentTitle ? ` (${capturedMeta.grandparentTitle} - ${capturedMeta.parentTitle})` : '');
+      mcLog().info('playback.unmount-progress-save', { assetId: capturedAssetId, pos, pct });
+      DaylightAPI(`api/v1/play/log`, { title, type: capturedType, assetId: capturedAssetId, seconds: pos, percent: pct, listId: capturedMeta?.listId || null });
+    };
+  }, [assetId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sample video playback quality metrics (dropped/decoded frames)
   useEffect(() => {
