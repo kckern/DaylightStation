@@ -2099,6 +2099,14 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   useEffect(() => {
     const session = fitnessSessionRef.current;
+    if (!session || typeof session.setPendingContentId !== 'function') return;
+    const head = Array.isArray(fitnessPlayQueue) ? fitnessPlayQueue[0] : null;
+    const id = head?.contentId || head?.id || null;
+    session.setPendingContentId(id);
+  }, [fitnessPlayQueue]);
+
+  useEffect(() => {
+    const session = fitnessSessionRef.current;
     if (!session || typeof session.updateSnapshot !== 'function') return;
     try {
       session.updateSnapshot({
