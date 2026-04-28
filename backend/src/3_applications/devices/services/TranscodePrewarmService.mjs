@@ -1,6 +1,7 @@
 // backend/src/3_applications/devices/services/TranscodePrewarmService.mjs
 
 const TOKEN_TTL_MS = 60_000;
+const PERMANENT_REASONS = new Set(['metadata-missing', 'non-playable-type', 'audio-key-missing']);
 
 export class TranscodePrewarmService {
   #contentIdResolver;
@@ -44,10 +45,14 @@ export class TranscodePrewarmService {
 
       const startOffset = first.resumePosition || first.playhead || 0;
       const ratingKey = first.ratingKey || first.contentId?.replace(/^plex:/, '');
-      const dashUrl = await resolved.adapter.loadMediaUrl(ratingKey, 0, { startOffset });
+      const mediaResult = await resolved.adapter.loadMediaUrl(ratingKey, 0, { startOffset });
+      const dashUrl = mediaResult?.url ?? null;
+      const failureReason = mediaResult?.reason ?? null;
       if (!dashUrl) {
-        this.#logger.warn?.('prewarm.failed', { contentRef, reason: 'loadMediaUrl returned null' });
-        return { status: 'failed', reason: 'loadMediaUrl returned null' };
+        const reason = failureReason || 'loadMediaUrl returned null';
+        const permanent = !!failureReason && PERMANENT_REASONS.has(failureReason);
+        this.#logger.warn?.('prewarm.failed', { contentRef, reason, permanent });
+        return { status: 'failed', reason, permanent };
       }
 
       this.#fetchMpd(dashUrl).catch(err => {
