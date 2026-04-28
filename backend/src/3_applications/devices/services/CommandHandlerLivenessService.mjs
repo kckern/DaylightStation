@@ -18,11 +18,17 @@
  * alone is the canonical "stale subscriber" — the WS connection is alive
  * but useScreenCommands/useCommandAckPublisher aren't mounted.
  *
+ * The dispatcher closure is registered exactly once, in the constructor,
+ * via `eventBus.onClientMessage`. start()/stop() are pure flag flips on
+ * #started; the dispatcher returns early when stopped. This is necessary
+ * because WebSocketEventBus.onClientMessage doesn't expose unsubscribe.
+ *
  * @module applications/devices/services
  */
 
+import { COMMAND_HANDLER_PRESENCE_TOPIC_PREFIX } from '#shared-contracts/media/topics.mjs';
+
 const DEFAULT_FRESHNESS_MS = 30_000;
-const PRESENCE_TOPIC_PREFIX = 'command-handler-presence:';
 
 export class CommandHandlerLivenessService {
   #eventBus;
@@ -30,7 +36,7 @@ export class CommandHandlerLivenessService {
   #clock;
   #freshnessMs;
   #lastSeenAt = new Map();
-  #handler = null;
+  #dispatch;
   #started = false;
 
   constructor(deps = {}) {
@@ -46,53 +52,50 @@ export class CommandHandlerLivenessService {
     this.#freshnessMs = typeof deps.freshnessMs === 'number' && deps.freshnessMs > 0
       ? deps.freshnessMs
       : DEFAULT_FRESHNESS_MS;
+
+    // Register the inbound-message dispatcher once, here.
+    // start()/stop() are flag flips; the dispatcher gates itself on #started.
+    this.#dispatch = (clientId, message) => this.#handleInbound(clientId, message);
+    this.#eventBus.onClientMessage(this.#dispatch);
+  }
+
+  #handleInbound(_clientId, message) {
+    if (!this.#started) return;
+    const topic = message?.topic;
+    if (typeof topic !== 'string') return;
+
+    if (topic.startsWith(COMMAND_HANDLER_PRESENCE_TOPIC_PREFIX)) {
+      const deviceId = message?.deviceId || topic.slice(COMMAND_HANDLER_PRESENCE_TOPIC_PREFIX.length);
+      if (!deviceId) return;
+      if (message?.online === false) {
+        this.#lastSeenAt.delete(deviceId);
+        this.#logger.debug?.('command-handler-liveness.offline', { deviceId });
+      } else {
+        this.#lastSeenAt.set(deviceId, this.#clock.now());
+        this.#logger.debug?.('command-handler-liveness.presence', { deviceId });
+      }
+      return;
+    }
+
+    if (topic === 'device-ack') {
+      const deviceId = message?.deviceId;
+      if (!deviceId) return;
+      this.#lastSeenAt.set(deviceId, this.#clock.now());
+      this.#logger.debug?.('command-handler-liveness.ack', {
+        deviceId, commandId: message?.commandId,
+      });
+    }
   }
 
   start() {
     if (this.#started) return;
     this.#started = true;
-
-    this.#handler = (_clientId, message) => {
-      if (!this.#started) return;
-      const topic = message?.topic;
-      if (typeof topic !== 'string') return;
-
-      // Path 1: command-handler-presence:<deviceId>
-      if (topic.startsWith(PRESENCE_TOPIC_PREFIX)) {
-        const deviceId = message?.deviceId || topic.slice(PRESENCE_TOPIC_PREFIX.length);
-        if (!deviceId) return;
-        if (message?.online === false) {
-          this.#lastSeenAt.delete(deviceId);
-          this.#logger.debug?.('command-handler-liveness.offline', { deviceId });
-        } else {
-          this.#lastSeenAt.set(deviceId, this.#clock.now());
-          this.#logger.debug?.('command-handler-liveness.presence', { deviceId });
-        }
-        return;
-      }
-
-      // Path 2: device-ack
-      if (topic === 'device-ack') {
-        const deviceId = message?.deviceId;
-        if (!deviceId) return;
-        this.#lastSeenAt.set(deviceId, this.#clock.now());
-        this.#logger.debug?.('command-handler-liveness.ack', {
-          deviceId, commandId: message?.commandId,
-        });
-      }
-    };
-
-    this.#eventBus.onClientMessage(this.#handler);
     this.#logger.info?.('command-handler-liveness.start', { freshnessMs: this.#freshnessMs });
   }
 
   stop() {
     if (!this.#started) return;
     this.#started = false;
-    // WebSocketEventBus.onClientMessage doesn't expose unsubscribe.
-    // Setting #started=false makes #handler a no-op; the array slot is
-    // a small, fixed leak acceptable for the lifetime of the process.
-    this.#handler = null;
     this.#lastSeenAt.clear();
     this.#logger.info?.('command-handler-liveness.stop');
   }
@@ -101,7 +104,7 @@ export class CommandHandlerLivenessService {
     const ts = this.#lastSeenAt.get(deviceId);
     if (!ts) return false;
     const limit = typeof windowMs === 'number' && windowMs > 0 ? windowMs : this.#freshnessMs;
-    return (this.#clock.now() - ts) < limit;
+    return (this.#clock.now() - ts) <= limit;
   }
 
   snapshot() {
