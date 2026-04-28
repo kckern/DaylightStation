@@ -1659,7 +1659,12 @@ export class PlexAdapter {
    * @param {string} [opts.maxVideoResolution] - Alias for maxResolution
    * @param {string} [opts.session] - Client session ID for multi-player isolation
    * @param {number} [opts.startOffset] - Start offset in seconds
-   * @returns {Promise<string|null>} Streaming URL or null if generation failed
+   * @returns {Promise<{ url: string|null, reason?: 'metadata-missing'|'non-playable-type'|'audio-key-missing'|'transient' }>}
+   *   Resolves to { url } on success, or { url: null, reason } on failure.
+   *   Reasons: 'metadata-missing' (Plex returned no metadata for the rating key);
+   *   'non-playable-type' (item is a show/season/album, not directly playable);
+   *   'audio-key-missing' (audio item lacks Media[].Part[].key);
+   *   'transient' (caught exception — network/timeout/etc.)
    */
   async loadMediaUrl(itemOrKey, attempt = 0, opts = {}) {
     try {
@@ -1797,7 +1802,7 @@ export class PlexAdapter {
    * @param {string} id - Plex rating key
    * @param {number} [startOffset=0] - Start offset in seconds
    * @param {Object} [opts] - Additional options
-   * @returns {Promise<string|null>}
+   * @returns {Promise<{ url: string|null, reason?: string }>} Pass-through of loadMediaUrl
    */
   async getMediaUrl(id, startOffset = 0, opts = {}) {
     const ratingKey = String(id).replace(/^plex:/, '');
