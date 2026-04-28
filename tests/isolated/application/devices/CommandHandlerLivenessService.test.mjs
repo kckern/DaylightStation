@@ -91,4 +91,45 @@ describe('CommandHandlerLivenessService', () => {
     bus._ingest({ topic: 'device-ack', deviceId: 'tv', commandId: 'c1', ok: true });
     expect(svc.isFresh('tv')).toBe(false);
   });
+
+  it('start() after stop() does not double-register the handler', () => {
+    // After stop+start, ingestion must update lastSeenAt exactly once per message.
+    bus._ingest({ topic: 'device-ack', deviceId: 'tv', commandId: 'c1', ok: true });
+    const t1 = svc.snapshot().tv;
+
+    svc.stop();
+    expect(svc.isFresh('tv')).toBe(false); // map cleared on stop
+
+    svc.start();
+    now += 100;
+    bus._ingest({ topic: 'device-ack', deviceId: 'tv', commandId: 'c2', ok: true });
+    const t2 = svc.snapshot().tv;
+
+    // The bus delivered the message exactly once (single registration).
+    // If the handler were registered twice, t2 would be set twice but
+    // would still equal `now`. The real failure mode is the bus calling
+    // both closures; we can't observe that directly via Map.set, but we
+    // CAN assert the ingestion count by checking handlers.length:
+    expect(bus.handlers.length).toBe(1);
+    expect(t2).toBe(now);
+    expect(t2).toBeGreaterThan(t1);
+  });
+
+  it('isFresh treats exactly-at-window-edge as fresh (inclusive)', () => {
+    bus._ingest({ topic: 'device-ack', deviceId: 'tv', commandId: 'c1', ok: true });
+    now += 30_000; // exactly the freshness window
+    expect(svc.isFresh('tv')).toBe(true);
+    now += 1; // one ms past
+    expect(svc.isFresh('tv')).toBe(false);
+  });
+
+  it('constructor throws when eventBus is missing', () => {
+    expect(() => new CommandHandlerLivenessService({})).toThrow(/requires eventBus/);
+    expect(() => new CommandHandlerLivenessService()).toThrow(/requires eventBus/);
+  });
+
+  it('constructor throws when eventBus.onClientMessage is missing', () => {
+    expect(() => new CommandHandlerLivenessService({ eventBus: {} }))
+      .toThrow(/requires eventBus.onClientMessage/);
+  });
 });
