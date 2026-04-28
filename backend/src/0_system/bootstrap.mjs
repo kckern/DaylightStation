@@ -854,7 +854,8 @@ export function createFitnessServices(config) {
 
   const sessionService = new SessionService({
     sessionStore,
-    defaultHouseholdId
+    defaultHouseholdId,
+    logger
   });
 
   // Home automation gateway (provided by composition root)
