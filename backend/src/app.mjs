@@ -98,6 +98,9 @@ import { UPCGateway } from '#adapters/nutribot/UPCGateway.mjs';
 // Thermal printer registry (multi-printer support)
 import { ThermalPrinterAdapter, ThermalPrinterRegistry } from '#adapters/hardware/thermal-printer/index.mjs';
 
+// Command-handler liveness (Task 8: gates WS-first warm-switch in WakeAndLoadService)
+import { CommandHandlerLivenessService } from '#apps/devices/services/CommandHandlerLivenessService.mjs';
+
 // HTTP middleware
 import { createDevProxy, errorHandlerMiddleware } from './0_system/http/middleware/index.mjs';
 import { createEventBusRouter } from './4_api/v1/routers/admin/eventbus.mjs';
@@ -1659,6 +1662,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'prewarm' })
   });
 
+  // Command-handler liveness tracker — gates WS-first warm-switch on positive
+  // proof a frontend command handler (useCommandAckPublisher) is mounted.
+  const commandHandlerLivenessService = new CommandHandlerLivenessService({
+    eventBus,
+    logger: rootLogger.child({ module: 'command-handler-liveness' }),
+  });
+  commandHandlerLivenessService.start();
+
   const { wakeAndLoadService } = createWakeAndLoadService({
     deviceService: deviceServices.deviceService,
     haGateway: homeAutomationAdapters.haGateway,
@@ -1666,6 +1677,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     broadcast: broadcastEvent,
     eventBus,
     prewarmService,
+    commandHandlerLivenessService,
     logger: rootLogger.child({ module: 'wake-and-load' })
   });
 

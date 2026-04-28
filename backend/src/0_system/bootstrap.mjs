@@ -1776,7 +1776,11 @@ export function createTriggerApiRouter(config) {
  * @returns {{ wakeAndLoadService: WakeAndLoadService }}
  */
 export function createWakeAndLoadService(config) {
-  const { deviceService, haGateway, devicesConfig, broadcast, eventBus, prewarmService, sessionControlService, logger = console } = config;
+  const {
+    deviceService, haGateway, devicesConfig, broadcast, eventBus,
+    prewarmService, sessionControlService, commandHandlerLivenessService,
+    logger = console,
+  } = config;
 
   // Build sensor map from device config: deviceId -> state_sensor entity
   const sensorMap = {};
@@ -1812,6 +1816,7 @@ export function createWakeAndLoadService(config) {
     prewarmService,
     sessionControlService,
     haGateway: haGateway ?? null,
+    commandHandlerLivenessService,
     logger
   });
 

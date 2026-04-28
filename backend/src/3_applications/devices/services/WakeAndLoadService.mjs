@@ -40,6 +40,7 @@ export class WakeAndLoadService {
   #prewarmService;
   #sessionControlService;
   #haGateway;
+  #commandHandlerLivenessService;
   #logger;
 
   /**
@@ -50,6 +51,7 @@ export class WakeAndLoadService {
    * @param {Object} [deps.eventBus] - EventBus instance for WS-first delivery (optional)
    * @param {Object} [deps.prewarmService] - TranscodePrewarmService (optional)
    * @param {Object} [deps.sessionControlService] - ISessionControl for adopt-snapshot (optional)
+   * @param {Object} [deps.commandHandlerLivenessService] - CommandHandlerLivenessService for WS-first liveness gate (optional)
    * @param {Object} [deps.logger]
    */
   /** @type {Map<string, Promise<Object>>} In-flight wake-and-load per device */
@@ -63,6 +65,7 @@ export class WakeAndLoadService {
     this.#prewarmService = deps.prewarmService || null;
     this.#sessionControlService = deps.sessionControlService || null;
     this.#haGateway = deps.haGateway || null;
+    this.#commandHandlerLivenessService = deps.commandHandlerLivenessService || null;
     this.#logger = deps.logger || console;
   }
 
@@ -435,16 +438,30 @@ export class WakeAndLoadService {
     const hasContentQuery = Object.keys(contentQuery).length > 0;
 
     // --- WS-first delivery ---
-    // If the screen is already loaded (warm prepare) and WS subscribers exist,
-    // try delivering content via WebSocket for an instant, no-refresh switch.
+    // Gate on TWO signals:
+    //   1. subscriberCount > 0  — someone is listening on the homeline topic
+    //   2. liveness.isFresh()    — a real command handler is mounted (Task 8)
+    // Subscriber count alone trusts stale subscribers; liveness adds positive
+    // proof a useCommandAckPublisher is actually running on the screen.
+    const liveness = this.#commandHandlerLivenessService;
     const warmPrepare = !coldWake && hasContentQuery && !!this.#eventBus;
     const subscriberCount = warmPrepare ? this.#eventBus.getTopicSubscriberCount(topic) : 0;
+    const handlerFresh = liveness ? liveness.isFresh(deviceId) : false;
     let wsDelivered = false;
+    let wsSkipReason = null;
 
     if (warmPrepare) {
-      this.#logger.info?.('wake-and-load.load.ws-check', { deviceId, dispatchId, topic, subscriberCount });
+      this.#logger.info?.('wake-and-load.load.ws-check', {
+        deviceId, dispatchId, topic, subscriberCount, handlerFresh,
+      });
 
-      if (subscriberCount > 0) {
+      if (subscriberCount === 0) {
+        wsSkipReason = 'no-subscribers';
+      } else if (liveness && !handlerFresh) {
+        wsSkipReason = 'handler-stale';
+      }
+
+      if (!wsSkipReason) {
         try {
           // Resolve contentId from the query using the same priority order as
           // WebSocketContentAdapter. If nothing resolves, skip WS-first and let
@@ -490,19 +507,23 @@ export class WakeAndLoadService {
           this.#emitProgress(topic, dispatchId, 'load', 'done', { method: 'websocket' });
         } catch (err) {
           this.#logger.warn?.('wake-and-load.load.ws-failed', { deviceId, dispatchId, error: err.message });
-          // Fall through to FKB loadURL
+          wsSkipReason = 'ws-error';
         }
       } else {
-        this.#logger.info?.('wake-and-load.load.ws-skipped', { deviceId, dispatchId, reason: 'no-subscribers' });
+        this.#logger.info?.('wake-and-load.load.ws-skipped', {
+          deviceId, dispatchId, reason: wsSkipReason,
+        });
       }
+    } else if (coldWake) {
+      wsSkipReason = 'cold-restart';
+    } else if (!hasContentQuery) {
+      wsSkipReason = 'no-content';
+    } else {
+      wsSkipReason = 'no-event-bus';
     }
 
     // --- FKB loadURL (primary or fallback) ---
     if (!wsDelivered) {
-      const wsSkipReason = warmPrepare
-        ? (subscriberCount === 0 ? 'no-subscribers' : undefined)
-        : (coldWake ? 'cold-restart' : undefined);
-
       // verifyAsync: don't block on FKB currentUrl polling. The playback
       // watchdog (#armPlaybackWatchdog) is the authoritative "user is seeing
       // media" signal — strictly more useful than currentUrl. The verify
@@ -510,10 +531,11 @@ export class WakeAndLoadService {
       const loadResult = await device.loadContent(screenPath, contentQuery, { verifyAsync: true });
 
       if (loadResult.ok) {
+        const isFkbFallback = !!wsSkipReason;
         result.steps.load = {
           ...loadResult,
-          ...(wsSkipReason ? { wsSkipped: wsSkipReason } : {}),
-          ...(warmPrepare && !wsSkipReason ? { method: 'fkb-fallback', wsError: 'ack-timeout' } : {})
+          ...(isFkbFallback ? { method: 'fkb-fallback', wsSkipped: wsSkipReason } : {}),
+          ...(wsSkipReason === 'ws-error' ? { wsError: 'ack-timeout' } : {}),
         };
         this.#emitProgress(topic, dispatchId, 'load', 'done');
       } else if (hasContentQuery) {
