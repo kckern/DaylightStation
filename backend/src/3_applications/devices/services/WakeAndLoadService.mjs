@@ -67,6 +67,11 @@ export class WakeAndLoadService {
     this.#haGateway = deps.haGateway || null;
     this.#commandHandlerLivenessService = deps.commandHandlerLivenessService || null;
     this.#logger = deps.logger || console;
+    if (!this.#commandHandlerLivenessService) {
+      this.#logger.warn?.('wake-and-load.no-liveness-service', {
+        note: 'WS-first warm-switch will fall back to subscriber-count gate only',
+      });
+    }
   }
 
   /**
