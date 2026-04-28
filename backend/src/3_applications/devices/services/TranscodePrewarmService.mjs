@@ -1,6 +1,9 @@
 // backend/src/3_applications/devices/services/TranscodePrewarmService.mjs
 
 const TOKEN_TTL_MS = 60_000;
+// Keep in sync with the reason union returned by PlexAdapter.loadMediaUrl
+// (backend/src/1_adapters/content/media/plex/PlexAdapter.mjs). Reasons NOT
+// in this set fall through to permanent:false and trigger FKB URL fallback.
 const PERMANENT_REASONS = new Set(['metadata-missing', 'non-playable-type', 'audio-key-missing']);
 
 export class TranscodePrewarmService {
