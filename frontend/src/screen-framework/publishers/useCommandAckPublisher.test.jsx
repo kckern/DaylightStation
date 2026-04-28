@@ -43,13 +43,18 @@ describe('useCommandAckPublisher', () => {
     vi.useRealTimers();
   });
 
+  // Helper: filter wsService.send calls down to device-ack envelopes
+  // (the beacon publisher also calls wsService.send on a separate topic).
+  const ackCalls = () =>
+    wsService.send.mock.calls.filter(([m]) => m?.topic === 'device-ack');
+
   it('sends an ok=true ack when a commanded event is emitted on the bus', () => {
     renderHook(() => useCommandAckPublisher({ deviceId: 'tv-1', actionBus: bus }));
 
     act(() => bus.emit('media:playback', { command: 'play', commandId: 'c1' }));
 
-    expect(wsService.send).toHaveBeenCalledTimes(1);
-    const ack = wsService.send.mock.calls[0][0];
+    expect(ackCalls().length).toBe(1);
+    const ack = ackCalls()[0][0];
     expect(ack.topic).toBe('device-ack');
     expect(ack.deviceId).toBe('tv-1');
     expect(ack.commandId).toBe('c1');
@@ -64,19 +69,19 @@ describe('useCommandAckPublisher', () => {
     act(() => bus.emit('media:playback', { command: 'play', commandId: 'c1' }));
     act(() => bus.emit('media:seek-abs', { value: 10, commandId: 'c1' }));
 
-    expect(wsService.send).toHaveBeenCalledTimes(1);
+    expect(ackCalls().length).toBe(1);
   });
 
   it('re-acks the same commandId after >60s (TTL expiry)', () => {
     renderHook(() => useCommandAckPublisher({ deviceId: 'tv-1', actionBus: bus }));
 
     act(() => bus.emit('media:playback', { command: 'play', commandId: 'c1' }));
-    expect(wsService.send).toHaveBeenCalledTimes(1);
+    expect(ackCalls().length).toBe(1);
 
     act(() => { vi.advanceTimersByTime(61_000); });
 
     act(() => bus.emit('media:playback', { command: 'play', commandId: 'c1' }));
-    expect(wsService.send).toHaveBeenCalledTimes(2);
+    expect(ackCalls().length).toBe(2);
   });
 
   it('emits separate acks for distinct commandIds', () => {
@@ -85,8 +90,8 @@ describe('useCommandAckPublisher', () => {
     act(() => bus.emit('media:playback', { command: 'play', commandId: 'c1' }));
     act(() => bus.emit('media:queue-op', { op: 'clear', commandId: 'c2' }));
 
-    expect(wsService.send).toHaveBeenCalledTimes(2);
-    const ids = wsService.send.mock.calls.map(([ack]) => ack.commandId).sort();
+    expect(ackCalls().length).toBe(2);
+    const ids = ackCalls().map(([ack]) => ack.commandId).sort();
     expect(ids).toEqual(['c1', 'c2']);
   });
 
@@ -95,8 +100,8 @@ describe('useCommandAckPublisher', () => {
 
     act(() => bus.emit('command-handler-error', { commandId: 'c2', error: 'oops', code: 'E_BAD' }));
 
-    expect(wsService.send).toHaveBeenCalledTimes(1);
-    const ack = wsService.send.mock.calls[0][0];
+    expect(ackCalls().length).toBe(1);
+    const ack = ackCalls()[0][0];
     expect(ack.ok).toBe(false);
     expect(ack.commandId).toBe('c2');
     expect(ack.error).toBe('oops');
@@ -114,7 +119,7 @@ describe('useCommandAckPublisher', () => {
   it('ignores bus emits missing a commandId', () => {
     renderHook(() => useCommandAckPublisher({ deviceId: 'tv-1', actionBus: bus }));
     act(() => bus.emit('media:playback', { command: 'play' }));  // no commandId
-    expect(wsService.send).not.toHaveBeenCalled();
+    expect(ackCalls().length).toBe(0);
   });
 
   it('detaches ActionBus listeners on unmount', () => {
@@ -130,6 +135,64 @@ describe('useCommandAckPublisher', () => {
     expect(bus.size('command-handler-error')).toBe(0);
 
     act(() => bus.emit('media:playback', { command: 'play', commandId: 'c-late' }));
-    expect(wsService.send).not.toHaveBeenCalled();
+    expect(ackCalls().length).toBe(0);
+  });
+
+  it('sends an online presence beacon on mount', () => {
+    renderHook(() => useCommandAckPublisher({ deviceId: 'tv-1', actionBus: bus }));
+    const beacon = wsService.send.mock.calls.find(
+      ([m]) => m?.topic === 'command-handler-presence:tv-1',
+    );
+    expect(beacon).toBeDefined();
+    expect(beacon[0].deviceId).toBe('tv-1');
+    expect(beacon[0].online).toBe(true);
+    expect(typeof beacon[0].ts).toBe('string');
+  });
+
+  it('repeats the beacon every 10 s', () => {
+    renderHook(() => useCommandAckPublisher({ deviceId: 'tv-1', actionBus: bus }));
+    wsService.send.mockClear();
+    vi.advanceTimersByTime(10_000);
+    const calls = wsService.send.mock.calls.filter(
+      ([m]) => m?.topic === 'command-handler-presence:tv-1',
+    );
+    expect(calls.length).toBe(1);
+    expect(calls[0][0].online).toBe(true);
+
+    vi.advanceTimersByTime(10_000);
+    const calls2 = wsService.send.mock.calls.filter(
+      ([m]) => m?.topic === 'command-handler-presence:tv-1',
+    );
+    expect(calls2.length).toBe(2);
+  });
+
+  it('sends an offline beacon on unmount', () => {
+    const { unmount } = renderHook(() =>
+      useCommandAckPublisher({ deviceId: 'tv-1', actionBus: bus }),
+    );
+    wsService.send.mockClear();
+    unmount();
+    const offlineBeacon = wsService.send.mock.calls.find(
+      ([m]) => m?.topic === 'command-handler-presence:tv-1' && m?.online === false,
+    );
+    expect(offlineBeacon).toBeDefined();
+    expect(offlineBeacon[0].deviceId).toBe('tv-1');
+  });
+
+  it('does not send any beacon when deviceId is missing', () => {
+    renderHook(() => useCommandAckPublisher({ deviceId: null, actionBus: bus }));
+    const beacons = wsService.send.mock.calls.filter(
+      ([m]) => typeof m?.topic === 'string' && m.topic.startsWith('command-handler-presence:'),
+    );
+    expect(beacons.length).toBe(0);
+  });
+
+  it('does not double-fire a beacon between the mount call and the first interval tick', () => {
+    renderHook(() => useCommandAckPublisher({ deviceId: 'tv-1', actionBus: bus }));
+    // The mount beacon counts as call 1. No interval tick has elapsed.
+    const beacons = wsService.send.mock.calls.filter(
+      ([m]) => m?.topic === 'command-handler-presence:tv-1',
+    );
+    expect(beacons.length).toBe(1);
   });
 });

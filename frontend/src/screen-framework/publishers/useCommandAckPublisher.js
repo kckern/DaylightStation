@@ -122,9 +122,29 @@ export function useCommandAckPublisher({ deviceId, actionBus } = {}) {
     }
     unsubs.push(bus.subscribe(ERROR_EVENT, errorHandler));
 
+    const PRESENCE_INTERVAL_MS = 10_000;
+    const presenceTopic = `command-handler-presence:${deviceId}`;
+    const sendPresence = (online) => {
+      try {
+        wsService.send({
+          topic: presenceTopic,
+          deviceId,
+          online,
+          ts: new Date().toISOString(),
+        });
+      } catch (err) {
+        logger().warn('presence-send-failed', { error: String(err?.message ?? err) });
+      }
+    };
+
+    sendPresence(true);
+    const presenceTimer = setInterval(() => sendPresence(true), PRESENCE_INTERVAL_MS);
+
     logger().info('mounted', { deviceId });
 
     return () => {
+      clearInterval(presenceTimer);
+      sendPresence(false);
       for (const u of unsubs) {
         try { u?.(); } catch (err) {
           logger().warn('unsubscribe-failed', { error: String(err?.message ?? err) });
