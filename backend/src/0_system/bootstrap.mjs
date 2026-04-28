@@ -1810,6 +1810,7 @@ export function createWakeAndLoadService(config) {
     eventBus,
     prewarmService,
     sessionControlService,
+    haGateway: haGateway ?? null,
     logger
   });
 
