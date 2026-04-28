@@ -283,6 +283,7 @@ export class FitnessSession {
     this._finalized = false;
     this._pendingResumePrompt = null;
     this._onResumePrompt = null;
+    this._pendingContentId = null;
 
     // Track users whose data was transferred to another identity (should be excluded from charts)
     this._transferredUsers = new Set();
@@ -1517,15 +1518,31 @@ export class FitnessSession {
   }
 
   /**
+   * Set a content-id hint that survives even before the session starts.
+   * The React layer should call this whenever the play queue head changes
+   * so that the resume check has something to work with at
+   * buffer-threshold time. (updateSnapshot returns early when sessionId is
+   * unset, leaving snapshot.mediaPlaylists empty before the session
+   * begins, so _getCurrentContentId would otherwise always return null.)
+   * @param {string|null} id
+   */
+  setPendingContentId(id) {
+    this._pendingContentId = id || null;
+  }
+
+  /**
    * Get the current primary content ID from active media.
+   * Falls back to the pending content-id hint when the snapshot has no
+   * media yet (e.g. before the session starts).
    * @returns {string|null}
    */
   _getCurrentContentId() {
     const playlist = this.snapshot?.mediaPlaylists?.video;
     if (Array.isArray(playlist) && playlist.length > 0) {
-      return playlist[0]?.contentId || playlist[0]?.id || null;
+      const id = playlist[0]?.contentId || playlist[0]?.id;
+      if (id) return id;
     }
-    return null;
+    return this._pendingContentId || null;
   }
 
   /**
