@@ -39,6 +39,7 @@ export class WakeAndLoadService {
   #eventBus;
   #prewarmService;
   #sessionControlService;
+  #haGateway;
   #logger;
 
   /**
@@ -61,6 +62,7 @@ export class WakeAndLoadService {
     this.#eventBus = deps.eventBus || null;
     this.#prewarmService = deps.prewarmService || null;
     this.#sessionControlService = deps.sessionControlService || null;
+    this.#haGateway = deps.haGateway || null;
     this.#logger = deps.logger || console;
   }
 
@@ -194,6 +196,7 @@ export class WakeAndLoadService {
         result.error = 'Display did not turn on';
         result.allowOverride = true; // Phone can choose "Connect anyway"
         result.totalElapsedMs = Date.now() - startTime;
+        if (!options._isRetry) this.#scheduleRetry(deviceId, query, options);
         return result;
       }
 
@@ -573,6 +576,50 @@ export class WakeAndLoadService {
     }
 
     return result;
+  }
+
+  /**
+   * Schedule one deferred retry after 45s. Fires HA push notification on failure.
+   * The _isRetry flag prevents cascading retries.
+   * @private
+   */
+  #scheduleRetry(deviceId, query, options) {
+    const RETRY_DELAY_MS = 45_000;
+    const timer = setTimeout(async () => {
+      this.#logger.info?.('wake-and-load.retry.start', { deviceId, delayMs: RETRY_DELAY_MS });
+      try {
+        const result = await this.execute(deviceId, query, { ...options, _isRetry: true });
+        if (result.ok) {
+          this.#logger.info?.('wake-and-load.retry.success', { deviceId });
+        } else {
+          this.#logger.warn?.('wake-and-load.retry.failed', { deviceId, failedStep: result.failedStep });
+          await this.#notifyPowerFailure(deviceId);
+        }
+      } catch (err) {
+        this.#logger.error?.('wake-and-load.retry.error', { deviceId, error: err.message });
+        await this.#notifyPowerFailure(deviceId);
+      }
+    }, RETRY_DELAY_MS);
+    if (timer.unref) timer.unref();
+  }
+
+  /**
+   * Send HA push notification that a device failed to power on.
+   * @private
+   */
+  async #notifyPowerFailure(deviceId) {
+    const device = this.#deviceService.get(deviceId);
+    const notifyService = device?.notifyService;
+    if (!notifyService || !this.#haGateway) return;
+    try {
+      await this.#haGateway.callService('notify', notifyService, {
+        title: 'TV failed to turn on',
+        message: `${deviceId} did not respond after retry`
+      });
+      this.#logger.info?.('wake-and-load.notify.sent', { deviceId, notifyService });
+    } catch (err) {
+      this.#logger.error?.('wake-and-load.notify.failed', { deviceId, notifyService, error: err.message });
+    }
   }
 
   /**

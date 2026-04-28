@@ -23,6 +23,7 @@ export class Device {
   #type;
   #defaultVolume;
   #screenPath;
+  #notifyService;
   #deviceControl;
   #osControl;
   #contentControl;
@@ -46,6 +47,7 @@ export class Device {
     this.#type = config.type || 'unknown';
     this.#defaultVolume = config.defaultVolume ?? null;
     this.#screenPath = config.screenPath || null;
+    this.#notifyService = config.notifyService ?? null;
     this.#deviceControl = capabilities.deviceControl || null;
     this.#osControl = capabilities.osControl || null;
     this.#contentControl = capabilities.contentControl || null;
@@ -90,6 +92,10 @@ export class Device {
    */
   get screenPath() {
     return this.#screenPath;
+  }
+
+  get notifyService() {
+    return this.#notifyService;
   }
 
   /**
