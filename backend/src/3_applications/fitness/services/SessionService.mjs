@@ -119,9 +119,10 @@ function normalizePayload(data) {
 }
 
 export class SessionService {
-  constructor({ sessionStore, defaultHouseholdId = null }) {
+  constructor({ sessionStore, defaultHouseholdId = null, logger = null }) {
     this.sessionStore = sessionStore;
     this.defaultHouseholdId = defaultHouseholdId;
+    this.logger = logger;
   }
 
   /**
@@ -324,6 +325,8 @@ export class SessionService {
     const today = `${now_.getFullYear()}-${String(now_.getMonth() + 1).padStart(2, '0')}-${String(now_.getDate()).padStart(2, '0')}`;
     const now = Date.now();
 
+    this.logger?.info?.('fitness.resumable.check.start', { contentId, householdId: hid, today });
+
     let sessions;
     try {
       sessions = await this.sessionStore.findByDate(today, hid);
@@ -352,7 +355,18 @@ export class SessionService {
       return (now - endTime) < maxGapMs;
     });
 
-    if (candidates.length === 0) return { resumable: false };
+    this.logger?.info?.('fitness.resumable.check.candidates', {
+      contentId,
+      totalSessions: sessions.length,
+      candidateCount: candidates.length,
+      rejected: sessions.length - candidates.length,
+      candidateIds: candidates.map(c => c.sessionId || c.session?.id).filter(Boolean)
+    });
+
+    if (candidates.length === 0) {
+      this.logger?.info?.('fitness.resumable.check.no_match', { contentId });
+      return { resumable: false };
+    }
 
     // Take the most recent by endTime
     candidates.sort((a, b) => {
@@ -367,6 +381,13 @@ export class SessionService {
     // Load full session data for the frontend to hydrate from
     const fullSession = await this.getSession(sessionId, hid, { decodeTimeline: true });
     if (!fullSession) return { resumable: false };
+
+    this.logger?.info?.('fitness.resumable.check.match', {
+      contentId,
+      matchedSessionId: sessionId,
+      finalized: !!fullSession.finalized,
+      ageMs: now - (typeof match.endTime === 'number' ? match.endTime : (match.startTime + (match.durationMs || 0)))
+    });
 
     return {
       resumable: true,
