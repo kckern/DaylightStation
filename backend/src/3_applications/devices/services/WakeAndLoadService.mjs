@@ -319,10 +319,30 @@ export class WakeAndLoadService {
             deviceId, dispatchId, contentId: prewarmResult.contentId, token: prewarmResult.token
           });
         } else if (prewarmResult?.status === 'failed') {
-          result.steps.prewarm = { ok: false, reason: prewarmResult.reason, error: prewarmResult.error };
+          result.steps.prewarm = {
+            ok: false,
+            reason: prewarmResult.reason,
+            permanent: !!prewarmResult.permanent,
+            error: prewarmResult.error,
+          };
           this.#logger.warn?.('wake-and-load.prewarm.failed', {
-            deviceId, dispatchId, reason: prewarmResult.reason, error: prewarmResult.error
+            deviceId, dispatchId,
+            reason: prewarmResult.reason,
+            permanent: !!prewarmResult.permanent,
+            error: prewarmResult.error,
           });
+
+          if (prewarmResult.permanent) {
+            this.#emitProgress(topic, dispatchId, 'prewarm', 'failed', {
+              reason: prewarmResult.reason,
+              permanent: true,
+            });
+            result.error = `Content unresolvable: ${prewarmResult.reason}`;
+            result.failedStep = 'prewarm';
+            result.permanent = true;
+            result.totalElapsedMs = Date.now() - startTime;
+            return result;
+          }
         } else if (prewarmResult?.status === 'skipped') {
           result.steps.prewarm = { skipped: true, reason: prewarmResult.reason || 'unknown' };
           this.#logger.debug?.('wake-and-load.prewarm.skipped', {
@@ -339,7 +359,9 @@ export class WakeAndLoadService {
         result.steps.prewarm = { ok: false, error: err.message };
         this.#logger.warn?.('wake-and-load.prewarm.failed', { deviceId, dispatchId, error: err.message });
       }
-      this.#emitProgress(topic, dispatchId, 'prewarm', 'done');
+      if (result.steps.prewarm?.ok !== false) {
+        this.#emitProgress(topic, dispatchId, 'prewarm', 'done');
+      }
     } else {
       const reason = isAdopt
         ? 'adopt-mode'
