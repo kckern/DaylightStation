@@ -82,7 +82,7 @@ describe('TranscodePrewarmService return shape', () => {
           localId: '1',
           adapter: {
             resolvePlayables: vi.fn().mockResolvedValue([{ contentId: 'plex:1', source: 'plex' }]),
-            loadMediaUrl: vi.fn().mockResolvedValue('https://example/mpd')
+            loadMediaUrl: vi.fn().mockResolvedValue({ url: 'https://example/mpd' })
           }
         })
       },
@@ -107,5 +107,43 @@ describe('TranscodePrewarmService return shape', () => {
     expect(result.status).toBe('failed');
     expect(result.reason).toBe('exception');
     expect(result.error).toBe('boom');
+  });
+});
+
+describe('TranscodePrewarmService — permanent vs transient failure', () => {
+  it('marks permanent: true when adapter returns reason="metadata-missing"', async () => {
+    const adapter = {
+      resolvePlayables: vi.fn().mockResolvedValue([{ contentId: 'plex:1', ratingKey: '1', source: 'plex' }]),
+      loadMediaUrl: vi.fn().mockResolvedValue({ url: null, reason: 'metadata-missing' }),
+    };
+    const svc = new TranscodePrewarmService({
+      contentIdResolver: { resolve: () => ({ adapter, source: 'plex', localId: '1' }) },
+      queueService: { resolveQueue: async (p) => p },
+      httpClient: { request: vi.fn() },
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+
+    const result = await svc.prewarm('plex:1');
+    expect(result.status).toBe('failed');
+    expect(result.reason).toBe('metadata-missing');
+    expect(result.permanent).toBe(true);
+  });
+
+  it('marks permanent: false when adapter returns reason="transient"', async () => {
+    const adapter = {
+      resolvePlayables: vi.fn().mockResolvedValue([{ contentId: 'plex:1', ratingKey: '1', source: 'plex' }]),
+      loadMediaUrl: vi.fn().mockResolvedValue({ url: null, reason: 'transient' }),
+    };
+    const svc = new TranscodePrewarmService({
+      contentIdResolver: { resolve: () => ({ adapter, source: 'plex', localId: '1' }) },
+      queueService: { resolveQueue: async (p) => p },
+      httpClient: { request: vi.fn() },
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+
+    const result = await svc.prewarm('plex:1');
+    expect(result.status).toBe('failed');
+    expect(result.reason).toBe('transient');
+    expect(result.permanent).toBe(false);
   });
 });
