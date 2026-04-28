@@ -1673,7 +1673,7 @@ export class PlexAdapter {
         itemData = data?.MediaContainer?.Metadata?.[0];
         if (!itemData) {
           this.logger.warn?.('plex.loadMediaUrl.metadataMissing', { ratingKey });
-          return null;
+          return { url: null, reason: 'metadata-missing' };
         }
       } else {
         itemData = itemOrKey;
@@ -1682,7 +1682,7 @@ export class PlexAdapter {
 
       if (!itemData || !ratingKey) {
         this.logger.warn?.('plex.loadMediaUrl.metadataMissing', { ratingKey });
-        return null;
+        return { url: null, reason: 'metadata-missing' };
       }
 
       const { type } = itemData;
@@ -1693,7 +1693,7 @@ export class PlexAdapter {
         // For shows/seasons/albums, would need to select a child item
         // This is handled by loadPlayableItemFromKey in the legacy code
         this.logger.warn?.('plex.loadMediaUrl.nonPlayableType', { ratingKey, type });
-        return null;
+        return { url: null, reason: 'non-playable-type' };
       }
 
       const {
@@ -1715,11 +1715,13 @@ export class PlexAdapter {
         const mediaKey = itemData?.Media?.[0]?.Part?.[0]?.key;
         if (!mediaKey) {
           this.logger.warn?.('plex.loadMediaUrl.audioMediaKeyMissing', { ratingKey });
-          return null;
+          return { url: null, reason: 'audio-key-missing' };
         }
 
         const separator = mediaKey.includes('?') ? '&' : '?';
-        return `${this.proxyPath}${mediaKey}${separator}X-Plex-Client-Identifier=${clientIdentifier}&X-Plex-Session-Identifier=${sessionIdentifier}`;
+        return {
+          url: `${this.proxyPath}${mediaKey}${separator}X-Plex-Client-Identifier=${clientIdentifier}&X-Plex-Session-Identifier=${sessionIdentifier}`
+        };
       }
 
       // Video: Use decision API to authorize session
@@ -1736,14 +1738,16 @@ export class PlexAdapter {
           reason: decisionResult.error || 'unknown'
         });
         const { sessionIdentifier, clientIdentifier } = decisionResult;
-        return this._buildTranscodeUrl(
-          ratingKey,
-          clientIdentifier,
-          sessionIdentifier,
-          maxVideoBitrate,
-          resolvedMaxResolution,
-          startOffset
-        );
+        return {
+          url: this._buildTranscodeUrl(
+            ratingKey,
+            clientIdentifier,
+            sessionIdentifier,
+            maxVideoBitrate,
+            resolvedMaxResolution,
+            startOffset
+          )
+        };
       }
 
       const { sessionIdentifier, clientIdentifier, decision } = decisionResult;
@@ -1752,18 +1756,22 @@ export class PlexAdapter {
       if (decision.canDirectPlay && decision.directStreamPath) {
         const directPath = decision.directStreamPath;
         const separator = directPath.includes('?') ? '&' : '?';
-        return `${this.proxyPath}${directPath}${separator}X-Plex-Client-Identifier=${clientIdentifier}&X-Plex-Session-Identifier=${sessionIdentifier}`;
+        return {
+          url: `${this.proxyPath}${directPath}${separator}X-Plex-Client-Identifier=${clientIdentifier}&X-Plex-Session-Identifier=${sessionIdentifier}`
+        };
       }
 
       // Otherwise use transcode URL
-      return this._buildTranscodeUrl(
-        ratingKey,
-        clientIdentifier,
-        sessionIdentifier,
-        maxVideoBitrate,
-        resolvedMaxResolution,
-        startOffset
-      );
+      return {
+        url: this._buildTranscodeUrl(
+          ratingKey,
+          clientIdentifier,
+          sessionIdentifier,
+          maxVideoBitrate,
+          resolvedMaxResolution,
+          startOffset
+        )
+      };
     } catch (error) {
       this.logger.error?.('plex.loadMediaUrl.exception', {
         ratingKey: typeof itemOrKey === 'string' || typeof itemOrKey === 'number'
@@ -1772,7 +1780,7 @@ export class PlexAdapter {
         error: error.message,
         stack: error.stack
       });
-      return null;
+      return { url: null, reason: 'transient' };
     }
   }
 
