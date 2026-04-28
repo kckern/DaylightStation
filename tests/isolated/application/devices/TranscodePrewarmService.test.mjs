@@ -119,7 +119,7 @@ describe('TranscodePrewarmService — permanent vs transient failure', () => {
     const svc = new TranscodePrewarmService({
       contentIdResolver: { resolve: () => ({ adapter, source: 'plex', localId: '1' }) },
       queueService: { resolveQueue: async (p) => p },
-      httpClient: { request: vi.fn() },
+      httpClient: { get: vi.fn() },
       logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     });
 
@@ -137,13 +137,31 @@ describe('TranscodePrewarmService — permanent vs transient failure', () => {
     const svc = new TranscodePrewarmService({
       contentIdResolver: { resolve: () => ({ adapter, source: 'plex', localId: '1' }) },
       queueService: { resolveQueue: async (p) => p },
-      httpClient: { request: vi.fn() },
+      httpClient: { get: vi.fn() },
       logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     });
 
     const result = await svc.prewarm('plex:1');
     expect(result.status).toBe('failed');
     expect(result.reason).toBe('transient');
+    expect(result.permanent).toBe(false);
+  });
+
+  it('marks permanent: false for an unrecognized reason string', async () => {
+    const adapter = {
+      resolvePlayables: vi.fn().mockResolvedValue([{ contentId: 'plex:1', ratingKey: '1', source: 'plex' }]),
+      loadMediaUrl: vi.fn().mockResolvedValue({ url: null, reason: 'banana' }),
+    };
+    const svc = new TranscodePrewarmService({
+      contentIdResolver: { resolve: () => ({ adapter, source: 'plex', localId: '1' }) },
+      queueService: { resolveQueue: async (p) => p },
+      httpClient: { get: vi.fn() },
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+
+    const result = await svc.prewarm('plex:1');
+    expect(result.status).toBe('failed');
+    expect(result.reason).toBe('banana');
     expect(result.permanent).toBe(false);
   });
 });
