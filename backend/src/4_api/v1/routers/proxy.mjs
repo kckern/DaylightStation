@@ -61,9 +61,14 @@ export function createProxyRouter(config) {
       return res.status(404).json({ error: 'Plex adapter not configured' });
     }
 
-    const mediaUrl = await adapter.loadMediaUrl(ratingKey, 0, { startOffset });
+    const result = await adapter.loadMediaUrl(ratingKey, 0, { startOffset });
+    const mediaUrl = result?.url ?? null;
     if (!mediaUrl) {
-      return res.status(404).json({ error: 'Could not generate stream URL', ratingKey });
+      return res.status(404).json({
+        error: 'Could not generate stream URL',
+        ratingKey,
+        reason: result?.reason
+      });
     }
     res.redirect(mediaUrl);
   }));

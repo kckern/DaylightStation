@@ -666,7 +666,7 @@ describe('loadMediaUrl error logging', () => {
 
     const result = await adapter.loadMediaUrl('999999');
 
-    expect(result).toBeNull();
+    expect(result).toEqual({ url: null, reason: 'metadata-missing' });
     expect(warn).toHaveBeenCalledWith(
       'plex.loadMediaUrl.metadataMissing',
       expect.objectContaining({ ratingKey: '999999' })
@@ -690,7 +690,7 @@ describe('loadMediaUrl error logging', () => {
 
     const result = await adapter.loadMediaUrl('1');
 
-    expect(result).toBeNull();
+    expect(result).toEqual({ url: null, reason: 'non-playable-type' });
     expect(warn).toHaveBeenCalledWith(
       'plex.loadMediaUrl.nonPlayableType',
       expect.objectContaining({ type: 'show' })
@@ -712,7 +712,7 @@ describe('loadMediaUrl error logging', () => {
 
     const result = await adapter.loadMediaUrl('1');
 
-    expect(result).toBeNull();
+    expect(result).toEqual({ url: null, reason: 'transient' });
     expect(errorLog).toHaveBeenCalledWith(
       'plex.loadMediaUrl.exception',
       expect.objectContaining({ ratingKey: '1', error: 'boom' })
