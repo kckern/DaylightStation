@@ -154,6 +154,67 @@ function findSeries(series, slug, v2Suffix, compactSuffix) {
     || [];
 }
 
+/**
+ * Cumulative series count up monotonically within a session and reset to 0
+ * across sessions. When merging, naively concatenating leaves the merged
+ * series ending at the LAST session's terminal value (not the sum). Rebase
+ * by offsetting each non-null entry by the running cumulative total carried
+ * over from previous sessions.
+ */
+function isCumulativeSeriesKey(key) {
+  return /:coins(_total)?$/.test(key)
+    || /:beats$/.test(key)
+    || key === 'global:coins';
+}
+
+function rebaseCumulativeSeries(series, offset) {
+  if (!offset) return series;
+  const out = {};
+  for (const [key, arr] of Object.entries(series)) {
+    if (!isCumulativeSeriesKey(key) || !Array.isArray(arr)) {
+      out[key] = arr;
+      continue;
+    }
+    out[key] = arr.map(v => (v == null ? null : v + offset));
+  }
+  return out;
+}
+
+/**
+ * For each cumulative series key present anywhere in `priorSessions`, sum
+ * each session's terminal (last non-null) value. Returns a map of key -> total.
+ */
+function cumulativeOffsets(priorSessions) {
+  const offsets = {};
+  for (const s of priorSessions) {
+    for (const [key, arr] of Object.entries(s.timeline.series)) {
+      if (!isCumulativeSeriesKey(key)) continue;
+      const last = getLastNonNull(arr);
+      offsets[key] = (offsets[key] || 0) + last;
+    }
+  }
+  return offsets;
+}
+
+/**
+ * Apply the offsets-map to a session's timeline series. Keys not present in
+ * the map are left untouched. Keys present but absent from the series are
+ * inserted as a single-element array of the offset (treated as "starts from
+ * the carried total at tick 0").
+ */
+function applyOffsets(series, offsets) {
+  if (!offsets || Object.keys(offsets).length === 0) return series;
+  const out = { ...series };
+  for (const [key, offset] of Object.entries(offsets)) {
+    if (!offset) continue;
+    if (Array.isArray(out[key])) {
+      out[key] = out[key].map(v => (v == null ? null : v + offset));
+    }
+    // If the key isn't in this session's series at all, skip — nothing to rebase.
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Load all input sessions
 // ---------------------------------------------------------------------------
@@ -215,7 +276,9 @@ let runningEndMs = sessions[0].endMs;
 const intervalMs = (merged.interval_seconds || 5) * 1000;
 
 for (let i = 1; i < sessions.length; i++) {
-  const next = sessions[i].timeline;
+  const offsets = cumulativeOffsets(sessions.slice(0, i));
+  const rebasedSeries = applyOffsets(sessions[i].timeline.series, offsets);
+  const next = { ...sessions[i].timeline, series: rebasedSeries };
   const gapTicks = Math.max(0, Math.floor((sessions[i].startMs - runningEndMs) / intervalMs));
   merged = mergeTimelines(merged, next, gapTicks);
   runningEndMs = sessions[i].endMs;
