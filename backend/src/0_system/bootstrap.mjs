@@ -466,7 +466,7 @@ export function createContentRegistry(config, deps = {}) {
         token: config.plex.token,
         mediaProgressMemory,  // Inject MediaProgressMemory for watch state persistence
         mediaKeyResolver,     // Inject MediaKeyResolver for normalizing media keys
-        logger: deps.logger?.child?.({ component: 'plex-adapter' }) || deps.logger || console,
+        logger: deps.logger?.child?.({ module: 'plex-adapter' }) || deps.logger || console,
       }, { httpClient }),
       { category: plexManifest.capability, provider: plexManifest.provider }
     );
