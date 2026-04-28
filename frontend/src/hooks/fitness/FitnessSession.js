@@ -1389,7 +1389,13 @@ export class FitnessSession {
       const resp = await DaylightAPI(`api/v1/fitness/resumable?contentId=${encodeURIComponent(contentId)}`);
       return resp || { resumable: false };
     } catch (err) {
-      getLogger().warn('fitness.session.resumable_check_failed', { contentId, error: err?.message });
+      const message = err?.message || String(err);
+      const isHttpError = message.startsWith('HTTP ');
+      getLogger().warn('fitness.session.resumable_check_failed', {
+        contentId,
+        error: message,
+        kind: isHttpError ? 'http' : 'js'
+      });
       return { resumable: false };
     }
   }
@@ -1477,13 +1483,21 @@ export class FitnessSession {
    */
   async _startWithResumeCheck(reason) {
     const contentId = this._getCurrentContentId();
+    getLogger().info('fitness.session.resume_check.start', { reason, contentId });
 
     if (!contentId) {
+      getLogger().info('fitness.session.resume_check.no_content', { reason });
       if (!this.sessionId) this.ensureStarted({ reason, force: true });
       return;
     }
 
     const result = await this._checkResumable(contentId);
+    getLogger().info('fitness.session.resume_check.result', {
+      contentId,
+      resumable: !!result.resumable,
+      finalized: !!result.finalized,
+      matchedSessionId: result.session?.sessionId || result.session?.session?.id || null
+    });
 
     if (!result.resumable) {
       if (!this.sessionId) this.ensureStarted({ reason, force: true });
@@ -1491,13 +1505,13 @@ export class FitnessSession {
     }
 
     if (result.finalized) {
-      // Session was explicitly ended — needs user prompt
+      getLogger().info('fitness.session.resume_check.finalized_prompt', { contentId });
       this._pendingResumePrompt = result.session;
       this._notifyResumePromptNeeded(result.session);
       return;
     }
 
-    // Auto-resume silently
+    getLogger().info('fitness.session.resume_check.auto_resume', { contentId });
     this.ensureStarted({ reason: 'resumed', force: true });
     this._hydrateFromSession(result.session);
   }
