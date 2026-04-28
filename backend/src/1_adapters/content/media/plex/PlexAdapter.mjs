@@ -45,7 +45,7 @@ export class PlexAdapter {
     this.proxyPath = config.proxyPath || '/api/v1/proxy/plex';
     this.mediaProgressMemory = config.mediaProgressMemory || null;
     this.mediaKeyResolver = config.mediaKeyResolver || null;
-    this.logger = deps.logger || console;
+    this.logger = config.logger || deps.logger || console;
   }
 
   /**
@@ -154,7 +154,10 @@ export class PlexAdapter {
       const metadata = await this.client.getMetadata(ratingKey);
       return metadata || null;
     } catch (err) {
-      console.error('[PlexAdapter] getMetadata error:', err.message);
+      this.logger.error?.('plex.getMetadata.exception', {
+        error: err.message,
+        stack: err.stack,
+      });
       return null;
     }
   }
@@ -179,7 +182,10 @@ export class PlexAdapter {
         t => t ? `${this.proxyPath}${t}` : ''
       );
     } catch (err) {
-      console.error('[PlexAdapter] loadImgFromKey error:', err.message);
+      this.logger.error?.('plex.loadImgFromKey.exception', {
+        error: err.message,
+        stack: err.stack,
+      });
       return ['', '', ''];
     }
   }
@@ -200,7 +206,10 @@ export class PlexAdapter {
       const thumbPath = item.composite || item.thumb;
       return thumbPath ? `${this.proxyPath}${thumbPath}` : null;
     } catch (err) {
-      console.error('[PlexAdapter] getThumbnail error:', err.message);
+      this.logger.error?.('plex.getThumbnail.exception', {
+        error: err.message,
+        stack: err.stack,
+      });
       return null;
     }
   }
@@ -244,7 +253,7 @@ export class PlexAdapter {
             } catch (err) {
               // Debug log but don't fail - episode can still play without show labels
               if (process.env.NODE_ENV !== 'production') {
-                console.debug('[PlexAdapter] Failed to fetch show labels:', err.message);
+                this.logger.debug?.('plex.show-labels.fetch-failed', { error: err.message });
               }
               // Cache the empty result to avoid retrying failed fetches
               if (cache) {
@@ -347,7 +356,10 @@ export class PlexAdapter {
         return this._toListableItem(item);
       });
     } catch (err) {
-      console.error('[PlexAdapter] getList error:', err.message);
+      this.logger.error?.('plex.getList.exception', {
+        error: err.message,
+        stack: err.stack,
+      });
       return [];
     }
   }
@@ -854,7 +866,10 @@ export class PlexAdapter {
         }
       };
     } catch (error) {
-      console.error('[PlexAdapter] requestTranscodeDecision error:', error.message);
+      this.logger.error?.('plex.requestTranscodeDecision.exception', {
+        error: error.message,
+        stack: error.stack,
+      });
       return {
         success: false,
         error: error.message,
@@ -987,7 +1002,10 @@ export class PlexAdapter {
         return this._buildTranscodeUrl(key, clientIdentifier, sessionIdentifier, maxVideoBitrate, maxResolution, startOffset);
       }
     } catch (error) {
-      console.error('[PlexAdapter] loadMediaUrl error:', error.message);
+      this.logger.error?.('plex.loadMediaUrl.exception', {
+        error: error.message,
+        stack: error.stack,
+      });
       return null;
     }
   }
@@ -1061,7 +1079,10 @@ export class PlexAdapter {
         childCount: item.leafCount || item.childCount || 0
       };
     } catch (err) {
-      console.error('[PlexAdapter] getContainerInfo error:', err.message);
+      this.logger.error?.('plex.getContainerInfo.exception', {
+        error: err.message,
+        stack: err.stack,
+      });
       return null;
     }
   }
@@ -1101,7 +1122,10 @@ export class PlexAdapter {
       }
       return history;
     } catch (e) {
-      console.error('[PlexAdapter] Error loading history from mediaProgressMemory:', e.message);
+      this.logger.error?.('plex.history.load-failed', {
+        error: e.message,
+        stack: e.stack,
+      });
       return {};
     }
   }
@@ -1569,7 +1593,10 @@ export class PlexAdapter {
         }
       };
     } catch (error) {
-      console.error('[PlexAdapter] requestTranscodeDecision error:', error.message);
+      this.logger.error?.('plex.requestTranscodeDecision.exception', {
+        error: error.message,
+        stack: error.stack,
+      });
       return {
         success: false,
         error: error.message,
@@ -1906,7 +1933,10 @@ export class PlexAdapter {
         total: filteredItems.length
       };
     } catch (err) {
-      console.error('[PlexAdapter] search error:', err.message);
+      this.logger.error?.('plex.search.exception', {
+        error: err.message,
+        stack: err.stack,
+      });
       return { items: [], total: 0 };
     }
   }
@@ -1972,7 +2002,10 @@ export class PlexAdapter {
           }
         }));
     } catch (err) {
-      console.error('[PlexAdapter] _searchPlaylists error:', err.message);
+      this.logger.error?.('plex._searchPlaylists.exception', {
+        error: err.message,
+        stack: err.stack,
+      });
       return [];
     }
   }
@@ -2025,7 +2058,10 @@ export class PlexAdapter {
 
       return allCollections;
     } catch (err) {
-      console.error('[PlexAdapter] _searchCollections error:', err.message);
+      this.logger.error?.('plex._searchCollections.exception', {
+        error: err.message,
+        stack: err.stack,
+      });
       return [];
     }
   }
@@ -2159,7 +2195,10 @@ export class PlexAdapter {
 
       return matchingItems;
     } catch (err) {
-      console.error('[PlexAdapter] getItemsByLabel error:', err.message);
+      this.logger.error?.('plex.getItemsByLabel.exception', {
+        error: err.message,
+        stack: err.stack,
+      });
       return [];
     }
   }
@@ -2219,7 +2258,10 @@ export class PlexAdapter {
 
       return smallest;
     } catch (err) {
-      console.error('[PlexAdapter] _findSmallestCollection error:', err.message);
+      this.logger.error?.('plex._findSmallestCollection.exception', {
+        error: err.message,
+        stack: err.stack,
+      });
       return null;
     }
   }
