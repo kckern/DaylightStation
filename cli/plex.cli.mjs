@@ -23,34 +23,63 @@
  * @module cli/plex
  */
 
-import 'dotenv/config';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { existsSync } from 'fs';
-import axios from '../backend/lib/http.mjs';
-import { createLogger } from '../backend/lib/logging/logger.js';
-import { configService } from '../backend/lib/config/ConfigService.mjs';
-import { resolveConfigPaths } from '../backend/lib/config/pathResolver.mjs';
-import { hydrateProcessEnvFromConfigs } from '../backend/lib/logging/config.js';
+import { existsSync, readFileSync } from 'fs';
+import { execSync } from 'child_process';
+import { hostname } from 'os';
+import yaml from 'js-yaml';
+import axios from 'axios';
 
-// Bootstrap config (same as backend/index.js)
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const isDocker = existsSync('/.dockerenv');
-const configPaths = resolveConfigPaths({ isDocker, codebaseDir: path.join(__dirname, '..') });
+// ============================================================================
+// Config: read auth + host from container via docker exec
+// (matches the buxfer.cli.mjs pattern — self-contained, no app server bootstrap)
+// ============================================================================
 
-if (configPaths.error) {
-    console.error('Config error:', configPaths.error);
-    console.error('Set DAYLIGHT_DATA_PATH environment variable');
-    process.exit(1);
+const CONTAINER = 'daylight-station';
+
+function dockerRead(filePath) {
+    try {
+        return execSync(
+            `sudo docker exec ${CONTAINER} sh -c 'cat ${filePath}'`,
+            { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+        );
+    } catch {
+        return null;
+    }
 }
 
-hydrateProcessEnvFromConfigs(configPaths.configDir);
-configService.init({ dataDir: configPaths.dataDir });
+function loadConfig() {
+    // Token from household auth
+    const authRaw = dockerRead('data/household/auth/plex.yml');
+    if (!authRaw) {
+        console.error('Error: cannot read data/household/auth/plex.yml from the daylight-station container.');
+        console.error('Ensure the container is running.');
+        process.exit(1);
+    }
+    const auth = yaml.load(authRaw) || {};
+    const token = auth.token;
+    if (!token) {
+        console.error('Error: data/household/auth/plex.yml has no `token` field.');
+        process.exit(1);
+    }
 
-const logger = createLogger({
-    source: 'cli',
-    app: 'plex'
-});
+    // Host from services.yml — keyed by current hostname
+    const servicesRaw = dockerRead('data/system/config/services.yml');
+    if (!servicesRaw) {
+        console.error('Error: cannot read data/system/config/services.yml from the container.');
+        process.exit(1);
+    }
+    const services = yaml.load(servicesRaw) || {};
+    const plexHosts = services.plex || {};
+    const host = process.env.PLEX_HOST || plexHosts[hostname()] || plexHosts['kckern-server'] || plexHosts.docker;
+    if (!host) {
+        console.error('Error: no plex host found in services.yml for the current host.');
+        console.error(`Tried hostname=${hostname()}, fallback kckern-server, fallback docker.`);
+        console.error('Set PLEX_HOST env var to override.');
+        process.exit(1);
+    }
+
+    return { token, host };
+}
 
 // Parse command line arguments
 const args = process.argv.slice(2);
@@ -58,19 +87,39 @@ const flags = {
     json: args.includes('--json'),
     idsOnly: args.includes('--ids-only'),
     deep: args.includes('--deep'),
-    section: null
+    lock: args.includes('--lock'),
+    dryRun: args.includes('--dry-run'),
+    section: null,
+    title: null,
+    summary: null,
+    titleSort: null,
+    tagline: null,
+    fromYaml: null
 };
 
-// Extract --section value
-const sectionIdx = args.indexOf('--section');
-if (sectionIdx !== -1 && args[sectionIdx + 1]) {
-    flags.section = args[sectionIdx + 1];
+// Flags that consume the next argument as their value
+const valueFlags = {
+    '--section': 'section',
+    '--title': 'title',
+    '--summary': 'summary',
+    '--titleSort': 'titleSort',
+    '--tagline': 'tagline',
+    '--from-yaml': 'fromYaml'
+};
+
+// Track indices of flag-values so we can exclude them from positional args
+const consumedValueIndices = new Set();
+for (const [flag, key] of Object.entries(valueFlags)) {
+    const idx = args.indexOf(flag);
+    if (idx !== -1 && args[idx + 1] !== undefined) {
+        flags[key] = args[idx + 1];
+        consumedValueIndices.add(idx + 1);
+    }
 }
 
-// Remove flags from args to get positional arguments
-const positionalArgs = args.filter(arg =>
-    !arg.startsWith('--') &&
-    (sectionIdx === -1 || args.indexOf(arg) !== sectionIdx + 1)
+// Remove flags and flag-values from args to get positional arguments
+const positionalArgs = args.filter((arg, i) =>
+    !arg.startsWith('--') && !consumedValueIndices.has(i)
 );
 
 const command = positionalArgs[0];
@@ -81,32 +130,13 @@ const commandArgs = positionalArgs.slice(1);
  */
 class PlexCLI {
     constructor() {
-        // Load auth from ConfigService (same pattern as backend/lib/plex.mjs)
-        const auth = configService.getHouseholdAuth('plex') || {};
-        this.token = auth.token;
-
-        if (!this.token) {
-            console.error('Error: Plex token not found in config');
-            console.error('Ensure secrets.yml has plex.token configured');
-            process.exit(1);
-        }
-
-        // Get server URL from auth config or environment
-        const { plex: plexEnv } = process.env;
-        this.host = auth.server_url?.replace(/:\d+$/, '') || plexEnv?.host;
-        this.port = plexEnv?.port;
-        this.baseUrl = this.port ? `${this.host}:${this.port}` : this.host;
-
-        if (!this.baseUrl) {
-            console.error('Error: Plex server URL not configured');
-            process.exit(1);
-        }
-
-        logger.info('Plex CLI initialized', { baseUrl: this.baseUrl });
+        const { token, host } = loadConfig();
+        this.token = token;
+        this.baseUrl = host.replace(/\/$/, '');
     }
 
     /**
-     * Make authenticated request to Plex API
+     * Make authenticated GET request to Plex API
      */
     async fetch(endpoint) {
         const url = `${this.baseUrl}/${endpoint}`;
@@ -122,7 +152,7 @@ class PlexCLI {
             if (error.response?.status === 404) {
                 return null;
             }
-            logger.error('Plex API error', { endpoint, error: error.message });
+            console.error(`Plex API error on ${endpoint}: ${error.message}`);
             throw error;
         }
     }
@@ -201,6 +231,50 @@ class PlexCLI {
             title: meta?.title || null,
             type: meta?.type || null
         };
+    }
+
+    /**
+     * Authenticated PUT request to Plex API.
+     * Used for editing metadata (title, summary, etc.).
+     *
+     * @param {string} endpoint - API path (e.g., 'library/metadata/603856')
+     * @param {Object} params - Query params to send (e.g., { 'title.value': 'New Title' })
+     * @returns {Promise<Object>} Response data
+     */
+    async put(endpoint, params = {}) {
+        const url = `${this.baseUrl}/${endpoint}`;
+        const separator = url.includes('?') ? '&' : '?';
+        const searchParams = new URLSearchParams(params);
+        const fullUrl = `${url}${separator}X-Plex-Token=${this.token}&${searchParams.toString()}`;
+
+        const response = await axios.put(fullUrl, null, {
+            headers: { Accept: 'application/json' }
+        });
+        return response.data;
+    }
+
+    /**
+     * Update metadata fields on a Plex item.
+     * Builds Plex's `field.value=...` (and optional `field.locked=1`) params and PUTs them.
+     *
+     * @param {string} plexId - Plex rating key (e.g., '603856')
+     * @param {Object} fields - Field name -> string value (only present fields are sent)
+     * @param {Object} [opts]
+     * @param {boolean} [opts.lock=false] - Also send `field.locked=1` for each field (recommended for
+     *   seasons whose default title comes from a Plex agent and would otherwise be re-overwritten on refresh)
+     * @returns {Promise<Object>} Plex response
+     */
+    async setMetadata(plexId, fields, { lock = false } = {}) {
+        const params = {};
+        for (const [field, value] of Object.entries(fields)) {
+            if (value === undefined || value === null) continue;
+            params[`${field}.value`] = String(value);
+            if (lock) params[`${field}.locked`] = '1';
+        }
+        if (Object.keys(params).length === 0) {
+            throw new Error('setMetadata called with no fields to update');
+        }
+        return this.put(`library/metadata/${plexId}`, params);
     }
 
     /**
@@ -361,33 +435,171 @@ async function cmdVerify(plex, ids) {
     console.log();
 }
 
+async function cmdSet(plex, plexId) {
+    if (!plexId) {
+        console.error('Usage: plex set <id> [--title "..."] [--summary "..."] [--titleSort "..."] [--tagline "..."] [--lock] [--dry-run]');
+        process.exit(1);
+    }
+
+    const fields = {};
+    if (flags.title !== null) fields.title = flags.title;
+    if (flags.summary !== null) fields.summary = flags.summary;
+    if (flags.titleSort !== null) fields.titleSort = flags.titleSort;
+    if (flags.tagline !== null) fields.tagline = flags.tagline;
+
+    if (Object.keys(fields).length === 0) {
+        console.error('Error: provide at least one of --title, --summary, --titleSort, --tagline');
+        process.exit(1);
+    }
+
+    // Show before-state for user verification
+    const before = await plex.getMetadata(plexId);
+    if (!before) {
+        console.error(`No item found with ID: ${plexId}`);
+        process.exit(1);
+    }
+
+    console.log('\nBefore:');
+    console.log(`  ID: ${before.ratingKey}  type: ${before.type}`);
+    console.log(`  Title: ${before.title}`);
+    if (before.summary) console.log(`  Summary: ${before.summary.substring(0, 120)}${before.summary.length > 120 ? '…' : ''}`);
+
+    console.log('\nWill update:');
+    for (const [k, v] of Object.entries(fields)) {
+        const display = String(v).substring(0, 120);
+        console.log(`  ${k}: ${display}${String(v).length > 120 ? '…' : ''}`);
+    }
+    if (flags.lock) console.log('  (with .locked=1 — agents will not overwrite)');
+
+    if (flags.dryRun) {
+        console.log('\n[dry-run] Skipping PUT.');
+        return;
+    }
+
+    await plex.setMetadata(plexId, fields, { lock: flags.lock });
+
+    // Verify by re-fetching
+    const after = await plex.getMetadata(plexId);
+    console.log('\nAfter:');
+    console.log(`  Title: ${after?.title}`);
+    if (after?.summary) console.log(`  Summary: ${after.summary.substring(0, 120)}${after.summary.length > 120 ? '…' : ''}`);
+    console.log('\n✓ Update applied');
+}
+
+async function cmdSetFromYaml(plex, yamlPath) {
+    if (!yamlPath) {
+        console.error('Usage: plex set-from-yaml <path/to/manifest.yml> [--lock] [--dry-run]');
+        console.error('\nManifest format:');
+        console.error('  show:               # optional, for context only');
+        console.error('    id: 603855');
+        console.error('    title: Super Blocks');
+        console.error('  seasons:');
+        console.error('    - id: 603856');
+        console.error('      title: "LIIFT MORE Super Block"');
+        console.error('      summary: |');
+        console.error('        Description text...');
+        process.exit(1);
+    }
+
+    if (!existsSync(yamlPath)) {
+        console.error(`File not found: ${yamlPath}`);
+        process.exit(1);
+    }
+
+    const raw = readFileSync(yamlPath, 'utf8');
+    const manifest = yaml.load(raw);
+
+    if (!manifest || !Array.isArray(manifest.seasons)) {
+        console.error('Manifest must have a top-level `seasons:` array');
+        process.exit(1);
+    }
+
+    console.log(`\nLoaded ${manifest.seasons.length} season entries from ${yamlPath}`);
+    if (manifest.show?.title) console.log(`Show: ${manifest.show.title} (id ${manifest.show.id})`);
+    if (flags.lock) console.log('Mode: locking fields (agents will not overwrite)');
+    if (flags.dryRun) console.log('Mode: dry-run (no PUTs)');
+
+    let updated = 0;
+    let skipped = 0;
+    const errors = [];
+
+    for (const entry of manifest.seasons) {
+        if (!entry?.id) {
+            console.warn(`  ⚠️  Skipping entry with no id: ${JSON.stringify(entry)}`);
+            skipped++;
+            continue;
+        }
+
+        const fields = {};
+        if (typeof entry.title === 'string') fields.title = entry.title;
+        if (typeof entry.summary === 'string') fields.summary = entry.summary;
+        if (typeof entry.titleSort === 'string') fields.titleSort = entry.titleSort;
+        if (typeof entry.tagline === 'string') fields.tagline = entry.tagline;
+
+        if (Object.keys(fields).length === 0) {
+            console.log(`  ↷ ${entry.id}: no fields to update — skipped`);
+            skipped++;
+            continue;
+        }
+
+        const fieldList = Object.keys(fields).join(', ');
+        if (flags.dryRun) {
+            console.log(`  [dry] ${entry.id}: would set ${fieldList} → "${(fields.title || fields.summary || '').substring(0, 60)}…"`);
+            updated++;
+            continue;
+        }
+
+        try {
+            await plex.setMetadata(entry.id, fields, { lock: flags.lock });
+            console.log(`  ✓ ${entry.id}: updated ${fieldList} → "${(fields.title || '').substring(0, 60)}"`);
+            updated++;
+        } catch (err) {
+            console.error(`  ✗ ${entry.id}: ${err.message}`);
+            errors.push({ id: entry.id, error: err.message });
+        }
+    }
+
+    console.log(`\n${updated} updated, ${skipped} skipped, ${errors.length} errors`);
+    if (errors.length > 0) process.exit(1);
+}
+
 function showHelp() {
     console.log(`
-Plex CLI - Search and verify Plex library items
+Plex CLI - Search, verify, and edit Plex library items
 
 Usage:
   node plex.cli.mjs <command> [arguments] [options]
 
 Commands:
-  libraries              List all library sections
-  search <query>         Search library by title (shows/movies)
-  info <id>              Show metadata for a Plex ID
-  verify <id> [...]      Check if ID(s) exist in Plex
+  libraries                List all library sections
+  search <query>           Search library by title (shows/movies)
+  info <id>                Show metadata for a Plex ID
+  verify <id> [...]        Check if ID(s) exist in Plex
+  set <id>                 Update metadata for a single item
+  set-from-yaml <file>     Bulk-update metadata from a YAML manifest
 
 Options:
-  --json                 Output as JSON
-  --ids-only             Output only Plex IDs (search command)
-  --deep                 Use hub search (finds episodes, tracks, etc.)
-  --section <id>         Limit search to specific library section
+  --json                   Output as JSON
+  --ids-only               Output only Plex IDs (search command)
+  --deep                   Use hub search (finds episodes, tracks, etc.)
+  --section <id>           Limit search to specific library section
+  --title "..."            (set) New title.value
+  --summary "..."          (set) New summary.value
+  --titleSort "..."        (set) New titleSort.value
+  --tagline "..."          (set) New tagline.value
+  --from-yaml <file>       (alt to positional) Manifest path for set-from-yaml
+  --lock                   Also send .locked=1 (prevents agent overwrite — recommended for seasons)
+  --dry-run                Show what would be sent without making the request
 
 Examples:
   node plex.cli.mjs libraries
   node plex.cli.mjs search "yoga"
-  node plex.cli.mjs search "ninja" --deep         # find episodes
-  node plex.cli.mjs search "ninja" --section 14   # fitness library only
+  node plex.cli.mjs search "ninja" --deep
   node plex.cli.mjs info 673634
   node plex.cli.mjs verify 606037 11570 11571
-  node plex.cli.mjs verify 606037 --json
+  node plex.cli.mjs set 603856 --title "LIIFT MORE Super Block" --lock
+  node plex.cli.mjs set 603856 --summary "..." --dry-run
+  node plex.cli.mjs set-from-yaml data/_drafts/super-blocks-seasons.yml --lock
 `);
 }
 
@@ -425,13 +637,22 @@ async function main() {
                 await cmdVerify(plex, commandArgs);
                 break;
 
+            case 'set':
+                await cmdSet(plex, commandArgs[0]);
+                break;
+
+            case 'set-from-yaml':
+            case 'yaml':
+                await cmdSetFromYaml(plex, commandArgs[0] || flags.fromYaml);
+                break;
+
             default:
                 console.error(`Unknown command: ${command}`);
                 showHelp();
                 process.exit(1);
         }
     } catch (error) {
-        logger.error('CLI error', { command, error: error.message });
+        console.error(`CLI error in ${command}: ${error.message}`);
         console.error(`Error: ${error.message}`);
         process.exit(1);
     }
