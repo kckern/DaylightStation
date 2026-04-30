@@ -748,7 +748,12 @@ describe('PlexClient', () => {
 });
 
 describe('getContainerInfo - rating and parent linkage', () => {
-  test('exposes rating and userRating from Plex metadata', async () => {
+  test('rating prefers userRating, with userRating exposed separately', async () => {
+    // Convention established at PlexAdapter.mjs:509 and :623 — `rating`
+    // is always the best-available value with this priority:
+    //   item.userRating ?? item.rating ?? item.audienceRating ?? null
+    // `userRating` is also exposed separately so consumers can distinguish
+    // a user-starred rating from a fallback to the content rating.
     const mockHttpClient = { get: vi.fn(), post: vi.fn() };
     const adapter = new PlexAdapter(
       { host: 'http://localhost:32400', token: 'test-token' },
@@ -774,7 +779,7 @@ describe('getContainerInfo - rating and parent linkage', () => {
 
     const info = await adapter.getContainerInfo('plex:603856');
 
-    expect(info.rating).toBe(7.5);
+    expect(info.rating).toBe(8);          // userRating wins
     expect(info.userRating).toBe(8);
   });
 
@@ -829,5 +834,6 @@ describe('getContainerInfo - rating and parent linkage', () => {
     expect(info.rating).toBeNull();
     expect(info.userRating).toBeNull();
     expect(info.parentRatingKey).toBeNull();
+    expect(info.parentTitle).toBeNull();
   });
 });

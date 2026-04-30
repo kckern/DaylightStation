@@ -1077,8 +1077,12 @@ export class PlexAdapter {
         duration: item.duration ? Math.floor(item.duration / 1000) : null,
         ratingKey: item.ratingKey,
         childCount: item.leafCount || item.childCount || 0,
-        // Rating fields for season-as-show tile sorting (FitnessMenu)
-        rating: item.rating ?? item.audienceRating ?? null,
+        // Rating fields for season-as-show tile sorting (FitnessMenu).
+        // Matches the convention in _toListableItem (line 509) and
+        // _toPlayableItem (line 623): `rating` is the best-available value
+        // with userRating winning. `userRating` is also exposed separately
+        // so consumers can distinguish a user-starred rating from a fallback.
+        rating: item.userRating ?? item.rating ?? item.audienceRating ?? null,
         userRating: item.userRating ?? null,
         // Parent linkage for season label inheritance (season -> show)
         parentRatingKey: item.parentRatingKey ?? null,
