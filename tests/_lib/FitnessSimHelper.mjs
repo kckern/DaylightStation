@@ -178,3 +178,82 @@ export class FitnessSimHelper {
     );
   }
 }
+
+/**
+ * Drive an equipment cadence (RPM) via the controller in the page.
+ * Equivalent to moving the popup's RPM slider, but scriptable from Playwright.
+ */
+export async function setRpm(page, equipmentId, rpm) {
+  return page.evaluate(({ id, rpm }) => {
+    const ctl = window.__fitnessSimController;
+    if (!ctl) return { ok: false, error: 'controller_unavailable' };
+    return ctl.setRpm(id, rpm);
+  }, { id: equipmentId, rpm });
+}
+
+/**
+ * Trigger a cycle challenge by selection id.
+ * Returns { success, reason?, challengeId? }.
+ */
+export async function triggerCycleChallenge(page, { selectionId, riderId } = {}) {
+  return page.evaluate(({ selectionId, riderId }) => {
+    const ctl = window.__fitnessSimController;
+    if (!ctl) return { success: false, reason: 'controller_unavailable' };
+    return ctl.triggerCycleChallenge({ selectionId, riderId });
+  }, { selectionId, riderId });
+}
+
+/**
+ * Read live cycle-challenge state from window.__fitnessGovernance.
+ * Returns null if no cycle challenge is active.
+ */
+export async function readCycleState(page) {
+  return page.evaluate(() => {
+    const gov = window.__fitnessGovernance;
+    if (!gov || gov.activeChallengeType !== 'cycle') return null;
+    return {
+      cycleState: gov.cycleState,
+      currentRpm: gov.currentRpm,
+      riderId: gov.riderId,
+      currentPhaseIndex: gov.currentPhaseIndex,
+      totalPhases: gov.totalPhases,
+      phaseProgressPct: gov.phaseProgressPct,
+      equipment: gov.activeChallengeEquipment
+    };
+  });
+}
+
+/**
+ * Wait until cycleState transitions to one of `targets`, or timeout.
+ */
+export async function waitForCycleState(page, targets, { timeoutMs = 30000, pollMs = 250 } = {}) {
+  const wanted = Array.isArray(targets) ? targets : [targets];
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const state = await readCycleState(page);
+    if (state && wanted.includes(state.cycleState)) return state;
+    await page.waitForTimeout(pollMs);
+  }
+  const finalState = await readCycleState(page);
+  throw new Error(`Timed out waiting for cycleState in ${wanted.join(',')}; last seen: ${JSON.stringify(finalState)}`);
+}
+
+/**
+ * List equipment as the simulator sees it.
+ */
+export async function getEquipment(page) {
+  return page.evaluate(() => {
+    const ctl = window.__fitnessSimController;
+    return ctl ? ctl.getEquipment() : [];
+  });
+}
+
+/**
+ * List cycle selections from the active policy set.
+ */
+export async function listCycleSelections(page) {
+  return page.evaluate(() => {
+    const ctl = window.__fitnessSimController;
+    return ctl ? (ctl.listCycleSelections?.() || []) : [];
+  });
+}
