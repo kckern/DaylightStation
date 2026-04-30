@@ -1951,13 +1951,23 @@ export class FitnessSession {
         });
     }
 
+    // Build equipmentCadenceMap: maps equipmentId -> { rpm, connected }
+    // so the governance engine can read live cadence for cycle challenges.
+    const equipmentCadenceMap = {};
+    this._equipmentById.forEach((entry, equipmentId) => {
+      if (entry && equipmentId) {
+        equipmentCadenceMap[equipmentId] = this.getEquipmentCadence(equipmentId);
+      }
+    });
+
     this.governanceEngine.evaluate({
         activeParticipants,
         userZoneMap,
         zoneRankMap,
         zoneInfoMap,
         totalCount: activeParticipants.length,
-        hrInactiveUsers
+        hrInactiveUsers,
+        equipmentCadenceMap
     });
   }
 
