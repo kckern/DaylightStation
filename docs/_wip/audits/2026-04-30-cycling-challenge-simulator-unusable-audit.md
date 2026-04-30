@@ -275,3 +275,24 @@ End-to-end Playwright test that walks the whole lifecycle in a real browser, scr
 9. Verify no orphan state on `window.__fitnessGovernance` after teardown.
 
 This test is the exit criterion for the fix.
+
+---
+
+## Resolution (2026-04-30)
+
+Closed by branch `worktree-cycle-challenge-sim-fix` (12 commits, +2084 / -24 LOC across 14 files):
+
+- `93598d6d8` `feat(fitness): add getEquipmentCatalog() to DeviceEventRouter and FitnessSession` — closes P0-2
+- `b8a343a49` `feat(fitness): apply equipment catalog from config to session` — closes P0-1
+- `ddd59c878` `feat(governance): expose cycle-challenge state on window globals` — closes P0-3
+- `a3162e73d` `fix(governance): support string-form rider on window globals` — discovered during Task 3 review (live engine stores `active.rider` as a userId string, not the `{id,name}` object form the spec assumed)
+- `a962054f1` `feat(governance): notify sim popout on cycle state transitions` — closes P0-4
+- `dade8b58d` `feat(governance): surface specific rejection reasons from cycle trigger` + `ff4c46149` docs — closes P1-2 (`failed_to_start` is now a defensive fallback only; real reasons are `equipment_not_found`, `no_eligible_riders`, `force_rider_not_eligible`, `all_riders_on_cooldown`, `selection_not_found`, `rider_not_eligible`)
+- `7ed4ac9d2` `fix(fitness): wire equipmentCadenceMap through to GovernanceEngine` — bonus catch from the Playwright test: `GovernanceEngine.evaluate()` was unconditionally clobbering the cached cadence map to `{}` on the pulse-timer path, racing the React snapshot path; `FitnessSession.updateSnapshot()` never built or passed the map at all. Both fixed.
+- `a514d3332` + `331eb8877` `test(fitness): cycle-challenge full lifecycle Playwright test` — exit criterion. Discovers a cycling Plex episode via `/api/v1/fitness` nav_items (`icon: cycle`), navigates to `/fitness/play/{id}?nogovern` to bypass sequential-show redirect (governance engine still active), starts auto-sessions on two HR devices to drive warmup → unlocked, triggers the cycle challenge, walks RPM through `init → ramp → maintain → locked → recover → success`, asserts cleanup. Plus a second test asserting non-`failed_to_start` rejection reasons. Both pass in ~2 min.
+
+Test file: `tests/live/flow/fitness/cycle-challenge-lifecycle.runtime.test.mjs`.
+
+Outstanding minor follow-ups (non-blocking):
+- M1: `GovernanceEngine.evaluate()` `no_participants` branch still clobbers `equipmentCadenceMap` to `{}` (unreachable while a cycle challenge is active, since cycle requires participants).
+- `_generateCyclePhases` is unguarded — a misconfigured selection (NaN ramp seconds, empty `segment_count`) would throw before reaching the rejection-reason path. Wrap in try/catch and return `{ ok: false, reason: 'invalid_phases' }` if/when this becomes a real concern.
