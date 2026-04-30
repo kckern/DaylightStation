@@ -746,3 +746,88 @@ describe('PlexClient', () => {
     });
   });
 });
+
+describe('getContainerInfo - rating and parent linkage', () => {
+  test('exposes rating and userRating from Plex metadata', async () => {
+    const mockHttpClient = { get: vi.fn(), post: vi.fn() };
+    const adapter = new PlexAdapter(
+      { host: 'http://localhost:32400', token: 'test-token' },
+      { httpClient: mockHttpClient }
+    );
+    const mockClient = {
+      getMetadata: vi.fn().mockResolvedValue({
+        MediaContainer: {
+          Metadata: [{
+            ratingKey: '603856',
+            type: 'season',
+            title: 'Season 2023121',
+            thumb: '/library/metadata/603856/thumb/1',
+            userRating: 8,
+            rating: 7.5,
+            parentRatingKey: '603855',
+            parentTitle: 'Super Blocks'
+          }]
+        }
+      })
+    };
+    adapter.client = mockClient;
+
+    const info = await adapter.getContainerInfo('plex:603856');
+
+    expect(info.rating).toBe(7.5);
+    expect(info.userRating).toBe(8);
+  });
+
+  test('exposes parentRatingKey for seasons', async () => {
+    const mockHttpClient = { get: vi.fn(), post: vi.fn() };
+    const adapter = new PlexAdapter(
+      { host: 'http://localhost:32400', token: 'test-token' },
+      { httpClient: mockHttpClient }
+    );
+    const mockClient = {
+      getMetadata: vi.fn().mockResolvedValue({
+        MediaContainer: {
+          Metadata: [{
+            ratingKey: '603856',
+            type: 'season',
+            title: 'Season 2023121',
+            parentRatingKey: '603855',
+            parentTitle: 'Super Blocks'
+          }]
+        }
+      })
+    };
+    adapter.client = mockClient;
+
+    const info = await adapter.getContainerInfo('plex:603856');
+
+    expect(info.parentRatingKey).toBe('603855');
+    expect(info.type).toBe('season');
+  });
+
+  test('rating fields default to null when absent', async () => {
+    const mockHttpClient = { get: vi.fn(), post: vi.fn() };
+    const adapter = new PlexAdapter(
+      { host: 'http://localhost:32400', token: 'test-token' },
+      { httpClient: mockHttpClient }
+    );
+    const mockClient = {
+      getMetadata: vi.fn().mockResolvedValue({
+        MediaContainer: {
+          Metadata: [{
+            ratingKey: '999',
+            type: 'show',
+            title: 'No Rating Show'
+          }]
+        }
+      })
+    };
+    adapter.client = mockClient;
+
+    const info = await adapter.getContainerInfo('plex:999');
+
+    expect(info.rating).toBeNull();
+    expect(info.userRating).toBeNull();
+    expect(info.parentRatingKey).toBeNull();
+  });
+});

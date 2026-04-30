@@ -1076,7 +1076,13 @@ export class PlexAdapter {
         // Additional fields that might be useful
         duration: item.duration ? Math.floor(item.duration / 1000) : null,
         ratingKey: item.ratingKey,
-        childCount: item.leafCount || item.childCount || 0
+        childCount: item.leafCount || item.childCount || 0,
+        // Rating fields for season-as-show tile sorting (FitnessMenu)
+        rating: item.rating ?? item.audienceRating ?? null,
+        userRating: item.userRating ?? null,
+        // Parent linkage for season label inheritance (season -> show)
+        parentRatingKey: item.parentRatingKey ?? null,
+        parentTitle: item.parentTitle ?? null
       };
     } catch (err) {
       this.logger.error?.('plex.getContainerInfo.exception', {
