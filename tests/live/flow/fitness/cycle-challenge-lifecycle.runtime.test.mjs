@@ -31,7 +31,9 @@ const CYCLE_EQUIPMENT_ID = 'cycle_ace';
 // Selection id is generated from policy structure — discovered at runtime.
 
 test.describe('Cycle challenge full lifecycle', () => {
-  test.setTimeout(300000); // 5 minutes; worst-case lifecycle: setup ~30s + phases (4×40s=160s) + buffer
+  // 5 minutes: setup (~30s) + warmup-to-unlocked (~120s)
+  // + phases (3-4 × 20-40s = 60-160s) + buffer.
+  test.setTimeout(300000);
 
   test('boots, opens cycling video, triggers, walks state machine, completes successfully', async ({ page }) => {
     // ---- 1. Boot the fitness app ----
@@ -64,14 +66,84 @@ test.describe('Cycle challenge full lifecycle', () => {
     const selectionId = cycleSel.id;
     const riderId = cycleAce.eligibleUsers[0];
 
-    // ---- 4. Open a governed video so governance is engaged ----
-    // The cycle state machine only ticks when media is active (GovernanceEngine.evaluate()
-    // returns early with no media). The cycle selection is in the 'default' policy which
-    // applies to all governed content — any governed episode suffices, not just cycling.
-    // Using a known-good episode (Mario Kart Video Game Fitness, ratingKey 606052)
-    // that is used in other governance tests and known to load quickly.
-    const GOVERNED_EPISODE_ID = '606052';
-    await page.goto(`${FRONTEND_URL}/fitness/play/${GOVERNED_EPISODE_ID}`);
+    // ---- 4. Discover a cycling episode via the API and navigate to it ----
+    // Discovery path:
+    //   /api/v1/fitness → nav_items[icon=cycle] → collection_ids
+    //   → /api/v1/list/plex/:collectionId → shows in cycling collection
+    //   → cross-reference with /api/v1/fitness/governed-content (governed shows only)
+    //   → /api/v1/fitness/show/:showId/playable → first episode (numeric ID)
+    //
+    // NOTE: /api/v1/content/collection/:id was the originally planned discovery
+    // endpoint but does not exist in this backend — it has no registered route and
+    // will hang indefinitely waiting for a Plex response. The correct path is
+    // /api/v1/list/plex/:id (served by the list router) followed by
+    // /api/v1/fitness/show/:id/playable to flatten to playable episodes.
+    //
+    // The cross-reference with governed-content is required because the cycling
+    // collections contain both governed (KidsFun-labeled) and non-governed shows.
+    // Only governed episodes engage the GovernanceEngine and set window.__fitnessGovernance.contentId.
+    // Any governed cycling episode works for this test — the cycle selection lives in the
+    // 'default' policy which applies to ALL governed content. We use a cycling-specific video
+    // so the test exercises the same content-discovery path the user takes from the
+    // Cycling nav item in the fitness app.
+    //
+    // NOTE: the ?nogovern query parameter is appended to the play URL below. The
+    // governed cycling shows in these collections (e.g. Game Cycling) have the
+    // 'sequential' Plex label, which causes FitnessApp to intercept /fitness/play/:id
+    // and redirect to the show browse page instead of playing the episode directly.
+    // ?nogovern bypasses that sequential redirect while leaving the GovernanceEngine
+    // fully active — it only overrides the UI's videoLocked display state, not the
+    // engine's phase evaluation or challenge firing logic. The cycle challenge test
+    // therefore still exercises the full governance lifecycle.
+    const cyclingEpisodeId = await page.evaluate(async () => {
+      const cfg = await fetch('/api/v1/fitness').then(r => r.json());
+      const navItems = cfg?.plex?.nav_items || cfg?.fitness?.plex?.nav_items || [];
+      const cycleNav = navItems.find(n =>
+        n?.icon === 'cycle' || /cycl/i.test(n?.name || '')
+      );
+      const collectionIds = cycleNav?.target?.collection_ids
+        || (cycleNav?.target?.collection_id ? [cycleNav.target.collection_id] : []);
+      if (!collectionIds.length) return null;
+
+      // Fetch governed shows (KidsFun-labeled) to cross-reference.
+      const governed = await fetch('/api/v1/fitness/governed-content')
+        .then(r => r.json()).catch(() => []);
+      const governedIds = new Set(
+        (Array.isArray(governed) ? governed : governed?.items || [])
+          .map(s => String(s?.id || '').replace(/^[a-z]+:/i, ''))
+          .filter(Boolean)
+      );
+
+      // Walk cycling collections until we find a governed show with playable episodes.
+      for (const collectionId of collectionIds) {
+        const collectionItems = await fetch(`/api/v1/list/plex/${collectionId}`)
+          .then(r => r.json()).catch(() => null);
+        const shows = Array.isArray(collectionItems)
+          ? collectionItems
+          : (collectionItems?.items || []);
+
+        for (const show of shows) {
+          if (!show?.id) continue;
+          const showNumericId = String(show.id).replace(/^[a-z]+:/i, '');
+          // Skip non-governed shows — they won't engage the governance engine.
+          if (!governedIds.has(showNumericId)) continue;
+
+          const playable = await fetch(`/api/v1/fitness/show/${showNumericId}/playable`)
+            .then(r => r.json()).catch(() => null);
+          const episodes = Array.isArray(playable) ? playable : (playable?.items || []);
+          const firstEp = episodes.find(e => e?.id);
+          if (firstEp) {
+            // Return the numeric ID only (strip "plex:" prefix).
+            return String(firstEp.id).replace(/^[a-z]+:/i, '');
+          }
+        }
+      }
+      return null;
+    });
+    expect(cyclingEpisodeId, 'must discover at least one governed cycling episode via nav_items config').toBeTruthy();
+
+    // Use ?nogovern to bypass the sequential-show redirect (see comment above).
+    await page.goto(`${FRONTEND_URL}/fitness/play/${cyclingEpisodeId}?nogovern`);
     await page.waitForFunction(() => !!window.__fitnessSimController, null, { timeout: 30000 });
     // Wait for catalog to be available on the play page.
     await page.waitForFunction(
@@ -93,11 +165,14 @@ test.describe('Cycle challenge full lifecycle', () => {
     );
 
     // ---- 5. Activate two participants via HR (simulate active users) ----
-    // Use startAutoSession with a phaseOffset that skips warmup and puts HR
-    // immediately into the build phase (~130 bpm, 'warm' zone >= 'active' req).
-    // A single setHR is not enough: the session needs 3 buffered readings before
-    // it starts, and the governance engine needs active participants (hrInactive=false)
-    // before phase transitions to 'unlocked'. Continuous auto-HR provides both.
+    // Use startAutoSession (not setHR) so the engine sees a sustained, evolving
+    // HR pattern. setHR(130) alone keeps participants in active zone but doesn't
+    // drive the warmup -> unlocked phase transition required for a cycle challenge
+    // to fire. startAutoSession feeds continuous buffered readings that advance the
+    // session through warmup and into the unlocked phase.
+    // phaseOffset = 200s puts each simulated session into build phase where HR
+    // is 110-145 bpm (above the 'active' zone threshold), satisfying the
+    // base_requirement: [{active: 'all'}] governance policy check.
     await page.evaluate(() => {
       const ctl = window.__fitnessSimController;
       const devices = ctl.getDevices();
@@ -190,9 +265,11 @@ test.describe('Cycle challenge full lifecycle', () => {
       { timeout: 15000 }
     );
 
-    // Discover the real selection id at runtime (it's normalized from policy config,
-    // not the label). Then use a non-existent rider so the engine rejects with a
-    // specific reason rather than the old catch-all 'failed_to_start'.
+    // selectionId is normalized as `${policyId}_${challengeIdx}_${selectionIdx}`
+    // at engine init. Discover at runtime rather than hardcoding so a config
+    // reorder doesn't silently break this test.
+    // Then use a non-existent rider so the engine rejects with a specific reason
+    // rather than the old catch-all 'failed_to_start'.
     const selections = await listCycleSelections(page);
     const cycleSel = selections.find(s => s.equipment === 'cycle_ace');
     // Use the discovered selection id (or a nonexistent one if no cycle selection found).
