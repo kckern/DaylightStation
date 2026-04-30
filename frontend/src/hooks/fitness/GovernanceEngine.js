@@ -2201,14 +2201,17 @@ export class GovernanceEngine {
   /**
    * Start a cycle challenge: pick a rider from equipment's eligible users (minus
    * those still on cooldown), generate phases, and build the initial activeChallenge
-   * object in the 'init' cycleState. Returns null if no rider can be picked.
+   * object in the 'init' cycleState.
    *
    * This method does NOT mutate challengeState.activeChallenge — that wiring is
    * performed by the evaluator in a later task. It simply produces the structure.
    *
    * @param {Object} selection - Normalized cycle selection (from _normalizePolicies)
-   * @param {Object} [ctx] - Context fields: { policyId, policyName, configId }
-   * @returns {Object|null} activeChallenge object or null when no rider available
+   * @param {Object} [ctx] - Context fields: { policyId, policyName, configId, forceRiderId }
+   * @returns {Object} Either the activeChallenge object on success, or
+   *   { ok: false, reason } where reason is one of:
+   *   'equipment_not_found', 'no_eligible_riders',
+   *   'force_rider_not_eligible', 'all_riders_on_cooldown'.
    */
   _startCycleChallenge(selection, ctx = {}) {
     const catalog = this.session?._deviceRouter?.getEquipmentCatalog?.() || [];
@@ -3276,7 +3279,9 @@ export class GovernanceEngine {
   //        returns `{ success: true, challengeId }`.
   //      - On failure returns `{ success: false, reason }` where reason is
   //        one of: 'selection_not_found', 'rider_not_eligible',
-  //        'failed_to_start'.
+  //        'equipment_not_found', 'no_eligible_riders',
+  //        'force_rider_not_eligible', 'all_riders_on_cooldown',
+  //        or 'failed_to_start' as a defensive fallback.
   //
   //   2. Legacy zone/vibration trigger (any other payload shape):
   //      - Sets `challengeState.forceStartRequest` and kicks a pulse so the
