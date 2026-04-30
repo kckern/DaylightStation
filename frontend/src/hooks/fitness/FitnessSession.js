@@ -1021,6 +1021,14 @@ export class FitnessSession {
   }
 
   /**
+   * Get equipment catalog via the device router.
+   * @returns {Array} Equipment entries with id, cadence, eligible_users, etc.
+   */
+  getEquipmentCatalog() {
+    return this._deviceRouter?.getEquipmentCatalog?.() || [];
+  }
+
+  /**
    * Initialize vibration activity trackers from equipment config.
    * @param {Array} equipmentList - Equipment config array
    */

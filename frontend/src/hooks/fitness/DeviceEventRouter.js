@@ -103,6 +103,15 @@ export class DeviceEventRouter {
   }
 
   /**
+   * Get the current equipment catalog (defensive copy).
+   * @returns {Array} Equipment list previously set via setEquipmentCatalog
+   */
+  getEquipmentCatalog() {
+    const list = this._context.equipmentCatalog;
+    return Array.isArray(list) ? list.slice() : [];
+  }
+
+  /**
    * Register a handler for a specific payload type
    * @param {string} type - Payload type (e.g., 'ant', 'ble_jumprope', 'vibration')
    * @param {(payload: any, ctx: HandlerContext) => Object|null} handler
