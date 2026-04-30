@@ -276,6 +276,8 @@ export class GovernanceEngine {
 
     // Debounce flag for _invalidateStateCache microtask batching
     this._stateChangePending = false;
+
+    this._lastCycleSig = null;
   }
 
   /**
@@ -415,6 +417,19 @@ export class GovernanceEngine {
         totalPhases: isCycle ? (active.totalPhases ?? null) : null,
         phaseProgressPct: isCycle ? (active.phaseProgressPct ?? null) : null
       };
+      // Bridge engine-tick cycle state changes to the sim popout via onCycleStateChange.
+      const cycleSig = [
+        active?.type === 'cycle' ? 'cycle' : 'none',
+        active?.cycleState || null,
+        active?.currentPhaseIndex ?? null,
+        (active?.rider?.id ?? active?.rider) || null
+      ].join('|');
+      if (cycleSig !== this._lastCycleSig) {
+        this._lastCycleSig = cycleSig;
+        if (typeof this.onCycleStateChange === 'function') {
+          try { this.onCycleStateChange(); } catch (_) {}
+        }
+      }
     }
   }
 
