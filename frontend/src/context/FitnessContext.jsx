@@ -14,6 +14,7 @@ import getLogger from '../lib/logging/Logger.js';
 import { getModuleManifest } from '../modules/Fitness/index.js';
 import { VIBRATION_CONSTANTS } from '../modules/Fitness/widgets/VibrationApp/constants.js';
 import { buildSelectionConfig } from '../hooks/fitness/selectPrimaryMedia.js';
+import { applyEquipmentCatalogFromConfig } from './fitnessConfigBridge.js';
 
 // Phase 3 SSOT: Domain model imports
 import ParticipantFactory from '../modules/Fitness/domain/ParticipantFactory.js';
@@ -505,6 +506,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   useEffect(() => {
     usersConfigRef.current = usersConfig;
   }, [usersConfig]);
+
+  // Sync equipment catalog to session whenever config changes
+  useEffect(() => {
+    applyEquipmentCatalogFromConfig(fitnessSessionRef.current, fitnessConfiguration);
+  }, [fitnessConfiguration]);
 
   // Derived Session State
   const session = fitnessSessionRef.current;
