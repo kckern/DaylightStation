@@ -1,0 +1,200 @@
+# Super Blocks — Season Metadata Final Draft
+# Generated: 2026-04-30 from per-season research blurbs
+# Apply with: node cli/plex.cli.mjs set-from-yaml data-drafts/super-blocks-seasons.yml --lock
+
+show:
+  id: 603855
+  title: Super Blocks
+
+seasons:
+  - id: 605793
+    plexIndex: 0
+    title: "Specials"
+    program: "Mixed (Specials)"
+    trainer: "Various"
+    summary: |
+      A collection of standalone workouts drawn from across the BODi Super Block catalog — no single program, no fixed schedule. Episodes like "Boxing: Cardio Kickboxing," "Short Circuit 1/2," and "The Chase: Palos Verdes" offer a low-commitment way to sample sessions from multiple programs. A good starting point if you want a taste of what's available before committing to a full block.
+
+  - id: 605686
+    plexIndex: 2023021
+    title: "Healthy Obsession Super Block"
+    program: "Healthy Obsession"
+    trainer: "Autumn Calabrese"
+    sources:
+      - "https://www.bodi.com/blog/healthy-obsession-autumn-calabrese"
+      - "https://www.beachbodyondemand.com/blocks/healthy-obsession-super-block/program-materials?locale=en_US"
+    summary: |
+      Autumn Calabrese's answer to 80 Day Obsession — condensed into four weeks. Three weeks of five 60-minute workouts (Total Body Core, Booty, Cardio Fusion, AAA, and Legs) followed by a functional recovery week, this Super Block delivers the same abs, glutes, and total-body sculpting formula in a format you can actually finish. No 80-day commitment required.
+
+  - id: 604118
+    plexIndex: 2023031
+    title: "For Beginners Only Super Block"
+    program: "For Beginners Only"
+    trainer: "Lacee Green"
+    sources:
+      - "https://www.bodi.com/us/en/s/fitness/for-beginners-only"
+      - "https://howtobefit.com/coach-blog/2023/12/08/for-beginners-only-super-block/"
+    summary: |
+      Super Trainer Lacee Green built this 4-week BODi program specifically for true beginners — no experience required. Five days a week, ~38-minute sessions cover cardio, strength, core, and mobility, teaching foundational moves like squats, hinges, and lunges with precision before layering on complexity. Block periodization keeps progress steady without overtraining, so day one feels welcoming and week four feels like a real achievement.
+
+  - id: 604095
+    plexIndex: 2023041
+    title: "21 Day Fix Super Block"
+    program: "21 Day Fix"
+    trainer: "Autumn Calabrese"
+    sources:
+      - "https://www.bodi.com/blog/21-day-fix-hub"
+      - "https://www.bodi.com/blog/21-day-fix-21-day-fix-extreme-workouts"
+      - "https://shop.bodi.com/products/21-day-fix"
+    summary: |
+      Autumn Calabrese's breakthrough program delivers a different 30-minute workout
+      each day — including Total Body Cardio Fix, Upper Fix, Lower Fix, Cardio Fix,
+      and the signature Dirty 30 total-body circuit. Three weeks of structured daily
+      movement is paired with Portion Fix, a color-coded container system that takes
+      the guesswork out of eating without counting calories or cutting food groups.
+      Simple, effective, and built to produce real results in just 21 days.
+
+  - id: 604076
+    plexIndex: 2023051
+    title: "FOCUS T25 Super Block"
+    program: "FOCUS T25"
+    trainer: "Shaun T"
+    sources:
+      - "https://www.beachbodyondemand.com/blocks/t25-super-block/start-here"
+      - "https://www.bodi.com/us/en/s/fitness/focus-t25?ICID=BLOG_T25"
+    summary: |
+      Shaun T delivers maximum results in minimum time with FOCUS T25 — 25 minutes a day, 5 days a week of relentless cardio, lower body, upper body, and dynamic core work that progressively challenges you week by week. No excuses, no wasted time. Each workout — from Cardio and Lower Focus to Total Body Climb — zeroes in on specific movement patterns to build strength and incinerate calories. Get an hour's worth of results in just 25 minutes. Done.
+
+  - id: 604057
+    plexIndex: 2023052
+    title: "B25 Super Block"
+    program: B25
+    trainer: "Shaun T"
+    sources:
+      - "https://www.beachbodyondemand.com/blocks/b25-super-block/workouts"
+      - "https://soreyfitness.com/beachbody-2/bodi-super-blocks-schedule/"
+    summary: |
+      Shaun T brings his signature 25-minute formula to the bike in B25 — five empowering sessions that start on the saddle and finish on the floor. Each workout carries a "Be ___" mantra — Be You, Be Powerful, Be Focused, Be Strong, Be Dynamic — fusing cycling intervals with off-bike strength work to build both body and mindset. Paired with Focus T25 as a Super Block, B25 proves that 25 minutes is all you need to dig deep and be unstoppable.
+
+  - id: 604031
+    plexIndex: 2023061
+    title: "Job 1 Super Block"
+    program: "Job 1"
+    trainer: "Jennifer Jacobs"
+    sources:
+      - "https://www.bodi.com/blog/job-1-jennifer-jacobs"
+      - "https://www.bodi.com/us/en/s/fitness/job1"
+    summary: |
+      Former senior Peloton instructor Jennifer Jacobs built Job 1 around a simple demand: treat your fitness like the non-negotiable it is. Five days a week, 20 minutes a day, you cycle through strength, HIIT, and endurance work—functional movements that train your body as a whole so every session counts. No wasted time, no excuses—just the focused, efficient work that makes everything else in your day run better.
+
+  - id: 604012
+    plexIndex: 2023062
+    title: "Bike 1 Super Block"
+    program: "Bike 1"
+    trainer: "Jennifer Jacobs"
+    sources:
+      - "https://www.beachbodyondemand.com/blocks/bike-1-super-block/workouts"
+      - "https://www.beachbodyondemand.com/blocks/bike-1-super-block"
+    summary: |
+      Former Peloton instructor Jennifer Jacobs brings her signature performance-driven coaching to 20-minute cycling workouts built around four pillars: endurance, speed, strength, and power. Each ride has a purpose — In the Zone for steady-state work, HIIT Your Peak for interval bursts, Embrace the Climb for hill strength, Fast 20 for speed, and Power Tempo for sustained output. Three weeks of progressive riding will break through your ceiling and make you fitter both on and off the bike.
+
+  - id: 603990
+    plexIndex: 2023071
+    title: "Barre Blend Super Block"
+    program: "Barre Blend"
+    trainer: "Elise Joan"
+    sources:
+      - "https://www.bodi.com/us/en/s/fitness/barre-blend"
+      - "https://www.bodi.com/blog/barre-blend"
+    summary: |
+      Drawn from her years as a professional dancer, Elise Joan fuses ballet barre,
+      Pilates, and cardio interval training into a graceful yet demanding 60-day
+      program. High-rep, small-range movements and isometric holds sculpt and
+      lengthen every muscle with the precision of a studio class, while built-in
+      cardio intervals elevate the intensity — delivering high-impact results
+      through entirely low-impact, elegantly structured work.
+
+  - id: 603971
+    plexIndex: 2023081
+    title: "Morning Meltdown 100 Super Block"
+    program: "Morning Meltdown 100"
+    trainer: "Jericho McMatthews"
+    sources:
+      - "https://www.bodi.com/blog/morning-meltdown-100"
+      - "https://www.bodi.com/us/en/s/fitness/morning-meltdown-100"
+    summary: |
+      Kick-start every morning with Jericho McMatthews across 100 unique, 20–30 minute workouts
+      set to heart-pumping playlists mixed by a live DJ. Five progressive phases cycle through
+      cardio (LIT Cardio), strength (MeltCon Upper/Lower), core (Core Inferno), and martial arts
+      (Fight Club), so no two sessions ever feel the same. Start your day with an endorphin rush
+      and build your best body over 100 mornings.
+
+  - id: 603949
+    plexIndex: 2023091
+    title: "4 Weeks for Every Body Super Block"
+    program: "4 Weeks for Every Body"
+    trainer: "Autumn Calabrese"
+    sources:
+      - "https://www.bodi.com/us/en/s/fitness/4-weeks-for-every-body"
+      - "https://www.beachbodyondemand.com/blocks/4-weeks-for-every-body-super-block/start-here?locale=en_US"
+    summary: |
+      A no-impact strength program designed to work for every fitness level. Autumn Calabrese
+      guides you through four 30-minute workouts per week—rotating Pull, Legs, Push, and
+      Cardio days—built on time-under-tension principles that maximize strength gains while
+      keeping stress off your joints. With purposeful, accessible programming that requires
+      nothing but dumbbells and a core ball, real results are within reach for every body.
+
+  - id: 603927
+    plexIndex: 2023101
+    title: "#mbf Super Block"
+    program: "#mbf (Muscle Burns Fat)"
+    trainer: "Megan Davies"
+    sources:
+      - "https://www.bodi.com/us/en/s/fitness/mbf-muscle-burns-fat"
+      - "https://www.bodi.com/blog/mbf-muscle-burns-fat"
+    summary: |
+      Trainer Megan Davies builds her signature program around one science-backed principle: muscle is your most efficient fat-burning engine. Each 25–35 minute session pairs symmetrical and asymmetrical lifting with cardio, letting the music drive your intensity while you hit the whole body — lower, upper, core, and everything in between. Build more muscle, torch more calories, and keep the burn going long after the workout ends.
+
+  - id: 603883
+    plexIndex: 2023112
+    title: "XB Pilates Super Block"
+    program: "XB Pilates"
+    trainer: "Andrea Rogers"
+    sources:
+      - "https://www.bodi.com/blog/xb-pilates-andrea-rogers"
+      - "https://www.beachbodyondemand.com/blocks/xb-pilates-super-block?locale=en_US"
+    summary: |
+      Classical Pilates instructor and former professional dancer Andrea Rogers fuses
+      traditional mat work with reformer-inspired cardio sequences to sculpt from
+      head to toe without adding bulk. Each 30-minute session — Signature mat flows,
+      Cardio Fusion, Sculpt & Define, Hit the Mat, Lower Body & Core — builds deep
+      core strength, body control, and alignment using only your bodyweight.
+      No equipment required.
+
+  - id: 603856
+    plexIndex: 2023121
+    title: "LIIFT MORE Super Block"
+    program: "LIIFT MORE"
+    trainer: "Joel Freeman"
+    sources:
+      - "https://markets.financialcontent.com/stocks/article/bizwire-2022-8-2-beachbody-super-trainer-joel-freeman-takes-muscle-sculpting-to-the-next-level-with-a-challenging-yet-approachable-new-strength-training-program-liift-more"
+      - "https://www.beachbodyondemand.com/blocks/liift-more-super-block?locale=en_CA"
+    summary: |
+      Joel Freeman takes muscle sculpting to the next level with LIIFT MORE, a
+      challenging yet approachable strength program that trains five days a week
+      across a targeted muscle-group split — Chest, Legs, Back, More Legs, and
+      Shoulders & Arms. Each session pairs classic heavy lifting with explosive
+      HIIT intervals, building strength and mass in Phase 1 before ramping up
+      volume and intensity for definition in Phase 2. More lifting, more reps,
+      more results.
+
+  - id: 605759
+    plexIndex: 2024081
+    title: "Sure Thing Super Block"
+    program: "Sure Thing"
+    trainer: "Megan Davies"
+    sources:
+      - "https://www.bodi.com/blog/beachbody-sure-thing-megan-davies"
+      - "https://www.beachbodyondemand.com/programs/sure-thing?locale=en_US"
+    summary: |
+      Super Trainer Megan Davies takes the guesswork out of getting results with Sure Thing — a science-backed Super Block that alternates weekly between endurance and power strength training to target both slow- and fast-twitch muscle fibers. Each 30–40 minute session cycles through Endurance Strength, Cardio Conditioning, EMOM Strength, and Bodyweight Burnout workouts, keeping your body challenged and your progress consistent. Team up with Megan and your results are exactly what the name promises: a sure thing.
