@@ -410,7 +410,7 @@ export class GovernanceEngine {
         activeChallengeEquipment: isCycle ? (active.equipment || null) : null,
         cycleState: isCycle ? (active.cycleState || null) : null,
         currentRpm: isCycle ? (active.currentRpm ?? null) : null,
-        riderId: isCycle ? (active.rider?.id || null) : null,
+        riderId: isCycle ? ((active.rider?.id ?? active.rider) || null) : null,
         currentPhaseIndex: isCycle ? (active.currentPhaseIndex ?? null) : null,
         totalPhases: isCycle ? (active.totalPhases ?? null) : null,
         phaseProgressPct: isCycle ? (active.phaseProgressPct ?? null) : null

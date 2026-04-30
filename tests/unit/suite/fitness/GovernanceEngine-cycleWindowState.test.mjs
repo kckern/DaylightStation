@@ -1,17 +1,21 @@
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
 
+jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
+  default: () => ({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), sampled: jest.fn() }),
+  getLogger: () => ({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), sampled: jest.fn() })
+}));
 const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
 
 describe('GovernanceEngine._updateGlobalState — cycle fields', () => {
   let engine;
 
   beforeEach(() => {
-    global.window = {};
-    engine = new GovernanceEngine({ session: null });
-  });
-
-  afterEach(() => {
-    delete global.window;
+    globalThis.window = {};
+    const mockSession = {
+      roster: [],
+      snapshot: { zoneConfig: [] }
+    };
+    engine = new GovernanceEngine(mockSession);
   });
 
   it('exposes null cycle fields when no challenge is active', () => {
@@ -59,5 +63,18 @@ describe('GovernanceEngine._updateGlobalState — cycle fields', () => {
     };
     engine._updateGlobalState();
     expect(window.__fitnessGovernance.riderId).toBeNull();
+  });
+
+  it('handles string rider (live engine form) as well as object form', () => {
+    engine.challengeState = {
+      activeChallenge: {
+        type: 'cycle',
+        cycleState: 'maintain',
+        equipment: 'cycle_ace',
+        rider: 'felix' // live engine stores rider as a userId string
+      }
+    };
+    engine._updateGlobalState();
+    expect(window.__fitnessGovernance.riderId).toBe('felix');
   });
 });
