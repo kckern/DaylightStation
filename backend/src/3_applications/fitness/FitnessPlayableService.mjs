@@ -92,8 +92,7 @@ export class FitnessPlayableService {
     // existing label-driven logic works unchanged.
     if (info?.type === 'season'
         && (!Array.isArray(info.labels) || info.labels.length === 0)
-        && info.parentRatingKey
-        && this.#contentAdapter.getContainerInfo) {
+        && info.parentRatingKey) {
       try {
         const parentInfo = await this.#contentAdapter.getContainerInfo(`plex:${info.parentRatingKey}`);
         if (parentInfo && Array.isArray(parentInfo.labels) && parentInfo.labels.length > 0) {
