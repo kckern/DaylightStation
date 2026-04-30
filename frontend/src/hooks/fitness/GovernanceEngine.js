@@ -2211,15 +2211,26 @@ export class GovernanceEngine {
    * @returns {Object|null} activeChallenge object or null when no rider available
    */
   _startCycleChallenge(selection, ctx = {}) {
-    const eligible = this._getEligibleUsers(selection.equipment);
-    if (!eligible.length) {
+    const catalog = this.session?._deviceRouter?.getEquipmentCatalog?.() || [];
+    const catalogEntry = catalog.find(e => e.id === selection.equipment);
+    if (!catalogEntry) {
       getLogger().info('governance.cycle.start_skipped', {
         equipment: selection.equipment,
-        reason: 'no_eligible_users',
+        reason: 'equipment_not_found',
         eligibleCount: 0,
         onCooldownCount: 0
       });
-      return null;
+      return { ok: false, reason: 'equipment_not_found' };
+    }
+    const eligible = Array.isArray(catalogEntry.eligible_users) ? [...catalogEntry.eligible_users] : [];
+    if (!eligible.length) {
+      getLogger().info('governance.cycle.start_skipped', {
+        equipment: selection.equipment,
+        reason: 'no_eligible_riders',
+        eligibleCount: 0,
+        onCooldownCount: 0
+      });
+      return { ok: false, reason: 'no_eligible_riders' };
     }
     const now = this._now();
     let rider;
@@ -2235,7 +2246,7 @@ export class GovernanceEngine {
           eligibleCount: eligible.length,
           onCooldownCount: 0
         });
-        return null;
+        return { ok: false, reason: 'force_rider_not_eligible' };
       }
       rider = ctx.forceRiderId;
       riderPool = [ctx.forceRiderId];
@@ -2247,11 +2258,11 @@ export class GovernanceEngine {
       if (!filtered.length) {
         getLogger().info('governance.cycle.start_skipped', {
           equipment: selection.equipment,
-          reason: 'all_on_cooldown',
+          reason: 'all_riders_on_cooldown',
           eligibleCount: eligible.length,
           onCooldownCount: eligible.length
         });
-        return null;
+        return { ok: false, reason: 'all_riders_on_cooldown' };
       }
       rider = filtered[Math.floor(this._random() * filtered.length)];
       riderPool = filtered;
@@ -2720,7 +2731,7 @@ export class GovernanceEngine {
           policyName: this.challengeState.activePolicyName,
           configId: challengeConfig.id
         });
-        if (!cycleActive) {
+        if (!cycleActive || cycleActive.ok === false) {
           const nextDelay = this._pickIntervalMs?.(challengeConfig.intervalRangeSeconds) || 60000;
           queueNextChallenge(nextDelay);
           this._schedulePulse(50);
@@ -3324,15 +3335,16 @@ export class GovernanceEngine {
         configId: null
       });
 
-      if (!active) {
+      if (!active || active.ok === false) {
+        const rejectionReason = active?.reason || 'failed_to_start';
         getLogger().info('governance.cycle.triggered_manually', {
           selectionId,
           riderId: payload.riderId || null,
           force: Boolean(payload.riderId),
           accepted: false,
-          rejectionReason: 'failed_to_start'
+          rejectionReason
         });
-        return { success: false, reason: 'failed_to_start' };
+        return { success: false, reason: rejectionReason };
       }
 
       this.challengeState.activeChallenge = active;
