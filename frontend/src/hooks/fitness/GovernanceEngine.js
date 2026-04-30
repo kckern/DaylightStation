@@ -385,25 +385,35 @@ export class GovernanceEngine {
   _updateGlobalState() {
     if (typeof window !== 'undefined') {
       const self = this;
+      const active = this.challengeState?.activeChallenge || null;
+      const isCycle = active?.type === 'cycle';
       window.__fitnessGovernance = {
         phase: this.phase,
-        // Use getter so duration is calculated at access time, not at update time
         get warningDuration() {
           return self._warningStartTime ? self._now() - self._warningStartTime : 0;
         },
         get lockDuration() {
           return self._lockStartTime ? self._now() - self._lockStartTime : 0;
         },
-        activeChallenge: this.challengeState?.activeChallenge?.id || null,
-        activeChallengeZone: this.challengeState?.activeChallenge?.zone || null,
+        activeChallenge: active?.id || null,
+        activeChallengeZone: active?.zone || null,
         videoLocked: (this.challengeState?.videoLocked || this._mediaIsGoverned())
           && this.phase !== 'unlocked' && this.phase !== 'warning',
         contentId: this.media?.id || null,
-        // Expose internal state for test diagnostics
         satisfiedOnce: this.meta?.satisfiedOnce || false,
         userZoneMap: { ...(this._latestInputs?.userZoneMap || {}) },
         activeParticipants: [...(this._latestInputs?.activeParticipants || [])],
-        zoneRankMap: { ...(this._latestInputs?.zoneRankMap || {}) }
+        zoneRankMap: { ...(this._latestInputs?.zoneRankMap || {}) },
+        // Cycle-challenge state — null when no cycle challenge is active.
+        // Consumers: sim-panel.html readCycleChallengeInfo(), CycleChallengeOverlay diagnostics.
+        activeChallengeType: active?.type || null,
+        activeChallengeEquipment: isCycle ? (active.equipment || null) : null,
+        cycleState: isCycle ? (active.cycleState || null) : null,
+        currentRpm: isCycle ? (active.currentRpm ?? null) : null,
+        riderId: isCycle ? (active.rider?.id || null) : null,
+        currentPhaseIndex: isCycle ? (active.currentPhaseIndex ?? null) : null,
+        totalPhases: isCycle ? (active.totalPhases ?? null) : null,
+        phaseProgressPct: isCycle ? (active.phaseProgressPct ?? null) : null
       };
     }
   }
@@ -2898,6 +2908,11 @@ export class GovernanceEngine {
           };
 
           this._evaluateCycleChallenge(challenge, ctx);
+          challenge.currentRpm = equipmentRpm;
+          const _cPhase = challenge.generatedPhases?.[challenge.currentPhaseIndex];
+          challenge.phaseProgressPct = _cPhase?.maintainSeconds
+            ? Math.min(1.0, (challenge.phaseProgressMs || 0) / (_cPhase.maintainSeconds * 1000))
+            : 0;
 
           // Success: record history, apply cooldowns, clear, schedule next.
           if (challenge.status === 'success') {
