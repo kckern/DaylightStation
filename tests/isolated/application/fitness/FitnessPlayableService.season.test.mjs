@@ -1,5 +1,5 @@
 import { describe, test, expect, vi } from 'vitest';
-import { FitnessPlayableService } from '#backend/src/3_applications/fitness/FitnessPlayableService.mjs';
+import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs';
 
 /**
  * Tests for season-as-show label inheritance.
@@ -118,6 +118,31 @@ describe('FitnessPlayableService - season label inheritance', () => {
 
     expect(result.info.type).toBe('season');
     expect(result.info.labels).toEqual([]); // degraded — no labels, no exception
+  });
+
+  test('falls back to empty labels when parent show resolves to null', async () => {
+    const deps = buildDeps();
+    deps.contentAdapter.getContainerInfo.mockImplementation(async (id) => {
+      if (id === 'plex:603856') {
+        return {
+          key: '603856',
+          title: 'LIIFT MORE Super Block',
+          type: 'season',
+          labels: [],
+          parentRatingKey: '603855'  // points to a missing/unknown ID
+        };
+      }
+      if (id === 'plex:603855') {
+        return null;  // parent metadata not found
+      }
+      return null;
+    });
+
+    const svc = new FitnessPlayableService(deps);
+    const result = await svc.getPlayableEpisodes('603856');
+
+    expect(result.info.type).toBe('season');
+    expect(result.info.labels).toEqual([]); // no exception, just empty
   });
 
   test('does not run inheritance for non-season info (existing show flow unchanged)', async () => {
