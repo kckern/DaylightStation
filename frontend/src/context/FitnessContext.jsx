@@ -1320,6 +1320,16 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
             }));
           };
 
+          // Bridge governance engine cycle state changes to the same popout event.
+          const engine = fitnessSessionRef.current?.governanceEngine;
+          if (engine) {
+            engine.onCycleStateChange = () => {
+              window.dispatchEvent(new CustomEvent('sim-state-change', {
+                detail: { source: 'governance.cycle' }
+              }));
+            };
+          }
+
           console.log('[FitnessContext] Simulation controller available on window.__fitnessSimController');
         });
       })
