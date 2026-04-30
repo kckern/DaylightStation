@@ -450,6 +450,38 @@ export function createListRouter(config) {
         items = [playlistItem];
       }
 
+      // === Season-as-show wrapping ===
+      // When the container is a Plex season, return a single "show" container
+      // item instead of the season's episodes. The season is then surfaced as
+      // its own tile in FitnessMenu alongside collection shows and playlists.
+      // resolvePlayables() (used by FitnessShow) calls the adapter directly
+      // and is NOT affected by this HTTP-layer change.
+      if (info?.type === 'season') {
+        // info.rating is already the best-available rating per PlexAdapter
+        // convention (lines 509 and 623): item.userRating ?? item.rating
+        // ?? item.audienceRating. We pass it through as-is so season tiles
+        // sort consistently with collection items in FitnessMenu.
+        const seasonItem = {
+          id: `${source}:${localId}`,
+          localId: String(localId),
+          title: containerInfo?.title || info?.title || localId,
+          label: containerInfo?.title || info?.title || localId,
+          itemType: 'container',
+          childCount: info?.childCount || items.length,
+          thumbnail: info?.image || containerInfo?.thumbnail,
+          metadata: {
+            type: 'show',
+            sourceType: 'season',
+            rating: info?.rating ?? null,
+            userRating: info?.userRating ?? null
+          },
+          actions: {
+            list: { contentId: `${source}:${localId}`, [source]: String(localId) }
+          }
+        };
+        items = [seasonItem];
+      }
+
       // Build parents map from items' hierarchy metadata (canonical relative fields)
       let parents = null;
       if (modifiers.playable && items.length > 0) {
