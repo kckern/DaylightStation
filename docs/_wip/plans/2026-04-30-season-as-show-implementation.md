@@ -49,7 +49,12 @@ Append (or extend the existing `describe('getContainerInfo')` block) at the bott
 
 ```js
 describe('getContainerInfo - rating and parent linkage', () => {
-  test('exposes rating and userRating from Plex metadata', async () => {
+  test('rating prefers userRating, with userRating exposed separately', async () => {
+    // Convention established at PlexAdapter.mjs:509 and :623 — `rating`
+    // is always the best-available value with this priority:
+    //   item.userRating ?? item.rating ?? item.audienceRating ?? null
+    // `userRating` is also exposed separately so consumers can distinguish
+    // a user-starred rating from a fallback to the content rating.
     const mockClient = {
       getMetadata: vi.fn().mockResolvedValue({
         MediaContainer: {
@@ -70,7 +75,7 @@ describe('getContainerInfo - rating and parent linkage', () => {
 
     const info = await adapter.getContainerInfo('plex:603856');
 
-    expect(info.rating).toBe(7.5);
+    expect(info.rating).toBe(8);          // userRating wins
     expect(info.userRating).toBe(8);
   });
 
@@ -279,12 +284,12 @@ describe('list router season-as-show', () => {
     expect(tile.metadata?.type).toBe('show');
   });
 
-  test('userRating wins over content rating on the tile (matches collection-item sort priority)', async () => {
-    // Plex distinguishes `rating` (content/audience rating) from `userRating`
-    // (operator's personal rating). FitnessMenu sorts by `tile.rating` and
-    // _toListableItem already prioritizes `item.userRating ?? item.rating`
-    // for collection items. Season tiles must use the same priority for
-    // consistent sort behavior across tile types.
+  test('passes rating through to tile metadata for menu sorting', async () => {
+    // Per PlexAdapter convention (lines 509 and 623), `info.rating` from
+    // getContainerInfo is already the best-available rating
+    // (item.userRating ?? item.rating ?? item.audienceRating). The list
+    // router does NOT compose — it just passes `info.rating` through.
+    // FitnessMenu then sorts by tile.rating directly.
     mockAdapter.getList.mockResolvedValue([]);
     mockAdapter.getItem.mockResolvedValue({ id: 'plex:603856', title: 'LIIFT MORE Super Block' });
     mockAdapter.getContainerInfo.mockResolvedValue({
@@ -292,8 +297,8 @@ describe('list router season-as-show', () => {
       title: 'LIIFT MORE Super Block',
       type: 'season',
       childCount: 22,
-      rating: 5,           // content rating
-      userRating: 9,       // operator's rating — should win
+      rating: 9,            // already the best-available rating from getContainerInfo
+      userRating: 9,        // raw user rating, exposed separately for diagnostics
       parentRatingKey: '603855'
     });
 
@@ -301,30 +306,8 @@ describe('list router season-as-show', () => {
 
     expect(res.status).toBe(200);
     const tile = res.body.items[0];
-    // toListItem flattens metadata.rating to top-level
-    expect(tile.rating).toBe(9);          // userRating wins
+    expect(tile.rating).toBe(9);          // passed through from info.rating
     expect(tile.userRating).toBe(9);
-  });
-
-  test('falls back to content rating when userRating is absent', async () => {
-    mockAdapter.getList.mockResolvedValue([]);
-    mockAdapter.getItem.mockResolvedValue({ id: 'plex:603856', title: 'LIIFT MORE Super Block' });
-    mockAdapter.getContainerInfo.mockResolvedValue({
-      key: '603856',
-      title: 'LIIFT MORE Super Block',
-      type: 'season',
-      childCount: 22,
-      rating: 7.5,         // content rating
-      userRating: null,    // no operator rating
-      parentRatingKey: '603855'
-    });
-
-    const res = await request(app).get('/api/v1/list/plex/603856');
-
-    expect(res.status).toBe(200);
-    const tile = res.body.items[0];
-    expect(tile.rating).toBe(7.5);        // falls back to content rating
-    expect(tile.userRating).toBeNull();
   });
 
   test('uses season image as tile thumbnail', async () => {
@@ -401,10 +384,10 @@ Modify `backend/src/4_api/v1/routers/list.mjs`. Locate the existing playlist wra
       // resolvePlayables() (used by FitnessShow) calls the adapter directly
       // and is NOT affected by this HTTP-layer change.
       if (info?.type === 'season') {
-        // Sort priority matches _toListableItem for collection items:
-        //   userRating (operator's personal score) wins over rating (content/audience)
-        // so season tiles sort consistently with regular show tiles in FitnessMenu.
-        const sortRating = info?.userRating ?? info?.rating ?? null;
+        // info.rating is already the best-available rating per PlexAdapter
+        // convention (lines 509 and 623): item.userRating ?? item.rating
+        // ?? item.audienceRating. We pass it through as-is so season tiles
+        // sort consistently with collection items in FitnessMenu.
         const seasonItem = {
           id: `${source}:${localId}`,
           localId: String(localId),
@@ -416,7 +399,7 @@ Modify `backend/src/4_api/v1/routers/list.mjs`. Locate the existing playlist wra
           metadata: {
             type: 'show',
             sourceType: 'season',
-            rating: sortRating,
+            rating: info?.rating ?? null,
             userRating: info?.userRating ?? null
           },
           actions: {
