@@ -85,6 +85,31 @@ export class FitnessPlayableService {
         : null
     ]);
 
+    // Season-as-show: inherit labels from parent show.
+    // Plex seasons rarely carry labels of their own; governance/resumable/
+    // sequential flags live on the parent show. We fetch the show metadata
+    // once and copy its labels onto the season's info so FitnessShow's
+    // existing label-driven logic works unchanged.
+    if (info?.type === 'season'
+        && (!Array.isArray(info.labels) || info.labels.length === 0)
+        && info.parentRatingKey
+        && this.#contentAdapter.getContainerInfo) {
+      try {
+        const parentInfo = await this.#contentAdapter.getContainerInfo(`plex:${info.parentRatingKey}`);
+        if (parentInfo && Array.isArray(parentInfo.labels) && parentInfo.labels.length > 0) {
+          info.labels = parentInfo.labels;
+        }
+      } catch (err) {
+        this.#logger.warn?.('fitness.playable.season_label_fetch_failed', {
+          seasonId: compoundId,
+          parentRatingKey: info.parentRatingKey,
+          error: err.message
+        });
+        // Degraded: leave info.labels as-is (empty). User loses governance/
+        // resume/sequential gating for this load only — preferable to a 500.
+      }
+    }
+
     return {
       compoundId,
       showId,
