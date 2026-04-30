@@ -1678,10 +1678,11 @@ export class GovernanceEngine {
       this._latestInputs.zoneInfoMap = zoneInfoMap;
     }
     // Capture equipmentCadenceMap early so it survives no-media/no-participant early-exit paths.
-    // Store verbatim; missing map becomes empty object.
-    this._latestInputs.equipmentCadenceMap = equipmentCadenceMap && typeof equipmentCadenceMap === 'object'
-      ? { ...equipmentCadenceMap }
-      : {};
+    // Only update when the caller provides a map — pulse-timer evaluate() calls do not supply cadence
+    // data, and we must not overwrite the last good snapshot with an empty object.
+    if (equipmentCadenceMap && typeof equipmentCadenceMap === 'object') {
+      this._latestInputs.equipmentCadenceMap = { ...equipmentCadenceMap };
+    }
 
     // Build evalContext so _setPhase logging reads current data (not stale _latestInputs)
     const evalContext = { userZoneMap, zoneRankMap, zoneInfoMap, activeParticipants };
@@ -3353,6 +3354,10 @@ export class GovernanceEngine {
       }
 
       this.challengeState.activeChallenge = active;
+      // Immediately reflect the new challenge in window.__fitnessGovernance so
+      // the sim popout and tests can read activeChallengeType / cycleState
+      // without waiting for the next timer-driven evaluate() cycle.
+      this._updateGlobalState();
 
       getLogger().info('governance.cycle.triggered_manually', {
         selectionId,
