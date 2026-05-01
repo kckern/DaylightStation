@@ -42,8 +42,8 @@ describe('selectPrimaryMedia (backend)', () => {
   });
 
   test('filters out audio events', () => {
-    const events = [audioEvent('Long Song', 9999), videoEvent('Short Video', 60)];
-    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Short Video');
+    const events = [audioEvent('Long Song', 9999), videoEvent('Real Workout', 8 * 60)];
+    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Real Workout');
   });
 
   test('filters out warmup by title pattern', () => {
@@ -64,13 +64,13 @@ describe('selectPrimaryMedia (backend)', () => {
     expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Lower Body Workout');
   });
 
-  test('falls back to longest deprioritized when only deprioritized + audio', () => {
+  test('returns null when only deprioritized + audio (no longer falls back to deprioritized)', () => {
     const events = [
       videoEvent('Mario Kart World', 763, { labels: ['kidsfun'] }),
       videoEvent('Danny Go Dance', 500, { labels: ['kidsfun'] }),
       audioEvent('Workout Mix', 9999),
     ];
-    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Mario Kart World');
+    expect(selectPrimaryMedia(events, defaultConfig)).toBeNull();
   });
 
   test('combined skip — warmup + deprioritized + workout, workout wins', () => {
