@@ -18,7 +18,7 @@ export class LongitudinalToolFactory extends ToolFactory {
   static domain = 'health';
 
   createTools() {
-    const { healthStore } = this.deps;
+    const { healthStore, healthService } = this.deps;
 
     return [
       createTool({
@@ -232,6 +232,68 @@ export class LongitudinalToolFactory extends ToolFactory {
             return { days };
           } catch (err) {
             return { days: [], error: err.message };
+          }
+        },
+      }),
+
+      createTool({
+        name: 'query_historical_workouts',
+        description:
+          'Query historical workouts over an inclusive [from, to] date range. ' +
+          'Reads from the household health data store (Strava + fitness trackers). ' +
+          'Supports optional filters by `type` (e.g. run, ride, strength, yoga) ' +
+          'and `name_contains` (case-insensitive substring match against the ' +
+          'workout title/name). Returns a flat list of workouts sorted by date ascending.',
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string', description: 'User identifier' },
+            from: { type: 'string', description: 'Inclusive start date (YYYY-MM-DD)' },
+            to: { type: 'string', description: 'Inclusive end date (YYYY-MM-DD)' },
+            type: {
+              type: 'string',
+              description: 'Optional exact-match filter on workout type (e.g. run, ride, strength).',
+            },
+            name_contains: {
+              type: 'string',
+              description: 'Optional case-insensitive substring filter against workout title/name.',
+            },
+          },
+          required: ['userId', 'from', 'to'],
+        },
+        execute: async ({ userId, from, to, type = null, name_contains = null }) => {
+          try {
+            const healthData = await healthService.getHealthForRange(userId, from, to);
+
+            const needle = typeof name_contains === 'string' && name_contains.length
+              ? name_contains.toLowerCase()
+              : null;
+
+            const workouts = [];
+            for (const [date, metric] of Object.entries(healthData || {})) {
+              for (const w of (metric?.workouts || [])) {
+                if (type != null && w.type !== type) continue;
+                if (needle != null) {
+                  const label = (w.title || w.name || '').toLowerCase();
+                  if (!label.includes(needle)) continue;
+                }
+                workouts.push({
+                  date,
+                  title: w.title || w.name,
+                  type: w.type,
+                  duration: w.duration,
+                  calories: w.calories,
+                  avgHr: w.avgHr,
+                });
+              }
+            }
+
+            // Sort by date ascending (chronological).
+            workouts.sort((a, b) => a.date.localeCompare(b.date));
+
+            return { workouts };
+          } catch (err) {
+            return { workouts: [], error: err.message };
           }
         },
       }),
