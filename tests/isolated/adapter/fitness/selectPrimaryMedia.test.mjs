@@ -145,3 +145,53 @@ describe('"Cold Start" warmup pattern (Plan 1 Task 4)', () => {
     expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Workout Short');
   });
 });
+
+describe('minimum primary duration floor (Plan 4)', () => {
+  const MIN_PRIMARY_SEC = 5 * 60;
+
+  test('returns null when only a sub-floor non-warmup event survives (regression for 2026-04-30 session)', () => {
+    const events = [
+      videoEvent('F-Zero',              1254, { labels: ['kidsfun'] }),
+      videoEvent('Strength Challenge 1', 48,  { labels: [] }),
+    ];
+    const cfg = { ...defaultConfig, deprioritized_labels: ['kidsfun'] };
+    expect(selectPrimaryMedia(events, cfg)).toBeNull();
+  });
+
+  test('returns null when only a deprioritized event exists', () => {
+    const events = [videoEvent('Cartoon Marathon', 30 * 60, { labels: ['kidsfun'] })];
+    const cfg = { ...defaultConfig, deprioritized_labels: ['kidsfun'] };
+    expect(selectPrimaryMedia(events, cfg)).toBeNull();
+  });
+
+  test('returns null when only a sub-floor real event exists', () => {
+    const events = [videoEvent('Quick Demo', 4 * 60)];
+    expect(selectPrimaryMedia(events, defaultConfig)).toBeNull();
+  });
+
+  test('returns the eligible event when it meets exactly MIN_PRIMARY_SEC', () => {
+    const events = [videoEvent('Workout', MIN_PRIMARY_SEC)];
+    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Workout');
+  });
+
+  test('picks the longer real candidate when only the longer clears the floor', () => {
+    const events = [
+      videoEvent('Brief', 4 * 60),
+      videoEvent('Real',  12 * 60),
+    ];
+    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Real');
+  });
+
+  test('falls back to longest non-deprioritized warmup when only warmups exist (≥ MIN_PRIMARY_SEC)', () => {
+    const events = [
+      videoEvent('Stretch Routine', 10 * 60),
+      videoEvent('Cool Down',        6 * 60),
+    ];
+    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Stretch Routine');
+  });
+
+  test('returns null when only sub-floor warmups exist', () => {
+    const events = [videoEvent('Stretch', 4 * 60)];
+    expect(selectPrimaryMedia(events, defaultConfig)).toBeNull();
+  });
+});
