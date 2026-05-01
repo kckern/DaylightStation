@@ -123,7 +123,7 @@ describe('HealthArchiveIngestion', () => {
 
   it('copies new files when destination does not exist', async () => {
     const report = await svc.ingest({
-      userId: 'kckern',
+      userId: 'test-user',
       category: 'scans',
       sourcePath: SRC,
       destPath: DEST,
@@ -159,7 +159,7 @@ describe('HealthArchiveIngestion', () => {
     });
 
     const report = await svc.ingest({
-      userId: 'kckern',
+      userId: 'test-user',
       category: 'scans',
       sourcePath: SRC,
       destPath: DEST,
@@ -183,7 +183,7 @@ describe('HealthArchiveIngestion', () => {
     ];
     for (const p of cases) {
       await expect(
-        svc.ingest({ userId: 'kckern', category: 'scans', sourcePath: p, destPath: DEST }),
+        svc.ingest({ userId: 'test-user', category: 'scans', sourcePath: p, destPath: DEST }),
       ).rejects.toThrow(/exclusion/i);
     }
   });
@@ -191,7 +191,7 @@ describe('HealthArchiveIngestion', () => {
   it('respects whitelist categories — rejects unknown category', async () => {
     await expect(
       svc.ingest({
-        userId: 'kckern',
+        userId: 'test-user',
         category: 'email',
         sourcePath: SRC,
         destPath: DEST,
@@ -201,7 +201,7 @@ describe('HealthArchiveIngestion', () => {
 
   it('dry-run reports planned ops without writing', async () => {
     const report = await svc.ingest({
-      userId: 'kckern',
+      userId: 'test-user',
       category: 'scans',
       sourcePath: SRC,
       destPath: DEST,
@@ -224,7 +224,7 @@ describe('HealthArchiveIngestion', () => {
     });
 
     const report = await svc.ingest({
-      userId: 'kckern',
+      userId: 'test-user',
       category: 'scans',
       sourcePath: SRC,
       destPath: DEST,
