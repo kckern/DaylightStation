@@ -127,3 +127,21 @@ describe('positional bias for multiple ≥10-min survivors (Plan 1 Task 2b)', ()
     expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Long');
   });
 });
+
+describe('"Cold Start" warmup pattern (Plan 1 Task 4)', () => {
+  test('treats "22 Minute Hard Corps—Cold Start" as a warmup', () => {
+    const events = [
+      videoEvent('22 Minute Hard Corps—Cold Start', 686), // ~11.4 min
+      videoEvent('Week 1 Day 4 - Upper Body',       642), // ~10.7 min
+    ];
+    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Week 1 Day 4 - Upper Body');
+  });
+
+  test('drops "cold start" (case-insensitive) when it is the only ≥10-min video and a shorter non-warmup exists', () => {
+    const events = [
+      videoEvent('cold start',    12 * 60), // 12 min — would win without filter
+      videoEvent('Workout Short', 8 * 60),  // 8 min
+    ];
+    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Workout Short');
+  });
+});

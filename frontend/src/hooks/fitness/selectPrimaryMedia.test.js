@@ -97,4 +97,24 @@ describe('selectPrimaryMedia', () => {
       expect(selectPrimaryMedia(media, cfg).contentId).toBe('b');
     });
   });
+
+  describe('"Cold Start" warmup pattern (regression for 20260501061820.yml bug)', () => {
+    it('treats "22 Minute Hard Corps—Cold Start" as a warmup', () => {
+      const media = [
+        { contentId: 'plex:600877', mediaType: 'video',
+          title: '22 Minute Hard Corps—Cold Start', durationMs: 686164 },
+        { contentId: 'plex:674501', mediaType: 'video',
+          title: 'Week 1 Day 4 - Upper Body',       durationMs: 642081 },
+      ];
+      expect(selectPrimaryMedia(media, {}).contentId).toBe('plex:674501');
+    });
+
+    it('drops "cold start" (case-insensitive) when it is the only ≥10-min video and a shorter non-warmup exists', () => {
+      const media = [
+        { contentId: 'cs', mediaType: 'video', title: 'cold start',    durationMs: 12 * 60_000 },
+        { contentId: 'wo', mediaType: 'video', title: 'Workout Short', durationMs: 8 * 60_000 },
+      ];
+      expect(selectPrimaryMedia(media, {}).contentId).toBe('wo');
+    });
+  });
 });
