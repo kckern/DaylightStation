@@ -197,6 +197,8 @@ import { PersonalContextLoader } from '../3_applications/health/PersonalContextL
 import { HealthArchiveScope } from '#domains/health/services/HealthArchiveScope.mjs';
 import { SimilarPeriodFinder } from '#domains/health/services/SimilarPeriodFinder.mjs';
 import { PatternDetector } from '#domains/health/services/PatternDetector.mjs';
+import { CalibrationConstants } from '#domains/health/services/CalibrationConstants.mjs';
+import { YamlHealthScanDatastore } from '#adapters/persistence/yaml/YamlHealthScanDatastore.mjs';
 import { CoachingOrchestrator, CoachingCommentaryService } from '#apps/coaching/index.mjs';
 import { PagedMediaTocAgent } from '#apps/agents/paged-media-toc/index.mjs';
 import { KomgaClient } from '#adapters/content/readable/komga/KomgaClient.mjs';
@@ -2964,6 +2966,18 @@ export async function createAgentsApiRouter(config) {
     // Stateless, no I/O; instantiated once and shared across requests.
     const patternDetector = new PatternDetector({ logger });
 
+    // F-007 CalibrationConstants — body-comp calibration anchor service used
+    // by MorningBrief to surface the DEXA staleness CTA. Instances hold
+    // per-user state, but `load(userId)` is idempotent and called lazily by
+    // consumers. We instantiate one shared instance here; per-user state is
+    // re-loaded on each gather() invocation.
+    const healthScanStore = new YamlHealthScanDatastore({ dataDir, logger });
+    const calibrationConstants = new CalibrationConstants({
+      healthScanStore,
+      weightStore: healthStore,
+      logger,
+    });
+
     agentOrchestrator.register(HealthCoachAgent, {
       workingMemory,
       healthStore,
@@ -2979,6 +2993,7 @@ export async function createAgentsApiRouter(config) {
       archiveScope,
       similarPeriodFinder,
       patternDetector,
+      calibrationConstants,
       dataRoot,
     });
   }

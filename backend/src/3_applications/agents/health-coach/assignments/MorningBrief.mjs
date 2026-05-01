@@ -32,6 +32,15 @@ const PATTERN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const PATTERN_WINDOW_DAYS = 30;
 const SEVERITY_RANK = { high: 0, medium: 1, low: 2 };
 
+// F-007 DEXA staleness CTA. When the user's calibration anchor (most recent
+// DEXA scan) is older than the threshold, surface a CTA prompting a re-scan —
+// body-composition math is currently running on consumer-BIA without a recent
+// truth anchor. The CTA is suppressed for 14 days via a working-memory key so
+// the user isn't nagged daily once they've seen it.
+const DEXA_STALENESS_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+const DEFAULT_DEXA_STALENESS_THRESHOLD_DAYS = 180;
+const DEXA_STALENESS_MEMORY_KEY = 'dexa_stale_warned';
+
 /**
  * MorningBrief - Scheduled assignment that sends a daily reconciliation-aware nutrition brief.
  *
@@ -128,6 +137,19 @@ export class MorningBrief extends Assignment {
       logger,
     });
 
+    // DEXA staleness CTA (F-007) — when the user's calibration anchor
+    // exceeds the configured threshold (default 180 days; playbook may
+    // override via coaching_thresholds.dexa_staleness_days), surface a
+    // re-scan prompt under "## DEXA Calibration". The CTA is suppressed
+    // for 14 days via the `dexa_stale_warned` working-memory key.
+    const staleCalibration = await this.#detectStaleCalibration({
+      userId,
+      memory,
+      personalContextLoader: context?.personalContextLoader,
+      calibrationConstants: context?.calibrationConstants,
+      logger,
+    });
+
     return {
       reconciliation,
       weight,
@@ -138,7 +160,104 @@ export class MorningBrief extends Assignment {
       similarPeriod,
       complianceCtas,
       detectedPatterns,
+      staleCalibration,
     };
+  }
+
+  /**
+   * Evaluate the user's DEXA calibration freshness and emit a CTA when stale.
+   *
+   * Logic:
+   *   1. If no `calibrationConstants` is wired, return null (graceful absence).
+   *   2. Lazily call `await calibrationConstants.load(userId)` — the service is
+   *      idempotent and instances are per-process; per-user state is loaded on
+   *      first access. Failures are caught and degrade to "no CTA".
+   *   3. Resolve the staleness threshold from the playbook
+   *      (`coaching_thresholds.dexa_staleness_days`) when present, else the
+   *      default of 180 days.
+   *   4. If `flagIfStale(threshold)` returns true AND the suppression key
+   *      `dexa_stale_warned` is not active in memory, emit a CTA and stamp
+   *      the suppression key with a 14-day TTL.
+   *
+   * @returns {Promise<null | { type: 'staleness', days: number, lastDexaDate: string|null }>}
+   */
+  async #detectStaleCalibration({
+    userId, memory, personalContextLoader, calibrationConstants, logger,
+  }) {
+    if (!calibrationConstants || typeof calibrationConstants.flagIfStale !== 'function') {
+      return null;
+    }
+
+    try {
+      if (typeof calibrationConstants.load === 'function') {
+        await calibrationConstants.load(userId);
+      }
+    } catch (err) {
+      logger?.warn?.('morning_brief.calibration.error', {
+        stage: 'load',
+        error: err?.message,
+      });
+      return null;
+    }
+
+    let thresholdDays = DEFAULT_DEXA_STALENESS_THRESHOLD_DAYS;
+    if (personalContextLoader && typeof personalContextLoader.loadPlaybook === 'function') {
+      try {
+        const playbook = await personalContextLoader.loadPlaybook(userId);
+        const fromPlaybook = playbook?.coaching_thresholds?.dexa_staleness_days;
+        if (Number.isFinite(fromPlaybook) && fromPlaybook > 0) {
+          thresholdDays = fromPlaybook;
+        }
+      } catch (err) {
+        // Loader failure is non-fatal — fall back to default silently.
+        logger?.warn?.('morning_brief.calibration.error', {
+          stage: 'playbook_load',
+          error: err?.message,
+        });
+      }
+    }
+
+    let stale;
+    try {
+      stale = calibrationConstants.flagIfStale(thresholdDays);
+    } catch (err) {
+      logger?.warn?.('morning_brief.calibration.error', {
+        stage: 'flagIfStale',
+        error: err?.message,
+      });
+      return null;
+    }
+
+    if (!stale) {
+      return null;
+    }
+
+    if (memory?.get?.(DEXA_STALENESS_MEMORY_KEY)) {
+      logger?.info?.('morning_brief.calibration.suppressed_by_memory', {
+        userId,
+        thresholdDays,
+      });
+      return null;
+    }
+
+    const days = typeof calibrationConstants.getStaleness === 'function'
+      ? calibrationConstants.getStaleness()
+      : null;
+    const lastDexaDate = typeof calibrationConstants.getCalibrationDate === 'function'
+      ? calibrationConstants.getCalibrationDate()
+      : null;
+
+    memory?.set?.(DEXA_STALENESS_MEMORY_KEY, new Date().toISOString(), {
+      ttl: DEXA_STALENESS_TTL_MS,
+    });
+    logger?.info?.('morning_brief.calibration.stale', {
+      userId,
+      days,
+      lastDexaDate,
+      thresholdDays,
+    });
+
+    return { type: 'staleness', days, lastDexaDate };
   }
 
   /**
@@ -551,6 +670,23 @@ export class MorningBrief extends Assignment {
         }
       }
       sections.push(lines.join('\n'));
+    }
+
+    // DEXA Calibration — when the user's clinical anchor is stale (F-007),
+    // surface a re-scan CTA. The suppression key in working memory keeps
+    // this from firing daily once it's been seen. Without a recent DEXA,
+    // the body-composition math is running on consumer-BIA without truth
+    // anchoring; the coach should reflect that uncertainty.
+    if (gathered.staleCalibration && gathered.staleCalibration.type === 'staleness') {
+      const sc = gathered.staleCalibration;
+      const lastDexa = sc.lastDexaDate ?? 'unknown';
+      const days = Number.isFinite(sc.days) ? sc.days : '?';
+      sections.push(
+        `\n## DEXA Calibration\n` +
+        `Last DEXA: ${lastDexa} (${days} days ago).\n` +
+        `Recommend scheduling a re-scan — body composition math is currently ` +
+        `running on consumer-BIA readings without recent DEXA anchoring.`
+      );
     }
 
     // Detect likely incomplete logging yesterday

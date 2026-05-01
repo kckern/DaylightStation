@@ -171,17 +171,19 @@ export class HealthCoachAgent extends BaseAgent {
 
     await this.#primePersonalContext(opts.userId);
 
-    // Thread personalContextLoader + patternDetector through the assignment
-    // context so assignments (e.g. MorningBrief F-003 / F-004) can read
-    // user-specific playbook config (coaching_thresholds, patterns, named
-    // periods) and run pattern detection without each one having to
-    // re-resolve the deps from the agent.
+    // Thread personalContextLoader + patternDetector + calibrationConstants
+    // through the assignment context so assignments (e.g. MorningBrief
+    // F-003 / F-004 / F-007) can read user-specific playbook config
+    // (coaching_thresholds, patterns, named periods), run pattern detection,
+    // and evaluate DEXA staleness without each one having to re-resolve
+    // the deps from the agent.
     const mergedOpts = {
       ...opts,
       context: {
         ...(opts.context || {}),
         personalContextLoader: this.deps.personalContextLoader,
         patternDetector: this.deps.patternDetector,
+        calibrationConstants: this.deps.calibrationConstants,
       },
     };
 
