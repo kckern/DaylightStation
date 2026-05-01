@@ -42,19 +42,37 @@ export class HealthAggregator {
    * @param {Object} [sources.fitness] - FitnessSyncer data
    * @param {Object} [sources.nutrition] - Nutrition data
    * @param {Object} [sources.coaching] - Coaching data
+   * @param {Object} [sources.calibration] - DEXA calibration (F-007). When
+   *   present, `getCorrectedLean(rawBIA)` and `getCorrectedBodyFat(rawBIA)`
+   *   are applied to weight.lean_lbs and weight.fat_percent respectively.
+   *   Identity functions when no DEXA is on file, so passing an unloaded
+   *   calibration is safe.
    * @returns {HealthMetric}
    */
   static aggregateDayMetrics(date, sources) {
-    const { weight, strava, fitness, nutrition, coaching, adjustedNutrition } = sources;
+    const { weight, strava, fitness, nutrition, coaching, adjustedNutrition, calibration } = sources;
 
     // Merge workouts from all sources
     const workouts = HealthAggregator.mergeWorkouts(strava, fitness?.activities || []);
 
+    // Apply DEXA calibration to BIA-derived body composition when provided.
+    // `calibration` is optional; existing callers don't pass it. Each accessor
+    // is only called when its raw input is finite, so missing fields don't
+    // produce NaN.
+    const rawLean = weight?.lean_lbs;
+    const rawBf = weight?.fat_percent;
+    const correctedLean = calibration && rawLean != null
+      ? calibration.getCorrectedLean(rawLean)
+      : rawLean;
+    const correctedBf = calibration && rawBf != null
+      ? calibration.getCorrectedBodyFat(rawBf)
+      : rawBf;
+
     // Build weight data
     const weightData = weight ? {
       lbs: weight.lbs,
-      fatPercent: weight.fat_percent,
-      leanLbs: weight.lean_lbs,
+      fatPercent: correctedBf,
+      leanLbs: correctedLean,
       waterWeight: weight.water_weight,
       trend: weight.lbs_adjusted_average_7day_trend
     } : null;
