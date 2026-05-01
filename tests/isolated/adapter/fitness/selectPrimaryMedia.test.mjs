@@ -64,13 +64,13 @@ describe('selectPrimaryMedia (backend)', () => {
     expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Lower Body Workout');
   });
 
-  test('returns null when only deprioritized + audio (no longer falls back to deprioritized)', () => {
+  test('returns the deprioritized event via cascade T4 when only deprioritized + audio exist', () => {
     const events = [
       videoEvent('Mario Kart World', 763, { labels: ['kidsfun'] }),
       videoEvent('Danny Go Dance', 500, { labels: ['kidsfun'] }),
       audioEvent('Workout Mix', 9999),
     ];
-    expect(selectPrimaryMedia(events, defaultConfig)).toBeNull();
+    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Mario Kart World');
   });
 
   test('combined skip — warmup + deprioritized + workout, workout wins', () => {
@@ -149,24 +149,24 @@ describe('"Cold Start" warmup pattern (Plan 1 Task 4)', () => {
 describe('minimum primary duration floor (Plan 4)', () => {
   const MIN_PRIMARY_SEC = 5 * 60;
 
-  test('returns null when only a sub-floor non-warmup event survives (regression for 2026-04-30 session)', () => {
+  test('returns the sub-floor non-warmup event via cascade T2 (regression for 2026-04-30 session)', () => {
     const events = [
       videoEvent('F-Zero',              1254, { labels: ['kidsfun'] }),
       videoEvent('Strength Challenge 1', 48,  { labels: [] }),
     ];
     const cfg = { ...defaultConfig, deprioritized_labels: ['kidsfun'] };
-    expect(selectPrimaryMedia(events, cfg)).toBeNull();
+    expect(selectPrimaryMedia(events, cfg).data.title).toBe('Strength Challenge 1');
   });
 
-  test('returns null when only a deprioritized event exists', () => {
+  test('returns the deprioritized event via cascade T4 when nothing else exists', () => {
     const events = [videoEvent('Cartoon Marathon', 30 * 60, { labels: ['kidsfun'] })];
     const cfg = { ...defaultConfig, deprioritized_labels: ['kidsfun'] };
-    expect(selectPrimaryMedia(events, cfg)).toBeNull();
+    expect(selectPrimaryMedia(events, cfg).data.title).toBe('Cartoon Marathon');
   });
 
-  test('returns null when only a sub-floor real event exists', () => {
+  test('returns the sub-floor real event via cascade T2', () => {
     const events = [videoEvent('Quick Demo', 4 * 60)];
-    expect(selectPrimaryMedia(events, defaultConfig)).toBeNull();
+    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Quick Demo');
   });
 
   test('returns the eligible event when it meets exactly MIN_PRIMARY_SEC', () => {
@@ -190,8 +190,45 @@ describe('minimum primary duration floor (Plan 4)', () => {
     expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Stretch Routine');
   });
 
-  test('returns null when only sub-floor warmups exist', () => {
+  test('returns the sub-floor warmup via cascade T3', () => {
     const events = [videoEvent('Stretch', 4 * 60)];
-    expect(selectPrimaryMedia(events, defaultConfig)).toBeNull();
+    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Stretch');
+  });
+});
+
+describe('cascading fallback tiers (Plan 5)', () => {
+  test('T3: prefers non-deprioritized (warmup) over deprioritized (browsing)', () => {
+    const events = [
+      videoEvent('Stretch Routine', 8 * 60),
+      videoEvent('Cartoon',        30 * 60, { labels: ['kidsfun'] }),
+    ];
+    const cfg = { ...defaultConfig, deprioritized_labels: ['kidsfun'] };
+    expect(selectPrimaryMedia(events, cfg).data.title).toBe('Stretch Routine');
+  });
+
+  test('T4: returns longest deprioritized event when every event is deprioritized (regression: 2026-04-29)', () => {
+    const events = [
+      videoEvent('F-Zero',                  1314, { labels: ['kidsfun'] }),
+      videoEvent('Super Smash Bros Fitness', 718, { labels: ['kidsfun'] }),
+    ];
+    const cfg = { ...defaultConfig, deprioritized_labels: ['kidsfun'] };
+    expect(selectPrimaryMedia(events, cfg).data.title).toBe('F-Zero');
+  });
+
+  test('T1 still wins when an eligible real workout exists alongside a longer deprioritized event', () => {
+    const events = [
+      videoEvent('Cartoon Marathon', 30 * 60, { labels: ['kidsfun'] }),
+      videoEvent('Real Workout',      6 * 60),
+    ];
+    const cfg = { ...defaultConfig, deprioritized_labels: ['kidsfun'] };
+    expect(selectPrimaryMedia(events, cfg).data.title).toBe('Real Workout');
+  });
+
+  test('returns null only when there are no non-audio events', () => {
+    expect(selectPrimaryMedia([], defaultConfig)).toBeNull();
+    const audioOnly = [
+      { type: 'media', data: { contentType: 'track', title: 'song', durationSeconds: 200, artist: 'X' } },
+    ];
+    expect(selectPrimaryMedia(audioOnly, defaultConfig)).toBeNull();
   });
 });
