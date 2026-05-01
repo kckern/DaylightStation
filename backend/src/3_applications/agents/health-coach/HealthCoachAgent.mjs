@@ -7,6 +7,7 @@ import { DashboardToolFactory } from './tools/DashboardToolFactory.mjs';
 import { ReconciliationToolFactory } from './tools/ReconciliationToolFactory.mjs';
 import { MessagingChannelToolFactory } from './tools/MessagingChannelToolFactory.mjs';
 import { LongitudinalToolFactory } from './tools/LongitudinalToolFactory.mjs';
+import { ComplianceToolFactory } from './tools/ComplianceToolFactory.mjs';
 import { DailyDashboard } from './assignments/DailyDashboard.mjs';
 import { systemPrompt } from './prompts/system.mjs';
 
@@ -153,6 +154,11 @@ export class HealthCoachAgent extends BaseAgent {
       archiveScope,
       dataRoot,
     }));
+
+    // Compliance summary tool (F-002). Reads the per-day `coaching` field
+    // written by F-001's SetDailyCoachingUseCase and surfaces counts,
+    // streaks, and gaps for each tracked dimension.
+    this.addToolFactory(new ComplianceToolFactory({ healthStore }));
 
     // Existing assignment
     this.registerAssignment(new DailyDashboard());

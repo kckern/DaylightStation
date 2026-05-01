@@ -46,6 +46,7 @@ function buildAgent() {
       loadNutritionData: async () => ({}),
       loadCoachingData: async () => ({}),
       saveCoachingData: async () => {},
+      loadHealthData: async () => ({}),
     },
     healthService: {
       getHealthForRange: async () => ({}),
@@ -102,6 +103,8 @@ describe('HealthCoachAgent — longitudinal tools registered', () => {
       'get_user_goals',
       // ReconciliationToolFactory
       'get_reconciliation_summary',
+      // ComplianceToolFactory (F-002)
+      'get_compliance_summary',
     ];
     for (const name of existingTools) {
       expect(toolNames).toContain(name);
