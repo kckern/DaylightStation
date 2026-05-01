@@ -2577,17 +2577,28 @@ export class GovernanceEngine {
       return;
     }
 
-    // Guard: don't run challenges if below minimum participant count
+    // Guard: don't START new challenges if below minimum participant count.
+    // An already-active cycle challenge is preserved — it has its own rider
+    // eligibility model and shouldn't be wiped just because the zone roster
+    // hasn't filled in yet (this matters for manually-triggered cycles via
+    // the simulator popout, where the user clicks Trigger before all
+    // participants register a zone).
     if (
       Number.isFinite(challengeConfig.minParticipants) &&
       challengeConfig.minParticipants > 0 &&
       totalCount < challengeConfig.minParticipants
     ) {
-      this.challengeState.activeChallenge = null;
+      const activeIsCycle = this.challengeState.activeChallenge?.type === 'cycle';
+      if (!activeIsCycle) {
+        this.challengeState.activeChallenge = null;
+      }
       this.challengeState.nextChallenge = null;
       this.challengeState.nextChallengeAt = null;
       this.challengeState.nextChallengeRemainingMs = null;
-      return;
+      if (!activeIsCycle) {
+        return;
+      }
+      // Fall through so _evaluateCycleChallenge can tick the active cycle.
     }
 
     const chooseSelectionPayload = () => {
