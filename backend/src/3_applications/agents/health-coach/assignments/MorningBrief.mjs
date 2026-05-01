@@ -59,7 +59,130 @@ export class MorningBrief extends Assignment {
       yesterdayClosed: !!yesterdayClosed?.closed,
     });
 
-    return { reconciliation, weight, goals, todayNutrition, nutritionHistory, yesterdayClosed: !!yesterdayClosed?.closed };
+    // Pattern signal detection (F-105.1) — when a notable trailing streak
+    // is present, ground the coaching in a historical analog by querying
+    // find_similar_period. We only fire on streaks ≥3 days to avoid spending
+    // tokens on irrelevant precedent during normal weeks.
+    const similarPeriod = await this.#detectAndQuerySimilarPeriod({
+      tools,
+      userId,
+      nutritionHistory,
+      weight,
+      goals,
+      logger,
+    });
+
+    return {
+      reconciliation,
+      weight,
+      goals,
+      todayNutrition,
+      nutritionHistory,
+      yesterdayClosed: !!yesterdayClosed?.closed,
+      similarPeriod,
+    };
+  }
+
+  /**
+   * Inspect the last 7 days of nutrition history for a trailing calorie-surplus
+   * or protein-shortfall streak (≥3 days). When detected, build a 7-day pattern
+   * signature and query find_similar_period for the closest historical analog.
+   * Returns the top match, or null when no streak is present / the lookup fails.
+   *
+   * @returns {Promise<null | { name: string, score: number, period: object }>}
+   */
+  async #detectAndQuerySimilarPeriod({ tools, userId, nutritionHistory, weight, goals, logger }) {
+    const days = Array.isArray(nutritionHistory?.days)
+      ? nutritionHistory.days
+      : Array.isArray(nutritionHistory)
+        ? nutritionHistory
+        : [];
+    if (days.length === 0) return null;
+
+    const calMax = goals?.goals?.nutrition?.calories_max;
+    const proteinMin = goals?.goals?.nutrition?.protein_min;
+
+    // Trailing streak counters — start from the most recent day and walk back
+    // until the streak breaks. This favors today's coaching relevance over
+    // arbitrary windows earlier in the week.
+    const trailingStreak = (predicate) => {
+      let count = 0;
+      for (let i = days.length - 1; i >= 0; i--) {
+        if (predicate(days[i])) count += 1;
+        else break;
+      }
+      return count;
+    };
+
+    const calorieSurplusStreak = typeof calMax === 'number'
+      ? trailingStreak(d => typeof d?.calories === 'number' && d.calories > calMax)
+      : 0;
+    const proteinShortfallStreak = typeof proteinMin === 'number'
+      ? trailingStreak(d => typeof d?.protein === 'number' && d.protein < proteinMin)
+      : 0;
+
+    const streakDetected = calorieSurplusStreak >= 3 || proteinShortfallStreak >= 3;
+    if (!streakDetected) return null;
+
+    const tool = tools.find(t => t.name === 'find_similar_period');
+    if (!tool) {
+      logger?.warn?.('morning_brief.similar_period.error', { reason: 'tool_not_registered' });
+      return null;
+    }
+
+    // Build the signature from the same 7-day nutrition window plus the
+    // weight history we already gathered. Missing dimensions are simply
+    // omitted from the resulting object — the finder ignores them.
+    const numericCalories = days.map(d => d?.calories).filter(v => typeof v === 'number');
+    const numericProtein = days.map(d => d?.protein).filter(v => typeof v === 'number');
+    const trackedDays = days.filter(d => typeof d?.calories === 'number' && d.calories > 0).length;
+
+    const weightHistory = Array.isArray(weight?.history) ? weight.history : [];
+    const numericWeights = weightHistory
+      .map(w => (typeof w?.lbs === 'number' ? w.lbs : null))
+      .filter(v => v !== null);
+
+    const avg = (arr) => (arr.length === 0 ? null : arr.reduce((a, b) => a + b, 0) / arr.length);
+
+    const signature = {};
+    const proteinAvg = avg(numericProtein);
+    if (proteinAvg !== null) signature.protein_avg_g = proteinAvg;
+    const calorieAvg = avg(numericCalories);
+    if (calorieAvg !== null) signature.calorie_avg = calorieAvg;
+    if (days.length > 0) signature.tracking_rate = trackedDays / days.length;
+    const weightAvg = avg(numericWeights);
+    if (weightAvg !== null) signature.weight_avg_lbs = weightAvg;
+    if (numericWeights.length >= 2) {
+      signature.weight_delta_lbs = numericWeights[numericWeights.length - 1] - numericWeights[0];
+    }
+
+    logger?.info?.('morning_brief.similar_period.queried', {
+      userId,
+      calorieSurplusStreak,
+      proteinShortfallStreak,
+      signatureDimensions: Object.keys(signature),
+    });
+
+    try {
+      const result = await tool.execute({ userId, pattern_signature: signature, max_results: 1 });
+      const matches = Array.isArray(result?.matches) ? result.matches : [];
+      if (matches.length === 0) {
+        return null;
+      }
+      const top = matches[0];
+      logger?.info?.('morning_brief.similar_period.match_found', {
+        name: top?.name,
+        score: top?.score,
+      });
+      return {
+        name: top?.name,
+        score: top?.score,
+        period: top?.period || null,
+      };
+    } catch (err) {
+      logger?.warn?.('morning_brief.similar_period.error', { error: err?.message });
+      return null;
+    }
   }
 
   /**
@@ -76,6 +199,24 @@ export class MorningBrief extends Assignment {
     sections.push(`\n## Nutrition History (last 7 days — calories, protein, macros per day)\n${JSON.stringify(gathered.nutritionHistory || {}, null, 2)}`);
     sections.push(`\n## Today's Nutrition (so far)\n${JSON.stringify(gathered.todayNutrition || {}, null, 2)}`);
     sections.push(`\n## Working Memory\n${memory.serialize()}`);
+
+    // Similar Period — historical analog when a notable pattern signal fired
+    // during gather (F-105.1). The section anchors any "the last time this
+    // happened" coaching language in concrete personal precedent.
+    if (gathered.similarPeriod && gathered.similarPeriod.period) {
+      const sp = gathered.similarPeriod;
+      const period = sp.period || {};
+      const stats = period.stats || {};
+      const fmt = (v) => (typeof v === 'number' ? Number(v.toFixed(2)) : 'n/a');
+      sections.push(
+        `\n## Similar Period — historical analog for the current pattern\n` +
+        `Period: ${sp.name ?? period.name ?? 'unknown'} (${period.from ?? '?'} → ${period.to ?? '?'})\n` +
+        `Description: ${period.description || '(no description)'}\n` +
+        `Stats: weight_avg=${fmt(stats.weight_avg_lbs)} protein_avg=${fmt(stats.protein_avg_g)}g ` +
+        `calorie_avg=${fmt(stats.calorie_avg)} tracking_rate=${fmt(stats.tracking_rate)}\n` +
+        `Use this as concrete personal precedent when the coach references "the last time this happened".`
+      );
+    }
 
     // Detect likely incomplete logging yesterday
     const calorieFloor = gathered.goals?.goals?.nutrition?.calories_min || 1200;
