@@ -112,6 +112,129 @@ export class LongitudinalToolFactory extends ToolFactory {
           }
         },
       }),
+
+      createTool({
+        name: 'query_historical_nutrition',
+        description:
+          'Query nutrition history over an inclusive [from, to] date range. ' +
+          'Returns per-day calories, protein, carbs, fat (and fiber/sugar/food_items ' +
+          'when available). Supports filters (protein_min, tagged_with, contains_food) ' +
+          'and field projection. Mirrors the reconciliation 14-day redaction policy: ' +
+          'implied_intake and tracking_accuracy are stripped from any day less than ' +
+          '14 days old.',
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string', description: 'User identifier' },
+            from: { type: 'string', description: 'Inclusive start date (YYYY-MM-DD)' },
+            to: { type: 'string', description: 'Inclusive end date (YYYY-MM-DD)' },
+            fields: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Optional field projection. When provided, returned days only ' +
+                'include the listed keys (plus `date`). When null/omitted, all fields are returned.',
+            },
+            filter: {
+              type: 'object',
+              description: 'Optional filters applied before projection.',
+              properties: {
+                protein_min: { type: 'number', description: 'Keep days where protein >= this value (g)' },
+                tagged_with: { type: 'string', description: 'Keep days whose tags array contains this string' },
+                contains_food: {
+                  type: 'string',
+                  description: 'Keep days where any food_items[].name contains this substring (case-insensitive)',
+                },
+              },
+            },
+          },
+          required: ['userId', 'from', 'to'],
+        },
+        execute: async ({ userId, from, to, fields = null, filter = {} }) => {
+          try {
+            const nutritionData = await healthStore.loadNutritionData(userId);
+            const dates = Object.keys(nutritionData || {})
+              .filter(d => d >= from && d <= to)
+              .sort();
+
+            if (!dates.length) return { days: [] };
+
+            // 14-day redaction window — match ReconciliationToolFactory.
+            // Use UTC to align with our YYYY-MM-DD date keys, which are UTC dates.
+            const MATURITY_DAYS = 14;
+            const now = new Date();
+            const todayUtc = new Date(Date.UTC(
+              now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(),
+            ));
+            const maturityCutoff = new Date(todayUtc);
+            maturityCutoff.setUTCDate(maturityCutoff.getUTCDate() - MATURITY_DAYS);
+
+            const proteinMin = filter && typeof filter.protein_min === 'number'
+              ? filter.protein_min : null;
+            const taggedWith = filter && typeof filter.tagged_with === 'string'
+              ? filter.tagged_with : null;
+            const containsFood = filter && typeof filter.contains_food === 'string'
+              ? filter.contains_food.toLowerCase() : null;
+
+            const days = [];
+            for (const date of dates) {
+              const entry = nutritionData[date] || {};
+
+              // ---- filtering ----
+              if (proteinMin != null && (entry.protein ?? 0) < proteinMin) continue;
+              if (taggedWith != null) {
+                const tags = Array.isArray(entry.tags) ? entry.tags : [];
+                if (!tags.includes(taggedWith)) continue;
+              }
+              if (containsFood != null) {
+                const foods = Array.isArray(entry.food_items) ? entry.food_items : [];
+                const match = foods.some(f =>
+                  typeof f?.name === 'string' && f.name.toLowerCase().includes(containsFood),
+                );
+                if (!match) continue;
+              }
+
+              // ---- canonical day shape ----
+              const day = {
+                date,
+                calories: entry.calories ?? null,
+                protein: entry.protein ?? null,
+                carbs: entry.carbs ?? null,
+                fat: entry.fat ?? null,
+              };
+              if (entry.fiber !== undefined) day.fiber = entry.fiber;
+              if (entry.sugar !== undefined) day.sugar = entry.sugar;
+              if (entry.food_items !== undefined) day.food_items = entry.food_items;
+              if (entry.tags !== undefined) day.tags = entry.tags;
+              if (entry.implied_intake !== undefined) day.implied_intake = entry.implied_intake;
+              if (entry.tracking_accuracy !== undefined) day.tracking_accuracy = entry.tracking_accuracy;
+
+              // ---- redaction (recent days < 14 days old) ----
+              const dateObj = new Date(date + 'T00:00:00Z');
+              const isMature = dateObj <= maturityCutoff;
+              if (!isMature) {
+                delete day.implied_intake;
+                delete day.tracking_accuracy;
+              }
+
+              // ---- projection ----
+              if (Array.isArray(fields) && fields.length) {
+                const projected = { date: day.date };
+                for (const key of fields) {
+                  if (key === 'date') continue;
+                  if (key in day) projected[key] = day[key];
+                }
+                days.push(projected);
+              } else {
+                days.push(day);
+              }
+            }
+
+            return { days };
+          } catch (err) {
+            return { days: [], error: err.message };
+          }
+        },
+      }),
     ];
   }
 }

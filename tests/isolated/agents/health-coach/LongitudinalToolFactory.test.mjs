@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { LongitudinalToolFactory } from '../../../../backend/src/3_applications/agents/health-coach/tools/LongitudinalToolFactory.mjs';
 
@@ -37,6 +37,7 @@ const FIXTURE = buildFixture();
 function makeFactory(overrides = {}) {
   const healthStore = {
     loadWeightData: vi.fn(async () => FIXTURE),
+    loadNutritionData: vi.fn(async () => ({})),
     ...overrides,
   };
   return { factory: new LongitudinalToolFactory({ healthStore }), healthStore };
@@ -44,6 +45,41 @@ function makeFactory(overrides = {}) {
 
 function getQueryTool(factory) {
   return factory.createTools().find(t => t.name === 'query_historical_weight');
+}
+
+function getNutritionTool(factory) {
+  return factory.createTools().find(t => t.name === 'query_historical_nutrition');
+}
+
+// Build a 30-day fixture anchored on a known "today" so the 14-day redaction
+// boundary is deterministic. Days 0-13 are "recent" (must be redacted); days
+// 14-29 are "old" (must NOT be redacted).
+function buildNutritionFixture(today) {
+  const data = {};
+  for (let i = 0; i < 30; i++) {
+    const d = new Date(today);
+    d.setUTCDate(d.getUTCDate() - i);
+    const date = d.toISOString().slice(0, 10);
+    data[date] = {
+      calories: 2000 + i,
+      protein: 100 + i,           // increasing protein for filter tests
+      carbs: 200,
+      fat: 70,
+      fiber: 25,
+      sugar: 40,
+      food_items: [
+        { name: i % 2 === 0 ? 'Chicken Breast' : 'Salmon Fillet', calories: 300, protein: 40 },
+        { name: 'Brown Rice', calories: 200, protein: 5 },
+      ],
+      tags: i < 5 ? ['cut'] : ['maintenance'],
+      // Note: real data shape DOES NOT include these — we synthesize them
+      // to verify redaction code is in place even though it's normally a
+      // no-op against loadNutritionData output today.
+      implied_intake: 2100 + i,
+      tracking_accuracy: 0.85,
+    };
+  }
+  return data;
 }
 
 describe('LongitudinalToolFactory.query_historical_weight', () => {
@@ -208,5 +244,181 @@ describe('LongitudinalToolFactory.query_historical_weight', () => {
     expect(result.aggregation).toBe('daily');
     expect(Array.isArray(result.rows)).toBe(true);
     expect(result.rows.length).toBe(0);
+  });
+});
+
+describe('LongitudinalToolFactory.query_historical_nutrition', () => {
+  // Anchor "today" so the 14-day redaction boundary is deterministic across
+  // test runs. We freeze the system clock with vi.useFakeTimers / setSystemTime.
+  const TODAY = new Date(Date.UTC(2026, 4, 1)); // 2026-05-01
+  const todayStr = TODAY.toISOString().slice(0, 10);
+  const NUTRITION_FIXTURE = buildNutritionFixture(TODAY);
+
+  // helper: date string i days before TODAY
+  const daysAgo = (i) => {
+    const d = new Date(TODAY);
+    d.setUTCDate(d.getUTCDate() - i);
+    return d.toISOString().slice(0, 10);
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TODAY);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function makeNutritionFactory(overrides = {}) {
+    const healthStore = {
+      loadWeightData: vi.fn(async () => FIXTURE),
+      loadNutritionData: vi.fn(async () => NUTRITION_FIXTURE),
+      ...overrides,
+    };
+    return { factory: new LongitudinalToolFactory({ healthStore }), healthStore };
+  }
+
+  it('tool definition has correct schema', () => {
+    const { factory } = makeNutritionFactory();
+    const tool = getNutritionTool(factory);
+
+    expect(tool).toBeTruthy();
+    expect(tool.name).toBe('query_historical_nutrition');
+    expect(typeof tool.description).toBe('string');
+    expect(tool.description.length).toBeGreaterThan(0);
+    expect(tool.parameters?.type).toBe('object');
+    const props = tool.parameters?.properties || {};
+    expect(props.userId).toBeTruthy();
+    expect(props.from).toBeTruthy();
+    expect(props.to).toBeTruthy();
+    expect(props.fields).toBeTruthy();
+    expect(props.filter).toBeTruthy();
+    expect(tool.parameters?.required).toEqual(expect.arrayContaining(['userId', 'from', 'to']));
+  });
+
+  it('query_historical_nutrition returns per-day calories/protein/carbs/fat', async () => {
+    const { factory } = makeNutritionFactory();
+    const tool = getNutritionTool(factory);
+
+    const result = await tool.execute({
+      userId: 'test-user',
+      from: daysAgo(20),
+      to: daysAgo(15),
+    });
+
+    expect(Array.isArray(result.days)).toBe(true);
+    expect(result.days.length).toBe(6); // inclusive: 20..15 = 6 days
+
+    for (const day of result.days) {
+      expect(typeof day.date).toBe('string');
+      expect(typeof day.calories).toBe('number');
+      expect(typeof day.protein).toBe('number');
+      expect(typeof day.carbs).toBe('number');
+      expect(typeof day.fat).toBe('number');
+    }
+  });
+
+  it('respects from/to bounds inclusive', async () => {
+    const { factory } = makeNutritionFactory();
+    const tool = getNutritionTool(factory);
+
+    const from = daysAgo(20);
+    const to = daysAgo(18);
+    const result = await tool.execute({
+      userId: 'test-user',
+      from,
+      to,
+    });
+
+    const dates = result.days.map(d => d.date).sort();
+    expect(dates.length).toBe(3);
+    expect(dates[0]).toBe(from);
+    expect(dates[dates.length - 1]).toBe(to);
+    // Every returned date is within [from, to]
+    for (const d of dates) {
+      expect(d >= from).toBe(true);
+      expect(d <= to).toBe(true);
+    }
+  });
+
+  it('filter.protein_min returns only days where protein >= threshold', async () => {
+    const { factory } = makeNutritionFactory();
+    const tool = getNutritionTool(factory);
+
+    // Across the whole 30-day window, protein values are 100..129.
+    // Threshold of 120 should keep days where protein >= 120.
+    const result = await tool.execute({
+      userId: 'test-user',
+      from: daysAgo(29),
+      to: todayStr,
+      filter: { protein_min: 120 },
+    });
+
+    expect(result.days.length).toBeGreaterThan(0);
+    for (const day of result.days) {
+      expect(day.protein).toBeGreaterThanOrEqual(120);
+    }
+  });
+
+  it('filter.contains_food returns only days whose food_items[].name contains substring (case-insensitive)', async () => {
+    const { factory } = makeNutritionFactory();
+    const tool = getNutritionTool(factory);
+
+    const result = await tool.execute({
+      userId: 'test-user',
+      from: daysAgo(29),
+      to: todayStr,
+      filter: { contains_food: 'salmon' }, // lowercase, fixture has 'Salmon Fillet'
+    });
+
+    expect(result.days.length).toBeGreaterThan(0);
+    for (const day of result.days) {
+      const names = (day.food_items || []).map(f => f.name.toLowerCase());
+      expect(names.some(n => n.includes('salmon'))).toBe(true);
+    }
+
+    // And there should be days WITHOUT salmon in the original fixture
+    // (every other day has Chicken Breast). Sanity-check we filtered something out.
+    const allDays = await tool.execute({
+      userId: 'test-user',
+      from: daysAgo(29),
+      to: todayStr,
+    });
+    expect(result.days.length).toBeLessThan(allDays.days.length);
+  });
+
+  it('redacts implied_intake and tracking_accuracy fields for days less than 14 days old', async () => {
+    const { factory } = makeNutritionFactory();
+    const tool = getNutritionTool(factory);
+
+    const result = await tool.execute({
+      userId: 'test-user',
+      from: daysAgo(13),
+      to: todayStr,
+    });
+
+    expect(result.days.length).toBe(14); // 0..13 inclusive
+    for (const day of result.days) {
+      expect(day).not.toHaveProperty('implied_intake');
+      expect(day).not.toHaveProperty('tracking_accuracy');
+    }
+  });
+
+  it('does NOT redact those fields for days 14+ days old', async () => {
+    const { factory } = makeNutritionFactory();
+    const tool = getNutritionTool(factory);
+
+    const result = await tool.execute({
+      userId: 'test-user',
+      from: daysAgo(29),
+      to: daysAgo(14),
+    });
+
+    expect(result.days.length).toBe(16); // 14..29 inclusive
+    // Fixture synthesizes these fields; mature days should retain them.
+    for (const day of result.days) {
+      expect(day).toHaveProperty('implied_intake');
+      expect(day).toHaveProperty('tracking_accuracy');
+    }
   });
 });
