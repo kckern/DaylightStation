@@ -689,6 +689,394 @@ describe('MorningBrief', () => {
     expect(gathered.complianceCtas).toEqual([]);
   });
 
+  // ---------- PatternDetector integration (Task 24, F-004) ----------
+  //
+  // The MorningBrief should pull 30-day windows (nutrition, weight, workouts,
+  // compliance) and pass them through PatternDetector along with the user's
+  // playbook patterns. Detections are filtered against working memory (7-day
+  // TTL key per pattern name) so the same flag doesn't fire daily, then
+  // surfaced under a "## Detected Patterns" section in the prompt.
+  //
+  // The 30-day query tools (query_historical_*) are already wired into the
+  // tools array as of Task 15. The compliance tool (get_compliance_summary)
+  // is wired as of Task 21. The PatternDetector is injected via
+  // `context.patternDetector`.
+
+  /**
+   * Build a baseline tool list with controllable 30-day window stubs and a
+   * compliance-summary stub. Tracks each tool's invocation params in `calls`.
+   */
+  function makePatternTools({
+    weightRows = null,
+    nutritionDays = null,
+    workouts = null,
+    compliance = null,
+    calls = {},
+  } = {}) {
+    calls.weight = [];
+    calls.nutrition = [];
+    calls.workouts = [];
+    calls.compliance = [];
+    return [
+      ...makeStandardTools(),
+      {
+        name: 'query_historical_weight',
+        execute: async (p) => {
+          calls.weight.push(p);
+          return { aggregation: p.aggregation || 'daily', rows: weightRows ?? [] };
+        },
+      },
+      {
+        name: 'query_historical_nutrition',
+        execute: async (p) => {
+          calls.nutrition.push(p);
+          return { days: nutritionDays ?? [] };
+        },
+      },
+      {
+        name: 'query_historical_workouts',
+        execute: async (p) => {
+          calls.workouts.push(p);
+          return { workouts: workouts ?? [] };
+        },
+      },
+      {
+        name: 'get_compliance_summary',
+        execute: async (p) => {
+          calls.compliance.push(p);
+          return compliance ?? {
+            windowDays: 30,
+            dimensions: {
+              post_workout_protein: {
+                logged: 30, missed: 0, untracked: 0,
+                complianceRate: 1, currentStreak: 30,
+                currentMissStreak: 0, currentUntrackedStreak: 0,
+                longestGap: 0,
+              },
+              daily_strength_micro: {
+                logged: 30, untracked: 0, avgReps: 8,
+                currentStreak: 30, currentUntrackedStreak: 0, longestGap: 0,
+              },
+              daily_note: { logged: 30, untracked: 0, complianceRate: 1 },
+            },
+          };
+        },
+      },
+    ];
+  }
+
+  it('gather: collects 30-day windows from longitudinal tools (weight/nutrition/workouts) and compliance', async () => {
+    const brief = new MorningBrief();
+    const calls = {};
+    const tools = makePatternTools({ calls });
+    // Playbook MUST have at least one pattern so the gather() path doesn't
+    // short-circuit before fetching the 30-day windows.
+    const personalContextLoader = {
+      loadPlaybook: async () => ({ patterns: [{ name: 'cut-mode' }] }),
+    };
+    const patternDetector = { detect: () => [] };
+
+    await brief.gather({
+      tools,
+      userId: 'test-user',
+      memory: makeMemory(),
+      logger: { info: () => {}, warn: () => {} },
+      context: { personalContextLoader, patternDetector },
+    });
+
+    expect(calls.weight.length).toBe(1);
+    expect(calls.nutrition.length).toBe(1);
+    expect(calls.workouts.length).toBe(1);
+    // Compliance is called once by the F-003 path and once by the F-004 path.
+    // Either is fine — but at least one call must hit it.
+    expect(calls.compliance.length).toBeGreaterThanOrEqual(1);
+    // Each window query covers a 30-day span ending today.
+    const today = new Date().toISOString().split('T')[0];
+    const expectedFrom = new Date(Date.now() - 29 * 86400000).toISOString().split('T')[0];
+    expect(calls.weight[0].userId).toBe('test-user');
+    expect(calls.weight[0].from).toBe(expectedFrom);
+    expect(calls.weight[0].to).toBe(today);
+    expect(calls.nutrition[0].from).toBe(expectedFrom);
+    expect(calls.nutrition[0].to).toBe(today);
+    expect(calls.workouts[0].from).toBe(expectedFrom);
+    expect(calls.workouts[0].to).toBe(today);
+  });
+
+  it('gather: invokes patternDetector.detect with the windows and playbook patterns', async () => {
+    const brief = new MorningBrief();
+    const tools = makePatternTools({
+      weightRows: [{ date: '2026-04-15', lbs: 185, count: 1 }],
+      nutritionDays: [{ date: '2026-04-15', calories: 1700, protein: 150 }],
+      workouts: [{ date: '2026-04-15', type: 'run', title: 'Easy run' }],
+    });
+    const playbook = {
+      patterns: [
+        { name: 'cut-mode', type: 'success', detection: {}, severity: 'low' },
+        { name: 'if-trap-risk', type: 'risk', detection: {}, severity: 'medium' },
+      ],
+    };
+    const personalContextLoader = { loadPlaybook: async () => playbook };
+    const detectCalls = [];
+    const patternDetector = {
+      detect: (args) => {
+        detectCalls.push(args);
+        return [];
+      },
+    };
+
+    await brief.gather({
+      tools,
+      userId: 'test-user',
+      memory: makeMemory(),
+      logger: { info: () => {}, warn: () => {} },
+      context: { personalContextLoader, patternDetector },
+    });
+
+    expect(detectCalls.length).toBe(1);
+    const arg = detectCalls[0];
+    expect(arg.windows).toBeTruthy();
+    expect(Array.isArray(arg.windows.nutrition)).toBe(true);
+    expect(Array.isArray(arg.windows.workouts)).toBe(true);
+    expect(Array.isArray(arg.windows.weight)).toBe(true);
+    expect(arg.windows.nutrition.length).toBe(1);
+    expect(arg.windows.workouts.length).toBe(1);
+    expect(arg.windows.weight.length).toBe(1);
+    expect(arg.windows.compliance).toBeTruthy();
+    expect(arg.playbookPatterns).toEqual(playbook.patterns);
+    expect(arg.userGoals).toBeTruthy();
+  });
+
+  it('gather: returns detectedPatterns in the gathered output', async () => {
+    const brief = new MorningBrief();
+    const tools = makePatternTools();
+    const personalContextLoader = {
+      loadPlaybook: async () => ({ patterns: [{ name: 'cut-mode', type: 'success' }] }),
+    };
+    const patternDetector = {
+      detect: () => [
+        {
+          name: 'cut-mode',
+          type: 'success',
+          confidence: 0.85,
+          evidence: { protein_avg_g: 155, calorie_avg: 1700, weight_delta_14d_lbs: -1.2 },
+          recommendation: 'Stay on this protocol',
+          memoryKey: 'pattern_cut-mode_last_flagged',
+          severity: 'low',
+        },
+      ],
+    };
+
+    const gathered = await brief.gather({
+      tools,
+      userId: 'test-user',
+      memory: makeMemory(),
+      logger: { info: () => {}, warn: () => {} },
+      context: { personalContextLoader, patternDetector },
+    });
+
+    expect(Array.isArray(gathered.detectedPatterns)).toBe(true);
+    expect(gathered.detectedPatterns.length).toBe(1);
+    expect(gathered.detectedPatterns[0].name).toBe('cut-mode');
+  });
+
+  it('buildPrompt: includes "## Detected Patterns" section when patterns found', () => {
+    const brief = new MorningBrief();
+    const gathered = {
+      reconciliation: {}, weight: {}, goals: {}, todayNutrition: {},
+      nutritionHistory: { days: [] }, yesterdayClosed: false,
+      similarPeriod: null,
+      complianceCtas: [],
+      detectedPatterns: [
+        {
+          name: 'if-trap-risk',
+          type: 'risk',
+          confidence: 0.78,
+          evidence: { protein_avg_g: 92, breakfast_skipped_days_7d: 5 },
+          recommendation: 'Move first food before 11am',
+          memoryKey: 'pattern_if-trap-risk_last_flagged',
+          severity: 'high',
+        },
+      ],
+    };
+    const prompt = brief.buildPrompt(gathered, { serialize: () => '' });
+    expect(prompt.includes('## Detected Patterns')).toBe(true);
+    expect(prompt.includes('if-trap-risk')).toBe(true);
+    expect(prompt.includes('high')).toBe(true);
+    expect(prompt.includes('0.78')).toBe(true);
+    expect(prompt.includes('Move first food before 11am')).toBe(true);
+    // Section appears before the Instructions block
+    expect(prompt.indexOf('## Detected Patterns')).toBeLessThan(prompt.indexOf('## Instructions'));
+  });
+
+  it('buildPrompt: omits the "## Detected Patterns" section when no patterns', () => {
+    const brief = new MorningBrief();
+    const gathered = {
+      reconciliation: {}, weight: {}, goals: {}, todayNutrition: {},
+      nutritionHistory: { days: [] }, yesterdayClosed: false,
+      similarPeriod: null,
+      complianceCtas: [],
+      detectedPatterns: [],
+    };
+    const prompt = brief.buildPrompt(gathered, { serialize: () => '' });
+    expect(prompt.includes('## Detected Patterns')).toBe(false);
+  });
+
+  it('gather: writes 7-day TTL memory keys (pattern_<name>_last_flagged) for each detection', async () => {
+    const brief = new MorningBrief();
+    const tools = makePatternTools();
+    const personalContextLoader = {
+      loadPlaybook: async () => ({ patterns: [{ name: 'cut-mode' }, { name: 'if-trap-risk' }] }),
+    };
+    const patternDetector = {
+      detect: () => [
+        {
+          name: 'cut-mode', type: 'success', confidence: 0.9, evidence: {},
+          recommendation: 'r1', memoryKey: 'pattern_cut-mode_last_flagged', severity: 'low',
+        },
+        {
+          name: 'if-trap-risk', type: 'risk', confidence: 0.7, evidence: {},
+          recommendation: 'r2', memoryKey: 'pattern_if-trap-risk_last_flagged', severity: 'medium',
+        },
+      ],
+    };
+    const setCalls = [];
+    const memory = makeMemory({ setCalls });
+
+    await brief.gather({
+      tools,
+      userId: 'test-user',
+      memory,
+      logger: { info: () => {}, warn: () => {} },
+      context: { personalContextLoader, patternDetector },
+    });
+
+    const cutSets = setCalls.filter(([k]) => k === 'pattern_cut-mode_last_flagged');
+    const ifSets = setCalls.filter(([k]) => k === 'pattern_if-trap-risk_last_flagged');
+    expect(cutSets.length).toBe(1);
+    expect(ifSets.length).toBe(1);
+    expect(cutSets[0][2]?.ttl).toBe(7 * 24 * 60 * 60 * 1000);
+    expect(ifSets[0][2]?.ttl).toBe(7 * 24 * 60 * 60 * 1000);
+  });
+
+  it('gather: filters out detections that have an active TTL key (deduped within 7 days)', async () => {
+    const brief = new MorningBrief();
+    const tools = makePatternTools();
+    const personalContextLoader = {
+      loadPlaybook: async () => ({ patterns: [{ name: 'cut-mode' }, { name: 'if-trap-risk' }] }),
+    };
+    const patternDetector = {
+      detect: () => [
+        {
+          name: 'cut-mode', type: 'success', confidence: 0.9, evidence: {},
+          recommendation: 'r1', memoryKey: 'pattern_cut-mode_last_flagged', severity: 'low',
+        },
+        {
+          name: 'if-trap-risk', type: 'risk', confidence: 0.7, evidence: {},
+          recommendation: 'r2', memoryKey: 'pattern_if-trap-risk_last_flagged', severity: 'medium',
+        },
+      ],
+    };
+    // Pre-populate the cut-mode TTL key so it should be suppressed.
+    const memory = makeMemory({
+      initial: { 'pattern_cut-mode_last_flagged': '2026-04-30T10:00:00Z' },
+    });
+
+    const gathered = await brief.gather({
+      tools,
+      userId: 'test-user',
+      memory,
+      logger: { info: () => {}, warn: () => {} },
+      context: { personalContextLoader, patternDetector },
+    });
+
+    expect(gathered.detectedPatterns.length).toBe(1);
+    expect(gathered.detectedPatterns[0].name).toBe('if-trap-risk');
+  });
+
+  it('gather: gracefully handles patternDetector.detect throwing — returns empty detections, logs warn', async () => {
+    const brief = new MorningBrief();
+    const tools = makePatternTools();
+    const personalContextLoader = {
+      loadPlaybook: async () => ({ patterns: [{ name: 'cut-mode' }] }),
+    };
+    const patternDetector = {
+      detect: () => { throw new Error('detector boom'); },
+    };
+    const warnCalls = [];
+    const logger = {
+      info: () => {},
+      warn: (event, data) => warnCalls.push([event, data]),
+    };
+
+    const gathered = await brief.gather({
+      tools,
+      userId: 'test-user',
+      memory: makeMemory(),
+      logger,
+      context: { personalContextLoader, patternDetector },
+    });
+
+    expect(gathered.detectedPatterns).toEqual([]);
+    const errorWarn = warnCalls.find(([e]) => e === 'morning_brief.pattern_detector.error');
+    expect(errorWarn).toBeTruthy();
+  });
+
+  it('gather: gracefully handles missing playbook (no patterns to evaluate, no detections)', async () => {
+    const brief = new MorningBrief();
+    const tools = makePatternTools();
+    const personalContextLoader = { loadPlaybook: async () => null };
+    const detectCalls = [];
+    const patternDetector = {
+      detect: (args) => { detectCalls.push(args); return []; },
+    };
+
+    const gathered = await brief.gather({
+      tools,
+      userId: 'test-user',
+      memory: makeMemory(),
+      logger: { info: () => {}, warn: () => {} },
+      context: { personalContextLoader, patternDetector },
+    });
+
+    expect(gathered.detectedPatterns).toEqual([]);
+    // The detector should NOT be invoked when there are no playbook patterns
+    // (nothing to evaluate against) — saves a no-op call.
+    expect(detectCalls.length).toBe(0);
+  });
+
+  it('buildPrompt: detected patterns are sorted by severity (high → medium → low) before being rendered', () => {
+    const brief = new MorningBrief();
+    const gathered = {
+      reconciliation: {}, weight: {}, goals: {}, todayNutrition: {},
+      nutritionHistory: { days: [] }, yesterdayClosed: false,
+      similarPeriod: null,
+      complianceCtas: [],
+      detectedPatterns: [
+        {
+          name: 'low-sev', type: 'success', confidence: 0.9, evidence: {},
+          recommendation: 'r-low', memoryKey: 'pattern_low-sev_last_flagged', severity: 'low',
+        },
+        {
+          name: 'high-sev', type: 'risk', confidence: 0.6, evidence: {},
+          recommendation: 'r-high', memoryKey: 'pattern_high-sev_last_flagged', severity: 'high',
+        },
+        {
+          name: 'med-sev', type: 'risk', confidence: 0.7, evidence: {},
+          recommendation: 'r-med', memoryKey: 'pattern_med-sev_last_flagged', severity: 'medium',
+        },
+      ],
+    };
+    const prompt = brief.buildPrompt(gathered, { serialize: () => '' });
+    const idxHigh = prompt.indexOf('high-sev');
+    const idxMed = prompt.indexOf('med-sev');
+    const idxLow = prompt.indexOf('low-sev');
+    expect(idxHigh).toBeGreaterThan(-1);
+    expect(idxMed).toBeGreaterThan(-1);
+    expect(idxLow).toBeGreaterThan(-1);
+    expect(idxHigh).toBeLessThan(idxMed);
+    expect(idxMed).toBeLessThan(idxLow);
+  });
+
   it('gather: gracefully handles find_similar_period throwing or returning empty matches', async () => {
     const brief = new MorningBrief();
 

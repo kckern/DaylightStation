@@ -23,6 +23,15 @@ const DEFAULT_COMPLIANCE_THRESHOLDS = Object.freeze({
 
 const COMPLIANCE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+// F-004 PatternDetector integration. The detector receives a 30-day window per
+// dimension and evaluates each playbook entry. To avoid daily nagging, every
+// detection that fires today gets a 7-day TTL key written to working memory;
+// detections whose key is already active are filtered out before reaching the
+// prompt. The TTL constant is shared with the compliance path above.
+const PATTERN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const PATTERN_WINDOW_DAYS = 30;
+const SEVERITY_RANK = { high: 0, medium: 1, low: 2 };
+
 /**
  * MorningBrief - Scheduled assignment that sends a daily reconciliation-aware nutrition brief.
  *
@@ -104,6 +113,21 @@ export class MorningBrief extends Assignment {
       logger,
     });
 
+    // Pattern detections (F-004) — pull 30-day windows from the longitudinal
+    // tools + compliance summary, run the user's playbook patterns through
+    // the injected PatternDetector, suppress any detections whose 7-day TTL
+    // key is still active, then stamp fresh keys for the rest. The result
+    // is rendered under "## Detected Patterns" in buildPrompt.
+    const detectedPatterns = await this.#detectPatterns({
+      tools,
+      userId,
+      memory,
+      goals,
+      personalContextLoader: context?.personalContextLoader,
+      patternDetector: context?.patternDetector,
+      logger,
+    });
+
     return {
       reconciliation,
       weight,
@@ -113,7 +137,131 @@ export class MorningBrief extends Assignment {
       yesterdayClosed: !!yesterdayClosed?.closed,
       similarPeriod,
       complianceCtas,
+      detectedPatterns,
     };
+  }
+
+  /**
+   * Run the user's playbook patterns through PatternDetector with a 30-day
+   * window of nutrition / weight / workouts / compliance.
+   *
+   * Logic:
+   *   1. Resolve playbook patterns. If the loader is unwired or the playbook
+   *      lacks a `patterns` array, return [] without invoking the detector —
+   *      there's nothing to evaluate.
+   *   2. Resolve the detector. If it's not injected, return [].
+   *   3. Pull 30-day windows in parallel (today − 29 → today). Tool errors
+   *      degrade to empty arrays so a single bad fetch doesn't kill the rest.
+   *   4. Call detector.detect(...) inside a try/catch. On error, log a warn
+   *      event and return [] — the brief never blocks on this signal.
+   *   5. Filter detections against working memory. Active TTL keys suppress
+   *      the detection; surviving detections get a fresh 7-day TTL stamp.
+   *
+   * @returns {Promise<Array<object>>} surviving detections in source order
+   */
+  async #detectPatterns({
+    tools, userId, memory, goals, personalContextLoader, patternDetector, logger,
+  }) {
+    if (!patternDetector || typeof patternDetector.detect !== 'function') {
+      return [];
+    }
+
+    let playbookPatterns = [];
+    if (personalContextLoader && typeof personalContextLoader.loadPlaybook === 'function') {
+      try {
+        const playbook = await personalContextLoader.loadPlaybook(userId);
+        if (Array.isArray(playbook?.patterns)) {
+          playbookPatterns = playbook.patterns;
+        }
+      } catch (err) {
+        logger?.warn?.('morning_brief.pattern_detector.error', {
+          stage: 'playbook_load',
+          error: err?.message,
+        });
+        return [];
+      }
+    }
+
+    if (playbookPatterns.length === 0) {
+      return [];
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    const from = new Date(Date.now() - (PATTERN_WINDOW_DAYS - 1) * 86400000)
+      .toISOString().split('T')[0];
+
+    const callTool = async (name, params) => {
+      const tool = tools.find(t => t.name === name);
+      if (!tool) return null;
+      try {
+        return await tool.execute(params);
+      } catch (err) {
+        logger?.warn?.('morning_brief.pattern_detector.error', {
+          stage: 'window_fetch',
+          tool: name,
+          error: err?.message,
+        });
+        return null;
+      }
+    };
+
+    const [weightRes, nutritionRes, workoutsRes, complianceRes] = await Promise.all([
+      callTool('query_historical_weight', { userId, from, to: today, aggregation: 'daily' }),
+      callTool('query_historical_nutrition', { userId, from, to: today }),
+      callTool('query_historical_workouts', { userId, from, to: today }),
+      callTool('get_compliance_summary', { userId }),
+    ]);
+
+    const windows = {
+      weight: Array.isArray(weightRes?.rows) ? weightRes.rows : [],
+      nutrition: Array.isArray(nutritionRes?.days) ? nutritionRes.days : [],
+      workouts: Array.isArray(workoutsRes?.workouts) ? workoutsRes.workouts : [],
+      compliance: complianceRes && !complianceRes.error ? complianceRes : {},
+    };
+
+    const userGoals = goals?.goals?.nutrition || goals?.goals || {};
+
+    logger?.info?.('morning_brief.pattern_detector.invoked', {
+      userId,
+      patternCount: playbookPatterns.length,
+      windowDays: PATTERN_WINDOW_DAYS,
+    });
+
+    let detections;
+    try {
+      detections = patternDetector.detect({ windows, playbookPatterns, userGoals });
+    } catch (err) {
+      logger?.warn?.('morning_brief.pattern_detector.error', {
+        stage: 'detect',
+        error: err?.message,
+      });
+      return [];
+    }
+
+    if (!Array.isArray(detections) || detections.length === 0) {
+      return [];
+    }
+
+    const surviving = [];
+    for (const detection of detections) {
+      const memKey = detection?.memoryKey || `pattern_${detection?.name}_last_flagged`;
+      if (memory?.get?.(memKey)) {
+        logger?.info?.('morning_brief.pattern.suppressed_by_memory', {
+          name: detection?.name,
+          severity: detection?.severity,
+        });
+        continue;
+      }
+      surviving.push(detection);
+      memory?.set?.(memKey, new Date().toISOString(), { ttl: PATTERN_TTL_MS });
+      logger?.info?.('morning_brief.pattern.detected', {
+        name: detection?.name,
+        severity: detection?.severity,
+        confidence: detection?.confidence,
+      });
+    }
+
+    return surviving;
   }
 
   /**
@@ -373,6 +521,34 @@ export class MorningBrief extends Assignment {
       const lines = ['\n## Compliance — historical-precedent CTAs'];
       for (const cta of gathered.complianceCtas) {
         lines.push(`- ${cta.dimension}: ${cta.message}`);
+      }
+      sections.push(lines.join('\n'));
+    }
+
+    // Detected Patterns (F-004). Surface PatternDetector matches sorted by
+    // severity (high → medium → low) so the coach reads the most-pressing
+    // signal first. Each line includes the pattern name, severity, confidence,
+    // a one-line recommendation, and an abridged comma-joined evidence map
+    // — concrete numbers help the LLM speak in specifics rather than abstract
+    // pattern names.
+    if (Array.isArray(gathered.detectedPatterns) && gathered.detectedPatterns.length > 0) {
+      const sorted = [...gathered.detectedPatterns].sort((a, b) => {
+        const ra = SEVERITY_RANK[a?.severity] ?? 99;
+        const rb = SEVERITY_RANK[b?.severity] ?? 99;
+        return ra - rb;
+      });
+      const lines = ['\n## Detected Patterns'];
+      for (const det of sorted) {
+        const conf = typeof det.confidence === 'number' ? det.confidence.toFixed(2) : 'n/a';
+        const evidenceStr = det.evidence && typeof det.evidence === 'object'
+          ? Object.entries(det.evidence).map(([k, v]) => `${k}=${v}`).join(', ')
+          : '';
+        lines.push(
+          `- **${det.name}** [${det.severity || 'medium'}] (confidence: ${conf}): ${det.recommendation || ''}`,
+        );
+        if (evidenceStr) {
+          lines.push(`  Evidence: ${evidenceStr}`);
+        }
       }
       sections.push(lines.join('\n'));
     }
