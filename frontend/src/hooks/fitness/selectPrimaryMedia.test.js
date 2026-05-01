@@ -121,7 +121,7 @@ describe('selectPrimaryMedia', () => {
   describe('minimum primary duration floor (Plan 4)', () => {
     const MIN_PRIMARY_MS = 5 * 60 * 1000;
 
-    it('returns the sub-floor non-warmup video via cascade T2 when no eligible real workout exists (regression: 2026-04-30/20260430192448.yml)', () => {
+    it('falls through to T4 when only sub-3-min non-deprio + long kidsfun exists (regression: 2026-04-30/20260430192448.yml)', () => {
       const media = [
         { contentId: 'plex:606445', mediaType: 'video',
           title: 'F-Zero', durationMs: 1254436, labels: ['kidsfun'] },
@@ -129,7 +129,7 @@ describe('selectPrimaryMedia', () => {
           title: 'Strength Challenge 1', durationMs: 48682, labels: [] },
       ];
       const cfg = { deprioritized_labels: ['kidsfun'] };
-      expect(selectPrimaryMedia(media, cfg).contentId).toBe('plex:601458');
+      expect(selectPrimaryMedia(media, cfg).contentId).toBe('plex:606445');
     });
 
     it('returns the deprioritized video via cascade T4 when nothing else exists', () => {

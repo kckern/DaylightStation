@@ -10,10 +10,13 @@
  *   T1: Real events (non-warmup, non-deprioritized) ≥ MIN_PRIMARY_SEC (5 min).
  *       When ≥2 are also ≥10 min, picks the LAST one (chronologically latest);
  *       otherwise picks the longest by data.durationSeconds. Main success path.
- *   T2: Any real candidate of any duration. Longest.
- *   T3: Non-deprioritized of any kind, allowing warmups but blocking browsing.
- *       Longest. Encodes "never primary on browsing if a non-browsing
- *       alternative exists" (e.g. stretch + cartoon → stretch wins).
+ *   T2: Real candidates ≥ MIN_T2_T3_SEC (3 min). Longest. Drops the T1 floor
+ *       but keeps a sub-floor — filters out brief demos that aren't real
+ *       workouts (e.g. a 48-second strength demo).
+ *   T3: Non-deprioritized ≥ MIN_T2_T3_SEC (3 min), allowing warmups but
+ *       blocking browsing. Longest. (E.g. stretch-only sessions where the
+ *       stretch is at least 3 min.) Sub-floor non-deprio still falls through
+ *       to T4.
  *   T4: Anything that survived audio filtering, including deprioritized.
  *       Longest. Last-resort fallback for sessions where every event is
  *       deprioritized (e.g. Game Cycling sessions with kidsfun-labeled tracks).
@@ -127,6 +130,7 @@ export function selectPrimaryMedia(mediaEvents, config) {
   const isWarmup = buildWarmupChecker(config);
   const isDeprioritized = buildDeprioritizedChecker(config);
   const MIN_PRIMARY_SEC = 5 * 60;
+  const MIN_T2_T3_SEC = 3 * 60;  // 3-min floor for fallback tiers — keeps brief demos out of primary
   const TEN_MIN_SEC = 10 * 60;
 
   // Step 3: Tier 1 — Eligible real workouts.
@@ -144,19 +148,22 @@ export function selectPrimaryMedia(mediaEvents, config) {
     });
   }
 
-  // Step 4: Tier 2 — any real candidate (drops the floor).
-  if (realCandidates.length > 0) {
-    return realCandidates.reduce((best, event) => {
+  // Step 4: Tier 2 — real candidates ≥ MIN_T2_T3_SEC (drops T1 floor, keeps demo filter).
+  const t2Candidates = realCandidates.filter(e => (e.data?.durationSeconds || 0) >= MIN_T2_T3_SEC);
+  if (t2Candidates.length > 0) {
+    return t2Candidates.reduce((best, event) => {
       const bestSec = best.data?.durationSeconds || 0;
       const evSec = event.data?.durationSeconds || 0;
       return evSec > bestSec ? event : best;
     });
   }
 
-  // Step 5: Tier 3 — non-deprioritized of any kind (allows warmups, blocks browsing).
-  const nonDeprio = episodes.filter(e => !isDeprioritized(e));
-  if (nonDeprio.length > 0) {
-    return nonDeprio.reduce((best, event) => {
+  // Step 5: Tier 3 — non-deprioritized ≥ MIN_T2_T3_SEC (allows warmups, blocks browsing).
+  const t3Candidates = episodes.filter(e =>
+    !isDeprioritized(e) && (e.data?.durationSeconds || 0) >= MIN_T2_T3_SEC
+  );
+  if (t3Candidates.length > 0) {
+    return t3Candidates.reduce((best, event) => {
       const bestSec = best.data?.durationSeconds || 0;
       const evSec = event.data?.durationSeconds || 0;
       return evSec > bestSec ? event : best;

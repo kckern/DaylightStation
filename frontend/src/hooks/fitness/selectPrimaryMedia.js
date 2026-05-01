@@ -7,14 +7,13 @@
  *   T1: Real workouts (non-warmup, non-deprioritized) ≥ MIN_PRIMARY_MS (5 min).
  *       When ≥2 are also ≥10 min, picks the LAST one (chronologically latest);
  *       otherwise picks the longest. This is the main success path.
- *   T2: Any real candidate (non-warmup, non-deprioritized) of any duration.
- *       Longest. (E.g. a 48-second strength demo when the only other content
- *       was a kidsfun-labeled track — the demo is still the user's intended
- *       workout, just brief.)
- *   T3: Non-deprioritized of any kind, allowing warmups but blocking
- *       browsing. Longest. (E.g. stretch-only sessions, or stretch + cartoon
- *       where stretch wins — never primary on browsing if a non-browsing
- *       alternative exists.)
+ *   T2: Real candidates ≥ MIN_T2_T3_MS (3 min). Longest. Drops the T1 floor
+ *       but keeps a sub-floor — filters out brief demos that aren't real
+ *       workouts (e.g. a 48-second strength demo).
+ *   T3: Non-deprioritized ≥ MIN_T2_T3_MS (3 min), allowing warmups but
+ *       blocking browsing. Longest. (E.g. stretch-only sessions where the
+ *       stretch is at least 3 min.) Sub-floor non-deprio still falls through
+ *       to T4.
  *   T4: Anything that survived audio filtering, including deprioritized.
  *       Longest. (E.g. Game Cycling sessions where every video is kidsfun;
  *       returns F-Zero rather than nothing.)
@@ -105,6 +104,7 @@ export function selectPrimaryMedia(mediaItems, config) {
 
   // Step 3: Constants for the cascade.
   const MIN_PRIMARY_MS = 5 * 60 * 1000;
+  const MIN_T2_T3_MS = 3 * 60 * 1000;  // 3-min floor for fallback tiers — keeps brief demos out of primary
   const TEN_MIN_MS = 10 * 60 * 1000;
 
   // Step 4: Tier 1 — Eligible real workouts (≥ MIN_PRIMARY_MS, non-warmup, non-deprio).
@@ -122,18 +122,20 @@ export function selectPrimaryMedia(mediaItems, config) {
     );
   }
 
-  // Step 5: Tier 2 — any real candidate (drops the floor, still non-warmup non-deprio).
-  if (realCandidates.length > 0) {
-    return realCandidates.reduce((best, item) =>
+  // Step 5: Tier 2 — real candidates ≥ MIN_T2_T3_MS (drops the T1 floor but keeps a
+  // sub-floor to filter out brief demos like a 48-second strength challenge).
+  const t2Candidates = realCandidates.filter(v => (v.durationMs || 0) >= MIN_T2_T3_MS);
+  if (t2Candidates.length > 0) {
+    return t2Candidates.reduce((best, item) =>
       (item.durationMs || 0) > (best.durationMs || 0) ? item : best
     );
   }
 
-  // Step 6: Tier 3 — non-deprioritized of any kind (allows warmups but blocks browsing).
-  // E.g. stretch-only sessions, or [stretch + cartoon] where stretch wins.
-  const nonDeprio = videos.filter(v => !isDeprioritized(v));
-  if (nonDeprio.length > 0) {
-    return nonDeprio.reduce((best, item) =>
+  // Step 6: Tier 3 — non-deprioritized ≥ MIN_T2_T3_MS (allows warmups, blocks browsing).
+  // Sub-floor non-deprio (e.g. a 48-second non-warmup demo) falls through to T4.
+  const t3Candidates = videos.filter(v => !isDeprioritized(v) && (v.durationMs || 0) >= MIN_T2_T3_MS);
+  if (t3Candidates.length > 0) {
+    return t3Candidates.reduce((best, item) =>
       (item.durationMs || 0) > (best.durationMs || 0) ? item : best
     );
   }
