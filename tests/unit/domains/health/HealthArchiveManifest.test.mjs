@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { HealthArchiveManifest } from '../../../../backend/src/2_domains/health/entities/HealthArchiveManifest.mjs';
+import {
+  HealthArchiveManifest,
+  BUILT_IN_CATEGORIES,
+  VALID_CATEGORIES,
+} from '../../../../backend/src/2_domains/health/entities/HealthArchiveManifest.mjs';
 
 describe('HealthArchiveManifest', () => {
   it('constructs with valid fields', () => {
@@ -16,8 +20,38 @@ describe('HealthArchiveManifest', () => {
     expect(m.recordCounts.totalFiles).toBe(4);
   });
 
-  it('rejects unknown category', () => {
-    expect(() => new HealthArchiveManifest({ userId: 'test-user', category: 'email' })).toThrow(/category/);
+  it('accepts every built-in category by default', () => {
+    for (const cat of BUILT_IN_CATEGORIES) {
+      expect(() => new HealthArchiveManifest({ userId: 'test-user', category: cat }))
+        .not.toThrow();
+    }
+  });
+
+  it('rejects unknown category by default', () => {
+    expect(() => new HealthArchiveManifest({ userId: 'test-user', category: 'email' }))
+      .toThrow(/category/);
+  });
+
+  it('accepts an extra category when validCategories includes it', () => {
+    expect(() => new HealthArchiveManifest({
+      userId: 'test-user',
+      category: 'hr-recovery',
+      validCategories: [...BUILT_IN_CATEGORIES, 'hr-recovery'],
+    })).not.toThrow();
+  });
+
+  it('still rejects categories outside both the floor and the override', () => {
+    expect(() => new HealthArchiveManifest({
+      userId: 'test-user',
+      category: 'mood-journal',
+      validCategories: [...BUILT_IN_CATEGORIES, 'hr-recovery'],
+    })).toThrow(/category/);
+  });
+
+  it('VALID_CATEGORIES export still contains the same six items as the floor', () => {
+    expect(VALID_CATEGORIES).toBeInstanceOf(Set);
+    expect([...VALID_CATEGORIES].sort()).toEqual([...BUILT_IN_CATEGORIES].sort());
+    expect(BUILT_IN_CATEGORIES.length).toBe(6);
   });
 
   it('serialize() returns a YAML-shaped plain object', () => {

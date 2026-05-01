@@ -22,7 +22,7 @@
  */
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { VALID_CATEGORIES } from '../entities/HealthArchiveManifest.mjs';
+import { BUILT_IN_CATEGORIES } from '../entities/HealthArchiveManifest.mjs';
 
 const EXCLUSION_PATTERNS = [
   /email/i,
@@ -57,16 +57,29 @@ export class HealthArchiveIngestion {
    * @param {string} opts.sourcePath - Absolute source directory.
    * @param {string} opts.destPath - Absolute destination directory.
    * @param {boolean} [opts.dryRun=false] - If true, plan only — no writes.
+   * @param {Iterable<string>} [opts.customCategories] - Per-user extra
+   *   categories (from playbook `archive.custom_categories`). Merged with
+   *   `BUILT_IN_CATEGORIES` to form the accepted set. Pre-F4-B callers can
+   *   omit this and the floor is used.
    * @returns {Promise<{copied: string[], skipped: string[], failed: Array<{file: string, error: string}>}>}
    */
-  async ingest({ userId, category, sourcePath, destPath, dryRun = false }) {
+  async ingest({ userId, category, sourcePath, destPath, dryRun = false, customCategories }) {
     if (!userId) throw new Error('HealthArchiveIngestion.ingest requires userId');
-    if (!VALID_CATEGORIES.has(category)) {
+    const validCategories = new Set([
+      ...BUILT_IN_CATEGORIES,
+      ...(customCategories ? Array.from(customCategories) : []),
+    ]);
+    if (!validCategories.has(category)) {
       throw new Error(`Unknown category: ${category}`);
     }
     if (EXCLUSION_PATTERNS.some((p) => p.test(sourcePath))) {
       this.logger.warn?.('ingest.exclusion_rejected', { userId, category, sourcePath });
       throw new Error(`Source path matches exclusion pattern: ${sourcePath}`);
+    }
+    if (customCategories
+        && Array.from(customCategories).includes(category)
+        && !BUILT_IN_CATEGORIES.includes(category)) {
+      this.logger.info?.('ingest.custom_category_used', { userId, category });
     }
 
     this.logger.info?.('ingest.start', { userId, category, sourcePath, destPath, dryRun });

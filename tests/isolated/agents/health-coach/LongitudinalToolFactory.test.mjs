@@ -1058,6 +1058,46 @@ describe('LongitudinalToolFactory.read_notes_file', () => {
     expect(archiveScope.assertReadable).not.toHaveBeenCalled();
   });
 
+  it('uses archiveScopeFactory.forUser(userId) when provided (F4-A)', async () => {
+    const absPath = '/fake/data/users/test-user/lifelog/archives/notes/file.md';
+    const SAMPLE = '# hello\nbody';
+    const fs = {
+      readFile: vi.fn(async (p) => {
+        if (p === absPath) return SAMPLE;
+        const err = new Error(`ENOENT: ${p}`);
+        err.code = 'ENOENT';
+        throw err;
+      }),
+    };
+    const perUserScope = {
+      assertReadable: vi.fn(() => {}),
+    };
+    const archiveScopeFactory = {
+      forUser: vi.fn(async () => perUserScope),
+    };
+    const healthStore = {
+      loadWeightData: vi.fn(async () => ({})),
+      loadNutritionData: vi.fn(async () => ({})),
+    };
+    const factory = new LongitudinalToolFactory({
+      healthStore,
+      archiveScopeFactory,
+      fs,
+      dataRoot: '/fake/data',
+    });
+    const tool = factory.createTools().find(t => t.name === 'read_notes_file');
+
+    const result = await tool.execute({
+      userId: 'test-user',
+      filename: 'notes/file.md',
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.content).toBe(SAMPLE);
+    expect(archiveScopeFactory.forUser).toHaveBeenCalledWith('test-user');
+    expect(perUserScope.assertReadable).toHaveBeenCalledWith(absPath, 'test-user');
+  });
+
   it('caches the same filename across calls within a single createTools() call', async () => {
     const absPath = '/fake/data/users/test-user/lifelog/archives/notes/strength-plateau.md';
     const fileContents = { [absPath]: SAMPLE_MD };

@@ -38,7 +38,7 @@ import yaml from 'js-yaml';
 import { HealthArchiveIngestion } from '#domains/health/services/HealthArchiveIngestion.mjs';
 import {
   HealthArchiveManifest,
-  VALID_CATEGORIES,
+  BUILT_IN_CATEGORIES,
 } from '#domains/health/entities/HealthArchiveManifest.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -62,6 +62,7 @@ function parseArgs(argv) {
     dryRun: false,
     dataRoot: null,
     mediaRoot: null,
+    playbook: null,
     help: false,
   };
   const args = argv.slice(2);
@@ -93,6 +94,9 @@ function parseArgs(argv) {
       case '--media-root':
         opts.mediaRoot = args[++i];
         break;
+      case '--playbook':
+        opts.playbook = args[++i];
+        break;
       default:
         // Unknown arg — surface, don't silently swallow.
         process.stderr.write(`Unknown argument: ${a}\n`);
@@ -119,11 +123,16 @@ function printHelp(stream = process.stdout) {
     '  --config <path>          config file (default: data/users/{userId}/config/health-archive.yml)',
     '  --source <path>          override source path (with --category)',
     '  --category <name>        restrict to one category',
-    `                           (one of: ${[...VALID_CATEGORIES].join(', ')})`,
+    `                           (built-in: ${BUILT_IN_CATEGORIES.join(', ')};`,
+    '                           any extra category declared in playbook',
+    '                           archive.custom_categories is also accepted)',
     '  --dry-run                plan only; do not write any files',
     '  --data-root <path>       override structured-archive root',
     '                           (default: data/users/{userId}/lifelog/archives/)',
     '  --media-root <path>      override raw-archive root (default: media/archives/)',
+    '  --playbook <path>        override playbook path used to resolve',
+    '                           archive.custom_categories (default:',
+    '                           data/users/{userId}/lifelog/archives/playbook/playbook.yml)',
     '  --help, -h               show this help',
     '',
     'Exit codes:',
@@ -170,16 +179,119 @@ async function loadConfig(configPath) {
 
 /**
  * Map a category to its destination directory.
- * - `scans` and any future raw-blob categories live under media-root
+ *
+ * Built-in categories use the historical mapping:
+ * - `scans` (a raw-blob category) lives under media-root with userId scoping
  * - everything else (notes, weight, workouts, nutrition-history, playbook)
- *   lives under data-root.
+ *   lives under data-root
+ *
+ * Custom categories (declared in playbook archive.custom_categories) are
+ * routed by their declared `destination`:
+ * - `'structured'` → data-root/<category>/
+ * - `'media'` → media-root/<category>/<userId>/ (matches scans)
+ *
+ * @param {object} args
+ * @param {string} args.category
+ * @param {string} args.userId
+ * @param {string} args.dataRoot
+ * @param {string} args.mediaRoot
+ * @param {Map<string, {destination: string}>} [args.customCategoryConfig]
+ *   key → declaration map for playbook-declared extras
  */
-function resolveDestPath({ category, userId, dataRoot, mediaRoot }) {
+function resolveDestPath({ category, userId, dataRoot, mediaRoot, customCategoryConfig }) {
+  // Custom-category routing takes precedence — a playbook author who
+  // re-declares a built-in name with a different destination is asserting
+  // intent. Built-ins still have their default routing for callers without
+  // a customCategoryConfig entry.
+  const custom = customCategoryConfig && customCategoryConfig.get(category);
+  if (custom) {
+    return resolveCustomDestination({
+      category,
+      destination: custom.destination,
+      userId,
+      dataRoot,
+      mediaRoot,
+    });
+  }
   if (category === 'scans') {
     return path.join(mediaRoot, 'scans', userId);
   }
-  // All other valid categories are structured archives.
+  // All other built-in categories are structured archives.
   return path.join(dataRoot, category);
+}
+
+/**
+ * Compute the destination directory for a playbook-declared custom category.
+ *
+ * - `destination: 'structured'` → `<dataRoot>/<category>/` (matches built-in
+ *   structured archives like notes/, weight/, ...)
+ * - `destination: 'media'` → `<mediaRoot>/<category>/<userId>/` (matches the
+ *   built-in `scans/` shape)
+ *
+ * Throws on unknown destination tokens so misspellings surface as a config
+ * error rather than silently routing to data-root.
+ */
+function resolveCustomDestination({ category, destination, userId, dataRoot, mediaRoot }) {
+  if (destination === 'structured') return path.join(dataRoot, category);
+  if (destination === 'media') return path.join(mediaRoot, category, userId);
+  throw new Error(
+    `Unknown destination "${destination}" for custom category "${category}" ` +
+    '(must be "structured" or "media")',
+  );
+}
+
+/**
+ * Default path to the user's playbook YAML. Optional input — if missing,
+ * custom categories are simply unavailable for this run.
+ */
+function defaultPlaybookPath(userId) {
+  return path.join(
+    REPO_ROOT, 'data', 'users', userId,
+    'lifelog', 'archives', 'playbook', 'playbook.yml',
+  );
+}
+
+/**
+ * Read the user's playbook (if present) and project the
+ * `archive.custom_categories` list into a Map keyed by category name.
+ *
+ * Each entry has shape `{ key, destination }` (extra fields ignored).
+ * Validates `destination` is `'structured'` or `'media'` so a typo surfaces
+ * here, not later when destination resolution fails.
+ *
+ * @param {string} playbookPath absolute path to the user's playbook.yml
+ * @returns {Promise<Map<string, {destination: string}>>}
+ */
+async function loadCustomCategoryConfig(playbookPath) {
+  let raw;
+  try {
+    raw = await fs.readFile(playbookPath, 'utf-8');
+  } catch (err) {
+    if (err.code === 'ENOENT') return new Map();
+    throw err;
+  }
+  let parsed;
+  try {
+    parsed = yaml.load(raw);
+  } catch {
+    return new Map();
+  }
+  const declared = parsed?.archive?.custom_categories;
+  const out = new Map();
+  if (!Array.isArray(declared)) return out;
+  for (const entry of declared) {
+    if (!entry || typeof entry !== 'object') continue;
+    const { key, destination } = entry;
+    if (typeof key !== 'string' || !key.length) continue;
+    if (destination !== 'structured' && destination !== 'media') {
+      throw new Error(
+        `playbook archive.custom_categories[${key}].destination must be ` +
+        `"structured" or "media" (got: ${String(destination)})`,
+      );
+    }
+    out.set(key, { destination });
+  }
+  return out;
 }
 
 function defaultDataRoot(userId) {
@@ -194,7 +306,7 @@ function defaultMediaRoot() {
 // Manifest writing
 // ============================================================================
 
-async function writeManifest({ destPath, userId, category, sourcePath, report, dryRun }) {
+async function writeManifest({ destPath, userId, category, sourcePath, report, dryRun, validCategories }) {
   if (dryRun) return null;
   const manifest = new HealthArchiveManifest({
     userId,
@@ -207,6 +319,7 @@ async function writeManifest({ destPath, userId, category, sourcePath, report, d
       skipped: report.skipped.length,
       failed: report.failed.length,
     },
+    validCategories,
   });
   await fs.mkdir(destPath, { recursive: true });
   const manifestPath = path.join(destPath, 'manifest.yml');
@@ -225,6 +338,8 @@ async function ingestCategory({
   sourcePath,
   destPath,
   dryRun,
+  customCategories,
+  validCategories,
 }) {
   const report = await ingestion.ingest({
     userId,
@@ -232,6 +347,7 @@ async function ingestCategory({
     sourcePath,
     destPath,
     dryRun,
+    customCategories,
   });
   const manifestPath = await writeManifest({
     destPath,
@@ -240,6 +356,7 @@ async function ingestCategory({
     sourcePath,
     report,
     dryRun,
+    validCategories,
   });
   return { report, manifestPath };
 }
@@ -302,6 +419,7 @@ async function main() {
   const configPath = opts.config || defaultConfigPath(userId);
   const dataRoot = opts.dataRoot || defaultDataRoot(userId);
   const mediaRoot = opts.mediaRoot || defaultMediaRoot();
+  const playbookPath = opts.playbook || defaultPlaybookPath(userId);
 
   let config;
   try {
@@ -310,6 +428,20 @@ async function main() {
     process.stderr.write(`Error: ${err.message}\n`);
     return 1;
   }
+
+  // F4-B: load per-user custom categories from playbook (best effort).
+  let customCategoryConfig;
+  try {
+    customCategoryConfig = await loadCustomCategoryConfig(playbookPath);
+  } catch (err) {
+    process.stderr.write(`Error: ${err.message}\n`);
+    return 1;
+  }
+  const customCategoryKeys = [...customCategoryConfig.keys()];
+  const validCategorySet = new Set([
+    ...BUILT_IN_CATEGORIES,
+    ...customCategoryKeys,
+  ]);
 
   const sources = config.sources || {};
   const categoryNames = Object.keys(sources);
@@ -321,10 +453,10 @@ async function main() {
   // Filter to requested category if --category given
   let toRun = categoryNames;
   if (opts.category) {
-    if (!VALID_CATEGORIES.has(opts.category)) {
+    if (!validCategorySet.has(opts.category)) {
       process.stderr.write(
         `Error: invalid --category "${opts.category}" ` +
-          `(must be one of: ${[...VALID_CATEGORIES].join(', ')})\n`,
+          `(must be one of: ${[...validCategorySet].join(', ')})\n`,
       );
       return 1;
     }
@@ -346,10 +478,10 @@ async function main() {
       // Honor "enabled: false" — skip silently in summary
       continue;
     }
-    if (!VALID_CATEGORIES.has(category)) {
+    if (!validCategorySet.has(category)) {
       results.push({
         category,
-        error: `invalid category "${category}" (must be one of: ${[...VALID_CATEGORIES].join(', ')})`,
+        error: `invalid category "${category}" (must be one of: ${[...validCategorySet].join(', ')})`,
       });
       continue;
     }
@@ -368,7 +500,15 @@ async function main() {
       continue;
     }
 
-    const destPath = resolveDestPath({ category, userId, dataRoot, mediaRoot });
+    let destPath;
+    try {
+      destPath = resolveDestPath({
+        category, userId, dataRoot, mediaRoot, customCategoryConfig,
+      });
+    } catch (err) {
+      results.push({ category, error: err.message });
+      continue;
+    }
 
     try {
       const { report, manifestPath } = await ingestCategory({
@@ -378,6 +518,8 @@ async function main() {
         sourcePath,
         destPath,
         dryRun,
+        customCategories: customCategoryKeys,
+        validCategories: validCategorySet,
       });
       results.push({ category, report, manifestPath });
     } catch (err) {

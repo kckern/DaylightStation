@@ -199,6 +199,29 @@ describe('HealthArchiveIngestion', () => {
     ).rejects.toThrow(/category/i);
   });
 
+  it('accepts a customCategories override for an otherwise-unknown category (F4-B)', async () => {
+    const report = await svc.ingest({
+      userId: 'test-user',
+      category: 'hr-recovery',     // not a built-in
+      sourcePath: SRC,
+      destPath: DEST,
+      customCategories: ['hr-recovery'],
+    });
+    expect(report.copied.length).toBe(2);
+  });
+
+  it('still rejects categories that are neither built-in nor in customCategories (F4-B)', async () => {
+    await expect(
+      svc.ingest({
+        userId: 'test-user',
+        category: 'mood-journal',
+        sourcePath: SRC,
+        destPath: DEST,
+        customCategories: ['hr-recovery'], // does NOT include mood-journal
+      }),
+    ).rejects.toThrow(/category/i);
+  });
+
   it('dry-run reports planned ops without writing', async () => {
     const report = await svc.ingest({
       userId: 'test-user',
