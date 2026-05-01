@@ -67,6 +67,18 @@ function buildAgent({ personalContextLoader, logger } = {}) {
 // Tests
 // ---------------------------------------------------------------------------
 
+describe('HealthCoachAgent system prompt — named-pattern rules', () => {
+  it('instructs the LLM to reference detected patterns by name (F-005)', () => {
+    expect(staticSystemPrompt).toMatch(/Detected Patterns/);
+    expect(staticSystemPrompt).toMatch(/reference patterns BY NAME/i);
+  });
+
+  it('instructs the LLM to name the similar period when present (F-005)', () => {
+    expect(staticSystemPrompt).toMatch(/Similar Period/);
+    expect(staticSystemPrompt).toMatch(/name the period explicitly/i);
+  });
+});
+
 describe('HealthCoachAgent.getSystemPrompt — PersonalContext injection', () => {
   it('returns the static prompt unchanged when no personalContextLoader is wired', async () => {
     const agent = buildAgent({ personalContextLoader: undefined });
