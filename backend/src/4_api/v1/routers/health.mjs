@@ -24,7 +24,7 @@ import { nowDate } from '#system/utils/time.mjs';
  * @returns {express.Router}
  */
 export function createHealthRouter(config) {
-  const { healthService, healthStore, configService, nutriListStore, dashboardService, catalogService, webNutribotAdapter, longitudinalService, logger = console } = config;
+  const { healthService, healthStore, configService, nutriListStore, dashboardService, catalogService, webNutribotAdapter, longitudinalService, setDailyCoachingUseCase, logger = console } = config;
   const router = express.Router();
 
   // JSON parsing middleware
@@ -212,6 +212,38 @@ export function createHealthRouter(config) {
       message: 'Health coaching data retrieved successfully',
       data: coachingData
     });
+  }));
+
+  /**
+   * POST /health/coaching/:date
+   * Set the daily coaching compliance entry for a date (PRD F-001).
+   * Body shape matches DailyCoachingEntry — passed straight through to the
+   * SetDailyCoachingUseCase, which handles validation.
+   */
+  router.post('/coaching/:date', asyncHandler(async (req, res) => {
+    const username = req.query.username || configService?.getHeadOfHousehold?.();
+    if (!username) {
+      return res.status(400).json({ error: 'username required' });
+    }
+    const { date } = req.params;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: `invalid date: ${date}` });
+    }
+    if (!setDailyCoachingUseCase) {
+      return res.status(503).json({ error: 'set-daily-coaching not wired' });
+    }
+    try {
+      await setDailyCoachingUseCase.execute({
+        userId: username,
+        date,
+        coaching: req.body,
+      });
+      logger.info?.('health.coaching.saved', { username, date });
+      return res.json({ message: 'coaching saved', date });
+    } catch (err) {
+      logger.warn?.('health.coaching.save_failed', { username, date, error: err.message });
+      return res.status(422).json({ error: err.message });
+    }
   }));
 
   // ==========================================================================

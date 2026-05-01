@@ -212,6 +212,7 @@ import { ReconciliationProcessor } from '#apps/health/ReconciliationProcessor.mj
 import { HealthDashboardUseCase } from '#apps/health/HealthDashboardUseCase.mjs';
 import { FoodCatalogService } from '#apps/health/FoodCatalogService.mjs';
 import { LongitudinalAggregationService } from '../3_applications/health/LongitudinalAggregationService.mjs';
+import { SetDailyCoachingUseCase } from '#apps/health/SetDailyCoachingUseCase.mjs';
 import { YamlHealthDatastore } from '#adapters/persistence/yaml/YamlHealthDatastore.mjs';
 import { YamlFoodCatalogDatastore } from '#adapters/persistence/yaml/YamlFoodCatalogDatastore.mjs';
 import { WebNutribotAdapter } from '#adapters/nutribot/WebNutribotAdapter.mjs';
@@ -2675,12 +2676,18 @@ export function createHealthApiRouter(config) {
     healthStore: healthServices.healthStore,
   });
 
+  const setDailyCoachingUseCase = new SetDailyCoachingUseCase({
+    healthStore: healthServices.healthStore,
+    logger,
+  });
+
   return createHealthRouter({
     healthService: healthServices.healthService,
     healthStore: healthServices.healthStore,
     nutriListStore: healthServices.nutriListStore,
     dashboardService,
     longitudinalService,
+    setDailyCoachingUseCase,
     configService,
     catalogService,
     webNutribotAdapter,
