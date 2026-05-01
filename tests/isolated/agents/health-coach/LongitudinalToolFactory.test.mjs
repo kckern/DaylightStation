@@ -1104,3 +1104,341 @@ describe('LongitudinalToolFactory.read_notes_file', () => {
     expect(fs.readFile).toHaveBeenCalledTimes(2);
   });
 });
+
+// -------------------------------------------------------------------
+// find_similar_period (F-104)
+// -------------------------------------------------------------------
+//
+// Loads the user's playbook via PersonalContextLoader, aggregates stats
+// for each named period from weight + nutrition + workout data sources,
+// then delegates ranking to the injected SimilarPeriodFinder.
+
+function getFindSimilarTool(factory) {
+  return factory.createTools().find(t => t.name === 'find_similar_period');
+}
+
+describe('LongitudinalToolFactory.find_similar_period', () => {
+  // Fixture period 1: fixture-cut-2024 (Feb 1 → Apr 30, 2024)
+  // Fixture period 2: rebound-2024 (May 1 → May 31, 2024)
+  function buildSimilarWeightFixture() {
+    const out = {};
+    // Cut period: 200 lbs → drops slowly to ~195
+    let lbs = 200;
+    let start = new Date(Date.UTC(2024, 1, 1));
+    let end = new Date(Date.UTC(2024, 3, 30));
+    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      const date = d.toISOString().slice(0, 10);
+      out[date] = {
+        date,
+        lbs,
+        lbs_adjusted_average: lbs,
+        fat_percent: 22,
+        fat_percent_average: 22,
+        source: 'consumer-bia',
+      };
+      lbs -= 0.05;
+    }
+    // Rebound: 195 → 198
+    lbs = 195;
+    start = new Date(Date.UTC(2024, 4, 1));
+    end = new Date(Date.UTC(2024, 4, 31));
+    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      const date = d.toISOString().slice(0, 10);
+      out[date] = {
+        date,
+        lbs,
+        lbs_adjusted_average: lbs,
+        fat_percent: 23,
+        fat_percent_average: 23,
+        source: 'consumer-bia',
+      };
+      lbs += 0.1;
+    }
+    return out;
+  }
+
+  function buildSimilarNutritionFixture() {
+    const out = {};
+    // Cut period — 90 days, all logged, protein 145, calories 1800
+    let start = new Date(Date.UTC(2024, 1, 1));
+    let end = new Date(Date.UTC(2024, 3, 30));
+    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      const date = d.toISOString().slice(0, 10);
+      out[date] = {
+        calories: 1800,
+        protein: 145,
+        carbs: 180,
+        fat: 60,
+      };
+    }
+    // Rebound period — only 16/31 days logged (tracking_rate ~ 0.516)
+    start = new Date(Date.UTC(2024, 4, 1));
+    end = new Date(Date.UTC(2024, 4, 16));
+    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      const date = d.toISOString().slice(0, 10);
+      out[date] = {
+        calories: 2400,
+        protein: 110,
+        carbs: 280,
+        fat: 90,
+      };
+    }
+    return out;
+  }
+
+  function buildSimilarPlaybook() {
+    return {
+      schema_version: 1,
+      named_periods: {
+        'fixture-cut-2024': {
+          from: '2024-02-01',
+          to: '2024-04-30',
+          description: 'Sample 90-day cut.',
+        },
+        'rebound-2024': {
+          from: '2024-05-01',
+          to: '2024-05-31',
+          description: 'Maintenance bounce after the cut.',
+        },
+      },
+    };
+  }
+
+  function makeSimilarFactory({
+    playbookByUser = null,
+    weightFixture = null,
+    nutritionFixture = null,
+    workoutsFixture = {},
+    similarPeriodFinder = null,
+  } = {}) {
+    const wFix = weightFixture ?? buildSimilarWeightFixture();
+    const nFix = nutritionFixture ?? buildSimilarNutritionFixture();
+    const playbooks = playbookByUser ?? { 'test-user': buildSimilarPlaybook() };
+
+    const healthStore = {
+      loadWeightData: vi.fn(async () => wFix),
+      loadNutritionData: vi.fn(async () => nFix),
+    };
+    const healthService = {
+      getHealthForRange: vi.fn(async (userId, from, to) => {
+        const out = {};
+        for (const [date, value] of Object.entries(workoutsFixture)) {
+          if (date >= from && date <= to) out[date] = value;
+        }
+        return out;
+      }),
+    };
+    const personalContextLoader = {
+      loadPlaybook: vi.fn(async (userId) => playbooks[userId] ?? null),
+    };
+    const finder = similarPeriodFinder ?? {
+      findSimilar: vi.fn(({ signature, periods, maxResults }) => {
+        // Default: return periods in input order, fixed score.
+        return (periods || []).slice(0, maxResults || 3).map((p, idx) => ({
+          name: p.name,
+          score: 0.9 - (idx * 0.1),
+          dimensionScores: { weight_avg_lbs: 0.9, protein_avg_g: 0.85 },
+          period: p,
+        }));
+      }),
+    };
+    return {
+      factory: new LongitudinalToolFactory({
+        healthStore,
+        healthService,
+        personalContextLoader,
+        similarPeriodFinder: finder,
+      }),
+      healthStore,
+      healthService,
+      personalContextLoader,
+      similarPeriodFinder: finder,
+    };
+  }
+
+  it('tool definition has correct schema', () => {
+    const { factory } = makeSimilarFactory();
+    const tool = getFindSimilarTool(factory);
+
+    expect(tool).toBeTruthy();
+    expect(tool.name).toBe('find_similar_period');
+    expect(typeof tool.description).toBe('string');
+    expect(tool.description.length).toBeGreaterThan(0);
+    expect(tool.parameters?.type).toBe('object');
+    const props = tool.parameters?.properties || {};
+    expect(props.userId).toBeTruthy();
+    expect(props.pattern_signature).toBeTruthy();
+    expect(props.max_results).toBeTruthy();
+    expect(tool.parameters?.required).toEqual(
+      expect.arrayContaining(['userId', 'pattern_signature']),
+    );
+  });
+
+  it('delegates to SimilarPeriodFinder with playbook periods + injected signature', async () => {
+    const { factory, similarPeriodFinder } = makeSimilarFactory();
+    const tool = getFindSimilarTool(factory);
+
+    const signature = {
+      weight_avg_lbs: 197,
+      weight_delta_lbs: -1.5,
+      protein_avg_g: 140,
+      calorie_avg: 1850,
+      tracking_rate: 0.95,
+    };
+
+    const result = await tool.execute({
+      userId: 'test-user',
+      pattern_signature: signature,
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(similarPeriodFinder.findSimilar).toHaveBeenCalledTimes(1);
+    const call = similarPeriodFinder.findSimilar.mock.calls[0][0];
+    expect(call.signature).toEqual(signature);
+    expect(Array.isArray(call.periods)).toBe(true);
+    // Both playbook periods should have been forwarded with computed stats.
+    expect(call.periods.length).toBe(2);
+    const names = call.periods.map(p => p.name).sort();
+    expect(names).toEqual(['fixture-cut-2024', 'rebound-2024']);
+
+    // Each period must have the required shape.
+    for (const period of call.periods) {
+      expect(typeof period.name).toBe('string');
+      expect(typeof period.from).toBe('string');
+      expect(typeof period.to).toBe('string');
+      expect(period.stats).toBeTruthy();
+      expect(typeof period.stats).toBe('object');
+    }
+  });
+
+  it('loads periods from playbook via personalContextLoader.loadPlaybook(userId)', async () => {
+    const { factory, personalContextLoader } = makeSimilarFactory();
+    const tool = getFindSimilarTool(factory);
+
+    await tool.execute({
+      userId: 'test-user',
+      pattern_signature: { weight_avg_lbs: 197 },
+    });
+
+    expect(personalContextLoader.loadPlaybook).toHaveBeenCalledWith('test-user');
+  });
+
+  it('aggregates each period stats by querying weight + nutrition for the period date range', async () => {
+    const { factory, similarPeriodFinder } = makeSimilarFactory();
+    const tool = getFindSimilarTool(factory);
+
+    await tool.execute({
+      userId: 'test-user',
+      pattern_signature: { weight_avg_lbs: 197 },
+    });
+
+    const periods = similarPeriodFinder.findSimilar.mock.calls[0][0].periods;
+    const cut = periods.find(p => p.name === 'fixture-cut-2024');
+    const rebound = periods.find(p => p.name === 'rebound-2024');
+
+    // Cut: 90-day fixture, weight starts at 200 and drops by 0.05/day, so:
+    //   first weight = 200, last weight = 200 - 0.05 * 89 = 195.55
+    //   weight_delta_lbs = 195.55 - 200 = -4.45
+    expect(cut.stats.weight_avg_lbs).toBeCloseTo((200 + 195.55) / 2, 1);
+    expect(cut.stats.weight_delta_lbs).toBeCloseTo(-4.45, 2);
+    expect(cut.stats.protein_avg_g).toBe(145);
+    expect(cut.stats.calorie_avg).toBe(1800);
+    // 90 days, all logged → tracking_rate = 1.0
+    expect(cut.stats.tracking_rate).toBe(1);
+
+    // Rebound: only 16/31 days logged.
+    expect(rebound.stats.tracking_rate).toBeCloseTo(16 / 31, 3);
+    // Protein avg over the 16 logged days = 110.
+    expect(rebound.stats.protein_avg_g).toBe(110);
+    expect(rebound.stats.calorie_avg).toBe(2400);
+  });
+
+  it('respects max_results param (default 3)', async () => {
+    const { factory, similarPeriodFinder } = makeSimilarFactory();
+    const tool = getFindSimilarTool(factory);
+
+    // Default max_results
+    await tool.execute({
+      userId: 'test-user',
+      pattern_signature: { weight_avg_lbs: 197 },
+    });
+    expect(similarPeriodFinder.findSimilar.mock.calls[0][0].maxResults).toBe(3);
+
+    // Explicit override
+    await tool.execute({
+      userId: 'test-user',
+      pattern_signature: { weight_avg_lbs: 197 },
+      max_results: 1,
+    });
+    expect(similarPeriodFinder.findSimilar.mock.calls[1][0].maxResults).toBe(1);
+  });
+
+  it('returns matches with name + score + dimensionScores + period metadata', async () => {
+    const { factory } = makeSimilarFactory();
+    const tool = getFindSimilarTool(factory);
+
+    const signature = {
+      weight_avg_lbs: 197,
+      protein_avg_g: 140,
+    };
+
+    const result = await tool.execute({
+      userId: 'test-user',
+      pattern_signature: signature,
+    });
+
+    expect(result.signature).toEqual(signature);
+    expect(Array.isArray(result.matches)).toBe(true);
+    expect(result.matches.length).toBeGreaterThan(0);
+    for (const m of result.matches) {
+      expect(typeof m.name).toBe('string');
+      expect(typeof m.score).toBe('number');
+      expect(m.dimensionScores).toBeTruthy();
+      expect(typeof m.dimensionScores).toBe('object');
+      expect(m.period).toBeTruthy();
+      expect(typeof m.period.from).toBe('string');
+      expect(typeof m.period.to).toBe('string');
+      expect(typeof m.period.description).toBe('string');
+      expect(m.period.stats).toBeTruthy();
+    }
+  });
+
+  it('gracefully degrades when playbook missing — returns { matches: [], reason: "no playbook" }', async () => {
+    // playbook returns null for this user
+    const { factory, similarPeriodFinder } = makeSimilarFactory({
+      playbookByUser: { 'test-user': null },
+    });
+    const tool = getFindSimilarTool(factory);
+
+    const result = await tool.execute({
+      userId: 'test-user',
+      pattern_signature: { weight_avg_lbs: 197 },
+    });
+
+    expect(result.matches).toEqual([]);
+    expect(result.reason).toBe('no playbook');
+    // Finder should NOT have been invoked.
+    expect(similarPeriodFinder.findSimilar).not.toHaveBeenCalled();
+  });
+
+  it('gracefully degrades when personalContextLoader dependency is missing', async () => {
+    const healthStore = {
+      loadWeightData: vi.fn(async () => ({})),
+      loadNutritionData: vi.fn(async () => ({})),
+    };
+    const factory = new LongitudinalToolFactory({
+      healthStore,
+      similarPeriodFinder: { findSimilar: vi.fn() },
+      // personalContextLoader intentionally absent
+    });
+    const tool = getFindSimilarTool(factory);
+
+    const result = await tool.execute({
+      userId: 'test-user',
+      pattern_signature: { weight_avg_lbs: 197 },
+    });
+
+    expect(result.matches).toEqual([]);
+    expect(result.reason).toBe('no playbook');
+  });
+});

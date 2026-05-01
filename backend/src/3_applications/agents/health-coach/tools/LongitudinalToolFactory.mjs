@@ -12,7 +12,10 @@
 // period from the user's playbook and runs the other three against
 // the period's [from, to] range. Plus read_notes_file (F-102), which
 // reads notes/*.md and scans/*.yml from the archive with optional
-// markdown section extraction and per-execution caching.
+// markdown section extraction and per-execution caching. And
+// find_similar_period (F-104), which aggregates each playbook period's
+// 30-day-equivalent stats and delegates similarity ranking to the
+// injected SimilarPeriodFinder.
 
 import path from 'node:path';
 import fsPromises from 'node:fs/promises';
@@ -54,6 +57,7 @@ export class LongitudinalToolFactory extends ToolFactory {
       healthStore,
       healthService,
       personalContextLoader,
+      similarPeriodFinder,
       archiveScope,
       fs = fsPromises,
       dataRoot,
@@ -72,6 +76,10 @@ export class LongitudinalToolFactory extends ToolFactory {
     const readNotesFile = makeReadNotesFileExecutor({
       archiveScope, fs, dataRoot, cache: readNotesCache,
     });
+
+    // Stats aggregator for find_similar_period. Closure-scoped so it can
+    // reuse healthStore from the factory deps without re-extracting.
+    const computePeriodStats = makeComputePeriodStats({ healthStore });
 
     return [
       createTool({
@@ -263,6 +271,96 @@ export class LongitudinalToolFactory extends ToolFactory {
           required: ['userId', 'filename'],
         },
         execute: readNotesFile,
+      }),
+
+      createTool({
+        name: 'find_similar_period',
+        description:
+          'Given a 30-day pattern signature (e.g. current weight average, ' +
+          'protein average, tracking rate), surface the closest historical ' +
+          'analog from the user\'s playbook of named periods. Useful when the ' +
+          'agent wants to ground a current observation in personal precedent ' +
+          '("the last time you were at this weight with this protein intake, ' +
+          'here\'s what happened"). Returns up to `max_results` ranked ' +
+          'matches with similarity scores per dimension.',
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string', description: 'User identifier' },
+            pattern_signature: {
+              type: 'object',
+              description:
+                'A subset of the supported dimensions: weight_avg_lbs, ' +
+                'weight_delta_lbs, protein_avg_g, calorie_avg, tracking_rate. ' +
+                'Missing dimensions are ignored during scoring.',
+              properties: {
+                weight_avg_lbs: { type: 'number' },
+                weight_delta_lbs: { type: 'number' },
+                protein_avg_g: { type: 'number' },
+                calorie_avg: { type: 'number' },
+                tracking_rate: { type: 'number' },
+              },
+            },
+            max_results: {
+              type: 'number',
+              default: 3,
+              description: 'Max number of matches to return (default 3).',
+            },
+          },
+          required: ['userId', 'pattern_signature'],
+        },
+        execute: async ({ userId, pattern_signature, max_results = 3 }) => {
+          try {
+            guardUserId(userId);
+
+            // Graceful degradation when context is unavailable. We return a
+            // structured no-result response rather than throwing so the agent
+            // can incorporate the negative signal into its reasoning.
+            if (!personalContextLoader || typeof personalContextLoader.loadPlaybook !== 'function') {
+              return { matches: [], reason: 'no playbook' };
+            }
+
+            const playbook = await personalContextLoader.loadPlaybook(userId);
+            const namedPeriods = playbook?.named_periods;
+            if (!namedPeriods || typeof namedPeriods !== 'object') {
+              return { matches: [], reason: 'no playbook' };
+            }
+
+            // Build the period descriptors the finder expects: name + stats +
+            // metadata (from/to/description). Skip periods that yield no
+            // usable stats — they would only dilute the rankings.
+            const periods = [];
+            for (const [name, raw] of Object.entries(namedPeriods)) {
+              if (!raw || typeof raw !== 'object') continue;
+              const from = formatDate(raw.from);
+              const to = formatDate(raw.to);
+              if (!from || !to) continue;
+
+              const stats = await computePeriodStats({ userId, from, to });
+              if (!hasUsableStats(stats)) continue;
+
+              const description = typeof raw.description === 'string'
+                ? raw.description.trim()
+                : '';
+
+              periods.push({ name, from, to, description, stats });
+            }
+
+            if (!similarPeriodFinder || typeof similarPeriodFinder.findSimilar !== 'function') {
+              return { signature: pattern_signature, matches: [], error: 'similarPeriodFinder dependency missing' };
+            }
+
+            const matches = similarPeriodFinder.findSimilar({
+              signature: pattern_signature,
+              periods,
+              maxResults: max_results,
+            });
+
+            return { signature: pattern_signature, matches };
+          } catch (err) {
+            return { signature: pattern_signature, matches: [], error: err.message };
+          }
+        },
       }),
     ];
   }
@@ -640,6 +738,106 @@ function extractMarkdownSection(content, section) {
 
   if (!inSection) return null;
   return collected.join('\n');
+}
+
+/**
+ * Build the period-stats aggregator used by find_similar_period (F-104).
+ *
+ * Given a [from, to] date range, computes the canonical 5-dimension signature
+ * the SimilarPeriodFinder accepts:
+ *
+ * - weight_avg_lbs: mean of daily adjusted/raw lbs across the range
+ * - weight_delta_lbs: last weight reading minus first weight reading in range
+ * - protein_avg_g: mean of daily protein over logged days only
+ * - calorie_avg: mean of daily calories over logged days only
+ * - tracking_rate: logged days ÷ total days in range (inclusive)
+ *
+ * Dimensions with no underlying data resolve to `null` so the finder can
+ * skip them in scoring (it ignores non-finite values).
+ *
+ * @param {object} args
+ * @param {object} args.healthStore datastore exposing loadWeightData / loadNutritionData
+ * @returns {Function} async ({ userId, from, to }) => stats
+ */
+function makeComputePeriodStats({ healthStore }) {
+  return async function computePeriodStats({ userId, from, to }) {
+    // Total day count in [from, to] inclusive — used as the tracking_rate
+    // denominator. We trust well-formed YYYY-MM-DD inputs (validated upstream).
+    const fromDate = new Date(from + 'T00:00:00Z');
+    const toDate = new Date(to + 'T00:00:00Z');
+    const totalDays = Math.round((toDate - fromDate) / 86400000) + 1;
+
+    const stats = {
+      weight_avg_lbs: null,
+      weight_delta_lbs: null,
+      protein_avg_g: null,
+      calorie_avg: null,
+      tracking_rate: null,
+    };
+
+    // ---- weight ----
+    if (typeof healthStore?.loadWeightData === 'function') {
+      const weightData = await healthStore.loadWeightData(userId);
+      const weightDates = Object.keys(weightData || {})
+        .filter(d => d >= from && d <= to)
+        .sort();
+      if (weightDates.length) {
+        const lbsValues = [];
+        for (const d of weightDates) {
+          const entry = weightData[d] || {};
+          const lbs = entry.lbs_adjusted_average ?? entry.lbs ?? null;
+          if (typeof lbs === 'number' && Number.isFinite(lbs)) lbsValues.push(lbs);
+        }
+        if (lbsValues.length) {
+          stats.weight_avg_lbs = lbsValues.reduce((s, n) => s + n, 0) / lbsValues.length;
+          stats.weight_delta_lbs = lbsValues[lbsValues.length - 1] - lbsValues[0];
+        }
+      }
+    }
+
+    // ---- nutrition + tracking_rate ----
+    if (typeof healthStore?.loadNutritionData === 'function') {
+      const nutritionData = await healthStore.loadNutritionData(userId);
+      const nutritionDates = Object.keys(nutritionData || {})
+        .filter(d => d >= from && d <= to);
+
+      const proteinValues = [];
+      const calorieValues = [];
+      for (const d of nutritionDates) {
+        const entry = nutritionData[d] || {};
+        if (typeof entry.protein === 'number' && Number.isFinite(entry.protein)) {
+          proteinValues.push(entry.protein);
+        }
+        if (typeof entry.calories === 'number' && Number.isFinite(entry.calories)) {
+          calorieValues.push(entry.calories);
+        }
+      }
+      if (proteinValues.length) {
+        stats.protein_avg_g = proteinValues.reduce((s, n) => s + n, 0) / proteinValues.length;
+      }
+      if (calorieValues.length) {
+        stats.calorie_avg = calorieValues.reduce((s, n) => s + n, 0) / calorieValues.length;
+      }
+      if (totalDays > 0) {
+        stats.tracking_rate = nutritionDates.length / totalDays;
+      }
+    }
+
+    return stats;
+  };
+}
+
+/**
+ * True iff a stats object has at least one finite numeric dimension we can
+ * actually score against. Periods that produced no usable data are excluded
+ * from the candidate set so they don't dilute rankings.
+ */
+function hasUsableStats(stats) {
+  if (!stats || typeof stats !== 'object') return false;
+  for (const v of Object.values(stats)) {
+    if (typeof v === 'number' && Number.isFinite(v)) return true;
+  }
+  return false;
 }
 
 // ---------- helpers ----------
