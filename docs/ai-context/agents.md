@@ -43,7 +43,7 @@ Autonomous AI agents that use LLM reasoning for complex tasks. Unlike rule-based
 ### Health Coach Agent (`3_applications/agents/health-coach/`)
 - `HealthCoachAgent.mjs` - Main agent class (extends BaseAgent)
 - `assignments/DailyDashboard.mjs` - Daily dashboard preparation assignment
-- `assignments/MorningBrief.mjs` - Daily reconciliation-aware nutrition brief (scheduled 10am)
+- `assignments/MorningBrief.mjs` - Daily reconciliation-aware nutrition brief (scheduled 10am). Also drives F-003 compliance CTAs, F-004 pattern detection, F-005 similar-period grounding, F-007 DEXA staleness warning.
 - `assignments/NoteReview.mjs` - Per-accept coaching review (event-triggered, default silent)
 - `assignments/EndOfDayReport.mjs` - Daily report coaching commentary (event-triggered)
 - `assignments/WeeklyDigest.mjs` - Weekly trend summary (scheduled Sunday 7pm)
@@ -53,10 +53,24 @@ Autonomous AI agents that use LLM reasoning for complex tasks. Unlike rule-based
 - `tools/DashboardToolFactory.mjs` - Dashboard write, goals, coaching notes (3 tools)
 - `tools/ReconciliationToolFactory.mjs` - Reconciliation summary, adjusted nutrition, coaching history (3 tools)
 - `tools/MessagingChannelToolFactory.mjs` - Channel message delivery (1 tool)
+- `tools/LongitudinalToolFactory.mjs` - Historical archive queries: `query_historical_weight`/`_nutrition`/`_workouts`, `query_named_period`, `read_notes_file`, `find_similar_period` (6 tools, F-102/103/104)
+- `tools/ComplianceToolFactory.mjs` - `get_compliance_summary` for daily-coaching-compliance counts/streaks/gaps (F-002)
 - `schemas/dashboard.mjs` - Dashboard output JSON Schema
 - `schemas/coachingMessage.mjs` - Output schema for coaching messages (should_send, text, parse_mode)
-- `prompts/system.mjs` - System prompt
+- `prompts/system.mjs` - System prompt (includes F-005 named-pattern referencing rules)
 - `index.mjs` - Barrel exports
+
+### Personalized Coaching Stack (F-100 → F-007)
+
+The HealthCoachAgent assignments are augmented with per-user personalization sourced from a mirrored personal-health archive:
+
+- **Ingestion** (`cli/ingest-health-archive.cli.mjs` + `2_domains/health/services/HealthArchiveIngestion.mjs`) — `npm run ingest:health-archive --user <userId>` mirrors a whitelisted subset of an external archive into `data/users/<userId>/lifelog/archives/` and `media/archives/`. Privacy keyword exclusions block email/chat/finance/journal/calendar/social/banking. Path-traversal defense lives separately in `2_domains/health/services/HealthArchiveScope.mjs` (instance-based, requires absolute `dataRoot`/`mediaRoot`).
+- **PersonalContext** (`3_applications/health/PersonalContextLoader.mjs`) — loads `playbook.yml` and renders a markdown bundle (Profile / Calibration / Named Periods / Patterns) injected into the agent's system prompt by `HealthCoachAgent.getSystemPrompt(userId)`. Cached per-userId; pre-warmed in `runAssignment` and `run` so the framework's sync `getSystemPrompt()` call always lands on cache hit.
+- **Pattern detection** (`2_domains/health/services/PatternDetector.mjs`) — pure function; consumes 30-day windows + the user's playbook patterns and emits structured detections (name, confidence, evidence, recommendation, severity, memoryKey). Wired into `MorningBrief.gather`. 7-day TTL working-memory keys (`pattern_<name>_last_flagged`) prevent daily re-nagging.
+- **Similar-period grounding** (`2_domains/health/services/SimilarPeriodFinder.mjs`) — pure scoring service comparing a current 30-day signature against historical playbook periods. Used by `MorningBrief` and `WeeklyDigest` when notable signals fire.
+- **Compliance tracking** (F-001/002/003) — `2_domains/health/entities/DailyCoachingEntry.mjs` validates the `coaching` field; `3_applications/health/SetDailyCoachingUseCase.mjs` writes it; `frontend/src/modules/Health/widgets/CoachingComplianceCard.jsx` is the one-tap entry UI; `get_compliance_summary` reads it back. `MorningBrief` surfaces protein-miss-streak and strength-untracked-streak CTAs with playbook-configurable thresholds.
+- **DEXA calibration** (F-006/007) — `2_domains/health/entities/HealthScan.mjs` + `1_adapters/persistence/yaml/YamlHealthScanDatastore.mjs` persist scan records to `lifelog/archives/scans/`. `2_domains/health/services/CalibrationConstants.mjs` computes consumer-BIA → DEXA offsets; `HealthAggregator.aggregateDayMetrics` applies them to `lean_lbs` and `fat_percent` so all downstream consumers see calibrated values. `MorningBrief` warns when calibration is older than 180 days (suppressed 14 days via `dexa_stale_warned`).
+- **Known v1 limitation:** `CalibrationConstants` instances are shared across requests but hold per-user state internally. Concurrent multi-user `MorningBrief` runs could observe each other's offsets between awaits. Today only one user is active per process, so this is theoretical; if multi-user concurrency lands, switch to per-userId caching or per-request instantiation.
 
 ### Framework (`3_applications/agents/framework/`)
 - `BaseAgent.mjs` - Common lifecycle (memory, tools, assignments)
