@@ -164,8 +164,16 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
     ? `${Math.min(totalPhases, currentPhaseIndex + 1)} / ${totalPhases}`
     : '—';
 
-  const riderName = challenge.rider?.name || challenge.rider?.id || '';
-  const riderInitial = firstInitial(challenge.rider?.name || challenge.rider?.id);
+  const riderName = (typeof challenge.rider === 'string'
+    ? challenge.rider
+    : (challenge.rider?.name || challenge.rider?.id)) || '';
+  const riderId = (typeof challenge.rider === 'string'
+    ? challenge.rider
+    : challenge.rider?.id) || null;
+  const riderInitial = firstInitial(riderName);
+  const riderAvatarUrl = riderId
+    ? `/api/v1/static/img/users/${riderId}`
+    : '/api/v1/static/img/users/user';
 
   const progressOffset = CYCLE_RING_CIRCUMFERENCE * (1 - phaseProgress);
 
@@ -427,7 +435,23 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
         disabled={!swapAllowed}
         aria-label={`Rider: ${riderName || 'unknown'}${swapAllowed ? ' — tap to swap' : ''}`}
       >
-        <span className="cycle-challenge-overlay__avatar-initials">{riderInitial}</span>
+        <img
+          className="cycle-challenge-overlay__avatar-img"
+          src={riderAvatarUrl}
+          alt=""
+          onError={(e) => {
+            // Hide the broken image and reveal the initial fallback.
+            e.currentTarget.style.display = 'none';
+            const fallback = e.currentTarget.nextSibling;
+            if (fallback) fallback.style.display = 'flex';
+          }}
+        />
+        <span
+          className="cycle-challenge-overlay__avatar-initials"
+          style={{ display: 'none' }}
+        >
+          {riderInitial}
+        </span>
       </button>
 
       {riderName && (

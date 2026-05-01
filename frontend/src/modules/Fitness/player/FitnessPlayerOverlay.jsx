@@ -229,7 +229,8 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
             : []
         }
         resolveUser={(uid) => ({
-          name: fitnessCtx?.getDisplayName?.(uid) || uid,
+          // getDisplayName returns { displayName, source, preferredGroupLabel } — extract the string.
+          name: fitnessCtx?.getDisplayName?.(uid)?.displayName || uid,
           avatarUrl: uid
             ? `/api/v1/static/img/users/${uid}`
             : '/api/v1/static/img/users/user'
