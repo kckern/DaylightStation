@@ -1,15 +1,25 @@
 /**
  * Select the primary media item from a session's media array.
  *
- * Filters out audio, then warmup videos AND deprioritized videos (e.g. kids
- * content, browsing). Among non-warmup, non-deprioritized videos that clear
- * the MIN_PRIMARY_MS (5-minute) floor, when ≥2 are each ≥10 minutes long,
- * picks the LAST one (chronologically latest — typically the main workout);
- * otherwise picks the longest survivor by durationMs. Falls back to the
- * longest non-deprioritized warmup ≥ MIN_PRIMARY_MS only when the entire
- * session is warmup/deprioritized content (e.g. stretch-only days). Returns
- * null when no candidate clears the floor — explicitly rejects browsing
- * content and sub-floor demos as primary.
+ * Filters out audio, then applies a four-tier cascade so every session that
+ * has any video item ends up with a primary:
+ *
+ *   T1: Real workouts (non-warmup, non-deprioritized) ≥ MIN_PRIMARY_MS (5 min).
+ *       When ≥2 are also ≥10 min, picks the LAST one (chronologically latest);
+ *       otherwise picks the longest. This is the main success path.
+ *   T2: Any real candidate (non-warmup, non-deprioritized) of any duration.
+ *       Longest. (E.g. a 48-second strength demo when the only other content
+ *       was a kidsfun-labeled track — the demo is still the user's intended
+ *       workout, just brief.)
+ *   T3: Non-deprioritized of any kind, allowing warmups but blocking
+ *       browsing. Longest. (E.g. stretch-only sessions, or stretch + cartoon
+ *       where stretch wins — never primary on browsing if a non-browsing
+ *       alternative exists.)
+ *   T4: Anything that survived audio filtering, including deprioritized.
+ *       Longest. (E.g. Game Cycling sessions where every video is kidsfun;
+ *       returns F-Zero rather than nothing.)
+ *
+ * Returns null only when there are no non-audio items at all.
  *
  * @param {Array} mediaItems - Media summary objects from buildSessionSummary
  * @param {Object} [config] - {
@@ -93,48 +103,46 @@ export function selectPrimaryMedia(mediaItems, config) {
     return false;
   }
 
-  // Step 3: Build candidate pools.
-  // - realCandidates: non-warmup + non-deprioritized (the universe of eligible primaries)
-  // - eligible: realCandidates that clear the minimum primary duration floor
+  // Step 3: Constants for the cascade.
   const MIN_PRIMARY_MS = 5 * 60 * 1000;
   const TEN_MIN_MS = 10 * 60 * 1000;
 
+  // Step 4: Tier 1 — Eligible real workouts (≥ MIN_PRIMARY_MS, non-warmup, non-deprio).
+  // Positional bias when ≥2 are also ≥10 min — events are chronological so the LAST
+  // one is almost always the actual main workout, not a warmup that survived filtering.
   const realCandidates = videos.filter(v => !isWarmup(v) && !isDeprioritized(v));
   const eligible = realCandidates.filter(v => (v.durationMs || 0) >= MIN_PRIMARY_MS);
-
-  // Step 4: Positional bias — when ≥2 eligible candidates are each ≥10 minutes long,
-  // prefer the LAST one. Events are chronological, and a true main-session video is
-  // almost always played AFTER any warmup that survived the filter.
   if (eligible.length > 0) {
     const longSurvivors = eligible.filter(v => (v.durationMs || 0) >= TEN_MIN_MS);
     if (longSurvivors.length >= 2) {
       return longSurvivors[longSurvivors.length - 1];
     }
-    // Step 5: Fallback for eligible-only — longest survivor wins.
     return eligible.reduce((best, item) =>
       (item.durationMs || 0) > (best.durationMs || 0) ? item : best
     );
   }
 
-  // Step 6: No eligible real candidate. If the user only did warmup-or-deprioritized
-  // content AND there is at least one non-deprioritized warmup ≥ MIN_PRIMARY_MS,
-  // surface the longest such warmup (e.g. a stretch-only session). Otherwise return
-  // null — never promote browsing/deprioritized content to primary, never promote
-  // sub-floor demos to primary.
-  const allWarmupOrDeprioritized =
-    videos.every(v => isWarmup(v) || isDeprioritized(v));
-  if (allWarmupOrDeprioritized) {
-    const eligibleWarmups = videos.filter(v =>
-      isWarmup(v) && !isDeprioritized(v) && (v.durationMs || 0) >= MIN_PRIMARY_MS
+  // Step 5: Tier 2 — any real candidate (drops the floor, still non-warmup non-deprio).
+  if (realCandidates.length > 0) {
+    return realCandidates.reduce((best, item) =>
+      (item.durationMs || 0) > (best.durationMs || 0) ? item : best
     );
-    if (eligibleWarmups.length > 0) {
-      return eligibleWarmups.reduce((best, item) =>
-        (item.durationMs || 0) > (best.durationMs || 0) ? item : best
-      );
-    }
   }
 
-  return null;
+  // Step 6: Tier 3 — non-deprioritized of any kind (allows warmups but blocks browsing).
+  // E.g. stretch-only sessions, or [stretch + cartoon] where stretch wins.
+  const nonDeprio = videos.filter(v => !isDeprioritized(v));
+  if (nonDeprio.length > 0) {
+    return nonDeprio.reduce((best, item) =>
+      (item.durationMs || 0) > (best.durationMs || 0) ? item : best
+    );
+  }
+
+  // Step 7: Tier 4 — anything that survived audio filtering. Last-resort browsing.
+  // E.g. Game Cycling sessions where every video is kidsfun-labeled.
+  return videos.reduce((best, item) =>
+    (item.durationMs || 0) > (best.durationMs || 0) ? item : best
+  );
 }
 
 export default selectPrimaryMedia;
