@@ -1113,4 +1113,174 @@ describe('MorningBrief', () => {
     });
     expect(gatheredC.similarPeriod).toBe(null);
   });
+
+  // ---------- DEXA staleness CTA (Task 30, F-007) ----------
+  //
+  // When CalibrationConstants.flagIfStale(180) returns true and the
+  // suppression key `dexa_stale_warned` is not active in working memory,
+  // MorningBrief surfaces a "## DEXA Calibration" CTA prompting the user
+  // to schedule a re-scan. The CTA is suppressed for 14 days via the
+  // `dexa_stale_warned` working-memory key.
+  //
+  // The CalibrationConstants instance is threaded through the assignment
+  // context (similar to personalContextLoader / patternDetector — see
+  // Tasks 22 and 24). When the dependency is unwired or load throws, the
+  // brief degrades silently — never blocking the morning send.
+  //
+  // Threshold: 180 days by default. Playbooks may override via
+  // `coaching_thresholds.dexa_staleness_days`.
+
+  /**
+   * Build a CalibrationConstants mock with controllable staleness behavior.
+   */
+  function makeCalibration({ stale = false, days = 200, lastDexaDate = '2025-08-01' } = {}) {
+    return {
+      load: vi.fn(async () => {}),
+      flagIfStale: vi.fn(() => stale),
+      getStaleness: vi.fn(() => days),
+      getCalibrationDate: vi.fn(() => lastDexaDate),
+    };
+  }
+
+  it('gather: when calibration is fresh, no staleness CTA in output', async () => {
+    const brief = new MorningBrief();
+    const tools = makeStandardTools();
+    const calibrationConstants = makeCalibration({ stale: false });
+    const personalContextLoader = { loadPlaybook: async () => null };
+
+    const gathered = await brief.gather({
+      tools,
+      userId: 'test-user',
+      memory: makeMemory(),
+      logger: { info: () => {}, warn: () => {} },
+      context: { personalContextLoader, calibrationConstants },
+    });
+
+    expect(calibrationConstants.flagIfStale).toHaveBeenCalled();
+    expect(gathered.staleCalibration).toBe(null);
+  });
+
+  it('gather: when calibration.flagIfStale(180) returns true AND no memory key, includes staleness CTA', async () => {
+    const brief = new MorningBrief();
+    const tools = makeStandardTools();
+    const calibrationConstants = makeCalibration({
+      stale: true, days: 220, lastDexaDate: '2025-09-15',
+    });
+    const personalContextLoader = { loadPlaybook: async () => null };
+
+    const gathered = await brief.gather({
+      tools,
+      userId: 'test-user',
+      memory: makeMemory(),
+      logger: { info: () => {}, warn: () => {} },
+      context: { personalContextLoader, calibrationConstants },
+    });
+
+    expect(calibrationConstants.load).toHaveBeenCalledWith('test-user');
+    // flagIfStale should have been called with 180 (the default threshold).
+    expect(calibrationConstants.flagIfStale).toHaveBeenCalledWith(180);
+    expect(gathered.staleCalibration).toBeTruthy();
+    expect(gathered.staleCalibration.type).toBe('staleness');
+    expect(gathered.staleCalibration.days).toBe(220);
+    expect(gathered.staleCalibration.lastDexaDate).toBe('2025-09-15');
+  });
+
+  it('gather: writes dexa_stale_warned with 14-day TTL when CTA fires', async () => {
+    const brief = new MorningBrief();
+    const tools = makeStandardTools();
+    const calibrationConstants = makeCalibration({
+      stale: true, days: 200, lastDexaDate: '2025-08-01',
+    });
+    const personalContextLoader = { loadPlaybook: async () => null };
+    const setCalls = [];
+    const memory = makeMemory({ setCalls });
+
+    await brief.gather({
+      tools,
+      userId: 'test-user',
+      memory,
+      logger: { info: () => {}, warn: () => {} },
+      context: { personalContextLoader, calibrationConstants },
+    });
+
+    const flaggedCalls = setCalls.filter(([k]) => k === 'dexa_stale_warned');
+    expect(flaggedCalls.length).toBe(1);
+    const opts = flaggedCalls[0][2];
+    expect(opts?.ttl).toBe(14 * 24 * 60 * 60 * 1000);
+  });
+
+  it('gather: suppresses CTA when dexa_stale_warned key is active in memory', async () => {
+    const brief = new MorningBrief();
+    const tools = makeStandardTools();
+    const calibrationConstants = makeCalibration({
+      stale: true, days: 200, lastDexaDate: '2025-08-01',
+    });
+    const personalContextLoader = { loadPlaybook: async () => null };
+    const memory = makeMemory({
+      initial: { dexa_stale_warned: '2026-04-25T10:00:00Z' },
+    });
+
+    const gathered = await brief.gather({
+      tools,
+      userId: 'test-user',
+      memory,
+      logger: { info: () => {}, warn: () => {} },
+      context: { personalContextLoader, calibrationConstants },
+    });
+
+    expect(gathered.staleCalibration).toBe(null);
+  });
+
+  it('gather: when no calibration is wired, no staleness CTA (graceful absence)', async () => {
+    const brief = new MorningBrief();
+    const tools = makeStandardTools();
+    const personalContextLoader = { loadPlaybook: async () => null };
+
+    const gathered = await brief.gather({
+      tools,
+      userId: 'test-user',
+      memory: makeMemory(),
+      logger: { info: () => {}, warn: () => {} },
+      context: { personalContextLoader },
+    });
+
+    expect(gathered.staleCalibration).toBe(null);
+  });
+
+  it('buildPrompt: includes "## DEXA Calibration" section when staleness CTA present', () => {
+    const brief = new MorningBrief();
+    const gathered = {
+      reconciliation: {}, weight: {}, goals: {}, todayNutrition: {},
+      nutritionHistory: { days: [] }, yesterdayClosed: false,
+      similarPeriod: null,
+      complianceCtas: [],
+      detectedPatterns: [],
+      staleCalibration: {
+        type: 'staleness',
+        days: 220,
+        lastDexaDate: '2025-09-15',
+      },
+    };
+    const prompt = brief.buildPrompt(gathered, { serialize: () => '' });
+    expect(prompt.includes('## DEXA Calibration')).toBe(true);
+    expect(prompt.includes('2025-09-15')).toBe(true);
+    expect(prompt.includes('220')).toBe(true);
+    expect(prompt.includes('re-scan')).toBe(true);
+    // Section appears before the Instructions block
+    expect(prompt.indexOf('## DEXA Calibration')).toBeLessThan(prompt.indexOf('## Instructions'));
+  });
+
+  it('buildPrompt: omits the section when no staleness CTA', () => {
+    const brief = new MorningBrief();
+    const gathered = {
+      reconciliation: {}, weight: {}, goals: {}, todayNutrition: {},
+      nutritionHistory: { days: [] }, yesterdayClosed: false,
+      similarPeriod: null,
+      complianceCtas: [],
+      detectedPatterns: [],
+      staleCalibration: null,
+    };
+    const prompt = brief.buildPrompt(gathered, { serialize: () => '' });
+    expect(prompt.includes('## DEXA Calibration')).toBe(false);
+  });
 });
