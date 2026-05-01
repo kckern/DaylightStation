@@ -9,6 +9,7 @@ import { usePersistentVolume } from '@/modules/Fitness/nav/usePersistentVolume.j
 import { normalizeDuration } from '@/modules/Player/utils/mediaIdentity.js';
 import { guid } from '@/modules/Player/lib/helpers.js';
 import getLogger from '@/lib/logging/Logger.js';
+import { useStuckLoadingDetector } from './useStuckLoadingDetector.js';
 
 const LOG_CURVE_TARGET_LEVEL = 50; // midpoint of the touch buttons
 const LOG_CURVE_TARGET_VOLUME = 0.1; // 10% output should align with midpoint
@@ -62,6 +63,33 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
   const setMusicOverride = fitnessContext?.setMusicOverride;
   const musicEnabled = fitnessContext?.musicEnabled ?? true;
   const sessionInstance = fitnessContext?.fitnessSessionInstance;
+
+  const hasTrack = Boolean(currentTrack);
+  const stuck = useStuckLoadingDetector({
+    hasTrack,
+    playlistId: selectedPlaylistId,
+    thresholdMs: 15_000,
+  });
+
+  // Diagnostic: emit a structured warning the first time the music player is
+  // detected stuck on this attempt. Production logs already capture the
+  // 'playback.overlay-summary' loop from PlayerOverlayLoading; this event lets
+  // us correlate the stuck UI state with that loop without scraping log shape.
+  const stuckLoggedRef = useRef(false);
+  useEffect(() => {
+    if (!stuck.isStuck) {
+      stuckLoggedRef.current = false;
+      return;
+    }
+    if (stuckLoggedRef.current) return;
+    stuckLoggedRef.current = true;
+    getLogger().warn('fitness.music.stuck_loading', {
+      playlistId: selectedPlaylistId || null,
+      attempt: stuck.attempt,
+      thresholdMs: 15_000,
+      musicEnabled: Boolean(musicEnabled),
+    });
+  }, [stuck.isStuck, stuck.attempt, selectedPlaylistId, musicEnabled]);
 
   // Stable Plex client session ID - ensures music player has distinct X-Plex-Client-Identifier from video player
   const musicPlexSession = useMemo(() => `fitness-music-${guid()}`, []);
@@ -532,7 +560,21 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
                   '--marquee-play-state': scrollDistance < 0 ? 'running' : 'paused'
                 }}
               >
-                {currentTrack?.title || currentTrack?.label || 'Loading...'}
+                {currentTrack?.title || currentTrack?.label || (
+                  stuck.isStuck ? (
+                    <span
+                      className="music-player-retry"
+                      role="button"
+                      tabIndex={0}
+                      onPointerDown={(e) => { e.stopPropagation(); stuck.retry(); }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); stuck.retry(); }
+                      }}
+                    >
+                      Music unavailable — tap to retry
+                    </span>
+                  ) : 'Loading…'
+                )}
               </span>
             </div>
             <div className="track-artist">
@@ -644,7 +686,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
       <div style={{ position: 'absolute', left: '-9999px' }}>
         <Player
           ref={audioPlayerRef}
-          key={selectedPlaylistId}
+          key={`${selectedPlaylistId}-${stuck.attempt}`}
           queue={playerQueueProp}
           play={playerPlayProp}
           onProgress={handleProgress}
