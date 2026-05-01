@@ -58,7 +58,105 @@ export class WeeklyDigest extends Assignment {
       hasGoals:            !!goals,
     });
 
-    return { reconciliation, weight, weightLongTerm, nutritionHistory, goals };
+    // Pattern signal detection (F-105.2) — when the 7-day window shows a
+    // sustained calorie surplus or protein shortfall against goals, query
+    // find_similar_period for a historical analog. Mirrors MorningBrief's
+    // approach but uses 7-day averages (the weekly cadence) rather than
+    // trailing streaks.
+    const similarPeriod = await this.#detectAndQuerySimilarPeriod({
+      tools,
+      userId,
+      nutritionHistory,
+      weight,
+      goals,
+      logger,
+    });
+
+    return { reconciliation, weight, weightLongTerm, nutritionHistory, goals, similarPeriod };
+  }
+
+  /**
+   * Inspect the 7-day nutrition window for a sustained calorie surplus
+   * (avg > calories_max) or protein shortfall (avg < protein_min). When
+   * detected, build a pattern signature from the same window plus the
+   * 14-day weight history and query find_similar_period.
+   *
+   * @returns {Promise<null | { name: string, score: number, period: object }>}
+   */
+  async #detectAndQuerySimilarPeriod({ tools, userId, nutritionHistory, weight, goals, logger }) {
+    const days = Array.isArray(nutritionHistory?.days)
+      ? nutritionHistory.days
+      : Array.isArray(nutritionHistory)
+        ? nutritionHistory
+        : [];
+    if (days.length === 0) return null;
+
+    const calMax = goals?.goals?.nutrition?.calories_max;
+    const proteinMin = goals?.goals?.nutrition?.protein_min;
+
+    const numericCalories = days.map(d => d?.calories).filter(v => typeof v === 'number');
+    const numericProtein = days.map(d => d?.protein).filter(v => typeof v === 'number');
+    const trackedDays = days.filter(d => typeof d?.calories === 'number' && d.calories > 0).length;
+
+    const avg = (arr) => (arr.length === 0 ? null : arr.reduce((a, b) => a + b, 0) / arr.length);
+
+    const calorieAvg = avg(numericCalories);
+    const proteinAvg = avg(numericProtein);
+
+    const calorieSurplus = typeof calMax === 'number' && calorieAvg !== null && calorieAvg > calMax;
+    const proteinShortfall = typeof proteinMin === 'number' && proteinAvg !== null && proteinAvg < proteinMin;
+
+    if (!calorieSurplus && !proteinShortfall) return null;
+
+    const tool = tools.find(t => t.name === 'find_similar_period');
+    if (!tool) {
+      logger?.warn?.('weekly_digest.similar_period.error', { reason: 'tool_not_registered' });
+      return null;
+    }
+
+    // Signature uses the 14-day weight history that gather() already pulled.
+    const weightHistory = Array.isArray(weight?.history) ? weight.history : [];
+    const numericWeights = weightHistory
+      .map(w => (typeof w?.lbs === 'number' ? w.lbs : null))
+      .filter(v => v !== null);
+
+    const signature = {};
+    if (proteinAvg !== null) signature.protein_avg_g = proteinAvg;
+    if (calorieAvg !== null) signature.calorie_avg = calorieAvg;
+    if (days.length > 0) signature.tracking_rate = trackedDays / days.length;
+    const weightAvg = avg(numericWeights);
+    if (weightAvg !== null) signature.weight_avg_lbs = weightAvg;
+    if (numericWeights.length >= 2) {
+      signature.weight_delta_lbs = numericWeights[numericWeights.length - 1] - numericWeights[0];
+    }
+
+    logger?.info?.('weekly_digest.similar_period.queried', {
+      userId,
+      calorieSurplus,
+      proteinShortfall,
+      signatureDimensions: Object.keys(signature),
+    });
+
+    try {
+      const result = await tool.execute({ userId, pattern_signature: signature, max_results: 1 });
+      const matches = Array.isArray(result?.matches) ? result.matches : [];
+      if (matches.length === 0) {
+        return null;
+      }
+      const top = matches[0];
+      logger?.info?.('weekly_digest.similar_period.match_found', {
+        name: top?.name,
+        score: top?.score,
+      });
+      return {
+        name: top?.name,
+        score: top?.score,
+        period: top?.period || null,
+      };
+    } catch (err) {
+      logger?.warn?.('weekly_digest.similar_period.error', { error: err?.message });
+      return null;
+    }
   }
 
   /**
@@ -75,6 +173,24 @@ export class WeeklyDigest extends Assignment {
     sections.push(`\n## This Week's Nutrition (7 days)\n${JSON.stringify(gathered.nutritionHistory || {}, null, 2)}`);
     sections.push(`\n## User Goals\n${JSON.stringify(gathered.goals || {}, null, 2)}`);
     sections.push(`\n## Working Memory\n${memory.serialize()}`);
+
+    // Similar Period — historical analog when a sustained weekly trend signal
+    // fired during gather (F-105.2). The section anchors any "the last time
+    // this happened" coaching language in concrete personal precedent.
+    if (gathered.similarPeriod && gathered.similarPeriod.period) {
+      const sp = gathered.similarPeriod;
+      const period = sp.period || {};
+      const stats = period.stats || {};
+      const fmt = (v) => (typeof v === 'number' ? Number(v.toFixed(2)) : 'n/a');
+      sections.push(
+        `\n## Similar Period — historical analog for the current pattern\n` +
+        `Period: ${sp.name ?? period.name ?? 'unknown'} (${period.from ?? '?'} → ${period.to ?? '?'})\n` +
+        `Description: ${period.description || '(no description)'}\n` +
+        `Stats: weight_avg=${fmt(stats.weight_avg_lbs)} protein_avg=${fmt(stats.protein_avg_g)}g ` +
+        `calorie_avg=${fmt(stats.calorie_avg)} tracking_rate=${fmt(stats.tracking_rate)}\n` +
+        `Use this as concrete personal precedent when the coach references "the last time this happened".`
+      );
+    }
 
     sections.push(`\n## Instructions
 Produce a JSON object matching the coachingMessageSchema:
