@@ -171,7 +171,19 @@ export class HealthCoachAgent extends BaseAgent {
 
     await this.#primePersonalContext(opts.userId);
 
-    const result = await super.runAssignment(assignmentId, opts);
+    // Thread personalContextLoader through the assignment context so
+    // assignments (e.g. MorningBrief F-003) can read user-specific
+    // playbook config (coaching_thresholds, named patterns, etc.) without
+    // each one having to re-resolve the dep from the agent.
+    const mergedOpts = {
+      ...opts,
+      context: {
+        ...(opts.context || {}),
+        personalContextLoader: this.deps.personalContextLoader,
+      },
+    };
+
+    const result = await super.runAssignment(assignmentId, mergedOpts);
 
     if (assignmentId === 'daily-dashboard' && result) {
       const writeTool = this.getTools().find(t => t.name === 'write_dashboard');

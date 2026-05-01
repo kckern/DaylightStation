@@ -262,6 +262,65 @@ describe('ComplianceToolFactory', () => {
     expect(result.dimensions.daily_note.untracked).toBe(30);
   });
 
+  // ---------- F-003 additions: trailing miss/untracked streaks ----------
+  //
+  // MorningBrief consumes these fields to fire historical-precedent CTAs.
+  // The miss-streak fires the protein CTA (explicit "no shake" days in a
+  // row); the untracked-streak fires the chronic-weakness CTA (daily-drill
+  // lapse for the strength dimension).
+
+  it('post_workout_protein: currentMissStreak counts trailing taken=false days', async () => {
+    // offsets 0..2: taken=false (trailing miss streak = 3)
+    // offset 3: taken=true (breaks the streak)
+    // offset 4: taken=false
+    const entries = {
+      0: { coaching: { post_workout_protein: { taken: false } } },
+      1: { coaching: { post_workout_protein: { taken: false } } },
+      2: { coaching: { post_workout_protein: { taken: false } } },
+      3: { coaching: { post_workout_protein: { taken: true } } },
+      4: { coaching: { post_workout_protein: { taken: false } } },
+    };
+    const { factory } = makeFactory(buildHealthData(entries));
+    const tool = getTool(factory);
+    const result = await tool.execute({ userId: 'test-user', days: 30 });
+
+    expect(result.dimensions.post_workout_protein.currentMissStreak).toBe(3);
+    // Trailing untracked is 0 because today (offset 0) IS tracked (as missed).
+    expect(result.dimensions.post_workout_protein.currentUntrackedStreak).toBe(0);
+  });
+
+  it('post_workout_protein: currentMissStreak is broken by an untracked day', async () => {
+    // offset 0: untracked (no entry) → miss streak = 0, untracked streak = 1
+    // offsets 1..3: taken=false
+    const entries = {
+      // offset 0 absent
+      1: { coaching: { post_workout_protein: { taken: false } } },
+      2: { coaching: { post_workout_protein: { taken: false } } },
+      3: { coaching: { post_workout_protein: { taken: false } } },
+    };
+    const { factory } = makeFactory(buildHealthData(entries));
+    const tool = getTool(factory);
+    const result = await tool.execute({ userId: 'test-user', days: 30 });
+
+    expect(result.dimensions.post_workout_protein.currentMissStreak).toBe(0);
+    expect(result.dimensions.post_workout_protein.currentUntrackedStreak).toBe(1);
+  });
+
+  it('daily_strength_micro: currentUntrackedStreak counts trailing untracked days', async () => {
+    // offsets 0..4: untracked (no entry)
+    // offset 5: logged (movement+reps)
+    const entries = {
+      5: { coaching: { daily_strength_micro: { movement: 'pull_up', reps: 5 } } },
+    };
+    const { factory } = makeFactory(buildHealthData(entries));
+    const tool = getTool(factory);
+    const result = await tool.execute({ userId: 'test-user', days: 30 });
+
+    expect(result.dimensions.daily_strength_micro.currentUntrackedStreak).toBe(5);
+    // Trailing logged streak is 0 because the most recent day is untracked.
+    expect(result.dimensions.daily_strength_micro.currentStreak).toBe(0);
+  });
+
   it('excludes future dates (only counts dates <= today)', async () => {
     // Populate today + 5 future days with coaching entries. The future entries
     // must NOT count toward `logged` because they fall outside the window
