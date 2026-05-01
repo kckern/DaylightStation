@@ -9,6 +9,7 @@ import * as PoseDemo from './widgets/PoseDemo/index.jsx';
 import * as VibrationApp from './widgets/VibrationApp/index.jsx';
 import * as SessionBrowserApp from './widgets/SessionBrowserApp/index.jsx';
 import * as FitnessSessionApp from './widgets/FitnessSessionApp/index.jsx';
+import * as CycleChallengeDemo from './widgets/CycleChallengeDemo/index.jsx';
 
 // Maps new fitness: registry keys to module definitions
 const REGISTRY_KEYS = {
@@ -20,6 +21,7 @@ const REGISTRY_KEYS = {
   'fitness:vibration': VibrationApp,
   'fitness:session-browser': SessionBrowserApp,
   'fitness:session': FitnessSessionApp,
+  'fitness:cycle-challenge-demo': CycleChallengeDemo,
 };
 
 // Maps old manifest IDs to new registry keys
@@ -32,6 +34,7 @@ const LEGACY_ID_MAP = {
   'vibration_monitor': 'fitness:vibration',
   'session-browser': 'fitness:session-browser',
   'fitness_session': 'fitness:session',
+  'cycle_challenge_demo': 'fitness:cycle-challenge-demo',
 };
 
 // Register all modules into the unified widget registry
