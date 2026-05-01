@@ -1717,7 +1717,7 @@ export class GovernanceEngine {
       active.currentRpm = equipmentRpm;
       const phase = active.generatedPhases?.[active.currentPhaseIndex];
       active.phaseProgressPct = phase?.maintainSeconds
-        ? Math.round(Math.min(1.0, (active.phaseProgressMs || 0) / (phase.maintainSeconds * 1000)) * 100)
+        ? Math.min(1.0, (active.phaseProgressMs || 0) / (phase.maintainSeconds * 1000))
         : 0;
       this._updateGlobalState();
     };
