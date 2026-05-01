@@ -11,7 +11,7 @@
  * @module domains/health/entities
  */
 
-const VALID_CATEGORIES = new Set([
+export const VALID_CATEGORIES = new Set([
   'nutrition-history',
   'scans',
   'notes',

@@ -1,0 +1,162 @@
+/**
+ * HealthArchiveIngestion Service
+ *
+ * Pure-domain service that performs an incremental copy of whitelisted health
+ * archive files from a source location into a per-user destination directory
+ * (e.g. `data/users/{userId}/lifelog/archives/` for structured archives or
+ * `media/archives/` for raw blobs).
+ *
+ * The service is filesystem-agnostic: it depends on an injected `fs` adapter
+ * exposing `stat`, `readFile`, `writeFile`, `mkdir`, and `readdir`. This makes
+ * the service trivially testable with an in-memory mock.
+ *
+ * Hard-fails on any source path that matches a privacy exclusion pattern
+ * (email, chat, finance, journal, search-history, calendar, social, banking)
+ * to ensure non-health archives never leak into the user's lifelog.
+ *
+ * @module domains/health/services
+ */
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { VALID_CATEGORIES } from '../entities/HealthArchiveManifest.mjs';
+
+const EXCLUSION_PATTERNS = [
+  /email/i,
+  /chat/i,
+  /finance/i,
+  /journal\b/i,
+  /search-history/i,
+  /calendar/i,
+  /social/i,
+  /\bbanking\b/i,
+];
+
+export class HealthArchiveIngestion {
+  /**
+   * @param {Object} deps
+   * @param {Object} deps.fs - Injected filesystem adapter with the methods
+   *   `stat`, `readFile`, `writeFile`, `mkdir`, `readdir` (all Promise-returning).
+   * @param {Object} [deps.logger] - Optional logger; defaults to `console`.
+   */
+  constructor({ fs, logger } = {}) {
+    if (!fs) throw new Error('HealthArchiveIngestion requires fs adapter');
+    this.fs = fs;
+    this.logger = logger || console;
+  }
+
+  /**
+   * Perform an incremental copy from `sourcePath` to `destPath`.
+   *
+   * @param {Object} opts
+   * @param {string} opts.userId - Owning user identifier.
+   * @param {string} opts.category - One of the whitelist categories.
+   * @param {string} opts.sourcePath - Absolute source directory.
+   * @param {string} opts.destPath - Absolute destination directory.
+   * @param {boolean} [opts.dryRun=false] - If true, plan only — no writes.
+   * @returns {Promise<{copied: string[], skipped: string[], failed: Array<{file: string, error: string}>}>}
+   */
+  async ingest({ userId, category, sourcePath, destPath, dryRun = false }) {
+    if (!userId) throw new Error('HealthArchiveIngestion.ingest requires userId');
+    if (!VALID_CATEGORIES.has(category)) {
+      throw new Error(`Unknown category: ${category}`);
+    }
+    if (EXCLUSION_PATTERNS.some((p) => p.test(sourcePath))) {
+      throw new Error(`Source path matches exclusion pattern: ${sourcePath}`);
+    }
+
+    const report = { copied: [], skipped: [], failed: [] };
+    const files = await this._listFiles(sourcePath);
+
+    for (const file of files) {
+      try {
+        const action = await this._planFile({ file, sourcePath, destPath });
+        if (action === 'skip') {
+          report.skipped.push(file);
+          continue;
+        }
+        if (!dryRun) {
+          await this._copyFile({ file, sourcePath, destPath });
+        }
+        report.copied.push(file);
+      } catch (err) {
+        report.failed.push({ file, error: err.message });
+      }
+    }
+
+    return report;
+  }
+
+  /**
+   * Recursively list every file beneath `root`, returning paths relative to it.
+   * @private
+   */
+  async _listFiles(root) {
+    const out = [];
+    const walk = async (dir, rel) => {
+      const entries = await this.fs.readdir(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const abs = path.join(dir, entry.name);
+        const relPath = rel ? path.join(rel, entry.name) : entry.name;
+        if (entry.isDirectory()) {
+          await walk(abs, relPath);
+        } else if (entry.isFile()) {
+          out.push(relPath);
+        }
+      }
+    };
+    await walk(root, '');
+    return out;
+  }
+
+  /**
+   * Decide whether a file should be skipped (already up-to-date) or copied.
+   * Skip iff destination exists, dest mtime >= source mtime, AND content
+   * hashes match. Anything else (including missing dest) yields 'copy'.
+   * @private
+   */
+  async _planFile({ file, sourcePath, destPath }) {
+    const srcAbs = path.join(sourcePath, file);
+    const destAbs = path.join(destPath, file);
+
+    const srcStat = await this.fs.stat(srcAbs);
+    let destStat = null;
+    try {
+      destStat = await this.fs.stat(destAbs);
+    } catch (err) {
+      if (err && err.code === 'ENOENT') {
+        return 'copy';
+      }
+      throw err;
+    }
+
+    const srcMs = srcStat.mtimeMs ?? (srcStat.mtime ? srcStat.mtime.getTime() : 0);
+    const destMs = destStat.mtimeMs ?? (destStat.mtime ? destStat.mtime.getTime() : 0);
+    if (destMs < srcMs) return 'copy';
+
+    const [srcBuf, destBuf] = await Promise.all([
+      this.fs.readFile(srcAbs),
+      this.fs.readFile(destAbs),
+    ]);
+    if (this._hash(srcBuf) === this._hash(destBuf)) return 'skip';
+    return 'copy';
+  }
+
+  /**
+   * Byte-for-byte copy with recursive parent-directory creation.
+   * @private
+   */
+  async _copyFile({ file, sourcePath, destPath }) {
+    const srcAbs = path.join(sourcePath, file);
+    const destAbs = path.join(destPath, file);
+    const buf = await this.fs.readFile(srcAbs);
+    await this.fs.mkdir(path.dirname(destAbs), { recursive: true });
+    await this.fs.writeFile(destAbs, buf);
+  }
+
+  /** @private */
+  _hash(buf) {
+    return crypto.createHash('sha256').update(buf).digest('hex');
+  }
+}
+
+export default HealthArchiveIngestion;
