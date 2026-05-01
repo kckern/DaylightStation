@@ -280,7 +280,7 @@ async function main() {
     if (opts._error) {
       // Unknown arg already printed to stderr; exit non-zero.
       printHelp(process.stderr);
-      process.exit(1);
+      return 1;
     }
     printHelp(process.stdout);
     return 0;
@@ -289,6 +289,11 @@ async function main() {
   if (!opts.user) {
     process.stderr.write('Error: --user <userId> is required\n');
     printHelp(process.stderr);
+    return 1;
+  }
+
+  if (opts.source && !opts.category) {
+    process.stderr.write('Error: --source requires --category (otherwise the same source is applied to every enabled category)\n');
     return 1;
   }
 
