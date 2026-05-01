@@ -194,7 +194,7 @@ export default function CycleChallengeDemo({ onClose }) {
           while (!cancelRef.current && Date.now() < phaseDeadline) {
             const g = safeReadGov();
             if (!g || g.activeChallengeType !== 'cycle') break;
-            stageLog(`8/8 PHASES — phase ${(g.currentPhaseIndex ?? 0) + 1}/${g.totalPhases} state=${g.cycleState} rpm=${g.currentRpm} progress=${g.phaseProgressPct}%`);
+            stageLog(`8/8 PHASES — phase ${(g.currentPhaseIndex ?? 0) + 1}/${g.totalPhases} state=${g.cycleState} rpm=${g.currentRpm} progress=${Math.round((g.phaseProgressPct ?? 0) * 100)}%`);
             await sleepCancellable(1500);
           }
 
@@ -301,7 +301,7 @@ export default function CycleChallengeDemo({ onClose }) {
               <td>{gov?.currentPhaseIndex != null ? `${gov.currentPhaseIndex + 1} / ${gov.totalPhases}` : '—'}</td>
             </tr>
             <tr style={rowStyle((gov?.phaseProgressPct ?? 0) > 0)}>
-              <td>phaseProgressPct</td><td><strong>{gov?.phaseProgressPct != null ? `${gov.phaseProgressPct}%` : '—'}</strong></td>
+              <td>phaseProgressPct</td><td><strong>{gov?.phaseProgressPct != null ? `${Math.round(gov.phaseProgressPct * 100)}%` : '—'}</strong></td>
             </tr>
             <tr><td>iterations</td><td>{iteration}</td></tr>
           </tbody>
