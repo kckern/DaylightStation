@@ -4,15 +4,21 @@
  * Same algorithm as frontend selectPrimaryMedia, adapted for backend
  * timeline event objects where data lives under event.data.
  *
- * Filters out audio, then warmup AND deprioritized events (e.g. kids
- * content, browsing). Among non-warmup, non-deprioritized events that clear
- * the MIN_PRIMARY_SEC (5-minute) floor, when ≥2 are each ≥10 minutes long,
- * picks the LAST one (chronologically latest — typically the main workout);
- * otherwise picks the longest survivor by data.durationSeconds. Falls back
- * to the longest non-deprioritized warmup ≥ MIN_PRIMARY_SEC only when the
- * entire session is warmup/deprioritized content (e.g. stretch-only days).
- * Returns null when no candidate clears the floor — explicitly rejects
- * browsing content and sub-floor demos as primary.
+ * Filters out audio, then applies a four-tier cascade so every session
+ * that has any video event ends up with a primary:
+ *
+ *   T1: Real events (non-warmup, non-deprioritized) ≥ MIN_PRIMARY_SEC (5 min).
+ *       When ≥2 are also ≥10 min, picks the LAST one (chronologically latest);
+ *       otherwise picks the longest by data.durationSeconds. Main success path.
+ *   T2: Any real candidate of any duration. Longest.
+ *   T3: Non-deprioritized of any kind, allowing warmups but blocking browsing.
+ *       Longest. Encodes "never primary on browsing if a non-browsing
+ *       alternative exists" (e.g. stretch + cartoon → stretch wins).
+ *   T4: Anything that survived audio filtering, including deprioritized.
+ *       Longest. Last-resort fallback for sessions where every event is
+ *       deprioritized (e.g. Game Cycling sessions with kidsfun-labeled tracks).
+ *
+ * Returns null only when there are no non-audio events at all.
  *
  * @param {Array} mediaEvents - Timeline event objects with { data: { title, durationSeconds, ... } }
  * @param {Object} [config] - {
@@ -117,17 +123,15 @@ export function selectPrimaryMedia(mediaEvents, config) {
   });
   if (episodes.length === 0) return null;
 
-  // Step 2: Build candidate pools.
-  // - realCandidates: non-warmup + non-deprioritized
-  // - eligible: realCandidates that clear the minimum primary duration floor
+  // Step 2: Constants for the cascade.
   const isWarmup = buildWarmupChecker(config);
   const isDeprioritized = buildDeprioritizedChecker(config);
   const MIN_PRIMARY_SEC = 5 * 60;
   const TEN_MIN_SEC = 10 * 60;
 
+  // Step 3: Tier 1 — Eligible real workouts.
   const realCandidates = episodes.filter(e => !isWarmup(e) && !isDeprioritized(e));
   const eligible = realCandidates.filter(e => (e.data?.durationSeconds || 0) >= MIN_PRIMARY_SEC);
-
   if (eligible.length > 0) {
     const longSurvivors = eligible.filter(e => (e.data?.durationSeconds || 0) >= TEN_MIN_SEC);
     if (longSurvivors.length >= 2) {
@@ -140,25 +144,31 @@ export function selectPrimaryMedia(mediaEvents, config) {
     });
   }
 
-  // Step 3: No eligible real candidate. Fall back to longest non-deprioritized warmup
-  // ≥ MIN_PRIMARY_SEC only if the whole session is warmup-or-deprioritized
-  // (e.g. stretch-only day). Otherwise return null — never promote browsing or
-  // sub-floor demos to primary.
-  const allWarmupOrDeprioritized = episodes.every(e => isWarmup(e) || isDeprioritized(e));
-  if (allWarmupOrDeprioritized) {
-    const eligibleWarmups = episodes.filter(e =>
-      isWarmup(e) && !isDeprioritized(e) && (e.data?.durationSeconds || 0) >= MIN_PRIMARY_SEC
-    );
-    if (eligibleWarmups.length > 0) {
-      return eligibleWarmups.reduce((best, event) => {
-        const bestSec = best.data?.durationSeconds || 0;
-        const evSec = event.data?.durationSeconds || 0;
-        return evSec > bestSec ? event : best;
-      });
-    }
+  // Step 4: Tier 2 — any real candidate (drops the floor).
+  if (realCandidates.length > 0) {
+    return realCandidates.reduce((best, event) => {
+      const bestSec = best.data?.durationSeconds || 0;
+      const evSec = event.data?.durationSeconds || 0;
+      return evSec > bestSec ? event : best;
+    });
   }
 
-  return null;
+  // Step 5: Tier 3 — non-deprioritized of any kind (allows warmups, blocks browsing).
+  const nonDeprio = episodes.filter(e => !isDeprioritized(e));
+  if (nonDeprio.length > 0) {
+    return nonDeprio.reduce((best, event) => {
+      const bestSec = best.data?.durationSeconds || 0;
+      const evSec = event.data?.durationSeconds || 0;
+      return evSec > bestSec ? event : best;
+    });
+  }
+
+  // Step 6: Tier 4 — anything that survived audio filtering. Last-resort browsing.
+  return episodes.reduce((best, event) => {
+    const bestSec = best.data?.durationSeconds || 0;
+    const evSec = event.data?.durationSeconds || 0;
+    return evSec > bestSec ? event : best;
+  });
 }
 
 export default selectPrimaryMedia;
