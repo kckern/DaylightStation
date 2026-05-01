@@ -86,10 +86,20 @@ export function selectPrimaryMedia(mediaItems, config) {
     return false;
   }
 
-  // Step 3: Drop warmup + deprioritized, pick longest. Fall back to all videos.
+  // Step 3: Drop warmup + deprioritized; fall back to all videos if filter empties the pool.
   const candidates = videos.filter(v => !isWarmup(v) && !isDeprioritized(v));
   const pool = candidates.length > 0 ? candidates : videos;
 
+  // Step 4: Positional bias — when ≥2 survivors are each ≥10 minutes long, prefer
+  // the LAST one. Events are chronological, and a true main-session video is
+  // almost always played AFTER any warmup that survived the filter.
+  const TEN_MIN_MS = 10 * 60 * 1000;
+  const longSurvivors = pool.filter(v => (v.durationMs || 0) >= TEN_MIN_MS);
+  if (longSurvivors.length >= 2) {
+    return longSurvivors[longSurvivors.length - 1];
+  }
+
+  // Step 5: Fallback — longest survivor wins.
   return pool.reduce((best, item) =>
     (item.durationMs || 0) > (best.durationMs || 0) ? item : best
   );
