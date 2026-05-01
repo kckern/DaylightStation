@@ -96,11 +96,21 @@ export class HealthArchiveScopeFactory {
 
     this.#logger.debug?.('archive_scope_factory.cache_miss', { userId });
 
-    const sources = await this.#resolveWorkoutSources(userId);
+    const playbook = await this.#loadPlaybook(userId);
+    const sources = this.#resolveWorkoutSourcesFromPlaybook(playbook);
+    const additions = this.#resolveAdditionalExclusionsFromPlaybook(playbook);
+    if (additions.length > 0) {
+      this.#logger.info?.('privacy.addition_matched', {
+        userId,
+        event: 'scope_built_with_additions',
+        additionCount: additions.length,
+      });
+    }
     const scope = new HealthArchiveScope({
       dataRoot: this.#dataRoot,
       mediaRoot: this.#mediaRoot,
       workoutSources: sources,
+      additionalPrivacyExclusions: additions,
     });
 
     this.#cache.set(userId, {
@@ -128,37 +138,44 @@ export class HealthArchiveScopeFactory {
   }
 
   /**
-   * Read the user's playbook and merge default workout sources with any
-   * declared in `archive.workout_sources`. Errors and missing config yield
-   * defaults — the factory must not block on a bad playbook.
+   * Best-effort playbook load. Missing loader / load failure yields `null`
+   * (caller treats as "no playbook" → defaults only). Errors are logged but
+   * never re-thrown — the factory must not block on a bad playbook.
    *
    * @private
    * @param {string} userId
-   * @returns {Promise<string[]>}
+   * @returns {Promise<object|null>}
    */
-  async #resolveWorkoutSources(userId) {
-    const defaults = [...DEFAULT_WORKOUT_SOURCES];
+  async #loadPlaybook(userId) {
     if (!this.#personalContextLoader
         || typeof this.#personalContextLoader.loadPlaybook !== 'function') {
-      return defaults;
+      return null;
     }
-
-    let playbook = null;
     try {
-      playbook = await this.#personalContextLoader.loadPlaybook(userId);
+      return await this.#personalContextLoader.loadPlaybook(userId);
     } catch (err) {
       this.#logger.warn?.('archive_scope_factory.playbook_load_failed', {
         userId,
         error: err?.message || String(err),
       });
-      return defaults;
+      return null;
     }
+  }
 
+  /**
+   * Merge default workout sources with any declared in
+   * `archive.workout_sources`. Pure — no I/O.
+   *
+   * @private
+   * @param {object|null} playbook
+   * @returns {string[]}
+   */
+  #resolveWorkoutSourcesFromPlaybook(playbook) {
+    const defaults = [...DEFAULT_WORKOUT_SOURCES];
     const declared = playbook?.archive?.workout_sources;
     if (!Array.isArray(declared) || declared.length === 0) {
       return defaults;
     }
-
     // Union, preserving order: defaults first, then any extras the user
     // declared. Constructor de-duplicates and validates element shape.
     const union = [...defaults];
@@ -168,6 +185,28 @@ export class HealthArchiveScopeFactory {
       }
     }
     return union;
+  }
+
+  /**
+   * Project `archive.additional_privacy_exclusions` from the playbook into a
+   * clean string[] (trimmed, non-empty, strings-only). The HealthArchiveScope
+   * constructor compiles them into RegExp objects with metacharacter escaping.
+   *
+   * @private
+   * @param {object|null} playbook
+   * @returns {string[]}
+   */
+  #resolveAdditionalExclusionsFromPlaybook(playbook) {
+    const declared = playbook?.archive?.additional_privacy_exclusions;
+    if (!Array.isArray(declared)) return [];
+    const out = [];
+    for (const entry of declared) {
+      if (typeof entry !== 'string') continue;
+      const trimmed = entry.trim();
+      if (!trimmed) continue;
+      out.push(trimmed);
+    }
+    return out;
   }
 }
 

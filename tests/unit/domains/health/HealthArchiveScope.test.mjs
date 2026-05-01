@@ -344,6 +344,127 @@ describe('HealthArchiveScope', () => {
     });
   });
 
+  describe('additional privacy exclusions (F4-C)', () => {
+    it('rejects paths matching a user-supplied addition', () => {
+      const s = new HealthArchiveScope({
+        dataRoot: DATA_ROOT,
+        mediaRoot: MEDIA_ROOT,
+        additionalPrivacyExclusions: ['therapy-notes'],
+      });
+      // The path is otherwise whitelisted (lives under notes/), but the
+      // addition rejects it.
+      const blocked = abs(`data/users/${USER}/lifelog/archives/notes/therapy-notes/2024.md`);
+      expect(s.isReadable(blocked, USER)).toBe(false);
+    });
+
+    it('rejects paths matching multiple user additions', () => {
+      const s = new HealthArchiveScope({
+        dataRoot: DATA_ROOT,
+        mediaRoot: MEDIA_ROOT,
+        additionalPrivacyExclusions: ['therapy-notes', 'client-confidential'],
+      });
+      expect(s.isReadable(
+        abs(`data/users/${USER}/lifelog/archives/notes/client-confidential/case.md`),
+        USER,
+      )).toBe(false);
+      expect(s.isReadable(
+        abs(`data/users/${USER}/lifelog/archives/notes/therapy-notes/2024.md`),
+        USER,
+      )).toBe(false);
+    });
+
+    it('still rejects floor patterns even when no additions are configured (regression)', () => {
+      // No additionalPrivacyExclusions passed at all — floor must still fire.
+      const s = new HealthArchiveScope({ dataRoot: DATA_ROOT, mediaRoot: MEDIA_ROOT });
+      expect(s.isReadable(
+        abs(`data/users/${USER}/lifelog/archives/notes/email-export.md`),
+        USER,
+      )).toBe(false);
+      expect(s.isReadable(
+        abs(`data/users/${USER}/lifelog/archives/notes/banking.md`),
+        USER,
+      )).toBe(false);
+    });
+
+    it('still rejects floor patterns even when only unrelated additions are configured', () => {
+      const s = new HealthArchiveScope({
+        dataRoot: DATA_ROOT,
+        mediaRoot: MEDIA_ROOT,
+        additionalPrivacyExclusions: ['therapy-notes'],
+      });
+      expect(s.isReadable(
+        abs(`data/users/${USER}/lifelog/archives/notes/email-export.md`),
+        USER,
+      )).toBe(false);
+    });
+
+    it('does NOT reject benign paths under whitelisted dirs without a matching addition', () => {
+      const s = new HealthArchiveScope({
+        dataRoot: DATA_ROOT,
+        mediaRoot: MEDIA_ROOT,
+        additionalPrivacyExclusions: ['therapy-notes'],
+      });
+      expect(s.isReadable(
+        abs(`data/users/${USER}/lifelog/archives/notes/training-log.md`),
+        USER,
+      )).toBe(true);
+    });
+
+    it('escapes regex metacharacters in additions — `foo.*bar` matches LITERALLY', () => {
+      const s = new HealthArchiveScope({
+        dataRoot: DATA_ROOT,
+        mediaRoot: MEDIA_ROOT,
+        additionalPrivacyExclusions: ['foo.*bar'],
+      });
+      // Literal `foo.*bar` somewhere in the path → blocked.
+      expect(s.isReadable(
+        abs(`data/users/${USER}/lifelog/archives/notes/foo.*bar-x.md`),
+        USER,
+      )).toBe(false);
+      // Wildcard interpretation would have matched this — must NOT.
+      expect(s.isReadable(
+        abs(`data/users/${USER}/lifelog/archives/notes/fooXXXbar.md`),
+        USER,
+      )).toBe(true);
+    });
+
+    it('exposes the additionalPrivacyExclusions getter (post-trim, post-filter)', () => {
+      const s = new HealthArchiveScope({
+        dataRoot: DATA_ROOT,
+        mediaRoot: MEDIA_ROOT,
+        additionalPrivacyExclusions: ['  therapy-notes  ', '', '   ', 'client-confidential'],
+      });
+      expect([...s.additionalPrivacyExclusions]).toEqual([
+        '  therapy-notes  ',
+        'client-confidential',
+      ]);
+    });
+
+    it('treats missing/empty/non-array additions as empty', () => {
+      const cases = [
+        undefined,
+        null,
+        [],
+        'not-an-array',
+        42,
+        {},
+      ];
+      for (const additions of cases) {
+        const s = new HealthArchiveScope({
+          dataRoot: DATA_ROOT,
+          mediaRoot: MEDIA_ROOT,
+          additionalPrivacyExclusions: additions,
+        });
+        expect([...s.additionalPrivacyExclusions]).toEqual([]);
+        // Floor still applies.
+        expect(s.isReadable(
+          abs(`data/users/${USER}/lifelog/archives/notes/email-thread.md`),
+          USER,
+        )).toBe(false);
+      }
+    });
+  });
+
   describe('static validatePathSegment (I-1)', () => {
     it('accepts simple filenames and dotted variants', () => {
       expect(HealthArchiveScope.validatePathSegment('notes.md')).toBe('notes.md');

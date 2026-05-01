@@ -263,21 +263,10 @@ function defaultPlaybookPath(userId) {
  * @returns {Promise<Map<string, {destination: string}>>}
  */
 async function loadCustomCategoryConfig(playbookPath) {
-  let raw;
-  try {
-    raw = await fs.readFile(playbookPath, 'utf-8');
-  } catch (err) {
-    if (err.code === 'ENOENT') return new Map();
-    throw err;
-  }
-  let parsed;
-  try {
-    parsed = yaml.load(raw);
-  } catch {
-    return new Map();
-  }
-  const declared = parsed?.archive?.custom_categories;
+  const parsed = await loadPlaybookSafely(playbookPath);
   const out = new Map();
+  if (!parsed) return out;
+  const declared = parsed?.archive?.custom_categories;
   if (!Array.isArray(declared)) return out;
   for (const entry of declared) {
     if (!entry || typeof entry !== 'object') continue;
@@ -292,6 +281,55 @@ async function loadCustomCategoryConfig(playbookPath) {
     out.set(key, { destination });
   }
   return out;
+}
+
+/**
+ * Read the user's playbook (if present) and project the
+ * `archive.additional_privacy_exclusions` list into a string[]. Non-strings
+ * and empty/whitespace entries are dropped. Missing playbook → `[]`.
+ *
+ * The strings are passed through to HealthArchiveIngestion which compiles
+ * them into RegExp objects with metacharacter escaping. The code-level floor
+ * (email/chat/...) is independent and ALWAYS applies — these only ADD.
+ *
+ * @param {string} playbookPath absolute path to the user's playbook.yml
+ * @returns {Promise<string[]>}
+ */
+async function loadAdditionalPrivacyExclusions(playbookPath) {
+  const parsed = await loadPlaybookSafely(playbookPath);
+  if (!parsed) return [];
+  const declared = parsed?.archive?.additional_privacy_exclusions;
+  if (!Array.isArray(declared)) return [];
+  const out = [];
+  for (const entry of declared) {
+    if (typeof entry !== 'string') continue;
+    const trimmed = entry.trim();
+    if (!trimmed) continue;
+    out.push(trimmed);
+  }
+  return out;
+}
+
+/**
+ * Best-effort playbook reader: returns the parsed object, or `null` if the
+ * file is missing or unparseable. Other I/O errors propagate.
+ *
+ * @param {string} playbookPath
+ * @returns {Promise<object|null>}
+ */
+async function loadPlaybookSafely(playbookPath) {
+  let raw;
+  try {
+    raw = await fs.readFile(playbookPath, 'utf-8');
+  } catch (err) {
+    if (err.code === 'ENOENT') return null;
+    throw err;
+  }
+  try {
+    return yaml.load(raw);
+  } catch {
+    return null;
+  }
 }
 
 function defaultDataRoot(userId) {
@@ -339,6 +377,7 @@ async function ingestCategory({
   destPath,
   dryRun,
   customCategories,
+  additionalPrivacyExclusions,
   validCategories,
 }) {
   const report = await ingestion.ingest({
@@ -348,6 +387,7 @@ async function ingestCategory({
     destPath,
     dryRun,
     customCategories,
+    additionalPrivacyExclusions,
   });
   const manifestPath = await writeManifest({
     destPath,
@@ -438,6 +478,17 @@ async function main() {
     return 1;
   }
   const customCategoryKeys = [...customCategoryConfig.keys()];
+
+  // F4-C: load per-user additional privacy exclusions from playbook (best
+  // effort). These ADD to the code-level floor; users cannot remove floor
+  // entries. See backend/src/2_domains/health/policies/PrivacyExclusions.mjs.
+  let additionalPrivacyExclusions;
+  try {
+    additionalPrivacyExclusions = await loadAdditionalPrivacyExclusions(playbookPath);
+  } catch (err) {
+    process.stderr.write(`Error: ${err.message}\n`);
+    return 1;
+  }
   const validCategorySet = new Set([
     ...BUILT_IN_CATEGORIES,
     ...customCategoryKeys,
@@ -519,6 +570,7 @@ async function main() {
         destPath,
         dryRun,
         customCategories: customCategoryKeys,
+        additionalPrivacyExclusions,
         validCategories: validCategorySet,
       });
       results.push({ category, report, manifestPath });

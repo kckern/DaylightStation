@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { HealthArchiveIngestion } from '#domains/health/services/HealthArchiveIngestion.mjs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -234,6 +234,104 @@ describe('HealthArchiveIngestion', () => {
     expect(report.copied.length).toBe(2);
     expect(fs._writes.length).toBe(0);
     expect(fs._mkdirs.length).toBe(0);
+  });
+
+  describe('additional privacy exclusions (F4-C)', () => {
+    it('rejects paths matching a user-supplied addition', async () => {
+      await expect(
+        svc.ingest({
+          userId: 'test-user',
+          category: 'scans',
+          sourcePath: '/external/client-confidential/case-files',
+          destPath: DEST,
+          additionalPrivacyExclusions: ['client-confidential'],
+        }),
+      ).rejects.toThrow(/exclusion/i);
+    });
+
+    it('still rejects floor patterns when no additions are passed (regression)', async () => {
+      await expect(
+        svc.ingest({
+          userId: 'test-user',
+          category: 'scans',
+          sourcePath: '/external/email/2024',
+          destPath: DEST,
+          // additionalPrivacyExclusions intentionally omitted
+        }),
+      ).rejects.toThrow(/exclusion/i);
+    });
+
+    it('still rejects floor patterns when only unrelated additions are passed', async () => {
+      await expect(
+        svc.ingest({
+          userId: 'test-user',
+          category: 'scans',
+          sourcePath: '/external/banking/statements',
+          destPath: DEST,
+          additionalPrivacyExclusions: ['client-confidential'],
+        }),
+      ).rejects.toThrow(/exclusion/i);
+    });
+
+    it('escapes regex metacharacters in additions — `foo.*bar` matches LITERALLY', async () => {
+      // Literal `foo.*bar` in the source path → blocked by the addition.
+      await expect(
+        svc.ingest({
+          userId: 'test-user',
+          category: 'scans',
+          sourcePath: '/external/foo.*bar/some-data',
+          destPath: DEST,
+          additionalPrivacyExclusions: ['foo.*bar'],
+        }),
+      ).rejects.toThrow(/exclusion/i);
+      // Wildcard interpretation would block this too — must NOT block.
+      // Source dir doesn't actually exist in the mock fs, but we want to see
+      // if it gets past the privacy filter. Pre-populate it.
+      fs._store.set('/external', { type: 'dir' });
+      fs._store.set('/external/fooXXXbar', { type: 'dir' });
+      // No files inside → empty copy succeeds.
+      const report = await svc.ingest({
+        userId: 'test-user',
+        category: 'scans',
+        sourcePath: '/external/fooXXXbar',
+        destPath: DEST,
+        additionalPrivacyExclusions: ['foo.*bar'],
+      });
+      expect(report.copied.length).toBe(0);
+      expect(report.failed.length).toBe(0);
+    });
+
+    it('logs privacy.addition_matched when an addition (not a floor entry) fires', async () => {
+      const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+      const taggedSvc = new HealthArchiveIngestion({ fs, logger });
+      await expect(
+        taggedSvc.ingest({
+          userId: 'test-user',
+          category: 'scans',
+          sourcePath: '/external/therapy-notes/2024',
+          destPath: DEST,
+          additionalPrivacyExclusions: ['therapy-notes'],
+        }),
+      ).rejects.toThrow();
+      const events = logger.info.mock.calls.map((c) => c[0]);
+      expect(events).toContain('privacy.addition_matched');
+    });
+
+    it('does NOT log privacy.addition_matched when the floor fires (not an addition)', async () => {
+      const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+      const taggedSvc = new HealthArchiveIngestion({ fs, logger });
+      await expect(
+        taggedSvc.ingest({
+          userId: 'test-user',
+          category: 'scans',
+          sourcePath: '/external/email/2024',
+          destPath: DEST,
+          additionalPrivacyExclusions: ['therapy-notes'], // unrelated
+        }),
+      ).rejects.toThrow();
+      const events = logger.info.mock.calls.map((c) => c[0]);
+      expect(events).not.toContain('privacy.addition_matched');
+    });
   });
 
   it('returns structured report with copied/skipped/failed counts', async () => {
