@@ -14,8 +14,26 @@
 
 import { ToolFactory } from '../../framework/ToolFactory.mjs';
 import { createTool } from '../../ports/ITool.mjs';
+import { HealthArchiveScope } from '#domains/health/services/HealthArchiveScope.mjs';
 
 const AGGREGATIONS = ['daily', 'weekly_avg', 'monthly_avg', 'quarterly_avg'];
+
+/**
+ * Hard-validate userId at every tool boundary. The four current tools delegate
+ * to trusted datastore methods (loadWeightData, loadNutritionData,
+ * getHealthForRange, loadPlaybook) that compose paths internally, so the
+ * userId is currently the only user-supplied input on the read path. Future
+ * tools (e.g. read_notes_file in F-102) WILL take user-supplied filenames —
+ * those must additionally call `HealthArchiveScope.assertReadable(absPath,
+ * userId)` before any read. See backend/src/2_domains/health/services/
+ * HealthArchiveScope.mjs for the F-106 whitelist.
+ *
+ * Errors are caught by each tool's outer try/catch and surfaced as
+ * `{ ..., error: '...' }` results so the agent gets a structured rejection.
+ */
+function guardUserId(userId) {
+  HealthArchiveScope.assertValidUserId(userId);
+}
 
 export class LongitudinalToolFactory extends ToolFactory {
   static domain = 'health';
@@ -143,6 +161,7 @@ export class LongitudinalToolFactory extends ToolFactory {
         },
         execute: async ({ userId, name }) => {
           try {
+            guardUserId(userId);
             if (!personalContextLoader || typeof personalContextLoader.loadPlaybook !== 'function') {
               return { name, error: 'personalContextLoader dependency missing' };
             }
@@ -200,6 +219,7 @@ export default LongitudinalToolFactory;
 function makeQueryWeightExecutor(healthStore) {
   return async function queryWeight({ userId, from, to, aggregation = 'daily' }) {
     try {
+      guardUserId(userId);
       if (!AGGREGATIONS.includes(aggregation)) {
         return { aggregation, rows: [], error: `Unknown aggregation: ${aggregation}` };
       }
@@ -276,6 +296,7 @@ function makeQueryWeightExecutor(healthStore) {
 function makeQueryNutritionExecutor(healthStore) {
   return async function queryNutrition({ userId, from, to, fields = null, filter = {} }) {
     try {
+      guardUserId(userId);
       const nutritionData = await healthStore.loadNutritionData(userId);
       const dates = Object.keys(nutritionData || {})
         .filter(d => d >= from && d <= to)
@@ -368,6 +389,7 @@ function makeQueryNutritionExecutor(healthStore) {
 function makeQueryWorkoutsExecutor(healthService) {
   return async function queryWorkouts({ userId, from, to, type = null, name_contains = null }) {
     try {
+      guardUserId(userId);
       const healthData = await healthService.getHealthForRange(userId, from, to);
 
       const needle = typeof name_contains === 'string' && name_contains.length
