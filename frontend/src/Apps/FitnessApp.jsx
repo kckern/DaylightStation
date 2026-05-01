@@ -964,6 +964,17 @@ const FitnessApp = () => {
     return () => clearTimeout(timeoutId);
   }, [logger]);
 
+  // After init: re-fire play-from-url whenever the URL changes to a /fitness/play/{id}
+  // path while the queue is empty. The main URL-init effect is one-shot, but in-app
+  // navigations (e.g. from the cycle-demo launcher module) need to populate the play
+  // queue without a full page reload.
+  useEffect(() => {
+    if (!urlInitialized || loading) return;
+    if (urlState.view !== 'play' || !urlState.id) return;
+    if (fitnessPlayQueue.length > 0) return;
+    handlePlayFromUrl(urlState.id, { nogovern });
+  }, [urlState.view, urlState.id, urlInitialized, loading, fitnessPlayQueue.length]);
+
   // Initialize state from URL on mount
   useEffect(() => {
     if (urlInitialized || loading) return;
