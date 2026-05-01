@@ -356,6 +356,9 @@
     align-items: center;
     justify-content: center;
     box-shadow: 0 0 12px rgba(15, 23, 42, 0.5);
+    opacity: 1 !important;
+    position: relative;
+    z-index: 2;
 
     img {
       width: 100%;
@@ -371,6 +374,8 @@
     gap: 2px;
     line-height: 1.2;
     min-width: 0;
+    position: relative;
+    z-index: 1;
 
     &--inline {
       flex-direction: row;
