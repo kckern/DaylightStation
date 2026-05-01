@@ -376,7 +376,7 @@ describe('MorningBrief', () => {
     expect(calls[0].userId).toBe('test-user');
   });
 
-  it('gather: triggers protein CTA when current missed streak >= playbook threshold', async () => {
+  it('gather: triggers boolean CTA when current missed streak >= playbook threshold', async () => {
     const brief = new MorningBrief();
     const summary = {
       windowDays: 30,
@@ -396,12 +396,15 @@ describe('MorningBrief', () => {
     const tools = makeComplianceTools({ summary });
     const personalContextLoader = {
       loadPlaybook: async () => ({
-        coaching_thresholds: {
-          post_workout_protein: {
-            consecutive_misses_trigger: 3,
+        coaching_dimensions: [
+          {
+            key: 'post_workout_protein',
+            type: 'boolean',
+            fields: { taken: { type: 'boolean', required: true } },
+            thresholds: { consecutive_misses_trigger: 3 },
             cta_text: 'Three days without the post-workout shake — re-anchor tomorrow.',
           },
-        },
+        ],
       }),
     };
 
@@ -419,7 +422,7 @@ describe('MorningBrief', () => {
     expect(gathered.complianceCtas[0].message).toMatch(/post-workout shake/);
   });
 
-  it('gather: triggers strength CTA when untracked run >= playbook threshold', async () => {
+  it('gather: triggers numeric CTA when untracked run >= playbook threshold', async () => {
     const brief = new MorningBrief();
     const summary = {
       windowDays: 30,
@@ -439,12 +442,18 @@ describe('MorningBrief', () => {
     const tools = makeComplianceTools({ summary });
     const personalContextLoader = {
       loadPlaybook: async () => ({
-        coaching_thresholds: {
-          daily_strength_micro: {
-            untracked_run_trigger: 5,
+        coaching_dimensions: [
+          {
+            key: 'daily_strength_micro',
+            type: 'numeric',
+            fields: {
+              movement: { type: 'string', required: true },
+              reps: { type: 'integer', required: true, min: 0 },
+            },
+            thresholds: { untracked_run_trigger: 5 },
             cta_text: '5+ days without the daily pull-up drill — daily-frequency exposure is the lever.',
           },
-        },
+        ],
       }),
     };
 
@@ -481,10 +490,25 @@ describe('MorningBrief', () => {
     const tools = makeComplianceTools({ summary });
     const personalContextLoader = {
       loadPlaybook: async () => ({
-        coaching_thresholds: {
-          post_workout_protein: { consecutive_misses_trigger: 3, cta_text: 'protein cta' },
-          daily_strength_micro: { untracked_run_trigger: 5, cta_text: 'strength cta' },
-        },
+        coaching_dimensions: [
+          {
+            key: 'post_workout_protein',
+            type: 'boolean',
+            fields: { taken: { type: 'boolean', required: true } },
+            thresholds: { consecutive_misses_trigger: 3 },
+            cta_text: 'protein cta',
+          },
+          {
+            key: 'daily_strength_micro',
+            type: 'numeric',
+            fields: {
+              movement: { type: 'string', required: true },
+              reps: { type: 'integer', required: true, min: 0 },
+            },
+            thresholds: { untracked_run_trigger: 5 },
+            cta_text: 'strength cta',
+          },
+        ],
       }),
     };
 
@@ -499,9 +523,10 @@ describe('MorningBrief', () => {
     expect(gathered.complianceCtas).toEqual([]);
   });
 
-  it('gather: uses default thresholds when playbook lacks coaching_thresholds section', async () => {
+  it('gather: emits NO CTAs when playbook lacks coaching_dimensions section (no hardcoded defaults)', async () => {
+    // Per F2-C: thresholds + CTA text live entirely in playbook YAML. When
+    // the playbook has no coaching_dimensions, the brief skips compliance.
     const brief = new MorningBrief();
-    // Defaults are protein=3, strength=5. Both are crossed here.
     const summary = {
       windowDays: 30,
       dimensions: {
@@ -518,7 +543,7 @@ describe('MorningBrief', () => {
       },
     };
     const tools = makeComplianceTools({ summary });
-    // Playbook exists but has no coaching_thresholds section.
+    // Playbook exists but has no coaching_dimensions section.
     const personalContextLoader = {
       loadPlaybook: async () => ({ profile: { goal_context: 'cut' } }),
     };
@@ -527,18 +552,52 @@ describe('MorningBrief', () => {
       tools,
       userId: 'test-user',
       memory: makeMemory(),
-      logger: { info: () => {}, warn: () => {} },
+      logger: { info: () => {}, warn: () => {}, debug: () => {} },
       context: { personalContextLoader },
     });
 
-    expect(gathered.complianceCtas.length).toBe(2);
-    const dims = gathered.complianceCtas.map(c => c.dimension).sort();
-    expect(dims).toEqual(['daily_strength_micro', 'post_workout_protein']);
-    // Default CTA text references the dimension name so the brief still
-    // surfaces something useful.
-    for (const cta of gathered.complianceCtas) {
-      expect(cta.message.length).toBeGreaterThan(0);
-    }
+    expect(gathered.complianceCtas).toEqual([]);
+  });
+
+  it('gather: surfaces CTAs only for dimensions declared in the playbook', async () => {
+    // Custom playbook with a renamed boolean dimension. Verifies the brief
+    // doesn't bake in `post_workout_protein` / `daily_strength_micro`.
+    const brief = new MorningBrief();
+    const summary = {
+      windowDays: 30,
+      dimensions: {
+        cold_exposure: {
+          logged: 25, untracked: 5,
+          currentStreak: 0, currentUntrackedStreak: 5, longestGap: 0,
+        },
+      },
+    };
+    const tools = makeComplianceTools({ summary });
+    const personalContextLoader = {
+      loadPlaybook: async () => ({
+        coaching_dimensions: [
+          {
+            key: 'cold_exposure',
+            type: 'numeric',
+            fields: { duration_min: { type: 'integer', required: true, min: 0 } },
+            thresholds: { untracked_run_trigger: 5 },
+            cta_text: 'Five days without the cold exposure routine.',
+          },
+        ],
+      }),
+    };
+
+    const gathered = await brief.gather({
+      tools,
+      userId: 'test-user',
+      memory: makeMemory(),
+      logger: { info: () => {}, warn: () => {}, debug: () => {} },
+      context: { personalContextLoader },
+    });
+
+    expect(gathered.complianceCtas.length).toBe(1);
+    expect(gathered.complianceCtas[0].dimension).toBe('cold_exposure');
+    expect(gathered.complianceCtas[0].message).toMatch(/cold exposure/);
   });
 
   it('buildPrompt: includes "## Compliance" section with the CTAs when triggered', () => {
@@ -636,7 +695,19 @@ describe('MorningBrief', () => {
       },
     };
     const tools = makeComplianceTools({ summary });
-    const personalContextLoader = { loadPlaybook: async () => null };
+    const personalContextLoader = {
+      loadPlaybook: async () => ({
+        coaching_dimensions: [
+          {
+            key: 'post_workout_protein',
+            type: 'boolean',
+            fields: { taken: { type: 'boolean', required: true } },
+            thresholds: { consecutive_misses_trigger: 3 },
+            cta_text: 'protein cta',
+          },
+        ],
+      }),
+    };
     const setCalls = [];
     const memory = makeMemory({ setCalls });
 
@@ -644,7 +715,7 @@ describe('MorningBrief', () => {
       tools,
       userId: 'test-user',
       memory,
-      logger: { info: () => {}, warn: () => {} },
+      logger: { info: () => {}, warn: () => {}, debug: () => {} },
       context: { personalContextLoader },
     });
 
@@ -672,7 +743,19 @@ describe('MorningBrief', () => {
       },
     };
     const tools = makeComplianceTools({ summary });
-    const personalContextLoader = { loadPlaybook: async () => null };
+    const personalContextLoader = {
+      loadPlaybook: async () => ({
+        coaching_dimensions: [
+          {
+            key: 'post_workout_protein',
+            type: 'boolean',
+            fields: { taken: { type: 'boolean', required: true } },
+            thresholds: { consecutive_misses_trigger: 3 },
+            cta_text: 'protein cta',
+          },
+        ],
+      }),
+    };
     // Pre-populate the TTL key so the CTA should be suppressed.
     const memory = makeMemory({
       initial: { compliance_post_workout_protein_last_flagged: '2026-04-30T10:00:00Z' },
@@ -682,7 +765,7 @@ describe('MorningBrief', () => {
       tools,
       userId: 'test-user',
       memory,
-      logger: { info: () => {}, warn: () => {} },
+      logger: { info: () => {}, warn: () => {}, debug: () => {} },
       context: { personalContextLoader },
     });
 

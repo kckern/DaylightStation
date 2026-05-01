@@ -41,13 +41,53 @@ function makeFakeStore(seed = {}) {
 const USER = 'test-user';
 const DATE = '2026-05-01';
 
+// Schema mirroring the F-001 fixture playbook so the existing assertion
+// shapes (post_workout_protein, daily_strength_micro, daily_note) keep
+// working under the new playbook-driven entity.
+const FIXTURE_SCHEMA = [
+  {
+    key: 'post_workout_protein',
+    type: 'boolean',
+    fields: {
+      taken: { type: 'boolean', required: true },
+      timestamp: { type: 'string', required: false },
+      source: { type: 'string', required: false },
+    },
+  },
+  {
+    key: 'daily_strength_micro',
+    type: 'numeric',
+    fields: {
+      movement: { type: 'string', required: true },
+      reps: { type: 'integer', required: true, min: 0 },
+    },
+    average_field: 'reps',
+  },
+  {
+    key: 'daily_note',
+    type: 'text',
+    fields: {
+      value: { type: 'string', required: true, max_length: 200 },
+    },
+  },
+];
+
+function makeFixtureLoader() {
+  return {
+    loadPlaybook: vi.fn(async () => ({ coaching_dimensions: FIXTURE_SCHEMA })),
+  };
+}
+
 describe('SetDailyCoachingUseCase', () => {
   let store;
   let useCase;
 
   beforeEach(() => {
     store = makeFakeStore();
-    useCase = new SetDailyCoachingUseCase({ healthStore: store });
+    useCase = new SetDailyCoachingUseCase({
+      healthStore: store,
+      personalContextLoader: makeFixtureLoader(),
+    });
   });
 
   it('validates input via DailyCoachingEntry — invalid input throws before any datastore call', async () => {
@@ -79,7 +119,10 @@ describe('SetDailyCoachingUseCase', () => {
     store = makeFakeStore({
       [DATE]: { weight: { lbs: 175 } },
     });
-    useCase = new SetDailyCoachingUseCase({ healthStore: store });
+    useCase = new SetDailyCoachingUseCase({
+      healthStore: store,
+      personalContextLoader: makeFixtureLoader(),
+    });
 
     await useCase.execute({
       userId: USER,
@@ -119,7 +162,10 @@ describe('SetDailyCoachingUseCase', () => {
         workouts: [{ id: 'w1' }],
       },
     });
-    useCase = new SetDailyCoachingUseCase({ healthStore: store });
+    useCase = new SetDailyCoachingUseCase({
+      healthStore: store,
+      personalContextLoader: makeFixtureLoader(),
+    });
 
     await useCase.execute({
       userId: USER,
@@ -166,7 +212,10 @@ describe('SetDailyCoachingUseCase', () => {
         coaching: { daily_note: 'old note' },
       },
     });
-    useCase = new SetDailyCoachingUseCase({ healthStore: store });
+    useCase = new SetDailyCoachingUseCase({
+      healthStore: store,
+      personalContextLoader: makeFixtureLoader(),
+    });
 
     await useCase.execute({ userId: USER, date: DATE, coaching: null });
 

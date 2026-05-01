@@ -155,10 +155,14 @@ export class HealthCoachAgent extends BaseAgent {
       dataRoot,
     }));
 
-    // Compliance summary tool (F-002). Reads the per-day `coaching` field
-    // written by F-001's SetDailyCoachingUseCase and surfaces counts,
-    // streaks, and gaps for each tracked dimension.
-    this.addToolFactory(new ComplianceToolFactory({ healthStore }));
+    // Compliance summary tool (F-002 / F2-B). Dimensions are declared in the
+    // user's playbook (`coaching_dimensions`) and resolved lazily via
+    // personalContextLoader; the factory has no hardcoded dimension names.
+    this.addToolFactory(new ComplianceToolFactory({
+      healthStore,
+      personalContextLoader,
+      logger: this.deps.logger,
+    }));
 
     // Existing assignment
     this.registerAssignment(new DailyDashboard());
