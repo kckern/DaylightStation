@@ -10,13 +10,24 @@
 // query_historical_workouts (F-103.3), and query_named_period (F-103.4),
 // the last of which is a convenience wrapper that resolves a labeled
 // period from the user's playbook and runs the other three against
-// the period's [from, to] range.
+// the period's [from, to] range. Plus read_notes_file (F-102), which
+// reads notes/*.md and scans/*.yml from the archive with optional
+// markdown section extraction and per-execution caching.
+
+import path from 'node:path';
+import fsPromises from 'node:fs/promises';
 
 import { ToolFactory } from '../../framework/ToolFactory.mjs';
 import { createTool } from '../../ports/ITool.mjs';
 import { HealthArchiveScope } from '#domains/health/services/HealthArchiveScope.mjs';
 
 const AGGREGATIONS = ['daily', 'weekly_avg', 'monthly_avg', 'quarterly_avg'];
+
+// Subtrees this tool is allowed to read from. The HealthArchiveScope whitelist
+// also covers playbook/, strava/, garmin/, etc. — but read_notes_file's
+// CONTRACT is narrower: only notes/ and scans/. The scope is defense-in-depth
+// against path-traversal; this constant is the tool's surface contract.
+const READ_NOTES_PREFIXES = ['notes/', 'scans/'];
 
 /**
  * Hard-validate userId at every tool boundary. The four current tools delegate
@@ -39,13 +50,28 @@ export class LongitudinalToolFactory extends ToolFactory {
   static domain = 'health';
 
   createTools() {
-    const { healthStore, healthService, personalContextLoader } = this.deps;
+    const {
+      healthStore,
+      healthService,
+      personalContextLoader,
+      archiveScope,
+      fs = fsPromises,
+      dataRoot,
+    } = this.deps;
 
     // Shared executors so the named-period wrapper can reuse the exact
     // logic from each underlying tool without duplicating it.
     const queryWeight = makeQueryWeightExecutor(healthStore);
     const queryNutrition = makeQueryNutritionExecutor(healthStore);
     const queryWorkouts = makeQueryWorkoutsExecutor(healthService);
+
+    // Per-execution cache for read_notes_file. Closure-scoped so it lives
+    // exactly as long as the returned tool set — fresh on every createTools()
+    // call, which matches the agent's execution scope.
+    const readNotesCache = new Map();
+    const readNotesFile = makeReadNotesFileExecutor({
+      archiveScope, fs, dataRoot, cache: readNotesCache,
+    });
 
     return [
       createTool({
@@ -202,6 +228,41 @@ export class LongitudinalToolFactory extends ToolFactory {
             return { name, error: err.message };
           }
         },
+      }),
+
+      createTool({
+        name: 'read_notes_file',
+        description:
+          'Read a markdown note (notes/*.md) or YAML scan (scans/*.yml) from ' +
+          'the user\'s health archive. The `filename` param MUST start with ' +
+          '`notes/` or `scans/` — these are the only subtrees this tool can ' +
+          'access. Optionally pass a `section` to extract only the content ' +
+          'under that markdown heading (h1-h6); content runs until the next ' +
+          'heading at the same or higher level. Results are cached per ' +
+          'agent execution.',
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string', description: 'User identifier' },
+            filename: {
+              type: 'string',
+              description:
+                'Relative path under the health archive, MUST be prefixed with ' +
+                '`notes/` or `scans/`. Examples: `notes/strength-plateau.md`, ' +
+                '`scans/2024-01-15-dexa.yml`.',
+            },
+            section: {
+              type: 'string',
+              description:
+                'Optional markdown heading anchor. When set, only the content ' +
+                'under that heading (until the next heading at the same or ' +
+                'higher level) is returned. Case-insensitive trim match against ' +
+                'the heading text.',
+            },
+          },
+          required: ['userId', 'filename'],
+        },
+        execute: readNotesFile,
       }),
     ];
   }
@@ -423,6 +484,162 @@ function makeQueryWorkoutsExecutor(healthService) {
       return { workouts: [], error: err.message };
     }
   };
+}
+
+/**
+ * Build the read_notes_file executor (F-102). Reads markdown notes and YAML
+ * scans from the user's health archive with per-execution caching, scope
+ * enforcement (HealthArchiveScope F-106), and optional markdown section
+ * extraction.
+ *
+ * Cache key: `${userId}:${filename}:${section || ''}`. Section extraction is
+ * computed against the cached raw file content, so two calls with the same
+ * filename but different sections incur a single disk read.
+ *
+ * @param {object} opts
+ * @param {{assertReadable: Function}} opts.archiveScope F-106 instance
+ * @param {{readFile: Function}} opts.fs fs adapter (defaults to node:fs/promises in createTools)
+ * @param {string} opts.dataRoot absolute data root path
+ * @param {Map} opts.cache closure-scoped per-execution cache
+ * @returns {Function} the tool executor
+ */
+function makeReadNotesFileExecutor({ archiveScope, fs, dataRoot, cache }) {
+  return async function readNotesFile({ userId, filename, section = null }) {
+    try {
+      // 1) userId format
+      HealthArchiveScope.assertValidUserId(userId);
+
+      // 2) Validate filename. validatePathSegment rejects ..-traversal, NULs,
+      //    absolute paths, and unsafe characters BEFORE we ever touch disk
+      //    or the archive scope.
+      if (typeof filename !== 'string' || !filename.length) {
+        return { filename, error: 'filename must be a non-empty string' };
+      }
+      const normalizedFilename = HealthArchiveScope.validatePathSegment(filename);
+
+      // 3) Tool-contract: only notes/ and scans/. Even though the F-106
+      //    scope permits more (playbook/, strava/, ...), this tool is
+      //    deliberately scoped narrower — those other surfaces have their
+      //    own dedicated tools.
+      const hasAllowedPrefix = READ_NOTES_PREFIXES.some(
+        (p) => normalizedFilename.startsWith(p),
+      );
+      if (!hasAllowedPrefix) {
+        return {
+          filename,
+          error: `filename must start with notes/ or scans/ (got: ${filename})`,
+        };
+      }
+
+      // 4) dataRoot must be configured.
+      if (!dataRoot || typeof dataRoot !== 'string') {
+        return { filename, error: 'read_notes_file: dataRoot dependency missing' };
+      }
+      if (!archiveScope || typeof archiveScope.assertReadable !== 'function') {
+        return { filename, error: 'read_notes_file: archiveScope dependency missing' };
+      }
+
+      // 5) Compose absolute path and assert against the F-106 whitelist.
+      const absPath = path.join(
+        dataRoot, 'users', userId, 'lifelog/archives', normalizedFilename,
+      );
+      archiveScope.assertReadable(absPath, userId);
+
+      // 6) Cache check.
+      const cacheKey = `${userId}:${normalizedFilename}:${section || ''}`;
+      if (cache.has(cacheKey)) {
+        return cache.get(cacheKey);
+      }
+
+      // Also cache the raw file content under a base key so
+      // (filename, sectionA) and (filename, sectionB) don't double-read.
+      const rawKey = `${userId}:${normalizedFilename}:`;
+      let raw;
+      if (cache.has(rawKey)) {
+        raw = cache.get(rawKey).content;
+      } else {
+        raw = await fs.readFile(absPath, 'utf8');
+        const rawResult = { filename: normalizedFilename, content: raw };
+        cache.set(rawKey, rawResult);
+        if (!section) {
+          // The rawKey IS the cacheKey when no section is requested.
+          return rawResult;
+        }
+      }
+
+      // 7) Section extraction (markdown only).
+      if (section) {
+        const isMarkdown = normalizedFilename.endsWith('.md');
+        if (!isMarkdown) {
+          const result = { filename: normalizedFilename, section, error: 'section extraction only supported on .md files' };
+          cache.set(cacheKey, result);
+          return result;
+        }
+        const extracted = extractMarkdownSection(raw, section);
+        if (extracted == null) {
+          const result = { filename: normalizedFilename, section, error: 'section not found' };
+          cache.set(cacheKey, result);
+          return result;
+        }
+        const result = { filename: normalizedFilename, section, content: extracted };
+        cache.set(cacheKey, result);
+        return result;
+      }
+
+      // No section: return the raw content (already cached above).
+      const result = { filename: normalizedFilename, content: raw };
+      cache.set(cacheKey, result);
+      return result;
+    } catch (err) {
+      return { filename, error: err.message };
+    }
+  };
+}
+
+/**
+ * Extract content under a markdown section heading. Returns the lines under
+ * the matching heading until either (a) a heading at the same or higher level
+ * (lower `#` count) or (b) end of file. Returns `null` if no matching heading
+ * is found. Section match is case-insensitive trim against the heading text.
+ *
+ * @param {string} content full file content
+ * @param {string} section heading text to match
+ * @returns {string|null}
+ */
+function extractMarkdownSection(content, section) {
+  const target = String(section).trim().toLowerCase();
+  const lines = content.split('\n');
+
+  let inSection = false;
+  let sectionLevel = 0;
+  const collected = [];
+
+  for (const line of lines) {
+    const headingMatch = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const text = headingMatch[2].trim().toLowerCase();
+      if (!inSection) {
+        if (text === target) {
+          inSection = true;
+          sectionLevel = level;
+        }
+        continue;
+      }
+      // We're inside the target section. A heading at the same or higher
+      // level (smaller-or-equal `#` count) terminates the section.
+      if (level <= sectionLevel) {
+        break;
+      }
+      // Otherwise it's a nested subsection — keep it.
+      collected.push(line);
+      continue;
+    }
+    if (inSection) collected.push(line);
+  }
+
+  if (!inSection) return null;
+  return collected.join('\n');
 }
 
 // ---------- helpers ----------

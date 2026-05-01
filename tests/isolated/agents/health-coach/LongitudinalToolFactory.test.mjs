@@ -858,3 +858,249 @@ describe('LongitudinalToolFactory.query_named_period', () => {
     expect(personalContextLoader.loadPlaybook).toHaveBeenCalledWith('user-B');
   });
 });
+
+// -------------------------------------------------------------------
+// read_notes_file (F-102)
+// -------------------------------------------------------------------
+//
+// Reads markdown from data/users/{userId}/lifelog/archives/notes/*.md
+// and YAML from data/users/{userId}/lifelog/archives/scans/*.yml.
+// Section extraction by markdown anchor. Per-execution cache.
+
+function getReadNotesTool(factory) {
+  return factory.createTools().find(t => t.name === 'read_notes_file');
+}
+
+describe('LongitudinalToolFactory.read_notes_file', () => {
+  // Build a stub archiveScope whose `assertReadable` is a no-op for valid
+  // inputs (anything starting with /fake/data/users/{userId}/lifelog/archives/)
+  // and throws for inputs that don't match. This isolates the tool's CALL
+  // pattern from the scope's whitelist internals (covered by Task 11 tests).
+  function makeReadNotesFactory({
+    fileContents = {},
+    dataRoot = '/fake/data',
+    archiveScopeOverride = null,
+  } = {}) {
+    const fs = {
+      readFile: vi.fn(async (absPath /*, encoding */) => {
+        if (absPath in fileContents) return fileContents[absPath];
+        const err = new Error(`ENOENT: no such file: ${absPath}`);
+        err.code = 'ENOENT';
+        throw err;
+      }),
+    };
+    const archiveScope = archiveScopeOverride ?? {
+      assertReadable: vi.fn((absPath, userId) => {
+        const expectedPrefix = `${dataRoot}/users/${userId}/lifelog/archives/`;
+        if (typeof absPath !== 'string' || !absPath.startsWith(expectedPrefix)) {
+          throw new Error(`HealthArchiveScope: path not readable for user ${userId}: ${absPath}`);
+        }
+      }),
+    };
+    const healthStore = {
+      loadWeightData: vi.fn(async () => ({})),
+      loadNutritionData: vi.fn(async () => ({})),
+    };
+    return {
+      factory: new LongitudinalToolFactory({
+        healthStore,
+        archiveScope,
+        fs,
+        dataRoot,
+      }),
+      fs,
+      archiveScope,
+    };
+  }
+
+  const SAMPLE_MD = [
+    '# Title',
+    '',
+    '## Section A',
+    'content A',
+    '',
+    '## Section B',
+    'content B',
+    '',
+    '### Subsection B1',
+    'sub content',
+    '',
+    '## Section C',
+    'content C',
+    '',
+  ].join('\n');
+
+  const SAMPLE_YAML = [
+    'date: 2024-01-15',
+    'source: bodyspec_dexa',
+    'weight_lbs: 175.0',
+    'body_fat_percent: 22.0',
+  ].join('\n');
+
+  it('tool definition has correct schema', () => {
+    const { factory } = makeReadNotesFactory();
+    const tool = getReadNotesTool(factory);
+
+    expect(tool).toBeTruthy();
+    expect(tool.name).toBe('read_notes_file');
+    expect(typeof tool.description).toBe('string');
+    expect(tool.description.length).toBeGreaterThan(0);
+    expect(tool.parameters?.type).toBe('object');
+    const props = tool.parameters?.properties || {};
+    expect(props.userId).toBeTruthy();
+    expect(props.filename).toBeTruthy();
+    expect(props.section).toBeTruthy();
+    expect(tool.parameters?.required).toEqual(expect.arrayContaining(['userId', 'filename']));
+  });
+
+  it('reads full markdown file from notes/', async () => {
+    const absPath = '/fake/data/users/test-user/lifelog/archives/notes/strength-plateau.md';
+    const { factory, fs, archiveScope } = makeReadNotesFactory({
+      fileContents: { [absPath]: SAMPLE_MD },
+    });
+    const tool = getReadNotesTool(factory);
+
+    const result = await tool.execute({
+      userId: 'test-user',
+      filename: 'notes/strength-plateau.md',
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.filename).toBe('notes/strength-plateau.md');
+    expect(result.content).toBe(SAMPLE_MD);
+    expect(archiveScope.assertReadable).toHaveBeenCalledWith(absPath, 'test-user');
+    expect(fs.readFile).toHaveBeenCalledWith(absPath, 'utf8');
+  });
+
+  it('reads YAML file from scans/', async () => {
+    const absPath = '/fake/data/users/test-user/lifelog/archives/scans/2024-01-15-dexa.yml';
+    const { factory, fs, archiveScope } = makeReadNotesFactory({
+      fileContents: { [absPath]: SAMPLE_YAML },
+    });
+    const tool = getReadNotesTool(factory);
+
+    const result = await tool.execute({
+      userId: 'test-user',
+      filename: 'scans/2024-01-15-dexa.yml',
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.filename).toBe('scans/2024-01-15-dexa.yml');
+    expect(result.content).toBe(SAMPLE_YAML);
+    expect(archiveScope.assertReadable).toHaveBeenCalledWith(absPath, 'test-user');
+    expect(fs.readFile).toHaveBeenCalledWith(absPath, 'utf8');
+  });
+
+  it('reads by markdown section anchor — returns content under heading until next heading at same or higher level', async () => {
+    const absPath = '/fake/data/users/test-user/lifelog/archives/notes/strength-plateau.md';
+    const { factory } = makeReadNotesFactory({
+      fileContents: { [absPath]: SAMPLE_MD },
+    });
+    const tool = getReadNotesTool(factory);
+
+    // Section A: terminated by ## Section B (same level h2).
+    const a = await tool.execute({
+      userId: 'test-user',
+      filename: 'notes/strength-plateau.md',
+      section: 'Section A',
+    });
+    expect(a.error).toBeUndefined();
+    expect(a.section).toBe('Section A');
+    expect(a.content.trim()).toBe('content A');
+
+    // Section B: includes its h3 subsection but stops at ## Section C.
+    const b = await tool.execute({
+      userId: 'test-user',
+      filename: 'notes/strength-plateau.md',
+      section: 'Section B',
+    });
+    expect(b.error).toBeUndefined();
+    expect(b.section).toBe('Section B');
+    expect(b.content).toContain('content B');
+    expect(b.content).toContain('### Subsection B1');
+    expect(b.content).toContain('sub content');
+    expect(b.content).not.toContain('Section C');
+    expect(b.content).not.toContain('content C');
+
+    // Missing section returns structured error, not throw.
+    const missing = await tool.execute({
+      userId: 'test-user',
+      filename: 'notes/strength-plateau.md',
+      section: 'Nonexistent',
+    });
+    expect(missing.error).toMatch(/section not found/i);
+    expect(missing.section).toBe('Nonexistent');
+  });
+
+  it('rejects paths outside notes/ and scans/ subtrees', async () => {
+    const { factory } = makeReadNotesFactory();
+    const tool = getReadNotesTool(factory);
+
+    // playbook is whitelisted for the SCOPE but not by THIS tool's contract.
+    const result = await tool.execute({
+      userId: 'test-user',
+      filename: 'playbook/named_periods.yml',
+    });
+    expect(typeof result.error).toBe('string');
+    expect(result.error).toMatch(/notes\/|scans\//);
+  });
+
+  it('rejects path traversal in filename param', async () => {
+    const { factory, archiveScope } = makeReadNotesFactory();
+    const tool = getReadNotesTool(factory);
+
+    const result = await tool.execute({
+      userId: 'test-user',
+      filename: '../../../etc/passwd',
+    });
+    expect(typeof result.error).toBe('string');
+    // Traversal must be caught before any read-scope or fs touch.
+    expect(archiveScope.assertReadable).not.toHaveBeenCalled();
+  });
+
+  it('caches the same filename across calls within a single createTools() call', async () => {
+    const absPath = '/fake/data/users/test-user/lifelog/archives/notes/strength-plateau.md';
+    const fileContents = { [absPath]: SAMPLE_MD };
+    const fs = {
+      readFile: vi.fn(async (p) => fileContents[p]),
+    };
+    const archiveScope = {
+      assertReadable: vi.fn(() => {}),
+    };
+    const healthStore = {
+      loadWeightData: vi.fn(async () => ({})),
+      loadNutritionData: vi.fn(async () => ({})),
+    };
+    const factory = new LongitudinalToolFactory({
+      healthStore, archiveScope, fs, dataRoot: '/fake/data',
+    });
+    const tools = factory.createTools();
+    const tool = tools.find(t => t.name === 'read_notes_file');
+
+    // First call — reads from disk.
+    const r1 = await tool.execute({ userId: 'test-user', filename: 'notes/strength-plateau.md' });
+    expect(r1.content).toBe(SAMPLE_MD);
+    expect(fs.readFile).toHaveBeenCalledTimes(1);
+
+    // Second call — same filename, no section: cache hit.
+    const r2 = await tool.execute({ userId: 'test-user', filename: 'notes/strength-plateau.md' });
+    expect(r2.content).toBe(SAMPLE_MD);
+    expect(fs.readFile).toHaveBeenCalledTimes(1);
+
+    // Different section — different cache key, but section extraction does NOT
+    // need a new disk read if implementation caches the raw file too. The
+    // contract here is that fs.readFile should not be called again — section
+    // extraction is in-memory.
+    const r3 = await tool.execute({
+      userId: 'test-user', filename: 'notes/strength-plateau.md', section: 'Section A',
+    });
+    expect(r3.content.trim()).toBe('content A');
+    expect(fs.readFile).toHaveBeenCalledTimes(1);
+
+    // A FRESH createTools() call gets a fresh cache.
+    const tools2 = factory.createTools();
+    const tool2 = tools2.find(t => t.name === 'read_notes_file');
+    await tool2.execute({ userId: 'test-user', filename: 'notes/strength-plateau.md' });
+    expect(fs.readFile).toHaveBeenCalledTimes(2);
+  });
+});
