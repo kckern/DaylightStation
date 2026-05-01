@@ -2291,6 +2291,12 @@ export class GovernanceEngine {
       policyId: ctx.policyId || null,
       policyName: ctx.policyName || null,
       equipment: selection.equipment,
+      // Forced cycles (manually triggered via the simulator or the
+      // CycleChallengeDemo widget) bypass the surrounding governance
+      // gates — they run standalone regardless of whether the policy's
+      // base requirement is satisfied or whether the engine has reached
+      // the 'unlocked' phase.
+      manualTrigger: Boolean(ctx.forceRiderId),
       rider,
       ridersUsed: [rider],
       generatedPhases: phases,
@@ -2328,8 +2334,11 @@ export class GovernanceEngine {
   _evaluateCycleChallenge(active, ctx) {
     const now = this._now();
 
-    // Pause gate: base requirement failing globally → freeze all cycle timers
-    if (ctx.baseReqSatisfiedGlobal === false) {
+    // Pause gate: base requirement failing globally → freeze all cycle timers.
+    // Manually-triggered cycles bypass this gate — they're run as a directed
+    // demo or test, and shouldn't be silently frozen because the surrounding
+    // governance phase isn't 'unlocked'.
+    if (ctx.baseReqSatisfiedGlobal === false && !active.manualTrigger) {
       if (active._pausedAt == null) {
         active._pausedAt = now;
         getLogger().info('governance.cycle.paused_by_base_req', {
@@ -2386,7 +2395,7 @@ export class GovernanceEngine {
         });
         return;
       }
-      if (ctx.equipmentRpm >= active.selection.init.minRpm && ctx.baseReqSatisfiedForRider) {
+      if (ctx.equipmentRpm >= active.selection.init.minRpm && (ctx.baseReqSatisfiedForRider || active.manualTrigger)) {
         const prev = active.cycleState;
         active.cycleState = 'ramp';
         active.rampElapsedMs = 0;
