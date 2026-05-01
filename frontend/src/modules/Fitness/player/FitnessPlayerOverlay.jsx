@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
+import { useLocation } from 'react-router-dom';
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import { useRenderProfiler } from '@/hooks/fitness/useRenderProfiler.js';
 import { ChallengeOverlay, useChallengeOverlays } from './overlays/ChallengeOverlay.jsx';
@@ -48,6 +49,11 @@ const buildChallengeEventPayload = (challenge, statusOverride = null) => {
 const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
   useRenderProfiler('FitnessPlayerOverlay');
   const fitnessCtx = useFitnessContext();
+  const location = useLocation();
+  const showCycleDemo = useMemo(
+    () => new URLSearchParams(location.search || '').has('cycle-demo'),
+    [location.search]
+  );
 
   const voiceMemoOverlayState = fitnessCtx?.voiceMemoOverlayState;
   const voiceMemoOverlayOpen = Boolean(voiceMemoOverlayState?.open);
@@ -239,9 +245,7 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
         onConfirm={handleConfirmSwap}
         onClose={handleCloseSwap}
       />
-      {typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('cycle-demo') ? (
-        <CycleChallengeDemo />
-      ) : null}
+      {showCycleDemo ? <CycleChallengeDemo /> : null}
       {fitnessCtx.overlayApp && (
         <div className="fitness-app-overlay-wrapper">
           <FitnessModuleContainer
