@@ -1064,7 +1064,11 @@ const FitnessApp = () => {
       return;
     }
     // Don't auto-navigate if URL already set up the initial state
-    if (urlInitialized && (urlState.view !== 'menu' || urlState.id || urlState.ids)) {
+    // Skip auto-redirect whenever the URL clearly specifies a non-default
+    // intent. Don't gate on urlInitialized — that races with the URL-init
+    // effect and causes /fitness/menu/{id} to bounce to /fitness/home on
+    // first render before activeCollection gets set.
+    if (urlState.view !== 'menu' || urlState.id || urlState.ids) {
       return;
     }
     // Default to first screen if screens config exists and nothing else is active
