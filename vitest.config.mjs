@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // In worktrees, frontend/node_modules may not exist — fall back to main repo location.
 const frontendNodeModulesLocal = path.resolve(__dirname, 'frontend/node_modules');
-const frontendNodeModulesMain = path.resolve(__dirname, '../../frontend/node_modules');
+const frontendNodeModulesMain = path.resolve(__dirname, '../../../frontend/node_modules');
 import { existsSync } from 'fs';
 const frontendNodeModules = existsSync(frontendNodeModulesLocal) ? frontendNodeModulesLocal : frontendNodeModulesMain;
 
