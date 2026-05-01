@@ -20,11 +20,11 @@ Glossary terms used across the four docs are defined exactly once, in this docum
 
 - **Weight** — daily measurements, trend lines, body composition where available.
 - **Nutrition** — every food logged, daily macro and calorie totals, longitudinal patterns.
-- **Fitness sessions** — workout activity records (start, duration, intensity, calories burned) for the purpose of reflection and goal tracking.
+- **Fitness sessions** — workout activity records: start, duration, intensity, calories burned.
 - **Goals** — explicit user targets (weight, calorie band, protein floor, weekly session count) and progress toward them.
 - **Sleep and other passive vitals** — folded in where an integration provides them, treated as additional signals on the same timeline.
 - **Coaching** — pattern detection, daily and weekly summaries, AI commentary, conversational follow-ups.
-- **Reconciliation** — adjusting recorded data after the fact when a more accurate signal arrives (e.g., scale readings refining tracked weight, scale-derived calorie burn refining logged intake accuracy).
+- **Reconciliation** — adjusting recorded data after the fact when a more accurate signal arrives.
 
 ### Out of scope
 
@@ -41,6 +41,7 @@ Glossary terms used across the four docs are defined exactly once, in this docum
 | See today's weight, calories, protein, and sessions at a glance | Health hub on the screen | Daily summary for today |
 | Drill into a specific dimension and see history | Health detail view | Longitudinal aggregate for that dimension |
 | Log food in plain language and see it parsed into structured items | Telegram bot, food entry inline on the hub | Food log, food catalog |
+| Log a meal from a photo and see it parsed into structured items | Telegram bot | Food log, food catalog |
 | Accept, revise, or discard an AI-parsed food entry | Telegram bot | Pending log entry, food catalog |
 | Quick-add a frequent food without re-typing | Hub food entry, Telegram bot | Food catalog |
 | See remaining calorie and protein budget for the day | Hub, Telegram bot, post-report coaching | Daily summary, user goals |
@@ -51,7 +52,7 @@ Glossary terms used across the four docs are defined exactly once, in this docum
 | Edit, delete, or annotate a logged food item | Hub detail, Telegram bot | Food log |
 | See trend lines for weight, calories, protein, and sessions over weeks, months, years | Hub detail, charts | Longitudinal aggregate |
 | Set or revise nutrition and fitness goals | Hub detail, Telegram bot | User goals |
-| See how recently each data source has reported | Hub recency card | Source freshness ledger |
+| See how recently each data source has reported | Hub recency card | Source freshness |
 | See progress against active fitness-related life goals | Hub goals card | Life plan goals filtered by health relevance |
 
 ---
@@ -100,7 +101,7 @@ The health system has three subsystems, each with its own deep-dive document.
 
 ## Identity model
 
-The health system is **per-user**, **household-scoped**.
+Every weight, meal, and session belongs to one person; configuration and shared dashboards belong to the household they're part of. The health system is **per-user**, **household-scoped**.
 
 - A **user** is the unit of health data. Every weight reading, food log, session, goal, and coaching message is owned by exactly one user.
 - A **household** groups users who share a physical environment. It is the unit of configuration (which integrations are enabled, which messaging platforms are used, which AI provider) and of shared dashboards.
@@ -139,7 +140,7 @@ Longitudinal aggregates are the substrate for both visualization and pattern det
 
 ## Data sources
 
-The system ingests health data from three kinds of sources. The pipeline normalizes all three into the same daily-summary shape.
+The system ingests health data from four kinds of sources — passive sensors, active capture, manual entry, and derived passes. The pipeline normalizes all of them into the same daily-summary shape.
 
 | Source | Type | Produces |
 |---|---|---|
@@ -153,7 +154,7 @@ The system ingests health data from three kinds of sources. The pipeline normali
 | Reconciliation passes | Derived | Adjusted nutrition values reflecting tracking-accuracy estimation, portion correction, phantom calories |
 | Coaching history | Derived | Past coaching messages used as memory for future coaching |
 
-Each source is wrapped by an adapter that knows how to read its native format and emit a normalized event. A user can have any subset of sources enabled; the pipeline tolerates missing sources and produces partial daily summaries from what it has.
+An adapter for each source reads its native format and emits a normalized event. A user can have any subset of sources enabled; the pipeline tolerates missing sources and produces partial daily summaries from what it has.
 
 ---
 
@@ -186,7 +187,7 @@ Telegram is the **delivery channel** the coaching system uses. The coaching syst
 
 ### LLM provider
 
-The coaching system, the food parser, and the on-demand health agent all consume an LLM. The provider, model, and mini-model are configured at the household level and selected per call. The LLM is treated as a *commentary and parsing layer* — it receives a deterministic snapshot of facts, returns prose or structured output, and never has authority to invent numbers, override facts, or overwrite data the system has already established. See `coaching-system.md` for the constraints in detail.
+The LLM is a commentary and parsing layer; it never has authority to invent numbers, override facts, or overwrite established data. The coaching system, the food parser, and the on-demand health agent all consume an LLM. The provider, model, and mini-model are configured at the household level and selected per call. The LLM receives a deterministic snapshot of facts and returns prose or structured output. See `coaching-system.md` for the constraints in detail.
 
 ---
 
@@ -208,7 +209,7 @@ Definitions of terms used across all four health reference documents. When a dee
 
 **Food catalog.** A per-user collection of frequent or seeded food items, surfaced as quick-add chips. Derived from the user's food log over time.
 
-**Food item.** A single structured entry in the food log: name, calories, macros (protein, carbs, fat, fiber, sodium, sugar, cholesterol), meal time, color category, source (Telegram or web), and identifying UUID.
+**Food item.** A single structured entry in the food log: name, calories, macros (protein, carbs, fat) plus other tracked nutrients (fiber, sodium, sugar, cholesterol), meal time, color category, source (Telegram or web), and identifying UUID.
 
 **Food log.** The full set of a user's food items, keyed by date. Mutable: items can be added, edited, deleted, and annotated.
 
@@ -216,7 +217,7 @@ Definitions of terms used across all four health reference documents. When a dee
 
 **Household.** The unit of configuration and of shared dashboards. Groups users who share a physical environment. Identified by a household ID.
 
-**Insight.** A pattern detected from recent daily summaries (binge after deficit, calorie surplus, protein short, on track) that the coach can reference in commentary.
+**Insight.** See *Pattern*. An *Insight* is a Pattern selected for delivery in a coaching message.
 
 **Longitudinal aggregate.** A series of values keyed by time bucket — daily, weekly, monthly — with statistical rollups (average, range, count, trend slope). Derived from daily summaries. Used for charts and for long-view coaching context.
 
@@ -224,7 +225,7 @@ Definitions of terms used across all four health reference documents. When a dee
 
 **Morning brief.** A coaching message delivered at the start of the day, framing yesterday's totals, the weekly average, and the day ahead.
 
-**Pattern.** See *Insight*.
+**Pattern.** A detected trend or break in recent daily summaries (binge after deficit, calorie surplus, protein short, on track) that the coach can reference in commentary. A *Pattern* selected for delivery in a coaching message is called an *Insight*.
 
 **Post-report summary.** A coaching message delivered after the user's last food log of the day, summarizing the day's totals against goals and noting notable items.
 
@@ -254,7 +255,7 @@ Definitions of terms used across all four health reference documents. When a dee
 - `backend/src/2_domains/nutrition/` — nutrition domain entities, schemas, and food log services.
 - `backend/src/3_applications/health/` — health aggregation use case, dashboard composition, food catalog, longitudinal aggregation, reconciliation.
 - `backend/src/3_applications/coaching/` — coaching orchestration, message builder, pattern detection, snapshots, commentary service.
-- `backend/src/3_applications/agents/health-coach/` — on-demand AI health coach (assignments, prompts, tool factories).
+- `backend/src/3_applications/agents/health-coach/` — on-demand AI health coach.
 - `backend/src/3_applications/nutribot/` — Telegram nutrition surface (container, handlers, jobs, use cases).
 - `backend/src/1_adapters/persistence/yaml/` — YAML datastores for health, nutrition, food catalog, coaching history.
 - `backend/src/1_adapters/health/` — adapters for external health data sources.
