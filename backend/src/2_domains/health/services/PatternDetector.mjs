@@ -1,27 +1,204 @@
 /**
- * PatternDetector (F-004)
+ * PatternDetector (F-004 — F1-A primitive-driven refactor)
  *
- * Pure-domain service. Given 30-day windows of nutrition, weight, workouts,
- * and compliance — plus a playbook entry list with detection thresholds — emits
- * an array of detected patterns with confidence, evidence, recommendation,
- * memoryKey, and severity.
+ * Pure-domain service. Patterns are NOT hardcoded here. Each playbook entry
+ * declares a `detection` block whose keys are PRIMITIVE names registered
+ * in this file (e.g. `pace_stdev_seconds_lt`, `protein_avg_lt_g`). The
+ * detector evaluates every primitive declared on the entry and AND-combines
+ * them; if all match, the detection fires with confidence = min margin
+ * across all primitive checks.
  *
- * Stateless. No I/O, no fs, no network. Class wrapper exists for DI consistency
- * with sibling services (SimilarPeriodFinder, WeightProcessor) and to allow
- * injection of a structured logger.
+ * The boundary the audit (F1-A) draws:
+ *   - Code: primitive shape, computation, schema (this file).
+ *   - YAML: pattern names, threshold values, primitive composition.
+ *
+ * A future playbook pattern named "weekend-binge" or "winter-tracking-collapse"
+ * ships as a YAML edit, not a code change.
  *
  * Confidence model (v1):
- *   Each signal is scored by its margin from the threshold (in the matching
- *   direction). Margin >= MARGIN_FOR_FULL (50%) → 1.0; margin = 0 (just barely
- *   matching) → 0; linearly interpolated. Pattern confidence is the minimum
- *   across all required signals (logical AND semantics). Detections only fire
- *   when every required signal matches — sub-confidence < 1.0 just means the
- *   pattern is borderline, not yet absent.
+ *   For each primitive, margin = |threshold - signal| / |threshold|, clamped
+ *   into [0, MARGIN_FOR_FULL]; confidence-component = margin / MARGIN_FOR_FULL.
+ *   Pattern confidence = min across components (logical AND).
+ *
+ * Stateless. No I/O, no fs, no network.
  *
  * @module domains/health/services/PatternDetector
  */
 
 const BREAKFAST_CUTOFF_HOUR = 11; // first food >= 11:00 → "skipped breakfast"
+
+// Confidence model parameters. Margin >= MARGIN_FOR_FULL (50%) → 1.0;
+// margin = 0 (just barely matching) → 0; linearly interpolated between.
+const MARGIN_FOR_FULL = 0.5;
+
+// Detection-block keys that are metadata for primitives (window sizes), not
+// primitive checks themselves. Skipped during evaluation.
+const METADATA_KEYS = new Set(['window_runs', 'weight_delta_window_days']);
+
+// ---------------------------------------------------------------------------
+// PRIMITIVES
+//
+// Each primitive: (windows, threshold, entry) → result | null.
+//   - returns null when there is not enough data to evaluate
+//   - returns { match, signal, evidenceKey, evidenceValue } otherwise
+//
+// Primitive names match the keys declared in playbook YAML `detection` blocks.
+// Names ending in `_lt` test signal < threshold; `_gt` test signal > threshold.
+// Special primitives (e.g. `programmed_workout_present`) document their own
+// shape inline.
+// ---------------------------------------------------------------------------
+
+const PRIMITIVES = {
+  // --- Workout primitives (run shape) ---
+  pace_stdev_seconds_lt: (windows, threshold, entry) => {
+    const windowRuns = entry.detection?.window_runs;
+    if (!Number.isFinite(windowRuns)) return null;
+    const runs = (windows.workouts || [])
+      .filter((w) => w?.type === 'run')
+      .slice(-windowRuns);
+    if (runs.length < windowRuns) return null;
+    const paces = runs
+      .map((r) => firstNumber(r.pace_seconds_per_km, r.pace, r.average_pace))
+      .filter((v) => Number.isFinite(v));
+    if (paces.length < windowRuns) return null;
+    const value = stdev(paces);
+    return matchLt(value, threshold, 'pace_stdev_seconds', round(value, 2));
+  },
+
+  hr_stdev_bpm_lt: (windows, threshold, entry) => {
+    const windowRuns = entry.detection?.window_runs;
+    if (!Number.isFinite(windowRuns)) return null;
+    const runs = (windows.workouts || [])
+      .filter((w) => w?.type === 'run')
+      .slice(-windowRuns);
+    if (runs.length < windowRuns) return null;
+    const hrs = runs
+      .map((r) => firstNumber(r.average_hr, r.heart_rate, r.hr))
+      .filter((v) => Number.isFinite(v));
+    if (hrs.length < windowRuns) return null;
+    const value = stdev(hrs);
+    return matchLt(value, threshold, 'hr_stdev_bpm', round(value, 2));
+  },
+
+  // --- Workout count primitives ---
+  bike_workouts_30d_gt: (windows, threshold) => {
+    const value = (windows.workouts || []).filter(isBikeWorkout).length;
+    return matchGt(value, threshold, 'bike_workouts_30d', value);
+  },
+
+  // --- Programmed workout presence (boolean shape) ---
+  // Threshold can be true/false; we only fire when threshold is truthy AND a
+  // programmed workout is present. If the playbook author wanted "no program"
+  // they would write `programmed_workout_absent` (not currently registered).
+  programmed_workout_present: (windows, threshold) => {
+    const present = (windows.workouts || []).some(isProgrammedWorkout);
+    const want = Boolean(threshold);
+    const match = want ? present : !present;
+    return {
+      match,
+      signal: present ? 1 : 0,
+      evidenceKey: 'programmed_workout_present',
+      evidenceValue: present,
+      // Boolean primitives are full-confidence on match (no margin to compute).
+      booleanFullConfidence: true,
+    };
+  },
+
+  // --- Nutrition primitives ---
+  protein_avg_lt_g: (windows, threshold) => {
+    const last = nutritionTail(windows, 7);
+    if (!last.length) return null;
+    const value = mean(last.map((d) => Number(d.protein) || 0));
+    return matchLt(value, threshold, 'protein_avg_g', round(value, 1));
+  },
+
+  protein_avg_gt_g: (windows, threshold) => {
+    const last = nutritionTail(windows, 14);
+    if (!last.length) return null;
+    const value = mean(last.map((d) => Number(d.protein) || 0));
+    return matchGt(value, threshold, 'protein_avg_g', round(value, 1));
+  },
+
+  calorie_avg_lt: (windows, threshold) => {
+    const last = nutritionTail(windows, 14);
+    if (!last.length) return null;
+    const value = mean(last.map((d) => Number(d.calories) || 0));
+    return matchLt(value, threshold, 'calorie_avg', round(value, 0));
+  },
+
+  calorie_avg_gt: (windows, threshold) => {
+    const last = nutritionTail(windows, 14);
+    if (!last.length) return null;
+    const value = mean(last.map((d) => Number(d.calories) || 0));
+    return matchGt(value, threshold, 'calorie_avg', round(value, 0));
+  },
+
+  protein_avg_drop_pct_gt: (windows, threshold) => {
+    const value = proteinDropPct(windows.nutrition);
+    if (value === null) return null;
+    return matchGt(value, threshold, 'protein_avg_drop_pct', round(value, 3));
+  },
+
+  breakfast_skipped_days_7d_gt: (windows, threshold) => {
+    const last7 = (windows.nutrition || []).slice(-7);
+    if (!last7.length) return null;
+    const value = countSkippedBreakfastDays(last7);
+    return matchGt(value, threshold, 'breakfast_skipped_days_7d', value);
+  },
+
+  meal_repetition_index_gt: (windows, threshold) => {
+    const last14 = (windows.nutrition || []).slice(-14);
+    if (!last14.length) return null;
+    const value = mealRepetitionIndex(last14);
+    return matchGt(value, threshold, 'meal_repetition_index', round(value, 3));
+  },
+
+  // --- Compliance primitives ---
+  tracking_rate_14d_lt: (windows, threshold) => {
+    const value = readTrackingRate14d(windows);
+    if (value === null) return null;
+    return matchLt(value, threshold, 'tracking_rate_14d', round(value, 3));
+  },
+
+  tracking_rate_14d_gt: (windows, threshold) => {
+    const value = readTrackingRate14d(windows);
+    if (value === null) return null;
+    return matchGt(value, threshold, 'tracking_rate_14d', round(value, 3));
+  },
+
+  // --- Weight primitives ---
+  weight_trend_3w_gt_lbs: (windows, threshold) => {
+    const value = weightDeltaOverDays(windows.weight, 21);
+    if (value === null) return null;
+    return matchGt(value, threshold, 'weight_trend_3w_lbs', round(value, 2));
+  },
+
+  weight_trend_3w_lt_lbs: (windows, threshold) => {
+    const value = weightDeltaOverDays(windows.weight, 21);
+    if (value === null) return null;
+    return matchLt(value, threshold, 'weight_trend_3w_lbs', round(value, 2));
+  },
+
+  weight_delta_lt_lbs: (windows, threshold, entry) => {
+    const days = entry.detection?.weight_delta_window_days;
+    if (!Number.isFinite(days)) return null;
+    const value = weightDeltaOverDays(windows.weight, days);
+    if (value === null) return null;
+    return matchLt(value, threshold, 'weight_delta_lbs', round(value, 2));
+  },
+
+  weight_delta_gt_lbs: (windows, threshold, entry) => {
+    const days = entry.detection?.weight_delta_window_days;
+    if (!Number.isFinite(days)) return null;
+    const value = weightDeltaOverDays(windows.weight, days);
+    if (value === null) return null;
+    return matchGt(value, threshold, 'weight_delta_lbs', round(value, 2));
+  },
+};
+
+// ---------------------------------------------------------------------------
+// PatternDetector
+// ---------------------------------------------------------------------------
 
 export class PatternDetector {
   /**
@@ -38,15 +215,16 @@ export class PatternDetector {
    * @param {object} args
    * @param {object} args.windows { nutrition, weight, workouts, compliance }
    * @param {Array<object>} args.playbookPatterns playbook entries with detection thresholds
-   * @param {object} [args.userGoals] { calories_min, calories_max, protein_min, ... }
+   * @param {object} [args.userGoals] reserved for future per-user thresholds (unused in v1)
    * @returns {Array<object>} array of detection records
    */
+  // eslint-disable-next-line no-unused-vars
   detect({ windows, playbookPatterns = [], userGoals = {} } = {}) {
     if (!windows || !Array.isArray(playbookPatterns) || playbookPatterns.length === 0) return [];
 
     const detections = [];
     for (const playbookEntry of playbookPatterns) {
-      const detection = this.#evaluate(playbookEntry, windows, userGoals);
+      const detection = this.#evaluate(playbookEntry, windows);
       if (detection) {
         detections.push(detection);
         this.logger.info?.('pattern_detector.match', {
@@ -58,271 +236,62 @@ export class PatternDetector {
     return detections;
   }
 
-  // ---------------------------------------------------------------------------
-  // Dispatch
-  // ---------------------------------------------------------------------------
+  /**
+   * Evaluate one playbook entry by composing its primitives.
+   *
+   * Returns null when:
+   *  - the detection block is empty
+   *  - any primitive is unknown (warn + skip pattern entirely)
+   *  - any primitive returns null (insufficient data)
+   *  - any primitive's match is false (logical AND)
+   */
+  #evaluate(entry, windows) {
+    const detection = entry?.detection || {};
+    const keys = Object.keys(detection);
+    if (keys.length === 0) return null;
 
-  #evaluate(playbookEntry, windows, userGoals) {
-    const dispatch = {
-      'cut-mode': this.#detectCutMode,
-      'if-trap-risk': this.#detectIfTrap,
-      'same-jog-rut': this.#detectJogRut,
-      'bike-commute-trap': this.#detectBikeTrap,
-      'maintenance-drift': this.#detectMaintenanceDrift,
-      'on-protocol-tracked-cut': this.#detectTrackedCut,
-      'tracked-cut-formula': this.#detectTrackedCut, // alias for fixture playbook name
-      'on-protocol-coached-bulk': this.#detectCoachedBulk,
-    };
-    const fn = dispatch[playbookEntry.name];
-    if (!fn) {
-      this.logger.warn?.('pattern_detector.unknown_pattern', { name: playbookEntry.name });
-      return null;
+    const checks = [];
+    for (const [key, threshold] of Object.entries(detection)) {
+      if (METADATA_KEYS.has(key)) continue;
+      const fn = PRIMITIVES[key];
+      if (!fn) {
+        this.logger.warn?.('pattern_detector.unknown_primitive', {
+          name: entry.name,
+          primitive: key,
+        });
+        return null;
+      }
+      const result = fn(windows, threshold, entry);
+      if (result === null) return null;       // insufficient data
+      if (!result.match) return null;         // AND-combine
+      checks.push({ key, threshold, ...result });
     }
-    return fn.call(this, playbookEntry, windows, userGoals);
-  }
+    if (checks.length === 0) return null;
 
-  // ---------------------------------------------------------------------------
-  // Per-pattern detection
-  // ---------------------------------------------------------------------------
+    const confidence = scoreConfidence(checks);
 
-  #detectJogRut(entry, windows /* , _goals */) {
-    const detection = entry.detection || {};
-    const windowRuns = detection.window_runs ?? 5;
-    const paceThresh = detection.pace_stdev_seconds_lt ?? 60;
-    const hrThresh = detection.hr_stdev_bpm_lt ?? 3;
-
-    const runs = (windows.workouts || [])
-      .filter((w) => w?.type === 'run')
-      .slice(-windowRuns);
-
-    if (runs.length < windowRuns) return null;
-
-    const paces = runs
-      .map((r) => firstNumber(r.pace_seconds_per_km, r.pace, r.average_pace))
-      .filter((v) => Number.isFinite(v));
-    const hrs = runs
-      .map((r) => firstNumber(r.average_hr, r.heart_rate, r.hr))
-      .filter((v) => Number.isFinite(v));
-
-    if (paces.length < windowRuns || hrs.length < windowRuns) return null;
-
-    const paceStdev = stdev(paces);
-    const hrStdev = stdev(hrs);
-
-    if (!(paceStdev < paceThresh && hrStdev < hrThresh)) return null;
-
-    const confidence = Math.min(
-      confidenceBelow(paceStdev, paceThresh),
-      confidenceBelow(hrStdev, hrThresh),
-    );
-
-    return buildDetection(entry, {
-      pace_stdev_seconds: round(paceStdev, 2),
-      hr_stdev_bpm: round(hrStdev, 2),
-      window_runs: runs.length,
-    }, confidence);
-  }
-
-  #detectIfTrap(entry, windows /* , _goals */) {
-    const detection = entry.detection || {};
-    const proteinThresh = detection.protein_avg_lt_g ?? 100;
-    const breakfastThresh = detection.breakfast_skipped_days_7d_gt ?? 4;
-
-    const last7 = (windows.nutrition || []).slice(-7);
-    if (last7.length === 0) return null;
-
-    const proteinAvg = mean(last7.map((d) => Number(d.protein) || 0));
-    const skippedDays = countSkippedBreakfastDays(last7);
-
-    const passProtein = proteinAvg < proteinThresh;
-    const passBreakfast = skippedDays > breakfastThresh;
-    if (!(passProtein && passBreakfast)) return null;
-
-    const confidence = Math.min(
-      confidenceBelow(proteinAvg, proteinThresh),
-      confidenceExceeded(skippedDays, breakfastThresh),
-    );
-
-    return buildDetection(entry, {
-      protein_avg_g: round(proteinAvg, 1),
-      breakfast_skipped_days_7d: skippedDays,
-    }, confidence);
-  }
-
-  #detectMaintenanceDrift(entry, windows /* , _goals */) {
-    const detection = entry.detection || {};
-    const trackingThresh = detection.tracking_rate_14d_lt ?? 0.5;
-    const weightThresh = detection.weight_trend_3w_gt_lbs ?? 1.0;
-    const proteinDropThresh = detection.protein_avg_drop_pct_gt ?? 0.15;
-
-    const trackingRate = readTrackingRate14d(windows);
-    if (trackingRate === null) return null;
-    const weightTrend = weightDeltaOverDays(windows.weight, 21);
-    if (weightTrend === null) return null;
-    const proteinDrop = proteinDropPct(windows.nutrition);
-    if (proteinDrop === null) return null;
-
-    const passTracking = trackingRate < trackingThresh;
-    const passWeight = weightTrend > weightThresh;
-    const passProtein = proteinDrop > proteinDropThresh;
-    if (!(passTracking && passWeight && passProtein)) return null;
-
-    const confidence = Math.min(
-      confidenceBelow(trackingRate, trackingThresh),
-      confidenceExceeded(weightTrend, weightThresh),
-      confidenceExceeded(proteinDrop, proteinDropThresh),
-    );
-
-    return buildDetection(entry, {
-      tracking_rate_14d: round(trackingRate, 3),
-      weight_trend_3w_lbs: round(weightTrend, 2),
-      protein_avg_drop_pct: round(proteinDrop, 3),
-    }, confidence);
-  }
-
-  #detectTrackedCut(entry, windows /* , _goals */) {
-    const detection = entry.detection || {};
-    const proteinThresh = detection.protein_avg_gt_g ?? 140;
-    const trackingThresh = detection.tracking_rate_14d_gt ?? 0.9;
-    const repetitionThresh = detection.meal_repetition_index_gt ?? 0.6;
-
-    const last14 = (windows.nutrition || []).slice(-14);
-    if (last14.length === 0) return null;
-
-    const proteinAvg = mean(last14.map((d) => Number(d.protein) || 0));
-    const trackingRate = readTrackingRate14d(windows);
-    if (trackingRate === null) return null;
-    const repetitionIndex = mealRepetitionIndex(last14);
-
-    const passProtein = proteinAvg > proteinThresh;
-    const passTracking = trackingRate > trackingThresh;
-    const passRepetition = repetitionIndex > repetitionThresh;
-    if (!(passProtein && passTracking && passRepetition)) return null;
-
-    const confidence = Math.min(
-      confidenceExceeded(proteinAvg, proteinThresh),
-      confidenceExceeded(trackingRate, trackingThresh),
-      confidenceExceeded(repetitionIndex, repetitionThresh),
-    );
-
-    return buildDetection(entry, {
-      protein_avg_g: round(proteinAvg, 1),
-      tracking_rate_14d: round(trackingRate, 3),
-      meal_repetition_index: round(repetitionIndex, 3),
-    }, confidence);
-  }
-
-  #detectCutMode(entry, windows, goals) {
-    const detection = entry.detection || {};
-    const proteinThresh = detection.protein_avg_gt_g ?? goals.protein_min ?? 140;
-    const calorieMax = detection.calorie_avg_lt ?? goals.calories_max ?? 2100;
-    const weightDeltaThresh = detection.weight_delta_14d_lt_lbs ?? -1;
-
-    const last14 = (windows.nutrition || []).slice(-14);
-    if (last14.length === 0) return null;
-    const proteinAvg = mean(last14.map((d) => Number(d.protein) || 0));
-    const calorieAvg = mean(last14.map((d) => Number(d.calories) || 0));
-    const weightDelta = weightDeltaOverDays(windows.weight, 14);
-    if (weightDelta === null) return null;
-
-    const passProtein = proteinAvg >= proteinThresh;
-    const passCalories = calorieAvg <= calorieMax;
-    const passWeight = weightDelta <= weightDeltaThresh;
-    if (!(passProtein && passCalories && passWeight)) return null;
-
-    // Confidence: each signal scored by margin against its threshold.
-    const confidence = Math.min(
-      confidenceExceeded(proteinAvg, proteinThresh),
-      confidenceBelow(calorieAvg, calorieMax),
-      // weightDelta and weightDeltaThresh are both negative; "stronger cut" = more
-      // negative weightDelta. Compare absolute values via confidenceExceeded.
-      confidenceExceeded(Math.abs(weightDelta), Math.abs(weightDeltaThresh || 1)),
-    );
-
-    return buildDetection(entry, {
-      protein_avg_g: round(proteinAvg, 1),
-      calorie_avg: round(calorieAvg, 0),
-      weight_delta_14d_lbs: round(weightDelta, 2),
-    }, confidence);
-  }
-
-  #detectBikeTrap(entry, windows /* , _goals */) {
-    const detection = entry.detection || {};
-    const bikeThresh = detection.bike_workouts_30d_gt ?? 5;
-    const trackingThresh = detection.tracking_rate_lt ?? 0.7;
-    const weightThresh = detection.weight_delta_lbs_gt ?? 1;
-
-    const bikeCount = (windows.workouts || [])
-      .filter((w) => isBikeWorkout(w))
-      .length;
-    const trackingRate = readTrackingRate14d(windows);
-    if (trackingRate === null) return null;
-    const weightDelta = weightDeltaOverDays(windows.weight, 21);
-    if (weightDelta === null) return null;
-
-    const passBike = bikeCount >= bikeThresh;
-    const passTracking = trackingRate < trackingThresh;
-    const passWeight = weightDelta > weightThresh;
-    if (!(passBike && passTracking && passWeight)) return null;
-
-    const confidence = Math.min(
-      Math.min(1, bikeCount / bikeThresh),
-      confidenceBelow(trackingRate, trackingThresh),
-      confidenceExceeded(weightDelta, weightThresh),
-    );
-
-    return buildDetection(entry, {
-      bike_workouts_30d: bikeCount,
-      tracking_rate: round(trackingRate, 3),
-      weight_delta_lbs: round(weightDelta, 2),
-    }, confidence);
-  }
-
-  #detectCoachedBulk(entry, windows, goals) {
-    const detection = entry.detection || {};
-    const proteinMin = detection.protein_avg_gt_g ?? goals.protein_min ?? 140;
-    const calorieMax = goals.calories_max ?? 2100;
-
-    const programPresent = (windows.workouts || []).some((w) => isProgrammedWorkout(w));
-    if (!programPresent) return null;
-
-    const last14 = (windows.nutrition || []).slice(-14);
-    if (last14.length === 0) return null;
-    const proteinAvg = mean(last14.map((d) => Number(d.protein) || 0));
-    const calorieAvg = mean(last14.map((d) => Number(d.calories) || 0));
-
-    const passProtein = proteinAvg >= proteinMin;
-    const passSurplus = calorieAvg > calorieMax;
-    if (!(passProtein && passSurplus)) return null;
-
-    const confidence = Math.min(
-      confidenceExceeded(proteinAvg, proteinMin),
-      Math.min(1, (calorieAvg - calorieMax) / Math.max(calorieMax * 0.1, 1)),
-    );
-
-    return buildDetection(entry, {
-      program_present: true,
-      calorie_avg: round(calorieAvg, 0),
-      protein_avg_g: round(proteinAvg, 1),
-    }, confidence);
+    return {
+      name: entry.name,
+      type: entry.type,
+      confidence,
+      evidence: Object.fromEntries(checks.map((c) => [c.evidenceKey, c.evidenceValue])),
+      recommendation: entry.recommended_response || entry.recommendation || '',
+      memoryKey: `pattern_${entry.name}_last_flagged`,
+      severity: entry.severity || 'medium',
+    };
   }
 }
 
+export default PatternDetector;
+
 // ---------------------------------------------------------------------------
-// Module-scope helpers (kept private to this file; not exported for testing —
-// public API surface is the `detect()` method).
+// Module-scope helpers (private to this file).
 // ---------------------------------------------------------------------------
 
-function buildDetection(entry, evidence, confidence) {
-  return {
-    name: entry.name,
-    type: entry.type,
-    confidence: clamp01(confidence),
-    evidence,
-    recommendation: entry.recommended_response || entry.recommendation || '',
-    memoryKey: `pattern_${entry.name}_last_flagged`,
-    severity: entry.severity || 'medium',
-  };
+function nutritionTail(windows, n) {
+  const days = windows.nutrition;
+  if (!Array.isArray(days) || days.length === 0) return [];
+  return days.slice(-n);
 }
 
 function mean(values) {
@@ -357,30 +326,55 @@ function firstNumber(...candidates) {
   return NaN;
 }
 
-// Confidence model parameters. The "margin" is the fractional distance from
-// the threshold in the matching direction. Margin >= MARGIN_FOR_FULL → 1.0;
-// margin = 0 (just barely matching) → 0; linearly interpolated between.
-const MARGIN_FOR_FULL = 0.5;
-
 /**
- * Confidence when signal is required to EXCEED a threshold.
- * margin = (signal - threshold) / threshold.
- * Far above → 1.0; just barely above → ~0.
+ * Build a primitive result for an `_lt` check (signal must be below threshold).
  */
-function confidenceExceeded(signal, threshold) {
-  if (!Number.isFinite(signal) || !Number.isFinite(threshold) || threshold === 0) return 0;
-  const margin = (signal - threshold) / threshold;
-  return clamp01(margin / MARGIN_FOR_FULL);
+function matchLt(signal, threshold, evidenceKey, evidenceValue) {
+  if (!Number.isFinite(signal) || !Number.isFinite(threshold)) return null;
+  return {
+    match: signal < threshold,
+    signal,
+    evidenceKey,
+    evidenceValue,
+  };
 }
 
 /**
- * Confidence when signal is required to be BELOW a threshold.
- * margin = (threshold - signal) / threshold.
- * Far below → 1.0; just barely below → ~0.
+ * Build a primitive result for a `_gt` check (signal must be above threshold).
  */
-function confidenceBelow(signal, threshold) {
-  if (!Number.isFinite(signal) || !Number.isFinite(threshold) || threshold === 0) return 0;
-  const margin = (threshold - signal) / threshold;
+function matchGt(signal, threshold, evidenceKey, evidenceValue) {
+  if (!Number.isFinite(signal) || !Number.isFinite(threshold)) return null;
+  return {
+    match: signal > threshold,
+    signal,
+    evidenceKey,
+    evidenceValue,
+  };
+}
+
+/**
+ * Confidence per primitive check. Boolean primitives that opt into
+ * `booleanFullConfidence: true` contribute 1.0. Otherwise margin is computed
+ * from |threshold - signal| / |threshold|, divided by MARGIN_FOR_FULL,
+ * clamped to [0, 1]. The pattern's overall confidence is the minimum across
+ * checks (AND semantics).
+ */
+function scoreConfidence(checks) {
+  if (!checks.length) return 0;
+  let min = 1;
+  for (const c of checks) {
+    const component = checkConfidence(c);
+    if (component < min) min = component;
+  }
+  return clamp01(min);
+}
+
+function checkConfidence(c) {
+  if (c.booleanFullConfidence) return 1;
+  const t = Math.abs(c.threshold);
+  if (t === 0 || !Number.isFinite(t)) return 0;
+  const diff = Math.abs(c.threshold - c.signal);
+  const margin = diff / t;
   return clamp01(margin / MARGIN_FOR_FULL);
 }
 
@@ -393,12 +387,12 @@ function countSkippedBreakfastDays(nutritionDays) {
   let count = 0;
   for (const day of nutritionDays) {
     const items = Array.isArray(day.food_items) ? day.food_items : [];
-    if (items.length === 0) continue; // no food at all = nothing to evaluate
+    if (items.length === 0) continue;
     const timestamps = items
       .map((it) => parseHour(it?.timestamp))
       .filter((h) => Number.isFinite(h))
       .sort((a, b) => a - b);
-    if (timestamps.length === 0) continue; // no timestamp data → don't count
+    if (timestamps.length === 0) continue;
     if (timestamps[0] >= BREAKFAST_CUTOFF_HOUR) count++;
   }
   return count;
@@ -449,8 +443,8 @@ function weightDeltaOverDays(weightSeries, days) {
 
 /**
  * Compare protein avg of the trailing half vs. earlier half of the nutrition
- * window. Returns the fractional drop ((earlier - recent) / earlier), or
- * null if insufficient data. Negative means protein actually rose.
+ * window. Returns the fractional drop ((earlier - recent) / earlier), or null
+ * if insufficient data. Negative means protein actually rose.
  */
 function proteinDropPct(nutritionDays) {
   if (!Array.isArray(nutritionDays) || nutritionDays.length < 4) return null;
@@ -464,12 +458,11 @@ function proteinDropPct(nutritionDays) {
 }
 
 /**
- * meal_repetition_index — fraction of days where ≥3 of the top-most-common
- * food names (across the window) appear. Substring-insensitive name match.
+ * meal_repetition_index — fraction of days where the top-3 most-common food
+ * names (across the window) all appear. Substring-insensitive name match.
  */
 function mealRepetitionIndex(nutritionDays) {
   if (!Array.isArray(nutritionDays) || nutritionDays.length === 0) return 0;
-  // Tally each food name across the window.
   const tally = new Map();
   for (const day of nutritionDays) {
     const items = Array.isArray(day.food_items) ? day.food_items : [];
@@ -482,13 +475,11 @@ function mealRepetitionIndex(nutritionDays) {
     }
   }
   if (tally.size === 0) return 0;
-  // Top 3 most-common foods.
   const top3 = Array.from(tally.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3)
     .map(([name]) => name);
   if (top3.length === 0) return 0;
-  // Fraction of days containing all top-3 (or as many as exist).
   let daysWithAll = 0;
   for (const day of nutritionDays) {
     const items = Array.isArray(day.food_items) ? day.food_items : [];
@@ -508,9 +499,6 @@ function isBikeWorkout(w) {
 function isProgrammedWorkout(w) {
   if (!w) return false;
   if (typeof w.program_name === 'string' && w.program_name.trim().length > 0) return true;
-  // Fallback heuristic: name references known programs.
   const name = String(w.name || '').toLowerCase();
   return /(stronglifts|5x5|wendler|531|gzclp|smolov|starting strength)/i.test(name);
 }
-
-export default PatternDetector;
