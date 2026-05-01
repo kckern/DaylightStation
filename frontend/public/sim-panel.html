@@ -487,6 +487,10 @@
             <button onclick="triggerCycleChallenge()">Trigger Cycle</button>
             <button onclick="swapCycleRider()">Swap Rider</button>
           </div>
+          <div class="btn-row">
+            <button id="cycle-demo-btn" onclick="runCycleDemo()" style="background:#5a3d10;flex:1">▶ Run Cycle Demo (~3 min)</button>
+          </div>
+          <div id="cycle-demo-status" style="font-size:11px;color:#bbb;padding:4px 0;min-height:14px"></div>
         </div>
       </div>`;
 
@@ -640,6 +644,106 @@
         alert(`Swap failed: ${result?.reason || 'unknown'}`);
       }
       render();
+    }
+
+    let cycleDemoActive = false;
+    let cycleDemoRpmHold = null;
+
+    function setDemoStatus(text) {
+      const el = document.getElementById('cycle-demo-status');
+      if (el) el.textContent = text;
+    }
+
+    function setDemoRpm(equipmentId, rpm, sustained) {
+      if (cycleDemoRpmHold) { clearInterval(cycleDemoRpmHold); cycleDemoRpmHold = null; }
+      controller.setRpm(equipmentId, rpm);
+      if (sustained) {
+        // The cycle SM reads RPM from cadence map; freshness is per-message, so
+        // re-send every second to keep the cached value warm.
+        cycleDemoRpmHold = setInterval(() => controller.setRpm(equipmentId, rpm), 1000);
+      }
+    }
+
+    async function runCycleDemo() {
+      if (cycleDemoActive) return;
+      cycleDemoActive = true;
+      const btn = document.getElementById('cycle-demo-btn');
+      if (btn) { btn.disabled = true; btn.textContent = '⏵ Running…'; }
+
+      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+      try {
+        const equipment = controller.getEquipment?.() || [];
+        const cycleAce = equipment.find(e => e.equipmentId === 'cycle_ace');
+        if (!cycleAce) { alert('No cycle_ace equipment found.'); return; }
+
+        const selections = controller.listCycleSelections?.() || [];
+        const sel = selections.find(s => s.equipment === 'cycle_ace');
+        if (!sel) { alert('No cycle selection found in policy set.'); return; }
+
+        const riderId = cycleAce.eligibleUsers?.[0];
+
+        // 1. Activate two HR devices
+        setDemoStatus('1/8 Activating HR session for 2 devices…');
+        const devices = controller.getDevices();
+        devices.slice(0, 2).forEach(d => controller.startAutoSession(d.deviceId, { phaseOffset: 200 }));
+        await sleep(3000);
+
+        // 2. Trigger
+        setDemoStatus(`2/8 Triggering cycle challenge — rider=${riderId || 'auto'}`);
+        const trig = controller.triggerCycleChallenge({ selectionId: sel.id, riderId });
+        if (!trig?.success) {
+          setDemoStatus(`Trigger failed: ${trig?.reason || 'unknown'}`);
+          alert(`Trigger failed: ${trig?.reason || 'unknown'}`);
+          return;
+        }
+        render();
+
+        // 3. INIT — RPM 0
+        setDemoStatus('3/8 INIT — RPM 0, slate-blue ring (6s)');
+        setDemoRpm('cycle_ace', 0, false);
+        await sleep(6000);
+
+        // 4. RAMP — RPM 35
+        setDemoStatus('4/8 RAMP — RPM 35, ring should turn warm yellow (6s)');
+        setDemoRpm('cycle_ace', 35, true);
+        await sleep(6000);
+
+        // 5. MAINTAIN — RPM 75
+        setDemoStatus('5/8 MAINTAIN — RPM 75, ring should turn green (8s)');
+        setDemoRpm('cycle_ace', 75, true);
+        await sleep(8000);
+
+        // 6. LOCKED — RPM 0
+        setDemoStatus('6/8 LOCKED — RPM 0, ring red, video dims (8s)');
+        setDemoRpm('cycle_ace', 0, false);
+        await sleep(8000);
+
+        // 7. RECOVER — RPM 80
+        setDemoStatus('7/8 RECOVER — RPM 80, unlocking back to ramp/maintain (8s)');
+        setDemoRpm('cycle_ace', 80, true);
+        await sleep(8000);
+
+        // 8. PHASES — RPM 85 sustained until clear or timeout
+        setDemoStatus('8/8 PHASES — RPM 85, advancing to success…');
+        setDemoRpm('cycle_ace', 85, true);
+        const deadline = Date.now() + 120000;
+        while (Date.now() < deadline) {
+          const gov = window.opener?.__fitnessGovernance;
+          if (!gov || gov.activeChallengeType !== 'cycle') break;
+          setDemoStatus(`8/8 PHASES — phase ${(gov.currentPhaseIndex ?? 0) + 1}/${gov.totalPhases}, state=${gov.cycleState}, rpm=${gov.currentRpm}`);
+          await sleep(1500);
+        }
+        setDemoStatus('Done. Cycle cleared.');
+      } catch (err) {
+        setDemoStatus('Demo error: ' + (err?.message || err));
+        console.error(err);
+      } finally {
+        if (cycleDemoRpmHold) { clearInterval(cycleDemoRpmHold); cycleDemoRpmHold = null; }
+        cycleDemoActive = false;
+        const btnEl = document.getElementById('cycle-demo-btn');
+        if (btnEl) { btnEl.disabled = false; btnEl.textContent = '▶ Run Cycle Demo (~3 min)'; }
+      }
     }
 
     function updateCycleSelectionPicker() {
