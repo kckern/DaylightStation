@@ -436,6 +436,77 @@ describe('cli/ingest-health-archive.cli.mjs', () => {
     expect(await pathExists(path.join(dataRoot, 'notes', '2024-01-15.md'))).toBe(true);
   });
 
+  it('passes archive.additional_privacy_exclusions through to ingestion (F4-C)', async () => {
+    // Source path contains the user-supplied addition substring → ingestion
+    // must reject it. The path doesn't actually need files; the privacy
+    // filter fires before any fs walk.
+    const blockedSrc = path.join(sourceDir, 'client-confidential-records');
+    await fs.mkdir(blockedSrc, { recursive: true });
+    await fs.writeFile(path.join(blockedSrc, 'case.md'), 'sensitive');
+
+    const playbookDir = path.join(tmpRoot, 'playbook');
+    await fs.mkdir(playbookDir, { recursive: true });
+    const playbookFile = path.join(playbookDir, 'playbook.yml');
+    await fs.writeFile(playbookFile, yaml.dump({
+      schema_version: 1,
+      archive: {
+        additional_privacy_exclusions: ['client-confidential'],
+      },
+    }));
+
+    await fs.writeFile(configPath, yaml.dump({
+      sources: {
+        notes: { path: blockedSrc, enabled: true },
+      },
+      sync: { cadence: 'manual' },
+    }));
+
+    const { exitCode, stderr } = await runCli([
+      '--user', TEST_USER_ID,
+      '--config', configPath,
+      '--data-root', dataRoot,
+      '--media-root', mediaRoot,
+      '--playbook', playbookFile,
+    ]);
+
+    expect(exitCode).toBe(1);
+    expect(stderr.toLowerCase()).toMatch(/exclusion/);
+    // No files copied to dest.
+    expect(await pathExists(path.join(dataRoot, 'notes', 'case.md'))).toBe(false);
+  });
+
+  it('does NOT block benign paths when only an unrelated addition is configured (F4-C)', async () => {
+    // Playbook adds an exclusion that does NOT match the source path; the
+    // floor also doesn't match. Ingestion should succeed.
+    const playbookDir = path.join(tmpRoot, 'playbook');
+    await fs.mkdir(playbookDir, { recursive: true });
+    const playbookFile = path.join(playbookDir, 'playbook.yml');
+    await fs.writeFile(playbookFile, yaml.dump({
+      schema_version: 1,
+      archive: {
+        additional_privacy_exclusions: ['therapy-notes'],
+      },
+    }));
+
+    await fs.writeFile(configPath, yaml.dump({
+      sources: {
+        notes: { path: path.join(sourceDir, 'notes'), enabled: true },
+      },
+      sync: { cadence: 'manual' },
+    }));
+
+    const { exitCode } = await runCli([
+      '--user', TEST_USER_ID,
+      '--config', configPath,
+      '--data-root', dataRoot,
+      '--media-root', mediaRoot,
+      '--playbook', playbookFile,
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(await pathExists(path.join(dataRoot, 'notes', '2024-01-15.md'))).toBe(true);
+  });
+
   it('exits 1 when a category fails (e.g. missing source)', async () => {
     await fs.writeFile(configPath, yaml.dump({
       sources: {

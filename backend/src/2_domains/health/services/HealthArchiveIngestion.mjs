@@ -23,17 +23,11 @@
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { BUILT_IN_CATEGORIES } from '../entities/HealthArchiveManifest.mjs';
-
-const EXCLUSION_PATTERNS = [
-  /email/i,
-  /chat/i,
-  /finance/i,
-  /journal\b/i,
-  /search-history/i,
-  /calendar/i,
-  /social/i,
-  /\bbanking\b/i,
-];
+import {
+  FLOOR_EXCLUSIONS,
+  compileAdditions,
+  matchesExclusion,
+} from '../policies/PrivacyExclusions.mjs';
 
 export class HealthArchiveIngestion {
   /**
@@ -61,9 +55,22 @@ export class HealthArchiveIngestion {
    *   categories (from playbook `archive.custom_categories`). Merged with
    *   `BUILT_IN_CATEGORIES` to form the accepted set. Pre-F4-B callers can
    *   omit this and the floor is used.
+   * @param {Iterable<string>} [opts.additionalPrivacyExclusions] - Per-user
+   *   extra substring patterns to reject (from playbook
+   *   `archive.additional_privacy_exclusions`). The code-level floor
+   *   (email/chat/...) is ALWAYS applied; these only ADD. See
+   *   `domains/health/policies/PrivacyExclusions.mjs`.
    * @returns {Promise<{copied: string[], skipped: string[], failed: Array<{file: string, error: string}>}>}
    */
-  async ingest({ userId, category, sourcePath, destPath, dryRun = false, customCategories }) {
+  async ingest({
+    userId,
+    category,
+    sourcePath,
+    destPath,
+    dryRun = false,
+    customCategories,
+    additionalPrivacyExclusions,
+  }) {
     if (!userId) throw new Error('HealthArchiveIngestion.ingest requires userId');
     const validCategories = new Set([
       ...BUILT_IN_CATEGORIES,
@@ -72,7 +79,15 @@ export class HealthArchiveIngestion {
     if (!validCategories.has(category)) {
       throw new Error(`Unknown category: ${category}`);
     }
-    if (EXCLUSION_PATTERNS.some((p) => p.test(sourcePath))) {
+    const compiledAdditions = compileAdditions(additionalPrivacyExclusions);
+    if (matchesExclusion(sourcePath, compiledAdditions)) {
+      // Distinguish floor matches from user-addition matches in the log so
+      // operators can tell whether a path was rejected by the immutable code
+      // floor or by the user's own playbook list.
+      const floorMatched = FLOOR_EXCLUSIONS.some((p) => p.test(sourcePath));
+      if (!floorMatched && compiledAdditions.length > 0) {
+        this.logger.info?.('privacy.addition_matched', { userId, category, sourcePath });
+      }
       this.logger.warn?.('ingest.exclusion_rejected', { userId, category, sourcePath });
       throw new Error(`Source path matches exclusion pattern: ${sourcePath}`);
     }

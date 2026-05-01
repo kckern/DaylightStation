@@ -66,6 +66,10 @@
  * @module domains/health/services/HealthArchiveScope
  */
 import path from 'node:path';
+import {
+  compileAdditions,
+  matchesExclusion,
+} from '../policies/PrivacyExclusions.mjs';
 
 const USER_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 // Workout-source segments must look like a path-safe identifier — no slashes,
@@ -79,20 +83,6 @@ const WORKOUT_SOURCE_PATTERN = /^[a-zA-Z0-9_-]+$/;
  * sources per-playbook via `archive.workout_sources` instead.
  */
 export const DEFAULT_WORKOUT_SOURCES = Object.freeze(['strava', 'garmin']);
-
-// Mirrors HealthArchiveIngestion.EXCLUSION_PATTERNS — defense in depth across
-// both the write surface (ingestion) and the read surface (longitudinal
-// tools). If you change one, change the other.
-const PRIVACY_EXCLUSIONS = [
-  /email/i,
-  /chat/i,
-  /finance/i,
-  /journal\b/i,
-  /search-history/i,
-  /calendar/i,
-  /social/i,
-  /\bbanking\b/i,
-];
 
 /**
  * Build the per-user whitelist of tail patterns. Each pattern matches the
@@ -170,6 +160,8 @@ export class HealthArchiveScope {
   #dataRoot;
   #mediaRoot;
   #workoutSources;
+  #additionalPrivacyExclusions;
+  #compiledAdditions;
 
   /**
    * @param {object} opts
@@ -181,8 +173,14 @@ export class HealthArchiveScope {
    *   include in the whitelist. Defaults to `DEFAULT_WORKOUT_SOURCES`. The
    *   factory (`HealthArchiveScopeFactory`) merges these with the user's
    *   `archive.workout_sources` playbook entry.
+   * @param {string[]} [opts.additionalPrivacyExclusions] Per-user extra
+   *   substring patterns to reject (from playbook
+   *   `archive.additional_privacy_exclusions`). The floor (email/chat/...) is
+   *   ALWAYS applied; these only ADD. Strings are escaped before regex
+   *   compilation, matched case-insensitively. See
+   *   `domains/health/policies/PrivacyExclusions.mjs` for floor + semantics.
    */
-  constructor({ dataRoot, mediaRoot, workoutSources } = {}) {
+  constructor({ dataRoot, mediaRoot, workoutSources, additionalPrivacyExclusions } = {}) {
     if (!dataRoot || typeof dataRoot !== 'string' || !path.isAbsolute(dataRoot)) {
       throw new Error(
         `HealthArchiveScope: dataRoot must be an absolute path string (got: ${String(dataRoot)})`,
@@ -198,6 +196,14 @@ export class HealthArchiveScope {
     this.#workoutSources = normalizeWorkoutSources(
       workoutSources === undefined ? [...DEFAULT_WORKOUT_SOURCES] : workoutSources,
     );
+    // Capture the raw additions for introspection (e.g. tests, logs) and
+    // compile them once for fast-path matching in isReadable.
+    this.#additionalPrivacyExclusions = Object.freeze(
+      Array.isArray(additionalPrivacyExclusions)
+        ? additionalPrivacyExclusions.filter((s) => typeof s === 'string' && s.trim().length > 0)
+        : [],
+    );
+    this.#compiledAdditions = compileAdditions(this.#additionalPrivacyExclusions);
   }
 
   /** @returns {string} configured absolute dataRoot (normalized) */
@@ -208,6 +214,13 @@ export class HealthArchiveScope {
 
   /** @returns {ReadonlyArray<string>} workout-source path segments in scope */
   get workoutSources() { return this.#workoutSources; }
+
+  /**
+   * @returns {ReadonlyArray<string>} the user-supplied additional
+   *   privacy-exclusion substrings (post-trim, post-filter). The code-level
+   *   floor is NOT included here — see `policies/PrivacyExclusions.mjs`.
+   */
+  get additionalPrivacyExclusions() { return this.#additionalPrivacyExclusions; }
 
   /**
    * Validate userId format. Throws on invalid input. Use this at every tool
@@ -300,10 +313,11 @@ export class HealthArchiveScope {
     // Normalize so `..` segments collapse before whitelist matching.
     const normalized = path.normalize(absPath);
 
-    // Privacy exclusion is checked AGAINST the normalized path. Anything
-    // matching email/chat/finance/journal/search-history/calendar/social/
-    // banking is rejected even if the rest of the path is whitelisted.
-    if (PRIVACY_EXCLUSIONS.some((re) => re.test(normalized))) return false;
+    // Privacy exclusion is checked AGAINST the normalized path. The floor
+    // (email/chat/finance/journal/search-history/calendar/social/banking) is
+    // unconditional. The user's playbook can ADD entries via
+    // `archive.additional_privacy_exclusions` — they are merged here.
+    if (matchesExclusion(normalized, this.#compiledAdditions)) return false;
 
     // Cross-user shared archive: must live under the configured mediaRoot
     // AND match one of the workout-source archive tails.

@@ -33,6 +33,15 @@ archive:
       destination: structured
     - key: pose-screens
       destination: media
+  # F4-C: per-user additional privacy-exclusion substrings. The code-level
+  # floor (email, chat, finance, journal, search-history, calendar, social,
+  # banking) is ALWAYS applied; users CANNOT remove floor entries — they only
+  # ADD their own. Match semantics: case-insensitive substring after regex
+  # metacharacter escaping. See backend/src/2_domains/health/policies/
+  # PrivacyExclusions.mjs.
+  additional_privacy_exclusions:
+    - therapy-notes
+    - client-confidential
 
 named_periods:
   fixture-cut-2024:

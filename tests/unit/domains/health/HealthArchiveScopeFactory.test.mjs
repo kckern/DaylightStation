@@ -220,6 +220,123 @@ describe('HealthArchiveScopeFactory', () => {
     expect(events).toContain('archive_scope_factory.cache_hit');
   });
 
+  describe('additional privacy exclusions (F4-C)', () => {
+    it('passes archive.additional_privacy_exclusions through to the scope it builds', async () => {
+      const loader = makePersonalContextLoader({
+        'test-user': {
+          archive: {
+            additional_privacy_exclusions: ['therapy-notes', 'client-confidential'],
+          },
+        },
+      });
+      const factory = new HealthArchiveScopeFactory({
+        dataRoot: DATA_ROOT,
+        mediaRoot: MEDIA_ROOT,
+        personalContextLoader: loader,
+      });
+
+      const scope = await factory.forUser('test-user');
+      expect([...scope.additionalPrivacyExclusions]).toEqual([
+        'therapy-notes',
+        'client-confidential',
+      ]);
+      // The produced scope rejects matching paths.
+      expect(scope.isReadable(
+        abs('data/users/test-user/lifelog/archives/notes/therapy-notes/2024.md'),
+        'test-user',
+      )).toBe(false);
+      expect(scope.isReadable(
+        abs('data/users/test-user/lifelog/archives/notes/client-confidential/case.md'),
+        'test-user',
+      )).toBe(false);
+    });
+
+    it('without playbook additions, only the floor applies (regression)', async () => {
+      const loader = makePersonalContextLoader({
+        'test-user': { archive: { workout_sources: ['strava'] } /* no additions */ },
+      });
+      const factory = new HealthArchiveScopeFactory({
+        dataRoot: DATA_ROOT,
+        mediaRoot: MEDIA_ROOT,
+        personalContextLoader: loader,
+      });
+
+      const scope = await factory.forUser('test-user');
+      expect([...scope.additionalPrivacyExclusions]).toEqual([]);
+      // Floor still rejects email/banking/etc.
+      expect(scope.isReadable(
+        abs('data/users/test-user/lifelog/archives/notes/email-thread.md'),
+        'test-user',
+      )).toBe(false);
+      // Benign path still passes.
+      expect(scope.isReadable(
+        abs('data/users/test-user/lifelog/archives/notes/training-log.md'),
+        'test-user',
+      )).toBe(true);
+    });
+
+    it('logs privacy.addition_matched at info when a scope is built with additions', async () => {
+      const info = vi.fn();
+      const loader = makePersonalContextLoader({
+        'test-user': {
+          archive: { additional_privacy_exclusions: ['therapy-notes'] },
+        },
+      });
+      const factory = new HealthArchiveScopeFactory({
+        dataRoot: DATA_ROOT,
+        mediaRoot: MEDIA_ROOT,
+        personalContextLoader: loader,
+        logger: { debug: vi.fn(), info, warn: vi.fn() },
+      });
+      await factory.forUser('test-user');
+      const events = info.mock.calls.map((c) => c[0]);
+      expect(events).toContain('privacy.addition_matched');
+    });
+
+    it('does NOT log privacy.addition_matched when there are no additions', async () => {
+      const info = vi.fn();
+      const loader = makePersonalContextLoader({
+        'test-user': { archive: { workout_sources: ['strava'] } },
+      });
+      const factory = new HealthArchiveScopeFactory({
+        dataRoot: DATA_ROOT,
+        mediaRoot: MEDIA_ROOT,
+        personalContextLoader: loader,
+        logger: { debug: vi.fn(), info, warn: vi.fn() },
+      });
+      await factory.forUser('test-user');
+      const events = info.mock.calls.map((c) => c[0]);
+      expect(events).not.toContain('privacy.addition_matched');
+    });
+
+    it('drops non-string and whitespace-only entries from playbook additions', async () => {
+      const loader = makePersonalContextLoader({
+        'test-user': {
+          archive: {
+            additional_privacy_exclusions: [
+              '  therapy-notes  ',
+              '',
+              '   ',
+              null,
+              42,
+              'client-confidential',
+            ],
+          },
+        },
+      });
+      const factory = new HealthArchiveScopeFactory({
+        dataRoot: DATA_ROOT,
+        mediaRoot: MEDIA_ROOT,
+        personalContextLoader: loader,
+      });
+      const scope = await factory.forUser('test-user');
+      expect([...scope.additionalPrivacyExclusions]).toEqual([
+        'therapy-notes',
+        'client-confidential',
+      ]);
+    });
+  });
+
   it('treats playbook load errors as graceful — falls back to defaults', async () => {
     const loader = {
       loadPlaybook: vi.fn(async () => { throw new Error('boom'); }),
