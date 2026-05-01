@@ -107,6 +107,7 @@
     "rt:player": "npx playwright test tests/runtime/player --headed",
     "rt:fitness": "npx playwright test tests/runtime/fitness-session --headed",
     "rt:finance": "npx playwright test tests/runtime/finance --headed",
-    "test:slot-machine": "npx playwright test tests/live/flow/admin/content-search-combobox/11-slot-machine.runtime.test.mjs --reporter=line"
+    "test:slot-machine": "npx playwright test tests/live/flow/admin/content-search-combobox/11-slot-machine.runtime.test.mjs --reporter=line",
+    "ingest:health-archive": "node cli/ingest-health-archive.cli.mjs"
   }
 }
