@@ -24,7 +24,7 @@ import { nowDate } from '#system/utils/time.mjs';
  * @returns {express.Router}
  */
 export function createHealthRouter(config) {
-  const { healthService, healthStore, configService, nutriListStore, dashboardService, catalogService, webNutribotAdapter, longitudinalService, setDailyCoachingUseCase, logger = console } = config;
+  const { healthService, healthStore, configService, nutriListStore, dashboardService, catalogService, webNutribotAdapter, longitudinalService, setDailyCoachingUseCase, personalContextLoader, logger = console } = config;
   const router = express.Router();
 
   // JSON parsing middleware
@@ -212,6 +212,42 @@ export function createHealthRouter(config) {
       message: 'Health coaching data retrieved successfully',
       data: coachingData
     });
+  }));
+
+  /**
+   * GET /health/coaching/schema
+   * Return the user's coaching dimension schema (F2-D). The frontend's
+   * CoachingComplianceCard fetches this on mount and renders one input row
+   * per declared dimension. When the user has no playbook (or the playbook
+   * lacks `coaching_dimensions`), returns `{ coaching_dimensions: [] }` and
+   * the UI shows an empty-state message.
+   */
+  router.get('/coaching/schema', asyncHandler(async (req, res) => {
+    const username = req.query.username || configService?.getHeadOfHousehold?.();
+    if (!username) {
+      return res.status(400).json({ error: 'username required' });
+    }
+    if (!personalContextLoader || typeof personalContextLoader.loadPlaybook !== 'function') {
+      logger.warn?.('health.coaching.schema.loader_missing', { username });
+      return res.json({ coaching_dimensions: [] });
+    }
+    try {
+      const playbook = await personalContextLoader.loadPlaybook(username);
+      const dims = Array.isArray(playbook?.coaching_dimensions)
+        ? playbook.coaching_dimensions
+        : [];
+      logger.info?.('health.coaching.schema.loaded', {
+        username,
+        dimensionCount: dims.length,
+      });
+      return res.json({ coaching_dimensions: dims });
+    } catch (err) {
+      logger.warn?.('health.coaching.schema.load_failed', {
+        username,
+        error: err.message,
+      });
+      return res.status(500).json({ error: err.message });
+    }
   }));
 
   /**

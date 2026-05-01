@@ -4,23 +4,10 @@ import { Assignment } from '../../framework/Assignment.mjs';
 import { OutputValidator } from '../../framework/OutputValidator.mjs';
 import { coachingMessageSchema } from '../schemas/coachingMessage.mjs';
 
-// F-003 default thresholds. Used when the user's playbook lacks a
-// `coaching_thresholds` section (or omits an individual dimension). The
-// defaults intentionally err on the side of NOT nagging — only fire a
-// historical-precedent CTA after a multi-day documented lapse.
-const DEFAULT_COMPLIANCE_THRESHOLDS = Object.freeze({
-  post_workout_protein: {
-    consecutive_misses_trigger: 3,
-    cta_text: 'Multiple consecutive days without the post-workout protein. ' +
-      'This is documented as a high-leverage daily action — worth re-anchoring tomorrow.',
-  },
-  daily_strength_micro: {
-    untracked_run_trigger: 5,
-    cta_text: 'Multiple days without the daily strength micro-drill. ' +
-      'Daily-frequency exposure is the lever for this dimension, not session volume.',
-  },
-});
-
+// F-003 / F2-C compliance CTA suppression TTL. The thresholds + CTA text
+// themselves come entirely from playbook YAML (`coaching_dimensions[*]`);
+// there are no hardcoded defaults in code. When the playbook declares no
+// dimensions, this assignment skips the compliance section entirely.
 const COMPLIANCE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 // F-004 PatternDetector integration. The detector receives a 30-day window per
@@ -386,17 +373,24 @@ export class MorningBrief extends Assignment {
   /**
    * Detect compliance gaps that warrant a historical-precedent CTA.
    *
-   * Logic:
+   * Logic (F2-C: playbook-driven, no hardcoded dimension names):
    *   1. Call get_compliance_summary. If the tool errors or is missing,
    *      return [] — never block the brief on this signal.
-   *   2. Load the user's playbook (when a loader is wired). The playbook
-   *      may expose a `coaching_thresholds` section with per-dimension
-   *      `consecutive_misses_trigger` / `untracked_run_trigger` thresholds
-   *      and `cta_text`. Fall back to DEFAULT_COMPLIANCE_THRESHOLDS for
-   *      any missing field.
-   *   3. For each tracked dimension, compare the current trailing streak
-   *      against its threshold. If crossed AND the working-memory TTL key
-   *      is not active, emit a CTA and stamp the memory key (7-day TTL).
+   *   2. Load the user's playbook (when a loader is wired). Each entry in
+   *      `coaching_dimensions[]` declares its own type, thresholds, and
+   *      cta_text. Without a playbook we can't fire CTAs (which thresholds
+   *      would we use?) — return [].
+   *   3. For each declared dimension, compare its trailing streak against
+   *      the declared threshold for that type. If crossed AND the
+   *      working-memory TTL key is not active, emit a CTA and stamp the
+   *      memory key (7-day TTL).
+   *
+   *   Threshold conventions per type:
+   *     - boolean → `thresholds.consecutive_misses_trigger` against
+   *                 `currentMissStreak`
+   *     - numeric → `thresholds.untracked_run_trigger` against
+   *                 `currentUntrackedStreak`
+   *     - text    → no thresholds (text dimensions are too noisy for v1)
    *
    * @returns {Promise<Array<{ dimension: string, message: string }>>}
    */
@@ -423,14 +417,16 @@ export class MorningBrief extends Assignment {
 
     logger?.info?.('morning_brief.compliance.queried', { userId });
 
-    // Resolve thresholds — playbook overrides defaults per-field.
-    let playbookThresholds = null;
+    // Resolve the playbook's coaching_dimensions. Without it there's no
+    // way to know which streaks matter or what to say — return [].
+    let dimensionsSchema = null;
     if (personalContextLoader && typeof personalContextLoader.loadPlaybook === 'function') {
       try {
         const playbook = await personalContextLoader.loadPlaybook(userId);
-        playbookThresholds = playbook?.coaching_thresholds || null;
+        if (Array.isArray(playbook?.coaching_dimensions)) {
+          dimensionsSchema = playbook.coaching_dimensions;
+        }
       } catch (err) {
-        // Loader failure is non-fatal — fall back to defaults silently.
         logger?.warn?.('morning_brief.compliance.error', {
           stage: 'playbook_load',
           error: err?.message,
@@ -438,59 +434,75 @@ export class MorningBrief extends Assignment {
       }
     }
 
-    const ctas = [];
-    const dims = summary.dimensions;
-
-    // Protein: trailing miss-streak. The playbook's protein CTA references
-    // the documented "highest-leverage daily action" copy; the default
-    // fallback uses generic but still actionable wording.
-    const proteinDim = dims.post_workout_protein || {};
-    const proteinCfg = {
-      ...DEFAULT_COMPLIANCE_THRESHOLDS.post_workout_protein,
-      ...(playbookThresholds?.post_workout_protein || {}),
-    };
-    const proteinStreak = Number.isFinite(proteinDim.currentMissStreak)
-      ? proteinDim.currentMissStreak
-      : 0;
-    if (proteinStreak >= proteinCfg.consecutive_misses_trigger) {
-      const memKey = 'compliance_post_workout_protein_last_flagged';
-      if (memory?.get?.(memKey)) {
-        logger?.info?.('morning_brief.compliance.suppressed_by_memory', {
-          dimension: 'post_workout_protein',
-        });
-      } else {
-        ctas.push({ dimension: 'post_workout_protein', message: proteinCfg.cta_text });
-        memory?.set?.(memKey, new Date().toISOString(), { ttl: COMPLIANCE_TTL_MS });
-        logger?.info?.('morning_brief.compliance.cta_triggered', {
-          dimension: 'post_workout_protein',
-          currentMissStreak: proteinStreak,
-        });
-      }
+    if (!dimensionsSchema || dimensionsSchema.length === 0) {
+      logger?.debug?.('morning_brief.compliance.no_dimensions_schema', { userId });
+      return [];
     }
 
-    // Strength: trailing untracked-streak (no daily-drill log for N days).
-    const strengthDim = dims.daily_strength_micro || {};
-    const strengthCfg = {
-      ...DEFAULT_COMPLIANCE_THRESHOLDS.daily_strength_micro,
-      ...(playbookThresholds?.daily_strength_micro || {}),
-    };
-    const strengthStreak = Number.isFinite(strengthDim.currentUntrackedStreak)
-      ? strengthDim.currentUntrackedStreak
-      : 0;
-    if (strengthStreak >= strengthCfg.untracked_run_trigger) {
-      const memKey = 'compliance_daily_strength_micro_last_flagged';
+    const ctas = [];
+    const dims = summary.dimensions || {};
+
+    for (const dim of dimensionsSchema) {
+      if (!dim?.key || !dim?.type) continue;
+      const summaryDim = dims[dim.key] || {};
+      const thresholds = dim.thresholds || {};
+      const ctaText = dim.cta_text;
+
+      let crossed = false;
+      let context = {};
+      if (dim.type === 'boolean') {
+        const trigger = thresholds.consecutive_misses_trigger;
+        const streak = Number.isFinite(summaryDim.currentMissStreak)
+          ? summaryDim.currentMissStreak
+          : 0;
+        if (Number.isFinite(trigger) && trigger > 0 && streak >= trigger) {
+          crossed = true;
+          context = { currentMissStreak: streak, threshold: trigger };
+        }
+      } else if (dim.type === 'numeric') {
+        const trigger = thresholds.untracked_run_trigger;
+        const streak = Number.isFinite(summaryDim.currentUntrackedStreak)
+          ? summaryDim.currentUntrackedStreak
+          : 0;
+        if (Number.isFinite(trigger) && trigger > 0 && streak >= trigger) {
+          crossed = true;
+          context = { currentUntrackedStreak: streak, threshold: trigger };
+        }
+      } else if (dim.type === 'text') {
+        // Text dimensions don't currently have streak math — skip CTAs.
+        logger?.debug?.('morning_brief.compliance.text_dim_skipped', {
+          dimension: dim.key,
+        });
+        continue;
+      } else {
+        logger?.debug?.('morning_brief.compliance.unsupported_type', {
+          dimension: dim.key,
+          type: dim.type,
+        });
+        continue;
+      }
+
+      if (!crossed) continue;
+      if (!ctaText || typeof ctaText !== 'string' || ctaText.trim().length === 0) {
+        logger?.debug?.('morning_brief.compliance.no_cta_text', { dimension: dim.key });
+        continue;
+      }
+
+      const memKey = `compliance_${dim.key}_last_flagged`;
       if (memory?.get?.(memKey)) {
         logger?.info?.('morning_brief.compliance.suppressed_by_memory', {
-          dimension: 'daily_strength_micro',
+          dimension: dim.key,
         });
-      } else {
-        ctas.push({ dimension: 'daily_strength_micro', message: strengthCfg.cta_text });
-        memory?.set?.(memKey, new Date().toISOString(), { ttl: COMPLIANCE_TTL_MS });
-        logger?.info?.('morning_brief.compliance.cta_triggered', {
-          dimension: 'daily_strength_micro',
-          currentUntrackedStreak: strengthStreak,
-        });
+        continue;
       }
+
+      const message = ctaText.trim();
+      ctas.push({ dimension: dim.key, message });
+      memory?.set?.(memKey, new Date().toISOString(), { ttl: COMPLIANCE_TTL_MS });
+      logger?.info?.('morning_brief.compliance.cta_triggered', {
+        dimension: dim.key,
+        ...context,
+      });
     }
 
     return ctas;

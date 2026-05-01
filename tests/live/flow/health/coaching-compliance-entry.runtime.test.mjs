@@ -35,16 +35,16 @@ test.describe('Health Hub coaching compliance entry', () => {
     await expect(card).toBeVisible({ timeout: 10000 });
 
     // Toggle protein taken
-    const proteinToggle = card.getByTestId('coaching-protein-toggle');
+    const proteinToggle = card.getByTestId('coaching-post_workout_protein-toggle');
     await expect(proteinToggle).toBeVisible();
     await proteinToggle.click();
 
     // Enter reps via the NumberInput (Mantine wraps an input)
-    const repsInput = card.getByTestId('coaching-reps-input').locator('input');
+    const repsInput = card.getByTestId('coaching-daily_strength_micro-reps-input').locator('input');
     await repsInput.fill('5');
 
     // Optional one-line note
-    const noteInput = card.getByTestId('coaching-note-input');
+    const noteInput = card.getByTestId('coaching-daily_note-input');
     await noteInput.fill('runtime test note');
 
     // Save
@@ -65,10 +65,10 @@ test.describe('Health Hub coaching compliance entry', () => {
       .first();
 
     // Set distinct rep count so we can spot it in the persisted record.
-    const repsInput = card.getByTestId('coaching-reps-input').locator('input');
+    const repsInput = card.getByTestId('coaching-daily_strength_micro-reps-input').locator('input');
     await repsInput.fill('7');
 
-    const proteinToggle = card.getByTestId('coaching-protein-toggle');
+    const proteinToggle = card.getByTestId('coaching-post_workout_protein-toggle');
     await proteinToggle.click();
 
     await card.getByTestId('coaching-save-button').click();

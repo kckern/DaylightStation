@@ -2679,8 +2679,37 @@ export function createHealthApiRouter(config) {
     healthStore: healthServices.healthStore,
   });
 
+  // PersonalContextLoader for the health router. Used by:
+  //  - SetDailyCoachingUseCase to resolve the per-user `coaching_dimensions`
+  //    schema for DailyCoachingEntry validation (F2-A)
+  //  - GET /coaching/schema endpoint (F2-D), so the frontend's
+  //    CoachingComplianceCard can render the right rows
+  const dataDirForCoaching = configService?.getDataDir?.() || './data';
+  const archiveRootForCoaching = path.resolve(dataDirForCoaching, 'users');
+  const yamlReaderForCoaching = {
+    readYaml: async (absPath) => {
+      try {
+        const content = await fs.readFile(absPath, 'utf8');
+        return yaml.load(content) || null;
+      } catch (err) {
+        if (err.code === 'ENOENT') return null;
+        logger.warn?.('health_router.personal_context.read_failed', {
+          path: absPath,
+          error: err?.message || String(err),
+        });
+        return null;
+      }
+    },
+  };
+  const personalContextLoader = new PersonalContextLoader({
+    dataService: yamlReaderForCoaching,
+    archiveRoot: archiveRootForCoaching,
+    logger,
+  });
+
   const setDailyCoachingUseCase = new SetDailyCoachingUseCase({
     healthStore: healthServices.healthStore,
+    personalContextLoader,
     logger,
   });
 
@@ -2691,6 +2720,7 @@ export function createHealthApiRouter(config) {
     dashboardService,
     longitudinalService,
     setDailyCoachingUseCase,
+    personalContextLoader,
     configService,
     catalogService,
     webNutribotAdapter,

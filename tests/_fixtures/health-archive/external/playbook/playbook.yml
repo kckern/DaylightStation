@@ -32,6 +32,39 @@ named_periods:
       Sample post-cut maintenance drift period for rebound-detection tests.
       Tracking compliance dropped to 40%, protein 110g avg, weight +3 lbs.
 
+coaching_dimensions:
+  - key: post_workout_protein
+    type: boolean
+    label: "Post-workout protein"
+    fields:
+      taken: { type: boolean, required: true }
+      timestamp: { type: string, required: false }
+      source: { type: string, required: false }
+    thresholds:
+      consecutive_misses_trigger: 3
+    cta_text: |
+      Multiple consecutive days without the post-workout protein. This is
+      documented as a high-leverage daily action — worth re-anchoring tomorrow.
+
+  - key: daily_strength_micro
+    type: numeric
+    label: "Daily strength micro"
+    fields:
+      movement: { type: string, required: true }
+      reps: { type: integer, required: true, min: 0 }
+    average_field: reps
+    thresholds:
+      untracked_run_trigger: 5
+    cta_text: |
+      Multiple days without the daily strength micro-drill. Daily-frequency
+      exposure is the lever for this dimension, not session volume.
+
+  - key: daily_note
+    type: text
+    label: "Daily note"
+    fields:
+      value: { type: string, required: true, max_length: 200 }
+
 patterns:
   - name: same-jog-rut
     type: failure_mode
