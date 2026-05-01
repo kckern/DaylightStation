@@ -19,6 +19,7 @@ const BUILTIN_TITLE_PATTERNS = [
   /warm[\s-]?up/i,
   /cool[\s-]?down/i,
   /stretch/i,
+  /cold[\s-]?start/i,  // 2026-05-01: catches Beachbody-style intro episodes
 ];
 
 /**
