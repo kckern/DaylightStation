@@ -99,3 +99,31 @@ describe('selectPrimaryMedia (backend)', () => {
     expect(isWarmup(kidsEvent)).toBe(false);
   });
 });
+
+describe('positional bias for multiple ≥10-min survivors (Plan 1 Task 2b)', () => {
+  const TEN_MIN_SEC = 10 * 60;
+
+  test('prefers the LAST ≥10-min event when two or more survive warmup filtering', () => {
+    const events = [
+      videoEvent('First Workout',  TEN_MIN_SEC + 60),
+      videoEvent('Second Workout', TEN_MIN_SEC + 30),
+    ];
+    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Second Workout');
+  });
+
+  test('prefers the LAST ≥10-min event even when an earlier one is longer', () => {
+    const events = [
+      videoEvent('First',  TEN_MIN_SEC + 5 * 60), // 15 min
+      videoEvent('Second', TEN_MIN_SEC + 30),     // 10.5 min
+    ];
+    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Second');
+  });
+
+  test('falls back to longest when only ONE survivor is ≥10 min', () => {
+    const events = [
+      videoEvent('Short', 5 * 60),               // 5 min
+      videoEvent('Long',  TEN_MIN_SEC + 2 * 60), // 12 min
+    ];
+    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Long');
+  });
+});
