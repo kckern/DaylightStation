@@ -10,7 +10,10 @@
 
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
-import { HealthArchiveScope } from '#domains/health/services/HealthArchiveScope.mjs';
+import {
+  HealthArchiveScope,
+  DEFAULT_WORKOUT_SOURCES,
+} from '#domains/health/services/HealthArchiveScope.mjs';
 
 const USER = 'test-user';
 const OTHER = 'other-user';
@@ -252,6 +255,92 @@ describe('HealthArchiveScope', () => {
       expect(() => HealthArchiveScope.assertValidUserId(null)).toThrow();
       expect(() => HealthArchiveScope.assertValidUserId(undefined)).toThrow();
       expect(() => HealthArchiveScope.assertValidUserId(123)).toThrow();
+    });
+  });
+
+  describe('workout-source vocabulary (F4-A)', () => {
+    it('exposes DEFAULT_WORKOUT_SOURCES = ["strava", "garmin"]', () => {
+      expect([...DEFAULT_WORKOUT_SOURCES]).toEqual(['strava', 'garmin']);
+    });
+
+    it('default workout sources still work without an explicit list', () => {
+      const s = new HealthArchiveScope({ dataRoot: DATA_ROOT, mediaRoot: MEDIA_ROOT });
+      expect(s.workoutSources).toEqual(['strava', 'garmin']);
+      expect(s.isReadable(
+        abs(`data/users/${USER}/lifelog/archives/strava/2024-08-12-run.json`),
+        USER,
+      )).toBe(true);
+      expect(s.isReadable(
+        abs(`data/users/${USER}/lifelog/archives/garmin/activities/abc.fit`),
+        USER,
+      )).toBe(true);
+    });
+
+    it('accepts a custom workoutSources list and whitelists it', () => {
+      const s = new HealthArchiveScope({
+        dataRoot: DATA_ROOT,
+        mediaRoot: MEDIA_ROOT,
+        workoutSources: ['apple_health'],
+      });
+      expect(s.workoutSources).toEqual(['apple_health']);
+      // apple_health is now whitelisted
+      expect(s.isReadable(
+        abs(`data/users/${USER}/lifelog/archives/apple_health/2024-08-12.xml`),
+        USER,
+      )).toBe(true);
+      // strava is NOT whitelisted any more — only the user's declared sources count
+      expect(s.isReadable(
+        abs(`data/users/${USER}/lifelog/archives/strava/2024-08-12-run.json`),
+        USER,
+      )).toBe(false);
+    });
+
+    it('shared (cross-user) media archive respects the workoutSources list too', () => {
+      const s = new HealthArchiveScope({
+        dataRoot: DATA_ROOT,
+        mediaRoot: MEDIA_ROOT,
+        workoutSources: ['strava', 'garmin', 'apple_health'],
+      });
+      expect(s.isReadable(abs('media/archives/strava/old.json'), USER)).toBe(true);
+      expect(s.isReadable(abs('media/archives/garmin/old.fit'), USER)).toBe(true);
+      expect(s.isReadable(abs('media/archives/apple_health/old.xml'), USER)).toBe(true);
+      // Sources NOT in the list aren't allowed even under the shared root.
+      expect(s.isReadable(abs('media/archives/whoop/old.json'), USER)).toBe(false);
+    });
+
+    it('rejects workoutSources that contain regex metacharacters or path separators', () => {
+      expect(() => new HealthArchiveScope({
+        dataRoot: DATA_ROOT,
+        mediaRoot: MEDIA_ROOT,
+        workoutSources: ['strava/../evil'],
+      })).toThrow();
+      expect(() => new HealthArchiveScope({
+        dataRoot: DATA_ROOT,
+        mediaRoot: MEDIA_ROOT,
+        workoutSources: ['..'],
+      })).toThrow();
+      expect(() => new HealthArchiveScope({
+        dataRoot: DATA_ROOT,
+        mediaRoot: MEDIA_ROOT,
+        workoutSources: ['ev|il'],
+      })).toThrow();
+    });
+
+    it('rejects non-array workoutSources', () => {
+      expect(() => new HealthArchiveScope({
+        dataRoot: DATA_ROOT,
+        mediaRoot: MEDIA_ROOT,
+        workoutSources: 'strava',
+      })).toThrow();
+    });
+
+    it('de-duplicates the list', () => {
+      const s = new HealthArchiveScope({
+        dataRoot: DATA_ROOT,
+        mediaRoot: MEDIA_ROOT,
+        workoutSources: ['strava', 'strava', 'garmin'],
+      });
+      expect([...s.workoutSources]).toEqual(['strava', 'garmin']);
     });
   });
 

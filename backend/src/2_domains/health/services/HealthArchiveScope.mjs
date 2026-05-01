@@ -10,22 +10,31 @@
  * Whitelist (verbatim from PRD F-106), anchored at the configured
  * `dataRoot` / `mediaRoot` (both absolute):
  *   - {dataRoot}/users/{userId}/lifelog/archives/weight.yaml
- *   - {dataRoot}/users/{userId}/lifelog/archives/strava/**
- *   - {dataRoot}/users/{userId}/lifelog/archives/garmin/**
+ *   - {dataRoot}/users/{userId}/lifelog/archives/<workout_source>/**
+ *       (workout_source ∈ this scope's `workoutSources` list — see F4-A)
  *   - {dataRoot}/users/{userId}/lifelog/archives/nutrition-history/**
  *   - {dataRoot}/users/{userId}/lifelog/archives/scans/**
  *   - {dataRoot}/users/{userId}/lifelog/archives/notes/**
  *   - {dataRoot}/users/{userId}/lifelog/archives/playbook/**
  *   - {dataRoot}/users/{userId}/health.yml
- *   - {mediaRoot}/archives/strava/**       (cross-user, no userId scope)
+ *   - {mediaRoot}/archives/<workout_source>/**   (cross-user, no userId scope)
+ *
+ * F4-A: workout-source vocabulary used to live in code as the literal path
+ * segments `strava` and `garmin`. It now flows through the constructor as
+ * `workoutSources: string[]` (default = `DEFAULT_WORKOUT_SOURCES`). Per-user
+ * scopes are constructed via `HealthArchiveScopeFactory` which merges the
+ * defaults with the user's `archive.workout_sources` from playbook.
  *
  * API shape:
  *   - `assertValidUserId` and `validatePathSegment` are pure regex/string
  *     checks and remain static — no roots required.
  *   - `isReadable` and `assertReadable` are instance methods because the
- *     whitelist must be anchored at a known absolute prefix. Construct via
- *     `new HealthArchiveScope({ dataRoot, mediaRoot })`. Bootstrap
- *     instantiates this once and injects it as a dependency (`archiveScope`).
+ *     whitelist must be anchored at known absolute prefixes and a known
+ *     workout-source vocabulary. Construct via
+ *     `new HealthArchiveScope({ dataRoot, mediaRoot, workoutSources? })`.
+ *     Bootstrap instantiates a per-user instance via
+ *     `HealthArchiveScopeFactory.forUser(userId)` and injects the factory
+ *     downstream as `archiveScopeFactory`.
  *
  * Defenses:
  *   - userId format validated (`/^[a-zA-Z0-9_-]+$/`) before any matching
@@ -40,6 +49,10 @@
  *     downstream tools (e.g. read_notes_file).
  *   - Privacy exclusion patterns (email/chat/finance/journal/search-history/
  *     calendar/social/banking) reject otherwise-whitelisted paths
+ *   - Workout-source segments (the dynamic part of the whitelist) are
+ *     validated against `/^[a-zA-Z0-9_-]+$/` at construction so a hostile
+ *     playbook can't smuggle regex metacharacters or path separators into
+ *     the whitelist.
  *
  * NOT covered (intentional, documented):
  *   - Symlink-based escape: this service is path-string only and does not
@@ -55,6 +68,17 @@
 import path from 'node:path';
 
 const USER_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
+// Workout-source segments must look like a path-safe identifier — no slashes,
+// no regex metacharacters, no traversal sequences.
+const WORKOUT_SOURCE_PATTERN = /^[a-zA-Z0-9_-]+$/;
+
+/**
+ * The two workout sources the codebase has historical knowledge of. Acts as
+ * the floor — every user gets these even without playbook config. Adding a
+ * source here is a code change with cross-cutting test impact; users add
+ * sources per-playbook via `archive.workout_sources` instead.
+ */
+export const DEFAULT_WORKOUT_SOURCES = Object.freeze(['strava', 'garmin']);
 
 // Mirrors HealthArchiveIngestion.EXCLUSION_PATTERNS — defense in depth across
 // both the write surface (ingestion) and the read surface (longitudinal
@@ -77,19 +101,18 @@ const PRIVACY_EXCLUSIONS = [
  * the configured dataRoot prefix; these regexes only check the suffix.
  *
  * @param {string} userId
+ * @param {string[]} workoutSources validated source identifiers
  * @returns {RegExp[]}
  */
-function buildUserWhitelistTails(userId) {
+function buildUserWhitelistTails(userId, workoutSources) {
   // Escape regex metachars in the userId — defense in depth even though the
   // userId pattern already restricts to [A-Za-z0-9_-].
   const u = userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const userBase = `users/${u}/lifelog/archives`;
-  return [
+  const tails = [
     // Single-file: weight.yaml
     new RegExp(`(?:^|\\/)${userBase}\\/weight\\.yaml$`),
-    // Directory globs (everything beneath the named subdir)
-    new RegExp(`(?:^|\\/)${userBase}\\/strava\\/.+`),
-    new RegExp(`(?:^|\\/)${userBase}\\/garmin\\/.+`),
+    // Static directory globs (everything beneath the named subdir)
     new RegExp(`(?:^|\\/)${userBase}\\/nutrition-history\\/.+`),
     new RegExp(`(?:^|\\/)${userBase}\\/scans\\/.+`),
     new RegExp(`(?:^|\\/)${userBase}\\/notes\\/.+`),
@@ -97,14 +120,56 @@ function buildUserWhitelistTails(userId) {
     // Single-file: health.yml (one level above lifelog/)
     new RegExp(`(?:^|\\/)users\\/${u}\\/health\\.yml$`),
   ];
+  // Dynamic workout-source globs. Sources are validated at construction so
+  // direct interpolation here is safe.
+  for (const src of workoutSources) {
+    tails.push(new RegExp(`(?:^|\\/)${userBase}\\/${src}\\/.+`));
+  }
+  return tails;
 }
 
-// Cross-user shared archive tail (only entry that does NOT bind to a userId).
-const SHARED_STRAVA_TAIL = /(?:^|\/)archives\/strava\/.+/;
+/**
+ * Cross-user shared archive tail. One regex per workout source; matches any
+ * path that lives under `archives/<source>/...` regardless of userId.
+ */
+function buildSharedTails(workoutSources) {
+  return workoutSources.map(
+    (src) => new RegExp(`(?:^|\\/)archives\\/${src}\\/.+`),
+  );
+}
+
+/**
+ * Validate and de-duplicate a workout-sources list. Throws on any element
+ * that doesn't look like a path-safe identifier. Returns a frozen array.
+ *
+ * @param {string[]} sources
+ * @returns {ReadonlyArray<string>}
+ */
+function normalizeWorkoutSources(sources) {
+  if (!Array.isArray(sources)) {
+    throw new Error(
+      `HealthArchiveScope: workoutSources must be an array (got: ${String(sources)})`,
+    );
+  }
+  const seen = new Set();
+  const out = [];
+  for (const raw of sources) {
+    if (typeof raw !== 'string' || !WORKOUT_SOURCE_PATTERN.test(raw)) {
+      throw new Error(
+        `HealthArchiveScope: invalid workoutSource "${String(raw)}" — must match ${WORKOUT_SOURCE_PATTERN}`,
+      );
+    }
+    if (seen.has(raw)) continue;
+    seen.add(raw);
+    out.push(raw);
+  }
+  return Object.freeze(out);
+}
 
 export class HealthArchiveScope {
   #dataRoot;
   #mediaRoot;
+  #workoutSources;
 
   /**
    * @param {object} opts
@@ -112,8 +177,12 @@ export class HealthArchiveScope {
    *   of `users/`). Required. e.g. `/srv/daylight/data`
    * @param {string} opts.mediaRoot Absolute path to the media root (the
    *   parent of `archives/`). Required. e.g. `/srv/daylight/media`
+   * @param {string[]} [opts.workoutSources] Workout-source path segments to
+   *   include in the whitelist. Defaults to `DEFAULT_WORKOUT_SOURCES`. The
+   *   factory (`HealthArchiveScopeFactory`) merges these with the user's
+   *   `archive.workout_sources` playbook entry.
    */
-  constructor({ dataRoot, mediaRoot } = {}) {
+  constructor({ dataRoot, mediaRoot, workoutSources } = {}) {
     if (!dataRoot || typeof dataRoot !== 'string' || !path.isAbsolute(dataRoot)) {
       throw new Error(
         `HealthArchiveScope: dataRoot must be an absolute path string (got: ${String(dataRoot)})`,
@@ -126,6 +195,9 @@ export class HealthArchiveScope {
     }
     this.#dataRoot = path.normalize(dataRoot);
     this.#mediaRoot = path.normalize(mediaRoot);
+    this.#workoutSources = normalizeWorkoutSources(
+      workoutSources === undefined ? [...DEFAULT_WORKOUT_SOURCES] : workoutSources,
+    );
   }
 
   /** @returns {string} configured absolute dataRoot (normalized) */
@@ -133,6 +205,9 @@ export class HealthArchiveScope {
 
   /** @returns {string} configured absolute mediaRoot (normalized) */
   get mediaRoot() { return this.#mediaRoot; }
+
+  /** @returns {ReadonlyArray<string>} workout-source path segments in scope */
+  get workoutSources() { return this.#workoutSources; }
 
   /**
    * Validate userId format. Throws on invalid input. Use this at every tool
@@ -231,9 +306,9 @@ export class HealthArchiveScope {
     if (PRIVACY_EXCLUSIONS.some((re) => re.test(normalized))) return false;
 
     // Cross-user shared archive: must live under the configured mediaRoot
-    // AND match the strava archive tail.
+    // AND match one of the workout-source archive tails.
     if (this.#startsWithRoot(normalized, this.#mediaRoot)
-        && SHARED_STRAVA_TAIL.test(normalized)) {
+        && buildSharedTails(this.#workoutSources).some((re) => re.test(normalized))) {
       return true;
     }
 
@@ -241,7 +316,7 @@ export class HealthArchiveScope {
     // a per-user tail pattern.
     if (!this.#startsWithRoot(normalized, this.#dataRoot)) return false;
 
-    const userTails = buildUserWhitelistTails(userId);
+    const userTails = buildUserWhitelistTails(userId, this.#workoutSources);
     return userTails.some((re) => re.test(normalized));
   }
 

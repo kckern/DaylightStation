@@ -194,7 +194,7 @@ import { createHomebotRouter } from '#api/v1/routers/homebot.mjs';
 import { AgentOrchestrator, EchoAgent, Scheduler } from '#apps/agents/index.mjs';
 import { HealthCoachAgent } from '#apps/agents/health-coach/index.mjs';
 import { PersonalContextLoader } from '../3_applications/health/PersonalContextLoader.mjs';
-import { HealthArchiveScope } from '#domains/health/services/HealthArchiveScope.mjs';
+import { HealthArchiveScopeFactory } from '#domains/health/services/HealthArchiveScopeFactory.mjs';
 import { SimilarPeriodFinder } from '#domains/health/services/SimilarPeriodFinder.mjs';
 import { PatternDetector } from '#domains/health/services/PatternDetector.mjs';
 import { CalibrationConstants } from '#domains/health/services/CalibrationConstants.mjs';
@@ -2983,14 +2983,20 @@ export async function createAgentsApiRouter(config) {
       logger,
     });
 
-    // F-102/103/104 longitudinal tool dependencies. The archiveScope enforces
-    // the F-106 path whitelist for read_notes_file and friends; the finder is
-    // a pure scoring service for find_similar_period. Both must be absolute
-    // paths — HealthArchiveScope hard-validates this at construction.
+    // F-102/103/104 longitudinal tool dependencies. The archiveScopeFactory
+    // builds per-user scopes that respect each user's `archive.workout_sources`
+    // playbook entry (F4-A). Falls back to DEFAULT_WORKOUT_SOURCES when a user
+    // has no `archive:` block. Both roots must be absolute — HealthArchiveScope
+    // hard-validates this at construction.
     const dataRoot = path.resolve(dataDir);
     const mediaDir = configService?.getMediaDir?.() || path.resolve(path.dirname(dataRoot), 'media');
     const mediaRoot = path.resolve(mediaDir);
-    const archiveScope = new HealthArchiveScope({ dataRoot, mediaRoot });
+    const archiveScopeFactory = new HealthArchiveScopeFactory({
+      dataRoot,
+      mediaRoot,
+      personalContextLoader,
+      logger,
+    });
     const similarPeriodFinder = new SimilarPeriodFinder({ logger });
     // F-004 PatternDetector — pure domain service consumed by MorningBrief.
     // Stateless, no I/O; instantiated once and shared across requests.
@@ -3020,7 +3026,7 @@ export async function createAgentsApiRouter(config) {
       messagingGateway,
       conversationId: conversationId ?? configService?.getNutribotConversationId?.() ?? null,
       personalContextLoader,
-      archiveScope,
+      archiveScopeFactory,
       similarPeriodFinder,
       patternDetector,
       calibrationConstants,

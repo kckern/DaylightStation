@@ -123,7 +123,7 @@ export class HealthCoachAgent extends BaseAgent {
       messagingGateway,
       conversationId,
       personalContextLoader,
-      archiveScope,
+      archiveScopeFactory,
       similarPeriodFinder,
       dataRoot,
     } = this.deps;
@@ -151,7 +151,7 @@ export class HealthCoachAgent extends BaseAgent {
       healthService,
       personalContextLoader,
       similarPeriodFinder,
-      archiveScope,
+      archiveScopeFactory,
       dataRoot,
     }));
 

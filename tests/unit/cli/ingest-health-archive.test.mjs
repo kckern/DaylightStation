@@ -293,6 +293,149 @@ describe('cli/ingest-health-archive.cli.mjs', () => {
     expect(await pathExists(path.join(dataRoot, 'notes', 'override-1.md'))).toBe(true);
   });
 
+  it('routes a structured custom category to data-root/<category>/ (F4-B)', async () => {
+    // Drop a fake hr-recovery dir into the source tree.
+    const hrSrc = path.join(sourceDir, 'hr-recovery');
+    await fs.mkdir(hrSrc, { recursive: true });
+    await fs.writeFile(path.join(hrSrc, '2024-09-01.csv'), 'rmssd,hf,lf\n42,200,300\n');
+
+    // Playbook declares the custom category at the default path
+    // (data/users/{user}/lifelog/archives/playbook/playbook.yml). Use --playbook
+    // to point at our temp playbook instead.
+    const playbookDir = path.join(tmpRoot, 'playbook');
+    await fs.mkdir(playbookDir, { recursive: true });
+    const playbookFile = path.join(playbookDir, 'playbook.yml');
+    await fs.writeFile(playbookFile, yaml.dump({
+      schema_version: 1,
+      archive: {
+        custom_categories: [
+          { key: 'hr-recovery', destination: 'structured' },
+        ],
+      },
+    }));
+
+    await fs.writeFile(configPath, yaml.dump({
+      sources: {
+        'hr-recovery': { path: hrSrc, enabled: true },
+      },
+      sync: { cadence: 'manual' },
+    }));
+
+    const { exitCode, stdout } = await runCli([
+      '--user', TEST_USER_ID,
+      '--config', configPath,
+      '--data-root', dataRoot,
+      '--media-root', mediaRoot,
+      '--playbook', playbookFile,
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toMatch(/hr-recovery/);
+    // Lands at data-root/<category>/
+    expect(await pathExists(path.join(dataRoot, 'hr-recovery', '2024-09-01.csv'))).toBe(true);
+    expect(await pathExists(path.join(dataRoot, 'hr-recovery', 'manifest.yml'))).toBe(true);
+    // Does NOT land at media-root.
+    expect(await pathExists(path.join(mediaRoot, 'hr-recovery'))).toBe(false);
+  });
+
+  it('routes a media custom category to media-root/<category>/<userId>/ (F4-B)', async () => {
+    const poseSrc = path.join(sourceDir, 'pose-screens');
+    await fs.mkdir(poseSrc, { recursive: true });
+    await fs.writeFile(path.join(poseSrc, '2024-09-01-front.png'), 'png-bytes');
+
+    const playbookDir = path.join(tmpRoot, 'playbook');
+    await fs.mkdir(playbookDir, { recursive: true });
+    const playbookFile = path.join(playbookDir, 'playbook.yml');
+    await fs.writeFile(playbookFile, yaml.dump({
+      schema_version: 1,
+      archive: {
+        custom_categories: [
+          { key: 'pose-screens', destination: 'media' },
+        ],
+      },
+    }));
+
+    await fs.writeFile(configPath, yaml.dump({
+      sources: {
+        'pose-screens': { path: poseSrc, enabled: true },
+      },
+      sync: { cadence: 'manual' },
+    }));
+
+    const { exitCode } = await runCli([
+      '--user', TEST_USER_ID,
+      '--config', configPath,
+      '--data-root', dataRoot,
+      '--media-root', mediaRoot,
+      '--playbook', playbookFile,
+    ]);
+
+    expect(exitCode).toBe(0);
+    // Media-routed: lands under media-root/<category>/<userId>/
+    expect(await pathExists(
+      path.join(mediaRoot, 'pose-screens', TEST_USER_ID, '2024-09-01-front.png'),
+    )).toBe(true);
+    expect(await pathExists(
+      path.join(mediaRoot, 'pose-screens', TEST_USER_ID, 'manifest.yml'),
+    )).toBe(true);
+    // NOT under data-root.
+    expect(await pathExists(path.join(dataRoot, 'pose-screens'))).toBe(false);
+  });
+
+  it('rejects custom categories with an unknown destination (F4-B)', async () => {
+    const playbookDir = path.join(tmpRoot, 'playbook');
+    await fs.mkdir(playbookDir, { recursive: true });
+    const playbookFile = path.join(playbookDir, 'playbook.yml');
+    await fs.writeFile(playbookFile, yaml.dump({
+      schema_version: 1,
+      archive: {
+        custom_categories: [
+          { key: 'hr-recovery', destination: 'unknown' },
+        ],
+      },
+    }));
+
+    await fs.writeFile(configPath, yaml.dump({
+      sources: {
+        'hr-recovery': { path: path.join(sourceDir, 'notes'), enabled: true },
+      },
+      sync: { cadence: 'manual' },
+    }));
+
+    const { exitCode, stderr } = await runCli([
+      '--user', TEST_USER_ID,
+      '--config', configPath,
+      '--data-root', dataRoot,
+      '--media-root', mediaRoot,
+      '--playbook', playbookFile,
+    ]);
+
+    expect(exitCode).toBe(1);
+    expect(stderr.toLowerCase()).toMatch(/destination/);
+  });
+
+  it('still works without a playbook (built-in categories only)', async () => {
+    // No --playbook flag and no playbook on disk — built-ins must continue
+    // to work as before.
+    await fs.writeFile(configPath, yaml.dump({
+      sources: {
+        notes: { path: path.join(sourceDir, 'notes'), enabled: true },
+      },
+      sync: { cadence: 'manual' },
+    }));
+
+    const { exitCode } = await runCli([
+      '--user', TEST_USER_ID,
+      '--config', configPath,
+      '--data-root', dataRoot,
+      '--media-root', mediaRoot,
+      // explicit non-existent playbook to force the "missing" branch
+      '--playbook', path.join(tmpRoot, 'no-playbook.yml'),
+    ]);
+    expect(exitCode).toBe(0);
+    expect(await pathExists(path.join(dataRoot, 'notes', '2024-01-15.md'))).toBe(true);
+  });
+
   it('exits 1 when a category fails (e.g. missing source)', async () => {
     await fs.writeFile(configPath, yaml.dump({
       sources: {

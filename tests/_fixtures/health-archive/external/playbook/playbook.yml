@@ -18,6 +18,22 @@ calibration:
   consumer_bia_lean_offset_lbs: -4.0
   consumer_bia_body_fat_offset_pct: 4.0
 
+archive:
+  # F4-A: workout-source vocabulary. Defaults (strava, garmin) are always
+  # whitelisted; this list ADDS extras for users with other trackers.
+  workout_sources:
+    - strava
+    - garmin
+    - apple_health
+  # F4-B: per-user extra ingest categories. Built-in categories
+  # (nutrition-history, scans, notes, playbook, weight, workouts) work
+  # without any declaration; this list ADDS extras with their routing.
+  custom_categories:
+    - key: hr-recovery
+      destination: structured
+    - key: pose-screens
+      destination: media
+
 named_periods:
   fixture-cut-2024:
     from: 2024-02-01
