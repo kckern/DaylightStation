@@ -1,6 +1,8 @@
 // backend/src/0_system/bootstrap.mjs
 
 import path from 'path';
+import fs from 'fs/promises';
+import yaml from 'js-yaml';
 import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -191,6 +193,7 @@ import { createHomebotRouter } from '#api/v1/routers/homebot.mjs';
 // Agents application imports
 import { AgentOrchestrator, EchoAgent, Scheduler } from '#apps/agents/index.mjs';
 import { HealthCoachAgent } from '#apps/agents/health-coach/index.mjs';
+import { PersonalContextLoader } from '../3_applications/health/PersonalContextLoader.mjs';
 import { CoachingOrchestrator, CoachingCommentaryService } from '#apps/coaching/index.mjs';
 import { PagedMediaTocAgent } from '#apps/agents/paged-media-toc/index.mjs';
 import { KomgaClient } from '#adapters/content/readable/komga/KomgaClient.mjs';
@@ -2907,6 +2910,37 @@ export async function createAgentsApiRouter(config) {
 
   // Register health coach agent (requires health services)
   if (healthStore && healthService) {
+    // Personal-context loader: reads per-user playbook YAML at
+    //   {dataDir}/users/{userId}/lifelog/archives/playbook/playbook.yml
+    // and projects it into a markdown bundle that gets appended to the agent's
+    // system prompt. The loader expects a `dataService` with a `readYaml(absPath)`
+    // method; DataService doesn't expose one, so we use a tiny inline shim
+    // that mirrors its sync `readYamlFile` semantics (return null on ENOENT or
+    // any read/parse error — never throw, so agent boot can't be killed by a
+    // bad playbook).
+    const dataDir = configService?.getDataDir?.() || './data';
+    const archiveRoot = path.resolve(dataDir, 'users');
+    const yamlReader = {
+      readYaml: async (absPath) => {
+        try {
+          const content = await fs.readFile(absPath, 'utf8');
+          return yaml.load(content) || null;
+        } catch (err) {
+          if (err.code === 'ENOENT') return null;
+          logger.warn?.('personal_context.read_failed', {
+            path: absPath,
+            error: err?.message || String(err),
+          });
+          return null;
+        }
+      },
+    };
+    const personalContextLoader = new PersonalContextLoader({
+      dataService: yamlReader,
+      archiveRoot,
+      logger,
+    });
+
     agentOrchestrator.register(HealthCoachAgent, {
       workingMemory,
       healthStore,
@@ -2918,6 +2952,7 @@ export async function createAgentsApiRouter(config) {
       configService,
       messagingGateway,
       conversationId: conversationId ?? configService?.getNutribotConversationId?.() ?? null,
+      personalContextLoader,
     });
   }
 
