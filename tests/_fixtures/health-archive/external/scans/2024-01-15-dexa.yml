@@ -1,0 +1,25 @@
+# Fixture: synthetic DEXA scan transcription used by health-archive ingestion + calibration tests.
+# Values are illustrative, not tied to a real user.
+date: 2024-01-15
+source: bodyspec_dexa
+device_type: DEXA
+weight_lbs: 175.0
+body_fat_percent: 22.0
+lean_tissue_lbs: 130.0
+fat_tissue_lbs: 38.5
+bone_mineral_content_lbs: 6.5
+bmr_kcal: 1700
+bmr_method: katch_mcardle
+visceral_fat_lbs: 0.7
+bone_density_z_score: 1.1
+asymmetry:
+  left_arm_lean_lbs: 7.2
+  right_arm_lean_lbs: 7.4
+regional:
+  trunk_fat_percent: 21.0
+  legs_fat_percent: 19.0
+notes: |
+  Synthetic fixture for tests. Replace with real scan transcription when
+  ingesting actual data. Numbers chosen to be obviously non-real.
+raw_pdf_path: /placeholder/2024-01-15-dexa.pdf
+raw_image_path: /placeholder/2024-01-15-dexa.jpg

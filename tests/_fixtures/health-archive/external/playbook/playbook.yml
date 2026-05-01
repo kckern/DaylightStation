@@ -1,0 +1,85 @@
+# Personal playbook (fixture).
+#
+# Synthetic shape used by HealthArchiveIngestion + PersonalContextLoader tests.
+# Real playbooks live in the user's external archive and contain user-specific
+# detail. Values here are illustrative.
+schema_version: 1
+profile:
+  age_range: "30s"
+  goal_context: |
+    Maintain lean mass while supporting an event-driven endurance goal.
+  truths:
+    - Responds to structure, not willpower.
+    - Frequency beats intensity.
+    - Maintenance is harder than cutting.
+
+calibration:
+  last_dexa: 2024-01-15
+  consumer_bia_lean_offset_lbs: -4.0
+  consumer_bia_body_fat_offset_pct: 4.0
+
+named_periods:
+  fixture-cut-2024:
+    from: 2024-02-01
+    to: 2024-04-30
+    description: |
+      Sample cut period for similar-period tests. Average protein 145g,
+      tracking compliance 95%, weight delta -8 lbs.
+  fixture-rebound-2024:
+    from: 2024-08-01
+    to: 2024-10-31
+    description: |
+      Sample post-cut maintenance drift period for rebound-detection tests.
+      Tracking compliance dropped to 40%, protein 110g avg, weight +3 lbs.
+
+patterns:
+  - name: same-jog-rut
+    type: failure_mode
+    detection:
+      pace_stdev_seconds_lt: 60
+      hr_stdev_bpm_lt: 3
+      window_runs: 5
+    description: |
+      Pace and HR variance collapse to near-zero across recent runs.
+      No stimulus variation produces no adaptation.
+    recommended_response: |
+      Add one interval/tempo session this week.
+    severity: medium
+
+  - name: if-trap-risk
+    type: failure_mode
+    detection:
+      protein_avg_lt_g: 100
+      breakfast_skipped_days_7d_gt: 4
+    description: |
+      Intermittent fasting paired with chronically low protein and skipped
+      breakfast — historically lean mass cost.
+    recommended_response: |
+      Anchor a 30g+ protein source within 60min of waking.
+    severity: high
+
+  - name: maintenance-drift
+    type: failure_mode
+    detection:
+      tracking_rate_14d_lt: 0.5
+      weight_trend_3w_gt_lbs: 1.0
+      protein_avg_drop_pct_gt: 0.15
+    description: |
+      Post-cut rebound signature: tracking compliance dropping while weight
+      creeps and protein dips below cut-phase average.
+    recommended_response: |
+      Re-anchor with the tracked-cut formula for 7 days; reassess weekly.
+    severity: high
+
+  - name: tracked-cut-formula
+    type: success_mode
+    detection:
+      protein_avg_gt_g: 140
+      tracking_rate_14d_gt: 0.9
+      meal_repetition_index_gt: 0.6
+    description: |
+      High-protein anchor + structured meal repetition + ~100% tracking.
+      Matches the documented period that produced sustained weight loss.
+    severity: low
+
+playbook_version: 1
