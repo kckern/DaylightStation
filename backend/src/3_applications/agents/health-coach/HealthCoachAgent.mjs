@@ -135,14 +135,7 @@ export class HealthCoachAgent extends BaseAgent {
       opts.userId = this.deps.configService?.getHeadOfHousehold?.() || 'default';
     }
 
-    // Pre-warm the personal-context cache so the framework's sync access
-    // (`BaseAgent.runAssignment` calls `this.getSystemPrompt()` synchronously)
-    // returns a string, not a Promise.
-    this.#activeUserId = opts.userId;
-    const loader = this.deps.personalContextLoader;
-    if (loader) {
-      await this.#getPersonalContextBundle(opts.userId, loader);
-    }
+    await this.#primePersonalContext(opts.userId);
 
     const result = await super.runAssignment(assignmentId, opts);
 
@@ -155,5 +148,33 @@ export class HealthCoachAgent extends BaseAgent {
     }
 
     return result;
+  }
+
+  /**
+   * Chat-style entry point. Mirror `runAssignment` and pre-warm the personal-
+   * context cache before delegating to `BaseAgent.run` so the framework's sync
+   * `getSystemPrompt()` call inside `#assemblePrompt` always lands on cache hit.
+   * Without this, `POST /api/v1/agents/health-coach/run` would silently miss
+   * personal context.
+   */
+  async run(input, opts = {}) {
+    const userId = opts.userId || this.deps.configService?.getHeadOfHousehold?.() || null;
+    if (userId) {
+      await this.#primePersonalContext(userId);
+    }
+    return super.run(input, opts);
+  }
+
+  /**
+   * Set `#activeUserId` and (when a loader is wired) populate the cache for
+   * the user. Safe to call repeatedly; cache hits short-circuit.
+   * @private
+   */
+  async #primePersonalContext(userId) {
+    this.#activeUserId = userId;
+    const loader = this.deps.personalContextLoader;
+    if (loader) {
+      await this.#getPersonalContextBundle(userId, loader);
+    }
   }
 }
