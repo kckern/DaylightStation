@@ -10,9 +10,13 @@
  * exposing `stat`, `readFile`, `writeFile`, `mkdir`, and `readdir`. This makes
  * the service trivially testable with an in-memory mock.
  *
- * Hard-fails on any source path that matches a privacy exclusion pattern
- * (email, chat, finance, journal, search-history, calendar, social, banking)
- * to ensure non-health archives never leak into the user's lifelog.
+ * Hard-fails on any source path that matches a privacy keyword pattern
+ * (email, chat, finance, journal, search-history, calendar, social, banking).
+ * NOTE: this is a coarse opaque-string filter on the raw `sourcePath`. It
+ * over-rejects safely (e.g. `/email-not-really` is blocked) but does NOT
+ * defend against `..` traversal or symlink escape — absolute-path
+ * normalization and read-scope enforcement live in `HealthArchiveScope`
+ * (Task 11 / F-106). Don't rely on this filter alone to bound mirror scope.
  *
  * @module domains/health/services
  */
@@ -61,8 +65,11 @@ export class HealthArchiveIngestion {
       throw new Error(`Unknown category: ${category}`);
     }
     if (EXCLUSION_PATTERNS.some((p) => p.test(sourcePath))) {
+      this.logger.warn?.('ingest.exclusion_rejected', { userId, category, sourcePath });
       throw new Error(`Source path matches exclusion pattern: ${sourcePath}`);
     }
+
+    this.logger.info?.('ingest.start', { userId, category, sourcePath, destPath, dryRun });
 
     const report = { copied: [], skipped: [], failed: [] };
     const files = await this._listFiles(sourcePath);
@@ -79,9 +86,18 @@ export class HealthArchiveIngestion {
         }
         report.copied.push(file);
       } catch (err) {
+        this.logger.warn?.('ingest.file_failed', { userId, category, file, error: err.message });
         report.failed.push({ file, error: err.message });
       }
     }
+
+    this.logger.info?.('ingest.complete', {
+      userId,
+      category,
+      copied: report.copied.length,
+      skipped: report.skipped.length,
+      failed: report.failed.length,
+    });
 
     return report;
   }
