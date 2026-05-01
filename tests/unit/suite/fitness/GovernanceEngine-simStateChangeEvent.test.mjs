@@ -51,4 +51,40 @@ describe('GovernanceEngine.onCycleStateChange callback', () => {
     engine._updateGlobalState();
     expect(cb).toHaveBeenCalledTimes(2);
   });
+
+  it('fires onCycleStateChange when tickManualCycle runs and cycle signature changes', () => {
+    const cb = jest.fn();
+    engine.onCycleStateChange = cb;
+    engine.media = null; // hits no-media early-return → tickManualCycle path
+    engine._latestInputs = {
+      activeParticipants: ['kckern'],
+      userZoneMap: { kckern: 'hot' },
+      equipmentCadenceMap: { cycle_ace: { rpm: 35, connected: true } }
+    };
+    engine.challengeState = {
+      activeChallenge: {
+        id: 'cyc_1',
+        type: 'cycle',
+        cycleState: 'init',
+        equipment: 'cycle_ace',
+        rider: 'kckern',
+        manualTrigger: true,
+        currentPhaseIndex: 0,
+        totalPhases: 1,
+        generatedPhases: [{ hiRpm: 50, loRpm: 38, rampSeconds: 0, maintainSeconds: 20 }],
+        phaseProgressMs: 0,
+        initElapsedMs: 0,
+        initTotalMs: 60000,
+        status: 'pending',
+        selection: { init: { minRpm: 30 } }
+      }
+    };
+    // First evaluate establishes baseline signature.
+    engine.evaluate({});
+    const callsAfterFirst = cb.mock.calls.length;
+
+    // Second evaluate with rpm=35 should advance init → ramp, changing the signature.
+    engine.evaluate({});
+    expect(cb.mock.calls.length).toBeGreaterThan(callsAfterFirst);
+  });
 });
