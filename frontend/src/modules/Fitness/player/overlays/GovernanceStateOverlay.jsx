@@ -548,7 +548,14 @@ GenericOverlay.propTypes = {
   }).isRequired
 };
 
-const GovernanceStateOverlay = ({ display, overlay = null, lockRows = [], warningOffenders = [] }) => {
+const GovernanceStateOverlay = ({
+  display,
+  overlay = null,
+  lockRows = [],
+  warningOffenders = [],
+  onRequestSwap = null,
+  swapAllowed = false
+}) => {
   // New path: display prop from useGovernanceDisplay
   // Legacy path: overlay + lockRows + warningOffenders
   const useNewPath = display != null;
@@ -661,6 +668,17 @@ const GovernanceStateOverlay = ({ display, overlay = null, lockRows = [], warnin
                   </div>
                 </div>
               </div>
+              {swapAllowed && typeof onRequestSwap === 'function' ? (
+                <div className="governance-lock__actions">
+                  <button
+                    type="button"
+                    className="governance-lock__swap-btn"
+                    onClick={onRequestSwap}
+                  >
+                    Switch Rider
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
         </>
@@ -734,7 +752,9 @@ GovernanceStateOverlay.propTypes = {
     requirements: PropTypes.array
   }),
   lockRows: PropTypes.array,
-  warningOffenders: PropTypes.array
+  warningOffenders: PropTypes.array,
+  onRequestSwap: PropTypes.func,
+  swapAllowed: PropTypes.bool
 };
 
 export default GovernanceStateOverlay;

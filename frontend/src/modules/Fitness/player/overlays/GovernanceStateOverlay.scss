@@ -587,6 +587,35 @@
       padding: 0;
     }
   }
+
+  &__actions {
+    display: flex;
+    justify-content: center;
+    margin-top: clamp(12px, 2vw, 20px);
+  }
+
+  &__swap-btn {
+    background: rgba(59, 130, 246, 0.18);
+    color: #f1f5f9;
+    border: 1px solid rgba(59, 130, 246, 0.45);
+    border-radius: 8px;
+    padding: clamp(8px, 1.5vw, 14px) clamp(16px, 3vw, 28px);
+    font-size: clamp(0.9rem, 1.4vw, 1.05rem);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: background 0.18s ease, border-color 0.18s ease;
+
+    &:hover {
+      background: rgba(59, 130, 246, 0.32);
+      border-color: rgba(59, 130, 246, 0.7);
+    }
+
+    &:focus-visible {
+      outline: 2px solid rgba(59, 130, 246, 0.85);
+      outline-offset: 3px;
+    }
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -201,7 +201,11 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
     : null;
 
   const primaryOverlay = governanceDisplay?.show ? (
-    <GovernanceStateOverlay display={governanceDisplay} />
+    <GovernanceStateOverlay
+      display={governanceDisplay}
+      onRequestSwap={isCycleChallenge && activeChallenge?.swapAllowed ? handleRequestSwap : null}
+      swapAllowed={isCycleChallenge && Boolean(activeChallenge?.swapAllowed)}
+    />
   ) : null;
 
   const hasAnyOverlay = Boolean(
