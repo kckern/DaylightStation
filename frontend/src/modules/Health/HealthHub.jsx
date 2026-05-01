@@ -5,10 +5,11 @@ import NutritionCard from './cards/NutritionCard';
 import SessionsCard from './cards/SessionsCard';
 import RecencyCard from './cards/RecencyCard';
 import GoalsCard from './cards/GoalsCard';
+import CoachingComplianceCard from './widgets/CoachingComplianceCard';
 
 export default function HealthHub({ dashboard, onCardClick, onRefresh }) {
   if (!dashboard) return null;
-  const { today, recency, goals } = dashboard;
+  const { today, recency, goals, userId } = dashboard;
 
   return (
     <>
@@ -28,6 +29,7 @@ export default function HealthHub({ dashboard, onCardClick, onRefresh }) {
           sessions={today?.sessions}
           onClick={() => onCardClick('sessions')}
         />
+        <CoachingComplianceCard username={userId} onSaved={onRefresh} />
         <RecencyCard recency={recency} />
         <GoalsCard
           goals={goals}
