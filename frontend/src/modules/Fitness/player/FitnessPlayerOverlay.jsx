@@ -9,6 +9,7 @@ import GovernanceStateOverlay from './overlays/GovernanceStateOverlay.jsx';
 import { useGovernanceDisplay } from '@/modules/Fitness/hooks/useGovernanceDisplay.js';
 import FullscreenVitalsOverlay from './overlays/FullscreenVitalsOverlay.jsx';
 import FitnessModuleContainer from './FitnessModuleContainer.jsx';
+import CycleChallengeDemo from '@/modules/Fitness/widgets/CycleChallengeDemo/CycleChallengeDemo.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 import './overlays/FitnessAppOverlay.scss';
 
@@ -238,6 +239,9 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
         onConfirm={handleConfirmSwap}
         onClose={handleCloseSwap}
       />
+      {typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('cycle-demo') ? (
+        <CycleChallengeDemo />
+      ) : null}
       {fitnessCtx.overlayApp && (
         <div className="fitness-app-overlay-wrapper">
           <FitnessModuleContainer

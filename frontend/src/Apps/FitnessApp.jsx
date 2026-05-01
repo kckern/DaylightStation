@@ -1002,6 +1002,45 @@ const FitnessApp = () => {
       document.documentElement.requestFullscreen().catch(() => {});
     }
 
+    // /fitness/cycle-demo — auto-discover a cycling episode and redirect to
+    // /fitness/play/{id}?cycle-demo=1 so the CycleChallengeDemo overlay
+    // mounts on top of a real cycle-eligible video.
+    if (view === 'cycle-demo') {
+      (async () => {
+        try {
+          const cfg = fitnessConfiguration;
+          const root = cfg?.fitness || cfg || {};
+          const navItems = root?.content?.nav_items || root?.plex?.nav_items || [];
+          const cycleNav = navItems.find((n) => n?.icon === 'cycle' || /cycl/i.test(n?.name || ''));
+          const collectionIds = cycleNav?.target?.collection_ids || (cycleNav?.target?.collection_id ? [cycleNav.target.collection_id] : []);
+          if (collectionIds.length === 0) {
+            logger.warn('cycle-demo-no-collection');
+            return;
+          }
+          const govResp = await fetch('/api/v1/fitness/governed-content').then((r) => r.json()).catch(() => null);
+          const governedIds = new Set((govResp?.shows || []).map((s) => String(s.id || s.contentId || s.ratingKey)));
+          for (const collectionId of collectionIds) {
+            const list = await fetch(`/api/v1/list/plex/${collectionId}`).then((r) => r.json()).catch(() => null);
+            const shows = list?.items || list?.shows || list || [];
+            const governedShow = shows.find((s) => governedIds.has(String(s.id || s.contentId || s.ratingKey)));
+            if (!governedShow) continue;
+            const showId = String(governedShow.id || governedShow.contentId || governedShow.ratingKey).replace(/^[a-z]+:/i, '');
+            const playable = await fetch(`/api/v1/fitness/show/${showId}/playable`).then((r) => r.json()).catch(() => null);
+            const episode = playable?.episode || playable?.episodes?.[0] || playable;
+            if (!episode) continue;
+            const episodeId = String(episode.id || episode.contentId || episode.ratingKey).replace(/^[a-z]+:/i, '');
+            navigate(`/fitness/play/${episodeId}?cycle-demo=1&nogovern`, { replace: true });
+            return;
+          }
+          logger.warn('cycle-demo-no-governed-cycling-show');
+        } catch (err) {
+          logger.error('cycle-demo-discover-failed', { error: err?.message });
+        }
+      })();
+      setUrlInitialized(true);
+      return;
+    }
+
     // Set view based on URL
     if (view === 'users') {
       setCurrentView('users');
