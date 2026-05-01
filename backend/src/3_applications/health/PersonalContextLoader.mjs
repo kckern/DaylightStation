@@ -126,9 +126,14 @@ export class PersonalContextLoader {
       return bundle;
     }
 
-    // Step 3: hard truncate.
+    // Step 3: hard truncate. Cut to last newline within budget so we never
+    // sever a list item mid-line and produce malformed markdown for the LLM.
     const suffix = '\n\n_(truncated)_';
-    const truncated = bundle.slice(0, Math.max(0, this.#charBudget - suffix.length)) + suffix;
+    const budget = Math.max(0, this.#charBudget - suffix.length);
+    const cut = bundle.slice(0, budget);
+    const lastNl = cut.lastIndexOf('\n');
+    const safe = lastNl > 0 ? cut.slice(0, lastNl) : cut;
+    const truncated = safe + suffix;
     this.#logger.warn?.('personal_context.truncated', {
       stage: 'hard_truncate',
       chars: truncated.length,
@@ -163,14 +168,14 @@ export class PersonalContextLoader {
     if (!profile || typeof profile !== 'object') return '';
     const lines = ['### Profile'];
 
-    const goal = (profile.goal_context || '').trim();
+    const goal = this.#escapeMd((profile.goal_context || '').trim());
     if (goal) lines.push(goal);
 
     const truths = Array.isArray(profile.truths) ? profile.truths.filter(Boolean) : [];
     if (truths.length) {
       lines.push('', '**Truths:**');
       for (const t of truths) {
-        lines.push(`- ${String(t).trim()}`);
+        lines.push(`- ${this.#escapeMd(String(t).trim())}`);
       }
     }
     return lines.join('\n');
@@ -214,8 +219,8 @@ export class PersonalContextLoader {
     const lines = ['### Named Periods'];
     for (const p of periods) {
       const range = p.from && p.to ? ` (${p.from} → ${p.to})` : '';
-      const summary = p.summary ? `: ${this.#firstSentence(p.summary)}` : '';
-      lines.push(`- **${p.name}**${range}${summary}`);
+      const summary = p.summary ? `: ${this.#escapeMd(this.#firstSentence(p.summary))}` : '';
+      lines.push(`- **${this.#escapeMd(p.name)}**${range}${summary}`);
     }
     return lines.join('\n');
   }
@@ -247,14 +252,14 @@ export class PersonalContextLoader {
     if (failures.length) {
       lines.push('**Failure modes:**');
       for (const p of failures) {
-        lines.push(`- **${p.name}** [${p.severity}]: ${this.#firstSentence(p.description)}`);
+        lines.push(`- **${this.#escapeMd(p.name)}** [${p.severity}]: ${this.#escapeMd(this.#firstSentence(p.description))}`);
       }
     }
     if (successes.length) {
       if (failures.length) lines.push('');
       lines.push('**Success modes:**');
       for (const p of successes) {
-        lines.push(`- **${p.name}** [${p.severity}]: ${this.#firstSentence(p.description)}`);
+        lines.push(`- **${this.#escapeMd(p.name)}** [${p.severity}]: ${this.#escapeMd(this.#firstSentence(p.description))}`);
       }
     }
     return lines.length > 1 ? lines.join('\n') : '';
@@ -276,6 +281,23 @@ export class PersonalContextLoader {
       return value.toISOString().slice(0, 10);
     }
     return String(value);
+  }
+
+  /**
+   * Escape markdown special characters in user-supplied playbook content so
+   * a stray `#`, backtick, or `**` in a description can't corrupt the rendered
+   * bundle the LLM receives. Conservative — strips backticks entirely (rare
+   * inside playbook prose) and prefixes leading `#`/`*`/`_`/`>` with a backslash
+   * so the LLM doesn't interpret them as headers/emphasis/blockquote markers.
+   */
+  #escapeMd(text) {
+    if (!text) return '';
+    return String(text)
+      .replace(/`/g, "'")
+      .replace(/\*\*/g, '\\*\\*')
+      .replace(/__/g, '\\_\\_')
+      .replace(/^#+\s/gm, '\\$&')
+      .replace(/^>\s/gm, '\\$&');
   }
 }
 
