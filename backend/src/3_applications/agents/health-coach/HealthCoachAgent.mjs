@@ -6,6 +6,7 @@ import { FitnessContentToolFactory } from './tools/FitnessContentToolFactory.mjs
 import { DashboardToolFactory } from './tools/DashboardToolFactory.mjs';
 import { ReconciliationToolFactory } from './tools/ReconciliationToolFactory.mjs';
 import { MessagingChannelToolFactory } from './tools/MessagingChannelToolFactory.mjs';
+import { LongitudinalToolFactory } from './tools/LongitudinalToolFactory.mjs';
 import { DailyDashboard } from './assignments/DailyDashboard.mjs';
 import { systemPrompt } from './prompts/system.mjs';
 
@@ -111,20 +112,47 @@ export class HealthCoachAgent extends BaseAgent {
   }
 
   registerTools() {
-    const { healthStore, healthService, fitnessPlayableService, sessionService, mediaProgressMemory, dataService, messagingGateway, conversationId } = this.deps;
+    const {
+      healthStore,
+      healthService,
+      fitnessPlayableService,
+      sessionService,
+      mediaProgressMemory,
+      dataService,
+      messagingGateway,
+      conversationId,
+      personalContextLoader,
+      archiveScope,
+      similarPeriodFinder,
+      dataRoot,
+    } = this.deps;
 
     // Existing
     this.addToolFactory(new HealthToolFactory({ healthStore, healthService, sessionService }));
     this.addToolFactory(new FitnessContentToolFactory({ fitnessPlayableService, mediaProgressMemory, dataService }));
     this.addToolFactory(new DashboardToolFactory({ dataService, healthStore }));
 
-    // New: reconciliation data access
+    // Reconciliation data access
     this.addToolFactory(new ReconciliationToolFactory({ healthStore }));
 
-    // New: messaging channel delivery (only if gateway available)
+    // Messaging channel delivery (only if gateway available)
     if (messagingGateway && conversationId) {
       this.addToolFactory(new MessagingChannelToolFactory({ messagingGateway, conversationId }));
     }
+
+    // Longitudinal historical queries (F-102 read_notes_file, F-103 query_*,
+    // F-104 find_similar_period). Always registered — individual tools surface
+    // structured "dependency missing" errors when their optional deps are
+    // unwired (e.g. personalContextLoader for query_named_period), so
+    // partial wiring degrades gracefully without breaking the agent.
+    this.addToolFactory(new LongitudinalToolFactory({
+      healthStore,
+      healthService,
+      personalContextLoader,
+      similarPeriodFinder,
+      archiveScope,
+      dataRoot,
+    }));
 
     // Existing assignment
     this.registerAssignment(new DailyDashboard());

@@ -194,6 +194,8 @@ import { createHomebotRouter } from '#api/v1/routers/homebot.mjs';
 import { AgentOrchestrator, EchoAgent, Scheduler } from '#apps/agents/index.mjs';
 import { HealthCoachAgent } from '#apps/agents/health-coach/index.mjs';
 import { PersonalContextLoader } from '../3_applications/health/PersonalContextLoader.mjs';
+import { HealthArchiveScope } from '#domains/health/services/HealthArchiveScope.mjs';
+import { SimilarPeriodFinder } from '#domains/health/services/SimilarPeriodFinder.mjs';
 import { CoachingOrchestrator, CoachingCommentaryService } from '#apps/coaching/index.mjs';
 import { PagedMediaTocAgent } from '#apps/agents/paged-media-toc/index.mjs';
 import { KomgaClient } from '#adapters/content/readable/komga/KomgaClient.mjs';
@@ -2941,6 +2943,16 @@ export async function createAgentsApiRouter(config) {
       logger,
     });
 
+    // F-102/103/104 longitudinal tool dependencies. The archiveScope enforces
+    // the F-106 path whitelist for read_notes_file and friends; the finder is
+    // a pure scoring service for find_similar_period. Both must be absolute
+    // paths — HealthArchiveScope hard-validates this at construction.
+    const dataRoot = path.resolve(dataDir);
+    const mediaDir = configService?.getMediaDir?.() || path.resolve(path.dirname(dataRoot), 'media');
+    const mediaRoot = path.resolve(mediaDir);
+    const archiveScope = new HealthArchiveScope({ dataRoot, mediaRoot });
+    const similarPeriodFinder = new SimilarPeriodFinder({ logger });
+
     agentOrchestrator.register(HealthCoachAgent, {
       workingMemory,
       healthStore,
@@ -2953,6 +2965,9 @@ export async function createAgentsApiRouter(config) {
       messagingGateway,
       conversationId: conversationId ?? configService?.getNutribotConversationId?.() ?? null,
       personalContextLoader,
+      archiveScope,
+      similarPeriodFinder,
+      dataRoot,
     });
   }
 
