@@ -149,13 +149,13 @@ describe('"Cold Start" warmup pattern (Plan 1 Task 4)', () => {
 describe('minimum primary duration floor (Plan 4)', () => {
   const MIN_PRIMARY_SEC = 5 * 60;
 
-  test('returns the sub-floor non-warmup event via cascade T2 (regression for 2026-04-30 session)', () => {
+  test('falls through to T4 when only sub-3-min non-deprio + long kidsfun exists (regression for 2026-04-30 session)', () => {
     const events = [
       videoEvent('F-Zero',              1254, { labels: ['kidsfun'] }),
       videoEvent('Strength Challenge 1', 48,  { labels: [] }),
     ];
     const cfg = { ...defaultConfig, deprioritized_labels: ['kidsfun'] };
-    expect(selectPrimaryMedia(events, cfg).data.title).toBe('Strength Challenge 1');
+    expect(selectPrimaryMedia(events, cfg).data.title).toBe('F-Zero');
   });
 
   test('returns the deprioritized event via cascade T4 when nothing else exists', () => {
