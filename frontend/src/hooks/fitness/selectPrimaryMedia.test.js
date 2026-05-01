@@ -117,4 +117,64 @@ describe('selectPrimaryMedia', () => {
       expect(selectPrimaryMedia(media, {}).contentId).toBe('wo');
     });
   });
+
+  describe('minimum primary duration floor (Plan 4)', () => {
+    const MIN_PRIMARY_MS = 5 * 60 * 1000;
+
+    it('returns null when only a sub-floor non-warmup video survives (regression: 2026-04-30/20260430192448.yml)', () => {
+      const media = [
+        { contentId: 'plex:606445', mediaType: 'video',
+          title: 'F-Zero', durationMs: 1254436, labels: ['kidsfun'] },
+        { contentId: 'plex:601458', mediaType: 'video',
+          title: 'Strength Challenge 1', durationMs: 48682, labels: [] },
+      ];
+      const cfg = { deprioritized_labels: ['kidsfun'] };
+      expect(selectPrimaryMedia(media, cfg)).toBeNull();
+    });
+
+    it('returns null when only a deprioritized video exists', () => {
+      const media = [
+        { contentId: 'a', mediaType: 'video', title: 'Cartoon Marathon', durationMs: 30 * 60_000, labels: ['kidsfun'] },
+      ];
+      const cfg = { deprioritized_labels: ['kidsfun'] };
+      expect(selectPrimaryMedia(media, cfg)).toBeNull();
+    });
+
+    it('returns null when only a sub-floor real video exists', () => {
+      const media = [
+        { contentId: 'a', mediaType: 'video', title: 'Quick Demo', durationMs: 4 * 60_000 },
+      ];
+      expect(selectPrimaryMedia(media, {})).toBeNull();
+    });
+
+    it('returns the eligible video when it meets exactly MIN_PRIMARY_MS', () => {
+      const media = [
+        { contentId: 'a', mediaType: 'video', title: 'Workout', durationMs: MIN_PRIMARY_MS },
+      ];
+      expect(selectPrimaryMedia(media, {}).contentId).toBe('a');
+    });
+
+    it('picks the longer of two real candidates when only the longer clears the floor', () => {
+      const media = [
+        { contentId: 'short', mediaType: 'video', title: 'Brief',  durationMs: 4 * 60_000 },
+        { contentId: 'long',  mediaType: 'video', title: 'Real',   durationMs: 12 * 60_000 },
+      ];
+      expect(selectPrimaryMedia(media, {}).contentId).toBe('long');
+    });
+
+    it('falls back to longest non-deprioritized warmup when only warmups exist (≥ MIN_PRIMARY_MS)', () => {
+      const media = [
+        { contentId: 's1', mediaType: 'video', title: 'Stretch Routine', durationMs: 10 * 60_000 },
+        { contentId: 's2', mediaType: 'video', title: 'Cool Down',       durationMs: 6 * 60_000 },
+      ];
+      expect(selectPrimaryMedia(media, {}).contentId).toBe('s1');
+    });
+
+    it('returns null when only sub-floor warmups exist', () => {
+      const media = [
+        { contentId: 's1', mediaType: 'video', title: 'Stretch', durationMs: 4 * 60_000 },
+      ];
+      expect(selectPrimaryMedia(media, {})).toBeNull();
+    });
+  });
 });
