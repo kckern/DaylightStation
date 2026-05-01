@@ -86,9 +86,16 @@ describe('HealthCoachAgent', () => {
       assert.ok(names.includes('get_user_goals'));
     });
 
-    it('should have 11 total tools', () => {
+    it('should have 24 total tools', () => {
+      // 18 pre-existing tools (Health/FitnessContent/Dashboard/Reconciliation;
+      // Messaging is gated behind a gateway+conversationId and not present
+      // here) + 6 longitudinal tools (F-102/103/104). The
+      // LongitudinalToolFactory is always registered; its individual tools
+      // surface "dependency missing" errors when optional deps (e.g.
+      // archiveScope, personalContextLoader) are unwired, but they still
+      // count in `getTools()`.
       const agent = new HealthCoachAgent(mockDeps);
-      assert.strictEqual(agent.getTools().length, 11);
+      assert.strictEqual(agent.getTools().length, 24);
     });
   });
 
