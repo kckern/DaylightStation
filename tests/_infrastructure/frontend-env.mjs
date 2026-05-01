@@ -2,9 +2,13 @@
 // This allows tests in tests/isolated/ to use React testing libraries
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { existsSync } from 'fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const frontendNodeModules = path.resolve(__dirname, '../../frontend/node_modules');
+// In worktrees, frontend/node_modules may not exist — fall back to main repo location.
+const frontendNodeModulesLocal = path.resolve(__dirname, '../../frontend/node_modules');
+const frontendNodeModulesMain = path.resolve(__dirname, '../../../../../frontend/node_modules');
+const frontendNodeModules = existsSync(frontendNodeModulesLocal) ? frontendNodeModulesLocal : frontendNodeModulesMain;
 const happyDomPath = path.join(frontendNodeModules, 'happy-dom', 'lib', 'index.js');
 
 const { Window, GlobalWindow } = await import(happyDomPath);
