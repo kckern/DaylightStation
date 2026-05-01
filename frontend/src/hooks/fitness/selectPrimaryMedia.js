@@ -2,10 +2,14 @@
  * Select the primary media item from a session's media array.
  *
  * Filters out audio, then warmup videos AND deprioritized videos (e.g. kids
- * content). When ≥2 surviving videos are each ≥10 minutes long, picks the
- * LAST one (chronologically latest — typically the main workout). Otherwise
- * picks the longest survivor by durationMs. Falls back to longest video
- * overall if every video is filtered out.
+ * content, browsing). Among non-warmup, non-deprioritized videos that clear
+ * the MIN_PRIMARY_MS (5-minute) floor, when ≥2 are each ≥10 minutes long,
+ * picks the LAST one (chronologically latest — typically the main workout);
+ * otherwise picks the longest survivor by durationMs. Falls back to the
+ * longest non-deprioritized warmup ≥ MIN_PRIMARY_MS only when the entire
+ * session is warmup/deprioritized content (e.g. stretch-only days). Returns
+ * null when no candidate clears the floor — explicitly rejects browsing
+ * content and sub-floor demos as primary.
  *
  * @param {Array} mediaItems - Media summary objects from buildSessionSummary
  * @param {Object} [config] - {
@@ -89,23 +93,48 @@ export function selectPrimaryMedia(mediaItems, config) {
     return false;
   }
 
-  // Step 3: Drop warmup + deprioritized; fall back to all videos if filter empties the pool.
-  const candidates = videos.filter(v => !isWarmup(v) && !isDeprioritized(v));
-  const pool = candidates.length > 0 ? candidates : videos;
-
-  // Step 4: Positional bias — when ≥2 survivors are each ≥10 minutes long, prefer
-  // the LAST one. Events are chronological, and a true main-session video is
-  // almost always played AFTER any warmup that survived the filter.
+  // Step 3: Build candidate pools.
+  // - realCandidates: non-warmup + non-deprioritized (the universe of eligible primaries)
+  // - eligible: realCandidates that clear the minimum primary duration floor
+  const MIN_PRIMARY_MS = 5 * 60 * 1000;
   const TEN_MIN_MS = 10 * 60 * 1000;
-  const longSurvivors = pool.filter(v => (v.durationMs || 0) >= TEN_MIN_MS);
-  if (longSurvivors.length >= 2) {
-    return longSurvivors[longSurvivors.length - 1];
+
+  const realCandidates = videos.filter(v => !isWarmup(v) && !isDeprioritized(v));
+  const eligible = realCandidates.filter(v => (v.durationMs || 0) >= MIN_PRIMARY_MS);
+
+  // Step 4: Positional bias — when ≥2 eligible candidates are each ≥10 minutes long,
+  // prefer the LAST one. Events are chronological, and a true main-session video is
+  // almost always played AFTER any warmup that survived the filter.
+  if (eligible.length > 0) {
+    const longSurvivors = eligible.filter(v => (v.durationMs || 0) >= TEN_MIN_MS);
+    if (longSurvivors.length >= 2) {
+      return longSurvivors[longSurvivors.length - 1];
+    }
+    // Step 5: Fallback for eligible-only — longest survivor wins.
+    return eligible.reduce((best, item) =>
+      (item.durationMs || 0) > (best.durationMs || 0) ? item : best
+    );
   }
 
-  // Step 5: Fallback — longest survivor wins.
-  return pool.reduce((best, item) =>
-    (item.durationMs || 0) > (best.durationMs || 0) ? item : best
-  );
+  // Step 6: No eligible real candidate. If the user only did warmup-or-deprioritized
+  // content AND there is at least one non-deprioritized warmup ≥ MIN_PRIMARY_MS,
+  // surface the longest such warmup (e.g. a stretch-only session). Otherwise return
+  // null — never promote browsing/deprioritized content to primary, never promote
+  // sub-floor demos to primary.
+  const allWarmupOrDeprioritized =
+    videos.every(v => isWarmup(v) || isDeprioritized(v));
+  if (allWarmupOrDeprioritized) {
+    const eligibleWarmups = videos.filter(v =>
+      isWarmup(v) && !isDeprioritized(v) && (v.durationMs || 0) >= MIN_PRIMARY_MS
+    );
+    if (eligibleWarmups.length > 0) {
+      return eligibleWarmups.reduce((best, item) =>
+        (item.durationMs || 0) > (best.durationMs || 0) ? item : best
+      );
+    }
+  }
+
+  return null;
 }
 
 export default selectPrimaryMedia;
