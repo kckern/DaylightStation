@@ -51,6 +51,10 @@ function getNutritionTool(factory) {
   return factory.createTools().find(t => t.name === 'query_historical_nutrition');
 }
 
+function getWorkoutsTool(factory) {
+  return factory.createTools().find(t => t.name === 'query_historical_workouts');
+}
+
 // Build a 30-day fixture anchored on a known "today" so the 14-day redaction
 // boundary is deterministic. Days 0-13 are "recent" (must be redacted); days
 // 14-29 are "old" (must NOT be redacted).
@@ -420,5 +424,201 @@ describe('LongitudinalToolFactory.query_historical_nutrition', () => {
       expect(day).toHaveProperty('implied_intake');
       expect(day).toHaveProperty('tracking_accuracy');
     }
+  });
+});
+
+// -------------------------------------------------------------------
+// query_historical_workouts (F-103.3)
+// -------------------------------------------------------------------
+//
+// Reads workouts from healthService.getHealthForRange(userId, from, to),
+// which returns a date-keyed object: { 'YYYY-MM-DD': { workouts: [...] } }.
+// Mirrors HealthToolFactory.get_recent_workouts data shape but accepts
+// explicit from/to bounds (rather than days-ago) and supports filters.
+
+function buildWorkoutsFixture() {
+  // Build a small, deliberate fixture so filter behavior is unambiguous.
+  return {
+    '2026-04-01': {
+      workouts: [
+        { title: 'Morning Run', type: 'run', duration: 1800, calories: 300, avgHr: 150 },
+      ],
+    },
+    '2026-04-02': {
+      workouts: [
+        { title: 'Bench Press Session', type: 'strength', duration: 2400, calories: 250, avgHr: 110 },
+        { title: 'Easy Recovery Run', type: 'run', duration: 1200, calories: 180, avgHr: 130 },
+      ],
+    },
+    '2026-04-03': {
+      workouts: [
+        { title: 'Yoga Flow', type: 'yoga', duration: 3000, calories: 150, avgHr: 95 },
+      ],
+    },
+    // Day with no workouts at all.
+    '2026-04-04': { workouts: [] },
+    '2026-04-05': {
+      workouts: [
+        { title: 'Hill Sprints', type: 'run', duration: 1500, calories: 280, avgHr: 165 },
+      ],
+    },
+    '2026-04-06': {
+      workouts: [
+        // Use `name` instead of `title` to verify name_contains falls back.
+        { name: 'Long bike ride along the coast', type: 'ride', duration: 5400, calories: 700, avgHr: 140 },
+      ],
+    },
+  };
+}
+
+describe('LongitudinalToolFactory.query_historical_workouts', () => {
+  function makeWorkoutsFactory(workoutsFixture, overrides = {}) {
+    const healthStore = {
+      loadWeightData: vi.fn(async () => FIXTURE),
+      loadNutritionData: vi.fn(async () => ({})),
+    };
+    const healthService = {
+      getHealthForRange: vi.fn(async (userId, from, to) => {
+        const out = {};
+        for (const [date, value] of Object.entries(workoutsFixture)) {
+          if (date >= from && date <= to) out[date] = value;
+        }
+        return out;
+      }),
+      ...overrides,
+    };
+    return {
+      factory: new LongitudinalToolFactory({ healthStore, healthService }),
+      healthStore,
+      healthService,
+    };
+  }
+
+  it('tool definition has correct schema', () => {
+    const { factory } = makeWorkoutsFactory(buildWorkoutsFixture());
+    const tool = getWorkoutsTool(factory);
+
+    expect(tool).toBeTruthy();
+    expect(tool.name).toBe('query_historical_workouts');
+    expect(typeof tool.description).toBe('string');
+    expect(tool.description.length).toBeGreaterThan(0);
+    expect(tool.parameters?.type).toBe('object');
+    const props = tool.parameters?.properties || {};
+    expect(props.userId).toBeTruthy();
+    expect(props.from).toBeTruthy();
+    expect(props.to).toBeTruthy();
+    expect(props.type).toBeTruthy();
+    expect(props.name_contains).toBeTruthy();
+    expect(tool.parameters?.required).toEqual(expect.arrayContaining(['userId', 'from', 'to']));
+  });
+
+  it('query_historical_workouts returns workouts in the requested date range', async () => {
+    const { factory, healthService } = makeWorkoutsFactory(buildWorkoutsFixture());
+    const tool = getWorkoutsTool(factory);
+
+    const result = await tool.execute({
+      userId: 'test-user',
+      from: '2026-04-01',
+      to: '2026-04-06',
+    });
+
+    expect(healthService.getHealthForRange).toHaveBeenCalledWith('test-user', '2026-04-01', '2026-04-06');
+    expect(Array.isArray(result.workouts)).toBe(true);
+    // Fixture has 1+2+1+0+1+1 = 6 workouts.
+    expect(result.workouts.length).toBe(6);
+
+    // Each workout should expose date + canonical fields.
+    for (const w of result.workouts) {
+      expect(typeof w.date).toBe('string');
+      expect(typeof w.type).toBe('string');
+      // duration / calories / avgHr come straight from the source.
+      expect(typeof w.duration).toBe('number');
+    }
+
+    // Sorted by date ascending.
+    const dates = result.workouts.map(w => w.date);
+    const sorted = [...dates].sort();
+    expect(dates).toEqual(sorted);
+  });
+
+  it('filter by type returns only matching workouts (e.g. type=run)', async () => {
+    const { factory } = makeWorkoutsFactory(buildWorkoutsFixture());
+    const tool = getWorkoutsTool(factory);
+
+    const result = await tool.execute({
+      userId: 'test-user',
+      from: '2026-04-01',
+      to: '2026-04-06',
+      type: 'run',
+    });
+
+    // Three runs: Morning Run (4-01), Easy Recovery Run (4-02), Hill Sprints (4-05).
+    expect(result.workouts.length).toBe(3);
+    for (const w of result.workouts) {
+      expect(w.type).toBe('run');
+    }
+  });
+
+  it('filter by name_contains returns only workouts whose title/name contains substring (case-insensitive)', async () => {
+    const { factory } = makeWorkoutsFactory(buildWorkoutsFixture());
+    const tool = getWorkoutsTool(factory);
+
+    // Search for 'run' (case-insensitive). Should match Morning Run, Easy Recovery Run, Hill Sprints? No — Hill Sprints has no 'run' substring. Match Morning Run, Easy Recovery Run only.
+    const result = await tool.execute({
+      userId: 'test-user',
+      from: '2026-04-01',
+      to: '2026-04-06',
+      name_contains: 'RUN',
+    });
+
+    expect(result.workouts.length).toBe(2);
+    for (const w of result.workouts) {
+      const label = (w.title || w.name || '').toLowerCase();
+      expect(label.includes('run')).toBe(true);
+    }
+
+    // Verify name fallback: query for 'bike' should match the 4-06 workout
+    // which only has `name`, not `title`.
+    const bikeResult = await tool.execute({
+      userId: 'test-user',
+      from: '2026-04-01',
+      to: '2026-04-06',
+      name_contains: 'bike',
+    });
+    expect(bikeResult.workouts.length).toBe(1);
+    expect(bikeResult.workouts[0].date).toBe('2026-04-06');
+  });
+
+  it('respects from/to bounds', async () => {
+    const { factory, healthService } = makeWorkoutsFactory(buildWorkoutsFixture());
+    const tool = getWorkoutsTool(factory);
+
+    const result = await tool.execute({
+      userId: 'test-user',
+      from: '2026-04-02',
+      to: '2026-04-03',
+    });
+
+    expect(healthService.getHealthForRange).toHaveBeenCalledWith('test-user', '2026-04-02', '2026-04-03');
+    // Apr 2 has 2 workouts, Apr 3 has 1 — total 3.
+    expect(result.workouts.length).toBe(3);
+    for (const w of result.workouts) {
+      expect(w.date >= '2026-04-02').toBe(true);
+      expect(w.date <= '2026-04-03').toBe(true);
+    }
+  });
+
+  it('returns empty array for empty range', async () => {
+    const { factory } = makeWorkoutsFactory(buildWorkoutsFixture());
+    const tool = getWorkoutsTool(factory);
+
+    const result = await tool.execute({
+      userId: 'test-user',
+      from: '2030-01-01',
+      to: '2030-01-31',
+    });
+
+    expect(Array.isArray(result.workouts)).toBe(true);
+    expect(result.workouts.length).toBe(0);
   });
 });
