@@ -1696,6 +1696,32 @@ export class GovernanceEngine {
     // Build evalContext so _setPhase logging reads current data (not stale _latestInputs)
     const evalContext = { userZoneMap, zoneRankMap, zoneInfoMap, activeParticipants };
 
+    // Manual cycle tick: keep a manually-triggered cycle ticking even when
+    // the surrounding governance early-returns. This is what the demo relies
+    // on: the user's Plex video isn't governed, but the cycle SM should still
+    // advance based on RPM input alone.
+    const tickManualCycle = () => {
+      const active = this.challengeState?.activeChallenge;
+      if (!active || active.type !== 'cycle' || !active.manualTrigger) return;
+      const cadenceEntry = this._latestInputs?.equipmentCadenceMap?.[active.equipment];
+      const rpmVal = Number(cadenceEntry?.rpm);
+      const equipmentRpm = Number.isFinite(rpmVal) ? rpmVal : 0;
+      this._evaluateCycleChallenge(active, {
+        equipmentRpm,
+        activeParticipants: this._latestInputs?.activeParticipants || [],
+        userZoneMap: this._latestInputs?.userZoneMap || {},
+        baseReqSatisfiedForRider: true,
+        baseReqSatisfiedGlobal: true
+      });
+      // Propagate currentRpm + phaseProgressPct so window globals reflect.
+      active.currentRpm = equipmentRpm;
+      const phase = active.generatedPhases?.[active.currentPhaseIndex];
+      active.phaseProgressPct = phase?.maintainSeconds
+        ? Math.round(Math.min(1.0, (active.phaseProgressMs || 0) / (phase.maintainSeconds * 1000)) * 100)
+        : 0;
+      this._updateGlobalState();
+    };
+
     // 1. Check if media is governed
     if (!this.media || !this.media.id || !hasGovernanceRules) {
       getLogger().sampled('governance.evaluate.no_media_or_rules', {
@@ -1703,6 +1729,7 @@ export class GovernanceEngine {
         hasGovernanceRules
       }, { maxPerMinute: 2, aggregate: true });
       this._resetToIdle();
+      tickManualCycle();
       return;
     }
 
@@ -1712,6 +1739,7 @@ export class GovernanceEngine {
         contentId: this.media?.id
       }, { maxPerMinute: 2, aggregate: true });
       this._resetToIdle();
+      tickManualCycle();
       return;
     }
 
