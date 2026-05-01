@@ -36,25 +36,32 @@ export function computeCycleLockPanelData(challenge, riderZone) {
 
   const lockReason = challenge.lockReason;
   const phase = challenge.currentPhase;
-  const currentRpm = Number.isFinite(challenge.currentRpm) ? challenge.currentRpm : 0;
+  const currentRpm = Number.isFinite(challenge.currentRpm)
+    ? Math.round(challenge.currentRpm)
+    : 0;
 
-  let targetRpm;
+  let targetRpmRaw;
   let instruction;
 
   if (lockReason === 'init') {
-    targetRpm = Number.isFinite(challenge.initMinRpm)
+    targetRpmRaw = Number.isFinite(challenge.initMinRpm)
       ? challenge.initMinRpm
       : (Number.isFinite(challenge.selection?.init?.minRpm)
           ? challenge.selection.init.minRpm
           : 30);
-    instruction = `Get on the bike — reach ${targetRpm} RPM`;
   } else if (lockReason === 'ramp' || lockReason === 'maintain') {
-    targetRpm = Number.isFinite(phase?.hiRpm) ? phase.hiRpm : 0;
-    instruction = lockReason === 'ramp'
-      ? `Climb to ${targetRpm} RPM`
-      : `Reach ${targetRpm} RPM to resume`;
+    targetRpmRaw = Number.isFinite(phase?.hiRpm) ? phase.hiRpm : 0;
   } else {
-    targetRpm = Number.isFinite(phase?.hiRpm) ? phase.hiRpm : 0;
+    targetRpmRaw = Number.isFinite(phase?.hiRpm) ? phase.hiRpm : 0;
+  }
+
+  const targetRpm = Math.round(targetRpmRaw);
+
+  if (lockReason === 'init') {
+    instruction = `Get on the bike — reach ${targetRpm} RPM`;
+  } else if (lockReason === 'ramp') {
+    instruction = `Climb to ${targetRpm} RPM`;
+  } else {
     instruction = `Reach ${targetRpm} RPM to resume`;
   }
 
