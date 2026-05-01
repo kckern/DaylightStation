@@ -169,6 +169,14 @@ function classifyNote(coaching) {
  * Boolean compliance: post_workout_protein. Has a true "missed" channel
  * (taken=false), so the complianceRate excludes untracked from the
  * denominator.
+ *
+ * F-003 additions:
+ * - `currentMissStreak` — trailing run of taken=false days. Anything else
+ *   (logged or untracked) breaks the streak. Used by MorningBrief to fire
+ *   the protein-CTA when the user has explicitly logged misses N days in
+ *   a row. Distinct from `currentUntrackedStreak` (didn't log at all).
+ * - `currentUntrackedStreak` — trailing run of untracked days. Used as a
+ *   secondary signal when the user has stopped logging entirely.
  */
 function summarizeBoolean(statusArr) {
   const counts = countStatuses(statusArr);
@@ -180,6 +188,8 @@ function summarizeBoolean(statusArr) {
     untracked: counts.untracked,
     complianceRate,
     currentStreak: trailingLoggedStreak(statusArr),
+    currentMissStreak: trailingStreakOf(statusArr, STATUS.MISSED),
+    currentUntrackedStreak: trailingStreakOf(statusArr, STATUS.UNTRACKED),
     longestGap: longestRunOf(statusArr, STATUS.MISSED),
   };
 }
@@ -188,6 +198,10 @@ function summarizeBoolean(statusArr) {
  * Engagement summary: daily_strength_micro. There's no explicit "missed"
  * channel — either the user logged a movement+reps that day or they didn't.
  * avgReps is the mean across logged days; null when no logged days exist.
+ *
+ * F-003 addition: `currentUntrackedStreak` — trailing run of untracked
+ * days. MorningBrief uses this to fire the chronic-weakness CTA when the
+ * daily-frequency drill has lapsed for N days.
  */
 function summarizeStrength(statusArr, repsArr) {
   const counts = countStatuses(statusArr);
@@ -199,6 +213,7 @@ function summarizeStrength(statusArr, repsArr) {
     untracked: counts.untracked,
     avgReps,
     currentStreak: trailingLoggedStreak(statusArr),
+    currentUntrackedStreak: trailingStreakOf(statusArr, STATUS.UNTRACKED),
     // For dimensions without an explicit miss channel, longestGap counts the
     // longest run of untracked days BETWEEN logged days. Trailing/leading
     // untracked runs (no logged day on the other side) don't count — they
@@ -235,6 +250,21 @@ function trailingLoggedStreak(statusArr) {
   let streak = 0;
   for (let i = statusArr.length - 1; i >= 0; i--) {
     if (statusArr[i] === STATUS.LOGGED) streak++;
+    else break;
+  }
+  return streak;
+}
+
+/**
+ * Count the number of trailing entries (from end-of-array backward) whose
+ * status equals `target`. The first non-matching entry breaks the streak.
+ * Used for currentMissStreak (target=MISSED) and currentUntrackedStreak
+ * (target=UNTRACKED) — each tracks a different trailing signal.
+ */
+function trailingStreakOf(statusArr, target) {
+  let streak = 0;
+  for (let i = statusArr.length - 1; i >= 0; i--) {
+    if (statusArr[i] === target) streak++;
     else break;
   }
   return streak;
@@ -351,6 +381,8 @@ function emptyDimensions(days) {
       untracked: windowDays,
       complianceRate: 0,
       currentStreak: 0,
+      currentMissStreak: 0,
+      currentUntrackedStreak: windowDays,
       longestGap: 0,
     },
     daily_strength_micro: {
@@ -358,6 +390,7 @@ function emptyDimensions(days) {
       untracked: windowDays,
       avgReps: null,
       currentStreak: 0,
+      currentUntrackedStreak: windowDays,
       longestGap: 0,
     },
     daily_note: {

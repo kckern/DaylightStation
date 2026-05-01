@@ -4,6 +4,25 @@ import { Assignment } from '../../framework/Assignment.mjs';
 import { OutputValidator } from '../../framework/OutputValidator.mjs';
 import { coachingMessageSchema } from '../schemas/coachingMessage.mjs';
 
+// F-003 default thresholds. Used when the user's playbook lacks a
+// `coaching_thresholds` section (or omits an individual dimension). The
+// defaults intentionally err on the side of NOT nagging — only fire a
+// historical-precedent CTA after a multi-day documented lapse.
+const DEFAULT_COMPLIANCE_THRESHOLDS = Object.freeze({
+  post_workout_protein: {
+    consecutive_misses_trigger: 3,
+    cta_text: 'Multiple consecutive days without the post-workout protein. ' +
+      'This is documented as a high-leverage daily action — worth re-anchoring tomorrow.',
+  },
+  daily_strength_micro: {
+    untracked_run_trigger: 5,
+    cta_text: 'Multiple days without the daily strength micro-drill. ' +
+      'Daily-frequency exposure is the lever for this dimension, not session volume.',
+  },
+});
+
+const COMPLIANCE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 /**
  * MorningBrief - Scheduled assignment that sends a daily reconciliation-aware nutrition brief.
  *
@@ -26,7 +45,7 @@ export class MorningBrief extends Assignment {
    * Gather phase — programmatic tool calls (no LLM).
    * Fetches reconciliation summary, weight trend, user goals, and today's nutrition in parallel.
    */
-  async gather({ tools, userId, memory, logger }) {
+  async gather({ tools, userId, memory, logger, context }) {
     const call = (name, params) => {
       const tool = tools.find(t => t.name === name);
       if (!tool) {
@@ -72,6 +91,19 @@ export class MorningBrief extends Assignment {
       logger,
     });
 
+    // Compliance CTAs (F-003) — call get_compliance_summary, load the
+    // user's playbook for thresholds + CTA copy, and surface CTAs whose
+    // current trailing streak crosses the documented threshold. A 7-day
+    // working-memory TTL key suppresses repeats so we don't nag every
+    // morning.
+    const complianceCtas = await this.#detectComplianceCtas({
+      tools,
+      userId,
+      memory,
+      personalContextLoader: context?.personalContextLoader,
+      logger,
+    });
+
     return {
       reconciliation,
       weight,
@@ -80,7 +112,121 @@ export class MorningBrief extends Assignment {
       nutritionHistory,
       yesterdayClosed: !!yesterdayClosed?.closed,
       similarPeriod,
+      complianceCtas,
     };
+  }
+
+  /**
+   * Detect compliance gaps that warrant a historical-precedent CTA.
+   *
+   * Logic:
+   *   1. Call get_compliance_summary. If the tool errors or is missing,
+   *      return [] — never block the brief on this signal.
+   *   2. Load the user's playbook (when a loader is wired). The playbook
+   *      may expose a `coaching_thresholds` section with per-dimension
+   *      `consecutive_misses_trigger` / `untracked_run_trigger` thresholds
+   *      and `cta_text`. Fall back to DEFAULT_COMPLIANCE_THRESHOLDS for
+   *      any missing field.
+   *   3. For each tracked dimension, compare the current trailing streak
+   *      against its threshold. If crossed AND the working-memory TTL key
+   *      is not active, emit a CTA and stamp the memory key (7-day TTL).
+   *
+   * @returns {Promise<Array<{ dimension: string, message: string }>>}
+   */
+  async #detectComplianceCtas({ tools, userId, memory, personalContextLoader, logger }) {
+    const tool = tools.find(t => t.name === 'get_compliance_summary');
+    if (!tool) {
+      return [];
+    }
+
+    let summary;
+    try {
+      summary = await tool.execute({ userId });
+    } catch (err) {
+      logger?.warn?.('morning_brief.compliance.error', { error: err?.message });
+      return [];
+    }
+
+    if (!summary || summary.error || !summary.dimensions) {
+      logger?.warn?.('morning_brief.compliance.error', {
+        reason: summary?.error || 'no_dimensions',
+      });
+      return [];
+    }
+
+    logger?.info?.('morning_brief.compliance.queried', { userId });
+
+    // Resolve thresholds — playbook overrides defaults per-field.
+    let playbookThresholds = null;
+    if (personalContextLoader && typeof personalContextLoader.loadPlaybook === 'function') {
+      try {
+        const playbook = await personalContextLoader.loadPlaybook(userId);
+        playbookThresholds = playbook?.coaching_thresholds || null;
+      } catch (err) {
+        // Loader failure is non-fatal — fall back to defaults silently.
+        logger?.warn?.('morning_brief.compliance.error', {
+          stage: 'playbook_load',
+          error: err?.message,
+        });
+      }
+    }
+
+    const ctas = [];
+    const dims = summary.dimensions;
+
+    // Protein: trailing miss-streak. The playbook's protein CTA references
+    // the documented "highest-leverage daily action" copy; the default
+    // fallback uses generic but still actionable wording.
+    const proteinDim = dims.post_workout_protein || {};
+    const proteinCfg = {
+      ...DEFAULT_COMPLIANCE_THRESHOLDS.post_workout_protein,
+      ...(playbookThresholds?.post_workout_protein || {}),
+    };
+    const proteinStreak = Number.isFinite(proteinDim.currentMissStreak)
+      ? proteinDim.currentMissStreak
+      : 0;
+    if (proteinStreak >= proteinCfg.consecutive_misses_trigger) {
+      const memKey = 'compliance_post_workout_protein_last_flagged';
+      if (memory?.get?.(memKey)) {
+        logger?.info?.('morning_brief.compliance.suppressed_by_memory', {
+          dimension: 'post_workout_protein',
+        });
+      } else {
+        ctas.push({ dimension: 'post_workout_protein', message: proteinCfg.cta_text });
+        memory?.set?.(memKey, new Date().toISOString(), { ttl: COMPLIANCE_TTL_MS });
+        logger?.info?.('morning_brief.compliance.cta_triggered', {
+          dimension: 'post_workout_protein',
+          currentMissStreak: proteinStreak,
+        });
+      }
+    }
+
+    // Strength: trailing untracked-streak (no daily-drill log for N days).
+    const strengthDim = dims.daily_strength_micro || {};
+    const strengthCfg = {
+      ...DEFAULT_COMPLIANCE_THRESHOLDS.daily_strength_micro,
+      ...(playbookThresholds?.daily_strength_micro || {}),
+    };
+    const strengthStreak = Number.isFinite(strengthDim.currentUntrackedStreak)
+      ? strengthDim.currentUntrackedStreak
+      : 0;
+    if (strengthStreak >= strengthCfg.untracked_run_trigger) {
+      const memKey = 'compliance_daily_strength_micro_last_flagged';
+      if (memory?.get?.(memKey)) {
+        logger?.info?.('morning_brief.compliance.suppressed_by_memory', {
+          dimension: 'daily_strength_micro',
+        });
+      } else {
+        ctas.push({ dimension: 'daily_strength_micro', message: strengthCfg.cta_text });
+        memory?.set?.(memKey, new Date().toISOString(), { ttl: COMPLIANCE_TTL_MS });
+        logger?.info?.('morning_brief.compliance.cta_triggered', {
+          dimension: 'daily_strength_micro',
+          currentUntrackedStreak: strengthStreak,
+        });
+      }
+    }
+
+    return ctas;
   }
 
   /**
@@ -216,6 +362,19 @@ export class MorningBrief extends Assignment {
         `calorie_avg=${fmt(stats.calorie_avg)} tracking_rate=${fmt(stats.tracking_rate)}\n` +
         `Use this as concrete personal precedent when the coach references "the last time this happened".`
       );
+    }
+
+    // Compliance — historical-precedent CTAs (F-003). When documented
+    // daily-leverage actions (post-workout protein, daily strength micro)
+    // have lapsed beyond the playbook threshold, surface explicit CTAs so
+    // the coach grounds its message in the user's documented patterns
+    // rather than generic admonitions.
+    if (Array.isArray(gathered.complianceCtas) && gathered.complianceCtas.length > 0) {
+      const lines = ['\n## Compliance — historical-precedent CTAs'];
+      for (const cta of gathered.complianceCtas) {
+        lines.push(`- ${cta.dimension}: ${cta.message}`);
+      }
+      sections.push(lines.join('\n'));
     }
 
     // Detect likely incomplete logging yesterday

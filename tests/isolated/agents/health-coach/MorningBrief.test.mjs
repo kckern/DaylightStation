@@ -299,6 +299,396 @@ describe('MorningBrief', () => {
     expect(prompt.includes('## Similar Period')).toBe(false);
   });
 
+  // ---------- Compliance integration (Task 22, F-003) ----------
+  //
+  // The MorningBrief should call get_compliance_summary, load the user's
+  // playbook for thresholds + CTA copy, and surface a "## Compliance"
+  // section in the prompt when documented daily-leverage actions have
+  // lapsed. Memory keys with a 7-day TTL prevent the same CTA from firing
+  // every morning.
+
+  /**
+   * Build a baseline tool list with a controllable get_compliance_summary
+   * stub. `summary` is what the tool returns; defaults to an "all clean"
+   * summary that should NOT trip any CTA.
+   */
+  function makeComplianceTools({ summary, calls = [] } = {}) {
+    const baseSummary = summary || {
+      windowDays: 30,
+      dimensions: {
+        post_workout_protein: {
+          logged: 30, missed: 0, untracked: 0,
+          complianceRate: 1, currentStreak: 30,
+          currentMissStreak: 0, currentUntrackedStreak: 0,
+          longestGap: 0,
+        },
+        daily_strength_micro: {
+          logged: 30, untracked: 0, avgReps: 8,
+          currentStreak: 30, currentUntrackedStreak: 0, longestGap: 0,
+        },
+        daily_note: { logged: 30, untracked: 0, complianceRate: 1 },
+      },
+    };
+    return [
+      ...makeStandardTools(),
+      {
+        name: 'get_compliance_summary',
+        execute: async (params) => {
+          calls.push(params);
+          return baseSummary;
+        },
+      },
+    ];
+  }
+
+  /**
+   * Build a memory mock that supports get/set with TTL semantics for testing.
+   * Pre-populated keys can be supplied; sets are tracked in `setCalls`.
+   */
+  function makeMemory({ initial = {}, setCalls = [] } = {}) {
+    const store = new Map();
+    for (const [k, v] of Object.entries(initial)) store.set(k, v);
+    return {
+      get: (key) => store.get(key),
+      set: (key, value, opts) => {
+        setCalls.push([key, value, opts]);
+        store.set(key, value);
+      },
+      serialize: () => '',
+    };
+  }
+
+  it('gather: calls get_compliance_summary', async () => {
+    const brief = new MorningBrief();
+    const calls = [];
+    const tools = makeComplianceTools({ calls });
+    const personalContextLoader = { loadPlaybook: async () => null };
+
+    await brief.gather({
+      tools,
+      userId: 'test-user',
+      memory: makeMemory(),
+      logger: { info: () => {}, warn: () => {} },
+      context: { personalContextLoader },
+    });
+
+    expect(calls.length).toBe(1);
+    expect(calls[0].userId).toBe('test-user');
+  });
+
+  it('gather: triggers protein CTA when current missed streak >= playbook threshold', async () => {
+    const brief = new MorningBrief();
+    const summary = {
+      windowDays: 30,
+      dimensions: {
+        post_workout_protein: {
+          logged: 27, missed: 3, untracked: 0,
+          complianceRate: 0.9, currentStreak: 0,
+          currentMissStreak: 3, currentUntrackedStreak: 0, longestGap: 3,
+        },
+        daily_strength_micro: {
+          logged: 30, untracked: 0, avgReps: 8,
+          currentStreak: 30, currentUntrackedStreak: 0, longestGap: 0,
+        },
+        daily_note: { logged: 30, untracked: 0, complianceRate: 1 },
+      },
+    };
+    const tools = makeComplianceTools({ summary });
+    const personalContextLoader = {
+      loadPlaybook: async () => ({
+        coaching_thresholds: {
+          post_workout_protein: {
+            consecutive_misses_trigger: 3,
+            cta_text: 'Three days without the post-workout shake — re-anchor tomorrow.',
+          },
+        },
+      }),
+    };
+
+    const gathered = await brief.gather({
+      tools,
+      userId: 'test-user',
+      memory: makeMemory(),
+      logger: { info: () => {}, warn: () => {} },
+      context: { personalContextLoader },
+    });
+
+    expect(Array.isArray(gathered.complianceCtas)).toBe(true);
+    expect(gathered.complianceCtas.length).toBe(1);
+    expect(gathered.complianceCtas[0].dimension).toBe('post_workout_protein');
+    expect(gathered.complianceCtas[0].message).toMatch(/post-workout shake/);
+  });
+
+  it('gather: triggers strength CTA when untracked run >= playbook threshold', async () => {
+    const brief = new MorningBrief();
+    const summary = {
+      windowDays: 30,
+      dimensions: {
+        post_workout_protein: {
+          logged: 30, missed: 0, untracked: 0,
+          complianceRate: 1, currentStreak: 30,
+          currentMissStreak: 0, currentUntrackedStreak: 0, longestGap: 0,
+        },
+        daily_strength_micro: {
+          logged: 25, untracked: 5, avgReps: 8,
+          currentStreak: 0, currentUntrackedStreak: 5, longestGap: 0,
+        },
+        daily_note: { logged: 30, untracked: 0, complianceRate: 1 },
+      },
+    };
+    const tools = makeComplianceTools({ summary });
+    const personalContextLoader = {
+      loadPlaybook: async () => ({
+        coaching_thresholds: {
+          daily_strength_micro: {
+            untracked_run_trigger: 5,
+            cta_text: '5+ days without the daily pull-up drill — daily-frequency exposure is the lever.',
+          },
+        },
+      }),
+    };
+
+    const gathered = await brief.gather({
+      tools,
+      userId: 'test-user',
+      memory: makeMemory(),
+      logger: { info: () => {}, warn: () => {} },
+      context: { personalContextLoader },
+    });
+
+    expect(gathered.complianceCtas.length).toBe(1);
+    expect(gathered.complianceCtas[0].dimension).toBe('daily_strength_micro');
+    expect(gathered.complianceCtas[0].message).toMatch(/pull-up drill/);
+  });
+
+  it('gather: does NOT trigger when streaks/gaps are below threshold', async () => {
+    const brief = new MorningBrief();
+    const summary = {
+      windowDays: 30,
+      dimensions: {
+        post_workout_protein: {
+          logged: 28, missed: 2, untracked: 0,
+          complianceRate: 0.93, currentStreak: 0,
+          currentMissStreak: 2, currentUntrackedStreak: 0, longestGap: 2,
+        },
+        daily_strength_micro: {
+          logged: 26, untracked: 4, avgReps: 8,
+          currentStreak: 0, currentUntrackedStreak: 4, longestGap: 0,
+        },
+        daily_note: { logged: 30, untracked: 0, complianceRate: 1 },
+      },
+    };
+    const tools = makeComplianceTools({ summary });
+    const personalContextLoader = {
+      loadPlaybook: async () => ({
+        coaching_thresholds: {
+          post_workout_protein: { consecutive_misses_trigger: 3, cta_text: 'protein cta' },
+          daily_strength_micro: { untracked_run_trigger: 5, cta_text: 'strength cta' },
+        },
+      }),
+    };
+
+    const gathered = await brief.gather({
+      tools,
+      userId: 'test-user',
+      memory: makeMemory(),
+      logger: { info: () => {}, warn: () => {} },
+      context: { personalContextLoader },
+    });
+
+    expect(gathered.complianceCtas).toEqual([]);
+  });
+
+  it('gather: uses default thresholds when playbook lacks coaching_thresholds section', async () => {
+    const brief = new MorningBrief();
+    // Defaults are protein=3, strength=5. Both are crossed here.
+    const summary = {
+      windowDays: 30,
+      dimensions: {
+        post_workout_protein: {
+          logged: 27, missed: 3, untracked: 0,
+          complianceRate: 0.9, currentStreak: 0,
+          currentMissStreak: 3, currentUntrackedStreak: 0, longestGap: 3,
+        },
+        daily_strength_micro: {
+          logged: 25, untracked: 5, avgReps: 8,
+          currentStreak: 0, currentUntrackedStreak: 5, longestGap: 0,
+        },
+        daily_note: { logged: 30, untracked: 0, complianceRate: 1 },
+      },
+    };
+    const tools = makeComplianceTools({ summary });
+    // Playbook exists but has no coaching_thresholds section.
+    const personalContextLoader = {
+      loadPlaybook: async () => ({ profile: { goal_context: 'cut' } }),
+    };
+
+    const gathered = await brief.gather({
+      tools,
+      userId: 'test-user',
+      memory: makeMemory(),
+      logger: { info: () => {}, warn: () => {} },
+      context: { personalContextLoader },
+    });
+
+    expect(gathered.complianceCtas.length).toBe(2);
+    const dims = gathered.complianceCtas.map(c => c.dimension).sort();
+    expect(dims).toEqual(['daily_strength_micro', 'post_workout_protein']);
+    // Default CTA text references the dimension name so the brief still
+    // surfaces something useful.
+    for (const cta of gathered.complianceCtas) {
+      expect(cta.message.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('buildPrompt: includes "## Compliance" section with the CTAs when triggered', () => {
+    const brief = new MorningBrief();
+    const gathered = {
+      reconciliation: {}, weight: {}, goals: {}, todayNutrition: {},
+      nutritionHistory: { days: [] }, yesterdayClosed: false,
+      similarPeriod: null,
+      complianceCtas: [
+        { dimension: 'post_workout_protein', message: 'Three days without the shake — re-anchor.' },
+        { dimension: 'daily_strength_micro', message: '5+ days without the pull-up drill.' },
+      ],
+    };
+    const prompt = brief.buildPrompt(gathered, { serialize: () => '' });
+    expect(prompt.includes('## Compliance')).toBe(true);
+    expect(prompt.includes('post_workout_protein')).toBe(true);
+    expect(prompt.includes('daily_strength_micro')).toBe(true);
+    expect(prompt.includes('re-anchor')).toBe(true);
+    expect(prompt.includes('pull-up drill')).toBe(true);
+    // Section appears before the Instructions block
+    expect(prompt.indexOf('## Compliance')).toBeLessThan(prompt.indexOf('## Instructions'));
+  });
+
+  it('buildPrompt: does NOT include the section when no CTAs', () => {
+    const brief = new MorningBrief();
+    const gathered = {
+      reconciliation: {}, weight: {}, goals: {}, todayNutrition: {},
+      nutritionHistory: { days: [] }, yesterdayClosed: false,
+      similarPeriod: null,
+      complianceCtas: [],
+    };
+    const prompt = brief.buildPrompt(gathered, { serialize: () => '' });
+    expect(prompt.includes('## Compliance')).toBe(false);
+  });
+
+  it('gather: gracefully handles get_compliance_summary throwing or returning error', async () => {
+    const brief = new MorningBrief();
+    const personalContextLoader = { loadPlaybook: async () => null };
+
+    // Case A: tool throws
+    const throwingTools = [
+      ...makeStandardTools(),
+      { name: 'get_compliance_summary', execute: async () => { throw new Error('compliance boom'); } },
+    ];
+    const gatheredA = await brief.gather({
+      tools: throwingTools,
+      userId: 'test-user',
+      memory: makeMemory(),
+      logger: { info: () => {}, warn: () => {} },
+      context: { personalContextLoader },
+    });
+    expect(gatheredA.complianceCtas).toEqual([]);
+
+    // Case B: tool returns structured error
+    const erroringTools = [
+      ...makeStandardTools(),
+      { name: 'get_compliance_summary', execute: async () => ({ error: 'no health data', dimensions: null }) },
+    ];
+    const gatheredB = await brief.gather({
+      tools: erroringTools,
+      userId: 'test-user',
+      memory: makeMemory(),
+      logger: { info: () => {}, warn: () => {} },
+      context: { personalContextLoader },
+    });
+    expect(gatheredB.complianceCtas).toEqual([]);
+
+    // Case C: tool not registered (no get_compliance_summary at all)
+    const noTool = [...makeStandardTools()];
+    const gatheredC = await brief.gather({
+      tools: noTool,
+      userId: 'test-user',
+      memory: makeMemory(),
+      logger: { info: () => {}, warn: () => {} },
+      context: { personalContextLoader },
+    });
+    expect(gatheredC.complianceCtas).toEqual([]);
+  });
+
+  it('gather: writes a 7-day TTL memory key when CTA fires (compliance_<dim>_last_flagged)', async () => {
+    const brief = new MorningBrief();
+    const summary = {
+      windowDays: 30,
+      dimensions: {
+        post_workout_protein: {
+          logged: 27, missed: 3, untracked: 0,
+          complianceRate: 0.9, currentStreak: 0,
+          currentMissStreak: 3, currentUntrackedStreak: 0, longestGap: 3,
+        },
+        daily_strength_micro: {
+          logged: 30, untracked: 0, avgReps: 8,
+          currentStreak: 30, currentUntrackedStreak: 0, longestGap: 0,
+        },
+        daily_note: { logged: 30, untracked: 0, complianceRate: 1 },
+      },
+    };
+    const tools = makeComplianceTools({ summary });
+    const personalContextLoader = { loadPlaybook: async () => null };
+    const setCalls = [];
+    const memory = makeMemory({ setCalls });
+
+    await brief.gather({
+      tools,
+      userId: 'test-user',
+      memory,
+      logger: { info: () => {}, warn: () => {} },
+      context: { personalContextLoader },
+    });
+
+    const flaggedCalls = setCalls.filter(([k]) => k === 'compliance_post_workout_protein_last_flagged');
+    expect(flaggedCalls.length).toBe(1);
+    const opts = flaggedCalls[0][2];
+    expect(opts?.ttl).toBe(7 * 24 * 60 * 60 * 1000);
+  });
+
+  it('gather: does NOT re-fire the CTA when the working-memory TTL key is still active', async () => {
+    const brief = new MorningBrief();
+    const summary = {
+      windowDays: 30,
+      dimensions: {
+        post_workout_protein: {
+          logged: 27, missed: 3, untracked: 0,
+          complianceRate: 0.9, currentStreak: 0,
+          currentMissStreak: 3, currentUntrackedStreak: 0, longestGap: 3,
+        },
+        daily_strength_micro: {
+          logged: 30, untracked: 0, avgReps: 8,
+          currentStreak: 30, currentUntrackedStreak: 0, longestGap: 0,
+        },
+        daily_note: { logged: 30, untracked: 0, complianceRate: 1 },
+      },
+    };
+    const tools = makeComplianceTools({ summary });
+    const personalContextLoader = { loadPlaybook: async () => null };
+    // Pre-populate the TTL key so the CTA should be suppressed.
+    const memory = makeMemory({
+      initial: { compliance_post_workout_protein_last_flagged: '2026-04-30T10:00:00Z' },
+    });
+
+    const gathered = await brief.gather({
+      tools,
+      userId: 'test-user',
+      memory,
+      logger: { info: () => {}, warn: () => {} },
+      context: { personalContextLoader },
+    });
+
+    expect(gathered.complianceCtas).toEqual([]);
+  });
+
   it('gather: gracefully handles find_similar_period throwing or returning empty matches', async () => {
     const brief = new MorningBrief();
 
