@@ -211,7 +211,8 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
     (!challengeOverlay && nextChallengeOverlay) ||
     cycleOverlay ||
     isSwapModalOpen ||
-    showFullscreenVitals
+    showFullscreenVitals ||
+    showCycleDemo
   );
 
   if (!hasAnyOverlay) {
