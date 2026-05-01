@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The data pipeline turns the messy, multi-source stream of health events that flow into the household — a meal typed into a chat, a number from the smart scale, the end of a fitness session, an integration's nightly sync — into a single, trustworthy timeline per user. A user opens the health hub, asks the coach a question, or receives a morning brief and reads the *same numbers* regardless of the surface, because every surface reads from the pipeline's output rather than from a raw source. The pipeline is the layer that makes "what did I eat yesterday?" a question with one answer.
+The data pipeline turns the raw, multi-source stream of health events that flow into the household — a meal typed into a chat, a number from the smart scale, the end of a fitness session, an integration's nightly sync — into a single, trustworthy timeline per user. A user opens the health hub, asks the coach a question, or receives a morning brief and reads the *same numbers* regardless of the surface, because every surface reads from the pipeline's output rather than from a raw source. The pipeline is the layer that makes "what did I eat yesterday?" a question with one answer.
 
 For shared concepts referenced throughout this document — identity model, time scales, daily summary, longitudinal aggregate, household, reconciliation, food catalog — see `health-system-architecture.md`. This document describes the mechanics of how those concepts are produced and what they contain.
 
@@ -10,18 +10,18 @@ For shared concepts referenced throughout this document — identity model, time
 
 ## Inputs
 
-The pipeline accepts events from several semantic categories. Each event carries an owning user and a date; the pipeline is otherwise indifferent to which source produced it.
+The pipeline accepts events from the sources catalogued in [`health-system-architecture.md`](health-system-architecture.md#data-sources). For each input, the pipeline does the following:
 
-| Input | What it represents |
-|---|---|
-| Food log via Telegram | A meal or snack the user described in plain language or photographed; an LLM parsed it into structured items, the user accepted the parse, and the items joined the day's food log. |
-| Food log via web | The same structured food items, captured through the health hub's inline entry instead of through a chat. |
-| Quick-add from food catalog | A previously-logged or seeded food item re-logged without re-parsing, by tapping a chip from the user's personal catalog. |
-| Manual annotations | Edits, deletions, color-category changes, and notes the user attaches to existing food log entries after the fact. |
-| Weight measurements | Daily readings from the household's smart scale: weight, body fat percentage, lean mass, water weight, multi-day trend. |
-| Fitness sessions | Completed workout records produced by the fitness system: start, duration, intensity profile, calories burned, participants, and media context. |
-| Activity tracker integrations | Passive signals from third-party activity-tracking platforms: steps, heart rate, recorded activities, calories burned, sleep where supported. |
-| Coaching history | Past coaching messages persisted as memory the coach can reference in future commentary. |
+| Input | What the pipeline does first | Idempotency key |
+|---|---|---|
+| Food log via Telegram | Queues the parsed items at parse-confirm; folds them into the day's food log on accept. | Log entry UUID |
+| Food log via web | Stores the structured items as they are submitted from the hub's inline entry. | Log entry UUID |
+| Quick-add from food catalog | Clones the catalog entry's nutrient values into a new food log entry without an LLM parse; bumps the catalog use count. | New log entry UUID |
+| Manual annotations | Applies the edit, deletion, color change, or note in place against the existing log entry; triggers re-aggregation of the affected day. | Target log entry UUID |
+| Smart scale reading | Stores as a measurement event tagged with reading time and body composition fields. | (user, timestamp) |
+| Fitness session | Stores the completed session record on session-end, including duration, intensity, calories, participants, and media context. | Session UUID |
+| Activity tracker integration | Pulls or receives passive signals (steps, heart rate, activities, calories, sleep) on the integration's cadence and tags them to the local date. | (source, native event ID) |
+| Coaching history | Persists each delivered message so the coach can reference it as memory in future commentary. | Message UUID |
 
 Every input carries the owning user as a stable username and a date in the user's local timezone. A user can have any subset of these inputs enabled. The pipeline tolerates missing sources and produces partial daily summaries from whatever it has — a day with weight but no food log is still a valid day.
 
@@ -39,7 +39,11 @@ The pipeline runs as five conceptual stages. Each stage operates per user; cross
   sessions    --> adapters  -->  shape per   --> user per date    -->   and monthly rollups   -->   bot, weekly
   trackers    -->                event type      with all sources                                   digest
   manual      -->                                folded in                                          
-  reconcile   -->                                                                              
+                                                       ^
+                                                       |
+                                                  reconcile
+                                                  (derived pass run
+                                                  alongside aggregation)
 ```
 
 ### Ingest
@@ -48,11 +52,11 @@ Each source has its own adapter that knows the source's native shape (a Telegram
 
 ### Normalize
 
-Normalization brings every event into a small, consistent vocabulary the rest of the pipeline understands. A weight reading becomes a number of pounds plus optional body composition fields. A workout record becomes a title, a duration, a calorie count, an intensity signal, and a source label — regardless of whether the underlying provider was a third-party tracker or the household's own fitness system. A food item becomes a name, calorie count, macro grams, micronutrient values, meal time, and color category. Source-specific fields are preserved as side data when they may matter later for reconciliation, but the normalized shape is what downstream stages read.
+Normalization brings every event into a small, consistent set of fields the rest of the pipeline understands. A weight reading becomes a number of pounds plus optional body composition fields. A workout record becomes a title, a duration, a calorie count, an intensity signal, and a source label — regardless of whether the underlying provider was a third-party tracker or the household's own fitness system. A food item becomes a name, calorie count, macro grams, micronutrient values, meal time, and color category. Source-specific fields are preserved as side data when they may matter later for reconciliation, but the normalized shape is what downstream stages read.
 
 ### Daily aggregate
 
-The daily aggregate produces one record per user per date. For a given date, the aggregator pulls the day's normalized events from every source, folds them into a single record, and writes that record to the user's health timeline. The same operation is run over a rolling window of recent days every time aggregation is triggered — so a late-arriving event for an earlier day causes that day's record to be recomputed. Workouts that appear in more than one source for the same day are merged into a single entry tagged with each contributing source, and the merge takes the most-accurate signal where sources disagree on duration or calorie count. The output of this stage is the **daily summary** described in `health-system-architecture.md`.
+The daily aggregate produces one record per user per date. For a given date, the aggregator pulls the day's normalized events from every source, folds them into a single record, and writes that record to the user's health timeline. The same operation is run over a rolling window of recent days every time aggregation is triggered — so a late-arriving event for an earlier day causes that day's record to be recomputed. Workouts that appear in more than one source for the same day are merged into a single entry tagged with each contributing source; where sources disagree on a number, the merge keeps the maximum signal (e.g., the higher of two calorie estimates). The output of this stage is the **daily summary** described in `health-system-architecture.md`.
 
 A reconciliation pass runs alongside daily aggregation. Reconciliation reads a recent window of weight readings, tracked nutrition, exercise, and step calories, derives the user's effective metabolic rate from observed weight change against logged intake, and produces an *adjusted* version of each day's nutrition that reflects tracking-accuracy estimation, portion correction, and phantom calories — calories the body's response indicates were eaten beyond what was logged. The adjusted nutrition is stored alongside the raw logged nutrition; both views are available downstream. Reconciliation is best-effort: a failure to reconcile leaves the raw daily summary intact and is reported but never blocks aggregation.
 
@@ -62,7 +66,7 @@ The longitudinal aggregate reads the user's daily summaries and produces time-bu
 
 ### Expose
 
-Aggregates are exposed through a small, stable read interface: a daily summary by date, a daily summary range, a longitudinal series, a tiered history view, the food catalog, source freshness. The exposure layer reads from the persisted aggregates; it does not recompute on demand and it does not reach back to raw sources. Every read is per-user. A read may trigger a fresh aggregation pass before returning if the caller asks for it (the hub asks on first load), but the read itself returns the persisted state — there is no in-memory-only computed view that survives only as long as the request.
+Aggregates are exposed through a small, stable read interface: a daily summary by date, a daily summary range, a longitudinal series, a tiered history view, the food catalog, source freshness. The exposure layer reads from the persisted aggregates; it does not recompute on demand and it does not reach back to raw sources. Every read is per-user. Reads return the persisted state. The hub triggers a fresh aggregation pass on first load by passing an explicit refresh flag; without the flag, reads do not recompute. There is no in-memory-only computed view that survives only as long as the request.
 
 ---
 
@@ -80,7 +84,7 @@ A daily summary is the canonical answer to "what did this user eat, weigh, and d
 - **Goal progress.** The day's standing against the user's active goals — calorie band remaining, protein floor met or missed, session count toward the weekly target. Computed against the user's current goal values from the life plan.
 - **Coaching messages.** Any coaching messages delivered or recorded that day, attached to the day for context. Drawn from the coaching history, not duplicated.
 
-A daily summary is **deterministic given its inputs**: re-running aggregation on the same source data produces the same record. It is also **revisable**: a late food log, a corrected weight, a deleted item, or a fresh reconciliation pass updates the summary in place, and any view that re-reads it sees the new state.
+A daily summary is deterministic and revisable as defined in [the architecture doc](health-system-architecture.md#daily).
 
 ---
 
@@ -94,7 +98,7 @@ The longitudinal layer presents a user's history at three time grains:
 - **Weekly rollups** — week-by-week values across roughly half a year: average weight per week, weekly exercise calories, weekly average heart rate during sessions, weekly calorie balance.
 - **Monthly rollups** — month-by-month values across a longer window, for the "two-year trend" view of weight, calories, sessions, and other dimensions.
 
-For each bucket, the layer carries the bucket's start and end dates plus statistical rollups: average of non-null values for continuous dimensions (weight, calories, protein), counts for discrete dimensions (workouts, sessions), sums for additive dimensions (exercise minutes, calories burned, total coins), and labels suitable for chart axes.
+For each bucket, the layer carries the bucket's start and end dates plus statistical rollups: average of non-null values for continuous dimensions (weight, calories, protein), counts for discrete dimensions (workouts, sessions), and sums for additive dimensions (exercise minutes, calories burned, total coins).
 
 The kinds of questions the longitudinal layer answers:
 
@@ -112,7 +116,7 @@ Range queries — "give me everything between these two dates" — are supported
 
 ## Food catalog
 
-The food catalog is a per-user collection of the foods this user has logged before, surfaced as quick-add chips and used to recognize frequent items. It is built passively from the food log: every accepted food item, regardless of source, is checked against the user's catalog and either creates a new catalog entry or increments the use count of an existing one.
+The food catalog turns a user's logging history into one-tap entry: a frequently-eaten item is recognized and re-logged without re-parsing. It is built passively from the food log: every accepted food item, regardless of source, is checked against the user's catalog and either creates a new catalog entry or increments the use count of an existing one.
 
 What an entry contains: a name, a normalized version of the name (lowercased and whitespace-collapsed) used for matching, the most recent nutrient values for the item, the source the item was first parsed from, an optional barcode reference, a use count, the date of last use, and the date the entry was created.
 
@@ -139,7 +143,7 @@ The pipeline makes the following guarantees. Downstream consumers — the hub, t
 
 - **Deterministic given inputs.** A daily summary or longitudinal series is a pure function of the source events and the goal configuration in effect. No randomness, no time-of-day dependence beyond the date the events fall on.
 
-- **Immutable history.** Source events are kept in their original form alongside every adjusted view. A reconciled or adjusted value never overwrites the underlying logged value — it is stored as an additional layer. A historical reading can always be reconstructed from the raw events.
+- **Immutable history.** Source events are kept in their original form alongside every adjusted view. A reconciled or adjusted value never overwrites the underlying logged value — it is stored as an additional layer, so a historical reading can always be reconstructed from the raw events.
 
 ---
 
@@ -177,9 +181,9 @@ The pipeline's outputs are read by every health-aware surface in the system. Non
 
 - **Fitness coach panel.** A daily reaction following a completed fitness session frames how the session affects the day's calorie budget and the week's session count. The framing reads directly from the daily summary (today's calorie standing) and the longitudinal aggregate (the week's session count).
 
-- **Weekly digest.** The end-of-week message comparing this week to long-term averages reads weekly and monthly longitudinal rollups directly.
+- **Weekly digest.** The end-of-week message comparing this week to long-term averages reads weekly and monthly rollups; it composes entirely from longitudinal output.
 
-- **Source freshness card.** The hub's recency card reads "days since last event" per source. The pipeline tracks the most recent ingest timestamp for each source per user; the card consumes this directly.
+- **Source freshness card.** The hub's recency card reads "days since last event" per source, computed from the most recent ingest timestamp the pipeline tracks for each source per user.
 
 - **Food entry surfaces.** The hub's inline food entry and the messaging-surface chat both read the food catalog for chip suggestions and write accepted items back to the food log, which the pipeline folds into the day's summary.
 
