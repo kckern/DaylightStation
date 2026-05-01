@@ -622,3 +622,239 @@ describe('LongitudinalToolFactory.query_historical_workouts', () => {
     expect(result.workouts.length).toBe(0);
   });
 });
+
+// -------------------------------------------------------------------
+// query_named_period (F-103.4)
+// -------------------------------------------------------------------
+//
+// Convenience wrapper. Looks up a named period from the user's playbook
+// (PersonalContextLoader.loadPlaybook) and runs the underlying weight,
+// nutrition, and workout queries against the period's [from, to] range.
+
+function getNamedPeriodTool(factory) {
+  return factory.createTools().find(t => t.name === 'query_named_period');
+}
+
+function buildPlaybook(periods) {
+  return {
+    schema_version: 1,
+    named_periods: periods,
+  };
+}
+
+describe('LongitudinalToolFactory.query_named_period', () => {
+  // Use a deterministic weight + nutrition + workouts fixture spanning the
+  // playbook's fixture-cut-2024 period (2024-02-01 → 2024-04-30).
+  function buildPeriodWeightFixture() {
+    const out = {};
+    let lbs = 200;
+    const start = new Date(Date.UTC(2024, 1, 1)); // Feb 1, 2024
+    const end = new Date(Date.UTC(2024, 3, 30));  // Apr 30, 2024
+    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      const date = d.toISOString().slice(0, 10);
+      out[date] = {
+        date,
+        lbs,
+        lbs_adjusted_average: lbs - 0.5,
+        fat_percent: 22,
+        fat_percent_average: 21.5,
+        source: 'consumer-bia',
+      };
+      lbs -= 0.05;
+    }
+    return out;
+  }
+
+  function buildPeriodNutritionFixture() {
+    const out = {};
+    const start = new Date(Date.UTC(2024, 1, 1));
+    const end = new Date(Date.UTC(2024, 3, 30));
+    let i = 0;
+    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      const date = d.toISOString().slice(0, 10);
+      out[date] = {
+        calories: 1800 + (i % 5),
+        protein: 145,
+        carbs: 180,
+        fat: 60,
+      };
+      i++;
+    }
+    return out;
+  }
+
+  function buildPeriodWorkoutsFixture() {
+    return {
+      '2024-02-15': { workouts: [{ title: 'Tempo Run', type: 'run', duration: 1800, calories: 350, avgHr: 155 }] },
+      '2024-03-10': { workouts: [{ title: 'Long Run', type: 'run', duration: 5400, calories: 800, avgHr: 145 }] },
+      '2024-04-20': { workouts: [{ title: 'Strength A', type: 'strength', duration: 2400, calories: 220, avgHr: 110 }] },
+      // Outside the period — must NOT be returned.
+      '2024-05-15': { workouts: [{ title: 'Outside Period Run', type: 'run', duration: 1800, calories: 300, avgHr: 150 }] },
+    };
+  }
+
+  function makeNamedPeriodFactory(playbookByUser, overrides = {}) {
+    const weightFixture = overrides.weightFixture ?? buildPeriodWeightFixture();
+    const nutritionFixture = overrides.nutritionFixture ?? buildPeriodNutritionFixture();
+    const workoutsFixture = overrides.workoutsFixture ?? buildPeriodWorkoutsFixture();
+
+    const healthStore = {
+      loadWeightData: vi.fn(async () => weightFixture),
+      loadNutritionData: vi.fn(async () => nutritionFixture),
+    };
+    const healthService = {
+      getHealthForRange: vi.fn(async (userId, from, to) => {
+        const out = {};
+        for (const [date, value] of Object.entries(workoutsFixture)) {
+          if (date >= from && date <= to) out[date] = value;
+        }
+        return out;
+      }),
+    };
+    const personalContextLoader = {
+      loadPlaybook: vi.fn(async (userId) => playbookByUser[userId] ?? null),
+    };
+    return {
+      factory: new LongitudinalToolFactory({ healthStore, healthService, personalContextLoader }),
+      healthStore,
+      healthService,
+      personalContextLoader,
+    };
+  }
+
+  it('tool definition has correct schema', () => {
+    const { factory } = makeNamedPeriodFactory({
+      'test-user': buildPlaybook({
+        'fixture-cut-2024': {
+          from: '2024-02-01',
+          to: '2024-04-30',
+          description: 'Sample cut period.',
+        },
+      }),
+    });
+    const tool = getNamedPeriodTool(factory);
+
+    expect(tool).toBeTruthy();
+    expect(tool.name).toBe('query_named_period');
+    expect(typeof tool.description).toBe('string');
+    expect(tool.description.length).toBeGreaterThan(0);
+    expect(tool.parameters?.type).toBe('object');
+    const props = tool.parameters?.properties || {};
+    expect(props.userId).toBeTruthy();
+    expect(props.name).toBeTruthy();
+    expect(tool.parameters?.required).toEqual(expect.arrayContaining(['userId', 'name']));
+  });
+
+  it('query_named_period returns aggregated stats for the named period range', async () => {
+    const playbook = buildPlaybook({
+      'fixture-cut-2024': {
+        from: '2024-02-01',
+        to: '2024-04-30',
+        description: 'Sample cut period for similar-period tests.',
+      },
+    });
+    const { factory, healthService } = makeNamedPeriodFactory({ 'test-user': playbook });
+    const tool = getNamedPeriodTool(factory);
+
+    const result = await tool.execute({
+      userId: 'test-user',
+      name: 'fixture-cut-2024',
+    });
+
+    // Period metadata
+    expect(result.name).toBe('fixture-cut-2024');
+    expect(result.from).toBe('2024-02-01');
+    expect(result.to).toBe('2024-04-30');
+    expect(typeof result.description).toBe('string');
+    expect(result.description.length).toBeGreaterThan(0);
+    expect(result.error).toBeUndefined();
+
+    // Weight: weekly_avg aggregation
+    expect(result.weight).toBeTruthy();
+    expect(result.weight.aggregation).toBe('weekly_avg');
+    expect(Array.isArray(result.weight.rows)).toBe(true);
+    expect(result.weight.rows.length).toBeGreaterThan(0);
+    for (const row of result.weight.rows) {
+      expect(row.period).toMatch(/^\d{4}-W\d{2}$/);
+      expect(typeof row.lbs).toBe('number');
+    }
+
+    // Nutrition: all days inside the period
+    expect(result.nutrition).toBeTruthy();
+    expect(Array.isArray(result.nutrition.days)).toBe(true);
+    // Feb 1 → Apr 30 = 29 + 31 + 30 = 90 days
+    expect(result.nutrition.days.length).toBe(90);
+    for (const day of result.nutrition.days) {
+      expect(day.date >= '2024-02-01').toBe(true);
+      expect(day.date <= '2024-04-30').toBe(true);
+    }
+
+    // Workouts: all 3 inside the period (the May 15 one is filtered out)
+    expect(Array.isArray(result.workouts)).toBe(true);
+    expect(result.workouts.length).toBe(3);
+    for (const w of result.workouts) {
+      expect(w.date >= '2024-02-01').toBe(true);
+      expect(w.date <= '2024-04-30').toBe(true);
+    }
+
+    // Verify the underlying healthService was called with the period bounds
+    expect(healthService.getHealthForRange).toHaveBeenCalledWith(
+      'test-user', '2024-02-01', '2024-04-30',
+    );
+  });
+
+  it('unknown period name returns { error, name } without throwing', async () => {
+    const playbook = buildPlaybook({
+      'fixture-cut-2024': { from: '2024-02-01', to: '2024-04-30', description: 'cut' },
+    });
+    const { factory, healthStore, healthService } = makeNamedPeriodFactory({
+      'test-user': playbook,
+    });
+    const tool = getNamedPeriodTool(factory);
+
+    const result = await tool.execute({
+      userId: 'test-user',
+      name: 'does-not-exist',
+    });
+
+    expect(result.name).toBe('does-not-exist');
+    expect(typeof result.error).toBe('string');
+    expect(result.error).toMatch(/not found/i);
+
+    // Should NOT have invoked the underlying queries.
+    expect(healthStore.loadWeightData).not.toHaveBeenCalled();
+    expect(healthStore.loadNutritionData).not.toHaveBeenCalled();
+    expect(healthService.getHealthForRange).not.toHaveBeenCalled();
+  });
+
+  it('respects user-namespaced playbook (different userId, different periods)', async () => {
+    // user-A has 'cut-A', user-B has 'cut-B'. Each lookup must isolate.
+    const playbookByUser = {
+      'user-A': buildPlaybook({
+        'cut-A': { from: '2024-02-01', to: '2024-02-29', description: 'A cut' },
+      }),
+      'user-B': buildPlaybook({
+        'cut-B': { from: '2024-03-01', to: '2024-03-31', description: 'B cut' },
+      }),
+    };
+    const { factory, personalContextLoader } = makeNamedPeriodFactory(playbookByUser);
+    const tool = getNamedPeriodTool(factory);
+
+    const aResult = await tool.execute({ userId: 'user-A', name: 'cut-A' });
+    expect(aResult.error).toBeUndefined();
+    expect(aResult.from).toBe('2024-02-01');
+    expect(aResult.to).toBe('2024-02-29');
+
+    // user-A doesn't have 'cut-B' — even though user-B does.
+    const aMiss = await tool.execute({ userId: 'user-A', name: 'cut-B' });
+    expect(aMiss.error).toMatch(/not found/i);
+
+    const bResult = await tool.execute({ userId: 'user-B', name: 'cut-B' });
+    expect(bResult.error).toBeUndefined();
+    expect(bResult.from).toBe('2024-03-01');
+    expect(bResult.to).toBe('2024-03-31');
+
+    expect(personalContextLoader.loadPlaybook).toHaveBeenCalledWith('user-A');
+    expect(personalContextLoader.loadPlaybook).toHaveBeenCalledWith('user-B');
+  });
+});
