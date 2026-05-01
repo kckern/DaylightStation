@@ -228,6 +228,12 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
             ? activeChallenge.swapEligibleUsers
             : []
         }
+        resolveUser={(uid) => ({
+          name: fitnessCtx?.getDisplayName?.(uid) || uid,
+          avatarUrl: uid
+            ? `/api/v1/static/img/users/${uid}`
+            : '/api/v1/static/img/users/user'
+        })}
         onConfirm={handleConfirmSwap}
         onClose={handleCloseSwap}
       />
