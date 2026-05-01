@@ -5,8 +5,10 @@
  * timeline event objects where data lives under event.data.
  *
  * Filters out audio, then warmup AND deprioritized events (e.g. kids
- * content). Picks longest of the survivors by data.durationSeconds.
- * Falls back to longest video overall if every video is filtered out.
+ * content). When ≥2 surviving events are each ≥10 minutes long, picks
+ * the LAST one (chronologically latest — typically the main workout).
+ * Otherwise picks the longest survivor by data.durationSeconds. Falls
+ * back to longest event overall if every event is filtered out.
  *
  * @param {Array} mediaEvents - Timeline event objects with { data: { title, durationSeconds, ... } }
  * @param {Object} [config] - {
@@ -116,6 +118,16 @@ export function selectPrimaryMedia(mediaEvents, config) {
   const candidates = episodes.filter(e => !isWarmup(e) && !isDeprioritized(e));
   const pool = candidates.length > 0 ? candidates : episodes;
 
+  // Step 3: Positional bias — when ≥2 survivors are each ≥10 minutes long, prefer
+  // the LAST one. Events are chronological, and a true main-session video is
+  // almost always played AFTER any warmup that survived the filter.
+  const TEN_MIN_SEC = 10 * 60;
+  const longSurvivors = pool.filter(e => (e.data?.durationSeconds || 0) >= TEN_MIN_SEC);
+  if (longSurvivors.length >= 2) {
+    return longSurvivors[longSurvivors.length - 1];
+  }
+
+  // Step 4: Fallback — longest survivor wins.
   return pool.reduce((best, event) => {
     const bestSec = best.data?.durationSeconds || 0;
     const evSec = event.data?.durationSeconds || 0;

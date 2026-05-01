@@ -2,8 +2,10 @@
  * Select the primary media item from a session's media array.
  *
  * Filters out audio, then warmup videos AND deprioritized videos (e.g. kids
- * content). Picks longest of the survivors by durationMs. Falls back to
- * longest video overall if every video is filtered out.
+ * content). When ≥2 surviving videos are each ≥10 minutes long, picks the
+ * LAST one (chronologically latest — typically the main workout). Otherwise
+ * picks the longest survivor by durationMs. Falls back to longest video
+ * overall if every video is filtered out.
  *
  * @param {Array} mediaItems - Media summary objects from buildSessionSummary
  * @param {Object} [config] - {
