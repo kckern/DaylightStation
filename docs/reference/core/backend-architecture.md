@@ -98,7 +98,7 @@ Pure business logic with no external dependencies. Each domain has:
 | `nutrition/` | Food logging | FoodLog, NutritionEntry |
 | `journaling/` | Daily journaling | JournalEntry |
 | `journalist/` | Journal chatbot logic | ConversationMessage, QuizQuestion |
-| `health/` | Health metrics | Aggregated health data |
+| `health/` | Health metrics | Aggregated health data, `HealthScan` (F-006), `HealthArchiveManifest`, `DailyCoachingEntry` (F-001), services: `PatternDetector` (F-004), `SimilarPeriodFinder` (F-104), `CalibrationConstants` (F-007), `HealthArchiveScope` (F-106), `HealthArchiveIngestion` |
 | `gratitude/` | Gratitude tracking | Selection |
 | `entropy/` | Random content | Entropy reader |
 | `home-automation/` | Smart home control | Device states |
@@ -118,6 +118,7 @@ Use case orchestration, complex workflows, and **port interfaces** (contracts fo
 | `finance/` | Budget workflows | BudgetCompilationService, HarvestService |
 | `fitness/` | Session management | VoiceMemoTranscription |
 | `lifeplan/` | Life planning (JOP) | DriftService, CeremonyService, AlignmentService, RetroService, MetricsService |
+| `health/` | Health workflows + agent personalization | `HealthDashboardUseCase`, `AggregateHealthUseCase`, `ReconciliationProcessor`, `LongitudinalAggregationService`, `PersonalContextLoader` (F-101), `SetDailyCoachingUseCase` (F-001) |
 
 ### 4_api/ (39 files)
 
