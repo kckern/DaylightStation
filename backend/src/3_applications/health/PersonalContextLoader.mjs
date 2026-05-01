@@ -51,11 +51,18 @@ export class PersonalContextLoader {
   }
 
   /**
-   * Load and render the personal context bundle for a user.
+   * Load the raw parsed playbook YAML object for a user. Returns the parsed
+   * object (e.g. with `profile`, `calibration`, `named_periods`, `patterns`)
+   * or `null` if the file is missing/empty/invalid.
+   *
+   * Shared by `load(userId)` (which renders the markdown bundle) and by
+   * downstream tools that need structured playbook access (e.g. the
+   * LongitudinalToolFactory's `query_named_period` tool).
+   *
    * @param {string} userId
-   * @returns {Promise<string>} markdown bundle, or '' if playbook is missing
+   * @returns {Promise<Object|null>}
    */
-  async load(userId) {
+  async loadPlaybook(userId) {
     if (!userId || typeof userId !== 'string' || !USER_ID_PATTERN.test(userId)) {
       throw new Error(`Invalid userId: must match ${USER_ID_PATTERN}`);
     }
@@ -72,8 +79,21 @@ export class PersonalContextLoader {
 
     if (!playbook || typeof playbook !== 'object') {
       this.#logger.info?.('personal_context.playbook_missing', { userId, path: playbookPath });
-      return '';
+      return null;
     }
+
+    return playbook;
+  }
+
+  /**
+   * Load and render the personal context bundle for a user.
+   * @param {string} userId
+   * @returns {Promise<string>} markdown bundle, or '' if playbook is missing
+   */
+  async load(userId) {
+    const playbook = await this.loadPlaybook(userId);
+
+    if (!playbook) return '';
 
     const bundle = this.#render(playbook);
 
