@@ -2360,6 +2360,14 @@ export class GovernanceEngine {
   }
 
   _evaluateCycleChallenge(active, ctx) {
+    // Terminal-status guard: once a cycle has resolved (success or failed),
+    // do not re-evaluate. The state-machine's branch conditions stay true
+    // (e.g. phaseProgressMs >= maintainSeconds*1000) and would otherwise
+    // re-emit the same state_transition every tick.
+    if (active.status === 'success' || active.status === 'failed') {
+      return;
+    }
+
     const now = this._now();
 
     // Pause gate: base requirement failing globally → freeze all cycle timers.
