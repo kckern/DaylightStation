@@ -55,6 +55,9 @@
     padding: 10px 20px 0;
     font-size: 13px;
     color: #94a3b8;
+    display: flex;
+    align-items: center;
+    gap: 4px;
 
     strong {
       color: #f1f5f9;
@@ -112,18 +115,53 @@
     }
   }
 
+  &__rider-avatar-wrap {
+    position: relative;
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    flex: 0 0 40px;
+    aspect-ratio: 1 / 1;
+    border-radius: 50%;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.08);
+    border: 2px solid rgba(255, 255, 255, 0.18);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__rider-avatar {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    aspect-ratio: 1 / 1;
+    border-radius: inherit;
+  }
+
   &__rider-initial {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.1);
+    width: 100%;
+    height: 100%;
     font-weight: 700;
     font-size: 14px;
     color: #cbd5e1;
-    flex-shrink: 0;
+  }
+
+  &__current-avatar {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    min-height: 28px;
+    aspect-ratio: 1 / 1;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1.5px solid rgba(255, 255, 255, 0.18);
+    margin-right: 8px;
+    vertical-align: middle;
   }
 
   &__rider-name {

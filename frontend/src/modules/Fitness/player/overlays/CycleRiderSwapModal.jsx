@@ -20,6 +20,20 @@ import './CycleRiderSwapModal.scss';
  * Modal chrome (backdrop click + Escape key) closes without confirming;
  * `onConfirm(riderId)` fires when the user taps one of the rider tiles.
  */
+/**
+ * Build a default user resolver: id → { name, avatarUrl }.
+ * Falls back to title-casing the id and the generic /static/img/users/{id}
+ * route, which the backend's avatar API serves a placeholder for unknown
+ * users.
+ */
+function defaultResolveUser(uid) {
+  const name = (uid || '').replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) || '?';
+  return {
+    name,
+    avatarUrl: uid ? `/api/v1/static/img/users/${uid}` : '/api/v1/static/img/users/user'
+  };
+}
+
 export default function CycleRiderSwapModal({
   isOpen,
   currentRider,
@@ -27,7 +41,8 @@ export default function CycleRiderSwapModal({
   cycleCooldowns = {},
   now,
   onConfirm,
-  onClose
+  onClose,
+  resolveUser
 }) {
   const logger = useMemo(
     () => getLogger().child({ component: 'cycle-rider-swap-modal' }),
@@ -35,6 +50,7 @@ export default function CycleRiderSwapModal({
   );
 
   const effectiveNow = typeof now === 'number' ? now : Date.now();
+  const resolveUserFn = typeof resolveUser === 'function' ? resolveUser : defaultResolveUser;
 
   const handleBackdropClick = useCallback(
     (e) => {
@@ -116,11 +132,21 @@ export default function CycleRiderSwapModal({
           </button>
         </div>
 
-        {currentRider?.name ? (
-          <div className="cycle-swap-modal__current">
-            Current: <strong>{currentRider.name}</strong>
-          </div>
-        ) : null}
+        {currentRider?.id || currentRider?.name ? (() => {
+          const resolved = resolveUserFn(currentRider.id || currentRider.name);
+          const displayName = currentRider.name || resolved.name;
+          return (
+            <div className="cycle-swap-modal__current">
+              <img
+                className="cycle-swap-modal__current-avatar"
+                src={resolved.avatarUrl}
+                alt=""
+                onError={(e) => { e.currentTarget.src = '/api/v1/static/img/users/user'; }}
+              />
+              <span>Current: <strong>{displayName}</strong></span>
+            </div>
+          );
+        })() : null}
 
         <div className="cycle-swap-modal__body">
           {eligibleUsers.length === 0 ? (
@@ -131,7 +157,8 @@ export default function CycleRiderSwapModal({
             <ul className="cycle-swap-modal__list">
               {eligibleUsers.map((uid) => {
                 const hint = formatCooldownHint(cycleCooldowns[uid], effectiveNow);
-                const initial = (uid && uid[0]) ? uid[0].toUpperCase() : '?';
+                const resolved = resolveUserFn(uid);
+                const initial = (resolved.name?.[0] || uid?.[0] || '?').toUpperCase();
                 return (
                   <li key={uid} className="cycle-swap-modal__item">
                     <button
@@ -139,10 +166,21 @@ export default function CycleRiderSwapModal({
                       className="cycle-swap-modal__rider-btn"
                       onClick={() => handleConfirm(uid)}
                     >
-                      <span className="cycle-swap-modal__rider-initial">
-                        {initial}
+                      <span className="cycle-swap-modal__rider-avatar-wrap">
+                        <img
+                          className="cycle-swap-modal__rider-avatar"
+                          src={resolved.avatarUrl}
+                          alt=""
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            e.currentTarget.nextSibling.style.display = 'flex';
+                          }}
+                        />
+                        <span className="cycle-swap-modal__rider-initial" style={{ display: 'none' }}>
+                          {initial}
+                        </span>
                       </span>
-                      <span className="cycle-swap-modal__rider-name">{uid}</span>
+                      <span className="cycle-swap-modal__rider-name">{resolved.name}</span>
                       {hint ? (
                         <span className="cycle-swap-modal__rider-hint">
                           {hint}
@@ -182,5 +220,6 @@ CycleRiderSwapModal.propTypes = {
   cycleCooldowns: PropTypes.object,
   now: PropTypes.number,
   onConfirm: PropTypes.func,
-  onClose: PropTypes.func
+  onClose: PropTypes.func,
+  resolveUser: PropTypes.func
 };

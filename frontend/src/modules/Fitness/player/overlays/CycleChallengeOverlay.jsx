@@ -409,9 +409,16 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
           }}
         >
           <span className="cycle-challenge-overlay__target-value">{targetRpm}</span>
-          <span className="cycle-challenge-overlay__target-unit">RPM</span>
         </div>
       )}
+
+      <div
+        className="cycle-challenge-overlay__current-rpm"
+        aria-label={`Current RPM ${Math.round(currentRpm)}`}
+      >
+        <span className="cycle-challenge-overlay__current-rpm-value">{Math.round(currentRpm)}</span>
+        <span className="cycle-challenge-overlay__current-rpm-unit">RPM</span>
+      </div>
 
       <button
         type="button"
@@ -428,11 +435,23 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
       )}
 
       <div
-        className="cycle-challenge-overlay__segment-counter"
-        role="status"
-        aria-label={`Segment ${Math.min(totalPhases, currentPhaseIndex + 1)} of ${totalPhases}`}
+        className="cycle-challenge-overlay__progress-bar"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(phaseProgress * 100)}
+        aria-label={`Phase ${Math.min(totalPhases, currentPhaseIndex + 1)} of ${totalPhases}, ${Math.round(phaseProgress * 100)}% complete`}
       >
-        {segmentLabel}
+        <div
+          className="cycle-challenge-overlay__progress-bar-fill"
+          style={{ width: `${Math.round(phaseProgress * 100)}%` }}
+        />
+        <span className="cycle-challenge-overlay__progress-bar-label">
+          Phase {segmentLabel}
+        </span>
+        <span className="cycle-challenge-overlay__progress-bar-pct">
+          {Math.round(phaseProgress * 100)}%
+        </span>
       </div>
 
       {boosters.map((b) => (
