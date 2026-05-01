@@ -14,6 +14,7 @@ import { resolveMediaIdentity, resolveContentId, normalizeDuration } from '@/mod
 import { resolvePause, PAUSE_REASON } from '@/modules/Player/utils/pauseArbiter.js';
 import FitnessChart from '@/modules/Fitness/widgets/FitnessChart/index.jsx';
 import FitnessChartBackButton from './FitnessChartBackButton.jsx';
+import FitnessChartVoiceMemoFab from './FitnessChartVoiceMemoFab.jsx';
 import { resolvePostEpisodeRedirect } from './postEpisodeRedirect.js';
 import { useMediaAmplifier } from '@/modules/Fitness/components/useMediaAmplifier.js';
 import { FitnessPlayerFrame } from './frames';
@@ -1570,6 +1571,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
         <div className="fitness-chart-overlay">
           <FitnessChartBackButton onReturn={() => setShowChart(false)} />
           <FitnessChart mode="sidebar" onClose={() => {}} />
+          <FitnessChartVoiceMemoFab
+            sessionActive={Boolean(fitnessSessionInstance?.isActive)}
+            onRecord={() => openVoiceMemoCapture?.(null)}
+          />
         </div>
       )}
       {playerMode === 'fullscreen' && fitnessSessionInstance?.isActive && (
