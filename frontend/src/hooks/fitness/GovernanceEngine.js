@@ -1373,6 +1373,15 @@ export class GovernanceEngine {
    * to ensure zone label fallbacks work even when no media/participants are present.
    */
   _resetToIdle() {
+    // Preserve an active cycle challenge across reset. Cycle has its own
+    // lifecycle (rider + RPM + phases) driven by equipment cadence, not by
+    // media governance, so it should survive transitions to non-governed
+    // media. Particularly relevant for the simulator popout, where a user
+    // can trigger a cycle from any view.
+    const preservedCycleChallenge = this.challengeState?.activeChallenge?.type === 'cycle'
+      ? this.challengeState.activeChallenge
+      : null;
+
     // Already idle — skip all work to avoid thousands of wasted onStateChange callbacks
     if (this.phase === null && !this.meta.satisfiedOnce && !this.challengeState.activeChallenge) {
       return;
@@ -1392,7 +1401,7 @@ export class GovernanceEngine {
       activePolicyId: null,
       activePolicyName: null,
       selectionCursor: {},
-      activeChallenge: null,
+      activeChallenge: preservedCycleChallenge,
       nextChallengeAt: null,
       nextChallengeRemainingMs: null,
       nextChallenge: null,
