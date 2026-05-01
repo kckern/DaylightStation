@@ -11,12 +11,12 @@
  * injection of a structured logger.
  *
  * Confidence model (v1):
- *   For each signal, compare against threshold. Confidence is the geometric
- *   minimum of per-signal sub-confidences:
- *     "exceeded" thresholds (signal > threshold):  min(1, signal / threshold)
- *     "below"    thresholds (signal < threshold):  min(1, (threshold - delta) / threshold)
- *   When all signals strongly exceed thresholds, confidence = 1.0.
- *   Borderline signals produce confidence < 1.0.
+ *   Each signal is scored by its margin from the threshold (in the matching
+ *   direction). Margin >= MARGIN_FOR_FULL (50%) → 1.0; margin = 0 (just barely
+ *   matching) → 0; linearly interpolated. Pattern confidence is the minimum
+ *   across all required signals (logical AND semantics). Detections only fire
+ *   when every required signal matches — sub-confidence < 1.0 just means the
+ *   pattern is borderline, not yet absent.
  *
  * @module domains/health/services/PatternDetector
  */
