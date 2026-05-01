@@ -1481,7 +1481,22 @@
       &.card-horizontal {
         gap: 8px;
         padding: 4px 8px;
-        .card-avatar { width: 36px; height: 36px; }
+        .card-avatar {
+          width: 36px;
+          height: 36px;
+          min-width: 36px;
+          min-height: 36px;
+          flex: 0 0 36px;
+          aspect-ratio: 1 / 1;
+        }
+        .card-avatar img,
+        .card-avatar .user-profile-img {
+          width: 100%;
+          height: 100%;
+          aspect-ratio: 1 / 1;
+          object-fit: cover;
+          border-radius: inherit;
+        }
         .device-info .device-name { font-size: 0.85rem; }
         .device-info .device-stats .device-value { font-size: 0.95rem; }
       }
