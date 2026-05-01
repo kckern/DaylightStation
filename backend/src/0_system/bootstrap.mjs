@@ -196,6 +196,7 @@ import { HealthCoachAgent } from '#apps/agents/health-coach/index.mjs';
 import { PersonalContextLoader } from '../3_applications/health/PersonalContextLoader.mjs';
 import { HealthArchiveScope } from '#domains/health/services/HealthArchiveScope.mjs';
 import { SimilarPeriodFinder } from '#domains/health/services/SimilarPeriodFinder.mjs';
+import { PatternDetector } from '#domains/health/services/PatternDetector.mjs';
 import { CoachingOrchestrator, CoachingCommentaryService } from '#apps/coaching/index.mjs';
 import { PagedMediaTocAgent } from '#apps/agents/paged-media-toc/index.mjs';
 import { KomgaClient } from '#adapters/content/readable/komga/KomgaClient.mjs';
@@ -2959,6 +2960,9 @@ export async function createAgentsApiRouter(config) {
     const mediaRoot = path.resolve(mediaDir);
     const archiveScope = new HealthArchiveScope({ dataRoot, mediaRoot });
     const similarPeriodFinder = new SimilarPeriodFinder({ logger });
+    // F-004 PatternDetector — pure domain service consumed by MorningBrief.
+    // Stateless, no I/O; instantiated once and shared across requests.
+    const patternDetector = new PatternDetector({ logger });
 
     agentOrchestrator.register(HealthCoachAgent, {
       workingMemory,
@@ -2974,6 +2978,7 @@ export async function createAgentsApiRouter(config) {
       personalContextLoader,
       archiveScope,
       similarPeriodFinder,
+      patternDetector,
       dataRoot,
     });
   }
