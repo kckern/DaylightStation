@@ -3176,6 +3176,7 @@ export async function createBrainServices(config) {
     configService,
     dataService,
     contentQueryService = null,
+    contentRegistry = null,         // optional — used to look up Plex labels for media policy
     haGateway = null,
     devicesConfig = {},
     mediaLogsDir,
@@ -3297,12 +3298,31 @@ export async function createBrainServices(config) {
         });
       }
 
+      // Per-satellite media_policy gate (library + label whitelist). The gate
+      // itself is vendor-agnostic; the labelLookup composed here dispatches
+      // by item.source to the right adapter's ancestor-label method. This is
+      // the only place in the brain wiring that names specific content
+      // sources — the gate and use case know nothing about them.
+      const { MediaPolicyGate } = await import('#applications/brain/services/MediaPolicyGate.mjs');
+      const labelLookup = async (item, _opts = {}) => {
+        const adapter = contentRegistry?.get?.(item?.source);
+        if (typeof adapter?.getAncestorLabels === 'function') {
+          return adapter.getAncestorLabels(item);
+        }
+        return [];
+      };
+      const mediaPolicyGate = new MediaPolicyGate({
+        labelLookup,
+        logger: logger.child({ skill: 'media', component: 'policy-gate' }),
+      });
+
       brainSkills.push(new MediaSkill({
         contentQuery: contentQueryService,
         gateway: haGateway,
         logger: logger.child({ skill: 'media' }),
         config: { ...mediaConfig, ds_base_url: dsBaseUrl },
         judge: mediaJudge,
+        policyGate: mediaPolicyGate,
       }));
       logger.info?.('brain.media.skill.url', {
         ds_base_url: dsBaseUrl,

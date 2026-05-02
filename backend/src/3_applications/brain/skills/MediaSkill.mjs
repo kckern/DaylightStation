@@ -4,39 +4,28 @@ import { PlayMediaUseCase } from '../usecases/PlayMedia.mjs';
  * MediaSkill — thin tool wrapper that exposes voice-driven media playback
  * to the brain agent. The actual orchestration (search → judge → resolve →
  * play) lives in PlayMediaUseCase. This file owns:
- *   - voice playback policy (what types are voice-playable, ranking weights,
- *     which sources/library subsets to search)
  *   - tool schema (what the LLM sees)
  *   - prompt fragment (how to describe the tool to the LLM)
+ *   - composition: assemble the use case from injected primitives + config
  *   - URL building from configured ds_base_url
+ *
+ * All vendor-specific values (source names, library IDs, source-namespaced
+ * query keys, ranking field names) come from the operator's brain.yml.
+ * This file names no specific content sources — defaults are vendor-neutral.
  */
 
-// ── Voice playback policy ─────────────────────────────────────────────────
+// ── Generic defaults (no vendor-specific values here) ─────────────────────
 
-// Block visual / long-form video types from voice playback.
-const VOICE_EXCLUDE_MEDIA_TYPES = ['image', 'photo', 'video', 'dash_video', 'movie', 'episode', 'show'];
+// Hard ceiling on queued items per container — caps a runaway artist queue.
+const DEFAULT_MAX_QUEUE_SIZE = 50;
 
-// Tier-1 default surfaces only containers; voice search needs individual
-// tracks (and episodes) returned alongside containers so a song query can
-// hit the song directly.
-const VOICE_PLEX_TIER1_TYPES = ['show', 'movie', 'artist', 'album', 'collection', 'track', 'episode'];
+// Container types that shuffle by default. These names are domain-generic
+// (artist/album/playlist exist as concepts across many media systems);
+// operator can override per their adapter's vocabulary.
+const DEFAULT_SHUFFLE_TYPES = ['artist', 'playlist', 'collection'];
 
-// Secondary ranking factors applied after relevance sort.
-const VOICE_RANK = {
-  factors: [
-    { field: 'metadata.userRating', weight: 0.7, normalize: 'div:10' },
-    { field: 'metadata.viewCount',  weight: 0.3, normalize: 'log10:100' },
-  ],
-};
-
-// Container types that should shuffle by default for voice playback.
-// Albums play in order; artists / playlists / collections shuffle since
-// playing them sequentially from track 1 is rarely what the user wants.
-const VOICE_SHUFFLE_TYPES = ['artist', 'playlist', 'collection'];
-
-// Hard ceiling on queued items per container — stops a 500-track artist
-// from spamming HA with 500 service calls.
-const VOICE_MAX_QUEUE_SIZE = 50;
+// How many candidates to ask the search for. Operator-overridable.
+const DEFAULT_VOICE_TAKE = 5;
 
 export class MediaSkill {
   static name = 'media';
@@ -44,10 +33,11 @@ export class MediaSkill {
   #contentQuery;
   #gateway;
   #judge;
+  #policyGate;
   #logger;
   #config;
 
-  constructor({ contentQuery, gateway, logger = console, config = {}, judge = null }) {
+  constructor({ contentQuery, gateway, logger = console, config = {}, judge = null, policyGate = null }) {
     if (!contentQuery) throw new Error('MediaSkill: contentQuery required');
     if (!gateway) throw new Error('MediaSkill: gateway required');
     if (!config?.ds_base_url || typeof config.ds_base_url !== 'string') {
@@ -60,14 +50,23 @@ export class MediaSkill {
     this.#gateway = gateway;
     this.#logger = logger;
     this.#judge = judge;
+    // Optional MediaPolicyGate — when satellite has media_policy, this gate
+    // applies library/label whitelisting. Pass-through if not provided.
+    this.#policyGate = policyGate;
+    // Defaults are vendor-neutral. All vendor specifics (source names,
+    // library IDs, source-namespaced query keys, ranking field names) are
+    // expected to come from brain.yml.media. Empty defaults mean no
+    // restriction at this layer — the operator owns what gets applied.
     this.#config = {
       default_volume: 30,
       prefix_aliases: {},
-      voice_sources: ['plex'],
-      // Default Plex audio libraries: music, children's music/stories,
-      // speech, education, scripture, ambient, industrial, sound effects.
-      // Excludes Audiobooks (id 9) by design — voice doesn't do long-form.
-      plex_library_ids: '5,10,11,16,18,19,21,22,23',
+      voice_sources: [],          // empty = no source restriction
+      search_params: {},          // verbatim merged into cq.search (operator owns the keys)
+      exclude_media_types: [],    // generic blocklist (item.mediaType / metadata.type)
+      rank: null,                 // optional secondary rank: { factors: [{field,weight,normalize}] }
+      shuffle_types: DEFAULT_SHUFFLE_TYPES,
+      max_queue_size: DEFAULT_MAX_QUEUE_SIZE,
+      take: DEFAULT_VOICE_TAKE,
       ...config,
     };
   }
@@ -130,7 +129,17 @@ You can play household media (music, songs, podcasts, ambient sounds, lectures).
     return new PlayMediaUseCase({
       search: (text) => voiceSearch(cq, text, cfg),
       resolve: (source, localId) => cq.resolve(source, localId, {}, {}),
-      filterPlayable: (items) => items.filter(isVoicePlayable),
+      filterPlayable: async (items, satellite) => {
+        // Two-stage filter: apply the operator-declared media-type blocklist
+        // first (vendor-agnostic — every adapter exposes mediaType), then
+        // apply the satellite's media_policy via the optional MediaPolicyGate.
+        const blocked = excludeSet(cfg.exclude_media_types);
+        const allowedTypes = blocked.size > 0
+          ? items.filter(item => !itemHasBlockedType(item, blocked))
+          : items;
+        if (!this.#policyGate) return allowedTypes;
+        return this.#policyGate.apply(allowedTypes, satellite);
+      },
       gateway: this.#gateway,
       urlBuilder: (playable, source, localId) => {
         const relative = playable.mediaUrl ?? `/api/v1/stream/${source}/${localId}`;
@@ -139,37 +148,46 @@ You can play household media (music, songs, podcasts, ambient sounds, lectures).
       judge: this.#judge,
       logger: this.#logger,
       playbackPolicy: {
-        shuffleTypes: cfg.shuffle_types ?? VOICE_SHUFFLE_TYPES,
-        maxQueueSize: cfg.max_queue_size ?? VOICE_MAX_QUEUE_SIZE,
+        shuffleTypes: cfg.shuffle_types,
+        maxQueueSize: cfg.max_queue_size,
       },
     });
   }
 }
 
-// ── Local helpers (voice-specific, kept here, not in CQS) ─────────────────
+// ── Local helpers (vendor-neutral) ────────────────────────────────────────
 
 async function voiceSearch(cq, text, cfg) {
-  const sources = Array.isArray(cfg?.voice_sources) ? cfg.voice_sources : [];
-  const sourceParam = sources.length === 1 ? sources[0] : undefined;
+  // Build the query verbatim from operator config. The brain names no
+  // specific source or library — operators populate brain.yml.media.
   const query = {
     text,
-    take: 5,
-    excludeMediaTypes: VOICE_EXCLUDE_MEDIA_TYPES,
-    tier1AllowedTypes: VOICE_PLEX_TIER1_TYPES,
-    rank: VOICE_RANK,
+    take: cfg?.take ?? DEFAULT_VOICE_TAKE,
+    ...(cfg?.search_params ?? {}),    // operator-declared keys (e.g. 'plex.libraryId', tier1AllowedTypes)
   };
-  if (sourceParam) query.source = sourceParam;
-  if (cfg?.plex_library_ids) query['plex.libraryId'] = cfg.plex_library_ids;
+  if (Array.isArray(cfg?.exclude_media_types) && cfg.exclude_media_types.length > 0) {
+    query.excludeMediaTypes = cfg.exclude_media_types;
+  }
+  if (cfg?.rank?.factors?.length > 0) {
+    query.rank = cfg.rank;
+  }
+  // Single configured source = pin to that source.
+  const sources = Array.isArray(cfg?.voice_sources) ? cfg.voice_sources : [];
+  if (sources.length === 1) query.source = sources[0];
   return cq.search(query);
 }
 
-function isVoicePlayable(item) {
+function excludeSet(list) {
+  if (!Array.isArray(list)) return new Set();
+  return new Set(list.map(s => String(s).toLowerCase()));
+}
+
+function itemHasBlockedType(item, blockedSet) {
   if (!item) return false;
-  const blocked = new Set(VOICE_EXCLUDE_MEDIA_TYPES);
   const types = [item.mediaType, item.metadata?.type, item.type]
     .filter(v => typeof v === 'string')
     .map(v => v.toLowerCase());
-  return !types.some(t => blocked.has(t));
+  return types.some(t => blockedSet.has(t));
 }
 
 function applyPrefix(query, mediaClass, aliases) {

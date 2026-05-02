@@ -38,6 +38,7 @@ export class YamlSatelliteRegistry {
           defaultMediaClass: entry.default_media_class ?? null,
           scopes_allowed: entry.scopes_allowed ?? [],
           scopes_denied: entry.scopes_denied ?? [],
+          media_policy: entry.media_policy ?? null,
         });
         this.#byToken.set(token, satellite);
         this.#all.push(satellite);
