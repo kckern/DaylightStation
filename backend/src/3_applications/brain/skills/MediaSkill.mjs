@@ -6,7 +6,9 @@ export class MediaSkill {
   #logger;
   #config;
 
-  constructor({ contentQuery, gateway, logger = console, config = {} }) {
+  #judge;
+
+  constructor({ contentQuery, gateway, logger = console, config = {}, judge = null }) {
     if (!contentQuery) throw new Error('MediaSkill: contentQuery required');
     if (!gateway) throw new Error('MediaSkill: gateway required');
     if (!config?.ds_base_url || typeof config.ds_base_url !== 'string') {
@@ -21,8 +23,18 @@ export class MediaSkill {
     this.#config = {
       default_volume: 30,
       prefix_aliases: {},
+      // Voice playback restricts the upstream search to a curated set of
+      // sources / library sections so it never lands on photos, video shows,
+      // audiobook chapter dumps, etc. Defaults below favour Plex audio
+      // libraries (music, speech, ambient, etc.) and exclude Audiobooks.
+      voice_sources: ['plex'],
+      plex_library_ids: '5,10,11,16,18,19,21,22,23',
       ...config,
     };
+    // Optional MediaJudge — when provided, called for ambiguous result sets to
+    // pick the best candidate. When null, MediaSkill falls back to the default
+    // pick (top of the rank-sorted list).
+    this.#judge = judge;
   }
 
   get name() { return MediaSkill.name; }
@@ -41,6 +53,7 @@ You can play household media (music, playlists, podcasts, audiobooks, ambient so
     const gw = this.#gateway;
     const cfg = this.#config;
     const log = this.#logger;
+    const judge = this.#judge;
 
     return [
       {
@@ -62,55 +75,107 @@ You can play household media (music, playlists, podcasts, audiobooks, ambient so
           const satellite = ctx?.satellite;
           if (!satellite?.mediaPlayerEntity) return { ok: false, reason: 'no_media_player' };
 
-          const text = applyPrefix(query, media_class, cfg.prefix_aliases);
           const start = Date.now();
-          // Voice playback: never return photos or videos. The agent serves audio only —
-          // music, songs, podcasts, audiobooks, ambient. Containers (album/artist/playlist)
-          // are allowed since they expand to audio tracks on resolve(). `includeLeafTypes`
-          // opts the Plex adapter into surfacing individual tracks (instead of only their
-          // parent albums/artists), which is required for "play <song name>" queries.
-          const search = await cq.search({ text, take: 5, audioOnly: true, includeLeafTypes: true });
+          const attempts = [];
+
+          // ── 1. Search (with one-shot retry on no_match using simplified query) ──
+          let searchQuery = applyPrefix(query, media_class, cfg.prefix_aliases);
+          let search = await voiceSearch(cq, searchQuery, cfg);
+          attempts.push({ kind: 'search', query: searchQuery, count: search.items?.length ?? 0 });
           log.info?.('brain.skill.media.search', {
-            query,
-            media_class,
+            query, media_class, search_query: searchQuery,
             result_count: search.items?.length ?? 0,
+            sources_scoped: cfg.voice_sources,
+            plex_library_ids: cfg.plex_library_ids,
             latencyMs: Date.now() - start,
           });
 
-          const candidates = (search.items ?? []).slice(0, 5).map((it) => ({
+          if ((search.items?.length ?? 0) === 0) {
+            const simplified = simplifyQuery(query);
+            if (simplified && simplified !== searchQuery) {
+              search = await voiceSearch(cq, simplified, cfg);
+              attempts.push({ kind: 'retry', query: simplified, count: search.items?.length ?? 0 });
+              log.info?.('brain.skill.media.search_retry', {
+                original: query, simplified, result_count: search.items?.length ?? 0,
+              });
+            }
+          }
+
+          const items = search.items ?? [];
+          const candidates = items.slice(0, 5).map((it) => ({
             id: it.id,
             source: it.source,
             title: it.title,
             mediaType: it.mediaType ?? it.metadata?.type ?? null,
+            userRating: it.metadata?.userRating ?? it.metadata?.rating ?? null,
+            playCount: it.metadata?.viewCount ?? it.metadata?.playCount ?? null,
           }));
 
-          const top = search.items?.[0];
-          if (!top) {
-            log.warn?.('brain.skill.media.no_match', { query, sources_tried: search.sources ?? [] });
-            return { ok: false, reason: 'no_match', query, candidates };
+          if (items.length === 0) {
+            log.warn?.('brain.skill.media.no_match', { query, sources_tried: search.sources ?? [], attempts });
+            return { ok: false, reason: 'no_match', query, attempts };
           }
 
-          const localId = top.localId ?? extractLocalId(top.id, top.source);
-          const resolved = await cq.resolve(top.source, localId, {}, {});
-          const resolvedItems = (resolved.items ?? []).map((it) => ({
-            id: it.id,
-            mediaType: it.mediaType ?? it.metadata?.type ?? null,
-            mediaUrl: it.mediaUrl ?? null,
-          }));
-          const audioOnly = (resolved.items ?? []).filter(isAudioItem);
-          const playable = audioOnly[0];
-          if (!playable) {
-            log.warn?.('brain.skill.media.no_audio_playable', { content_id: top.id, source: top.source });
+          // ── 2. Pick the best candidate (judge if ambiguous, else top) ──
+          let pickIndex = 0;
+          let pickReason = 'top_of_rank';
+          if (items.length > 1 && judge) {
+            try {
+              const judgement = await judge.pick({ query, candidates });
+              if (judgement?.index >= 0 && judgement.index < candidates.length) {
+                pickIndex = judgement.index;
+                pickReason = `judge:${judgement.reason ?? 'no_reason'}`;
+                log.info?.('brain.skill.media.judge', {
+                  query, picked_id: candidates[pickIndex].id,
+                  reason: judgement.reason, latencyMs: judgement.latencyMs,
+                });
+              }
+            } catch (err) {
+              log.warn?.('brain.skill.media.judge_failed', { error: err.message });
+            }
+          }
+
+          // ── 3. Iterate-on-resolve: walk candidates from pickIndex outward ──
+          const tryOrder = orderForResolve(items, pickIndex);
+          let played = null;
+          let lastFailReason = null;
+          const resolveAttempts = [];
+
+          for (const candidate of tryOrder) {
+            const localId = candidate.localId ?? extractLocalId(candidate.id, candidate.source);
+            try {
+              const resolved = await cq.resolve(candidate.source, localId, {}, {});
+              const audioPlayables = (resolved.items ?? []).filter(isAudioItem);
+              const playable = audioPlayables[0];
+              if (!playable) {
+                resolveAttempts.push({ id: candidate.id, reason: 'no_audio_playable' });
+                lastFailReason = 'no_audio_playable';
+                continue;
+              }
+              played = { candidate, playable, localId };
+              resolveAttempts.push({ id: candidate.id, reason: 'ok' });
+              break;
+            } catch (err) {
+              resolveAttempts.push({ id: candidate.id, reason: 'error', error: err.message });
+              lastFailReason = `error:${err.message}`;
+            }
+          }
+
+          if (!played) {
+            log.warn?.('brain.skill.media.all_resolve_failed', {
+              query, candidates: candidates.map((c) => c.id), resolveAttempts,
+            });
             return {
               ok: false,
-              reason: 'no_audio_playable',
-              source: top.source,
-              top: { id: top.id, title: top.title, mediaType: top.mediaType ?? top.metadata?.type ?? null },
+              reason: lastFailReason ?? 'no_resolvable_audio',
+              query,
               candidates,
-              resolvedItems,
+              resolveAttempts,
+              attempts,
             };
           }
 
+          const { candidate: top, playable, localId } = played;
           const relative = playable.mediaUrl ?? `/api/v1/stream/${top.source}/${localId}`;
           const mediaUrl = absoluteUrl(cfg.ds_base_url, relative);
           const contentType = mapContentType(playable.metadata?.type ?? media_class ?? 'music');
@@ -129,12 +194,14 @@ You can play household media (music, playlists, podcasts, audiobooks, ambient so
             content_type: contentType,
             ok: !!playResult?.ok,
             ha_error: playResult?.error,
+            pick_reason: pickReason,
+            resolve_attempts: resolveAttempts.length,
           });
 
           return {
             ok: !!playResult?.ok,
             title: top.title,
-            artist: top.metadata?.artist ?? null,
+            artist: top.metadata?.artist ?? top.metadata?.parentTitle ?? null,
             mediaPlayer: satellite.mediaPlayerEntity,
             mediaUrl,
             mediaContentType: contentType,
@@ -144,12 +211,64 @@ You can play household media (music, playlists, podcasts, audiobooks, ambient so
             haResponse: playResult?.data ?? null,
             error: playResult?.error,
             candidates,
-            resolvedItems,
+            resolveAttempts,
+            pickReason,
+            attempts,
           };
         },
       },
     ];
   }
+}
+
+async function voiceSearch(cq, text, cfg) {
+  const sources = Array.isArray(cfg?.voice_sources) ? cfg.voice_sources : [];
+  // Single-source scoping if exactly one configured (most common: ['plex']).
+  const sourceParam = sources.length === 1 ? sources[0] : undefined;
+  const query = {
+    text,
+    take: 5,
+    audioOnly: true,
+    includeLeafTypes: true,
+    rankBy: 'voice',
+  };
+  if (sourceParam) query.source = sourceParam;
+  if (cfg?.plex_library_ids) query['plex.libraryId'] = cfg.plex_library_ids;
+  return cq.search(query);
+}
+
+/**
+ * Build the order to attempt resolves: start at the picked index, then walk
+ * outward both directions so we try near-matches first.
+ */
+function orderForResolve(items, pickIndex) {
+  const ordered = [items[pickIndex]];
+  let left = pickIndex - 1;
+  let right = pickIndex + 1;
+  while (left >= 0 || right < items.length) {
+    if (right < items.length) ordered.push(items[right++]);
+    if (left >= 0) ordered.push(items[left--]);
+  }
+  return ordered;
+}
+
+/**
+ * Trim a voice query to its "core" — drop "by ARTIST" suffix, leading/trailing
+ * articles, common politeness words. Used as a single fallback when the
+ * original query returns zero hits.
+ */
+function simplifyQuery(query) {
+  if (!query || typeof query !== 'string') return null;
+  let q = query.trim().toLowerCase();
+  // strip "by ARTIST" / "from ARTIST"
+  q = q.replace(/\s+(by|from)\s+.+$/i, '');
+  // strip leading articles
+  q = q.replace(/^(the|a|an)\s+/, '');
+  // strip leading politeness
+  q = q.replace(/^(please\s+|can you\s+|could you\s+|would you\s+)/, '');
+  // strip trailing punctuation
+  q = q.replace(/[.?!,]+$/, '').trim();
+  return q.length >= 2 ? q : null;
 }
 
 function absoluteUrl(base, relativeOrAbsolute) {

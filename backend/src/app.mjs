@@ -2374,15 +2374,34 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         });
       } else {
         const mediaOverrides = configService.reloadHouseholdAppConfig?.(null, 'brain.media') ?? {};
+        // Build a lightweight judge runtime — second MastraAdapter pinned to a
+        // cheap model so disambiguating between 5 candidates doesn't run on the
+        // primary brain model.
+        const { MastraAdapter: JudgeMastraAdapter } = await import('#adapters/agents/index.mjs');
+        const judgeModel = mediaOverrides?.judge_model ?? 'openai/gpt-4o-mini';
+        const judgeRuntime = new JudgeMastraAdapter({
+          model: judgeModel,
+          logger: brainLogger.child({ component: 'judge-runtime' }),
+          maxToolCalls: 1,
+          timeoutMs: 8000,
+        });
+        const { MediaJudge } = await import('#applications/brain/services/MediaJudge.mjs');
+        const mediaJudge = new MediaJudge({
+          agentRuntime: judgeRuntime,
+          logger: brainLogger.child({ skill: 'media', component: 'judge' }),
+        });
+
         brainSkills.push(new MediaSkill({
           contentQuery: contentServices.contentQueryService,
           gateway: homeAutomationAdapters.haGateway,
           logger: brainLogger.child({ skill: 'media' }),
           config: { ...mediaOverrides, ds_base_url: dsBaseUrl },
+          judge: mediaJudge,
         }));
         rootLogger.info('brain.media.skill.url', {
           ds_base_url: dsBaseUrl,
           source: devicesConfig?.daylightHostInternal ? 'daylightHostInternal' : 'daylightHost',
+          judge_model: judgeModel,
         });
       }
     }
