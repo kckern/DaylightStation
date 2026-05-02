@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The health app is the visual surface a household member uses to take stock of their day and explore their history. It answers two questions in one place: *where do I stand right now?* and *how is the longer story going?* The first answer lives on a single screen of summary cards a user reads in seconds. The second lives one tap away — a chart-and-history detail view per dimension. The app is fast to open, fast to read, and fast to act on: a meal can be logged from the same screen that shows today's calorie standing.
+The health app is the visual surface a household member uses to take stock of their day and explore their history. It answers two questions in one place: *where do I stand right now?* and *how is the longer story going?* The first answer lives on a single screen of summary cards a user reads in seconds. The second lives one tap away — a chart-and-history detail view per dimension. A meal can be logged from the same screen that shows today's calorie standing, and the longest interaction — review and accept an AI-parsed meal — takes a single tap from any card.
 
 For shared concepts referenced throughout this document — daily summary, longitudinal aggregate, identity model, household, food catalog, source freshness, status block — see `health-system-architecture.md`. For how those numbers are produced, see `data-pipeline.md`. For how coaching messages are composed and delivered, see `coaching-system.md`. This document describes what the user sees and does.
 
@@ -12,11 +12,11 @@ For shared concepts referenced throughout this document — daily summary, longi
 
 The app has two views and one transition between them.
 
-The default view is a **hub** — a grid of summary cards covering today's weight, nutrition, sessions, source freshness, and goal progress. Each tappable card shows just enough to read at a glance: a number, a trend, a badge, a one-line summary. The cards stack into a single column on a narrow viewport and break into a multi-column grid on a wider one.
+The default view is a **hub** — a grid of summary cards covering today's weight, nutrition, sessions, source freshness, and goal progress. Each card shows a number, a trend, a badge, and a one-line summary (see *Hub cards* below for the shared shape). The cards stack into a single column on a narrow viewport and break into a multi-column grid on a wider one.
 
-Tapping a card opens a **detail view** for that dimension. The detail view replaces the hub in place — there is no modal, no overlay. A back affordance at the top of the detail returns the user to the hub. The transition feels like drilling in and stepping back out, not switching pages.
+Tapping a card opens a **detail view** for that dimension. The detail view replaces the hub in place — there is no modal, no overlay. A back affordance at the top of the detail returns the user to the hub.
 
-The hub fetches a single composed dashboard document on open and passes the relevant slices into each card. The detail views read the same document. A user moving from hub to detail and back does not pay another network round trip for data the hub already loaded; only an explicit refresh re-fetches.
+The hub fetches a single composed dashboard document on open and passes the relevant slices into each card. The detail views read the same document, so a single open-the-app load covers both the at-a-glance numbers and any drill-down a user explores from there.
 
 ---
 
@@ -34,11 +34,11 @@ The nutrition card carries the day's calorie total as the headline number, with 
 
 ### Sessions
 
-The sessions card reports today's count of completed fitness sessions, the total coins earned (a household incentive metric carried by each session), and a one-line label for the most recent session — typically a show or workout title. A user with no sessions today sees a zero rather than an absence, since the day is still in progress and a session may be added later.
+The sessions card reports today's count of completed fitness sessions, the total coins earned (a household incentive metric carried by each session), and a one-line label for the most recent session — typically a show or workout title. A user with no sessions today sees a zero rather than an absence; the day is still in progress, and the user reads a true zero instead of an empty state.
 
 ### Recency
 
-The recency card is the system's "is everything still talking to me?" panel. It lists each tracked source — weight, food, fitness, activity tracker, sleep where supported — with a colored dot (green / yellow / red) indicating freshness, the source's display name, and a relative timestamp ("Today," "2d," "5d"). The card is read-only and does not drill in: a user spotting a red dot for the smart scale knows to step on it, not to navigate further.
+The recency card answers a single question: which sources are still reporting on schedule, and which have gone quiet. It lists each tracked source — weight, food, fitness, activity tracker, sleep where supported — with a colored dot (green / yellow / red) indicating freshness, the source's display name, and a relative timestamp ("Today," "2d," "5d"). The card is read-only and does not drill in: a user spotting a red dot for the smart scale knows to step on it, not to navigate further.
 
 ### Goals
 
@@ -96,7 +96,7 @@ Every card and every detail view defines its behavior in five states. Treating t
 
 **Fresh.** A daily summary read within the user's active day is fresh: the numbers are today's, the recency dots are green, the trend is computed from a recent series. The hub presents fresh data without qualification.
 
-**Stale.** A daily summary that is more than a day old, or one whose underlying sources have not reported recently, is stale. Stale state surfaces in two places: the recency card carries yellow or red dots for sources past their expected cadence, and the trend value on the weight card omits when the most recent reading is too far back to anchor. The hub does not refuse to render stale data — it shows what it has and lets the recency card speak to the gaps.
+**Stale.** A daily summary that is more than a day old, or one whose underlying sources have not reported recently, is stale. Stale state surfaces in two places: the recency card carries yellow or red dots for sources past their expected cadence, and the trend value on the weight card is suppressed when the most recent reading is too far back to anchor a trend. The hub does not refuse to render stale data — it shows what it has and lets the recency card speak to the gaps.
 
 ---
 
@@ -110,7 +110,7 @@ The chart binds three series to a single x-axis (time):
 - **Calories** as a dashed line on the right axis, in whole calories per day.
 - **Workout minutes** as columns on a second right axis, in minutes per day.
 
-Time-range controls sit above the chart with three options: 90 days at daily grain, 6 months at daily-plus-weekly grain, 2 years at full daily-weekly-monthly grain. Switching range does not refetch — the dashboard already carries the tiered history series — it only rebuilds the chart's series from the cached data. Bar widths scale with range so a two-year view does not blur into a solid block.
+A user can switch between 90 days, 6 months, and 2 years of history. The time-range controls sit above the chart; tapping a range adjusts the visible window without a network round-trip — the dashboard already carries the tiered history series (90 days at daily grain, 6 months at daily-plus-weekly grain, 2 years at full daily-weekly-monthly grain), so switching only rebuilds the chart's series from the cached data. Bar widths scale with range so a two-year view does not blur into a solid block.
 
 Sparklines do not appear on the hub cards as a separate element; the cards trade chart space for headline legibility, and the user is one tap from the full chart in the detail view.
 
@@ -122,7 +122,7 @@ The chart's color palette and tooltip styling sit on the dark theme the rest of 
 
 The health app has two entry points: a direct route (`/health`) and a tile in the broader life view that lands the user on the same hub. The hub is the only top-level view; detail views are accessible from the hub by tapping a card and from the back affordance by stepping out.
 
-The Telegram nutrition surface (Nutribot) is the system's parallel surface for richer logging — photo-based meal capture, multi-turn parse confirmation, search through the user's full food log, longer chat with the on-demand health coach. The hub does not duplicate that surface. Where richer logging is wanted, the user opens the messaging app; everything captured there shows up on the hub on the next refresh, because both surfaces write into the same food log and read from the same daily summary. The hub's role is the visual at-a-glance and the fast-path inline entry; the bot's role is the conversational and image-based capture.
+The Telegram nutrition surface (Nutribot) is where richer logging happens — photo-based meal capture, multi-turn parse confirmation, search through the user's full food log, longer chat with the on-demand health coach. Nutribot is also where the daily, morning, and weekly coaching messages described in [`coaching-system.md`](coaching-system.md) land. The hub and the bot operate on the same data: both surfaces write into the same food log and read from the same daily summary, and the bot's coaching deliveries are surfaced back on the hub through the in-app coach panel. The bot is the surface for richer logging and for proactive coaching delivery; the hub is the surface for at-a-glance review and fast inline entry.
 
 Return paths from a detail view are simple: the back affordance returns to the hub, and the back navigation does not refetch. A user can open a detail, scroll through history, return to the hub, and the hub still shows the values it loaded on first open. Refreshing the data — after a food log, on user request — is an explicit action.
 
@@ -132,7 +132,7 @@ Return paths from a detail view are simple: the back affordance returns to the h
 
 The household runs on multiple input devices: touchscreens on tablets and kitchen panels, keyboards on dev workstations, and a gamepad in the family room. The health app is operable from all three.
 
-**Touch.** Cards and tap-to-drill affordances meet a comfortable touch target size — large enough to hit with a thumb on a kitchen tablet without precision aiming. The food-logging input field is full-width and the quick-add chips have generous padding so they do not require pointer accuracy.
+**Touch.** Every tappable region — card surface, chip, button — is sized so a thumb-press anywhere on its visible bounds activates it. Cards have no internal touch targets smaller than the card itself, so a partial-area miss does not exist: tapping any pixel of a hub card opens its detail. The nutrition card is the one exception, by design — its input field and quick-add chips are nested tap targets that swallow taps so typing does not navigate away. Long-press and gesture-based interactions are not used.
 
 **Keyboard.** Every interactive element is reachable by tab. Arrow keys move within grids of cards and chips; enter activates the focused element; the back affordance on a detail view responds to enter. The food input takes typed text directly and submits on enter. Focus visibility is preserved on every interactive element so a keyboard user can always tell where they are.
 
@@ -150,7 +150,7 @@ The app does not require a pointing device for any operation. A user with a keyb
 - `frontend/src/modules/Health/` — hub view and detail view shells.
 - `frontend/src/modules/Health/cards/` — hub summary cards (weight, nutrition, sessions, recency, goals).
 - `frontend/src/modules/Health/detail/` — detail views (weight, nutrition, sessions, goals) and the shared multi-axis history chart.
-- `frontend/src/modules/Fitness/widgets/_shared/` — shared dashboard card chrome reused by health hub cards.
+- `frontend/src/modules/Fitness/widgets/_shared/` — shared dashboard card chrome originally written for the fitness app and reused here, so the two apps render visually consistent cards.
 - `frontend/src/modules/Health/HealthCoach/` — coach panel rendering on-demand commentary inside the health surface (see `coaching-system.md`).
 - `frontend/src/hooks/` — supporting hooks for document title, viewport probing, and gamepad/keyboard navigation.
 - `frontend/src/lib/api.mjs` — shared API client used by every health surface call.
