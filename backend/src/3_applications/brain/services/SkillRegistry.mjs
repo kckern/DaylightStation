@@ -20,11 +20,11 @@ export class SkillRegistry {
     return [...this.#skills.values()].filter((s) => satellite.canUseSkill(s.name));
   }
 
-  buildToolsFor(satellite, policy) {
+  buildToolsFor(satellite, policy, transcript = null) {
     const tools = [];
     for (const skill of this.getSkillsFor(satellite)) {
       for (const tool of skill.getTools()) {
-        tools.push(this.#wrap(tool, skill, satellite, policy));
+        tools.push(this.#wrap(tool, skill, satellite, policy, transcript));
       }
     }
     return tools;
@@ -37,7 +37,7 @@ export class SkillRegistry {
       .join('\n\n');
   }
 
-  #wrap(tool, skill, satellite, policy) {
+  #wrap(tool, skill, satellite, policy, transcript) {
     const log = this.#logger;
     return {
       ...tool,
@@ -49,7 +49,9 @@ export class SkillRegistry {
             tool: tool.name,
             reason: decision.reason,
           });
-          return { ok: false, reason: `policy_denied:${decision.reason ?? 'unspecified'}` };
+          const denied = { ok: false, reason: `policy_denied:${decision.reason ?? 'unspecified'}` };
+          transcript?.recordTool({ name: tool.name, args: params, result: denied, ok: false, latencyMs: 0 });
+          return denied;
         }
         const start = Date.now();
         log.info?.('brain.tool.invoke', {
@@ -59,21 +61,26 @@ export class SkillRegistry {
         });
         try {
           const result = await tool.execute(params, { ...ctx, satellite, skill: skill.name });
+          const latencyMs = Date.now() - start;
           log.info?.('brain.tool.complete', {
             satellite_id: satellite.id,
             tool: tool.name,
             ok: result?.ok !== false,
-            latencyMs: Date.now() - start,
+            latencyMs,
           });
+          transcript?.recordTool({ name: tool.name, args: params, result, ok: result?.ok !== false, latencyMs });
           return result;
         } catch (error) {
+          const latencyMs = Date.now() - start;
           log.error?.('brain.tool.error', {
             satellite_id: satellite.id,
             tool: tool.name,
             error: error.message,
-            latencyMs: Date.now() - start,
+            latencyMs,
           });
-          return { ok: false, reason: 'error', error: error.message };
+          const errResult = { ok: false, reason: 'error', error: error.message };
+          transcript?.recordTool({ name: tool.name, args: params, result: errResult, ok: false, latencyMs });
+          return errResult;
         }
       },
     };

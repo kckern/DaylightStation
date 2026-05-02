@@ -15,12 +15,13 @@ export function createBrainRouter({
   chatCompletionRunner,
   logger = console,
   advertisedModels = ['daylight-house', 'gpt-4o-mini'],
+  mediaLogsDir = null,
 }) {
   if (!satelliteRegistry?.findByToken) throw new Error('createBrainRouter: satelliteRegistry required');
   if (!chatCompletionRunner?.runChat) throw new Error('createBrainRouter: chatCompletionRunner required');
 
   const router = express.Router();
-  const translator = new OpenAIChatCompletionsTranslator({ runner: chatCompletionRunner, logger });
+  const translator = new OpenAIChatCompletionsTranslator({ runner: chatCompletionRunner, logger, mediaLogsDir });
 
   router.use(async (req, res, next) => {
     const auth = req.headers.authorization || req.headers.Authorization;

@@ -39,12 +39,12 @@ export class BrainApplication {
    * @param {Array} [params.tools] - Tools from caller (intentionally ignored — see Spec §3.2)
    * @param {string} [params.conversationId]
    */
-  async runChat({ satellite, messages, tools: _tools = [], conversationId = null }) {
-    return this.#agent.runChat({ satellite, messages, conversationId });
+  async runChat({ satellite, messages, tools: _tools = [], conversationId = null, transcript = null }) {
+    return this.#agent.runChat({ satellite, messages, conversationId, transcript });
   }
 
-  async *streamChat({ satellite, messages, tools: _tools = [], conversationId = null }) {
-    yield* this.#agent.streamChat({ satellite, messages, conversationId });
+  async *streamChat({ satellite, messages, tools: _tools = [], conversationId = null, transcript = null }) {
+    yield* this.#agent.streamChat({ satellite, messages, conversationId, transcript });
   }
 }
 

@@ -284,6 +284,20 @@ export class ContentQueryService {
         items = items.filter(item => this.#hasCapability(item, query.capability));
       }
 
+      // Apply audio-only filter (blocks photos / videos for voice playback)
+      if (query.audioOnly) {
+        items = items.filter(item => isAudioPlayable(item));
+      }
+
+      // Apply explicit media-type allow list
+      if (Array.isArray(query.mediaTypes) && query.mediaTypes.length > 0) {
+        const allow = new Set(query.mediaTypes.map(t => String(t).toLowerCase()));
+        items = items.filter(item => {
+          const t = (item.mediaType || item.metadata?.type || '').toLowerCase();
+          return allow.has(t);
+        });
+      }
+
       // Skip if all items filtered out
       if (items.length === 0) {
         continue;
@@ -450,6 +464,20 @@ export class ContentQueryService {
     // Apply capability filter
     if (query.capability) {
       items = items.filter(item => this.#hasCapability(item, query.capability));
+    }
+
+    // Apply audio-only filter (blocks photos / videos for voice playback)
+    if (query.audioOnly) {
+      items = items.filter(item => isAudioPlayable(item));
+    }
+
+    // Apply explicit media-type allow list (e.g. mediaTypes: ['audio', 'music'])
+    if (Array.isArray(query.mediaTypes) && query.mediaTypes.length > 0) {
+      const allow = new Set(query.mediaTypes.map(t => String(t).toLowerCase()));
+      items = items.filter(item => {
+        const t = (item.mediaType || item.metadata?.type || '').toLowerCase();
+        return allow.has(t);
+      });
     }
 
     // Apply relevance-based sorting (unless random or explicit sort)
@@ -837,6 +865,26 @@ export class ContentQueryService {
       }
     };
   }
+}
+
+/**
+ * Determine whether an item is acceptable for audio playback.
+ *
+ * Voice-assistant rule: surface music, audiobooks, podcasts, songs, and any
+ * audio container (album, artist, playlist) — never photos or videos. We use
+ * a blocklist on visual media types so unknown audio sources keep working.
+ *
+ * @param {object} item - Search result item with mediaType / metadata.type
+ * @returns {boolean}
+ */
+function isAudioPlayable(item) {
+  if (!item) return false;
+  const blocked = new Set(['image', 'photo', 'video', 'dash_video', 'movie', 'episode', 'show']);
+  const candidates = [item.mediaType, item.metadata?.type, item.type]
+    .filter(v => typeof v === 'string')
+    .map(v => v.toLowerCase());
+  if (candidates.some(t => blocked.has(t))) return false;
+  return true;
 }
 
 export default ContentQueryService;

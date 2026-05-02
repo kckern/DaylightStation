@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { BrainTranscript } from '../../../3_applications/brain/services/BrainTranscript.mjs';
 
 /**
  * Translates OpenAI /v1/chat/completions wire format to/from an
@@ -10,11 +11,13 @@ import crypto from 'crypto';
 export class OpenAIChatCompletionsTranslator {
   #runner;
   #logger;
+  #mediaLogsDir;
 
-  constructor({ runner, logger = console }) {
+  constructor({ runner, logger = console, mediaLogsDir = null }) {
     if (!runner?.runChat) throw new Error('OpenAIChatCompletionsTranslator: runner with runChat required');
     this.#runner = runner;
     this.#logger = logger;
+    this.#mediaLogsDir = mediaLogsDir;
   }
 
   async handle(req, res, satellite) {
@@ -36,8 +39,15 @@ export class OpenAIChatCompletionsTranslator {
       return this.#errorJson(res, 400, 'invalid_request_error', 'messages required', 'bad_request');
     }
 
+    const transcript = new BrainTranscript({
+      satellite,
+      request: { model, stream, conversation_id: conversationId, messages },
+      mediaLogsDir: this.#mediaLogsDir,
+      logger: this.#logger,
+    });
+
     if (stream) {
-      return this.#stream(req, res, satellite, { messages, conversationId, model, start });
+      return this.#stream(req, res, satellite, { messages, conversationId, model, start, transcript });
     }
 
     try {
@@ -46,7 +56,10 @@ export class OpenAIChatCompletionsTranslator {
         messages,
         tools: body.tools ?? [],
         conversationId,
+        transcript,
       });
+      transcript.appendAssistantText(result.content ?? '');
+      transcript.finishOk({ status: 200, finishReason: 'stop', usage: result.usage });
       const envelope = this.#buildEnvelope(result, model);
       res.status(200).json(envelope);
       this.#logger.info?.('brain.response.sent', {
@@ -55,13 +68,16 @@ export class OpenAIChatCompletionsTranslator {
         total_latency_ms: Date.now() - start,
         stream: false,
       });
+      await transcript.flush();
     } catch (error) {
       this.#logger.error?.('brain.runtime.error', { satellite_id: satellite.id, error: error.message });
+      transcript.finishError({ status: 502, message: error.message });
       this.#errorJson(res, 502, 'server_error', error.message, 'upstream_unavailable');
+      await transcript.flush();
     }
   }
 
-  async #stream(_req, res, satellite, { messages, conversationId, model, start }) {
+  async #stream(_req, res, satellite, { messages, conversationId, model, start, transcript }) {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -84,7 +100,7 @@ export class OpenAIChatCompletionsTranslator {
     let chunksSent = 0;
     let finishReason = 'stop';
     try {
-      for await (const part of this.#runner.streamChat({ satellite, messages, conversationId })) {
+      for await (const part of this.#runner.streamChat({ satellite, messages, conversationId, transcript })) {
         if (part.type === 'text-delta' && part.text) {
           send({
             id,
@@ -93,6 +109,7 @@ export class OpenAIChatCompletionsTranslator {
             model,
             choices: [{ index: 0, delta: { content: part.text } }],
           });
+          transcript?.appendAssistantText(part.text);
           chunksSent++;
         } else if (part.type === 'finish') {
           finishReason = part.reason ?? 'stop';
@@ -112,6 +129,7 @@ export class OpenAIChatCompletionsTranslator {
         model,
         choices: [{ index: 0, delta: { content: ` (error: ${error.message})` }, finish_reason: 'error' }],
       });
+      transcript?.finishError({ status: 500, message: error.message });
     }
 
     send({
@@ -123,6 +141,11 @@ export class OpenAIChatCompletionsTranslator {
     });
     res.write('data: [DONE]\n\n');
     res.end();
+
+    if (transcript && !transcript.errorMessage) {
+      transcript.finishOk({ status: 200, finishReason });
+    }
+    await transcript?.flush();
 
     this.#logger.info?.('brain.stream.complete', {
       satellite_id: satellite.id,
