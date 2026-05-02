@@ -54,3 +54,79 @@ describe('BrainPolicyEvaluator — defaults & basic shape', () => {
     assert.strictEqual(d.allow, true);
   });
 });
+
+describe('BrainPolicyEvaluator — deny precedence', () => {
+  function ev({ household = {} } = {}) {
+    return new BrainPolicyEvaluator({ householdPolicy: household, logger: silentLogger });
+  }
+  const restrictedReader = (getScopesFor) => tool({
+    name: 'read_data_file',
+    defaultPolicy: 'restricted',
+    getScopesFor,
+  });
+
+  it('household deny short-circuits even when satellite allows it', () => {
+    const e = ev({ household: { scopes_denied: ['data:finances:**'] } });
+    const sat = satellite({ scopes_allowed: ['data:**'] });
+    const t = restrictedReader(({ path }) => [`data:${path.replace(/\//g, ':')}`]);
+    const d = e.evaluateToolCall(sat, 'read_data_file', { path: 'finances/budget.yml' }, t, 'helpdesk');
+    assert.strictEqual(d.allow, false);
+    assert.match(d.reason, /^household:/);
+    assert.match(d.reason, /data:finances:\*\*/);
+  });
+
+  it('satellite deny short-circuits even when household allows it', () => {
+    const e = ev({ household: { scopes_allowed: ['ha:**'] } });
+    const sat = satellite({ scopes_denied: ['ha:scripts:office:**'] });
+    const t = restrictedReader(({ name }) => [`ha:scripts:office:${name}`]);
+    const d = e.evaluateToolCall(sat, 'ha_run_script', { name: 'chill_activate' }, t, 'home_automation');
+    assert.strictEqual(d.allow, false);
+    assert.match(d.reason, /^satellite:/);
+  });
+
+  it('multi-scope: any single denied scope causes deny', () => {
+    const e = ev({ household: { scopes_denied: ['data:auth:*'] } });
+    const sat = satellite({ scopes_allowed: ['data:**'] });
+    const t = tool({
+      name: 'multi',
+      defaultPolicy: 'restricted',
+      getScopesFor: () => ['data:fitness:strava.yml', 'data:auth:user.yml', 'data:weather:today.yml'],
+    });
+    const d = e.evaluateToolCall(sat, 'multi', {}, t, 'helpdesk');
+    assert.strictEqual(d.allow, false);
+    assert.match(d.reason, /data:auth/);
+  });
+
+  it('multi-scope: all covered → allow', () => {
+    const e = ev();
+    const sat = satellite({ scopes_allowed: ['data:fitness:**', 'data:weather:**'] });
+    const t = tool({
+      name: 'multi',
+      defaultPolicy: 'restricted',
+      getScopesFor: () => ['data:fitness:strava.yml', 'data:weather:today.yml'],
+    });
+    const d = e.evaluateToolCall(sat, 'multi', {}, t, 'helpdesk');
+    assert.strictEqual(d.allow, true);
+  });
+
+  it('multi-scope: any uncovered scope on a restricted tool → deny', () => {
+    const e = ev();
+    const sat = satellite({ scopes_allowed: ['data:fitness:**'] });
+    const t = tool({
+      name: 'multi',
+      defaultPolicy: 'restricted',
+      getScopesFor: () => ['data:fitness:strava.yml', 'data:weather:today.yml'],
+    });
+    const d = e.evaluateToolCall(sat, 'multi', {}, t, 'helpdesk');
+    assert.strictEqual(d.allow, false);
+    assert.match(d.reason, /uncovered:data:weather/);
+  });
+
+  it('household allow can cover what satellite does not (allow-list union)', () => {
+    const e = ev({ household: { scopes_allowed: ['memory:**'] } });
+    const sat = satellite();   // no satellite-level allows
+    const t = tool({ name: 'remember_note', defaultPolicy: 'restricted', getScopesFor: () => ['memory:write:notes'] });
+    const d = e.evaluateToolCall(sat, 'remember_note', {}, t, 'memory');
+    assert.strictEqual(d.allow, true);
+  });
+});
