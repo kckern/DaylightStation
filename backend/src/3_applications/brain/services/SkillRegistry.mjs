@@ -42,7 +42,7 @@ export class SkillRegistry {
     return {
       ...tool,
       execute: async (params, ctx) => {
-        const decision = policy.evaluateToolCall(satellite, tool.name, params);
+        const decision = policy.evaluateToolCall(satellite, tool.name, params, tool, skill.name);
         if (!decision.allow) {
           log.warn?.('brain.tool.policy_denied', {
             satellite_id: satellite.id,
@@ -50,7 +50,10 @@ export class SkillRegistry {
             reason: decision.reason,
           });
           const denied = { ok: false, reason: `policy_denied:${decision.reason ?? 'unspecified'}` };
-          transcript?.recordTool({ name: tool.name, args: params, result: denied, ok: false, latencyMs: 0 });
+          transcript?.recordTool({
+            name: tool.name, args: params, result: denied, ok: false, latencyMs: 0,
+            policyDecision: { allowed: false, reason: decision.reason ?? null },
+          });
           return denied;
         }
         const start = Date.now();
@@ -68,7 +71,10 @@ export class SkillRegistry {
             ok: result?.ok !== false,
             latencyMs,
           });
-          transcript?.recordTool({ name: tool.name, args: params, result, ok: result?.ok !== false, latencyMs });
+          transcript?.recordTool({
+            name: tool.name, args: params, result, ok: result?.ok !== false, latencyMs,
+            policyDecision: { allowed: true },
+          });
           return result;
         } catch (error) {
           const latencyMs = Date.now() - start;
@@ -79,7 +85,10 @@ export class SkillRegistry {
             latencyMs,
           });
           const errResult = { ok: false, reason: 'error', error: error.message };
-          transcript?.recordTool({ name: tool.name, args: params, result: errResult, ok: false, latencyMs });
+          transcript?.recordTool({
+            name: tool.name, args: params, result: errResult, ok: false, latencyMs,
+            policyDecision: { allowed: true },
+          });
           return errResult;
         }
       },

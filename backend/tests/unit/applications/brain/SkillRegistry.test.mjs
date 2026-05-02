@@ -81,3 +81,54 @@ describe('SkillRegistry', () => {
     assert.throws(() => r.register(makeSkill('memory', [])), /already registered/);
   });
 });
+
+describe('SkillRegistry — passes tool + skill name into policy', () => {
+  it('forwards tool object and skill name to evaluateToolCall', async () => {
+    const calls = [];
+    const policy = {
+      evaluateRequest: () => ({ allow: true }),
+      evaluateToolCall: (sat, toolName, args, tool, skillName) => {
+        calls.push({ toolName, args, hasTool: !!tool, defaultPolicy: tool?.defaultPolicy, skillName });
+        return { allow: true };
+      },
+      shapeResponse: (_s, t) => t,
+    };
+    const r = new SkillRegistry({ logger: silentLogger });
+    r.register(makeSkill('memory', [{
+      name: 'remember_note',
+      description: '', parameters: {},
+      defaultPolicy: 'restricted',
+      execute: async () => ({ ok: true }),
+    }]));
+    const sat = new Satellite({ id: 's', mediaPlayerEntity: 'media_player.x', allowedSkills: ['memory'] });
+    const tools = r.buildToolsFor(sat, policy);
+    await tools[0].execute({ content: 'x' }, { satellite: sat });
+    assert.strictEqual(calls.length, 1);
+    assert.strictEqual(calls[0].toolName, 'remember_note');
+    assert.strictEqual(calls[0].hasTool, true);
+    assert.strictEqual(calls[0].defaultPolicy, 'restricted');
+    assert.strictEqual(calls[0].skillName, 'memory');
+  });
+
+  it('records policyDecision on the transcript when transcript is provided', async () => {
+    const transcript = { recordTool: (e) => transcript.events.push(e), events: [] };
+    const policy = {
+      evaluateRequest: () => ({ allow: true }),
+      evaluateToolCall: () => ({ allow: false, reason: 'household:data:auth:*' }),
+      shapeResponse: (_s, t) => t,
+    };
+    const r = new SkillRegistry({ logger: silentLogger });
+    r.register(makeSkill('helpdesk', [{
+      name: 'read_data_file',
+      description: '', parameters: {},
+      execute: async () => ({ ok: true }),
+    }]));
+    const sat = new Satellite({ id: 's', mediaPlayerEntity: 'media_player.x', allowedSkills: ['helpdesk'] });
+    const tools = r.buildToolsFor(sat, policy, transcript);
+    await tools[0].execute({ path: 'auth/x' }, { satellite: sat });
+    assert.strictEqual(transcript.events.length, 1);
+    const entry = transcript.events[0];
+    assert.strictEqual(entry.policyDecision.allowed, false);
+    assert.strictEqual(entry.policyDecision.reason, 'household:data:auth:*');
+  });
+});
