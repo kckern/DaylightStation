@@ -102,3 +102,43 @@ describe('YamlSatelliteRegistry', () => {
     assert.strictEqual(list2.length, 1);
   });
 });
+
+describe('YamlSatelliteRegistry — scope fields', () => {
+  it('passes scopes_allowed and scopes_denied from YAML through to Satellite', async () => {
+    const cfg = makeFakeConfigService(
+      {
+        satellites: [{
+          id: 'office',
+          media_player_entity: 'media_player.office',
+          allowed_skills: ['memory'],
+          scopes_allowed: ['memory:**', 'data:fitness:*'],
+          scopes_denied: ['data:auth:*'],
+          token_ref: 'ENV:T',
+        }],
+      },
+      { T: 'tok' },
+    );
+    const registry = new YamlSatelliteRegistry({ configService: cfg, logger: console });
+    await registry.load();
+    const s = await registry.findByToken('tok');
+    assert.deepStrictEqual([...s.scopes_allowed], ['memory:**', 'data:fitness:*']);
+    assert.deepStrictEqual([...s.scopes_denied], ['data:auth:*']);
+  });
+
+  it('defaults scope fields to empty when YAML omits them', async () => {
+    const cfg = makeFakeConfigService(
+      {
+        satellites: [{
+          id: 'office', media_player_entity: 'media_player.office',
+          allowed_skills: ['memory'], token_ref: 'ENV:T',
+        }],
+      },
+      { T: 'tok' },
+    );
+    const registry = new YamlSatelliteRegistry({ configService: cfg, logger: console });
+    await registry.load();
+    const s = await registry.findByToken('tok');
+    assert.strictEqual(s.scopes_allowed.length, 0);
+    assert.strictEqual(s.scopes_denied.length, 0);
+  });
+});
