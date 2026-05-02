@@ -34,13 +34,14 @@ export class BrainTranscript {
     if (typeof text === 'string' && text) this.assistantText += text;
   }
 
-  recordTool({ name, args, result, ok, latencyMs }) {
+  recordTool({ name, args, result, ok, latencyMs, policyDecision = null }) {
     this.toolInvocations.push({
       name,
       args: safeClone(args),
       result: safeClone(result),
       ok: ok !== false,
       latencyMs: latencyMs ?? null,
+      policyDecision: policyDecision ? safeClone(policyDecision) : null,
       ts: new Date().toISOString(),
     });
   }
