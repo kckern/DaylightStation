@@ -914,103 +914,6 @@ export class PlexAdapter {
   }
 
   /**
-   * Generate a streaming media URL for a playable item
-   * Handles both video (with transcode decision) and audio (direct stream)
-   *
-   * @param {Object|string} itemData - Item metadata object or rating key
-   * @param {Object} [opts] - Options
-   * @param {number} [opts.maxVideoBitrate] - Maximum video bitrate in kbps
-   * @param {string} [opts.maxResolution] - Maximum resolution (e.g., "1080p")
-   * @param {string} [opts.session] - Client session ID
-   * @param {number} [opts.startOffset] - Start offset in seconds
-   * @returns {Promise<string|null>} Streaming URL or null on failure
-   */
-  async loadMediaUrl(itemData, opts = {}) {
-    try {
-      // If string ID provided, fetch metadata first
-      if (typeof itemData === 'string') {
-        const data = await this.client.getMetadata(itemData);
-        const meta = data?.MediaContainer?.Metadata?.[0];
-        if (!meta) return null;
-        itemData = meta;
-      }
-      if (!itemData) return null;
-
-      const key = itemData.ratingKey || itemData.plex;
-      const type = itemData.type;
-
-      // If not a playable type, recursively get a playable item
-      if (!['episode', 'movie', 'track'].includes(type)) {
-        const list = await this.getList(key);
-        if (!list.length) return null;
-        // Get first item (smart selection will be added later)
-        const firstItem = list[0];
-        const childKey = firstItem.id.replace('plex:', '');
-        return this.loadMediaUrl(childKey, opts);
-      }
-
-      const {
-        maxVideoBitrate = null,
-        maxResolution = null,
-        session = null,
-        startOffset = 0
-      } = opts;
-
-      const mediaType = ['track'].includes(type) ? 'audio' : 'video';
-
-      if (mediaType === 'audio') {
-        // Audio: Direct stream without transcode decision
-        const { clientIdentifier, sessionIdentifier } = this._generateSessionIds(session ? `${session}-audio` : null);
-        const mediaKey = itemData?.Media?.[0]?.Part?.[0]?.key;
-        if (!mediaKey) throw new InfrastructureError('Media key not found for audio', {
-        code: 'NOT_FOUND',
-        service: 'Plex'
-      });
-
-        const separator = mediaKey.includes('?') ? '&' : '?';
-        return `${this.proxyPath}${mediaKey}${separator}X-Plex-Client-Identifier=${clientIdentifier}&X-Plex-Session-Identifier=${sessionIdentifier}`;
-      } else {
-        // Video: Use decision API
-        if (!key) throw new InfrastructureError('Rating key not found for video', {
-        code: 'NOT_FOUND',
-        service: 'Plex'
-      });
-
-        const decisionResult = await this.requestTranscodeDecision(key, {
-          maxVideoBitrate,
-          maxResolution,
-          session,
-          startOffset
-        });
-
-        if (!decisionResult.success) {
-          // Fallback to transcode URL
-          const { sessionIdentifier, clientIdentifier } = decisionResult;
-          return this._buildTranscodeUrl(key, clientIdentifier, sessionIdentifier, maxVideoBitrate, maxResolution, startOffset);
-        }
-
-        const { sessionIdentifier, clientIdentifier, decision } = decisionResult;
-
-        // Use direct stream if available
-        if (decision.canDirectPlay && decision.directStreamPath) {
-          const directPath = decision.directStreamPath;
-          const separator = directPath.includes('?') ? '&' : '?';
-          return `${this.proxyPath}${directPath}${separator}X-Plex-Client-Identifier=${clientIdentifier}&X-Plex-Session-Identifier=${sessionIdentifier}`;
-        }
-
-        // Otherwise use transcode
-        return this._buildTranscodeUrl(key, clientIdentifier, sessionIdentifier, maxVideoBitrate, maxResolution, startOffset);
-      }
-    } catch (error) {
-      this.logger.error?.('plex.loadMediaUrl.exception', {
-        error: error.message,
-        stack: error.stack,
-      });
-      return null;
-    }
-  }
-
-  /**
    * Get container metadata bundled with its children
    * @param {string} id - Compound ID
    * @returns {Promise<{container: Object, children: Array}|null>}
@@ -1654,63 +1557,51 @@ export class PlexAdapter {
   }
 
   /**
-   * Generate a streaming URL for a Plex media item.
+   * Generate a streaming URL for a playable domain entity.
    *
-   * For video: Uses the decision API to authorize the session, then returns
+   * The application layer should pass a {@link PlayableItem} obtained from
+   * `resolvePlayables` / `getItem`. This adapter extracts the Plex-specific
+   * details (rating key, raw Media metadata, type) from the entity itself
+   * rather than asking callers to know Plex internals.
+   *
+   * For HTTP routes that only have a rating-key string (e.g. /plex/stream/:id),
+   * use {@link getMediaUrl} which fetches the item first.
+   *
+   * For video: uses the decision API to authorize the session, then returns
    * either a direct stream URL or a transcode URL.
+   * For audio: returns a direct stream URL using the entity's stored Media[].
    *
-   * For audio: Returns a direct stream URL without transcode decision.
-   *
-   * @param {string|Object} itemOrKey - Plex rating key or item metadata object
-   * @param {number} [attempt=0] - Retry attempt counter
-   * @param {Object} [opts] - Streaming options
-   * @param {number} [opts.maxVideoBitrate] - Maximum video bitrate in kbps
-   * @param {string} [opts.maxResolution] - Maximum resolution (e.g., "1080p")
-   * @param {string} [opts.maxVideoResolution] - Alias for maxResolution
-   * @param {string} [opts.session] - Client session ID for multi-player isolation
-   * @param {number} [opts.startOffset] - Start offset in seconds
+   * @param {import('#domains/content/capabilities/Playable.mjs').PlayableItem} playableItem
+   * @param {Object} [opts]
+   * @param {number} [opts.maxVideoBitrate]
+   * @param {string} [opts.maxResolution]
+   * @param {string} [opts.maxVideoResolution]
+   * @param {string} [opts.session]
+   * @param {number} [opts.startOffset]
    * @returns {Promise<{ url: string|null, reason?: 'metadata-missing'|'non-playable-type'|'audio-key-missing'|'transient' }>}
-   *   Resolves to { url } on success, or { url: null, reason } on failure.
-   *   Reasons: 'metadata-missing' (Plex returned no metadata for the rating key);
-   *   'non-playable-type' (item is a show/season/album, not directly playable);
-   *   'audio-key-missing' (audio item lacks Media[].Part[].key);
-   *   'transient' (caught exception — network/timeout/etc.)
    */
-  async loadMediaUrl(itemOrKey, attempt = 0, opts = {}) {
+  async loadMediaUrl(playableItem, opts = {}) {
+    let ratingKey;
     try {
-      // Normalize input: accept rating key string or item object
-      let itemData;
-      let ratingKey;
-
-      if (typeof itemOrKey === 'string' || typeof itemOrKey === 'number') {
-        ratingKey = String(itemOrKey).replace(/^plex:/, '');
-        const data = await this.client.getMetadata(ratingKey);
-        itemData = data?.MediaContainer?.Metadata?.[0];
-        if (!itemData) {
-          this.logger.warn?.('plex.loadMediaUrl.metadataMissing', { ratingKey });
-          return { url: null, reason: 'metadata-missing' };
-        }
-      } else {
-        itemData = itemOrKey;
-        ratingKey = itemData?.ratingKey || itemData?.plex;
-      }
-
-      if (!itemData || !ratingKey) {
-        this.logger.warn?.('plex.loadMediaUrl.metadataMissing', { ratingKey });
+      if (!playableItem) {
+        this.logger.warn?.('plex.loadMediaUrl.metadataMissing', { reason: 'null-entity' });
         return { url: null, reason: 'metadata-missing' };
       }
 
-      const { type } = itemData;
-      const mediaType = this._determineMediaType(type);
+      ratingKey = playableItem.localId;
+      const plexType = playableItem.metadata?.type;
 
-      // If not directly playable, drill down to find playable item
-      if (!['movie', 'episode', 'track', 'clip'].includes(type)) {
-        // For shows/seasons/albums, would need to select a child item
-        // This is handled by loadPlayableItemFromKey in the legacy code
-        this.logger.warn?.('plex.loadMediaUrl.nonPlayableType', { ratingKey, type });
+      if (!ratingKey) {
+        this.logger.warn?.('plex.loadMediaUrl.metadataMissing', { id: playableItem.id });
+        return { url: null, reason: 'metadata-missing' };
+      }
+
+      if (!['movie', 'episode', 'track', 'clip'].includes(plexType)) {
+        this.logger.warn?.('plex.loadMediaUrl.nonPlayableType', { ratingKey, type: plexType });
         return { url: null, reason: 'non-playable-type' };
       }
 
+      const mediaType = this._determineMediaType(plexType);
       const {
         maxVideoBitrate = null,
         maxResolution = null,
@@ -1718,16 +1609,14 @@ export class PlexAdapter {
         session = null,
         startOffset = 0
       } = opts;
-
       const resolvedMaxResolution = maxResolution ?? maxVideoResolution;
 
       if (mediaType === 'audio') {
-        // Audio: Direct stream without transcode decision
         const { clientIdentifier, sessionIdentifier } = this._generateSessionIds(
           session ? `${session}-audio` : null
         );
 
-        const mediaKey = itemData?.Media?.[0]?.Part?.[0]?.key;
+        const mediaKey = playableItem.metadata?.Media?.[0]?.Part?.[0]?.key;
         if (!mediaKey) {
           this.logger.warn?.('plex.loadMediaUrl.audioMediaKeyMissing', { ratingKey });
           return { url: null, reason: 'audio-key-missing' };
@@ -1739,7 +1628,7 @@ export class PlexAdapter {
         };
       }
 
-      // Video: Use decision API to authorize session
+      // Video: use decision API to authorize session
       const decisionResult = await this.requestTranscodeDecision(ratingKey, {
         maxVideoBitrate,
         maxResolution: resolvedMaxResolution,
@@ -1767,7 +1656,6 @@ export class PlexAdapter {
 
       const { sessionIdentifier, clientIdentifier, decision } = decisionResult;
 
-      // If direct play is available, use it
       if (decision.canDirectPlay && decision.directStreamPath) {
         const directPath = decision.directStreamPath;
         const separator = directPath.includes('?') ? '&' : '?';
@@ -1776,7 +1664,6 @@ export class PlexAdapter {
         };
       }
 
-      // Otherwise use transcode URL
       return {
         url: this._buildTranscodeUrl(
           ratingKey,
@@ -1789,9 +1676,7 @@ export class PlexAdapter {
       };
     } catch (error) {
       this.logger.error?.('plex.loadMediaUrl.exception', {
-        ratingKey: typeof itemOrKey === 'string' || typeof itemOrKey === 'number'
-          ? String(itemOrKey).replace(/^plex:/, '')
-          : itemOrKey?.ratingKey,
+        ratingKey,
         error: error.message,
         stack: error.stack
       });
@@ -1800,23 +1685,38 @@ export class PlexAdapter {
   }
 
   /**
-   * Alias for loadMediaUrl to match legacy interface
-   * @deprecated Use loadMediaUrl instead
+   * Convenience for HTTP routes / id-only callers: fetch the item, then
+   * delegate to {@link loadMediaUrl}. Application services that already
+   * hold a PlayableItem should call loadMediaUrl directly instead.
+   *
+   * @param {string} id - Plex rating key (with or without `plex:` prefix)
+   * @param {Object} [opts] - Same shape as loadMediaUrl opts
+   * @returns {Promise<{ url: string|null, reason?: string }>}
    */
-  async loadMediaUrlLegacy(itemOrKey, attempt = 0, opts = {}) {
-    return this.loadMediaUrl(itemOrKey, attempt, opts);
-  }
-
-  /**
-   * Get a streaming URL for a Plex item (convenience method for routers)
-   * @param {string} id - Plex rating key
-   * @param {number} [startOffset=0] - Start offset in seconds
-   * @param {Object} [opts] - Additional options
-   * @returns {Promise<{ url: string|null, reason?: string }>} Pass-through of loadMediaUrl
-   */
-  async getMediaUrl(id, startOffset = 0, opts = {}) {
+  async getMediaUrl(id, opts = {}) {
     const ratingKey = String(id).replace(/^plex:/, '');
-    return this.loadMediaUrl(ratingKey, 0, { ...opts, startOffset });
+    try {
+      // Bypass getItem() — it swallows errors as null which would mask
+      // network failures as metadata-missing (a permanent reason). Calling
+      // getMetadata directly lets transient errors propagate to our catch.
+      const data = await this.client.getMetadata(ratingKey);
+      const item = data?.MediaContainer?.Metadata?.[0];
+      if (!item) {
+        this.logger.warn?.('plex.loadMediaUrl.metadataMissing', { ratingKey });
+        return { url: null, reason: 'metadata-missing' };
+      }
+      // _toPlayableItem returns a ListableItem for non-playable types;
+      // loadMediaUrl will surface that as 'non-playable-type'.
+      const playableItem = this._toPlayableItem(item);
+      return await this.loadMediaUrl(playableItem, opts);
+    } catch (error) {
+      this.logger.error?.('plex.loadMediaUrl.exception', {
+        ratingKey,
+        error: error.message,
+        stack: error.stack
+      });
+      return { url: null, reason: 'transient' };
+    }
   }
 
   // ===========================================================================

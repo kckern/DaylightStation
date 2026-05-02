@@ -1,6 +1,7 @@
 // tests/isolated/services/transcode-prewarm.test.mjs
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 import { TranscodePrewarmService } from '../../../backend/src/3_applications/devices/services/TranscodePrewarmService.mjs';
+import { PlayableItem } from '../../../backend/src/2_domains/content/capabilities/Playable.mjs';
 
 // --- Helpers ---
 
@@ -9,13 +10,27 @@ const RATING_KEY = '12345';
 const CONTENT_ID = `plex:${RATING_KEY}`;
 const CONTENT_REF = `plex:${RATING_KEY}`;
 
+function makePlexPlayable(ratingKey = RATING_KEY) {
+  return new PlayableItem({
+    id: `plex:${ratingKey}`,
+    source: 'plex',
+    localId: String(ratingKey),
+    title: 'Test',
+    mediaType: 'audio',
+    mediaUrl: `/api/v1/proxy/plex/stream/${ratingKey}`,
+    duration: 200,
+    resumable: false,
+    metadata: { type: 'track', Media: [{ Part: [{ key: '/p/1.mp3' }] }] },
+  });
+}
+
 function mockAdapter({ resolvePlayables = true, loadMediaUrl = true } = {}) {
   return {
     resolvePlayables: resolvePlayables
-      ? vi.fn().mockResolvedValue([{ contentId: CONTENT_ID, ratingKey: RATING_KEY, source: 'plex' }])
+      ? vi.fn().mockResolvedValue([makePlexPlayable()])
       : undefined,
     loadMediaUrl: loadMediaUrl
-      ? vi.fn().mockResolvedValue(DASH_URL)
+      ? vi.fn().mockResolvedValue({ url: DASH_URL })
       : undefined,
   };
 }
@@ -100,7 +115,7 @@ describe('TranscodePrewarmService', () => {
       // resolveQueue returns item with non-plex source
       const queueService = {
         resolveQueue: vi.fn().mockResolvedValue([
-          { contentId: 'youtube:vid123', source: 'youtube' },
+          { id: 'youtube:vid123', source: 'youtube' },
         ]),
       };
       const svc = buildService({ contentIdResolver, queueService });
@@ -120,9 +135,7 @@ describe('TranscodePrewarmService', () => {
 
     test('returns failed status when loadMediaUrl returns null', async () => {
       const adapter = {
-        resolvePlayables: vi.fn().mockResolvedValue([
-          { contentId: CONTENT_ID, ratingKey: RATING_KEY, source: 'plex' },
-        ]),
+        resolvePlayables: vi.fn().mockResolvedValue([makePlexPlayable()]),
         loadMediaUrl: vi.fn().mockResolvedValue(null),
       };
       const contentIdResolver = mockContentIdResolver({ adapter });

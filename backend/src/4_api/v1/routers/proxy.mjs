@@ -61,7 +61,7 @@ export function createProxyRouter(config) {
       return res.status(404).json({ error: 'Plex adapter not configured' });
     }
 
-    const result = await adapter.loadMediaUrl(ratingKey, 0, { startOffset });
+    const result = await adapter.getMediaUrl(ratingKey, { startOffset });
     const mediaUrl = result?.url ?? null;
     if (!mediaUrl) {
       return res.status(404).json({
