@@ -24,7 +24,7 @@ export function printError(stream, errOrEnvelope) {
   } else if (typeof errOrEnvelope === 'string') {
     envelope = { error: errOrEnvelope };
   } else if (errOrEnvelope && typeof errOrEnvelope === 'object') {
-    envelope = errOrEnvelope.error ? errOrEnvelope : { error: 'unknown', ...errOrEnvelope };
+    envelope = errOrEnvelope;
   } else {
     envelope = { error: String(errOrEnvelope) };
   }
