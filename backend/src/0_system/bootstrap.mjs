@@ -3244,6 +3244,19 @@ export async function createBrainServices(config) {
   const brainConfig = configService.reloadHouseholdAppConfig?.(null, 'brain') ?? {};
   const mediaConfig = brainConfig?.media ?? {};
 
+  const vocabularyConfig = brainConfig?.vocabulary ?? null;
+  let brainVocabulary = null;
+  if (vocabularyConfig) {
+    const { AliasMap } = await import('#domains/common/AliasMap.mjs');
+    try {
+      brainVocabulary = new AliasMap(vocabularyConfig);
+      logger.info?.('brain.vocabulary.loaded', { entry_count: brainVocabulary.size });
+    } catch (err) {
+      logger.error?.('brain.vocabulary.invalid_config', { error: err.message });
+      throw err;
+    }
+  }
+
   const householdPolicy = brainConfig?.policy ?? {};
   let brainPolicy;
   try {
@@ -3354,6 +3367,7 @@ export async function createBrainServices(config) {
     policy: brainPolicy,
     agentRuntime: brainAgentRuntime,
     skills: brainSkills,
+    vocabulary: brainVocabulary,
     logger,
   });
 

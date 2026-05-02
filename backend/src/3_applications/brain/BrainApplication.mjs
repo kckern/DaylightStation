@@ -18,6 +18,7 @@ export class BrainApplication {
     policy,
     agentRuntime,
     skills = [],
+    vocabulary = null,
     logger = console,
   }) {
     if (!satelliteRegistry) throw new Error('BrainApplication: satelliteRegistry required');
@@ -27,7 +28,7 @@ export class BrainApplication {
     const registry = new SkillRegistry({ logger });
     for (const skill of skills) registry.register(skill);
 
-    this.#agent = new BrainAgent({ agentRuntime, memory, policy, skills: registry, logger });
+    this.#agent = new BrainAgent({ agentRuntime, memory, policy, skills: registry, vocabulary, logger });
   }
 
   get satelliteRegistry() { return this.#registry; }

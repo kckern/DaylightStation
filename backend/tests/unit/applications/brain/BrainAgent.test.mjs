@@ -5,6 +5,7 @@ import { Satellite } from '../../../../src/2_domains/brain/Satellite.mjs';
 import { PassThroughBrainPolicy } from '../../../../src/3_applications/brain/services/PassThroughBrainPolicy.mjs';
 import { SkillRegistry } from '../../../../src/3_applications/brain/services/SkillRegistry.mjs';
 import { MemorySkill } from '../../../../src/3_applications/brain/skills/MemorySkill.mjs';
+import { AliasMap } from '../../../../src/2_domains/common/AliasMap.mjs';
 
 const silentLogger = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
 
@@ -106,6 +107,27 @@ describe('BrainAgent', () => {
     const result = await agent.runChat({ satellite: sat, messages: [{ role: 'user', content: 'hi' }] });
     assert.match(result.content, /can't/i);
     assert.strictEqual(runtime.calls.length, 0);
+  });
+
+  it('includes vocabulary section in systemPrompt when non-empty AliasMap is provided', async () => {
+    const memory = new InMemoryBrainMemory();
+    const registry = new SkillRegistry({ logger: silentLogger });
+    registry.register(new MemorySkill({ memory, logger: silentLogger }));
+    const runtime = new FakeRuntime({ outputs: { execute: { output: 'ok', toolCalls: [] } } });
+    const vocab = new AliasMap({ 'FHE': 'Family Home Evening', 'big room': 'living room' });
+    const agent = new BrainAgent({
+      agentRuntime: runtime,
+      memory,
+      policy,
+      skills: registry,
+      vocabulary: vocab,
+      logger: silentLogger,
+    });
+    await agent.runChat({ satellite: sat, messages: [{ role: 'user', content: 'hi' }] });
+    const { systemPrompt } = runtime.calls[0];
+    assert.ok(systemPrompt.includes('## Household vocabulary'), 'should include vocabulary header');
+    assert.ok(systemPrompt.includes('- FHE = Family Home Evening'), 'should include FHE entry');
+    assert.ok(systemPrompt.includes('- big room = living room'), 'should include big room entry');
   });
 
   it('streamChat refusal yields a single text-delta + finish', async () => {

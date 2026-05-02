@@ -1,4 +1,4 @@
-import { BASE_PROMPT, satellitePrompt, memoryPrompt } from './prompts/system.mjs';
+import { BASE_PROMPT, satellitePrompt, memoryPrompt, vocabularyPrompt } from './prompts/system.mjs';
 
 export class BrainAgent {
   static id = 'brain';
@@ -7,9 +7,10 @@ export class BrainAgent {
   #memory;
   #policy;
   #skills;
+  #vocabulary;
   #logger;
 
-  constructor({ agentRuntime, memory, policy, skills, logger = console }) {
+  constructor({ agentRuntime, memory, policy, skills, vocabulary = null, logger = console }) {
     if (!agentRuntime?.execute || !agentRuntime?.streamExecute) {
       throw new Error('BrainAgent: agentRuntime with execute() + streamExecute() required');
     }
@@ -20,6 +21,7 @@ export class BrainAgent {
     this.#memory = memory;
     this.#policy = policy;
     this.#skills = skills;
+    this.#vocabulary = vocabulary;
     this.#logger = logger;
   }
 
@@ -33,6 +35,7 @@ export class BrainAgent {
       BASE_PROMPT,
       satellitePrompt(satellite),
       this.#skills.buildPromptFragmentsFor(satellite),
+      vocabularyPrompt(this.#vocabulary),
       memoryPrompt(memorySnapshot),
     ].filter(Boolean).join('\n\n');
 

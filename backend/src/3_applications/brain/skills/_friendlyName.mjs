@@ -1,16 +1,21 @@
+import { AliasMap } from '#domains/common/AliasMap.mjs';
+
 /**
  * Resolve a free-form name like "office light" to an HA entity_id (e.g. "light.office_main").
  * Strategy:
  *   1. Exact alias hit (config.friendly_name_aliases).
  *   2. Token-overlap fuzzy match against state names + entity ids from gateway.listAllStates().
  *
- * @param {{ name: string, gateway: object, aliases?: object, domain?: string|null }} args
+ * @param {{ name: string, gateway: object, aliases?: object|AliasMap, domain?: string|null }} args
  * @returns {Promise<{ entityId: string|null, reason: string, candidates?: string[] }>}
  */
 export async function resolveEntity({ name, gateway, aliases = {}, domain = null }) {
   if (!name) return { entityId: null, reason: 'empty' };
   const norm = String(name).trim().toLowerCase();
-  if (aliases[norm]) return { entityId: aliases[norm], reason: 'alias' };
+
+  const aliasMap = aliases instanceof AliasMap ? aliases : new AliasMap(aliases ?? {});
+  const aliasHit = aliasMap.lookup(name);
+  if (aliasHit) return { entityId: aliasHit, reason: 'alias' };
 
   const all = await safeStates(gateway);
   const candidates = all
