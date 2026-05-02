@@ -130,3 +130,46 @@ describe('BrainPolicyEvaluator — deny precedence', () => {
     assert.strictEqual(d.allow, true);
   });
 });
+
+describe('BrainPolicyEvaluator — fail-closed on tool bugs', () => {
+  it('getScopesFor that throws → uses fallback scope, restricted tool denies', () => {
+    const ev = new BrainPolicyEvaluator({ householdPolicy: {}, logger: silentLogger });
+    const t = tool({
+      name: 'broken',
+      defaultPolicy: 'restricted',
+      getScopesFor: () => { throw new Error('explode'); },
+    });
+    const d = ev.evaluateToolCall(satellite(), 'broken', {}, t, 'helpdesk');
+    assert.strictEqual(d.allow, false);
+    assert.match(d.reason, /uncovered:helpdesk:broken/);
+  });
+
+  it('getScopesFor that throws → fallback scope, open tool allows', () => {
+    const ev = new BrainPolicyEvaluator({ householdPolicy: {}, logger: silentLogger });
+    const t = tool({
+      name: 'sloppy',
+      defaultPolicy: 'open',
+      getScopesFor: () => { throw new Error('explode'); },
+    });
+    const d = ev.evaluateToolCall(satellite(), 'sloppy', {}, t, 'memory');
+    assert.strictEqual(d.allow, true);
+  });
+
+  it('getScopesFor returns non-array → fallback used', () => {
+    const ev = new BrainPolicyEvaluator({ householdPolicy: {}, logger: silentLogger });
+    const sat = satellite({ scopes_allowed: ['helpdesk:weird'] });
+    const t = tool({ name: 'weird', defaultPolicy: 'restricted', getScopesFor: () => 'string-not-array' });
+    const d = ev.evaluateToolCall(sat, 'weird', {}, t, 'helpdesk');
+    assert.strictEqual(d.allow, true);   // fallback scope 'helpdesk:weird' matches
+  });
+
+  it('boot-time: malformed household glob throws at construction', () => {
+    assert.throws(
+      () => new BrainPolicyEvaluator({
+        householdPolicy: { scopes_denied: ['data:[bad]:*'] },
+        logger: silentLogger,
+      }),
+      /invalid scope/i,
+    );
+  });
+});
