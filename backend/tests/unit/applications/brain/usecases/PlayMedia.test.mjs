@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { PlayMediaUseCase, orderForResolve, simplifyQuery } from '../../../../../src/3_applications/brain/usecases/PlayMedia.mjs';
+import { PlayMediaUseCase, orderForResolve, simplifyQuery, splitCompoundWords } from '../../../../../src/3_applications/brain/usecases/PlayMedia.mjs';
 
 const silentLogger = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
 const SAT = { mediaPlayerEntity: 'media_player.office' };
@@ -407,5 +407,143 @@ describe('simplifyQuery helper', () => {
     assert.strictEqual(simplifyQuery(null), null);
     assert.strictEqual(simplifyQuery(undefined), null);
     assert.strictEqual(simplifyQuery(42), null);
+  });
+});
+
+describe('splitCompoundWords helper', () => {
+  it('splits CamelCase boundary', () => {
+    assert.strictEqual(splitCompoundWords('MotherGoose'), 'Mother Goose');
+    assert.strictEqual(splitCompoundWords('iPhone'), 'i Phone');
+  });
+
+  it('splits repeated 3+ char subsequence', () => {
+    assert.strictEqual(splitCompoundWords('JoyJoy'), 'Joy Joy');
+    assert.strictEqual(splitCompoundWords('Baby JoyJoy'), 'Baby Joy Joy');
+    assert.strictEqual(splitCompoundWords('ABCABCABC'), 'ABC ABC ABC');
+  });
+
+  it('splits both CamelCase and repeated', () => {
+    assert.strictEqual(splitCompoundWords('BabyJoyJoy'), 'Baby Joy Joy');
+  });
+
+  it('does not split short repeats', () => {
+    // "yo" is too short (< 3 chars) — stays untouched, returns null
+    assert.strictEqual(splitCompoundWords('yoyo'), null);
+  });
+
+  it('returns null when query is unchanged', () => {
+    assert.strictEqual(splitCompoundWords('Baby Joy Joy'), null);
+    assert.strictEqual(splitCompoundWords('Starship'), null);
+    assert.strictEqual(splitCompoundWords('JSON'), null);
+  });
+
+  it('returns null for empty / non-string', () => {
+    assert.strictEqual(splitCompoundWords(''), null);
+    assert.strictEqual(splitCompoundWords(null), null);
+    assert.strictEqual(splitCompoundWords(undefined), null);
+    assert.strictEqual(splitCompoundWords(42), null);
+  });
+});
+
+describe('PlayMediaUseCase — compound-word retry on weak first results', () => {
+  // Helpers that mirror the existing makeFakes pattern but support sequenced search calls
+  const SAT2 = { mediaPlayerEntity: 'media_player.office' };
+
+  function makeSeqFakes(searchResultsBySeq, resolveResults) {
+    const calls = { search: [], resolve: [], play: [] };
+    return {
+      calls,
+      search: async (text) => { calls.search.push(text); return { items: searchResultsBySeq[calls.search.length - 1] ?? [] }; },
+      resolve: async (source, localId) => {
+        calls.resolve.push({ source, localId });
+        return { items: resolveResults[`${source}:${localId}`] ?? [] };
+      },
+      filterPlayable: (items) => items,
+      gateway: { callService: async (d, s, data) => { calls.play.push({ d, s, data }); return { ok: true }; } },
+      urlBuilder: (playable, source, localId) => `http://test/${source}/${localId}`,
+      logger: silentLogger,
+    };
+  }
+
+  it('retries with split query when first results have no containers AND query has compound pattern', async () => {
+    const wrongTracks = [
+      { id: 'plex:1', source: 'plex', localId: '1', title: 'Wrong A', mediaType: 'track', metadata: {} },
+      { id: 'plex:2', source: 'plex', localId: '2', title: 'Wrong B', mediaType: 'track', metadata: {} },
+    ];
+    const rightHits = [
+      { id: 'plex:42', source: 'plex', localId: '42', title: 'Baby Joy Joy', mediaType: 'artist', metadata: { type: 'artist' } },
+    ];
+    const fakes = makeSeqFakes(
+      [wrongTracks, rightHits],   // first call returns track-only, second returns artist
+      { 'plex:42': [{ id: 'plex:42', mediaUrl: '/x.mp3' }] },
+    );
+    const uc = new PlayMediaUseCase(fakes);
+    const r = await uc.execute({ query: 'Baby JoyJoy', satellite: SAT2 });
+    assert.strictEqual(fakes.calls.search.length, 2);
+    assert.strictEqual(fakes.calls.search[0], 'Baby JoyJoy');
+    assert.strictEqual(fakes.calls.search[1], 'Baby Joy Joy');
+    // The artist should win — it's first in the merged candidates list
+    assert.strictEqual(r.candidates[0].id, 'plex:42');
+    assert.strictEqual(r.candidates[0].mediaType, 'artist');
+    assert.strictEqual(r.ok, true);
+  });
+
+  it('does NOT retry when first results contain a container', async () => {
+    const goodAlbum = [
+      { id: 'plex:99', source: 'plex', localId: '99', title: 'Some Album', mediaType: 'album', metadata: { type: 'album' } },
+    ];
+    const fakes = makeSeqFakes(
+      [goodAlbum],
+      { 'plex:99': [{ id: 'plex:99', mediaUrl: '/y.mp3' }] },
+    );
+    const uc = new PlayMediaUseCase(fakes);
+    await uc.execute({ query: 'BabyJoyJoy', satellite: SAT2 });
+    // No retry — only 1 search call
+    assert.strictEqual(fakes.calls.search.length, 1);
+  });
+
+  it('does NOT retry when query has no compound pattern', async () => {
+    const tracks = [
+      { id: 'plex:1', source: 'plex', localId: '1', title: 'A track', mediaType: 'track', metadata: {} },
+    ];
+    const fakes = makeSeqFakes(
+      [tracks],
+      { 'plex:1': [{ id: 'plex:1', mediaUrl: '/x.mp3' }] },
+    );
+    const uc = new PlayMediaUseCase(fakes);
+    await uc.execute({ query: 'Yesterday', satellite: SAT2 });
+    // "Yesterday" has no CamelCase or repeated subseq — no retry
+    assert.strictEqual(fakes.calls.search.length, 1);
+  });
+
+  it('keeps original results when retry returns 0', async () => {
+    const wrongTracks = [
+      { id: 'plex:1', source: 'plex', localId: '1', title: 'Wrong', mediaType: 'track', metadata: {} },
+    ];
+    const fakes = makeSeqFakes(
+      [wrongTracks, []],   // first returns wrong, retry returns 0
+      { 'plex:1': [{ id: 'plex:1', mediaUrl: '/x.mp3' }] },
+    );
+    const uc = new PlayMediaUseCase(fakes);
+    const r = await uc.execute({ query: 'Baby JoyJoy', satellite: SAT2 });
+    assert.strictEqual(fakes.calls.search.length, 2);
+    // Original tracks remain
+    assert.strictEqual(r.candidates[0].id, 'plex:1');
+    assert.strictEqual(r.ok, true);
+  });
+
+  it('dedupes when retry overlaps with original', async () => {
+    const sharedTrack = { id: 'plex:5', source: 'plex', localId: '5', title: 'Shared', mediaType: 'track', metadata: {} };
+    const newAlbum = { id: 'plex:9', source: 'plex', localId: '9', title: 'New Album', mediaType: 'album', metadata: { type: 'album' } };
+    const fakes = makeSeqFakes(
+      [[sharedTrack], [newAlbum, sharedTrack]],   // retry returns album + same track
+      { 'plex:9': [{ id: 'plex:9', mediaUrl: '/x.mp3' }] },
+    );
+    const uc = new PlayMediaUseCase(fakes);
+    const r = await uc.execute({ query: 'BabyJoyJoy', satellite: SAT2 });
+    // Album first (new), then shared track (deduped from original) — 2 unique
+    assert.strictEqual(r.candidates.length, 2);
+    assert.strictEqual(r.candidates[0].id, 'plex:9');
+    assert.strictEqual(r.candidates[1].id, 'plex:5');
   });
 });

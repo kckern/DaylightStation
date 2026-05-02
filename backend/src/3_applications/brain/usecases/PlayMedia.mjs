@@ -93,7 +93,31 @@ export class PlayMediaUseCase {
       }
     }
 
-    const items = search.items ?? [];
+    let items = search.items ?? [];
+
+    // 2.5. If we got results but NO container types AND the original query has
+    // a compound-word pattern (e.g. "BabyJoyJoy" or "MotherGoose"), retry once
+    // with the normalized spelling and merge. Plex's hub-search tokenizer
+    // doesn't split compound words, so artist/album hubs come back empty;
+    // the spaced variant lets it match. Cheap — only fires when results
+    // already look weak.
+    if (items.length > 0 && !items.some(isContainerCandidate)) {
+      const split = splitCompoundWords(query);
+      if (split && split !== query) {
+        const extra = await this.#search(split);
+        const extraItems = extra.items ?? [];
+        if (extraItems.length > 0) {
+          const seen = new Set(extraItems.map((i) => i.id));
+          // New (better) results first; original results filtered to dedupe.
+          items = [...extraItems, ...items.filter((i) => !seen.has(i.id))];
+          attempts.push({ kind: 'compound_split', query: split, count: extraItems.length });
+          log.info?.('brain.skill.media.compound_split', {
+            original: query, split, added: extraItems.length, total: items.length,
+          });
+        }
+      }
+    }
+
     const candidates = items.slice(0, 5).map(toCandidateView);
 
     if (items.length === 0) {
@@ -280,6 +304,34 @@ export function orderForResolve(items, pickIndex) {
     if (left >= 0) ordered.push(items[left--]);
   }
   return ordered;
+}
+
+/**
+ * Insert spaces at compound-word boundaries so Plex's hub-search tokenizer
+ * can match. Catches two patterns:
+ *   1. CamelCase: "MotherGoose" → "Mother Goose"
+ *   2. Repeated subsequence (≥3 char): "JoyJoy" → "Joy Joy", "ABCABCABC" → "ABC ABC ABC"
+ *
+ * Returns null if the query unchanged after normalization (no compound pattern
+ * detected) — caller uses null to skip retry.
+ */
+export function splitCompoundWords(query) {
+  if (!query || typeof query !== 'string') return null;
+  let q = query;
+  // CamelCase boundary
+  q = q.replace(/([a-z])([A-Z])/g, '$1 $2');
+  // Repeated 3+-char subsequence — split into N space-separated copies.
+  q = q.replace(/\b(\w{3,})\1+\b/g, (match, sub) => {
+    const count = match.length / sub.length;
+    return Array.from({ length: count }, () => sub).join(' ');
+  });
+  q = q.trim();
+  return q === query.trim() ? null : q;
+}
+
+function isContainerCandidate(item) {
+  const t = (item?.mediaType ?? item?.metadata?.type ?? '').toLowerCase();
+  return CONTAINER_TYPES.has(t);
 }
 
 /**
