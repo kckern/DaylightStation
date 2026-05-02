@@ -86,7 +86,8 @@ async function main() {
     getConfigService: bootstrap.getConfigService,
     getHttpClient: bootstrap.getHttpClient,
     getHaGateway: bootstrap.getHaGateway,
-    // Later tasks add: getContentQuery, getMemory, getBuxfer
+    getContentQuery: bootstrap.getContentQuery,
+    // Later tasks add: getMemory, getBuxfer
   };
 
   try {
