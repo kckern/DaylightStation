@@ -221,6 +221,25 @@ You can play household media (music, playlists, podcasts, audiobooks, ambient so
   }
 }
 
+// ── Voice playback policy (declared here, applied via generic CQS primitives) ──
+
+// Block visual / long-form video types from voice playback.
+const VOICE_EXCLUDE_MEDIA_TYPES = ['image', 'photo', 'video', 'dash_video', 'movie', 'episode', 'show'];
+
+// PlexAdapter tier-1 default surfaces only containers; voice search needs
+// individual tracks (and episodes) returned alongside containers so a song
+// query can hit the song directly.
+const VOICE_PLEX_TIER1_TYPES = ['show', 'movie', 'artist', 'album', 'collection', 'track', 'episode'];
+
+// Secondary ranking factors used after relevance sort: bubble high-rated and
+// frequently-played items above otherwise-equal matches.
+const VOICE_RANK = {
+  factors: [
+    { field: 'metadata.userRating', weight: 0.7, normalize: 'div:10' },
+    { field: 'metadata.viewCount',  weight: 0.3, normalize: 'log10:100' },
+  ],
+};
+
 async function voiceSearch(cq, text, cfg) {
   const sources = Array.isArray(cfg?.voice_sources) ? cfg.voice_sources : [];
   // Single-source scoping if exactly one configured (most common: ['plex']).
@@ -228,9 +247,9 @@ async function voiceSearch(cq, text, cfg) {
   const query = {
     text,
     take: 5,
-    audioOnly: true,
-    includeLeafTypes: true,
-    rankBy: 'voice',
+    excludeMediaTypes: VOICE_EXCLUDE_MEDIA_TYPES,
+    tier1AllowedTypes: VOICE_PLEX_TIER1_TYPES,
+    rank: VOICE_RANK,
   };
   if (sourceParam) query.source = sourceParam;
   if (cfg?.plex_library_ids) query['plex.libraryId'] = cfg.plex_library_ids;
