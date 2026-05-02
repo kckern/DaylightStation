@@ -79,3 +79,40 @@ describe('Satellite — policy scope fields', () => {
     );
   });
 });
+
+describe('Satellite — media_policy field', () => {
+  it('defaults media_policy to null', () => {
+    const s = new Satellite({
+      id: 's', mediaPlayerEntity: 'media_player.x', allowedSkills: ['memory'],
+    });
+    assert.strictEqual(s.media_policy, null);
+  });
+
+  it('accepts and freezes media_policy object', () => {
+    const policy = { auto_approved_libraries: [10, 11], label_gated: { libraries: [5], required_labels: ['family'] } };
+    const s = new Satellite({
+      id: 's', mediaPlayerEntity: 'media_player.x', allowedSkills: ['memory'],
+      media_policy: policy,
+    });
+    assert.deepStrictEqual(s.media_policy.auto_approved_libraries, [10, 11]);
+    assert.deepStrictEqual(s.media_policy.label_gated.required_labels, ['family']);
+    assert.throws(() => { s.media_policy.auto_approved_libraries.push(99); });
+  });
+
+  it('rejects non-object media_policy', () => {
+    assert.throws(() =>
+      new Satellite({
+        id: 's', mediaPlayerEntity: 'media_player.x', allowedSkills: ['memory'],
+        media_policy: 'family',
+      }),
+      /media_policy/,
+    );
+    assert.throws(() =>
+      new Satellite({
+        id: 's', mediaPlayerEntity: 'media_player.x', allowedSkills: ['memory'],
+        media_policy: ['family'],
+      }),
+      /media_policy/,
+    );
+  });
+});

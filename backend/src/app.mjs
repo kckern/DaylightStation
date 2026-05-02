@@ -2316,6 +2316,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       configService,
       dataService,
       contentQueryService: contentServices?.contentQueryService ?? null,
+      contentRegistry,
       haGateway: homeAutomationAdapters?.haGateway ?? null,
       devicesConfig,
       mediaLogsDir: join(configService.getMediaDir(), 'logs'),

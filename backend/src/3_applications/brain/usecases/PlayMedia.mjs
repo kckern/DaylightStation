@@ -16,7 +16,7 @@
  * Dependencies are abstract — caller injects:
  *   - search(text): Promise<{items: Array}>
  *   - resolve(source, localId): Promise<{items: Array}>
- *   - filterPlayable(items): Array          // domain filter: which items are playable here
+ *   - filterPlayable(items, satellite): Promise<Array>  // domain filter — async so it can apply per-satellite policies (e.g. label fetches)
  *   - gateway: { callService(domain, service, data) }
  *   - urlBuilder(playable, source, localId): string  // builds the final media URL
  *   - judge?: { pick({query, candidates}): Promise<{index, reason, latencyMs}> }
@@ -157,7 +157,7 @@ export class PlayMediaUseCase {
       const localId = candidate.localId ?? extractLocalId(candidate.id, candidate.source);
       try {
         const resolved = await this.#resolve(candidate.source, localId);
-        const playables = this.#filterPlayable(resolved.items ?? []);
+        const playables = await this.#filterPlayable(resolved.items ?? [], satellite);
         if (playables.length === 0) {
           resolveAttempts.push({ id: candidate.id, reason: 'no_playable' });
           lastFailReason = 'no_playable';

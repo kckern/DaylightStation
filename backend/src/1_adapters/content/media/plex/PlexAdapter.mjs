@@ -163,6 +163,40 @@ export class PlexAdapter {
   }
 
   /**
+   * Get the Plex labels (tags applied via Plex's label system) for a rating key.
+   * @param {string} ratingKey - Plex rating key
+   * @returns {Promise<string[]>} Array of label tag strings (empty if none / on error)
+   */
+  async getLabels(ratingKey) {
+    try {
+      const response = await this.client.getMetadata(ratingKey);
+      const labels = response?.MediaContainer?.Metadata?.[0]?.Label ?? [];
+      return labels.map(l => l?.tag).filter(Boolean);
+    } catch (err) {
+      this.logger.warn?.('plex.getLabels.exception', { ratingKey, error: err.message });
+      return [];
+    }
+  }
+
+  /**
+   * Get the labels of a Plex item's ancestors (parent album / grandparent
+   * artist for tracks; parent artist for albums; etc.). Knows the Plex
+   * item shape so consumers don't need to.
+   *
+   * @param {Object} item - resolved playable item from this adapter
+   * @returns {Promise<string[]>} flat array of ancestor label tags
+   */
+  async getAncestorLabels(item) {
+    if (!item) return [];
+    const keys = [
+      item.parentRatingKey ?? item.metadata?.parentRatingKey,
+      item.grandparentRatingKey ?? item.metadata?.grandparentRatingKey,
+    ].filter(Boolean);
+    const labelLists = await Promise.all(keys.map(k => this.getLabels(k)));
+    return labelLists.flat();
+  }
+
+  /**
    * Get thumbnail URLs from a Plex rating key
    * Migrated from: plex.mjs:432-438
    * @param {string} ratingKey - Plex rating key

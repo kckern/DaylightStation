@@ -142,3 +142,42 @@ describe('YamlSatelliteRegistry — scope fields', () => {
     assert.strictEqual(s.scopes_denied.length, 0);
   });
 });
+
+describe('YamlSatelliteRegistry — media_policy', () => {
+  it('passes media_policy from YAML through to Satellite', async () => {
+    const cfg = makeFakeConfigService(
+      {
+        satellites: [{
+          id: 'kids', media_player_entity: 'media_player.kids',
+          allowed_skills: ['memory'], token_ref: 'ENV:T',
+          media_policy: {
+            auto_approved_libraries: [10, 11],
+            label_gated: { libraries: [5], required_labels: ['family'] },
+          },
+        }],
+      },
+      { T: 'tok' },
+    );
+    const registry = new YamlSatelliteRegistry({ configService: cfg, logger: console });
+    await registry.load();
+    const s = await registry.findByToken('tok');
+    assert.deepStrictEqual([...s.media_policy.auto_approved_libraries], [10, 11]);
+    assert.deepStrictEqual([...s.media_policy.label_gated.required_labels], ['family']);
+  });
+
+  it('defaults media_policy to null when YAML omits it', async () => {
+    const cfg = makeFakeConfigService(
+      {
+        satellites: [{
+          id: 's', media_player_entity: 'media_player.s',
+          allowed_skills: ['memory'], token_ref: 'ENV:T',
+        }],
+      },
+      { T: 'tok' },
+    );
+    const registry = new YamlSatelliteRegistry({ configService: cfg, logger: console });
+    await registry.load();
+    const s = await registry.findByToken('tok');
+    assert.strictEqual(s.media_policy, null);
+  });
+});
