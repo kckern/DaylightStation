@@ -37,3 +37,45 @@ describe('Satellite', () => {
     assert.strictEqual(s.mediaPlayerFor(), 'media_player.living_room');
   });
 });
+
+describe('Satellite — policy scope fields', () => {
+  it('defaults scopes_allowed and scopes_denied to empty arrays', () => {
+    const s = new Satellite({
+      id: 's', mediaPlayerEntity: 'media_player.x', allowedSkills: ['memory'],
+    });
+    assert.deepStrictEqual(s.scopes_allowed, []);
+    assert.deepStrictEqual(s.scopes_denied, []);
+  });
+
+  it('accepts and freezes scopes_allowed and scopes_denied', () => {
+    const s = new Satellite({
+      id: 's', mediaPlayerEntity: 'media_player.x', allowedSkills: ['memory'],
+      scopes_allowed: ['memory:**', 'ha:office:**'],
+      scopes_denied:  ['ha:scripts:dangerous:*'],
+    });
+    assert.deepStrictEqual(s.scopes_allowed, ['memory:**', 'ha:office:**']);
+    assert.deepStrictEqual(s.scopes_denied, ['ha:scripts:dangerous:*']);
+    assert.throws(() => s.scopes_allowed.push('x'));
+    assert.throws(() => s.scopes_denied.push('x'));
+  });
+
+  it('rejects non-array scopes_allowed', () => {
+    assert.throws(() =>
+      new Satellite({
+        id: 's', mediaPlayerEntity: 'media_player.x', allowedSkills: ['memory'],
+        scopes_allowed: 'memory:*',
+      }),
+      /scopes_allowed/,
+    );
+  });
+
+  it('rejects non-array scopes_denied', () => {
+    assert.throws(() =>
+      new Satellite({
+        id: 's', mediaPlayerEntity: 'media_player.x', allowedSkills: ['memory'],
+        scopes_denied: 42,
+      }),
+      /scopes_denied/,
+    );
+  });
+});

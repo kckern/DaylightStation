@@ -6,6 +6,8 @@ export class Satellite {
     allowedSkills = [],
     defaultVolume = null,
     defaultMediaClass = null,
+    scopes_allowed = [],
+    scopes_denied = [],
   }) {
     if (!id || typeof id !== 'string') throw new Error('Satellite.id is required');
     if (!mediaPlayerEntity || typeof mediaPlayerEntity !== 'string') {
@@ -14,6 +16,8 @@ export class Satellite {
     if (!Array.isArray(allowedSkills) || allowedSkills.length === 0) {
       throw new Error('Satellite.allowedSkills must be a non-empty list');
     }
+    if (!Array.isArray(scopes_allowed)) throw new Error('Satellite.scopes_allowed must be an array');
+    if (!Array.isArray(scopes_denied)) throw new Error('Satellite.scopes_denied must be an array');
 
     this.id = id;
     this.mediaPlayerEntity = mediaPlayerEntity;
@@ -21,6 +25,8 @@ export class Satellite {
     this.allowedSkills = Object.freeze([...allowedSkills]);
     this.defaultVolume = defaultVolume;
     this.defaultMediaClass = defaultMediaClass;
+    this.scopes_allowed = Object.freeze([...scopes_allowed]);
+    this.scopes_denied = Object.freeze([...scopes_denied]);
     Object.freeze(this);
   }
 
