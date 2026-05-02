@@ -217,15 +217,15 @@ Definitions of terms used across all four health reference documents. When a dee
 
 **Household.** The unit of configuration and of shared dashboards. Groups users who share a physical environment. Identified by a household ID.
 
-**Insight.** See *Pattern*. An *Insight* is a Pattern selected for delivery in a coaching message.
-
 **Longitudinal aggregate.** A series of values keyed by time bucket — daily, weekly, monthly — with statistical rollups (average, range, count, trend slope). Derived from daily summaries. Used for charts and for long-view coaching context.
 
 **Macro.** A macronutrient category: protein, carbs, fat. Tracked per food item and rolled up per daily summary.
 
+**Messaging gateway.** The household-configured adapter that delivers coaching messages and other outbound notifications to the user's chosen messaging platform (Telegram, in this household). The coaching system hands the gateway a message and a target conversation; the gateway handles platform-specific formatting and transport.
+
 **Morning brief.** A coaching message delivered at the start of the day, framing yesterday's totals, the weekly average, and the day ahead.
 
-**Pattern.** A detected trend or break in recent daily summaries (binge after deficit, calorie surplus, protein short, on track) that the coach can reference in commentary. A *Pattern* selected for delivery in a coaching message is called an *Insight*.
+**Pattern.** A detected trend or break in recent daily summaries (binge after deficit, calorie surplus, protein short, on track) that the coach can reference in commentary. At most one pattern is selected per snapshot.
 
 **Post-report summary.** A coaching message delivered after the user's last food log of the day, summarizing the day's totals against goals and noting notable items.
 
@@ -240,6 +240,8 @@ Definitions of terms used across all four health reference documents. When a dee
 **Source freshness.** The age of the most recent data point from each source. Surfaced on the hub's recency card so a user can see which integrations are reporting and which have gone silent.
 
 **Status block.** The deterministic, factual layer of a coaching message. Numbers and goal-relative framing computed from the daily summary. The LLM may not rewrite the status block — its commentary is appended below.
+
+**Tiered history.** A composite read of the longitudinal aggregate that mixes time grains — recent days at daily grain, the surrounding months at weekly grain, the prior years at monthly grain — into a single time series suitable for a chart that spans from days to years.
 
 **User.** The unit of health data ownership. Identified by a stable username. Belongs to exactly one household.
 
