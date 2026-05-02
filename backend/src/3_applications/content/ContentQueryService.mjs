@@ -284,19 +284,8 @@ export class ContentQueryService {
         items = items.filter(item => this.#hasCapability(item, query.capability));
       }
 
-      // Apply audio-only filter (blocks photos / videos for voice playback)
-      if (query.audioOnly) {
-        items = items.filter(item => isAudioPlayable(item));
-      }
-
-      // Apply explicit media-type allow list
-      if (Array.isArray(query.mediaTypes) && query.mediaTypes.length > 0) {
-        const allow = new Set(query.mediaTypes.map(t => String(t).toLowerCase()));
-        items = items.filter(item => {
-          const t = (item.mediaType || item.metadata?.type || '').toLowerCase();
-          return allow.has(t);
-        });
-      }
+      // Apply caller-declared media-type filters (see search() for shape).
+      items = applyMediaTypeFilters(items, query);
 
       // Skip if all items filtered out
       if (items.length === 0) {
@@ -466,19 +455,10 @@ export class ContentQueryService {
       items = items.filter(item => this.#hasCapability(item, query.capability));
     }
 
-    // Apply audio-only filter (blocks photos / videos for voice playback)
-    if (query.audioOnly) {
-      items = items.filter(item => isAudioPlayable(item));
-    }
-
-    // Apply explicit media-type allow list (e.g. mediaTypes: ['audio', 'music'])
-    if (Array.isArray(query.mediaTypes) && query.mediaTypes.length > 0) {
-      const allow = new Set(query.mediaTypes.map(t => String(t).toLowerCase()));
-      items = items.filter(item => {
-        const t = (item.mediaType || item.metadata?.type || '').toLowerCase();
-        return allow.has(t);
-      });
-    }
+    // Generic media-type filters (callers declare the policy):
+    //   excludeMediaTypes: string[] — blocklist by item.mediaType / metadata.type
+    //   includeMediaTypes: string[] — allowlist (anything outside is dropped)
+    items = applyMediaTypeFilters(items, query);
 
     // Apply relevance-based sorting (unless random or explicit sort)
     if (query.sort === 'random') {
@@ -490,12 +470,14 @@ export class ContentQueryService {
       items = this.#sortByRelevance(items, query.text);
     }
 
-    // Secondary voice ranking: when a caller asks for voice-friendly ranking,
-    // bubble high-rated and frequently-played items above otherwise-equal
-    // matches. Stable: relies on the relevance sort above being authoritative
-    // for the primary ordering and only re-orders within tied groups.
-    if (query.rankBy === 'voice') {
-      items = applyVoiceRanking(items);
+    // Generic secondary ranking. Callers declare a list of weighted factors
+    // applied AFTER the primary sort (preserves relevance order within ties).
+    //   query.rank: { factors: [{ field, weight, normalize }] }
+    //   field      — dotted path into the item, e.g. 'metadata.userRating'
+    //   weight     — 0..1 contribution to the composite score
+    //   normalize  — 'div:N' (value/N capped at 1) | 'log10:N' (log10(v+1)/log10(N+1) capped at 1)
+    if (query.rank?.factors?.length > 0) {
+      items = applyWeightedRank(items, query.rank.factors);
     }
 
     // Clean up internal flag
@@ -886,48 +868,85 @@ export class ContentQueryService {
  * @returns {boolean}
  */
 /**
- * Voice-friendly secondary ranking. Composite score per item, items sorted
- * descending. Doesn't replace relevance — applied after, so an item the
- * relevance scorer ranked first can still win unless something with much
- * higher rating/play count overtakes it.
- *
- * Score components (all default to 0 when missing — items without the
- * signals stay where the relevance sort put them):
- *   userRating  → 0..1 (Plex rates 0..10, normalize)
- *   playCount   → log-scale 0..1 capped at 100 plays
+ * Apply caller-declared media-type filters.
+ *   query.excludeMediaTypes: string[] — drop items whose mediaType / metadata.type / type matches
+ *   query.includeMediaTypes: string[] — keep ONLY items whose type matches (allowlist)
+ * Both are case-insensitive. Items without a typed field fall through unchanged
+ * for the exclude filter, but are dropped by the include filter.
  */
-function applyVoiceRanking(items) {
+function applyMediaTypeFilters(items, query) {
+  let out = items;
+  if (Array.isArray(query?.excludeMediaTypes) && query.excludeMediaTypes.length > 0) {
+    const blocked = new Set(query.excludeMediaTypes.map(t => String(t).toLowerCase()));
+    out = out.filter(item => {
+      const types = itemTypes(item);
+      return !types.some(t => blocked.has(t));
+    });
+  }
+  if (Array.isArray(query?.includeMediaTypes) && query.includeMediaTypes.length > 0) {
+    const allowed = new Set(query.includeMediaTypes.map(t => String(t).toLowerCase()));
+    out = out.filter(item => {
+      const types = itemTypes(item);
+      return types.length > 0 && types.every(t => allowed.has(t));
+    });
+  }
+  return out;
+}
+
+function itemTypes(item) {
+  return [item?.mediaType, item?.metadata?.type, item?.type]
+    .filter(v => typeof v === 'string')
+    .map(v => v.toLowerCase());
+}
+
+/**
+ * Apply caller-declared weighted secondary ranking. Stable: items with equal
+ * scores keep their original (relevance-sorted) order. Items without a value
+ * for a factor's field contribute 0 to that factor (don't fail the sort).
+ *
+ * Each factor: { field: 'a.b.c', weight: 0..1, normalize: 'div:N' | 'log10:N' }
+ *   div:N    → min(value / N, 1)
+ *   log10:N  → min(log10(value + 1) / log10(N + 1), 1)
+ *   none     → raw value clamped to 0..1
+ */
+function applyWeightedRank(items, factors) {
   if (!Array.isArray(items) || items.length < 2) return items;
-  const scored = items.map((item, originalIndex) => {
-    const rating = numberOf(item?.metadata?.userRating ?? item?.metadata?.rating);
-    const plays = numberOf(item?.metadata?.viewCount ?? item?.metadata?.playCount);
-    const ratingScore = rating > 0 ? Math.min(rating / 10, 1) : 0;
-    const playScore = plays > 0 ? Math.min(Math.log10(plays + 1) / 2, 1) : 0;
-    return {
-      item,
-      originalIndex,
-      score: ratingScore * 0.7 + playScore * 0.3,
-    };
-  });
-  // Stable sort: by score desc, fallback to original index asc to preserve relevance order
+  if (!Array.isArray(factors) || factors.length === 0) return items;
+  const scored = items.map((item, originalIndex) => ({
+    item,
+    originalIndex,
+    score: factors.reduce((sum, f) => {
+      const raw = readPath(item, f.field);
+      const n = numberOf(raw);
+      const normalized = normalizeValue(n, f.normalize);
+      const weight = numberOf(f.weight);
+      return sum + (normalized * weight);
+    }, 0),
+  }));
   scored.sort((a, b) => (b.score - a.score) || (a.originalIndex - b.originalIndex));
   return scored.map(s => s.item);
+}
+
+function readPath(obj, path) {
+  if (!obj || typeof path !== 'string') return undefined;
+  return path.split('.').reduce((cur, key) => (cur == null ? cur : cur[key]), obj);
+}
+
+function normalizeValue(n, spec) {
+  if (n <= 0) return 0;
+  if (typeof spec !== 'string') return Math.min(Math.max(n, 0), 1);
+  const [op, capStr] = spec.split(':');
+  const cap = numberOf(capStr);
+  if (cap <= 0) return Math.min(Math.max(n, 0), 1);
+  if (op === 'div') return Math.min(n / cap, 1);
+  if (op === 'log10') return Math.min(Math.log10(n + 1) / Math.log10(cap + 1), 1);
+  return Math.min(Math.max(n, 0), 1);
 }
 
 function numberOf(v) {
   if (v == null) return 0;
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
-}
-
-function isAudioPlayable(item) {
-  if (!item) return false;
-  const blocked = new Set(['image', 'photo', 'video', 'dash_video', 'movie', 'episode', 'show']);
-  const candidates = [item.mediaType, item.metadata?.type, item.type]
-    .filter(v => typeof v === 'string')
-    .map(v => v.toLowerCase());
-  if (candidates.some(t => blocked.has(t))) return false;
-  return true;
 }
 
 export default ContentQueryService;
