@@ -1,4 +1,5 @@
 import { PlayMediaUseCase } from '../usecases/PlayMedia.mjs';
+import { AliasMap } from '#domains/common/AliasMap.mjs';
 
 /**
  * MediaSkill — thin tool wrapper that exposes voice-driven media playback
@@ -36,6 +37,8 @@ export class MediaSkill {
   #policyGate;
   #logger;
   #config;
+  /** @type {AliasMap} */
+  #nameAliases;
 
   constructor({ contentQuery, gateway, logger = console, config = {}, judge = null, policyGate = null }) {
     if (!contentQuery) throw new Error('MediaSkill: contentQuery required');
@@ -70,6 +73,8 @@ export class MediaSkill {
       take: DEFAULT_VOICE_TAKE,
       ...config,
     };
+    // Construct once at boot; throws loud on malformed operator config — desired.
+    this.#nameAliases = new AliasMap(this.#config.name_aliases);
   }
 
   get name() { return MediaSkill.name; }
@@ -106,7 +111,8 @@ You can play household media (music, songs, podcasts, ambient sounds, lectures).
         execute: async ({ query, media_class }, ctx) => {
           const start = Date.now();
           let normalisedQuery = applyPrefix(query, media_class, this.#config.prefix_aliases);
-          normalisedQuery = applyNameAlias(normalisedQuery, this.#config.name_aliases);
+          const aliased = this.#nameAliases.lookup(normalisedQuery);
+          if (aliased !== null) normalisedQuery = aliased;
           const result = await useCase.execute({
             query: normalisedQuery,
             satellite: ctx?.satellite,
@@ -201,19 +207,18 @@ function applyPrefix(query, mediaClass, aliases) {
   return query;
 }
 
-// Whole-string, case-insensitive substitution. Operator-curated map that
-// normalises STT-flavored or simplified spellings to canonical search terms
-// (e.g. 'beyonce' → 'Beyoncé') so the search backend's tokenizer can match.
-// Compares trimmed/lowercased query against trimmed/lowercased keys; on hit,
-// returns the alias VALUE verbatim (preserving its casing and any special
-// characters). On miss, returns the input unchanged.
+// Whole-string, case-insensitive substitution shim — delegates to AliasMap.
+// Exported for direct unit testing; internal call-sites use this.#nameAliases
+// (constructed once in the constructor) rather than calling this per query.
 export function applyNameAlias(query, aliases) {
-  if (!aliases || typeof aliases !== 'object') return query;
-  const lc = String(query).trim().toLowerCase();
-  for (const [k, v] of Object.entries(aliases)) {
-    if (String(k).trim().toLowerCase() === lc) return v;
+  try {
+    const map = new AliasMap(aliases ?? null);
+    const hit = map.lookup(String(query));
+    return hit !== null ? hit : query;
+  } catch {
+    // Malformed aliases object at the shim level — return input unchanged.
+    return query;
   }
-  return query;
 }
 
 function absoluteUrl(base, relativeOrAbsolute) {

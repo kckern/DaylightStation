@@ -1,3 +1,5 @@
+import { AliasMap } from '#domains/common/AliasMap.mjs';
+
 export const BASE_PROMPT = `You are the household assistant for the user's home, accessed via a Home Assistant Voice satellite.
 
 Style:
@@ -19,6 +21,20 @@ export function satellitePrompt(satellite) {
   return `## Satellite
 You are responding from the "${satellite.id}" satellite${satellite.area ? ` (${satellite.area})` : ''}.
 Available skills: ${satellite.allowedSkills.join(', ')}.`;
+}
+
+/**
+ * Render household vocabulary into the LLM system prompt. The brain doesn't
+ * substitute these terms at runtime; it shows them to the LLM so the model
+ * understands the user's words natively (e.g. "FHE" → "Family Home Evening").
+ *
+ * @param {AliasMap|null} vocab
+ * @returns {string} Empty string if vocab is null or empty.
+ */
+export function vocabularyPrompt(vocab) {
+  if (!vocab || vocab.size === 0) return '';
+  const lines = vocab.entries().map(([k, v]) => `- ${k} = ${v}`);
+  return `## Household vocabulary\n${lines.join('\n')}`;
 }
 
 export function memoryPrompt(memorySnapshot) {

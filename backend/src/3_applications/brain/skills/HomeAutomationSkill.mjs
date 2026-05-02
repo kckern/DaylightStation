@@ -1,4 +1,5 @@
 import { resolveEntity } from './_friendlyName.mjs';
+import { AliasMap } from '#domains/common/AliasMap.mjs';
 
 export class HomeAutomationSkill {
   static name = 'home_automation';
@@ -29,7 +30,7 @@ Refuse if a device is not configured. Do not invent entity IDs.`;
 
   getTools() {
     const gw = this.#gateway;
-    const aliases = this.#config.friendly_name_aliases ?? {};
+    const aliases = new AliasMap(this.#config.friendly_name_aliases ?? {});
     const log = this.#logger;
 
     return [
