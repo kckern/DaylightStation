@@ -151,17 +151,16 @@ Every policy decision lands in the per-request transcript already written by `Br
   "args": { "path": "common/finances/budget.yml" },
   "policyDecision": {
     "allowed": false,
-    "scopes": ["data:finances:budget.yml"],
-    "deniedBy": "household:data:finances:*"
+    "reason": "household:data:finances:*"
   },
-  "result": { "ok": false, "reason": "policy_denied:data:finances:*" },
+  "result": { "ok": false, "reason": "policy_denied:household:data:finances:*" },
   "ok": false,
   "latencyMs": 0,
   "ts": "…"
 }
 ```
 
-`BrainTranscript.recordTool` already exists; we just thread the decision through.
+The `reason` string encodes both the source (`household:`, `satellite:`, `uncovered:`) and the matching pattern, so a single field captures the audit need. The emitted scopes themselves are recoverable from `args` + `getScopesFor`, so we don't duplicate them. `BrainTranscript.recordTool` already exists; we just thread the decision through.
 
 ---
 
