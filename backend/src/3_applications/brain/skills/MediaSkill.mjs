@@ -59,7 +59,10 @@ You can play household media (music, playlists, podcasts, audiobooks, ambient so
 
           const text = applyPrefix(query, media_class, cfg.prefix_aliases);
           const start = Date.now();
-          const search = await cq.search({ text, take: 5 });
+          // Voice playback: never return photos or videos. The agent serves audio only —
+          // music, songs, podcasts, audiobooks, ambient. Containers (album/artist/playlist)
+          // are allowed since they expand to audio tracks on resolve().
+          const search = await cq.search({ text, take: 5, audioOnly: true });
           log.info?.('brain.skill.media.search', {
             query,
             media_class,
@@ -75,8 +78,12 @@ You can play household media (music, playlists, podcasts, audiobooks, ambient so
 
           const localId = top.localId ?? extractLocalId(top.id, top.source);
           const resolved = await cq.resolve(top.source, localId, {}, {});
-          const playable = resolved.items?.[0];
-          if (!playable) return { ok: false, reason: 'no_playable', source: top.source };
+          const audioOnly = (resolved.items ?? []).filter(isAudioItem);
+          const playable = audioOnly[0];
+          if (!playable) {
+            log.warn?.('brain.skill.media.no_audio_playable', { content_id: top.id, source: top.source });
+            return { ok: false, reason: 'no_audio_playable', source: top.source };
+          }
 
           const relative = playable.mediaUrl ?? `/api/v1/stream/${top.source}/${localId}`;
           const mediaUrl = absoluteUrl(cfg.ds_base_url, relative);
@@ -128,14 +135,18 @@ function extractLocalId(id, source) {
   return id;
 }
 
-function mapContentType(t) {
-  switch (t) {
-    case 'video':
-    case 'dash_video':
-      return 'video';
-    default:
-      return 'music';
-  }
+function mapContentType(_t) {
+  // Voice playback is audio-only — see isAudioItem. Always tell HA "music".
+  return 'music';
+}
+
+function isAudioItem(item) {
+  if (!item) return false;
+  const blocked = new Set(['image', 'photo', 'video', 'dash_video', 'movie', 'episode', 'show']);
+  const types = [item.mediaType, item.metadata?.type, item.type]
+    .filter(v => typeof v === 'string')
+    .map(v => v.toLowerCase());
+  return !types.some(t => blocked.has(t));
 }
 
 export default MediaSkill;

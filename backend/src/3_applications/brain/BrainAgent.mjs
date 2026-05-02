@@ -23,12 +23,12 @@ export class BrainAgent {
     this.#logger = logger;
   }
 
-  async #buildContext(satellite) {
+  async #buildContext(satellite, transcript = null) {
     const decision = this.#policy.evaluateRequest(satellite, {});
     if (!decision.allow) return { allowed: false, decision };
 
     const memorySnapshot = await this.#snapshotMemory();
-    const tools = this.#skills.buildToolsFor(satellite, this.#policy);
+    const tools = this.#skills.buildToolsFor(satellite, this.#policy, transcript);
     const prompt = [
       BASE_PROMPT,
       satellitePrompt(satellite),
@@ -56,8 +56,8 @@ export class BrainAgent {
     return `I can't do that right now${tail}.`;
   }
 
-  async runChat({ satellite, messages, conversationId = null }) {
-    const ctx = await this.#buildContext(satellite);
+  async runChat({ satellite, messages, conversationId = null, transcript = null }) {
+    const ctx = await this.#buildContext(satellite, transcript);
     if (!ctx.allowed) {
       this.#logger.warn?.('brain.policy.request_denied', {
         satellite_id: satellite.id,
@@ -85,8 +85,8 @@ export class BrainAgent {
     return { content: final, toolCalls: result.toolCalls ?? [], usage: result.usage ?? null };
   }
 
-  async *streamChat({ satellite, messages, conversationId = null }) {
-    const ctx = await this.#buildContext(satellite);
+  async *streamChat({ satellite, messages, conversationId = null, transcript = null }) {
+    const ctx = await this.#buildContext(satellite, transcript);
     if (!ctx.allowed) {
       yield { type: 'text-delta', text: this.#refusalContent(ctx.decision.reason) };
       yield { type: 'finish', reason: 'policy' };

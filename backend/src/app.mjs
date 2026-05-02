@@ -2404,10 +2404,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       logger: brainLogger,
     });
 
+    const brainMediaLogsDir = join(configService.getMediaDir(), 'logs');
     app.use('/v1', createBrainRouter({
       satelliteRegistry: brainSatelliteRegistry,
       chatCompletionRunner: brainApp,
       logger: brainLogger.child({ component: 'router' }),
+      mediaLogsDir: brainMediaLogsDir,
     }));
 
     rootLogger.info('brain.mounted', { path: '/v1', skills: brainSkills.map((s) => s.name) });
