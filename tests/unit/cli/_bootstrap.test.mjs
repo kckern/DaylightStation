@@ -69,10 +69,10 @@ describe('cli/_bootstrap.mjs', () => {
     expect(a).toBe(b);
   });
 
-  it('getHttpClient() returns an object with a request method', () => {
+  it('getHttpClient() returns an HttpClient with a get method', () => {
     const http = bootstrap.getHttpClient();
     expect(http).toBeTruthy();
-    expect(typeof http.request).toBe('function');
+    expect(typeof http.get).toBe('function');
   });
 
   it('getHttpClient() memoizes', () => {
