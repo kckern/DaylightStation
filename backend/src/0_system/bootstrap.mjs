@@ -3189,6 +3189,7 @@ export async function createBrainServices(config) {
   const { YamlSatelliteRegistry } = await import('#adapters/persistence/yaml/YamlSatelliteRegistry.mjs');
   const { YamlBrainMemoryAdapter } = await import('#adapters/persistence/yaml/YamlBrainMemoryAdapter.mjs');
   const { PassThroughBrainPolicy } = await import('#applications/brain/services/PassThroughBrainPolicy.mjs');
+  const { BrainPolicyEvaluator } = await import('#applications/brain/services/BrainPolicyEvaluator.mjs');
   const { BrainApplication } = await import('#applications/brain/BrainApplication.mjs');
   const { MemorySkill } = await import('#applications/brain/skills/MemorySkill.mjs');
   const { HomeAutomationSkill } = await import('#applications/brain/skills/HomeAutomationSkill.mjs');
@@ -3241,6 +3242,23 @@ export async function createBrainServices(config) {
   //     prefix_aliases: {}
   const brainConfig = configService.reloadHouseholdAppConfig?.(null, 'brain') ?? {};
   const mediaConfig = brainConfig?.media ?? {};
+
+  const householdPolicy = brainConfig?.policy ?? {};
+  let brainPolicy;
+  try {
+    brainPolicy = new BrainPolicyEvaluator({
+      householdPolicy,
+      logger: logger.child({ component: 'policy' }),
+    });
+    logger.info?.('brain.policy.loaded', {
+      household_allowed: householdPolicy.scopes_allowed?.length ?? 0,
+      household_denied: householdPolicy.scopes_denied?.length ?? 0,
+    });
+  } catch (err) {
+    // Boot-time fail-loud: malformed glob in brain.yml.policy is a config bug.
+    logger.error?.('brain.policy.invalid_config', { error: err.message });
+    throw err;
+  }
 
   if (contentQueryService && haGateway) {
     const dsBaseUrl = devicesConfig?.daylightHostInternal || devicesConfig?.daylightHost;
@@ -3297,7 +3315,7 @@ export async function createBrainServices(config) {
   const brainApp = new BrainApplication({
     satelliteRegistry: brainSatelliteRegistry,
     memory: brainMemory,
-    policy: new PassThroughBrainPolicy(),
+    policy: brainPolicy,
     agentRuntime: brainAgentRuntime,
     skills: brainSkills,
     logger,
