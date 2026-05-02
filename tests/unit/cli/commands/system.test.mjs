@@ -115,4 +115,79 @@ describe('cli/commands/system', () => {
       expect(stdout.read()).toMatch(/health/i);
     });
   });
+
+  describe('config action', () => {
+    function fakeConfigService() {
+      return {
+        getDataDir: () => '/data',
+        getMediaDir: () => '/media',
+        getTimezone: () => 'America/Los_Angeles',
+        getHouseholdDevices: () => ({ devices: { 'office-tv': { type: 'linux-pc' } } }),
+        getIntegrationsConfig: () => ({ homeassistant: { host: 'http://hass:8123' } }),
+        getHouseholdAppConfig: (_hid, appName) => {
+          if (appName === 'fitness') return { mode: 'cycle' };
+          return null;
+        },
+      };
+    }
+
+    it('returns system namespace with derived values', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const result = await system.run(
+        { subcommand: 'system', positional: ['config', 'system'], flags: {}, help: false },
+        { stdout, stderr, getConfigService: async () => fakeConfigService() },
+      );
+      expect(result.exitCode).toBe(0);
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.namespace).toBe('system');
+      expect(out.config.dataDir).toBe('/data');
+      expect(out.config.timezone).toBe('America/Los_Angeles');
+    });
+
+    it('returns devices namespace', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const result = await system.run(
+        { subcommand: 'system', positional: ['config', 'devices'], flags: {}, help: false },
+        { stdout, stderr, getConfigService: async () => fakeConfigService() },
+      );
+      expect(result.exitCode).toBe(0);
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.namespace).toBe('devices');
+      expect(out.config.devices['office-tv'].type).toBe('linux-pc');
+    });
+
+    it('returns app namespace (fitness) via catch-all path', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const result = await system.run(
+        { subcommand: 'system', positional: ['config', 'fitness'], flags: {}, help: false },
+        { stdout, stderr, getConfigService: async () => fakeConfigService() },
+      );
+      expect(result.exitCode).toBe(0);
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.namespace).toBe('fitness');
+      expect(out.config.mode).toBe('cycle');
+    });
+
+    it('exits 1 (not_found) for unknown namespace', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const result = await system.run(
+        { subcommand: 'system', positional: ['config', 'nope'], flags: {}, help: false },
+        { stdout, stderr, getConfigService: async () => fakeConfigService() },
+      );
+      expect(result.exitCode).toBe(1);
+      const err = JSON.parse(stderr.read().trim());
+      expect(err.error).toBe('not_found');
+      expect(err.namespace).toBe('nope');
+    });
+
+    it('exits 2 when namespace arg missing', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const result = await system.run(
+        { subcommand: 'system', positional: ['config'], flags: {}, help: false },
+        { stdout, stderr, getConfigService: async () => fakeConfigService() },
+      );
+      expect(result.exitCode).toBe(2);
+      expect(stderr.read()).toMatch(/namespace/i);
+    });
+  });
 });
