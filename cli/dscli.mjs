@@ -87,7 +87,8 @@ async function main() {
     getHttpClient: bootstrap.getHttpClient,
     getHaGateway: bootstrap.getHaGateway,
     getContentQuery: bootstrap.getContentQuery,
-    // Later tasks add: getMemory, getBuxfer
+    getMemory: bootstrap.getMemory,
+    // Later tasks add: getBuxfer
   };
 
   try {

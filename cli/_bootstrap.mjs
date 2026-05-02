@@ -26,6 +26,8 @@ let _haGateway = null;
 let _haInitPromise = null;
 let _contentQuery = null;
 let _contentInitPromise = null;
+let _memory = null;
+let _memoryInitPromise = null;
 
 /**
  * Resolve the data directory the same way backend/index.js does:
@@ -172,6 +174,37 @@ export async function getContentQuery() {
 }
 
 /**
+ * Build the household's concierge memory accessor.
+ *
+ * Returns the YamlConciergeMemoryAdapter (.get / .set / .merge over key strings)
+ * with `__workingMemory` exposed so the `list` action can dump all keys via
+ * the underlying WorkingMemoryState.getAll().
+ *
+ * Hardcoded agentId/userId match the YamlConciergeMemoryAdapter's internals
+ * ('concierge' / 'household').
+ */
+export async function getMemory() {
+  if (_memory) return _memory;
+  if (_memoryInitPromise) return _memoryInitPromise;
+
+  _memoryInitPromise = (async () => {
+    await getConfigService();
+    const { dataService } = await import('#system/config/index.mjs');
+    const { YamlWorkingMemoryAdapter } = await import('#adapters/agents/YamlWorkingMemoryAdapter.mjs');
+    const { YamlConciergeMemoryAdapter } = await import('#adapters/persistence/yaml/YamlConciergeMemoryAdapter.mjs');
+    const workingMemory = new YamlWorkingMemoryAdapter({ dataService });
+    const memory = new YamlConciergeMemoryAdapter({ workingMemory });
+    // Stash the working memory so `dscli memory list` can dump all keys via
+    // wm.load('concierge', 'household').then(state => state.getAll()).
+    memory.__workingMemory = workingMemory;
+    _memory = memory;
+    return _memory;
+  })();
+
+  return _memoryInitPromise;
+}
+
+/**
  * Reset all memoized state. For tests only.
  */
 export function _resetForTests() {
@@ -182,5 +215,7 @@ export function _resetForTests() {
   _haInitPromise = null;
   _contentQuery = null;
   _contentInitPromise = null;
+  _memory = null;
+  _memoryInitPromise = null;
   resetConfigService();
 }
