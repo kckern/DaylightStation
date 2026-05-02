@@ -1789,7 +1789,14 @@ export class PlexAdapter {
 
       // ── Tier 1 (fast): hubSearch + playlists, top-level types, no hydration ──
       if (tier === 1) {
-        const topLevelTypes = ['show', 'movie', 'artist', 'album', 'collection'];
+        // Voice / direct-play callers (e.g. brain MediaSkill) need to surface
+        // individual tracks/episodes, not just their parent containers — a
+        // dashboard drill-down assumption that doesn't hold for "play this song
+        // by name". `query.includeLeafTypes` opts into that behaviour without
+        // changing the existing UI default.
+        const topLevelTypes = query.includeLeafTypes
+          ? ['show', 'movie', 'artist', 'album', 'collection', 'track', 'episode']
+          : ['show', 'movie', 'artist', 'album', 'collection'];
         const filtered = items.filter(item => topLevelTypes.includes(item.type));
         const converted = filtered.map(item => this._hubResultToListableItem(item));
 

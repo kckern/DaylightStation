@@ -66,8 +66,10 @@ You can play household media (music, playlists, podcasts, audiobooks, ambient so
           const start = Date.now();
           // Voice playback: never return photos or videos. The agent serves audio only —
           // music, songs, podcasts, audiobooks, ambient. Containers (album/artist/playlist)
-          // are allowed since they expand to audio tracks on resolve().
-          const search = await cq.search({ text, take: 5, audioOnly: true });
+          // are allowed since they expand to audio tracks on resolve(). `includeLeafTypes`
+          // opts the Plex adapter into surfacing individual tracks (instead of only their
+          // parent albums/artists), which is required for "play <song name>" queries.
+          const search = await cq.search({ text, take: 5, audioOnly: true, includeLeafTypes: true });
           log.info?.('brain.skill.media.search', {
             query,
             media_class,
