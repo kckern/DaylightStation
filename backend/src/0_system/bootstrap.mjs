@@ -3231,6 +3231,17 @@ export async function createBrainServices(config) {
     }));
   }
 
+  // Read all brain config from a single file with sections (satellites, media, …).
+  // brain.yml example:
+  //   satellites: [...]
+  //   media:
+  //     judge_model: openai/gpt-4o-mini   # if absent → judge disabled, top-of-rank pick
+  //     voice_sources: [plex]
+  //     plex_library_ids: "5,10,11,16,18,19,21,22,23"
+  //     prefix_aliases: {}
+  const brainConfig = configService.reloadHouseholdAppConfig?.(null, 'brain') ?? {};
+  const mediaConfig = brainConfig?.media ?? {};
+
   if (contentQueryService && haGateway) {
     const dsBaseUrl = devicesConfig?.daylightHostInternal || devicesConfig?.daylightHost;
     if (!dsBaseUrl) {
@@ -3241,18 +3252,32 @@ export async function createBrainServices(config) {
                + 'where this server is reachable from HA and Voice PE devices.',
       });
     } else {
-      const mediaConfig = configService.reloadHouseholdAppConfig?.(null, 'brain.media') ?? {};
-      const judgeModel = mediaConfig?.judge_model ?? 'openai/gpt-4o-mini';
-      const judgeRuntime = new MastraAdapter({
-        model: judgeModel,
-        logger: logger.child({ component: 'judge-runtime' }),
-        maxToolCalls: 1,
-        timeoutMs: 8000,
-      });
-      const mediaJudge = new MediaJudge({
-        agentRuntime: judgeRuntime,
-        logger: logger.child({ skill: 'media', component: 'judge' }),
-      });
+      // Judge is optional — only built when brain.yml.media.judge_model is set.
+      // No hardcoded fallback model: a quietly-different default in source has
+      // bitten us before (10.0.0.5 default for ds_base_url). Fail loud here:
+      // either the operator opts in by naming a model, or the use case runs
+      // judge-less and picks top-of-rank.
+      let mediaJudge = null;
+      const judgeModel = mediaConfig?.judge_model;
+      if (judgeModel) {
+        const judgeRuntime = new MastraAdapter({
+          model: judgeModel,
+          logger: logger.child({ component: 'judge-runtime' }),
+          maxToolCalls: 1,
+          timeoutMs: 8000,
+        });
+        mediaJudge = new MediaJudge({
+          agentRuntime: judgeRuntime,
+          logger: logger.child({ skill: 'media', component: 'judge' }),
+        });
+      } else {
+        logger.warn?.('brain.media.judge.disabled', {
+          reason: 'no_judge_model_configured',
+          message: 'brain.yml.media.judge_model is unset — MediaSkill will pick the top '
+                 + 'rank-sorted candidate without LLM disambiguation. Set judge_model '
+                 + 'to enable (e.g. openai/gpt-4o-mini).',
+        });
+      }
 
       brainSkills.push(new MediaSkill({
         contentQuery: contentQueryService,
@@ -3264,7 +3289,7 @@ export async function createBrainServices(config) {
       logger.info?.('brain.media.skill.url', {
         ds_base_url: dsBaseUrl,
         source: devicesConfig?.daylightHostInternal ? 'daylightHostInternal' : 'daylightHost',
-        judge_model: judgeModel,
+        judge_model: judgeModel ?? null,
       });
     }
   }
