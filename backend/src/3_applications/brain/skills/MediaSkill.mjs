@@ -9,13 +9,18 @@ export class MediaSkill {
   constructor({ contentQuery, gateway, logger = console, config = {} }) {
     if (!contentQuery) throw new Error('MediaSkill: contentQuery required');
     if (!gateway) throw new Error('MediaSkill: gateway required');
+    if (!config?.ds_base_url || typeof config.ds_base_url !== 'string') {
+      throw new Error(
+        'MediaSkill: ds_base_url is required (the URL where this server is reachable ' +
+        'from media-player devices on the LAN). Configure devices.yml.daylightHost.'
+      );
+    }
     this.#contentQuery = contentQuery;
     this.#gateway = gateway;
     this.#logger = logger;
     this.#config = {
       default_volume: 30,
       prefix_aliases: {},
-      ds_base_url: 'http://10.0.0.5:3111',
       ...config,
     };
   }

@@ -2360,14 +2360,24 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     }
 
     if (contentServices?.contentQueryService && homeAutomationAdapters?.haGateway) {
-      // Read media skill config from household — same convention as other skills.
-      const mediaSkillConfig = configService.reloadHouseholdAppConfig?.(null, 'brain.media') ?? {};
-      brainSkills.push(new MediaSkill({
-        contentQuery: contentServices.contentQueryService,
-        gateway: homeAutomationAdapters.haGateway,
-        logger: brainLogger.child({ skill: 'media' }),
-        config: mediaSkillConfig,
-      }));
+      // Source-of-truth for the LAN URL is devices.yml.daylightHost — same value
+      // device services already use for content callbacks.
+      const dsBaseUrl = devicesConfig?.daylightHost;
+      if (!dsBaseUrl) {
+        rootLogger.warn('brain.media.skill.skipped', {
+          reason: 'no_daylight_host',
+          message: 'devices.yml.daylightHost is unset — MediaSkill not registered. ' +
+                   'Set it to the URL where this server is reachable from media players on the LAN.',
+        });
+      } else {
+        const mediaOverrides = configService.reloadHouseholdAppConfig?.(null, 'brain.media') ?? {};
+        brainSkills.push(new MediaSkill({
+          contentQuery: contentServices.contentQueryService,
+          gateway: homeAutomationAdapters.haGateway,
+          logger: brainLogger.child({ skill: 'media' }),
+          config: { ...mediaOverrides, ds_base_url: dsBaseUrl },
+        }));
+      }
     }
 
     // Read-only domain skills (calendar, lifelog, finance, fitness)
