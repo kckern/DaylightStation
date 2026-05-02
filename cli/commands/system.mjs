@@ -121,7 +121,7 @@ const ACTIONS = {
 export default {
   name: 'system',
   description: 'System operations: health, config',
-  requiresBackend: true,
+  requiresBackend: false,  // per-action; actionHealth checks its own backend
   async run(args, deps) {
     if (args.help) {
       deps.stdout.write(HELP);
