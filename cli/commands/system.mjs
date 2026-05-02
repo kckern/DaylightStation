@@ -55,11 +55,11 @@ async function actionHealth(args, deps) {
   printJson(deps.stdout, {
     ok: true,
     backend: {
+      ...body,
       reachable: true,
       status: response.status,
       url,
       version: body.version ?? body.commit ?? null,
-      ...body,
     },
   });
   return { exitCode: EXIT_OK };
