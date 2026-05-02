@@ -241,6 +241,128 @@ describe('PlayMediaUseCase — walk on resolve failure', () => {
   });
 });
 
+describe('PlayMediaUseCase — container expansion + shuffle', () => {
+  const ALBUM_ITEM = { id: 'plex:74613', source: 'plex', localId: '74613', title: 'Greatest Hits',
+    mediaType: 'album', metadata: { type: 'album' } };
+  const ARTIST_ITEM = { id: 'plex:74612', source: 'plex', localId: '74612', title: 'Starship',
+    mediaType: 'artist', metadata: { type: 'artist' } };
+  const PLAYLIST_ITEM = { id: 'plex:8888', source: 'plex', localId: '8888', title: 'Workout Mix',
+    mediaType: 'playlist', metadata: { type: 'playlist' } };
+
+  function fiveTracks(prefix = 't') {
+    return Array.from({ length: 5 }, (_, i) => ({
+      id: `plex:${prefix}${i}`, localId: `${prefix}${i}`, mediaUrl: `/${prefix}${i}.mp3`,
+      mediaType: 'track', metadata: { type: 'audio' },
+    }));
+  }
+
+  it('album: plays all tracks in order, no shuffle', async () => {
+    const tracks = fiveTracks('a');
+    const fakes = makeFakes({
+      searchResults: [[ALBUM_ITEM]],
+      resolveResults: { 'plex:74613': tracks },
+    });
+    const uc = new PlayMediaUseCase(fakes);
+    const r = await uc.execute({ query: 'greatest hits album', satellite: SAT });
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(r.candidateType, 'album');
+    assert.strictEqual(r.sequenceLength, 5);
+    assert.strictEqual(r.shuffled, false);
+    // 5 enqueue calls, first with 'play', rest with 'add', in original order
+    const enqueues = fakes.calls.play.map(p => p.data.enqueue);
+    assert.deepStrictEqual(enqueues, ['play', 'add', 'add', 'add', 'add']);
+    const ids = fakes.calls.play.map(p => p.data.media_content_id);
+    assert.deepStrictEqual(ids, ['http://test/plex/a0', 'http://test/plex/a1', 'http://test/plex/a2', 'http://test/plex/a3', 'http://test/plex/a4']);
+  });
+
+  it('artist: shuffles tracks before queueing', async () => {
+    const tracks = fiveTracks('r');
+    const fakes = makeFakes({
+      searchResults: [[ARTIST_ITEM]],
+      resolveResults: { 'plex:74612': tracks },
+    });
+    const uc = new PlayMediaUseCase(fakes);
+    const r = await uc.execute({ query: 'starship', satellite: SAT });
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(r.candidateType, 'artist');
+    assert.strictEqual(r.sequenceLength, 5);
+    assert.strictEqual(r.shuffled, true);
+    // sequence still has all 5 ids but possibly reordered
+    const ids = fakes.calls.play.map(p => p.data.media_content_id).sort();
+    assert.deepStrictEqual(ids, ['http://test/plex/r0','http://test/plex/r1','http://test/plex/r2','http://test/plex/r3','http://test/plex/r4'].sort());
+  });
+
+  it('playlist: shuffles by default', async () => {
+    const tracks = fiveTracks('p');
+    const fakes = makeFakes({
+      searchResults: [[PLAYLIST_ITEM]],
+      resolveResults: { 'plex:8888': tracks },
+    });
+    const uc = new PlayMediaUseCase(fakes);
+    const r = await uc.execute({ query: 'workout mix', satellite: SAT });
+    assert.strictEqual(r.shuffled, true);
+    assert.strictEqual(r.sequenceLength, 5);
+  });
+
+  it('caps queue at maxQueueSize', async () => {
+    const lots = Array.from({ length: 100 }, (_, i) => ({
+      id: `plex:big${i}`, localId: `big${i}`, mediaUrl: `/b${i}.mp3`,
+      mediaType: 'track', metadata: { type: 'audio' },
+    }));
+    const fakes = makeFakes({
+      searchResults: [[ARTIST_ITEM]],
+      resolveResults: { 'plex:74612': lots },
+    });
+    const uc = new PlayMediaUseCase({ ...fakes, playbackPolicy: { maxQueueSize: 7, shuffleTypes: ['artist'] } });
+    const r = await uc.execute({ query: 'huge artist', satellite: SAT });
+    assert.strictEqual(r.sequenceLength, 7);
+    assert.strictEqual(fakes.calls.play.length, 7);
+  });
+
+  it('track candidate plays a single item (no enqueue chain)', async () => {
+    const single = { id: 'plex:99', source: 'plex', localId: '99', title: 'A track',
+      mediaType: 'track', metadata: { type: 'audio' } };
+    const fakes = makeFakes({
+      searchResults: [[single]],
+      resolveResults: { 'plex:99': [{ id: 'plex:99', localId: '99', mediaUrl: '/99.mp3', mediaType: 'track' }] },
+    });
+    const uc = new PlayMediaUseCase(fakes);
+    const r = await uc.execute({ query: 'a track', satellite: SAT });
+    assert.strictEqual(r.candidateType, 'track');
+    assert.strictEqual(r.sequenceLength, 1);
+    assert.strictEqual(r.shuffled, false);
+    assert.strictEqual(fakes.calls.play.length, 1);
+    assert.strictEqual(fakes.calls.play[0].data.enqueue, 'play');
+  });
+
+  it('first-item failure aborts the queue chain', async () => {
+    const tracks = fiveTracks('f');
+    const fakes = makeFakes({
+      searchResults: [[ARTIST_ITEM]],
+      resolveResults: { 'plex:74612': tracks },
+      callServiceResult: { ok: false, error: 'ha said no' },
+    });
+    const uc = new PlayMediaUseCase(fakes);
+    const r = await uc.execute({ query: 'artist', satellite: SAT });
+    assert.strictEqual(r.ok, false);
+    assert.strictEqual(r.error, 'ha said no');
+    // Only the first call should have been attempted
+    assert.strictEqual(fakes.calls.play.length, 1);
+  });
+
+  it('honors caller-supplied shuffleTypes override', async () => {
+    const tracks = fiveTracks('o');
+    const fakes = makeFakes({
+      searchResults: [[ALBUM_ITEM]],
+      resolveResults: { 'plex:74613': tracks },
+    });
+    // Override: shuffle albums too
+    const uc = new PlayMediaUseCase({ ...fakes, playbackPolicy: { shuffleTypes: ['album'] } });
+    const r = await uc.execute({ query: 'album', satellite: SAT });
+    assert.strictEqual(r.shuffled, true);
+  });
+});
+
 describe('orderForResolve helper', () => {
   it('starts at picked index and walks outward', () => {
     const items = ['a', 'b', 'c', 'd', 'e'];
