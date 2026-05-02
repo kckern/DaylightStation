@@ -60,6 +60,7 @@ export class MediaSkill {
     this.#config = {
       default_volume: 30,
       prefix_aliases: {},
+      name_aliases: {},           // case-insensitive whole-string substitution map
       voice_sources: [],          // empty = no source restriction
       search_params: {},          // verbatim merged into cq.search (operator owns the keys)
       exclude_media_types: [],    // generic blocklist (item.mediaType / metadata.type)
@@ -104,7 +105,8 @@ You can play household media (music, songs, podcasts, ambient sounds, lectures).
         },
         execute: async ({ query, media_class }, ctx) => {
           const start = Date.now();
-          const normalisedQuery = applyPrefix(query, media_class, this.#config.prefix_aliases);
+          let normalisedQuery = applyPrefix(query, media_class, this.#config.prefix_aliases);
+          normalisedQuery = applyNameAlias(normalisedQuery, this.#config.name_aliases);
           const result = await useCase.execute({
             query: normalisedQuery,
             satellite: ctx?.satellite,
@@ -196,6 +198,21 @@ function applyPrefix(query, mediaClass, aliases) {
     if (lc.includes(k)) return v;
   }
   if (mediaClass && !lc.includes(':')) return `${mediaClass}:${query}`;
+  return query;
+}
+
+// Whole-string, case-insensitive substitution. Operator-curated map that
+// normalises STT-flavored or simplified spellings to canonical search terms
+// (e.g. 'beyonce' → 'Beyoncé') so the search backend's tokenizer can match.
+// Compares trimmed/lowercased query against trimmed/lowercased keys; on hit,
+// returns the alias VALUE verbatim (preserving its casing and any special
+// characters). On miss, returns the input unchanged.
+export function applyNameAlias(query, aliases) {
+  if (!aliases || typeof aliases !== 'object') return query;
+  const lc = String(query).trim().toLowerCase();
+  for (const [k, v] of Object.entries(aliases)) {
+    if (String(k).trim().toLowerCase() === lc) return v;
+  }
   return query;
 }
 

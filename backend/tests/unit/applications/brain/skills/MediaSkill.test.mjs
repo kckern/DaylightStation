@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { MediaSkill } from '../../../../../src/3_applications/brain/skills/MediaSkill.mjs';
+import { MediaSkill, applyNameAlias } from '../../../../../src/3_applications/brain/skills/MediaSkill.mjs';
 
 const silentLogger = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
 
@@ -81,5 +81,89 @@ describe('MediaSkill', () => {
     await skill.getTools()[0].execute({ query: 'rain', media_class: 'ambient' }, { satellite: { mediaPlayerEntity: 'm' } });
     const searchCall = cq.calls.find((c) => c.search);
     assert.strictEqual(searchCall.search.text, 'ambient:rain');
+  });
+});
+
+describe('applyNameAlias', () => {
+  it('substitutes a matching whole-string key (case-insensitive)', () => {
+    const result = applyNameAlias('beyonce', { 'beyonce': 'Beyoncé' });
+    assert.strictEqual(result, 'Beyoncé');
+  });
+
+  it('returns input unchanged when no key matches', () => {
+    const result = applyNameAlias('something else', { 'beyonce': 'Beyoncé' });
+    assert.strictEqual(result, 'something else');
+  });
+
+  it('matches case-insensitively but preserves the alias VALUE casing exactly', () => {
+    const aliases = { 'beyonce': 'Beyoncé' };
+    assert.strictEqual(applyNameAlias('beyonce', aliases), 'Beyoncé');
+    assert.strictEqual(applyNameAlias('BEYONCE', aliases), 'Beyoncé');
+    assert.strictEqual(applyNameAlias('BeYoncE', aliases), 'Beyoncé');
+  });
+
+  it('matches whole strings only — partial matches do NOT substitute', () => {
+    const result = applyNameAlias('beyonce concert', { 'beyonce': 'Beyoncé' });
+    assert.strictEqual(result, 'beyonce concert');
+  });
+
+  it('handles trimming — surrounding whitespace still matches the key', () => {
+    const result = applyNameAlias('  beyonce  ', { 'beyonce': 'Beyoncé' });
+    assert.strictEqual(result, 'Beyoncé');
+  });
+
+  it('handles empty/missing aliases map gracefully', () => {
+    assert.strictEqual(applyNameAlias('beyonce', {}), 'beyonce');
+    assert.strictEqual(applyNameAlias('beyonce', undefined), 'beyonce');
+    assert.strictEqual(applyNameAlias('beyonce', null), 'beyonce');
+  });
+});
+
+describe('MediaSkill name_aliases integration', () => {
+  it('applies prefix from media_class first, then name alias substitution', async () => {
+    // The prefix step would yield "music:beyonce" — that won't match the
+    // whole-string alias key "beyonce", so the alias does NOT fire and the
+    // prefixed string passes through. This confirms ordering: prefix runs
+    // first, then alias sees the (possibly prefixed) string.
+    const cq = new FakeContentQuery({
+      searchResult: { items: [{ id: 'plex:1', source: 'plex', localId: '1', title: 'T' }], total: 1, sources: ['plex'] },
+      resolveResult: { items: [{ mediaUrl: '/x' }], strategy: {} },
+    });
+    const gw = new FakeGateway();
+    const skill = new MediaSkill({
+      contentQuery: cq, gateway: gw, logger: silentLogger,
+      config: {
+        ds_base_url: 'http://x',
+        name_aliases: { 'beyonce': 'Beyoncé' },
+      },
+    });
+    await skill.getTools()[0].execute(
+      { query: 'beyonce', media_class: 'music' },
+      { satellite: { mediaPlayerEntity: 'm' } },
+    );
+    const searchCall = cq.calls.find((c) => c.search);
+    // prefix applied first → "music:beyonce" → alias does not match → unchanged
+    assert.strictEqual(searchCall.search.text, 'music:beyonce');
+  });
+
+  it('applies name alias when no media_class is given', async () => {
+    const cq = new FakeContentQuery({
+      searchResult: { items: [{ id: 'plex:1', source: 'plex', localId: '1', title: 'T' }], total: 1, sources: ['plex'] },
+      resolveResult: { items: [{ mediaUrl: '/x' }], strategy: {} },
+    });
+    const gw = new FakeGateway();
+    const skill = new MediaSkill({
+      contentQuery: cq, gateway: gw, logger: silentLogger,
+      config: {
+        ds_base_url: 'http://x',
+        name_aliases: { 'ac dc': 'AC/DC' },
+      },
+    });
+    await skill.getTools()[0].execute(
+      { query: 'ac dc' },
+      { satellite: { mediaPlayerEntity: 'm' } },
+    );
+    const searchCall = cq.calls.find((c) => c.search);
+    assert.strictEqual(searchCall.search.text, 'AC/DC');
   });
 });
