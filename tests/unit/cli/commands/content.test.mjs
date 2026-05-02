@@ -1,0 +1,101 @@
+// @vitest-environment node
+import { describe, it, expect } from 'vitest';
+import { Writable } from 'node:stream';
+import content from '../../../../cli/commands/content.mjs';
+
+function makeBuffers() {
+  const stdoutChunks = [];
+  const stderrChunks = [];
+  const stdout = new Writable({ write(c, _e, cb) { stdoutChunks.push(c); cb(); } });
+  stdout.read = () => Buffer.concat(stdoutChunks).toString('utf8');
+  const stderr = new Writable({ write(c, _e, cb) { stderrChunks.push(c); cb(); } });
+  stderr.read = () => Buffer.concat(stderrChunks).toString('utf8');
+  return { stdout, stderr };
+}
+
+describe('cli/commands/content', () => {
+  describe('search action', () => {
+    it('emits JSON with results array and count', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const fakeQuery = {
+        async search(query) {
+          return {
+            items: [
+              { source: 'plex', localId: '642120', title: 'Workout Mix', type: 'playlist' },
+              { source: 'plex', localId: '642121', title: 'Workout Vol 2', type: 'playlist' },
+            ],
+            total: 2,
+            sources: ['plex'],
+          };
+        },
+      };
+
+      const result = await content.run(
+        { subcommand: 'content', positional: ['search', 'workout'], flags: { take: '5' }, help: false },
+        { stdout, stderr, getContentQuery: async () => fakeQuery },
+      );
+
+      expect(result.exitCode).toBe(0);
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.results).toHaveLength(2);
+      expect(out.count).toBe(2);
+      expect(out.results[0].title).toBe('Workout Mix');
+    });
+
+    it('passes query text to the service as a query object', async () => {
+      const { stdout, stderr } = makeBuffers();
+      let capturedQuery;
+      const fakeQuery = {
+        async search(q) {
+          capturedQuery = q;
+          return { items: [], total: 0, sources: [] };
+        },
+      };
+
+      await content.run(
+        { subcommand: 'content', positional: ['search', 'plex:', 'workout', 'mix'], flags: {}, help: false },
+        { stdout, stderr, getContentQuery: async () => fakeQuery },
+      );
+
+      // Should join positional[1..] with spaces and pass as { text: ... }
+      expect(capturedQuery).toMatchObject({ text: 'plex: workout mix' });
+    });
+
+    it('exits 2 when query text is missing', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const result = await content.run(
+        { subcommand: 'content', positional: ['search'], flags: {}, help: false },
+        { stdout, stderr, getContentQuery: async () => ({ async search() { return {}; } }) },
+      );
+      expect(result.exitCode).toBe(2);
+      expect(stderr.read()).toMatch(/query/i);
+    });
+
+    it('exits 0 with empty results array on no matches', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const fakeQuery = { async search() { return { items: [], total: 0, sources: [] }; } };
+
+      const result = await content.run(
+        { subcommand: 'content', positional: ['search', 'nothing'], flags: {}, help: false },
+        { stdout, stderr, getContentQuery: async () => fakeQuery },
+      );
+
+      expect(result.exitCode).toBe(0);
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.results).toEqual([]);
+      expect(out.count).toBe(0);
+    });
+  });
+
+  describe('help', () => {
+    it('returns exit 0 with usage to stdout when help=true', async () => {
+      const { stdout } = makeBuffers();
+      const result = await content.run(
+        { subcommand: 'content', positional: [], flags: {}, help: true },
+        { stdout, stderr: makeBuffers().stderr },
+      );
+      expect(result.exitCode).toBe(0);
+      expect(stdout.read()).toMatch(/search/);
+    });
+  });
+});

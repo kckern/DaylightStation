@@ -24,6 +24,8 @@ let _configInitPromise = null;
 let _httpClient = null;
 let _haGateway = null;
 let _haInitPromise = null;
+let _contentQuery = null;
+let _contentInitPromise = null;
 
 /**
  * Resolve the data directory the same way backend/index.js does:
@@ -123,6 +125,54 @@ export async function getHaGateway() {
 }
 
 /**
+ * Build a ContentQueryService for the household.
+ *
+ * Minimal Plex-only configuration — sufficient for `dscli content search`.
+ * Other content sources (immich, audiobookshelf, etc.) are not wired into the
+ * CLI yet; they'll be added when their commands need them.
+ *
+ * Mirrors backend/src/app.mjs createContentRegistry() call (line ~496),
+ * stripped to just plex + mediaBasePath.
+ */
+export async function getContentQuery() {
+  if (_contentQuery) return _contentQuery;
+  if (_contentInitPromise) return _contentInitPromise;
+
+  _contentInitPromise = (async () => {
+    const cfg = await getConfigService();
+    const plexHost = cfg.resolveServiceUrl?.('plex');
+    const plexAuth = cfg.getHouseholdAuth('plex');
+    if (!plexHost) {
+      throw new Error('Plex host not configured (set in data/system/config/services.yml).');
+    }
+    if (!plexAuth?.token) {
+      throw new Error('Plex auth token missing (data/household/auth/plex.yml).');
+    }
+
+    const { createContentRegistry } = await import('#system/bootstrap.mjs');
+    const { ContentQueryService } = await import('#apps/content/ContentQueryService.mjs');
+
+    const result = createContentRegistry(
+      {
+        plex: { host: plexHost, token: plexAuth.token },
+        mediaBasePath: cfg.getMediaDir(),
+      },
+      {
+        httpClient: getHttpClient(),
+        configService: cfg,
+      },
+    );
+
+    // createContentRegistry returns { registry, savedQueryService } — we only need the registry
+    const registry = result.registry || result;
+    _contentQuery = new ContentQueryService({ registry });
+    return _contentQuery;
+  })();
+
+  return _contentInitPromise;
+}
+
+/**
  * Reset all memoized state. For tests only.
  */
 export function _resetForTests() {
@@ -131,5 +181,7 @@ export function _resetForTests() {
   _httpClient = null;
   _haGateway = null;
   _haInitPromise = null;
+  _contentQuery = null;
+  _contentInitPromise = null;
   resetConfigService();
 }
