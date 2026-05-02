@@ -648,7 +648,7 @@ describe('PlexAdapter', () => {
   });
 });
 
-describe('loadMediaUrl error logging', () => {
+describe('getMediaUrl error logging', () => {
   test('logs structured warning when metadata is missing', async () => {
     const warn = vi.fn();
     const logger = { debug: vi.fn(), info: vi.fn(), warn, error: vi.fn() };
@@ -664,7 +664,7 @@ describe('loadMediaUrl error logging', () => {
     // replace internal client so getMetadata returns empty
     adapter.client = mockClient;
 
-    const result = await adapter.loadMediaUrl('999999');
+    const result = await adapter.getMediaUrl('999999');
 
     expect(result).toEqual({ url: null, reason: 'metadata-missing' });
     expect(warn).toHaveBeenCalledWith(
@@ -688,7 +688,7 @@ describe('loadMediaUrl error logging', () => {
     );
     adapter.client = mockClient;
 
-    const result = await adapter.loadMediaUrl('1');
+    const result = await adapter.getMediaUrl('1');
 
     expect(result).toEqual({ url: null, reason: 'non-playable-type' });
     expect(warn).toHaveBeenCalledWith(
@@ -710,7 +710,7 @@ describe('loadMediaUrl error logging', () => {
     );
     adapter.client = mockClient;
 
-    const result = await adapter.loadMediaUrl('1');
+    const result = await adapter.getMediaUrl('1');
 
     expect(result).toEqual({ url: null, reason: 'transient' });
     expect(errorLog).toHaveBeenCalledWith(

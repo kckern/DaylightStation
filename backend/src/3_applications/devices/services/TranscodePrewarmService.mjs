@@ -40,15 +40,14 @@ export class TranscodePrewarmService {
       }
 
       const first = items[0];
-      const isPlex = first.source === 'plex' || first.contentId?.startsWith('plex:');
+      const isPlex = first.source === 'plex' || first.id?.startsWith('plex:');
       if (!isPlex || !resolved.adapter.loadMediaUrl) {
         this.#logger.debug?.('prewarm.skip', { contentRef, reason: 'not plex', source: first.source });
         return { status: 'skipped', reason: 'not plex' };
       }
 
       const startOffset = first.resumePosition || first.playhead || 0;
-      const ratingKey = first.ratingKey || first.contentId?.replace(/^plex:/, '');
-      const mediaResult = await resolved.adapter.loadMediaUrl(ratingKey, 0, { startOffset });
+      const mediaResult = await resolved.adapter.loadMediaUrl(first, { startOffset });
       const dashUrl = mediaResult?.url ?? null;
       const failureReason = mediaResult?.reason ?? null;
       if (!dashUrl) {
@@ -63,7 +62,7 @@ export class TranscodePrewarmService {
       });
 
       const token = this.#generateToken();
-      const contentId = first.contentId || `plex:${ratingKey}`;
+      const contentId = first.id;
       this.#cache.set(token, { url: dashUrl, contentId, expiresAt: Date.now() + TOKEN_TTL_MS });
       this.#scheduleCleanup(token);
 

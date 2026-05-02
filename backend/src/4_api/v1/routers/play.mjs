@@ -213,7 +213,7 @@ export function createPlayRouter(config) {
       if (typeof plexAdapter.getMediaUrl !== 'function') {
         return res.status(501).json({ error: 'Plex adapter does not support media URL retrieval' });
       }
-      const result = await plexAdapter.getMediaUrl(id, 0, opts);
+      const result = await plexAdapter.getMediaUrl(id, opts);
       mediaUrl = result?.url ?? null;
 
       if (!mediaUrl) {
