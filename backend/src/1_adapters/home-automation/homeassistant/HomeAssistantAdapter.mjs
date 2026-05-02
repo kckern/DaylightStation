@@ -126,7 +126,7 @@ export class HomeAssistantAdapter {
   }
 
   /**
-   * Read all current entity states. Used by the brain's friendly-name resolver
+   * Read all current entity states. Used by the concierge's friendly-name resolver
    * to enumerate the full device surface for fuzzy matching.
    * @returns {Promise<DeviceState[]>}
    */
