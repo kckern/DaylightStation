@@ -1,4 +1,4 @@
-import { BASE_PROMPT, satellitePrompt, memoryPrompt, vocabularyPrompt } from './prompts/system.mjs';
+import { BASE_PROMPT, satellitePrompt, memoryPrompt, vocabularyPrompt, personalityPrompt } from './prompts/system.mjs';
 
 export class ConciergeAgent {
   static id = 'concierge';
@@ -8,9 +8,10 @@ export class ConciergeAgent {
   #policy;
   #skills;
   #vocabulary;
+  #personality;
   #logger;
 
-  constructor({ agentRuntime, memory, policy, skills, vocabulary = null, logger = console }) {
+  constructor({ agentRuntime, memory, policy, skills, vocabulary = null, personality = null, logger = console }) {
     if (!agentRuntime?.execute || !agentRuntime?.streamExecute) {
       throw new Error('ConciergeAgent: agentRuntime with execute() + streamExecute() required');
     }
@@ -22,6 +23,7 @@ export class ConciergeAgent {
     this.#policy = policy;
     this.#skills = skills;
     this.#vocabulary = vocabulary;
+    this.#personality = personality;
     this.#logger = logger;
   }
 
@@ -33,6 +35,7 @@ export class ConciergeAgent {
     const tools = this.#skills.buildToolsFor(satellite, this.#policy, transcript);
     const prompt = [
       BASE_PROMPT,
+      personalityPrompt(this.#personality),
       satellitePrompt(satellite),
       this.#skills.buildPromptFragmentsFor(satellite),
       vocabularyPrompt(this.#vocabulary),

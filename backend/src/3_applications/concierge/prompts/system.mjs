@@ -37,6 +37,20 @@ export function vocabularyPrompt(vocab) {
   return `## Household vocabulary\n${lines.join('\n')}`;
 }
 
+/**
+ * Render an operator-supplied personality fragment into the system prompt.
+ * Empty/missing input yields an empty string (no behavior change).
+ *
+ * @param {string|null|undefined} text — free-form operator text
+ * @returns {string}
+ */
+export function personalityPrompt(text) {
+  if (typeof text !== 'string') return '';
+  const trimmed = text.trim();
+  if (trimmed === '') return '';
+  return `## Personality\n${trimmed}`;
+}
+
 export function memoryPrompt(memorySnapshot) {
   if (!memorySnapshot || Object.keys(memorySnapshot).length === 0) return '';
   const json = JSON.stringify(memorySnapshot).slice(0, 1024);

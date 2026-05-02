@@ -19,6 +19,7 @@ export class ConciergeApplication {
     agentRuntime,
     skills = [],
     vocabulary = null,
+    personality = null,
     logger = console,
   }) {
     if (!satelliteRegistry) throw new Error('ConciergeApplication: satelliteRegistry required');
@@ -28,7 +29,7 @@ export class ConciergeApplication {
     const registry = new SkillRegistry({ logger });
     for (const skill of skills) registry.register(skill);
 
-    this.#agent = new ConciergeAgent({ agentRuntime, memory, policy, skills: registry, vocabulary, logger });
+    this.#agent = new ConciergeAgent({ agentRuntime, memory, policy, skills: registry, vocabulary, personality, logger });
   }
 
   get satelliteRegistry() { return this.#registry; }

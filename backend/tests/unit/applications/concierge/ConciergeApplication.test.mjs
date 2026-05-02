@@ -54,6 +54,30 @@ describe('ConciergeApplication', () => {
     }), /satelliteRegistry required/);
   });
 
+  it('forwards personality to the agent so it appears in the system prompt', async () => {
+    const sat = new Satellite({ id: 'c', mediaPlayerEntity: 'media_player.c', allowedSkills: ['memory'] });
+    const memory = new InMemoryConciergeMemory();
+    const capturedCalls = [];
+    const capturingRuntime = {
+      async execute(opts) { capturedCalls.push(opts); return { output: 'ok', toolCalls: [] }; },
+      async *streamExecute() { yield { type: 'finish' }; },
+    };
+    const app = new ConciergeApplication({
+      satelliteRegistry: new InMemoryRegistry(sat, 'tok'),
+      memory,
+      policy: new PassThroughConciergePolicy(),
+      agentRuntime: capturingRuntime,
+      skills: [new MemorySkill({ memory, logger: silentLogger })],
+      personality: 'Talk like a pirate, arrr.',
+      logger: silentLogger,
+    });
+    await app.runChat({ satellite: sat, messages: [{ role: 'user', content: 'hi' }] });
+    assert.ok(capturedCalls.length > 0, 'runtime.execute should have been called');
+    const { systemPrompt } = capturedCalls[0];
+    assert.ok(systemPrompt.includes('## Personality'), 'personality header should be in prompt');
+    assert.ok(systemPrompt.includes('Talk like a pirate, arrr.'), 'personality text should be in prompt');
+  });
+
   it('forwards vocabulary to the agent so it appears in the system prompt', async () => {
     const sat = new Satellite({ id: 'b', mediaPlayerEntity: 'media_player.b', allowedSkills: ['memory'] });
     const memory = new InMemoryConciergeMemory();

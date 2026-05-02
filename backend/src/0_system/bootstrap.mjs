@@ -3258,6 +3258,11 @@ export async function createConciergeServices(config) {
     }
   }
 
+  const personalityText = conciergeConfig?.personality ?? null;
+  if (personalityText && typeof personalityText === 'string' && personalityText.trim()) {
+    logger.info?.('concierge.personality.loaded', { length: personalityText.length });
+  }
+
   const householdPolicy = conciergeConfig?.policy ?? {};
   let conciergePolicy;
   try {
@@ -3369,6 +3374,7 @@ export async function createConciergeServices(config) {
     agentRuntime: conciergeAgentRuntime,
     skills: conciergeSkills,
     vocabulary: conciergeVocabulary,
+    personality: personalityText,
     logger,
   });
 
