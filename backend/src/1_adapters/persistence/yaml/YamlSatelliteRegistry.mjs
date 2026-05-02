@@ -1,4 +1,4 @@
-import { Satellite } from '../../../2_domains/brain/Satellite.mjs';
+import { Satellite } from '../../../2_domains/concierge/Satellite.mjs';
 
 export class YamlSatelliteRegistry {
   #configService;
@@ -15,7 +15,7 @@ export class YamlSatelliteRegistry {
   }
 
   async load() {
-    const yaml = this.#configService.reloadHouseholdAppConfig?.(this.#householdId, 'brain');
+    const yaml = this.#configService.reloadHouseholdAppConfig?.(this.#householdId, 'concierge');
     const entries = Array.isArray(yaml?.satellites) ? yaml.satellites : [];
     this.#byToken.clear();
     this.#all = [];
@@ -24,7 +24,7 @@ export class YamlSatelliteRegistry {
       const tokenRef = entry.token_ref ?? '';
       const token = this.#resolveTokenRef(tokenRef);
       if (!token) {
-        this.#logger.warn?.('brain.satellite.missing_token', { id: entry.id, token_ref: tokenRef });
+        this.#logger.warn?.('concierge.satellite.missing_token', { id: entry.id, token_ref: tokenRef });
         continue;
       }
 
@@ -43,11 +43,11 @@ export class YamlSatelliteRegistry {
         this.#byToken.set(token, satellite);
         this.#all.push(satellite);
       } catch (err) {
-        this.#logger.warn?.('brain.satellite.invalid', { id: entry.id, error: err.message });
+        this.#logger.warn?.('concierge.satellite.invalid', { id: entry.id, error: err.message });
       }
     }
 
-    this.#logger.info?.('brain.satellite.config_reload', { count: this.#all.length });
+    this.#logger.info?.('concierge.satellite.config_reload', { count: this.#all.length });
   }
 
   #resolveTokenRef(ref) {

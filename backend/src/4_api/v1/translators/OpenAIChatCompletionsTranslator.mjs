@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { BrainTranscript } from '../../../3_applications/brain/services/BrainTranscript.mjs';
+import { ConciergeTranscript } from '../../../3_applications/concierge/services/ConciergeTranscript.mjs';
 
 /**
  * Translates OpenAI /v1/chat/completions wire format to/from an
@@ -28,7 +28,7 @@ export class OpenAIChatCompletionsTranslator {
     const conversationId = body.conversation_id ?? body.conversationId ?? null;
     const model = body.model ?? 'daylight-house';
 
-    this.#logger.info?.('brain.request.received', {
+    this.#logger.info?.('concierge.request.received', {
       satellite_id: satellite.id,
       conv_id: conversationId,
       stream,
@@ -39,7 +39,7 @@ export class OpenAIChatCompletionsTranslator {
       return this.#errorJson(res, 400, 'invalid_request_error', 'messages required', 'bad_request');
     }
 
-    const transcript = new BrainTranscript({
+    const transcript = new ConciergeTranscript({
       satellite,
       request: { model, stream, conversation_id: conversationId, messages },
       mediaLogsDir: this.#mediaLogsDir,
@@ -62,7 +62,7 @@ export class OpenAIChatCompletionsTranslator {
       transcript.finishOk({ status: 200, finishReason: 'stop', usage: result.usage });
       const envelope = this.#buildEnvelope(result, model);
       res.status(200).json(envelope);
-      this.#logger.info?.('brain.response.sent', {
+      this.#logger.info?.('concierge.response.sent', {
         satellite_id: satellite.id,
         status: 200,
         total_latency_ms: Date.now() - start,
@@ -70,7 +70,7 @@ export class OpenAIChatCompletionsTranslator {
       });
       await transcript.flush();
     } catch (error) {
-      this.#logger.error?.('brain.runtime.error', { satellite_id: satellite.id, error: error.message });
+      this.#logger.error?.('concierge.runtime.error', { satellite_id: satellite.id, error: error.message });
       transcript.finishError({ status: 502, message: error.message });
       this.#errorJson(res, 502, 'server_error', error.message, 'upstream_unavailable');
       await transcript.flush();
@@ -95,7 +95,7 @@ export class OpenAIChatCompletionsTranslator {
       model,
       choices: [{ index: 0, delta: { role: 'assistant' } }],
     });
-    this.#logger.info?.('brain.stream.start', { satellite_id: satellite.id });
+    this.#logger.info?.('concierge.stream.start', { satellite_id: satellite.id });
 
     let chunksSent = 0;
     let finishReason = 'stop';
@@ -117,7 +117,7 @@ export class OpenAIChatCompletionsTranslator {
         // tool-start / tool-end intentionally NOT emitted to client (Spec §7.2)
       }
     } catch (error) {
-      this.#logger.error?.('brain.stream.error', {
+      this.#logger.error?.('concierge.stream.error', {
         satellite_id: satellite.id,
         error: error.message,
         where: 'mid_stream',
@@ -147,12 +147,12 @@ export class OpenAIChatCompletionsTranslator {
     }
     await transcript?.flush();
 
-    this.#logger.info?.('brain.stream.complete', {
+    this.#logger.info?.('concierge.stream.complete', {
       satellite_id: satellite.id,
       total_chunks: chunksSent,
       latencyMs: Date.now() - start,
     });
-    this.#logger.info?.('brain.response.sent', {
+    this.#logger.info?.('concierge.response.sent', {
       satellite_id: satellite.id,
       status: 200,
       total_latency_ms: Date.now() - start,

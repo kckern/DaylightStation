@@ -198,7 +198,7 @@ export class PlexAdapter {
 
   /**
    * Get the set of item ratingKeys that are members of a Plex playlist.
-   * Used by the brain's media policy gate for per-satellite playlist
+   * Used by the concierge's media policy gate for per-satellite playlist
    * membership whitelisting. Plex playlists contain tracks (or videos),
    * so the returned set matches at the leaf level.
    *

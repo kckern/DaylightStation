@@ -3143,23 +3143,23 @@ export async function createAgentsApiRouter(config) {
 }
 
 // =============================================================================
-// Brain Services Bootstrap
+// Concierge Services Bootstrap
 // =============================================================================
 
 /**
- * Create the brain (OpenAI-compatible /v1) router with all skills wired in.
+ * Create the concierge (OpenAI-compatible /v1) router with all skills wired in.
  *
  * Composes:
- *   - YamlSatelliteRegistry  (satellites + tokens from brain.yml + Infisical)
- *   - YamlBrainMemoryAdapter (household working memory)
- *   - PassThroughBrainPolicy (v1 — replace with real policy gate later)
- *   - MastraAdapter (primary brain runtime)
+ *   - YamlSatelliteRegistry       (satellites + tokens from concierge.yml + Infisical)
+ *   - YamlConciergeMemoryAdapter  (household working memory)
+ *   - ConciergePolicyEvaluator    (scope-based tool gating)
+ *   - MastraAdapter (primary concierge runtime)
  *   - MediaJudge subagent backed by a SECOND MastraAdapter pinned to a
  *     cheap model
  *   - Skills: MemorySkill, HomeAutomationSkill (when haGateway), MediaSkill
  *     (when contentQuery + haGateway + daylightHostInternal/daylightHost)
- *   - BrainApplication composition root
- *   - createBrainRouter mounted at /v1 with bearer auth + transcript logging
+ *   - ConciergeApplication composition root
+ *   - createConciergeRouter mounted at /v1 with bearer auth + transcript logging
  *
  * @param {Object} config
  * @param {Object} config.configService     - ConfigService
@@ -3171,7 +3171,7 @@ export async function createAgentsApiRouter(config) {
  * @param {Object} [config.logger]          - Logger
  * @returns {Promise<express.Router>}       - Router to mount at /v1
  */
-export async function createBrainServices(config) {
+export async function createConciergeServices(config) {
   const {
     configService,
     dataService,
@@ -3183,20 +3183,20 @@ export async function createBrainServices(config) {
     logger = console,
   } = config;
 
-  if (!configService) throw new Error('createBrainServices: configService required');
-  if (!dataService) throw new Error('createBrainServices: dataService required');
-  if (!mediaLogsDir) throw new Error('createBrainServices: mediaLogsDir required');
+  if (!configService) throw new Error('createConciergeServices: configService required');
+  if (!dataService) throw new Error('createConciergeServices: dataService required');
+  if (!mediaLogsDir) throw new Error('createConciergeServices: mediaLogsDir required');
 
   const { YamlSatelliteRegistry } = await import('#adapters/persistence/yaml/YamlSatelliteRegistry.mjs');
-  const { YamlBrainMemoryAdapter } = await import('#adapters/persistence/yaml/YamlBrainMemoryAdapter.mjs');
-  const { PassThroughBrainPolicy } = await import('#applications/brain/services/PassThroughBrainPolicy.mjs');
-  const { BrainPolicyEvaluator } = await import('#applications/brain/services/BrainPolicyEvaluator.mjs');
-  const { BrainApplication } = await import('#applications/brain/BrainApplication.mjs');
-  const { MemorySkill } = await import('#applications/brain/skills/MemorySkill.mjs');
-  const { HomeAutomationSkill } = await import('#applications/brain/skills/HomeAutomationSkill.mjs');
-  const { MediaSkill } = await import('#applications/brain/skills/MediaSkill.mjs');
-  const { MediaJudge } = await import('#applications/brain/services/MediaJudge.mjs');
-  const { createBrainRouter } = await import('#api/v1/routers/brain.mjs');
+  const { YamlConciergeMemoryAdapter } = await import('#adapters/persistence/yaml/YamlConciergeMemoryAdapter.mjs');
+  const { PassThroughConciergePolicy } = await import('#applications/concierge/services/PassThroughConciergePolicy.mjs');
+  const { ConciergePolicyEvaluator } = await import('#applications/concierge/services/ConciergePolicyEvaluator.mjs');
+  const { ConciergeApplication } = await import('#applications/concierge/ConciergeApplication.mjs');
+  const { MemorySkill } = await import('#applications/concierge/skills/MemorySkill.mjs');
+  const { HomeAutomationSkill } = await import('#applications/concierge/skills/HomeAutomationSkill.mjs');
+  const { MediaSkill } = await import('#applications/concierge/skills/MediaSkill.mjs');
+  const { MediaJudge } = await import('#applications/concierge/services/MediaJudge.mjs');
+  const { createConciergeRouter } = await import('#api/v1/routers/concierge.mjs');
 
   // Mastra reads OPENAI_API_KEY from process.env — bridge from ConfigService.
   const openaiKey = configService.getSecret?.('OPENAI_API_KEY');
@@ -3204,87 +3204,88 @@ export async function createBrainServices(config) {
     process.env.OPENAI_API_KEY = openaiKey;
   }
 
-  const brainAgentRuntime = new MastraAdapter({
+  const conciergeAgentRuntime = new MastraAdapter({
     logger: logger.child({ component: 'mastra' }),
   });
-  const brainWorkingMemory = new YamlWorkingMemoryAdapter({
+  const conciergeWorkingMemory = new YamlWorkingMemoryAdapter({
     dataService,
     logger: logger.child({ component: 'working-memory' }),
   });
-  const brainMemory = new YamlBrainMemoryAdapter({ workingMemory: brainWorkingMemory });
+  const conciergeMemory = new YamlConciergeMemoryAdapter({ workingMemory: conciergeWorkingMemory });
 
-  const brainSatelliteRegistry = new YamlSatelliteRegistry({
+  const conciergeSatelliteRegistry = new YamlSatelliteRegistry({
     configService,
     logger: logger.child({ component: 'satellite-registry' }),
   });
-  await brainSatelliteRegistry.load();
+  await conciergeSatelliteRegistry.load();
 
-  const brainSkills = [
+  const conciergeSkills = [
     new MemorySkill({
-      memory: brainMemory,
+      memory: conciergeMemory,
       logger: logger.child({ skill: 'memory' }),
     }),
   ];
 
   if (haGateway) {
-    brainSkills.push(new HomeAutomationSkill({
+    conciergeSkills.push(new HomeAutomationSkill({
       gateway: haGateway,
       logger: logger.child({ skill: 'home_automation' }),
     }));
   }
 
-  // Read all brain config from a single file with sections (satellites, media, …).
-  // brain.yml example:
+  // Read all concierge config from a single file with sections (satellites, media, …).
+  // concierge.yml example:
   //   satellites: [...]
   //   media:
   //     judge_model: openai/gpt-4o-mini   # if absent → judge disabled, top-of-rank pick
   //     voice_sources: [plex]
   //     plex_library_ids: "5,10,11,16,18,19,21,22,23"
   //     prefix_aliases: {}
-  const brainConfig = configService.reloadHouseholdAppConfig?.(null, 'brain') ?? {};
-  const mediaConfig = brainConfig?.media ?? {};
+  // Reads data/household/config/concierge.yml
+  const conciergeConfig = configService.reloadHouseholdAppConfig?.(null, 'concierge') ?? {};
+  const mediaConfig = conciergeConfig?.media ?? {};
 
-  const vocabularyConfig = brainConfig?.vocabulary ?? null;
-  let brainVocabulary = null;
+  const vocabularyConfig = conciergeConfig?.vocabulary ?? null;
+  let conciergeVocabulary = null;
   if (vocabularyConfig) {
     const { AliasMap } = await import('#domains/common/AliasMap.mjs');
     try {
-      brainVocabulary = new AliasMap(vocabularyConfig);
-      logger.info?.('brain.vocabulary.loaded', { entry_count: brainVocabulary.size });
+      conciergeVocabulary = new AliasMap(vocabularyConfig);
+      logger.info?.('concierge.vocabulary.loaded', { entry_count: conciergeVocabulary.size });
     } catch (err) {
-      logger.error?.('brain.vocabulary.invalid_config', { error: err.message });
+      logger.error?.('concierge.vocabulary.invalid_config', { error: err.message });
       throw err;
     }
   }
 
-  const householdPolicy = brainConfig?.policy ?? {};
-  let brainPolicy;
+  const householdPolicy = conciergeConfig?.policy ?? {};
+  let conciergePolicy;
   try {
-    brainPolicy = new BrainPolicyEvaluator({
+    conciergePolicy = new ConciergePolicyEvaluator({
       householdPolicy,
       logger: logger.child({ component: 'policy' }),
     });
-    logger.info?.('brain.policy.loaded', {
+    logger.info?.('concierge.policy.loaded', {
       household_allowed: householdPolicy.scopes_allowed?.length ?? 0,
       household_denied: householdPolicy.scopes_denied?.length ?? 0,
     });
   } catch (err) {
-    // Boot-time fail-loud: malformed glob in brain.yml.policy is a config bug.
-    logger.error?.('brain.policy.invalid_config', { error: err.message });
+    // Boot-time fail-loud: malformed glob in concierge.yml.policy is a config bug.
+    logger.error?.('concierge.policy.invalid_config', { error: err.message });
     throw err;
   }
 
   if (contentQueryService && haGateway) {
     const dsBaseUrl = devicesConfig?.daylightHostInternal || devicesConfig?.daylightHost;
     if (!dsBaseUrl) {
-      logger.warn?.('brain.media.skill.skipped', {
+      logger.warn?.('concierge.media.skill.skipped', {
         reason: 'no_daylight_host',
         message: 'devices.yml.daylightHostInternal (or daylightHost) is unset — '
                + 'MediaSkill not registered. Set daylightHostInternal to the LAN-routable URL '
                + 'where this server is reachable from HA and Voice PE devices.',
       });
     } else {
-      // Judge is optional — only built when brain.yml.media.judge_model is set.
+      // Judge is optional — only built when concierge.yml.media.judge_model is set.
       // No hardcoded fallback model: a quietly-different default in source has
       // bitten us before (10.0.0.5 default for ds_base_url). Fail loud here:
       // either the operator opts in by naming a model, or the use case runs
@@ -3303,9 +3304,9 @@ export async function createBrainServices(config) {
           logger: logger.child({ skill: 'media', component: 'judge' }),
         });
       } else {
-        logger.warn?.('brain.media.judge.disabled', {
+        logger.warn?.('concierge.media.judge.disabled', {
           reason: 'no_judge_model_configured',
-          message: 'brain.yml.media.judge_model is unset — MediaSkill will pick the top '
+          message: 'concierge.yml.media.judge_model is unset — MediaSkill will pick the top '
                  + 'rank-sorted candidate without LLM disambiguation. Set judge_model '
                  + 'to enable (e.g. openai/gpt-4o-mini).',
         });
@@ -3315,8 +3316,8 @@ export async function createBrainServices(config) {
       // membership whitelist). The gate itself is vendor-agnostic; the
       // lookup callables composed here dispatch by item.source / by the
       // single configured voice source to the right adapter. This is the
-      // only place in the brain wiring that names specific content sources.
-      const { MediaPolicyGate } = await import('#applications/brain/services/MediaPolicyGate.mjs');
+      // only place in the concierge wiring that names specific content sources.
+      const { MediaPolicyGate } = await import('#applications/concierge/services/MediaPolicyGate.mjs');
       const labelLookup = async (item, _opts = {}) => {
         const adapter = contentRegistry?.get?.(item?.source);
         if (typeof adapter?.getAncestorLabels === 'function') {
@@ -3345,7 +3346,7 @@ export async function createBrainServices(config) {
         logger: logger.child({ skill: 'media', component: 'policy-gate' }),
       });
 
-      brainSkills.push(new MediaSkill({
+      conciergeSkills.push(new MediaSkill({
         contentQuery: contentQueryService,
         gateway: haGateway,
         logger: logger.child({ skill: 'media' }),
@@ -3353,7 +3354,7 @@ export async function createBrainServices(config) {
         judge: mediaJudge,
         policyGate: mediaPolicyGate,
       }));
-      logger.info?.('brain.media.skill.url', {
+      logger.info?.('concierge.media.skill.url', {
         ds_base_url: dsBaseUrl,
         source: devicesConfig?.daylightHostInternal ? 'daylightHostInternal' : 'daylightHost',
         judge_model: judgeModel ?? null,
@@ -3361,26 +3362,26 @@ export async function createBrainServices(config) {
     }
   }
 
-  const brainApp = new BrainApplication({
-    satelliteRegistry: brainSatelliteRegistry,
-    memory: brainMemory,
-    policy: brainPolicy,
-    agentRuntime: brainAgentRuntime,
-    skills: brainSkills,
-    vocabulary: brainVocabulary,
+  const conciergeApp = new ConciergeApplication({
+    satelliteRegistry: conciergeSatelliteRegistry,
+    memory: conciergeMemory,
+    policy: conciergePolicy,
+    agentRuntime: conciergeAgentRuntime,
+    skills: conciergeSkills,
+    vocabulary: conciergeVocabulary,
     logger,
   });
 
-  const router = createBrainRouter({
-    satelliteRegistry: brainSatelliteRegistry,
-    chatCompletionRunner: brainApp,
+  const router = createConciergeRouter({
+    satelliteRegistry: conciergeSatelliteRegistry,
+    chatCompletionRunner: conciergeApp,
     logger: logger.child({ component: 'router' }),
     mediaLogsDir,
   });
 
-  logger.info?.('brain.mounted', {
+  logger.info?.('concierge.mounted', {
     path: '/v1',
-    skills: brainSkills.map(s => s.name),
+    skills: conciergeSkills.map(s => s.name),
   });
 
   return router;

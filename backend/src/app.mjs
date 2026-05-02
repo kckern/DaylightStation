@@ -76,7 +76,7 @@ import {
   broadcastEvent,
   createHarvesterServices,
   createAgentsApiRouter,
-  createBrainServices,
+  createConciergeServices,
   createCostServices,
   createCostApiRouter,
   createMediaServices
@@ -2309,10 +2309,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   app.use('/api/v1/fitness/provider/webhook', devProxy.middleware);
 
   // ==========================================================================
-  // Brain endpoint (OpenAI-compatible /v1) — for HA Voice / external clients
+  // Concierge endpoint (OpenAI-compatible /v1) — for HA Voice / external clients
   // ==========================================================================
   try {
-    const brainRouter = await createBrainServices({
+    const conciergeRouter = await createConciergeServices({
       configService,
       dataService,
       contentQueryService: contentServices?.contentQueryService ?? null,
@@ -2320,11 +2320,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       haGateway: homeAutomationAdapters?.haGateway ?? null,
       devicesConfig,
       mediaLogsDir: join(configService.getMediaDir(), 'logs'),
-      logger: rootLogger.child({ module: 'brain' }),
+      logger: rootLogger.child({ module: 'concierge' }),
     });
-    app.use('/v1', brainRouter);
+    app.use('/v1', conciergeRouter);
   } catch (error) {
-    rootLogger.error('brain.mount_failed', { error: error.message, stack: error.stack });
+    rootLogger.error('concierge.mount_failed', { error: error.message, stack: error.stack });
   }
   // ==========================================================================
   // Frontend Static Files (Production Only) - MUST be before API router
