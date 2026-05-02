@@ -1,40 +1,45 @@
 /**
  * MediaPolicyGate — applies a satellite's media_policy to a list of resolved
- * playable items. Per-satellite library + label whitelist for voice playback.
+ * playable items. Per-satellite library / label / playlist-membership
+ * whitelist for voice playback.
  *
  * Policy shape (from satellite.media_policy):
- *   auto_approved_libraries: number[]           // library IDs allowed without label check
- *   label_gated:
- *     libraries: number[]                       // library IDs that need a label match
+ *   auto_approved_libraries: number[]           // library IDs allowed unconditionally
+ *   label_gated:                                // label-based allow path (optional)
+ *     libraries: number[]
  *     required_labels: string[]                 // any of these on item / ancestors
- *     check_ancestors: boolean (default true)   // include ancestor labels
+ *     check_ancestors: boolean (default true)
+ *   playlist_gated:                             // playlist-membership allow path (optional)
+ *     allowed_playlist_ids: (string|number)[]   // items in any of these playlists are allowed
  *
- * Behavior:
- *   - No media_policy on satellite → pass-through (back-compat).
- *   - Library in auto_approved_libraries → always allow.
- *   - Library in label_gated.libraries → allow only if a required label is present.
- *   - Library in NEITHER list → deny (default-deny — explicit list, no surprises).
+ * Behavior — three independent allow paths, OR-combined:
+ *   1. Library in auto_approved_libraries → allow.
+ *   2. Library in label_gated.libraries AND has required label → allow.
+ *   3. Item is a member of any allowed_playlist_ids → allow.
+ *   Otherwise → deny (default-deny).
  *
  * Vendor-agnostic: the gate doesn't know about Plex (or any other source).
- * It calls a caller-supplied `labelLookup(item, opts)` that returns the
- * label strings considered relevant for the item. The composition root
- * decides how to compute those labels for each source.
+ * It calls caller-supplied callables (`labelLookup`, `playlistMembershipLookup`)
+ * that handle source-specific lookups. The composition root wires them.
  */
 export class MediaPolicyGate {
   #labelLookup;
+  #playlistMembershipLookup;
   #logger;
   #cache = new Map();
+  #playlistMembersCache = new Map();   // playlistId → Promise<Set<itemId>>
 
   /**
    * @param {Object} deps
    * @param {(item: object, opts: { includeAncestors: boolean }) => Promise<string[]>} [deps.labelLookup]
-   *   Optional. Returns ALL labels considered relevant for the item. If
-   *   absent, only item-level `labels` (read straight off the item) are
-   *   considered.
+   *   Returns labels considered relevant for the item. Optional.
+   * @param {(playlistId: string|number) => Promise<Set<string>>} [deps.playlistMembershipLookup]
+   *   Returns the set of member item IDs for a given playlist. Optional.
    * @param {Object} [deps.logger]
    */
-  constructor({ labelLookup = null, logger = console } = {}) {
+  constructor({ labelLookup = null, playlistMembershipLookup = null, logger = console } = {}) {
     this.#labelLookup = labelLookup;
+    this.#playlistMembershipLookup = playlistMembershipLookup;
     this.#logger = logger;
   }
 
@@ -54,30 +59,57 @@ export class MediaPolicyGate {
   }
 
   async #allow(item, policy) {
+    // Path 1: auto-approved libraries (unconditional allow).
     const libId = String(item?.librarySectionID ?? item?.metadata?.librarySectionID ?? '');
-    if (!libId) {
-      // Item has no library — can't policy-check it, deny conservatively.
-      return false;
-    }
-
     const auto = (policy.auto_approved_libraries ?? []).map(String);
-    if (auto.includes(libId)) return true;
+    if (libId && auto.includes(libId)) return true;
 
-    const gated = policy.label_gated;
-    if (!gated) return false;
-
-    const gatedLibs = (gated.libraries ?? []).map(String);
-    if (!gatedLibs.includes(libId)) {
-      // Not in any listed library — default deny.
-      return false;
+    // Path 2: label-based allow (item or ancestor has a required label).
+    if (libId && policy.label_gated) {
+      const gated = policy.label_gated;
+      const gatedLibs = (gated.libraries ?? []).map(String);
+      if (gatedLibs.includes(libId)) {
+        const required = new Set((gated.required_labels ?? []).map(s => String(s).toLowerCase()));
+        if (required.size > 0) {
+          const includeAncestors = gated.check_ancestors !== false;
+          const labels = await this.#getLabels(item, includeAncestors);
+          if (labels.some(l => required.has(l))) return true;
+        }
+      }
     }
 
-    const required = new Set((gated.required_labels ?? []).map(s => String(s).toLowerCase()));
-    if (required.size === 0) return false;
+    // Path 3: playlist membership (item is in any allowed playlist).
+    if (policy.playlist_gated && this.#playlistMembershipLookup) {
+      const allowedIds = (policy.playlist_gated.allowed_playlist_ids ?? []).map(String);
+      if (allowedIds.length > 0) {
+        const itemKey = String(item?.ratingKey ?? item?.metadata?.ratingKey ?? item?.localId ?? '');
+        if (itemKey) {
+          for (const playlistId of allowedIds) {
+            const members = await this.#getPlaylistMembers(playlistId);
+            if (members.has(itemKey)) return true;
+          }
+        }
+      }
+    }
 
-    const includeAncestors = gated.check_ancestors !== false;   // default true
-    const labels = await this.#getLabels(item, includeAncestors);
-    return labels.some(l => required.has(l));
+    return false;
+  }
+
+  async #getPlaylistMembers(playlistId) {
+    if (this.#playlistMembersCache.has(playlistId)) return this.#playlistMembersCache.get(playlistId);
+    const promise = (async () => {
+      try {
+        const set = await this.#playlistMembershipLookup(playlistId);
+        return set instanceof Set ? set : new Set();
+      } catch (err) {
+        this.#logger.warn?.('media.policy.playlist_lookup_failed', {
+          playlistId, error: err.message,
+        });
+        return new Set();
+      }
+    })();
+    this.#playlistMembersCache.set(playlistId, promise);
+    return promise;
   }
 
   async #getLabels(item, includeAncestors) {

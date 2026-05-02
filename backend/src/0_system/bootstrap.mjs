@@ -3298,11 +3298,11 @@ export async function createBrainServices(config) {
         });
       }
 
-      // Per-satellite media_policy gate (library + label whitelist). The gate
-      // itself is vendor-agnostic; the labelLookup composed here dispatches
-      // by item.source to the right adapter's ancestor-label method. This is
-      // the only place in the brain wiring that names specific content
-      // sources — the gate and use case know nothing about them.
+      // Per-satellite media_policy gate (library / label / playlist
+      // membership whitelist). The gate itself is vendor-agnostic; the
+      // lookup callables composed here dispatch by item.source / by the
+      // single configured voice source to the right adapter. This is the
+      // only place in the brain wiring that names specific content sources.
       const { MediaPolicyGate } = await import('#applications/brain/services/MediaPolicyGate.mjs');
       const labelLookup = async (item, _opts = {}) => {
         const adapter = contentRegistry?.get?.(item?.source);
@@ -3311,8 +3311,24 @@ export async function createBrainServices(config) {
         }
         return [];
       };
+      // For playlist membership we need to know the source the playlist
+      // lives in. Today voice playback pins to a single source via
+      // mediaConfig.voice_sources; use that.
+      const primaryVoiceSource = Array.isArray(mediaConfig?.voice_sources) && mediaConfig.voice_sources.length === 1
+        ? mediaConfig.voice_sources[0]
+        : null;
+      const playlistMembershipLookup = primaryVoiceSource
+        ? async (playlistId) => {
+            const adapter = contentRegistry?.get?.(primaryVoiceSource);
+            if (typeof adapter?.getPlaylistItemIds === 'function') {
+              return adapter.getPlaylistItemIds(playlistId);
+            }
+            return new Set();
+          }
+        : null;
       const mediaPolicyGate = new MediaPolicyGate({
         labelLookup,
+        playlistMembershipLookup,
         logger: logger.child({ skill: 'media', component: 'policy-gate' }),
       });
 

@@ -155,3 +155,107 @@ describe('MediaPolicyGate — labelLookup fail-safe', () => {
     assert.strictEqual(calls, 1);
   });
 });
+
+describe('MediaPolicyGate — playlist_gated', () => {
+  function membershipLookup(idToMembers) {
+    return (playlistId) => Promise.resolve(idToMembers[String(playlistId)] ?? new Set());
+  }
+
+  it('allows item whose ratingKey is in an allowed playlist', async () => {
+    const gate = new MediaPolicyGate({
+      playlistMembershipLookup: membershipLookup({ '111': new Set(['t1', 't2']) }),
+      logger: silentLogger,
+    });
+    const sat = satWith({
+      playlist_gated: { allowed_playlist_ids: [111] },
+    });
+    const items = [
+      { id: 'a', source: 'plex', ratingKey: 't1', librarySectionID: 5 },
+      { id: 'b', source: 'plex', ratingKey: 'tX', librarySectionID: 5 },
+    ];
+    const out = await gate.apply(items, sat);
+    assert.deepStrictEqual(out.map(i => i.id), ['a']);
+  });
+
+  it('checks across multiple allowed playlists (OR)', async () => {
+    const gate = new MediaPolicyGate({
+      playlistMembershipLookup: membershipLookup({
+        '111': new Set(['t1']),
+        '222': new Set(['t2']),
+      }),
+      logger: silentLogger,
+    });
+    const sat = satWith({
+      playlist_gated: { allowed_playlist_ids: [111, 222] },
+    });
+    const items = [
+      { id: 'a', ratingKey: 't1', librarySectionID: 5 },
+      { id: 'b', ratingKey: 't2', librarySectionID: 5 },
+      { id: 'c', ratingKey: 't3', librarySectionID: 5 },
+    ];
+    const out = await gate.apply(items, sat);
+    assert.deepStrictEqual(out.map(i => i.id), ['a', 'b']);
+  });
+
+  it('combines with auto_approved_libraries (OR)', async () => {
+    const gate = new MediaPolicyGate({
+      playlistMembershipLookup: membershipLookup({ '111': new Set(['t1']) }),
+      logger: silentLogger,
+    });
+    const sat = satWith({
+      auto_approved_libraries: [10],
+      playlist_gated: { allowed_playlist_ids: [111] },
+    });
+    const items = [
+      { id: 'kids', ratingKey: 'kkid', librarySectionID: 10 },     // auto-approved lib
+      { id: 'pl', ratingKey: 't1', librarySectionID: 5 },          // playlist member
+      { id: 'no', ratingKey: 'tX', librarySectionID: 5 },          // neither
+    ];
+    const out = await gate.apply(items, sat);
+    assert.deepStrictEqual(out.map(i => i.id).sort(), ['kids', 'pl']);
+  });
+
+  it('caches playlist membership across calls (lookup once)', async () => {
+    let calls = 0;
+    const gate = new MediaPolicyGate({
+      playlistMembershipLookup: (id) => {
+        calls++;
+        return Promise.resolve(new Set(['t1']));
+      },
+      logger: silentLogger,
+    });
+    const sat = satWith({ playlist_gated: { allowed_playlist_ids: [111] } });
+    const items = [
+      { id: 'a', ratingKey: 't1', librarySectionID: 5 },
+      { id: 'b', ratingKey: 't1', librarySectionID: 5 },
+      { id: 'c', ratingKey: 'tX', librarySectionID: 5 },
+    ];
+    await gate.apply(items, sat);
+    assert.strictEqual(calls, 1);
+  });
+
+  it('handles lookup throw safely (denies that path, other paths still considered)', async () => {
+    const gate = new MediaPolicyGate({
+      playlistMembershipLookup: () => { throw new Error('boom'); },
+      logger: silentLogger,
+    });
+    const sat = satWith({
+      auto_approved_libraries: [10],
+      playlist_gated: { allowed_playlist_ids: [111] },
+    });
+    const items = [
+      { id: 'kids', ratingKey: 'k', librarySectionID: 10 },   // auto-approved still works
+      { id: 'plex', ratingKey: 't1', librarySectionID: 5 },   // playlist denied due to throw
+    ];
+    const out = await gate.apply(items, sat);
+    assert.deepStrictEqual(out.map(i => i.id), ['kids']);
+  });
+
+  it('no-op when playlistMembershipLookup is not injected', async () => {
+    const gate = new MediaPolicyGate({ logger: silentLogger });
+    const sat = satWith({ playlist_gated: { allowed_playlist_ids: [111] } });
+    const items = [{ id: 'a', ratingKey: 't1', librarySectionID: 5 }];
+    const out = await gate.apply(items, sat);
+    assert.strictEqual(out.length, 0);   // no lookup → playlist path silently denies
+  });
+});

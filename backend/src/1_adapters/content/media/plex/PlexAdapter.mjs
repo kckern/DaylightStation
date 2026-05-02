@@ -197,6 +197,26 @@ export class PlexAdapter {
   }
 
   /**
+   * Get the set of item ratingKeys that are members of a Plex playlist.
+   * Used by the brain's media policy gate for per-satellite playlist
+   * membership whitelisting. Plex playlists contain tracks (or videos),
+   * so the returned set matches at the leaf level.
+   *
+   * @param {string} playlistId - Plex playlist ratingKey
+   * @returns {Promise<Set<string>>} set of member item ratingKeys
+   */
+  async getPlaylistItemIds(playlistId) {
+    try {
+      const response = await this.client.request(`/playlists/${playlistId}/items`);
+      const items = response?.MediaContainer?.Metadata ?? [];
+      return new Set(items.map(i => String(i?.ratingKey)).filter(k => k && k !== 'undefined'));
+    } catch (err) {
+      this.logger.warn?.('plex.getPlaylistItemIds.exception', { playlistId, error: err.message });
+      return new Set();
+    }
+  }
+
+  /**
    * Get thumbnail URLs from a Plex rating key
    * Migrated from: plex.mjs:432-438
    * @param {string} ratingKey - Plex rating key
