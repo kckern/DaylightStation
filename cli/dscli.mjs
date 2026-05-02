@@ -55,11 +55,6 @@ async function main() {
     process.exit(EXIT_OK);
   }
 
-  if (parsed.help && !parsed.subcommand) {
-    printTopLevelHelp(process.stdout);
-    process.exit(EXIT_OK);
-  }
-
   // --help with no subcommand already handled above; subcommand-level --help
   // is passed through to the command module.
   if (!KNOWN_SUBCOMMANDS.includes(parsed.subcommand)) {
