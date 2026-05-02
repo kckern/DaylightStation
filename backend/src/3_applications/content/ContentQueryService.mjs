@@ -490,6 +490,14 @@ export class ContentQueryService {
       items = this.#sortByRelevance(items, query.text);
     }
 
+    // Secondary voice ranking: when a caller asks for voice-friendly ranking,
+    // bubble high-rated and frequently-played items above otherwise-equal
+    // matches. Stable: relies on the relevance sort above being authoritative
+    // for the primary ordering and only re-orders within tied groups.
+    if (query.rankBy === 'voice') {
+      items = applyVoiceRanking(items);
+    }
+
     // Clean up internal flag
     items = items.map(({ _idMatch, ...item }) => item);
 
@@ -877,6 +885,41 @@ export class ContentQueryService {
  * @param {object} item - Search result item with mediaType / metadata.type
  * @returns {boolean}
  */
+/**
+ * Voice-friendly secondary ranking. Composite score per item, items sorted
+ * descending. Doesn't replace relevance — applied after, so an item the
+ * relevance scorer ranked first can still win unless something with much
+ * higher rating/play count overtakes it.
+ *
+ * Score components (all default to 0 when missing — items without the
+ * signals stay where the relevance sort put them):
+ *   userRating  → 0..1 (Plex rates 0..10, normalize)
+ *   playCount   → log-scale 0..1 capped at 100 plays
+ */
+function applyVoiceRanking(items) {
+  if (!Array.isArray(items) || items.length < 2) return items;
+  const scored = items.map((item, originalIndex) => {
+    const rating = numberOf(item?.metadata?.userRating ?? item?.metadata?.rating);
+    const plays = numberOf(item?.metadata?.viewCount ?? item?.metadata?.playCount);
+    const ratingScore = rating > 0 ? Math.min(rating / 10, 1) : 0;
+    const playScore = plays > 0 ? Math.min(Math.log10(plays + 1) / 2, 1) : 0;
+    return {
+      item,
+      originalIndex,
+      score: ratingScore * 0.7 + playScore * 0.3,
+    };
+  });
+  // Stable sort: by score desc, fallback to original index asc to preserve relevance order
+  scored.sort((a, b) => (b.score - a.score) || (a.originalIndex - b.originalIndex));
+  return scored.map(s => s.item);
+}
+
+function numberOf(v) {
+  if (v == null) return 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function isAudioPlayable(item) {
   if (!item) return false;
   const blocked = new Set(['image', 'photo', 'video', 'dash_video', 'movie', 'episode', 'show']);
