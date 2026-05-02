@@ -1,0 +1,61 @@
+# Media search harness — voice scenarios.
+#
+# Each scenario is a single user voice phrase the harness sends to the brain
+# endpoint. Optional `expect:` block declares pass criteria; without it the
+# scenario is informational (no PASS/FAIL).
+#
+# Copy this file to data/household/eval/media-scenarios.yml and tune the
+# entries to your own library. The harness loads from that path first, then
+# falls back to this example.
+#
+# expect fields:
+#   tool_called: <tool name>   # require the brain to invoke this tool
+#   contains:    <substring>   # response text must contain this (case-insensitive)
+#   no_match:    true          # model should politely say it can't find anything
+#   status:      <http code>   # default 200
+
+scenarios:
+  - name: track-by-name-known
+    user: "Play We Built This City"
+    expect:
+      tool_called: play_media
+
+  - name: track-by-name-with-artist
+    user: "Play We Built This City by Starship"
+    expect:
+      tool_called: play_media
+
+  - name: album-by-name
+    user: "Play the Greatest Hits album by Starship"
+    expect:
+      tool_called: play_media
+
+  - name: artist-only
+    user: "Play some Starship"
+    expect:
+      tool_called: play_media
+
+  - name: ambiguous-cover
+    user: "Play We Built This City"   # same query — multiple matches (Starship + Muppets cover)
+    expect:
+      tool_called: play_media
+
+  - name: kids-story-known
+    user: "Play The Three Little Pigs"
+    expect:
+      tool_called: play_media
+
+  - name: fuzzy-typo
+    user: "Play we bilt this citi"
+    expect:
+      tool_called: play_media
+
+  - name: politeness-prefix
+    user: "Could you please play some music"
+    expect:
+      tool_called: play_media
+
+  - name: definite-no-match
+    user: "Play the Beatles song Wibble Flarp Bzzt"
+    expect:
+      no_match: true
