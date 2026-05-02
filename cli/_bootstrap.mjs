@@ -163,8 +163,7 @@ export async function getContentQuery() {
       },
     );
 
-    // createContentRegistry returns { registry, savedQueryService } — we only need the registry
-    const registry = result.registry || result;
+    const { registry } = result;
     _contentQuery = new ContentQueryService({ registry });
     return _contentQuery;
   })();
