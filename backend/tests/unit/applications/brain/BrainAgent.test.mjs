@@ -1,0 +1,137 @@
+import { describe, it } from 'node:test';
+import assert from 'node:assert';
+import { BrainAgent } from '../../../../src/3_applications/brain/BrainAgent.mjs';
+import { Satellite } from '../../../../src/2_domains/brain/Satellite.mjs';
+import { PassThroughBrainPolicy } from '../../../../src/3_applications/brain/services/PassThroughBrainPolicy.mjs';
+import { SkillRegistry } from '../../../../src/3_applications/brain/services/SkillRegistry.mjs';
+import { MemorySkill } from '../../../../src/3_applications/brain/skills/MemorySkill.mjs';
+
+const silentLogger = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
+
+class InMemoryBrainMemory {
+  constructor() { this.store = {}; }
+  async get(k) { return this.store[k] ?? null; }
+  async set(k, v) { this.store[k] = v; }
+  async merge() {}
+}
+
+class FakeRuntime {
+  constructor({ outputs }) { this.outputs = outputs; this.calls = []; }
+  async execute(opts) {
+    this.calls.push(opts);
+    return this.outputs.execute ?? { output: 'ok', toolCalls: [] };
+  }
+  async *streamExecute(opts) {
+    this.calls.push(opts);
+    for (const c of this.outputs.stream ?? [{ type: 'text-delta', text: 'ok' }, { type: 'finish' }]) {
+      yield c;
+    }
+  }
+}
+
+describe('BrainAgent', () => {
+  const sat = new Satellite({ id: 's', mediaPlayerEntity: 'media_player.x', allowedSkills: ['memory'] });
+  const policy = new PassThroughBrainPolicy();
+
+  function build(runtimeOutputs = {}) {
+    const memory = new InMemoryBrainMemory();
+    const registry = new SkillRegistry({ logger: silentLogger });
+    registry.register(new MemorySkill({ memory, logger: silentLogger }));
+    const runtime = new FakeRuntime({ outputs: runtimeOutputs });
+    const agent = new BrainAgent({
+      agentRuntime: runtime,
+      memory,
+      policy,
+      skills: registry,
+      logger: silentLogger,
+    });
+    return { agent, runtime, memory };
+  }
+
+  it('runChat returns the runtime output as content', async () => {
+    const { agent } = build({ execute: { output: 'Hello there.', toolCalls: [] } });
+    const result = await agent.runChat({
+      satellite: sat,
+      messages: [{ role: 'user', content: 'hi' }],
+    });
+    assert.strictEqual(result.content, 'Hello there.');
+  });
+
+  it('passes assembled prompt and tools to runtime.execute', async () => {
+    const { agent, runtime } = build({ execute: { output: 'ok', toolCalls: [] } });
+    await agent.runChat({ satellite: sat, messages: [{ role: 'user', content: 'hi' }] });
+    const opts = runtime.calls[0];
+    assert.match(opts.systemPrompt, /satellite/i);
+    assert.ok(opts.tools.length > 0);
+    const toolNames = opts.tools.map((t) => t.name);
+    assert.ok(toolNames.includes('remember_note') || toolNames.includes('recall_note'));
+  });
+
+  it('streamChat yields text deltas', async () => {
+    const { agent } = build({
+      stream: [
+        { type: 'text-delta', text: 'Hi' },
+        { type: 'text-delta', text: ' there' },
+        { type: 'finish' },
+      ],
+    });
+    const chunks = [];
+    for await (const c of agent.streamChat({
+      satellite: sat,
+      messages: [{ role: 'user', content: 'hi' }],
+    })) {
+      chunks.push(c);
+    }
+    const texts = chunks.filter((c) => c.type === 'text-delta').map((c) => c.text).join('');
+    assert.strictEqual(texts, 'Hi there');
+  });
+
+  it('refuses pre-flight via policy', async () => {
+    const memory = new InMemoryBrainMemory();
+    const registry = new SkillRegistry({ logger: silentLogger });
+    registry.register(new MemorySkill({ memory, logger: silentLogger }));
+    const runtime = new FakeRuntime({ outputs: {} });
+    const denyAll = {
+      evaluateRequest: () => ({ allow: false, reason: 'quiet_hours' }),
+      evaluateToolCall: () => ({ allow: true }),
+      shapeResponse: (_s, t) => t,
+    };
+    const agent = new BrainAgent({
+      agentRuntime: runtime,
+      memory,
+      policy: denyAll,
+      skills: registry,
+      logger: silentLogger,
+    });
+    const result = await agent.runChat({ satellite: sat, messages: [{ role: 'user', content: 'hi' }] });
+    assert.match(result.content, /can't/i);
+    assert.strictEqual(runtime.calls.length, 0);
+  });
+
+  it('streamChat refusal yields a single text-delta + finish', async () => {
+    const memory = new InMemoryBrainMemory();
+    const registry = new SkillRegistry({ logger: silentLogger });
+    const denyAll = {
+      evaluateRequest: () => ({ allow: false, reason: 'busy' }),
+      evaluateToolCall: () => ({ allow: true }),
+      shapeResponse: (_s, t) => t,
+    };
+    const runtime = new FakeRuntime({ outputs: {} });
+    const agent = new BrainAgent({
+      agentRuntime: runtime,
+      memory,
+      policy: denyAll,
+      skills: registry,
+      logger: silentLogger,
+    });
+    const chunks = [];
+    for await (const c of agent.streamChat({ satellite: sat, messages: [{ role: 'user', content: 'hi' }] })) {
+      chunks.push(c);
+    }
+    assert.strictEqual(chunks.length, 2);
+    assert.strictEqual(chunks[0].type, 'text-delta');
+    assert.match(chunks[0].text, /can't/i);
+    assert.strictEqual(chunks[1].type, 'finish');
+    assert.strictEqual(runtime.calls.length, 0);
+  });
+});

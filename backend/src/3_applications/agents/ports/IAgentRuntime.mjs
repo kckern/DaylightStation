@@ -25,6 +25,14 @@ export const IAgentRuntime = {
    * @returns {Promise<{taskId: string}>}
    */
   async executeInBackground(options, onComplete) {},
+
+  /**
+   * Execute an agent with streaming output.
+   * Yields normalized chunks: text-delta, tool-start, tool-end, finish.
+   * @param {Object} options - Same shape as execute
+   * @returns {AsyncIterable<{type: 'text-delta'|'tool-start'|'tool-end'|'finish', text?: string, toolName?: string, args?: object, result?: any, reason?: string, usage?: object}>}
+   */
+  async *streamExecute(options) {},
 };
 
 /**
@@ -36,6 +44,7 @@ export function isAgentRuntime(obj) {
   return (
     obj &&
     typeof obj.execute === 'function' &&
-    typeof obj.executeInBackground === 'function'
+    typeof obj.executeInBackground === 'function' &&
+    typeof obj.streamExecute === 'function'
   );
 }
