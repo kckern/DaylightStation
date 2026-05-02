@@ -887,7 +887,10 @@ function applyMediaTypeFilters(items, query) {
     const allowed = new Set(query.includeMediaTypes.map(t => String(t).toLowerCase()));
     out = out.filter(item => {
       const types = itemTypes(item);
-      return types.length > 0 && types.every(t => allowed.has(t));
+      // Item is kept if ANY of its typed fields matches the allowlist —
+      // items typically expose both mediaType ('track') and metadata.type
+      // ('audio') and we don't want to require both.
+      return types.some(t => allowed.has(t));
     });
   }
   return out;
