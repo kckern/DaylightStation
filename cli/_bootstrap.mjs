@@ -70,40 +70,11 @@ export async function getConfigService() {
 /**
  * Get a memoized HTTP client.
  *
- * The returned object exposes the full IHttpClient API (get, post, put,
- * delete, downloadBuffer, postForm) plus a generic `request(method, url,
- * body, options)` dispatcher for callers that prefer a single entry point.
- *
- * @returns {{ request: Function, get: Function, post: Function, put: Function, delete: Function }}
+ * @returns {HttpClient}
  */
 export function getHttpClient() {
   if (_httpClient) return _httpClient;
-
-  const inner = new HttpClient();
-
-  _httpClient = {
-    get: inner.get.bind(inner),
-    post: inner.post.bind(inner),
-    put: inner.put.bind(inner),
-    delete: inner.delete.bind(inner),
-    downloadBuffer: inner.downloadBuffer.bind(inner),
-    postForm: inner.postForm.bind(inner),
-    /**
-     * Generic dispatcher.
-     * @param {string} method - HTTP verb (GET, POST, PUT, DELETE)
-     * @param {string} url
-     * @param {any} [body]
-     * @param {object} [options]
-     */
-    request(method, url, body, options = {}) {
-      const m = method.toLowerCase();
-      if (m === 'get' || m === 'delete') {
-        return inner[m](url, options);
-      }
-      return inner[m](url, body, options);
-    },
-  };
-
+  _httpClient = new HttpClient();
   return _httpClient;
 }
 
