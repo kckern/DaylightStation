@@ -130,6 +130,32 @@ describe('ConciergeAgent', () => {
     assert.ok(systemPrompt.includes('- big room = living room'), 'should include big room entry');
   });
 
+  it('includes personality section in systemPrompt when personality string is provided', async () => {
+    const memory = new InMemoryConciergeMemory();
+    const registry = new SkillRegistry({ logger: silentLogger });
+    registry.register(new MemorySkill({ memory, logger: silentLogger }));
+    const runtime = new FakeRuntime({ outputs: { execute: { output: 'ok', toolCalls: [] } } });
+    const agent = new ConciergeAgent({
+      agentRuntime: runtime,
+      memory,
+      policy,
+      skills: registry,
+      personality: 'Speak like a refined English butler. Address the user as sir.',
+      logger: silentLogger,
+    });
+    await agent.runChat({ satellite: sat, messages: [{ role: 'user', content: 'hi' }] });
+    const { systemPrompt } = runtime.calls[0];
+    assert.ok(systemPrompt.includes('## Personality'), 'should include personality header');
+    assert.ok(systemPrompt.includes('Speak like a refined English butler'), 'should include personality text');
+  });
+
+  it('omits personality section when personality is null', async () => {
+    const { agent, runtime } = build({ execute: { output: 'ok', toolCalls: [] } });
+    await agent.runChat({ satellite: sat, messages: [{ role: 'user', content: 'hi' }] });
+    const { systemPrompt } = runtime.calls[0];
+    assert.ok(!systemPrompt.includes('## Personality'), 'should not include personality header when null');
+  });
+
   it('streamChat refusal yields a single text-delta + finish', async () => {
     const memory = new InMemoryConciergeMemory();
     const registry = new SkillRegistry({ logger: silentLogger });
