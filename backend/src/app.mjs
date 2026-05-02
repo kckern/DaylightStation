@@ -76,6 +76,7 @@ import {
   broadcastEvent,
   createHarvesterServices,
   createAgentsApiRouter,
+  createBrainServices,
   createCostServices,
   createCostApiRouter,
   createMediaServices
@@ -2310,149 +2311,20 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // ==========================================================================
   // Brain endpoint (OpenAI-compatible /v1) — for HA Voice / external clients
   // ==========================================================================
-  // Mounts an OpenAI-shaped chat completions API backed by a Mastra agent
-  // with curated household skills. Auth is per-satellite bearer tokens
-  // resolved via brain.yml + Infisical.
   try {
-    const { MastraAdapter, YamlWorkingMemoryAdapter } = await import('#adapters/agents/index.mjs');
-    const { YamlSatelliteRegistry } = await import('#adapters/persistence/yaml/YamlSatelliteRegistry.mjs');
-    const { YamlBrainMemoryAdapter } = await import('#adapters/persistence/yaml/YamlBrainMemoryAdapter.mjs');
-    const { PassThroughBrainPolicy } = await import('#applications/brain/services/PassThroughBrainPolicy.mjs');
-    const { BrainApplication } = await import('#applications/brain/BrainApplication.mjs');
-    const { MemorySkill } = await import('#applications/brain/skills/MemorySkill.mjs');
-    const { HomeAutomationSkill } = await import('#applications/brain/skills/HomeAutomationSkill.mjs');
-    const { MediaSkill } = await import('#applications/brain/skills/MediaSkill.mjs');
-    const { createBrainRouter } = await import('./4_api/v1/routers/brain.mjs');
-
-    const brainLogger = rootLogger.child({ module: 'brain' });
-
-    // Mastra reads OPENAI_API_KEY from process.env — bridge from ConfigService.
-    const openaiKey = configService.getSecret?.('OPENAI_API_KEY');
-    if (openaiKey && !process.env.OPENAI_API_KEY) {
-      process.env.OPENAI_API_KEY = openaiKey;
-    }
-
-    const brainAgentRuntime = new MastraAdapter({ logger: brainLogger.child({ component: 'mastra' }) });
-    const brainWorkingMemory = new YamlWorkingMemoryAdapter({
-      dataService,
-      logger: brainLogger.child({ component: 'working-memory' }),
-    });
-    const brainMemory = new YamlBrainMemoryAdapter({ workingMemory: brainWorkingMemory });
-
-    const brainSatelliteRegistry = new YamlSatelliteRegistry({
+    const brainRouter = await createBrainServices({
       configService,
-      logger: brainLogger.child({ component: 'satellite-registry' }),
+      dataService,
+      contentQueryService: contentServices?.contentQueryService ?? null,
+      haGateway: homeAutomationAdapters?.haGateway ?? null,
+      devicesConfig,
+      mediaLogsDir: join(configService.getMediaDir(), 'logs'),
+      logger: rootLogger.child({ module: 'brain' }),
     });
-    await brainSatelliteRegistry.load();
-
-    const brainSkills = [
-      new MemorySkill({
-        memory: brainMemory,
-        logger: brainLogger.child({ skill: 'memory' }),
-      }),
-    ];
-
-    if (homeAutomationAdapters?.haGateway) {
-      brainSkills.push(new HomeAutomationSkill({
-        gateway: homeAutomationAdapters.haGateway,
-        logger: brainLogger.child({ skill: 'home_automation' }),
-      }));
-    }
-
-    if (contentServices?.contentQueryService && homeAutomationAdapters?.haGateway) {
-      // For media playback URLs we prefer the LAN-internal host
-      // (daylightHostInternal) so that intra-host clients like Home Assistant
-      // can reach it without hairpin NAT through the public Cloudflare fronting.
-      // Fall back to daylightHost if no internal URL is configured.
-      const dsBaseUrl = devicesConfig?.daylightHostInternal || devicesConfig?.daylightHost;
-      if (!dsBaseUrl) {
-        rootLogger.warn('brain.media.skill.skipped', {
-          reason: 'no_daylight_host',
-          message: 'devices.yml.daylightHostInternal (or daylightHost) is unset — ' +
-                   'MediaSkill not registered. Set daylightHostInternal to the LAN-routable ' +
-                   'URL where this server is reachable from HA and Voice PE devices.',
-        });
-      } else {
-        const mediaOverrides = configService.reloadHouseholdAppConfig?.(null, 'brain.media') ?? {};
-        // Build a lightweight judge runtime — second MastraAdapter pinned to a
-        // cheap model so disambiguating between 5 candidates doesn't run on the
-        // primary brain model.
-        const { MastraAdapter: JudgeMastraAdapter } = await import('#adapters/agents/index.mjs');
-        const judgeModel = mediaOverrides?.judge_model ?? 'openai/gpt-4o-mini';
-        const judgeRuntime = new JudgeMastraAdapter({
-          model: judgeModel,
-          logger: brainLogger.child({ component: 'judge-runtime' }),
-          maxToolCalls: 1,
-          timeoutMs: 8000,
-        });
-        const { MediaJudge } = await import('#applications/brain/services/MediaJudge.mjs');
-        const mediaJudge = new MediaJudge({
-          agentRuntime: judgeRuntime,
-          logger: brainLogger.child({ skill: 'media', component: 'judge' }),
-        });
-
-        brainSkills.push(new MediaSkill({
-          contentQuery: contentServices.contentQueryService,
-          gateway: homeAutomationAdapters.haGateway,
-          logger: brainLogger.child({ skill: 'media' }),
-          config: { ...mediaOverrides, ds_base_url: dsBaseUrl },
-          judge: mediaJudge,
-        }));
-        rootLogger.info('brain.media.skill.url', {
-          ds_base_url: dsBaseUrl,
-          source: devicesConfig?.daylightHostInternal ? 'daylightHostInternal' : 'daylightHost',
-          judge_model: judgeModel,
-        });
-      }
-    }
-
-    // Read-only domain skills (calendar, lifelog, finance, fitness)
-    // Each is registered when its adapter is provided. Adapters wrap existing
-    // application services to satisfy I*Read contracts; build them as needed.
-    const brainCalendarRead = null; // TODO: implement CalendarReadAdapter wrapping scheduling services
-    const brainLifelogRead = null;  // TODO: implement LifelogReadAdapter wrapping LifelogAggregator
-    const brainFinanceRead = null;  // TODO: implement FinanceReadAdapter wrapping finance services
-    const brainFitnessRead = null;  // TODO: implement FitnessReadAdapter wrapping fitness services
-
-    if (brainCalendarRead) {
-      const { CalendarReadSkill } = await import('#applications/brain/skills/CalendarReadSkill.mjs');
-      brainSkills.push(new CalendarReadSkill({ calendar: brainCalendarRead, logger: brainLogger.child({ skill: 'calendar_read' }) }));
-    }
-    if (brainLifelogRead) {
-      const { LifelogReadSkill } = await import('#applications/brain/skills/LifelogReadSkill.mjs');
-      brainSkills.push(new LifelogReadSkill({ lifelog: brainLifelogRead, logger: brainLogger.child({ skill: 'lifelog_read' }) }));
-    }
-    if (brainFinanceRead) {
-      const { FinanceReadSkill } = await import('#applications/brain/skills/FinanceReadSkill.mjs');
-      brainSkills.push(new FinanceReadSkill({ finance: brainFinanceRead, logger: brainLogger.child({ skill: 'finance_read' }) }));
-    }
-    if (brainFitnessRead) {
-      const { FitnessReadSkill } = await import('#applications/brain/skills/FitnessReadSkill.mjs');
-      brainSkills.push(new FitnessReadSkill({ fitness: brainFitnessRead, logger: brainLogger.child({ skill: 'fitness_read' }) }));
-    }
-
-    const brainApp = new BrainApplication({
-      satelliteRegistry: brainSatelliteRegistry,
-      memory: brainMemory,
-      policy: new PassThroughBrainPolicy(),
-      agentRuntime: brainAgentRuntime,
-      skills: brainSkills,
-      logger: brainLogger,
-    });
-
-    const brainMediaLogsDir = join(configService.getMediaDir(), 'logs');
-    app.use('/v1', createBrainRouter({
-      satelliteRegistry: brainSatelliteRegistry,
-      chatCompletionRunner: brainApp,
-      logger: brainLogger.child({ component: 'router' }),
-      mediaLogsDir: brainMediaLogsDir,
-    }));
-
-    rootLogger.info('brain.mounted', { path: '/v1', skills: brainSkills.map((s) => s.name) });
+    app.use('/v1', brainRouter);
   } catch (error) {
     rootLogger.error('brain.mount_failed', { error: error.message, stack: error.stack });
   }
-
   // ==========================================================================
   // Frontend Static Files (Production Only) - MUST be before API router
   // ==========================================================================
