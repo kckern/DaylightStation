@@ -3143,6 +3143,157 @@ export async function createAgentsApiRouter(config) {
 }
 
 // =============================================================================
+// Brain Services Bootstrap
+// =============================================================================
+
+/**
+ * Create the brain (OpenAI-compatible /v1) router with all skills wired in.
+ *
+ * Composes:
+ *   - YamlSatelliteRegistry  (satellites + tokens from brain.yml + Infisical)
+ *   - YamlBrainMemoryAdapter (household working memory)
+ *   - PassThroughBrainPolicy (v1 — replace with real policy gate later)
+ *   - MastraAdapter (primary brain runtime)
+ *   - MediaJudge subagent backed by a SECOND MastraAdapter pinned to a
+ *     cheap model
+ *   - Skills: MemorySkill, HomeAutomationSkill (when haGateway), MediaSkill
+ *     (when contentQuery + haGateway + daylightHostInternal/daylightHost)
+ *   - BrainApplication composition root
+ *   - createBrainRouter mounted at /v1 with bearer auth + transcript logging
+ *
+ * @param {Object} config
+ * @param {Object} config.configService     - ConfigService
+ * @param {Object} config.dataService       - DataService for working memory
+ * @param {Object} [config.contentQueryService] - ContentQueryService for MediaSkill
+ * @param {Object} [config.haGateway]       - IHomeAutomationGateway for HA + Media skills
+ * @param {Object} [config.devicesConfig]   - Household devices config (provides daylightHost*)
+ * @param {string} config.mediaLogsDir      - Directory for per-request transcript files
+ * @param {Object} [config.logger]          - Logger
+ * @returns {Promise<express.Router>}       - Router to mount at /v1
+ */
+export async function createBrainServices(config) {
+  const {
+    configService,
+    dataService,
+    contentQueryService = null,
+    haGateway = null,
+    devicesConfig = {},
+    mediaLogsDir,
+    logger = console,
+  } = config;
+
+  if (!configService) throw new Error('createBrainServices: configService required');
+  if (!dataService) throw new Error('createBrainServices: dataService required');
+  if (!mediaLogsDir) throw new Error('createBrainServices: mediaLogsDir required');
+
+  const { YamlSatelliteRegistry } = await import('#adapters/persistence/yaml/YamlSatelliteRegistry.mjs');
+  const { YamlBrainMemoryAdapter } = await import('#adapters/persistence/yaml/YamlBrainMemoryAdapter.mjs');
+  const { PassThroughBrainPolicy } = await import('#applications/brain/services/PassThroughBrainPolicy.mjs');
+  const { BrainApplication } = await import('#applications/brain/BrainApplication.mjs');
+  const { MemorySkill } = await import('#applications/brain/skills/MemorySkill.mjs');
+  const { HomeAutomationSkill } = await import('#applications/brain/skills/HomeAutomationSkill.mjs');
+  const { MediaSkill } = await import('#applications/brain/skills/MediaSkill.mjs');
+  const { MediaJudge } = await import('#applications/brain/services/MediaJudge.mjs');
+  const { createBrainRouter } = await import('#api/v1/routers/brain.mjs');
+
+  // Mastra reads OPENAI_API_KEY from process.env — bridge from ConfigService.
+  const openaiKey = configService.getSecret?.('OPENAI_API_KEY');
+  if (openaiKey && !process.env.OPENAI_API_KEY) {
+    process.env.OPENAI_API_KEY = openaiKey;
+  }
+
+  const brainAgentRuntime = new MastraAdapter({
+    logger: logger.child({ component: 'mastra' }),
+  });
+  const brainWorkingMemory = new YamlWorkingMemoryAdapter({
+    dataService,
+    logger: logger.child({ component: 'working-memory' }),
+  });
+  const brainMemory = new YamlBrainMemoryAdapter({ workingMemory: brainWorkingMemory });
+
+  const brainSatelliteRegistry = new YamlSatelliteRegistry({
+    configService,
+    logger: logger.child({ component: 'satellite-registry' }),
+  });
+  await brainSatelliteRegistry.load();
+
+  const brainSkills = [
+    new MemorySkill({
+      memory: brainMemory,
+      logger: logger.child({ skill: 'memory' }),
+    }),
+  ];
+
+  if (haGateway) {
+    brainSkills.push(new HomeAutomationSkill({
+      gateway: haGateway,
+      logger: logger.child({ skill: 'home_automation' }),
+    }));
+  }
+
+  if (contentQueryService && haGateway) {
+    const dsBaseUrl = devicesConfig?.daylightHostInternal || devicesConfig?.daylightHost;
+    if (!dsBaseUrl) {
+      logger.warn?.('brain.media.skill.skipped', {
+        reason: 'no_daylight_host',
+        message: 'devices.yml.daylightHostInternal (or daylightHost) is unset — '
+               + 'MediaSkill not registered. Set daylightHostInternal to the LAN-routable URL '
+               + 'where this server is reachable from HA and Voice PE devices.',
+      });
+    } else {
+      const mediaConfig = configService.reloadHouseholdAppConfig?.(null, 'brain.media') ?? {};
+      const judgeModel = mediaConfig?.judge_model ?? 'openai/gpt-4o-mini';
+      const judgeRuntime = new MastraAdapter({
+        model: judgeModel,
+        logger: logger.child({ component: 'judge-runtime' }),
+        maxToolCalls: 1,
+        timeoutMs: 8000,
+      });
+      const mediaJudge = new MediaJudge({
+        agentRuntime: judgeRuntime,
+        logger: logger.child({ skill: 'media', component: 'judge' }),
+      });
+
+      brainSkills.push(new MediaSkill({
+        contentQuery: contentQueryService,
+        gateway: haGateway,
+        logger: logger.child({ skill: 'media' }),
+        config: { ...mediaConfig, ds_base_url: dsBaseUrl },
+        judge: mediaJudge,
+      }));
+      logger.info?.('brain.media.skill.url', {
+        ds_base_url: dsBaseUrl,
+        source: devicesConfig?.daylightHostInternal ? 'daylightHostInternal' : 'daylightHost',
+        judge_model: judgeModel,
+      });
+    }
+  }
+
+  const brainApp = new BrainApplication({
+    satelliteRegistry: brainSatelliteRegistry,
+    memory: brainMemory,
+    policy: new PassThroughBrainPolicy(),
+    agentRuntime: brainAgentRuntime,
+    skills: brainSkills,
+    logger,
+  });
+
+  const router = createBrainRouter({
+    satelliteRegistry: brainSatelliteRegistry,
+    chatCompletionRunner: brainApp,
+    logger: logger.child({ component: 'router' }),
+    mediaLogsDir,
+  });
+
+  logger.info?.('brain.mounted', {
+    path: '/v1',
+    skills: brainSkills.map(s => s.name),
+  });
+
+  return router;
+}
+
+// =============================================================================
 // Harvester Services Bootstrap
 // =============================================================================
 
