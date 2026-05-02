@@ -36,6 +36,8 @@ export class YamlSatelliteRegistry {
           allowedSkills: entry.allowed_skills ?? [],
           defaultVolume: entry.default_volume ?? null,
           defaultMediaClass: entry.default_media_class ?? null,
+          scopes_allowed: entry.scopes_allowed ?? [],
+          scopes_denied: entry.scopes_denied ?? [],
         });
         this.#byToken.set(token, satellite);
         this.#all.push(satellite);
