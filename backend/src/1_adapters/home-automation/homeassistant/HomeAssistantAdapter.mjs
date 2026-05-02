@@ -126,6 +126,26 @@ export class HomeAssistantAdapter {
   }
 
   /**
+   * Read all current entity states. Used by the brain's friendly-name resolver
+   * to enumerate the full device surface for fuzzy matching.
+   * @returns {Promise<DeviceState[]>}
+   */
+  async listAllStates() {
+    try {
+      const response = await this.#apiGet('/api/states');
+      return (response || []).map((entry) => ({
+        entityId: entry.entity_id,
+        state: entry.state,
+        attributes: entry.attributes || {},
+        lastChanged: entry.last_changed,
+      }));
+    } catch (error) {
+      this.#logger.error?.('ha.listAllStates.error', { error: error.message });
+      return [];
+    }
+  }
+
+  /**
    * Fetch historical state series for given entities since an ISO timestamp.
    * Response from HA is an array of arrays; each inner array is one entity's history.
    * Cached for 60 seconds keyed on (sinceIso, sorted entityIds).

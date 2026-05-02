@@ -180,6 +180,74 @@ export class MastraAdapter {
   }
 
   /**
+   * Execute an agent with streaming output.
+   * Yields normalized chunks: text-delta, tool-start, tool-end, finish.
+   * @implements IAgentRuntime.streamExecute
+   */
+  async *streamExecute({ agent, agentId, input, tools, systemPrompt, context = {} }) {
+    const name = agentId || agent?.constructor?.id || 'unknown';
+    const callCounter = { count: 0 };
+    const mastraTools = this.#translateTools(tools || [], context, callCounter);
+
+    const mastraAgent = new Agent({
+      name,
+      instructions: systemPrompt,
+      model: this.#model,
+      tools: mastraTools,
+    });
+
+    this.#logger.info?.('agent.stream.start', {
+      agentId: name,
+      inputLength: input?.length,
+      toolCount: Object.keys(mastraTools).length,
+    });
+
+    const start = Date.now();
+    let totalChunks = 0;
+    try {
+      const output = await mastraAgent.stream(input);
+      const iterable = output?.fullStream ?? output;
+      for await (const part of iterable) {
+        totalChunks++;
+        const payload = part?.payload ?? {};
+        switch (part?.type) {
+          case 'text-delta':
+            yield { type: 'text-delta', text: payload.text ?? part.textDelta ?? part.text ?? '' };
+            break;
+          case 'tool-call':
+            yield { type: 'tool-start', toolName: payload.toolName ?? part.toolName, args: payload.args ?? part.args };
+            break;
+          case 'tool-result':
+            yield { type: 'tool-end', toolName: payload.toolName ?? part.toolName, result: payload.result ?? part.result };
+            break;
+          case 'finish':
+            yield {
+              type: 'finish',
+              reason: payload?.stepResult?.reason ?? part.finishReason ?? 'stop',
+              usage: payload?.output?.usage ?? part.usage,
+            };
+            break;
+          default:
+            this.#logger.debug?.('agent.stream.unknown_event', { type: part?.type });
+        }
+      }
+      this.#logger.info?.('agent.stream.complete', {
+        agentId: name,
+        totalChunks,
+        latencyMs: Date.now() - start,
+        toolCallsUsed: callCounter.count,
+      });
+    } catch (error) {
+      this.#logger.error?.('agent.stream.error', {
+        agentId: name,
+        error: error.message,
+        latencyMs: Date.now() - start,
+      });
+      throw error;
+    }
+  }
+
+  /**
    * Execute an agent in background
    * @implements IAgentRuntime.executeInBackground
    */

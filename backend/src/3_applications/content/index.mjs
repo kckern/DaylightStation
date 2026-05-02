@@ -41,3 +41,6 @@ export { default as ArchiveService } from './services/ArchiveService.mjs';
 // ContentQueryService - Multi-source content query orchestration
 export { ContentQueryService } from './ContentQueryService.mjs';
 export { default as ContentQueryServiceDefault } from './ContentQueryService.mjs';
+
+// IContentQuery port — provider-agnostic interface over ContentQueryService
+export * from './ports/IContentQuery.mjs';
