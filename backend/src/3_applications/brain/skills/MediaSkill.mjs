@@ -70,35 +70,58 @@ You can play household media (music, playlists, podcasts, audiobooks, ambient so
             latencyMs: Date.now() - start,
           });
 
+          const candidates = (search.items ?? []).slice(0, 5).map((it) => ({
+            id: it.id,
+            source: it.source,
+            title: it.title,
+            mediaType: it.mediaType ?? it.metadata?.type ?? null,
+          }));
+
           const top = search.items?.[0];
           if (!top) {
             log.warn?.('brain.skill.media.no_match', { query, sources_tried: search.sources ?? [] });
-            return { ok: false, reason: 'no_match', query };
+            return { ok: false, reason: 'no_match', query, candidates };
           }
 
           const localId = top.localId ?? extractLocalId(top.id, top.source);
           const resolved = await cq.resolve(top.source, localId, {}, {});
+          const resolvedItems = (resolved.items ?? []).map((it) => ({
+            id: it.id,
+            mediaType: it.mediaType ?? it.metadata?.type ?? null,
+            mediaUrl: it.mediaUrl ?? null,
+          }));
           const audioOnly = (resolved.items ?? []).filter(isAudioItem);
           const playable = audioOnly[0];
           if (!playable) {
             log.warn?.('brain.skill.media.no_audio_playable', { content_id: top.id, source: top.source });
-            return { ok: false, reason: 'no_audio_playable', source: top.source };
+            return {
+              ok: false,
+              reason: 'no_audio_playable',
+              source: top.source,
+              top: { id: top.id, title: top.title, mediaType: top.mediaType ?? top.metadata?.type ?? null },
+              candidates,
+              resolvedItems,
+            };
           }
 
           const relative = playable.mediaUrl ?? `/api/v1/stream/${top.source}/${localId}`;
           const mediaUrl = absoluteUrl(cfg.ds_base_url, relative);
           const contentType = mapContentType(playable.metadata?.type ?? media_class ?? 'music');
 
-          const playResult = await gw.callService('media_player', 'play_media', {
+          const playArgs = {
             entity_id: satellite.mediaPlayerEntity,
             media_content_id: mediaUrl,
             media_content_type: contentType,
-          });
+          };
+          const playResult = await gw.callService('media_player', 'play_media', playArgs);
 
           log.info?.('brain.skill.media.play', {
             content_id: top.id,
             media_player: satellite.mediaPlayerEntity,
+            media_url: mediaUrl,
+            content_type: contentType,
             ok: !!playResult?.ok,
+            ha_error: playResult?.error,
           });
 
           return {
@@ -106,7 +129,15 @@ You can play household media (music, playlists, podcasts, audiobooks, ambient so
             title: top.title,
             artist: top.metadata?.artist ?? null,
             mediaPlayer: satellite.mediaPlayerEntity,
+            mediaUrl,
+            mediaContentType: contentType,
+            sourceContentId: top.id,
+            playableId: playable.id,
+            playArgs,
+            haResponse: playResult?.data ?? null,
             error: playResult?.error,
+            candidates,
+            resolvedItems,
           };
         },
       },
