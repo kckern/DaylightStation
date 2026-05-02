@@ -30,8 +30,18 @@ export class PlayMediaUseCase {
   #urlBuilder;
   #judge;
   #logger;
+  #playbackPolicy;
 
-  constructor({ search, resolve, filterPlayable, gateway, urlBuilder, judge = null, logger = console }) {
+  constructor({
+    search,
+    resolve,
+    filterPlayable,
+    gateway,
+    urlBuilder,
+    judge = null,
+    logger = console,
+    playbackPolicy = {},
+  }) {
     if (typeof search !== 'function') throw new Error('PlayMediaUseCase: search(text) required');
     if (typeof resolve !== 'function') throw new Error('PlayMediaUseCase: resolve(source, localId) required');
     if (typeof filterPlayable !== 'function') throw new Error('PlayMediaUseCase: filterPlayable(items) required');
@@ -44,6 +54,14 @@ export class PlayMediaUseCase {
     this.#urlBuilder = urlBuilder;
     this.#judge = judge;
     this.#logger = logger;
+    // Caller declares which resolved-container types should shuffle.
+    // Defaults are intentionally conservative — caller should override.
+    this.#playbackPolicy = {
+      shuffleTypes: new Set(['artist', 'playlist', 'collection']),
+      maxQueueSize: 50,
+      ...playbackPolicy,
+      shuffleTypes: new Set(playbackPolicy?.shuffleTypes ?? ['artist', 'playlist', 'collection']),
+    };
   }
 
   /**
@@ -103,6 +121,9 @@ export class PlayMediaUseCase {
     }
 
     // 4. Walk candidates from pickIndex outward, attempting to resolve each.
+    //    For container candidates (artist/album/playlist/collection) we keep
+    //    ALL playables — sequence assembled below. For leaf candidates we just
+    //    take the first.
     const tryOrder = orderForResolve(items, pickIndex);
     let played = null;
     let lastFailReason = null;
@@ -113,14 +134,13 @@ export class PlayMediaUseCase {
       try {
         const resolved = await this.#resolve(candidate.source, localId);
         const playables = this.#filterPlayable(resolved.items ?? []);
-        const playable = playables[0];
-        if (!playable) {
+        if (playables.length === 0) {
           resolveAttempts.push({ id: candidate.id, reason: 'no_playable' });
           lastFailReason = 'no_playable';
           continue;
         }
-        played = { candidate, playable, localId };
-        resolveAttempts.push({ id: candidate.id, reason: 'ok' });
+        played = { candidate, playables, localId };
+        resolveAttempts.push({ id: candidate.id, reason: 'ok', count: playables.length });
         break;
       } catch (err) {
         resolveAttempts.push({ id: candidate.id, reason: 'error', error: err.message });
@@ -142,39 +162,73 @@ export class PlayMediaUseCase {
       };
     }
 
-    // 5. Issue the play call.
-    const { candidate: top, playable, localId } = played;
-    const mediaUrl = this.#urlBuilder(playable, top.source, localId);
-    const playArgs = {
-      entity_id: satellite.mediaPlayerEntity,
-      media_content_id: mediaUrl,
-      media_content_type: contentType,
-    };
-    const playResult = await this.#gateway.callService('media_player', 'play_media', playArgs);
+    // 5. Build play sequence based on candidate type. Containers expand to
+    //    multiple tracks; shuffle is applied per the playback policy.
+    const { candidate: top, playables, localId } = played;
+    const candidateType = (top.mediaType ?? top.metadata?.type ?? '').toLowerCase();
+    const isContainer = playables.length > 1 || CONTAINER_TYPES.has(candidateType);
+    let sequence = playables.slice();
+    let shuffled = false;
+    if (isContainer && this.#playbackPolicy.shuffleTypes.has(candidateType)) {
+      sequence = shuffleArray(sequence);
+      shuffled = true;
+    }
+    if (sequence.length > this.#playbackPolicy.maxQueueSize) {
+      sequence = sequence.slice(0, this.#playbackPolicy.maxQueueSize);
+    }
+
+    // 6. Play the sequence via HA. First item starts immediately (`enqueue:'play'`),
+    //    rest are appended (`enqueue:'add'`). If the puck's media_player ignores
+    //    enqueue, only the first track plays — failure is silent at HA level
+    //    but we log the queue attempt so it's auditable.
+    const queueResults = [];
+    let firstPlayResult = null;
+    for (let i = 0; i < sequence.length; i++) {
+      const playable = sequence[i];
+      const itemUrl = this.#urlBuilder(playable, top.source, playable.localId ?? localId);
+      const enqueue = i === 0 ? 'play' : 'add';
+      const args = {
+        entity_id: satellite.mediaPlayerEntity,
+        media_content_id: itemUrl,
+        media_content_type: contentType,
+        enqueue,
+      };
+      const result = await this.#gateway.callService('media_player', 'play_media', args);
+      queueResults.push({ id: playable.id, ok: !!result?.ok, enqueue, error: result?.error });
+      if (i === 0) firstPlayResult = result;
+      if (i === 0 && !result?.ok) break; // first call failed — don't bother queueing the rest
+    }
 
     log.info?.('brain.skill.media.play', {
       content_id: top.id,
       media_player: satellite.mediaPlayerEntity,
-      media_url: mediaUrl,
+      first_url: queueResults[0]?.ok != null ? sequence[0]?.mediaUrl : null,
       content_type: contentType,
-      ok: !!playResult?.ok,
-      ha_error: playResult?.error,
+      ok: !!firstPlayResult?.ok,
+      ha_error: firstPlayResult?.error,
       pick_reason: pickReason,
+      candidate_type: candidateType,
+      sequence_length: sequence.length,
+      shuffled,
       resolve_attempts: resolveAttempts.length,
     });
 
+    const firstPlayable = sequence[0];
     return {
-      ok: !!playResult?.ok,
+      ok: !!firstPlayResult?.ok,
       title: top.title,
       artist: top.metadata?.artist ?? top.metadata?.parentTitle ?? null,
       mediaPlayer: satellite.mediaPlayerEntity,
-      mediaUrl,
+      mediaUrl: this.#urlBuilder(firstPlayable, top.source, firstPlayable.localId ?? localId),
       mediaContentType: contentType,
       sourceContentId: top.id,
-      playableId: playable.id,
-      playArgs,
-      haResponse: playResult?.data ?? null,
-      error: playResult?.error,
+      candidateType,
+      playableId: firstPlayable.id,
+      sequenceLength: sequence.length,
+      shuffled,
+      queueResults,
+      haResponse: firstPlayResult?.data ?? null,
+      error: firstPlayResult?.error,
       candidates,
       resolveAttempts,
       pickReason,
@@ -184,6 +238,21 @@ export class PlayMediaUseCase {
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────
+
+// Item types treated as containers (resolve to multiple playables).
+const CONTAINER_TYPES = new Set(['artist', 'album', 'playlist', 'collection', 'show', 'season']);
+
+/**
+ * Fisher-Yates shuffle, returns a new array.
+ */
+export function shuffleArray(arr) {
+  const out = arr.slice();
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
 
 function toCandidateView(it) {
   return {

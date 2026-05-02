@@ -29,6 +29,15 @@ const VOICE_RANK = {
   ],
 };
 
+// Container types that should shuffle by default for voice playback.
+// Albums play in order; artists / playlists / collections shuffle since
+// playing them sequentially from track 1 is rarely what the user wants.
+const VOICE_SHUFFLE_TYPES = ['artist', 'playlist', 'collection'];
+
+// Hard ceiling on queued items per container — stops a 500-track artist
+// from spamming HA with 500 service calls.
+const VOICE_MAX_QUEUE_SIZE = 50;
+
 export class MediaSkill {
   static name = 'media';
 
@@ -129,6 +138,10 @@ You can play household media (music, songs, podcasts, ambient sounds, lectures).
       },
       judge: this.#judge,
       logger: this.#logger,
+      playbackPolicy: {
+        shuffleTypes: cfg.shuffle_types ?? VOICE_SHUFFLE_TYPES,
+        maxQueueSize: cfg.max_queue_size ?? VOICE_MAX_QUEUE_SIZE,
+      },
     });
   }
 }
