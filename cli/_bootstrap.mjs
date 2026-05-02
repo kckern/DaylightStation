@@ -28,6 +28,8 @@ let _contentQuery = null;
 let _contentInitPromise = null;
 let _memory = null;
 let _memoryInitPromise = null;
+let _buxfer = null;
+let _buxferInitPromise = null;
 
 /**
  * Resolve the data directory the same way backend/index.js does:
@@ -205,6 +207,33 @@ export async function getMemory() {
 }
 
 /**
+ * Build the household's Buxfer adapter for finance operations.
+ *
+ * Auth from data/household/auth/buxfer.yml (email + password).
+ * Throws with a clear message if creds are missing.
+ */
+export async function getBuxfer() {
+  if (_buxfer) return _buxfer;
+  if (_buxferInitPromise) return _buxferInitPromise;
+
+  _buxferInitPromise = (async () => {
+    const cfg = await getConfigService();
+    const auth = cfg.getHouseholdAuth('buxfer');
+    if (!auth?.email || !auth?.password) {
+      throw new Error('Buxfer credentials missing (data/household/auth/buxfer.yml requires email + password).');
+    }
+    const { BuxferAdapter } = await import('#adapters/finance/BuxferAdapter.mjs');
+    _buxfer = new BuxferAdapter(
+      { email: auth.email, password: auth.password },
+      { httpClient: getHttpClient() },
+    );
+    return _buxfer;
+  })();
+
+  return _buxferInitPromise;
+}
+
+/**
  * Reset all memoized state. For tests only.
  */
 export function _resetForTests() {
@@ -217,5 +246,7 @@ export function _resetForTests() {
   _contentInitPromise = null;
   _memory = null;
   _memoryInitPromise = null;
+  _buxfer = null;
+  _buxferInitPromise = null;
   resetConfigService();
 }
