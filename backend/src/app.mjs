@@ -2360,14 +2360,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     }
 
     if (contentServices?.contentQueryService && homeAutomationAdapters?.haGateway) {
-      // Source-of-truth for the LAN URL is devices.yml.daylightHost — same value
-      // device services already use for content callbacks.
-      const dsBaseUrl = devicesConfig?.daylightHost;
+      // For media playback URLs we prefer the LAN-internal host
+      // (daylightHostInternal) so that intra-host clients like Home Assistant
+      // can reach it without hairpin NAT through the public Cloudflare fronting.
+      // Fall back to daylightHost if no internal URL is configured.
+      const dsBaseUrl = devicesConfig?.daylightHostInternal || devicesConfig?.daylightHost;
       if (!dsBaseUrl) {
         rootLogger.warn('brain.media.skill.skipped', {
           reason: 'no_daylight_host',
-          message: 'devices.yml.daylightHost is unset — MediaSkill not registered. ' +
-                   'Set it to the URL where this server is reachable from media players on the LAN.',
+          message: 'devices.yml.daylightHostInternal (or daylightHost) is unset — ' +
+                   'MediaSkill not registered. Set daylightHostInternal to the LAN-routable ' +
+                   'URL where this server is reachable from HA and Voice PE devices.',
         });
       } else {
         const mediaOverrides = configService.reloadHouseholdAppConfig?.(null, 'brain.media') ?? {};
@@ -2377,6 +2380,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
           logger: brainLogger.child({ skill: 'media' }),
           config: { ...mediaOverrides, ds_base_url: dsBaseUrl },
         }));
+        rootLogger.info('brain.media.skill.url', {
+          ds_base_url: dsBaseUrl,
+          source: devicesConfig?.daylightHostInternal ? 'daylightHostInternal' : 'daylightHost',
+        });
       }
     }
 
