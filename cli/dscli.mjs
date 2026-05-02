@@ -78,6 +78,10 @@ async function main() {
     process.exit(EXIT_FAIL);
   }
 
+  // Note: command.requiresBackend is metadata only in the foundation phase.
+  // Each command that needs the backend (currently only `system health`) checks
+  // reachability inside its own action and returns EXIT_BACKEND on failure.
+  // A future phase may add dispatcher-level pre-flight enforcement.
   // Build deps bag: real streams + bootstrap factories + global fetch.
   const deps = {
     stdout: process.stdout,

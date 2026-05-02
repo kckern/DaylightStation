@@ -51,7 +51,13 @@ async function actionState(args, deps) {
     return { exitCode: EXIT_CONFIG };
   }
 
-  const state = await gateway.getState(entityId);
+  let state;
+  try {
+    state = await gateway.getState(entityId);
+  } catch (err) {
+    printError(deps.stderr, { error: 'ha_error', message: err.message });
+    return { exitCode: EXIT_FAIL };
+  }
   if (!state) {
     printError(deps.stderr, { error: 'not_found', entity_id: entityId });
     return { exitCode: EXIT_FAIL };

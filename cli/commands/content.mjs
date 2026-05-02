@@ -14,7 +14,7 @@
  * passing it to the service.
  */
 
-import { printJson, printError, EXIT_OK, EXIT_USAGE, EXIT_CONFIG } from '../_output.mjs';
+import { printJson, printError, EXIT_OK, EXIT_FAIL, EXIT_USAGE, EXIT_CONFIG } from '../_output.mjs';
 
 const HELP = `
 dscli content — content search
@@ -51,7 +51,13 @@ async function actionSearch(args, deps) {
   }
 
   // ContentQueryService.search() takes a query object, not a plain string.
-  const result = await queryService.search({ text: queryText });
+  let result;
+  try {
+    result = await queryService.search({ text: queryText });
+  } catch (err) {
+    printError(deps.stderr, { error: 'content_error', message: err.message });
+    return { exitCode: EXIT_FAIL };
+  }
   const items = Array.isArray(result?.items) ? result.items : [];
   const take = parseInt(args.flags.take, 10);
   const results = Number.isFinite(take) && take > 0 ? items.slice(0, take) : items;

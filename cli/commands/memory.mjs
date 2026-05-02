@@ -41,7 +41,13 @@ async function actionGet(args, deps) {
     return { exitCode: EXIT_CONFIG };
   }
 
-  const value = await memory.get(key);
+  let value;
+  try {
+    value = await memory.get(key);
+  } catch (err) {
+    printError(deps.stderr, { error: 'memory_error', message: err.message });
+    return { exitCode: EXIT_FAIL };
+  }
   if (value === null || value === undefined) {
     printError(deps.stderr, { error: 'not_found', key });
     return { exitCode: EXIT_FAIL };
@@ -63,12 +69,17 @@ async function actionList(args, deps) {
   const wm = memory.__workingMemory;
   let values = {};
   if (wm && typeof wm.load === 'function') {
-    const state = await wm.load('concierge', 'household');
-    if (state && typeof state.getAll === 'function') {
-      const all = state.getAll();
-      if (all && typeof all === 'object' && !Array.isArray(all)) {
-        values = all;
+    try {
+      const state = await wm.load('concierge', 'household');
+      if (state && typeof state.getAll === 'function') {
+        const all = state.getAll();
+        if (all && typeof all === 'object' && !Array.isArray(all)) {
+          values = all;
+        }
       }
+    } catch (err) {
+      printError(deps.stderr, { error: 'memory_error', message: err.message });
+      return { exitCode: EXIT_FAIL };
     }
   }
   const keys = Object.keys(values);
