@@ -37,13 +37,13 @@ export function parseArgv(argv) {
       continue;
     }
 
-    // Treat tokens like "-50", "-50.00" as positional, not flags
+    // Treat numeric tokens (e.g. "-50", "732539", "-50.00") as positional, not flags
     const isNumericLooking = /^-?\d+(\.\d+)?$/.test(tok);
 
     if (!stopFlagParsing && tok.startsWith('--') && !isNumericLooking) {
       const key = tok.slice(2);
       const next = argv[i + 1];
-      if (next === undefined || next.startsWith('--') || next === '-h') {
+      if (next === undefined || next.startsWith('--')) {
         flags[key] = true;
       } else {
         flags[key] = next;
