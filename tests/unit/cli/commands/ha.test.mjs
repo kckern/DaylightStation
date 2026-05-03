@@ -126,4 +126,82 @@ describe('cli/commands/ha', () => {
       expect(stdout.read()).toMatch(/state/);
     });
   });
+
+  describe('list-devices action', () => {
+    function fakeGateway(states) {
+      return { async listAllStates() { return states; } };
+    }
+    const sample = [
+      { entityId: 'light.office_main', state: 'off', attributes: { friendly_name: 'Office Main', area_id: 'office' } },
+      { entityId: 'light.kitchen_main', state: 'on', attributes: { friendly_name: 'Kitchen Main', area_id: 'kitchen' } },
+      { entityId: 'switch.office_fan', state: 'off', attributes: { friendly_name: 'Office Fan', area_id: 'office' } },
+    ];
+
+    it('returns all devices when no filters', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await ha.run(
+        { subcommand: 'ha', positional: ['list-devices'], flags: {}, help: false },
+        { stdout, stderr, getHaGateway: async () => fakeGateway(sample) },
+      );
+      expect(r.exitCode).toBe(0);
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.devices).toHaveLength(3);
+      expect(out.count).toBe(3);
+    });
+
+    it('filters by --domain', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await ha.run(
+        { subcommand: 'ha', positional: ['list-devices'], flags: { domain: 'light' }, help: false },
+        { stdout, stderr, getHaGateway: async () => fakeGateway(sample) },
+      );
+      expect(r.exitCode).toBe(0);
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.devices).toHaveLength(2);
+      expect(out.devices.every(d => d.entity_id.startsWith('light.'))).toBe(true);
+    });
+
+    it('filters by --area', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await ha.run(
+        { subcommand: 'ha', positional: ['list-devices'], flags: { area: 'office' }, help: false },
+        { stdout, stderr, getHaGateway: async () => fakeGateway(sample) },
+      );
+      expect(r.exitCode).toBe(0);
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.devices).toHaveLength(2);
+    });
+
+    it('combines --domain and --area filters', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await ha.run(
+        { subcommand: 'ha', positional: ['list-devices'], flags: { domain: 'light', area: 'office' }, help: false },
+        { stdout, stderr, getHaGateway: async () => fakeGateway(sample) },
+      );
+      expect(r.exitCode).toBe(0);
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.devices).toHaveLength(1);
+      expect(out.devices[0].entity_id).toBe('light.office_main');
+    });
+
+    it('exits 3 when getHaGateway() throws', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await ha.run(
+        { subcommand: 'ha', positional: ['list-devices'], flags: {}, help: false },
+        { stdout, stderr, getHaGateway: async () => { throw new Error('not configured'); } },
+      );
+      expect(r.exitCode).toBe(3);
+    });
+
+    it('exits 1 when listAllStates() throws', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await ha.run(
+        { subcommand: 'ha', positional: ['list-devices'], flags: {}, help: false },
+        { stdout, stderr, getHaGateway: async () => ({ async listAllStates() { throw new Error('HA timeout'); } }) },
+      );
+      expect(r.exitCode).toBe(1);
+      const err = JSON.parse(stderr.read().trim());
+      expect(err.error).toBe('ha_error');
+    });
+  });
 });
