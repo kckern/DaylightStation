@@ -402,4 +402,79 @@ describe('cli/commands/ha', () => {
       expect(logged[0].action).toBe('toggle');
     });
   });
+
+  describe('call-service action', () => {
+    function fakeGateway() {
+      const calls = [];
+      return {
+        async callService(domain, service, data) {
+          calls.push({ domain, service, data });
+          return { ok: true, data };
+        },
+        _calls: calls,
+      };
+    }
+
+    it('exits 2 without --allow-write', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await ha.run(
+        { subcommand: 'ha', positional: ['call-service', 'light', 'turn_on', 'light.x'], flags: {}, help: false },
+        { stdout, stderr, getHaGateway: async () => fakeGateway() },
+      );
+      expect(r.exitCode).toBe(2);
+      const err = JSON.parse(stderr.read().trim());
+      expect(err.error).toBe('allow_write_required');
+    });
+
+    it('exits 2 when domain or service missing', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await ha.run(
+        { subcommand: 'ha', positional: ['call-service', 'light'], flags: { 'allow-write': true }, help: false },
+        { stdout, stderr, allowWrite: true, getHaGateway: async () => fakeGateway() },
+      );
+      expect(r.exitCode).toBe(2);
+    });
+
+    it('calls gateway.callService(domain, service, data) with merged entity_id', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const gw = fakeGateway();
+      const r = await ha.run(
+        { subcommand: 'ha', positional: ['call-service', 'light', 'turn_on', 'light.x'], flags: { 'allow-write': true }, help: false },
+        { stdout, stderr, allowWrite: true, getHaGateway: async () => gw, getWriteAuditor: async () => ({ log: async () => {} }) },
+      );
+      expect(r.exitCode).toBe(0);
+      expect(gw._calls).toEqual([{ domain: 'light', service: 'turn_on', data: { entity_id: 'light.x' } }]);
+    });
+
+    it('parses --data JSON and merges with entity_id', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const gw = fakeGateway();
+      const r = await ha.run(
+        {
+          subcommand: 'ha',
+          positional: ['call-service', 'light', 'turn_on', 'light.x'],
+          flags: { 'allow-write': true, data: '{"brightness":128}' },
+          help: false,
+        },
+        { stdout, stderr, allowWrite: true, getHaGateway: async () => gw, getWriteAuditor: async () => ({ log: async () => {} }) },
+      );
+      expect(r.exitCode).toBe(0);
+      expect(gw._calls[0].data).toEqual({ entity_id: 'light.x', brightness: 128 });
+    });
+
+    it('exits 2 when --data is not valid JSON', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await ha.run(
+        {
+          subcommand: 'ha',
+          positional: ['call-service', 'light', 'turn_on'],
+          flags: { 'allow-write': true, data: 'not-json' },
+          help: false,
+        },
+        { stdout, stderr, allowWrite: true, getHaGateway: async () => fakeGateway() },
+      );
+      expect(r.exitCode).toBe(2);
+      expect(stderr.read()).toMatch(/json/i);
+    });
+  });
 });
