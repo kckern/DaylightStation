@@ -92,4 +92,57 @@ describe('cli/commands/finance', () => {
       expect(stdout.read()).toMatch(/accounts/);
     });
   });
+
+  describe('balance action', () => {
+    const accounts = [
+      { id: 732539, name: 'Fidelity', balance: 12345.67 },
+      { id: 732537, name: 'Capital One', balance: -250.00 },
+      { id: 1489884, name: 'Payroll', balance: 0 },
+    ];
+
+    it('returns exact-name match', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await finance.run(
+        { subcommand: 'finance', positional: ['balance', 'Fidelity'], flags: {}, help: false },
+        { stdout, stderr, getBuxfer: async () => ({ async getAccounts() { return accounts; } }) },
+      );
+      expect(r.exitCode).toBe(0);
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.account.name).toBe('Fidelity');
+      expect(out.account.balance).toBe(12345.67);
+    });
+
+    it('returns case-insensitive substring match', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await finance.run(
+        { subcommand: 'finance', positional: ['balance', 'capital'], flags: {}, help: false },
+        { stdout, stderr, getBuxfer: async () => ({ async getAccounts() { return accounts; } }) },
+      );
+      expect(r.exitCode).toBe(0);
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.account.name).toBe('Capital One');
+    });
+
+    it('exits 1 not_found when no match', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await finance.run(
+        { subcommand: 'finance', positional: ['balance', 'nonexistent'], flags: {}, help: false },
+        { stdout, stderr, getBuxfer: async () => ({ async getAccounts() { return accounts; } }) },
+      );
+      expect(r.exitCode).toBe(1);
+      const err = JSON.parse(stderr.read().trim());
+      expect(err.error).toBe('not_found');
+      expect(err.name).toBe('nonexistent');
+    });
+
+    it('exits 2 when name arg missing', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await finance.run(
+        { subcommand: 'finance', positional: ['balance'], flags: {}, help: false },
+        { stdout, stderr, getBuxfer: async () => ({ async getAccounts() { return []; } }) },
+      );
+      expect(r.exitCode).toBe(2);
+      expect(stderr.read()).toMatch(/name/i);
+    });
+  });
 });

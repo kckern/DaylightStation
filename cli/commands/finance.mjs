@@ -18,6 +18,9 @@ Usage:
 Actions:
   accounts    List Buxfer accounts with balances.
               Returns: { accounts, count, total }
+  balance <name>
+              Single account by name (exact then substring match).
+              Returns: { account }
 `.trimStart();
 
 async function actionAccounts(args, deps) {
@@ -48,8 +51,48 @@ async function actionAccounts(args, deps) {
   return { exitCode: EXIT_OK };
 }
 
+async function actionBalance(args, deps) {
+  const name = args.positional.slice(1).join(' ').trim();
+  if (!name) {
+    deps.stderr.write('dscli finance balance: missing required <name>\n');
+    deps.stderr.write(HELP);
+    return { exitCode: EXIT_USAGE };
+  }
+
+  let buxfer;
+  try {
+    buxfer = await deps.getBuxfer();
+  } catch (err) {
+    printError(deps.stderr, { error: 'config_error', message: err.message });
+    return { exitCode: EXIT_CONFIG };
+  }
+
+  let accounts;
+  try {
+    accounts = await buxfer.getAccounts();
+  } catch (err) {
+    printError(deps.stderr, { error: 'buxfer_error', message: err.message });
+    return { exitCode: EXIT_FAIL };
+  }
+
+  const needle = name.toLowerCase();
+  let match = accounts.find((a) => a.name?.toLowerCase() === needle);
+  if (!match) {
+    match = accounts.find((a) => a.name?.toLowerCase().includes(needle));
+  }
+
+  if (!match) {
+    printError(deps.stderr, { error: 'not_found', name });
+    return { exitCode: EXIT_FAIL };
+  }
+
+  printJson(deps.stdout, { account: match });
+  return { exitCode: EXIT_OK };
+}
+
 const ACTIONS = {
   accounts: actionAccounts,
+  balance: actionBalance,
 };
 
 export default {
