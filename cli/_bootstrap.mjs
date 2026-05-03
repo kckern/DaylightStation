@@ -33,6 +33,8 @@ let _buxfer = null;
 let _buxferInitPromise = null;
 let _writeAuditor = null;
 let _writeAuditorInitPromise = null;
+let _conciergeConfig = null;
+let _conciergeConfigPromise = null;
 
 /**
  * Resolve the data directory the same way backend/index.js does:
@@ -258,6 +260,29 @@ export async function getWriteAuditor() {
 }
 
 /**
+ * Load the household concierge.yml app config (satellites, scopes, media policy).
+ * Re-reads from disk so changes to the YAML are picked up without restarting
+ * the CLI process.
+ */
+export async function getConciergeConfig() {
+  if (_conciergeConfig) return _conciergeConfig;
+  if (_conciergeConfigPromise) return _conciergeConfigPromise;
+
+  _conciergeConfigPromise = (async () => {
+    const cfg = await getConfigService();
+    const value = cfg.reloadHouseholdAppConfig?.(null, 'concierge')
+                  ?? cfg.getHouseholdAppConfig?.(null, 'concierge');
+    if (!value) {
+      throw new Error('Concierge config not found (data/household/config/concierge.yml).');
+    }
+    _conciergeConfig = value;
+    return _conciergeConfig;
+  })();
+
+  return _conciergeConfigPromise;
+}
+
+/**
  * Reset all memoized state. For tests only.
  */
 export function _resetForTests() {
@@ -274,5 +299,7 @@ export function _resetForTests() {
   _buxferInitPromise = null;
   _writeAuditor = null;
   _writeAuditorInitPromise = null;
+  _conciergeConfig = null;
+  _conciergeConfigPromise = null;
   resetConfigService();
 }
