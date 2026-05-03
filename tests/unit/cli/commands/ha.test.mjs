@@ -96,6 +96,7 @@ describe('cli/commands/ha', () => {
         async getState() { return null; },
         async getStates() { return new Map(); },
         async getHistory() { return new Map(); },
+        async listAllStates() { return []; },
         async callService() { return { ok: true }; },
         async activateScene() { return { ok: true }; },
       };
@@ -159,6 +160,26 @@ describe('cli/commands/ha', () => {
       const out = JSON.parse(stdout.read().trim());
       expect(out.areas).toEqual([]);
       expect(out.count).toBe(0);
+    });
+
+    it('exits 3 when getHaGateway() throws', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await ha.run(
+        { subcommand: 'ha', positional: ['list-areas'], flags: {}, help: false },
+        { stdout, stderr, getHaGateway: async () => { throw new Error('not configured'); } },
+      );
+      expect(r.exitCode).toBe(3);
+    });
+
+    it('exits 1 when listAllStates() throws', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await ha.run(
+        { subcommand: 'ha', positional: ['list-areas'], flags: {}, help: false },
+        { stdout, stderr, getHaGateway: async () => ({ async listAllStates() { throw new Error('HA timeout'); } }) },
+      );
+      expect(r.exitCode).toBe(1);
+      const err = JSON.parse(stderr.read().trim());
+      expect(err.error).toBe('ha_error');
     });
   });
 

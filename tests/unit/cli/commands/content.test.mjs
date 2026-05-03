@@ -186,5 +186,17 @@ describe('cli/commands/content', () => {
       );
       expect(r.exitCode).toBe(3);
     });
+
+    it('exits 1 when registry is missing or malformed', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const fakeQuery = { __registry: null };
+      const r = await content.run(
+        { subcommand: 'content', positional: ['list-libraries'], flags: {}, help: false },
+        { stdout, stderr, getContentQuery: async () => fakeQuery },
+      );
+      expect(r.exitCode).toBe(1);
+      const err = JSON.parse(stderr.read().trim());
+      expect(err.error).toBe('content_error');
+    });
   });
 });

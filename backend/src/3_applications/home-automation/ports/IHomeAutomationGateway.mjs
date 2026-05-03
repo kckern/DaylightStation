@@ -38,7 +38,8 @@ export function isHomeAutomationGateway(obj) {
     typeof obj.callService === 'function' &&
     typeof obj.activateScene === 'function' &&
     typeof obj.getStates === 'function' &&
-    typeof obj.getHistory === 'function'
+    typeof obj.getHistory === 'function' &&
+    typeof obj.listAllStates === 'function'
   );
 }
 
@@ -67,6 +68,10 @@ export function assertHomeAutomationGateway(obj) {
  *   Returns a Map keyed by entityId. Entities not found are omitted from the map.
  *   Implementations should prefer a single upstream request (e.g. /api/states on
  *   Home Assistant) over N parallel getState() calls.
+ *
+ * listAllStates(): Promise<DeviceState[]>
+ *   Read all current entity states. Used by the concierge's friendly-name
+ *   resolver to enumerate the full device surface for fuzzy matching.
  *
  * getHistory(entityIds: string[], options: HistoryOptions): Promise<Map<string, HistoryPoint[]>>
  *   Fetch historical state values for a batch of entities since a given ISO timestamp.
@@ -144,6 +149,9 @@ export function createNoOpGateway() {
     },
     async getHistory(_entityIds, _options) {
       return new Map();
+    },
+    async listAllStates() {
+      return [];
     },
     async callService(_domain, _service, _data) {
       return { ok: false, error: 'No home automation provider configured' };
