@@ -280,12 +280,64 @@ async function actionToggle(args, deps) {
   return { exitCode: EXIT_OK };
 }
 
+async function actionCallService(args, deps) {
+  const domain = args.positional[1];
+  const service = args.positional[2];
+  const entityId = args.positional[3] || null;
+  const dataJson = args.flags.data;
+
+  if (!domain || !service) {
+    deps.stderr.write('dscli ha call-service: usage: dscli ha call-service <domain> <service> [entity_id] [--data JSON] --allow-write\n');
+    return { exitCode: EXIT_USAGE };
+  }
+  if (!deps.allowWrite) {
+    printError(deps.stderr, { error: 'allow_write_required', command: 'ha call-service', message: 'Write commands require --allow-write.' });
+    return { exitCode: EXIT_USAGE };
+  }
+
+  let serviceData = {};
+  if (dataJson) {
+    try {
+      serviceData = JSON.parse(dataJson);
+    } catch (err) {
+      deps.stderr.write(`dscli ha call-service: --data is not valid JSON: ${err.message}\n`);
+      return { exitCode: EXIT_USAGE };
+    }
+  }
+  if (entityId) serviceData.entity_id = entityId;
+
+  let gateway;
+  try {
+    gateway = await deps.getHaGateway();
+  } catch (err) {
+    printError(deps.stderr, { error: 'config_error', message: err.message });
+    return { exitCode: EXIT_CONFIG };
+  }
+
+  let result;
+  try {
+    result = await gateway.callService(domain, service, serviceData);
+  } catch (err) {
+    printError(deps.stderr, { error: 'ha_error', message: err.message });
+    return { exitCode: EXIT_FAIL };
+  }
+
+  try {
+    const audit = await deps.getWriteAuditor();
+    await audit.log({ command: 'ha', action: 'call-service', args: { domain, service, data: serviceData }, result });
+  } catch { /* */ }
+
+  printJson(deps.stdout, { ok: result?.ok ?? true, domain, service, data: serviceData, result });
+  return { exitCode: EXIT_OK };
+}
+
 const ACTIONS = {
   state: actionState,
   'list-devices': actionListDevices,
   'list-areas': actionListAreas,
   resolve: actionResolve,
   toggle: actionToggle,
+  'call-service': actionCallService,
 };
 
 export default {
