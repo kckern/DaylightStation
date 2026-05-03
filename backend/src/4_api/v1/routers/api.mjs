@@ -12,6 +12,9 @@
  */
 
 import express from 'express';
+import path from 'node:path';
+import fs from 'node:fs';
+import { configService } from '#system/config/index.mjs';
 
 /**
  * Create the v1 API router with all domain sub-routers
@@ -134,6 +137,54 @@ export function createApiRouter(config) {
     routes: mounted,
     config: safeConfig
   }));
+
+  // System reload — re-read household app YAML configs from disk without
+  // restarting the process. Useful when an admin edits a config file.
+  // Optional ?app=<name> reloads just that app; otherwise iterates the
+  // household config dir and reloads every .yml file found.
+  router.post('/system/reload', (req, res) => {
+    const requestedApp = req.query?.app || req.body?.app || null;
+    const reloaded = [];
+    const failed = [];
+
+    const tryReload = (app) => {
+      try {
+        const cfg = configService.reloadHouseholdAppConfig(null, app);
+        if (cfg !== null && cfg !== undefined) reloaded.push(app);
+        else failed.push({ app, reason: 'not_found' });
+      } catch (err) {
+        failed.push({ app, reason: err.message });
+      }
+    };
+
+    if (requestedApp) {
+      tryReload(requestedApp);
+    } else {
+      let configDir;
+      try {
+        configDir = path.join(configService.getHouseholdPath('config', null));
+      } catch (err) {
+        return res.status(500).json({ ok: false, error: 'cannot_resolve_config_dir', message: err.message });
+      }
+      let files = [];
+      try {
+        files = fs.readdirSync(configDir)
+          .filter((f) => f.endsWith('.yml') && !f.includes('.bak'))
+          .map((f) => f.slice(0, -4));
+      } catch (err) {
+        return res.status(500).json({ ok: false, error: 'cannot_list_config_dir', message: err.message });
+      }
+      for (const app of files) tryReload(app);
+    }
+
+    logger.info?.('system.reload', { reloaded: reloaded.length, failed: failed.length, requestedApp });
+    res.json({
+      ok: true,
+      reloaded,
+      count: reloaded.length,
+      ...(failed.length ? { failed } : {}),
+    });
+  });
 
   logger.info?.('api.mounted', { routeCount: mounted.length, routes: mounted });
 
