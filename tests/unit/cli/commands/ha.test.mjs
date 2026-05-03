@@ -127,6 +127,41 @@ describe('cli/commands/ha', () => {
     });
   });
 
+  describe('list-areas action', () => {
+    it('returns unique areas with device counts', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const states = [
+        { entityId: 'light.office_main', state: 'off', attributes: { area_id: 'office' } },
+        { entityId: 'switch.office_fan', state: 'off', attributes: { area_id: 'office' } },
+        { entityId: 'light.kitchen_main', state: 'on', attributes: { area_id: 'kitchen' } },
+        { entityId: 'sensor.no_area', state: 'on', attributes: {} },
+      ];
+      const r = await ha.run(
+        { subcommand: 'ha', positional: ['list-areas'], flags: {}, help: false },
+        { stdout, stderr, getHaGateway: async () => ({ async listAllStates() { return states; } }) },
+      );
+      expect(r.exitCode).toBe(0);
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.areas).toEqual(expect.arrayContaining([
+        { area_id: 'office', device_count: 2 },
+        { area_id: 'kitchen', device_count: 1 },
+      ]));
+      expect(out.count).toBe(2); // entities without area_id are excluded
+    });
+
+    it('returns empty list when no entities have areas', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await ha.run(
+        { subcommand: 'ha', positional: ['list-areas'], flags: {}, help: false },
+        { stdout, stderr, getHaGateway: async () => ({ async listAllStates() { return []; } }) },
+      );
+      expect(r.exitCode).toBe(0);
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.areas).toEqual([]);
+      expect(out.count).toBe(0);
+    });
+  });
+
   describe('list-devices action', () => {
     function fakeGateway(states) {
       return { async listAllStates() { return states; } };

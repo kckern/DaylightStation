@@ -23,6 +23,8 @@ Actions:
   list-devices [--domain X] [--area Y]
                        List entities, optionally filtered.
                        Returns: { devices, count }
+  list-areas           List unique areas with device counts.
+                       Returns: { areas, count }
 
 Examples:
   dscli ha state light.office_main
@@ -118,9 +120,41 @@ async function actionListDevices(args, deps) {
   return { exitCode: EXIT_OK };
 }
 
+async function actionListAreas(args, deps) {
+  let gateway;
+  try {
+    gateway = await deps.getHaGateway();
+  } catch (err) {
+    printError(deps.stderr, { error: 'config_error', message: err.message });
+    return { exitCode: EXIT_CONFIG };
+  }
+
+  let states;
+  try {
+    states = await gateway.listAllStates();
+  } catch (err) {
+    printError(deps.stderr, { error: 'ha_error', message: err.message });
+    return { exitCode: EXIT_FAIL };
+  }
+
+  const counts = new Map();
+  for (const s of states) {
+    const areaId = s.attributes?.area_id ?? s.attributes?.area;
+    if (!areaId) continue;
+    counts.set(areaId, (counts.get(areaId) ?? 0) + 1);
+  }
+  const areas = Array.from(counts.entries())
+    .map(([area_id, device_count]) => ({ area_id, device_count }))
+    .sort((a, b) => a.area_id.localeCompare(b.area_id));
+
+  printJson(deps.stdout, { areas, count: areas.length });
+  return { exitCode: EXIT_OK };
+}
+
 const ACTIONS = {
   state: actionState,
   'list-devices': actionListDevices,
+  'list-areas': actionListAreas,
 };
 
 export default {
