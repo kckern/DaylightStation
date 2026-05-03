@@ -105,6 +105,7 @@ async function main() {
     getBuxfer: bootstrap.getBuxfer,
     getWriteAuditor: bootstrap.getWriteAuditor,
     getConciergeConfig: bootstrap.getConciergeConfig,
+    getTranscriptDir: bootstrap.getTranscriptDir,
   };
 
   try {
