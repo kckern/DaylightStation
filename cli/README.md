@@ -34,6 +34,13 @@ dscli memory list
 dscli finance accounts
 dscli finance balance Fidelity
 dscli finance transactions --from 2026-04-01 --to 2026-04-30 --tag Groceries
+dscli finance accounts --direct  # bypass app server, hit Buxfer directly
+
+# Concierge agent inspection (read-only)
+dscli concierge satellites
+dscli concierge transcripts --days 3
+dscli concierge transcripts --satellite office
+dscli concierge transcript <id>
 
 # Write commands (require --allow-write per invocation)
 dscli ha toggle "office main" on --allow-write
@@ -43,6 +50,7 @@ dscli memory delete notes --allow-write
 dscli finance refresh --allow-write
 dscli system reload --allow-write
 dscli system reload --app concierge --allow-write
+dscli content play plex:642120 --to livingroom-tv --shader dark --allow-write
 ```
 
 All commands return JSON to stdout on success (exit 0) and a JSON error envelope to stderr on failure (exit 1+). Pipe to `jq` for reshaping.
@@ -83,6 +91,42 @@ The CLI satellite identity (`id: cli`) lives in `data/household/config/concierge
 |---|---|
 | `DAYLIGHT_BASE_PATH` | Path containing `data/` and `media/` (required for service-backed commands) |
 | `DSCLI_BACKEND_URL` | Override backend base URL for `system health` etc. (default `http://localhost:3111`) |
+| `BUXFER_EMAIL` / `BUXFER_PASSWORD` | Used by `dscli finance --direct` when set (no docker exec needed) |
+
+## Installation
+
+### Inside the project (dev/local)
+
+```bash
+node cli/dscli.mjs <subcommand> ...
+# OR after npm install:
+npx dscli <subcommand> ...
+```
+
+### Host-wide (prod host with Docker)
+
+If `dscli` should be callable from anywhere on the host (and the data volume isn't readable as the current user — typical on the prod host), install the wrapper that exec's into the container:
+
+```bash
+sudo sh cli/scripts/install-host-wrapper.sh
+dscli --help
+```
+
+The wrapper is a one-line `exec sudo docker exec -i daylight-station node /usr/src/app/cli/dscli.mjs "$@"`. It assumes `docker exec daylight-station` is sudo-allowed (see `/etc/sudoers.d/claude` on prod hosts).
+
+## Concierge transcripts
+
+The concierge agent writes one JSON transcript per request to `{mediaDir}/logs/concierge/YYYY-MM-DD/{satellite}/{ts}-{reqid}.json`. Inspect them with:
+
+```bash
+# List recent transcripts (default last 7 days)
+dscli concierge transcripts --days 3 --satellite office | jq '.transcripts[].id'
+
+# Dump one (recursive scan finds the most recent matching id)
+dscli concierge transcript <id> | jq .
+```
+
+The full `concierge ask` (streaming agent invocation from the shell) is intentionally deferred — it requires `DAYLIGHT_BRAIN_TOKEN_<ID>` env vars to be provisioned for each satellite identity. Once those are in place, the streaming command can be added with the same Bearer-auth path the voice satellites use.
 
 ## Adding a new command
 
