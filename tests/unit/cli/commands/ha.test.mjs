@@ -239,4 +239,57 @@ describe('cli/commands/ha', () => {
       expect(err.error).toBe('ha_error');
     });
   });
+
+  describe('resolve action', () => {
+    const sample = [
+      { entityId: 'light.office_main', state: 'off', attributes: { friendly_name: 'Office Main' } },
+      { entityId: 'light.living_room_main', state: 'off', attributes: { friendly_name: 'Living Room Main' } },
+      { entityId: 'switch.kitchen_fan', state: 'off', attributes: { friendly_name: 'Kitchen Fan' } },
+    ];
+
+    it('returns exact friendly_name match', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await ha.run(
+        { subcommand: 'ha', positional: ['resolve', 'Office Main'], flags: {}, help: false },
+        { stdout, stderr, getHaGateway: async () => ({ async listAllStates() { return sample; } }) },
+      );
+      expect(r.exitCode).toBe(0);
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.entity_id).toBe('light.office_main');
+      expect(out.friendly_name).toBe('Office Main');
+    });
+
+    it('returns case-insensitive substring match', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await ha.run(
+        { subcommand: 'ha', positional: ['resolve', 'living', 'room'], flags: {}, help: false },
+        { stdout, stderr, getHaGateway: async () => ({ async listAllStates() { return sample; } }) },
+      );
+      expect(r.exitCode).toBe(0);
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.entity_id).toBe('light.living_room_main');
+    });
+
+    it('exits 1 not_found when no match', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await ha.run(
+        { subcommand: 'ha', positional: ['resolve', 'garage'], flags: {}, help: false },
+        { stdout, stderr, getHaGateway: async () => ({ async listAllStates() { return sample; } }) },
+      );
+      expect(r.exitCode).toBe(1);
+      const err = JSON.parse(stderr.read().trim());
+      expect(err.error).toBe('not_found');
+      expect(err.query).toBe('garage');
+    });
+
+    it('exits 2 when query missing', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await ha.run(
+        { subcommand: 'ha', positional: ['resolve'], flags: {}, help: false },
+        { stdout, stderr, getHaGateway: async () => ({ async listAllStates() { return []; } }) },
+      );
+      expect(r.exitCode).toBe(2);
+      expect(stderr.read()).toMatch(/query/i);
+    });
+  });
 });
