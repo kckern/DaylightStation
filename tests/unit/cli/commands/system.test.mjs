@@ -190,4 +190,60 @@ describe('cli/commands/system', () => {
       expect(stderr.read()).toMatch(/namespace/i);
     });
   });
+
+  describe('reload action', () => {
+    it('exits 2 without --allow-write', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await system.run(
+        { subcommand: 'system', positional: ['reload'], flags: {}, help: false },
+        { stdout, stderr, allowWrite: false },
+      );
+      expect(r.exitCode).toBe(2);
+      const err = JSON.parse(stderr.read().trim());
+      expect(err.error).toBe('allow_write_required');
+    });
+
+    it('POSTs to /api/v1/system/reload and emits backend response', async () => {
+      const { stdout, stderr } = makeBuffers();
+      let captured;
+      const fakeFetch = async (url, opts) => {
+        captured = { url, method: opts?.method };
+        return { ok: true, status: 200, async json() { return { ok: true, reloaded: ['concierge', 'fitness'], count: 2 }; } };
+      };
+      const r = await system.run(
+        { subcommand: 'system', positional: ['reload'], flags: { 'allow-write': true }, help: false },
+        { stdout, stderr, fetch: fakeFetch, allowWrite: true, getWriteAuditor: async () => ({ log: async () => {} }) },
+      );
+      expect(r.exitCode).toBe(0);
+      expect(captured.url).toMatch(/\/api\/v1\/system\/reload/);
+      expect(captured.method).toBe('POST');
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.reloaded).toEqual(['concierge', 'fitness']);
+      expect(out.count).toBe(2);
+    });
+
+    it('passes --app as query string', async () => {
+      const { stdout, stderr } = makeBuffers();
+      let captured;
+      const fakeFetch = async (url) => {
+        captured = url;
+        return { ok: true, status: 200, async json() { return { ok: true, reloaded: ['concierge'], count: 1 }; } };
+      };
+      await system.run(
+        { subcommand: 'system', positional: ['reload'], flags: { 'allow-write': true, app: 'concierge' }, help: false },
+        { stdout, stderr, fetch: fakeFetch, allowWrite: true, getWriteAuditor: async () => ({ log: async () => {} }) },
+      );
+      expect(captured).toMatch(/[?&]app=concierge/);
+    });
+
+    it('exits 4 when backend unreachable', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const fakeFetch = async () => { throw new Error('ECONNREFUSED'); };
+      const r = await system.run(
+        { subcommand: 'system', positional: ['reload'], flags: { 'allow-write': true }, help: false },
+        { stdout, stderr, fetch: fakeFetch, allowWrite: true, getWriteAuditor: async () => ({ log: async () => {} }) },
+      );
+      expect(r.exitCode).toBe(4);
+    });
+  });
 });
