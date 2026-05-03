@@ -98,4 +98,59 @@ describe('cli/commands/content', () => {
       expect(stdout.read()).toMatch(/search/);
     });
   });
+
+  describe('resolve action', () => {
+    it('parses source:id and calls resolve()', async () => {
+      const { stdout, stderr } = makeBuffers();
+      let captured;
+      const fakeQuery = {
+        async resolve(source, localId) {
+          captured = { source, localId };
+          return { source, localId, title: 'Workout Mix', type: 'playlist', metadata: { runtime: 1800 } };
+        },
+      };
+      const r = await content.run(
+        { subcommand: 'content', positional: ['resolve', 'plex:642120'], flags: {}, help: false },
+        { stdout, stderr, getContentQuery: async () => fakeQuery },
+      );
+      expect(r.exitCode).toBe(0);
+      expect(captured).toEqual({ source: 'plex', localId: '642120' });
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.title).toBe('Workout Mix');
+      expect(out.source).toBe('plex');
+    });
+
+    it('exits 2 when key is missing', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await content.run(
+        { subcommand: 'content', positional: ['resolve'], flags: {}, help: false },
+        { stdout, stderr, getContentQuery: async () => ({ async resolve() { return null; } }) },
+      );
+      expect(r.exitCode).toBe(2);
+      expect(stderr.read()).toMatch(/source:id/i);
+    });
+
+    it('exits 2 when key is malformed (no colon)', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await content.run(
+        { subcommand: 'content', positional: ['resolve', 'just-an-id'], flags: {}, help: false },
+        { stdout, stderr, getContentQuery: async () => ({ async resolve() { return null; } }) },
+      );
+      expect(r.exitCode).toBe(2);
+      expect(stderr.read()).toMatch(/source:id/i);
+    });
+
+    it('exits 1 not_found when resolve returns null', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await content.run(
+        { subcommand: 'content', positional: ['resolve', 'plex:nope'], flags: {}, help: false },
+        { stdout, stderr, getContentQuery: async () => ({ async resolve() { return null; } }) },
+      );
+      expect(r.exitCode).toBe(1);
+      const err = JSON.parse(stderr.read().trim());
+      expect(err.error).toBe('not_found');
+      expect(err.source).toBe('plex');
+      expect(err.localId).toBe('nope');
+    });
+  });
 });
