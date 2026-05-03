@@ -313,4 +313,93 @@ describe('cli/commands/ha', () => {
       expect(stderr.read()).toMatch(/query/i);
     });
   });
+
+  describe('toggle action', () => {
+    function fakeGateway(states) {
+      const calls = [];
+      return {
+        async listAllStates() { return states; },
+        async callService(domain, service, data) {
+          calls.push({ domain, service, data });
+          return { ok: true };
+        },
+        _calls: calls,
+      };
+    }
+    const sample = [
+      { entityId: 'light.office_main', state: 'off', attributes: { friendly_name: 'Office Main' } },
+    ];
+
+    it('exits 2 when --allow-write is missing', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await ha.run(
+        { subcommand: 'ha', positional: ['toggle', 'light.office_main', 'on'], flags: {}, help: false },
+        { stdout, stderr, getHaGateway: async () => fakeGateway(sample), allowWrite: false },
+      );
+      expect(r.exitCode).toBe(2);
+      const err = JSON.parse(stderr.read().trim());
+      expect(err.error).toBe('allow_write_required');
+    });
+
+    it('toggles by entity_id when --allow-write is set', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const gw = fakeGateway(sample);
+      const r = await ha.run(
+        { subcommand: 'ha', positional: ['toggle', 'light.office_main', 'on'], flags: { 'allow-write': true }, help: false },
+        { stdout, stderr, getHaGateway: async () => gw, allowWrite: true, getWriteAuditor: async () => ({ log: async () => {} }) },
+      );
+      expect(r.exitCode).toBe(0);
+      expect(gw._calls).toEqual([{ domain: 'light', service: 'turn_on', data: { entity_id: 'light.office_main' } }]);
+    });
+
+    it('toggles by friendly name (resolves via listAllStates)', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const gw = fakeGateway(sample);
+      const r = await ha.run(
+        { subcommand: 'ha', positional: ['toggle', 'Office', 'Main', 'off'], flags: { 'allow-write': true }, help: false },
+        { stdout, stderr, getHaGateway: async () => gw, allowWrite: true, getWriteAuditor: async () => ({ log: async () => {} }) },
+      );
+      expect(r.exitCode).toBe(0);
+      expect(gw._calls[0]).toEqual({ domain: 'light', service: 'turn_off', data: { entity_id: 'light.office_main' } });
+    });
+
+    it('exits 1 not_found if friendly name does not resolve', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await ha.run(
+        { subcommand: 'ha', positional: ['toggle', 'garage', 'on'], flags: { 'allow-write': true }, help: false },
+        { stdout, stderr, getHaGateway: async () => fakeGateway(sample), allowWrite: true, getWriteAuditor: async () => ({ log: async () => {} }) },
+      );
+      expect(r.exitCode).toBe(1);
+      const err = JSON.parse(stderr.read().trim());
+      expect(err.error).toBe('not_found');
+    });
+
+    it('exits 2 if state arg is not on/off', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await ha.run(
+        { subcommand: 'ha', positional: ['toggle', 'light.office_main', 'maybe'], flags: { 'allow-write': true }, help: false },
+        { stdout, stderr, getHaGateway: async () => fakeGateway(sample), allowWrite: true, getWriteAuditor: async () => ({ log: async () => {} }) },
+      );
+      expect(r.exitCode).toBe(2);
+      expect(stderr.read()).toMatch(/on.*off/i);
+    });
+
+    it('calls audit.log on success', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const logged = [];
+      const r = await ha.run(
+        { subcommand: 'ha', positional: ['toggle', 'light.office_main', 'on'], flags: { 'allow-write': true }, help: false },
+        {
+          stdout, stderr,
+          getHaGateway: async () => fakeGateway(sample),
+          allowWrite: true,
+          getWriteAuditor: async () => ({ log: async (entry) => logged.push(entry) }),
+        },
+      );
+      expect(r.exitCode).toBe(0);
+      expect(logged).toHaveLength(1);
+      expect(logged[0].command).toBe('ha');
+      expect(logged[0].action).toBe('toggle');
+    });
+  });
 });
