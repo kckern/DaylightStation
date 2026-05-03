@@ -18,7 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const COMMANDS_DIR = path.join(__dirname, 'commands');
 
 // Subcommands wired up so far. Add to this list as new command modules land.
-const KNOWN_SUBCOMMANDS = ['system', 'ha', 'content', 'memory', 'finance'];
+const KNOWN_SUBCOMMANDS = ['system', 'ha', 'content', 'memory', 'finance', 'concierge'];
 
 function printTopLevelHelp(stdout) {
   stdout.write([
@@ -32,9 +32,10 @@ function printTopLevelHelp(stdout) {
     'Subcommands:',
     '  system    Health, config, reload',
     '  ha        Home Assistant entity state and control',
-    '  content   Search and resolve media content',
-    '  memory    Read concierge memory state',
+    '  content   Search, resolve, and play media content',
+    '  memory    Read and write concierge memory state',
     '  finance   Buxfer accounts and transactions',
+    '  concierge List satellites and read transcript files',
     '',
     'Output:',
     '  JSON to stdout on success (exit 0).',
@@ -103,6 +104,7 @@ async function main() {
     getMemory: bootstrap.getMemory,
     getBuxfer: bootstrap.getBuxfer,
     getWriteAuditor: bootstrap.getWriteAuditor,
+    getConciergeConfig: bootstrap.getConciergeConfig,
   };
 
   try {
