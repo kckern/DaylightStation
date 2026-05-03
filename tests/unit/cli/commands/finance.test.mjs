@@ -145,4 +145,63 @@ describe('cli/commands/finance', () => {
       expect(stderr.read()).toMatch(/name/i);
     });
   });
+
+  describe('transactions action', () => {
+    const txns = [
+      { id: 1, date: '2026-04-01', amount: -50, description: 'Safeway', tagNames: ['Groceries'] },
+      { id: 2, date: '2026-04-15', amount: -200, description: 'Costco', tagNames: ['Groceries'] },
+    ];
+
+    it('passes date range and filters to adapter and returns array', async () => {
+      const { stdout, stderr } = makeBuffers();
+      let captured;
+      const fakeBuxfer = {
+        async getTransactions(opts) {
+          captured = opts;
+          return txns;
+        },
+      };
+      const r = await finance.run(
+        {
+          subcommand: 'finance',
+          positional: ['transactions'],
+          flags: { from: '2026-04-01', to: '2026-04-30', account: 'Fidelity', tag: 'Groceries' },
+          help: false,
+        },
+        { stdout, stderr, getBuxfer: async () => fakeBuxfer },
+      );
+      expect(r.exitCode).toBe(0);
+      expect(captured).toEqual({
+        startDate: '2026-04-01',
+        endDate: '2026-04-30',
+        accounts: 'Fidelity',
+        tagName: 'Groceries',
+      });
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.transactions).toHaveLength(2);
+      expect(out.count).toBe(2);
+    });
+
+    it('works without filters (all defaults to adapter)', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await finance.run(
+        { subcommand: 'finance', positional: ['transactions'], flags: {}, help: false },
+        { stdout, stderr, getBuxfer: async () => ({ async getTransactions() { return []; } }) },
+      );
+      expect(r.exitCode).toBe(0);
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.transactions).toEqual([]);
+    });
+
+    it('exits 1 when adapter throws', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await finance.run(
+        { subcommand: 'finance', positional: ['transactions'], flags: { from: '2026-04-01' }, help: false },
+        { stdout, stderr, getBuxfer: async () => ({ async getTransactions() { throw new Error('rate-limited'); } }) },
+      );
+      expect(r.exitCode).toBe(1);
+      const err = JSON.parse(stderr.read().trim());
+      expect(err.error).toBe('buxfer_error');
+    });
+  });
 });

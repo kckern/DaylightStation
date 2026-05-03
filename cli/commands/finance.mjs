@@ -21,6 +21,9 @@ Actions:
   balance <name>
               Single account by name (exact then substring match).
               Returns: { account }
+  transactions [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--account NAME] [--tag NAME]
+              List transactions, optionally filtered.
+              Returns: { transactions, count }
 `.trimStart();
 
 async function actionAccounts(args, deps) {
@@ -90,9 +93,38 @@ async function actionBalance(args, deps) {
   return { exitCode: EXIT_OK };
 }
 
+async function actionTransactions(args, deps) {
+  let buxfer;
+  try {
+    buxfer = await deps.getBuxfer();
+  } catch (err) {
+    printError(deps.stderr, { error: 'config_error', message: err.message });
+    return { exitCode: EXIT_CONFIG };
+  }
+
+  const opts = {};
+  if (args.flags.from) opts.startDate = args.flags.from;
+  if (args.flags.to) opts.endDate = args.flags.to;
+  if (args.flags.account) opts.accounts = args.flags.account;
+  if (args.flags.tag) opts.tagName = args.flags.tag;
+
+  let transactions;
+  try {
+    transactions = await buxfer.getTransactions(opts);
+  } catch (err) {
+    printError(deps.stderr, { error: 'buxfer_error', message: err.message });
+    return { exitCode: EXIT_FAIL };
+  }
+
+  transactions = Array.isArray(transactions) ? transactions : [];
+  printJson(deps.stdout, { transactions, count: transactions.length });
+  return { exitCode: EXIT_OK };
+}
+
 const ACTIONS = {
   accounts: actionAccounts,
   balance: actionBalance,
+  transactions: actionTransactions,
 };
 
 export default {
