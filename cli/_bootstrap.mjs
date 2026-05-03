@@ -169,6 +169,7 @@ export async function getContentQuery() {
 
     const { registry } = result;
     _contentQuery = new ContentQueryService({ registry });
+    _contentQuery.__registry = registry;
     return _contentQuery;
   })();
 

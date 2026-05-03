@@ -29,6 +29,9 @@ Actions:
   resolve <source>:<id>
               Look up one content item by source key.
               Returns: full metadata object
+  list-libraries
+              List configured content categories.
+              Returns: { categories, count }
 
 Examples:
   dscli content search "workout playlist"
@@ -110,9 +113,30 @@ async function actionResolve(args, deps) {
   return { exitCode: EXIT_OK };
 }
 
+async function actionListLibraries(args, deps) {
+  let queryService;
+  try {
+    queryService = await deps.getContentQuery();
+  } catch (err) {
+    printError(deps.stderr, { error: 'config_error', message: err.message });
+    return { exitCode: EXIT_CONFIG };
+  }
+
+  const registry = queryService.__registry;
+  if (!registry || typeof registry.getCategories !== 'function') {
+    printError(deps.stderr, { error: 'content_error', message: 'registry not available' });
+    return { exitCode: EXIT_FAIL };
+  }
+
+  const categories = registry.getCategories();
+  printJson(deps.stdout, { categories, count: categories.length });
+  return { exitCode: EXIT_OK };
+}
+
 const ACTIONS = {
   search: actionSearch,
   resolve: actionResolve,
+  'list-libraries': actionListLibraries,
 };
 
 export default {
