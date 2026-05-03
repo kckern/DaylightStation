@@ -22,6 +22,10 @@ Actions:
   config <namespace>     Dump a config namespace as JSON.
                          Namespaces: system | devices | integrations | <appName>
                          Returns: { namespace, config }
+  reload [--app NAME] --allow-write
+                         Re-read household app YAML configs from disk on the
+                         running backend. POST /api/v1/system/reload.
+                         Returns: { ok, reloaded, count, failed? }
 
 Environment:
   DSCLI_BACKEND_URL    Base URL of the running backend (default: http://localhost:3111)
@@ -113,9 +117,45 @@ async function actionConfig(args, deps) {
   return { exitCode: EXIT_OK };
 }
 
+async function actionReload(args, deps) {
+  if (!deps.allowWrite) {
+    printError(deps.stderr, { error: 'allow_write_required', command: 'system reload', message: 'Write commands require --allow-write.' });
+    return { exitCode: EXIT_USAGE };
+  }
+
+  const url = new URL(`${backendUrl()}/api/v1/system/reload`);
+  if (args.flags.app) url.searchParams.set('app', args.flags.app);
+  const fetchFn = deps.fetch || globalThis.fetch;
+
+  let response;
+  try {
+    response = await fetchFn(url.toString(), { method: 'POST' });
+  } catch (err) {
+    printError(deps.stderr, { error: 'backend_unreachable', url: url.toString(), message: err.message });
+    return { exitCode: EXIT_BACKEND };
+  }
+
+  if (!response.ok) {
+    printError(deps.stderr, { error: 'backend_unhealthy', url: url.toString(), status: response.status });
+    return { exitCode: EXIT_BACKEND };
+  }
+
+  let body = {};
+  try { body = await response.json(); } catch {}
+
+  try {
+    const audit = await deps.getWriteAuditor();
+    await audit.log({ command: 'system', action: 'reload', args: { app: args.flags.app ?? null }, result: body });
+  } catch {}
+
+  printJson(deps.stdout, body);
+  return { exitCode: EXIT_OK };
+}
+
 const ACTIONS = {
   health: actionHealth,
   config: actionConfig,
+  reload: actionReload,
 };
 
 export default {
