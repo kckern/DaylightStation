@@ -14,7 +14,11 @@
  * passing it to the service.
  */
 
-import { printJson, printError, EXIT_OK, EXIT_FAIL, EXIT_USAGE, EXIT_CONFIG } from '../_output.mjs';
+import { printJson, printError, EXIT_OK, EXIT_FAIL, EXIT_USAGE, EXIT_CONFIG, EXIT_BACKEND } from '../_output.mjs';
+
+function backendUrl() {
+  return process.env.DSCLI_BACKEND_URL || 'http://localhost:3111';
+}
 
 const HELP = `
 dscli content — content search
@@ -32,11 +36,16 @@ Actions:
   list-libraries
               List configured content categories.
               Returns: { categories, count }
+  play <source>:<id> --to <deviceId> [--shader X] [--shuffle] [--enqueue play|add] --allow-write
+              Load content on a device via the running backend.
+              GET /api/v1/device/<deviceId>/load?queue=...&shader=...&shuffle=1
+              Returns: { ok, device, key, ... }. Audited.
 
 Examples:
   dscli content search "workout playlist"
   dscli content search "plex: cartoon" --take 3
   dscli content resolve plex:642120
+  dscli content play plex:642120 --to livingroom-tv --shader dark --allow-write
 `.trimStart();
 
 async function actionSearch(args, deps) {
@@ -133,10 +142,55 @@ async function actionListLibraries(args, deps) {
   return { exitCode: EXIT_OK };
 }
 
+async function actionPlay(args, deps) {
+  const key = args.positional[1];
+  const device = args.flags.to;
+  if (!key || !device) {
+    deps.stderr.write('dscli content play: usage: dscli content play <source>:<id> --to <deviceId> [--shader X] [--shuffle] [--enqueue play|add] --allow-write\n');
+    return { exitCode: EXIT_USAGE };
+  }
+  if (!deps.allowWrite) {
+    printError(deps.stderr, { error: 'allow_write_required', command: 'content play', message: 'Write commands require --allow-write.' });
+    return { exitCode: EXIT_USAGE };
+  }
+
+  const url = new URL(`${backendUrl()}/api/v1/device/${encodeURIComponent(device)}/load`);
+  url.searchParams.set('queue', key);
+  if (args.flags.shader) url.searchParams.set('shader', args.flags.shader);
+  if (args.flags.shuffle) url.searchParams.set('shuffle', '1');
+  if (args.flags.enqueue) url.searchParams.set('enqueue', args.flags.enqueue);
+
+  const fetchFn = deps.fetch || globalThis.fetch;
+  let response;
+  try {
+    response = await fetchFn(url.toString());
+  } catch (err) {
+    printError(deps.stderr, { error: 'backend_unreachable', url: url.toString(), message: err.message });
+    return { exitCode: EXIT_BACKEND };
+  }
+
+  if (!response.ok) {
+    printError(deps.stderr, { error: 'backend_unhealthy', url: url.toString(), status: response.status });
+    return { exitCode: EXIT_BACKEND };
+  }
+
+  let body = {};
+  try { body = await response.json(); } catch {}
+
+  try {
+    const audit = await deps.getWriteAuditor();
+    await audit.log({ command: 'content', action: 'play', args: { key, device, shader: args.flags.shader ?? null, shuffle: !!args.flags.shuffle }, result: body });
+  } catch {}
+
+  printJson(deps.stdout, { ok: true, device, key, ...body });
+  return { exitCode: EXIT_OK };
+}
+
 const ACTIONS = {
   search: actionSearch,
   resolve: actionResolve,
   'list-libraries': actionListLibraries,
+  play: actionPlay,
 };
 
 export default {
