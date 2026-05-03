@@ -153,4 +153,38 @@ describe('cli/commands/content', () => {
       expect(err.localId).toBe('nope');
     });
   });
+
+  describe('list-libraries action', () => {
+    it('returns categories with optional source filter', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const fakeRegistry = {
+        getCategories() { return ['media', 'gallery', 'audiobooks']; },
+        resolveSource(name) {
+          const map = {
+            plex: [{ getProviderName: () => 'plex', getCategoryName: () => 'media' }],
+            immich: [{ getProviderName: () => 'immich', getCategoryName: () => 'gallery' }],
+          };
+          return map[name] || [];
+        },
+      };
+      const fakeQuery = { __registry: fakeRegistry };
+      const r = await content.run(
+        { subcommand: 'content', positional: ['list-libraries'], flags: {}, help: false },
+        { stdout, stderr, getContentQuery: async () => fakeQuery },
+      );
+      expect(r.exitCode).toBe(0);
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.categories).toEqual(['media', 'gallery', 'audiobooks']);
+      expect(out.count).toBe(3);
+    });
+
+    it('exits 3 when factory throws', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await content.run(
+        { subcommand: 'content', positional: ['list-libraries'], flags: {}, help: false },
+        { stdout, stderr, getContentQuery: async () => { throw new Error('plex auth missing'); } },
+      );
+      expect(r.exitCode).toBe(3);
+    });
+  });
 });
