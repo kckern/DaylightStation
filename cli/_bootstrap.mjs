@@ -35,6 +35,7 @@ let _writeAuditor = null;
 let _writeAuditorInitPromise = null;
 let _conciergeConfig = null;
 let _conciergeConfigPromise = null;
+let _transcriptDir = null;
 
 /**
  * Resolve the data directory the same way backend/index.js does:
@@ -283,6 +284,19 @@ export async function getConciergeConfig() {
 }
 
 /**
+ * Resolve the directory where ConciergeTranscript writes per-request transcript
+ * JSON files. Mirrors backend/src/app.mjs which sets
+ *   mediaLogsDir = path.join(configService.getMediaDir(), 'logs')
+ * and ConciergeTranscript writes to {mediaLogsDir}/concierge/...
+ */
+export async function getTranscriptDir() {
+  if (_transcriptDir) return _transcriptDir;
+  const cfg = await getConfigService();
+  _transcriptDir = path.join(cfg.getMediaDir(), 'logs', 'concierge');
+  return _transcriptDir;
+}
+
+/**
  * Reset all memoized state. For tests only.
  */
 export function _resetForTests() {
@@ -301,5 +315,6 @@ export function _resetForTests() {
   _writeAuditorInitPromise = null;
   _conciergeConfig = null;
   _conciergeConfigPromise = null;
+  _transcriptDir = null;
   resetConfigService();
 }
