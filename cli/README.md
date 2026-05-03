@@ -17,9 +17,14 @@ dscli system config devices
 
 # Home Assistant
 dscli ha state light.office_main
+dscli ha list-devices --domain light --area office
+dscli ha list-areas
+dscli ha resolve "office main"
 
 # Content
 dscli content search "workout playlist" --take 5
+dscli content resolve plex:642120
+dscli content list-libraries
 
 # Memory
 dscli memory get notes
@@ -27,6 +32,8 @@ dscli memory list
 
 # Finance
 dscli finance accounts
+dscli finance balance Fidelity
+dscli finance transactions --from 2026-04-01 --to 2026-04-30 --tag Groceries
 ```
 
 All commands return JSON to stdout on success (exit 0) and a JSON error envelope to stderr on failure (exit 1+). Pipe to `jq` for reshaping.
