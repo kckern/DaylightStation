@@ -82,17 +82,27 @@ async function main() {
   // Each command that needs the backend (currently only `system health`) checks
   // reachability inside its own action and returns EXIT_BACKEND on failure.
   // A future phase may add dispatcher-level pre-flight enforcement.
-  // Build deps bag: real streams + bootstrap factories + global fetch.
+  //
+  // --allow-write is a deliberate friction surface for state-changing commands.
+  // Each write action checks deps.allowWrite explicitly; without the flag the
+  // action returns EXIT_USAGE with `allow_write_required`. NOT inherited across
+  // multi-command pipelines.
+  const allowWrite = parsed.flags['allow-write'] === true;
+  const cliSatelliteId = process.env.DSCLI_SATELLITE_ID || 'cli';
+
   const deps = {
     stdout: process.stdout,
     stderr: process.stderr,
     fetch: globalThis.fetch,
+    allowWrite,
+    cliSatelliteId,
     getConfigService: bootstrap.getConfigService,
     getHttpClient: bootstrap.getHttpClient,
     getHaGateway: bootstrap.getHaGateway,
     getContentQuery: bootstrap.getContentQuery,
     getMemory: bootstrap.getMemory,
     getBuxfer: bootstrap.getBuxfer,
+    getWriteAuditor: bootstrap.getWriteAuditor,
   };
 
   try {

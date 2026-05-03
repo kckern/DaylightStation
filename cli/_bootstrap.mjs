@@ -16,6 +16,7 @@ import { initConfigService, getConfigService as getInstance, resetConfigService 
 import { HttpClient } from '#system/services/HttpClient.mjs';
 import { HomeAssistantAdapter } from '#adapters/home-automation/homeassistant/HomeAssistantAdapter.mjs';
 import { assertHomeAutomationGateway } from '#apps/home-automation/ports/IHomeAutomationGateway.mjs';
+import { createWriteAuditor } from './_writeAudit.mjs';
 
 const _isDocker = existsSync('/.dockerenv');
 
@@ -30,6 +31,8 @@ let _memory = null;
 let _memoryInitPromise = null;
 let _buxfer = null;
 let _buxferInitPromise = null;
+let _writeAuditor = null;
+let _writeAuditorInitPromise = null;
 
 /**
  * Resolve the data directory the same way backend/index.js does:
@@ -235,6 +238,26 @@ export async function getBuxfer() {
 }
 
 /**
+ * Build the write-audit log writer. Append-only NDJSON, one file per UTC date,
+ * stored under data/household/cli-transcripts/. Falls back to /tmp when the
+ * data path is not writable (typical on dev hosts where the data volume is
+ * Docker-owned).
+ */
+export async function getWriteAuditor() {
+  if (_writeAuditor) return _writeAuditor;
+  if (_writeAuditorInitPromise) return _writeAuditorInitPromise;
+
+  _writeAuditorInitPromise = (async () => {
+    const cfg = await getConfigService();
+    const baseDir = path.join(cfg.getDataDir(), 'household', 'cli-transcripts');
+    _writeAuditor = createWriteAuditor({ baseDir });
+    return _writeAuditor;
+  })();
+
+  return _writeAuditorInitPromise;
+}
+
+/**
  * Reset all memoized state. For tests only.
  */
 export function _resetForTests() {
@@ -249,5 +272,7 @@ export function _resetForTests() {
   _memoryInitPromise = null;
   _buxfer = null;
   _buxferInitPromise = null;
+  _writeAuditor = null;
+  _writeAuditorInitPromise = null;
   resetConfigService();
 }
