@@ -204,4 +204,48 @@ describe('cli/commands/finance', () => {
       expect(err.error).toBe('buxfer_error');
     });
   });
+
+  describe('refresh action', () => {
+    it('exits 2 without --allow-write', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await finance.run(
+        { subcommand: 'finance', positional: ['refresh'], flags: {}, help: false },
+        { stdout, stderr, allowWrite: false },
+      );
+      expect(r.exitCode).toBe(2);
+      const err = JSON.parse(stderr.read().trim());
+      expect(err.error).toBe('allow_write_required');
+    });
+
+    it('POSTs to /api/v1/finance/refresh and returns ok on 200', async () => {
+      const { stdout, stderr } = makeBuffers();
+      let captured;
+      const fakeFetch = async (url, opts) => {
+        captured = { url, method: opts?.method };
+        return { ok: true, status: 200, async json() { return { refreshed: true, accounts: 17 }; } };
+      };
+      const r = await finance.run(
+        { subcommand: 'finance', positional: ['refresh'], flags: { 'allow-write': true }, help: false },
+        { stdout, stderr, fetch: fakeFetch, allowWrite: true, getWriteAuditor: async () => ({ log: async () => {} }) },
+      );
+      expect(r.exitCode).toBe(0);
+      expect(captured.url).toMatch(/\/api\/v1\/finance\/refresh$/);
+      expect(captured.method).toBe('POST');
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.ok).toBe(true);
+      expect(out.refreshed).toBe(true);
+    });
+
+    it('exits 4 if backend unreachable', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const fakeFetch = async () => { throw new Error('ECONNREFUSED'); };
+      const r = await finance.run(
+        { subcommand: 'finance', positional: ['refresh'], flags: { 'allow-write': true }, help: false },
+        { stdout, stderr, fetch: fakeFetch, allowWrite: true, getWriteAuditor: async () => ({ log: async () => {} }) },
+      );
+      expect(r.exitCode).toBe(4);
+      const err = JSON.parse(stderr.read().trim());
+      expect(err.error).toBe('backend_unreachable');
+    });
+  });
 });
