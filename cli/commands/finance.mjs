@@ -7,7 +7,11 @@
  * Auth from data/household/auth/buxfer.yml.
  */
 
-import { printJson, printError, EXIT_OK, EXIT_FAIL, EXIT_USAGE, EXIT_CONFIG } from '../_output.mjs';
+import { printJson, printError, EXIT_OK, EXIT_FAIL, EXIT_USAGE, EXIT_CONFIG, EXIT_BACKEND } from '../_output.mjs';
+
+function backendUrl() {
+  return process.env.DSCLI_BACKEND_URL || 'http://localhost:3111';
+}
 
 const HELP = `
 dscli finance — finance operations
@@ -24,6 +28,9 @@ Actions:
   transactions [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--account NAME] [--tag NAME]
               List transactions, optionally filtered.
               Returns: { transactions, count }
+  refresh --allow-write
+              Trigger full Buxfer refresh on the running backend
+              (POST /api/v1/finance/refresh). Audited.
 `.trimStart();
 
 async function actionAccounts(args, deps) {
@@ -121,10 +128,45 @@ async function actionTransactions(args, deps) {
   return { exitCode: EXIT_OK };
 }
 
+async function actionRefresh(args, deps) {
+  if (!deps.allowWrite) {
+    printError(deps.stderr, { error: 'allow_write_required', command: 'finance refresh', message: 'Write commands require --allow-write.' });
+    return { exitCode: EXIT_USAGE };
+  }
+
+  const url = backendUrl() + '/api/v1/finance/refresh';
+  const fetchFn = deps.fetch || globalThis.fetch;
+
+  let response;
+  try {
+    response = await fetchFn(url, { method: 'POST' });
+  } catch (err) {
+    printError(deps.stderr, { error: 'backend_unreachable', url, message: err.message });
+    return { exitCode: EXIT_BACKEND };
+  }
+
+  if (!response.ok) {
+    printError(deps.stderr, { error: 'backend_unhealthy', url, status: response.status });
+    return { exitCode: EXIT_BACKEND };
+  }
+
+  let body = {};
+  try { body = await response.json(); } catch {}
+
+  try {
+    const audit = await deps.getWriteAuditor();
+    await audit.log({ command: 'finance', action: 'refresh', args: {}, result: body });
+  } catch {}
+
+  printJson(deps.stdout, { ok: true, ...body });
+  return { exitCode: EXIT_OK };
+}
+
 const ACTIONS = {
   accounts: actionAccounts,
   balance: actionBalance,
   transactions: actionTransactions,
+  refresh: actionRefresh,
 };
 
 export default {
