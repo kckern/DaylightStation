@@ -173,4 +173,46 @@ describe('cli/commands/memory', () => {
       expect(r.exitCode).toBe(2);
     });
   });
+
+  describe('delete action', () => {
+    function fakeMemoryWithDelete(initial = {}) {
+      const state = { ...initial };
+      return {
+        async get(key) { return state[key] ?? null; },
+        async delete(key) { if (key in state) { delete state[key]; return true; } return false; },
+        _state: state,
+      };
+    }
+
+    it('exits 2 without --allow-write', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await memory.run(
+        { subcommand: 'memory', positional: ['delete', 'notes'], flags: {}, help: false },
+        { stdout, stderr, getMemory: async () => fakeMemoryWithDelete({ notes: ['a'] }), allowWrite: false },
+      );
+      expect(r.exitCode).toBe(2);
+    });
+
+    it('removes the key', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const mem = fakeMemoryWithDelete({ notes: ['a'] });
+      const r = await memory.run(
+        { subcommand: 'memory', positional: ['delete', 'notes'], flags: { 'allow-write': true }, help: false },
+        { stdout, stderr, getMemory: async () => mem, allowWrite: true, getWriteAuditor: async () => ({ log: async () => {} }) },
+      );
+      expect(r.exitCode).toBe(0);
+      expect(mem._state.notes).toBeUndefined();
+    });
+
+    it('exits 1 not_found when key absent', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await memory.run(
+        { subcommand: 'memory', positional: ['delete', 'absent'], flags: { 'allow-write': true }, help: false },
+        { stdout, stderr, getMemory: async () => fakeMemoryWithDelete({}), allowWrite: true, getWriteAuditor: async () => ({ log: async () => {} }) },
+      );
+      expect(r.exitCode).toBe(1);
+      const err = JSON.parse(stderr.read().trim());
+      expect(err.error).toBe('not_found');
+    });
+  });
 });

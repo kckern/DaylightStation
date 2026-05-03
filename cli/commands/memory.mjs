@@ -26,6 +26,9 @@ Actions:
   write <key> <value> --allow-write
                Set a memory key. Value is JSON-parsed if possible, else stored as string.
                Returns: { ok, key, value }. Audited.
+  delete <key> --allow-write
+               Remove a memory key. Returns { ok, key, deleted } on success;
+               exit 1 not_found if absent. Audited.
 `.trimStart();
 
 async function actionGet(args, deps) {
@@ -124,10 +127,44 @@ async function actionWrite(args, deps) {
   return { exitCode: EXIT_OK };
 }
 
+async function actionDelete(args, deps) {
+  const key = args.positional[1];
+  if (!key) {
+    deps.stderr.write('dscli memory delete: usage: dscli memory delete <key> --allow-write\n');
+    return { exitCode: EXIT_USAGE };
+  }
+  if (!deps.allowWrite) {
+    printError(deps.stderr, { error: 'allow_write_required', command: 'memory delete', message: 'Write commands require --allow-write.' });
+    return { exitCode: EXIT_USAGE };
+  }
+
+  let memory;
+  try { memory = await deps.getMemory(); }
+  catch (err) { printError(deps.stderr, { error: 'config_error', message: err.message }); return { exitCode: EXIT_CONFIG }; }
+
+  let removed;
+  try { removed = await memory.delete(key); }
+  catch (err) { printError(deps.stderr, { error: 'memory_error', message: err.message }); return { exitCode: EXIT_FAIL }; }
+
+  if (!removed) {
+    printError(deps.stderr, { error: 'not_found', key });
+    return { exitCode: EXIT_FAIL };
+  }
+
+  try {
+    const audit = await deps.getWriteAuditor();
+    await audit.log({ command: 'memory', action: 'delete', args: { key }, result: { ok: true } });
+  } catch {}
+
+  printJson(deps.stdout, { ok: true, key, deleted: true });
+  return { exitCode: EXIT_OK };
+}
+
 const ACTIONS = {
   get: actionGet,
   list: actionList,
   write: actionWrite,
+  delete: actionDelete,
 };
 
 export default {
