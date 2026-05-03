@@ -28,7 +28,7 @@ describe('cli/commands/finance', () => {
 
       const result = await finance.run(
         { subcommand: 'finance', positional: ['accounts'], flags: {}, help: false },
-        { stdout, stderr, getBuxfer: async () => fakeBuxfer },
+        { stdout, stderr, getFinance: async () => fakeBuxfer },
       );
 
       expect(result.exitCode).toBe(0);
@@ -45,7 +45,7 @@ describe('cli/commands/finance', () => {
 
       const result = await finance.run(
         { subcommand: 'finance', positional: ['accounts'], flags: {}, help: false },
-        { stdout, stderr, getBuxfer: async () => fakeBuxfer },
+        { stdout, stderr, getFinance: async () => fakeBuxfer },
       );
 
       expect(result.exitCode).toBe(0);
@@ -55,11 +55,11 @@ describe('cli/commands/finance', () => {
       expect(out.total).toBe(0);
     });
 
-    it('exits 3 (EXIT_CONFIG) when getBuxfer() throws', async () => {
+    it('exits 3 (EXIT_CONFIG) when getFinance() throws', async () => {
       const { stdout, stderr } = makeBuffers();
       const result = await finance.run(
         { subcommand: 'finance', positional: ['accounts'], flags: {}, help: false },
-        { stdout, stderr, getBuxfer: async () => { throw new Error('Buxfer credentials missing'); } },
+        { stdout, stderr, getFinance: async () => { throw new Error('Buxfer credentials missing'); } },
       );
       expect(result.exitCode).toBe(3);
       const err = JSON.parse(stderr.read().trim());
@@ -73,7 +73,7 @@ describe('cli/commands/finance', () => {
 
       const result = await finance.run(
         { subcommand: 'finance', positional: ['accounts'], flags: {}, help: false },
-        { stdout, stderr, getBuxfer: async () => fakeBuxfer },
+        { stdout, stderr, getFinance: async () => fakeBuxfer },
       );
       expect(result.exitCode).toBe(1);
       const err = JSON.parse(stderr.read().trim());
@@ -104,7 +104,7 @@ describe('cli/commands/finance', () => {
       const { stdout, stderr } = makeBuffers();
       const r = await finance.run(
         { subcommand: 'finance', positional: ['balance', 'Fidelity'], flags: {}, help: false },
-        { stdout, stderr, getBuxfer: async () => ({ async getAccounts() { return accounts; } }) },
+        { stdout, stderr, getFinance: async () => ({ async getAccounts() { return accounts; } }) },
       );
       expect(r.exitCode).toBe(0);
       const out = JSON.parse(stdout.read().trim());
@@ -116,7 +116,7 @@ describe('cli/commands/finance', () => {
       const { stdout, stderr } = makeBuffers();
       const r = await finance.run(
         { subcommand: 'finance', positional: ['balance', 'capital'], flags: {}, help: false },
-        { stdout, stderr, getBuxfer: async () => ({ async getAccounts() { return accounts; } }) },
+        { stdout, stderr, getFinance: async () => ({ async getAccounts() { return accounts; } }) },
       );
       expect(r.exitCode).toBe(0);
       const out = JSON.parse(stdout.read().trim());
@@ -127,7 +127,7 @@ describe('cli/commands/finance', () => {
       const { stdout, stderr } = makeBuffers();
       const r = await finance.run(
         { subcommand: 'finance', positional: ['balance', 'nonexistent'], flags: {}, help: false },
-        { stdout, stderr, getBuxfer: async () => ({ async getAccounts() { return accounts; } }) },
+        { stdout, stderr, getFinance: async () => ({ async getAccounts() { return accounts; } }) },
       );
       expect(r.exitCode).toBe(1);
       const err = JSON.parse(stderr.read().trim());
@@ -139,7 +139,7 @@ describe('cli/commands/finance', () => {
       const { stdout, stderr } = makeBuffers();
       const r = await finance.run(
         { subcommand: 'finance', positional: ['balance'], flags: {}, help: false },
-        { stdout, stderr, getBuxfer: async () => ({ async getAccounts() { return []; } }) },
+        { stdout, stderr, getFinance: async () => ({ async getAccounts() { return []; } }) },
       );
       expect(r.exitCode).toBe(2);
       expect(stderr.read()).toMatch(/name/i);
@@ -168,7 +168,7 @@ describe('cli/commands/finance', () => {
           flags: { from: '2026-04-01', to: '2026-04-30', account: 'Fidelity', tag: 'Groceries' },
           help: false,
         },
-        { stdout, stderr, getBuxfer: async () => fakeBuxfer },
+        { stdout, stderr, getFinance: async () => fakeBuxfer },
       );
       expect(r.exitCode).toBe(0);
       expect(captured).toEqual({
@@ -186,7 +186,7 @@ describe('cli/commands/finance', () => {
       const { stdout, stderr } = makeBuffers();
       const r = await finance.run(
         { subcommand: 'finance', positional: ['transactions'], flags: {}, help: false },
-        { stdout, stderr, getBuxfer: async () => ({ async getTransactions() { return []; } }) },
+        { stdout, stderr, getFinance: async () => ({ async getTransactions() { return []; } }) },
       );
       expect(r.exitCode).toBe(0);
       const out = JSON.parse(stdout.read().trim());
@@ -197,11 +197,71 @@ describe('cli/commands/finance', () => {
       const { stdout, stderr } = makeBuffers();
       const r = await finance.run(
         { subcommand: 'finance', positional: ['transactions'], flags: { from: '2026-04-01' }, help: false },
-        { stdout, stderr, getBuxfer: async () => ({ async getTransactions() { throw new Error('rate-limited'); } }) },
+        { stdout, stderr, getFinance: async () => ({ async getTransactions() { throw new Error('rate-limited'); } }) },
       );
       expect(r.exitCode).toBe(1);
       const err = JSON.parse(stderr.read().trim());
       expect(err.error).toBe('buxfer_error');
+    });
+  });
+
+  describe('--direct flag routing', () => {
+    it('uses getFinanceDirect when --direct is set', async () => {
+      const { stdout, stderr } = makeBuffers();
+      let directCalled = false;
+      let normalCalled = false;
+      const fakeBuxfer = {
+        async getAccounts() { return [{ id: 1, name: 'X', balance: 100 }]; },
+      };
+      const result = await finance.run(
+        { subcommand: 'finance', positional: ['accounts'], flags: { direct: true }, help: false },
+        {
+          stdout, stderr,
+          getFinance: async () => { normalCalled = true; return fakeBuxfer; },
+          getFinanceDirect: async () => { directCalled = true; return fakeBuxfer; },
+        },
+      );
+      expect(result.exitCode).toBe(0);
+      expect(directCalled).toBe(true);
+      expect(normalCalled).toBe(false);
+    });
+
+    it('uses getFinance (not direct) when --direct is absent', async () => {
+      const { stdout, stderr } = makeBuffers();
+      let directCalled = false;
+      let normalCalled = false;
+      const fakeBuxfer = { async getAccounts() { return []; } };
+      await finance.run(
+        { subcommand: 'finance', positional: ['accounts'], flags: {}, help: false },
+        {
+          stdout, stderr,
+          getFinance: async () => { normalCalled = true; return fakeBuxfer; },
+          getFinanceDirect: async () => { directCalled = true; return fakeBuxfer; },
+        },
+      );
+      expect(normalCalled).toBe(true);
+      expect(directCalled).toBe(false);
+    });
+
+    it('--direct also routes balance and transactions actions', async () => {
+      const { stdout, stderr } = makeBuffers();
+      let directCalls = 0;
+      const fakeBuxfer = {
+        async getAccounts() { return [{ id: 1, name: 'Fidelity', balance: 100 }]; },
+        async getTransactions() { return []; },
+      };
+      const getFinanceDirect = async () => { directCalls++; return fakeBuxfer; };
+
+      await finance.run(
+        { subcommand: 'finance', positional: ['balance', 'Fidelity'], flags: { direct: true }, help: false },
+        { stdout, stderr, getFinanceDirect, getFinance: async () => { throw new Error('should not be called'); } },
+      );
+      await finance.run(
+        { subcommand: 'finance', positional: ['transactions'], flags: { direct: true }, help: false },
+        { stdout, stderr: makeBuffers().stderr, getFinanceDirect, getFinance: async () => { throw new Error('should not be called'); } },
+      );
+
+      expect(directCalls).toBe(2);
     });
   });
 

@@ -12,6 +12,7 @@
 
 import path from 'node:path';
 import { existsSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { initConfigService, getConfigService as getInstance, resetConfigService } from '#system/config/index.mjs';
 import { HttpClient } from '#system/services/HttpClient.mjs';
 import { HomeAssistantAdapter } from '#adapters/home-automation/homeassistant/HomeAssistantAdapter.mjs';
@@ -29,13 +30,14 @@ let _contentQuery = null;
 let _contentInitPromise = null;
 let _memory = null;
 let _memoryInitPromise = null;
-let _buxfer = null;
-let _buxferInitPromise = null;
+let _finance = null;
+let _financeInitPromise = null;
 let _writeAuditor = null;
 let _writeAuditorInitPromise = null;
 let _conciergeConfig = null;
 let _conciergeConfigPromise = null;
 let _transcriptDir = null;
+let _financeDirect = null;
 
 /**
  * Resolve the data directory the same way backend/index.js does:
@@ -219,25 +221,25 @@ export async function getMemory() {
  * Auth from data/household/auth/buxfer.yml (email + password).
  * Throws with a clear message if creds are missing.
  */
-export async function getBuxfer() {
-  if (_buxfer) return _buxfer;
-  if (_buxferInitPromise) return _buxferInitPromise;
+export async function getFinance() {
+  if (_finance) return _finance;
+  if (_financeInitPromise) return _financeInitPromise;
 
-  _buxferInitPromise = (async () => {
+  _financeInitPromise = (async () => {
     const cfg = await getConfigService();
     const auth = cfg.getHouseholdAuth('buxfer');
     if (!auth?.email || !auth?.password) {
       throw new Error('Buxfer credentials missing (data/household/auth/buxfer.yml requires email + password).');
     }
     const { BuxferAdapter } = await import('#adapters/finance/BuxferAdapter.mjs');
-    _buxfer = new BuxferAdapter(
+    _finance = new BuxferAdapter(
       { email: auth.email, password: auth.password },
       { httpClient: getHttpClient() },
     );
-    return _buxfer;
+    return _finance;
   })();
 
-  return _buxferInitPromise;
+  return _financeInitPromise;
 }
 
 /**
@@ -284,6 +286,65 @@ export async function getConciergeConfig() {
 }
 
 /**
+ * Read Buxfer credentials without ConfigService — needed for `dscli finance --direct`
+ * which is meant to work without the app server / bootstrap chain.
+ *
+ * Lookup order (mirrors cli/buxfer.cli.mjs):
+ *   1. BUXFER_EMAIL + BUXFER_PASSWORD env vars
+ *   2. `sudo docker exec daylight-station cat data/household/auth/buxfer.yml`
+ *
+ * The dockerExec param is overridable for testing.
+ */
+function readBuxferCredsDirect({ env = process.env, dockerExec = null } = {}) {
+  if (env.BUXFER_EMAIL && env.BUXFER_PASSWORD) {
+    return { email: env.BUXFER_EMAIL, password: env.BUXFER_PASSWORD };
+  }
+  const exec = dockerExec || (() => execSync(
+    `sudo docker exec daylight-station sh -c 'cat data/household/auth/buxfer.yml'`,
+    { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
+  ).trim());
+
+  let raw;
+  try { raw = exec(); }
+  catch (err) {
+    throw new Error(
+      'Buxfer credentials missing: set BUXFER_EMAIL+BUXFER_PASSWORD or ensure ' +
+      `sudo docker exec daylight-station is reachable (${err.message}).`,
+    );
+  }
+  // Minimal YAML: each line `key: value`, optional quotes
+  const out = {};
+  for (const line of raw.split('\n')) {
+    const m = line.match(/^\s*(email|password):\s*(.+)$/);
+    if (m) out[m[1]] = m[2].trim().replace(/^['"]|['"]$/g, '');
+  }
+  if (!out.email || !out.password) {
+    throw new Error('Buxfer credentials parsed but email/password missing.');
+  }
+  return out;
+}
+
+/**
+ * Build a Buxfer adapter without going through ConfigService — for `--direct`
+ * usage where the user doesn't have the data volume mounted or the app server
+ * isn't running. Credentials come from BUXFER_EMAIL+BUXFER_PASSWORD env or via
+ * `sudo docker exec daylight-station cat data/household/auth/buxfer.yml`.
+ */
+export async function getFinanceDirect() {
+  if (_financeDirect) return _financeDirect;
+  const auth = readBuxferCredsDirect();
+  const { BuxferAdapter } = await import('#adapters/finance/BuxferAdapter.mjs');
+  _financeDirect = new BuxferAdapter(
+    { email: auth.email, password: auth.password },
+    { httpClient: getHttpClient() },
+  );
+  return _financeDirect;
+}
+
+// Exported for unit tests only — not part of the public factory API.
+export { readBuxferCredsDirect as _readBuxferCredsDirect };
+
+/**
  * Resolve the directory where ConciergeTranscript writes per-request transcript
  * JSON files. Mirrors backend/src/app.mjs which sets
  *   mediaLogsDir = path.join(configService.getMediaDir(), 'logs')
@@ -309,12 +370,13 @@ export function _resetForTests() {
   _contentInitPromise = null;
   _memory = null;
   _memoryInitPromise = null;
-  _buxfer = null;
-  _buxferInitPromise = null;
+  _finance = null;
+  _financeInitPromise = null;
   _writeAuditor = null;
   _writeAuditorInitPromise = null;
   _conciergeConfig = null;
   _conciergeConfigPromise = null;
   _transcriptDir = null;
+  _financeDirect = null;
   resetConfigService();
 }

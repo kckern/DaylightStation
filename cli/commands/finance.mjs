@@ -31,12 +31,22 @@ Actions:
   refresh --allow-write
               Trigger full Buxfer refresh on the running backend
               (POST /api/v1/finance/refresh). Audited.
+
+Flags:
+  --direct    Bypass the bootstrap factory and call the finance provider
+              directly (BUXFER_EMAIL/BUXFER_PASSWORD env or
+              docker exec to read data/household/auth/buxfer.yml).
+              Useful when the backend isn't running. Read actions only.
 `.trimStart();
+
+function pickFinance(args, deps) {
+  return args.flags.direct ? deps.getFinanceDirect : deps.getFinance;
+}
 
 async function actionAccounts(args, deps) {
   let buxfer;
   try {
-    buxfer = await deps.getBuxfer();
+    buxfer = await pickFinance(args, deps)();
   } catch (err) {
     printError(deps.stderr, { error: 'config_error', message: err.message });
     return { exitCode: EXIT_CONFIG };
@@ -71,7 +81,7 @@ async function actionBalance(args, deps) {
 
   let buxfer;
   try {
-    buxfer = await deps.getBuxfer();
+    buxfer = await pickFinance(args, deps)();
   } catch (err) {
     printError(deps.stderr, { error: 'config_error', message: err.message });
     return { exitCode: EXIT_CONFIG };
@@ -103,7 +113,7 @@ async function actionBalance(args, deps) {
 async function actionTransactions(args, deps) {
   let buxfer;
   try {
-    buxfer = await deps.getBuxfer();
+    buxfer = await pickFinance(args, deps)();
   } catch (err) {
     printError(deps.stderr, { error: 'config_error', message: err.message });
     return { exitCode: EXIT_CONFIG };
