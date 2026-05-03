@@ -27,6 +27,12 @@ Actions:
                        Returns: { areas, count }
   resolve "<query>"    Friendly-name → entity_id matcher.
                        Returns: { entity_id, friendly_name, state, area_id }
+  toggle <name|entity_id> <on|off> --allow-write
+                       Turn a light/switch on or off. Friendly names resolved
+                       via listAllStates(). Audited.
+  call-service <domain> <service> [entity_id] [--data JSON] --allow-write
+                       Call any HA service directly. --data is parsed as JSON
+                       and merged with entity_id (if provided). Audited.
 
 Examples:
   dscli ha state light.office_main
@@ -197,11 +203,89 @@ async function actionResolve(args, deps) {
   return { exitCode: EXIT_OK };
 }
 
+async function actionToggle(args, deps) {
+  // Last positional must be on|off; everything between [1] and [-1] is the name/entity_id
+  const positional = args.positional.slice(1);
+  if (positional.length < 2) {
+    deps.stderr.write('dscli ha toggle: usage: dscli ha toggle <name|entity_id> <on|off> --allow-write\n');
+    return { exitCode: EXIT_USAGE };
+  }
+  const desiredState = positional[positional.length - 1].toLowerCase();
+  if (desiredState !== 'on' && desiredState !== 'off') {
+    deps.stderr.write(`dscli ha toggle: state must be 'on' or 'off', got: ${desiredState}\n`);
+    return { exitCode: EXIT_USAGE };
+  }
+  const target = positional.slice(0, -1).join(' ');
+
+  if (!deps.allowWrite) {
+    printError(deps.stderr, {
+      error: 'allow_write_required',
+      command: 'ha toggle',
+      message: 'Write commands require the --allow-write flag.',
+    });
+    return { exitCode: EXIT_USAGE };
+  }
+
+  let gateway;
+  try {
+    gateway = await deps.getHaGateway();
+  } catch (err) {
+    printError(deps.stderr, { error: 'config_error', message: err.message });
+    return { exitCode: EXIT_CONFIG };
+  }
+
+  // Resolve entity_id: direct if it has a dot; otherwise fuzzy-resolve
+  let entityId = target;
+  if (!/^[a-z_]+\.[a-z0-9_]+$/i.test(target)) {
+    let states;
+    try {
+      states = await gateway.listAllStates();
+    } catch (err) {
+      printError(deps.stderr, { error: 'ha_error', message: err.message });
+      return { exitCode: EXIT_FAIL };
+    }
+    const needle = target.toLowerCase();
+    const match = states.find((s) => s.attributes?.friendly_name?.toLowerCase() === needle)
+                  || states.find((s) => s.attributes?.friendly_name?.toLowerCase().includes(needle));
+    if (!match) {
+      printError(deps.stderr, { error: 'not_found', query: target });
+      return { exitCode: EXIT_FAIL };
+    }
+    entityId = match.entityId;
+  }
+
+  const domain = entityId.split('.')[0];
+  const service = desiredState === 'on' ? 'turn_on' : 'turn_off';
+
+  let result;
+  try {
+    result = await gateway.callService(domain, service, { entity_id: entityId });
+  } catch (err) {
+    printError(deps.stderr, { error: 'ha_error', message: err.message });
+    return { exitCode: EXIT_FAIL };
+  }
+
+  // Best-effort audit log
+  try {
+    const audit = await deps.getWriteAuditor();
+    await audit.log({
+      command: 'ha',
+      action: 'toggle',
+      args: { entity_id: entityId, state: desiredState },
+      result,
+    });
+  } catch { /* logging failures don't fail the command */ }
+
+  printJson(deps.stdout, { ok: result?.ok ?? true, entity_id: entityId, state: desiredState, result });
+  return { exitCode: EXIT_OK };
+}
+
 const ACTIONS = {
   state: actionState,
   'list-devices': actionListDevices,
   'list-areas': actionListAreas,
   resolve: actionResolve,
+  toggle: actionToggle,
 };
 
 export default {
