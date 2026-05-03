@@ -34,9 +34,38 @@ dscli memory list
 dscli finance accounts
 dscli finance balance Fidelity
 dscli finance transactions --from 2026-04-01 --to 2026-04-30 --tag Groceries
+
+# Write commands (require --allow-write per invocation)
+dscli ha toggle "office main" on --allow-write
+dscli ha call-service light turn_on light.office_main --data '{"brightness":128}' --allow-write
+dscli memory write notes "remember to call dad" --allow-write
+dscli memory delete notes --allow-write
+dscli finance refresh --allow-write
+dscli system reload --allow-write
+dscli system reload --app concierge --allow-write
 ```
 
 All commands return JSON to stdout on success (exit 0) and a JSON error envelope to stderr on failure (exit 1+). Pipe to `jq` for reshaping.
+
+## Write commands and policy
+
+State-changing commands require the `--allow-write` flag on every invocation. Without it the command exits 2 with `{error: 'allow_write_required', command, message}`. This is a deliberate friction surface — agents and humans must explicitly opt into mutation per command.
+
+Each successful write is appended as a JSON line to `data/household/cli-transcripts/YYYY-MM-DD.ndjson` (or `/tmp/dscli-cli-transcripts/` when the data path is unwritable, e.g. on dev hosts where the volume is Docker-owned). Sensitive arg keys (`token`, `password`, `apiKey`, `authorization`) are redacted in the audit entry.
+
+```bash
+# Read — works without --allow-write
+dscli ha state light.office_main
+
+# Write — needs --allow-write
+dscli ha toggle light.office_main on --allow-write
+
+# Inspect today's audit log
+cat data/household/cli-transcripts/$(date -u +%Y-%m-%d).ndjson | jq .
+# (or /tmp/dscli-cli-transcripts/ if running outside the container)
+```
+
+The CLI satellite identity (`id: cli`) lives in `data/household/config/concierge.yml.satellites`. Adjust `scopes_allowed` there to grant or revoke access; the CLI inherits whatever's listed.
 
 ## Exit codes
 
