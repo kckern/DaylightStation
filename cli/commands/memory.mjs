@@ -23,6 +23,9 @@ Actions:
                Returns: { key, value }
   list         Dump all memory keys + values.
                Returns: { keys, count, values }
+  write <key> <value> --allow-write
+               Set a memory key. Value is JSON-parsed if possible, else stored as string.
+               Returns: { ok, key, value }. Audited.
 `.trimStart();
 
 async function actionGet(args, deps) {
@@ -88,9 +91,43 @@ async function actionList(args, deps) {
   return { exitCode: EXIT_OK };
 }
 
+async function actionWrite(args, deps) {
+  const key = args.positional[1];
+  const rawValue = args.positional.slice(2).join(' ');
+  if (!key || !rawValue) {
+    deps.stderr.write('dscli memory write: usage: dscli memory write <key> <value> --allow-write\n');
+    return { exitCode: EXIT_USAGE };
+  }
+  if (!deps.allowWrite) {
+    printError(deps.stderr, { error: 'allow_write_required', command: 'memory write', message: 'Write commands require --allow-write.' });
+    return { exitCode: EXIT_USAGE };
+  }
+
+  // Try JSON-parse first; fall back to string
+  let value;
+  try { value = JSON.parse(rawValue); }
+  catch { value = rawValue; }
+
+  let memory;
+  try { memory = await deps.getMemory(); }
+  catch (err) { printError(deps.stderr, { error: 'config_error', message: err.message }); return { exitCode: EXIT_CONFIG }; }
+
+  try { await memory.set(key, value); }
+  catch (err) { printError(deps.stderr, { error: 'memory_error', message: err.message }); return { exitCode: EXIT_FAIL }; }
+
+  try {
+    const audit = await deps.getWriteAuditor();
+    await audit.log({ command: 'memory', action: 'write', args: { key, value }, result: { ok: true } });
+  } catch {}
+
+  printJson(deps.stdout, { ok: true, key, value });
+  return { exitCode: EXIT_OK };
+}
+
 const ACTIONS = {
   get: actionGet,
   list: actionList,
+  write: actionWrite,
 };
 
 export default {
