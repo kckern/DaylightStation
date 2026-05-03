@@ -25,6 +25,8 @@ Actions:
                        Returns: { devices, count }
   list-areas           List unique areas with device counts.
                        Returns: { areas, count }
+  resolve "<query>"    Friendly-name → entity_id matcher.
+                       Returns: { entity_id, friendly_name, state, area_id }
 
 Examples:
   dscli ha state light.office_main
@@ -151,10 +153,55 @@ async function actionListAreas(args, deps) {
   return { exitCode: EXIT_OK };
 }
 
+async function actionResolve(args, deps) {
+  const query = args.positional.slice(1).join(' ').trim();
+  if (!query) {
+    deps.stderr.write('dscli ha resolve: missing required <query>\n');
+    deps.stderr.write(HELP);
+    return { exitCode: EXIT_USAGE };
+  }
+
+  let gateway;
+  try {
+    gateway = await deps.getHaGateway();
+  } catch (err) {
+    printError(deps.stderr, { error: 'config_error', message: err.message });
+    return { exitCode: EXIT_CONFIG };
+  }
+
+  let states;
+  try {
+    states = await gateway.listAllStates();
+  } catch (err) {
+    printError(deps.stderr, { error: 'ha_error', message: err.message });
+    return { exitCode: EXIT_FAIL };
+  }
+
+  const needle = query.toLowerCase();
+  let match = states.find((s) => s.attributes?.friendly_name?.toLowerCase() === needle);
+  if (!match) {
+    match = states.find((s) => s.attributes?.friendly_name?.toLowerCase().includes(needle));
+  }
+
+  if (!match) {
+    printError(deps.stderr, { error: 'not_found', query });
+    return { exitCode: EXIT_FAIL };
+  }
+
+  printJson(deps.stdout, {
+    entity_id: match.entityId,
+    friendly_name: match.attributes?.friendly_name ?? null,
+    state: match.state,
+    area_id: match.attributes?.area_id ?? match.attributes?.area ?? null,
+  });
+  return { exitCode: EXIT_OK };
+}
+
 const ACTIONS = {
   state: actionState,
   'list-devices': actionListDevices,
   'list-areas': actionListAreas,
+  resolve: actionResolve,
 };
 
 export default {
