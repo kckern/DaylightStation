@@ -26,10 +26,14 @@ Actions:
   search "<query>" [--take N]
               Search media content across configured sources.
               Returns: { results, count, sources }
+  resolve <source>:<id>
+              Look up one content item by source key.
+              Returns: full metadata object
 
 Examples:
   dscli content search "workout playlist"
   dscli content search "plex: cartoon" --take 3
+  dscli content resolve plex:642120
 `.trimStart();
 
 async function actionSearch(args, deps) {
@@ -70,8 +74,45 @@ async function actionSearch(args, deps) {
   return { exitCode: EXIT_OK };
 }
 
+async function actionResolve(args, deps) {
+  const key = args.positional[1];
+  if (!key || !key.includes(':')) {
+    deps.stderr.write('dscli content resolve: missing or malformed <source:id> (e.g. plex:642120)\n');
+    deps.stderr.write(HELP);
+    return { exitCode: EXIT_USAGE };
+  }
+  const colonIdx = key.indexOf(':');
+  const source = key.slice(0, colonIdx);
+  const localId = key.slice(colonIdx + 1);
+
+  let queryService;
+  try {
+    queryService = await deps.getContentQuery();
+  } catch (err) {
+    printError(deps.stderr, { error: 'config_error', message: err.message });
+    return { exitCode: EXIT_CONFIG };
+  }
+
+  let item;
+  try {
+    item = await queryService.resolve(source, localId);
+  } catch (err) {
+    printError(deps.stderr, { error: 'content_error', message: err.message });
+    return { exitCode: EXIT_FAIL };
+  }
+
+  if (!item) {
+    printError(deps.stderr, { error: 'not_found', source, localId });
+    return { exitCode: EXIT_FAIL };
+  }
+
+  printJson(deps.stdout, item);
+  return { exitCode: EXIT_OK };
+}
+
 const ACTIONS = {
   search: actionSearch,
+  resolve: actionResolve,
 };
 
 export default {
