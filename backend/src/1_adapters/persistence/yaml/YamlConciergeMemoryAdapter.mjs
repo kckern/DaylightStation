@@ -61,6 +61,26 @@ export class YamlConciergeMemoryAdapter {
     this.#write(state, key, next);
     await this.#save(state);
   }
+
+  /**
+   * Remove a key. Returns true if the key existed and was removed,
+   * false if the key was already absent. Idempotent: calling twice on
+   * a present key returns true then false; never throws on missing.
+   */
+  async delete(key) {
+    const state = await this.#loadAll();
+    const current = this.#read(state, key);
+    if (current === undefined) return false;
+    if (state && typeof state.remove === 'function') {
+      state.remove(key);
+    } else if (state?.data && typeof state.data === 'object') {
+      delete state.data[key];
+    } else {
+      return false;
+    }
+    await this.#save(state);
+    return true;
+  }
 }
 
 export default YamlConciergeMemoryAdapter;
