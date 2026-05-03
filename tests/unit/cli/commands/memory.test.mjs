@@ -120,4 +120,57 @@ describe('cli/commands/memory', () => {
       expect(stdout.read()).toMatch(/list/);
     });
   });
+
+  describe('write action', () => {
+    function fakeMemory() {
+      const state = {};
+      return {
+        async get(key) { return state[key] ?? null; },
+        async set(key, value) { state[key] = value; },
+        _state: state,
+      };
+    }
+
+    it('exits 2 without --allow-write', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await memory.run(
+        { subcommand: 'memory', positional: ['write', 'notes', 'hello'], flags: {}, help: false },
+        { stdout, stderr, getMemory: async () => fakeMemory(), allowWrite: false },
+      );
+      expect(r.exitCode).toBe(2);
+      const err = JSON.parse(stderr.read().trim());
+      expect(err.error).toBe('allow_write_required');
+    });
+
+    it('writes a string value', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const mem = fakeMemory();
+      const r = await memory.run(
+        { subcommand: 'memory', positional: ['write', 'notes', 'pick up groceries'], flags: { 'allow-write': true }, help: false },
+        { stdout, stderr, getMemory: async () => mem, allowWrite: true, getWriteAuditor: async () => ({ log: async () => {} }) },
+      );
+      expect(r.exitCode).toBe(0);
+      expect(mem._state.notes).toBe('pick up groceries');
+    });
+
+    it('writes a parsed JSON value', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const mem = fakeMemory();
+      const r = await memory.run(
+        { subcommand: 'memory', positional: ['write', 'prefs', '{"diet":"low-carb"}'], flags: { 'allow-write': true }, help: false },
+        { stdout, stderr, getMemory: async () => mem, allowWrite: true, getWriteAuditor: async () => ({ log: async () => {} }) },
+      );
+      expect(r.exitCode).toBe(0);
+      expect(mem._state.prefs).toEqual({ diet: 'low-carb' });
+    });
+
+    it('exits 2 when key or value missing', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const r = await memory.run(
+        { subcommand: 'memory', positional: ['write', 'notes'], flags: { 'allow-write': true }, help: false },
+        { stdout, stderr, getMemory: async () => fakeMemory(), allowWrite: true },
+      );
+      expect(r.exitCode).toBe(2);
+    });
+  });
 });
