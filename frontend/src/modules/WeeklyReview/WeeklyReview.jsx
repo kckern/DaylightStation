@@ -11,6 +11,7 @@ import { useAudioRecorder } from './hooks/useAudioRecorder.js';
 import { useChunkUploader } from './hooks/useChunkUploader.js';
 import { deleteSession as deleteLocalSession, listSessions as listLocalSessions, getChunksForSession } from './hooks/chunkDb.js';
 import { modalReducer, initialModalState } from './state/modalReducer.js';
+import { viewReducer, initialViewState } from './state/viewReducer.js';
 import './WeeklyReview.scss';
 
 const logger = getLogger().child({ component: 'weekly-review' });
@@ -26,13 +27,9 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   // modal.focusIndex: button focus within the modal (0 ↔ 1)
   // modal.payload: per-modal data (e.g. resumeDraft descriptor, finalize error message, disconnect phase)
   const [modal, dispatchModal] = React.useReducer(modalReducer, initialModalState);
-  // Task 8: viewLevel state machine — replaces selectedDay/focusedDay/focusRow/barFocus
-  const [viewLevel, setViewLevel] = useState('toc');           // 'toc' | 'day' | 'fullscreen'
-  const [dayIndex, setDayIndex] = useState(0);                 // always valid once data loads
-  const [imageIndex, setImageIndex] = useState(0);             // valid when viewLevel === 'fullscreen'
-
-  // Task 9: focus row state (preflight + disconnect modal moved to modalReducer in Task 5)
-  const [focusRow, setFocusRow] = useState('main');            // 'main' | 'bar'
+  // Task 6: viewReducer consolidates viewLevel + dayIndex + imageIndex + focusRow into one state machine.
+  // See state/viewReducer.js for actions: SELECT_DAY, OPEN_DAY, OPEN_PHOTO, CYCLE_PHOTO, CYCLE_DAY, BACK, FOCUS_BAR, FOCUS_MAIN.
+  const [view, dispatchView] = React.useReducer(viewReducer, initialViewState);
 
   const autoStartRef = useRef(false);
   const menuNav = React.useContext(MenuNavigationContext);
@@ -93,11 +90,12 @@ export default function WeeklyReview({ dispatch, dismiss }) {
 
   const onBackPressed = useCallback(() => {
     // Climb hierarchy at L2/L3; save-confirm modal at L1 TOC.
-    if (focusRow === 'bar') { setFocusRow('main'); return; }
-    if (viewLevel === 'fullscreen') { setViewLevel('day'); return; }
-    if (viewLevel === 'day')        { setViewLevel('toc'); return; }
+    if (view.focusRow === 'bar' || view.level !== 'toc') {
+      dispatchView({ type: 'BACK' });
+      return;
+    }
     dispatchModal({ type: 'OPEN', modal: 'stopConfirm' });
-  }, [viewLevel, focusRow]);
+  }, [view.focusRow, view.level]);
 
   useEffect(() => {
     logger.info('mount');
@@ -125,7 +123,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
       try {
         const result = await DaylightAPI('/api/v1/weekly-review/bootstrap');
         setData(result);
-        setDayIndex(Math.max(0, (result.days?.length || 1) - 1));
+        dispatchView({ type: 'SELECT_DAY', index: (result.days?.length || 1) - 1, totalDays: result.days?.length });
         const totalPhotos = result.days?.reduce((s, d) => s + (d.photoCount || 0), 0) || 0;
         const totalEvents = result.days?.reduce((s, d) => s + (d.calendar?.length || 0), 0) || 0;
         const daysWithPhotos = result.days?.filter(d => d.photoCount > 0).length || 0;
@@ -394,32 +392,31 @@ export default function WeeklyReview({ dispatch, dismiss }) {
       }
 
       // ---- Bottom recording bar focus ----
-      // focusRow === 'bar' means the user has tabbed down onto the bar. Enter activates Save.
-      if (focusRow === 'bar') {
+      // view.focusRow === 'bar' means the user has tabbed down onto the bar. Enter activates Save.
+      if (view.focusRow === 'bar') {
         e.preventDefault();
         if (isEnter) { onSaveAndExit(); return; }
-        if (e.key === 'ArrowUp')   { setFocusRow('main'); return; }
+        if (e.key === 'ArrowUp')   { dispatchView({ type: 'FOCUS_MAIN' }); return; }
         if (e.key === 'ArrowDown') { onExitWidget(); return; }
-        if (isBack) { setFocusRow('main'); return; }
+        if (isBack) { dispatchView({ type: 'BACK' }); return; }
         return;
       }
 
       // ---- Main hierarchy: Enter = open focused day (TOC) or fullscreen (day), Back = climb ----
       if (isEnter) {
-        if (viewLevel === 'toc') {
+        if (view.level === 'toc') {
           e.preventDefault();
           e.stopPropagation();
-          setViewLevel('day');
+          dispatchView({ type: 'OPEN_DAY' });
           return;
         }
-        if (viewLevel === 'day') {
+        if (view.level === 'day') {
           // Enter at day view: open fullscreen if photos exist; otherwise no-op.
-          const photos = data.days[dayIndex]?.photos || [];
+          const photos = data.days[view.dayIndex]?.photos || [];
           if (photos.length > 0) {
             e.preventDefault();
             e.stopPropagation();
-            setImageIndex(0);
-            setViewLevel('fullscreen');
+            dispatchView({ type: 'OPEN_PHOTO', index: 0 });
           }
           return;
         }
@@ -434,68 +431,63 @@ export default function WeeklyReview({ dispatch, dismiss }) {
         return;
       }
 
-      if (viewLevel === 'fullscreen') {
-        const photos = data.days[dayIndex]?.photos || [];
+      if (view.level === 'fullscreen') {
+        const photos = data.days[view.dayIndex]?.photos || [];
         if (photos.length === 0) {
           // No images — drop straight to day view
-          setViewLevel('day');
+          dispatchView({ type: 'BACK' });
           return;
         }
         switch (e.key) {
           case 'ArrowUp':
             e.preventDefault();
-            setImageIndex(prev => (prev + 1) % photos.length);
+            dispatchView({ type: 'CYCLE_PHOTO', delta: 1, totalPhotos: photos.length });
             return;
           case 'ArrowDown':
             e.preventDefault();
-            setImageIndex(prev => (prev - 1 + photos.length) % photos.length);
+            dispatchView({ type: 'CYCLE_PHOTO', delta: -1, totalPhotos: photos.length });
             return;
           case 'ArrowLeft':
             e.preventDefault();
-            if (dayIndex > 0) {
-              setDayIndex(dayIndex - 1);
-              setImageIndex(0);
-              setViewLevel('day');
+            if (view.dayIndex > 0) {
+              dispatchView({ type: 'OPEN_DAY', index: view.dayIndex - 1, totalDays: total });
             }
             return;
           case 'ArrowRight':
             e.preventDefault();
-            if (dayIndex < total - 1) {
-              setDayIndex(dayIndex + 1);
-              setImageIndex(0);
-              setViewLevel('day');
+            if (view.dayIndex < total - 1) {
+              dispatchView({ type: 'OPEN_DAY', index: view.dayIndex + 1, totalDays: total });
             }
             return;
           default: return;
         }
       }
 
-      if (viewLevel === 'day') {
+      if (view.level === 'day') {
         switch (e.key) {
           case 'ArrowDown':
             e.preventDefault();
-            setViewLevel('toc');
+            dispatchView({ type: 'BACK' });
             return;
           case 'ArrowUp':
             e.preventDefault();
-            if ((data.days[dayIndex]?.photos?.length || 0) > 0) {
-              setImageIndex(0);
-              setViewLevel('fullscreen');
+            if ((data.days[view.dayIndex]?.photos?.length || 0) > 0) {
+              dispatchView({ type: 'OPEN_PHOTO', index: 0 });
             }
             return;
           case 'ArrowLeft':
             e.preventDefault();
-            if (dayIndex > 0) setDayIndex(dayIndex - 1);
+            dispatchView({ type: 'CYCLE_DAY', delta: -1, totalDays: total });
             return;
           case 'ArrowRight':
             e.preventDefault();
-            if (dayIndex < total - 1) setDayIndex(dayIndex + 1);
+            dispatchView({ type: 'CYCLE_DAY', delta: 1, totalDays: total });
             return;
           default: return;
         }
       }
 
-      // viewLevel === 'toc'
+      // view.level === 'toc'
       switch (e.key) {
         case 'ArrowUp':
           e.preventDefault();
@@ -505,20 +497,18 @@ export default function WeeklyReview({ dispatch, dismiss }) {
           e.preventDefault();
           // First Down at TOC focuses the recording bar; only the next Down exits.
           // This keeps the bar reachable from the keyboard.
-          setFocusRow('bar');
+          dispatchView({ type: 'FOCUS_BAR' });
           return;
         case 'ArrowLeft':
           e.preventDefault();
-          if (dayIndex > 0) {
-            setDayIndex(dayIndex - 1);
-            setViewLevel('day');
+          if (view.dayIndex > 0) {
+            dispatchView({ type: 'OPEN_DAY', index: view.dayIndex - 1, totalDays: total });
           }
           return;
         case 'ArrowRight':
           e.preventDefault();
-          if (dayIndex < total - 1) {
-            setDayIndex(dayIndex + 1);
-            setViewLevel('day');
+          if (view.dayIndex < total - 1) {
+            dispatchView({ type: 'OPEN_DAY', index: view.dayIndex + 1, totalDays: total });
           }
           return;
         default: return;
@@ -527,7 +517,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [data, viewLevel, dayIndex, imageIndex, focusRow, modal,
+  }, [data, view, modal,
       finalizePriorDraft, onExitWidget, onSaveAndExit,
       onPreflightRetry, onPreflightExit, onBackPressed]);
 
@@ -536,8 +526,8 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   // modalTypeRef is declared above near the preflight effect — reuse it here.
   const isRecordingRef = useRef(isRecording);
   isRecordingRef.current = isRecording;
-  const viewLevelRef = useRef(viewLevel);
-  viewLevelRef.current = viewLevel;
+  const viewLevelRef = useRef(view.level);
+  viewLevelRef.current = view.level;
 
   useEffect(() => {
     if (!menuNav?.setPopGuard) return;
@@ -554,8 +544,10 @@ export default function WeeklyReview({ dispatch, dismiss }) {
       });
 
       if (modalTypeRef.current === 'stopConfirm') { dispatchModal({ type: 'CLOSE' }); return false; }
-      if (viewLevelRef.current === 'fullscreen') { setViewLevel('day'); return false; }
-      if (viewLevelRef.current === 'day')        { setViewLevel('toc'); return false; }
+      if (viewLevelRef.current === 'fullscreen' || viewLevelRef.current === 'day') {
+        dispatchView({ type: 'BACK' });
+        return false;
+      }
       dispatchModal({ type: 'OPEN', modal: 'stopConfirm' });
       return false;
     });
@@ -599,32 +591,31 @@ export default function WeeklyReview({ dispatch, dismiss }) {
         </div>
       )}
 
-      {/* Task 8: viewLevel-driven render — fullscreen > day > toc */}
-      {viewLevel === 'fullscreen' && data?.days?.[dayIndex] && (() => {
-        const photos = data.days[dayIndex].photos || [];
-        const safeIdx = Math.min(imageIndex, Math.max(0, photos.length - 1));
-        const dt = new Date(`${data.days[dayIndex].date}T12:00:00Z`);
+      {/* Task 6: view-driven render — fullscreen > day > toc */}
+      {view.level === 'fullscreen' && data?.days?.[view.dayIndex] && (() => {
+        const photos = data.days[view.dayIndex].photos || [];
+        const safeIdx = Math.min(view.imageIndex, Math.max(0, photos.length - 1));
+        const dt = new Date(`${data.days[view.dayIndex].date}T12:00:00Z`);
         const dayLabel = dt.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
         return <FullscreenImage photo={photos[safeIdx]} index={safeIdx} total={photos.length} dayLabel={dayLabel} />;
       })()}
 
-      {viewLevel === 'day' && data?.days?.[dayIndex] && (
+      {view.level === 'day' && data?.days?.[view.dayIndex] && (
         <DayDetail
-          day={data.days[dayIndex]}
-          onClose={() => setViewLevel('toc')}
+          day={data.days[view.dayIndex]}
+          onClose={() => dispatchView({ type: 'BACK' })}
         />
       )}
 
-      {viewLevel === 'toc' && (
+      {view.level === 'toc' && (
         <div className="weekly-review-grid">
           {data.days.map((day, i) => (
             <DayColumn
               key={day.date}
               day={day}
-              isFocused={i === dayIndex}
+              isFocused={i === view.dayIndex}
               onClick={() => {
-                setDayIndex(i);
-                setViewLevel('day');
+                dispatchView({ type: 'OPEN_DAY', index: i, totalDays: data.days.length });
               }}
             />
           ))}
@@ -712,7 +703,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
         syncStatus={uploaderStatus}
         pendingCount={uploaderPendingCount}
         lastAckedAt={uploaderLastAckedAt}
-        isFocused={focusRow === 'bar'}
+        isFocused={view.focusRow === 'bar'}
         canSave={isRecording}
         onSave={() => {
           logger.info('nav.bar-save-clicked');
