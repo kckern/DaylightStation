@@ -16,6 +16,7 @@ import AdminApp from './Apps/AdminApp.jsx';
 import CallApp from './Apps/CallApp.jsx';
 import MediaApp from './Apps/MediaApp.jsx';
 import LiveStreamApp from './Apps/LiveStreamApp.jsx';
+import AppContainer from './modules/AppContainer/AppContainer.jsx';
 import Blank from './modules/Blank/Blank.jsx';
 import SetupWizard from './modules/Auth/SetupWizard.jsx';
 import InviteAccept from './modules/Auth/InviteAccept.jsx';
@@ -82,6 +83,13 @@ const TVAppWithParams = () => {
   return <TVApp appParam={app} />;
 };
 
+// Standalone /app/:appId route — renders a registered app directly without the TV shell.
+// Used for testing and direct linking to specific apps (e.g. /app/weekly-review).
+const AppDirectRoute = () => {
+  const { appId } = useParams();
+  return <AppContainer open={{ app: appId }} clear={() => window.history.back()} />;
+};
+
 // Wrapper that redirects to /setup when no users have been created yet
 function SetupCheck({ children }) {
   const [checked, setChecked] = useState(false);
@@ -124,6 +132,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/office/*" element={<OfficeRedirect />} />
         <Route path="/budget" element={<FinanceApp />} />
         <Route path="/finances" element={<FinanceApp />} />
+        <Route path="/app/:appId" element={<AppDirectRoute />} />
         <Route path="/tv/app/:app" element={<TVAppWithParams />} />
         <Route path="/tv" element={<TVApp />} />
         <Route path="/media" element={<MediaApp />} />
