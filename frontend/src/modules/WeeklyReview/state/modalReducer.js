@@ -17,6 +17,7 @@ export function modalReducer(state, action) {
       const incoming = action.modal;
       const incomingPriority = OVERLAY_PRIORITY[incoming] ?? 0;
       const currentPriority = OVERLAY_PRIORITY[state.type] ?? 0;
+      // Strict less-than: equal-priority OPEN replaces (used for disconnect phase transitions).
       if (state.type && incomingPriority < currentPriority) return state;
       return {
         type: incoming,
