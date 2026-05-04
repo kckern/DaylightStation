@@ -12,7 +12,11 @@ export default defineConfig({
     headless: true,
     screenshot: 'only-on-failure',
     launchOptions: {
-      args: ['--autoplay-policy=no-user-gesture-required'],
+      args: [
+        '--autoplay-policy=no-user-gesture-required',
+        '--use-fake-ui-for-media-stream',
+        '--use-fake-device-for-media-stream',
+      ],
     },
   },
   webServer: {

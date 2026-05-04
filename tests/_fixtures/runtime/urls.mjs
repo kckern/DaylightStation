@@ -18,6 +18,9 @@ export const FRONTEND_URL = process.env.TEST_FRONTEND_URL || urls.frontend;
 export const BACKEND_URL = process.env.TEST_BACKEND_URL || urls.backend;
 export const WS_URL = process.env.TEST_WS_URL || urls.ws;
 
+// Alias for tests that prefer APP_URL over FRONTEND_URL
+export const APP_URL = FRONTEND_URL;
+
 /**
  * Get WebSocket URL from a base URL
  */

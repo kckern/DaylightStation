@@ -1164,7 +1164,7 @@
 }
 
 .vu-meter {
-  display: inline-block;
+  // Width pinned for stable layout; do NOT redeclare display (see :453).
   width: 8rem;
   flex-shrink: 0;
 }
