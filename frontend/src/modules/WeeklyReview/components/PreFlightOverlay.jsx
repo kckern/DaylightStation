@@ -12,19 +12,25 @@ export default function PreFlightOverlay({ status, focusIndex = 0, onRetry, onEx
   if (status === 'ok') return null;
 
   return (
-    <div className="weekly-review-preflight-overlay">
+    <div
+      className="weekly-review-preflight-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="weekly-review-preflight-label"
+      aria-live="polite"
+    >
       <div className="preflight-content">
         {status === 'acquiring' && (
           <>
             <div className="preflight-mic-pulse">🎤</div>
-            <div className="preflight-title">Listening for your microphone…</div>
+            <div className="preflight-title" id="weekly-review-preflight-label">Listening for your microphone…</div>
             <div className="preflight-subtitle">Speak to begin.</div>
           </>
         )}
         {status === 'failed' && (
           <>
             <div className="preflight-mic-error">🎤❌</div>
-            <div className="preflight-title">Microphone unavailable</div>
+            <div className="preflight-title" id="weekly-review-preflight-label">Microphone unavailable</div>
             <div className="preflight-subtitle">Please check the device and try again.</div>
             <div className="preflight-actions">
               <button
