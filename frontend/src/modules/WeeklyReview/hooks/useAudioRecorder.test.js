@@ -116,4 +116,29 @@ describe('useAudioRecorder', () => {
     expect(ok).toBe(true);
     expect(result.current.disconnected).toBe(false);
   });
+
+  it('exposes micLevelRef whose .current updates without React re-render', async () => {
+    global.AudioContext = class {
+      state = 'running';
+      createAnalyser() {
+        return {
+          fftSize: 256,
+          frequencyBinCount: 128,
+          getByteTimeDomainData: (arr) => { for (let i = 0; i < arr.length; i++) arr[i] = 200; },
+        };
+      }
+      createMediaStreamSource() { return { connect: () => {} }; }
+      resume() { return Promise.resolve(); }
+      close() { return Promise.resolve(); }
+    };
+
+    const { result } = renderHook(() => useAudioRecorder({ onChunk: () => {} }));
+    expect(result.current.micLevelRef).toBeDefined();
+    expect(result.current.micLevelRef.current).toBe(0);
+
+    await act(async () => { await result.current.startRecording(); });
+    await act(async () => { await new Promise(r => setTimeout(r, 100)); });
+
+    expect(result.current.micLevelRef.current).toBeGreaterThan(0);
+  });
 });

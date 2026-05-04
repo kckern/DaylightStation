@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useRef } from 'react';
 
 const formatTime = (seconds) => {
   const m = Math.floor(seconds / 60);
@@ -10,7 +10,7 @@ export default function RecordingBar({
   weekLabel,
   isRecording,
   duration,
-  micLevel,
+  micLevelRef,
   silenceWarning,
   uploading,
   existingRecording,
@@ -23,11 +23,34 @@ export default function RecordingBar({
   onSave,
   micConnected,
 }) {
-  const vuBars = useMemo(() => {
-    const count = 20;
-    const filled = Math.round(micLevel * count);
-    return Array.from({ length: count }, (_, i) => i < filled);
-  }, [micLevel]);
+  // Task 10: VU meter is driven by rAF + DOM mutation (not React render).
+  // micLevelRef.current is updated ~20×/sec by useAudioRecorder; reading
+  // it through state would re-render the whole WeeklyReview tree at that
+  // rate. Instead we read the ref inside a rAF loop and toggle `.filled`
+  // classes on 20 stable child divs.
+  const vuMeterRef = useRef(null);
+
+  useEffect(() => {
+    if (!isRecording || !micLevelRef) return;
+    let raf;
+    const tick = () => {
+      const meter = vuMeterRef.current;
+      if (meter) {
+        const level = micLevelRef.current;
+        const filled = Math.round(level * 20);
+        const bars = meter.children;
+        for (let i = 0; i < bars.length; i++) {
+          const shouldFill = i < filled;
+          const isFilled = bars[i].classList.contains('filled');
+          if (shouldFill && !isFilled) bars[i].classList.add('filled');
+          else if (!shouldFill && isFilled) bars[i].classList.remove('filled');
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [isRecording, micLevelRef]);
 
   const barClass = `recording-bar${silenceWarning ? ' silence-warning' : ''}`;
 
@@ -48,10 +71,8 @@ export default function RecordingBar({
           <>
             <span className="recording-dot">●</span>
             <span className="recording-timer">{formatTime(duration)}</span>
-            <div className="vu-meter">
-              {vuBars.map((filled, i) => (
-                <div key={i} className={`vu-bar${filled ? ' filled' : ''}`} />
-              ))}
+            <div className="vu-meter" ref={vuMeterRef} aria-label="Microphone level">
+              {Array.from({ length: 20 }, (_, i) => <div key={i} className="vu-bar" />)}
             </div>
           </>
         )}

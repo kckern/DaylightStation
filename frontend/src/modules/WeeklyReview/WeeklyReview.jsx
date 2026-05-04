@@ -49,7 +49,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   }, [uploaderEnqueue]);
 
   const {
-    isRecording, duration: recordingDuration, micLevel, silenceWarning,
+    isRecording, duration: recordingDuration, micLevelRef, silenceWarning,
     error: recorderError, startRecording, stopRecording,
     firstAudibleFrameSeen, disconnected, reconnect,
   } = useAudioRecorder({ onChunk: handleChunk });
@@ -686,7 +686,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
         weekLabel={weekLabel}
         isRecording={isRecording}
         duration={recordingDuration}
-        micLevel={micLevel}
+        micLevelRef={micLevelRef}
         silenceWarning={silenceWarning}
         uploading={uploading}
         micConnected={isRecording && !disconnected}
