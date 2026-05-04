@@ -23,6 +23,13 @@ test.describe('Weekly Review accessibility', () => {
         close() { if (this._interval()) clearInterval(this._interval()); }
       }
       window.WebSocket = FakeWS;
+
+      // Mock getUserMedia to return a fake stream with audio track
+      navigator.mediaDevices.getUserMedia = async () => {
+        const context = new AudioContext();
+        const dest = context.createMediaStreamDestination();
+        return dest.stream;
+      };
     });
   });
 

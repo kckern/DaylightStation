@@ -193,7 +193,13 @@ export function useAudioRecorder({ onChunk }) {
         logger().info('recorder.bridge-acquired');
       } catch (bridgeErr) {
         logger().info('recorder.bridge-unavailable', { reason: bridgeErr.message });
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
       }
       streamRef.current = stream;
 
@@ -294,7 +300,13 @@ export function useAudioRecorder({ onChunk }) {
         ]);
       } catch {
         stream = await Promise.race([
-          navigator.mediaDevices.getUserMedia({ audio: true }),
+          navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+          }),
           new Promise((_, rej) => setTimeout(() => rej(new Error('reconnect timeout')), 3000)),
         ]);
       }

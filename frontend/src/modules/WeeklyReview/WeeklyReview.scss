@@ -1003,7 +1003,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 50;
+  z-index: 70;
 
   .preflight-content {
     text-align: center;
@@ -1141,4 +1141,12 @@
   outline: 3px solid #ffeb3b;
   outline-offset: 2px;
   box-shadow: 0 0 0 4px rgba(255, 235, 59, 0.3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recording-dot,
+  .preflight-mic-pulse,
+  .mic-indicator--lost {
+    animation: none !important;
+  }
 }
