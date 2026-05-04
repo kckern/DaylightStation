@@ -44,4 +44,18 @@ describe('modalReducer', () => {
     });
     expect(next.payload).toBe('network down');
   });
+
+  it('SET_FOCUS sets focusIndex to the given index', () => {
+    const state = { type: 'stopConfirm', focusIndex: 0, payload: null };
+    expect(modalReducer(state, { type: 'SET_FOCUS', index: 1 }).focusIndex).toBe(1);
+    const back = modalReducer(state, { type: 'SET_FOCUS', index: 0 });
+    expect(back.focusIndex).toBe(0);
+  });
+
+  it('same-priority OPEN replaces current modal (disconnect phase transition)', () => {
+    const reconnecting = { type: 'disconnect', focusIndex: 0, payload: { phase: 'reconnecting' } };
+    const next = modalReducer(reconnecting, { type: 'OPEN', modal: 'disconnect', payload: { phase: 'finalizing' } });
+    expect(next.type).toBe('disconnect');
+    expect(next.payload.phase).toBe('finalizing');
+  });
 });

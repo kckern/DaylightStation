@@ -154,9 +154,11 @@ export default function WeeklyReview({ dispatch, dismiss }) {
     startRecording();
   }, [data, startRecording]);
 
-  // Track modal type via ref so the preflight clear-on-recover effect can guard
-  // the CLOSE dispatch without taking `modal` as a dep (which would re-run the
-  // 10s timer on every modal change).
+  // Ref so the audio-recovery and pop-guard effects can read modal.type without
+  // taking modal as a dep (which would tear down/restart inner timers on every
+  // modal change). Render-body assignment (rather than useEffect) is intentional
+  // for the same reason as preflightStatusRef: a useEffect-based mirror runs
+  // post-paint, widening the staleness window.
   const modalTypeRef = useRef(modal.type);
   modalTypeRef.current = modal.type;
 
