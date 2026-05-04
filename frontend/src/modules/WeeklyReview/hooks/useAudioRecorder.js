@@ -81,7 +81,6 @@ registerProcessor('bridge-recorder-processor', BridgeProcessor);`;
 export function useAudioRecorder({ onChunk }) {
   const [isRecording, setIsRecording] = useState(false);
   const [duration, setDuration] = useState(0);
-  const [micLevel, setMicLevel] = useState(0);
   const [silenceWarning, setSilenceWarning] = useState(false);
   const [firstAudibleFrameSeen, setFirstAudibleFrameSeen] = useState(false);
   const [disconnected, setDisconnected] = useState(false);
@@ -99,6 +98,10 @@ export function useAudioRecorder({ onChunk }) {
   const peakLevelRef = useRef(0);
   const seqRef = useRef(0);
   const firstAudibleFrameSeenRef = useRef(false);
+  // Task 10: micLevel as ref, not state — VU meter reads ref.current via rAF in
+  // RecordingBar and mutates DOM directly. Avoids 20×/sec re-renders of the
+  // entire WeeklyReview tree.
+  const micLevelRef = useRef(0);
 
   const cleanup = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -152,7 +155,7 @@ export function useAudioRecorder({ onChunk }) {
         const now = performance.now();
         if (now - lastLevelAtRef.current >= LEVEL_SAMPLE_INTERVAL_MS) {
           lastLevelAtRef.current = now;
-          setMicLevel(normalized);
+          micLevelRef.current = normalized;
           if (normalized < 0.02) {
             if (!silenceStartRef.current) silenceStartRef.current = now;
             if (now - silenceStartRef.current > SILENCE_WARNING_MS) {
@@ -239,7 +242,7 @@ export function useAudioRecorder({ onChunk }) {
         logger().info('recorder.stopped', { duration: Math.round((Date.now() - startTimeRef.current) / 1000) });
         cleanup();
         setIsRecording(false);
-        setMicLevel(0);
+        micLevelRef.current = 0;
         setSilenceWarning(false);
       };
 
@@ -320,7 +323,7 @@ export function useAudioRecorder({ onChunk }) {
         logger().info('recorder.stopped-after-reconnect', { duration: Math.round((Date.now() - startTimeRef.current) / 1000) });
         cleanup();
         setIsRecording(false);
-        setMicLevel(0);
+        micLevelRef.current = 0;
         setSilenceWarning(false);
       };
       recorder.start(5000);
@@ -333,5 +336,5 @@ export function useAudioRecorder({ onChunk }) {
     }
   }, [onChunk, cleanup]);
 
-  return { isRecording, duration, micLevel, silenceWarning, firstAudibleFrameSeen, disconnected, error, startRecording, stopRecording, reconnect };
+  return { isRecording, duration, micLevelRef, silenceWarning, firstAudibleFrameSeen, disconnected, error, startRecording, stopRecording, reconnect };
 }
