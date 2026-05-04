@@ -63,7 +63,12 @@ export default function WeeklyReview({ dispatch, dismiss }) {
     ? 'failed'
     : (firstAudibleFrameSeen ? 'ok' : 'acquiring');
 
-  // Ref so handleKeyDown always reads the latest preflightStatus without stale-closure lag.
+  // Ref so handleKeyDown reads the latest preflightStatus without stale-closure lag.
+  // Assigning during render (rather than useEffect) is intentional: a useEffect-based
+  // mirror runs post-paint, which would WIDEN the window where ref.current lags
+  // behind the rendered DOM. Render-body assignment commits before any DOM event
+  // can fire on the new tree. The soft preflight gate during 'acquiring' provides
+  // defense-in-depth if any timing edge-case slips through.
   const preflightStatusRef = useRef(preflightStatus);
   preflightStatusRef.current = preflightStatus;
 
@@ -628,7 +633,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
               <small>Your recording is safe — stored locally and on the server.</small>
             </div>
             <div className="confirm-actions">
-              <button className={`confirm-btn confirm-btn--save${errorFocus === 0 ? ' focused' : ''}`} onClick={() => { setFinalizeError(null); }}>Retry</button>
+              <button className={`confirm-btn confirm-btn--save${errorFocus === 0 ? ' focused' : ''}`} onClick={() => { setFinalizeError(null); }}>Dismiss</button>
               <button className={`confirm-btn confirm-btn--continue${errorFocus === 1 ? ' focused' : ''}`} onClick={() => { setFinalizeError(null); if (typeof dispatch === 'function') dispatch('escape'); else if (typeof dismiss === 'function') dismiss(); }}>Exit (save later)</button>
             </div>
           </div>
