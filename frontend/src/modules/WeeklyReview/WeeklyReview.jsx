@@ -571,8 +571,8 @@ export default function WeeklyReview({ dispatch, dismiss }) {
       {/* Resume-draft overlay — shown after bootstrap if an unfinalized draft exists */}
       {modal.type === 'resumeDraft' && !isRecording && (
         <div className="weekly-review-confirm-overlay">
-          <div className="confirm-dialog">
-            <div className="confirm-message">
+          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="weekly-review-resume-label">
+            <div className="confirm-message" id="weekly-review-resume-label">
               A previous recording was not finalized.<br/>
               <small>{modal.payload?.source === 'server' ? `Server draft · ${Math.round((modal.payload?.totalBytes || 0) / 1024)} KB` : `Local-only draft · ${modal.payload?.chunkCount || 0} chunks`}</small>
             </div>
@@ -617,8 +617,8 @@ export default function WeeklyReview({ dispatch, dismiss }) {
       {/* Finalize error dialog — shown when upload/finalize fails after recording stops */}
       {modal.type === 'finalizeError' && !isRecording && (
         <div className="weekly-review-confirm-overlay">
-          <div className="confirm-dialog">
-            <div className="confirm-message">
+          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="weekly-review-error-label">
+            <div className="confirm-message" id="weekly-review-error-label">
               Save failed: {modal.payload}
               <br/>
               <small>Your recording is safe — stored locally and on the server.</small>
@@ -634,8 +634,8 @@ export default function WeeklyReview({ dispatch, dismiss }) {
       {/* Stop confirmation overlay */}
       {modal.type === 'stopConfirm' && (
         <div className="weekly-review-confirm-overlay">
-          <div className="confirm-dialog">
-            <div className="confirm-message">End weekly review recording?</div>
+          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="weekly-review-stop-confirm-label">
+            <div className="confirm-message" id="weekly-review-stop-confirm-label">End weekly review recording?</div>
             <div className="confirm-actions">
               <button
                 className={`confirm-btn confirm-btn--continue${modal.focusIndex === 0 ? ' focused' : ''}`}
@@ -657,8 +657,8 @@ export default function WeeklyReview({ dispatch, dismiss }) {
       {/* Disconnect modal — shown when mic drops; blocks input while reconnecting or finalizing */}
       {modal.type === 'disconnect' && (
         <div className="weekly-review-confirm-overlay">
-          <div className="confirm-dialog">
-            <div className="confirm-message">
+          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="weekly-review-disconnect-label" aria-live="polite">
+            <div className="confirm-message" id="weekly-review-disconnect-label">
               {modal.payload?.phase === 'reconnecting' && (
                 <>Microphone dropped — reconnecting…<br/><small>Please hold tight.</small></>
               )}
