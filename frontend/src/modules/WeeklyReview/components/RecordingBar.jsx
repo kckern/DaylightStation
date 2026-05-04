@@ -15,8 +15,6 @@ export default function RecordingBar({
   uploading,
   existingRecording,
   error,
-  onStart,
-  onStop,
   syncStatus,
   pendingCount,
   lastAckedAt,
@@ -70,17 +68,7 @@ export default function RecordingBar({
 
         {error && <span className="recording-error">{error}</span>}
 
-        {uploading ? (
-          <span className="uploading-status">Transcribing...</span>
-        ) : isRecording ? (
-          <button className="recording-stop-btn" onClick={onStop}>
-            ■ Stop
-          </button>
-        ) : (
-          <button className="recording-start-btn" onClick={onStart}>
-            ● Record
-          </button>
-        )}
+        {uploading && <span className="uploading-status">Transcribing...</span>}
 
         <button
           className={`recording-bar__save ${isFocused ? 'focused' : ''} ${canSave ? 'can-save' : ''}`}
