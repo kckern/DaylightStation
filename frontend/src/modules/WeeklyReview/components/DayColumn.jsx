@@ -32,8 +32,17 @@ export default function DayColumn({ day, isFocused, onClick }) {
   return (
     <div
       className={columnClass}
-      style={{ flex: day.columnWeight }}
+      style={{ flex: day.columnWeight ?? 1 }}
+      role="button"
+      tabIndex={0}
+      aria-label={`${day.label} ${dt.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}, ${day.photoCount || 0} photos`}
       onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
     >
       <div className="day-header">
         <span className="day-label">{day.label}</span>
