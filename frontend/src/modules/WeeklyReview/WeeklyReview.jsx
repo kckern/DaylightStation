@@ -39,7 +39,6 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   const [preflightFocus, setPreflightFocus] = useState(0);     // 0=Retry, 1=Exit
   const [disconnectModal, setDisconnectModal] = useState(null);
 
-  const containerRef = useRef(null);
   const autoStartRef = useRef(false);
   const menuNav = React.useContext(MenuNavigationContext);
 
@@ -338,6 +337,8 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   // 4-level keyboard navigation hierarchy
   useEffect(() => {
     const handleKeyDown = (e) => {
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (!data?.days) return;
       const total = data.days.length;
       const isEnter = e.key === 'Enter' || e.key === ' ';
@@ -528,16 +529,9 @@ export default function WeeklyReview({ dispatch, dismiss }) {
       }
     };
 
-    const container = containerRef.current;
-    if (container) {
-      container.addEventListener('keydown', handleKeyDown);
-      return () => container.removeEventListener('keydown', handleKeyDown);
-    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
   }, [data, viewLevel, dayIndex, imageIndex, focusRow, resumeDraft, finalizeError, showStopConfirm, preflightStatus, preflightFocus, confirmFocus, errorFocus, disconnectModal, finalizePriorDraft, onExitWidget, onSaveAndExit, onEnterUpload, onPreflightRetry, onPreflightExit, onBackPressed]);
-
-  useEffect(() => {
-    containerRef.current?.focus();
-  }, [loading]);
 
   // Pop guard: prevent MenuNavigationContext from popping the app while recording or uploading.
   // Handles remote Back button (FKB/Shield popstate) and any other pop() caller.
@@ -596,7 +590,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   }
 
   return (
-    <div className="weekly-review" ref={containerRef} tabIndex={0}>
+    <div className="weekly-review">
       {/* Resume-draft overlay — shown after bootstrap if an unfinalized draft exists */}
       {resumeDraft && !isRecording && (
         <div className="weekly-review-confirm-overlay">

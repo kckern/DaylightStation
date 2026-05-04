@@ -6,7 +6,7 @@
   flex-direction: column;
   background: #1a1a1a;
   color: #e0e0e0;
-  outline: none;
+  // outline removed — see button :focus-visible rules below
   overflow: hidden;
 
   &--loading,
@@ -17,6 +17,12 @@
     font-size: 1.4rem;
     color: #888;
   }
+}
+
+.weekly-review button:focus-visible,
+.weekly-review [role="button"]:focus-visible {
+  outline: 3px solid #ffeb3b;
+  outline-offset: 2px;
 }
 
 // === Init Overlay (before recording starts) ===

@@ -84,4 +84,22 @@ test.describe('Weekly Review UX', () => {
     await page.keyboard.press('ArrowLeft');
     await expect(page.locator('.day-detail')).toBeVisible();
   });
+
+  test('arrow keys still work after a child element receives focus', async ({ page }) => {
+    await page.goto(`${APP_URL}/app/weekly-review`);
+    await expect(page.locator('.weekly-review-preflight-overlay')).toBeHidden({ timeout: 12000 });
+    await expect(page.locator('.weekly-review-grid')).toBeVisible();
+
+    // Steal focus by clicking somewhere inside the widget that ISN'T the container.
+    // The Save Recording button is always present in the bar.
+    await page.locator('.recording-bar__save').click({ trial: false }).catch(() => {});
+    // (Click may activate the button via onClick — that's fine; we're testing keydown
+    // routing, not the click outcome. Dismiss any modal that opens.)
+    await page.keyboard.press('Escape').catch(() => {});
+
+    // Arrow Right must still navigate to a day, even though focus is no longer on
+    // the .weekly-review container.
+    await page.keyboard.press('ArrowRight');
+    await expect(page.locator('.day-detail')).toBeVisible({ timeout: 5000 });
+  });
 });
