@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter, Routes, Route, useParams, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useParams, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { MantineProvider } from '@mantine/core';
 import '@mantine/core/styles.css';
 import { WebSocketProvider } from './contexts/WebSocketContext.jsx';
@@ -87,7 +87,16 @@ const TVAppWithParams = () => {
 // Used for testing and direct linking to specific apps (e.g. /app/weekly-review).
 const AppDirectRoute = () => {
   const { appId } = useParams();
-  return <AppContainer open={{ app: appId }} clear={() => window.history.back()} />;
+  const navigate = useNavigate();
+  return (
+    <AppContainer
+      open={{ app: appId }}
+      clear={() => {
+        if (window.history.length > 1) navigate(-1);
+        else navigate('/');
+      }}
+    />
+  );
 };
 
 // Wrapper that redirects to /setup when no users have been created yet

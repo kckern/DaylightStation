@@ -14,6 +14,11 @@ export default defineConfig({
     launchOptions: {
       args: [
         '--autoplay-policy=no-user-gesture-required',
+        // The two flags below are required for headless Chromium to serve audio to
+        // WeeklyReview's AudioBridge WebSocket stub. They auto-approve all media
+        // permission requests — tests that want to verify real permission-denial
+        // behavior (e.g., "preflight failure when mic is unavailable") will not
+        // observe denials under this config.
         '--use-fake-ui-for-media-stream',
         '--use-fake-device-for-media-stream',
       ],
