@@ -325,8 +325,8 @@ export default function WeeklyReview({ dispatch, dismiss }) {
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (!data?.days) return;
       const total = data.days.length;
-      const isEnter = e.key === 'Enter' || e.key === ' ';
-      const isBack  = e.key === 'Escape' || e.key === 'Backspace';
+      const isEnter = e.key === 'Enter';
+      const isBack  = e.key === 'Escape';
 
       // ---- Overlay-specific handling. These modals override "Enter = upload" ----
 
@@ -449,15 +449,11 @@ export default function WeeklyReview({ dispatch, dismiss }) {
             return;
           case 'ArrowLeft':
             e.preventDefault();
-            if (view.dayIndex > 0) {
-              dispatchView({ type: 'OPEN_DAY', index: view.dayIndex - 1, totalDays: total });
-            }
+            dispatchView({ type: 'CYCLE_PHOTO', delta: -1, totalPhotos: photos.length });
             return;
           case 'ArrowRight':
             e.preventDefault();
-            if (view.dayIndex < total - 1) {
-              dispatchView({ type: 'OPEN_DAY', index: view.dayIndex + 1, totalDays: total });
-            }
+            dispatchView({ type: 'CYCLE_PHOTO', delta: 1, totalPhotos: photos.length });
             return;
           default: return;
         }
@@ -501,15 +497,11 @@ export default function WeeklyReview({ dispatch, dismiss }) {
           return;
         case 'ArrowLeft':
           e.preventDefault();
-          if (view.dayIndex > 0) {
-            dispatchView({ type: 'OPEN_DAY', index: view.dayIndex - 1, totalDays: total });
-          }
+          dispatchView({ type: 'CYCLE_DAY', delta: -1, totalDays: total });
           return;
         case 'ArrowRight':
           e.preventDefault();
-          if (view.dayIndex < total - 1) {
-            dispatchView({ type: 'OPEN_DAY', index: view.dayIndex + 1, totalDays: total });
-          }
+          dispatchView({ type: 'CYCLE_DAY', delta: 1, totalDays: total });
           return;
         default: return;
       }
