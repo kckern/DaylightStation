@@ -717,8 +717,6 @@ export default function WeeklyReview({ dispatch, dismiss }) {
         micConnected={isRecording && !disconnected}
         existingRecording={data.recording}
         error={recorderError}
-        onStart={() => { logger.info('recording.manual-start'); startRecording(); }}
-        onStop={() => { logger.info('recording.manual-stop'); setShowStopConfirm(true); }}
         syncStatus={uploaderStatus}
         pendingCount={uploaderPendingCount}
         lastAckedAt={uploaderLastAckedAt}

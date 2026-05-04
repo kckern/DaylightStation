@@ -63,6 +63,15 @@ test.describe('Weekly Review UX', () => {
     expect(buttons.some(b => /save/i.test(b))).toBe(true);
   });
 
+  test('recording bar shows exactly one stop affordance during recording', async ({ page }) => {
+    await page.goto(`${APP_URL}/app/weekly-review`);
+    await expect(page.locator('.weekly-review-preflight-overlay')).toBeHidden({ timeout: 12000 });
+
+    // While recording: the small Stop button must NOT be present; only the Save Recording button.
+    await expect(page.locator('.recording-stop-btn')).toHaveCount(0);
+    await expect(page.locator('.recording-bar__save')).toBeVisible();
+  });
+
   test('Up at day with photos enters fullscreen image view', async ({ page }) => {
     await page.goto(`${APP_URL}/app/weekly-review`);
     await expect(page.locator('.weekly-review-preflight-overlay')).toBeHidden({ timeout: 12000 });

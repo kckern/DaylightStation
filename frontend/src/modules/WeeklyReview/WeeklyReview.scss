@@ -483,34 +483,7 @@
   }
 }
 
-.recording-start-btn,
-.recording-stop-btn {
-  padding: 6px 16px;
-  border: none;
-  border-radius: 6px;
-  font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s ease;
-}
 
-.recording-start-btn {
-  background: #c0392b;
-  color: white;
-
-  &:hover {
-    background: #e74c3c;
-  }
-}
-
-.recording-stop-btn {
-  background: #555;
-  color: white;
-
-  &:hover {
-    background: #666;
-  }
-}
 
 .uploading-status {
   font-size: 0.85rem;
@@ -997,10 +970,6 @@
     opacity: 0.4;
     cursor: not-allowed;
   }
-  &.can-save:not(.focused) {
-    box-shadow: 0 0 0 0 rgba(46, 125, 50, 0.8);
-    animation: save-pulse 2.5s ease-in-out infinite;
-  }
   &.focused {
     transform: scale(1.06);
     box-shadow: 0 0 0 4px #ffeb3b, 0 0 24px 8px rgba(255, 235, 59, 0.6);
@@ -1009,11 +978,6 @@
 }
 
 .recording-bar__save-icon { font-size: 26px; }
-
-@keyframes save-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(46, 125, 50, 0.4); }
-  50%      { box-shadow: 0 0 0 8px rgba(46, 125, 50, 0); }
-}
 
 .sync-badge {
   display: inline-flex;
