@@ -16,22 +16,28 @@ import { APP_URL } from '#fixtures/runtime/urls.mjs';
 
 test.describe('Weekly Review UX', () => {
   test.beforeEach(async ({ page }) => {
-    // Stub the AudioBridge WS so pre-flight clears immediately.
-    // Sends a JSON sample-rate header followed by a buffer of audible PCM.
+    // Stub the AudioBridge WS so pre-flight clears AND stays cleared.
+    // Sends a JSON sample-rate header, then a continuous stream of audible PCM
+    // buffers — without continuous frames, the recorder's level monitor would
+    // see silence and the preflight overlay would re-show, intercepting keys.
     await page.addInitScript(() => {
       class FakeWS {
         constructor() {
           this.binaryType = 'arraybuffer';
-          setTimeout(() => {
+          const send = () => {
             this.onmessage?.({ data: JSON.stringify({ sampleRate: 48000 }) });
             const buf = new ArrayBuffer(2048);
             const view = new Int16Array(buf);
             for (let i = 0; i < view.length; i++) view[i] = (i % 2) ? 8000 : -8000;
             this.onmessage?.({ data: buf });
+          };
+          setTimeout(() => {
+            send();
+            this._iv = setInterval(send, 100);
           }, 50);
         }
         send() {}
-        close() {}
+        close() { if (this._iv) clearInterval(this._iv); }
       }
       window.WebSocket = FakeWS;
     });
@@ -45,9 +51,15 @@ test.describe('Weekly Review UX', () => {
 
     // Default landing: TOC grid.
     await expect(page.locator('.weekly-review-grid')).toBeVisible();
+    // Tiny settle: preflight just cleared and the React tree just re-rendered.
+    // Without this, the first keypress can race the keydown listener re-attach.
+    await page.waitForTimeout(100);
 
-    // Right arrow → opens day detail.
-    await page.keyboard.press('ArrowRight');
+    // Bootstrap focuses the last day. ArrowLeft moves selection to the previous day (still TOC view).
+    await page.keyboard.press('ArrowLeft');
+    await expect(page.locator('.weekly-review-grid')).toBeVisible();
+    // Enter opens the focused day's detail view.
+    await page.keyboard.press('Enter');
     await expect(page.locator('.day-detail')).toBeVisible({ timeout: 5000 });
 
     // Down at day → returns to TOC.
@@ -85,8 +97,13 @@ test.describe('Weekly Review UX', () => {
   test('Up at day with photos enters fullscreen image view', async ({ page }) => {
     await page.goto(`${APP_URL}/app/weekly-review`);
     await expect(page.locator('.weekly-review-preflight-overlay')).toBeHidden({ timeout: 12000 });
+    await expect(page.locator('.weekly-review-grid')).toBeVisible();
+    // Settle after preflight clears so the keydown listener is reattached on the latest view.
+    await page.waitForTimeout(100);
 
-    await page.keyboard.press('ArrowRight');
+    // Move selection to the previous day, then Enter to open day-detail.
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('Enter');
     await expect(page.locator('.day-detail')).toBeVisible({ timeout: 5000 });
 
     const photoCount = await page.locator('.day-detail-photo').count();
@@ -95,12 +112,31 @@ test.describe('Weekly Review UX', () => {
     await page.keyboard.press('ArrowUp');
     await expect(page.locator('.weekly-review-fullscreen-image')).toBeVisible();
 
-    // Down at fullscreen cycles backward (still in fullscreen).
+    // Down at fullscreen cycles photos (still in fullscreen).
     await page.keyboard.press('ArrowDown');
     await expect(page.locator('.weekly-review-fullscreen-image')).toBeVisible();
 
-    // Left at fullscreen drops to previous day's L2 detail (or no-op at first day).
+    // Left at fullscreen also cycles photos (no longer jumps to a different day).
     await page.keyboard.press('ArrowLeft');
+    await expect(page.locator('.weekly-review-fullscreen-image')).toBeVisible();
+
+    // Escape drops back to day detail.
+    await page.keyboard.press('Escape');
     await expect(page.locator('.day-detail')).toBeVisible();
+  });
+
+  test('Space and Backspace are no longer aliased to Enter and Escape', async ({ page }) => {
+    await page.goto(`${APP_URL}/app/weekly-review`);
+    await expect(page.locator('.weekly-review-preflight-overlay')).toBeHidden({ timeout: 12000 });
+    await expect(page.locator('.weekly-review-grid')).toBeVisible();
+
+    // Space at TOC must NOT open a day (it would have under the old Space==Enter aliasing).
+    await page.keyboard.press(' ');
+    await expect(page.locator('.weekly-review-grid')).toBeVisible();
+    await expect(page.locator('.day-detail')).toBeHidden();
+
+    // Backspace at TOC must NOT open the stop-confirm modal (it would have under old Backspace==Esc).
+    await page.keyboard.press('Backspace');
+    await expect(page.locator('.weekly-review-confirm-overlay')).toBeHidden();
   });
 });
