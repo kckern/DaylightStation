@@ -10,6 +10,7 @@ import RecordingBar from './components/RecordingBar.jsx';
 import { useAudioRecorder } from './hooks/useAudioRecorder.js';
 import { useChunkUploader } from './hooks/useChunkUploader.js';
 import { deleteSession as deleteLocalSession, listSessions as listLocalSessions, getChunksForSession } from './hooks/chunkDb.js';
+import { modalReducer, initialModalState } from './state/modalReducer.js';
 import './WeeklyReview.scss';
 
 const logger = getLogger().child({ component: 'weekly-review' });
@@ -20,21 +21,18 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   const [error, setError] = useState(null);
   // eslint-disable-next-line no-unused-vars -- setUploading kept; Task 14 may revive or remove it
   const [uploading, setUploading] = useState(false);
-  const [showStopConfirm, setShowStopConfirm] = useState(false);
-  const [confirmFocus, setConfirmFocus] = useState(0); // 0=continue, 1=save
-  const [resumeDraft, setResumeDraft] = useState(null); // { sessionId, source: 'server'|'local', totalBytes?, lastSavedAt, chunkCount? }
-  const [finalizeError, setFinalizeError] = useState(null);
-  const [errorFocus, setErrorFocus] = useState(0); // I2: 0=Retry, 1=Exit
+  // Task 5: single reducer replaces 8 individual overlay flags. See state/modalReducer.js.
+  // modal.type ∈ { null, 'stopConfirm', 'resumeDraft', 'finalizeError', 'disconnect', 'preflightFailed' }
+  // modal.focusIndex: button focus within the modal (0 ↔ 1)
+  // modal.payload: per-modal data (e.g. resumeDraft descriptor, finalize error message, disconnect phase)
+  const [modal, dispatchModal] = React.useReducer(modalReducer, initialModalState);
   // Task 8: viewLevel state machine — replaces selectedDay/focusedDay/focusRow/barFocus
   const [viewLevel, setViewLevel] = useState('toc');           // 'toc' | 'day' | 'fullscreen'
   const [dayIndex, setDayIndex] = useState(0);                 // always valid once data loads
   const [imageIndex, setImageIndex] = useState(0);             // valid when viewLevel === 'fullscreen'
 
-  // Task 9: focus row, preflight, and disconnect modal state
+  // Task 9: focus row state (preflight + disconnect modal moved to modalReducer in Task 5)
   const [focusRow, setFocusRow] = useState('main');            // 'main' | 'bar'
-  const [preflightFailed, setPreflightFailed] = useState(false);
-  const [preflightFocus, setPreflightFocus] = useState(0);     // 0=Retry, 1=Exit
-  const [disconnectModal, setDisconnectModal] = useState(null);
 
   const autoStartRef = useRef(false);
   const menuNav = React.useContext(MenuNavigationContext);
@@ -59,7 +57,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
     firstAudibleFrameSeen, disconnected, reconnect,
   } = useAudioRecorder({ onChunk: handleChunk });
 
-  const preflightStatus = preflightFailed
+  const preflightStatus = modal.type === 'preflightFailed'
     ? 'failed'
     : (firstAudibleFrameSeen ? 'ok' : 'acquiring');
 
@@ -86,7 +84,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   }, [stopRecording]);
 
   const onPreflightRetry = useCallback(() => {
-    setPreflightFailed(false);
+    dispatchModal({ type: 'CLOSE' });
     autoStartRef.current = false;
     stopRecording();
     setTimeout(() => { autoStartRef.current = true; startRecording(); }, 100);
@@ -98,8 +96,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
     if (focusRow === 'bar') { setFocusRow('main'); return; }
     if (viewLevel === 'fullscreen') { setViewLevel('day'); return; }
     if (viewLevel === 'day')        { setViewLevel('toc'); return; }
-    setConfirmFocus(0);
-    setShowStopConfirm(true);
+    dispatchModal({ type: 'OPEN', modal: 'stopConfirm' });
   }, [viewLevel, focusRow]);
 
   useEffect(() => {
@@ -157,16 +154,26 @@ export default function WeeklyReview({ dispatch, dismiss }) {
     startRecording();
   }, [data, startRecording]);
 
+  // Track modal type via ref so the preflight clear-on-recover effect can guard
+  // the CLOSE dispatch without taking `modal` as a dep (which would re-run the
+  // 10s timer on every modal change).
+  const modalTypeRef = useRef(modal.type);
+  modalTypeRef.current = modal.type;
+
   useEffect(() => {
     if (firstAudibleFrameSeen) {
-      setPreflightFailed(false);
+      // Audio recovered — clear the preflight-failed modal if it's the one open.
+      // Don't blindly CLOSE: other modals (stopConfirm, finalizeError) must persist.
+      if (modalTypeRef.current === 'preflightFailed') {
+        dispatchModal({ type: 'CLOSE' });
+      }
       return;
     }
     if (!isRecording) return;
     const timer = setTimeout(() => {
       if (!firstAudibleFrameSeen) {
         logger.warn('recording.preflight-timeout');
-        setPreflightFailed(true);
+        dispatchModal({ type: 'OPEN', modal: 'preflightFailed' });
       }
     }, 10000);
     return () => clearTimeout(timer);
@@ -183,27 +190,27 @@ export default function WeeklyReview({ dispatch, dismiss }) {
     disconnectFiredRef.current = true;
     (async () => {
       logger.warn('disconnect.detected');
-      setDisconnectModal({ phase: 'reconnecting' });
+      dispatchModal({ type: 'OPEN', modal: 'disconnect', payload: { phase: 'reconnecting' } });
       const ok = await reconnect();
       if (ok) {
         logger.info('disconnect.recovered');
-        setDisconnectModal(null);
+        dispatchModal({ type: 'CLOSE' });
         return;
       }
       logger.warn('disconnect.reconnect-failed-finalizing');
-      setDisconnectModal({ phase: 'finalizing' });
+      dispatchModal({ type: 'OPEN', modal: 'disconnect', payload: { phase: 'finalizing' } });
       try {
         uploaderFlushNow();
         await DaylightAPI('/api/v1/weekly-review/recording/finalize', {
           sessionId: sessionIdRef.current, week: data?.week, duration: recordingDuration,
         }, 'POST');
         await deleteLocalSession(sessionIdRef.current).catch(() => {});
-        setDisconnectModal(null);
+        dispatchModal({ type: 'CLOSE' });
         onExitWidget();
       } catch (err) {
         logger.error('disconnect.finalize-failed', { error: err.message });
-        setDisconnectModal(null);
-        setFinalizeError(err.message);
+        dispatchModal({ type: 'CLOSE' });
+        dispatchModal({ type: 'OPEN', modal: 'finalizeError', payload: err.message });
       }
     })();
   }, [disconnected, reconnect, uploaderFlushNow, data?.week, recordingDuration, onExitWidget]);
@@ -220,7 +227,10 @@ export default function WeeklyReview({ dispatch, dismiss }) {
           .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))[0];
         if (serverDraft && !cancelled) {
           logger.info('recording.resume-candidate.server', serverDraft);
-          setResumeDraft({ sessionId: serverDraft.sessionId, source: 'server', totalBytes: serverDraft.totalBytes, lastSavedAt: serverDraft.updatedAt });
+          dispatchModal({
+            type: 'OPEN', modal: 'resumeDraft',
+            payload: { sessionId: serverDraft.sessionId, source: 'server', totalBytes: serverDraft.totalBytes, lastSavedAt: serverDraft.updatedAt },
+          });
           return;
         }
         const localSessions = await listLocalSessions();
@@ -229,7 +239,10 @@ export default function WeeklyReview({ dispatch, dismiss }) {
           .sort((a, b) => b.lastSavedAt - a.lastSavedAt)[0];
         if (localDraft && !cancelled) {
           logger.info('recording.resume-candidate.local', localDraft);
-          setResumeDraft({ sessionId: localDraft.sessionId, source: 'local', totalBytes: null, lastSavedAt: new Date(localDraft.lastSavedAt).toISOString(), chunkCount: localDraft.chunkCount });
+          dispatchModal({
+            type: 'OPEN', modal: 'resumeDraft',
+            payload: { sessionId: localDraft.sessionId, source: 'local', totalBytes: null, lastSavedAt: new Date(localDraft.lastSavedAt).toISOString(), chunkCount: localDraft.chunkCount },
+          });
         }
       } catch (err) {
         logger.warn('recording.resume-check-failed', { error: err.message });
@@ -239,11 +252,12 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   }, [data?.week]);
 
   const finalizePriorDraft = useCallback(async () => {
-    if (!resumeDraft?.sessionId || !data?.week) return;
+    const draft = modal.type === 'resumeDraft' ? modal.payload : null;
+    if (!draft?.sessionId || !data?.week) return;
     try {
-      logger.info('recording.resume.finalize', { sessionId: resumeDraft.sessionId, source: resumeDraft.source });
-      if (resumeDraft.source === 'local') {
-        const rows = await getChunksForSession(resumeDraft.sessionId);
+      logger.info('recording.resume.finalize', { sessionId: draft.sessionId, source: draft.source });
+      if (draft.source === 'local') {
+        const rows = await getChunksForSession(draft.sessionId);
         for (const row of rows) {
           if (row.uploaded) continue;
           const buf = await row.blob.arrayBuffer();
@@ -256,7 +270,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
           let lastErr = null;
           for (let attempt = 0; attempt < 3; attempt++) {
             try {
-              await DaylightAPI('/api/v1/weekly-review/recording/chunk', { sessionId: resumeDraft.sessionId, seq: row.seq, week: data.week, chunkBase64 }, 'POST');
+              await DaylightAPI('/api/v1/weekly-review/recording/chunk', { sessionId: draft.sessionId, seq: row.seq, week: data.week, chunkBase64 }, 'POST');
               lastErr = null;
               break;
             } catch (err) {
@@ -269,24 +283,24 @@ export default function WeeklyReview({ dispatch, dismiss }) {
         }
       }
       let estimatedDuration = 0;
-      if (resumeDraft.source === 'local') {
+      if (draft.source === 'local') {
         // chunkCount * 5 seconds per chunk
-        estimatedDuration = (resumeDraft.chunkCount || 0) * 5;
-      } else if (resumeDraft.source === 'server') {
+        estimatedDuration = (draft.chunkCount || 0) * 5;
+      } else if (draft.source === 'server') {
         // Server drafts: estimate from totalBytes and typical opus bitrate ~24kbps (3000 bytes/sec)
-        estimatedDuration = Math.round((resumeDraft.totalBytes || 0) / 3000);
+        estimatedDuration = Math.round((draft.totalBytes || 0) / 3000);
       }
       await DaylightAPI('/api/v1/weekly-review/recording/finalize', {
-        sessionId: resumeDraft.sessionId, week: data.week, duration: estimatedDuration,
+        sessionId: draft.sessionId, week: data.week, duration: estimatedDuration,
       }, 'POST');
-      await deleteLocalSession(resumeDraft.sessionId);
-      setResumeDraft(null);
+      await deleteLocalSession(draft.sessionId);
+      dispatchModal({ type: 'CLOSE' });
       const fresh = await DaylightAPI('/api/v1/weekly-review/bootstrap');
       setData(fresh);
     } catch (err) {
       logger.error('recording.resume.finalize-failed', { error: err.message });
     }
-  }, [resumeDraft, data?.week]);
+  }, [modal, data?.week]);
 
   // Pagehide/beforeunload beacon flush
   useEffect(() => {
@@ -316,72 +330,64 @@ export default function WeeklyReview({ dispatch, dismiss }) {
 
       // ---- Overlay-specific handling. These modals override "Enter = upload" ----
 
-      // Pre-flight key handling.
+      // Preflight 'acquiring' gate. The overlay is visible but not a hard block:
+      // Esc/Backspace exits the widget; other keys (arrows, Enter) fall through to
+      // the main hierarchy so the user can pre-navigate while the mic warms up.
       // Use ref to avoid stale-closure lag on rapid key presses right after preflight clears.
       const currentPreflightStatus = preflightStatusRef.current;
-      if (currentPreflightStatus === 'failed') {
-        // Hard block — mic unavailable; only Retry/Exit buttons work.
-        if (isBack) { e.preventDefault(); onExitWidget(); return; }
-        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-          e.preventDefault();
-          setPreflightFocus(prev => prev === 0 ? 1 : 0);
-        } else if (isEnter) {
-          e.preventDefault();
-          if (preflightFocus === 0) onPreflightRetry(); else onPreflightExit();
-        }
-        return;
-      }
-      // 'acquiring': overlay is showing but not a hard block.
-      // Esc exits; other navigation keys fall through to the main hierarchy below.
       if (currentPreflightStatus === 'acquiring' && isBack) {
         e.preventDefault();
         onExitWidget();
         return;
       }
 
-      // Disconnect modal: informational while reconnecting/finalizing — swallow all keys.
-      if (disconnectModal) {
-        e.preventDefault();
-        return;
-      }
-
-      // Stop-confirm modal: existing behavior (L/R toggles focus, Enter activates).
-      if (showStopConfirm) {
-        e.preventDefault();
-        if (isBack) { setShowStopConfirm(false); return; }
-        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-          setConfirmFocus(prev => prev === 0 ? 1 : 0); return;
-        }
-        if (isEnter) {
-          if (confirmFocus === 0) { setShowStopConfirm(false); }
-          else { setShowStopConfirm(false); onSaveAndExit(); }
+      // Modal handling: any open modal (preflightFailed, disconnect, stopConfirm, finalizeError,
+      // resumeDraft) swallows main-hierarchy keys. Per-modal Enter/Back semantics differ slightly.
+      if (modal.type) {
+        if (modal.type === 'disconnect') {
+          // Informational while reconnecting/finalizing — swallow all keys.
+          e.preventDefault();
           return;
         }
-        return;
-      }
-
-      // Finalize-error modal: L/R toggles focus, Enter activates Retry / Exit-save-later.
-      if (finalizeError) {
-        e.preventDefault();
+        if (isBack) {
+          e.preventDefault();
+          if (modal.type === 'resumeDraft') return;            // must explicitly Finalize
+          if (modal.type === 'preflightFailed') { onExitWidget(); return; }
+          dispatchModal({ type: 'CLOSE' });
+          return;
+        }
         if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-          setErrorFocus(prev => prev === 0 ? 1 : 0); return;
+          e.preventDefault();
+          if (modal.type !== 'resumeDraft') dispatchModal({ type: 'TOGGLE_FOCUS' });
+          return;
         }
         if (isEnter) {
-          if (errorFocus === 0) { setFinalizeError(null); }
-          else {
-            setFinalizeError(null);
-            onExitWidget();
+          e.preventDefault();
+          if (modal.type === 'stopConfirm') {
+            if (modal.focusIndex === 0) {
+              dispatchModal({ type: 'CLOSE' });
+            } else {
+              dispatchModal({ type: 'CLOSE' });
+              onSaveAndExit();
+            }
+            return;
           }
-          return;
+          if (modal.type === 'finalizeError') {
+            // Task 4 polish: both buttons just close; "Exit (save later)" also exits the widget.
+            dispatchModal({ type: 'CLOSE' });
+            if (modal.focusIndex === 1) onExitWidget();
+            return;
+          }
+          if (modal.type === 'preflightFailed') {
+            if (modal.focusIndex === 0) onPreflightRetry();
+            else onPreflightExit();
+            return;
+          }
+          if (modal.type === 'resumeDraft') {
+            finalizePriorDraft();
+            return;
+          }
         }
-        return;
-      }
-
-      // Resume-draft overlay (single-button after Task 13): Enter activates Finalize.
-      if (resumeDraft) {
-        e.preventDefault();
-        if (isEnter) finalizePriorDraft();
-        // No Discard option, no L/R toggle. Back is intentionally a no-op (must explicitly finalize).
         return;
       }
 
@@ -519,12 +525,13 @@ export default function WeeklyReview({ dispatch, dismiss }) {
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [data, viewLevel, dayIndex, imageIndex, focusRow, resumeDraft, finalizeError, showStopConfirm, preflightFocus, confirmFocus, errorFocus, disconnectModal, finalizePriorDraft, onExitWidget, onSaveAndExit, onPreflightRetry, onPreflightExit, onBackPressed]);
+  }, [data, viewLevel, dayIndex, imageIndex, focusRow, modal,
+      finalizePriorDraft, onExitWidget, onSaveAndExit,
+      onPreflightRetry, onPreflightExit, onBackPressed]);
 
   // Pop guard: prevent MenuNavigationContext from popping the app while recording or uploading.
   // Handles remote Back button (FKB/Shield popstate) and any other pop() caller.
-  const showStopConfirmRef = useRef(showStopConfirm);
-  showStopConfirmRef.current = showStopConfirm;
+  // modalTypeRef is declared above near the preflight effect — reuse it here.
   const isRecordingRef = useRef(isRecording);
   isRecordingRef.current = isRecording;
   const viewLevelRef = useRef(viewLevel);
@@ -541,14 +548,13 @@ export default function WeeklyReview({ dispatch, dismiss }) {
       logger.info('nav.pop-guard', {
         isRecording: isRecordingRef.current,
         viewLevel: viewLevelRef.current,
-        showStopConfirm: showStopConfirmRef.current,
+        modalType: modalTypeRef.current,
       });
 
-      if (showStopConfirmRef.current) { setShowStopConfirm(false); return false; }
+      if (modalTypeRef.current === 'stopConfirm') { dispatchModal({ type: 'CLOSE' }); return false; }
       if (viewLevelRef.current === 'fullscreen') { setViewLevel('day'); return false; }
       if (viewLevelRef.current === 'day')        { setViewLevel('toc'); return false; }
-      setConfirmFocus(0);
-      setShowStopConfirm(true);
+      dispatchModal({ type: 'OPEN', modal: 'stopConfirm' });
       return false;
     });
 
@@ -577,12 +583,12 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   return (
     <div className="weekly-review">
       {/* Resume-draft overlay — shown after bootstrap if an unfinalized draft exists */}
-      {resumeDraft && !isRecording && (
+      {modal.type === 'resumeDraft' && !isRecording && (
         <div className="weekly-review-confirm-overlay">
           <div className="confirm-dialog">
             <div className="confirm-message">
               A previous recording was not finalized.<br/>
-              <small>{resumeDraft.source === 'server' ? `Server draft · ${Math.round((resumeDraft.totalBytes || 0) / 1024)} KB` : `Local-only draft · ${resumeDraft.chunkCount || 0} chunks`}</small>
+              <small>{modal.payload?.source === 'server' ? `Server draft · ${Math.round((modal.payload?.totalBytes || 0) / 1024)} KB` : `Local-only draft · ${modal.payload?.chunkCount || 0} chunks`}</small>
             </div>
             <div className="confirm-actions">
               <button className="confirm-btn confirm-btn--save focused" onClick={finalizePriorDraft}>Finalize Previous</button>
@@ -624,37 +630,37 @@ export default function WeeklyReview({ dispatch, dismiss }) {
       )}
 
       {/* Finalize error dialog — shown when upload/finalize fails after recording stops */}
-      {finalizeError && !isRecording && (
+      {modal.type === 'finalizeError' && !isRecording && (
         <div className="weekly-review-confirm-overlay">
           <div className="confirm-dialog">
             <div className="confirm-message">
-              Save failed: {finalizeError}
+              Save failed: {modal.payload}
               <br/>
               <small>Your recording is safe — stored locally and on the server.</small>
             </div>
             <div className="confirm-actions">
-              <button className={`confirm-btn confirm-btn--save${errorFocus === 0 ? ' focused' : ''}`} onClick={() => { setFinalizeError(null); }}>Dismiss</button>
-              <button className={`confirm-btn confirm-btn--continue${errorFocus === 1 ? ' focused' : ''}`} onClick={() => { setFinalizeError(null); if (typeof dispatch === 'function') dispatch('escape'); else if (typeof dismiss === 'function') dismiss(); }}>Exit (save later)</button>
+              <button className={`confirm-btn confirm-btn--save${modal.focusIndex === 0 ? ' focused' : ''}`} onClick={() => { dispatchModal({ type: 'CLOSE' }); }}>Dismiss</button>
+              <button className={`confirm-btn confirm-btn--continue${modal.focusIndex === 1 ? ' focused' : ''}`} onClick={() => { dispatchModal({ type: 'CLOSE' }); if (typeof dispatch === 'function') dispatch('escape'); else if (typeof dismiss === 'function') dismiss(); }}>Exit (save later)</button>
             </div>
           </div>
         </div>
       )}
 
       {/* Stop confirmation overlay */}
-      {showStopConfirm && (
+      {modal.type === 'stopConfirm' && (
         <div className="weekly-review-confirm-overlay">
           <div className="confirm-dialog">
             <div className="confirm-message">End weekly review recording?</div>
             <div className="confirm-actions">
               <button
-                className={`confirm-btn confirm-btn--continue${confirmFocus === 0 ? ' focused' : ''}`}
-                onClick={() => { logger.info('recording.confirm-continue'); setShowStopConfirm(false); }}
+                className={`confirm-btn confirm-btn--continue${modal.focusIndex === 0 ? ' focused' : ''}`}
+                onClick={() => { logger.info('recording.confirm-continue'); dispatchModal({ type: 'CLOSE' }); }}
               >
                 Continue Recording
               </button>
               <button
-                className={`confirm-btn confirm-btn--save${confirmFocus === 1 ? ' focused' : ''}`}
-                onClick={() => { logger.info('recording.confirm-save'); setShowStopConfirm(false); stopRecording(); }}
+                className={`confirm-btn confirm-btn--save${modal.focusIndex === 1 ? ' focused' : ''}`}
+                onClick={() => { logger.info('recording.confirm-save'); dispatchModal({ type: 'CLOSE' }); stopRecording(); }}
               >
                 Save &amp; Close
               </button>
@@ -664,14 +670,14 @@ export default function WeeklyReview({ dispatch, dismiss }) {
       )}
 
       {/* Disconnect modal — shown when mic drops; blocks input while reconnecting or finalizing */}
-      {disconnectModal && (
+      {modal.type === 'disconnect' && (
         <div className="weekly-review-confirm-overlay">
           <div className="confirm-dialog">
             <div className="confirm-message">
-              {disconnectModal.phase === 'reconnecting' && (
+              {modal.payload?.phase === 'reconnecting' && (
                 <>Microphone dropped — reconnecting…<br/><small>Please hold tight.</small></>
               )}
-              {disconnectModal.phase === 'finalizing' && (
+              {modal.payload?.phase === 'finalizing' && (
                 <>Microphone disconnected.<br/><small>Saving your recording…</small></>
               )}
             </div>
@@ -681,9 +687,9 @@ export default function WeeklyReview({ dispatch, dismiss }) {
 
       <PreFlightOverlay
         status={preflightStatus}
-        focusIndex={preflightFocus}
+        focusIndex={modal.focusIndex}
         onRetry={() => {
-          setPreflightFailed(false);
+          dispatchModal({ type: 'CLOSE' });
           autoStartRef.current = false;
           stopRecording();
           setTimeout(() => { autoStartRef.current = true; startRecording(); }, 100);
