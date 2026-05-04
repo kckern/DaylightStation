@@ -25,9 +25,6 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   const [resumeDraft, setResumeDraft] = useState(null); // { sessionId, source: 'server'|'local', totalBytes?, lastSavedAt, chunkCount? }
   const [finalizeError, setFinalizeError] = useState(null);
   const [errorFocus, setErrorFocus] = useState(0); // I2: 0=Retry, 1=Exit
-  const [uploadInFlight, setUploadInFlight] = useState(false);
-  const lastUploadAtRef = useRef(0);
-
   // Task 8: viewLevel state machine — replaces selectedDay/focusedDay/focusRow/barFocus
   const [viewLevel, setViewLevel] = useState('toc');           // 'toc' | 'day' | 'fullscreen'
   const [dayIndex, setDayIndex] = useState(0);                 // always valid once data loads
@@ -66,6 +63,10 @@ export default function WeeklyReview({ dispatch, dismiss }) {
     ? 'failed'
     : (firstAudibleFrameSeen ? 'ok' : 'acquiring');
 
+  // Ref so handleKeyDown always reads the latest preflightStatus without stale-closure lag.
+  const preflightStatusRef = useRef(preflightStatus);
+  preflightStatusRef.current = preflightStatus;
+
   // Task 9 callbacks — declared after useAudioRecorder so stopRecording is in scope.
   // Some are stubs; Tasks 10–12 will wire them up fully.
   const onExitWidget = useCallback(() => {
@@ -78,42 +79,6 @@ export default function WeeklyReview({ dispatch, dismiss }) {
     // Task 10 will wire up auto-finalize on stop.
     stopRecording();
   }, [stopRecording]);
-
-  // Task 11: Enter triggers finalize while recording continues.
-  const onEnterUpload = useCallback(async () => {
-    if (uploadInFlight) {
-      logger.info('upload.skip-in-flight');
-      return;
-    }
-    if (Date.now() - lastUploadAtRef.current < 1000) {
-      logger.info('upload.skip-debounced');
-      return;
-    }
-    if (!data?.week) return;
-    lastUploadAtRef.current = Date.now();
-    setUploadInFlight(true);
-    try {
-      logger.info('upload.finalize-request', { sessionId: sessionIdRef.current, week: data.week });
-      uploaderFlushNow();
-      // Wait briefly for in-memory queue to drain before finalize. Don't block forever — server tolerates partial.
-      const drainDeadline = Date.now() + 3000;
-      while (uploaderPendingCountRef.current > 0 && Date.now() < drainDeadline) {
-        await new Promise(r => setTimeout(r, 200));
-        uploaderFlushNow();
-      }
-      await DaylightAPI('/api/v1/weekly-review/recording/finalize', {
-        sessionId: sessionIdRef.current,
-        week: data.week,
-        duration: recordingDuration,
-      }, 'POST');
-      logger.info('upload.finalize-complete');
-    } catch (err) {
-      logger.warn('upload.finalize-failed', { error: err.message });
-      // Non-blocking — just toast on the bar; pipeline continues.
-    } finally {
-      setUploadInFlight(false);
-    }
-  }, [data?.week, recordingDuration, uploaderFlushNow, uploaderPendingCountRef, uploadInFlight]);
 
   const onPreflightRetry = useCallback(() => {
     setPreflightFailed(false);
@@ -346,23 +311,26 @@ export default function WeeklyReview({ dispatch, dismiss }) {
 
       // ---- Overlay-specific handling. These modals override "Enter = upload" ----
 
-      // Pre-flight: only Back works (to bail). Other keys ignored.
-      if (preflightStatus !== 'ok') {
-        if (isBack) {
+      // Pre-flight key handling.
+      // Use ref to avoid stale-closure lag on rapid key presses right after preflight clears.
+      const currentPreflightStatus = preflightStatusRef.current;
+      if (currentPreflightStatus === 'failed') {
+        // Hard block — mic unavailable; only Retry/Exit buttons work.
+        if (isBack) { e.preventDefault(); onExitWidget(); return; }
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
           e.preventDefault();
-          onExitWidget();
-          return;
+          setPreflightFocus(prev => prev === 0 ? 1 : 0);
+        } else if (isEnter) {
+          e.preventDefault();
+          if (preflightFocus === 0) onPreflightRetry(); else onPreflightExit();
         }
-        // Pre-flight failed has its own Retry/Exit buttons; route L/R + Enter:
-        if (preflightStatus === 'failed') {
-          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-            e.preventDefault();
-            setPreflightFocus(prev => prev === 0 ? 1 : 0);
-          } else if (isEnter) {
-            e.preventDefault();
-            if (preflightFocus === 0) onPreflightRetry(); else onPreflightExit();
-          }
-        }
+        return;
+      }
+      // 'acquiring': overlay is showing but not a hard block.
+      // Esc exits; other navigation keys fall through to the main hierarchy below.
+      if (currentPreflightStatus === 'acquiring' && isBack) {
+        e.preventDefault();
+        onExitWidget();
         return;
       }
 
@@ -394,7 +362,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
           setErrorFocus(prev => prev === 0 ? 1 : 0); return;
         }
         if (isEnter) {
-          if (errorFocus === 0) { setFinalizeError(null); onEnterUpload(); }
+          if (errorFocus === 0) { setFinalizeError(null); }
           else {
             setFinalizeError(null);
             onExitWidget();
@@ -423,11 +391,26 @@ export default function WeeklyReview({ dispatch, dismiss }) {
         return;
       }
 
-      // ---- Main hierarchy: Enter = upload, Back = climb ----
+      // ---- Main hierarchy: Enter = open focused day (TOC) or fullscreen (day), Back = climb ----
       if (isEnter) {
-        e.preventDefault();
-        e.stopPropagation();
-        onEnterUpload();
+        if (viewLevel === 'toc') {
+          e.preventDefault();
+          e.stopPropagation();
+          setViewLevel('day');
+          return;
+        }
+        if (viewLevel === 'day') {
+          // Enter at day view: open fullscreen if photos exist; otherwise no-op.
+          const photos = data.days[dayIndex]?.photos || [];
+          if (photos.length > 0) {
+            e.preventDefault();
+            e.stopPropagation();
+            setImageIndex(0);
+            setViewLevel('fullscreen');
+          }
+          return;
+        }
+        // Fullscreen: Enter is a no-op (use Esc to back out, arrows to navigate).
         return;
       }
 
@@ -531,7 +514,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [data, viewLevel, dayIndex, imageIndex, focusRow, resumeDraft, finalizeError, showStopConfirm, preflightStatus, preflightFocus, confirmFocus, errorFocus, disconnectModal, finalizePriorDraft, onExitWidget, onSaveAndExit, onEnterUpload, onPreflightRetry, onPreflightExit, onBackPressed]);
+  }, [data, viewLevel, dayIndex, imageIndex, focusRow, resumeDraft, finalizeError, showStopConfirm, preflightFocus, confirmFocus, errorFocus, disconnectModal, finalizePriorDraft, onExitWidget, onSaveAndExit, onPreflightRetry, onPreflightExit, onBackPressed]);
 
   // Pop guard: prevent MenuNavigationContext from popping the app while recording or uploading.
   // Handles remote Back button (FKB/Shield popstate) and any other pop() caller.
@@ -544,7 +527,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
 
   useEffect(() => {
     if (!menuNav?.setPopGuard) return;
-    if (!isRecording && !uploadInFlight) {
+    if (!isRecording) {
       menuNav.clearPopGuard();
       return;
     }
@@ -552,12 +535,9 @@ export default function WeeklyReview({ dispatch, dismiss }) {
     menuNav.setPopGuard(() => {
       logger.info('nav.pop-guard', {
         isRecording: isRecordingRef.current,
-        uploadInFlight: uploadInFlight,
         viewLevel: viewLevelRef.current,
         showStopConfirm: showStopConfirmRef.current,
       });
-
-      if (uploadInFlight) return false;
 
       if (showStopConfirmRef.current) { setShowStopConfirm(false); return false; }
       if (viewLevelRef.current === 'fullscreen') { setViewLevel('day'); return false; }
@@ -568,7 +548,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
     });
 
     return () => menuNav.clearPopGuard();
-  }, [isRecording, uploadInFlight, menuNav]);
+  }, [isRecording, menuNav]);
 
   const weekLabel = useMemo(() => {
     if (!data?.days?.length) return '';
@@ -648,7 +628,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
               <small>Your recording is safe — stored locally and on the server.</small>
             </div>
             <div className="confirm-actions">
-              <button className={`confirm-btn confirm-btn--save${errorFocus === 0 ? ' focused' : ''}`} onClick={() => { setFinalizeError(null); onEnterUpload(); }}>Retry</button>
+              <button className={`confirm-btn confirm-btn--save${errorFocus === 0 ? ' focused' : ''}`} onClick={() => { setFinalizeError(null); }}>Retry</button>
               <button className={`confirm-btn confirm-btn--continue${errorFocus === 1 ? ' focused' : ''}`} onClick={() => { setFinalizeError(null); if (typeof dispatch === 'function') dispatch('escape'); else if (typeof dismiss === 'function') dismiss(); }}>Exit (save later)</button>
             </div>
           </div>
@@ -713,7 +693,6 @@ export default function WeeklyReview({ dispatch, dismiss }) {
         micLevel={micLevel}
         silenceWarning={silenceWarning}
         uploading={uploading}
-        uploadInFlight={uploadInFlight}
         micConnected={isRecording && !disconnected}
         existingRecording={data.recording}
         error={recorderError}

@@ -1084,18 +1084,6 @@
   50% { opacity: 0.5; }
 }
 
-.upload-flash {
-  font-size: 0.85rem;
-  color: #c0e8d0;
-  margin-left: 0.5rem;
-  animation: upload-flash-fade 1.2s ease-out;
-}
-@keyframes upload-flash-fade {
-  0% { opacity: 0; }
-  20% { opacity: 1; }
-  100% { opacity: 0.6; }
-}
-
 // ---- Task 18: Fixed-width treatment for dynamic text (no jitter) ----
 
 .weekly-review,
@@ -1124,12 +1112,6 @@
 .sync-badge {
   display: inline-block;
   min-width: 16ch;
-  text-align: left;
-}
-
-.upload-flash {
-  display: inline-block;
-  min-width: 9ch;
   text-align: left;
 }
 

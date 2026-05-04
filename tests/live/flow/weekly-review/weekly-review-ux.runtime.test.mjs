@@ -72,6 +72,16 @@ test.describe('Weekly Review UX', () => {
     await expect(page.locator('.recording-bar__save')).toBeVisible();
   });
 
+  test('Enter at TOC opens the focused day', async ({ page }) => {
+    await page.goto(`${APP_URL}/app/weekly-review`);
+    await expect(page.locator('.weekly-review-preflight-overlay')).toBeHidden({ timeout: 12000 });
+    await expect(page.locator('.weekly-review-grid')).toBeVisible();
+
+    // Press Enter on whatever day is currently focused (bootstrap selects the last day).
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.day-detail')).toBeVisible({ timeout: 5000 });
+  });
+
   test('Up at day with photos enters fullscreen image view', async ({ page }) => {
     await page.goto(`${APP_URL}/app/weekly-review`);
     await expect(page.locator('.weekly-review-preflight-overlay')).toBeHidden({ timeout: 12000 });
