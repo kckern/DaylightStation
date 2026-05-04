@@ -22,7 +22,6 @@ export default function RecordingBar({
   canSave,
   onSave,
   micConnected,
-  uploadInFlight,
 }) {
   const vuBars = useMemo(() => {
     const count = 20;
@@ -80,7 +79,6 @@ export default function RecordingBar({
           <span className="recording-bar__save-label">Save Recording</span>
         </button>
 
-        {uploadInFlight && <span className="upload-flash">Uploading…</span>}
       </div>
     </div>
   );
