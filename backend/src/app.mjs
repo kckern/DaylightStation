@@ -87,6 +87,9 @@ import { bootstrapLifeplan } from './0_system/bootstrap/lifeplan.mjs';
 // AI router import
 import { createAIRouter } from './4_api/v1/routers/ai.mjs';
 
+// Health mentions router (CoachChat autocomplete)
+import { createHealthMentionsRouter } from './4_api/v1/routers/health-mentions.mjs';
+
 // Feed harvester adapter for scheduler integration
 import { HeadlineHarvesterAdapter } from './1_adapters/feed/HeadlineHarvesterAdapter.mjs';
 
@@ -828,6 +831,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers['health-dashboard'] = createHealthDashboardApiRouter({
     dataService,
     logger: rootLogger.child({ module: 'health-dashboard-api' })
+  });
+
+  // Health mentions router — powers CoachChat @-mention autocomplete dropdowns.
+  // Mounted BEFORE the health router so /health/mentions/* is matched first.
+  v1Routers.healthMentions = createHealthMentionsRouter({
+    healthAnalyticsService: null,  // wired lazily — listPeriods gracefully skipped when null
+    healthStore: healthServices.healthStore,
+    healthService: healthServices.healthService,
   });
 
   // Finance domain router
