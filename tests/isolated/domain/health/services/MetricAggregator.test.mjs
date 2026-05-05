@@ -137,3 +137,67 @@ describe('MetricAggregator.aggregate', () => {
     expect(out.daysCovered).toBe(6);
   });
 });
+
+describe('MetricAggregator.aggregateSeries', () => {
+  it('weekly buckets for weight_lbs over a 4-week period', async () => {
+    // 28-day fixture, 4 ISO weeks. Use the same weight fixture pattern.
+    const data = {};
+    let lbs = 200;
+    const start = new Date(Date.UTC(2026, 3, 6)); // Mon 2026-04-06
+    for (let i = 0; i < 28; i++) {
+      const d = new Date(start);
+      d.setUTCDate(start.getUTCDate() + i);
+      const date = d.toISOString().slice(0, 10);
+      data[date] = { date, lbs, lbs_adjusted_average: lbs };
+      lbs -= 0.1;
+    }
+    const { aggregator } = (() => {
+      const healthStore = { loadWeightData: vi.fn(async () => data), loadNutritionData: vi.fn(async () => ({})) };
+      const healthService = { getHealthForRange: vi.fn(async () => ({})) };
+      const resolver = new PeriodResolver({ now: fixedNow });
+      return { aggregator: new MetricAggregator({ healthStore, healthService, periodResolver: resolver }) };
+    })();
+
+    const out = await aggregator.aggregateSeries({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period: { from: '2026-04-06', to: '2026-05-03' },
+      granularity: 'weekly',
+    });
+    expect(out.granularity).toBe('weekly');
+    expect(out.buckets).toHaveLength(4);
+    // Each bucket has 7 days, mean is the midpoint of its 7-value run
+    expect(out.buckets[0].count).toBe(7);
+    expect(out.buckets[0].value).toBeCloseTo(200 - 0.3, 5); // mean of lbs..lbs-0.6
+  });
+
+  it('monthly buckets for weight_lbs over Q1-2024', async () => {
+    const data = {};
+    // Synthesize one entry on the 15th of Jan, Feb, Mar 2024.
+    data['2024-01-15'] = { lbs: 200, lbs_adjusted_average: 200 };
+    data['2024-02-15'] = { lbs: 201, lbs_adjusted_average: 201 };
+    data['2024-03-15'] = { lbs: 202, lbs_adjusted_average: 202 };
+    const healthStore = { loadWeightData: vi.fn(async () => data), loadNutritionData: vi.fn(async () => ({})) };
+    const healthService = { getHealthForRange: vi.fn(async () => ({})) };
+    const resolver = new PeriodResolver({ now: fixedNow });
+    const aggregator = new MetricAggregator({ healthStore, healthService, periodResolver: resolver });
+
+    const out = await aggregator.aggregateSeries({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period: { calendar: '2024-Q1' },
+      granularity: 'monthly',
+    });
+    expect(out.buckets).toHaveLength(3);
+    expect(out.buckets[0]).toMatchObject({ period: '2024-01', value: 200, count: 1 });
+    expect(out.buckets[1]).toMatchObject({ period: '2024-02', value: 201, count: 1 });
+    expect(out.buckets[2]).toMatchObject({ period: '2024-03', value: 202, count: 1 });
+  });
+
+  it('throws on unknown granularity', async () => {
+    const { aggregator } = makeAggregator();
+    await expect(aggregator.aggregateSeries({
+      userId: 'kc', metric: 'weight_lbs', period: { rolling: 'last_7d' }, granularity: 'fortnightly',
+    })).rejects.toThrow(/unknown granularity/);
+  });
+});
