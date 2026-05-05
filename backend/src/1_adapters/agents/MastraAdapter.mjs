@@ -10,7 +10,8 @@
 import { Agent } from '@mastra/core/agent';
 import { createTool as mastraCreateTool } from '@mastra/core/tools';
 import { z } from 'zod';
-import crypto from 'crypto';
+import crypto from 'node:crypto';
+import { AgentTranscript } from '#apps/agents/framework/AgentTranscript.mjs';
 
 /**
  * Convert JSON Schema to Zod schema (simplified)
@@ -88,9 +89,11 @@ export class MastraAdapter {
    * Translate ITool[] to Mastra tool format
    * @param {Array} tools - ITool instances
    * @param {Object} context - Execution context
+   * @param {Object} callCounter - Mutable counter object
+   * @param {AgentTranscript|null} transcript - Optional transcript for recording tool calls
    * @returns {Object} Mastra tools object
    */
-  #translateTools(tools, context, callCounter) {
+  #translateTools(tools, context, callCounter, transcript = null) {
     const mastraTools = {};
 
     for (const tool of tools) {
@@ -100,25 +103,55 @@ export class MastraAdapter {
         inputSchema: jsonSchemaToZod(tool.parameters),
         execute: async (inputData) => {
           callCounter.count++;
-          this.#logger.info?.('tool.execute.call', {
+          this.#logger.debug?.('tool.execute.call', {       // ← was info, now debug
             tool: tool.name,
+            turnId: transcript?.turnId,
             callNumber: callCounter.count,
             maxCalls: this.#maxToolCalls,
           });
 
           if (callCounter.count > this.#maxToolCalls) {
             const msg = `Tool call limit reached (${this.#maxToolCalls}). Aborting to prevent runaway costs.`;
-            this.#logger.warn?.('tool.execute.limit_reached', { tool: tool.name, count: callCounter.count });
+            this.#logger.warn?.('tool.execute.limit_reached', {
+              tool: tool.name,
+              turnId: transcript?.turnId,
+              count: callCounter.count,
+            });
+            transcript?.recordTool({
+              name: tool.name,
+              args: inputData,
+              result: { error: msg },
+              ok: false,
+              latencyMs: 0,
+            });
             return { error: msg };
           }
 
+          const startedAt = Date.now();
           try {
             const result = await tool.execute(inputData, context);
+            const latencyMs = Date.now() - startedAt;
+            transcript?.recordTool({
+              name: tool.name,
+              args: inputData,
+              result,
+              ok: !(result && typeof result === 'object' && 'error' in result),
+              latencyMs,
+            });
             return result;
           } catch (error) {
+            const latencyMs = Date.now() - startedAt;
             this.#logger.error?.('tool.execute.error', {
               tool: tool.name,
+              turnId: transcript?.turnId,
               error: error.message,
+            });
+            transcript?.recordTool({
+              name: tool.name,
+              args: inputData,
+              result: { error: error.message },
+              ok: false,
+              latencyMs,
             });
             return { error: error.message };
           }
@@ -135,25 +168,38 @@ export class MastraAdapter {
    */
   async execute({ agent, agentId, input, tools, systemPrompt, context = {} }) {
     const name = agentId || agent?.constructor?.id || 'unknown';
-    const callCounter = { count: 0 };
-    const mastraTools = this.#translateTools(tools || [], context, callCounter);
+    const turnId = context.turnId ?? crypto.randomUUID();
+    const userId = context.userId ?? null;
 
-    const mastraAgent = new Agent({
-      name,
-      instructions: systemPrompt,
-      model: this.#model,
-      tools: mastraTools,
+    const transcript = new AgentTranscript({
+      agentId: name,
+      userId,
+      turnId,
+      input: { text: input, context: { ...context, turnId } },
+      mediaDir: this.#mediaDir,
+      logger: this.#logger,
     });
+    transcript.setSystemPrompt(systemPrompt);
+    transcript.setModel(parseModelDescriptor(this.#model));
 
+    const callCounter = { count: 0 };
+    const mastraTools = this.#translateTools(tools || [], context, callCounter, transcript);
+
+    const startedAt = Date.now();
     this.#logger.info?.('agent.execute.start', {
       agentId: name,
-      inputLength: input?.length,
-      toolCount: Object.keys(mastraTools).length,
-      maxToolCalls: this.#maxToolCalls,
-      timeoutMs: this.#timeoutMs,
+      turnId,
+      userId,
     });
 
     try {
+      const mastraAgent = new Agent({
+        name,
+        instructions: systemPrompt,
+        model: this.#model,
+        tools: mastraTools,
+      });
+
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error(`Agent execution timed out after ${this.#timeoutMs}ms`)), this.#timeoutMs)
       );
@@ -162,23 +208,38 @@ export class MastraAdapter {
         timeoutPromise,
       ]);
 
+      transcript.setOutput({
+        text: response.text || '',
+        finishReason: response.finishReason || (response.toolCalls?.length ? 'tool_calls' : 'stop'),
+        usage: response.usage || null,
+      });
+      transcript.setStatus('ok');
+
       this.#logger.info?.('agent.execute.complete', {
         agentId: name,
-        outputLength: response.text?.length,
-        toolCallsUsed: callCounter.count,
+        turnId,
+        status: 'ok',
+        durationMs: Date.now() - startedAt,
       });
 
       return {
         output: response.text,
         toolCalls: response.toolCalls || [],
+        turnId,
       };
     } catch (error) {
+      transcript.setError(error, { toolCallsBeforeError: callCounter.count });
+      transcript.setStatus(error?.name === 'AbortError' ? 'aborted' : 'error');
+
       this.#logger.error?.('agent.execute.error', {
         agentId: name,
+        turnId,
         error: error.message,
-        toolCallsUsed: callCounter.count,
+        durationMs: Date.now() - startedAt,
       });
       throw error;
+    } finally {
+      try { await transcript.flush(); } catch { /* swallow */ }
     }
   }
 
@@ -278,6 +339,28 @@ export class MastraAdapter {
 
     return { taskId };
   }
+}
+
+/**
+ * Parse a model string or object into { name, provider } descriptor.
+ * @param {string|object} model
+ * @returns {{ name: string, provider: string }}
+ */
+function parseModelDescriptor(model) {
+  if (!model) return { name: 'unknown', provider: 'unknown' };
+  if (typeof model === 'string') {
+    // 'openai/gpt-4o' → { provider: 'openai', name: 'gpt-4o' }
+    const idx = model.indexOf('/');
+    if (idx > 0) {
+      return { provider: model.slice(0, idx), name: model.slice(idx + 1) };
+    }
+    return { provider: 'unknown', name: model };
+  }
+  // Object form: { modelId, provider } or similar
+  return {
+    name: model.modelId || model.name || 'unknown',
+    provider: model.provider || 'unknown',
+  };
 }
 
 export default MastraAdapter;
