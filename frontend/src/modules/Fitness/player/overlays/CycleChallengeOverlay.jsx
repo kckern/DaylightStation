@@ -107,7 +107,8 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
     stale,
     waitingForBaseReq,
     initRemainingMs,
-    rampRemainingMs
+    rampRemainingMs,
+    clockPaused
   } = visuals;
 
   const targetRpm = Number.isFinite(challenge.currentPhase?.hiRpm)
@@ -444,10 +445,16 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
       {(challenge.cycleState === 'init' || challenge.cycleState === 'ramp') && (
         <div className="cycle-challenge-overlay__countdown">
           {challenge.cycleState === 'init' && Number.isFinite(initRemainingMs) && (
-            <span>Start in {Math.ceil(initRemainingMs / 1000)}s</span>
+            <span>
+              {clockPaused ? 'Paused — start in ' : 'Start in '}
+              {Math.ceil(initRemainingMs / 1000)}s
+            </span>
           )}
           {challenge.cycleState === 'ramp' && Number.isFinite(rampRemainingMs) && (
-            <span>Reach target in {Math.ceil(rampRemainingMs / 1000)}s</span>
+            <span>
+              {clockPaused ? 'Paused — reach target in ' : 'Reach target in '}
+              {Math.ceil(rampRemainingMs / 1000)}s
+            </span>
           )}
         </div>
       )}
