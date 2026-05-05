@@ -256,3 +256,77 @@ describe('MetricComparator.conditionalAggregate', () => {
     })).rejects.toThrow(/unknown condition/);
   });
 });
+
+describe('MetricComparator.correlateMetrics', () => {
+  // Fixture: 30 days. Weight drifts down, calories drift up — should produce
+  // strong negative correlation.
+  function buildCorrelatedFixture() {
+    const weight = {};
+    const nutrition = {};
+    let lbs = 200;
+    let cal = 1800;
+    const start = new Date(Date.UTC(2026, 3, 6));
+    for (let i = 0; i < 30; i++) {
+      const d = new Date(start);
+      d.setUTCDate(start.getUTCDate() + i);
+      const key = d.toISOString().slice(0, 10);
+      weight[key] = { lbs, lbs_adjusted_average: lbs };
+      nutrition[key] = { calories: cal, protein: 150 };
+      lbs -= 0.5;
+      cal += 10;
+    }
+    return { weight, nutrition };
+  }
+
+  it('returns Spearman + Pearson correlations across daily series', async () => {
+    const { weight, nutrition } = buildCorrelatedFixture();
+    const { comparator } = makeComparator(weight, nutrition);
+    const out = await comparator.correlateMetrics({
+      userId: 'kc',
+      metric_a: 'weight_lbs',
+      metric_b: 'calories',
+      period: { from: '2026-04-06', to: '2026-05-05' },
+      granularity: 'daily',
+    });
+    expect(out.metric_a).toBe('weight_lbs');
+    expect(out.metric_b).toBe('calories');
+    // Both go monotonically (weight down, calories up) → strong negative
+    expect(out.correlation).toBeLessThan(-0.9);
+    expect(out.pearson).toBeLessThan(-0.9);
+    expect(out.pairs).toBe(30);
+    expect(out.interpretation).toBe('strong-negative');
+  });
+
+  it('skips days where either metric is null', async () => {
+    const weight = {};
+    const nutrition = {};
+    weight['2026-05-01'] = { lbs: 200, lbs_adjusted_average: 200 };
+    weight['2026-05-02'] = { lbs: 199, lbs_adjusted_average: 199 };
+    weight['2026-05-03'] = { lbs: 198, lbs_adjusted_average: 198 };
+    nutrition['2026-05-02'] = { calories: 2000, protein: 150 };
+    const { comparator } = makeComparator(weight, nutrition);
+    const out = await comparator.correlateMetrics({
+      userId: 'kc',
+      metric_a: 'weight_lbs',
+      metric_b: 'calories',
+      period: { from: '2026-05-01', to: '2026-05-03' },
+      granularity: 'daily',
+    });
+    // Only 2026-05-02 has both → 1 pair → correlation = NaN/undefined → 0
+    expect(out.pairs).toBe(1);
+    expect(out.interpretation).toBe('none');
+  });
+
+  it('classifies interpretation', async () => {
+    const { weight, nutrition } = buildCorrelatedFixture();
+    const { comparator } = makeComparator(weight, nutrition);
+    const out = await comparator.correlateMetrics({
+      userId: 'kc',
+      metric_a: 'weight_lbs',
+      metric_b: 'calories',
+      period: { from: '2026-04-06', to: '2026-05-05' },
+      granularity: 'daily',
+    });
+    expect(['strong-positive', 'weak-positive', 'none', 'weak-negative', 'strong-negative']).toContain(out.interpretation);
+  });
+});
