@@ -409,3 +409,31 @@ describe('Cycle SM — init↔ramp gate symmetry (Task 7)', () => {
     expect(active.lockReason).toBe('init');
   });
 });
+
+describe('Cycle SM — init/ramp clocks pause when rider is idle (Task 8)', () => {
+  it('marks the clock as paused when rpm is below minRpm', () => {
+    const { engine, advance } = makeEngineWithActiveCycle(42);
+
+    // Advance time and feed a single tick at rpm=5 (below minRpm=30).
+    // The snapshot should mark clockPaused=true.
+    advance(200);
+    tick(engine, engine._now(), { zone: 'warm', rpm: 5 });
+
+    const snap = engine.state?.challenge;
+    expect(snap).toBeDefined();
+    expect(snap.clockPaused).toBe(true);
+  });
+
+  it('marks the clock as active when rpm is at or above minRpm', () => {
+    const { engine, advance } = makeEngineWithActiveCycle(42);
+
+    // Advance time and feed a tick at rpm=60 (above minRpm=30).
+    // The snapshot should mark clockPaused=false.
+    advance(200);
+    tick(engine, engine._now(), { zone: 'warm', rpm: 60 });
+
+    const snap = engine.state?.challenge;
+    expect(snap).toBeDefined();
+    expect(snap.clockPaused).toBe(false);
+  });
+});
