@@ -1,0 +1,45 @@
+// Positioning anchor for all challenge overlays. Children render inside
+// this wrapper; the deck itself owns the top/middle/bottom slot. Tap-to-
+// cycle is handled once at the deck level (see ChallengeOverlayDeck.jsx).
+//
+// Layout: anchored to the left edge (matching the legacy per-overlay
+// positioning, which used `left: var(--challenge-overlay-edge)`) so the
+// circular overlays render in the same on-screen location they did
+// before this refactor. Children inside the deck are flow-positioned
+// (position: relative on the overlays themselves) and stack vertically
+// when more than one is shown.
+
+.challenge-overlay-deck {
+  --challenge-overlay-deck-edge: clamp(12px, min(4vw, 4%), 40px);
+
+  position: absolute;
+  left: var(--challenge-overlay-deck-edge);
+  z-index: calc(var(--fitness-parent-overlay-z, 60));
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  cursor: pointer;
+  outline: none;
+
+  &:focus-visible {
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.35);
+  }
+}
+
+.challenge-overlay-deck--pos-top {
+  top: var(--challenge-overlay-deck-edge);
+  bottom: auto;
+}
+
+.challenge-overlay-deck--pos-middle {
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
+}
+
+.challenge-overlay-deck--pos-bottom {
+  top: auto;
+  bottom: var(--challenge-overlay-deck-edge);
+}

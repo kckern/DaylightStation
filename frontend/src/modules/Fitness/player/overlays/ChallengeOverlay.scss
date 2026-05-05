@@ -4,11 +4,9 @@
   --challenge-overlay-available: calc(100% - (var(--challenge-overlay-edge) * 2));
   --challenge-overlay-diameter: min(var(--challenge-overlay-size), var(--challenge-overlay-available));
   --challenge-ring-width: clamp(8px, calc(var(--challenge-overlay-diameter) * 0.08), 18px);
-  --challenge-overlay-translate: 0;
-  position: absolute;
-  top: var(--challenge-overlay-edge);
-  left: var(--challenge-overlay-edge);
-  z-index: calc(var(--fitness-parent-overlay-z, 60));
+  // Positioning is owned by ChallengeOverlayDeck — this element flows inside
+  // the deck and renders at the deck's frame.
+  position: relative;
   width: var(--challenge-overlay-diameter);
   aspect-ratio: 1 / 1;
   border-radius: 50%;
@@ -21,13 +19,12 @@
   align-items: center;
   justify-content: center;
   transform-origin: top left;
-  transform: translateY(var(--challenge-overlay-translate)) scale(var(--fitness-overlay-scale, 1));
+  transform: scale(var(--fitness-overlay-scale, 1));
   transition: transform 0.25s ease, opacity 0.2s ease;
   font-size: clamp(0.9rem, var(--challenge-overlay-diameter) * 0.04, 1.2rem);
   padding: clamp(4px, var(--challenge-overlay-diameter) * 0.03, 10px);
   box-sizing: border-box;
   user-select: none;
-  cursor: pointer;
   outline: none;
 
   &__ring {
@@ -188,23 +185,6 @@
     }
   }
 
-  &--pos-top {
-    top: var(--challenge-overlay-edge);
-    bottom: auto;
-    --challenge-overlay-translate: 0;
-  }
-
-  &--pos-middle {
-    top: 50%;
-    bottom: auto;
-    --challenge-overlay-translate: -50%;
-  }
-
-  &--pos-bottom {
-    top: auto;
-    bottom: var(--challenge-overlay-edge);
-    --challenge-overlay-translate: 0;
-  }
 }
 
 @keyframes challenge-overlay-done-ring {

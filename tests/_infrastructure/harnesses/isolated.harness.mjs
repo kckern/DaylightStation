@@ -2,14 +2,25 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
-import { parseArgs, findTestFiles, runJest, printSummary, COLORS } from './base.harness.mjs';
+import {
+  parseArgs,
+  findTestFiles,
+  findColocatedTestFiles,
+  runJest,
+  printSummary,
+  COLORS,
+} from './base.harness.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ISOLATED_DIR = path.resolve(__dirname, '../../isolated');
 const ROOT_DIR = path.resolve(__dirname, '../../..');
+const FRONTEND_SRC_DIR = path.resolve(ROOT_DIR, 'frontend/src');
 const JEST_TARGETS = ['domain', 'adapter', 'flow', 'contract', 'assembly', 'application', 'api'];
 const VITEST_TARGETS = ['modules'];
-const TARGETS = [...JEST_TARGETS, ...VITEST_TARGETS];
+// Pseudo-target for the frontend/src/ colocated tree. Allows --only=frontend
+// to scope a run to just the colocated specs.
+const VITEST_COLOCATED_TARGET = 'frontend';
+const TARGETS = [...JEST_TARGETS, ...VITEST_TARGETS, VITEST_COLOCATED_TARGET];
 
 function runVitest(files) {
   return new Promise((resolve, reject) => {
@@ -32,9 +43,28 @@ async function main() {
   const jestArgs   = args.only ? { ...args, only: args.only.filter(t => JEST_TARGETS.includes(t))   } : args;
   const vitestArgs = args.only ? { ...args, only: args.only.filter(t => VITEST_TARGETS.includes(t)) } : args;
 
+  // Run the frontend colocated walk when no --only is supplied, or when the
+  // user explicitly asks for `frontend`.
+  const runColocated = !args.only || args.only.includes(VITEST_COLOCATED_TARGET);
+
   const jestFiles   = findTestFiles(ISOLATED_DIR, JEST_TARGETS,   jestArgs);
-  const vitestFiles = findTestFiles(ISOLATED_DIR, VITEST_TARGETS, vitestArgs);
-  const allFiles = [...jestFiles, ...vitestFiles];
+  // Vitest targets may include both `.test.mjs` and `.test.jsx` specs (the
+  // existing tests/isolated/modules/Fitness/*.test.jsx files were never
+  // matched by the old finder). Pass extensions explicitly here.
+  const vitestFiles = findTestFiles(
+    ISOLATED_DIR,
+    VITEST_TARGETS,
+    vitestArgs,
+    { extensions: ['.test.mjs', '.test.jsx', '.test.js'] }
+  );
+  // Colocated frontend specs (live alongside the source they cover, e.g.
+  // frontend/src/hooks/fitness/CycleStateMachine.test.js). These never lived
+  // under tests/isolated/, so they need a separate walk.
+  const colocatedFiles = runColocated
+    ? findColocatedTestFiles(FRONTEND_SRC_DIR, args)
+    : [];
+  const allVitestFiles = [...vitestFiles, ...colocatedFiles];
+  const allFiles = [...jestFiles, ...allVitestFiles];
 
   if (allFiles.length === 0) {
     console.log(`${COLORS.yellow}No test files found${COLORS.reset}`);
@@ -64,9 +94,9 @@ async function main() {
     }
   }
 
-  if (vitestFiles.length > 0) {
+  if (allVitestFiles.length > 0) {
     try {
-      await runVitest(vitestFiles);
+      await runVitest(allVitestFiles);
     } catch {
       vitestPassed = false;
     }

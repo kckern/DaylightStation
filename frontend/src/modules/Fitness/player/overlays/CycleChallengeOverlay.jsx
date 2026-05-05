@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import {
   getCycleOverlayVisuals,
@@ -6,29 +6,32 @@ import {
   rpmToAngle,
   getBoosterAvatarSlots
 } from './cycleOverlayVisuals.js';
+import { CycleBaseReqIndicator } from './CycleBaseReqIndicator.jsx';
+import CompletionCountBlocks from './CompletionCountBlocks.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 import './CycleChallengeOverlay.scss';
 
 /**
- * CycleChallengeOverlay (Tasks 21 + 22 + 23).
+ * CycleChallengeOverlay (Tasks 21 + 22 + 23, 2026-05-03 redesign).
  *
  * Circular ~220px widget that visualises the active cycle challenge:
- *   - Outer status ring (color + opacity from cycleState / dimFactor)
- *   - Outer ring doubles as phase progress sweep (stroke-dashoffset)
+ *   - Outer status ring track (faint full-circle outline)
+ *   - Lower-hemisphere phase progress arc (9 → 6 → 3 o'clock). Color/opacity
+ *     come from cycleState/dimFactor; switches to a flashing yellow depleting
+ *     countdown when dangerActive (3-second grace before maintain → locked).
  *   - RPM gauge arc (top hemisphere) with tick marks, hi/lo markers, needle (Task 22)
  *   - Target RPM sign anchored to the hi-rpm tick on the gauge arc (Task 22)
  *   - Rider avatar centered, name below
- *   - Segment counter pill bottom center (e.g. "2 / 4")
+ *   - Phase count blocks (rounded squares — one per phase, completed phases lit)
  *   - Up to 4 booster avatars at the corners (NE/SE/SW/NW) (Task 23)
  *   - Boost multiplier pill (×2.5) below the rider name when >1.0 (Task 23)
- *   - Position cycling (top / middle / bottom) on background tap, localStorage persisted
  *
- * Not in this task: swap modal (Task 24), FitnessPlayer integration (Task 26).
+ * Position (top / middle / bottom) is owned by ChallengeOverlayDeck — this
+ * component renders inside the deck and does not manage its own placement.
  */
 
 const CYCLE_VIEWBOX_SIZE = 220;
 const CYCLE_RING_RADIUS = 100;
-const CYCLE_RING_CIRCUMFERENCE = 2 * Math.PI * CYCLE_RING_RADIUS;
 const CYCLE_RING_CENTER = CYCLE_VIEWBOX_SIZE / 2;
 const CYCLE_RING_STROKE_WIDTH = 8;
 
@@ -42,28 +45,6 @@ const CYCLE_GAUGE_HILO_INNER_OFFSET = 6;
 const CYCLE_GAUGE_HILO_OUTER_OFFSET = 6;
 const CYCLE_GAUGE_TARGET_OFFSET = 18; // px outward from arc for the target label anchor
 
-const CYCLE_POSITION_KEY = 'fitness.cycleChallengeOverlay.position';
-const CYCLE_POSITION_ORDER = ['top', 'middle', 'bottom'];
-
-const readStoredPosition = () => {
-  if (typeof window === 'undefined' || !window?.localStorage) {
-    return CYCLE_POSITION_ORDER[0];
-  }
-  try {
-    const stored = window.localStorage.getItem(CYCLE_POSITION_KEY);
-    return CYCLE_POSITION_ORDER.includes(stored) ? stored : CYCLE_POSITION_ORDER[0];
-  } catch (_) {
-    return CYCLE_POSITION_ORDER[0];
-  }
-};
-
-const writeStoredPosition = (position) => {
-  if (typeof window === 'undefined' || !window?.localStorage) return;
-  try {
-    window.localStorage.setItem(CYCLE_POSITION_KEY, position);
-  } catch (_) {}
-};
-
 const firstInitial = (value) => {
   if (typeof value !== 'string') return '?';
   const trimmed = value.trim();
@@ -74,7 +55,6 @@ const firstInitial = (value) => {
 
 export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
   const visuals = useMemo(() => getCycleOverlayVisuals(challenge), [challenge]);
-  const [position, setPosition] = useState(() => readStoredPosition());
 
   const logger = useMemo(
     () => getLogger().child({ component: 'cycle-challenge-overlay' }),
@@ -85,7 +65,6 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
     if (!visuals.visible) return;
     logger.debug('mounted', {
       cycleState: challenge?.cycleState,
-      position,
       phaseIndex: challenge?.currentPhaseIndex,
       totalPhases: challenge?.totalPhases
     });
@@ -101,30 +80,6 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [challenge?.cycleState, challenge?.dimFactor]);
-
-  const cyclePosition = useCallback(() => {
-    setPosition((current) => {
-      const currentIndex = CYCLE_POSITION_ORDER.indexOf(current);
-      const nextIndex = (currentIndex + 1) % CYCLE_POSITION_ORDER.length;
-      const next = CYCLE_POSITION_ORDER[nextIndex];
-      writeStoredPosition(next);
-      logger.debug('position-changed', { from: current, to: next });
-      return next;
-    });
-  }, [logger]);
-
-  const handleBackgroundClick = useCallback((event) => {
-    event.stopPropagation();
-    cyclePosition();
-  }, [cyclePosition]);
-
-  const handleKeyDown = useCallback((event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      event.stopPropagation();
-      cyclePosition();
-    }
-  }, [cyclePosition]);
 
   const handleAvatarClick = useCallback((event) => {
     event.stopPropagation();
@@ -147,7 +102,16 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
     ringColor,
     ringOpacity,
     dimPulse,
-    phaseProgress
+    phaseProgress,
+    lostSignal,
+    stale,
+    waitingForBaseReq,
+    initRemainingMs,
+    rampRemainingMs,
+    clockPaused,
+    dangerActive,
+    dangerRemainingMs,
+    dangerProgress
   } = visuals;
 
   const targetRpm = Number.isFinite(challenge.currentPhase?.hiRpm)
@@ -160,10 +124,6 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
   const currentPhaseIndex = Number.isFinite(challenge.currentPhaseIndex)
     ? Math.max(0, challenge.currentPhaseIndex)
     : 0;
-  const segmentLabel = totalPhases > 0
-    ? `${Math.min(totalPhases, currentPhaseIndex + 1)} / ${totalPhases}`
-    : '—';
-
   const riderName = (typeof challenge.rider === 'string'
     ? challenge.rider
     : (challenge.rider?.name || challenge.rider?.id)) || '';
@@ -174,8 +134,6 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
   const riderAvatarUrl = riderId
     ? `/api/v1/static/img/users/${riderId}`
     : '/api/v1/static/img/users/user';
-
-  const progressOffset = CYCLE_RING_CIRCUMFERENCE * (1 - phaseProgress);
 
   // --- RPM gauge geometry (Task 22) -----------------------------------------
   const hiRpm = Number.isFinite(challenge.currentPhase?.hiRpm)
@@ -272,13 +230,26 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
   const targetLeftPct = (targetAnchor.x / CYCLE_VIEWBOX_SIZE) * 100;
   const targetTopPct = (targetAnchor.y / CYCLE_VIEWBOX_SIZE) * 100;
 
-  const ringStyle = {
-    stroke: ringColor,
-    strokeDasharray: `${CYCLE_RING_CIRCUMFERENCE}px`,
-    strokeDashoffset: `${progressOffset}px`,
-    opacity: ringOpacity,
-    '--cycle-ring-circumference': `${CYCLE_RING_CIRCUMFERENCE}px`
-  };
+  // Lower-hemisphere phase progress arc geometry (9 → 6 → 3 o'clock).
+  // The arc's color, opacity, and fill fraction switch when dangerActive is
+  // true: the depleting `dangerProgress` value drives a flashing yellow arc
+  // counting down the 3-second grace window before maintain → locked fires.
+  const phaseArcStartPt = polarToCartesian(
+    CYCLE_RING_CENTER, CYCLE_RING_CENTER, CYCLE_RING_RADIUS, Math.PI
+  );
+  const phaseArcEndPt = polarToCartesian(
+    CYCLE_RING_CENTER, CYCLE_RING_CENTER, CYCLE_RING_RADIUS, 0
+  );
+  const phaseArcLen = Math.PI * CYCLE_RING_RADIUS; // half-circumference
+  const phaseArcFraction = dangerActive ? dangerProgress : phaseProgress;
+  const phaseArcDashOffset = phaseArcLen * (1 - phaseArcFraction);
+  // Sweep flag = 0 with start at 9 o'clock and end at 3 o'clock routes through
+  // the bottom (6 o'clock) in SVG y-down coordinates.
+  const phaseArcPath =
+    `M ${phaseArcStartPt.x} ${phaseArcStartPt.y} ` +
+    `A ${CYCLE_RING_RADIUS} ${CYCLE_RING_RADIUS} 0 0 0 ${phaseArcEndPt.x} ${phaseArcEndPt.y}`;
+  const phaseArcStroke = dangerActive ? '#fbbf24' : ringColor;
+  const phaseArcOpacity = dangerActive ? 1 : ringOpacity;
 
   // --- Boosters + boost multiplier (Task 23) --------------------------------
   const boosters = getBoosterAvatarSlots(
@@ -291,26 +262,26 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
   const showBoostBadge = rawMultiplier > 1;
   const boostText = `×${rawMultiplier.toFixed(1)}`;
 
-  const classNames = ['cycle-challenge-overlay', `cycle-challenge-overlay--pos-${position}`];
+  const classNames = ['cycle-challenge-overlay'];
   if (challenge.cycleState) {
     classNames.push(`cycle-challenge-overlay--state-${String(challenge.cycleState).toLowerCase()}`);
   }
   if (dimPulse) {
     classNames.push('cycle-challenge-overlay--dim-pulse');
   }
+  if (lostSignal) classNames.push('cycle-challenge-overlay--lost-signal');
+  if (stale)      classNames.push('cycle-challenge-overlay--stale');
 
   const swapAllowed = Boolean(challenge.swapAllowed);
-  const positionLabel = position;
 
-  const ariaLabel = `Cycle challenge — ${challenge.cycleState || 'state unknown'}, segment ${Math.min(totalPhases, currentPhaseIndex + 1)} of ${totalPhases}, positioned ${positionLabel}. Tap to move.`;
+  const dangerSuffix = dangerActive && Number.isFinite(dangerRemainingMs)
+    ? `, danger — ${Math.ceil(dangerRemainingMs / 1000)}s to lock`
+    : '';
+  const ariaLabel = `Cycle challenge — ${challenge.cycleState || 'state unknown'}, segment ${Math.min(totalPhases, currentPhaseIndex + 1)} of ${totalPhases}${dangerSuffix}`;
 
   return (
     <div
       className={classNames.join(' ')}
-      onClick={handleBackgroundClick}
-      onKeyDown={handleKeyDown}
-      role="button"
-      tabIndex={0}
       aria-label={ariaLabel}
     >
       <svg
@@ -325,17 +296,6 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
           r={CYCLE_RING_RADIUS}
           fill="none"
           strokeWidth={CYCLE_RING_STROKE_WIDTH}
-        />
-        <circle
-          className="cycle-challenge-overlay__ring-progress"
-          cx={CYCLE_RING_CENTER}
-          cy={CYCLE_RING_CENTER}
-          r={CYCLE_RING_RADIUS}
-          fill="none"
-          strokeWidth={CYCLE_RING_STROKE_WIDTH}
-          strokeLinecap="round"
-          style={ringStyle}
-          transform={`rotate(-90 ${CYCLE_RING_CENTER} ${CYCLE_RING_CENTER})`}
         />
 
         {/* --- RPM gauge arc (Task 22) ---------------------------------- */}
@@ -405,6 +365,22 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
             fill={atHi ? '#22c55e' : '#e2e8f0'}
           />
         </g>
+
+        {/* Lower-hemisphere phase progress arc (9 → 6 → 3 o'clock).
+            When dangerActive is true the arc shows a depleting countdown in
+            flashing yellow representing the 3-second grace window before the
+            engine transitions maintain → locked. */}
+        <path
+          className={`cycle-challenge-overlay__phase-arc${dangerActive ? ' cycle-challenge-overlay__phase-arc--danger' : ''}`}
+          d={phaseArcPath}
+          fill="none"
+          stroke={phaseArcStroke}
+          strokeWidth={CYCLE_RING_STROKE_WIDTH}
+          strokeLinecap="round"
+          strokeDasharray={`${phaseArcLen}px`}
+          strokeDashoffset={`${phaseArcDashOffset}px`}
+          style={{ opacity: phaseArcOpacity }}
+        />
       </svg>
 
       {targetRpm !== null && (
@@ -455,28 +431,43 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
       </button>
 
       {riderName && (
-        <div className="cycle-challenge-overlay__rider-name">{riderName}</div>
+        <div className="cycle-challenge-overlay__rider-name">
+          {riderName}
+          <CycleBaseReqIndicator
+            baseReqSatisfied={Boolean(challenge.baseReqSatisfiedForRider)}
+            waitingForBaseReq={waitingForBaseReq}
+          />
+        </div>
       )}
 
-      <div
-        className="cycle-challenge-overlay__progress-bar"
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(phaseProgress * 100)}
-        aria-label={`Phase ${Math.min(totalPhases, currentPhaseIndex + 1)} of ${totalPhases}, ${Math.round(phaseProgress * 100)}% complete`}
-      >
-        <div
-          className="cycle-challenge-overlay__progress-bar-fill"
-          style={{ width: `${Math.round(phaseProgress * 100)}%` }}
+      {totalPhases > 0 && (
+        <CompletionCountBlocks
+          targetCount={totalPhases}
+          actualCount={Math.max(0, currentPhaseIndex)}
+          metUsers={[]}
+          containerClassName="cycle-challenge-overlay__phase-blocks"
+          blockClassName="cycle-challenge-overlay__phase-block"
+          completeBlockClassName="cycle-challenge-overlay__phase-block--complete"
+          ariaLabel={`Phase ${Math.min(totalPhases, currentPhaseIndex + 1)} of ${totalPhases}`}
         />
-        <span className="cycle-challenge-overlay__progress-bar-label">
-          Phase {segmentLabel}
-        </span>
-        <span className="cycle-challenge-overlay__progress-bar-pct">
-          {Math.round(phaseProgress * 100)}%
-        </span>
-      </div>
+      )}
+
+      {(challenge.cycleState === 'init' || challenge.cycleState === 'ramp') && (
+        <div className="cycle-challenge-overlay__countdown">
+          {challenge.cycleState === 'init' && Number.isFinite(initRemainingMs) && (
+            <span>
+              {clockPaused ? 'Paused — start in ' : 'Start in '}
+              {Math.ceil(initRemainingMs / 1000)}s
+            </span>
+          )}
+          {challenge.cycleState === 'ramp' && Number.isFinite(rampRemainingMs) && (
+            <span>
+              {clockPaused ? 'Paused — reach target in ' : 'Reach target in '}
+              {Math.ceil(rampRemainingMs / 1000)}s
+            </span>
+          )}
+        </div>
+      )}
 
       {boosters.map((b) => (
         <div
@@ -519,7 +510,21 @@ CycleChallengeOverlay.propTypes = {
     }),
     swapAllowed: PropTypes.bool,
     boostingUsers: PropTypes.arrayOf(PropTypes.string),
-    boostMultiplier: PropTypes.number
+    boostMultiplier: PropTypes.number,
+    baseReqSatisfiedForRider: PropTypes.bool,
+    cadenceFlags: PropTypes.shape({
+      lostSignal: PropTypes.bool,
+      stale: PropTypes.bool,
+      smoothed: PropTypes.bool,
+      implausible: PropTypes.bool
+    }),
+    waitingForBaseReq: PropTypes.bool,
+    clockPaused: PropTypes.bool,
+    initRemainingMs: PropTypes.number,
+    rampRemainingMs: PropTypes.number,
+    dangerActive: PropTypes.bool,
+    dangerRemainingMs: PropTypes.number,
+    dangerProgress: PropTypes.number
   }),
   onRequestSwap: PropTypes.func
 };

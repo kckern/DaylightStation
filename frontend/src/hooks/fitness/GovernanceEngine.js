@@ -4,6 +4,7 @@ const normalizeLabel = (value) => {
 };
 
 import getLogger from '../../lib/logging/Logger.js';
+import { CadenceFilter } from './CadenceFilter.js';
 
 const normalizeLabelList = (labels) => {
   if (!Array.isArray(labels)) return [];
@@ -278,6 +279,12 @@ export class GovernanceEngine {
     this._stateChangePending = false;
 
     this._lastCycleSig = null;
+
+    // Per-equipment cadence filters and freshness watermarks. Filters are
+    // created lazily by _filteredCadenceFor(); the watermark map ensures we
+    // only treat a cadence-map entry as fresh when its `ts` strictly advances.
+    this._cadenceFilters = new Map();      // equipmentId → CadenceFilter
+    this._lastSeenCadenceTs = new Map();   // equipmentId → last ts we treated as fresh
   }
 
   /**
@@ -474,7 +481,57 @@ export class GovernanceEngine {
     this._previousUserZoneMap = { ...userZoneMap };
   }
 
+  /**
+   * Filtered RPM read for the given equipment.
+   *
+   * Returns { rpm, flags } where flags include `stale` and `lostSignal`. The
+   * caller decides what to do with stale/lost — for the cycle SM this means
+   * "do not lock on a stale read; do treat lostSignal as 0".
+   *
+   * **Freshness contract:** the cadence map entry may be re-read every engine
+   * tick even when the sensor has gone silent (the upstream pipeline doesn't
+   * clear it). We only count a sample as fresh when its `ts` is strictly
+   * greater than the last `ts` we observed for this equipment. Without this
+   * check, the filter's staleness clock would never advance and the held
+   * value would persist indefinitely — which is the bug the user hit:
+   * "RPM holds the most recent value much longer than it should."
+   */
+  _filteredCadenceFor(equipmentId, nowTs) {
+    if (!equipmentId) return {
+      rpm: 0,
+      flags: { implausible: false, smoothed: false, stale: false, lostSignal: true }
+    };
+    let filter = this._cadenceFilters.get(equipmentId);
+    if (!filter) {
+      filter = new CadenceFilter();
+      this._cadenceFilters.set(equipmentId, filter);
+    }
+    const cadenceEntry = this._latestInputs?.equipmentCadenceMap?.[equipmentId];
+    const entryTs = Number(cadenceEntry?.ts);
+    const entryRpm = Number(cadenceEntry?.rpm);
+    const lastSeen = this._lastSeenCadenceTs.get(equipmentId) ?? -Infinity;
+
+    const isFresh =
+      cadenceEntry &&
+      Number.isFinite(entryTs) &&
+      entryTs > lastSeen &&
+      Number.isFinite(entryRpm);
+
+    if (isFresh) {
+      this._lastSeenCadenceTs.set(equipmentId, entryTs);
+      return filter.update({ rpm: entryRpm, ts: entryTs });
+    }
+    // No fresh sample this tick — let the filter advance its staleness clock.
+    return filter.tick(nowTs);
+  }
+
   _buildChallengeSnapshot(now) {
+    // I-4: anchor `now` on the engine's injectable clock so the debounce math
+    // below (which reads `_pendingSince` written by `_startCycleChallenge`
+    // using `this._now()`) is guaranteed to use a consistent time source.
+    // Current callers pass `this._now()` already; this is defensive against
+    // future code paths that might pass a different value.
+    now = this._now();
     const state = this.challengeState || {};
     const activeChallenge = state.activeChallenge;
     if (!activeChallenge) return null;
@@ -483,8 +540,9 @@ export class GovernanceEngine {
     // ramp/init/phase progress, dim factor, boost info, and swap eligibility.
     if (activeChallenge.type === 'cycle') {
       const phase = activeChallenge.generatedPhases?.[activeChallenge.currentPhaseIndex] || null;
-      const cadenceEntry = this._latestInputs?.equipmentCadenceMap?.[activeChallenge.equipment];
-      const currentRpm = cadenceEntry?.rpm || 0;
+      const filtered = this._filteredCadenceFor(activeChallenge.equipment, this._now());
+      const currentRpm = filtered.rpm;
+      const cadenceFlags = filtered.flags;
 
       // Dim factor only applies during maintain when RPM is in [lo, hi) band
       let dimFactor = 0;
@@ -576,17 +634,75 @@ export class GovernanceEngine {
         });
       }
 
+      // Task 6: 500 ms transition debounce on the *published* cycleState.
+      //
+      // The internal `activeChallenge.cycleState` continues to track ground
+      // truth (so init/ramp timers and phase progress accumulate correctly),
+      // but the snapshot exposes a delayed copy that only updates after the
+      // internal state has been stable for ≥STATE_DEBOUNCE_MS. This kills
+      // sub-500 ms maintain↔locked flickers caused by EMA values briefly
+      // straddling loRpm/hiRpm under noisy sensor conditions.
+      //
+      // Terminal/fatal states bypass the debounce so they surface immediately:
+      //   - status === 'success' (challenge completed)
+      //   - lockReason === 'init' (init-timeout: rider never started, no point
+      //     hiding that behind a 500 ms delay).
+      const STATE_DEBOUNCE_MS = 500;
+      const internal = activeChallenge.cycleState;
+      if (!Number.isFinite(activeChallenge._pendingSince)) {
+        // Defensive fallback: every code path that creates an active cycle
+        // challenge today seeds _pendingSince in _startCycleChallenge, but a
+        // future code path that builds an active challenge through a
+        // different route shouldn't crash the debounce math with NaN.
+        activeChallenge._pendingSince = now;
+        activeChallenge._pendingCycleState = internal;
+      }
+      if (internal !== activeChallenge._pendingCycleState) {
+        activeChallenge._pendingCycleState = internal;
+        activeChallenge._pendingSince = now;
+      }
+      const heldEnough = (now - activeChallenge._pendingSince) >= STATE_DEBOUNCE_MS;
+      const fatal = activeChallenge.status === 'success'
+                 || activeChallenge.lockReason === 'init';
+      if (heldEnough || fatal || activeChallenge._publishedCycleState === internal) {
+        activeChallenge._publishedCycleState = internal;
+        activeChallenge._publishedAt = now;
+      }
+      const publishedState = activeChallenge._publishedCycleState;
+
+      // Task 8: clockPaused flag for UI — true when rider is not pedalling fast
+      // enough to be considered "active" (below init.minRpm threshold).
+      // The engine continues advancing timers unconditionally, but the UI can
+      // render the countdown as "paused" when this flag is true.
+      const clockPaused = currentRpm < (activeChallenge.selection?.init?.minRpm ?? 0);
+
+      // 3-second grace window when RPM dips below loRpm in maintain. The
+      // overlay renders a depleting arc in flashing yellow during the grace,
+      // then transitions to locked once dangerProgress reaches 0.
+      const DANGER_GRACE_MS_SNAPSHOT = 3000;
+      const dangerActive = Number.isFinite(activeChallenge.dangerSinceMs);
+      const dangerElapsedMs = dangerActive
+        ? Math.max(0, now - activeChallenge.dangerSinceMs)
+        : 0;
+      const dangerRemainingMs = dangerActive
+        ? Math.max(0, DANGER_GRACE_MS_SNAPSHOT - dangerElapsedMs)
+        : null;
+      const dangerProgress = dangerActive
+        ? Math.max(0, Math.min(1, dangerRemainingMs / DANGER_GRACE_MS_SNAPSHOT))
+        : 1;
+
       return {
         id: activeChallenge.id,
         type: 'cycle',
         status: activeChallenge.status,
         rider: { id: activeChallenge.rider, name: riderName },
-        cycleState: activeChallenge.cycleState,
+        cycleState: publishedState,
         currentPhaseIndex: activeChallenge.currentPhaseIndex,
         totalPhases: activeChallenge.totalPhases,
         currentPhase: phase ? { ...phase } : null,
         generatedPhases: phases.map((p) => ({ ...p })),
         currentRpm,
+        cadenceFlags,
         phaseProgressPct,
         allPhasesProgress,
         rampRemainingMs,
@@ -594,9 +710,15 @@ export class GovernanceEngine {
         initRemainingMs,
         initTotalMs,
         dimFactor,
+        clockPaused,
+        dangerActive,
+        dangerRemainingMs,
+        dangerProgress,
         boostMultiplier: multiplier,
         boostingUsers: contributors,
         lockReason: activeChallenge.lockReason || null,
+        waitingForBaseReq: Boolean(activeChallenge.waitingForBaseReq),
+        baseReqSatisfiedForRider: Boolean(activeChallenge.baseReqSatisfiedForRider),
         swapAllowed,
         swapEligibleUsers,
         cycleAudioCue
@@ -1703,9 +1825,8 @@ export class GovernanceEngine {
     const tickManualCycle = () => {
       const active = this.challengeState?.activeChallenge;
       if (!active || active.type !== 'cycle' || !active.manualTrigger) return;
-      const cadenceEntry = this._latestInputs?.equipmentCadenceMap?.[active.equipment];
-      const rpmVal = Number(cadenceEntry?.rpm);
-      const equipmentRpm = Number.isFinite(rpmVal) ? rpmVal : 0;
+      const filtered = this._filteredCadenceFor(active.equipment, this._now());
+      const equipmentRpm = filtered.rpm;
       this._evaluateCycleChallenge(active, {
         equipmentRpm,
         activeParticipants: this._latestInputs?.activeParticipants || [],
@@ -2339,13 +2460,36 @@ export class GovernanceEngine {
       rampElapsedMs: 0,
       phaseProgressMs: 0,
       totalLockEventsCount: 0,
+      // Task 7 (audit F2): set to true while init is held open because the
+      // rider is pedalling at >= minRpm but baseReqSatisfiedForRider is false.
+      // Surfaced in the snapshot so the overlay can explain the wait instead
+      // of locking the rider out every initTotalMs.
+      waitingForBaseReq: false,
       totalBoostedMs: 0,
       boostContributors: new Set(),
       lockReason: null,
+      // 3-second grace window timestamp for the maintain → locked transition.
+      // Set to a timestamp on the first below-loRpm tick in maintain; cleared
+      // when RPM recovers OR when the grace expires (and the lock fires).
+      // Surfaced in the snapshot so the overlay can render a depleting arc.
+      dangerSinceMs: null,
       pausedAt: null,
       pausedRemainingMs: null,
+      // Task 6: 500ms debounce for the published cycleState. The internal
+      // `cycleState` above continues to track ground truth (so progress
+      // accumulates correctly), but the snapshot exposes a hold-stable view
+      // that suppresses sub-500ms flickers from EMA values straddling
+      // loRpm/hiRpm under noisy sensor conditions.
+      _publishedCycleState: 'init',
+      _publishedAt: now,
+      _pendingCycleState: 'init',
+      _pendingSince: now,
       selection
     };
+    // Reset cadence filter for this equipment so the new challenge starts with
+    // fresh smoothing state, not a residual EMA from the prior challenge.
+    this._cadenceFilters.delete(active.equipment);
+    this._lastSeenCadenceTs.delete(active.equipment);
     getLogger().info('governance.cycle.started', {
       challengeId: active.id,
       equipment: selection.equipment,
@@ -2360,6 +2504,13 @@ export class GovernanceEngine {
   }
 
   _evaluateCycleChallenge(active, ctx) {
+    // Stash the latest baseReqSatisfiedForRider so the snapshot can publish it
+    // for the HR-zone indicator. Recorded BEFORE the terminal-status guard so
+    // post-success snapshots still reflect the most recent rider gate state.
+    if (ctx && Object.prototype.hasOwnProperty.call(ctx, 'baseReqSatisfiedForRider')) {
+      active.baseReqSatisfiedForRider = ctx.baseReqSatisfiedForRider;
+    }
+
     // Terminal-status guard: once a cycle has resolved (success or failed),
     // do not re-evaluate. The state-machine's branch conditions stay true
     // (e.g. phaseProgressMs >= maintainSeconds*1000) and would otherwise
@@ -2407,11 +2558,50 @@ export class GovernanceEngine {
 
     if (active.cycleState === 'init') {
       active.initElapsedMs += dt;
+      const rpmAtMin = ctx.equipmentRpm >= active.selection.init.minRpm;
+      const gatesOpen = active.manualTrigger || ctx.baseReqSatisfiedForRider;
+
+      // Happy path: rider is pedalling AND HR/manual gate is open → ramp.
+      if (rpmAtMin && gatesOpen) {
+        const prev = active.cycleState;
+        active.waitingForBaseReq = false;
+        active.cycleState = 'ramp';
+        active.rampElapsedMs = 0;
+        getLogger().info('governance.cycle.state_transition', {
+          challengeId: active.id,
+          from: prev,
+          to: 'ramp',
+          currentPhaseIndex: active.currentPhaseIndex,
+          rider: active.rider,
+          currentRpm: ctx.equipmentRpm
+        });
+        return;
+      }
+
+      // Init clock expired. Decide: hold (rider pedalling, HR gate unmet) or
+      // lock (true abandonment — rider not pedalling).
       if (active.initElapsedMs >= active.initTotalMs) {
+        if (rpmAtMin) {
+          // Audit F2 fix: rider IS doing the work but baseReq is unmet.
+          // Holding here prevents the init→locked→init oscillation that used
+          // to cycle every `initTotalMs` (locked→init recovery only checks
+          // rpm, so the engine immediately bounced back to a fresh init,
+          // then timed out again, etc.). Reset the clock and surface
+          // `waitingForBaseReq` so the overlay can explain the wait.
+          active.initElapsedMs = 0;
+          active.waitingForBaseReq = true;
+          getLogger().sampled('governance.cycle.holding_for_base_req', {
+            challengeId: active.id,
+            currentRpm: ctx.equipmentRpm
+          }, { maxPerMinute: 1, aggregate: true });
+          return;
+        }
+        // True abandonment — rider not pedalling AND base-req not met.
         const prev = active.cycleState;
         active.cycleState = 'locked';
         active.lockReason = 'init';
         active.totalLockEventsCount += 1;
+        active.waitingForBaseReq = false;
         getLogger().info('governance.cycle.state_transition', {
           challengeId: active.id,
           from: prev,
@@ -2428,20 +2618,6 @@ export class GovernanceEngine {
           currentRpm: ctx.equipmentRpm,
           threshold: active.selection.init.minRpm,
           totalLockEventsCount: active.totalLockEventsCount
-        });
-        return;
-      }
-      if (ctx.equipmentRpm >= active.selection.init.minRpm && (ctx.baseReqSatisfiedForRider || active.manualTrigger)) {
-        const prev = active.cycleState;
-        active.cycleState = 'ramp';
-        active.rampElapsedMs = 0;
-        getLogger().info('governance.cycle.state_transition', {
-          challengeId: active.id,
-          from: prev,
-          to: 'ramp',
-          currentPhaseIndex: active.currentPhaseIndex,
-          rider: active.rider,
-          currentRpm: ctx.equipmentRpm
         });
       }
       return;
@@ -2480,22 +2656,48 @@ export class GovernanceEngine {
 
     if (active.cycleState === 'maintain') {
       const phase = active.generatedPhases[active.currentPhaseIndex];
+      const DANGER_GRACE_MS = 3000;
+
       if (ctx.equipmentRpm < phase.loRpm) {
-        active.cycleState = 'locked';
-        active.lockReason = 'maintain';
-        active.totalLockEventsCount += 1;
-        getLogger().info('governance.cycle.state_transition', {
-          challengeId: active.id, from: 'maintain', to: 'locked',
-          currentPhaseIndex: active.currentPhaseIndex, rider: active.rider,
-          currentRpm: ctx.equipmentRpm, reason: 'below_lo'
-        });
-        getLogger().info('governance.cycle.locked', {
-          challengeId: active.id, lockReason: 'maintain', phaseIndex: active.currentPhaseIndex,
-          currentRpm: ctx.equipmentRpm, threshold: phase.loRpm,
-          totalLockEventsCount: active.totalLockEventsCount
-        });
+        if (!Number.isFinite(active.dangerSinceMs)) {
+          active.dangerSinceMs = ctx.now ?? this._now();
+          getLogger().info('governance.cycle.danger_started', {
+            challengeId: active.id,
+            phaseIndex: active.currentPhaseIndex,
+            currentRpm: ctx.equipmentRpm,
+            threshold: phase.loRpm
+          });
+        }
+        const elapsed = (ctx.now ?? this._now()) - active.dangerSinceMs;
+        if (elapsed >= DANGER_GRACE_MS) {
+          active.cycleState = 'locked';
+          active.lockReason = 'maintain';
+          active.totalLockEventsCount += 1;
+          active.dangerSinceMs = null;
+          getLogger().info('governance.cycle.state_transition', {
+            challengeId: active.id, from: 'maintain', to: 'locked',
+            currentPhaseIndex: active.currentPhaseIndex, rider: active.rider,
+            currentRpm: ctx.equipmentRpm, reason: 'below_lo_grace_expired'
+          });
+          getLogger().info('governance.cycle.locked', {
+            challengeId: active.id, lockReason: 'maintain', phaseIndex: active.currentPhaseIndex,
+            currentRpm: ctx.equipmentRpm, threshold: phase.loRpm,
+            totalLockEventsCount: active.totalLockEventsCount
+          });
+          return;
+        }
+        // In grace window — stay in maintain visually, no progress accumulation.
         return;
       }
+
+      // RPM is at or above loRpm — clear any pending grace.
+      if (Number.isFinite(active.dangerSinceMs)) {
+        getLogger().info('governance.cycle.danger_cleared', {
+          challengeId: active.id, currentRpm: ctx.equipmentRpm
+        });
+        active.dangerSinceMs = null;
+      }
+
       if (ctx.equipmentRpm >= phase.hiRpm) {
         const { multiplier, contributors } = this._computeBoostMultiplier(active, ctx);
         const progressAdd = dt * multiplier;
@@ -2984,9 +3186,8 @@ export class GovernanceEngine {
         // Cycle challenge branch — RPM-driven state machine. Skips the
         // zone-specific pending/expiry/summary flow entirely.
         if (challenge.type === 'cycle') {
-          const cadenceEntry = this._latestInputs?.equipmentCadenceMap?.[challenge.equipment];
-          const rpmVal = Number(cadenceEntry?.rpm);
-          const equipmentRpm = Number.isFinite(rpmVal) ? rpmVal : 0;
+          const filtered = this._filteredCadenceFor(challenge.equipment, this._now());
+          const equipmentRpm = filtered.rpm;
 
           const riderZone = userZoneMap?.[challenge.rider];
           const riderRank = this._getZoneRank(riderZone) ?? 0;
@@ -3001,6 +3202,12 @@ export class GovernanceEngine {
             baseReqSatisfiedForRider,
             baseReqSatisfiedGlobal
           };
+
+          // Stash the latest baseReqSatisfiedForRider on the active challenge so
+          // _buildChallengeSnapshot can publish it for the HR-zone indicator.
+          // Mirrors how other transient flags (e.g. _lastAudioCueState) are
+          // remembered between ticks.
+          challenge.baseReqSatisfiedForRider = baseReqSatisfiedForRider;
 
           this._evaluateCycleChallenge(challenge, ctx);
           challenge.currentRpm = equipmentRpm;
