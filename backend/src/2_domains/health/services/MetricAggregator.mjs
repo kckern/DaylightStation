@@ -120,6 +120,49 @@ export class MetricAggregator {
     return { metric, period: resolved, granularity, statistic, unit: reg.unit, buckets: out };
   }
 
+  async distribution({ userId, metric, period, bins = null }) {
+    const reg = MetricRegistry.get(metric);
+    const resolved = this.periodResolver.resolve(period);
+    const rows = await this.#collectDailyRows({ userId, reg, from: resolved.from, to: resolved.to });
+    const values = rows.map(r => r.value);
+    const sorted = [...values].sort((a, b) => a - b);
+    const n = sorted.length;
+
+    const out = {
+      metric,
+      period: resolved,
+      unit: reg.unit,
+      count: n,
+      min: n ? sorted[0] : null,
+      max: n ? sorted[n - 1] : null,
+      mean: n ? sorted.reduce((s, v) => s + v, 0) / n : null,
+      median: n ? percentileFromSorted(sorted, 0.5) : null,
+      stdev: n ? computeStatistic(values, 'stdev') : null,
+      quartiles: {
+        p25: n ? percentileFromSorted(sorted, 0.25) : null,
+        p50: n ? percentileFromSorted(sorted, 0.5)  : null,
+        p75: n ? percentileFromSorted(sorted, 0.75) : null,
+      },
+    };
+
+    if (typeof bins === 'number' && bins >= 1 && n > 0) {
+      const lo = sorted[0];
+      const hi = sorted[n - 1];
+      const span = hi - lo || 1; // avoid divide-by-zero on degenerate distributions
+      const histogram = [];
+      for (let i = 0; i < bins; i++) {
+        const binStart = lo + (span * i) / bins;
+        const binEnd = lo + (span * (i + 1)) / bins;
+        const isLast = i === bins - 1;
+        const count = sorted.filter(v => v >= binStart && (isLast ? v <= binEnd : v < binEnd)).length;
+        histogram.push({ binStart, binEnd, count });
+      }
+      out.histogram = histogram;
+    }
+
+    return out;
+  }
+
   /**
    * Internal: like #collectValues, but returns per-row { date, value } so the
    * caller can group them by bucket key. Mirrors the same source dispatch.
