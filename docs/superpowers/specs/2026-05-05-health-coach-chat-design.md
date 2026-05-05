@@ -97,7 +97,32 @@ A persistent tab strip at the top of HealthApp gives "Hub | Coach | Detail" navi
 
 ---
 
-## Mention vocabulary (v1)
+## Mention vocabulary (v1) — config-driven
+
+The set of mention categories is **declared in a config file**, not hardcoded in components. Adding, removing, or relabeling a category is a data edit, not a code change.
+
+```javascript
+// frontend/src/modules/Health/CoachChat/mentions/vocabulary.config.js
+export const MENTION_CATEGORIES = [
+  {
+    key: 'period',
+    label: 'Period',
+    triggerPrefix: '@period:',     // also reachable via bare @
+    icon: 'calendar',
+    color: 'blue',
+    suggestEndpoint: '/api/v1/health/mentions/periods',
+    chipComponent: 'PeriodChip',
+    attachmentSchema: { /* zod-style — type:'period', value:PeriodInput, label */ },
+  },
+  { key: 'day',             label: 'Day',             triggerPrefix: '@day:',       icon: 'calendar-event', color: 'gray',   suggestEndpoint: '/api/v1/health/mentions/recent-days',  chipComponent: 'DayChip', /* ... */ },
+  { key: 'workout',         label: 'Workout',         triggerPrefix: '@workout:',   icon: 'run',            color: 'orange', suggestEndpoint: '/api/v1/health/mentions/recent-days?has=workout',   chipComponent: 'WorkoutChip', /* ... */ },
+  { key: 'nutrition',       label: 'Nutrition',       triggerPrefix: '@nutrition:', icon: 'apple',          color: 'green',  suggestEndpoint: '/api/v1/health/mentions/recent-days?has=nutrition', chipComponent: 'NutritionChip', /* ... */ },
+  { key: 'weight',          label: 'Weight',          triggerPrefix: '@weight:',    icon: 'scale',          color: 'cyan',   suggestEndpoint: '/api/v1/health/mentions/recent-days?has=weight',    chipComponent: 'WeightChip', /* ... */ },
+  { key: 'metric_snapshot', label: 'Metric snapshot', triggerPrefix: '@metric:',    icon: 'chart-line',     color: 'violet', suggestEndpoint: '/api/v1/health/mentions/metrics', chipComponent: 'MetricSnapshotChip', /* ... */ },
+];
+```
+
+The mention extension iterates this config to register triggers, the suggestion engine fans out to the listed endpoints, and chip rendering picks the named component from a registry. Adding `note` or `playbook_section` later is a config entry plus a new chip component — no edits to the trigger detection, suggestion fanout, or attachment serialization.
 
 The autocomplete dropdown groups suggestions by category. Each group has a distinct icon + color so the user can scan quickly.
 
@@ -246,7 +271,7 @@ The agent already returns `toolCalls` in its response (per `agents.mjs`). Each t
 > *🔧 aggregate_metric* — `weight_lbs / last_30d / mean` → 197.4 lbs (covered 28/30 days)
 > [▶ details]
 
-This is opt-in: by default tool calls render as a compact collapsed row; the user clicks to expand. For coaching transparency this is high-value — the user sees what the agent looked up.
+**Best practice — collapsed by default, expand on click.** Industry-standard pattern (Cursor, ChatGPT, Claude.ai): the user gets transparency without scrolling through walls of tool-call payloads. A compact one-line summary shows the tool name, the key arg(s), and the headline result; clicking expands the full args/result JSON. This is the v1 default. We render the summary line via a per-tool formatter (e.g., `aggregate_metric` shows `metric/period/statistic → value`); unknown tools fall back to a generic `name(args) → result_count` line.
 
 ---
 
