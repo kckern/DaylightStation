@@ -835,8 +835,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Health mentions router — powers CoachChat @-mention autocomplete dropdowns.
   // Mounted BEFORE the health router so /health/mentions/* is matched first.
+  // NOTE: healthAnalyticsService is set later (after createAgentsApiRouter) via
+  // v1Routers.agents.healthAnalyticsService. See the re-assignment below.
   v1Routers.healthMentions = createHealthMentionsRouter({
-    healthAnalyticsService: null,  // wired lazily — listPeriods gracefully skipped when null
+    healthAnalyticsService: null,  // placeholder — replaced after agents router boots
     healthStore: healthServices.healthStore,
     healthService: healthServices.healthService,
   });
@@ -1984,6 +1986,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       services: lifeplanResult.services,
       aggregator: lifelogServices.lifelogAggregator,
     },
+  });
+
+  // Re-create health mentions router now that healthAnalyticsService is available
+  // from the agents router. This replaces the null-wired placeholder above so
+  // listPeriods() works in CoachChat @-mention autocomplete.
+  v1Routers.healthMentions = createHealthMentionsRouter({
+    healthAnalyticsService: v1Routers.agents?.healthAnalyticsService ?? null,
+    healthStore: healthServices.healthStore,
+    healthService: healthServices.healthService,
   });
 
   // Register morning debrief as a scheduled task (via agents scheduler)
