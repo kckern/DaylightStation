@@ -1,6 +1,7 @@
 // backend/src/3_applications/agents/health-coach/HealthCoachAgent.mjs
 
 import { BaseAgent } from '../framework/BaseAgent.mjs';
+import { formatHealthAttachment } from './formatAttachment.mjs';
 import { HealthToolFactory } from './tools/HealthToolFactory.mjs';
 import { FitnessContentToolFactory } from './tools/FitnessContentToolFactory.mjs';
 import { DashboardToolFactory } from './tools/DashboardToolFactory.mjs';
@@ -111,6 +112,31 @@ export class HealthCoachAgent extends BaseAgent {
 
     this.#personalContextCache.set(userId, bundle);
     return bundle;
+  }
+
+  /**
+   * Override formatAttachments to resolve period bounds inline and point the
+   * model at the right tool for each attachment type.
+   *
+   * @param {Array<object>} attachments
+   * @returns {Promise<string>}
+   */
+  async formatAttachments(attachments) {
+    if (!Array.isArray(attachments) || attachments.length === 0) return '';
+    const periodResolver = this.deps.periodResolver
+      ?? this.deps.healthAnalyticsService?.aggregator?.periodResolver
+      ?? null;
+    const userId = this.#activeUserId ?? this.deps.configService?.getHeadOfHousehold?.() ?? null;
+    const lines = [
+      '## User Mentions',
+      'The user\'s message refers to the following items. ' +
+      'Use your tools to fetch data when relevant.',
+      '',
+    ];
+    for (const a of attachments) {
+      lines.push(`- ${await formatHealthAttachment(a, { userId, periodResolver })}`);
+    }
+    return lines.join('\n');
   }
 
   registerTools() {
