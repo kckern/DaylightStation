@@ -643,6 +643,14 @@ export class GovernanceEngine {
       //     hiding that behind a 500 ms delay).
       const STATE_DEBOUNCE_MS = 500;
       const internal = activeChallenge.cycleState;
+      if (!Number.isFinite(activeChallenge._pendingSince)) {
+        // Defensive fallback: every code path that creates an active cycle
+        // challenge today seeds _pendingSince in _startCycleChallenge, but a
+        // future code path that builds an active challenge through a
+        // different route shouldn't crash the debounce math with NaN.
+        activeChallenge._pendingSince = now;
+        activeChallenge._pendingCycleState = internal;
+      }
       if (internal !== activeChallenge._pendingCycleState) {
         activeChallenge._pendingCycleState = internal;
         activeChallenge._pendingSince = now;
@@ -2449,6 +2457,10 @@ export class GovernanceEngine {
       _pendingSince: now,
       selection
     };
+    // Reset cadence filter for this equipment so the new challenge starts with
+    // fresh smoothing state, not a residual EMA from the prior challenge.
+    this._cadenceFilters.delete(active.equipment);
+    this._lastSeenCadenceTs.delete(active.equipment);
     getLogger().info('governance.cycle.started', {
       challengeId: active.id,
       equipment: selection.equipment,

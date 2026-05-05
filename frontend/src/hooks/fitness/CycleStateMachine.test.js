@@ -5,9 +5,8 @@
 // These tests reproduce the 2026-05-04 pattern where the equipment cadence
 // stream bounced 0↔55 every ~200 ms (single-sample dropouts on a real ANT+
 // link) and prove that the CadenceFilter (Tasks 1-3) plus its wiring into
-// GovernanceEngine (Task 4) plus Task 6's transition debounce (NOT yet
-// landed at the time these tests were written) prevent lock storms while
-// still locking on real abandonment.
+// GovernanceEngine (Task 4) plus Task 6's transition debounce prevent lock
+// storms while still locking on real abandonment.
 //
 // Block A: noise resilience + implausible-spike rejection.
 // Block B: 5-second freshness contract end-to-end.
@@ -435,6 +434,48 @@ describe('Cycle SM — init/ramp clocks pause when rider is idle (Task 8)', () =
     const snap = engine.state?.challenge;
     expect(snap).toBeDefined();
     expect(snap.clockPaused).toBe(false);
+  });
+});
+
+describe('Cycle SM — filter state reset', () => {
+  // I-3 (audit closeout): GovernanceEngine's per-equipment _cadenceFilters and
+  // _lastSeenCadenceTs Maps are populated lazily and never cleared. When a
+  // cycle challenge ends and a new one starts on the same equipment, the new
+  // challenge must NOT inherit the prior filter's EMA/watermark — otherwise
+  // the first sample on the new challenge is smoothed against residual state
+  // from the prior lock period.
+  it('clears cadence filter state when a new cycle challenge starts', () => {
+    const { engine, advance } = makeEngineWithActiveCycle(42);
+
+    // Drag the EMA down with sustained low-RPM samples on the first challenge.
+    for (let i = 0; i < 10; i += 1) {
+      advance(200);
+      tick(engine, engine._now(), { zone: 'warm', rpm: 5 });
+    }
+    // EMA should now be ≈5 (seeded at 5 on first sample, then steady).
+    expect(engine.challengeState.activeChallenge.currentRpm).toBeLessThan(10);
+
+    // End the prior challenge — there is no public "end" method; null it
+    // directly, mirroring how the engine itself clears activeChallenge in
+    // terminal paths (see e.g. lines 2762/2782 of GovernanceEngine.js).
+    engine.challengeState.activeChallenge = null;
+
+    // Start a new challenge on the same equipment.
+    const result = engine.triggerChallenge({
+      type: 'cycle',
+      selectionId: CYCLE_SELECTION_ID,
+      riderId: 'felix'
+    });
+    expect(result.success).toBe(true);
+
+    // First cadence sample on the new challenge. If the filter state was
+    // reset, this 80 RPM is passed through unsmoothed (ema=null on a fresh
+    // filter). If not, the EMA carries over from the prior low value and the
+    // smoothed result is much lower (0.4*80 + 0.6*5 ≈ 35).
+    advance(200);
+    tick(engine, engine._now(), { zone: 'warm', rpm: 80 });
+
+    expect(engine.challengeState.activeChallenge.currentRpm).toBeGreaterThan(70);
   });
 });
 
