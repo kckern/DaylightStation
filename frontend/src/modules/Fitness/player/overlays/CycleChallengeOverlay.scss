@@ -2,12 +2,10 @@
   --cycle-overlay-edge: clamp(12px, min(4vw, 4%), 40px);
   --cycle-overlay-size: clamp(160px, min(22vw, 16vh), 240px);
   --cycle-overlay-diameter: var(--cycle-overlay-size);
-  --cycle-overlay-translate: 0;
 
-  position: absolute;
-  top: var(--cycle-overlay-edge);
-  left: var(--cycle-overlay-edge);
-  z-index: calc(var(--fitness-parent-overlay-z, 60));
+  // Positioning is owned by ChallengeOverlayDeck — this element flows inside
+  // the deck and renders at the deck's frame.
+  position: relative;
   width: var(--cycle-overlay-diameter);
   aspect-ratio: 1 / 1;
   border-radius: 50%;
@@ -17,12 +15,11 @@
   backdrop-filter: blur(16px);
   pointer-events: auto;
   user-select: none;
-  cursor: pointer;
   outline: none;
   box-sizing: border-box;
-  transform: translateY(var(--cycle-overlay-translate)) scale(var(--fitness-overlay-scale, 1));
+  transform: scale(var(--fitness-overlay-scale, 1));
   transform-origin: top left;
-  transition: transform 0.25s ease, opacity 0.2s ease, top 0.4s ease, bottom 0.4s ease;
+  transition: transform 0.25s ease, opacity 0.2s ease;
 
   &:focus-visible {
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.35), 0 24px 48px rgba(0, 0, 0, 0.45);
@@ -241,25 +238,6 @@
   }
   &--state-locked &__progress-bar-fill {
     background: linear-gradient(90deg, rgba(239, 68, 68, 0.6), rgba(239, 68, 68, 0.9));
-  }
-
-  // --- Position variants (top / middle / bottom) --------------------------
-  &--pos-top {
-    top: var(--cycle-overlay-edge);
-    bottom: auto;
-    --cycle-overlay-translate: 0;
-  }
-
-  &--pos-middle {
-    top: 50%;
-    bottom: auto;
-    --cycle-overlay-translate: -50%;
-  }
-
-  &--pos-bottom {
-    top: auto;
-    bottom: var(--cycle-overlay-edge);
-    --cycle-overlay-translate: 0;
   }
 
   // --- State variants -----------------------------------------------------
