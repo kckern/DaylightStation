@@ -17,6 +17,11 @@ function makeFactory(overrides = {}) {
     detectRegimeChange:   vi.fn(async (args) => ({ ...args, changes: [] })),
     detectAnomalies:      vi.fn(async (args) => ({ ...args, anomalies: [], count: 0 })),
     detectSustained:      vi.fn(async (args) => ({ ...args, runs: [] })),
+    listPeriods:     vi.fn(async () => ({ periods: [] })),
+    deducePeriod:    vi.fn(async () => ({ candidates: [] })),
+    rememberPeriod:  vi.fn(async () => ({ slug: 'x' })),
+    forgetPeriod:    vi.fn(async () => ({ slug: 'x', removed: true })),
+    analyzeHistory:  vi.fn(async () => ({ summary: { metrics: [] }, candidates: [], observations: [] })),
     ...overrides,
   };
   return { factory: new HealthAnalyticsToolFactory({ healthAnalyticsService }), healthAnalyticsService };
@@ -28,12 +33,28 @@ describe('HealthAnalyticsToolFactory', () => {
     const names = factory.createTools().map(t => t.name).sort();
     expect(names).toEqual([
       'aggregate_metric', 'aggregate_series',
+      'analyze_history',
       'compare_metric', 'conditional_aggregate', 'correlate_metrics',
+      'deduce_period',
       'detect_anomalies', 'detect_regime_change', 'detect_sustained',
+      'forget_period',
+      'list_periods',
       'metric_distribution', 'metric_percentile', 'metric_snapshot',
       'metric_trajectory',
+      'remember_period',
       'summarize_change',
     ]);
+  });
+
+  it('createTools returns 18 tools after Plan 4', () => {
+    const { factory } = makeFactory();
+    const names = factory.createTools().map(t => t.name).sort();
+    expect(names).toContain('list_periods');
+    expect(names).toContain('deduce_period');
+    expect(names).toContain('remember_period');
+    expect(names).toContain('forget_period');
+    expect(names).toContain('analyze_history');
+    expect(names.length).toBe(18);
   });
 
   it('metric_trajectory calls service.trajectory', async () => {
@@ -161,5 +182,51 @@ describe('HealthAnalyticsToolFactory', () => {
     expect(healthAnalyticsService.snapshot).toHaveBeenCalledWith({
       userId: 'kc', period: { rolling: 'last_30d' }, metrics: ['weight_lbs'],
     });
+  });
+
+  it('list_periods calls service.listPeriods', async () => {
+    const m = vi.fn(async () => ({ periods: [] }));
+    const { factory } = makeFactory({ listPeriods: m });
+    const tool = factory.createTools().find(t => t.name === 'list_periods');
+    await tool.execute({ userId: 'kc' });
+    expect(m).toHaveBeenCalled();
+  });
+
+  it('deduce_period calls service.deducePeriod', async () => {
+    const m = vi.fn(async () => ({ candidates: [] }));
+    const { factory } = makeFactory({ deducePeriod: m });
+    const tool = factory.createTools().find(t => t.name === 'deduce_period');
+    await tool.execute({
+      userId: 'kc',
+      criteria: { metric: 'weight_lbs', value_range: [193, 197], min_duration_days: 30 },
+    });
+    expect(m).toHaveBeenCalled();
+  });
+
+  it('remember_period calls service.rememberPeriod', async () => {
+    const m = vi.fn(async () => ({ slug: 'x' }));
+    const { factory } = makeFactory({ rememberPeriod: m });
+    const tool = factory.createTools().find(t => t.name === 'remember_period');
+    await tool.execute({
+      userId: 'kc', slug: 'stable-195',
+      from: '2024-08-01', to: '2024-11-15', label: 'Stable 195',
+    });
+    expect(m).toHaveBeenCalled();
+  });
+
+  it('forget_period calls service.forgetPeriod', async () => {
+    const m = vi.fn(async () => ({ slug: 'x', removed: true }));
+    const { factory } = makeFactory({ forgetPeriod: m });
+    const tool = factory.createTools().find(t => t.name === 'forget_period');
+    await tool.execute({ userId: 'kc', slug: 'stable-195' });
+    expect(m).toHaveBeenCalled();
+  });
+
+  it('analyze_history calls service.analyzeHistory', async () => {
+    const m = vi.fn(async () => ({ summary: { metrics: [] }, candidates: [], observations: [] }));
+    const { factory } = makeFactory({ analyzeHistory: m });
+    const tool = factory.createTools().find(t => t.name === 'analyze_history');
+    await tool.execute({ userId: 'kc' });
+    expect(m).toHaveBeenCalled();
   });
 });
