@@ -169,6 +169,11 @@ export class LongitudinalToolFactory extends ToolFactory {
               type: 'string',
               description: 'Optional case-insensitive substring filter against workout title/name.',
             },
+            aggregation: {
+              type: 'string',
+              enum: ['weekly_count', 'monthly_count', 'yearly_count'],
+              description: 'Optional rollup. When present, returns per-bucket count + totalDurationMin instead of a flat list.',
+            },
           },
           required: ['userId', 'from', 'to'],
         },
@@ -701,14 +706,13 @@ function makeQueryNutritionExecutor(healthStore) {
  * the named-period wrapper.
  */
 function makeQueryWorkoutsExecutor(healthService) {
-  return async function queryWorkouts({ userId, from, to, type = null, name_contains = null }) {
+  return async function queryWorkouts({ userId, from, to, type = null, name_contains = null, aggregation = null }) {
     try {
       guardUserId(userId);
       const healthData = await healthService.getHealthForRange(userId, from, to);
 
       const needle = typeof name_contains === 'string' && name_contains.length
-        ? name_contains.toLowerCase()
-        : null;
+        ? name_contains.toLowerCase() : null;
 
       const workouts = [];
       for (const [date, metric] of Object.entries(healthData || {})) {
@@ -728,9 +732,30 @@ function makeQueryWorkoutsExecutor(healthService) {
           });
         }
       }
-
-      // Sort by date ascending (chronological).
       workouts.sort((a, b) => a.date.localeCompare(b.date));
+
+      // Optional rollup
+      if (aggregation) {
+        const validAggregations = ['weekly_count', 'monthly_count', 'yearly_count'];
+        if (!validAggregations.includes(aggregation)) {
+          return { aggregation, rows: [], error: `Unknown aggregation: ${aggregation}` };
+        }
+        const bucketKey = aggregation === 'weekly_count' ? isoWeek :
+                          aggregation === 'monthly_count' ? isoMonth :
+                          isoYear;
+        const buckets = new Map();
+        for (const w of workouts) {
+          const key = bucketKey(w.date);
+          if (!buckets.has(key)) buckets.set(key, { period: key, count: 0, totalDurationMin: 0 });
+          const b = buckets.get(key);
+          b.count++;
+          if (typeof w.duration === 'number' && Number.isFinite(w.duration)) {
+            b.totalDurationMin += w.duration;
+          }
+        }
+        const rows = [...buckets.values()].sort((a, b) => a.period.localeCompare(b.period));
+        return { aggregation, rows };
+      }
 
       return { workouts };
     } catch (err) {
