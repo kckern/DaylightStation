@@ -686,6 +686,7 @@ export class GovernanceEngine {
         boostingUsers: contributors,
         lockReason: activeChallenge.lockReason || null,
         waitingForBaseReq: Boolean(activeChallenge.waitingForBaseReq),
+        baseReqSatisfiedForRider: Boolean(activeChallenge.baseReqSatisfiedForRider),
         swapAllowed,
         swapEligibleUsers,
         cycleAudioCue
@@ -2462,6 +2463,13 @@ export class GovernanceEngine {
   }
 
   _evaluateCycleChallenge(active, ctx) {
+    // Stash the latest baseReqSatisfiedForRider so the snapshot can publish it
+    // for the HR-zone indicator. Recorded BEFORE the terminal-status guard so
+    // post-success snapshots still reflect the most recent rider gate state.
+    if (ctx && Object.prototype.hasOwnProperty.call(ctx, 'baseReqSatisfiedForRider')) {
+      active.baseReqSatisfiedForRider = ctx.baseReqSatisfiedForRider;
+    }
+
     // Terminal-status guard: once a cycle has resolved (success or failed),
     // do not re-evaluate. The state-machine's branch conditions stay true
     // (e.g. phaseProgressMs >= maintainSeconds*1000) and would otherwise
@@ -3127,6 +3135,12 @@ export class GovernanceEngine {
             baseReqSatisfiedForRider,
             baseReqSatisfiedGlobal
           };
+
+          // Stash the latest baseReqSatisfiedForRider on the active challenge so
+          // _buildChallengeSnapshot can publish it for the HR-zone indicator.
+          // Mirrors how other transient flags (e.g. _lastAudioCueState) are
+          // remembered between ticks.
+          challenge.baseReqSatisfiedForRider = baseReqSatisfiedForRider;
 
           this._evaluateCycleChallenge(challenge, ctx);
           challenge.currentRpm = equipmentRpm;
