@@ -22,9 +22,12 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
   };
 
   return (
-    <div className="budget-block">
-      <h2 onClick={handleTitleClick} style={{ cursor: 'pointer' }}>Mortgage</h2>
-      <div onClick={() => openDrawer('amortization')} style={{ cursor: 'pointer' }}>
+    <div className="budget-block" style={{ display: 'flex', flexDirection: 'column' }}>
+      <h2 onClick={handleTitleClick} style={{ cursor: 'pointer', flexShrink: 0 }}>Mortgage</h2>
+      <div
+        onClick={() => openDrawer('amortization')}
+        style={{ cursor: 'pointer', flex: 1, minHeight: 0, overflow: 'hidden' }}
+      >
         <MortgageChart mortgage={mortgage} />
       </div>
     </div>
@@ -100,7 +103,8 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
     const options = {
       chart: {
       backgroundColor: "transparent",
-      style: { fontFamily: "sans-serif", marginBottom: '2rem' },
+      style: { fontFamily: "sans-serif" },
+      spacingBottom: 12,
       zoomType: zoomable ? 'x' : undefined,
       panning: zoomable ? { enabled: true, type: 'x' } : undefined,
       panKey: zoomable ? 'shift' : undefined,
@@ -191,14 +195,21 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
 
 
 
-    
-    // In the dashboard grid: budget-block is ~50vh, h2 is ~2rem, summary is ~3.5rem
-    // In the drawer: zoomable mode uses a fixed 350px height
-    const chartHeight = zoomable ? '350px' : 'calc(100% - 4rem)';
+    // Layout: flexbox column. Summary grid takes its natural height; the chart
+    // fills the remaining space. `min-height: 0` is critical — without it, the
+    // chart's intrinsic Highcharts size (~400px) wins over the flex constraint
+    // and the chart overflows the budget-block container, pushing the x-axis
+    // labels outside the visible area.
+    const wrapperStyle = zoomable
+      ? { width: '100%' }
+      : { height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' };
+    const chartContainerStyle = zoomable
+      ? { width: '100%', height: '350px' }
+      : { width: '100%', flex: 1, minHeight: 0 };
 
     return (
-      <div style={{ height: '100%', overflow: 'hidden' }}>
-      <div className="mortgage-summary-grid">
+      <div style={wrapperStyle}>
+      <div className="mortgage-summary-grid" style={{ flexShrink: 0 }}>
         <div><span>Paid</span><b>{formatAsCurrency(totalPaid, "K")}</b></div>
         <div><span>Balance</span><b>{formatAsCurrency(balance, "K")}</b></div>
         <div><span>Total Cost</span><b style={{ color: '#888' }}>{formatAsCurrency(totalExpectedCost, "K")}</b></div>
@@ -210,7 +221,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
         <div><span>Principal %</span><b>{principalPctOff.toFixed(1)}%</b></div>
         <div><span>Total %</span><b>{totalPctOff.toFixed(1)}%</b></div>
       </div>
-      <div style={{ width: '100%', height: chartHeight }}>
+      <div style={chartContainerStyle}>
       <HighchartsReact
       highcharts={Highcharts}
       options={options}
