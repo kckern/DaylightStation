@@ -133,10 +133,47 @@ export class MortgageCalculator {
       throw new ValidationError('asOfDate required', { code: 'MISSING_DATE', field: 'asOfDate' });
     }
 
-    if (statementData?.statements) {
-      return this.#buildFromStatements({ config, balance, transactions, asOfDate, statementData });
+    const result = statementData?.statements
+      ? this.#buildFromStatements({ config, balance, transactions, asOfDate, statementData })
+      : this.#buildFromBuxferOnly({ config, balance, transactions, asOfDate });
+
+    this.#assertAmortizationInvariants(result.amortization);
+    return result;
+  }
+
+  /**
+   * Guardrail: the amortization array must have unique, ascending month
+   * keys. Statement keys (billing-cycle labels) and bridge keys (also
+   * billing-cycle labels for future cycles) live in the same namespace,
+   * so any duplicate or backwards step is a calculation bug — fail loud
+   * rather than persist silently broken data.
+   * @private
+   */
+  #assertAmortizationInvariants(amortization) {
+    if (!Array.isArray(amortization) || amortization.length === 0) return;
+
+    const months = amortization.map(r => r.month);
+    const seen = new Set();
+    const dups = new Set();
+    for (const m of months) {
+      if (seen.has(m)) dups.add(m);
+      seen.add(m);
     }
-    return this.#buildFromBuxferOnly({ config, balance, transactions, asOfDate });
+    if (dups.size > 0) {
+      throw new ValidationError(
+        `Mortgage amortization has duplicate month keys: ${[...dups].sort().join(', ')}`,
+        { code: 'AMORTIZATION_DUP_KEYS', dups: [...dups] }
+      );
+    }
+
+    for (let i = 1; i < months.length; i++) {
+      if (months[i] <= months[i - 1]) {
+        throw new ValidationError(
+          `Mortgage amortization months not strictly ascending at index ${i}: ${months[i - 1]} → ${months[i]}`,
+          { code: 'AMORTIZATION_OUT_OF_ORDER', prev: months[i - 1], curr: months[i], index: i }
+        );
+      }
+    }
   }
 
   /**
@@ -164,12 +201,14 @@ export class MortgageCalculator {
 
     let lastStatementBalance = null;
     let lastStatementMonth = null;
+    let lastStatementDate = null;
 
     for (let mi = 0; mi < statementMonths.length; mi++) {
       const month = statementMonths[mi];
       const stmt = statements[month];
       lastStatementMonth = month;
       lastStatementBalance = stmt.principalBalance;
+      lastStatementDate = stmt.statementDate || `${month}-01`;
 
       // principalBalance on statement N is the balance AFTER N's transactions.
       // So the starting point for N's transactions is the PREVIOUS statement's principalBalance.
@@ -205,31 +244,6 @@ export class MortgageCalculator {
       }
     }
 
-    // Append Buxfer transactions for months after the latest statement
-    if (lastStatementMonth && transactions?.length) {
-      const sortedBuxfer = [...transactions].sort(
-        (a, b) => new Date(a.date) - new Date(b.date)
-      );
-
-      let runningBuxferBalance = -lastStatementBalance;
-      for (const txn of sortedBuxfer) {
-        const txnMonth = txn.date.substring(0, 7);
-        if (txnMonth <= lastStatementMonth) continue;
-
-        runningBuxferBalance += txn.amount || 0;
-        totalPaid += txn.amount || 0;
-        allTransactions.push({
-          ...txn,
-          runningBalance: this.#round(runningBuxferBalance),
-          source: 'buxfer'
-        });
-      }
-    }
-
-    const currentBalance = lastStatementBalance != null
-      ? lastStatementBalance
-      : Math.abs(balance);
-
     // Build amortization from statement data (grouped by month)
     const amortization = [];
     let cumulativeInterest = 0;
@@ -260,7 +274,173 @@ export class MortgageCalculator {
       });
     }
 
-    // Start projections from the month after the last statement/amortization month
+    // Bridge phase: extend ground-truth statements with Buxfer transactions
+    // covering activity since the last statement. Statements are authoritative
+    // up to lastStatementDate; Buxfer fills the last-mile gap and the bridge
+    // endpoint is anchored to Buxfer's cached balance.
+    //
+    // Bridge rows use the lender's billing-cycle convention for `month`
+    // (same as statement keys), so labels strictly extend the statement
+    // sequence with no overlap. The cutoff day is inferred from
+    // statementDate's day-of-month — txns dated through that day belong to
+    // the cycle ending that month; later txns belong to the next cycle.
+    // Statement labels = cycle-end month + 1 (lender's "due-date" convention).
+    const bridgeRecords = [];
+    const monthlyRate = interestRate / 12;
+
+    if (lastStatementDate && transactions?.length) {
+      const bridgeTxns = transactions
+        .filter(t => t.date > lastStatementDate)
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+      if (bridgeTxns.length > 0) {
+        const cutoffDay = parseInt(lastStatementDate.split('-')[2], 10) || 1;
+
+        const cycleLabelFor = (isoDate) => {
+          const [y, m, d] = isoDate.split('-').map(Number);
+          let cy = y, cm = m;
+          if (d > cutoffDay) {
+            cm++;
+            if (cm > 12) { cm = 1; cy++; }
+          }
+          let ly = cy, lm = cm + 1;
+          if (lm > 12) { lm = 1; ly++; }
+          return `${ly}-${String(lm).padStart(2, '0')}`;
+        };
+
+        const bridgeByCycle = {};
+        for (const t of bridgeTxns) {
+          const c = cycleLabelFor(t.date);
+          if (!bridgeByCycle[c]) bridgeByCycle[c] = [];
+          bridgeByCycle[c].push(t);
+        }
+
+        const asOfIso = (typeof asOfDate === 'string'
+          ? asOfDate
+          : asOfDate.toISOString()
+        ).slice(0, 10);
+        const asOfCycle = cycleLabelFor(asOfIso);
+
+        // Walk cycles strictly AFTER lastStatementMonth through asOfCycle.
+        const walkCycles = [];
+        let [wy, wm] = lastStatementMonth.split('-').map(Number);
+        wm++;
+        if (wm > 12) { wm = 1; wy++; }
+        const [eY, eM] = asOfCycle.split('-').map(Number);
+        while (wy < eY || (wy === eY && wm <= eM)) {
+          walkCycles.push(`${wy}-${String(wm).padStart(2, '0')}`);
+          wm++;
+          if (wm > 12) { wm = 1; wy++; }
+        }
+
+        let bridgeBalance = lastStatementBalance;
+        let cumIntRunning = cumulativeInterest;
+
+        for (const cycle of walkCycles) {
+          const cycleTxns = bridgeByCycle[cycle] || [];
+          if (cycleTxns.length === 0) continue;
+
+          const opening = bridgeBalance;
+          const interestAccrued = this.#round(opening * monthlyRate);
+          const cyclePaid = cycleTxns.reduce((sum, t) => sum + (t.amount || 0), 0);
+          const principalPaid = this.#round(cyclePaid - interestAccrued);
+
+          bridgeBalance = this.#round(opening + interestAccrued - cyclePaid);
+          cumIntRunning += interestAccrued;
+
+          bridgeRecords.push({
+            month: cycle,
+            effectiveRate: interestRate,
+            openingBalance: this.#round(opening),
+            interestAccrued: this.#round(interestAccrued),
+            payments: cycleTxns.map(t => t.amount),
+            totalPaid: this.#round(cyclePaid),
+            principalPaid: this.#round(principalPaid),
+            closingBalance: this.#round(bridgeBalance),
+            cumulativeInterest: this.#round(cumIntRunning),
+            reconciliationAdj: 0,
+            source: 'buxfer'
+          });
+        }
+
+        // Reconcile bridge endpoint against Buxfer's cached balance. Drift
+        // distributed across bridge months weighted by interest accrual; the
+        // statement-month row (interest=0) absorbs none, post-statement
+        // months absorb proportionally.
+        if (bridgeRecords.length > 0) {
+          const buxferCachedBalance = Math.abs(balance);
+          const lastBridgeClosing = bridgeRecords[bridgeRecords.length - 1].closingBalance;
+          const drift = this.#round(buxferCachedBalance - lastBridgeClosing);
+
+          if (Math.abs(drift) > 0.01) {
+            const totalBridgeInterest = bridgeRecords.reduce(
+              (s, r) => s + r.interestAccrued, 0
+            );
+
+            for (const record of bridgeRecords) {
+              const weight = totalBridgeInterest > 0
+                ? record.interestAccrued / totalBridgeInterest
+                : 1 / bridgeRecords.length;
+              const adj = this.#round(drift * weight);
+              record.reconciliationAdj = adj;
+              record.interestAccrued = this.#round(record.interestAccrued + adj);
+              record.principalPaid = this.#round(record.totalPaid - record.interestAccrued);
+            }
+
+            let walkBal = bridgeRecords[0].openingBalance;
+            let cumInt = cumulativeInterest;
+            for (const record of bridgeRecords) {
+              record.openingBalance = this.#round(walkBal);
+              walkBal += record.interestAccrued;
+              cumInt += record.interestAccrued;
+              walkBal -= record.totalPaid;
+              record.closingBalance = this.#round(walkBal);
+              record.cumulativeInterest = this.#round(cumInt);
+            }
+          }
+
+          totalInterestPaid += bridgeRecords.reduce((s, r) => s + r.interestAccrued, 0);
+          totalPrincipalPaid += bridgeRecords.reduce((s, r) => s + r.principalPaid, 0);
+
+          // Emit individual Buxfer txns AFTER reconciliation. Each txn's
+          // running balance steps down by its share of the month's reconciled
+          // principal reduction (ratio = principalReduction / totalPaid), so
+          // the last txn of each month lands exactly on that month's
+          // reconciled closing balance — no cliff between the actual line
+          // and the projection line.
+          for (const record of bridgeRecords) {
+            const cycleTxns = bridgeByCycle[record.month] || [];
+            if (cycleTxns.length === 0) continue;
+
+            const principalReduction = record.openingBalance - record.closingBalance;
+            const ratio = record.totalPaid > 0
+              ? principalReduction / record.totalPaid
+              : 0;
+
+            let running = -record.openingBalance;
+            for (const txn of cycleTxns) {
+              running += (txn.amount || 0) * ratio;
+              totalPaid += txn.amount || 0;
+              allTransactions.push({
+                ...txn,
+                runningBalance: this.#round(running),
+                source: 'buxfer'
+              });
+            }
+          }
+
+          amortization.push(...bridgeRecords);
+        }
+      }
+    }
+
+    // currentBalance: bridge endpoint (anchored to Buxfer cached) when bridge
+    // exists, otherwise the most recent statement's balance.
+    const currentBalance = bridgeRecords.length > 0
+      ? Math.abs(bridgeRecords[bridgeRecords.length - 1].closingBalance)
+      : (lastStatementBalance != null ? lastStatementBalance : Math.abs(balance));
+
+    // Start projections from the month after the last amortization month
     const lastAmortMonth = amortization.length > 0
       ? amortization[amortization.length - 1].month
       : null;
