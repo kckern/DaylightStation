@@ -656,6 +656,12 @@ export class GovernanceEngine {
       }
       const publishedState = activeChallenge._publishedCycleState;
 
+      // Task 8: clockPaused flag for UI — true when rider is not pedalling fast
+      // enough to be considered "active" (below init.minRpm threshold).
+      // The engine continues advancing timers unconditionally, but the UI can
+      // render the countdown as "paused" when this flag is true.
+      const clockPaused = currentRpm < (activeChallenge.selection?.init?.minRpm ?? 0);
+
       return {
         id: activeChallenge.id,
         type: 'cycle',
@@ -675,6 +681,7 @@ export class GovernanceEngine {
         initRemainingMs,
         initTotalMs,
         dimFactor,
+        clockPaused,
         boostMultiplier: multiplier,
         boostingUsers: contributors,
         lockReason: activeChallenge.lockReason || null,
