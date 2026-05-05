@@ -1,6 +1,6 @@
 import moment from "moment";
 import { formatAsCurrency } from "../blocks";
-import { Tabs, Badge, Table, Select, TextInput } from "@mantine/core";
+import { Tabs, Badge, Table, Select, TextInput, Tooltip } from "@mantine/core";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import { useState, useMemo } from 'react';
@@ -22,9 +22,12 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
   };
 
   return (
-    <div className="budget-block">
-      <h2 onClick={handleTitleClick} style={{ cursor: 'pointer' }}>Mortgage</h2>
-      <div onClick={() => openDrawer('amortization')} style={{ cursor: 'pointer' }}>
+    <div className="budget-block" style={{ display: 'flex', flexDirection: 'column' }}>
+      <h2 onClick={handleTitleClick} style={{ cursor: 'pointer', flexShrink: 0 }}>Mortgage</h2>
+      <div
+        onClick={() => openDrawer('amortization')}
+        style={{ cursor: 'pointer', flex: 1, minHeight: 0, overflow: 'hidden' }}
+      >
         <MortgageChart mortgage={mortgage} />
       </div>
     </div>
@@ -34,23 +37,39 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
   export default function MortgageChart({ mortgage, zoomable = false }) {
     if (!mortgage?.amortization && !mortgage?.transactions) return null;
 
-    const { months, pastData, cumulativeInterestData, futureSeries, maxY } = useMemo(() => {
-      // 1. Build sawtooth pastData from amortization records.
-      // Three points per month: opening → interest peak → payment trough
-      const pastData = (mortgage.amortization || []).flatMap(record => {
-        const monthStart = moment(record.month, "YYYY-MM").valueOf();
-        const midMonth = moment(record.month, "YYYY-MM").date(15).valueOf();
-        const monthEnd = moment(record.month, "YYYY-MM").endOf('month').valueOf();
+    const { months, pastData, cumulativeInterestData, futureSeries, maxY, monthTicks, yearLines } = useMemo(() => {
+      const todayMs = moment().valueOf();
+      const amort = mortgage.amortization || [];
+
+      // 1. Build sawtooth pastData using each record's actual asOfDate (not
+      // its calendar-month label, which is the lender's billing-cycle name and
+      // typically lags the actual data date by ~1 month). Each record spans
+      // from the previous record's asOfDate to its own asOfDate, with a peak
+      // mid-period for accrued interest. The last record's end is capped at
+      // Today — past line never extends into the future.
+      const recordEndMs = (record) => record.asOfDate
+        ? moment(record.asOfDate).valueOf()
+        : moment(record.month, "YYYY-MM").endOf('month').valueOf();
+
+      const pastData = amort.flatMap((record, i, arr) => {
+        const prev = arr[i - 1];
+        const periodStart = prev
+          ? recordEndMs(prev)
+          : moment(record.month, "YYYY-MM").startOf('month').valueOf();
+        let periodEnd = recordEndMs(record);
+        if (i === arr.length - 1 && periodEnd > todayMs) periodEnd = todayMs;
+        const midPeriod = (periodStart + periodEnd) / 2;
         return [
-          [monthStart, record.openingBalance],
-          [midMonth, record.openingBalance + record.interestAccrued],
-          [monthEnd, record.closingBalance]
+          [periodStart, record.openingBalance],
+          [midPeriod, record.openingBalance + record.interestAccrued],
+          [periodEnd, record.closingBalance]
         ];
       });
 
-      const cumulativeInterestData = (mortgage.amortization || []).map(record => {
-        const ms = moment(record.month, "YYYY-MM").endOf('month').valueOf();
-        return [ms, record.cumulativeInterest];
+      const cumulativeInterestData = amort.map((record, i, arr) => {
+        let endMs = recordEndMs(record);
+        if (i === arr.length - 1 && endMs > todayMs) endMs = todayMs;
+        return [endMs, record.cumulativeInterest];
       });
 
       // 2. Determine last amortization month to avoid overlap with future series.
@@ -59,12 +78,33 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
         : null;
 
       // 3. Build a future series for each payment plan.
-      // Projections now start from the month after the last amortization month,
-      // using the reconciled closing balance — so the first startBalance matches exactly.
+      // First point anchors at TODAY with the first projection month's
+      // startBalance (= currentBalance), joining seamlessly to the past
+      // line's capped endpoint. Subsequent points are month-END endBalances.
+      // For the final payoff month: the calculator caps the last payment to
+      // not overpay, so the loan zeroes out PART-WAY through that month.
+      // Plotting endBalance=0 at calendar month-end would create a flat tail
+      // (artificial bend). Instead, interpolate the payoff date within the
+      // month based on (partial last payment / full prior payment).
       const futureSeries = mortgage.paymentPlans.map((plan) => {
-        const data = plan.months.map(({ month, startBalance, endBalance }) => {
-          const ms = moment(month, "YYYY-MM").valueOf();
-          return [ms, endBalance];
+        const data = [];
+        if (plan.months.length > 0) {
+          data.push([todayMs, plan.months[0].startBalance]);
+        }
+        plan.months.forEach((m, idx, arr) => {
+          const monthStart = moment(m.month, "YYYY-MM").valueOf();
+          const monthEnd = moment(m.month, "YYYY-MM").endOf('month').valueOf();
+          const isLast = idx === arr.length - 1;
+          const isPaidOff = isLast && m.endBalance < 1;
+          let plotMs;
+          if (isPaidOff && idx > 0) {
+            const fullPayment = arr[idx - 1].amountPaid || m.amountPaid || 1;
+            const fraction = Math.min(1, Math.max(0, m.amountPaid / fullPayment));
+            plotMs = monthStart + (monthEnd - monthStart) * fraction;
+          } else {
+            plotMs = monthEnd;
+          }
+          if (plotMs > todayMs) data.push([plotMs, m.endBalance]);
         });
 
         return {
@@ -82,14 +122,60 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       const allMonths = [...amortMonths, ...planEndMonths].sort((a, b) => a.diff(b));
       const months = allMonths.length ? [allMonths[0], allMonths[allMonths.length - 1]] : [];
 
-      // 5. Compute the maximum Y value for chart scaling (includes sawtooth peaks).
+      // 5. Calendar-aligned tick positions. Highcharts' default `tickInterval`
+      // anchors at axis-min and uses fixed-day arithmetic (365.25 / 30), which
+      // drifts off calendar boundaries. Compute month-1st positions directly
+      // so the year boundaries (Jan-1) overlap exactly with monthly grid lines.
+      const monthTicks = [];
+      const yearLines = [];
+      if (allMonths.length) {
+        const cursor = allMonths[0].clone().startOf('month');
+        const end = allMonths[allMonths.length - 1].clone().endOf('month');
+        while (cursor.isSameOrBefore(end)) {
+          monthTicks.push(cursor.valueOf());
+          if (cursor.month() === 0) yearLines.push(cursor.valueOf());
+          cursor.add(1, 'month');
+        }
+      }
+
+      // 6. Compute the maximum Y value for chart scaling (includes sawtooth peaks).
       const allPastValues = pastData.map(([_, y]) => y || 0);
       const allFutureValues = futureSeries.flatMap(s =>
         s.data.map(([_, y]) => y || 0)
       );
       const maxY = Math.max(...allPastValues, ...allFutureValues, 0);
 
-      return { months, pastData, cumulativeInterestData, futureSeries, maxY };
+      // 7. Tag the very last past-line point with a data label showing the
+      // current balance. Convert from [x, y] tuple to point-object form so
+      // Highcharts attaches the label only to that one point. (Done AFTER
+      // maxY to avoid breaking the array-destructure in step 6.) The label
+      // floats up into the empty space above the line, in dark text for
+      // readability against the light chart background.
+      if (pastData.length > 0) {
+        const [lastX, lastY] = pastData[pastData.length - 1];
+        pastData[pastData.length - 1] = {
+          x: lastX,
+          y: lastY,
+          dataLabels: {
+            enabled: true,
+            align: 'left',
+            verticalAlign: 'bottom',
+            x: 8,
+            y: -8,
+            formatter() {
+              return `<b>$${(this.y / 1000).toFixed(1)}k</b>`;
+            },
+            style: {
+              color: '#1f2937',
+              fontSize: '13px',
+              fontWeight: 'bold',
+              textOutline: 'none'
+            }
+          }
+        };
+      }
+
+      return { months, pastData, cumulativeInterestData, futureSeries, maxY, monthTicks, yearLines };
     }, [mortgage]);
   
     // Early-exit if we have no months at all:
@@ -100,7 +186,8 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
     const options = {
       chart: {
       backgroundColor: "transparent",
-      style: { fontFamily: "sans-serif", marginBottom: '2rem' },
+      style: { fontFamily: "sans-serif" },
+      spacingBottom: 12,
       zoomType: zoomable ? 'x' : undefined,
       panning: zoomable ? { enabled: true, type: 'x' } : undefined,
       panKey: zoomable ? 'shift' : undefined,
@@ -108,33 +195,58 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       credits: { enabled: false },
       ...(zoomable && { resetZoomButton: { theme: { fill: '#333', stroke: '#555', style: { color: '#ccc' } } } }),
       title: { text: null },
-      legend: { enabled: true, itemStyle: { color: '#ccc' } },
+      legend: { enabled: false },
       tooltip: { xDateFormat: '%b %Y' },
       xAxis: {
       type: "datetime",
       min: months[0].valueOf(),
       max: months[months.length - 1].valueOf(),
-      tickInterval: 365.25 * 24 * 3600 * 1000, // one year
-      minorTickInterval: 30 * 24 * 3600 * 1000,
-      gridLineWidth: 1,
-      gridLineColor: "#444",
-      minorGridLineWidth: 0.5,
-      minorGridLineColor: "#333",
+      // Calendar-aligned tick positions — every month-1st. Year boundaries
+      // (Jan-1) are drawn as plotLines on top, so the prominent year markers
+      // fall exactly on a month gridline (no drift).
+      tickPositions: monthTicks,
+      gridLineWidth: 0.5,
+      gridLineColor: "#dcdcdc",
+      minorTicks: false,
       labels: {
+        formatter() {
+          return moment(this.value).month() === 0
+            ? moment(this.value).format('YYYY')
+            : '';
+        },
         rotation: -45,
-        style: { color: '#999', fontSize: '10px' }
+        style: { color: '#666', fontSize: '10px' }
       },
-      plotLines: [{
-        color: '#ffffff55',
-        width: 2,
-        value: moment().valueOf(),
-        dashStyle: 'Dash',
-        label: { text: 'Today', style: { color: '#999' } }
-      }]
+      plotLines: [
+        ...yearLines.map(t => ({
+          color: '#888',
+          width: 1.25,
+          value: t,
+          zIndex: 3
+        })),
+        {
+          color: '#dc2626',
+          width: 2,
+          value: moment().valueOf(),
+          dashStyle: 'ShortDash',
+          zIndex: 5,
+          label: {
+            text: 'Today',
+            rotation: 0,
+            align: 'left',
+            x: 4,
+            y: 12,
+            style: { color: '#dc2626', fontWeight: 'bold', fontSize: '11px' }
+          }
+        }
+      ]
       },
       yAxis: {
         title: { text: null },
+        min: 0,
         max: maxY,
+        startOnTick: false,
+        endOnTick: false,
         tickInterval: 100000,
         minorTickInterval: 25000,
         labels: {
@@ -143,8 +255,8 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
           },
           style: { color: '#999' }
         },
-        gridLineColor: "#666",
-        minorGridLineColor: "#444",
+        gridLineColor: "#888",
+        minorGridLineColor: "#dcdcdc",
       },
       plotOptions: {
       series: {
@@ -191,26 +303,56 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
 
 
 
-    
-    // In the dashboard grid: budget-block is ~50vh, h2 is ~2rem, summary is ~3.5rem
-    // In the drawer: zoomable mode uses a fixed 350px height
-    const chartHeight = zoomable ? '350px' : 'calc(100% - 4rem)';
+    // Layout: flexbox column. Summary grid takes its natural height; the chart
+    // fills the remaining space. `min-height: 0` is critical — without it, the
+    // chart's intrinsic Highcharts size (~400px) wins over the flex constraint
+    // and the chart overflows the budget-block container, pushing the x-axis
+    // labels outside the visible area.
+    const wrapperStyle = zoomable
+      ? { width: '100%' }
+      : { height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' };
+    const chartContainerStyle = zoomable
+      ? { width: '100%', height: '350px' }
+      : { width: '100%', flex: 1, minHeight: 0 };
 
     return (
-      <div style={{ height: '100%', overflow: 'hidden' }}>
-      <div className="mortgage-summary-grid">
-        <div><span>Paid</span><b>{formatAsCurrency(totalPaid, "K")}</b></div>
-        <div><span>Balance</span><b>{formatAsCurrency(balance, "K")}</b></div>
-        <div><span>Total Cost</span><b style={{ color: '#888' }}>{formatAsCurrency(totalExpectedCost, "K")}</b></div>
-        <div><span>Principal</span><b>{formatAsCurrency(totalPrincipalPaid, "K")}</b></div>
-        <div><span>Interest</span><b style={{ color: '#ff9800' }}>{formatAsCurrency(totalInterestPaid, "K")}</b></div>
-        <div><span>Equity/mo</span><b>{formatAsCurrency(monthlyEquity, "K")}</b></div>
-        <div><span>Rent/mo</span><b>{formatAsCurrency(monthlyRent, "K")}</b></div>
-        <div><span>Int. Ratio</span><b>{totalPaid > 0 ? `${(totalInterestPaid / totalPaid * 100).toFixed(1)}%` : '0%'}</b></div>
-        <div><span>Principal %</span><b>{principalPctOff.toFixed(1)}%</b></div>
-        <div><span>Total %</span><b>{totalPctOff.toFixed(1)}%</b></div>
+      <div style={wrapperStyle}>
+      <div className="mortgage-summary-grid" style={{ flexShrink: 0 }}>
+        {/* Row 1: headline numbers — Balance / Paid / Principal / Interest / Equity-per-month */}
+        <Tooltip label="Current outstanding principal balance, anchored to Buxfer's most recent cached balance (post-statement activity bridges from the latest statement)." multiline w={280} withArrow>
+          <div><span>Balance</span><b>{formatAsCurrency(balance, "K")}</b></div>
+        </Tooltip>
+        <Tooltip label="Total cash paid into the mortgage to date — principal + interest + escrow combined." multiline w={260} withArrow>
+          <div><span>Paid</span><b>{formatAsCurrency(totalPaid, "K")}</b></div>
+        </Tooltip>
+        <Tooltip label="Total principal paid down so far — equity you've built in the home through loan paydown alone (excludes appreciation)." multiline w={280} withArrow>
+          <div><span>Principal</span><b>{formatAsCurrency(totalPrincipalPaid, "K")}</b></div>
+        </Tooltip>
+        <Tooltip label="Total interest paid to the lender so far — the cost of borrowing, gone forever." multiline w={260} withArrow>
+          <div><span>Interest</span><b style={{ color: '#ff9800' }}>{formatAsCurrency(totalInterestPaid, "K")}</b></div>
+        </Tooltip>
+        <Tooltip label="Average monthly principal paydown across the loan's lifetime so far — your equity-building rate per month." multiline w={280} withArrow>
+          <div><span>Equity/mo</span><b>{formatAsCurrency(monthlyEquity, "K")}</b></div>
+        </Tooltip>
+
+        {/* Row 2: companion ratios/totals — Total Cost / Total % / Principal % / Int. Ratio / Rent-per-month */}
+        <Tooltip label="Original principal + total interest projected over the life of the loan at the historical payment pace. Your eventual all-in cost if you keep paying as you have been." multiline w={300} withArrow>
+          <div><span>Total Cost</span><b style={{ color: '#888' }}>{formatAsCurrency(totalExpectedCost, "K")}</b></div>
+        </Tooltip>
+        <Tooltip label="Share of the projected lifetime cost (principal + interest) that's been paid so far. Compare with Principal % — gap between them is the interest you've front-loaded." multiline w={320} withArrow>
+          <div><span>Total %</span><b>{totalPctOff.toFixed(1)}%</b></div>
+        </Tooltip>
+        <Tooltip label="Share of the original principal that's been paid off. Hits 100% when the loan is paid in full." multiline w={280} withArrow>
+          <div><span>Principal %</span><b>{principalPctOff.toFixed(1)}%</b></div>
+        </Tooltip>
+        <Tooltip label="Share of every dollar paid that went to interest (vs principal). Lower is better — extra principal payments push this number down." multiline w={300} withArrow>
+          <div><span>Int. Ratio</span><b>{totalPaid > 0 ? `${(totalInterestPaid / totalPaid * 100).toFixed(1)}%` : '0%'}</b></div>
+        </Tooltip>
+        <Tooltip label="Average monthly interest paid across the loan's lifetime so far — the rough equivalent of monthly rent (the price of borrowing the money)." multiline w={300} withArrow>
+          <div><span>Rent/mo</span><b>{formatAsCurrency(monthlyRent, "K")}</b></div>
+        </Tooltip>
       </div>
-      <div style={{ width: '100%', height: chartHeight }}>
+      <div style={chartContainerStyle}>
       <HighchartsReact
       highcharts={Highcharts}
       options={options}
