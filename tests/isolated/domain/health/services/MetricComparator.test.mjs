@@ -168,3 +168,91 @@ describe('MetricComparator.summarizeChange', () => {
     expect(out.changeShape).toBe('step');
   });
 });
+
+describe('MetricComparator.conditionalAggregate', () => {
+  // Build a fixture where: 30 days of weight + nutrition. Days where i%2===0
+  // have nutrition logged (calories>0); odd days do not.
+  function buildPairedFixture() {
+    const weight = {};
+    const nutrition = {};
+    let lbs = 200;
+    const start = new Date(Date.UTC(2026, 3, 6)); // Mon 2026-04-06
+    for (let i = 0; i < 30; i++) {
+      const d = new Date(start);
+      d.setUTCDate(start.getUTCDate() + i);
+      const key = d.toISOString().slice(0, 10);
+      weight[key] = { lbs, lbs_adjusted_average: lbs };
+      if (i % 2 === 0) {
+        nutrition[key] = { calories: 2000, protein: 150 };
+      }
+      lbs -= 0.1;
+    }
+    return { weight, nutrition };
+  }
+
+  it('splits a metric by tracked vs untracked condition', async () => {
+    const { weight, nutrition } = buildPairedFixture();
+    const { comparator } = makeComparator(weight, nutrition);
+    const out = await comparator.conditionalAggregate({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period: { from: '2026-04-06', to: '2026-05-05' },
+      condition: { tracked: true },
+    });
+    expect(out.metric).toBe('weight_lbs');
+    expect(out.matching.daysMatched).toBe(15);  // even-indexed days
+    expect(out.notMatching.daysNotMatched).toBe(15);
+    expect(typeof out.matching.value).toBe('number');
+    expect(typeof out.notMatching.value).toBe('number');
+    expect(typeof out.delta).toBe('number');
+  });
+
+  it('weekday condition splits by ISO day-of-week', async () => {
+    const { weight, nutrition } = buildPairedFixture();
+    const { comparator } = makeComparator(weight, nutrition);
+    const out = await comparator.conditionalAggregate({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period: { from: '2026-04-06', to: '2026-05-05' },
+      condition: { weekday: 'Mon' },
+    });
+    // 30 days from Mon 2026-04-06 → 5 Mondays
+    expect(out.matching.daysMatched).toBe(5);
+  });
+
+  it('weekend condition matches Sat+Sun', async () => {
+    const { weight, nutrition } = buildPairedFixture();
+    const { comparator } = makeComparator(weight, nutrition);
+    const out = await comparator.conditionalAggregate({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period: { from: '2026-04-06', to: '2026-05-05' },
+      condition: { weekend: true },
+    });
+    // 30-day window = 4 weeks + 2 days; 4*2 = 8 weekend days
+    expect(out.matching.daysMatched).toBe(8);
+  });
+
+  it('since condition keeps only days >= cutoff', async () => {
+    const { weight, nutrition } = buildPairedFixture();
+    const { comparator } = makeComparator(weight, nutrition);
+    const out = await comparator.conditionalAggregate({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period: { from: '2026-04-06', to: '2026-05-05' },
+      condition: { since: '2026-04-20' },
+    });
+    expect(out.matching.daysMatched).toBe(16);
+  });
+
+  it('throws on unknown condition shape', async () => {
+    const { weight, nutrition } = buildPairedFixture();
+    const { comparator } = makeComparator(weight, nutrition);
+    await expect(comparator.conditionalAggregate({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period: { from: '2026-04-06', to: '2026-05-05' },
+      condition: { magic: 'unicorn' },
+    })).rejects.toThrow(/unknown condition/);
+  });
+});
