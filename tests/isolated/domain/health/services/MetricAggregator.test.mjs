@@ -278,6 +278,19 @@ describe('MetricAggregator.percentile', () => {
     expect(out.percentile).toBe(null);
     expect(out.total).toBe(0);
   });
+
+  it('returns percentile=0 (not negative) when value is below the dataset minimum', async () => {
+    const { aggregator } = makeAggregator();
+    const out = await aggregator.percentile({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period: { rolling: 'last_7d' },
+      value: 195.0,  // strictly below the dataset min of 196.5
+    });
+    expect(out.rank).toBe(0);
+    expect(out.percentile).toBe(0);
+    expect(out.interpretation).toBe('below typical');
+  });
 });
 
 describe('MetricAggregator.snapshot', () => {
