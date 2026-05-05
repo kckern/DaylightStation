@@ -2952,6 +2952,11 @@ export async function createAgentsApiRouter(config) {
   // Register available agents
   agentOrchestrator.register(EchoAgent);
 
+  // Shared HealthAnalyticsService instance — assigned inside the health-coach
+  // registration block below and exposed on the returned router so app.mjs
+  // can wire it into the health-mentions router (listPeriods support).
+  let sharedHealthAnalyticsService = null;
+
   // Register health coach agent (requires health services)
   if (healthStore && healthService) {
     // Personal-context loader: reads per-user playbook YAML at
@@ -3030,6 +3035,7 @@ export async function createAgentsApiRouter(config) {
       playbookLoader: personalContextLoader,    // ← Plan 4
       workingMemoryAdapter: workingMemory,      // ← Plan 4
     });
+    sharedHealthAnalyticsService = healthAnalyticsService;
 
     agentOrchestrator.register(HealthCoachAgent, {
       workingMemory,
@@ -3157,6 +3163,8 @@ export async function createAgentsApiRouter(config) {
   router.scheduler = scheduler;
   // Expose coaching orchestrator for direct invocations (e.g., post-report hook)
   router.coachingOrchestrator = coachingOrchestrator;
+  // Expose healthAnalyticsService so app.mjs can wire it into the mentions router.
+  router.healthAnalyticsService = sharedHealthAnalyticsService;
   return router;
 }
 
