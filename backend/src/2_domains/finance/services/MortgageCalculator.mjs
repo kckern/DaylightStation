@@ -262,6 +262,11 @@ export class MortgageCalculator {
 
       amortization.push({
         month,
+        // asOfDate = the date this row's closing balance is effective. For
+        // statements that's the statementDate; falls back to month-1st when
+        // statementDate is absent. Frontend uses this for x-axis positioning
+        // so plots align with billing-cycle reality, not the calendar label.
+        asOfDate: stmt.statementDate || `${month}-01`,
         effectiveRate: interestRate,
         openingBalance: this.#round(prevBalance),
         interestAccrued: this.#round(monthInterest),
@@ -348,8 +353,17 @@ export class MortgageCalculator {
           bridgeBalance = this.#round(opening + interestAccrued - cyclePaid);
           cumIntRunning += interestAccrued;
 
+          // Cycle '2026-06' (June bill) ends on cutoffDay of the prior month
+          // (~2026-05-06). closingBalance is effective as of that date, so
+          // that's what frontend uses for x-axis positioning.
+          const [labelY, labelM] = cycle.split('-').map(Number);
+          let prevY = labelY, prevM = labelM - 1;
+          if (prevM < 1) { prevM = 12; prevY--; }
+          const cycleAsOf = `${prevY}-${String(prevM).padStart(2, '0')}-${String(cutoffDay).padStart(2, '0')}`;
+
           bridgeRecords.push({
             month: cycle,
+            asOfDate: cycleAsOf,
             effectiveRate: interestRate,
             openingBalance: this.#round(opening),
             interestAccrued: this.#round(interestAccrued),
