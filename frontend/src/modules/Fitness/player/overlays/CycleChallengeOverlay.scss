@@ -394,3 +394,26 @@
     filter: drop-shadow(0 0 12px rgba(249, 115, 22, 0.6));
   }
 }
+
+.cycle-challenge-overlay__countdown {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #94a3b8;
+  text-align: center;
+}
+
+.cycle-challenge-overlay--lost-signal .cycle-needle,
+.cycle-challenge-overlay--stale       .cycle-needle {
+  opacity: 0.35;
+}
+
+.cycle-challenge-overlay--lost-signal::after {
+  content: 'No signal';
+  position: absolute;
+  top: 4px; right: 4px;
+  font-size: 10px;
+  color: #f59e0b;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 1px 4px;
+  border-radius: 4px;
+}

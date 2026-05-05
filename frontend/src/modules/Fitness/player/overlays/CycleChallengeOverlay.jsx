@@ -6,6 +6,7 @@ import {
   rpmToAngle,
   getBoosterAvatarSlots
 } from './cycleOverlayVisuals.js';
+import { CycleBaseReqIndicator } from './CycleBaseReqIndicator.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 import './CycleChallengeOverlay.scss';
 
@@ -147,7 +148,12 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
     ringColor,
     ringOpacity,
     dimPulse,
-    phaseProgress
+    phaseProgress,
+    lostSignal,
+    stale,
+    waitingForBaseReq,
+    initRemainingMs,
+    rampRemainingMs
   } = visuals;
 
   const targetRpm = Number.isFinite(challenge.currentPhase?.hiRpm)
@@ -298,6 +304,8 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
   if (dimPulse) {
     classNames.push('cycle-challenge-overlay--dim-pulse');
   }
+  if (lostSignal) classNames.push('cycle-challenge-overlay--lost-signal');
+  if (stale)      classNames.push('cycle-challenge-overlay--stale');
 
   const swapAllowed = Boolean(challenge.swapAllowed);
   const positionLabel = position;
@@ -455,7 +463,13 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
       </button>
 
       {riderName && (
-        <div className="cycle-challenge-overlay__rider-name">{riderName}</div>
+        <div className="cycle-challenge-overlay__rider-name">
+          {riderName}
+          <CycleBaseReqIndicator
+            baseReqSatisfied={Boolean(challenge.baseReqSatisfiedForRider)}
+            waitingForBaseReq={waitingForBaseReq}
+          />
+        </div>
       )}
 
       <div
@@ -477,6 +491,17 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
           {Math.round(phaseProgress * 100)}%
         </span>
       </div>
+
+      {(challenge.cycleState === 'init' || challenge.cycleState === 'ramp') && (
+        <div className="cycle-challenge-overlay__countdown">
+          {challenge.cycleState === 'init' && Number.isFinite(initRemainingMs) && (
+            <span>Start in {Math.ceil(initRemainingMs / 1000)}s</span>
+          )}
+          {challenge.cycleState === 'ramp' && Number.isFinite(rampRemainingMs) && (
+            <span>Reach target in {Math.ceil(rampRemainingMs / 1000)}s</span>
+          )}
+        </div>
+      )}
 
       {boosters.map((b) => (
         <div
@@ -519,7 +544,18 @@ CycleChallengeOverlay.propTypes = {
     }),
     swapAllowed: PropTypes.bool,
     boostingUsers: PropTypes.arrayOf(PropTypes.string),
-    boostMultiplier: PropTypes.number
+    boostMultiplier: PropTypes.number,
+    baseReqSatisfiedForRider: PropTypes.bool,
+    cadenceFlags: PropTypes.shape({
+      lostSignal: PropTypes.bool,
+      stale: PropTypes.bool,
+      smoothed: PropTypes.bool,
+      implausible: PropTypes.bool
+    }),
+    waitingForBaseReq: PropTypes.bool,
+    clockPaused: PropTypes.bool,
+    initRemainingMs: PropTypes.number,
+    rampRemainingMs: PropTypes.number
   }),
   onRequestSwap: PropTypes.func
 };
