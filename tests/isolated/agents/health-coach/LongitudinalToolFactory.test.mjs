@@ -1587,3 +1587,39 @@ describe('query_historical_reconciliation (Plan 5)', () => {
     expect(out.days).toEqual([]);
   });
 });
+
+describe('query_historical_coaching (Plan 5)', () => {
+  it('returns entries grouped by date in the window', async () => {
+    const fixture = {
+      '2024-06-15': [{ type: 'morning_brief', text: 'Hello', timestamp: '2024-06-15T08:00:00Z' }],
+      '2024-07-01': [{ type: 'feedback', text: 'Good week', timestamp: '2024-07-01T19:00:00Z' }],
+      '2024-08-15': [{ type: 'morning_brief', text: 'Pulling cut tight' }],
+    };
+    const healthStore = {
+      loadWeightData: vi.fn(async () => ({})),
+      loadNutritionData: vi.fn(async () => ({})),
+      loadCoachingData: vi.fn(async () => fixture),
+    };
+    const factory = new LongitudinalToolFactory({ healthStore });
+    const tool = factory.createTools().find(t => t.name === 'query_historical_coaching');
+    expect(tool).toBeDefined();
+
+    const out = await tool.execute({ userId: 'kc', from: '2024-07-01', to: '2024-12-31' });
+    expect(out.entries).toHaveLength(2);
+    const dates = out.entries.map(e => e.date);
+    expect(dates).toEqual(['2024-07-01', '2024-08-15']);
+    expect(out.entries[0].messages[0].text).toBe('Good week');
+  });
+
+  it('returns empty when no entries in range', async () => {
+    const healthStore = {
+      loadWeightData: vi.fn(async () => ({})),
+      loadNutritionData: vi.fn(async () => ({})),
+      loadCoachingData: vi.fn(async () => ({ '2024-01-01': [{ text: 'Older entry' }] })),
+    };
+    const factory = new LongitudinalToolFactory({ healthStore });
+    const tool = factory.createTools().find(t => t.name === 'query_historical_coaching');
+    const out = await tool.execute({ userId: 'kc', from: '2025-01-01', to: '2025-12-31' });
+    expect(out.entries).toEqual([]);
+  });
+});
