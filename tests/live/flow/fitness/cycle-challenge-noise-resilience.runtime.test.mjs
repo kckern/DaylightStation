@@ -180,5 +180,32 @@ test.describe('Cycle overlay noise resilience', () => {
     console.log(`State trace: ${result.states.join(',')}`);
 
     expect(result.lockTransitions).toBeLessThan(2);
+
+    // I-6: also verify the new UI surfaces from Tasks 9-11 actually render
+    // for this cycle challenge. These assertions catch regressions where the
+    // overlay component mounts but the new flags/countdown don't reach the
+    // DOM (the kind of producer/consumer boundary bug that bricked the
+    // base-req indicator before commit ae0898c0b).
+
+    // CycleBaseReqIndicator should be visible (in some state — satisfied,
+    // waiting, or inactive). Two HR devices are running so satisfied is the
+    // expected mode, but the test passes if any of the three modes are
+    // surfaced (the assertion is "the indicator IS rendered," not "it's
+    // green right now").
+    const indicator = page.locator('.cycle-base-req');
+    await expect(indicator).toBeVisible({ timeout: 5000 });
+
+    // Drive RPM=0 sustained so the cadence filter exits its grace window
+    // and reports lostSignal=true after ~4 s. The overlay should pick up
+    // the --lost-signal modifier class. We use a tighter 6 s wait to be
+    // safely inside LOST_SIGNAL_MS=4000 without flakiness.
+    await page.evaluate((id) => {
+      window.__fitnessSimController?.setRpm?.(id, 0);
+      // Then stop sending samples entirely.
+    }, CYCLE_EQUIPMENT_ID);
+    const overlay = page.locator('.cycle-challenge-overlay');
+    await expect(overlay).toHaveClass(/cycle-challenge-overlay--lost-signal/, {
+      timeout: 7000
+    });
   });
 });

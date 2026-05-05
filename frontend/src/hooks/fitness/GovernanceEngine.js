@@ -526,6 +526,12 @@ export class GovernanceEngine {
   }
 
   _buildChallengeSnapshot(now) {
+    // I-4: anchor `now` on the engine's injectable clock so the debounce math
+    // below (which reads `_pendingSince` written by `_startCycleChallenge`
+    // using `this._now()`) is guaranteed to use a consistent time source.
+    // Current callers pass `this._now()` already; this is defensive against
+    // future code paths that might pass a different value.
+    now = this._now();
     const state = this.challengeState || {};
     const activeChallenge = state.activeChallenge;
     if (!activeChallenge) return null;
