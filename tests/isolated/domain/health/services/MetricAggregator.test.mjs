@@ -201,3 +201,46 @@ describe('MetricAggregator.aggregateSeries', () => {
     })).rejects.toThrow(/unknown granularity/);
   });
 });
+
+describe('MetricAggregator.distribution', () => {
+  it('returns count, min/max, mean, median, stdev, and quartiles', async () => {
+    const { aggregator } = makeAggregator();
+    const out = await aggregator.distribution({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period: { rolling: 'last_7d' },
+    });
+    expect(out.count).toBe(7);
+    expect(out.min).toBe(196.5);
+    expect(out.max).toBe(199.5);
+    expect(out.median).toBe(198);
+    expect(out.quartiles.p25).toBeCloseTo(197.25, 5);
+    expect(out.quartiles.p75).toBeCloseTo(198.75, 5);
+    expect(out.mean).toBeCloseTo(198, 5);
+    expect(typeof out.stdev).toBe('number');
+  });
+
+  it('returns histogram when bins provided', async () => {
+    const { aggregator } = makeAggregator();
+    const out = await aggregator.distribution({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period: { rolling: 'last_7d' },
+      bins: 3,
+    });
+    expect(out.histogram).toHaveLength(3);
+    const totalCount = out.histogram.reduce((s, b) => s + b.count, 0);
+    expect(totalCount).toBe(7);
+  });
+
+  it('returns null stats when no data', async () => {
+    const { aggregator } = makeAggregator({ loadWeightData: async () => ({}) });
+    const out = await aggregator.distribution({
+      userId: 'kc', metric: 'weight_lbs', period: { rolling: 'last_7d' },
+    });
+    expect(out.count).toBe(0);
+    expect(out.min).toBe(null);
+    expect(out.max).toBe(null);
+    expect(out.median).toBe(null);
+  });
+});
