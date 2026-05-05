@@ -309,6 +309,64 @@ describe('BuxferAdapter', () => {
         })
       );
     });
+
+    test('transfer with fromAccountId + toAccountId sends both legs', async () => {
+      mockHttpClient.post.mockResolvedValue({ data: { response: { transactionId: 1 } } });
+
+      await adapter.addTransaction({
+        fromAccountId: '111',
+        toAccountId: '222',
+        amount: 5000,
+        date: '2026-05-01',
+        description: 'Net Pay',
+        type: 'transfer'
+      });
+
+      const params = mockHttpClient.post.mock.calls[0][1];
+      expect(params.fromAccountId).toBe('111');
+      expect(params.toAccountId).toBe('222');
+      // accountId must NOT be set for transfers — Buxfer ignores it and
+      // including it has historically resulted in one-sided transfers.
+      expect(params.accountId).toBeUndefined();
+    });
+
+    test('transfer auto-translates legacy accountId to fromAccountId', async () => {
+      mockHttpClient.post.mockResolvedValue({ data: { response: { transactionId: 1 } } });
+
+      await adapter.addTransaction({
+        accountId: '111',
+        toAccountId: '222',
+        amount: 5000,
+        date: '2026-05-01',
+        description: 'Net Pay',
+        type: 'transfer'
+      });
+
+      const params = mockHttpClient.post.mock.calls[0][1];
+      expect(params.fromAccountId).toBe('111');
+      expect(params.toAccountId).toBe('222');
+      expect(params.accountId).toBeUndefined();
+    });
+
+    test('transfer missing toAccountId throws', async () => {
+      await expect(adapter.addTransaction({
+        fromAccountId: '111',
+        amount: 5000,
+        date: '2026-05-01',
+        description: 'Net Pay',
+        type: 'transfer'
+      })).rejects.toThrow(/transfer requires/i);
+    });
+
+    test('transfer missing both fromAccountId and accountId throws', async () => {
+      await expect(adapter.addTransaction({
+        toAccountId: '222',
+        amount: 5000,
+        date: '2026-05-01',
+        description: 'Net Pay',
+        type: 'transfer'
+      })).rejects.toThrow(/transfer requires/i);
+    });
   });
 
   describe('deleteTransaction', () => {

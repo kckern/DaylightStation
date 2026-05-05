@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
+import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
 import speexWasmSource from '../../../lib/audio/speex_aec.js?raw';
 
 let _logger;
@@ -32,6 +33,15 @@ export const useNativeAudioBridge = (config = {}) => {
   const [stream, setStream] = useState(null);
   const [volume, setVolume] = useState(0);
   const [status, setStatus] = useState('idle');
+
+  // Screen-framework software master volume. When this hook is rendered outside
+  // a ScreenVolumeProvider, master = 1 and behavior is unchanged. The bridge's
+  // calibration gain (default 2× — compensates for the natively-quiet Shield TV
+  // mic) is multiplied by master so screen-framework volume keys scale bridge
+  // audio the same way they scale Player audio.
+  const { master: masterVolume } = useScreenVolume();
+  const masterVolumeRef = useRef(masterVolume);
+  masterVolumeRef.current = masterVolume;
 
   const wsRef = useRef(null);
   const ctxRef = useRef(null);
@@ -468,10 +478,11 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
       logger().info('bridge-aec-status', { status: 'disabled' });
     }
 
-    // Gain boost → compressor (limiter) → destination
+    // Gain boost × master → compressor (limiter) → destination
     // Compressor prevents clipping from the gain boost.
+    const baseGain = configRef.current.gain || 2;
     const gainNode = ctx.createGain();
-    gainNode.gain.value = configRef.current.gain || 2;
+    gainNode.gain.value = baseGain * masterVolumeRef.current;
     gainNodeRef.current = gainNode;
 
     const compressor = ctx.createDynamicsCompressor();
@@ -529,12 +540,13 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
     cleanupRef.current = cleanupFn;
   }, []);
 
-  // Update gain in real-time when config changes
+  // Update gain in real-time when config gain or master volume changes.
+  // Effective bridge gain = configured gain × master.
   useEffect(() => {
     if (gainNodeRef.current) {
-      gainNodeRef.current.gain.value = gain;
+      gainNodeRef.current.gain.value = gain * masterVolume;
     }
-  }, [gain]);
+  }, [gain, masterVolume]);
 
   // Main effect: connect/disconnect based on enabled + url
   useEffect(() => {

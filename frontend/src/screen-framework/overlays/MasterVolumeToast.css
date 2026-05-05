@@ -1,0 +1,52 @@
+.master-volume-toast {
+  position: fixed;
+  top: 5vh;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  padding: 0.75em 1.5em;
+  border-radius: 0.5em;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 1.6rem;
+  line-height: 1;
+  z-index: 10000;
+  pointer-events: none;
+  user-select: none;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6);
+  animation: master-volume-toast-in 120ms ease-out;
+}
+
+.master-volume-toast__content {
+  display: flex;
+  gap: 0.6em;
+  align-items: center;
+}
+
+.master-volume-toast__icon {
+  font-size: 1.2em;
+}
+
+.master-volume-toast__bar {
+  letter-spacing: -0.05em;
+  color: #4ade80;
+}
+
+.master-volume-toast__percent {
+  min-width: 2.5ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.master-volume-toast__content--muted .master-volume-toast__icon {
+  color: #ef4444;
+}
+
+.master-volume-toast__label {
+  font-weight: 600;
+}
+
+@keyframes master-volume-toast-in {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
