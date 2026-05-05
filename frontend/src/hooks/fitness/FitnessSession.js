@@ -1116,7 +1116,10 @@ export class FitnessSession {
     if (lastActivity == null) return disconnected;
     if (Date.now() - lastActivity > rpmZero) return disconnected;
 
-    return { rpm: rpmRaw, connected: true, ts: lastActivity };
+    // Use lastSeen (advances on every packet, including 0 readings) so 0-RPM
+    // blips between rotations reach CadenceFilter's EMA. lastActivity above is
+    // kept for the rpmZero timeout check only.
+    return { rpm: rpmRaw, connected: true, ts: device.lastSeen ?? lastActivity };
   }
 
   /**
