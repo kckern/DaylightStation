@@ -5,6 +5,7 @@ import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import { useRenderProfiler } from '@/hooks/fitness/useRenderProfiler.js';
 import { ChallengeOverlay, useChallengeOverlays } from './overlays/ChallengeOverlay.jsx';
 import { CycleChallengeOverlay } from './overlays/CycleChallengeOverlay.jsx';
+import { ChallengeOverlayDeck } from './overlays/ChallengeOverlayDeck.jsx';
 import CycleRiderSwapModal from './overlays/CycleRiderSwapModal.jsx';
 import GovernanceStateOverlay from './overlays/GovernanceStateOverlay.jsx';
 import { useGovernanceDisplay } from '@/modules/Fitness/hooks/useGovernanceDisplay.js';
@@ -223,11 +224,22 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
     return null;
   }
 
+  // Wrap any visible challenge overlay in the shared deck so position is
+  // unified across both variants (zone-based ChallengeOverlay and
+  // CycleChallengeOverlay). The deck owns the top/middle/bottom slot and
+  // tap-to-cycle; the overlays inside are pure presentation.
+  const visibleChallengeContent = challengeOverlay
+    || (!challengeOverlay && nextChallengeOverlay)
+    || cycleOverlay;
+  const challengeDeck = visibleChallengeContent ? (
+    <ChallengeOverlayDeck>
+      {visibleChallengeContent}
+    </ChallengeOverlayDeck>
+  ) : null;
+
   return (
     <>
-      {challengeOverlay}
-      {!challengeOverlay && nextChallengeOverlay}
-      {cycleOverlay}
+      {challengeDeck}
       {primaryOverlay}
       {showFullscreenVitals ? (
         <FullscreenVitalsOverlay visible={showFullscreenVitals} />

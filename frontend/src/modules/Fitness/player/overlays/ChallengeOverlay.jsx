@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import CompletionCountBlocks from './CompletionCountBlocks.jsx';
 import './ChallengeOverlay.scss';
@@ -8,8 +8,6 @@ const CHALLENGE_RING_RADIUS = 95;
 const CHALLENGE_RING_CIRCUMFERENCE = 2 * Math.PI * CHALLENGE_RING_RADIUS;
 const CHALLENGE_RING_CENTER = CHALLENGE_VIEWBOX_SIZE / 2;
 const CHALLENGE_SUCCESS_HOLD_MS = 2000;
-const CHALLENGE_POSITION_KEY = 'fitness.challengeOverlay.position';
-const CHALLENGE_POSITION_ORDER = ['top', 'middle', 'bottom'];
 const DEFAULT_RING_COLOR = '#38bdf8';
 const SUCCESS_RING_COLOR = '#22c55e';
 const FAILURE_RING_COLOR = '#ef4444';
@@ -64,18 +62,6 @@ const normalizeZoneKey = (value) => {
 };
 
 const toSecondsLabel = (value) => (Number.isFinite(value) ? `${Math.max(0, Math.round(value))}` : '—');
-
-const readStoredOverlayPosition = () => {
-	if (typeof window === 'undefined' || !window?.localStorage) {
-		return CHALLENGE_POSITION_ORDER[0];
-	}
-	try {
-		const stored = window.localStorage.getItem(CHALLENGE_POSITION_KEY);
-		return CHALLENGE_POSITION_ORDER.includes(stored) ? stored : CHALLENGE_POSITION_ORDER[0];
-	} catch (_) {
-		return CHALLENGE_POSITION_ORDER[0];
-	}
-};
 
 export const useChallengeMachine = (challenge) => {
 	const [dismissedChallengeId, setDismissedChallengeId] = useState(null);
@@ -375,42 +361,7 @@ export const ChallengeOverlay = ({ overlay }) => {
 		ringColor,
 		timeLeftSeconds
 	} = overlay;
-	const [position, setPosition] = useState(() => readStoredOverlayPosition());
 
-	useEffect(() => {
-		setPosition(readStoredOverlayPosition());
-	}, []);
-
-	const cyclePosition = useCallback(() => {
-		setPosition((current) => {
-			const currentIndex = CHALLENGE_POSITION_ORDER.indexOf(current);
-			const nextIndex = (currentIndex + 1) % CHALLENGE_POSITION_ORDER.length;
-			const nextPosition = CHALLENGE_POSITION_ORDER[nextIndex];
-			if (typeof window !== 'undefined' && window?.localStorage) {
-				try {
-					window.localStorage.setItem(CHALLENGE_POSITION_KEY, nextPosition);
-				} catch (_) {}
-			}
-			return nextPosition;
-		});
-	}, []);
-
-	const handleClick = useCallback((event) => {
-		event.stopPropagation();
-		cyclePosition();
-	}, [cyclePosition]);
-
-	const handlePointerDown = useCallback((event) => {
-		event.stopPropagation();
-	}, []);
-
-	const handleKeyDown = useCallback((event) => {
-		if (event.key === 'Enter' || event.key === ' ') {
-			event.preventDefault();
-			event.stopPropagation();
-			cyclePosition();
-		}
-	}, [cyclePosition]);
 	const clampedProgress = Math.max(0, Math.min(1, overlay.progress ?? 0));
 	const isSuccess = status === 'success';
 	const strokeOffset = variant === 'upcoming'
@@ -445,9 +396,6 @@ export const ChallengeOverlay = ({ overlay }) => {
 	if (countdownPaused) {
 		classNames.push('challenge-overlay--paused');
 	}
-	if (position && CHALLENGE_POSITION_ORDER.includes(position)) {
-		classNames.push(`challenge-overlay--pos-${position}`);
-	}
 
 	const hideTime = Number.isFinite(timeLeftSeconds) && timeLeftSeconds <= 0;
 	const normalizedTime = hideTime ? '' : (timeLabel || '—');
@@ -462,21 +410,11 @@ export const ChallengeOverlay = ({ overlay }) => {
 	const timeAriaLabel = hideTime
 		? statusLabel ? `${statusLabel}: timer complete` : 'Timer complete'
 		: statusLabel ? `${statusLabel}: ${normalizedTime} seconds` : `Time remaining ${normalizedTime} seconds`;
-	const positionLabel = position === 'middle'
-		? 'middle'
-		: position === 'bottom'
-			? 'bottom'
-			: 'top';
 
 	return (
 		<div
 			className={classNames.join(' ')}
-			onClick={handleClick}
-			onPointerDown={handlePointerDown}
-			onKeyDown={handleKeyDown}
-			role="button"
-			tabIndex={0}
-			aria-label={`${normalizedTitle} challenge overlay, positioned ${positionLabel}. Tap to move.`}
+			aria-label={`${normalizedTitle} challenge overlay`}
 		>
 			<svg
 				className="challenge-overlay__ring"

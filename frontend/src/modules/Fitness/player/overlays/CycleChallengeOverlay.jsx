@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import {
   getCycleOverlayVisuals,
@@ -22,7 +22,9 @@ import './CycleChallengeOverlay.scss';
  *   - Segment counter pill bottom center (e.g. "2 / 4")
  *   - Up to 4 booster avatars at the corners (NE/SE/SW/NW) (Task 23)
  *   - Boost multiplier pill (×2.5) below the rider name when >1.0 (Task 23)
- *   - Position cycling (top / middle / bottom) on background tap, localStorage persisted
+ *
+ * Position (top / middle / bottom) is owned by ChallengeOverlayDeck — this
+ * component renders inside the deck and does not manage its own placement.
  *
  * Not in this task: swap modal (Task 24), FitnessPlayer integration (Task 26).
  */
@@ -43,28 +45,6 @@ const CYCLE_GAUGE_HILO_INNER_OFFSET = 6;
 const CYCLE_GAUGE_HILO_OUTER_OFFSET = 6;
 const CYCLE_GAUGE_TARGET_OFFSET = 18; // px outward from arc for the target label anchor
 
-const CYCLE_POSITION_KEY = 'fitness.cycleChallengeOverlay.position';
-const CYCLE_POSITION_ORDER = ['top', 'middle', 'bottom'];
-
-const readStoredPosition = () => {
-  if (typeof window === 'undefined' || !window?.localStorage) {
-    return CYCLE_POSITION_ORDER[0];
-  }
-  try {
-    const stored = window.localStorage.getItem(CYCLE_POSITION_KEY);
-    return CYCLE_POSITION_ORDER.includes(stored) ? stored : CYCLE_POSITION_ORDER[0];
-  } catch (_) {
-    return CYCLE_POSITION_ORDER[0];
-  }
-};
-
-const writeStoredPosition = (position) => {
-  if (typeof window === 'undefined' || !window?.localStorage) return;
-  try {
-    window.localStorage.setItem(CYCLE_POSITION_KEY, position);
-  } catch (_) {}
-};
-
 const firstInitial = (value) => {
   if (typeof value !== 'string') return '?';
   const trimmed = value.trim();
@@ -75,7 +55,6 @@ const firstInitial = (value) => {
 
 export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
   const visuals = useMemo(() => getCycleOverlayVisuals(challenge), [challenge]);
-  const [position, setPosition] = useState(() => readStoredPosition());
 
   const logger = useMemo(
     () => getLogger().child({ component: 'cycle-challenge-overlay' }),
@@ -86,7 +65,6 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
     if (!visuals.visible) return;
     logger.debug('mounted', {
       cycleState: challenge?.cycleState,
-      position,
       phaseIndex: challenge?.currentPhaseIndex,
       totalPhases: challenge?.totalPhases
     });
@@ -102,30 +80,6 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [challenge?.cycleState, challenge?.dimFactor]);
-
-  const cyclePosition = useCallback(() => {
-    setPosition((current) => {
-      const currentIndex = CYCLE_POSITION_ORDER.indexOf(current);
-      const nextIndex = (currentIndex + 1) % CYCLE_POSITION_ORDER.length;
-      const next = CYCLE_POSITION_ORDER[nextIndex];
-      writeStoredPosition(next);
-      logger.debug('position-changed', { from: current, to: next });
-      return next;
-    });
-  }, [logger]);
-
-  const handleBackgroundClick = useCallback((event) => {
-    event.stopPropagation();
-    cyclePosition();
-  }, [cyclePosition]);
-
-  const handleKeyDown = useCallback((event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      event.stopPropagation();
-      cyclePosition();
-    }
-  }, [cyclePosition]);
 
   const handleAvatarClick = useCallback((event) => {
     event.stopPropagation();
@@ -297,7 +251,7 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
   const showBoostBadge = rawMultiplier > 1;
   const boostText = `×${rawMultiplier.toFixed(1)}`;
 
-  const classNames = ['cycle-challenge-overlay', `cycle-challenge-overlay--pos-${position}`];
+  const classNames = ['cycle-challenge-overlay'];
   if (challenge.cycleState) {
     classNames.push(`cycle-challenge-overlay--state-${String(challenge.cycleState).toLowerCase()}`);
   }
@@ -308,17 +262,12 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
   if (stale)      classNames.push('cycle-challenge-overlay--stale');
 
   const swapAllowed = Boolean(challenge.swapAllowed);
-  const positionLabel = position;
 
-  const ariaLabel = `Cycle challenge — ${challenge.cycleState || 'state unknown'}, segment ${Math.min(totalPhases, currentPhaseIndex + 1)} of ${totalPhases}, positioned ${positionLabel}. Tap to move.`;
+  const ariaLabel = `Cycle challenge — ${challenge.cycleState || 'state unknown'}, segment ${Math.min(totalPhases, currentPhaseIndex + 1)} of ${totalPhases}`;
 
   return (
     <div
       className={classNames.join(' ')}
-      onClick={handleBackgroundClick}
-      onKeyDown={handleKeyDown}
-      role="button"
-      tabIndex={0}
       aria-label={ariaLabel}
     >
       <svg
