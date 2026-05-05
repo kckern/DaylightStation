@@ -180,6 +180,164 @@ describe('cli/commands/health', () => {
     });
   });
 
+  describe('compare action', () => {
+    it('emits JSON for `health compare <metric> --a <p> --b <p>`', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const result = await health.run(
+        {
+          subcommand: 'health',
+          positional: ['compare', 'weight_lbs'],
+          flags: { a: 'last_30d', b: 'prev_30d' },
+          help: false,
+        },
+        {
+          stdout, stderr,
+          getHealthAnalytics: async () => ({
+            compare: async (args) => ({
+              metric: args.metric, statistic: 'mean',
+              a: { value: 197 }, b: { value: 200 },
+              delta: -3, percentChange: -0.015, reliability: 'high',
+            }),
+          }),
+        },
+      );
+      expect(result.exitCode).toBe(0);
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.delta).toBe(-3);
+    });
+
+    it('exits 2 when --a or --b missing', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const result = await health.run(
+        {
+          subcommand: 'health',
+          positional: ['compare', 'weight_lbs'],
+          flags: { a: 'last_30d' },  // missing b
+          help: false,
+        },
+        { stdout, stderr, getHealthAnalytics: async () => ({}) },
+      );
+      expect(result.exitCode).toBe(2);
+    });
+  });
+
+  describe('summarize-change action', () => {
+    it('emits JSON for `health summarize-change <metric> --a <p> --b <p>`', async () => {
+      const { stdout, stderr } = makeBuffers();
+      let captured;
+      const result = await health.run(
+        {
+          subcommand: 'health',
+          positional: ['summarize-change', 'weight_lbs'],
+          flags: { a: 'last_30d', b: 'prev_30d' },
+          help: false,
+        },
+        {
+          stdout, stderr,
+          getHealthAnalytics: async () => ({
+            summarizeChange: async (args) => { captured = args; return { changeShape: 'monotonic' }; },
+          }),
+        },
+      );
+      expect(result.exitCode).toBe(0);
+      expect(captured.metric).toBe('weight_lbs');
+    });
+  });
+
+  describe('conditional action', () => {
+    it('emits JSON for `health conditional <metric> --period <p> --condition <json>`', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const result = await health.run(
+        {
+          subcommand: 'health',
+          positional: ['conditional', 'weight_lbs'],
+          flags: { period: 'last_30d', condition: '{"tracked":true}' },
+          help: false,
+        },
+        {
+          stdout, stderr,
+          getHealthAnalytics: async () => ({
+            conditionalAggregate: async (args) => ({
+              matching: { value: 197, daysMatched: 15 },
+              notMatching: { value: 199, daysNotMatched: 15 },
+              delta: -2,
+            }),
+          }),
+        },
+      );
+      expect(result.exitCode).toBe(0);
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.matching.daysMatched).toBe(15);
+    });
+
+    it('exits 2 when --condition missing', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const result = await health.run(
+        {
+          subcommand: 'health',
+          positional: ['conditional', 'weight_lbs'],
+          flags: { period: 'last_30d' },
+          help: false,
+        },
+        { stdout, stderr, getHealthAnalytics: async () => ({}) },
+      );
+      expect(result.exitCode).toBe(2);
+    });
+
+    it('exits 2 when --condition is malformed JSON', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const result = await health.run(
+        {
+          subcommand: 'health',
+          positional: ['conditional', 'weight_lbs'],
+          flags: { period: 'last_30d', condition: 'not-json' },
+          help: false,
+        },
+        { stdout, stderr, getHealthAnalytics: async () => ({}) },
+      );
+      expect(result.exitCode).toBe(2);
+    });
+  });
+
+  describe('correlate action', () => {
+    it('emits JSON for `health correlate <a> <b> --period <p>`', async () => {
+      const { stdout, stderr } = makeBuffers();
+      let captured;
+      const result = await health.run(
+        {
+          subcommand: 'health',
+          positional: ['correlate', 'weight_lbs', 'calories'],
+          flags: { period: 'last_30d', granularity: 'weekly' },
+          help: false,
+        },
+        {
+          stdout, stderr,
+          getHealthAnalytics: async () => ({
+            correlateMetrics: async (args) => { captured = args; return { correlation: -0.85, pearson: -0.84, pairs: 4, interpretation: 'strong-negative' }; },
+          }),
+        },
+      );
+      expect(result.exitCode).toBe(0);
+      expect(captured.metric_a).toBe('weight_lbs');
+      expect(captured.metric_b).toBe('calories');
+      expect(captured.granularity).toBe('weekly');
+    });
+
+    it('exits 2 when second metric missing', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const result = await health.run(
+        {
+          subcommand: 'health',
+          positional: ['correlate', 'weight_lbs'],
+          flags: { period: 'last_30d' },
+          help: false,
+        },
+        { stdout, stderr, getHealthAnalytics: async () => ({}) },
+      );
+      expect(result.exitCode).toBe(2);
+    });
+  });
+
   describe('userId resolution', () => {
     it('uses --user flag when provided', async () => {
       let captured;
