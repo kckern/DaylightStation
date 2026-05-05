@@ -1079,10 +1079,13 @@ export class FitnessSession {
    *   - unknown / missing equipmentId                     -> { rpm: 0, connected: false }
    *   - equipment in catalog but no sample yet            -> { rpm: 0, connected: false }
    *   - reading older than FITNESS_TIMEOUTS.rpmZero       -> { rpm: 0, connected: false }
-   *   - fresh reading                                      -> { rpm: <number>, connected: true }
+   *   - fresh reading                                      -> { rpm: <number>, connected: true, ts: <epoch ms> }
+   *
+   * The `ts` field is the sensor packet timestamp (lastSignificantActivity ||
+   * lastSeen), used by downstream freshness checks (e.g. CadenceFilter).
    *
    * @param {string|number} equipmentId
-   * @returns {{ rpm: number, connected: boolean }}
+   * @returns {{ rpm: number, connected: boolean, ts?: number }}
    */
   getEquipmentCadence(equipmentId) {
     const disconnected = { rpm: 0, connected: false };
@@ -1113,7 +1116,7 @@ export class FitnessSession {
     if (lastActivity == null) return disconnected;
     if (Date.now() - lastActivity > rpmZero) return disconnected;
 
-    return { rpm: rpmRaw, connected: true };
+    return { rpm: rpmRaw, connected: true, ts: lastActivity };
   }
 
   /**

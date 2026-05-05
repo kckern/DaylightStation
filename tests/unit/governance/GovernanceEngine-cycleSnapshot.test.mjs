@@ -74,7 +74,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
       initElapsedMs: 10000,
       initTotalMs: 60000
     });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 25 } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 25, ts: now } };
     engine._latestInputs.activeParticipants = ['felix'];
     engine._latestInputs.userZoneMap = { felix: 'warm' };
 
@@ -111,7 +111,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
       cycleState: 'ramp',
       rampElapsedMs: 6000
     });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 50 } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 50, ts: now } };
 
     const snap = engine._buildChallengeSnapshot(now);
     expect(snap.cycleState).toBe('ramp');
@@ -123,7 +123,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
 
   it('snapshot during maintain — dimFactor = 0 when rpm at hi', () => {
     engine.challengeState.activeChallenge = baseActiveCycle({ cycleState: 'maintain' });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 60 } }; // at hi
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 60, ts: now } }; // at hi
 
     const snap = engine._buildChallengeSnapshot(now);
     expect(snap.cycleState).toBe('maintain');
@@ -134,7 +134,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
   it('snapshot during maintain — dimFactor ~0.5 when rpm midway between lo and hi', () => {
     engine.challengeState.activeChallenge = baseActiveCycle({ cycleState: 'maintain' });
     // lo=45, hi=60 → midway is 52.5
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 52.5 } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 52.5, ts: now } };
 
     const snap = engine._buildChallengeSnapshot(now);
     expect(snap.cycleState).toBe('maintain');
@@ -145,7 +145,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
     // When RPM < lo we're below the dim band. _buildChallengeSnapshot branch only
     // computes a non-zero dim when rpm is within [lo, hi). Below lo it stays 0.
     engine.challengeState.activeChallenge = baseActiveCycle({ cycleState: 'maintain' });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 30 } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 30, ts: now } };
     const snap = engine._buildChallengeSnapshot(now);
     expect(snap.dimFactor).toBe(0);
   });
@@ -155,7 +155,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
       cycleState: 'locked',
       lockReason: 'maintain'
     });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 30 } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 30, ts: now } };
 
     const snap = engine._buildChallengeSnapshot(now);
     expect(snap.cycleState).toBe('locked');
@@ -165,7 +165,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
 
   it('swapAllowed: true in init', () => {
     engine.challengeState.activeChallenge = baseActiveCycle({ cycleState: 'init' });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 10 } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 10, ts: now } };
     const snap = engine._buildChallengeSnapshot(now);
     expect(snap.swapAllowed).toBe(true);
   });
@@ -176,14 +176,14 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
       currentPhaseIndex: 0,
       rampElapsedMs: 1000
     });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 40 } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 40, ts: now } };
     const snap = engine._buildChallengeSnapshot(now);
     expect(snap.swapAllowed).toBe(true);
   });
 
   it('swapAllowed: false in maintain', () => {
     engine.challengeState.activeChallenge = baseActiveCycle({ cycleState: 'maintain' });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 60 } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 60, ts: now } };
     const snap = engine._buildChallengeSnapshot(now);
     expect(snap.swapAllowed).toBe(false);
   });
@@ -194,14 +194,14 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
       currentPhaseIndex: 1,
       rampElapsedMs: 2000
     });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 60 } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 60, ts: now } };
     const snap = engine._buildChallengeSnapshot(now);
     expect(snap.swapAllowed).toBe(false);
   });
 
   it('swapEligibleUsers excludes current rider and cooldown users', () => {
     engine.challengeState.activeChallenge = baseActiveCycle({ cycleState: 'init' });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 10 } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 10, ts: now } };
     // Set milo on cooldown
     engine._cycleCooldowns = { milo: now + 10000 };
     const snap = engine._buildChallengeSnapshot(now);
@@ -212,7 +212,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
 
   it('swapEligibleUsers includes users whose cooldown has expired', () => {
     engine.challengeState.activeChallenge = baseActiveCycle({ cycleState: 'init' });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 10 } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 10, ts: now } };
     // milo cooldown expired (<= now)
     engine._cycleCooldowns = { milo: now - 1000 };
     const snap = engine._buildChallengeSnapshot(now);
@@ -226,7 +226,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
       cycleState: 'maintain',
       phaseProgressMs: 99999 // massively over maintainSeconds*1000 (30_000)
     });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 60 } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 60, ts: now } };
     const snap = engine._buildChallengeSnapshot(now);
     expect(snap.phaseProgressPct).toBe(1.0);
     // And the clamped entry in allPhasesProgress for current phase
@@ -239,7 +239,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
       currentPhaseIndex: 1,
       phaseProgressMs: 22500 // half of phase[1].maintainSeconds*1000 (45_000)
     });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 70 } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 70, ts: now } };
     const snap = engine._buildChallengeSnapshot(now);
     // phase 0 is past → 1.0; phase 1 is current → 0.5
     expect(snap.allPhasesProgress[0]).toBe(1.0);
@@ -248,7 +248,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
 
   it('boostMultiplier computed correctly with boosters and self-boost', () => {
     engine.challengeState.activeChallenge = baseActiveCycle({ cycleState: 'maintain' });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 60 } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 60, ts: now } };
     // felix (rider) is in fire (+1.0), milo is in hot (+0.5) → 1.0 + 1.0 + 0.5 = 2.5
     engine._latestInputs.userZoneMap = { felix: 'fire', milo: 'hot' };
     engine._latestInputs.activeParticipants = ['felix', 'milo'];
@@ -261,7 +261,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
   it('falls back to rider id as name when session.getParticipantProfile returns null', () => {
     engine = buildEngine({ nowValue: now, profiles: {} });
     engine.challengeState.activeChallenge = baseActiveCycle({ cycleState: 'init' });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 10 } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 10, ts: now } };
     const snap = engine._buildChallengeSnapshot(now);
     expect(snap.rider).toEqual({ id: 'felix', name: 'felix' });
   });

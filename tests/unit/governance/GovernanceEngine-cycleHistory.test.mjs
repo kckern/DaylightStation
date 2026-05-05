@@ -52,27 +52,27 @@ describe('GovernanceEngine cycle history and cooldown', () => {
     engine.evaluate({ activeParticipants: ['felix'], userZoneMap: { felix: 'active' },
       zoneRankMap: { cool:0, active:1, warm:2, hot:3, fire:4 },
       zoneInfoMap: { active: { name:'Active' } }, totalCount: 1,
-      equipmentCadenceMap: { cycle_ace: { rpm: 0, connected: true } } });
+      equipmentCadenceMap: { cycle_ace: { rpm: 0, connected: true, ts: nowRef.value } } });
     nowRef.value = 102500;
     engine.evaluate({ activeParticipants: ['felix'], userZoneMap: { felix: 'active' },
       zoneRankMap: { cool:0, active:1, warm:2, hot:3, fire:4 },
       zoneInfoMap: { active: { name:'Active' } }, totalCount: 1,
-      equipmentCadenceMap: { cycle_ace: { rpm: 40, connected: true } } });
+      equipmentCadenceMap: { cycle_ace: { rpm: 40, connected: true, ts: nowRef.value } } });
     nowRef.value = 103000;
     engine.evaluate({ activeParticipants: ['felix'], userZoneMap: { felix: 'warm' },
       zoneRankMap: { cool:0, active:1, warm:2, hot:3, fire:4 },
       zoneInfoMap: { warm: { name:'Warm' } }, totalCount: 1,
-      equipmentCadenceMap: { cycle_ace: { rpm: 65, connected: true } } });
+      equipmentCadenceMap: { cycle_ace: { rpm: 65, connected: true, ts: nowRef.value } } });
     nowRef.value = 103500;
     engine.evaluate({ activeParticipants: ['felix'], userZoneMap: { felix: 'warm' },
       zoneRankMap: { cool:0, active:1, warm:2, hot:3, fire:4 },
       zoneInfoMap: { warm: { name:'Warm' } }, totalCount: 1,
-      equipmentCadenceMap: { cycle_ace: { rpm: 65, connected: true } } });
+      equipmentCadenceMap: { cycle_ace: { rpm: 65, connected: true, ts: nowRef.value } } });
     nowRef.value = 106000;
     engine.evaluate({ activeParticipants: ['felix'], userZoneMap: { felix: 'warm' },
       zoneRankMap: { cool:0, active:1, warm:2, hot:3, fire:4 },
       zoneInfoMap: { warm: { name:'Warm' } }, totalCount: 1,
-      equipmentCadenceMap: { cycle_ace: { rpm: 65, connected: true } } });
+      equipmentCadenceMap: { cycle_ace: { rpm: 65, connected: true, ts: nowRef.value } } });
 
     const history = engine.challengeState.challengeHistory;
     expect(history.length).toBe(1);
@@ -99,13 +99,13 @@ describe('GovernanceEngine cycle history and cooldown', () => {
     engine.evaluate({ activeParticipants: ['felix'], userZoneMap: { felix: 'warm' },
       zoneRankMap: { cool:0, active:1, warm:2, hot:3, fire:4 },
       zoneInfoMap: { warm: { name:'Warm' } }, totalCount: 1,
-      equipmentCadenceMap: { cycle_ace: { rpm: 0, connected: true } } });
+      equipmentCadenceMap: { cycle_ace: { rpm: 0, connected: true, ts: nowRef.value } } });
     // Tick 2: nextChallengeAt has elapsed → cycle challenge actually starts.
     nowRef.value = 202500;
     engine.evaluate({ activeParticipants: ['felix'], userZoneMap: { felix: 'warm' },
       zoneRankMap: { cool:0, active:1, warm:2, hot:3, fire:4 },
       zoneInfoMap: { warm: { name:'Warm' } }, totalCount: 1,
-      equipmentCadenceMap: { cycle_ace: { rpm: 0, connected: true } } });
+      equipmentCadenceMap: { cycle_ace: { rpm: 0, connected: true, ts: nowRef.value } } });
     expect(engine.challengeState.activeChallenge?.type).toBe('cycle');
 
     nowRef.value = 203000;
