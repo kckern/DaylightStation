@@ -279,3 +279,46 @@ describe('MetricAggregator.percentile', () => {
     expect(out.total).toBe(0);
   });
 });
+
+describe('MetricAggregator.snapshot', () => {
+  it('returns one row per default metric over a period', async () => {
+    const { aggregator } = makeAggregator();
+    const out = await aggregator.snapshot({
+      userId: 'kc',
+      period: { rolling: 'last_7d' },
+    });
+    expect(out.period.from).toBe('2026-04-29');
+    expect(out.metrics.length).toBeGreaterThan(0);
+    const names = out.metrics.map(m => m.metric);
+    expect(names).toContain('weight_lbs');
+    expect(names).toContain('calories');
+    expect(names).toContain('protein_g');
+    expect(names).toContain('tracking_density');
+  });
+
+  it('honors explicit metrics list', async () => {
+    const { aggregator } = makeAggregator();
+    const out = await aggregator.snapshot({
+      userId: 'kc',
+      period: { rolling: 'last_7d' },
+      metrics: ['weight_lbs', 'fat_percent'],
+    });
+    expect(out.metrics).toHaveLength(2);
+    expect(out.metrics[0].metric).toBe('weight_lbs');
+    expect(out.metrics[1].metric).toBe('fat_percent');
+  });
+
+  it('each row has value/daysCovered/daysInPeriod/unit', async () => {
+    const { aggregator } = makeAggregator();
+    const out = await aggregator.snapshot({
+      userId: 'kc',
+      period: { rolling: 'last_7d' },
+      metrics: ['weight_lbs'],
+    });
+    const row = out.metrics[0];
+    expect(row).toHaveProperty('value');
+    expect(row).toHaveProperty('daysCovered');
+    expect(row).toHaveProperty('daysInPeriod');
+    expect(row).toHaveProperty('unit');
+  });
+});
