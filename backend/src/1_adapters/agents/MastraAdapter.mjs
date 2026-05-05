@@ -66,6 +66,7 @@ export class MastraAdapter {
   #logger;
   #maxToolCalls;
   #timeoutMs;
+  #mediaDir;
 
   /**
    * @param {Object} deps
@@ -73,12 +74,14 @@ export class MastraAdapter {
    * @param {Object} [deps.logger] - Logger instance
    * @param {number} [deps.maxToolCalls=50] - Maximum tool calls before aborting
    * @param {number} [deps.timeoutMs=120000] - Execution timeout in ms
+   * @param {string} [deps.mediaDir] - Base media directory; transcripts written under {mediaDir}/logs/agents/...
    */
   constructor(deps = {}) {
     this.#model = deps.model || 'openai/gpt-4o';
     this.#logger = deps.logger || console;
     this.#maxToolCalls = deps.maxToolCalls || 50;
     this.#timeoutMs = deps.timeoutMs || 120000;
+    this.#mediaDir = deps.mediaDir || null;
   }
 
   /**
