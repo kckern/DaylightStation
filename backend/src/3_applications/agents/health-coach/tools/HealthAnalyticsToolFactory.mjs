@@ -255,6 +255,94 @@ export class HealthAnalyticsToolFactory extends ToolFactory {
           catch (err) { return { error: err.message }; }
         },
       }),
+
+      createTool({
+        name: 'metric_trajectory',
+        description:
+          'Slope, direction, and r² over a period. Optional bucketed series ' +
+          'when granularity provided.',
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string' },
+            metric: { type: 'string' },
+            period: periodSchema,
+            granularity: { type: 'string', enum: ['daily','weekly','monthly','quarterly','yearly'] },
+            statistic: { type: 'string', enum: ['mean','median','min','max','count','sum','p25','p75','stdev'], default: 'mean' },
+          },
+          required: ['userId', 'metric', 'period'],
+        },
+        execute: async (args) => {
+          try { return await healthAnalyticsService.trajectory(args); }
+          catch (err) { return { error: err.message }; }
+        },
+      }),
+
+      createTool({
+        name: 'detect_regime_change',
+        description:
+          'Find inflection points where a metric\'s mean shifted significantly. ' +
+          'Returns up to max_results ranked candidates with before/after stats.',
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string' },
+            metric: { type: 'string' },
+            period: periodSchema,
+            max_results: { type: 'number', minimum: 1, default: 3 },
+          },
+          required: ['userId', 'metric', 'period'],
+        },
+        execute: async (args) => {
+          try { return await healthAnalyticsService.detectRegimeChange(args); }
+          catch (err) { return { error: err.message }; }
+        },
+      }),
+
+      createTool({
+        name: 'detect_anomalies',
+        description:
+          'Days where the metric deviates from rolling baseline by more than ' +
+          'zScore_threshold standard deviations.',
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string' },
+            metric: { type: 'string' },
+            period: periodSchema,
+            zScore_threshold: { type: 'number', default: 2 },
+            baseline_window_days: { type: 'number', default: 30 },
+          },
+          required: ['userId', 'metric', 'period'],
+        },
+        execute: async (args) => {
+          try { return await healthAnalyticsService.detectAnomalies(args); }
+          catch (err) { return { error: err.message }; }
+        },
+      }),
+
+      createTool({
+        name: 'detect_sustained',
+        description:
+          'Find consecutive-day runs satisfying a condition for at least ' +
+          'min_duration_days. Conditions: { value_range: [min, max] }, ' +
+          '{ field_above: value }, { field_below: value }.',
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string' },
+            metric: { type: 'string' },
+            period: periodSchema,
+            condition: { type: 'object', description: 'Structured condition; see description.' },
+            min_duration_days: { type: 'number', minimum: 1 },
+          },
+          required: ['userId', 'metric', 'period', 'condition', 'min_duration_days'],
+        },
+        execute: async (args) => {
+          try { return await healthAnalyticsService.detectSustained(args); }
+          catch (err) { return { error: err.message }; }
+        },
+      }),
     ];
   }
 }

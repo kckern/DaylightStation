@@ -13,22 +13,64 @@ function makeFactory(overrides = {}) {
     summarizeChange:      vi.fn(async (args) => ({ ...args, changeShape: 'step' })),
     conditionalAggregate: vi.fn(async (args) => ({ ...args, matching: { value: 0, daysMatched: 0 }, notMatching: { value: 0, daysNotMatched: 0 }, delta: 0 })),
     correlateMetrics:     vi.fn(async (args) => ({ ...args, correlation: 0, pairs: 0, interpretation: 'none' })),
+    trajectory:           vi.fn(async (args) => ({ ...args, slope: 0, direction: 'flat' })),
+    detectRegimeChange:   vi.fn(async (args) => ({ ...args, changes: [] })),
+    detectAnomalies:      vi.fn(async (args) => ({ ...args, anomalies: [], count: 0 })),
+    detectSustained:      vi.fn(async (args) => ({ ...args, runs: [] })),
     ...overrides,
   };
   return { factory: new HealthAnalyticsToolFactory({ healthAnalyticsService }), healthAnalyticsService };
 }
 
 describe('HealthAnalyticsToolFactory', () => {
-  it('createTools returns 9 tools (5 from Plan 1 + 4 from Plan 2)', () => {
+  it('createTools returns 13 tools after Plan 3', () => {
     const { factory } = makeFactory();
-    const tools = factory.createTools();
-    const names = tools.map(t => t.name).sort();
+    const names = factory.createTools().map(t => t.name).sort();
     expect(names).toEqual([
       'aggregate_metric', 'aggregate_series',
       'compare_metric', 'conditional_aggregate', 'correlate_metrics',
+      'detect_anomalies', 'detect_regime_change', 'detect_sustained',
       'metric_distribution', 'metric_percentile', 'metric_snapshot',
+      'metric_trajectory',
       'summarize_change',
     ]);
+  });
+
+  it('metric_trajectory calls service.trajectory', async () => {
+    const trajMock = vi.fn(async () => ({ slope: -0.1, direction: 'down' }));
+    const { factory } = makeFactory({ trajectory: trajMock });
+    const tool = factory.createTools().find(t => t.name === 'metric_trajectory');
+    await tool.execute({ userId: 'kc', metric: 'weight_lbs', period: { rolling: 'last_30d' } });
+    expect(trajMock).toHaveBeenCalled();
+  });
+
+  it('detect_regime_change calls service.detectRegimeChange', async () => {
+    const rcMock = vi.fn(async () => ({ changes: [] }));
+    const { factory } = makeFactory({ detectRegimeChange: rcMock });
+    const tool = factory.createTools().find(t => t.name === 'detect_regime_change');
+    await tool.execute({ userId: 'kc', metric: 'weight_lbs', period: { rolling: 'last_2y' } });
+    expect(rcMock).toHaveBeenCalled();
+  });
+
+  it('detect_anomalies calls service.detectAnomalies', async () => {
+    const anMock = vi.fn(async () => ({ anomalies: [], count: 0 }));
+    const { factory } = makeFactory({ detectAnomalies: anMock });
+    const tool = factory.createTools().find(t => t.name === 'detect_anomalies');
+    await tool.execute({ userId: 'kc', metric: 'weight_lbs', period: { rolling: 'last_90d' } });
+    expect(anMock).toHaveBeenCalled();
+  });
+
+  it('detect_sustained calls service.detectSustained', async () => {
+    const susMock = vi.fn(async () => ({ runs: [] }));
+    const { factory } = makeFactory({ detectSustained: susMock });
+    const tool = factory.createTools().find(t => t.name === 'detect_sustained');
+    await tool.execute({
+      userId: 'kc', metric: 'weight_lbs',
+      period: { rolling: 'last_year' },
+      condition: { value_range: [193, 197] },
+      min_duration_days: 30,
+    });
+    expect(susMock).toHaveBeenCalled();
   });
 
   it('compare_metric calls service.compare', async () => {
