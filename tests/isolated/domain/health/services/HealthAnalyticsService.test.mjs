@@ -39,4 +39,28 @@ describe('HealthAnalyticsService', () => {
   it('throws when constructed without required deps', () => {
     expect(() => new HealthAnalyticsService({})).toThrow();
   });
+
+  it('exposes compare / summarizeChange / conditionalAggregate / correlateMetrics via MetricComparator', async () => {
+    const healthStore = {
+      loadWeightData: vi.fn(async () => ({
+        '2026-05-04': { lbs: 200, lbs_adjusted_average: 199 },
+        '2026-05-05': { lbs: 199, lbs_adjusted_average: 198 },
+      })),
+      loadNutritionData: vi.fn(async () => ({})),
+    };
+    const healthService = { getHealthForRange: vi.fn(async () => ({})) };
+    const periodResolver = new PeriodResolver({ now: fixedNow });
+    const service = new HealthAnalyticsService({ healthStore, healthService, periodResolver });
+
+    expect(typeof service.compare).toBe('function');
+    expect(typeof service.summarizeChange).toBe('function');
+    expect(typeof service.conditionalAggregate).toBe('function');
+    expect(typeof service.correlateMetrics).toBe('function');
+
+    const cmp = await service.compare({
+      userId: 'kc', metric: 'weight_lbs',
+      period_a: { rolling: 'last_2d' }, period_b: { rolling: 'prev_2d' },
+    });
+    expect(cmp.metric).toBe('weight_lbs');
+  });
 });
