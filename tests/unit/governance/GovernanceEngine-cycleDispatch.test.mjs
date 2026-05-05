@@ -44,7 +44,10 @@ function tick(engine, nowValue, { zone = 'active', rpm = 0, connected = true } =
     zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
     zoneInfoMap: { active: { id: 'active', name: 'Active' }, warm: { id: 'warm', name: 'Warm' } },
     totalCount: 1,
-    equipmentCadenceMap: { cycle_ace: { rpm, connected } }
+    // ts mirrors the engine clock so the freshness gate in _filteredCadenceFor
+    // sees each tick as a new sample. Without ts, samples are filtered out
+    // and rpm collapses to 0 — see the cycle-challenge-remediation audit.
+    equipmentCadenceMap: { cycle_ace: { rpm, connected, ts: nowValue } }
   });
 }
 

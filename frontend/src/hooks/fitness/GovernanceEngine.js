@@ -497,7 +497,10 @@ export class GovernanceEngine {
    * "RPM holds the most recent value much longer than it should."
    */
   _filteredCadenceFor(equipmentId, nowTs) {
-    if (!equipmentId) return { rpm: 0, flags: { lostSignal: true } };
+    if (!equipmentId) return {
+      rpm: 0,
+      flags: { implausible: false, smoothed: false, stale: false, lostSignal: true }
+    };
     let filter = this._cadenceFilters.get(equipmentId);
     if (!filter) {
       filter = new CadenceFilter();
