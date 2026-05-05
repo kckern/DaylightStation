@@ -126,26 +126,75 @@ function makeEngineWithActiveCycle(seed = 42) {
   };
 }
 
+// Drive a full cadence sequence through a fresh engine and capture the
+// PUBLISHED (snapshot) cycleState after each evaluate(). Used by Task 6's
+// debounce tests + Task 5's noise-resilience test. The published state is
+// what the overlay reads — the internal `activeChallenge.cycleState` may
+// disagree during the 500 ms hold-down window.
+//
+// `samples` is an array of { rpm, ts }. `ts` becomes the engine clock at
+// the moment of evaluate() and the cadence sample's timestamp.
+function runCadenceSequence(samples, seed = 42) {
+  const fixture = makeEngineWithActiveCycle(seed);
+  const states = [];
+  for (const sample of samples) {
+    fixture.setNow(sample.ts);
+    fixture.engine.evaluate({
+      activeParticipants: ['felix'],
+      userZoneMap: { felix: 'warm' },
+      zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
+      zoneInfoMap: {
+        active: { id: 'active', name: 'Active' },
+        warm: { id: 'warm', name: 'Warm' }
+      },
+      totalCount: 1,
+      equipmentCadenceMap: { cycle_ace: { rpm: sample.rpm, connected: true, ts: sample.ts } }
+    });
+    // Reading engine.state forces _composeState → _buildChallengeSnapshot,
+    // which is where the published-state debounce runs. Without this read,
+    // the snapshot is never built and the debounce never updates.
+    const state = fixture.engine.state;
+    states.push(state?.challenge?.cycleState ?? null);
+  }
+  return states;
+}
+
 describe('Cycle SM — sensor noise resilience', () => {
-  // TODO: re-enable after Task 6 transition debounce lands.
+  // BLOCKED — re-skipped during Task 6 implementation (2026-05-03).
   //
-  // The noise-resilience claim is that EMA(α=0.4) plus a transition debounce
-  // together absorb the alternating-sample dropouts. EMA alone oscillates
-  // around the midpoint (~25-37 RPM for 0↔55), which sits right on the
-  // loRpm=30 boundary — so without the debounce the SM still flips between
-  // maintain and locked. Skipping until Task 6 lands; do not "fix" this by
-  // weakening assertions or tuning thresholds.
+  // The proposed scenario (5 ticks at 80 RPM to prime maintain, then 30
+  // alternating 0↔55 RPM) cannot satisfy `locks < 2` even with EMA + the
+  // 500 ms publish debounce in place. The dynamics:
+  //
+  //   1. EMA(α=0.4) of 0↔55 settles to a fixed-point oscillation ~21–34 RPM.
+  //      That's continuously below loRpm=30 on the 0-side, so the *internal*
+  //      SM enters 'locked' at the 9th sample (ts=2600, ema=28.3 < 30).
+  //   2. Once internal is locked, recovery requires ema ≥ hiRpm=60. But the
+  //      alternating pattern's max EMA is ~34, so internal stays locked
+  //      forever — no oscillation, just a one-way trip.
+  //   3. The Task 6 debounce delays the *published* snapshot's transition
+  //      to locked by 500 ms, so published flips to 'locked' at ts=3200 and
+  //      then stays locked for the remainder of the test (~24 samples).
+  //
+  // The test thus observes ~24 'locked' published states, failing
+  // `locks < 2`. The user's original "10 transitions in 13 s" report
+  // describes a *pre-EMA* symptom — raw RPM crossing thresholds every
+  // sample. Post-EMA + post-debounce, the failure mode is "one-way trip
+  // to locked", not "flicker". The test's threshold and assertion need
+  // to be reconsidered by the controller before re-enabling.
+  //
+  // See report from Task 6 implementation for trace data.
   it.skip('does not enter locked when rpm bounces 0↔55 (single-sample dropouts)', () => {
-    const { engine, advance } = makeEngineWithActiveCycle(42);
-    const states = [];
+    const samples = [];
+    let ts = 1000;
+    // Pre-prime: 5 ticks at sustained 80 RPM gets us through init→ramp→maintain.
+    for (let i = 0; i < 5; i += 1) { samples.push({ rpm: 80, ts }); ts += 200; }
+    // Then 30 alternating samples — the production noise pattern.
     for (let i = 0; i < 30; i += 1) {
-      advance(200);
-      tick(engine, engine._now(), {
-        zone: 'warm',
-        rpm: i % 2 === 0 ? 55 : 0
-      });
-      states.push(engine.challengeState?.activeChallenge?.cycleState ?? null);
+      samples.push({ rpm: i % 2 === 0 ? 55 : 0, ts });
+      ts += 200;
     }
+    const states = runCadenceSequence(samples, 42);
     const locks = states.filter((s) => s === 'locked').length;
     expect(locks).toBeLessThan(2);
   });
@@ -237,5 +286,43 @@ describe('Cycle SM — cadence freshness', () => {
     // currentRpm is set inside tickManualCycle from the filtered output.
     // After 5.5 s with no fresh samples, the filter must have decayed to 0.
     expect(engine.challengeState.activeChallenge.currentRpm).toBe(0);
+  });
+});
+
+describe('Cycle SM — transition debounce', () => {
+  // Task 6: the *internal* cycleState may flip to locked the moment the
+  // EMA crosses below loRpm, but the *published* snapshot (what the overlay
+  // reads) holds the previous state until the new one has been stable for
+  // ≥500 ms. These tests observe the published state via `engine.state`.
+
+  it('does not surface a locked snapshot when locked-state lasts <500 ms', () => {
+    // Pre-prime to maintain with sustained 80 RPM, then inject a brief dip.
+    // The EMA absorbs single-sample dropouts (one 0 against ema=80 → 48 →
+    // back to 60.8 on recovery), so the internal SM never enters locked.
+    // The published snapshot must therefore never show locked either.
+    const samples = [];
+    let ts = 1000;
+    for (let i = 0; i < 5; i += 1) { samples.push({ rpm: 80, ts }); ts += 200; } // → maintain
+    samples.push({ rpm: 0,  ts }); ts += 200;   // brief dump (1 sample = ~200ms)
+    samples.push({ rpm: 80, ts });              // recover before 500ms hold expires
+    const states = runCadenceSequence(samples);
+    expect(states[states.length - 1]).not.toBe('locked');
+  });
+
+  it('does surface a locked snapshot when locked-state lasts ≥500 ms', () => {
+    // Pre-prime to maintain, then sustain rpm=0 long enough for the EMA to
+    // decay below loRpm AND for the internal-locked state to be held for
+    // ≥500 ms. Four 0-samples at 300 ms intervals gives 900 ms of zero
+    // input, and after the EMA crosses below loRpm at the second one
+    // (28.8 < 30), internal stays locked for ≥600 ms — past the debounce.
+    const samples = [];
+    let ts = 1000;
+    for (let i = 0; i < 5; i += 1) { samples.push({ rpm: 80, ts }); ts += 200; } // → maintain
+    samples.push({ rpm: 0, ts }); ts += 300;
+    samples.push({ rpm: 0, ts }); ts += 300;
+    samples.push({ rpm: 0, ts }); ts += 300;
+    samples.push({ rpm: 0, ts });               // total below-lo span ≥900 ms
+    const states = runCadenceSequence(samples);
+    expect(states[states.length - 1]).toBe('locked');
   });
 });

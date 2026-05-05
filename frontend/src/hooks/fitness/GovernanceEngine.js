@@ -628,12 +628,40 @@ export class GovernanceEngine {
         });
       }
 
+      // Task 6: 500 ms transition debounce on the *published* cycleState.
+      //
+      // The internal `activeChallenge.cycleState` continues to track ground
+      // truth (so init/ramp timers and phase progress accumulate correctly),
+      // but the snapshot exposes a delayed copy that only updates after the
+      // internal state has been stable for ≥STATE_DEBOUNCE_MS. This kills
+      // sub-500 ms maintain↔locked flickers caused by EMA values briefly
+      // straddling loRpm/hiRpm under noisy sensor conditions.
+      //
+      // Terminal/fatal states bypass the debounce so they surface immediately:
+      //   - status === 'success' (challenge completed)
+      //   - lockReason === 'init' (init-timeout: rider never started, no point
+      //     hiding that behind a 500 ms delay).
+      const STATE_DEBOUNCE_MS = 500;
+      const internal = activeChallenge.cycleState;
+      if (internal !== activeChallenge._pendingCycleState) {
+        activeChallenge._pendingCycleState = internal;
+        activeChallenge._pendingSince = now;
+      }
+      const heldEnough = (now - activeChallenge._pendingSince) >= STATE_DEBOUNCE_MS;
+      const fatal = activeChallenge.status === 'success'
+                 || activeChallenge.lockReason === 'init';
+      if (heldEnough || fatal || activeChallenge._publishedCycleState === internal) {
+        activeChallenge._publishedCycleState = internal;
+        activeChallenge._publishedAt = now;
+      }
+      const publishedState = activeChallenge._publishedCycleState;
+
       return {
         id: activeChallenge.id,
         type: 'cycle',
         status: activeChallenge.status,
         rider: { id: activeChallenge.rider, name: riderName },
-        cycleState: activeChallenge.cycleState,
+        cycleState: publishedState,
         currentPhaseIndex: activeChallenge.currentPhaseIndex,
         totalPhases: activeChallenge.totalPhases,
         currentPhase: phase ? { ...phase } : null,
@@ -2396,6 +2424,15 @@ export class GovernanceEngine {
       lockReason: null,
       pausedAt: null,
       pausedRemainingMs: null,
+      // Task 6: 500ms debounce for the published cycleState. The internal
+      // `cycleState` above continues to track ground truth (so progress
+      // accumulates correctly), but the snapshot exposes a hold-stable view
+      // that suppresses sub-500ms flickers from EMA values straddling
+      // loRpm/hiRpm under noisy sensor conditions.
+      _publishedCycleState: 'init',
+      _publishedAt: now,
+      _pendingCycleState: 'init',
+      _pendingSince: now,
       selection
     };
     getLogger().info('governance.cycle.started', {
