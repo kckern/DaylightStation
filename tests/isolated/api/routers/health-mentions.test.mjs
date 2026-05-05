@@ -139,3 +139,51 @@ describe('GET /api/v1/health/mentions/recent-days', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('GET /api/v1/health/mentions/metrics', () => {
+  it('returns the registered metrics', async () => {
+    const { app } = makeApp({});
+    const res = await request(app).get('/api/v1/health/mentions/metrics');
+    expect(res.status).toBe(200);
+    const slugs = res.body.suggestions.map(s => s.slug);
+    expect(slugs).toContain('weight_lbs');
+    expect(slugs).toContain('calories');
+    expect(slugs).toContain('protein_g');
+    expect(slugs).toContain('tracking_density');
+    expect(res.body.suggestions[0].group).toBe('metric');
+  });
+
+  it('filters by prefix', async () => {
+    const { app } = makeApp({});
+    const res = await request(app).get('/api/v1/health/mentions/metrics?prefix=weight');
+    const slugs = res.body.suggestions.map(s => s.slug);
+    expect(slugs).toContain('weight_lbs');
+    expect(slugs).not.toContain('calories');
+  });
+});
+
+describe('GET /api/v1/health/mentions/all', () => {
+  it('returns merged top results across categories', async () => {
+    const { app } = makeApp({
+      healthAnalyticsService: {
+        listPeriods: async () => ({ periods: [{ slug: '2017-cut', label: '2017 Cut', from: '2017-01-15', to: '2017-04-30', source: 'declared' }] }),
+      },
+      healthStore: { loadWeightData: async () => ({}), loadNutritionData: async () => ({}) },
+      healthService: { getHealthForRange: async () => ({}) },
+      now: () => new Date('2026-05-05T12:00:00Z'),
+    });
+    const res = await request(app).get('/api/v1/health/mentions/all?user=kc&prefix=weight');
+    expect(res.status).toBe(200);
+    expect(res.body.suggestions.length).toBeGreaterThan(0);
+    expect(res.body.suggestions.length).toBeLessThanOrEqual(20);
+    // Should include weight metric
+    const slugs = res.body.suggestions.map(s => s.slug);
+    expect(slugs).toContain('weight_lbs');
+  });
+
+  it('returns 400 when user missing', async () => {
+    const { app } = makeApp({});
+    const res = await request(app).get('/api/v1/health/mentions/all?prefix=x');
+    expect(res.status).toBe(400);
+  });
+});
