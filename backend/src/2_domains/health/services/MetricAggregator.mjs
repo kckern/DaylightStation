@@ -187,8 +187,10 @@ export class MetricAggregator {
     // Rank: 1-based position of `value` within `sorted` (count of values <= value).
     let rank = 0;
     for (const v of sorted) { if (v <= value) rank++; else break; }
-    if (rank === 0) rank = 0; // value below all
-    const percentile = total === 1 ? 50 : ((rank - 1) / (total - 1)) * 100;
+    let percentile;
+    if (rank === 0)            percentile = 0;       // value below all
+    else if (total === 1)      percentile = 50;
+    else                        percentile = ((rank - 1) / (total - 1)) * 100;
 
     let interpretation;
     if (percentile <= 10) interpretation = 'below typical';
