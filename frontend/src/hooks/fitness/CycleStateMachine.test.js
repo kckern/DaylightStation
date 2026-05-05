@@ -312,3 +312,100 @@ describe('Cycle SM — transition debounce', () => {
     expect(states[states.length - 1]).toBe('locked');
   });
 });
+
+describe('Cycle SM — init↔ramp gate symmetry (Task 7)', () => {
+  // Audit finding F2: in production, when a rider was pedalling at >= minRpm
+  // BUT their HR didn't satisfy the per-rider base-requirement gate, the
+  // init→ramp transition was blocked. After the 10 s init clock expired, the
+  // engine locked. Recovery from `locked` (lockReason='init') only required
+  // rpm >= minRpm — NOT the baseReq — so the engine bounced back to init the
+  // very next tick, the init clock reset, and the cycle repeated every 10 s.
+  //
+  // Fix (Task 7): when init times out and the rider IS pedalling but baseReq
+  // is unmet, hold in init (reset the init clock to 0) and surface a
+  // `waitingForBaseReq: true` flag. Lock only on TRUE abandonment — when
+  // both rpm < minRpm AND baseReq is unmet.
+  //
+  // These tests bypass `engine.evaluate()` and call `_evaluateCycleChallenge`
+  // directly — the same approach as the existing jest cycleInit tests
+  // (tests/unit/governance/GovernanceEngine-cycleInit.test.mjs). The full
+  // evaluate() path requires `phase === 'unlocked'` for non-manual cycles,
+  // which is impossible to arrange with a rider whose own zone fails the
+  // base requirement (single-participant fixture). Direct invocation keeps
+  // the test focused on the gate-symmetry behaviour without dragging in the
+  // surrounding policy/phase machinery.
+
+  // Helper: spin up a fresh engine + active cycle challenge with manualTrigger
+  // explicitly false, so the (baseReqSatisfiedForRider || manualTrigger) gate
+  // in _evaluateCycleChallenge actually depends on baseReqSatisfiedForRider.
+  function makeNonManualCycle(seed = 42) {
+    let nowValue = 100000;
+    const session = buildSession();
+    const engine = new GovernanceEngine(session, {
+      now: () => nowValue,
+      random: seededRng(seed)
+    });
+    engine.configure(POLICY);
+    engine.setMedia({ id: 'v1', type: 'episode', labels: ['cardio'] });
+    // Trigger WITHOUT riderId so manualTrigger is false on the active challenge.
+    const result = engine.triggerChallenge({ type: 'cycle', selectionId: CYCLE_SELECTION_ID });
+    if (!result || result.success !== true) {
+      throw new Error(`triggerChallenge failed: ${result?.reason || 'unknown'}`);
+    }
+    const active = engine.challengeState.activeChallenge;
+    if (!active || active.manualTrigger !== false) {
+      throw new Error('Fixture broken: expected manualTrigger=false on active challenge');
+    }
+    // Initialise _lastCycleTs so the first dt is computed against a known stamp.
+    active._lastCycleTs = nowValue;
+    return {
+      engine,
+      active,
+      getNow: () => nowValue,
+      setNow: (v) => { nowValue = v; },
+      advance: (delta) => { nowValue += delta; return nowValue; }
+    };
+  }
+
+  it('does not enter locked on init_timeout when rider is pedalling but baseReq is unmet', () => {
+    const { engine, active, advance, getNow } = makeNonManualCycle(42);
+    // Init timeout in fixture is 10 s. We tick 360 × 200 ms = 72 s. Without
+    // the fix this oscillates init→locked→init repeatedly; with the fix the
+    // engine holds in init and surfaces waitingForBaseReq=true.
+    const states = [];
+    for (let i = 0; i < 360; i += 1) {
+      advance(200);
+      engine._evaluateCycleChallenge(active, {
+        equipmentRpm: 60,                  // above minRpm=30
+        baseReqSatisfiedForRider: false,   // HR-zone gate unmet
+        baseReqSatisfiedGlobal: true,      // global gate met (avoids pause)
+        activeParticipants: ['felix'],
+        userZoneMap: { felix: 'cool' }
+      });
+      states.push(active.cycleState);
+    }
+    const lockEvents = states.filter((s) => s === 'locked').length;
+    expect(lockEvents).toBe(0);
+    expect(active.waitingForBaseReq).toBe(true);
+  });
+
+  it('does enter locked on init_timeout when rider is below minRpm AND baseReq is unmet', () => {
+    const { engine, active, advance } = makeNonManualCycle(42);
+    // True abandonment: rider not pedalling AND base-req not met. After the
+    // 10 s init clock expires, the engine MUST lock — only the gate-symmetry
+    // case (rpm met, baseReq unmet) is special-cased.
+    for (let i = 0; i < 360; i += 1) {
+      advance(200);
+      engine._evaluateCycleChallenge(active, {
+        equipmentRpm: 5,                   // well below minRpm=30
+        baseReqSatisfiedForRider: false,
+        baseReqSatisfiedGlobal: true,
+        activeParticipants: ['felix'],
+        userZoneMap: { felix: 'cool' }
+      });
+      if (active.cycleState === 'locked') break;
+    }
+    expect(active.cycleState).toBe('locked');
+    expect(active.lockReason).toBe('init');
+  });
+});
