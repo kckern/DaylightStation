@@ -124,3 +124,47 @@ describe('MetricComparator.compare', () => {
     expect(out.percentChange).toBe(null);
   });
 });
+
+describe('MetricComparator.summarizeChange', () => {
+  it('returns delta + changeShape for two adjacent periods', async () => {
+    const { comparator } = makeComparator(buildLongWeightFixture());
+    const out = await comparator.summarizeChange({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period_a: { rolling: 'last_30d' },
+      period_b: { rolling: 'prev_30d' },
+    });
+    expect(out.metric).toBe('weight_lbs');
+    expect(typeof out.delta).toBe('number');
+    expect(['monotonic', 'volatile', 'step', 'reversal']).toContain(out.changeShape);
+    expect(out.varianceA).toBeGreaterThanOrEqual(0);
+    expect(out.varianceB).toBeGreaterThanOrEqual(0);
+    expect(Array.isArray(out.drivers)).toBe(true);
+  });
+
+  it('identifies monotonic shape when fixture drifts steadily', async () => {
+    // The buildLongWeightFixture is strictly monotonic decreasing
+    const { comparator } = makeComparator(buildLongWeightFixture());
+    const out = await comparator.summarizeChange({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period_a: { rolling: 'last_30d' },
+      period_b: { rolling: 'prev_30d' },
+    });
+    expect(out.changeShape).toBe('monotonic');
+  });
+
+  it('returns null delta when one period has no value', async () => {
+    const sparse = {};
+    sparse['2026-05-05'] = { lbs: 200, lbs_adjusted_average: 200 };
+    const { comparator } = makeComparator(sparse);
+    const out = await comparator.summarizeChange({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period_a: { rolling: 'last_30d' },
+      period_b: { rolling: 'prev_30d' },
+    });
+    expect(out.delta).toBe(null);
+    expect(out.changeShape).toBe('step');
+  });
+});
