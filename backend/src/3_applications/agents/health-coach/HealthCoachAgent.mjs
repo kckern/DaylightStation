@@ -8,6 +8,7 @@ import { ReconciliationToolFactory } from './tools/ReconciliationToolFactory.mjs
 import { MessagingChannelToolFactory } from './tools/MessagingChannelToolFactory.mjs';
 import { LongitudinalToolFactory } from './tools/LongitudinalToolFactory.mjs';
 import { ComplianceToolFactory } from './tools/ComplianceToolFactory.mjs';
+import { HealthAnalyticsToolFactory } from './tools/HealthAnalyticsToolFactory.mjs';
 import { DailyDashboard } from './assignments/DailyDashboard.mjs';
 import { systemPrompt } from './prompts/system.mjs';
 
@@ -126,6 +127,7 @@ export class HealthCoachAgent extends BaseAgent {
       archiveScopeFactory,
       similarPeriodFinder,
       dataRoot,
+      healthAnalyticsService,           // ← new (Plan 1 / Task 10)
     } = this.deps;
 
     // Existing
@@ -163,6 +165,13 @@ export class HealthCoachAgent extends BaseAgent {
       personalContextLoader,
       logger: this.deps.logger,
     }));
+
+    // F-201 / Plan 1: Analytical primitives — aggregate / series /
+    // distribution / percentile / snapshot. Pulled from the dedicated
+    // domain service so the math lives in one testable place.
+    if (healthAnalyticsService) {
+      this.addToolFactory(new HealthAnalyticsToolFactory({ healthAnalyticsService }));
+    }
 
     // Existing assignment
     this.registerAssignment(new DailyDashboard());

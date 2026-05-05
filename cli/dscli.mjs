@@ -18,7 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const COMMANDS_DIR = path.join(__dirname, 'commands');
 
 // Subcommands wired up so far. Add to this list as new command modules land.
-const KNOWN_SUBCOMMANDS = ['system', 'ha', 'content', 'memory', 'finance', 'concierge'];
+const KNOWN_SUBCOMMANDS = ['system', 'ha', 'content', 'memory', 'finance', 'concierge', 'health'];
 
 function printTopLevelHelp(stdout) {
   stdout.write([
@@ -36,6 +36,7 @@ function printTopLevelHelp(stdout) {
     '  memory    Read and write concierge memory state',
     '  finance   Buxfer accounts and transactions',
     '  concierge List satellites and read transcript files',
+    '  health    Health analytics — aggregate, etc.',
     '',
     'Output:',
     '  JSON to stdout on success (exit 0).',
@@ -107,6 +108,7 @@ async function main() {
     getWriteAuditor: bootstrap.getWriteAuditor,
     getConciergeConfig: bootstrap.getConciergeConfig,
     getTranscriptDir: bootstrap.getTranscriptDir,
+    getHealthAnalytics: bootstrap.getHealthAnalytics,
   };
 
   try {
