@@ -244,3 +244,38 @@ describe('MetricAggregator.distribution', () => {
     expect(out.median).toBe(null);
   });
 });
+
+describe('MetricAggregator.percentile', () => {
+  it('finds the percentile rank of a value within a period', async () => {
+    const { aggregator } = makeAggregator();
+    // The 7-day weight values are 199.5, 199, 198.5, 198, 197.5, 197, 196.5
+    const out = await aggregator.percentile({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period: { rolling: 'last_7d' },
+      value: 198,
+    });
+    expect(out.metric).toBe('weight_lbs');
+    expect(out.value).toBe(198);
+    expect(out.rank).toBe(4); // 4th smallest in ascending sort
+    expect(out.total).toBe(7);
+    expect(out.percentile).toBeCloseTo(50, 5); // (4-1)/(7-1) * 100 = 50
+  });
+
+  it('classifies extreme values', async () => {
+    const { aggregator } = makeAggregator();
+    const lowest = await aggregator.percentile({ userId: 'kc', metric: 'weight_lbs', period: { rolling: 'last_7d' }, value: 196.5 });
+    expect(lowest.percentile).toBe(0);
+    expect(lowest.interpretation).toBe('below typical');
+    const highest = await aggregator.percentile({ userId: 'kc', metric: 'weight_lbs', period: { rolling: 'last_7d' }, value: 199.5 });
+    expect(highest.percentile).toBe(100);
+    expect(highest.interpretation).toBe('above typical');
+  });
+
+  it('returns null percentile when no data', async () => {
+    const { aggregator } = makeAggregator({ loadWeightData: async () => ({}) });
+    const out = await aggregator.percentile({ userId: 'kc', metric: 'weight_lbs', period: { rolling: 'last_7d' }, value: 198 });
+    expect(out.percentile).toBe(null);
+    expect(out.total).toBe(0);
+  });
+});

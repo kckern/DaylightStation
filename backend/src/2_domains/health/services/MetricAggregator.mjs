@@ -163,6 +163,35 @@ export class MetricAggregator {
     return out;
   }
 
+  async percentile({ userId, metric, period, value }) {
+    const reg = MetricRegistry.get(metric);
+    const resolved = this.periodResolver.resolve(period);
+    const rows = await this.#collectDailyRows({ userId, reg, from: resolved.from, to: resolved.to });
+    const sorted = rows.map(r => r.value).sort((a, b) => a - b);
+    const total = sorted.length;
+
+    if (total === 0) {
+      return { metric, period: resolved, unit: reg.unit, value, percentile: null, rank: 0, total: 0, interpretation: 'no data' };
+    }
+
+    // Rank: 1-based position of `value` within `sorted` (count of values <= value).
+    let rank = 0;
+    for (const v of sorted) { if (v <= value) rank++; else break; }
+    if (rank === 0) rank = 0; // value below all
+    const percentile = total === 1 ? 50 : ((rank - 1) / (total - 1)) * 100;
+
+    let interpretation;
+    if (percentile <= 10) interpretation = 'below typical';
+    else if (percentile >= 90) interpretation = 'above typical';
+    else interpretation = 'typical';
+    if (percentile === 0 || percentile === 100) {
+      // Edge cases: explicitly below/above
+      interpretation = percentile === 0 ? 'below typical' : 'above typical';
+    }
+
+    return { metric, period: resolved, unit: reg.unit, value, percentile, rank, total, interpretation };
+  }
+
   /**
    * Internal: like #collectValues, but returns per-row { date, value } so the
    * caller can group them by bucket key. Mirrors the same source dispatch.
