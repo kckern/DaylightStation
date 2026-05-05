@@ -7,6 +7,13 @@
   color: white;
 }
 
+.health-app__coach-pane {
+  // Tabs panel needs a height for assistant-ui's Thread to scroll
+  height: calc(100vh - 80px); // tab strip + body padding
+  display: flex;
+  flex-direction: column;
+}
+
 .health-hub-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
