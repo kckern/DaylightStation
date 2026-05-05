@@ -4,6 +4,16 @@ import { MetricRegistry } from './MetricRegistry.mjs';
 
 const STATS = ['mean', 'median', 'min', 'max', 'count', 'sum', 'p25', 'p75', 'stdev'];
 
+const DEFAULT_SNAPSHOT_METRICS = [
+  'weight_lbs',
+  'fat_percent',
+  'calories',
+  'protein_g',
+  'workout_count',
+  'workout_duration_min',
+  'tracking_density',
+];
+
 /**
  * Five operations for aggregating per-day metric data over a period:
  *   - aggregate({ userId, metric, period, statistic? }) → single value
@@ -190,6 +200,43 @@ export class MetricAggregator {
     }
 
     return { metric, period: resolved, unit: reg.unit, value, percentile, rank, total, interpretation };
+  }
+
+  /**
+   * Compressed multi-metric "vital signs" view of a period. One row per
+   * requested metric. Default metric set is the head-of-household coaching
+   * dashboard; pass `metrics` to override.
+   */
+  async snapshot({ userId, period, metrics }) {
+    const list = Array.isArray(metrics) && metrics.length ? metrics : DEFAULT_SNAPSHOT_METRICS;
+    // Run aggregations in parallel — different metrics may pull from
+    // different stores, so this overlaps I/O.
+    const rows = await Promise.all(
+      list.map(async (metric) => {
+        try {
+          const reg = MetricRegistry.get(metric);
+          const single = await this.aggregate({ userId, metric, period });
+          // For rate-style metrics ('count' / 'sum') flip the headline statistic.
+          let row = {
+            metric,
+            value: single.value,
+            unit: single.unit,
+            daysCovered: single.daysCovered,
+            daysInPeriod: single.daysInPeriod,
+          };
+          if (reg.kind === 'count' || reg.kind === 'sum') {
+            const summed = await this.aggregate({ userId, metric, period, statistic: 'sum' });
+            row.value = summed.value;
+          }
+          return row;
+        } catch (err) {
+          return { metric, error: err.message };
+        }
+      })
+    );
+
+    const resolved = this.periodResolver.resolve(period);
+    return { period: resolved, metrics: rows };
   }
 
   /**
