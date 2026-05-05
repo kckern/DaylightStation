@@ -80,6 +80,78 @@ export class MetricAggregator {
   }
 
   /**
+   * Bucketed series — same metric/statistic semantics as `aggregate`, but
+   * returns one row per bucket. Granularity: daily | weekly | monthly |
+   * quarterly | yearly.
+   */
+  async aggregateSeries({ userId, metric, period, granularity, statistic = 'mean' }) {
+    const reg = MetricRegistry.get(metric);
+    if (!STATS.includes(statistic)) throw new Error(`MetricAggregator: unknown statistic "${statistic}"`);
+    if (!['daily','weekly','monthly','quarterly','yearly'].includes(granularity)) {
+      throw new Error(`MetricAggregator: unknown granularity "${granularity}"`);
+    }
+    const resolved = this.periodResolver.resolve(period);
+    const dailyRows = await this.#collectDailyRows({ userId, reg, from: resolved.from, to: resolved.to });
+
+    // Group by bucket key.
+    const bucketKey = bucketKeyFn(granularity);
+    const buckets = new Map();
+    for (const row of dailyRows) {
+      const key = bucketKey(row.date);
+      if (!buckets.has(key)) buckets.set(key, { period: key, values: [] });
+      buckets.get(key).values.push(row.value);
+    }
+
+    const out = [...buckets.values()]
+      .sort((a, b) => a.period.localeCompare(b.period))
+      .map(b => {
+        let value;
+        if (reg.kind === 'ratio') {
+          const matched = b.values.filter(v => v === 1).length;
+          value = matched / b.values.length;
+        } else if (statistic === 'count') {
+          value = b.values.length;
+        } else {
+          value = computeStatistic(b.values, statistic);
+        }
+        return { period: b.period, value, count: b.values.length };
+      });
+
+    return { metric, period: resolved, granularity, statistic, unit: reg.unit, buckets: out };
+  }
+
+  /**
+   * Internal: like #collectValues, but returns per-row { date, value } so the
+   * caller can group them by bucket key. Mirrors the same source dispatch.
+   */
+  async #collectDailyRows({ userId, reg, from, to }) {
+    const rows = [];
+    if (reg.source === 'weight') {
+      const data = await this.healthStore.loadWeightData(userId);
+      for (const [date, entry] of Object.entries(data || {})) {
+        if (date < from || date > to) continue;
+        const v = reg.read(entry);
+        if (typeof v === 'number' && Number.isFinite(v)) rows.push({ date, value: v });
+      }
+    } else if (reg.source === 'nutrition') {
+      const data = await this.healthStore.loadNutritionData(userId);
+      for (const [date, entry] of Object.entries(data || {})) {
+        if (date < from || date > to) continue;
+        const v = reg.read(entry);
+        if (typeof v === 'number' && Number.isFinite(v)) rows.push({ date, value: v });
+      }
+    } else if (reg.source === 'workouts') {
+      const range = await this.healthService.getHealthForRange(userId, from, to);
+      for (const [date, metricEntry] of Object.entries(range || {})) {
+        if (date < from || date > to) continue;
+        const v = reg.read(metricEntry?.workouts);
+        if (typeof v === 'number' && Number.isFinite(v)) rows.push({ date, value: v });
+      }
+    }
+    return rows;
+  }
+
+  /**
    * Pull the raw per-day numeric values for a metric over [from, to].
    * Returns the values array (only the days that produced a numeric reading)
    * plus a daysCovered count.
@@ -166,6 +238,29 @@ function percentileFromSorted(sorted, p) {
   const hi = Math.ceil(idx);
   if (lo === hi) return sorted[lo];
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+}
+
+function bucketKeyFn(granularity) {
+  if (granularity === 'daily')     return (d) => d;
+  if (granularity === 'monthly')   return (d) => d.slice(0, 7);
+  if (granularity === 'yearly')    return (d) => d.slice(0, 4);
+  if (granularity === 'quarterly') return (d) => {
+    const m = parseInt(d.slice(5, 7), 10);
+    return `${d.slice(0, 4)}-Q${Math.ceil(m / 3)}`;
+  };
+  // weekly: ISO week
+  return (d) => {
+    const [y, m, day] = d.split('-').map(Number);
+    const date = new Date(Date.UTC(y, m - 1, day));
+    const dow = date.getUTCDay() || 7;
+    date.setUTCDate(date.getUTCDate() + 4 - dow);
+    const isoYear = date.getUTCFullYear();
+    const yearStart = new Date(Date.UTC(isoYear, 0, 4));
+    const ysDow = yearStart.getUTCDay() || 7;
+    yearStart.setUTCDate(yearStart.getUTCDate() + 4 - ysDow);
+    const week = Math.ceil(((date - yearStart) / 86400000 + 1) / 7);
+    return `${isoYear}-W${String(week).padStart(2, '0')}`;
+  };
 }
 
 // Exports for unit tests of helpers if they grow.
