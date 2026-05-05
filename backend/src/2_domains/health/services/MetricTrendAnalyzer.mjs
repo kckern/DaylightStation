@@ -23,7 +23,7 @@ export class MetricTrendAnalyzer {
    * bucketed series at the requested granularity.
    */
   async trajectory({ userId, metric, period, granularity = null, statistic = 'mean' }) {
-    const resolved = this.periodResolver.resolve(period);
+    const resolved = await this.periodResolver.resolve(period, { userId });
     const dailySeries = await this.aggregator.aggregateSeries({
       userId, metric, period, granularity: 'daily', statistic,
     });
@@ -79,7 +79,7 @@ export class MetricTrendAnalyzer {
    * Threshold: |z| > 2 → candidate. Sort by magnitude descending.
    */
   async detectRegimeChange({ userId, metric, period, max_results = 3 }) {
-    const resolved = this.periodResolver.resolve(period);
+    const resolved = await this.periodResolver.resolve(period, { userId });
     const series = await this.aggregator.aggregateSeries({
       userId, metric, period, granularity: 'daily',
     });
@@ -133,7 +133,7 @@ export class MetricTrendAnalyzer {
     zScore_threshold = 2,
     baseline_window_days = 30,
   }) {
-    const resolved = this.periodResolver.resolve(period);
+    const resolved = await this.periodResolver.resolve(period, { userId });
     const series = await this.aggregator.aggregateSeries({
       userId, metric, period, granularity: 'daily',
     });
@@ -183,7 +183,7 @@ export class MetricTrendAnalyzer {
    *   { field_below: value }       — value < threshold
    */
   async detectSustained({ userId, metric, period, condition, min_duration_days }) {
-    const resolved = this.periodResolver.resolve(period);
+    const resolved = await this.periodResolver.resolve(period, { userId });
     const matcher = buildSustainedMatcher(condition);
 
     const series = await this.aggregator.aggregateSeries({

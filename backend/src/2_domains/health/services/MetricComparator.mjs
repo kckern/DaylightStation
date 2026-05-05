@@ -132,7 +132,7 @@ export class MetricComparator {
    */
   async conditionalAggregate({ userId, metric, period, condition, statistic = 'mean' }) {
     const reg = MetricRegistry.get(metric);
-    const resolved = this.periodResolver.resolve(period);
+    const resolved = await this.periodResolver.resolve(period, { userId });
     const dateMatcher = buildDateMatcher(condition);
     const presenceMatcher = await this.#buildPresenceMatcher(condition, userId, resolved);
 
@@ -195,7 +195,7 @@ export class MetricComparator {
    * and a coarse interpretation.
    */
   async correlateMetrics({ userId, metric_a, metric_b, period, granularity = 'daily' }) {
-    const resolved = this.periodResolver.resolve(period);
+    const resolved = await this.periodResolver.resolve(period, { userId });
     const [seriesA, seriesB] = await Promise.all([
       this.aggregator.aggregateSeries({ userId, metric: metric_a, period, granularity }),
       this.aggregator.aggregateSeries({ userId, metric: metric_b, period, granularity }),

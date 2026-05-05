@@ -56,7 +56,7 @@ export class MetricAggregator {
     if (!STATS.includes(statistic)) {
       throw new Error(`MetricAggregator: unknown statistic "${statistic}"`);
     }
-    const resolved = this.periodResolver.resolve(period);
+    const resolved = await this.periodResolver.resolve(period, { userId });
     const daysInPeriod = daysBetweenInclusive(resolved.from, resolved.to);
 
     const { values, daysCovered } = await this.#collectValues({ userId, reg, from: resolved.from, to: resolved.to });
@@ -100,7 +100,7 @@ export class MetricAggregator {
     if (!['daily','weekly','monthly','quarterly','yearly'].includes(granularity)) {
       throw new Error(`MetricAggregator: unknown granularity "${granularity}"`);
     }
-    const resolved = this.periodResolver.resolve(period);
+    const resolved = await this.periodResolver.resolve(period, { userId });
     const dailyRows = await this.#collectDailyRows({ userId, reg, from: resolved.from, to: resolved.to });
 
     // Group by bucket key.
@@ -132,7 +132,7 @@ export class MetricAggregator {
 
   async distribution({ userId, metric, period, bins = null }) {
     const reg = MetricRegistry.get(metric);
-    const resolved = this.periodResolver.resolve(period);
+    const resolved = await this.periodResolver.resolve(period, { userId });
     const rows = await this.#collectDailyRows({ userId, reg, from: resolved.from, to: resolved.to });
     const values = rows.map(r => r.value);
     const sorted = [...values].sort((a, b) => a - b);
@@ -175,7 +175,7 @@ export class MetricAggregator {
 
   async percentile({ userId, metric, period, value }) {
     const reg = MetricRegistry.get(metric);
-    const resolved = this.periodResolver.resolve(period);
+    const resolved = await this.periodResolver.resolve(period, { userId });
     const rows = await this.#collectDailyRows({ userId, reg, from: resolved.from, to: resolved.to });
     const sorted = rows.map(r => r.value).sort((a, b) => a - b);
     const total = sorted.length;
@@ -237,7 +237,7 @@ export class MetricAggregator {
       })
     );
 
-    const resolved = this.periodResolver.resolve(period);
+    const resolved = await this.periodResolver.resolve(period, { userId });
     return { period: resolved, metrics: rows };
   }
 
