@@ -1623,3 +1623,98 @@ describe('query_historical_coaching (Plan 5)', () => {
     expect(out.entries).toEqual([]);
   });
 });
+
+describe('query_historical_workouts — count aggregations (Plan 5)', () => {
+  it('returns weekly_count buckets with workouts per week + total duration', async () => {
+    const healthService = {
+      getHealthForRange: vi.fn(async () => ({
+        '2024-08-05': { workouts: [{ type: 'run', title: 'Mon run', duration: 30 }] },     // Mon W32
+        '2024-08-07': { workouts: [{ type: 'run', title: 'Wed run', duration: 35 }] },     // Wed W32
+        '2024-08-12': { workouts: [{ type: 'ride', title: 'Mon ride', duration: 60 }] },   // Mon W33
+      })),
+    };
+    const factory = new LongitudinalToolFactory({
+      healthStore: { loadWeightData: vi.fn(async () => ({})), loadNutritionData: vi.fn(async () => ({})) },
+      healthService,
+    });
+    const tool = factory.createTools().find(t => t.name === 'query_historical_workouts');
+    const out = await tool.execute({
+      userId: 'kc',
+      from: '2024-08-01', to: '2024-08-15',
+      aggregation: 'weekly_count',
+    });
+    expect(out.aggregation).toBe('weekly_count');
+    expect(out.rows.length).toBe(2);
+    // W32 has 2 workouts totaling 65 min, W33 has 1 totaling 60 min
+    const w32 = out.rows.find(r => r.period.endsWith('W32'));
+    const w33 = out.rows.find(r => r.period.endsWith('W33'));
+    expect(w32.count).toBe(2);
+    expect(w32.totalDurationMin).toBe(65);
+    expect(w33.count).toBe(1);
+    expect(w33.totalDurationMin).toBe(60);
+  });
+
+  it('returns monthly_count buckets', async () => {
+    const healthService = {
+      getHealthForRange: vi.fn(async () => ({
+        '2024-08-05': { workouts: [{ type: 'run', duration: 30 }] },
+        '2024-08-15': { workouts: [{ type: 'run', duration: 35 }] },
+        '2024-09-10': { workouts: [{ type: 'ride', duration: 60 }] },
+      })),
+    };
+    const factory = new LongitudinalToolFactory({
+      healthStore: { loadWeightData: vi.fn(async () => ({})), loadNutritionData: vi.fn(async () => ({})) },
+      healthService,
+    });
+    const tool = factory.createTools().find(t => t.name === 'query_historical_workouts');
+    const out = await tool.execute({
+      userId: 'kc',
+      from: '2024-08-01', to: '2024-09-30',
+      aggregation: 'monthly_count',
+    });
+    expect(out.rows).toHaveLength(2);
+    expect(out.rows[0].period).toBe('2024-08');
+    expect(out.rows[0].count).toBe(2);
+    expect(out.rows[1].period).toBe('2024-09');
+    expect(out.rows[1].count).toBe(1);
+  });
+
+  it('returns yearly_count buckets', async () => {
+    const healthService = {
+      getHealthForRange: vi.fn(async () => ({
+        '2024-03-15': { workouts: [{ duration: 30 }, { duration: 30 }] },
+        '2024-12-25': { workouts: [{ duration: 45 }] },
+        '2025-01-10': { workouts: [{ duration: 30 }] },
+      })),
+    };
+    const factory = new LongitudinalToolFactory({
+      healthStore: { loadWeightData: vi.fn(async () => ({})), loadNutritionData: vi.fn(async () => ({})) },
+      healthService,
+    });
+    const tool = factory.createTools().find(t => t.name === 'query_historical_workouts');
+    const out = await tool.execute({
+      userId: 'kc',
+      from: '2024-01-01', to: '2025-12-31',
+      aggregation: 'yearly_count',
+    });
+    expect(out.rows).toHaveLength(2);
+    expect(out.rows[0]).toMatchObject({ period: '2024', count: 3, totalDurationMin: 105 });
+    expect(out.rows[1]).toMatchObject({ period: '2025', count: 1, totalDurationMin: 30 });
+  });
+
+  it('returns the existing flat list when aggregation not provided (no regression)', async () => {
+    const healthService = {
+      getHealthForRange: vi.fn(async () => ({
+        '2024-08-05': { workouts: [{ type: 'run', title: 'Run', duration: 30 }] },
+      })),
+    };
+    const factory = new LongitudinalToolFactory({
+      healthStore: { loadWeightData: vi.fn(async () => ({})), loadNutritionData: vi.fn(async () => ({})) },
+      healthService,
+    });
+    const tool = factory.createTools().find(t => t.name === 'query_historical_workouts');
+    const out = await tool.execute({ userId: 'kc', from: '2024-08-01', to: '2024-08-31' });
+    expect(out.workouts).toBeDefined();
+    expect(out.workouts).toHaveLength(1);
+  });
+});
