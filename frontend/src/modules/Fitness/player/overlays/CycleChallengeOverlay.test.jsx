@@ -58,4 +58,22 @@ describe('CycleChallengeOverlay — extended UI', () => {
     expect(screen.queryByText(/Start in/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Reach target in/)).not.toBeInTheDocument();
   });
+
+  it('renders the paused init countdown when clockPaused is true', () => {
+    const ch = { ...baseChallenge, clockPaused: true };
+    render(<CycleChallengeOverlay challenge={ch} />);
+    expect(screen.getByText(/Paused — start in 23s/)).toBeInTheDocument();
+  });
+
+  it('renders the paused ramp countdown when clockPaused is true', () => {
+    const ch = {
+      ...baseChallenge,
+      cycleState: 'ramp',
+      initRemainingMs: null,
+      rampRemainingMs: 7000,
+      clockPaused: true
+    };
+    render(<CycleChallengeOverlay challenge={ch} />);
+    expect(screen.getByText(/Paused — reach target in 7s/)).toBeInTheDocument();
+  });
 });
