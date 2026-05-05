@@ -370,11 +370,37 @@ export async function getHealthAnalytics() {
     const { AggregateHealthUseCase } = await import('#apps/health/AggregateHealthUseCase.mjs');
     const { HealthAnalyticsService } = await import('#domains/health/services/HealthAnalyticsService.mjs');
     const { PeriodResolver }         = await import('#domains/health/services/PeriodResolver.mjs');
+    const { PersonalContextLoader }  = await import('#apps/health/PersonalContextLoader.mjs');
+    const { YamlWorkingMemoryAdapter } = await import('#adapters/agents/YamlWorkingMemoryAdapter.mjs');
+    const { readFile }               = await import('node:fs/promises');
+    const { default: yaml }          = await import('js-yaml');
 
     const healthStore    = new YamlHealthDatastore({ dataService, configService: cfg });
     const healthService  = new AggregateHealthUseCase({ healthStore });
     const periodResolver = new PeriodResolver();
-    _healthAnalytics = new HealthAnalyticsService({ healthStore, healthService, periodResolver });
+
+    // PersonalContextLoader needs a dataService with readYaml(absPath).
+    // Build the same shim used in the backend bootstrap.
+    const dataDir    = cfg.getDataDir?.() || path.join(process.env.DAYLIGHT_BASE_PATH || '.', 'data');
+    const archiveRoot = path.join(dataDir, 'users');
+    const yamlReader = {
+      readYaml: async (absPath) => {
+        try {
+          const content = await readFile(absPath, 'utf8');
+          return yaml.load(content) || null;
+        } catch (err) {
+          if (err.code === 'ENOENT') return null;
+          return null;
+        }
+      },
+    };
+    const playbookLoader       = new PersonalContextLoader({ dataService: yamlReader, archiveRoot });
+    const workingMemoryAdapter = new YamlWorkingMemoryAdapter({ dataService });
+
+    _healthAnalytics = new HealthAnalyticsService({
+      healthStore, healthService, periodResolver,
+      playbookLoader, workingMemoryAdapter,
+    });
     return _healthAnalytics;
   })();
 
