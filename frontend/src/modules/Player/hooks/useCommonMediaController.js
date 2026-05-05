@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { getProgressPercent } from '../lib/helpers.js';
 import { useMediaKeyboardHandler } from '../../../lib/Player/useMediaKeyboardHandler.js';
+import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
 
 // Lazy-init child logger for media controller diagnostics
@@ -47,6 +48,12 @@ export function useCommonMediaController({
   keyboardOverrides
 }) {
   const DEBUG_MEDIA = false;
+
+  // Screen-framework software master volume. When this hook is rendered outside
+  // a ScreenVolumeProvider (e.g., Fitness, Feed, or any other host), master = 1
+  // and behavior is unchanged. effective volume = adjustedVolume × master.
+  const { master: masterVolume } = useScreenVolume();
+
   // Global guards persisted across remounts (per assetId)
   if (!useCommonMediaController.__appliedStartByKey) useCommonMediaController.__appliedStartByKey = Object.create(null);
   if (!useCommonMediaController.__lastPosByKey) useCommonMediaController.__lastPosByKey = Object.create(null);
@@ -313,6 +320,20 @@ export function useCommonMediaController({
     // Otherwise container IS the media element
     return container;
   }, []);
+
+  // Re-apply master × volume to the active media element when either changes.
+  // Volume is set once on loadedmetadata; this effect propagates live master
+  // changes (vol-up/down on the screen-framework numpad) to playing media.
+  useEffect(() => {
+    const mediaEl = getMediaEl();
+    if (!mediaEl) return;
+    let processed = parseFloat(volume || 100);
+    if (processed > 1) processed = processed / 100;
+    const adjusted = Math.min(1, Math.max(0, processed));
+    try {
+      mediaEl.volume = Math.min(1, Math.max(0, adjusted * masterVolume));
+    } catch { /* element may not yet support volume */ }
+  }, [masterVolume, volume, getMediaEl, elementKey]);
 
   // Use DASH for dash_video mediaType (set by adapters that serve DASH streams)
   const isDash = meta.mediaType === 'dash_video';
@@ -1196,7 +1217,7 @@ export function useCommonMediaController({
       }
       
       mediaEl.autoplay = true;
-      mediaEl.volume = adjustedVolume;
+      mediaEl.volume = adjustedVolume * masterVolume;
       
       // Loop logic — set the native HTMLMediaElement.loop attribute when the
       // caller has *explicitly* opted in. We must NOT loop just because the
@@ -1232,7 +1253,7 @@ export function useCommonMediaController({
           mediaEl.playbackRate = snapshot.playbackRate;
         }
         if (typeof snapshot.volume === 'number') {
-          mediaEl.volume = Math.min(1, Math.max(0, snapshot.volume));
+          mediaEl.volume = Math.min(1, Math.max(0, snapshot.volume * masterVolume));
         }
         if (snapshot.wasPaused) {
           setTimeout(() => {

@@ -7,6 +7,8 @@ import { ScreenDataProvider } from './data/ScreenDataProvider.jsx';
 import { ScreenProvider } from './providers/ScreenProvider.jsx';
 import { ScreenOverlayProvider, useScreenOverlay } from './overlays/ScreenOverlayProvider.jsx';
 import { PipManager, usePip } from './pip/PipManager.jsx';
+import { ScreenVolumeProvider } from './providers/ScreenVolumeProvider.jsx';
+import { MasterVolumeToast } from './overlays/MasterVolumeToast.jsx';
 import { registerBuiltinWidgets } from './widgets/builtins.js';
 import { getActionBus } from './input/ActionBus.js';
 import { createInputManager } from './input/InputManager.js';
@@ -349,20 +351,23 @@ export function ScreenRenderer({ screenId: propScreenId }) {
           overflow: 'hidden',
           ...themeStyle,
         }}>
-          <MenuNavigationProvider>
-            <ScreenOverlayProvider>
-              <PipManager config={config.pip}>
-                <ScreenAutoplay routes={config.routes} />
-                <ScreenActionHandler actions={config.actions} />
-                <ScreenCommandHandler wsConfig={config.websocket} screenId={screenId} />
-                <ScreenSessionPublishers wsConfig={config.websocket} />
-                <ScreenSubscriptionHandler subscriptions={config.subscriptions} />
-                <ScreenProvider config={config.layout}>
-                  {suppressLayout ? <ActionLoadingShell /> : <PanelRenderer />}
-                </ScreenProvider>
-              </PipManager>
-            </ScreenOverlayProvider>
-          </MenuNavigationProvider>
+          <ScreenVolumeProvider storageKey={`screen-volume-${screenId}`}>
+            <MasterVolumeToast />
+            <MenuNavigationProvider>
+              <ScreenOverlayProvider>
+                <PipManager config={config.pip}>
+                  <ScreenAutoplay routes={config.routes} />
+                  <ScreenActionHandler actions={config.actions} />
+                  <ScreenCommandHandler wsConfig={config.websocket} screenId={screenId} />
+                  <ScreenSessionPublishers wsConfig={config.websocket} />
+                  <ScreenSubscriptionHandler subscriptions={config.subscriptions} />
+                  <ScreenProvider config={config.layout}>
+                    {suppressLayout ? <ActionLoadingShell /> : <PanelRenderer />}
+                  </ScreenProvider>
+                </PipManager>
+              </ScreenOverlayProvider>
+            </MenuNavigationProvider>
+          </ScreenVolumeProvider>
         </div>
       )}
     </ScreenDataProvider>

@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import PropTypes from 'prop-types';
+import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
 import getLogger from '../../../lib/logging/Logger.js';
 
 const logger = getLogger().child({ component: 'AudioLayer' });
@@ -27,11 +28,14 @@ export function AudioLayer({
 }) {
   const containerRef = useRef(null);
   const prevMediaTypeRef = useRef(currentItemMediaType);
+  // savedVolume is the LOGICAL pre-duck volume (master-independent). Stored as
+  // el.volume / master so we can restore correctly even if master changes mid-duck.
   const savedVolumeRef = useRef(1);
   const fadeRafRef = useRef(null);
   const isDuckedRef = useRef(false);
   const lastAudioElRef = useRef(null);
   const [audioQueue, setAudioQueue] = useState(null);
+  const { master: masterVolume } = useScreenVolume();
 
   /** Find the audio/video element rendered by the nested Player */
   const getAudioEl = useCallback(() => {
@@ -97,6 +101,20 @@ export function AudioLayer({
     return () => { cancelled = true; };
   }, [contentId]);
 
+  // When master volume changes, the inner Player's master-change effect
+  // re-applies el.volume = adjustedVolume × master, which undoes any active
+  // duck. React commits child effects before parent effects, so by the time
+  // this runs, Player has already restored the un-ducked level — we just
+  // re-apply the duck on top.
+  useEffect(() => {
+    if (!isDuckedRef.current) return;
+    if (behavior !== 'duck') return;
+    const el = getAudioEl();
+    if (!el) return;
+    el.volume = Math.max(0, Math.min(1, el.volume * duckLevel));
+    logger.debug('audio-layer-master-reduck', { contentId, volume: el.volume });
+  }, [masterVolume, behavior, duckLevel, contentId, getAudioEl]);
+
   // Re-apply duck when the inner Player remounts (new audio element on track advance).
   // Volume is track-level state on the DOM element; this promotes it to playlist-level.
   useEffect(() => {
@@ -108,7 +126,9 @@ export function AudioLayer({
       if (el && el !== lastAudioElRef.current) {
         lastAudioElRef.current = el;
         if (isDuckedRef.current) {
-          el.volume = Math.max(0, duckLevel);
+          // duckLevel is a proportion of the new element's natural volume; the
+          // inner Player will have already set el.volume = adjustedVolume × master.
+          el.volume = Math.max(0, Math.min(1, el.volume * duckLevel));
           logger.debug('audio-layer-reduck', { contentId, volume: el.volume, reason: 'track-advance' });
         }
       }
@@ -150,10 +170,13 @@ export function AudioLayer({
         logger.info('audio-layer-pause', { contentId, reason: 'video-start', fromType: prev, toType: currentItemMediaType });
         el.pause();
       } else if (behavior === 'duck') {
-        savedVolumeRef.current = el.volume;
+        // Capture LOGICAL pre-duck volume (master-independent). Recover later
+        // by multiplying back in by current master.
+        const safeMaster = masterVolume > 0 ? masterVolume : 1;
+        savedVolumeRef.current = el.volume / safeMaster;
         isDuckedRef.current = true;
         const target = Math.max(0, el.volume * duckLevel);
-        logger.info('audio-layer-duck', { contentId, reason: 'video-start', from: el.volume, to: target, fadeMs: FADE_MS });
+        logger.info('audio-layer-duck', { contentId, reason: 'video-start', from: el.volume, to: target, fadeMs: FADE_MS, savedLogical: savedVolumeRef.current });
         fadeVolume(el, el.volume, target, FADE_MS);
       }
     } else if (wasVideo && !isVideo) {
@@ -162,7 +185,8 @@ export function AudioLayer({
         el.play().catch(() => {});
       } else if (behavior === 'duck') {
         isDuckedRef.current = false;
-        const restoreTo = savedVolumeRef.current;
+        // Restore: logical × current master. Handles mid-duck master changes.
+        const restoreTo = Math.max(0, Math.min(1, savedVolumeRef.current * masterVolume));
         logger.info('audio-layer-unduck', { contentId, reason: 'video-end', from: el.volume, to: restoreTo, fadeMs: FADE_MS });
         fadeVolume(el, el.volume, restoreTo, FADE_MS);
       }
