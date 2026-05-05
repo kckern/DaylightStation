@@ -678,6 +678,7 @@ export class GovernanceEngine {
         boostMultiplier: multiplier,
         boostingUsers: contributors,
         lockReason: activeChallenge.lockReason || null,
+        waitingForBaseReq: Boolean(activeChallenge.waitingForBaseReq),
         swapAllowed,
         swapEligibleUsers,
         cycleAudioCue
@@ -2419,6 +2420,11 @@ export class GovernanceEngine {
       rampElapsedMs: 0,
       phaseProgressMs: 0,
       totalLockEventsCount: 0,
+      // Task 7 (audit F2): set to true while init is held open because the
+      // rider is pedalling at >= minRpm but baseReqSatisfiedForRider is false.
+      // Surfaced in the snapshot so the overlay can explain the wait instead
+      // of locking the rider out every initTotalMs.
+      waitingForBaseReq: false,
       totalBoostedMs: 0,
       boostContributors: new Set(),
       lockReason: null,
@@ -2496,11 +2502,50 @@ export class GovernanceEngine {
 
     if (active.cycleState === 'init') {
       active.initElapsedMs += dt;
+      const rpmAtMin = ctx.equipmentRpm >= active.selection.init.minRpm;
+      const gatesOpen = active.manualTrigger || ctx.baseReqSatisfiedForRider;
+
+      // Happy path: rider is pedalling AND HR/manual gate is open → ramp.
+      if (rpmAtMin && gatesOpen) {
+        const prev = active.cycleState;
+        active.waitingForBaseReq = false;
+        active.cycleState = 'ramp';
+        active.rampElapsedMs = 0;
+        getLogger().info('governance.cycle.state_transition', {
+          challengeId: active.id,
+          from: prev,
+          to: 'ramp',
+          currentPhaseIndex: active.currentPhaseIndex,
+          rider: active.rider,
+          currentRpm: ctx.equipmentRpm
+        });
+        return;
+      }
+
+      // Init clock expired. Decide: hold (rider pedalling, HR gate unmet) or
+      // lock (true abandonment — rider not pedalling).
       if (active.initElapsedMs >= active.initTotalMs) {
+        if (rpmAtMin) {
+          // Audit F2 fix: rider IS doing the work but baseReq is unmet.
+          // Holding here prevents the init→locked→init oscillation that used
+          // to cycle every `initTotalMs` (locked→init recovery only checks
+          // rpm, so the engine immediately bounced back to a fresh init,
+          // then timed out again, etc.). Reset the clock and surface
+          // `waitingForBaseReq` so the overlay can explain the wait.
+          active.initElapsedMs = 0;
+          active.waitingForBaseReq = true;
+          getLogger().sampled('governance.cycle.holding_for_base_req', {
+            challengeId: active.id,
+            currentRpm: ctx.equipmentRpm
+          }, { maxPerMinute: 1, aggregate: true });
+          return;
+        }
+        // True abandonment — rider not pedalling AND base-req not met.
         const prev = active.cycleState;
         active.cycleState = 'locked';
         active.lockReason = 'init';
         active.totalLockEventsCount += 1;
+        active.waitingForBaseReq = false;
         getLogger().info('governance.cycle.state_transition', {
           challengeId: active.id,
           from: prev,
@@ -2517,20 +2562,6 @@ export class GovernanceEngine {
           currentRpm: ctx.equipmentRpm,
           threshold: active.selection.init.minRpm,
           totalLockEventsCount: active.totalLockEventsCount
-        });
-        return;
-      }
-      if (ctx.equipmentRpm >= active.selection.init.minRpm && (ctx.baseReqSatisfiedForRider || active.manualTrigger)) {
-        const prev = active.cycleState;
-        active.cycleState = 'ramp';
-        active.rampElapsedMs = 0;
-        getLogger().info('governance.cycle.state_transition', {
-          challengeId: active.id,
-          from: prev,
-          to: 'ramp',
-          currentPhaseIndex: active.currentPhaseIndex,
-          rider: active.rider,
-          currentRpm: ctx.equipmentRpm
         });
       }
       return;
