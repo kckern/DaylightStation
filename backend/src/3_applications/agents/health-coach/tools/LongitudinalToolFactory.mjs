@@ -364,6 +364,158 @@ export class LongitudinalToolFactory extends ToolFactory {
           }
         },
       }),
+      createTool({
+        name: 'query_historical_reconciliation',
+        description:
+          'Query reconciliation data over an inclusive [from, to] date range. ' +
+          'Returns per-day tracked_calories and exercise_calories. The 14-day ' +
+          'maturity gate strips implied_intake / tracking_accuracy / ' +
+          'calorie_adjustment from days less than 14 days old (those values ' +
+          'depend on weight smoothing that hasn\'t settled).',
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string' },
+            from:   { type: 'string', description: 'YYYY-MM-DD inclusive' },
+            to:     { type: 'string', description: 'YYYY-MM-DD inclusive' },
+          },
+          required: ['userId', 'from', 'to'],
+        },
+        execute: async ({ userId, from, to }) => {
+          try {
+            HealthArchiveScope.assertValidUserId(userId);
+            const data = await healthStore.loadReconciliationData?.(userId) || {};
+            const dates = Object.keys(data).filter(d => d >= from && d <= to).sort();
+
+            const MATURITY_DAYS = 14;
+            const now = new Date();
+            const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+            const cutoff = new Date(todayUtc);
+            cutoff.setUTCDate(cutoff.getUTCDate() - MATURITY_DAYS);
+
+            const days = dates.map(date => {
+              const entry = data[date] || {};
+              const dateObj = new Date(date + 'T00:00:00Z');
+              const isMature = dateObj <= cutoff;
+              const day = {
+                date,
+                tracked_calories: entry.tracked_calories ?? 0,
+                exercise_calories: entry.exercise_calories ?? 0,
+              };
+              if (isMature) {
+                if (entry.tracking_accuracy   !== undefined) day.tracking_accuracy   = entry.tracking_accuracy;
+                if (entry.implied_intake      !== undefined) day.implied_intake      = entry.implied_intake;
+                if (entry.calorie_adjustment  !== undefined) day.calorie_adjustment  = entry.calorie_adjustment;
+              }
+              return day;
+            });
+
+            return { days };
+          } catch (err) {
+            return { days: [], error: err.message };
+          }
+        },
+      }),
+
+      createTool({
+        name: 'query_historical_coaching',
+        description:
+          'Query past coaching messages over an inclusive [from, to] date ' +
+          'range. Returns per-date entries with type/text/timestamp.',
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string' },
+            from:   { type: 'string' },
+            to:     { type: 'string' },
+          },
+          required: ['userId', 'from', 'to'],
+        },
+        execute: async ({ userId, from, to }) => {
+          try {
+            HealthArchiveScope.assertValidUserId(userId);
+            const data = await healthStore.loadCoachingData?.(userId) || {};
+            const dates = Object.keys(data).filter(d => d >= from && d <= to).sort();
+            const entries = dates.map(date => ({
+              date,
+              messages: (data[date] || []).map(entry => ({
+                type: entry.type,
+                text: entry.text || entry.message,
+                timestamp: entry.timestamp,
+              })),
+            }));
+            return { entries };
+          } catch (err) {
+            return { entries: [], error: err.message };
+          }
+        },
+      }),
+
+      createTool({
+        name: 'query_nutrition_density',
+        description:
+          'Per-bucket "tracking density" series. A "logged" day is one with ' +
+          'a nutrition entry whose calories > 0. Returns per-bucket ' +
+          '{ daysLogged, daysInPeriod, density } at the requested granularity ' +
+          '(daily | weekly | monthly | quarterly | yearly).',
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string' },
+            from:   { type: 'string' },
+            to:     { type: 'string' },
+            granularity: {
+              type: 'string',
+              enum: ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'],
+              default: 'monthly',
+            },
+          },
+          required: ['userId', 'from', 'to'],
+        },
+        execute: async ({ userId, from, to, granularity = 'monthly' }) => {
+          try {
+            HealthArchiveScope.assertValidUserId(userId);
+            const allowed = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'];
+            if (!allowed.includes(granularity)) {
+              return { rows: [], error: `Unknown granularity: ${granularity}` };
+            }
+            const data = await healthStore.loadNutritionData?.(userId) || {};
+            const bucketKey = granularity === 'daily' ? (d) => d :
+                              granularity === 'weekly' ? isoWeek :
+                              granularity === 'monthly' ? isoMonth :
+                              granularity === 'quarterly' ? quarter :
+                              isoYear;
+
+            // Walk every date in [from, to]; classify each as logged or not.
+            const buckets = new Map();
+            const f = new Date(from + 'T00:00:00Z');
+            const t = new Date(to + 'T00:00:00Z');
+            for (let d = new Date(f); d <= t; d.setUTCDate(d.getUTCDate() + 1)) {
+              const date = d.toISOString().slice(0, 10);
+              const entry = data[date];
+              const logged = entry && typeof entry.calories === 'number' && entry.calories > 0;
+              const key = bucketKey(date);
+              if (!buckets.has(key)) buckets.set(key, { period: key, daysLogged: 0, daysInPeriod: 0 });
+              const b = buckets.get(key);
+              b.daysInPeriod++;
+              if (logged) b.daysLogged++;
+            }
+
+            const rows = [...buckets.values()]
+              .sort((a, b) => a.period.localeCompare(b.period))
+              .map(b => ({
+                period: b.period,
+                daysLogged: b.daysLogged,
+                daysInPeriod: b.daysInPeriod,
+                density: b.daysInPeriod > 0 ? b.daysLogged / b.daysInPeriod : 0,
+              }));
+
+            return { granularity, rows };
+          } catch (err) {
+            return { rows: [], error: err.message };
+          }
+        },
+      }),
     ];
   }
 }
