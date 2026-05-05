@@ -1,4 +1,5 @@
 import React from 'react';
+import PropTypes from 'prop-types';
 import './CycleBaseReqIndicator.scss';
 
 export const CycleBaseReqIndicator = ({ baseReqSatisfied, waitingForBaseReq }) => {
@@ -24,6 +25,11 @@ export const CycleBaseReqIndicator = ({ baseReqSatisfied, waitingForBaseReq }) =
       <span className="cycle-base-req__label">{label}</span>
     </div>
   );
+};
+
+CycleBaseReqIndicator.propTypes = {
+  baseReqSatisfied: PropTypes.bool,
+  waitingForBaseReq: PropTypes.bool
 };
 
 export default CycleBaseReqIndicator;
