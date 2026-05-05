@@ -1718,3 +1718,84 @@ describe('query_historical_workouts — count aggregations (Plan 5)', () => {
     expect(out.workouts).toHaveLength(1);
   });
 });
+
+describe('query_nutrition_density (Plan 5)', () => {
+  function buildDensityFixture() {
+    // 60 days. Days 0-29: log every other day (50% density).
+    // Days 30-59: log every day (100% density).
+    const data = {};
+    const start = new Date(Date.UTC(2024, 5, 1)); // June 1
+    for (let i = 0; i < 60; i++) {
+      const d = new Date(start);
+      d.setUTCDate(start.getUTCDate() + i);
+      const key = d.toISOString().slice(0, 10);
+      const isLogged = i < 30 ? (i % 2 === 0) : true;
+      if (isLogged) data[key] = { calories: 2000 };
+    }
+    return data;
+  }
+
+  it('returns monthly density buckets', async () => {
+    const healthStore = {
+      loadWeightData: vi.fn(async () => ({})),
+      loadNutritionData: vi.fn(async () => buildDensityFixture()),
+    };
+    const factory = new LongitudinalToolFactory({ healthStore });
+    const tool = factory.createTools().find(t => t.name === 'query_nutrition_density');
+    expect(tool).toBeDefined();
+
+    const out = await tool.execute({
+      userId: 'kc',
+      from: '2024-06-01', to: '2024-07-30',
+      granularity: 'monthly',
+    });
+    expect(out.granularity).toBe('monthly');
+    expect(out.rows.length).toBe(2);
+
+    const june = out.rows.find(r => r.period === '2024-06');
+    expect(june).toBeDefined();
+    // June 1-30 = 30 days; days 0-29 of fixture; logged on even i (0,2,4,...,28) = 15 logged
+    expect(june.daysLogged).toBe(15);
+    expect(june.daysInPeriod).toBe(30);
+    expect(june.density).toBeCloseTo(15 / 30, 5);
+
+    const july = out.rows.find(r => r.period === '2024-07');
+    expect(july).toBeDefined();
+    expect(july.density).toBe(1);  // every day logged
+  });
+
+  it('returns weekly density', async () => {
+    const healthStore = {
+      loadWeightData: vi.fn(async () => ({})),
+      loadNutritionData: vi.fn(async () => ({
+        '2024-06-03': { calories: 2000 },  // Mon W23
+        '2024-06-04': { calories: 2100 },  // Tue W23
+        '2024-06-05': { calories: 0 },     // Wed W23 — calories=0 → not logged
+        '2024-06-10': { calories: 1900 },  // Mon W24
+      })),
+    };
+    const factory = new LongitudinalToolFactory({ healthStore });
+    const tool = factory.createTools().find(t => t.name === 'query_nutrition_density');
+    const out = await tool.execute({
+      userId: 'kc',
+      from: '2024-06-03', to: '2024-06-16',
+      granularity: 'weekly',
+    });
+    expect(out.rows.length).toBe(2);
+  });
+
+  it('rejects unknown granularity', async () => {
+    const healthStore = {
+      loadWeightData: vi.fn(async () => ({})),
+      loadNutritionData: vi.fn(async () => ({})),
+    };
+    const factory = new LongitudinalToolFactory({ healthStore });
+    const tool = factory.createTools().find(t => t.name === 'query_nutrition_density');
+    const out = await tool.execute({
+      userId: 'kc',
+      from: '2024-06-01', to: '2024-12-31',
+      granularity: 'fortnightly',
+    });
+    expect(out.error).toMatch(/unknown granularity/i);
+  });
+});
