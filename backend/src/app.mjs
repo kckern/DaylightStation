@@ -87,6 +87,9 @@ import { bootstrapLifeplan } from './0_system/bootstrap/lifeplan.mjs';
 // AI router import
 import { createAIRouter } from './4_api/v1/routers/ai.mjs';
 
+// Health mentions router (CoachChat autocomplete)
+import { createHealthMentionsRouter } from './4_api/v1/routers/health-mentions.mjs';
+
 // Feed harvester adapter for scheduler integration
 import { HeadlineHarvesterAdapter } from './1_adapters/feed/HeadlineHarvesterAdapter.mjs';
 
@@ -828,6 +831,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers['health-dashboard'] = createHealthDashboardApiRouter({
     dataService,
     logger: rootLogger.child({ module: 'health-dashboard-api' })
+  });
+
+  // Health mentions router — powers CoachChat @-mention autocomplete dropdowns.
+  // Mounted BEFORE the health router so /health/mentions/* is matched first.
+  // NOTE: healthAnalyticsService is set later (after createAgentsApiRouter) via
+  // v1Routers.agents.healthAnalyticsService. See the re-assignment below.
+  v1Routers.healthMentions = createHealthMentionsRouter({
+    healthAnalyticsService: null,  // placeholder — replaced after agents router boots
+    healthStore: healthServices.healthStore,
+    healthService: healthServices.healthService,
   });
 
   // Finance domain router
@@ -1973,6 +1986,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       services: lifeplanResult.services,
       aggregator: lifelogServices.lifelogAggregator,
     },
+  });
+
+  // Re-create health mentions router now that healthAnalyticsService is available
+  // from the agents router. This replaces the null-wired placeholder above so
+  // listPeriods() works in CoachChat @-mention autocomplete.
+  v1Routers.healthMentions = createHealthMentionsRouter({
+    healthAnalyticsService: v1Routers.agents?.healthAnalyticsService ?? null,
+    healthStore: healthServices.healthStore,
+    healthService: healthServices.healthService,
   });
 
   // Register morning debrief as a scheduled task (via agents scheduler)

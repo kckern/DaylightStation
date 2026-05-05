@@ -11,6 +11,7 @@
     "test": "node --experimental-specifier-resolution=node --test"
   },
   "dependencies": {
+    "@assistant-ui/react": "^0.12.28",
     "@codemirror/lang-yaml": "^6.1.2",
     "@codemirror/state": "^6.5.4",
     "@codemirror/theme-one-dark": "^6.1.3",
