@@ -63,3 +63,40 @@ describe('CadenceFilter — EMA smoothing', () => {
     expect(result.flags.implausible).toBe(true);
   });
 });
+
+describe('CadenceFilter — staleness', () => {
+  it('marks output stale and decays the value when ts gap exceeds the grace threshold', () => {
+    const f = new CadenceFilter();
+    f.update({ rpm: 60, ts: 1000 });
+    const stale = f.tick(2750); // 1750 ms — 250 ms into the decay window
+    expect(stale.flags.stale).toBe(true);
+    expect(stale.flags.lostSignal).toBe(false);
+    expect(stale.rpm).toBeLessThan(60);   // decaying
+    expect(stale.rpm).toBeGreaterThan(45); // not collapsed yet
+  });
+
+  it('reports lost signal and returns 0 when ts gap exceeds the abandonment threshold', () => {
+    const f = new CadenceFilter();
+    f.update({ rpm: 60, ts: 1000 });
+    const lost = f.tick(5000); // 4 s since last update
+    expect(lost.rpm).toBe(0);
+    expect(lost.flags.lostSignal).toBe(true);
+  });
+
+  it('drops to 0 within 5 seconds of the last fresh sample (hard contract)', () => {
+    const f = new CadenceFilter();
+    f.update({ rpm: 90, ts: 1000 });
+    const atFiveSec = f.tick(6000); // exactly 5 s later
+    expect(atFiveSec.rpm).toBe(0);
+    expect(atFiveSec.flags.lostSignal).toBe(true);
+  });
+
+  it('a fresh update after a stale tick clears the stale flag', () => {
+    const f = new CadenceFilter();
+    f.update({ rpm: 60, ts: 1000 });
+    f.tick(2500);
+    const fresh = f.update({ rpm: 58, ts: 2700 });
+    expect(fresh.flags.stale).toBe(false);
+    expect(fresh.flags.lostSignal).toBe(false);
+  });
+});
