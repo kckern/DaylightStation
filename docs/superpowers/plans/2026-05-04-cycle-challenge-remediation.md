@@ -1415,6 +1415,369 @@ git commit -m "feat(fitness): cycle overlay shows base-req indicator, countdown,
 
 ---
 
+## Task 11A: Unify challenge-overlay position across both overlays
+
+**Files:**
+- Create: `frontend/src/modules/Fitness/player/overlays/useChallengeOverlayPosition.js`
+- Create: `frontend/src/modules/Fitness/player/overlays/useChallengeOverlayPosition.test.js`
+- Create: `frontend/src/modules/Fitness/player/overlays/ChallengeOverlayDeck.jsx`
+- Create: `frontend/src/modules/Fitness/player/overlays/ChallengeOverlayDeck.scss`
+- Create: `frontend/src/modules/Fitness/player/overlays/ChallengeOverlayDeck.test.jsx`
+- Modify: `frontend/src/modules/Fitness/player/overlays/ChallengeOverlay.jsx`
+- Modify: `frontend/src/modules/Fitness/player/overlays/ChallengeOverlay.scss`
+- Modify: `frontend/src/modules/Fitness/player/overlays/CycleChallengeOverlay.jsx`
+- Modify: `frontend/src/modules/Fitness/player/overlays/CycleChallengeOverlay.scss`
+- Modify: `frontend/src/modules/Fitness/player/FitnessPlayerOverlay.jsx`
+
+Today the two challenge overlays each own their own position state (`fitness.challengeOverlay.position` and `fitness.cycleChallengeOverlay.position`). Cycling position on one does not affect the other. The user's expectation: position is a property of the *challenge-overlay slot*, not of any specific overlay variant. A single tap toggles the shared position; both overlays render at that position.
+
+Approach:
+- Extract a shared hook `useChallengeOverlayPosition()` that owns the shared state (single localStorage key `fitness.challengeOverlay.position`) and exposes `{ position, cyclePosition }`.
+- Introduce a presentational deck component `ChallengeOverlayDeck` that wraps both overlays inside a single positioned wrapper element. Tap-to-cycle handler lives on the deck. The deck applies the `--pos-{top,middle,bottom}` class.
+- The two child overlays become "dumb" — they no longer manage position state, no longer write localStorage, no longer handle their own click-to-cycle. They render their own visual content only.
+- `FitnessPlayerOverlay` (which currently mounts both overlays as siblings) renders the deck instead.
+
+Note: at most one of the two overlays should be visible at a time in production (a challenge is either zone-based or cycle-based). The deck still works if both happen to render (e.g. during test fixtures) — they stack at the same position.
+
+- [ ] **Step 1: Write the failing tests for the shared hook**
+
+```javascript
+// frontend/src/modules/Fitness/player/overlays/useChallengeOverlayPosition.test.js
+import { describe, it, expect, beforeEach } from 'vitest';
+import { renderHook, act } from '@testing-library/react';
+import { useChallengeOverlayPosition, CHALLENGE_OVERLAY_POSITION_KEY }
+  from './useChallengeOverlayPosition.js';
+
+describe('useChallengeOverlayPosition', () => {
+  beforeEach(() => {
+    if (typeof window !== 'undefined') window.localStorage?.clear?.();
+  });
+
+  it('defaults to "top" when no value is stored', () => {
+    const { result } = renderHook(() => useChallengeOverlayPosition());
+    expect(result.current.position).toBe('top');
+  });
+
+  it('reads a previously stored position from localStorage', () => {
+    window.localStorage.setItem(CHALLENGE_OVERLAY_POSITION_KEY, 'middle');
+    const { result } = renderHook(() => useChallengeOverlayPosition());
+    expect(result.current.position).toBe('middle');
+  });
+
+  it('cyclePosition() advances top → middle → bottom → top', () => {
+    const { result } = renderHook(() => useChallengeOverlayPosition());
+    expect(result.current.position).toBe('top');
+    act(() => result.current.cyclePosition());
+    expect(result.current.position).toBe('middle');
+    act(() => result.current.cyclePosition());
+    expect(result.current.position).toBe('bottom');
+    act(() => result.current.cyclePosition());
+    expect(result.current.position).toBe('top');
+  });
+
+  it('persists the new position to localStorage', () => {
+    const { result } = renderHook(() => useChallengeOverlayPosition());
+    act(() => result.current.cyclePosition());
+    expect(window.localStorage.getItem(CHALLENGE_OVERLAY_POSITION_KEY)).toBe('middle');
+  });
+
+  it('rejects an invalid stored value and falls back to "top"', () => {
+    window.localStorage.setItem(CHALLENGE_OVERLAY_POSITION_KEY, 'sideways');
+    const { result } = renderHook(() => useChallengeOverlayPosition());
+    expect(result.current.position).toBe('top');
+  });
+});
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `npx vitest run frontend/src/modules/Fitness/player/overlays/useChallengeOverlayPosition.test.js`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Implement the hook**
+
+```javascript
+// frontend/src/modules/Fitness/player/overlays/useChallengeOverlayPosition.js
+import { useCallback, useEffect, useState } from 'react';
+
+export const CHALLENGE_OVERLAY_POSITION_KEY = 'fitness.challengeOverlay.position';
+export const CHALLENGE_OVERLAY_POSITION_ORDER = ['top', 'middle', 'bottom'];
+
+const readStored = () => {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return CHALLENGE_OVERLAY_POSITION_ORDER[0];
+  }
+  try {
+    const stored = window.localStorage.getItem(CHALLENGE_OVERLAY_POSITION_KEY);
+    return CHALLENGE_OVERLAY_POSITION_ORDER.includes(stored)
+      ? stored
+      : CHALLENGE_OVERLAY_POSITION_ORDER[0];
+  } catch (_) {
+    return CHALLENGE_OVERLAY_POSITION_ORDER[0];
+  }
+};
+
+const writeStored = (value) => {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    window.localStorage.setItem(CHALLENGE_OVERLAY_POSITION_KEY, value);
+  } catch (_) {}
+};
+
+export const useChallengeOverlayPosition = () => {
+  const [position, setPosition] = useState(() => readStored());
+
+  // Re-read on mount in case localStorage was set after the initial render.
+  useEffect(() => {
+    setPosition(readStored());
+  }, []);
+
+  const cyclePosition = useCallback(() => {
+    setPosition((current) => {
+      const idx = CHALLENGE_OVERLAY_POSITION_ORDER.indexOf(current);
+      const next = CHALLENGE_OVERLAY_POSITION_ORDER[
+        (idx + 1) % CHALLENGE_OVERLAY_POSITION_ORDER.length
+      ];
+      writeStored(next);
+      return next;
+    });
+  }, []);
+
+  return { position, cyclePosition };
+};
+
+export default useChallengeOverlayPosition;
+```
+
+- [ ] **Step 4: Run tests to verify pass**
+
+Run: `npx vitest run frontend/src/modules/Fitness/player/overlays/useChallengeOverlayPosition.test.js`
+Expected: PASS — 5 tests.
+
+- [ ] **Step 5: Write the failing tests for `ChallengeOverlayDeck`**
+
+```jsx
+// frontend/src/modules/Fitness/player/overlays/ChallengeOverlayDeck.test.jsx
+import React from 'react';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { ChallengeOverlayDeck } from './ChallengeOverlayDeck.jsx';
+import { CHALLENGE_OVERLAY_POSITION_KEY } from './useChallengeOverlayPosition.js';
+
+describe('ChallengeOverlayDeck', () => {
+  beforeEach(() => {
+    if (typeof window !== 'undefined') window.localStorage?.clear?.();
+  });
+
+  it('applies the top position class by default', () => {
+    const { container } = render(
+      <ChallengeOverlayDeck>
+        <div data-testid="child" />
+      </ChallengeOverlayDeck>
+    );
+    expect(container.querySelector('.challenge-overlay-deck--pos-top')).toBeTruthy();
+  });
+
+  it('cycles position on click', () => {
+    const { container } = render(
+      <ChallengeOverlayDeck>
+        <div data-testid="child" />
+      </ChallengeOverlayDeck>
+    );
+    const deck = container.querySelector('.challenge-overlay-deck');
+    fireEvent.click(deck);
+    expect(container.querySelector('.challenge-overlay-deck--pos-middle')).toBeTruthy();
+    fireEvent.click(deck);
+    expect(container.querySelector('.challenge-overlay-deck--pos-bottom')).toBeTruthy();
+    fireEvent.click(deck);
+    expect(container.querySelector('.challenge-overlay-deck--pos-top')).toBeTruthy();
+  });
+
+  it('persists position changes to localStorage so both overlays share state', () => {
+    const { container } = render(
+      <ChallengeOverlayDeck>
+        <div data-testid="child" />
+      </ChallengeOverlayDeck>
+    );
+    fireEvent.click(container.querySelector('.challenge-overlay-deck'));
+    expect(window.localStorage.getItem(CHALLENGE_OVERLAY_POSITION_KEY)).toBe('middle');
+  });
+
+  it('renders children inside the deck', () => {
+    render(
+      <ChallengeOverlayDeck>
+        <div data-testid="child-a">A</div>
+        <div data-testid="child-b">B</div>
+      </ChallengeOverlayDeck>
+    );
+    expect(screen.getByTestId('child-a')).toBeInTheDocument();
+    expect(screen.getByTestId('child-b')).toBeInTheDocument();
+  });
+
+  it('renders nothing when there are no children', () => {
+    const { container } = render(<ChallengeOverlayDeck />);
+    // The deck still mounts (so position state survives) but is visually empty.
+    expect(container.querySelector('.challenge-overlay-deck')).toBeTruthy();
+  });
+});
+```
+
+- [ ] **Step 6: Run tests to verify they fail**
+
+Run: `npx vitest run frontend/src/modules/Fitness/player/overlays/ChallengeOverlayDeck.test.jsx`
+Expected: FAIL — module not found.
+
+- [ ] **Step 7: Implement `ChallengeOverlayDeck`**
+
+```jsx
+// frontend/src/modules/Fitness/player/overlays/ChallengeOverlayDeck.jsx
+import React, { useCallback } from 'react';
+import PropTypes from 'prop-types';
+import { useChallengeOverlayPosition } from './useChallengeOverlayPosition.js';
+import './ChallengeOverlayDeck.scss';
+
+export const ChallengeOverlayDeck = ({ children }) => {
+  const { position, cyclePosition } = useChallengeOverlayPosition();
+
+  const handleClick = useCallback((event) => {
+    event.stopPropagation();
+    cyclePosition();
+  }, [cyclePosition]);
+
+  const handleKeyDown = useCallback((event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      event.stopPropagation();
+      cyclePosition();
+    }
+  }, [cyclePosition]);
+
+  return (
+    <div
+      className={`challenge-overlay-deck challenge-overlay-deck--pos-${position}`}
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
+      role="button"
+      tabIndex={0}
+      aria-label={`Challenge overlay deck — positioned ${position}. Tap to move.`}
+    >
+      {children}
+    </div>
+  );
+};
+
+ChallengeOverlayDeck.propTypes = {
+  children: PropTypes.node
+};
+
+export default ChallengeOverlayDeck;
+```
+
+```scss
+// frontend/src/modules/Fitness/player/overlays/ChallengeOverlayDeck.scss
+//
+// Positioning anchor for all challenge overlays. Children render at this
+// element's frame; the deck itself owns the top/middle/bottom slot.
+
+.challenge-overlay-deck {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+
+.challenge-overlay-deck--pos-top    { top: 24px; }
+.challenge-overlay-deck--pos-middle { top: 50%; transform: translate(-50%, -50%); }
+.challenge-overlay-deck--pos-bottom { bottom: 24px; top: auto; }
+```
+
+- [ ] **Step 8: Run tests to verify deck tests pass**
+
+Run: `npx vitest run frontend/src/modules/Fitness/player/overlays/ChallengeOverlayDeck.test.jsx`
+Expected: PASS — 5 tests.
+
+- [ ] **Step 9: Strip position state from `ChallengeOverlay.jsx`**
+
+In `frontend/src/modules/Fitness/player/overlays/ChallengeOverlay.jsx`:
+
+- Remove the `CHALLENGE_POSITION_KEY` and `CHALLENGE_POSITION_ORDER` constants and the `readStoredOverlayPosition` helper.
+- Remove the `position` state, the `useEffect` that re-reads it, and the `cyclePosition` / `handleClick` / `handlePointerDown` / `handleKeyDown` handlers that handled position cycling.
+- Remove the `pos-${position}` class entry in the `classNames` array.
+- Remove the wrapping element's `onClick`, `onKeyDown`, `role="button"`, `tabIndex={0}`, and `aria-label` props (the deck owns these now). Keep the rest of the element's content as-is.
+- Update the propTypes to drop nothing (no new props needed).
+
+- [ ] **Step 10: Strip position state from `CycleChallengeOverlay.jsx`**
+
+Same surgery in `frontend/src/modules/Fitness/player/overlays/CycleChallengeOverlay.jsx`:
+
+- Remove the `CYCLE_POSITION_KEY`, `CYCLE_POSITION_ORDER`, `readStoredPosition`, `writeStoredPosition` constants/helpers.
+- Remove the `position` state, the `useEffect` re-reading it, and the `cyclePosition` callback. Keep `handleAvatarClick` (that's the rider-swap, unrelated).
+- Remove the `--pos-${position}` class from `classNames`.
+- Remove the outer wrapper's `onClick={handleBackgroundClick}` (delete `handleBackgroundClick`), and `onKeyDown={handleKeyDown}`, `role`, `tabIndex`, `aria-label` props.
+- The avatar button's own `onClick={handleAvatarClick}` MUST stay — it's a different concern.
+
+- [ ] **Step 11: Drop the now-unused position SCSS from each overlay's own scss file**
+
+In `ChallengeOverlay.scss`: delete the `.challenge-overlay--pos-top / --pos-middle / --pos-bottom` rules. The deck handles positioning now.
+In `CycleChallengeOverlay.scss`: same — delete the `.cycle-challenge-overlay--pos-*` rules.
+
+- [ ] **Step 12: Wrap both overlays in `ChallengeOverlayDeck` from `FitnessPlayerOverlay`**
+
+Open `frontend/src/modules/Fitness/player/FitnessPlayerOverlay.jsx`. Find the JSX section that renders `ChallengeOverlay` and `CycleChallengeOverlay`. Wrap them with `<ChallengeOverlayDeck>`:
+
+```jsx
+import { ChallengeOverlayDeck } from './overlays/ChallengeOverlayDeck.jsx';
+…
+{(currentChallengeOverlay?.show || cycleChallengeOverlayVisible) && (
+  <ChallengeOverlayDeck>
+    {currentChallengeOverlay?.show && (
+      <ChallengeOverlay overlay={currentChallengeOverlay} />
+    )}
+    {cycleChallengeOverlayVisible && (
+      <CycleChallengeOverlay challenge={cycleChallenge} onRequestSwap={…} />
+    )}
+  </ChallengeOverlayDeck>
+)}
+```
+
+(Use the variable names already in scope; this is a guide, not literal code. The conditions controlling each overlay's visibility stay exactly as they were.)
+
+- [ ] **Step 13: Run all overlay tests**
+
+Run: `npx vitest run frontend/src/modules/Fitness/player/overlays/`
+Expected: PASS — all overlay tests pass, including any updated ChallengeOverlay or CycleChallengeOverlay tests that previously asserted on position-cycle behaviour. If there are tests asserting on the old per-overlay position behaviour, update them to either (a) test the deck instead, or (b) remove the assertion if the new container-test in Step 5 covers it.
+
+- [ ] **Step 14: Run the full vitest + jest suite**
+
+Run: `npx vitest run frontend/src/`
+Expected: all pass.
+
+Run: `npx jest tests/unit/`
+Expected: pass count at or above the post-Task-6 baseline. No new failures.
+
+- [ ] **Step 15: Commit**
+
+```bash
+git add frontend/src/modules/Fitness/player/overlays/useChallengeOverlayPosition.js \
+        frontend/src/modules/Fitness/player/overlays/useChallengeOverlayPosition.test.js \
+        frontend/src/modules/Fitness/player/overlays/ChallengeOverlayDeck.jsx \
+        frontend/src/modules/Fitness/player/overlays/ChallengeOverlayDeck.scss \
+        frontend/src/modules/Fitness/player/overlays/ChallengeOverlayDeck.test.jsx \
+        frontend/src/modules/Fitness/player/overlays/ChallengeOverlay.jsx \
+        frontend/src/modules/Fitness/player/overlays/ChallengeOverlay.scss \
+        frontend/src/modules/Fitness/player/overlays/CycleChallengeOverlay.jsx \
+        frontend/src/modules/Fitness/player/overlays/CycleChallengeOverlay.scss \
+        frontend/src/modules/Fitness/player/FitnessPlayerOverlay.jsx
+git commit -m "refactor(fitness): unify challenge overlay position via shared deck container"
+```
+
+---
+
 ## Task 12: End-to-end Playwright sensor-blip repro
 
 **Files:**
