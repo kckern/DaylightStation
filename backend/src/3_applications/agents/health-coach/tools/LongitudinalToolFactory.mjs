@@ -24,7 +24,7 @@ import { ToolFactory } from '../../framework/ToolFactory.mjs';
 import { createTool } from '../../ports/ITool.mjs';
 import { HealthArchiveScope } from '#domains/health/services/HealthArchiveScope.mjs';
 
-const AGGREGATIONS = ['daily', 'weekly_avg', 'monthly_avg', 'quarterly_avg'];
+const AGGREGATIONS = ['daily', 'weekly_avg', 'monthly_avg', 'quarterly_avg', 'yearly_avg'];
 
 // Subtrees this tool is allowed to read from. The HealthArchiveScope whitelist
 // also covers playbook/, strava/, garmin/, etc. — but read_notes_file's
@@ -419,7 +419,8 @@ function makeQueryWeightExecutor(healthStore) {
       const bucketKey =
         aggregation === 'weekly_avg' ? isoWeek :
         aggregation === 'monthly_avg' ? isoMonth :
-        quarter; // 'quarterly_avg'
+        aggregation === 'quarterly_avg' ? quarter :
+        isoYear; // 'yearly_avg'
 
       const buckets = new Map();
       for (const row of dailyRows) {
@@ -888,6 +889,11 @@ function quarter(dateStr) {
   const month = parseInt(dateStr.slice(5, 7), 10);
   const q = Math.ceil(month / 3);
   return `${year}-Q${q}`;
+}
+
+function isoYear(dateStr) {
+  // 'YYYY-MM-DD' → 'YYYY'
+  return dateStr.slice(0, 4);
 }
 
 /**

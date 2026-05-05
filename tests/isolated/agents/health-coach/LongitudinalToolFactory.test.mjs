@@ -1482,3 +1482,42 @@ describe('LongitudinalToolFactory.find_similar_period', () => {
     expect(result.reason).toBe('no playbook');
   });
 });
+
+describe('query_historical_weight — yearly_avg (Plan 5)', () => {
+  it('aggregates 2 years of data into 2 yearly buckets', async () => {
+    const fixture = {};
+    let lbs = 200;
+    const start = new Date(Date.UTC(2024, 0, 1));
+    for (let i = 0; i < 730; i++) {  // 2 years
+      const d = new Date(start);
+      d.setUTCDate(start.getUTCDate() + i);
+      fixture[d.toISOString().slice(0, 10)] = {
+        date: d.toISOString().slice(0, 10),
+        lbs, lbs_adjusted_average: lbs - 0.5, source: 'consumer-bia',
+      };
+      lbs -= 0.01;
+    }
+    const { factory } = makeFactory({ loadWeightData: vi.fn(async () => fixture) });
+    const tool = getQueryTool(factory);
+    const out = await tool.execute({
+      userId: 'kc',
+      from: '2024-01-01', to: '2025-12-31',
+      aggregation: 'yearly_avg',
+    });
+    expect(out.aggregation).toBe('yearly_avg');
+    expect(out.rows).toHaveLength(2);
+    expect(out.rows[0].period).toBe('2024');
+    expect(out.rows[1].period).toBe('2025');
+    expect(typeof out.rows[0].lbs).toBe('number');
+  });
+
+  it('rejects unknown aggregation with structured error', async () => {
+    const { factory } = makeFactory();
+    const tool = getQueryTool(factory);
+    const out = await tool.execute({
+      userId: 'kc', from: '2024-01-01', to: '2024-12-31',
+      aggregation: 'centurial_avg',
+    });
+    expect(out.error).toMatch(/Unknown aggregation/);
+  });
+});
