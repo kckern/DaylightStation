@@ -400,6 +400,215 @@ describe('MortgageCalculator', () => {
     });
   });
 
+  describe('calculateMortgageStatus with statement bridge', () => {
+    const baseConfig = {
+      mortgageStartValue: 400000,
+      accountId: 'mortgage-1',
+      startDate: '2024-06-01',
+      interestRate: 0.0625,
+      minimumPayment: 4088.89,
+      paymentPlans: [{ id: 'minimum', title: 'Minimum' }]
+    };
+
+    test('uses last statement balance when no bridge txns exist', () => {
+      const statementData = {
+        statements: {
+          '2026-04': {
+            statementDate: '2026-03-06',
+            principalBalance: 172374.64,
+            transactions: [
+              { date: '2026-03-01', principal: 2508.88, interest: 920.81, escrow: 866.17, total: 4295.86 }
+            ]
+          }
+        }
+      };
+
+      const result = calculator.calculateMortgageStatus({
+        config: baseConfig,
+        balance: -172374.64,
+        transactions: [],
+        statementData,
+        asOfDate: new Date('2026-03-15')
+      });
+
+      expect(result.balance).toBe(172374.64);
+      // No bridge rows
+      expect(result.amortization.every(r => r.source !== 'buxfer')).toBe(true);
+    });
+
+    test('extends amortization with bridge rows for post-statement Buxfer activity', () => {
+      const statementData = {
+        statements: {
+          '2026-04': {
+            statementDate: '2026-03-06',
+            principalBalance: 172374.64,
+            transactions: [
+              { date: '2026-03-01', principal: 2508.88, interest: 920.81, escrow: 866.17, total: 4295.86 }
+            ]
+          }
+        }
+      };
+
+      // Buxfer-cached balance reflects post-statement principal payments
+      const result = calculator.calculateMortgageStatus({
+        config: baseConfig,
+        balance: -155381.92,
+        transactions: [
+          { date: '2026-03-31', amount: 8000, description: 'Principal Pmt' },
+          { date: '2026-04-01', amount: 4295.86, description: 'Mortgage Payment' },
+          { date: '2026-04-01', amount: 1911.11, description: 'Principal Pmt' },
+          { date: '2026-05-01', amount: 4295.86, description: 'Mortgage Payment' },
+          { date: '2026-05-01', amount: 1911.11, description: 'Principal Pmt' }
+        ],
+        statementData,
+        asOfDate: new Date('2026-05-05')
+      });
+
+      // Returned balance should match Buxfer cached, not stale statement
+      expect(result.balance).toBeCloseTo(155381.92, 1);
+
+      const bridgeRows = result.amortization.filter(r => r.source === 'buxfer');
+
+      // Bridge labels use the lender's billing-cycle convention (cutoff
+      // day inferred from statementDate=2026-03-06 → day 6). Cycle for a
+      // txn dated 2026-03-31 is '2026-05'; cycle for 2026-05-01 is '2026-06'.
+      // These strictly extend the statement sequence — no collisions.
+      expect(bridgeRows.map(r => r.month)).toEqual(['2026-05', '2026-06']);
+
+      // First bridge cycle '2026-05' bundles 2026-03-31 + 2026-04-01 txns
+      expect(bridgeRows[0].openingBalance).toBeCloseTo(172374.64, 0);
+      expect(bridgeRows[0].payments).toContain(8000);
+      expect(bridgeRows[0].payments).toContain(4295.86);
+      expect(bridgeRows[0].payments).toContain(1911.11);
+
+      // Second bridge cycle '2026-06' has only May 1 txns
+      expect(bridgeRows[1].payments).toEqual([4295.86, 1911.11]);
+
+      // Last bridge row's closing == Buxfer cached balance exactly
+      expect(bridgeRows[bridgeRows.length - 1].closingBalance).toBeCloseTo(155381.92, 1);
+    });
+
+    test('amortization has no duplicate month keys (guardrail)', () => {
+      const statementData = {
+        statements: {
+          '2026-03': { statementDate: '2026-02-06', principalBalance: 200000, transactions: [] },
+          '2026-04': { statementDate: '2026-03-06', principalBalance: 190000, transactions: [] }
+        }
+      };
+
+      const result = calculator.calculateMortgageStatus({
+        config: { ...baseConfig, mortgageStartValue: 200000 },
+        balance: -180000,
+        transactions: [
+          { date: '2026-03-31', amount: 5000 },
+          { date: '2026-04-15', amount: 5000 }
+        ],
+        statementData,
+        asOfDate: new Date('2026-05-01')
+      });
+
+      const months = result.amortization.map(r => r.month);
+      const uniq = new Set(months);
+      expect(months.length).toBe(uniq.size);
+    });
+
+    test('amortization months are strictly ascending (guardrail)', () => {
+      const statementData = {
+        statements: {
+          '2026-04': { statementDate: '2026-03-06', principalBalance: 172374.64, transactions: [] }
+        }
+      };
+
+      const result = calculator.calculateMortgageStatus({
+        config: baseConfig,
+        balance: -155381.92,
+        transactions: [
+          { date: '2026-03-31', amount: 8000 },
+          { date: '2026-05-01', amount: 6206.97 }
+        ],
+        statementData,
+        asOfDate: new Date('2026-05-05')
+      });
+
+      const months = result.amortization.map(r => r.month);
+      for (let i = 1; i < months.length; i++) {
+        expect(months[i] > months[i - 1]).toBe(true);
+      }
+    });
+
+    test('reconciles drift between bridge calculation and Buxfer cached balance', () => {
+      const statementData = {
+        statements: {
+          '2026-01': {
+            statementDate: '2026-01-05',
+            principalBalance: 80000,
+            transactions: []
+          }
+        }
+      };
+
+      // statementDate=2026-01-05 → cutoff day 5. Txn 2026-02-01, day 1 ≤ 5,
+      // so cycle = month + 1 + 1 = '2026-03'. Pure-bridge: opening 80000,
+      // interest = 400, paid = 1500, closing = 78900. Buxfer says 78500 →
+      // drift -400 absorbed by the single bridge row.
+      const result = calculator.calculateMortgageStatus({
+        config: {
+          ...baseConfig,
+          mortgageStartValue: 100000,
+          interestRate: 0.06,
+          minimumPayment: 1000,
+          startDate: '2025-01-01'
+        },
+        balance: -78500,
+        transactions: [
+          { date: '2026-02-01', amount: 1500 }
+        ],
+        statementData,
+        asOfDate: new Date('2026-02-10')
+      });
+
+      expect(result.balance).toBeCloseTo(78500, 1);
+
+      const bridgeRow = result.amortization.find(r => r.source === 'buxfer');
+      expect(bridgeRow).toBeDefined();
+      expect(bridgeRow.month).toBe('2026-03');
+      expect(bridgeRow.reconciliationAdj).toBeCloseTo(-400, 0);
+      expect(bridgeRow.closingBalance).toBeCloseTo(78500, 1);
+    });
+
+    test('projection starts after the last bridge cycle, not the last statement', () => {
+      const statementData = {
+        statements: {
+          '2026-04': {
+            statementDate: '2026-03-06',
+            principalBalance: 100000,
+            transactions: []
+          }
+        }
+      };
+
+      // cutoff=6. 2026-04-15 (d=15>6) → cycle '2026-06'. 2026-05-01 (d=1≤6)
+      // → cycle '2026-06'. Both fold into one bridge row. Projection starts
+      // at '2026-07'.
+      const result = calculator.calculateMortgageStatus({
+        config: { ...baseConfig, mortgageStartValue: 100000, minimumPayment: 1000 },
+        balance: -97000,
+        transactions: [
+          { date: '2026-04-15', amount: 1500 },
+          { date: '2026-05-01', amount: 1500 }
+        ],
+        statementData,
+        asOfDate: new Date('2026-05-15')
+      });
+
+      const bridgeRows = result.amortization.filter(r => r.source === 'buxfer');
+      expect(bridgeRows.map(r => r.month)).toEqual(['2026-06']);
+
+      const firstProjMonth = result.paymentPlans[0].months[0].month;
+      expect(firstProjMonth).toBe('2026-07');
+    });
+  });
+
   describe('reconstructAmortization', () => {
     test('reconstructs monthly interest for a simple 3-month scenario', () => {
       // $100,000 loan at 6% annual, 3 months of $1,000 payments
