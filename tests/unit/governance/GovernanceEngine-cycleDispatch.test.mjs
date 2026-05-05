@@ -44,7 +44,10 @@ function tick(engine, nowValue, { zone = 'active', rpm = 0, connected = true } =
     zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
     zoneInfoMap: { active: { id: 'active', name: 'Active' }, warm: { id: 'warm', name: 'Warm' } },
     totalCount: 1,
-    equipmentCadenceMap: { cycle_ace: { rpm, connected } }
+    // ts mirrors the engine clock so the freshness gate in _filteredCadenceFor
+    // sees each tick as a new sample. Without ts, samples are filtered out
+    // and rpm collapses to 0 — see the cycle-challenge-remediation audit.
+    equipmentCadenceMap: { cycle_ace: { rpm, connected, ts: nowValue } }
   });
 }
 
@@ -99,20 +102,24 @@ describe('GovernanceEngine cycle challenge dispatch', () => {
     expect(active.rider).toBe('felix');
     expect(active.equipment).toBe('cycle_ace');
 
-    // Tick 3: rider reaches min_rpm (30) while base_req is satisfied → init→ramp
+    // Tick 3: rider above min_rpm (30) while base_req is satisfied → init→ramp.
+    // Use rpm=80 (well above min_rpm) so the EMA-smoothed value clears the
+    // threshold immediately. EMA(α=0.4) applied to a fresh filter passes the
+    // first sample through unsmoothed (=80).
     nowValue = 103000;
-    tick(engine, nowValue, { zone: 'active', rpm: 40 });
+    tick(engine, nowValue, { zone: 'active', rpm: 80 });
     expect(engine.challengeState.activeChallenge.cycleState).toBe('ramp');
 
-    // Tick 4: rider hits hi_rpm (60) → ramp→maintain
+    // Tick 4: rider holds rpm well above hi_rpm (60) → ramp→maintain.
+    // EMA = 0.4·80 + 0.6·80 = 80, comfortably above hi_rpm.
     nowValue = 103500;
-    tick(engine, nowValue, { zone: 'warm', rpm: 65 });
+    tick(engine, nowValue, { zone: 'warm', rpm: 80 });
     expect(engine.challengeState.activeChallenge.cycleState).toBe('maintain');
 
-    // Tick 5: hold target for maintain duration (2s = 2000ms) → success
-    // dt from tick 4 (103500) to now (106000) = 2500ms > 2000ms at 1x multiplier
+    // Tick 5: hold target for maintain duration (2s = 2000ms) → success.
+    // dt from tick 4 (103500) to now (106000) = 2500ms > 2000ms at 1x multiplier.
     nowValue = 106000;
-    tick(engine, nowValue, { zone: 'warm', rpm: 65 });
+    tick(engine, nowValue, { zone: 'warm', rpm: 80 });
     const history = engine.challengeState.challengeHistory;
     expect(history.at(-1)?.status).toBe('success');
     expect(history.at(-1)?.type).toBe('cycle');

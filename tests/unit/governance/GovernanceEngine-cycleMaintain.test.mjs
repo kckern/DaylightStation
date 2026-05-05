@@ -48,15 +48,57 @@ describe('GovernanceEngine cycle maintain state', () => {
     expect(active.cycleState).toBe('maintain');
   });
 
-  it('transitions to locked when rpm below lo', () => {
+  it('arms danger grace and stays in maintain on first below-lo tick', () => {
+    // The 2026-05-03 redesign wraps the maintain → locked transition in a
+    // 3-second grace window. The first below-lo tick stamps `dangerSinceMs`
+    // but does not lock — the lock fires only after 3 s of sustained
+    // sub-loRpm input.
     nowValue = 31000;
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 40, baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true,
       userZoneMap: { felix: 'active' }, activeParticipants: ['felix']
     });
+    expect(active.cycleState).toBe('maintain');
+    expect(active.lockReason).toBeFalsy();
+    expect(active.totalLockEventsCount).toBe(0);
+    expect(Number.isFinite(active.dangerSinceMs)).toBe(true);
+  });
+
+  it('transitions to locked after sustained below-lo for ≥3 seconds', () => {
+    // Sustain rpm < lo across multiple ticks for >3 s. Drive the engine clock
+    // forward between ticks so the grace timer accumulates.
+    let lockObserved = false;
+    for (let i = 0; i < 20; i += 1) {
+      nowValue += 200; // 20 ticks × 200 ms = 4 s total
+      engine._evaluateCycleChallenge(active, {
+        equipmentRpm: 40, baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true,
+        userZoneMap: { felix: 'active' }, activeParticipants: ['felix']
+      });
+      if (active.cycleState === 'locked') { lockObserved = true; break; }
+    }
+    expect(lockObserved).toBe(true);
     expect(active.cycleState).toBe('locked');
     expect(active.lockReason).toBe('maintain');
     expect(active.totalLockEventsCount).toBe(1);
+  });
+
+  it('clears the danger grace when rpm recovers within the 3-second window', () => {
+    // First tick below lo arms the grace.
+    nowValue = 31000;
+    engine._evaluateCycleChallenge(active, {
+      equipmentRpm: 40, baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true,
+      userZoneMap: { felix: 'warm' }, activeParticipants: ['felix']
+    });
+    expect(Number.isFinite(active.dangerSinceMs)).toBe(true);
+
+    // 1 s later, rider recovers above hiRpm. Grace must clear.
+    nowValue = 32000;
+    engine._evaluateCycleChallenge(active, {
+      equipmentRpm: 65, baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true,
+      userZoneMap: { felix: 'warm' }, activeParticipants: ['felix']
+    });
+    expect(active.dangerSinceMs).toBeNull();
+    expect(active.cycleState).toBe('maintain');
   });
 
   it('accrues at boosted rate when non-rider in hot', () => {

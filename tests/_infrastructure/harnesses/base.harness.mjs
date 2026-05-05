@@ -39,7 +39,8 @@ export function parseArgs(argv) {
   return args;
 }
 
-export function findTestFiles(baseDir, targets, args) {
+export function findTestFiles(baseDir, targets, args, options = {}) {
+  const { extensions = ['.test.mjs'] } = options;
   const files = [];
 
   const searchDirs = args.only || targets;
@@ -57,7 +58,7 @@ export function findTestFiles(baseDir, targets, args) {
         const fullPath = path.join(dir, entry.name);
         if (entry.isDirectory()) {
           walk(fullPath);
-        } else if (entry.name.endsWith('.test.mjs')) {
+        } else if (extensions.some((ext) => entry.name.endsWith(ext))) {
           if (!args.pattern || fullPath.includes(args.pattern)) {
             files.push(fullPath);
           }
@@ -67,6 +68,34 @@ export function findTestFiles(baseDir, targets, args) {
     walk(targetDir);
   }
 
+  return files;
+}
+
+/**
+ * Walks an arbitrary tree (e.g. `frontend/src/`) collecting any test files
+ * with the given extensions. Used by the isolated harness to discover
+ * colocated vitest specs that live next to the code they cover, outside
+ * the `tests/isolated/{target}/` layout.
+ */
+export function findColocatedTestFiles(rootDir, args, options = {}) {
+  const { extensions = ['.test.js', '.test.jsx', '.test.mjs'] } = options;
+  if (!fs.existsSync(rootDir)) return [];
+  const files = [];
+  const walk = (dir) => {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === 'node_modules') continue;
+        walk(fullPath);
+      } else if (extensions.some((ext) => entry.name.endsWith(ext))) {
+        if (!args.pattern || fullPath.includes(args.pattern)) {
+          files.push(fullPath);
+        }
+      }
+    }
+  };
+  walk(rootDir);
   return files;
 }
 
