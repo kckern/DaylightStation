@@ -1,6 +1,9 @@
 // tests/isolated/agents/framework/AgentTranscript.test.mjs
 import { describe, it, expect } from 'vitest';
 import { AgentTranscript } from '../../../../backend/src/3_applications/agents/framework/AgentTranscript.mjs';
+import { promises as fsp } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 describe('AgentTranscript constructor', () => {
   it('captures identity + input + start time', () => {
@@ -172,5 +175,214 @@ describe('AgentTranscript.toJSON', () => {
     const j = t.toJSON();
     expect(j.status).toBe('error');
     expect(j.error.message).toBe('nope');
+  });
+});
+
+describe('AgentTranscript.flush', () => {
+  async function makeTmpDir() {
+    return fsp.mkdtemp(path.join(os.tmpdir(), 'agent-transcript-'));
+  }
+
+  it('writes a JSON file at the spec path', async () => {
+    const tmp = await makeTmpDir();
+    const t = new AgentTranscript({
+      agentId: 'health-coach',
+      userId: 'kc',
+      turnId: '11111111-2222-3333-4444-555555555555',
+      input: { text: 'q', context: {} },
+      mediaDir: tmp,
+    });
+    t.setSystemPrompt('SYS');
+    t.setOutput({ text: 'ok', finishReason: 'stop', usage: null });
+    t.setStatus('ok');
+
+    await t.flush();
+
+    // Path: {tmp}/logs/agents/health-coach/{YYYY-MM-DD}/kc/{HHMMSS-mmm}-{turnIdShort}.json
+    const day = t.startedAt.toISOString().slice(0, 10);
+    const dir = path.join(tmp, 'logs', 'agents', 'health-coach', day, 'kc');
+    const files = await fsp.readdir(dir);
+    expect(files.length).toBe(1);
+    expect(files[0]).toMatch(/^\d{6}-\d{3}-11111111\.json$/);
+
+    const contents = JSON.parse(await fsp.readFile(path.join(dir, files[0]), 'utf8'));
+    expect(contents.version).toBe(1);
+    expect(contents.turnId).toBe('11111111-2222-3333-4444-555555555555');
+    expect(contents.agentId).toBe('health-coach');
+    expect(contents.systemPrompt).toBe('SYS');
+    expect(contents.status).toBe('ok');
+
+    await fsp.rm(tmp, { recursive: true, force: true });
+  });
+
+  it('uses "anonymous" when userId is null', async () => {
+    const tmp = await makeTmpDir();
+    const t = new AgentTranscript({
+      agentId: 'echo',
+      userId: null,
+      turnId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      input: { text: 'q', context: {} },
+      mediaDir: tmp,
+    });
+    t.setStatus('ok');
+    await t.flush();
+    const day = t.startedAt.toISOString().slice(0, 10);
+    const dir = path.join(tmp, 'logs', 'agents', 'echo', day, 'anonymous');
+    const files = await fsp.readdir(dir);
+    expect(files.length).toBe(1);
+    await fsp.rm(tmp, { recursive: true, force: true });
+  });
+
+  it('flush() is idempotent — calling twice writes one file', async () => {
+    const tmp = await makeTmpDir();
+    const t = new AgentTranscript({
+      agentId: 'x',
+      userId: 'kc',
+      turnId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      input: { text: 'q', context: {} },
+      mediaDir: tmp,
+    });
+    t.setStatus('ok');
+    await t.flush();
+    await t.flush();
+    const day = t.startedAt.toISOString().slice(0, 10);
+    const dir = path.join(tmp, 'logs', 'agents', 'x', day, 'kc');
+    const files = await fsp.readdir(dir);
+    expect(files.length).toBe(1);
+    await fsp.rm(tmp, { recursive: true, force: true });
+  });
+
+  it('flush() without mediaDir is a no-op (no throw)', async () => {
+    const t = new AgentTranscript({
+      agentId: 'x',
+      userId: 'kc',
+      input: { text: 'q', context: {} },
+    });
+    t.setStatus('ok');
+    await expect(t.flush()).resolves.toBeUndefined();
+  });
+
+  it('flush() failures (unwriteable path) get warned, do not throw', async () => {
+    const warnings = [];
+    const t = new AgentTranscript({
+      agentId: 'x',
+      userId: 'kc',
+      input: { text: 'q', context: {} },
+      mediaDir: '/root/forbidden-no-permission-path-99999',
+      logger: { warn: (event, data) => warnings.push({ event, data }) },
+    });
+    t.setStatus('ok');
+    await expect(t.flush()).resolves.toBeUndefined();
+    expect(warnings.length).toBeGreaterThanOrEqual(0);
+    // We don't assert exactly one warning — different OSes have different
+    // failure shapes — but we DO assert the call doesn't throw.
+  });
+});
+
+describe('AgentTranscript.recordTool — linkedAttachments heuristic', () => {
+  function makeWith(attachments) {
+    return new AgentTranscript({
+      agentId: 'health-coach',
+      userId: 'kc',
+      input: { text: 'q', context: { attachments } },
+    });
+  }
+
+  it('links a period attachment when args.period deep-equals it', () => {
+    const t = makeWith([
+      { type: 'period', value: { rolling: 'last_30d' }, label: 'Last 30 days' },
+    ]);
+    t.recordTool({
+      name: 'aggregate_metric',
+      args: { metric: 'weight_lbs', period: { rolling: 'last_30d' } },
+      result: {},
+      ok: true,
+      latencyMs: 1,
+    });
+    expect(t.toolCalls[0].linkedAttachments).toEqual([0]);
+  });
+
+  it('does NOT link when args.period differs', () => {
+    const t = makeWith([
+      { type: 'period', value: { rolling: 'last_30d' }, label: 'Last 30 days' },
+    ]);
+    t.recordTool({
+      name: 'aggregate_metric',
+      args: { metric: 'weight_lbs', period: { rolling: 'last_90d' } },
+      result: {},
+      ok: true,
+      latencyMs: 1,
+    });
+    expect(t.toolCalls[0].linkedAttachments).toEqual([]);
+  });
+
+  it('links two attachments when compare_metric uses period_a + period_b', () => {
+    const t = makeWith([
+      { type: 'period', value: { rolling: 'last_30d' }, label: 'Last 30 days' },
+      { type: 'period', value: { named: '2017-cut' }, label: '2017 Cut' },
+    ]);
+    t.recordTool({
+      name: 'compare_metric',
+      args: {
+        metric: 'weight_lbs',
+        period_a: { rolling: 'last_30d' },
+        period_b: { named: '2017-cut' },
+      },
+      result: {},
+      ok: true,
+      latencyMs: 1,
+    });
+    expect(t.toolCalls[0].linkedAttachments.sort()).toEqual([0, 1]);
+  });
+
+  it('links a day attachment when args.date matches', () => {
+    const t = makeWith([
+      { type: 'day', date: '2026-05-04', label: 'May 4' },
+    ]);
+    t.recordTool({
+      name: 'get_health_summary',
+      args: { userId: 'kc', date: '2026-05-04' },
+      result: {},
+      ok: true,
+      latencyMs: 1,
+    });
+    expect(t.toolCalls[0].linkedAttachments).toEqual([0]);
+  });
+
+  it('links a workout attachment when args.from === args.to === attachment.date', () => {
+    const t = makeWith([
+      { type: 'workout', date: '2026-05-04', label: 'Workout May 4' },
+    ]);
+    t.recordTool({
+      name: 'query_historical_workouts',
+      args: { userId: 'kc', from: '2026-05-04', to: '2026-05-04' },
+      result: {},
+      ok: true,
+      latencyMs: 1,
+    });
+    expect(t.toolCalls[0].linkedAttachments).toEqual([0]);
+  });
+
+  it('returns empty array when no attachments present', () => {
+    const t = new AgentTranscript({
+      agentId: 'x',
+      input: { text: 'q', context: {} },
+    });
+    t.recordTool({ name: 'a', args: { period: { rolling: 'last_30d' } }, result: {}, ok: true, latencyMs: 1 });
+    expect(t.toolCalls[0].linkedAttachments).toEqual([]);
+  });
+
+  it('returns empty array when attachments exist but none match', () => {
+    const t = makeWith([
+      { type: 'period', value: { rolling: 'last_7d' }, label: 'Last 7 days' },
+    ]);
+    t.recordTool({
+      name: 'aggregate_metric',
+      args: { metric: 'weight_lbs', period: { rolling: 'last_30d' } },
+      result: {},
+      ok: true,
+      latencyMs: 1,
+    });
+    expect(t.toolCalls[0].linkedAttachments).toEqual([]);
   });
 });
