@@ -49,7 +49,10 @@ const OFF = Object.freeze({
   waitingForBaseReq: false,
   clockPaused: false,
   initRemainingMs: null,
-  rampRemainingMs: null
+  rampRemainingMs: null,
+  dangerActive: false,
+  dangerRemainingMs: null,
+  dangerProgress: 1
 });
 
 const clamp01 = (value) => {
@@ -129,6 +132,15 @@ export function getCycleOverlayVisuals(challenge) {
   const rampRemainingMs   = Number.isFinite(challenge.rampRemainingMs)
     ? challenge.rampRemainingMs : null;
 
+  // Maintain-grace fields (3-second danger window before a maintain → locked
+  // transition fires). When dangerActive is true the overlay swaps the phase
+  // progress arc for a depleting yellow countdown.
+  const dangerActive      = Boolean(challenge.dangerActive);
+  const dangerRemainingMs = Number.isFinite(challenge.dangerRemainingMs)
+    ? challenge.dangerRemainingMs : null;
+  const dangerProgress    = Number.isFinite(challenge.dangerProgress)
+    ? challenge.dangerProgress : 1;
+
   return {
     visible: true,
     ringColor,
@@ -141,7 +153,10 @@ export function getCycleOverlayVisuals(challenge) {
     waitingForBaseReq,
     clockPaused,
     initRemainingMs,
-    rampRemainingMs
+    rampRemainingMs,
+    dangerActive,
+    dangerRemainingMs,
+    dangerProgress
   };
 }
 

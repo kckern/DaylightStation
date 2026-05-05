@@ -59,4 +59,23 @@ describe('cycleOverlayVisuals — extended state', () => {
     const v = getCycleOverlayVisuals({ type: 'zone', cycleState: null });
     expect(v.visible).toBe(false);
   });
+
+  it('exposes dangerActive=true when challenge.dangerActive is true', () => {
+    const v = getCycleOverlayVisuals({
+      ...baseChallenge,
+      dangerActive: true,
+      dangerRemainingMs: 1500,
+      dangerProgress: 0.5
+    });
+    expect(v.dangerActive).toBe(true);
+    expect(v.dangerRemainingMs).toBe(1500);
+    expect(v.dangerProgress).toBe(0.5);
+  });
+
+  it('defaults dangerActive=false, dangerProgress=1, dangerRemainingMs=null when absent', () => {
+    const v = getCycleOverlayVisuals(baseChallenge);
+    expect(v.dangerActive).toBe(false);
+    expect(v.dangerRemainingMs).toBeNull();
+    expect(v.dangerProgress).toBe(1);
+  });
 });

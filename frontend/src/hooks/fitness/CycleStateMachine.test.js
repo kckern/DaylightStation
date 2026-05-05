@@ -184,7 +184,7 @@ describe('Cycle SM — sensor noise resilience', () => {
     expect(lockTransitions).toBeLessThanOrEqual(1);
   });
 
-  it('does still lock when rpm is sustained below loRpm for >1s', () => {
+  it('does still lock when rpm is sustained below loRpm past the 3s grace window', () => {
     const { engine, advance } = makeEngineWithActiveCycle(7);
     // Drive into maintain: hi_rpm=60, so feed rpm=80 a few times. EMA passes
     // the first sample through unsmoothed so we hit 80 immediately.
@@ -194,12 +194,12 @@ describe('Cycle SM — sensor noise resilience', () => {
     }
     expect(engine.challengeState.activeChallenge.cycleState).toBe('maintain');
 
-    // Now sustain rpm=10, well below loRpm=30. EMA decays from 80 toward 10
-    // but the very next maintain tick already sees a value below loRpm
-    // (0.4*10 + 0.6*80 = 38 → next: 0.4*10 + 0.6*38 = 26.8 < 30). Even if
-    // it took several ticks, 8 ticks × 200 ms = 1.6 s is plenty to lock.
+    // Now sustain rpm=10, well below loRpm=30. The 2026-05-03 redesign added
+    // a 3-second grace window before the maintain → locked transition fires,
+    // so we need to drive the clock forward >3 s of below-lo input. 25 ticks
+    // × 200 ms = 5 s comfortably clears the 3 s grace plus EMA settle time.
     const states = [];
-    for (let i = 0; i < 8; i += 1) {
+    for (let i = 0; i < 25; i += 1) {
       advance(200);
       tick(engine, engine._now(), { zone: 'warm', rpm: 10 });
       states.push(engine.challengeState?.activeChallenge?.cycleState ?? null);
@@ -294,19 +294,19 @@ describe('Cycle SM — transition debounce', () => {
     expect(states[states.length - 1]).not.toBe('locked');
   });
 
-  it('does surface a locked snapshot when locked-state lasts ≥500 ms', () => {
+  it('does surface a locked snapshot when locked-state lasts ≥500 ms (and the 3s grace has expired)', () => {
     // Pre-prime to maintain, then sustain rpm=0 long enough for the EMA to
-    // decay below loRpm AND for the internal-locked state to be held for
-    // ≥500 ms. Four 0-samples at 300 ms intervals gives 900 ms of zero
-    // input, and after the EMA crosses below loRpm at the second one
-    // (28.8 < 30), internal stays locked for ≥600 ms — past the debounce.
+    // decay below loRpm, the 3-second danger grace to expire, AND the
+    // published-state debounce (≥500 ms) to release the locked snapshot.
+    // Sustained-zero ticks for 4 s + a final tail sample easily clears both.
     const samples = [];
     let ts = 1000;
     for (let i = 0; i < 5; i += 1) { samples.push({ rpm: 80, ts }); ts += 200; } // → maintain
-    samples.push({ rpm: 0, ts }); ts += 300;
-    samples.push({ rpm: 0, ts }); ts += 300;
-    samples.push({ rpm: 0, ts }); ts += 300;
-    samples.push({ rpm: 0, ts });               // total below-lo span ≥900 ms
+    // 20 below-lo ticks × 250 ms = 5 s of below-lo input.
+    for (let i = 0; i < 20; i += 1) { samples.push({ rpm: 0, ts }); ts += 250; }
+    // One trailing tick so the published-state debounce has ≥500 ms past the
+    // internal lock to release.
+    samples.push({ rpm: 0, ts });
     const states = runCadenceSequence(samples);
     expect(states[states.length - 1]).toBe('locked');
   });
@@ -476,6 +476,113 @@ describe('Cycle SM — filter state reset', () => {
     tick(engine, engine._now(), { zone: 'warm', rpm: 80 });
 
     expect(engine.challengeState.activeChallenge.currentRpm).toBeGreaterThan(70);
+  });
+});
+
+describe('Cycle SM — danger grace window (maintain → locked)', () => {
+  // The maintain branch wraps the immediate-lock-on-below-lo path in a
+  // 3-second grace window. The first below-lo tick stamps `dangerSinceMs`,
+  // subsequent below-lo ticks accumulate elapsed time, and the engine
+  // transitions to locked only after the grace expires. Recovery during
+  // the grace clears `dangerSinceMs` and keeps the rider in maintain.
+
+  // Helper: build a cycle challenge already pinned to maintain so we can drive
+  // the danger logic directly without going through init/ramp.
+  function makeMaintainCycle(seed = 42) {
+    let nowValue = 100000;
+    const session = buildSession();
+    const engine = new GovernanceEngine(session, {
+      now: () => nowValue,
+      random: seededRng(seed)
+    });
+    engine.configure(POLICY);
+    engine.setMedia({ id: 'v1', type: 'episode', labels: ['cardio'] });
+    const result = engine.triggerChallenge({
+      type: 'cycle',
+      selectionId: CYCLE_SELECTION_ID,
+      riderId: 'felix'
+    });
+    if (!result || result.success !== true) {
+      throw new Error(`triggerChallenge failed: ${result?.reason || 'unknown'}`);
+    }
+    const active = engine.challengeState.activeChallenge;
+    // Pin to maintain directly — we're testing the maintain branch in isolation.
+    active.cycleState = 'maintain';
+    active._lastCycleTs = nowValue;
+    return {
+      engine,
+      active,
+      getNow: () => nowValue,
+      setNow: (v) => { nowValue = v; },
+      advance: (delta) => { nowValue += delta; return nowValue; }
+    };
+  }
+
+  it('starts a danger grace window when rpm dips below loRpm in maintain', () => {
+    const { engine, active, advance } = makeMaintainCycle(42);
+    const phase = active.generatedPhases[0];
+    advance(200);
+    engine._evaluateCycleChallenge(active, {
+      equipmentRpm: phase.loRpm - 5, // below lo
+      activeParticipants: ['felix'],
+      userZoneMap: { felix: 'warm' },
+      baseReqSatisfiedForRider: true,
+      baseReqSatisfiedGlobal: true
+    });
+    // Still in maintain — grace window armed.
+    expect(active.cycleState).toBe('maintain');
+    expect(Number.isFinite(active.dangerSinceMs)).toBe(true);
+
+    // Snapshot exposes danger fields.
+    engine._latestInputs.equipmentCadenceMap = {
+      cycle_ace: { rpm: phase.loRpm - 5, connected: true, ts: engine._now() }
+    };
+    engine._latestInputs.activeParticipants = ['felix'];
+    engine._latestInputs.userZoneMap = { felix: 'warm' };
+    const snap = engine.state?.challenge;
+    expect(snap.dangerActive).toBe(true);
+    expect(snap.dangerProgress).toBeGreaterThan(0.99);
+    expect(snap.dangerRemainingMs).toBeGreaterThan(2900);
+  });
+
+  it('clears the danger when rpm recovers above loRpm', () => {
+    const { engine, active, advance } = makeMaintainCycle(7);
+    const phase = active.generatedPhases[0];
+    // Tick below lo to start the grace.
+    advance(200);
+    engine._evaluateCycleChallenge(active, {
+      equipmentRpm: phase.loRpm - 5,
+      activeParticipants: ['felix'], userZoneMap: { felix: 'warm' },
+      baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true
+    });
+    expect(Number.isFinite(active.dangerSinceMs)).toBe(true);
+
+    // Now recover ~1s later — still well within the 3s grace.
+    advance(1000);
+    engine._evaluateCycleChallenge(active, {
+      equipmentRpm: phase.hiRpm + 5,
+      activeParticipants: ['felix'], userZoneMap: { felix: 'warm' },
+      baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true
+    });
+    expect(active.dangerSinceMs).toBeNull();
+    expect(active.cycleState).toBe('maintain');
+  });
+
+  it('transitions to locked after the 3-second grace expires', () => {
+    const { engine, active, advance } = makeMaintainCycle(13);
+    const phase = active.generatedPhases[0];
+    // Sustain rpm < lo across multiple ticks for >3 seconds total.
+    for (let i = 0; i < 25; i += 1) {
+      advance(200); // 25 ticks × 200 ms = 5 s
+      engine._evaluateCycleChallenge(active, {
+        equipmentRpm: phase.loRpm - 5,
+        activeParticipants: ['felix'], userZoneMap: { felix: 'warm' },
+        baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true
+      });
+      if (active.cycleState === 'locked') break;
+    }
+    expect(active.cycleState).toBe('locked');
+    expect(active.lockReason).toBe('maintain');
   });
 });
 

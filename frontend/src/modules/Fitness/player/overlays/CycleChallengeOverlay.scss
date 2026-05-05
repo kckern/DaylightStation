@@ -38,11 +38,6 @@
     stroke: rgba(255, 255, 255, 0.08);
   }
 
-  &__ring-progress {
-    transition: stroke-dashoffset 0.3s ease, stroke 0.3s ease, opacity 0.3s ease;
-    filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.4));
-  }
-
   // --- Target RPM sign (anchored to hi-rpm tick on gauge arc, Task 22) ----
   // Position is set inline via computed left/top percentages (viewBox coords
   // converted to %). The translate(-50%, -50%) centers the label on that
@@ -183,61 +178,50 @@
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
   }
 
-  // --- Phase progress bar (horizontal, below the circle) -----------------
-  &__progress-bar {
+  // --- Phase count blocks (rounded squares below the rider name) ---------
+  // One block per phase. Completed phases are lit green. Incomplete blocks
+  // remain a muted slate fill. Mirrors the look of `.challenge-overlay__count-block`
+  // but scoped to the cycle overlay BEM root.
+  &__phase-blocks {
     position: absolute;
-    top: calc(100% + 8px);
-    left: 0;
-    width: 100%;
-    height: clamp(20px, calc(var(--cycle-overlay-diameter) * 0.13), 28px);
-    border-radius: 999px;
-    background: rgba(15, 23, 42, 0.85);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    overflow: hidden;
+    top: calc(50% + clamp(46px, calc(var(--cycle-overlay-diameter) * 0.30), 70px));
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 10px;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45);
+    gap: 4px;
+    justify-content: center;
     pointer-events: none;
   }
 
-  &__progress-bar-fill {
-    position: absolute;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    background: linear-gradient(90deg, rgba(34, 197, 94, 0.65), rgba(34, 197, 94, 0.95));
-    transition: width 0.3s ease;
-    z-index: 0;
+  &__phase-block {
+    width: clamp(10px, calc(var(--cycle-overlay-diameter) * 0.07), 16px);
+    height: clamp(10px, calc(var(--cycle-overlay-diameter) * 0.07), 16px);
+    border-radius: 4px;
+    background: rgba(148, 163, 184, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    transition: background 0.2s ease, border-color 0.2s ease;
+    box-sizing: border-box;
   }
 
-  &__progress-bar-label,
-  &__progress-bar-pct {
-    position: relative;
-    z-index: 1;
-    font-size: clamp(0.6rem, calc(var(--cycle-overlay-diameter) * 0.05), 0.78rem);
-    font-weight: 700;
-    color: #f8fafc;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
-    letter-spacing: 0.04em;
-    font-variant-numeric: tabular-nums;
+  &__phase-block--complete {
+    background: #22c55e;
+    border-color: #22c55e;
   }
 
-  &__progress-bar-pct {
-    text-align: right;
-    min-width: 36px;
+  // --- Lower-hemisphere phase progress arc -------------------------------
+  // Sweeps 9 → 6 → 3 o'clock. Stroke color comes from the visuals helper
+  // (state-driven). When dangerActive flips on, the arc switches to flashing
+  // yellow showing the depleting `dangerProgress` (3-second grace window
+  // before maintain → locked).
+  &__phase-arc {
+    transition: stroke-dashoffset 0.2s linear, stroke 0.2s ease;
+    filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.4));
   }
 
-  // State-driven progress bar fill color (matches ring semantics)
-  &--state-init &__progress-bar-fill {
-    background: linear-gradient(90deg, rgba(100, 116, 139, 0.5), rgba(100, 116, 139, 0.8));
-  }
-  &--state-ramp &__progress-bar-fill {
-    background: linear-gradient(90deg, rgba(245, 158, 11, 0.6), rgba(245, 158, 11, 0.9));
-  }
-  &--state-locked &__progress-bar-fill {
-    background: linear-gradient(90deg, rgba(239, 68, 68, 0.6), rgba(239, 68, 68, 0.9));
+  &__phase-arc--danger {
+    animation: cycle-phase-arc-danger-flash 0.6s ease-in-out infinite;
+    // Faster transition so the depleting bar visibly retreats inside the 3 s window.
+    transition: stroke-dashoffset 0.15s linear;
   }
 
   // --- State variants -----------------------------------------------------
@@ -254,9 +238,10 @@
   }
 
   &--dim-pulse {
-    // When in the orange dim band, animate a subtle pulse on the ring
-    // to draw attention. Muted so it doesn't compete with content.
-    .cycle-challenge-overlay__ring-progress {
+    // When in the orange dim band, animate a subtle pulse on the lower-
+    // hemisphere phase arc to draw attention. Muted so it doesn't compete
+    // with content.
+    .cycle-challenge-overlay__phase-arc {
       animation: cycle-challenge-overlay-dim-pulse 1.6s ease-in-out infinite;
     }
 
@@ -370,6 +355,18 @@
   }
   50% {
     filter: drop-shadow(0 0 12px rgba(249, 115, 22, 0.6));
+  }
+}
+
+@keyframes cycle-phase-arc-danger-flash {
+  0%,
+  100% {
+    opacity: 1;
+    stroke: #fbbf24;
+  }
+  50% {
+    opacity: 0.55;
+    stroke: #f59e0b;
   }
 }
 

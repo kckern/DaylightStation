@@ -76,4 +76,28 @@ describe('CycleChallengeOverlay — extended UI', () => {
     render(<CycleChallengeOverlay challenge={ch} />);
     expect(screen.getByText(/Paused — reach target in 7s/)).toBeInTheDocument();
   });
+
+  it('renders phase count blocks instead of the horizontal progress bar', () => {
+    const ch = { ...baseChallenge, totalPhases: 3, currentPhaseIndex: 1 };
+    const { container } = render(<CycleChallengeOverlay challenge={ch} />);
+    expect(container.querySelector('.cycle-challenge-overlay__phase-blocks')).toBeTruthy();
+    // No legacy horizontal progress bar.
+    expect(container.querySelector('.cycle-challenge-overlay__progress-bar')).toBeFalsy();
+    // 3 blocks, 1 complete (index 1 = first phase done).
+    const blocks = container.querySelectorAll('.cycle-challenge-overlay__phase-block');
+    expect(blocks.length).toBe(3);
+    const complete = container.querySelectorAll('.cycle-challenge-overlay__phase-block--complete');
+    expect(complete.length).toBe(1);
+  });
+
+  it('renders the danger arc class when dangerActive is true', () => {
+    const ch = {
+      ...baseChallenge,
+      dangerActive: true,
+      dangerRemainingMs: 1500,
+      dangerProgress: 0.5
+    };
+    const { container } = render(<CycleChallengeOverlay challenge={ch} />);
+    expect(container.querySelector('.cycle-challenge-overlay__phase-arc--danger')).toBeTruthy();
+  });
 });
