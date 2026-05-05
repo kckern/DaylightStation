@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 export const CHALLENGE_OVERLAY_POSITION_KEY = 'fitness.challengeOverlay.position';
 export const CHALLENGE_OVERLAY_POSITION_ORDER = ['top', 'middle', 'bottom'];
@@ -26,11 +26,6 @@ const writeStored = (value) => {
 
 export const useChallengeOverlayPosition = () => {
   const [position, setPosition] = useState(() => readStored());
-
-  // Re-read on mount in case localStorage was set after the initial render.
-  useEffect(() => {
-    setPosition(readStored());
-  }, []);
 
   const cyclePosition = useCallback(() => {
     setPosition((current) => {
