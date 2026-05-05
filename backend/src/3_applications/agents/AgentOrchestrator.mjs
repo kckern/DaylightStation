@@ -1,5 +1,6 @@
 // backend/src/3_applications/agents/AgentOrchestrator.mjs
 
+import crypto from 'node:crypto';
 import { ValidationError } from '#system/utils/errors/index.mjs';
 import { ServiceNotFoundError } from '../common/errors/index.mjs';
 
@@ -57,10 +58,18 @@ export class AgentOrchestrator {
    */
   async run(agentId, input, context = {}) {
     const agent = this.#getAgent(agentId);
+    const turnId = context.turnId ?? crypto.randomUUID();
+    const userId = context.userId ?? null;
+    const augmented = { ...context, turnId };
 
-    this.#logger.info?.('orchestrator.run', { agentId, contextKeys: Object.keys(context) });
+    this.#logger.info?.('orchestrator.run', {
+      agentId,
+      turnId,
+      userId,
+      contextKeys: Object.keys(context),
+    });
 
-    return agent.run(input, { context });
+    return agent.run(input, { context: augmented });
   }
 
   /**
@@ -72,8 +81,11 @@ export class AgentOrchestrator {
    */
   async runInBackground(agentId, input, context = {}) {
     const agent = this.#getAgent(agentId);
+    const turnId = context.turnId ?? crypto.randomUUID();
+    const userId = context.userId ?? null;
+    const augmented = { ...context, turnId };
 
-    this.#logger.info?.('orchestrator.runInBackground', { agentId });
+    this.#logger.info?.('orchestrator.runInBackground', { agentId, turnId, userId });
 
     return this.#agentRuntime.executeInBackground(
       {
@@ -81,11 +93,12 @@ export class AgentOrchestrator {
         input,
         tools: agent.getTools(),
         systemPrompt: agent.getSystemPrompt(),
-        context,
+        context: augmented,
       },
       (result) => {
         this.#logger.info?.('orchestrator.background.complete', {
           agentId,
+          turnId,
           hasError: !!result.error,
         });
       }
