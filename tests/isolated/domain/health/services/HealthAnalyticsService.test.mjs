@@ -40,6 +40,34 @@ describe('HealthAnalyticsService', () => {
     expect(() => new HealthAnalyticsService({})).toThrow();
   });
 
+  it('exposes trajectory / detectRegimeChange / detectAnomalies / detectSustained via MetricTrendAnalyzer', async () => {
+    const healthStore = {
+      loadWeightData: vi.fn(async () => {
+        const out = {};
+        for (let i = 0; i < 30; i++) {
+          const d = new Date(Date.UTC(2026, 3, 6 + i));
+          out[d.toISOString().slice(0, 10)] = { lbs: 200 - i * 0.1, lbs_adjusted_average: 200 - i * 0.1 };
+        }
+        return out;
+      }),
+      loadNutritionData: vi.fn(async () => ({})),
+    };
+    const healthService = { getHealthForRange: vi.fn(async () => ({})) };
+    const periodResolver = new PeriodResolver({ now: fixedNow });
+    const service = new HealthAnalyticsService({ healthStore, healthService, periodResolver });
+
+    expect(typeof service.trajectory).toBe('function');
+    expect(typeof service.detectRegimeChange).toBe('function');
+    expect(typeof service.detectAnomalies).toBe('function');
+    expect(typeof service.detectSustained).toBe('function');
+
+    const traj = await service.trajectory({
+      userId: 'kc', metric: 'weight_lbs',
+      period: { from: '2026-04-06', to: '2026-05-05' },
+    });
+    expect(traj.direction).toBe('down');
+  });
+
   it('exposes compare / summarizeChange / conditionalAggregate / correlateMetrics via MetricComparator', async () => {
     const healthStore = {
       loadWeightData: vi.fn(async () => ({
