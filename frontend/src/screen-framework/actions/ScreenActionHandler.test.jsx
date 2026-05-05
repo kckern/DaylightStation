@@ -3,7 +3,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { getActionBus, resetActionBus } from '../input/ActionBus.js';
 import { ScreenOverlayProvider } from '../overlays/ScreenOverlayProvider.jsx';
+import { ScreenVolumeProvider } from '../providers/ScreenVolumeProvider.jsx';
+import {
+  useScreenVolume,
+  _resetForTests as resetVolumeModuleState,
+} from '../../lib/volume/ScreenVolumeContext.js';
 import { ScreenActionHandler } from './ScreenActionHandler.jsx';
+import * as apiModule from '../../lib/api.mjs';
 
 import { useScreenOverlay } from '../overlays/ScreenOverlayProvider.jsx';
 
@@ -32,6 +38,8 @@ vi.mock('../../modules/Player/Player.jsx', () => ({
 describe('ScreenActionHandler', () => {
   beforeEach(() => {
     resetActionBus();
+    resetVolumeModuleState();
+    window.localStorage.clear();
   });
 
   it('opens MenuStack overlay on menu:open action', () => {
@@ -653,5 +661,65 @@ describe('ScreenActionHandler', () => {
 
     window.removeEventListener('player:queue-op', handler);
     dummy.remove();
+  });
+
+  describe('display:volume (software master)', () => {
+    function VolumeProbe({ onValue }) {
+      const v = useScreenVolume();
+      React.useEffect(() => onValue(v), [v, onValue]);
+      return null;
+    }
+
+    function withProviders() {
+      const onValue = vi.fn();
+      const utils = render(
+        <ScreenVolumeProvider defaultMaster={0.5} stepSize={0.1}>
+          <ScreenOverlayProvider>
+            <ScreenActionHandler />
+            <VolumeProbe onValue={onValue} />
+          </ScreenOverlayProvider>
+        </ScreenVolumeProvider>
+      );
+      return { ...utils, onValue };
+    }
+
+    it('+1 increments master by step', () => {
+      const { onValue } = withProviders();
+      act(() => getActionBus().emit('display:volume', { command: '+1' }));
+      expect(onValue.mock.calls.at(-1)[0].master).toBeCloseTo(0.6);
+    });
+
+    it('-1 decrements master by step', () => {
+      const { onValue } = withProviders();
+      act(() => getActionBus().emit('display:volume', { command: '-1' }));
+      expect(onValue.mock.calls.at(-1)[0].master).toBeCloseTo(0.4);
+    });
+
+    it('mute_toggle toggles muted state', () => {
+      const { onValue } = withProviders();
+      act(() => getActionBus().emit('display:volume', { command: 'mute_toggle' }));
+      expect(onValue.mock.calls.at(-1)[0].muted).toBe(true);
+      expect(onValue.mock.calls.at(-1)[0].master).toBe(0);
+      act(() => getActionBus().emit('display:volume', { command: 'mute_toggle' }));
+      expect(onValue.mock.calls.at(-1)[0].muted).toBe(false);
+      expect(onValue.mock.calls.at(-1)[0].master).toBe(0.5);
+    });
+
+    it('does not call DaylightAPI for any volume command (regression guard)', () => {
+      const apiSpy = vi.spyOn(apiModule, 'DaylightAPI').mockResolvedValue({});
+      withProviders();
+      act(() => getActionBus().emit('display:volume', { command: '+1' }));
+      act(() => getActionBus().emit('display:volume', { command: '-1' }));
+      act(() => getActionBus().emit('display:volume', { command: 'mute_toggle' }));
+      expect(apiSpy).not.toHaveBeenCalled();
+      apiSpy.mockRestore();
+    });
+
+    it('unknown command logs warn but does not throw', () => {
+      const { onValue } = withProviders();
+      const before = onValue.mock.calls.at(-1)[0].master;
+      act(() => getActionBus().emit('display:volume', { command: 'cycle' }));
+      expect(onValue.mock.calls.at(-1)[0].master).toBe(before);
+    });
   });
 });
