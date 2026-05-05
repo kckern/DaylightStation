@@ -70,6 +70,7 @@ export function createApiRouter(config) {
     '/play': 'play',
     '/local-content': 'localContent',
     '/local': 'local',
+    '/health/mentions': 'healthMentions',
     '/health': 'health',
     '/health-dashboard': 'health-dashboard',
     '/feed': 'feed',
