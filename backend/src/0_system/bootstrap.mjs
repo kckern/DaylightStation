@@ -198,6 +198,8 @@ import { HealthArchiveScopeFactory } from '#domains/health/services/HealthArchiv
 import { SimilarPeriodFinder } from '#domains/health/services/SimilarPeriodFinder.mjs';
 import { PatternDetector } from '#domains/health/services/PatternDetector.mjs';
 import { CalibrationConstants } from '#domains/health/services/CalibrationConstants.mjs';
+import { HealthAnalyticsService } from '#domains/health/services/HealthAnalyticsService.mjs';
+import { PeriodResolver } from '#domains/health/services/PeriodResolver.mjs';
 import { YamlHealthScanDatastore } from '#adapters/persistence/yaml/YamlHealthScanDatastore.mjs';
 import { CoachingOrchestrator, CoachingCommentaryService } from '#apps/coaching/index.mjs';
 import { PagedMediaTocAgent } from '#apps/agents/paged-media-toc/index.mjs';
@@ -3014,6 +3016,17 @@ export async function createAgentsApiRouter(config) {
       logger,
     });
 
+    // Plan 1: HealthAnalyticsService composition root for Tier 2 analytical
+    // primitives. Wires PeriodResolver + healthStore + healthService into a
+    // single addressable service used by both the agent (via
+    // HealthAnalyticsToolFactory) and the dscli health surface.
+    const periodResolver = new PeriodResolver();
+    const healthAnalyticsService = new HealthAnalyticsService({
+      healthStore,
+      healthService,
+      periodResolver,
+    });
+
     agentOrchestrator.register(HealthCoachAgent, {
       workingMemory,
       healthStore,
@@ -3031,6 +3044,7 @@ export async function createAgentsApiRouter(config) {
       patternDetector,
       calibrationConstants,
       dataRoot,
+      healthAnalyticsService,
     });
   }
 
