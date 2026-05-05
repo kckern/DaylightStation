@@ -511,4 +511,171 @@ describe('cli/commands/health', () => {
       }
     });
   });
+
+  describe('periods list action', () => {
+    it('emits JSON for `health periods list`', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const result = await health.run(
+        { subcommand: 'health', positional: ['periods', 'list'], flags: {}, help: false },
+        {
+          stdout, stderr,
+          getHealthAnalytics: async () => ({
+            listPeriods: async () => ({ periods: [
+              { slug: 'cut-2024', label: '2024 Cut', from: '2024-01-01', to: '2024-04-30', source: 'declared' },
+            ] }),
+          }),
+        },
+      );
+      expect(result.exitCode).toBe(0);
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.periods).toHaveLength(1);
+    });
+  });
+
+  describe('periods deduce action', () => {
+    it('emits JSON for `health periods deduce --metric weight_lbs --range 193 197 --min-duration-days 30`', async () => {
+      const { stdout, stderr } = makeBuffers();
+      let captured;
+      const result = await health.run(
+        {
+          subcommand: 'health',
+          positional: ['periods', 'deduce'],
+          flags: { metric: 'weight_lbs', range: '193 197', 'min-duration-days': '30' },
+          help: false,
+        },
+        {
+          stdout, stderr,
+          getHealthAnalytics: async () => ({
+            deducePeriod: async (args) => { captured = args; return { candidates: [] }; },
+          }),
+        },
+      );
+      expect(result.exitCode).toBe(0);
+      expect(captured.criteria).toEqual({
+        metric: 'weight_lbs',
+        value_range: [193, 197],
+        min_duration_days: 30,
+      });
+    });
+
+    it('exits 2 when --metric or --min-duration-days missing', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const result = await health.run(
+        { subcommand: 'health', positional: ['periods', 'deduce'], flags: { metric: 'weight_lbs' }, help: false },
+        { stdout, stderr, getHealthAnalytics: async () => ({}) },
+      );
+      expect(result.exitCode).toBe(2);
+    });
+  });
+
+  describe('periods remember action', () => {
+    it('requires --allow-write', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const result = await health.run(
+        {
+          subcommand: 'health',
+          positional: ['periods', 'remember'],
+          flags: { slug: 'stable', from: '2024-01-01', to: '2024-12-31', label: 'Stable' },
+          help: false,
+        },
+        { stdout, stderr, allowWrite: false, getHealthAnalytics: async () => ({}) },
+      );
+      expect(result.exitCode).toBe(2);
+      expect(stderr.read()).toMatch(/allow_write_required/);
+    });
+
+    it('calls service.rememberPeriod when --allow-write set', async () => {
+      const { stdout, stderr } = makeBuffers();
+      let captured;
+      const result = await health.run(
+        {
+          subcommand: 'health',
+          positional: ['periods', 'remember'],
+          flags: { slug: 'stable', from: '2024-01-01', to: '2024-12-31', label: 'Stable' },
+          help: false,
+        },
+        {
+          stdout, stderr, allowWrite: true,
+          getHealthAnalytics: async () => ({
+            rememberPeriod: async (args) => { captured = args; return { slug: args.slug }; },
+          }),
+        },
+      );
+      expect(result.exitCode).toBe(0);
+      expect(captured.slug).toBe('stable');
+    });
+  });
+
+  describe('periods forget action', () => {
+    it('requires --allow-write', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const result = await health.run(
+        {
+          subcommand: 'health',
+          positional: ['periods', 'forget'],
+          flags: { slug: 'stable' },
+          help: false,
+        },
+        { stdout, stderr, allowWrite: false, getHealthAnalytics: async () => ({}) },
+      );
+      expect(result.exitCode).toBe(2);
+    });
+
+    it('calls service.forgetPeriod when --allow-write set', async () => {
+      const { stdout, stderr } = makeBuffers();
+      let captured;
+      await health.run(
+        {
+          subcommand: 'health',
+          positional: ['periods', 'forget'],
+          flags: { slug: 'stable' },
+          help: false,
+        },
+        {
+          stdout, stderr, allowWrite: true,
+          getHealthAnalytics: async () => ({
+            forgetPeriod: async (args) => { captured = args; return { slug: args.slug, removed: true }; },
+          }),
+        },
+      );
+      expect(captured.slug).toBe('stable');
+    });
+  });
+
+  describe('analyze action', () => {
+    it('emits JSON for `health analyze`', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const result = await health.run(
+        { subcommand: 'health', positional: ['analyze'], flags: {}, help: false },
+        {
+          stdout, stderr,
+          getHealthAnalytics: async () => ({
+            analyzeHistory: async () => ({
+              summary: { metrics: [{ metric: 'weight_lbs', value: 195 }] },
+              candidates: [],
+              observations: ['weight_lbs flat across all_time'],
+            }),
+          }),
+        },
+      );
+      expect(result.exitCode).toBe(0);
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.observations).toHaveLength(1);
+    });
+
+    it('passes --focus through', async () => {
+      const { stdout, stderr } = makeBuffers();
+      let captured;
+      await health.run(
+        { subcommand: 'health', positional: ['analyze'], flags: { focus: 'weight' }, help: false },
+        {
+          stdout, stderr,
+          getHealthAnalytics: async () => ({
+            analyzeHistory: async (args) => { captured = args; return { summary: { metrics: [] }, candidates: [], observations: [] }; },
+          }),
+        },
+      );
+      expect(captured.focus).toBe('weight');
+    });
+  });
 });

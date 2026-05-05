@@ -3016,15 +3016,19 @@ export async function createAgentsApiRouter(config) {
       logger,
     });
 
-    // Plan 1: HealthAnalyticsService composition root for Tier 2 analytical
+    // Plan 1+4: HealthAnalyticsService composition root for Tier 2 analytical
     // primitives. Wires PeriodResolver + healthStore + healthService into a
     // single addressable service used by both the agent (via
     // HealthAnalyticsToolFactory) and the dscli health surface.
+    // Plan 4: also wire playbookLoader + workingMemory so period-memory
+    // + reflection methods light up.
     const periodResolver = new PeriodResolver();
     const healthAnalyticsService = new HealthAnalyticsService({
       healthStore,
       healthService,
       periodResolver,
+      playbookLoader: personalContextLoader,    // ← Plan 4
+      workingMemoryAdapter: workingMemory,      // ← Plan 4
     });
 
     agentOrchestrator.register(HealthCoachAgent, {

@@ -91,4 +91,36 @@ describe('HealthAnalyticsService', () => {
     });
     expect(cmp.metric).toBe('weight_lbs');
   });
+
+  it('exposes PeriodMemory + HistoryReflector when workingMemoryAdapter provided', async () => {
+    const periodResolver = new PeriodResolver({ now: fixedNow });
+    const fakeWMState = { get: () => undefined, set: () => {}, remove: () => {}, getAll: () => ({}) };
+    const workingMemoryAdapter = { load: async () => fakeWMState, save: async () => {} };
+
+    const service = new HealthAnalyticsService({
+      healthStore: { loadWeightData: vi.fn(async () => ({})), loadNutritionData: vi.fn(async () => ({})) },
+      healthService: { getHealthForRange: vi.fn(async () => ({})) },
+      periodResolver,
+      workingMemoryAdapter,
+    });
+
+    expect(typeof service.listPeriods).toBe('function');
+    expect(typeof service.deducePeriod).toBe('function');
+    expect(typeof service.rememberPeriod).toBe('function');
+    expect(typeof service.forgetPeriod).toBe('function');
+    expect(typeof service.analyzeHistory).toBe('function');
+
+    const out = await service.listPeriods({ userId: 'kc' });
+    expect(out.periods).toEqual([]);
+  });
+
+  it('PeriodMemory delegates throw when workingMemoryAdapter is absent', async () => {
+    const periodResolver = new PeriodResolver({ now: fixedNow });
+    const service = new HealthAnalyticsService({
+      healthStore: { loadWeightData: vi.fn(async () => ({})), loadNutritionData: vi.fn(async () => ({})) },
+      healthService: { getHealthForRange: vi.fn(async () => ({})) },
+      periodResolver,
+    });
+    expect(() => service.listPeriods({ userId: 'kc' })).toThrow(/workingMemoryAdapter/);
+  });
 });

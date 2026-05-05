@@ -1,5 +1,5 @@
 /**
- * dscli health — health analytics surface (Plans 1-3).
+ * dscli health — health analytics surface (Plans 1-4).
  *
  * Plan 1 actions:
  *   dscli health aggregate <metric> --period <shorthand> [--statistic <s>] [--user <id>]
@@ -16,14 +16,19 @@
  *   dscli health anomalies <metric> --period <p> [--z-threshold <n>] [--baseline-days <n>]
  *   dscli health sustained <metric> --period <p> --condition <json> --min-duration-days <n>
  *
+ * Plan 4 actions:
+ *   dscli health periods list
+ *   dscli health periods deduce --metric <m> --range <lo> <hi> --min-duration-days <n>
+ *   dscli health periods remember --slug <s> --from <d> --to <d> --label <l> --allow-write
+ *   dscli health periods forget --slug <s> --allow-write
+ *   dscli health analyze [--focus weight|nutrition|training]
+ *
  * Period shorthand:
  *   bare token        → rolling: 'last_30d', 'last_year', 'prev_30d', 'all_time'
  *   YYYY              → calendar: { calendar: '2024' }
  *   YYYY-MM           → calendar: { calendar: '2024-08' }
  *   YYYY-Qn           → calendar: { calendar: '2024-Q3' }
  *   --from / --to     → explicit { from, to } (highest precedence)
- *
- * (Named and deduced shorthand land in Plan 4.)
  */
 
 import { printJson, printError, EXIT_OK, EXIT_USAGE, EXIT_FAIL } from '../_output.mjs';
@@ -47,6 +52,13 @@ Actions (Plan 3):
   anomalies <metric>                    Days deviating from rolling baseline.
   sustained <metric>                    Consecutive-day runs satisfying a condition.
 
+Actions (Plan 4):
+  periods list                          List all named periods (declared/remembered/deduced).
+  periods deduce                        Find periods matching criteria (--metric, --range, --min-duration-days).
+  periods remember                      Save a period to working memory (--slug, --from, --to, --label, --allow-write).
+  periods forget                        Remove a remembered period (--slug, --allow-write).
+  analyze [--focus weight|nutrition|training]   Reflective history scan.
+
 Period shorthand (--period, --a, --b, or --from/--to):
   last_7d / last_30d / last_90d / last_180d / last_365d / last_2y / last_5y / last_10y / all_time
   prev_7d / prev_30d / prev_90d / prev_180d / prev_365d
@@ -59,10 +71,17 @@ Other flags:
   --from / --to             explicit YYYY-MM-DD bounds (overrides --period)
   --condition <json>        JSON condition for 'conditional' / 'sustained' actions
   --granularity <g>         daily (default) | weekly | monthly | quarterly | yearly
-  --max-results <n>         max regime-change candidates (default 3)
+  --max-results <n>         max regime-change / deduce candidates (default 3)
   --z-threshold <n>         z-score threshold for anomalies (default 2)
   --baseline-days <n>       rolling baseline window for anomalies (default 30)
-  --min-duration-days <n>   minimum run length for sustained (required)
+  --min-duration-days <n>   minimum run length for sustained / deduce (required)
+  --slug <name>             period slug for remember/forget (alphanumeric + hyphens)
+  --label <text>            human label for remember
+  --range <lo> <hi>         value range for deduce (space-separated)
+  --field-above <v>         field_above threshold for deduce
+  --field-below <v>         field_below threshold for deduce
+  --focus <domain>          weight | nutrition | training (for analyze)
+  --allow-write             required for write commands (remember, forget)
 
 Environment:
   DSCLI_USER_ID             default user id when --user not provided
@@ -561,6 +580,211 @@ async function actionSustained(args, deps) {
   return { exitCode: EXIT_OK };
 }
 
+const PERIOD_SUB_ACTIONS = {
+  list: actionPeriodsList,
+  deduce: actionPeriodsDeduce,
+  remember: actionPeriodsRemember,
+  forget: actionPeriodsForget,
+};
+
+async function actionPeriods(args, deps) {
+  const sub = args.positional[1];
+  if (!sub || !PERIOD_SUB_ACTIONS[sub]) {
+    deps.stderr.write(`dscli health periods: unknown sub-action: ${sub ?? '(none)'}\n`);
+    deps.stderr.write(HELP);
+    return { exitCode: EXIT_USAGE };
+  }
+  return PERIOD_SUB_ACTIONS[sub](args, deps);
+}
+
+async function actionPeriodsList(args, deps) {
+  let svc;
+  try { svc = await deps.getHealthAnalytics(); }
+  catch (err) {
+    printError(deps.stderr, { error: 'config_error', message: err.message });
+    return { exitCode: EXIT_FAIL };
+  }
+  let result;
+  try { result = await svc.listPeriods({ userId: resolveUserId(args) }); }
+  catch (err) {
+    printError(deps.stderr, { error: 'list_periods_failed', message: err.message });
+    return { exitCode: EXIT_FAIL };
+  }
+  if (result?.error) {
+    printError(deps.stderr, { error: 'service_error', message: result.error });
+    return { exitCode: EXIT_FAIL };
+  }
+  printJson(deps.stdout, result);
+  return { exitCode: EXIT_OK };
+}
+
+async function actionPeriodsDeduce(args, deps) {
+  if (!args.flags.metric) {
+    printError(deps.stderr, { error: 'metric_required', message: 'pass --metric <name>.' });
+    return { exitCode: EXIT_USAGE };
+  }
+  if (!args.flags['min-duration-days']) {
+    printError(deps.stderr, { error: 'min_duration_required', message: 'pass --min-duration-days <n>.' });
+    return { exitCode: EXIT_USAGE };
+  }
+  const criteria = {
+    metric: args.flags.metric,
+    min_duration_days: parseInt(args.flags['min-duration-days'], 10),
+  };
+  if (args.flags.range) {
+    const parts = String(args.flags.range).trim().split(/\s+/).map(parseFloat);
+    if (parts.length === 2 && parts.every(Number.isFinite)) {
+      criteria.value_range = parts;
+    } else {
+      printError(deps.stderr, { error: 'invalid_range', message: '--range expects "<min> <max>".' });
+      return { exitCode: EXIT_USAGE };
+    }
+  } else if (args.flags['field-above']) {
+    criteria.field_above = parseFloat(args.flags['field-above']);
+  } else if (args.flags['field-below']) {
+    criteria.field_below = parseFloat(args.flags['field-below']);
+  } else {
+    printError(deps.stderr, { error: 'criteria_required', message: 'pass --range "<min> <max>" or --field-above <v> or --field-below <v>.' });
+    return { exitCode: EXIT_USAGE };
+  }
+
+  let svc;
+  try { svc = await deps.getHealthAnalytics(); }
+  catch (err) {
+    printError(deps.stderr, { error: 'config_error', message: err.message });
+    return { exitCode: EXIT_FAIL };
+  }
+
+  let result;
+  try {
+    const max_results = args.flags['max-results'] ? parseInt(args.flags['max-results'], 10) : undefined;
+    result = await svc.deducePeriod({
+      userId: resolveUserId(args),
+      criteria,
+      ...(max_results ? { max_results } : {}),
+    });
+  } catch (err) {
+    printError(deps.stderr, { error: 'deduce_failed', message: err.message });
+    return { exitCode: EXIT_FAIL };
+  }
+  if (result?.error) {
+    printError(deps.stderr, { error: 'service_error', message: result.error });
+    return { exitCode: EXIT_FAIL };
+  }
+  printJson(deps.stdout, result);
+  return { exitCode: EXIT_OK };
+}
+
+async function actionPeriodsRemember(args, deps) {
+  if (!deps.allowWrite) {
+    printError(deps.stderr, { error: 'allow_write_required', command: 'periods remember', message: 'Write commands require --allow-write.' });
+    return { exitCode: EXIT_USAGE };
+  }
+  const { slug, from, to, label, description } = args.flags;
+  if (!slug || !from || !to || !label) {
+    printError(deps.stderr, { error: 'missing_required_flag', message: '--slug, --from, --to, --label are all required.' });
+    return { exitCode: EXIT_USAGE };
+  }
+
+  let svc;
+  try { svc = await deps.getHealthAnalytics(); }
+  catch (err) {
+    printError(deps.stderr, { error: 'config_error', message: err.message });
+    return { exitCode: EXIT_FAIL };
+  }
+
+  let result;
+  try {
+    result = await svc.rememberPeriod({
+      userId: resolveUserId(args),
+      slug, from, to, label, description: description ?? null,
+    });
+  } catch (err) {
+    printError(deps.stderr, { error: 'remember_failed', message: err.message });
+    return { exitCode: EXIT_FAIL };
+  }
+  if (result?.error) {
+    printError(deps.stderr, { error: 'service_error', message: result.error });
+    return { exitCode: EXIT_FAIL };
+  }
+
+  // Optional write-audit (matches existing dscli pattern; skip if no auditor)
+  try {
+    if (deps.getWriteAuditor) {
+      const audit = await deps.getWriteAuditor();
+      await audit.log({ command: 'health', action: 'periods remember', args: { slug, from, to }, result });
+    }
+  } catch { /* best-effort */ }
+
+  printJson(deps.stdout, result);
+  return { exitCode: EXIT_OK };
+}
+
+async function actionPeriodsForget(args, deps) {
+  if (!deps.allowWrite) {
+    printError(deps.stderr, { error: 'allow_write_required', command: 'periods forget', message: 'Write commands require --allow-write.' });
+    return { exitCode: EXIT_USAGE };
+  }
+  if (!args.flags.slug) {
+    printError(deps.stderr, { error: 'slug_required', message: 'pass --slug <name>.' });
+    return { exitCode: EXIT_USAGE };
+  }
+
+  let svc;
+  try { svc = await deps.getHealthAnalytics(); }
+  catch (err) {
+    printError(deps.stderr, { error: 'config_error', message: err.message });
+    return { exitCode: EXIT_FAIL };
+  }
+
+  let result;
+  try {
+    result = await svc.forgetPeriod({ userId: resolveUserId(args), slug: args.flags.slug });
+  } catch (err) {
+    printError(deps.stderr, { error: 'forget_failed', message: err.message });
+    return { exitCode: EXIT_FAIL };
+  }
+  if (result?.error) {
+    printError(deps.stderr, { error: 'service_error', message: result.error });
+    return { exitCode: EXIT_FAIL };
+  }
+
+  try {
+    if (deps.getWriteAuditor) {
+      const audit = await deps.getWriteAuditor();
+      await audit.log({ command: 'health', action: 'periods forget', args: { slug: args.flags.slug }, result });
+    }
+  } catch { /* best-effort */ }
+
+  printJson(deps.stdout, result);
+  return { exitCode: EXIT_OK };
+}
+
+async function actionAnalyze(args, deps) {
+  let svc;
+  try { svc = await deps.getHealthAnalytics(); }
+  catch (err) {
+    printError(deps.stderr, { error: 'config_error', message: err.message });
+    return { exitCode: EXIT_FAIL };
+  }
+  let result;
+  try {
+    result = await svc.analyzeHistory({
+      userId: resolveUserId(args),
+      ...(args.flags.focus ? { focus: args.flags.focus } : {}),
+    });
+  } catch (err) {
+    printError(deps.stderr, { error: 'analyze_failed', message: err.message });
+    return { exitCode: EXIT_FAIL };
+  }
+  if (result?.error) {
+    printError(deps.stderr, { error: 'service_error', message: result.error });
+    return { exitCode: EXIT_FAIL };
+  }
+  printJson(deps.stdout, result);
+  return { exitCode: EXIT_OK };
+}
+
 const ACTIONS = {
   aggregate: actionAggregate,
   compare: actionCompare,
@@ -571,11 +795,13 @@ const ACTIONS = {
   'regime-change': actionRegimeChange,
   anomalies: actionAnomalies,
   sustained: actionSustained,
+  periods: actionPeriods,
+  analyze: actionAnalyze,
 };
 
 export default {
   name: 'health',
-  description: 'Health analytics: aggregate, compare, summarize-change, conditional, correlate, trajectory, regime-change, anomalies, sustained (Plans 1-3)',
+  description: 'Health analytics: aggregate, compare, summarize-change, conditional, correlate, trajectory, regime-change, anomalies, sustained, periods, analyze (Plans 1-4)',
   requiresBackend: false,
   async run(args, deps) {
     if (args.help) {
