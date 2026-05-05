@@ -354,3 +354,48 @@ In severity order — **F2 is the spine, everything else is contributory**.
 - Overlay class names: `CycleChallengeOverlay.jsx:294-300`
 - Session log: `data/household/history/fitness/2026-05-02/20260502184911.yml`
 - Backend log events: `governance.cycle.*` between 2026-05-03T02:03:05Z and 02:07:20Z
+
+---
+
+## Resolution — 2026-05-04
+
+Remediated by `docs/superpowers/plans/2026-05-04-cycle-challenge-remediation.md`.
+
+Per-finding fix commits (in chronological order on branch `worktree-cycle-challenge-remediation`):
+
+- **F1 / F1b — Cadence input has no filtering, no upper bound, no stale-vs-zero distinction:**
+  - `CadenceFilter` skeleton + plausibility clamp (Task 1)
+  - EMA smoothing α=0.4 (Task 2)
+  - Staleness detection with ≤5 s hard contract (Task 3)
+  - Wired into `GovernanceEngine` with freshness watermark (Task 4 + clock-fix follow-up)
+  - **Integration fix:** `getEquipmentCadence` returns `ts: device.lastSeen` so 0-readings reach the EMA filter (Task 12 follow-up — caught only by the live-system Playwright reproduction)
+
+- **F2 — `init→ramp` and `locked→init` gate asymmetry:**
+  - When `init_timeout` fires AND rider is pedalling but `baseReq` unmet, hold in `init` with `waitingForBaseReq: true` instead of locking (Task 7)
+
+- **F3 — User has no visibility into why challenge isn't advancing:**
+  - `CycleBaseReqIndicator` component (Task 10) shows green/amber/grey HR-zone gate state
+  - `CycleChallengeOverlay` mounts the indicator next to the rider name and renders an init/ramp countdown line (Task 11)
+  - `cycleOverlayVisuals` exposes `lostSignal`, `stale`, `waitingForBaseReq`, `clockPaused`, `initRemainingMs`, `rampRemainingMs` (Task 9)
+
+- **F4 — Wall-clock vs work-clock progress UX:**
+  - Snapshot exposes `clockPaused: true` when rider is below `init.minRpm` so UI can render "paused" countdown (Task 8). Engine clocks unchanged to preserve `init_timeout` semantics post-Task-7.
+
+- **F5 — 250 ms state durations rendered as UI flicker:**
+  - `_buildChallengeSnapshot` (cycle branch) publishes state with 500 ms minimum hold; internal SM continues to track ground truth (Task 6). Lock transitions reduced from 10+/15s to ≤1/15s on the noise-resilience scenario.
+
+- **F6 — `manualTrigger` not plumbed even where it should be:**
+  - The integration test `tests/unit/governance/GovernanceEngine-cycleDispatch.test.mjs` proves `manualTrigger=true` flows end-to-end when `riderId` is supplied; `paused_by_base_req` no longer fires when the demo path is engaged correctly (verified by Task 7's symmetric-gate test, which exercises the non-manual path explicitly).
+
+**Plus a user-driven addition during execution:**
+
+- **Unified position container:** `ChallengeOverlayDeck` + `useChallengeOverlayPosition` hook (Task 11A — added per user feedback during execution). Both `ChallengeOverlay` and `CycleChallengeOverlay` now share a single position state (`fitness.challengeOverlay.position` localStorage key); a tap on the deck cycles position for both overlays at once.
+
+**Regression guards:**
+
+- Unit tests in `frontend/src/hooks/fitness/CadenceFilter.test.js` (13 tests) and `frontend/src/hooks/fitness/CycleStateMachine.test.js` (12 tests) cover Tasks 1-8.
+- Component tests in `frontend/src/modules/Fitness/player/overlays/` cover Tasks 9-11 + 11A.
+- Live Playwright test at `tests/live/flow/fitness/cycle-challenge-noise-resilience.runtime.test.mjs` reproduces the original 0↔55 RPM noise pattern on the running app and asserts ≤1 lock transition over a 15 s window (Task 12).
+- New integration regression test at `frontend/src/hooks/fitness/FitnessSession.cadenceTs.test.js` pins the `ts: device.lastSeen` contract so the silent-0-read regression cannot recur.
+
+**Closed.**
