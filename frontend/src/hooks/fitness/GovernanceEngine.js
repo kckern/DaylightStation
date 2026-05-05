@@ -676,6 +676,21 @@ export class GovernanceEngine {
       // render the countdown as "paused" when this flag is true.
       const clockPaused = currentRpm < (activeChallenge.selection?.init?.minRpm ?? 0);
 
+      // 3-second grace window when RPM dips below loRpm in maintain. The
+      // overlay renders a depleting arc in flashing yellow during the grace,
+      // then transitions to locked once dangerProgress reaches 0.
+      const DANGER_GRACE_MS_SNAPSHOT = 3000;
+      const dangerActive = Number.isFinite(activeChallenge.dangerSinceMs);
+      const dangerElapsedMs = dangerActive
+        ? Math.max(0, now - activeChallenge.dangerSinceMs)
+        : 0;
+      const dangerRemainingMs = dangerActive
+        ? Math.max(0, DANGER_GRACE_MS_SNAPSHOT - dangerElapsedMs)
+        : null;
+      const dangerProgress = dangerActive
+        ? Math.max(0, Math.min(1, dangerRemainingMs / DANGER_GRACE_MS_SNAPSHOT))
+        : 1;
+
       return {
         id: activeChallenge.id,
         type: 'cycle',
@@ -696,6 +711,9 @@ export class GovernanceEngine {
         initTotalMs,
         dimFactor,
         clockPaused,
+        dangerActive,
+        dangerRemainingMs,
+        dangerProgress,
         boostMultiplier: multiplier,
         boostingUsers: contributors,
         lockReason: activeChallenge.lockReason || null,
@@ -2450,6 +2468,11 @@ export class GovernanceEngine {
       totalBoostedMs: 0,
       boostContributors: new Set(),
       lockReason: null,
+      // 3-second grace window timestamp for the maintain → locked transition.
+      // Set to a timestamp on the first below-loRpm tick in maintain; cleared
+      // when RPM recovers OR when the grace expires (and the lock fires).
+      // Surfaced in the snapshot so the overlay can render a depleting arc.
+      dangerSinceMs: null,
       pausedAt: null,
       pausedRemainingMs: null,
       // Task 6: 500ms debounce for the published cycleState. The internal
@@ -2633,22 +2656,48 @@ export class GovernanceEngine {
 
     if (active.cycleState === 'maintain') {
       const phase = active.generatedPhases[active.currentPhaseIndex];
+      const DANGER_GRACE_MS = 3000;
+
       if (ctx.equipmentRpm < phase.loRpm) {
-        active.cycleState = 'locked';
-        active.lockReason = 'maintain';
-        active.totalLockEventsCount += 1;
-        getLogger().info('governance.cycle.state_transition', {
-          challengeId: active.id, from: 'maintain', to: 'locked',
-          currentPhaseIndex: active.currentPhaseIndex, rider: active.rider,
-          currentRpm: ctx.equipmentRpm, reason: 'below_lo'
-        });
-        getLogger().info('governance.cycle.locked', {
-          challengeId: active.id, lockReason: 'maintain', phaseIndex: active.currentPhaseIndex,
-          currentRpm: ctx.equipmentRpm, threshold: phase.loRpm,
-          totalLockEventsCount: active.totalLockEventsCount
-        });
+        if (!Number.isFinite(active.dangerSinceMs)) {
+          active.dangerSinceMs = ctx.now ?? this._now();
+          getLogger().info('governance.cycle.danger_started', {
+            challengeId: active.id,
+            phaseIndex: active.currentPhaseIndex,
+            currentRpm: ctx.equipmentRpm,
+            threshold: phase.loRpm
+          });
+        }
+        const elapsed = (ctx.now ?? this._now()) - active.dangerSinceMs;
+        if (elapsed >= DANGER_GRACE_MS) {
+          active.cycleState = 'locked';
+          active.lockReason = 'maintain';
+          active.totalLockEventsCount += 1;
+          active.dangerSinceMs = null;
+          getLogger().info('governance.cycle.state_transition', {
+            challengeId: active.id, from: 'maintain', to: 'locked',
+            currentPhaseIndex: active.currentPhaseIndex, rider: active.rider,
+            currentRpm: ctx.equipmentRpm, reason: 'below_lo_grace_expired'
+          });
+          getLogger().info('governance.cycle.locked', {
+            challengeId: active.id, lockReason: 'maintain', phaseIndex: active.currentPhaseIndex,
+            currentRpm: ctx.equipmentRpm, threshold: phase.loRpm,
+            totalLockEventsCount: active.totalLockEventsCount
+          });
+          return;
+        }
+        // In grace window — stay in maintain visually, no progress accumulation.
         return;
       }
+
+      // RPM is at or above loRpm — clear any pending grace.
+      if (Number.isFinite(active.dangerSinceMs)) {
+        getLogger().info('governance.cycle.danger_cleared', {
+          challengeId: active.id, currentRpm: ctx.equipmentRpm
+        });
+        active.dangerSinceMs = null;
+      }
+
       if (ctx.equipmentRpm >= phase.hiRpm) {
         const { multiplier, contributors } = this._computeBoostMultiplier(active, ctx);
         const progressAdd = dt * multiplier;
