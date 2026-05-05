@@ -49,6 +49,61 @@ function makeAnalyzer(weightFixture = buildDownwardWeight()) {
   };
 }
 
+describe('MetricTrendAnalyzer.detectRegimeChange', () => {
+  // Step fixture: 30 days where first 15 are at lbs=200 and last 15 are at lbs=195
+  function buildStepFixture() {
+    const out = {};
+    const start = new Date(Date.UTC(2026, 3, 6));
+    for (let i = 0; i < 30; i++) {
+      const d = new Date(start);
+      d.setUTCDate(start.getUTCDate() + i);
+      const key = d.toISOString().slice(0, 10);
+      out[key] = { lbs: i < 15 ? 200 : 195, lbs_adjusted_average: i < 15 ? 200 : 195 };
+    }
+    return out;
+  }
+
+  it('finds a strong regime change at the step point', async () => {
+    const { analyzer } = makeAnalyzer(buildStepFixture());
+    const out = await analyzer.detectRegimeChange({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period: { from: '2026-04-06', to: '2026-05-05' },
+    });
+    expect(out.changes.length).toBeGreaterThanOrEqual(1);
+    const top = out.changes[0];
+    // Algorithm finds highest-magnitude split at index 14 (2026-04-20):
+    // 14 days of 200 before, 16 days of 195 after — pooledStd≈0.856, magnitude≈5.48
+    // (index 15 gives pooledStd=0 so raw diff=5.0, which is lower)
+    expect(top.date).toBe('2026-04-20');
+    expect(top.confidence).toBeGreaterThan(0.5);
+    expect(top.before.mean).toBeCloseTo(200, 5);
+    // After window starts at idx 14 so includes 1 day of 200 + 15 days of 195 ≈ 195.31
+    expect(top.after.mean).toBeLessThan(198);
+    expect(top.magnitude).toBeGreaterThan(1);
+  });
+
+  it('returns empty changes for a flat series', async () => {
+    const { analyzer } = makeAnalyzer(buildFlatWeight());
+    const out = await analyzer.detectRegimeChange({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period: { from: '2026-04-06', to: '2026-05-05' },
+    });
+    expect(out.changes).toEqual([]);
+  });
+
+  it('handles too-few-points gracefully', async () => {
+    const { analyzer } = makeAnalyzer({});
+    const out = await analyzer.detectRegimeChange({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period: { from: '2026-04-06', to: '2026-05-05' },
+    });
+    expect(out.changes).toEqual([]);
+  });
+});
+
 describe('MetricTrendAnalyzer.trajectory', () => {
   it('returns slope, direction=down, and high rSquared for monotonic descent', async () => {
     const { analyzer } = makeAnalyzer();
