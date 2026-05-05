@@ -104,6 +104,61 @@ describe('MetricTrendAnalyzer.detectRegimeChange', () => {
   });
 });
 
+describe('MetricTrendAnalyzer.detectAnomalies', () => {
+  // 60-day fixture: ~200 lbs with small noise for 50 days, then a spike to 210 on day 50,
+  // then back to ~200. The spike should be detected. Small noise (±0.2) keeps stdev > 0
+  // so z-score arithmetic works correctly and the threshold parameter is honored.
+  function buildSpikeFixture() {
+    const out = {};
+    const start = new Date(Date.UTC(2026, 2, 7)); // 60 days back from 2026-05-05
+    // Deterministic noise pattern to avoid flat baselines
+    const noise = [0.1, -0.1, 0.2, -0.2, 0.1, -0.1, 0.2, -0.2, 0.1, -0.1];
+    for (let i = 0; i < 60; i++) {
+      const d = new Date(start);
+      d.setUTCDate(start.getUTCDate() + i);
+      const key = d.toISOString().slice(0, 10);
+      let lbs = i === 50 ? 210 : 200 + noise[i % noise.length]; // spike at day 50
+      out[key] = { lbs, lbs_adjusted_average: lbs };
+    }
+    return out;
+  }
+
+  it('detects a clear spike as an anomaly', async () => {
+    const { analyzer } = makeAnalyzer(buildSpikeFixture());
+    const out = await analyzer.detectAnomalies({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period: { from: '2026-03-07', to: '2026-05-05' },
+    });
+    expect(out.anomalies.length).toBeGreaterThanOrEqual(1);
+    const spike = out.anomalies.find(a => a.value === 210);
+    expect(spike).toBeDefined();
+    expect(spike.direction).toBe('high');
+    expect(Math.abs(spike.zScore)).toBeGreaterThan(2);
+  });
+
+  it('returns no anomalies for a flat series', async () => {
+    const { analyzer } = makeAnalyzer(buildFlatWeight());
+    const out = await analyzer.detectAnomalies({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period: { from: '2026-04-06', to: '2026-05-05' },
+    });
+    expect(out.anomalies).toEqual([]);
+  });
+
+  it('honors zScore_threshold parameter', async () => {
+    const { analyzer } = makeAnalyzer(buildSpikeFixture());
+    const out = await analyzer.detectAnomalies({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period: { from: '2026-03-07', to: '2026-05-05' },
+      zScore_threshold: 100,  // unreachable
+    });
+    expect(out.anomalies).toEqual([]);
+  });
+});
+
 describe('MetricTrendAnalyzer.trajectory', () => {
   it('returns slope, direction=down, and high rSquared for monotonic descent', async () => {
     const { analyzer } = makeAnalyzer();
