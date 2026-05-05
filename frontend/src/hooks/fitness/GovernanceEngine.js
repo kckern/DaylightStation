@@ -4,6 +4,7 @@ const normalizeLabel = (value) => {
 };
 
 import getLogger from '../../lib/logging/Logger.js';
+import { CadenceFilter } from './CadenceFilter.js';
 
 const normalizeLabelList = (labels) => {
   if (!Array.isArray(labels)) return [];
@@ -278,6 +279,12 @@ export class GovernanceEngine {
     this._stateChangePending = false;
 
     this._lastCycleSig = null;
+
+    // Per-equipment cadence filters and freshness watermarks. Filters are
+    // created lazily by _filteredCadenceFor(); the watermark map ensures we
+    // only treat a cadence-map entry as fresh when its `ts` strictly advances.
+    this._cadenceFilters = new Map();      // equipmentId → CadenceFilter
+    this._lastSeenCadenceTs = new Map();   // equipmentId → last ts we treated as fresh
   }
 
   /**
@@ -474,6 +481,47 @@ export class GovernanceEngine {
     this._previousUserZoneMap = { ...userZoneMap };
   }
 
+  /**
+   * Filtered RPM read for the given equipment.
+   *
+   * Returns { rpm, flags } where flags include `stale` and `lostSignal`. The
+   * caller decides what to do with stale/lost — for the cycle SM this means
+   * "do not lock on a stale read; do treat lostSignal as 0".
+   *
+   * **Freshness contract:** the cadence map entry may be re-read every engine
+   * tick even when the sensor has gone silent (the upstream pipeline doesn't
+   * clear it). We only count a sample as fresh when its `ts` is strictly
+   * greater than the last `ts` we observed for this equipment. Without this
+   * check, the filter's staleness clock would never advance and the held
+   * value would persist indefinitely — which is the bug the user hit:
+   * "RPM holds the most recent value much longer than it should."
+   */
+  _filteredCadenceFor(equipmentId, nowTs) {
+    if (!equipmentId) return { rpm: 0, flags: { lostSignal: true } };
+    let filter = this._cadenceFilters.get(equipmentId);
+    if (!filter) {
+      filter = new CadenceFilter();
+      this._cadenceFilters.set(equipmentId, filter);
+    }
+    const cadenceEntry = this._latestInputs?.equipmentCadenceMap?.[equipmentId];
+    const entryTs = Number(cadenceEntry?.ts);
+    const entryRpm = Number(cadenceEntry?.rpm);
+    const lastSeen = this._lastSeenCadenceTs.get(equipmentId) ?? -Infinity;
+
+    const isFresh =
+      cadenceEntry &&
+      Number.isFinite(entryTs) &&
+      entryTs > lastSeen &&
+      Number.isFinite(entryRpm);
+
+    if (isFresh) {
+      this._lastSeenCadenceTs.set(equipmentId, entryTs);
+      return filter.update({ rpm: entryRpm, ts: entryTs });
+    }
+    // No fresh sample this tick — let the filter advance its staleness clock.
+    return filter.tick(nowTs);
+  }
+
   _buildChallengeSnapshot(now) {
     const state = this.challengeState || {};
     const activeChallenge = state.activeChallenge;
@@ -483,8 +531,9 @@ export class GovernanceEngine {
     // ramp/init/phase progress, dim factor, boost info, and swap eligibility.
     if (activeChallenge.type === 'cycle') {
       const phase = activeChallenge.generatedPhases?.[activeChallenge.currentPhaseIndex] || null;
-      const cadenceEntry = this._latestInputs?.equipmentCadenceMap?.[activeChallenge.equipment];
-      const currentRpm = cadenceEntry?.rpm || 0;
+      const filtered = this._filteredCadenceFor(activeChallenge.equipment, Date.now());
+      const currentRpm = filtered.rpm;
+      const cadenceFlags = filtered.flags;
 
       // Dim factor only applies during maintain when RPM is in [lo, hi) band
       let dimFactor = 0;
@@ -587,6 +636,7 @@ export class GovernanceEngine {
         currentPhase: phase ? { ...phase } : null,
         generatedPhases: phases.map((p) => ({ ...p })),
         currentRpm,
+        cadenceFlags,
         phaseProgressPct,
         allPhasesProgress,
         rampRemainingMs,
@@ -1703,9 +1753,8 @@ export class GovernanceEngine {
     const tickManualCycle = () => {
       const active = this.challengeState?.activeChallenge;
       if (!active || active.type !== 'cycle' || !active.manualTrigger) return;
-      const cadenceEntry = this._latestInputs?.equipmentCadenceMap?.[active.equipment];
-      const rpmVal = Number(cadenceEntry?.rpm);
-      const equipmentRpm = Number.isFinite(rpmVal) ? rpmVal : 0;
+      const filtered = this._filteredCadenceFor(active.equipment, Date.now());
+      const equipmentRpm = filtered.rpm;
       this._evaluateCycleChallenge(active, {
         equipmentRpm,
         activeParticipants: this._latestInputs?.activeParticipants || [],
@@ -2984,9 +3033,8 @@ export class GovernanceEngine {
         // Cycle challenge branch — RPM-driven state machine. Skips the
         // zone-specific pending/expiry/summary flow entirely.
         if (challenge.type === 'cycle') {
-          const cadenceEntry = this._latestInputs?.equipmentCadenceMap?.[challenge.equipment];
-          const rpmVal = Number(cadenceEntry?.rpm);
-          const equipmentRpm = Number.isFinite(rpmVal) ? rpmVal : 0;
+          const filtered = this._filteredCadenceFor(challenge.equipment, Date.now());
+          const equipmentRpm = filtered.rpm;
 
           const riderZone = userZoneMap?.[challenge.rider];
           const riderRank = this._getZoneRank(riderZone) ?? 0;
