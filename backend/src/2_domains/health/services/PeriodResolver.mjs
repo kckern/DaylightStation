@@ -2,33 +2,52 @@
 
 /**
  * Resolves polymorphic period inputs into a concrete `{ from, to, label, source }`
- * tuple. Pure domain service — no I/O.
+ * tuple.
  *
- * Plan 1 handles:
+ * Plan 1 handles (sync internally):
  *   { rolling: 'last_<N>d' | 'last_<N>y' | 'all_time' | 'prev_<N>d' | 'prev_<N>y' }
  *   { calendar: 'YYYY' | 'YYYY-MM' | 'YYYY-Qn' | 'this_week' | 'this_month'
  *               | 'this_quarter' | 'this_year' | 'last_quarter' | 'last_year' }
  *   { from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' }
  *
- * `named` and `deduced` forms throw — they're wired in Plan 4.
+ * Plan 4 adds:
+ *   { named: 'slug' } — async lookup across working memory + playbook
+ *
+ * `deduced` form throws with hint to call deduce_period() explicitly.
  */
+
+const AGENT_ID = 'health-coach';
+const PERIOD_REMEMBERED_PREFIX = 'period.remembered.';
+const PERIOD_DEDUCED_PREFIX    = 'period.deduced.';
 
 export class PeriodResolver {
   /**
    * @param {object} [opts]
    * @param {() => Date} [opts.now] - injectable clock (defaults to new Date())
+   * @param {object} [opts.playbookLoader] - { loadPlaybook(userId) } for named lookup
+   * @param {object} [opts.workingMemoryAdapter] - { load(agentId, userId) } for named lookup
    */
-  constructor({ now = () => new Date() } = {}) {
+  constructor({
+    now = () => new Date(),
+    playbookLoader = null,
+    workingMemoryAdapter = null,
+  } = {}) {
     this.now = now;
+    this.playbookLoader = playbookLoader;
+    this.workingMemoryAdapter = workingMemoryAdapter;
   }
 
   /**
    * Resolve a polymorphic period input to absolute date bounds.
    *
+   * Sync forms (rolling/calendar/explicit) resolve immediately; named
+   * periods do an async lookup across playbook + working memory.
+   *
    * @param {object} input
-   * @returns {{from: string, to: string, label: string, source: 'rolling'|'calendar'|'explicit'|'named'|'deduced'}}
+   * @param {object} [ctx] - { userId } required for named-period lookup
+   * @returns {Promise<{from: string, to: string, label: string, source: string}>}
    */
-  resolve(input) {
+  async resolve(input, ctx = {}) {
     if (!input || typeof input !== 'object') {
       throw new Error('PeriodResolver.resolve: input must be an object');
     }
@@ -38,10 +57,10 @@ export class PeriodResolver {
       return { from: input.from, to: input.to, label: `${input.from}..${input.to}`, source: 'explicit' };
     }
     if (typeof input.named === 'string') {
-      throw new Error('Period kind "named" not yet supported (Plan 4 — period-memory)');
+      return this.#resolveNamed(input.named, ctx);
     }
     if (input.deduced) {
-      throw new Error('Period kind "deduced" not yet supported (Plan 4 — period-memory)');
+      throw new Error('deduced period inline resolution is not supported. Call deduce_period() first and pass the result as { from, to }.');
     }
     throw new Error('PeriodResolver.resolve: unknown period input shape');
   }
@@ -147,4 +166,56 @@ export class PeriodResolver {
     }
     throw new Error(`PeriodResolver: unknown calendar label "${label}"`);
   }
+
+  async #resolveNamed(slug, ctx) {
+    if (!this.playbookLoader && !this.workingMemoryAdapter) {
+      throw new Error('PeriodResolver: named period lookup requires playbookLoader or workingMemoryAdapter dep');
+    }
+    const userId = ctx?.userId;
+
+    // 1) workingMemory.period.remembered.<slug>
+    if (this.workingMemoryAdapter && userId) {
+      const state = await this.workingMemoryAdapter.load(AGENT_ID, userId);
+      const all = (typeof state?.getAll === 'function') ? state.getAll() : {};
+      const remembered = all[`${PERIOD_REMEMBERED_PREFIX}${slug}`];
+      if (remembered) {
+        return {
+          from: remembered.from, to: remembered.to,
+          label: remembered.label ?? slug,
+          source: 'named', subSource: 'remembered',
+        };
+      }
+      // 2) workingMemory.period.deduced.<slug>
+      const deduced = all[`${PERIOD_DEDUCED_PREFIX}${slug}`];
+      if (deduced) {
+        return {
+          from: deduced.from, to: deduced.to,
+          label: deduced.label ?? slug,
+          source: 'named', subSource: 'deduced',
+        };
+      }
+    }
+
+    // 3) playbook.named_periods.<slug>
+    if (this.playbookLoader && userId) {
+      const playbook = await this.playbookLoader.loadPlaybook(userId);
+      const period = playbook?.named_periods?.[slug];
+      if (period) {
+        return {
+          from: formatYmd(period.from),
+          to:   formatYmd(period.to),
+          label: slug,
+          source: 'named', subSource: 'declared',
+        };
+      }
+    }
+
+    throw new Error(`PeriodResolver: named period not found: "${slug}"`);
+  }
+}
+
+function formatYmd(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value);
 }
