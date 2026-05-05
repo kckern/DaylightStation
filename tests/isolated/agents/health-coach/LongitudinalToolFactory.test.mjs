@@ -1521,3 +1521,69 @@ describe('query_historical_weight — yearly_avg (Plan 5)', () => {
     expect(out.error).toMatch(/Unknown aggregation/);
   });
 });
+
+describe('query_historical_reconciliation (Plan 5)', () => {
+  function buildReconciliationFixture(today) {
+    const data = {};
+    for (let i = 0; i < 30; i++) {
+      const d = new Date(today);
+      d.setUTCDate(d.getUTCDate() - i);
+      const date = d.toISOString().slice(0, 10);
+      data[date] = {
+        tracked_calories: 2100 - i,
+        exercise_calories: 300 + i,
+        tracking_accuracy: 0.85,
+        implied_intake: 2000 + i,
+        calorie_adjustment: -100,
+      };
+    }
+    return data;
+  }
+
+  it('returns days in window with matured/redacted fields per row', async () => {
+    const today = new Date();  // anchor; tests ARE time-sensitive
+    const fixture = buildReconciliationFixture(today);
+    const healthStore = {
+      loadWeightData: vi.fn(async () => ({})),
+      loadNutritionData: vi.fn(async () => ({})),
+      loadReconciliationData: vi.fn(async () => fixture),
+    };
+    const factory = new LongitudinalToolFactory({ healthStore });
+    const tool = factory.createTools().find(t => t.name === 'query_historical_reconciliation');
+    expect(tool).toBeDefined();
+
+    const todayStr = today.toISOString().slice(0, 10);
+    const fromDate = new Date(today);
+    fromDate.setUTCDate(fromDate.getUTCDate() - 29);
+    const fromStr = fromDate.toISOString().slice(0, 10);
+
+    const out = await tool.execute({ userId: 'kc', from: fromStr, to: todayStr });
+    expect(out.days.length).toBe(30);
+    // Last 14 days redacted: only tracked_calories and exercise_calories present
+    const recent = out.days.find(d => d.date === todayStr);
+    expect(recent.tracked_calories).toBeDefined();
+    expect(recent.exercise_calories).toBeDefined();
+    expect(recent.tracking_accuracy).toBeUndefined();
+    expect(recent.implied_intake).toBeUndefined();
+    expect(recent.calorie_adjustment).toBeUndefined();
+    // Old days (> 14 days back) keep all fields
+    const oldDate = new Date(today);
+    oldDate.setUTCDate(oldDate.getUTCDate() - 20);
+    const oldStr = oldDate.toISOString().slice(0, 10);
+    const old = out.days.find(d => d.date === oldStr);
+    expect(old.tracking_accuracy).toBeDefined();
+    expect(old.implied_intake).toBeDefined();
+  });
+
+  it('returns empty days for an out-of-range window', async () => {
+    const healthStore = {
+      loadWeightData: vi.fn(async () => ({})),
+      loadNutritionData: vi.fn(async () => ({})),
+      loadReconciliationData: vi.fn(async () => ({ '2024-01-15': { tracked_calories: 2000 } })),
+    };
+    const factory = new LongitudinalToolFactory({ healthStore });
+    const tool = factory.createTools().find(t => t.name === 'query_historical_reconciliation');
+    const out = await tool.execute({ userId: 'kc', from: '2025-01-01', to: '2025-12-31' });
+    expect(out.days).toEqual([]);
+  });
+});
