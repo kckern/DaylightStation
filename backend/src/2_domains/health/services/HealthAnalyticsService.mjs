@@ -2,19 +2,9 @@
 
 import { MetricAggregator } from './MetricAggregator.mjs';
 import { MetricComparator } from './MetricComparator.mjs';
+import { MetricTrendAnalyzer } from './MetricTrendAnalyzer.mjs';
 
-/**
- * Composition root for the analytical surface. Plan 1 wires MetricAggregator.
- * Plan 2 adds MetricComparator (compare, summarizeChange, conditionalAggregate,
- * correlateMetrics). Plans 3-4 will add MetricTrendAnalyzer, PeriodMemory, etc.
- *
- * @typedef {object} HealthAnalyticsDeps
- * @property {object} healthStore
- * @property {object} healthService
- * @property {object} periodResolver
- */
 export class HealthAnalyticsService {
-  /** @param {HealthAnalyticsDeps} deps */
   constructor(deps) {
     if (!deps?.healthStore)    throw new Error('HealthAnalyticsService requires healthStore');
     if (!deps?.healthService)  throw new Error('HealthAnalyticsService requires healthService');
@@ -26,6 +16,10 @@ export class HealthAnalyticsService {
       periodResolver: deps.periodResolver,
       healthStore: deps.healthStore,
       healthService: deps.healthService,
+    });
+    this.trendAnalyzer = new MetricTrendAnalyzer({
+      aggregator: this.aggregator,
+      periodResolver: deps.periodResolver,
     });
   }
 
@@ -41,6 +35,12 @@ export class HealthAnalyticsService {
   summarizeChange(args)      { return this.comparator.summarizeChange(args); }
   conditionalAggregate(args) { return this.comparator.conditionalAggregate(args); }
   correlateMetrics(args)     { return this.comparator.correlateMetrics(args); }
+
+  // TrendAnalyzer delegates
+  trajectory(args)         { return this.trendAnalyzer.trajectory(args); }
+  detectRegimeChange(args) { return this.trendAnalyzer.detectRegimeChange(args); }
+  detectAnomalies(args)    { return this.trendAnalyzer.detectAnomalies(args); }
+  detectSustained(args)    { return this.trendAnalyzer.detectSustained(args); }
 }
 
 export default HealthAnalyticsService;

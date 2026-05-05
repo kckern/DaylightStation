@@ -338,6 +338,131 @@ describe('cli/commands/health', () => {
     });
   });
 
+  describe('trajectory action', () => {
+    it('emits JSON for `health trajectory <metric> --period <p>`', async () => {
+      const { stdout, stderr } = makeBuffers();
+      let captured;
+      const result = await health.run(
+        {
+          subcommand: 'health',
+          positional: ['trajectory', 'weight_lbs'],
+          flags: { period: 'last_90d', granularity: 'weekly' },
+          help: false,
+        },
+        {
+          stdout, stderr,
+          getHealthAnalytics: async () => ({
+            trajectory: async (args) => { captured = args; return { slope: -0.1, direction: 'down', rSquared: 0.95 }; },
+          }),
+        },
+      );
+      expect(result.exitCode).toBe(0);
+      expect(captured.granularity).toBe('weekly');
+    });
+  });
+
+  describe('regime-change action', () => {
+    it('emits JSON for `health regime-change <metric> --period <p>`', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const result = await health.run(
+        {
+          subcommand: 'health',
+          positional: ['regime-change', 'weight_lbs'],
+          flags: { period: 'last_2y', 'max-results': '5' },
+          help: false,
+        },
+        {
+          stdout, stderr,
+          getHealthAnalytics: async () => ({
+            detectRegimeChange: async () => ({ changes: [{ date: '2024-08-15', confidence: 0.8, magnitude: 2.5 }] }),
+          }),
+        },
+      );
+      expect(result.exitCode).toBe(0);
+      const out = JSON.parse(stdout.read().trim());
+      expect(out.changes.length).toBe(1);
+    });
+  });
+
+  describe('anomalies action', () => {
+    it('emits JSON for `health anomalies <metric> --period <p>`', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const result = await health.run(
+        {
+          subcommand: 'health',
+          positional: ['anomalies', 'workout_calories'],
+          flags: { period: 'last_90d' },
+          help: false,
+        },
+        {
+          stdout, stderr,
+          getHealthAnalytics: async () => ({
+            detectAnomalies: async () => ({ anomalies: [], count: 0 }),
+          }),
+        },
+      );
+      expect(result.exitCode).toBe(0);
+    });
+
+    it('passes z-score threshold flag', async () => {
+      const { stdout, stderr } = makeBuffers();
+      let captured;
+      await health.run(
+        {
+          subcommand: 'health',
+          positional: ['anomalies', 'weight_lbs'],
+          flags: { period: 'last_90d', 'z-threshold': '3' },
+          help: false,
+        },
+        {
+          stdout, stderr,
+          getHealthAnalytics: async () => ({
+            detectAnomalies: async (args) => { captured = args; return { anomalies: [], count: 0 }; },
+          }),
+        },
+      );
+      expect(captured.zScore_threshold).toBe(3);
+    });
+  });
+
+  describe('sustained action', () => {
+    it('emits JSON for `health sustained <metric> --period <p> --condition <json> --min-duration-days <n>`', async () => {
+      const { stdout, stderr } = makeBuffers();
+      let captured;
+      const result = await health.run(
+        {
+          subcommand: 'health',
+          positional: ['sustained', 'weight_lbs'],
+          flags: { period: 'last_year', condition: '{"value_range":[193,197]}', 'min-duration-days': '30' },
+          help: false,
+        },
+        {
+          stdout, stderr,
+          getHealthAnalytics: async () => ({
+            detectSustained: async (args) => { captured = args; return { runs: [] }; },
+          }),
+        },
+      );
+      expect(result.exitCode).toBe(0);
+      expect(captured.condition).toEqual({ value_range: [193, 197] });
+      expect(captured.min_duration_days).toBe(30);
+    });
+
+    it('exits 2 when --min-duration-days missing', async () => {
+      const { stdout, stderr } = makeBuffers();
+      const result = await health.run(
+        {
+          subcommand: 'health',
+          positional: ['sustained', 'weight_lbs'],
+          flags: { period: 'last_year', condition: '{"value_range":[193,197]}' },
+          help: false,
+        },
+        { stdout, stderr, getHealthAnalytics: async () => ({}) },
+      );
+      expect(result.exitCode).toBe(2);
+    });
+  });
+
   describe('userId resolution', () => {
     it('uses --user flag when provided', async () => {
       let captured;
