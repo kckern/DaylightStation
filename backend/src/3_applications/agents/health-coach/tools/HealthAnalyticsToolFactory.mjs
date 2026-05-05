@@ -148,6 +148,113 @@ export class HealthAnalyticsToolFactory extends ToolFactory {
           catch (err) { return { error: err.message }; }
         },
       }),
+
+      createTool({
+        name: 'compare_metric',
+        description:
+          'Compare a metric across two periods. Returns delta, percentChange, ' +
+          'and reliability scoring based on data coverage.',
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string' },
+            metric: { type: 'string' },
+            period_a: periodSchema,
+            period_b: periodSchema,
+            statistic: {
+              type: 'string',
+              enum: ['mean','median','min','max','count','sum','p25','p75','stdev'],
+              default: 'mean',
+            },
+          },
+          required: ['userId', 'metric', 'period_a', 'period_b'],
+        },
+        execute: async (args) => {
+          try { return await healthAnalyticsService.compare(args); }
+          catch (err) { return { error: err.message }; }
+        },
+      }),
+
+      createTool({
+        name: 'summarize_change',
+        description:
+          'Richer comparison than compare_metric — classifies change shape ' +
+          '(monotonic/volatile/step/reversal), reports inflection date and ' +
+          'per-side variance.',
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string' },
+            metric: { type: 'string' },
+            period_a: periodSchema,
+            period_b: periodSchema,
+            statistic: {
+              type: 'string',
+              enum: ['mean','median','min','max','count','sum','p25','p75','stdev'],
+              default: 'mean',
+            },
+          },
+          required: ['userId', 'metric', 'period_a', 'period_b'],
+        },
+        execute: async (args) => {
+          try { return await healthAnalyticsService.summarizeChange(args); }
+          catch (err) { return { error: err.message }; }
+        },
+      }),
+
+      createTool({
+        name: 'conditional_aggregate',
+        description:
+          'Compute a metric statistic for days matching a condition vs not. ' +
+          'Conditions: { tracked }, { workout }, { weekday }, { weekend }, ' +
+          '{ since: \'YYYY-MM-DD\' }, { before: \'YYYY-MM-DD\' }.',
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string' },
+            metric: { type: 'string' },
+            period: periodSchema,
+            condition: { type: 'object', description: 'Structured condition object — see description.' },
+            statistic: {
+              type: 'string',
+              enum: ['mean','median','min','max','count','sum','p25','p75','stdev'],
+              default: 'mean',
+            },
+          },
+          required: ['userId', 'metric', 'period', 'condition'],
+        },
+        execute: async (args) => {
+          try { return await healthAnalyticsService.conditionalAggregate(args); }
+          catch (err) { return { error: err.message }; }
+        },
+      }),
+
+      createTool({
+        name: 'correlate_metrics',
+        description:
+          'Joint behavior of two metrics over a period. Returns Spearman ' +
+          'and Pearson correlations, paired-observation count, and a coarse ' +
+          'interpretation (strong/weak positive/negative or none).',
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string' },
+            metric_a: { type: 'string' },
+            metric_b: { type: 'string' },
+            period: periodSchema,
+            granularity: {
+              type: 'string',
+              enum: ['daily','weekly','monthly','quarterly','yearly'],
+              default: 'daily',
+            },
+          },
+          required: ['userId', 'metric_a', 'metric_b', 'period'],
+        },
+        execute: async (args) => {
+          try { return await healthAnalyticsService.correlateMetrics(args); }
+          catch (err) { return { error: err.message }; }
+        },
+      }),
     ];
   }
 }
