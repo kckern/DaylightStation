@@ -2937,8 +2937,12 @@ export async function createAgentsApiRouter(config) {
     }
   }
 
+  // Resolve mediaDir early so all MastraAdapter instances can write transcripts.
+  // Falls back to a sibling of the data directory if getMediaDir is unavailable.
+  const mediaDir = configService?.getMediaDir?.() || null;
+
   // Create Mastra adapter (IAgentRuntime implementation)
-  const agentRuntime = new MastraAdapter({ logger });
+  const agentRuntime = new MastraAdapter({ logger, mediaDir });
 
   // Create working memory adapter for agent state persistence
   const workingMemory = new YamlWorkingMemoryAdapter({ dataService, logger });
@@ -3230,8 +3234,10 @@ export async function createConciergeServices(config) {
     process.env.OPENAI_API_KEY = openaiKey;
   }
 
+  const conciergeMediaDir = configService?.getMediaDir?.() || null;
   const conciergeAgentRuntime = new MastraAdapter({
     logger: logger.child({ component: 'mastra' }),
+    mediaDir: conciergeMediaDir,
   });
   const conciergeWorkingMemory = new YamlWorkingMemoryAdapter({
     dataService,
@@ -3329,6 +3335,7 @@ export async function createConciergeServices(config) {
           logger: logger.child({ component: 'judge-runtime' }),
           maxToolCalls: 1,
           timeoutMs: 8000,
+          mediaDir: conciergeMediaDir,
         });
         mediaJudge = new MediaJudge({
           agentRuntime: judgeRuntime,
