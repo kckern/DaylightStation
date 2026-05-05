@@ -436,7 +436,7 @@ this._cadenceFilters = new Map();      // equipmentId → CadenceFilter
 this._lastSeenCadenceTs = new Map();   // equipmentId → last ts we treated as fresh
 ```
 
-Then add this method to the class (place it near `_buildCycleSnapshot` or other private helpers):
+Then add this method to the class (place it near `_buildChallengeSnapshot (cycle branch)` or other private helpers):
 
 ```javascript
 /**
@@ -483,7 +483,7 @@ _filteredCadenceFor(equipmentId, nowTs) {
 
 - [ ] **Step 3: Replace the three call sites**
 
-At line ~486-487 (snapshot builder, inside `_buildCycleSnapshot`):
+At line ~486-487 (snapshot builder, inside `_buildChallengeSnapshot (cycle branch)`):
 
 Old:
 ```javascript
@@ -530,7 +530,7 @@ const equipmentRpm = filtered.rpm;
 
 - [ ] **Step 4: Forward `cadenceFlags` to the snapshot**
 
-In `_buildCycleSnapshot` (the `return { … }` near line 579-600), add:
+In `_buildChallengeSnapshot (cycle branch)` (the `return { … }` near line 579-600), add:
 
 ```javascript
 return {
@@ -738,7 +738,7 @@ describe('Cycle SM — transition debounce', () => {
 Run: `npx vitest run frontend/src/hooks/fitness/CycleStateMachine.test.js`
 Expected: the new "does not surface" test fails — current snapshot reflects the locked state instantly.
 
-- [ ] **Step 3: Implement the debounce in `_buildCycleSnapshot`**
+- [ ] **Step 3: Implement the debounce in `_buildChallengeSnapshot (cycle branch)`**
 
 In `GovernanceEngine.js` add to the `activeChallenge` initialisation in `_startCycleChallenge` (around line 2330):
 
@@ -749,7 +749,7 @@ _pendingCycleState: 'init',
 _pendingSince: now
 ```
 
-Then, in `_buildCycleSnapshot` (just before computing the return shape), add:
+Then, in `_buildChallengeSnapshot (cycle branch)` (just before computing the return shape), add:
 
 ```javascript
 const STATE_DEBOUNCE_MS = 500;
@@ -903,7 +903,7 @@ if (active.cycleState === 'init') {
 
 Also add `waitingForBaseReq: false` to the active-challenge initialisation in `_startCycleChallenge` (around line 2330).
 
-Forward `waitingForBaseReq` in the `_buildCycleSnapshot` return shape:
+Forward `waitingForBaseReq` in the `_buildChallengeSnapshot (cycle branch)` return shape:
 
 ```javascript
 return {
@@ -1540,7 +1540,7 @@ git commit -m "docs: archive cycling-challenge-ux-failure audit with resolution 
 ## Self-Review Notes
 
 - **Spec coverage:** Audit findings F1, F1b, F2, F3, F4, F5, F6 each have a labelled task. F1+F1b → Tasks 1-4. F2 → Task 7. F3 → Tasks 10-11. F4 → Task 8. F5 → Task 6. F6 → Task 12 (which forces manualTrigger by passing `riderId`, exercising the demo plumbing path).
-- **Type consistency:** `cadenceFlags` (object with `lostSignal`/`stale`) is created in Task 1, exposed by `_filteredCadenceFor` in Task 4, forwarded by `_buildCycleSnapshot` in Task 4, surfaced by `getCycleOverlayVisuals` in Task 9, and consumed by `CycleChallengeOverlay` in Task 11. `waitingForBaseReq` is created in Task 7, forwarded in Task 7's `_buildCycleSnapshot` change, surfaced in Task 9, consumed in Tasks 10-11.
+- **Type consistency:** `cadenceFlags` (object with `lostSignal`/`stale`) is created in Task 1, exposed by `_filteredCadenceFor` in Task 4, forwarded by `_buildChallengeSnapshot (cycle branch)` in Task 4, surfaced by `getCycleOverlayVisuals` in Task 9, and consumed by `CycleChallengeOverlay` in Task 11. `waitingForBaseReq` is created in Task 7, forwarded in Task 7's `_buildChallengeSnapshot (cycle branch)` change, surfaced in Task 9, consumed in Tasks 10-11.
 - **Placeholders:** None of the tasks defer code to the implementer except where the existing test file's fixture builder is the canonical source — that is flagged with explicit "mirror this file" instructions and the file path.
 - **Test discipline:** Every code-changing task is preceded by a failing test, then makes it pass. CLAUDE.md's "no skipping" / "no vacuously true" rule is honoured.
 - **Risk areas:**
