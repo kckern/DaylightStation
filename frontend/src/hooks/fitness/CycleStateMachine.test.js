@@ -437,3 +437,72 @@ describe('Cycle SM — init/ramp clocks pause when rider is idle (Task 8)', () =
     expect(snap.clockPaused).toBe(false);
   });
 });
+
+describe('Cycle SM — baseReqSatisfiedForRider snapshot exposure', () => {
+  // Pin Critical #1: CycleChallengeOverlay reads
+  // `challenge.baseReqSatisfiedForRider` to drive the green/red HR-zone
+  // indicator. Before the fix, the value was computed inside the eval loop
+  // and discarded — never copied onto the active challenge nor surfaced in
+  // the snapshot. These tests prove the value computed during eval is
+  // exposed via engine.state.challenge.baseReqSatisfiedForRider.
+  //
+  // We invoke `_evaluateCycleChallenge` directly (mirroring the gate-symmetry
+  // tests above) because the manual-trigger evaluate() path hardcodes
+  // baseReqSatisfiedForRider=true inside tickManualCycle. The non-manual
+  // eval-loop path requires phase==='unlocked', which is impossible to
+  // arrange with a single-rider fixture whose zone fails the base
+  // requirement. Direct invocation keeps the test focused on the
+  // eval→snapshot wiring without dragging in policy/phase machinery.
+
+  it('exposes baseReqSatisfiedForRider=true on the snapshot when the rider is in zone', () => {
+    const { engine, advance } = makeEngineWithActiveCycle(42);
+    const active = engine.challengeState.activeChallenge;
+    active._lastCycleTs = engine._now();
+
+    advance(200);
+    engine._evaluateCycleChallenge(active, {
+      equipmentRpm: 80,
+      activeParticipants: ['felix'],
+      userZoneMap: { felix: 'warm' },
+      baseReqSatisfiedForRider: true,    // in zone
+      baseReqSatisfiedGlobal: true
+    });
+
+    // _latestInputs is consulted by _buildChallengeSnapshot for boost
+    // contributors; populate enough to keep the snapshot path happy.
+    engine._latestInputs.activeParticipants = ['felix'];
+    engine._latestInputs.userZoneMap = { felix: 'warm' };
+    engine._latestInputs.equipmentCadenceMap = {
+      cycle_ace: { rpm: 80, connected: true, ts: engine._now() }
+    };
+
+    const snap = engine.state?.challenge;
+    expect(snap).toBeDefined();
+    expect(snap.baseReqSatisfiedForRider).toBe(true);
+  });
+
+  it('exposes baseReqSatisfiedForRider=false on the snapshot when the rider is out of zone', () => {
+    const { engine, advance } = makeEngineWithActiveCycle(42);
+    const active = engine.challengeState.activeChallenge;
+    active._lastCycleTs = engine._now();
+
+    advance(200);
+    engine._evaluateCycleChallenge(active, {
+      equipmentRpm: 80,
+      activeParticipants: ['felix'],
+      userZoneMap: { felix: 'cool' },
+      baseReqSatisfiedForRider: false,   // out of zone
+      baseReqSatisfiedGlobal: true
+    });
+
+    engine._latestInputs.activeParticipants = ['felix'];
+    engine._latestInputs.userZoneMap = { felix: 'cool' };
+    engine._latestInputs.equipmentCadenceMap = {
+      cycle_ace: { rpm: 80, connected: true, ts: engine._now() }
+    };
+
+    const snap = engine.state?.challenge;
+    expect(snap).toBeDefined();
+    expect(snap.baseReqSatisfiedForRider).toBe(false);
+  });
+});
