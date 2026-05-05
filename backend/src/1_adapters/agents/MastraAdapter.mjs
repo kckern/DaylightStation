@@ -250,34 +250,53 @@ export class MastraAdapter {
    */
   async *streamExecute({ agent, agentId, input, tools, systemPrompt, context = {} }) {
     const name = agentId || agent?.constructor?.id || 'unknown';
-    const callCounter = { count: 0 };
-    const mastraTools = this.#translateTools(tools || [], context, callCounter);
+    const turnId = context.turnId ?? crypto.randomUUID();
+    const userId = context.userId ?? null;
 
-    const mastraAgent = new Agent({
-      name,
-      instructions: systemPrompt,
-      model: this.#model,
-      tools: mastraTools,
+    const transcript = new AgentTranscript({
+      agentId: name,
+      userId,
+      turnId,
+      input: { text: input, context: { ...context, turnId } },
+      mediaDir: this.#mediaDir,
+      logger: this.#logger,
     });
+    transcript.setSystemPrompt(systemPrompt);
+    transcript.setModel(parseModelDescriptor(this.#model));
 
+    const callCounter = { count: 0 };
+    const mastraTools = this.#translateTools(tools || [], context, callCounter, transcript);
+
+    const startedAt = Date.now();
     this.#logger.info?.('agent.stream.start', {
       agentId: name,
-      inputLength: input?.length,
-      toolCount: Object.keys(mastraTools).length,
+      turnId,
+      userId,
     });
 
-    const start = Date.now();
-    let totalChunks = 0;
+    let accumulatedText = '';
+    let finishReason = 'stop';
+    let usage = null;
+
     try {
+      const mastraAgent = new Agent({
+        name,
+        instructions: systemPrompt,
+        model: this.#model,
+        tools: mastraTools,
+      });
+
       const output = await mastraAgent.stream(input);
       const iterable = output?.fullStream ?? output;
       for await (const part of iterable) {
-        totalChunks++;
         const payload = part?.payload ?? {};
         switch (part?.type) {
-          case 'text-delta':
-            yield { type: 'text-delta', text: payload.text ?? part.textDelta ?? part.text ?? '' };
+          case 'text-delta': {
+            const text = payload.text ?? part.textDelta ?? part.text ?? '';
+            accumulatedText += text;
+            yield { type: 'text-delta', text };
             break;
+          }
           case 'tool-call':
             yield { type: 'tool-start', toolName: payload.toolName ?? part.toolName, args: payload.args ?? part.args };
             break;
@@ -285,29 +304,40 @@ export class MastraAdapter {
             yield { type: 'tool-end', toolName: payload.toolName ?? part.toolName, result: payload.result ?? part.result };
             break;
           case 'finish':
-            yield {
-              type: 'finish',
-              reason: payload?.stepResult?.reason ?? part.finishReason ?? 'stop',
-              usage: payload?.output?.usage ?? part.usage,
-            };
+            finishReason = payload?.stepResult?.reason ?? part.finishReason ?? 'stop';
+            usage = payload?.output?.usage ?? part.usage ?? null;
+            yield { type: 'finish', reason: finishReason, usage };
             break;
           default:
-            this.#logger.debug?.('agent.stream.unknown_event', { type: part?.type });
+            this.#logger.debug?.('agent.stream.unknown_event', {
+              type: part?.type,
+              turnId,
+            });
         }
       }
+
+      transcript.setOutput({ text: accumulatedText, finishReason, usage });
+      transcript.setStatus('ok');
+
       this.#logger.info?.('agent.stream.complete', {
         agentId: name,
-        totalChunks,
-        latencyMs: Date.now() - start,
-        toolCallsUsed: callCounter.count,
+        turnId,
+        status: 'ok',
+        durationMs: Date.now() - startedAt,
       });
     } catch (error) {
+      transcript.setError(error, { toolCallsBeforeError: callCounter.count });
+      transcript.setStatus(error?.name === 'AbortError' ? 'aborted' : 'error');
+
       this.#logger.error?.('agent.stream.error', {
         agentId: name,
+        turnId,
         error: error.message,
-        latencyMs: Date.now() - start,
+        durationMs: Date.now() - startedAt,
       });
       throw error;
+    } finally {
+      try { await transcript.flush(); } catch { /* swallow */ }
     }
   }
 
@@ -317,20 +347,24 @@ export class MastraAdapter {
    */
   async executeInBackground(options, onComplete) {
     const taskId = crypto.randomUUID();
+    const turnId = options.context?.turnId ?? crypto.randomUUID();
+    const augmented = { ...options, context: { ...options.context, turnId } };
 
     this.#logger.info?.('agent.background.start', {
       taskId,
-      agentId: options.agent?.constructor?.id,
+      turnId,
+      agentId: options.agentId || options.agent?.constructor?.id,
     });
 
     setImmediate(async () => {
       try {
-        const result = await this.execute(options);
-        this.#logger.info?.('agent.background.complete', { taskId });
+        const result = await this.execute(augmented);
+        this.#logger.info?.('agent.background.complete', { taskId, turnId });
         onComplete?.(result);
       } catch (error) {
         this.#logger.error?.('agent.background.error', {
           taskId,
+          turnId,
           error: error.message,
         });
         onComplete?.({ error: error.message });
