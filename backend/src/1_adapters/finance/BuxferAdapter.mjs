@@ -298,8 +298,25 @@ export class BuxferAdapter {
     toAccountId,
     fromAccountId
   }) {
+    // For transfers, Buxfer requires both fromAccountId and toAccountId.
+    // Accept legacy `accountId` as a stand-in for `fromAccountId` so older
+    // callers don't silently produce one-sided transfers (the source-leg
+    // ends up null and the source account never gets debited).
+    if (type === 'transfer') {
+      const resolvedFrom = fromAccountId || accountId;
+      if (!resolvedFrom || !toAccountId) {
+        throw new InfrastructureError(
+          'Buxfer transfer requires fromAccountId (or accountId) AND toAccountId',
+          { code: 'INVALID_TRANSFER', service: 'Buxfer', fromAccountId, accountId, toAccountId }
+        );
+      }
+      fromAccountId = resolvedFrom;
+      // Don't pass accountId for transfers — Buxfer ignores it for type=transfer
+      // and including it has caused confusion in past payloads.
+      accountId = undefined;
+    }
+
     const params = {
-      accountId,
       amount,
       date,
       description,
@@ -308,15 +325,16 @@ export class BuxferAdapter {
       status
     };
 
+    if (accountId) params.accountId = accountId;
     if (toAccountId) params.toAccountId = toAccountId;
     if (fromAccountId) params.fromAccountId = fromAccountId;
 
     try {
       const response = await this.request('transaction_add', params, 'POST');
-      this.logger.info?.('buxfer.transaction_added', { description, amount });
+      this.logger.info?.('buxfer.transaction_added', { description, amount, type });
       return response;
     } catch (error) {
-      this.logger.error?.('buxfer.add_failed', { error: error.message });
+      this.logger.error?.('buxfer.add_failed', { error: error.message, type, description });
       throw error;
     }
   }

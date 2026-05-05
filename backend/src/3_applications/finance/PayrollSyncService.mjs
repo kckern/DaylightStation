@@ -49,11 +49,14 @@ export class PayrollSyncService {
       return this.#payrollConfig;
     }
 
-    // Fallback for backwards compatibility (to be removed)
+    // Fallback for backwards compatibility. Accept multiple field-name
+    // variants because `data/household/auth/payroll.yml` has historically
+    // used snake_case (`auth_key`, `auth_cookie`) while older code looked
+    // for `authkey`/`auth` — silently producing undefined cookie headers.
     const auth = this.#configService.getUserAuth?.('payroll') || {};
     return {
       baseUrl: auth.base_url || auth.base,
-      authKey: auth.cookie_name || auth.authkey,
+      authKey: auth.cookie_name || auth.authkey || auth.auth_key,
       authCookie: auth.auth_cookie || auth.auth,
       company: auth.company,
       employeeId: auth.employee_id || auth.employee,
@@ -110,13 +113,18 @@ export class PayrollSyncService {
     const checks = checksResponse.data?.data?.checkSummaries || [];
     this.#logger.info?.('payroll.sync.found', { count: checks.length });
 
-    // Build a set of existing check IDs to detect already-fetched paychecks.
-    // Each stored paycheck may have a `_checkId` field from prior syncs.
-    // Also index by payEndDt for legacy entries without _checkId.
+    // Build sets to detect already-fetched paychecks. We track by both
+    // TriNet check ID (modern) AND payEndDt (legacy entries stored before
+    // _checkId was added) — otherwise re-syncing legacy data produces
+    // duplicate `<date>-rsu` entries because the new id format never
+    // matches the old date-based key.
     const existingCheckIds = new Set();
+    const existingPayEndDts = new Set();
     for (const [key, data] of Object.entries(existingData.paychecks || {})) {
       if (data._checkId) existingCheckIds.add(data._checkId);
-      existingCheckIds.add(key); // legacy: payEndDt was used as key
+      // Legacy entries used payEndDt as the storage key directly.
+      const legacyDate = key.replace(/-rsu$/, '');
+      if (/^\d{4}-\d{2}-\d{2}$/.test(legacyDate)) existingPayEndDts.add(legacyDate);
     }
 
     // Fetch details for each new paycheck
@@ -129,10 +137,24 @@ export class PayrollSyncService {
 
       if (!payEndDt) continue;
 
-      // Skip if already retrieved (by check ID or legacy payEndDt key)
+      // Skip if already retrieved by modern check ID, OR if a legacy entry
+      // exists for this payEndDt and there is no entry for this specific id.
+      // (A legitimate off-cycle RSU vest will have a different id but the
+      // same payEndDt — those still need to be fetched, but we shouldn't
+      // re-fetch the regular paycheck the legacy entry already represents.)
       if (existingCheckIds.has(id)) {
-        this.#logger.debug?.('payroll.paycheck.skip', { payEndDt, id });
+        this.#logger.debug?.('payroll.paycheck.skip', { payEndDt, id, reason: 'id-known' });
         continue;
+      }
+      if (existingPayEndDts.has(payEndDt) && !paychecks[`${payEndDt}-rsu`]) {
+        // Legacy entry exists at this date and no -rsu slot is taken —
+        // assume this is the same paycheck and stamp it with its real id.
+        if (paychecks[payEndDt] && !paychecks[payEndDt]._checkId) {
+          paychecks[payEndDt]._checkId = id;
+          existingCheckIds.add(id);
+          this.#logger.info?.('payroll.paycheck.legacy_id_attached', { payEndDt, id });
+          continue;
+        }
       }
 
       // Fetch paycheck details
@@ -167,9 +189,9 @@ export class PayrollSyncService {
     }
 
     // Upload transactions if gateway available
-    let uploadedCount = 0;
+    let uploadResult = { uploadedCount: 0, failures: [] };
     if (this.#transactionGateway && payrollAccountId) {
-      uploadedCount = await this.#uploadTransactions(paychecks, {
+      uploadResult = await this.#uploadTransactions(paychecks, {
         payrollAccountId,
         directDepositAccountId,
         householdId,
@@ -177,10 +199,11 @@ export class PayrollSyncService {
     }
 
     return {
-      status: 'success',
+      status: uploadResult.failures.length > 0 ? 'partial_success' : 'success',
       paychecksFound: checks.length,
       newPaychecks: newCount,
-      transactionsUploaded: uploadedCount,
+      transactionsUploaded: uploadResult.uploadedCount,
+      uploadFailures: uploadResult.failures,
     };
   }
 
@@ -256,26 +279,41 @@ export class PayrollSyncService {
 
     // Upload new transactions
     let uploadedCount = 0;
+    const failures = [];
     for (const txn of toUpload) {
+      const txType = txn.type || (txn.amount < 0 ? 'expense' : 'income');
       try {
-        await this.#transactionGateway.addTransaction({
-          accountId: payrollAccountId,
+        const params = {
           amount: txn.amount,
           date: txn.date,
           description: txn.desc,
           tags: txn.category ? [txn.category] : [],
-          type: txn.type || (txn.amount < 0 ? 'expense' : 'income'),
-          toAccountId: txn.toAccountId,
+          type: txType,
           status: 'cleared',
-        });
+        };
+        if (txType === 'transfer') {
+          // Two-sided transfer: payroll account is the source, txn.toAccountId is the destination
+          params.fromAccountId = payrollAccountId;
+          params.toAccountId = txn.toAccountId;
+        } else {
+          params.accountId = payrollAccountId;
+          if (txn.toAccountId) params.toAccountId = txn.toAccountId;
+        }
+        await this.#transactionGateway.addTransaction(params);
         uploadedCount++;
-        this.#logger.info?.('payroll.upload.success', { date: txn.date, amount: txn.amount });
+        this.#logger.info?.('payroll.upload.success', { date: txn.date, amount: txn.amount, type: txType });
       } catch (error) {
-        this.#logger.warn?.('payroll.upload.error', { date: txn.date, error: error.message });
+        const failure = { date: txn.date, amount: txn.amount, type: txType, desc: txn.desc, error: error.message };
+        failures.push(failure);
+        this.#logger.warn?.('payroll.upload.error', failure);
       }
     }
 
-    return uploadedCount;
+    if (failures.length > 0) {
+      this.#logger.warn?.('payroll.upload.partial_failure', { uploadedCount, failureCount: failures.length });
+    }
+
+    return { uploadedCount, failures };
   }
 
   /**

@@ -8,6 +8,7 @@ import Player from '../../modules/Player/Player.jsx';
 import AppContainer from '../../modules/AppContainer/AppContainer.jsx';
 import { getApp } from '../../lib/appRegistry.js';
 import { getWidgetRegistry } from '../widgets/registry.js';
+import { useScreenVolume } from '../../lib/volume/ScreenVolumeContext.js';
 import getLogger from '../../lib/logging/Logger.js';
 
 let _logger;
@@ -39,6 +40,7 @@ function logger() {
 export function ScreenActionHandler({ actions = {} }) {
   const { showOverlay, dismissOverlay, hasOverlay, escapeInterceptorRef } = useScreenOverlay();
   const pip = usePip();
+  const { step: stepVolume, toggleMute: toggleVolumeMute, stepSize: volumeStepSize } = useScreenVolume();
   const shaderRef = useRef(null);
   const prevShaderOpacity = useRef(null);
 
@@ -200,18 +202,21 @@ export function ScreenActionHandler({ actions = {} }) {
     media.playbackRate = rates[(idx + 1) % rates.length];
   }, []);
 
-  // --- Volume ---
+  // --- Volume (software master, applied as a multiplier on every audio source
+  //     rendered inside the screen-framework — see lib/volume/ScreenVolumeContext.js) ---
   const handleVolume = useCallback((payload) => {
-    const endpoints = {
-      '+1': 'api/v1/home/vol/+',
-      '-1': 'api/v1/home/vol/-',
-      'mute_toggle': 'api/v1/home/vol/togglemute',
-    };
-    const endpoint = endpoints[payload.command] || 'api/v1/home/vol/cycle';
-    DaylightAPI(endpoint).catch((err) => {
-      logger().warn('volume.api-error', { endpoint, error: err.message });
-    });
-  }, []);
+    const cmd = payload?.command;
+    const stepSize = volumeStepSize ?? 0.1;
+    if (cmd === '+1') {
+      stepVolume(+stepSize);
+    } else if (cmd === '-1') {
+      stepVolume(-stepSize);
+    } else if (cmd === 'mute_toggle') {
+      toggleVolumeMute();
+    } else {
+      logger().warn('volume.unknown-command', { command: cmd });
+    }
+  }, [stepVolume, toggleVolumeMute, volumeStepSize]);
 
   // --- Shader (dimming) ---
   const handleShader = useCallback(() => {
