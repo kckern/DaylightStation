@@ -104,6 +104,99 @@ describe('MetricTrendAnalyzer.detectRegimeChange', () => {
   });
 });
 
+describe('MetricTrendAnalyzer.detectSustained', () => {
+  // 30 days: lbs starts at 200, stays in [193, 197] for days 10-25 (16 days),
+  // and is outside that range otherwise.
+  function buildBandedFixture() {
+    const out = {};
+    const start = new Date(Date.UTC(2026, 3, 6));
+    const sequence = [];
+    for (let i = 0; i < 30; i++) {
+      const d = new Date(start);
+      d.setUTCDate(start.getUTCDate() + i);
+      const key = d.toISOString().slice(0, 10);
+      let lbs;
+      if (i < 10) lbs = 200;
+      else if (i < 26) lbs = 195;  // in [193, 197] for days 10..25 (16 days)
+      else lbs = 200;
+      out[key] = { lbs, lbs_adjusted_average: lbs };
+      sequence.push({ key, lbs });
+    }
+    return out;
+  }
+
+  it('finds a sustained run within value_range', async () => {
+    const { analyzer } = makeAnalyzer(buildBandedFixture());
+    const out = await analyzer.detectSustained({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period: { from: '2026-04-06', to: '2026-05-05' },
+      condition: { value_range: [193, 197] },
+      min_duration_days: 7,
+    });
+    expect(out.runs.length).toBe(1);
+    const run = out.runs[0];
+    // Days 10..25 are in range
+    expect(run.from).toBe('2026-04-16');
+    expect(run.to).toBe('2026-05-01');
+    expect(run.durationDays).toBe(16);
+    expect(run.summary.mean).toBeCloseTo(195, 5);
+  });
+
+  it('drops runs shorter than min_duration_days', async () => {
+    const { analyzer } = makeAnalyzer(buildBandedFixture());
+    const out = await analyzer.detectSustained({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period: { from: '2026-04-06', to: '2026-05-05' },
+      condition: { value_range: [193, 197] },
+      min_duration_days: 30,  // longer than the 16-day run
+    });
+    expect(out.runs).toEqual([]);
+  });
+
+  it('handles field_above condition', async () => {
+    const { analyzer } = makeAnalyzer(buildBandedFixture());
+    const out = await analyzer.detectSustained({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period: { from: '2026-04-06', to: '2026-05-05' },
+      condition: { field_above: 198 },
+      min_duration_days: 5,
+    });
+    expect(out.runs.length).toBeGreaterThanOrEqual(1);
+    // The first 10 days (lbs=200) should match
+    const first = out.runs.find(r => r.from === '2026-04-06');
+    expect(first).toBeDefined();
+    expect(first.durationDays).toBe(10);
+  });
+
+  it('handles field_below condition', async () => {
+    const { analyzer } = makeAnalyzer(buildBandedFixture());
+    const out = await analyzer.detectSustained({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period: { from: '2026-04-06', to: '2026-05-05' },
+      condition: { field_below: 198 },
+      min_duration_days: 5,
+    });
+    // Days 10..25 are at 195 (< 198) → 16-day run
+    expect(out.runs.length).toBe(1);
+    expect(out.runs[0].durationDays).toBe(16);
+  });
+
+  it('throws on unknown condition shape', async () => {
+    const { analyzer } = makeAnalyzer();
+    await expect(analyzer.detectSustained({
+      userId: 'kc',
+      metric: 'weight_lbs',
+      period: { from: '2026-04-06', to: '2026-05-05' },
+      condition: { magic: 'unicorn' },
+      min_duration_days: 5,
+    })).rejects.toThrow(/unknown condition/);
+  });
+});
+
 describe('MetricTrendAnalyzer.detectAnomalies', () => {
   // 60-day fixture: ~200 lbs with small noise for 50 days, then a spike to 210 on day 50,
   // then back to ~200. The spike should be detected. Small noise (±0.2) keeps stdev > 0
