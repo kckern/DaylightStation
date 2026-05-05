@@ -99,4 +99,15 @@ describe('CadenceFilter — staleness', () => {
     expect(fresh.flags.stale).toBe(false);
     expect(fresh.flags.lostSignal).toBe(false);
   });
+
+  it('re-baselines the staleness clock after a fresh update', () => {
+    const f = new CadenceFilter();
+    f.update({ rpm: 60, ts: 1000 });
+    f.tick(2500);                            // gap=1500 — would be stale
+    f.update({ rpm: 58, ts: 2700 });         // re-baseline _lastUpdateTs to 2700
+    const stillFresh = f.tick(3500);         // new gap = 800 ms — should be fresh
+    expect(stillFresh.flags.stale).toBe(false);
+    expect(stillFresh.flags.lostSignal).toBe(false);
+    expect(stillFresh.rpm).toBeGreaterThan(0);
+  });
 });
