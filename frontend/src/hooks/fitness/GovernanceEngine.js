@@ -531,7 +531,7 @@ export class GovernanceEngine {
     // ramp/init/phase progress, dim factor, boost info, and swap eligibility.
     if (activeChallenge.type === 'cycle') {
       const phase = activeChallenge.generatedPhases?.[activeChallenge.currentPhaseIndex] || null;
-      const filtered = this._filteredCadenceFor(activeChallenge.equipment, Date.now());
+      const filtered = this._filteredCadenceFor(activeChallenge.equipment, this._now());
       const currentRpm = filtered.rpm;
       const cadenceFlags = filtered.flags;
 
@@ -1753,7 +1753,7 @@ export class GovernanceEngine {
     const tickManualCycle = () => {
       const active = this.challengeState?.activeChallenge;
       if (!active || active.type !== 'cycle' || !active.manualTrigger) return;
-      const filtered = this._filteredCadenceFor(active.equipment, Date.now());
+      const filtered = this._filteredCadenceFor(active.equipment, this._now());
       const equipmentRpm = filtered.rpm;
       this._evaluateCycleChallenge(active, {
         equipmentRpm,
@@ -3033,7 +3033,7 @@ export class GovernanceEngine {
         // Cycle challenge branch — RPM-driven state machine. Skips the
         // zone-specific pending/expiry/summary flow entirely.
         if (challenge.type === 'cycle') {
-          const filtered = this._filteredCadenceFor(challenge.equipment, Date.now());
+          const filtered = this._filteredCadenceFor(challenge.equipment, this._now());
           const equipmentRpm = filtered.rpm;
 
           const riderZone = userZoneMap?.[challenge.rider];
