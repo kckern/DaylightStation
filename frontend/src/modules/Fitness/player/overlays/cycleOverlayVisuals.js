@@ -11,7 +11,13 @@
  *     ringOpacity: number,     // [0..1] — dims with dimFactor in the dim band
  *     dimPulse: boolean,       // true when maintain + dimFactor > 0 (orange)
  *     phaseProgress: number,   // [0..1] — clamped challenge.phaseProgressPct
- *     positionValid: boolean   // always true for non-null cycle challenges
+ *     positionValid: boolean,  // always true for non-null cycle challenges
+ *     lostSignal: boolean,     // cadenceFlags.lostSignal (no recent cadence data)
+ *     stale: boolean,          // cadenceFlags.stale (cadence data is aged)
+ *     waitingForBaseReq: boolean,  // waiting for initial baseline request
+ *     clockPaused: boolean,    // init/ramp clocks are paused (rider idle)
+ *     initRemainingMs: number|null,  // milliseconds left in init phase
+ *     rampRemainingMs: number|null   // milliseconds left in ramp phase
  *   }
  *
  * Color mapping (per Task 21 spec):
@@ -37,7 +43,13 @@ const OFF = Object.freeze({
   ringOpacity: 0,
   dimPulse: false,
   phaseProgress: 0,
-  positionValid: false
+  positionValid: false,
+  lostSignal: false,
+  stale: false,
+  waitingForBaseReq: false,
+  clockPaused: false,
+  initRemainingMs: null,
+  rampRemainingMs: null
 });
 
 const clamp01 = (value) => {
@@ -108,13 +120,28 @@ export function getCycleOverlayVisuals(challenge) {
       return OFF;
   }
 
+  const lostSignal        = Boolean(challenge.cadenceFlags?.lostSignal);
+  const stale             = Boolean(challenge.cadenceFlags?.stale);
+  const waitingForBaseReq = Boolean(challenge.waitingForBaseReq);
+  const clockPaused       = Boolean(challenge.clockPaused);
+  const initRemainingMs   = Number.isFinite(challenge.initRemainingMs)
+    ? challenge.initRemainingMs : null;
+  const rampRemainingMs   = Number.isFinite(challenge.rampRemainingMs)
+    ? challenge.rampRemainingMs : null;
+
   return {
     visible: true,
     ringColor,
     ringOpacity,
     dimPulse,
     phaseProgress,
-    positionValid: true
+    positionValid: true,
+    lostSignal,
+    stale,
+    waitingForBaseReq,
+    clockPaused,
+    initRemainingMs,
+    rampRemainingMs
   };
 }
 
