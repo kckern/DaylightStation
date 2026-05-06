@@ -142,6 +142,21 @@ export class BaseAgent {
   }
 
   /**
+   * buildToolDecorators — override in subclasses to inject additional
+   * ToolDecorators into the chain before the framework defaults
+   * (UserIdInjector, CallLimiter, TranscriptRecorder).
+   *
+   * The returned decorators run BEFORE the framework defaults — i.e. the
+   * leftmost in the final chain. At call time, the outermost decorator
+   * runs first.
+   *
+   * @returns {import('./decorators/ToolDecorator.mjs').ToolDecorator[]}
+   */
+  buildToolDecorators() {
+    return [];
+  }
+
+  /**
    * Build the array of prompt sections that get joined to form the system
    * prompt. Override to add, remove, or reorder sections in subclasses.
    *
