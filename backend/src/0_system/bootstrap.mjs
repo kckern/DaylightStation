@@ -3448,12 +3448,20 @@ export async function createConciergeServices(config) {
     ? {
         async runChat({ satellite, messages, conversationId = null, transcript = null }) {
           const input = lastUserMessage(messages);
-          return agentOrchestrator.run(ConciergeAgent.id, input, {
+          const result = await agentOrchestrator.run(ConciergeAgent.id, input, {
             satellite,
             conversationId,
             transcript,
             userId: 'household',
           });
+          // Translate orchestrator shape → translator shape.
+          // agentOrchestrator.run() returns { output, toolCalls, usage } (BaseAgent contract).
+          // OpenAIChatCompletionsTranslator reads result.content — map output → content.
+          return {
+            content: result?.output ?? '',
+            toolCalls: result?.toolCalls ?? [],
+            usage: result?.usage ?? null,
+          };
         },
         async *streamChat({ satellite, messages, conversationId = null, transcript = null }) {
           const input = lastUserMessage(messages);

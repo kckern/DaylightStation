@@ -9,12 +9,10 @@
 // Stack under test:
 //   ConciergeAgent → AgentOrchestrator → bridge → OpenAIChatCompletionsTranslator → AgentTranscript
 //
-// Note on content field: AgentOrchestrator.run() → ConciergeAgent.run() → BaseAgent.run()
-// → agentRuntime.execute() all return { output, toolCalls, usage }. The bridge in
-// bootstrap.mjs passes this through unchanged (no output→content rename). The translator
-// reads result.content, which is undefined, and falls back to '' via `result.content ?? ''`.
-// This test validates the actual end-to-end behaviour — content is an empty string when
-// the runtime returns `output` rather than `content`.
+// Shape contract: AgentOrchestrator.run() returns { output, toolCalls, usage }.
+// The bridge in bootstrap.mjs translates this to { content, toolCalls, usage } so
+// that OpenAIChatCompletionsTranslator (which reads result.content) receives the
+// correct field. The makeBridge helper below mirrors that translation.
 
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { mkdtemp, rm, readdir, readFile } from 'node:fs/promises';
@@ -52,8 +50,8 @@ function makeWorkingMemory() {
 
 /**
  * Minimal bridge that mirrors bootstrap.mjs's chatCompletionRunner exactly —
- * calls AgentOrchestrator.run() / streamExecute() and passes the result through
- * without any field renaming.
+ * calls AgentOrchestrator.run() and translates { output, toolCalls, usage }
+ * → { content, toolCalls, usage } so the translator receives result.content.
  */
 function makeBridge(orchestrator, agentId) {
   function lastUserMessage(messages) {
@@ -69,12 +67,17 @@ function makeBridge(orchestrator, agentId) {
   return {
     async runChat({ satellite, messages, conversationId = null, transcript = null }) {
       const input = lastUserMessage(messages);
-      return orchestrator.run(agentId, input, {
+      const result = await orchestrator.run(agentId, input, {
         satellite,
         conversationId,
         transcript,
         userId: 'household',
       });
+      return {
+        content: result?.output ?? '',
+        toolCalls: result?.toolCalls ?? [],
+        usage: result?.usage ?? null,
+      };
     },
     async *streamChat({ satellite, messages, conversationId = null, transcript = null }) {
       const input = lastUserMessage(messages);
@@ -175,8 +178,8 @@ describe('concierge smoke — non-stream path', () => {
     expect(body.object).toBe('chat.completion');
     expect(Array.isArray(body.choices)).toBe(true);
     expect(body.choices[0].message.role).toBe('assistant');
-    // content is string (empty string because bridge passes `output`, translator reads `content`)
-    expect(typeof body.choices[0].message.content).toBe('string');
+    // Bridge maps output → content; translator populates envelope with the string.
+    expect(body.choices[0].message.content).toMatch(/saved|note|hello/i);
   });
 
   it('calls the agent runtime (LLM stub was invoked)', async () => {
@@ -285,14 +288,13 @@ describe('concierge smoke — policy deny path', () => {
     const body = res._body();
     expect(body).toBeTruthy();
     expect(body.object).toBe('chat.completion');
+    expect(body.choices[0].message.role).toBe('assistant');
 
     // ConciergeAgent.#refusalContent() formats: "I can't do that right now — {reason}."
+    // Bridge maps output → content; refusal text should appear in the envelope.
     const content = body.choices[0].message.content;
-    expect(typeof content).toBe('string');
-    // The refusal text comes through as output→ passed as bridge result→ translator reads result.content
-    // which is undefined → falls back to ''. So content is '' here, but runtimeExecute not called
-    // is the real assertion. We still verify the envelope is valid.
-    expect(body.choices[0].message.role).toBe('assistant');
+    expect(content).toMatch(/can't do that/i);
+    expect(content).toContain('test_deny');
   });
 
   it('ConciergeAgent.run() returns refusal output directly without hitting runtime', async () => {
