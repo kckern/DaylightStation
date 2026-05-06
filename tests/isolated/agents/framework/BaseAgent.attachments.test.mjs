@@ -50,3 +50,53 @@ describe('BaseAgent attachment preamble', () => {
     expect(runtime.execute.mock.calls.at(-1)[0].systemPrompt).toMatch(/## Custom Block\n1 item/);
   });
 });
+
+describe('BaseAgent active-user injection', () => {
+  it('adds "## Active User" section when context.userId is set', async () => {
+    const runtime = { execute: vi.fn(async () => ({ output: 'ok', toolCalls: [] })) };
+    const agent = new FakeAgent({ ...baseDeps, agentRuntime: runtime });
+    await agent.run('hi', { context: { userId: 'kckern' } });
+    const passed = runtime.execute.mock.calls.at(-1)[0];
+    expect(passed.systemPrompt).toMatch(/## Active User/);
+    expect(passed.systemPrompt).toMatch(/\*\*kckern\*\*/);
+  });
+
+  it('omits the Active User section when context.userId is null', async () => {
+    const runtime = { execute: vi.fn(async () => ({ output: 'ok', toolCalls: [] })) };
+    const agent = new FakeAgent({ ...baseDeps, agentRuntime: runtime });
+    await agent.run('hi', { context: {} });
+    const passed = runtime.execute.mock.calls.at(-1)[0];
+    expect(passed.systemPrompt).not.toMatch(/## Active User/);
+  });
+
+  it('passes context to getSystemPrompt for mode-aware agents', async () => {
+    let captured;
+    class ModeAware extends BaseAgent {
+      static id = 'mode-aware';
+      getSystemPrompt(context) {
+        captured = context;
+        return 'BASE';
+      }
+    }
+    const runtime = { execute: vi.fn(async () => ({ output: 'ok', toolCalls: [] })) };
+    const agent = new ModeAware({ ...baseDeps, agentRuntime: runtime });
+    await agent.run('hi', { context: { userId: 'kc', mode: 'chat' } });
+    expect(captured).toBeDefined();
+    expect(captured.mode).toBe('chat');
+    expect(captured.userId).toBe('kc');
+  });
+
+  it('awaits async getSystemPrompt return values', async () => {
+    class AsyncAgent extends BaseAgent {
+      static id = 'async-prompt';
+      async getSystemPrompt() {
+        return 'AWAITED_BASE';
+      }
+    }
+    const runtime = { execute: vi.fn(async () => ({ output: 'ok', toolCalls: [] })) };
+    const agent = new AsyncAgent({ ...baseDeps, agentRuntime: runtime });
+    await agent.run('hi', { context: {} });
+    const passed = runtime.execute.mock.calls.at(-1)[0];
+    expect(passed.systemPrompt).toMatch(/AWAITED_BASE/);
+  });
+});
