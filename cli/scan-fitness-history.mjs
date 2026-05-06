@@ -21,7 +21,9 @@
  * 4. STUCK WEBHOOK JOBS — jobs with attempts > 10 (the new MAX_TOTAL_ATTEMPTS
  *    cap from Task 3.1). Should be abandoned.
  *
- * Usage:  node /tmp/scan-fitness-history.mjs
+ * Usage:
+ *   node cli/scan-fitness-history.mjs              (read-only diagnostic)
+ *   node cli/scan-fitness-history.mjs --auto-fix   (delete absorbable slivers)
  *
  * Reads from /Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data
  * (Dropbox mirror of prod).
@@ -29,7 +31,11 @@
 
 import { readdirSync, readFileSync, statSync, existsSync } from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = path.join(__dirname, '..');
 
 const DATA_BASE = '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data';
 const HISTORY_DIR = path.join(DATA_BASE, 'household/history/fitness');
@@ -38,6 +44,9 @@ const WEBHOOK_JOBS_DIR = path.join(DATA_BASE, 'household/common/strava/strava-we
 const MAX_GAP_MS = 30 * 60 * 1000;       // resume window
 const MAX_TOTAL_ATTEMPTS = 10;
 const ORPHAN_AGE_DAYS = 7;
+
+const args = process.argv.slice(2);
+const AUTO_FIX = args.includes('--auto-fix');
 
 const loadYaml = (p) => {
   try { return yaml.load(readFileSync(p, 'utf8')); }
@@ -277,4 +286,38 @@ for (const o of orphans) {
 console.log(`\n=== 4. STUCK JOBS (attempts >= ${MAX_TOTAL_ATTEMPTS}) — ${stuck.length} ===`);
 for (const s of stuck) {
   console.log(`  ${s.activityId} | ${s.status} | ${s.attempts} attempts | last: ${s.lastAttemptAt}`);
+}
+
+if (AUTO_FIX) {
+  console.log('\n=== AUTO-FIX: running sliver absorption for each Strava-only session ===');
+  const { absorbOverlappingSlivers } = await import(
+    path.join(PROJECT_ROOT, 'backend/src/3_applications/fitness/sliverAbsorption.mjs')
+  );
+
+  const stravaOnlySessions = sessions.filter(s => s.source === 'strava');
+  let totalAbsorbed = 0;
+
+  for (const s of stravaOnlySessions) {
+    const dateDir = path.join(HISTORY_DIR, s.date);
+    if (!s.stravaActivityId) continue;
+    // The scanner doesn't fetch from the Strava API; reconstruct the minimal
+    // fields the helper needs from the session's stored data.
+    const activityShim = {
+      id: s.stravaActivityId,
+      start_date: new Date(s.startMs).toISOString(),
+      elapsed_time: Math.round((s.endMs - s.startMs) / 1000),
+      moving_time: Math.round((s.endMs - s.startMs) / 1000),
+    };
+    const result = absorbOverlappingSlivers(activityShim, dateDir, {
+      justCreatedSessionId: s.sessionId,
+      tz: 'America/Los_Angeles',
+      logger: console,
+    });
+    if (result.absorbed.length > 0) {
+      console.log(`  ${s.date}: absorbed ${result.absorbed.length} sliver(s) for ${s.stravaName || s.stravaActivityId}`);
+      totalAbsorbed += result.absorbed.length;
+    }
+  }
+
+  console.log(`\nAUTO-FIX complete: ${totalAbsorbed} slivers absorbed across ${stravaOnlySessions.length} Strava-only sessions.`);
 }
