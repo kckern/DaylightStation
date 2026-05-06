@@ -10,7 +10,7 @@ import {
 } from '@assistant-ui/react';
 import { useMemo, useEffect, useRef, useState } from 'react';
 import './CoachChat.scss';
-import { healthCoachChatModel } from './runtime.js';
+import { createAgentRuntime } from '../../Agent/runtime.js';
 import { MarkdownText } from '../../Agent/MarkdownText.jsx';
 import { ToolCallAttribution } from '../../Agent/ToolCallAttribution.jsx';
 import { MENTION_CATEGORIES, fetchSuggestions, buildAttachment } from './mentions/index.js';
@@ -29,27 +29,30 @@ export function CoachChat({ userId, variant = 'light', style }) {
   // Mention insertions captured here; runtime adapter reads them on run().
   const pendingMentionsRef = useRef([]);
 
-  const adapter = useMemo(() => ({
-    async *run({ messages, abortSignal }) {
-      const attachments = [
-        ...collectAttachments(messages),
-        ...pendingMentionsRef.current,
-      ];
-      pendingMentionsRef.current = [];
-      for await (const chunk of healthCoachChatModel.runStream({ messages, userId, attachments, abortSignal })) {
-        // Map runStream output to ChatModelRunResult shape.
-        // Tool calls live in metadata.custom.toolCalls (assistant-ui's custom bucket).
-        yield {
-          content: chunk.content,
-          metadata: {
-            custom: {
-              toolCalls: chunk.metadata?.toolCalls ?? [],
+  const adapter = useMemo(() => {
+    const agentRuntime = createAgentRuntime('health-coach');
+    return {
+      async *run({ messages, abortSignal }) {
+        const attachments = [
+          ...collectAttachments(messages),
+          ...pendingMentionsRef.current,
+        ];
+        pendingMentionsRef.current = [];
+        for await (const chunk of agentRuntime.runStream({ messages, userId, attachments, abortSignal })) {
+          // Map runStream output to ChatModelRunResult shape.
+          // Tool calls live in metadata.custom.toolCalls (assistant-ui's custom bucket).
+          yield {
+            content: chunk.content,
+            metadata: {
+              custom: {
+                toolCalls: chunk.metadata?.toolCalls ?? [],
+              },
             },
-          },
-        };
-      }
-    },
-  }), [userId]);
+          };
+        }
+      },
+    };
+  }, [userId]);
 
   const runtime = useLocalRuntime(adapter);
 
