@@ -93,7 +93,10 @@ export class MastraAdapter {
    * Translate ITool[] to Mastra tool format via the decorator chain.
    *
    * Decorators applied left-to-right (outermost first):
-   *   userIdInjector → callLimiter → transcriptRecorder
+   *   [agent.buildToolDecorators()...] → userIdInjector → callLimiter → transcriptRecorder
+   *
+   * The agent's own decorators (e.g. PolicyDecorator on concierge) are
+   * prepended so they run before the framework defaults.
    *
    * Mastra-specific wiring (jsonSchemaToZod + mastraCreateTool) and
    * structured logger emission stay at adapter level.
@@ -102,15 +105,20 @@ export class MastraAdapter {
    * @param {Object} context - Execution context (includes userId)
    * @param {Object} callCounter - Mutable counter object (for toolCallsBeforeError)
    * @param {AgentTranscript|null} transcript - Optional transcript for recording tool calls
+   * @param {Object|null} agent - The BaseAgent instance (optional; provides buildToolDecorators)
    * @returns {Object} Mastra tools object
    */
-  #translateTools(tools, context, callCounter, transcript = null) {
+  #translateTools(tools, context, callCounter, transcript = null, agent = null) {
     const callLimiter = createCallLimiter({ maxToolCalls: this.#maxToolCalls });
     const decoratorContext = { ...context, transcript };
 
+    const agentExtraDecorators = (typeof agent?.buildToolDecorators === 'function')
+      ? agent.buildToolDecorators()
+      : [];
+
     const decorated = applyDecorators(
       tools,
-      [userIdInjector, callLimiter, transcriptRecorder],
+      [...agentExtraDecorators, userIdInjector, callLimiter, transcriptRecorder],
       decoratorContext,
     );
 
@@ -190,7 +198,7 @@ export class MastraAdapter {
     transcript.setModel(parseModelDescriptor(this.#model));
 
     const callCounter = { count: 0 };
-    const mastraTools = this.#translateTools(tools || [], context, callCounter, transcript);
+    const mastraTools = this.#translateTools(tools || [], context, callCounter, transcript, agent);
 
     const startedAt = Date.now();
     this.#logger.info?.('agent.execute.start', {
@@ -272,7 +280,7 @@ export class MastraAdapter {
     transcript.setModel(parseModelDescriptor(this.#model));
 
     const callCounter = { count: 0 };
-    const mastraTools = this.#translateTools(tools || [], context, callCounter, transcript);
+    const mastraTools = this.#translateTools(tools || [], context, callCounter, transcript, agent);
 
     const startedAt = Date.now();
     this.#logger.info?.('agent.stream.start', {
