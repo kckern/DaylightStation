@@ -640,7 +640,13 @@ const FitnessApp = () => {
     if (window) {
       window.addToFitnessQueue = (item) => {
         // silent queue append (debug log removed)
-        setFitnessPlayQueue(prev => [...prev, item]);
+        // Boundary normalize: caller may not set contentId; derive from plex/id if absent.
+        const normalized = item && item.contentId
+          ? item
+          : { ...item, contentId: item?.plex
+              ? `plex:${item.plex}`
+              : (item?.id != null && /^[0-9]+$/.test(String(item.id)) ? `plex:${item.id}` : null) };
+        setFitnessPlayQueue(prev => [...prev, normalized]);
       };
     }
     return () => {
@@ -706,6 +712,7 @@ const FitnessApp = () => {
         const contentId = String(episodeId);
         const fallbackItem = {
           id: contentId,
+          contentId: contentSource ? `${contentSource}:${contentId}` : null,
           contentSource,
           type: 'episode',
           title: `Episode ${episodeId}`,
@@ -738,6 +745,7 @@ const FitnessApp = () => {
       const contentId = String(response.key || episodeId);
       const queueItem = {
         id: contentId,
+        contentId: contentSource ? `${contentSource}:${contentId}` : null,
         contentSource,
         type: response.type || 'episode',
         title: response.title || `Episode ${episodeId}`,
@@ -759,7 +767,13 @@ const FitnessApp = () => {
   };
 
   const handleHomePlay = useCallback((queueItem) => {
-    setFitnessPlayQueue(prev => [...prev, queueItem]);
+    // Boundary normalize: queueItem comes from upstream caller; ensure contentId is set.
+    const normalized = queueItem && queueItem.contentId
+      ? queueItem
+      : { ...queueItem, contentId: queueItem?.plex
+          ? `plex:${queueItem.plex}`
+          : (queueItem?.id != null && /^[0-9]+$/.test(String(queueItem.id)) ? `plex:${queueItem.id}` : null) };
+    setFitnessPlayQueue(prev => [...prev, normalized]);
     const episodeId = String(queueItem.id).replace(/^[a-z]+:/i, '');
     if (episodeId) {
       navigate(`/fitness/play/${episodeId}`, { replace: true });
@@ -857,7 +871,13 @@ const FitnessApp = () => {
       case 'movie':
         //send directly to player queue
         const movieId = String(target.contentId || target.plex || target.id).replace(/^[a-z]+:/i, '');
-        setFitnessPlayQueue(prev => [...prev, target]);
+        // Boundary normalize: target is a pre-built nav item; ensure contentId is set.
+        const movieNormalized = target && target.contentId
+          ? target
+          : { ...target, contentId: target?.plex
+              ? `plex:${target.plex}`
+              : (target?.id != null && /^[0-9]+$/.test(String(target.id)) ? `plex:${target.id}` : null) };
+        setFitnessPlayQueue(prev => [...prev, movieNormalized]);
         navigate(`/fitness/play/${movieId}`, { replace: true });
         break;
 
