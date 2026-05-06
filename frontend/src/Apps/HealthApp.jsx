@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { MantineProvider, Skeleton, Tabs } from '@mantine/core';
-import { IconLayoutDashboard, IconMessageCircle } from '@tabler/icons-react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { MantineProvider } from '@mantine/core';
 import '@mantine/core/styles.css';
 import './HealthApp.scss';
 import { DaylightAPI } from '../lib/api.mjs';
@@ -8,20 +7,19 @@ import { getChildLogger } from '../lib/logging/singleton.js';
 import HealthHub from '../modules/Health/HealthHub';
 import HealthDetail from '../modules/Health/HealthDetail';
 import CoachChat from '../modules/Health/CoachChat';
+import { AskBar } from '../modules/Health/AskBar/index.jsx';
+import { ChatOverlay } from '../modules/Health/ChatOverlay/index.jsx';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
+import { healthTheme } from './HealthApp.theme.js';
 
 const HealthApp = () => {
   useDocumentTitle('Health');
   const logger = useMemo(() => getChildLogger({ app: 'health' }), []);
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState('hub');
   const [detailType, setDetailType] = useState(null);
-  const [topTab, setTopTab] = useState('hub');
+  const [overlayOpen, setOverlayOpen] = useState(false);
 
-  // Replace 'default' with the actual head-of-household lookup if available
-  // via existing app config. For v1, derive userId from a window-level config
-  // if present; fall back to 'default'.
   const userId = useMemo(() =>
     (typeof window !== 'undefined' && window.DAYLIGHT_USER_ID) || 'default',
     []
@@ -38,62 +36,46 @@ const HealthApp = () => {
     }
   }, [logger]);
 
+  useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
+
+  // ⌘K / Ctrl+K opens the chat overlay from anywhere
   useEffect(() => {
-    fetchDashboard();
-  }, [fetchDashboard]);
-
-  const openDetail = useCallback((type) => {
-    setDetailType(type);
-    setView('detail');
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setOverlayOpen(true);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
   }, []);
 
-  const backToHub = useCallback(() => {
-    setView('hub');
-    setDetailType(null);
-  }, []);
-
-  if (loading) {
-    return (
-      <MantineProvider>
-        <div className="health-app">
-          <Skeleton height={200} mb="md" />
-          <Skeleton height={200} mb="md" />
-        </div>
-      </MantineProvider>
-    );
-  }
+  const openDetail = useCallback((type) => setDetailType(type), []);
+  const backToHub = useCallback(() => setDetailType(null), []);
 
   return (
-    <MantineProvider>
+    <MantineProvider theme={healthTheme} defaultColorScheme="dark">
       <div className="health-app">
-        <Tabs value={topTab} onChange={setTopTab} variant="outline">
-          <Tabs.List>
-            <Tabs.Tab value="hub" leftSection={<IconLayoutDashboard size={14} />}>Hub</Tabs.Tab>
-            <Tabs.Tab value="coach" leftSection={<IconMessageCircle size={14} />}>Coach</Tabs.Tab>
-          </Tabs.List>
+        <header className="health-app__header">
+          <div className="health-app__header-left">
+            <span className="health-app__status-dot" />
+            <span>Health · {userId}</span>
+          </div>
+          <div className="health-app__header-right">
+            {new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+          </div>
+        </header>
 
-          <Tabs.Panel value="hub" pt="sm">
-            {view === 'hub' ? (
-              <HealthHub
-                dashboard={dashboard}
-                onCardClick={openDetail}
-                onRefresh={fetchDashboard}
-              />
-            ) : (
-              <HealthDetail
-                type={detailType}
-                dashboard={dashboard}
-                onBack={backToHub}
-              />
-            )}
-          </Tabs.Panel>
+        {detailType
+          ? <HealthDetail type={detailType} dashboard={dashboard} onBack={backToHub} />
+          : <HealthHub dashboard={dashboard} loading={loading} onCardClick={openDetail} onRefresh={fetchDashboard} />
+        }
 
-          <Tabs.Panel value="coach" pt="sm">
-            <div className="health-app__coach-pane">
-              <CoachChat userId={userId} />
-            </div>
-          </Tabs.Panel>
-        </Tabs>
+        <AskBar onActivate={() => setOverlayOpen(true)} />
+
+        <ChatOverlay open={overlayOpen} onClose={() => setOverlayOpen(false)} userId={userId}>
+          <CoachChat userId={userId} variant="overlay" />
+        </ChatOverlay>
       </div>
     </MantineProvider>
   );
