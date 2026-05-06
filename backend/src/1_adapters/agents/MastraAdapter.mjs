@@ -14,26 +14,8 @@ import crypto from 'node:crypto';
 import { AgentTranscript } from '#apps/agents/framework/AgentTranscript.mjs';
 import { applyDecorators } from '../../3_applications/agents/framework/decorators/applyDecorators.mjs';
 import { userIdInjector } from '../../3_applications/agents/framework/decorators/UserIdInjector.mjs';
-import { createCallLimiter } from '../../3_applications/agents/framework/decorators/CallLimiter.mjs';
+import { createCallLimiter, LIMIT_REACHED_MESSAGE_PREFIX } from '../../3_applications/agents/framework/decorators/CallLimiter.mjs';
 import { transcriptRecorder } from '../../3_applications/agents/framework/decorators/TranscriptRecorder.mjs';
-
-/**
- * Strip the `userId` parameter from a tool's JSON schema. The model never
- * sees `userId` — the MastraAdapter merges it from context before invoking
- * the tool's execute(). Confabulation becomes structurally impossible.
- *
- * Exported for testing.
- */
-export function stripUserIdFromSchema(jsonSchema) {
-  if (!jsonSchema || jsonSchema.type !== 'object') return jsonSchema;
-  if (!jsonSchema.properties) return jsonSchema;
-  const out = { ...jsonSchema, properties: { ...jsonSchema.properties } };
-  delete out.properties.userId;
-  if (Array.isArray(out.required)) {
-    out.required = out.required.filter(k => k !== 'userId');
-  }
-  return out;
-}
 
 /**
  * Convert JSON Schema to Zod schema (simplified)
@@ -159,7 +141,7 @@ export class MastraAdapter {
 
           if (result && typeof result === 'object' && 'error' in result) {
             // Distinguish limit-reached from other errors for the warn log.
-            if (typeof result.error === 'string' && result.error.startsWith('Tool call limit reached')) {
+            if (typeof result.error === 'string' && result.error.startsWith(LIMIT_REACHED_MESSAGE_PREFIX)) {
               this.#logger.warn?.('tool.execute.limit_reached', {
                 tool: originalTool.name,
                 turnId: transcript?.turnId,
