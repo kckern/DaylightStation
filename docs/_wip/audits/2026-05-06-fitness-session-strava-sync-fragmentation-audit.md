@@ -617,3 +617,49 @@ attempts) when the new `MAX_TOTAL_ATTEMPTS` cap fired.
    in terminal `completed` state, harmless. One activity (`17631358591`)
    has been deleted from Strava entirely; the other two could optionally
    be re-run if the historical Strava-only sessions are wanted back.
+
+### Safety-net layers (post-2026-05-06)
+
+The webhook-time absorption from `5a48108ce` (originally a private method on
+`FitnessActivityEnrichmentService`) was extracted to a shared module
+`backend/src/3_applications/fitness/sliverAbsorption.mjs` and wired into
+every code path that produces a Strava-only session. Per
+`docs/_wip/plans/2026-05-06-cooldown-sliver-safety-net.md`:
+
+| Path | Absorption fires | Commits |
+|---|---|---|
+| Webhook `_createStravaOnlySession` | After `saveYaml`, before return | `5a48108ce` (original) → `530b37435`, `f058687fc` (extract + delegate) |
+| Periodic `StravaReconciliationService.reconcile()` Pass 3 | When iterating any `session.source === 'strava'` | `7ab28cd54` |
+| Backfill `cli/scripts/backfill-strava-enrichment.mjs` | After creating Strava-only session in `--write` mode | `ee7f1dfb7`, `66d84ada9` (shape fix) |
+| On-demand `cli/scan-fitness-history.mjs --auto-fix` | When invoked manually with the flag | `fa930cc09` |
+
+All four paths use the same conservative rules from `sliverAbsorption.mjs`:
+no media, `<15` min duration, time overlap with activity ±15 min buffer,
+not itself a Strava-only session, not the just-created session. Coverage
+expanded; bar for what counts as a sliver did not.
+
+Reconciliation runs after every Strava webhook AND on the scheduled morning
+debrief, so even if a webhook drops or a service restart interrupts
+absorption, the next reconciliation pass within the lookback window
+(default 10 days) catches it. The on-demand CLI is the last-resort safety
+net for cases that fall outside the lookback (e.g. backups restored from
+months ago).
+
+The shared helper is unit-tested in
+`tests/isolated/application/fitness/sliverAbsorption.test.mjs` (7 tests
+covering each of the conservative rules), and each call site has its own
+integration tests:
+
+- `tests/isolated/application/fitness/FitnessActivityEnrichmentService.test.mjs` — sport-guard, overlap-fraction, aging
+- `tests/isolated/application/fitness/StravaReconciliationService.test.mjs` — Pass 3 absorbs, summary-log, skip-non-strava
+
+Three open systemic concerns remain explicitly out-of-scope of this
+safety-net work:
+
+- **Idle-detection for long captures (>15 min):** intentionally conservative
+  — better to keep a long capture for manual review than auto-delete real
+  data.
+- **Slivers with media:** any media-bearing session is preserved. Manual
+  cleanup only.
+- **Multi-client session-id collision:** pre-existing concern from the
+  2026-04-28 audit, independent of cooldown-sliver pattern.
