@@ -11,7 +11,7 @@ export class LifeplanGuideAgent extends BaseAgent {
   static id = 'lifeplan-guide';
   static description = 'Personal life coach for goal tracking, value alignment, and ceremony facilitation';
 
-  getSystemPrompt() {
+  getSystemPrompt(_context = {}) {
     return systemPrompt;
   }
 

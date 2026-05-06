@@ -80,9 +80,10 @@ export class EchoAgent {
 
   /**
    * Get system prompt for this agent
+   * @param {Object} [_context={}] - Execution context (ignored by EchoAgent, accepted for signature compat)
    * @returns {string}
    */
-  getSystemPrompt() {
+  getSystemPrompt(_context = {}) {
     return systemPrompt;
   }
 
@@ -94,12 +95,13 @@ export class EchoAgent {
    * @returns {Promise<{output: string, toolCalls: Array}>}
    */
   async run(input, options = {}) {
+    const context = options.context || {};
     return this.#agentRuntime.execute({
       agent: this,
       input,
       tools: this.getTools(),
-      systemPrompt: this.getSystemPrompt(),
-      context: options.context || {},
+      systemPrompt: await this.getSystemPrompt(context),
+      context,
     });
   }
 }
