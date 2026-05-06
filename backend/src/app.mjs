@@ -95,6 +95,8 @@ import { mountAgentHttp } from './4_api/v1/agents/mountAgentHttp.mjs';
 
 // Agent memory CRUD router (mounted once at /api/v1/agents)
 import { createAgentMemoryRouter } from './4_api/v1/agents/createAgentMemoryRouter.mjs';
+// Agent listing + assignments router (Phase 3 T5)
+import { createAgentMetaRouter } from './4_api/v1/agents/createAgentMetaRouter.mjs';
 
 // Feed harvester adapter for scheduler integration
 import { HeadlineHarvesterAdapter } from './1_adapters/feed/HeadlineHarvesterAdapter.mjs';
@@ -2013,8 +2015,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
   app.use('/api/v1/agents', v1Routers.agentMemory);
 
-  // TEMPORARY (deleted in Tasks 4+5): legacy router for GET /, memory CRUD, assignments
-  // Memory CRUD routes are now shadowed by the dedicated router above.
+  // Listing + assignments router — mounted once for all agents (Phase 3 T5)
+  v1Routers.agentMeta = createAgentMetaRouter({
+    orchestrator: agentsServices.orchestrator,
+    logger: rootLogger.child({ module: 'agent-meta' }),
+  });
+  app.use('/api/v1/agents', v1Routers.agentMeta);
+
+  // TEMPORARY (deleted in Task 6): legacy router — all routes now shadowed by dedicated routers above.
   const { createAgentsRouter } = await import('./4_api/v1/routers/agents.mjs');
   v1Routers.agentsLegacy = createAgentsRouter({
     agentOrchestrator: agentsServices.orchestrator,
