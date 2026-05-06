@@ -2954,7 +2954,7 @@ export async function createAgentsApiRouter(config) {
   const scheduler = new Scheduler({ logger });
 
   // Register available agents
-  agentOrchestrator.register(EchoAgent);
+  agentOrchestrator.register(EchoAgent, { workingMemory });
 
   // Shared HealthAnalyticsService instance — assigned inside the health-coach
   // registration block below and exposed on the returned router so app.mjs
