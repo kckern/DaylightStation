@@ -52,4 +52,12 @@ describe('FitnessSession._getCurrentContentId pre-session fallback', () => {
     session.setPendingContentId('plex:664042');
     expect(session._getCurrentContentId()).toBe('plex:664042');
   });
+
+  it('setPendingContentId stores the value normalized when caller passes a bare id', () => {
+    const session = new FitnessSession();
+    session.setPendingContentId('664042');
+    // Read via _getCurrentContentId (which we already test) to confirm the
+    // stored form is the prefixed one.
+    expect(session._getCurrentContentId()).toBe('plex:664042');
+  });
 });
