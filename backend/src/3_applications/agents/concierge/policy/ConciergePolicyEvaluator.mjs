@@ -1,7 +1,7 @@
-// backend/src/3_applications/concierge/services/ConciergePolicyEvaluator.mjs
+// backend/src/3_applications/agents/concierge/policy/ConciergePolicyEvaluator.mjs
 
 import { matchesScope, validateGlob } from './scopeMatcher.mjs';
-import { ConciergeDecision } from '../../../2_domains/concierge/ConciergeDecision.mjs';
+import { ConciergeDecision } from '#domains/concierge/ConciergeDecision.mjs';
 
 /**
  * ConciergePolicyEvaluator — implements IConciergePolicy.evaluateToolCall with real

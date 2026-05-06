@@ -3226,8 +3226,8 @@ export async function createConciergeServices(config) {
   if (!mediaLogsDir) throw new Error('createConciergeServices: mediaLogsDir required');
 
   const { YamlSatelliteRegistry } = await import('#adapters/persistence/yaml/YamlSatelliteRegistry.mjs');
-  const { ConciergePolicyEvaluator } = await import('#applications/concierge/services/ConciergePolicyEvaluator.mjs');
-  const { MediaJudge } = await import('#applications/concierge/services/MediaJudge.mjs');
+  const { ConciergePolicyEvaluator } = await import('#applications/agents/concierge/policy/ConciergePolicyEvaluator.mjs');
+  const { MediaJudge } = await import('#applications/agents/concierge/services/MediaJudge.mjs');
   const { createConciergeRouter } = await import('#api/v1/routers/concierge.mjs');
 
   // Mastra reads OPENAI_API_KEY from process.env — bridge from ConfigService.
@@ -3362,7 +3362,7 @@ export async function createConciergeServices(config) {
       // lookup callables composed here dispatch by item.source / by the
       // single configured voice source to the right adapter. This is the
       // only place in the concierge wiring that names specific content sources.
-      const { MediaPolicyGate } = await import('#applications/concierge/services/MediaPolicyGate.mjs');
+      const { MediaPolicyGate } = await import('#applications/agents/concierge/services/MediaPolicyGate.mjs');
       const labelLookup = async (item, _opts = {}) => {
         const adapter = contentRegistry?.get?.(item?.source);
         if (typeof adapter?.getAncestorLabels === 'function') {

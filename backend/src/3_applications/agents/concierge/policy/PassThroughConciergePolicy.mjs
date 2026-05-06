@@ -1,4 +1,4 @@
-import { ConciergeDecision } from '../../../2_domains/concierge/ConciergeDecision.mjs';
+import { ConciergeDecision } from '#domains/concierge/ConciergeDecision.mjs';
 
 export class PassThroughConciergePolicy {
   evaluateRequest(_satellite, _request) { return ConciergeDecision.allow(); }
