@@ -58,7 +58,6 @@ describe('POST /api/v1/agents/:id/run-stream', () => {
       const { status, headers, events } = await readSSE(port, '/api/v1/agents/health-coach/run-stream', { input: 'hi', context: { userId: 'kc' } });
       expect(status).toBe(200);
       expect(headers['content-type']).toMatch(/text\/event-stream/);
-      expect(events.length).toBeGreaterThanOrEqual(6);
       expect(events.map(e => e.type)).toEqual(['text-delta', 'tool-start', 'tool-end', 'text-delta', 'finish', 'done']);
     } finally {
       server.close();
