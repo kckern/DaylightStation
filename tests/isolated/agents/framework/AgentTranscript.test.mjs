@@ -386,3 +386,78 @@ describe('AgentTranscript.recordTool — linkedAttachments heuristic', () => {
     expect(t.toolCalls[0].linkedAttachments).toEqual([]);
   });
 });
+
+describe('AgentTranscript optional fields (Phase 1 Foundations)', () => {
+  const baseDeps = {
+    agentId: 'test',
+    userId: 'kc',
+    turnId: '00000000-0000-0000-0000-000000000000',
+    input: { text: 'q', context: {} },
+  };
+
+  it('recordTool accepts optional policyDecision and includes it in toJSON', () => {
+    const t = new AgentTranscript(baseDeps);
+    t.recordTool({
+      name: 'remember_note',
+      args: { text: 'hi' },
+      result: { ok: true },
+      ok: true,
+      latencyMs: 5,
+      policyDecision: { allowed: true, reason: null },
+    });
+    const json = t.toJSON();
+    expect(json.toolCalls[0].policyDecision).toEqual({ allowed: true, reason: null });
+  });
+
+  it('toolCalls without policyDecision do not include the field', () => {
+    const t = new AgentTranscript(baseDeps);
+    t.recordTool({ name: 'foo', args: {}, result: {}, ok: true, latencyMs: 0 });
+    const json = t.toJSON();
+    expect(json.toolCalls[0]).not.toHaveProperty('policyDecision');
+  });
+
+  it('setRequestBody captures the raw HTTP body in toJSON', () => {
+    const t = new AgentTranscript(baseDeps);
+    const body = { messages: [{ role: 'user', content: 'hi' }], model: 'gpt-4o', stream: true };
+    t.setRequestBody(body);
+    const json = t.toJSON();
+    expect(json.requestBody).toEqual(body);
+  });
+
+  it('toJSON does not include requestBody when not set', () => {
+    const t = new AgentTranscript(baseDeps);
+    const json = t.toJSON();
+    expect(json).not.toHaveProperty('requestBody');
+  });
+
+  it('setSatelliteSnapshot captures satellite info in toJSON', () => {
+    const t = new AgentTranscript(baseDeps);
+    t.setSatelliteSnapshot({ id: 'kitchen', area: 'kitchen', allowedSkills: ['memory', 'media'] });
+    const json = t.toJSON();
+    expect(json.satellite).toEqual({ id: 'kitchen', area: 'kitchen', allowedSkills: ['memory', 'media'] });
+  });
+
+  it('toJSON does not include satellite when not set', () => {
+    const t = new AgentTranscript(baseDeps);
+    const json = t.toJSON();
+    expect(json).not.toHaveProperty('satellite');
+  });
+
+  it('filePathStrategy option overrides default path generation', async () => {
+    const writes = [];
+    const fakeFs = {
+      mkdir: async () => {},
+      writeFile: async (filePath, body) => { writes.push({ path: filePath, body }); },
+    };
+    const t = new AgentTranscript({
+      ...baseDeps,
+      mediaDir: '/does-not-matter',
+      fs: fakeFs,
+      filePathStrategy: (transcript) => `/custom/${transcript.agentId}/${transcript.turnId}.json`,
+    });
+    t.setStatus('ok');
+    await t.flush();
+    expect(writes).toHaveLength(1);
+    expect(writes[0].path).toBe(`/custom/${baseDeps.agentId}/${baseDeps.turnId}.json`);
+  });
+});
