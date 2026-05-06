@@ -32,10 +32,9 @@ export function createHealthMentionsRouter({
 }) {
   const router = Router();
 
-  router.get('/periods', async (req, res) => {
-    const userId = req.query.user;
-    if (!userId) return res.status(400).json({ error: 'user query param required' });
-    const prefix = (req.query.prefix || '').toString().toLowerCase();
+  // ── Internal helpers ──
+
+  async function fetchPeriodsInternal({ userId, prefix, limit = 50 }) {
     const out = [];
 
     // Rolling vocab
@@ -78,15 +77,10 @@ export function createHealthMentionsRouter({
           (s.label || '').toLowerCase().includes(prefix))
       : out;
 
-    res.json({ suggestions: filtered });
-  });
+    return filtered.slice(0, limit);
+  }
 
-  router.get('/recent-days', async (req, res) => {
-    const userId = req.query.user;
-    if (!userId) return res.status(400).json({ error: 'user query param required' });
-    const days = Math.min(365, Math.max(1, parseInt(req.query.days, 10) || 30));
-    const has = req.query.has || null;
-
+  async function fetchRecentDaysInternal({ userId, prefix, has = null, days = 30, limit = 50 }) {
     const today = now();
     const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
     const fromDate = new Date(todayUtc);
@@ -122,18 +116,44 @@ export function createHealthMentionsRouter({
       results.push(entry);
     }
 
-    res.json({ suggestions: results });
-  });
+    const filtered = prefix
+      ? results.filter(s => s.slug.toLowerCase().includes(prefix))
+      : results;
 
-  router.get('/metrics', (req, res) => {
-    const prefix = (req.query.prefix || '').toString().toLowerCase();
+    return filtered.slice(0, limit);
+  }
+
+  function fetchMetricsInternal({ prefix, limit = 50 }) {
     const out = METRIC_LIST.map(name => ({
       slug: name, label: name, value: { metric: name }, group: 'metric',
     }));
     const filtered = prefix
       ? out.filter(s => s.slug.toLowerCase().includes(prefix))
       : out;
-    res.json({ suggestions: filtered });
+    return filtered.slice(0, limit);
+  }
+
+  // ── Routes ──
+
+  router.get('/periods', async (req, res) => {
+    const userId = req.query.user;
+    if (!userId) return res.status(400).json({ error: 'user query param required' });
+    const prefix = (req.query.prefix || '').toString().toLowerCase();
+    res.json({ suggestions: await fetchPeriodsInternal({ userId, prefix }) });
+  });
+
+  router.get('/recent-days', async (req, res) => {
+    const userId = req.query.user;
+    if (!userId) return res.status(400).json({ error: 'user query param required' });
+    const prefix = (req.query.prefix || '').toString().toLowerCase();
+    const days = Math.min(365, Math.max(1, parseInt(req.query.days, 10) || 30));
+    const has = req.query.has || null;
+    res.json({ suggestions: await fetchRecentDaysInternal({ userId, prefix, has, days }) });
+  });
+
+  router.get('/metrics', (req, res) => {
+    const prefix = (req.query.prefix || '').toString().toLowerCase();
+    res.json({ suggestions: fetchMetricsInternal({ prefix }) });
   });
 
   router.get('/all', async (req, res) => {
@@ -141,31 +161,19 @@ export function createHealthMentionsRouter({
     if (!userId) return res.status(400).json({ error: 'user query param required' });
     const prefix = (req.query.prefix || '').toString().toLowerCase();
 
-    const fanout = await Promise.all([
-      // periods (rolling + calendar + named)
-      (async () => {
-        const fakeReq = { query: { user: userId, prefix } };
-        let captured;
-        const fakeRes = { json: (b) => { captured = b; }, status: () => ({ json: () => {} }) };
-        const findPeriods = router.stack.find(l => l.route?.path === '/periods');
-        if (findPeriods) await findPeriods.route.stack[0].handle(fakeReq, fakeRes);
-        return captured?.suggestions || [];
-      })(),
-      // metric vocab
-      (async () => {
-        const out = METRIC_LIST.map(name => ({
-          slug: name, label: name, value: { metric: name }, group: 'metric',
-        }));
-        return prefix ? out.filter(s => s.slug.toLowerCase().includes(prefix)) : out;
-      })(),
+    const [periods, days, metrics] = await Promise.all([
+      fetchPeriodsInternal({ userId, prefix, limit: 8 }),
+      fetchRecentDaysInternal({ userId, prefix, days: 14, limit: 14 }),
+      Promise.resolve(fetchMetricsInternal({ prefix, limit: 6 })),
     ]);
 
-    const merged = [...fanout[0], ...fanout[1]];
-    res.json({ suggestions: merged.slice(0, 20) });
+    res.json({ suggestions: roundRobin([periods, days, metrics]) });
   });
 
   return router;
 }
+
+// ── Helpers ──
 
 function humanizeRollingLabel(label) {
   if (label === 'all_time') return 'All time';
@@ -176,8 +184,23 @@ function humanizeRollingLabel(label) {
   const plural = parseInt(n, 10) === 1 ? '' : 's';
   return `${kind === 'last' ? 'Last' : 'Previous'} ${n} ${unit}${plural}`;
 }
+
 function humanizeCalendarLabel(label) {
   return label.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function roundRobin(buckets) {
+  const out = [];
+  let i = 0;
+  let any = true;
+  while (any) {
+    any = false;
+    for (const b of buckets) {
+      if (i < b.length) { out.push(b[i]); any = true; }
+    }
+    i++;
+  }
+  return out;
 }
 
 export default createHealthMentionsRouter;

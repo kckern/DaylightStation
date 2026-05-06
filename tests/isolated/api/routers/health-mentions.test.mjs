@@ -187,3 +187,85 @@ describe('GET /api/v1/health/mentions/all', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('GET /api/v1/health/mentions/all (refactored fanout)', () => {
+  function makeRichApp() {
+    return makeApp({
+      healthAnalyticsService: {
+        listPeriods: vi.fn(async () => ({
+          periods: [
+            { slug: '2017-cut', label: '2017 Cut', from: '2017-01-15', to: '2017-04-30', source: 'declared' },
+          ],
+        })),
+      },
+      healthStore: {
+        loadWeightData: async () => ({ '2026-05-04': { lbs: 197 }, '2026-05-05': { lbs: 196.5 } }),
+        loadNutritionData: async () => ({ '2026-05-03': { calories: 2000 }, '2026-05-05': { calories: 2100 } }),
+      },
+      healthService: {
+        getHealthForRange: async () => ({
+          '2026-05-04': { workouts: [{ type: 'run', duration: 30 }] },
+        }),
+      },
+      now: () => new Date('2026-05-05T12:00:00Z'),
+    });
+  }
+
+  it('returns suggestions across periods, days, and metrics groups', async () => {
+    const { app } = makeRichApp();
+    const res = await request(app).get('/api/v1/health/mentions/all?user=kc');
+    expect(res.status).toBe(200);
+    const groups = new Set(res.body.suggestions.map(s => s.group));
+    expect(groups.has('period')).toBe(true);
+    expect(groups.has('day')).toBe(true);
+    expect(groups.has('metric')).toBe(true);
+  });
+
+  it('respects per-category limits (8 periods + 14 days + 6 metrics)', async () => {
+    const { app } = makeRichApp();
+    const res = await request(app).get('/api/v1/health/mentions/all?user=kc');
+    const byGroup = res.body.suggestions.reduce((acc, s) => {
+      acc[s.group] = (acc[s.group] || 0) + 1;
+      return acc;
+    }, {});
+    expect(byGroup.period).toBeLessThanOrEqual(8);
+    expect(byGroup.day).toBeLessThanOrEqual(14);
+    expect(byGroup.metric).toBeLessThanOrEqual(6);
+  });
+
+  it('round-robin interleaves so first 3 results span all groups', async () => {
+    const { app } = makeRichApp();
+    const res = await request(app).get('/api/v1/health/mentions/all?user=kc');
+    const firstThreeGroups = res.body.suggestions.slice(0, 3).map(s => s.group);
+    expect(new Set(firstThreeGroups).size).toBe(3);
+  });
+
+  it('filters by prefix across all groups', async () => {
+    const { app } = makeRichApp();
+    const res = await request(app).get('/api/v1/health/mentions/all?user=kc&prefix=weight');
+    expect(res.status).toBe(200);
+    const slugs = res.body.suggestions.map(s => s.slug);
+    expect(slugs).toContain('weight_lbs');
+  });
+
+  it('returns 400 when user query param missing', async () => {
+    const { app } = makeRichApp();
+    const res = await request(app).get('/api/v1/health/mentions/all');
+    expect(res.status).toBe(400);
+  });
+
+  it('existing /periods route still works (regression)', async () => {
+    const { app } = makeRichApp();
+    const res = await request(app).get('/api/v1/health/mentions/periods?user=kc');
+    expect(res.status).toBe(200);
+    expect(res.body.suggestions.length).toBeGreaterThan(0);
+    expect(res.body.suggestions.every(s => s.group === 'period')).toBe(true);
+  });
+
+  it('existing /recent-days route still works (regression)', async () => {
+    const { app } = makeRichApp();
+    const res = await request(app).get('/api/v1/health/mentions/recent-days?user=kc&days=7');
+    expect(res.status).toBe(200);
+    expect(res.body.suggestions.every(s => s.group === 'day')).toBe(true);
+  });
+});
