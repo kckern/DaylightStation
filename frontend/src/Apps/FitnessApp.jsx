@@ -767,12 +767,23 @@ const FitnessApp = () => {
   };
 
   const handleHomePlay = useCallback((queueItem) => {
-    // Boundary normalize: queueItem comes from upstream caller; ensure contentId is set.
+    // Boundary normalize: queueItem comes from upstream caller (widgets that
+    // parse compound contentIds). Use queueItem.contentSource when present —
+    // do NOT hardcode 'plex:' since widgets are source-agnostic.
+    const src = queueItem?.contentSource || 'plex';
     const normalized = queueItem && queueItem.contentId
       ? queueItem
-      : { ...queueItem, contentId: queueItem?.plex
-          ? `plex:${queueItem.plex}`
-          : (queueItem?.id != null && /^[0-9]+$/.test(String(queueItem.id)) ? `plex:${queueItem.id}` : null) };
+      : {
+          ...queueItem,
+          contentId:
+            (typeof queueItem?.id === 'string' && /^[a-z]+:/i.test(queueItem.id))
+              ? queueItem.id
+              : (queueItem?.plex
+                  ? `plex:${queueItem.plex}`
+                  : (queueItem?.id != null && /^[0-9]+$/.test(String(queueItem.id))
+                      ? `${src}:${queueItem.id}`
+                      : null))
+        };
     setFitnessPlayQueue(prev => [...prev, normalized]);
     const episodeId = String(queueItem.id).replace(/^[a-z]+:/i, '');
     if (episodeId) {
@@ -868,18 +879,29 @@ const FitnessApp = () => {
         navigate(`/fitness/show/${showId}`, { replace: true });
         break;
 
-      case 'movie':
+      case 'movie': {
         //send directly to player queue
         const movieId = String(target.contentId || target.plex || target.id).replace(/^[a-z]+:/i, '');
-        // Boundary normalize: target is a pre-built nav item; ensure contentId is set.
-        const movieNormalized = target && target.contentId
+        // Boundary normalize: prefer existing prefixed id, else synthesize from plex
+        // field, else from a bare numeric id. Otherwise leave null and rely on the
+        // read-side fallback chain.
+        const movieNormalized = target?.contentId
           ? target
-          : { ...target, contentId: target?.plex
-              ? `plex:${target.plex}`
-              : (target?.id != null && /^[0-9]+$/.test(String(target.id)) ? `plex:${target.id}` : null) };
+          : {
+              ...target,
+              contentId:
+                (typeof target?.id === 'string' && /^[a-z]+:/i.test(target.id))
+                  ? target.id
+                  : (target?.plex
+                      ? `plex:${target.plex}`
+                      : (target?.id != null && /^[0-9]+$/.test(String(target.id))
+                          ? `plex:${target.id}`
+                          : null))
+            };
         setFitnessPlayQueue(prev => [...prev, movieNormalized]);
         navigate(`/fitness/play/${movieId}`, { replace: true });
         break;
+      }
 
       case 'custom_action':
         logger.warn('custom_action not implemented', { action: target.action });

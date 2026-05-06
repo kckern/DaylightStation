@@ -598,9 +598,12 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
         ? normalizeImageUrl(parentData.thumbnail)
         : (episode.parentId ? ContentDisplayUrl(episode.parentId) : undefined);
 
+      const candidateId = plexId || episode.id || `episode-${Date.now()}`;
       const queueItem = {
-        id: plexId || episode.id || `episode-${Date.now()}`,
-        contentId: plexId ? `plex:${plexId}` : null,
+        id: candidateId,
+        contentId: plexId
+          ? `plex:${plexId}`
+          : (typeof candidateId === 'string' && /^[a-z]+:/i.test(candidateId) ? candidateId : null),
         plex: plexId, // Ensure plex ID is passed for downstream components
         source: plexId ? 'plex' : (episode.source || null),
         show: showTitle,
@@ -1068,9 +1071,12 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
         const seasonTitle = seasonObj ? (seasonObj.title || seasonObj.name || seasonObj.rawName) : undefined;
         const showTitle = info?.title;
 
+        const candidateId = plexId || episode.id || `episode-${Date.now()}`;
         const queueItem = {
-          id: plexId || episode.id || `episode-${Date.now()}`,
-          contentId: plexId ? `plex:${plexId}` : null,
+          id: candidateId,
+          contentId: plexId
+            ? `plex:${plexId}`
+            : (typeof candidateId === 'string' && /^[a-z]+:/i.test(candidateId) ? candidateId : null),
           plex: plexId, // Ensure plex ID is passed for downstream components
           source: plexId ? 'plex' : (episode.source || null),
           show: showTitle,
