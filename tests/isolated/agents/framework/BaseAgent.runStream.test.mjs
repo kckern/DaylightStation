@@ -7,6 +7,16 @@ class FakeAgent extends BaseAgent {
   getSystemPrompt() { return 'SYS'; }
 }
 
+async function* finishStream() {
+  yield { type: 'text-delta', text: 'Hi ' };
+  yield { type: 'finish', reason: 'stop', usage: { totalTokens: 5 } };
+}
+
+const baseDeps = {
+  agentRuntime: { streamExecute: vi.fn(() => finishStream()) },
+  workingMemory: { load: vi.fn(async () => null), save: vi.fn(async () => {}) },
+};
+
 describe('BaseAgent.runStream', () => {
   it('yields chunks from agentRuntime.streamExecute', async () => {
     async function* fakeStream() {
@@ -43,5 +53,44 @@ describe('BaseAgent.runStream', () => {
     });
     for await (const _ of agent.runStream('hi', { context: { userId: 'kc' } })) { /* drain */ }
     expect(capturedContext.mode).toBe('chat');
+  });
+
+  it('saves memory when userId is present', async () => {
+    const save = vi.fn(async () => {});
+    const load = vi.fn(async () => ({ scratch: 'm', serialize: () => 'scratch: m' }));
+    async function* fakeStream() { yield { type: 'finish' }; }
+    const agent = new FakeAgent({
+      agentRuntime: { streamExecute: () => fakeStream() },
+      workingMemory: { load, save },
+    });
+    for await (const _ of agent.runStream('hi', { context: { userId: 'kc' } })) { /* drain */ }
+    expect(save).toHaveBeenCalledWith('fake', 'kc', expect.objectContaining({ scratch: 'm' }));
+  });
+
+  it('does not load or save memory when userId is absent', async () => {
+    const load = vi.fn();
+    const save = vi.fn();
+    async function* fakeStream() { yield { type: 'finish' }; }
+    const agent = new FakeAgent({
+      agentRuntime: { streamExecute: () => fakeStream() },
+      workingMemory: { load, save },
+    });
+    for await (const _ of agent.runStream('hi', { context: {} })) { /* drain */ }
+    expect(load).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('propagates errors from the runtime stream to the consumer', async () => {
+    async function* fakeStream() {
+      yield { type: 'text-delta', text: 'partial' };
+      throw new Error('boom');
+    }
+    const agent = new FakeAgent({
+      agentRuntime: { streamExecute: () => fakeStream() },
+      workingMemory: { load: async () => null, save: async () => {} },
+    });
+    await expect((async () => {
+      for await (const _ of agent.runStream('hi', { context: { userId: 'kc' } })) { /* drain */ }
+    })()).rejects.toThrow('boom');
   });
 });
