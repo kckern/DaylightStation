@@ -270,6 +270,19 @@ const sanitizeRosterForPersist = (roster) => {
     .filter(Boolean);
 };
 
+/**
+ * Normalize a content id to the canonical "source:localId" form. Bare
+ * numeric/string ids are prefixed with "plex:" (fitness app default).
+ * Already-prefixed ids pass through unchanged. Returns null for empty input.
+ * @param {string|number|null|undefined} id
+ * @returns {string|null}
+ */
+function normalizeContentId(id) {
+  if (id == null || id === '') return null;
+  const s = String(id);
+  return s.includes(':') ? s : `plex:${s}`;
+}
+
 export class FitnessSession {
   constructor(getTimeoutsFn = getFitnessTimeouts) {
     this._getTimeouts = getTimeoutsFn;
@@ -1547,16 +1560,19 @@ export class FitnessSession {
   /**
    * Get the current primary content ID from active media.
    * Falls back to the pending content-id hint when the snapshot has no
-   * media yet (e.g. before the session starts).
+   * media yet (e.g. before the session starts). Bare local ids on
+   * play-queue items are normalized to "plex:<id>" before returning.
    * @returns {string|null}
    */
   _getCurrentContentId() {
     const playlist = this.snapshot?.mediaPlaylists?.video;
     if (Array.isArray(playlist) && playlist.length > 0) {
-      const id = playlist[0]?.contentId || playlist[0]?.id;
-      if (id) return id;
+      const head = playlist[0];
+      const id = head?.contentId || head?.id;
+      const normalized = normalizeContentId(id);
+      if (normalized) return normalized;
     }
-    return this._pendingContentId || null;
+    return normalizeContentId(this._pendingContentId);
   }
 
   /**
