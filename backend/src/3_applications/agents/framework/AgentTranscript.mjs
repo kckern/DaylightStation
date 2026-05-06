@@ -1,9 +1,25 @@
 // backend/src/3_applications/agents/framework/AgentTranscript.mjs
 
 import crypto from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir as fsMkdir, writeFile as fsWriteFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { safeClone } from './utils/safeClone.mjs';
+
+/**
+ * Default file-path strategy — produces the same path as the original flush() logic:
+ *   {mediaDir}/logs/agents/{agentId}/{YYYY-MM-DD}/{userId}/{HHMMSS-mmm}-{turnIdShort}.json
+ * @param {AgentTranscript} t
+ * @returns {string}
+ */
+function defaultFilePathStrategy(t) {
+  const day = t.startedAt.toISOString().slice(0, 10); // YYYY-MM-DD
+  const iso = t.startedAt.toISOString();
+  const time = iso.slice(11, 23).replace(/[:.]/g, '');      // 204215123
+  const filenameTs = `${time.slice(0, 6)}-${time.slice(6, 9)}`; // 204215-123
+  const turnIdShort = (t.turnId || '').slice(0, 8) || 'no-id';
+  const userDir = t.userId || 'anonymous';
+  return join(t.mediaDir, 'logs', 'agents', t.agentId, day, userDir, `${filenameTs}-${turnIdShort}.json`);
+}
 
 /**
  * Per-turn transcript collector for any agent run. Generalizes the
@@ -17,7 +33,7 @@ import { safeClone } from './utils/safeClone.mjs';
  * Schema: see docs/superpowers/specs/2026-05-05-agent-transcripts-design.md
  */
 export class AgentTranscript {
-  constructor({ agentId, userId = null, turnId = null, input, mediaDir = null, logger = console } = {}) {
+  constructor({ agentId, userId = null, turnId = null, input, mediaDir = null, logger = console, fs: injectedFs = null, filePathStrategy = null } = {}) {
     if (!agentId) throw new Error('AgentTranscript: agentId is required');
     if (!input || typeof input !== 'object') throw new Error('AgentTranscript: input is required');
 
@@ -40,9 +56,17 @@ export class AgentTranscript {
     this.output = null;
     this.error = null;
 
+    // Optional fields — only emitted in toJSON when set
+    this.requestBody = null;
+    this.satellite = null;
+
     this.mediaDir = mediaDir;
     this.logger = logger;
     this._flushed = false;
+
+    // Injectable fs (for testing) and file-path strategy
+    this._fs = injectedFs || { mkdir: fsMkdir, writeFile: fsWriteFile };
+    this.filePathStrategy = filePathStrategy ?? defaultFilePathStrategy;
   }
 
   setSystemPrompt(text) {
@@ -55,12 +79,12 @@ export class AgentTranscript {
 
   /**
    * Append a tool invocation. Called by the MastraAdapter tool wrapper.
-   * @param {{ name, args, result, ok, latencyMs }} entry
+   * @param {{ name, args, result, ok, latencyMs, policyDecision? }} entry
    */
-  recordTool({ name, args, result, ok, latencyMs }) {
+  recordTool({ name, args, result, ok, latencyMs, policyDecision } = {}) {
     const ix = this.toolCalls.length;
     const attachments = this.input?.context?.attachments;
-    this.toolCalls.push({
+    const entry = {
       ix,
       name,
       args: safeClone(args),
@@ -69,7 +93,17 @@ export class AgentTranscript {
       latencyMs: typeof latencyMs === 'number' ? latencyMs : null,
       ts: new Date().toISOString(),
       linkedAttachments: computeLinkedAttachments(args, attachments),
-    });
+    };
+    if (policyDecision !== undefined) entry.policyDecision = policyDecision;
+    this.toolCalls.push(entry);
+  }
+
+  setRequestBody(body) {
+    this.requestBody = body ? safeClone(body) : null;
+  }
+
+  setSatelliteSnapshot(satellite) {
+    this.satellite = satellite ? safeClone(satellite) : null;
   }
 
   setOutput({ text = '', finishReason = 'stop', usage = null } = {}) {
@@ -97,7 +131,7 @@ export class AgentTranscript {
   }
 
   toJSON() {
-    return {
+    const json = {
       version: 1,
       turnId: this.turnId,
       agentId: this.agentId,
@@ -114,6 +148,9 @@ export class AgentTranscript {
       error: this.error,
       tags: [this.agentId],
     };
+    if (this.requestBody !== null) json.requestBody = this.requestBody;
+    if (this.satellite !== null) json.satellite = this.satellite;
+    return json;
   }
 
   /**
@@ -129,20 +166,9 @@ export class AgentTranscript {
     if (this._flushed) return;
 
     try {
-      const day = this.startedAt.toISOString().slice(0, 10); // YYYY-MM-DD
-      // Filename ts: HHMMSS-mmm (e.g. 204215-123)
-      const iso = this.startedAt.toISOString();
-      const time = iso.slice(11, 23).replace(/[:.]/g, '');     // 204215123
-      const filenameTs = `${time.slice(0, 6)}-${time.slice(6, 9)}`; // 204215-123
-      const turnIdShort = (this.turnId || '').slice(0, 8) || 'no-id';
-      const userDir = this.userId || 'anonymous';
-
-      const file = join(
-        this.mediaDir, 'logs', 'agents', this.agentId, day, userDir,
-        `${filenameTs}-${turnIdShort}.json`
-      );
-      await mkdir(dirname(file), { recursive: true });
-      await writeFile(file, JSON.stringify(this.toJSON(), null, 2), 'utf8');
+      const file = this.filePathStrategy(this);
+      await this._fs.mkdir(dirname(file), { recursive: true });
+      await this._fs.writeFile(file, JSON.stringify(this.toJSON(), null, 2), 'utf8');
       this._flushed = true;
     } catch (err) {
       this.logger?.warn?.('agent.transcript.flush_failed', {
