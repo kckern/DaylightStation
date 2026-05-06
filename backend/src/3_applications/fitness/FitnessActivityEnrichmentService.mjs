@@ -24,13 +24,17 @@ import moment from 'moment-timezone';
 import { loadYamlSafe, listYamlFiles, dirExists, saveYaml } from '#system/utils/FileIO.mjs';
 import { buildStravaDescription } from '../../1_adapters/fitness/buildStravaDescription.mjs';
 import { buildSelectionConfig } from '../../1_adapters/fitness/selectPrimaryMedia.mjs';
+import { absorbOverlappingSlivers } from './sliverAbsorption.mjs';
 import { userService } from '#system/config/index.mjs';
 import { buildStravaSessionTimeline } from '../../2_domains/fitness/services/StravaSessionBuilder.mjs';
 import { encodeSingleSeries } from '../../2_domains/fitness/services/TimelineService.mjs';
 
 const MAX_RETRIES = 3;
+const MAX_TOTAL_ATTEMPTS = 10;            // hard cap before abandoning
 const RETRY_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const COOLDOWN_TTL_MS = 60 * 60 * 1000;  // 1 hour
+const GPS_DISTANCE_THRESHOLD_METERS = 100;  // activities below this are treated as indoor (treadmill, etc.)
+const MIN_OVERLAP_FRACTION = 0.5;           // matched session must overlap ≥50% of activity elapsed_time
 
 export class FitnessActivityEnrichmentService {
   #stravaClient;
@@ -135,6 +139,19 @@ export class FitnessActivityEnrichmentService {
     // Circuit breaker: re-check cooldown (may have been set by concurrent attempt)
     if (this._isOnCooldown(activityId)) return;
     if (job.status === 'completed') return;
+    if (job.status === 'abandoned') return;
+
+    if ((job.attempts || 0) >= MAX_TOTAL_ATTEMPTS) {
+      this.#logger.warn?.('strava.enrichment.abandoned', {
+        activityId,
+        attempts: job.attempts,
+      });
+      this.#jobStore.update(activityId, {
+        status: 'abandoned',
+        abandonedAt: new Date().toISOString(),
+      });
+      return;
+    }
 
     const attempt = (job.attempts || 0) + 1;
     this.#logger.info?.('strava.enrichment.attempt_start', { activityId, attempt });
@@ -340,6 +357,24 @@ export class FitnessActivityEnrichmentService {
           }
         }
 
+        // Plausibility guard: an activity with real GPS distance should not
+        // be matched to a session that has zero distance AND no media. That
+        // is almost always a coincidental overlap (e.g. user came home from a
+        // run wearing the HR strap and triggered a treasureBox session).
+        const activityHasGpsDistance = (activity.distance || 0) > GPS_DISTANCE_THRESHOLD_METERS;
+        const sessionIsZeroDistanceNoMedia =
+          ((data.strava?.distance ?? 0) === 0)
+          && (!Array.isArray(data.summary?.media) || data.summary.media.length === 0);
+        if (activityHasGpsDistance && sessionIsZeroDistanceNoMedia) {
+          this.#logger.info?.('strava.enrichment.session_scan.rejected_by_sport_guard', {
+            activityId,
+            file: filename,
+            reason: 'outdoor-gps-vs-indoor-empty',
+            activityDistanceMeters: activity.distance,
+          });
+          continue;
+        }
+
         // Time-based matching
         const sessionTz = data.timezone || tz;
         const sessStart = moment.tz(data.session.start, sessionTz);
@@ -352,6 +387,18 @@ export class FitnessActivityEnrichmentService {
         const overlapMs = overlapEnd.diff(overlapStart);
 
         if (overlapMs > 0 && overlapMs > bestOverlap) {
+          const activityElapsedMs = (activity.elapsed_time || activity.moving_time || 0) * 1000;
+          const overlapFraction = activityElapsedMs > 0 ? overlapMs / activityElapsedMs : 0;
+          if (overlapFraction < MIN_OVERLAP_FRACTION) {
+            this.#logger.info?.('strava.enrichment.session_scan.rejected_by_overlap_fraction', {
+              activityId,
+              file: filename,
+              overlapFraction,
+              overlapMs,
+              activityElapsedMs,
+            });
+            continue;
+          }
           bestOverlap = overlapMs;
           bestMatch = { data, filePath, date, filename };
         }
@@ -551,6 +598,16 @@ export class FitnessActivityEnrichmentService {
       name: activity.name,
       type: activity.type,
       filePath,
+    });
+
+    // Absorb any HR-only cooldown/passing-through slivers in this date dir
+    // that overlap the activity window. Strava is the source of truth for
+    // the real workout; standalone HR slivers caught at home during cooldown
+    // are redundant and would otherwise show up as phantom sessions.
+    absorbOverlappingSlivers(activity, sessionDir, {
+      justCreatedSessionId: sessionId,
+      tz,
+      logger: this.#logger,
     });
 
     return { sessionId, filePath };
