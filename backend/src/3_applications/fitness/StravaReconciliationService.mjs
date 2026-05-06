@@ -15,6 +15,7 @@ import moment from 'moment-timezone';
 import { loadYamlSafe, listYamlFiles, dirExists, saveYaml } from '#system/utils/FileIO.mjs';
 import { buildStravaDescription } from '../../1_adapters/fitness/buildStravaDescription.mjs';
 import { buildSelectionConfig } from '../../1_adapters/fitness/selectPrimaryMedia.mjs';
+import { absorbOverlappingSlivers } from './sliverAbsorption.mjs';
 
 const RECONCILE_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
 const INTER_SESSION_DELAY_MS = 200;
@@ -56,6 +57,7 @@ export class StravaReconciliationService {
     let sessionsProcessed = 0;
     let enriched = 0;
     let notesPulled = 0;
+    let sliversAbsorbed = 0;
 
     for (const date of dates) {
       const dateDir = path.join(this.#fitnessHistoryDir, date);
@@ -100,6 +102,20 @@ export class StravaReconciliationService {
             saveYaml(savePath, session);
           }
 
+          // Pass 3: Sliver absorption (only for Strava-only sessions).
+          // If this session was the result of _createStravaOnlySession (or
+          // an equivalent backfill), look for adjacent HR-only home slivers
+          // in the same date dir and delete them. Catches the cases where
+          // the original webhook either failed to absorb or never fired.
+          if (session.session?.source === 'strava') {
+            const result = absorbOverlappingSlivers(activity, dateDir, {
+              justCreatedSessionId: session.sessionId || session.session?.id,
+              tz,
+              logger: this.#logger,
+            });
+            sliversAbsorbed += result.absorbed.length;
+          }
+
           sessionsProcessed++;
 
           // Rate limit: small delay between sessions
@@ -118,6 +134,7 @@ export class StravaReconciliationService {
       sessionsProcessed,
       enriched,
       notesPulled,
+      sliversAbsorbed,
     });
   }
 
