@@ -29,6 +29,7 @@ import { buildStravaSessionTimeline } from '../../2_domains/fitness/services/Str
 import { encodeSingleSeries } from '../../2_domains/fitness/services/TimelineService.mjs';
 
 const MAX_RETRIES = 3;
+const MAX_TOTAL_ATTEMPTS = 10;            // hard cap before abandoning
 const RETRY_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const COOLDOWN_TTL_MS = 60 * 60 * 1000;  // 1 hour
 const GPS_DISTANCE_THRESHOLD_METERS = 100;  // activities below this are treated as indoor (treadmill, etc.)
@@ -137,6 +138,19 @@ export class FitnessActivityEnrichmentService {
     // Circuit breaker: re-check cooldown (may have been set by concurrent attempt)
     if (this._isOnCooldown(activityId)) return;
     if (job.status === 'completed') return;
+    if (job.status === 'abandoned') return;
+
+    if ((job.attempts || 0) >= MAX_TOTAL_ATTEMPTS) {
+      this.#logger.warn?.('strava.enrichment.abandoned', {
+        activityId,
+        attempts: job.attempts,
+      });
+      this.#jobStore.update(activityId, {
+        status: 'abandoned',
+        abandonedAt: new Date().toISOString(),
+      });
+      return;
+    }
 
     const attempt = (job.attempts || 0) + 1;
     this.#logger.info?.('strava.enrichment.attempt_start', { activityId, attempt });

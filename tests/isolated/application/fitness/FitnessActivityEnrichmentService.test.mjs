@@ -223,3 +223,76 @@ describe('FitnessActivityEnrichmentService._findMatchingSession sport guard', ()
     expect(result.data.sessionId).toBe('long-session');
   });
 });
+
+describe('FitnessActivityEnrichmentService — terminal-failure aging', () => {
+  let service;
+  let jobStore;
+  let stravaClientMock;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    dirExists.mockReturnValue(true);
+    jobStore = {
+      findById: vi.fn(),
+      update: vi.fn(),
+      create: vi.fn(),
+      findActionable: vi.fn(() => []),
+    };
+    stravaClientMock = { hasAccessToken: () => true, getActivity: vi.fn() };
+    service = new FitnessActivityEnrichmentService({
+      stravaClient: stravaClientMock,
+      jobStore,
+      authStore: {},
+      configService: {
+        getTimezone: () => 'America/Los_Angeles',
+        getHeadOfHousehold: () => 'test-user',
+        getAppConfig: () => ({}),
+      },
+      fitnessHistoryDir: '/tmp/fake-history',
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+    });
+  });
+
+  test('marks a job abandoned when attempts >= MAX_TOTAL_ATTEMPTS', async () => {
+    jobStore.findById.mockReturnValue({
+      activityId: '17831319049',
+      status: 'pending',
+      attempts: 10,
+    });
+    await service._attemptEnrichment('17831319049');
+    expect(jobStore.update).toHaveBeenCalledWith('17831319049', expect.objectContaining({
+      status: 'abandoned',
+    }));
+    // Should NOT have called getActivity (early-returned before the work)
+    expect(stravaClientMock.getActivity).not.toHaveBeenCalled();
+  });
+
+  test('does not retry an abandoned job', async () => {
+    jobStore.findById.mockReturnValue({
+      activityId: '17831319049',
+      status: 'abandoned',
+      attempts: 11,
+    });
+    await service._attemptEnrichment('17831319049');
+    // No update, no getActivity call — full early-return.
+    expect(jobStore.update).not.toHaveBeenCalled();
+    expect(stravaClientMock.getActivity).not.toHaveBeenCalled();
+  });
+
+  test('attempts < MAX_TOTAL_ATTEMPTS proceeds normally', async () => {
+    jobStore.findById.mockReturnValue({
+      activityId: '12345',
+      status: 'pending',
+      attempts: 3,
+    });
+    // The attempt will fail downstream because we haven't fully wired
+    // stravaClient/getActivity, but we verify the abandon-update did NOT fire
+    // before that downstream failure.
+    await service._attemptEnrichment('12345').catch(() => {});
+    const calls = jobStore.update.mock.calls;
+    const abandonCalls = calls.filter(call =>
+      call[1] && call[1].status === 'abandoned'
+    );
+    expect(abandonCalls).toHaveLength(0);
+  });
+});
