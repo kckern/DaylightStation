@@ -8,6 +8,7 @@ import {
   unstable_useMentionAdapter,
 } from '@assistant-ui/react';
 import { useMemo, useEffect, useRef, useState } from 'react';
+import './AgentChatSurface.scss';
 import { createAgentRuntime } from './runtime.js';
 import { MarkdownText } from './MarkdownText.jsx';
 import { ToolCallAttribution } from './ToolCallAttribution.jsx';
