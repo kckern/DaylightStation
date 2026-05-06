@@ -141,18 +141,34 @@ export class BaseAgent {
     return [...this.#assignments.values()];
   }
 
-  async #assemblePrompt(memory, context = {}) {
-    const base = await this.getSystemPrompt(context);
-    const sections = [base];
-
+  /**
+   * Build the array of prompt sections that get joined to form the system
+   * prompt. Override to add, remove, or reorder sections in subclasses.
+   *
+   * Default returns four sections (any may be null/empty — they're filtered):
+   * 1. Base prompt from getSystemPrompt(context)
+   * 2. "## Active User" if context.userId present
+   * 3. "## User Mentions" from formatAttachments() if attachments present
+   * 4. "## Working Memory" from memory.serialize() if memory present
+   *
+   * @param {object} context
+   * @param {import('./WorkingMemory.mjs').WorkingMemoryState|null} memory
+   * @returns {Promise<Array<string|null>>}
+   */
+  async buildPromptSections(context = {}, memory = null) {
+    const sections = [await this.getSystemPrompt(context)];
     if (context.userId) {
       sections.push(`## Active User\nThe user you are assisting is: **${context.userId}**`);
     }
-
     const attachmentsBlock = await this.formatAttachments(context.attachments);
     if (attachmentsBlock) sections.push(attachmentsBlock);
     if (memory) sections.push(`## Working Memory\n${memory.serialize()}`);
-    return sections.join('\n\n');
+    return sections;
+  }
+
+  async #assemblePrompt(memory, context = {}) {
+    const sections = await this.buildPromptSections(context, memory);
+    return sections.filter(Boolean).join('\n\n');
   }
 
   /**
