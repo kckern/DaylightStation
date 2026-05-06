@@ -80,7 +80,8 @@ export class BaseAgent {
   /**
    * Streaming variant of run. Yields chunks from the agent runtime as the
    * model produces them. Same userId resolution + assemble-prompt flow as
-   * run(); the runtime's own streamExecute handles transcript flush at end.
+   * run(); memory is saved in a finally block so it persists even if the
+   * consumer abandons the stream early (e.g. SSE client disconnects).
    *
    * @yields { type: 'text-delta'|'tool-start'|'tool-end'|'finish', ... }
    */
@@ -94,19 +95,20 @@ export class BaseAgent {
 
     const stream = this.#agentRuntime.streamExecute({
       agent: this,
-      agentId: this.constructor.id,
       input,
       tools: this.getTools(),
       systemPrompt: await this.#assemblePrompt(memory, augmentedContext),
       context: { ...augmentedContext, memory },
     });
 
-    for await (const chunk of stream) {
-      yield chunk;
-    }
-
-    if (memory) {
-      await this.#workingMemory.save(this.constructor.id, effectiveUserId, memory);
+    try {
+      for await (const chunk of stream) {
+        yield chunk;
+      }
+    } finally {
+      if (memory) {
+        await this.#workingMemory.save(this.constructor.id, effectiveUserId, memory);
+      }
     }
   }
 
