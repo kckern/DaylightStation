@@ -600,6 +600,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
 
       const queueItem = {
         id: plexId || episode.id || `episode-${Date.now()}`,
+        contentId: plexId ? `plex:${plexId}` : null,
         plex: plexId, // Ensure plex ID is passed for downstream components
         source: plexId ? 'plex' : (episode.source || null),
         show: showTitle,
@@ -1069,6 +1070,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
 
         const queueItem = {
           id: plexId || episode.id || `episode-${Date.now()}`,
+          contentId: plexId ? `plex:${plexId}` : null,
           plex: plexId, // Ensure plex ID is passed for downstream components
           source: plexId ? 'plex' : (episode.source || null),
           show: showTitle,
