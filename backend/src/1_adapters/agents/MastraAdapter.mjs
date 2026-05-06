@@ -12,6 +12,10 @@ import { createTool as mastraCreateTool } from '@mastra/core/tools';
 import { z } from 'zod';
 import crypto from 'node:crypto';
 import { AgentTranscript } from '#apps/agents/framework/AgentTranscript.mjs';
+import { applyDecorators } from '../../3_applications/agents/framework/decorators/applyDecorators.mjs';
+import { userIdInjector } from '../../3_applications/agents/framework/decorators/UserIdInjector.mjs';
+import { createCallLimiter } from '../../3_applications/agents/framework/decorators/CallLimiter.mjs';
+import { transcriptRecorder } from '../../3_applications/agents/framework/decorators/TranscriptRecorder.mjs';
 
 /**
  * Strip the `userId` parameter from a tool's JSON schema. The model never
@@ -104,82 +108,78 @@ export class MastraAdapter {
   }
 
   /**
-   * Translate ITool[] to Mastra tool format
+   * Translate ITool[] to Mastra tool format via the decorator chain.
+   *
+   * Decorators applied left-to-right (outermost first):
+   *   userIdInjector → callLimiter → transcriptRecorder
+   *
+   * Mastra-specific wiring (jsonSchemaToZod + mastraCreateTool) and
+   * structured logger emission stay at adapter level.
+   *
    * @param {Array} tools - ITool instances
-   * @param {Object} context - Execution context
-   * @param {Object} callCounter - Mutable counter object
+   * @param {Object} context - Execution context (includes userId)
+   * @param {Object} callCounter - Mutable counter object (for toolCallsBeforeError)
    * @param {AgentTranscript|null} transcript - Optional transcript for recording tool calls
    * @returns {Object} Mastra tools object
    */
   #translateTools(tools, context, callCounter, transcript = null) {
-    const mastraTools = {};
+    const callLimiter = createCallLimiter({ maxToolCalls: this.#maxToolCalls });
+    const decoratorContext = { ...context, transcript };
 
-    for (const tool of tools) {
-      mastraTools[tool.name] = mastraCreateTool({
-        id: tool.name,
-        description: tool.description,
-        inputSchema: jsonSchemaToZod(stripUserIdFromSchema(tool.parameters)),
+    const decorated = applyDecorators(
+      tools,
+      [userIdInjector, callLimiter, transcriptRecorder],
+      decoratorContext,
+    );
+
+    const mastraTools = {};
+    for (let i = 0; i < decorated.length; i++) {
+      const decoratedTool = decorated[i];
+      const originalTool = tools[i];
+
+      // Use the already-stripped schema from the decorated tool (UserIdInjector
+      // ran stripUserIdFromSchema on it).
+      mastraTools[originalTool.name] = mastraCreateTool({
+        id: originalTool.name,
+        description: originalTool.description,
+        inputSchema: jsonSchemaToZod(decoratedTool.parameters),
         execute: async (inputData) => {
           callCounter.count++;
 
-          // Adapter-injected userId wins over anything the model might pass.
-          // The schema strip means the model can't pass userId at all, but
-          // we belt-and-suspenders here for safety.
-          const args = { ...inputData };
-          if (context.userId) args.userId = context.userId;
-
-          this.#logger.debug?.('tool.execute.call', {       // ← was info, now debug
-            tool: tool.name,
+          this.#logger.debug?.('tool.execute.call', {
+            tool: originalTool.name,
             turnId: transcript?.turnId,
             callNumber: callCounter.count,
             maxCalls: this.#maxToolCalls,
           });
 
-          if (callCounter.count > this.#maxToolCalls) {
-            const msg = `Tool call limit reached (${this.#maxToolCalls}). Aborting to prevent runaway costs.`;
-            this.#logger.warn?.('tool.execute.limit_reached', {
-              tool: tool.name,
+          // decoratedTool.execute handles: userId injection, call limiting,
+          // transcript recording, and error-envelope wrapping on throws.
+          const result = await decoratedTool.execute(inputData ?? {}, decoratorContext);
+
+          if (result && typeof result === 'object' && 'error' in result) {
+            // Distinguish limit-reached from other errors for the warn log.
+            if (typeof result.error === 'string' && result.error.startsWith('Tool call limit reached')) {
+              this.#logger.warn?.('tool.execute.limit_reached', {
+                tool: originalTool.name,
+                turnId: transcript?.turnId,
+                count: callCounter.count,
+              });
+            } else {
+              this.#logger.error?.('tool.execute.error', {
+                tool: originalTool.name,
+                turnId: transcript?.turnId,
+                error: result.error,
+              });
+            }
+          } else {
+            this.#logger.debug?.('tool.execute.complete', {
+              tool: originalTool.name,
               turnId: transcript?.turnId,
-              count: callCounter.count,
             });
-            transcript?.recordTool({
-              name: tool.name,
-              args,
-              result: { error: msg },
-              ok: false,
-              latencyMs: 0,
-            });
-            return { error: msg };
           }
 
-          const startedAt = Date.now();
-          try {
-            const result = await tool.execute(args, context);
-            const latencyMs = Date.now() - startedAt;
-            transcript?.recordTool({
-              name: tool.name,
-              args,
-              result,
-              ok: !(result && typeof result === 'object' && 'error' in result),
-              latencyMs,
-            });
-            return result;
-          } catch (error) {
-            const latencyMs = Date.now() - startedAt;
-            this.#logger.error?.('tool.execute.error', {
-              tool: tool.name,
-              turnId: transcript?.turnId,
-              error: error.message,
-            });
-            transcript?.recordTool({
-              name: tool.name,
-              args,
-              result: { error: error.message },
-              ok: false,
-              latencyMs,
-            });
-            return { error: error.message };
-          }
+          return result;
         },
       });
     }
