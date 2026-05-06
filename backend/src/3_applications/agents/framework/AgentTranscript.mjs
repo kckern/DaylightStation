@@ -3,6 +3,7 @@
 import crypto from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { safeClone } from './utils/safeClone.mjs';
 
 /**
  * Per-turn transcript collector for any agent run. Generalizes the
@@ -215,13 +216,5 @@ function deepEqual(a, b) {
   return true;
 }
 
-function safeClone(v) {
-  if (v === undefined || v === null) return v;
-  try {
-    return JSON.parse(JSON.stringify(v));
-  } catch {
-    return String(v);
-  }
-}
 
 export default AgentTranscript;
