@@ -24,7 +24,7 @@ import { ToolFactory } from '../../framework/ToolFactory.mjs';
 import { createTool } from '../../ports/ITool.mjs';
 import { HealthArchiveScope } from '#domains/health/services/HealthArchiveScope.mjs';
 
-const AGGREGATIONS = ['daily', 'weekly_avg', 'monthly_avg', 'quarterly_avg'];
+const AGGREGATIONS = ['daily', 'weekly_avg', 'monthly_avg', 'quarterly_avg', 'yearly_avg'];
 
 // Subtrees this tool is allowed to read from. The HealthArchiveScope whitelist
 // also covers playbook/, strava/, garmin/, etc. — but read_notes_file's
@@ -168,6 +168,11 @@ export class LongitudinalToolFactory extends ToolFactory {
             name_contains: {
               type: 'string',
               description: 'Optional case-insensitive substring filter against workout title/name.',
+            },
+            aggregation: {
+              type: 'string',
+              enum: ['weekly_count', 'monthly_count', 'yearly_count'],
+              description: 'Optional rollup. When present, returns per-bucket count + totalDurationMin instead of a flat list.',
             },
           },
           required: ['userId', 'from', 'to'],
@@ -364,6 +369,158 @@ export class LongitudinalToolFactory extends ToolFactory {
           }
         },
       }),
+      createTool({
+        name: 'query_historical_reconciliation',
+        description:
+          'Query reconciliation data over an inclusive [from, to] date range. ' +
+          'Returns per-day tracked_calories and exercise_calories. The 14-day ' +
+          'maturity gate strips implied_intake / tracking_accuracy / ' +
+          'calorie_adjustment from days less than 14 days old (those values ' +
+          'depend on weight smoothing that hasn\'t settled).',
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string' },
+            from:   { type: 'string', description: 'YYYY-MM-DD inclusive' },
+            to:     { type: 'string', description: 'YYYY-MM-DD inclusive' },
+          },
+          required: ['userId', 'from', 'to'],
+        },
+        execute: async ({ userId, from, to }) => {
+          try {
+            HealthArchiveScope.assertValidUserId(userId);
+            const data = await healthStore.loadReconciliationData?.(userId) || {};
+            const dates = Object.keys(data).filter(d => d >= from && d <= to).sort();
+
+            const MATURITY_DAYS = 14;
+            const now = new Date();
+            const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+            const cutoff = new Date(todayUtc);
+            cutoff.setUTCDate(cutoff.getUTCDate() - MATURITY_DAYS);
+
+            const days = dates.map(date => {
+              const entry = data[date] || {};
+              const dateObj = new Date(date + 'T00:00:00Z');
+              const isMature = dateObj <= cutoff;
+              const day = {
+                date,
+                tracked_calories: entry.tracked_calories ?? 0,
+                exercise_calories: entry.exercise_calories ?? 0,
+              };
+              if (isMature) {
+                if (entry.tracking_accuracy   !== undefined) day.tracking_accuracy   = entry.tracking_accuracy;
+                if (entry.implied_intake      !== undefined) day.implied_intake      = entry.implied_intake;
+                if (entry.calorie_adjustment  !== undefined) day.calorie_adjustment  = entry.calorie_adjustment;
+              }
+              return day;
+            });
+
+            return { days };
+          } catch (err) {
+            return { days: [], error: err.message };
+          }
+        },
+      }),
+
+      createTool({
+        name: 'query_historical_coaching',
+        description:
+          'Query past coaching messages over an inclusive [from, to] date ' +
+          'range. Returns per-date entries with type/text/timestamp.',
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string' },
+            from:   { type: 'string' },
+            to:     { type: 'string' },
+          },
+          required: ['userId', 'from', 'to'],
+        },
+        execute: async ({ userId, from, to }) => {
+          try {
+            HealthArchiveScope.assertValidUserId(userId);
+            const data = await healthStore.loadCoachingData?.(userId) || {};
+            const dates = Object.keys(data).filter(d => d >= from && d <= to).sort();
+            const entries = dates.map(date => ({
+              date,
+              messages: (data[date] || []).map(entry => ({
+                type: entry.type,
+                text: entry.text || entry.message,
+                timestamp: entry.timestamp,
+              })),
+            }));
+            return { entries };
+          } catch (err) {
+            return { entries: [], error: err.message };
+          }
+        },
+      }),
+
+      createTool({
+        name: 'query_nutrition_density',
+        description:
+          'Per-bucket "tracking density" series. A "logged" day is one with ' +
+          'a nutrition entry whose calories > 0. Returns per-bucket ' +
+          '{ daysLogged, daysInPeriod, density } at the requested granularity ' +
+          '(daily | weekly | monthly | quarterly | yearly).',
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string' },
+            from:   { type: 'string' },
+            to:     { type: 'string' },
+            granularity: {
+              type: 'string',
+              enum: ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'],
+              default: 'monthly',
+            },
+          },
+          required: ['userId', 'from', 'to'],
+        },
+        execute: async ({ userId, from, to, granularity = 'monthly' }) => {
+          try {
+            HealthArchiveScope.assertValidUserId(userId);
+            const allowed = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'];
+            if (!allowed.includes(granularity)) {
+              return { rows: [], error: `Unknown granularity: ${granularity}` };
+            }
+            const data = await healthStore.loadNutritionData?.(userId) || {};
+            const bucketKey = granularity === 'daily' ? (d) => d :
+                              granularity === 'weekly' ? isoWeek :
+                              granularity === 'monthly' ? isoMonth :
+                              granularity === 'quarterly' ? quarter :
+                              isoYear;
+
+            // Walk every date in [from, to]; classify each as logged or not.
+            const buckets = new Map();
+            const f = new Date(from + 'T00:00:00Z');
+            const t = new Date(to + 'T00:00:00Z');
+            for (let d = new Date(f); d <= t; d.setUTCDate(d.getUTCDate() + 1)) {
+              const date = d.toISOString().slice(0, 10);
+              const entry = data[date];
+              const logged = entry && typeof entry.calories === 'number' && entry.calories > 0;
+              const key = bucketKey(date);
+              if (!buckets.has(key)) buckets.set(key, { period: key, daysLogged: 0, daysInPeriod: 0 });
+              const b = buckets.get(key);
+              b.daysInPeriod++;
+              if (logged) b.daysLogged++;
+            }
+
+            const rows = [...buckets.values()]
+              .sort((a, b) => a.period.localeCompare(b.period))
+              .map(b => ({
+                period: b.period,
+                daysLogged: b.daysLogged,
+                daysInPeriod: b.daysInPeriod,
+                density: b.daysInPeriod > 0 ? b.daysLogged / b.daysInPeriod : 0,
+              }));
+
+            return { granularity, rows };
+          } catch (err) {
+            return { rows: [], error: err.message };
+          }
+        },
+      }),
     ];
   }
 }
@@ -419,7 +576,8 @@ function makeQueryWeightExecutor(healthStore) {
       const bucketKey =
         aggregation === 'weekly_avg' ? isoWeek :
         aggregation === 'monthly_avg' ? isoMonth :
-        quarter; // 'quarterly_avg'
+        aggregation === 'quarterly_avg' ? quarter :
+        isoYear; // 'yearly_avg'
 
       const buckets = new Map();
       for (const row of dailyRows) {
@@ -548,14 +706,13 @@ function makeQueryNutritionExecutor(healthStore) {
  * the named-period wrapper.
  */
 function makeQueryWorkoutsExecutor(healthService) {
-  return async function queryWorkouts({ userId, from, to, type = null, name_contains = null }) {
+  return async function queryWorkouts({ userId, from, to, type = null, name_contains = null, aggregation = null }) {
     try {
       guardUserId(userId);
       const healthData = await healthService.getHealthForRange(userId, from, to);
 
       const needle = typeof name_contains === 'string' && name_contains.length
-        ? name_contains.toLowerCase()
-        : null;
+        ? name_contains.toLowerCase() : null;
 
       const workouts = [];
       for (const [date, metric] of Object.entries(healthData || {})) {
@@ -575,9 +732,30 @@ function makeQueryWorkoutsExecutor(healthService) {
           });
         }
       }
-
-      // Sort by date ascending (chronological).
       workouts.sort((a, b) => a.date.localeCompare(b.date));
+
+      // Optional rollup
+      if (aggregation) {
+        const validAggregations = ['weekly_count', 'monthly_count', 'yearly_count'];
+        if (!validAggregations.includes(aggregation)) {
+          return { aggregation, rows: [], error: `Unknown aggregation: ${aggregation}` };
+        }
+        const bucketKey = aggregation === 'weekly_count' ? isoWeek :
+                          aggregation === 'monthly_count' ? isoMonth :
+                          isoYear;
+        const buckets = new Map();
+        for (const w of workouts) {
+          const key = bucketKey(w.date);
+          if (!buckets.has(key)) buckets.set(key, { period: key, count: 0, totalDurationMin: 0 });
+          const b = buckets.get(key);
+          b.count++;
+          if (typeof w.duration === 'number' && Number.isFinite(w.duration)) {
+            b.totalDurationMin += w.duration;
+          }
+        }
+        const rows = [...buckets.values()].sort((a, b) => a.period.localeCompare(b.period));
+        return { aggregation, rows };
+      }
 
       return { workouts };
     } catch (err) {
@@ -888,6 +1066,11 @@ function quarter(dateStr) {
   const month = parseInt(dateStr.slice(5, 7), 10);
   const q = Math.ceil(month / 3);
   return `${year}-Q${q}`;
+}
+
+function isoYear(dateStr) {
+  // 'YYYY-MM-DD' → 'YYYY'
+  return dateStr.slice(0, 4);
 }
 
 /**

@@ -198,6 +198,8 @@ import { HealthArchiveScopeFactory } from '#domains/health/services/HealthArchiv
 import { SimilarPeriodFinder } from '#domains/health/services/SimilarPeriodFinder.mjs';
 import { PatternDetector } from '#domains/health/services/PatternDetector.mjs';
 import { CalibrationConstants } from '#domains/health/services/CalibrationConstants.mjs';
+import { HealthAnalyticsService } from '#domains/health/services/HealthAnalyticsService.mjs';
+import { PeriodResolver } from '#domains/health/services/PeriodResolver.mjs';
 import { YamlHealthScanDatastore } from '#adapters/persistence/yaml/YamlHealthScanDatastore.mjs';
 import { CoachingOrchestrator, CoachingCommentaryService } from '#apps/coaching/index.mjs';
 import { PagedMediaTocAgent } from '#apps/agents/paged-media-toc/index.mjs';
@@ -2935,8 +2937,12 @@ export async function createAgentsApiRouter(config) {
     }
   }
 
+  // Resolve mediaDir early so all MastraAdapter instances can write transcripts.
+  // Falls back to a sibling of the data directory if getMediaDir is unavailable.
+  const mediaDir = configService?.getMediaDir?.() || null;
+
   // Create Mastra adapter (IAgentRuntime implementation)
-  const agentRuntime = new MastraAdapter({ logger });
+  const agentRuntime = new MastraAdapter({ logger, mediaDir });
 
   // Create working memory adapter for agent state persistence
   const workingMemory = new YamlWorkingMemoryAdapter({ dataService, logger });
@@ -2949,6 +2955,11 @@ export async function createAgentsApiRouter(config) {
 
   // Register available agents
   agentOrchestrator.register(EchoAgent);
+
+  // Shared HealthAnalyticsService instance — assigned inside the health-coach
+  // registration block below and exposed on the returned router so app.mjs
+  // can wire it into the health-mentions router (listPeriods support).
+  let sharedHealthAnalyticsService = null;
 
   // Register health coach agent (requires health services)
   if (healthStore && healthService) {
@@ -3014,6 +3025,22 @@ export async function createAgentsApiRouter(config) {
       logger,
     });
 
+    // Plan 1+4: HealthAnalyticsService composition root for Tier 2 analytical
+    // primitives. Wires PeriodResolver + healthStore + healthService into a
+    // single addressable service used by both the agent (via
+    // HealthAnalyticsToolFactory) and the dscli health surface.
+    // Plan 4: also wire playbookLoader + workingMemory so period-memory
+    // + reflection methods light up.
+    const periodResolver = new PeriodResolver();
+    const healthAnalyticsService = new HealthAnalyticsService({
+      healthStore,
+      healthService,
+      periodResolver,
+      playbookLoader: personalContextLoader,    // ← Plan 4
+      workingMemoryAdapter: workingMemory,      // ← Plan 4
+    });
+    sharedHealthAnalyticsService = healthAnalyticsService;
+
     agentOrchestrator.register(HealthCoachAgent, {
       workingMemory,
       healthStore,
@@ -3031,6 +3058,7 @@ export async function createAgentsApiRouter(config) {
       patternDetector,
       calibrationConstants,
       dataRoot,
+      healthAnalyticsService,
     });
   }
 
@@ -3139,6 +3167,8 @@ export async function createAgentsApiRouter(config) {
   router.scheduler = scheduler;
   // Expose coaching orchestrator for direct invocations (e.g., post-report hook)
   router.coachingOrchestrator = coachingOrchestrator;
+  // Expose healthAnalyticsService so app.mjs can wire it into the mentions router.
+  router.healthAnalyticsService = sharedHealthAnalyticsService;
   return router;
 }
 
@@ -3204,8 +3234,10 @@ export async function createConciergeServices(config) {
     process.env.OPENAI_API_KEY = openaiKey;
   }
 
+  const conciergeMediaDir = configService?.getMediaDir?.() || null;
   const conciergeAgentRuntime = new MastraAdapter({
     logger: logger.child({ component: 'mastra' }),
+    mediaDir: conciergeMediaDir,
   });
   const conciergeWorkingMemory = new YamlWorkingMemoryAdapter({
     dataService,
@@ -3303,6 +3335,7 @@ export async function createConciergeServices(config) {
           logger: logger.child({ component: 'judge-runtime' }),
           maxToolCalls: 1,
           timeoutMs: 8000,
+          mediaDir: conciergeMediaDir,
         });
         mediaJudge = new MediaJudge({
           agentRuntime: judgeRuntime,

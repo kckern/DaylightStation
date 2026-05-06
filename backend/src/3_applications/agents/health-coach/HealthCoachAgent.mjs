@@ -1,6 +1,7 @@
 // backend/src/3_applications/agents/health-coach/HealthCoachAgent.mjs
 
 import { BaseAgent } from '../framework/BaseAgent.mjs';
+import { formatHealthAttachment } from './formatAttachment.mjs';
 import { HealthToolFactory } from './tools/HealthToolFactory.mjs';
 import { FitnessContentToolFactory } from './tools/FitnessContentToolFactory.mjs';
 import { DashboardToolFactory } from './tools/DashboardToolFactory.mjs';
@@ -8,6 +9,7 @@ import { ReconciliationToolFactory } from './tools/ReconciliationToolFactory.mjs
 import { MessagingChannelToolFactory } from './tools/MessagingChannelToolFactory.mjs';
 import { LongitudinalToolFactory } from './tools/LongitudinalToolFactory.mjs';
 import { ComplianceToolFactory } from './tools/ComplianceToolFactory.mjs';
+import { HealthAnalyticsToolFactory } from './tools/HealthAnalyticsToolFactory.mjs';
 import { DailyDashboard } from './assignments/DailyDashboard.mjs';
 import { systemPrompt } from './prompts/system.mjs';
 
@@ -112,6 +114,31 @@ export class HealthCoachAgent extends BaseAgent {
     return bundle;
   }
 
+  /**
+   * Override formatAttachments to resolve period bounds inline and point the
+   * model at the right tool for each attachment type.
+   *
+   * @param {Array<object>} attachments
+   * @returns {Promise<string>}
+   */
+  async formatAttachments(attachments) {
+    if (!Array.isArray(attachments) || attachments.length === 0) return '';
+    const periodResolver = this.deps.periodResolver
+      ?? this.deps.healthAnalyticsService?.aggregator?.periodResolver
+      ?? null;
+    const userId = this.#activeUserId ?? this.deps.configService?.getHeadOfHousehold?.() ?? null;
+    const lines = [
+      '## User Mentions',
+      'The user\'s message refers to the following items. ' +
+      'Use your tools to fetch data when relevant.',
+      '',
+    ];
+    for (const a of attachments) {
+      lines.push(`- ${await formatHealthAttachment(a, { userId, periodResolver })}`);
+    }
+    return lines.join('\n');
+  }
+
   registerTools() {
     const {
       healthStore,
@@ -126,6 +153,7 @@ export class HealthCoachAgent extends BaseAgent {
       archiveScopeFactory,
       similarPeriodFinder,
       dataRoot,
+      healthAnalyticsService,           // ← new (Plan 1 / Task 10)
     } = this.deps;
 
     // Existing
@@ -163,6 +191,13 @@ export class HealthCoachAgent extends BaseAgent {
       personalContextLoader,
       logger: this.deps.logger,
     }));
+
+    // F-201 / Plan 1: Analytical primitives — aggregate / series /
+    // distribution / percentile / snapshot. Pulled from the dedicated
+    // domain service so the math lives in one testable place.
+    if (healthAnalyticsService) {
+      this.addToolFactory(new HealthAnalyticsToolFactory({ healthAnalyticsService }));
+    }
 
     // Existing assignment
     this.registerAssignment(new DailyDashboard());

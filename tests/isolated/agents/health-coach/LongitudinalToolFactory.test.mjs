@@ -1482,3 +1482,320 @@ describe('LongitudinalToolFactory.find_similar_period', () => {
     expect(result.reason).toBe('no playbook');
   });
 });
+
+describe('query_historical_weight — yearly_avg (Plan 5)', () => {
+  it('aggregates 2 years of data into 2 yearly buckets', async () => {
+    const fixture = {};
+    let lbs = 200;
+    const start = new Date(Date.UTC(2024, 0, 1));
+    for (let i = 0; i < 730; i++) {  // 2 years
+      const d = new Date(start);
+      d.setUTCDate(start.getUTCDate() + i);
+      fixture[d.toISOString().slice(0, 10)] = {
+        date: d.toISOString().slice(0, 10),
+        lbs, lbs_adjusted_average: lbs - 0.5, source: 'consumer-bia',
+      };
+      lbs -= 0.01;
+    }
+    const { factory } = makeFactory({ loadWeightData: vi.fn(async () => fixture) });
+    const tool = getQueryTool(factory);
+    const out = await tool.execute({
+      userId: 'kc',
+      from: '2024-01-01', to: '2025-12-31',
+      aggregation: 'yearly_avg',
+    });
+    expect(out.aggregation).toBe('yearly_avg');
+    expect(out.rows).toHaveLength(2);
+    expect(out.rows[0].period).toBe('2024');
+    expect(out.rows[1].period).toBe('2025');
+    expect(typeof out.rows[0].lbs).toBe('number');
+  });
+
+  it('rejects unknown aggregation with structured error', async () => {
+    const { factory } = makeFactory();
+    const tool = getQueryTool(factory);
+    const out = await tool.execute({
+      userId: 'kc', from: '2024-01-01', to: '2024-12-31',
+      aggregation: 'centurial_avg',
+    });
+    expect(out.error).toMatch(/Unknown aggregation/);
+  });
+});
+
+describe('query_historical_reconciliation (Plan 5)', () => {
+  function buildReconciliationFixture(today) {
+    const data = {};
+    for (let i = 0; i < 30; i++) {
+      const d = new Date(today);
+      d.setUTCDate(d.getUTCDate() - i);
+      const date = d.toISOString().slice(0, 10);
+      data[date] = {
+        tracked_calories: 2100 - i,
+        exercise_calories: 300 + i,
+        tracking_accuracy: 0.85,
+        implied_intake: 2000 + i,
+        calorie_adjustment: -100,
+      };
+    }
+    return data;
+  }
+
+  it('returns days in window with matured/redacted fields per row', async () => {
+    const today = new Date();  // anchor; tests ARE time-sensitive
+    const fixture = buildReconciliationFixture(today);
+    const healthStore = {
+      loadWeightData: vi.fn(async () => ({})),
+      loadNutritionData: vi.fn(async () => ({})),
+      loadReconciliationData: vi.fn(async () => fixture),
+    };
+    const factory = new LongitudinalToolFactory({ healthStore });
+    const tool = factory.createTools().find(t => t.name === 'query_historical_reconciliation');
+    expect(tool).toBeDefined();
+
+    const todayStr = today.toISOString().slice(0, 10);
+    const fromDate = new Date(today);
+    fromDate.setUTCDate(fromDate.getUTCDate() - 29);
+    const fromStr = fromDate.toISOString().slice(0, 10);
+
+    const out = await tool.execute({ userId: 'kc', from: fromStr, to: todayStr });
+    expect(out.days.length).toBe(30);
+    // Last 14 days redacted: only tracked_calories and exercise_calories present
+    const recent = out.days.find(d => d.date === todayStr);
+    expect(recent.tracked_calories).toBeDefined();
+    expect(recent.exercise_calories).toBeDefined();
+    expect(recent.tracking_accuracy).toBeUndefined();
+    expect(recent.implied_intake).toBeUndefined();
+    expect(recent.calorie_adjustment).toBeUndefined();
+    // Old days (> 14 days back) keep all fields
+    const oldDate = new Date(today);
+    oldDate.setUTCDate(oldDate.getUTCDate() - 20);
+    const oldStr = oldDate.toISOString().slice(0, 10);
+    const old = out.days.find(d => d.date === oldStr);
+    expect(old.tracking_accuracy).toBeDefined();
+    expect(old.implied_intake).toBeDefined();
+  });
+
+  it('returns empty days for an out-of-range window', async () => {
+    const healthStore = {
+      loadWeightData: vi.fn(async () => ({})),
+      loadNutritionData: vi.fn(async () => ({})),
+      loadReconciliationData: vi.fn(async () => ({ '2024-01-15': { tracked_calories: 2000 } })),
+    };
+    const factory = new LongitudinalToolFactory({ healthStore });
+    const tool = factory.createTools().find(t => t.name === 'query_historical_reconciliation');
+    const out = await tool.execute({ userId: 'kc', from: '2025-01-01', to: '2025-12-31' });
+    expect(out.days).toEqual([]);
+  });
+});
+
+describe('query_historical_coaching (Plan 5)', () => {
+  it('returns entries grouped by date in the window', async () => {
+    const fixture = {
+      '2024-06-15': [{ type: 'morning_brief', text: 'Hello', timestamp: '2024-06-15T08:00:00Z' }],
+      '2024-07-01': [{ type: 'feedback', text: 'Good week', timestamp: '2024-07-01T19:00:00Z' }],
+      '2024-08-15': [{ type: 'morning_brief', text: 'Pulling cut tight' }],
+    };
+    const healthStore = {
+      loadWeightData: vi.fn(async () => ({})),
+      loadNutritionData: vi.fn(async () => ({})),
+      loadCoachingData: vi.fn(async () => fixture),
+    };
+    const factory = new LongitudinalToolFactory({ healthStore });
+    const tool = factory.createTools().find(t => t.name === 'query_historical_coaching');
+    expect(tool).toBeDefined();
+
+    const out = await tool.execute({ userId: 'kc', from: '2024-07-01', to: '2024-12-31' });
+    expect(out.entries).toHaveLength(2);
+    const dates = out.entries.map(e => e.date);
+    expect(dates).toEqual(['2024-07-01', '2024-08-15']);
+    expect(out.entries[0].messages[0].text).toBe('Good week');
+  });
+
+  it('returns empty when no entries in range', async () => {
+    const healthStore = {
+      loadWeightData: vi.fn(async () => ({})),
+      loadNutritionData: vi.fn(async () => ({})),
+      loadCoachingData: vi.fn(async () => ({ '2024-01-01': [{ text: 'Older entry' }] })),
+    };
+    const factory = new LongitudinalToolFactory({ healthStore });
+    const tool = factory.createTools().find(t => t.name === 'query_historical_coaching');
+    const out = await tool.execute({ userId: 'kc', from: '2025-01-01', to: '2025-12-31' });
+    expect(out.entries).toEqual([]);
+  });
+});
+
+describe('query_historical_workouts — count aggregations (Plan 5)', () => {
+  it('returns weekly_count buckets with workouts per week + total duration', async () => {
+    const healthService = {
+      getHealthForRange: vi.fn(async () => ({
+        '2024-08-05': { workouts: [{ type: 'run', title: 'Mon run', duration: 30 }] },     // Mon W32
+        '2024-08-07': { workouts: [{ type: 'run', title: 'Wed run', duration: 35 }] },     // Wed W32
+        '2024-08-12': { workouts: [{ type: 'ride', title: 'Mon ride', duration: 60 }] },   // Mon W33
+      })),
+    };
+    const factory = new LongitudinalToolFactory({
+      healthStore: { loadWeightData: vi.fn(async () => ({})), loadNutritionData: vi.fn(async () => ({})) },
+      healthService,
+    });
+    const tool = factory.createTools().find(t => t.name === 'query_historical_workouts');
+    const out = await tool.execute({
+      userId: 'kc',
+      from: '2024-08-01', to: '2024-08-15',
+      aggregation: 'weekly_count',
+    });
+    expect(out.aggregation).toBe('weekly_count');
+    expect(out.rows.length).toBe(2);
+    // W32 has 2 workouts totaling 65 min, W33 has 1 totaling 60 min
+    const w32 = out.rows.find(r => r.period.endsWith('W32'));
+    const w33 = out.rows.find(r => r.period.endsWith('W33'));
+    expect(w32.count).toBe(2);
+    expect(w32.totalDurationMin).toBe(65);
+    expect(w33.count).toBe(1);
+    expect(w33.totalDurationMin).toBe(60);
+  });
+
+  it('returns monthly_count buckets', async () => {
+    const healthService = {
+      getHealthForRange: vi.fn(async () => ({
+        '2024-08-05': { workouts: [{ type: 'run', duration: 30 }] },
+        '2024-08-15': { workouts: [{ type: 'run', duration: 35 }] },
+        '2024-09-10': { workouts: [{ type: 'ride', duration: 60 }] },
+      })),
+    };
+    const factory = new LongitudinalToolFactory({
+      healthStore: { loadWeightData: vi.fn(async () => ({})), loadNutritionData: vi.fn(async () => ({})) },
+      healthService,
+    });
+    const tool = factory.createTools().find(t => t.name === 'query_historical_workouts');
+    const out = await tool.execute({
+      userId: 'kc',
+      from: '2024-08-01', to: '2024-09-30',
+      aggregation: 'monthly_count',
+    });
+    expect(out.rows).toHaveLength(2);
+    expect(out.rows[0].period).toBe('2024-08');
+    expect(out.rows[0].count).toBe(2);
+    expect(out.rows[1].period).toBe('2024-09');
+    expect(out.rows[1].count).toBe(1);
+  });
+
+  it('returns yearly_count buckets', async () => {
+    const healthService = {
+      getHealthForRange: vi.fn(async () => ({
+        '2024-03-15': { workouts: [{ duration: 30 }, { duration: 30 }] },
+        '2024-12-25': { workouts: [{ duration: 45 }] },
+        '2025-01-10': { workouts: [{ duration: 30 }] },
+      })),
+    };
+    const factory = new LongitudinalToolFactory({
+      healthStore: { loadWeightData: vi.fn(async () => ({})), loadNutritionData: vi.fn(async () => ({})) },
+      healthService,
+    });
+    const tool = factory.createTools().find(t => t.name === 'query_historical_workouts');
+    const out = await tool.execute({
+      userId: 'kc',
+      from: '2024-01-01', to: '2025-12-31',
+      aggregation: 'yearly_count',
+    });
+    expect(out.rows).toHaveLength(2);
+    expect(out.rows[0]).toMatchObject({ period: '2024', count: 3, totalDurationMin: 105 });
+    expect(out.rows[1]).toMatchObject({ period: '2025', count: 1, totalDurationMin: 30 });
+  });
+
+  it('returns the existing flat list when aggregation not provided (no regression)', async () => {
+    const healthService = {
+      getHealthForRange: vi.fn(async () => ({
+        '2024-08-05': { workouts: [{ type: 'run', title: 'Run', duration: 30 }] },
+      })),
+    };
+    const factory = new LongitudinalToolFactory({
+      healthStore: { loadWeightData: vi.fn(async () => ({})), loadNutritionData: vi.fn(async () => ({})) },
+      healthService,
+    });
+    const tool = factory.createTools().find(t => t.name === 'query_historical_workouts');
+    const out = await tool.execute({ userId: 'kc', from: '2024-08-01', to: '2024-08-31' });
+    expect(out.workouts).toBeDefined();
+    expect(out.workouts).toHaveLength(1);
+  });
+});
+
+describe('query_nutrition_density (Plan 5)', () => {
+  function buildDensityFixture() {
+    // 60 days. Days 0-29: log every other day (50% density).
+    // Days 30-59: log every day (100% density).
+    const data = {};
+    const start = new Date(Date.UTC(2024, 5, 1)); // June 1
+    for (let i = 0; i < 60; i++) {
+      const d = new Date(start);
+      d.setUTCDate(start.getUTCDate() + i);
+      const key = d.toISOString().slice(0, 10);
+      const isLogged = i < 30 ? (i % 2 === 0) : true;
+      if (isLogged) data[key] = { calories: 2000 };
+    }
+    return data;
+  }
+
+  it('returns monthly density buckets', async () => {
+    const healthStore = {
+      loadWeightData: vi.fn(async () => ({})),
+      loadNutritionData: vi.fn(async () => buildDensityFixture()),
+    };
+    const factory = new LongitudinalToolFactory({ healthStore });
+    const tool = factory.createTools().find(t => t.name === 'query_nutrition_density');
+    expect(tool).toBeDefined();
+
+    const out = await tool.execute({
+      userId: 'kc',
+      from: '2024-06-01', to: '2024-07-30',
+      granularity: 'monthly',
+    });
+    expect(out.granularity).toBe('monthly');
+    expect(out.rows.length).toBe(2);
+
+    const june = out.rows.find(r => r.period === '2024-06');
+    expect(june).toBeDefined();
+    // June 1-30 = 30 days; days 0-29 of fixture; logged on even i (0,2,4,...,28) = 15 logged
+    expect(june.daysLogged).toBe(15);
+    expect(june.daysInPeriod).toBe(30);
+    expect(june.density).toBeCloseTo(15 / 30, 5);
+
+    const july = out.rows.find(r => r.period === '2024-07');
+    expect(july).toBeDefined();
+    expect(july.density).toBe(1);  // every day logged
+  });
+
+  it('returns weekly density', async () => {
+    const healthStore = {
+      loadWeightData: vi.fn(async () => ({})),
+      loadNutritionData: vi.fn(async () => ({
+        '2024-06-03': { calories: 2000 },  // Mon W23
+        '2024-06-04': { calories: 2100 },  // Tue W23
+        '2024-06-05': { calories: 0 },     // Wed W23 — calories=0 → not logged
+        '2024-06-10': { calories: 1900 },  // Mon W24
+      })),
+    };
+    const factory = new LongitudinalToolFactory({ healthStore });
+    const tool = factory.createTools().find(t => t.name === 'query_nutrition_density');
+    const out = await tool.execute({
+      userId: 'kc',
+      from: '2024-06-03', to: '2024-06-16',
+      granularity: 'weekly',
+    });
+    expect(out.rows.length).toBe(2);
+  });
+
+  it('rejects unknown granularity', async () => {
+    const healthStore = {
+      loadWeightData: vi.fn(async () => ({})),
+      loadNutritionData: vi.fn(async () => ({})),
+    };
+    const factory = new LongitudinalToolFactory({ healthStore });
+    const tool = factory.createTools().find(t => t.name === 'query_nutrition_density');
+    const out = await tool.execute({
+      userId: 'kc',
+      from: '2024-06-01', to: '2024-12-31',
+      granularity: 'fortnightly',
+    });
+    expect(out.error).toMatch(/unknown granularity/i);
+  });
+});
