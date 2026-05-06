@@ -44,6 +44,7 @@ const configDir = path.join(dataDir, 'system', 'config');
 const { hydrateProcessEnvFromConfigs } = await import('#system/logging/config.mjs');
 const { initConfigService, configService } = await import('#system/config/index.mjs');
 const { loadYamlSafe, saveYaml, listYamlFiles, fileExists, dirExists, listDirs } = await import('#system/utils/FileIO.mjs');
+const { absorbOverlappingSlivers } = await import('#apps/fitness/sliverAbsorption.mjs');
 
 hydrateProcessEnvFromConfigs(configDir);
 await initConfigService(dataDir);
@@ -103,6 +104,7 @@ const matchedActivityIds = new Set();
 let enriched = 0;
 let created = 0;
 let skipped = 0;
+let sliversAbsorbed = 0;
 
 // Get all date directories in range
 const dateDirs = listDirs(fitnessHistoryDir).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= cutoff);
@@ -306,6 +308,16 @@ for (const [activityIdStr, archive] of archivesByActivityId) {
     // saveYaml auto-creates directories and appends .yml
     const savePath = path.join(sessionDir, sessionId);
     saveYaml(savePath, sessionData);
+
+    // Absorb any HR-only home slivers in the same date dir that overlap
+    // this activity. Mirrors what the webhook flow does in
+    // FitnessActivityEnrichmentService._createStravaOnlySession.
+    const absorbResult = absorbOverlappingSlivers(archive, sessionDir, {
+      justCreatedSessionId: sessionId,
+      tz: TIMEZONE,
+      logger: console,
+    });
+    sliversAbsorbed += absorbResult.absorbed.length;
   }
 
   created++;
@@ -314,7 +326,7 @@ for (const [activityIdStr, archive] of archivesByActivityId) {
 // ------------------------------------------------------------------
 // Summary
 // ------------------------------------------------------------------
-console.log(`\nDone: ${enriched} enriched, ${created} created, ${skipped} skipped`);
+console.log(`\nDone: ${enriched} enriched, ${created} created, ${skipped} skipped, ${sliversAbsorbed} slivers absorbed`);
 if (!writeMode) {
   console.log('(dry-run -- pass --write to persist)');
 }
