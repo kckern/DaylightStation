@@ -20,11 +20,11 @@
  */
 
 import path from 'path';
-import { unlinkSync } from 'fs';
 import moment from 'moment-timezone';
 import { loadYamlSafe, listYamlFiles, dirExists, saveYaml } from '#system/utils/FileIO.mjs';
 import { buildStravaDescription } from '../../1_adapters/fitness/buildStravaDescription.mjs';
 import { buildSelectionConfig } from '../../1_adapters/fitness/selectPrimaryMedia.mjs';
+import { absorbOverlappingSlivers } from './sliverAbsorption.mjs';
 import { userService } from '#system/config/index.mjs';
 import { buildStravaSessionTimeline } from '../../2_domains/fitness/services/StravaSessionBuilder.mjs';
 import { encodeSingleSeries } from '../../2_domains/fitness/services/TimelineService.mjs';
@@ -35,8 +35,6 @@ const RETRY_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const COOLDOWN_TTL_MS = 60 * 60 * 1000;  // 1 hour
 const GPS_DISTANCE_THRESHOLD_METERS = 100;  // activities below this are treated as indoor (treadmill, etc.)
 const MIN_OVERLAP_FRACTION = 0.5;           // matched session must overlap ≥50% of activity elapsed_time
-const SLIVER_MAX_DURATION_SEC = 15 * 60;       // 15 min — anything shorter than this with no media is a candidate sliver
-const SLIVER_OVERLAP_BUFFER_MS = 15 * 60 * 1000; // 15-min buffer on each side for cooldown tails
 
 export class FitnessActivityEnrichmentService {
   #stravaClient;
@@ -606,73 +604,13 @@ export class FitnessActivityEnrichmentService {
     // that overlap the activity window. Strava is the source of truth for
     // the real workout; standalone HR slivers caught at home during cooldown
     // are redundant and would otherwise show up as phantom sessions.
-    this._absorbOverlappingSlivers(activity, sessionDir, sessionId);
+    absorbOverlappingSlivers(activity, sessionDir, {
+      justCreatedSessionId: sessionId,
+      tz,
+      logger: this.#logger,
+    });
 
     return { sessionId, filePath };
-  }
-
-  /**
-   * Delete short HR-only home sessions that overlap a Strava activity's
-   * window. Such "slivers" are typically cooldown / passing-through HR
-   * captures (e.g. user walked into the home receiver's range while finishing
-   * an outdoor activity). They are never real workouts; the Strava activity
-   * has the actual data. Only invoked from `_createStravaOnlySession` after
-   * a new Strava-only session is written.
-   *
-   * Conservative absorption rules: must be short (<15 min), no media, time
-   * overlap with activity ±15min buffer, not itself a Strava-only session,
-   * and not the session we just created.
-   *
-   * @private
-   * @param {Object} activity - Strava activity object (start_date, elapsed_time)
-   * @param {string} sessionDir - Date directory path
-   * @param {string} justCreatedSessionId - Session ID of the strava-only session we just wrote (to skip)
-   */
-  _absorbOverlappingSlivers(activity, sessionDir, justCreatedSessionId) {
-    if (!dirExists(sessionDir)) return;
-
-    const tz = this.#configService?.getTimezone?.() || 'America/Los_Angeles';
-    const actStart = moment(activity.start_date).tz(tz);
-    const actEnd = actStart.clone().add(activity.elapsed_time || activity.moving_time || 0, 'seconds');
-    const bufStart = actStart.clone().subtract(SLIVER_OVERLAP_BUFFER_MS, 'ms');
-    const bufEnd = actEnd.clone().add(SLIVER_OVERLAP_BUFFER_MS, 'ms');
-
-    const files = listYamlFiles(sessionDir);
-    for (const filename of files) {
-      if (filename === justCreatedSessionId) continue;
-
-      const filePath = path.join(sessionDir, `${filename}.yml`);
-      const data = loadYamlSafe(filePath);
-      if (!data) continue;
-      if (data.session?.source === 'strava') continue;       // not a sliver — another Strava-only session
-      if (Array.isArray(data.summary?.media) && data.summary.media.length > 0) continue; // has media — real workout
-      const durSec = data.session?.duration_seconds || 0;
-      if (durSec === 0 || durSec >= SLIVER_MAX_DURATION_SEC) continue;
-
-      const sessTz = data.timezone || tz;
-      const sessStart = data.session?.start ? moment.tz(data.session.start, sessTz) : null;
-      const sessEnd = data.session?.end
-        ? moment.tz(data.session.end, sessTz)
-        : (sessStart ? sessStart.clone().add(durSec, 'seconds') : null);
-      if (!sessStart || !sessEnd) continue;
-      if (sessEnd.isBefore(bufStart) || sessStart.isAfter(bufEnd)) continue;
-
-      try {
-        unlinkSync(filePath);
-        this.#logger.info?.('strava.enrichment.sliver_absorbed', {
-          activityId: activity.id,
-          sliverFile: filename,
-          sliverDurationSec: durSec,
-          activityElapsedSec: activity.elapsed_time || activity.moving_time || 0,
-        });
-      } catch (err) {
-        this.#logger.warn?.('strava.enrichment.sliver_absorb_failed', {
-          activityId: activity.id,
-          sliverFile: filename,
-          error: err?.message,
-        });
-      }
-    }
   }
 
   /**
