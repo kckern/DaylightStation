@@ -1,0 +1,12 @@
+data: {"id":"chatcmpl-{UUID}","object":"chat.completion.chunk","created":{TS},"model":"daylight-house","choices":[{"index":0,"delta":{"role":"assistant"}}]}
+
+data: {"id":"chatcmpl-{UUID}","object":"chat.completion.chunk","created":{TS},"model":"daylight-house","choices":[{"index":0,"delta":{"content":"Hello"}}]}
+
+data: {"id":"chatcmpl-{UUID}","object":"chat.completion.chunk","created":{TS},"model":"daylight-house","choices":[{"index":0,"delta":{"content":" from"}}]}
+
+data: {"id":"chatcmpl-{UUID}","object":"chat.completion.chunk","created":{TS},"model":"daylight-house","choices":[{"index":0,"delta":{"content":" the kitchen."}}]}
+
+data: {"id":"chatcmpl-{UUID}","object":"chat.completion.chunk","created":{TS},"model":"daylight-house","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+

@@ -1,0 +1,21 @@
+{
+  "id": "chatcmpl-{UUID}",
+  "object": "chat.completion",
+  "created": "{TS}",
+  "model": "daylight-house",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Hello from the kitchen."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 5,
+    "total_tokens": 17
+  }
+}
