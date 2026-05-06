@@ -114,3 +114,118 @@
     }
   }
 }
+
+// ── Overlay variant ───────────────────────────────────────────────────────────
+.coach-chat--overlay {
+  background: var(--mantine-color-background-0);
+  color: var(--mantine-color-textHigh-0);
+
+  --aui-primary: #2563eb;
+  --aui-primary-foreground: #fff;
+  --aui-background: var(--mantine-color-background-0);
+  --aui-foreground: var(--mantine-color-textHigh-0);
+  --aui-muted: var(--mantine-color-surface-0);
+  --aui-muted-foreground: var(--mantine-color-textMid-0);
+  --aui-border: var(--mantine-color-border-0);
+  --aui-radius: 14px;
+
+  .coach-chat__message--user [data-message-part-text] {
+    background: var(--mantine-color-surface-0);
+    color: var(--mantine-color-textHigh-0);
+    border-radius: 14px;
+    padding: 10px 14px;
+    max-width: 70%;
+    margin-left: auto;
+    align-self: flex-end;
+  }
+
+  .coach-chat__message--assistant {
+    color: var(--mantine-color-textHigh-0);
+    line-height: 1.6;
+    max-width: 90%;
+  }
+}
+
+// ── Markdown styles (light + overlay both use these) ──────────────────────────
+.coach-chat__markdown {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.coach-chat__md-p { margin: 0 0 8px 0; }
+.coach-chat__md-p:last-child { margin-bottom: 0; }
+.coach-chat__md-ul, .coach-chat__md-ol { margin: 6px 0; padding-left: 20px; }
+.coach-chat__md-li { margin-bottom: 2px; }
+.coach-chat__md-strong { font-weight: 600; }
+.coach-chat__md-em { font-style: italic; }
+
+.coach-chat__md-code-inline {
+  background: var(--mantine-color-surface-0);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.coach-chat__md-code-block {
+  background: var(--mantine-color-surfaceAlt-0);
+  padding: 10px;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 11px;
+  margin: 6px 0;
+}
+
+.coach-chat__md-table {
+  border-collapse: collapse;
+  margin: 6px 0;
+  font-size: 12px;
+}
+
+.coach-chat__md-table th,
+.coach-chat__md-table td {
+  border: 1px solid var(--mantine-color-border-0);
+  padding: 4px 8px;
+  text-align: left;
+}
+
+// ── Tool call attribution ─────────────────────────────────────────────────────
+.tool-call-attribution {
+  margin-top: 8px;
+}
+
+.tool-call-attribution__toggle {
+  background: rgba(37, 99, 235, 0.1);
+  border: none;
+  border-left: 2px solid #3b82f6;
+  border-radius: 4px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--mantine-color-textMid-0);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.tool-call-attribution__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  code {
+    color: #3b82f6;
+  }
+}
+
+.tool-call-attribution__details {
+  margin-top: 8px;
+  padding: 10px;
+  background: var(--mantine-color-surfaceAlt-0);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--mantine-color-textMid-0);
+  overflow-x: auto;
+}
