@@ -22,6 +22,7 @@ export default {
       '@testing-library/react': path.join(frontendNodeModules, '@testing-library/react'),
       '@testing-library/jest-dom': path.join(frontendNodeModules, '@testing-library/jest-dom'),
       '@mantine/core': path.join(frontendNodeModules, '@mantine/core'),
+      '@mantine/charts': path.join(frontendNodeModules, '@mantine/charts'),
       'react': path.join(frontendNodeModules, 'react'),
       'react-dom': path.join(frontendNodeModules, 'react-dom'),
     },
