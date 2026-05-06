@@ -310,8 +310,10 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
     if (didScroll) return;
     if (setFitnessPlayQueue) {
       const resumeMeta = normalizeResumeMeta(show);
+      const plexId = getPlexId(show);
       setFitnessPlayQueue(prevQueue => [...prevQueue, {
         id: getItemKey(show),
+        contentId: plexId ? `plex:${plexId}` : null,
         title: show.label,
         videoUrl: show.url || show.videoUrl,
         duration: show.duration,

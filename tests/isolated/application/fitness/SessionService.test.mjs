@@ -472,6 +472,67 @@ describe('SessionService', () => {
     });
   });
 
+  describe('findResumable — bare contentId tolerance', () => {
+    test('matches when caller sends bare plex localId but storage has prefixed contentId', async () => {
+      const now = Date.now();
+      const stored = {
+        sessionId: '20260506125238',
+        startTime: now - 600_000,
+        endTime: now - 13_000,           // 13 seconds ago
+        durationMs: 587_000,
+        finalized: false,
+        media: { primary: { contentId: 'plex:664042' } },
+        timeline: { series: {}, events: [] }
+      };
+      mockStore.findByDate.mockResolvedValue([stored]);
+      mockStore.findById.mockResolvedValue(stored);
+
+      // Caller sends bare id (current production frontend behavior)
+      const result = await service.findResumable('664042', 'test-hid');
+
+      expect(result.resumable).toBe(true);
+      expect(result.session?.sessionId).toBe('20260506125238');
+    });
+
+    test('matches when caller sends prefixed contentId (canonical path)', async () => {
+      const now = Date.now();
+      const stored = {
+        sessionId: '20260506125238',
+        startTime: now - 600_000,
+        endTime: now - 13_000,
+        durationMs: 587_000,
+        finalized: false,
+        media: { primary: { contentId: 'plex:664042' } },
+        timeline: { series: {}, events: [] }
+      };
+      mockStore.findByDate.mockResolvedValue([stored]);
+      mockStore.findById.mockResolvedValue(stored);
+
+      const result = await service.findResumable('plex:664042', 'test-hid');
+      expect(result.resumable).toBe(true);
+    });
+
+    test('does not falsely match when bare id maps to a different source', async () => {
+      // Bare '664042' must only normalize to 'plex:664042' — never collide with
+      // 'youtube:664042' or any other source.
+      const now = Date.now();
+      mockStore.findByDate.mockResolvedValue([
+        {
+          sessionId: '20260506125238',
+          startTime: now - 600_000,
+          endTime: now - 13_000,
+          durationMs: 587_000,
+          finalized: false,
+          media: { primary: { contentId: 'youtube:664042' } },
+          timeline: { series: {}, events: [] }
+        }
+      ]);
+
+      const result = await service.findResumable('664042', 'test-hid');
+      expect(result.resumable).toBe(false);
+    });
+  });
+
   describe('mergeSessions — finalized guard', () => {
     test('refuses to merge when source is finalized', async () => {
       mockStore.findById

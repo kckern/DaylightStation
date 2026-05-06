@@ -219,7 +219,9 @@ function applyOffsets(series, offsets) {
 // Load all input sessions
 // ---------------------------------------------------------------------------
 
-const baseDir = process.cwd(); // /usr/src/app inside container
+// Honor DAYLIGHT_BASE_PATH so the CLI can run against the Dropbox mirror
+// (or any non-cwd data path) while imports still resolve from the project root.
+const baseDir = process.env.DAYLIGHT_BASE_PATH || process.cwd(); // /usr/src/app inside container
 const dir = path.join(baseDir, 'data', 'household', 'history', 'fitness', date);
 
 async function loadSession(id) {
