@@ -87,4 +87,19 @@ describe('cli/_bootstrap.mjs', () => {
     const fresh = await import('../../../cli/_bootstrap.mjs' + bustQuery);
     await expect(fresh.getConfigService()).rejects.toThrow(/DAYLIGHT_BASE_PATH/);
   });
+
+  it('getHealthAnalytics() returns a HealthAnalyticsService with expected methods', async () => {
+    const svc = await bootstrap.getHealthAnalytics();
+    expect(typeof svc.aggregate).toBe('function');
+    expect(typeof svc.aggregateSeries).toBe('function');
+    expect(typeof svc.distribution).toBe('function');
+    expect(typeof svc.percentile).toBe('function');
+    expect(typeof svc.snapshot).toBe('function');
+  });
+
+  it('getHealthAnalytics() memoizes — second call returns same instance', async () => {
+    const a = await bootstrap.getHealthAnalytics();
+    const b = await bootstrap.getHealthAnalytics();
+    expect(a).toBe(b);
+  });
 });

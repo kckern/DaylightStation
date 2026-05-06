@@ -38,6 +38,8 @@ let _conciergeConfig = null;
 let _conciergeConfigPromise = null;
 let _transcriptDir = null;
 let _financeDirect = null;
+let _healthAnalytics = null;
+let _healthAnalyticsInitPromise = null;
 
 /**
  * Resolve the data directory the same way backend/index.js does:
@@ -345,6 +347,67 @@ export async function getFinanceDirect() {
 export { readBuxferCredsDirect as _readBuxferCredsDirect };
 
 /**
+ * Build the household's HealthAnalyticsService for the dscli health
+ * subcommands. Uses the same domain service the in-process HealthCoachAgent
+ * uses — one set of analytics, two transports.
+ *
+ * Wiring (mirrors backend/src/0_system/bootstrap.mjs around line 2587):
+ *   healthStore     ← YamlHealthDatastore({ dataService, configService })
+ *   healthService   ← AggregateHealthUseCase({ healthStore })   (exposes getHealthForRange)
+ *   periodResolver  ← new PeriodResolver()
+ *
+ * No HTTP, no backend running needed.
+ */
+export async function getHealthAnalytics() {
+  if (_healthAnalytics) return _healthAnalytics;
+  if (_healthAnalyticsInitPromise) return _healthAnalyticsInitPromise;
+
+  _healthAnalyticsInitPromise = (async () => {
+    const cfg = await getConfigService();
+
+    const { dataService }            = await import('#system/config/index.mjs');
+    const { YamlHealthDatastore }    = await import('#adapters/persistence/yaml/YamlHealthDatastore.mjs');
+    const { AggregateHealthUseCase } = await import('#apps/health/AggregateHealthUseCase.mjs');
+    const { HealthAnalyticsService } = await import('#domains/health/services/HealthAnalyticsService.mjs');
+    const { PeriodResolver }         = await import('#domains/health/services/PeriodResolver.mjs');
+    const { PersonalContextLoader }  = await import('#apps/health/PersonalContextLoader.mjs');
+    const { YamlWorkingMemoryAdapter } = await import('#adapters/agents/YamlWorkingMemoryAdapter.mjs');
+    const { readFile }               = await import('node:fs/promises');
+    const { default: yaml }          = await import('js-yaml');
+
+    const healthStore    = new YamlHealthDatastore({ dataService, configService: cfg });
+    const healthService  = new AggregateHealthUseCase({ healthStore });
+    const periodResolver = new PeriodResolver();
+
+    // PersonalContextLoader needs a dataService with readYaml(absPath).
+    // Build the same shim used in the backend bootstrap.
+    const dataDir    = cfg.getDataDir?.() || path.join(process.env.DAYLIGHT_BASE_PATH || '.', 'data');
+    const archiveRoot = path.join(dataDir, 'users');
+    const yamlReader = {
+      readYaml: async (absPath) => {
+        try {
+          const content = await readFile(absPath, 'utf8');
+          return yaml.load(content) || null;
+        } catch (err) {
+          if (err.code === 'ENOENT') return null;
+          return null;
+        }
+      },
+    };
+    const playbookLoader       = new PersonalContextLoader({ dataService: yamlReader, archiveRoot });
+    const workingMemoryAdapter = new YamlWorkingMemoryAdapter({ dataService });
+
+    _healthAnalytics = new HealthAnalyticsService({
+      healthStore, healthService, periodResolver,
+      playbookLoader, workingMemoryAdapter,
+    });
+    return _healthAnalytics;
+  })();
+
+  return _healthAnalyticsInitPromise;
+}
+
+/**
  * Resolve the directory where ConciergeTranscript writes per-request transcript
  * JSON files. Mirrors backend/src/app.mjs which sets
  *   mediaLogsDir = path.join(configService.getMediaDir(), 'logs')
@@ -378,5 +441,7 @@ export function _resetForTests() {
   _conciergeConfigPromise = null;
   _transcriptDir = null;
   _financeDirect = null;
+  _healthAnalytics = null;
+  _healthAnalyticsInitPromise = null;
   resetConfigService();
 }

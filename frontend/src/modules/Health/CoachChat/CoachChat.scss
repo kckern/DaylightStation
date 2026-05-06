@@ -1,0 +1,116 @@
+// frontend/src/modules/Health/CoachChat/CoachChat.scss
+// Mantine ↔ assistant-ui CSS variable bridge.
+// Override assistant-ui's CSS custom properties to match Mantine tokens
+// so the chat reads as part of the app, not a foreign component.
+
+.coach-chat {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+
+  // assistant-ui exposes these (verify against installed version's docs):
+  --aui-primary: var(--mantine-color-blue-6);
+  --aui-primary-foreground: var(--mantine-color-white);
+  --aui-background: var(--mantine-color-body);
+  --aui-foreground: var(--mantine-color-text);
+  --aui-muted: var(--mantine-color-gray-1);
+  --aui-muted-foreground: var(--mantine-color-gray-7);
+  --aui-border: var(--mantine-color-gray-3);
+  --aui-radius: var(--mantine-radius-md);
+
+  font-family: var(--mantine-font-family);
+
+  &__thread {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  &__viewport {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  &__message {
+    max-width: 80%;
+    padding: 0.625rem 0.875rem;
+    border-radius: var(--mantine-radius-md);
+    font-size: var(--mantine-font-size-sm);
+    line-height: 1.6;
+
+    &--user {
+      align-self: flex-end;
+      background: var(--mantine-color-blue-6);
+      color: white;
+    }
+
+    &--assistant {
+      align-self: flex-start;
+      background: var(--mantine-color-gray-1);
+      color: var(--mantine-color-dark-7);
+    }
+  }
+
+  &__composer {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid var(--mantine-color-gray-3);
+    background: var(--mantine-color-body);
+  }
+
+  &__input {
+    flex: 1;
+    min-height: 2.5rem;
+    max-height: 10rem;
+    overflow-y: auto;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--mantine-color-gray-4);
+    border-radius: var(--mantine-radius-sm);
+    font-family: inherit;
+    font-size: var(--mantine-font-size-sm);
+    line-height: 1.5;
+    resize: none;
+    outline: none;
+
+    &:focus {
+      border-color: var(--mantine-color-blue-5);
+      box-shadow: 0 0 0 2px var(--mantine-color-blue-1);
+    }
+
+    &[data-empty]::before {
+      content: attr(data-placeholder);
+      color: var(--mantine-color-gray-5);
+      pointer-events: none;
+      position: absolute;
+    }
+  }
+
+  &__send {
+    flex-shrink: 0;
+    padding: 0.5rem 1rem;
+    background: var(--mantine-color-blue-6);
+    color: white;
+    border: none;
+    border-radius: var(--mantine-radius-sm);
+    cursor: pointer;
+    font-size: var(--mantine-font-size-sm);
+    font-family: inherit;
+    transition: background 0.15s;
+
+    &:hover {
+      background: var(--mantine-color-blue-7);
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+}
