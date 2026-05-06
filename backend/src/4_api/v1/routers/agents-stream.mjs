@@ -29,7 +29,11 @@ export function createAgentsStreamRouter({ orchestrator, logger = console }) {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders?.();
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    let closed = false;
+    res.on('close', () => { closed = true; });
 
     const send = (payload) => {
       res.write(`data: ${JSON.stringify(payload)}\n\n`);
@@ -38,6 +42,7 @@ export function createAgentsStreamRouter({ orchestrator, logger = console }) {
     try {
       logger.info?.('agents.runStream.start', { agentId });
       for await (const chunk of orchestrator.streamExecute(agentId, input, context)) {
+        if (closed) break;
         send(chunk);
       }
       send({ type: 'done' });
