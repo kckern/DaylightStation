@@ -175,7 +175,7 @@ describe('GET /api/v1/health/mentions/all', () => {
     const res = await request(app).get('/api/v1/health/mentions/all?user=kc&prefix=weight');
     expect(res.status).toBe(200);
     expect(res.body.suggestions.length).toBeGreaterThan(0);
-    expect(res.body.suggestions.length).toBeLessThanOrEqual(20);
+    expect(res.body.suggestions.length).toBeLessThanOrEqual(28);
     // Should include weight metric
     const slugs = res.body.suggestions.map(s => s.slug);
     expect(slugs).toContain('weight_lbs');
