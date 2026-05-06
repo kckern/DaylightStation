@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import crypto from 'node:crypto';
+import { safeClone } from '../../agents/framework/utils/safeClone.mjs';
 
 /**
  * Per-request transcript collector. The translator creates one when a request
@@ -95,13 +96,5 @@ export class ConciergeTranscript {
   }
 }
 
-function safeClone(v) {
-  if (v === undefined || v === null) return v;
-  try {
-    return JSON.parse(JSON.stringify(v));
-  } catch {
-    return String(v);
-  }
-}
 
 export default ConciergeTranscript;
