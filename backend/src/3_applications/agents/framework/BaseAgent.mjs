@@ -77,6 +77,39 @@ export class BaseAgent {
     return result;
   }
 
+  /**
+   * Streaming variant of run. Yields chunks from the agent runtime as the
+   * model produces them. Same userId resolution + assemble-prompt flow as
+   * run(); the runtime's own streamExecute handles transcript flush at end.
+   *
+   * @yields { type: 'text-delta'|'tool-start'|'tool-end'|'finish', ... }
+   */
+  async *runStream(input, { userId, context = {} } = {}) {
+    const effectiveUserId = userId ?? context?.userId ?? null;
+    const augmentedContext = { mode: 'chat', ...context, userId: effectiveUserId };
+
+    const memory = effectiveUserId
+      ? await this.#workingMemory.load(this.constructor.id, effectiveUserId)
+      : null;
+
+    const stream = this.#agentRuntime.streamExecute({
+      agent: this,
+      agentId: this.constructor.id,
+      input,
+      tools: this.getTools(),
+      systemPrompt: await this.#assemblePrompt(memory, augmentedContext),
+      context: { ...augmentedContext, memory },
+    });
+
+    for await (const chunk of stream) {
+      yield chunk;
+    }
+
+    if (memory) {
+      await this.#workingMemory.save(this.constructor.id, effectiveUserId, memory);
+    }
+  }
+
   // --- Assignment run (structured workflow) ---
   async runAssignment(assignmentId, { userId, context = {} } = {}) {
     const assignment = this.#assignments.get(assignmentId);

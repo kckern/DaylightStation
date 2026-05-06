@@ -87,6 +87,23 @@ export class AgentOrchestrator {
   }
 
   /**
+   * Streaming variant of run. Yields chunks from the agent's runStream.
+   * Resolves userId + generates turnId same as run().
+   */
+  async *streamExecute(agentId, input, context = {}) {
+    const agent = this.#getAgent(agentId);
+    const turnId = context.turnId ?? crypto.randomUUID();
+    const userId = this.#resolveUserId(context.userId);
+    const augmented = { ...context, turnId, userId };
+
+    this.#logger.info?.('orchestrator.streamExecute', {
+      agentId, turnId, userId, contextKeys: Object.keys(context),
+    });
+
+    yield* agent.runStream(input, { context: augmented });
+  }
+
+  /**
    * Run agent in background (returns immediately)
    * @param {string} agentId - Agent identifier
    * @param {string} input - User input / task description
