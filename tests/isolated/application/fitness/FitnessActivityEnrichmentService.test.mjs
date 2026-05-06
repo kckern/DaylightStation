@@ -31,6 +31,30 @@ const { FitnessActivityEnrichmentService } = await import(
 );
 const { loadYamlSafe, listYamlFiles, dirExists } = await import('#system/utils/FileIO.mjs');
 
+const buildActivity = (overrides = {}) => ({
+  id: 1,
+  type: 'Run',
+  start_date: '2026-05-04T20:00:00Z',
+  elapsed_time: 2400,
+  moving_time: 2350,
+  distance: 5000,
+  has_heartrate: true,
+  ...overrides,
+});
+
+const buildSession = (overrides = {}) => ({
+  sessionId: 'S',
+  timezone: 'America/Los_Angeles',
+  session: {
+    start: '2026-05-04 13:00:00',
+    end: '2026-05-04 13:40:00',
+    duration_seconds: 2400,
+  },
+  participants: { 'test-user': { hr_device: '40475' } },
+  summary: { media: [] },
+  ...overrides,
+});
+
 describe('FitnessActivityEnrichmentService._findMatchingSession sport guard', () => {
   let service;
   let logger;
@@ -58,31 +82,27 @@ describe('FitnessActivityEnrichmentService._findMatchingSession sport guard', ()
   test('rejects an outdoor GPS Run match against a zero-distance no-media session', () => {
     // Activity: 39:48 outdoor Run, 5230 m (3.25 mi), GPS-style.
     // 2026-05-05T19:30:00Z = 2026-05-05 12:30:00 PT.
-    const activity = {
+    const activity = buildActivity({
       id: 18390552794,
       type: 'Run',
       start_date: '2026-05-05T19:30:00Z',
       elapsed_time: 2388,
       moving_time: 2342,
       distance: 5230, // > 100 m (real GPS distance)
-      has_heartrate: true,
-    };
+    });
 
     // Session: 7-min indoor treasureBox, no media, no distance — overlaps the
     // run by ~7 min (well within the 5-min buffer).
     listYamlFiles.mockReturnValue(['20260505130756']);
-    loadYamlSafe.mockReturnValue({
+    loadYamlSafe.mockReturnValue(buildSession({
       sessionId: '20260505130756',
-      timezone: 'America/Los_Angeles',
       session: {
         start: '2026-05-05 13:07:56',
         end: '2026-05-05 13:14:51',
         duration_seconds: 415,
       },
-      participants: { 'test-user': { hr_device: '40475' } },
-      summary: { media: [] },
-      // no `strava` block — distance is implicitly 0
-    });
+      // no `strava` block — distance is implicitly 0; summary.media empty by default
+    }));
 
     const result = service._findMatchingSession(activity);
     expect(result).toBeNull();
@@ -91,30 +111,27 @@ describe('FitnessActivityEnrichmentService._findMatchingSession sport guard', ()
   test('still matches an indoor Ride against an indoor session with media', () => {
     // Indoor ride: trainer, no GPS distance.
     // 2026-05-04T20:00:00Z = 2026-05-04 13:00:00 PT (same UTC date as session dir).
-    const activity = {
+    const activity = buildActivity({
       id: 18380161567,
       type: 'Ride',
       start_date: '2026-05-04T20:00:00Z',
       elapsed_time: 2120,
       moving_time: 2050,
       distance: 0, // indoor: no GPS distance
-      has_heartrate: true,
-    };
+    });
 
     listYamlFiles.mockReturnValue(['20260504130000']);
-    loadYamlSafe.mockReturnValue({
+    loadYamlSafe.mockReturnValue(buildSession({
       sessionId: '20260504130000',
-      timezone: 'America/Los_Angeles',
       session: {
         start: '2026-05-04 13:00:00',
         end: '2026-05-04 13:48:21',
         duration_seconds: 2901,
       },
-      participants: { 'test-user': { hr_device: '40475' } },
       summary: {
         media: [{ contentId: 'plex:606446', primary: true }],
       },
-    });
+    }));
 
     const result = service._findMatchingSession(activity);
     expect(result).not.toBeNull();
@@ -125,27 +142,25 @@ describe('FitnessActivityEnrichmentService._findMatchingSession sport guard', ()
     // Treadmill activity: distance 0, no GPS — guard does NOT apply because
     // the activity itself has no GPS distance.
     // 2026-05-04T13:00:00Z = 2026-05-04 06:00:00 PT.
-    const activity = {
+    const activity = buildActivity({
       id: 99999,
       type: 'Run',
       start_date: '2026-05-04T13:00:00Z',
       elapsed_time: 1800,
       moving_time: 1800,
       distance: 0, // treadmill
-    };
+      has_heartrate: undefined,
+    });
 
     listYamlFiles.mockReturnValue(['20260504060000']);
-    loadYamlSafe.mockReturnValue({
+    loadYamlSafe.mockReturnValue(buildSession({
       sessionId: '20260504060000',
-      timezone: 'America/Los_Angeles',
       session: {
         start: '2026-05-04 06:00:00',
         end: '2026-05-04 06:30:00',
         duration_seconds: 1800,
       },
-      participants: { 'test-user': { hr_device: '40475' } },
-      summary: { media: [] },
-    });
+    }));
 
     const result = service._findMatchingSession(activity);
     // The guard only fires for outdoor-GPS-vs-empty-indoor combos. A treadmill
