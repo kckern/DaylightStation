@@ -123,16 +123,6 @@ export function createHealthMentionsRouter({
     return filtered.slice(0, limit);
   }
 
-  function fetchMetricsInternal({ prefix, limit = 50 }) {
-    const out = METRIC_LIST.map(name => ({
-      slug: name, label: name, value: { metric: name }, group: 'metric',
-    }));
-    const filtered = prefix
-      ? out.filter(s => s.slug.toLowerCase().includes(prefix))
-      : out;
-    return filtered.slice(0, limit);
-  }
-
   // ── Routes ──
 
   router.get('/periods', async (req, res) => {
@@ -164,7 +154,7 @@ export function createHealthMentionsRouter({
     const [periods, days, metrics] = await Promise.all([
       fetchPeriodsInternal({ userId, prefix, limit: 8 }),
       fetchRecentDaysInternal({ userId, prefix, days: 14, limit: 14 }),
-      Promise.resolve(fetchMetricsInternal({ prefix, limit: 6 })),
+      fetchMetricsInternal({ prefix, limit: 6 }),
     ]);
 
     res.json({ suggestions: roundRobin([periods, days, metrics]) });
@@ -174,6 +164,16 @@ export function createHealthMentionsRouter({
 }
 
 // ── Helpers ──
+
+function fetchMetricsInternal({ prefix, limit = 50 }) {
+  const out = METRIC_LIST.map(name => ({
+    slug: name, label: name, value: { metric: name }, group: 'metric',
+  }));
+  const filtered = prefix
+    ? out.filter(s => s.slug.toLowerCase().includes(prefix))
+    : out;
+  return filtered.slice(0, limit);
+}
 
 function humanizeRollingLabel(label) {
   if (label === 'all_time') return 'All time';
