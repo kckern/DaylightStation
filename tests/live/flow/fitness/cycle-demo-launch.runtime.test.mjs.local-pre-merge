@@ -1,0 +1,58 @@
+/**
+ * Confirms that:
+ *   1. The Cycle Challenge Demo entry shows up in /fitness/menu/app_menu1.
+ *   2. Clicking it navigates to /fitness/cycle-demo.
+ *   3. /fitness/cycle-demo redirects to /fitness/play/{id}?cycle-demo=1&nogovern.
+ *   4. The CycleChallengeDemo overlay panel is mounted in the player.
+ */
+
+import { test, expect } from '@playwright/test';
+import { FRONTEND_URL } from '#fixtures/runtime/urls.mjs';
+
+test.describe('Cycle Challenge Demo launch flow', () => {
+  test.setTimeout(90000);
+
+  test('app_menu1 launches the cycle-demo overlay on a real video', async ({ page }) => {
+    page.on('console', (msg) => {
+      const t = msg.text();
+      if (/cycle-demo|cycle_challenge_demo|cycle\.|Error/i.test(t)) {
+        console.log(`  [browser ${msg.type()}]`, t.slice(0, 240));
+      }
+    });
+
+    // 1. Open the app menu directly.
+    await page.goto(`${FRONTEND_URL}/fitness/menu/app_menu1`);
+    await page.waitForFunction(() => !!window.__fitnessSimController, null, { timeout: 30000 });
+
+    // 2. The module card should appear.
+    const card = page.locator('.module-card', { hasText: 'Cycle Challenge Demo' });
+    await expect(card).toBeVisible({ timeout: 10000 });
+
+    // 3. Clicking it navigates to /fitness/cycle-demo. The launcher
+    //    component then redirects to /fitness/play/{id}?cycle-demo=1.
+    await card.click();
+    await page.waitForURL(/\/fitness\/(cycle-demo|play\/\d+)/, { timeout: 10000 });
+
+    // 4. After auto-discovery, we land on /fitness/play/{id}?cycle-demo=1.
+    await page.waitForURL(/\/fitness\/play\/\d+\?.*cycle-demo=1/, { timeout: 15000 });
+    const finalUrl = page.url();
+    console.log('  Final URL:', finalUrl);
+    expect(finalUrl).toMatch(/\/fitness\/play\/\d+/);
+    expect(finalUrl).toContain('cycle-demo=1');
+
+    // 5. The demo overlay panel should mount.
+    const panel = page.locator('.cycle-challenge-demo');
+    await expect(panel).toBeVisible({ timeout: 15000 });
+
+    // 6. Telemetry should populate (governance phase row exists).
+    const telemetry = page.locator('.cycle-challenge-demo__table');
+    await expect(telemetry).toBeVisible();
+    const phaseRow = panel.locator('td', { hasText: 'governance.phase' });
+    await expect(phaseRow).toBeVisible();
+
+    // 7. Buttons should be present.
+    await expect(panel.locator('button', { hasText: 'Trigger' })).toBeVisible();
+    await expect(panel.locator('button', { hasText: 'Reset' })).toBeVisible();
+    await expect(panel.locator('button', { hasText: '75 RPM' })).toBeVisible();
+  });
+});

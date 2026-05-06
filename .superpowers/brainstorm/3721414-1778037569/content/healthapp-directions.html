@@ -1,0 +1,96 @@
+<h2>HealthApp visual direction — pick one</h2>
+<p class="subtitle">Each direction will apply to Tabs/chrome + HealthHub + HealthDetail + CoachChat together (scope C). Click to select.</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="editorial" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#fafaf7; padding:20px; font-family: 'Georgia', serif;">
+      <div style="border-bottom:1px solid #ddd; padding-bottom:8px; margin-bottom:16px;">
+        <div style="display:flex; gap:24px; font-size:13px; color:#666;">
+          <span style="border-bottom:2px solid #000; padding-bottom:6px; color:#000;">Hub</span>
+          <span>Coach</span>
+        </div>
+      </div>
+      <div style="font-size:14px; color:#888; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:8px;">Today</div>
+      <div style="font-size:42px; font-style:italic; line-height:1; color:#222; margin-bottom:6px;">171.0 lbs</div>
+      <div style="font-size:14px; color:#666; font-style:italic;">trending stable · 0.04 lbs/wk down over 30 days</div>
+      <div style="margin-top:24px; display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+        <div style="border-top:1px solid #ddd; padding-top:8px;">
+          <div style="font-size:11px; color:#999; text-transform:uppercase; letter-spacing:0.08em;">Workouts</div>
+          <div style="font-size:22px; font-style:italic;">10 <span style="font-size:13px; color:#666;">this week</span></div>
+        </div>
+        <div style="border-top:1px solid #ddd; padding-top:8px;">
+          <div style="font-size:11px; color:#999; text-transform:uppercase; letter-spacing:0.08em;">Calories</div>
+          <div style="font-size:22px; font-style:italic;">1,470 <span style="font-size:13px; color:#666;">avg</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Editorial / Health Magazine</h3>
+      <p>Serif headlines, generous whitespace, low-contrast nav. The number dominates; chrome whispers. Chat bubbles: papery, like an article. <strong>Vibe: NYT health column.</strong></p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="dashboard" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#0f1419; padding:20px; font-family: -apple-system, system-ui, sans-serif; color:#e8eef3;">
+      <div style="display:flex; gap:6px; margin-bottom:16px;">
+        <span style="background:#2563eb; color:#fff; padding:6px 12px; border-radius:14px; font-size:12px; font-weight:600;">Hub</span>
+        <span style="background:#1c2229; color:#94a3b8; padding:6px 12px; border-radius:14px; font-size:12px;">Coach</span>
+        <span style="margin-left:auto; font-size:11px; color:#6b7785; align-self:center;">● synced 2m ago</span>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
+        <div style="background:#1c2229; padding:12px; border-radius:8px;">
+          <div style="font-size:10px; color:#94a3b8; text-transform:uppercase;">WEIGHT</div>
+          <div style="font-size:24px; font-weight:700;">171.0</div>
+          <div style="font-size:11px; color:#10b981;">▼ 0.04 /wk</div>
+        </div>
+        <div style="background:#1c2229; padding:12px; border-radius:8px;">
+          <div style="font-size:10px; color:#94a3b8; text-transform:uppercase;">STREAK</div>
+          <div style="font-size:24px; font-weight:700;">12d</div>
+          <div style="font-size:11px; color:#94a3b8;">protein logged</div>
+        </div>
+      </div>
+      <div style="background:#1c2229; padding:12px; border-radius:8px;">
+        <div style="font-size:10px; color:#94a3b8; text-transform:uppercase; margin-bottom:4px;">THIS WEEK</div>
+        <div style="display:flex; gap:4px; align-items:flex-end; height:32px;">
+          <div style="background:#2563eb; flex:1; height:50%;"></div>
+          <div style="background:#2563eb; flex:1; height:80%;"></div>
+          <div style="background:#1c2229; flex:1; height:20%; border:1px dashed #334155;"></div>
+          <div style="background:#2563eb; flex:1; height:90%;"></div>
+          <div style="background:#2563eb; flex:1; height:60%;"></div>
+          <div style="background:#1c2229; flex:1; height:10%; border:1px dashed #334155;"></div>
+          <div style="background:#2563eb; flex:1; height:75%;"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. Dashboard / Fitness App</h3>
+      <p>Dense info, pill tabs with active state, dark-on-color cards, status dots, mini-charts. Data-forward. <strong>Vibe: Apple Health, Strava, Whoop.</strong></p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="conversational" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#fff; padding:20px; font-family: -apple-system, system-ui, sans-serif; display:flex; flex-direction:column; gap:8px;">
+      <div style="display:flex; gap:6px; align-items:center; padding-bottom:12px; border-bottom:1px solid #eee;">
+        <div style="width:24px; height:24px; background:#10b981; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-size:11px;">H</div>
+        <span style="font-weight:500; font-size:14px;">Health Coach</span>
+        <span style="margin-left:auto; font-size:11px; color:#999;">Hub ▾</span>
+      </div>
+      <div style="background:#f5f5f7; padding:10px 14px; border-radius:18px; align-self:flex-end; max-width:70%; font-size:13px;">whats my weight trend?</div>
+      <div style="font-size:13px; color:#444; padding:6px 0;">
+        Down ~0.04 lbs/week over the last 30 days, fairly steady. Started at <strong>170.36</strong>, now at <strong>170.68</strong>. Minimal change — stable.
+      </div>
+      <div style="margin-top:auto; background:#f5f5f7; padding:10px 14px; border-radius:24px; font-size:13px; color:#999; display:flex; align-items:center;">
+        Ask your coach…
+        <span style="margin-left:auto; opacity:0.4;">@</span>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. Conversational / AI-first</h3>
+      <p>Chat surface dominates the page. Tabs collapse into a small "Hub ▾" toggle. Dashboard becomes a side-panel or contextual cards inside chat answers. <strong>Vibe: ChatGPT, Perplexity, Linear.</strong></p>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:24px; opacity:0.7">Click a card to select. You can also describe a different direction in the terminal.</p>

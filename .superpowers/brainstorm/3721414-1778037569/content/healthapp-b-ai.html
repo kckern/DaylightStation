@@ -1,0 +1,150 @@
+<h2>B + prominent AI widget — proposed layout</h2>
+<p class="subtitle">Dashboard is the default view; chat is always reachable via a persistent ask bar at the bottom. Tap or focus the bar → chat history slides up as an overlay. No tabs needed.</p>
+
+<div style="display:flex; flex-direction:column; gap:24px; max-width:820px; margin:0 auto;">
+
+  <!-- HERO MOCK — DEFAULT STATE -->
+  <div style="background:#0f1419; border-radius:14px; padding:0; overflow:hidden; box-shadow:0 4px 24px rgba(0,0,0,0.3); color:#e8eef3; font-family: -apple-system, system-ui, sans-serif;">
+
+    <!-- Header strip -->
+    <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 20px; border-bottom:1px solid #1c2229;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <div style="width:8px; height:8px; background:#10b981; border-radius:50%;"></div>
+        <span style="font-size:12px; color:#94a3b8;">Health · synced 2m ago · kckern</span>
+      </div>
+      <div style="font-size:11px; color:#6b7785;">Tue · May 6</div>
+    </div>
+
+    <!-- Hero metrics row -->
+    <div style="padding:20px; display:grid; grid-template-columns: 1.4fr 1fr 1fr; gap:12px;">
+
+      <div style="background:#1c2229; padding:16px; border-radius:10px;">
+        <div style="font-size:10px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.08em;">WEIGHT</div>
+        <div style="font-size:36px; font-weight:700; line-height:1.1; margin-top:4px;">170.7 <span style="font-size:14px; color:#94a3b8; font-weight:400;">lbs</span></div>
+        <div style="font-size:12px; color:#10b981; margin-top:6px; display:flex; align-items:center; gap:4px;">
+          <span>▼ 0.04 lbs/wk</span>
+          <span style="color:#6b7785;">· last 30d</span>
+        </div>
+        <div style="margin-top:12px; display:flex; align-items:flex-end; gap:2px; height:28px;">
+          <div style="background:#2563eb; flex:1; height:60%; border-radius:1px;"></div>
+          <div style="background:#2563eb; flex:1; height:65%;"></div>
+          <div style="background:#2563eb; flex:1; height:55%;"></div>
+          <div style="background:#2563eb; flex:1; height:70%;"></div>
+          <div style="background:#2563eb; flex:1; height:50%;"></div>
+          <div style="background:#2563eb; flex:1; height:62%;"></div>
+          <div style="background:#2563eb; flex:1; height:45%;"></div>
+        </div>
+      </div>
+
+      <div style="background:#1c2229; padding:16px; border-radius:10px;">
+        <div style="font-size:10px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.08em;">WORKOUTS</div>
+        <div style="font-size:36px; font-weight:700; line-height:1.1; margin-top:4px;">10</div>
+        <div style="font-size:12px; color:#94a3b8; margin-top:6px;">this week · 3 runs · 3 lifts</div>
+      </div>
+
+      <div style="background:#1c2229; padding:16px; border-radius:10px;">
+        <div style="font-size:10px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.08em;">CALORIES</div>
+        <div style="font-size:36px; font-weight:700; line-height:1.1; margin-top:4px;">1,470</div>
+        <div style="font-size:12px; color:#94a3b8; margin-top:6px;">avg · 30d · 103g protein</div>
+      </div>
+    </div>
+
+    <!-- Cards row -->
+    <div style="padding:0 20px 20px; display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+
+      <div style="background:#1c2229; padding:14px; border-radius:10px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+          <div style="font-size:12px; font-weight:600; color:#e8eef3;">Coach observations</div>
+          <span style="background:#0d2538; color:#3b82f6; padding:2px 8px; border-radius:8px; font-size:10px;">2 new</span>
+        </div>
+        <div style="font-size:12px; color:#94a3b8; line-height:1.5;">Tracking dropped 78%→34% in late April. Weight trajectory still flat — tracking gap may be masking real signal.</div>
+      </div>
+
+      <div style="background:#1c2229; padding:14px; border-radius:10px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+          <div style="font-size:12px; font-weight:600; color:#e8eef3;">Today</div>
+          <span style="font-size:10px; color:#10b981;">on track</span>
+        </div>
+        <div style="font-size:12px; color:#94a3b8; line-height:1.5;">Run @ 7:14 · 45min · 145 avg HR. Lunch logged: 620 cal. No dinner yet.</div>
+      </div>
+    </div>
+
+    <!-- AI ASK BAR (persistent — the prominent widget) -->
+    <div style="padding:14px 16px; border-top:1px solid #1c2229; background:#0a0e12;">
+      <div style="background:#1c2229; padding:10px 14px; border-radius:24px; display:flex; align-items:center; gap:10px; border:1px solid #2d3743;">
+        <div style="width:24px; height:24px; background:linear-gradient(135deg, #2563eb, #10b981); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; color:#fff;">✦</div>
+        <span style="color:#6b7785; font-size:13px; flex:1;">Ask your coach… <span style="opacity:0.5">type @ to mention a period or workout</span></span>
+        <span style="color:#94a3b8; font-size:10px; background:#2d3743; padding:2px 6px; border-radius:4px;">⌘K</span>
+      </div>
+    </div>
+
+  </div>
+
+  <p class="subtitle" style="margin:8px 0 0; text-align:center; opacity:0.8;">Click the ask bar (or any chat hint) → a chat overlay slides up over the dashboard. Esc or scroll-down dismisses.</p>
+
+  <!-- EXPANDED STATE PREVIEW -->
+  <div style="position:relative; background:#0f1419; border-radius:14px; padding:0; overflow:hidden; box-shadow:0 4px 24px rgba(0,0,0,0.3); color:#e8eef3; font-family: -apple-system, system-ui, sans-serif; height:480px;">
+
+    <!-- Faded dashboard behind -->
+    <div style="position:absolute; inset:0; opacity:0.25; padding:14px 20px; pointer-events:none;">
+      <div style="font-size:12px; color:#94a3b8;">Health · 170.7 lbs · 10 workouts · 1,470 cal</div>
+    </div>
+
+    <!-- Chat overlay -->
+    <div style="position:absolute; inset:0; display:flex; flex-direction:column; padding:16px 20px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:14px; border-bottom:1px solid #1c2229;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <div style="width:24px; height:24px; background:linear-gradient(135deg, #2563eb, #10b981); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px;">✦</div>
+          <span style="font-size:13px; font-weight:500;">Health Coach</span>
+          <span style="font-size:11px; color:#6b7785;">· kckern</span>
+        </div>
+        <span style="font-size:11px; color:#6b7785;">Esc to dismiss</span>
+      </div>
+
+      <div style="flex:1; padding:16px 0; display:flex; flex-direction:column; gap:14px; overflow-y:auto;">
+        <div style="background:#1c2229; padding:10px 14px; border-radius:14px; align-self:flex-end; max-width:70%; font-size:13px;">
+          whats my weight trend?
+        </div>
+        <div style="font-size:13px; color:#e8eef3; line-height:1.6; max-width:90%;">
+          Down <strong>~0.04 lbs/week</strong> over the last 30 days, fairly steady. Started at <strong>170.36</strong>, currently at <strong>170.68</strong>. The change is minimal — call it stable.
+          <div style="margin-top:8px; padding:8px 10px; background:#0d2538; border-left:2px solid #3b82f6; border-radius:4px; font-size:11px; color:#94a3b8;">
+            ✦ used <code style="color:#3b82f6;">metric_trajectory</code> · 9ms
+          </div>
+        </div>
+        <div style="background:#1c2229; padding:10px 14px; border-radius:14px; align-self:flex-end; max-width:70%; font-size:13px;">
+          and my workouts?
+        </div>
+        <div style="font-size:13px; color:#e8eef3; line-height:1.6; max-width:90%;">
+          <strong>10 workouts</strong> in the last week:
+          <ul style="margin:6px 0 0; padding-left:20px; color:#94a3b8;">
+            <li>3× running (longest 41 min)</li>
+            <li>3× lifting (24 min avg)</li>
+            <li>2× cycling, 2× yoga</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- input pinned to bottom of overlay -->
+      <div style="background:#1c2229; padding:10px 14px; border-radius:24px; display:flex; align-items:center; gap:10px; border:1px solid #2d3743;">
+        <div style="width:24px; height:24px; background:linear-gradient(135deg, #2563eb, #10b981); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px;">✦</div>
+        <span style="color:#e8eef3; font-size:13px; flex:1;">why is tracking density dropping?<span style="background:#3b82f6; width:2px; height:14px; display:inline-block; vertical-align:middle; margin-left:2px;"></span></span>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<div style="margin-top:24px; padding:14px; background:rgba(255,255,255,0.03); border-radius:8px; max-width:820px; margin-left:auto; margin-right:auto;">
+  <div style="font-size:13px; opacity:0.85;">
+    <strong>Layout decisions baked in:</strong>
+  </div>
+  <ul style="font-size:12px; opacity:0.75; line-height:1.7; margin:8px 0 0; padding-left:20px;">
+    <li>Dark theme — chosen for B's data-forward aesthetic + reduces eye strain on a coaching surface</li>
+    <li>No more tabs — Hub IS the page; chat overlays from the bottom on demand</li>
+    <li>Persistent ask bar at the bottom — always reachable, ⌘K to focus</li>
+    <li>AI gradient mark (✦) used consistently — bar, chat avatar, tool-call attributions</li>
+    <li>Mini-charts inline with metric cards — no separate "charts page"</li>
+    <li>Coach observations card surfaces transcript-driven insights inline on Hub</li>
+  </ul>
+</div>
