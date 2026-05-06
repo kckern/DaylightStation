@@ -9,6 +9,7 @@
  */
 
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { unlinkSync } from 'fs';
 
 // Mock the FileIO module so the service uses our in-memory fakes instead of
 // touching the filesystem.
@@ -18,6 +19,15 @@ vi.mock('#system/utils/FileIO.mjs', () => ({
   dirExists: vi.fn(),
   saveYaml: vi.fn(),
 }));
+
+// Mock fs.unlinkSync so the absorb helper does not actually delete files.
+vi.mock('fs', async () => {
+  const actual = await vi.importActual('fs');
+  return {
+    ...actual,
+    unlinkSync: vi.fn(),
+  };
+});
 
 // userService is touched in unrelated paths; mock to keep the import graph clean.
 vi.mock('#system/config/index.mjs', () => ({
@@ -294,5 +304,180 @@ describe('FitnessActivityEnrichmentService — terminal-failure aging', () => {
       call[1] && call[1].status === 'abandoned'
     );
     expect(abandonCalls).toHaveLength(0);
+  });
+});
+
+describe('FitnessActivityEnrichmentService._absorbOverlappingSlivers', () => {
+  let service;
+  let logger;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    dirExists.mockReturnValue(true);
+    logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    service = new FitnessActivityEnrichmentService({
+      stravaClient: {},
+      jobStore: { findById: () => null, update: () => {}, create: () => {}, findActionable: () => [] },
+      authStore: {},
+      configService: {
+        getTimezone: () => 'America/Los_Angeles',
+        getHeadOfHousehold: () => 'test-user',
+        getAppConfig: () => ({}),
+      },
+      fitnessHistoryDir: '/tmp/fake-history',
+      logger,
+    });
+  });
+
+  test('absorbs a short HR-only home sliver inside the activity window', () => {
+    // Activity: 37-min outdoor Run, 12:30 → 13:09:48 PT (UTC: 19:30 → 20:09:48)
+    const activity = buildActivity({
+      id: 18390552794,
+      type: 'Run',
+      distance: 5230,
+      elapsed_time: 2388,
+      moving_time: 2342,
+      start_date: '2026-05-04T20:00:00Z',  // 13:00 PT
+    });
+    // Sliver: 13:07–13:14 PT (overlaps activity tail and runs ~5 min past activity end)
+    const sliverFile = '20260504130756';
+    listYamlFiles.mockReturnValue([sliverFile, 'just-created-strava-only-session']);
+    loadYamlSafe.mockImplementation((p) => {
+      if (p.includes(sliverFile)) {
+        return buildSession({
+          sessionId: sliverFile,
+          session: {
+            start: '2026-05-04 13:07:56',
+            end: '2026-05-04 13:14:51',
+            duration_seconds: 415,
+          },
+          summary: { media: [] },
+        });
+      }
+      // The Strava-only session that was just created — has source: 'strava'
+      return buildSession({
+        sessionId: 'just-created-strava-only-session',
+        session: {
+          start: '2026-05-04 13:00:00',
+          end: '2026-05-04 13:39:48',
+          duration_seconds: 2388,
+          source: 'strava',
+        },
+      });
+    });
+
+    service._absorbOverlappingSlivers(activity, '/tmp/fake-history/2026-05-04', 'just-created-strava-only-session');
+
+    expect(unlinkSync).toHaveBeenCalledWith(expect.stringContaining(sliverFile));
+    expect(logger.info).toHaveBeenCalledWith(
+      'strava.enrichment.sliver_absorbed',
+      expect.objectContaining({
+        activityId: 18390552794,
+        sliverFile,
+        sliverDurationSec: 415,
+      })
+    );
+  });
+
+  test('does NOT absorb a session with media (real indoor workout)', () => {
+    const activity = buildActivity({
+      id: 1,
+      type: 'Run',
+      distance: 5000,
+      elapsed_time: 2400,
+      start_date: '2026-05-04T20:00:00Z',
+    });
+    const indoorFile = '20260504130000';
+    listYamlFiles.mockReturnValue([indoorFile]);
+    loadYamlSafe.mockReturnValue(buildSession({
+      sessionId: indoorFile,
+      session: {
+        start: '2026-05-04 13:00:00',
+        end: '2026-05-04 13:30:00',
+        duration_seconds: 1800,
+      },
+      summary: { media: [{ contentId: 'plex:606446', primary: true }] },
+    }));
+
+    service._absorbOverlappingSlivers(activity, '/tmp/fake-history/2026-05-04', 'something-else');
+
+    expect(unlinkSync).not.toHaveBeenCalled();
+  });
+
+  test('does NOT absorb a long session even with no media', () => {
+    const activity = buildActivity({
+      id: 1,
+      type: 'Run',
+      distance: 5000,
+      elapsed_time: 2400,
+      start_date: '2026-05-04T20:00:00Z',
+    });
+    const longFile = '20260504130000';
+    listYamlFiles.mockReturnValue([longFile]);
+    loadYamlSafe.mockReturnValue(buildSession({
+      sessionId: longFile,
+      session: {
+        start: '2026-05-04 13:00:00',
+        end: '2026-05-04 13:25:00',
+        duration_seconds: 1500,  // 25 min — too long for a sliver
+      },
+      summary: { media: [] },
+    }));
+
+    service._absorbOverlappingSlivers(activity, '/tmp/fake-history/2026-05-04', 'something-else');
+
+    expect(unlinkSync).not.toHaveBeenCalled();
+  });
+
+  test('does NOT absorb a session with no time-window overlap', () => {
+    const activity = buildActivity({
+      id: 1,
+      type: 'Run',
+      distance: 5000,
+      elapsed_time: 2400,
+      start_date: '2026-05-04T20:00:00Z',  // 13:00–13:40 PT
+    });
+    const earlyFile = '20260504060000';
+    listYamlFiles.mockReturnValue([earlyFile]);
+    loadYamlSafe.mockReturnValue(buildSession({
+      sessionId: earlyFile,
+      session: {
+        start: '2026-05-04 06:00:00',  // 7 hours before — no overlap
+        end: '2026-05-04 06:10:00',
+        duration_seconds: 600,
+      },
+      summary: { media: [] },
+    }));
+
+    service._absorbOverlappingSlivers(activity, '/tmp/fake-history/2026-05-04', 'something-else');
+
+    expect(unlinkSync).not.toHaveBeenCalled();
+  });
+
+  test('does NOT absorb the just-created Strava-only session itself', () => {
+    const activity = buildActivity({
+      id: 1,
+      type: 'Run',
+      distance: 5000,
+      elapsed_time: 2400,
+      start_date: '2026-05-04T20:00:00Z',
+    });
+    // Only file present is the Strava-only session that was just created
+    const stravaOnlyFile = 'just-created';
+    listYamlFiles.mockReturnValue([stravaOnlyFile]);
+    loadYamlSafe.mockReturnValue(buildSession({
+      sessionId: stravaOnlyFile,
+      session: {
+        start: '2026-05-04 13:00:00',
+        end: '2026-05-04 13:39:48',
+        duration_seconds: 2388,
+        source: 'strava',
+      },
+      summary: { media: [] },
+    }));
+
+    service._absorbOverlappingSlivers(activity, '/tmp/fake-history/2026-05-04', stravaOnlyFile);
+
+    expect(unlinkSync).not.toHaveBeenCalled();
   });
 });
