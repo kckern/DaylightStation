@@ -260,8 +260,8 @@ describe('MastraAdapter userId schema-strip + auto-inject', () => {
   });
 
   it('schema-strip: stripUserIdFromSchema removes userId from properties + required', async () => {
-    // Import the helper directly (we'll export it for testing).
-    const { stripUserIdFromSchema } = await import('../../../../backend/src/1_adapters/agents/MastraAdapter.mjs');
+    // Import the canonical helper from UserIdInjector (single source of truth).
+    const { stripUserIdFromSchema } = await import('../../../../backend/src/3_applications/agents/framework/decorators/UserIdInjector.mjs');
     const schema = {
       type: 'object',
       properties: {
@@ -280,7 +280,7 @@ describe('MastraAdapter userId schema-strip + auto-inject', () => {
   });
 
   it('schema-strip: handles missing required + missing properties gracefully', async () => {
-    const { stripUserIdFromSchema } = await import('../../../../backend/src/1_adapters/agents/MastraAdapter.mjs');
+    const { stripUserIdFromSchema } = await import('../../../../backend/src/3_applications/agents/framework/decorators/UserIdInjector.mjs');
     expect(stripUserIdFromSchema(null)).toBe(null);
     expect(stripUserIdFromSchema({ type: 'object' })).toEqual({ type: 'object' });
     expect(stripUserIdFromSchema({ type: 'object', properties: {} })).toEqual({
