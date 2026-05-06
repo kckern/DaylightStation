@@ -90,6 +90,9 @@ import { createAIRouter } from './4_api/v1/routers/ai.mjs';
 // Health mentions router (CoachChat autocomplete)
 import { createHealthMentionsRouter } from './4_api/v1/routers/health-mentions.mjs';
 
+// SSE streaming agents router
+import { createAgentsStreamRouter } from './4_api/v1/routers/agents-stream.mjs';
+
 // Feed harvester adapter for scheduler integration
 import { HeadlineHarvesterAdapter } from './1_adapters/feed/HeadlineHarvesterAdapter.mjs';
 
@@ -1987,6 +1990,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       aggregator: lifelogServices.lifelogAggregator,
     },
   });
+
+  // SSE streaming router — mounts /:agentId/run-stream alongside the agents router
+  v1Routers.agentsStream = createAgentsStreamRouter({
+    orchestrator: v1Routers.agents.orchestrator,
+    logger: rootLogger.child({ module: 'agents-stream' }),
+  });
+  app.use('/api/v1/agents', v1Routers.agentsStream);
 
   // Re-create health mentions router now that healthAnalyticsService is available
   // from the agents router. This replaces the null-wired placeholder above so
