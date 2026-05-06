@@ -319,13 +319,23 @@ export class SessionService {
    */
   async findResumable(contentId, householdId, { maxGapMs = 30 * 60 * 1000 } = {}) {
     if (!contentId) return { resumable: false };
+
+    // Defensive normalization: callers (especially the frontend pre-2026-05-06)
+    // may send a bare local id like '664042' instead of 'plex:664042'. The
+    // session YAML always stores the prefixed form, so a bare id would never
+    // match. Prefix bare numeric/string ids with 'plex:' as the fitness app
+    // default.
+    const normalizedContentId = String(contentId).includes(':')
+      ? String(contentId)
+      : `plex:${contentId}`;
+
     const hid = this.resolveHouseholdId(householdId);
     // Use local date (not UTC) since session dates are stored in local time
     const now_ = new Date();
     const today = `${now_.getFullYear()}-${String(now_.getMonth() + 1).padStart(2, '0')}-${String(now_.getDate()).padStart(2, '0')}`;
     const now = Date.now();
 
-    this.logger?.info?.('fitness.resumable.check.start', { contentId, householdId: hid, today });
+    this.logger?.info?.('fitness.resumable.check.start', { contentId: normalizedContentId, householdId: hid, today });
 
     let sessions;
     try {
@@ -345,7 +355,7 @@ export class SessionService {
       const mediaId = s.media?.primary?.contentId
         || s.contentId
         || null;
-      if (mediaId !== contentId) return false;
+      if (mediaId !== normalizedContentId) return false;
 
       // Must have an endTime (session is over, not active)
       const endTime = typeof s.endTime === 'number' ? s.endTime
@@ -356,7 +366,7 @@ export class SessionService {
     });
 
     this.logger?.info?.('fitness.resumable.check.candidates', {
-      contentId,
+      contentId: normalizedContentId,
       totalSessions: sessions.length,
       candidateCount: candidates.length,
       rejected: sessions.length - candidates.length,
@@ -364,7 +374,7 @@ export class SessionService {
     });
 
     if (candidates.length === 0) {
-      this.logger?.info?.('fitness.resumable.check.no_match', { contentId });
+      this.logger?.info?.('fitness.resumable.check.no_match', { contentId: normalizedContentId });
       return { resumable: false };
     }
 
@@ -383,7 +393,7 @@ export class SessionService {
     if (!fullSession) return { resumable: false };
 
     this.logger?.info?.('fitness.resumable.check.match', {
-      contentId,
+      contentId: normalizedContentId,
       matchedSessionId: sessionId,
       finalized: !!fullSession.finalized,
       ageMs: now - (typeof match.endTime === 'number' ? match.endTime : (match.startTime + (match.durationMs || 0)))
