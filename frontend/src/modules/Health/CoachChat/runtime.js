@@ -6,7 +6,7 @@
  * /api/v1/agents/health-coach/run. Returns the assistant response
  * shaped for assistant-ui (content array + metadata).
  */
-import { parseSSE } from './parseSSE.js';
+import { parseSSE } from '../../../lib/sse/parseSSE.js';
 
 export const healthCoachChatModel = {
   /**
