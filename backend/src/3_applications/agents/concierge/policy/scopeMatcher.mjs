@@ -1,4 +1,4 @@
-// backend/src/3_applications/concierge/services/scopeMatcher.mjs
+// backend/src/3_applications/agents/concierge/policy/scopeMatcher.mjs
 
 /**
  * Match a scope string against a glob pattern. The scope vocabulary uses

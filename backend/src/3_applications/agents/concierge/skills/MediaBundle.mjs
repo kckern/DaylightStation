@@ -1,5 +1,5 @@
 import { ToolBundle } from '../../framework/ToolBundle.mjs';
-import { PlayMediaUseCase } from '../../../concierge/usecases/PlayMedia.mjs';
+import { PlayMediaUseCase } from '../usecases/PlayMedia.mjs';
 import { AliasMap } from '#domains/common/AliasMap.mjs';
 
 /**
