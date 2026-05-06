@@ -2117,7 +2117,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     const session = fitnessSessionRef.current;
     if (!session || typeof session.setPendingContentId !== 'function') return;
     const head = Array.isArray(fitnessPlayQueue) ? fitnessPlayQueue[0] : null;
-    const id = head?.contentId || head?.id || null;
+    const rawId = head?.contentId || head?.id || null;
+    // Normalize at write so structured logs and any direct reads get the
+    // canonical "source:localId" form. Bare plex localIds → "plex:<id>".
+    const id = rawId == null
+      ? null
+      : (String(rawId).includes(':') ? String(rawId) : `plex:${rawId}`);
     session.setPendingContentId(id);
   }, [fitnessPlayQueue]);
 
