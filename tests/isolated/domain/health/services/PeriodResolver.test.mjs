@@ -226,3 +226,117 @@ describe('PeriodResolver — named periods (Plan 4)', () => {
       .rejects.toThrow(/deduced period.*deduce_period/i);
   });
 });
+
+describe('PeriodResolver — string shorthand', () => {
+  const NOW = new Date('2026-05-05T12:00:00Z');
+  const fixedNow = () => NOW;
+
+  it('resolves bare "last_30d" as rolling', async () => {
+    const r = new PeriodResolver({ now: fixedNow });
+    const out = await r.resolve('last_30d');
+    expect(out.from).toBe('2026-04-06');
+    expect(out.to).toBe('2026-05-05');
+    expect(out.label).toBe('last_30d');
+    expect(out.source).toBe('rolling');
+  });
+
+  it('resolves bare "last_7d"', async () => {
+    const r = new PeriodResolver({ now: fixedNow });
+    const out = await r.resolve('last_7d');
+    expect(out.from).toBe('2026-04-29');
+    expect(out.to).toBe('2026-05-05');
+    expect(out.source).toBe('rolling');
+  });
+
+  it('resolves bare "all_time"', async () => {
+    const r = new PeriodResolver({ now: fixedNow });
+    const out = await r.resolve('all_time');
+    expect(out.from).toBe('1900-01-01');
+    expect(out.to).toBe('2026-05-05');
+    expect(out.source).toBe('rolling');
+  });
+
+  it('resolves bare "prev_30d"', async () => {
+    const r = new PeriodResolver({ now: fixedNow });
+    const out = await r.resolve('prev_30d');
+    // prev_30d is the 30 days adjacent to last_30d — days -60 to -30
+    expect(out.from).toBe('2026-03-07');
+    expect(out.to).toBe('2026-04-05');
+    expect(out.source).toBe('rolling');
+  });
+
+  it('resolves bare "2024" as calendar year', async () => {
+    const r = new PeriodResolver({ now: fixedNow });
+    const out = await r.resolve('2024');
+    expect(out.from).toBe('2024-01-01');
+    expect(out.to).toBe('2024-12-31');
+    expect(out.source).toBe('calendar');
+  });
+
+  it('resolves bare "2024-08" as calendar month', async () => {
+    const r = new PeriodResolver({ now: fixedNow });
+    const out = await r.resolve('2024-08');
+    expect(out.from).toBe('2024-08-01');
+    expect(out.to).toBe('2024-08-31');
+  });
+
+  it('resolves bare "2024-Q3" as calendar quarter', async () => {
+    const r = new PeriodResolver({ now: fixedNow });
+    const out = await r.resolve('2024-Q3');
+    expect(out.from).toBe('2024-07-01');
+    expect(out.to).toBe('2024-09-30');
+  });
+
+  it('resolves bare "this_year"', async () => {
+    const r = new PeriodResolver({ now: fixedNow });
+    const out = await r.resolve('this_year');
+    expect(out.from).toBe('2026-01-01');
+    expect(out.to).toBe('2026-12-31');
+  });
+
+  it('resolves bare "this_month"', async () => {
+    const r = new PeriodResolver({ now: fixedNow });
+    const out = await r.resolve('this_month');
+    expect(out.from).toBe('2026-05-01');
+    expect(out.to).toBe('2026-05-31');
+  });
+
+  it('resolves bare "last_quarter"', async () => {
+    const r = new PeriodResolver({ now: fixedNow });
+    const out = await r.resolve('last_quarter');
+    // May 2026 is Q2; last_quarter = Q1
+    expect(out.from).toBe('2026-01-01');
+    expect(out.to).toBe('2026-03-31');
+  });
+
+  it('throws on unknown string with input echoed', async () => {
+    const r = new PeriodResolver({ now: fixedNow });
+    await expect(r.resolve('foo_bar')).rejects.toThrow(/unknown period string "foo_bar"/);
+  });
+
+  it('throws on empty string', async () => {
+    const r = new PeriodResolver({ now: fixedNow });
+    await expect(r.resolve('')).rejects.toThrow();
+  });
+
+  it('still rejects null/undefined/numbers', async () => {
+    const r = new PeriodResolver({ now: fixedNow });
+    await expect(r.resolve(null)).rejects.toThrow();
+    await expect(r.resolve(undefined)).rejects.toThrow();
+    await expect(r.resolve(42)).rejects.toThrow();
+  });
+
+  it('object form still works (no regression)', async () => {
+    const r = new PeriodResolver({ now: fixedNow });
+    const out = await r.resolve({ rolling: 'last_30d' });
+    expect(out.from).toBe('2026-04-06');
+    expect(out.source).toBe('rolling');
+  });
+
+  it('object form { calendar } still works (no regression)', async () => {
+    const r = new PeriodResolver({ now: fixedNow });
+    const out = await r.resolve({ calendar: '2024-Q3' });
+    expect(out.from).toBe('2024-07-01');
+    expect(out.source).toBe('calendar');
+  });
+});
