@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AiMark } from '../AiMark/index.jsx';
+import { AiMark } from '../Health/AiMark/index.jsx';
 
 export function ToolCallAttribution({ toolCalls }) {
   const [expanded, setExpanded] = useState(false);

@@ -12,7 +12,7 @@ import { useMemo, useEffect, useRef, useState } from 'react';
 import './CoachChat.scss';
 import { healthCoachChatModel } from './runtime.js';
 import { MarkdownText } from '../../Agent/MarkdownText.jsx';
-import { ToolCallAttribution } from './ToolCallAttribution.jsx';
+import { ToolCallAttribution } from '../../Agent/ToolCallAttribution.jsx';
 import { MENTION_CATEGORIES, fetchSuggestions, buildAttachment } from './mentions/index.js';
 import { Chip } from './chips/index.js';
 
