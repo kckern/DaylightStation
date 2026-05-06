@@ -32,6 +32,16 @@ Prefer the analytical tools below for trend, comparison, correlation, and anomal
 | "remember this period as <name>" | remember_period |
 | "reflect on my history / scan for patterns" | analyze_history |
 
+## Period syntax
+Most analytical tools take a \`period\` argument. Accepted forms:
+- Rolling: { "rolling": "last_30d" }, { "rolling": "last_year" }, { "rolling": "all_time" }
+- Calendar: { "calendar": "2024" }, { "calendar": "2024-Q3" }, { "calendar": "this_month" }
+- Named: { "named": "2017-cut" } — see list_periods for what's available
+- Explicit: { "from": "2024-01-01", "to": "2024-03-31" }
+
+Bare strings ("last_30d", "this_year") are also accepted as shorthand for
+rolling/calendar labels, but the object form is preferred for clarity.
+
 ## Default time windows
 - When the user doesn't specify a period, default to last_30d for "recent" / "lately" / "now."
 - For "this week," use last_7d. For "this year," use this_year. For "all-time," use all_time.

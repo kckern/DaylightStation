@@ -65,4 +65,23 @@ describe('HealthCoachAgent.getSystemPrompt mode routing', () => {
     expect(prompt).toMatch(/Dashboard Output/);
     expect(prompt).toMatch(/PERSONAL_CONTEXT_BUNDLE/);
   });
+
+  it('chat-mode prompt includes a "## Period syntax" section', async () => {
+    const agent = new HealthCoachAgent(buildBaseDeps());
+    const prompt = await agent.getSystemPrompt({ mode: 'chat' });
+    expect(prompt).toMatch(/## Period syntax/);
+    // The section names the four canonical forms
+    expect(prompt).toMatch(/Rolling: \{ "rolling":/);
+    expect(prompt).toMatch(/Calendar: \{ "calendar":/);
+    expect(prompt).toMatch(/Named: \{ "named":/);
+    expect(prompt).toMatch(/Explicit: \{ "from":/);
+    // Bare-string shorthand mentioned (so the model knows it works)
+    expect(prompt).toMatch(/[Bb]are strings.*shorthand/);
+  });
+
+  it('dashboard-mode prompt does NOT include the Period syntax section', async () => {
+    const agent = new HealthCoachAgent(buildBaseDeps());
+    const prompt = await agent.getSystemPrompt({ mode: 'dashboard' });
+    expect(prompt).not.toMatch(/## Period syntax/);
+  });
 });

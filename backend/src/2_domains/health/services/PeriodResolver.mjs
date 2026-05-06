@@ -16,6 +16,11 @@
  * `deduced` form throws with hint to call deduce_period() explicitly.
  */
 
+const CALENDAR_NAMED = [
+  'this_week', 'this_month', 'this_quarter', 'this_year',
+  'last_quarter', 'last_year',
+];
+
 const AGENT_ID = 'health-coach';
 const PERIOD_REMEMBERED_PREFIX = 'period.remembered.';
 const PERIOD_DEDUCED_PREFIX    = 'period.deduced.';
@@ -48,8 +53,18 @@ export class PeriodResolver {
    * @returns {Promise<{from: string, to: string, label: string, source: string}>}
    */
   async resolve(input, ctx = {}) {
+    // String shorthand: 'last_30d' → { rolling: 'last_30d' };
+    // '2024' / '2024-Q3' / 'this_year' → { calendar: <label> }.
+    // Bare strings let the model pass simple labels without the object
+    // wrapper. The prompt cheatsheet still teaches the canonical form.
+    if (typeof input === 'string') {
+      if (this.#isRollingLabel(input)) return this.#resolveRolling(input);
+      if (this.#isCalendarLabel(input)) return this.#resolveCalendar(input);
+      throw new Error(`PeriodResolver: unknown period string "${input}"`);
+    }
+
     if (!input || typeof input !== 'object') {
-      throw new Error('PeriodResolver.resolve: input must be an object');
+      throw new Error('PeriodResolver.resolve: input must be an object or recognized string label');
     }
     if (typeof input.rolling === 'string') return this.#resolveRolling(input.rolling);
     if (typeof input.calendar === 'string') return this.#resolveCalendar(input.calendar);
@@ -63,6 +78,19 @@ export class PeriodResolver {
       throw new Error('deduced period inline resolution is not supported. Call deduce_period() first and pass the result as { from, to }.');
     }
     throw new Error('PeriodResolver.resolve: unknown period input shape');
+  }
+
+  #isRollingLabel(label) {
+    if (label === 'all_time') return true;
+    return /^(last|prev)_\d+[dy]$/.test(label);
+  }
+
+  #isCalendarLabel(label) {
+    if (CALENDAR_NAMED.includes(label)) return true;
+    if (/^\d{4}$/.test(label)) return true;          // YYYY
+    if (/^\d{4}-\d{2}$/.test(label)) return true;     // YYYY-MM
+    if (/^\d{4}-Q[1-4]$/.test(label)) return true;    // YYYY-Qn
+    return false;
   }
 
   #today() {
