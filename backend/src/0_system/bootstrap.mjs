@@ -3184,8 +3184,7 @@ export async function createAgentsServices(config) {
  *   - ToolBundles: MemoryBundle, HomeAutomationBundle (when haGateway), MediaBundle
  *     (when contentQuery + haGateway + daylightHostInternal/daylightHost)
  *   - ConciergeAgent registered through agentOrchestrator
- *   - Bridge object wiring agentOrchestrator.run/streamExecute → chatCompletionRunner
- *   - createConciergeRouter mounted at /v1 with bearer auth + transcript logging
+ *   - SatelliteRegistry built and returned for app.mjs to pass to satelliteBearerAuth
  *
  * @param {Object} config
  * @param {Object} config.configService         - ConfigService
@@ -3198,7 +3197,7 @@ export async function createAgentsServices(config) {
  * @param {Object} [config.devicesConfig]       - Household devices config (provides daylightHost*)
  * @param {string} config.mediaLogsDir          - Directory for per-request transcript files
  * @param {Object} [config.logger]              - Logger
- * @returns {Promise<express.Router>}           - Router to mount at /v1
+ * @returns {Promise<{satelliteRegistry, advertisedModels}>}
  */
 export async function createConciergeServices(config) {
   const {
@@ -3221,7 +3220,6 @@ export async function createConciergeServices(config) {
   const { YamlSatelliteRegistry } = await import('#adapters/persistence/yaml/YamlSatelliteRegistry.mjs');
   const { ConciergePolicyEvaluator } = await import('#applications/agents/concierge/policy/ConciergePolicyEvaluator.mjs');
   const { MediaJudge } = await import('#applications/agents/concierge/services/MediaJudge.mjs');
-  const { createConciergeRouter } = await import('#api/v1/routers/concierge.mjs');
 
   // Mastra reads OPENAI_API_KEY from process.env — bridge from ConfigService.
   const openaiKey = configService.getSecret?.('OPENAI_API_KEY');
@@ -3421,73 +3419,21 @@ export async function createConciergeServices(config) {
     });
   }
 
-  // Bridge: translate the concierge router's chatCompletionRunner interface
-  // ({ runChat, streamChat }) to agentOrchestrator.run / streamExecute.
-  // Task 9 will move this bridge into the translator; it lives here for now.
-  //
-  // lastUserMessage: pull the last user-role content from a messages array.
-  // Mirrors the implementation in the old ConciergeAgent.mjs.
-  function lastUserMessage(messages) {
-    if (!Array.isArray(messages)) return '';
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === 'user' && typeof messages[i].content === 'string') {
-        return messages[i].content;
-      }
-    }
-    return '';
-  }
-
-  const chatCompletionRunner = agentOrchestrator
-    ? {
-        async runChat({ satellite, messages, conversationId = null, transcript = null }) {
-          const input = lastUserMessage(messages);
-          const result = await agentOrchestrator.run(ConciergeAgent.id, input, {
-            satellite,
-            conversationId,
-            transcript,
-            userId: 'household',
-          });
-          // Translate orchestrator shape → translator shape.
-          // agentOrchestrator.run() returns { output, toolCalls, usage } (BaseAgent contract).
-          // OpenAIChatCompletionsTranslator reads result.content — map output → content.
-          return {
-            content: result?.output ?? '',
-            toolCalls: result?.toolCalls ?? [],
-            usage: result?.usage ?? null,
-          };
-        },
-        async *streamChat({ satellite, messages, conversationId = null, transcript = null }) {
-          const input = lastUserMessage(messages);
-          yield* agentOrchestrator.streamExecute(ConciergeAgent.id, input, {
-            satellite,
-            conversationId,
-            transcript,
-            userId: 'household',
-          });
-        },
-      }
-    : null;
-
-  if (!chatCompletionRunner) {
+  if (!agentOrchestrator) {
     throw new Error(
       'createConciergeServices: agentOrchestrator is required. '
       + 'Pass agentOrchestrator from createAgentsServices.'
     );
   }
 
-  const router = createConciergeRouter({
-    satelliteRegistry: conciergeSatelliteRegistry,
-    chatCompletionRunner,
-    logger: logger.child({ component: 'router' }),
-    mediaLogsDir,
-  });
-
-  logger.info?.('concierge.mounted', {
-    path: '/v1',
+  logger.info?.('concierge.services.ready', {
     bundles: toolBundles.map(b => b.name),
   });
 
-  return router;
+  return {
+    satelliteRegistry: conciergeSatelliteRegistry,
+    advertisedModels: conciergeConfig?.advertised_models ?? ['daylight-house', 'gpt-4o-mini'],
+  };
 }
 
 // =============================================================================

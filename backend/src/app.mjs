@@ -92,6 +92,7 @@ import { createHealthMentionsRouter } from './4_api/v1/routers/health-mentions.m
 
 // Native-wire agent HTTP mounter
 import { mountAgentHttp } from './4_api/v1/agents/mountAgentHttp.mjs';
+import { satelliteBearerAuth } from './4_api/v1/agents/middlewares/satelliteBearerAuth.mjs';
 
 // Agent memory CRUD router (mounted once at /api/v1/agents)
 import { createAgentMemoryRouter } from './4_api/v1/agents/createAgentMemoryRouter.mjs';
@@ -2377,7 +2378,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Concierge endpoint (OpenAI-compatible /v1) — for HA Voice / external clients
   // ==========================================================================
   try {
-    const conciergeRouter = await createConciergeServices({
+    const conciergeServices = await createConciergeServices({
       configService,
       dataService,
       agentOrchestrator: v1Routers.agents?.orchestrator ?? null,
@@ -2389,7 +2390,25 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       mediaLogsDir: join(configService.getMediaDir(), 'logs'),
       logger: rootLogger.child({ module: 'concierge' }),
     });
-    app.use('/v1', conciergeRouter);
+
+    const bearerAuth = satelliteBearerAuth({
+      satelliteRegistry: conciergeServices.satelliteRegistry,
+      logger: rootLogger.child({ module: 'concierge-auth' }),
+    });
+
+    mountAgentHttp(app, {
+      orchestrator: v1Routers.agents?.orchestrator ?? null,
+      agentId: 'concierge',
+      mountPath: '/v1',
+      wireFormat: 'openai-chat-completions',
+      authMiddleware: [bearerAuth],
+      contextExtractor: (req) => ({
+        satellite: req.satellite,
+        conversationId: req.body?.conversation_id ?? req.body?.conversationId ?? null,
+      }),
+      advertisedModels: conciergeServices.advertisedModels,
+      logger: rootLogger.child({ module: 'agents/concierge' }),
+    });
   } catch (error) {
     rootLogger.error('concierge.mount_failed', { error: error.message, stack: error.stack });
   }
