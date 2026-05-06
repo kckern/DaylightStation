@@ -312,7 +312,11 @@ for (const [activityIdStr, archive] of archivesByActivityId) {
     // Absorb any HR-only home slivers in the same date dir that overlap
     // this activity. Mirrors what the webhook flow does in
     // FitnessActivityEnrichmentService._createStravaOnlySession.
-    const absorbResult = absorbOverlappingSlivers(archive, sessionDir, {
+    // The helper expects the raw Strava activity body (start_date, elapsed_time,
+    // id). The archive wrapper holds those at archive.data — destructure to match
+    // the shape the webhook-path passes in.
+    const activityForAbsorb = { ...data, id: archive.id };
+    const absorbResult = absorbOverlappingSlivers(activityForAbsorb, sessionDir, {
       justCreatedSessionId: sessionId,
       tz: TIMEZONE,
       logger: console,
