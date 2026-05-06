@@ -15,9 +15,15 @@ export function createCallLimiter({ maxToolCalls = 50 } = {}) {
       execute: async (args, ctx) => {
         counter.count += 1;
         if (counter.count > maxToolCalls) {
-          return {
-            error: `Tool call limit reached (${maxToolCalls}). Refusing further tool calls this turn.`,
-          };
+          const errMsg = `Tool call limit reached (${maxToolCalls}). Aborting to prevent runaway costs.`;
+          context.transcript?.recordTool({
+            name: tool.name,
+            args,
+            result: { error: errMsg },
+            ok: false,
+            latencyMs: 0,
+          });
+          return { error: errMsg };
         }
         return tool.execute(args, ctx);
       },

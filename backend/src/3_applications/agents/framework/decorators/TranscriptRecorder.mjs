@@ -2,7 +2,12 @@
  * TranscriptRecorder — wraps a tool so every execute() call is recorded on
  * the active transcript with timing and ok/error status.
  *
- * No-op when context.transcript is missing.
+ * No-op when context.transcript is missing (bare tool is returned as-is, so
+ * errors from the underlying tool will propagate unwrapped in that case).
+ *
+ * When transcript IS present, errors are swallowed and returned as an
+ * `{ error: message }` envelope — matching the inline behaviour in
+ * MastraAdapter.#translateTools so the agent loop never sees raw throws.
  *
  * @type {import('./ToolDecorator.mjs').ToolDecorator}
  */
@@ -34,7 +39,7 @@ export function transcriptRecorder(tool, context = {}) {
           ok: false,
           latencyMs: Date.now() - startedAt,
         });
-        throw error;
+        return errResult;
       }
     },
   };

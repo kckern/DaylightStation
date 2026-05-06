@@ -50,6 +50,22 @@ describe('createCallLimiter', () => {
     expect(tool.execute).toHaveBeenCalledTimes(1);
   });
 
+  it('records the limit-exceeded call to context.transcript', async () => {
+    const transcript = { calls: [], recordTool(e) { this.calls.push(e); } };
+    const limiter = createCallLimiter({ maxToolCalls: 1 });
+    const wrapped = limiter(makeTool(), { transcript });
+    await wrapped.execute({ x: 1 });
+    await wrapped.execute({ x: 2 }); // exceeds
+    expect(transcript.calls).toHaveLength(1);
+    expect(transcript.calls[0]).toMatchObject({
+      name: 'foo',
+      args: { x: 2 },
+      ok: false,
+      result: { error: expect.stringMatching(/limit reached/i) },
+      latencyMs: 0,
+    });
+  });
+
   it('default maxToolCalls is reasonable (50)', async () => {
     const limiter = createCallLimiter();
     const wrapped = limiter(makeTool(), {});

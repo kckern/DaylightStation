@@ -38,14 +38,15 @@ describe('transcriptRecorder decorator', () => {
     expect(transcript.calls[0].ok).toBe(false);
   });
 
-  it('records and re-throws when execute throws', async () => {
+  it('records and returns error envelope when execute throws', async () => {
     const transcript = makeFakeTranscript();
     const tool = makeTool(async () => { throw new Error('boom'); });
     const wrapped = transcriptRecorder(tool, { transcript });
-    await expect(wrapped.execute({ x: 1 })).rejects.toThrow('boom');
+    const result = await wrapped.execute({ x: 1 });
+    expect(result).toEqual({ error: 'boom' });
     expect(transcript.calls).toHaveLength(1);
     expect(transcript.calls[0].ok).toBe(false);
-    expect(transcript.calls[0].result).toMatchObject({ error: 'boom' });
+    expect(transcript.calls[0].result).toEqual({ error: 'boom' });
   });
 
   it('is a no-op when transcript is null', async () => {
