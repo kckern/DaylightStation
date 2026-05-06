@@ -31,6 +31,8 @@ import { encodeSingleSeries } from '../../2_domains/fitness/services/TimelineSer
 const MAX_RETRIES = 3;
 const RETRY_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const COOLDOWN_TTL_MS = 60 * 60 * 1000;  // 1 hour
+const GPS_DISTANCE_THRESHOLD_METERS = 100;  // activities below this are treated as indoor (treadmill, etc.)
+const MIN_OVERLAP_FRACTION = 0.5;           // matched session must overlap ≥50% of activity elapsed_time
 
 export class FitnessActivityEnrichmentService {
   #stravaClient;
@@ -344,7 +346,7 @@ export class FitnessActivityEnrichmentService {
         // be matched to a session that has zero distance AND no media. That
         // is almost always a coincidental overlap (e.g. user came home from a
         // run wearing the HR strap and triggered a treasureBox session).
-        const activityHasGpsDistance = (activity.distance || 0) > 100; // > 100 m
+        const activityHasGpsDistance = (activity.distance || 0) > GPS_DISTANCE_THRESHOLD_METERS;
         const sessionIsZeroDistanceNoMedia =
           ((data.strava?.distance ?? 0) === 0)
           && (!Array.isArray(data.summary?.media) || data.summary.media.length === 0);
@@ -370,6 +372,18 @@ export class FitnessActivityEnrichmentService {
         const overlapMs = overlapEnd.diff(overlapStart);
 
         if (overlapMs > 0 && overlapMs > bestOverlap) {
+          const activityElapsedMs = (activity.elapsed_time || activity.moving_time || 0) * 1000;
+          const overlapFraction = activityElapsedMs > 0 ? overlapMs / activityElapsedMs : 0;
+          if (overlapFraction < MIN_OVERLAP_FRACTION) {
+            this.#logger.info?.('strava.enrichment.session_scan.rejected_by_overlap_fraction', {
+              activityId,
+              file: filename,
+              overlapFraction,
+              overlapMs,
+              activityElapsedMs,
+            });
+            continue;
+          }
           bestOverlap = overlapMs;
           bestMatch = { data, filePath, date, filename };
         }

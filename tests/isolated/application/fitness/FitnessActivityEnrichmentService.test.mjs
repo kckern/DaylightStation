@@ -167,4 +167,59 @@ describe('FitnessActivityEnrichmentService._findMatchingSession sport guard', ()
     // run with no media is still a legitimate match candidate.
     expect(result).not.toBeNull();
   });
+
+  test('rejects a 7-minute session match against a 37-minute activity (overlap < 50% of activity)', () => {
+    // Activity: 37 min outdoor Ride (distance 0 to skip Task 2.1 sport guard).
+    // Session: 7 min, with media so the sport guard doesn't fire.
+    // Overlap is the session's full 7 min — 7/37 ≈ 19%, below the 50% threshold.
+    const activity = buildActivity({
+      id: 2,
+      type: 'Ride',
+      distance: 0,                          // indoor — sport guard skipped
+      elapsed_time: 37 * 60,                 // 2220 s
+      moving_time: 37 * 60,
+      start_date: '2026-05-04T20:00:00Z',   // 13:00 PT
+    });
+
+    listYamlFiles.mockReturnValue(['short-session']);
+    loadYamlSafe.mockReturnValue(buildSession({
+      sessionId: 'short-session',
+      session: {
+        start: '2026-05-04 13:00:00',
+        end: '2026-05-04 13:07:00',         // 7 min later
+        duration_seconds: 420,
+      },
+      summary: { media: [{ contentId: 'plex:606446', primary: true }] },
+    }));
+
+    const result = service._findMatchingSession(activity);
+    expect(result).toBeNull();
+  });
+
+  test('accepts a 30-minute session match against a 37-minute activity', () => {
+    // Overlap ~30 min / activity 37 min = 81% — above threshold.
+    const activity = buildActivity({
+      id: 3,
+      type: 'Ride',
+      distance: 0,
+      elapsed_time: 37 * 60,
+      moving_time: 37 * 60,
+      start_date: '2026-05-04T20:00:00Z',
+    });
+
+    listYamlFiles.mockReturnValue(['long-session']);
+    loadYamlSafe.mockReturnValue(buildSession({
+      sessionId: 'long-session',
+      session: {
+        start: '2026-05-04 13:00:00',
+        end: '2026-05-04 13:30:00',         // 30 min — overlap is the full 30 min
+        duration_seconds: 1800,
+      },
+      summary: { media: [{ contentId: 'plex:606446', primary: true }] },
+    }));
+
+    const result = service._findMatchingSession(activity);
+    expect(result).not.toBeNull();
+    expect(result.data.sessionId).toBe('long-session');
+  });
 });
