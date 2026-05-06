@@ -1,94 +1,117 @@
 .health-app {
+  background: var(--mantine-color-background-0);
+  color: var(--mantine-color-textHigh-0);
   min-height: 100vh;
-  box-sizing: border-box;
-  padding: 1rem;
-  max-width: 1200px;
-  margin: 0 auto;
-  color: white;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  padding-bottom: 80px; // space for the persistent AskBar
 }
 
-.health-app__coach-pane {
-  // Tabs panel needs a height for assistant-ui's Thread to scroll
-  height: calc(100vh - 80px); // tab strip + body padding
-  display: flex;
-  flex-direction: column;
-}
-
-.health-hub-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 1rem;
-
-  @media (max-width: 600px) {
-    grid-template-columns: 1fr;
-  }
-}
-
-.health-detail {
-  &__back {
-    cursor: pointer;
-    margin-bottom: 1rem;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    color: rgba(255, 255, 255, 0.6);
-    font-size: 0.875rem;
-
-    &:hover {
-      color: white;
-    }
-  }
-}
-
-// Nutrition input states
-.nutrition-input {
-  margin-top: 0.5rem;
-
-  &__chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.25rem;
-    margin-top: 0.5rem;
-  }
-}
-
-.nutrition-review {
-  &__item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.25rem 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  }
-
-  &__actions {
-    display: flex;
-    gap: 0.5rem;
-    margin-top: 0.75rem;
-  }
-}
-
-// Recency grid
-.recency-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 0.5rem;
-}
-
-.recency-item {
+.health-app__header {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.25rem 0;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--mantine-color-surface-0);
+}
 
-  &__dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
+.health-app__header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--mantine-color-textMid-0);
+}
 
-    &--green { background: #40c057; }
-    &--yellow { background: #fab005; }
-    &--red { background: #fa5252; }
-  }
+.health-app__status-dot {
+  width: 8px;
+  height: 8px;
+  background: #10b981;
+  border-radius: 50%;
+  animation: health-status-pulse 2s ease-in-out infinite;
+}
+
+@keyframes health-status-pulse {
+  0%, 100% { opacity: 0.5; }
+  50%      { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .health-app__status-dot { animation: none; }
+}
+
+.health-app__header-right {
+  font-size: 11px;
+  color: var(--mantine-color-textLow-0);
+}
+
+// Hero card shared styles
+.metric-card {
+  background: var(--mantine-color-surface-0);
+  padding: 16px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 150ms ease;
+}
+
+.metric-card:hover {
+  border-color: var(--mantine-color-border-0);
+}
+
+.metric-card__label {
+  font-size: 10px;
+  color: var(--mantine-color-textMid-0);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.metric-card__value {
+  font-size: 36px;
+  font-weight: 700;
+  line-height: 1.1;
+  margin-top: 4px;
+  font-feature-settings: 'tnum';
+}
+
+.metric-card__unit {
+  font-size: 14px;
+  color: var(--mantine-color-textMid-0);
+  font-weight: 400;
+}
+
+.metric-card__trend {
+  font-size: 12px;
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.metric-card__trend-period {
+  color: var(--mantine-color-textLow-0);
+}
+
+.metric-card__sparkline {
+  margin-top: 12px;
+}
+
+// Hub layout
+.health-hub {
+  padding: 20px;
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+.health-hub__hero {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.health-hub__secondary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
 }
