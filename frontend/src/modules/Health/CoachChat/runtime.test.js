@@ -122,4 +122,28 @@ describe('healthCoachChatModel.runStream (async generator)', () => {
       })) { /* drain */ }
     })()).rejects.toThrow(/boom/);
   });
+
+  it('records latencyMs from tool-end event on the matching in-flight call', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      body: readableStreamFrom([
+        'data: {"type":"tool-start","toolName":"metric_trajectory","args":{"metric":"weight_lbs"}}\n\n',
+        'data: {"type":"tool-end","toolName":"metric_trajectory","result":{"slope":-0.04},"latencyMs":42}\n\n',
+        'data: {"type":"finish"}\n\ndata: {"type":"done"}\n\n',
+      ]),
+    }));
+
+    const updates = [];
+    for await (const u of healthCoachChatModel.runStream({
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'q' }] }],
+      userId: 'kc',
+    })) {
+      updates.push(u);
+    }
+    const finalToolCalls = updates.at(-1).metadata.toolCalls;
+    expect(finalToolCalls).toHaveLength(1);
+    expect(finalToolCalls[0].toolName).toBe('metric_trajectory');
+    expect(finalToolCalls[0].status).toBe('done');
+    expect(finalToolCalls[0].latencyMs).toBe(42);
+  });
 });

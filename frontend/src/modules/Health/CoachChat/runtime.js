@@ -98,13 +98,13 @@ healthCoachChatModel.runStream = async function* runStream({ messages, userId, a
       if (inflight) {
         inflight.status = 'done';
         inflight.result = event.result;
-        inflight.latencyMs = inflight.latencyMs ?? 0;
+        inflight.latencyMs = event.latencyMs ?? 0;
       } else {
         toolCalls.push({
           toolName: event.toolName,
           result: event.result,
           status: 'done',
-          latencyMs: 0,
+          latencyMs: event.latencyMs ?? 0,
         });
       }
       yield {
