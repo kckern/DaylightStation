@@ -3167,6 +3167,8 @@ export async function createAgentsApiRouter(config) {
   router.scheduler = scheduler;
   // Expose coaching orchestrator for direct invocations (e.g., post-report hook)
   router.coachingOrchestrator = coachingOrchestrator;
+  // Expose workingMemory so createConciergeServices can share the same adapter instance
+  router.workingMemory = workingMemory;
   // Expose healthAnalyticsService so app.mjs can wire it into the mentions router.
   router.healthAnalyticsService = sharedHealthAnalyticsService;
   return router;
@@ -3181,30 +3183,36 @@ export async function createAgentsApiRouter(config) {
  *
  * Composes:
  *   - YamlSatelliteRegistry       (satellites + tokens from concierge.yml + Infisical)
- *   - YamlConciergeMemoryAdapter  (household working memory)
  *   - ConciergePolicyEvaluator    (scope-based tool gating)
- *   - MastraAdapter (primary concierge runtime)
- *   - MediaJudge subagent backed by a SECOND MastraAdapter pinned to a
- *     cheap model
- *   - Skills: MemorySkill, HomeAutomationSkill (when haGateway), MediaSkill
+ *   - Shared agentOrchestrator / MastraAdapter runtime (no duplicate MastraAdapter)
+ *   - Shared workingMemory adapter (keyed agentId='concierge', userId='household')
+ *   - MediaJudge subagent backed by a dedicated MastraAdapter pinned to a
+ *     cheap model (separate concern — different model + maxToolCalls:1 — audit Q10)
+ *   - ToolBundles: MemoryBundle, HomeAutomationBundle (when haGateway), MediaBundle
  *     (when contentQuery + haGateway + daylightHostInternal/daylightHost)
- *   - ConciergeApplication composition root
+ *   - ConciergeAgent registered through agentOrchestrator
+ *   - Bridge object wiring agentOrchestrator.run/streamExecute → chatCompletionRunner
  *   - createConciergeRouter mounted at /v1 with bearer auth + transcript logging
  *
  * @param {Object} config
- * @param {Object} config.configService     - ConfigService
- * @param {Object} config.dataService       - DataService for working memory
- * @param {Object} [config.contentQueryService] - ContentQueryService for MediaSkill
- * @param {Object} [config.haGateway]       - IHomeAutomationGateway for HA + Media skills
- * @param {Object} [config.devicesConfig]   - Household devices config (provides daylightHost*)
- * @param {string} config.mediaLogsDir      - Directory for per-request transcript files
- * @param {Object} [config.logger]          - Logger
- * @returns {Promise<express.Router>}       - Router to mount at /v1
+ * @param {Object} config.configService         - ConfigService
+ * @param {Object} config.dataService           - DataService for working memory (fallback only)
+ * @param {Object} config.agentOrchestrator     - Shared AgentOrchestrator from createAgentsApiRouter
+ * @param {Object} config.workingMemory         - Shared YamlWorkingMemoryAdapter from createAgentsApiRouter
+ * @param {Object} [config.contentQueryService] - ContentQueryService for MediaBundle
+ * @param {Object} [config.contentRegistry]     - Optional — used to look up Plex labels for media policy
+ * @param {Object} [config.haGateway]           - IHomeAutomationGateway for HA + Media bundles
+ * @param {Object} [config.devicesConfig]       - Household devices config (provides daylightHost*)
+ * @param {string} config.mediaLogsDir          - Directory for per-request transcript files
+ * @param {Object} [config.logger]              - Logger
+ * @returns {Promise<express.Router>}           - Router to mount at /v1
  */
 export async function createConciergeServices(config) {
   const {
     configService,
     dataService,
+    agentOrchestrator = null,
+    workingMemory: sharedWorkingMemory = null,
     contentQueryService = null,
     contentRegistry = null,         // optional — used to look up Plex labels for media policy
     haGateway = null,
@@ -3218,13 +3226,7 @@ export async function createConciergeServices(config) {
   if (!mediaLogsDir) throw new Error('createConciergeServices: mediaLogsDir required');
 
   const { YamlSatelliteRegistry } = await import('#adapters/persistence/yaml/YamlSatelliteRegistry.mjs');
-  const { YamlConciergeMemoryAdapter } = await import('#adapters/persistence/yaml/YamlConciergeMemoryAdapter.mjs');
-  const { PassThroughConciergePolicy } = await import('#applications/concierge/services/PassThroughConciergePolicy.mjs');
   const { ConciergePolicyEvaluator } = await import('#applications/concierge/services/ConciergePolicyEvaluator.mjs');
-  const { ConciergeApplication } = await import('#applications/concierge/ConciergeApplication.mjs');
-  const { MemorySkill } = await import('#applications/concierge/skills/MemorySkill.mjs');
-  const { HomeAutomationSkill } = await import('#applications/concierge/skills/HomeAutomationSkill.mjs');
-  const { MediaSkill } = await import('#applications/concierge/skills/MediaSkill.mjs');
   const { MediaJudge } = await import('#applications/concierge/services/MediaJudge.mjs');
   const { createConciergeRouter } = await import('#api/v1/routers/concierge.mjs');
 
@@ -3234,36 +3236,18 @@ export async function createConciergeServices(config) {
     process.env.OPENAI_API_KEY = openaiKey;
   }
 
-  const conciergeMediaDir = configService?.getMediaDir?.() || null;
-  const conciergeAgentRuntime = new MastraAdapter({
-    logger: logger.child({ component: 'mastra' }),
-    mediaDir: conciergeMediaDir,
-  });
-  const conciergeWorkingMemory = new YamlWorkingMemoryAdapter({
+  // Shared workingMemory from createAgentsApiRouter (preferred). Fall back to a
+  // new instance only when called without the orchestrator (e.g., unit tests).
+  const workingMemory = sharedWorkingMemory ?? new YamlWorkingMemoryAdapter({
     dataService,
     logger: logger.child({ component: 'working-memory' }),
   });
-  const conciergeMemory = new YamlConciergeMemoryAdapter({ workingMemory: conciergeWorkingMemory });
 
   const conciergeSatelliteRegistry = new YamlSatelliteRegistry({
     configService,
     logger: logger.child({ component: 'satellite-registry' }),
   });
   await conciergeSatelliteRegistry.load();
-
-  const conciergeSkills = [
-    new MemorySkill({
-      memory: conciergeMemory,
-      logger: logger.child({ skill: 'memory' }),
-    }),
-  ];
-
-  if (haGateway) {
-    conciergeSkills.push(new HomeAutomationSkill({
-      gateway: haGateway,
-      logger: logger.child({ skill: 'home_automation' }),
-    }));
-  }
 
   // Read all concierge config from a single file with sections (satellites, media, …).
   // concierge.yml example:
@@ -3312,13 +3296,32 @@ export async function createConciergeServices(config) {
     throw err;
   }
 
+  // Build ToolBundles (replaces old Skills). MemoryBundle is always included.
+  const { MemoryBundle } = await import('#apps/agents/concierge/skills/MemoryBundle.mjs');
+  const { HomeAutomationBundle } = await import('#apps/agents/concierge/skills/HomeAutomationBundle.mjs');
+  const { MediaBundle } = await import('#apps/agents/concierge/skills/MediaBundle.mjs');
+
+  const conciergeMediaDir = configService?.getMediaDir?.() || null;
+
+  const toolBundles = [
+    new MemoryBundle({ config: conciergeConfig?.memory ?? {} }),
+  ];
+
+  if (haGateway) {
+    toolBundles.push(new HomeAutomationBundle({
+      haGateway,
+      logger: logger.child({ component: 'concierge.bundle.ha' }),
+      config: conciergeConfig?.home_automation ?? {},
+    }));
+  }
+
   if (contentQueryService && haGateway) {
     const dsBaseUrl = devicesConfig?.daylightHostInternal || devicesConfig?.daylightHost;
     if (!dsBaseUrl) {
-      logger.warn?.('concierge.media.skill.skipped', {
+      logger.warn?.('concierge.media.bundle.skipped', {
         reason: 'no_daylight_host',
         message: 'devices.yml.daylightHostInternal (or daylightHost) is unset — '
-               + 'MediaSkill not registered. Set daylightHostInternal to the LAN-routable URL '
+               + 'MediaBundle not registered. Set daylightHostInternal to the LAN-routable URL '
                + 'where this server is reachable from HA and Voice PE devices.',
       });
     } else {
@@ -3327,6 +3330,10 @@ export async function createConciergeServices(config) {
       // bitten us before (10.0.0.5 default for ds_base_url). Fail loud here:
       // either the operator opts in by naming a model, or the use case runs
       // judge-less and picks top-of-rank.
+      //
+      // MediaJudge uses its OWN MastraAdapter (different model + maxToolCalls:1 +
+      // tighter timeoutMs). This is not the shared agentRuntime — keeping it
+      // separate is intentional (audit Q10).
       let mediaJudge = null;
       const judgeModel = mediaConfig?.judge_model;
       if (judgeModel) {
@@ -3344,7 +3351,7 @@ export async function createConciergeServices(config) {
       } else {
         logger.warn?.('concierge.media.judge.disabled', {
           reason: 'no_judge_model_configured',
-          message: 'concierge.yml.media.judge_model is unset — MediaSkill will pick the top '
+          message: 'concierge.yml.media.judge_model is unset — MediaBundle will pick the top '
                  + 'rank-sorted candidate without LLM disambiguation. Set judge_model '
                  + 'to enable (e.g. openai/gpt-4o-mini).',
         });
@@ -3384,15 +3391,15 @@ export async function createConciergeServices(config) {
         logger: logger.child({ skill: 'media', component: 'policy-gate' }),
       });
 
-      conciergeSkills.push(new MediaSkill({
+      toolBundles.push(new MediaBundle({
         contentQuery: contentQueryService,
         gateway: haGateway,
-        logger: logger.child({ skill: 'media' }),
+        logger: logger.child({ component: 'concierge.bundle.media' }),
         config: { ...mediaConfig, ds_base_url: dsBaseUrl },
         judge: mediaJudge,
         policyGate: mediaPolicyGate,
       }));
-      logger.info?.('concierge.media.skill.url', {
+      logger.info?.('concierge.media.bundle.url', {
         ds_base_url: dsBaseUrl,
         source: devicesConfig?.daylightHostInternal ? 'daylightHostInternal' : 'daylightHost',
         judge_model: judgeModel ?? null,
@@ -3400,27 +3407,83 @@ export async function createConciergeServices(config) {
     }
   }
 
-  const conciergeApp = new ConciergeApplication({
-    satelliteRegistry: conciergeSatelliteRegistry,
-    memory: conciergeMemory,
-    policy: conciergePolicy,
-    agentRuntime: conciergeAgentRuntime,
-    skills: conciergeSkills,
-    vocabulary: conciergeVocabulary,
-    personality: personalityText,
-    logger,
-  });
+  // Register ConciergeAgent through the shared orchestrator so it uses the
+  // shared MastraAdapter (agentRuntime) instead of a duplicate instance.
+  // The agentRuntime is injected automatically by AgentOrchestrator.register().
+  const { ConciergeAgent } = await import('#apps/agents/concierge/ConciergeAgent.mjs');
+  if (agentOrchestrator) {
+    agentOrchestrator.register(ConciergeAgent, {
+      workingMemory,
+      policy: conciergePolicy,
+      toolBundles,
+      vocabulary: conciergeVocabulary,
+      personality: personalityText,
+    });
+  } else {
+    // Fallback: no orchestrator provided (e.g., standalone test harness).
+    // Log a warning — production should always pass agentOrchestrator.
+    logger.warn?.('concierge.orchestrator.missing', {
+      message: 'agentOrchestrator not provided — ConciergeAgent cannot be registered. '
+             + 'Pass agentOrchestrator from createAgentsApiRouter to enable the new path.',
+    });
+  }
+
+  // Bridge: translate the concierge router's chatCompletionRunner interface
+  // ({ runChat, streamChat }) to agentOrchestrator.run / streamExecute.
+  // Task 9 will move this bridge into the translator; it lives here for now.
+  //
+  // lastUserMessage: pull the last user-role content from a messages array.
+  // Mirrors the implementation in the old ConciergeAgent.mjs.
+  function lastUserMessage(messages) {
+    if (!Array.isArray(messages)) return '';
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user' && typeof messages[i].content === 'string') {
+        return messages[i].content;
+      }
+    }
+    return '';
+  }
+
+  const chatCompletionRunner = agentOrchestrator
+    ? {
+        async runChat({ satellite, messages, conversationId = null, transcript = null }) {
+          const input = lastUserMessage(messages);
+          return agentOrchestrator.run(ConciergeAgent.id, input, {
+            satellite,
+            conversationId,
+            transcript,
+            userId: 'household',
+          });
+        },
+        async *streamChat({ satellite, messages, conversationId = null, transcript = null }) {
+          const input = lastUserMessage(messages);
+          yield* agentOrchestrator.streamExecute(ConciergeAgent.id, input, {
+            satellite,
+            conversationId,
+            transcript,
+            userId: 'household',
+          });
+        },
+      }
+    : null;
+
+  if (!chatCompletionRunner) {
+    throw new Error(
+      'createConciergeServices: agentOrchestrator is required. '
+      + 'Pass agentOrchestrator from createAgentsApiRouter.'
+    );
+  }
 
   const router = createConciergeRouter({
     satelliteRegistry: conciergeSatelliteRegistry,
-    chatCompletionRunner: conciergeApp,
+    chatCompletionRunner,
     logger: logger.child({ component: 'router' }),
     mediaLogsDir,
   });
 
   logger.info?.('concierge.mounted', {
     path: '/v1',
-    skills: conciergeSkills.map(s => s.name),
+    bundles: toolBundles.map(b => b.name),
   });
 
   return router;
