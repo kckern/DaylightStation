@@ -55,3 +55,71 @@ describe('healthCoachChatModel.run', () => {
     })).rejects.toThrow(/500/);
   });
 });
+
+describe('healthCoachChatModel.runStream (async generator)', () => {
+  let originalFetch;
+  beforeEach(() => { originalFetch = globalThis.fetch; });
+  afterEach(() => { globalThis.fetch = originalFetch; });
+
+  function readableStreamFrom(strings) {
+    return new ReadableStream({
+      async start(controller) {
+        for (const s of strings) controller.enqueue(new TextEncoder().encode(s));
+        controller.close();
+      },
+    });
+  }
+
+  it('yields incremental message updates as text-deltas arrive', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      body: readableStreamFrom([
+        'data: {"type":"text-delta","text":"Hi "}\n\n',
+        'data: {"type":"text-delta","text":"there"}\n\n',
+        'data: {"type":"finish"}\n\ndata: {"type":"done"}\n\n',
+      ]),
+    }));
+
+    const messages = [{ role: 'user', content: [{ type: 'text', text: 'q' }] }];
+    const updates = [];
+    for await (const u of healthCoachChatModel.runStream({ messages, userId: 'kc' })) {
+      updates.push(u);
+    }
+    expect(updates.length).toBeGreaterThanOrEqual(2);
+    const lastText = updates.at(-1).content.find(p => p.type === 'text').text;
+    expect(lastText).toBe('Hi there');
+  });
+
+  it('threads attachments through to the request body', async () => {
+    let captured;
+    globalThis.fetch = vi.fn(async (url, opts) => {
+      captured = JSON.parse(opts.body);
+      return {
+        ok: true,
+        body: readableStreamFrom(['data: {"type":"finish"}\n\ndata: {"type":"done"}\n\n']),
+      };
+    });
+
+    const attachments = [{ type: 'period', value: { rolling: 'last_30d' }, label: 'Last 30 days' }];
+    for await (const _ of healthCoachChatModel.runStream({
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'q' }] }],
+      userId: 'kc',
+      attachments,
+    })) { /* drain */ }
+    expect(captured.context.attachments).toEqual(attachments);
+  });
+
+  it('throws when SSE error event arrives', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      body: readableStreamFrom(['data: {"type":"error","message":"boom"}\n\n']),
+    }));
+
+    await expect((async () => {
+      for await (const _ of healthCoachChatModel.runStream({
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'q' }] }],
+        userId: 'kc',
+      })) { /* drain */ }
+    })()).rejects.toThrow(/boom/);
+  });
+});
