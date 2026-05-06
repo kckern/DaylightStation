@@ -11,7 +11,7 @@ export class PagedMediaTocAgent extends BaseAgent {
     this.addToolFactory(new PagedMediaTocToolFactory(this.deps));
   }
 
-  getSystemPrompt() {
+  getSystemPrompt(_context = {}) {
     return systemPrompt;
   }
 }

@@ -15,11 +15,13 @@ export class AgentOrchestrator {
   #agents = new Map();
   #agentRuntime;
   #logger;
+  #configService;       // ← new
 
   /**
    * @param {Object} deps
    * @param {Object} deps.agentRuntime - IAgentRuntime implementation
    * @param {Object} [deps.logger] - Logger instance
+   * @param {Object} [deps.configService] - ConfigService for userId resolution
    */
   constructor(deps) {
     if (!deps.agentRuntime) {
@@ -27,6 +29,18 @@ export class AgentOrchestrator {
     }
     this.#agentRuntime = deps.agentRuntime;
     this.#logger = deps.logger || console;
+    this.#configService = deps.configService || null;
+  }
+
+  /**
+   * Resolve a userId. Treats 'default' (frontend sentinel) and missing userId
+   * as a hint to use the configured head-of-household. Real userIds pass through.
+   * Falls back to the raw value when configService is unavailable.
+   */
+  #resolveUserId(rawUserId) {
+    if (rawUserId && rawUserId !== 'default') return rawUserId;
+    const head = this.#configService?.getHeadOfHousehold?.();
+    return head || rawUserId || null;
   }
 
   /**
@@ -59,8 +73,8 @@ export class AgentOrchestrator {
   async run(agentId, input, context = {}) {
     const agent = this.#getAgent(agentId);
     const turnId = context.turnId ?? crypto.randomUUID();
-    const userId = context.userId ?? null;
-    const augmented = { ...context, turnId };
+    const userId = this.#resolveUserId(context.userId);
+    const augmented = { ...context, turnId, userId };
 
     this.#logger.info?.('orchestrator.run', {
       agentId,
@@ -82,8 +96,8 @@ export class AgentOrchestrator {
   async runInBackground(agentId, input, context = {}) {
     const agent = this.#getAgent(agentId);
     const turnId = context.turnId ?? crypto.randomUUID();
-    const userId = context.userId ?? null;
-    const augmented = { ...context, turnId };
+    const userId = this.#resolveUserId(context.userId);
+    const augmented = { ...context, turnId, userId };
 
     this.#logger.info?.('orchestrator.runInBackground', { agentId, turnId, userId });
 
@@ -134,10 +148,17 @@ export class AgentOrchestrator {
    */
   async runAssignment(agentId, assignmentId, options = {}) {
     const agent = this.#getAgent(agentId);
-
-    this.#logger.info?.('orchestrator.runAssignment', { agentId, assignmentId });
-
-    return agent.runAssignment(assignmentId, options);
+    const turnId = options.context?.turnId ?? crypto.randomUUID();
+    const userId = this.#resolveUserId(options.userId ?? options.context?.userId);
+    const augmentedOpts = {
+      ...options,
+      userId,
+      context: { ...(options.context || {}), turnId, userId },
+    };
+    this.#logger.info?.('orchestrator.runAssignment', {
+      agentId, assignmentId, turnId, userId,
+    });
+    return agent.runAssignment(assignmentId, augmentedOpts);
   }
 
   /**

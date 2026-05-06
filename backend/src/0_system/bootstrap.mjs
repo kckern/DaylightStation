@@ -2948,7 +2948,7 @@ export async function createAgentsApiRouter(config) {
   const workingMemory = new YamlWorkingMemoryAdapter({ dataService, logger });
 
   // Create orchestrator
-  const agentOrchestrator = new AgentOrchestrator({ agentRuntime, logger });
+  const agentOrchestrator = new AgentOrchestrator({ agentRuntime, configService, logger });
 
   // Create scheduler for cron-triggered assignments
   const scheduler = new Scheduler({ logger });

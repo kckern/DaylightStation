@@ -35,7 +35,12 @@ export class BaseAgent {
   }
 
   // --- Subclass contract ---
-  getSystemPrompt() { throw new Error('Subclass must implement getSystemPrompt()'); }
+  /**
+   * Return the agent's base system prompt as a string or Promise<string>.
+   * Subclasses MAY accept a `context` object (with userId/mode/etc.) to
+   * branch on. Agents that ignore the arg keep working — backwards-compatible.
+   */
+  getSystemPrompt(context = {}) { throw new Error('Subclass must implement getSystemPrompt()'); }
   registerTools() { /* optional — subclass calls addToolFactory() here */ }
 
   // --- Tool factories ---
@@ -51,6 +56,8 @@ export class BaseAgent {
   async run(input, { userId, context = {} } = {}) {
     // userId may also be inside context (orchestrator path)
     const effectiveUserId = userId ?? context?.userId ?? null;
+    const augmentedContext = { mode: 'chat', ...context, userId: effectiveUserId };
+
     const memory = effectiveUserId
       ? await this.#workingMemory.load(this.constructor.id, effectiveUserId)
       : null;
@@ -59,8 +66,8 @@ export class BaseAgent {
       agent: this,
       input,
       tools: this.getTools(),
-      systemPrompt: await this.#assemblePrompt(memory, context),
-      context: { ...context, userId: effectiveUserId, memory },
+      systemPrompt: await this.#assemblePrompt(memory, augmentedContext),
+      context: { ...augmentedContext, memory },
     });
 
     if (memory) {
@@ -75,14 +82,17 @@ export class BaseAgent {
     const assignment = this.#assignments.get(assignmentId);
     if (!assignment) throw new Error(`Unknown assignment: ${assignmentId}`);
 
+    const augmentedContext = { mode: 'dashboard', ...context };
+    const systemPrompt = await this.getSystemPrompt(augmentedContext);
+
     return assignment.execute({
       agentRuntime: this.#agentRuntime,
       workingMemory: this.#workingMemory,
       tools: this.getTools(),
-      systemPrompt: this.getSystemPrompt(),
+      systemPrompt,
       agentId: this.constructor.id,
       userId,
-      context,
+      context: augmentedContext,
       logger: this.#logger,
     });
   }
@@ -97,8 +107,13 @@ export class BaseAgent {
   }
 
   async #assemblePrompt(memory, context = {}) {
-    const base = this.getSystemPrompt();
+    const base = await this.getSystemPrompt(context);
     const sections = [base];
+
+    if (context.userId) {
+      sections.push(`## Active User\nThe user you are assisting is: **${context.userId}**`);
+    }
+
     const attachmentsBlock = await this.formatAttachments(context.attachments);
     if (attachmentsBlock) sections.push(attachmentsBlock);
     if (memory) sections.push(`## Working Memory\n${memory.serialize()}`);

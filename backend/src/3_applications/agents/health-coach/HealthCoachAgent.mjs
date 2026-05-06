@@ -11,7 +11,8 @@ import { LongitudinalToolFactory } from './tools/LongitudinalToolFactory.mjs';
 import { ComplianceToolFactory } from './tools/ComplianceToolFactory.mjs';
 import { HealthAnalyticsToolFactory } from './tools/HealthAnalyticsToolFactory.mjs';
 import { DailyDashboard } from './assignments/DailyDashboard.mjs';
-import { systemPrompt } from './prompts/system.mjs';
+import { chatPrompt } from './prompts/chat.mjs';
+import { dashboardPrompt } from './prompts/dashboard.mjs';
 
 export class HealthCoachAgent extends BaseAgent {
   static id = 'health-coach';
@@ -19,68 +20,39 @@ export class HealthCoachAgent extends BaseAgent {
 
   /**
    * Per-userId cache of rendered personal-context bundles. Populated lazily on
-   * first `getSystemPrompt(userId)` call (or by `runAssignment()` before it
-   * delegates to the framework's sync `getSystemPrompt()` path). Bundles are
-   * stable for the lifetime of the agent instance — restart picks up changes
-   * to the playbook YAML.
+   * first `getSystemPrompt(context)` call. Bundles are stable for the lifetime
+   * of the agent instance — restart picks up changes to the playbook YAML.
    */
   #personalContextCache = new Map();
 
   /**
-   * The userId most recently primed via `runAssignment()`. Lets the framework's
-   * sync `getSystemPrompt()` path (called inside `BaseAgent.runAssignment` /
-   * `BaseAgent.run`) find the right cached bundle without changing the base
-   * contract.
+   * The userId most recently resolved by the orchestrator. Set from context
+   * in formatAttachments for cases where the context flows through that path.
    */
   #activeUserId = null;
 
   /**
-   * Returns the agent's system prompt with a per-user "Personal Context" bundle
-   * appended when a `personalContextLoader` is wired and the user has a
-   * playbook on disk.
+   * Returns the agent's resolved system prompt. Always async.
    *
-   * Dual-mode return: synchronous (a `string`) when no loader is wired, no
-   * userId is in scope, or the bundle is already cached for `userId`.
-   * Asynchronous (a `Promise<string>`) on a cache miss with a loader present.
-   * Callers that always `await` the result work correctly in both modes.
+   * Mode selection: context.mode ('chat' default → chatPrompt with tool
+   * cheatsheet; 'dashboard' → dashboardPrompt with JSON output instructions).
    *
-   * `runAssignment()` pre-warms the cache before delegating to the framework,
-   * so the framework's sync call site (`BaseAgent.runAssignment` →
-   * `assignment.execute({ systemPrompt: this.getSystemPrompt() })`) always
-   * lands on the sync branch and gets a proper string.
+   * Personal context bundle: when personalContextLoader is wired and a userId
+   * is in scope, appends the per-user bundle (named periods, playbook, etc.).
    *
-   * @param {string} [userId] - When omitted, falls back to the userId primed
-   *   by `runAssignment`. If neither is available or no loader is wired,
-   *   returns the static prompt unchanged.
-   * @returns {string|Promise<string>}
+   * @param {{ userId?: string, mode?: 'chat'|'dashboard' }} [context]
+   * @returns {Promise<string>}
    */
-  getSystemPrompt(userId = null) {
+  async getSystemPrompt(context = {}) {
+    const mode = context?.mode ?? 'chat';
+    const base = mode === 'dashboard' ? dashboardPrompt : chatPrompt;
+
+    const userId = context?.userId ?? this.#activeUserId ?? null;
     const loader = this.deps.personalContextLoader;
-    const effectiveUserId = userId || this.#activeUserId;
+    if (!loader || !userId) return base;
 
-    if (!loader || !effectiveUserId) {
-      return systemPrompt;
-    }
-
-    // Cache hit — return synchronously so the framework's sync call site works.
-    if (this.#personalContextCache.has(effectiveUserId)) {
-      const bundle = this.#personalContextCache.get(effectiveUserId);
-      return bundle ? `${systemPrompt}\n\n${bundle}` : systemPrompt;
-    }
-
-    // Cache miss — return a Promise. Sync callers (the framework) won't hit
-    // this path because `runAssignment` pre-warms the cache.
-    return this.#loadAndCombine(effectiveUserId, loader);
-  }
-
-  /**
-   * Async helper used on cache miss. Loads the bundle, caches it, and returns
-   * the combined prompt.
-   * @private
-   */
-  async #loadAndCombine(userId, loader) {
     const bundle = await this.#getPersonalContextBundle(userId, loader);
-    return bundle ? `${systemPrompt}\n\n${bundle}` : systemPrompt;
+    return bundle ? `${base}\n\n${bundle}` : base;
   }
 
   /**
@@ -94,20 +66,20 @@ export class HealthCoachAgent extends BaseAgent {
       return this.#personalContextCache.get(userId);
     }
 
-    let bundle = '';
+    let bundle = null;
     try {
-      bundle = (await loader.load(userId)) || '';
+      bundle = await loader.load(userId);
       this.deps.logger?.info?.('health_coach.system_prompt.cached', {
         userId,
-        chars: bundle.length,
-        empty: bundle.length === 0,
+        chars: bundle?.length ?? 0,
+        empty: !bundle,
       });
     } catch (err) {
       this.deps.logger?.warn?.('health_coach.system_prompt.loader_failed', {
         userId,
         error: err?.message || String(err),
       });
-      bundle = '';
+      bundle = null;
     }
 
     this.#personalContextCache.set(userId, bundle);
@@ -204,12 +176,6 @@ export class HealthCoachAgent extends BaseAgent {
   }
 
   async runAssignment(assignmentId, opts = {}) {
-    if (!opts.userId) {
-      opts.userId = this.deps.configService?.getHeadOfHousehold?.() || 'default';
-    }
-
-    await this.#primePersonalContext(opts.userId);
-
     // Thread personalContextLoader + patternDetector + calibrationConstants
     // through the assignment context so assignments (e.g. MorningBrief
     // F-003 / F-004 / F-007) can read user-specific playbook config
@@ -231,39 +197,12 @@ export class HealthCoachAgent extends BaseAgent {
     if (assignmentId === 'daily-dashboard' && result) {
       const writeTool = this.getTools().find(t => t.name === 'write_dashboard');
       if (writeTool) {
+        const userId = opts.userId ?? opts.context?.userId ?? null;
         const today = new Date().toISOString().split('T')[0];
-        await writeTool.execute({ userId: opts.userId, date: today, dashboard: result });
+        await writeTool.execute({ userId, date: today, dashboard: result });
       }
     }
 
     return result;
-  }
-
-  /**
-   * Chat-style entry point. Mirror `runAssignment` and pre-warm the personal-
-   * context cache before delegating to `BaseAgent.run` so the framework's sync
-   * `getSystemPrompt()` call inside `#assemblePrompt` always lands on cache hit.
-   * Without this, `POST /api/v1/agents/health-coach/run` would silently miss
-   * personal context.
-   */
-  async run(input, opts = {}) {
-    const userId = opts.userId || this.deps.configService?.getHeadOfHousehold?.() || null;
-    if (userId) {
-      await this.#primePersonalContext(userId);
-    }
-    return super.run(input, opts);
-  }
-
-  /**
-   * Set `#activeUserId` and (when a loader is wired) populate the cache for
-   * the user. Safe to call repeatedly; cache hits short-circuit.
-   * @private
-   */
-  async #primePersonalContext(userId) {
-    this.#activeUserId = userId;
-    const loader = this.deps.personalContextLoader;
-    if (loader) {
-      await this.#getPersonalContextBundle(userId, loader);
-    }
   }
 }
