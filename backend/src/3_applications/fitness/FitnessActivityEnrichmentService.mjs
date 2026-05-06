@@ -340,6 +340,24 @@ export class FitnessActivityEnrichmentService {
           }
         }
 
+        // Plausibility guard: an activity with real GPS distance should not
+        // be matched to a session that has zero distance AND no media. That
+        // is almost always a coincidental overlap (e.g. user came home from a
+        // run wearing the HR strap and triggered a treasureBox session).
+        const activityHasGpsDistance = (activity.distance || 0) > 100; // > 100 m
+        const sessionIsZeroDistanceNoMedia =
+          ((data.strava?.distance ?? 0) === 0)
+          && (!Array.isArray(data.summary?.media) || data.summary.media.length === 0);
+        if (activityHasGpsDistance && sessionIsZeroDistanceNoMedia) {
+          this.#logger.info?.('strava.enrichment.session_scan.rejected_by_sport_guard', {
+            activityId,
+            file: filename,
+            reason: 'outdoor-gps-vs-indoor-empty',
+            activityDistanceMeters: activity.distance,
+          });
+          continue;
+        }
+
         // Time-based matching
         const sessionTz = data.timezone || tz;
         const sessStart = moment.tz(data.session.start, sessionTz);
