@@ -79,7 +79,7 @@ export class StravaWebhookJobStore {
 
   /**
    * Find all jobs with a given status.
-   * @param {string} status - 'pending' | 'completed' | 'unmatched'
+   * @param {string} status - 'pending' | 'completed' | 'unmatched' | 'abandoned'
    * @returns {Array<Object>}
    */
   findByStatus(status) {
@@ -99,7 +99,8 @@ export class StravaWebhookJobStore {
   }
 
   /**
-   * Find all pending or unmatched jobs (for startup recovery).
+   * Find jobs eligible for re-attempt: pending and unmatched only.
+   * `completed` and `abandoned` jobs are terminal and excluded.
    * @returns {Array<Object>}
    */
   findActionable() {
