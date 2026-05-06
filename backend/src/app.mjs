@@ -2347,6 +2347,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const conciergeRouter = await createConciergeServices({
       configService,
       dataService,
+      agentOrchestrator: v1Routers.agents?.orchestrator ?? null,
+      workingMemory: v1Routers.agents?.workingMemory ?? null,
       contentQueryService: contentServices?.contentQueryService ?? null,
       contentRegistry,
       haGateway: homeAutomationAdapters?.haGateway ?? null,
