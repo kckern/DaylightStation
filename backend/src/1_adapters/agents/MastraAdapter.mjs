@@ -14,6 +14,24 @@ import crypto from 'node:crypto';
 import { AgentTranscript } from '#apps/agents/framework/AgentTranscript.mjs';
 
 /**
+ * Strip the `userId` parameter from a tool's JSON schema. The model never
+ * sees `userId` — the MastraAdapter merges it from context before invoking
+ * the tool's execute(). Confabulation becomes structurally impossible.
+ *
+ * Exported for testing.
+ */
+export function stripUserIdFromSchema(jsonSchema) {
+  if (!jsonSchema || jsonSchema.type !== 'object') return jsonSchema;
+  if (!jsonSchema.properties) return jsonSchema;
+  const out = { ...jsonSchema, properties: { ...jsonSchema.properties } };
+  delete out.properties.userId;
+  if (Array.isArray(out.required)) {
+    out.required = out.required.filter(k => k !== 'userId');
+  }
+  return out;
+}
+
+/**
  * Convert JSON Schema to Zod schema (simplified)
  * @param {Object} jsonSchema
  * @returns {z.ZodType}
@@ -100,9 +118,16 @@ export class MastraAdapter {
       mastraTools[tool.name] = mastraCreateTool({
         id: tool.name,
         description: tool.description,
-        inputSchema: jsonSchemaToZod(tool.parameters),
+        inputSchema: jsonSchemaToZod(stripUserIdFromSchema(tool.parameters)),
         execute: async (inputData) => {
           callCounter.count++;
+
+          // Adapter-injected userId wins over anything the model might pass.
+          // The schema strip means the model can't pass userId at all, but
+          // we belt-and-suspenders here for safety.
+          const args = { ...inputData };
+          if (context.userId) args.userId = context.userId;
+
           this.#logger.debug?.('tool.execute.call', {       // ← was info, now debug
             tool: tool.name,
             turnId: transcript?.turnId,
@@ -119,7 +144,7 @@ export class MastraAdapter {
             });
             transcript?.recordTool({
               name: tool.name,
-              args: inputData,
+              args,
               result: { error: msg },
               ok: false,
               latencyMs: 0,
@@ -129,11 +154,11 @@ export class MastraAdapter {
 
           const startedAt = Date.now();
           try {
-            const result = await tool.execute(inputData, context);
+            const result = await tool.execute(args, context);
             const latencyMs = Date.now() - startedAt;
             transcript?.recordTool({
               name: tool.name,
-              args: inputData,
+              args,
               result,
               ok: !(result && typeof result === 'object' && 'error' in result),
               latencyMs,
@@ -148,7 +173,7 @@ export class MastraAdapter {
             });
             transcript?.recordTool({
               name: tool.name,
-              args: inputData,
+              args,
               result: { error: error.message },
               ok: false,
               latencyMs,
