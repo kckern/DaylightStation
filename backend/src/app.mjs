@@ -75,7 +75,7 @@ import {
   createDeviceLivenessService,
   broadcastEvent,
   createHarvesterServices,
-  createAgentsApiRouter,
+  createAgentsServices,
   createConciergeServices,
   createCostServices,
   createCostApiRouter,
@@ -90,8 +90,8 @@ import { createAIRouter } from './4_api/v1/routers/ai.mjs';
 // Health mentions router (CoachChat autocomplete)
 import { createHealthMentionsRouter } from './4_api/v1/routers/health-mentions.mjs';
 
-// SSE streaming agents router
-import { createAgentsStreamRouter } from './4_api/v1/routers/agents-stream.mjs';
+// Native-wire agent HTTP mounter
+import { mountAgentHttp } from './4_api/v1/agents/mountAgentHttp.mjs';
 
 // Feed harvester adapter for scheduler integration
 import { HeadlineHarvesterAdapter } from './1_adapters/feed/HeadlineHarvesterAdapter.mjs';
@@ -838,7 +838,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Health mentions router — powers CoachChat @-mention autocomplete dropdowns.
   // Mounted BEFORE the health router so /health/mentions/* is matched first.
-  // NOTE: healthAnalyticsService is set later (after createAgentsApiRouter) via
+  // NOTE: healthAnalyticsService is set later (after createAgentsServices) via
   // v1Routers.agents.healthAnalyticsService. See the re-assignment below.
   v1Routers.healthMentions = createHealthMentionsRouter({
     healthAnalyticsService: null,  // placeholder — replaced after agents router boots
@@ -1866,7 +1866,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     reconciliationReader: healthServices.reconciliationReader,
     healthStore: healthServices.healthStore,
     catalogService: healthServices.catalogService,
-    // Lazy proxy: agentOrchestrator is created later in createAgentsApiRouter
+    // Lazy proxy: agentOrchestrator is created later in createAgentsServices
     agentOrchestrator: { runAssignment: (...args) => v1Routers.agents?.orchestrator?.runAssignment(...args) },
     logger: rootLogger.child({ module: 'nutribot' })
   });
@@ -1966,8 +1966,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'homebot-api' })
   });
 
-  // Agents application router
-  v1Routers.agents = await createAgentsApiRouter({
+  // Agents services — build orchestrator + services without constructing a router
+  const agentsServices = await createAgentsServices({
     logger: rootLogger.child({ module: 'agents-api' }),
     healthStore: healthServices.healthStore,
     healthService: healthServices.healthService,
@@ -1991,12 +1991,35 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     },
   });
 
-  // SSE streaming router — mounts /:agentId/run-stream alongside the agents router
-  v1Routers.agentsStream = createAgentsStreamRouter({
-    orchestrator: v1Routers.agents.orchestrator,
-    logger: rootLogger.child({ module: 'agents-stream' }),
+  // Mount each registered agent's HTTP surface (run, run-stream, run-background) via mountAgentHttp
+  for (const { id: agentId } of agentsServices.orchestrator.list()) {
+    mountAgentHttp(app, {
+      orchestrator: agentsServices.orchestrator,
+      agentId,
+      mountPath: '/api/v1/agents',
+      wireFormat: 'native',
+      logger: rootLogger.child({ module: `agents/${agentId}` }),
+    });
+  }
+
+  // TEMPORARY (deleted in Tasks 4+5): legacy router for GET /, memory CRUD, assignments
+  const { createAgentsRouter } = await import('./4_api/v1/routers/agents.mjs');
+  v1Routers.agentsLegacy = createAgentsRouter({
+    agentOrchestrator: agentsServices.orchestrator,
+    workingMemory: agentsServices.workingMemory,
+    scheduler: agentsServices.scheduler,
+    logger: rootLogger.child({ module: 'agents-legacy' }),
   });
-  app.use('/api/v1/agents', v1Routers.agentsStream);
+  app.use('/api/v1/agents', v1Routers.agentsLegacy);
+
+  // Expose for downstream consumers (createHealthMentionsRouter, createConciergeServices, scheduler)
+  v1Routers.agents = {
+    orchestrator: agentsServices.orchestrator,
+    workingMemory: agentsServices.workingMemory,
+    scheduler: agentsServices.scheduler,
+    coachingOrchestrator: agentsServices.coachingOrchestrator,
+    healthAnalyticsService: agentsServices.healthAnalyticsService,
+  };
 
   // Re-create health mentions router now that healthAnalyticsService is available
   // from the agents router. This replaces the null-wired placeholder above so

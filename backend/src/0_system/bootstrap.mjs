@@ -209,8 +209,6 @@ import { YamlTocCacheDatastore } from '#adapters/persistence/yaml/YamlTocCacheDa
 import { MastraAdapter, YamlWorkingMemoryAdapter } from '#adapters/agents/index.mjs';
 import { LifeplanGuideAgent } from '#apps/agents/lifeplan-guide/LifeplanGuideAgent.mjs';
 import { YamlConversationStore } from '#adapters/agents/YamlConversationStore.mjs';
-import { createAgentsRouter } from '#api/v1/routers/agents.mjs';
-
 // Health domain + application imports
 import { AggregateHealthUseCase } from '#apps/health/AggregateHealthUseCase.mjs';
 import { ReconciliationProcessor } from '#apps/health/ReconciliationProcessor.mjs';
@@ -2910,9 +2908,9 @@ export function createCalendarApiRouter(config) {
  * @param {Object} [config.configService] - ConfigService for household/user config
  * @param {Object} [config.messagingGateway] - TelegramAdapter for outbound messaging (health coach)
  * @param {string} [config.conversationId] - Nutribot Telegram chat conversation ID (health coach)
- * @returns {express.Router}
+ * @returns {{ orchestrator, workingMemory, scheduler, coachingOrchestrator, healthAnalyticsService }}
  */
-export async function createAgentsApiRouter(config) {
+export async function createAgentsServices(config) {
   const {
     logger = console,
     healthStore,
@@ -3160,18 +3158,13 @@ export async function createAgentsApiRouter(config) {
     scheduledJobs: scheduler.list(),
   });
 
-  const router = createAgentsRouter({ agentOrchestrator, workingMemory, scheduler, logger });
-  // Expose orchestrator alongside router for cross-domain agent invocations (e.g., nutribot → health-coach)
-  router.orchestrator = agentOrchestrator;
-  // Expose scheduler for cross-domain task registration (e.g., journalist morning debrief)
-  router.scheduler = scheduler;
-  // Expose coaching orchestrator for direct invocations (e.g., post-report hook)
-  router.coachingOrchestrator = coachingOrchestrator;
-  // Expose workingMemory so createConciergeServices can share the same adapter instance
-  router.workingMemory = workingMemory;
-  // Expose healthAnalyticsService so app.mjs can wire it into the mentions router.
-  router.healthAnalyticsService = sharedHealthAnalyticsService;
-  return router;
+  return {
+    orchestrator: agentOrchestrator,
+    workingMemory,
+    scheduler,
+    coachingOrchestrator,
+    healthAnalyticsService: sharedHealthAnalyticsService,
+  };
 }
 
 // =============================================================================
@@ -3197,8 +3190,8 @@ export async function createAgentsApiRouter(config) {
  * @param {Object} config
  * @param {Object} config.configService         - ConfigService
  * @param {Object} config.dataService           - DataService for working memory (fallback only)
- * @param {Object} config.agentOrchestrator     - Shared AgentOrchestrator from createAgentsApiRouter
- * @param {Object} config.workingMemory         - Shared YamlWorkingMemoryAdapter from createAgentsApiRouter
+ * @param {Object} config.agentOrchestrator     - Shared AgentOrchestrator from createAgentsServices
+ * @param {Object} config.workingMemory         - Shared YamlWorkingMemoryAdapter from createAgentsServices
  * @param {Object} [config.contentQueryService] - ContentQueryService for MediaBundle
  * @param {Object} [config.contentRegistry]     - Optional — used to look up Plex labels for media policy
  * @param {Object} [config.haGateway]           - IHomeAutomationGateway for HA + Media bundles
@@ -3236,7 +3229,7 @@ export async function createConciergeServices(config) {
     process.env.OPENAI_API_KEY = openaiKey;
   }
 
-  // Shared workingMemory from createAgentsApiRouter (preferred). Fall back to a
+  // Shared workingMemory from createAgentsServices (preferred). Fall back to a
   // new instance only when called without the orchestrator (e.g., unit tests).
   const workingMemory = sharedWorkingMemory ?? new YamlWorkingMemoryAdapter({
     dataService,
@@ -3424,7 +3417,7 @@ export async function createConciergeServices(config) {
     // Log a warning — production should always pass agentOrchestrator.
     logger.warn?.('concierge.orchestrator.missing', {
       message: 'agentOrchestrator not provided — ConciergeAgent cannot be registered. '
-             + 'Pass agentOrchestrator from createAgentsApiRouter to enable the new path.',
+             + 'Pass agentOrchestrator from createAgentsServices to enable the new path.',
     });
   }
 
@@ -3478,7 +3471,7 @@ export async function createConciergeServices(config) {
   if (!chatCompletionRunner) {
     throw new Error(
       'createConciergeServices: agentOrchestrator is required. '
-      + 'Pass agentOrchestrator from createAgentsApiRouter.'
+      + 'Pass agentOrchestrator from createAgentsServices.'
     );
   }
 
