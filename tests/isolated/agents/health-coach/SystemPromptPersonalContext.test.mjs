@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { HealthCoachAgent } from '../../../../backend/src/3_applications/agents/health-coach/HealthCoachAgent.mjs';
-import { systemPrompt as staticSystemPrompt } from '../../../../backend/src/3_applications/agents/health-coach/prompts/system.mjs';
+import { dashboardPrompt as staticSystemPrompt } from '../../../../backend/src/3_applications/agents/health-coach/prompts/dashboard.mjs';
 
 // ---------------------------------------------------------------------------
 // Test doubles
@@ -67,7 +67,7 @@ function buildAgent({ personalContextLoader, logger } = {}) {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('HealthCoachAgent system prompt — named-pattern rules', () => {
+describe('HealthCoachAgent dashboard prompt — named-pattern rules', () => {
   it('instructs the LLM to reference detected patterns by name (F-005)', () => {
     expect(staticSystemPrompt).toMatch(/Detected Patterns/);
     expect(staticSystemPrompt).toMatch(/reference patterns BY NAME/i);
@@ -85,8 +85,8 @@ describe('HealthCoachAgent.getSystemPrompt — PersonalContext injection', () =>
 
     // Without a loader, calling with or without userId should return the
     // static prompt verbatim — no '## Personal Context' section appended.
-    const promptNoArg = await agent.getSystemPrompt();
-    const promptWithUser = await agent.getSystemPrompt('test-user');
+    const promptNoArg = await agent.getSystemPrompt({ mode: 'dashboard' });
+    const promptWithUser = await agent.getSystemPrompt({ mode: 'dashboard', userId: 'test-user' });
 
     expect(promptNoArg).toBe(staticSystemPrompt);
     expect(promptWithUser).toBe(staticSystemPrompt);
@@ -100,7 +100,7 @@ describe('HealthCoachAgent.getSystemPrompt — PersonalContext injection', () =>
     };
 
     const agent = buildAgent({ personalContextLoader });
-    const prompt = await agent.getSystemPrompt('test-user');
+    const prompt = await agent.getSystemPrompt({ mode: 'dashboard', userId: 'test-user' });
 
     // Static prompt must still be present in full.
     expect(prompt).toContain(staticSystemPrompt);
@@ -119,9 +119,9 @@ describe('HealthCoachAgent.getSystemPrompt — PersonalContext injection', () =>
 
     const agent = buildAgent({ personalContextLoader });
 
-    const a = await agent.getSystemPrompt('test-user');
-    const b = await agent.getSystemPrompt('test-user');
-    const c = await agent.getSystemPrompt('test-user');
+    const a = await agent.getSystemPrompt({ mode: 'dashboard', userId: 'test-user' });
+    const b = await agent.getSystemPrompt({ mode: 'dashboard', userId: 'test-user' });
+    const c = await agent.getSystemPrompt({ mode: 'dashboard', userId: 'test-user' });
 
     // Same content every time.
     expect(a).toBe(b);
@@ -132,7 +132,7 @@ describe('HealthCoachAgent.getSystemPrompt — PersonalContext injection', () =>
     // A different userId triggers a fresh load.
     const otherBundle = '## Personal Context\n\n### Profile\nOther user.\n';
     personalContextLoader.load.mockResolvedValueOnce(otherBundle);
-    const d = await agent.getSystemPrompt('other-user');
+    const d = await agent.getSystemPrompt({ mode: 'dashboard', userId: 'other-user' });
     expect(d).toContain('Other user.');
     expect(personalContextLoader.load).toHaveBeenCalledTimes(2);
   });
@@ -144,7 +144,7 @@ describe('HealthCoachAgent.getSystemPrompt — PersonalContext injection', () =>
     const logger = buildLogger();
 
     const agent = buildAgent({ personalContextLoader, logger });
-    const prompt = await agent.getSystemPrompt('test-user');
+    const prompt = await agent.getSystemPrompt({ mode: 'dashboard', userId: 'test-user' });
 
     // Falls back to static prompt — no Personal Context section.
     expect(prompt).toBe(staticSystemPrompt);
