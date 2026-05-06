@@ -1,0 +1,28 @@
+/**
+ * Create a CallLimiter decorator factory. The factory returns a decorator
+ * that shares a counter across all tools it wraps in one call. Wrapping a
+ * tool twice (or wrapping multiple tools in one chain) shares the counter.
+ *
+ * @param {{ maxToolCalls?: number }} opts
+ * @returns {import('./ToolDecorator.mjs').ToolDecorator}
+ */
+export function createCallLimiter({ maxToolCalls = 50 } = {}) {
+  const counter = { count: 0 };
+
+  return function callLimiter(tool, context = {}) {
+    return {
+      ...tool,
+      execute: async (args, ctx) => {
+        counter.count += 1;
+        if (counter.count > maxToolCalls) {
+          return {
+            error: `Tool call limit reached (${maxToolCalls}). Refusing further tool calls this turn.`,
+          };
+        }
+        return tool.execute(args, ctx);
+      },
+    };
+  };
+}
+
+export default createCallLimiter;
