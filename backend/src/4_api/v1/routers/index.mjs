@@ -5,7 +5,6 @@ export { createHealthRouter } from './health.mjs';
 export { createStaticRouter } from './static.mjs';
 
 // Domain routers - Agents & AI
-export { createAgentsRouter } from './agents.mjs';
 export { createAIRouter } from './ai.mjs';
 
 // Domain routers - Bots

@@ -2022,16 +2022,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
   app.use('/api/v1/agents', v1Routers.agentMeta);
 
-  // TEMPORARY (deleted in Task 6): legacy router — all routes now shadowed by dedicated routers above.
-  const { createAgentsRouter } = await import('./4_api/v1/routers/agents.mjs');
-  v1Routers.agentsLegacy = createAgentsRouter({
-    agentOrchestrator: agentsServices.orchestrator,
-    workingMemory: agentsServices.workingMemory,
-    scheduler: agentsServices.scheduler,
-    logger: rootLogger.child({ module: 'agents-legacy' }),
-  });
-  app.use('/api/v1/agents', v1Routers.agentsLegacy);
-
   // Expose for downstream consumers (createHealthMentionsRouter, createConciergeServices, scheduler)
   v1Routers.agents = {
     orchestrator: agentsServices.orchestrator,
