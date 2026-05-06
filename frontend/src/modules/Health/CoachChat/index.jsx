@@ -2,6 +2,7 @@
 import {
   AssistantRuntimeProvider,
   useLocalRuntime,
+  useMessage,
   ThreadPrimitive,
   ComposerPrimitive,
   MessagePrimitive,
@@ -10,6 +11,8 @@ import {
 import { useMemo, useEffect, useRef, useState } from 'react';
 import './CoachChat.scss';
 import { healthCoachChatModel } from './runtime.js';
+import { MarkdownText } from './MarkdownText.jsx';
+import { ToolCallAttribution } from './ToolCallAttribution.jsx';
 import { MENTION_CATEGORIES, fetchSuggestions, buildAttachment } from './mentions/index.js';
 import { Chip } from './chips/index.js';
 
@@ -20,25 +23,31 @@ import { Chip } from './chips/index.js';
  * MessagePrimitive). The plan's `Thread` and `Composer` named exports are not
  * present in v0.12.28 — the primitives namespaces are the correct API.
  *
- * @param {{ userId: string, style?: object }} props
+ * @param {{ userId: string, variant?: 'light'|'overlay', style?: object }} props
  */
-export function CoachChat({ userId, style }) {
+export function CoachChat({ userId, variant = 'light', style }) {
   // Mention insertions captured here; runtime adapter reads them on run().
   const pendingMentionsRef = useRef([]);
 
   const adapter = useMemo(() => ({
-    async run({ messages, abortSignal }) {
+    async *run({ messages, abortSignal }) {
       const attachments = [
         ...collectAttachments(messages),
         ...pendingMentionsRef.current,
       ];
       pendingMentionsRef.current = [];
-      return healthCoachChatModel.run({
-        messages,
-        userId,
-        attachments,
-        abortSignal,
-      });
+      for await (const chunk of healthCoachChatModel.runStream({ messages, userId, attachments, abortSignal })) {
+        // Map runStream output to ChatModelRunResult shape.
+        // Tool calls live in metadata.custom.toolCalls (assistant-ui's custom bucket).
+        yield {
+          content: chunk.content,
+          metadata: {
+            custom: {
+              toolCalls: chunk.metadata?.toolCalls ?? [],
+            },
+          },
+        };
+      }
     },
   }), [userId]);
 
@@ -108,7 +117,7 @@ export function CoachChat({ userId, style }) {
   });
 
   return (
-    <div className="coach-chat" style={style}>
+    <div className={`coach-chat${variant === 'overlay' ? ' coach-chat--overlay' : ''}`} style={style}>
       <AssistantRuntimeProvider runtime={runtime}>
         {/* Message thread */}
         <ThreadPrimitive.Root className="coach-chat__thread">
@@ -196,9 +205,25 @@ function UserMessage() {
 function AssistantMessage() {
   return (
     <MessagePrimitive.Root className="coach-chat__message coach-chat__message--assistant">
-      <MessagePrimitive.Parts />
+      <MessagePrimitive.Parts
+        components={{
+          Text: ({ text }) => <MarkdownText text={text || ''} />,
+        }}
+      />
+      <AssistantMessageToolCalls />
     </MessagePrimitive.Root>
   );
+}
+
+function AssistantMessageToolCalls() {
+  try {
+    // useMessage() returns the current ThreadAssistantMessage state.
+    // Tool calls are stored in metadata.custom.toolCalls (our custom bucket).
+    const toolCalls = useMessage((state) => state?.metadata?.custom?.toolCalls);
+    return <ToolCallAttribution toolCalls={toolCalls} />;
+  } catch {
+    return null;
+  }
 }
 
 function collectAttachments(messages) {
