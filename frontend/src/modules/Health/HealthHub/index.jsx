@@ -1,4 +1,5 @@
 import { Skeleton } from '@mantine/core';
+import './HealthHub.scss';
 import { WeightHeroCard } from './cards/WeightHeroCard.jsx';
 import { WorkoutsHeroCard } from './cards/WorkoutsHeroCard.jsx';
 import { CaloriesHeroCard } from './cards/CaloriesHeroCard.jsx';

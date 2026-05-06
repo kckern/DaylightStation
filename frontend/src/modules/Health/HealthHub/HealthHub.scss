@@ -1,0 +1,11 @@
+// Component-specific overrides only. Global hub layout lives in HealthApp.scss.
+
+.health-hub__hero .metric-card--hero {
+  min-height: 130px;
+  display: flex;
+  flex-direction: column;
+}
+
+.health-hub__hero .metric-card--hero .metric-card__sparkline {
+  margin-top: auto;
+}
