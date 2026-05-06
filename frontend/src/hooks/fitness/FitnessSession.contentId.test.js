@@ -53,11 +53,13 @@ describe('FitnessSession._getCurrentContentId pre-session fallback', () => {
     expect(session._getCurrentContentId()).toBe('plex:664042');
   });
 
-  it('setPendingContentId stores the value normalized when caller passes a bare id', () => {
+  it('round-trips a bare id through setPendingContentId → _getCurrentContentId as plex-prefixed', () => {
+    // Regression guard for the integration contract: even if a caller passes
+    // an unprefixed id (current play-queue items have only head.id, no
+    // contentId), the value read back via _getCurrentContentId is canonical.
+    // (Storage is bare; normalization happens on read.)
     const session = new FitnessSession();
     session.setPendingContentId('664042');
-    // Read via _getCurrentContentId (which we already test) to confirm the
-    // stored form is the prefixed one.
     expect(session._getCurrentContentId()).toBe('plex:664042');
   });
 });
