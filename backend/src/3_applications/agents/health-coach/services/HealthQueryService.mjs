@@ -18,7 +18,7 @@ export class HealthQueryService {
     this.#now = now;
   }
 
-  async query({ metric, period, granularity = 'daily', aggregate = 'none', group_by, filter, join, userId, ...rest }) {
+  async query({ metric, period, granularity = 'daily', aggregate = 'none', group_by, filter, join, correlate, rolling, userId, ...rest }) {
     if (!KNOWN_METRICS.has(metric)) {
       throw new Error(`HealthQueryService: unknown metric "${metric}"`);
     }
@@ -47,6 +47,11 @@ export class HealthQueryService {
       series = series.filter(row => filters.every(f => this.#matchesFilter(row, f)));
     }
 
+    // Rolling: transform series in-place before correlate/aggregate
+    if (rolling) {
+      series = this.#rollingSeries(series, rolling.fn, rolling.window);
+    }
+
     const meta = {
       metric,
       period,
@@ -54,6 +59,11 @@ export class HealthQueryService {
       n: series.length,
       generated_at: this.#now().toISOString(),
     };
+
+    // Correlate: return correlation result instead of aggregate
+    if (correlate) {
+      return { ...(await this.#correlate(series, correlate, userId, from, to)), meta };
+    }
 
     // Group by: bucket rows before aggregating
     if (group_by) {
@@ -249,6 +259,67 @@ export class HealthQueryService {
       case 'hr_minutes_zone2':     return workouts.reduce((s, w) => s + (w.zone2_min ?? 0), 0);
       default: return null;
     }
+  }
+
+  async #correlate(series, { with: otherMetric, method = 'pearson', lag = 0 }, userId, from, to) {
+    const otherRows = await this.#fetchSeries(otherMetric, userId, from, to);
+    const otherByDate = Object.fromEntries(otherRows.map(r => [r.date, r.value]));
+    const pairs = series
+      .map((r, i) => {
+        const otherIdx = i + lag;
+        const otherDate = series[otherIdx]?.date;
+        return otherDate ? { x: r.value, y: otherByDate[otherDate] } : null;
+      })
+      .filter(p => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+
+    if (pairs.length < 2) return { r: null, n: pairs.length };
+
+    if (method === 'spearman') {
+      const rankX = this.#ranks(pairs.map(p => p.x));
+      const rankY = this.#ranks(pairs.map(p => p.y));
+      return { r: this.#pearson(rankX, rankY), n: pairs.length, method: 'spearman' };
+    }
+    return { r: this.#pearson(pairs.map(p => p.x), pairs.map(p => p.y)), n: pairs.length, method: 'pearson' };
+  }
+
+  #pearson(xs, ys) {
+    const n = xs.length;
+    const mx = xs.reduce((s, v) => s + v, 0) / n;
+    const my = ys.reduce((s, v) => s + v, 0) / n;
+    let num = 0, dx = 0, dy = 0;
+    for (let i = 0; i < n; i++) {
+      num += (xs[i] - mx) * (ys[i] - my);
+      dx  += (xs[i] - mx) ** 2;
+      dy  += (ys[i] - my) ** 2;
+    }
+    return dx * dy === 0 ? null : num / Math.sqrt(dx * dy);
+  }
+
+  #ranks(vs) {
+    const sorted = vs.map((v, i) => ({ v, i })).sort((a, b) => a.v - b.v);
+    const ranks = new Array(vs.length);
+    sorted.forEach((entry, rank) => { ranks[entry.i] = rank + 1; });
+    return ranks;
+  }
+
+  #rollingSeries(series, fn, window) {
+    const out = [];
+    for (let i = 0; i < series.length; i++) {
+      if (i + 1 < window) { out.push({ ...series[i], value: null }); continue; }
+      const slice = series.slice(i - window + 1, i + 1).map(r => r.value).filter(v => Number.isFinite(v));
+      let v = null;
+      if (slice.length === window) {
+        switch (fn) {
+          case 'mean': v = slice.reduce((s, x) => s + x, 0) / slice.length; break;
+          case 'sum':  v = slice.reduce((s, x) => s + x, 0); break;
+          case 'min':  v = Math.min(...slice); break;
+          case 'max':  v = Math.max(...slice); break;
+          default: throw new Error(`HealthQueryService: unsupported rolling fn "${fn}"`);
+        }
+      }
+      out.push({ ...series[i], value: v });
+    }
+    return out;
   }
 }
 
