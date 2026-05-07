@@ -2,6 +2,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { UserModelService } from '../../../../../backend/src/3_applications/agents/health-coach/services/UserModelService.mjs';
 
+const FROZEN_NOW = () => new Date('2026-05-07T12:00:00Z');
+
 describe('UserModelService.composeContext', () => {
   it('composes a markdown block of profile + baselines', async () => {
     const profile = { weight_lbs: 175, height_cm: 180, age: 38, sex: 'M' };
@@ -20,6 +22,7 @@ describe('UserModelService.composeContext', () => {
     const svc = new UserModelService({
       personalConstantsService: { get: vi.fn(async () => profile) },
       baselineService: { getBaselines: vi.fn(async () => baselines) },
+      now: FROZEN_NOW,
     });
     const ctx = await svc.composeContext({ userId: 'kckern' });
     expect(ctx).toMatch(/Your model of this user/i);
@@ -34,6 +37,7 @@ describe('UserModelService.composeContext', () => {
     const svc = new UserModelService({
       personalConstantsService: { get: vi.fn(async () => ({})) },
       baselineService: { getBaselines: vi.fn(async () => null) },
+      now: FROZEN_NOW,
     });
     const ctx = await svc.composeContext({ userId: 'kckern' });
     expect(ctx).toMatch(/No baselines available yet/i);
@@ -49,6 +53,7 @@ describe('UserModelService.composeContext', () => {
     const svc = new UserModelService({
       personalConstantsService: { get: vi.fn(async () => ({ weight_lbs: 175 })) },
       baselineService: { getBaselines: vi.fn(async () => baselines) },
+      now: FROZEN_NOW,
     });
     const ctx = await svc.composeContext({ userId: 'kckern' });
     expect(ctx).toMatch(/Workouts: 0\.4\/wk/);
@@ -63,6 +68,7 @@ describe('UserModelService.composeContext', () => {
     const svc = new UserModelService({
       personalConstantsService: { get: vi.fn(async () => ({ weight_lbs: 175 })) },
       baselineService: { getBaselines: vi.fn(async () => { throw new Error('boom'); }) },
+      now: FROZEN_NOW,
     });
     const ctx = await svc.composeContext({ userId: 'kckern' });
     expect(ctx).toMatch(/175 lbs/);
@@ -73,8 +79,31 @@ describe('UserModelService.composeContext', () => {
     const svc = new UserModelService({
       personalConstantsService: { get: vi.fn(async () => { throw new Error('boom'); }) },
       baselineService: { getBaselines: vi.fn(async () => null) },
+      now: FROZEN_NOW,
     });
     const ctx = await svc.composeContext({ userId: 'kckern' });
     expect(ctx).toMatch(/Your model of this user/i);
+  });
+
+  it('includes Today section with date and weekday', async () => {
+    const svc = new UserModelService({
+      personalConstantsService: { get: vi.fn(async () => ({})) },
+      baselineService: { getBaselines: vi.fn(async () => null) },
+      now: () => new Date('2026-05-07T12:00:00Z'),  // Thursday
+    });
+    const ctx = await svc.composeContext({ userId: 'kckern' });
+    expect(ctx).toMatch(/### Today/);
+    expect(ctx).toMatch(/Date: 2026-05-07 \(Thursday\)/);
+    expect(ctx).toMatch(/ground truth.*relative days/i);
+  });
+
+  it('uses ISO date format consistently', async () => {
+    const svc = new UserModelService({
+      personalConstantsService: { get: vi.fn(async () => ({})) },
+      baselineService: { getBaselines: vi.fn(async () => null) },
+      now: () => new Date('2026-01-01T00:00:00Z'),  // Thursday
+    });
+    const ctx = await svc.composeContext({ userId: 'kckern' });
+    expect(ctx).toMatch(/Date: 2026-01-01 \(Thursday\)/);
   });
 });
