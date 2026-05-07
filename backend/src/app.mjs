@@ -1990,6 +1990,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // TODO: derive chatId from user identity mapping instead of hardcoding
     conversationId: '575596036',
     nutriListStore: healthServices.nutriListStore,
+    // Task 9: pass foodLogStore so NutritionEventAdapter can be wired for baselines
+    foodLogStore: nutribotServices.foodLogStore,
     lifeplanServices: {
       container: lifeplanResult.container,
       services: lifeplanResult.services,
