@@ -18,7 +18,7 @@ export class FitnessEventAdapter extends EventAdapter {
     this.#now = now;
   }
 
-  async list({ period, filter, limit }) {
+  async list({ period, filter, limit }, { baseline = null } = {}) {
     const { from, to } = resolvePeriod(period, this.#now);
     const sessions = await this.#sessionService.listSessionsInRange(from, to, this.#householdId);
     let events = sessions.map(s => this.#sessionToEvent(s));
@@ -33,6 +33,8 @@ export class FitnessEventAdapter extends EventAdapter {
     if (events.length > 0 && events.length <= 3) {
       events = await Promise.all(events.map(e => this.#hydrate(e)));
     }
+
+    if (baseline) events = events.map(e => this.#annotateBaseline(e, baseline));
 
     return { events, meta: { kind: 'workout', period, n: events.length } };
   }
@@ -150,6 +152,28 @@ export class FitnessEventAdapter extends EventAdapter {
         hr_stats,
       },
     };
+  }
+
+  #annotateBaseline(event, baseline) {
+    const kind = event.domain_extras?.kind_canonical;
+    // Only run / strength have baselines in PersonalBaselineService output.
+    const b = (kind === 'run' && baseline?.run) || (kind === 'strength' && baseline?.strength) || null;
+    if (!b) return event;
+
+    const compare = (typical, actual) => {
+      if (typical == null || actual == null || !Number.isFinite(typical) || !Number.isFinite(actual)) return null;
+      const delta = Math.round((actual - typical) * 10) / 10;
+      const delta_pct = typical !== 0 ? Math.round(((actual - typical) / typical) * 1000) / 10 : null;
+      return { typical, delta, delta_pct };
+    };
+
+    const vs = {};
+    const dm = compare(b.median_duration_min, event.scalars?.duration_min); if (dm) vs.duration_min = dm;
+    const ha = compare(b.median_hr_avg,        event.scalars?.hr_avg);       if (ha) vs.hr_avg = ha;
+    const hx = compare(b.median_hr_max,        event.scalars?.hr_max);       if (hx) vs.hr_max = hx;
+    const di = compare(b.median_distance_mi,   event.scalars?.distance_mi);  if (di) vs.distance_mi = di;
+    if (Object.keys(vs).length === 0) return event;
+    return { ...event, vs_baseline: vs };
   }
 
   #extractVoiceMemos(session) {
