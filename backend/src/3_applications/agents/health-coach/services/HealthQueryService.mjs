@@ -18,14 +18,34 @@ export class HealthQueryService {
     this.#now = now;
   }
 
-  async query({ metric, period, granularity = 'daily', aggregate = 'none', userId, ...rest }) {
+  async query({ metric, period, granularity = 'daily', aggregate = 'none', group_by, filter, join, userId, ...rest }) {
     if (!KNOWN_METRICS.has(metric)) {
       throw new Error(`HealthQueryService: unknown metric "${metric}"`);
     }
     if (!userId) throw new Error('HealthQueryService: userId required');
 
     const { from, to } = this.#resolvePeriod(period);
-    const series = await this.#fetchSeries(metric, userId, from, to);
+    let series = await this.#fetchSeries(metric, userId, from, to);
+
+    // Join: pull other metrics onto each row by date (applied first)
+    if (join?.length) {
+      const joined = {};
+      for (const otherMetric of join) {
+        const otherRows = await this.#fetchSeries(otherMetric, userId, from, to);
+        joined[otherMetric] = Object.fromEntries(otherRows.map(r => [r.date, r.value]));
+      }
+      series = series.map(row => {
+        const out = { ...row };
+        for (const m of join) out[m] = joined[m]?.[row.date] ?? null;
+        return out;
+      });
+    }
+
+    // Filter: chainable AND constraints (applied after join)
+    if (filter?.length) {
+      const filters = Array.isArray(filter) ? filter : [filter];
+      series = series.filter(row => filters.every(f => this.#matchesFilter(row, f)));
+    }
 
     const meta = {
       metric,
@@ -35,12 +55,66 @@ export class HealthQueryService {
       generated_at: this.#now().toISOString(),
     };
 
-    if (aggregate === 'none' || aggregate === undefined) {
+    // Group by: bucket rows before aggregating
+    if (group_by) {
+      const groups = this.#groupBy(series, group_by, aggregate === 'none' ? 'mean' : aggregate);
+      return { groups, meta };
+    }
+
+    return this.#aggregate(series, aggregate, meta);
+  }
+
+  #matchesFilter(row, { field, op, value }) {
+    const lhs = row[field];
+    switch (op) {
+      case '<':      return lhs < value;
+      case '<=':     return lhs <= value;
+      case '==':     return lhs === value;
+      case '>':      return lhs > value;
+      case '>=':     return lhs >= value;
+      case 'in':     return Array.isArray(value) && value.includes(lhs);
+      case 'not_in': return Array.isArray(value) && !value.includes(lhs);
+      default: throw new Error(`HealthQueryService: unknown filter op "${op}"`);
+    }
+  }
+
+  #groupBy(series, key, aggregate) {
+    const buckets = new Map();
+    for (const row of series) {
+      const k = this.#bucketKey(row, key);
+      if (!buckets.has(k)) buckets.set(k, []);
+      buckets.get(k).push(row);
+    }
+    const out = {};
+    for (const [k, rows] of buckets) {
+      const r = this.#aggregate(rows, aggregate, { metric: '', period: {}, granularity: '', n: rows.length, generated_at: '' });
+      out[k] = { value: r.value, count: r.count };
+    }
+    return out;
+  }
+
+  #bucketKey(row, key) {
+    if (key === 'day_of_week') {
+      const day = new Date(row.date + 'T00:00:00Z').getUTCDay();  // 0 = Sun
+      return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][day];
+    }
+    if (key === 'weekday_vs_weekend') {
+      const day = new Date(row.date + 'T00:00:00Z').getUTCDay();
+      return (day === 0 || day === 6) ? 'weekend' : 'weekday';
+    }
+    if (key === 'month') return row.date.slice(0, 7);
+    if (key === 'year')  return row.date.slice(0, 4);
+    throw new Error(`HealthQueryService: unsupported group_by "${key}"`);
+  }
+
+  #aggregate(series, aggregate, meta) {
+    const op = typeof aggregate === 'string' ? aggregate : (aggregate?.op ?? 'none');
+    const opts = typeof aggregate === 'object' ? aggregate : {};
+
+    if (op === 'none' || op === undefined) {
       return { rows: series, meta };
     }
 
-    const op = typeof aggregate === 'string' ? aggregate : aggregate.op;
-    const opts = typeof aggregate === 'object' ? aggregate : {};
     const values = series.map(r => r.value).filter(v => v !== null && v !== undefined && Number.isFinite(v));
 
     switch (op) {
