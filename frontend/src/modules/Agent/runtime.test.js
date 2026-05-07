@@ -162,3 +162,101 @@ describe('createAgentRuntime(...).runStream (async generator)', () => {
     })()).rejects.toThrow(/boom/);
   });
 });
+
+describe('createAgentRuntime("health-coach").run — messages forwarding', () => {
+  let originalFetch;
+  beforeEach(() => { originalFetch = globalThis.fetch; });
+  afterEach(() => { globalThis.fetch = originalFetch; });
+
+  it('ships full messages array (capped at 20) along with input', async () => {
+    let captured;
+    globalThis.fetch = vi.fn(async (url, opts) => {
+      captured = JSON.parse(opts.body);
+      return { ok: true, status: 200, json: async () => ({ output: 'ok', toolCalls: [] }) };
+    });
+    const runtime = createAgentRuntime('health-coach');
+    const messages = [
+      { role: 'user', content: 'first' },
+      { role: 'assistant', content: 'reply' },
+      { role: 'user', content: 'last' },
+    ];
+    await runtime.run({ messages, userId: 'kckern' });
+    expect(captured.messages).toHaveLength(3);
+    expect(captured.messages[0]).toEqual({ role: 'user', content: 'first' });
+    expect(captured.messages[2]).toEqual({ role: 'user', content: 'last' });
+    expect(captured.input).toBe('last');
+  });
+
+  it('caps shipped messages to last 20', async () => {
+    let captured;
+    globalThis.fetch = vi.fn(async (url, opts) => {
+      captured = JSON.parse(opts.body);
+      return { ok: true, status: 200, json: async () => ({ output: 'ok', toolCalls: [] }) };
+    });
+    const runtime = createAgentRuntime('health-coach');
+    const messages = Array.from({ length: 30 }, (_, i) => ({
+      role: i % 2 ? 'assistant' : 'user',
+      content: `m${i}`,
+    }));
+    await runtime.run({ messages, userId: 'kckern' });
+    expect(captured.messages).toHaveLength(20);
+    expect(captured.messages[0].content).toBe('m10');
+    expect(captured.messages[19].content).toBe('m29');
+  });
+
+  it('flattens content arrays (assistant-ui shape) to plain strings', async () => {
+    let captured;
+    globalThis.fetch = vi.fn(async (url, opts) => {
+      captured = JSON.parse(opts.body);
+      return { ok: true, status: 200, json: async () => ({ output: 'ok', toolCalls: [] }) };
+    });
+    const runtime = createAgentRuntime('health-coach');
+    const messages = [
+      { role: 'user', content: [{ type: 'text', text: 'hi' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'hello' }, { type: 'text', text: '!' }] },
+    ];
+    await runtime.run({ messages, userId: 'kckern' });
+    expect(captured.messages).toEqual([
+      { role: 'user', content: 'hi' },
+      { role: 'assistant', content: 'hello!' },
+    ]);
+  });
+
+  it('drops messages with no extractable text', async () => {
+    let captured;
+    globalThis.fetch = vi.fn(async (url, opts) => {
+      captured = JSON.parse(opts.body);
+      return { ok: true, status: 200, json: async () => ({ output: 'ok', toolCalls: [] }) };
+    });
+    const runtime = createAgentRuntime('health-coach');
+    const messages = [
+      { role: 'user', content: 'a' },
+      { role: 'assistant', content: [{ type: 'image', url: '/foo.png' }] },  // no text part
+      { role: 'user', content: 'b' },
+    ];
+    await runtime.run({ messages, userId: 'kckern' });
+    expect(captured.messages).toEqual([
+      { role: 'user', content: 'a' },
+      { role: 'user', content: 'b' },
+    ]);
+  });
+
+  it('drops messages with invalid roles', async () => {
+    let captured;
+    globalThis.fetch = vi.fn(async (url, opts) => {
+      captured = JSON.parse(opts.body);
+      return { ok: true, status: 200, json: async () => ({ output: 'ok', toolCalls: [] }) };
+    });
+    const runtime = createAgentRuntime('health-coach');
+    const messages = [
+      { role: 'user', content: 'a' },
+      { role: 'frog', content: 'b' },
+      { role: 'assistant', content: 'c' },
+    ];
+    await runtime.run({ messages, userId: 'kckern' });
+    expect(captured.messages).toEqual([
+      { role: 'user', content: 'a' },
+      { role: 'assistant', content: 'c' },
+    ]);
+  });
+});

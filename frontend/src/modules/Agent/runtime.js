@@ -32,6 +32,7 @@ export function createAgentRuntime(agentId) {
         body: JSON.stringify({
           input: text,
           context: { userId, attachments },
+          messages: serializeMessages(messages),
         }),
       });
 
@@ -54,7 +55,7 @@ export function createAgentRuntime(agentId) {
       const res = await fetch(streamUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: text, context: { userId, attachments } }),
+        body: JSON.stringify({ input: text, context: { userId, attachments }, messages: serializeMessages(messages) }),
         signal: abortSignal,
       });
 
@@ -125,6 +126,32 @@ function extractText(msg) {
       .join('\n');
   }
   return '';
+}
+
+const VALID_ROLES = new Set(['user', 'assistant', 'system']);
+const MAX_MESSAGES = 20;
+
+function messageContentText(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter(p => p && typeof p === 'object' && p.type === 'text' && typeof p.text === 'string')
+      .map(p => p.text)
+      .join('');
+  }
+  return null;
+}
+
+function serializeMessages(messages) {
+  if (!Array.isArray(messages)) return [];
+  const out = [];
+  for (const m of messages) {
+    if (!m || !VALID_ROLES.has(m.role)) continue;
+    const text = messageContentText(m.content);
+    if (typeof text !== 'string' || text.length === 0) continue;
+    out.push({ role: m.role, content: text });
+  }
+  return out.length > MAX_MESSAGES ? out.slice(out.length - MAX_MESSAGES) : out;
 }
 
 export default createAgentRuntime;
