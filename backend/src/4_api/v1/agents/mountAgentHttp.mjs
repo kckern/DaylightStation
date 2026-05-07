@@ -61,9 +61,9 @@ function mountNative({ app, mountPath, agentId, orchestrator, wire, authMiddlewa
 
   router.post(`/${agentId}/run`, async (req, res) => {
     try {
-      const { input, context } = wire.parseRequest(req);
+      const { input, context, messages } = wire.parseRequest(req);
       if (!input) return wire.respondError(res, new Error('input is required'));
-      const merged = mergeContext(context, contextExtractor, req);
+      const merged = { ...mergeContext(context, contextExtractor, req), messages };
       logger.info?.('agents.run.request', { agentId, inputLength: input.length });
       const result = await orchestrator.run(agentId, input, merged);
       wire.respondSync(res, result, { agentId });
@@ -75,9 +75,9 @@ function mountNative({ app, mountPath, agentId, orchestrator, wire, authMiddlewa
 
   router.post(`/${agentId}/run-stream`, async (req, res) => {
     try {
-      const { input, context } = wire.parseRequest(req);
+      const { input, context, messages } = wire.parseRequest(req);
       if (!input) return wire.respondError(res, new Error('input is required'));
-      const merged = mergeContext(context, contextExtractor, req);
+      const merged = { ...mergeContext(context, contextExtractor, req), messages };
       const iter = orchestrator.streamExecute(agentId, input, merged);
       await wire.respondStream(res, iter, { agentId, logger });
     } catch (err) {
@@ -88,9 +88,9 @@ function mountNative({ app, mountPath, agentId, orchestrator, wire, authMiddlewa
 
   router.post(`/${agentId}/run-background`, async (req, res) => {
     try {
-      const { input, context } = wire.parseRequest(req);
+      const { input, context, messages } = wire.parseRequest(req);
       if (!input) return wire.respondError(res, new Error('input is required'));
-      const merged = mergeContext(context, contextExtractor, req);
+      const merged = { ...mergeContext(context, contextExtractor, req), messages };
       logger.info?.('agents.runBackground.request', { agentId });
       const { taskId } = await orchestrator.runInBackground(agentId, input, merged);
       res.status(202).json({ agentId, taskId, status: 'accepted' });

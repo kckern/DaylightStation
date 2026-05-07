@@ -56,7 +56,10 @@ export class BaseAgent {
   async run(input, { userId, context = {} } = {}) {
     // userId may also be inside context (orchestrator path)
     const effectiveUserId = userId ?? context?.userId ?? null;
-    const augmentedContext = { mode: 'chat', ...context, userId: effectiveUserId };
+    // Extract messages from context so it travels as a peer field, not nested inside context.
+    const { messages: rawMessages, ...restContext } = context || {};
+    const messages = Array.isArray(rawMessages) ? rawMessages : [];
+    const augmentedContext = { mode: 'chat', ...restContext, userId: effectiveUserId };
 
     const memory = effectiveUserId
       ? await this.#workingMemory.load(this.constructor.id, effectiveUserId)
@@ -65,6 +68,7 @@ export class BaseAgent {
     const result = await this.#agentRuntime.execute({
       agent: this,
       input,
+      messages,
       tools: this.getTools(),
       systemPrompt: await this.#assemblePrompt(memory, augmentedContext),
       context: { ...augmentedContext, memory },
@@ -87,7 +91,10 @@ export class BaseAgent {
    */
   async *runStream(input, { userId, context = {} } = {}) {
     const effectiveUserId = userId ?? context?.userId ?? null;
-    const augmentedContext = { mode: 'chat', ...context, userId: effectiveUserId };
+    // Extract messages from context so it travels as a peer field, not nested inside context.
+    const { messages: rawMessages, ...restContext } = context || {};
+    const messages = Array.isArray(rawMessages) ? rawMessages : [];
+    const augmentedContext = { mode: 'chat', ...restContext, userId: effectiveUserId };
 
     const memory = effectiveUserId
       ? await this.#workingMemory.load(this.constructor.id, effectiveUserId)
@@ -96,6 +103,7 @@ export class BaseAgent {
     const stream = this.#agentRuntime.streamExecute({
       agent: this,
       input,
+      messages,
       tools: this.getTools(),
       systemPrompt: await this.#assemblePrompt(memory, augmentedContext),
       context: { ...augmentedContext, memory },
