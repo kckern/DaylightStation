@@ -4,6 +4,20 @@ const SUPPORTED_KINDS = new Set(['workout']);  // future: 'meal', 'weigh_in'
 
 const ALLOWED_FILTER_KEYS = new Set(['type', 'kind']);
 
+const KIND_MAP = {
+  Run: 'run', TrailRun: 'run', VirtualRun: 'run',
+  Ride: 'cycle', VirtualRide: 'cycle', EBikeRide: 'cycle', GravelRide: 'cycle', MountainBikeRide: 'cycle',
+  WeightTraining: 'strength', Crossfit: 'strength', Workout: 'strength',
+  Walk: 'walk', Hike: 'walk',
+  Yoga: 'yoga',
+  Swim: 'swim',
+};
+
+export function normalizeKind(stravaType) {
+  if (!stravaType) return 'other';
+  return KIND_MAP[stravaType] || 'other';
+}
+
 export function validateFilter(filter) {
   if (filter === null || filter === undefined) return;
   if (typeof filter !== 'object' || Array.isArray(filter)) {
@@ -39,6 +53,7 @@ export class EventQueryService {
       const sessions = await this.#sessionService.listSessionsInRange(from, to, this.#householdId);
       let events = sessions.map(s => this.#sessionToEvent(s));
       if (filter?.type) events = events.filter(e => e.type === filter.type);
+      if (filter?.kind) events = events.filter(e => e.kind === filter.kind);
       if (limit) events = events.slice(0, limit);
 
       // Eager hydration for narrow questions: when result set is small, fold the
@@ -141,6 +156,7 @@ export class EventQueryService {
       session_id: s.sessionId?.toString?.() ?? String(s.sessionId),
       strava_id: s.strava?.id ?? null,
       type: s.strava?.type ?? 'Workout',
+      kind: normalizeKind(s.strava?.type),
       name: s.strava?.name ?? null,
       date: iso ? iso.slice(0, 10) : null,
       start_time: iso,

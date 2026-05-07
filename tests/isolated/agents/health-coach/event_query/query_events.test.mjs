@@ -182,3 +182,34 @@ describe('EventQueryService.queryEvents — eager hydration (n ≤ 3)', () => {
     expect(r.events[0].hr_stats).toBeUndefined();
   });
 });
+
+describe('EventQueryService.queryEvents — canonical kind', () => {
+  it('attaches canonical kind to each row', async () => {
+    const sessions = [
+      { sessionId: '1', startTime: '2026-05-07T06:00:00Z', durationMs: 60_000, strava: { id: 1, type: 'TrailRun' }, metadata: {} },
+      { sessionId: '2', startTime: '2026-05-06T06:00:00Z', durationMs: 60_000, strava: { id: 2, type: 'WeightTraining' }, metadata: {} },
+    ];
+    const svc = new EventQueryService({
+      sessionService: { listSessionsInRange: vi.fn(async () => sessions) },
+      householdId: 'kckern',
+    });
+    const r = await svc.queryEvents({ kind: 'workout', period: { rolling: 'last_7d' } });
+    expect(r.events[0].kind).toBe('run');
+    expect(r.events[1].kind).toBe('strength');
+  });
+
+  it('filters by canonical kind', async () => {
+    const sessions = [
+      { sessionId: '1', startTime: '2026-05-07T06:00:00Z', durationMs: 60_000, strava: { id: 1, type: 'TrailRun' }, metadata: {} },
+      { sessionId: '2', startTime: '2026-05-06T06:00:00Z', durationMs: 60_000, strava: { id: 2, type: 'WeightTraining' }, metadata: {} },
+    ];
+    const svc = new EventQueryService({
+      sessionService: { listSessionsInRange: vi.fn(async () => sessions) },
+      householdId: 'kckern',
+    });
+    const r = await svc.queryEvents({ kind: 'workout', period: { rolling: 'last_7d' }, filter: { kind: 'strength' } });
+    expect(r.events).toHaveLength(1);
+    expect(r.events[0].type).toBe('WeightTraining');
+    expect(r.events[0].kind).toBe('strength');
+  });
+});
