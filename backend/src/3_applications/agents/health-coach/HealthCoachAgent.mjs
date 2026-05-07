@@ -14,10 +14,89 @@ import { DailyDashboard } from './assignments/DailyDashboard.mjs';
 import { chatPrompt } from './prompts/chat.mjs';
 import { dashboardPrompt } from './prompts/dashboard.mjs';
 import { loadSeedIfEmpty } from './playbooks/seedLoader.mjs';
+import { FitnessEventAdapter }    from './services/adapters/FitnessEventAdapter.mjs';
+import { NutritionEventAdapter }  from './services/adapters/NutritionEventAdapter.mjs';
+import { WeightEventAdapter }     from './services/adapters/WeightEventAdapter.mjs';
+import { PersonalBaselineService } from './services/PersonalBaselineService.mjs';
+import { UserModelService }        from './services/UserModelService.mjs';
+import { healthCoachWorkingMemorySchema } from './memory/workingMemorySchema.mjs';
+import { FoodLogService } from '#domains/nutrition/services/FoodLogService.mjs';
 
 export class HealthCoachAgent extends BaseAgent {
   static id = 'health-coach';
   static description = 'Health coaching and fitness dashboard agent';
+
+  // ---------------------------------------------------------------------------
+  // Infrastructure declarations (consumed by bootstrap in T4)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Memory configuration for this agent.
+   * @returns {{ lastMessages: number, workingMemory: object }}
+   */
+  static getMemoryConfig() {
+    return {
+      lastMessages: 20,
+      workingMemory: {
+        enabled: true,
+        scope: 'resource',
+        schema: healthCoachWorkingMemorySchema,
+      },
+    };
+  }
+
+  /**
+   * Build the domain adapters map from available infrastructure deps.
+   * Each adapter is null when its required service is not available.
+   *
+   * Note: `foodLogStore` (not `foodLogService`) is accepted here — FoodLogService
+   * is constructed inline so bootstrap does not need to build it separately.
+   *
+   * @param {{ sessionService?, foodLogStore?, healthService?, householdId?, defaultUserId? }} [deps]
+   * @returns {{ workout, meal, weigh_in }}
+   */
+  static getDomainAdapters({ sessionService, foodLogStore, healthService, householdId, defaultUserId } = {}) {
+    return {
+      workout:  sessionService
+        ? new FitnessEventAdapter({ sessionService, householdId })
+        : null,
+      meal:     foodLogStore
+        ? new NutritionEventAdapter({
+            foodLogService: new FoodLogService({ foodLogStore }),
+            userId: defaultUserId,
+          })
+        : null,
+      weigh_in: healthService
+        ? new WeightEventAdapter({ healthService, userId: defaultUserId })
+        : null,
+    };
+  }
+
+  /**
+   * Build a PersonalBaselineService from adapters + dataService.
+   * Returns null when either required dep is absent.
+   *
+   * @param {{ adapters?, dataService? }} [deps]
+   * @returns {PersonalBaselineService|null}
+   */
+  static getBaselineService({ adapters, dataService } = {}) {
+    if (!dataService || !adapters) return null;
+    return new PersonalBaselineService({ adapters, dataService });
+  }
+
+  /**
+   * Build a UserModelService from personalConstantsService + baselineService.
+   * Returns null when either required dep is absent.
+   *
+   * @param {{ personalConstantsService?, baselineService? }} [deps]
+   * @returns {UserModelService|null}
+   */
+  static getUserModelService({ personalConstantsService, baselineService } = {}) {
+    if (!personalConstantsService || !baselineService) return null;
+    return new UserModelService({ personalConstantsService, baselineService });
+  }
+
+  // ---------------------------------------------------------------------------
 
   /**
    * Per-userId cache of rendered personal-context bundles. Populated lazily on
