@@ -1,10 +1,15 @@
 // tests/isolated/agents/health-coach/filter_validation/filter_contract.test.mjs
 import { describe, it, expect, vi } from 'vitest';
 import { EventQueryService } from '../../../../../backend/src/3_applications/agents/health-coach/services/EventQueryService.mjs';
+import { FitnessEventAdapter } from '../../../../../backend/src/3_applications/agents/health-coach/services/adapters/FitnessEventAdapter.mjs';
 
 const makeSvc = (sessions = []) => new EventQueryService({
-  sessionService: { listSessionsInRange: vi.fn(async () => sessions) },
-  householdId: 'kckern',
+  adapters: {
+    workout: new FitnessEventAdapter({
+      sessionService: { listSessionsInRange: vi.fn(async () => sessions) },
+      householdId: 'kckern',
+    }),
+  },
 });
 
 describe('queryEvents — filter contract', () => {

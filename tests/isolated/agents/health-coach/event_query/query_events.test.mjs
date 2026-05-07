@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { EventQueryService } from '../../../../../backend/src/3_applications/agents/health-coach/services/EventQueryService.mjs';
+import { FitnessEventAdapter } from '../../../../../backend/src/3_applications/agents/health-coach/services/adapters/FitnessEventAdapter.mjs';
 
 function makeSession({ sessionId, startTime, durationMs, type = 'Run', stravaId = null, hr_avg = 140, hr_max = 175, distance_mi = 4.2 }) {
   return {
@@ -13,10 +14,14 @@ function makeSession({ sessionId, startTime, durationMs, type = 'Run', stravaId 
 
 function makeSvc(sessions) {
   return new EventQueryService({
-    sessionService: {
-      listSessionsInRange: vi.fn(async () => sessions),
+    adapters: {
+      workout: new FitnessEventAdapter({
+        sessionService: {
+          listSessionsInRange: vi.fn(async () => sessions),
+        },
+        householdId: 'kckern',
+      }),
     },
-    householdId: 'kckern',
   });
 }
 
@@ -30,22 +35,20 @@ describe('EventQueryService.queryEvents — workouts', () => {
     const r = await svc.queryEvents({ kind: 'workout', period: { rolling: 'last_7d' } });
     expect(r.events).toHaveLength(2);
     expect(r.events[0]).toMatchObject({
-      session_id: '20260507060000',
-      strava_id: 12345,
-      type: 'Run',
+      id: '20260507060000',
+      domain_extras: { strava_id: 12345, type: 'Run' },
       date: '2026-05-07',
-      duration_min: 38,
-      hr_avg: 140,
+      scalars: { duration_min: 38, hr_avg: 140 },
     });
-    expect(r.events[1].type).toBe('WeightTraining');
+    expect(r.events[1].domain_extras.type).toBe('WeightTraining');
   });
 
   it('handles sessions without Strava metadata', async () => {
     const sessions = [makeSession({ sessionId: '20260507060000', startTime: '2026-05-07T06:00:00Z', durationMs: 30 * 60_000 })];
     const svc = makeSvc(sessions);
     const r = await svc.queryEvents({ kind: 'workout', period: { rolling: 'last_1d' } });
-    expect(r.events[0].strava_id).toBe(null);
-    expect(r.events[0].session_id).toBe('20260507060000');
+    expect(r.events[0].domain_extras.strava_id).toBe(null);
+    expect(r.events[0].id).toBe('20260507060000');
   });
 
   it('filters by type when type filter passed', async () => {
@@ -56,7 +59,7 @@ describe('EventQueryService.queryEvents — workouts', () => {
     const svc = makeSvc(sessions);
     const r = await svc.queryEvents({ kind: 'workout', period: { rolling: 'last_7d' }, filter: { type: 'Run' } });
     expect(r.events).toHaveLength(1);
-    expect(r.events[0].type).toBe('Run');
+    expect(r.events[0].domain_extras.type).toBe('Run');
   });
 
   it('returns meta envelope', async () => {
@@ -86,24 +89,28 @@ describe('EventQueryService.queryEvents — eager hydration (n ≤ 3)', () => {
       strava_notes: null,
     };
     const svc = new EventQueryService({
-      sessionService: {
-        listSessionsInRange: vi.fn(async () => [sparseSummary]),
-        getSession: vi.fn(async (id) => id === '20260507060000' ? fullSession : null),
+      adapters: {
+        workout: new FitnessEventAdapter({
+          sessionService: {
+            listSessionsInRange: vi.fn(async () => [sparseSummary]),
+            getSession: vi.fn(async (id) => id === '20260507060000' ? fullSession : null),
+          },
+          householdId: 'kckern',
+        }),
       },
-      householdId: 'kckern',
     });
     const r = await svc.queryEvents({ kind: 'workout', period: { rolling: 'last_1d' } });
     expect(r.events).toHaveLength(1);
     const e = r.events[0];
-    expect(e.hr_avg).toBe(142);
-    expect(e.hr_max).toBe(175);
-    expect(e.kcal).toBe(380);
-    expect(e.distance_mi).toBe(4.2);
-    expect(e.hr_stats).toBeDefined();
-    expect(e.hr_stats.n).toBe(120);
-    expect(e.hr_stats.mean).toBe(140);
-    expect(e.hr_stats.bands.b120_139).toBe(60);
-    expect(e.hr_stats.bands.b140_159).toBe(60);
+    expect(e.scalars.hr_avg).toBe(142);
+    expect(e.scalars.hr_max).toBe(175);
+    expect(e.scalars.kcal).toBe(380);
+    expect(e.scalars.distance_mi).toBe(4.2);
+    expect(e.scalars.hr_stats).toBeDefined();
+    expect(e.scalars.hr_stats.n).toBe(120);
+    expect(e.scalars.hr_stats.mean).toBe(140);
+    expect(e.scalars.hr_stats.bands.b120_139).toBe(60);
+    expect(e.scalars.hr_stats.bands.b140_159).toBe(60);
   });
 
   it('does NOT hydrate when n > 3 (avoid N×getSession on wide queries)', async () => {
@@ -114,16 +121,20 @@ describe('EventQueryService.queryEvents — eager hydration (n ≤ 3)', () => {
     }));
     const getSession = vi.fn();
     const svc = new EventQueryService({
-      sessionService: {
-        listSessionsInRange: vi.fn(async () => five),
-        getSession,
+      adapters: {
+        workout: new FitnessEventAdapter({
+          sessionService: {
+            listSessionsInRange: vi.fn(async () => five),
+            getSession,
+          },
+          householdId: 'kckern',
+        }),
       },
-      householdId: 'kckern',
     });
     const r = await svc.queryEvents({ kind: 'workout', period: { rolling: 'last_7d' } });
     expect(r.events).toHaveLength(5);
     expect(getSession).not.toHaveBeenCalled();
-    expect(r.events[0].hr_stats).toBeUndefined();
+    expect(r.events[0].scalars.hr_stats).toBeUndefined();
   });
 
   it('falls back to series-derived hr_avg when metadata.hr_avg is null but series exists', async () => {
@@ -138,16 +149,20 @@ describe('EventQueryService.queryEvents — eager hydration (n ≤ 3)', () => {
       timeline: { series: { kc: Array(120).fill(145) }, events: [] }, // but series has data
     };
     const svc = new EventQueryService({
-      sessionService: {
-        listSessionsInRange: vi.fn(async () => [sparseSummary]),
-        getSession: vi.fn(async () => fullSession),
+      adapters: {
+        workout: new FitnessEventAdapter({
+          sessionService: {
+            listSessionsInRange: vi.fn(async () => [sparseSummary]),
+            getSession: vi.fn(async () => fullSession),
+          },
+          householdId: 'kckern',
+        }),
       },
-      householdId: 'kckern',
     });
     const r = await svc.queryEvents({ kind: 'workout', period: { rolling: 'last_1d' } });
-    expect(r.events[0].hr_avg).toBe(145);  // derived from series
-    expect(r.events[0].hr_max).toBe(145);
-    expect(r.events[0].hr_stats.n).toBe(120);
+    expect(r.events[0].scalars.hr_avg).toBe(145);  // derived from series
+    expect(r.events[0].scalars.hr_max).toBe(145);
+    expect(r.events[0].scalars.hr_stats.n).toBe(120);
   });
 
   it('survives getSession failure — returns sparse row, no throw', async () => {
@@ -156,16 +171,20 @@ describe('EventQueryService.queryEvents — eager hydration (n ≤ 3)', () => {
       strava: null, metadata: {},
     };
     const svc = new EventQueryService({
-      sessionService: {
-        listSessionsInRange: vi.fn(async () => [sparseSummary]),
-        getSession: vi.fn(async () => { throw new Error('boom'); }),
+      adapters: {
+        workout: new FitnessEventAdapter({
+          sessionService: {
+            listSessionsInRange: vi.fn(async () => [sparseSummary]),
+            getSession: vi.fn(async () => { throw new Error('boom'); }),
+          },
+          householdId: 'kckern',
+        }),
       },
-      householdId: 'kckern',
     });
     const r = await svc.queryEvents({ kind: 'workout', period: { rolling: 'last_1d' } });
     expect(r.events).toHaveLength(1);
-    expect(r.events[0].hr_avg).toBe(null);  // unhydrated, but no crash
-    expect(r.events[0].hr_stats).toBeUndefined();
+    expect(r.events[0].scalars.hr_avg).toBe(null);  // unhydrated, but no crash
+    expect(r.events[0].scalars.hr_stats).toBeUndefined();
   });
 
   it('skips hydration entirely when getSession is not on the service', async () => {
@@ -174,12 +193,16 @@ describe('EventQueryService.queryEvents — eager hydration (n ≤ 3)', () => {
       strava: null, metadata: {},
     };
     const svc = new EventQueryService({
-      sessionService: { listSessionsInRange: vi.fn(async () => [sparseSummary]) },  // no getSession
-      householdId: 'kckern',
+      adapters: {
+        workout: new FitnessEventAdapter({
+          sessionService: { listSessionsInRange: vi.fn(async () => [sparseSummary]) },  // no getSession
+          householdId: 'kckern',
+        }),
+      },
     });
     const r = await svc.queryEvents({ kind: 'workout', period: { rolling: 'last_1d' } });
     expect(r.events).toHaveLength(1);
-    expect(r.events[0].hr_stats).toBeUndefined();
+    expect(r.events[0].scalars.hr_stats).toBeUndefined();
   });
 });
 
@@ -190,12 +213,16 @@ describe('EventQueryService.queryEvents — canonical kind', () => {
       { sessionId: '2', startTime: '2026-05-06T06:00:00Z', durationMs: 60_000, strava: { id: 2, type: 'WeightTraining' }, metadata: {} },
     ];
     const svc = new EventQueryService({
-      sessionService: { listSessionsInRange: vi.fn(async () => sessions) },
-      householdId: 'kckern',
+      adapters: {
+        workout: new FitnessEventAdapter({
+          sessionService: { listSessionsInRange: vi.fn(async () => sessions) },
+          householdId: 'kckern',
+        }),
+      },
     });
     const r = await svc.queryEvents({ kind: 'workout', period: { rolling: 'last_7d' } });
-    expect(r.events[0].kind).toBe('run');
-    expect(r.events[1].kind).toBe('strength');
+    expect(r.events[0].domain_extras.kind_canonical).toBe('run');
+    expect(r.events[1].domain_extras.kind_canonical).toBe('strength');
   });
 
   it('filters by canonical kind', async () => {
@@ -204,12 +231,16 @@ describe('EventQueryService.queryEvents — canonical kind', () => {
       { sessionId: '2', startTime: '2026-05-06T06:00:00Z', durationMs: 60_000, strava: { id: 2, type: 'WeightTraining' }, metadata: {} },
     ];
     const svc = new EventQueryService({
-      sessionService: { listSessionsInRange: vi.fn(async () => sessions) },
-      householdId: 'kckern',
+      adapters: {
+        workout: new FitnessEventAdapter({
+          sessionService: { listSessionsInRange: vi.fn(async () => sessions) },
+          householdId: 'kckern',
+        }),
+      },
     });
     const r = await svc.queryEvents({ kind: 'workout', period: { rolling: 'last_7d' }, filter: { kind: 'strength' } });
     expect(r.events).toHaveLength(1);
-    expect(r.events[0].type).toBe('WeightTraining');
-    expect(r.events[0].kind).toBe('strength');
+    expect(r.events[0].domain_extras.type).toBe('WeightTraining');
+    expect(r.events[0].domain_extras.kind_canonical).toBe('strength');
   });
 });

@@ -1,6 +1,6 @@
 // backend/src/3_applications/agents/health-coach/services/EventQueryService.mjs
 
-const SUPPORTED_KINDS = new Set(['workout']);  // future: 'meal', 'weigh_in'
+const SUPPORTED_KINDS = new Set(['workout', 'meal', 'weigh_in']);
 
 const ALLOWED_FILTER_KEYS = new Set(['type', 'kind']);
 
@@ -30,164 +30,72 @@ export function validateFilter(filter) {
   }
 }
 
-export class EventQueryService {
-  #sessionService;
-  #householdId;
-  #now;
+export function toIso(v) {
+  if (v == null) return null;
+  if (typeof v === 'string') return v;
+  if (v instanceof Date) return v.toISOString();
+  if (typeof v === 'number') return new Date(v).toISOString();
+  try { return new Date(v).toISOString(); } catch { return null; }
+}
 
-  constructor({ sessionService, householdId, now = () => new Date() }) {
-    if (!sessionService) throw new Error('EventQueryService: sessionService required');
-    this.#sessionService = sessionService;
-    this.#householdId = householdId;
-    this.#now = now;
+export function resolvePeriod(period, now = () => new Date()) {
+  if (typeof period === 'string') return resolvePeriod({ rolling: period }, now);
+  if (period?.rolling) {
+    const m = /^last_(\d+)d$/.exec(period.rolling);
+    if (m) {
+      const days = parseInt(m[1], 10);
+      const today = now();
+      const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+      const fromDate = new Date(todayUtc);
+      fromDate.setUTCDate(fromDate.getUTCDate() - (days - 1));
+      return { from: fromDate.toISOString().slice(0, 10), to: todayUtc.toISOString().slice(0, 10) };
+    }
+  }
+  if (period?.from && period?.to) return { from: period.from, to: period.to };
+  throw new Error(`unsupported period ${JSON.stringify(period)}`);
+}
+
+export class EventQueryService {
+  #adapters;
+
+  /**
+   * Accepts the new { adapters } map shape.
+   * Legacy { sessionService, householdId } construction is no longer supported;
+   * callers must pass { adapters: { workout: new FitnessEventAdapter(...) } }.
+   */
+  constructor(deps) {
+    if (deps?.adapters && typeof deps.adapters === 'object') {
+      this.#adapters = deps.adapters;
+    } else {
+      throw new Error(
+        'EventQueryService: { adapters } map required. ' +
+        'Legacy { sessionService } construction has been replaced — ' +
+        'use { adapters: { workout: new FitnessEventAdapter({ sessionService, householdId }) } }.'
+      );
+    }
   }
 
   async queryEvents({ kind, period, filter, limit }) {
-    if (!SUPPORTED_KINDS.has(kind)) {
-      throw new Error(`EventQueryService: unsupported kind "${kind}"`);
-    }
+    if (!SUPPORTED_KINDS.has(kind)) throw new Error(`unsupported kind "${kind}"`);
     validateFilter(filter);
-    const { from, to } = this.#resolvePeriod(period);
-
-    if (kind === 'workout') {
-      const sessions = await this.#sessionService.listSessionsInRange(from, to, this.#householdId);
-      let events = sessions.map(s => this.#sessionToEvent(s));
-      if (filter?.type) events = events.filter(e => e.type === filter.type);
-      if (filter?.kind) events = events.filter(e => e.kind === filter.kind);
-      if (limit) events = events.slice(0, limit);
-
-      // Eager hydration for narrow questions: when result set is small, fold the
-      // full Session detail (populated metadata + computed HR stats) into each row
-      // so the agent can describe events in one response — no get_event_detail
-      // follow-up needed. Wide queries skip hydration to avoid N×getSession.
-      if (events.length > 0 && events.length <= 3) {
-        events = await Promise.all(events.map(e => this.#hydrate(e)));
-      }
-
-      return {
-        events,
-        meta: { kind, period, n: events.length, generated_at: this.#now().toISOString() },
-      };
-    }
-    return { events: [], meta: { kind, n: 0, generated_at: this.#now().toISOString() } };
+    const adapter = this.#adapters[kind];
+    if (!adapter) return { events: [], meta: { kind, period, n: 0 } };
+    return adapter.list({ period, filter, limit });
   }
 
   async getEventDetail({ id, kind = 'workout' }) {
-    if (!id) throw new Error('EventQueryService: id required');
-    if (kind !== 'workout') throw new Error(`EventQueryService: unsupported kind "${kind}"`);
-
-    let session = null;
-    const idStr = String(id);
-    const looksLikeSessionId = /^\d{14}$/.test(idStr);
-
-    if (looksLikeSessionId && typeof this.#sessionService.getSession === 'function') {
-      session = await this.#sessionService.getSession(idStr, this.#householdId).catch(() => null);
-    }
-    if (!session && typeof this.#sessionService.getById === 'function') {
-      session = await this.#sessionService.getById(idStr, this.#householdId).catch(() => null);
-    }
-    if (!session && typeof this.#sessionService.findByStravaId === 'function') {
-      session = await this.#sessionService.findByStravaId(id, this.#householdId).catch(() => null);
-    }
-    if (!session && typeof this.#sessionService.listSessionsInRange === 'function') {
-      const today = this.#now();
-      const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-      const fromDate = new Date(todayUtc);
-      fromDate.setUTCDate(fromDate.getUTCDate() - 60);
-      const all = await this.#sessionService.listSessionsInRange(
-        fromDate.toISOString().slice(0, 10),
-        todayUtc.toISOString().slice(0, 10),
-        this.#householdId,
-      ).catch(() => []);
-      session = all.find(s =>
-        String(s.sessionId) === idStr ||
-        (s.strava && String(s.strava.id) === idStr)
-      ) ?? null;
-    }
-    if (!session) {
-      return { error: `event not found for id=${id}` };
-    }
-    return this.#sessionToDetail(session);
+    if (!id) throw new Error('id required');
+    if (!SUPPORTED_KINDS.has(kind)) throw new Error(`unsupported kind "${kind}"`);
+    const adapter = this.#adapters[kind];
+    if (!adapter) return { error: `no adapter for kind ${kind}` };
+    return adapter.detail(id);
   }
 
-  // ── Internals ──────────────────────────────────────────────────────────────
-
-  #resolvePeriod(period) {
-    if (typeof period === 'string') return this.#resolvePeriod({ rolling: period });
-    if (period?.rolling) {
-      const m = /^last_(\d+)d$/.exec(period.rolling);
-      if (m) {
-        const days = parseInt(m[1], 10);
-        const today = this.#now();
-        const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-        const fromDate = new Date(todayUtc);
-        fromDate.setUTCDate(fromDate.getUTCDate() - (days - 1));
-        return { from: fromDate.toISOString().slice(0, 10), to: todayUtc.toISOString().slice(0, 10) };
-      }
-    }
-    if (period?.from && period?.to) return { from: period.from, to: period.to };
-    throw new Error(`EventQueryService: unsupported period ${JSON.stringify(period)}`);
-  }
-
-  async #hydrate(event) {
-    if (typeof this.#sessionService.getSession !== 'function') return event;
-    let full;
-    try {
-      full = await this.#sessionService.getSession(event.session_id, this.#householdId);
-    } catch {
-      return event;
-    }
-    if (!full) return event;
-    const series = pickPrimaryHrSeries(full.timeline?.series);
-    const hr_stats = computeHrStats(series);
-    return {
-      ...event,
-      kcal:        full.metadata?.kcal        ?? event.kcal,
-      hr_avg:      full.metadata?.hr_avg      ?? hr_stats.mean ?? event.hr_avg,
-      hr_max:      full.metadata?.hr_max      ?? hr_stats.max  ?? event.hr_max,
-      distance_mi: full.metadata?.distance_mi ?? event.distance_mi,
-      hr_stats,
-    };
-  }
-
-  #sessionToEvent(s) {
-    const iso = this.#toIso(s.startTime);
-    return {
-      session_id: s.sessionId?.toString?.() ?? String(s.sessionId),
-      strava_id: s.strava?.id ?? null,
-      type: s.strava?.type ?? 'Workout',
-      kind: normalizeKind(s.strava?.type),
-      name: s.strava?.name ?? null,
-      date: iso ? iso.slice(0, 10) : null,
-      start_time: iso,
-      duration_min: s.durationMs ? Math.round(s.durationMs / 60000) : null,
-      kcal: s.metadata?.kcal ?? null,
-      hr_avg: s.metadata?.hr_avg ?? null,
-      hr_max: s.metadata?.hr_max ?? null,
-      distance_mi: s.metadata?.distance_mi ?? null,
-      source: s.strava ? 'strava' : 'local',
-    };
-  }
-
-  #toIso(v) {
-    if (v == null) return null;
-    if (typeof v === 'string') return v;
-    if (v instanceof Date) return v.toISOString();
-    if (typeof v === 'number') return new Date(v).toISOString();
-    try { return new Date(v).toISOString(); } catch { return null; }
-  }
-
-  #sessionToDetail(s) {
-    return {
-      ...this.#sessionToEvent(s),
-      timeline: {
-        series: s.timeline?.series ?? {},
-        events: s.timeline?.events ?? [],
-      },
-      metadata: s.metadata ?? {},
-      strava: s.strava ?? null,
-      strava_notes: s.strava_notes ?? null,
-    };
+  async getDomainSummary({ kind, period }) {
+    if (!SUPPORTED_KINDS.has(kind)) throw new Error(`unsupported kind "${kind}"`);
+    const adapter = this.#adapters[kind];
+    if (!adapter) return { kind, n: 0 };
+    return adapter.summary({ period });
   }
 }
 
