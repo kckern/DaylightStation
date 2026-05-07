@@ -206,6 +206,7 @@ import { HealthQueryService }       from '#apps/agents/health-coach/services/Hea
 import { ComputeSandbox }           from '#apps/agents/health-coach/services/ComputeSandbox.mjs';
 import { PersonalConstantsService } from '#apps/agents/health-coach/services/PersonalConstantsService.mjs';
 import { EventQueryService }        from '#apps/agents/health-coach/services/EventQueryService.mjs';
+import { FitnessEventAdapter }      from '#apps/agents/health-coach/services/adapters/FitnessEventAdapter.mjs';
 import { PagedMediaTocAgent } from '#apps/agents/paged-media-toc/index.mjs';
 import { KomgaClient } from '#adapters/content/readable/komga/KomgaClient.mjs';
 import { KomgaPagedMediaAdapter } from '#adapters/komga/KomgaPagedMediaAdapter.mjs';
@@ -3050,11 +3051,15 @@ export async function createAgentsServices(config) {
     const personalConstantsService = new PersonalConstantsService({ dataService, healthStore });
 
     // Task 4: EventQueryService — drives query_events / get_event_detail tools.
-    // Reuses the sessionService already threaded through config; householdId is
-    // resolved from configService (same pattern used elsewhere in this module).
+    // Dispatches by domain kind; FitnessEventAdapter handles 'workout' events.
+    // householdId resolved from configService (same pattern used elsewhere).
     const eventQueryService = new EventQueryService({
-      sessionService,
-      householdId: configService?.getDefaultHouseholdId?.() ?? 'default',
+      adapters: {
+        workout: new FitnessEventAdapter({
+          sessionService,
+          householdId: configService?.getDefaultHouseholdId?.() ?? 'default',
+        }),
+      },
     });
 
     agentOrchestrator.register(HealthCoachAgent, {
