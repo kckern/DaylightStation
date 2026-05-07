@@ -70,13 +70,14 @@ export class EventQueryService {
   }
 
   #sessionToEvent(s) {
+    const iso = this.#toIso(s.startTime);
     return {
       session_id: s.sessionId?.toString?.() ?? String(s.sessionId),
       strava_id: s.strava?.id ?? null,
       type: s.strava?.type ?? 'Workout',
       name: s.strava?.name ?? null,
-      date: (s.startTime ?? '').slice(0, 10),
-      start_time: s.startTime ?? null,
+      date: iso ? iso.slice(0, 10) : null,
+      start_time: iso,
       duration_min: s.durationMs ? Math.round(s.durationMs / 60000) : null,
       kcal: s.metadata?.kcal ?? null,
       hr_avg: s.metadata?.hr_avg ?? null,
@@ -84,6 +85,14 @@ export class EventQueryService {
       distance_mi: s.metadata?.distance_mi ?? null,
       source: s.strava ? 'strava' : 'local',
     };
+  }
+
+  #toIso(v) {
+    if (v == null) return null;
+    if (typeof v === 'string') return v;
+    if (v instanceof Date) return v.toISOString();
+    if (typeof v === 'number') return new Date(v).toISOString();
+    try { return new Date(v).toISOString(); } catch { return null; }
   }
 
   #sessionToDetail(s) {
