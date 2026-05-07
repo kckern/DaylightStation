@@ -66,17 +66,16 @@ describe('HealthCoachAgent.getSystemPrompt mode routing', () => {
     expect(prompt).toMatch(/PERSONAL_CONTEXT_BUNDLE/);
   });
 
-  it('chat-mode prompt includes a "## Period syntax" section', async () => {
+  it('chat-mode prompt documents period syntax inline in the Tools section', async () => {
     const agent = new HealthCoachAgent(buildBaseDeps());
     const prompt = await agent.getSystemPrompt({ mode: 'chat' });
-    expect(prompt).toMatch(/## Period syntax/);
-    // The section names the four canonical forms
-    expect(prompt).toMatch(/Rolling: \{ "rolling":/);
-    expect(prompt).toMatch(/Calendar: \{ "calendar":/);
-    expect(prompt).toMatch(/Named: \{ "named":/);
-    expect(prompt).toMatch(/Explicit: \{ "from":/);
-    // Bare-string shorthand mentioned (so the model knows it works)
-    expect(prompt).toMatch(/[Bb]are strings.*shorthand/);
+    // Period is documented inline in the query_events tool docs
+    // Bare rolling strings are listed as accepted shorthand
+    expect(prompt).toMatch(/last_1d/);
+    expect(prompt).toMatch(/last_7d/);
+    expect(prompt).toMatch(/last_30d/);
+    // Explicit date range form is documented
+    expect(prompt).toMatch(/\{ from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' \}/);
   });
 
   it('dashboard-mode prompt does NOT include the Period syntax section', async () => {
