@@ -72,6 +72,7 @@ export class MastraAdapter {
   #maxToolCalls;
   #timeoutMs;
   #mediaDir;
+  #AgentClass;
 
   /**
    * @param {Object} deps
@@ -80,6 +81,7 @@ export class MastraAdapter {
    * @param {number} [deps.maxToolCalls=50] - Maximum tool calls before aborting
    * @param {number} [deps.timeoutMs=120000] - Execution timeout in ms
    * @param {string} [deps.mediaDir] - Base media directory; transcripts written under {mediaDir}/logs/agents/...
+   * @param {Function} [deps.agentClass] - Agent class to instantiate (defaults to @mastra/core Agent; injectable for tests)
    */
   constructor(deps = {}) {
     this.#model = deps.model || 'openai/gpt-4o';
@@ -87,6 +89,7 @@ export class MastraAdapter {
     this.#maxToolCalls = deps.maxToolCalls || 50;
     this.#timeoutMs = deps.timeoutMs || 120000;
     this.#mediaDir = deps.mediaDir || null;
+    this.#AgentClass = deps.agentClass || Agent;
   }
 
   /**
@@ -181,7 +184,7 @@ export class MastraAdapter {
    * Execute an agent synchronously
    * @implements IAgentRuntime.execute
    */
-  async execute({ agent, agentId, input, tools, systemPrompt, context = {} }) {
+  async execute({ agent, agentId, input, messages = [], tools, systemPrompt, context = {} }) {
     const name = agentId || agent?.constructor?.id || 'unknown';
     const turnId = context.turnId ?? crypto.randomUUID();
     const userId = context.userId ?? null;
@@ -208,18 +211,20 @@ export class MastraAdapter {
     });
 
     try {
-      const mastraAgent = new Agent({
+      const mastraAgent = new this.#AgentClass({
         name,
         instructions: systemPrompt,
         model: this.#model,
         tools: mastraTools,
       });
 
+      const callArg = (Array.isArray(messages) && messages.length > 0) ? messages : input;
+
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error(`Agent execution timed out after ${this.#timeoutMs}ms`)), this.#timeoutMs)
       );
       const response = await Promise.race([
-        mastraAgent.generate(input),
+        mastraAgent.generate(callArg),
         timeoutPromise,
       ]);
 
@@ -263,7 +268,7 @@ export class MastraAdapter {
    * Yields normalized chunks: text-delta, tool-start, tool-end, finish.
    * @implements IAgentRuntime.streamExecute
    */
-  async *streamExecute({ agent, agentId, input, tools, systemPrompt, context = {} }) {
+  async *streamExecute({ agent, agentId, input, messages = [], tools, systemPrompt, context = {} }) {
     const name = agentId || agent?.constructor?.id || 'unknown';
     const turnId = context.turnId ?? crypto.randomUUID();
     const userId = context.userId ?? null;
@@ -295,14 +300,15 @@ export class MastraAdapter {
     const toolStartTimes = new Map();
 
     try {
-      const mastraAgent = new Agent({
+      const mastraAgent = new this.#AgentClass({
         name,
         instructions: systemPrompt,
         model: this.#model,
         tools: mastraTools,
       });
 
-      const output = await mastraAgent.stream(input);
+      const callArg = (Array.isArray(messages) && messages.length > 0) ? messages : input;
+      const output = await mastraAgent.stream(callArg);
       const iterable = output?.fullStream ?? output;
       for await (const part of iterable) {
         const payload = part?.payload ?? {};
