@@ -17,7 +17,7 @@ export class WeightEventAdapter extends EventAdapter {
     this.#now = now;
   }
 
-  async list({ period, filter, limit }) {
+  async list({ period, filter, limit }, { baseline = null } = {}) {
     const { from, to } = resolvePeriod(period, this.#now);
     const rangeMap = await this.#healthService.getHealthForRange(this.#userId, from, to).catch(() => ({}));
     const points = this.#mapToPoints(rangeMap);
@@ -25,6 +25,7 @@ export class WeightEventAdapter extends EventAdapter {
       .map(p => this.#pointToEvent(p))
       .sort((a, b) => b.date.localeCompare(a.date));  // newest first
     if (limit) events = events.slice(0, limit);
+    if (baseline) events = events.map(e => this.#annotateBaseline(e, baseline));
     return { events, meta: { kind: 'weigh_in', period, n: events.length } };
   }
 
@@ -84,6 +85,15 @@ export class WeightEventAdapter extends EventAdapter {
   }
 
   // ── Internals ──────────────────────────────────────────────────────────────
+
+  #annotateBaseline(event, baseline) {
+    const typical = baseline?.trim_mean;
+    const actual = event.scalars?.weight_lbs;
+    if (typical == null || actual == null || !Number.isFinite(typical) || !Number.isFinite(actual)) return event;
+    const delta = Math.round((actual - typical) * 10) / 10;
+    const delta_pct = typical !== 0 ? Math.round(((actual - typical) / typical) * 1000) / 10 : null;
+    return { ...event, vs_baseline: { weight_lbs: { typical, delta, delta_pct } } };
+  }
 
   #mapToPoints(rangeMap) {
     const out = [];

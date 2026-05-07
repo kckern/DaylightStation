@@ -3092,13 +3092,15 @@ export async function createAgentsServices(config) {
       weigh_in: weightEventAdapter,
     };
 
-    const eventQueryService = new EventQueryService({ adapters });
-
     // Task 9: PersonalBaselineService — rolling baselines per domain.
     const baselineService = new PersonalBaselineService({
       adapters,
       dataService,
     });
+
+    // Task 10: baselineService forwarded into EventQueryService so queryEvents
+    // can annotate each event row with vs_baseline (actual vs typical).
+    const eventQueryService = new EventQueryService({ adapters, baselineService });
 
     // Task 9: UserModelService — composes profile + baselines into a markdown
     // block that getSystemPrompt appends to the system prompt every turn.

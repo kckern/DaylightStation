@@ -17,7 +17,9 @@ export class NutritionEventAdapter extends EventAdapter {
     this.#now = now;
   }
 
-  async list({ period, filter, limit }) {
+  async list({ period, filter, limit }, { baseline = null } = {}) {  // eslint-disable-line no-unused-vars
+    // baseline intentionally unused — per-meal vs daily-avg comparison isn't meaningful.
+    // The second arg is accepted for API symmetry with FitnessEventAdapter / WeightEventAdapter.
     const { from, to } = resolvePeriod(period, this.#now);
     const logs = await this.#foodLogService.getLogsInRange(this.#userId, from, to);
     let events = (logs || []).map(l => this.#logToEvent(l));

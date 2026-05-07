@@ -57,15 +57,19 @@ export function resolvePeriod(period, now = () => new Date()) {
 
 export class EventQueryService {
   #adapters;
+  #baselineService;
 
   /**
-   * Accepts the new { adapters } map shape.
+   * Accepts the new { adapters } map shape, plus an optional baselineService.
    * Legacy { sessionService, householdId } construction is no longer supported;
    * callers must pass { adapters: { workout: new FitnessEventAdapter(...) } }.
+   *
+   * @param {{ adapters: object, baselineService?: object|null }} deps
    */
   constructor(deps) {
     if (deps?.adapters && typeof deps.adapters === 'object') {
       this.#adapters = deps.adapters;
+      this.#baselineService = deps.baselineService ?? null;
     } else {
       throw new Error(
         'EventQueryService: { adapters } map required. ' +
@@ -75,12 +79,25 @@ export class EventQueryService {
     }
   }
 
-  async queryEvents({ kind, period, filter, limit }) {
+  async queryEvents({ kind, period, filter, limit, userId }) {
     if (!SUPPORTED_KINDS.has(kind)) throw new Error(`unsupported kind "${kind}"`);
     validateFilter(filter);
     const adapter = this.#adapters[kind];
     if (!adapter) return { events: [], meta: { kind, period, n: 0 } };
-    return adapter.list({ period, filter, limit });
+
+    // Fetch baselines and pick the relevant block for this kind.
+    let baseline = null;
+    if (this.#baselineService && userId) {
+      const all = await this.#baselineService.getBaselines({ userId }).catch(() => null);
+      if (all) {
+        baseline = kind === 'workout'  ? (all.fitness   ?? null)
+                 : kind === 'meal'     ? (all.nutrition ?? null)
+                 : kind === 'weigh_in' ? (all.weight    ?? null)
+                 : null;
+      }
+    }
+
+    return adapter.list({ period, filter, limit }, { baseline });
   }
 
   async getEventDetail({ id, kind = 'workout' }) {
