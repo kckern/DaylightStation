@@ -11,10 +11,12 @@
 export class UserModelService {
   #personalConstantsService;
   #baselineService;
+  #now;
 
-  constructor({ personalConstantsService, baselineService }) {
+  constructor({ personalConstantsService, baselineService, now = () => new Date() }) {
     this.#personalConstantsService = personalConstantsService;
     this.#baselineService = baselineService;
+    this.#now = now;
   }
 
   /**
@@ -36,6 +38,15 @@ export class UserModelService {
 
     const lines = [];
     lines.push('## Your model of this user (auto-loaded each turn)');
+    lines.push('');
+
+    // --- Today ---
+    const today = this.#now();
+    const dateStr = today.toISOString().slice(0, 10);
+    const weekday = today.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
+    lines.push('### Today');
+    lines.push(`- Date: ${dateStr} (${weekday})`);
+    lines.push('- Use this date as ground truth when the user references relative days ("Saturday", "yesterday", "last week"). Do not guess years.');
     lines.push('');
 
     // --- Profile ---
