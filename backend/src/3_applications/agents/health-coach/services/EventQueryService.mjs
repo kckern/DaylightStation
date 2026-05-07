@@ -25,6 +25,15 @@ export class EventQueryService {
       let events = sessions.map(s => this.#sessionToEvent(s));
       if (filter?.type) events = events.filter(e => e.type === filter.type);
       if (limit) events = events.slice(0, limit);
+
+      // Eager hydration for narrow questions: when result set is small, fold the
+      // full Session detail (populated metadata + computed HR stats) into each row
+      // so the agent can describe events in one response — no get_event_detail
+      // follow-up needed. Wide queries skip hydration to avoid N×getSession.
+      if (events.length > 0 && events.length <= 3) {
+        events = await Promise.all(events.map(e => this.#hydrate(e)));
+      }
+
       return {
         events,
         meta: { kind, period, n: events.length, generated_at: this.#now().toISOString() },
@@ -88,6 +97,27 @@ export class EventQueryService {
     }
     if (period?.from && period?.to) return { from: period.from, to: period.to };
     throw new Error(`EventQueryService: unsupported period ${JSON.stringify(period)}`);
+  }
+
+  async #hydrate(event) {
+    if (typeof this.#sessionService.getSession !== 'function') return event;
+    let full;
+    try {
+      full = await this.#sessionService.getSession(event.session_id, this.#householdId);
+    } catch {
+      return event;
+    }
+    if (!full) return event;
+    const series = pickPrimaryHrSeries(full.timeline?.series);
+    const hr_stats = computeHrStats(series);
+    return {
+      ...event,
+      kcal:        full.metadata?.kcal        ?? event.kcal,
+      hr_avg:      full.metadata?.hr_avg      ?? hr_stats.mean ?? event.hr_avg,
+      hr_max:      full.metadata?.hr_max      ?? hr_stats.max  ?? event.hr_max,
+      distance_mi: full.metadata?.distance_mi ?? event.distance_mi,
+      hr_stats,
+    };
   }
 
   #sessionToEvent(s) {
