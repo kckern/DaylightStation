@@ -38,11 +38,32 @@ export class EventQueryService {
     if (kind !== 'workout') throw new Error(`EventQueryService: unsupported kind "${kind}"`);
 
     let session = null;
-    if (typeof this.#sessionService.getById === 'function') {
-      session = await this.#sessionService.getById(String(id), this.#householdId).catch(() => null);
+    const idStr = String(id);
+    const looksLikeSessionId = /^\d{14}$/.test(idStr);
+
+    if (looksLikeSessionId && typeof this.#sessionService.getSession === 'function') {
+      session = await this.#sessionService.getSession(idStr, this.#householdId).catch(() => null);
+    }
+    if (!session && typeof this.#sessionService.getById === 'function') {
+      session = await this.#sessionService.getById(idStr, this.#householdId).catch(() => null);
     }
     if (!session && typeof this.#sessionService.findByStravaId === 'function') {
       session = await this.#sessionService.findByStravaId(id, this.#householdId).catch(() => null);
+    }
+    if (!session && typeof this.#sessionService.listSessionsInRange === 'function') {
+      const today = this.#now();
+      const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+      const fromDate = new Date(todayUtc);
+      fromDate.setUTCDate(fromDate.getUTCDate() - 60);
+      const all = await this.#sessionService.listSessionsInRange(
+        fromDate.toISOString().slice(0, 10),
+        todayUtc.toISOString().slice(0, 10),
+        this.#householdId,
+      ).catch(() => []);
+      session = all.find(s =>
+        String(s.sessionId) === idStr ||
+        (s.strava && String(s.strava.id) === idStr)
+      ) ?? null;
     }
     if (!session) {
       return { error: `event not found for id=${id}` };
