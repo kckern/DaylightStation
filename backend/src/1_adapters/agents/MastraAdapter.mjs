@@ -292,6 +292,7 @@ export class MastraAdapter {
     let accumulatedText = '';
     let finishReason = 'stop';
     let usage = null;
+    const toolStartTimes = new Map();
 
     try {
       const mastraAgent = new Agent({
@@ -312,12 +313,20 @@ export class MastraAdapter {
             yield { type: 'text-delta', text };
             break;
           }
-          case 'tool-call':
-            yield { type: 'tool-start', toolName: payload.toolName ?? part.toolName, args: payload.args ?? part.args };
+          case 'tool-call': {
+            const toolName = payload.toolName ?? part.toolName;
+            toolStartTimes.set(toolName, Date.now());
+            yield { type: 'tool-start', toolName, args: payload.args ?? part.args };
             break;
-          case 'tool-result':
-            yield { type: 'tool-end', toolName: payload.toolName ?? part.toolName, result: payload.result ?? part.result };
+          }
+          case 'tool-result': {
+            const toolName = payload.toolName ?? part.toolName;
+            const toolStartedAt = toolStartTimes.get(toolName);
+            const latencyMs = toolStartedAt ? Date.now() - toolStartedAt : 0;
+            toolStartTimes.delete(toolName);
+            yield { type: 'tool-end', toolName, result: payload.result ?? part.result, latencyMs };
             break;
+          }
           case 'finish':
             finishReason = payload?.stepResult?.reason ?? part.finishReason ?? 'stop';
             usage = payload?.output?.usage ?? part.usage ?? null;
