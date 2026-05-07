@@ -218,7 +218,6 @@ import { KomgaPagedMediaAdapter } from '#adapters/komga/KomgaPagedMediaAdapter.m
 import { YamlTocCacheDatastore } from '#adapters/persistence/yaml/YamlTocCacheDatastore.mjs';
 import { MastraAdapter, YamlWorkingMemoryAdapter } from '#adapters/agents/index.mjs';
 import { buildMastraMemory } from '#system/memory/buildMastraMemory.mjs';
-import { healthCoachWorkingMemorySchema } from '#apps/agents/health-coach/memory/workingMemorySchema.mjs';
 import { LifeplanGuideAgent } from '#apps/agents/lifeplan-guide/LifeplanGuideAgent.mjs';
 import { YamlConversationStore } from '#adapters/agents/YamlConversationStore.mjs';
 // Health domain + application imports
@@ -2960,11 +2959,11 @@ export async function createAgentsServices(config) {
     mastraMemory = buildMastraMemory({
       dbPath: `${dataPath}/agents/memory.db`,
       lastMessages: 20,
-      workingMemory: {
-        enabled: true,
-        scope: 'resource',  // shared across all threads + agents per userId
-        schema: healthCoachWorkingMemorySchema,
-      },
+      // Working memory schema deferred — @mastra/memory@1.3.0 crashes when
+      // converting our Zod schema to a tool ("Cannot read properties of
+      // undefined (reading 'def')" inside Agent.listMemoryTools). Core Memory
+      // value (storage + thread persistence + lastMessages) does not depend
+      // on this. Re-enable when we upgrade @mastra/core past 1.4.1.
     });
   } catch (memErr) {
     logger.warn?.('agent.memory.init_failed', { error: memErr.message });
