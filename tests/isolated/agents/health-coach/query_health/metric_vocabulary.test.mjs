@@ -80,3 +80,11 @@ describe('HealthQueryService.query — metric vocabulary', () => {
     expect(r.meta.period).toEqual({ rolling: 'last_3d' });
   });
 });
+
+describe('HealthQueryService.query — period shorthand', () => {
+  it('accepts bare-string rolling period', async () => {
+    const svc = new HealthQueryService({ healthStore: makeStore(), healthService: makeHealthService(), now: today });
+    const r = await svc.query({ metric: 'weight_lbs', period: 'last_3d', userId: 'kc' });
+    expect(r.rows).toHaveLength(3);
+  });
+});

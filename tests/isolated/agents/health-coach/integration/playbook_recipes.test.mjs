@@ -30,7 +30,7 @@ function makeFixtureServices() {
     healthService: { getHealthForRange: async () => workoutData },
     dataService: {
       user: {
-        read: async (userId, path) => path === 'profile/health.yml'
+        read: async (path, userId) => path === 'profile/health'
           ? { height_cm: 180, age: 40, sex: 'M', activity_pal: 1.55, scale_bias_lbs: 0 }
           : null,
       },
