@@ -78,3 +78,9 @@ frontend/src/lib/audio/vendor/
 _extensions/musicozy/README.md
 _extensions/musicozy/devices.json
 .plex-backups/
+
+# Mastra Memory storage (SQLite files — persisted in data volume, not committed)
+data/agents/*.db
+data/agents/*.db-journal
+data/agents/*.db-wal
+data/agents/*.db-shm
