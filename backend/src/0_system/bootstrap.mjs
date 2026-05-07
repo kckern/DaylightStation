@@ -3054,7 +3054,7 @@ export async function createAgentsServices(config) {
     // resolved from configService (same pattern used elsewhere in this module).
     const eventQueryService = new EventQueryService({
       sessionService,
-      householdId: configService?.getHeadOfHousehold?.() ?? null,
+      householdId: configService?.getDefaultHouseholdId?.() ?? 'default',
     });
 
     agentOrchestrator.register(HealthCoachAgent, {
