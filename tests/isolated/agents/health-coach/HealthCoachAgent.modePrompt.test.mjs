@@ -19,8 +19,8 @@ describe('HealthCoachAgent.getSystemPrompt mode routing', () => {
   it('returns chatPrompt when mode="chat"', async () => {
     const agent = new HealthCoachAgent(buildBaseDeps());
     const prompt = await agent.getSystemPrompt({ mode: 'chat' });
-    expect(prompt).toMatch(/Tool Cheatsheet/);
-    expect(prompt).toMatch(/metric_trajectory/);
+    expect(prompt).toMatch(/query_health/);
+    expect(prompt).toMatch(/compute/);
   });
 
   it('returns dashboardPrompt when mode="dashboard"', async () => {
@@ -33,13 +33,13 @@ describe('HealthCoachAgent.getSystemPrompt mode routing', () => {
   it('defaults to chat mode when mode unspecified', async () => {
     const agent = new HealthCoachAgent(buildBaseDeps());
     const prompt = await agent.getSystemPrompt({});
-    expect(prompt).toMatch(/Tool Cheatsheet/);
+    expect(prompt).toMatch(/query_health/);
   });
 
   it('defaults to chat mode when called with no args', async () => {
     const agent = new HealthCoachAgent(buildBaseDeps());
     const prompt = await agent.getSystemPrompt();
-    expect(prompt).toMatch(/Tool Cheatsheet/);
+    expect(prompt).toMatch(/query_health/);
   });
 
   it('appends personal-context bundle in chat mode when loader is wired', async () => {
@@ -50,7 +50,7 @@ describe('HealthCoachAgent.getSystemPrompt mode routing', () => {
     };
     const agent = new HealthCoachAgent(deps);
     const prompt = await agent.getSystemPrompt({ mode: 'chat', userId: 'kc' });
-    expect(prompt).toMatch(/Tool Cheatsheet/);
+    expect(prompt).toMatch(/query_health/);
     expect(prompt).toMatch(/PERSONAL_CONTEXT_BUNDLE/);
   });
 
