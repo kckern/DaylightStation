@@ -6,11 +6,45 @@
  * behavior byte-for-byte.
  */
 
+const VALID_ROLES = new Set(['user', 'assistant', 'system']);
+const MAX_MESSAGES = 20;
+
+function extractContentText(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter(part => part && typeof part === 'object' && part.type === 'text' && typeof part.text === 'string')
+      .map(part => part.text)
+      .join('');
+  }
+  return null;
+}
+
+function sanitizeMessages(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const m of raw) {
+    if (!m || typeof m !== 'object') continue;
+    if (!VALID_ROLES.has(m.role)) continue;
+    const text = extractContentText(m.content);
+    if (typeof text !== 'string') continue;
+    out.push({ role: m.role, content: text });
+  }
+  // Cap to last MAX_MESSAGES
+  return out.length > MAX_MESSAGES ? out.slice(out.length - MAX_MESSAGES) : out;
+}
+
 export function parseRequest(req) {
   const body = req?.body || {};
+  const input = body.input ?? null;
+  let messages = sanitizeMessages(body.messages);
+  if (messages.length === 0 && typeof input === 'string' && input.length > 0) {
+    messages = [{ role: 'user', content: input }];
+  }
   return {
-    input: body.input ?? null,
+    input,
     context: body.context ?? {},
+    messages,
   };
 }
 
