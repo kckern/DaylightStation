@@ -1,0 +1,98 @@
+# backend/src/3_applications/agents/health-coach/playbooks/seed.yml
+- id: under-reporting-calories
+  fact: "User's logged calories under-report actual intake. Verify by reconciling logged deficit against actual weight slope."
+  confidence: unverified
+  tags: [nutrition, weight, energy-balance]
+  recipe: |
+    Compute TDEE from body comp + activity, compare predicted Δweight from
+    logged deficit to actual weight slope. Gap = % of deficit unlogged.
+
+    Steps (sub period as needed):
+      1. query_health({ metric: 'weight_lbs',   period: P, aggregate: 'regression' }) -> slope
+      2. query_health({ metric: 'calories',     period: P, aggregate: 'mean' })       -> intake
+      3. query_health({ metric: 'workout_kcal', period: P, aggregate: 'mean' })       -> activity
+      4. personal_constants()                                                          -> kg/cm/age/sex
+      5. compute("10*kg + 6.25*cm - 5*age + 5 + activity")                            -> tdee (Mifflin-St Jeor for men; subtract 161 for women)
+      6. compute("(intake - tdee) * <days> / 3500")                                   -> predicted_dw
+      7. compute("slope * <days>")                                                     -> actual_dw
+      8. compute("1 - actual_dw / predicted_dw")                                      -> gap_pct
+
+- id: weight-trend-noise
+  fact: "Daily weight has +-2 lb water/sodium swing; only 7-day-smoothed trends are signal. Don't conclude on raw daily slopes."
+  confidence: high
+  tags: [weight, methodology]
+  recipe: |
+    When assessing weight trend, query with rolling 7d mean and run
+    regression on the smoothed series, not the raw.
+    query_health({
+      metric: 'weight_lbs', period: P,
+      rolling: { fn: 'mean', window: 7 },
+      aggregate: 'regression'
+    })
+
+- id: tracking-density-reliability
+  fact: "Tracking density >= 0.8 means nutrition logs are reliable. < 0.6 means under-logged; nutrition conclusions need a confidence caveat."
+  confidence: high
+  tags: [nutrition, data-quality]
+  recipe: |
+    Before claiming "you ate X" or drawing nutrition conclusions:
+      query_health({ metric: 'tracking_density', period: P, aggregate: 'mean' })
+    If < 0.6, qualify the conclusion as low-confidence.
+    If between 0.6 and 0.8, note caveat.
+    If >= 0.8, nutrition data is trustworthy.
+
+- id: workout-source-reconciliation
+  fact: "Workouts can land in three places: logged manually, captured by HR device, or pulled from Strava. Real activity = the union; logged-only counts under-state."
+  confidence: medium
+  tags: [activity, data-quality]
+  recipe: |
+    Compare workout counts across data sources (when source-aware queries
+    are available). Today, query_health aggregates across sources by
+    default - flag if a known source seems missing for the period.
+      query_health({ metric: 'workout_count', period: P, aggregate: 'sum' })
+    Sanity-check against the user's intuition; if they say "I worked out
+    5 times last week" but the count is 3, surface the gap.
+
+- id: protein-adequacy
+  fact: "Target protein is ~0.8 g/lb of lean mass. Below 0.6 g/lb is under-fueling; above 1.0 g/lb is fine but expensive."
+  confidence: high
+  tags: [nutrition, fitness]
+  recipe: |
+    query_health({ metric: 'protein_g',     period: P, aggregate: 'mean' }) -> protein
+    query_health({ metric: 'lean_mass_lbs', period: P, aggregate: 'mean' }) -> lean
+    compute("protein / lean")                                                -> ratio
+    Compare ratio to thresholds 0.6, 0.8, 1.0. Report adequacy.
+
+- id: weekly-cadence
+  fact: "Personal baseline is ~3-4 strength sessions + 2-3 cardio sessions per week. Below 2 total = recovery week; above 6 = potential overreach."
+  confidence: medium
+  tags: [activity, baseline]
+  recipe: |
+    query_health({
+      metric: 'workout_count', period: P,
+      granularity: 'weekly', aggregate: 'sum'
+    })
+    Compare each week's count to the 2 / 6 thresholds; flag deviations.
+
+- id: weekend-vs-weekday-divergence
+  fact: "User's nutrition tends to drift higher on weekends. Quantify with grouped means; weekly average can hide compensation."
+  confidence: medium
+  tags: [nutrition, pattern]
+  recipe: |
+    query_health({
+      metric: 'calories', period: { rolling: 'last_90d' },
+      group_by: 'weekday_vs_weekend', aggregate: 'mean'
+    })
+    Call out the gap if > 200 kcal/day. Higher weekend kcal explains weight
+    plateau even when weekly average looks reasonable.
+
+- id: heart-rate-zone-load
+  fact: "Time in zone 2 (60-70% HRmax) is the highest-value cardio. Below 90 min/week of zone 2 = undertrained for endurance."
+  confidence: high
+  tags: [activity, cardiovascular]
+  recipe: |
+    query_health({
+      metric: 'hr_minutes_zone2', period: P,
+      granularity: 'weekly', aggregate: 'sum'
+    })
+    Compare to 90 min/week threshold. Flag weeks below.
