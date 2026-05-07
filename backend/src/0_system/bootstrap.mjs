@@ -202,6 +202,9 @@ import { HealthAnalyticsService } from '#domains/health/services/HealthAnalytics
 import { PeriodResolver } from '#domains/health/services/PeriodResolver.mjs';
 import { YamlHealthScanDatastore } from '#adapters/persistence/yaml/YamlHealthScanDatastore.mjs';
 import { CoachingOrchestrator, CoachingCommentaryService } from '#apps/coaching/index.mjs';
+import { HealthQueryService }       from '#apps/agents/health-coach/services/HealthQueryService.mjs';
+import { ComputeSandbox }           from '#apps/agents/health-coach/services/ComputeSandbox.mjs';
+import { PersonalConstantsService } from '#apps/agents/health-coach/services/PersonalConstantsService.mjs';
 import { PagedMediaTocAgent } from '#apps/agents/paged-media-toc/index.mjs';
 import { KomgaClient } from '#adapters/content/readable/komga/KomgaClient.mjs';
 import { KomgaPagedMediaAdapter } from '#adapters/komga/KomgaPagedMediaAdapter.mjs';
@@ -3039,6 +3042,12 @@ export async function createAgentsServices(config) {
     });
     sharedHealthAnalyticsService = healthAnalyticsService;
 
+    // Task 12: construct new analytical query services for HealthQueryToolFactory
+    // + PlaybookToolFactory. Added additively — old tools remain registered.
+    const healthQueryService       = new HealthQueryService({ healthStore, healthService });
+    const computeSandbox           = new ComputeSandbox();
+    const personalConstantsService = new PersonalConstantsService({ dataService, healthStore });
+
     agentOrchestrator.register(HealthCoachAgent, {
       workingMemory,
       healthStore,
@@ -3057,6 +3066,9 @@ export async function createAgentsServices(config) {
       calibrationConstants,
       dataRoot,
       healthAnalyticsService,
+      healthQueryService,
+      computeSandbox,
+      personalConstantsService,
     });
   }
 

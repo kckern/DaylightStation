@@ -10,6 +10,8 @@ import { MessagingChannelToolFactory } from './tools/MessagingChannelToolFactory
 import { LongitudinalToolFactory } from './tools/LongitudinalToolFactory.mjs';
 import { ComplianceToolFactory } from './tools/ComplianceToolFactory.mjs';
 import { HealthAnalyticsToolFactory } from './tools/HealthAnalyticsToolFactory.mjs';
+import { HealthQueryToolFactory } from './tools/HealthQueryToolFactory.mjs';
+import { PlaybookToolFactory }    from './tools/PlaybookToolFactory.mjs';
 import { DailyDashboard } from './assignments/DailyDashboard.mjs';
 import { chatPrompt } from './prompts/chat.mjs';
 import { dashboardPrompt } from './prompts/dashboard.mjs';
@@ -187,6 +189,21 @@ export class HealthCoachAgent extends BaseAgent {
     if (healthAnalyticsService) {
       this.addToolFactory(new HealthAnalyticsToolFactory({ healthAnalyticsService }));
     }
+
+    // Task 12 (additive): SQL-equivalent query engine + compute sandbox.
+    // Conditional for safety — if bootstrap hasn't wired these deps yet, the
+    // agent still loads cleanly (old tools remain live). Cleanup in Task 13.
+    const { healthQueryService, computeSandbox, personalConstantsService } = this.deps;
+    if (healthQueryService && computeSandbox && personalConstantsService) {
+      this.addToolFactory(new HealthQueryToolFactory({
+        queryService:     healthQueryService,
+        sandbox:          computeSandbox,
+        constantsService: personalConstantsService,
+      }));
+    }
+
+    // PlaybookToolFactory has no required deps — always register.
+    this.addToolFactory(new PlaybookToolFactory());
 
     // Existing assignment
     this.registerAssignment(new DailyDashboard());
