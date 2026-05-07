@@ -1,21 +1,20 @@
 // backend/src/3_applications/agents/health-coach/tools/LongitudinalToolFactory.mjs
 //
-// Tools for longitudinal historical queries against archived health data
-// (F-103). Each tool aggregates a time series at a selectable granularity so
-// the coaching agent can ground its observations in personal precedent
-// without consuming day-by-day rows.
+// Period vocabulary and notes-file tools for the health-coach agent.
 //
-// This factory is structured as an array of `createTool(...)` entries:
-// query_historical_weight (F-103.1), query_historical_nutrition (F-103.2),
-// query_historical_workouts (F-103.3), and query_named_period (F-103.4),
-// the last of which is a convenience wrapper that resolves a labeled
-// period from the user's playbook and runs the other three against
-// the period's [from, to] range. Plus read_notes_file (F-102), which
-// reads notes/*.md and scans/*.yml from the archive with optional
-// markdown section extraction and per-execution caching. And
-// find_similar_period (F-104), which aggregates each playbook period's
-// 30-day-equivalent stats and delegates similarity ranking to the
-// injected SimilarPeriodFinder.
+// After Task 13 retirement, this factory exposes two tools:
+//   - query_named_period (F-103.4): resolves a labeled period from the user's
+//     playbook and returns aggregated data for its [from, to] range.
+//   - read_notes_file (F-102): reads notes/*.md and scans/*.yml from the
+//     archive with optional markdown section extraction and per-execution
+//     caching.
+//
+// The bulk historical query tools (query_historical_weight/nutrition/workouts,
+// find_similar_period, query_historical_reconciliation/coaching,
+// query_nutrition_density) were retired in Task 13 — their surface is fully
+// covered by query_health + compute + playbook recipes. The private executor
+// helpers (makeQueryWeightExecutor, etc.) are retained here because
+// query_named_period internally delegates to them.
 
 import path from 'node:path';
 import fsPromises from 'node:fs/promises';
@@ -33,14 +32,11 @@ const AGGREGATIONS = ['daily', 'weekly_avg', 'monthly_avg', 'quarterly_avg', 'ye
 const READ_NOTES_PREFIXES = ['notes/', 'scans/'];
 
 /**
- * Hard-validate userId at every tool boundary. The four current tools delegate
- * to trusted datastore methods (loadWeightData, loadNutritionData,
- * getHealthForRange, loadPlaybook) that compose paths internally, so the
- * userId is currently the only user-supplied input on the read path. Future
- * tools (e.g. read_notes_file in F-102) WILL take user-supplied filenames —
- * those must additionally call `HealthArchiveScope.assertReadable(absPath,
- * userId)` before any read. See backend/src/2_domains/health/services/
- * HealthArchiveScope.mjs for the F-106 whitelist.
+ * Hard-validate userId at every tool boundary. Tools that accept user-supplied
+ * filenames (read_notes_file) additionally call
+ * `HealthArchiveScope.assertReadable(absPath, userId)` before any disk access.
+ * See backend/src/2_domains/health/services/HealthArchiveScope.mjs for the
+ * F-106 whitelist.
  *
  * Errors are caught by each tool's outer try/catch and surfaced as
  * `{ ..., error: '...' }` results so the agent gets a structured rejection.
@@ -57,7 +53,6 @@ export class LongitudinalToolFactory extends ToolFactory {
       healthStore,
       healthService,
       personalContextLoader,
-      similarPeriodFinder,
       archiveScope,           // legacy: pre-factory direct injection (still
                               // accepted so existing tests keep working)
       archiveScopeFactory,    // F4-A: per-user scope factory (preferred)
@@ -65,8 +60,8 @@ export class LongitudinalToolFactory extends ToolFactory {
       dataRoot,
     } = this.deps;
 
-    // Shared executors so the named-period wrapper can reuse the exact
-    // logic from each underlying tool without duplicating it.
+    // Shared executors used internally by query_named_period to aggregate
+    // weight, nutrition, and workout data for a resolved period range.
     const queryWeight = makeQueryWeightExecutor(healthStore);
     const queryNutrition = makeQueryNutritionExecutor(healthStore);
     const queryWorkouts = makeQueryWorkoutsExecutor(healthService);
@@ -79,107 +74,7 @@ export class LongitudinalToolFactory extends ToolFactory {
       archiveScope, archiveScopeFactory, fs, dataRoot, cache: readNotesCache,
     });
 
-    // Stats aggregator for find_similar_period. Closure-scoped so it can
-    // reuse healthStore from the factory deps without re-extracting.
-    const computePeriodStats = makeComputePeriodStats({ healthStore });
-
     return [
-      createTool({
-        name: 'query_historical_weight',
-        description:
-          'Query weight history with selectable aggregation (daily, weekly_avg, ' +
-          'monthly_avg, quarterly_avg) over an inclusive [from, to] date range. ' +
-          'Returns time series with lbs, fatPercent, count, and source attribution.',
-        parameters: {
-          type: 'object',
-          properties: {
-            userId: { type: 'string', description: 'User identifier' },
-            from: { type: 'string', description: 'Inclusive start date (YYYY-MM-DD)' },
-            to: { type: 'string', description: 'Inclusive end date (YYYY-MM-DD)' },
-            aggregation: {
-              type: 'string',
-              enum: AGGREGATIONS,
-              default: 'daily',
-              description: 'Granularity of returned rows',
-            },
-          },
-          required: ['userId', 'from', 'to'],
-        },
-        execute: queryWeight,
-      }),
-
-      createTool({
-        name: 'query_historical_nutrition',
-        description:
-          'Query nutrition history over an inclusive [from, to] date range. ' +
-          'Returns per-day calories, protein, carbs, fat (and fiber/sugar/food_items ' +
-          'when available). Supports filters (protein_min, tagged_with, contains_food) ' +
-          'and field projection. Mirrors the reconciliation 14-day redaction policy: ' +
-          'implied_intake and tracking_accuracy are stripped from any day less than ' +
-          '14 days old.',
-        parameters: {
-          type: 'object',
-          properties: {
-            userId: { type: 'string', description: 'User identifier' },
-            from: { type: 'string', description: 'Inclusive start date (YYYY-MM-DD)' },
-            to: { type: 'string', description: 'Inclusive end date (YYYY-MM-DD)' },
-            fields: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Optional field projection. When provided, returned days only ' +
-                'include the listed keys (plus `date`). When null/omitted, all fields are returned.',
-            },
-            filter: {
-              type: 'object',
-              description: 'Optional filters applied before projection.',
-              properties: {
-                protein_min: { type: 'number', description: 'Keep days where protein >= this value (g)' },
-                tagged_with: { type: 'string', description: 'Keep days whose tags array contains this string' },
-                contains_food: {
-                  type: 'string',
-                  description: 'Keep days where any food_items[].name contains this substring (case-insensitive)',
-                },
-              },
-            },
-          },
-          required: ['userId', 'from', 'to'],
-        },
-        execute: queryNutrition,
-      }),
-
-      createTool({
-        name: 'query_historical_workouts',
-        description:
-          'Query historical workouts over an inclusive [from, to] date range. ' +
-          'Reads from the household health data store (Strava + fitness trackers). ' +
-          'Supports optional filters by `type` (e.g. run, ride, strength, yoga) ' +
-          'and `name_contains` (case-insensitive substring match against the ' +
-          'workout title/name). Returns a flat list of workouts sorted by date ascending.',
-        parameters: {
-          type: 'object',
-          properties: {
-            userId: { type: 'string', description: 'User identifier' },
-            from: { type: 'string', description: 'Inclusive start date (YYYY-MM-DD)' },
-            to: { type: 'string', description: 'Inclusive end date (YYYY-MM-DD)' },
-            type: {
-              type: 'string',
-              description: 'Optional exact-match filter on workout type (e.g. run, ride, strength).',
-            },
-            name_contains: {
-              type: 'string',
-              description: 'Optional case-insensitive substring filter against workout title/name.',
-            },
-            aggregation: {
-              type: 'string',
-              enum: ['weekly_count', 'monthly_count', 'yearly_count'],
-              description: 'Optional rollup. When present, returns per-bucket count + totalDurationMin instead of a flat list.',
-            },
-          },
-          required: ['userId', 'from', 'to'],
-        },
-        execute: queryWorkouts,
-      }),
-
       createTool({
         name: 'query_named_period',
         description:
@@ -278,248 +173,6 @@ export class LongitudinalToolFactory extends ToolFactory {
           required: ['userId', 'filename'],
         },
         execute: readNotesFile,
-      }),
-
-      createTool({
-        name: 'find_similar_period',
-        description:
-          'Given a 30-day pattern signature (e.g. current weight average, ' +
-          'protein average, tracking rate), surface the closest historical ' +
-          'analog from the user\'s playbook of named periods. Useful when the ' +
-          'agent wants to ground a current observation in personal precedent ' +
-          '("the last time you were at this weight with this protein intake, ' +
-          'here\'s what happened"). Returns up to `max_results` ranked ' +
-          'matches with similarity scores per dimension.',
-        parameters: {
-          type: 'object',
-          properties: {
-            userId: { type: 'string', description: 'User identifier' },
-            pattern_signature: {
-              type: 'object',
-              description:
-                'A subset of the supported dimensions: weight_avg_lbs, ' +
-                'weight_delta_lbs, protein_avg_g, calorie_avg, tracking_rate. ' +
-                'Missing dimensions are ignored during scoring.',
-              properties: {
-                weight_avg_lbs: { type: 'number' },
-                weight_delta_lbs: { type: 'number' },
-                protein_avg_g: { type: 'number' },
-                calorie_avg: { type: 'number' },
-                tracking_rate: { type: 'number' },
-              },
-            },
-            max_results: {
-              type: 'number',
-              default: 3,
-              description: 'Max number of matches to return (default 3).',
-            },
-          },
-          required: ['userId', 'pattern_signature'],
-        },
-        execute: async ({ userId, pattern_signature, max_results = 3 }) => {
-          try {
-            guardUserId(userId);
-
-            // Graceful degradation when context is unavailable. We return a
-            // structured no-result response rather than throwing so the agent
-            // can incorporate the negative signal into its reasoning.
-            if (!personalContextLoader || typeof personalContextLoader.loadPlaybook !== 'function') {
-              return { matches: [], reason: 'no playbook' };
-            }
-
-            const playbook = await personalContextLoader.loadPlaybook(userId);
-            const namedPeriods = playbook?.named_periods;
-            if (!namedPeriods || typeof namedPeriods !== 'object') {
-              return { matches: [], reason: 'no playbook' };
-            }
-
-            // Build the period descriptors the finder expects: name + stats +
-            // metadata (from/to/description). Skip periods that yield no
-            // usable stats — they would only dilute the rankings.
-            const periods = [];
-            for (const [name, raw] of Object.entries(namedPeriods)) {
-              if (!raw || typeof raw !== 'object') continue;
-              const from = formatDate(raw.from);
-              const to = formatDate(raw.to);
-              if (!from || !to) continue;
-
-              const stats = await computePeriodStats({ userId, from, to });
-              if (!hasUsableStats(stats)) continue;
-
-              const description = typeof raw.description === 'string'
-                ? raw.description.trim()
-                : '';
-
-              periods.push({ name, from, to, description, stats });
-            }
-
-            if (!similarPeriodFinder || typeof similarPeriodFinder.findSimilar !== 'function') {
-              return { signature: pattern_signature, matches: [], error: 'similarPeriodFinder dependency missing' };
-            }
-
-            const matches = similarPeriodFinder.findSimilar({
-              signature: pattern_signature,
-              periods,
-              maxResults: max_results,
-            });
-
-            return { signature: pattern_signature, matches };
-          } catch (err) {
-            return { signature: pattern_signature, matches: [], error: err.message };
-          }
-        },
-      }),
-      createTool({
-        name: 'query_historical_reconciliation',
-        description:
-          'Query reconciliation data over an inclusive [from, to] date range. ' +
-          'Returns per-day tracked_calories and exercise_calories. The 14-day ' +
-          'maturity gate strips implied_intake / tracking_accuracy / ' +
-          'calorie_adjustment from days less than 14 days old (those values ' +
-          'depend on weight smoothing that hasn\'t settled).',
-        parameters: {
-          type: 'object',
-          properties: {
-            userId: { type: 'string' },
-            from:   { type: 'string', description: 'YYYY-MM-DD inclusive' },
-            to:     { type: 'string', description: 'YYYY-MM-DD inclusive' },
-          },
-          required: ['userId', 'from', 'to'],
-        },
-        execute: async ({ userId, from, to }) => {
-          try {
-            HealthArchiveScope.assertValidUserId(userId);
-            const data = await healthStore.loadReconciliationData?.(userId) || {};
-            const dates = Object.keys(data).filter(d => d >= from && d <= to).sort();
-
-            const MATURITY_DAYS = 14;
-            const now = new Date();
-            const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-            const cutoff = new Date(todayUtc);
-            cutoff.setUTCDate(cutoff.getUTCDate() - MATURITY_DAYS);
-
-            const days = dates.map(date => {
-              const entry = data[date] || {};
-              const dateObj = new Date(date + 'T00:00:00Z');
-              const isMature = dateObj <= cutoff;
-              const day = {
-                date,
-                tracked_calories: entry.tracked_calories ?? 0,
-                exercise_calories: entry.exercise_calories ?? 0,
-              };
-              if (isMature) {
-                if (entry.tracking_accuracy   !== undefined) day.tracking_accuracy   = entry.tracking_accuracy;
-                if (entry.implied_intake      !== undefined) day.implied_intake      = entry.implied_intake;
-                if (entry.calorie_adjustment  !== undefined) day.calorie_adjustment  = entry.calorie_adjustment;
-              }
-              return day;
-            });
-
-            return { days };
-          } catch (err) {
-            return { days: [], error: err.message };
-          }
-        },
-      }),
-
-      createTool({
-        name: 'query_historical_coaching',
-        description:
-          'Query past coaching messages over an inclusive [from, to] date ' +
-          'range. Returns per-date entries with type/text/timestamp.',
-        parameters: {
-          type: 'object',
-          properties: {
-            userId: { type: 'string' },
-            from:   { type: 'string' },
-            to:     { type: 'string' },
-          },
-          required: ['userId', 'from', 'to'],
-        },
-        execute: async ({ userId, from, to }) => {
-          try {
-            HealthArchiveScope.assertValidUserId(userId);
-            const data = await healthStore.loadCoachingData?.(userId) || {};
-            const dates = Object.keys(data).filter(d => d >= from && d <= to).sort();
-            const entries = dates.map(date => ({
-              date,
-              messages: (data[date] || []).map(entry => ({
-                type: entry.type,
-                text: entry.text || entry.message,
-                timestamp: entry.timestamp,
-              })),
-            }));
-            return { entries };
-          } catch (err) {
-            return { entries: [], error: err.message };
-          }
-        },
-      }),
-
-      createTool({
-        name: 'query_nutrition_density',
-        description:
-          'Per-bucket "tracking density" series. A "logged" day is one with ' +
-          'a nutrition entry whose calories > 0. Returns per-bucket ' +
-          '{ daysLogged, daysInPeriod, density } at the requested granularity ' +
-          '(daily | weekly | monthly | quarterly | yearly).',
-        parameters: {
-          type: 'object',
-          properties: {
-            userId: { type: 'string' },
-            from:   { type: 'string' },
-            to:     { type: 'string' },
-            granularity: {
-              type: 'string',
-              enum: ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'],
-              default: 'monthly',
-            },
-          },
-          required: ['userId', 'from', 'to'],
-        },
-        execute: async ({ userId, from, to, granularity = 'monthly' }) => {
-          try {
-            HealthArchiveScope.assertValidUserId(userId);
-            const allowed = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'];
-            if (!allowed.includes(granularity)) {
-              return { rows: [], error: `Unknown granularity: ${granularity}` };
-            }
-            const data = await healthStore.loadNutritionData?.(userId) || {};
-            const bucketKey = granularity === 'daily' ? (d) => d :
-                              granularity === 'weekly' ? isoWeek :
-                              granularity === 'monthly' ? isoMonth :
-                              granularity === 'quarterly' ? quarter :
-                              isoYear;
-
-            // Walk every date in [from, to]; classify each as logged or not.
-            const buckets = new Map();
-            const f = new Date(from + 'T00:00:00Z');
-            const t = new Date(to + 'T00:00:00Z');
-            for (let d = new Date(f); d <= t; d.setUTCDate(d.getUTCDate() + 1)) {
-              const date = d.toISOString().slice(0, 10);
-              const entry = data[date];
-              const logged = entry && typeof entry.calories === 'number' && entry.calories > 0;
-              const key = bucketKey(date);
-              if (!buckets.has(key)) buckets.set(key, { period: key, daysLogged: 0, daysInPeriod: 0 });
-              const b = buckets.get(key);
-              b.daysInPeriod++;
-              if (logged) b.daysLogged++;
-            }
-
-            const rows = [...buckets.values()]
-              .sort((a, b) => a.period.localeCompare(b.period))
-              .map(b => ({
-                period: b.period,
-                daysLogged: b.daysLogged,
-                daysInPeriod: b.daysInPeriod,
-                density: b.daysInPeriod > 0 ? b.daysLogged / b.daysInPeriod : 0,
-              }));
-
-            return { granularity, rows };
-          } catch (err) {
-            return { rows: [], error: err.message };
-          }
-        },
       }),
     ];
   }
@@ -623,7 +276,7 @@ function makeQueryNutritionExecutor(healthStore) {
 
       if (!dates.length) return { days: [] };
 
-      // 14-day redaction window — match ReconciliationToolFactory.
+      // 14-day redaction window for implied_intake / tracking_accuracy.
       // Use UTC to align with our YYYY-MM-DD date keys, which are UTC dates.
       const MATURITY_DAYS = 14;
       const now = new Date();
@@ -932,106 +585,6 @@ function extractMarkdownSection(content, section) {
 
   if (!inSection) return null;
   return collected.join('\n');
-}
-
-/**
- * Build the period-stats aggregator used by find_similar_period (F-104).
- *
- * Given a [from, to] date range, computes the canonical 5-dimension signature
- * the SimilarPeriodFinder accepts:
- *
- * - weight_avg_lbs: mean of daily adjusted/raw lbs across the range
- * - weight_delta_lbs: last weight reading minus first weight reading in range
- * - protein_avg_g: mean of daily protein over logged days only
- * - calorie_avg: mean of daily calories over logged days only
- * - tracking_rate: logged days ÷ total days in range (inclusive)
- *
- * Dimensions with no underlying data resolve to `null` so the finder can
- * skip them in scoring (it ignores non-finite values).
- *
- * @param {object} args
- * @param {object} args.healthStore datastore exposing loadWeightData / loadNutritionData
- * @returns {Function} async ({ userId, from, to }) => stats
- */
-function makeComputePeriodStats({ healthStore }) {
-  return async function computePeriodStats({ userId, from, to }) {
-    // Total day count in [from, to] inclusive — used as the tracking_rate
-    // denominator. We trust well-formed YYYY-MM-DD inputs (validated upstream).
-    const fromDate = new Date(from + 'T00:00:00Z');
-    const toDate = new Date(to + 'T00:00:00Z');
-    const totalDays = Math.round((toDate - fromDate) / 86400000) + 1;
-
-    const stats = {
-      weight_avg_lbs: null,
-      weight_delta_lbs: null,
-      protein_avg_g: null,
-      calorie_avg: null,
-      tracking_rate: null,
-    };
-
-    // ---- weight ----
-    if (typeof healthStore?.loadWeightData === 'function') {
-      const weightData = await healthStore.loadWeightData(userId);
-      const weightDates = Object.keys(weightData || {})
-        .filter(d => d >= from && d <= to)
-        .sort();
-      if (weightDates.length) {
-        const lbsValues = [];
-        for (const d of weightDates) {
-          const entry = weightData[d] || {};
-          const lbs = entry.lbs_adjusted_average ?? entry.lbs ?? null;
-          if (typeof lbs === 'number' && Number.isFinite(lbs)) lbsValues.push(lbs);
-        }
-        if (lbsValues.length) {
-          stats.weight_avg_lbs = lbsValues.reduce((s, n) => s + n, 0) / lbsValues.length;
-          stats.weight_delta_lbs = lbsValues[lbsValues.length - 1] - lbsValues[0];
-        }
-      }
-    }
-
-    // ---- nutrition + tracking_rate ----
-    if (typeof healthStore?.loadNutritionData === 'function') {
-      const nutritionData = await healthStore.loadNutritionData(userId);
-      const nutritionDates = Object.keys(nutritionData || {})
-        .filter(d => d >= from && d <= to);
-
-      const proteinValues = [];
-      const calorieValues = [];
-      for (const d of nutritionDates) {
-        const entry = nutritionData[d] || {};
-        if (typeof entry.protein === 'number' && Number.isFinite(entry.protein)) {
-          proteinValues.push(entry.protein);
-        }
-        if (typeof entry.calories === 'number' && Number.isFinite(entry.calories)) {
-          calorieValues.push(entry.calories);
-        }
-      }
-      if (proteinValues.length) {
-        stats.protein_avg_g = proteinValues.reduce((s, n) => s + n, 0) / proteinValues.length;
-      }
-      if (calorieValues.length) {
-        stats.calorie_avg = calorieValues.reduce((s, n) => s + n, 0) / calorieValues.length;
-      }
-      if (totalDays > 0) {
-        stats.tracking_rate = nutritionDates.length / totalDays;
-      }
-    }
-
-    return stats;
-  };
-}
-
-/**
- * True iff a stats object has at least one finite numeric dimension we can
- * actually score against. Periods that produced no usable data are excluded
- * from the candidate set so they don't dilute rankings.
- */
-function hasUsableStats(stats) {
-  if (!stats || typeof stats !== 'object') return false;
-  for (const v of Object.values(stats)) {
-    if (typeof v === 'number' && Number.isFinite(v)) return true;
-  }
-  return false;
 }
 
 // ---------- helpers ----------
