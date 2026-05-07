@@ -2,6 +2,20 @@
 
 const SUPPORTED_KINDS = new Set(['workout']);  // future: 'meal', 'weigh_in'
 
+const ALLOWED_FILTER_KEYS = new Set(['type', 'kind']);
+
+export function validateFilter(filter) {
+  if (filter === null || filter === undefined) return;
+  if (typeof filter !== 'object' || Array.isArray(filter)) {
+    throw new Error(`filter must be an object like { type: 'Run' } or { kind: 'strength' } — got ${typeof filter}: ${JSON.stringify(filter)}`);
+  }
+  for (const k of Object.keys(filter)) {
+    if (!ALLOWED_FILTER_KEYS.has(k)) {
+      throw new Error(`unknown filter key "${k}" — allowed keys: ${[...ALLOWED_FILTER_KEYS].join(', ')}`);
+    }
+  }
+}
+
 export class EventQueryService {
   #sessionService;
   #householdId;
@@ -18,6 +32,7 @@ export class EventQueryService {
     if (!SUPPORTED_KINDS.has(kind)) {
       throw new Error(`EventQueryService: unsupported kind "${kind}"`);
     }
+    validateFilter(filter);
     const { from, to } = this.#resolvePeriod(period);
 
     if (kind === 'workout') {
