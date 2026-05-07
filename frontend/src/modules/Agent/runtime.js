@@ -11,6 +11,42 @@
  */
 import { parseSSE } from '../../lib/sse/parseSSE.js';
 
+// ---------------------------------------------------------------------------
+// Thread ID helpers — stable localStorage-backed key per (agentId, userId)
+// ---------------------------------------------------------------------------
+
+const THREAD_PREFIX = 'daylight-station:agent-thread:';
+
+function getStorage() {
+  try {
+    if (typeof globalThis !== 'undefined' && globalThis.localStorage) return globalThis.localStorage;
+    if (typeof window !== 'undefined' && window.localStorage) return window.localStorage;
+  } catch {}
+  return null;
+}
+
+export function getOrCreateThreadId(agentId, userId) {
+  if (!agentId || !userId) return null;
+  const storage = getStorage();
+  if (!storage) return null;
+  const key = `${THREAD_PREFIX}${agentId}:${userId}`;
+  let id;
+  try { id = storage.getItem(key); } catch { return null; }
+  if (!id) {
+    id = `t-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    try { storage.setItem(key, id); } catch {}
+  }
+  return id;
+}
+
+export function resetThread(agentId, userId) {
+  if (!agentId || !userId) return;
+  const storage = getStorage();
+  if (!storage) return;
+  const key = `${THREAD_PREFIX}${agentId}:${userId}`;
+  try { storage.removeItem(key); } catch {}
+}
+
 export function createAgentRuntime(agentId) {
   const runUrl = `/api/v1/agents/${agentId}/run`;
   const streamUrl = `/api/v1/agents/${agentId}/run-stream`;
@@ -25,6 +61,7 @@ export function createAgentRuntime(agentId) {
     async run({ messages, userId, attachments = [] }) {
       const last = messages.at(-1);
       const text = extractText(last);
+      const threadId = getOrCreateThreadId(agentId, userId);
 
       const res = await fetch(runUrl, {
         method: 'POST',
@@ -33,6 +70,7 @@ export function createAgentRuntime(agentId) {
           input: text,
           context: { userId, attachments },
           messages: serializeMessages(messages),
+          threadId,
         }),
       });
 
@@ -51,11 +89,12 @@ export function createAgentRuntime(agentId) {
     async *runStream({ messages, userId, attachments = [], abortSignal }) {
       const last = messages.at(-1);
       const text = extractText(last);
+      const threadId = getOrCreateThreadId(agentId, userId);
 
       const res = await fetch(streamUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: text, context: { userId, attachments }, messages: serializeMessages(messages) }),
+        body: JSON.stringify({ input: text, context: { userId, attachments }, messages: serializeMessages(messages), threadId }),
         signal: abortSignal,
       });
 

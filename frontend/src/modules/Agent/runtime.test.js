@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createAgentRuntime } from './runtime.js';
+import { getOrCreateThreadId } from './runtime.js';
 
 describe('createAgentRuntime', () => {
   it('returns an object with run and runStream methods', () => {
@@ -258,5 +259,145 @@ describe('createAgentRuntime("health-coach").run — messages forwarding', () =>
       { role: 'user', content: 'a' },
       { role: 'assistant', content: 'c' },
     ]);
+  });
+});
+
+describe('createAgentRuntime — threadId', () => {
+  let originalFetch, originalLocalStorage;
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    originalLocalStorage = globalThis.localStorage;
+    // Provide a minimal localStorage shim
+    const store = {};
+    globalThis.localStorage = {
+      _store: store,
+      getItem(k) { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null; },
+      setItem(k, v) { store[k] = String(v); },
+      removeItem(k) { delete store[k]; },
+      clear() { for (const k of Object.keys(store)) delete store[k]; },
+    };
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    globalThis.localStorage = originalLocalStorage;
+  });
+
+  it('ships a threadId in the request body', async () => {
+    let captured;
+    globalThis.fetch = vi.fn(async (url, opts) => {
+      captured = JSON.parse(opts.body);
+      return { ok: true, status: 200, json: async () => ({ output: 'ok', toolCalls: [] }) };
+    });
+    const runtime = createAgentRuntime('health-coach');
+    await runtime.run({ messages: [{ role: 'user', content: 'hi' }], userId: 'kckern' });
+    expect(typeof captured.threadId).toBe('string');
+    expect(captured.threadId).toMatch(/^t-/);
+  });
+
+  it('reuses the same threadId across calls for same agent + user', async () => {
+    const captured = [];
+    globalThis.fetch = vi.fn(async (url, opts) => {
+      captured.push(JSON.parse(opts.body));
+      return { ok: true, status: 200, json: async () => ({ output: 'ok', toolCalls: [] }) };
+    });
+    const runtime = createAgentRuntime('health-coach');
+    await runtime.run({ messages: [{ role: 'user', content: 'a' }], userId: 'kckern' });
+    await runtime.run({ messages: [{ role: 'user', content: 'b' }], userId: 'kckern' });
+    expect(captured[0].threadId).toBe(captured[1].threadId);
+  });
+
+  it('uses different threadIds for different agentIds (same user)', async () => {
+    const captured = [];
+    globalThis.fetch = vi.fn(async (url, opts) => {
+      captured.push(JSON.parse(opts.body));
+      return { ok: true, status: 200, json: async () => ({ output: 'ok', toolCalls: [] }) };
+    });
+    const a = createAgentRuntime('health-coach');
+    const b = createAgentRuntime('lifeplan-guide');
+    await a.run({ messages: [{ role: 'user', content: 'x' }], userId: 'kckern' });
+    await b.run({ messages: [{ role: 'user', content: 'y' }], userId: 'kckern' });
+    expect(captured[0].threadId).not.toBe(captured[1].threadId);
+  });
+
+  it('uses different threadIds for different users (same agent)', async () => {
+    const captured = [];
+    globalThis.fetch = vi.fn(async (url, opts) => {
+      captured.push(JSON.parse(opts.body));
+      return { ok: true, status: 200, json: async () => ({ output: 'ok', toolCalls: [] }) };
+    });
+    const runtime = createAgentRuntime('health-coach');
+    await runtime.run({ messages: [{ role: 'user', content: 'x' }], userId: 'alice' });
+    await runtime.run({ messages: [{ role: 'user', content: 'y' }], userId: 'bob' });
+    expect(captured[0].threadId).not.toBe(captured[1].threadId);
+  });
+
+  it('omits threadId when userId is missing', async () => {
+    let captured;
+    globalThis.fetch = vi.fn(async (url, opts) => {
+      captured = JSON.parse(opts.body);
+      return { ok: true, status: 200, json: async () => ({ output: 'ok', toolCalls: [] }) };
+    });
+    const runtime = createAgentRuntime('health-coach');
+    await runtime.run({ messages: [{ role: 'user', content: 'hi' }] });
+    // userId is undefined → no threadId can be created
+    expect(captured.threadId).toBeNull();
+  });
+
+  it('falls back to null threadId when localStorage is unavailable', async () => {
+    globalThis.localStorage = undefined;
+    let captured;
+    globalThis.fetch = vi.fn(async (url, opts) => {
+      captured = JSON.parse(opts.body);
+      return { ok: true, status: 200, json: async () => ({ output: 'ok', toolCalls: [] }) };
+    });
+    const runtime = createAgentRuntime('health-coach');
+    await runtime.run({ messages: [{ role: 'user', content: 'hi' }], userId: 'kckern' });
+    expect(captured.threadId).toBeNull();
+  });
+
+  it('runStream ships the same threadId as run', async () => {
+    const captured = [];
+    let callCount = 0;
+    globalThis.fetch = vi.fn(async (url, opts) => {
+      captured.push(JSON.parse(opts.body));
+      callCount++;
+      if (callCount === 1) {
+        // First call is run() — needs json()
+        return { ok: true, status: 200, json: async () => ({ output: 'ok', toolCalls: [] }) };
+      }
+      // Second call is runStream() — needs a readable stream body
+      return {
+        ok: true, status: 200,
+        body: new ReadableStream({ start(controller) { controller.close(); } }),
+      };
+    });
+    const runtime = createAgentRuntime('health-coach');
+    // Ship one run() to seed the localStorage threadId
+    await runtime.run({ messages: [{ role: 'user', content: 'a' }], userId: 'kckern' });
+    // Now stream
+    const iter = runtime.runStream({ messages: [{ role: 'user', content: 'b' }], userId: 'kckern' });
+    for await (const _ of iter) break;
+    expect(captured[0].threadId).toBeDefined();
+    expect(captured[1].threadId).toBe(captured[0].threadId);
+  });
+});
+
+describe('threadId helpers exported from runtime', () => {
+  it('getOrCreateThreadId is exported and returns stable id', () => {
+    if (typeof getOrCreateThreadId !== 'function') {
+      // Helper not exported — that's fine, just skip.
+      return;
+    }
+    const store = {};
+    const savedLS = globalThis.localStorage;
+    globalThis.localStorage = {
+      getItem(k) { return store[k] ?? null; },
+      setItem(k, v) { store[k] = v; },
+      removeItem(k) { delete store[k]; },
+    };
+    const a = getOrCreateThreadId('agent', 'user');
+    const b = getOrCreateThreadId('agent', 'user');
+    globalThis.localStorage = savedLS;
+    expect(a).toBe(b);
   });
 });
