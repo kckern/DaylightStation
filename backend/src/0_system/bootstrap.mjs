@@ -217,6 +217,7 @@ import { KomgaClient } from '#adapters/content/readable/komga/KomgaClient.mjs';
 import { KomgaPagedMediaAdapter } from '#adapters/komga/KomgaPagedMediaAdapter.mjs';
 import { YamlTocCacheDatastore } from '#adapters/persistence/yaml/YamlTocCacheDatastore.mjs';
 import { MastraAdapter, YamlWorkingMemoryAdapter } from '#adapters/agents/index.mjs';
+import { buildMastraMemory } from '#system/memory/buildMastraMemory.mjs';
 import { LifeplanGuideAgent } from '#apps/agents/lifeplan-guide/LifeplanGuideAgent.mjs';
 import { YamlConversationStore } from '#adapters/agents/YamlConversationStore.mjs';
 // Health domain + application imports
@@ -2950,8 +2951,21 @@ export async function createAgentsServices(config) {
   // Falls back to a sibling of the data directory if getMediaDir is unavailable.
   const mediaDir = configService?.getMediaDir?.() || null;
 
+  // Build Mastra Memory for cross-session persistence. Uses LibSQL (SQLite) backed
+  // by data/agents/memory.db. Factory creates parent dir if missing.
+  const dataPath = configService?.getDataDir?.() ?? 'data';
+  let mastraMemory = null;
+  try {
+    mastraMemory = buildMastraMemory({
+      dbPath: `${dataPath}/agents/memory.db`,
+      lastMessages: 20,
+    });
+  } catch (memErr) {
+    logger.warn?.('agent.memory.init_failed', { error: memErr.message });
+  }
+
   // Create Mastra adapter (IAgentRuntime implementation)
-  const agentRuntime = new MastraAdapter({ logger, mediaDir });
+  const agentRuntime = new MastraAdapter({ logger, mediaDir, memory: mastraMemory });
 
   // Create working memory adapter for agent state persistence
   const workingMemory = new YamlWorkingMemoryAdapter({ dataService, logger });
