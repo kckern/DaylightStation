@@ -13,6 +13,7 @@ import { HealthAnalyticsToolFactory } from './tools/HealthAnalyticsToolFactory.m
 import { DailyDashboard } from './assignments/DailyDashboard.mjs';
 import { chatPrompt } from './prompts/chat.mjs';
 import { dashboardPrompt } from './prompts/dashboard.mjs';
+import { loadSeedIfEmpty } from './playbooks/seedLoader.mjs';
 
 export class HealthCoachAgent extends BaseAgent {
   static id = 'health-coach';
@@ -84,6 +85,22 @@ export class HealthCoachAgent extends BaseAgent {
 
     this.#personalContextCache.set(userId, bundle);
     return bundle;
+  }
+
+  /**
+   * Seed the playbook library on first turn. `loadSeedIfEmpty` is idempotent —
+   * it writes the seed entries only when the memory has no playbooks yet, and
+   * is a no-op on every subsequent call.
+   *
+   * @param {{ userId?: string, mode?: 'chat'|'dashboard' }} context
+   * @param {import('../framework/WorkingMemory.mjs').WorkingMemoryState|null} memory
+   * @returns {Promise<Array<string|null>>}
+   */
+  async buildPromptSections(context = {}, memory = null) {
+    if (memory) {
+      await loadSeedIfEmpty(memory);
+    }
+    return super.buildPromptSections(context, memory);
   }
 
   /**
