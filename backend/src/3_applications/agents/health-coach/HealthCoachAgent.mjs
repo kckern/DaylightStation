@@ -9,6 +9,7 @@ import { LongitudinalToolFactory } from './tools/LongitudinalToolFactory.mjs';
 import { PeriodToolFactory } from './tools/PeriodToolFactory.mjs';
 import { HealthQueryToolFactory } from './tools/HealthQueryToolFactory.mjs';
 import { PlaybookToolFactory }    from './tools/PlaybookToolFactory.mjs';
+import { PersonalBaselineToolFactory } from './tools/PersonalBaselineToolFactory.mjs';
 import { DailyDashboard } from './assignments/DailyDashboard.mjs';
 import { chatPrompt } from './prompts/chat.mjs';
 import { dashboardPrompt } from './prompts/dashboard.mjs';
@@ -48,11 +49,31 @@ export class HealthCoachAgent extends BaseAgent {
     const base = mode === 'dashboard' ? dashboardPrompt : chatPrompt;
 
     const userId = context?.userId ?? this.#activeUserId ?? null;
-    const loader = this.deps.personalContextLoader;
-    if (!loader || !userId) return base;
+    const sections = [base];
 
-    const bundle = await this.#getPersonalContextBundle(userId, loader);
-    return bundle ? `${base}\n\n${bundle}` : base;
+    // Existing personal-context bundle (playbooks, named periods, etc.)
+    const loader = this.deps.personalContextLoader;
+    if (loader && userId) {
+      const bundle = await this.#getPersonalContextBundle(userId, loader);
+      if (bundle) sections.push(bundle);
+    }
+
+    // User model (profile + baselines) — appended last so it is closest to
+    // the conversation and easy for the model to reference.
+    const userModelService = this.deps.userModelService;
+    if (userModelService && userId) {
+      try {
+        const block = await userModelService.composeContext({ userId });
+        if (block) sections.push(block);
+      } catch (err) {
+        this.deps.logger?.warn?.('health_coach.system_prompt.user_model_failed', {
+          userId,
+          error: err?.message || String(err),
+        });
+      }
+    }
+
+    return sections.join('\n\n');
   }
 
   /**
@@ -183,6 +204,13 @@ export class HealthCoachAgent extends BaseAgent {
 
     // PlaybookToolFactory has no required deps — always register.
     this.addToolFactory(new PlaybookToolFactory());
+
+    // PersonalBaselineToolFactory: on-demand re-query of user baselines.
+    // Only register when baselineService is wired in bootstrap.
+    const { baselineService } = this.deps;
+    if (baselineService) {
+      this.addToolFactory(new PersonalBaselineToolFactory({ baselineService }));
+    }
 
     // Existing assignment
     this.registerAssignment(new DailyDashboard());

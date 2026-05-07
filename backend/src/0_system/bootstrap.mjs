@@ -207,6 +207,11 @@ import { ComputeSandbox }           from '#apps/agents/health-coach/services/Com
 import { PersonalConstantsService } from '#apps/agents/health-coach/services/PersonalConstantsService.mjs';
 import { EventQueryService }        from '#apps/agents/health-coach/services/EventQueryService.mjs';
 import { FitnessEventAdapter }      from '#apps/agents/health-coach/services/adapters/FitnessEventAdapter.mjs';
+import { NutritionEventAdapter }    from '#apps/agents/health-coach/services/adapters/NutritionEventAdapter.mjs';
+import { WeightEventAdapter }       from '#apps/agents/health-coach/services/adapters/WeightEventAdapter.mjs';
+import { PersonalBaselineService }  from '#apps/agents/health-coach/services/PersonalBaselineService.mjs';
+import { UserModelService }         from '#apps/agents/health-coach/services/UserModelService.mjs';
+import { FoodLogService }           from '#domains/nutrition/services/FoodLogService.mjs';
 import { PagedMediaTocAgent } from '#apps/agents/paged-media-toc/index.mjs';
 import { KomgaClient } from '#adapters/content/readable/komga/KomgaClient.mjs';
 import { KomgaPagedMediaAdapter } from '#adapters/komga/KomgaPagedMediaAdapter.mjs';
@@ -2930,6 +2935,7 @@ export async function createAgentsServices(config) {
     messagingGateway = null,
     conversationId = null,
     nutriListStore = null,
+    foodLogStore = null,
   } = config;
 
   // Mastra reads API keys from process.env — bridge from ConfigService
@@ -3053,13 +3059,52 @@ export async function createAgentsServices(config) {
     // Task 4: EventQueryService — drives query_events / get_event_detail tools.
     // Dispatches by domain kind; FitnessEventAdapter handles 'workout' events.
     // householdId resolved from configService (same pattern used elsewhere).
-    const eventQueryService = new EventQueryService({
-      adapters: {
-        workout: new FitnessEventAdapter({
-          sessionService,
-          householdId: configService?.getDefaultHouseholdId?.() ?? 'default',
-        }),
-      },
+    const householdId = configService?.getDefaultHouseholdId?.() ?? 'default';
+    const defaultUserId = configService?.getHeadOfHousehold?.() ?? householdId;
+
+    const fitnessEventAdapter = new FitnessEventAdapter({
+      sessionService,
+      householdId,
+    });
+
+    // Task 9: Nutrition adapter — only wired when foodLogStore is available.
+    // foodLogStore comes from the caller (app.mjs can pass it from createNutribotServices).
+    // If not provided, nutrition baselines are gracefully skipped.
+    let nutritionEventAdapter = null;
+    if (foodLogStore) {
+      const foodLogService = new FoodLogService({ foodLogStore });
+      nutritionEventAdapter = new NutritionEventAdapter({
+        foodLogService,
+        userId: defaultUserId,
+      });
+    }
+
+    // Task 9: Weight adapter — uses healthService.getHealthForRange, always available
+    // when healthService is present (same guard as the HealthCoachAgent block).
+    const weightEventAdapter = new WeightEventAdapter({
+      healthService,
+      userId: defaultUserId,
+    });
+
+    const adapters = {
+      workout: fitnessEventAdapter,
+      ...(nutritionEventAdapter ? { meal: nutritionEventAdapter } : {}),
+      weigh_in: weightEventAdapter,
+    };
+
+    const eventQueryService = new EventQueryService({ adapters });
+
+    // Task 9: PersonalBaselineService — rolling baselines per domain.
+    const baselineService = new PersonalBaselineService({
+      adapters,
+      dataService,
+    });
+
+    // Task 9: UserModelService — composes profile + baselines into a markdown
+    // block that getSystemPrompt appends to the system prompt every turn.
+    const userModelService = new UserModelService({
+      personalConstantsService,
+      baselineService,
     });
 
     agentOrchestrator.register(HealthCoachAgent, {
@@ -3084,6 +3129,8 @@ export async function createAgentsServices(config) {
       computeSandbox,
       personalConstantsService,
       eventQueryService,
+      baselineService,
+      userModelService,
     });
   }
 
