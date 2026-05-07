@@ -16,6 +16,7 @@ The framework supports any number of agents in a single deployment. Agents range
 ## Where to read next
 
 - **[Architecture](architecture.md)** — turn lifecycle, prompt composition, tool decorator chain, memory model, transcript format, HTTP wire formats, frontend chat surface.
+- **[Patterns](patterns.md)** — reusable patterns for domain adapters, user models, baseline annotations, and reasoning rails. Read this if your agent needs to reason over domain data.
 - **[Extending](extending.md)** — what's required to add a new agent. End-to-end checklist: agent class, tools, prompts, dependencies, registration, HTTP mount, optional frontend.
 
 ## Where it lives
