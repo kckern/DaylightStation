@@ -130,4 +130,53 @@ export class EventQueryService {
   }
 }
 
+export function computeHrStats(series) {
+  const empty = {
+    n: 0, mean: null, max: null, min: null, p50: null, p90: null,
+    drift_pct: null,
+    bands: { lt120: 0, b120_139: 0, b140_159: 0, b160_179: 0, gte180: 0 },
+  };
+  if (!Array.isArray(series) || series.length === 0) return empty;
+
+  const xs = series.filter(v => typeof v === 'number' && Number.isFinite(v));
+  if (xs.length === 0) return empty;
+
+  const sorted = [...xs].sort((a, b) => a - b);
+  const sum = xs.reduce((a, b) => a + b, 0);
+  const mean = sum / xs.length;
+
+  const pct = (p) => {
+    const idx = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));
+    return sorted[idx];
+  };
+
+  const bands = { lt120: 0, b120_139: 0, b140_159: 0, b160_179: 0, gte180: 0 };
+  for (const v of xs) {
+    if (v < 120) bands.lt120++;
+    else if (v < 140) bands.b120_139++;
+    else if (v < 160) bands.b140_159++;
+    else if (v < 180) bands.b160_179++;
+    else bands.gte180++;
+  }
+
+  let drift_pct = null;
+  if (xs.length >= 9) {
+    const third = Math.floor(xs.length / 3);
+    const firstMean = xs.slice(0, third).reduce((a, b) => a + b, 0) / third;
+    const lastMean  = xs.slice(-third).reduce((a, b) => a + b, 0) / third;
+    if (firstMean > 0) drift_pct = (lastMean / firstMean - 1) * 100;
+  }
+
+  return {
+    n: xs.length,
+    mean: Math.round(mean * 10) / 10,
+    max: Math.max(...xs),
+    min: Math.min(...xs),
+    p50: pct(50),
+    p90: pct(90),
+    drift_pct: drift_pct === null ? null : Math.round(drift_pct * 100) / 100,
+    bands,
+  };
+}
+
 export default EventQueryService;
