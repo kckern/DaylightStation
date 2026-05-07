@@ -68,6 +68,7 @@ export class FitnessEventAdapter extends EventAdapter {
     return {
       ...baseEvent,
       scalars: { ...baseEvent.scalars, hr_stats },
+      // Pass-through full domain object
       session_full: typeof session.toJSON === 'function' ? session.toJSON() : session,
       timeline: session.timeline ?? null,
       strava: session.strava ?? null,
@@ -76,6 +77,12 @@ export class FitnessEventAdapter extends EventAdapter {
       snapshots: session.snapshots ?? null,
       entities: session.entities ?? null,
       summary_block: session.summary ?? null,
+      // Coach-friendly structured summaries
+      voice_memos: this.#extractVoiceMemos(session),
+      snapshot_refs: this.#extractSnapshotRefs(session),
+      treasure_stats: this.#extractTreasureStats(session),
+      strava_summary: this.#extractStravaSummary(session),
+      participant_summary: this.#extractParticipantSummary(session),
     };
   }
 
@@ -142,6 +149,67 @@ export class FitnessEventAdapter extends EventAdapter {
         distance_mi: full.metadata?.distance_mi ?? event.scalars.distance_mi,
         hr_stats,
       },
+    };
+  }
+
+  #extractVoiceMemos(session) {
+    const memos = session.summary?.voiceMemos ?? [];
+    if (!Array.isArray(memos)) return [];
+    return memos.map(m => ({
+      timestamp: m?.timestamp ?? null,
+      transcript: m?.transcript ?? null,
+    }));
+  }
+
+  #extractSnapshotRefs(session) {
+    const media = session.summary?.media ?? [];
+    if (!Array.isArray(media)) return [];
+    return media.map(m => ({
+      timestamp: m?.timestamp ?? null,
+      ref: m?.ref ?? m?.imageRef ?? m?.imageUrl ?? null,
+    }));
+  }
+
+  #extractTreasureStats(session) {
+    if (!session.treasureBox) return null;
+    return {
+      total_coins: session.treasureBox.totalCoins ?? 0,
+      buckets: session.treasureBox.buckets ?? null,
+    };
+  }
+
+  #extractStravaSummary(session) {
+    const s = session.strava;
+    if (!s) return null;
+    return {
+      activity_id:      s.activityId ?? s.id ?? null,
+      name:             s.name ?? null,
+      type:             s.type ?? null,
+      distance_m:       s.distance ?? null,
+      elevation_gain_m: s.totalElevationGain ?? null,
+      avg_heartrate:    s.avgHeartrate ?? null,
+      max_heartrate:    s.maxHeartrate ?? null,
+      map_polyline:     s.map?.polyline ?? s.map?.summary_polyline ?? null,
+      start_latlng:     s.map?.startLatLng ?? s.start_latlng ?? null,
+      description:      s.description ?? null,
+    };
+  }
+
+  #extractParticipantSummary(session) {
+    const participants = session.summary?.participants;
+    if (!participants || typeof participants !== 'object') return null;
+    // Pick the first participant (single-user sessions); for multi-user sessions
+    // pick the longest entry (heuristic: most data → primary participant).
+    const entries = Object.entries(participants);
+    if (entries.length === 0) return null;
+    const [, p] = entries[0];
+    if (!p || typeof p !== 'object') return null;
+    return {
+      hr_avg: p.hr_avg ?? null,
+      hr_max: p.hr_max ?? null,
+      hr_min: p.hr_min ?? null,
+      zone_minutes: p.zone_minutes ?? null,
+      coins: p.coins ?? null,
     };
   }
 }
