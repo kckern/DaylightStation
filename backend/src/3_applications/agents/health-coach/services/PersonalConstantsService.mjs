@@ -11,7 +11,7 @@ export class PersonalConstantsService {
   async get(userId) {
     if (!userId) throw new Error('PersonalConstantsService: userId required');
 
-    const profile = await this.#dataService.user.read(userId, 'profile/health.yml');
+    const profile = await this.#dataService.user.read('profile/health', userId);
     if (!profile) {
       throw new Error(`PersonalConstantsService: profile/health.yml not found for ${userId}`);
     }

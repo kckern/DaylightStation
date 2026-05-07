@@ -6,8 +6,8 @@ describe('PersonalConstantsService.get', () => {
     const svc = new PersonalConstantsService({
       dataService: {
         user: {
-          read: async (userId, path) => {
-            if (path === 'profile/health.yml') {
+          read: async (path, userId) => {
+            if (path === 'profile/health') {
               return { height_cm: 180, age: 40, sex: 'M', activity_pal: 1.55, scale_bias_lbs: 0 };
             }
             return null;

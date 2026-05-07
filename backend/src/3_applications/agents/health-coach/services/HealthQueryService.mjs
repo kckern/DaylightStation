@@ -188,6 +188,7 @@ export class HealthQueryService {
   }
 
   #resolvePeriod(period) {
+    if (typeof period === 'string') return this.#resolvePeriod({ rolling: period });
     if (period?.rolling) {
       const m = /^last_(\d+)d$/.exec(period.rolling);
       if (m) {
