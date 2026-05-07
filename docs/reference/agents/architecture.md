@@ -181,6 +181,14 @@ When a turn finishes, the component captures token usage from the finish event a
 
 ---
 
+## Reasoning patterns
+
+For agents that reason over domain data — comparing today to typical, narrating the significance of a number, traversing multiple domain services through one query surface — see [patterns.md](patterns.md). Four named patterns (Domain Event Adapter, User Model in Prompt Context, Baseline Annotation, Reasoning Rails) compose into the reflective agent shape. Each pattern names a recurring failure mode (decision-tree feel, invented baselines, missed comparisons) and the structural fix.
+
+The patterns are framework-agnostic — they layer on top of the lifecycle, tools, memory, and HTTP described above.
+
+---
+
 ## Where it lives
 
 - Agent framework core: `backend/src/3_applications/agents/framework/`
