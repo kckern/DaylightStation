@@ -179,4 +179,13 @@ export function computeHrStats(series) {
   };
 }
 
+export function pickPrimaryHrSeries(seriesMap) {
+  if (!seriesMap || typeof seriesMap !== 'object' || Array.isArray(seriesMap)) return [];
+  let best = [];
+  for (const v of Object.values(seriesMap)) {
+    if (Array.isArray(v) && v.length > best.length) best = v;
+  }
+  return best;
+}
+
 export default EventQueryService;
