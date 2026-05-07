@@ -41,10 +41,20 @@ export function parseRequest(req) {
   if (messages.length === 0 && typeof input === 'string' && input.length > 0) {
     messages = [{ role: 'user', content: input }];
   }
+
+  // threadId: prefer body root, fall back to body.context, must be non-empty string
+  let threadId = null;
+  if (typeof body.threadId === 'string' && body.threadId.length > 0) {
+    threadId = body.threadId;
+  } else if (typeof body.context?.threadId === 'string' && body.context.threadId.length > 0) {
+    threadId = body.context.threadId;
+  }
+
   return {
     input,
     context: body.context ?? {},
     messages,
+    threadId,
   };
 }
 
