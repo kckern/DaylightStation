@@ -3,11 +3,9 @@
 
 export { HealthCoachAgent } from './HealthCoachAgent.mjs';
 export { DailyDashboard } from './assignments/DailyDashboard.mjs';
-export { HealthToolFactory } from './tools/HealthToolFactory.mjs';
 export { FitnessContentToolFactory } from './tools/FitnessContentToolFactory.mjs';
 export { DashboardToolFactory } from './tools/DashboardToolFactory.mjs';
 export { dashboardSchema } from './schemas/dashboard.mjs';
-export { ReconciliationToolFactory } from './tools/ReconciliationToolFactory.mjs';
 export { MessagingChannelToolFactory } from './tools/MessagingChannelToolFactory.mjs';
 export { MorningBrief } from './assignments/MorningBrief.mjs';
 export { NoteReview } from './assignments/NoteReview.mjs';

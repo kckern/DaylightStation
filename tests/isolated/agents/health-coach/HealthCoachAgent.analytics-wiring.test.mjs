@@ -26,27 +26,48 @@ function buildBaseDeps(extra = {}) {
   };
 }
 
-describe('HealthCoachAgent — analytics wiring (Plan 1)', () => {
-  it('registers HealthAnalyticsToolFactory when healthAnalyticsService is provided', () => {
+describe('HealthCoachAgent — PeriodToolFactory wiring (Task 13)', () => {
+  it('registers period vocabulary tools when healthAnalyticsService is provided', () => {
     const agent = new HealthCoachAgent(buildBaseDeps({
       healthAnalyticsService: {
-        aggregate: vi.fn(), aggregateSeries: vi.fn(),
-        distribution: vi.fn(), percentile: vi.fn(), snapshot: vi.fn(),
+        listPeriods: vi.fn(),
+        deducePeriod: vi.fn(),
+        rememberPeriod: vi.fn(),
+        forgetPeriod: vi.fn(),
       },
     }));
     agent.registerTools();
     const names = agent.getTools().map(t => t.name);
-    expect(names).toContain('aggregate_metric');
-    expect(names).toContain('aggregate_series');
-    expect(names).toContain('metric_distribution');
-    expect(names).toContain('metric_percentile');
-    expect(names).toContain('metric_snapshot');
+    expect(names).toContain('list_periods');
+    expect(names).toContain('deduce_period');
+    expect(names).toContain('remember_period');
+    expect(names).toContain('forget_period');
   });
 
-  it('skips analytics tools cleanly when healthAnalyticsService is absent', () => {
+  it('skips period tools cleanly when healthAnalyticsService is absent', () => {
     const agent = new HealthCoachAgent(buildBaseDeps());
     agent.registerTools();
     const names = agent.getTools().map(t => t.name);
+    expect(names).not.toContain('list_periods');
+    expect(names).not.toContain('remember_period');
+  });
+
+  it('retired analytics tools are no longer registered', () => {
+    const agent = new HealthCoachAgent(buildBaseDeps({
+      healthAnalyticsService: {
+        listPeriods: vi.fn(),
+        deducePeriod: vi.fn(),
+        rememberPeriod: vi.fn(),
+        forgetPeriod: vi.fn(),
+      },
+    }));
+    agent.registerTools();
+    const names = agent.getTools().map(t => t.name);
+    // These were in HealthAnalyticsToolFactory (now deleted).
     expect(names).not.toContain('aggregate_metric');
+    expect(names).not.toContain('aggregate_series');
+    expect(names).not.toContain('metric_distribution');
+    expect(names).not.toContain('metric_percentile');
+    expect(names).not.toContain('metric_snapshot');
   });
 });

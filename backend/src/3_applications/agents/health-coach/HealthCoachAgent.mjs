@@ -2,14 +2,11 @@
 
 import { BaseAgent } from '../framework/BaseAgent.mjs';
 import { formatHealthAttachment } from './formatAttachment.mjs';
-import { HealthToolFactory } from './tools/HealthToolFactory.mjs';
 import { FitnessContentToolFactory } from './tools/FitnessContentToolFactory.mjs';
 import { DashboardToolFactory } from './tools/DashboardToolFactory.mjs';
-import { ReconciliationToolFactory } from './tools/ReconciliationToolFactory.mjs';
 import { MessagingChannelToolFactory } from './tools/MessagingChannelToolFactory.mjs';
 import { LongitudinalToolFactory } from './tools/LongitudinalToolFactory.mjs';
-import { ComplianceToolFactory } from './tools/ComplianceToolFactory.mjs';
-import { HealthAnalyticsToolFactory } from './tools/HealthAnalyticsToolFactory.mjs';
+import { PeriodToolFactory } from './tools/PeriodToolFactory.mjs';
 import { HealthQueryToolFactory } from './tools/HealthQueryToolFactory.mjs';
 import { PlaybookToolFactory }    from './tools/PlaybookToolFactory.mjs';
 import { DailyDashboard } from './assignments/DailyDashboard.mjs';
@@ -135,64 +132,44 @@ export class HealthCoachAgent extends BaseAgent {
       healthStore,
       healthService,
       fitnessPlayableService,
-      sessionService,
       mediaProgressMemory,
       dataService,
       messagingGateway,
       conversationId,
       personalContextLoader,
       archiveScopeFactory,
-      similarPeriodFinder,
       dataRoot,
-      healthAnalyticsService,           // ← new (Plan 1 / Task 10)
+      healthAnalyticsService,
     } = this.deps;
 
-    // Existing
-    this.addToolFactory(new HealthToolFactory({ healthStore, healthService, sessionService }));
     this.addToolFactory(new FitnessContentToolFactory({ fitnessPlayableService, mediaProgressMemory, dataService }));
     this.addToolFactory(new DashboardToolFactory({ dataService, healthStore }));
-
-    // Reconciliation data access
-    this.addToolFactory(new ReconciliationToolFactory({ healthStore }));
 
     // Messaging channel delivery (only if gateway available)
     if (messagingGateway && conversationId) {
       this.addToolFactory(new MessagingChannelToolFactory({ messagingGateway, conversationId }));
     }
 
-    // Longitudinal historical queries (F-102 read_notes_file, F-103 query_*,
-    // F-104 find_similar_period). Always registered — individual tools surface
-    // structured "dependency missing" errors when their optional deps are
-    // unwired (e.g. personalContextLoader for query_named_period), so
-    // partial wiring degrades gracefully without breaking the agent.
+    // Longitudinal tools: query_named_period (F-103.4) and read_notes_file
+    // (F-102). Always registered — individual tools surface structured
+    // "dependency missing" errors when their optional deps are unwired.
     this.addToolFactory(new LongitudinalToolFactory({
       healthStore,
       healthService,
       personalContextLoader,
-      similarPeriodFinder,
       archiveScopeFactory,
       dataRoot,
     }));
 
-    // Compliance summary tool (F-002 / F2-B). Dimensions are declared in the
-    // user's playbook (`coaching_dimensions`) and resolved lazily via
-    // personalContextLoader; the factory has no hardcoded dimension names.
-    this.addToolFactory(new ComplianceToolFactory({
-      healthStore,
-      personalContextLoader,
-      logger: this.deps.logger,
-    }));
-
-    // F-201 / Plan 1: Analytical primitives — aggregate / series /
-    // distribution / percentile / snapshot. Pulled from the dedicated
-    // domain service so the math lives in one testable place.
+    // Period vocabulary: list_periods, deduce_period, remember_period,
+    // forget_period. Requires healthAnalyticsService (same dep as the retired
+    // HealthAnalyticsToolFactory that previously hosted them).
     if (healthAnalyticsService) {
-      this.addToolFactory(new HealthAnalyticsToolFactory({ healthAnalyticsService }));
+      this.addToolFactory(new PeriodToolFactory({ healthAnalyticsService }));
     }
 
-    // Task 12 (additive): SQL-equivalent query engine + compute sandbox.
-    // Conditional for safety — if bootstrap hasn't wired these deps yet, the
-    // agent still loads cleanly (old tools remain live). Cleanup in Task 13.
+    // SQL-equivalent query engine + compute sandbox + playbook recipes
+    // (Task 12/13). These replace the surface of the four retired factories.
     const { healthQueryService, computeSandbox, personalConstantsService } = this.deps;
     if (healthQueryService && computeSandbox && personalConstantsService) {
       this.addToolFactory(new HealthQueryToolFactory({

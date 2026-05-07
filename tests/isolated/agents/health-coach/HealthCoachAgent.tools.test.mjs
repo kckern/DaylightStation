@@ -1,8 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
 import { HealthCoachAgent } from '../../../../backend/src/3_applications/agents/health-coach/HealthCoachAgent.mjs';
-import { HealthArchiveScope } from '../../../../backend/src/2_domains/health/services/HealthArchiveScope.mjs';
-import { SimilarPeriodFinder } from '../../../../backend/src/2_domains/health/services/SimilarPeriodFinder.mjs';
 
 // ---------------------------------------------------------------------------
 // Test doubles
@@ -28,14 +26,12 @@ function buildLogger() {
 }
 
 /**
- * Build a HealthCoachAgent with all dependencies the F-102/103/104 wiring
- * expects. The longitudinal factory takes archiveScope, similarPeriodFinder,
- * personalContextLoader, and dataRoot in addition to the standard health-coach
- * deps.
+ * Build a HealthCoachAgent wired with enough deps to register all surviving
+ * factories after Task 13. Omits deps for deleted factories (HealthToolFactory,
+ * ReconciliationToolFactory, ComplianceToolFactory, HealthAnalyticsToolFactory).
  */
 function buildAgent() {
   const dataRoot = '/tmp/data';
-  const mediaRoot = '/tmp/media';
 
   return new HealthCoachAgent({
     agentRuntime: buildAgentRuntime(),
@@ -44,8 +40,6 @@ function buildAgent() {
     healthStore: {
       loadWeightData: async () => ({}),
       loadNutritionData: async () => ({}),
-      loadCoachingData: async () => ({}),
-      saveCoachingData: async () => {},
       loadHealthData: async () => ({}),
     },
     healthService: {
@@ -55,56 +49,42 @@ function buildAgent() {
     fitnessPlayableService: {
       getPlayableEpisodes: async () => ({ items: [], containerItem: {} }),
     },
-    sessionService: {},
     mediaProgressMemory: {},
     dataService: { user: { read: () => null, write: () => true } },
     configService: { getHeadOfHousehold: () => 'test-user' },
     personalContextLoader: { loadPlaybook: async () => null, load: async () => '' },
-    archiveScope: new HealthArchiveScope({ dataRoot, mediaRoot }),
-    similarPeriodFinder: new SimilarPeriodFinder({}),
     dataRoot,
   });
 }
 
 describe('HealthCoachAgent — longitudinal tools registered', () => {
-  it('exposes all F-103 + F-102 + F-104 tools after registration', () => {
+  it('exposes longitudinal tools (query_named_period + read_notes_file) after registration', () => {
     const agent = buildAgent();
     const toolNames = agent.getTools().map((t) => t.name);
 
-    // The 6 longitudinal tools added by LongitudinalToolFactory.
+    // Surviving tools from LongitudinalToolFactory (Task 13 trimmed the bulk
+    // historical query tools; these two remain).
     const longitudinalToolNames = [
-      'query_historical_weight',
-      'query_historical_nutrition',
-      'query_historical_workouts',
       'query_named_period',
       'read_notes_file',
-      'find_similar_period',
     ];
     for (const name of longitudinalToolNames) {
       expect(toolNames).toContain(name);
     }
   });
 
-  it('keeps existing health-coach tools registered (regression guard)', () => {
+  it('keeps fitness + dashboard tools registered (regression guard)', () => {
     const agent = buildAgent();
     const toolNames = agent.getTools().map((t) => t.name);
 
-    // Sample of pre-existing tools across the four original factories.
+    // Tools from factories that survived Task 13.
     const existingTools = [
-      // HealthToolFactory
-      'get_weight_trend',
-      'get_today_nutrition',
-      'get_nutrition_history',
       // FitnessContentToolFactory
       'get_fitness_content',
       'get_program_state',
       // DashboardToolFactory
       'write_dashboard',
       'get_user_goals',
-      // ReconciliationToolFactory
-      'get_reconciliation_summary',
-      // ComplianceToolFactory (F-002)
-      'get_compliance_summary',
     ];
     for (const name of existingTools) {
       expect(toolNames).toContain(name);
