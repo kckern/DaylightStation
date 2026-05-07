@@ -140,9 +140,32 @@
   }
 
   .coach-chat__message--assistant {
+    background: var(--mantine-color-surface-0);
     color: var(--mantine-color-textHigh-0);
+    border-radius: 14px;
+    padding: 10px 14px;
     line-height: 1.6;
     max-width: 90%;
+  }
+
+  .coach-chat__composer {
+    background: var(--mantine-color-background-0);
+    border-top: 1px solid var(--mantine-color-border-0);
+  }
+
+  .coach-chat__input {
+    background: var(--mantine-color-surface-0);
+    color: var(--mantine-color-textHigh-0);
+    border: 1px solid var(--mantine-color-border-0);
+
+    &:focus {
+      border-color: #2563eb;
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+    }
+
+    &[data-empty]::before {
+      color: var(--mantine-color-textLow-0);
+    }
   }
 }
 
