@@ -141,6 +141,19 @@ Nothing outside this list is required. The agent does not implement HTTP wiring,
 
 ---
 
+## Patterns
+
+If your agent reasons over domain data, consider these patterns before designing tools from scratch — see [patterns.md](patterns.md):
+
+- **Reasoning over multiple domains** (workouts + meals + weigh-ins, or notes + tasks + calendar): use the **Domain Event Adapter** pattern. Each domain implements list/detail/summary; the agent gets one query surface.
+- **The agent needs to know what's typical for this user**: use the **User Model in Prompt Context** pattern. Compose profile + baselines + recent context into a markdown block prepended to the system prompt.
+- **The agent should describe whether values are anomalous**: use the **Baseline Annotation** pattern. Fold `vs_baseline` into adapter rows so the agent reads "delta -12, delta_pct -8" instead of doing the math.
+- **The agent drifts into parroting / inventing baselines / listing without comparing**: use **Reasoning Rails** in the system prompt — citation, validation, comparison, default windows, don't-ask-back.
+
+Not every agent needs every pattern. A simple workflow agent that runs a fixed pipeline doesn't need a user model. Pick the patterns that fit the failure modes you're seeing.
+
+---
+
 ## Where it lives
 
 - Framework base: `backend/src/3_applications/agents/framework/BaseAgent.mjs`
