@@ -170,12 +170,14 @@ export class HealthCoachAgent extends BaseAgent {
 
     // SQL-equivalent query engine + compute sandbox + playbook recipes
     // (Task 12/13). These replace the surface of the four retired factories.
-    const { healthQueryService, computeSandbox, personalConstantsService } = this.deps;
-    if (healthQueryService && computeSandbox && personalConstantsService) {
+    // Task 4: eventQueryService drives query_events / get_event_detail tools.
+    const { healthQueryService, computeSandbox, personalConstantsService, eventQueryService } = this.deps;
+    if (healthQueryService && computeSandbox && personalConstantsService && eventQueryService) {
       this.addToolFactory(new HealthQueryToolFactory({
         queryService:     healthQueryService,
         sandbox:          computeSandbox,
         constantsService: personalConstantsService,
+        eventQueryService,
       }));
     }
 
