@@ -4,12 +4,15 @@ import { ToolFactory } from '../../framework/ToolFactory.mjs';
 import { createTool } from '../../ports/ITool.mjs';
 
 /**
- * Wraps HealthQueryService, ComputeSandbox, and PersonalConstantsService into
- * the three ToolFactory-shaped tools the health-coach agent calls:
+ * Wraps HealthQueryService, ComputeSandbox, PersonalConstantsService, and
+ * EventQueryService into the five ToolFactory-shaped tools the health-coach
+ * agent calls:
  *
  *   - query_health        SQL-flavored health data query (metric × period × aggregate)
  *   - compute             Sandboxed JS math evaluator for arithmetic on query results
  *   - personal_constants  User calibration values (height, age, sex, PAL, etc.)
+ *   - query_events        List individual events (workouts) with natural identifiers
+ *   - get_event_detail    Fetch full detail for a specific event by ID
  *
  * Tool descriptions include enough vocabulary that the LLM can compose calls
  * without reading additional documentation.
@@ -19,21 +22,25 @@ export class HealthQueryToolFactory extends ToolFactory {
   #queryService;
   #sandbox;
   #constantsService;
+  #eventQueryService;
 
-  constructor({ queryService, sandbox, constantsService }) {
-    super({ queryService, sandbox, constantsService });
-    if (!queryService)     throw new Error('HealthQueryToolFactory: queryService required');
-    if (!sandbox)          throw new Error('HealthQueryToolFactory: sandbox required');
-    if (!constantsService) throw new Error('HealthQueryToolFactory: constantsService required');
+  constructor({ queryService, sandbox, constantsService, eventQueryService }) {
+    super({ queryService, sandbox, constantsService, eventQueryService });
+    if (!queryService)      throw new Error('HealthQueryToolFactory: queryService required');
+    if (!sandbox)           throw new Error('HealthQueryToolFactory: sandbox required');
+    if (!constantsService)  throw new Error('HealthQueryToolFactory: constantsService required');
+    if (!eventQueryService) throw new Error('HealthQueryToolFactory: eventQueryService required');
     this.#queryService = queryService;
     this.#sandbox = sandbox;
     this.#constantsService = constantsService;
+    this.#eventQueryService = eventQueryService;
   }
 
   createTools() {
     const queryService = this.#queryService;
     const sandbox = this.#sandbox;
     const constantsService = this.#constantsService;
+    const eventQueryService = this.#eventQueryService;
 
     return [
       createTool({
@@ -164,6 +171,48 @@ export class HealthQueryToolFactory extends ToolFactory {
             return { error: err.message };
           }
         },
+      }),
+
+      createTool({
+        name: 'query_events',
+        description:
+          'List individual events (workouts, etc.) with their natural identifiers — ' +
+          'sessionId, strava_id, type, date, duration, kcal, hr_avg, hr_max, distance_mi. ' +
+          'Use this when the user asks about specific events ("how was my run today?"); ' +
+          'include the IDs in your prose so follow-up questions can drill in via get_event_detail.',
+        parameters: {
+          type: 'object',
+          properties: {
+            kind:   { type: 'string', enum: ['workout'], description: 'Event kind. Currently only "workout" is supported.' },
+            period: { description: '{ rolling: "last_30d" } | { from, to } | bare string shorthand' },
+            filter: { type: 'object', description: 'Optional filter, e.g. { type: "Run" }' },
+            limit:  { type: 'number' },
+            userId: { type: 'string' },
+          },
+          required: ['kind', 'period', 'userId'],
+        },
+        execute: async (args) => eventQueryService.queryEvents(args),
+      }),
+
+      createTool({
+        name: 'get_event_detail',
+        description:
+          'Fetch full detail for a specific event by ID. Pass either the sessionId ' +
+          '(YYYYMMDDHHmmss) or the Strava activity ID. Returns the event\'s metadata + ' +
+          'timeline.series (HR per second) + events. Use this for follow-up drill-down ' +
+          'after query_events surfaces an ID.',
+        parameters: {
+          type: 'object',
+          properties: {
+            id:     { description: 'sessionId (string) or Strava activity ID (number).' },
+            kind:   { type: 'string', enum: ['workout'], default: 'workout' },
+            userId: { type: 'string' },
+          },
+          required: ['id', 'userId'],
+        },
+        execute: async ({ id, kind }) => kind
+          ? eventQueryService.getEventDetail({ id, kind })
+          : eventQueryService.getEventDetail({ id }),
       }),
     ];
   }
