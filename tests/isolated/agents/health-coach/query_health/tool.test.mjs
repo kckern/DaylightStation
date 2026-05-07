@@ -6,15 +6,24 @@ function makeFactory() {
   const queryService = { query: vi.fn(async () => ({ value: 1462, count: 30, meta: { metric: 'calories' } })) };
   const sandbox      = { evaluate: vi.fn(() => ({ value: 1986, type: 'number', expression: '...', durationMs: 1 })) };
   const constantsService = { get: vi.fn(async () => ({ height_cm: 180, age: 40, sex: 'M' })) };
-  return { factory: new HealthQueryToolFactory({ queryService, sandbox, constantsService }), queryService, sandbox, constantsService };
+  const eventQueryService = {
+    queryEvents: vi.fn(async () => ({ events: [{ session_id: '1', strava_id: 12345, type: 'Run' }], meta: { kind: 'workout', n: 1 } })),
+    getEventDetail: vi.fn(async () => ({ session_id: '1', strava_id: 12345, timeline: { series: { kc: [120, 130] }, events: [] } })),
+  };
+  return {
+    factory: new HealthQueryToolFactory({ queryService, sandbox, constantsService, eventQueryService }),
+    queryService,
+    sandbox,
+    constantsService,
+    eventQueryService,
+  };
 }
 
 describe('HealthQueryToolFactory', () => {
-  it('produces three tools', () => {
+  it('produces five tools', () => {
     const { factory } = makeFactory();
-    const tools = factory.createTools();
-    const names = tools.map(t => t.name).sort();
-    expect(names).toEqual(['compute', 'personal_constants', 'query_health']);
+    const names = factory.createTools().map(t => t.name).sort();
+    expect(names).toEqual(['compute', 'get_event_detail', 'personal_constants', 'query_events', 'query_health']);
   });
 
   it('query_health forwards to service with userId injected', async () => {
@@ -58,5 +67,22 @@ describe('HealthQueryToolFactory', () => {
     expect(props).toHaveProperty('rolling');
     expect(tool.parameters.required).toContain('metric');
     expect(tool.parameters.required).toContain('period');
+  });
+
+  it('query_events forwards to eventQueryService', async () => {
+    const { factory, eventQueryService } = makeFactory();
+    const tool = factory.createTools().find(t => t.name === 'query_events');
+    const r = await tool.execute({ kind: 'workout', period: { rolling: 'last_7d' } });
+    expect(eventQueryService.queryEvents).toHaveBeenCalled();
+    expect(r.events).toHaveLength(1);
+    expect(r.events[0].strava_id).toBe(12345);
+  });
+
+  it('get_event_detail forwards to eventQueryService', async () => {
+    const { factory, eventQueryService } = makeFactory();
+    const tool = factory.createTools().find(t => t.name === 'get_event_detail');
+    const r = await tool.execute({ id: '20260507060000' });
+    expect(eventQueryService.getEventDetail).toHaveBeenCalledWith({ id: '20260507060000' });
+    expect(r.timeline.series.kc).toEqual([120, 130]);
   });
 });
