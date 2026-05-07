@@ -10,6 +10,7 @@ backend/node_modules
 !tests/_fixtures/**/*.yml
 !tests/unit/suite/config/fixtures/**/*.yml
 !tests/_infrastructure/environments.yml
+!backend/src/3_applications/agents/health-coach/playbooks/seed.yml
 data/
 !tests/_fixtures/data/
 !**/screen-framework/data/
