@@ -73,6 +73,7 @@ export class MastraAdapter {
   #timeoutMs;
   #mediaDir;
   #AgentClass;
+  #memory;
 
   /**
    * @param {Object} deps
@@ -82,6 +83,7 @@ export class MastraAdapter {
    * @param {number} [deps.timeoutMs=120000] - Execution timeout in ms
    * @param {string} [deps.mediaDir] - Base media directory; transcripts written under {mediaDir}/logs/agents/...
    * @param {Function} [deps.agentClass] - Agent class to instantiate (defaults to @mastra/core Agent; injectable for tests)
+   * @param {import('@mastra/memory').Memory|null} [deps.memory] - Mastra Memory instance for cross-session persistence
    */
   constructor(deps = {}) {
     this.#model = deps.model || 'openai/gpt-4o';
@@ -90,6 +92,7 @@ export class MastraAdapter {
     this.#timeoutMs = deps.timeoutMs || 120000;
     this.#mediaDir = deps.mediaDir || null;
     this.#AgentClass = deps.agentClass || Agent;
+    this.#memory = deps.memory || null;
   }
 
   /**
@@ -188,6 +191,7 @@ export class MastraAdapter {
     const name = agentId || agent?.constructor?.id || 'unknown';
     const turnId = context.turnId ?? crypto.randomUUID();
     const userId = context.userId ?? null;
+    const threadId = context.threadId ?? null;
 
     const transcript = new AgentTranscript({
       agentId: name,
@@ -211,20 +215,26 @@ export class MastraAdapter {
     });
 
     try {
-      const mastraAgent = new this.#AgentClass({
+      const agentOpts = {
         name,
         instructions: systemPrompt,
         model: this.#model,
         tools: mastraTools,
-      });
+      };
+      if (this.#memory) agentOpts.memory = this.#memory;
+      const mastraAgent = new this.#AgentClass(agentOpts);
 
       const callArg = (Array.isArray(messages) && messages.length > 0) ? messages : input;
+
+      const memoryOpts = (this.#memory && userId && threadId)
+        ? { memory: { resource: userId, thread: threadId } }
+        : null;
 
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error(`Agent execution timed out after ${this.#timeoutMs}ms`)), this.#timeoutMs)
       );
       const response = await Promise.race([
-        mastraAgent.generate(callArg),
+        memoryOpts ? mastraAgent.generate(callArg, memoryOpts) : mastraAgent.generate(callArg),
         timeoutPromise,
       ]);
 
@@ -272,6 +282,7 @@ export class MastraAdapter {
     const name = agentId || agent?.constructor?.id || 'unknown';
     const turnId = context.turnId ?? crypto.randomUUID();
     const userId = context.userId ?? null;
+    const threadId = context.threadId ?? null;
 
     const transcript = new AgentTranscript({
       agentId: name,
@@ -300,15 +311,20 @@ export class MastraAdapter {
     const toolStartTimes = new Map();
 
     try {
-      const mastraAgent = new this.#AgentClass({
+      const agentOpts = {
         name,
         instructions: systemPrompt,
         model: this.#model,
         tools: mastraTools,
-      });
+      };
+      if (this.#memory) agentOpts.memory = this.#memory;
+      const mastraAgent = new this.#AgentClass(agentOpts);
 
       const callArg = (Array.isArray(messages) && messages.length > 0) ? messages : input;
-      const output = await mastraAgent.stream(callArg);
+      const memoryOpts = (this.#memory && userId && threadId)
+        ? { memory: { resource: userId, thread: threadId } }
+        : null;
+      const output = await (memoryOpts ? mastraAgent.stream(callArg, memoryOpts) : mastraAgent.stream(callArg));
       const iterable = output?.fullStream ?? output;
       for await (const part of iterable) {
         const payload = part?.payload ?? {};
