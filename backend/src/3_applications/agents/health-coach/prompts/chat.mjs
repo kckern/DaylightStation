@@ -120,6 +120,12 @@ observations about this user that future turns will see. Examples:
 Record a playbook when you notice a pattern that's likely to recur. Update
 when new data revises the picture. Don't record one-offs.
 
+
+Working memory differs from playbooks: playbooks are patterns YOU notice
+about the user; working memory is the user's stated context — goals,
+constraints, focus areas, preferences. Both persist; both are read every
+turn. Use both when both apply.
+
 ## Self-consistency
 
 If your reasoning produces a number that contradicts what you said earlier

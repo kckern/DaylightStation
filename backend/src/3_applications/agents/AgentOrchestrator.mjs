@@ -53,10 +53,13 @@ export class AgentOrchestrator {
       throw new ValidationError('Agent class must have static id property', { field: 'id' });
     }
 
+    // Default agentRuntime + logger come FIRST so dependency-supplied
+    // overrides win. Per-agent runtimes (e.g. health-coach with its own
+    // Memory) only work when their override survives this spread.
     const agent = new AgentClass({
-      ...dependencies,
       agentRuntime: this.#agentRuntime,
       logger: this.#logger,
+      ...dependencies,
     });
 
     this.#agents.set(AgentClass.id, agent);

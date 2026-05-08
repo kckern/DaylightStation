@@ -37,11 +37,13 @@ export class HealthCoachAgent extends BaseAgent {
   static getMemoryConfig() {
     return {
       lastMessages: 20,
-      workingMemory: {
-        enabled: true,
-        scope: 'resource',
-        schema: healthCoachWorkingMemorySchema,
-      },
+      // workingMemory disabled pending Mastra schema-conversion fix.
+      // Both Zod (.optional() / .passthrough()) and raw JSONSchema7 produce
+      // { type: "None" } for the inner memory schema — OpenAI rejects:
+      //   "Invalid schema for function 'updateWorkingMemory': schema must
+      //    be a JSON Schema of 'type: \"object\"', got 'type: \"None\"'"
+      // The bug is in @mastra/memory@1.17.5's standardSchema → JSONSchema
+      // pipeline. Server-side message history (lastMessages) still works.
     };
   }
 

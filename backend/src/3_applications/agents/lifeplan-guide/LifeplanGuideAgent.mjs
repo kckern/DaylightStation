@@ -23,11 +23,9 @@ export class LifeplanGuideAgent extends BaseAgent {
   static getMemoryConfig() {
     return {
       lastMessages: 20,
-      workingMemory: {
-        enabled: true,
-        scope: 'resource',
-        schema: healthCoachWorkingMemorySchema,
-      },
+      // workingMemory disabled — see HealthCoachAgent.getMemoryConfig for
+      // details. Server-side message history works; cross-agent shared
+      // state via working memory waits on Mastra schema-conversion fix.
     };
   }
 
