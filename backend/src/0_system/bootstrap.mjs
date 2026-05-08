@@ -205,20 +205,15 @@ import { CoachingOrchestrator, CoachingCommentaryService } from '#apps/coaching/
 import { HealthQueryService }       from '#apps/agents/health-coach/services/HealthQueryService.mjs';
 import { ComputeSandbox }           from '#apps/agents/health-coach/services/ComputeSandbox.mjs';
 import { PersonalConstantsService } from '#apps/agents/health-coach/services/PersonalConstantsService.mjs';
-import { EventQueryService }        from '#apps/agents/health-coach/services/EventQueryService.mjs';
-import { FitnessEventAdapter }      from '#apps/agents/health-coach/services/adapters/FitnessEventAdapter.mjs';
-import { NutritionEventAdapter }    from '#apps/agents/health-coach/services/adapters/NutritionEventAdapter.mjs';
-import { WeightEventAdapter }       from '#apps/agents/health-coach/services/adapters/WeightEventAdapter.mjs';
-import { PersonalBaselineService }  from '#apps/agents/health-coach/services/PersonalBaselineService.mjs';
-import { UserModelService }         from '#apps/agents/health-coach/services/UserModelService.mjs';
-import { FoodLogService }           from '#domains/nutrition/services/FoodLogService.mjs';
+import { buildAgentMemory }            from '#apps/agents/framework/buildAgentMemory.mjs';
+import { buildAgentEventQueryService } from '#apps/agents/framework/buildAgentEventQueryService.mjs';
+import { buildAgentRuntime }           from '#apps/agents/framework/buildAgentRuntime.mjs';
 import { PagedMediaTocAgent } from '#apps/agents/paged-media-toc/index.mjs';
 import { KomgaClient } from '#adapters/content/readable/komga/KomgaClient.mjs';
 import { KomgaPagedMediaAdapter } from '#adapters/komga/KomgaPagedMediaAdapter.mjs';
 import { YamlTocCacheDatastore } from '#adapters/persistence/yaml/YamlTocCacheDatastore.mjs';
 import { MastraAdapter, YamlWorkingMemoryAdapter } from '#adapters/agents/index.mjs';
 import { buildMastraMemory } from '#system/memory/buildMastraMemory.mjs';
-import { healthCoachWorkingMemorySchema } from '#apps/agents/health-coach/memory/workingMemorySchema.mjs';
 import { LifeplanGuideAgent } from '#apps/agents/lifeplan-guide/LifeplanGuideAgent.mjs';
 import { YamlConversationStore } from '#adapters/agents/YamlConversationStore.mjs';
 // Health domain + application imports
@@ -3078,84 +3073,76 @@ export async function createAgentsServices(config) {
     const computeSandbox           = new ComputeSandbox();
     const personalConstantsService = new PersonalConstantsService({ dataService, healthStore });
 
-    // Task 4: EventQueryService — drives query_events / get_event_detail tools.
-    // Dispatches by domain kind; FitnessEventAdapter handles 'workout' events.
-    // householdId resolved from configService (same pattern used elsewhere).
-    const householdId = configService?.getDefaultHouseholdId?.() ?? 'default';
-    const defaultUserId = configService?.getHeadOfHousehold?.() ?? householdId;
+    // ── Per-agent infrastructure loop ───────────────────────────────────────────
+    // Each agent class declares its infrastructure needs via static methods.
+    // Bootstrap stays generic — no #apps/agents/<agent>/ imports for adapters
+    // or services; each class's static methods handle their own wiring.
+    //
+    // Adding a new reflective agent: declare the four static methods on the class,
+    // then append it to REFLECTIVE_AGENTS below. No other bootstrap changes needed.
 
-    const fitnessEventAdapter = new FitnessEventAdapter({
+    const householdId    = configService?.getDefaultHouseholdId?.() ?? 'default';
+    const defaultUserId  = configService?.getHeadOfHousehold?.()    ?? householdId;
+
+    const sharedAgentDeps = {
+      // Domain services
       sessionService,
-      householdId,
-    });
-
-    // Task 9: Nutrition adapter — only wired when foodLogStore is available.
-    // foodLogStore comes from the caller (app.mjs can pass it from createNutribotServices).
-    // If not provided, nutrition baselines are gracefully skipped.
-    let nutritionEventAdapter = null;
-    if (foodLogStore) {
-      const foodLogService = new FoodLogService({ foodLogStore });
-      nutritionEventAdapter = new NutritionEventAdapter({
-        foodLogService,
-        userId: defaultUserId,
-      });
-    }
-
-    // Task 9: Weight adapter — uses healthService.getHealthForRange, always available
-    // when healthService is present (same guard as the HealthCoachAgent block).
-    const weightEventAdapter = new WeightEventAdapter({
+      foodLogStore,
       healthService,
-      userId: defaultUserId,
-    });
-
-    const adapters = {
-      workout: fitnessEventAdapter,
-      ...(nutritionEventAdapter ? { meal: nutritionEventAdapter } : {}),
-      weigh_in: weightEventAdapter,
-    };
-
-    // Task 9: PersonalBaselineService — rolling baselines per domain.
-    const baselineService = new PersonalBaselineService({
-      adapters,
-      dataService,
-    });
-
-    // Task 10: baselineService forwarded into EventQueryService so queryEvents
-    // can annotate each event row with vs_baseline (actual vs typical).
-    const eventQueryService = new EventQueryService({ adapters, baselineService });
-
-    // Task 9: UserModelService — composes profile + baselines into a markdown
-    // block that getSystemPrompt appends to the system prompt every turn.
-    const userModelService = new UserModelService({
-      personalConstantsService,
-      baselineService,
-    });
-
-    agentOrchestrator.register(HealthCoachAgent, {
-      workingMemory,
       healthStore,
-      healthService,
-      fitnessPlayableService,
-      sessionService,
-      mediaProgressMemory,
       dataService,
       configService,
-      messagingGateway,
-      conversationId: conversationId ?? configService?.getNutribotConversationId?.() ?? null,
-      personalContextLoader,
-      archiveScopeFactory,
-      similarPeriodFinder,
-      patternDetector,
-      calibrationConstants,
-      dataRoot,
-      healthAnalyticsService,
-      healthQueryService,
-      computeSandbox,
       personalConstantsService,
-      eventQueryService,
-      baselineService,
-      userModelService,
-    });
+      // Coordinates
+      householdId,
+      defaultUserId,
+      // Framework deps
+      logger,
+      mediaDir,
+      dataPath,
+    };
+
+    const REFLECTIVE_AGENTS = [HealthCoachAgent];
+
+    for (const AgentClass of REFLECTIVE_AGENTS) {
+      const agentId           = AgentClass.id ?? 'unknown';
+      const memoryConfig      = AgentClass.getMemoryConfig?.(sharedAgentDeps)                        ?? null;
+      const adapters          = AgentClass.getDomainAdapters?.(sharedAgentDeps)                      ?? null;
+      const memory            = buildAgentMemory(memoryConfig, { ...sharedAgentDeps, agentId });
+      const baselineService   = AgentClass.getBaselineService?.({ ...sharedAgentDeps, adapters })    ?? null;
+      const eventQueryService = buildAgentEventQueryService(adapters, baselineService);
+      const userModelService  = AgentClass.getUserModelService?.({ ...sharedAgentDeps, baselineService }) ?? null;
+      const perAgentRuntime   = buildAgentRuntime(memory, sharedAgentDeps);
+
+      agentOrchestrator.register(AgentClass, {
+        workingMemory,
+        healthStore,
+        healthService,
+        fitnessPlayableService,
+        sessionService,
+        mediaProgressMemory,
+        dataService,
+        configService,
+        messagingGateway,
+        conversationId: conversationId ?? configService?.getNutribotConversationId?.() ?? null,
+        personalContextLoader,
+        archiveScopeFactory,
+        similarPeriodFinder,
+        patternDetector,
+        calibrationConstants,
+        dataRoot,
+        healthAnalyticsService,
+        healthQueryService,
+        computeSandbox,
+        personalConstantsService,
+        // Per-agent infrastructure (each reflective agent gets its own Memory
+        // + MastraAdapter so cross-agent memory isolation is preserved):
+        agentRuntime: perAgentRuntime,
+        eventQueryService,
+        baselineService,
+        userModelService,
+      });
+    }
   }
 
   // Create coaching orchestrator (new template-driven system)
