@@ -40,6 +40,13 @@ export class HealthCoachAgent extends BaseAgent {
   static getMemoryConfig({ configService } = {}) {
     const yaml = loadAgentConfig({ configService, agentId: 'health-coach' });
     const m = yaml.memory;
+    // Skip Memory entirely when all features are off — avoids @mastra/memory's
+    // Zod v3/v4 schema-compat bug that crashes prepare-tools-step.
+    const anyFeatureOn = (m.last_messages !== false && m.last_messages > 0)
+                      || m.working_memory?.enabled
+                      || m.semantic_recall?.enabled;
+    if (!anyFeatureOn) return null;
+
     const out = { lastMessages: m.last_messages };
     if (m.working_memory?.enabled) {
       out.workingMemory = {
