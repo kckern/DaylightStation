@@ -22,6 +22,7 @@ import { UserModelService }        from './services/UserModelService.mjs';
 import { loadAgentConfig } from '../framework/loadAgentConfig.mjs';
 import { healthCoachWorkingMemoryTemplate } from './memory/workingMemoryTemplate.mjs';
 import { buildObservationalMemory } from '../framework/buildObservationalMemory.mjs';
+import { buildTimeWindowProcessor } from '../framework/buildTimeWindowProcessor.mjs';
 import { FoodLogService } from '#domains/nutrition/services/FoodLogService.mjs';
 
 export class HealthCoachAgent extends BaseAgent {
@@ -119,8 +120,9 @@ export class HealthCoachAgent extends BaseAgent {
     const yaml = loadAgentConfig({ configService, agentId: 'health-coach' });
     const storage = memory?.storage?.stores?.memory ?? null;
     const obs = buildObservationalMemory(yaml.memory?.observational, { storage });
+    const tw  = buildTimeWindowProcessor(yaml.memory);
     return {
-      inputProcessors:  obs ? [obs] : [],
+      inputProcessors:  [tw, obs].filter(Boolean),
       outputProcessors: obs ? [obs] : [],
     };
   }
