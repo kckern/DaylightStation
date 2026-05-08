@@ -228,8 +228,6 @@ export class MastraAdapter {
         tools: mastraTools,
       };
       if (this.#memory) agentOpts.memory = this.#memory;
-      if (this.#inputProcessors?.length)  agentOpts.inputProcessors  = this.#inputProcessors;
-      if (this.#outputProcessors?.length) agentOpts.outputProcessors = this.#outputProcessors;
       const mastraAgent = new this.#AgentClass(agentOpts);
 
       const callArg = (Array.isArray(messages) && messages.length > 0) ? messages : input;
@@ -327,8 +325,6 @@ export class MastraAdapter {
         tools: mastraTools,
       };
       if (this.#memory) agentOpts.memory = this.#memory;
-      if (this.#inputProcessors?.length)  agentOpts.inputProcessors  = this.#inputProcessors;
-      if (this.#outputProcessors?.length) agentOpts.outputProcessors = this.#outputProcessors;
       const mastraAgent = new this.#AgentClass(agentOpts);
 
       const callArg = (Array.isArray(messages) && messages.length > 0) ? messages : input;

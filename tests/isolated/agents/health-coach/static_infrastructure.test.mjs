@@ -11,12 +11,32 @@ describe('HealthCoachAgent.getMemoryConfig', () => {
         }),
       },
     });
+    expect(cfg).toBeTruthy();
     expect(cfg.lastMessages).toBe(75);
   });
 
   it('falls back to hardcoded default (100) when no configService', () => {
     const cfg = HealthCoachAgent.getMemoryConfig({ configService: null });
+    expect(cfg).toBeTruthy();
     expect(cfg.lastMessages).toBe(100);
+  });
+
+  it('returns null when all memory features are disabled (Mastra schema-compat bug guard)', () => {
+    const cfg = HealthCoachAgent.getMemoryConfig({
+      configService: {
+        getAppConfig: () => ({
+          default: {
+            memory: {
+              last_messages: false,
+              working_memory: { enabled: false },
+              semantic_recall: { enabled: false },
+            },
+          },
+          overrides: {},
+        }),
+      },
+    });
+    expect(cfg).toBe(null);
   });
 
   it('attaches working memory template when enabled in config', () => {
