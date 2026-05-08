@@ -19,7 +19,8 @@ import { NutritionEventAdapter }  from './services/adapters/NutritionEventAdapte
 import { WeightEventAdapter }     from './services/adapters/WeightEventAdapter.mjs';
 import { PersonalBaselineService } from './services/PersonalBaselineService.mjs';
 import { UserModelService }        from './services/UserModelService.mjs';
-import { healthCoachWorkingMemorySchema } from './memory/workingMemorySchema.mjs';
+import { loadAgentConfig } from '../framework/loadAgentConfig.mjs';
+import { healthCoachWorkingMemoryTemplate } from './memory/workingMemoryTemplate.mjs';
 import { FoodLogService } from '#domains/nutrition/services/FoodLogService.mjs';
 
 export class HealthCoachAgent extends BaseAgent {
@@ -34,17 +35,18 @@ export class HealthCoachAgent extends BaseAgent {
    * Memory configuration for this agent.
    * @returns {{ lastMessages: number, workingMemory: object }}
    */
-  static getMemoryConfig() {
-    return {
-      lastMessages: 20,
-      // workingMemory disabled pending Mastra schema-conversion fix.
-      // Both Zod (.optional() / .passthrough()) and raw JSONSchema7 produce
-      // { type: "None" } for the inner memory schema — OpenAI rejects:
-      //   "Invalid schema for function 'updateWorkingMemory': schema must
-      //    be a JSON Schema of 'type: \"object\"', got 'type: \"None\"'"
-      // The bug is in @mastra/memory@1.17.5's standardSchema → JSONSchema
-      // pipeline. Server-side message history (lastMessages) still works.
-    };
+  static getMemoryConfig({ configService } = {}) {
+    const yaml = loadAgentConfig({ configService, agentId: 'health-coach' });
+    const m = yaml.memory;
+    const out = { lastMessages: m.last_messages };
+    if (m.working_memory?.enabled) {
+      out.workingMemory = {
+        enabled: true,
+        scope: m.working_memory.scope || 'resource',
+        template: healthCoachWorkingMemoryTemplate,
+      };
+    }
+    return out;
   }
 
   /**

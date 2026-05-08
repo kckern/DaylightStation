@@ -6,7 +6,8 @@ import { NotificationToolFactory } from './tools/NotificationToolFactory.mjs';
 import { CoachingToolFactory } from './tools/CoachingToolFactory.mjs';
 import { CadenceCheck } from './assignments/CadenceCheck.mjs';
 import { systemPrompt } from './prompts/system.mjs';
-import { healthCoachWorkingMemorySchema } from '../health-coach/memory/workingMemorySchema.mjs';
+import { loadAgentConfig } from '../framework/loadAgentConfig.mjs';
+import { lifeplanGuideWorkingMemoryTemplate } from './memory/workingMemoryTemplate.mjs';
 
 export class LifeplanGuideAgent extends BaseAgent {
   static id = 'lifeplan-guide';
@@ -20,13 +21,18 @@ export class LifeplanGuideAgent extends BaseAgent {
    * (When lifeplan-guide grows its own observation fields, union the schema
    * with health-coach's or split into per-agent Memory instances.)
    */
-  static getMemoryConfig() {
-    return {
-      lastMessages: 20,
-      // workingMemory disabled — see HealthCoachAgent.getMemoryConfig for
-      // details. Server-side message history works; cross-agent shared
-      // state via working memory waits on Mastra schema-conversion fix.
-    };
+  static getMemoryConfig({ configService } = {}) {
+    const yaml = loadAgentConfig({ configService, agentId: 'lifeplan-guide' });
+    const m = yaml.memory;
+    const out = { lastMessages: m.last_messages };
+    if (m.working_memory?.enabled) {
+      out.workingMemory = {
+        enabled: true,
+        scope: m.working_memory.scope || 'resource',
+        template: lifeplanGuideWorkingMemoryTemplate,
+      };
+    }
+    return out;
   }
 
   getSystemPrompt(_context = {}) {

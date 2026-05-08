@@ -3226,7 +3226,7 @@ export async function createAgentsServices(config) {
       mediaDir,
       agentId: 'lifeplan-guide',
     };
-    const lifeplanMemoryConfig = LifeplanGuideAgent.getMemoryConfig?.() ?? null;
+    const lifeplanMemoryConfig = LifeplanGuideAgent.getMemoryConfig?.({ configService }) ?? null;
     const lifeplanMemory = buildAgentMemory(lifeplanMemoryConfig, lifeplanMemoryDeps);
     const lifeplanRuntime = buildAgentRuntime(lifeplanMemory, lifeplanMemoryDeps);
 

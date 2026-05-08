@@ -2,18 +2,69 @@ import { describe, it, expect, vi } from 'vitest';
 import { HealthCoachAgent } from '../../../../backend/src/3_applications/agents/health-coach/HealthCoachAgent.mjs';
 
 describe('HealthCoachAgent.getMemoryConfig', () => {
-  it('returns lastMessages: 20 (workingMemory deferred — see comment in agent class)', () => {
-    const cfg = HealthCoachAgent.getMemoryConfig({ logger: console });
-    expect(cfg).toBeDefined();
-    expect(cfg.lastMessages).toBe(20);
-    // workingMemory currently disabled pending Mastra schema-conversion fix.
-    // When re-enabled, assert: workingMemory.enabled === true,
-    // scope === 'resource', schema defined.
+  it('reads last_messages from configService when present', () => {
+    const cfg = HealthCoachAgent.getMemoryConfig({
+      configService: {
+        getAppConfig: () => ({
+          default: { memory: { last_messages: 75 } },
+          overrides: {},
+        }),
+      },
+    });
+    expect(cfg.lastMessages).toBe(75);
   });
 
-  it('does not require any deps to construct config', () => {
-    const cfg = HealthCoachAgent.getMemoryConfig();
-    expect(cfg).toBeDefined();
+  it('falls back to hardcoded default (100) when no configService', () => {
+    const cfg = HealthCoachAgent.getMemoryConfig({ configService: null });
+    expect(cfg.lastMessages).toBe(100);
+  });
+
+  it('attaches working memory template when enabled in config', () => {
+    const cfg = HealthCoachAgent.getMemoryConfig({
+      configService: {
+        getAppConfig: () => ({
+          default: {
+            memory: {
+              working_memory: { enabled: true, scope: 'resource' },
+            },
+          },
+        }),
+      },
+    });
+    expect(cfg.workingMemory).toBeDefined();
+    expect(cfg.workingMemory.enabled).toBe(true);
+    expect(cfg.workingMemory.scope).toBe('resource');
+    expect(typeof cfg.workingMemory.template).toBe('string');
+    expect(cfg.workingMemory.template).toMatch(/Recent Focus Areas/);
+  });
+
+  it('omits workingMemory when disabled in config', () => {
+    const cfg = HealthCoachAgent.getMemoryConfig({
+      configService: {
+        getAppConfig: () => ({
+          default: { memory: { working_memory: { enabled: false } } },
+          overrides: {},
+        }),
+      },
+    });
+    expect(cfg.workingMemory).toBeUndefined();
+  });
+
+  it('honors per-agent overrides over defaults', () => {
+    const cfg = HealthCoachAgent.getMemoryConfig({
+      configService: {
+        getAppConfig: () => ({
+          default: { memory: { last_messages: 50 } },
+          overrides: { 'health-coach': { memory: { last_messages: 200 } } },
+        }),
+      },
+    });
+    expect(cfg.lastMessages).toBe(200);
+  });
+
+  it('uses scope: resource as default when not in YAML', () => {
+    const cfg = HealthCoachAgent.getMemoryConfig({ configService: null });
+    expect(cfg.workingMemory.scope).toBe('resource');
   });
 });
 
