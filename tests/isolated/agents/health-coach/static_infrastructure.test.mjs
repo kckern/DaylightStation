@@ -2,14 +2,13 @@ import { describe, it, expect, vi } from 'vitest';
 import { HealthCoachAgent } from '../../../../backend/src/3_applications/agents/health-coach/HealthCoachAgent.mjs';
 
 describe('HealthCoachAgent.getMemoryConfig', () => {
-  it('returns lastMessages: 20 and the working memory schema', () => {
+  it('returns lastMessages: 20 (workingMemory deferred — see comment in agent class)', () => {
     const cfg = HealthCoachAgent.getMemoryConfig({ logger: console });
     expect(cfg).toBeDefined();
     expect(cfg.lastMessages).toBe(20);
-    expect(cfg.workingMemory).toBeDefined();
-    expect(cfg.workingMemory.enabled).toBe(true);
-    expect(cfg.workingMemory.scope).toBe('resource');
-    expect(cfg.workingMemory.schema).toBeDefined();
+    // workingMemory currently disabled pending Mastra schema-conversion fix.
+    // When re-enabled, assert: workingMemory.enabled === true,
+    // scope === 'resource', schema defined.
   });
 
   it('does not require any deps to construct config', () => {
