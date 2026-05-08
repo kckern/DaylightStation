@@ -51,7 +51,11 @@ export class LifeplanGuideAgent extends BaseAgent {
    * @param {{ configService?, memory? }} [deps]
    * @returns {{ inputProcessors: Array, outputProcessors: Array }}
    */
-  static getMemoryProcessors({ configService, memory } = {}) {
+  static getMemoryProcessors() {
+    // Disabled pending Mastra schema-compat fix (see getMemoryConfig comment).
+    return { inputProcessors: [], outputProcessors: [] };
+  }
+  static _disabled_getMemoryProcessors({ configService, memory } = {}) {
     const yaml = loadAgentConfig({ configService, agentId: 'lifeplan-guide' });
     const storage = memory?.storage?.stores?.memory ?? null;
     const obs = buildObservationalMemory(yaml.memory?.observational, { storage });

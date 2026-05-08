@@ -15,10 +15,12 @@ describe('HealthCoachAgent.getMemoryConfig', () => {
     expect(cfg.lastMessages).toBe(75);
   });
 
-  it('falls back to hardcoded default (100) when no configService', () => {
+  it('returns null in safe-state default when no configService (Mastra bug guard)', () => {
     const cfg = HealthCoachAgent.getMemoryConfig({ configService: null });
-    expect(cfg).toBeTruthy();
-    expect(cfg.lastMessages).toBe(100);
+    // Hardcoded defaults disable all memory features, so getMemoryConfig
+    // returns null (no Memory attached). Re-enable in agents.yml when
+    // upstream Mastra is fixed.
+    expect(cfg).toBe(null);
   });
 
   it('returns null when all memory features are disabled (Mastra schema-compat bug guard)', () => {
@@ -58,7 +60,7 @@ describe('HealthCoachAgent.getMemoryConfig', () => {
     expect(cfg.workingMemory.template).toMatch(/Recent Focus Areas/);
   });
 
-  it('omits workingMemory when disabled in config', () => {
+  it('returns null when working_memory disabled and no other features (Mastra bug guard)', () => {
     const cfg = HealthCoachAgent.getMemoryConfig({
       configService: {
         getAppConfig: () => ({
@@ -67,7 +69,8 @@ describe('HealthCoachAgent.getMemoryConfig', () => {
         }),
       },
     });
-    expect(cfg.workingMemory).toBeUndefined();
+    // With safe-state defaults, all features off → null (no Memory at all).
+    expect(cfg).toBe(null);
   });
 
   it('honors per-agent overrides over defaults', () => {
@@ -82,9 +85,9 @@ describe('HealthCoachAgent.getMemoryConfig', () => {
     expect(cfg.lastMessages).toBe(200);
   });
 
-  it('uses scope: resource as default when not in YAML', () => {
+  it('returns null when no configService (safe-state default; Mastra bug guard)', () => {
     const cfg = HealthCoachAgent.getMemoryConfig({ configService: null });
-    expect(cfg.workingMemory.scope).toBe('resource');
+    expect(cfg).toBe(null);
   });
 });
 

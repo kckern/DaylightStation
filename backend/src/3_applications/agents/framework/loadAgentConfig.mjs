@@ -1,16 +1,19 @@
 // backend/src/3_applications/agents/framework/loadAgentConfig.mjs
 
+// Hardcoded defaults match the SAFE state — Mastra Memory layers all
+// disabled. Re-enable in agents.yml overrides once upstream Mastra
+// (memory/schema-compat) bugs are fixed.
 const HARDCODED_DEFAULTS = Object.freeze({
   memory: {
-    last_messages: 100,
+    last_messages: false,
     time_window_hours: null,
     working_memory: {
-      enabled: true,
+      enabled: false,
       scope: 'resource',
       template_ref: 'default',
     },
     observational: {
-      enabled: true,
+      enabled: false,
       observer_model: 'openai/gpt-4o-mini',
       reflector_model: 'openai/gpt-4o-mini',
       message_tokens_threshold: 30000,
