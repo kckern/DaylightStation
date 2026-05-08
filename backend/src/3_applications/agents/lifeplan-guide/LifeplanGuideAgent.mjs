@@ -8,6 +8,7 @@ import { CadenceCheck } from './assignments/CadenceCheck.mjs';
 import { systemPrompt } from './prompts/system.mjs';
 import { loadAgentConfig } from '../framework/loadAgentConfig.mjs';
 import { lifeplanGuideWorkingMemoryTemplate } from './memory/workingMemoryTemplate.mjs';
+import { buildObservationalMemory } from '../framework/buildObservationalMemory.mjs';
 
 export class LifeplanGuideAgent extends BaseAgent {
   static id = 'lifeplan-guide';
@@ -33,6 +34,23 @@ export class LifeplanGuideAgent extends BaseAgent {
       };
     }
     return out;
+  }
+
+  /**
+   * Build memory processors for this agent. Currently: ObservationalMemory for
+   * auto-compaction of long threads. T5 will add the TimeWindow processor.
+   *
+   * @param {{ configService?, memory? }} [deps]
+   * @returns {{ inputProcessors: Array, outputProcessors: Array }}
+   */
+  static getMemoryProcessors({ configService, memory } = {}) {
+    const yaml = loadAgentConfig({ configService, agentId: 'lifeplan-guide' });
+    const storage = memory?.storage?.stores?.memory ?? null;
+    const obs = buildObservationalMemory(yaml.memory?.observational, { storage });
+    return {
+      inputProcessors:  obs ? [obs] : [],
+      outputProcessors: obs ? [obs] : [],
+    };
   }
 
   getSystemPrompt(_context = {}) {

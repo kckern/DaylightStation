@@ -21,6 +21,7 @@ import { PersonalBaselineService } from './services/PersonalBaselineService.mjs'
 import { UserModelService }        from './services/UserModelService.mjs';
 import { loadAgentConfig } from '../framework/loadAgentConfig.mjs';
 import { healthCoachWorkingMemoryTemplate } from './memory/workingMemoryTemplate.mjs';
+import { buildObservationalMemory } from '../framework/buildObservationalMemory.mjs';
 import { FoodLogService } from '#domains/nutrition/services/FoodLogService.mjs';
 
 export class HealthCoachAgent extends BaseAgent {
@@ -98,6 +99,30 @@ export class HealthCoachAgent extends BaseAgent {
   static getUserModelService({ personalConstantsService, baselineService } = {}) {
     if (!personalConstantsService || !baselineService) return null;
     return new UserModelService({ personalConstantsService, baselineService });
+  }
+
+  /**
+   * Build memory processors for this agent. Currently: ObservationalMemory for
+   * auto-compaction of long threads. T5 will add the TimeWindow processor.
+   *
+   * ObservationalMemory is both an input processor (injects compressed history)
+   * and an output processor (persists new observations). The same instance
+   * belongs in both arrays — Mastra is designed for this.
+   *
+   * Storage note: ObservationalMemory requires the MemoryStorage domain store,
+   * accessed via `memory.storage.stores?.memory` on a built Memory instance.
+   *
+   * @param {{ configService?, memory? }} [deps]
+   * @returns {{ inputProcessors: Array, outputProcessors: Array }}
+   */
+  static getMemoryProcessors({ configService, memory } = {}) {
+    const yaml = loadAgentConfig({ configService, agentId: 'health-coach' });
+    const storage = memory?.storage?.stores?.memory ?? null;
+    const obs = buildObservationalMemory(yaml.memory?.observational, { storage });
+    return {
+      inputProcessors:  obs ? [obs] : [],
+      outputProcessors: obs ? [obs] : [],
+    };
   }
 
   // ---------------------------------------------------------------------------

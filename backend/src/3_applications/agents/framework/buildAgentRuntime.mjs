@@ -12,15 +12,19 @@ import { MastraAdapter } from '#adapters/agents/index.mjs';
  *
  * @param {Memory|null} memory — from buildAgentMemory, or null for stateless.
  * @param {object} sharedDeps — { logger, mediaDir, model?, agentClass?, ... }
+ * @param {{ inputProcessors?: Array, outputProcessors?: Array }|null} [processors]
+ *   Optional processor arrays (e.g. ObservationalMemory). Null/omitted = no processors.
  * @returns {MastraAdapter}
  */
-export function buildAgentRuntime(memory, sharedDeps = {}) {
+export function buildAgentRuntime(memory, sharedDeps = {}, processors = null) {
   return new MastraAdapter({
     logger: sharedDeps.logger,
     mediaDir: sharedDeps.mediaDir,
     model: sharedDeps.model,
     agentClass: sharedDeps.agentClass,
     memory,
+    inputProcessors: processors?.inputProcessors || null,
+    outputProcessors: processors?.outputProcessors || null,
   });
 }
 

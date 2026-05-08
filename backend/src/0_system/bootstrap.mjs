@@ -3112,7 +3112,9 @@ export async function createAgentsServices(config) {
       const baselineService   = AgentClass.getBaselineService?.({ ...sharedAgentDeps, adapters })    ?? null;
       const eventQueryService = buildAgentEventQueryService(adapters, baselineService);
       const userModelService  = AgentClass.getUserModelService?.({ ...sharedAgentDeps, baselineService }) ?? null;
-      const perAgentRuntime   = buildAgentRuntime(memory, sharedAgentDeps);
+      // Per-agent memory processors (ObservationalMemory etc.)
+      const processors        = AgentClass.getMemoryProcessors?.({ ...sharedAgentDeps, memory })     ?? null;
+      const perAgentRuntime   = buildAgentRuntime(memory, sharedAgentDeps, processors);
 
       agentOrchestrator.register(AgentClass, {
         workingMemory,
@@ -3228,7 +3230,10 @@ export async function createAgentsServices(config) {
     };
     const lifeplanMemoryConfig = LifeplanGuideAgent.getMemoryConfig?.({ configService }) ?? null;
     const lifeplanMemory = buildAgentMemory(lifeplanMemoryConfig, lifeplanMemoryDeps);
-    const lifeplanRuntime = buildAgentRuntime(lifeplanMemory, lifeplanMemoryDeps);
+    const lifeplanProcessors = LifeplanGuideAgent.getMemoryProcessors?.({
+      configService, memory: lifeplanMemory,
+    }) ?? null;
+    const lifeplanRuntime = buildAgentRuntime(lifeplanMemory, lifeplanMemoryDeps, lifeplanProcessors);
 
     agentOrchestrator.register(LifeplanGuideAgent, {
       workingMemory,
