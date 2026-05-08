@@ -74,6 +74,8 @@ export class MastraAdapter {
   #mediaDir;
   #AgentClass;
   #memory;
+  #inputProcessors;
+  #outputProcessors;
 
   /**
    * @param {Object} deps
@@ -84,6 +86,8 @@ export class MastraAdapter {
    * @param {string} [deps.mediaDir] - Base media directory; transcripts written under {mediaDir}/logs/agents/...
    * @param {Function} [deps.agentClass] - Agent class to instantiate (defaults to @mastra/core Agent; injectable for tests)
    * @param {import('@mastra/memory').Memory|null} [deps.memory] - Mastra Memory instance for cross-session persistence
+   * @param {Array|null} [deps.inputProcessors] - Mastra input processors (e.g. ObservationalMemory)
+   * @param {Array|null} [deps.outputProcessors] - Mastra output processors (e.g. ObservationalMemory)
    */
   constructor(deps = {}) {
     this.#model = deps.model || 'openai/gpt-4o';
@@ -93,6 +97,8 @@ export class MastraAdapter {
     this.#mediaDir = deps.mediaDir || null;
     this.#AgentClass = deps.agentClass || Agent;
     this.#memory = deps.memory || null;
+    this.#inputProcessors = deps.inputProcessors || null;
+    this.#outputProcessors = deps.outputProcessors || null;
   }
 
   /**
@@ -222,6 +228,8 @@ export class MastraAdapter {
         tools: mastraTools,
       };
       if (this.#memory) agentOpts.memory = this.#memory;
+      if (this.#inputProcessors?.length)  agentOpts.inputProcessors  = this.#inputProcessors;
+      if (this.#outputProcessors?.length) agentOpts.outputProcessors = this.#outputProcessors;
       const mastraAgent = new this.#AgentClass(agentOpts);
 
       const callArg = (Array.isArray(messages) && messages.length > 0) ? messages : input;
@@ -319,6 +327,8 @@ export class MastraAdapter {
         tools: mastraTools,
       };
       if (this.#memory) agentOpts.memory = this.#memory;
+      if (this.#inputProcessors?.length)  agentOpts.inputProcessors  = this.#inputProcessors;
+      if (this.#outputProcessors?.length) agentOpts.outputProcessors = this.#outputProcessors;
       const mastraAgent = new this.#AgentClass(agentOpts);
 
       const callArg = (Array.isArray(messages) && messages.length > 0) ? messages : input;

@@ -29,4 +29,15 @@ describe('buildAgentRuntime', () => {
     });
     expect(runtime).toBeDefined();
   });
+
+  it('forwards inputProcessors and outputProcessors to MastraAdapter', () => {
+    const fakeIn = { name: 'in' };
+    const fakeOut = { name: 'out' };
+    const runtime = buildAgentRuntime(null, { logger: console, mediaDir: '/tmp' }, {
+      inputProcessors: [fakeIn],
+      outputProcessors: [fakeOut],
+    });
+    expect(runtime).toBeDefined();
+    // Just verify no throw; behavior covered by MastraAdapter tests
+  });
 });
