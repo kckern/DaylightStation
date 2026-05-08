@@ -8,9 +8,11 @@ describe('loadAgentConfig', () => {
       configService: { getAppConfig: vi.fn(() => null) },
       agentId: 'health-coach',
     });
-    expect(cfg.memory.last_messages).toBe(100);  // hardcoded default fallback
-    expect(cfg.memory.working_memory.enabled).toBe(true);
-    expect(cfg.memory.observational.enabled).toBe(true);
+    // Hardcoded defaults are the SAFE state — Mastra Memory disabled
+    // pending upstream schema-compat fix.
+    expect(cfg.memory.last_messages).toBe(false);
+    expect(cfg.memory.working_memory.enabled).toBe(false);
+    expect(cfg.memory.observational.enabled).toBe(false);
   });
 
   it('uses default block from YAML when no overrides for agent', () => {
@@ -70,14 +72,14 @@ describe('loadAgentConfig', () => {
       configService: { getAppConfig: vi.fn(() => yaml) },
       agentId: 'health-coach',
     });
-    // hardcoded fallback for working_memory.enabled
-    expect(cfg.memory.working_memory.enabled).toBe(true);
+    // hardcoded fallback for working_memory.enabled = false (safe-state default)
+    expect(cfg.memory.working_memory.enabled).toBe(false);
     expect(cfg.memory.working_memory.scope).toBe('resource');
   });
 
   it('handles configService missing entirely (no throw)', () => {
     const cfg = loadAgentConfig({ configService: null, agentId: 'health-coach' });
-    expect(cfg.memory.last_messages).toBe(100);
+    expect(cfg.memory.last_messages).toBe(false);   // safe-state default
   });
 
   it('handles configService.getAppConfig throwing (no throw, returns defaults)', () => {
@@ -85,6 +87,6 @@ describe('loadAgentConfig', () => {
       configService: { getAppConfig: vi.fn(() => { throw new Error('boom'); }) },
       agentId: 'health-coach',
     });
-    expect(cfg.memory.last_messages).toBe(100);
+    expect(cfg.memory.last_messages).toBe(false);   // safe-state default
   });
 });

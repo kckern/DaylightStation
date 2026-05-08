@@ -123,15 +123,9 @@ export class HealthCoachAgent extends BaseAgent {
    * @param {{ configService?, memory? }} [deps]
    * @returns {{ inputProcessors: Array, outputProcessors: Array }}
    */
-  static getMemoryProcessors({ configService, memory } = {}) {
-    const yaml = loadAgentConfig({ configService, agentId: 'health-coach' });
-    const storage = memory?.storage?.stores?.memory ?? null;
-    const obs = buildObservationalMemory(yaml.memory?.observational, { storage });
-    const tw  = buildTimeWindowProcessor(yaml.memory);
-    return {
-      inputProcessors:  [tw, obs].filter(Boolean),
-      outputProcessors: obs ? [obs] : [],
-    };
+  static getMemoryProcessors() {
+    // Disabled pending Mastra schema-compat fix (see getMemoryConfig comment).
+    return { inputProcessors: [], outputProcessors: [] };
   }
 
   // ---------------------------------------------------------------------------
