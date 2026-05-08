@@ -3216,6 +3216,20 @@ export async function createAgentsServices(config) {
       basePath: dataService.resolveUserPath?.('') || dataService.basePath,
     });
 
+    // Per-agent Mastra Memory for lifeplan-guide. Shares the resource-scoped
+    // working memory schema with health-coach so observations cross over.
+    // (sharedAgentDeps from the reflective loop above is inside a different
+    // conditional scope — reconstruct the bits we need locally.)
+    const lifeplanMemoryDeps = {
+      dataPath,
+      logger,
+      mediaDir,
+      agentId: 'lifeplan-guide',
+    };
+    const lifeplanMemoryConfig = LifeplanGuideAgent.getMemoryConfig?.() ?? null;
+    const lifeplanMemory = buildAgentMemory(lifeplanMemoryConfig, lifeplanMemoryDeps);
+    const lifeplanRuntime = buildAgentRuntime(lifeplanMemory, lifeplanMemoryDeps);
+
     agentOrchestrator.register(LifeplanGuideAgent, {
       workingMemory,
       lifePlanStore: config.lifeplanServices.container.getLifePlanStore(),
@@ -3230,6 +3244,7 @@ export async function createAgentsServices(config) {
       cadenceService: config.lifeplanServices.container.getCadenceService(),
       notificationService: config.notificationService || { send: () => [] },
       conversationStore,
+      agentRuntime: lifeplanRuntime,
     });
   }
 
