@@ -1,0 +1,43 @@
+# Example agents.yml — copy to data/household/config/agents.yml in the data volume.
+#
+# data/ is gitignored, so this file is the checked-in reference for what shape
+# the live config expects. Memory + processor configuration for all reflective
+# agents.
+#
+# Top-level `default` applies to every reflective agent.
+# `overrides.<agentId>` deep-merges over the defaults.
+# Hardcoded fallbacks in backend/src/3_applications/agents/framework/loadAgentConfig.mjs
+# (HARDCODED_DEFAULTS) kick in for any field not set here.
+
+default:
+  memory:
+    last_messages: 100              # count window — fed to Mastra Memory.lastMessages
+    time_window_hours: null         # null = no time filter; e.g. 3 = last 3 hours
+
+    working_memory:
+      enabled: true
+      scope: resource               # 'resource' = cross-thread + cross-agent
+                                    # 'thread'  = isolated per conversation
+
+    observational:                  # auto-compaction of long threads
+      enabled: true
+      observer_model: 'openai/gpt-4o-mini'
+      reflector_model: 'openai/gpt-4o-mini'
+      message_tokens_threshold: 30000
+      observation_tokens_threshold: 40000
+
+    semantic_recall:                # opt-in; needs vector store + embedder
+      enabled: false
+      top_k: 5
+      message_range: 2
+      scope: resource
+
+# Per-agent overrides deep-merge over `default`.
+overrides:
+  health-coach:
+    memory:
+      last_messages: 100
+
+  lifeplan-guide:
+    memory:
+      last_messages: 50
