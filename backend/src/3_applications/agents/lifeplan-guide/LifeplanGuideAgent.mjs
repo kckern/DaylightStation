@@ -9,6 +9,7 @@ import { systemPrompt } from './prompts/system.mjs';
 import { loadAgentConfig } from '../framework/loadAgentConfig.mjs';
 import { lifeplanGuideWorkingMemoryTemplate } from './memory/workingMemoryTemplate.mjs';
 import { buildObservationalMemory } from '../framework/buildObservationalMemory.mjs';
+import { buildTimeWindowProcessor } from '../framework/buildTimeWindowProcessor.mjs';
 
 export class LifeplanGuideAgent extends BaseAgent {
   static id = 'lifeplan-guide';
@@ -47,8 +48,9 @@ export class LifeplanGuideAgent extends BaseAgent {
     const yaml = loadAgentConfig({ configService, agentId: 'lifeplan-guide' });
     const storage = memory?.storage?.stores?.memory ?? null;
     const obs = buildObservationalMemory(yaml.memory?.observational, { storage });
+    const tw  = buildTimeWindowProcessor(yaml.memory);
     return {
-      inputProcessors:  obs ? [obs] : [],
+      inputProcessors:  [tw, obs].filter(Boolean),
       outputProcessors: obs ? [obs] : [],
     };
   }
