@@ -6,10 +6,30 @@ import { NotificationToolFactory } from './tools/NotificationToolFactory.mjs';
 import { CoachingToolFactory } from './tools/CoachingToolFactory.mjs';
 import { CadenceCheck } from './assignments/CadenceCheck.mjs';
 import { systemPrompt } from './prompts/system.mjs';
+import { healthCoachWorkingMemorySchema } from '../health-coach/memory/workingMemorySchema.mjs';
 
 export class LifeplanGuideAgent extends BaseAgent {
   static id = 'lifeplan-guide';
   static description = 'Personal life coach for goal tracking, value alignment, and ceremony facilitation';
+
+  /**
+   * Per-agent Mastra Memory configuration. Shares the same working memory
+   * schema as health-coach so user observations made by either agent are
+   * visible to both via resource-scoped storage.
+   *
+   * (When lifeplan-guide grows its own observation fields, union the schema
+   * with health-coach's or split into per-agent Memory instances.)
+   */
+  static getMemoryConfig() {
+    return {
+      lastMessages: 20,
+      workingMemory: {
+        enabled: true,
+        scope: 'resource',
+        schema: healthCoachWorkingMemorySchema,
+      },
+    };
+  }
 
   getSystemPrompt(_context = {}) {
     return systemPrompt;
