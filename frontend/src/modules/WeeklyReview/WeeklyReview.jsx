@@ -21,7 +21,7 @@ const logger = getLogger().child({ component: 'weekly-review' });
 // taps are slower than mouse clicks.
 const DOUBLE_ENTER_WINDOW_MS = 500;
 
-export default function WeeklyReview({ dispatch, dismiss }) {
+export default function WeeklyReview({ dispatch, dismiss, clear }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -82,15 +82,37 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   // Task 9 callbacks — declared after useAudioRecorder so stopRecording is in scope.
   // Some are stubs; Tasks 10–12 will wire them up fully.
   const onExitWidget = useCallback(() => {
+    // Three callers depending on launch context:
+    //   - screen-framework widget: dispatch('escape')
+    //   - widget dismiss helper: dismiss()
+    //   - standalone /app/weekly-review (AppContainer): clear()
     if (typeof dispatch === 'function') dispatch('escape');
     else if (typeof dismiss === 'function') dismiss();
-  }, [dispatch, dismiss]);
+    else if (typeof clear === 'function') clear();
+  }, [dispatch, dismiss, clear]);
 
-  const onSaveAndExit = useCallback(() => {
-    // Stops the recorder; the existing onstop chain finalizes.
-    // Task 10 will wire up auto-finalize on stop.
+  const onSaveAndExit = useCallback(async () => {
+    // Save & close: stop recorder, flush any pending chunks, finalize on
+    // server, then exit. Show the disconnect/finalizing modal as progress
+    // feedback (reused — same shape). Always exit at the end, even on
+    // finalize error, so the user is never trapped inside the widget.
     stopRecording();
-  }, [stopRecording]);
+    dispatchModal({ type: 'OPEN', modal: 'disconnect', payload: { phase: 'finalizing' } });
+    try {
+      uploaderFlushNow();
+      if (sessionIdRef.current && data?.week) {
+        await DaylightAPI('/api/v1/weekly-review/recording/finalize', {
+          sessionId: sessionIdRef.current, week: data.week, duration: recordingDuration,
+        }, 'POST');
+        await deleteLocalSession(sessionIdRef.current).catch(() => {});
+      }
+    } catch (err) {
+      logger.error('save-and-exit.finalize-failed', { error: err.message });
+    } finally {
+      dispatchModal({ type: 'CLOSE' });
+      onExitWidget();
+    }
+  }, [stopRecording, uploaderFlushNow, data?.week, recordingDuration, onExitWidget]);
 
   const onPreflightRetry = useCallback(() => {
     dispatchModal({ type: 'CLOSE' });
@@ -700,7 +722,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
               </button>
               <button
                 className={`confirm-btn confirm-btn--save${modal.focusIndex === 1 ? ' focused' : ''}`}
-                onClick={() => { logger.info('recording.confirm-save'); dispatchModal({ type: 'CLOSE' }); stopRecording(); }}
+                onClick={() => { logger.info('recording.confirm-save'); dispatchModal({ type: 'CLOSE' }); onSaveAndExit(); }}
               >
                 Save &amp; Close
               </button>
@@ -754,7 +776,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
         canSave={isRecording}
         onSave={() => {
           logger.info('nav.bar-save-clicked');
-          stopRecording();
+          onSaveAndExit();
         }}
       />
     </div>
