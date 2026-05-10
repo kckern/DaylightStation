@@ -236,6 +236,10 @@ export class ParticipantRoster {
    * Returns active participant IDs and their zone map in a single call.
    * Consumers should use this instead of reading getRoster() and re-extracting.
    *
+   * Guests are excluded — they are exempt from governance: their HR neither
+   * blocks nor satisfies unlock requirements (anti-cheat: a primary user can't
+   * escape governance by handing the strap to a guest).
+   *
    * @returns {{ participants: string[], zoneMap: Object<string, string>, totalCount: number }}
    */
   getActiveParticipantState() {
@@ -245,6 +249,7 @@ export class ParticipantRoster {
 
     for (const entry of roster) {
       if (!entry.isActive) continue;
+      if (entry.isGuest) continue;
       const id = entry.id || entry.profileId;
       if (!id) continue;
       participants.push(id);
