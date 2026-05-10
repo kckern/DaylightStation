@@ -256,6 +256,18 @@
   }
 }
 
+.calendar-chip--overflow {
+  background: transparent;
+  border: 1px dashed #3a5a3a;
+  color: #6a9a6a;
+}
+
+.fitness-chip--overflow {
+  background: transparent;
+  border: 1px dashed #3a3a5a;
+  color: #7a7aaa;
+}
+
 .day-fitness {
   display: flex;
   flex-direction: column;

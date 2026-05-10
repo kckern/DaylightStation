@@ -15,6 +15,8 @@ function cToF(c) {
   return Math.round(c * 9 / 5 + 32);
 }
 
+const MAX_CHIPS = 3;
+
 export default function DayColumn({ day, isFocused, onClick }) {
   const dt = new Date(`${day.date}T12:00:00Z`);
   const dateNum = dt.getDate();
@@ -58,18 +60,21 @@ export default function DayColumn({ day, isFocused, onClick }) {
 
       {day.calendar.length > 0 && (
         <div className="day-calendar">
-          {day.calendar.map((event, i) => (
+          {day.calendar.slice(0, MAX_CHIPS).map((event, i) => (
             <div key={i} className="calendar-chip">
               {event.time && <span className="chip-time">{event.time}</span>}
               {event.summary}
             </div>
           ))}
+          {day.calendar.length > MAX_CHIPS && (
+            <div className="calendar-chip calendar-chip--overflow">+{day.calendar.length - MAX_CHIPS} more</div>
+          )}
         </div>
       )}
 
       {day.fitness?.length > 0 && (
         <div className="day-fitness">
-          {day.fitness.map((session, i) => (
+          {day.fitness.slice(0, MAX_CHIPS).map((session, i) => (
             <div key={i} className="fitness-chip">
               <span className="fitness-icon">🏋️</span>
               {session.media?.primary?.showTitle || session.media?.primary?.title || 'Workout'}
@@ -78,6 +83,9 @@ export default function DayColumn({ day, isFocused, onClick }) {
               )}
             </div>
           ))}
+          {day.fitness.length > MAX_CHIPS && (
+            <div className="fitness-chip fitness-chip--overflow">+{day.fitness.length - MAX_CHIPS} more</div>
+          )}
         </div>
       )}
 
