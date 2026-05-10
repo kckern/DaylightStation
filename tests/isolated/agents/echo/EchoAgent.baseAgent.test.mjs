@@ -33,12 +33,12 @@ describe('EchoAgent — constructor', () => {
       .toThrow(/agentRuntime is required/);
   });
 
-  it('throws when workingMemory is missing', () => {
+  it('constructs successfully without workingMemory (chat path is dep-free)', () => {
     expect(() => new EchoAgent({ agentRuntime: { execute: async () => ({}) } }))
-      .toThrow(/workingMemory is required/);
+      .not.toThrow();
   });
 
-  it('constructs successfully with both required deps', () => {
+  it('constructs successfully with both deps', () => {
     expect(() => makeAgent()).not.toThrow();
   });
 });

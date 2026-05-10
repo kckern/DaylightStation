@@ -226,6 +226,9 @@ export class MastraAdapter {
         instructions: systemPrompt,
         model: this.#model,
         tools: mastraTools,
+        // Workaround for Mastra issue #16179 — autoResumeSuspendedTools
+        // mutates schemas across Zod v3/v4 and crashes prepare-tools-step.
+        autoResumeSuspendedTools: false,
       };
       if (this.#memory) agentOpts.memory = this.#memory;
       const mastraAgent = new this.#AgentClass(agentOpts);
@@ -323,6 +326,9 @@ export class MastraAdapter {
         instructions: systemPrompt,
         model: this.#model,
         tools: mastraTools,
+        // Workaround for Mastra issue #16179 — autoResumeSuspendedTools
+        // mutates schemas across Zod v3/v4 and crashes prepare-tools-step.
+        autoResumeSuspendedTools: false,
       };
       if (this.#memory) agentOpts.memory = this.#memory;
       const mastraAgent = new this.#AgentClass(agentOpts);

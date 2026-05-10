@@ -5,7 +5,6 @@ import { policyDecorator } from '../framework/decorators/PolicyDecorator.mjs';
 import {
   BASE_PROMPT,
   satellitePrompt,
-  memoryPrompt,
   vocabularyPrompt,
   personalityPrompt,
 } from './prompts/system.mjs';
@@ -93,16 +92,16 @@ export class ConciergeAgent extends BaseAgent {
    *   3. satellitePrompt — omitted when no satellite in context
    *   4. skill fragments — joined fragments from allowed bundles; omitted if none
    *   5. vocabularyPrompt — omitted when vocabulary is null/empty
-   *   6. memoryPrompt — omitted when memory snapshot is empty
+   *
+   * (Working memory is owned by Mastra Memory and injected by the runtime;
+   *  no explicit memory section here.)
    *
    * @param {object} context — agent context; may include satellite
-   * @param {import('../framework/WorkingMemory.mjs').WorkingMemoryState|null} memory
    * @returns {Promise<Array<string|null>>}
    */
-  async buildPromptSections(context = {}, memory = null) {
+  async buildPromptSections(context = {}) {
     const satellite = context?.satellite ?? null;
     const bundlesMap = this.#toolBundlesMap;
-    const memorySnapshot = this.#snapshotMemory(memory);
 
     const skillFragments = satellite
       ? [...bundlesMap.values()]
@@ -118,7 +117,6 @@ export class ConciergeAgent extends BaseAgent {
       satellite ? satellitePrompt(satellite) : null,
       skillFragments || null,
       vocabularyPrompt(this.#vocabulary) || null,
-      memorySnapshot ? memoryPrompt(memorySnapshot) : null,
     ];
   }
 
@@ -156,15 +154,6 @@ export class ConciergeAgent extends BaseAgent {
   }
 
   // --- Private helpers ---
-
-  #snapshotMemory(memoryState) {
-    if (!memoryState) return null;
-    const notes = memoryState.get?.('notes') ?? [];
-    const prefs = memoryState.get?.('preferences') ?? {};
-    const hasContent = (Array.isArray(notes) && notes.length > 0) || Object.keys(prefs).length > 0;
-    if (!hasContent) return null;
-    return { notes_recent: notes.slice(-5), preferences: prefs };
-  }
 
   #refusalContent(reason) {
     const tail = reason ? ` — ${reason}` : '';

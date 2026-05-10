@@ -51,8 +51,3 @@ export function personalityPrompt(text) {
   return `## Personality\n${trimmed}`;
 }
 
-export function memoryPrompt(memorySnapshot) {
-  if (!memorySnapshot || Object.keys(memorySnapshot).length === 0) return '';
-  const json = JSON.stringify(memorySnapshot).slice(0, 1024);
-  return `## Known household notes\n\`\`\`json\n${json}\n\`\`\``;
-}

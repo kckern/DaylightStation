@@ -92,43 +92,10 @@ export class CoachingToolFactory extends ToolFactory {
         },
       }),
 
-      createTool({
-        name: 'get_user_preferences',
-        description: 'Load user coaching style preferences (directness, nudge frequency, challenge level).',
-        parameters: {
-          type: 'object',
-          properties: { username: { type: 'string' } },
-          required: ['username'],
-        },
-        execute: async ({ username }) => {
-          const memory = await workingMemory.load(agentId, username);
-          return memory.get('user_profile') || {
-            directness: 'moderate',
-            nudge_frequency: 'daily',
-            challenge_level: 'moderate',
-          };
-        },
-      }),
-
-      createTool({
-        name: 'update_user_preferences',
-        description: 'Save user coaching style preferences.',
-        parameters: {
-          type: 'object',
-          properties: {
-            username: { type: 'string' },
-            preferences: { type: 'object', description: 'Preference key-value pairs to merge' },
-          },
-          required: ['username', 'preferences'],
-        },
-        execute: async ({ username, preferences }) => {
-          const memory = await workingMemory.load(agentId, username);
-          const current = memory.get('user_profile') || {};
-          memory.set('user_profile', { ...current, ...preferences });
-          await workingMemory.save(agentId, username, memory);
-          return { updated: true };
-        },
-      }),
+      // NOTE: user-preference state (directness, nudge frequency, challenge
+      // level, etc.) lives in Mastra's resource-scoped working memory, accessed
+      // via the `updateWorkingMemory` tool. Do NOT add per-agent preference
+      // tools here — they fork the source of truth from the shared user model.
     ];
   }
 }

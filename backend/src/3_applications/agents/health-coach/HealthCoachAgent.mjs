@@ -13,7 +13,6 @@ import { PersonalBaselineToolFactory } from './tools/PersonalBaselineToolFactory
 import { DailyDashboard } from './assignments/DailyDashboard.mjs';
 import { chatPrompt } from './prompts/chat.mjs';
 import { dashboardPrompt } from './prompts/dashboard.mjs';
-import { loadSeedIfEmpty } from './playbooks/seedLoader.mjs';
 import { FitnessEventAdapter }    from './services/adapters/FitnessEventAdapter.mjs';
 import { NutritionEventAdapter }  from './services/adapters/NutritionEventAdapter.mjs';
 import { WeightEventAdapter }     from './services/adapters/WeightEventAdapter.mjs';
@@ -40,8 +39,6 @@ export class HealthCoachAgent extends BaseAgent {
   static getMemoryConfig({ configService } = {}) {
     const yaml = loadAgentConfig({ configService, agentId: 'health-coach' });
     const m = yaml.memory;
-    // Skip Memory entirely when all features are off — avoids @mastra/memory's
-    // Zod v3/v4 schema-compat bug that crashes prepare-tools-step.
     const anyFeatureOn = (m.last_messages !== false && m.last_messages > 0)
                       || m.working_memory?.enabled
                       || m.semantic_recall?.enabled;
@@ -219,19 +216,14 @@ export class HealthCoachAgent extends BaseAgent {
   }
 
   /**
-   * Seed the playbook library on first turn. `loadSeedIfEmpty` is idempotent —
-   * it writes the seed entries only when the memory has no playbooks yet, and
-   * is a no-op on every subsequent call.
+   * Default prompt section assembly — Mastra Memory handles working memory,
+   * so this layer is a thin pass-through to the base implementation.
    *
    * @param {{ userId?: string, mode?: 'chat'|'dashboard' }} context
-   * @param {import('../framework/WorkingMemory.mjs').WorkingMemoryState|null} memory
    * @returns {Promise<Array<string|null>>}
    */
-  async buildPromptSections(context = {}, memory = null) {
-    if (memory) {
-      await loadSeedIfEmpty(memory);
-    }
-    return super.buildPromptSections(context, memory);
+  async buildPromptSections(context = {}) {
+    return super.buildPromptSections(context);
   }
 
   /**
