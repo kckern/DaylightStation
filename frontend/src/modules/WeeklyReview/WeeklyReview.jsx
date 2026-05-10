@@ -353,9 +353,16 @@ export default function WeeklyReview({ dispatch, dismiss }) {
         return;
       }
 
-      // Modal handling: any open modal (preflightFailed, disconnect, stopConfirm, finalizeError,
-      // resumeDraft) swallows main-hierarchy keys. Per-modal Enter/Back semantics differ slightly.
+      // Modal handling. Per-modal Enter/Back semantics differ.
+      // 2-button modals (stopConfirm, finalizeError, preflightFailed) capture
+      // arrows to toggle focus. 1-button modal (resumeDraft) lets arrows fall
+      // through to underlying TOC nav, so the grid doesn't feel dead while
+      // the user has the prompt up.
       if (modal.type) {
+        const isTwoButton = modal.type === 'stopConfirm'
+          || modal.type === 'finalizeError'
+          || modal.type === 'preflightFailed';
+
         if (modal.type === 'disconnect') {
           // Informational while reconnecting/finalizing — swallow all keys.
           e.preventDefault();
@@ -368,9 +375,10 @@ export default function WeeklyReview({ dispatch, dismiss }) {
           dispatchModal({ type: 'CLOSE' });
           return;
         }
-        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        if (isTwoButton && (e.key === 'ArrowLeft' || e.key === 'ArrowRight'
+                         || e.key === 'ArrowUp'   || e.key === 'ArrowDown')) {
           e.preventDefault();
-          if (modal.type !== 'resumeDraft') dispatchModal({ type: 'TOGGLE_FOCUS' });
+          dispatchModal({ type: 'TOGGLE_FOCUS' });
           return;
         }
         if (isEnter) {
@@ -400,7 +408,8 @@ export default function WeeklyReview({ dispatch, dismiss }) {
             return;
           }
         }
-        return;
+        // resumeDraft + arrows: fall through to main hierarchy so the
+        // underlying grid stays navigable while the prompt is up.
       }
 
       // ---- Bottom recording bar focus ----
