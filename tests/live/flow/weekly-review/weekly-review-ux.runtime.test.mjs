@@ -62,8 +62,11 @@ test.describe('Weekly Review UX', () => {
     await page.keyboard.press('Enter');
     await expect(page.locator('.day-detail')).toBeVisible({ timeout: 5000 });
 
-    // Down at day → returns to TOC.
+    // Down at day → returns to TOC. Wait for day-detail to actually unmount before
+    // pressing Escape; the grid is always present underneath, so its visibility
+    // alone doesn't prove we're back at TOC.
     await page.keyboard.press('ArrowDown');
+    await expect(page.locator('.day-detail')).toBeHidden();
     await expect(page.locator('.weekly-review-grid')).toBeVisible();
 
     // Esc at TOC → save-confirm modal. No Discard option allowed.
@@ -112,17 +115,83 @@ test.describe('Weekly Review UX', () => {
     await page.keyboard.press('ArrowUp');
     await expect(page.locator('.weekly-review-fullscreen-image')).toBeVisible();
 
-    // Down at fullscreen cycles photos (still in fullscreen).
-    await page.keyboard.press('ArrowDown');
-    await expect(page.locator('.weekly-review-fullscreen-image')).toBeVisible();
-
-    // Left at fullscreen also cycles photos (no longer jumps to a different day).
+    // Left at fullscreen cycles photos (no longer jumps to a different day).
     await page.keyboard.press('ArrowLeft');
     await expect(page.locator('.weekly-review-fullscreen-image')).toBeVisible();
 
-    // Escape drops back to day detail.
-    await page.keyboard.press('Escape');
+    // Right at fullscreen also cycles photos (still fullscreen).
+    await page.keyboard.press('ArrowRight');
+    await expect(page.locator('.weekly-review-fullscreen-image')).toBeVisible();
+
+    // Down at fullscreen climbs back to day view — D-pad path out without Esc,
+    // since FKB on the Shield swallows Esc unpredictably.
+    await page.keyboard.press('ArrowDown');
     await expect(page.locator('.day-detail')).toBeVisible();
+    await expect(page.locator('.weekly-review-fullscreen-image')).toBeHidden();
+  });
+
+  test('double-Enter at TOC opens save-confirm and reverts to TOC on cancel', async ({ page }) => {
+    await page.goto(`${APP_URL}/app/weekly-review`);
+    await expect(page.locator('.weekly-review-preflight-overlay')).toBeHidden({ timeout: 12000 });
+    await expect(page.locator('.weekly-review-grid')).toBeVisible();
+    await page.waitForTimeout(100);
+
+    // Two rapid Enters: first opens a day, second reverts and opens stopConfirm.
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.weekly-review-confirm-overlay')).toBeVisible({ timeout: 2000 });
+    // Snapshot was TOC, so the view underneath should have been restored to the grid.
+    await expect(page.locator('.weekly-review-grid')).toBeVisible();
+    await expect(page.locator('.day-detail')).toBeHidden();
+
+    // Cancel the confirm modal (default focus is "Continue" / focusIndex 0).
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.weekly-review-confirm-overlay')).toBeHidden();
+    await expect(page.locator('.weekly-review-grid')).toBeVisible();
+  });
+
+  test('double-Enter at day opens save-confirm and reverts to day on cancel', async ({ page }) => {
+    await page.goto(`${APP_URL}/app/weekly-review`);
+    await expect(page.locator('.weekly-review-preflight-overlay')).toBeHidden({ timeout: 12000 });
+    await expect(page.locator('.weekly-review-grid')).toBeVisible();
+    await page.waitForTimeout(100);
+
+    // Open a day first.
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.day-detail')).toBeVisible({ timeout: 5000 });
+
+    // Pause longer than the double-Enter window, then double-tap to exit.
+    await page.waitForTimeout(700);
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.weekly-review-confirm-overlay')).toBeVisible({ timeout: 2000 });
+    // Snapshot was day, so the view underneath should be the day-detail (not fullscreen, not TOC).
+    await expect(page.locator('.day-detail')).toBeVisible();
+    await expect(page.locator('.weekly-review-grid')).toBeHidden();
+
+    // Cancel restores us to day.
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.weekly-review-confirm-overlay')).toBeHidden();
+    await expect(page.locator('.day-detail')).toBeVisible();
+  });
+
+  test('two Enters separated by >500ms navigate twice (not treated as a double)', async ({ page }) => {
+    await page.goto(`${APP_URL}/app/weekly-review`);
+    await expect(page.locator('.weekly-review-preflight-overlay')).toBeHidden({ timeout: 12000 });
+    await expect(page.locator('.weekly-review-grid')).toBeVisible();
+    await page.waitForTimeout(100);
+
+    // First Enter: TOC → day.
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.day-detail')).toBeVisible({ timeout: 5000 });
+
+    // Wait past the double-Enter window, then a second Enter — should NOT trigger the exit prompt.
+    await page.waitForTimeout(700);
+    await page.keyboard.press('Enter');
+
+    // No stopConfirm should appear within a reasonable window.
+    await page.waitForTimeout(200);
+    await expect(page.locator('.weekly-review-confirm-overlay')).toBeHidden();
   });
 
   test('Space and Backspace are no longer aliased to Enter and Escape', async ({ page }) => {

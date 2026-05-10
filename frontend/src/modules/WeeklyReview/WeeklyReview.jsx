@@ -16,6 +16,11 @@ import './WeeklyReview.scss';
 
 const logger = getLogger().child({ component: 'weekly-review' });
 
+// Window in which two Enter presses are treated as a "double-tap exit" gesture.
+// Picked at the upper end of standard double-click (400-500ms) since remote-thumb
+// taps are slower than mouse clicks.
+const DOUBLE_ENTER_WINDOW_MS = 500;
+
 export default function WeeklyReview({ dispatch, dismiss }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -66,6 +71,13 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   // defense-in-depth if any timing edge-case slips through.
   const preflightStatusRef = useRef(preflightStatus);
   preflightStatusRef.current = preflightStatus;
+
+  // Double-Enter exit gesture: a non-Esc path to open stopConfirm, since FKB on the
+  // Shield TV swallows Esc. Two Enters within DOUBLE_ENTER_WINDOW_MS in the main
+  // hierarchy (toc/day/fullscreen) revert the first transition and open the prompt.
+  // Refs (not state) so consecutive keydowns within a single frame don't fight React.
+  const lastEnterAtRef = useRef(0);
+  const lastEnterSnapshotRef = useRef(null);
 
   // Task 9 callbacks — declared after useAudioRecorder so stopRecording is in scope.
   // Some are stubs; Tasks 10–12 will wire them up fully.
@@ -404,6 +416,22 @@ export default function WeeklyReview({ dispatch, dismiss }) {
 
       // ---- Main hierarchy: Enter = open focused day (TOC) or fullscreen (day), Back = climb ----
       if (isEnter) {
+        // Double-Enter detection: second Enter within window reverts first transition
+        // and opens stopConfirm. Provides a D-pad/OK exit path when Esc is unreliable.
+        const now = Date.now();
+        if ((now - lastEnterAtRef.current) < DOUBLE_ENTER_WINDOW_MS) {
+          e.preventDefault();
+          e.stopPropagation();
+          dispatchView({ type: 'RESTORE_VIEW', snapshot: lastEnterSnapshotRef.current });
+          dispatchModal({ type: 'OPEN', modal: 'stopConfirm' });
+          lastEnterAtRef.current = 0;
+          lastEnterSnapshotRef.current = null;
+          return;
+        }
+        // First Enter: snapshot pre-transition view so a follow-up tap can revert.
+        lastEnterAtRef.current = now;
+        lastEnterSnapshotRef.current = view;
+
         if (view.level === 'toc') {
           e.preventDefault();
           e.stopPropagation();
@@ -444,8 +472,10 @@ export default function WeeklyReview({ dispatch, dismiss }) {
             dispatchView({ type: 'CYCLE_PHOTO', delta: 1, totalPhotos: photos.length });
             return;
           case 'ArrowDown':
+            // ↓ climbs out of fullscreen back to day view — gives D-pad users an
+            // exit path that doesn't depend on Esc (which FKB swallows on Shield).
             e.preventDefault();
-            dispatchView({ type: 'CYCLE_PHOTO', delta: -1, totalPhotos: photos.length });
+            dispatchView({ type: 'BACK' });
             return;
           case 'ArrowLeft':
             e.preventDefault();
