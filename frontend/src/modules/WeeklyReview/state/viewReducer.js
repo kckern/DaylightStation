@@ -51,6 +51,8 @@ export function viewReducer(state, action) {
       return { ...state, focusRow: 'bar' };
     case 'FOCUS_MAIN':
       return { ...state, focusRow: 'main' };
+    case 'RESTORE_VIEW':
+      return action.snapshot ?? state;
     default:
       return state;
   }

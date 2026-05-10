@@ -109,6 +109,20 @@ describe('viewReducer', () => {
     });
   });
 
+  describe('RESTORE_VIEW', () => {
+    it('replaces state with the provided snapshot', () => {
+      const start = { level: 'fullscreen', dayIndex: 2, imageIndex: 3, focusRow: 'main' };
+      const snapshot = { level: 'toc', dayIndex: 5, imageIndex: 0, focusRow: 'main' };
+      expect(viewReducer(start, { type: 'RESTORE_VIEW', snapshot })).toEqual(snapshot);
+    });
+
+    it('is a no-op when snapshot is missing', () => {
+      const start = { level: 'day', dayIndex: 2, imageIndex: 0, focusRow: 'main' };
+      expect(viewReducer(start, { type: 'RESTORE_VIEW' })).toEqual(start);
+      expect(viewReducer(start, { type: 'RESTORE_VIEW', snapshot: null })).toEqual(start);
+    });
+  });
+
   describe('FOCUS_BAR / FOCUS_MAIN', () => {
     it('FOCUS_BAR sets focusRow=bar', () => {
       expect(viewReducer(initialViewState, { type: 'FOCUS_BAR' }).focusRow).toBe('bar');
