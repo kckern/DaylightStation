@@ -1,8 +1,6 @@
 .challenge-overlay {
-  --challenge-overlay-edge: clamp(12px, min(4vw, 4%), 40px);
   --challenge-overlay-size: clamp(140px, min(22vw, 15vh), 240px);
-  --challenge-overlay-available: calc(100% - (var(--challenge-overlay-edge) * 2));
-  --challenge-overlay-diameter: min(var(--challenge-overlay-size), var(--challenge-overlay-available));
+  --challenge-overlay-diameter: var(--challenge-overlay-size);
   --challenge-ring-width: clamp(8px, calc(var(--challenge-overlay-diameter) * 0.08), 18px);
   // Positioning is owned by ChallengeOverlayDeck — this element flows inside
   // the deck and renders at the deck's frame.
