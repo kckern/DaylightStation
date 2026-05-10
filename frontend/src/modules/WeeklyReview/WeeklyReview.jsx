@@ -513,17 +513,26 @@ export default function WeeklyReview({ dispatch, dismiss }) {
         }
       }
 
-      // view.level === 'toc'
+      // view.level === 'toc' — 4-column grid, 2 rows
+      // Up/Down traverse rows (±4); Left/Right traverse within row (±1).
+      // Up from row 0 exits; Down from row 1 focuses the recording bar.
+      const TOC_COLS = 4;
       switch (e.key) {
         case 'ArrowUp':
           e.preventDefault();
-          onExitWidget();
+          if (view.dayIndex >= TOC_COLS) {
+            dispatchView({ type: 'CYCLE_DAY', delta: -TOC_COLS, totalDays: total });
+          } else {
+            onExitWidget();
+          }
           return;
         case 'ArrowDown':
           e.preventDefault();
-          // First Down at TOC focuses the recording bar; only the next Down exits.
-          // This keeps the bar reachable from the keyboard.
-          dispatchView({ type: 'FOCUS_BAR' });
+          if (view.dayIndex + TOC_COLS < total) {
+            dispatchView({ type: 'CYCLE_DAY', delta: +TOC_COLS, totalDays: total });
+          } else {
+            dispatchView({ type: 'FOCUS_BAR' });
+          }
           return;
         case 'ArrowLeft':
           e.preventDefault();

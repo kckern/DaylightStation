@@ -304,10 +304,10 @@ export default function DayDetail({ day }) {
                     style={{ backgroundImage: `url(${photo.thumbnail})` }}
                     onClick={() => handleMediaClick(photo)}
                   >
-                    <img src={photo.original} alt="" loading="lazy" />
-                    {photo.type === 'video' && (
-                      <div className="day-detail-video-play">▶</div>
-                    )}
+                    {photo.type === 'video'
+                      ? <div className="day-detail-video-play">▶</div>
+                      : <img src={photo.thumbnail} alt="" loading="lazy" />
+                    }
                     <div className="day-detail-photo-meta">
                       {timeLabel && <span className="photo-time">{timeLabel}</span>}
                       {photo.people?.length > 0 && <span className="photo-people">{photo.people.join(', ')}</span>}
