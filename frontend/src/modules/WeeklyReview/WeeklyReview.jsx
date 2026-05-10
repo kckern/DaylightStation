@@ -135,7 +135,7 @@ export default function WeeklyReview({ dispatch, dismiss }) {
       try {
         const result = await DaylightAPI('/api/v1/weekly-review/bootstrap');
         setData(result);
-        dispatchView({ type: 'SELECT_DAY', index: (result.days?.length || 1) - 1, totalDays: result.days?.length });
+        dispatchView({ type: 'SELECT_DAY', index: 0, totalDays: result.days?.length });
         const totalPhotos = result.days?.reduce((s, d) => s + (d.photoCount || 0), 0) || 0;
         const totalEvents = result.days?.reduce((s, d) => s + (d.calendar?.length || 0), 0) || 0;
         const daysWithPhotos = result.days?.filter(d => d.photoCount > 0).length || 0;
@@ -266,6 +266,11 @@ export default function WeeklyReview({ dispatch, dismiss }) {
   const finalizePriorDraft = useCallback(async () => {
     const draft = modal.type === 'resumeDraft' ? modal.payload : null;
     if (!draft?.sessionId || !data?.week) return;
+    // Close the modal immediately so the user gets feedback on Enter and the
+    // grid behind it becomes usable — finalize runs in the background. If it
+    // fails, log it; the modal does NOT reopen (user can re-trigger from the
+    // recording bar if needed).
+    dispatchModal({ type: 'CLOSE' });
     try {
       logger.info('recording.resume.finalize', { sessionId: draft.sessionId, source: draft.source });
       if (draft.source === 'local') {
@@ -306,11 +311,13 @@ export default function WeeklyReview({ dispatch, dismiss }) {
         sessionId: draft.sessionId, week: data.week, duration: estimatedDuration,
       }, 'POST');
       await deleteLocalSession(draft.sessionId);
-      dispatchModal({ type: 'CLOSE' });
       const fresh = await DaylightAPI('/api/v1/weekly-review/bootstrap');
       setData(fresh);
     } catch (err) {
-      logger.error('recording.resume.finalize-failed', { error: err.message });
+      // 404 = draft already finalized/gone elsewhere — not really an error.
+      const is404 = /HTTP 404/.test(err.message || '');
+      if (is404) logger.info('recording.resume.finalize-noop', { reason: 'draft-already-gone' });
+      else logger.error('recording.resume.finalize-failed', { error: err.message });
     }
   }, [modal, data?.week]);
 
