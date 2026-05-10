@@ -3,10 +3,20 @@
 /**
  * BaseAgent - Common agent lifecycle.
  *
- * Handles memory load/save, tool factory aggregation, and assignment dispatch.
- * Subclasses define behavior via getSystemPrompt(), registerTools(), and registerAssignments().
+ * Handles tool factory aggregation and assignment dispatch.
  *
- * @see docs/roadmap/2026-02-14-fitness-dashboard-health-agent-design.md — BaseAgent section
+ * Free-form user context (focus, goals, preferences) is owned by Mastra
+ * Memory's resource-scoped working memory, exposed to the agent as the
+ * `updateWorkingMemory` tool. BaseAgent's chat path (run / runStream) does
+ * NOT touch the YAML working memory.
+ *
+ * The optional `workingMemory` dep is forwarded to `runAssignment`, where
+ * scheduled assignments use it as a per-agent operational scratchpad
+ * (e.g., "alerts sent today" counters, last-run timestamps). Agents that
+ * have no assignments may omit the dep entirely.
+ *
+ * Subclasses define behavior via getSystemPrompt(), registerTools(), and
+ * registerAssignments().
  */
 export class BaseAgent {
   static id;
@@ -18,9 +28,8 @@ export class BaseAgent {
   #toolFactories = [];
   #assignments = new Map();
 
-  constructor({ agentRuntime, workingMemory, logger = console, ...rest }) {
+  constructor({ agentRuntime, workingMemory = null, logger = console, ...rest }) {
     if (!agentRuntime) throw new Error('agentRuntime is required');
-    if (!workingMemory) throw new Error('workingMemory is required');
 
     this.#agentRuntime = agentRuntime;
     this.#workingMemory = workingMemory;
@@ -53,15 +62,19 @@ export class BaseAgent {
   }
 
   // --- Freeform run (chat-style) ---
+  //
+  // Memory note: free-form user context (focus, goals, prefs) is owned by
+  // Mastra Memory and injected by the runtime. The per-agent YAML store
+  // ("memory" passed via context) is a backing scratchpad for tools that
+  // need it (playbooks, period vocabulary, etc.). It is NOT rendered into
+  // the system prompt — only made available to tools via context.memory.
   async run(input, { userId, context = {} } = {}) {
-    // userId may also be inside context (orchestrator path)
     const effectiveUserId = userId ?? context?.userId ?? null;
-    // Extract messages from context so it travels as a peer field, not nested inside context.
     const { messages: rawMessages, ...restContext } = context || {};
     const messages = Array.isArray(rawMessages) ? rawMessages : [];
     const augmentedContext = { mode: 'chat', ...restContext, userId: effectiveUserId };
 
-    const memory = effectiveUserId
+    const memory = (this.#workingMemory && effectiveUserId)
       ? await this.#workingMemory.load(this.constructor.id, effectiveUserId)
       : null;
 
@@ -70,7 +83,7 @@ export class BaseAgent {
       input,
       messages,
       tools: this.getTools(),
-      systemPrompt: await this.#assemblePrompt(memory, augmentedContext),
+      systemPrompt: await this.#assemblePrompt(augmentedContext),
       context: { ...augmentedContext, memory },
     });
 
@@ -83,20 +96,18 @@ export class BaseAgent {
 
   /**
    * Streaming variant of run. Yields chunks from the agent runtime as the
-   * model produces them. Same userId resolution + assemble-prompt flow as
-   * run(); memory is saved in a finally block so it persists even if the
-   * consumer abandons the stream early (e.g. SSE client disconnects).
+   * model produces them. Same memory wiring as run() — scratchpad goes to
+   * tools via context.memory, never into the system prompt.
    *
    * @yields { type: 'text-delta'|'tool-start'|'tool-end'|'finish', ... }
    */
   async *runStream(input, { userId, context = {} } = {}) {
     const effectiveUserId = userId ?? context?.userId ?? null;
-    // Extract messages from context so it travels as a peer field, not nested inside context.
     const { messages: rawMessages, ...restContext } = context || {};
     const messages = Array.isArray(rawMessages) ? rawMessages : [];
     const augmentedContext = { mode: 'chat', ...restContext, userId: effectiveUserId };
 
-    const memory = effectiveUserId
+    const memory = (this.#workingMemory && effectiveUserId)
       ? await this.#workingMemory.load(this.constructor.id, effectiveUserId)
       : null;
 
@@ -105,7 +116,7 @@ export class BaseAgent {
       input,
       messages,
       tools: this.getTools(),
-      systemPrompt: await this.#assemblePrompt(memory, augmentedContext),
+      systemPrompt: await this.#assemblePrompt(augmentedContext),
       context: { ...augmentedContext, memory },
     });
 
@@ -124,6 +135,9 @@ export class BaseAgent {
   async runAssignment(assignmentId, { userId, context = {} } = {}) {
     const assignment = this.#assignments.get(assignmentId);
     if (!assignment) throw new Error(`Unknown assignment: ${assignmentId}`);
+    if (!this.#workingMemory) {
+      throw new Error(`Cannot run assignment '${assignmentId}': BaseAgent was constructed without workingMemory dep (assignments require an operational scratchpad)`);
+    }
 
     const augmentedContext = { mode: 'dashboard', ...context };
     const systemPrompt = await this.getSystemPrompt(augmentedContext);
@@ -168,29 +182,29 @@ export class BaseAgent {
    * Build the array of prompt sections that get joined to form the system
    * prompt. Override to add, remove, or reorder sections in subclasses.
    *
-   * Default returns four sections (any may be null/empty — they're filtered):
+   * Default returns three sections (any may be null/empty — they're filtered):
    * 1. Base prompt from getSystemPrompt(context)
    * 2. "## Active User" if context.userId present
    * 3. "## User Mentions" from formatAttachments() if attachments present
-   * 4. "## Working Memory" from memory.serialize() if memory present
+   *
+   * Free-form user context (working memory) is injected by Mastra Memory
+   * automatically — no section needed here.
    *
    * @param {object} context
-   * @param {import('./WorkingMemory.mjs').WorkingMemoryState|null} memory
    * @returns {Promise<Array<string|null>>}
    */
-  async buildPromptSections(context = {}, memory = null) {
+  async buildPromptSections(context = {}) {
     const sections = [await this.getSystemPrompt(context)];
     if (context.userId) {
       sections.push(`## Active User\nThe user you are assisting is: **${context.userId}**`);
     }
     const attachmentsBlock = await this.formatAttachments(context.attachments);
     if (attachmentsBlock) sections.push(attachmentsBlock);
-    if (memory) sections.push(`## Working Memory\n${memory.serialize()}`);
     return sections;
   }
 
-  async #assemblePrompt(memory, context = {}) {
-    const sections = await this.buildPromptSections(context, memory);
+  async #assemblePrompt(context = {}) {
+    const sections = await this.buildPromptSections(context);
     return sections.filter(Boolean).join('\n\n');
   }
 

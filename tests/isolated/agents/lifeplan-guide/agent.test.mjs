@@ -27,7 +27,8 @@ describe('LifeplanGuideAgent', () => {
   it('registers all 5 tool factories', () => {
     const agent = new LifeplanGuideAgent(makeDeps());
     const tools = agent.getTools();
-    expect(tools.length).toBeGreaterThanOrEqual(20);
+    // 2 user-preference tools moved to Mastra working memory (#185)
+    expect(tools.length).toBeGreaterThanOrEqual(18);
 
     const names = tools.map(t => t.name);
     expect(names).toContain('get_plan');

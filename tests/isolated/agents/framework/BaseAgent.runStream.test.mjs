@@ -1,4 +1,8 @@
 // tests/isolated/agents/framework/BaseAgent.runStream.test.mjs
+//
+// runStream no longer touches the per-agent YAML working-memory store —
+// free-form user context is owned by Mastra Memory, persisted by the runtime.
+// These tests cover the streaming contract (chunks, context, error paths).
 import { describe, it, expect, vi } from 'vitest';
 import { BaseAgent } from '../../../../backend/src/3_applications/agents/framework/BaseAgent.mjs';
 
@@ -6,16 +10,6 @@ class FakeAgent extends BaseAgent {
   static id = 'fake';
   getSystemPrompt() { return 'SYS'; }
 }
-
-async function* finishStream() {
-  yield { type: 'text-delta', text: 'Hi ' };
-  yield { type: 'finish', reason: 'stop', usage: { totalTokens: 5 } };
-}
-
-const baseDeps = {
-  agentRuntime: { streamExecute: vi.fn(() => finishStream()) },
-  workingMemory: { load: vi.fn(async () => null), save: vi.fn(async () => {}) },
-};
 
 describe('BaseAgent.runStream', () => {
   it('yields chunks from agentRuntime.streamExecute', async () => {
@@ -25,10 +19,7 @@ describe('BaseAgent.runStream', () => {
       yield { type: 'finish', reason: 'stop', usage: { totalTokens: 10 } };
     }
     const agentRuntime = { streamExecute: vi.fn(() => fakeStream()) };
-    const agent = new FakeAgent({
-      agentRuntime,
-      workingMemory: { load: async () => null, save: async () => {} },
-    });
+    const agent = new FakeAgent({ agentRuntime });
 
     const collected = [];
     for await (const chunk of agent.runStream('hi', { context: { userId: 'kc' } })) {
@@ -47,37 +38,22 @@ describe('BaseAgent.runStream', () => {
       capturedContext = args.context;
       return fakeStream();
     }) };
-    const agent = new FakeAgent({
-      agentRuntime,
-      workingMemory: { load: async () => null, save: async () => {} },
-    });
+    const agent = new FakeAgent({ agentRuntime });
     for await (const _ of agent.runStream('hi', { context: { userId: 'kc' } })) { /* drain */ }
     expect(capturedContext.mode).toBe('chat');
   });
 
-  it('saves memory when userId is present', async () => {
-    const save = vi.fn(async () => {});
-    const load = vi.fn(async () => ({ scratch: 'm', serialize: () => 'scratch: m' }));
+  it('does not require workingMemory in chat path', async () => {
     async function* fakeStream() { yield { type: 'finish' }; }
     const agent = new FakeAgent({
       agentRuntime: { streamExecute: () => fakeStream() },
-      workingMemory: { load, save },
+      // no workingMemory — chat path must work without it
     });
-    for await (const _ of agent.runStream('hi', { context: { userId: 'kc' } })) { /* drain */ }
-    expect(save).toHaveBeenCalledWith('fake', 'kc', expect.objectContaining({ scratch: 'm' }));
-  });
-
-  it('does not load or save memory when userId is absent', async () => {
-    const load = vi.fn();
-    const save = vi.fn();
-    async function* fakeStream() { yield { type: 'finish' }; }
-    const agent = new FakeAgent({
-      agentRuntime: { streamExecute: () => fakeStream() },
-      workingMemory: { load, save },
-    });
-    for await (const _ of agent.runStream('hi', { context: {} })) { /* drain */ }
-    expect(load).not.toHaveBeenCalled();
-    expect(save).not.toHaveBeenCalled();
+    const collected = [];
+    for await (const chunk of agent.runStream('hi', { context: { userId: 'kc' } })) {
+      collected.push(chunk);
+    }
+    expect(collected).toHaveLength(1);
   });
 
   it('propagates errors from the runtime stream to the consumer', async () => {
@@ -87,7 +63,6 @@ describe('BaseAgent.runStream', () => {
     }
     const agent = new FakeAgent({
       agentRuntime: { streamExecute: () => fakeStream() },
-      workingMemory: { load: async () => null, save: async () => {} },
     });
     await expect((async () => {
       for await (const _ of agent.runStream('hi', { context: { userId: 'kc' } })) { /* drain */ }

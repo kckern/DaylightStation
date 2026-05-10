@@ -4,6 +4,7 @@
     "@mastra/core": "1.32.1",
     "@mastra/libsql": "1.10.0",
     "@mastra/memory": "1.17.5",
+    "@mastra/schema-compat": "1.2.9",
     "@resvg/resvg-js": "^2.6.2",
     "@tabler/icons-react": "^3.36.1",
     "adm-zip": "^0.5.16",

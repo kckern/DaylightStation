@@ -32,15 +32,18 @@ describe('CoachingToolFactory', () => {
     tools = factory.createTools();
   });
 
-  it('creates 6 tools', () => {
-    expect(tools).toHaveLength(6);
+  it('creates 4 tools (user-preference tools moved to Mastra working memory)', () => {
+    expect(tools).toHaveLength(4);
     const names = tools.map(t => t.name);
     expect(names).toContain('get_conversation_history');
     expect(names).toContain('save_session_state');
     expect(names).toContain('resume_session');
     expect(names).toContain('log_agent_feedback');
-    expect(names).toContain('get_user_preferences');
-    expect(names).toContain('update_user_preferences');
+    // get_user_preferences / update_user_preferences are intentionally absent —
+    // user preferences live in Mastra's resource-scoped working memory and are
+    // updated via the updateWorkingMemory tool.
+    expect(names).not.toContain('get_user_preferences');
+    expect(names).not.toContain('update_user_preferences');
   });
 
   it('get_conversation_history returns messages', async () => {

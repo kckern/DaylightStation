@@ -4,10 +4,13 @@
  * Assignment - Base class for structured multi-step agent workflows.
  *
  * Template method pattern: gather → buildPrompt → reason → validate → act
- * Memory load/save is handled by the framework (this base class).
  * Subclasses implement the five phase methods.
  *
- * @see docs/roadmap/2026-02-14-fitness-dashboard-health-agent-design.md — Assignment section
+ * NOTE: assignments still use the per-agent YAML "working memory" store as
+ * an operational scratchpad (e.g., "did the morning brief run today?",
+ * "alerts sent today" counter, "last weekly digest" timestamp). This is
+ * SEPARATE from free-form user context, which is owned by Mastra Memory
+ * (resource-scoped, exposed to chat agents via updateWorkingMemory).
  */
 export class Assignment {
   static id;
@@ -18,7 +21,7 @@ export class Assignment {
    * Execute the assignment lifecycle.
    * @param {Object} deps
    * @param {Object} deps.agentRuntime - IAgentRuntime implementation
-   * @param {Object} deps.workingMemory - IWorkingMemory implementation
+   * @param {Object} deps.workingMemory - Per-agent operational scratchpad (YAML)
    * @param {Array} deps.tools - ITool[] available to the agent
    * @param {string} deps.systemPrompt - Agent system prompt
    * @param {string} deps.agentId - Agent identifier
@@ -28,7 +31,7 @@ export class Assignment {
    * @returns {Promise<any>} Validated output
    */
   async execute({ agentRuntime, workingMemory, tools, systemPrompt, agentId, userId, context, logger }) {
-    // 1. Load memory
+    // 1. Load operational scratchpad
     const memory = await workingMemory.load(agentId, userId);
     memory.pruneExpired();
 
@@ -50,10 +53,10 @@ export class Assignment {
     // 5. Validate — schema + domain checks
     const validated = await this.validate(raw, gathered, logger);
 
-    // 6. Act — write output, update memory
+    // 6. Act — write output, update scratchpad
     await this.act(validated, { memory, userId, logger });
 
-    // 7. Save memory
+    // 7. Save scratchpad
     await workingMemory.save(agentId, userId, memory);
 
     logger.info?.('assignment.complete', {
@@ -66,7 +69,7 @@ export class Assignment {
   }
 
   // --- Subclass contract ---
-  // gather({ tools, userId, memory, logger, context }) — context is the execution context passed to execute()
+  // gather({ tools, userId, memory, logger, context }) — memory is the operational scratchpad
   async gather(deps) { throw new Error('Subclass must implement gather()'); }
   buildPrompt(gathered, memory) { throw new Error('Subclass must implement buildPrompt()'); }
   getOutputSchema() { throw new Error('Subclass must implement getOutputSchema()'); }
