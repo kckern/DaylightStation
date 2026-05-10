@@ -33,11 +33,21 @@ describe('ParticipantRoster.getActiveParticipantState()', () => {
       deviceManager: { getAllDevices: () => devices },
       userManager: {
         assignmentLedger: new Map(
-          users.map(u => [u.deviceId, { occupantName: u.name, occupantId: u.id, occupantType: 'member' }])
+          users.map(u => [u.deviceId, {
+            occupantName: u.name,
+            occupantId: u.id,
+            occupantType: u.isGuest ? 'guest' : 'member'
+          }])
         ),
         resolveUserForDevice: (deviceId) => {
           const u = users.find(x => x.deviceId === deviceId);
-          return u ? { id: u.id, name: u.name, source: 'Member', currentData: {} } : null;
+          if (!u) return null;
+          return {
+            id: u.id,
+            name: u.name,
+            source: u.isGuest ? 'Guest' : 'Member',
+            currentData: {}
+          };
         }
       },
       treasureBox: { getUserZoneSnapshot: () => zones },
@@ -126,5 +136,29 @@ describe('ParticipantRoster.getActiveParticipantState()', () => {
 
     const state = roster.getActiveParticipantState();
     expect(state.zoneMap.alice).toBe('active'); // lowercased
+  });
+
+  it('excludes guests — they are exempt from governance', () => {
+    // Guests neither block nor satisfy unlock requirements. A primary user
+    // must not be able to escape governance by handing the HR strap to a guest.
+    configureWithParticipants(
+      [
+        { id: 'dev-1', type: 'heart_rate', heartRate: 120 },
+        { id: 'dev-2', type: 'heart_rate', heartRate: 130 }
+      ],
+      [
+        { deviceId: 'dev-1', id: 'alice', name: 'Alice' },
+        { deviceId: 'dev-2', id: 'guest', name: 'Guest', isGuest: true }
+      ],
+      [
+        { trackingId: 'alice', userId: 'alice', zoneId: 'cool', color: 'blue' },
+        { trackingId: 'guest', userId: 'guest', zoneId: 'warm', color: 'yellow' }
+      ]
+    );
+
+    const state = roster.getActiveParticipantState();
+    expect(state.participants).toEqual(['alice']);
+    expect(state.zoneMap).toEqual({ alice: 'cool' });
+    expect(state.totalCount).toBe(1); // guest does not count toward denominator
   });
 });
