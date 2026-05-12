@@ -35,6 +35,24 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
   const rankOf = (zoneId) => zoneMap[zoneId]?.rank ?? -1;
   const hrInactiveSet = new Set((hrInactiveUsers || []).map(normalize));
 
+  // Hard rule: a user whose display entry shows no current HR signal
+  // (heartRate null or 0) is never a candidate for the lock screen, regardless
+  // of which list governance put them on. Belt-and-braces with the
+  // hrInactiveSet filter below — if the engine's pulse/snapshot paths ever
+  // disagree about hrInactiveUsers, this still guarantees zero-HR users
+  // don't appear.
+  //
+  // Note: when displayMap has NO entry for the key at all (e.g. init race
+  // where governance has emitted a requirement before the display map has
+  // populated), we leave the user in so the fallback name path keeps working.
+  // Only an explicit zero/null in the entry triggers the exclusion.
+  const isZeroHrInDisplay = (key) => {
+    const d = displayMap.get(key);
+    if (!d) return false;
+    if (d.heartRate == null) return true;
+    return Number.isFinite(d.heartRate) && d.heartRate <= 0;
+  };
+
   // Base requirements
   normalizedRequirements.forEach((req) => {
     if (req.satisfied) return;
@@ -42,6 +60,7 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
     (req.missingUsers || []).forEach((userId) => {
       const key = normalize(userId);
       if (hrInactiveSet.has(key)) return;
+      if (isZeroHrInDisplay(key)) return;
       const existing = userTargets.get(key);
       if (!existing || rankOf(targetZoneId) > rankOf(existing.targetZoneId)) {
         userTargets.set(key, { userId, targetZoneId });
@@ -55,6 +74,7 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
     challenge.missingUsers.forEach((userId) => {
       const key = normalize(userId);
       if (hrInactiveSet.has(key)) return;
+      if (isZeroHrInDisplay(key)) return;
       const existing = userTargets.get(key);
       if (!existing || rankOf(targetZoneId) > rankOf(existing.targetZoneId)) {
         userTargets.set(key, { userId, targetZoneId });

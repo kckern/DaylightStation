@@ -240,11 +240,18 @@ export class ParticipantRoster {
    * blocks nor satisfies unlock requirements (anti-cheat: a primary user can't
    * escape governance by handing the strap to a guest).
    *
-   * @returns {{ participants: string[], zoneMap: Object<string, string>, totalCount: number }}
+   * hrInactive users (HR=0/null) are excluded from `participants` and returned
+   * in `hrInactiveUsers` instead, matching the snapshot path in
+   * FitnessSession._evaluateGovernance. Without this, the pulse evaluation
+   * path would let a user whose strap just dropped to zero appear on the lock
+   * screen for a tick or two before the next snapshot eval cleared them.
+   *
+   * @returns {{ participants: string[], zoneMap: Object<string, string>, totalCount: number, hrInactiveUsers: string[] }}
    */
   getActiveParticipantState() {
     const roster = this.getRoster();
     const participants = [];
+    const hrInactiveUsers = [];
     const zoneMap = {};
 
     for (const entry of roster) {
@@ -252,6 +259,10 @@ export class ParticipantRoster {
       if (entry.isGuest) continue;
       const id = entry.id || entry.profileId;
       if (!id) continue;
+      if (entry.hrInactive) {
+        hrInactiveUsers.push(id);
+        continue;
+      }
       participants.push(id);
       const zoneId = entry.zoneId;
       if (zoneId) {
@@ -259,7 +270,7 @@ export class ParticipantRoster {
       }
     }
 
-    return { participants, zoneMap, totalCount: participants.length };
+    return { participants, zoneMap, totalCount: participants.length, hrInactiveUsers };
   }
 
   /**

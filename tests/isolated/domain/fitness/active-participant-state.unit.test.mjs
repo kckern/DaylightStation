@@ -42,11 +42,15 @@ describe('ParticipantRoster.getActiveParticipantState()', () => {
         resolveUserForDevice: (deviceId) => {
           const u = users.find(x => x.deviceId === deviceId);
           if (!u) return null;
+          // hrInactive defaults to !u.hrInactive (i.e., user is HR-active unless
+          // the test fixture marks them as inactive). ParticipantRoster's
+          // `?? true` default is the safe production behavior; tests opt in to
+          // "live HR" explicitly via the fixture flag.
           return {
             id: u.id,
             name: u.name,
             source: u.isGuest ? 'Guest' : 'Member',
-            currentData: {}
+            currentData: { hrInactive: u.hrInactive === true }
           };
         }
       },
@@ -61,7 +65,7 @@ describe('ParticipantRoster.getActiveParticipantState()', () => {
 
   it('returns empty state when not configured', () => {
     const state = roster.getActiveParticipantState();
-    expect(state).toEqual({ participants: [], zoneMap: {}, totalCount: 0 });
+    expect(state).toEqual({ participants: [], zoneMap: {}, totalCount: 0, hrInactiveUsers: [] });
   });
 
   it('returns active participants with their zone IDs', () => {
@@ -136,6 +140,32 @@ describe('ParticipantRoster.getActiveParticipantState()', () => {
 
     const state = roster.getActiveParticipantState();
     expect(state.zoneMap.alice).toBe('active'); // lowercased
+  });
+
+  it('excludes hrInactive users from participants and returns them in hrInactiveUsers', () => {
+    // A user whose HR strap is dead/warming up (HR=0 → hrInactive=true) must
+    // not appear in `participants` — otherwise the pulse evaluation path would
+    // count them as "missing" and surface them on the lock screen for a tick
+    // before the next snapshot eval clears them.
+    configureWithParticipants(
+      [
+        { id: 'dev-1', type: 'heart_rate', heartRate: 120 },
+        { id: 'dev-2', type: 'heart_rate', heartRate: 0 }
+      ],
+      [
+        { deviceId: 'dev-1', id: 'alice', name: 'Alice' },
+        { deviceId: 'dev-2', id: 'bob', name: 'Bob', hrInactive: true }
+      ],
+      [
+        { trackingId: 'alice', userId: 'alice', zoneId: 'active', color: 'orange' }
+      ]
+    );
+
+    const state = roster.getActiveParticipantState();
+    expect(state.participants).toEqual(['alice']);
+    expect(state.hrInactiveUsers).toEqual(['bob']);
+    expect(state.zoneMap).toEqual({ alice: 'active' });
+    expect(state.totalCount).toBe(1);
   });
 
   it('excludes guests — they are exempt from governance', () => {

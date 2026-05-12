@@ -1750,6 +1750,12 @@ export class GovernanceEngine {
       activeParticipants = state.participants;
       userZoneMap = state.zoneMap;
       totalCount = state.totalCount;
+      // Pulse path: take fresh hrInactiveUsers from the same call so the
+      // lock-screen filter in useGovernanceDisplay sees current data, not the
+      // stale snapshot value from _latestInputs.
+      if (hrInactiveUsers === undefined && Array.isArray(state.hrInactiveUsers)) {
+        hrInactiveUsers = state.hrInactiveUsers;
+      }
     }
 
     // BUGFIX: Fall back to previous zoneRankMap/zoneInfoMap when not provided
