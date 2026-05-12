@@ -91,8 +91,8 @@
   }
 
   &__count-block {
-    width: clamp(22px, var(--challenge-overlay-diameter) * 0.2, 46px);
-    height: clamp(22px, var(--challenge-overlay-diameter) * 0.2, 46px);
+    width: clamp(18px, var(--challenge-overlay-diameter) * 0.14, 36px);
+    height: clamp(18px, var(--challenge-overlay-diameter) * 0.14, 36px);
     border-radius: clamp(6px, var(--challenge-overlay-diameter) * 0.06, 14px);
     background: rgba(248, 250, 252, 0.2);
     border: 1px solid rgba(248, 250, 252, 0.35);
@@ -128,7 +128,7 @@
   }
 
   &__time {
-    font-size: clamp(1.6rem, var(--challenge-overlay-diameter) * 0.28, 3.2rem);
+    font-size: clamp(1.2rem, var(--challenge-overlay-diameter) * 0.20, 2.4rem);
     font-weight: 600;
     letter-spacing: 0.06em;
     color: #f8fafc;
