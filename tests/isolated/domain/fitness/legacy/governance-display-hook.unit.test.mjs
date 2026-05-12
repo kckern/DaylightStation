@@ -62,6 +62,71 @@ describe('resolveGovernanceDisplay', () => {
     expect(result.status).toBe('unlocked');
   });
 
+  test('cycle locked while parent unlocked: returns show:true and forwards challenge', () => {
+    const result = resolveGovernanceDisplay(
+      {
+        isGoverned: true,
+        status: 'unlocked',
+        requirements: [],
+        challenge: {
+          id: 'default_0_7_1234',
+          type: 'cycle',
+          cycleState: 'locked',
+          lockReason: 'maintain',
+          rider: { id: 'felix', name: 'Felix' },
+          currentRpm: 42,
+          currentPhase: { hiRpm: 69, loRpm: 52 },
+          status: 'pending'
+        },
+        videoLocked: false
+      },
+      new Map(),
+      ZONE_META
+    );
+
+    expect(result.show).toBe(true);
+    expect(result.status).toBe('unlocked');
+    expect(result.challenge).toBeTruthy();
+    expect(result.challenge.cycleState).toBe('locked');
+    expect(result.challenge.rider.id).toBe('felix');
+    expect(result.rows).toEqual([]);
+    expect(result.requirements).toEqual([]);
+    expect(result.videoLocked).toBe(false);
+  });
+
+  test('cycle in non-locked state while parent unlocked: returns show:false (CycleChallengeOverlay owns it)', () => {
+    const result = resolveGovernanceDisplay(
+      {
+        isGoverned: true,
+        status: 'unlocked',
+        requirements: [],
+        challenge: {
+          id: 'default_0_7_1234',
+          type: 'cycle',
+          cycleState: 'maintain',
+          rider: { id: 'felix', name: 'Felix' },
+          status: 'pending'
+        }
+      },
+      new Map(),
+      ZONE_META
+    );
+
+    expect(result.show).toBe(false);
+    expect(result.status).toBe('unlocked');
+  });
+
+  test('parent unlocked with no challenge at all: returns show:false (existing behavior)', () => {
+    const result = resolveGovernanceDisplay(
+      { isGoverned: true, status: 'unlocked', requirements: [] },
+      new Map(),
+      ZONE_META
+    );
+
+    expect(result.show).toBe(false);
+    expect(result.status).toBe('unlocked');
+  });
+
   test('resolves pending rows from requirements + display map', () => {
     const displayMap = makeDisplayMap([
       {
