@@ -160,4 +160,30 @@ describe('useStreamingSearch', () => {
     expect(result.current.pending).toEqual([]);
     expect(result.current.isSearching).toBe(false);
   });
+
+  it('exposes error state on connection error', () => {
+    const { result } = renderHook(() => useStreamingSearch('/api/search/stream'));
+    act(() => { result.current.search('hello'); });
+    act(() => { MockEventSource.instances[0].simulateError(); });
+    expect(result.current.error).toMatchObject({ kind: 'connection' });
+    expect(result.current.isSearching).toBe(false);
+  });
+
+  it('exposes error state on stream error event', () => {
+    const { result } = renderHook(() => useStreamingSearch('/api/search/stream'));
+    act(() => { result.current.search('hello'); });
+    act(() => {
+      MockEventSource.instances[0].simulateMessage({ event: 'error', message: 'adapter blew up' });
+    });
+    expect(result.current.error).toMatchObject({ kind: 'stream', message: 'adapter blew up' });
+  });
+
+  it('clears error on a fresh search', () => {
+    const { result } = renderHook(() => useStreamingSearch('/api/search/stream'));
+    act(() => { result.current.search('hello'); });
+    act(() => { MockEventSource.instances[0].simulateError(); });
+    expect(result.current.error).not.toBeNull();
+    act(() => { result.current.search('world'); });
+    expect(result.current.error).toBeNull();
+  });
 });

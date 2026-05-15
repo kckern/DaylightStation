@@ -17,6 +17,7 @@ function logger() {
  *   results: Array,
  *   pending: string[],
  *   isSearching: boolean,
+ *   error: {kind: 'stream'|'connection', message: string}|null,
  *   search: (query: string, overrideExtraQuery?: string) => void
  * }}
  */
@@ -24,6 +25,7 @@ export function useStreamingSearch(endpoint, extraQueryString = '') {
   const [results, setResults] = useState([]);
   const [pending, setPending] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [error, setError] = useState(null);
   const eventSourceRef = useRef(null);
 
   // Cleanup on unmount
@@ -40,6 +42,8 @@ export function useStreamingSearch(endpoint, extraQueryString = '') {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
+
+    setError(null);
 
     // Short queries: clear and don't search
     if (!query || query.length < 2) {
@@ -86,6 +90,7 @@ export function useStreamingSearch(endpoint, extraQueryString = '') {
           eventSource.close();
         } else if (data.event === 'error') {
           logger().warn('search.error', { query, error: data.message });
+          setError({ kind: 'stream', message: data.message ?? 'Search adapter reported an error.' });
           setIsSearching(false);
           setPending([]);
           eventSource.close();
@@ -98,6 +103,7 @@ export function useStreamingSearch(endpoint, extraQueryString = '') {
     eventSource.onerror = () => {
       logger().warn('search.connection-error', { endpoint });
       if (eventSourceRef.current === eventSource) {
+        setError({ kind: 'connection', message: 'Lost connection to the search service.' });
         setIsSearching(false);
         setPending([]);
       }
@@ -105,7 +111,7 @@ export function useStreamingSearch(endpoint, extraQueryString = '') {
     };
   }, [endpoint, extraQueryString]);
 
-  return { results, pending, isSearching, search };
+  return { results, pending, isSearching, error, search };
 }
 
 export default useStreamingSearch;

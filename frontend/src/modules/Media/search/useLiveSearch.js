@@ -16,7 +16,9 @@ export function useLiveSearch({ scopeParams = '' } = {}) {
     results: inner.results,
     pending: inner.pending,
     isSearching: inner.isSearching,
+    error: inner.error,
     setQuery,
+    retry: inner.search,
   };
 }
 
