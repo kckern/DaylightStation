@@ -1182,3 +1182,63 @@ div.media-search-results {
   .media-search-bar { order: -1; max-width: 100%; flex-basis: 100%; }
   .media-app .media-canvas { padding: 20px 16px 40px; }
 }
+
+/* =========================================================================
+   SettingsMenu + dock status cluster
+   ========================================================================= */
+.media-app .dock-status-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.media-app .settings-menu-root {
+  position: relative;
+  display: inline-flex;
+}
+.media-app .settings-menu-trigger {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: var(--fg-2);
+  background: var(--bg-card);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--r);
+  transition: all 120ms ease;
+
+  &:hover { color: var(--fg); background: var(--bg-hover); border-color: rgba(255, 255, 255, 0.2); }
+}
+.media-app .settings-menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  min-width: 200px;
+  padding: 6px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--r);
+  box-shadow: 0 12px 32px -10px rgba(0, 0, 0, 0.7);
+}
+.media-app .settings-menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  color: var(--fg);
+  background: transparent;
+  border: none;
+  border-radius: var(--r-sm);
+  transition: background 100ms ease, color 100ms ease;
+
+  &:hover { background: var(--bg-hover); color: var(--brand); }
+}
+
+/* Remove the now-defunct inline Reset button selector (kept until verified) */
+.media-app [data-testid="session-reset-btn"] { display: none; }

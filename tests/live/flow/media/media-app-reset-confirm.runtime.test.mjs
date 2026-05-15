@@ -25,7 +25,8 @@ test.describe('MediaApp — reset session confirmation', () => {
     await page.goto('/media');
     await expect(page.getByTestId('mini-player-open-nowplaying')).toBeVisible({ timeout: 10000 });
 
-    await page.getByTestId('session-reset-btn').click();
+    await page.getByTestId('settings-menu-trigger').click();
+    await page.getByTestId('settings-reset-session').click();
     await expect(page.getByTestId('confirm-dialog')).toBeVisible();
 
     // Cancel does nothing
@@ -34,7 +35,8 @@ test.describe('MediaApp — reset session confirmation', () => {
     await expect(page.getByTestId('mini-player-open-nowplaying')).toBeVisible();
 
     // Confirm actually resets
-    await page.getByTestId('session-reset-btn').click();
+    await page.getByTestId('settings-menu-trigger').click();
+    await page.getByTestId('settings-reset-session').click();
     await page.getByTestId('confirm-ok').click();
     await expect(page.getByTestId('mini-player-open-nowplaying')).toBeHidden({ timeout: 5000 });
   });

@@ -6,6 +6,7 @@ import { FleetIndicator } from './FleetIndicator.jsx';
 import { CastTargetChip } from '../cast/CastTargetChip.jsx';
 import { DispatchProgressTray } from '../cast/DispatchProgressTray.jsx';
 import { ConfirmDialog } from './ConfirmDialog.jsx';
+import { SettingsMenu } from './SettingsMenu.jsx';
 
 export function Dock() {
   const { lifecycle } = useSessionController('local');
@@ -19,13 +20,13 @@ export function Dock() {
   return (
     <div data-testid="media-dock">
       <SearchBar />
-      <FleetIndicator />
-      <CastTargetChip />
-      <MiniPlayer />
+      <div className="dock-status-cluster">
+        <FleetIndicator />
+        <CastTargetChip />
+        <MiniPlayer />
+      </div>
+      <SettingsMenu onResetSession={() => setConfirmOpen(true)} />
       <DispatchProgressTray />
-      <button data-testid="session-reset-btn" onClick={() => setConfirmOpen(true)}>
-        Reset session
-      </button>
       <ConfirmDialog
         open={confirmOpen}
         title="Reset local session?"
