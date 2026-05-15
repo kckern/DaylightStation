@@ -1387,3 +1387,47 @@ div.media-search-results {
   right: 0;
   z-index: 80;
 }
+
+.media-app ul.media-search-results > li.result-row {
+  display: block;
+  padding: 0;
+  border-bottom: 1px solid var(--border);
+
+  &:last-child { border-bottom: none; }
+}
+.media-app .result-row-main {
+  display: grid;
+  grid-template-columns: 42px 1fr auto;
+  align-items: center;
+  column-gap: 12px;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  cursor: default;
+
+  &:hover { background: var(--bg-hover); }
+}
+.media-app .result-row--open .result-row-main { background: var(--bg-hover); }
+.media-app .result-peek {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 16px;
+  padding: 12px 14px;
+  background: rgba(229, 160, 13, 0.04);
+  border-top: 1px solid var(--border);
+}
+.media-app .result-peek-thumb {
+  width: 96px;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+}
+.media-app .result-peek-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--fg-2);
+
+  .result-peek-title { font-size: 16px; font-weight: 600; color: var(--fg); }
+  code { color: var(--brand); font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; }
+}
