@@ -1,7 +1,7 @@
-// frontend/src/modules/Media/shell/MediaAppShell.jsx
 import React from 'react';
 import { Dock } from './Dock.jsx';
 import { Canvas } from './Canvas.jsx';
+import { AppNav } from './AppNav.jsx';
 import { NavProvider } from './NavProvider.jsx';
 
 export function MediaAppShell() {
@@ -9,7 +9,10 @@ export function MediaAppShell() {
     <NavProvider>
       <div className="media-app-shell">
         <Dock />
-        <Canvas />
+        <div className="media-app-body">
+          <AppNav />
+          <Canvas />
+        </div>
       </div>
     </NavProvider>
   );
