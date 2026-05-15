@@ -36,18 +36,13 @@ beforeEach(() => {
 describe('SearchResults', () => {
   const row = { id: 'plex:660761', title: 'Lonesome Ghosts', thumbnail: '/t.jpg', mediaType: 'video' };
 
-  it('renders nothing while still searching with no results yet', () => {
-    const { container } = render(<SearchResults results={[]} pending={['plex']} isSearching={true} />);
-    expect(container.textContent).toMatch(/searching/i);
-  });
-
   it('renders results', () => {
-    render(<SearchResults results={[row]} pending={[]} isSearching={false} />);
+    render(<SearchResults results={[row]} pending={[]} />);
     expect(screen.getByText('Lonesome Ghosts')).toBeInTheDocument();
   });
 
   it('Play Now calls controller.queue.playNow with mapped input', () => {
-    render(<SearchResults results={[row]} pending={[]} isSearching={false} />);
+    render(<SearchResults results={[row]} pending={[]} />);
     fireEvent.click(screen.getByTestId('result-play-now-plex:660761'));
     expect(controller.queue.playNow).toHaveBeenCalledWith(
       expect.objectContaining({ contentId: 'plex:660761', title: 'Lonesome Ghosts', format: 'video' }),
@@ -56,13 +51,13 @@ describe('SearchResults', () => {
   });
 
   it('Add to Queue calls controller.queue.add', () => {
-    render(<SearchResults results={[row]} pending={[]} isSearching={false} />);
+    render(<SearchResults results={[row]} pending={[]} />);
     fireEvent.click(screen.getByTestId('result-add-plex:660761'));
     expect(controller.queue.add).toHaveBeenCalled();
   });
 
   it('clicking title navigates to detail', () => {
-    render(<SearchResults results={[row]} pending={[]} isSearching={false} />);
+    render(<SearchResults results={[row]} pending={[]} />);
     fireEvent.click(screen.getByTestId('result-open-plex:660761'));
     expect(navCtx.push).toHaveBeenCalledWith('detail', { contentId: 'plex:660761' });
   });

@@ -14,14 +14,9 @@ function thumbnailSrc(row) {
   return `/api/v1/display/${encodeURIComponent(source)}/${localId}`;
 }
 
-export function SearchResults({ results = [], pending = [], isSearching = false, onAction }) {
+export function SearchResults({ results = [], pending = [], onAction }) {
   const { queue } = useSessionController('local');
   const { push } = useNav();
-
-  if (isSearching && results.length === 0) {
-    return <div data-testid="media-search-results" className="media-search-results">Searching…</div>;
-  }
-  if (!results.length) return null;
 
   const handle = (row, action) => (e) => {
     e.stopPropagation();
@@ -43,13 +38,8 @@ export function SearchResults({ results = [], pending = [], isSearching = false,
         return (
           <li key={id} data-testid={`result-row-${id}`}>
             {thumb && (
-              <img
-                className="media-result-thumb"
-                src={thumb}
-                alt=""
-                loading="lazy"
-                onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
-              />
+              <img className="media-result-thumb" src={thumb} alt="" loading="lazy"
+                   onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} />
             )}
             <button
               data-testid={`result-open-${id}`}
@@ -68,7 +58,9 @@ export function SearchResults({ results = [], pending = [], isSearching = false,
           </li>
         );
       })}
-      {pending.length > 0 && <li data-testid="media-search-pending">Loading {pending.join(', ')}…</li>}
+      {pending.length > 0 && (
+        <li data-testid="media-search-pending">Loading {pending.join(', ')}…</li>
+      )}
     </ul>
   );
 }
