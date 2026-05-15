@@ -3,7 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 
 const setQueryFn = vi.fn();
-let mockSearch = { results: [], pending: [], isSearching: false, setQuery: setQueryFn };
+const retryFn = vi.fn();
+let mockSearch = { results: [], pending: [], isSearching: false, error: null, setQuery: setQueryFn, retry: retryFn };
 vi.mock('./useLiveSearch.js', () => ({
   useLiveSearch: vi.fn(() => mockSearch),
 }));
@@ -43,8 +44,9 @@ import { SearchBar } from './SearchBar.jsx';
 
 beforeEach(() => {
   setQueryFn.mockClear();
+  retryFn.mockClear();
   scopeCtx.setScopeKey.mockClear();
-  mockSearch = { results: [], pending: [], isSearching: false, setQuery: setQueryFn };
+  mockSearch = { results: [], pending: [], isSearching: false, error: null, setQuery: setQueryFn, retry: retryFn };
 });
 
 describe('SearchBar', () => {
@@ -68,11 +70,20 @@ describe('SearchBar', () => {
   it('shows results dropdown when results are present', () => {
     mockSearch = {
       results: [{ id: 'plex:1', title: 'Lonesome Ghosts' }],
-      pending: [], isSearching: false, setQuery: setQueryFn,
+      pending: [], isSearching: false, error: null, setQuery: setQueryFn, retry: retryFn,
     };
     render(<SearchBar />);
-    // Typing 2+ chars triggers results render; simulate by setting value first
+    // Typing 2+ chars triggers RESULTS state
     fireEvent.change(screen.getByTestId('media-search-input'), { target: { value: 'lo' } });
     expect(screen.getByText('Lonesome Ghosts')).toBeInTheDocument();
+  });
+
+  it('shows search-loading indicator while isSearching with 2+ chars', () => {
+    mockSearch = {
+      results: [], pending: ['plex'], isSearching: true, error: null, setQuery: setQueryFn, retry: retryFn,
+    };
+    render(<SearchBar />);
+    fireEvent.change(screen.getByTestId('media-search-input'), { target: { value: 'lo' } });
+    expect(screen.getByTestId('search-loading')).toBeInTheDocument();
   });
 });

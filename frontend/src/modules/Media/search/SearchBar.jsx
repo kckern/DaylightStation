@@ -2,20 +2,28 @@ import React, { useState, useRef, useCallback } from 'react';
 import { useLiveSearch } from './useLiveSearch.js';
 import { useSearchContext } from './SearchProvider.jsx';
 import { SearchResults } from './SearchResults.jsx';
+import { SearchIdleState } from './SearchIdleState.jsx';
+import { SearchEmptyState } from './SearchEmptyState.jsx';
+import { SearchErrorState } from './SearchErrorState.jsx';
+import { deriveSearchState, SEARCH_STATE } from './searchStates.js';
 import { useDismissable } from '../../../hooks/useDismissable.js';
+import { useSessionController } from '../session/useSessionController.js';
 
 export function SearchBar() {
   const { scopes, currentScopeKey, currentScope, setScopeKey } = useSearchContext();
-  const { results, pending, isSearching, setQuery } = useLiveSearch({
+  const { results, pending, isSearching, error, setQuery, retry } = useLiveSearch({
     scopeParams: currentScope?.params ?? '',
   });
+  const { queue } = useSessionController('local');
   const [value, setValue] = useState('');
+  const [focused, setFocused] = useState(false);
   const rootRef = useRef(null);
 
-  const isOpen = value.length >= 2;
+  const isOpen = focused || value.length >= 1;
 
   const close = useCallback(() => {
     setValue('');
+    setFocused(false);
     setQuery('');
   }, [setQuery]);
 
@@ -27,8 +35,26 @@ export function SearchBar() {
     setQuery(next);
   };
 
+  const onDeepLink = ({ source, localId }) => {
+    const contentId = `${source}:${localId}`;
+    queue.playNow({ contentId }, { clearRest: true });
+    close();
+  };
+
+  const state = deriveSearchState({
+    query: value,
+    isSearching,
+    results,
+    error,
+  });
+
   return (
-    <div data-testid="media-search-bar" className="media-search-bar" ref={rootRef}>
+    <div
+      data-testid="media-search-bar"
+      className="media-search-bar"
+      ref={rootRef}
+      onFocus={() => setFocused(true)}
+    >
       <select
         data-testid="media-search-scope"
         value={currentScopeKey ?? ''}
@@ -42,10 +68,26 @@ export function SearchBar() {
         data-testid="media-search-input"
         value={value}
         onChange={onChange}
-        placeholder="Search"
+        placeholder="Search media — title, artist, or paste a content ID (plex-main:12345)"
       />
       {isOpen && (
-        <SearchResults results={results} pending={pending} isSearching={isSearching} onAction={close} />
+        <div data-testid="search-overlay" className="media-search-overlay">
+          {state.kind === SEARCH_STATE.IDLE && (
+            <SearchIdleState input={value} onDeepLink={onDeepLink} />
+          )}
+          {state.kind === SEARCH_STATE.SEARCHING && (
+            <div data-testid="search-loading" className="search-state search-state--loading">
+              Searching{pending.length > 0 ? ` (${pending.join(', ')})` : ''}…
+            </div>
+          )}
+          {state.kind === SEARCH_STATE.RESULTS && (
+            <SearchResults results={state.results} pending={pending} onAction={close} />
+          )}
+          {state.kind === SEARCH_STATE.EMPTY && <SearchEmptyState query={state.query} />}
+          {state.kind === SEARCH_STATE.ERROR && (
+            <SearchErrorState error={state.error} onRetry={retry} />
+          )}
+        </div>
       )}
     </div>
   );
