@@ -32,12 +32,21 @@ test.describe('MediaApp — P2 discovery', () => {
     await expect(page.getByRole('heading', { name: new RegExp(`Now Playing: ${contentId}`, 'i') })).toBeVisible({ timeout: 10000 });
   });
 
-  test('clicking a search result title opens the Detail view', async ({ page }) => {
+  test('clicking a search result title opens inline peek (no navigation)', async ({ page }) => {
     await page.goto('/media');
     await page.getByTestId('media-search-input').fill('lonesome');
     const firstRow = page.locator('[data-testid^="result-open-"]').first();
     await expect(firstRow).toBeVisible({ timeout: 15000 });
+
+    const firstRowId = await firstRow.getAttribute('data-testid');
+    const contentId = firstRowId?.replace(/^result-open-/, '');
+    expect(contentId).toBeTruthy();
+
     await firstRow.click();
-    await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 10000 });
+    // Title click now expands inline peek, not detail route
+    await expect(page.getByTestId(`result-peek-${contentId}`)).toBeVisible({ timeout: 5000 });
+    // Toggle closes it
+    await firstRow.click();
+    await expect(page.getByTestId(`result-peek-${contentId}`)).not.toBeVisible({ timeout: 3000 });
   });
 });

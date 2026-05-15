@@ -14,11 +14,6 @@ vi.mock('../session/useSessionController.js', () => ({
   useSessionController: vi.fn(() => controller),
 }));
 
-const navCtx = { push: vi.fn() };
-vi.mock('../shell/NavProvider.jsx', () => ({
-  useNav: vi.fn(() => navCtx),
-}));
-
 vi.mock('../cast/CastButton.jsx', () => ({
   CastButton: ({ contentId }) => <button data-testid={`cast-button-${contentId}`}>Cast</button>,
 }));
@@ -30,7 +25,6 @@ beforeEach(() => {
   controller.queue.add.mockClear();
   controller.queue.playNext.mockClear();
   controller.queue.addUpNext.mockClear();
-  navCtx.push.mockClear();
 });
 
 describe('SearchResults', () => {
@@ -56,9 +50,12 @@ describe('SearchResults', () => {
     expect(controller.queue.add).toHaveBeenCalled();
   });
 
-  it('clicking title navigates to detail', () => {
+  it('clicking title toggles inline peek (no navigation)', () => {
     render(<SearchResults results={[row]} pending={[]} />);
     fireEvent.click(screen.getByTestId('result-open-plex:660761'));
-    expect(navCtx.push).toHaveBeenCalledWith('detail', { contentId: 'plex:660761' });
+    expect(screen.getByTestId('result-peek-plex:660761')).toBeInTheDocument();
+    // Toggle closes it
+    fireEvent.click(screen.getByTestId('result-open-plex:660761'));
+    expect(screen.queryByTestId('result-peek-plex:660761')).not.toBeInTheDocument();
   });
 });
