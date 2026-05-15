@@ -1220,3 +1220,52 @@ div.media-search-results {
 
   &:hover { background: var(--bg-hover); color: var(--brand); }
 }
+
+/* =========================================================================
+   Search state components — Idle / Empty / Error
+   ========================================================================= */
+
+.media-app .search-state {
+  padding: 14px 16px;
+  font-size: 13px;
+  color: var(--fg-2);
+}
+.media-app .search-state--idle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.media-app .search-idle-prompt { color: var(--fg-3); }
+.media-app .search-deeplink-suggestion {
+  color: var(--fg-2);
+  code {
+    color: var(--brand);
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+  }
+}
+.media-app .search-deeplink-btn,
+.media-app .search-retry-btn {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--brand-ink);
+  background: var(--brand);
+  border: 1px solid var(--brand);
+  border-radius: var(--r-sm);
+
+  &:hover { background: var(--brand-hot); border-color: var(--brand-hot); }
+}
+.media-app .search-state--empty {
+  color: var(--fg-3);
+}
+.media-app .search-state--error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  color: var(--danger);
+  background: rgba(227, 93, 93, 0.06);
+  border-left: 3px solid var(--danger);
+}
