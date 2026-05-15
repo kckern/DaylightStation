@@ -1,49 +1,46 @@
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, test, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-
-let castTargetCtx = { mode: 'transfer', targetIds: ['lr'], setMode: vi.fn(), toggleTarget: vi.fn(), clearTargets: vi.fn() };
-vi.mock('./useCastTarget.js', () => ({
-  useCastTarget: vi.fn(() => castTargetCtx),
-}));
-
-const dispatchMock = vi.fn(() => Promise.resolve(['d1']));
-vi.mock('./useDispatch.js', () => ({
-  useDispatch: vi.fn(() => ({ dispatches: new Map(), dispatchToTarget: dispatchMock, retryLast: vi.fn() })),
-}));
-
 import { CastButton } from './CastButton.jsx';
+import { FleetContext } from '../fleet/FleetProvider.jsx';
+import { DispatchContext } from './DispatchProvider.jsx';
+import { CastTargetContext } from './CastTargetProvider.jsx';
 
-beforeEach(() => {
-  dispatchMock.mockClear();
-  castTargetCtx = { mode: 'transfer', targetIds: ['lr'], setMode: vi.fn(), toggleTarget: vi.fn(), clearTargets: vi.fn() };
-});
+const devices = { 'living-tv': { id: 'living-tv', name: 'Living Room TV', location: 'living' } };
+
+function harness({ dispatchMock = vi.fn() } = {}) {
+  return {
+    dispatchMock,
+    ...render(
+      <FleetContext.Provider value={{ devices, byDevice: new Map(), loading: false, error: null, refresh: () => {} }}>
+        <CastTargetContext.Provider value={{ targetIds: [], mode: 'transfer', setMode: () => {}, toggleTarget: () => {}, clearTargets: () => {} }}>
+          <DispatchContext.Provider value={{ dispatches: {}, dispatchToTarget: dispatchMock, retryLast: () => {} }}>
+            <CastButton contentId="plex:42" />
+          </DispatchContext.Provider>
+        </CastTargetContext.Provider>
+      </FleetContext.Provider>,
+    ),
+  };
+}
 
 describe('CastButton', () => {
-  it('renders "Cast" text', () => {
-    render(<CastButton contentId="plex:1" />);
-    expect(screen.getByTestId('cast-button-plex:1')).toHaveTextContent(/cast/i);
+  test('is enabled even when CastTargetContext has no targets', () => {
+    harness();
+    expect(screen.getByTestId('cast-button-plex:42')).not.toBeDisabled();
   });
 
-  it('click fires dispatchToTarget with targetIds + mode + play', () => {
-    render(<CastButton contentId="plex:1" />);
-    fireEvent.click(screen.getByTestId('cast-button-plex:1'));
-    expect(dispatchMock).toHaveBeenCalledWith(expect.objectContaining({
-      targetIds: ['lr'],
-      mode: 'transfer',
-      play: 'plex:1',
-    }));
+  test('opens the DispatchTargetPicker on click', () => {
+    harness();
+    fireEvent.click(screen.getByTestId('cast-button-plex:42'));
+    expect(screen.getByTestId('dispatch-target-picker')).toBeInTheDocument();
   });
 
-  it('is disabled when no targets selected', () => {
-    castTargetCtx = { mode: 'transfer', targetIds: [], setMode: vi.fn(), toggleTarget: vi.fn(), clearTargets: vi.fn() };
-    render(<CastButton contentId="plex:1" />);
-    expect(screen.getByTestId('cast-button-plex:1')).toBeDisabled();
-  });
-
-  it('accepts a queue prop (container dispatch)', () => {
-    render(<CastButton queue="plex:album-1" />);
-    fireEvent.click(screen.getByTestId('cast-button-plex:album-1'));
-    expect(dispatchMock).toHaveBeenCalledWith(expect.objectContaining({ queue: 'plex:album-1' }));
+  test('closes the picker after submit', () => {
+    const { dispatchMock } = harness();
+    fireEvent.click(screen.getByTestId('cast-button-plex:42'));
+    fireEvent.click(screen.getByTestId('picker-device-living-tv'));
+    fireEvent.click(screen.getByTestId('picker-submit'));
+    expect(dispatchMock).toHaveBeenCalledWith(expect.objectContaining({ play: 'plex:42', targetIds: ['living-tv'] }));
+    expect(screen.queryByTestId('dispatch-target-picker')).not.toBeInTheDocument();
   });
 });
