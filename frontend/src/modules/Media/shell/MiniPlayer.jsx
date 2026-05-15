@@ -12,11 +12,12 @@ export function MiniPlayer() {
   if (!item) return <div data-testid="media-mini-player">Idle</div>;
 
   const isPlaying = PLAYING_STATES.has(snapshot.state);
-  const label = isPlaying ? 'Pause' : 'Play';
+  const toggleLabel = isPlaying ? 'Pause' : 'Play';
   const onToggle = () => {
     if (isPlaying) transport.pause();
     else transport.play();
   };
+  const onStop = () => transport.stop();
 
   return (
     <div data-testid="media-mini-player">
@@ -28,11 +29,20 @@ export function MiniPlayer() {
       </button>
       <button
         data-testid="mini-toggle"
-        aria-label={label}
+        aria-label={toggleLabel}
         onClick={onToggle}
         className={`media-mini-player__toggle media-mini-player__toggle--${isPlaying ? 'playing' : 'paused'}`}
       >
         {isPlaying ? '❚❚' : '▶'}
+      </button>
+      <button
+        data-testid="mini-stop"
+        aria-label="Stop"
+        onClick={onStop}
+        className="media-mini-player__stop"
+        title="Stop and clear current item"
+      >
+        ■
       </button>
     </div>
   );
