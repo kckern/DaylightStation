@@ -4,7 +4,7 @@ import { useDevices } from './useDevices.js';
 import { reduceFleet, initialFleetState } from './fleetReducer.js';
 import mediaLog from '../logging/mediaLog.js';
 
-const FleetContext = createContext(null);
+export const FleetContext = createContext(null);
 
 function isDeviceStateBroadcast(msg) {
   return !!msg && typeof msg.topic === 'string' && msg.topic.startsWith('device-state:');

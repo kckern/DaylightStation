@@ -6,7 +6,7 @@ import { buildDispatchUrl } from './dispatchUrl.js';
 import { useSessionController } from '../session/useSessionController.js';
 import mediaLog from '../logging/mediaLog.js';
 
-const DispatchContext = createContext(null);
+export const DispatchContext = createContext(null);
 
 function uuid() {
   try { if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID(); } catch { /* ignore */ }
