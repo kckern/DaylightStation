@@ -1310,3 +1310,69 @@ div.media-search-results {
 .media-app .search-state--loading {
   color: var(--fg-3);
 }
+
+/* =========================================================================
+   DispatchTargetPicker
+   ========================================================================= */
+
+.media-app .dispatch-target-picker {
+  min-width: 260px;
+  padding: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--r);
+  box-shadow: 0 12px 32px -10px rgba(0, 0, 0, 0.7);
+  font-size: 13px;
+
+  .picker-section { padding: 6px 0; }
+  .picker-section + .picker-section { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 12px; }
+  .picker-section-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--fg-3);
+    margin-bottom: 8px;
+  }
+  .picker-device,
+  .picker-mode {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    margin-bottom: 2px;
+    border-radius: var(--r-sm);
+    cursor: pointer;
+    transition: background 100ms ease, color 100ms ease;
+    color: var(--fg);
+
+    input { accent-color: var(--brand); }
+
+    &:hover { background: var(--bg-hover); }
+  }
+  .picker-device--selected { background: rgba(229, 160, 13, 0.12); }
+  .picker-device-name { font-weight: 500; }
+  .picker-device-location {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--fg-3);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .picker-empty { color: var(--fg-3); padding: 6px 10px; }
+  .picker-submit {
+    margin-top: 12px;
+    width: 100%;
+    padding: 9px 14px;
+    background: var(--brand);
+    color: var(--brand-ink);
+    border: 1px solid var(--brand);
+    border-radius: var(--r);
+    font-weight: 600;
+    font-size: 13px;
+    transition: background 120ms ease;
+
+    &:hover:not(:disabled) { background: var(--brand-hot); }
+    &:disabled { background: var(--bg-active); border-color: var(--bg-active); color: var(--fg-dim); cursor: not-allowed; }
+  }
+}
