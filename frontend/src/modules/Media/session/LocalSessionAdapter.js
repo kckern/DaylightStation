@@ -3,6 +3,7 @@ import { reduce } from './sessionReducer.js';
 import * as qOps from './queueOps.js';
 import { pickNextQueueItem } from './advancement.js';
 import mediaLog from '../logging/mediaLog.js';
+import { recordRecent } from './recents.js';
 
 function defaultUuid() {
   try {
@@ -93,6 +94,14 @@ export class LocalSessionAdapter {
     const next = reduce(prev, action);
     if (next === prev) return;
     this._snapshot = next;
+    if (next.state === 'playing' && prev.state !== 'playing' && next.currentItem) {
+      recordRecent({
+        contentId: next.currentItem.contentId,
+        title: next.currentItem.title,
+        thumbnail: next.currentItem.thumbnail,
+        format: next.currentItem.format,
+      });
+    }
     this._persist.write(next, { wasPlayingOnUnload: next.state === 'playing' });
     for (const sub of this._subscribers) sub(next);
   }
