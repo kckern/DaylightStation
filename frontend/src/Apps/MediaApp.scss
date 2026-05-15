@@ -95,15 +95,18 @@
   position: sticky;
   top: 0;
   z-index: 40;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(280px, 640px) 1fr auto;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   padding: 10px 20px;
   background: rgba(10, 11, 13, 0.92);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border-mid);
 }
+
+.media-app .media-search-bar { max-width: none; width: 100%; }
 
 /* =========================================================================
    Search Bar
@@ -1177,10 +1180,9 @@ div.media-search-results {
    ========================================================================= */
 @media (max-width: 780px) {
   .media-app [data-testid="media-dock"] {
-    flex-wrap: wrap;
+    grid-template-columns: 1fr auto;
     padding: 8px 14px;
   }
-  .media-search-bar { order: -1; max-width: 100%; flex-basis: 100%; }
   .media-app .media-canvas { padding: 20px 16px 40px; }
 }
 
@@ -1188,10 +1190,10 @@ div.media-search-results {
    SettingsMenu + dock status cluster
    ========================================================================= */
 .media-app .dock-status-cluster {
+  justify-self: end;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin-left: auto;
 }
 
 .media-app .settings-menu-root {
