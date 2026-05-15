@@ -1,31 +1,36 @@
-import React from 'react';
-import { useCastTarget } from './useCastTarget.js';
-import { useDispatch } from './useDispatch.js';
+import React, { useState, useRef, useCallback } from 'react';
+import { DispatchTargetPicker } from './DispatchTargetPicker.jsx';
+import { useDismissable } from '../../../hooks/useDismissable.js';
 
 export function CastButton({ contentId, queue, onAction }) {
-  const { targetIds, mode } = useCastTarget();
-  const { dispatchToTarget } = useDispatch();
-  const id = contentId ?? queue;
-  const disabled = targetIds.length === 0;
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+  const close = useCallback(() => setOpen(false), []);
+  useDismissable(rootRef, { open, onDismiss: close });
 
-  const onClick = () => {
-    if (disabled) return;
-    const params = { targetIds, mode };
-    if (contentId) params.play = contentId;
-    else if (queue) params.queue = queue;
-    dispatchToTarget(params);
+  const id = contentId ?? queue;
+  const source = contentId ? { play: contentId } : { queue };
+
+  const onComplete = () => {
+    setOpen(false);
     onAction?.();
   };
 
   return (
-    <button
-      data-testid={`cast-button-${id}`}
-      className="cast-button"
-      onClick={onClick}
-      disabled={disabled}
-    >
-      Cast
-    </button>
+    <span data-testid={`cast-button-root-${id}`} className="cast-button-root" ref={rootRef}>
+      <button
+        data-testid={`cast-button-${id}`}
+        className="cast-button"
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+      >
+        Cast
+      </button>
+      {open && (
+        <div className="cast-button-popover">
+          <DispatchTargetPicker source={source} onComplete={onComplete} />
+        </div>
+      )}
+    </span>
   );
 }
 

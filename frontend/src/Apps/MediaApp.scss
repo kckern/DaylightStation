@@ -1376,3 +1376,14 @@ div.media-search-results {
     &:disabled { background: var(--bg-active); border-color: var(--bg-active); color: var(--fg-dim); cursor: not-allowed; }
   }
 }
+
+.media-app .cast-button-root {
+  position: relative;
+  display: inline-flex;
+}
+.media-app .cast-button-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 80;
+}
