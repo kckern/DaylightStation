@@ -399,6 +399,26 @@ div.media-search-results {
       border-color: var(--brand);
     }
   }
+
+  .media-mini-player__stop {
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-card);
+    border: 1px solid var(--border-mid);
+    border-radius: var(--r);
+    color: var(--fg);
+    font-size: 12px;
+    transition: all 100ms ease;
+
+    &:hover {
+      color: #fff;
+      background: var(--danger);
+      border-color: var(--danger);
+    }
+  }
 }
 
 /* =========================================================================
