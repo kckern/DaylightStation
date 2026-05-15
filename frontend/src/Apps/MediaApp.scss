@@ -105,25 +105,6 @@
   border-bottom: 1px solid var(--border-mid);
 }
 
-/* Reset session — right-aligned, ghost button */
-.media-app [data-testid="session-reset-btn"] {
-  margin-left: auto;
-  padding: 7px 14px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--fg-2);
-  background: transparent;
-  border: 1px solid var(--border-mid);
-  border-radius: var(--r);
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
-
-  &:hover {
-    color: var(--fg);
-    background: var(--bg-hover);
-    border-color: var(--border-mid);
-  }
-}
-
 /* =========================================================================
    Search Bar
    ========================================================================= */
@@ -1239,6 +1220,3 @@ div.media-search-results {
 
   &:hover { background: var(--bg-hover); color: var(--brand); }
 }
-
-/* Remove the now-defunct inline Reset button selector (kept until verified) */
-.media-app [data-testid="session-reset-btn"] { display: none; }
