@@ -231,17 +231,21 @@ ul.media-search-results > li {
   grid-column: 3;
   display: inline-flex;
   gap: 4px;
-  opacity: 0.35;
+  /* Fix 2: raised from 0.35 to 0.7 so buttons read as interactive at rest,
+     not disabled. Row hover still punches them to full opacity. */
+  opacity: 0.7;
   transition: opacity 120ms ease;
 
   button {
     padding: 5px 10px;
     font-size: 11px;
     font-weight: 500;
-    color: var(--fg-2);
-    border: 1px solid var(--border-mid);
+    /* Fix 2 cont'd: use fg (white) instead of fg-2 (grey) for resting label;
+       add a slightly brighter border so buttons have a clear edge on the dark bg */
+    color: var(--fg);
+    border: 1px solid rgba(255, 255, 255, 0.18);
     border-radius: var(--r-sm);
-    background: var(--bg-card);
+    background: var(--bg-active);
     transition: all 100ms ease;
 
     &:hover {
@@ -573,9 +577,11 @@ div.media-search-results {
   position: relative;
   display: flex;
   align-items: flex-end;
-  min-height: 150px;
+  /* Fix 3: taller cards with a richer top-to-bottom gradient give them
+     visual depth and a thumbnail-like silhouette even without artwork */
+  min-height: 180px;
   padding: 18px 20px;
-  background: linear-gradient(135deg, #24262c 0%, #1a1c20 100%);
+  background: linear-gradient(160deg, #2e3038 0%, #1a1c20 55%, #141518 100%);
   border: 1px solid var(--border-mid);
   border-radius: var(--r);
   color: var(--fg);
@@ -586,12 +592,16 @@ div.media-search-results {
   overflow: hidden;
   cursor: pointer;
 
+  /* Fix 3 cont'd: always-visible amber glow in the top-left corner
+     gives the card a branded "lit" appearance at rest, not just on hover */
   &::before {
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(135deg, rgba(229, 160, 13, 0.12), transparent 60%);
-    opacity: 0;
+    background:
+      radial-gradient(ellipse 60% 55% at 20% 15%, rgba(229, 160, 13, 0.18) 0%, transparent 70%),
+      linear-gradient(160deg, rgba(229, 160, 13, 0.08) 0%, transparent 50%);
+    opacity: 0.6;
     transition: opacity 160ms ease;
     pointer-events: none;
   }
@@ -1342,12 +1352,17 @@ div.media-search-results {
   .picker-section { padding: 6px 0; }
   .picker-section + .picker-section { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 12px; }
   .picker-section-label {
+    /* Fix 5: section labels were barely visible (fg-3 = #70747c on dark panel).
+       Raise to fg-2 and add a thin amber underline to make the two sections
+       ("TARGET DEVICE" / "MODE") scannable at a glance. */
     font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: var(--fg-3);
+    color: var(--fg-2);
     margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(229, 160, 13, 0.25);
   }
   .picker-device,
   .picker-mode {
@@ -1395,12 +1410,37 @@ div.media-search-results {
 .media-app .cast-button-root {
   position: relative;
   display: inline-flex;
+  /* Fix 1: break out of the .media-result-actions opacity: 0.35 cascade.
+     The popover is a descendant, so opacity inheritance makes picker content
+     render at 35% opacity. Setting opacity:1 here restores it to fully opaque.
+     pointer-events must also be restored so the open picker is clickable. */
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+.media-app .cast-button {
+  /* Fix 1 cont'd: style the trigger to match the sibling action buttons */
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--fg-2);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--r-sm);
+  background: var(--bg-card);
+  transition: all 100ms ease;
+
+  &:hover {
+    color: var(--brand-ink);
+    background: var(--brand);
+    border-color: var(--brand);
+  }
 }
 .media-app .cast-button-popover {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
   z-index: 80;
+  /* Ensure the popover itself is never faded by parent opacity */
+  opacity: 1;
 }
 
 .media-app ul.media-search-results > li.result-row {
@@ -1427,8 +1467,12 @@ div.media-search-results {
   grid-template-columns: 96px 1fr;
   gap: 16px;
   padding: 12px 14px;
-  background: rgba(229, 160, 13, 0.04);
-  border-top: 1px solid var(--border);
+  /* Fix 4: stronger peek panel bg — 0.04 amber was indistinguishable from the
+     list background. Use bg-card + a legible amber tint so the expanded state
+     is immediately recognisable as a distinct surface. */
+  background: var(--bg-card);
+  border-top: 1px solid rgba(229, 160, 13, 0.3);
+  box-shadow: inset 3px 0 0 rgba(229, 160, 13, 0.5);
 }
 .media-app .result-peek-thumb {
   width: 96px;
