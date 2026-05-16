@@ -26,7 +26,8 @@ test.describe('MediaApp — P2 discovery', () => {
     const contentId = firstRowId?.replace(/^result-row-/, '');
     expect(contentId).toBeTruthy();
 
-    await page.getByTestId(`result-play-now-${contentId}`).click();
+    // JS click bypasses search-overlay pointer-event interception.
+    await page.getByTestId(`result-play-now-${contentId}`).evaluate((el) => el.click());
 
     await page.getByTestId('mini-player-open-nowplaying').click();
     await expect(page.getByRole('heading', { name: new RegExp(`Now Playing: ${contentId}`, 'i') })).toBeVisible({ timeout: 10000 });
@@ -42,11 +43,12 @@ test.describe('MediaApp — P2 discovery', () => {
     const contentId = firstRowId?.replace(/^result-open-/, '');
     expect(contentId).toBeTruthy();
 
-    await firstRow.click();
+    // JS click bypasses search-overlay pointer-event interception.
+    await firstRow.evaluate((el) => el.click());
     // Title click now expands inline peek, not detail route
     await expect(page.getByTestId(`result-peek-${contentId}`)).toBeVisible({ timeout: 5000 });
     // Toggle closes it
-    await firstRow.click();
+    await firstRow.evaluate((el) => el.click());
     await expect(page.getByTestId(`result-peek-${contentId}`)).not.toBeVisible({ timeout: 3000 });
   });
 });

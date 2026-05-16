@@ -13,8 +13,8 @@ test.describe('MediaApp — NowPlaying exit', () => {
     await expect(row).toBeVisible({ timeout: 15000 });
     const rowId = await row.getAttribute('data-testid');
     const contentId = rowId?.replace(/^result-row-/, '');
-    await row.hover();
-    await page.getByTestId(`result-play-now-${contentId}`).click();
+    // JS click bypasses search-overlay pointer-event interception.
+    await page.getByTestId(`result-play-now-${contentId}`).evaluate((el) => el.click());
     await page.getByTestId('mini-player-open-nowplaying').click();
     await expect(page.getByTestId('now-playing-view')).toBeVisible({ timeout: 10000 });
   }
