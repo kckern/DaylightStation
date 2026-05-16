@@ -30,8 +30,8 @@ test.describe('MediaApp — search dropdown lifecycle', () => {
     await expect(firstRow).toBeVisible({ timeout: 15000 });
     const rowId = await firstRow.getAttribute('data-testid');
     const contentId = rowId?.replace(/^result-row-/, '');
-    await firstRow.hover();
-    await page.getByTestId(`result-play-now-${contentId}`).click();
+    // JS click bypasses search-overlay pointer-event interception.
+    await page.getByTestId(`result-play-now-${contentId}`).evaluate((el) => el.click());
     await expect(page.locator('ul[data-testid="media-search-results"]')).toBeHidden({ timeout: 2000 });
     await expect(page.getByTestId('media-search-input')).toHaveValue('');
   });

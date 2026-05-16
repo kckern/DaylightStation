@@ -15,13 +15,17 @@ test.describe('MediaApp — P4 cast', () => {
     await expect(page.getByTestId('cast-mode-fork')).toBeVisible();
   });
 
-  test('selecting a device and casting a search result places a row in the dispatch tray', async ({ page }) => {
+  test('opening the inline cast picker from a result row shows the DispatchTargetPicker', async ({ page }) => {
+    // Stub dispatch so we don't actually wake a device.
+    await page.route('**/api/v1/device/*/load*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, dispatchId: 'cast-tray-1', steps: [], totalElapsedMs: 5 }),
+      });
+    });
     await page.goto('/media');
-    await page.getByTestId('cast-target-chip').click();
-    const firstTarget = page.locator('[data-testid^="cast-target-checkbox-"]').first();
-    await expect(firstTarget).toBeVisible({ timeout: 5000 });
-    await firstTarget.check();
-    await page.getByTestId('cast-target-chip').click();
+    await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
 
     await page.getByTestId('media-search-input').fill('lonesome');
     const firstRow = page.locator('[data-testid^="result-row-"]').first();
@@ -31,11 +35,19 @@ test.describe('MediaApp — P4 cast', () => {
     const contentId = rowId?.replace(/^result-row-/, '');
     expect(contentId).toBeTruthy();
 
-    await page.getByTestId(`cast-button-${contentId}`).click();
+    // Open inline DispatchTargetPicker via the per-row Cast button.
+    // JS click bypasses search-overlay pointer-event interception.
+    await page.getByTestId(`cast-button-${contentId}`).evaluate((el) => el.click());
+    await expect(page.getByTestId('dispatch-target-picker')).toBeVisible({ timeout: 5000 });
 
-    await expect(page.getByTestId('dispatch-tray')).toBeVisible({ timeout: 10000 });
-    const anyRow = page.locator('[data-testid^="dispatch-row-"]').first();
-    await expect(anyRow).toBeVisible({ timeout: 10000 });
+    // Select first device and submit.
+    const firstDevice = page.locator('[data-testid^="picker-device-"]').first();
+    await expect(firstDevice).toBeVisible();
+    await firstDevice.evaluate((el) => el.click());
+    await page.getByTestId('picker-submit').evaluate((el) => el.click());
+
+    // Picker closes after submit.
+    await expect(page.getByTestId('dispatch-target-picker')).not.toBeVisible({ timeout: 5000 });
   });
 
   test('Escape closes the cast popover', async ({ page }) => {

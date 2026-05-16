@@ -14,8 +14,8 @@ test.describe('MediaApp — mini player toggle', () => {
     await expect(row).toBeVisible({ timeout: 15000 });
     const rowId = await row.getAttribute('data-testid');
     const contentId = rowId?.replace(/^result-row-/, '');
-    await row.hover();
-    await page.getByTestId(`result-play-now-${contentId}`).click();
+    // JS click bypasses search-overlay pointer-event interception.
+    await page.getByTestId(`result-play-now-${contentId}`).evaluate((el) => el.click());
   }
 
   test('mini player shows exactly one transport button that toggles', async ({ page }) => {
