@@ -1308,6 +1308,19 @@ div.media-search-results {
   border: 1px solid var(--border-mid);
   border-radius: var(--r);
   box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.7);
+
+  /* Inside the overlay wrapper, SearchResults is in-flow — the wrapper
+     already handles absolute positioning and max-height scroll. */
+  ul.media-search-results {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+    background: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 4px;
+  }
 }
 .media-app .search-state--loading {
   color: var(--fg-3);
