@@ -1407,16 +1407,8 @@ div.media-search-results {
   }
 }
 
-.media-app .cast-button-root {
-  position: relative;
-  display: inline-flex;
-  /* Fix 1: break out of the .media-result-actions opacity: 0.35 cascade.
-     The popover is a descendant, so opacity inheritance makes picker content
-     render at 35% opacity. Setting opacity:1 here restores it to fully opaque.
-     pointer-events must also be restored so the open picker is clickable. */
-  opacity: 1 !important;
-  pointer-events: auto !important;
-}
+/* .cast-button-root removed — portal rendering escapes the opacity cascade;
+   no wrapper span needed. */
 .media-app .cast-button {
   /* Fix 1 cont'd: style the trigger to match the sibling action buttons */
   padding: 5px 10px;
@@ -1434,13 +1426,11 @@ div.media-search-results {
     border-color: var(--brand);
   }
 }
-.media-app .cast-button-popover {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 80;
-  /* Ensure the popover itself is never faded by parent opacity */
+/* cast-button-popover-portal renders at document.body via React portal,
+   outside .media-app scope — no prefix needed. */
+.cast-button-popover-portal {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .media-app ul.media-search-results > li.result-row {
