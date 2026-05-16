@@ -255,3 +255,54 @@ None of these touch the provider tree, the streaming-search backend, the dispatc
 | LiveStream module (dead) | `frontend/src/modules/Media/LiveStream/` | — |
 | Search box does not parse `source:id` | `frontend/src/modules/Media/search/useLiveSearch.js` | 7–13 |
 | Canvas — peer-weighted view routing | `frontend/src/modules/Media/shell/Canvas.jsx` | 11–21 |
+
+---
+
+## Resolved 2026-05-16
+
+This audit drove `docs/superpowers/plans/2026-05-15-media-app-overhaul.md`.
+28 commits between `324eec1b3` (first task) and `3fa8a01ec` (final design fix)
+addressed all P0/P1 findings and most of P2.
+
+### Status per finding
+
+| ID | Finding | Status | Resolved by |
+|---|---|---|---|
+| P0-1 | No Stop control | ✅ Fixed | MiniPlayer Stop button calling `transport.stop()` (`a71f859cc`) |
+| P0-2 | Cast requires pre-set Dock targets | ✅ Fixed | Unified `DispatchTargetPicker` opened inline from each row's Cast button (`1ce0fa1af`, `38636158e`) |
+| P0-3 | Search silent failures | ✅ Fixed | Four explicit states — idle, searching, empty, error — with retry (`3bc9aa626`, `c7ab596ca`, `1eb7f4cb6`) |
+| P0-4 | No quick preview | ✅ Fixed | Inline peek expansion preserves search context (`6e8551057`) |
+| P1-5 | Dock crowded | ✅ Fixed | Grid layout, Search dominant, status cluster right-aligned (`249abb196`) |
+| P1-6 | Reset is debug-in-UI | ✅ Fixed | Moved behind gear-overflow SettingsMenu (`324eec1b3`) |
+| P1-7 | Two cast flows | ✅ Fixed | NowPlayingView hand-off now uses the same DispatchTargetPicker (`1b3ba0042`) |
+| P1-8 | Browse competes with Search | ✅ Fixed | Home view restructured: Resume → Recents → demoted "Browse the catalog" (`505609553`) |
+| P2-9 | LiveStream `dead` | ⏭ Skipped | Audit premise was wrong — `LiveStream/` is consumed by `LiveStreamApp` at `/media/channels/*` (`main.jsx:148`). Misfiled under `modules/Media/` but not dead. No user-impact in MediaApp; cleanup is a future architectural refactor outside this overhaul. |
+| P2-10 | Plex ID input does nothing | ✅ Fixed | Idle-state deep-link affordance: typing `source:id` shows a "Play this ID" button that calls `queue.playNow` (`c7ab596ca`) |
+
+### Test coverage
+
+- **Vitest (component + unit):** 1673 tests across 317 files, all passing
+- **Playwright (e2e flows):** 35 tests, all passing (see Phase 8 commits `2591d72c8` through `0195a245d`)
+- **Screenshot reference set:** 7 canonical states captured at `docs/_wip/audits/media-app-screens/` (see `9cf6ad582`)
+
+### Design review
+
+A single-pass critique against the captured screenshots (`e8b9791bb`) addressed:
+- Cast picker opacity (root cause: inherited `opacity: 0.35` from `.media-result-actions` parent — CSS opacity cascades and can only be broken at an ancestor)
+- Per-row action button legibility (was reading as disabled)
+- Browse card depth (deeper gradients + persistent amber glow)
+- Result peek visual separation (amber left rail)
+
+Follow-up portal fix (`3fa8a01ec`) lifted the cast picker into `document.body` to escape the search overlay's `overflow-y: auto` clip, fully resolving picker visibility regardless of which result row launches it.
+
+### Outstanding follow-ups (out of scope for this overhaul)
+
+1. **Architectural relocation of `LiveStream/`** — move out of `modules/Media/` to a sibling location matching its app boundary (consumed only by `LiveStreamApp` at `/media/channels/*`).
+2. **Browse-cards icons** — flat gradient panels would benefit from category-representative icons (music note, film strip, etc.); deferred from design pass.
+3. **Visual regression baseline in CI** — current screenshots in `docs/_wip/audits/media-app-screens/` are reference-only; not gated.
+4. **Accessibility deep dive** — requirements N6 punted on this in the original spec; remains punted.
+5. **Cast picker overlap with peek content** when both are open on the same row — picker positions correctly via portal but visually overlaps the row's expanded peek. Minor cosmetic; user can still interact with the picker.
+
+### One pre-existing bug found and fixed in passing
+
+`ul.media-search-results` inherited `position: absolute` from earlier styles, collapsing the new `.media-search-overlay` wrapper to 2px height — which was the actual cause of Playwright's "pointer interception" failures across the legacy media tests. Fixed by scoping the `ul` to `position: static` inside the overlay (within `9cf6ad582`).
