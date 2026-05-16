@@ -7,11 +7,18 @@ export function RecentsRow() {
   const [items, setItems] = useState(() => readRecents());
 
   useEffect(() => {
+    function refresh() { setItems(readRecents()); }
+    // Cross-tab: storage event fires for changes made in other tabs.
     function onStorage(e) {
-      if (e.key === 'media-app.recents') setItems(readRecents());
+      if (e.key === 'media-app.recents') refresh();
     }
+    // Same-tab: custom event dispatched by recordRecent.
     window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
+    window.addEventListener('media-recents-updated', refresh);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('media-recents-updated', refresh);
+    };
   }, []);
 
   if (items.length === 0) return null;

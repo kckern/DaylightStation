@@ -94,7 +94,11 @@ export class LocalSessionAdapter {
     const next = reduce(prev, action);
     if (next === prev) return;
     this._snapshot = next;
-    if (next.state === 'playing' && prev.state !== 'playing' && next.currentItem) {
+    // Record a recent when: (a) transitioning into 'playing', or
+    // (b) a new LOAD_ITEM arrives (item queued, even before player fires 'playing').
+    const itemChanged = next.currentItem?.contentId !== prev.currentItem?.contentId;
+    const nowPlaying = next.state === 'playing' && prev.state !== 'playing';
+    if ((nowPlaying || (itemChanged && next.currentItem)) && next.currentItem) {
       recordRecent({
         contentId: next.currentItem.contentId,
         title: next.currentItem.title,

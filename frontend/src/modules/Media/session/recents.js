@@ -36,4 +36,8 @@ export function recordRecent(item) {
     if (next.length >= MAX_RECENTS) break;
   }
   safeWrite(next);
+  // Notify same-window listeners (storage events only fire in other tabs/windows).
+  try {
+    window.dispatchEvent(new CustomEvent('media-recents-updated'));
+  } catch { /* SSR/non-browser */ }
 }
