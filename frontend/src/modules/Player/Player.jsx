@@ -4,6 +4,7 @@ import './styles/Player.scss';
 import { useQueueController } from './hooks/useQueueController.js';
 import { SinglePlayer } from './components/SinglePlayer.jsx';
 import { AudioLayer } from './components/AudioLayer.jsx';
+import { AmbientLayer } from './components/AmbientLayer.jsx';
 import { PlayerOverlayLoading } from './components/PlayerOverlayLoading.jsx';
 import { PlayerOverlayPaused } from './components/PlayerOverlayPaused.jsx';
 import { PlayerOverlayStateDebug } from './components/PlayerOverlayStateDebug.jsx';
@@ -121,6 +122,7 @@ const Player = forwardRef(function Player(props, ref) {
     playQueue,
     advance,
     queueAudio,
+    queueSessionId,
     onDeck,
     onDeckFlashKey,
     pushOnDeck,
@@ -260,9 +262,19 @@ const Player = forwardRef(function Player(props, ref) {
     [effectiveMeta, singlePlayerProps, play, queue]
   );
 
-  const playbackSessionKey = useMemo(() => {
+  // Two sessions: preferences (volume/rate) live at queue scope so they survive
+  // item swaps; seek intent lives at item scope so resume-position never crosses items.
+  const prefsSessionKey = useMemo(() => {
+    if (queueSessionId && isQueue) {
+      return `player-session:queue:${queueSessionId}`;
+    }
     const identifier = currentMediaGuid ?? mediaIdentity;
     return identifier ? `player-session:${identifier}` : 'player-session:idle';
+  }, [queueSessionId, isQueue, currentMediaGuid, mediaIdentity]);
+
+  const itemSessionKey = useMemo(() => {
+    const identifier = currentMediaGuid ?? mediaIdentity;
+    return identifier ? `player-item:${identifier}` : 'player-item:idle';
   }, [currentMediaGuid, mediaIdentity]);
 
   const explicitStartProvided = effectiveMeta && Object.prototype.hasOwnProperty.call(effectiveMeta, 'seconds');
@@ -271,14 +283,17 @@ const Player = forwardRef(function Player(props, ref) {
     : null;
 
   const {
-    targetTimeSeconds,
-    setTargetTimeSeconds,
-    consumeTargetTimeSeconds,
     volume: sessionVolume,
     playbackRate: sessionPlaybackRate,
     setVolume: setSessionVolume,
     setPlaybackRate: setSessionPlaybackRate
-  } = usePlaybackSession({ sessionKey: playbackSessionKey, defaults: { targetTimeSeconds: explicitStartSeconds } });
+  } = usePlaybackSession({ sessionKey: prefsSessionKey });
+
+  const {
+    targetTimeSeconds,
+    setTargetTimeSeconds,
+    consumeTargetTimeSeconds
+  } = usePlaybackSession({ sessionKey: itemSessionKey, defaults: { targetTimeSeconds: explicitStartSeconds } });
 
   const handleResolvedMeta = useCallback((meta) => {
     if (!meta) {
@@ -687,7 +702,7 @@ const Player = forwardRef(function Player(props, ref) {
     configOverrides: resolvedResilience.config,
     controllerRef: resilienceControllerRef,
     plexId,
-    playbackSessionKey,
+    playbackSessionKey: itemSessionKey,
     debugContext: { scope: 'player', mediaGuid: currentMediaGuid || null },
     externalPauseReason: pauseDecision?.reason,
     externalPauseActive: pauseDecision?.paused,
@@ -704,43 +719,39 @@ const Player = forwardRef(function Player(props, ref) {
     cancelDeadline();
   }, [currentMediaGuid, cancelDeadline]);
 
-  // Get playback rate from the current item, falling back to queue/play level, then default
+  // Precedence: session (user override, queue-wide) > current item > queue defaults > 1.
+  // External values seed the session on first encounter; once user overrides, they win.
   const currentItemPlaybackRate = effectiveMeta?.playbackRate || effectiveMeta?.playbackrate;
   const effectivePlaybackRate = (
-    currentItemPlaybackRate
+    sessionPlaybackRate
+    ?? currentItemPlaybackRate
     ?? queuePlaybackRate
-    ?? sessionPlaybackRate
     ?? 1
   );
 
-  // Get volume from the current item, falling back to queue/play level, then default
   const currentItemVolume = effectiveMeta?.volume;
   const effectiveVolume = (
-    currentItemVolume ?? queueVolume ?? sessionVolume ?? 1
+    sessionVolume ?? currentItemVolume ?? queueVolume ?? 1
   );
 
   const hasExternalVolume = currentItemVolume != null || queueVolume != null;
   const hasExternalPlaybackRate = currentItemPlaybackRate != null || queuePlaybackRate != null;
 
   useEffect(() => {
-    if (!hasExternalVolume || !Number.isFinite(effectiveVolume)) {
-      return;
-    }
-    if (sessionVolume === effectiveVolume) {
-      return;
-    }
-    setSessionVolume(effectiveVolume);
-  }, [effectiveVolume, hasExternalVolume, sessionVolume, setSessionVolume]);
+    if (!hasExternalVolume) return;
+    if (sessionVolume != null) return; // user override already set
+    const seed = currentItemVolume ?? queueVolume;
+    if (!Number.isFinite(seed)) return;
+    setSessionVolume(seed);
+  }, [hasExternalVolume, sessionVolume, currentItemVolume, queueVolume, setSessionVolume]);
 
   useEffect(() => {
-    if (!hasExternalPlaybackRate || !Number.isFinite(effectivePlaybackRate)) {
-      return;
-    }
-    if (sessionPlaybackRate === effectivePlaybackRate) {
-      return;
-    }
-    setSessionPlaybackRate(effectivePlaybackRate);
-  }, [effectivePlaybackRate, hasExternalPlaybackRate, sessionPlaybackRate, setSessionPlaybackRate]);
+    if (!hasExternalPlaybackRate) return;
+    if (sessionPlaybackRate != null) return;
+    const seed = currentItemPlaybackRate ?? queuePlaybackRate;
+    if (!Number.isFinite(seed)) return;
+    setSessionPlaybackRate(seed);
+  }, [hasExternalPlaybackRate, sessionPlaybackRate, currentItemPlaybackRate, queuePlaybackRate, setSessionPlaybackRate]);
 
   // Get shader from the current item, falling back to queue/play level, then default
   // Shader aliases: legacy names map to canonical shader classes (must match useQueueController)
@@ -860,6 +871,10 @@ const Player = forwardRef(function Player(props, ref) {
       const el = _getMediaElFallback();
       return (el && Number.isFinite(el.duration)) ? el.duration : 0;
     },
+    setVolume: (value) => setSessionVolume(value),
+    setPlaybackRate: (value) => setSessionPlaybackRate(value),
+    getVolume: () => sessionVolume,
+    getPlaybackRate: () => sessionPlaybackRate,
     getMediaElement: _getMediaElFallback,
     getMediaController: () => controllerRef.current,
     getMediaResilienceController: () => resilienceControllerRef.current,
@@ -875,7 +890,7 @@ const Player = forwardRef(function Player(props, ref) {
     clearSeekIntent: (reason) => {
       resilienceControllerRef.current?.clearSeekIntent?.(reason);
     }
-  }), [isQueue, advance, singleAdvance]);
+  }), [isQueue, advance, singleAdvance, sessionVolume, sessionPlaybackRate, setSessionVolume, setSessionPlaybackRate]);
 
   useEffect(() => () => clearRemountTimer(), [clearRemountTimer]);
 
@@ -979,10 +994,12 @@ const Player = forwardRef(function Player(props, ref) {
     clear,
     shader: effectiveShader,
     volume: effectiveVolume,
+    setVolume: setSessionVolume,
     setShader,
     cycleThroughClasses,
     classes,
     playbackRate: effectivePlaybackRate,
+    setPlaybackRate: setSessionPlaybackRate,
     playbackKeys,
     playerType,
     queuePosition,
@@ -1049,6 +1066,13 @@ const Player = forwardRef(function Player(props, ref) {
     isQueue && Array.isArray(playQueue) && playQueue.length > 1 ? playQueue[1] : null
   ), [isQueue, playQueue]);
 
+  // Per-item ambient hoisted above the SinglePlayer remount boundary so it can
+  // crossfade between items rather than hard-cut on track change.
+  const ambientUrl = effectiveMeta?.ambientUrl || null;
+  const ambientVolumeFromMeta = Number.isFinite(effectiveMeta?.ambientVolume)
+    ? effectiveMeta.ambientVolume
+    : 0.1;
+
   const mainContent = sanitizedSinglePlayerProps ? (
     <SinglePlayer
       key={singlePlayerKey}
@@ -1060,6 +1084,7 @@ const Player = forwardRef(function Player(props, ref) {
 
   return (
     <div className={playerShellClass}>
+      <AmbientLayer ambientUrl={ambientUrl} ambientVolume={ambientVolumeFromMeta} />
       {audioConfig && (
         <AudioLayer
           contentId={audioConfig.contentId}

@@ -71,7 +71,6 @@ import { useMediaReporter } from '../hooks/useMediaReporter.js';
   }) {
     // Refs for media elements
     const mainRef = useRef(null);
-    const ambientRef = useRef(null);
     const {
       reportPlaybackMetrics,
       applyPendingSeek,
@@ -131,14 +130,10 @@ import { useMediaReporter } from '../hooks/useMediaReporter.js';
     // Fade-in class
     const [init, setInit] = useState(true);
   
-    // Ambient audio defaults
-    const {
-      fadeOutStep = 0.01,
-      fadeOutInterval = 400,
-      fadeInDelay = 5000,
-      ambientVolume = 0.1
-    } = ambientConfig || {};
-  
+    // Ambient audio is now hoisted to Player.jsx (AmbientLayer) so it can crossfade
+    // between queue items. ambientMediaUrl/ambientConfig are accepted but unused here.
+    void ambientMediaUrl; void ambientConfig;
+
     // Once we know main media's duration, we can do the scroll math
     const movingTime = Math.max(0, duration - yStartTime + 2);
     const yProgress =
@@ -230,25 +225,17 @@ import { useMediaReporter } from '../hooks/useMediaReporter.js';
       const mainEl = mainRef.current;
       if (mainEl) {
         setDuration(mainEl.duration);
-        
-        // Apply volume using simple direct mapping
+
         if (mainVolume !== undefined) {
           let processedVolume = parseFloat(mainVolume || 100);
-          if(processedVolume > 1) {
-            processedVolume = processedVolume / 100; // Convert percentage to decimal
-          }
-          
-          // Direct mapping - no complex volume curves
-          const finalVolume = Math.min(1, Math.max(0, processedVolume));
-          mainEl.volume = finalVolume;
+          if (processedVolume > 1) processedVolume = processedVolume / 100;
+          mainEl.volume = Math.min(1, Math.max(0, processedVolume));
         }
-        if (!ambientMediaUrl) {
-          mainEl.play().catch(() => {});
-        }
+        mainEl.play().catch(() => {});
         applyPendingSeek();
         reportPlaybackMetrics();
       }
-    }, [mainVolume, applyPendingSeek, reportPlaybackMetrics, isVideo, ambientMediaUrl]);
+    }, [mainVolume, applyPendingSeek, reportPlaybackMetrics, isVideo]);
   
     // Seek bar click => set new currentTime
     const handleSeekBarClick = (e) => {
@@ -271,37 +258,10 @@ import { useMediaReporter } from '../hooks/useMediaReporter.js';
       }
     };
   
-    // When main media ends => optionally fade out ambient, then call onAdvance
     const handleEnded = useCallback(() => {
-      if (ambientRef.current) {
-        const fade = setInterval(() => {
-          if (!ambientRef.current) { clearInterval(fade); onAdvance && onAdvance(); return; }
-          if (ambientRef.current.volume > fadeOutStep) {
-            ambientRef.current.volume -= fadeOutStep;
-          } else {
-            ambientRef.current.volume = 0;
-            clearInterval(fade);
-            onAdvance && onAdvance();
-          }
-        }, fadeOutInterval);
-      } else {
-        onAdvance && onAdvance();
-      }
-    }, [fadeOutStep, fadeOutInterval, onAdvance]);
-  
-    // After ambient loaded, wait fadeInDelay before playing main
-    const startAudioAfterDelay = useCallback(() => {
-      if (!ambientRef.current) return;
-      ambientRef.current.volume = ambientVolume;
-      ambientRef.current.play().catch(() => {});
-      setTimeout(() => {
-        if (mainRef.current) {
-          mainRef.current.play().catch(() => {});
-          if (ambientRef.current) ambientRef.current.volume = ambientVolume;
-        }
-      }, fadeInDelay);
-    }, [fadeInDelay, ambientVolume]);
-  
+      onAdvance && onAdvance();
+    }, [onAdvance]);
+
     // Use centralized keyboard handler
     useMediaKeyboardHandler({
       mediaRef: mainRef,
@@ -312,13 +272,15 @@ import { useMediaReporter } from '../hooks/useMediaReporter.js';
       queuePosition, // Use the queuePosition passed from parent
       ignoreKeys,
       setCurrentTime // Pass state setter for time synchronization
-    });    // If no ambient, try to play main right away
+    });
+
+    // Play main media immediately once mounted; ambient (if any) runs independently in AmbientLayer.
     useEffect(() => {
-      if (!ambientMediaUrl && mainRef.current) {
+      if (mainRef.current) {
         mainRef.current.play().catch(() => {});
       }
-    }, [ambientMediaUrl]);
-  
+    }, [mainMediaUrl]);
+
     // If user provides parseContent, use it; otherwise a fallback
     const renderedContent = parseContent
       ? parseContent(contentData)
@@ -425,18 +387,6 @@ import { useMediaReporter } from '../hooks/useMediaReporter.js';
               onLoadedMetadata={handleLoadedMetadata}
               onEnded={handleEnded}
             />) : null }
-  
-          {/* Ambient media (optional) */}
-          {ambientMediaUrl && (
-            <audio
-              ref={ambientRef}
-              className="ambient"
-              autoPlay
-              src={ambientMediaUrl}
-              style={{ display: "none" }}
-              onLoadedMetadata={startAudioAfterDelay}
-            />
-          )}
         </div>
       </div>
     );

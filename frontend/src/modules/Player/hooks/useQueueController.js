@@ -66,7 +66,11 @@ export function useQueueController({ play, queue, clear, shuffle }) {
     setOriginalQueue((prev) => prev.length > 0 ? [item, ...prev.slice(1)] : [item]);
   }, []);
 
-  const isQueue = !!queue || (play && (play.playlist || play.queue)) || Array.isArray(play);
+  // Single-item input (e.g. play: { contentId: 'watchlist:...' }) can resolve to a
+  // multi-item playlist via the /api/v1/queue fetch. Reflect that here so consumers
+  // dispatch queue-advance instead of clear() at end-of-item.
+  const inputIsQueue = !!queue || (play && (play.playlist || play.queue)) || Array.isArray(play);
+  const isQueue = inputIsQueue || playQueue.length > 1;
   const contentRef = play?.contentId || queue?.contentId
                   || play?.plex || queue?.plex
                   || play?.playlist || play?.queue
@@ -392,6 +396,9 @@ export function useQueueController({ play, queue, clear, shuffle }) {
     advance,
     queuePosition,
     queueAudio,
+    // Stable identity for the whole queue (volume/rate/etc. persist across item swaps).
+    // Null for inline-array inputs that have no canonical id.
+    queueSessionId: contentRef || null,
     onDeck,
     onDeckFlashKey,
     pushOnDeck,
