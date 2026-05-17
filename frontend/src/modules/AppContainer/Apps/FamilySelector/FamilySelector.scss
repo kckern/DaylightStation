@@ -10,26 +10,21 @@
 }
 
 .family-selector-container {
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1rem;
-  padding: 3.5rem 1.25rem 1.5rem;
-  max-height: 100%;
+  padding: 5rem 2rem 2rem; // top reserves space for the pointer poking above the wheel
   box-sizing: border-box;
-}
-
-.wheel-title {
-  font-size: 2.5rem;
-  font-weight: 700;
-  text-align: center;
-  margin: 0;
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
 }
 
 .wheel-wrapper {
   position: relative;
+  flex: 1 1 auto;
+  min-height: 0; // allow shrinking inside flex so max-height: 100% actually clamps
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -63,17 +58,20 @@
   }
 }
 
-.roulette-wheel {
+.wheel-rotator {
   display: block;
-  filter: drop-shadow(0 10px 30px rgba(0, 0, 0, 0.4));
-  max-width: 100%;
-  max-height: 55vh;
+  aspect-ratio: 1 / 1;
+  height: 100%;        // try to fill wrapper height; max-width clamps if too narrow
   width: auto;
-  height: auto;
+  max-width: 100%;
+  max-height: 100%;
 }
 
-.wheel-rotator {
-  display: inline-block;
+.roulette-wheel {
+  display: block;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 10px 30px rgba(0, 0, 0, 0.4));
 }
 
 .wheel-segments {
@@ -143,28 +141,7 @@
   object-fit: cover;
 }
 
-.wheel-instructions {
-  font-size: 1.25rem;
-  color: rgba(255, 255, 255, 0.7);
-  margin: 0;
-  animation: pulse-opacity 2s ease-in-out infinite;
-  transition: all 0.3s ease;
-
-  &.winner-text {
-    font-size: 2rem;
-    font-weight: 700;
-    color: #fff;
-    animation: none;
-    text-shadow: 0 0 20px rgba(255, 215, 0, 0.8);
-  }
-}
-
 .family-selector[data-state="spinning"] {
-  .wheel-instructions {
-    animation: none;
-    opacity: 0.5;
-  }
-  
   .wheel-segment:hover path {
     filter: none;
   }
@@ -216,35 +193,13 @@
 }
 
 @media (max-width: 500px) {
-  .wheel-title {
-    font-size: 1.75rem;
-  }
-  
-  .roulette-wheel {
-    width: 300px;
-    height: 300px;
-  }
-  
   .wheel-pointer {
     font-size: 2rem;
     top: -15px;
   }
-  
-  .wheel-instructions {
-    font-size: 1rem;
-  }
 }
 
 @media (min-width: 1200px) {
-  .wheel-title {
-    font-size: 3rem;
-  }
-  
-  .roulette-wheel {
-    width: 500px;
-    height: 500px;
-  }
-  
   .wheel-pointer {
     font-size: 4rem;
     top: -25px;

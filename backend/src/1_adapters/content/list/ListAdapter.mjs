@@ -912,18 +912,20 @@ export class ListAdapter {
       const queueAction = {};
       const displayAction = {};
 
-      // Handle raw YAML action overrides first
+      // Handle raw YAML action overrides first.
+      // Merge baseAction first so behavior flags (shuffle/continuous/playable) propagate;
+      // the explicit YAML action block overlays on top for contentId/overrides.
       if (item.play) {
-        Object.assign(playAction, item.play);
+        Object.assign(playAction, baseAction, item.play);
       } else if (item.open) {
         // open is a string (e.g., "family-selector/alan") — wrap as { app: value }
         Object.assign(openAction, typeof item.open === 'string' ? { app: item.open } : item.open);
       } else if (item.queue) {
-        Object.assign(queueAction, item.queue);
+        Object.assign(queueAction, baseAction, item.queue);
       } else if (item.list) {
-        Object.assign(listAction, item.list);
+        Object.assign(listAction, baseAction, item.list);
       } else if (item.display) {
-        Object.assign(displayAction, item.display);
+        Object.assign(displayAction, baseAction, item.display);
       } else if (actionType === 'open' || source === 'app') {
         Object.assign(openAction, baseAction);
       } else if (actionType === 'queue') {
