@@ -204,8 +204,9 @@ function RouletteWheel({ members, rotation, isSpinning, winnerIndex, showResult,
         <svg
           viewBox={`0 0 ${size} ${size}`}
           className={`roulette-wheel ${isSpinning ? 'spinning' : ''} ${showResult ? 'show-result' : ''}`}
-          width={size}
-          height={size}
+          width="100%"
+          height="100%"
+          preserveAspectRatio="xMidYMid meet"
         >
           <g className="wheel-segments">
           {members.map((member, index) => (
