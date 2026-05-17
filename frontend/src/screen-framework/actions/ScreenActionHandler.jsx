@@ -160,7 +160,7 @@ export function ScreenActionHandler({ actions = {} }) {
     const idleMode = actions?.playback?.when_idle || 'dispatch';
 
     // Check if media is currently active
-    const media = document.querySelector('audio, video, dash-video');
+    const media = document.querySelector('audio:not([data-role="ambient"]), video, dash-video');
     const isActive = media && !media.paused;
 
     if (!isActive && idleMode === 'secondary' && payload.secondary) {
@@ -195,7 +195,7 @@ export function ScreenActionHandler({ actions = {} }) {
 
   // --- Playback rate ---
   const handleMediaRate = useCallback(() => {
-    const media = document.querySelector('audio, video, dash-video');
+    const media = document.querySelector('audio:not([data-role="ambient"]), video, dash-video');
     if (!media) return;
     const rates = [1.0, 1.5, 2.0];
     const idx = rates.indexOf(media.playbackRate);
