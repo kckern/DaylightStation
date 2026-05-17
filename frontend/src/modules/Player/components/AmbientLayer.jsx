@@ -126,8 +126,8 @@ export function AmbientLayer({
       style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden', pointerEvents: 'none' }}
       aria-hidden="true"
     >
-      <audio ref={slotARef} preload="auto" />
-      <audio ref={slotBRef} preload="auto" />
+      <audio ref={slotARef} preload="auto" data-role="ambient" />
+      <audio ref={slotBRef} preload="auto" data-role="ambient" />
     </div>
   );
 }

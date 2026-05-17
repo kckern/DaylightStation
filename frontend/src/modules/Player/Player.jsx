@@ -109,6 +109,9 @@ const Player = forwardRef(function Player(props, ref) {
   // Override playback rate if passed in via menu selection
   if (playbackrate && play) play['playbackRate'] = playbackrate;
 
+  // Gate for activeSource transition: see comment near `activeSource` below.
+  const [queueHasAdvanced, setQueueHasAdvanced] = useState(false);
+
   const {
     classes,
     cycleThroughClasses,
@@ -120,7 +123,7 @@ const Player = forwardRef(function Player(props, ref) {
     queuePosition,
     playbackRate: queuePlaybackRate,
     playQueue,
-    advance,
+    advance: rawAdvance,
     queueAudio,
     queueSessionId,
     onDeck,
@@ -130,6 +133,13 @@ const Player = forwardRef(function Player(props, ref) {
     playNow,
     setShaderUserCycled,
   } = useQueueController({ play, queue, clear, shuffle: props?.shuffle });
+
+  // Gated advance: marks the queue as advanced so activeSource starts following
+  // playQueue[0] instead of the original `play` prop.
+  const advance = useCallback((...args) => {
+    setQueueHasAdvanced(true);
+    return rawAdvance(...args);
+  }, [rawAdvance]);
   const { onDeck: onDeckCfg } = usePlayerConfig();
 
   const hasNextQueueItem = useMemo(() => (
@@ -138,20 +148,35 @@ const Player = forwardRef(function Player(props, ref) {
     && playQueue.length > 1
   ), [isQueue, playQueue]);
 
+  // Single-play inputs (`play: {contentId: ...}`) hand SinglePlayer the input
+  // object so it can render immediately while useQueueController fetches the
+  // queue in parallel. Switching activeSource to playQueue[0] the moment the
+  // queue resolves would force a redundant remount + re-fetch of the same
+  // first item. Defer the switch until the user actually advances.
+  const inputIsExplicitQueue = !!queue
+    || (play && (play.playlist || play.queue))
+    || Array.isArray(play);
+
   const activeSource = useMemo(() => {
-    if (isQueue && playQueue?.length > 0) {
-      const head = playQueue[0];
-      // Trigger end-behavior side-effect markers are not playable. The
-      // useQueueController hook fires the configured behavior (tv-off, clear)
-      // and advances past them on its own.
-      if (head?.mediaType === 'trigger/side-effect') return null;
-      return head;
+    const playQueueHead = Array.isArray(playQueue) && playQueue.length > 0 ? playQueue[0] : null;
+    if (playQueueHead?.mediaType === 'trigger/side-effect') return null;
+
+    if (inputIsExplicitQueue) {
+      return playQueueHead;
+    }
+    if (queueHasAdvanced && playQueueHead) {
+      return playQueueHead;
     }
     if (play && !Array.isArray(play)) {
       return play;
     }
     return null;
-  }, [isQueue, playQueue, play]);
+  }, [inputIsExplicitQueue, queueHasAdvanced, playQueue, play]);
+
+  // Reset the advance gate when a new queue is loaded (different contentRef).
+  useEffect(() => {
+    setQueueHasAdvanced(false);
+  }, [queueSessionId]);
 
   // Auto-dismiss if no playable source materializes within 30s
   // Catches garbage queues, failed resolutions, and missing content
