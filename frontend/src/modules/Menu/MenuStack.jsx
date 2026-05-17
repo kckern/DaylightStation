@@ -30,7 +30,7 @@ function LoadingFallback() {
  */
 export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
   const { currentContent, depth, push, pop, reset } = useMenuNavigationContext();
-  const { registerEscapeInterceptor, unregisterEscapeInterceptor } = useScreenOverlay();
+  const { registerEscapeInterceptor, unregisterEscapeInterceptor, dismissOverlay } = useScreenOverlay();
 
   // Reset navigation state when rootMenu changes (including initial mount).
   // Without this, the nav stack from a previous menu persists — e.g., auto-selected
@@ -160,6 +160,14 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
     pop();
   }, [pop]);
 
+  // Player exits dismiss the entire MenuStack overlay rather than popping back to
+  // the source menu. The auto-select countdown on the source menu would otherwise
+  // re-launch the first item, trapping the user; "exit means home" matches the
+  // NFC/voice launch path's behavior (ScreenActionHandler).
+  const exitToHome = useCallback(() => {
+    dismissOverlay?.();
+  }, [dismissOverlay]);
+
   // If stack is empty, render root menu
   if (!currentContent) {
     return (
@@ -234,7 +242,7 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
     case 'player':
       return (
         <Suspense fallback={<LoadingFallback />}>
-          <Player {...props} ref={playerRef} clear={clear} />
+          <Player {...props} ref={playerRef} clear={exitToHome} />
         </Suspense>
       );
 
@@ -242,7 +250,7 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
       // Composed presentation with visual + audio tracks
       return (
         <Suspense fallback={<LoadingFallback />}>
-          <Player {...props} ref={playerRef} clear={clear} />
+          <Player {...props} ref={playerRef} clear={exitToHome} />
         </Suspense>
       );
 
