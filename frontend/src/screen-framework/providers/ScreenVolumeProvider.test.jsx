@@ -7,6 +7,7 @@ import {
   useEffectiveVolume,
   getMasterVolume,
   getMasterMuted,
+  getEffectiveMaster,
   subscribeMaster,
   _resetForTests,
 } from '../../lib/volume/ScreenVolumeContext.js';
@@ -290,6 +291,56 @@ describe('ScreenVolumeProvider', () => {
       unsub();
       act(() => api.setMaster(0.2));
       expect(sub).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('outputCeiling', () => {
+    it('exposes effectiveMaster = master × outputCeiling when ceiling < 1', () => {
+      const onValue = vi.fn();
+      render(
+        <ScreenVolumeProvider defaultMaster={0.8} outputCeiling={0.25}>
+          <Probe onValue={onValue} />
+        </ScreenVolumeProvider>
+      );
+      const last = onValue.mock.calls.at(-1)[0];
+      expect(last.master).toBeCloseTo(0.8, 5);
+      expect(last.effectiveMaster).toBeCloseTo(0.2, 5); // 0.8 × 0.25
+    });
+
+    it('defaults effectiveMaster = master when outputCeiling is omitted', () => {
+      const onValue = vi.fn();
+      render(
+        <ScreenVolumeProvider defaultMaster={0.5}>
+          <Probe onValue={onValue} />
+        </ScreenVolumeProvider>
+      );
+      const last = onValue.mock.calls.at(-1)[0];
+      expect(last.master).toBeCloseTo(0.5, 5);
+      expect(last.effectiveMaster).toBeCloseTo(0.5, 5);
+    });
+
+    it('mute always yields effectiveMaster = 0 regardless of ceiling', () => {
+      let api;
+      const onValue = vi.fn((v) => { api = v; });
+      render(
+        <ScreenVolumeProvider defaultMaster={0.8} outputCeiling={0.25}>
+          <Probe onValue={onValue} />
+        </ScreenVolumeProvider>
+      );
+      act(() => api.toggleMute());
+      const last = onValue.mock.calls.at(-1)[0];
+      expect(last.master).toBe(0);
+      expect(last.effectiveMaster).toBe(0);
+    });
+
+    it('mirrors effectiveMaster to module state for non-React consumers', () => {
+      render(
+        <ScreenVolumeProvider defaultMaster={0.6} outputCeiling={0.5}>
+          <Probe onValue={() => {}} />
+        </ScreenVolumeProvider>
+      );
+      // 0.6 × 0.5 = 0.3
+      expect(getEffectiveMaster()).toBeCloseTo(0.3, 5);
     });
   });
 });
