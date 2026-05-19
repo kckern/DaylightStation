@@ -17,6 +17,16 @@ function fireMediaEvent(container, type) {
   return el;
 }
 
+// Probe component is hoisted so its component identity is stable across the
+// test module. apiRef holds the current ScreenVolume context value; the test
+// clears it at the start of its run, and Probe's effect sets it on mount.
+const apiRef = { current: null };
+const Probe = () => {
+  const v = useScreenVolume();
+  React.useEffect(() => { apiRef.current = v; }, [v]);
+  return null;
+};
+
 describe('ContentScroller — master volume integration', () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -73,5 +83,40 @@ describe('ContentScroller — master volume integration', () => {
     });
 
     expect(mediaEl.volume).toBeCloseTo(0.6, 5);
+  });
+
+  it('re-applies master × mainVolume when master changes mid-playback', () => {
+    apiRef.current = null;
+    const { container } = render(
+      <ScreenVolumeProvider defaultMaster={0.5}>
+        <Probe />
+        <ContentScroller
+          type="readalong"
+          title="Test"
+          assetId="test-3"
+          mainMediaUrl="https://example.test/audio.mp3"
+          isVideo={false}
+          mainVolume={0.8}
+          contentData={{ data: [] }}
+          parseContent={parseContent}
+        />
+      </ScreenVolumeProvider>
+    );
+
+    let mediaEl;
+    act(() => {
+      mediaEl = fireMediaEvent(container, 'loadedmetadata');
+    });
+    // 0.8 × 0.5 = 0.4
+    expect(mediaEl.volume).toBeCloseTo(0.4, 5);
+
+    // User presses vol-up — master changes mid-playback.
+    act(() => apiRef.current.setMaster(1.0));
+    // 0.8 × 1.0 = 0.8
+    expect(mediaEl.volume).toBeCloseTo(0.8, 5);
+
+    // Mute — master → 0.
+    act(() => apiRef.current.toggleMute());
+    expect(mediaEl.volume).toBeCloseTo(0, 5);
   });
 });
