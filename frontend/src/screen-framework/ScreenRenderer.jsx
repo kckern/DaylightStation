@@ -351,7 +351,13 @@ export function ScreenRenderer({ screenId: propScreenId }) {
           overflow: 'hidden',
           ...themeStyle,
         }}>
-          <ScreenVolumeProvider storageKey={`screen-volume-${screenId}`}>
+          <ScreenVolumeProvider
+            storageKey={`screen-volume-${screenId}`}
+            outputCeiling={config.volume?.outputCeiling}
+            curveExponent={config.volume?.curveExponent}
+            stepSize={config.volume?.stepSize}
+            defaultMaster={config.volume?.defaultMaster}
+          >
             <MasterVolumeToast />
             <MenuNavigationProvider>
               <ScreenOverlayProvider>
