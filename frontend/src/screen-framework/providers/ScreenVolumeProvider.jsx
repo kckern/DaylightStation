@@ -39,6 +39,7 @@ export function ScreenVolumeProvider({
   defaultMaster = 0.5,
   stepSize = 0.1,
   outputCeiling = 1,
+  curveExponent = 1,
 }) {
   const [master, setMasterState] = useState(() => readInitial(storageKey, defaultMaster));
   // preMute = the most recent non-zero master. Used to restore on unmute.
@@ -50,10 +51,12 @@ export function ScreenVolumeProvider({
     if (master > 0) preMuteRef.current = master;
   }, [master]);
 
-  // effectiveMaster is the output amplitude consumers should multiply by — it
-  // applies the per-screen ceiling. master remains the user-facing [0,1] level
-  // (drives the HUD, persistence, mute logic).
-  const effectiveMaster = master * clamp(outputCeiling);
+  // (master ** curveExponent) gives a perceptual curve — curveExponent=2 makes
+  // the bottom half of the master range cover more of the audible amplitude
+  // change humans perceive. curveExponent=1 is the pre-curve linear behavior.
+  // Then × outputCeiling caps the maximum output amplitude. master remains the
+  // user-facing [0,1] level (drives the HUD, persistence, mute logic).
+  const effectiveMaster = Math.pow(master, curveExponent) * clamp(outputCeiling);
 
   // Mirror state into module scope for non-React consumers (sound effects, etc).
   useEffect(() => {
