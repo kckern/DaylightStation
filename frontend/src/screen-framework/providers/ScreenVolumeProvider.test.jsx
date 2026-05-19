@@ -356,4 +356,55 @@ describe('ScreenVolumeProvider', () => {
       expect(last.effectiveMaster).toBeCloseTo(0.8, 5);
     });
   });
+
+  describe('curveExponent', () => {
+    it('exposes effectiveMaster = master ** curveExponent when ceiling = 1', () => {
+      const onValue = vi.fn();
+      render(
+        <ScreenVolumeProvider defaultMaster={0.5} curveExponent={2}>
+          <Probe onValue={onValue} />
+        </ScreenVolumeProvider>
+      );
+      const last = onValue.mock.calls.at(-1)[0];
+      // 0.5 ** 2 = 0.25
+      expect(last.effectiveMaster).toBeCloseTo(0.25, 5);
+    });
+
+    it('combines curve and ceiling: (master ** curve) × ceiling', () => {
+      const onValue = vi.fn();
+      render(
+        <ScreenVolumeProvider defaultMaster={0.5} curveExponent={2} outputCeiling={0.5}>
+          <Probe onValue={onValue} />
+        </ScreenVolumeProvider>
+      );
+      const last = onValue.mock.calls.at(-1)[0];
+      // (0.5 ** 2) × 0.5 = 0.25 × 0.5 = 0.125
+      expect(last.effectiveMaster).toBeCloseTo(0.125, 5);
+    });
+
+    it('defaults to linear (curveExponent = 1) so effectiveMaster = master × ceiling', () => {
+      const onValue = vi.fn();
+      render(
+        <ScreenVolumeProvider defaultMaster={0.5} outputCeiling={0.5}>
+          <Probe onValue={onValue} />
+        </ScreenVolumeProvider>
+      );
+      const last = onValue.mock.calls.at(-1)[0];
+      // 0.5 × 0.5 = 0.25, no curve
+      expect(last.effectiveMaster).toBeCloseTo(0.25, 5);
+    });
+
+    it('preserves master = 0 → effectiveMaster = 0 (mute)', () => {
+      let api;
+      const onValue = vi.fn((v) => { api = v; });
+      render(
+        <ScreenVolumeProvider defaultMaster={0.5} curveExponent={3} outputCeiling={0.5}>
+          <Probe onValue={onValue} />
+        </ScreenVolumeProvider>
+      );
+      act(() => api.toggleMute());
+      const last = onValue.mock.calls.at(-1)[0];
+      expect(last.effectiveMaster).toBe(0);
+    });
+  });
 });
