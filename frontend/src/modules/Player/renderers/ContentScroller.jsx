@@ -241,7 +241,23 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
         reportPlaybackMetrics();
       }
     }, [mainVolume, masterVolume, applyPendingSeek, reportPlaybackMetrics, isVideo]);
-  
+
+    // Re-apply master × mainVolume to the active media element when either
+    // changes mid-playback. Mirrors useCommonMediaController.js:327-336 so the
+    // screen-framework numpad vol-up/down/mute affects scripture/talk/poetry/
+    // hymn/primary-song playback the same way it affects standard player media.
+    useEffect(() => {
+      const mainEl = mainRef.current;
+      if (!mainEl) return;
+      if (mainVolume === undefined) return;
+      let processed = parseFloat(mainVolume || 100);
+      if (processed > 1) processed = processed / 100;
+      const adjusted = Math.min(1, Math.max(0, processed));
+      try {
+        mainEl.volume = Math.min(1, Math.max(0, adjusted * masterVolume));
+      } catch { /* element may not yet support volume */ }
+    }, [masterVolume, mainVolume]);
+
     // Seek bar click => set new currentTime
     const handleSeekBarClick = (e) => {
       if (!duration) return;
