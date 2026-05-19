@@ -35,7 +35,7 @@ export function AudioLayer({
   const isDuckedRef = useRef(false);
   const lastAudioElRef = useRef(null);
   const [audioQueue, setAudioQueue] = useState(null);
-  const { master: masterVolume } = useScreenVolume();
+  const { effectiveMaster: masterVolume } = useScreenVolume();
 
   /** Find the audio/video element rendered by the nested Player */
   const getAudioEl = useCallback(() => {

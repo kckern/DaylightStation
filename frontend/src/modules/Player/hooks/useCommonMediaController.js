@@ -49,10 +49,10 @@ export function useCommonMediaController({
 }) {
   const DEBUG_MEDIA = false;
 
-  // Screen-framework software master volume. When this hook is rendered outside
-  // a ScreenVolumeProvider (e.g., Fitness, Feed, or any other host), master = 1
-  // and behavior is unchanged. effective volume = adjustedVolume × master.
-  const { master: masterVolume } = useScreenVolume();
+  // Screen-framework effective master (post-ceiling, post-curve). When this hook
+  // is rendered outside a ScreenVolumeProvider (e.g., Fitness, Feed, or any
+  // other host), effectiveMaster = 1 and behavior is unchanged.
+  const { effectiveMaster: masterVolume } = useScreenVolume();
 
   // Global guards persisted across remounts (per assetId)
   if (!useCommonMediaController.__appliedStartByKey) useCommonMediaController.__appliedStartByKey = Object.create(null);

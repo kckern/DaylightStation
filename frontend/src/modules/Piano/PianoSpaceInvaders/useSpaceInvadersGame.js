@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
-import { getMasterVolume } from '../../../lib/volume/ScreenVolumeContext.js';
+import { getEffectiveMaster } from '../../../lib/volume/ScreenVolumeContext.js';
 import {
   createInitialState,
   resetForLevel,
@@ -222,7 +222,7 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
           errorAudioRef.current.currentTime = 0;
           // Re-apply at trigger time so screen-framework master volume changes
           // take effect on the next press (master = 1 outside screen-framework).
-          errorAudioRef.current.volume = 0.4 * getMasterVolume();
+          errorAudioRef.current.volume = 0.4 * getEffectiveMaster();
           errorAudioRef.current.play().catch(() => {});
         }
         setWrongNotes(wn => {

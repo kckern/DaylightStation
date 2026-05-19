@@ -34,12 +34,12 @@ export const useNativeAudioBridge = (config = {}) => {
   const [volume, setVolume] = useState(0);
   const [status, setStatus] = useState('idle');
 
-  // Screen-framework software master volume. When this hook is rendered outside
-  // a ScreenVolumeProvider, master = 1 and behavior is unchanged. The bridge's
-  // calibration gain (default 2× — compensates for the natively-quiet Shield TV
-  // mic) is multiplied by master so screen-framework volume keys scale bridge
-  // audio the same way they scale Player audio.
-  const { master: masterVolume } = useScreenVolume();
+  // Screen-framework effective master (post-ceiling, post-curve). When this hook
+  // is rendered outside a ScreenVolumeProvider, effectiveMaster = 1 and behavior
+  // is unchanged. The bridge's calibration gain (default 2× — compensates for the
+  // natively-quiet Shield TV mic) is multiplied by effectiveMaster so screen-framework
+  // volume keys scale bridge audio the same way they scale Player audio.
+  const { effectiveMaster: masterVolume } = useScreenVolume();
   const masterVolumeRef = useRef(masterVolume);
   masterVolumeRef.current = masterVolume;
 
