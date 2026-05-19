@@ -119,4 +119,42 @@ describe('ContentScroller — master volume integration', () => {
     act(() => apiRef.current.toggleMute());
     expect(mediaEl.volume).toBeCloseTo(0, 5);
   });
+
+  it('applies outputCeiling and curveExponent to the audio element volume', () => {
+    apiRef.current = null;
+    const { container } = render(
+      <ScreenVolumeProvider defaultMaster={0.5} outputCeiling={0.5} curveExponent={2}>
+        <Probe />
+        <ContentScroller
+          type="readalong"
+          title="Test"
+          assetId="test-effective"
+          mainMediaUrl="https://example.test/audio.mp3"
+          isVideo={false}
+          mainVolume={0.8}
+          contentData={{ data: [] }}
+          parseContent={parseContent}
+        />
+      </ScreenVolumeProvider>
+    );
+
+    let mediaEl;
+    act(() => {
+      mediaEl = fireMediaEvent(container, 'loadedmetadata');
+    });
+
+    // mainVolume × effectiveMaster = 0.8 × ((0.5 ** 2) × 0.5)
+    //                              = 0.8 × (0.25 × 0.5)
+    //                              = 0.8 × 0.125
+    //                              = 0.1
+    expect(mediaEl.volume).toBeCloseTo(0.1, 5);
+
+    // Mid-playback master bump: 1.0 ** 2 × 0.5 = 0.5 → 0.8 × 0.5 = 0.4
+    act(() => apiRef.current.setMaster(1.0));
+    expect(mediaEl.volume).toBeCloseTo(0.4, 5);
+
+    // Mute → effectiveMaster = 0 → el.volume = 0
+    act(() => apiRef.current.toggleMute());
+    expect(mediaEl.volume).toBeCloseTo(0, 5);
+  });
 });
