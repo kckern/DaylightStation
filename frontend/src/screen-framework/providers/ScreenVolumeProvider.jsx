@@ -38,6 +38,7 @@ export function ScreenVolumeProvider({
   storageKey = 'screen-volume',
   defaultMaster = 0.5,
   stepSize = 0.1,
+  outputCeiling = 1,
 }) {
   const [master, setMasterState] = useState(() => readInitial(storageKey, defaultMaster));
   // preMute = the most recent non-zero master. Used to restore on unmute.
@@ -49,10 +50,15 @@ export function ScreenVolumeProvider({
     if (master > 0) preMuteRef.current = master;
   }, [master]);
 
+  // effectiveMaster is the output amplitude consumers should multiply by — it
+  // applies the per-screen ceiling. master remains the user-facing [0,1] level
+  // (drives the HUD, persistence, mute logic).
+  const effectiveMaster = master * clamp(outputCeiling);
+
   // Mirror state into module scope for non-React consumers (sound effects, etc).
   useEffect(() => {
-    _publishMasterState(master, muted);
-  }, [master, muted]);
+    _publishMasterState(master, effectiveMaster, muted);
+  }, [master, effectiveMaster, muted]);
 
   // Persist on every change.
   useEffect(() => {
@@ -82,8 +88,8 @@ export function ScreenVolumeProvider({
   }, []);
 
   const value = useMemo(
-    () => ({ master, muted, setMaster, step, toggleMute, stepSize }),
-    [master, muted, setMaster, step, toggleMute, stepSize],
+    () => ({ master, effectiveMaster, muted, setMaster, step, toggleMute, stepSize }),
+    [master, effectiveMaster, muted, setMaster, step, toggleMute, stepSize],
   );
 
   return (

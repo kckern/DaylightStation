@@ -8,6 +8,7 @@ const noop = () => {};
 
 const DEFAULT_VALUE = Object.freeze({
   master: 1,
+  effectiveMaster: 1,
   muted: false,
   setMaster: noop,
   step: noop,
@@ -21,13 +22,13 @@ export function useScreenVolume() {
 }
 
 export function useEffectiveVolume(local = 1) {
-  const { master } = useContext(ScreenVolumeContext);
-  return master * local;
+  const { effectiveMaster } = useContext(ScreenVolumeContext);
+  return effectiveMaster * local;
 }
 
 // --- Module-level state for non-React consumers (sound effects, services) ---
 
-let _state = { master: 1, muted: false };
+let _state = { master: 1, effectiveMaster: 1, muted: false };
 const _subscribers = new Set();
 
 export function getMasterVolume() {
@@ -38,6 +39,10 @@ export function getMasterMuted() {
   return _state.muted;
 }
 
+export function getEffectiveMaster() {
+  return _state.effectiveMaster;
+}
+
 export function subscribeMaster(fn) {
   if (typeof fn !== 'function') return () => {};
   _subscribers.add(fn);
@@ -46,8 +51,8 @@ export function subscribeMaster(fn) {
 
 // Internal: ScreenVolumeProvider calls this to mirror state into module scope
 // so non-React code can read the latest master synchronously.
-export function _publishMasterState(master, muted) {
-  _state = { master, muted };
+export function _publishMasterState(master, effectiveMaster, muted) {
+  _state = { master, effectiveMaster, muted };
   for (const fn of _subscribers) {
     try { fn(master, muted); } catch { /* ignore subscriber errors */ }
   }
@@ -55,6 +60,6 @@ export function _publishMasterState(master, muted) {
 
 // Test-only: reset module state. Not part of the public API.
 export function _resetForTests() {
-  _state = { master: 1, muted: false };
+  _state = { master: 1, effectiveMaster: 1, muted: false };
   _subscribers.clear();
 }
