@@ -342,5 +342,18 @@ describe('ScreenVolumeProvider', () => {
       // 0.6 × 0.5 = 0.3
       expect(getEffectiveMaster()).toBeCloseTo(0.3, 5);
     });
+
+    it('clamps outputCeiling to [0,1] so effectiveMaster never exceeds master', () => {
+      const onValue = vi.fn();
+      render(
+        <ScreenVolumeProvider defaultMaster={0.8} outputCeiling={1.5}>
+          <Probe onValue={onValue} />
+        </ScreenVolumeProvider>
+      );
+      const last = onValue.mock.calls.at(-1)[0];
+      // ceiling > 1 is clamped to 1; effectiveMaster = master × 1 = master
+      expect(last.master).toBeCloseTo(0.8, 5);
+      expect(last.effectiveMaster).toBeCloseTo(0.8, 5);
+    });
   });
 });
