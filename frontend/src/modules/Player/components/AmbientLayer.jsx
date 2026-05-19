@@ -26,7 +26,7 @@ export function AmbientLayer({
   const slotUrlsRef = useRef({ A: null, B: null });
   const fadeRafRef = useRef({ A: null, B: null });
 
-  const { master: masterVolume } = useScreenVolume();
+  const { effectiveMaster: masterVolume } = useScreenVolume();
   const effectiveAmbient = Math.max(0, Math.min(1, ambientVolume * masterVolume));
 
   const cancelFade = (slot) => {

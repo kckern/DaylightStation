@@ -72,9 +72,10 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
   }) {
     // Refs for media elements
     const mainRef = useRef(null);
-    // Screen-framework software master volume. Outside a ScreenVolumeProvider
-    // (e.g. Fitness host) the context default is master=1, so this is a no-op.
-    const { master: masterVolume } = useScreenVolume();
+    // Screen-framework effective master (master after per-screen output ceiling
+    // and perceptual curve). Outside a ScreenVolumeProvider (e.g. Fitness host)
+    // the context default is effectiveMaster=1, so this is a no-op.
+    const { effectiveMaster: masterVolume } = useScreenVolume();
     const {
       reportPlaybackMetrics,
       applyPendingSeek,
