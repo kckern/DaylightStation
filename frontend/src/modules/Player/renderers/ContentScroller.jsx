@@ -13,6 +13,7 @@ import paperBackground from "../../../assets/backgrounds/paper.jpg";
 import { useMediaKeyboardHandler } from '../../../lib/Player/useMediaKeyboardHandler.js';
 import { useDynamicDimensions } from '../../../lib/Player/useDynamicDimensions.js';
 import { useMediaReporter } from '../hooks/useMediaReporter.js';
+import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
   import { playbackLog } from '../lib/playbackLogger.js';
   
   /**
@@ -71,6 +72,9 @@ import { useMediaReporter } from '../hooks/useMediaReporter.js';
   }) {
     // Refs for media elements
     const mainRef = useRef(null);
+    // Screen-framework software master volume. Outside a ScreenVolumeProvider
+    // (e.g. Fitness host) the context default is master=1, so this is a no-op.
+    const { master: masterVolume } = useScreenVolume();
     const {
       reportPlaybackMetrics,
       applyPendingSeek,
@@ -229,13 +233,14 @@ import { useMediaReporter } from '../hooks/useMediaReporter.js';
         if (mainVolume !== undefined) {
           let processedVolume = parseFloat(mainVolume || 100);
           if (processedVolume > 1) processedVolume = processedVolume / 100;
-          mainEl.volume = Math.min(1, Math.max(0, processedVolume));
+          const adjusted = Math.min(1, Math.max(0, processedVolume));
+          mainEl.volume = Math.min(1, Math.max(0, adjusted * masterVolume));
         }
         mainEl.play().catch(() => {});
         applyPendingSeek();
         reportPlaybackMetrics();
       }
-    }, [mainVolume, applyPendingSeek, reportPlaybackMetrics, isVideo]);
+    }, [mainVolume, masterVolume, applyPendingSeek, reportPlaybackMetrics, isVideo]);
   
     // Seek bar click => set new currentTime
     const handleSeekBarClick = (e) => {
