@@ -284,18 +284,62 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // Drive the governance stall-pause off the live resilience state. GovernanceEngine
   // subscribes to playback:stalled/playback:recovered to pause its penalty timers
   // while video can't progress; previously the only emitter was a stall hook that
-  // never fired, so this protection never engaged. Emit on the stalled edge.
-  const prevResilienceStalledRef = useRef(false);
+  // never fired, so this protection never engaged.
+  //
+  // resilienceState.stalled is isStalled||isBuffering, so it flips on routine
+  // sub-second DASH buffering. Debounce the stalled edge so only a *sustained*
+  // stall pauses governance timers (matching the ~3s threshold of the retired
+  // detector); recovery is emitted immediately when the stall clears.
+  const stallEmitTimerRef = useRef(null);
+  const stallEmittedRef = useRef(false);
+  const stallItemIdRef = useRef(null);
   useEffect(() => {
-    const stalled = Boolean(resilienceState?.stalled);
-    if (stalled === prevResilienceStalledRef.current) return;
-    prevResilienceStalledRef.current = stalled;
-    const info = {
+    const itemId = currentItem ? currentItem.id : null;
+    const buildInfo = () => ({
       mediaKey: resolveContentId(resilienceState?.meta || currentItem),
       status: resilienceState?.status || null
-    };
-    emitAppEvent?.(stalled ? 'playback:stalled' : 'playback:recovered', info, 'fitness-player');
+    });
+    // Media changed (e.g. queue advance): reset the debounce so the new item
+    // starts clean. If a stall was outstanding for the outgoing item, emit
+    // recovered first so governance timers don't stay paused across the swap.
+    if (itemId !== stallItemIdRef.current) {
+      stallItemIdRef.current = itemId;
+      if (stallEmitTimerRef.current) {
+        clearTimeout(stallEmitTimerRef.current);
+        stallEmitTimerRef.current = null;
+      }
+      if (stallEmittedRef.current) {
+        stallEmittedRef.current = false;
+        emitAppEvent?.('playback:recovered', { mediaKey: null, status: 'media-change' }, 'fitness-player');
+      }
+    }
+    const stalled = Boolean(resilienceState?.stalled);
+    if (stalled) {
+      if (stallEmitTimerRef.current || stallEmittedRef.current) return;
+      stallEmitTimerRef.current = setTimeout(() => {
+        stallEmitTimerRef.current = null;
+        stallEmittedRef.current = true;
+        emitAppEvent?.('playback:stalled', buildInfo(), 'fitness-player');
+      }, 3000);
+    } else {
+      if (stallEmitTimerRef.current) {
+        clearTimeout(stallEmitTimerRef.current);
+        stallEmitTimerRef.current = null;
+      }
+      if (stallEmittedRef.current) {
+        stallEmittedRef.current = false;
+        emitAppEvent?.('playback:recovered', buildInfo(), 'fitness-player');
+      }
+    }
   }, [resilienceState?.stalled, resilienceState?.status, currentItem, emitAppEvent]);
+
+  // Clear any pending debounce timer on unmount.
+  useEffect(() => () => {
+    if (stallEmitTimerRef.current) {
+      clearTimeout(stallEmitTimerRef.current);
+      stallEmitTimerRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     lastKnownTimeRef.current = 0;
