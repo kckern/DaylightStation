@@ -4,7 +4,6 @@ import './FitnessPlayer.scss';
 import { useFitness } from '@/context/FitnessContext.jsx';
 import Player from '@/modules/Player/Player.jsx';
 import usePlayerController from '@/modules/Player/usePlayerController.js';
-import { usePlayheadStallDetection } from '@/modules/Player/hooks/usePlayheadStallDetection.js';
 import { DaylightMediaPath, DaylightAPI } from '@/lib/api.mjs';
 import FitnessPlayerFooter from './FitnessPlayerFooter.jsx';
 import FitnessPlayerOverlay from './FitnessPlayerOverlay.jsx';
@@ -180,25 +179,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   } = useFitness() || {};
   const playerRef = useRef(null); // imperative Player API
 
-  // Stall detection and recovery - wires dead hook into live system
-  usePlayheadStallDetection({
-    getMediaEl: () => playerRef.current?.getMediaElement?.(),
-    enabled: true,
-    meta: currentItem,
-    onStallDetected: (info) => {
-      emitAppEvent?.('playback:stalled', info, 'fitness-player');
-    },
-    onRecoveryAttempt: (info) => {
-      emitAppEvent?.('playback:recovery_attempt', info, 'fitness-player');
-    },
-    onRecoveryExhausted: (info) => {
-      emitAppEvent?.('playback:recovery_failed', info, 'fitness-player');
-    },
-    onRecovered: (info) => {
-      emitAppEvent?.('playback:recovered', info, 'fitness-player');
-    }
-  });
-
   const [mediaElement, setMediaElement] = useState(null);
 
   // Track media element replacements so boost can rebind after player remounts
@@ -300,6 +280,22 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   }), [isSeeking, effectiveGovernanceState?.videoLocked, resilienceState?.stalled, resilienceState?.waitingToPlay, isPaused]);
 
   const governancePaused = pauseDecision.reason === PAUSE_REASON.GOVERNANCE && pauseDecision.paused;
+
+  // Drive the governance stall-pause off the live resilience state. GovernanceEngine
+  // subscribes to playback:stalled/playback:recovered to pause its penalty timers
+  // while video can't progress; previously the only emitter was a stall hook that
+  // never fired, so this protection never engaged. Emit on the stalled edge.
+  const prevResilienceStalledRef = useRef(false);
+  useEffect(() => {
+    const stalled = Boolean(resilienceState?.stalled);
+    if (stalled === prevResilienceStalledRef.current) return;
+    prevResilienceStalledRef.current = stalled;
+    const info = {
+      mediaKey: resolveContentId(resilienceState?.meta || currentItem),
+      status: resilienceState?.status || null
+    };
+    emitAppEvent?.(stalled ? 'playback:stalled' : 'playback:recovered', info, 'fitness-player');
+  }, [resilienceState?.stalled, resilienceState?.status, currentItem, emitAppEvent]);
 
   useEffect(() => {
     lastKnownTimeRef.current = 0;
