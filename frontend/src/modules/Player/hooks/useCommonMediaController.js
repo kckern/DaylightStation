@@ -4,6 +4,7 @@ import { getProgressPercent } from '../lib/helpers.js';
 import { useMediaKeyboardHandler } from '../../../lib/Player/useMediaKeyboardHandler.js';
 import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
+import { evaluatePlayheadProgress } from '../lib/playheadProgress.js';
 
 // Lazy-init child logger for media controller diagnostics
 let _mcLogger;
@@ -101,6 +102,7 @@ export function useCommonMediaController({
   // Stall detection refs
   const stallStateRef = useRef({
     lastProgressTs: 0,
+    lastAdvancePos: null,
     softTimer: null,
     hardTimer: null,
     recoveryAttempt: 0,
@@ -931,12 +933,24 @@ export function useCommonMediaController({
     if (s.hasEnded) {
       return;
     }
-    
+
+    const mediaEl = getMediaEl();
+    const pos = mediaEl ? mediaEl.currentTime : null;
+
+    // Only genuine forward motion counts as progress. A `timeupdate` also fires
+    // on seeks, the recovery nudge (currentTime -= 0.001), and DASH buffer pokes;
+    // treating those as progress is what reset the escalation counter and let the
+    // player nudge-loop forever without ever reaching `reload`.
+    const { advanced, nextPos } = evaluatePlayheadProgress(pos, s.lastAdvancePos);
+    s.lastAdvancePos = nextPos;
+    if (!advanced) {
+      return;
+    }
+
     const wasStalled = s.isStalled;
     s.lastProgressTs = Date.now();
-    
+
     if (wasStalled) {
-  const mediaEl = getMediaEl();
   if (DEBUG_MEDIA) console.log('[Stall] Progress resumed; clearing stalled state', { currentTime: mediaEl?.currentTime, recoveryAttempt: s.recoveryAttempt, lastStrategy: s.lastStrategy });
       mcLog().info('playback.recovery-resolved', {
         mediaKey: assetId,
@@ -1265,6 +1279,9 @@ export function useCommonMediaController({
       // Reset ended flag for new media
       stallStateRef.current.hasEnded = false;
       stallStateRef.current.recoveryAttempt = 0;
+      // Fresh playhead baseline for the new item so the first real forward
+      // timeupdate (not a seek-to-start) establishes progress tracking.
+      stallStateRef.current.lastAdvancePos = null;
       // Don't set lastProgressTs here — let real playback progress (timeupdate
       // → markProgress) set it. Setting it at metadata-load time causes stall
       // detection to fire during initial buffering (after only softMs=1.2s),
