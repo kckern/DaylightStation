@@ -372,6 +372,17 @@ export class GovernanceEngine {
 
     const requiredCount = this._normalizeRequiredCount(rule, activeParticipants.length, activeParticipants);
     if (achievableCount < requiredCount) {
+      // Tightened gate (2026-05-16 audit): when 0 participants are within
+      // FEASIBILITY_MARGIN_BPM of the original target, skip rather than downgrade.
+      // The recursive downgrade otherwise turned "nobody close to hot" into a
+      // surprise warm challenge the group then had to satisfy. Only downgrade
+      // when at least one participant is within striking distance of the target.
+      if (achievableCount === 0) {
+        return {
+          feasible: false,
+          reason: `Only 0/${requiredCount} within ${FEASIBILITY_MARGIN_BPM} BPM of ${targetZone}`,
+        };
+      }
       // Try downgrading: hot → warm → active
       const zoneDowngrades = ['fire', 'hot', 'warm', 'active'];
       const targetIdx = zoneDowngrades.indexOf(normalizeZoneId(targetZone));
