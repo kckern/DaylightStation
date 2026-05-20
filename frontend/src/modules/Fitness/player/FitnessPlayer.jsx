@@ -15,6 +15,7 @@ import FitnessChart from '@/modules/Fitness/widgets/FitnessChart/index.jsx';
 import FitnessChartBackButton from './FitnessChartBackButton.jsx';
 import FitnessChartVoiceMemoFab from './FitnessChartVoiceMemoFab.jsx';
 import { resolvePostEpisodeRedirect } from './postEpisodeRedirect.js';
+import { makeCloseGuard } from './closeGuard.js';
 import { useMediaAmplifier } from '@/modules/Fitness/components/useMediaAmplifier.js';
 import { FitnessPlayerFrame } from './frames';
 import { useVolumeSync } from '@/modules/Fitness/hooks/useVolumeSync.js';
@@ -152,6 +153,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   const measureRafRef = useRef(null);
   const computeRef = useRef(null); // expose compute so other effects can trigger it safely
   const pendingCloseRef = useRef(false); // Track pending close for voice memo guard (4A fix)
+  const closeGuardRef = useRef(makeCloseGuard()); // Single-shot guard so executeClose can't fire twice
   // BUG-04 Fix: Use high-res timestamp guard to prevent runaway touch events from previous views
   const mountTimeRef = useRef(performance.now());
   const {
@@ -941,17 +943,27 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
 
   // 4A: Execute actual close (separated for voice memo guard)
   const executeClose = useCallback(() => {
+    const sid = fitnessSessionInstance?.sessionId ?? null;
+    // Dedup: both the voice-memo onComplete callback and the overlay-transition
+    // useEffect can race to call executeClose after one close gesture.
+    if (!closeGuardRef.current.acquire(sid)) {
+      logger.debug('fitness.player.close.deduped', { sessionId: sid });
+      return;
+    }
+    logger.info('fitness.player.close.initiated', { sessionId: sid });
+
     statusUpdateRef.current.endSent = true;
     postEpisodeStatus({ naturalEnd: false, reason: 'close' });
 
     const redirect = resolvePostEpisodeRedirect({
-      hasActiveSession: Boolean(fitnessSessionInstance?.sessionId)
+      hasActiveSession: Boolean(sid),
+      sessionId: sid,
     });
     if (redirect && typeof onSessionEndRedirect === 'function') {
       try {
         onSessionEndRedirect(redirect);
       } catch (err) {
-        console.error('[FitnessPlayer] onSessionEndRedirect failed', err);
+        logger.error('fitness.player.close.redirect_failed', { error: err?.message });
       }
     }
 
@@ -964,11 +976,17 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     }
     setCurrentItem(null);
     pendingCloseRef.current = false;
-  }, [postEpisodeStatus, setQueue, currentItem?.grandparentId, fitnessSessionInstance?.sessionId, onSessionEndRedirect]);
+
+    logger.info('fitness.player.close.completed', { sessionId: sid });
+  }, [postEpisodeStatus, setQueue, currentItem?.grandparentId, fitnessSessionInstance?.sessionId, onSessionEndRedirect, logger]);
 
   const handleClose = () => {
     // Note: media_end is logged by the useEffect cleanup when currentMediaIdentity changes to null
     // (triggered by setCurrentItem(null) in executeClose). No explicit media_end here to avoid duplicates.
+    logger.info('fitness.player.close.requested', {
+      sessionId: fitnessSessionInstance?.sessionId ?? null,
+      voiceMemoOverlayOpen: Boolean(voiceMemoOverlayState?.open),
+    });
 
     // 4A: Guard - if voice memo overlay is open, pause video but don't unmount
     if (voiceMemoOverlayState?.open) {
