@@ -48,6 +48,7 @@ const FitnessApp = () => {
   const [selectedEpisodeId, setSelectedEpisodeId] = useState(null);
   const [activeModule, setActiveModule] = useState(null); // { id, ...manifest }
   const [activeScreen, setActiveScreen] = useState(null); // screen_id from screens config
+  const [pendingSelectedSessionId, setPendingSelectedSessionId] = useState(null); // pre-select just-ended session on home
   const [fitnessPlayQueue, setFitnessPlayQueue] = useState([]);
   const [kioskUI, setKioskUI] = useState(() => {
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -1284,6 +1285,8 @@ const FitnessApp = () => {
                       onPlay={handleHomePlay}
                       onNavigate={handleNavigate}
                       onCtaAction={(cta) => logger.info('fitness-cta-action', { action: cta.action })}
+                      initialSelectedSessionId={pendingSelectedSessionId}
+                      onSelectedSessionConsumed={() => setPendingSelectedSessionId(null)}
                     >
                       <ScreenDataProvider sources={screenSources}>
                         <ScreenProvider config={{ ...screensConfig[activeScreen].layout, theme: screensConfig[activeScreen].theme }}>
@@ -1355,7 +1358,13 @@ const FitnessApp = () => {
                       setSelectedEpisodeId(null);
                     }
                     setCurrentView(redirect.view);
-                    if (redirect.view === 'users') {
+                    if (redirect.view === 'screen' && redirect.screenId) {
+                      setActiveScreen(redirect.screenId);
+                      if (redirect.sessionId) {
+                        setPendingSelectedSessionId(redirect.sessionId);
+                      }
+                      navigate(`/fitness/${redirect.screenId}`, { replace: true });
+                    } else if (redirect.view === 'users') {
                       navigate('/fitness/users', { replace: true });
                     }
                   }}
