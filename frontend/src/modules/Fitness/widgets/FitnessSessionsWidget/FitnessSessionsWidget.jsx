@@ -308,6 +308,20 @@ export default function FitnessSessionsWidget() {
     });
   }, [selectedSessionId, setSelectedSessionId, replace]);
 
+  // When a session is selected externally (e.g. post-session redirect set it on the
+  // provider) rather than via a row click, open its detail pane. handleSessionClick
+  // sets revertRef on click, so a set selection with no revertRef means it came from
+  // outside; the selected row scrolls itself into view via its ref. Re-runs once
+  // sessions finish loading so the detail widget has data to render.
+  useEffect(() => {
+    if (loading) return;
+    if (!selectedSessionId) return;
+    if (revertRef.current) return;
+    revertRef.current = replace('right-area', {
+      children: [{ widget: 'fitness:session-detail', props: { sessionId: selectedSessionId } }]
+    });
+  }, [selectedSessionId, loading, replace]);
+
   // When calendar sets scrollToDate, scroll to that date group and auto-select first session
   useEffect(() => {
     if (!scrollToDate || !containerRef.current) return;
