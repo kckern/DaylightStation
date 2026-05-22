@@ -1,5 +1,4 @@
 .cycle-challenge-overlay {
-  --cycle-overlay-edge: clamp(12px, min(4vw, 4%), 40px);
   --cycle-overlay-size: clamp(190px, min(24vw, 22vh), 280px);
   --cycle-overlay-diameter: var(--cycle-overlay-size);
 
@@ -57,7 +56,7 @@
   }
 
   &__target-value {
-    font-size: clamp(1.4rem, calc(var(--cycle-overlay-diameter) * 0.16), 2rem);
+    font-size: clamp(1.2rem, calc(var(--cycle-overlay-diameter) * 0.13), 1.7rem);
     font-weight: 700;
     color: #f1f5f9;
     letter-spacing: 0.02em;
@@ -275,15 +274,6 @@
   // --- RPM gauge (Task 22) ------------------------------------------------
   &__gauge {
     pointer-events: none;
-  }
-
-  &__gauge-arc {
-    // Stroked directly via attributes (color + width); this class is available
-    // for overrides (e.g. per-state tinting if needed later).
-  }
-
-  &__gauge-tick {
-    // Minor tick — 10-RPM interval.
   }
 
   &__gauge-tick-hi,
