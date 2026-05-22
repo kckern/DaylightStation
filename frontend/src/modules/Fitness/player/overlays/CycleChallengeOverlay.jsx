@@ -209,12 +209,7 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
     : null;
 
   const needleAngle = rpmToAngle(currentRpm, CYCLE_GAUGE_MAX_RPM);
-  const needleTip = polarToCartesian(
-    CYCLE_RING_CENTER,
-    CYCLE_RING_CENTER,
-    CYCLE_GAUGE_RADIUS,
-    needleAngle
-  );
+  const needleDeg = ((needleAngle - 1.5 * Math.PI) * 180) / Math.PI;
   const atHi = hiRpm != null && currentRpm >= hiRpm;
 
   // Target label anchor — sits just outside the hi-rpm tick on the arc.
@@ -347,16 +342,26 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
             />
           )}
 
-          <line
-            className={`cycle-needle${atHi ? ' cycle-needle--at-hi' : ''}`}
-            x1={CYCLE_RING_CENTER}
-            y1={CYCLE_RING_CENTER}
-            x2={needleTip.x}
-            y2={needleTip.y}
-            stroke={atHi ? '#22c55e' : '#e2e8f0'}
-            strokeWidth="2.5"
-            strokeLinecap="round"
-          />
+          <g
+            className={`cycle-needle-group${atHi ? ' cycle-needle-group--at-hi' : ''}`}
+            style={{
+              transform: `rotate(${needleDeg}deg)`,
+              transformBox: 'view-box',
+              transformOrigin: `${CYCLE_RING_CENTER}px ${CYCLE_RING_CENTER}px`,
+              transition: 'transform 0.18s ease'
+            }}
+          >
+            <line
+              className={`cycle-needle${atHi ? ' cycle-needle--at-hi' : ''}`}
+              x1={CYCLE_RING_CENTER}
+              y1={CYCLE_RING_CENTER}
+              x2={CYCLE_RING_CENTER}
+              y2={CYCLE_RING_CENTER - CYCLE_GAUGE_RADIUS}
+              stroke={atHi ? '#22c55e' : '#e2e8f0'}
+              strokeWidth="2.5"
+              strokeLinecap="round"
+            />
+          </g>
           <circle
             className="cycle-needle-hub"
             cx={CYCLE_RING_CENTER}
