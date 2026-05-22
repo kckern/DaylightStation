@@ -100,4 +100,30 @@ describe('CycleChallengeOverlay — extended UI', () => {
     const { container } = render(<CycleChallengeOverlay challenge={ch} />);
     expect(container.querySelector('.cycle-challenge-overlay__phase-arc--danger')).toBeTruthy();
   });
+
+  it('groups lower content inside a single __stack container', () => {
+    const ch = {
+      ...baseChallenge,
+      cycleState: 'init',
+      initRemainingMs: 5000,
+      totalPhases: 3,
+      currentPhaseIndex: 1
+    };
+    const { container } = render(<CycleChallengeOverlay challenge={ch} />);
+    const stack = container.querySelector('.cycle-challenge-overlay__stack');
+    expect(stack).toBeTruthy();
+    expect(stack.querySelector('.cycle-challenge-overlay__rider-name')).toBeTruthy();
+    expect(stack.querySelector('.cycle-challenge-overlay__phase-blocks')).toBeTruthy();
+    expect(stack.querySelector('.cycle-challenge-overlay__countdown')).toBeTruthy();
+    expect(stack.querySelector('.cycle-challenge-overlay__current-rpm')).toBeTruthy();
+  });
+
+  it('does not render the countdown as a direct child of the overlay root', () => {
+    const ch = { ...baseChallenge, cycleState: 'init', initRemainingMs: 5000 };
+    const { container } = render(<CycleChallengeOverlay challenge={ch} />);
+    const root = container.querySelector('.cycle-challenge-overlay');
+    const strayCountdown = Array.from(root.children).some((el) =>
+      el.classList?.contains('cycle-challenge-overlay__countdown'));
+    expect(strayCountdown).toBe(false);
+  });
 });

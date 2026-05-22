@@ -387,22 +387,11 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
         <div
           className="cycle-challenge-overlay__target"
           aria-label={`Target RPM ${targetRpm}`}
-          style={{
-            left: `${targetLeftPct}%`,
-            top: `${targetTopPct}%`
-          }}
+          style={{ left: `${targetLeftPct}%`, top: `${targetTopPct}%` }}
         >
           <span className="cycle-challenge-overlay__target-value">{targetRpm}</span>
         </div>
       )}
-
-      <div
-        className="cycle-challenge-overlay__current-rpm"
-        aria-label={`Current RPM ${Math.round(currentRpm)}`}
-      >
-        <span className="cycle-challenge-overlay__current-rpm-value">{Math.round(currentRpm)}</span>
-        <span className="cycle-challenge-overlay__current-rpm-unit">RPM</span>
-      </div>
 
       <button
         type="button"
@@ -416,7 +405,6 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
           src={riderAvatarUrl}
           alt=""
           onError={(e) => {
-            // Hide the broken image and reveal the initial fallback.
             e.currentTarget.style.display = 'none';
             const fallback = e.currentTarget.nextSibling;
             if (fallback) fallback.style.display = 'flex';
@@ -430,44 +418,66 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
         </span>
       </button>
 
-      {riderName && (
-        <div className="cycle-challenge-overlay__rider-name">
-          {riderName}
-          <CycleBaseReqIndicator
-            baseReqSatisfied={Boolean(challenge.baseReqSatisfiedForRider)}
-            waitingForBaseReq={waitingForBaseReq}
+      {/* Lower content as one bottom-anchored flex column — guarantees the
+          name, boost badge, phase blocks, countdown, and RPM readout stack
+          without overlap and stay centered regardless of overlay diameter. */}
+      <div className="cycle-challenge-overlay__stack">
+        {riderName && (
+          <div className="cycle-challenge-overlay__rider-name">
+            <span className="cycle-challenge-overlay__rider-name-text">{riderName}</span>
+            <CycleBaseReqIndicator
+              baseReqSatisfied={Boolean(challenge.baseReqSatisfiedForRider)}
+              waitingForBaseReq={waitingForBaseReq}
+            />
+          </div>
+        )}
+
+        {showBoostBadge && (
+          <div
+            className="cycle-challenge-overlay__boost-badge"
+            aria-label={`Boost multiplier ${boostText}`}
+          >
+            {boostText}
+          </div>
+        )}
+
+        {totalPhases > 0 && (
+          <CompletionCountBlocks
+            targetCount={totalPhases}
+            actualCount={Math.max(0, currentPhaseIndex)}
+            metUsers={[]}
+            containerClassName="cycle-challenge-overlay__phase-blocks"
+            blockClassName="cycle-challenge-overlay__phase-block"
+            completeBlockClassName="cycle-challenge-overlay__phase-block--complete"
+            ariaLabel={`Phase ${Math.min(totalPhases, currentPhaseIndex + 1)} of ${totalPhases}`}
           />
-        </div>
-      )}
+        )}
 
-      {totalPhases > 0 && (
-        <CompletionCountBlocks
-          targetCount={totalPhases}
-          actualCount={Math.max(0, currentPhaseIndex)}
-          metUsers={[]}
-          containerClassName="cycle-challenge-overlay__phase-blocks"
-          blockClassName="cycle-challenge-overlay__phase-block"
-          completeBlockClassName="cycle-challenge-overlay__phase-block--complete"
-          ariaLabel={`Phase ${Math.min(totalPhases, currentPhaseIndex + 1)} of ${totalPhases}`}
-        />
-      )}
+        {(challenge.cycleState === 'init' || challenge.cycleState === 'ramp') && (
+          <div className="cycle-challenge-overlay__countdown">
+            {challenge.cycleState === 'init' && Number.isFinite(initRemainingMs) && (
+              <span>
+                {clockPaused ? 'Paused — start in ' : 'Start in '}
+                {Math.ceil(initRemainingMs / 1000)}s
+              </span>
+            )}
+            {challenge.cycleState === 'ramp' && Number.isFinite(rampRemainingMs) && (
+              <span>
+                {clockPaused ? 'Paused — reach target in ' : 'Reach target in '}
+                {Math.ceil(rampRemainingMs / 1000)}s
+              </span>
+            )}
+          </div>
+        )}
 
-      {(challenge.cycleState === 'init' || challenge.cycleState === 'ramp') && (
-        <div className="cycle-challenge-overlay__countdown">
-          {challenge.cycleState === 'init' && Number.isFinite(initRemainingMs) && (
-            <span>
-              {clockPaused ? 'Paused — start in ' : 'Start in '}
-              {Math.ceil(initRemainingMs / 1000)}s
-            </span>
-          )}
-          {challenge.cycleState === 'ramp' && Number.isFinite(rampRemainingMs) && (
-            <span>
-              {clockPaused ? 'Paused — reach target in ' : 'Reach target in '}
-              {Math.ceil(rampRemainingMs / 1000)}s
-            </span>
-          )}
+        <div
+          className="cycle-challenge-overlay__current-rpm"
+          aria-label={`Current RPM ${Math.round(currentRpm)}`}
+        >
+          <span className="cycle-challenge-overlay__current-rpm-value">{Math.round(currentRpm)}</span>
+          <span className="cycle-challenge-overlay__current-rpm-unit">RPM</span>
         </div>
-      )}
+      </div>
 
       {boosters.map((b) => (
         <div
@@ -479,15 +489,6 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
           {b.initial}
         </div>
       ))}
-
-      {showBoostBadge && (
-        <div
-          className="cycle-challenge-overlay__boost-badge"
-          aria-label={`Boost multiplier ${boostText}`}
-        >
-          {boostText}
-        </div>
-      )}
     </div>
   );
 };
