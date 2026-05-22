@@ -205,30 +205,35 @@ export function polarToCartesian(cx, cy, r, angle) {
 }
 
 /**
- * getBoosterAvatarSlots(boostingUsers, overlaySize)
+ * getBoosterAvatarSlots(boostingUsers)
  *
  * Returns up to 4 avatar slots positioned at the four quadrants (NE, SE, SW, NW)
  * around the perimeter of a square overlay. Each slot carries the user id,
  * the uppercase first-letter initial, and an inline style with `top`/`left`
- * pixel values suitable for `position: absolute`.
+ * percentage values suitable for `position: absolute`. Positions are
+ * size-independent — they scale with `--cycle-overlay-size` so pips always
+ * sit on the ring's diagonals regardless of the element's rendered size.
+ * The SCSS centers each pip on its point via `translate(-50%, -50%)`.
  *
  * Contract:
  *   - boostingUsers: string[]  (non-arrays or empty → [])
- *   - overlaySize:  number px  (default 220)
  *   - Caps at 4 entries; no overflow indicator (YAGNI).
  *   - Order:  [0]=NE, [1]=SE, [2]=SW, [3]=NW
  *
  * @param {string[]} boostingUsers
- * @param {number} [overlaySize=220]
  * @returns {Array<{ id: string, initial: string, style: { top: string, left: string } }>}
  */
-export function getBoosterAvatarSlots(boostingUsers, overlaySize = 220) {
+export function getBoosterAvatarSlots(boostingUsers /* , _overlaySize */) {
   if (!Array.isArray(boostingUsers) || boostingUsers.length === 0) return [];
+  // Percentage positions relative to the overlay element, so the pips scale
+  // with --cycle-overlay-size and sit on the ring's diagonals (NE/SE/SW/NW)
+  // instead of floating off a hardcoded 220px frame. The SCSS centers each
+  // pip on its point via translate(-50%, -50%).
   const positions = [
-    { top: 8, left: overlaySize - 32 },                 // NE
-    { top: overlaySize - 32, left: overlaySize - 32 },  // SE
-    { top: overlaySize - 32, left: 8 },                 // SW
-    { top: 8, left: 8 }                                 // NW
+    { top: '16%', left: '84%' }, // NE
+    { top: '84%', left: '84%' }, // SE
+    { top: '84%', left: '16%' }, // SW
+    { top: '16%', left: '16%' }  // NW
   ];
   return boostingUsers.slice(0, 4).map((uid, i) => {
     const idStr = typeof uid === 'string' ? uid : String(uid ?? '');
@@ -236,10 +241,7 @@ export function getBoosterAvatarSlots(boostingUsers, overlaySize = 220) {
     return {
       id: idStr,
       initial: firstChar || '?',
-      style: {
-        top: `${positions[i].top}px`,
-        left: `${positions[i].left}px`
-      }
+      style: { top: positions[i].top, left: positions[i].left }
     };
   });
 }

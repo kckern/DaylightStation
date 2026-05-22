@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getCycleOverlayVisuals } from './cycleOverlayVisuals.js';
+import { getCycleOverlayVisuals, getBoosterAvatarSlots } from './cycleOverlayVisuals.js';
 
 describe('cycleOverlayVisuals — extended state', () => {
   const baseChallenge = {
@@ -77,5 +77,33 @@ describe('cycleOverlayVisuals — extended state', () => {
     expect(v.dangerActive).toBe(false);
     expect(v.dangerRemainingMs).toBeNull();
     expect(v.dangerProgress).toBe(1);
+  });
+});
+
+describe('getBoosterAvatarSlots — percentage positioning', () => {
+  it('returns percentage-based positions, not pixels', () => {
+    const slots = getBoosterAvatarSlots(['kc', 'alan']);
+    expect(slots).toHaveLength(2);
+    expect(slots[0].style).toEqual({ top: '16%', left: '84%' }); // NE
+    expect(slots[1].style).toEqual({ top: '84%', left: '84%' }); // SE
+    expect(slots[0].style.left.endsWith('%')).toBe(true);
+    expect(slots[0].style.top.endsWith('%')).toBe(true);
+  });
+
+  it('is independent of any overlay-size argument', () => {
+    const a = getBoosterAvatarSlots(['kc'], 220);
+    const b = getBoosterAvatarSlots(['kc'], 160);
+    expect(a[0].style).toEqual(b[0].style);
+  });
+
+  it('caps at four entries and uppercases the initial', () => {
+    const slots = getBoosterAvatarSlots(['a', 'b', 'c', 'd', 'e']);
+    expect(slots).toHaveLength(4);
+    expect(getBoosterAvatarSlots(['kc'])[0].initial).toBe('K');
+  });
+
+  it('returns [] for empty or non-array input', () => {
+    expect(getBoosterAvatarSlots([])).toEqual([]);
+    expect(getBoosterAvatarSlots(null)).toEqual([]);
   });
 });
