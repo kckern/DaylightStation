@@ -453,7 +453,8 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
           />
         )}
 
-        {(challenge.cycleState === 'init' || challenge.cycleState === 'ramp') && (
+        {((challenge.cycleState === 'init' && Number.isFinite(initRemainingMs)) ||
+          (challenge.cycleState === 'ramp' && Number.isFinite(rampRemainingMs))) && (
           <div className="cycle-challenge-overlay__countdown">
             {challenge.cycleState === 'init' && Number.isFinite(initRemainingMs) && (
               <span>
