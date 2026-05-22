@@ -954,7 +954,11 @@ export class PlexAdapter {
       `autoAdjustQuality=1`,
       `fastSeek=1`,
       `mediaBufferSize=${mediaBufferSize}`,
-      `X-Plex-Client-Profile-Extra=${encodeURIComponent('append-transcode-target-codec(type=videoProfile&context=streaming&videoCodec=h264,hevc&audioCodec=aac&protocol=dash)')}`
+      // Advertise AV1 and VP9 in addition to H.264/HEVC so Plex DirectStreams
+      // (remux-only, no transcode) AV1/VP9 sources instead of doing a software
+      // AV1 → H.264 encode. Modern browser clients (Firefox 90+, Chrome 90+,
+      // Safari 17+) all decode AV1 natively; VP9 has even broader support.
+      `X-Plex-Client-Profile-Extra=${encodeURIComponent('append-transcode-target-codec(type=videoProfile&context=streaming&videoCodec=h264,hevc,av1,vp9&audioCodec=aac&protocol=dash)')}`
     ];
 
     if (maxVideoBitrate != null) {
@@ -1493,6 +1497,12 @@ export class PlexAdapter {
     params.append('X-Plex-Client-Identifier', clientIdentifier);
     params.append('X-Plex-Session-Identifier', sessionIdentifier);
     params.append('X-Plex-Platform', this.platform);
+    // Mirror the codec advertisement used by _buildTranscodeUrl so Plex makes
+    // a consistent decision (DirectStream AV1/VP9 instead of transcode).
+    params.append(
+      'X-Plex-Client-Profile-Extra',
+      'append-transcode-target-codec(type=videoProfile&context=streaming&videoCodec=h264,hevc,av1,vp9&audioCodec=aac&protocol=dash)'
+    );
     params.append('autoAdjustQuality', '1');
     params.append('directPlay', '0');
     params.append('directStream', '1');
@@ -1594,7 +1604,11 @@ export class PlexAdapter {
       'autoAdjustQuality=1',
       'fastSeek=1',
       `mediaBufferSize=${mediaBufferSize}`,
-      `X-Plex-Client-Profile-Extra=${encodeURIComponent('append-transcode-target-codec(type=videoProfile&context=streaming&videoCodec=h264,hevc&audioCodec=aac&protocol=dash)')}`
+      // Advertise AV1 and VP9 in addition to H.264/HEVC so Plex DirectStreams
+      // (remux-only, no transcode) AV1/VP9 sources instead of doing a software
+      // AV1 → H.264 encode. Modern browser clients (Firefox 90+, Chrome 90+,
+      // Safari 17+) all decode AV1 natively; VP9 has even broader support.
+      `X-Plex-Client-Profile-Extra=${encodeURIComponent('append-transcode-target-codec(type=videoProfile&context=streaming&videoCodec=h264,hevc,av1,vp9&audioCodec=aac&protocol=dash)')}`
     ];
 
     if (startOffset > 0) {
