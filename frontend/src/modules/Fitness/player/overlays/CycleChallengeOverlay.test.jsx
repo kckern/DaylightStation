@@ -126,4 +126,11 @@ describe('CycleChallengeOverlay — extended UI', () => {
       el.classList?.contains('cycle-challenge-overlay__countdown'));
     expect(strayCountdown).toBe(false);
   });
+
+  it('renders the needle as a rotated group, not via animated x2/y2', () => {
+    const { container } = render(<CycleChallengeOverlay challenge={baseChallenge} />);
+    const group = container.querySelector('.cycle-needle-group');
+    expect(group).toBeTruthy();
+    expect(group.getAttribute('style') || '').toMatch(/rotate\(/);
+  });
 });
