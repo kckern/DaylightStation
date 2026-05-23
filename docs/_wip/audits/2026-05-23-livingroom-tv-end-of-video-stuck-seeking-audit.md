@@ -267,3 +267,15 @@ $ grep -E '"event":"dash\.(buffer-stalled|waiting|seeking|seeked|fragment-abando
 ```
 
 The 87 subsequent `playback.overlay-summary` heartbeats with identical `el:t=441.8 r=4 n=2 p=true | status:Seeking…` are omitted for brevity.
+
+---
+
+## Status
+
+- **2026-05-23 (filed)** — Audit published; plan written at `docs/superpowers/plans/2026-05-23-screens-player-end-of-video-recovery.md`.
+- **2026-05-23 (landed on `worktree-end-of-video-recovery`)** — All five fix items implemented across six commits. 51 new tests, all in scope passing (87/87 across 12 of 13 Player module test files; `VideoPlayer.hardReset.test.jsx` is a pre-existing baseline failure unrelated to this change). Awaiting merge to main + live verification.
+  - **D (end-of-content watchdog)** — `frontend/src/modules/Player/lib/endOfContentWatchdog.js` + `hooks/useEndOfContentWatchdog.js` wired into `ContentScroller.jsx`. Fires `onAdvance` once after 3s of paused-at-duration with no progress; one-shot per arming episode, resets on source change.
+  - **C (overlay status)** — `PlayerOverlayLoading` returns null when paused within 0.5s of duration. `useMediaResilience` now passes numeric `currentTime` + new `duration` field in `mediaDetails` so the suppression can actually trigger in prod (the prior `currentTime: seconds.toFixed(1)` was a string that defeated `Number.isFinite` checks).
+  - **B (telemetry on near-end exemption)** — `playback.at-duration-stuck` warn log fires once per arming episode when `scheduleStallDetection`'s guard activates with `mediaEl.ended === false`. Predicate lives in `lib/atDurationStuck.js`.
+  - **A (seek-source trace)** — `playback.seek-trace` event with truncated `Error().stack` fires from `handleSeeking` when intent ≥ duration − 0.5, sampled at 5/min. Predicate + stack capture + payload builder in `lib/seekTrace.js`. The next occurrence in prod will pin down whether the trigger is dash.js-internal or an untagged app path.
+  - **Orphan — `fps_stats` stale closure** — `VideoPlayer.jsx` now reads from `latestDataRef.current` via a pure `buildFpsStatsPayload` helper. No more frozen-at-effect-creation values in production telemetry.
