@@ -9,6 +9,7 @@ import { getLogger } from '../../../lib/logging/Logger.js';
 import { playbackLog } from '../lib/playbackLogger.js';
 import { cleanupDashElement } from '../lib/dashCleanup.js';
 import { createStaleSessionWatchdog } from '../lib/staleSessionWatchdog.js';
+import { buildFpsStatsPayload } from '../lib/fpsStatsPayload.js';
 
 /**
  * Append or replace a cache-buster query param on a URL.
@@ -553,34 +554,25 @@ export function VideoPlayer({
 
       const logger = getLogger();
       const mediaEl = getMediaEl();
-      
-      // Calculate instantaneous FPS if available
+
+      // Audit 2026-05-23 §4.1: read from latestDataRef so the payload
+      // reflects the current React state, not the values captured when
+      // this useEffect was last created. The bug: every fps_stats event
+      // in a 5.5-minute Bluey session reported currentTime: 107 even as
+      // real playback advanced to 441s.
+      const snap = latestDataRef.current;
+
+      // Calculate instantaneous FPS if available (snapshot-consistent).
       let estimatedFps = null;
       if (mediaEl && typeof mediaEl.requestVideoFrameCallback === 'function') {
-        // Modern browsers support this for precise frame timing
         estimatedFps = 'supported';
-      } else if (quality.totalVideoFrames > 0 && duration > 0) {
-        // Fallback: estimate from total frames / duration
-        estimatedFps = Math.round((quality.totalVideoFrames / duration) * 100) / 100;
+      } else if (snap.quality?.totalVideoFrames > 0 && snap.duration > 0) {
+        estimatedFps = Math.round((snap.quality.totalVideoFrames / snap.duration) * 100) / 100;
       }
 
-      logger.info('playback.fps_stats', {
-        title: media?.title,
-        grandparentTitle: media?.grandparentTitle,
-        parentTitle: media?.parentTitle,
-        mediaKey: media?.assetId || media?.key || media?.plex,
-        currentTime: Math.round(seconds * 10) / 10,
-        duration: Math.round(duration * 10) / 10,
-        droppedFrames: quality.droppedVideoFrames,
-        totalFrames: quality.totalVideoFrames,
-        droppedPct: quality.droppedPct?.toFixed(2),
-        avgDroppedPct: droppedFramePct ? (droppedFramePct * 100).toFixed(2) : null,
-        bitrateCapKbps: currentMaxKbps,
-        estimatedFps,
-        playbackRate: media.playbackRate || 1,
-        isDash,
-        shader
-      });
+      logger.info('playback.fps_stats',
+        buildFpsStatsPayload(snap, { estimatedFps })
+      );
     }, 10000); // 10 seconds
 
     return () => {
