@@ -21,11 +21,12 @@ export function PlayerOverlayPaused({
   if (suppressForBlackout) {
     return null;
   }
-  // During a stall the user still needs an explicit "this is paused" affordance —
-  // the loading spinner alone (now retained behind the pause icon during stalled-pause)
-  // is not enough, because the user's perception is "I pressed pause and nothing
-  // changed visually." Previously this overlay was suppressed during stall and the
-  // screen went blank — see 2026-05-22 fitness-session-merge-and-resilience-failure audit.
+  // During a stall the user still needs an explicit "this is paused" affordance.
+  // Previously this overlay was suppressed when `stalled` was true; combined with
+  // PlayerOverlayLoading suppressing itself when `pauseOverlayActive` is true,
+  // pausing during a stall produced a completely blank screen with no feedback.
+  // We show the pause icon regardless of stall state — see the 2026-05-22
+  // fitness-session-merge-and-resilience-failure audit.
   const isInitialPlayback = seconds === 0 && !stalled;
   const shouldShowPauseOverlay = shouldRender
     && isVisible
