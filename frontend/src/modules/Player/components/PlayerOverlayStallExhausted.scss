@@ -1,0 +1,51 @@
+.stall-exhausted-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  // Use the same z-index variable as other player overlays plus a small bump.
+  // Loading and Paused overlays use --player-layer-loading (default 40).
+  // The exhaustion banner is more urgent and should sit on top.
+  z-index: calc(var(--player-layer-loading, 40) + 5);
+  background: rgba(0, 0, 0, 0.78);
+  color: #fff;
+  text-align: center;
+  padding: 2rem;
+
+  &__inner {
+    max-width: 28rem;
+  }
+
+  &__title {
+    font-size: 1.6rem;
+    margin: 0 0 0.5rem;
+  }
+
+  &__body {
+    font-size: 1rem;
+    opacity: 0.85;
+    margin: 0 0 1.25rem;
+  }
+
+  &__actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: center;
+
+    button {
+      padding: 0.6rem 1.2rem;
+      font-size: 0.95rem;
+      border-radius: 0.4rem;
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      cursor: pointer;
+
+      &:hover, &:focus {
+        background: rgba(255, 255, 255, 0.18);
+        outline: none;
+      }
+    }
+  }
+}
