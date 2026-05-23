@@ -51,6 +51,12 @@ export function useCloseWatchdog({ timeoutMs = 5000, onTimeout }) {
   }, [clear, onTimeout, timeoutMs]);
 
   const completed = useCallback((payload = {}) => {
+    if (armedRef.current) {
+      getLogger().debug('fitness.player.close.watchdog_cleared', {
+        ...payload,
+        elapsedMs: armedRef.current.armedAt ? Date.now() - armedRef.current.armedAt : null,
+      });
+    }
     clear();
   }, [clear]);
 
