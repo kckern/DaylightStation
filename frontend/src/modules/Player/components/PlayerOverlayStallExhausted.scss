@@ -4,10 +4,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  // Use the same z-index variable as other player overlays plus a small bump.
-  // Loading and Paused overlays use --player-layer-loading (default 40).
-  // The exhaustion banner is more urgent and should sit on top.
-  z-index: calc(var(--player-layer-loading, 40) + 5);
+  // Sit above every other player layer. The stack as of 2026-05-22:
+  //   --player-layer-loading   default 40 (Loading + Paused overlays)
+  //   --player-layer-shader    default 45
+  //   --player-layer-composite default 46
+  // The exhaustion banner is the most urgent feedback the player can show, so
+  // it must float above all of them.
+  z-index: calc(var(--player-layer-composite, 46) + 1);
   background: rgba(0, 0, 0, 0.78);
   color: #fff;
   text-align: center;
