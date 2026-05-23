@@ -40,8 +40,15 @@ export function ScreenVolumeProvider({
   stepSize = 0.1,
   outputCeiling = 1,
   curveExponent = 1,
+  fixed = false,
 }) {
-  const [master, setMasterState] = useState(() => readInitial(storageKey, defaultMaster));
+  // Fixed mode (e.g. living-room TV where hardware controls volume):
+  // master is locked at defaultMaster, localStorage is bypassed, and
+  // setMaster / step / toggleMute are no-ops. The HUD toast never fires
+  // because master never changes after init.
+  const [master, setMasterState] = useState(() =>
+    fixed ? clamp(defaultMaster) : readInitial(storageKey, defaultMaster)
+  );
   // preMute = the most recent non-zero master. Used to restore on unmute.
   const preMuteRef = useRef(master > 0 ? master : clamp(defaultMaster));
   const muted = master === 0;
@@ -63,32 +70,37 @@ export function ScreenVolumeProvider({
     _publishMasterState(master, effectiveMaster, muted);
   }, [master, effectiveMaster, muted]);
 
-  // Persist on every change.
+  // Persist on every change (skipped in fixed mode — the master is config-driven,
+  // not user-driven, so there's nothing to remember across sessions).
   useEffect(() => {
+    if (fixed) return;
     if (typeof window === 'undefined') return;
     try {
       window.localStorage.setItem(storageKey, JSON.stringify({ master, muted }));
     } catch (e) {
       logger().warn('persist-failed', { error: e.message, storageKey });
     }
-  }, [storageKey, master, muted]);
+  }, [fixed, storageKey, master, muted]);
 
   const setMaster = useCallback((next) => {
+    if (fixed) return;
     setMasterState(clamp(next));
-  }, []);
+  }, [fixed]);
 
   // Vol-up / vol-down. While muted, applies delta on top of preMute (so the
   // first press unmutes AND moves the level — keys always do what they say).
   const step = useCallback((delta) => {
+    if (fixed) return;
     setMasterState((prev) => {
       if (prev === 0) return clamp(preMuteRef.current + delta);
       return clamp(prev + delta);
     });
-  }, []);
+  }, [fixed]);
 
   const toggleMute = useCallback(() => {
+    if (fixed) return;
     setMasterState((prev) => (prev === 0 ? preMuteRef.current : 0));
-  }, []);
+  }, [fixed]);
 
   const value = useMemo(
     () => ({ master, effectiveMaster, muted, setMaster, step, toggleMute, stepSize }),
