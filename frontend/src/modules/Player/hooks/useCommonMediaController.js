@@ -2,6 +2,11 @@ import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { getProgressPercent } from '../lib/helpers.js';
 import { shouldLogAtDurationStuck, buildAtDurationStuckPayload } from '../lib/atDurationStuck.js';
+import {
+  shouldTraceSeekAtDuration,
+  captureSeekStack,
+  buildSeekTracePayload
+} from '../lib/seekTrace.js';
 import { useMediaKeyboardHandler } from '../../../lib/Player/useMediaKeyboardHandler.js';
 import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
@@ -1313,6 +1318,16 @@ export function useCommonMediaController({
           duration: mediaEl.duration,
           source: mediaEl.__seekSource || 'programmatic'
         }, { maxPerMinute: 30 });
+        // Audit 2026-05-23 §2.1 (Layer A): when a seek lands at end-of-content,
+        // capture the stack trace so the next occurrence pins down the caller
+        // (whether it is dash.js-internal, an untagged app path, or a known
+        // recovery strategy). Sampled at 5/min so a stuck-loop cannot flood
+        // the log.
+        if (shouldTraceSeekAtDuration({ currentTime: mediaEl.currentTime, duration: mediaEl.duration })) {
+          mcLog().sampled('playback.seek-trace',
+            buildSeekTracePayload({ assetId, mediaEl, stack: captureSeekStack() }),
+            { maxPerMinute: 5 });
+        }
         delete mediaEl.__seekSource;
         if (DEBUG_MEDIA) console.log('[Seek] seeking event: intent captured', { intent: lastSeekIntentRef.current, duration: mediaEl.duration });
       }
