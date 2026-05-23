@@ -10,6 +10,7 @@ import { playbackLog } from '../lib/playbackLogger.js';
 import { cleanupDashElement } from '../lib/dashCleanup.js';
 import { createStaleSessionWatchdog } from '../lib/staleSessionWatchdog.js';
 import { buildFpsStatsPayload } from '../lib/fpsStatsPayload.js';
+import { decideDashErrorRecovery } from '../lib/dashErrorRecovery.js';
 
 /**
  * Append or replace a cache-buster query param on a URL.
@@ -79,6 +80,11 @@ export function VideoPlayer({
   // fires after the component has been torn down.
   const unmountedRef = useRef(false);
   useEffect(() => () => { unmountedRef.current = true; }, []);
+
+  // Per-mount counter for dash.error 27/28 → hardReset({ refreshUrl: true })
+  // escalations. Capped at maxAttempts in decideDashErrorRecovery so a
+  // permanently dead URL cannot infinite-loop. Resets when the source URL changes.
+  const dashErrorRefreshAttemptsRef = useRef(0);
 
   const staleSessionWatchdogRef = useRef(null);
   if (!staleSessionWatchdogRef.current) {
@@ -331,6 +337,12 @@ export function VideoPlayer({
     displayReadyLoggedRef.current = false;
   }, [mediaUrl, media?.maxVideoBitrate]);
 
+  // Bug 2026-05-23 §2: new source URL -> reset dash error refresh budget
+  // for this mount so a fresh URL gets its own 3-attempt allotment.
+  useEffect(() => {
+    dashErrorRefreshAttemptsRef.current = 0;
+  }, [mediaUrl]);
+
   // Handle dash-video custom element events (web components don't support React synthetic events)
   useEffect(() => {
     if (!isDash) return;
@@ -479,6 +491,28 @@ export function VideoPlayer({
           data: e?.error?.data ? JSON.stringify(e.error.data).substring(0, 300) : null
         });
         staleSessionWatchdogRef.current?.recordError({ code, message });
+
+        // Bug 2026-05-23 §2: source-URL errors (code 27 segment unavailable,
+        // 28 manifest/init unavailable) signal a dead Plex transcode session.
+        // Escalate to hardReset with refreshUrl so the backend mints a fresh
+        // transcode. Capped at 3 attempts per mount.
+        const decision = decideDashErrorRecovery({
+          errorCode: code,
+          attemptsThisMount: dashErrorRefreshAttemptsRef.current,
+          maxAttempts: 3
+        });
+        if (decision.action === 'refresh-url') {
+          dashErrorRefreshAttemptsRef.current += 1;
+          const innerEl = getMediaEl();
+          const seekToSeconds = (innerEl && Number.isFinite(innerEl.currentTime)) ? innerEl.currentTime : 0;
+          dashLog.warn('dash.error-recovery', {
+            action: 'refresh-url',
+            reason: decision.reason,
+            attempt: dashErrorRefreshAttemptsRef.current,
+            seekToSeconds
+          });
+          hardReset({ seekToSeconds, refreshUrl: true });
+        }
       });
 
       // Quality/representation changes
