@@ -1,9 +1,25 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
 /**
- * Track how long a stall has lasted. Flip `exhausted=true` when the stall
- * exceeds `thresholdMs` continuously. Reset when stall ends or `dismiss()`
- * is called. Used by the "Tap to restart" banner.
+ * Track how long a continuous stall has lasted and flip `exhausted=true` after
+ * `thresholdMs`. Reset state when the stall ends or `dismiss()` is called.
+ *
+ * Used by `PlayerOverlayStallExhausted` (the "Playback stuck" banner) so that
+ * the banner appears only after a sustained recovery loop.
+ *
+ * **Dismiss semantics:**
+ * - After `dismiss()`, `exhausted` becomes `false` and stays `false` for the
+ *   rest of this stall episode, even if the stall continues past `thresholdMs`.
+ * - `secondsStalled` freezes at the dismissed value (the UI is expected to
+ *   stop rendering it post-dismiss).
+ * - When the stall ends (`stalled` flips to `false`), all state including the
+ *   dismiss flag resets. A subsequent stall starts a fresh episode.
+ *
+ * @param {object} args
+ * @param {boolean} args.stalled - Whether the player is currently stalled.
+ * @param {number} [args.thresholdMs=15000] - Continuous stall duration to flip
+ *   `exhausted=true`.
+ * @returns {{ exhausted: boolean, secondsStalled: number, dismiss: () => void }}
  */
 export function useStallExhaustion({ stalled, thresholdMs = 15000 }) {
   const [exhausted, setExhausted] = useState(false);

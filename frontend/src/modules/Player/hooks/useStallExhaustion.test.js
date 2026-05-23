@@ -43,4 +43,43 @@ describe('useStallExhaustion', () => {
     act(() => { result.current.dismiss(); });
     expect(result.current.exhausted).toBe(false);
   });
+
+  it('after dismiss(), exhausted stays false even if stall continues for additional thresholdMs', () => {
+    const { result } = renderHook(() => useStallExhaustion({ stalled: true, thresholdMs: 5000 }));
+    act(() => { vi.advanceTimersByTime(6000); });
+    expect(result.current.exhausted).toBe(true);
+    act(() => { result.current.dismiss(); });
+    expect(result.current.exhausted).toBe(false);
+    // Stall continues for another 10s — dismiss should be sticky.
+    act(() => { vi.advanceTimersByTime(10000); });
+    expect(result.current.exhausted).toBe(false);
+  });
+
+  it('dismiss() freezes secondsStalled at the dismissed value (does not keep counting)', () => {
+    const { result } = renderHook(() => useStallExhaustion({ stalled: true, thresholdMs: 5000 }));
+    act(() => { vi.advanceTimersByTime(6000); });
+    const frozen = result.current.secondsStalled;
+    expect(frozen).toBeGreaterThanOrEqual(5);
+    act(() => { result.current.dismiss(); });
+    act(() => { vi.advanceTimersByTime(10000); });
+    // After dismiss, the counter is intentionally frozen — UI shouldn't be
+    // displaying it post-dismiss anyway.
+    expect(result.current.secondsStalled).toBe(frozen);
+  });
+
+  it('after stall ends and starts again, dismiss state is cleared (counter and exhausted reset)', () => {
+    const { result, rerender } = renderHook(
+      ({ stalled }) => useStallExhaustion({ stalled, thresholdMs: 5000 }),
+      { initialProps: { stalled: true } }
+    );
+    act(() => { vi.advanceTimersByTime(6000); });
+    act(() => { result.current.dismiss(); });
+    rerender({ stalled: false });
+    expect(result.current.exhausted).toBe(false);
+    expect(result.current.secondsStalled).toBe(0);
+    rerender({ stalled: true });
+    // Fresh start — dismiss should NOT persist across stall episodes.
+    act(() => { vi.advanceTimersByTime(6000); });
+    expect(result.current.exhausted).toBe(true);
+  });
 });
