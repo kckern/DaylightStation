@@ -148,6 +148,7 @@ export function PlayerOverlayLoading({
       return {
         hasElement: Boolean(mediaDetailsProp.hasElement),
         currentTime: mediaDetailsProp.currentTime ?? null,
+        duration: mediaDetailsProp.duration ?? null,
         readyState: mediaDetailsProp.readyState ?? null,
         networkState: mediaDetailsProp.networkState ?? null,
         paused: mediaDetailsProp.paused ?? null
@@ -156,11 +157,27 @@ export function PlayerOverlayLoading({
     return {
       hasElement: false,
       currentTime: null,
+      duration: null,
       readyState: null,
       networkState: null,
       paused: null
     };
   }, [mediaDetailsProp]);
+
+  // Audit 2026-05-23 (Layer C): when the element is paused at duration, the
+  // spec-compliant `mediaEl.seeking` flag stays true after a seek-to-duration
+  // whose target fragment came back zero-byte. The loading overlay then holds
+  // on a static end-of-content frame for as long as it takes the user to
+  // intervene. Suppress the overlay entirely once we are within 0.5s of
+  // duration and paused — `useEndOfContentWatchdog` will drive the queue
+  // advance shortly after.
+  const isPausedAtDuration = useMemo(() => {
+    const ct = normalizedMediaDetails.currentTime;
+    const dur = normalizedMediaDetails.duration;
+    if (!Number.isFinite(ct) || !Number.isFinite(dur) || dur <= 0) return false;
+    if (normalizedMediaDetails.paused !== true) return false;
+    return ct >= (dur - 0.5);
+  }, [normalizedMediaDetails]);
 
   // Debug-only detailed diagnostics (buffer, dropped frames)
   const debugEnabled = showDebugDiagnostics ||
@@ -379,6 +396,10 @@ export function PlayerOverlayLoading({
   const transitionStyle = isVisible
     ? 'opacity 0.3s ease-in-out 0.3s' // 0.3s delay before showing
     : 'opacity 0.2s ease-in-out 0s';  // No delay when hiding
+
+  if (isPausedAtDuration) {
+    return null;
+  }
 
   return (
     <div
