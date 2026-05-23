@@ -353,10 +353,11 @@ export function ScreenRenderer({ screenId: propScreenId }) {
         }}>
           <ScreenVolumeProvider
             storageKey={`screen-volume-${screenId}`}
+            defaultMaster={config.volume?.defaultMaster}
+            stepSize={config.volume?.stepSize}
             outputCeiling={config.volume?.outputCeiling}
             curveExponent={config.volume?.curveExponent}
-            stepSize={config.volume?.stepSize}
-            defaultMaster={config.volume?.defaultMaster}
+            fixed={config.volume?.fixed}
           >
             <MasterVolumeToast />
             <MenuNavigationProvider>

@@ -407,4 +407,64 @@ describe('ScreenVolumeProvider', () => {
       expect(last.effectiveMaster).toBe(0);
     });
   });
+
+  describe('fixed mode', () => {
+    it('uses defaultMaster and ignores localStorage', () => {
+      window.localStorage.setItem(
+        'screen-volume-living-room',
+        JSON.stringify({ master: 0.2, muted: false })
+      );
+      const onValue = vi.fn();
+      render(
+        <ScreenVolumeProvider
+          storageKey="screen-volume-living-room"
+          defaultMaster={1.0}
+          fixed
+        >
+          <Probe onValue={onValue} />
+        </ScreenVolumeProvider>
+      );
+      expect(onValue.mock.calls.at(-1)[0].master).toBe(1);
+    });
+
+    it('does not write to localStorage', () => {
+      window.localStorage.removeItem('screen-volume-living-room');
+      const onValue = vi.fn();
+      render(
+        <ScreenVolumeProvider
+          storageKey="screen-volume-living-room"
+          defaultMaster={1.0}
+          fixed
+        >
+          <Probe onValue={onValue} />
+        </ScreenVolumeProvider>
+      );
+      expect(window.localStorage.getItem('screen-volume-living-room')).toBeNull();
+    });
+
+    it('setMaster / step / toggleMute are no-ops', () => {
+      let api;
+      const onValue = vi.fn((v) => { api = v; });
+      render(
+        <ScreenVolumeProvider defaultMaster={1.0} fixed>
+          <Probe onValue={onValue} />
+        </ScreenVolumeProvider>
+      );
+      act(() => api.setMaster(0.3));
+      act(() => api.step(-0.5));
+      act(() => api.toggleMute());
+      expect(onValue.mock.calls.at(-1)[0].master).toBe(1);
+      expect(onValue.mock.calls.at(-1)[0].muted).toBe(false);
+    });
+
+    it('module-level getMasterVolume reflects the fixed value', () => {
+      const onValue = vi.fn();
+      render(
+        <ScreenVolumeProvider defaultMaster={1.0} fixed>
+          <Probe onValue={onValue} />
+        </ScreenVolumeProvider>
+      );
+      expect(getMasterVolume()).toBe(1);
+    });
+  });
 });
