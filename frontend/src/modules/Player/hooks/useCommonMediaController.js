@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { getProgressPercent } from '../lib/helpers.js';
 import { shouldLogAtDurationStuck, buildAtDurationStuckPayload } from '../lib/atDurationStuck.js';
+import { decideStallVerdict } from '../lib/stallVerdict.js';
 import {
   shouldTraceSeekAtDuration,
   captureSeekStack,
@@ -107,6 +108,7 @@ export function useCommonMediaController({
   // Stall detection refs
   const stallStateRef = useRef({
     lastProgressTs: 0,
+    lastObservedCurrentTime: null,  // tracks currentTime at last markProgress for stall verdict (bug 2026-05-23 §1)
     softTimer: null,
     hardTimer: null,
     recoveryAttempt: 0,
@@ -872,10 +874,28 @@ export function useCommonMediaController({
         return;
       }
       
-      const diff = Date.now() - s.lastProgressTs;
-      
-      if (diff >= softMs) {
-        if (DEBUG_MEDIA) console.log('[Stall] DETECTED (soft)', { diff, softMs, hardMs, mode, currentTime: mediaEl.currentTime, duration: mediaEl.duration, droppedFramePct, quality });
+      const verdict = decideStallVerdict({
+        now: Date.now(),
+        lastProgressTs: s.lastProgressTs,
+        softMs,
+        currentTime: mediaEl.currentTime,
+        lastObservedCurrentTime: s.lastObservedCurrentTime
+      });
+
+      if (verdict.verdict === 'progressing') {
+        // Bug 2026-05-23 §1: timeupdate was starved but currentTime advanced.
+        // Fast-forward lastProgressTs so the next soft-timer cycle has a fresh
+        // baseline; do NOT log playback.stalled.
+        s.lastProgressTs = Date.now();
+        s.lastObservedCurrentTime = mediaEl.currentTime;
+        s.softTimer = null;
+        if (DEBUG_MEDIA) console.log('[Stall] softTimer: progressing (currentTime advanced); fast-forward', { currentTime: mediaEl.currentTime });
+        scheduleStallDetection();
+        return;
+      }
+
+      if (verdict.verdict === 'stalled') {
+        if (DEBUG_MEDIA) console.log('[Stall] DETECTED (soft)', { diff: verdict.stallDurationMs, softMs, hardMs, mode, currentTime: mediaEl.currentTime, duration: mediaEl.duration, droppedFramePct, quality });
         // Prod telemetry: stall detected
         const logger = getLogger();
         logger.warn('playback.stalled', {
@@ -887,27 +907,27 @@ export function useCommonMediaController({
           mediaKey: assetId,
           currentTime: mediaEl.currentTime,
           duration: mediaEl.duration,
-          stallDurationMs: diff
+          stallDurationMs: verdict.stallDurationMs
         });
         s.isStalled = true;
         if (!s.sinceTs) s.sinceTs = Date.now();
         s.status = 'stalled';
         publishStallSnapshot();
         setIsStalled(true);
-        
+
         if (mode === 'auto') {
           const recoveryDelay = Math.max(0, hardMs - softMs);
           s.hardTimer = setTimeout(() => {
             const s = stallStateRef.current;
             const mediaEl = getMediaEl();
-            
+
             // Don't attempt recovery if media has ended
             if (s.hasEnded || !mediaEl || mediaEl.ended || (mediaEl.duration && mediaEl.currentTime >= mediaEl.duration - 0.5)) {
               if (DEBUG_MEDIA) console.log('[Stall] hardTimer: skip recovery (ended or invalid)');
               clearTimers();
               return;
             }
-            
+
             if (!s.isStalled) {
               if (DEBUG_MEDIA) console.log('[Stall] hardTimer: not stalled anymore; abort');
               return;
@@ -940,9 +960,9 @@ export function useCommonMediaController({
           }, recoveryDelay);
         }
       } else {
-        // Not stalled yet, keep checking
+        // verdict 'within-window' — reschedule
         s.softTimer = null;
-        if (DEBUG_MEDIA) console.log('[Stall] softTimer: no stall yet; diff < softMs; reschedule', { diff, softMs });
+        if (DEBUG_MEDIA) console.log('[Stall] softTimer: no stall yet; diff < softMs; reschedule', { softMs });
         scheduleStallDetection();
       }
     }, checkInterval);
@@ -953,12 +973,15 @@ export function useCommonMediaController({
     if (s.hasEnded) {
       return;
     }
-    
+
     const wasStalled = s.isStalled;
+    const mediaEl = getMediaEl();
     s.lastProgressTs = Date.now();
-    
+    if (mediaEl && Number.isFinite(mediaEl.currentTime)) {
+      s.lastObservedCurrentTime = mediaEl.currentTime;
+    }
+
     if (wasStalled) {
-  const mediaEl = getMediaEl();
   if (DEBUG_MEDIA) console.log('[Stall] Progress resumed; clearing stalled state', { currentTime: mediaEl?.currentTime, recoveryAttempt: s.recoveryAttempt, lastStrategy: s.lastStrategy });
       mcLog().info('playback.recovery-resolved', {
         mediaKey: assetId,
@@ -1288,6 +1311,7 @@ export function useCommonMediaController({
       stallStateRef.current.hasEnded = false;
       stallStateRef.current.recoveryAttempt = 0;
       stallStateRef.current.atDurationStuckLogged = false;
+      stallStateRef.current.lastObservedCurrentTime = null;  // bug 2026-05-23 §1: reset stall-verdict tracking for new asset
       // Don't set lastProgressTs here — let real playback progress (timeupdate
       // → markProgress) set it. Setting it at metadata-load time causes stall
       // detection to fire during initial buffering (after only softMs=1.2s),
