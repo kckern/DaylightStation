@@ -43,7 +43,12 @@ export function PlayerOverlayLoading({
   if (suppressForBlackout) {
     return null;
   }
-  const overlayDisplayActive = shouldRender && isVisible && !pauseOverlayActive;
+  // Render whenever the user needs recovery feedback. During a true stall, show
+  // the spinner even with the pause overlay active — the pause overlay sits ON TOP
+  // (higher z-index in CSS) and tells the user "you paused", while the spinner
+  // underneath signals "still trying to recover." Without this, stalled-pause
+  // shows a black screen with no affordance — see the 2026-05-22 audit.
+  const overlayDisplayActive = shouldRender && isVisible && (!pauseOverlayActive || stalled);
 
   const logIntervalRef = useRef(null);
   const diagnosticIntervalRef = useRef(null);
