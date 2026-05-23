@@ -336,9 +336,13 @@ export function useMediaResilience({
   const mediaElSnapshot = (() => {
     try {
       const el = getMediaEl?.();
-      return { seeking: el?.seeking === true, seekSource: el?.__seekSource || null };
+      return {
+        seeking: el?.seeking === true,
+        seekSource: el?.__seekSource || null,
+        duration: Number.isFinite(el?.duration) ? el.duration : null
+      };
     } catch {
-      return { seeking: false, seekSource: null };
+      return { seeking: false, seekSource: null, duration: null };
     }
   })();
   const effectiveSeeking = isSeeking || mediaElSnapshot.seeking;
@@ -479,7 +483,10 @@ export function useMediaResilience({
       || (effectiveSeeking ? stickyIntentUpdatedAtRef.current : null),
     mediaDetails: {
       hasElement: true,
-      currentTime: seconds.toFixed(1),
+      // Numeric currentTime + duration so the loading overlay can recognize
+      // paused-at-duration and suppress the misleading "Seeking…" spinner.
+      currentTime: Number.isFinite(seconds) ? Math.round(seconds * 10) / 10 : null,
+      duration: mediaElSnapshot.duration,
       readyState: playbackHealth.elementSignals.readyState,
       networkState: playbackHealth.elementSignals.networkState,
       paused: playbackHealth.elementSignals.paused

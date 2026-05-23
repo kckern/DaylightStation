@@ -1,6 +1,19 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { getProgressPercent } from '../lib/helpers.js';
+import { shouldLogAtDurationStuck, buildAtDurationStuckPayload } from '../lib/atDurationStuck.js';
+import { decideStallVerdict } from '../lib/stallVerdict.js';
+import {
+  shouldTraceSeekAtDuration,
+  captureSeekStack,
+  buildSeekTracePayload
+} from '../lib/seekTrace.js';
+import {
+  tagPauseSource,
+  tagPlaySource,
+  readAndClearPauseSource,
+  readAndClearPlaySource
+} from '../lib/playbackToggleSource.js';
 import { useMediaKeyboardHandler } from '../../../lib/Player/useMediaKeyboardHandler.js';
 import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
@@ -103,6 +116,7 @@ export function useCommonMediaController({
   const stallStateRef = useRef({
     lastProgressTs: 0,
     lastAdvancePos: null,
+    lastObservedCurrentTime: null,  // tracks currentTime at last markProgress for stall verdict (bug 2026-05-23 §1)
     softTimer: null,
     hardTimer: null,
     recoveryAttempt: 0,
@@ -119,7 +133,9 @@ export function useCommonMediaController({
     strategyCounts: Object.create(null),
     strategySteps: [],
     pendingSoftReinit: false,
-    lastError: null
+    lastError: null,
+    // One-shot guard for `playback.at-duration-stuck` telemetry (audit 2026-05-23).
+    atDurationStuckLogged: false
   });
   const [stallState, setStallState] = useState(() => ({
     status: 'idle',
@@ -450,8 +466,10 @@ export function useCommonMediaController({
         return false;
       }
 
+      tagPauseSource(mediaEl, 'recovery-nudge');
       mediaEl.pause();
       mediaEl.currentTime = Math.max(0, t - 0.001);
+      tagPlaySource(mediaEl, 'recovery-nudge');
       mediaEl.play().catch(() => {});
       return true;
     } catch (_) {
@@ -480,6 +498,7 @@ export function useCommonMediaController({
     if (dashPlayer && typeof dashPlayer.reset === 'function' && typeof dashPlayer.initialize === 'function') {
       const streamSrc = hostEl.getAttribute('src') || src;
       try {
+        tagPauseSource(mediaEl, 'recovery-reload-dash');
         mediaEl.pause();
         dashPlayer.reset();
         dashPlayer.initialize(mediaEl, streamSrc, true);
@@ -512,6 +531,7 @@ export function useCommonMediaController({
               if (DEBUG_MEDIA) console.log('[Stall Recovery] reload (DASH): seeked timeout, clearing recovery flag but preserving seek intent');
             }
           }, 5000);
+          tagPlaySource(mediaEl, 'recovery-reload-dash');
           mediaEl.play().catch(() => {});
         }, { once: true });
         return true;
@@ -522,6 +542,7 @@ export function useCommonMediaController({
     }
 
     try {
+      tagPauseSource(mediaEl, 'recovery-reload-dom');
       mediaEl.pause();
       mediaEl.removeAttribute('src');
       mediaEl.load();
@@ -556,6 +577,7 @@ export function useCommonMediaController({
                 if (DEBUG_MEDIA) console.log('[Stall Recovery] reload: seeked timeout, clearing recovery flag but preserving seek intent');
               }
             }, 5000);
+            tagPlaySource(mediaEl, 'recovery-reload-dom');
             mediaEl.play().catch(() => {});
           }, { once: true });
         } catch (_) {
@@ -839,6 +861,20 @@ export function useCommonMediaController({
       // Check if media has ended or is very close to end
       if (s.hasEnded || mediaEl.ended || (mediaEl.duration && mediaEl.currentTime >= mediaEl.duration - 0.5)) {
         if (DEBUG_MEDIA) console.log('[Stall] softTimer: media ended or near end; cancel timers');
+        // Audit 2026-05-23 §2.2: when the guard activates due to the near-end
+        // branch (not a legitimate ended event), the screens player is in the
+        // stuck-at-duration failure mode. Emit a one-shot telemetry log so the
+        // condition is observable in prod alongside the watchdog's eventual
+        // playback.end-of-content-advance.
+        if (shouldLogAtDurationStuck({
+          hasEnded: s.hasEnded,
+          mediaEl,
+          alreadyLogged: s.atDurationStuckLogged
+        })) {
+          s.atDurationStuckLogged = true;
+          mcLog().warn('playback.at-duration-stuck',
+            buildAtDurationStuckPayload({ assetId, mediaEl }));
+        }
         s.hasEnded = true;
         clearTimers();
         return;
@@ -852,10 +888,28 @@ export function useCommonMediaController({
         return;
       }
       
-      const diff = Date.now() - s.lastProgressTs;
-      
-      if (diff >= softMs) {
-        if (DEBUG_MEDIA) console.log('[Stall] DETECTED (soft)', { diff, softMs, hardMs, mode, currentTime: mediaEl.currentTime, duration: mediaEl.duration, droppedFramePct, quality });
+      const verdict = decideStallVerdict({
+        now: Date.now(),
+        lastProgressTs: s.lastProgressTs,
+        softMs,
+        currentTime: mediaEl.currentTime,
+        lastObservedCurrentTime: s.lastObservedCurrentTime
+      });
+
+      if (verdict.verdict === 'progressing') {
+        // Bug 2026-05-23 §1: timeupdate was starved but currentTime advanced.
+        // Fast-forward lastProgressTs so the next soft-timer cycle has a fresh
+        // baseline; do NOT log playback.stalled.
+        s.lastProgressTs = Date.now();
+        s.lastObservedCurrentTime = mediaEl.currentTime;
+        s.softTimer = null;
+        if (DEBUG_MEDIA) console.log('[Stall] softTimer: progressing (currentTime advanced); fast-forward', { currentTime: mediaEl.currentTime });
+        scheduleStallDetection();
+        return;
+      }
+
+      if (verdict.verdict === 'stalled') {
+        if (DEBUG_MEDIA) console.log('[Stall] DETECTED (soft)', { diff: verdict.stallDurationMs, softMs, hardMs, mode, currentTime: mediaEl.currentTime, duration: mediaEl.duration, droppedFramePct, quality });
         // Prod telemetry: stall detected
         const logger = getLogger();
         logger.warn('playback.stalled', {
@@ -867,27 +921,27 @@ export function useCommonMediaController({
           mediaKey: assetId,
           currentTime: mediaEl.currentTime,
           duration: mediaEl.duration,
-          stallDurationMs: diff
+          stallDurationMs: verdict.stallDurationMs
         });
         s.isStalled = true;
         if (!s.sinceTs) s.sinceTs = Date.now();
         s.status = 'stalled';
         publishStallSnapshot();
         setIsStalled(true);
-        
+
         if (mode === 'auto') {
           const recoveryDelay = Math.max(0, hardMs - softMs);
           s.hardTimer = setTimeout(() => {
             const s = stallStateRef.current;
             const mediaEl = getMediaEl();
-            
+
             // Don't attempt recovery if media has ended
             if (s.hasEnded || !mediaEl || mediaEl.ended || (mediaEl.duration && mediaEl.currentTime >= mediaEl.duration - 0.5)) {
               if (DEBUG_MEDIA) console.log('[Stall] hardTimer: skip recovery (ended or invalid)');
               clearTimers();
               return;
             }
-            
+
             if (!s.isStalled) {
               if (DEBUG_MEDIA) console.log('[Stall] hardTimer: not stalled anymore; abort');
               return;
@@ -920,9 +974,9 @@ export function useCommonMediaController({
           }, recoveryDelay);
         }
       } else {
-        // Not stalled yet, keep checking
+        // verdict 'within-window' — reschedule
         s.softTimer = null;
-        if (DEBUG_MEDIA) console.log('[Stall] softTimer: no stall yet; diff < softMs; reschedule', { diff, softMs });
+        if (DEBUG_MEDIA) console.log('[Stall] softTimer: no stall yet; diff < softMs; reschedule', { softMs });
         scheduleStallDetection();
       }
     }, checkInterval);
@@ -949,6 +1003,9 @@ export function useCommonMediaController({
 
     const wasStalled = s.isStalled;
     s.lastProgressTs = Date.now();
+    if (Number.isFinite(pos)) {
+      s.lastObservedCurrentTime = pos;
+    }
 
     if (wasStalled) {
   if (DEBUG_MEDIA) console.log('[Stall] Progress resumed; clearing stalled state', { currentTime: mediaEl?.currentTime, recoveryAttempt: s.recoveryAttempt, lastStrategy: s.lastStrategy });
@@ -1279,9 +1336,11 @@ export function useCommonMediaController({
       // Reset ended flag for new media
       stallStateRef.current.hasEnded = false;
       stallStateRef.current.recoveryAttempt = 0;
+      stallStateRef.current.atDurationStuckLogged = false;
       // Fresh playhead baseline for the new item so the first real forward
       // timeupdate (not a seek-to-start) establishes progress tracking.
       stallStateRef.current.lastAdvancePos = null;
+      stallStateRef.current.lastObservedCurrentTime = null;  // bug 2026-05-23 §1: reset stall-verdict tracking for new asset
       // Don't set lastProgressTs here — let real playback progress (timeupdate
       // → markProgress) set it. Setting it at metadata-load time causes stall
       // detection to fire during initial buffering (after only softMs=1.2s),
@@ -1312,6 +1371,16 @@ export function useCommonMediaController({
           duration: mediaEl.duration,
           source: mediaEl.__seekSource || 'programmatic'
         }, { maxPerMinute: 30 });
+        // Audit 2026-05-23 §2.1 (Layer A): when a seek lands at end-of-content,
+        // capture the stack trace so the next occurrence pins down the caller
+        // (whether it is dash.js-internal, an untagged app path, or a known
+        // recovery strategy). Sampled at 5/min so a stuck-loop cannot flood
+        // the log.
+        if (shouldTraceSeekAtDuration({ currentTime: mediaEl.currentTime, duration: mediaEl.duration })) {
+          mcLog().sampled('playback.seek-trace',
+            buildSeekTracePayload({ assetId, mediaEl, stack: captureSeekStack() }),
+            { maxPerMinute: 5 });
+        }
         delete mediaEl.__seekSource;
         if (DEBUG_MEDIA) console.log('[Seek] seeking event: intent captured', { intent: lastSeekIntentRef.current, duration: mediaEl.duration });
       }
@@ -1380,6 +1449,7 @@ export function useCommonMediaController({
       const onPause = () => {
         const el = getMediaEl();
         if (el && !el.ended) {
+          const source = readAndClearPauseSource(el);
           const logger = getLogger();
           logger.info('playback.paused', {
             title: meta?.title || meta?.name,
@@ -1389,13 +1459,15 @@ export function useCommonMediaController({
             parentTitle: meta?.parentTitle,
             mediaKey: assetId,
             currentTime: el.currentTime,
-            duration: el.duration
+            duration: el.duration,
+            source
           });
         }
       };
       const onResume = () => {
         const el = getMediaEl();
         if (el && playbackStartedRef.current) {
+          const source = readAndClearPlaySource(el);
           const logger = getLogger();
           logger.info('playback.resumed', {
             title: meta?.title || meta?.name,
@@ -1405,7 +1477,8 @@ export function useCommonMediaController({
             parentTitle: meta?.parentTitle,
             mediaKey: assetId,
             currentTime: el.currentTime,
-            duration: el.duration
+            duration: el.duration,
+            source
           });
         }
       };
@@ -1668,17 +1741,28 @@ export function useCommonMediaController({
         },
         play: () => {
           const mediaEl = getMediaEl();
-          if (mediaEl) mediaEl.play?.();
+          if (mediaEl) {
+            tagPlaySource(mediaEl, 'controller');
+            mediaEl.play?.();
+          }
         },
         pause: () => {
           const mediaEl = getMediaEl();
-          if (mediaEl) mediaEl.pause?.();
+          if (mediaEl) {
+            tagPauseSource(mediaEl, 'controller');
+            mediaEl.pause?.();
+          }
         },
         toggle: () => {
           const mediaEl = getMediaEl();
           if (mediaEl) {
-            if (mediaEl.paused) mediaEl.play?.();
-            else mediaEl.pause?.();
+            if (mediaEl.paused) {
+              tagPlaySource(mediaEl, 'controller-toggle');
+              mediaEl.play?.();
+            } else {
+              tagPauseSource(mediaEl, 'controller-toggle');
+              mediaEl.pause?.();
+            }
           }
         },
         getCurrentTime: () => {
