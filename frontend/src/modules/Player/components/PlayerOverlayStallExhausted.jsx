@@ -9,7 +9,7 @@ import './PlayerOverlayStallExhausted.scss';
 export function PlayerOverlayStallExhausted({ exhausted, secondsStalled, onRestart, onDismiss }) {
   if (!exhausted) return null;
   return (
-    <div className="stall-exhausted-overlay" role="alertdialog" aria-live="assertive">
+    <div className="stall-exhausted-overlay" role="alertdialog">
       <div className="stall-exhausted-overlay__inner">
         <h2 className="stall-exhausted-overlay__title">Playback stuck</h2>
         <p className="stall-exhausted-overlay__body">
