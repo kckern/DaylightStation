@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { getProgressPercent } from '../lib/helpers.js';
+import { shouldLogAtDurationStuck, buildAtDurationStuckPayload } from '../lib/atDurationStuck.js';
 import { useMediaKeyboardHandler } from '../../../lib/Player/useMediaKeyboardHandler.js';
 import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
@@ -117,7 +118,9 @@ export function useCommonMediaController({
     strategyCounts: Object.create(null),
     strategySteps: [],
     pendingSoftReinit: false,
-    lastError: null
+    lastError: null,
+    // One-shot guard for `playback.at-duration-stuck` telemetry (audit 2026-05-23).
+    atDurationStuckLogged: false
   });
   const [stallState, setStallState] = useState(() => ({
     status: 'idle',
@@ -837,6 +840,20 @@ export function useCommonMediaController({
       // Check if media has ended or is very close to end
       if (s.hasEnded || mediaEl.ended || (mediaEl.duration && mediaEl.currentTime >= mediaEl.duration - 0.5)) {
         if (DEBUG_MEDIA) console.log('[Stall] softTimer: media ended or near end; cancel timers');
+        // Audit 2026-05-23 §2.2: when the guard activates due to the near-end
+        // branch (not a legitimate ended event), the screens player is in the
+        // stuck-at-duration failure mode. Emit a one-shot telemetry log so the
+        // condition is observable in prod alongside the watchdog's eventual
+        // playback.end-of-content-advance.
+        if (shouldLogAtDurationStuck({
+          hasEnded: s.hasEnded,
+          mediaEl,
+          alreadyLogged: s.atDurationStuckLogged
+        })) {
+          s.atDurationStuckLogged = true;
+          mcLog().warn('playback.at-duration-stuck',
+            buildAtDurationStuckPayload({ assetId, mediaEl }));
+        }
         s.hasEnded = true;
         clearTimers();
         return;
@@ -1265,6 +1282,7 @@ export function useCommonMediaController({
       // Reset ended flag for new media
       stallStateRef.current.hasEnded = false;
       stallStateRef.current.recoveryAttempt = 0;
+      stallStateRef.current.atDurationStuckLogged = false;
       // Don't set lastProgressTs here — let real playback progress (timeupdate
       // → markProgress) set it. Setting it at metadata-load time causes stall
       // detection to fire during initial buffering (after only softMs=1.2s),
