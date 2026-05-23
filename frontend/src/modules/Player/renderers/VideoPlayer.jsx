@@ -9,6 +9,8 @@ import { getLogger } from '../../../lib/logging/Logger.js';
 import { playbackLog } from '../lib/playbackLogger.js';
 import { cleanupDashElement } from '../lib/dashCleanup.js';
 import { createStaleSessionWatchdog } from '../lib/staleSessionWatchdog.js';
+import { buildFpsStatsPayload } from '../lib/fpsStatsPayload.js';
+import { decideDashErrorRecovery } from '../lib/dashErrorRecovery.js';
 
 /**
  * Append or replace a cache-buster query param on a URL.
@@ -78,6 +80,11 @@ export function VideoPlayer({
   // fires after the component has been torn down.
   const unmountedRef = useRef(false);
   useEffect(() => () => { unmountedRef.current = true; }, []);
+
+  // Per-mount counter for dash.error 27/28 → hardReset({ refreshUrl: true })
+  // escalations. Capped at maxAttempts in decideDashErrorRecovery so a
+  // permanently dead URL cannot infinite-loop. Resets when the source URL changes.
+  const dashErrorRefreshAttemptsRef = useRef(0);
 
   const staleSessionWatchdogRef = useRef(null);
   if (!staleSessionWatchdogRef.current) {
@@ -330,6 +337,12 @@ export function VideoPlayer({
     displayReadyLoggedRef.current = false;
   }, [mediaUrl, media?.maxVideoBitrate]);
 
+  // Bug 2026-05-23 §2: new source URL -> reset dash error refresh budget
+  // for this mount so a fresh URL gets its own 3-attempt allotment.
+  useEffect(() => {
+    dashErrorRefreshAttemptsRef.current = 0;
+  }, [mediaUrl]);
+
   // Handle dash-video custom element events (web components don't support React synthetic events)
   useEffect(() => {
     if (!isDash) return;
@@ -478,6 +491,28 @@ export function VideoPlayer({
           data: e?.error?.data ? JSON.stringify(e.error.data).substring(0, 300) : null
         });
         staleSessionWatchdogRef.current?.recordError({ code, message });
+
+        // Bug 2026-05-23 §2: source-URL errors (code 27 segment unavailable,
+        // 28 manifest/init unavailable) signal a dead Plex transcode session.
+        // Escalate to hardReset with refreshUrl so the backend mints a fresh
+        // transcode. Capped at 3 attempts per mount.
+        const decision = decideDashErrorRecovery({
+          errorCode: code,
+          attemptsThisMount: dashErrorRefreshAttemptsRef.current,
+          maxAttempts: 3
+        });
+        if (decision.action === 'refresh-url') {
+          dashErrorRefreshAttemptsRef.current += 1;
+          const innerEl = getMediaEl();
+          const seekToSeconds = (innerEl && Number.isFinite(innerEl.currentTime)) ? innerEl.currentTime : 0;
+          dashLog.warn('dash.error-recovery', {
+            action: 'refresh-url',
+            reason: decision.reason,
+            attempt: dashErrorRefreshAttemptsRef.current,
+            seekToSeconds
+          });
+          hardReset({ seekToSeconds, refreshUrl: true });
+        }
       });
 
       // Quality/representation changes
@@ -553,34 +588,25 @@ export function VideoPlayer({
 
       const logger = getLogger();
       const mediaEl = getMediaEl();
-      
-      // Calculate instantaneous FPS if available
+
+      // Audit 2026-05-23 §4.1: read from latestDataRef so the payload
+      // reflects the current React state, not the values captured when
+      // this useEffect was last created. The bug: every fps_stats event
+      // in a 5.5-minute Bluey session reported currentTime: 107 even as
+      // real playback advanced to 441s.
+      const snap = latestDataRef.current;
+
+      // Calculate instantaneous FPS if available (snapshot-consistent).
       let estimatedFps = null;
       if (mediaEl && typeof mediaEl.requestVideoFrameCallback === 'function') {
-        // Modern browsers support this for precise frame timing
         estimatedFps = 'supported';
-      } else if (quality.totalVideoFrames > 0 && duration > 0) {
-        // Fallback: estimate from total frames / duration
-        estimatedFps = Math.round((quality.totalVideoFrames / duration) * 100) / 100;
+      } else if (snap.quality?.totalVideoFrames > 0 && snap.duration > 0) {
+        estimatedFps = Math.round((snap.quality.totalVideoFrames / snap.duration) * 100) / 100;
       }
 
-      logger.info('playback.fps_stats', {
-        title: media?.title,
-        grandparentTitle: media?.grandparentTitle,
-        parentTitle: media?.parentTitle,
-        mediaKey: media?.assetId || media?.key || media?.plex,
-        currentTime: Math.round(seconds * 10) / 10,
-        duration: Math.round(duration * 10) / 10,
-        droppedFrames: quality.droppedVideoFrames,
-        totalFrames: quality.totalVideoFrames,
-        droppedPct: quality.droppedPct?.toFixed(2),
-        avgDroppedPct: droppedFramePct ? (droppedFramePct * 100).toFixed(2) : null,
-        bitrateCapKbps: currentMaxKbps,
-        estimatedFps,
-        playbackRate: media.playbackRate || 1,
-        isDash,
-        shader
-      });
+      logger.info('playback.fps_stats',
+        buildFpsStatsPayload(snap, { estimatedFps })
+      );
     }, 10000); // 10 seconds
 
     return () => {
