@@ -1013,7 +1013,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       voiceMemoOverlayOpen: Boolean(voiceMemoOverlayState?.open),
     };
     logger.info('fitness.player.close.requested', closeRequestPayload);
-    closeWatchdog.requested(closeRequestPayload);
 
     // 4A: Guard - if voice memo overlay is open, pause video but don't unmount
     if (voiceMemoOverlayState?.open) {
@@ -1029,8 +1028,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     const sessionStartTime = fitnessSessionInstance?.startTime;
     const threshold = plexConfig?.voice_memo_prompt_threshold_seconds ?? 480; // 8 minutes default
     const hasMemos = Array.isArray(voiceMemos) && voiceMemos.length > 0;
-    const shouldPrompt = sessionStartTime 
-      && ((Date.now() - sessionStartTime) / 1000 > threshold) 
+    const shouldPrompt = sessionStartTime
+      && ((Date.now() - sessionStartTime) / 1000 > threshold)
       && !hasMemos;
 
     // 4B: Check 15-minute rule - prompt for voice memo if session is long and no memos
@@ -1042,11 +1041,22 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       pendingCloseRef.current = true;
       // Pass autoAccept: true so the review will auto-accept after recording
       // Pass fromFitnessVideoEnd: true to show "How did it go?" prompt
-      // Pass onComplete callback so close happens via callback (not just effect transition)
-      openVoiceMemoCapture(null, { autoAccept: true, fromFitnessVideoEnd: true, onComplete: executeClose });
+      // Watchdog arms inside the callback so it only guards the actual teardown, not the
+      // time the user spends recording — which can legitimately exceed 5 s.
+      openVoiceMemoCapture(null, {
+        autoAccept: true,
+        fromFitnessVideoEnd: true,
+        onComplete: () => {
+          closeWatchdog.requested(closeRequestPayload);
+          executeClose();
+        },
+      });
       return;
     }
 
+    // Watchdog only arms when executeClose is imminent — it guards the teardown
+    // machinery, not the user's voice-memo interaction.
+    closeWatchdog.requested(closeRequestPayload);
     executeClose();
   };
 
@@ -1064,9 +1074,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       if (process.env.NODE_ENV === 'development') {
         console.log('[FitnessPlayer] Voice memo overlay closed (transition detected), executing pending close');
       }
+      closeWatchdog.requested({
+        sessionId: fitnessSessionInstance?.sessionId ?? null,
+        voiceMemoOverlayOpen: false,
+        deferredVia: 'voice-memo-overlay-close-transition',
+      });
       executeClose();
     }
-  }, [voiceMemoOverlayState?.open, executeClose]);
+  }, [voiceMemoOverlayState?.open, executeClose, closeWatchdog, fitnessSessionInstance?.sessionId]);
 
   const handleNext = () => {
     const naturalEnd = currentTime >= Math.max(1, (duration || 0) * 0.98);
