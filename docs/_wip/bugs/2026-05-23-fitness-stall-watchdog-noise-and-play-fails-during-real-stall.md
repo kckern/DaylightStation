@@ -248,3 +248,23 @@ The 5 stalls *not* in the ≤10ms bucket:
 ```
 
 (The full table is reproducible from the session log; only the first 22 rows fit in this report.)
+
+---
+
+## Status
+
+- **2026-05-23 (filed)** — Bug report; three remediations identified.
+- **2026-05-23 (landed on `worktree-end-of-video-recovery`)** — All three remediations implemented across six commits:
+  - **§1 watchdog false positives** (`83f5eeb4e` + `450d30072`) — `frontend/src/modules/Player/lib/stallVerdict.js` exports a pure `decideStallVerdict` that consults `mediaEl.currentTime` as a second opinion when `Date.now() - lastProgressTs ≥ softMs`. If `currentTime` advanced past `progressEpsilon` (0.05s) during the timer-gap window, verdict is `'progressing'` — caller fast-forwards `lastProgressTs` and does not log `playback.stalled`. Wired into `useCommonMediaController.scheduleStallDetection`. `lastObservedCurrentTime` captured on each `markProgress`, reset on asset change. Expected: ~0 false positives in subsequent sessions (currently 91%).
+  - **§2 transcode-session timeout** (`db683ab43` + `049c567ab`) — `frontend/src/modules/Player/lib/dashErrorRecovery.js` exports a pure `decideDashErrorRecovery` that routes dash error codes `27` (segment unavailable) and `28` (init/manifest unavailable) to `action: 'refresh-url'`, capped at 3 attempts per mount. Wired into `VideoPlayer.jsx`'s `api.on('error', …)` handler; on `refresh-url`, invokes `hardReset({ seekToSeconds: currentTime, refreshUrl: true })` — the existing mechanism that mutates the `<dash-video>` `src` so the backend mints a fresh Plex transcode session. Counter resets on `mediaUrl` change.
+  - **§3 pause/play telemetry gap** (`67911a349` + `ae344354c`) — `frontend/src/modules/Player/lib/playbackToggleSource.js` exports `tagPauseSource` / `tagPlaySource` / `readAndClearPauseSource` / `readAndClearPlaySource`. `playback.paused` and `playback.resumed` log payloads now carry a `source` field. Tagged sites: `controller.play/pause/toggle` (`'controller'` / `'controller-toggle'`), `nudgeRecovery` (`'recovery-nudge'`), `reloadRecovery` DASH path (`'recovery-reload-dash'`), `reloadRecovery` DOM path (`'recovery-reload-dom'`). Untagged calls (dash.js auto-retries, browser auto-pause on `waiting`, `softReinitRecovery`, snapshot replay) surface as `'dom-event'` — that's the desired default for "DOM-event-but-not-tagged-by-our-code" callers including dash.js's internal retry loop.
+- **Test counts:** 24 new unit tests across 3 helper modules (8 + 6 + 8 + 2 controller wiring), all passing. Full Player module sweep: **109/109 tests pass across 15 of 16 files.** The single failing file is `VideoPlayer.hardReset.test.jsx`, a pre-existing baseline failure (`dash-video-element` package unresolvable under the worktree's vitest environment) unrelated to this change.
+- **Pending live verification** — Awaiting next fitness session post-deploy. Expected observable changes:
+  1. `playback.stalled` event count drops from ~50/session toward zero.
+  2. When a Plex transcode session ages out mid-workout, `dash.error-recovery action='refresh-url'` + `playback.stream-url-refreshed` appear in the log and playback continues without manual close+restart.
+  3. `playback.paused` / `playback.resumed` payloads carry `source`. `source: "dom-event"` clusters are dash.js retry signatures; `source: "controller"` / `"controller-toggle"` are app-initiated; `source: "recovery-*"` are stall-recovery initiated.
+
+Items intentionally NOT addressed in this fix:
+- **§5.1 — Phantom overlay leak on garage.** Requires deploying commit `9de00c9b5` to the garage container; non-code.
+- **§4 — `player-no-source-timeout` race.** Needs a separate reproducer; out of scope for this fix.
+- **§5.2 — `fitness.render_thrashing`.** Background contributor to `timeupdate` starvation; root cause needs separate investigation.
