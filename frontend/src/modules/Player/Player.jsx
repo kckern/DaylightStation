@@ -9,7 +9,9 @@ import { PlayerOverlayLoading } from './components/PlayerOverlayLoading.jsx';
 import { PlayerOverlayPaused } from './components/PlayerOverlayPaused.jsx';
 import { PlayerOverlayStateDebug } from './components/PlayerOverlayStateDebug.jsx';
 import { PlayerOverlayAutoplayBlocked } from './components/PlayerOverlayAutoplayBlocked.jsx';
+import { PlayerOverlayStallExhausted } from './components/PlayerOverlayStallExhausted.jsx';
 import { useMediaResilience, mergeMediaResilienceConfig } from './hooks/useMediaResilience.js';
+import { useStallExhaustion } from './hooks/useStallExhaustion.js';
 import { usePlaybackSession } from './hooks/usePlaybackSession.js';
 import { guid } from './lib/helpers.js';
 import { playbackLog } from './lib/playbackLogger.js';
@@ -995,6 +997,30 @@ const Player = forwardRef(function Player(props, ref) {
 
   const suppressOverlaysForBlackout = effectiveShader === 'blackout';
 
+  const stallExhaustion = useStallExhaustion({
+    stalled: !!overlayProps?.stalled,
+    thresholdMs: 15000
+  });
+
+  const handleStallExhaustedRestart = useCallback(() => {
+    playbackLog('player.stall-exhausted-restart', {
+      secondsStalled: stallExhaustion.secondsStalled,
+      mediaIdentity
+    }, { level: 'warn' });
+    if (typeof requestRecovery === 'function') {
+      requestRecovery('user-requested-after-exhaustion');
+    }
+    stallExhaustion.dismiss();
+  }, [requestRecovery, stallExhaustion, mediaIdentity]);
+
+  const handleStallExhaustedDismiss = useCallback(() => {
+    playbackLog('player.stall-exhausted-dismiss', {
+      secondsStalled: stallExhaustion.secondsStalled,
+      mediaIdentity
+    }, { level: 'info' });
+    stallExhaustion.dismiss();
+  }, [stallExhaustion, mediaIdentity]);
+
   const overlayElements = (overlayProps && !isSelfContainedFormat) ? (
     <>
       <PlayerOverlayLoading {...overlayProps} suppressForBlackout={suppressOverlaysForBlackout} />
@@ -1005,6 +1031,14 @@ const Player = forwardRef(function Player(props, ref) {
         onAutoplayResolved={mediaAccess.onAutoplayResolved}
         suppressForBlackout={suppressOverlaysForBlackout}
       />
+      {!suppressOverlaysForBlackout && (
+        <PlayerOverlayStallExhausted
+          exhausted={stallExhaustion.exhausted}
+          secondsStalled={stallExhaustion.secondsStalled}
+          onRestart={handleStallExhaustedRestart}
+          onDismiss={handleStallExhaustedDismiss}
+        />
+      )}
     </>
   ) : null;
 
@@ -1162,6 +1196,7 @@ export default Player;
 // Export components for external use
 export { PlayerOverlayLoading } from './components/PlayerOverlayLoading.jsx';
 export { PlayerOverlayPaused } from './components/PlayerOverlayPaused.jsx';
+export { PlayerOverlayStallExhausted } from './components/PlayerOverlayStallExhausted.jsx';
 export { SinglePlayer } from './components/SinglePlayer.jsx';
 export { AudioPlayer } from './renderers/AudioPlayer.jsx';
 export { VideoPlayer } from './renderers/VideoPlayer.jsx';
