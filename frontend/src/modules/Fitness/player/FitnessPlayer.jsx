@@ -16,6 +16,7 @@ import FitnessChartBackButton from './FitnessChartBackButton.jsx';
 import FitnessChartVoiceMemoFab from './FitnessChartVoiceMemoFab.jsx';
 import { resolvePostEpisodeRedirect } from './postEpisodeRedirect.js';
 import { makeCloseGuard } from './closeGuard.js';
+import { useCloseWatchdog } from '@/modules/Player/hooks/useCloseWatchdog.js';
 import { useMediaAmplifier } from '@/modules/Fitness/components/useMediaAmplifier.js';
 import { FitnessPlayerFrame } from './frames';
 import { useVolumeSync } from '@/modules/Fitness/hooks/useVolumeSync.js';
@@ -941,6 +942,28 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // Fix 2 (bugbash 4B): Removed stale useMemo - now computed fresh in handleClose
   // The 15-minute check needs current time, not cached time from useMemo
 
+  // Watchdog: if close.requested fires but close.completed doesn't arrive in 5s,
+  // force-unmount the player so the user isn't stuck on a frozen screen.
+  // See 2026-05-22 fitness audit §UX regression B.
+  const closeWatchdog = useCloseWatchdog({
+    timeoutMs: 5000,
+    onTimeout: (ctx) => {
+      // Force the same teardown the normal close path runs, minus the parts that
+      // could be stuck (voice memo wait, redirect resolution). Mark as forced.
+      statusUpdateRef.current.endSent = true;
+      pendingCloseRef.current = false;
+      if (setQueue) setQueue([]);
+      setCurrentItem(null);
+      if (typeof onSessionEndRedirect === 'function') {
+        try {
+          onSessionEndRedirect({ to: 'home', reason: 'close-watchdog-fired', context: ctx });
+        } catch (err) {
+          // best effort; we're already in a recovery path
+        }
+      }
+    }
+  });
+
   // 4A: Execute actual close (separated for voice memo guard)
   const executeClose = useCallback(() => {
     const sid = fitnessSessionInstance?.sessionId ?? null;
@@ -948,6 +971,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     // useEffect can race to call executeClose after one close gesture.
     if (!closeGuardRef.current.acquire(sid)) {
       logger.debug('fitness.player.close.deduped', { sessionId: sid });
+      closeWatchdog.completed({ sessionId: sid });
       return;
     }
     logger.info('fitness.player.close.initiated', { sessionId: sid });
@@ -978,15 +1002,18 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     pendingCloseRef.current = false;
 
     logger.info('fitness.player.close.completed', { sessionId: sid });
-  }, [postEpisodeStatus, setQueue, currentItem?.grandparentId, fitnessSessionInstance?.sessionId, onSessionEndRedirect, logger]);
+    closeWatchdog.completed({ sessionId: sid });
+  }, [postEpisodeStatus, setQueue, currentItem?.grandparentId, fitnessSessionInstance?.sessionId, onSessionEndRedirect, logger, closeWatchdog]);
 
   const handleClose = () => {
     // Note: media_end is logged by the useEffect cleanup when currentMediaIdentity changes to null
     // (triggered by setCurrentItem(null) in executeClose). No explicit media_end here to avoid duplicates.
-    logger.info('fitness.player.close.requested', {
+    const closeRequestPayload = {
       sessionId: fitnessSessionInstance?.sessionId ?? null,
       voiceMemoOverlayOpen: Boolean(voiceMemoOverlayState?.open),
-    });
+    };
+    logger.info('fitness.player.close.requested', closeRequestPayload);
+    closeWatchdog.requested(closeRequestPayload);
 
     // 4A: Guard - if voice memo overlay is open, pause video but don't unmount
     if (voiceMemoOverlayState?.open) {
