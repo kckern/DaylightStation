@@ -112,8 +112,9 @@ describe('createEndOfContentWatchdog', () => {
     wd.tick();
     expect(onAdvance).toHaveBeenCalledTimes(1);
     wd.reset();
-    vi.advanceTimersByTime(3001);
+    // After reset, conditions still hold — the caller ticks to re-arm.
     wd.tick();
+    vi.advanceTimersByTime(3001);
     expect(onAdvance).toHaveBeenCalledTimes(2);
   });
 

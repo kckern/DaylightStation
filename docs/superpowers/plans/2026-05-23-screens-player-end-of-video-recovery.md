@@ -33,6 +33,13 @@
 
 ---
 
+## Revisions during execution
+
+- **2026-05-23:** Watchdog factory `reset()` does NOT auto-tick. Original draft had `reset()` call `tick()` internally so the lib test #6 (`re-arms after reset()`) could pass with a single post-reset tick. That made teardown ambiguous (a teardown that re-arms is no teardown) and broke the hook's `sourceKey` change path. New contract: `reset()` clears state only; callers tick when they want re-evaluation. Lib test #6 inserts an explicit `wd.tick()` between `reset()` and the time advance.
+- **2026-05-23:** Tasks 3-4 were originally specified as an inline change to `ContentScroller.jsx` plus a full-render integration test. The worktree has zero existing render tests for `ContentScroller` (it pulls in DaylightAPI, scss, image imports, multiple sub-hooks). Switched to the codebase's established pattern: extract the wiring into `useEndOfContentWatchdog` (sibling of `usePlayheadStallDetection`, `useBufferResilience`). The hook is tested standalone via `renderHook` with a fake media element; ContentScroller consumes it in one line. Final file layout: `frontend/src/modules/Player/hooks/useEndOfContentWatchdog.js` + `.test.jsx`. ContentScroller adds one import + one `useEndOfContentWatchdog({ … })` call beneath `handleEnded`. `handleEndedWithWatchdog` from the original draft is unnecessary — the hook calls `handleEnded` directly, which already disarms via cleanup on next event (no double-fire risk because the watchdog's one-shot guard sets `fired = true` before calling `onAdvance`).
+
+---
+
 ## Background invariants the engineer must understand before writing code
 
 1. **The `mediaEl.seeking` DOM attribute is owned by the browser**, not by dash.js. After a seek to `duration` whose target fragment came back zero-byte, `mediaEl.seeking` stays `true` indefinitely. dash.js fires its own synthetic `seeked` event (`dash.seeked`) but the DOM attribute does not flip. Tests must mock `mediaEl.seeking` explicitly; do not assume `dash.seeked` clears it.
