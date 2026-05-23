@@ -8,6 +8,12 @@ import {
   captureSeekStack,
   buildSeekTracePayload
 } from '../lib/seekTrace.js';
+import {
+  tagPauseSource,
+  tagPlaySource,
+  readAndClearPauseSource,
+  readAndClearPlaySource
+} from '../lib/playbackToggleSource.js';
 import { useMediaKeyboardHandler } from '../../../lib/Player/useMediaKeyboardHandler.js';
 import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
@@ -458,8 +464,10 @@ export function useCommonMediaController({
         return false;
       }
 
+      tagPauseSource(mediaEl, 'recovery-nudge');
       mediaEl.pause();
       mediaEl.currentTime = Math.max(0, t - 0.001);
+      tagPlaySource(mediaEl, 'recovery-nudge');
       mediaEl.play().catch(() => {});
       return true;
     } catch (_) {
@@ -488,6 +496,7 @@ export function useCommonMediaController({
     if (dashPlayer && typeof dashPlayer.reset === 'function' && typeof dashPlayer.initialize === 'function') {
       const streamSrc = hostEl.getAttribute('src') || src;
       try {
+        tagPauseSource(mediaEl, 'recovery-reload-dash');
         mediaEl.pause();
         dashPlayer.reset();
         dashPlayer.initialize(mediaEl, streamSrc, true);
@@ -520,6 +529,7 @@ export function useCommonMediaController({
               if (DEBUG_MEDIA) console.log('[Stall Recovery] reload (DASH): seeked timeout, clearing recovery flag but preserving seek intent');
             }
           }, 5000);
+          tagPlaySource(mediaEl, 'recovery-reload-dash');
           mediaEl.play().catch(() => {});
         }, { once: true });
         return true;
@@ -530,6 +540,7 @@ export function useCommonMediaController({
     }
 
     try {
+      tagPauseSource(mediaEl, 'recovery-reload-dom');
       mediaEl.pause();
       mediaEl.removeAttribute('src');
       mediaEl.load();
@@ -564,6 +575,7 @@ export function useCommonMediaController({
                 if (DEBUG_MEDIA) console.log('[Stall Recovery] reload: seeked timeout, clearing recovery flag but preserving seek intent');
               }
             }, 5000);
+            tagPlaySource(mediaEl, 'recovery-reload-dom');
             mediaEl.play().catch(() => {});
           }, { once: true });
         } catch (_) {
@@ -1420,6 +1432,7 @@ export function useCommonMediaController({
       const onPause = () => {
         const el = getMediaEl();
         if (el && !el.ended) {
+          const source = readAndClearPauseSource(el);
           const logger = getLogger();
           logger.info('playback.paused', {
             title: meta?.title || meta?.name,
@@ -1429,13 +1442,15 @@ export function useCommonMediaController({
             parentTitle: meta?.parentTitle,
             mediaKey: assetId,
             currentTime: el.currentTime,
-            duration: el.duration
+            duration: el.duration,
+            source
           });
         }
       };
       const onResume = () => {
         const el = getMediaEl();
         if (el && playbackStartedRef.current) {
+          const source = readAndClearPlaySource(el);
           const logger = getLogger();
           logger.info('playback.resumed', {
             title: meta?.title || meta?.name,
@@ -1445,7 +1460,8 @@ export function useCommonMediaController({
             parentTitle: meta?.parentTitle,
             mediaKey: assetId,
             currentTime: el.currentTime,
-            duration: el.duration
+            duration: el.duration,
+            source
           });
         }
       };
@@ -1708,17 +1724,28 @@ export function useCommonMediaController({
         },
         play: () => {
           const mediaEl = getMediaEl();
-          if (mediaEl) mediaEl.play?.();
+          if (mediaEl) {
+            tagPlaySource(mediaEl, 'controller');
+            mediaEl.play?.();
+          }
         },
         pause: () => {
           const mediaEl = getMediaEl();
-          if (mediaEl) mediaEl.pause?.();
+          if (mediaEl) {
+            tagPauseSource(mediaEl, 'controller');
+            mediaEl.pause?.();
+          }
         },
         toggle: () => {
           const mediaEl = getMediaEl();
           if (mediaEl) {
-            if (mediaEl.paused) mediaEl.play?.();
-            else mediaEl.pause?.();
+            if (mediaEl.paused) {
+              tagPlaySource(mediaEl, 'controller-toggle');
+              mediaEl.play?.();
+            } else {
+              tagPauseSource(mediaEl, 'controller-toggle');
+              mediaEl.pause?.();
+            }
           }
         },
         getCurrentTime: () => {
