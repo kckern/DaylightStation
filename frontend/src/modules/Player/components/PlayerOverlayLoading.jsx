@@ -12,6 +12,7 @@ export function PlayerOverlayLoading({
   shouldRender,
   isVisible,
   pauseOverlayActive = false,
+  effectiveMetaIsNull = false,  // phantom Player guard — see 2026-05-22 fitness audit Bug 3
   seconds = 0,
   stalled = false,
   waitingToPlay = false,
@@ -288,6 +289,11 @@ export function PlayerOverlayLoading({
 
   const logLabel = overlayLogLabel || waitKey || '';
   const logOverlaySummary = useCallback(() => {
+    // Phantom Player guard: a Player mounted with no effectiveMeta sits in
+    // STATUS.startup forever (useMediaResilience cannot arm without metadata).
+    // Without this guard, the 1s log interval below leaks ~600 events per workout.
+    // See 2026-05-22 fitness audit Bug 3.
+    if (effectiveMetaIsNull) return;
     // Suppress noisy logging during normal healthy playback (overlay hidden, status playing)
     if (!isVisible && status === 'playing') return;
 
@@ -328,7 +334,7 @@ export function PlayerOverlayLoading({
         context: overlayLogContext
       });
     }
-  }, [isVisible, status, overlayRevealDelayMs, timerSummary, seekSummary, mediaSummary, startupSummary, logLabel, overlayLogContext, sessionInstance, statusLabel, countdownSeconds, intentPositionDisplay, normalizedMediaDetails, isStartupPhase, startupWatchdogState, stalled, waitingToPlay, waitKey, overlayLogLabel]);
+  }, [effectiveMetaIsNull, isVisible, status, overlayRevealDelayMs, timerSummary, seekSummary, mediaSummary, startupSummary, logLabel, overlayLogContext, sessionInstance, statusLabel, countdownSeconds, intentPositionDisplay, normalizedMediaDetails, isStartupPhase, startupWatchdogState, stalled, waitingToPlay, waitKey, overlayLogLabel]);
 
   // Use a ref to store the latest logOverlaySummary function to avoid timer recreation
   const logOverlaySummaryRef = useRef(logOverlaySummary);
@@ -342,6 +348,8 @@ export function PlayerOverlayLoading({
       clearInterval(logIntervalRef.current);
       logIntervalRef.current = null;
     }
+
+    if (effectiveMetaIsNull) return undefined;  // phantom Player — see Bug 3 guard above
 
     if (!overlayLoggingActive) {
       return () => {};
@@ -372,7 +380,7 @@ export function PlayerOverlayLoading({
         logIntervalRef.current = null;
       }
     };
-  }, [overlayLoggingActive, overlayLogContext]);
+  }, [effectiveMetaIsNull, overlayLoggingActive, overlayLogContext]);
 
   if (!overlayDisplayActive) {
     return null;
@@ -424,6 +432,7 @@ PlayerOverlayLoading.propTypes = {
   shouldRender: PropTypes.bool,
   isVisible: PropTypes.bool,
   pauseOverlayActive: PropTypes.bool,
+  effectiveMetaIsNull: PropTypes.bool,
   seconds: PropTypes.number,
   stalled: PropTypes.bool,
   waitingToPlay: PropTypes.bool,

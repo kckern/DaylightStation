@@ -1023,7 +1023,11 @@ const Player = forwardRef(function Player(props, ref) {
 
   const overlayElements = (overlayProps && !isSelfContainedFormat) ? (
     <>
-      <PlayerOverlayLoading {...overlayProps} suppressForBlackout={suppressOverlaysForBlackout} />
+      <PlayerOverlayLoading
+        {...overlayProps}
+        effectiveMetaIsNull={!effectiveMeta}
+        suppressForBlackout={suppressOverlaysForBlackout}
+      />
       <PlayerOverlayPaused {...overlayProps} suppressForBlackout={suppressOverlaysForBlackout} />
       <PlayerOverlayStateDebug {...overlayProps} />
       <PlayerOverlayAutoplayBlocked
@@ -1099,6 +1103,7 @@ const Player = forwardRef(function Player(props, ref) {
         seconds={0}
         stalled={false}
         waitingToPlay
+        effectiveMetaIsNull={true}
         showPauseOverlay={false}
         showDebug={false}
         togglePauseOverlay={() => {}}
