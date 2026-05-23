@@ -13,6 +13,7 @@ import paperBackground from "../../../assets/backgrounds/paper.jpg";
 import { useMediaKeyboardHandler } from '../../../lib/Player/useMediaKeyboardHandler.js';
 import { useDynamicDimensions } from '../../../lib/Player/useDynamicDimensions.js';
 import { useMediaReporter } from '../hooks/useMediaReporter.js';
+import { useEndOfContentWatchdog } from '../hooks/useEndOfContentWatchdog.js';
   import { playbackLog } from '../lib/playbackLogger.js';
   
   /**
@@ -288,6 +289,17 @@ import { useMediaReporter } from '../hooks/useMediaReporter.js';
         onAdvance && onAdvance();
       }
     }, [fadeOutStep, fadeOutInterval, onAdvance]);
+
+    // Fallback advance when HTML5 `ended` never fires — e.g. DASH with a
+    // zero-byte trailing fragment leaves the element paused at duration
+    // with mediaEl.seeking stuck true. See audit
+    // docs/_wip/audits/2026-05-23-livingroom-tv-end-of-video-stuck-seeking-audit.md
+    useEndOfContentWatchdog({
+      mediaRef: mainRef,
+      sourceKey: mainMediaUrl,
+      onAdvance: handleEnded,
+      enabled: !!isVideo
+    });
   
     // After ambient loaded, wait fadeInDelay before playing main
     const startAudioAfterDelay = useCallback(() => {

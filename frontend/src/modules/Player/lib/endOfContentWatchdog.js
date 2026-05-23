@@ -92,9 +92,10 @@ export function createEndOfContentWatchdog({
   const reset = () => {
     cancel();
     fired = false;
-    // Re-evaluate current state so monitoring resumes without requiring
-    // the caller to issue an extra tick after a reset.
-    tick();
+    // Reset only clears state. The caller decides whether to re-evaluate
+    // by issuing the next tick() — typically on the next player event
+    // after a source change. Auto-ticking inside reset() makes teardown
+    // semantics ambiguous (a teardown that re-arms is no teardown).
   };
 
   return { tick, reset };
