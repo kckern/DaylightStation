@@ -12,6 +12,7 @@ import { PlayerOverlayAutoplayBlocked } from './components/PlayerOverlayAutoplay
 import { PlayerOverlayStallExhausted } from './components/PlayerOverlayStallExhausted.jsx';
 import { useMediaResilience, mergeMediaResilienceConfig } from './hooks/useMediaResilience.js';
 import { useStallExhaustion } from './hooks/useStallExhaustion.js';
+import { useMediaErrorReporter } from './hooks/useMediaErrorReporter.js';
 import { usePlaybackSession } from './hooks/usePlaybackSession.js';
 import { guid } from './lib/helpers.js';
 import { playbackLog } from './lib/playbackLogger.js';
@@ -105,7 +106,9 @@ const Player = forwardRef(function Player(props, ref) {
     maxVideoBitrate,
     maxResolution,
     pauseDecision,
-    plexClientSession: externalPlexClientSession
+    plexClientSession: externalPlexClientSession,
+    onError,
+    mediaLoadTimeoutMs
   } = props || {};
 
   // Override playback rate if passed in via menu selection
@@ -134,7 +137,14 @@ const Player = forwardRef(function Player(props, ref) {
     flashOnDeck,
     playNow,
     setShaderUserCycled,
-  } = useQueueController({ play, queue, clear, shuffle: props?.shuffle });
+  } = useQueueController({
+    play,
+    queue,
+    clear,
+    shuffle: props?.shuffle,
+    onError,
+    queueFetchTimeoutMs: 10_000,
+  });
 
   // Gated advance: marks the queue as advanced so activeSource starts following
   // playQueue[0] instead of the original `play` prop.
@@ -582,6 +592,13 @@ const Player = forwardRef(function Player(props, ref) {
   const resilienceControllerRef = resolvedResilience.controllerRef;
 
   const transportAdapter = useMediaTransportAdapter({ controllerRef, mediaAccess, resilienceBridge: resilienceBridgeRef.current });
+
+  useMediaErrorReporter({
+    getMediaEl: transportAdapter.getMediaEl,
+    mediaKey: currentMediaGuid,
+    onError,
+    mediaLoadTimeoutMs: mediaLoadTimeoutMs ?? null,
+  });
 
   const resolvedResilienceOnState = resolvedResilience.onStateChange;
 

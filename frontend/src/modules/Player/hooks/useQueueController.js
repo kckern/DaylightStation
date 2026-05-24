@@ -10,11 +10,27 @@ import { shouldEmitTrackChanged } from '../lib/shouldEmitTrackChanged.js';
 // Follows the same pattern as _recoveryTracker in useMediaResilience.js.
 const _signatureCache = new Map();
 
+function withTimeout(promise, timeoutMs, kind, ctx) {
+  if (!timeoutMs || timeoutMs <= 0) return promise;
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error(`TIMEOUT ${kind} after ${timeoutMs}ms`);
+      err.isTimeout = true;
+      err.kind = kind;
+      err.timeoutMs = timeoutMs;
+      err.ctx = ctx;
+      reject(err);
+    }, timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 /**
  * Queue controller hook for managing playlist/queue playback
  * Handles queue initialization, advancement, and shader management
  */
-export function useQueueController({ play, queue, clear, shuffle }) {
+export function useQueueController({ play, queue, clear, shuffle, onError, contentRef: contentRefArg, queueFetchTimeoutMs = null }) {
   const classes = ['default', 'focused', 'night', 'blackout'];
   // Legacy aliases: multiple old names can map to the same canonical shader
   const shaderAliases = {
@@ -71,7 +87,8 @@ export function useQueueController({ play, queue, clear, shuffle }) {
   // dispatch queue-advance instead of clear() at end-of-item.
   const inputIsQueue = !!queue || (play && (play.playlist || play.queue)) || Array.isArray(play);
   const isQueue = inputIsQueue || playQueue.length > 1;
-  const contentRef = play?.contentId || queue?.contentId
+  const contentRef = contentRefArg
+                  || play?.contentId || queue?.contentId
                   || play?.plex || queue?.plex
                   || play?.playlist || play?.queue
                   || queue?.playlist || queue?.queue || queue?.media
@@ -124,6 +141,10 @@ export function useQueueController({ play, queue, clear, shuffle }) {
     async function initQueue() {
       let newQueue = [];
       let fetchedAudio = null;
+      // Only true when we actually executed the queue API call below.
+      // Used to gate the empty-queue onError branch so it doesn't misfire
+      // on caller-supplied empty arrays or inline-media fall-throughs.
+      let fetchedFromApi = false;
 
       // Extract overrides that should apply to all generated items
       const sourceObj = (play && typeof play === 'object' && !Array.isArray(play)) ? play :
@@ -145,7 +166,13 @@ export function useQueueController({ play, queue, clear, shuffle }) {
       } else if ((play && typeof play === 'object') || (queue && typeof queue === 'object')) {
         if (contentRef) {
           const shuffleParam = isShuffle ? '?shuffle=true' : '';
-          const response = await DaylightAPI(`api/v1/queue/${contentRef}${shuffleParam}`);
+          const response = await withTimeout(
+            DaylightAPI(`api/v1/queue/${contentRef}${shuffleParam}`),
+            queueFetchTimeoutMs,
+            'fetch-timeout',
+            { contentRef }
+          );
+          fetchedFromApi = true;
           newQueue = response.items.map(item => ({ ...item, ...itemOverrides, guid: guid() }));
           fetchedAudio = response.audio || null;
 
@@ -205,12 +232,31 @@ export function useQueueController({ play, queue, clear, shuffle }) {
         });
       }
 
+      // Only fire empty-queue on the API-fetch path. Caller-supplied empty
+      // arrays and inline-media fall-throughs must remain silent no-ops to
+      // preserve pre-existing consumer behavior.
+      if (fetchedFromApi && validQueue.length === 0 && newQueue.length === 0 && contentRef) {
+        playbackLog('queue-init-empty', { contentRef }, { level: 'error' });
+        if (typeof onError === 'function' && !isCancelled) {
+          onError({ kind: 'empty-queue', contentRef });
+        }
+        if (!isCancelled && clear) clear();
+        return;
+      }
+
       if (newQueue.length > 0 && validQueue.length === 0) {
         playbackLog('queue-init-invalid', {
           contentRef,
           itemCount: newQueue.length,
           sampleKeys: Object.keys(newQueue[0] || {}).slice(0, 5),
         }, { level: 'error' });
+        if (typeof onError === 'function' && !isCancelled) {
+          onError({
+            kind: 'invalid-queue',
+            contentRef,
+            itemCount: newQueue.length,
+          });
+        }
         if (!isCancelled && clear) clear();
         return;
       }
@@ -224,6 +270,17 @@ export function useQueueController({ play, queue, clear, shuffle }) {
       }
     }
     initQueue().catch((error) => {
+      if (error?.isTimeout) {
+        playbackLog('queue-init-timeout', { contentRef, timeoutMs: error.timeoutMs }, { level: 'error' });
+        if (typeof onError === 'function' && !isCancelled) {
+          onError({ kind: 'fetch-timeout', contentRef, timeoutMs: error.timeoutMs });
+        }
+        if (!isCancelled) {
+          sourceSignatureRef.current = previousSignature;
+          if (contentRef) _signatureCache.set(contentRef, previousSignature);
+        }
+        return;
+      }
       // Parse structured error from API response (format: "HTTP 404: Not Found - {json}")
       let apiError = null;
       const dashIdx = error?.message?.indexOf(' - ');
@@ -238,6 +295,15 @@ export function useQueueController({ play, queue, clear, shuffle }) {
         apiDetail: apiError?.error,
         httpStatus: error?.message?.match(/^HTTP (\d+)/)?.[1],
       }, { level: 'error' });
+      if (typeof onError === 'function' && !isCancelled) {
+        onError({
+          kind: 'fetch-failed',
+          contentRef,
+          message: error?.message,
+          httpStatus: error?.message?.match(/^HTTP (\d+)/)?.[1] || null,
+          apiDetail: apiError?.error || null,
+        });
+      }
       if (!isCancelled) {
         sourceSignatureRef.current = previousSignature;
         if (contentRef) _signatureCache.set(contentRef, previousSignature);

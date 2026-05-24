@@ -10,6 +10,7 @@ import { normalizeDuration } from '@/modules/Player/utils/mediaIdentity.js';
 import { guid } from '@/modules/Player/lib/helpers.js';
 import getLogger from '@/lib/logging/Logger.js';
 import { useStuckLoadingDetector } from './useStuckLoadingDetector.js';
+import { formatMusicErrorMessage } from './musicPlayerErrorFormat.js';
 
 const LOG_CURVE_TARGET_LEVEL = 50; // midpoint of the touch buttons
 const LOG_CURVE_TARGET_VOLUME = 0.1; // 10% output should align with midpoint
@@ -39,6 +40,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
+  const [playerError, setPlayerError] = useState(null);
   const isPlayingRef = useRef(true); // Track current playing state for sync effects
   const audioPlayerRef = useRef(null);
   const wasPlayingBeforePauseRef = useRef(false);
@@ -83,13 +85,16 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     }
     if (stuckLoggedRef.current) return;
     stuckLoggedRef.current = true;
+    const hasExplicitError = Boolean(playerError);
     getLogger().warn('fitness.music.stuck_loading', {
       playlistId: selectedPlaylistId || null,
       attempt: stuck.attempt,
       thresholdMs: 15_000,
       musicEnabled: Boolean(musicEnabled),
+      hasExplicitError,
+      silentFailure: !hasExplicitError,
     });
-  }, [stuck.isStuck, stuck.attempt, selectedPlaylistId, musicEnabled]);
+  }, [stuck.isStuck, stuck.attempt, selectedPlaylistId, musicEnabled, playerError]);
 
   // Stable Plex client session ID - ensures music player has distinct X-Plex-Client-Identifier from video player
   const musicPlexSession = useMemo(() => `fitness-music-${guid()}`, []);
@@ -194,6 +199,23 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     playerRef: audioPlayerRef
   });
 
+  const handlePlayerError = useCallback((err) => {
+    setPlayerError(err);
+    getLogger().warn('fitness.music.player_error', {
+      kind: err?.kind,
+      contentRef: err?.contentRef,
+      httpStatus: err?.httpStatus,
+      timeoutMs: err?.timeoutMs,
+      code: err?.code,
+      playlistId: selectedPlaylistId || null,
+    });
+  }, [selectedPlaylistId]);
+
+  const handleRetry = useCallback(() => {
+    setPlayerError(null);
+    stuck.retry();
+  }, [stuck]);
+
   // Memoize Player props to prevent unnecessary useEffect re-runs in useQueueController
   // Without this, inline objects like queue={{}} and play={{}} are new refs on every render
   const playerQueueProp = useMemo(() => ({
@@ -248,6 +270,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
         });
       }
       setCurrentTrack(null);
+      setPlayerError(null);
       prevPlaylistIdRef.current = selectedPlaylistId;
     }
   }, [selectedPlaylistId]);
@@ -560,21 +583,22 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
                   '--marquee-play-state': scrollDistance < 0 ? 'running' : 'paused'
                 }}
               >
-                {currentTrack?.title || currentTrack?.label || (
-                  stuck.isStuck ? (
+                {currentTrack?.title || currentTrack?.label || (() => {
+                  const errToShow = playerError || (stuck.isStuck ? { kind: 'unknown' } : null);
+                  if (!errToShow) return 'Loading…';
+                  const text = formatMusicErrorMessage(errToShow);
+                  return (
                     <span
                       className="music-player-retry"
                       role="button"
                       tabIndex={0}
-                      onPointerDown={(e) => { e.stopPropagation(); stuck.retry(); }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); stuck.retry(); }
-                      }}
+                      onPointerDown={(e) => { e.stopPropagation(); handleRetry(); }}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleRetry(); } }}
                     >
-                      Music unavailable — tap to retry
+                      {text} — tap to retry
                     </span>
-                  ) : 'Loading…'
-                )}
+                  );
+                })()}
               </span>
             </div>
             <div className="track-artist">
@@ -690,6 +714,8 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
           queue={playerQueueProp}
           play={playerPlayProp}
           onProgress={handleProgress}
+          onError={handlePlayerError}
+          mediaLoadTimeoutMs={15_000}
           playerType="audio"
           plexClientSession={musicPlexSession}
         />
