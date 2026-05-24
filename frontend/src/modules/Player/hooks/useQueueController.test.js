@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useQueueController } from './useQueueController.js';
 
@@ -99,5 +99,93 @@ describe('useQueueController.advance with on-deck', () => {
     expect(result.current.onDeck).toBeNull();
     act(() => result.current.advance());
     expect(result.current.playQueue[0]?.id).toBe('b');
+  });
+});
+
+describe('useQueueController error propagation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    // Defensive: always restore real timers even if a fake-timer test fails mid-flight.
+    vi.useRealTimers();
+  });
+
+  it('calls onError with kind=fetch-failed when the queue API rejects', async () => {
+    const { DaylightAPI } = await import('../../../lib/api.mjs');
+    DaylightAPI.mockRejectedValueOnce(new Error('HTTP 502: Bad Gateway - {"error":"upstream"}'));
+    const onError = vi.fn();
+    renderHook(() =>
+      useQueueController({
+        play: null,
+        queue: { plex: 12345, shuffle: true },
+        contentRef: 'plex:12345',
+        clear: vi.fn(),
+        onError,
+      })
+    );
+    await vi.waitFor(() => expect(onError).toHaveBeenCalled());
+    const call = onError.mock.calls[0][0];
+    expect(call.kind).toBe('fetch-failed');
+    expect(call.httpStatus).toBe('502');
+    expect(call.contentRef).toBe('plex:12345');
+  });
+
+  it('calls onError with kind=empty-queue when API returns items:[]', async () => {
+    const { DaylightAPI } = await import('../../../lib/api.mjs');
+    DaylightAPI.mockResolvedValueOnce({ items: [], audio: null });
+    const onError = vi.fn();
+    renderHook(() =>
+      useQueueController({
+        play: null,
+        queue: { plex: 99, shuffle: true },
+        contentRef: 'plex:99',
+        clear: vi.fn(),
+        onError,
+      })
+    );
+    await vi.waitFor(() => expect(onError).toHaveBeenCalled());
+    expect(onError.mock.calls[0][0]).toMatchObject({ kind: 'empty-queue', contentRef: 'plex:99' });
+  });
+
+  it('calls onError with kind=invalid-queue when items exist but all fail validation', async () => {
+    const { DaylightAPI } = await import('../../../lib/api.mjs');
+    DaylightAPI.mockResolvedValueOnce({ items: [{ junk: true }, { other: 1 }], audio: null });
+    const onError = vi.fn();
+    renderHook(() =>
+      useQueueController({
+        play: null,
+        queue: { plex: 7, shuffle: true },
+        contentRef: 'plex:7',
+        clear: vi.fn(),
+        onError,
+      })
+    );
+    await vi.waitFor(() => expect(onError).toHaveBeenCalled());
+    expect(onError.mock.calls[0][0]).toMatchObject({ kind: 'invalid-queue', contentRef: 'plex:7' });
+  });
+
+  it('calls onError with kind=fetch-timeout when queue API does not resolve within threshold', async () => {
+    vi.useFakeTimers();
+    const { DaylightAPI } = await import('../../../lib/api.mjs');
+    DaylightAPI.mockReturnValueOnce(new Promise(() => {}));
+    const onError = vi.fn();
+    renderHook(() =>
+      useQueueController({
+        play: null,
+        queue: { plex: 5, shuffle: true },
+        contentRef: 'plex:5',
+        clear: vi.fn(),
+        onError,
+        queueFetchTimeoutMs: 10_000,
+      })
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_001);
+    });
+    expect(onError).toHaveBeenCalled();
+    expect(onError.mock.calls[0][0]).toMatchObject({ kind: 'fetch-timeout', contentRef: 'plex:5', timeoutMs: 10_000 });
+    vi.useRealTimers();
   });
 });
