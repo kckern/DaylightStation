@@ -484,7 +484,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       governanceConfig: {
         ...governance,
         governed_labels: normalizedGovernedLabels,
-        governed_types: normalizedGovernedTypes
+        governed_types: normalizedGovernedTypes,
+        // W1.A: continuous-usage threshold (seconds) for participant attribution.
+        // Mirrors the FitnessConfigService default — kept here so the frontend
+        // applies the same 300s fallback if the raw config endpoint returns a
+        // YAML without the field.
+        usage_threshold_seconds: governance?.usage_threshold_seconds ?? 300
       },
       equipmentConfig: root?.equipment || [],
       nomusicLabels: normalizedNomusicLabels,
@@ -519,7 +524,14 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   useEffect(() => {
     const ledger = guestAssignmentLedgerRef.current;
     ledger?.setEventJournal?.(session?.eventJournal || null);
-    const service = new GuestAssignmentService({ session, ledger });
+    // W1.A: continuous-usage threshold for participant attribution comes from
+    // fitness.yml → governance.usage_threshold_seconds (300s default at the
+    // FitnessConfigService layer). Convert to ms for the service.
+    const usageThresholdSeconds = governanceConfig?.usage_threshold_seconds;
+    const thresholdMs = Number.isFinite(usageThresholdSeconds)
+      ? usageThresholdSeconds * 1000
+      : undefined; // let the service apply its own (back-compat 60s) default
+    const service = new GuestAssignmentService({ session, ledger, thresholdMs });
     guestAssignmentServiceRef.current = service;
     session?.userManager?.setAssignmentLedger?.(ledger, {
       onChange: () => setLedgerVersion((v) => v + 1)
@@ -527,7 +539,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return () => {
       session?.userManager?.setAssignmentLedger?.(null);
     };
-  }, [session]);
+  }, [session, governanceConfig?.usage_threshold_seconds]);
 
   useEffect(() => {
     if (!session) return;

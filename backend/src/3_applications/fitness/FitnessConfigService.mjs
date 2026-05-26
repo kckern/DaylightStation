@@ -48,11 +48,20 @@ export class FitnessConfigService {
     const governance = raw.governance || {};
     const plex = raw.plex || {};
 
+    // Defaulted governance block: surfaces all raw governance fields plus
+    // any service-level defaults (e.g. continuous-usage threshold for
+    // participant attribution — see W1 spec / audit Decision §7).
+    const normalizedGovernance = {
+      ...governance,
+      usage_threshold_seconds: governance.usage_threshold_seconds ?? 300
+    };
+
     return {
       raw,
       householdId: hid,
       contentSource: raw.content_source || 'plex',
       musicPlaylists: plex.music_playlists || [],
+      governance: normalizedGovernance,
       governedLabels: governance.governed_labels?.length
         ? governance.governed_labels
         : plex.governed_labels || [],
