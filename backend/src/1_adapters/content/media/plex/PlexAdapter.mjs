@@ -825,8 +825,6 @@ export class PlexAdapter {
    * @param {number} [opts.maxVideoBitrate] - Maximum video bitrate in kbps
    * @param {string} [opts.maxResolution] - Maximum resolution (e.g., "1080p", "720p")
    * @param {number} [opts.startOffset] - Start offset in seconds
-   * @param {boolean} [opts.forceTranscode] - When true, sets directStream=0
-   *   to force re-encode (fixes irregular-GOP stutter bug).
    * @returns {Promise<Object>} Decision result with session identifiers and stream info
    */
   async requestTranscodeDecision(key, opts = {}) {
@@ -834,8 +832,7 @@ export class PlexAdapter {
       maxVideoBitrate = null,
       maxResolution = null,
       session = null,
-      startOffset = 0,
-      forceTranscode = false
+      startOffset = 0
     } = opts;
 
     const { clientIdentifier, sessionIdentifier } = this._generateSessionIds(session);
@@ -849,8 +846,7 @@ export class PlexAdapter {
     params.append('X-Plex-Platform', this.platform);
     params.append('autoAdjustQuality', '1');
     params.append('directPlay', '0');
-    // See the other requestTranscodeDecision (line ~1508) for full rationale.
-    params.append('directStream', forceTranscode ? '0' : '1');
+    params.append('directStream', '1');
     params.append('subtitleSize', '100');
     params.append('audioBoost', '100');
     params.append('fastSeek', '1');
@@ -1482,10 +1478,6 @@ export class PlexAdapter {
    * @param {number} [opts.maxVideoBitrate] - Maximum video bitrate in kbps
    * @param {string} [opts.maxResolution] - Maximum resolution (e.g., "1080p", "720p")
    * @param {number} [opts.startOffset] - Start offset in seconds
-   * @param {boolean} [opts.forceTranscode] - When true, tells Plex to re-encode
-   *   instead of stream-copy. Required when the source has non-uniform GOPs that
-   *   would otherwise break dash.js segment timing. See docs/_wip/bugs/
-   *   2026-05-26-httyd-source-non-uniform-gops-cause-dash-fragmentation.md.
    * @returns {Promise<Object>} Decision result with session identifiers and stream info
    */
   async requestTranscodeDecision(key, opts = {}) {
@@ -1493,8 +1485,7 @@ export class PlexAdapter {
       maxVideoBitrate = null,
       maxResolution = null,
       session = null,
-      startOffset = 0,
-      forceTranscode = false
+      startOffset = 0
     } = opts;
 
     const { clientIdentifier, sessionIdentifier } = this._generateSessionIds(session);
@@ -1514,12 +1505,7 @@ export class PlexAdapter {
     );
     params.append('autoAdjustQuality', '1');
     params.append('directPlay', '0');
-    // directStream=0 forces Plex to re-encode (not just remux). Re-encoded
-    // segments have uniform GOPs aligned to seg_duration, which fixes the
-    // dash.js GapController stutters that affect titles with irregular
-    // source GOPs (e.g., HTTYD: 52.7% sub-frame GOPs). Cost: Plex CPU per
-    // stream. directStream=1 (stream-copy) reproduces the GOP bug.
-    params.append('directStream', forceTranscode ? '0' : '1');
+    params.append('directStream', '1');
     params.append('subtitleSize', '100');
     params.append('audioBoost', '100');
     params.append('fastSeek', '1');
@@ -1660,11 +1646,6 @@ export class PlexAdapter {
    * @param {string} [opts.maxVideoResolution]
    * @param {string} [opts.session]
    * @param {number} [opts.startOffset]
-   * @param {boolean} [opts.forceTranscode=true] - When true, forces Plex to
-   *   re-encode (not stream-copy). Default true to guarantee smooth playback
-   *   for sources with irregular GOPs. Pass false to allow stream-copy on
-   *   sources known to have uniform GOPs (saves Plex CPU). See
-   *   docs/_wip/bugs/2026-05-26-httyd-source-non-uniform-gops-cause-dash-fragmentation.md.
    * @returns {Promise<{ url: string|null, reason?: 'metadata-missing'|'non-playable-type'|'audio-key-missing'|'transient' }>}
    */
   async loadMediaUrl(playableItem, opts = {}) {
@@ -1690,19 +1671,13 @@ export class PlexAdapter {
 
       const mediaType = this._determineMediaType(plexType);
       const {
-        maxVideoBitrate: optMaxVideoBitrate = null,
+        maxVideoBitrate = null,
         maxResolution = null,
         maxVideoResolution = null,
         session = null,
-        startOffset = 0,
-        forceTranscode = true
+        startOffset = 0
       } = opts;
       const resolvedMaxResolution = maxResolution ?? maxVideoResolution;
-      // When force-transcoding without an explicit bitrate cap, set 8 Mbps —
-      // above typical 1080p source bitrates so Plex picks native resolution.
-      // Empirically: too low and Plex downscales (e.g. 4000 → 720p); 8000
-      // keeps 1920x816 native for HTTYD.
-      const maxVideoBitrate = optMaxVideoBitrate ?? (forceTranscode ? 8000 : null);
 
       if (mediaType === 'audio') {
         const { clientIdentifier, sessionIdentifier } = this._generateSessionIds(
@@ -1726,8 +1701,7 @@ export class PlexAdapter {
         maxVideoBitrate,
         maxResolution: resolvedMaxResolution,
         session,
-        startOffset,
-        forceTranscode
+        startOffset
       });
 
       if (!decisionResult.success) {
@@ -1750,9 +1724,7 @@ export class PlexAdapter {
 
       const { sessionIdentifier, clientIdentifier, decision } = decisionResult;
 
-      // Skip the direct-play short-circuit when forcing transcode — we want
-      // server-side re-encoding to guarantee uniform GOPs, not raw file serve.
-      if (!forceTranscode && decision.canDirectPlay && decision.directStreamPath) {
+      if (decision.canDirectPlay && decision.directStreamPath) {
         const directPath = decision.directStreamPath;
         const separator = directPath.includes('?') ? '&' : '?';
         return {
