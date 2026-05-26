@@ -1798,6 +1798,51 @@ export class GovernanceEngine {
     zoneInfoMap = zoneInfoMap || {};
     totalCount = totalCount || activeParticipants.length;
 
+    // W3 — Defensive INACTIVE-device filter at the governance boundary.
+    //
+    // Per 2026-05-26 guest-mode-ux audit Decision §4: an INACTIVE card
+    // (device signal silent ≥10s, gray card in the UI) MUST NOT count as a
+    // current participant for governance evaluation. Both upstream call sites
+    // — ParticipantRoster.getActiveParticipantState() (pulse path) and
+    // FitnessSession._evaluateGovernance() (snapshot path) — already filter
+    // these out. This guard is belt-and-suspenders for the SNAPSHOT path
+    // only: it re-applies the filter so a future upstream refactor cannot
+    // accidentally regress §4 by letting INACTIVE IDs leak into
+    // base-requirement / min-participants evaluation.
+    //
+    // The pulse path is intentionally skipped — getActiveParticipantState()
+    // is the canonical source there, and touching session.roster from this
+    // branch would violate the canonical-state invariant enforced by
+    // tests/isolated/domain/fitness/governance-canonical-state.unit.test.mjs.
+    if (this._lastEvaluatePath === 'snapshot'
+        && Array.isArray(this.session?.roster)
+        && activeParticipants.length > 0) {
+      const inactiveIds = new Set();
+      for (const entry of this.session.roster) {
+        if (!entry) continue;
+        const id = entry.id || entry.profileId;
+        if (!id) continue;
+        if (entry.isActive === false || entry.inactiveSince) {
+          inactiveIds.add(id);
+        }
+      }
+      if (inactiveIds.size > 0) {
+        const before = activeParticipants.length;
+        const filtered = activeParticipants.filter((pid) => !inactiveIds.has(pid));
+        if (filtered.length !== before) {
+          getLogger().debug('governance.evaluate.inactive_filtered', {
+            beforeCount: before,
+            afterCount: filtered.length,
+            droppedIds: activeParticipants.filter((pid) => inactiveIds.has(pid))
+          });
+          activeParticipants = filtered;
+          // Keep totalCount in sync — `active: all` and min_participants
+          // both use this as the denominator.
+          totalCount = activeParticipants.length;
+        }
+      }
+    }
+
     // DIAGNOSTIC: Warn if zoneRankMap is empty but we have participants
     // This was the exact bug condition - zones not configured, causing false warnings
     if (activeParticipants.length > 0 && Object.keys(zoneRankMap).length === 0) {
