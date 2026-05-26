@@ -224,10 +224,12 @@ const FitnessSidebarMenu = ({
       }
     }
     
-    // Add generic guest at the top (unless it's currently selected)
+    // Add generic guest at the top (unless it's currently selected).
+    // Note: no `profileId` here — it is synthesized in handleAssignGuest as
+    // `guest_<deviceId>` so each device gets a distinct guest identity (W2).
     if (!seen.has('guest')) {
       seen.add('guest');
-      topOptions.push({ id: 'guest', name: 'Guest', profileId: 'guest', source: 'Guest', isGeneric: true });
+      topOptions.push({ id: 'guest', name: 'Guest', source: 'Guest', isGeneric: true });
     }
     
     // Filter candidates based on selected tab
@@ -298,9 +300,15 @@ const FitnessSidebarMenu = ({
 
   const handleAssignGuest = (option) => {
     if (!assignGuestToDevice || !deviceIdStr) return;
+    // W2: generic "Guest" gets a device-keyed alias so two simultaneous
+    // Guests on different devices resolve to distinct User identities.
+    // Configured users keep their explicit profileId / id.
+    const profileId = option.isGeneric
+      ? `guest_${deviceIdStr}`
+      : (option.profileId || option.id);
     assignGuestToDevice(deviceIdStr, {
       name: option.name,
-      profileId: option.profileId,
+      profileId,
       candidateId: option.id,
       source: option.source,
       baseUserName: baseName
@@ -461,7 +469,7 @@ const FitnessSidebarMenu = ({
         >
           <div className={avatarClass.join(' ')}>
             <img
-              src={DaylightMediaPath(`/static/img/users/${option.profileId}`)}
+              src={DaylightMediaPath(`/static/img/users/${option.profileId || option.id}`)}
               alt={`${option.name} avatar`}
               data-generic={option.isGeneric ? '1' : undefined}
               onLoad={(e) => {
