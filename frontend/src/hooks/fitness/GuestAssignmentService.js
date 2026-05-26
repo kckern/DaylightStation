@@ -3,13 +3,22 @@ import { DeviceAssignmentLedger } from './DeviceAssignmentLedger.js';
 import getLogger from '../../lib/logging/Logger.js';
 
 /**
- * Phase 4: Grace period for session transfers.
- * If a participant has been active for less than this duration when replaced,
- * their session data (coins, start time, timeline) is transferred to the new participant.
- * 
+ * Continuous-usage threshold for session transfers.
+ *
+ * If a participant has been active for less than `this.thresholdMs` when
+ * replaced, their session data (coins, start time, timeline) is transferred
+ * to the new participant; otherwise the previous segment is dropped.
+ *
+ * The threshold is injected via the constructor (sourced from
+ * fitness.yml → governance.usage_threshold_seconds, defaulted to 300s at the
+ * FitnessConfigService layer — see W1.A / audit Decision §7).
+ *
+ * The constructor default of 60_000 ms is preserved here for back-compat with
+ * existing unit tests that assume a 60s window.
+ *
  * @see /docs/design/guest-switch-session-transition.md
  */
-const GRACE_PERIOD_MS = 60 * 1000; // 1 minute
+const DEFAULT_THRESHOLD_MS = 60 * 1000;
 
 export const validateGuestAssignmentPayload = (rawInput) => {
   const errors = [];
@@ -49,9 +58,13 @@ export const validateGuestAssignmentPayload = (rawInput) => {
 };
 
 export class GuestAssignmentService {
-  constructor({ session, ledger } = {}) {
+  constructor({ session, ledger, thresholdMs } = {}) {
     this.session = session;
     this.ledger = ledger instanceof DeviceAssignmentLedger ? ledger : ledger || null;
+    // Continuous-usage threshold (ms). Sourced upstream from
+    // fitness.yml → governance.usage_threshold_seconds via FitnessContext.
+    // Constructor default preserved at 60_000 ms for back-compat (see W1.A).
+    this.thresholdMs = Number.isFinite(thresholdMs) ? thresholdMs : DEFAULT_THRESHOLD_MS;
   }
 
   #logEvent(type, data, options = {}) {
@@ -116,19 +129,20 @@ export class GuestAssignmentService {
     const newOccupantId = value.profileId || `guest-${now}`;
     
     // Phase 4: Grace Period Transfer Logic
-    // If previous assignment was active for less than GRACE_PERIOD_MS, transfer data to new participant
-    // This works for both entity-to-entity transfers AND user-to-entity transfers
+    // If previous assignment was active for less than this.thresholdMs,
+    // transfer data to new participant (continuous-usage attribution).
+    // This works for both entity-to-entity transfers AND user-to-entity transfers.
     let isGracePeriodTransfer = false;
     let transferredFromEntity = null;
     let transferFromUserId = null; // For user-to-entity transfers (original user has no entity)
-    
+
     if (previousEntry && previousOccupantId && previousOccupantId !== newOccupantId) {
       const previousStartTime = previousEntry.updatedAt || previousEntry.metadata?.startTime || 0;
       const previousDuration = previousStartTime > 0 ? (now - previousStartTime) : Infinity;
-      
-      // Grace period applies if: duration < 1 min AND (has entity OR is original user)
+
+      // Threshold applies if: duration < this.thresholdMs AND (has entity OR is original user)
       const hasTransferableSource = previousEntityId != null || previousOccupantId != null;
-      isGracePeriodTransfer = previousDuration < GRACE_PERIOD_MS && hasTransferableSource;
+      isGracePeriodTransfer = previousDuration < this.thresholdMs && hasTransferableSource;
       
       if (isGracePeriodTransfer) {
         // Grace period transfer: brief session gets merged into successor
@@ -142,7 +156,7 @@ export class GuestAssignmentService {
           newOccupantName: value.name,
           transferType: previousEntityId ? 'entity-to-entity' : 'user-to-entity'
         });
-        console.log('[GuestAssignmentService] Grace period transfer (< 1 min):', {
+        console.log('[GuestAssignmentService] Grace period transfer (< thresholdMs):', {
           deviceId: key,
           previous: previousEntry.occupantName,
           new: value.name,
