@@ -536,6 +536,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     session?.userManager?.setAssignmentLedger?.(ledger, {
       onChange: () => setLedgerVersion((v) => v + 1)
     });
+    // W1.B: mirror the same threshold into PersistenceManager so the save-time
+    // backfill pass uses the same continuous-usage boundary as the in-session
+    // GuestAssignmentService. Both should resolve from the same fitness.yml key.
+    if (Number.isFinite(thresholdMs)) {
+      session?._persistenceManager?.setUsageThresholdMs?.(thresholdMs);
+    }
     return () => {
       session?.userManager?.setAssignmentLedger?.(null);
     };
