@@ -36,6 +36,8 @@ export class HubDevice {
   /** @type {VolumeBounds} */ #volumeBounds;
   /** @type {ReadonlyArray<ContinuousSchedule>} */ #continuousSchedules;
 
+  /** @type {object} */ #extras;
+
   /**
    * @param {{
    *   position: SlotPosition,
@@ -45,8 +47,15 @@ export class HubDevice {
    *   haEntityId?: string|null,
    *   haTurnOffOnStop?: boolean,
    *   volumeBounds?: VolumeBounds,
-   *   continuousSchedules?: ContinuousSchedule[]
+   *   continuousSchedules?: ContinuousSchedule[],
+   *   extras?: object|null
    * }} args
+   *
+   * `extras` is an optional plain object of arbitrary YAML keys not modeled
+   * by the domain (e.g. `queue` — the per-device default queue, a hub-side
+   * convenience field). The datastore preserves these so round-trip
+   * read→write is non-destructive. Keys that collide with modeled fields
+   * are silently overridden by the modeled values on toYaml emission.
    */
   constructor({
     position,
@@ -56,7 +65,8 @@ export class HubDevice {
     haEntityId = null,
     haTurnOffOnStop = false,
     volumeBounds,
-    continuousSchedules = []
+    continuousSchedules = [],
+    extras = null
   } = {}) {
     if (!(position instanceof SlotPosition)) {
       throw new ValidationError('HubDevice.position must be a SlotPosition instance', {
@@ -114,6 +124,13 @@ export class HubDevice {
         { code: 'PUBLIC_REQUIRES_HA_ENTITY', details: { color: color.value } }
       );
     }
+    if (extras !== null && extras !== undefined) {
+      if (typeof extras !== 'object' || Array.isArray(extras)) {
+        throw new ValidationError('HubDevice.extras must be a plain object or null', {
+          code: 'INVALID_HUB_DEVICE', field: 'extras', value: extras
+        });
+      }
+    }
     this.#position = position;
     this.#color = color;
     this.#mac = mac;
@@ -122,6 +139,7 @@ export class HubDevice {
     this.#haTurnOffOnStop = haTurnOffOnStop;
     this.#volumeBounds = bounds;
     this.#continuousSchedules = Object.freeze([...continuousSchedules]);
+    this.#extras = extras === null || extras === undefined ? null : Object.freeze({ ...extras });
     Object.freeze(this);
   }
 
@@ -141,6 +159,8 @@ export class HubDevice {
   get volumeBounds() { return this.#volumeBounds; }
   /** @returns {ReadonlyArray<ContinuousSchedule>} */
   get continuousSchedules() { return this.#continuousSchedules; }
+  /** @returns {object|null} */
+  get extras() { return this.#extras; }
 
   /**
    * Return a NEW HubDevice with patched fields. Re-validates invariants.
@@ -160,7 +180,8 @@ export class HubDevice {
       haEntityId: 'haEntityId' in patch ? patch.haEntityId : this.#haEntityId,
       haTurnOffOnStop: 'haTurnOffOnStop' in patch ? patch.haTurnOffOnStop : this.#haTurnOffOnStop,
       volumeBounds: 'volumeBounds' in patch ? patch.volumeBounds : this.#volumeBounds,
-      continuousSchedules: 'continuousSchedules' in patch ? patch.continuousSchedules : this.#continuousSchedules
+      continuousSchedules: 'continuousSchedules' in patch ? patch.continuousSchedules : this.#continuousSchedules,
+      extras: 'extras' in patch ? patch.extras : this.#extras
     });
   }
 
@@ -196,6 +217,16 @@ export class HubDevice {
         if (s.shuffle) entry.shuffle = true;
         return entry;
       });
+    }
+    // Merge in any pass-through YAML keys not modeled by the domain
+    // (e.g. `queue` — the hub-side default-queue convenience field).
+    // Modeled keys always win on collision.
+    if (this.#extras !== null) {
+      for (const k of Object.keys(this.#extras)) {
+        if (!(k in out)) {
+          out[k] = this.#extras[k];
+        }
+      }
     }
     return out;
   }
