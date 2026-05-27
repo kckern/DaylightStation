@@ -237,6 +237,64 @@ describe('ScheduledFiresSection', () => {
     expect(mutations.deleteFire).toHaveBeenCalledWith('fire-1');
   });
 
+  it('does NOT mark a new fire as saved when saveFire returns { ok: false }', async () => {
+    mutations.saveFire = vi.fn().mockResolvedValue({
+      ok: false,
+      error: new Error('HTTP 400: invalid time'),
+    });
+
+    renderSection({
+      target: 'red',
+      fires: [],
+      slotMaxVolume: 75,
+      mutations,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /^add fire$/i }));
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole('button', { name: /^save fire$/i })[0]);
+    });
+
+    // After failed save: the row's trash icon must still say "Remove (not yet saved)",
+    // NOT "Delete fire" — meaning the row never got promoted to a saved fire.
+    const removeButton = screen.getByRole('button', { name: /delete fire 1/i });
+    expect(removeButton.getAttribute('title')).toMatch(/not yet saved/i);
+    expect(mutations.saveFire).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT close the confirm modal when deleteFire returns { ok: false }', async () => {
+    mutations.deleteFire = vi.fn().mockResolvedValue({
+      ok: false,
+      error: new Error('HTTP 404'),
+    });
+
+    renderSection({
+      target: 'red',
+      fires: [
+        {
+          id: 'fire-1',
+          time: '07:00',
+          days: 'weekdays',
+          target: 'red',
+          queue: 'plex:670208',
+        },
+      ],
+      slotMaxVolume: 75,
+      mutations,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /delete fire 1/i }));
+
+    const confirmBtn = await screen.findByRole('button', { name: /^delete$/i });
+    await act(async () => {
+      fireEvent.click(confirmBtn);
+    });
+
+    // Modal stays open — title still visible.
+    expect(screen.queryByText(/delete scheduled fire/i)).toBeTruthy();
+  });
+
   it('Volume override NumberInput clamps to slotMaxVolume when typing an excessive value', async () => {
     renderSection({
       target: 'red',

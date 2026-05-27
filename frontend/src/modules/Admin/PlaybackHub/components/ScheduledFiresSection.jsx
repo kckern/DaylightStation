@@ -98,7 +98,7 @@ export function ScheduledFiresSection({ target, fires, slotMaxVolume, mutations 
     const id = row.id || newFireId();
     setSavingId(idx);
     try {
-      await mutations.saveFire({
+      const out = await mutations.saveFire({
         id,
         time: row.time,
         days: row.days,
@@ -107,7 +107,9 @@ export function ScheduledFiresSection({ target, fires, slotMaxVolume, mutations 
         durationMin: row.indefinite ? null : Number(row.durationMin) || null,
         volumeOverride: row.volumeOverride == null ? null : Number(row.volumeOverride),
       });
-      updateRow(idx, { id });
+      if (out?.ok) {
+        updateRow(idx, { id });
+      }
     } finally {
       setSavingId(null);
     }
@@ -121,10 +123,12 @@ export function ScheduledFiresSection({ target, fires, slotMaxVolume, mutations 
     if (!confirmDelete.id) return;
     setDeleting(true);
     try {
-      await mutations.deleteFire(confirmDelete.id);
+      const out = await mutations.deleteFire(confirmDelete.id);
+      if (out?.ok) {
+        setConfirmDelete({ open: false, id: null });
+      }
     } finally {
       setDeleting(false);
-      setConfirmDelete({ open: false, id: null });
     }
   };
 
