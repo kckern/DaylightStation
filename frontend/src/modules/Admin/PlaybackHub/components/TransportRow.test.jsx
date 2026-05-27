@@ -192,45 +192,71 @@ describe('TransportRow', () => {
     expect(slider.getAttribute('aria-valuenow')).toBe('50');
   });
 
-  it('disables Play Now button while sendCommand is in flight', async () => {
-    let resolveCmd;
-    const pending = new Promise((resolve) => { resolveCmd = resolve; });
-    mutations.sendCommand = vi.fn().mockReturnValue(pending);
-
-    renderTransport({ slot: mkSlot(), status: mkStatus(), mutations });
-
-    act(() => {
-      pickerOnChangeRef('plex:42');
-    });
-
-    const playBtn = screen.getByRole('button', { name: /^play now$/i });
-    expect(playBtn).not.toBeDisabled();
-
-    fireEvent.click(playBtn);
-    expect(playBtn).toBeDisabled();
-
-    await act(async () => {
-      resolveCmd({ ok: true, result: { applied: ['red'], skipped: [] } });
-    });
-
-    expect(screen.getByRole('button', { name: /^play now$/i })).not.toBeDisabled();
+  it('calls predict({ paused }) when pause clicked', () => {
+    const predict = vi.fn();
+    const pending = vi.fn();
+    renderTransport({ slot: mkSlot(), status: mkStatus(), mutations, predict, pending });
+    fireEvent.click(screen.getByRole('button', { name: 'pause' }));
+    expect(predict).toHaveBeenCalledWith('red', { paused: true });
   });
 
-  it('does not crash if sendCommand returns { ok: false }', async () => {
-    mutations.sendCommand = vi.fn().mockResolvedValue({
-      ok: false,
-      error: new Error('HTTP 502'),
-    });
+  it('calls pending(["now_playing"]) when next clicked', () => {
+    const predict = vi.fn();
+    const pending = vi.fn();
+    renderTransport({ slot: mkSlot(), status: mkStatus(), mutations, predict, pending });
+    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    expect(pending).toHaveBeenCalledWith('red', ['now_playing']);
+  });
 
-    renderTransport({ slot: mkSlot(), status: mkStatus(), mutations });
+  it('calls pending(["now_playing"]) when prev clicked', () => {
+    const predict = vi.fn();
+    const pending = vi.fn();
+    renderTransport({ slot: mkSlot(), status: mkStatus(), mutations, predict, pending });
+    fireEvent.click(screen.getByRole('button', { name: /prev/i }));
+    expect(pending).toHaveBeenCalledWith('red', ['now_playing']);
+  });
 
-    act(() => {
-      pickerOnChangeRef('plex:42');
-    });
+  it('calls pending(["now_playing"]) + predict({ paused: false }) when Play Now clicked', () => {
+    const predict = vi.fn();
+    const pending = vi.fn();
+    renderTransport({ slot: mkSlot(), status: mkStatus(), mutations, predict, pending });
 
+    act(() => { pickerOnChangeRef('plex:42'); });
     fireEvent.click(screen.getByRole('button', { name: /^play now$/i }));
-    await act(async () => { await Promise.resolve(); });
-    const playBtn = screen.getByRole('button', { name: /^play now$/i });
-    expect(playBtn).not.toBeDisabled();
+
+    expect(pending).toHaveBeenCalledWith('red', ['now_playing']);
+    expect(predict).toHaveBeenCalledWith('red', { paused: false });
+  });
+
+  it('greys + disables pause button when status._pending has paused', () => {
+    const statusPending = mkStatus({ paused: true, _pending: new Set(['paused']) });
+    renderTransport({ slot: mkSlot(), status: statusPending, mutations });
+    const btn = screen.getByRole('button', { name: 'play' });
+    expect(btn).toBeDisabled();
+    expect(btn.getAttribute('data-pending')).toBe('true');
+  });
+
+  it('greys + disables prev/next/Play Now when status._pending has now_playing', () => {
+    const statusPending = mkStatus({ _pending: new Set(['now_playing']) });
+    renderTransport({ slot: mkSlot(), status: statusPending, mutations });
+    expect(screen.getByRole('button', { name: /prev/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /next/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^play now$/i })).toBeDisabled();
+  });
+
+  it('marks volume slider container with data-pending when status._pending has volume', () => {
+    const statusPending = mkStatus({ _pending: new Set(['volume']) });
+    const { container } = renderTransport({ slot: mkSlot(), status: statusPending, mutations });
+    expect(container.querySelector('[data-pending="true"]')).toBeTruthy();
+  });
+
+  it('debounced volume release calls predict({ volume }) before sendCommand', async () => {
+    vi.useFakeTimers();
+    const predict = vi.fn();
+    renderTransport({ slot: mkSlot(), status: mkStatus(), mutations, predict });
+    const slider = screen.getByRole('slider');
+    act(() => { fireEvent.keyDown(slider, { key: 'ArrowRight' }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(310); });
+    expect(predict).toHaveBeenCalledWith('red', expect.objectContaining({ volume: expect.any(Number) }));
   });
 });

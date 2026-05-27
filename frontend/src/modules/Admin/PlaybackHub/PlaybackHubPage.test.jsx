@@ -129,7 +129,9 @@ describe('PlaybackHubPage', () => {
 
     const redCallProps = deviceCardCalls.find(p => p.slot.color === 'red');
     const whiteCallProps = deviceCardCalls.find(p => p.slot.color === 'white');
-    expect(redCallProps.status).toBe(redStatus);
+    // status is wrapped by useStatusOverlay; check structural fields.
+    expect(redCallProps.status).toMatchObject(redStatus);
+    expect(redCallProps.status._pending).toBeInstanceOf(Set);
     expect(whiteCallProps.status).toBeUndefined();
   });
 

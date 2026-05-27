@@ -31,7 +31,7 @@ import './DeviceCard.scss';
  *                    (the parent page passes only this slot's fires here)
  *   mutations:       object from useHubMutations
  */
-export function DeviceCard({ slot, status, scheduledFires, mutations }) {
+export function DeviceCard({ slot, status, scheduledFires, mutations, predict, pending }) {
   const isPrivate = slot?.class === 'private';
   const isPublic = slot?.class === 'public';
 
@@ -39,7 +39,13 @@ export function DeviceCard({ slot, status, scheduledFires, mutations }) {
     <Paper withBorder p="md" className="playback-hub-device-card">
       <Stack gap="sm">
         <DeviceHeader slot={slot} status={status} />
-        <TransportRow slot={slot} status={status} mutations={mutations} />
+        <TransportRow
+          slot={slot}
+          status={status}
+          mutations={mutations}
+          predict={predict}
+          pending={pending}
+        />
         <Accordion variant="separated" multiple>
           {isPrivate && (
             <Accordion.Item value="schedules">

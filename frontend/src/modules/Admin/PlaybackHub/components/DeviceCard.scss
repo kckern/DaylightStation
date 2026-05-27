@@ -16,4 +16,37 @@
   .mantine-Accordion-root {
     margin-top: 0.25rem;
   }
+
+  // Interstitial state: a control or display element with
+  // data-pending="true" has had its predicted/optimistic value applied
+  // but the broadcaster hasn't confirmed yet. Dim + lock until reality
+  // catches up (cleared automatically by useStatusOverlay).
+  [data-pending="true"] {
+    opacity: 0.55;
+    cursor: not-allowed;
+
+    // Subtle animated underline so the operator can tell the state is
+    // "in flight" rather than just disabled. ~1.5s pulse — quick enough
+    // to feel responsive, slow enough not to be distracting.
+    animation: playback-hub-pending-pulse 1.5s ease-in-out infinite;
+  }
+
+  // Buttons that are disabled-because-pending get the same visual.
+  // Mantine sets data-disabled or the `disabled` attr; we still rely
+  // on data-pending for the colour treatment.
+  button[data-pending="true"],
+  .mantine-ActionIcon-root[data-pending="true"] {
+    // Override Mantine's default disabled colour so it reads as
+    // "waiting for confirmation" rather than "broken".
+    color: var(--mantine-color-dimmed) !important;
+  }
+}
+
+@keyframes playback-hub-pending-pulse {
+  0%, 100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 0.75;
+  }
 }

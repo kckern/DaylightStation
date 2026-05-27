@@ -11,17 +11,11 @@ import {
  *
  * Cross-source render: pulls live state from `status` (bt_connected, paused,
  * now_playing, volume) AND limits from `slot` (volume.max for the gauge).
- * This is intentional — the gauge "45/75" requires both.
  *
- * Props:
- *   slot:   YAML-shape device config from useHubConfig
- *           { slot, color, name?, mac, class, volume:{default,min,max},
- *             ha_entity_id?, ... }
- *   status: SlotStatus wire shape from useHubStatus, possibly undefined
- *           on first paint
- *           { color, bt_connected, paused, now_playing:
- *             { queue:{source,id}, title? } | null,
- *             volume, ... }
+ * Interstitial state: when a status field appears in `status._pending` the
+ * corresponding cell renders with `data-pending="true"` so CSS can dim it,
+ * signalling that the operator's last command hasn't yet been confirmed by
+ * the broadcaster.
  */
 export function DeviceHeader({ slot, status }) {
   const volMax = slot?.volume?.max ?? 100;
@@ -30,6 +24,11 @@ export function DeviceHeader({ slot, status }) {
   const isPlaying = !!status?.now_playing;
   const isPaused = status?.paused === true;
   const btConnected = status?.bt_connected === true;
+
+  const pendingFields = status?._pending;
+  const nowPlayingPending = pendingFields?.has('now_playing');
+  const pausedPending = pendingFields?.has('paused');
+  const volumePending = pendingFields?.has('volume');
 
   return (
     <Group justify="space-between" align="flex-start" wrap="nowrap">
@@ -65,7 +64,12 @@ export function DeviceHeader({ slot, status }) {
               </>
             )}
           </Group>
-          <Text size="xs" c="dimmed" truncate>
+          <Text
+            size="xs"
+            c="dimmed"
+            truncate
+            data-pending={nowPlayingPending ? 'true' : undefined}
+          >
             {isPlaying ? (
               <>
                 Now: <Text component="span" inherit fw={500}>{nowTitle || '(untitled)'}</Text>
@@ -75,14 +79,22 @@ export function DeviceHeader({ slot, status }) {
             )}
           </Text>
           {isPaused && (
-            <Group gap={2} wrap="nowrap">
+            <Group
+              gap={2}
+              wrap="nowrap"
+              data-pending={pausedPending ? 'true' : undefined}
+            >
               <IconPlayerPauseFilled size={12} />
               <Text size="xs" c="yellow.6">paused</Text>
             </Group>
           )}
         </Group>
       </Stack>
-      <Stack gap={0} align="flex-end">
+      <Stack
+        gap={0}
+        align="flex-end"
+        data-pending={volumePending ? 'true' : undefined}
+      >
         <Text size="sm" fw={500} ff="monospace">{volCurrent}/{volMax}</Text>
         <Text size="xs" c="dimmed">vol</Text>
       </Stack>
