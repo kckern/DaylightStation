@@ -81,14 +81,30 @@ def next_slot(devices):
     return n
 
 def is_connected(mac):
+    """Check Connected via busctl on each /sys/class/bluetooth/hciN, so
+    devices bonded to non-default adapters are detected too."""
+    dbus_id = mac.replace(":", "_")
     try:
-        out = subprocess.check_output(
-            ["bluetoothctl", "info", mac],
-            stderr=subprocess.DEVNULL, timeout=5
-        ).decode()
-        return "Connected: yes" in out
-    except Exception:
+        adapters = sorted(
+            entry for entry in os.listdir("/sys/class/bluetooth")
+            if entry.startswith("hci") and ":" not in entry
+        )
+    except FileNotFoundError:
         return False
+
+    for hci in adapters:
+        path = f"/org/bluez/{hci}/dev_{dbus_id}"
+        try:
+            out = subprocess.check_output(
+                ["busctl", "--system", "get-property", "org.bluez",
+                 path, "org.bluez.Device1", "Connected"],
+                stderr=subprocess.DEVNULL, timeout=2
+            ).decode().strip()
+            if out == "b true":
+                return True
+        except Exception:
+            continue
+    return False
 
 def pid_alive(pid_file):
     try:
