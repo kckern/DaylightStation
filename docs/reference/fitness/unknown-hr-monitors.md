@@ -125,16 +125,26 @@ The avatar on a device card updates in real time as soon as the device's assignm
 
 Tap a Pikachu card → `FitnessSidebarMenu` opens in `mode='guest'` (header shows `#<deviceId>` from `FitnessSidebarMenu.jsx:62`) → pick a candidate from Friends/Family or generic "Guest" → the card immediately swaps to the assigned person's avatar and name.
 
-Saved-session attribution depends on the 1-minute grace window (see [`assign-guest.md`](./assign-guest.md) § Grace Period Transfer):
+Saved-session attribution depends on the configurable continuous-usage
+threshold `T` (default 5 min / 300 s, from `fitness.yml →
+governance.usage_threshold_seconds` — see [`assign-guest.md`](./assign-guest.md)
+§ Continuous-Usage Threshold):
 
-- **Tagged within 1 min** → the new user inherits the Pikachu's coins, timeline, and start time. The Pikachu identity vanishes from the saved YAML.
-- **Tagged after 1 min** → the Pikachu becomes a permanent entry in `participants:` (typically keyed by device ID) with whatever stats it earned. The new user's series starts fresh at the moment of assignment.
+- **Tagged within T (live `SEGMENT_ABSORBED`)** → the new user inherits the Pikachu's coins, timeline, and start time. The Pikachu identity vanishes from the saved YAML.
+- **Tagged after T (live `GUEST_REPLACED`, save-time Decision §5 merge)** → the live pass treats this as a normal replacement, but the save-time backfill in `PersistenceManager._applyBackfill` recognises the Pikachu→configured-user transition and absorbs the Pikachu data regardless of duration. Per audit Decision §5, late tagging means "I'm telling you now who this was" — so the Pikachu identity is removed from the saved YAML.
+- **Never tagged** → the Pikachu becomes a permanent entry in `participants:` (typically keyed by device ID) with whatever stats it earned.
 
-A Pikachu that lingered ten minutes before being tagged will show up in the saved session as a phantom participant alongside the real user. Tag promptly to avoid this.
+The original "1 minute" framing reflected an older hardcoded 60 s window
+plus no save-time backfill. Both have changed:
+1. The threshold is now configurable and defaults to 5 minutes.
+2. The save-time backfill catches late-tagged Pikachus unconditionally, so
+   a Pikachu that lingered ten minutes before being tagged is still
+   absorbed into the configured user at save time — no phantom
+   participant in the YAML.
 
 ### Tagged user → different tagged user
 
-Standard guest reassignment via the sidebar menu — covered in [`assign-guest.md`](./assign-guest.md). Avatar swaps immediately; the same grace-period rules govern data attribution.
+Standard guest reassignment via the sidebar menu — covered in [`assign-guest.md`](./assign-guest.md). Avatar swaps immediately; the same continuous-usage threshold rules govern data attribution (live `SEGMENT_ABSORBED` if sub-T, `GUEST_REPLACED` otherwise; save-time backfill catches OI-1/OI-2/OI-3 cases the live pass misses).
 
 ### Tagged user → silent owner swap (no menu action)
 
@@ -242,6 +252,6 @@ ble_users:
 ## See Also
 
 - [Guest Mode](./guest-mode.md) — umbrella overview of friend/family participation
-- [Assign Guest](./assign-guest.md) — borrowed-device flow, grace period, entity lifecycle
+- [Assign Guest](./assign-guest.md) — borrowed-device flow, continuous-usage threshold, entity lifecycle
 - [BLE Heart Rate](./ble-heart-rate.md) — BLE matching cascade, GATT parsing, Apple Watch limitations
 - [Display Name Resolver](./display-name-resolver.md) — priority chain for the name shown on a card

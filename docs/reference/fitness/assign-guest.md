@@ -304,6 +304,71 @@ This means governance requirements are evaluated based on **who is currently ass
 
 ---
 
+## Continuous-Usage Threshold (W1)
+
+The legacy hardcoded 60-second "grace period" is gone. Sub-segment absorption
+is now driven by a single configurable knob with four behavioral rules that
+are applied at two distinct moments: live (in `GuestAssignmentService` as
+each reassignment happens) and at session save time (in `PersistenceManager`
+via the backfill pass).
+
+### Configuration
+
+```yaml
+# data/household/.../fitness.yml
+governance:
+  usage_threshold_seconds: 300   # default; T = 5 minutes
+```
+
+| Source | Value |
+|--------|-------|
+| `fitness.yml → governance.usage_threshold_seconds` | Authoritative; loaded by `FitnessConfigService` |
+| `FitnessContext` → `GuestAssignmentService({ thresholdMs })` | Threshold passed in as `thresholdMs` |
+| `FitnessContext` → `PersistenceManager.setUsageThresholdMs(...)` | Same value reused for save-time backfill |
+| GuestAssignmentService constructor default | `60_000` ms (back-compat for legacy unit tests only — NOT the runtime default) |
+| PersistenceManager `_applyBackfill` default | `60_000` ms (only when `sessionData.thresholdMs` and `_usageThresholdMs` are both absent) |
+
+The runtime default is **300 s / 5 min** — `fitness.yml` is the source of
+truth. The lower 60 s constructor defaults exist purely so legacy unit
+tests written against the original 60 s window don't have to inject a
+threshold; production code paths always provide a value.
+
+### The Four Behavioral Rules (audit Decision §7 + OI-1..OI-3)
+
+| Rule | Trigger | Effect |
+|------|---------|--------|
+| **OI-3 — Symmetric forward absorption** | A segment of duration `< T` is followed by ANY other segment on the same device | The sub-T segment is absorbed forward into the successor (coins, timeline, start time). Applies to ALL transition types — Guest→Mapped, Mapped→Guest, **Mapped→Mapped**, Guest→Guest. There is intentionally NO "previous occupant must be a guest" gate. |
+| **OI-1 — Final-segment backward absorption** | The LAST segment on a device is `< T` and has no successor to absorb into | Absorbed BACKWARD into the immediately prior honored segment (the "I just put it down" case). |
+| **OI-2 — Cycling / turn-taking detection** | 3+ consecutive sub-T segments alternating between 2+ distinct occupants on one device | All segments honored as a "shared device" pattern — neither cascading forward-absorption nor the OI-1 backward rule applies. Both occupants survive in the saved YAML. |
+| **§5 — Late-tag Pikachu merge** | A synthetic untagged (Pikachu) occupant is followed by a configured user, regardless of duration | The Pikachu segment is absorbed into the configured user. Per Decision §5, late tagging means "I'm telling you now who this was" — duration is irrelevant. |
+
+### Live vs Save-Time Application
+
+| Layer | What it does | What it can't catch |
+|-------|--------------|---------------------|
+| **`GuestAssignmentService`** (live, per reassignment) | Compares `previousDuration` against `thresholdMs`; emits `SEGMENT_ABSORBED` (sub-T, calls `session.transferSessionEntity` / `session.transferUserSeries`) or `GUEST_REPLACED` (≥ T, calls `session.endSessionEntity({ status: 'dropped' })`). | Final-segment backward absorption (OI-1 — no further reassignment exists), cycling-detection (OI-2 — would already have cascaded), late Pikachu merges (Decision §5 — the in-session check sees them as already-expired). |
+| **`PersistenceManager._applyBackfill`** (session save time) | Walks every device's entity history with `runSessionBackfill({ entities, thresholdMs, sessionEndTime })`. Applies OI-1, OI-2, OI-3, and §5 against the full timeline. Mutates `sessionData.timeline.series` in place via `_mergeUserSeriesInPlace` (destination-wins cell-by-cell). | (Save-time is the final word — anything wrong at this layer is wrong on disk.) |
+
+The save-time pass skips entities whose `status === 'transferred'` — those
+were already absorbed in-session and re-applying would null-out the merged
+destination data.
+
+### Telemetry
+
+| Event | When emitted | Payload fields (key ones) |
+|-------|--------------|---------------------------|
+| `SEGMENT_ABSORBED` (live, in `GuestAssignmentService`) | Sub-T reassignment, segment absorbed forward | `deviceId`, `previousOccupantId`, `previousDurationMs`, `thresholdMs`, `newOccupantId`, `transferType` (`entity-to-entity` \| `user-to-entity`) |
+| `GUEST_REPLACED` (live, in `GuestAssignmentService`) | Reassignment ≥ T, previous segment dropped | Same shape as above, plus `thresholdMs` for diagnostic correlation |
+| `persist_backfill_applied` (save time, in `PersistenceManager`) | Backfill pass moved data or removed occupants | `sessionId`, `thresholdMs`, `transfers[]`, `removedOccupants[]` |
+
+> **Event rename note (W1.C):** The live event was previously named
+> `GRACE_PERIOD_TRANSFER`. It is now `SEGMENT_ABSORBED` to match the actual
+> semantic (the "grace period" framing only made sense when the constant
+> was hardcoded at 60s). No external consumers existed at rename time — only
+> the emitter itself and its unit tests referenced the old name.
+
+---
+
 ## Lifecycle Scenarios
 
 This section documents the ideal flows and constraints for guest assignment state transitions.
@@ -327,9 +392,12 @@ This section documents the ideal flows and constraints for guest assignment stat
 │     - baseUserName stored with every assignment                    │
 │     - Enables "restore to owner" option                            │
 │                                                                     │
-│  4. GRACE PERIOD TRANSFER (< 1 minute)                             │
-│     - If previous assignment < 1 min, data transfers to new user   │
-│     - Coins, timeline, start time inherited                        │
+│  4. CONTINUOUS-USAGE THRESHOLD (< T, default 5 min / 300s)         │
+│     - Configured via fitness.yml governance.usage_threshold_seconds│
+│     - Sub-T segment absorbed forward into next occupant            │
+│     - Applies SYMMETRICALLY across Guest↔Mapped↔Mapped transitions │
+│     - Session-end backfill catches OI-1 (final), OI-2 (cycling)    │
+│     - See "Continuous-Usage Threshold" section above for details   │
 │                                                                     │
 │  5. ENTITY LIFECYCLE                                                │
 │     - Each assignment creates a session entity                     │
@@ -431,33 +499,40 @@ Constraint enforcement (FitnessSidebarMenu.jsx:138-150):
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Scenario 4: Grace Period Transfer
+### Scenario 4: Sub-Threshold Segment Absorption
 
-**Use case**: Quick correction when wrong user assigned (< 1 minute).
+**Use case**: Quick correction when wrong user assigned, within the
+continuous-usage threshold `T` (default 5 min / 300 s; see
+"Continuous-Usage Threshold" above).
 
 ```
 Timeline:
   t0:     Device #1 assigned to Bob
-  t0+30s: Realize mistake, assign to Carol instead
+  t0+30s: Realize mistake, assign to Carol instead   (30s < T → absorb)
 
-Result: Carol inherits Bob's session data (coins, timeline, start time)
+Result: Carol inherits Bob's session data (coins, timeline, start time).
+        The live SEGMENT_ABSORBED event is emitted with thresholdMs in
+        the payload.
 
-Grace Period Logic (GuestAssignmentService.js:97-165):
+Sub-Threshold Absorption Logic (GuestAssignmentService.js):
 ┌─────────────────────────────────────────────────────────────────────┐
-│  const GRACE_PERIOD_MS = 60 * 1000; // 1 minute                     │
+│  // this.thresholdMs is injected at construction time from          │
+│  // fitness.yml → governance.usage_threshold_seconds                │
 │                                                                     │
-│  if (previousEntry && previousDuration < GRACE_PERIOD_MS) {         │
-│    // Transfer mode: inherit data from previous                     │
-│    isGracePeriodTransfer = true;                                    │
+│  if (previousEntry && previousDuration < this.thresholdMs) {        │
+│    // Absorb mode: previous segment merged forward                  │
+│    isSegmentAbsorbed = true;                                        │
 │    transferredFromEntity = previousEntityId;                        │
 │                                                                     │
 │    // New entity inherits:                                          │
 │    // - Start time from previous entity                             │
 │    // - Coins via transferSessionEntity()                           │
 │    // - Timeline series via transferUserSeries()                    │
+│    // SEGMENT_ABSORBED event logged with thresholdMs                │
 │  } else {                                                           │
-│    // Normal replacement: previous session kept separate            │
+│    // ≥ T: previous segment honored as separate participant         │
 │    // Previous entity marked as 'dropped'                           │
+│    // GUEST_REPLACED event logged with thresholdMs                  │
 │  }                                                                  │
 └─────────────────────────────────────────────────────────────────────┘
 
@@ -467,6 +542,17 @@ Data Transfer Flow:
 
   User-to-Entity (owner → guest):
     session.transferUserSeries(ownerUserId, guestUserId)
+
+Symmetric application (OI-3): the same absorption rule applies even when
+both occupants are configured household members (e.g. parent hands strap
+to child mid-session). There is no "previous occupant must be a guest"
+gate. See `PersistenceManager.symmetricTransitions.test.js`.
+
+Save-time catches what live misses: if the in-session pass doesn't fire
+(e.g. the final segment with no successor — OI-1, or 3+ alternating
+sub-T segments — OI-2, or late-tag Pikachu merges — Decision §5), the
+session-end backfill pass in PersistenceManager applies the same rules
+against the full timeline at save time.
 ```
 
 ### Scenario 5: Multi-Device Family Session
@@ -557,12 +643,15 @@ Constraint bypass (FitnessSidebarMenu.jsx:123-128):
             │                 │   restored) │                 │
             │                 └─────────────┘                 │
             │                                                 │
-            └────────────────── < 1 min ──────────────────────┘
-                              (grace transfer)
+            └──────────────────── < T ────────────────────────┘
+                          (sub-threshold absorb)
 
 Note: Selecting "Original" from top options calls assignGuest()
 with the base user, not clearGuest(). This creates an assignment
 record that explicitly assigns the original owner.
+
+T = configured continuous-usage threshold from fitness.yml →
+governance.usage_threshold_seconds (default 5 min / 300 s).
 ```
 
 ### Entity Lifecycle During Transitions
@@ -572,19 +661,25 @@ Assignment creates entity:
   assignGuest(device, Bob) → createSessionEntity({profileId: Bob})
                            → entityId: "entity-123"
 
-Replacement (> 1 min) ends previous entity:
+Replacement (>= T) ends previous entity:
   assignGuest(device, Carol) → endSessionEntity("entity-123", {status: 'dropped'})
                              → createSessionEntity({profileId: Carol})
                              → entityId: "entity-456"
+                             → GUEST_REPLACED event (thresholdMs in payload)
 
-Replacement (< 1 min) transfers to new entity:
+Replacement (< T) absorbs into new entity:
   assignGuest(device, Carol) → createSessionEntity({profileId: Carol,
                                                     startTime: inheritedFromBob})
                              → transferSessionEntity("entity-123", "entity-456")
                              → entityId: "entity-456"
+                             → SEGMENT_ABSORBED event (thresholdMs in payload)
 
 Clear ends entity:
   clearGuest(device) → endSessionEntity("entity-456", {status: 'ended'})
+
+T = configured continuous-usage threshold (see Continuous-Usage Threshold
+section above for full details on the four behavioral rules — OI-1, OI-2,
+OI-3, §5 — and the live/save-time split.)
 ```
 
 ---
