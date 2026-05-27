@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import { HomeAssistantSection } from './HomeAssistantSection.jsx';
+import { HomeAutomationSection } from './HomeAutomationSection.jsx';
 
 function mkSlot(overrides = {}) {
   return {
@@ -19,18 +19,26 @@ function mkSlot(overrides = {}) {
 function renderSection(props) {
   return render(
     <MantineProvider>
-      <HomeAssistantSection {...props} />
+      <HomeAutomationSection {...props} />
     </MantineProvider>
   );
 }
 
-describe('HomeAssistantSection', () => {
+describe('HomeAutomationSection', () => {
   let mutations;
 
   beforeEach(() => {
     mutations = {
       updateDevice: vi.fn().mockResolvedValue({ ok: true }),
     };
+  });
+
+  it('uses "Home automation" vocabulary, not vendor name "Home Assistant"', () => {
+    const { container } = renderSection({ slot: mkSlot(), mutations });
+    const html = container.innerHTML;
+    expect(html).not.toMatch(/Home\s*Assistant/i);
+    // Labeled entity-ID input uses domain-vocabulary label.
+    expect(screen.getByLabelText(/home automation entity id/i)).toBeInTheDocument();
   });
 
   it('renders existing ha_entity_id and ha_turn_off_on_stop values', () => {
