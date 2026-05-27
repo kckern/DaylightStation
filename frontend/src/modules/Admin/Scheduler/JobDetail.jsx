@@ -9,6 +9,7 @@ import {
 } from '@tabler/icons-react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import ConfirmModal from '../shared/ConfirmModal.jsx';
+import { notifySuccess, notifyFailure } from '../shared/feedback.js';
 
 function cronToHuman(expr) {
   if (!expr) return '';
@@ -95,13 +96,16 @@ function JobDetail() {
     setRunQueued(true);
     try {
       await DaylightAPI(`/api/v1/admin/scheduler/jobs/${jobId}/run`, {}, 'POST');
+      notifySuccess({ title: 'Job triggered', message: jobId });
       // Re-fetch to update runtime status after a short delay
       setTimeout(() => {
         fetchJob();
         setRunQueued(false);
       }, 2000);
     } catch (err) {
-      setError(err.message || 'Failed to trigger job');
+      const msg = err.message || 'Failed to trigger job';
+      setError(msg);
+      notifyFailure({ title: 'Trigger failed', message: msg });
       setRunQueued(false);
     }
   }, [jobId, fetchJob]);
@@ -146,9 +150,12 @@ function JobDetail() {
     setDeleteLoading(true);
     try {
       await DaylightAPI(`/api/v1/admin/scheduler/jobs/${jobId}`, {}, 'DELETE');
+      notifySuccess({ title: 'Job deleted', message: jobId });
       navigate('/admin/system/scheduler');
     } catch (err) {
-      setError(err.message || 'Failed to delete job');
+      const msg = err.message || 'Failed to delete job';
+      setError(msg);
+      notifyFailure({ title: 'Delete failed', message: msg });
       setDeleteLoading(false);
       setDeleteOpen(false);
     }
