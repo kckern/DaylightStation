@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
+
+const { showMock } = vi.hoisted(() => ({ showMock: vi.fn() }));
+vi.mock('@mantine/notifications', () => ({
+  notifications: { show: (...args) => showMock(...args) },
+}));
+
 import { useHubMutations } from './useHubMutations.js';
 
 // Helper: build a fetch mock response.
@@ -17,6 +23,7 @@ describe('useHubMutations', () => {
   beforeEach(() => {
     revalidate = vi.fn();
     global.fetch = vi.fn();
+    showMock.mockClear();
   });
 
   afterEach(() => {
@@ -55,7 +62,10 @@ describe('useHubMutations', () => {
         action: 'play',
         contentId: 'plex:670208',
       });
-      expect(response).toEqual({ ok: true, applied: ['red'], skipped: [] });
+      expect(response).toEqual({
+        ok: true,
+        result: { ok: true, applied: ['red'], skipped: [] },
+      });
     });
 
     it('auto-retries ONCE after 500ms on contention with only the contention targets', async () => {
@@ -113,7 +123,7 @@ describe('useHubMutations', () => {
       await act(async () => {
         response = await promise;
       });
-      expect(response.applied).toEqual(['yellow', 'green']);
+      expect(response.result.applied).toEqual(['yellow', 'green']);
     });
 
     it('does NOT retry a second time if the retry also returns contention', async () => {
@@ -147,7 +157,7 @@ describe('useHubMutations', () => {
       });
 
       expect(global.fetch).toHaveBeenCalledTimes(2);
-      expect(response.skipped).toEqual([{ color: 'red', reason: 'contention' }]);
+      expect(response.result.skipped).toEqual([{ color: 'red', reason: 'contention' }]);
     });
 
     it('does NOT retry on non-contention skips', async () => {
@@ -177,7 +187,7 @@ describe('useHubMutations', () => {
       });
 
       expect(global.fetch).toHaveBeenCalledTimes(1);
-      expect(response.applied).toEqual([]);
+      expect(response.result.applied).toEqual([]);
     });
   });
 
@@ -206,7 +216,7 @@ describe('useHubMutations', () => {
       expect(opts.method).toBe('PATCH');
       expect(JSON.parse(opts.body)).toEqual({ volume: { max: 30 } });
       expect(revalidate).toHaveBeenCalledTimes(1);
-      expect(response.device.color).toBe('red');
+      expect(response.result.device.color).toBe('red');
     });
 
     it('encodes special characters in the color path', async () => {
@@ -341,7 +351,7 @@ describe('useHubMutations', () => {
       expect(url).toBe('/api/v1/playback-hub/scheduled/foo');
       expect(opts.method).toBe('DELETE');
       expect(revalidate).toHaveBeenCalledTimes(1);
-      expect(response).toEqual({ ok: true });
+      expect(response).toEqual({ ok: true, result: { ok: true } });
     });
 
     it('does NOT call revalidate on a non-2xx response', async () => {
@@ -359,7 +369,94 @@ describe('useHubMutations', () => {
       });
 
       expect(revalidate).not.toHaveBeenCalled();
-      expect(response).toEqual({ ok: false });
+      expect(response.ok).toBe(false);
+    });
+  });
+
+  // --------------------------------------------------------------------
+  // Feedback shape (returns { ok, result, error })
+  // --------------------------------------------------------------------
+
+  describe('feedback wiring', () => {
+    it('sendCommand returns { ok: true, result } on full success', async () => {
+      global.fetch.mockReturnValueOnce(ok({
+        ok: true, applied: ['red'], skipped: [],
+      }));
+
+      const { result } = renderHook(() => useHubMutations({ revalidate }));
+      let response;
+      await act(async () => {
+        response = await result.current.sendCommand({
+          target: 'red', action: 'play',
+        });
+      });
+
+      expect(response).toEqual({
+        ok: true,
+        result: { ok: true, applied: ['red'], skipped: [] },
+      });
+    });
+
+    it('sendCommand returns { ok: true, result } AND shows a partial toast when skipped is non-empty', async () => {
+      global.fetch.mockReturnValueOnce(ok({
+        ok: true,
+        applied: [],
+        skipped: [{ color: 'white', reason: 'unreachable' }],
+      }, 502));
+
+      const { result } = renderHook(() => useHubMutations({ revalidate }));
+      let response;
+      await act(async () => {
+        response = await result.current.sendCommand({
+          target: 'white', action: 'play',
+        });
+      });
+
+      expect(response.ok).toBe(true);
+      expect(response.result.skipped).toEqual([
+        { color: 'white', reason: 'unreachable' },
+      ]);
+      const yellow = showMock.mock.calls.find((c) => c[0].color === 'yellow');
+      expect(yellow).toBeTruthy();
+      expect(yellow[0].message).toContain('white');
+      expect(yellow[0].message).toContain('unreachable');
+    });
+
+    it('sendCommand returns { ok: false, error } when fetch rejects', async () => {
+      global.fetch.mockRejectedValueOnce(new Error('network'));
+
+      const { result } = renderHook(() => useHubMutations({ revalidate }));
+      let response;
+      await act(async () => {
+        response = await result.current.sendCommand({
+          target: 'red', action: 'play',
+        });
+      });
+
+      expect(response.ok).toBe(false);
+      expect(response.error.message).toBe('network');
+      const red = showMock.mock.calls.find((c) => c[0].color === 'red');
+      expect(red).toBeTruthy();
+    });
+
+    it('updateDevice returns { ok: false, error } when response is non-2xx', async () => {
+      global.fetch.mockReturnValueOnce(ok(
+        { ok: false, error: 'invariant violated: max < min' },
+        422,
+      ));
+
+      const { result } = renderHook(() => useHubMutations({ revalidate }));
+      let response;
+      await act(async () => {
+        response = await result.current.updateDevice('red', { volume: { min: 90, max: 10 } });
+      });
+
+      expect(response.ok).toBe(false);
+      expect(response.error.message).toContain('invariant violated');
+      expect(revalidate).not.toHaveBeenCalled();
+      const red = showMock.mock.calls.find((c) => c[0].color === 'red');
+      expect(red).toBeTruthy();
+      expect(red[0].message).toContain('invariant violated');
     });
   });
 
