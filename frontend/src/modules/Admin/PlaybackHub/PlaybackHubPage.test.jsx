@@ -13,7 +13,7 @@ const hubMutations = {
 };
 
 vi.mock('./hooks/useHubStatus', () => ({
-  useHubStatus: () => hubStatusMap,
+  useHubStatus: () => ({ devices: hubStatusMap, fetchedAt: new Date() }),
 }));
 
 vi.mock('./hooks/useHubConfig', () => ({
