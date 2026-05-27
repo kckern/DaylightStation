@@ -45,8 +45,10 @@ export function VolumeLimitsSection({ slot, mutations }) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await mutations.updateDevice(slot.color, { volume: { ...vals } });
-      setBaseline({ ...vals });
+      const out = await mutations.updateDevice(slot.color, { volume: { ...vals } });
+      if (out?.ok) {
+        setBaseline({ ...vals });
+      }
     } finally {
       setSaving(false);
     }

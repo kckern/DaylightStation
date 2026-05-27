@@ -88,4 +88,26 @@ describe('VolumeLimitsSection', () => {
     const defaultInput = screen.getByLabelText(/default/i);
     expect(defaultInput).toHaveValue('0');
   });
+
+  it('does NOT rebaseline when updateDevice returns { ok: false }', async () => {
+    mutations.updateDevice = vi.fn().mockResolvedValue({
+      ok: false,
+      error: new Error('HTTP 422: invariant violated'),
+    });
+
+    renderSection({ slot: mkSlot(), mutations });
+
+    const maxInput = screen.getByLabelText(/^max$/i);
+    fireEvent.change(maxInput, { target: { value: '80' } });
+
+    const saveBtn = screen.getByRole('button', { name: /save/i });
+    expect(saveBtn).not.toBeDisabled();
+
+    await act(async () => {
+      fireEvent.click(saveBtn);
+    });
+
+    // After failure: Save should STILL be enabled (dirty state preserved).
+    expect(screen.getByRole('button', { name: /save/i })).not.toBeDisabled();
+  });
 });
