@@ -20,7 +20,7 @@ import './PlaybackHubPage.scss';
  * being handed down to each DeviceCard.
  */
 export default function PlaybackHubPage() {
-  const status = useHubStatus();
+  const { devices: statusByColor, fetchedAt: statusFetchedAt } = useHubStatus();
   const { config, loading, error, revalidate } = useHubConfig();
   const mutations = useHubMutations({ revalidate });
 
@@ -50,7 +50,7 @@ export default function PlaybackHubPage() {
         <DeviceCard
           key={device.color}
           slot={device}
-          status={status.get(device.color)}
+          status={statusByColor.get(device.color)}
           scheduledFires={allFires.filter((f) => f.target === device.color)}
           mutations={mutations}
         />

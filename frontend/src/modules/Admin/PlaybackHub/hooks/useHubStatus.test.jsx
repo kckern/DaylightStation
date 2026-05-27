@@ -81,8 +81,8 @@ describe('useHubStatus', () => {
     );
 
     const { result } = renderHook(() => useHubStatus());
-    expect(result.current).toBeInstanceOf(Map);
-    expect(result.current.size).toBe(0);
+    expect(result.current.devices).toBeInstanceOf(Map);
+    expect(result.current.devices.size).toBe(0);
   });
 
   it('on initial GET success → state has all devices keyed by color', async () => {
@@ -97,12 +97,12 @@ describe('useHubStatus', () => {
     const { result } = renderHook(() => useHubStatus());
 
     await waitFor(() => {
-      expect(result.current.size).toBe(5);
+      expect(result.current.devices.size).toBe(5);
     });
 
     for (const c of ['red', 'yellow', 'green', 'blue', 'white']) {
-      expect(result.current.get(c)).toBeDefined();
-      expect(result.current.get(c).color).toBe(c);
+      expect(result.current.devices.get(c)).toBeDefined();
+      expect(result.current.devices.get(c).color).toBe(c);
     }
   });
 
@@ -126,7 +126,7 @@ describe('useHubStatus', () => {
     });
 
     await waitFor(() => {
-      expect(result.current.get('red')?.volume).toBe(99);
+      expect(result.current.devices.get('red')?.volume).toBe(99);
     });
 
     // 2. Now the GET response (OLDER) lands. Race guard should reject it.
@@ -139,7 +139,7 @@ describe('useHubStatus', () => {
 
     // Allow a microtask flush.
     await waitFor(() => {
-      expect(result.current.get('red')?.volume).toBe(99); // unchanged
+      expect(result.current.devices.get('red')?.volume).toBe(99); // unchanged
     });
   });
 
@@ -159,7 +159,7 @@ describe('useHubStatus', () => {
     const { result } = renderHook(() => useHubStatus());
 
     await waitFor(() => {
-      expect(result.current.get('red')?.volume).toBe(10);
+      expect(result.current.devices.get('red')?.volume).toBe(10);
     });
 
     act(() => {
@@ -173,7 +173,7 @@ describe('useHubStatus', () => {
     });
 
     await waitFor(() => {
-      expect(result.current.get('red')?.volume).toBe(99);
+      expect(result.current.devices.get('red')?.volume).toBe(99);
     });
   });
 
@@ -193,7 +193,7 @@ describe('useHubStatus', () => {
     const { result } = renderHook(() => useHubStatus());
 
     await waitFor(() => {
-      expect(result.current.get('red')?.volume).toBe(99);
+      expect(result.current.devices.get('red')?.volume).toBe(99);
     });
 
     act(() => {
@@ -206,7 +206,7 @@ describe('useHubStatus', () => {
       });
     });
 
-    expect(result.current.get('red')?.volume).toBe(99);
+    expect(result.current.devices.get('red')?.volume).toBe(99);
   });
 
   it('GET responses without ok=true are not accepted', async () => {
@@ -221,7 +221,7 @@ describe('useHubStatus', () => {
     // Give time for the promise chain to settle.
     await new Promise((res) => setTimeout(res, 10));
 
-    expect(result.current.size).toBe(0);
+    expect(result.current.devices.size).toBe(0);
   });
 
   it('GET network errors are swallowed (WS will deliver)', async () => {
@@ -230,7 +230,7 @@ describe('useHubStatus', () => {
     const { result } = renderHook(() => useHubStatus());
 
     await new Promise((res) => setTimeout(res, 10));
-    expect(result.current.size).toBe(0);
+    expect(result.current.devices.size).toBe(0);
 
     // WS still works.
     act(() => {
@@ -242,7 +242,7 @@ describe('useHubStatus', () => {
         },
       });
     });
-    expect(result.current.get('red')).toBeDefined();
+    expect(result.current.devices.get('red')).toBeDefined();
   });
 
   it('ignores WS messages with the wrong type', async () => {
@@ -262,7 +262,7 @@ describe('useHubStatus', () => {
       });
     });
 
-    expect(result.current.size).toBe(0);
+    expect(result.current.devices.size).toBe(0);
   });
 
   it('unmount during in-flight fetch does not raise setState-on-unmounted warnings', async () => {
@@ -306,5 +306,51 @@ describe('useHubStatus', () => {
     expect(unsubscribeFn).not.toHaveBeenCalled();
     unmount();
     expect(unsubscribeFn).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Return shape (devices + fetchedAt)
+// ---------------------------------------------------------------------------
+
+describe('useHubStatus return shape', () => {
+  beforeEach(() => {
+    lastSubscribeFilter = null;
+    lastSubscribeCallback = null;
+    unsubscribeFn.mockClear();
+    wsService.subscribe.mockClear();
+  });
+
+  it('returns { devices: Map, fetchedAt: Date } instead of bare Map', async () => {
+    const initialBody = {
+      ok: true,
+      slots: [makeDevice('red', { volume: 50 })],
+      fetchedAt: '2026-05-27T12:00:00.000Z',
+    };
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(initialBody),
+    });
+
+    const { result } = renderHook(() => useHubStatus());
+
+    await waitFor(() => {
+      expect(result.current.devices.size).toBe(1);
+    });
+
+    expect(result.current).toHaveProperty('devices');
+    expect(result.current).toHaveProperty('fetchedAt');
+    expect(result.current.devices).toBeInstanceOf(Map);
+    expect(result.current.devices.get('red')).toMatchObject({ color: 'red', volume: 50 });
+    expect(result.current.fetchedAt).toBeInstanceOf(Date);
+    expect(result.current.fetchedAt.toISOString()).toBe('2026-05-27T12:00:00.000Z');
+  });
+
+  it('returns { devices: empty Map, fetchedAt: null } before initial GET resolves', () => {
+    global.fetch = vi.fn(() => new Promise(() => { /* never resolves */ }));
+    const { result } = renderHook(() => useHubStatus());
+    expect(result.current.devices).toBeInstanceOf(Map);
+    expect(result.current.devices.size).toBe(0);
+    expect(result.current.fetchedAt).toBeNull();
   });
 });
