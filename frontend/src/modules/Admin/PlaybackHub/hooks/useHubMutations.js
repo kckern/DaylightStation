@@ -1,31 +1,34 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
+import getLogger from '../../../../lib/logging/Logger.js';
+import { runWithFeedback } from '../../shared/feedback.js';
 
 const CONTENTION_RETRY_DELAY_MS = 500;
 
 /**
  * Write helpers for the playback-hub admin.
  *
- * Constructor accepts `{ revalidate }` so each successful config-mutating
- * call (`updateDevice`, `saveFire`, `deleteFire`) can trigger a config
- * re-fetch. `sendCommand` does NOT revalidate (status changes flow back
- * via the WS broadcaster).
+ * Every call goes through `runWithFeedback` so the user sees a toast for
+ * success / partial / failure, and an entry shows up in the structured log
+ * stream under `playback-hub.<action>.<phase>`.
  *
- * Contention auto-retry semantics — `sendCommand` has built-in single
- * retry on `skipped[].reason === 'contention'` (matches the use case's
- * CommandResult). Retries fire only the contention'd targets, after a
- * 500 ms delay. There is at most ONE auto-retry per call.
+ * Each mutation returns `{ ok, result?, error? }`:
+ *   - on full success:    { ok: true, result: <wire body> }
+ *   - on partial success: { ok: true, result: <wire body> }  (yellow toast shown)
+ *   - on HTTP error or network throw: { ok: false, error }   (red toast shown)
  *
- * @param {object} options
- * @param {() => Promise<void>} [options.revalidate]
- * @returns {{
- *   sendCommand: (body: object) => Promise<object>,
- *   updateDevice: (color: string, patch: object) => Promise<object>,
- *   saveFire: (fire: object) => Promise<object>,
- *   deleteFire: (id: string) => Promise<{ ok: boolean }>,
- * }}
+ * `sendCommand` keeps its existing contention auto-retry (500ms delay,
+ * single retry, only the contention'd targets). Real protocol-level
+ * errors (body has `ok: false`) become exceptions so they classify as
+ * failure; partial outcomes (HTTP 502 but body `ok: true` with skipped[])
+ * remain structured and classify as partial via `partialFromResult`.
  */
 export function useHubMutations({ revalidate } = {}) {
-  const sendCommand = useCallback(async (body, _attempt = 0) => {
+  const logger = useMemo(
+    () => getLogger().child({ component: 'useHubMutations' }),
+    [],
+  );
+
+  const sendCommandRaw = useCallback(async function inner(body, _attempt = 0) {
     const r = await fetch('/api/v1/playback-hub/command', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -33,36 +36,74 @@ export function useHubMutations({ revalidate } = {}) {
     });
     const result = await r.json();
 
-    // Auto-retry contention'd targets ONCE, after a short delay. Other
-    // skip reasons (`unreachable`, `not-found`) are terminal and bubble
-    // up to the caller as-is.
     if (_attempt === 0 && Array.isArray(result?.skipped)) {
       const contention = result.skipped.filter((s) => s?.reason === 'contention');
       if (contention.length > 0) {
         const retryTargets = contention.map((s) => s.color).join(',');
         await new Promise((res) => setTimeout(res, CONTENTION_RETRY_DELAY_MS));
-        return sendCommand({ ...body, target: retryTargets }, 1);
+        return inner({ ...body, target: retryTargets }, 1);
       }
     }
 
+    if (result?.ok === false) {
+      const err = new Error(result?.error ?? `HTTP ${r.status}`);
+      err.status = r.status;
+      throw err;
+    }
     return result;
   }, []);
 
-  const updateDevice = useCallback(async (color, patch) => {
+  const sendCommand = useCallback((body) => {
+    return runWithFeedback(() => sendCommandRaw(body), {
+      logger,
+      eventName: `playback-hub.command.${body?.action ?? 'unknown'}`,
+      successTitle: 'Command sent',
+      successMessage: (r) =>
+        `${body?.action ?? 'command'}: ${(r.applied ?? []).join(', ') || '(no targets)'}`,
+      partialTitle: 'Command partial',
+      partialFromResult: (r) => ({
+        applied: r.applied ?? [],
+        skipped: r.skipped ?? [],
+        isPartial: (r.skipped ?? []).length > 0,
+      }),
+      failureTitle: 'Command failed',
+      logContext: { action: body?.action, target: body?.target },
+    });
+  }, [logger, sendCommandRaw]);
+
+  const updateDeviceRaw = useCallback(async (color, patch) => {
     const r = await fetch(
       `/api/v1/playback-hub/devices/${encodeURIComponent(color)}`,
       {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch),
-      }
+      },
     );
     const result = await r.json();
-    if (r.ok) revalidate?.();
+    if (!r.ok) {
+      const err = new Error(result?.error ?? `HTTP ${r.status}`);
+      err.status = r.status;
+      throw err;
+    }
     return result;
-  }, [revalidate]);
+  }, []);
 
-  const saveFire = useCallback(async (fire) => {
+  const updateDevice = useCallback((color, patch) => {
+    return runWithFeedback(() => updateDeviceRaw(color, patch), {
+      logger,
+      eventName: 'playback-hub.update-device',
+      successTitle: 'Saved',
+      successMessage: () => `${color} updated`,
+      failureTitle: `Could not update ${color}`,
+      logContext: { color },
+    }).then((out) => {
+      if (out.ok) revalidate?.();
+      return out;
+    });
+  }, [logger, updateDeviceRaw, revalidate]);
+
+  const saveFireRaw = useCallback(async (fire) => {
     const isUpdate = !!fire?.id;
     const url = isUpdate
       ? `/api/v1/playback-hub/scheduled/${encodeURIComponent(fire.id)}`
@@ -73,18 +114,63 @@ export function useHubMutations({ revalidate } = {}) {
       body: JSON.stringify(fire),
     });
     const result = await r.json();
-    if (r.ok) revalidate?.();
+    if (!r.ok) {
+      const err = new Error(result?.error ?? `HTTP ${r.status}`);
+      err.status = r.status;
+      throw err;
+    }
     return result;
-  }, [revalidate]);
+  }, []);
 
-  const deleteFire = useCallback(async (id) => {
+  const saveFire = useCallback((fire) => {
+    const isUpdate = !!fire?.id;
+    return runWithFeedback(() => saveFireRaw(fire), {
+      logger,
+      eventName: isUpdate
+        ? 'playback-hub.fire.update'
+        : 'playback-hub.fire.create',
+      successTitle: isUpdate ? 'Schedule updated' : 'Schedule created',
+      successMessage: (r) =>
+        `${r.fire?.target ?? fire?.target ?? '?'} @ ${r.fire?.time ?? fire?.time ?? '?'}`,
+      failureTitle: 'Could not save schedule',
+      logContext: { id: fire?.id, target: fire?.target },
+    }).then((out) => {
+      if (out.ok) revalidate?.();
+      return out;
+    });
+  }, [logger, saveFireRaw, revalidate]);
+
+  const deleteFireRaw = useCallback(async (id) => {
     const r = await fetch(
       `/api/v1/playback-hub/scheduled/${encodeURIComponent(id)}`,
-      { method: 'DELETE' }
+      { method: 'DELETE' },
     );
-    if (r.ok) revalidate?.();
-    return { ok: r.ok };
-  }, [revalidate]);
+    if (!r.ok) {
+      let detail = `HTTP ${r.status}`;
+      try {
+        const body = await r.json();
+        detail = body?.error ?? detail;
+      } catch { /* no body */ }
+      const err = new Error(detail);
+      err.status = r.status;
+      throw err;
+    }
+    return { ok: true };
+  }, []);
+
+  const deleteFire = useCallback((id) => {
+    return runWithFeedback(() => deleteFireRaw(id), {
+      logger,
+      eventName: 'playback-hub.fire.delete',
+      successTitle: 'Schedule deleted',
+      successMessage: () => `id: ${id}`,
+      failureTitle: 'Could not delete schedule',
+      logContext: { id },
+    }).then((out) => {
+      if (out.ok) revalidate?.();
+      return out;
+    });
+  }, [logger, deleteFireRaw, revalidate]);
 
   return { sendCommand, updateDevice, saveFire, deleteFire };
 }
