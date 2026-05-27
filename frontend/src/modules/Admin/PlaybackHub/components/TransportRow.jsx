@@ -15,13 +15,9 @@ const VOLUME_DEBOUNCE_MS = 300;
  *
  * Layout: [⏮] [⏯] [⏭] | volume slider | LabeledContentPicker | [Play Now]
  *
- * Volume slider is debounced (300 ms) so dragging doesn't spam mutations.
- * Each transport button targets the slot's color via `mutations.sendCommand`.
- *
- * Props:
- *   slot:      device config { color, volume:{default,min,max}, ... }
- *   status:    live status { paused, volume, ... } | undefined
- *   mutations: object from useHubMutations
+ * Each transport button shows a loading state while its sendCommand is in
+ * flight. Other buttons in the row dim during that window to make the active
+ * op visible.
  */
 export function TransportRow({ slot, status, mutations }) {
   const maxVol = slot?.volume?.max ?? 100;
@@ -29,12 +25,9 @@ export function TransportRow({ slot, status, mutations }) {
   const defaultVol = slot?.volume?.default ?? 0;
 
   const [pickedValue, setPickedValue] = useState('');
-  const [sliderValue, setSliderValue] = useState(
-    status?.volume ?? defaultVol
-  );
+  const [sliderValue, setSliderValue] = useState(status?.volume ?? defaultVol);
+  const [busyKey, setBusyKey] = useState(null);
 
-  // Re-sync slider when status arrives or external volume changes,
-  // but only when the user isn't actively interacting.
   const userInteractingRef = useRef(false);
   useEffect(() => {
     if (userInteractingRef.current) return;
@@ -60,52 +53,46 @@ export function TransportRow({ slot, status, mutations }) {
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
   }, []);
 
-  const handlePrev = () => {
-    mutations.sendCommand({ action: 'prev', target: slot.color });
-  };
-  const handleNext = () => {
-    mutations.sendCommand({ action: 'next', target: slot.color });
-  };
-  const handlePause = () => {
-    mutations.sendCommand({ action: 'pause', target: slot.color });
-  };
+  const run = useCallback(async (key, body) => {
+    setBusyKey(key);
+    try {
+      await mutations.sendCommand(body);
+    } finally {
+      setBusyKey(null);
+    }
+  }, [mutations]);
+
+  const handlePrev = () => run('prev', { action: 'prev', target: slot.color });
+  const handleNext = () => run('next', { action: 'next', target: slot.color });
+  const handlePause = () => run('pause', { action: 'pause', target: slot.color });
   const handlePlayNow = () => {
     if (!pickedValue) return;
-    mutations.sendCommand({
-      action: 'play',
-      target: slot.color,
-      contentId: pickedValue,
-    });
+    run('play', { action: 'play', target: slot.color, contentId: pickedValue });
   };
 
   const isPaused = status?.paused === true;
+  const otherBusy = (k) => busyKey !== null && busyKey !== k;
 
   return (
     <Group gap="sm" wrap="nowrap" align="center" mt="md">
       <ActionIcon
-        size="lg"
-        variant="default"
-        onClick={handlePrev}
-        aria-label="prev"
-        title="Previous"
+        size="lg" variant="default" onClick={handlePrev}
+        aria-label="prev" title="Previous"
+        loading={busyKey === 'prev'} disabled={otherBusy('prev')}
       >
         <IconPlayerSkipBack size={18} />
       </ActionIcon>
       <ActionIcon
-        size="lg"
-        variant="default"
-        onClick={handlePause}
-        aria-label={isPaused ? 'play' : 'pause'}
-        title={isPaused ? 'Resume' : 'Pause'}
+        size="lg" variant="default" onClick={handlePause}
+        aria-label={isPaused ? 'play' : 'pause'} title={isPaused ? 'Resume' : 'Pause'}
+        loading={busyKey === 'pause'} disabled={otherBusy('pause')}
       >
         {isPaused ? <IconPlayerPlay size={18} /> : <IconPlayerPause size={18} />}
       </ActionIcon>
       <ActionIcon
-        size="lg"
-        variant="default"
-        onClick={handleNext}
-        aria-label="next"
-        title="Next"
+        size="lg" variant="default" onClick={handleNext}
+        aria-label="next" title="Next"
+        loading={busyKey === 'next'} disabled={otherBusy('next')}
       >
         <IconPlayerSkipForward size={18} />
       </ActionIcon>
@@ -132,7 +119,8 @@ export function TransportRow({ slot, status, mutations }) {
       <Button
         size="sm"
         variant="filled"
-        disabled={!pickedValue}
+        disabled={!pickedValue || otherBusy('play')}
+        loading={busyKey === 'play'}
         onClick={handlePlayNow}
       >
         Play Now
