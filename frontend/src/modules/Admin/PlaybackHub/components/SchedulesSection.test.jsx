@@ -26,7 +26,7 @@ function mkSlot(overrides = {}) {
     class: 'private',
     mac: 'aa:bb',
     volume: { default: 50, min: 0, max: 75 },
-    continuous: [
+    schedules: [
       { start: '07:00', end: '21:00', queue: 'plex:675465', shuffle: true },
     ],
     ...overrides,
@@ -61,14 +61,14 @@ describe('SchedulesSection', () => {
     expect(endInputs[0]).toHaveValue('21:00');
   });
 
-  it('renders empty state when slot has no continuous schedules', () => {
-    renderSection({ slot: mkSlot({ continuous: [] }), mutations });
+  it('renders empty state when slot has no schedules', () => {
+    renderSection({ slot: mkSlot({ schedules: [] }), mutations });
     expect(screen.queryAllByTestId(/picker-stub/).length).toBe(0);
     expect(screen.getByRole('button', { name: /add window/i })).toBeInTheDocument();
   });
 
   it('Add window adds a new empty row', () => {
-    renderSection({ slot: mkSlot({ continuous: [] }), mutations });
+    renderSection({ slot: mkSlot({ schedules: [] }), mutations });
     fireEvent.click(screen.getByRole('button', { name: /add window/i }));
     expect(screen.getAllByTestId(/picker-stub/).length).toBe(1);
   });
@@ -93,14 +93,14 @@ describe('SchedulesSection', () => {
 
     expect(mutations.updateDevice).toHaveBeenCalledTimes(1);
     expect(mutations.updateDevice).toHaveBeenCalledWith('red', {
-      continuous: [
+      schedules: [
         { start: '08:00', end: '21:00', queue: 'plex:675465', shuffle: true },
       ],
     });
   });
 
   it('Save includes new rows added via Add window', async () => {
-    renderSection({ slot: mkSlot({ continuous: [] }), mutations });
+    renderSection({ slot: mkSlot({ schedules: [] }), mutations });
 
     fireEvent.click(screen.getByRole('button', { name: /add window/i }));
 
@@ -120,7 +120,7 @@ describe('SchedulesSection', () => {
     });
 
     expect(mutations.updateDevice).toHaveBeenCalledWith('red', {
-      continuous: [
+      schedules: [
         expect.objectContaining({
           start: '09:00',
           end: '17:00',
@@ -133,7 +133,7 @@ describe('SchedulesSection', () => {
   it('Shuffle switch toggles shuffle field in saved payload', async () => {
     renderSection({
       slot: mkSlot({
-        continuous: [
+        schedules: [
           { start: '07:00', end: '21:00', queue: 'plex:1', shuffle: false },
         ],
       }),
@@ -148,7 +148,7 @@ describe('SchedulesSection', () => {
     });
 
     expect(mutations.updateDevice).toHaveBeenCalledWith('red', {
-      continuous: [
+      schedules: [
         expect.objectContaining({ shuffle: true }),
       ],
     });

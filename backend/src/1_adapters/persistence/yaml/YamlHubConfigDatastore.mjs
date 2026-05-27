@@ -43,7 +43,7 @@ const VALID_DAY_NAMES = new Set(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'
 
 const MODELED_DEVICE_KEYS = new Set([
   'slot', 'color', 'mac', 'class', 'ha_entity_id', 'ha_turn_off_on_stop',
-  'volume', 'continuous'
+  'volume', 'schedules'
 ]);
 
 function isPlainObject(v) {
@@ -312,8 +312,8 @@ export class YamlHubConfigDatastore extends IHubConfigRepository {
       const volumeBounds = ('volume' in dev && dev.volume !== null && dev.volume !== undefined)
         ? new VolumeBounds(dev.volume)
         : new VolumeBounds({});
-      const continuous = Array.isArray(dev.continuous)
-        ? dev.continuous.map(c => new ContinuousSchedule({
+      const continuous = Array.isArray(dev.schedules)
+        ? dev.schedules.map(c => new ContinuousSchedule({
             start: c.start,
             end: c.end,
             queue: c.queue instanceof QueueRef ? c.queue : QueueRef.parse(String(c.queue)),

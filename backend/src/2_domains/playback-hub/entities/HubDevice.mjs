@@ -208,7 +208,7 @@ export class HubDevice {
       out.volume = volumeYaml;
     }
     if (this.#continuousSchedules.length > 0) {
-      out.continuous = this.#continuousSchedules.map(s => {
+      out.schedules = this.#continuousSchedules.map(s => {
         const entry = {
           start: s.start,
           end: s.end,

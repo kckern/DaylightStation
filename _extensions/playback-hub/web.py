@@ -263,18 +263,25 @@ def expected_audio_devices(mac):
 
 def slot_status(device):
     slot = device["slot"]
+    color = device.get("color")
     slot_dir = SLOTS_DIR / str(slot)
     sock_path = slot_dir / "mpv-socket"
     pid_file = slot_dir / "mpv.pid"
+    armed_file = slot_dir / ".armed.json"
 
     connected = is_connected(device["mac"])
     playing = pid_alive(pid_file)
 
+    # Legacy fields (consumed by this hub's own /admin web UI):
     title = None
-    position = None
+    position = None       # playback time in seconds (legacy meaning)
     duration = None
     playlist_pos = None
     audio_device = None
+    # New fields (consumed by DaylightStation's SlotStatus value object):
+    volume = None
+    playlist_count = None
+    paused = False
 
     if playing and sock_path.exists():
         r = mpv_command(sock_path, ["get_property", "media-title"])
@@ -289,11 +296,46 @@ def slot_status(device):
         r = mpv_command(sock_path, ["get_property", "playlist-pos"])
         if r and "data" in r:
             playlist_pos = r["data"]
+        r = mpv_command(sock_path, ["get_property", "playlist-count"])
+        if r and "data" in r:
+            playlist_count = r["data"]
         r = mpv_command(sock_path, ["get_property", "audio-device"])
         if r and "data" in r:
             audio_device = r["data"]
+        r = mpv_command(sock_path, ["get_property", "volume"])
+        if r and "data" in r:
+            volume = r["data"]
+        r = mpv_command(sock_path, ["get_property", "pause"])
+        if r and "data" in r:
+            paused = bool(r["data"])
+
+    # Armed state — set by scheduled fires + /api/play. Drives the
+    # public-class auto-play gate.
+    armed_source = None
+    armed_queue_id = None
+    if armed_file.exists():
+        try:
+            with open(armed_file) as f:
+                armed = json.load(f)
+            armed_source = armed.get("source")
+            armed_queue_id = armed.get("queue")
+        except Exception:
+            pass
+
+    # now_playing follows the domain's QueueRef shape. The queue id comes
+    # from the armed sentinel (set by /api/play or scheduled fire) when
+    # available; otherwise from the device's static `queue` field. Null
+    # when nothing is playing.
+    current_queue_id = armed_queue_id or device.get("queue") or None
+    now_playing = None
+    if playing and title and current_queue_id:
+        now_playing = {
+            "queue": {"source": "plex", "id": str(current_queue_id)},
+            "title": title,
+        }
 
     return {
+        # ── Legacy keys (this hub's own /admin UI in this file consumes them) ──
         "slot": slot,
         "name": device.get("name", ""),
         "mac": device.get("mac", ""),
@@ -305,6 +347,14 @@ def slot_status(device):
         "playlist_pos": playlist_pos,
         "audio_device": audio_device,
         "expected_audio_devices": expected_audio_devices(device.get("mac", "")),
+        # ── New keys (DaylightStation SlotStatus VO consumes them) ──
+        "color": color,
+        "bt_connected": connected,
+        "paused": paused,
+        "now_playing": now_playing,
+        "volume": volume,
+        "playlist_count": playlist_count,
+        "armed_source": armed_source,
     }
 
 API_BASE = "https://daylightlocal.kckern.net"

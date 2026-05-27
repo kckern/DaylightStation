@@ -120,18 +120,21 @@ export class SlotStatus {
         code: 'INVALID_SLOT_STATUS', field: 'paused', value: args.paused
       });
     }
-    if (typeof args.volume !== 'number' || !Number.isFinite(args.volume)) {
-      throw new ValidationError('SlotStatus.volume must be a finite number', {
+    // volume / playlist_pos / playlist_count are null while the slot's mpv
+    // isn't running (idle slot, BT disconnected, etc). Otherwise they must
+    // be finite numbers.
+    if (args.volume !== null && (typeof args.volume !== 'number' || !Number.isFinite(args.volume))) {
+      throw new ValidationError('SlotStatus.volume must be a finite number or null', {
         code: 'INVALID_SLOT_STATUS', field: 'volume', value: args.volume
       });
     }
-    if (typeof args.playlist_pos !== 'number' || !Number.isFinite(args.playlist_pos)) {
-      throw new ValidationError('SlotStatus.playlist_pos must be a finite number', {
+    if (args.playlist_pos !== null && (typeof args.playlist_pos !== 'number' || !Number.isFinite(args.playlist_pos))) {
+      throw new ValidationError('SlotStatus.playlist_pos must be a finite number or null', {
         code: 'INVALID_SLOT_STATUS', field: 'playlist_pos', value: args.playlist_pos
       });
     }
-    if (typeof args.playlist_count !== 'number' || !Number.isFinite(args.playlist_count)) {
-      throw new ValidationError('SlotStatus.playlist_count must be a finite number', {
+    if (args.playlist_count !== null && (typeof args.playlist_count !== 'number' || !Number.isFinite(args.playlist_count))) {
+      throw new ValidationError('SlotStatus.playlist_count must be a finite number or null', {
         code: 'INVALID_SLOT_STATUS', field: 'playlist_count', value: args.playlist_count
       });
     }
@@ -190,6 +193,15 @@ export class SlotStatus {
 
   /**
    * Map a single hub-JSON snapshot entry into a SlotStatus.
+   *
+   * The hub's `/api/status` emits both a "slot" field (the slot position,
+   * 1..N) and a legacy "position" field (mpv playback time in seconds).
+   * The VO's `position` field carries the slot position — so we read it
+   * from `json.slot`, not `json.position`.
+   *
+   * `volume`, `playlist_pos`, `playlist_count` are null when mpv isn't
+   * running for that slot; passed through verbatim.
+   *
    * @param {object} json
    * @returns {SlotStatus}
    */
@@ -201,16 +213,36 @@ export class SlotStatus {
       });
     }
     return new SlotStatus({
-      position: json.position,
+      position: json.slot,
       color: json.color,
       bt_connected: json.bt_connected,
       paused: json.paused,
       now_playing: json.now_playing ?? null,
-      volume: json.volume,
-      playlist_pos: json.playlist_pos,
-      playlist_count: json.playlist_count,
+      volume: json.volume ?? null,
+      playlist_pos: json.playlist_pos ?? null,
+      playlist_count: json.playlist_count ?? null,
       armed_source: json.armed_source ?? null
     });
+  }
+
+  /**
+   * JSON-serialize as the wire shape consumed by the frontend useHubStatus
+   * hook. Private fields don't survive default JSON.stringify, so this is
+   * what gets sent over the WebSocket broadcast and the REST first-paint.
+   * @returns {object}
+   */
+  toJSON() {
+    return {
+      position: this.#position,
+      color: this.#color,
+      bt_connected: this.#bt_connected,
+      paused: this.#paused,
+      now_playing: this.#now_playing,
+      volume: this.#volume,
+      playlist_pos: this.#playlist_pos,
+      playlist_count: this.#playlist_count,
+      armed_source: this.#armed_source,
+    };
   }
 }
 

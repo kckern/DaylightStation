@@ -17,22 +17,21 @@ import { LabeledContentPicker } from './LabeledContentPicker.jsx';
  *
  * Each window is { start: 'HH:MM', end: 'HH:MM', queue: 'source:id', shuffle?: boolean }.
  *
- * The wire field on the device is `continuous` (matches HubDevice.toYaml());
- * the plan doc refers to it as `continuousSchedules` but the actual YAML
- * uses `continuous`, which is what useHubConfig returns.
+ * The wire field on the device is `schedules` (matches the hub's canonical
+ * YAML and HubDevice.toYaml() output).
  *
  * Props:
- *   slot:      device config { color, continuous?: [...], ... }
+ *   slot:      device config { color, schedules?: [...], ... }
  *   mutations: object from useHubMutations
  */
 export function SchedulesSection({ slot, mutations }) {
-  const [windows, setWindows] = useState(() => slot?.continuous ?? []);
+  const [windows, setWindows] = useState(() => slot?.schedules ?? []);
   const [saving, setSaving] = useState(false);
 
   // Re-sync when slot prop changes (e.g. after revalidate)
   useEffect(() => {
-    setWindows(slot?.continuous ?? []);
-  }, [slot?.continuous]);
+    setWindows(slot?.schedules ?? []);
+  }, [slot?.schedules]);
 
   const updateWindow = (idx, patch) => {
     setWindows((prev) => prev.map((w, i) => (i === idx ? { ...w, ...patch } : w)));
@@ -53,7 +52,7 @@ export function SchedulesSection({ slot, mutations }) {
     setSaving(true);
     try {
       await mutations.updateDevice(slot.color, {
-        continuous: windows.map((w) => ({
+        schedules: windows.map((w) => ({
           start: w.start || '',
           end: w.end || '',
           queue: w.queue || '',
