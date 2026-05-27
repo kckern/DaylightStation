@@ -191,4 +191,46 @@ describe('TransportRow', () => {
     // aria-valuenow reflects current value
     expect(slider.getAttribute('aria-valuenow')).toBe('50');
   });
+
+  it('disables Play Now button while sendCommand is in flight', async () => {
+    let resolveCmd;
+    const pending = new Promise((resolve) => { resolveCmd = resolve; });
+    mutations.sendCommand = vi.fn().mockReturnValue(pending);
+
+    renderTransport({ slot: mkSlot(), status: mkStatus(), mutations });
+
+    act(() => {
+      pickerOnChangeRef('plex:42');
+    });
+
+    const playBtn = screen.getByRole('button', { name: /^play now$/i });
+    expect(playBtn).not.toBeDisabled();
+
+    fireEvent.click(playBtn);
+    expect(playBtn).toBeDisabled();
+
+    await act(async () => {
+      resolveCmd({ ok: true, result: { applied: ['red'], skipped: [] } });
+    });
+
+    expect(screen.getByRole('button', { name: /^play now$/i })).not.toBeDisabled();
+  });
+
+  it('does not crash if sendCommand returns { ok: false }', async () => {
+    mutations.sendCommand = vi.fn().mockResolvedValue({
+      ok: false,
+      error: new Error('HTTP 502'),
+    });
+
+    renderTransport({ slot: mkSlot(), status: mkStatus(), mutations });
+
+    act(() => {
+      pickerOnChangeRef('plex:42');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /^play now$/i }));
+    await act(async () => { await Promise.resolve(); });
+    const playBtn = screen.getByRole('button', { name: /^play now$/i });
+    expect(playBtn).not.toBeDisabled();
+  });
 });
