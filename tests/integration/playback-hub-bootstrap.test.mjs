@@ -2,23 +2,34 @@
 /**
  * tests/integration/playback-hub-bootstrap.test.mjs
  *
- * Exercises `createPlaybackHubServices` end-to-end. Constructs the real
- * adapters (HttpPlaybackHubAdapter against a stub HTTP server, and
- * YamlHubConfigDatastore against a tmp file), builds the container, and
- * verifies:
- *   1. `GET /api/v1/playback-hub/status` returns slots from the stub hub
- *   2. `GET /api/v1/playback-hub/config` returns the parsed YAML
- *   3. The broadcaster ran at least once and published a snapshot
- *   4. Shutdown stops the broadcaster cleanly
+ * This is the Task 9.1 full-stack integration smoke test for the Playback Hub
+ * Admin bounded context. Exercises `createPlaybackHubServices`-equivalent
+ * wiring end-to-end. Constructs the real adapters (HttpPlaybackHubAdapter
+ * against a stub HTTP server, and YamlHubConfigDatastore against a tmp file),
+ * builds the container, and verifies that every router route returns the
+ * expected payload and reaches the real adapters:
+ *
+ *   1. `GET    /api/v1/playback-hub/status`           — slots come from the stub hub
+ *   2. `GET    /api/v1/playback-hub/config`           — parsed YAML aggregate
+ *   3. `POST   /api/v1/playback-hub/command`          — dispatches to gateway
+ *   4. `PATCH  /api/v1/playback-hub/devices/:color`   — patches + persists YAML
+ *   5. `POST   /api/v1/playback-hub/scheduled`        — adds a fire + persists YAML
+ *   6. Broadcaster runs at least once and publishes a snapshot
+ *   7. Shutdown stops the broadcaster cleanly
+ *
+ * Future readers: this file IS the Task 9.1 deliverable. A duplicate
+ * `playback-hub-admin-smoke.test.mjs` was deemed redundant because every
+ * router route + adapter integration is covered here against real modules.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import http from 'node:http';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import yaml from 'js-yaml';
 
 // NOTE: We don't import `createPlaybackHubServices` from bootstrap.mjs
 // directly — that file eagerly pulls in the entire backend (Mastra, Plex,
@@ -104,10 +115,18 @@ const STUB_SLOT_STATUS = [
 
 /**
  * Spin up a tiny mock playback hub on a random port.
- * Only implements GET /api/status — that's all the bootstrap smoke needs.
+ * Implements:
+ *   - GET  /api/status — returns STUB_SLOT_STATUS
+ *   - POST /api/play   — records the body in `playRequests`, returns
+ *                        `{ ok, applied: [<targets>], skipped: [] }` so the
+ *                        gateway's CommandResult parser accepts it.
+ *
+ * Returns `{ server, port, playRequests }` so tests can assert what the
+ * gateway forwarded to the hub.
  */
 function startStubHub() {
   return new Promise((resolve) => {
+    const playRequests = [];
     const server = http.createServer((req, res) => {
       if (req.method === 'GET' && req.url === '/api/status') {
         res.statusCode = 200;
@@ -115,12 +134,33 @@ function startStubHub() {
         res.end(JSON.stringify(STUB_SLOT_STATUS));
         return;
       }
+      if (req.method === 'POST' && req.url === '/api/play') {
+        let body = '';
+        req.on('data', (chunk) => { body += chunk; });
+        req.on('end', () => {
+          let parsed = null;
+          try { parsed = JSON.parse(body); } catch { /* keep null */ }
+          playRequests.push(parsed);
+          const targetColors = typeof parsed?.target === 'string'
+            ? parsed.target.split(',').map((s) => s.trim()).filter(Boolean)
+            : [];
+          res.statusCode = 200;
+          res.setHeader('content-type', 'application/json');
+          res.end(JSON.stringify({
+            ok: true,
+            action: parsed?.action ?? null,
+            applied: targetColors,
+            skipped: [],
+          }));
+        });
+        return;
+      }
       res.statusCode = 404;
       res.end('not found');
     });
     server.listen(0, '127.0.0.1', () => {
       const { port } = server.address();
-      resolve({ server, port });
+      resolve({ server, port, playRequests });
     });
   });
 }
@@ -158,6 +198,8 @@ describe('playback-hub bootstrap integration', () => {
   /** @type {http.Server} */
   let stubServer;
   let baseUrl;
+  /** @type {Array<object|null>} */
+  let stubPlayRequests;
   /** @type {string} */
   let dataDir;
   /** @type {string} */
@@ -174,6 +216,7 @@ describe('playback-hub bootstrap integration', () => {
     const stub = await startStubHub();
     stubServer = stub.server;
     baseUrl = `http://127.0.0.1:${stub.port}`;
+    stubPlayRequests = stub.playRequests;
 
     // Tmp data dir + household/config/playback-hub.yml
     dataDir = await mkdtemp(path.join(tmpdir(), 'playback-hub-it-'));
@@ -233,6 +276,81 @@ describe('playback-hub bootstrap integration', () => {
     expect(res.body.config.devices).toHaveLength(2);
     expect(res.body.config.devices[0].color).toBe('red');
     expect(res.body.config.devices[1].color).toBe('yellow');
+  });
+
+  it('POST /command (action=play) dispatches to the hub gateway', async () => {
+    const before = stubPlayRequests.length;
+    const res = await request(app)
+      .post('/api/v1/playback-hub/command')
+      .send({ action: 'play', target: 'red', contentId: '670208' });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(Array.isArray(res.body.applied)).toBe(true);
+    expect(res.body.applied).toContain('red');
+    expect(Array.isArray(res.body.skipped)).toBe(true);
+    expect(res.body.skipped).toHaveLength(0);
+
+    // Mock hub received exactly one new POST /api/play with the wire shape
+    // produced by HttpPlaybackHubAdapter (`content_id` stripped of `plex:`).
+    expect(stubPlayRequests.length).toBe(before + 1);
+    const sent = stubPlayRequests[stubPlayRequests.length - 1];
+    expect(sent).toMatchObject({
+      action: 'play',
+      target: 'red',
+      content_id: '670208',
+    });
+  });
+
+  it('PATCH /devices/:color persists the patch to YAML on disk', async () => {
+    const res = await request(app)
+      .patch('/api/v1/playback-hub/devices/yellow')
+      .send({ haTurnOffOnStop: true });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    // toYaml emits `ha_turn_off_on_stop: true` only when truthy.
+    expect(res.body.device.color).toBe('yellow');
+    expect(res.body.device.ha_turn_off_on_stop).toBe(true);
+
+    // YAML file was rewritten by YamlHubConfigDatastore.saveConfig.
+    const rewritten = yaml.load(await readFile(yamlPath, 'utf8'));
+    const yellow = rewritten.devices.find((d) => d.color === 'yellow');
+    expect(yellow).toBeDefined();
+    expect(yellow.ha_turn_off_on_stop).toBe(true);
+  });
+
+  it('POST /scheduled creates a fire and persists it to YAML', async () => {
+    const res = await request(app)
+      .post('/api/v1/playback-hub/scheduled')
+      .send({
+        id: 'smoke-fire',
+        time: '07:30',
+        days: 'weekdays',
+        target: 'red',
+        queue: 'plex:670208',
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.fire).toMatchObject({
+      id: 'smoke-fire',
+      time: '07:30',
+      target: 'red',
+      queue: 'plex:670208',
+      days: 'weekdays',
+    });
+
+    // Subsequent GET /config sees the fire.
+    const cfg = await request(app).get('/api/v1/playback-hub/config');
+    expect(cfg.status).toBe(200);
+    expect(Array.isArray(cfg.body.config.scheduled)).toBe(true);
+    expect(cfg.body.config.scheduled.find((f) => f.id === 'smoke-fire')).toBeDefined();
+
+    // YAML on disk reflects it too.
+    const rewritten = yaml.load(await readFile(yamlPath, 'utf8'));
+    expect(Array.isArray(rewritten.scheduled)).toBe(true);
+    const fire = rewritten.scheduled.find((f) => f.id === 'smoke-fire');
+    expect(fire).toBeDefined();
+    expect(fire.target).toBe('red');
+    expect(fire.queue).toBe('plex:670208');
   });
 
   it('broadcaster publishes snapshots to the event bus', async () => {
