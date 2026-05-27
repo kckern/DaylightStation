@@ -60,7 +60,7 @@ describe('PersistenceManager — late-tag Pikachu merge (W1.B / Decision §5)', 
     //   t0+10m .. t0+15m  test-friend tagged onto same device, 60 HR readings
     // The Pikachu segment is 10 minutes — well past the 5-min threshold —
     // so the in-session GuestAssignmentService logged GUEST_REPLACED, not
-    // GRACE_PERIOD_TRANSFER. Status of the Pikachu entity is 'dropped'.
+    // SEGMENT_ABSORBED. Status of the Pikachu entity is 'dropped'.
     const t0 = 1_700_000_000_000;
     const T = 5 * 60 * 1000; // 5 min threshold
     const sessionStart = t0;

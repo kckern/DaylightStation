@@ -238,7 +238,7 @@ BLE_HR_USERS=family-a,friend-a   # comma-separated; consumed by the fitness exte
 |------|------|
 | `frontend/src/modules/Fitness/player/FitnessSidebar.jsx` | Builds `guestCandidates` from `family` + `friends` + primary returnees |
 | `frontend/src/modules/Fitness/player/panels/FitnessSidebarMenu.jsx` | Guest picker UI (tabs, filtering, assignment trigger) |
-| `frontend/src/hooks/fitness/GuestAssignmentService.js` | Validation, grace-period logic, entity creation |
+| `frontend/src/hooks/fitness/GuestAssignmentService.js` | Validation, continuous-usage threshold logic, entity creation |
 | `frontend/src/hooks/fitness/DeviceAssignmentLedger.js` | `deviceId → occupant` ledger |
 | `frontend/src/hooks/fitness/UserManager.js` | Resolves `deviceId → user`; multi-device arbitration |
 | `frontend/src/hooks/fitness/DisplayNameResolver.js` | Guest-priority display name resolution |
