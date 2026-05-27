@@ -3,7 +3,7 @@
 How non-household participants (friends and extended family) join a fitness session — either by borrowing a household member's heart rate monitor, or by bringing their own.
 
 This document is the umbrella overview. For the deep dives:
-- [`assign-guest.md`](./assign-guest.md) — borrowed-device flow, lifecycle, grace period, entity transfer
+- [`assign-guest.md`](./assign-guest.md) — borrowed-device flow, lifecycle, continuous-usage threshold, entity transfer
 - [`ble-heart-rate.md`](./ble-heart-rate.md) — Apple Watch / Polar / Garmin BLE discovery and matching
 - [`display-name-resolver.md`](./display-name-resolver.md) — how guest names render in the sidebar and overlay
 
@@ -66,7 +66,7 @@ The guest takes someone else's heart rate strap. The sidebar menu reassigns the 
 
 **This flow is the subject of [`assign-guest.md`](./assign-guest.md)** — see it for:
 - Constraint matrix (one-user-per-device, one-device-per-user, base-user preservation)
-- Grace-period transfer (<1 min) of coins, timeline, start time
+- Continuous-usage threshold absorption (`< T`, default 5 min / 300 s) of coins, timeline, start time — symmetric across all transition types
 - Entity lifecycle (creation, replacement, drop, transfer)
 - `allowWhileAssigned` override for shared accounts
 - State machine diagrams
@@ -161,7 +161,7 @@ When a guest is assigned (either flow), the resolved user identity propagates th
 | **GovernanceEngine** | Lock/unlock evaluates against guest's current zone; guest counts toward `min_participants` thresholds |
 | **FitnessTimeline** | Series keys (`{userId}:hr`, `{userId}:zone`, `{userId}:coins`) use guest's user ID |
 | **DisplayNameResolver** | `guest` priority (1) trumps `groupLabel`, `owner`, `profile`, `fallback` |
-| **EventJournal** | Emits `ASSIGN_GUEST`, `GUEST_REPLACED`, `GRACE_PERIOD_TRANSFER`, `CLEAR_GUEST` events |
+| **EventJournal** | Emits `ASSIGN_GUEST`, `GUEST_REPLACED`, `SEGMENT_ABSORBED`, `CLEAR_GUEST` events (the live events carry `thresholdMs` for diagnostic correlation) |
 | **SessionDatastore** | Guest appears in `participants:` block on save; their timeline series persists alongside primaries |
 
 This means a guest is a **full first-class participant for the duration of the session** — they earn coins, contribute to governance, get a row in the saved session YAML.
@@ -179,11 +179,15 @@ A guest enters the session at the moment of assignment (borrow flow) or first HR
 | Trigger | Effect |
 |---------|--------|
 | User selects "Original" in menu | `clearGuestAssignment(deviceId)` — entity ended (`status: 'ended'`), device reverts to base user |
-| Different guest assigned > 1 min later | Previous entity ended (`status: 'dropped'`), new entity created for replacement |
-| Different guest assigned < 1 min later | Grace-period transfer: previous entity data (coins, timeline, start time) migrates to new entity |
+| Different guest assigned, previous segment ≥ T (default 5 min / 300 s) | Previous entity ended (`status: 'dropped'`), new entity created. `GUEST_REPLACED` event logged. |
+| Different guest assigned, previous segment < T | Sub-threshold absorption: previous entity data (coins, timeline, start time) migrates forward to new entity. `SEGMENT_ABSORBED` event logged. Applies symmetrically to Guest↔Mapped↔Mapped transitions (W1.C / OI-3). |
 | User clicks "Remove User" | `suppressDeviceUntilNextReading(deviceId)` — device temporarily dropped from active set |
-| Session ends | All active guest entities finalized as part of normal session teardown |
+| Session ends | All active guest entities finalized; `PersistenceManager` runs the W1.B backfill pass to catch OI-1 (final sub-T segment), OI-2 (cycling), and Decision §5 (late-tag Pikachu merges) that the live pass couldn't see |
 | Own-monitor guest disconnects (BLE) | DeviceManager flags device stale after timeout; ActivityMonitor moves user to idle, then dropped |
+
+T = continuous-usage threshold from `fitness.yml → governance.usage_threshold_seconds`.
+See [`assign-guest.md`](./assign-guest.md) § Continuous-Usage Threshold for the full
+behavioral rules and live vs save-time split.
 
 ### Cleanup
 
@@ -246,7 +250,7 @@ BLE_HR_USERS=family-a,friend-a   # comma-separated; consumed by the fitness exte
 
 ## See Also
 
-- [Assign Guest](./assign-guest.md) — full borrow-flow specification (constraints, grace period, entity transfer, state machine)
+- [Assign Guest](./assign-guest.md) — full borrow-flow specification (constraints, continuous-usage threshold, entity transfer, state machine)
 - [BLE Heart Rate](./ble-heart-rate.md) — own-monitor flow technical reference
 - [Display Name Resolver](./display-name-resolver.md) — name resolution priority chain
 - [Governance Engine](./governance-engine.md) — how guests count toward `min_participants` and zone requirements
