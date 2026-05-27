@@ -1,0 +1,55 @@
+{
+  "_about": "musiCozy headset config. queue values are Plex playlist IDs; full URL = queue_base + queue. Schedules use 24h local time; first matching window wins; on schedule rollover the new queue takes over on the next refresh tick (~5min after the boundary).",
+  "queue_base": "https://daylightlocal.kckern.net/api/v1/queue/plex/",
+  "devices": [
+    {
+      "slot": 1,
+      "color": "red",
+      "mac": "41:42:3A:E5:43:07",
+      "name": "musiCozy",
+      "queue": "674397"
+    },
+    {
+      "slot": 2,
+      "color": "yellow",
+      "mac": "41:42:9A:E3:65:73",
+      "name": "musiCozy",
+      "queue": "",
+      "shuffle": false,
+      "schedules": [
+        { "start": "07:00", "end": "19:00", "queue": "76018",  "shuffle": true },
+        { "start": "19:00", "end": "07:00", "queue": "622829", "shuffle": true }
+      ],
+      "resume_queue": false,
+      "resume_track": false
+    },
+    {
+      "slot": 3,
+      "color": "green",
+      "mac": "41:42:8C:7C:77:5C",
+      "name": "musiCozy",
+      "queue": "",
+      "shuffle": false,
+      "schedules": [
+        { "start": "08:00", "end": "20:00", "queue": "675431", "shuffle": false },
+        { "start": "20:00", "end": "08:00", "queue": "591918", "shuffle": true  }
+      ],
+      "resume_queue": false,
+      "resume_track": false
+    },
+    {
+      "slot": 4,
+      "color": "blue",
+      "mac": "41:42:50:C8:85:13",
+      "name": "musiCozy",
+      "queue": "",
+      "shuffle": false,
+      "schedules": [
+        { "start": "08:00", "end": "20:00", "queue": "592904", "shuffle": true },
+        { "start": "20:00", "end": "08:00", "queue": "591918", "shuffle": true }
+      ],
+      "resume_queue": false,
+      "resume_track": false
+    }
+  ]
+}

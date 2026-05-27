@@ -86,6 +86,7 @@ export function createApiRouter(config) {
     '/fitness': 'fitness',
     '/media': 'media',
     '/home': 'home',
+    '/home-automation': 'home',  // alias — matches the router's own docstrings and external callers (e.g. playback-hub)
     '/home-dashboard': 'home-dashboard',
     '/playback-hub': 'playback-hub',
     '/nutribot': 'nutribot',

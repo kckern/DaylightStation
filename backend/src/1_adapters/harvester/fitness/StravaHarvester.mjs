@@ -413,6 +413,27 @@ export class StravaHarvester extends IHarvester {
         }
       }
 
+      // Fetch activity detail for calories (list endpoint omits it).
+      // Skipped if calories already present from cache.
+      if (activity.calories == null && activity.kilojoules == null) {
+        try {
+          await this.#delay(this.#rateLimitDelayMs);
+          const detail = await this.#stravaClient.getActivity(activity.id);
+          if (detail?.calories != null) activity.calories = detail.calories;
+          if (detail?.kilojoules != null && activity.kilojoules == null) activity.kilojoules = detail.kilojoules;
+          if (detail?.description != null && activity.description == null) activity.description = detail.description;
+          if (detail?.perceived_exertion != null && activity.perceived_exertion == null) activity.perceived_exertion = detail.perceived_exertion;
+        } catch (error) {
+          this.#logger.warn?.('strava.detail.error', {
+            activityId: activity.id,
+            error: this.#cleanErrorMessage(error),
+          });
+          if (error.response?.status === 429) {
+            throw error;
+          }
+        }
+      }
+
       enriched.push(activity);
     }
 

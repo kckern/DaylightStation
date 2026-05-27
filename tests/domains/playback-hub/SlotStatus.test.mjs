@@ -73,9 +73,10 @@ describe('SlotStatus', () => {
       expect(() => new SlotStatus({ ...baseFields, paused: 'no' })).toThrow(ValidationError);
     });
 
-    it('rejects non-numeric volume', () => {
+    it('rejects non-numeric volume (null is allowed for idle slots)', () => {
       expect(() => new SlotStatus({ ...baseFields, volume: '45' })).toThrow(ValidationError);
-      expect(() => new SlotStatus({ ...baseFields, volume: null })).toThrow(ValidationError);
+      // null is explicitly allowed — mpv volume is unknown while a slot is idle.
+      expect(() => new SlotStatus({ ...baseFields, volume: null })).not.toThrow();
     });
 
     it('rejects malformed now_playing (no queue field)', () => {
@@ -94,9 +95,9 @@ describe('SlotStatus', () => {
   });
 
   describe('fromHubJson (static factory)', () => {
-    it('maps the snapshot wire format', () => {
+    it('maps the snapshot wire format (reads slot for position)', () => {
       const wire = {
-        position: 1,
+        slot: 1,                 // hub emits slot, NOT position (which would be playback seconds)
         color: 'red',
         bt_connected: true,
         paused: false,
@@ -112,9 +113,23 @@ describe('SlotStatus', () => {
       expect(s.now_playing.queue.id).toBe('670208');
     });
 
-    it('null now_playing passes through', () => {
-      const wire = { ...baseFields };
+    it('idle slot — nulls for volume/playlist_pos/playlist_count pass through', () => {
+      const wire = {
+        slot: 2,
+        color: 'yellow',
+        bt_connected: false,
+        paused: false,
+        now_playing: null,
+        volume: null,
+        playlist_pos: null,
+        playlist_count: null,
+        armed_source: null
+      };
       const s = SlotStatus.fromHubJson(wire);
+      expect(s.position).toBe(2);
+      expect(s.volume).toBeNull();
+      expect(s.playlist_pos).toBeNull();
+      expect(s.playlist_count).toBeNull();
       expect(s.now_playing).toBeNull();
     });
 
