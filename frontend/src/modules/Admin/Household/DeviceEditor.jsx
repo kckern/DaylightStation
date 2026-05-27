@@ -9,6 +9,7 @@ import {
 } from '@tabler/icons-react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import ConfirmModal from '../shared/ConfirmModal.jsx';
+import { notifySuccess, notifyFailure } from '../shared/feedback.js';
 
 const DEVICE_TYPE_OPTIONS = [
   { value: 'shield-tv', label: 'Shield TV' },
@@ -286,8 +287,10 @@ function DeviceEditor() {
     try {
       await DaylightAPI(`/api/v1/admin/household/devices/${deviceId}`, device, 'PUT');
       setOriginal(JSON.parse(JSON.stringify(device)));
+      notifySuccess({ title: 'Device saved', message: deviceId });
     } catch (err) {
       setError(err);
+      notifyFailure({ title: 'Save failed', message: err.message });
     } finally {
       setSaving(false);
     }
@@ -301,9 +304,11 @@ function DeviceEditor() {
     setDeleting(true);
     try {
       await DaylightAPI(`/api/v1/admin/household/devices/${deviceId}`, {}, 'DELETE');
+      notifySuccess({ title: 'Device deleted', message: deviceId });
       navigate('/admin/household/devices');
     } catch (err) {
       setError(err);
+      notifyFailure({ title: 'Delete failed', message: err.message });
     } finally {
       setDeleting(false);
       setDeleteOpen(false);
