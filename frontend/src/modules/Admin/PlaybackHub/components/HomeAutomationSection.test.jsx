@@ -104,6 +104,31 @@ describe('HomeAutomationSection', () => {
     }
   });
 
+  it('does NOT rebaseline when updateDevice returns { ok: false }', async () => {
+    mutations.updateDevice = vi.fn().mockResolvedValue({
+      ok: false,
+      error: new Error('HTTP 422: invariant violated'),
+    });
+
+    renderSection({
+      slot: mkSlot({ class: 'public', ha_entity_id: 'media_player.living_room' }),
+      mutations,
+    });
+
+    const entityInput = screen.getByLabelText(/home automation entity id/i);
+    fireEvent.change(entityInput, { target: { value: 'switch.bedroom' } });
+
+    const saveBtn = screen.getByRole('button', { name: /^save$/i });
+    expect(saveBtn).not.toBeDisabled();
+
+    await act(async () => {
+      fireEvent.click(saveBtn);
+    });
+
+    expect(screen.getByRole('button', { name: /^save$/i })).not.toBeDisabled();
+    expect(screen.getByLabelText(/home automation entity id/i)).toHaveValue('switch.bedroom');
+  });
+
   it('allows empty haEntityId when class is private (no warning)', async () => {
     renderSection({
       slot: mkSlot({ class: 'private', ha_entity_id: 'switch.foo' }),

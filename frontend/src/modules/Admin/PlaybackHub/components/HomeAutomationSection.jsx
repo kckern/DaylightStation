@@ -52,11 +52,13 @@ export function HomeAutomationSection({ slot, mutations }) {
     if (violatesPublicInvariant) return;
     setSaving(true);
     try {
-      await mutations.updateDevice(slot.color, {
+      const out = await mutations.updateDevice(slot.color, {
         haEntityId: vals.haEntityId,
         haTurnOffOnStop: vals.haTurnOffOnStop,
       });
-      setBaseline({ ...vals });
+      if (out?.ok) {
+        setBaseline({ ...vals });
+      }
     } finally {
       setSaving(false);
     }
