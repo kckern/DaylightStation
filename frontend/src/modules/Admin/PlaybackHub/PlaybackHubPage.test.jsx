@@ -5,6 +5,7 @@ import { MantineProvider } from '@mantine/core';
 // Mocked hooks — controlled per-test via the implementations below.
 const hubConfigState = { config: null, loading: true, error: null };
 const hubStatusMap = new Map();
+const hubStatusState = { fetchedAt: new Date() };
 const hubMutations = {
   sendCommand: vi.fn(),
   updateDevice: vi.fn(),
@@ -13,7 +14,7 @@ const hubMutations = {
 };
 
 vi.mock('./hooks/useHubStatus', () => ({
-  useHubStatus: () => ({ devices: hubStatusMap, fetchedAt: new Date() }),
+  useHubStatus: () => ({ devices: hubStatusMap, fetchedAt: hubStatusState.fetchedAt }),
 }));
 
 vi.mock('./hooks/useHubConfig', () => ({
@@ -64,6 +65,7 @@ describe('PlaybackHubPage', () => {
     hubConfigState.loading = true;
     hubConfigState.error = null;
     hubStatusMap.clear();
+    hubStatusState.fetchedAt = new Date();
     deviceCardCalls.length = 0;
   });
 
@@ -151,6 +153,19 @@ describe('PlaybackHubPage', () => {
     const whiteCallProps = deviceCardCalls.find(p => p.slot.color === 'white');
     expect(redCallProps.scheduledFires.map(f => f.id)).toEqual(['f1', 'f2']);
     expect(whiteCallProps.scheduledFires.map(f => f.id)).toEqual(['f3']);
+  });
+
+  it('renders StalenessBanner when fetchedAt is null', () => {
+    hubStatusState.fetchedAt = null;
+    hubConfigState.loading = false;
+    hubConfigState.config = {
+      devices: [
+        { color: 'red', class: 'private', volume: { default: 50, min: 0, max: 75 } },
+      ],
+      scheduled: [],
+    };
+    renderPage();
+    expect(screen.getByText(/live updates paused/i)).toBeTruthy();
   });
 
   it('forwards the mutations object to every DeviceCard', () => {

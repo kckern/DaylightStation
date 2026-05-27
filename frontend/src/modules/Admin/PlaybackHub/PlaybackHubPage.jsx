@@ -3,7 +3,9 @@ import { Stack, Loader, Alert, Text } from '@mantine/core';
 import { useHubStatus } from './hooks/useHubStatus';
 import { useHubConfig } from './hooks/useHubConfig';
 import { useHubMutations } from './hooks/useHubMutations';
+import { useStaleness } from './hooks/useStaleness';
 import DeviceCard from './components/DeviceCard';
+import { StalenessBanner } from './components/StalenessBanner.jsx';
 import './PlaybackHubPage.scss';
 
 /**
@@ -23,6 +25,7 @@ export default function PlaybackHubPage() {
   const { devices: statusByColor, fetchedAt: statusFetchedAt } = useHubStatus();
   const { config, loading, error, revalidate } = useHubConfig();
   const mutations = useHubMutations({ revalidate });
+  const { isStale, secondsSinceUpdate } = useStaleness(statusFetchedAt);
 
   if (loading && !config) {
     return <Loader p="md" />;
@@ -46,6 +49,7 @@ export default function PlaybackHubPage() {
 
   return (
     <Stack gap="md" p="md" className="playback-hub-page">
+      <StalenessBanner isStale={isStale} secondsSinceUpdate={secondsSinceUpdate} />
       {config.devices.map((device) => (
         <DeviceCard
           key={device.color}
