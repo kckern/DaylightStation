@@ -19,7 +19,7 @@ from urllib.parse import urlparse, parse_qs
 import yaml
 
 PORT = 8080
-BASE = Path("/home/kckern/musicozy")
+BASE = Path("/home/kckern/playback-hub")
 DEVICES_YAML = BASE / "devices.yml"
 DEVICES_JSON_LEGACY = BASE / "devices.json"
 SLOTS_DIR = BASE / "slots"
@@ -1027,6 +1027,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._bt_unpair()
         if path == "/api/service/restart":
             return self._service_restart()
+        if path == "/api/play":
+            return self._post_play()
         self.send_error(404)
 
     def do_PUT(self):
@@ -1292,12 +1294,78 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _service_restart(self):
         try:
             subprocess.run(
-                ["systemctl", "--user", "restart", "musicozy.service"],
+                ["systemctl", "--user", "restart", "playback-hub.service"],
                 capture_output=True, timeout=15
             )
             self._json({"ok": True})
         except Exception as e:
             self._json({"ok": False, "error": str(e)})
+
+    def _post_play(self):
+        """POST /api/play — remote command endpoint.
+
+        Body: {
+          "action": "play" | "stop" | "pause" | "next" | "prev" | "volume",
+          "target": "red" | "white,blue" | "all" | "all-private" | "all-public",
+          "content_id": "670208",        # required for play
+          "volume": 50,                  # optional for play; required for volume action
+          "duration_min": 30,            # optional for play
+          "resume_previous": true        # optional for play (v1: not yet implemented)
+        }
+
+        Shells out to `playback-hub.sh cmd <action> <target> ...` which
+        contains all the orchestration (arm slot, HA wake, mpv IPC, etc).
+        That keeps a single source of truth for playback state and
+        avoids duplicating the daemon's logic in this web process.
+        """
+        body = self._read_body()
+        action = body.get("action", "")
+        target = body.get("target", "")
+        if not action or not target:
+            return self._json({"ok": False, "error": "action and target required"}, 400)
+
+        cmd = [str(BASE / "playback-hub.sh"), "cmd", action, target]
+
+        # content_id is positional after target for the play action; also
+        # for volume action where the value is treated as a content_id-
+        # style positional by the bash dispatcher (it checks both slots).
+        content_id = body.get("content_id")
+        if content_id is not None:
+            cmd.append(str(content_id))
+
+        volume = body.get("volume")
+        if volume is not None:
+            cmd += ["--volume", str(int(volume))]
+
+        duration = body.get("duration_min")
+        if duration is not None:
+            cmd += ["--duration", str(int(duration))]
+
+        resume = body.get("resume_previous")
+        if resume is not None:
+            cmd += ["--resume", "yes" if resume else "no"]
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=70)
+        except subprocess.TimeoutExpired:
+            return self._json({"ok": False, "error": "command timed out"}, 504)
+        except Exception as e:
+            return self._json({"ok": False, "error": str(e)}, 500)
+
+        # handle_cmd echoes a JSON line on its last stdout line.
+        stdout = (result.stdout or "").strip()
+        last_line = stdout.splitlines()[-1] if stdout else ""
+        try:
+            payload = json.loads(last_line) if last_line.startswith("{") else \
+                      {"ok": result.returncode == 0, "stdout": stdout}
+        except Exception:
+            payload = {"ok": result.returncode == 0, "stdout": stdout}
+
+        if result.returncode != 0:
+            payload.setdefault("ok", False)
+            payload.setdefault("error", result.stderr.strip() or "command failed")
+            return self._json(payload, 500)
+        return self._json(payload)
 
 
 # ---------------------------------------------------------------------------
