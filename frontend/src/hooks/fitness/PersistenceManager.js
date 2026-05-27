@@ -1180,9 +1180,14 @@ export class PersistenceManager {
    * were absorbed in-session via session.transferUserSeries/transferSessionEntity
    * — re-running the transfer here would double-move null arrays).
    *
-   * Threshold source: `sessionData.thresholdMs` (populated by FitnessSession
-   * from GuestAssignmentService). Falls back to 60_000 ms if absent, matching
-   * the GuestAssignmentService back-compat default.
+   * Threshold source priority (mirrors the implementation at lines below):
+   *   1. `sessionData.thresholdMs` — test injection / one-off override
+   *   2. `this._usageThresholdMs`  — set by FitnessContext via setUsageThresholdMs
+   *                                  (sourced from fitness.yml → governance.usage_threshold_seconds)
+   *   3. `60_000` ms                — GuestAssignmentService back-compat default
+   *
+   * In production, path #2 does the work; #1 is test-only. `FitnessSession.summary`
+   * does NOT populate `sessionData.thresholdMs` — the field is reserved for tests.
    *
    * @param {Object} sessionData
    * @returns {{ removedOccupants: Set<string>, transfers: Array, perDevice: Map }|null}
