@@ -69,7 +69,7 @@ describe('GuestAssignmentService — threshold drives grace-period transfer boun
     };
   }
 
-  it('triggers grace-period transfer when previous segment age < thresholdMs (default 60s)', () => {
+  it('emits SEGMENT_ABSORBED when previous segment age < thresholdMs (default 60s)', () => {
     const ledger = buildLedgerWithPrevious({ ageMs: 30 * 1000 }); // 30s ago
     const service = new GuestAssignmentService({ session: mockSession, ledger });
 
@@ -80,11 +80,11 @@ describe('GuestAssignmentService — threshold drives grace-period transfer boun
 
     expect(result.ok).toBe(true);
     const loggedTypes = mockEventJournal.log.mock.calls.map((call) => call[0]);
-    expect(loggedTypes).toContain('GRACE_PERIOD_TRANSFER');
+    expect(loggedTypes).toContain('SEGMENT_ABSORBED');
     expect(loggedTypes).not.toContain('GUEST_REPLACED');
   });
 
-  it('drops the previous segment when age >= thresholdMs (default 60s)', () => {
+  it('emits GUEST_REPLACED (drop) when age >= thresholdMs (default 60s)', () => {
     const ledger = buildLedgerWithPrevious({ ageMs: 90 * 1000 }); // 90s ago
     const service = new GuestAssignmentService({ session: mockSession, ledger });
 
@@ -96,10 +96,10 @@ describe('GuestAssignmentService — threshold drives grace-period transfer boun
     expect(result.ok).toBe(true);
     const loggedTypes = mockEventJournal.log.mock.calls.map((call) => call[0]);
     expect(loggedTypes).toContain('GUEST_REPLACED');
-    expect(loggedTypes).not.toContain('GRACE_PERIOD_TRANSFER');
+    expect(loggedTypes).not.toContain('SEGMENT_ABSORBED');
   });
 
-  it('honours a custom larger thresholdMs: 90s-old segment still transfers when threshold=300s', () => {
+  it('honours a custom larger thresholdMs: 90s-old segment still absorbs when threshold=300s', () => {
     const ledger = buildLedgerWithPrevious({ ageMs: 90 * 1000 }); // 90s ago
     const service = new GuestAssignmentService({
       session: mockSession,
@@ -114,7 +114,7 @@ describe('GuestAssignmentService — threshold drives grace-period transfer boun
 
     expect(result.ok).toBe(true);
     const loggedTypes = mockEventJournal.log.mock.calls.map((call) => call[0]);
-    expect(loggedTypes).toContain('GRACE_PERIOD_TRANSFER');
+    expect(loggedTypes).toContain('SEGMENT_ABSORBED');
     expect(loggedTypes).not.toContain('GUEST_REPLACED');
   });
 
@@ -134,6 +134,36 @@ describe('GuestAssignmentService — threshold drives grace-period transfer boun
     expect(result.ok).toBe(true);
     const loggedTypes = mockEventJournal.log.mock.calls.map((call) => call[0]);
     expect(loggedTypes).toContain('GUEST_REPLACED');
-    expect(loggedTypes).not.toContain('GRACE_PERIOD_TRANSFER');
+    expect(loggedTypes).not.toContain('SEGMENT_ABSORBED');
+  });
+
+  it('records thresholdMs in the SEGMENT_ABSORBED event payload (W1.C)', () => {
+    const ledger = buildLedgerWithPrevious({ ageMs: 30 * 1000 });
+    const service = new GuestAssignmentService({
+      session: mockSession,
+      ledger,
+      thresholdMs: 120 * 1000 // 2 min
+    });
+
+    service.assignGuest('device-1', { name: 'Bob', profileId: 'bob-2' });
+
+    const absorbedCall = mockEventJournal.log.mock.calls.find(c => c[0] === 'SEGMENT_ABSORBED');
+    expect(absorbedCall).toBeTruthy();
+    expect(absorbedCall[1].thresholdMs).toBe(120 * 1000);
+  });
+
+  it('records thresholdMs in the GUEST_REPLACED event payload (W1.C)', () => {
+    const ledger = buildLedgerWithPrevious({ ageMs: 90 * 1000 });
+    const service = new GuestAssignmentService({
+      session: mockSession,
+      ledger,
+      thresholdMs: 60 * 1000
+    });
+
+    service.assignGuest('device-1', { name: 'Bob', profileId: 'bob-2' });
+
+    const replacedCall = mockEventJournal.log.mock.calls.find(c => c[0] === 'GUEST_REPLACED');
+    expect(replacedCall).toBeTruthy();
+    expect(replacedCall[1].thresholdMs).toBe(60 * 1000);
   });
 });

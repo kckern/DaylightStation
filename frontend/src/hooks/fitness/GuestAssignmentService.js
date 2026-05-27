@@ -127,12 +127,15 @@ export class GuestAssignmentService {
     const previousOccupantId = previousEntry?.metadata?.profileId || previousEntry?.occupantId;
     const previousEntityId = previousEntry?.entityId || null;
     const newOccupantId = value.profileId || `guest-${now}`;
-    
-    // Phase 4: Grace Period Transfer Logic
-    // If previous assignment was active for less than this.thresholdMs,
-    // transfer data to new participant (continuous-usage attribution).
-    // This works for both entity-to-entity transfers AND user-to-entity transfers.
-    let isGracePeriodTransfer = false;
+
+    // W1.A/W1.C: Continuous-usage threshold transfer logic.
+    // If the previous assignment was active for less than `this.thresholdMs`,
+    // the previous segment is absorbed forward into the new participant
+    // (continuous-usage attribution per audit Decision §7). This applies
+    // symmetrically to entity-to-entity AND user-to-entity transitions —
+    // there is intentionally no "is the previous occupant a guest?" gate.
+    // See W1.C / OI-3 symmetric test for the regression guard.
+    let isSegmentAbsorbed = false;
     let transferredFromEntity = null;
     let transferFromUserId = null; // For user-to-entity transfers (original user has no entity)
 
@@ -142,25 +145,32 @@ export class GuestAssignmentService {
 
       // Threshold applies if: duration < this.thresholdMs AND (has entity OR is original user)
       const hasTransferableSource = previousEntityId != null || previousOccupantId != null;
-      isGracePeriodTransfer = previousDuration < this.thresholdMs && hasTransferableSource;
-      
-      if (isGracePeriodTransfer) {
-        // Grace period transfer: brief session gets merged into successor
-        this.#logEvent('GRACE_PERIOD_TRANSFER', {
+      isSegmentAbsorbed = previousDuration < this.thresholdMs && hasTransferableSource;
+
+      if (isSegmentAbsorbed) {
+        // Sub-threshold segment absorbed forward into successor.
+        // Event name change (W1.C): `GRACE_PERIOD_TRANSFER` → `SEGMENT_ABSORBED`.
+        // The "grace period" framing was misleading once the constant became
+        // a configurable threshold; "segment absorbed" describes the actual
+        // semantic. No external consumers exist (only this emitter + its
+        // own tests referenced the old name as of the W1.C consumer search).
+        this.#logEvent('SEGMENT_ABSORBED', {
           deviceId: key,
           previousOccupantId,
           previousOccupantName: previousEntry.occupantName || previousEntry.metadata?.name,
           previousEntityId,
           previousDurationMs: previousDuration,
+          thresholdMs: this.thresholdMs,
           newOccupantId,
           newOccupantName: value.name,
           transferType: previousEntityId ? 'entity-to-entity' : 'user-to-entity'
         });
-        console.log('[GuestAssignmentService] Grace period transfer (< thresholdMs):', {
+        console.log('[GuestAssignmentService] Segment absorbed (< thresholdMs):', {
           deviceId: key,
           previous: previousEntry.occupantName,
           new: value.name,
           duration: `${Math.round(previousDuration / 1000)}s`,
+          thresholdMs: this.thresholdMs,
           type: previousEntityId ? 'entity-to-entity' : 'user-to-entity'
         });
         
@@ -171,13 +181,17 @@ export class GuestAssignmentService {
           transferFromUserId = previousOccupantId;
         }
       } else {
-        // Normal replacement: previous session exceeded grace period
+        // Normal replacement: previous segment exceeded the continuous-usage
+        // threshold and is honored as a separate participant in the saved
+        // session. `thresholdMs` recorded in payload for downstream analysis
+        // (W1.C — uniformly stamped on both branches).
         this.#logEvent('GUEST_REPLACED', {
           deviceId: key,
           previousOccupantId,
           previousOccupantName: previousEntry.occupantName || previousEntry.metadata?.name,
           previousEntityId,
           previousDurationMs: previousDuration,
+          thresholdMs: this.thresholdMs,
           newOccupantId,
           newOccupantName: value.name
         });
@@ -185,10 +199,11 @@ export class GuestAssignmentService {
           deviceId: key,
           previous: previousEntry.occupantName,
           new: value.name,
-          duration: `${Math.round(previousDuration / 1000)}s`
+          duration: `${Math.round(previousDuration / 1000)}s`,
+          thresholdMs: this.thresholdMs
         });
-        
-        // End the previous entity as dropped (exceeded grace period)
+
+        // End the previous entity as dropped (exceeded usage threshold)
         if (previousEntityId && session.endSessionEntity) {
           session.endSessionEntity(previousEntityId, {
             status: 'dropped',
@@ -206,28 +221,30 @@ export class GuestAssignmentService {
       deviceId: key,
       newOccupant: { id: newOccupantId, name: value.name },
       previousOccupant: { id: previousOccupantId, entityId: previousEntityId },
-      isGracePeriodTransfer,
+      isSegmentAbsorbed,
       transferFromUserId,
       hasCreateSessionEntity: !!session.createSessionEntity,
       hasTreasureBox: !!session.treasureBox,
       previousUserAccumulator: session.treasureBox ? session.treasureBox.perUser.get(previousOccupantId) : null
     });
-    
-    // For grace period user-to-guest transfer (< 1 min), DON'T create entity
-    // The guest takes over the original user's identity completely
-    // Data flows through user:newOccupantId series (which gets backfilled with original user's data)
-    const skipEntityCreation = isGracePeriodTransfer && transferFromUserId && !transferredFromEntity;
-    
+
+    // For sub-threshold user-to-guest absorption, DON'T create entity:
+    // the guest takes over the original user's identity completely. Data
+    // flows through user:newOccupantId series (which gets backfilled with
+    // the original user's data).
+    const skipEntityCreation = isSegmentAbsorbed && transferFromUserId && !transferredFromEntity;
+
     if (session.createSessionEntity && !skipEntityCreation) {
-      // Phase 4: If grace period transfer, inherit start time from previous entity
+      // Sub-threshold absorption: inherit start time from previous entity
+      // so the new participant's timeline starts at the original handoff.
       let inheritedStartTime = now;
-      if (isGracePeriodTransfer && transferredFromEntity) {
+      if (isSegmentAbsorbed && transferredFromEntity) {
         const previousEntity = session.entityRegistry?.get?.(transferredFromEntity);
         if (previousEntity?.startTime) {
           inheritedStartTime = previousEntity.startTime;
         }
       }
-      
+
       const entity = session.createSessionEntity({
         profileId: newOccupantId,
         name: value.name,
@@ -235,11 +252,11 @@ export class GuestAssignmentService {
         startTime: inheritedStartTime
       });
       entityId = entity?.entityId || null;
-      
+
     }
 
-    // Phase 4/5: Execute transfer if within grace period
-    if (isGracePeriodTransfer) {
+    // Execute transfer if previous segment was sub-threshold.
+    if (isSegmentAbsorbed) {
       if (transferredFromEntity && entityId) {
         // Entity-to-entity transfer
         const transferResult = session.transferSessionEntity?.(transferredFromEntity, entityId);
@@ -252,7 +269,7 @@ export class GuestAssignmentService {
           });
         }
       } else if (transferFromUserId) {
-        // User-to-guest transfer (Jin takes over Soren's series directly)
+        // User-to-guest transfer (one configured user takes over another's series directly)
         getLogger().warn('guest_assignment.user_series_transfer_start', { fromUserId: transferFromUserId, toUserId: newOccupantId });
 
         // Orchestrate full transfer via session (Phase 4/5)

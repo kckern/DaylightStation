@@ -1371,7 +1371,7 @@ export class PersistenceManager {
    * The live roster only contains currently connected devices — participants
    * who disconnected before persist time would be missing.
    * @param {Array} roster - Sanitized roster array (mutated in place)
-   * @param {Object} seriesData - Timeline series keyed by e.g. 'user:felix:heart_rate'
+   * @param {Object} seriesData - Timeline series keyed by e.g. 'user:user-a:heart_rate'
    * @param {Array} deviceAssignments - Device assignment entries
    * @returns {Array} The augmented roster
    */
