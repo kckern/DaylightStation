@@ -93,6 +93,12 @@ import { DisplayReadinessPolicy, createNoOpDisplayPowerCheck } from '#domains/ho
 import { HomeAutomationContainer } from '#apps/home-automation/HomeAutomationContainer.mjs';
 import { YamlHomeDashboardConfigRepository } from '#adapters/persistence/yaml/YamlHomeDashboardConfigRepository.mjs';
 import { createHomeDashboardRouter } from '#api/v1/routers/home-dashboard.mjs';
+
+// Playback Hub domain imports
+import { PlaybackHubContainer } from '#apps/playback-hub/PlaybackHubContainer.mjs';
+import { HttpPlaybackHubAdapter } from '#adapters/playback-hub/HttpPlaybackHubAdapter.mjs';
+import { YamlHubConfigDatastore } from '#adapters/persistence/yaml/YamlHubConfigDatastore.mjs';
+import { createPlaybackHubRouter } from '#api/v1/routers/playbackHub.mjs';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
 import { TranscodePrewarmService } from '#apps/devices/services/TranscodePrewarmService.mjs';
 import { DispatchIdempotencyService } from '#apps/devices/services/DispatchIdempotencyService.mjs';
@@ -1624,6 +1630,88 @@ export function createHomeDashboardApiRouter(config) {
   });
 
   return createHomeDashboardRouter({ container, logger });
+}
+
+// =============================================================================
+// Playback Hub Bootstrap
+// =============================================================================
+
+/**
+ * Create the playback-hub services (HTTP gateway + YAML config datastore +
+ * PlaybackHubContainer + Express router for /api/v1/playback-hub).
+ *
+ * Reads the hub's `baseUrl` from `services.playback_hub.docker` in
+ * `data/system/config/services.yml` and the configurable timeout from
+ * `services.playback_hub.request_timeout_sec` (default 2). Persists
+ * household-side `playback-hub.yml` at
+ * `<dataDir>/household/config/playback-hub.yml`.
+ *
+ * Starts the HubStatusBroadcaster as part of `container.start()`. Returns the
+ * container alongside the router so the caller can register
+ * `container.stop()` on graceful shutdown.
+ *
+ * @param {Object} config
+ * @param {Object} config.configService - ConfigService singleton
+ * @param {Object} config.eventBus - WebSocketEventBus singleton
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {Promise<{ container: PlaybackHubContainer, router: import('express').Router } | null>}
+ */
+export async function createPlaybackHubServices(config) {
+  const { configService, eventBus, logger = console } = config;
+
+  const services = configService.getAllServices?.() ?? {};
+  const hubServiceCfg = services.playback_hub;
+  if (!hubServiceCfg) {
+    logger.warn?.('playback-hub.disabled', { reason: 'services.playback_hub missing' });
+    return null;
+  }
+  const baseUrl = hubServiceCfg.docker;
+  if (typeof baseUrl !== 'string' || baseUrl.length === 0) {
+    logger.warn?.('playback-hub.disabled', { reason: 'services.playback_hub.docker missing' });
+    return null;
+  }
+  const requestTimeoutSec = typeof hubServiceCfg.request_timeout_sec === 'number'
+    ? hubServiceCfg.request_timeout_sec
+    : 2;
+
+  const gateway = new HttpPlaybackHubAdapter({
+    baseUrl,
+    requestTimeoutSec,
+    logger,
+  });
+
+  const yamlPath = path.join(configService.getDataDir(), 'household', 'config', 'playback-hub.yml');
+  const configRepository = new YamlHubConfigDatastore({
+    yamlPath,
+    logger,
+  });
+
+  // Adapter from WebSocketEventBus to the broadcaster's expected publisher
+  // shape. Broadcaster publishes `{ topic, type, data }`; the bus internally
+  // multiplexes by topic. We forward the payload (including type+data) under
+  // the supplied topic so WS subscribers receive the full envelope.
+  const eventPublisher = {
+    publish(payload) {
+      if (!payload || typeof payload !== 'object') return;
+      const { topic, ...rest } = payload;
+      if (typeof topic !== 'string' || topic.length === 0) return;
+      eventBus.broadcast(topic, rest);
+    },
+  };
+
+  const container = new PlaybackHubContainer({
+    gateway,
+    configRepository,
+    eventPublisher,
+    logger,
+    broadcasterOptions: { intervalMs: 3000, maxBackoffMs: 30000 },
+  });
+  await container.start();
+
+  const router = createPlaybackHubRouter({ container, logger });
+
+  logger.info?.('playback-hub.bootstrap.complete', { baseUrl, requestTimeoutSec, yamlPath });
+  return { container, router };
 }
 
 // =============================================================================

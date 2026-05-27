@@ -52,6 +52,7 @@ import {
   createHomeAutomationAdapters,
   createHomeAutomationApiRouter,
   createHomeDashboardApiRouter,
+  createPlaybackHubServices,
   createDeviceServices,
   createDeviceApiRouter,
   createTriggerApiRouter,
@@ -1661,6 +1662,27 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     v1Routers['home-dashboard'] = homeDashboardRouter;
   }
 
+  // Playback Hub domain — wraps the kckern-playback-hub HTTP API + YAML config
+  // datastore. Container starts the HubStatusBroadcaster long-running service
+  // and is stopped on SIGTERM below.
+  let playbackHubContainer = null;
+  try {
+    const playbackHubServices = await createPlaybackHubServices({
+      configService,
+      eventBus,
+      logger: rootLogger.child({ module: 'playback-hub' }),
+    });
+    if (playbackHubServices) {
+      playbackHubContainer = playbackHubServices.container;
+      v1Routers['playback-hub'] = playbackHubServices.router;
+    }
+  } catch (err) {
+    rootLogger.error('playback-hub.bootstrap_failed', {
+      error: err?.message,
+      stack: err?.stack,
+    });
+  }
+
   // Device registry domain
   const devicesConfig = configService.getHouseholdDevices(householdId);
   // daylight_host is the callback URL for this app - derive from app port or device config
@@ -2482,6 +2504,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     process.on('SIGTERM', async () => {
       await progressSyncService.flush();
       progressSyncService.dispose();
+    });
+  }
+
+  // Graceful shutdown: stop the HubStatusBroadcaster loop cleanly.
+  if (playbackHubContainer) {
+    process.on('SIGTERM', async () => {
+      try {
+        await playbackHubContainer.stop();
+        rootLogger.info?.('playback-hub.shutdown.complete');
+      } catch (err) {
+        rootLogger.error?.('playback-hub.shutdown.error', { error: err?.message });
+      }
     });
   }
 
