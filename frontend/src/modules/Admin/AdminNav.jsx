@@ -6,7 +6,7 @@ import {
   IconRun, IconCoin, IconHeart, IconShoppingCart,
   IconUsers, IconDevices,
   IconPlugConnected, IconClock, IconFileCode,
-  IconRobot, IconDeviceGamepad2
+  IconRobot, IconDeviceGamepad2, IconBroadcast
 } from '@tabler/icons-react';
 
 const navSections = [
@@ -32,6 +32,12 @@ const navSections = [
     label: 'AGENTS',
     items: [
       { label: 'All Agents', icon: IconRobot, to: '/admin/agents' },
+    ]
+  },
+  {
+    label: 'PLAYBACK HUB',
+    items: [
+      { label: 'All Devices', icon: IconBroadcast, to: '/admin/playback-hub' },
     ]
   },
   {

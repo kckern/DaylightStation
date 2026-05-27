@@ -22,6 +22,7 @@ import AgentsIndex from '../modules/Admin/Agents/AgentsIndex.jsx';
 import AgentDetail from '../modules/Admin/Agents/AgentDetail.jsx';
 import GamesIndex from '../modules/Admin/Games/GamesIndex.jsx';
 import ConsoleDetail from '../modules/Admin/Games/ConsoleDetail.jsx';
+import PlaybackHubPage from '../modules/Admin/PlaybackHub/PlaybackHubPage.jsx';
 import ComboboxTestPage from '../modules/Admin/TestHarness/ComboboxTestPage.jsx';
 import { Notifications } from '@mantine/notifications';
 import AuthGate from '../modules/Auth/AuthGate.jsx';
@@ -154,6 +155,9 @@ function AdminApp() {
               {/* Agents */}
               <Route path="agents" element={<AgentsIndex />} />
               <Route path="agents/:agentId" element={<AgentDetail />} />
+
+              {/* Playback Hub */}
+              <Route path="playback-hub" element={<PlaybackHubPage />} />
 
               {/* System */}
               <Route path="system/integrations" element={<IntegrationsIndex />} />
