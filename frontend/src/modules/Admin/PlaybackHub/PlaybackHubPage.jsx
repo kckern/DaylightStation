@@ -4,6 +4,7 @@ import { useHubStatus } from './hooks/useHubStatus';
 import { useHubConfig } from './hooks/useHubConfig';
 import { useHubMutations } from './hooks/useHubMutations';
 import { useStaleness } from './hooks/useStaleness';
+import { useStatusOverlay } from './hooks/useStatusOverlay';
 import DeviceCard from './components/DeviceCard';
 import { StalenessBanner } from './components/StalenessBanner.jsx';
 import './PlaybackHubPage.scss';
@@ -13,16 +14,18 @@ import './PlaybackHubPage.scss';
  * context. Renders one DeviceCard per device in the config.
  *
  * Composes:
- *   useHubStatus()   → Map<color, SlotStatus> live snapshot
- *   useHubConfig()   → { config, loading, error, revalidate }
- *   useHubMutations()→ { sendCommand, updateDevice, saveFire, deleteFire }
+ *   useHubStatus()    → { devices, fetchedAt }
+ *   useStatusOverlay()→ { statusView, predict, pending } (optimistic overlay)
+ *   useHubConfig()    → { config, loading, error, revalidate }
+ *   useHubMutations() → { sendCommand, updateDevice, saveFire, deleteFire }
  *
- * The config aggregate uses keys `devices` and `scheduled` per
- * HubConfig.toYaml(); scheduled fires are filtered by target color before
- * being handed down to each DeviceCard.
+ * The `statusView` from useStatusOverlay wraps the raw WS status with
+ * optimistic predictions so a click flips the UI immediately while the
+ * affected control greys out until the WS broadcaster confirms.
  */
 export default function PlaybackHubPage() {
-  const { devices: statusByColor, fetchedAt: statusFetchedAt } = useHubStatus();
+  const { devices: realStatus, fetchedAt: statusFetchedAt } = useHubStatus();
+  const { statusView, predict, pending } = useStatusOverlay(realStatus);
   const { config, loading, error, revalidate } = useHubConfig();
   const mutations = useHubMutations({ revalidate });
   const { isStale, secondsSinceUpdate } = useStaleness(statusFetchedAt);
@@ -54,9 +57,11 @@ export default function PlaybackHubPage() {
         <DeviceCard
           key={device.color}
           slot={device}
-          status={statusByColor.get(device.color)}
+          status={statusView.get(device.color)}
           scheduledFires={allFires.filter((f) => f.target === device.color)}
           mutations={mutations}
+          predict={predict}
+          pending={pending}
         />
       ))}
     </Stack>
