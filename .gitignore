@@ -8,6 +8,7 @@ backend/node_modules
 *.yml
 !docker-compose.test.yml
 !tests/_fixtures/**/*.yml
+!tests/fixtures/**/*.yml
 !tests/unit/suite/config/fixtures/**/*.yml
 !tests/_infrastructure/environments.yml
 !backend/src/3_applications/agents/health-coach/playbooks/seed.yml

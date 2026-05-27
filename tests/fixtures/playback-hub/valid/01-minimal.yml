@@ -1,0 +1,6 @@
+devices:
+  - slot: 1
+    color: red
+    mac: "41:42:3A:E5:43:07"
+    class: private
+    queue: "674397"

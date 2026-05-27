@@ -1,0 +1,4 @@
+daylight_station:
+  request_timeout_sec: 5
+devices:
+  - { slot: 1, color: red, mac: "41:42:3A:E5:43:07", class: private }
