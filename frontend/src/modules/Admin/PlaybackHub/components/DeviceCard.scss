@@ -1,0 +1,19 @@
+// DeviceCard — playback-hub admin
+//
+// Mantine's Paper + Accordion handle most of the visual structure.
+// This file is intentionally minimal — only add overrides here when
+// Mantine theming can't deliver the layout we want.
+
+.playback-hub-device-card {
+  // Slight breathing room between cards in the page-level Stack.
+  & + & {
+    margin-top: 0.75rem;
+  }
+
+  // Mantine Accordion has its own padding; trim a hair so the
+  // header + transport row don't feel cramped above the collapsible
+  // sections.
+  .mantine-Accordion-root {
+    margin-top: 0.25rem;
+  }
+}
