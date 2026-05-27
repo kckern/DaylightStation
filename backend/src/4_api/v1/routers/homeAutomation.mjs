@@ -349,6 +349,25 @@ export function createHomeAutomationRouter(config) {
   router.get('/ha/script/:scriptId', haScriptHandler);
   router.post('/ha/script/:scriptId', haScriptHandler);
 
+  /**
+   * POST /home-automation/ha/call
+   * Generic Home Assistant service-call wrapper. Body: { domain, service, data }.
+   * Used by playback-hub to fire switch.turn_on / notify.* without each caller
+   * needing to know HA tokens or write its own HA client.
+   */
+  router.post('/ha/call', asyncHandler(async (req, res) => {
+    if (!haGateway) {
+      return res.status(503).json({ ok: false, error: 'Home Assistant not configured' });
+    }
+    const { domain, service, data } = req.body || {};
+    if (!domain || !service) {
+      return res.status(400).json({ ok: false, error: 'domain and service required' });
+    }
+    logger.info?.('homeAutomation.ha.call', { domain, service, data });
+    const result = await haGateway.callService(domain, service, data || {});
+    res.json({ ok: true, domain, service, data: data || {}, result });
+  }));
+
   // ===========================================================================
   // Status Endpoints
   // ===========================================================================
