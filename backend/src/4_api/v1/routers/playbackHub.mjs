@@ -103,7 +103,7 @@ export function createPlaybackHubRouter({ container, logger = console } = {}) {
     const { slots, fetchedAt } = await container.getHubStatus.execute();
     res.json({
       ok: true,
-      slots,
+      slots: (slots ?? []).map(serializeSlotStatus),
       fetchedAt: fetchedAt instanceof Date ? fetchedAt.toISOString() : fetchedAt,
     });
   }));
@@ -197,6 +197,31 @@ export function createPlaybackHubRouter({ container, logger = console } = {}) {
   });
 
   return router;
+}
+
+/**
+ * Serialize a SlotStatus VO (or a plain object passthrough) into the wire
+ * shape documented by the design's "Event shape" snapshot example. Handles
+ * both real VOs (with private fields exposed via getters) and plain objects
+ * (e.g. from tests).
+ */
+function serializeSlotStatus(slot) {
+  if (slot && typeof slot === 'object') {
+    // If the object already has its fields enumerable (plain object / from
+    // hub JSON), return a defensive copy with the documented keys present.
+    return {
+      position: slot.position,
+      color: slot.color,
+      bt_connected: slot.bt_connected,
+      paused: slot.paused,
+      now_playing: slot.now_playing ?? null,
+      volume: slot.volume,
+      playlist_pos: slot.playlist_pos,
+      playlist_count: slot.playlist_count,
+      armed_source: slot.armed_source ?? null,
+    };
+  }
+  return slot;
 }
 
 /**

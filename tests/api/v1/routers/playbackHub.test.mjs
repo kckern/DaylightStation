@@ -82,8 +82,16 @@ describe('statusForError mapping', () => {
 describe('GET /api/v1/playback-hub/status', () => {
   it('200 — returns slots + fetchedAt', async () => {
     const fakeSlots = [
-      { color: 'red', position: 1, bt_connected: true },
-      { color: 'yellow', position: 2, bt_connected: false },
+      {
+        position: 1, color: 'red', bt_connected: true, paused: false,
+        now_playing: null, volume: 50, playlist_pos: 0, playlist_count: 0,
+        armed_source: null,
+      },
+      {
+        position: 2, color: 'yellow', bt_connected: false, paused: true,
+        now_playing: null, volume: 0, playlist_pos: 0, playlist_count: 0,
+        armed_source: null,
+      },
     ];
     const fetchedAt = new Date('2026-05-27T17:00:00Z');
     const container = makeFakeContainer({
