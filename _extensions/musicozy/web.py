@@ -16,10 +16,14 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
+import yaml
+
 PORT = 8080
 BASE = Path("/home/kckern/musicozy")
-DEVICES_FILE = BASE / "devices.json"
+DEVICES_YAML = BASE / "devices.yml"
+DEVICES_JSON_LEGACY = BASE / "devices.json"
 SLOTS_DIR = BASE / "slots"
+DEFAULT_QUEUE_BASE = "https://daylightlocal.kckern.net/api/v1/queue/plex/"
 TIME_RE = re.compile(r"^(?:[01]?\d|2[0-3]):[0-5]\d$")
 
 # ---------------------------------------------------------------------------
@@ -63,15 +67,52 @@ def normalize_device(device):
     item["resume_track"] = normalize_bool(item.get("resume_track"), True)
     return item
 
+def _load_config_doc():
+    """Load the full config document (yml preferred, legacy json fallback)."""
+    if DEVICES_YAML.exists():
+        with open(DEVICES_YAML) as f:
+            data = yaml.safe_load(f) or {}
+    elif DEVICES_JSON_LEGACY.exists():
+        with open(DEVICES_JSON_LEGACY) as f:
+            data = json.load(f)
+    else:
+        return {}
+    # Support both new {queue_base, devices: [...]} and legacy bare list.
+    if isinstance(data, list):
+        return {"queue_base": "", "devices": data}
+    return data
+
+def queue_base():
+    doc = _load_config_doc()
+    return str(doc.get("queue_base") or DEFAULT_QUEUE_BASE)
+
+def resolve_queue_url(value):
+    """Bare IDs get queue_base prepended; values already containing
+    a scheme pass through unchanged."""
+    if not value:
+        return ""
+    if value.startswith("http://") or value.startswith("https://"):
+        return value
+    return queue_base() + value
+
 def read_devices():
-    if not DEVICES_FILE.exists():
-        return []
-    with open(DEVICES_FILE) as f:
-        return [normalize_device(d) for d in json.load(f)]
+    doc = _load_config_doc()
+    return [normalize_device(d) for d in doc.get("devices", [])]
 
 def write_devices(devices):
-    with open(DEVICES_FILE, "w") as f:
-        json.dump(devices, f, indent=2)
+    """Persist devices back to devices.yml, preserving queue_base and
+    top-level keys. Falls back to writing JSON if yaml isn't available
+    (won't happen in practice since we import yaml)."""
+    doc = _load_config_doc()
+    doc["devices"] = devices
+    doc.setdefault("queue_base", DEFAULT_QUEUE_BASE)
+    if DEVICES_YAML.exists() or not DEVICES_JSON_LEGACY.exists():
+        with open(DEVICES_YAML, "w") as f:
+            yaml.safe_dump(doc, f, sort_keys=False, default_flow_style=False, allow_unicode=True)
+    else:
+        # Legacy mode — keep the bare-list format intact.
+        with open(DEVICES_JSON_LEGACY, "w") as f:
+            json.dump(devices, f, indent=2)
 
 def next_slot(devices):
     used = {d["slot"] for d in devices}
@@ -159,16 +200,16 @@ def selected_queue(device):
         start = entry.get("start", "")
         end = entry.get("end", "")
         if not start and not end:
-            return entry.get("queue", "")
+            return resolve_queue_url(entry.get("queue", ""))
         if start and end and in_time_window(start, end):
-            return entry.get("queue", "")
+            return resolve_queue_url(entry.get("queue", ""))
 
     alternate_queue = device.get("alternate_queue", "")
     alternate_start = device.get("alternate_start", "")
     alternate_end = device.get("alternate_end", "")
     if alternate_queue and alternate_start and alternate_end and in_time_window(alternate_start, alternate_end):
-        return alternate_queue
-    return device.get("queue", "")
+        return resolve_queue_url(alternate_queue)
+    return resolve_queue_url(device.get("queue", ""))
 
 def selected_shuffle(device):
     for entry in device.get("schedules", []):
