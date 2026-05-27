@@ -8,6 +8,7 @@ import {
   IconArrowBack, IconPlugConnected, IconAlertCircle, IconCheck, IconX, IconRefresh
 } from '@tabler/icons-react';
 import { useAdminIntegrations } from '../../../hooks/admin/useAdminIntegrations.js';
+import { notifySuccess, notifyFailure } from '../shared/feedback.js';
 
 const CATEGORY_LABELS = {
   media: 'Media',
@@ -74,12 +75,24 @@ function IntegrationDetail() {
     try {
       const result = await testConnection(provider);
       setTestResult(result);
+      if (result?.status === 'success') {
+        notifySuccess({
+          title: 'Connection OK',
+          message: `${provider}: ${result?.message ?? 'reachable'}`,
+        });
+      } else {
+        notifyFailure({
+          title: 'Connection failed',
+          message: `${provider}: ${result?.message ?? 'unknown failure'}`,
+        });
+      }
     } catch (err) {
       setTestResult({
         status: 'failed',
         message: err.message || 'Connection test failed',
         timestamp: new Date().toISOString()
       });
+      notifyFailure({ title: 'Connection failed', message: err.message });
     } finally {
       setTesting(false);
     }
