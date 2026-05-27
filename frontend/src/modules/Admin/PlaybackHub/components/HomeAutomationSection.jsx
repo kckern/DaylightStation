@@ -2,7 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Stack, Group, TextInput, Switch, Button, Text } from '@mantine/core';
 
 /**
- * HomeAssistantSection — bind a public device to a HA entity.
+ * HomeAutomationSection — bind a public device to a home-automation entity.
+ *
+ * "home-automation" is the bounded context (see 3_applications/home-automation/);
+ * the underlying vendor name lives inside the adapter layer only.
  *
  * Wire shape (input from useHubConfig): snake_case
  *   slot.ha_entity_id, slot.ha_turn_off_on_stop
@@ -16,7 +19,7 @@ import { Stack, Group, TextInput, Switch, Button, Text } from '@mantine/core';
  *   slot:      device config { color, class, ha_entity_id?, ha_turn_off_on_stop?, ... }
  *   mutations: object from useHubMutations
  */
-export function HomeAssistantSection({ slot, mutations }) {
+export function HomeAutomationSection({ slot, mutations }) {
   const initialEntity = slot?.ha_entity_id ?? '';
   const initialTurnOff = slot?.ha_turn_off_on_stop === true;
 
@@ -62,7 +65,8 @@ export function HomeAssistantSection({ slot, mutations }) {
   return (
     <Stack gap="sm">
       <TextInput
-        label="HA Entity ID"
+        label="Home automation entity ID"
+        aria-label="Home automation entity ID"
         value={vals.haEntityId}
         onChange={(e) => setVals({ ...vals, haEntityId: e.currentTarget.value })}
         placeholder="switch.bedroom_light"
@@ -92,4 +96,4 @@ export function HomeAssistantSection({ slot, mutations }) {
   );
 }
 
-export default HomeAssistantSection;
+export default HomeAutomationSection;
