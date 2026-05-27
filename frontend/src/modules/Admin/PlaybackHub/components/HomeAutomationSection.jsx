@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Stack, Group, TextInput, Switch, Button, Text } from '@mantine/core';
+import { Stack, Group, TextInput, Switch, Button } from '@mantine/core';
 
 /**
  * HomeAutomationSection — bind a public device to a home-automation entity.
