@@ -22,6 +22,7 @@ import getLogger from '../../lib/logging/Logger.js';
 import { SessionSerializerV3 } from './SessionSerializerV3.js';
 import { buildSessionSummary } from './buildSessionSummary.js';
 import { getClientId } from '../../lib/clientId.js';
+import { runSessionBackfill } from './sessionBackfill.js';
 
 // -------------------- Constants --------------------
 
@@ -154,10 +155,16 @@ const sanitizeRosterForPersist = (roster) => {
  *
  * @param {Array} roster
  * @param {Array} deviceAssignments
+ * @param {Object} [options]
+ * @param {Set<string>} [options.excludeOccupantIds]  W1.B — drop occupants
+ *   whose session segments were fully absorbed by the backfill pass.
  * @returns {Record<string, Object>}
  */
-const buildParticipantsForPersist = (roster, deviceAssignments) => {
+const buildParticipantsForPersist = (roster, deviceAssignments, options = {}) => {
   const participants = {};
+  const excludeIds = options?.excludeOccupantIds instanceof Set
+    ? options.excludeOccupantIds
+    : null;
 
   const assignmentBySlug = new Map();
   if (Array.isArray(deviceAssignments)) {
@@ -174,6 +181,9 @@ const buildParticipantsForPersist = (roster, deviceAssignments) => {
     const name = typeof entry.name === 'string' ? entry.name : null;
     const participantId = entry.id || entry.profileId || entry.hrDeviceId || `anon-${idx}`;
     if (!participantId) return;
+
+    // W1.B — drop occupants whose data was fully absorbed by the backfill pass.
+    if (excludeIds && excludeIds.has(String(participantId))) return;
 
     const assignment = assignmentBySlug.get(participantId) || null;
     const hrDevice = entry.hrDeviceId ?? assignment?.deviceId ?? null;
@@ -588,6 +598,22 @@ export class PersistenceManager {
   }
 
   /**
+   * W1.B — Set the continuous-usage threshold (ms) used by the session-end
+   * backfill pass. Sourced upstream from fitness.yml →
+   * governance.usage_threshold_seconds (FitnessConfigService default 300s).
+   *
+   * Mirrors GuestAssignmentService.thresholdMs so the in-session and
+   * save-time passes use the same boundary.
+   *
+   * @param {number} ms
+   */
+  setUsageThresholdMs(ms) {
+    if (Number.isFinite(ms) && ms > 0) {
+      this._usageThresholdMs = ms;
+    }
+  }
+
+  /**
    * Record that a save succeeded for a given session.
    * @param {string} sessionId
    */
@@ -904,7 +930,22 @@ export class PersistenceManager {
 
     const sanitizedRoster = sanitizeRosterForPersist(sessionData.roster);
     this._augmentRosterFromSeries(sanitizedRoster, sessionData.timeline?.series, sessionData.deviceAssignments);
-    const participants = buildParticipantsForPersist(sanitizedRoster, sessionData.deviceAssignments);
+
+    // W1.B — session-end backfill pass.
+    // Walks per-device segment history (sessionData.entities) and resolves
+    // sub-threshold transitions the in-session GuestAssignmentService couldn't
+    // catch: late-tag Pikachu merges (Decision §5), final-segment backward
+    // absorption (OI-1), forward absorption (OI-3), and cycling detection
+    // (OI-2). Returns a list of (from→to) transfers that we apply to the
+    // timeline series and a set of occupants to drop from the participant list.
+    // See sessionBackfill.js + audit Decision §7.
+    const backfillResult = this._applyBackfill(sessionData);
+
+    const participants = buildParticipantsForPersist(
+      sanitizedRoster,
+      sessionData.deviceAssignments,
+      { excludeOccupantIds: backfillResult?.removedOccupants }
+    );
 
     const persistSessionData = {
       ...sessionData,
@@ -1124,6 +1165,143 @@ export class PersistenceManager {
   }
 
   // -------------------- Private Helpers --------------------
+
+  /**
+   * W1.B — Apply the session-end backfill pass.
+   *
+   * Runs the pure backfill algorithm on the entity history + threshold and
+   * applies the resulting timeline-series transfers IN PLACE on
+   * `sessionData.timeline.series`. This is the save-time counterpart to the
+   * in-session GuestAssignmentService flow — it catches transitions the
+   * in-session pass couldn't (late-tag Pikachu merges, OI-1 final-segment
+   * backward absorption, OI-2 cycling, OI-3 forward absorption).
+   *
+   * The algorithm already skips segments whose status === 'transferred' (those
+   * were absorbed in-session via session.transferUserSeries/transferSessionEntity
+   * — re-running the transfer here would double-move null arrays).
+   *
+   * Threshold source: `sessionData.thresholdMs` (populated by FitnessSession
+   * from GuestAssignmentService). Falls back to 60_000 ms if absent, matching
+   * the GuestAssignmentService back-compat default.
+   *
+   * @param {Object} sessionData
+   * @returns {{ removedOccupants: Set<string>, transfers: Array, perDevice: Map }|null}
+   */
+  _applyBackfill(sessionData) {
+    if (!sessionData) return null;
+
+    const entities = Array.isArray(sessionData.entities) ? sessionData.entities : [];
+    if (entities.length === 0) {
+      return { removedOccupants: new Set(), transfers: [], perDevice: new Map() };
+    }
+
+    // Threshold source priority (per W1.A/W1.B SSOT discipline):
+    //   1. sessionData.thresholdMs (test injection / one-off override)
+    //   2. this._usageThresholdMs (set by FitnessContext from fitness.yml)
+    //   3. 60_000 (GuestAssignmentService back-compat default)
+    const thresholdMs = Number.isFinite(sessionData.thresholdMs)
+      ? sessionData.thresholdMs
+      : (Number.isFinite(this._usageThresholdMs) ? this._usageThresholdMs : 60_000);
+
+    const sessionEndTime = Number.isFinite(sessionData.endTime)
+      ? sessionData.endTime
+      : Date.now();
+
+    let result;
+    try {
+      result = runSessionBackfill({ entities, thresholdMs, sessionEndTime });
+    } catch (err) {
+      getLogger().warn('fitness.persistence.backfill_failed', {
+        error: err?.message,
+        entityCount: entities.length
+      });
+      return { removedOccupants: new Set(), transfers: [], perDevice: new Map() };
+    }
+
+    // Apply timeline-series transfers in-place. Shares the key-rewrite shape
+    // with FitnessTimeline.transferUserSeries (`user:<id>:<metric>` →
+    // `user:<newId>:<metric>`, with source nulled out so it doesn't appear on
+    // charts), but the merge semantics differ — see _mergeUserSeriesInPlace
+    // for the destination-wins cell-by-cell behavior used at save time.
+    const series = sessionData.timeline?.series;
+    if (series && typeof series === 'object' && result.transfers.length > 0) {
+      for (const { fromOccupantId, toOccupantId } of result.transfers) {
+        this._mergeUserSeriesInPlace(series, fromOccupantId, toOccupantId);
+      }
+    }
+
+    if (result.transfers.length > 0 || result.removedOccupants.size > 0) {
+      this._log('persist_backfill_applied', {
+        sessionId: sessionData.sessionId,
+        thresholdMs,
+        transfers: result.transfers,
+        removedOccupants: [...result.removedOccupants]
+      });
+      getLogger().info('fitness.persistence.backfill_applied', {
+        sessionId: sessionData.sessionId,
+        thresholdMs,
+        transferCount: result.transfers.length,
+        removedCount: result.removedOccupants.size
+      });
+    }
+
+    return result;
+  }
+
+  /**
+   * Save-time series merge. Differs from live FitnessTimeline.transferUserSeries
+   * (which overwrites the destination wholesale): here the destination may
+   * already have data accumulated from its own ticks, so we merge cell-by-cell
+   * with destination-wins semantics. Source fills only the cells where the
+   * destination is null/undefined; source is then nulled out for tickCount
+   * parity.
+   *
+   * If the destination key doesn't exist at all, the source is moved wholesale
+   * (there's nothing to lose). The source key is then emptied (nulls preserved
+   * for length parity with the timeline's tickCount), matching the live
+   * transfer's "source no longer appears on charts" outcome.
+   *
+   * @param {Object} series
+   * @param {string} fromUserId
+   * @param {string} toUserId
+   */
+  _mergeUserSeriesInPlace(series, fromUserId, toUserId) {
+    if (!series || typeof series !== 'object' || !fromUserId || !toUserId) return;
+    if (fromUserId === toUserId) return;
+    const fromPrefix = `user:${fromUserId}:`;
+    const toPrefix = `user:${toUserId}:`;
+
+    for (const key of Object.keys(series)) {
+      if (!key.startsWith(fromPrefix)) continue;
+      const metric = key.slice(fromPrefix.length);
+      const newKey = `${toPrefix}${metric}`;
+      const fromArr = Array.isArray(series[key]) ? series[key] : null;
+      if (!fromArr) continue;
+
+      const toArr = Array.isArray(series[newKey]) ? series[newKey] : null;
+
+      if (!toArr) {
+        // Destination missing — move the array wholesale.
+        series[newKey] = [...fromArr];
+      } else {
+        // Merge cell-by-cell: destination wins where it has a value,
+        // source fills nulls. This preserves any data the destination
+        // already accumulated for ticks where both happened to record.
+        const len = Math.max(fromArr.length, toArr.length);
+        const merged = new Array(len).fill(null);
+        for (let i = 0; i < len; i++) {
+          const dst = i < toArr.length ? toArr[i] : null;
+          const src = i < fromArr.length ? fromArr[i] : null;
+          merged[i] = dst != null ? dst : src;
+        }
+        series[newKey] = merged;
+      }
+
+      // Empty the source: keep nulls for length parity with timeline tickCount,
+      // matching FitnessTimeline.transferUserSeries semantics.
+      series[key] = fromArr.map(() => null);
+    }
+  }
 
   /**
    * Fetch missing Plex metadata for episode media events and populate in-place.
