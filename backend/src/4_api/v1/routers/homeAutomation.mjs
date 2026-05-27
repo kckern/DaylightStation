@@ -26,6 +26,9 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * @param {Object} [config.entropyService] - Entropy service for data freshness
  * @param {Object} [config.configService] - Config service for user lookup
  * @param {Object} [config.eventAggregationService] - Event aggregation service
+ * @param {Object} [config.callHomeAssistantService] - Use case wrapping
+ *   `haGateway.callService` for the /ha/call and /ha/script/:scriptId
+ *   endpoints. Required for those two endpoints; when absent they return 503.
  * @param {Object} [config.logger]
  * @returns {express.Router}
  */
@@ -43,6 +46,7 @@ export function createHomeAutomationRouter(config) {
     entropyService,
     configService,
     eventAggregationService,
+    callHomeAssistantService,
     logger = console
   } = config;
 
@@ -329,7 +333,7 @@ export function createHomeAutomationRouter(config) {
    * Run a Home Assistant script by entity ID
    */
   const haScriptHandler = asyncHandler(async (req, res) => {
-    if (!haGateway) {
+    if (!callHomeAssistantService) {
       return res.status(503).json({
         ok: false,
         error: 'Home Assistant not configured'
@@ -341,9 +345,13 @@ export function createHomeAutomationRouter(config) {
 
     logger.info?.('homeAutomation.ha.script.running', { entityId });
 
-    const result = await haGateway.callService('script', 'turn_on', { entity_id: entityId });
+    const useCaseResult = await callHomeAssistantService.execute({
+      domain: 'script',
+      service: 'turn_on',
+      data: { entity_id: entityId },
+    });
 
-    res.json({ ok: true, entityId, result });
+    res.json({ ok: true, entityId, result: useCaseResult.result });
   });
 
   router.get('/ha/script/:scriptId', haScriptHandler);
@@ -354,18 +362,30 @@ export function createHomeAutomationRouter(config) {
    * Generic Home Assistant service-call wrapper. Body: { domain, service, data }.
    * Used by playback-hub to fire switch.turn_on / notify.* without each caller
    * needing to know HA tokens or write its own HA client.
+   *
+   * Delegates to the `CallHomeAssistantService` use case (DDD layering — the
+   * router does not reach into the adapter layer directly).
    */
   router.post('/ha/call', asyncHandler(async (req, res) => {
-    if (!haGateway) {
+    if (!callHomeAssistantService) {
       return res.status(503).json({ ok: false, error: 'Home Assistant not configured' });
     }
     const { domain, service, data } = req.body || {};
     if (!domain || !service) {
       return res.status(400).json({ ok: false, error: 'domain and service required' });
     }
-    logger.info?.('homeAutomation.ha.call', { domain, service, data });
-    const result = await haGateway.callService(domain, service, data || {});
-    res.json({ ok: true, domain, service, data: data || {}, result });
+    const useCaseResult = await callHomeAssistantService.execute({
+      domain,
+      service,
+      data: data || {},
+    });
+    res.json({
+      ok: true,
+      domain: useCaseResult.domain,
+      service: useCaseResult.service,
+      data: useCaseResult.data,
+      result: useCaseResult.result,
+    });
   }));
 
   // ===========================================================================

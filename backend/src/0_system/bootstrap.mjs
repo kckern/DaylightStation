@@ -88,6 +88,7 @@ import { KioskAdapter } from '#adapters/home-automation/kiosk/KioskAdapter.mjs';
 import { TaskerAdapter } from '#adapters/home-automation/tasker/TaskerAdapter.mjs';
 import { RemoteExecAdapter } from '#adapters/home-automation/remote-exec/RemoteExecAdapter.mjs';
 import { createHomeAutomationRouter } from '#api/v1/routers/homeAutomation.mjs';
+import { CallHomeAssistantService } from '#apps/home-automation/usecases/CallHomeAssistantService.mjs';
 import { HaSensorDisplayPowerCheck } from '#adapters/home-automation/HaSensorDisplayPowerCheck.mjs';
 import { DisplayReadinessPolicy, createNoOpDisplayPowerCheck } from '#domains/home-automation/index.mjs';
 import { HomeAutomationContainer } from '#apps/home-automation/HomeAutomationContainer.mjs';
@@ -1580,6 +1581,14 @@ export function createHomeAutomationApiRouter(config) {
     logger = console
   } = config;
 
+  // HA-call use case: wraps haGateway.callService for the /ha/call and
+  // /ha/script/:scriptId endpoints. Constructed inline because there's no
+  // home-automation container that owns it yet; if more HA-call call sites
+  // appear, lift this into HomeAutomationContainer.
+  const callHomeAssistantService = adapters.haGateway
+    ? new CallHomeAssistantService({ haGateway: adapters.haGateway, logger })
+    : null;
+
   return createHomeAutomationRouter({
     haGateway: adapters.haGateway,
     tvAdapter: adapters.tvAdapter,
@@ -1592,6 +1601,7 @@ export function createHomeAutomationApiRouter(config) {
     entropyService,
     configService,
     eventAggregationService,
+    callHomeAssistantService,
     logger
   });
 }
