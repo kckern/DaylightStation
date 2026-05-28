@@ -27,6 +27,12 @@ function renderSection(props) {
   );
 }
 
+function expandFire(n = 1) {
+  fireEvent.click(
+    screen.getByRole('button', { name: new RegExp(`expand fire ${n}`, 'i') })
+  );
+}
+
 describe('ScheduledFiresSection', () => {
   let mutations;
 
@@ -56,6 +62,7 @@ describe('ScheduledFiresSection', () => {
       mutations,
     });
 
+    expandFire(1);
     expect(screen.getAllByLabelText(/time/i)[0]).toHaveValue('07:00');
     expect(screen.getAllByTestId(/picker-stub/).length).toBe(1);
   });
@@ -88,6 +95,7 @@ describe('ScheduledFiresSection', () => {
       mutations,
     });
 
+    expandFire(1);
     const indefiniteBox = screen.getByLabelText(/indefinite/i);
     const durationInput = screen.getByLabelText(/duration/i);
 
@@ -143,6 +151,7 @@ describe('ScheduledFiresSection', () => {
       mutations,
     });
 
+    expandFire(1);
     await act(async () => {
       fireEvent.click(screen.getAllByRole('button', { name: /save fire/i })[0]);
     });
@@ -170,6 +179,7 @@ describe('ScheduledFiresSection', () => {
       mutations,
     });
 
+    expandFire(1);
     await act(async () => {
       fireEvent.click(screen.getAllByRole('button', { name: /save fire/i })[0]);
     });
@@ -199,6 +209,7 @@ describe('ScheduledFiresSection', () => {
       mutations,
     });
 
+    expandFire(1);
     fireEvent.click(screen.getByLabelText(/indefinite/i));
 
     await act(async () => {
@@ -311,6 +322,7 @@ describe('ScheduledFiresSection', () => {
       mutations,
     });
 
+    expandFire(1);
     const volInput = screen.getByLabelText(/volume override/i);
 
     // Type a value above the max and blur to commit
@@ -324,5 +336,57 @@ describe('ScheduledFiresSection', () => {
     // Saved value should not exceed the slotMaxVolume
     const payload = mutations.saveFire.mock.calls[0][0];
     expect(payload.volumeOverride).toBeLessThanOrEqual(30);
+  });
+
+  it('renders existing fires as collapsed (summary visible, form hidden)', () => {
+    renderSection({
+      target: 'red',
+      fires: [{
+        id: 'fire-1', time: '07:30', days: 'weekdays',
+        target: 'red', queue: 'plex:670208', duration_min: 30,
+      }],
+      slotMaxVolume: 75,
+      mutations,
+    });
+    expect(screen.getByText('07:30')).toBeInTheDocument();
+    expect(screen.queryByLabelText(/time/i)).toBeNull();
+    expect(screen.queryByLabelText(/duration/i)).toBeNull();
+  });
+
+  it('clicking expand chevron reveals the fire form', () => {
+    renderSection({
+      target: 'red',
+      fires: [{
+        id: 'fire-1', time: '07:30', days: 'weekdays',
+        target: 'red', queue: 'plex:670208', duration_min: 30,
+      }],
+      slotMaxVolume: 75,
+      mutations,
+    });
+    fireEvent.click(screen.getByRole('button', { name: /expand fire 1/i }));
+    expect(screen.getByLabelText(/time/i)).toHaveValue('07:30');
+    expect(screen.getByLabelText(/duration/i)).toBeInTheDocument();
+  });
+
+  it('newly added fire starts expanded', () => {
+    renderSection({ target: 'red', fires: [], slotMaxVolume: 75, mutations });
+    fireEvent.click(screen.getByRole('button', { name: /add fire/i }));
+    expect(screen.getByLabelText(/time/i)).toBeInTheDocument();
+  });
+
+  it('dirty fire row stays expanded after attempted collapse', () => {
+    renderSection({
+      target: 'red',
+      fires: [{
+        id: 'fire-1', time: '07:30', days: 'weekdays',
+        target: 'red', queue: 'plex:670208', duration_min: 30,
+      }],
+      slotMaxVolume: 75,
+      mutations,
+    });
+    fireEvent.click(screen.getByRole('button', { name: /expand fire 1/i }));
+    fireEvent.change(screen.getByLabelText(/time/i), { target: { value: '08:00' } });
+    fireEvent.click(screen.getByRole('button', { name: /collapse fire 1/i }));
+    expect(screen.getByLabelText(/time/i)).toHaveValue('08:00');
   });
 });
