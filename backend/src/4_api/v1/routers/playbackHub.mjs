@@ -11,7 +11,8 @@
  *   - domain ValidationError       → 400
  *   - DomainInvariantError         → 422
  *   - EntityNotFoundError          → 404
- *   - InfrastructureError (any)    → 502
+ *   - InfrastructureError HUB_TIMEOUT → 504
+ *   - InfrastructureError (other)  → 502
  *   - unhandled                    → 500
  *
  * Partial-failure HTTP coding for POST /command (per design):
@@ -66,7 +67,9 @@ export function statusForError(err) {
   if (err instanceof EntityNotFoundError) return 404;
   if (err instanceof DomainInvariantError) return 422;
   if (err instanceof ValidationError) return 400;
-  if (err instanceof InfrastructureError) return 502;
+  if (err instanceof InfrastructureError) {
+    return err?.code === 'HUB_TIMEOUT' ? 504 : 502;
+  }
   return 500;
 }
 
@@ -171,6 +174,14 @@ export function createPlaybackHubRouter({ container, logger = console } = {}) {
   router.delete('/scheduled/:id', asyncHandler(async (req, res) => {
     await container.deleteScheduledFire.execute({ id: req.params.id });
     res.status(204).end();
+  }));
+
+  // -- GET /verify/:color ---------------------------------------------------
+  router.get('/verify/:color', asyncHandler(async (req, res) => {
+    const payload = await container.verifyAudioFlowing.execute({
+      color: req.params.color,
+    });
+    res.json(payload);
   }));
 
   // Error handler (must be mounted last).
