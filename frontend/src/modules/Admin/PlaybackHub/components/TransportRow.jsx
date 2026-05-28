@@ -1,5 +1,6 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { Group, Slider, Button, ActionIcon, Box } from '@mantine/core';
+import { notifications } from '@mantine/notifications';
 import {
   IconPlayerSkipBack,
   IconPlayerSkipForward,
@@ -7,8 +8,15 @@ import {
   IconPlayerPause,
 } from '@tabler/icons-react';
 import { LabeledContentPicker } from './LabeledContentPicker.jsx';
+import getLogger from '../../../../lib/logging/Logger.js';
 
 const VOLUME_DEBOUNCE_MS = 300;
+// Tunable. We saw mpv take ~5s to stabilize after BT A2DP comes up. Cold-start
+// BT (e.g. the 10-SYNC bulb after a wedged state) may need longer; bump if
+// false-negative toasts become noisy in practice.
+const POST_PLAY_VERIFY_DELAY_MS = 5000;
+const VERIFY_ERROR_AUTOCLOSE_MS = 15000;
+const VERIFY_OK_AUTOCLOSE_MS = 3000;
 
 /**
  * TransportRow — transport controls for a device.
@@ -33,6 +41,11 @@ export function TransportRow({ slot, status, mutations, predict, pending }) {
   const [pickedValue, setPickedValue] = useState('');
   const [sliderValue, setSliderValue] = useState(status?.volume ?? defaultVol);
 
+  const logger = useMemo(
+    () => getLogger().child({ component: 'TransportRow' }),
+    []
+  );
+  const verifyTimerRef = useRef(null);
   const userInteractingRef = useRef(false);
   useEffect(() => {
     if (userInteractingRef.current) return;
@@ -62,6 +75,7 @@ export function TransportRow({ slot, status, mutations, predict, pending }) {
 
   useEffect(() => () => {
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    if (verifyTimerRef.current) clearTimeout(verifyTimerRef.current);
   }, []);
 
   const handlePrev = () => {
@@ -77,15 +91,75 @@ export function TransportRow({ slot, status, mutations, predict, pending }) {
     predict?.(slot.color, { paused: nextPaused });
     mutations.sendCommand({ action: 'pause', target: slot.color });
   };
-  const handlePlayNow = () => {
+  const handlePlayNow = async () => {
     if (!pickedValue) return;
     pending?.(slot.color, ['now_playing']);
     predict?.(slot.color, { paused: false });
-    mutations.sendCommand({
-      action: 'play',
-      target: slot.color,
-      contentId: pickedValue,
+    let cmdResult;
+    try {
+      cmdResult = await mutations.sendCommand({
+        action: 'play',
+        target: slot.color,
+        contentId: pickedValue,
+      });
+    } catch (err) {
+      logger.warn('play-now.send-command-failed', {
+        color: slot.color, error: err?.message,
+      });
+      return;
+    }
+    const applied = Array.isArray(cmdResult?.applied) ? cmdResult.applied : [];
+    if (!applied.includes(slot.color)) {
+      logger.debug('play-now.not-applied-skip-verify', {
+        color: slot.color, applied, skipped: cmdResult?.skipped,
+      });
+      return;
+    }
+    logger.info('play-now.verify-scheduled', {
+      color: slot.color, delayMs: POST_PLAY_VERIFY_DELAY_MS,
     });
+    if (verifyTimerRef.current) clearTimeout(verifyTimerRef.current);
+    verifyTimerRef.current = setTimeout(async () => {
+      verifyTimerRef.current = null;
+      let result;
+      try {
+        result = await mutations.verifyAudio(slot.color);
+      } catch (err) {
+        logger.warn('play-now.verify-threw', {
+          color: slot.color, error: err?.message,
+        });
+        return;
+      }
+      if (!result || result.ok === false) {
+        logger.warn('play-now.verify-network-failed', {
+          color: slot.color, error: result?.error,
+        });
+        return;
+      }
+      if (result.audio_flowing === true) {
+        logger.info('play-now.verify-ok', {
+          color: slot.color, peak_dbfs: result.peak_dbfs,
+        });
+        notifications.show({
+          color: 'green',
+          title: 'Audio verified',
+          message: `Audio verified at ${slot.color}`,
+          autoClose: VERIFY_OK_AUTOCLOSE_MS,
+        });
+      } else {
+        logger.warn('play-now.verify-silent', {
+          color: slot.color,
+          peak_dbfs: result.peak_dbfs,
+          bt_connected: result.bt_connected,
+        });
+        notifications.show({
+          color: 'red',
+          title: 'No audio at speaker',
+          message: `No audio at ${slot.color} speaker — try Play again`,
+          autoClose: VERIFY_ERROR_AUTOCLOSE_MS,
+        });
+      }
+    }, POST_PLAY_VERIFY_DELAY_MS);
   };
 
   // Read the optimistic state — `status.paused` already reflects the

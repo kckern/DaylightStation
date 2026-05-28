@@ -259,4 +259,136 @@ describe('TransportRow', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(310); });
     expect(predict).toHaveBeenCalledWith('red', expect.objectContaining({ volume: expect.any(Number) }));
   });
+
+  // -- post-Play verify ------------------------------------------------------
+  describe('post-Play verify guardrail', () => {
+    let notificationsMock;
+
+    beforeEach(() => {
+      notificationsMock = { show: vi.fn() };
+      vi.resetModules();
+      vi.doMock('@mantine/notifications', () => ({ notifications: notificationsMock }));
+    });
+
+    afterEach(() => {
+      vi.doUnmock('@mantine/notifications');
+    });
+
+    it('after a successful Play Now, calls verifyAudio after 5s and shows a green toast when audio_flowing', async () => {
+      vi.useFakeTimers();
+      const { TransportRow: Subject } = await import('./TransportRow.jsx');
+
+      const mutations = {
+        sendCommand: vi.fn().mockResolvedValue({ ok: true, applied: ['red'], skipped: [] }),
+        verifyAudio: vi.fn().mockResolvedValue({ audio_flowing: true, peak_dbfs: -3.2, bt_connected: true }),
+      };
+
+      render(
+        <MantineProvider>
+          <Subject slot={mkSlot()} status={mkStatus()} mutations={mutations} />
+        </MantineProvider>
+      );
+
+      act(() => { pickerOnChangeRef('plex:670208'); });
+      fireEvent.click(screen.getByRole('button', { name: /play now/i }));
+
+      // verifyAudio should NOT have been called yet.
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(mutations.verifyAudio).not.toHaveBeenCalled();
+
+      // Advance just under 5s — still not called.
+      await act(async () => { await vi.advanceTimersByTimeAsync(4900); });
+      expect(mutations.verifyAudio).not.toHaveBeenCalled();
+
+      // Cross 5s threshold.
+      await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+      expect(mutations.verifyAudio).toHaveBeenCalledWith('red');
+
+      // Settle the verifyAudio promise.
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+
+      expect(notificationsMock.show).toHaveBeenCalledTimes(1);
+      const call = notificationsMock.show.mock.calls[0][0];
+      expect(call.color).toBe('green');
+      expect(String(call.message)).toMatch(/Audio verified/i);
+    });
+
+    it('shows a red toast (autoClose 15000) when audio_flowing is false', async () => {
+      vi.useFakeTimers();
+      const { TransportRow: Subject } = await import('./TransportRow.jsx');
+
+      const mutations = {
+        sendCommand: vi.fn().mockResolvedValue({ ok: true, applied: ['red'], skipped: [] }),
+        verifyAudio: vi.fn().mockResolvedValue({ audio_flowing: false, peak_dbfs: -90, bt_connected: true }),
+      };
+
+      render(
+        <MantineProvider>
+          <Subject slot={mkSlot()} status={mkStatus()} mutations={mutations} />
+        </MantineProvider>
+      );
+
+      act(() => { pickerOnChangeRef('plex:670208'); });
+      fireEvent.click(screen.getByRole('button', { name: /play now/i }));
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+
+      expect(notificationsMock.show).toHaveBeenCalledTimes(1);
+      const call = notificationsMock.show.mock.calls[0][0];
+      expect(call.color).toBe('red');
+      expect(call.autoClose).toBe(15000);
+      expect(String(call.message)).toMatch(/No audio.*red/i);
+    });
+
+    it('shows NO toast on verifyAudio { ok: false } (silent fallback)', async () => {
+      vi.useFakeTimers();
+      const { TransportRow: Subject } = await import('./TransportRow.jsx');
+
+      const mutations = {
+        sendCommand: vi.fn().mockResolvedValue({ ok: true, applied: ['red'], skipped: [] }),
+        verifyAudio: vi.fn().mockResolvedValue({ ok: false, error: 'hub timeout' }),
+      };
+
+      render(
+        <MantineProvider>
+          <Subject slot={mkSlot()} status={mkStatus()} mutations={mutations} />
+        </MantineProvider>
+      );
+
+      act(() => { pickerOnChangeRef('plex:670208'); });
+      fireEvent.click(screen.getByRole('button', { name: /play now/i }));
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+
+      expect(notificationsMock.show).not.toHaveBeenCalled();
+    });
+
+    it('does NOT schedule verify when Play Now applied is empty', async () => {
+      vi.useFakeTimers();
+      const { TransportRow: Subject } = await import('./TransportRow.jsx');
+
+      const mutations = {
+        sendCommand: vi.fn().mockResolvedValue({
+          ok: true,
+          applied: [],
+          skipped: [{ color: 'red', reason: 'unreachable' }],
+        }),
+        verifyAudio: vi.fn(),
+      };
+
+      render(
+        <MantineProvider>
+          <Subject slot={mkSlot()} status={mkStatus()} mutations={mutations} />
+        </MantineProvider>
+      );
+
+      act(() => { pickerOnChangeRef('plex:670208'); });
+      fireEvent.click(screen.getByRole('button', { name: /play now/i }));
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+      expect(mutations.verifyAudio).not.toHaveBeenCalled();
+    });
+  });
 });
