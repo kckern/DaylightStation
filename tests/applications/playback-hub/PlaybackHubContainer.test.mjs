@@ -18,7 +18,7 @@ class StubEventPublisher {
 }
 
 const makeStatus = () => SlotStatus.fromHubJson({
-  position: 1, color: 'red', bt_connected: true, paused: false, now_playing: null,
+  slot: 1, color: 'red', bt_connected: true, paused: false, now_playing: null,
   volume: 50, playlist_pos: 0, playlist_count: 0, armed_source: null
 });
 
