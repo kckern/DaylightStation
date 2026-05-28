@@ -135,8 +135,9 @@ export class ParticipantRoster {
         // Guest/ledger assignment — keyed by device ID (ledger is always 1:1).
         devicesByUserId.set(`ledger:${deviceId}`, [device]);
       } else {
-        // Truly anonymous — no user, no ledger. Preserve current drop-anon
-        // behavior (_buildRosterEntry returns null when no participantName).
+        // Truly anonymous — no user, no ledger. Rendered as a Pikachu
+        // card with name `#<deviceId>` so the user can tap to assign
+        // via FitnessSidebarMenu. See _buildRosterEntry synthesis path.
         anonymousDevices.push(device);
       }
     }
@@ -175,9 +176,8 @@ export class ParticipantRoster {
       }
     }
 
-    // Emit truly-anonymous device entries unchanged (will be dropped inside
-    // _buildRosterEntry because no participantName resolves — preserves the
-    // previous contract explicitly).
+    // Emit truly-anonymous device entries with synthesized name + id from
+    // _buildRosterEntry, so the assignment UX is reachable.
     for (const device of anonymousDevices) {
       const entry = this._buildRosterEntry(device, zoneLookup, { preferGroupLabels });
       if (entry) {
@@ -416,19 +416,20 @@ export class ParticipantRoster {
     // to the primary device's raw reading for the single-device path.
     let rawHeartRate = Number.isFinite(device.heartRate) ? Math.round(device.heartRate) : null;
 
-    // Resolve participant name from guest assignment or user mapping
+    // Resolve participant name + id. Anonymous devices (no user mapping
+    // and no guest-assignment ledger entry) get synthetic identifiers so
+    // they render as cards the user can tap to tag via FitnessSidebarMenu.
+    // Without this, unrecognized ANT+ HR straps broadcast silently — see
+    // docs/reference/fitness/unknown-hr-monitors.md.
     const guestEntry = this._userManager?.assignmentLedger?.get?.(deviceId) || null;
     const ledgerName = guestEntry?.occupantName || guestEntry?.metadata?.name || null;
     const mappedUser = this._userManager.resolveUserForDevice(deviceId);
-    const participantName = ledgerName || mappedUser?.name;
+    const participantName = ledgerName || mappedUser?.name || `#${deviceId}`;
 
-    if (!participantName) return null;
-
-    // Use the actual user ID - must be explicitly set
-    const userId = mappedUser?.id || guestEntry?.occupantId || guestEntry?.metadata?.profileId;
-    if (!userId) {
-      getLogger().warn('participant.roster.missing_user_id', { participantName });
-    }
+    const userId = mappedUser?.id
+      || guestEntry?.occupantId
+      || guestEntry?.metadata?.profileId
+      || `device:${deviceId}`;
 
     // Phase 4: Get entityId from ledger for entity-aware tracking
     const entityId = guestEntry?.entityId || null;
