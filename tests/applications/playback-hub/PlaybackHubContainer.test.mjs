@@ -8,6 +8,7 @@ import { SendHubCommand } from '../../../backend/src/3_applications/playback-hub
 import { UpdateDeviceConfig } from '../../../backend/src/3_applications/playback-hub/usecases/UpdateDeviceConfig.mjs';
 import { SaveScheduledFire } from '../../../backend/src/3_applications/playback-hub/usecases/SaveScheduledFire.mjs';
 import { DeleteScheduledFire } from '../../../backend/src/3_applications/playback-hub/usecases/DeleteScheduledFire.mjs';
+import { VerifyAudioFlowing } from '../../../backend/src/3_applications/playback-hub/usecases/VerifyAudioFlowing.mjs';
 import { HubStatusBroadcaster } from '../../../backend/src/3_applications/playback-hub/runtime/HubStatusBroadcaster.mjs';
 import { SlotStatus } from '../../../backend/src/2_domains/playback-hub/value-objects/SlotStatus.mjs';
 
@@ -71,5 +72,19 @@ describe('PlaybackHubContainer', () => {
     expect(() => new PlaybackHubContainer({ gateway })).toThrow(/configRepository/);
     expect(() => new PlaybackHubContainer({ gateway, configRepository }))
       .toThrow(/eventPublisher/);
+  });
+});
+
+describe('PlaybackHubContainer.verifyAudioFlowing', () => {
+  it('exposes a VerifyAudioFlowing use case wired to the gateway', () => {
+    const container = new PlaybackHubContainer({
+      gateway: new FakeHubGateway(),
+      configRepository: new FakeHubConfigRepository(),
+      eventPublisher: { publish: () => {} },
+    });
+
+    expect(container.verifyAudioFlowing).toBeInstanceOf(VerifyAudioFlowing);
+    // Memoized — second access returns same instance.
+    expect(container.verifyAudioFlowing).toBe(container.verifyAudioFlowing);
   });
 });
