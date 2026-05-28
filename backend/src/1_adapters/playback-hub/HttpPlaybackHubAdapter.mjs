@@ -115,6 +115,38 @@ export class HttpPlaybackHubAdapter {
     return this.#parseCommandResult(response.body, targetColors);
   }
 
+  /**
+   * GET /api/verify/<color> — sample the BT sink's PipeWire monitor port
+   * and return the peak-meter snapshot.
+   *
+   * @param {string} color
+   * @returns {Promise<{
+   *   color: string,
+   *   sink: string,
+   *   peak_dbfs: number|null,
+   *   audio_flowing: boolean,
+   *   sampled_ms: number,
+   *   bt_connected: boolean
+   * }>}
+   */
+  async verifyAudio(color) {
+    const path = `/api/verify/${encodeURIComponent(color)}`;
+    const response = await this.#request('GET', path, null);
+    if (response.status >= 400) {
+      throw new InfrastructureError(
+        `playback hub ${path} returned ${response.status}`,
+        { code: 'HUB_HTTP_ERROR', status: response.status, body: response.body }
+      );
+    }
+    const body = response.body;
+    if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+      throw new InfrastructureError(`playback hub ${path}: expected JSON object`, {
+        code: 'HUB_BAD_RESPONSE', body: typeof body
+      });
+    }
+    return body;
+  }
+
   // -----------------------------------------------------------------------
   // Private — request shape
   // -----------------------------------------------------------------------

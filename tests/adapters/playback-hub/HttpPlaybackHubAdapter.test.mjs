@@ -364,6 +364,72 @@ describe('HttpPlaybackHubAdapter', () => {
   });
 
   // -----------------------------------------------------------------------
+  // verifyAudio
+  // -----------------------------------------------------------------------
+
+  describe('verifyAudio', () => {
+    it('GETs /api/verify/<color> and returns the parsed body', async () => {
+      let receivedPath = null;
+      const listening = await listenWith((req, res) => {
+        receivedPath = req.url;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({
+          color: 'white',
+          sink: 'bluez_output.9C_0C_35_75_B7_75.1',
+          peak_dbfs: -3.2,
+          audio_flowing: true,
+          sampled_ms: 500,
+          bt_connected: true,
+        }));
+      });
+      server = listening.server;
+      adapter = new HttpPlaybackHubAdapter({ baseUrl: `http://127.0.0.1:${listening.port}` });
+      const result = await adapter.verifyAudio('white');
+      expect(receivedPath).toBe('/api/verify/white');
+      expect(result.audio_flowing).toBe(true);
+      expect(result.peak_dbfs).toBe(-3.2);
+      expect(result.bt_connected).toBe(true);
+    });
+
+    it('URL-encodes the color path segment', async () => {
+      let receivedPath = null;
+      const listening = await listenWith((req, res) => {
+        receivedPath = req.url;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({
+          color: 'weird color', sink: '', peak_dbfs: null,
+          audio_flowing: false, sampled_ms: 0, bt_connected: false,
+        }));
+      });
+      server = listening.server;
+      adapter = new HttpPlaybackHubAdapter({ baseUrl: `http://127.0.0.1:${listening.port}` });
+      await adapter.verifyAudio('weird color');
+      expect(receivedPath).toBe('/api/verify/weird%20color');
+    });
+
+    it('404 from hub → throws InfrastructureError(HUB_HTTP_ERROR)', async () => {
+      const listening = await listenWith((_req, res) => {
+        res.statusCode = 404;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ ok: false, error: 'unknown color' }));
+      });
+      server = listening.server;
+      adapter = new HttpPlaybackHubAdapter({ baseUrl: `http://127.0.0.1:${listening.port}` });
+      await expect(adapter.verifyAudio('orange')).rejects.toThrow(InfrastructureError);
+    });
+
+    it('non-JSON response body → throws InfrastructureError(HUB_BAD_RESPONSE)', async () => {
+      const listening = await listenWith((_req, res) => {
+        res.setHeader('Content-Type', 'text/plain');
+        res.end('not-json');
+      });
+      server = listening.server;
+      adapter = new HttpPlaybackHubAdapter({ baseUrl: `http://127.0.0.1:${listening.port}` });
+      await expect(adapter.verifyAudio('red')).rejects.toThrow(/HUB_BAD_RESPONSE|expected JSON/);
+    });
+  });
+
+  // -----------------------------------------------------------------------
   // Constructor validation
   // -----------------------------------------------------------------------
 
