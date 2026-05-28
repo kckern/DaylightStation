@@ -1061,6 +1061,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._bt_scan()
         if path == "/api/bt/paired":
             return self._bt_paired()
+        if path.startswith("/api/verify/"):
+            color = path[len("/api/verify/"):]
+            return self._verify_audio(color)
         self.send_error(404)
 
     def do_POST(self):
@@ -1416,6 +1419,57 @@ class Handler(http.server.BaseHTTPRequestHandler):
             payload.setdefault("error", result.stderr.strip() or "command failed")
             return self._json(payload, 500)
         return self._json(payload)
+
+    def _verify_audio(self, color):
+        """GET /api/verify/<color> — peak-meter guardrail.
+
+        Looks up the device by color, builds the BT sink name
+        (`bluez_output.<MAC underscored>.1`), and samples its monitor port
+        for 500 ms via peak_meter.sample_peak_dbfs. Returns peak_dbfs +
+        audio_flowing so the Admin UI can distinguish "mpv claims playing"
+        from "speaker actually receiving samples."
+
+        Short-circuits with audio_flowing=false when BT is not connected
+        — there is no sink to sample.
+        """
+        from peak_meter import (
+            sample_peak_dbfs,
+            DEFAULT_SAMPLE_SEC,
+            AUDIO_FLOWING_THRESHOLD_DBFS,
+        )
+
+        device = next((d for d in read_devices() if d.get("color") == color), None)
+        if device is None:
+            return self._json({"ok": False, "error": f"unknown color: {color}"}, 404)
+
+        mac = device.get("mac", "")
+        mac_underscored = mac.replace(":", "_")
+        sink = f"bluez_output.{mac_underscored}.1"
+        connected = is_connected(mac)
+
+        if not connected:
+            return self._json({
+                "color": color,
+                "sink": sink,
+                "peak_dbfs": None,
+                "audio_flowing": False,
+                "sampled_ms": 0,
+                "bt_connected": False,
+            })
+
+        peak_dbfs = sample_peak_dbfs(sink, duration_sec=DEFAULT_SAMPLE_SEC)
+        audio_flowing = (
+            peak_dbfs is not None
+            and peak_dbfs > AUDIO_FLOWING_THRESHOLD_DBFS
+        )
+        return self._json({
+            "color": color,
+            "sink": sink,
+            "peak_dbfs": peak_dbfs,
+            "audio_flowing": audio_flowing,
+            "sampled_ms": int(DEFAULT_SAMPLE_SEC * 1000),
+            "bt_connected": True,
+        })
 
 
 # ---------------------------------------------------------------------------

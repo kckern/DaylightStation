@@ -7,6 +7,7 @@ spawned. Real `pw-cat` integration is exercised only on the hub host.
 import io
 import struct
 import unittest
+from unittest import mock
 
 import peak_meter
 
@@ -105,6 +106,55 @@ class SamplePeakDbfsEdgeCasesTests(unittest.TestCase):
             now_factory=iter([0.0, 0.02]).__next__,
         )
         self.assertAlmostEqual(result, -90.0, places=3)
+
+
+class VerifyRouteTests(unittest.TestCase):
+    """Drives Handler._verify_audio directly with a fake request.
+
+    web.py uses stdlib http.server, so we can't trivially spin up a real
+    server here — but the method's contract is small enough to test by
+    instantiating the class without going through BaseHTTPRequestHandler
+    setup. We monkeypatch the bits the method touches.
+    """
+    def _make_handler(self):
+        import web  # noqa: WPS433 — local import keeps module load lazy
+        h = web.Handler.__new__(web.Handler)
+        h._json_calls = []
+        def fake_json(data, status=200):
+            h._json_calls.append({"data": data, "status": status})
+        h._json = fake_json
+        return h, web
+
+    def test_verify_bt_disconnected_returns_null_peak_without_sampling(self):
+        h, web = self._make_handler()
+        device = {
+            "color": "white", "mac": "9C:0C:35:75:B7:75", "slot": 5,
+            "name": "10-SYNC", "class": "public",
+        }
+        with mock.patch.object(web, "read_devices", return_value=[device]), \
+             mock.patch.object(web, "is_connected", return_value=False), \
+             mock.patch("peak_meter.sample_peak_dbfs") as sampler:
+            h._verify_audio("white")
+            sampler.assert_not_called()
+
+        self.assertEqual(len(h._json_calls), 1)
+        body = h._json_calls[0]["data"]
+        self.assertEqual(h._json_calls[0]["status"], 200)
+        self.assertEqual(body["color"], "white")
+        self.assertEqual(body["sink"], "bluez_output.9C_0C_35_75_B7_75.1")
+        self.assertIsNone(body["peak_dbfs"])
+        self.assertFalse(body["audio_flowing"])
+        self.assertFalse(body["bt_connected"])
+        self.assertEqual(body["sampled_ms"], 0)
+
+    def test_verify_unknown_color_returns_404(self):
+        h, web = self._make_handler()
+        with mock.patch.object(web, "read_devices", return_value=[
+            {"color": "red", "mac": "AA:BB", "slot": 1, "name": "x", "class": "private"}
+        ]):
+            h._verify_audio("orange")
+        self.assertEqual(h._json_calls[0]["status"], 404)
+        self.assertFalse(h._json_calls[0]["data"]["ok"])
 
 
 if __name__ == "__main__":
