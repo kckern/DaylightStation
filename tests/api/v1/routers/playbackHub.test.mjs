@@ -27,6 +27,7 @@ function makeFakeContainer(overrides = {}) {
     updateDeviceConfig: { execute: overrides.updateDeviceConfig ?? vi.fn() },
     saveScheduledFire: { execute: overrides.saveScheduledFire ?? vi.fn() },
     deleteScheduledFire: { execute: overrides.deleteScheduledFire ?? vi.fn() },
+    verifyAudioFlowing: { execute: overrides.verifyAudioFlowing ?? vi.fn() },
   };
 }
 
@@ -109,12 +110,12 @@ describe('GET /api/v1/playback-hub/status', () => {
     expect(container.getHubStatus.execute).toHaveBeenCalledOnce();
   });
 
-  it('502 — InfrastructureError from gateway', async () => {
+  it('504 — InfrastructureError with HUB_TIMEOUT code → 504', async () => {
     const container = makeFakeContainer({
       getHubStatus: vi.fn().mockRejectedValue(new InfrastructureError('hub unreachable', { code: 'HUB_TIMEOUT' })),
     });
     const res = await request(buildApp(container)).get('/api/v1/playback-hub/status');
-    expect(res.status).toBe(502);
+    expect(res.status).toBe(504);
     expect(res.body).toEqual({ ok: false, error: 'hub unreachable', code: 'HUB_TIMEOUT' });
   });
 });
@@ -534,5 +535,61 @@ describe('error mapping — unhandled', () => {
       .get('/api/v1/playback-hub/status');
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ ok: false, error: 'boom', code: null });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /verify/:color
+// ---------------------------------------------------------------------------
+
+describe('GET /verify/:color', () => {
+  it('200 with the gateway payload on success', async () => {
+    const container = makeFakeContainer({});
+    container.verifyAudioFlowing = { execute: vi.fn().mockResolvedValue({
+      color: 'white',
+      sink: 'bluez_output.9C_0C_35_75_B7_75.1',
+      peak_dbfs: -3.2,
+      audio_flowing: true,
+      sampled_ms: 500,
+      bt_connected: true,
+    }) };
+    const app = buildApp(container);
+    const res = await request(app).get('/api/v1/playback-hub/verify/white');
+    expect(res.status).toBe(200);
+    expect(res.body.audio_flowing).toBe(true);
+    expect(res.body.peak_dbfs).toBe(-3.2);
+    expect(container.verifyAudioFlowing.execute).toHaveBeenCalledWith({ color: 'white' });
+  });
+
+  it('400 when use case throws ValidationError', async () => {
+    const container = makeFakeContainer({});
+    container.verifyAudioFlowing = { execute: vi.fn().mockRejectedValue(
+      new ValidationError('bad color', { code: 'INVALID_COLOR' })
+    ) };
+    const app = buildApp(container);
+    const res = await request(app).get('/api/v1/playback-hub/verify/%20');
+    expect(res.status).toBe(400);
+    expect(res.body.ok).toBe(false);
+  });
+
+  it('504 when InfrastructureError code is HUB_TIMEOUT', async () => {
+    const container = makeFakeContainer({});
+    container.verifyAudioFlowing = { execute: vi.fn().mockRejectedValue(
+      new InfrastructureError('timed out', { code: 'HUB_TIMEOUT' })
+    ) };
+    const app = buildApp(container);
+    const res = await request(app).get('/api/v1/playback-hub/verify/white');
+    expect(res.status).toBe(504);
+    expect(res.body.code).toBe('HUB_TIMEOUT');
+  });
+
+  it('502 for any other InfrastructureError', async () => {
+    const container = makeFakeContainer({});
+    container.verifyAudioFlowing = { execute: vi.fn().mockRejectedValue(
+      new InfrastructureError('upstream 500', { code: 'HUB_HTTP_ERROR', status: 500 })
+    ) };
+    const app = buildApp(container);
+    const res = await request(app).get('/api/v1/playback-hub/verify/white');
+    expect(res.status).toBe(502);
   });
 });
