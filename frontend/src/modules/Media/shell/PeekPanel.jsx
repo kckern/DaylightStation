@@ -2,6 +2,7 @@ import React, { useEffect, useMemo } from 'react';
 import { useSessionController } from '../session/useSessionController.js';
 import { usePeek } from '../peek/usePeek.js';
 import { useStatusOverlay } from '../../../hooks/useStatusOverlay';
+import './PeekPanel.scss';
 
 /**
  * PeekPanel — remote-control surface for a single device.
