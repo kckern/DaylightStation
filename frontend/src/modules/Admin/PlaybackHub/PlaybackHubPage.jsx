@@ -4,7 +4,7 @@ import { useHubStatus } from './hooks/useHubStatus';
 import { useHubConfig } from './hooks/useHubConfig';
 import { useHubMutations } from './hooks/useHubMutations';
 import { useStaleness } from './hooks/useStaleness';
-import { useStatusOverlay } from './hooks/useStatusOverlay';
+import { useStatusOverlay } from '../../../hooks/useStatusOverlay';
 import DeviceCard from './components/DeviceCard';
 import { StalenessBanner } from './components/StalenessBanner.jsx';
 import './PlaybackHubPage.scss';
