@@ -15,6 +15,7 @@ import { SendHubCommand } from './usecases/SendHubCommand.mjs';
 import { UpdateDeviceConfig } from './usecases/UpdateDeviceConfig.mjs';
 import { SaveScheduledFire } from './usecases/SaveScheduledFire.mjs';
 import { DeleteScheduledFire } from './usecases/DeleteScheduledFire.mjs';
+import { VerifyAudioFlowing } from './usecases/VerifyAudioFlowing.mjs';
 import { HubStatusBroadcaster } from './runtime/HubStatusBroadcaster.mjs';
 
 export class PlaybackHubContainer {
@@ -30,6 +31,7 @@ export class PlaybackHubContainer {
   #updateDeviceConfig;
   #saveScheduledFire;
   #deleteScheduledFire;
+  #verifyAudioFlowing;
   #broadcaster;
 
   /**
@@ -119,6 +121,17 @@ export class PlaybackHubContainer {
       });
     }
     return this.#deleteScheduledFire;
+  }
+
+  /** @returns {VerifyAudioFlowing} */
+  get verifyAudioFlowing() {
+    if (!this.#verifyAudioFlowing) {
+      this.#verifyAudioFlowing = new VerifyAudioFlowing({
+        gateway: this.#gateway,
+        logger: this.#logger,
+      });
+    }
+    return this.#verifyAudioFlowing;
   }
 
   /** @returns {HubStatusBroadcaster} */
