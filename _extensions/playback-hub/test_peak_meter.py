@@ -156,6 +156,54 @@ class VerifyRouteTests(unittest.TestCase):
         self.assertEqual(h._json_calls[0]["status"], 404)
         self.assertFalse(h._json_calls[0]["data"]["ok"])
 
+    def test_verify_bt_connected_samples_and_returns_audio_flowing_true(self):
+        h, web = self._make_handler()
+        device = {
+            "color": "white", "mac": "9C:0C:35:75:B7:75", "slot": 5,
+            "name": "10-SYNC", "class": "public",
+        }
+        with mock.patch.object(web, "read_devices", return_value=[device]), \
+             mock.patch.object(web, "is_connected", return_value=True), \
+             mock.patch("peak_meter.sample_peak_dbfs", return_value=-3.2) as sampler:
+            h._verify_audio("white")
+        sampler.assert_called_once_with(
+            "bluez_output.9C_0C_35_75_B7_75.1",
+            duration_sec=0.5,
+        )
+        body = h._json_calls[0]["data"]
+        self.assertEqual(body["peak_dbfs"], -3.2)
+        self.assertTrue(body["audio_flowing"])
+        self.assertEqual(body["sampled_ms"], 500)
+        self.assertTrue(body["bt_connected"])
+
+    def test_verify_bt_connected_below_threshold_returns_audio_flowing_false(self):
+        h, web = self._make_handler()
+        device = {
+            "color": "white", "mac": "9C:0C:35:75:B7:75", "slot": 5,
+            "name": "10-SYNC", "class": "public",
+        }
+        with mock.patch.object(web, "read_devices", return_value=[device]), \
+             mock.patch.object(web, "is_connected", return_value=True), \
+             mock.patch("peak_meter.sample_peak_dbfs", return_value=-72.0):
+            h._verify_audio("white")
+        body = h._json_calls[0]["data"]
+        self.assertFalse(body["audio_flowing"])
+        self.assertEqual(body["peak_dbfs"], -72.0)
+
+    def test_verify_bt_connected_sample_returns_none_means_audio_flowing_false(self):
+        h, web = self._make_handler()
+        device = {
+            "color": "red", "mac": "41:42:3A:E5:43:07", "slot": 1,
+            "name": "musiCozy", "class": "private",
+        }
+        with mock.patch.object(web, "read_devices", return_value=[device]), \
+             mock.patch.object(web, "is_connected", return_value=True), \
+             mock.patch("peak_meter.sample_peak_dbfs", return_value=None):
+            h._verify_audio("red")
+        body = h._json_calls[0]["data"]
+        self.assertIsNone(body["peak_dbfs"])
+        self.assertFalse(body["audio_flowing"])
+
 
 if __name__ == "__main__":
     unittest.main()
