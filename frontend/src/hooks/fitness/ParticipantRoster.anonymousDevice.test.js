@@ -64,4 +64,34 @@ describe('ParticipantRoster — anonymous HR device rendering', () => {
     const names = result.map(e => e.name).sort();
     expect(names).toEqual(['#10366', '#11521']);
   });
+
+  it('swaps the synthetic name once the device is tagged via assignGuest', () => {
+    const { roster, deviceManager, userManager } = buildRoster();
+
+    deviceManager.registerDevice({
+      id: '10366',
+      type: 'heart_rate',
+      heartRate: 72,
+      lastSeen: Date.now()
+    });
+
+    // Pre-assignment: anonymous identity
+    const before = roster.getRoster();
+    expect(before).toHaveLength(1);
+    expect(before[0].name).toBe('#10366');
+
+    // Tag the device — mirrors what FitnessSidebarMenu.handleAssignGuest does
+    // with the generic 'Guest' choice (W2 device-keyed alias).
+    userManager.assignGuest('10366', 'Guest', {
+      profileId: 'guest_10366',
+      occupantType: 'guest'
+    });
+
+    // Post-assignment: ledger entry wins, synthetic name is gone
+    const after = roster.getRoster();
+    expect(after).toHaveLength(1);
+    expect(after[0].name).toBe('Guest');
+    expect(after[0].id).toBe('guest_10366');
+    expect(after[0].isGuest).toBe(true);
+  });
 });
