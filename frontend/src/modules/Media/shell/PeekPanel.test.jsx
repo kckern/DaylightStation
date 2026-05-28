@@ -1,6 +1,6 @@
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 
 const pauseFn = vi.fn();
 const playFn = vi.fn();
@@ -64,5 +64,93 @@ describe('PeekPanel', () => {
     render(<PeekPanel deviceId="lr" />);
     fireEvent.change(screen.getByTestId('peek-volume'), { target: { value: '80' } });
     expect(volumeFn).toHaveBeenCalledWith(80);
+  });
+
+  describe('optimistic state', () => {
+    it('flips state label immediately when Pause clicked, even before snapshot updates', () => {
+      ctl = {
+        ...ctl,
+        snapshot: {
+          state: 'playing',
+          currentItem: { contentId: 'plex:1', title: 'Remote Song' },
+          position: 0,
+          config: { volume: 50 },
+        },
+      };
+      render(<PeekPanel deviceId="lr" />);
+      expect(screen.getByTestId('peek-panel')).toHaveTextContent('state: playing');
+
+      fireEvent.click(screen.getByTestId('peek-pause'));
+      // Optimistic flip: state label now reads "paused" even though
+      // ctl.snapshot.state is still "playing".
+      expect(screen.getByTestId('peek-panel')).toHaveTextContent('state: paused');
+    });
+
+    it('greys + disables transport buttons while state is pending', () => {
+      render(<PeekPanel deviceId="lr" />);
+      fireEvent.click(screen.getByTestId('peek-pause'));
+      expect(screen.getByTestId('peek-play')).toBeDisabled();
+      expect(screen.getByTestId('peek-pause')).toBeDisabled();
+      expect(screen.getByTestId('peek-stop')).toBeDisabled();
+      expect(screen.getByTestId('peek-pause').getAttribute('data-pending')).toBe('true');
+    });
+
+    it('greys + disables next/prev while currentItem is pending', () => {
+      render(<PeekPanel deviceId="lr" />);
+      fireEvent.click(screen.getByTestId('peek-next'));
+      expect(screen.getByTestId('peek-next')).toBeDisabled();
+      expect(screen.getByTestId('peek-prev')).toBeDisabled();
+      expect(screen.getByTestId('peek-next').getAttribute('data-pending')).toBe('true');
+    });
+
+    it('clears the pending state when snapshot.state catches up with prediction', () => {
+      ctl = {
+        ...ctl,
+        snapshot: {
+          state: 'playing',
+          currentItem: { contentId: 'plex:1', title: 'Remote Song' },
+          position: 0,
+          config: { volume: 50 },
+        },
+      };
+      const { rerender } = render(<PeekPanel deviceId="lr" />);
+      fireEvent.click(screen.getByTestId('peek-pause'));
+      expect(screen.getByTestId('peek-pause')).toBeDisabled();
+
+      // Simulate the WS broadcaster catching up.
+      ctl = { ...ctl, snapshot: { ...ctl.snapshot, state: 'paused' } };
+      rerender(<PeekPanel deviceId="lr" />);
+
+      expect(screen.getByTestId('peek-pause')).not.toBeDisabled();
+      expect(screen.getByTestId('peek-panel')).toHaveTextContent('state: paused');
+    });
+
+    it('auto-lifts a pending state after 5s timeout if WS never confirms', () => {
+      vi.useFakeTimers();
+      ctl = {
+        ...ctl,
+        snapshot: {
+          state: 'playing',
+          currentItem: { contentId: 'plex:1', title: 'Remote Song' },
+          position: 0,
+          config: { volume: 50 },
+        },
+      };
+      try {
+        render(<PeekPanel deviceId="lr" />);
+        fireEvent.click(screen.getByTestId('peek-pause'));
+        expect(screen.getByTestId('peek-pause')).toBeDisabled();
+
+        act(() => {
+          vi.advanceTimersByTime(5100);
+        });
+
+        // Pending lifted; reverts to the real (still 'playing') state.
+        expect(screen.getByTestId('peek-pause')).not.toBeDisabled();
+        expect(screen.getByTestId('peek-panel')).toHaveTextContent('state: playing');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 });
