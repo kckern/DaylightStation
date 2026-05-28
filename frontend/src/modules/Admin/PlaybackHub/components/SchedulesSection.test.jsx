@@ -41,6 +41,12 @@ function renderSection(props) {
   );
 }
 
+function expandWindow(n = 1) {
+  fireEvent.click(
+    screen.getByRole('button', { name: new RegExp(`expand window ${n}`, 'i') })
+  );
+}
+
 describe('SchedulesSection', () => {
   let mutations;
 
@@ -53,6 +59,7 @@ describe('SchedulesSection', () => {
 
   it('renders existing windows with start/end/queue/shuffle', () => {
     renderSection({ slot: mkSlot(), mutations });
+    expandWindow(1);
     expect(screen.getAllByTestId(/picker-stub/).length).toBe(1);
 
     const startInputs = screen.getAllByLabelText(/start/i);
@@ -75,13 +82,14 @@ describe('SchedulesSection', () => {
 
   it('Remove removes a row', () => {
     renderSection({ slot: mkSlot(), mutations });
-    expect(screen.getAllByTestId(/picker-stub/).length).toBe(1);
+    expect(screen.getAllByRole('button', { name: /remove window/i }).length).toBe(1);
     fireEvent.click(screen.getByRole('button', { name: /remove window 1/i }));
-    expect(screen.queryAllByTestId(/picker-stub/).length).toBe(0);
+    expect(screen.queryAllByRole('button', { name: /remove window/i }).length).toBe(0);
   });
 
   it('Save calls updateDevice with the full updated continuous list', async () => {
     renderSection({ slot: mkSlot(), mutations });
+    expandWindow(1);
 
     // Edit start time
     const startInputs = screen.getAllByLabelText(/start/i);
@@ -130,6 +138,40 @@ describe('SchedulesSection', () => {
     });
   });
 
+  it('renders existing windows as collapsed (summary visible, form hidden)', () => {
+    renderSection({ slot: mkSlot(), mutations });
+    // Summary row is visible
+    expect(screen.getByText('07:00 – 21:00')).toBeInTheDocument();
+    // Form inputs are NOT yet rendered
+    expect(screen.queryByLabelText(/start/i)).toBeNull();
+    expect(screen.queryByLabelText(/end/i)).toBeNull();
+  });
+
+  it('clicking expand chevron reveals the form', () => {
+    renderSection({ slot: mkSlot(), mutations });
+    fireEvent.click(screen.getByRole('button', { name: /expand window 1/i }));
+    expect(screen.getByLabelText(/start/i)).toHaveValue('07:00');
+    expect(screen.getByLabelText(/end/i)).toHaveValue('21:00');
+  });
+
+  it('newly added rows start expanded', () => {
+    renderSection({ slot: mkSlot({ schedules: [] }), mutations });
+    fireEvent.click(screen.getByRole('button', { name: /add window/i }));
+    expect(screen.getByLabelText(/start/i)).toBeInTheDocument();
+  });
+
+  it('expanding, editing, and collapsing keeps the row expanded while dirty', () => {
+    renderSection({ slot: mkSlot(), mutations });
+    fireEvent.click(screen.getByRole('button', { name: /expand window 1/i }));
+    fireEvent.change(screen.getByLabelText(/start/i), { target: { value: '08:00' } });
+
+    // Attempt to collapse
+    fireEvent.click(screen.getByRole('button', { name: /collapse window 1/i }));
+
+    // Form should still be there — dirty wins
+    expect(screen.getByLabelText(/start/i)).toHaveValue('08:00');
+  });
+
   it('Shuffle switch toggles shuffle field in saved payload', async () => {
     renderSection({
       slot: mkSlot({
@@ -139,6 +181,7 @@ describe('SchedulesSection', () => {
       }),
       mutations,
     });
+    expandWindow(1);
 
     const shuffleSwitch = screen.getByRole('switch', { name: /shuffle/i });
     fireEvent.click(shuffleSwitch);
