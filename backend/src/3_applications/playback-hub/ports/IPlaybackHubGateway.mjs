@@ -41,6 +41,25 @@ export class IPlaybackHubGateway {
   async sendCommand(playCommand, targets) {
     throw new Error('IPlaybackHubGateway.sendCommand must be implemented');
   }
+
+  /**
+   * Sample the BT sink's PipeWire monitor port and return a peak-meter
+   * reading. Lets callers distinguish "playback claimed playing" from
+   * "speaker actually receiving samples."
+   *
+   * @param {string} color
+   * @returns {Promise<{
+   *   color: string,
+   *   sink: string,
+   *   peak_dbfs: number|null,
+   *   audio_flowing: boolean,
+   *   sampled_ms: number,
+   *   bt_connected: boolean
+   * }>}
+   */
+  async verifyAudio(color) {
+    throw new Error('IPlaybackHubGateway.verifyAudio must be implemented');
+  }
 }
 
 /**
@@ -49,7 +68,10 @@ export class IPlaybackHubGateway {
  * @returns {boolean}
  */
 export function isPlaybackHubGateway(obj) {
-  return Boolean(obj) && typeof obj.getStatus === 'function' && typeof obj.sendCommand === 'function';
+  return Boolean(obj)
+    && typeof obj.getStatus === 'function'
+    && typeof obj.sendCommand === 'function'
+    && typeof obj.verifyAudio === 'function';
 }
 
 export default IPlaybackHubGateway;
