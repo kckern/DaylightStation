@@ -1281,11 +1281,16 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     };
   }, [batchedForceUpdate, handleVibrationEvent]);
 
-  // MEMORY LEAK FIX: Only prune devices when session is active
-  const currentSessionId = fitnessSessionRef.current?.sessionId;
+  // Run device pruning unconditionally for the lifetime of FitnessProvider.
+  // Previously gated by currentSessionId — but ANT+ packets can still arrive
+  // between sessions (a sensor finishing its broadcast cycle, a leftover fob),
+  // registering devices that then persist forever because no prune ran.
+  // Pruning is cheap (small map iteration) and the staleness logic already
+  // handles the empty-map and no-significant-activity cases correctly.
+  // See docs/_wip/bugs/2026-05-28-fitness-rpm-cadence-freeze-and-ghost-devices.md (Bug 2)
   useEffect(() => {
     const session = fitnessSessionRef.current;
-    if (!currentSessionId) return;
+    if (!session) return;
 
     const interval = setInterval(() => {
       const timeouts = getFitnessTimeouts();
@@ -1293,7 +1298,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       batchedForceUpdate();
     }, 3000);
     return () => clearInterval(interval);
-  }, [batchedForceUpdate, currentSessionId]);
+  }, [batchedForceUpdate]);
 
   const reconnectFitnessWebSocket = React.useCallback(() => {
     // Use the centralized WebSocketService to reconnect
