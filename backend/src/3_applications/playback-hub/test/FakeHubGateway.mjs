@@ -23,6 +23,11 @@ export class FakeHubGateway extends IPlaybackHubGateway {
   #statusError = null;
   #commandResult = null;
   #commandError = null;
+  #verifyResult = null;
+  #verifyError = null;
+
+  /** @type {Array<{ color: string }>} */
+  verifyCalls = [];
 
   /** @type {{ playCommand: object, targets: object[] }|null} */
   lastCall = null;
@@ -93,6 +98,24 @@ export class FakeHubGateway extends IPlaybackHubGateway {
   }
 
   /**
+   * Seed the next verifyAudio() response.
+   */
+  setNextVerifyResult(result) {
+    if (result === null || typeof result !== 'object') {
+      throw new Error('FakeHubGateway.setNextVerifyResult requires an object');
+    }
+    this.#verifyResult = result;
+    this.#verifyError = null;
+  }
+
+  /**
+   * Seed the next verifyAudio() to reject. Single-shot — cleared after one throw.
+   */
+  setVerifyError(err) {
+    this.#verifyError = err;
+  }
+
+  /**
    * @override
    * @returns {Promise<object[]>}
    */
@@ -136,6 +159,31 @@ export class FakeHubGateway extends IPlaybackHubGateway {
       return this.#commandResult;
     }
     return new CommandResult({ applied: [], skipped: [] });
+  }
+
+  /**
+   * @override
+   * @param {string} color
+   * @returns {Promise<object>}
+   */
+  async verifyAudio(color) {
+    this.verifyCalls.push({ color });
+    if (this.#verifyError) {
+      const err = this.#verifyError;
+      this.#verifyError = null; // single-shot
+      throw err;
+    }
+    if (this.#verifyResult) {
+      return this.#verifyResult;
+    }
+    return {
+      color,
+      sink: '',
+      peak_dbfs: null,
+      audio_flowing: false,
+      sampled_ms: 0,
+      bt_connected: false,
+    };
   }
 }
 
