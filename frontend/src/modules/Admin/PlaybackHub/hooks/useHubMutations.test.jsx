@@ -476,4 +476,79 @@ describe('useHubMutations', () => {
     // Should not throw.
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
+
+  // --------------------------------------------------------------------
+  // verifyAudio
+  // --------------------------------------------------------------------
+
+  describe('verifyAudio', () => {
+    it('GETs /verify/:color and returns the parsed body', async () => {
+      global.fetch.mockReturnValueOnce(ok({
+        color: 'white',
+        sink: 'bluez_output.9C_0C_35_75_B7_75.1',
+        peak_dbfs: -3.2,
+        audio_flowing: true,
+        sampled_ms: 500,
+        bt_connected: true,
+      }));
+
+      const { result } = renderHook(() => useHubMutations({ revalidate }));
+
+      let response;
+      await act(async () => {
+        response = await result.current.verifyAudio('white');
+      });
+
+      const [url, opts] = global.fetch.mock.calls[0];
+      expect(url).toBe('/api/v1/playback-hub/verify/white');
+      expect(opts?.method ?? 'GET').toBe('GET');
+      expect(response.audio_flowing).toBe(true);
+      expect(response.peak_dbfs).toBe(-3.2);
+    });
+
+    it('URL-encodes special characters in color', async () => {
+      global.fetch.mockReturnValueOnce(ok({}));
+      const { result } = renderHook(() => useHubMutations({ revalidate }));
+      await act(async () => {
+        await result.current.verifyAudio('weird color');
+      });
+      expect(global.fetch.mock.calls[0][0]).toBe(
+        '/api/v1/playback-hub/verify/weird%20color'
+      );
+    });
+
+    it('returns { ok:false, error } on non-2xx response (does NOT throw)', async () => {
+      global.fetch.mockReturnValueOnce(ok(
+        { ok: false, error: 'hub timeout', code: 'HUB_TIMEOUT' },
+        504
+      ));
+      const { result } = renderHook(() => useHubMutations({ revalidate }));
+      let response;
+      await act(async () => {
+        response = await result.current.verifyAudio('white');
+      });
+      expect(response.ok).toBe(false);
+      expect(response.error).toBe('hub timeout');
+    });
+
+    it('returns { ok:false, error } on fetch rejection (network failure)', async () => {
+      global.fetch.mockRejectedValueOnce(new Error('network down'));
+      const { result } = renderHook(() => useHubMutations({ revalidate }));
+      let response;
+      await act(async () => {
+        response = await result.current.verifyAudio('white');
+      });
+      expect(response.ok).toBe(false);
+      expect(response.error).toMatch(/network down/);
+    });
+
+    it('does NOT call revalidate (verify is read-only)', async () => {
+      global.fetch.mockReturnValueOnce(ok({ audio_flowing: true }));
+      const { result } = renderHook(() => useHubMutations({ revalidate }));
+      await act(async () => {
+        await result.current.verifyAudio('white');
+      });
+      expect(revalidate).not.toHaveBeenCalled();
+    });
+  });
 });

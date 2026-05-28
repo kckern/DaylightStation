@@ -21,6 +21,12 @@ const CONTENTION_RETRY_DELAY_MS = 500;
  * errors (body has `ok: false`) become exceptions so they classify as
  * failure; partial outcomes (HTTP 502 but body `ok: true` with skipped[])
  * remain structured and classify as partial via `partialFromResult`.
+ *
+ * `verifyAudio` is read-only and silent-fail-tolerant: it never throws
+ * and never calls revalidate. On non-2xx or network errors it returns
+ * `{ ok: false, error }` instead of raising. This lets post-Play timers
+ * call it safely without try/catch.
+ *   verifyAudio: (color: string) => Promise<object>,
  */
 export function useHubMutations({ revalidate } = {}) {
   const logger = useMemo(
@@ -172,7 +178,26 @@ export function useHubMutations({ revalidate } = {}) {
     });
   }, [logger, deleteFireRaw, revalidate]);
 
-  return { sendCommand, updateDevice, saveFire, deleteFire };
+  const verifyAudio = useCallback(async (color) => {
+    try {
+      const r = await fetch(
+        `/api/v1/playback-hub/verify/${encodeURIComponent(color)}`
+      );
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        return {
+          ok: false,
+          error: body?.error ?? `HTTP ${r.status}`,
+          code: body?.code ?? null,
+        };
+      }
+      return body;
+    } catch (err) {
+      return { ok: false, error: err?.message ?? 'network error' };
+    }
+  }, []);
+
+  return { sendCommand, updateDevice, saveFire, deleteFire, verifyAudio };
 }
 
 export default useHubMutations;
