@@ -72,13 +72,18 @@ export class Device {
     if (Number.isFinite(data.revolutionCount)) this.revolutionCount = data.revolutionCount;
     if (data.timestamp) this.timestamp = data.timestamp;
 
-    // Check for significant activity to reset inactivity flags
-    const hasHeartRate = Number.isFinite(this.heartRate) && this.heartRate > 0;
-    const hasCadence = Number.isFinite(this.cadence) && this.cadence > 0;
-    const hasPower = Number.isFinite(this.power) && this.power > 0;
-    const hasSpeed = Number.isFinite(this.speed) && this.speed > 0;
-    
-    if (hasHeartRate || hasCadence || hasPower || hasSpeed) {
+    // Significance check: bump lastSignificantActivity based on the INCOMING
+    // payload, not the device's persisted state. ANT+ sensors broadcast
+    // non-cadence pages (battery, manufacturer, common 80-82) for 60-120s
+    // after pedaling stops; reading post-merge `this.cadence` here would let
+    // those frames refresh the timer forever via stale data.
+    // See docs/_wip/bugs/2026-05-28-fitness-rpm-cadence-freeze-and-ghost-devices.md
+    const payloadHasHeartRate = Number.isFinite(data.heartRate) && data.heartRate > 0;
+    const payloadHasCadence   = Number.isFinite(data.cadence)   && data.cadence   > 0;
+    const payloadHasPower     = Number.isFinite(data.power)     && data.power     > 0;
+    const payloadHasSpeed     = Number.isFinite(data.speed)     && data.speed     > 0;
+
+    if (payloadHasHeartRate || payloadHasCadence || payloadHasPower || payloadHasSpeed) {
       this.lastSignificantActivity = Date.now();
       this.inactiveSince = null;
       this.removalAt = null;
