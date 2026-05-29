@@ -9,8 +9,8 @@ import { usePersistentVolume } from '@/modules/Fitness/nav/usePersistentVolume.j
 import { normalizeDuration } from '@/modules/Player/utils/mediaIdentity.js';
 import { guid } from '@/modules/Player/lib/helpers.js';
 import getLogger from '@/lib/logging/Logger.js';
-import { useStuckLoadingDetector } from './useStuckLoadingDetector.js';
-import { formatMusicErrorMessage } from './musicPlayerErrorFormat.js';
+import { useMusicRecovery } from './useMusicRecovery.js';
+import { formatMusicErrorMessage, isRecoverableMusicError } from './musicPlayerErrorFormat.js';
 
 const LOG_CURVE_TARGET_LEVEL = 50; // midpoint of the touch buttons
 const LOG_CURVE_TARGET_VOLUME = 0.1; // 10% output should align with midpoint
@@ -67,11 +67,26 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
   const sessionInstance = fitnessContext?.fitnessSessionInstance;
 
   const hasTrack = Boolean(currentTrack);
-  const stuck = useStuckLoadingDetector({
+  const recoverableError = isRecoverableMusicError(playerError?.kind);
+  const recovery = useMusicRecovery({
     hasTrack,
     playlistId: selectedPlaylistId,
+    recoverableError,
     thresholdMs: 15_000,
+    retryDelayMs: 1_000,
+    maxAutoRetries: 3,
   });
+
+  // Each retry (auto or manual) bumps recovery.attempt → the inner <Player>
+  // remounts and re-fetches. Clear the previous error so the recovery loop
+  // isn't immediately re-triggered by a stale error on the fresh attempt.
+  const recoveryAttemptRef = useRef(recovery.attempt);
+  useEffect(() => {
+    if (recoveryAttemptRef.current !== recovery.attempt) {
+      recoveryAttemptRef.current = recovery.attempt;
+      setPlayerError(null);
+    }
+  }, [recovery.attempt]);
 
   // Diagnostic: emit a structured warning the first time the music player is
   // detected stuck on this attempt. Production logs already capture the
@@ -213,8 +228,8 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
 
   const handleRetry = useCallback(() => {
     setPlayerError(null);
-    stuck.retry();
-  }, [stuck]);
+    recovery.retry();
+  }, [recovery]);
 
   // Memoize Player props to prevent unnecessary useEffect re-runs in useQueueController
   // Without this, inline objects like queue={{}} and play={{}} are new refs on every render
@@ -584,9 +599,14 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
                 }}
               >
                 {currentTrack?.title || currentTrack?.label || (() => {
-                  const errToShow = playerError || (stuck.isStuck ? { kind: 'unknown' } : null);
-                  if (!errToShow) return 'Loading…';
-                  const text = formatMusicErrorMessage(errToShow);
+                  // A non-recoverable error (e.g. an empty playlist) is shown at
+                  // once; recoverable failures are retried silently and only
+                  // surface once the recovery budget is exhausted.
+                  const terminalError = playerError && !isRecoverableMusicError(playerError.kind)
+                    ? playerError
+                    : (recovery.exhausted ? { kind: 'unknown' } : null);
+                  if (!terminalError) return 'Loading…';
+                  const text = formatMusicErrorMessage(terminalError);
                   return (
                     <span
                       className="music-player-retry"
@@ -710,7 +730,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
       <div style={{ position: 'absolute', left: '-9999px' }}>
         <Player
           ref={audioPlayerRef}
-          key={`${selectedPlaylistId}-${stuck.attempt}`}
+          key={`${selectedPlaylistId}-${recovery.attempt}`}
           queue={playerQueueProp}
           play={playerPlayProp}
           onProgress={handleProgress}
