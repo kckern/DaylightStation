@@ -97,4 +97,30 @@ describe('useMusicRecovery', () => {
     expect(result.current.attempt).toBe(4);
     expect(result.current.exhausted).toBe(false);
   });
+
+  it('clears timers on unmount without firing late state updates', () => {
+    vi.useFakeTimers();
+    const { unmount } = renderHook(() => useMusicRecovery(BASE));
+    unmount();
+    // A stall timer was in flight; unmount cleanup must cancel it.
+    expect(() => { vi.runAllTimers(); }).not.toThrow();
+  });
+
+  it('spends the budget at the retry cadence while a recoverable error persists', () => {
+    vi.useFakeTimers();
+    // recoverableError stays true (the consumer never clears it) → each retry
+    // delay spends one budget unit until the budget (maxAutoRetries = 2) is gone.
+    const { result } = renderHook(() => useMusicRecovery({ ...BASE, recoverableError: true }));
+
+    act(() => { vi.advanceTimersByTime(1_000); });
+    expect(result.current.attempt).toBe(1);
+
+    act(() => { vi.advanceTimersByTime(1_000); });
+    expect(result.current.attempt).toBe(2);
+
+    // Budget spent → next failure detection exhausts (no further attempt bump).
+    act(() => { vi.advanceTimersByTime(1_000); });
+    expect(result.current.attempt).toBe(2);
+    expect(result.current.exhausted).toBe(true);
+  });
 });
