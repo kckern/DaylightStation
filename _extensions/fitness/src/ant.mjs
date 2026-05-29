@@ -6,6 +6,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { createRequire } from 'module';
+import { createCadenceGate } from './cadenceGate.mjs';
 
 const execAsync = promisify(exec);
 const require = createRequire(import.meta.url);
@@ -23,6 +24,10 @@ export class ANTPlusManager {
     // sensor to skip duplicates within a short window.
     this._lastBroadcast = new Map(); // deviceId-profile -> { ts, hr, cadence, power }
     this._dedupeWindowMs = 50; // Skip duplicates within 50ms
+
+    // Gate cadence on revolution-count advancement so a sensor that holds its
+    // last CalculatedCadence after the crank stops reports 0 instead of a stuck value.
+    this._cadenceGate = createCadenceGate({ revStaleMs: 2500 });
   }
 
   async initialize() {
@@ -166,13 +171,30 @@ export class ANTPlusManager {
 
         // Extract key metrics for logging (avoid raw buffer spam)
         const hr = data.ComputedHeartRate ?? data.heartRate ?? null;
-        const cadence = data.CalculatedCadence ?? data.cadence ?? null;
+        const rawCadence = data.CalculatedCadence ?? data.cadence ?? null;
+        const revolutionCount = Number.isFinite(data.CumulativeCadenceRevolutionCount)
+          ? data.CumulativeCadenceRevolutionCount
+          : null;
         const power = data.InstantaneousPower ?? data.power ?? null;
 
         // Multi-dongle deduplication: skip if another dongle already sent
         // identical data for this sensor within the dedup window
         const dedupeKey = `${deviceId}-${profile}`;
         const now = Date.now();
+
+        // Revolution-gate the cadence: zero it if the crank has stalled even though
+        // the sensor keeps broadcasting a non-zero held CalculatedCadence.
+        const cadence = this._cadenceGate.gate(deviceId, {
+          calculatedCadence: rawCadence,
+          revolutionCount,
+          now
+        });
+        // Make downstream consumers (the app's DeviceManager) see the gated value.
+        if (cadence !== null) data.CalculatedCadence = cadence;
+        if (rawCadence !== null && rawCadence > 0 && cadence === 0) {
+          console.log(`[${timestamp}] ${deviceId} cadence revolution-stall → 0 (was ${Math.round(rawCadence)}, revs=${revolutionCount})`);
+        }
+
         const lastBroadcast = this._lastBroadcast.get(dedupeKey);
 
         if (lastBroadcast && (now - lastBroadcast.ts) < this._dedupeWindowMs) {
@@ -198,6 +220,7 @@ export class ANTPlusManager {
           const metrics = [];
           if (hr) metrics.push(`HR:${hr}`);
           if (cadence !== null) metrics.push(`CAD:${Math.round(cadence)}`);
+          if (revolutionCount !== null) metrics.push(`REV:${revolutionCount}`);
           if (power) metrics.push(`PWR:${power}`);
 
           if (metrics.length > 0) {
