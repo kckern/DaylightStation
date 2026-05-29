@@ -41,7 +41,7 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
         requirements: [],
         deadline: null,
         gracePeriodTotal: null,
-        videoLocked: false,
+        videoLocked: challenge.lockReason === 'health',
         challenge,
         activeUserCount: Number.isFinite(activeUserCount) ? Math.max(0, Math.round(activeUserCount)) : null
       };
