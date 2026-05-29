@@ -203,6 +203,7 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
 
   const primaryOverlay = governanceDisplay?.show ? (
     <GovernanceStateOverlay
+      voiceMemoOpen={voiceMemoOverlayOpen}
       display={governanceDisplay}
       onRequestSwap={isCycleChallenge && activeChallenge?.swapAllowed ? handleRequestSwap : null}
       swapAllowed={isCycleChallenge && Boolean(activeChallenge?.swapAllowed)}
