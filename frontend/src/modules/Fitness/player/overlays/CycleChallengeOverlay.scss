@@ -96,11 +96,26 @@
   }
 
   // --- Rider avatar (center) ---------------------------------------------
-  &__avatar {
+  &__avatar-wrap {
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
+    z-index: 1;
+  }
+
+  // Compact HR gate dot — pinned to the avatar's bottom-right edge.
+  &__avatar-wrap .cycle-base-req {
+    position: absolute;
+    right: -2px;
+    bottom: -2px;
+    padding: 2px;
+    background: rgba(11, 18, 28, 0.9);
+    border-radius: 999px;
+    box-shadow: 0 0 0 2px rgba(11, 18, 28, 0.9);
+  }
+
+  &__avatar {
     width: clamp(48px, calc(var(--cycle-overlay-diameter) * 0.28), 72px);
     height: clamp(48px, calc(var(--cycle-overlay-diameter) * 0.28), 72px);
     border-radius: 50%;
@@ -126,7 +141,7 @@
       }
 
       &:active {
-        transform: translate(-50%, -50%) scale(0.96);
+        transform: scale(0.96);
       }
     }
 
@@ -173,25 +188,6 @@
     gap: clamp(2px, calc(var(--cycle-overlay-diameter) * 0.02), 6px);
     pointer-events: none;
     z-index: 1;
-  }
-
-  &__rider-name {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    max-width: 100%;
-    font-size: clamp(0.65rem, calc(var(--cycle-overlay-diameter) * 0.05), 0.8rem);
-    color: #cbd5e1;
-    text-align: center;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
-  }
-
-  &__rider-name-text {
-    max-width: 100%;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   // --- Phase count blocks (rounded squares below the rider name) ---------
