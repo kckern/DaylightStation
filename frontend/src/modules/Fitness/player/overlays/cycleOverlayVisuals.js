@@ -88,6 +88,8 @@ export function getCycleOverlayVisuals(challenge) {
   }
 
   const dimFactor = clamp01(challenge.dimFactor);
+  // NOTE: `phaseProgressPct` is a FRACTION in [0,1] despite the "Pct" suffix
+  // (engine computes min(1, ms/total)). clamp01 is correct; do not multiply by 100.
   const phaseProgress = clamp01(challenge.phaseProgressPct);
 
   let ringColor = RING_COLORS.neutral;
@@ -104,7 +106,14 @@ export function getCycleOverlayVisuals(challenge) {
       ringOpacity = 1;
       break;
     case 'maintain':
-      if (dimFactor > 0) {
+      if (Boolean(challenge.dangerActive)) {
+        // Below lo (failing) — slipping-hard color. The separate draining
+        // danger ring + numeric countdown carry the lockout urgency, so we do
+        // NOT pulse the dim animation here.
+        ringColor = RING_COLORS.maintainOrange;
+        ringOpacity = 1;
+        dimPulse = false;
+      } else if (dimFactor > 0) {
         ringColor = RING_COLORS.maintainOrange;
         // Ring opacity scales down with dimFactor so that as the video dims,
         // the ring also fades. Floor at 0.35 so it never fully disappears.

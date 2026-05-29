@@ -107,3 +107,25 @@ describe('getBoosterAvatarSlots — percentage positioning', () => {
     expect(getBoosterAvatarSlots(null)).toEqual([]);
   });
 });
+
+describe('cycleOverlayVisuals — danger color classification', () => {
+  it('uses the slipping (orange) color, not green, when dangerActive in maintain', () => {
+    const v = getCycleOverlayVisuals({
+      type: 'cycle',
+      cycleState: 'maintain',
+      dimFactor: 0,          // below lo → engine reports dimFactor 0
+      phaseProgressPct: 0.4,
+      dangerActive: true,
+      dangerProgress: 0.6
+    });
+    expect(v.ringColor).toBe('#f97316'); // maintainOrange, not #22c55e green
+    expect(v.dimPulse).toBe(false);      // the danger ring owns attention, not the dim pulse
+  });
+
+  it('still reports green in maintain at/above hi with no danger', () => {
+    const v = getCycleOverlayVisuals({
+      type: 'cycle', cycleState: 'maintain', dimFactor: 0, phaseProgressPct: 0.4
+    });
+    expect(v.ringColor).toBe('#22c55e');
+  });
+});
