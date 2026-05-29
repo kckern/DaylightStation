@@ -187,10 +187,17 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
     ? <ChallengeOverlay overlay={upcomingChallengeOverlay} />
     : null;
 
-  // Cycle overlay shows for any active cycle challenge except the locked
-  // branch, which is owned by GovernanceStateOverlay (Task 25 lock panel).
+  // Cycle overlay shows for any active cycle challenge except terminal states
+  // (success/failed) and non-health locks. A health-lock keeps the overlay
+  // visible so the rider sees the empty health meter and "pedal back to green"
+  // signal while the video is paused — health-locks are NOT owned by
+  // GovernanceStateOverlay (the generic panel is suppressed for this case in
+  // useGovernanceDisplay).
+  const isHealthLock = isCycleChallenge
+    && activeChallenge?.cycleState === 'locked'
+    && activeChallenge?.lockReason === 'health';
   const cycleOverlay = isCycleChallenge
-    && activeChallenge?.cycleState !== 'locked'
+    && !(activeChallenge?.cycleState === 'locked' && !isHealthLock)
     && activeChallenge?.status !== 'success'
     && activeChallenge?.status !== 'failed'
     ? (
@@ -205,8 +212,6 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
     <GovernanceStateOverlay
       voiceMemoOpen={voiceMemoOverlayOpen}
       display={governanceDisplay}
-      onRequestSwap={isCycleChallenge && activeChallenge?.swapAllowed ? handleRequestSwap : null}
-      swapAllowed={isCycleChallenge && Boolean(activeChallenge?.swapAllowed)}
     />
   ) : null;
 

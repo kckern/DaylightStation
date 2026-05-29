@@ -17,17 +17,18 @@ import './CycleChallengeOverlay.scss';
  * Circular ~220px widget that visualises the active cycle challenge:
  *   - Outer status ring track (faint full-circle outline)
  *   - Lower-hemisphere phase progress arc (9 → 6 → 3 o'clock). Monotonic phase
- *     progress fill; color/opacity driven by cycleState/dimFactor only — never
- *     repurposed for the danger countdown.
- *   - Draining red danger ring (separate full circle at radius CYCLE_RING_RADIUS+4)
- *     plus a numeric "⚠ Ns ↑ pedal" countdown, shown only during the 3-second
- *     grace window before maintain → locked fires (dangerActive=true).
+ *     progress fill; color/opacity driven by cycleState/dimFactor only.
  *   - RPM gauge arc (top hemisphere) with tick marks, hi/lo markers, needle (Task 22)
  *   - Target RPM sign anchored to the hi-rpm tick on the gauge arc (Task 22)
  *   - Rider avatar centered (sole rider identifier; heart-rate gate dot pinned to it)
+ *   - Health meter bar (depletes below loRpm; empty meter = video paused)
  *   - Phase count blocks (rounded squares — one per phase, completed phases lit)
  *   - Up to 4 booster avatars at the corners (NE/SE/SW/NW) (Task 23)
  *   - Boost multiplier pill (×2.5) below the avatar when >1.0 (Task 23)
+ *
+ * During a health-lock (cycleState='locked', lockReason='health') the overlay
+ * stays mounted with the empty health meter so the rider knows to pedal back
+ * into the green zone to resume playback.
  *
  * Position (top / middle / bottom) is owned by ChallengeOverlayDeck — this
  * component renders inside the deck and does not manage its own placement.
@@ -207,8 +208,7 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
     CYCLE_RING_CENTER, CYCLE_RING_CENTER, CYCLE_RING_RADIUS, 0
   );
   const phaseArcLen = Math.PI * CYCLE_RING_RADIUS; // half-circumference
-  // Phase arc is progress ONLY — monotonic, never repurposed for the danger
-  // countdown (that lives on the separate __danger-ring). It holds when paused.
+  // Phase arc is progress ONLY — monotonic. It holds when paused.
   const phaseArcDashOffset = phaseArcLen * (1 - phaseProgress);
   // Sweep flag = 0 with start at 9 o'clock and end at 3 o'clock routes through
   // the bottom (6 o'clock) in SVG y-down coordinates.
@@ -338,8 +338,7 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
           />
         </g>
 
-        {/* Phase progress arc — reflects phaseProgress only (monotonic).
-            The separate __danger-ring (below) handles the lockout countdown. */}
+        {/* Phase progress arc — reflects phaseProgress only (monotonic). */}
         <path
           className="cycle-challenge-overlay__phase-arc"
           d={phaseArcPath}
