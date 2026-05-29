@@ -123,7 +123,7 @@ export class MQTTSelectorAdapter {
     const action = data && typeof data.action === 'string' ? data.action : '';
     if (!action) return null;
     const userId = entry.buttons[action];
-    if (!userId) return null;
+    if (userId == null) return null;
     return { selectorId: entry.selectorId, equipmentId: entry.equipmentId, userId, action };
   }
 
@@ -137,7 +137,7 @@ export class MQTTSelectorAdapter {
       return false;
     }
     if (this.#topicMap.size === 0) {
-      this.#logger.info?.('selector.mqtt.noSelectors', { message: 'No selectors configured' });
+      this.#logger.warn?.('selector.mqtt.noSelectors', { message: 'No selectors configured' });
       return false;
     }
 
@@ -167,6 +167,12 @@ export class MQTTSelectorAdapter {
 
   #connectToBroker(brokerUrl) {
     if (this.#isShuttingDown) return;
+
+    if (this.#client) {
+      this.#client.removeAllListeners();
+      this.#client.end(true);
+      this.#client = null;
+    }
 
     this.#client = mqtt.connect(brokerUrl, { reconnectPeriod: 0, connectTimeout: 10000 });
 

@@ -30,6 +30,10 @@ describe('MQTTSelectorAdapter', () => {
       const a = new MQTTSelectorAdapter({ host: '' }, { selectors: SELECTORS, logger });
       expect(a.isConfigured()).toBe(false);
     });
+    it('reports not configured when selectors list is empty', () => {
+      const a = new MQTTSelectorAdapter({ host: 'mosquitto' }, { selectors: [], logger });
+      expect(a.isConfigured()).toBe(false);
+    });
   });
 
   describe('resolveSelection', () => {
