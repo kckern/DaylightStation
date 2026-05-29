@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import {
   getCycleOverlayVisuals,
@@ -134,6 +134,9 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
   const riderAvatarUrl = riderId
     ? `/api/v1/static/img/users/${riderId}`
     : '/api/v1/static/img/users/user';
+
+  const [imgFailed, setImgFailed] = useState(false);
+  useEffect(() => { setImgFailed(false); }, [riderAvatarUrl]);
 
   // --- RPM gauge geometry (Task 22) -----------------------------------------
   const currentRpm = Number.isFinite(challenge.currentRpm) ? challenge.currentRpm : 0;
@@ -395,22 +398,19 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
           disabled={!swapAllowed}
           aria-label={`Rider: ${riderName || 'unknown'}${swapAllowed ? ' — tap to swap' : ''}`}
         >
-          <img
-            className="cycle-challenge-overlay__avatar-img"
-            src={riderAvatarUrl}
-            alt=""
-            onError={(e) => {
-              e.currentTarget.style.display = 'none';
-              const fallback = e.currentTarget.nextSibling;
-              if (fallback) fallback.style.display = 'flex';
-            }}
-          />
-          <span
-            className="cycle-challenge-overlay__avatar-initials"
-            style={{ display: 'none' }}
-          >
-            {riderInitial}
-          </span>
+          {!imgFailed && (
+            <img
+              className="cycle-challenge-overlay__avatar-img"
+              src={riderAvatarUrl}
+              alt=""
+              onError={() => setImgFailed(true)}
+            />
+          )}
+          {imgFailed && (
+            <span className="cycle-challenge-overlay__avatar-initials">
+              {riderInitial}
+            </span>
+          )}
         </button>
         <CycleBaseReqIndicator
           compact
