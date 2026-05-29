@@ -2535,6 +2535,7 @@ export class GovernanceEngine {
       // when RPM recovers OR when the grace expires (and the lock fires).
       // Surfaced in the snapshot so the overlay can render a depleting arc.
       dangerSinceMs: null,
+      dangerRecoverySinceMs: null,
       pausedAt: null,
       pausedRemainingMs: null,
       // Task 6: 500ms debounce for the published cycleState. The internal
@@ -2719,10 +2720,16 @@ export class GovernanceEngine {
     if (active.cycleState === 'maintain') {
       const phase = active.generatedPhases[active.currentPhaseIndex];
       const DANGER_GRACE_MS = 3000;
+      const DANGER_RECOVERY_MS = 500;
+      const nowMs = ctx.now ?? this._now();
 
       if (ctx.equipmentRpm < phase.loRpm) {
+        // Below lo — arm or continue danger. Any dip cancels a pending recovery
+        // so the grace clock keeps counting from the ORIGINAL dangerSinceMs: a
+        // rider bobbing at the threshold can no longer reset grace forever.
+        active.dangerRecoverySinceMs = null;
         if (!Number.isFinite(active.dangerSinceMs)) {
-          active.dangerSinceMs = ctx.now ?? this._now();
+          active.dangerSinceMs = nowMs;
           getLogger().info('governance.cycle.danger_started', {
             challengeId: active.id,
             phaseIndex: active.currentPhaseIndex,
@@ -2730,12 +2737,12 @@ export class GovernanceEngine {
             threshold: phase.loRpm
           });
         }
-        const elapsed = (ctx.now ?? this._now()) - active.dangerSinceMs;
-        if (elapsed >= DANGER_GRACE_MS) {
+        if (nowMs - active.dangerSinceMs >= DANGER_GRACE_MS) {
           active.cycleState = 'locked';
           active.lockReason = 'maintain';
           active.totalLockEventsCount += 1;
           active.dangerSinceMs = null;
+          active.dangerRecoverySinceMs = null;
           getLogger().info('governance.cycle.state_transition', {
             challengeId: active.id, from: 'maintain', to: 'locked',
             currentPhaseIndex: active.currentPhaseIndex, rider: active.rider,
@@ -2752,12 +2759,22 @@ export class GovernanceEngine {
         return;
       }
 
-      // RPM is at or above loRpm — clear any pending grace.
+      // RPM is at or above loRpm.
       if (Number.isFinite(active.dangerSinceMs)) {
+        // Recovering: require RPM to hold above lo for DANGER_RECOVERY_MS before
+        // clearing danger. Until then danger stays armed (no lock — we're above
+        // lo; no progress — recovery unconfirmed) so the overlay does not flicker.
+        if (!Number.isFinite(active.dangerRecoverySinceMs)) {
+          active.dangerRecoverySinceMs = nowMs;
+        }
+        if (nowMs - active.dangerRecoverySinceMs < DANGER_RECOVERY_MS) {
+          return;
+        }
         getLogger().info('governance.cycle.danger_cleared', {
           challengeId: active.id, currentRpm: ctx.equipmentRpm
         });
         active.dangerSinceMs = null;
+        active.dangerRecoverySinceMs = null;
       }
 
       if (ctx.equipmentRpm >= phase.hiRpm) {
