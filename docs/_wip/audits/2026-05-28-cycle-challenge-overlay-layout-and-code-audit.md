@@ -47,6 +47,9 @@ when active).
 
 ### A2. Rider name is largely redundant with the avatar
 
+**Status: Resolved (2026-05-28)** — rider name dropped; avatar is the sole identifier. See `docs/superpowers/plans/2026-05-28-cycle-challenge-logic-ux-integration.md`.
+
+
 The avatar (photo, or initials fallback) already identifies the rider. On a
 single-rider challenge dial, the rider knows who they are; a persistent name label
 earns its keep on a *multi-rider leaderboard*, not here. The one legitimate use is
@@ -57,6 +60,9 @@ name only transiently (on mount / right after a swap, then fade), or only while
 `swapAllowed` is true.
 
 ### A3. The heart-rate gate renders a "log line," not a status
+
+**Status: Resolved (2026-05-28)** — text label dropped; dot moved onto the avatar. See `docs/superpowers/plans/2026-05-28-cycle-challenge-logic-ux-integration.md`.
+
 
 `CycleBaseReqIndicator` renders a colored dot **and** a full sentence:
 *"Heart-rate zone satisfied" / "Waiting for heart-rate zone" / "Heart-rate gate
@@ -86,6 +92,9 @@ and should be protected when trimming.
 
 ### B1. Static gauge geometry is recomputed on every RPM tick (inefficiency)
 
+**Status: Resolved (2026-05-28)** — gauge geometry memoized on `currentPhase`. See `docs/superpowers/plans/2026-05-28-cycle-challenge-logic-ux-integration.md`.
+
+
 `currentRpm` changes on essentially every governance tick, forcing a re-render. Each
 render recomputes **all** gauge geometry in the function body: the 13 tick
 `polarToCartesian` pairs, the arc path, and the hi/lo marker endpoints
@@ -97,6 +106,9 @@ second for no reason.
 leaving only the needle angle to recompute per tick.
 
 ### B2. Avatar fallback mutates the DOM imperatively (correctness smell)
+
+**Status: Resolved (2026-05-28)** — replaced with React `imgFailed` state keyed off avatar URL. See `docs/superpowers/plans/2026-05-28-cycle-challenge-logic-ux-integration.md`.
+
 
 The `<img onError>` handler hides the image and reveals the initials span by writing
 `style.display` directly on DOM nodes via `nextSibling`
@@ -110,6 +122,9 @@ it.
 
 ### B3. `phaseProgressPct` is a fraction, not a percent (naming hazard)
 
+**Status: Addressed by documentation (2026-05-28)** — the unit is now documented at the source (`[0,1]` fraction); the field was not renamed. See `docs/superpowers/plans/2026-05-28-cycle-challenge-logic-ux-integration.md`.
+
+
 Upstream the engine computes `phaseProgressPct = min(1.0, ms / total)` — a value in
 `[0,1]` (`GovernanceEngine.js:598`) — and `getCycleOverlayVisuals` correctly
 `clamp01`s it. The `Pct` suffix strongly implies 0–100. Anyone who later "fixes" the
@@ -120,17 +135,26 @@ to full (`clamp01` maps everything > 1 to 1) with no error.
 
 ### B4. `hiRpm` / `targetRpm` read the same field twice (duplication)
 
+**Status: Resolved (2026-05-28)** — collapsed to a single derivation. See `docs/superpowers/plans/2026-05-28-cycle-challenge-logic-ux-integration.md`.
+
+
 `targetRpm` (`:117`) and `hiRpm` (`:139`) both derive from
 `challenge.currentPhase?.hiRpm` with near-identical finite checks; `targetRpm` is just
 `Math.round(hiRpm)`. Collapse to a single derivation.
 
 ### B5. `metUsers={[]}` is always empty for phase blocks (dead capability)
 
+**Status: Resolved (2026-05-28)** — prop removed; intent is now explicit. See `docs/superpowers/plans/2026-05-28-cycle-challenge-logic-ux-integration.md`.
+
+
 `CompletionCountBlocks` supports per-block initials via `metUsers`, but the overlay
 always passes `[]` (`:453`), so completed phase blocks never show who completed them.
 Either wire real per-phase attribution or drop the prop to make the intent explicit.
 
 ### B6. State-change log effect reads fields it doesn't depend on (stale logging)
+
+**Status: Resolved (2026-05-28)** — log effect dependencies corrected. See `docs/superpowers/plans/2026-05-28-cycle-challenge-logic-ux-integration.md`.
+
 
 The `state-change` effect fires only on `cycleState`/`dimFactor` changes but logs
 `phaseProgressPct` (`:74-82`), so the logged progress value is whatever it was at the
@@ -139,6 +163,9 @@ Minor, but the logged number can mislead during debugging.
 
 ### B7. Terminology drift: "segment" vs "phase"
 
+**Status: Resolved (2026-05-28)** — `aria-label` and all surfaces now use "phase" consistently. See `docs/superpowers/plans/2026-05-28-cycle-challenge-logic-ux-integration.md`.
+
+
 The root `aria-label` calls each unit a "segment" (`:275`) while every other surface —
 phase blocks, countdown, internal naming — calls it a "phase". Pick one for
 screen-reader consistency.
@@ -146,6 +173,8 @@ screen-reader consistency.
 ---
 
 ## C. Progress semicircle behavior across RPM bands (the "wonky" report)
+
+**Status: Resolved (2026-05-28) — C1–C7 all addressed.** See `docs/superpowers/plans/2026-05-28-cycle-challenge-logic-ux-integration.md`. The progress arc is now monotonic (phase progress only); the lockout grace has a separate draining red outer ring and "⚠ Ns ↑ pedal" countdown; `dangerActive` uses hysteresis + sustained recovery so threshold bobbing no longer flickers or resets grace; the below-lo color is now slipping/orange (not green).
 
 This is the lower-hemisphere arc. It is the headline UX problem with the widget: **a
 single visual channel (the bottom arc's fill fraction) is overloaded with two
