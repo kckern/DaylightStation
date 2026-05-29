@@ -139,7 +139,7 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
   const currentRpm = Number.isFinite(challenge.currentRpm) ? challenge.currentRpm : 0;
 
   const {
-    hiRpm, loRpm, gaugeTicks, arcPath,
+    hiRpm, gaugeTicks, arcPath,
     hiAngle, loAngle, hiTickInner, hiTickOuter, loTickInner, loTickOuter
   } = useMemo(() => {
     const _hiRpm = Number.isFinite(challenge.currentPhase?.hiRpm) ? challenge.currentPhase.hiRpm : null;
