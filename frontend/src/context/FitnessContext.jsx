@@ -15,6 +15,8 @@ import { getModuleManifest } from '../modules/Fitness/index.js';
 import { VIBRATION_CONSTANTS } from '../modules/Fitness/widgets/VibrationApp/constants.js';
 import { buildSelectionConfig } from '../hooks/fitness/selectPrimaryMedia.js';
 import { applyEquipmentCatalogFromConfig } from './fitnessConfigBridge.js';
+import { normalizeToast, dismissMatches } from '../modules/Fitness/player/overlays/fitnessToastSlot.js';
+import { buildRiderToast } from '../modules/Fitness/player/overlays/buildRiderToast.js';
 
 // Phase 3 SSOT: Domain model imports
 import ParticipantFactory from '../modules/Fitness/domain/ParticipantFactory.js';
@@ -133,6 +135,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const [sidebarSizeMode, setSidebarSizeMode] = useState('regular');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [voiceMemoOverlayState, setVoiceMemoOverlayState] = useState(VOICE_MEMO_OVERLAY_INITIAL);
+  const [fitnessToast, setFitnessToast] = useState(null);
+  const toastIdRef = useRef(0);
+  const riderToastRef = useRef(null);
   const [voiceMemoVersion, setVoiceMemoVersion] = useState(0);
   const [connected, setConnected] = useState(false);
   const [internalPlayQueue, setInternalPlayQueue] = useState([]);
@@ -1200,7 +1205,16 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       }, VIBRATION_CONSTANTS.ACTIVE_STATE_MS);
     }
   }, []);
-  
+
+  const pushFitnessToast = useCallback((toast) => {
+    toastIdRef.current += 1;
+    setFitnessToast(normalizeToast(toast, toastIdRef.current));
+  }, []);
+
+  const dismissFitnessToast = useCallback((id) => {
+    setFitnessToast((prev) => (dismissMatches(prev, id) ? null : prev));
+  }, []);
+
   // WebSocket subscription using centralized WebSocketService
   useEffect(() => {
     // MEMORY LEAK FIX: Move cleanup refs outside .then() to ensure proper cleanup
@@ -1241,6 +1255,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
               batchedForceUpdate();
             }
             return;
+          }
+
+          // Cosmetic rider-assignment toast (additive — must NOT return; the
+          // claim is still set by ingestData below).
+          if (data?.topic === 'rider_select') {
+            riderToastRef.current?.(data);
           }
 
           session.ingestData(data);
@@ -1759,6 +1779,18 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return resolveDisplayName(deviceId, displayNameContext);
   }, [displayNameContext]);
 
+  // Keep a current rider→toast handler so the WS dispatch can fire a toast without
+  // putting getDisplayName (declared below the WS effect) in that effect's deps.
+  useEffect(() => {
+    riderToastRef.current = (data) => {
+      pushFitnessToast(buildRiderToast(data, {
+        resolveUserName: (uid) => getDisplayName(uid)?.displayName || uid,
+        resolveEquipmentName: (eid) =>
+          (Array.isArray(equipmentConfig) ? equipmentConfig : []).find((e) => e?.id === eid)?.name || eid,
+      }));
+    };
+  }, [getDisplayName, equipmentConfig, pushFitnessToast]);
+
   const guestCandidateList = React.useMemo(() => {
     return Array.isArray(session?.guestCandidates) ? session.guestCandidates : [];
   }, [session, version]);
@@ -2230,7 +2262,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     expandSidebar,
     toggleSidebarCollapsed,
     voiceMemoOverlayState,
-    
+    fitnessToast,
+    pushFitnessToast,
+    dismissFitnessToast,
+
     // Voice memo video pause/resume control (BUG-08 fix)
     videoPlayerPaused,
     setVideoPlayerPaused,

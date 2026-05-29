@@ -1,0 +1,72 @@
+.fitness-toast {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(1);
+  z-index: 2200; // above challenge deck / governance overlays
+  pointer-events: none; // non-blocking
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 280px;
+  max-width: 70%;
+  padding: 18px 24px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #f8fafc;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  opacity: 1;
+  overflow: hidden;
+  // 320ms here must stay in sync with TOAST_EXIT_MS in FitnessToast.jsx
+  transition: opacity 320ms ease, transform 320ms ease, max-height 320ms ease, padding 320ms ease;
+  max-height: 240px;
+
+  &--entered { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+
+  // fade + collapse
+  &--exiting {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.92);
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  &--success { border-left: 4px solid #22c55e; }
+  &--info { border-left: 4px solid #38bdf8; }
+
+  &__body { display: flex; align-items: center; gap: 16px; }
+
+  &__avatar {
+    width: 56px; height: 56px; border-radius: 50%; object-fit: cover;
+    background: rgba(255, 255, 255, 0.06);
+    flex: 0 0 auto;
+  }
+  &__icon { font-size: 40px; line-height: 1; flex: 0 0 auto; }
+
+  &__text { display: flex; flex-direction: column; gap: 2px; }
+  &__title { font-size: 1.5rem; font-weight: 700; }
+  &__subtitle { font-size: 1.05rem; opacity: 0.85; }
+
+  &__countdown {
+    height: 4px; border-radius: 2px;
+    background: rgba(255, 255, 255, 0.12);
+    overflow: hidden;
+  }
+  &__countdown-bar {
+    height: 100%;
+    width: 100%;
+    transform-origin: left center;
+    background: currentColor;
+    opacity: 0.6;
+    animation-name: fitness-toast-countdown;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+  }
+}
+
+@keyframes fitness-toast-countdown {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
