@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { CycleChallengeOverlay } from './CycleChallengeOverlay.jsx';
 
 const baseChallenge = {
@@ -90,18 +90,39 @@ describe('CycleChallengeOverlay — extended UI', () => {
     expect(complete.length).toBe(1);
   });
 
-  it('renders the danger arc class when dangerActive is true', () => {
+  it('renders a draining danger ring and numeric countdown when dangerActive', () => {
     const ch = {
       ...baseChallenge,
+      cycleState: 'maintain',
+      initRemainingMs: null,
+      rampRemainingMs: null,
       dangerActive: true,
       dangerRemainingMs: 1500,
       dangerProgress: 0.5
     };
     const { container } = render(<CycleChallengeOverlay challenge={ch} />);
-    expect(container.querySelector('.cycle-challenge-overlay__phase-arc--danger')).toBeTruthy();
+    // Separate danger ring exists; progress arc keeps its progress role.
+    expect(container.querySelector('.cycle-challenge-overlay__danger-ring')).toBeTruthy();
+    expect(container.querySelector('.cycle-challenge-overlay__phase-arc--danger')).toBeFalsy();
+    // Numeric countdown: ceil(1500/1000) = 2.
+    expect(screen.getByText(/2s/)).toBeInTheDocument();
   });
 
-  it('groups lower content inside a single __stack container', () => {
+  it('does not render the danger ring or countdown when dangerActive is false', () => {
+    const ch = { ...baseChallenge, cycleState: 'maintain', dangerActive: false };
+    const { container } = render(<CycleChallengeOverlay challenge={ch} />);
+    expect(container.querySelector('.cycle-challenge-overlay__danger-ring')).toBeFalsy();
+    expect(container.querySelector('.cycle-challenge-overlay__danger-countdown')).toBeFalsy();
+  });
+
+  it('labels the challenge with "phase", not "segment"', () => {
+    const { container } = render(<CycleChallengeOverlay challenge={baseChallenge} />);
+    const root = container.querySelector('.cycle-challenge-overlay');
+    expect(root.getAttribute('aria-label')).toMatch(/phase/i);
+    expect(root.getAttribute('aria-label')).not.toMatch(/segment/i);
+  });
+
+  it('groups lower content inside a single __stack container without a rider name', () => {
     const ch = {
       ...baseChallenge,
       cycleState: 'init',
@@ -112,10 +133,26 @@ describe('CycleChallengeOverlay — extended UI', () => {
     const { container } = render(<CycleChallengeOverlay challenge={ch} />);
     const stack = container.querySelector('.cycle-challenge-overlay__stack');
     expect(stack).toBeTruthy();
-    expect(stack.querySelector('.cycle-challenge-overlay__rider-name')).toBeTruthy();
+    // Rider name is dropped — avatar is the sole identifier.
+    expect(container.querySelector('.cycle-challenge-overlay__rider-name')).toBeFalsy();
     expect(stack.querySelector('.cycle-challenge-overlay__phase-blocks')).toBeTruthy();
     expect(stack.querySelector('.cycle-challenge-overlay__countdown')).toBeTruthy();
     expect(stack.querySelector('.cycle-challenge-overlay__current-rpm')).toBeTruthy();
+  });
+
+  it('does not render the rider name text', () => {
+    render(<CycleChallengeOverlay challenge={baseChallenge} />);
+    expect(screen.queryByText('KC Kern')).not.toBeInTheDocument();
+  });
+
+  it('renders the heart-rate gate as a compact dot on the avatar', () => {
+    const { container } = render(<CycleChallengeOverlay challenge={baseChallenge} />);
+    const wrap = container.querySelector('.cycle-challenge-overlay__avatar-wrap');
+    expect(wrap).toBeTruthy();
+    // Dot lives with the avatar, not in the lower stack.
+    expect(wrap.querySelector('.cycle-base-req')).toBeTruthy();
+    // Compact mode hides the sentence label but keeps the status aria-label.
+    expect(wrap.querySelector('.cycle-base-req__label')).toBeFalsy();
   });
 
   it('does not render the countdown as a direct child of the overlay root', () => {
@@ -132,5 +169,65 @@ describe('CycleChallengeOverlay — extended UI', () => {
     const group = container.querySelector('.cycle-needle-group');
     expect(group).toBeTruthy();
     expect(group.getAttribute('style') || '').toMatch(/rotate\(/);
+  });
+
+  it('phase arc dashoffset reflects phaseProgress, not dangerProgress, when dangerActive', () => {
+    const PHASE_ARC_LEN = Math.PI * 100; // π × CYCLE_RING_RADIUS(100)
+    const ch = {
+      ...baseChallenge,
+      cycleState: 'maintain',
+      initRemainingMs: null,
+      rampRemainingMs: null,
+      phaseProgressPct: 0.4,
+      dangerActive: true,
+      dangerRemainingMs: 2700,
+      dangerProgress: 0.9
+    };
+    const { container } = render(<CycleChallengeOverlay challenge={ch} />);
+    const arc = container.querySelector('.cycle-challenge-overlay__phase-arc');
+    const offset = parseFloat(arc.getAttribute('stroke-dashoffset'));
+    // dashoffset = len × (1 − phaseProgress) = len × 0.6, NOT len × (1 − 0.9).
+    expect(offset).toBeCloseTo(PHASE_ARC_LEN * (1 - 0.4), 1);
+    expect(offset).not.toBeCloseTo(PHASE_ARC_LEN * (1 - 0.9), 1);
+  });
+
+  it('keeps gauge ticks stable when only currentRpm changes', () => {
+    const ch1 = { ...baseChallenge, cycleState: 'maintain', currentRpm: 40 };
+    const { container, rerender } = render(<CycleChallengeOverlay challenge={ch1} />);
+    const before = container.querySelectorAll('.cycle-challenge-overlay__gauge-tick').length;
+    rerender(<CycleChallengeOverlay challenge={{ ...ch1, currentRpm: 95 }} />);
+    const after = container.querySelectorAll('.cycle-challenge-overlay__gauge-tick').length;
+    expect(after).toBe(before);
+    expect(after).toBeGreaterThan(0);
+  });
+
+  it('shows initials when the avatar image fails, and recovers on rider change', () => {
+    const ch = { ...baseChallenge, rider: { id: 'kckern', name: 'KC Kern' } };
+    const { container, rerender } = render(<CycleChallengeOverlay challenge={ch} />);
+    // Initially the image renders and initials are absent.
+    expect(container.querySelector('.cycle-challenge-overlay__avatar-img')).toBeTruthy();
+    expect(container.querySelector('.cycle-challenge-overlay__avatar-initials')).toBeFalsy();
+
+    // Image errors → state flips → initials shown, image removed.
+    fireEvent.error(container.querySelector('.cycle-challenge-overlay__avatar-img'));
+    expect(container.querySelector('.cycle-challenge-overlay__avatar-initials')).toBeTruthy();
+    expect(container.querySelector('.cycle-challenge-overlay__avatar-img')).toBeFalsy();
+
+    // New rider → fresh URL → effect resets imgFailed → image is attempted again.
+    rerender(<CycleChallengeOverlay challenge={{ ...ch, rider: { id: 'alan', name: 'Alan' } }} />);
+    expect(container.querySelector('.cycle-challenge-overlay__avatar-img')).toBeTruthy();
+    expect(container.querySelector('.cycle-challenge-overlay__avatar-initials')).toBeFalsy();
+  });
+
+  it('does not violate the rules of hooks when toggling visibility', () => {
+    // Visible cycle challenge → renders. Then a non-cycle challenge makes
+    // visuals.visible false → early return. If any hook sits after that return,
+    // React throws "rendered fewer hooks than expected" on this rerender.
+    const { container, rerender } = render(<CycleChallengeOverlay challenge={baseChallenge} />);
+    expect(container.querySelector('.cycle-challenge-overlay')).toBeTruthy();
+    expect(() => {
+      rerender(<CycleChallengeOverlay challenge={{ type: 'zone', cycleState: null }} />);
+    }).not.toThrow();
+    expect(container.querySelector('.cycle-challenge-overlay')).toBeFalsy();
   });
 });

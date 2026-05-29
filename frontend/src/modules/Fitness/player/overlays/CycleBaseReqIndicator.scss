@@ -19,3 +19,14 @@
 .cycle-base-req__dot--waiting   { background: #f59e0b; }
 .cycle-base-req__dot--inactive  { background: #475569; }
 .cycle-base-req__label { white-space: nowrap; }
+
+.cycle-base-req--compact {
+  padding: 0;
+  background: transparent;
+  gap: 0;
+}
+.cycle-base-req--compact .cycle-base-req__dot {
+  width: 10px;
+  height: 10px;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.6);
+}
