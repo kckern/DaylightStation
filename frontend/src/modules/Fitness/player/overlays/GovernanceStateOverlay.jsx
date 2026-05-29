@@ -552,8 +552,6 @@ const GovernanceStateOverlay = ({
   overlay = null,
   lockRows = [],
   warningOffenders = [],
-  onRequestSwap = null,
-  swapAllowed = false,
   voiceMemoOpen = false
 }) => {
   // New path: display prop from useGovernanceDisplay
@@ -677,8 +675,6 @@ GovernanceStateOverlay.propTypes = {
   }),
   lockRows: PropTypes.array,
   warningOffenders: PropTypes.array,
-  onRequestSwap: PropTypes.func,
-  swapAllowed: PropTypes.bool,
   voiceMemoOpen: PropTypes.bool
 };
 

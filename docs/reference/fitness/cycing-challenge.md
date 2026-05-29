@@ -27,7 +27,7 @@ in the governance engine's display projection and carries:
 | `currentPhaseIndex` / `totalPhases` | Position within the phase sequence. Drives the phase blocks and the aria phase count. |
 | `phaseProgressPct` | Fraction `[0,1]` of the current phase's maintain time elapsed (the "Pct" suffix is historical — the value is a fraction, not 0–100). Drives the lower-hemisphere progress arc. |
 | `dimFactor` | `[0,1]` dim amount during maintain; > 0 means the rider has slipped into the orange "dimming" band. |
-| `dangerActive` / `dangerRemainingMs` / `dangerProgress` | The 3-second grace window before `maintain → locked`. When active, a separate draining red outer ring and a numeric "⚠ Ns ↑ pedal" countdown appear. The grace timer starts at the first dip below loRpm (wall-clock) and clears only after RPM holds above loRpm for a sustained ~500ms window (hysteresis). |
+| `cycleHealthPct` | Fraction `[0,1]` of the health pool remaining. Depletes at 1ms/ms while RPM is below loRpm; regenerates at 1.5ms/ms in the green zone (≥ hiRpm). At zero the video pauses (`videoLocked`). Shown as a compact horizontal bar in the lower stack. |
 | `clockPaused` / `initRemainingMs` / `rampRemainingMs` | Countdown text for the `init` and `ramp` states; `clockPaused` is set when the rider is below the init min-RPM threshold. |
 | `boostingUsers` / `boostMultiplier` | Corner booster pips and the `×N.N` multiplier pill. |
 | `baseReqSatisfiedForRider` / `waitingForBaseReq` | Heart-rate gate status, shown as a dot on the rider avatar. |
@@ -53,8 +53,7 @@ Colour is decided entirely by `cycleState` and `dimFactor`:
 - `maintain`, holding at/above target (`dimFactor === 0`) → green
 - `maintain`, slipping (`dimFactor > 0`) → orange, with `dimPulse` set and ring
   opacity scaled down by `dimFactor` (floored at 0.35 so it never disappears)
-- `maintain`, below lo (failing / `dangerActive`) → slipping/orange (not green);
-  the separate danger affordances appear on top
+- `maintain`, below lo (failing) → health meter depletes; video pauses when empty
 - `locked` → red
 
 `dimPulse` adds the `--dim-pulse` modifier class, and `lostSignal` / `stale`
@@ -81,21 +80,25 @@ The bottom half of the ring is a progress arc sweeping 9 → 6 → 3 o'clock, dr
 and is monotonic: it holds when the clock is paused and never jumps backward.
 It is not repurposed into a danger countdown.
 
-### Lockout grace affordance
+### Health meter
 
-When `dangerActive` is true two separate affordances make the impending lockout
-unmistakable without touching the progress arc:
+A compact horizontal bar in the lower stack (first child of `__stack`) shows the
+rider's remaining health:
 
-- A **draining red danger ring** — a full circle drawn just outside the status track
-  (radius `CYCLE_RING_RADIUS + 4`) that depletes clockwise from 12 o'clock as the
-  3-second grace runs out.
-- A numeric **"⚠ Ns ↑ pedal"** countdown in the lower stack, counting down
-  seconds remaining.
+- **Depletes** at 1 ms health per 1 ms real time while RPM is below `loRpm`.
+- **Holds** when RPM is in the amber `lo..hi` band.
+- **Regenerates** at 1.5× rate when RPM is in the green zone (`≥ hiRpm`).
+- When the pool hits zero the engine sets `cycleState: 'locked'` with
+  `lockReason: 'health'`, which flips `videoLocked: true` — pausing the video —
+  even though the parent governance phase is `unlocked`. The cycle overlay stays
+  visible with an empty meter so the rider can see exactly why playback stopped.
+- Recovery: reaching the green zone (`≥ hiRpm`) transitions back to `maintain`
+  with the health pool reset to full.
+- The pool resets to full on challenge start and on each `ramp → maintain` phase
+  entry, so riders start each phase with a fresh buffer.
 
-Grace uses **hysteresis and sustained recovery**: the wall-clock timer starts on the
-first dip below loRpm and does not reset on each momentary recovery. Danger clears
-only after RPM holds above loRpm for a sustained ~500ms window, preventing flicker
-when a rider bobs at the threshold.
+The separate danger ring and numeric countdown are removed; the health bar is the
+sole punishment affordance.
 
 ### Rider, phases, countdown, RPM readout
 
@@ -124,10 +127,7 @@ Caps at four with no overflow indicator.
 
 ### Accessibility & logging
 
-The root carries an `aria-label` summarising state and phase ("phase 2 of 4,
-danger — 3s to lock"); the SVG is `aria-hidden`; the phase blocks expose a `meter`
-role; the base-req dot is a `status`. The component logs `mounted`, `state-change`,
-and `swap-requested` through the structured logger child `cycle-challenge-overlay`.
+The root carries an `aria-label` summarising state and phase ("Cycle challenge — maintain, phase 2 of 4"); the SVG is `aria-hidden`; the health meter exposes a `meter` role; the base-req dot is a `status`. The component logs `mounted`, `state-change`, and `swap-requested` through the structured logger child `cycle-challenge-overlay`.
 
 ---
 
