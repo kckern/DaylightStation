@@ -27,7 +27,7 @@ import { PersistenceManager } from './PersistenceManager.js';
 const FITNESS_TIMEOUTS = {
   inactive: 60000,
   remove: 1800000, // 30 minutes — keeps session alive during breaks
-  rpmZero: 3000,
+  rpmZero: 1200,  // zero RPM ~1.2s after the last cadence broadcast (silence case)
   emptySession: 60000, // 6A: Time (ms) with empty roster before auto-ending session
   sessionEndCooldown: 600000 // 10 minutes — prevents duplicate sessions from leftover HR data
 };
@@ -2550,14 +2550,23 @@ export class FitnessSession {
   _persistSession(sessionData, { force = false } = {}) {
     // Delegate to PersistenceManager
     const result = this._persistenceManager.persistSession(sessionData, { force });
-    
+
     // Sync state for backward compatibility
     this._lastAutosaveAt = this._persistenceManager.getLastSaveTime();
     this._saveTriggered = this._persistenceManager.isSaveInProgress();
-    
+
     return result;
   }
-  
+
+  /**
+   * Promise that settles when the most recent session save completes.
+   * Used by the player to refresh the sessions list only after the save lands.
+   * @returns {Promise<void>}
+   */
+  whenFinalPersistSettled() {
+    return this._persistenceManager?.whenLastSaveSettled?.() || Promise.resolve();
+  }
+
   // NOTE: ~140 lines of _persistSession implementation were extracted to
   // PersistenceManager.js as part of Phase 5 refactoring.
   // See: /docs/postmortem-entityid-migration-fitnessapp.md #13

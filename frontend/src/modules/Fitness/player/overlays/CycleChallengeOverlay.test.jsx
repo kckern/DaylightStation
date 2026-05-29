@@ -18,7 +18,8 @@ const baseChallenge = {
   cadenceFlags: { lostSignal: false, stale: false, smoothed: false, implausible: false },
   waitingForBaseReq: false,
   baseReqSatisfiedForRider: true,
-  swapAllowed: false
+  swapAllowed: false,
+  cycleHealthPct: 1
 };
 
 describe('CycleChallengeOverlay — extended UI', () => {
@@ -90,29 +91,19 @@ describe('CycleChallengeOverlay — extended UI', () => {
     expect(complete.length).toBe(1);
   });
 
-  it('renders a draining danger ring and numeric countdown when dangerActive', () => {
-    const ch = {
-      ...baseChallenge,
-      cycleState: 'maintain',
-      initRemainingMs: null,
-      rampRemainingMs: null,
-      dangerActive: true,
-      dangerRemainingMs: 1500,
-      dangerProgress: 0.5
-    };
+  it('renders a health meter reflecting cycleHealthPct', () => {
+    const ch = { ...baseChallenge, cycleState: 'maintain', cycleHealthPct: 0.5 };
     const { container } = render(<CycleChallengeOverlay challenge={ch} />);
-    // Separate danger ring exists; progress arc keeps its progress role.
-    expect(container.querySelector('.cycle-challenge-overlay__danger-ring')).toBeTruthy();
-    expect(container.querySelector('.cycle-challenge-overlay__phase-arc--danger')).toBeFalsy();
-    // Numeric countdown: ceil(1500/1000) = 2.
-    expect(screen.getByText(/2s/)).toBeInTheDocument();
+    const meter = container.querySelector('.cycle-challenge-overlay__health-meter');
+    expect(meter).toBeTruthy();
+    const fill = container.querySelector('.cycle-challenge-overlay__health-fill');
+    expect(fill.getAttribute('style') || '').toMatch(/width:\s*50%/);
   });
 
-  it('does not render the danger ring or countdown when dangerActive is false', () => {
-    const ch = { ...baseChallenge, cycleState: 'maintain', dangerActive: false };
-    const { container } = render(<CycleChallengeOverlay challenge={ch} />);
+  it('keeps the phase-progress arc (positive indicator)', () => {
+    const { container } = render(<CycleChallengeOverlay challenge={{ ...baseChallenge, cycleState: 'maintain' }} />);
+    expect(container.querySelector('.cycle-challenge-overlay__phase-arc')).toBeTruthy();
     expect(container.querySelector('.cycle-challenge-overlay__danger-ring')).toBeFalsy();
-    expect(container.querySelector('.cycle-challenge-overlay__danger-countdown')).toBeFalsy();
   });
 
   it('labels the challenge with "phase", not "segment"', () => {
@@ -171,24 +162,20 @@ describe('CycleChallengeOverlay — extended UI', () => {
     expect(group.getAttribute('style') || '').toMatch(/rotate\(/);
   });
 
-  it('phase arc dashoffset reflects phaseProgress, not dangerProgress, when dangerActive', () => {
+  it('phase arc dashoffset reflects phaseProgress', () => {
     const PHASE_ARC_LEN = Math.PI * 100; // π × CYCLE_RING_RADIUS(100)
     const ch = {
       ...baseChallenge,
       cycleState: 'maintain',
       initRemainingMs: null,
       rampRemainingMs: null,
-      phaseProgressPct: 0.4,
-      dangerActive: true,
-      dangerRemainingMs: 2700,
-      dangerProgress: 0.9
+      phaseProgressPct: 0.4
     };
     const { container } = render(<CycleChallengeOverlay challenge={ch} />);
     const arc = container.querySelector('.cycle-challenge-overlay__phase-arc');
     const offset = parseFloat(arc.getAttribute('stroke-dashoffset'));
-    // dashoffset = len × (1 − phaseProgress) = len × 0.6, NOT len × (1 − 0.9).
+    // dashoffset = len × (1 − phaseProgress) = len × 0.6
     expect(offset).toBeCloseTo(PHASE_ARC_LEN * (1 - 0.4), 1);
-    expect(offset).not.toBeCloseTo(PHASE_ARC_LEN * (1 - 0.9), 1);
   });
 
   it('keeps gauge ticks stable when only currentRpm changes', () => {
@@ -217,6 +204,29 @@ describe('CycleChallengeOverlay — extended UI', () => {
     rerender(<CycleChallengeOverlay challenge={{ ...ch, rider: { id: 'alan', name: 'Alan' } }} />);
     expect(container.querySelector('.cycle-challenge-overlay__avatar-img')).toBeTruthy();
     expect(container.querySelector('.cycle-challenge-overlay__avatar-initials')).toBeFalsy();
+  });
+
+  it('renders (phase arc + health meter visible) when cycleState=locked with cycleHealthPct:0', () => {
+    // During a health-lock the engine sets cycleState='locked' and cycleHealthPct=0.
+    // getCycleOverlayVisuals returns visible:true for 'locked', so the overlay must
+    // stay mounted showing the empty health meter — NOT early-return.
+    const ch = {
+      ...baseChallenge,
+      cycleState: 'locked',
+      lockReason: 'health',
+      cycleHealthPct: 0,
+      initRemainingMs: null,
+      rampRemainingMs: null
+    };
+    const { container } = render(<CycleChallengeOverlay challenge={ch} />);
+    // Root overlay element must be present.
+    expect(container.querySelector('.cycle-challenge-overlay')).toBeTruthy();
+    // Phase arc (lower hemisphere) must be present.
+    expect(container.querySelector('.cycle-challenge-overlay__phase-arc')).toBeTruthy();
+    // Health meter must be present and show 0% fill.
+    const fill = container.querySelector('.cycle-challenge-overlay__health-fill');
+    expect(fill).toBeTruthy();
+    expect(fill.getAttribute('style') || '').toMatch(/width:\s*0%/);
   });
 
   it('does not violate the rules of hooks when toggling visibility', () => {

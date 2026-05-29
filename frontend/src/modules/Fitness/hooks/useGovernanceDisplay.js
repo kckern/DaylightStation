@@ -28,12 +28,31 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
   if (status === 'unlocked') {
     // Cycle challenges can enter `cycleState: 'locked'` independently of
     // parent governance — the rider dropped below loRpm even though HR-based
-    // base requirements are still satisfied. CycleChallengeOverlay hides
-    // itself in this case (see FitnessPlayerOverlay.jsx) on the expectation
-    // that GovernanceStateOverlay will take over with its cycle lock panel
-    // (computeCycleLockPanelData). For that hand-off to actually happen we
-    // have to forward the challenge through `show: true` instead of bailing.
+    // base requirements are still satisfied.
+    //
+    // Health-lock (lockReason === 'health'): the inline CycleChallengeOverlay
+    // stays visible showing the empty health meter; videoLocked pauses
+    // playback. The generic GovernanceStateOverlay must NOT render — return
+    // show:false so the host skips it. The cycle overlay is kept by
+    // FitnessPlayerOverlay's health-lock guard.
+    //
+    // Non-health locks (init/ramp): keep existing show:true so GovernanceStateOverlay
+    // renders (the inline overlay is already suppressed for those by FitnessPlayerOverlay).
     if (challenge && challenge.type === 'cycle' && challenge.cycleState === 'locked') {
+      if (challenge.lockReason === 'health') {
+        return {
+          show: false,
+          status,
+          rows: [],
+          requirements: [],
+          deadline: null,
+          gracePeriodTotal: null,
+          videoLocked: true,
+          challenge,
+          activeUserCount: Number.isFinite(activeUserCount) ? Math.max(0, Math.round(activeUserCount)) : null
+        };
+      }
+      // Non-health cycle lock (init/ramp) — surface through GovernanceStateOverlay.
       return {
         show: true,
         status,

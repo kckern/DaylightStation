@@ -556,6 +556,7 @@ export class PersistenceManager {
     this._lastSaveAt = 0;
     this._lastSuccessfulSaveAt = 0;
     this._hasSuccessfulSave = {};
+    this._lastSavePromise = null;
 
     // Session lock state: null = unknown, true = leader, false = not leader
     this._sessionLockGranted = null;
@@ -652,6 +653,15 @@ export class PersistenceManager {
    */
   getLastSaveTime() {
     return this._lastSaveAt;
+  }
+
+  /**
+   * Promise that settles when the most recent save_session POST completes
+   * (resolves even on failure). Resolves immediately if no save is in flight.
+   * @returns {Promise<void>}
+   */
+  whenLastSaveSettled() {
+    return this._lastSavePromise || Promise.resolve();
   }
 
   // -------------------- Session Lock --------------------
@@ -908,12 +918,24 @@ export class PersistenceManager {
       if ((this._debugValidationCount = (this._debugValidationCount || 0) + 1) <= 3) {
         console.error(`⚠️ VALIDATION_FAIL [${this._debugValidationCount}/3]: ${sessionData?.sessionId}, reason="${validation?.reason}"`, validation);
       }
-      getLogger().warn('fitness.persistence.validation_failed', {
+      const validationDetail = {
         sessionId: sessionData?.sessionId,
         reason: validation?.reason,
         rosterLength: (Array.isArray(sessionData?.roster) ? sessionData.roster.length : 0),
         hasPriorSave: this.hasSuccessfulSave(sessionData?.sessionId)
-      });
+      };
+      // Benign "not yet persistable" reasons fire on every early-session autosave —
+      // rate-limit them to info+aggregate instead of warn-spamming the log.
+      const BENIGN_VALIDATION_REASONS = new Set([
+        'session-too-short',
+        'session-too-short-and-empty',
+        'insufficient-ticks'
+      ]);
+      if (BENIGN_VALIDATION_REASONS.has(validation?.reason)) {
+        getLogger().sampled('fitness.persistence.validation_skipped', validationDetail, { maxPerMinute: 4, aggregate: true });
+      } else {
+        getLogger().warn('fitness.persistence.validation_failed', validationDetail);
+      }
       this._log('persist_validation_fail', { reason: validation.reason, detail: validation });
       return false;
     }
@@ -1133,7 +1155,7 @@ export class PersistenceManager {
       console.error(`📤 SESSION_SAVE [${this._debugSaveCount}/5]: ${persistSessionData.session?.id}, ticks=${tickCount}, series=${seriesCount}`);
     }
 
-    this._enrichMissingPlexMetadata(persistSessionData.timeline?.events)
+    this._lastSavePromise = this._enrichMissingPlexMetadata(persistSessionData.timeline?.events)
       .then(() => {
         // Build summary AFTER enrichment so grandparentId/parentId are populated
         if (summaryInputs) {
@@ -1159,7 +1181,8 @@ export class PersistenceManager {
       })
       .finally(() => {
         this._saveTriggered = false;
-      });
+      })
+      .catch(() => {});  // settle (never reject) so awaiters always resume
 
     return true;
   }
