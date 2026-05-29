@@ -31,6 +31,9 @@ export default function FitnessToast({ toast, onDone }) {
       if (typeof onDone === 'function') onDone(id);
     }, durationMs + TOAST_EXIT_MS);
     return () => { clearTimeout(hideTimer); clearTimeout(doneTimer); };
+    // Intentionally keyed on `id` only. onDone/durationMs/variant are read from the
+    // toast captured when this id last changed; ids are monotonic (see normalizeToast),
+    // so the same id never reappears with a different callback/duration — no stale-closure risk.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -62,7 +65,7 @@ export default function FitnessToast({ toast, onDone }) {
         </div>
       </div>
       <div className="fitness-toast__countdown">
-        {/* key={id} restarts the CSS countdown animation on each new toast */}
+        {/* key forces a DOM remount on each new toast → restarts the CSS countdown animation */}
         <div
           key={id}
           className="fitness-toast__countdown-bar"
