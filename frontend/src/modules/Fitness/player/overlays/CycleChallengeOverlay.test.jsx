@@ -218,4 +218,16 @@ describe('CycleChallengeOverlay — extended UI', () => {
     expect(container.querySelector('.cycle-challenge-overlay__avatar-img')).toBeTruthy();
     expect(container.querySelector('.cycle-challenge-overlay__avatar-initials')).toBeFalsy();
   });
+
+  it('does not violate the rules of hooks when toggling visibility', () => {
+    // Visible cycle challenge → renders. Then a non-cycle challenge makes
+    // visuals.visible false → early return. If any hook sits after that return,
+    // React throws "rendered fewer hooks than expected" on this rerender.
+    const { container, rerender } = render(<CycleChallengeOverlay challenge={baseChallenge} />);
+    expect(container.querySelector('.cycle-challenge-overlay')).toBeTruthy();
+    expect(() => {
+      rerender(<CycleChallengeOverlay challenge={{ type: 'zone', cycleState: null }} />);
+    }).not.toThrow();
+    expect(container.querySelector('.cycle-challenge-overlay')).toBeFalsy();
+  });
 });
