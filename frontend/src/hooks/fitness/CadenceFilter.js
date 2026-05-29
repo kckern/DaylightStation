@@ -1,9 +1,10 @@
 const MAX_PLAUSIBLE_RPM = 200;
 const EMA_ALPHA = 0.4;
-// Hard contract: zero within 5 s of last fresh sample. Decay starts at 1.5 s
-// and reaches 0 by 4 s (well inside the 5 s ceiling).
-const STALE_THRESHOLD_MS = 1500;
-const LOST_SIGNAL_MS     = 4000;
+// Hard contract: zero within ~2 s of last fresh sample. Decay starts at 0.8 s
+// and reaches 0 by 2 s, so the governance-facing cadence drops shortly after
+// the last broadcast.
+const STALE_THRESHOLD_MS = 800;
+const LOST_SIGNAL_MS     = 2000;
 
 export class CadenceFilter {
   constructor() {

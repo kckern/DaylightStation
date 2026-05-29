@@ -68,11 +68,11 @@ describe('CadenceFilter — staleness', () => {
   it('marks output stale and decays the value when ts gap exceeds the grace threshold', () => {
     const f = new CadenceFilter();
     f.update({ rpm: 60, ts: 1000 });
-    const stale = f.tick(2750); // 1750 ms — 250 ms into the decay window
+    const stale = f.tick(2050); // 1050 ms — 250 ms into the decay window (STALE=800)
     expect(stale.flags.stale).toBe(true);
     expect(stale.flags.lostSignal).toBe(false);
     expect(stale.rpm).toBeLessThan(60);   // decaying
-    expect(stale.rpm).toBeGreaterThan(45); // not collapsed yet
+    expect(stale.rpm).toBeGreaterThan(35); // not collapsed yet
   });
 
   it('reports lost signal and returns 0 when ts gap exceeds the abandonment threshold', () => {
@@ -105,7 +105,7 @@ describe('CadenceFilter — staleness', () => {
     f.update({ rpm: 60, ts: 1000 });
     f.tick(2500);                            // gap=1500 — would be stale
     f.update({ rpm: 58, ts: 2700 });         // re-baseline _lastUpdateTs to 2700
-    const stillFresh = f.tick(3500);         // new gap = 800 ms — should be fresh
+    const stillFresh = f.tick(3400);         // new gap = 700 ms — should be fresh (STALE=800)
     expect(stillFresh.flags.stale).toBe(false);
     expect(stillFresh.flags.lostSignal).toBe(false);
     expect(stillFresh.rpm).toBeGreaterThan(0);

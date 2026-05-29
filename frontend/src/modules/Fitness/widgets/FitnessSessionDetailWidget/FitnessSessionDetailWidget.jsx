@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallba
 import { Text, Skeleton } from '@mantine/core';
 import { getWidgetRegistry } from '@/screen-framework/widgets/registry.js';
 import { useScreen } from '@/screen-framework/providers/ScreenProvider.jsx';
-import { useScreenDataRefetch } from '@/screen-framework/data/ScreenDataProvider.jsx';
+import { useScreenData, useScreenDataRefetch } from '@/screen-framework/data/ScreenDataProvider.jsx';
 import { useFitnessScreen } from '@/modules/Fitness/FitnessScreenProvider.jsx';
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import FitnessTimeline from './FitnessTimeline.jsx';
@@ -138,6 +138,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   const [deleting, setDeleting] = useState(false);
   const { restore } = useScreen();
   const refetchScreenData = useScreenDataRefetch();
+  const sessionsData = useScreenData('sessions');
   const { onNavigate } = useFitnessScreen() || {};
   const fitnessCtx = useFitnessContext();
   const posterRef = useRef(null);
@@ -196,7 +197,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
 
   useEffect(() => {
     fetchSession();
-  }, [fetchSession]);
+  }, [fetchSession, sessionsData]);
 
   const header = useMemo(() => {
     if (!sessionData) return null;
