@@ -1,3 +1,13 @@
+// Error kinds that represent transient client-side resolution failures —
+// the playlist is fine, the fetch just needs another try. Genuine content
+// problems (empty-queue, invalid-queue) are intentionally excluded: retrying
+// an empty playlist would loop forever.
+const RECOVERABLE_MUSIC_ERROR_KINDS = new Set(['fetch-failed', 'fetch-timeout']);
+
+export function isRecoverableMusicError(kind) {
+  return RECOVERABLE_MUSIC_ERROR_KINDS.has(kind);
+}
+
 export function formatMusicErrorMessage(err) {
   if (!err) return null;
   switch (err.kind) {

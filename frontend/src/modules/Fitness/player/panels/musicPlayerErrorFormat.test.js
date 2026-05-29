@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatMusicErrorMessage } from './musicPlayerErrorFormat.js';
+import { formatMusicErrorMessage, isRecoverableMusicError } from './musicPlayerErrorFormat.js';
 
 describe('formatMusicErrorMessage', () => {
   it('returns null for falsy input', () => { expect(formatMusicErrorMessage(null)).toBeNull(); });
@@ -29,5 +29,20 @@ describe('formatMusicErrorMessage', () => {
   });
   it('returns generic fallback for unknown kind', () => {
     expect(formatMusicErrorMessage({ kind: 'something-new' })).toBe('Music unavailable');
+  });
+});
+
+describe('isRecoverableMusicError', () => {
+  it('treats transient queue-fetch failures as recoverable', () => {
+    expect(isRecoverableMusicError('fetch-failed')).toBe(true);
+    expect(isRecoverableMusicError('fetch-timeout')).toBe(true);
+  });
+  it('treats genuine content problems as non-recoverable', () => {
+    expect(isRecoverableMusicError('empty-queue')).toBe(false);
+    expect(isRecoverableMusicError('invalid-queue')).toBe(false);
+  });
+  it('returns false for null/unknown kinds', () => {
+    expect(isRecoverableMusicError(null)).toBe(false);
+    expect(isRecoverableMusicError('something-new')).toBe(false);
   });
 });
