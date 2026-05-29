@@ -15,6 +15,7 @@ import { FitnessProvider } from '../context/FitnessContext.jsx';
 import getLogger, { configure as configureLogger } from '../lib/logging/Logger.js';
 import { sortNavItems } from '../modules/Fitness/lib/navigationUtils.js';
 import VoiceMemoOverlay from '../modules/Fitness/player/overlays/VoiceMemoOverlay.jsx';
+import FitnessToast from '../modules/Fitness/player/overlays/FitnessToast.jsx';
 import { useFitnessContext } from '../context/FitnessContext.jsx';
 import { FitnessFrame } from '../modules/Fitness/player/frames';
 import { useFitnessUrlParams } from '../hooks/fitness/useFitnessUrlParams.js';
@@ -1384,20 +1385,23 @@ const GlobalOverlays = () => {
   if (!fitnessCtx) return null;
 
   return (
-    <VoiceMemoOverlay
-      overlayState={fitnessCtx.voiceMemoOverlayState}
-      voiceMemos={fitnessCtx.voiceMemos}
-      onClose={fitnessCtx.closeVoiceMemoOverlay}
-      onOpenReview={fitnessCtx.openVoiceMemoReview}
-      onOpenList={fitnessCtx.openVoiceMemoList}
-      onOpenRedo={fitnessCtx.openVoiceMemoCapture}
-      onRemoveMemo={fitnessCtx.removeVoiceMemoFromSession}
-      onAddMemo={fitnessCtx.addVoiceMemoToSession}
-      onReplaceMemo={fitnessCtx.replaceVoiceMemoInSession}
-      sessionId={fitnessCtx.fitnessSession?.sessionId || fitnessCtx.fitnessSessionInstance?.sessionId}
-      playerRef={fitnessCtx.videoPlayerRef}
-      preferredMicrophoneId={fitnessCtx.preferredMicrophoneId}
-    />
+    <>
+      <VoiceMemoOverlay
+        overlayState={fitnessCtx.voiceMemoOverlayState}
+        voiceMemos={fitnessCtx.voiceMemos}
+        onClose={fitnessCtx.closeVoiceMemoOverlay}
+        onOpenReview={fitnessCtx.openVoiceMemoReview}
+        onOpenList={fitnessCtx.openVoiceMemoList}
+        onOpenRedo={fitnessCtx.openVoiceMemoCapture}
+        onRemoveMemo={fitnessCtx.removeVoiceMemoFromSession}
+        onAddMemo={fitnessCtx.addVoiceMemoToSession}
+        onReplaceMemo={fitnessCtx.replaceVoiceMemoInSession}
+        sessionId={fitnessCtx.fitnessSession?.sessionId || fitnessCtx.fitnessSessionInstance?.sessionId}
+        playerRef={fitnessCtx.videoPlayerRef}
+        preferredMicrophoneId={fitnessCtx.preferredMicrophoneId}
+      />
+      <FitnessToast toast={fitnessCtx.fitnessToast} onDone={fitnessCtx.dismissFitnessToast} />
+    </>
   );
 };
 
