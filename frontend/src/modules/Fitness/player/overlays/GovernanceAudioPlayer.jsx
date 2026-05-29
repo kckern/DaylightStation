@@ -15,7 +15,8 @@ const AUDIO_TRACKS = {
 const GovernanceAudioPlayer = React.memo(function GovernanceAudioPlayer({
   trackKey,
   volume = 0.85,
-  loop = true
+  loop = true,
+  paused = false
 }) {
   const audioRef = useRef(null);
   const currentTrackRef = useRef(null);
@@ -58,7 +59,8 @@ const GovernanceAudioPlayer = React.memo(function GovernanceAudioPlayer({
     audio.volume = Math.max(0, Math.min(1, volume));
     audio.loop = loop;
 
-    // Attempt to play (may fail due to autoplay policy)
+    // Attempt to play (unless currently paused by an overlay, e.g. a voice memo)
+    if (paused) return;
     playAttemptRef.current = audio.play().catch((err) => {
       // Autoplay blocked is common - don't log as error
       if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
@@ -72,7 +74,7 @@ const GovernanceAudioPlayer = React.memo(function GovernanceAudioPlayer({
         playAttemptRef.current = null;
       }
     };
-  }, [audioSrc, volume, loop]);
+  }, [audioSrc, volume, loop, paused]);
 
   // Update volume when it changes (without reloading track)
   useEffect(() => {
@@ -81,6 +83,17 @@ const GovernanceAudioPlayer = React.memo(function GovernanceAudioPlayer({
       audio.volume = Math.max(0, Math.min(1, volume));
     }
   }, [volume]);
+
+  // Pause/resume in place (no position reset) when an overlay requests silence.
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !audioSrc) return;
+    if (paused) {
+      audio.pause();
+    } else {
+      audio.play().catch(() => {});
+    }
+  }, [paused, audioSrc]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -106,13 +119,15 @@ const GovernanceAudioPlayer = React.memo(function GovernanceAudioPlayer({
   if (prevProps.trackKey !== nextProps.trackKey) return false;
   if (Math.abs((prevProps.volume || 0.85) - (nextProps.volume || 0.85)) > 0.05) return false;
   if (prevProps.loop !== nextProps.loop) return false;
+  if (prevProps.paused !== nextProps.paused) return false;
   return true;
 });
 
 GovernanceAudioPlayer.propTypes = {
   trackKey: PropTypes.oneOf(['init', 'locked', null]),
   volume: PropTypes.number,
-  loop: PropTypes.bool
+  loop: PropTypes.bool,
+  paused: PropTypes.bool
 };
 
 export default GovernanceAudioPlayer;
