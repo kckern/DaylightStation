@@ -9,7 +9,7 @@
  *     visible: boolean,        // whether the overlay should render
  *     ringColor: string,       // hex color for the outer status ring
  *     ringOpacity: number,     // [0..1] — dims with dimFactor in the dim band
- *     dimPulse: boolean,       // true when maintain + dimFactor > 0 (orange); forced false when dangerActive
+ *     dimPulse: boolean,       // true when maintain + dimFactor > 0 (orange)
  *     phaseProgress: number,   // [0..1] — clamped challenge.phaseProgressPct
  *     positionValid: boolean,  // always true for non-null cycle challenges
  *     lostSignal: boolean,     // cadenceFlags.lostSignal (no recent cadence data)
@@ -18,9 +18,7 @@
  *     clockPaused: boolean,    // init/ramp clocks are paused (rider idle)
  *     initRemainingMs: number|null,  // milliseconds left in init phase
  *     rampRemainingMs: number|null,  // milliseconds left in ramp phase
- *     dangerActive: boolean,         // RPM below loRpm in the maintain grace window
- *     dangerRemainingMs: number|null,// ms left before maintain → locked
- *     dangerProgress: number         // [0..1] remaining grace fraction (drains 1→0)
+ *     cycleHealthPct: number   // [0..1] cycle health (depletes below loRpm)
  *   }
  *
  * Color mapping (per Task 21 spec):
@@ -53,9 +51,7 @@ const OFF = Object.freeze({
   clockPaused: false,
   initRemainingMs: null,
   rampRemainingMs: null,
-  dangerActive: false,
-  dangerRemainingMs: null,
-  dangerProgress: 1
+  cycleHealthPct: 1
 });
 
 const clamp01 = (value) => {
@@ -109,14 +105,7 @@ export function getCycleOverlayVisuals(challenge) {
       ringOpacity = 1;
       break;
     case 'maintain':
-      if (challenge.dangerActive) {
-        // Below lo (failing) — slipping-hard color. The separate draining
-        // danger ring + numeric countdown carry the lockout urgency, so we do
-        // NOT pulse the dim animation here.
-        ringColor = RING_COLORS.maintainOrange;
-        ringOpacity = 1;
-        dimPulse = false;
-      } else if (dimFactor > 0) {
+      if (dimFactor > 0) {
         ringColor = RING_COLORS.maintainOrange;
         // Ring opacity scales down with dimFactor so that as the video dims,
         // the ring also fades. Floor at 0.35 so it never fully disappears.
@@ -143,15 +132,8 @@ export function getCycleOverlayVisuals(challenge) {
     ? challenge.initRemainingMs : null;
   const rampRemainingMs   = Number.isFinite(challenge.rampRemainingMs)
     ? challenge.rampRemainingMs : null;
-
-  // Maintain-grace fields (3-second danger window before a maintain → locked
-  // transition fires). When dangerActive is true the overlay shows a separate
-  // draining red danger ring + numeric countdown; the phase arc is untouched.
-  const dangerActive      = Boolean(challenge.dangerActive);
-  const dangerRemainingMs = Number.isFinite(challenge.dangerRemainingMs)
-    ? challenge.dangerRemainingMs : null;
-  const dangerProgress    = Number.isFinite(challenge.dangerProgress)
-    ? challenge.dangerProgress : 1;
+  const cycleHealthPct    = Number.isFinite(challenge.cycleHealthPct)
+    ? Math.max(0, Math.min(1, challenge.cycleHealthPct)) : 1;
 
   return {
     visible: true,
@@ -166,9 +148,7 @@ export function getCycleOverlayVisuals(challenge) {
     clockPaused,
     initRemainingMs,
     rampRemainingMs,
-    dangerActive,
-    dangerRemainingMs,
-    dangerProgress
+    cycleHealthPct
   };
 }
 
