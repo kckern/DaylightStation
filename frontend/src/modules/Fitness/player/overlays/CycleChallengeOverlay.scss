@@ -227,44 +227,27 @@
 
   // --- Lower-hemisphere phase progress arc -------------------------------
   // Sweeps 9 → 6 → 3 o'clock. Stroke color comes from the visuals helper
-  // (state-driven). When dangerActive flips on, the arc switches to flashing
-  // yellow showing the depleting `dangerProgress` (3-second grace window
-  // before maintain → locked).
+  // (state-driven). Monotonic phase progress fill; never repurposed for
+  // any countdown.
   &__phase-arc {
     transition: stroke-dashoffset 0.2s linear, stroke 0.2s ease;
     filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.4));
   }
 
-  // Draining lockout ring — distinct red countdown outside the status track.
-  &__danger-ring {
-    transition: stroke-dashoffset 0.15s linear;
-    filter: drop-shadow(0 0 6px rgba(239, 68, 68, 0.7));
-    animation: cycle-danger-ring-flash 0.6s ease-in-out infinite;
+  // Health meter — depletes below the red line; empty == video paused.
+  &__health-meter {
+    width: clamp(80px, calc(var(--cycle-overlay-diameter) * 0.55), 150px);
+    height: clamp(5px, calc(var(--cycle-overlay-diameter) * 0.035), 9px);
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    overflow: hidden;
   }
-
-  // Numeric lockout countdown — top of the lower stack, unmistakably a timer.
-  &__danger-countdown {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    line-height: 1.05;
-    color: #fecaca;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
-    animation: cycle-danger-countdown-flash 0.6s ease-in-out infinite;
-  }
-
-  &__danger-countdown-time {
-    font-size: clamp(0.75rem, calc(var(--cycle-overlay-diameter) * 0.08), 1.1rem);
-    font-weight: 800;
-    letter-spacing: 0.02em;
-  }
-
-  &__danger-countdown-cue {
-    font-size: clamp(0.5rem, calc(var(--cycle-overlay-diameter) * 0.045), 0.65rem);
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    color: rgba(254, 202, 202, 0.85);
+  &__health-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #ef4444 0%, #f59e0b 45%, #22c55e 100%);
+    transition: width 0.2s linear;
   }
 
   // --- State variants -----------------------------------------------------
@@ -387,16 +370,6 @@
   50% {
     filter: drop-shadow(0 0 12px rgba(249, 115, 22, 0.6));
   }
-}
-
-@keyframes cycle-danger-ring-flash {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-@keyframes cycle-danger-countdown-flash {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
 }
 
 .cycle-challenge-overlay--lost-signal .cycle-needle,
