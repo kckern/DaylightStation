@@ -75,10 +75,10 @@ Placed alongside the existing toast helpers in
 
 ### Component change
 
-`FitnessToast.jsx` gains an optional `icon` prop: when a toast carries `icon` and no
-`avatarUrl`, render the icon glyph in the avatar slot. Today the icon only appears as a
-fallback when an avatar image fails to load; this makes it a first-class, explicit
-option for avatar-less (group) toasts.
+None required. `FitnessToast.jsx` already supports a first-class optional `icon` prop:
+when a toast carries `icon` and no `avatarUrl`, it renders the icon glyph in the avatar
+slot (`FitnessToast.jsx` lines 42, 59–61, 86). Challenge toasts pass `icon: '🏆'` and no
+`avatarUrl`.
 
 ### Wiring
 
@@ -106,8 +106,8 @@ using the FitnessContext child logger (per project logging rule — no raw conso
 - `buildChallengeToast.test.js`
   - start/end copy with full fields.
   - count/zone fallbacks when fields missing.
-- `FitnessToast.test.jsx` — renders the `icon` glyph when `icon` is set and no
-  `avatarUrl`.
+
+(`FitnessToast` already has icon-render coverage; no new component test needed.)
 
 ## Files Touched
 
@@ -115,6 +115,6 @@ using the FitnessContext child logger (per project logging rule — no raw conso
 - `frontend/src/modules/Fitness/player/overlays/buildChallengeToast.js` (new)
 - `frontend/src/modules/Fitness/player/overlays/challengeToastTracker.test.js` (new)
 - `frontend/src/modules/Fitness/player/overlays/buildChallengeToast.test.js` (new)
-- `frontend/src/modules/Fitness/player/overlays/FitnessToast.jsx` (add `icon` prop)
-- `frontend/src/modules/Fitness/player/overlays/FitnessToast.test.jsx` (icon test)
 - `frontend/src/context/FitnessContext.jsx` (tracker ref + effect + wiring)
+
+`FitnessToast.jsx` is unchanged — its `icon` prop already exists.
