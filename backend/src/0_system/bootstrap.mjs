@@ -124,6 +124,7 @@ import { createTriggerRouter } from '#api/v1/routers/trigger.mjs';
 import { TTSAdapter } from '#adapters/hardware/tts/TTSAdapter.mjs';
 import { MQTTSensorAdapter } from '#adapters/hardware/mqtt-sensor/MQTTSensorAdapter.mjs';
 import { MQTTBarcodeAdapter } from '#adapters/hardware/mqtt-barcode/MQTTBarcodeAdapter.mjs';
+import { MQTTSelectorAdapter } from '#adapters/hardware/mqtt-selector/MQTTSelectorAdapter.mjs';
 import { KNOWN_COMMANDS } from '#domains/barcode/BarcodeCommandMap.mjs';
 
 // Proxy infrastructure imports
@@ -2090,10 +2091,27 @@ export function createHardwareAdapters(config) {
     );
   }
 
+  // MQTT selector adapter (optional) - rider-selector buttons
+  let selectorAdapter = null;
+  if (config.mqtt?.host && Array.isArray(config.selectors) && config.selectors.length > 0) {
+    selectorAdapter = new MQTTSelectorAdapter(
+      {
+        host: config.mqtt.host,
+        port: config.mqtt.port,
+      },
+      {
+        selectors: config.selectors,
+        onSelect: config.onSelectorSelect,
+        logger,
+      }
+    );
+  }
+
   return {
     ttsAdapter,
     mqttAdapter,
-    barcodeAdapter
+    barcodeAdapter,
+    selectorAdapter,
   };
 }
 

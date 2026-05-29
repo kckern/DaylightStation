@@ -729,3 +729,69 @@ describe('Cycle SM — health meter (2026-05-28 redesign)', () => {
     expect(engine.state.videoLocked).toBe(true);
   });
 });
+
+describe('Cycle SM — standing rider claim', () => {
+  function makeEngine(seed = 42, equipmentRiderMap = {}) {
+    let nowValue = 100000;
+    const session = buildSession();
+    const engine = new GovernanceEngine(session, { now: () => nowValue, random: seededRng(seed) });
+    engine.configure(POLICY);
+    engine.setMedia({ id: 'v1', type: 'episode', labels: ['cardio'] });
+    engine._latestInputs.equipmentRiderMap = equipmentRiderMap;
+    return engine;
+  }
+
+  const SELECTION = { id: CYCLE_SELECTION_ID, equipment: 'cycle_ace', init: {}, hiRpmRange: [60, 60], segmentCount: [1, 1], segmentDurationSeconds: [2, 2], rampSeconds: [5, 5], loRpmRatio: 0.5 };
+
+  it('uses the standing claim as the rider when one is set', () => {
+    const engine = makeEngine(42, { cycle_ace: 'user_2' });
+    const active = engine._startCycleChallenge({ ...SELECTION }, {});
+    expect(active.ok).not.toBe(false);
+    expect(active.rider).toBe('user_2');
+  });
+
+  it('grants eligibility to a claimed rider not in eligible_users', () => {
+    const engine = makeEngine(42, { cycle_ace: 'kckern' });
+    expect(engine._getEligibleUsers('cycle_ace')).toContain('kckern');
+    const active = engine._startCycleChallenge({ ...SELECTION }, {});
+    expect(active.rider).toBe('kckern');
+  });
+
+  it('falls back to random-from-eligible when no claim is set', () => {
+    const engine = makeEngine(42, {});
+    const active = engine._startCycleChallenge({ ...SELECTION }, {});
+    expect(active.rider).toBe('user_2');
+  });
+
+  it('forceRiderId takes precedence over a standing claim', () => {
+    const engine = makeEngine(42, { cycle_ace: 'user_3' });
+    const active = engine._startCycleChallenge({ ...SELECTION }, { forceRiderId: 'user_2' });
+    expect(active.rider).toBe('user_2');
+  });
+});
+
+describe('Cycle SM — live rider swap on claim change', () => {
+  it('force-swaps the active rider when the claim changes during the swap window', () => {
+    let nowValue = 100000;
+    const session = buildSession();
+    const engine = new GovernanceEngine(session, { now: () => nowValue, random: seededRng(42) });
+    engine.configure(POLICY);
+    engine.setMedia({ id: 'v1', type: 'episode', labels: ['cardio'] });
+    engine.triggerChallenge({ type: 'cycle', selectionId: CYCLE_SELECTION_ID, riderId: 'user_2' });
+    expect(engine.challengeState.activeChallenge.rider).toBe('user_2');
+
+    engine._latestInputs.equipmentRiderMap = { cycle_ace: 'user_3' };
+    nowValue += 200;
+    engine.evaluate({
+      activeParticipants: ['user_2', 'user_3'],
+      userZoneMap: { user_2: 'warm', user_3: 'warm' },
+      zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
+      zoneInfoMap: { warm: { id: 'warm', name: 'Warm' } },
+      totalCount: 2,
+      equipmentCadenceMap: { cycle_ace: { rpm: 70, connected: true, ts: nowValue } },
+      equipmentRiderMap: { cycle_ace: 'user_3' }
+    });
+
+    expect(engine.challengeState.activeChallenge.rider).toBe('user_3');
+  });
+});

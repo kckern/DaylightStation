@@ -1214,7 +1214,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       
       // Subscribe to fitness and vibration topics
       unsubscribe = wsService.subscribe(
-        ['fitness', 'vibration'],
+        ['fitness', 'vibration', 'rider_select'],
         (data) => {
           // Guard against malformed or empty data during reconnect churn
           if (!data || typeof data !== 'object') return;
