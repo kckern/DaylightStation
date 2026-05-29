@@ -189,3 +189,42 @@ describe('useQueueController error propagation', () => {
     vi.useRealTimers();
   });
 });
+
+describe('useQueueController re-fetches after remount (signature cache carryover)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // Repro of the music-player "Music unavailable" bug: a playlist loads
+  // successfully (its signature is written to the module-level cache), the
+  // music sidebar unmounts on a view navigation, then remounts with the SAME
+  // playlist. The remounted instance starts with an empty playQueue. The cache
+  // must not suppress the re-fetch — otherwise playQueue stays [] forever and
+  // the player strands at "Music unavailable" with no recovery.
+  it('repopulates the queue when remounted with the same contentRef', async () => {
+    const { DaylightAPI } = await import('../../../lib/api.mjs');
+    const items = [{ id: 'plex:140619', contentId: 'plex:140619', title: 'Gangnam Style' }];
+    DaylightAPI.mockResolvedValue({ items, audio: null });
+
+    const props = {
+      play: null,
+      queue: { contentId: 'plex:672596', plex: 672596, shuffle: true },
+      contentRef: 'plex:672596',
+      clear: vi.fn(),
+    };
+
+    // First mount: fetch succeeds, queue populated, signature cached.
+    const first = renderHook(() => useQueueController(props));
+    await vi.waitFor(() => expect(first.result.current.playQueue.length).toBe(1));
+
+    // Navigation tears down the music sidebar. The fetch completed, so the
+    // cleanup preserves the cached signature (matches production).
+    first.unmount();
+
+    // Returning / starting a video remounts the player with the same playlist.
+    // A fresh instance => playQueue resets to []; it must re-fetch.
+    const second = renderHook(() => useQueueController(props));
+    await vi.waitFor(() => expect(second.result.current.playQueue.length).toBe(1));
+    expect(second.result.current.playQueue[0]?.contentId).toBe('plex:140619');
+  });
+});

@@ -264,7 +264,8 @@ export class GovernanceEngine {
       zoneRankMap: {},
       zoneInfoMap: {},
       totalCount: 0,
-      equipmentCadenceMap: {}
+      equipmentCadenceMap: {},
+      equipmentRiderMap: {}
     };
     this._lastEvaluationTs = null;
 
@@ -327,8 +328,11 @@ export class GovernanceEngine {
     if (!equipmentId) return [];
     const catalog = this.session?._deviceRouter?.getEquipmentCatalog?.() || [];
     const entry = catalog.find(e => e.id === equipmentId);
-    if (!entry || !Array.isArray(entry.eligible_users)) return [];
-    return [...entry.eligible_users];
+    const base = (entry && Array.isArray(entry.eligible_users)) ? [...entry.eligible_users] : [];
+    // A physical claim grants eligibility for that equipment (authoritative selector).
+    const claimed = this._latestInputs?.equipmentRiderMap?.[equipmentId];
+    if (claimed && !base.includes(claimed)) base.push(claimed);
+    return base;
   }
 
   /**
@@ -843,7 +847,10 @@ export class GovernanceEngine {
       hrInactiveUsers: Array.isArray(payload.hrInactiveUsers) ? [...payload.hrInactiveUsers] : [],
       equipmentCadenceMap: payload.equipmentCadenceMap && typeof payload.equipmentCadenceMap === 'object'
         ? { ...payload.equipmentCadenceMap }
-        : {}
+        : {},
+      equipmentRiderMap: payload.equipmentRiderMap && typeof payload.equipmentRiderMap === 'object'
+        ? { ...payload.equipmentRiderMap }
+        : (this._latestInputs?.equipmentRiderMap || {})
     };
     this._lastEvaluationTs = this._now();
 
@@ -1476,7 +1483,9 @@ export class GovernanceEngine {
       userZoneMap: {},
       zoneRankMap: {},
       zoneInfoMap: {},
-      totalCount: 0
+      totalCount: 0,
+      equipmentCadenceMap: {},
+      equipmentRiderMap: {}
     };
     this._lastEvaluationTs = null;
     this._timersPaused = false;
@@ -1549,13 +1558,15 @@ export class GovernanceEngine {
     const preservedZoneRankMap = this._latestInputs?.zoneRankMap || {};
     const preservedZoneInfoMap = this._latestInputs?.zoneInfoMap || {};
     const preservedEquipmentCadenceMap = this._latestInputs?.equipmentCadenceMap || {};
+    const preservedEquipmentRiderMap = this._latestInputs?.equipmentRiderMap || {};
     this._latestInputs = {
       activeParticipants: [],
       userZoneMap: {},
       zoneRankMap: preservedZoneRankMap,
       zoneInfoMap: preservedZoneInfoMap,
       totalCount: 0,
-      equipmentCadenceMap: preservedEquipmentCadenceMap
+      equipmentCadenceMap: preservedEquipmentCadenceMap,
+      equipmentRiderMap: preservedEquipmentRiderMap
     };
     this._lastEvaluationTs = null;
     this._timersPaused = false;
@@ -1740,7 +1751,7 @@ export class GovernanceEngine {
    * @param {number} params.totalCount - Total number of active participants
    * @param {Object.<string, {rpm: number, connected: boolean}>} input.equipmentCadenceMap - Latest cadence reading per equipment id. Default: {}.
    */
-  evaluate({ activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, hrInactiveUsers, equipmentCadenceMap } = {}) {
+  evaluate({ activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, hrInactiveUsers, equipmentCadenceMap, equipmentRiderMap } = {}) {
     // Tag which code path triggered this evaluation (for prod log diagnostics)
     this._lastEvaluatePath = activeParticipants ? 'snapshot' : 'pulse';
 
@@ -1875,6 +1886,12 @@ export class GovernanceEngine {
     if (equipmentCadenceMap && typeof equipmentCadenceMap === 'object') {
       this._latestInputs.equipmentCadenceMap = { ...equipmentCadenceMap };
     }
+    // Capture equipmentRiderMap early so claim-based rider selection works even when evaluation
+    // exits early (no media, no rules, etc.). Unlike cadence (reset to {} on omission), the
+    // rider claim PERSISTS across ticks that omit it — a standing selector press stays active.
+    if (equipmentRiderMap && typeof equipmentRiderMap === 'object') {
+      this._latestInputs.equipmentRiderMap = { ...equipmentRiderMap };
+    }
 
     // Build evalContext so _setPhase logging reads current data (not stale _latestInputs)
     const evalContext = { userZoneMap, zoneRankMap, zoneInfoMap, activeParticipants };
@@ -1886,6 +1903,13 @@ export class GovernanceEngine {
     const tickManualCycle = () => {
       const active = this.challengeState?.activeChallenge;
       if (!active || active.type !== 'cycle' || !active.manualTrigger) return;
+      // Reconcile a changed standing claim in the early-exit (no-media) path as well.
+      const _claimManual = this._latestInputs?.equipmentRiderMap?.[active.equipment];
+      if (_claimManual && _claimManual !== active.rider) {
+        const _swapAllowed = active.cycleState === 'init'
+          || (active.cycleState === 'ramp' && active.currentPhaseIndex === 0);
+        if (_swapAllowed) this.swapCycleRider(_claimManual, { force: true });
+      }
       const filtered = this._filteredCadenceFor(active.equipment, this._now());
       const equipmentRpm = filtered.rpm;
       this._evaluateCycleChallenge(active, {
@@ -1992,7 +2016,10 @@ export class GovernanceEngine {
         hrInactiveUsers: Array.isArray(hrInactiveUsers) ? [...hrInactiveUsers] : [],
         equipmentCadenceMap: equipmentCadenceMap && typeof equipmentCadenceMap === 'object'
           ? { ...equipmentCadenceMap }
-          : {}
+          : {},
+        equipmentRiderMap: equipmentRiderMap && typeof equipmentRiderMap === 'object'
+          ? { ...equipmentRiderMap }
+          : (this._latestInputs?.equipmentRiderMap || {}),
       };
       this._invalidateStateCache();
       // No polling needed here - governance is reactive via TreasureBox mutation callback
@@ -2100,6 +2127,17 @@ export class GovernanceEngine {
     }
 
     // 7. Handle Challenges
+    // Reconcile a changed standing claim: a physical re-press during the swap
+    // window reassigns the active cycle rider (force = bypass cooldown).
+    const _activeCycle = this.challengeState?.activeChallenge;
+    if (_activeCycle && _activeCycle.type === 'cycle') {
+      const _claim = this._latestInputs?.equipmentRiderMap?.[_activeCycle.equipment];
+      if (_claim && _claim !== _activeCycle.rider) {
+        const _swapAllowed = _activeCycle.cycleState === 'init'
+          || (_activeCycle.cycleState === 'ramp' && _activeCycle.currentPhaseIndex === 0);
+        if (_swapAllowed) this.swapCycleRider(_claim, { force: true });
+      }
+    }
     this._evaluateChallenges(activePolicy, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, evalContext);
 
     this._captureLatestInputs({
@@ -2109,7 +2147,8 @@ export class GovernanceEngine {
       zoneInfoMap,
       totalCount,
       hrInactiveUsers,
-      equipmentCadenceMap
+      equipmentCadenceMap,
+      equipmentRiderMap
     });
     
     // Invalidate state cache after evaluation completes
@@ -2445,7 +2484,7 @@ export class GovernanceEngine {
       });
       return { ok: false, reason: 'equipment_not_found' };
     }
-    const eligible = Array.isArray(catalogEntry.eligible_users) ? [...catalogEntry.eligible_users] : [];
+    const eligible = this._getEligibleUsers(selection.equipment);
     if (!eligible.length) {
       getLogger().info('governance.cycle.start_skipped', {
         equipment: selection.equipment,
@@ -2473,6 +2512,12 @@ export class GovernanceEngine {
       }
       rider = ctx.forceRiderId;
       riderPool = [ctx.forceRiderId];
+    } else if (this._latestInputs?.equipmentRiderMap?.[selection.equipment]) {
+      // Standing claim: the rider physically claimed this bike. Authoritative —
+      // skip the cooldown filter (a deliberate press overrides cooldown).
+      const claimedRider = this._latestInputs.equipmentRiderMap[selection.equipment];
+      rider = claimedRider;
+      riderPool = [claimedRider];
     } else {
       const filtered = eligible.filter(uid => {
         const until = this._cycleCooldowns[uid];

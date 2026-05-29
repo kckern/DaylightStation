@@ -816,6 +816,10 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                         const equipmentInfo = equipmentMap[String(rpmDevice.deviceId)];
                         const deviceName = equipmentInfo?.name || String(rpmDevice.deviceId);
                         const equipmentId = equipmentInfo?.id || String(rpmDevice.deviceId);
+                        const claimedRiderId = fitnessContext.fitnessSessionInstance?.getEquipmentRider?.(equipmentId) || null;
+                        const riderAvatarSrc = claimedRiderId
+                          ? DaylightMediaPath(`/static/img/users/${claimedRiderId}`)
+                          : null;
                         const rpmValue = Number.isFinite(rpmDevice.cadence)
                           ? Math.max(0, Math.round(rpmDevice.cadence))
                           : 0;
@@ -831,8 +835,8 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                             key={`rpm-${rpmDevice.deviceId}`}
                             rpm={rpmValue}
                             animationDuration={animationDuration}
-                            avatarSrc={DaylightMediaPath(`/static/img/equipment/${equipmentId}`)}
-                            avatarAlt={deviceName}
+                            avatarSrc={riderAvatarSrc || DaylightMediaPath(`/static/img/equipment/${equipmentId}`)}
+                            avatarAlt={claimedRiderId ? claimedRiderId : deviceName}
                             imageClassName="rpm-device-image"
                             spinnerStyle={{ borderColor }}
                             valueStyle={{ background: CONFIG.rpm.overlayBg }}
