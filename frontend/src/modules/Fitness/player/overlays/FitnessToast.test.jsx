@@ -36,4 +36,18 @@ describe('FitnessToast', () => {
     expect(onDone).toHaveBeenCalledTimes(1);
     expect(onDone).toHaveBeenCalledWith(2);
   });
+
+  it('cleanly shows a new toast after the previous one fully dismissed and unmounted', () => {
+    const onDone = vi.fn();
+    const { rerender } = render(<FitnessToast toast={{ id: 1, title: 'A', durationMs: 4000 }} onDone={onDone} />);
+    act(() => { vi.advanceTimersByTime(4000 + TOAST_EXIT_MS); }); // toast 1 fully done
+    expect(onDone).toHaveBeenCalledWith(1);
+    rerender(<FitnessToast toast={null} onDone={onDone} />); // slot cleared
+    rerender(<FitnessToast toast={{ id: 2, title: 'B', subtitle: 'second', durationMs: 4000 }} onDone={onDone} />);
+    expect(screen.getByText('B')).toBeTruthy();
+    expect(screen.getByText('second')).toBeTruthy();
+    act(() => { vi.advanceTimersByTime(4000 + TOAST_EXIT_MS); });
+    expect(onDone).toHaveBeenCalledWith(2);
+    expect(onDone).toHaveBeenCalledTimes(2);
+  });
 });
