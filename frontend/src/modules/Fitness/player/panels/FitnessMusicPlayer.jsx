@@ -88,28 +88,27 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     }
   }, [recovery.attempt]);
 
-  // Diagnostic: emit a structured warning the first time the music player is
-  // detected stuck on this attempt. Production logs already capture the
-  // 'playback.overlay-summary' loop from PlayerOverlayLoading; this event lets
-  // us correlate the stuck UI state with that loop without scraping log shape.
-  const stuckLoggedRef = useRef(false);
+  // Log once when auto-recovery is exhausted — i.e. the player retried and
+  // still could not load a track. This is the actionable signal; transient
+  // stalls that self-heal on retry are intentionally not logged as failures.
+  const exhaustionLoggedRef = useRef(false);
   useEffect(() => {
-    if (!stuck.isStuck) {
-      stuckLoggedRef.current = false;
+    if (!recovery.exhausted) {
+      exhaustionLoggedRef.current = false;
       return;
     }
-    if (stuckLoggedRef.current) return;
-    stuckLoggedRef.current = true;
+    if (exhaustionLoggedRef.current) return;
+    exhaustionLoggedRef.current = true;
     const hasExplicitError = Boolean(playerError);
     getLogger().warn('fitness.music.stuck_loading', {
       playlistId: selectedPlaylistId || null,
-      attempt: stuck.attempt,
+      attempt: recovery.attempt,
       thresholdMs: 15_000,
       musicEnabled: Boolean(musicEnabled),
       hasExplicitError,
       silentFailure: !hasExplicitError,
     });
-  }, [stuck.isStuck, stuck.attempt, selectedPlaylistId, musicEnabled, playerError]);
+  }, [recovery.exhausted, recovery.attempt, selectedPlaylistId, musicEnabled, playerError]);
 
   // Stable Plex client session ID - ensures music player has distinct X-Plex-Client-Identifier from video player
   const musicPlexSession = useMemo(() => `fitness-music-${guid()}`, []);
