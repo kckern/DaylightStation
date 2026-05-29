@@ -37,7 +37,6 @@ const CYCLE_VIEWBOX_SIZE = 220;
 const CYCLE_RING_RADIUS = 100;
 const CYCLE_RING_CENTER = CYCLE_VIEWBOX_SIZE / 2;
 const CYCLE_RING_STROKE_WIDTH = 8;
-const DANGER_RING_RADIUS = CYCLE_RING_RADIUS + 4;
 
 // RPM gauge geometry — top hemisphere inside the outer ring.
 const CYCLE_GAUGE_RADIUS = 80;
@@ -162,9 +161,7 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
     initRemainingMs,
     rampRemainingMs,
     clockPaused,
-    dangerActive,
-    dangerRemainingMs,
-    dangerProgress
+    cycleHealthPct
   } = visuals;
 
   const totalPhases = Number.isFinite(challenge.totalPhases)
@@ -219,15 +216,6 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
     `M ${phaseArcStartPt.x} ${phaseArcStartPt.y} ` +
     `A ${CYCLE_RING_RADIUS} ${CYCLE_RING_RADIUS} 0 0 0 ${phaseArcEndPt.x} ${phaseArcEndPt.y}`;
 
-  // Draining danger ring — a full circle just outside the status track that
-  // depletes clockwise from 12 o'clock as the 3-second grace runs out. Distinct
-  // radius + color so it reads as a countdown timer, not as phase progress.
-  const dangerRingCircumference = 2 * Math.PI * DANGER_RING_RADIUS;
-  const dangerRingDashOffset = dangerRingCircumference * (1 - dangerProgress);
-  const dangerCountdownSec = Number.isFinite(dangerRemainingMs)
-    ? Math.max(0, Math.ceil(dangerRemainingMs / 1000))
-    : null;
-
   // --- Boosters + boost multiplier (Task 23) --------------------------------
   const boosters = getBoosterAvatarSlots(
     Array.isArray(challenge.boostingUsers) ? challenge.boostingUsers : [],
@@ -251,10 +239,7 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
 
   const swapAllowed = Boolean(challenge.swapAllowed);
 
-  const dangerSuffix = dangerActive && Number.isFinite(dangerRemainingMs)
-    ? `, danger — ${Math.ceil(dangerRemainingMs / 1000)}s to lock`
-    : '';
-  const ariaLabel = `Cycle challenge — ${challenge.cycleState || 'state unknown'}, phase ${Math.min(totalPhases, currentPhaseIndex + 1)} of ${totalPhases}${dangerSuffix}`;
+  const ariaLabel = `Cycle challenge — ${challenge.cycleState || 'state unknown'}, phase ${Math.min(totalPhases, currentPhaseIndex + 1)} of ${totalPhases}`;
 
   return (
     <div
@@ -366,21 +351,6 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
           strokeDashoffset={`${phaseArcDashOffset}px`}
           style={{ opacity: ringOpacity }}
         />
-        {dangerActive && (
-          <circle
-            className="cycle-challenge-overlay__danger-ring"
-            cx={CYCLE_RING_CENTER}
-            cy={CYCLE_RING_CENTER}
-            r={DANGER_RING_RADIUS}
-            fill="none"
-            stroke="#ef4444"
-            strokeWidth="3"
-            strokeLinecap="butt"
-            strokeDasharray={`${dangerRingCircumference}px`}
-            strokeDashoffset={`${dangerRingDashOffset}px`}
-            transform={`rotate(-90 ${CYCLE_RING_CENTER} ${CYCLE_RING_CENTER})`}
-          />
-        )}
       </svg>
 
       {targetRpm !== null && (
@@ -426,16 +396,19 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
           name, boost badge, phase blocks, countdown, and RPM readout stack
           without overlap and stay centered regardless of overlay diameter. */}
       <div className="cycle-challenge-overlay__stack">
-        {dangerActive && dangerCountdownSec !== null && (
+        <div
+          className="cycle-challenge-overlay__health-meter"
+          role="meter"
+          aria-label={`Health ${Math.round((cycleHealthPct ?? 1) * 100)} percent`}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round((cycleHealthPct ?? 1) * 100)}
+        >
           <div
-            className="cycle-challenge-overlay__danger-countdown"
-            role="alert"
-            aria-label={`Lockout in ${dangerCountdownSec} seconds — pedal faster`}
-          >
-            <span className="cycle-challenge-overlay__danger-countdown-time">⚠ {dangerCountdownSec}s</span>
-            <span className="cycle-challenge-overlay__danger-countdown-cue">↑ pedal</span>
-          </div>
-        )}
+            className="cycle-challenge-overlay__health-fill"
+            style={{ width: `${Math.round((cycleHealthPct ?? 1) * 100)}%` }}
+          />
+        </div>
         {showBoostBadge && (
           <div
             className="cycle-challenge-overlay__boost-badge"
@@ -527,9 +500,7 @@ CycleChallengeOverlay.propTypes = {
     clockPaused: PropTypes.bool,
     initRemainingMs: PropTypes.number,
     rampRemainingMs: PropTypes.number,
-    dangerActive: PropTypes.bool,
-    dangerRemainingMs: PropTypes.number,
-    dangerProgress: PropTypes.number
+    cycleHealthPct: PropTypes.number
   }),
   onRequestSwap: PropTypes.func
 };
