@@ -23,11 +23,12 @@ const normalizeZoneId = (value) => {
 
 const normalizeName = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
 
-// Maintain-grace window (ms) before a maintain → locked transition. Shared by the
-// state machine (_evaluateCycleChallenge) and the display snapshot
-// (_buildChallengeSnapshot) so the rendered dangerProgress always aligns with the
-// actual lock timing.
-const CYCLE_DANGER_GRACE_MS = 3000;
+// Cycle challenge "health" pool: depletes while RPM is below loRpm, regenerates
+// while in the green zone (>= hiRpm). At zero the video pauses until the rider
+// is back in green. Replaces the old 3-second danger grace.
+const CYCLE_HEALTH_MAX_MS = 3000;
+const CYCLE_HEALTH_DEPLETE_RATE = 1;    // ms health lost per ms below loRpm
+const CYCLE_HEALTH_REGEN_RATE = 1.5;    // ms health gained per ms in green
 
 // Cycle challenge config helpers (Task 5) ----------------------------------------
 // normalizeCycleRange: scalar N -> [N, N], array [a, b] -> [min(a,b), max(a,b)] (finite only), else defaultRange.
@@ -680,7 +681,8 @@ export class GovernanceEngine {
       }
       const heldEnough = (now - activeChallenge._pendingSince) >= STATE_DEBOUNCE_MS;
       const fatal = activeChallenge.status === 'success'
-                 || activeChallenge.lockReason === 'init';
+                 || activeChallenge.lockReason === 'init'
+                 || activeChallenge.lockReason === 'health';
       if (heldEnough || fatal || activeChallenge._publishedCycleState === internal) {
         activeChallenge._publishedCycleState = internal;
         activeChallenge._publishedAt = now;
@@ -693,19 +695,9 @@ export class GovernanceEngine {
       // render the countdown as "paused" when this flag is true.
       const clockPaused = currentRpm < (activeChallenge.selection?.init?.minRpm ?? 0);
 
-      // Grace window when RPM dips below loRpm in maintain. While dangerActive the
-      // overlay renders a separate draining red danger ring + numeric countdown;
-      // the challenge transitions to locked once dangerProgress reaches 0.
-      const DANGER_GRACE_MS_SNAPSHOT = CYCLE_DANGER_GRACE_MS;
-      const dangerActive = Number.isFinite(activeChallenge.dangerSinceMs);
-      const dangerElapsedMs = dangerActive
-        ? Math.max(0, now - activeChallenge.dangerSinceMs)
-        : 0;
-      const dangerRemainingMs = dangerActive
-        ? Math.max(0, DANGER_GRACE_MS_SNAPSHOT - dangerElapsedMs)
-        : null;
-      const dangerProgress = dangerActive
-        ? Math.max(0, Math.min(1, dangerRemainingMs / DANGER_GRACE_MS_SNAPSHOT))
+      // Health meter: fraction of the pool remaining [0..1].
+      const cycleHealthPct = Number.isFinite(activeChallenge.cycleHealthMs)
+        ? Math.max(0, Math.min(1, activeChallenge.cycleHealthMs / CYCLE_HEALTH_MAX_MS))
         : 1;
 
       return {
@@ -728,9 +720,7 @@ export class GovernanceEngine {
         initTotalMs,
         dimFactor,
         clockPaused,
-        dangerActive,
-        dangerRemainingMs,
-        dangerProgress,
+        cycleHealthPct,
         boostMultiplier: multiplier,
         boostingUsers: contributors,
         lockReason: activeChallenge.lockReason || null,
@@ -1721,8 +1711,11 @@ export class GovernanceEngine {
       countdownSecondsTotal: gracePeriodTotal,
       deadline: this.meta?.deadline || null,
       gracePeriodTotal,
-      videoLocked: (this.challengeState?.videoLocked || this._mediaIsGoverned())
-        && this.phase !== 'unlocked' && this.phase !== 'warning',
+      videoLocked: ((this.challengeState?.videoLocked || this._mediaIsGoverned())
+          && this.phase !== 'unlocked' && this.phase !== 'warning')
+        || (this.challengeState?.activeChallenge?.type === 'cycle'
+            && this.challengeState?.activeChallenge?.cycleState === 'locked'
+            && this.challengeState?.activeChallenge?.lockReason === 'health'),
       challengePaused: challengeSnapshot ? Boolean(challengeSnapshot.paused) : false,
       challenge: challengeSnapshot,
       challengeHistory: Array.isArray(this.challengeState?.challengeHistory)
@@ -2537,11 +2530,7 @@ export class GovernanceEngine {
       boostContributors: new Set(),
       lockReason: null,
       // 3-second grace window timestamp for the maintain → locked transition.
-      // Set to a timestamp on the first below-loRpm tick in maintain; cleared
-      // when RPM recovers OR when the grace expires (and the lock fires).
-      // Surfaced in the snapshot so the overlay can render the draining danger ring + countdown.
-      dangerSinceMs: null,
-      dangerRecoverySinceMs: null,
+      cycleHealthMs: CYCLE_HEALTH_MAX_MS,
       pausedAt: null,
       pausedRemainingMs: null,
       // Task 6: 500ms debounce for the published cycleState. The internal
@@ -2725,65 +2714,32 @@ export class GovernanceEngine {
 
     if (active.cycleState === 'maintain') {
       const phase = active.generatedPhases[active.currentPhaseIndex];
-      const DANGER_GRACE_MS = CYCLE_DANGER_GRACE_MS;
-      const DANGER_RECOVERY_MS = 500;
-      const nowMs = now;
 
       if (ctx.equipmentRpm < phase.loRpm) {
-        // Below lo — arm or continue danger. Any dip cancels a pending recovery
-        // so the grace clock keeps counting from the ORIGINAL dangerSinceMs: a
-        // rider bobbing at the threshold can no longer reset grace forever.
-        active.dangerRecoverySinceMs = null;
-        if (!Number.isFinite(active.dangerSinceMs)) {
-          active.dangerSinceMs = nowMs;
-          getLogger().info('governance.cycle.danger_started', {
-            challengeId: active.id,
-            phaseIndex: active.currentPhaseIndex,
-            currentRpm: ctx.equipmentRpm,
-            threshold: phase.loRpm
-          });
-        }
-        if (nowMs - active.dangerSinceMs >= DANGER_GRACE_MS) {
+        // Below the red line — deplete health; pause (lock) when empty.
+        active.cycleHealthMs = Math.max(0, active.cycleHealthMs - dt * CYCLE_HEALTH_DEPLETE_RATE);
+        if (active.cycleHealthMs <= 0) {
           active.cycleState = 'locked';
-          active.lockReason = 'maintain';
+          active.lockReason = 'health';
           active.totalLockEventsCount += 1;
-          active.dangerSinceMs = null;
-          active.dangerRecoverySinceMs = null;
           getLogger().info('governance.cycle.state_transition', {
             challengeId: active.id, from: 'maintain', to: 'locked',
             currentPhaseIndex: active.currentPhaseIndex, rider: active.rider,
-            currentRpm: ctx.equipmentRpm, reason: 'below_lo_grace_expired'
+            currentRpm: ctx.equipmentRpm, reason: 'health_depleted'
           });
           getLogger().info('governance.cycle.locked', {
-            challengeId: active.id, lockReason: 'maintain', phaseIndex: active.currentPhaseIndex,
+            challengeId: active.id, lockReason: 'health', phaseIndex: active.currentPhaseIndex,
             currentRpm: ctx.equipmentRpm, threshold: phase.loRpm,
             totalLockEventsCount: active.totalLockEventsCount
           });
-          return;
         }
-        // In grace window — stay in maintain visually, no progress accumulation.
-        return;
-      }
-
-      // RPM is at or above loRpm.
-      if (Number.isFinite(active.dangerSinceMs)) {
-        // Recovering: require RPM to hold above lo for DANGER_RECOVERY_MS before
-        // clearing danger. Until then danger stays armed (no lock — we're above
-        // lo; no progress — recovery unconfirmed) so the overlay does not flicker.
-        if (!Number.isFinite(active.dangerRecoverySinceMs)) {
-          active.dangerRecoverySinceMs = nowMs;
-        }
-        if (nowMs - active.dangerRecoverySinceMs < DANGER_RECOVERY_MS) {
-          return;
-        }
-        getLogger().info('governance.cycle.danger_cleared', {
-          challengeId: active.id, currentRpm: ctx.equipmentRpm
-        });
-        active.dangerSinceMs = null;
-        active.dangerRecoverySinceMs = null;
+        return; // below lo: no progress
       }
 
       if (ctx.equipmentRpm >= phase.hiRpm) {
+        // Green — regenerate health AND accumulate phase progress.
+        active.cycleHealthMs = Math.min(CYCLE_HEALTH_MAX_MS, active.cycleHealthMs + dt * CYCLE_HEALTH_REGEN_RATE);
+
         const { multiplier, contributors } = this._computeBoostMultiplier(active, ctx);
         const progressAdd = dt * multiplier;
         active.phaseProgressMs += progressAdd;
@@ -2798,14 +2754,14 @@ export class GovernanceEngine {
             active.completedAt = now;
             getLogger().info('governance.cycle.state_transition', {
               challengeId: active.id, from: 'maintain', to: 'success',
-              currentPhaseIndex: prev, rider: active.rider,
-              currentRpm: ctx.equipmentRpm
+              currentPhaseIndex: prev, rider: active.rider, currentRpm: ctx.equipmentRpm
             });
           } else {
             active.currentPhaseIndex += 1;
             active.cycleState = 'ramp';
             active.rampElapsedMs = 0;
             active.phaseProgressMs = 0;
+            active.cycleHealthMs = CYCLE_HEALTH_MAX_MS; // fresh health each phase
             getLogger().info('governance.cycle.phase_advanced', {
               challengeId: active.id, fromPhaseIndex: prev, toPhaseIndex: active.currentPhaseIndex,
               elapsedMs: phase.maintainSeconds * 1000, boostedMs: Math.round(active.totalBoostedMs)
@@ -2817,8 +2773,10 @@ export class GovernanceEngine {
             });
           }
         }
+        return;
       }
-      // between lo and hi: progress paused, no state change
+
+      // Amber band (lo..hi): hold health and progress, no change.
       return;
     }
 
@@ -2843,16 +2801,17 @@ export class GovernanceEngine {
         }
         return;
       }
-      if (active.lockReason === 'ramp' || active.lockReason === 'maintain') {
+      if (active.lockReason === 'ramp' || active.lockReason === 'maintain' || active.lockReason === 'health') {
         if (ctx.equipmentRpm >= phase.hiRpm) {
           const prevLockReason = active.lockReason;
           active.cycleState = 'maintain';
           if (prevLockReason === 'ramp') active.phaseProgressMs = 0;
+          active.cycleHealthMs = CYCLE_HEALTH_MAX_MS;
           active.lockReason = null;
           getLogger().info('governance.cycle.state_transition', {
             challengeId: active.id, from: 'locked', to: 'maintain',
             currentPhaseIndex: active.currentPhaseIndex, rider: active.rider,
-            currentRpm: ctx.equipmentRpm, reason: `recovered_from_${prevLockReason}_lock`
+            currentRpm: ctx.equipmentRpm, reason: 'recovered_from_health_lock'
           });
           getLogger().info('governance.cycle.recovered', {
             challengeId: active.id, fromLockReason: prevLockReason,
