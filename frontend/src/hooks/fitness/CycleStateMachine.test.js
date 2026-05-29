@@ -184,7 +184,7 @@ describe('Cycle SM — sensor noise resilience', () => {
     expect(lockTransitions).toBeLessThanOrEqual(1);
   });
 
-  it('does still lock when rpm is sustained below loRpm past the 3s grace window', () => {
+  it('does still lock when rpm is sustained below loRpm past the health pool depletion (~3s)', () => {
     const { engine, advance } = makeEngineWithActiveCycle(7);
     // Drive into maintain: hi_rpm=60, so feed rpm=80 a few times. EMA passes
     // the first sample through unsmoothed so we hit 80 immediately.
@@ -194,10 +194,9 @@ describe('Cycle SM — sensor noise resilience', () => {
     }
     expect(engine.challengeState.activeChallenge.cycleState).toBe('maintain');
 
-    // Now sustain rpm=10, well below loRpm=30. The 2026-05-03 redesign added
-    // a 3-second grace window before the maintain → locked transition fires,
-    // so we need to drive the clock forward >3 s of below-lo input. 25 ticks
-    // × 200 ms = 5 s comfortably clears the 3 s grace plus EMA settle time.
+    // Now sustain rpm=10, well below loRpm=30. The health meter depletes at
+    // 1ms/ms below lo, so 3s of below-lo input empties the 3000ms pool.
+    // 25 ticks × 200 ms = 5 s comfortably clears the pool plus EMA settle time.
     const states = [];
     for (let i = 0; i < 25; i += 1) {
       advance(200);
@@ -294,9 +293,9 @@ describe('Cycle SM — transition debounce', () => {
     expect(states[states.length - 1]).not.toBe('locked');
   });
 
-  it('does surface a locked snapshot when locked-state lasts ≥500 ms (and the 3s grace has expired)', () => {
+  it('does surface a locked snapshot when locked-state lasts ≥500 ms (and the health pool has emptied)', () => {
     // Pre-prime to maintain, then sustain rpm=0 long enough for the EMA to
-    // decay below loRpm, the 3-second danger grace to expire, AND the
+    // decay below loRpm, the health pool (~3s) to deplete to zero, AND the
     // published-state debounce (≥500 ms) to release the locked snapshot.
     // Sustained-zero ticks for 4 s + a final tail sample easily clears both.
     const samples = [];
@@ -479,15 +478,12 @@ describe('Cycle SM — filter state reset', () => {
   });
 });
 
-describe('Cycle SM — danger grace window (maintain → locked)', () => {
-  // The maintain branch wraps the immediate-lock-on-below-lo path in a
-  // 3-second grace window. The first below-lo tick stamps `dangerSinceMs`,
-  // subsequent below-lo ticks accumulate elapsed time, and the engine
-  // transitions to locked only after the grace expires. Recovery during
-  // the grace clears `dangerSinceMs` and keeps the rider in maintain.
+describe('Cycle SM — health meter direct eval (maintain branch)', () => {
+  // The maintain branch depletes cycleHealthMs while RPM < loRpm and locks
+  // (lockReason='health') when the pool empties. Recovery requires RPM >= hiRpm.
+  // These tests drive _evaluateCycleChallenge directly (bypassing EMA/filter) to
+  // give precise control over dt and equipmentRpm.
 
-  // Helper: build a cycle challenge already pinned to maintain so we can drive
-  // the danger logic directly without going through init/ramp.
   function makeMaintainCycle(seed = 42) {
     let nowValue = 100000;
     const session = buildSession();
@@ -518,9 +514,10 @@ describe('Cycle SM — danger grace window (maintain → locked)', () => {
     };
   }
 
-  it('starts a danger grace window when rpm dips below loRpm in maintain', () => {
+  it('depletes health when rpm dips below loRpm in maintain', () => {
     const { engine, active, advance } = makeMaintainCycle(42);
     const phase = active.generatedPhases[0];
+    const healthBefore = active.cycleHealthMs;
     advance(200);
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: phase.loRpm - 5, // below lo
@@ -529,59 +526,48 @@ describe('Cycle SM — danger grace window (maintain → locked)', () => {
       baseReqSatisfiedForRider: true,
       baseReqSatisfiedGlobal: true
     });
-    // Still in maintain — grace window armed.
+    // Health should have depleted but not yet locked (200ms < 3000ms pool).
     expect(active.cycleState).toBe('maintain');
-    expect(Number.isFinite(active.dangerSinceMs)).toBe(true);
+    expect(active.cycleHealthMs).toBeLessThan(healthBefore);
 
-    // Snapshot exposes danger fields.
+    // Snapshot exposes cycleHealthPct.
     engine._latestInputs.equipmentCadenceMap = {
       cycle_ace: { rpm: phase.loRpm - 5, connected: true, ts: engine._now() }
     };
     engine._latestInputs.activeParticipants = ['felix'];
     engine._latestInputs.userZoneMap = { felix: 'warm' };
     const snap = engine.state?.challenge;
-    expect(snap.dangerActive).toBe(true);
-    expect(snap.dangerProgress).toBeGreaterThan(0.99);
-    expect(snap.dangerRemainingMs).toBeGreaterThan(2900);
+    expect(snap.cycleHealthPct).toBeLessThan(1);
+    expect(snap.cycleHealthPct).toBeGreaterThan(0.9); // only ~200ms depleted from 3000ms
   });
 
-  it('clears the danger when rpm recovers above loRpm (sustained ≥500ms)', () => {
+  it('recovers health when rpm goes back into the green zone', () => {
     const { engine, active, advance } = makeMaintainCycle(7);
     const phase = active.generatedPhases[0];
-    // Tick below lo to start the grace.
+    // Drain some health.
+    for (let i = 0; i < 5; i += 1) {
+      advance(200);
+      engine._evaluateCycleChallenge(active, {
+        equipmentRpm: phase.loRpm - 5,
+        activeParticipants: ['felix'], userZoneMap: { felix: 'warm' },
+        baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true
+      });
+    }
+    const drained = active.cycleHealthMs;
+    expect(drained).toBeLessThan(3000);
+
+    // Pedal back into green — health regenerates.
     advance(200);
     engine._evaluateCycleChallenge(active, {
-      equipmentRpm: phase.loRpm - 5,
-      activeParticipants: ['felix'], userZoneMap: { felix: 'warm' },
-      baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true
-    });
-    expect(Number.isFinite(active.dangerSinceMs)).toBe(true);
-
-    // First recovery tick — starts the dangerRecoverySinceMs timer but does
-    // not yet clear danger (recovery hold = 500ms; a single tick is not enough).
-    advance(300);
-    engine._evaluateCycleChallenge(active, {
       equipmentRpm: phase.hiRpm + 5,
       activeParticipants: ['felix'], userZoneMap: { felix: 'warm' },
       baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true
     });
-    expect(Number.isFinite(active.dangerSinceMs)).toBe(true); // still armed
-
-    // Second recovery tick 600ms after the first — total above-lo time ≥ 500ms.
-    // Now the recovery is confirmed and danger clears. Still well within the
-    // 3s grace window (only ~1.1s elapsed since the dip).
-    advance(600);
-    engine._evaluateCycleChallenge(active, {
-      equipmentRpm: phase.hiRpm + 5,
-      activeParticipants: ['felix'], userZoneMap: { felix: 'warm' },
-      baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true
-    });
-    expect(active.dangerSinceMs).toBeNull();
-    expect(active.dangerRecoverySinceMs).toBeNull();
+    expect(active.cycleHealthMs).toBeGreaterThan(drained);
     expect(active.cycleState).toBe('maintain');
   });
 
-  it('transitions to locked after the 3-second grace expires', () => {
+  it('locks (lockReason=health) after the health pool is fully depleted', () => {
     const { engine, active, advance } = makeMaintainCycle(13);
     const phase = active.generatedPhases[0];
     // Sustain rpm < lo across multiple ticks for >3 seconds total.
@@ -595,7 +581,7 @@ describe('Cycle SM — danger grace window (maintain → locked)', () => {
       if (active.cycleState === 'locked') break;
     }
     expect(active.cycleState).toBe('locked');
-    expect(active.lockReason).toBe('maintain');
+    expect(active.lockReason).toBe('health');
   });
 });
 
@@ -668,8 +654,7 @@ describe('Cycle SM — baseReqSatisfiedForRider snapshot exposure', () => {
   });
 });
 
-describe('Cycle SM — maintain grace hysteresis', () => {
-  // Drive init→ramp→maintain with sustained 80 RPM (above hi=60).
+describe('Cycle SM — health meter (2026-05-28 redesign)', () => {
   function intoMaintain(engine, advance) {
     for (let i = 0; i < 5; i += 1) {
       advance(200);
@@ -678,108 +663,69 @@ describe('Cycle SM — maintain grace hysteresis', () => {
     expect(engine.challengeState.activeChallenge.cycleState).toBe('maintain');
   }
 
-  it('keeps danger armed across a single-tick bob above lo (no flicker)', () => {
-    const { engine, advance } = makeEngineWithActiveCycle(11);
+  it('starts maintain at full health', () => {
+    const { engine, advance } = makeEngineWithActiveCycle(21);
     intoMaintain(engine, advance);
-
-    // Dip below lo (rpm=1 < 30) for two ticks → EMA decays below loRpm=30 and
-    // danger arms. (rpm=1 crosses the EMA threshold in 2 ticks from ~80.)
-    advance(200); tick(engine, engine._now(), { zone: 'warm', rpm: 1 });
-    advance(200); tick(engine, engine._now(), { zone: 'warm', rpm: 1 });
-    expect(Number.isFinite(engine.challengeState.activeChallenge.dangerSinceMs)).toBe(true);
-
-    // One tick back above lo (rpm=40) — shorter than the 500ms recovery hold.
-    advance(200); tick(engine, engine._now(), { zone: 'warm', rpm: 40 });
-    // Danger must remain armed (recovery not yet confirmed) → no UI flicker.
-    expect(Number.isFinite(engine.challengeState.activeChallenge.dangerSinceMs)).toBe(true);
+    const a = engine.challengeState.activeChallenge;
+    expect(a.cycleHealthMs).toBe(3000);
   });
 
-  it('clears danger only after RPM is sustained above lo for the recovery window', () => {
-    const { engine, advance } = makeEngineWithActiveCycle(12);
+  it('depletes health below loRpm and locks (lockReason health) at zero', () => {
+    const { engine, advance } = makeEngineWithActiveCycle(22);
     intoMaintain(engine, advance);
-
-    // Two ticks at rpm=1 drive EMA below loRpm=30 → danger arms.
-    advance(200); tick(engine, engine._now(), { zone: 'warm', rpm: 1 });
-    advance(200); tick(engine, engine._now(), { zone: 'warm', rpm: 1 });
-    expect(Number.isFinite(engine.challengeState.activeChallenge.dangerSinceMs)).toBe(true);
-
-    // Sustain rpm=80 (above hi) for >500ms recovery window: 4 × 200ms = 800ms.
-    for (let i = 0; i < 4; i += 1) {
-      advance(200);
-      tick(engine, engine._now(), { zone: 'warm', rpm: 80 });
-    }
-    expect(engine.challengeState.activeChallenge.dangerSinceMs).toBeNull();
-    expect(engine.challengeState.activeChallenge.cycleState).toBe('maintain');
-  });
-
-  it('locks at ~3s wall-clock even while bobbing at the lo threshold', () => {
-    const { engine, advance } = makeEngineWithActiveCycle(13);
-    intoMaintain(engine, advance);
-
-    // Alternate just-below-lo (rpm=1, EMA drops below 30 quickly) and
-    // just-above-lo (rpm=40) every 200ms for 4s. Each above-lo tick is
-    // < the 500ms recovery hold so danger never clears; grace is wall-clock
-    // from the first dip → must lock within ~3s.
+    // Sustain rpm=1 (well below lo=30). EMA crosses lo within ~2 ticks; then
+    // ~3s of depletion empties the 3000ms health pool. 25 × 200ms = 5s covers it.
     let locked = false;
-    for (let i = 0; i < 20 && !locked; i += 1) {
+    for (let i = 0; i < 25 && !locked; i += 1) {
       advance(200);
-      tick(engine, engine._now(), { zone: 'warm', rpm: i % 2 === 0 ? 1 : 40 });
+      tick(engine, engine._now(), { zone: 'warm', rpm: 1 });
       if (engine.challengeState.activeChallenge.cycleState === 'locked') locked = true;
     }
     expect(locked).toBe(true);
+    expect(engine.challengeState.activeChallenge.lockReason).toBe('health');
+    expect(engine.challengeState.activeChallenge.cycleHealthMs).toBe(0);
   });
 
-  it('snapshot dangerProgress decreases monotonically through a bob', () => {
-    const { engine, advance } = makeEngineWithActiveCycle(14);
+  it('regenerates health when back in the green zone (>= hiRpm)', () => {
+    const { engine, advance } = makeEngineWithActiveCycle(23);
     intoMaintain(engine, advance);
-
-    const progresses = [];
-    // rpm=1 drives the EMA well below loRpm=30 within ~2 ticks from the 80
-    // baseline. The single rpm=40 tick is a brief "bob" above lo (honoring the
-    // test name) but is still below hiRpm=60, so the EMA stays below lo long
-    // enough to keep dangerActive true. The surrounding rpm=1 runs guarantee
-    // ≥2-3 consecutive dangerActive snapshots so the monotonic loop is non-vacuous.
-    const seq = [1, 1, 1, 40, 1, 1, 1]; // dip×3, bob, dip×3
-    for (const rpm of seq) {
-      advance(200);
-      tick(engine, engine._now(), { zone: 'warm', rpm });
-      const snap = engine.state.challenge;
-      if (snap?.dangerActive) progresses.push(snap.dangerProgress);
-    }
-    // Guard: must have collected at least 2 snapshots or the monotonic loop is vacuous.
-    expect(progresses.length).toBeGreaterThanOrEqual(2);
-    // dangerProgress is remaining/3000 from a fixed dangerSinceMs → non-increasing.
-    for (let i = 1; i < progresses.length; i += 1) {
-      expect(progresses[i]).toBeLessThanOrEqual(progresses[i - 1]);
-    }
+    // Drain partway below lo.
+    for (let i = 0; i < 5; i += 1) { advance(200); tick(engine, engine._now(), { zone: 'warm', rpm: 1 }); }
+    const drained = engine.challengeState.activeChallenge.cycleHealthMs;
+    expect(drained).toBeLessThan(3000);
+    // Back to green for a while.
+    for (let i = 0; i < 5; i += 1) { advance(200); tick(engine, engine._now(), { zone: 'warm', rpm: 80 }); }
+    expect(engine.challengeState.activeChallenge.cycleHealthMs).toBeGreaterThan(drained);
   });
 
-  it('redip below lo cancels recovery timer without resetting the grace clock', () => {
-    const { engine, advance } = makeEngineWithActiveCycle(15);
+  it('recovers from a health lock and resets health when RPM returns to green', () => {
+    const { engine, advance } = makeEngineWithActiveCycle(24);
     intoMaintain(engine, advance);
+    for (let i = 0; i < 25; i += 1) { advance(200); tick(engine, engine._now(), { zone: 'warm', rpm: 1 }); }
+    expect(engine.challengeState.activeChallenge.cycleState).toBe('locked');
+    // Pedal back into green.
+    for (let i = 0; i < 3; i += 1) { advance(200); tick(engine, engine._now(), { zone: 'warm', rpm: 90 }); }
+    const a = engine.challengeState.activeChallenge;
+    expect(a.cycleState).toBe('maintain');
+    expect(a.cycleHealthMs).toBe(3000);
+  });
 
-    // Dip below lo (rpm=1) for three ticks → EMA decays well below loRpm=30,
-    // danger arms.
-    advance(200); tick(engine, engine._now(), { zone: 'warm', rpm: 1 });
-    advance(200); tick(engine, engine._now(), { zone: 'warm', rpm: 1 });
-    advance(200); tick(engine, engine._now(), { zone: 'warm', rpm: 1 });
-    const active = engine.challengeState.activeChallenge;
-    expect(Number.isFinite(active.dangerSinceMs)).toBe(true);
+  it('exposes cycleHealthPct in the snapshot and pauses video on health lock', () => {
+    const { engine, advance } = makeEngineWithActiveCycle(25);
+    function intoMaintainLocal() {
+      for (let i = 0; i < 5; i += 1) { advance(200); tick(engine, engine._now(), { zone: 'warm', rpm: 80 }); }
+    }
+    intoMaintainLocal();
+    // Full health → pct 1, video not locked.
+    let snap = engine.state.challenge;
+    expect(snap.cycleHealthPct).toBeCloseTo(1, 1);
+    expect(engine.state.videoLocked).toBe(false);
 
-    // One tick at rpm=80 — EMA climbs back above loRpm=30 so the engine sees
-    // equipmentRpm ≥ loRpm and starts the recovery timer. Danger is still armed
-    // (< 500ms hold). Capture the original arm time.
-    advance(200); tick(engine, engine._now(), { zone: 'warm', rpm: 80 });
-    expect(Number.isFinite(active.dangerSinceMs)).toBe(true);        // still armed
-    expect(Number.isFinite(active.dangerRecoverySinceMs)).toBe(true); // recovery started
-    const armedAt = active.dangerSinceMs;
-
-    // Redip — sustain rpm=1 for two ticks so the EMA crosses back below loRpm=30.
-    // Recovery must be cancelled AND grace clock must NOT reset (dangerSinceMs
-    // stays at the original arm time, not re-armed to now).
-    advance(200); tick(engine, engine._now(), { zone: 'warm', rpm: 1 });
-    advance(200); tick(engine, engine._now(), { zone: 'warm', rpm: 1 });
-    expect(active.dangerRecoverySinceMs).toBeNull(); // recovery cancelled
-    expect(active.dangerSinceMs).toBe(armedAt);      // grace clock untouched
+    // Drain to a health lock.
+    for (let i = 0; i < 25; i += 1) { advance(200); tick(engine, engine._now(), { zone: 'warm', rpm: 1 }); }
+    snap = engine.state.challenge;
+    expect(snap.cycleHealthPct).toBe(0);
+    // Cycle health lock pauses the video even though governance phase is unlocked.
+    expect(engine.state.videoLocked).toBe(true);
   });
 });
