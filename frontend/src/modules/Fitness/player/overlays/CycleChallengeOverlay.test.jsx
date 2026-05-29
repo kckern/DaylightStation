@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { CycleChallengeOverlay } from './CycleChallengeOverlay.jsx';
 
 const baseChallenge = {
@@ -199,5 +199,23 @@ describe('CycleChallengeOverlay — extended UI', () => {
     const after = container.querySelectorAll('.cycle-challenge-overlay__gauge-tick').length;
     expect(after).toBe(before);
     expect(after).toBeGreaterThan(0);
+  });
+
+  it('shows initials when the avatar image fails, and recovers on rider change', () => {
+    const ch = { ...baseChallenge, rider: { id: 'kckern', name: 'KC Kern' } };
+    const { container, rerender } = render(<CycleChallengeOverlay challenge={ch} />);
+    // Initially the image renders and initials are absent.
+    expect(container.querySelector('.cycle-challenge-overlay__avatar-img')).toBeTruthy();
+    expect(container.querySelector('.cycle-challenge-overlay__avatar-initials')).toBeFalsy();
+
+    // Image errors → state flips → initials shown, image removed.
+    fireEvent.error(container.querySelector('.cycle-challenge-overlay__avatar-img'));
+    expect(container.querySelector('.cycle-challenge-overlay__avatar-initials')).toBeTruthy();
+    expect(container.querySelector('.cycle-challenge-overlay__avatar-img')).toBeFalsy();
+
+    // New rider → fresh URL → effect resets imgFailed → image is attempted again.
+    rerender(<CycleChallengeOverlay challenge={{ ...ch, rider: { id: 'alan', name: 'Alan' } }} />);
+    expect(container.querySelector('.cycle-challenge-overlay__avatar-img')).toBeTruthy();
+    expect(container.querySelector('.cycle-challenge-overlay__avatar-initials')).toBeFalsy();
   });
 });
