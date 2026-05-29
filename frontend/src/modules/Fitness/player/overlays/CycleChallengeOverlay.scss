@@ -239,10 +239,36 @@
     filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.4));
   }
 
-  &__phase-arc--danger {
-    animation: cycle-phase-arc-danger-flash 0.6s ease-in-out infinite;
-    // Faster transition so the depleting bar visibly retreats inside the 3 s window.
+  // Draining lockout ring — distinct red countdown outside the status track.
+  &__danger-ring {
     transition: stroke-dashoffset 0.15s linear;
+    filter: drop-shadow(0 0 6px rgba(239, 68, 68, 0.7));
+    animation: cycle-danger-ring-flash 0.6s ease-in-out infinite;
+  }
+
+  // Numeric lockout countdown — top of the lower stack, unmistakably a timer.
+  &__danger-countdown {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1.05;
+    color: #fecaca;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+    animation: cycle-danger-countdown-flash 0.6s ease-in-out infinite;
+  }
+
+  &__danger-countdown-time {
+    font-size: clamp(0.75rem, calc(var(--cycle-overlay-diameter) * 0.08), 1.1rem);
+    font-weight: 800;
+    letter-spacing: 0.02em;
+  }
+
+  &__danger-countdown-cue {
+    font-size: clamp(0.5rem, calc(var(--cycle-overlay-diameter) * 0.045), 0.65rem);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: rgba(254, 202, 202, 0.85);
   }
 
   // --- State variants -----------------------------------------------------
@@ -367,16 +393,14 @@
   }
 }
 
-@keyframes cycle-phase-arc-danger-flash {
-  0%,
-  100% {
-    opacity: 1;
-    stroke: #fbbf24;
-  }
-  50% {
-    opacity: 0.55;
-    stroke: #f59e0b;
-  }
+@keyframes cycle-danger-ring-flash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes cycle-danger-countdown-flash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }
 
 .cycle-challenge-overlay--lost-signal .cycle-needle,
