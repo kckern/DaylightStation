@@ -24,10 +24,10 @@ import './CycleChallengeOverlay.scss';
  *     grace window before maintain → locked fires (dangerActive=true).
  *   - RPM gauge arc (top hemisphere) with tick marks, hi/lo markers, needle (Task 22)
  *   - Target RPM sign anchored to the hi-rpm tick on the gauge arc (Task 22)
- *   - Rider avatar centered, name below
+ *   - Rider avatar centered (sole rider identifier; heart-rate gate dot pinned to it)
  *   - Phase count blocks (rounded squares — one per phase, completed phases lit)
  *   - Up to 4 booster avatars at the corners (NE/SE/SW/NW) (Task 23)
- *   - Boost multiplier pill (×2.5) below the rider name when >1.0 (Task 23)
+ *   - Boost multiplier pill (×2.5) below the avatar when >1.0 (Task 23)
  *
  * Position (top / middle / bottom) is owned by ChallengeOverlayDeck — this
  * component renders inside the deck and does not manage its own placement.

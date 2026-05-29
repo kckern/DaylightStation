@@ -23,6 +23,12 @@ const normalizeZoneId = (value) => {
 
 const normalizeName = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
 
+// Maintain-grace window (ms) before a maintain → locked transition. Shared by the
+// state machine (_evaluateCycleChallenge) and the display snapshot
+// (_buildChallengeSnapshot) so the rendered dangerProgress always aligns with the
+// actual lock timing.
+const CYCLE_DANGER_GRACE_MS = 3000;
+
 // Cycle challenge config helpers (Task 5) ----------------------------------------
 // normalizeCycleRange: scalar N -> [N, N], array [a, b] -> [min(a,b), max(a,b)] (finite only), else defaultRange.
 const normalizeCycleRange = (value, defaultRange) => {
@@ -687,10 +693,10 @@ export class GovernanceEngine {
       // render the countdown as "paused" when this flag is true.
       const clockPaused = currentRpm < (activeChallenge.selection?.init?.minRpm ?? 0);
 
-      // 3-second grace window when RPM dips below loRpm in maintain. The
-      // overlay renders a depleting arc in flashing yellow during the grace,
-      // then transitions to locked once dangerProgress reaches 0.
-      const DANGER_GRACE_MS_SNAPSHOT = 3000;
+      // Grace window when RPM dips below loRpm in maintain. While dangerActive the
+      // overlay renders a separate draining red danger ring + numeric countdown;
+      // the challenge transitions to locked once dangerProgress reaches 0.
+      const DANGER_GRACE_MS_SNAPSHOT = CYCLE_DANGER_GRACE_MS;
       const dangerActive = Number.isFinite(activeChallenge.dangerSinceMs);
       const dangerElapsedMs = dangerActive
         ? Math.max(0, now - activeChallenge.dangerSinceMs)
@@ -2533,7 +2539,7 @@ export class GovernanceEngine {
       // 3-second grace window timestamp for the maintain → locked transition.
       // Set to a timestamp on the first below-loRpm tick in maintain; cleared
       // when RPM recovers OR when the grace expires (and the lock fires).
-      // Surfaced in the snapshot so the overlay can render a depleting arc.
+      // Surfaced in the snapshot so the overlay can render the draining danger ring + countdown.
       dangerSinceMs: null,
       dangerRecoverySinceMs: null,
       pausedAt: null,
@@ -2719,7 +2725,7 @@ export class GovernanceEngine {
 
     if (active.cycleState === 'maintain') {
       const phase = active.generatedPhases[active.currentPhaseIndex];
-      const DANGER_GRACE_MS = 3000;
+      const DANGER_GRACE_MS = CYCLE_DANGER_GRACE_MS;
       const DANGER_RECOVERY_MS = 500;
       const nowMs = now;
 
