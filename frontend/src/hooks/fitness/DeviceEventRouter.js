@@ -182,7 +182,11 @@ export class DeviceEventRouter {
     if (payload.topic === 'vibration') {
       return 'vibration';
     }
-    
+
+    if (payload.topic === 'rider_select') {
+      return 'rider_select';
+    }
+
     if (payload.topic === 'fitness') {
       // ANT+ data
       if (payload.type === 'ant' && payload.deviceId && payload.data) {
