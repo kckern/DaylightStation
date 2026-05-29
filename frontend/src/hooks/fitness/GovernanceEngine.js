@@ -1886,8 +1886,9 @@ export class GovernanceEngine {
     if (equipmentCadenceMap && typeof equipmentCadenceMap === 'object') {
       this._latestInputs.equipmentCadenceMap = { ...equipmentCadenceMap };
     }
-    // Capture equipmentRiderMap early (parallel to cadence map) so claim-based rider selection
-    // works even when evaluation exits early (no media, no rules, etc.).
+    // Capture equipmentRiderMap early so claim-based rider selection works even when evaluation
+    // exits early (no media, no rules, etc.). Unlike cadence (reset to {} on omission), the
+    // rider claim PERSISTS across ticks that omit it — a standing selector press stays active.
     if (equipmentRiderMap && typeof equipmentRiderMap === 'object') {
       this._latestInputs.equipmentRiderMap = { ...equipmentRiderMap };
     }
@@ -1905,7 +1906,9 @@ export class GovernanceEngine {
       // Reconcile a changed standing claim in the early-exit (no-media) path as well.
       const _claimManual = this._latestInputs?.equipmentRiderMap?.[active.equipment];
       if (_claimManual && _claimManual !== active.rider) {
-        this.swapCycleRider(_claimManual, { force: true });
+        const _swapAllowed = active.cycleState === 'init'
+          || (active.cycleState === 'ramp' && active.currentPhaseIndex === 0);
+        if (_swapAllowed) this.swapCycleRider(_claimManual, { force: true });
       }
       const filtered = this._filteredCadenceFor(active.equipment, this._now());
       const equipmentRpm = filtered.rpm;
@@ -2130,7 +2133,9 @@ export class GovernanceEngine {
     if (_activeCycle && _activeCycle.type === 'cycle') {
       const _claim = this._latestInputs?.equipmentRiderMap?.[_activeCycle.equipment];
       if (_claim && _claim !== _activeCycle.rider) {
-        this.swapCycleRider(_claim, { force: true });
+        const _swapAllowed = _activeCycle.cycleState === 'init'
+          || (_activeCycle.cycleState === 'ramp' && _activeCycle.currentPhaseIndex === 0);
+        if (_swapAllowed) this.swapCycleRider(_claim, { force: true });
       }
     }
     this._evaluateChallenges(activePolicy, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, evalContext);
