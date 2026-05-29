@@ -1093,6 +1093,7 @@ export class FitnessSession {
    */
   setEquipmentRider(equipmentId, userId) {
     if (!equipmentId || !userId) return;
+    if (!this._equipmentRider) return;
     const prev = this._equipmentRider.get(String(equipmentId)) || null;
     this._equipmentRider.set(String(equipmentId), String(userId));
     getLogger().info('fitness.rider.claimed', { equipmentId: String(equipmentId), userId: String(userId), previousRider: prev });
@@ -2361,6 +2362,7 @@ export class FitnessSession {
     // Note: Don't clear _sessionEndedCallbacks - they persist across sessions
     this.governanceEngine.reset();
     this._vibrationTrackers.forEach(t => t.reset());
+    this._equipmentRider?.clear();
     if (this.timeline) {
       this.timeline.reset(Date.now(), this.timeline.timebase?.intervalMs || 5000);
     }
