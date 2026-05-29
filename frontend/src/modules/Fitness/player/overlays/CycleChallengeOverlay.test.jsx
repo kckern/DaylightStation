@@ -122,7 +122,7 @@ describe('CycleChallengeOverlay — extended UI', () => {
     expect(root.getAttribute('aria-label')).not.toMatch(/segment/i);
   });
 
-  it('groups lower content inside a single __stack container', () => {
+  it('groups lower content inside a single __stack container without a rider name', () => {
     const ch = {
       ...baseChallenge,
       cycleState: 'init',
@@ -133,10 +133,26 @@ describe('CycleChallengeOverlay — extended UI', () => {
     const { container } = render(<CycleChallengeOverlay challenge={ch} />);
     const stack = container.querySelector('.cycle-challenge-overlay__stack');
     expect(stack).toBeTruthy();
-    expect(stack.querySelector('.cycle-challenge-overlay__rider-name')).toBeTruthy();
+    // Rider name is dropped — avatar is the sole identifier.
+    expect(container.querySelector('.cycle-challenge-overlay__rider-name')).toBeFalsy();
     expect(stack.querySelector('.cycle-challenge-overlay__phase-blocks')).toBeTruthy();
     expect(stack.querySelector('.cycle-challenge-overlay__countdown')).toBeTruthy();
     expect(stack.querySelector('.cycle-challenge-overlay__current-rpm')).toBeTruthy();
+  });
+
+  it('does not render the rider name text', () => {
+    render(<CycleChallengeOverlay challenge={baseChallenge} />);
+    expect(screen.queryByText('KC Kern')).not.toBeInTheDocument();
+  });
+
+  it('renders the heart-rate gate as a compact dot on the avatar', () => {
+    const { container } = render(<CycleChallengeOverlay challenge={baseChallenge} />);
+    const wrap = container.querySelector('.cycle-challenge-overlay__avatar-wrap');
+    expect(wrap).toBeTruthy();
+    // Dot lives with the avatar, not in the lower stack.
+    expect(wrap.querySelector('.cycle-base-req')).toBeTruthy();
+    // Compact mode hides the sentence label but keeps the status aria-label.
+    expect(wrap.querySelector('.cycle-base-req__label')).toBeFalsy();
   });
 
   it('does not render the countdown as a direct child of the overlay root', () => {

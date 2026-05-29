@@ -423,30 +423,37 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
         </div>
       )}
 
-      <button
-        type="button"
-        className={`cycle-challenge-overlay__avatar${swapAllowed ? ' is-clickable' : ''}`}
-        onClick={handleAvatarClick}
-        disabled={!swapAllowed}
-        aria-label={`Rider: ${riderName || 'unknown'}${swapAllowed ? ' — tap to swap' : ''}`}
-      >
-        <img
-          className="cycle-challenge-overlay__avatar-img"
-          src={riderAvatarUrl}
-          alt=""
-          onError={(e) => {
-            e.currentTarget.style.display = 'none';
-            const fallback = e.currentTarget.nextSibling;
-            if (fallback) fallback.style.display = 'flex';
-          }}
-        />
-        <span
-          className="cycle-challenge-overlay__avatar-initials"
-          style={{ display: 'none' }}
+      <div className="cycle-challenge-overlay__avatar-wrap">
+        <button
+          type="button"
+          className={`cycle-challenge-overlay__avatar${swapAllowed ? ' is-clickable' : ''}`}
+          onClick={handleAvatarClick}
+          disabled={!swapAllowed}
+          aria-label={`Rider: ${riderName || 'unknown'}${swapAllowed ? ' — tap to swap' : ''}`}
         >
-          {riderInitial}
-        </span>
-      </button>
+          <img
+            className="cycle-challenge-overlay__avatar-img"
+            src={riderAvatarUrl}
+            alt=""
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+              const fallback = e.currentTarget.nextSibling;
+              if (fallback) fallback.style.display = 'flex';
+            }}
+          />
+          <span
+            className="cycle-challenge-overlay__avatar-initials"
+            style={{ display: 'none' }}
+          >
+            {riderInitial}
+          </span>
+        </button>
+        <CycleBaseReqIndicator
+          compact
+          baseReqSatisfied={Boolean(challenge.baseReqSatisfiedForRider)}
+          waitingForBaseReq={waitingForBaseReq}
+        />
+      </div>
 
       {/* Lower content as one bottom-anchored flex column — guarantees the
           name, boost badge, phase blocks, countdown, and RPM readout stack
@@ -462,16 +469,6 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
             <span className="cycle-challenge-overlay__danger-countdown-cue">↑ pedal</span>
           </div>
         )}
-        {riderName && (
-          <div className="cycle-challenge-overlay__rider-name">
-            <span className="cycle-challenge-overlay__rider-name-text">{riderName}</span>
-            <CycleBaseReqIndicator
-              baseReqSatisfied={Boolean(challenge.baseReqSatisfiedForRider)}
-              waitingForBaseReq={waitingForBaseReq}
-            />
-          </div>
-        )}
-
         {showBoostBadge && (
           <div
             className="cycle-challenge-overlay__boost-badge"
