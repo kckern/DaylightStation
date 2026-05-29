@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import {
   getCycleOverlayVisuals,
@@ -16,15 +16,18 @@ import './CycleChallengeOverlay.scss';
  *
  * Circular ~220px widget that visualises the active cycle challenge:
  *   - Outer status ring track (faint full-circle outline)
- *   - Lower-hemisphere phase progress arc (9 → 6 → 3 o'clock). Color/opacity
- *     come from cycleState/dimFactor; switches to a flashing yellow depleting
- *     countdown when dangerActive (3-second grace before maintain → locked).
+ *   - Lower-hemisphere phase progress arc (9 → 6 → 3 o'clock). Monotonic phase
+ *     progress fill; color/opacity driven by cycleState/dimFactor only — never
+ *     repurposed for the danger countdown.
+ *   - Draining red danger ring (separate full circle at radius CYCLE_RING_RADIUS+4)
+ *     plus a numeric "⚠ Ns ↑ pedal" countdown, shown only during the 3-second
+ *     grace window before maintain → locked fires (dangerActive=true).
  *   - RPM gauge arc (top hemisphere) with tick marks, hi/lo markers, needle (Task 22)
  *   - Target RPM sign anchored to the hi-rpm tick on the gauge arc (Task 22)
- *   - Rider avatar centered, name below
+ *   - Rider avatar centered (sole rider identifier; heart-rate gate dot pinned to it)
  *   - Phase count blocks (rounded squares — one per phase, completed phases lit)
  *   - Up to 4 booster avatars at the corners (NE/SE/SW/NW) (Task 23)
- *   - Boost multiplier pill (×2.5) below the rider name when >1.0 (Task 23)
+ *   - Boost multiplier pill (×2.5) below the avatar when >1.0 (Task 23)
  *
  * Position (top / middle / bottom) is owned by ChallengeOverlayDeck — this
  * component renders inside the deck and does not manage its own placement.
@@ -34,6 +37,7 @@ const CYCLE_VIEWBOX_SIZE = 220;
 const CYCLE_RING_RADIUS = 100;
 const CYCLE_RING_CENTER = CYCLE_VIEWBOX_SIZE / 2;
 const CYCLE_RING_STROKE_WIDTH = 8;
+const DANGER_RING_RADIUS = CYCLE_RING_RADIUS + 4;
 
 // RPM gauge geometry — top hemisphere inside the outer ring.
 const CYCLE_GAUGE_RADIUS = 80;
@@ -79,7 +83,7 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
       phaseProgressPct: challenge?.phaseProgressPct
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [challenge?.cycleState, challenge?.dimFactor]);
+  }, [challenge?.cycleState, challenge?.dimFactor, challenge?.phaseProgressPct]);
 
   const handleAvatarClick = useCallback((event) => {
     event.stopPropagation();
@@ -93,6 +97,55 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
       onRequestSwap();
     }
   }, [challenge, onRequestSwap, logger]);
+
+  // --- Hooks that must be ABOVE the early return (Rules of Hooks) ------------
+  // challenge may be null here — use ?. throughout.
+  const riderId = (typeof challenge?.rider === 'string'
+    ? challenge.rider
+    : challenge?.rider?.id) || null;
+  const riderAvatarUrl = riderId
+    ? `/api/v1/static/img/users/${riderId}`
+    : '/api/v1/static/img/users/user';
+
+  const [imgFailed, setImgFailed] = useState(false);
+  useEffect(() => { setImgFailed(false); }, [riderAvatarUrl]);
+
+  const {
+    hiRpm, gaugeTicks, arcPath,
+    hiAngle, loAngle, hiTickInner, hiTickOuter, loTickInner, loTickOuter
+  } = useMemo(() => {
+    const _hiRpm = Number.isFinite(challenge?.currentPhase?.hiRpm) ? challenge.currentPhase.hiRpm : null;
+    const _loRpm = Number.isFinite(challenge?.currentPhase?.loRpm) ? challenge.currentPhase.loRpm : null;
+
+    const ticks = [];
+    for (let rpm = 0; rpm <= CYCLE_GAUGE_MAX_RPM; rpm += CYCLE_GAUGE_TICK_STEP) {
+      const angle = rpmToAngle(rpm, CYCLE_GAUGE_MAX_RPM);
+      ticks.push({
+        rpm,
+        inner: polarToCartesian(CYCLE_RING_CENTER, CYCLE_RING_CENTER, CYCLE_GAUGE_RADIUS - CYCLE_GAUGE_TICK_INNER_OFFSET, angle),
+        outer: polarToCartesian(CYCLE_RING_CENTER, CYCLE_RING_CENTER, CYCLE_GAUGE_RADIUS + CYCLE_GAUGE_TICK_OUTER_OFFSET, angle)
+      });
+    }
+
+    const aStart = polarToCartesian(CYCLE_RING_CENTER, CYCLE_RING_CENTER, CYCLE_GAUGE_RADIUS, Math.PI);
+    const aEnd = polarToCartesian(CYCLE_RING_CENTER, CYCLE_RING_CENTER, CYCLE_GAUGE_RADIUS, 2 * Math.PI);
+    const _arcPath = `M ${aStart.x} ${aStart.y} A ${CYCLE_GAUGE_RADIUS} ${CYCLE_GAUGE_RADIUS} 0 0 1 ${aEnd.x} ${aEnd.y}`;
+
+    const _hiAngle = _hiRpm != null ? rpmToAngle(_hiRpm, CYCLE_GAUGE_MAX_RPM) : null;
+    const _loAngle = _loRpm != null ? rpmToAngle(_loRpm, CYCLE_GAUGE_MAX_RPM) : null;
+    const mk = (angle, offIn, offOut) => angle != null ? {
+      inner: polarToCartesian(CYCLE_RING_CENTER, CYCLE_RING_CENTER, CYCLE_GAUGE_RADIUS - offIn, angle),
+      outer: polarToCartesian(CYCLE_RING_CENTER, CYCLE_RING_CENTER, CYCLE_GAUGE_RADIUS + offOut, angle)
+    } : { inner: null, outer: null };
+    const hi = mk(_hiAngle, CYCLE_GAUGE_HILO_INNER_OFFSET, CYCLE_GAUGE_HILO_OUTER_OFFSET);
+    const lo = mk(_loAngle, CYCLE_GAUGE_HILO_INNER_OFFSET, CYCLE_GAUGE_HILO_OUTER_OFFSET);
+
+    return {
+      hiRpm: _hiRpm, gaugeTicks: ticks, arcPath: _arcPath,
+      hiAngle: _hiAngle, loAngle: _loAngle,
+      hiTickInner: hi.inner, hiTickOuter: hi.outer, loTickInner: lo.inner, loTickOuter: lo.outer
+    };
+  }, [challenge?.currentPhase?.hiRpm, challenge?.currentPhase?.loRpm]);
 
   if (!visuals.visible || !challenge) {
     return null;
@@ -114,10 +167,6 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
     dangerProgress
   } = visuals;
 
-  const targetRpm = Number.isFinite(challenge.currentPhase?.hiRpm)
-    ? Math.round(challenge.currentPhase.hiRpm)
-    : null;
-
   const totalPhases = Number.isFinite(challenge.totalPhases)
     ? Math.max(0, challenge.totalPhases)
     : 0;
@@ -127,90 +176,15 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
   const riderName = (typeof challenge.rider === 'string'
     ? challenge.rider
     : (challenge.rider?.name || challenge.rider?.id)) || '';
-  const riderId = (typeof challenge.rider === 'string'
-    ? challenge.rider
-    : challenge.rider?.id) || null;
   const riderInitial = firstInitial(riderName);
-  const riderAvatarUrl = riderId
-    ? `/api/v1/static/img/users/${riderId}`
-    : '/api/v1/static/img/users/user';
 
   // --- RPM gauge geometry (Task 22) -----------------------------------------
-  const hiRpm = Number.isFinite(challenge.currentPhase?.hiRpm)
-    ? challenge.currentPhase.hiRpm
-    : null;
-  const loRpm = Number.isFinite(challenge.currentPhase?.loRpm)
-    ? challenge.currentPhase.loRpm
-    : null;
-  const currentRpm = Number.isFinite(challenge.currentRpm)
-    ? challenge.currentRpm
-    : 0;
-
-  const gaugeTicks = [];
-  for (let rpm = 0; rpm <= CYCLE_GAUGE_MAX_RPM; rpm += CYCLE_GAUGE_TICK_STEP) {
-    const angle = rpmToAngle(rpm, CYCLE_GAUGE_MAX_RPM);
-    const inner = polarToCartesian(
-      CYCLE_RING_CENTER,
-      CYCLE_RING_CENTER,
-      CYCLE_GAUGE_RADIUS - CYCLE_GAUGE_TICK_INNER_OFFSET,
-      angle
-    );
-    const outer = polarToCartesian(
-      CYCLE_RING_CENTER,
-      CYCLE_RING_CENTER,
-      CYCLE_GAUGE_RADIUS + CYCLE_GAUGE_TICK_OUTER_OFFSET,
-      angle
-    );
-    gaugeTicks.push({ rpm, inner, outer });
-  }
-
-  const arcStart = polarToCartesian(
-    CYCLE_RING_CENTER,
-    CYCLE_RING_CENTER,
-    CYCLE_GAUGE_RADIUS,
-    Math.PI
-  );
-  const arcEnd = polarToCartesian(
-    CYCLE_RING_CENTER,
-    CYCLE_RING_CENTER,
-    CYCLE_GAUGE_RADIUS,
-    2 * Math.PI
-  );
-  const arcPath =
-    `M ${arcStart.x} ${arcStart.y} ` +
-    `A ${CYCLE_GAUGE_RADIUS} ${CYCLE_GAUGE_RADIUS} 0 0 1 ${arcEnd.x} ${arcEnd.y}`;
-
-  const hiAngle = hiRpm != null ? rpmToAngle(hiRpm, CYCLE_GAUGE_MAX_RPM) : null;
-  const loAngle = loRpm != null ? rpmToAngle(loRpm, CYCLE_GAUGE_MAX_RPM) : null;
-
-  const hiTickInner = hiAngle != null
-    ? polarToCartesian(
-        CYCLE_RING_CENTER, CYCLE_RING_CENTER,
-        CYCLE_GAUGE_RADIUS - CYCLE_GAUGE_HILO_INNER_OFFSET, hiAngle
-      )
-    : null;
-  const hiTickOuter = hiAngle != null
-    ? polarToCartesian(
-        CYCLE_RING_CENTER, CYCLE_RING_CENTER,
-        CYCLE_GAUGE_RADIUS + CYCLE_GAUGE_HILO_OUTER_OFFSET, hiAngle
-      )
-    : null;
-  const loTickInner = loAngle != null
-    ? polarToCartesian(
-        CYCLE_RING_CENTER, CYCLE_RING_CENTER,
-        CYCLE_GAUGE_RADIUS - CYCLE_GAUGE_HILO_INNER_OFFSET, loAngle
-      )
-    : null;
-  const loTickOuter = loAngle != null
-    ? polarToCartesian(
-        CYCLE_RING_CENTER, CYCLE_RING_CENTER,
-        CYCLE_GAUGE_RADIUS + CYCLE_GAUGE_HILO_OUTER_OFFSET, loAngle
-      )
-    : null;
+  const currentRpm = Number.isFinite(challenge.currentRpm) ? challenge.currentRpm : 0;
 
   const needleAngle = rpmToAngle(currentRpm, CYCLE_GAUGE_MAX_RPM);
   const needleDeg = ((needleAngle - 1.5 * Math.PI) * 180) / Math.PI;
   const atHi = hiRpm != null && currentRpm >= hiRpm;
+  const targetRpm = hiRpm != null ? Math.round(hiRpm) : null;
 
   // Target label anchor — sits just outside the hi-rpm tick on the arc.
   // Fallback (no hi) is top-center at the same radial offset.
@@ -226,9 +200,9 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
   const targetTopPct = (targetAnchor.y / CYCLE_VIEWBOX_SIZE) * 100;
 
   // Lower-hemisphere phase progress arc geometry (9 → 6 → 3 o'clock).
-  // The arc's color, opacity, and fill fraction switch when dangerActive is
-  // true: the depleting `dangerProgress` value drives a flashing yellow arc
-  // counting down the 3-second grace window before maintain → locked fires.
+  // Fill fraction is always driven by phaseProgress (monotonic within a phase).
+  // Color/opacity are state-driven via ringColor/ringOpacity. Danger handling
+  // lives entirely on the separate __danger-ring circle rendered below.
   const phaseArcStartPt = polarToCartesian(
     CYCLE_RING_CENTER, CYCLE_RING_CENTER, CYCLE_RING_RADIUS, Math.PI
   );
@@ -236,15 +210,23 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
     CYCLE_RING_CENTER, CYCLE_RING_CENTER, CYCLE_RING_RADIUS, 0
   );
   const phaseArcLen = Math.PI * CYCLE_RING_RADIUS; // half-circumference
-  const phaseArcFraction = dangerActive ? dangerProgress : phaseProgress;
-  const phaseArcDashOffset = phaseArcLen * (1 - phaseArcFraction);
+  // Phase arc is progress ONLY — monotonic, never repurposed for the danger
+  // countdown (that lives on the separate __danger-ring). It holds when paused.
+  const phaseArcDashOffset = phaseArcLen * (1 - phaseProgress);
   // Sweep flag = 0 with start at 9 o'clock and end at 3 o'clock routes through
   // the bottom (6 o'clock) in SVG y-down coordinates.
   const phaseArcPath =
     `M ${phaseArcStartPt.x} ${phaseArcStartPt.y} ` +
     `A ${CYCLE_RING_RADIUS} ${CYCLE_RING_RADIUS} 0 0 0 ${phaseArcEndPt.x} ${phaseArcEndPt.y}`;
-  const phaseArcStroke = dangerActive ? '#fbbf24' : ringColor;
-  const phaseArcOpacity = dangerActive ? 1 : ringOpacity;
+
+  // Draining danger ring — a full circle just outside the status track that
+  // depletes clockwise from 12 o'clock as the 3-second grace runs out. Distinct
+  // radius + color so it reads as a countdown timer, not as phase progress.
+  const dangerRingCircumference = 2 * Math.PI * DANGER_RING_RADIUS;
+  const dangerRingDashOffset = dangerRingCircumference * (1 - dangerProgress);
+  const dangerCountdownSec = Number.isFinite(dangerRemainingMs)
+    ? Math.max(0, Math.ceil(dangerRemainingMs / 1000))
+    : null;
 
   // --- Boosters + boost multiplier (Task 23) --------------------------------
   const boosters = getBoosterAvatarSlots(
@@ -272,7 +254,7 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
   const dangerSuffix = dangerActive && Number.isFinite(dangerRemainingMs)
     ? `, danger — ${Math.ceil(dangerRemainingMs / 1000)}s to lock`
     : '';
-  const ariaLabel = `Cycle challenge — ${challenge.cycleState || 'state unknown'}, segment ${Math.min(totalPhases, currentPhaseIndex + 1)} of ${totalPhases}${dangerSuffix}`;
+  const ariaLabel = `Cycle challenge — ${challenge.cycleState || 'state unknown'}, phase ${Math.min(totalPhases, currentPhaseIndex + 1)} of ${totalPhases}${dangerSuffix}`;
 
   return (
     <div
@@ -371,21 +353,34 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
           />
         </g>
 
-        {/* Lower-hemisphere phase progress arc (9 → 6 → 3 o'clock).
-            When dangerActive is true the arc shows a depleting countdown in
-            flashing yellow representing the 3-second grace window before the
-            engine transitions maintain → locked. */}
+        {/* Phase progress arc — reflects phaseProgress only (monotonic).
+            The separate __danger-ring (below) handles the lockout countdown. */}
         <path
-          className={`cycle-challenge-overlay__phase-arc${dangerActive ? ' cycle-challenge-overlay__phase-arc--danger' : ''}`}
+          className="cycle-challenge-overlay__phase-arc"
           d={phaseArcPath}
           fill="none"
-          stroke={phaseArcStroke}
+          stroke={ringColor}
           strokeWidth={CYCLE_RING_STROKE_WIDTH}
           strokeLinecap="round"
           strokeDasharray={`${phaseArcLen}px`}
           strokeDashoffset={`${phaseArcDashOffset}px`}
-          style={{ opacity: phaseArcOpacity }}
+          style={{ opacity: ringOpacity }}
         />
+        {dangerActive && (
+          <circle
+            className="cycle-challenge-overlay__danger-ring"
+            cx={CYCLE_RING_CENTER}
+            cy={CYCLE_RING_CENTER}
+            r={DANGER_RING_RADIUS}
+            fill="none"
+            stroke="#ef4444"
+            strokeWidth="3"
+            strokeLinecap="butt"
+            strokeDasharray={`${dangerRingCircumference}px`}
+            strokeDashoffset={`${dangerRingDashOffset}px`}
+            transform={`rotate(-90 ${CYCLE_RING_CENTER} ${CYCLE_RING_CENTER})`}
+          />
+        )}
       </svg>
 
       {targetRpm !== null && (
@@ -398,45 +393,49 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
         </div>
       )}
 
-      <button
-        type="button"
-        className={`cycle-challenge-overlay__avatar${swapAllowed ? ' is-clickable' : ''}`}
-        onClick={handleAvatarClick}
-        disabled={!swapAllowed}
-        aria-label={`Rider: ${riderName || 'unknown'}${swapAllowed ? ' — tap to swap' : ''}`}
-      >
-        <img
-          className="cycle-challenge-overlay__avatar-img"
-          src={riderAvatarUrl}
-          alt=""
-          onError={(e) => {
-            e.currentTarget.style.display = 'none';
-            const fallback = e.currentTarget.nextSibling;
-            if (fallback) fallback.style.display = 'flex';
-          }}
-        />
-        <span
-          className="cycle-challenge-overlay__avatar-initials"
-          style={{ display: 'none' }}
+      <div className="cycle-challenge-overlay__avatar-wrap">
+        <button
+          type="button"
+          className={`cycle-challenge-overlay__avatar${swapAllowed ? ' is-clickable' : ''}`}
+          onClick={handleAvatarClick}
+          disabled={!swapAllowed}
+          aria-label={`Rider: ${riderName || 'unknown'}${swapAllowed ? ' — tap to swap' : ''}`}
         >
-          {riderInitial}
-        </span>
-      </button>
+          {!imgFailed && (
+            <img
+              className="cycle-challenge-overlay__avatar-img"
+              src={riderAvatarUrl}
+              alt=""
+              onError={() => setImgFailed(true)}
+            />
+          )}
+          {imgFailed && (
+            <span className="cycle-challenge-overlay__avatar-initials">
+              {riderInitial}
+            </span>
+          )}
+        </button>
+        <CycleBaseReqIndicator
+          compact
+          baseReqSatisfied={Boolean(challenge.baseReqSatisfiedForRider)}
+          waitingForBaseReq={waitingForBaseReq}
+        />
+      </div>
 
       {/* Lower content as one bottom-anchored flex column — guarantees the
           name, boost badge, phase blocks, countdown, and RPM readout stack
           without overlap and stay centered regardless of overlay diameter. */}
       <div className="cycle-challenge-overlay__stack">
-        {riderName && (
-          <div className="cycle-challenge-overlay__rider-name">
-            <span className="cycle-challenge-overlay__rider-name-text">{riderName}</span>
-            <CycleBaseReqIndicator
-              baseReqSatisfied={Boolean(challenge.baseReqSatisfiedForRider)}
-              waitingForBaseReq={waitingForBaseReq}
-            />
+        {dangerActive && dangerCountdownSec !== null && (
+          <div
+            className="cycle-challenge-overlay__danger-countdown"
+            role="alert"
+            aria-label={`Lockout in ${dangerCountdownSec} seconds — pedal faster`}
+          >
+            <span className="cycle-challenge-overlay__danger-countdown-time">⚠ {dangerCountdownSec}s</span>
+            <span className="cycle-challenge-overlay__danger-countdown-cue">↑ pedal</span>
           </div>
         )}
-
         {showBoostBadge && (
           <div
             className="cycle-challenge-overlay__boost-badge"
@@ -450,7 +449,6 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
           <CompletionCountBlocks
             targetCount={totalPhases}
             actualCount={Math.max(0, currentPhaseIndex)}
-            metUsers={[]}
             containerClassName="cycle-challenge-overlay__phase-blocks"
             blockClassName="cycle-challenge-overlay__phase-block"
             completeBlockClassName="cycle-challenge-overlay__phase-block--complete"
