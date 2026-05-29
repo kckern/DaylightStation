@@ -152,13 +152,17 @@ Responsibilities:
 - The `CycleChallengeOverlay` requires no changes; it already renders `challenge.rider`,
   and the correct rider now flows in.
 
-### Frontend — RPM card
+### Frontend — RPM avatar
 
-- `RpmDeviceCard` / `RpmDeviceAvatar` for the NiceDay renders the claimed rider's avatar
-  (`/api/v1/static/img/users/{userId}`) when `equipmentRider[equipmentId]` is set, live,
-  even with no challenge active. Falls back to the existing device-color avatar when
-  unclaimed. Requires threading `equipmentRider` into the panel that renders the card
-  (e.g. `FitnessUsers.jsx`).
+- The live player renders RPM equipment in the `rpm-group` block of
+  `FitnessUsers.jsx` using `@/modules/Fitness/components/RpmDeviceAvatar.jsx` (props
+  `avatarSrc` / `avatarAlt`). When `equipmentRider[equipmentId]` is set, swap the avatar
+  from the equipment image to the claimed rider's user avatar
+  (`/static/img/users/{userId}`), live, even with no challenge active. Falls back to the
+  equipment image when unclaimed (and via `fallbackSrc` if the user image 404s).
+
+  > Note: supersedes an earlier draft that referenced `RealtimeCards/RpmDeviceCard` —
+  > that component is not the live render path.
 
 ## Data flow
 
@@ -172,7 +176,7 @@ Tuya button press
   → FitnessSession.setEquipmentRider(equipmentId, userId)
   → equipmentRiderMap in engine.evaluate() inputs
   → GovernanceEngine cycle-rider selection / live swap
-  → CycleChallengeOverlay rider avatar + RpmDeviceCard rider avatar
+  → CycleChallengeOverlay rider avatar + FitnessUsers rpm-group rider avatar
 ```
 
 ## Edge cases
