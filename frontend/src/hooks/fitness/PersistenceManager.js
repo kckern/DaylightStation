@@ -918,12 +918,24 @@ export class PersistenceManager {
       if ((this._debugValidationCount = (this._debugValidationCount || 0) + 1) <= 3) {
         console.error(`⚠️ VALIDATION_FAIL [${this._debugValidationCount}/3]: ${sessionData?.sessionId}, reason="${validation?.reason}"`, validation);
       }
-      getLogger().warn('fitness.persistence.validation_failed', {
+      const validationDetail = {
         sessionId: sessionData?.sessionId,
         reason: validation?.reason,
         rosterLength: (Array.isArray(sessionData?.roster) ? sessionData.roster.length : 0),
         hasPriorSave: this.hasSuccessfulSave(sessionData?.sessionId)
-      });
+      };
+      // Benign "not yet persistable" reasons fire on every early-session autosave —
+      // rate-limit them to info+aggregate instead of warn-spamming the log.
+      const BENIGN_VALIDATION_REASONS = new Set([
+        'session-too-short',
+        'session-too-short-and-empty',
+        'insufficient-ticks'
+      ]);
+      if (BENIGN_VALIDATION_REASONS.has(validation?.reason)) {
+        getLogger().sampled('fitness.persistence.validation_skipped', validationDetail, { maxPerMinute: 4, aggregate: true });
+      } else {
+        getLogger().warn('fitness.persistence.validation_failed', validationDetail);
+      }
       this._log('persist_validation_fail', { reason: validation.reason, detail: validation });
       return false;
     }
