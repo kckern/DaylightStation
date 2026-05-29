@@ -27,7 +27,7 @@ import { PersistenceManager } from './PersistenceManager.js';
 const FITNESS_TIMEOUTS = {
   inactive: 60000,
   remove: 1800000, // 30 minutes — keeps session alive during breaks
-  rpmZero: 3000,
+  rpmZero: 1200,  // zero RPM ~1.2s after the last cadence broadcast (silence case)
   emptySession: 60000, // 6A: Time (ms) with empty roster before auto-ending session
   sessionEndCooldown: 600000 // 10 minutes — prevents duplicate sessions from leftover HR data
 };

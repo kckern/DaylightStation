@@ -99,28 +99,33 @@ describe('DeviceManager.pruneStaleDevices — zeros cadence after rpmZero window
     vi.useRealTimers();
   });
 
-  it('resets cadence to 0 within rpmZero after pedaling stops, even if non-cadence frames keep arriving', () => {
+  it('resets cadence to 0 within the rpmZero window after pedaling stops', () => {
     const t0 = 1_000_000;
     vi.setSystemTime(t0);
     const mgr = new DeviceManager();
-
-    // Rider pedals: cadence frame arrives.
     mgr.registerDevice({ id: 'bike-1', type: 'cadence', cadence: 55, lastSeen: t0 });
     expect(mgr.getDevice('bike-1').cadence).toBe(55);
 
-    // 1 second later: battery-only ANT+ page arrives (no cadence in payload).
-    const t1 = t0 + 1_000;
-    vi.setSystemTime(t1);
-    mgr.registerDevice({ id: 'bike-1', batteryLevel: 80, lastSeen: t1 });
+    // Battery-only page 1s later (no cadence in payload).
+    vi.setSystemTime(t0 + 1_000);
+    mgr.registerDevice({ id: 'bike-1', batteryLevel: 80, lastSeen: t0 + 1_000 });
 
-    // 4 seconds later: another non-cadence page. Past the 3s rpmZero threshold now.
-    const t2 = t0 + 4_000;
-    vi.setSystemTime(t2);
-    mgr.registerDevice({ id: 'bike-1', batteryLevel: 80, lastSeen: t2 });
-
-    // Prune should detect the stale cadence and zero it.
-    mgr.pruneStaleDevices({ inactive: 60_000, remove: 1_800_000, rpmZero: 3_000 });
-
+    // 1.3s after last cadence: past the new 1200ms rpmZero window.
+    vi.setSystemTime(t0 + 1_300);
+    mgr.registerDevice({ id: 'bike-1', batteryLevel: 80, lastSeen: t0 + 1_300 });
+    mgr.pruneStaleDevices({ inactive: 60_000, remove: 1_800_000, rpmZero: 1_200 });
     expect(mgr.getDevice('bike-1').cadence).toBe(0);
+  });
+
+  it('does NOT zero cadence before the rpmZero window (no false-zero during slow pedaling)', () => {
+    const t0 = 2_000_000;
+    vi.setSystemTime(t0);
+    const mgr = new DeviceManager();
+    mgr.registerDevice({ id: 'bike-2', type: 'cadence', cadence: 40, lastSeen: t0 });
+
+    // 0.8s later, still within the 1200ms window.
+    vi.setSystemTime(t0 + 800);
+    mgr.pruneStaleDevices({ inactive: 60_000, remove: 1_800_000, rpmZero: 1_200 });
+    expect(mgr.getDevice('bike-2').cadence).toBe(40);
   });
 });
