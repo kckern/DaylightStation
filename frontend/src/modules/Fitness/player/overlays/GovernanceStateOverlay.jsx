@@ -554,7 +554,8 @@ const GovernanceStateOverlay = ({
   lockRows = [],
   warningOffenders = [],
   onRequestSwap = null,
-  swapAllowed = false
+  swapAllowed = false,
+  voiceMemoOpen = false
 }) => {
   // New path: display prop from useGovernanceDisplay
   // Legacy path: overlay + lockRows + warningOffenders
@@ -598,7 +599,7 @@ const GovernanceStateOverlay = ({
     if (normalizedStatus === 'warning') {
       return (
         <>
-          <GovernanceAudioPlayer trackKey={audioTrackKey} />
+          <GovernanceAudioPlayer trackKey={audioTrackKey} paused={voiceMemoOpen} />
           <GovernanceWarningOverlay
             countdown={countdown}
             countdownTotal={display.gracePeriodTotal}
@@ -631,7 +632,7 @@ const GovernanceStateOverlay = ({
 
       return (
         <>
-          <GovernanceAudioPlayer trackKey={audioTrackKey} />
+          <GovernanceAudioPlayer trackKey={audioTrackKey} paused={voiceMemoOpen} />
           <div className="governance-overlay governance-overlay--locked">
             <div className="governance-overlay__panel governance-lock governance-lock--cycle">
               <div className="governance-lock__title">{cycleLockData.title}</div>
@@ -688,7 +689,7 @@ const GovernanceStateOverlay = ({
     // pending, locked, challenge-failed
     return (
       <>
-        <GovernanceAudioPlayer trackKey={audioTrackKey} />
+        <GovernanceAudioPlayer trackKey={audioTrackKey} paused={voiceMemoOpen} />
         <GovernancePanelOverlay display={display} />
       </>
     );
@@ -698,7 +699,7 @@ const GovernanceStateOverlay = ({
   if (overlay.category === 'governance-warning-progress') {
     return (
       <>
-        <GovernanceAudioPlayer trackKey={audioTrackKey} />
+        <GovernanceAudioPlayer trackKey={audioTrackKey} paused={voiceMemoOpen} />
         <GovernanceWarningOverlay
           countdown={countdown}
           countdownTotal={overlay.countdownTotal}
@@ -712,7 +713,7 @@ const GovernanceStateOverlay = ({
   if (overlay.category === 'governance') {
     return (
       <>
-        <GovernanceAudioPlayer trackKey={audioTrackKey} />
+        <GovernanceAudioPlayer trackKey={audioTrackKey} paused={voiceMemoOpen} />
         <GovernancePanelOverlay
           overlay={overlay}
           lockRows={lockRows}
@@ -723,7 +724,7 @@ const GovernanceStateOverlay = ({
 
   return (
     <>
-      <GovernanceAudioPlayer trackKey={audioTrackKey} />
+      <GovernanceAudioPlayer trackKey={audioTrackKey} paused={voiceMemoOpen} />
       <GenericOverlay overlay={overlay} />
     </>
   );
@@ -754,7 +755,8 @@ GovernanceStateOverlay.propTypes = {
   lockRows: PropTypes.array,
   warningOffenders: PropTypes.array,
   onRequestSwap: PropTypes.func,
-  swapAllowed: PropTypes.bool
+  swapAllowed: PropTypes.bool,
+  voiceMemoOpen: PropTypes.bool
 };
 
 export default GovernanceStateOverlay;
