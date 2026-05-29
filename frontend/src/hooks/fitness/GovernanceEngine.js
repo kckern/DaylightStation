@@ -2721,7 +2721,7 @@ export class GovernanceEngine {
       const phase = active.generatedPhases[active.currentPhaseIndex];
       const DANGER_GRACE_MS = 3000;
       const DANGER_RECOVERY_MS = 500;
-      const nowMs = ctx.now ?? this._now();
+      const nowMs = now;
 
       if (ctx.equipmentRpm < phase.loRpm) {
         // Below lo — arm or continue danger. Any dip cancels a pending recovery
