@@ -12,6 +12,12 @@ import { useEffect, useRef, useState, useCallback } from 'react';
  * available, so a stall is a client-side resolution failure that self-heals on
  * retry; only after the retry budget is spent do we surface a manual affordance.
  *
+ * Consumer contract: when `attempt` changes, the consumer must clear any
+ * `recoverableError` it is feeding back in (it remounts on the `attempt` key,
+ * which re-fetches). This keeps each real failure to a single budget unit — a
+ * persistently-true `recoverableError` is treated as the error still occurring
+ * and will spend the budget at the `retryDelayMs` cadence until exhausted.
+ *
  * Inputs:
  *   hasTrack          boolean — true when a track is actually playing
  *   playlistId        string|number|null — selected playlist; null => idle
