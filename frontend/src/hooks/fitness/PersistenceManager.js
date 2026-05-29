@@ -556,6 +556,7 @@ export class PersistenceManager {
     this._lastSaveAt = 0;
     this._lastSuccessfulSaveAt = 0;
     this._hasSuccessfulSave = {};
+    this._lastSavePromise = null;
 
     // Session lock state: null = unknown, true = leader, false = not leader
     this._sessionLockGranted = null;
@@ -652,6 +653,15 @@ export class PersistenceManager {
    */
   getLastSaveTime() {
     return this._lastSaveAt;
+  }
+
+  /**
+   * Promise that settles when the most recent save_session POST completes
+   * (resolves even on failure). Resolves immediately if no save is in flight.
+   * @returns {Promise<void>}
+   */
+  whenLastSaveSettled() {
+    return this._lastSavePromise || Promise.resolve();
   }
 
   // -------------------- Session Lock --------------------
@@ -1133,7 +1143,7 @@ export class PersistenceManager {
       console.error(`📤 SESSION_SAVE [${this._debugSaveCount}/5]: ${persistSessionData.session?.id}, ticks=${tickCount}, series=${seriesCount}`);
     }
 
-    this._enrichMissingPlexMetadata(persistSessionData.timeline?.events)
+    this._lastSavePromise = this._enrichMissingPlexMetadata(persistSessionData.timeline?.events)
       .then(() => {
         // Build summary AFTER enrichment so grandparentId/parentId are populated
         if (summaryInputs) {
@@ -1159,7 +1169,8 @@ export class PersistenceManager {
       })
       .finally(() => {
         this._saveTriggered = false;
-      });
+      })
+      .catch(() => {});  // settle (never reject) so awaiters always resume
 
     return true;
   }
