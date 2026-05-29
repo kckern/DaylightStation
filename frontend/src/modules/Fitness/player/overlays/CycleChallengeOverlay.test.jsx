@@ -154,4 +154,24 @@ describe('CycleChallengeOverlay — extended UI', () => {
     expect(group).toBeTruthy();
     expect(group.getAttribute('style') || '').toMatch(/rotate\(/);
   });
+
+  it('phase arc dashoffset reflects phaseProgress, not dangerProgress, when dangerActive', () => {
+    const PHASE_ARC_LEN = Math.PI * 100; // π × CYCLE_RING_RADIUS(100)
+    const ch = {
+      ...baseChallenge,
+      cycleState: 'maintain',
+      initRemainingMs: null,
+      rampRemainingMs: null,
+      phaseProgressPct: 0.4,
+      dangerActive: true,
+      dangerRemainingMs: 2700,
+      dangerProgress: 0.9
+    };
+    const { container } = render(<CycleChallengeOverlay challenge={ch} />);
+    const arc = container.querySelector('.cycle-challenge-overlay__phase-arc');
+    const offset = parseFloat(arc.getAttribute('stroke-dashoffset'));
+    // dashoffset = len × (1 − phaseProgress) = len × 0.6, NOT len × (1 − 0.9).
+    expect(offset).toBeCloseTo(PHASE_ARC_LEN * (1 - 0.4), 1);
+    expect(offset).not.toBeCloseTo(PHASE_ARC_LEN * (1 - 0.9), 1);
+  });
 });
