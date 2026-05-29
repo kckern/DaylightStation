@@ -20,7 +20,7 @@ Spec: `docs/superpowers/specs/2026-05-29-fitness-toast-notifications-design.md`
 1. The slot's latest-wins + id-guard logic is extracted to a **pure module** `fitnessToastSlot.js` (testable without React), instead of an untestable provider-internal reducer.
 2. `buildRiderToast` takes **resolver functions** `{ resolveUserName, resolveEquipmentName }` (not the raw `fitnessConfiguration`), keeping it pure/testable. The real resolvers (`getDisplayName`, `equipmentConfig`) are supplied at the call site.
 3. **TDZ/staleness:** `getDisplayName` is declared *after* the WS effect in `FitnessContext`, so it must NOT go in the WS effect's dep array. The rider→toast handler is reached through a **ref** (`riderToastRef`) populated by a later effect — robust against both the temporal-dead-zone and stale closures, matching the ref pattern the WS effect already uses (`fitnessSessionRef`, `reconnectCountRef`).
-4. **Mount gate:** `FitnessPlayerOverlay` early-returns `null` when `!hasAnyOverlay`. The toast MUST be added to that boolean or it never renders.
+4. **Root mount (revised per user direction):** the toast mounts in `FitnessApp.jsx`'s root `GlobalOverlays` component (next to `VoiceMemoOverlay`), NOT in `FitnessPlayerOverlay` — so it shows in any view (menu, screen, player), even with no video playing. Consequently the toast uses `position: fixed` (viewport-centered), independent of any video container.
 
 ## Testing in a worktree (read before running any test command)
 
@@ -44,7 +44,7 @@ cd "$WT" && "$VITEST" run --config /opt/Code/DaylightStation/vitest.config.mjs <
 | `frontend/src/modules/Fitness/player/overlays/FitnessToast.scss` | Centered layout, countdown bar, fade+collapse, variants | Create |
 | `frontend/src/modules/Fitness/player/overlays/FitnessToast.test.jsx` | Component tests (fake timers) | Create |
 | `frontend/src/context/FitnessContext.jsx` | Toast state + push/dismiss + ref-bridged rider_select trigger + value exposure | Modify |
-| `frontend/src/modules/Fitness/player/FitnessPlayerOverlay.jsx` | Mount `FitnessToast`; add to `hasAnyOverlay` | Modify |
+| `frontend/src/Apps/FitnessApp.jsx` | Mount `FitnessToast` in the root `GlobalOverlays` (view-agnostic) | Modify |
 
 ---
 
@@ -592,58 +592,85 @@ git commit -m "feat(fitness): toast slot state + rider_select toast trigger in F
 
 ---
 
-### Task 5: Mount `FitnessToast` in `FitnessPlayerOverlay`
+### Task 5: Mount `FitnessToast` at the FitnessApp root (view-agnostic)
 
 **Files:**
-- Modify: `frontend/src/modules/Fitness/player/FitnessPlayerOverlay.jsx`
+- Modify: `frontend/src/Apps/FitnessApp.jsx` (the root `GlobalOverlays` component, ~line 1382)
+- Modify: `frontend/src/modules/Fitness/player/overlays/FitnessToast.scss` (position: absolute → fixed)
 
-`FitnessPlayerOverlay` early-returns `null` when `!hasAnyOverlay`, so the toast must be added to that boolean AND rendered. No isolated test (mounting this overlay needs the full context); verify by inspection + the build sweep.
+The toast must work in ANY view (menu, screen, player) — even with no video playing — so it mounts in the root `GlobalOverlays` (which already renders `VoiceMemoOverlay` via `useFitnessContext()`), NOT in the playback-only `FitnessPlayerOverlay`. Because it's now at the app root, it uses `position: fixed` so it centers in the viewport regardless of ancestor positioning. No isolated test (mounting needs the full provider); verify by inspection + the feature test sweep.
 
-- [ ] **Step 1: Import the component**
+- [ ] **Step 1: Switch the toast to viewport-fixed positioning**
 
-With the other overlay imports at the top of `frontend/src/modules/Fitness/player/FitnessPlayerOverlay.jsx`, add:
+In `frontend/src/modules/Fitness/player/overlays/FitnessToast.scss`, change the `.fitness-toast` positioning from `absolute` to `fixed` so it centers in the viewport from the root mount:
 
-```javascript
-import FitnessToast from './overlays/FitnessToast.jsx';
+```scss
+.fitness-toast {
+  position: fixed;
+  top: 50%;
+  left: 50%;
 ```
 
-- [ ] **Step 2: Read the toast from context**
+(Leave the `transform: translate(-50%, -50%) ...`, z-index, and everything else unchanged.)
 
-In the component body (where `fitnessCtx` is already obtained — it is used throughout, e.g. `fitnessCtx?.voiceMemoOverlayState`), add a local:
+- [ ] **Step 2: Import the component in FitnessApp**
+
+With the other imports at the top of `frontend/src/Apps/FitnessApp.jsx` (near `import VoiceMemoOverlay from '../modules/Fitness/player/overlays/VoiceMemoOverlay.jsx';`), add:
 
 ```javascript
-  const fitnessToast = fitnessCtx?.fitnessToast || null;
+import FitnessToast from '../modules/Fitness/player/overlays/FitnessToast.jsx';
 ```
 
-- [ ] **Step 3: Include the toast in the `hasAnyOverlay` gate**
+- [ ] **Step 3: Render the toast inside `GlobalOverlays`**
 
-In the `const hasAnyOverlay = Boolean( ... )` expression (~line 200), add `fitnessToast` as another OR term, e.g. change the closing of the `Boolean(...)` list to include it:
+`GlobalOverlays` (~line 1382) currently returns a single `<VoiceMemoOverlay .../>`. Wrap its return in a fragment and add the toast so both render at the root. Replace:
 
 ```javascript
-  const hasAnyOverlay = Boolean(
-    primaryOverlay ||
-    voiceMemoOverlayOpen ||
-    challengeOverlay ||
-    (!challengeOverlay && nextChallengeOverlay) ||
-    cycleOverlay ||
-    isSwapModalOpen ||
-    showFullscreenVitals ||
-    showCycleDemo ||
-    fitnessToast
+  return (
+    <VoiceMemoOverlay
+      overlayState={fitnessCtx.voiceMemoOverlayState}
+      voiceMemos={fitnessCtx.voiceMemos}
+      onClose={fitnessCtx.closeVoiceMemoOverlay}
+      onOpenReview={fitnessCtx.openVoiceMemoReview}
+      onOpenList={fitnessCtx.openVoiceMemoList}
+      onOpenRedo={fitnessCtx.openVoiceMemoCapture}
+      onRemoveMemo={fitnessCtx.removeVoiceMemoFromSession}
+      onAddMemo={fitnessCtx.addVoiceMemoToSession}
+      onReplaceMemo={fitnessCtx.replaceVoiceMemoInSession}
+      sessionId={fitnessCtx.fitnessSession?.sessionId || fitnessCtx.fitnessSessionInstance?.sessionId}
+      playerRef={fitnessCtx.videoPlayerRef}
+      preferredMicrophoneId={fitnessCtx.preferredMicrophoneId}
+    />
   );
 ```
 
-- [ ] **Step 4: Render the toast in the returned fragment**
-
-In the `return ( <> ... </> )` block, add the toast alongside the other overlays (e.g. right after `{primaryOverlay}`):
+with:
 
 ```javascript
-      <FitnessToast toast={fitnessToast} onDone={fitnessCtx?.dismissFitnessToast} />
+  return (
+    <>
+      <VoiceMemoOverlay
+        overlayState={fitnessCtx.voiceMemoOverlayState}
+        voiceMemos={fitnessCtx.voiceMemos}
+        onClose={fitnessCtx.closeVoiceMemoOverlay}
+        onOpenReview={fitnessCtx.openVoiceMemoReview}
+        onOpenList={fitnessCtx.openVoiceMemoList}
+        onOpenRedo={fitnessCtx.openVoiceMemoCapture}
+        onRemoveMemo={fitnessCtx.removeVoiceMemoFromSession}
+        onAddMemo={fitnessCtx.addVoiceMemoToSession}
+        onReplaceMemo={fitnessCtx.replaceVoiceMemoInSession}
+        sessionId={fitnessCtx.fitnessSession?.sessionId || fitnessCtx.fitnessSessionInstance?.sessionId}
+        playerRef={fitnessCtx.videoPlayerRef}
+        preferredMicrophoneId={fitnessCtx.preferredMicrophoneId}
+      />
+      <FitnessToast toast={fitnessCtx.fitnessToast} onDone={fitnessCtx.dismissFitnessToast} />
+    </>
+  );
 ```
 
-(`FitnessToast` self-gates on a null toast, but the `hasAnyOverlay` term in Step 3 is what lets the overlay tree render at all when only a toast is present.)
+(`GlobalOverlays` already guards `if (!fitnessCtx) return null;` above this, so `fitnessCtx` is non-null here. `FitnessToast` self-gates on a null `toast`.)
 
-- [ ] **Step 5: Verify the whole feature set passes**
+- [ ] **Step 4: Verify the whole feature set passes**
 
 ```bash
 cd "$WT" && "$VITEST" run --config /opt/Code/DaylightStation/vitest.config.mjs \
@@ -652,13 +679,13 @@ cd "$WT" && "$VITEST" run --config /opt/Code/DaylightStation/vitest.config.mjs \
   frontend/src/modules/Fitness/player/overlays/FitnessToast.test.jsx \
   frontend/src/hooks/fitness/DeviceEventRouter.riderSelect.test.js
 ```
-Expected: all PASS. Re-read the `FitnessPlayerOverlay.jsx` diff to confirm `fitnessToast` is in `hasAnyOverlay` and the component is rendered.
+Expected: all PASS. Re-read the `FitnessApp.jsx` diff to confirm the fragment wrap is correct and `FitnessToast` is rendered with the context's `fitnessToast`/`dismissFitnessToast`.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add frontend/src/modules/Fitness/player/FitnessPlayerOverlay.jsx
-git commit -m "feat(fitness): mount FitnessToast in the player overlay (centered)"
+git add frontend/src/Apps/FitnessApp.jsx frontend/src/modules/Fitness/player/overlays/FitnessToast.scss
+git commit -m "feat(fitness): mount FitnessToast at the FitnessApp root (works without video)"
 ```
 
 ---
