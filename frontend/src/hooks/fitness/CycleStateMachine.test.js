@@ -577,6 +577,7 @@ describe('Cycle SM — danger grace window (maintain → locked)', () => {
       baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true
     });
     expect(active.dangerSinceMs).toBeNull();
+    expect(active.dangerRecoverySinceMs).toBeNull();
     expect(active.cycleState).toBe('maintain');
   });
 
@@ -667,7 +668,7 @@ describe('Cycle SM — baseReqSatisfiedForRider snapshot exposure', () => {
   });
 });
 
-describe('Cycle SM — maintain grace hysteresis (2026-05-28)', () => {
+describe('Cycle SM — maintain grace hysteresis', () => {
   // Drive init→ramp→maintain with sustained 80 RPM (above hi=60).
   function intoMaintain(engine, advance) {
     for (let i = 0; i < 5; i += 1) {
@@ -733,16 +734,52 @@ describe('Cycle SM — maintain grace hysteresis (2026-05-28)', () => {
     intoMaintain(engine, advance);
 
     const progresses = [];
-    const seq = [20, 20, 40, 20, 20]; // dip, dip, bob, dip, dip
+    // rpm=1 drives the EMA well below loRpm=30 within ~2 ticks from the 80
+    // baseline. The single rpm=40 tick is a brief "bob" above lo (honoring the
+    // test name) but is still below hiRpm=60, so the EMA stays below lo long
+    // enough to keep dangerActive true. The surrounding rpm=1 runs guarantee
+    // ≥2-3 consecutive dangerActive snapshots so the monotonic loop is non-vacuous.
+    const seq = [1, 1, 1, 40, 1, 1, 1]; // dip×3, bob, dip×3
     for (const rpm of seq) {
       advance(200);
       tick(engine, engine._now(), { zone: 'warm', rpm });
       const snap = engine.state.challenge;
       if (snap?.dangerActive) progresses.push(snap.dangerProgress);
     }
+    // Guard: must have collected at least 2 snapshots or the monotonic loop is vacuous.
+    expect(progresses.length).toBeGreaterThanOrEqual(2);
     // dangerProgress is remaining/3000 from a fixed dangerSinceMs → non-increasing.
     for (let i = 1; i < progresses.length; i += 1) {
       expect(progresses[i]).toBeLessThanOrEqual(progresses[i - 1]);
     }
+  });
+
+  it('redip below lo cancels recovery timer without resetting the grace clock', () => {
+    const { engine, advance } = makeEngineWithActiveCycle(15);
+    intoMaintain(engine, advance);
+
+    // Dip below lo (rpm=1) for three ticks → EMA decays well below loRpm=30,
+    // danger arms.
+    advance(200); tick(engine, engine._now(), { zone: 'warm', rpm: 1 });
+    advance(200); tick(engine, engine._now(), { zone: 'warm', rpm: 1 });
+    advance(200); tick(engine, engine._now(), { zone: 'warm', rpm: 1 });
+    const active = engine.challengeState.activeChallenge;
+    expect(Number.isFinite(active.dangerSinceMs)).toBe(true);
+
+    // One tick at rpm=80 — EMA climbs back above loRpm=30 so the engine sees
+    // equipmentRpm ≥ loRpm and starts the recovery timer. Danger is still armed
+    // (< 500ms hold). Capture the original arm time.
+    advance(200); tick(engine, engine._now(), { zone: 'warm', rpm: 80 });
+    expect(Number.isFinite(active.dangerSinceMs)).toBe(true);        // still armed
+    expect(Number.isFinite(active.dangerRecoverySinceMs)).toBe(true); // recovery started
+    const armedAt = active.dangerSinceMs;
+
+    // Redip — sustain rpm=1 for two ticks so the EMA crosses back below loRpm=30.
+    // Recovery must be cancelled AND grace clock must NOT reset (dangerSinceMs
+    // stays at the original arm time, not re-armed to now).
+    advance(200); tick(engine, engine._now(), { zone: 'warm', rpm: 1 });
+    advance(200); tick(engine, engine._now(), { zone: 'warm', rpm: 1 });
+    expect(active.dangerRecoverySinceMs).toBeNull(); // recovery cancelled
+    expect(active.dangerSinceMs).toBe(armedAt);      // grace clock untouched
   });
 });
