@@ -16,9 +16,12 @@ import './CycleChallengeOverlay.scss';
  *
  * Circular ~220px widget that visualises the active cycle challenge:
  *   - Outer status ring track (faint full-circle outline)
- *   - Lower-hemisphere phase progress arc (9 → 6 → 3 o'clock). Color/opacity
- *     come from cycleState/dimFactor; switches to a flashing yellow depleting
- *     countdown when dangerActive (3-second grace before maintain → locked).
+ *   - Lower-hemisphere phase progress arc (9 → 6 → 3 o'clock). Monotonic phase
+ *     progress fill; color/opacity driven by cycleState/dimFactor only — never
+ *     repurposed for the danger countdown.
+ *   - Draining red danger ring (separate full circle at radius CYCLE_RING_RADIUS+4)
+ *     plus a numeric "⚠ Ns ↑ pedal" countdown, shown only during the 3-second
+ *     grace window before maintain → locked fires (dangerActive=true).
  *   - RPM gauge arc (top hemisphere) with tick marks, hi/lo markers, needle (Task 22)
  *   - Target RPM sign anchored to the hi-rpm tick on the gauge arc (Task 22)
  *   - Rider avatar centered, name below
@@ -34,6 +37,7 @@ const CYCLE_VIEWBOX_SIZE = 220;
 const CYCLE_RING_RADIUS = 100;
 const CYCLE_RING_CENTER = CYCLE_VIEWBOX_SIZE / 2;
 const CYCLE_RING_STROKE_WIDTH = 8;
+const DANGER_RING_RADIUS = CYCLE_RING_RADIUS + 4;
 
 // RPM gauge geometry — top hemisphere inside the outer ring.
 const CYCLE_GAUGE_RADIUS = 80;
@@ -226,9 +230,9 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
   const targetTopPct = (targetAnchor.y / CYCLE_VIEWBOX_SIZE) * 100;
 
   // Lower-hemisphere phase progress arc geometry (9 → 6 → 3 o'clock).
-  // The arc's color, opacity, and fill fraction switch when dangerActive is
-  // true: the depleting `dangerProgress` value drives a flashing yellow arc
-  // counting down the 3-second grace window before maintain → locked fires.
+  // Fill fraction is always driven by phaseProgress (monotonic within a phase).
+  // Color/opacity are state-driven via ringColor/ringOpacity. Danger handling
+  // lives entirely on the separate __danger-ring circle rendered below.
   const phaseArcStartPt = polarToCartesian(
     CYCLE_RING_CENTER, CYCLE_RING_CENTER, CYCLE_RING_RADIUS, Math.PI
   );
@@ -244,13 +248,10 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
   const phaseArcPath =
     `M ${phaseArcStartPt.x} ${phaseArcStartPt.y} ` +
     `A ${CYCLE_RING_RADIUS} ${CYCLE_RING_RADIUS} 0 0 0 ${phaseArcEndPt.x} ${phaseArcEndPt.y}`;
-  const phaseArcStroke = ringColor;
-  const phaseArcOpacity = ringOpacity;
 
   // Draining danger ring — a full circle just outside the status track that
   // depletes clockwise from 12 o'clock as the 3-second grace runs out. Distinct
   // radius + color so it reads as a countdown timer, not as phase progress.
-  const DANGER_RING_RADIUS = CYCLE_RING_RADIUS + 4;
   const dangerRingCircumference = 2 * Math.PI * DANGER_RING_RADIUS;
   const dangerRingDashOffset = dangerRingCircumference * (1 - dangerProgress);
   const dangerCountdownSec = Number.isFinite(dangerRemainingMs)
@@ -382,20 +383,18 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
           />
         </g>
 
-        {/* Lower-hemisphere phase progress arc (9 → 6 → 3 o'clock).
-            When dangerActive is true the arc shows a depleting countdown in
-            flashing yellow representing the 3-second grace window before the
-            engine transitions maintain → locked. */}
+        {/* Phase progress arc — reflects phaseProgress only (monotonic).
+            The separate __danger-ring (below) handles the lockout countdown. */}
         <path
           className="cycle-challenge-overlay__phase-arc"
           d={phaseArcPath}
           fill="none"
-          stroke={phaseArcStroke}
+          stroke={ringColor}
           strokeWidth={CYCLE_RING_STROKE_WIDTH}
           strokeLinecap="round"
           strokeDasharray={`${phaseArcLen}px`}
           strokeDashoffset={`${phaseArcDashOffset}px`}
-          style={{ opacity: phaseArcOpacity }}
+          style={{ opacity: ringOpacity }}
         />
         {dangerActive && (
           <circle
@@ -406,7 +405,7 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
             fill="none"
             stroke="#ef4444"
             strokeWidth="3"
-            strokeLinecap="round"
+            strokeLinecap="butt"
             strokeDasharray={`${dangerRingCircumference}px`}
             strokeDashoffset={`${dangerRingDashOffset}px`}
             transform={`rotate(-90 ${CYCLE_RING_CENTER} ${CYCLE_RING_CENTER})`}
