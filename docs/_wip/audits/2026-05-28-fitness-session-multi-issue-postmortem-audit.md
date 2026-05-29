@@ -143,6 +143,8 @@ This session shows both lock types within minutes:
 
 So the user's instinct in #4 ("if it failed it didn't pause the video") reflects a real architectural asymmetry: governance failures gate playback; cycle-challenge outcomes (including the *absent* fail path) do not. Aligning these is the core product decision behind Issue 4.
 
+**Resolved (health-meter redesign, 2026-05-28):** The danger grace + separate lock panel replaced with a health-meter. RPM below `loRpm` depletes a 3-second pool; at zero the video pauses via `videoLocked: true` even though governance `phase` stays `unlocked`. Recovery at `≥ hiRpm` resumes and refills. See `docs/superpowers/plans/2026-05-28-fitness-cycle-challenge-health-meter.md`.
+
 ---
 
 ## Suggested priority
