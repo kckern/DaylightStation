@@ -2550,14 +2550,23 @@ export class FitnessSession {
   _persistSession(sessionData, { force = false } = {}) {
     // Delegate to PersistenceManager
     const result = this._persistenceManager.persistSession(sessionData, { force });
-    
+
     // Sync state for backward compatibility
     this._lastAutosaveAt = this._persistenceManager.getLastSaveTime();
     this._saveTriggered = this._persistenceManager.isSaveInProgress();
-    
+
     return result;
   }
-  
+
+  /**
+   * Promise that settles when the most recent session save completes.
+   * Used by the player to refresh the sessions list only after the save lands.
+   * @returns {Promise<void>}
+   */
+  whenFinalPersistSettled() {
+    return this._persistenceManager?.whenLastSaveSettled?.() || Promise.resolve();
+  }
+
   // NOTE: ~140 lines of _persistSession implementation were extracted to
   // PersistenceManager.js as part of Phase 5 refactoring.
   // See: /docs/postmortem-entityid-migration-fitnessapp.md #13
