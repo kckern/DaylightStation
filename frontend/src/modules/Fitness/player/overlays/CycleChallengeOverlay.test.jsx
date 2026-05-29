@@ -206,6 +206,29 @@ describe('CycleChallengeOverlay — extended UI', () => {
     expect(container.querySelector('.cycle-challenge-overlay__avatar-initials')).toBeFalsy();
   });
 
+  it('renders (phase arc + health meter visible) when cycleState=locked with cycleHealthPct:0', () => {
+    // During a health-lock the engine sets cycleState='locked' and cycleHealthPct=0.
+    // getCycleOverlayVisuals returns visible:true for 'locked', so the overlay must
+    // stay mounted showing the empty health meter — NOT early-return.
+    const ch = {
+      ...baseChallenge,
+      cycleState: 'locked',
+      lockReason: 'health',
+      cycleHealthPct: 0,
+      initRemainingMs: null,
+      rampRemainingMs: null
+    };
+    const { container } = render(<CycleChallengeOverlay challenge={ch} />);
+    // Root overlay element must be present.
+    expect(container.querySelector('.cycle-challenge-overlay')).toBeTruthy();
+    // Phase arc (lower hemisphere) must be present.
+    expect(container.querySelector('.cycle-challenge-overlay__phase-arc')).toBeTruthy();
+    // Health meter must be present and show 0% fill.
+    const fill = container.querySelector('.cycle-challenge-overlay__health-fill');
+    expect(fill).toBeTruthy();
+    expect(fill.getAttribute('style') || '').toMatch(/width:\s*0%/);
+  });
+
   it('does not violate the rules of hooks when toggling visibility', () => {
     // Visible cycle challenge → renders. Then a non-cycle challenge makes
     // visuals.visible false → early return. If any hook sits after that return,

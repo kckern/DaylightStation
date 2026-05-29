@@ -28,11 +28,31 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
   if (status === 'unlocked') {
     // Cycle challenges can enter `cycleState: 'locked'` independently of
     // parent governance — the rider dropped below loRpm even though HR-based
-    // base requirements are still satisfied. Forward the challenge through
-    // `show: true` so the overlay host stays active (cycle overlay remains
-    // visible with an empty health meter; videoLocked pauses playback on
-    // a health-lock).
+    // base requirements are still satisfied.
+    //
+    // Health-lock (lockReason === 'health'): the inline CycleChallengeOverlay
+    // stays visible showing the empty health meter; videoLocked pauses
+    // playback. The generic GovernanceStateOverlay must NOT render — return
+    // show:false so the host skips it. The cycle overlay is kept by
+    // FitnessPlayerOverlay's health-lock guard.
+    //
+    // Non-health locks (init/ramp): keep existing show:true so GovernanceStateOverlay
+    // renders (the inline overlay is already suppressed for those by FitnessPlayerOverlay).
     if (challenge && challenge.type === 'cycle' && challenge.cycleState === 'locked') {
+      if (challenge.lockReason === 'health') {
+        return {
+          show: false,
+          status,
+          rows: [],
+          requirements: [],
+          deadline: null,
+          gracePeriodTotal: null,
+          videoLocked: true,
+          challenge,
+          activeUserCount: Number.isFinite(activeUserCount) ? Math.max(0, Math.round(activeUserCount)) : null
+        };
+      }
+      // Non-health cycle lock (init/ramp) — surface through GovernanceStateOverlay.
       return {
         show: true,
         status,
@@ -40,7 +60,7 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
         requirements: [],
         deadline: null,
         gracePeriodTotal: null,
-        videoLocked: challenge.lockReason === 'health',
+        videoLocked: false,
         challenge,
         activeUserCount: Number.isFinite(activeUserCount) ? Math.max(0, Math.round(activeUserCount)) : null
       };
