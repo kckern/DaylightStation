@@ -60,23 +60,16 @@ describe('cycleOverlayVisuals — extended state', () => {
     expect(v.visible).toBe(false);
   });
 
-  it('exposes dangerActive=true when challenge.dangerActive is true', () => {
-    const v = getCycleOverlayVisuals({
-      ...baseChallenge,
-      dangerActive: true,
-      dangerRemainingMs: 1500,
-      dangerProgress: 0.5
-    });
-    expect(v.dangerActive).toBe(true);
-    expect(v.dangerRemainingMs).toBe(1500);
-    expect(v.dangerProgress).toBe(0.5);
-  });
+});
 
-  it('defaults dangerActive=false, dangerProgress=1, dangerRemainingMs=null when absent', () => {
-    const v = getCycleOverlayVisuals(baseChallenge);
-    expect(v.dangerActive).toBe(false);
-    expect(v.dangerRemainingMs).toBeNull();
-    expect(v.dangerProgress).toBe(1);
+describe('cycleOverlayVisuals — health meter', () => {
+  it('passes through cycleHealthPct', () => {
+    const v = getCycleOverlayVisuals({ type: 'cycle', cycleState: 'maintain', dimFactor: 0, phaseProgressPct: 0.4, cycleHealthPct: 0.5 });
+    expect(v.cycleHealthPct).toBe(0.5);
+  });
+  it('defaults cycleHealthPct to 1 when absent', () => {
+    const v = getCycleOverlayVisuals({ type: 'cycle', cycleState: 'maintain', dimFactor: 0, phaseProgressPct: 0 });
+    expect(v.cycleHealthPct).toBe(1);
   });
 });
 
@@ -108,24 +101,3 @@ describe('getBoosterAvatarSlots — percentage positioning', () => {
   });
 });
 
-describe('cycleOverlayVisuals — danger color classification', () => {
-  it('uses the slipping (orange) color, not green, when dangerActive in maintain', () => {
-    const v = getCycleOverlayVisuals({
-      type: 'cycle',
-      cycleState: 'maintain',
-      dimFactor: 0,          // below lo → engine reports dimFactor 0
-      phaseProgressPct: 0.4,
-      dangerActive: true,
-      dangerProgress: 0.6
-    });
-    expect(v.ringColor).toBe('#f97316'); // maintainOrange, not #22c55e green
-    expect(v.dimPulse).toBe(false);      // the danger ring owns attention, not the dim pulse
-  });
-
-  it('still reports green in maintain at/above hi with no danger', () => {
-    const v = getCycleOverlayVisuals({
-      type: 'cycle', cycleState: 'maintain', dimFactor: 0, phaseProgressPct: 0.4
-    });
-    expect(v.ringColor).toBe('#22c55e');
-  });
-});
