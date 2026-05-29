@@ -118,10 +118,6 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
     dangerProgress
   } = visuals;
 
-  const targetRpm = Number.isFinite(challenge.currentPhase?.hiRpm)
-    ? Math.round(challenge.currentPhase.hiRpm)
-    : null;
-
   const totalPhases = Number.isFinite(challenge.totalPhases)
     ? Math.max(0, challenge.totalPhases)
     : 0;
@@ -140,81 +136,49 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
     : '/api/v1/static/img/users/user';
 
   // --- RPM gauge geometry (Task 22) -----------------------------------------
-  const hiRpm = Number.isFinite(challenge.currentPhase?.hiRpm)
-    ? challenge.currentPhase.hiRpm
-    : null;
-  const loRpm = Number.isFinite(challenge.currentPhase?.loRpm)
-    ? challenge.currentPhase.loRpm
-    : null;
-  const currentRpm = Number.isFinite(challenge.currentRpm)
-    ? challenge.currentRpm
-    : 0;
+  const currentRpm = Number.isFinite(challenge.currentRpm) ? challenge.currentRpm : 0;
 
-  const gaugeTicks = [];
-  for (let rpm = 0; rpm <= CYCLE_GAUGE_MAX_RPM; rpm += CYCLE_GAUGE_TICK_STEP) {
-    const angle = rpmToAngle(rpm, CYCLE_GAUGE_MAX_RPM);
-    const inner = polarToCartesian(
-      CYCLE_RING_CENTER,
-      CYCLE_RING_CENTER,
-      CYCLE_GAUGE_RADIUS - CYCLE_GAUGE_TICK_INNER_OFFSET,
-      angle
-    );
-    const outer = polarToCartesian(
-      CYCLE_RING_CENTER,
-      CYCLE_RING_CENTER,
-      CYCLE_GAUGE_RADIUS + CYCLE_GAUGE_TICK_OUTER_OFFSET,
-      angle
-    );
-    gaugeTicks.push({ rpm, inner, outer });
-  }
+  const {
+    hiRpm, loRpm, gaugeTicks, arcPath,
+    hiAngle, loAngle, hiTickInner, hiTickOuter, loTickInner, loTickOuter
+  } = useMemo(() => {
+    const _hiRpm = Number.isFinite(challenge.currentPhase?.hiRpm) ? challenge.currentPhase.hiRpm : null;
+    const _loRpm = Number.isFinite(challenge.currentPhase?.loRpm) ? challenge.currentPhase.loRpm : null;
 
-  const arcStart = polarToCartesian(
-    CYCLE_RING_CENTER,
-    CYCLE_RING_CENTER,
-    CYCLE_GAUGE_RADIUS,
-    Math.PI
-  );
-  const arcEnd = polarToCartesian(
-    CYCLE_RING_CENTER,
-    CYCLE_RING_CENTER,
-    CYCLE_GAUGE_RADIUS,
-    2 * Math.PI
-  );
-  const arcPath =
-    `M ${arcStart.x} ${arcStart.y} ` +
-    `A ${CYCLE_GAUGE_RADIUS} ${CYCLE_GAUGE_RADIUS} 0 0 1 ${arcEnd.x} ${arcEnd.y}`;
+    const ticks = [];
+    for (let rpm = 0; rpm <= CYCLE_GAUGE_MAX_RPM; rpm += CYCLE_GAUGE_TICK_STEP) {
+      const angle = rpmToAngle(rpm, CYCLE_GAUGE_MAX_RPM);
+      ticks.push({
+        rpm,
+        inner: polarToCartesian(CYCLE_RING_CENTER, CYCLE_RING_CENTER, CYCLE_GAUGE_RADIUS - CYCLE_GAUGE_TICK_INNER_OFFSET, angle),
+        outer: polarToCartesian(CYCLE_RING_CENTER, CYCLE_RING_CENTER, CYCLE_GAUGE_RADIUS + CYCLE_GAUGE_TICK_OUTER_OFFSET, angle)
+      });
+    }
 
-  const hiAngle = hiRpm != null ? rpmToAngle(hiRpm, CYCLE_GAUGE_MAX_RPM) : null;
-  const loAngle = loRpm != null ? rpmToAngle(loRpm, CYCLE_GAUGE_MAX_RPM) : null;
+    const aStart = polarToCartesian(CYCLE_RING_CENTER, CYCLE_RING_CENTER, CYCLE_GAUGE_RADIUS, Math.PI);
+    const aEnd = polarToCartesian(CYCLE_RING_CENTER, CYCLE_RING_CENTER, CYCLE_GAUGE_RADIUS, 2 * Math.PI);
+    const _arcPath = `M ${aStart.x} ${aStart.y} A ${CYCLE_GAUGE_RADIUS} ${CYCLE_GAUGE_RADIUS} 0 0 1 ${aEnd.x} ${aEnd.y}`;
 
-  const hiTickInner = hiAngle != null
-    ? polarToCartesian(
-        CYCLE_RING_CENTER, CYCLE_RING_CENTER,
-        CYCLE_GAUGE_RADIUS - CYCLE_GAUGE_HILO_INNER_OFFSET, hiAngle
-      )
-    : null;
-  const hiTickOuter = hiAngle != null
-    ? polarToCartesian(
-        CYCLE_RING_CENTER, CYCLE_RING_CENTER,
-        CYCLE_GAUGE_RADIUS + CYCLE_GAUGE_HILO_OUTER_OFFSET, hiAngle
-      )
-    : null;
-  const loTickInner = loAngle != null
-    ? polarToCartesian(
-        CYCLE_RING_CENTER, CYCLE_RING_CENTER,
-        CYCLE_GAUGE_RADIUS - CYCLE_GAUGE_HILO_INNER_OFFSET, loAngle
-      )
-    : null;
-  const loTickOuter = loAngle != null
-    ? polarToCartesian(
-        CYCLE_RING_CENTER, CYCLE_RING_CENTER,
-        CYCLE_GAUGE_RADIUS + CYCLE_GAUGE_HILO_OUTER_OFFSET, loAngle
-      )
-    : null;
+    const _hiAngle = _hiRpm != null ? rpmToAngle(_hiRpm, CYCLE_GAUGE_MAX_RPM) : null;
+    const _loAngle = _loRpm != null ? rpmToAngle(_loRpm, CYCLE_GAUGE_MAX_RPM) : null;
+    const mk = (angle, offIn, offOut) => angle != null ? {
+      inner: polarToCartesian(CYCLE_RING_CENTER, CYCLE_RING_CENTER, CYCLE_GAUGE_RADIUS - offIn, angle),
+      outer: polarToCartesian(CYCLE_RING_CENTER, CYCLE_RING_CENTER, CYCLE_GAUGE_RADIUS + offOut, angle)
+    } : { inner: null, outer: null };
+    const hi = mk(_hiAngle, CYCLE_GAUGE_HILO_INNER_OFFSET, CYCLE_GAUGE_HILO_OUTER_OFFSET);
+    const lo = mk(_loAngle, CYCLE_GAUGE_HILO_INNER_OFFSET, CYCLE_GAUGE_HILO_OUTER_OFFSET);
+
+    return {
+      hiRpm: _hiRpm, loRpm: _loRpm, gaugeTicks: ticks, arcPath: _arcPath,
+      hiAngle: _hiAngle, loAngle: _loAngle,
+      hiTickInner: hi.inner, hiTickOuter: hi.outer, loTickInner: lo.inner, loTickOuter: lo.outer
+    };
+  }, [challenge.currentPhase?.hiRpm, challenge.currentPhase?.loRpm]);
 
   const needleAngle = rpmToAngle(currentRpm, CYCLE_GAUGE_MAX_RPM);
   const needleDeg = ((needleAngle - 1.5 * Math.PI) * 180) / Math.PI;
   const atHi = hiRpm != null && currentRpm >= hiRpm;
+  const targetRpm = hiRpm != null ? Math.round(hiRpm) : null;
 
   // Target label anchor — sits just outside the hi-rpm tick on the arc.
   // Fallback (no hi) is top-center at the same radial offset.

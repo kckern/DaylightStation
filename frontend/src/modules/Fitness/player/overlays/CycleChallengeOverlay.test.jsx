@@ -190,4 +190,14 @@ describe('CycleChallengeOverlay — extended UI', () => {
     expect(offset).toBeCloseTo(PHASE_ARC_LEN * (1 - 0.4), 1);
     expect(offset).not.toBeCloseTo(PHASE_ARC_LEN * (1 - 0.9), 1);
   });
+
+  it('keeps gauge ticks stable when only currentRpm changes', () => {
+    const ch1 = { ...baseChallenge, cycleState: 'maintain', currentRpm: 40 };
+    const { container, rerender } = render(<CycleChallengeOverlay challenge={ch1} />);
+    const before = container.querySelectorAll('.cycle-challenge-overlay__gauge-tick').length;
+    rerender(<CycleChallengeOverlay challenge={{ ...ch1, currentRpm: 95 }} />);
+    const after = container.querySelectorAll('.cycle-challenge-overlay__gauge-tick').length;
+    expect(after).toBe(before);
+    expect(after).toBeGreaterThan(0);
+  });
 });
