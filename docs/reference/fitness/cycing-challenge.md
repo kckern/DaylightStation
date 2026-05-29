@@ -24,8 +24,8 @@ in the governance engine's display projection and carries:
 | `type` / `cycleState` | Discriminator (`'cycle'`) and lifecycle state (`init` → `ramp` → `maintain` → `locked`, plus terminal `success`). |
 | `currentPhase` | The active phase's `{ hiRpm, loRpm, maintainSeconds, … }`. Drives the gauge band and target. |
 | `currentRpm` | Live smoothed cadence. Drives the needle and the bottom RPM readout. |
-| `currentPhaseIndex` / `totalPhases` | Position within the phase sequence. Drives the phase blocks and the aria segment count. |
-| `phaseProgressPct` | Fraction `[0,1]` of the current phase's maintain time elapsed. Drives the lower-hemisphere progress arc. (See *Flagged issues* — the name says "Pct" but the value is a fraction.) |
+| `currentPhaseIndex` / `totalPhases` | Position within the phase sequence. Drives the phase blocks and the aria phase count. |
+| `phaseProgressPct` | Fraction `[0,1]` of the current phase's maintain time elapsed (the "Pct" suffix is historical — the value is a fraction, not 0–100). Drives the lower-hemisphere progress arc. |
 | `dimFactor` | `[0,1]` dim amount during maintain; > 0 means the rider has slipped into the orange "dimming" band. |
 | `dangerActive` / `dangerRemainingMs` / `dangerProgress` | The 3-second grace window before `maintain → locked`. When active, a separate draining red outer ring and a numeric "⚠ Ns ↑ pedal" countdown appear. The grace timer starts at the first dip below loRpm (wall-clock) and clears only after RPM holds above loRpm for a sustained ~500ms window (hysteresis). |
 | `clockPaused` / `initRemainingMs` / `rampRemainingMs` | Countdown text for the `init` and `ramp` states; `clockPaused` is set when the rider is below the init min-RPM threshold. |
@@ -124,7 +124,7 @@ Caps at four with no overflow indicator.
 
 ### Accessibility & logging
 
-The root carries an `aria-label` summarising state and segment ("segment 2 of 4,
+The root carries an `aria-label` summarising state and phase ("phase 2 of 4,
 danger — 3s to lock"); the SVG is `aria-hidden`; the phase blocks expose a `meter`
 role; the base-req dot is a `status`. The component logs `mounted`, `state-change`,
 and `swap-requested` through the structured logger child `cycle-challenge-overlay`.
