@@ -1304,6 +1304,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // Broadcast MQTT sensor messages to WebSocket clients
       broadcastEvent({ topic: 'sensor', ...payload });
     },
+    selectors: (configService.getHouseholdAppConfig(householdId, 'fitness') || {}).selectors || [],
+    onSelectorSelect: (selection) => {
+      // selection: { selectorId, equipmentId, userId, action }
+      broadcastEvent({ topic: 'rider_select', ...selection });
+    },
     logger: hardwareLogger
   });
 
@@ -1325,6 +1330,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     rootLogger.info('mqtt.disabled', { reason: 'disabled for this environment' });
   } else if (mqtt.host) {
     rootLogger.warn?.('mqtt.disabled', { reason: 'MQTT configured but adapter not initialized' });
+  }
+
+  // Initialize MQTT selector adapter if configured and enabled
+  if (enableMqtt && hardwareAdapters.selectorAdapter?.isConfigured()) {
+    if (hardwareAdapters.selectorAdapter.init()) {
+      rootLogger.info('selector.mqtt.initialized', {
+        topics: hardwareAdapters.selectorAdapter.getStatus().topics,
+      });
+    }
   }
 
   // Initialize barcode scanner MQTT adapter

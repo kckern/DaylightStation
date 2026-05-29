@@ -96,6 +96,12 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
 
   const sourceSignatureRef = useRef(_signatureCache.get(contentRef) ?? null);
 
+  // Latest playQueue length, mirrored into a ref so the init effect can read it
+  // without taking playQueue as a dependency (which would re-fire the effect —
+  // and re-fetch — whenever the queue drains to empty at end-of-playlist).
+  const playQueueLengthRef = useRef(0);
+  playQueueLengthRef.current = playQueue.length;
+
   const cycleThroughClasses = useCallback((upOrDownInt) => {
     upOrDownInt = parseInt(upOrDownInt) || 1;
     setShaderUserCycled(true);
@@ -129,7 +135,15 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
     const nextSignature = signatureParts.join(';');
     const previousSignature = sourceSignatureRef.current;
 
-    if (previousSignature === nextSignature) {
+    // Skip the fetch only when the signature is unchanged AND this instance
+    // still holds the resolved queue. The module-level _signatureCache survives
+    // remounts (to break the resilience re-dispatch loop — see queueSignature
+    // cache), but a genuine unmount/remount (e.g. navigating away from and back
+    // to the music sidebar) resets playQueue to [] while the cached signature
+    // still matches. Without the length guard the effect would early-return and
+    // leave playQueue empty forever, stranding the player at "Music unavailable"
+    // with no recovery. An empty queue has nothing to protect, so re-fetch.
+    if (previousSignature === nextSignature && playQueueLengthRef.current > 0) {
       return;
     }
 
