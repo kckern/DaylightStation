@@ -236,15 +236,26 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
     CYCLE_RING_CENTER, CYCLE_RING_CENTER, CYCLE_RING_RADIUS, 0
   );
   const phaseArcLen = Math.PI * CYCLE_RING_RADIUS; // half-circumference
-  const phaseArcFraction = dangerActive ? dangerProgress : phaseProgress;
-  const phaseArcDashOffset = phaseArcLen * (1 - phaseArcFraction);
+  // Phase arc is progress ONLY — monotonic, never repurposed for the danger
+  // countdown (that lives on the separate __danger-ring). It holds when paused.
+  const phaseArcDashOffset = phaseArcLen * (1 - phaseProgress);
   // Sweep flag = 0 with start at 9 o'clock and end at 3 o'clock routes through
   // the bottom (6 o'clock) in SVG y-down coordinates.
   const phaseArcPath =
     `M ${phaseArcStartPt.x} ${phaseArcStartPt.y} ` +
     `A ${CYCLE_RING_RADIUS} ${CYCLE_RING_RADIUS} 0 0 0 ${phaseArcEndPt.x} ${phaseArcEndPt.y}`;
-  const phaseArcStroke = dangerActive ? '#fbbf24' : ringColor;
-  const phaseArcOpacity = dangerActive ? 1 : ringOpacity;
+  const phaseArcStroke = ringColor;
+  const phaseArcOpacity = ringOpacity;
+
+  // Draining danger ring — a full circle just outside the status track that
+  // depletes clockwise from 12 o'clock as the 3-second grace runs out. Distinct
+  // radius + color so it reads as a countdown timer, not as phase progress.
+  const DANGER_RING_RADIUS = CYCLE_RING_RADIUS + 4;
+  const dangerRingCircumference = 2 * Math.PI * DANGER_RING_RADIUS;
+  const dangerRingDashOffset = dangerRingCircumference * (1 - dangerProgress);
+  const dangerCountdownSec = Number.isFinite(dangerRemainingMs)
+    ? Math.max(0, Math.ceil(dangerRemainingMs / 1000))
+    : null;
 
   // --- Boosters + boost multiplier (Task 23) --------------------------------
   const boosters = getBoosterAvatarSlots(
@@ -272,7 +283,7 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
   const dangerSuffix = dangerActive && Number.isFinite(dangerRemainingMs)
     ? `, danger — ${Math.ceil(dangerRemainingMs / 1000)}s to lock`
     : '';
-  const ariaLabel = `Cycle challenge — ${challenge.cycleState || 'state unknown'}, segment ${Math.min(totalPhases, currentPhaseIndex + 1)} of ${totalPhases}${dangerSuffix}`;
+  const ariaLabel = `Cycle challenge — ${challenge.cycleState || 'state unknown'}, phase ${Math.min(totalPhases, currentPhaseIndex + 1)} of ${totalPhases}${dangerSuffix}`;
 
   return (
     <div
@@ -376,7 +387,7 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
             flashing yellow representing the 3-second grace window before the
             engine transitions maintain → locked. */}
         <path
-          className={`cycle-challenge-overlay__phase-arc${dangerActive ? ' cycle-challenge-overlay__phase-arc--danger' : ''}`}
+          className="cycle-challenge-overlay__phase-arc"
           d={phaseArcPath}
           fill="none"
           stroke={phaseArcStroke}
@@ -386,6 +397,21 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
           strokeDashoffset={`${phaseArcDashOffset}px`}
           style={{ opacity: phaseArcOpacity }}
         />
+        {dangerActive && (
+          <circle
+            className="cycle-challenge-overlay__danger-ring"
+            cx={CYCLE_RING_CENTER}
+            cy={CYCLE_RING_CENTER}
+            r={DANGER_RING_RADIUS}
+            fill="none"
+            stroke="#ef4444"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeDasharray={`${dangerRingCircumference}px`}
+            strokeDashoffset={`${dangerRingDashOffset}px`}
+            transform={`rotate(-90 ${CYCLE_RING_CENTER} ${CYCLE_RING_CENTER})`}
+          />
+        )}
       </svg>
 
       {targetRpm !== null && (
@@ -427,6 +453,16 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
           name, boost badge, phase blocks, countdown, and RPM readout stack
           without overlap and stay centered regardless of overlay diameter. */}
       <div className="cycle-challenge-overlay__stack">
+        {dangerActive && dangerCountdownSec !== null && (
+          <div
+            className="cycle-challenge-overlay__danger-countdown"
+            role="alert"
+            aria-label={`Lockout in ${dangerCountdownSec} seconds — pedal faster`}
+          >
+            <span className="cycle-challenge-overlay__danger-countdown-time">⚠ {dangerCountdownSec}s</span>
+            <span className="cycle-challenge-overlay__danger-countdown-cue">↑ pedal</span>
+          </div>
+        )}
         {riderName && (
           <div className="cycle-challenge-overlay__rider-name">
             <span className="cycle-challenge-overlay__rider-name-text">{riderName}</span>

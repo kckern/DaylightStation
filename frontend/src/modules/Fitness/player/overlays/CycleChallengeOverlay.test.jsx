@@ -90,15 +90,36 @@ describe('CycleChallengeOverlay — extended UI', () => {
     expect(complete.length).toBe(1);
   });
 
-  it('renders the danger arc class when dangerActive is true', () => {
+  it('renders a draining danger ring and numeric countdown when dangerActive', () => {
     const ch = {
       ...baseChallenge,
+      cycleState: 'maintain',
+      initRemainingMs: null,
+      rampRemainingMs: null,
       dangerActive: true,
       dangerRemainingMs: 1500,
       dangerProgress: 0.5
     };
     const { container } = render(<CycleChallengeOverlay challenge={ch} />);
-    expect(container.querySelector('.cycle-challenge-overlay__phase-arc--danger')).toBeTruthy();
+    // Separate danger ring exists; progress arc keeps its progress role.
+    expect(container.querySelector('.cycle-challenge-overlay__danger-ring')).toBeTruthy();
+    expect(container.querySelector('.cycle-challenge-overlay__phase-arc--danger')).toBeFalsy();
+    // Numeric countdown: ceil(1500/1000) = 2.
+    expect(screen.getByText(/2s/)).toBeInTheDocument();
+  });
+
+  it('does not render the danger ring or countdown when dangerActive is false', () => {
+    const ch = { ...baseChallenge, cycleState: 'maintain', dangerActive: false };
+    const { container } = render(<CycleChallengeOverlay challenge={ch} />);
+    expect(container.querySelector('.cycle-challenge-overlay__danger-ring')).toBeFalsy();
+    expect(container.querySelector('.cycle-challenge-overlay__danger-countdown')).toBeFalsy();
+  });
+
+  it('labels the challenge with "phase", not "segment"', () => {
+    const { container } = render(<CycleChallengeOverlay challenge={baseChallenge} />);
+    const root = container.querySelector('.cycle-challenge-overlay');
+    expect(root.getAttribute('aria-label')).toMatch(/phase/i);
+    expect(root.getAttribute('aria-label')).not.toMatch(/segment/i);
   });
 
   it('groups lower content inside a single __stack container', () => {
