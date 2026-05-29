@@ -1012,7 +1012,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
 
     logger.info('fitness.player.close.completed', { sessionId: sid });
     closeWatchdog.completed({ sessionId: sid });
-  }, [postEpisodeStatus, setQueue, currentItem?.grandparentId, fitnessSessionInstance, fitnessSessionInstance?.sessionId, onSessionEndRedirect, logger, closeWatchdog, refetchScreenData]);
+  }, [postEpisodeStatus, setQueue, currentItem?.grandparentId, fitnessSessionInstance, onSessionEndRedirect, logger, closeWatchdog, refetchScreenData]);
 
   const handleClose = () => {
     // Note: media_end is logged by the useEffect cleanup when currentMediaIdentity changes to null
