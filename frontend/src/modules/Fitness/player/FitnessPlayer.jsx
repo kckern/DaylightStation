@@ -23,6 +23,7 @@ import { useVolumeSync } from '@/modules/Fitness/hooks/useVolumeSync.js';
 import { useRenderProfiler } from '@/hooks/fitness/useRenderProfiler.js';
 import { getLogger } from '@/lib/logging/Logger.js';
 import { computeCycleDimStyle } from './cycleDimStyle.js';
+import { useScreenDataRefetch } from '@/screen-framework/data/ScreenDataProvider.jsx';
 
 // Helper function to generate Plex thumbnail URLs for specific timestamps
 const generateThumbnailUrl = (plexObj, timeInSeconds) => {
@@ -180,6 +181,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     trackRecentlyPlayed,
     emitAppEvent
   } = useFitness() || {};
+  const refetchScreenData = useScreenDataRefetch();
   const playerRef = useRef(null); // imperative Player API
 
   const [mediaElement, setMediaElement] = useState(null);
@@ -991,6 +993,13 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       }
     }
 
+    // Refresh the sessions list once the final save has landed, so the just-saved
+    // voice memo (and final stats) show on the session entry without a manual re-nav.
+    if (typeof refetchScreenData === 'function') {
+      Promise.resolve(fitnessSessionInstance?.whenFinalPersistSettled?.())
+        .finally(() => { refetchScreenData('sessions'); });
+    }
+
     if (setQueue) {
       setQueue([]);
     }
@@ -1003,7 +1012,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
 
     logger.info('fitness.player.close.completed', { sessionId: sid });
     closeWatchdog.completed({ sessionId: sid });
-  }, [postEpisodeStatus, setQueue, currentItem?.grandparentId, fitnessSessionInstance?.sessionId, onSessionEndRedirect, logger, closeWatchdog]);
+  }, [postEpisodeStatus, setQueue, currentItem?.grandparentId, fitnessSessionInstance, fitnessSessionInstance?.sessionId, onSessionEndRedirect, logger, closeWatchdog, refetchScreenData]);
 
   const handleClose = () => {
     // Note: media_end is logged by the useEffect cleanup when currentMediaIdentity changes to null
