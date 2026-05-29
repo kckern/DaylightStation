@@ -311,6 +311,7 @@ export class FitnessSession {
     this.eventJournal = new EventJournal();
     this.treasureBox = null; // Instantiated on start
     this._vibrationTrackers = new Map(); // equipmentId -> VibrationActivityTracker
+    this._equipmentRider = new Map(); // equipmentId -> userId (current claimed rider; null/absent = unclaimed)
     this._equipmentById = new Map(); // equipmentId -> equipment config entry (cycle challenge reverse lookup)
     this._deviceHrSampleCount = new Map(); // deviceId -> count for startup discard
 
@@ -371,6 +372,10 @@ export class FitnessSession {
     // Device Event Router - central dispatcher for device data payloads
     this._deviceRouter = new DeviceEventRouter();
     this._deviceRouter.setDeviceManager(this.deviceManager);
+    this._deviceRouter.register('rider_select', (payload) => {
+      this.setEquipmentRider(payload.equipmentId, payload.userId);
+      return null; // no device object; claim state lives on the session
+    });
 
     // Legacy: these are now managed by MetricsRecorder but kept for backward compatibility
     // TODO: Remove after full migration to MetricsRecorder
@@ -1078,6 +1083,28 @@ export class FitnessSession {
    */
   getVibrationTracker(equipmentId) {
     return this._vibrationTrackers.get(String(equipmentId)) || null;
+  }
+
+  /**
+   * Record the rider currently claiming a piece of equipment (physical selector
+   * button press). Sticky until reassigned or the session resets. Last write wins.
+   * @param {string} equipmentId
+   * @param {string} userId
+   */
+  setEquipmentRider(equipmentId, userId) {
+    if (!equipmentId || !userId) return;
+    const prev = this._equipmentRider.get(String(equipmentId)) || null;
+    this._equipmentRider.set(String(equipmentId), String(userId));
+    getLogger().info('fitness.rider.claimed', { equipmentId: String(equipmentId), userId: String(userId), previousRider: prev });
+  }
+
+  /**
+   * Get the currently claimed rider for a piece of equipment.
+   * @param {string} equipmentId
+   * @returns {string|null}
+   */
+  getEquipmentRider(equipmentId) {
+    return this._equipmentRider?.get(String(equipmentId)) || null;
   }
 
   /**
@@ -1982,6 +2009,12 @@ export class FitnessSession {
       }
     });
 
+    // Build equipmentRiderMap: equipmentId -> claimed userId (or absent if unclaimed)
+    const equipmentRiderMap = {};
+    this._equipmentRider.forEach((userId, equipmentId) => {
+      if (userId) equipmentRiderMap[equipmentId] = userId;
+    });
+
     this.governanceEngine.evaluate({
         activeParticipants,
         userZoneMap,
@@ -1989,7 +2022,8 @@ export class FitnessSession {
         zoneInfoMap,
         totalCount: activeParticipants.length,
         hrInactiveUsers,
-        equipmentCadenceMap
+        equipmentCadenceMap,
+        equipmentRiderMap
     });
   }
 
@@ -2370,6 +2404,10 @@ export class FitnessSession {
     // Clear vibration trackers
     this._vibrationTrackers.clear();
     this._vibrationTrackers = null;
+
+    // Clear rider claims
+    this._equipmentRider?.clear();
+    this._equipmentRider = null;
 
     // Clear zone profile store
     this.zoneProfileStore?.clear();
