@@ -83,7 +83,7 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
       phaseProgressPct: challenge?.phaseProgressPct
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [challenge?.cycleState, challenge?.dimFactor]);
+  }, [challenge?.cycleState, challenge?.dimFactor, challenge?.phaseProgressPct]);
 
   const handleAvatarClick = useCallback((event) => {
     event.stopPropagation();
@@ -449,7 +449,6 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
           <CompletionCountBlocks
             targetCount={totalPhases}
             actualCount={Math.max(0, currentPhaseIndex)}
-            metUsers={[]}
             containerClassName="cycle-challenge-overlay__phase-blocks"
             blockClassName="cycle-challenge-overlay__phase-block"
             completeBlockClassName="cycle-challenge-overlay__phase-block--complete"
