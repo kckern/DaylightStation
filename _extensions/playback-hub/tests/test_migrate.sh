@@ -8,8 +8,11 @@ set +e   # production script enables `set -euo pipefail`; restore lenient mode f
 # macOS caveat: override GNU-stat primitive with portable size check (see report).
 file_size_bytes() { wc -c < "$1" 2>/dev/null | tr -d ' ' || echo 0; }
 
-# Portable inode reader: BSD `stat -f %i` (macOS) with GNU `stat -c %i` fallback.
-inode_of() { stat -f %i "$1" 2>/dev/null || stat -c %i "$1" 2>/dev/null; }
+# Portable inode reader: GNU `stat -c %i` (Linux) first, BSD `stat -f %i` (macOS)
+# fallback. GNU-first is REQUIRED: on Linux `stat -f` means "filesystem status"
+# and succeeds with non-inode output, so a BSD-first order never reaches the GNU
+# fallback. `stat -c` cleanly errors on BSD, so the fallback still fires on macOS.
+inode_of() { stat -c %i "$1" 2>/dev/null || stat -f %i "$1" 2>/dev/null; }
 
 # Ensure head_fetch is genuinely absent for this test (it arrives in a later
 # unit). The migrate path must gate on `command -v head_fetch` and fall back
