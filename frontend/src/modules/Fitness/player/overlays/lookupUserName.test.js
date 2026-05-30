@@ -8,17 +8,23 @@ const users = [
 ];
 
 describe('lookupUserName', () => {
-  it('prefers the household nickname (groupLabel) when set', () => {
-    expect(lookupUserName(users, 'kckern')).toBe('Dad');
-    expect(lookupUserName(users, 'user_3')).toBe('User_3');
+  it('uses the given name by default (solo / preferGroupLabels false)', () => {
+    expect(lookupUserName(users, 'kckern')).toBe('User_1');
+    expect(lookupUserName(users, 'user_3')).toBe('User_3 Kern');
   });
 
-  it('falls back to the given name when there is no nickname', () => {
-    expect(lookupUserName(users, 'user_4')).toBe('User_4 Kern');
+  it('uses the household nickname only when preferGroupLabels is true', () => {
+    expect(lookupUserName(users, 'kckern', { preferGroupLabels: true })).toBe('Dad');
+    expect(lookupUserName(users, 'user_3', { preferGroupLabels: true })).toBe('User_3');
+  });
+
+  it('falls back to the given name when there is no nickname, even with preferGroupLabels', () => {
+    expect(lookupUserName(users, 'user_4', { preferGroupLabels: true })).toBe('User_4 Kern');
   });
 
   it('matches case-insensitively', () => {
-    expect(lookupUserName(users, 'KCKERN')).toBe('Dad');
+    expect(lookupUserName(users, 'KCKERN')).toBe('User_1');
+    expect(lookupUserName(users, 'KCKERN', { preferGroupLabels: true })).toBe('Dad');
   });
 
   it('falls back to the raw userId when no user matches', () => {
@@ -33,5 +39,6 @@ describe('lookupUserName', () => {
 
   it('falls back to the raw userId when the matched user has no name or nickname', () => {
     expect(lookupUserName([{ id: 'user_3' }], 'user_3')).toBe('user_3');
+    expect(lookupUserName([{ id: 'user_3' }], 'user_3', { preferGroupLabels: true })).toBe('user_3');
   });
 });
