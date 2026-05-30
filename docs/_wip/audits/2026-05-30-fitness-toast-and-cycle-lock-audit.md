@@ -215,11 +215,12 @@ descriptor. That removes the split-brain (fixes D2/D3/D4), gives the cycle lock 
   attempts. Add `governance.cycle.health_lock.*` logging so the next live occurrence is
   observable.
 
-## Open questions for the spec
-1. **C2 confirm:** is `__countdown` (init/ramp "Start in / Reach target in") definitely the
-   "status label" to remove? (No other status text exists in the overlay.)
-2. **D promote mechanics:** when promoted to lock, should the cycle overlay scale via a CSS
-   class on a centered wrapper (simplest), and should the rest of the challenge deck / other
-   overlays be fully hidden behind it?
-3. **D music lifecycle:** start `locked` track on health-lock enter, stop on recover —
-   confirm it should duck/stop the main media audio the same way the governance lock does.
+## Resolved with user (2026-05-30)
+1. **C2:** Confirmed — remove the init/ramp `__countdown` text ("Start in Ns" / "Reach
+   target in Ns"). The user described it as "a text label near the bottom, too small to
+   see"; it is the only status-style stack child and matches that description.
+2. **D promote mechanics:** Cycle health-lock promotes the `CycleChallengeOverlay` to
+   **screen center, ~2× scale, with a dimmed background**, and everything else
+   (challenge deck, other overlays, video frame) hidden/dimmed behind it.
+3. **D music:** **Same as the governance lock** — play the `locked` track on health-lock
+   enter, stop on recover, ducking/pausing the main media audio the same way.
