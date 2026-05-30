@@ -24,6 +24,9 @@ node_modules/*
 !cli/scripts/*.sh
 !_extensions/document-processor/src/post-consume.sh
 !_extensions/playback-hub/*.sh
+!_extensions/playback-hub/tests/*.sh
+__pycache__/
+*.pyc
 docker.local.sh
 known_hosts
 /_extentions/fitness/node_modules

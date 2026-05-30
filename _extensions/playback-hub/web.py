@@ -261,6 +261,100 @@ def expected_audio_devices(mac):
         f"pulse/bluez_output.{normalized}.1",
     ]
 
+# ---------------------------------------------------------------------------
+# Postmortem observability helpers (Unit G). Pure, defensive, stdlib-only —
+# extracted so they're unit-testable without standing up the HTTP server.
+# Every one returns a sane default (0 / None) on any missing file or parse
+# error and NEVER raises.
+# ---------------------------------------------------------------------------
+
+def file_playlist_count(playlist_path):
+    """Count media lines in a playlist.m3u — lines starting with '/' (cache
+    paths). This is the ON-DISK count; comparing it to mpv's in-memory
+    playlist_count (via IPC) reveals a subset-loop at a glance. 0 if missing."""
+    try:
+        n = 0
+        with open(playlist_path) as f:
+            for line in f:
+                if line.startswith("/"):
+                    n += 1
+        return n
+    except Exception:
+        return 0
+
+def _tail_events(events_path, max_bytes=256 * 1024):
+    """Yield parsed JSON event dicts from the tail of events.jsonl (cheap —
+    only the last max_bytes are read). Silently skips unparseable lines and
+    returns nothing if the file is missing."""
+    try:
+        size = os.path.getsize(events_path)
+        with open(events_path, "rb") as f:
+            if size > max_bytes:
+                f.seek(size - max_bytes)
+                f.readline()  # discard the partial first line
+            raw = f.read().decode("utf-8", "replace")
+    except Exception:
+        return []
+    out = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append(json.loads(line))
+        except Exception:
+            continue
+    return out
+
+def last_reconcile(events_path):
+    """ts of the most recent playlist.reconciled or playback.reconciled event
+    in events.jsonl, or None. Tails the file so it stays cheap on big logs."""
+    latest = None
+    for ev in _tail_events(events_path):
+        if ev.get("evt") in ("playlist.reconciled", "playback.reconciled"):
+            ts = ev.get("ts")
+            if ts and (latest is None or ts > latest):
+                latest = ts
+    return latest
+
+def integrity_failures(events_path, now=None, window_sec=3600):
+    """Count cache.integrity_fail events in events.jsonl within the last hour.
+    Parses each event's ISO-8601 ts; events without a parseable ts (or outside
+    the window) are not counted. 0 if no file / none."""
+    if now is None:
+        now = time.time()
+    count = 0
+    for ev in _tail_events(events_path):
+        if ev.get("evt") != "cache.integrity_fail":
+            continue
+        ts = ev.get("ts")
+        if not ts:
+            continue
+        epoch = _iso_to_epoch(ts)
+        if epoch is None:
+            continue
+        if 0 <= (now - epoch) <= window_sec:
+            count += 1
+    return count
+
+def _iso_to_epoch(ts):
+    """Parse an ISO-8601 timestamp (as emitted by `date -Is`, e.g.
+    '2026-05-29T13:04:05+00:00' or with no offset) into epoch seconds.
+    Returns None on any failure — never raises."""
+    if not isinstance(ts, str):
+        return None
+    s = ts.strip()
+    # Normalize a trailing 'Z' to a explicit UTC offset for fromisoformat
+    # (Python <3.11 fromisoformat doesn't accept 'Z').
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        import datetime
+        return datetime.datetime.fromisoformat(s).timestamp()
+    except Exception:
+        return None
+
+
 def slot_status(device):
     slot = device["slot"]
     color = device.get("color")
@@ -334,6 +428,13 @@ def slot_status(device):
             "title": title,
         }
 
+    # ── Postmortem observability fields (Unit G). All defensive: missing
+    # files yield 0 / None, never an exception. ──
+    events_path = slot_dir / "events.jsonl"
+    file_count = file_playlist_count(slot_dir / "playlist.m3u")
+    reconcile_ts = last_reconcile(events_path)
+    integrity_fails = integrity_failures(events_path)
+
     return {
         # ── Legacy keys (this hub's own /admin UI in this file consumes them) ──
         "slot": slot,
@@ -355,6 +456,10 @@ def slot_status(device):
         "volume": volume,
         "playlist_count": playlist_count,
         "armed_source": armed_source,
+        # ── Postmortem observability (Unit G) ──
+        "file_playlist_count": file_count,
+        "last_reconcile": reconcile_ts,
+        "integrity_failures": integrity_fails,
     }
 
 API_BASE = "https://daylightlocal.kckern.net"
