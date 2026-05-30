@@ -1790,12 +1790,14 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         // rider_select carries a user slug (e.g. "milo"), not a device id — resolve it
         // against configuredUsers (the userCollections.all SSOT the roster uses), NOT the
         // device-centric getDisplayName, which would fall through to the raw id.
-        resolveUserName: (uid) => lookupUserName(configuredUsers, uid),
+        // preferGroupLabels mirrors the main resolver: nickname ("Dad") only when 2+ HR
+        // participants are present, else the given name ("KC Kern").
+        resolveUserName: (uid) => lookupUserName(configuredUsers, uid, { preferGroupLabels }),
         resolveEquipmentName: (eid) =>
           (Array.isArray(equipmentConfig) ? equipmentConfig : []).find((e) => e?.id === eid)?.name || eid,
       }));
     };
-  }, [configuredUsers, equipmentConfig, pushFitnessToast]);
+  }, [configuredUsers, equipmentConfig, pushFitnessToast, preferGroupLabels]);
 
   const guestCandidateList = React.useMemo(() => {
     return Array.isArray(session?.guestCandidates) ? session.guestCandidates : [];
