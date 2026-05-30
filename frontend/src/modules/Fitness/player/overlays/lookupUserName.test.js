@@ -2,19 +2,23 @@ import { describe, it, expect } from 'vitest';
 import { lookupUserName } from './lookupUserName.js';
 
 const users = [
-  { id: 'milo', name: 'Milo' },
-  { id: 'kckern', name: 'Kevin' },
-  { id: 'alan', name: 'Alan' },
+  { id: 'milo', name: 'Milo Kern', groupLabel: 'Milo' },
+  { id: 'kckern', name: 'KC Kern', groupLabel: 'Dad' },
+  { id: 'alan', name: 'Alan Kern' }, // no nickname
 ];
 
 describe('lookupUserName', () => {
-  it('resolves a user slug to the configured given name', () => {
+  it('prefers the household nickname (groupLabel) when set', () => {
+    expect(lookupUserName(users, 'kckern')).toBe('Dad');
     expect(lookupUserName(users, 'milo')).toBe('Milo');
-    expect(lookupUserName(users, 'kckern')).toBe('Kevin');
+  });
+
+  it('falls back to the given name when there is no nickname', () => {
+    expect(lookupUserName(users, 'alan')).toBe('Alan Kern');
   });
 
   it('matches case-insensitively', () => {
-    expect(lookupUserName(users, 'MILO')).toBe('Milo');
+    expect(lookupUserName(users, 'KCKERN')).toBe('Dad');
   });
 
   it('falls back to the raw userId when no user matches', () => {
@@ -27,7 +31,7 @@ describe('lookupUserName', () => {
     expect(lookupUserName(undefined, 'milo')).toBe('milo');
   });
 
-  it('falls back to the raw userId when the matched user has no name', () => {
+  it('falls back to the raw userId when the matched user has no name or nickname', () => {
     expect(lookupUserName([{ id: 'milo' }], 'milo')).toBe('milo');
   });
 });
