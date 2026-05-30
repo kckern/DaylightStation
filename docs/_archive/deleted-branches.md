@@ -70,3 +70,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-05-27 | worktree-health-coach-chat | a417af1f7 | Health coach chat — functional @-mention popover + real healthAnalyticsService wiring. Orphan branch (worktree dir already gone), ancestor of main; branch deleted. |
 | 2026-05-27 | worktree-health-coach-chat-fix | a86c4454e | Health-coach plan complete — chat-mode + userId resolution. Orphan branch, ancestor of main; branch deleted. |
 | 2026-05-27 | worktree-period-string-shorthand | 49e634834 | Health-coach chat prompt — Period syntax section. Orphan branch, ancestor of main; branch deleted. |
+| 2026-05-29 | feature/fitness-challenge-toasts | 6131f9349 | Challenge start/success toasts (squash-merged to main as 77119cd38) |
