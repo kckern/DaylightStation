@@ -7,6 +7,11 @@ CONFIG_JSON_LEGACY="$BASE_DIR/devices.json"
 CONFIG_FILE="$BASE_DIR/.devices.runtime.json"
 API_BASE="https://daylightlocal.kckern.net"
 API_FALLBACK_BASE="http://10.0.0.10:3111"
+# Default prefix for bare queue ratingKeys when the config omits queue_base.
+# MUST stay in parity with web.py's DEFAULT_QUEUE_BASE — both resolve a bare
+# id like "674397" to <base>674397. Without this, queue_base() returned ""
+# and curl got a bare id (curl exit 28, "API unavailable" on every fetch).
+DEFAULT_QUEUE_BASE="https://daylightlocal.kckern.net/api/v1/queue/plex/"
 REFRESH_INTERVAL=300       # seconds between queue refreshes (full playlist re-fetch)
 WATCHDOG_INTERVAL=5        # seconds between mpv liveness checks (tight respawn)
 SCHEDULE_TICK_INTERVAL=30  # seconds between scheduled-fire checks
@@ -16,6 +21,18 @@ DUPE_FIRE_WINDOW=60        # window in which a scheduled time matches "now"
 LAZY_PRIME_COUNT=5         # tracks to download synchronously before starting mpv
 MIN_AUDIO_BYTES=2048
 SCHEDULED_STATE_FILE="$BASE_DIR/.scheduled-state.json"
+CACHE_DIR="$BASE_DIR/cache"
+CACHE_MAX_BYTES=$((2*1024*1024*1024))  # 2 GB orphan-sweep backstop
+ORPHAN_TTL_DAYS=7
+MEMBERSHIP_INTERVAL=60
+HEAD_FULL_PASS=900
+SWEEP_INTERVAL=3600
+STALL_REVALIDATE_COOLDOWN=120  # min seconds between stall revalidations of the SAME plex_id (anti-thrash)
+
+# Central cache manager — sourced for both direct-exec and source (tests).
+# Defined here, before refresh_config_cache, and NOT inside the dispatch guard.
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$_SCRIPT_DIR/cache_manager.sh"
 
 # Regenerate the runtime JSON cache from devices.yml so the rest of
 # playback-hub.sh can keep using jq. Called at startup and from the
@@ -62,6 +79,45 @@ refresh_config_cache() {
 log() { echo "[$(date '+%H:%M:%S')] [$1] $2"; }
 
 slot_dir() { echo "$BASE_DIR/slots/$1"; }
+
+# Structured event: logev <tag/color/slot> <evt> [k=v ...]
+# Human line to STDERR + JSON to slots/<N>/events.jsonl when tag maps to a slot.
+# Human line goes to stderr (not stdout) so logev can be called from inside
+# functions whose stdout is captured for a value (e.g. get_cached_path returns
+# a path on stdout). In production the daemon runs `> hub.log 2>&1`, so the
+# human line still lands in hub.log either way.
+# NOTE: values are single tokens only (k=v). Multi-word quoted values are not
+# supported because $* word-splitting would break them; the emitter is
+# intentionally not over-engineered for that case.
+logev() {
+    local tag="$1" evt="$2"; shift 2
+    local kv="$*"
+    echo "[$(date '+%H:%M:%S')] [$tag] evt=$evt $kv" >&2
+    local slot; slot=$(slot_for_tag "$tag" 2>/dev/null || echo "")
+    [[ -z "$slot" ]] && return 0
+    local dir; dir="$(slot_dir "$slot")"; mkdir -p "$dir"
+    local jl="$dir/events.jsonl"
+    [[ -f "$jl" && $(file_size_bytes "$jl") -gt $((5*1024*1024)) ]] && mv "$jl" "$jl.1"
+    local json; json=$(kv_to_json "$kv")
+    echo "{\"ts\":\"$(date -Is 2>/dev/null || date)\",\"evt\":\"$evt\",\"slot\":$slot${json:+,$json}}" >> "$jl"
+}
+
+kv_to_json() { # "a=1 b=two" -> "\"a\":\"1\",\"b\":\"two\"" (values quoted as strings)
+    local out="" tok k v
+    for tok in $1; do
+        [[ "$tok" != *=* ]] && continue
+        k="${tok%%=*}"; v="${tok#*=}"
+        out+="\"$k\":\"${v//\"/\\\"}\","
+    done
+    echo "${out%,}"
+}
+
+slot_for_tag() { # color or numeric slot -> slot number (empty if no match)
+    local t="$1"
+    [[ "$t" =~ ^[0-9]+$ ]] && { echo "$t"; return 0; }
+    [[ -f "$CONFIG_FILE" ]] || return 0
+    jq -r --arg c "$t" '.devices[] | select(.color==$c) | .slot' "$CONFIG_FILE" 2>/dev/null | head -1
+}
 
 # =====================================================================
 # Alerts — log + optional HA notify dispatch
@@ -503,7 +559,11 @@ mac_to_dbus_path() { echo "$1" | tr ':' '_'; }
 # if absent. Queues already containing a scheme (http/https) are passed
 # through unchanged by resolve_queue_url().
 queue_base() {
-    jq -r '.queue_base // ""' "$CONFIG_FILE" 2>/dev/null
+    local base
+    base=$(jq -r '.queue_base // ""' "$CONFIG_FILE" 2>/dev/null)
+    # Parity with web.py:87 — fall back to DEFAULT_QUEUE_BASE when the config
+    # has no queue_base key, so bare ratingKeys resolve to real API URLs.
+    [[ -n "$base" ]] && echo "$base" || echo "$DEFAULT_QUEUE_BASE"
 }
 
 # Read the device class from a device JSON blob. Defaults to "private" so
@@ -569,6 +629,14 @@ curl_api() {
     else
         return 1
     fi
+}
+
+# Like curl_api but streams body to $2 and dumps response headers to $3.
+curl_api_dump() { # url body_dest header_dest
+    local url="$1" body="$2" hdrs="$3"
+    if curl -fsSL --max-time 60 -D "$hdrs" -o "$body" "$url"; then return 0; fi
+    local fb="${url/$API_BASE/$API_FALLBACK_BASE}"
+    [[ "$fb" != "$url" ]] && curl -fsSL --max-time 60 -D "$hdrs" -o "$body" "$fb"
 }
 
 is_valid_queue_json() {
@@ -882,7 +950,7 @@ selected_shuffle() {
 }
 
 save_position() {
-    local slot="$1" name="$2"
+    local slot="$1" name="$2" quiet="${3:-}"
     local dir=$(slot_dir "$slot")
     local socket="$dir/mpv-socket"
 
@@ -890,13 +958,19 @@ save_position() {
         local pos track
         pos=$(echo '{"command":["get_property","playback-time"]}' | socat - "$socket" 2>/dev/null | jq -r '.data // 0') || pos=0
         track=$(echo '{"command":["get_property","playlist-pos"]}' | socat - "$socket" 2>/dev/null | jq -r '.data // 0') || track=0
+        # mpv returns null/empty for these right after launch (before the
+        # first file loads). Never persist that — it would clobber a good
+        # resume point with 0 and yank playback back to the top of the queue.
+        [[ -z "$pos" || "$pos" == "null" ]] && pos=0
+        [[ -z "$track" || "$track" == "null" ]] && track=0
         echo "{\"track\": $track, \"position\": $pos}" > "$dir/state.json"
-        log "$name" "Saved position: track=$track pos=$pos"
+        # quiet = periodic watchdog persistence; don't spam the log every tick.
+        [[ "$quiet" == "quiet" ]] || log "$name" "Saved position: track=$track pos=$pos"
     fi
 }
 
 stop_playback() {
-    local slot="$1" name="$2"
+    local slot="$1" name="$2" mode="${3:-graceful}"
     local dir=$(slot_dir "$slot")
 
     # NOTE: this function intentionally does NOT disarm the slot or
@@ -904,6 +978,25 @@ stop_playback() {
     # by `end_session` below. stop_playback is also invoked from
     # stop_all (service shutdown), where we want armed state to persist
     # so a mid-fire restart can resume on the next BT connect.
+
+    # FAST (BT-disconnect) PATH — kill mpv FIRST, before anything else.
+    # On disconnect BlueZ has already torn down this slot's bluez_output
+    # sink. A still-alive mpv stream gets migrated by PipeWire onto
+    # whatever sink remains (e.g. another connected headset) — this is the
+    # "green/blue audio piles onto yellow" bug. SIGKILL slams that window
+    # shut instantly. We deliberately do NOT do a live IPC save_position
+    # here: querying mpv over the socket while its sink is gone is exactly
+    # the multi-step delay that keeps the orphaned stream alive long enough
+    # to migrate. Resume position instead comes from state.json, which the
+    # watchdog persists every WATCHDOG_INTERVAL (5s) seconds.
+    if [[ "$mode" == "fast" && -f "$dir/mpv.pid" ]]; then
+        local kpid
+        kpid=$(cat "$dir/mpv.pid" 2>/dev/null)
+        if [[ -n "$kpid" ]]; then
+            kill -9 "$kpid" 2>/dev/null && log "$name" "Killed mpv (pid $kpid, fast/disconnect)" || true
+        fi
+        rm -f "$dir/mpv.pid"
+    fi
 
     # Kill any background downloader first — it would otherwise keep
     # writing tracks to playlist.m3u after mpv is gone, and on the next
@@ -920,7 +1013,15 @@ stop_playback() {
     fi
 
     stop_avrcp_dispatcher "$slot" "$name"
-    save_position "$slot" "$name"
+    # Graceful path (scheduled stop, /play stop, shutdown): the sink is
+    # still alive, so a live IPC save is safe and most accurate. Fast path
+    # skips it — mpv is already dead and state.json is fresh from the
+    # watchdog (see the fast block above).
+    if [[ "$mode" != "fast" ]]; then
+        save_position "$slot" "$name"
+    fi
+    # In fast mode mpv.pid was already removed above, so this SIGTERM
+    # fallback is a no-op there; it only runs for the graceful path.
     if [[ -f "$dir/mpv.pid" ]]; then
         local pid
         pid=$(cat "$dir/mpv.pid")
@@ -935,8 +1036,8 @@ stop_playback() {
 # mpv + cleans up files), this ALSO disarms the slot and fires the
 # optional HA turn_off, ending the logical "play session" entirely.
 end_session() {
-    local slot="$1" name="$2"
-    stop_playback "$slot" "$name"
+    local slot="$1" name="$2" mode="${3:-graceful}"
+    stop_playback "$slot" "$name" "$mode"
     disarm_slot "$slot"
 
     # Optional ha_turn_off_on_stop — used by public devices to power off
@@ -954,20 +1055,111 @@ end_session() {
     fi
 }
 
-fetch_and_cache() {
-    # Lazy/streaming mode: prime the first LAZY_PRIME_COUNT tracks
-    # synchronously, write the partial playlist, then fork a background
-    # downloader that fetches the remaining tracks and APPENDs them to
-    # both playlist.m3u and mpv's in-memory list. This lets a cold queue
-    # of 200+ tracks start playing within seconds instead of minutes.
-    local slot="$1" name="$2" queue_url="$3" shuffle="${4:-false}"
-    local dir=$(slot_dir "$slot")
+# Build playlist.m3u (central-cache paths) from a queue JSON, priming the first
+# LAZY_PRIME_COUNT tracks synchronously and recording the remainder to
+# .bg_remaining for spawn_bg_downloader. PURE w.r.t. mpv — no IPC, no fork.
+# Reused by Unit E (membership reconcile). Returns 1 if nothing primed.
+#   args: slot name queue_json shuffle
+rebuild_playlist_from_queue() {
+    local slot="$1" name="$2" queue_json="$3" shuffle="${4:-false}"
+    local dir; dir="$(slot_dir "$slot")"
     local playlist_tmp="$dir/playlist.m3u.tmp"
+    mkdir -p "$dir"
 
-    mkdir -p "$dir/cache"
+    local count
+    count=$(echo "$queue_json" | jq '.items | length')
 
-    # Kill any prior background downloader for this slot before
-    # rewriting the playlist — otherwise it'd race with the new shuffle.
+    # Build the canonical track order (shuffled if requested). We shuffle
+    # INDEX positions so the prime loop and the background downloader walk
+    # tracks in the same order — the playlist appears in shuffled order
+    # from track 1.
+    # NOTE: read loop (not mapfile) for bash 3.2 portability — the macOS dev box
+    # used to source this in tests ships bash 3.2 which lacks mapfile.
+    local -a ordered_indices=()
+    local _oi
+    if bool_enabled "$shuffle"; then
+        while IFS= read -r _oi; do ordered_indices+=("$_oi"); done < <(seq 0 $((count - 1)) | shuf)
+        log "$name" "Shuffled playlist order (shuf/urandom)"
+    else
+        while IFS= read -r _oi; do ordered_indices+=("$_oi"); done < <(seq 0 $((count - 1)))
+    fi
+
+    # Extract per-track metadata once into parallel arrays (avoids
+    # re-parsing the queue JSON repeatedly).
+    local -a track_ids=() track_urls=() track_titles=()
+    local orig_idx
+    for orig_idx in "${ordered_indices[@]}"; do
+        local plex_id media_path title safe_title
+        plex_id=$(echo "$queue_json" | jq -r ".items[$orig_idx].contentId" | sed 's/plex://')
+        media_path=$(echo "$queue_json" | jq -r ".items[$orig_idx].mediaUrl")
+        title=$(echo "$queue_json" | jq -r ".items[$orig_idx].title")
+        safe_title=$(printf '%s' "$title" | tr '\t\n\r' '   ' | sed 's/  */ /g')
+        [[ -z "$safe_title" || "$safe_title" == "null" ]] && safe_title="$plex_id"
+        track_ids+=("$plex_id")
+        track_urls+=("${API_BASE}${media_path}")
+        track_titles+=("$safe_title")
+    done
+    local total=${#track_ids[@]}
+
+    # Phase 1: synchronously prime the first LAZY_PRIME_COUNT tracks into the
+    # CENTRAL cache via get_cached_path, writing their central paths to the
+    # playlist. Skip (don't abort) any track that can't be cached.
+    local primed=0 target_prime=$((LAZY_PRIME_COUNT < total ? LAZY_PRIME_COUNT : total))
+    echo "#EXTM3U" > "$playlist_tmp"
+    local i cpath
+    for ((i=0; i<total && primed<target_prime; i++)); do
+        if cpath=$(get_cached_path "${track_ids[$i]}" "${track_urls[$i]}" "$name"); then
+            printf '#EXTINF:-1,%s\n%s\n' "${track_titles[$i]}" "$cpath" >> "$playlist_tmp"
+            primed=$((primed+1))
+        else
+            logev "$name" prime.skip plex_id="${track_ids[$i]}" reason=cache_fail
+        fi
+    done
+    local first_pending_idx=$i
+
+    if (( primed == 0 )); then
+        log "$name" "No primed tracks; queue produced no playable files"
+        rm -f "$playlist_tmp"
+        return 1
+    fi
+
+    mv "$playlist_tmp" "$dir/playlist.m3u"
+
+    # Record the membership baseline at the same atomic point as the playlist
+    # swap. This is what the membership self-heal tier (Unit E) diffs against:
+    # priming establishes the baseline so the first membership tick is a no-op
+    # when the server-side queue hasn't drifted.
+    queue_membership_hash "$queue_json" > "$dir/.membership"
+
+    # Record the remaining tracks (tab-separated: plex_id, url, title) for the
+    # background downloader. Written fresh every rebuild so a re-shuffle or
+    # content change supersedes the prior remainder.
+    : > "$dir/.bg_remaining"
+    local j
+    for ((j=first_pending_idx; j<total; j++)); do
+        printf '%s\t%s\t%s\n' \
+            "${track_ids[$j]}" "${track_urls[$j]}" "${track_titles[$j]}" \
+            >> "$dir/.bg_remaining"
+    done
+    [[ -s "$dir/.bg_remaining" ]] || rm -f "$dir/.bg_remaining"
+
+    logev "$name" playlist.primed primed=$primed total=$total
+    log "$name" "Playlist primed: $primed of $total tracks (rest will stream in background)"
+}
+
+fetch_and_cache() {
+    # Prime-only: fetch the queue, validate, then build playlist.m3u with the
+    # first LAZY_PRIME_COUNT tracks cached synchronously (rest recorded to
+    # .bg_remaining). Does NOT fork the background downloader — that now happens
+    # in start_playback AFTER mpv is up, so the bg's playlist appends can be
+    # reconciled into a live mpv instead of racing a not-yet-existent socket.
+    local slot="$1" name="$2" queue_url="$3" shuffle="${4:-false}"
+    local dir; dir="$(slot_dir "$slot")"
+
+    mkdir -p "$dir"
+
+    # Kill any prior background downloader for this slot before rewriting the
+    # playlist — otherwise it'd race with the new shuffle/content.
     if [[ -f "$dir/downloader.pid" ]]; then
         local old_pid
         old_pid=$(cat "$dir/downloader.pid" 2>/dev/null)
@@ -994,120 +1186,44 @@ fetch_and_cache() {
     fi
     log "$name" "Fetched queue from API"
 
-    local count
-    count=$(echo "$queue_json" | jq '.items | length')
+    rebuild_playlist_from_queue "$slot" "$name" "$queue_json" "$shuffle"
+}
 
-    # Build the canonical track order (shuffled if requested). We
-    # shuffle INDEX positions so both the synchronous prime and the
-    # background downloader walk tracks in the same order — the
-    # playlist appears in shuffled order from track 1.
-    local -a ordered_indices=()
-    if bool_enabled "$shuffle"; then
-        mapfile -t ordered_indices < <(seq 0 $((count - 1)) | shuf)
-        log "$name" "Shuffled playlist order (shuf/urandom)"
-    else
-        mapfile -t ordered_indices < <(seq 0 $((count - 1)))
-    fi
-
-    # Extract per-track metadata once into parallel arrays (avoids
-    # re-parsing the queue JSON repeatedly).
-    local -a track_ids=() track_urls=() track_titles=() track_files=()
-    local i orig_idx
-    for orig_idx in "${ordered_indices[@]}"; do
-        local plex_id media_path title cached_file safe_title
-        plex_id=$(echo "$queue_json" | jq -r ".items[$orig_idx].contentId" | sed 's/plex://')
-        media_path=$(echo "$queue_json" | jq -r ".items[$orig_idx].mediaUrl")
-        title=$(echo "$queue_json" | jq -r ".items[$orig_idx].title")
-        cached_file="$dir/cache/${plex_id}.mp3"
-        safe_title=$(printf '%s' "$title" | tr '\t\n\r' '   ' | sed 's/  */ /g')
-        [[ -z "$safe_title" || "$safe_title" == "null" ]] && safe_title="$plex_id"
-        track_ids+=("$plex_id")
-        track_urls+=("${API_BASE}${media_path}")
-        track_titles+=("$safe_title")
-        track_files+=("$cached_file")
-    done
-    local total=${#track_ids[@]}
-
-    # Phase 1: synchronously prime the first LAZY_PRIME_COUNT tracks.
-    echo "#EXTM3U" > "$playlist_tmp"
-    local primed=0
-    local first_pending_idx=0
-    local target_prime=$((LAZY_PRIME_COUNT < total ? LAZY_PRIME_COUNT : total))
-
-    for ((i=0; i<total && primed<target_prime; i++)); do
-        local plex_id="${track_ids[$i]}"
-        local url="${track_urls[$i]}"
-        local title="${track_titles[$i]}"
-        local cached_file="${track_files[$i]}"
-
-        if [[ -f "$cached_file" ]] && is_valid_audio_file "$cached_file"; then
-            log "$name" "Cached: $title ($plex_id)"
-        else
-            log "$name" "Priming: $title ($plex_id)"
-            rm -f "$cached_file"
-            if ! download_media_file "$url" "$cached_file" "$name" "$plex_id"; then
-                log "$name" "Failed to prime $plex_id, skipping"
-                continue
-            fi
-        fi
-        printf '#EXTINF:-1,%s\n%s\n' "$title" "$cached_file" >> "$playlist_tmp"
-        primed=$((primed + 1))
-    done
-    first_pending_idx=$i
-
-    if (( primed == 0 )); then
-        log "$name" "No primed tracks; queue produced no playable files"
-        rm -f "$playlist_tmp"
-        return 1
-    fi
-
-    mv "$playlist_tmp" "$dir/playlist.m3u"
-    log "$name" "Playlist primed: $primed of $total tracks (rest will stream in background)"
-
-    # Phase 2: fork a background downloader for the remaining tracks.
-    # The BG appends each new track to both playlist.m3u (so a future
-    # mpv restart sees the full list) and to mpv's running playlist
-    # via loadfile … append.
-    if (( first_pending_idx < total )); then
-        local socket="$dir/mpv-socket"
-        local bg_state="$dir/.bg_remaining"
-        : > "$bg_state"
-        local j
-        for ((j=first_pending_idx; j<total; j++)); do
-            printf '%s\t%s\t%s\t%s\n' \
-                "${track_ids[$j]}" "${track_urls[$j]}" \
-                "${track_files[$j]}" "${track_titles[$j]}" >> "$bg_state"
-        done
-
-        # Spawn the downloader. exec 9>&- closes the inherited flock fd
-        # so the lock isn't held for the lifetime of the background job.
-        # set +e so a single failed download doesn't abort the whole loop.
-        (
-            exec 9>&-
-            set +e
-            local line plex_id url cached_file title
-            while IFS=$'\t' read -r plex_id url cached_file title; do
-                if [[ -f "$cached_file" ]] && is_valid_audio_file "$cached_file"; then
-                    :
-                else
-                    rm -f "$cached_file"
-                    if ! download_media_file "$url" "$cached_file" "$name" "$plex_id"; then
-                        log "$name" "[bg] failed download $plex_id"
-                        continue
-                    fi
-                fi
-                printf '#EXTINF:-1,%s\n%s\n' "$title" "$cached_file" >> "$dir/playlist.m3u"
-                if [[ -S "$socket" ]]; then
-                    echo "{\"command\":[\"loadfile\",\"$cached_file\",\"append\"]}" \
-                        | socat - "$socket" >/dev/null 2>&1
-                fi
-            done < "$bg_state"
-            rm -f "$bg_state" "$dir/downloader.pid"
-            log "$name" "[bg] all tracks cached and appended"
-        ) &
-        echo $! > "$dir/downloader.pid"
-        log "$name" "bg downloader spawned pid=$!"
-    fi
+# Fork the background downloader for the remaining tracks recorded in
+# .bg_remaining. Each track is cached via get_cached_path (central cache) and
+# its central path is APPENDED to playlist.m3u (file), then — best-effort,
+# guarded by socket presence — appended into mpv's live in-memory list via
+# `loadfile append` so a cold queue gains variety during the download instead
+# of looping only the primed subset. The authoritative full-list sync is still
+# a single position-preserving loadlist replace once .bg_done is touched (see
+# start_playback), which closes the warm-cache subset-loop race. On finish:
+# rm .bg_remaining/downloader.pid, touch .bg_done, emit bg.complete.
+spawn_bg_downloader() {
+    local slot="$1" name="$2" dir; dir="$(slot_dir "$slot")"
+    [[ -s "$dir/.bg_remaining" ]] || { touch "$dir/.bg_done"; return 0; }
+    ( exec 9>&-; set +e
+      local plex_id url title cpath
+      while IFS=$'\t' read -r plex_id url title; do
+          if cpath=$(get_cached_path "$plex_id" "$url" "$name"); then
+              printf '#EXTINF:-1,%s\n%s\n' "$title" "$cpath" >> "$dir/playlist.m3u"
+              # Incremental: extend mpv's in-memory list live so a cold queue
+              # gains variety during download instead of looping the primed
+              # subset. Safe here because bg is forked AFTER the socket is up.
+              # Best-effort: the authoritative full-list sync is the final
+              # loadlist-replace reconcile in start_playback.
+              if [[ -S "$dir/mpv-socket" ]]; then
+                  mpv_ipc "$dir/mpv-socket" "{\"command\":[\"loadfile\",\"$cpath\",\"append\"]}" >/dev/null 2>&1 || true
+              fi
+          else
+              logev "$name" bg.skip plex_id="$plex_id" reason=cache_fail
+          fi
+      done < "$dir/.bg_remaining"
+      rm -f "$dir/.bg_remaining" "$dir/downloader.pid"
+      touch "$dir/.bg_done"
+      logev "$name" bg.complete file_count="$(grep -c '^/' "$dir/playlist.m3u" 2>/dev/null || echo 0)"
+    ) &
+    echo $! > "$dir/downloader.pid"
+    logev "$name" bg.spawned pid=$!
 }
 
 reload_mpv_playlist() {
@@ -1137,6 +1253,96 @@ reload_mpv_playlist() {
         log "$name" "reload_mpv_playlist: mpv response not success: $response"
         return 1
     fi
+}
+
+# === mpv-IPC + playlist-reconcile helpers (Unit D1) =========================
+# These are the verified-IPC building blocks the race fix (Unit D2) wires into
+# start_playback. Each uses the same socat/jq style as reload_mpv_playlist
+# above. They are deliberately small and side-effect-free except where noted,
+# so they can be tested in isolation against a fake mpv socket.
+
+# Poll until the mpv IPC socket is live (0) or the timeout lapses (1).
+# 0.2s steps * (timeout*5) iterations == timeout seconds total.
+wait_for_mpv_socket() { # dir timeout_sec -> 0 when socket is live
+    local socket="$1/mpv-socket" timeout="${2:-5}" waited=0
+    while (( waited < timeout*5 )); do
+        [[ -S "$socket" ]] && return 0
+        sleep 0.2; waited=$((waited+1))
+    done
+    [[ -S "$socket" ]]
+}
+
+# Send a JSON command, print the raw response, return 0 iff mpv reports success.
+mpv_ipc() { # socket json -> prints raw response; returns 0 iff "error":"success"
+    local socket="$1" json="$2" resp
+    [[ -S "$socket" ]] || return 1
+    resp=$(echo "$json" | socat - "$socket" 2>/dev/null) || return 1
+    echo "$resp"
+    echo "$resp" | grep -q '"error":"success"'
+}
+
+# Current number of entries mpv has loaded (0 if unavailable).
+mpv_playlist_count() { # socket -> integer (0 if unavailable)
+    local socket="$1" r
+    r=$(echo '{"command":["get_property","playlist-count"]}' | socat - "$socket" 2>/dev/null | jq -r '.data // 0') || r=0
+    echo "${r:-0}"
+}
+
+# plex_id (basename minus .mp3) of the entry mpv is currently on, or empty.
+mpv_current_plexid() { # socket -> plex_id of current entry, or empty
+    local socket="$1" path
+    path=$(echo '{"command":["get_property","path"]}' | socat - "$socket" 2>/dev/null | jq -r '.data // empty')
+    [[ -n "$path" ]] && basename "$path" .mp3 || true
+}
+
+# Read a single mpv property's .data (empty on failure). Thin wrapper used by
+# the watchdog stall detector to sample time-pos / pause.
+mpv_get_prop() { # socket prop -> prints .data or empty
+    local socket="$1" prop="$2"
+    echo "{\"command\":[\"get_property\",\"$prop\"]}" | socat - "$socket" 2>/dev/null | jq -r '.data // empty'
+}
+
+# PURE predicate (Unit F Part 2): has playback stalled between two watchdog
+# ticks? Stalled iff NOT paused AND both samples are present AND time-pos did
+# not advance (prev == cur). Conservative: a paused player or any missing sample
+# is NEVER a stall, so we never fight a user pause or a transient IPC miss.
+pos_stalled() { # prev cur paused -> 0 stalled / 1 not
+    local prev="$1" cur="$2" paused="$3"
+    [[ "$paused" == "true" ]] && return 1
+    [[ -z "$prev" || -z "$cur" ]] && return 1
+    [[ "$prev" == "$cur" ]] && return 0
+    return 1
+}
+
+# PURE: 0-based index of the m3u entry whose basename (minus .mp3) == plex_id,
+# or -1. No socket. Skips #-comments and blank lines. Extracted for testability.
+playlist_index_of() { # playlist_file plex_id -> prints index or -1
+    local file="$1" want="$2" i=0 line
+    [[ -f "$file" ]] || { echo -1; return; }
+    while IFS= read -r line; do
+        [[ "$line" == \#* || -z "$line" ]] && continue
+        [[ "$(basename "$line" .mp3)" == "$want" ]] && { echo "$i"; return; }
+        i=$((i+1))
+    done < "$file"
+    echo -1
+}
+
+# Reload playlist.m3u into mpv (replace) while keeping the current track if it
+# survives the new list. loadlist resets pos to 0, so we re-seek to the
+# surviving entry's new index. Logs a reconcile.loadlist event.
+loadlist_replace_preserving_pos() { # slot name -> 0 on reconcile, 1 on skip/fail
+    local slot="$1" name="$2" dir; dir="$(slot_dir "$slot")"
+    local socket="$dir/mpv-socket"
+    [[ -S "$socket" ]] || { logev "$name" reconcile.skip slot="$slot" reason=no_socket; return 1; }
+    local cur_id before; cur_id="$(mpv_current_plexid "$socket")"; before="$(mpv_playlist_count "$socket")"
+    mpv_ipc "$socket" "{\"command\":[\"loadlist\",\"$dir/playlist.m3u\",\"replace\"]}" >/dev/null || {
+        logev "$name" reconcile.fail slot="$slot" reason=loadlist; return 1; }
+    local idx; idx="$(playlist_index_of "$dir/playlist.m3u" "$cur_id")"
+    if (( idx >= 0 )); then
+        mpv_ipc "$socket" "{\"command\":[\"set_property\",\"playlist-pos\",$idx]}" >/dev/null || true
+    fi
+    local after; after="$(mpv_playlist_count "$socket")"
+    logev "$name" reconcile.loadlist slot="$slot" mpv_count="${before}-${after}" cur_track_survived="$([[ $idx -ge 0 ]] && echo true || echo false)"
 }
 
 start_playback() {
@@ -1207,6 +1413,7 @@ start_playback() {
             start_pos=$(jq -r '.position // 0' "$dir/state.json")
         fi
         log "$name" "Resuming: track=$start_track pos=$start_pos"
+        logev "$name" resume track="$start_track" pos="$start_pos"
     fi
 
     log "$name" "Using audio device: $audio_device"
@@ -1227,15 +1434,17 @@ start_playback() {
     # default 130), NOT a clamp below — passing < 100 makes mpv exit
     # immediately. Volume capping is enforced by avrcp_dispatch.py and
     # the /play API instead, with mpv launched at the configured default.
-    # LANE GUARDRAIL: PIPEWIRE_PROPS node.dont-reconnect=true makes PipeWire
-    # DESTROY this stream when its target BT sink disappears (BT teardown on
-    # disconnect) instead of re-routing the orphan frames to the default sink
-    # — which would leak this slot's audio into the white speaker for the ~1s
-    # window between BT teardown and our mpv kill. --audio-fallback-to-null
-    # is defense-in-depth: if the device fails to open, mpv uses a null AO
-    # instead of grabbing whatever device PipeWire offers.
-    ( exec 9>&-; exec env PIPEWIRE_PROPS='{ "node.dont-reconnect": true }' \
-        mpv --no-video --no-terminal \
+    # mpv.log: rotate the previous launch's log to mpv.log.1 (so a crash's
+    # log survives the next restart's truncation) and raise the message
+    # level so demuxer/stream/ao/ffmpeg warnings — the signal for partial or
+    # corrupt cache files — are captured. AUDIO-SAFETY: ONLY these two
+    # additions (rotate + --msg-level) were made here; no other flag was
+    # added, removed, or reordered. Do NOT add --audio-fallback-to-null,
+    # PIPEWIRE_PROPS/node.dont-reconnect, or any ao-mute (see README "Audio
+    # flow troubleshooting" — that combination silently silences mpv).
+    [[ -f "$dir/mpv.log" ]] && mv "$dir/mpv.log" "$dir/mpv.log.1"
+    ( exec 9>&-; exec mpv --no-video --no-terminal \
+        --msg-level=all=info,demuxer=warn,stream=warn,ao=warn,ffmpeg=warn \
         --input-ipc-server="$dir/mpv-socket" \
         --playlist="$dir/playlist.m3u" \
         --playlist-start="$start_track" \
@@ -1244,15 +1453,16 @@ start_playback() {
         --pause=no \
         --volume="$vol_default" \
         --load-scripts="$load_scripts" \
-        --audio-fallback-to-null=yes \
         --audio-device="$audio_device" 2>"$dir/mpv.log" ) &
 
     echo $! > "$dir/mpv.pid"
     log "$name" "mpv started (pid $!)"
+    logev "$name" mpv.start pid=$! resume_track="$start_track" resume_pos="$start_pos"
 
     sleep 2
     if ! kill -0 "$!" 2>/dev/null; then
         log "$name" "mpv exited immediately after launch"
+        logev "$name" mpv.exit_immediate slot="$slot"
         rm -f "$dir/mpv.pid" "$dir/mpv-socket"
         exec 9>&-
         return 1
@@ -1268,6 +1478,27 @@ start_playback() {
 
     # Headset AVRCP buttons → mpv IPC bridge (per-slot)
     start_avrcp_dispatcher "$slot" "$name" "$mac" || true
+
+    # mpv is up; wait for its IPC socket before doing anything that needs it.
+    if wait_for_mpv_socket "$dir" 8; then
+        logev "$name" mpv.loaded slot="$slot" count="$(mpv_playlist_count "$dir/mpv-socket")"
+    else
+        logev "$name" mpv.socket_timeout slot="$slot"
+    fi
+    rm -f "$dir/.bg_done"
+    spawn_bg_downloader "$slot" "$name"
+    # One-shot reconcile: when the bg finishes appending the full list to the
+    # file, reload it into mpv (position-preserving) so mpv's in-memory list
+    # matches the full playlist — closing the warm-cache subset-loop race.
+    # exec 9>&- so the long-lived reconcile subshell does NOT hold the FD-9
+    # playback lock (it is still open in this parent until the line below).
+    ( exec 9>&-; set +e
+      for _ in $(seq 1 120); do [[ -f "$dir/.bg_done" ]] && break; sleep 1; done
+      rm -f "$dir/.bg_done"
+      loadlist_replace_preserving_pos "$slot" "$name"
+      logev "$name" playback.reconciled slot="$slot" \
+            mpv_count="$(mpv_playlist_count "$dir/mpv-socket")" \
+            file_count="$(grep -c '^/' "$dir/playlist.m3u" 2>/dev/null || echo 0)" ) &
 
     # Release the per-slot playback lock (FD 9). Closing the FD lets a
     # future start_playback acquire flock; the lock file itself stays.
@@ -1326,12 +1557,206 @@ refresh_loop() {
                         exit 0
                     fi
                     log "$tag" "Periodic queue refresh"
-                    fetch_and_cache "$slot" "$tag" "$queue" "$shuffle" \
-                        && reload_mpv_playlist "$slot" "$tag"
+                    if fetch_and_cache "$slot" "$tag" "$queue" "$shuffle"; then
+                        # Reload the freshly-primed list into the running mpv,
+                        # then stream the remainder in the background and do a
+                        # one-shot position-preserving reconcile once it lands.
+                        reload_mpv_playlist "$slot" "$tag" || true
+                        rm -f "$dir/.bg_done"
+                        spawn_bg_downloader "$slot" "$tag"
+                        ( exec 9>&-
+                          for _ in $(seq 1 120); do [[ -f "$dir/.bg_done" ]] && break; sleep 1; done
+                          rm -f "$dir/.bg_done"
+                          loadlist_replace_preserving_pos "$slot" "$tag" ) &
+                    fi
                 )
             fi
         done
     done
+}
+
+# Membership self-heal tier (Unit E). One pass: for each device whose mpv is
+# live (a live mpv implies BT-connected — disconnect hard-kills it, mirroring
+# refresh_loop's gate), resolve the SCHEDULE-CORRECT active queue exactly as
+# refresh_loop does (selected_queue/selected_shuffle, with armed-queue override
+# like the watchdog), then reconcile the running mpv to the server-side queue.
+# Cheap when nothing drifted (hash compare in reconcile_slot_membership).
+# Extracted as a single pass so it is unit-testable; membership_loop just calls
+# it on an interval.
+membership_tick() {
+    local count idx
+    count=$(jq '.devices | length' "$CONFIG_FILE" 2>/dev/null || echo 0)
+    for ((idx=0; idx<count; idx++)); do
+        local device_json slot name mac tag queue shuffle dir
+        device_json=$(jq -c ".devices[$idx]" "$CONFIG_FILE" 2>/dev/null) || continue
+        slot=$(jq -r '.slot' <<< "$device_json")
+        name=$(jq -r '.name' <<< "$device_json")
+        mac=$(jq -r '.mac' <<< "$device_json")
+        tag=$(device_tag "$slot" "$mac" "$name")
+        shuffle=$(selected_shuffle "$device_json")
+        dir=$(slot_dir "$slot")
+
+        # Only touch slots with a live mpv (idle slots have nothing to reconcile
+        # and we don't want to fetch their queues). Mirrors refresh_loop's gate.
+        [[ -f "$dir/mpv.pid" ]] && kill -0 "$(cat "$dir/mpv.pid" 2>/dev/null)" 2>/dev/null || continue
+
+        # Resolve the effective active queue, schedule-aware. Armed slots
+        # (scheduled fires / /play) override the device's static queue — this is
+        # how a public slot (no static queue) gets a queue at all.
+        queue=$(selected_queue "$device_json")
+        if is_armed_for_play "$slot"; then
+            local armed_queue
+            armed_queue=$(armed_field "$slot" "queue")
+            [[ -n "$armed_queue" ]] && queue=$(resolve_queue_url "$armed_queue")
+        fi
+
+        # Skip cleanly when there is no per-device queue (e.g. class=public
+        # white speaker, slot 5) — reconcile would no-op but better to skip.
+        [[ -z "$queue" ]] && continue
+
+        reconcile_slot_membership "$slot" "$tag" "$queue" "$shuffle"
+    done
+}
+
+# Background loop: membership self-heal every MEMBERSHIP_INTERVAL seconds.
+membership_loop() {
+    while true; do
+        sleep "$MEMBERSHIP_INTERVAL"
+        membership_tick
+    done
+}
+
+# Rolling HTTP HEAD content-change scheduler (Unit F Part 1).
+# Each tick HEAD-checks a BOUNDED, round-robin slice of the live cache set so a
+# full pass over all live files spans ~HEAD_FULL_PASS seconds rather than
+# bursting one HEAD per file at once. With one tick per MEMBERSHIP_INTERVAL (60s)
+# and HEAD_FULL_PASS=900, that's ~15 ticks/pass, so batch = ceil(live/15). The
+# cursor persists across ticks in $BASE_DIR/.head_cursor and wraps at the end of
+# the live list. Batch is hard-clamped (<=12) so a large library can never burst
+# 100+ HEADs in a single tick. head_check itself is a cheap no-op unless the
+# server's Content-Length actually changed.
+HEAD_BATCH_CLAMP=12
+head_sweep_tick() {
+    local cursor_file="$BASE_DIR/.head_cursor"
+    local -a ids=()
+    local id
+    while IFS= read -r id; do [[ -n "$id" ]] && ids+=("$id"); done < <(cache_live_set)
+    local n=${#ids[@]}
+    (( n == 0 )) && return 0
+
+    # ticks per full pass (>=1); batch = ceil(n / ticks).
+    local ticks=$(( HEAD_FULL_PASS / MEMBERSHIP_INTERVAL ))
+    (( ticks < 1 )) && ticks=1
+    local batch=$(( (n + ticks - 1) / ticks ))
+    (( batch < 1 )) && batch=1
+    if (( batch > HEAD_BATCH_CLAMP )); then
+        logev sweep cache.head_clamp requested="$batch" clamped="$HEAD_BATCH_CLAMP" live="$n"
+        batch=$HEAD_BATCH_CLAMP
+    fi
+
+    local cursor; cursor=$(cat "$cursor_file" 2>/dev/null || echo 0)
+    [[ "$cursor" =~ ^[0-9]+$ ]] || cursor=0
+    (( cursor >= n )) && cursor=0
+
+    local i pos url checked=0
+    for (( i=0; i<batch; i++ )); do
+        pos=$(( (cursor + i) % n ))
+        id="${ids[$pos]}"
+        url=$(cache_meta_get "$id" source_url)
+        [[ -z "$url" ]] && continue          # no recorded source — can't HEAD
+        head_check "$id" "$url" sweep
+        checked=$((checked+1))
+    done
+    # Advance + persist the cursor (wrap). Always advance by batch so we make
+    # forward progress even if some ids in this window had no source_url.
+    cursor=$(( (cursor + batch) % n ))
+    echo "$cursor" > "$cursor_file"
+    logev sweep cache.head_pass batch="$batch" checked="$checked" cursor="$cursor" live="$n"
+}
+
+# Background loop: rolling HEAD content-change every MEMBERSHIP_INTERVAL seconds.
+# Staggered (initial sleep 30) so it does not fire simultaneously with
+# membership_loop, which shares the same interval.
+head_loop() {
+    sleep 30
+    while true; do
+        sleep "$MEMBERSHIP_INTERVAL"
+        head_sweep_tick
+    done
+}
+
+# Background loop: ref-counted orphan cache sweep every SWEEP_INTERVAL seconds.
+# Staggered (initial sleep 45) off the other self-heal loops.
+sweep_loop() {
+    sleep 45
+    while true; do
+        sleep "$SWEEP_INTERVAL"
+        cache_orphan_sweep
+    done
+}
+
+# Revalidate-on-stall (Unit F Part 2). Called from the watchdog's ALIVE branch
+# on every tick for a live mpv. Samples time-pos + pause and compares to the
+# pos this slot reported on the PREVIOUS tick (persisted in $dir/.last_pos). If
+# pos_stalled fires across two consecutive ticks (~10s of frozen, unpaused
+# playback — the signature of a bad/partial cache file mpv cannot decode), it
+# treats the current track as corrupt: drop the cache file, force a
+# revalidate/redownload via get_cached_path, then loadlist-replace to reload the
+# repaired file in place.
+#
+# Anti-thrash: it will NOT re-revalidate the SAME plex_id more than once per
+# STALL_REVALIDATE_COOLDOWN seconds (state in $dir/.last_revalidate = "id epoch").
+# This function NEVER kills mpv or touches mpv.pid/state.json — it only
+# revalidates + reloads, so it cannot interfere with the watchdog's respawn,
+# position-persist, or fast-kill paths. It is intentionally OFF the disconnect
+# path (called only when mpv is alive AND the device is connected).
+#   args: slot tag socket
+mpv_check_stall() {
+    local slot="$1" tag="$2" socket="$3" dir; dir="$(slot_dir "$slot")"
+    [[ -S "$socket" ]] || return 0
+    local cur paused; cur="$(mpv_get_prop "$socket" time-pos)"; paused="$(mpv_get_prop "$socket" pause)"
+    local prev; prev="$(cat "$dir/.last_pos" 2>/dev/null || echo "")"
+    # Record current pos for the next tick's comparison (always).
+    printf '%s' "$cur" > "$dir/.last_pos"
+
+    local id; id="$(mpv_current_plexid "$socket")"
+
+    # Track-progression timeline (best-effort, cheap): when the current
+    # plex_id changes from the last-seen one, emit a track.start. Reuses the
+    # already-sampled current id — no extra polling loop. State lives in
+    # $dir/.last_track_id alongside the stall machinery.
+    if [[ -n "$id" ]]; then
+        local last_id; last_id="$(cat "$dir/.last_track_id" 2>/dev/null || echo "")"
+        if [[ "$id" != "$last_id" ]]; then
+            printf '%s' "$id" > "$dir/.last_track_id"
+            logev "$tag" track.start plex_id="$id" idx="$(mpv_get_prop "$socket" playlist-pos)"
+        fi
+    fi
+
+    pos_stalled "$prev" "$cur" "$paused" || return 0
+
+    [[ -z "$id" ]] && return 0
+
+    # Cooldown: skip if we already revalidated THIS id within the window.
+    local lr lr_id lr_ts now; now=$(date +%s)
+    lr="$(cat "$dir/.last_revalidate" 2>/dev/null || echo "")"
+    lr_id="${lr%% *}"; lr_ts="${lr##* }"
+    if [[ "$lr_id" == "$id" && "$lr_ts" =~ ^[0-9]+$ ]] && (( now - lr_ts < STALL_REVALIDATE_COOLDOWN )); then
+        return 0
+    fi
+
+    logev "$tag" track.stall plex_id="$id" pos="$cur" slot="$slot"
+    local url; url="$(cache_meta_get "$id" source_url)"
+    if [[ -z "$url" ]]; then
+        logev "$tag" track.stall_skip plex_id="$id" reason=no_source_url
+        return 0
+    fi
+    printf '%s %s' "$id" "$now" > "$dir/.last_revalidate"
+    rm -f "$(cache_path "$id")"
+    get_cached_path "$id" "$url" "$tag" >/dev/null || true
+    loadlist_replace_preserving_pos "$slot" "$tag" || true
+    logev "$tag" cache.revalidate plex_id="$id" slot="$slot" reason=playback_stall
+    return 0
 }
 
 # Tight liveness watchdog. Every WATCHDOG_INTERVAL seconds, for each
@@ -1389,6 +1814,15 @@ mpv_watchdog() {
             if [[ -f "$dir/mpv.pid" ]]; then
                 mpv_pid=$(cat "$dir/mpv.pid" 2>/dev/null)
                 if [[ -n "$mpv_pid" ]] && kill -0 "$mpv_pid" 2>/dev/null; then
+                    # Persist position every tick (quiet — no log spam) so the
+                    # fast-kill disconnect path has a fresh resume point without
+                    # needing a live IPC save while the sink is being torn down.
+                    save_position "$slot" "$name" quiet
+                    # Revalidate-on-stall: ADD-ONLY self-heal for a frozen track
+                    # (bad/partial cache file). Never touches mpv.pid/state/respawn;
+                    # cooldown-guarded so it can't thrash. `|| true` keeps the
+                    # watchdog loop unbreakable even under set -e.
+                    mpv_check_stall "$slot" "$tag" "$dir/mpv-socket" || true
                     continue
                 fi
                 rm -f "$dir/mpv.pid" "$dir/mpv-socket"
@@ -1405,6 +1839,13 @@ monitor() {
     declare -A dbus_to_name
     declare -A dbus_to_device
     declare -A connected_state
+
+    # One-time startup migration: fold any legacy per-slot caches
+    # (slots/<N>/cache/<id>.mp3) into the central $CACHE_DIR before the
+    # per-slot `mkdir -p .../cache` loop below touches those dirs. Idempotent
+    # and runs exactly once at daemon start (NOT in any loop). Config is already
+    # materialized by the refresh_config_cache call in the dispatch guard.
+    migrate_per_slot_caches || true
 
     local count idx
     count=$(jq '.devices | length' "$CONFIG_FILE")
@@ -1465,6 +1906,22 @@ monitor() {
     mpv_watchdog &
     WATCHDOG_PID=$!
 
+    # Start membership self-heal loop (reconcile mpv to server-side queue
+    # membership/order drift every MEMBERSHIP_INTERVAL)
+    membership_loop &
+    MEMBERSHIP_PID=$!
+
+    # Start rolling HEAD content-change loop (Unit F): bounded round-robin HEADs
+    # over the live cache set, ~HEAD_FULL_PASS per full pass. Staggered (sleep 30)
+    # off membership_loop so the two same-interval loops don't fire together.
+    head_loop &
+    HEAD_PID=$!
+
+    # Start orphan cache sweep loop (Unit F): ref-counted TTL + size-cap eviction
+    # every SWEEP_INTERVAL. Staggered (sleep 45) off the other self-heal loops.
+    sweep_loop &
+    SWEEP_PID=$!
+
     # Start scheduled-fire loop (one-shot wake events from devices.yml `scheduled:`)
     scheduled_loop &
     SCHEDULED_PID=$!
@@ -1491,6 +1948,7 @@ monitor() {
                 if echo "$line" | grep -q "'Connected': <true>"; then
                     if [[ "${connected_state[$dbus_id]}" == false ]]; then
                         log "$name" "Connected"
+                        logev "$name" bt.connect mac="$(jq -r '.mac' <<< "$device_json")"
                         connected_state[$dbus_id]=true
                         sleep 2
                         local cls
@@ -1513,21 +1971,19 @@ monitor() {
                     fi
                 elif echo "$line" | grep -q "'Connected': <false>"; then
                     if [[ "${connected_state[$dbus_id]}" == true ]]; then
-                        # LANE GUARDRAIL window-shrinker: mute + detach mpv's audio
-                        # output BEFORE end_session, so no orphan frames are
-                        # emitted during the BT-teardown → kill window. Belt-and-
-                        # suspenders with PIPEWIRE_PROPS node.dont-reconnect set
-                        # at launch — that is the real fix; this is insurance.
-                        local _disc_dir=$(slot_dir "$slot")
-                        if [[ -S "$_disc_dir/mpv-socket" ]]; then
-                            printf '%s\n' '{"command":["set_property","ao-mute",true]}' \
-                                | socat - "$_disc_dir/mpv-socket" >/dev/null 2>&1 || true
-                            printf '%s\n' '{"command":["set_property","audio-device","null"]}' \
-                                | socat - "$_disc_dir/mpv-socket" >/dev/null 2>&1 || true
-                        fi
+                        # Bleed fix: end_session in FAST mode SIGKILLs this
+                        # slot's mpv immediately (before any IPC), so PipeWire
+                        # can't migrate the now-sinkless stream onto another
+                        # connected headset ("green/blue piling onto yellow").
+                        # This replaces the old LANE GUARDRAIL disconnect-time
+                        # IPC mute, which raced the new mpv socket on reconnect
+                        # and silenced fresh playback. No mute IPC here — just a
+                        # hard kill. Resume position comes from state.json, kept
+                        # fresh by the watchdog's periodic save.
                         log "$name" "Disconnected"
+                        logev "$name" bt.disconnect mac="$(jq -r '.mac' <<< "$device_json")"
                         connected_state[$dbus_id]=false
-                        end_session "$slot" "$name"
+                        end_session "$slot" "$name" fast
                     fi
                 fi
             fi
@@ -1564,13 +2020,8 @@ expand_targets() {
 
 # Send a single mpv IPC command to a slot's mpv-socket. Returns 0 on
 # socket reachable + mpv response received, non-zero otherwise.
-mpv_ipc() {
-    local slot="$1" cmd_json="$2"
-    local sock
-    sock="$(slot_dir "$slot")/mpv-socket"
-    [[ -S "$sock" ]] || return 1
-    echo "$cmd_json" | socat - "$sock" 2>/dev/null | head -1
-}
+# mpv_ipc lives with the Unit D1 helpers above (socket-based, verified). The
+# control-path call sites below pass the resolved socket path via slot_dir.
 
 handle_cmd() {
     local action="$1" target="$2"
@@ -1655,6 +2106,15 @@ handle_cmd() {
                             echo "{\"command\":[\"set_property\",\"volume\",$volume]}" \
                                 | socat - "$sock" >/dev/null 2>&1
                         fi
+                        # Stream the remainder of the override queue in the
+                        # background, then reconcile the full list into mpv.
+                        local odir; odir="$(slot_dir "$slot")"
+                        rm -f "$odir/.bg_done"
+                        spawn_bg_downloader "$slot" "$tag"
+                        ( exec 9>&-
+                          for _ in $(seq 1 120); do [[ -f "$odir/.bg_done" ]] && break; sleep 1; done
+                          rm -f "$odir/.bg_done"
+                          loadlist_replace_preserving_pos "$slot" "$tag" ) &
                     fi
                 fi
                 applied=$((applied+1))
@@ -1665,15 +2125,15 @@ handle_cmd() {
                 applied=$((applied+1))
                 ;;
             pause)
-                mpv_ipc "$slot" '{"command":["cycle","pause"]}' >/dev/null && \
+                mpv_ipc "$(slot_dir "$slot")/mpv-socket" '{"command":["cycle","pause"]}' >/dev/null && \
                     applied=$((applied+1)) || skipped=$((skipped+1))
                 ;;
             next)
-                mpv_ipc "$slot" '{"command":["playlist-next"]}' >/dev/null && \
+                mpv_ipc "$(slot_dir "$slot")/mpv-socket" '{"command":["playlist-next"]}' >/dev/null && \
                     applied=$((applied+1)) || skipped=$((skipped+1))
                 ;;
             prev)
-                mpv_ipc "$slot" '{"command":["playlist-prev"]}' >/dev/null && \
+                mpv_ipc "$(slot_dir "$slot")/mpv-socket" '{"command":["playlist-prev"]}' >/dev/null && \
                     applied=$((applied+1)) || skipped=$((skipped+1))
                 ;;
             volume)
@@ -1689,7 +2149,7 @@ handle_cmd() {
                     "$CONFIG_FILE")
                 (( v > vmax )) && v=$vmax
                 (( v < 0 )) && v=0
-                mpv_ipc "$slot" "{\"command\":[\"set_property\",\"volume\",$v]}" >/dev/null && \
+                mpv_ipc "$(slot_dir "$slot")/mpv-socket" "{\"command\":[\"set_property\",\"volume\",$v]}" >/dev/null && \
                     applied=$((applied+1)) || skipped=$((skipped+1))
                 ;;
             *)
@@ -1703,23 +2163,28 @@ handle_cmd() {
     (( applied > 0 )) && return 0 || return 1
 }
 
-# Always materialize the runtime JSON cache from devices.yml before any
-# subcommand runs — jq paths throughout the script depend on it.
-refresh_config_cache || {
-    echo "[startup] No usable config (looked for $CONFIG_YML / $CONFIG_JSON_LEGACY)" >&2
-    exit 1
-}
+# Only run the command dispatch (and its config-cache side effects) when this
+# script is executed directly. When sourced (e.g. by the bash test harness),
+# all functions are defined but nothing auto-launches or exits.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    # Always materialize the runtime JSON cache from devices.yml before any
+    # subcommand runs — jq paths throughout the script depend on it.
+    refresh_config_cache || {
+        echo "[startup] No usable config (looked for $CONFIG_YML / $CONFIG_JSON_LEGACY)" >&2
+        exit 1
+    }
 
-case "${1:-monitor}" in
-    monitor)
-        # The monitor daemon owns the running mpv/avrcp/dispatcher child
-        # processes; on EXIT it should clean them up. One-shot subcommands
-        # (cmd, stop) must NOT have this trap — otherwise their EXIT would
-        # tear down the daemon's mpv processes.
-        trap stop_all EXIT
-        monitor
-        ;;
-    stop)    stop_all ;;
-    cmd)     shift; handle_cmd "$@" ;;
-    *)       echo "Usage: $0 {monitor|stop|cmd <action> <target> [args]}" ;;
-esac
+    case "${1:-monitor}" in
+        monitor)
+            # The monitor daemon owns the running mpv/avrcp/dispatcher child
+            # processes; on EXIT it should clean them up. One-shot subcommands
+            # (cmd, stop) must NOT have this trap — otherwise their EXIT would
+            # tear down the daemon's mpv processes.
+            trap stop_all EXIT
+            monitor
+            ;;
+        stop)    stop_all ;;
+        cmd)     shift; handle_cmd "$@" ;;
+        *)       echo "Usage: $0 {monitor|stop|cmd <action> <target> [args]}" ;;
+    esac
+fi
