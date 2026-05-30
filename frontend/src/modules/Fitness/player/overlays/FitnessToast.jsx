@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import getLogger from '@/lib/logging/Logger.js';
 import { DEFAULT_TOAST_DURATION_MS } from './fitnessToastSlot.js';
@@ -18,6 +18,7 @@ export default function FitnessToast({ toast, onDone }) {
   const [exiting, setExiting] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
   const id = toast?.id ?? null;
+  const timersRef = useRef({ hide: null, done: null });
 
   useEffect(() => {
     if (id == null) return undefined;
@@ -25,17 +26,32 @@ export default function FitnessToast({ toast, onDone }) {
     setImgFailed(false);
     const durationMs = Number.isFinite(toast?.durationMs) ? toast.durationMs : DEFAULT_TOAST_DURATION_MS;
     logger.info('fitness.toast.shown', { id, variant: toast?.variant, durationMs });
-    const hideTimer = setTimeout(() => setExiting(true), durationMs);
-    const doneTimer = setTimeout(() => {
-      logger.info('fitness.toast.dismissed', { id });
+    timersRef.current.hide = setTimeout(() => setExiting(true), durationMs);
+    timersRef.current.done = setTimeout(() => {
+      logger.info('fitness.toast.dismissed', { id, reason: 'timeout' });
       if (typeof onDone === 'function') onDone(id);
     }, durationMs + TOAST_EXIT_MS);
-    return () => { clearTimeout(hideTimer); clearTimeout(doneTimer); };
+    return () => {
+      clearTimeout(timersRef.current.hide);
+      clearTimeout(timersRef.current.done);
+    };
     // Intentionally keyed on `id` only. onDone/durationMs/variant are read from the
     // toast captured when this id last changed; ids are monotonic (see normalizeToast),
     // so the same id never reappears with a different callback/duration — no stale-closure risk.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  const handleDismiss = useCallback(() => {
+    if (id == null) return;
+    clearTimeout(timersRef.current.hide);
+    clearTimeout(timersRef.current.done);
+    setExiting(true);
+    timersRef.current.done = setTimeout(() => {
+      logger.info('fitness.toast.dismissed', { id, reason: 'tap' });
+      if (typeof onDone === 'function') onDone(id);
+    }, TOAST_EXIT_MS);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, onDone]);
 
   if (!toast) return null;
 
@@ -47,7 +63,7 @@ export default function FitnessToast({ toast, onDone }) {
   ].join(' ');
 
   return (
-    <div className={className} role="status" aria-live="polite">
+    <div className={className} role="status" aria-live="polite" onClick={handleDismiss}>
       <div className="fitness-toast__body">
         {avatarUrl && !imgFailed ? (
           <img

@@ -3,8 +3,7 @@ import PropTypes from 'prop-types';
 import {
   getCycleOverlayVisuals,
   polarToCartesian,
-  rpmToAngle,
-  getBoosterAvatarSlots
+  rpmToAngle
 } from './cycleOverlayVisuals.js';
 import { CycleBaseReqIndicator } from './CycleBaseReqIndicator.jsx';
 import CompletionCountBlocks from './CompletionCountBlocks.jsx';
@@ -159,9 +158,6 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
     lostSignal,
     stale,
     waitingForBaseReq,
-    initRemainingMs,
-    rampRemainingMs,
-    clockPaused,
     cycleHealthPct
   } = visuals;
 
@@ -216,11 +212,7 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
     `M ${phaseArcStartPt.x} ${phaseArcStartPt.y} ` +
     `A ${CYCLE_RING_RADIUS} ${CYCLE_RING_RADIUS} 0 0 0 ${phaseArcEndPt.x} ${phaseArcEndPt.y}`;
 
-  // --- Boosters + boost multiplier (Task 23) --------------------------------
-  const boosters = getBoosterAvatarSlots(
-    Array.isArray(challenge.boostingUsers) ? challenge.boostingUsers : [],
-    CYCLE_VIEWBOX_SIZE
-  );
+  // --- Boost multiplier badge -----------------------------------------------
   const rawMultiplier = Number.isFinite(challenge.boostMultiplier)
     ? challenge.boostMultiplier
     : 1;
@@ -392,7 +384,7 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
       </div>
 
       {/* Lower content as one bottom-anchored flex column — guarantees the
-          name, boost badge, phase blocks, countdown, and RPM readout stack
+          name, boost badge, phase blocks, and RPM readout stack
           without overlap and stay centered regardless of overlay diameter. */}
       <div className="cycle-challenge-overlay__stack">
         <div
@@ -408,15 +400,6 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
             style={{ width: `${Math.round((cycleHealthPct ?? 1) * 100)}%` }}
           />
         </div>
-        {showBoostBadge && (
-          <div
-            className="cycle-challenge-overlay__boost-badge"
-            aria-label={`Boost multiplier ${boostText}`}
-          >
-            {boostText}
-          </div>
-        )}
-
         {totalPhases > 0 && (
           <CompletionCountBlocks
             targetCount={totalPhases}
@@ -428,24 +411,6 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
           />
         )}
 
-        {((challenge.cycleState === 'init' && Number.isFinite(initRemainingMs)) ||
-          (challenge.cycleState === 'ramp' && Number.isFinite(rampRemainingMs))) && (
-          <div className="cycle-challenge-overlay__countdown">
-            {challenge.cycleState === 'init' && Number.isFinite(initRemainingMs) && (
-              <span>
-                {clockPaused ? 'Paused — start in ' : 'Start in '}
-                {Math.ceil(initRemainingMs / 1000)}s
-              </span>
-            )}
-            {challenge.cycleState === 'ramp' && Number.isFinite(rampRemainingMs) && (
-              <span>
-                {clockPaused ? 'Paused — reach target in ' : 'Reach target in '}
-                {Math.ceil(rampRemainingMs / 1000)}s
-              </span>
-            )}
-          </div>
-        )}
-
         <div
           className="cycle-challenge-overlay__current-rpm"
           aria-label={`Current RPM ${Math.round(currentRpm)}`}
@@ -455,16 +420,15 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
         </div>
       </div>
 
-      {boosters.map((b) => (
+      {showBoostBadge && (
         <div
-          key={`booster-${b.id}`}
-          className="cycle-challenge-overlay__booster"
-          style={b.style}
-          aria-label={`Booster: ${b.id}`}
+          className="cycle-challenge-overlay__boost-badge"
+          aria-label={`Boost multiplier ${boostText}`}
         >
-          {b.initial}
+          {boostText}
         </div>
-      ))}
+      )}
+
     </div>
   );
 };

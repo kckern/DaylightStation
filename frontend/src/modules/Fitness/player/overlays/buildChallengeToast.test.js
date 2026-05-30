@@ -7,7 +7,7 @@ describe('buildChallengeToast', () => {
     expect(toast).toEqual({
       icon: '🏆',
       title: 'Challenge started',
-      subtitle: 'Get 3 riders to Active',
+      subtitle: 'Get 3 people to Active',
       variant: 'info',
     });
   });
@@ -17,21 +17,21 @@ describe('buildChallengeToast', () => {
     expect(toast).toEqual({
       icon: '🏆',
       title: 'Challenge complete!',
-      subtitle: '3 of 3 riders reached Active',
+      subtitle: '3 of 3 people reached Active',
       variant: 'success',
     });
   });
 
-  it('uses singular "rider" when requiredCount is 1', () => {
+  it('uses singular "person" when requiredCount is 1', () => {
     expect(buildChallengeToast('start', { zoneLabel: 'Hot', requiredCount: 1 }).subtitle)
-      .toBe('Get 1 rider to Hot');
+      .toBe('Get 1 person to Hot');
     expect(buildChallengeToast('end', { zoneLabel: 'Hot', requiredCount: 1, actualCount: 1 }).subtitle)
-      .toBe('1 of 1 rider reached Hot');
+      .toBe('1 of 1 person reached Hot');
   });
 
   it('falls back to selectionLabel when zoneLabel is absent', () => {
     expect(buildChallengeToast('start', { selectionLabel: 'Sprint', requiredCount: 2 }).subtitle)
-      .toBe('Get 2 riders to Sprint');
+      .toBe('Get 2 people to Sprint');
   });
 
   it('degrades to no subtitle when counts/zone are missing', () => {
