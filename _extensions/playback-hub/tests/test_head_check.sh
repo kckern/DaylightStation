@@ -63,18 +63,20 @@ head_check "$ID" "$URL" "tag"
 assert_eq "0" "$(dl_count)" "(c) no download when server gives no clen"
 assert_eq "0" "$(logged 'evt=cache.content_changed')" "(c) no log on missing signal"
 
-# === Case (d): no stored meta (oclen empty) -> cannot compare, no download ===
+# === Case (d): no stored meta (oclen empty) -> establish baseline lazily, no download ===
 rm -f "$(meta_path "$ID")"
 head_fetch() { echo "5000 "; }
 reset
 head_check "$ID" "$URL" "tag"
-assert_eq "0" "$(dl_count)" "(d) no download when no stored meta to compare"
+assert_eq "0" "$(dl_count)" "(d) no download when establishing baseline"
+assert_eq "5000" "$(cache_meta_get "$ID" content_length)" "(d) baseline content_length established from HEAD"
 
-# === Case (e): stored meta is null content_length -> no download ===
+# === Case (e): stored meta is null content_length -> establish baseline, no download ===
 cache_meta_write "$ID" "" "" "$URL"   # null content_length
 head_fetch() { echo "5000 "; }
 reset
 head_check "$ID" "$URL" "tag"
-assert_eq "0" "$(dl_count)" "(e) no download when stored clen is null"
+assert_eq "0" "$(dl_count)" "(e) no download when establishing baseline from null"
+assert_eq "5000" "$(cache_meta_get "$ID" content_length)" "(e) baseline established when stored clen was null"
 
 teardown_tmp; finish

@@ -64,7 +64,15 @@ head_check() { # plex_id url name
     read -r clen lm < <(head_fetch "$url" || echo " ")
     [[ -z "$clen" ]] && return 0                       # no server signal — skip
     local oclen; oclen=$(cache_meta_get "$id" content_length)
-    if [[ -n "$oclen" && "$oclen" != "null" && "$clen" != "$oclen" ]]; then
+    if [[ -z "$oclen" || "$oclen" == "null" ]]; then
+        # No baseline yet (size-only migrated meta): establish it lazily from
+        # this HEAD — NO redownload. This is how migrated files gain
+        # content-change detection over the rolling sweep, instead of a
+        # startup HEAD stampede in cache_meta_backfill.
+        cache_meta_write "$id" "$clen" "$lm" "$url"
+        return 0
+    fi
+    if [[ "$clen" != "$oclen" ]]; then
         logev "$name" cache.content_changed plex_id="$id" content_length="${oclen}-${clen}" action=redownload
         rm -f "$(cache_path "$id")"
         cache_download "$id" "$url" "$name"
@@ -223,19 +231,20 @@ migrate_per_slot_caches() {
     [[ $moved -gt 0 ]] && logev migrate cache.migrated count="$moved" || true
 }
 
-# Build a .meta.json for a migrated file. HEADs the source_url when head_fetch
-# exists (a later unit); otherwise writes a size-only meta (null content_length,
-# which validate_cached tolerates via the MIN_AUDIO_BYTES floor).
+# Build a SIZE-ONLY .meta.json for a migrated file (null content_length, which
+# validate_cached tolerates via the MIN_AUDIO_BYTES floor). We deliberately do
+# NOT HEAD the source here: a first migration can cover hundreds of files, and a
+# synchronous HEAD per file stalls daemon startup — and audio — for minutes
+# (observed: 486 files blocked the watchdog ~2min on first boot). The rolling
+# head_sweep populates content_length lazily after startup; the source_url is
+# recorded so that sweep knows where to look.
 cache_meta_backfill() { # plex_id
     # NOTE: `id` must be assigned in its own `local` before `url` references it.
     # A single `local id=.. url=..${id}..` resolves ${id} against the *outer*
     # (unset) name, which trips `set -u` with "id: unbound variable".
     local id="$1"
-    local url="${API_BASE}/api/v1/proxy/plex/stream/${id}" clen="" lm=""
-    if command -v head_fetch >/dev/null; then
-        read -r clen lm < <(head_fetch "$url" 2>/dev/null || echo " ")
-    fi
-    cache_meta_write "$id" "$clen" "$lm" "$url"
+    local url="${API_BASE}/api/v1/proxy/plex/stream/${id}"
+    cache_meta_write "$id" "" "" "$url"
 }
 
 # Membership self-heal (Unit E): detect when a slot's server-side queue

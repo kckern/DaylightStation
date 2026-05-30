@@ -112,9 +112,13 @@ kv_to_json() { # "a=1 b=two" -> "\"a\":\"1\",\"b\":\"two\"" (values quoted as st
     echo "${out%,}"
 }
 
-slot_for_tag() { # color or numeric slot -> slot number (empty if no match)
+slot_for_tag() { # color | numeric slot | device-tag ("slot=N mac=...") -> slot number (empty if no match)
     local t="$1"
     [[ "$t" =~ ^[0-9]+$ ]] && { echo "$t"; return 0; }
+    # The daemon passes its device-tag string ("slot=N mac=... name=...") as the
+    # logev tag (same value log() uses). Extract the slot so every instrumented
+    # logev call lands in slots/<N>/events.jsonl, not just color/numeric tags.
+    [[ "$t" =~ slot=([0-9]+) ]] && { echo "${BASH_REMATCH[1]}"; return 0; }
     [[ -f "$CONFIG_FILE" ]] || return 0
     jq -r --arg c "$t" '.devices[] | select(.color==$c) | .slot' "$CONFIG_FILE" 2>/dev/null | head -1
 }
