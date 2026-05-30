@@ -17,6 +17,8 @@ import { buildSelectionConfig } from '../hooks/fitness/selectPrimaryMedia.js';
 import { applyEquipmentCatalogFromConfig } from './fitnessConfigBridge.js';
 import { normalizeToast, dismissMatches } from '../modules/Fitness/player/overlays/fitnessToastSlot.js';
 import { buildRiderToast } from '../modules/Fitness/player/overlays/buildRiderToast.js';
+import { createChallengeToastTracker, nextChallengeToast } from '../modules/Fitness/player/overlays/challengeToastTracker.js';
+import { buildChallengeToast } from '../modules/Fitness/player/overlays/buildChallengeToast.js';
 
 // Phase 3 SSOT: Domain model imports
 import ParticipantFactory from '../modules/Fitness/domain/ParticipantFactory.js';
@@ -2207,6 +2209,36 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // Governance State from Engine
   const governanceState = session?.governanceEngine?.state || { status: 'idle' };
   const governanceChallenge = session?.governanceEngine?.challengeState || {};
+
+  // Challenge start/success toasts. View-agnostic (mirrors the rider_select toast): the
+  // toast is mounted at the FitnessApp root, so its trigger lives here in context rather
+  // than in a player-only overlay.
+  //
+  // We derive discrete start/end events from the sampled governance snapshot. Keyed on
+  // the (id, status) primitives because governanceState.challenge is rebuilt every tick,
+  // so object identity can't be a dep. The tracker de-dups per id, so a coalesced render
+  // that skips an intermediate snapshot at worst drops one toast (acceptable for this UX).
+  const challengeToastTrackerRef = useRef(createChallengeToastTracker());
+  const govChallenge = governanceState.challenge || null;
+  const govChallengeId = govChallenge?.id || null;
+  const govChallengeStatus = govChallenge?.status || null;
+  useEffect(() => {
+    const { event, tracker } = nextChallengeToast(challengeToastTrackerRef.current, govChallenge);
+    challengeToastTrackerRef.current = tracker;
+    if (event) {
+      pushFitnessToast(buildChallengeToast(event, govChallenge));
+      getLogger().info('fitness.challenge.toast', {
+        event,
+        challengeId: govChallengeId,
+        status: govChallengeStatus,
+      });
+    }
+    // Reading govChallenge (object) while keyed on primitives is safe: start fires once at
+    // first 'pending' and end once at 'success'; mid-'pending' count changes don't alter
+    // id/status, so the copy is intentionally built from the snapshot at the transition tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [govChallengeId, govChallengeStatus]);
+
   const treasureBox = session?.treasureBox ? session.treasureBox.summary : null;
 
   // TreasureBox instance and helpers for chart live edge and responsive UI
