@@ -476,67 +476,75 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 **Files:**
 - Modify: `frontend/src/modules/Fitness/player/overlays/CycleChallengeOverlay.jsx` (booster map ~458-467; import; `boosters` const ~220-223)
 - Modify: `frontend/src/modules/Fitness/player/overlays/CycleChallengeOverlay.scss` (`&__booster` ~309-326)
-- Modify: `frontend/src/modules/Fitness/player/overlays/cycleOverlayVisuals.js` (delete `getBoosterAvatarSlots` ~207-224)
-- Test (new): `frontend/src/modules/Fitness/player/overlays/CycleChallengeOverlay.test.jsx`
+- Modify: `frontend/src/modules/Fitness/player/overlays/cycleOverlayVisuals.js` (delete `getBoosterAvatarSlots` ~199-239)
+- Modify: `frontend/src/modules/Fitness/player/overlays/cycleOverlayVisuals.test.js` (remove the `getBoosterAvatarSlots` describe block — it exercises the function we're deleting)
+- Modify (EXISTING, do NOT create): `frontend/src/modules/Fitness/player/overlays/CycleChallengeOverlay.test.jsx` (243 lines already present — ADD the new cases below)
 
-- [ ] **Step 1: Write the new render test (red)**
+> ⚠️ Both test files already exist. `cycleOverlayVisuals.test.js` has a
+> `describe('getBoosterAvatarSlots — percentage positioning', …)` block (~lines 76-100)
+> that imports and tests `getBoosterAvatarSlots`; that block MUST be removed in this task
+> or the suite fails to import after the function is deleted. `CycleChallengeOverlay.test.jsx`
+> already exists — append the new cases, don't recreate the file.
 
-Create `frontend/src/modules/Fitness/player/overlays/CycleChallengeOverlay.test.jsx`:
+- [ ] **Step 1: Add the new render cases to the EXISTING `CycleChallengeOverlay.test.jsx` (red)**
+
+Open `frontend/src/modules/Fitness/player/overlays/CycleChallengeOverlay.test.jsx`. It already
+imports `{ CycleChallengeOverlay }`, `render`, and vitest helpers. Add a new `describe` block
+at the end of the file (before the final newline), reusing the file's existing import style
+(do not duplicate imports already present at the top):
 
 ```jsx
-import React from 'react';
-import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/react';
-import { CycleChallengeOverlay } from './CycleChallengeOverlay.jsx';
+describe('CycleChallengeOverlay — C3 cleanup (badge float, no boosters, no countdown)', () => {
+  const c3Challenge = {
+    type: 'cycle',
+    cycleState: 'maintain',
+    phaseProgressPct: 50,
+    currentPhaseIndex: 1,
+    totalPhases: 4,
+    currentRpm: 72,
+    currentPhase: { hiRpm: 80, loRpm: 60 },
+    cycleHealthPct: 100,
+    boostMultiplier: 2.5,
+    boostingUsers: ['kckern', 'milo'],
+    rider: { id: 'felix', name: 'Felix' }
+  };
 
-const baseChallenge = {
-  type: 'cycle',
-  cycleState: 'maintain',
-  phaseProgressPct: 50,
-  currentPhaseIndex: 1,
-  totalPhases: 4,
-  currentRpm: 72,
-  currentPhase: { hiRpm: 80, loRpm: 60 },
-  cycleHealthPct: 100,
-  boostMultiplier: 2.5,
-  boostingUsers: ['kckern', 'milo'],
-  rider: { id: 'felix', name: 'Felix' }
-};
-
-describe('CycleChallengeOverlay', () => {
   it('renders the boost badge when multiplier > 1', () => {
-    const { container } = render(<CycleChallengeOverlay challenge={baseChallenge} />);
+    const { container } = render(<CycleChallengeOverlay challenge={c3Challenge} />);
     const badge = container.querySelector('.cycle-challenge-overlay__boost-badge');
     expect(badge).not.toBeNull();
     expect(badge.textContent).toContain('2.5');
   });
 
   it('renders the boost badge OUTSIDE the bottom stack (no reflow)', () => {
-    const { container } = render(<CycleChallengeOverlay challenge={baseChallenge} />);
+    const { container } = render(<CycleChallengeOverlay challenge={c3Challenge} />);
     const stack = container.querySelector('.cycle-challenge-overlay__stack');
     expect(stack).not.toBeNull();
     expect(stack.querySelector('.cycle-challenge-overlay__boost-badge')).toBeNull();
   });
 
   it('does not render booster avatar pips', () => {
-    const { container } = render(<CycleChallengeOverlay challenge={baseChallenge} />);
+    const { container } = render(<CycleChallengeOverlay challenge={c3Challenge} />);
     expect(container.querySelector('.cycle-challenge-overlay__booster')).toBeNull();
   });
 
   it('does not render the init/ramp countdown text', () => {
     const { container } = render(
-      <CycleChallengeOverlay challenge={{ ...baseChallenge, cycleState: 'init', initRemainingMs: 20000 }} />
+      <CycleChallengeOverlay challenge={{ ...c3Challenge, cycleState: 'init', initRemainingMs: 20000 }} />
     );
     expect(container.querySelector('.cycle-challenge-overlay__countdown')).toBeNull();
-    expect(document.body.textContent).not.toContain('Start in');
   });
 });
 ```
 
+> If the existing file does not already import `render` from `@testing-library/react` or the
+> vitest globals, add them — but it almost certainly does (it's a 243-line component test).
+> Confirm the top-of-file imports before running; do not add duplicates.
+
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `cd /opt/Code/DaylightStation && npx vitest run frontend/src/modules/Fitness/player/overlays/CycleChallengeOverlay.test.jsx`
-Expected: FAIL — the "does not render booster avatar pips" test fails (boosters still render), and the "outside the bottom stack" test depends on C1 (should already pass after C1).
+Run: `cd /opt/Code/DaylightStation && npx vitest run frontend/src/modules/Fitness/player/overlays/CycleChallengeOverlay.test.jsx -t "C3 cleanup"`
+Expected: FAIL — "does not render booster avatar pips" fails (boosters still render). (The badge-outside-stack case already passes if Task C1 landed; the countdown case already passes if Task C2 landed.)
 
 - [ ] **Step 3: Remove the booster JSX + `boosters` const + import**
 
@@ -644,6 +652,27 @@ export function getBoosterAvatarSlots(boostingUsers) {
 }
 ```
 
+- [ ] **Step 5b: Remove the `getBoosterAvatarSlots` tests from `cycleOverlayVisuals.test.js`**
+
+`cycleOverlayVisuals.test.js` imports `getBoosterAvatarSlots` and has a dedicated describe
+block for it. With the function deleted, that import resolves to `undefined` and the block
+throws. Remove both:
+
+(a) In the import at the top of `cycleOverlayVisuals.test.js`, change:
+
+```js
+import { getCycleOverlayVisuals, getBoosterAvatarSlots } from './cycleOverlayVisuals.js';
+```
+
+to:
+
+```js
+import { getCycleOverlayVisuals } from './cycleOverlayVisuals.js';
+```
+
+(b) Delete the entire `describe('getBoosterAvatarSlots — percentage positioning', () => { … });`
+block (~lines 76-100, through its closing `});`). Leave the `getCycleOverlayVisuals` tests intact.
+
 Confirm no other importers remain:
 
 Run: `cd /opt/Code/DaylightStation && grep -rn "getBoosterAvatarSlots" frontend/src`
@@ -657,7 +686,7 @@ Expected: PASS (all overlay tests including the new `CycleChallengeOverlay.test.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add frontend/src/modules/Fitness/player/overlays/CycleChallengeOverlay.jsx frontend/src/modules/Fitness/player/overlays/CycleChallengeOverlay.scss frontend/src/modules/Fitness/player/overlays/cycleOverlayVisuals.js frontend/src/modules/Fitness/player/overlays/CycleChallengeOverlay.test.jsx
+git add frontend/src/modules/Fitness/player/overlays/CycleChallengeOverlay.jsx frontend/src/modules/Fitness/player/overlays/CycleChallengeOverlay.scss frontend/src/modules/Fitness/player/overlays/cycleOverlayVisuals.js frontend/src/modules/Fitness/player/overlays/cycleOverlayVisuals.test.js frontend/src/modules/Fitness/player/overlays/CycleChallengeOverlay.test.jsx
 git commit -m "fix(fitness): remove cycle overlay booster pips + dead helper; add overlay test
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
@@ -1205,23 +1234,46 @@ Open `http://localhost:3111/fitness?cycle-demo` in a browser.
 
 **Part 2 — Real health-lock behavior (verifies Task D end-to-end):**
 
-This needs a real cycle challenge with the garage fitness simulator driving cadence/RPM. Per the cycle simulator docs (`docs/superpowers/plans/2026-04-30-cycle-challenge-simulator-fix.md`) the cycle challenge consumes `equipmentCadenceMap` RPM; depleting health requires holding RPM **below `loRpm`** during the `maintain` phase until `cycleHealthMs` hits 0.
+This needs a real cycle challenge with RPM driven below `loRpm` during `maintain` until
+`cycleHealthMs` hits 0. The in-app simulator exposes a controller on `window`:
+`window.__fitnessSimController` with `setRpm(equipmentId, rpm)`, `getEquipment()`,
+`getDevices()`, `setHR(...)`, `listCycleSelections()`. The self-running demo
+(`CycleChallengeDemo`, mounted via `?cycle-demo`) drives equipment id **`cycle_ace`** through
+`init → ramp → maintain → locked → recover` using `ctl.setRpm('cycle_ace', rpm)` re-sent every
+second (so cadence freshness doesn't decay). Use the same controller from the browser console
+to reach a health-lock deterministically.
 
 - [ ] **Step 3: Start a real fitness session with a cycle challenge**
-  - Launch the fitness session that includes a cycle challenge on the `niceday` equipment (the same flow used in the session that produced the bug).
-  - Use the fitness simulator (garage `daylight-fitness` cadence injection, or the in-app sim controls used during cycle development) to ride the cycle: get through `init` → `ramp` → `maintain` by holding RPM at/above `hiRpm`, so the challenge reaches `maintain` and health is full.
+  - Open the fitness app **without** `?cycle-demo` (you want the real overlay path, not the
+    demo widget). Confirm `window.__fitnessSimController` exists in the console
+    (`!!window.__fitnessSimController`). If it's absent in this build, fall back to the actual
+    garage hardware ride on `niceday`, or use `?cycle-demo` to at least confirm the promoted
+    lock visuals (the demo drives `cycle_ace` through `locked`).
+  - Get HR going for ≥1 device so base reqs are satisfied:
+    `const d = window.__fitnessSimController.getDevices().slice(0,1); d.forEach(x => window.__fitnessSimController.setHR(x.deviceId ?? x.id, 145));`
+    (match the arg shape `setHR` expects in this build — inspect one device object first).
+  - Trigger / wait for the cycle challenge, then hold RPM at/above `hiRpm` to pass
+    `init → ramp → maintain`:
+    `const sustain = setInterval(() => window.__fitnessSimController.setRpm('cycle_ace', 90), 1000);`
+    Watch the overlay reach `maintain` with a full health meter. (Use the real equipment id
+    from `window.__fitnessSimController.getEquipment()` if it's not `cycle_ace` in your config —
+    the live bug was on `niceday`; drive whichever id the active cycle challenge uses.)
 
 - [ ] **Step 4: Drive RPM below `loRpm` to deplete health and trigger the lock**
-  - Drop simulated RPM **below `loRpm`** and hold it. Watch the health meter deplete to empty.
-  - At empty, confirm ALL of:
+  - Stop the high-RPM sustain and hold RPM below `loRpm`:
+    `clearInterval(sustain); const drop = setInterval(() => window.__fitnessSimController.setRpm('cycle_ace', 20), 1000);`
+  - Watch the health meter deplete to empty. At empty, confirm ALL of:
     1. **Video pauses.**
-    2. The **cycle overlay moves to center and scales up (~2×)** with a **dimmed background** hiding the rest of the UI — it does NOT vanish, and there is NO blank governance panel.
+    2. The **cycle overlay moves to center and scales up (~2×)** with a **dimmed background**
+       hiding the rest of the UI — it does NOT vanish, and there is NO blank governance panel.
     3. The **lock-screen music plays** (the `locked` track), same as the governance lock.
     4. Pressing **play does NOT resume** the video (it re-pauses) — it's a real lock.
 
 - [ ] **Step 5: Verify recovery**
-  - Raise simulated RPM back **above `loRpm`**.
-  - Confirm: health refills / lock clears, the overlay **returns to its normal in-deck size**, the lock music **stops**, and the **video resumes**.
+  - Raise RPM back above `loRpm`:
+    `clearInterval(drop); const recover = setInterval(() => window.__fitnessSimController.setRpm('cycle_ace', 90), 1000);`
+  - Confirm: health refills / lock clears, the overlay **returns to its normal in-deck size**,
+    the lock music **stops**, and the **video resumes**. Then `clearInterval(recover);`.
 
 - [ ] **Step 6: Confirm via logs**
 
