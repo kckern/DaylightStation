@@ -17,6 +17,7 @@ import { buildSelectionConfig } from '../hooks/fitness/selectPrimaryMedia.js';
 import { applyEquipmentCatalogFromConfig } from './fitnessConfigBridge.js';
 import { normalizeToast, dismissMatches } from '../modules/Fitness/player/overlays/fitnessToastSlot.js';
 import { buildRiderToast } from '../modules/Fitness/player/overlays/buildRiderToast.js';
+import { lookupUserName } from '../modules/Fitness/player/overlays/lookupUserName.js';
 import { createChallengeToastTracker, nextChallengeToast } from '../modules/Fitness/player/overlays/challengeToastTracker.js';
 import { buildChallengeToast } from '../modules/Fitness/player/overlays/buildChallengeToast.js';
 
@@ -1786,12 +1787,15 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   useEffect(() => {
     riderToastRef.current = (data) => {
       pushFitnessToast(buildRiderToast(data, {
-        resolveUserName: (uid) => getDisplayName(uid)?.displayName || uid,
+        // rider_select carries a user slug (e.g. "milo"), not a device id — resolve it
+        // against configuredUsers (the userCollections.all SSOT the roster uses), NOT the
+        // device-centric getDisplayName, which would fall through to the raw id.
+        resolveUserName: (uid) => lookupUserName(configuredUsers, uid),
         resolveEquipmentName: (eid) =>
           (Array.isArray(equipmentConfig) ? equipmentConfig : []).find((e) => e?.id === eid)?.name || eid,
       }));
     };
-  }, [getDisplayName, equipmentConfig, pushFitnessToast]);
+  }, [configuredUsers, equipmentConfig, pushFitnessToast]);
 
   const guestCandidateList = React.useMemo(() => {
     return Array.isArray(session?.guestCandidates) ? session.guestCandidates : [];

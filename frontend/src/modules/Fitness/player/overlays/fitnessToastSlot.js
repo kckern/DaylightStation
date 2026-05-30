@@ -3,7 +3,7 @@
  * No React — trivially unit-testable. Consumed by FitnessContext.
  */
 
-export const DEFAULT_TOAST_DURATION_MS = 4000;
+export const DEFAULT_TOAST_DURATION_MS = 2500;
 export const DEFAULT_TOAST_VARIANT = 'info';
 
 /**
