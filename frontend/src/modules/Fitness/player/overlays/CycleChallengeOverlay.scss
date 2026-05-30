@@ -174,8 +174,8 @@
 
   // --- Lower content stack ------------------------------------------------
   // One bottom-anchored flex column holding rider name, boost badge, phase
-  // blocks, init/ramp countdown, and the current-RPM readout. Replaces the
-  // old per-element absolute anchors that overlapped in the lower third.
+  // blocks, and the current-RPM readout. Replaces the old per-element
+  // absolute anchors that overlapped in the lower third.
   &__stack {
     position: absolute;
     left: 50%;
@@ -214,15 +214,6 @@
   &__phase-block--complete {
     background: #22c55e;
     border-color: #22c55e;
-  }
-
-  // --- Init/ramp countdown (inside __stack) --------------------------------
-  &__countdown {
-    font-size: clamp(0.6rem, calc(var(--cycle-overlay-diameter) * 0.05), 0.75rem);
-    color: #94a3b8;
-    text-align: center;
-    line-height: 1.15;
-    pointer-events: none;
   }
 
   // --- Lower-hemisphere phase progress arc -------------------------------
@@ -301,33 +292,14 @@
     pointer-events: none;
   }
 
-  // --- Booster avatars + boost multiplier badge (Task 23) -----------------
-  // Booster avatars: small pips at the four outer corners (NE, SE, SW, NW)
-  // showing who is currently contributing boost. Positions are inline
-  // (viewBox 220px). When the overlay scales via --cycle-overlay-size, the
-  // transform on the root scales these along with everything else.
-  &__booster {
-    position: absolute;
-    transform: translate(-50%, -50%);
-    width: clamp(16px, calc(var(--cycle-overlay-diameter) * 0.12), 26px);
-    height: clamp(16px, calc(var(--cycle-overlay-diameter) * 0.12), 26px);
-    border-radius: 50%;
-    background: rgba(249, 115, 22, 0.25);
-    border: 1.5px solid #f97316;
-    color: #fed7aa;
-    font-size: clamp(9px, calc(var(--cycle-overlay-diameter) * 0.06), 13px);
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 0 6px rgba(249, 115, 22, 0.6);
-    pointer-events: none;
-    line-height: 1;
-  }
-
-  // Boost multiplier pill — flows inside __stack below rider name, pulses
-  // to draw attention. Only rendered when boostMultiplier > 1.0.
+  // Boost multiplier pill — floats just BELOW the overlay circle, absolutely
+  // positioned so its appearance never reflows the bottom stack. Only rendered
+  // when boostMultiplier > 1.0.
   &__boost-badge {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
     padding: 2px clamp(6px, calc(var(--cycle-overlay-diameter) * 0.04), 10px);
     border-radius: 8px;
     background: rgba(249, 115, 22, 0.9);
@@ -345,10 +317,10 @@
 @keyframes cycle-boost-pulse {
   0%,
   100% {
-    transform: scale(1);
+    transform: translateX(-50%) scale(1);
   }
   50% {
-    transform: scale(1.08);
+    transform: translateX(-50%) scale(1.08);
   }
 }
 

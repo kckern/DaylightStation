@@ -4,7 +4,8 @@
   left: 50%;
   transform: translate(-50%, -50%) scale(1);
   z-index: 2200; // above challenge deck / governance overlays
-  pointer-events: none; // non-blocking
+  pointer-events: auto; // tappable to dismiss; the toast is small + centered
+  cursor: pointer;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -57,7 +58,7 @@
   &__countdown-bar {
     height: 100%;
     width: 100%;
-    transform-origin: left center;
+    transform-origin: right center;
     background: currentColor;
     opacity: 0.6;
     animation-name: fitness-toast-countdown;

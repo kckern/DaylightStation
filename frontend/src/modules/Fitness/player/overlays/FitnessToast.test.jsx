@@ -50,4 +50,20 @@ describe('FitnessToast', () => {
     expect(onDone).toHaveBeenCalledWith(2);
     expect(onDone).toHaveBeenCalledTimes(2);
   });
+
+  it('dismisses on click: fires onDone(id) once after the exit animation', () => {
+    const onDone = vi.fn();
+    const { container } = render(<FitnessToast toast={{ id: 9, title: 'Tap me', durationMs: 4000 }} onDone={onDone} />);
+    const root = container.querySelector('.fitness-toast');
+    expect(root).not.toBeNull();
+    act(() => { root.click(); });
+    // Not immediate — exit animation plays first.
+    expect(onDone).not.toHaveBeenCalled();
+    act(() => { vi.advanceTimersByTime(320 + 5); });
+    expect(onDone).toHaveBeenCalledTimes(1);
+    expect(onDone).toHaveBeenCalledWith(9);
+    // The original duration timer must NOT also fire onDone again.
+    act(() => { vi.advanceTimersByTime(4000 + 320 + 5); });
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
 });

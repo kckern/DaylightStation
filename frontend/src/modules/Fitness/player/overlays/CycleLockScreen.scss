@@ -1,0 +1,28 @@
+// Promoted cycle health-lock screen: full-viewport dim scrim with the
+// CycleChallengeOverlay centered and scaled up ~2x. Sits above the challenge
+// deck and governance overlays. Distinct from the generic governance lock.
+.cycle-lock-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 2300; // above challenge deck / governance overlays / toast deck
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto; // block interaction behind it (real lock)
+
+  &__scrim {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
+  }
+
+  &__stage {
+    position: relative;
+    transform: scale(2);
+    transform-origin: center center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}

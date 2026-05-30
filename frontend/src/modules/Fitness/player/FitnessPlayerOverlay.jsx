@@ -8,6 +8,9 @@ import { CycleChallengeOverlay } from './overlays/CycleChallengeOverlay.jsx';
 import { ChallengeOverlayDeck } from './overlays/ChallengeOverlayDeck.jsx';
 import CycleRiderSwapModal from './overlays/CycleRiderSwapModal.jsx';
 import GovernanceStateOverlay from './overlays/GovernanceStateOverlay.jsx';
+import GovernanceAudioPlayer from './overlays/GovernanceAudioPlayer.jsx';
+import { resolveLockScreen } from './overlays/resolveLockScreen.js';
+import './overlays/CycleLockScreen.scss';
 import { useGovernanceDisplay } from '@/modules/Fitness/hooks/useGovernanceDisplay.js';
 import FullscreenVitalsOverlay from './overlays/FullscreenVitalsOverlay.jsx';
 import FitnessModuleContainer from './FitnessModuleContainer.jsx';
@@ -71,6 +74,7 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
   const isGovernanceLocked = governanceDisplay?.status === 'locked';
   const activeChallenge = governanceState?.challenge || null;
   const isCycleChallenge = activeChallenge?.type === 'cycle';
+  const lockScreen = resolveLockScreen({ activeChallenge, governanceDisplay });
   const challengeEventRef = useRef({ id: null, status: null });
   const wasPlayingBeforeOverlayRef = useRef(false);
 
@@ -193,27 +197,52 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
   // signal while the video is paused — health-locks are NOT owned by
   // GovernanceStateOverlay (the generic panel is suppressed for this case in
   // useGovernanceDisplay).
-  const isHealthLock = isCycleChallenge
-    && activeChallenge?.cycleState === 'locked'
-    && activeChallenge?.lockReason === 'health';
-  const cycleOverlay = isCycleChallenge
-    && !(activeChallenge?.cycleState === 'locked' && !isHealthLock)
+  // Cycle overlay shows for any active, non-terminal cycle challenge. When the
+  // resolver promotes it (cycle health-lock), it renders as a centered, scaled,
+  // dimmed lock screen instead of inside the deck (see promotedCycleLock below).
+  const cycleOverlayActive = isCycleChallenge
     && activeChallenge?.status !== 'success'
     && activeChallenge?.status !== 'failed'
-    ? (
-      <CycleChallengeOverlay
-        challenge={activeChallenge}
-        onRequestSwap={handleRequestSwap}
-      />
-    )
-    : null;
+    && (activeChallenge?.cycleState !== 'locked' || lockScreen.variety === 'cycle-health');
+  const cycleOverlayNode = cycleOverlayActive ? (
+    <CycleChallengeOverlay
+      challenge={activeChallenge}
+      onRequestSwap={handleRequestSwap}
+    />
+  ) : null;
+  // In-deck cycle overlay only when NOT promoted.
+  const cycleOverlay = (cycleOverlayActive && !lockScreen.promoteCycle) ? cycleOverlayNode : null;
 
-  const primaryOverlay = governanceDisplay?.show ? (
+  const primaryOverlay = lockScreen.showGovernanceOverlay ? (
     <GovernanceStateOverlay
       voiceMemoOpen={voiceMemoOverlayOpen}
       display={governanceDisplay}
     />
   ) : null;
+
+  // Promoted cycle health-lock: the cycle overlay becomes a centered, ~2x, dimmed
+  // lock screen covering everything else. Single owner via resolveLockScreen.
+  const promotedCycleLock = (lockScreen.promoteCycle && cycleOverlayNode) ? (
+    <div className="cycle-lock-screen" role="dialog" aria-label="Cycle challenge locked">
+      <div className="cycle-lock-screen__scrim" />
+      <div className="cycle-lock-screen__stage">
+        {cycleOverlayNode}
+      </div>
+      {lockScreen.audioTrack ? (
+        <GovernanceAudioPlayer trackKey={lockScreen.audioTrack} paused={voiceMemoOverlayOpen} />
+      ) : null}
+    </div>
+  ) : null;
+
+  useEffect(() => {
+    if (lockScreen.variety === 'cycle-health') {
+      cycleLogger.info('health-lock-shown', {
+        challengeId: activeChallenge?.id || null,
+        audioTrack: lockScreen.audioTrack
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lockScreen.variety]);
 
   const hasAnyOverlay = Boolean(
     primaryOverlay ||
@@ -221,6 +250,7 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
     challengeOverlay ||
     (!challengeOverlay && nextChallengeOverlay) ||
     cycleOverlay ||
+    promotedCycleLock ||
     isSwapModalOpen ||
     showFullscreenVitals ||
     showCycleDemo
@@ -247,6 +277,7 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
     <>
       {challengeDeck}
       {primaryOverlay}
+      {promotedCycleLock}
       {showFullscreenVitals ? (
         <FullscreenVitalsOverlay visible={showFullscreenVitals} />
       ) : null}

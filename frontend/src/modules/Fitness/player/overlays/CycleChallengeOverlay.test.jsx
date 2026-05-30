@@ -23,11 +23,6 @@ const baseChallenge = {
 };
 
 describe('CycleChallengeOverlay — extended UI', () => {
-  it('renders the init countdown', () => {
-    render(<CycleChallengeOverlay challenge={baseChallenge} />);
-    expect(screen.getByText(/Start in 23s/)).toBeInTheDocument();
-  });
-
   it('renders the base-req indicator in satisfied mode', () => {
     render(<CycleChallengeOverlay challenge={baseChallenge} />);
     expect(screen.getByLabelText(/heart-rate.*satisfied/i)).toBeInTheDocument();
@@ -42,40 +37,11 @@ describe('CycleChallengeOverlay — extended UI', () => {
     expect(container.querySelector('.cycle-challenge-overlay--lost-signal')).toBeTruthy();
   });
 
-  it('renders the ramp countdown when cycleState is ramp', () => {
-    const ch = {
-      ...baseChallenge,
-      cycleState: 'ramp',
-      initRemainingMs: null,
-      rampRemainingMs: 7000
-    };
-    render(<CycleChallengeOverlay challenge={ch} />);
-    expect(screen.getByText(/Reach target in 7s/)).toBeInTheDocument();
-  });
-
   it('does not render countdown when in maintain', () => {
     const ch = { ...baseChallenge, cycleState: 'maintain', initRemainingMs: null, rampRemainingMs: null };
     render(<CycleChallengeOverlay challenge={ch} />);
     expect(screen.queryByText(/Start in/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Reach target in/)).not.toBeInTheDocument();
-  });
-
-  it('renders the paused init countdown when clockPaused is true', () => {
-    const ch = { ...baseChallenge, clockPaused: true };
-    render(<CycleChallengeOverlay challenge={ch} />);
-    expect(screen.getByText(/Paused — start in 23s/)).toBeInTheDocument();
-  });
-
-  it('renders the paused ramp countdown when clockPaused is true', () => {
-    const ch = {
-      ...baseChallenge,
-      cycleState: 'ramp',
-      initRemainingMs: null,
-      rampRemainingMs: 7000,
-      clockPaused: true
-    };
-    render(<CycleChallengeOverlay challenge={ch} />);
-    expect(screen.getByText(/Paused — reach target in 7s/)).toBeInTheDocument();
   });
 
   it('renders phase count blocks instead of the horizontal progress bar', () => {
@@ -127,7 +93,6 @@ describe('CycleChallengeOverlay — extended UI', () => {
     // Rider name is dropped — avatar is the sole identifier.
     expect(container.querySelector('.cycle-challenge-overlay__rider-name')).toBeFalsy();
     expect(stack.querySelector('.cycle-challenge-overlay__phase-blocks')).toBeTruthy();
-    expect(stack.querySelector('.cycle-challenge-overlay__countdown')).toBeTruthy();
     expect(stack.querySelector('.cycle-challenge-overlay__current-rpm')).toBeTruthy();
   });
 
@@ -239,5 +204,47 @@ describe('CycleChallengeOverlay — extended UI', () => {
       rerender(<CycleChallengeOverlay challenge={{ type: 'zone', cycleState: null }} />);
     }).not.toThrow();
     expect(container.querySelector('.cycle-challenge-overlay')).toBeFalsy();
+  });
+});
+
+describe('CycleChallengeOverlay — C3 cleanup (badge float, no boosters, no countdown)', () => {
+  const c3Challenge = {
+    type: 'cycle',
+    cycleState: 'maintain',
+    phaseProgressPct: 50,
+    currentPhaseIndex: 1,
+    totalPhases: 4,
+    currentRpm: 72,
+    currentPhase: { hiRpm: 80, loRpm: 60 },
+    cycleHealthPct: 100,
+    boostMultiplier: 2.5,
+    boostingUsers: ['kckern', 'milo'],
+    rider: { id: 'felix', name: 'Felix' }
+  };
+
+  it('renders the boost badge when multiplier > 1', () => {
+    const { container } = render(<CycleChallengeOverlay challenge={c3Challenge} />);
+    const badge = container.querySelector('.cycle-challenge-overlay__boost-badge');
+    expect(badge).not.toBeNull();
+    expect(badge.textContent).toContain('2.5');
+  });
+
+  it('renders the boost badge OUTSIDE the bottom stack (no reflow)', () => {
+    const { container } = render(<CycleChallengeOverlay challenge={c3Challenge} />);
+    const stack = container.querySelector('.cycle-challenge-overlay__stack');
+    expect(stack).not.toBeNull();
+    expect(stack.querySelector('.cycle-challenge-overlay__boost-badge')).toBeNull();
+  });
+
+  it('does not render booster avatar pips', () => {
+    const { container } = render(<CycleChallengeOverlay challenge={c3Challenge} />);
+    expect(container.querySelector('.cycle-challenge-overlay__booster')).toBeNull();
+  });
+
+  it('does not render the init/ramp countdown text', () => {
+    const { container } = render(
+      <CycleChallengeOverlay challenge={{ ...c3Challenge, cycleState: 'init', initRemainingMs: 20000 }} />
+    );
+    expect(container.querySelector('.cycle-challenge-overlay__countdown')).toBeNull();
   });
 });
