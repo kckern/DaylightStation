@@ -1,135 +1,90 @@
+// frontend/src/modules/WeeklyReview/state/viewReducer.test.js
 import { describe, it, expect } from 'vitest';
-import { viewReducer, initialViewState, makeInitialView } from './viewReducer.js';
+import { viewReducer, initialViewState } from './viewReducer.js';
+
+const grid = (over = {}) => ({ level: 'grid', dayIndex: 0, itemIndex: 0, playing: false, muted: true, contextOpen: false, ...over });
+const reel = (over = {}) => ({ level: 'reel', dayIndex: 0, itemIndex: 0, playing: false, muted: true, contextOpen: false, ...over });
 
 describe('viewReducer', () => {
-  it('default state is TOC, focus on main, day 0, image 0', () => {
-    expect(initialViewState).toEqual({
-      level: 'toc', dayIndex: 0, imageIndex: 0, focusRow: 'main',
-    });
-  });
-
-  it('makeInitialView clamps dayIndex to last day', () => {
-    expect(makeInitialView(7)).toEqual({
-      level: 'toc', dayIndex: 6, imageIndex: 0, focusRow: 'main',
-    });
-    expect(makeInitialView(0)).toEqual(initialViewState);
+  it('starts on the grid', () => {
+    expect(initialViewState).toEqual(grid());
   });
 
   describe('SELECT_DAY', () => {
-    it('moves selection within TOC without changing level', () => {
-      const next = viewReducer(initialViewState, { type: 'SELECT_DAY', index: 3 });
-      expect(next).toEqual({ level: 'toc', dayIndex: 3, imageIndex: 0, focusRow: 'main' });
+    it('sets focus dayIndex without leaving the grid', () => {
+      expect(viewReducer(grid(), { type: 'SELECT_DAY', dayIndex: 3 })).toEqual(grid({ dayIndex: 3 }));
     });
+  });
 
-    it('clamps within [0, totalDays-1]', () => {
-      const next = viewReducer(initialViewState, { type: 'SELECT_DAY', index: 99, totalDays: 7 });
-      expect(next.dayIndex).toBe(6);
-      const back = viewReducer(initialViewState, { type: 'SELECT_DAY', index: -5, totalDays: 7 });
-      expect(back.dayIndex).toBe(0);
+  describe('GRID_MOVE (4 cols)', () => {
+    const g = (i) => grid({ dayIndex: i });
+    it('right/left move within a row and hard-stop at column edges', () => {
+      expect(viewReducer(g(0), { type: 'GRID_MOVE', dir: 'right', cols: 4, total: 8 }).dayIndex).toBe(1);
+      expect(viewReducer(g(3), { type: 'GRID_MOVE', dir: 'right', cols: 4, total: 8 }).dayIndex).toBe(3); // edge
+      expect(viewReducer(g(4), { type: 'GRID_MOVE', dir: 'left', cols: 4, total: 8 }).dayIndex).toBe(4); // edge
+      expect(viewReducer(g(5), { type: 'GRID_MOVE', dir: 'left', cols: 4, total: 8 }).dayIndex).toBe(4);
+    });
+    it('down/up move between rows and hard-stop at grid edges', () => {
+      expect(viewReducer(g(1), { type: 'GRID_MOVE', dir: 'down', cols: 4, total: 8 }).dayIndex).toBe(5);
+      expect(viewReducer(g(5), { type: 'GRID_MOVE', dir: 'down', cols: 4, total: 8 }).dayIndex).toBe(5); // bottom edge
+      expect(viewReducer(g(5), { type: 'GRID_MOVE', dir: 'up', cols: 4, total: 8 }).dayIndex).toBe(1);
+      expect(viewReducer(g(1), { type: 'GRID_MOVE', dir: 'up', cols: 4, total: 8 }).dayIndex).toBe(1); // top edge
+    });
+    it('down hard-stops when the target cell has no day', () => {
+      expect(viewReducer(g(2), { type: 'GRID_MOVE', dir: 'down', cols: 4, total: 6 }).dayIndex).toBe(2); // 2+4=6 out of range
     });
   });
 
   describe('OPEN_DAY', () => {
-    it('moves to day level at the current dayIndex', () => {
-      const start = { level: 'toc', dayIndex: 4, imageIndex: 0, focusRow: 'main' };
-      expect(viewReducer(start, { type: 'OPEN_DAY' }))
-        .toEqual({ level: 'day', dayIndex: 4, imageIndex: 0, focusRow: 'main' });
-    });
-
-    it('OPEN_DAY with index moves AND opens', () => {
-      const start = { level: 'toc', dayIndex: 0, imageIndex: 0, focusRow: 'main' };
-      expect(viewReducer(start, { type: 'OPEN_DAY', index: 2 }))
-        .toEqual({ level: 'day', dayIndex: 2, imageIndex: 0, focusRow: 'main' });
+    it('enters the reel at item 0 with playback reset', () => {
+      expect(viewReducer(grid({ dayIndex: 4 }), { type: 'OPEN_DAY' }))
+        .toEqual(reel({ dayIndex: 4 }));
     });
   });
 
-  describe('OPEN_PHOTO', () => {
-    it('moves to fullscreen at index 0', () => {
-      const start = { level: 'day', dayIndex: 2, imageIndex: 0, focusRow: 'main' };
-      expect(viewReducer(start, { type: 'OPEN_PHOTO' }).level).toBe('fullscreen');
-      expect(viewReducer(start, { type: 'OPEN_PHOTO' }).imageIndex).toBe(0);
+  describe('STEP_ITEM', () => {
+    it('advances and clamps with no wrap, resetting playback', () => {
+      expect(viewReducer(reel({ itemIndex: 2, playing: true, muted: false }), { type: 'STEP_ITEM', delta: 1, totalItems: 5 }))
+        .toEqual(reel({ itemIndex: 3 }));
+      expect(viewReducer(reel({ itemIndex: 4 }), { type: 'STEP_ITEM', delta: 1, totalItems: 5 }).itemIndex).toBe(4); // edge
+      expect(viewReducer(reel({ itemIndex: 0 }), { type: 'STEP_ITEM', delta: -1, totalItems: 5 }).itemIndex).toBe(0); // edge
     });
   });
 
-  describe('CYCLE_PHOTO', () => {
-    it('cycles forward modulo totalPhotos', () => {
-      const start = { level: 'fullscreen', dayIndex: 1, imageIndex: 4, focusRow: 'main' };
-      expect(viewReducer(start, { type: 'CYCLE_PHOTO', delta: 1, totalPhotos: 5 }).imageIndex).toBe(0);
-    });
-
-    it('cycles backward modulo totalPhotos', () => {
-      const start = { level: 'fullscreen', dayIndex: 1, imageIndex: 0, focusRow: 'main' };
-      expect(viewReducer(start, { type: 'CYCLE_PHOTO', delta: -1, totalPhotos: 5 }).imageIndex).toBe(4);
-    });
-
-    it('no-op when totalPhotos is 0', () => {
-      const start = { level: 'fullscreen', dayIndex: 1, imageIndex: 0, focusRow: 'main' };
-      expect(viewReducer(start, { type: 'CYCLE_PHOTO', delta: 1, totalPhotos: 0 })).toEqual(start);
+  describe('CROSS_DAY', () => {
+    it('jumps to a given day + item with playback reset', () => {
+      expect(viewReducer(reel({ dayIndex: 2, itemIndex: 3, playing: true }), { type: 'CROSS_DAY', dayIndex: 3, itemIndex: 0 }))
+        .toEqual(reel({ dayIndex: 3, itemIndex: 0 }));
     });
   });
 
-  describe('CYCLE_DAY', () => {
-    it('clamps forward at last day', () => {
-      const start = { level: 'toc', dayIndex: 6, imageIndex: 0, focusRow: 'main' };
-      expect(viewReducer(start, { type: 'CYCLE_DAY', delta: 1, totalDays: 7 }).dayIndex).toBe(6);
+  describe('CLIMB (priority: context > playing > level)', () => {
+    it('closes the context panel first', () => {
+      expect(viewReducer(reel({ contextOpen: true, playing: true }), { type: 'CLIMB' }))
+        .toEqual(reel({ contextOpen: false, playing: true }));
     });
-
-    it('clamps backward at day 0', () => {
-      const start = { level: 'toc', dayIndex: 0, imageIndex: 0, focusRow: 'main' };
-      expect(viewReducer(start, { type: 'CYCLE_DAY', delta: -1, totalDays: 7 }).dayIndex).toBe(0);
+    it('stops a playing video to the poster', () => {
+      expect(viewReducer(reel({ playing: true, muted: false }), { type: 'CLIMB' }))
+        .toEqual(reel({ playing: false, muted: true }));
     });
-
-    it('moves within bounds', () => {
-      const start = { level: 'toc', dayIndex: 3, imageIndex: 0, focusRow: 'main' };
-      expect(viewReducer(start, { type: 'CYCLE_DAY', delta: 1, totalDays: 7 }).dayIndex).toBe(4);
-      expect(viewReducer(start, { type: 'CYCLE_DAY', delta: -1, totalDays: 7 }).dayIndex).toBe(2);
+    it('reel climbs to the grid, resetting reel fields but keeping dayIndex', () => {
+      expect(viewReducer(reel({ dayIndex: 5, itemIndex: 4 }), { type: 'CLIMB' }))
+        .toEqual(grid({ dayIndex: 5 }));
     });
-
-    it('resets imageIndex when changing day', () => {
-      const start = { level: 'fullscreen', dayIndex: 3, imageIndex: 5, focusRow: 'main' };
-      expect(viewReducer(start, { type: 'CYCLE_DAY', delta: 1, totalDays: 7 }).imageIndex).toBe(0);
+    it('grid is a no-op (caller raises the exit gate)', () => {
+      expect(viewReducer(grid({ dayIndex: 2 }), { type: 'CLIMB' })).toEqual(grid({ dayIndex: 2 }));
     });
   });
 
-  describe('BACK', () => {
-    it('fullscreen → day', () => {
-      const start = { level: 'fullscreen', dayIndex: 2, imageIndex: 3, focusRow: 'main' };
-      expect(viewReducer(start, { type: 'BACK' }).level).toBe('day');
+  describe('context + video actions', () => {
+    it('OPEN_CONTEXT / CLOSE_CONTEXT toggle the panel', () => {
+      expect(viewReducer(reel(), { type: 'OPEN_CONTEXT' }).contextOpen).toBe(true);
+      expect(viewReducer(reel({ contextOpen: true }), { type: 'CLOSE_CONTEXT' }).contextOpen).toBe(false);
     });
-    it('day → toc', () => {
-      const start = { level: 'day', dayIndex: 2, imageIndex: 0, focusRow: 'main' };
-      expect(viewReducer(start, { type: 'BACK' }).level).toBe('toc');
-    });
-    it('toc stays at toc (no-op; caller decides what to do)', () => {
-      expect(viewReducer(initialViewState, { type: 'BACK' })).toEqual(initialViewState);
-    });
-    it('focusRow=bar → focusRow=main (climbs out of bar focus before view level)', () => {
-      const start = { level: 'toc', dayIndex: 0, imageIndex: 0, focusRow: 'bar' };
-      expect(viewReducer(start, { type: 'BACK' }).focusRow).toBe('main');
-    });
-  });
-
-  describe('RESTORE_VIEW', () => {
-    it('replaces state with the provided snapshot', () => {
-      const start = { level: 'fullscreen', dayIndex: 2, imageIndex: 3, focusRow: 'main' };
-      const snapshot = { level: 'toc', dayIndex: 5, imageIndex: 0, focusRow: 'main' };
-      expect(viewReducer(start, { type: 'RESTORE_VIEW', snapshot })).toEqual(snapshot);
-    });
-
-    it('is a no-op when snapshot is missing', () => {
-      const start = { level: 'day', dayIndex: 2, imageIndex: 0, focusRow: 'main' };
-      expect(viewReducer(start, { type: 'RESTORE_VIEW' })).toEqual(start);
-      expect(viewReducer(start, { type: 'RESTORE_VIEW', snapshot: null })).toEqual(start);
-    });
-  });
-
-  describe('FOCUS_BAR / FOCUS_MAIN', () => {
-    it('FOCUS_BAR sets focusRow=bar', () => {
-      expect(viewReducer(initialViewState, { type: 'FOCUS_BAR' }).focusRow).toBe('bar');
-    });
-    it('FOCUS_MAIN sets focusRow=main', () => {
-      const start = { ...initialViewState, focusRow: 'bar' };
-      expect(viewReducer(start, { type: 'FOCUS_MAIN' }).focusRow).toBe('main');
+    it('PLAY_VIDEO starts muted; TOGGLE_MUTE flips; STOP_VIDEO stops', () => {
+      expect(viewReducer(reel(), { type: 'PLAY_VIDEO' })).toEqual(reel({ playing: true, muted: true }));
+      expect(viewReducer(reel({ playing: true, muted: true }), { type: 'TOGGLE_MUTE' }).muted).toBe(false);
+      expect(viewReducer(reel({ playing: true }), { type: 'STOP_VIDEO' }).playing).toBe(false);
     });
   });
 });
