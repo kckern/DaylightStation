@@ -16,6 +16,10 @@ import { resolveKey } from './state/keymap.js';
 import './WeeklyReview.scss';
 
 const logger = getLogger().child({ component: 'weekly-review' });
+// Most-recent-8-day grid is 4 columns wide.
+const GRID_COLS = 4;
+// Two presses of the same horizontal direction within this window cross to the adjacent day.
+const DOUBLE_EDGE_WINDOW_MS = 500;
 
 export default function WeeklyReview({ dispatch, dismiss, clear }) {
   const [data, setData] = useState(null);
@@ -31,9 +35,6 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
   // Two-level view state machine (grid ↔ reel). See state/viewReducer.js.
   const [view, dispatchView] = React.useReducer(viewReducer, initialViewState);
 
-  // Most-recent-8-day grid is 4 columns wide.
-  const GRID_COLS = 4;
-  const DOUBLE_EDGE_WINDOW_MS = 500;
   const lastEdgeRef = useRef(null); // { dir, at } for double-tap cross-day
 
   // Derive everything the keymap needs about the focused media item.
@@ -55,7 +56,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       atLast: view.itemIndex >= itemCount - 1,
       hasPrevDay, hasNextDay, prevDayIndex, nextDayIndex, prevDayLastIndex,
     };
-  }, [data, view.dayIndex, view.itemIndex]);
+  }, [data, view.dayIndex, view.itemIndex, view.level]);
 
   const autoStartRef = useRef(false);
   const menuNav = React.useContext(MenuNavigationContext);
@@ -495,7 +496,10 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
                 key={day.date}
                 day={day}
                 isFocused={realIndex === view.dayIndex}
-                onClick={() => dispatchView({ type: 'OPEN_DAY' })}
+                onClick={() => {
+                  dispatchView({ type: 'SELECT_DAY', dayIndex: realIndex });
+                  dispatchView({ type: 'OPEN_DAY' });
+                }}
               />
             );
           })}
@@ -511,6 +515,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
               <small>Your recording is safe — stored locally and on the server.</small>
             </div>
             <div className="confirm-actions">
+              {/* Remote-driven: the keymap dispatches CLOSE / exitWidget; buttons are visual focus indicators. */}
               <button className={`confirm-btn confirm-btn--save${modal.focusIndex === 0 ? ' focused' : ''}`}>Dismiss</button>
               <button className={`confirm-btn confirm-btn--continue${modal.focusIndex === 1 ? ' focused' : ''}`}>Exit (save later)</button>
             </div>
@@ -524,6 +529,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
           <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="wr-exit-label">
             <div className="confirm-message" id="wr-exit-label">End weekly review recording?</div>
             <div className="confirm-actions">
+              {/* Remote-driven: the keymap dispatches CLOSE / saveAndExit; buttons are visual focus indicators. */}
               <button className={`confirm-btn confirm-btn--continue${modal.focusIndex === 0 ? ' focused' : ''}`}>Keep going</button>
               <button className={`confirm-btn confirm-btn--save${modal.focusIndex === 1 ? ' focused' : ''}`}>Save &amp; end</button>
             </div>
