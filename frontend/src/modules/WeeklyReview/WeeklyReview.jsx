@@ -3,8 +3,8 @@ import getLogger from '@/lib/logging/Logger.js';
 import { DaylightAPI } from '@/lib/api.mjs';
 import MenuNavigationContext from '@/context/MenuNavigationContext.jsx';
 import DayColumn from './components/DayColumn.jsx';
-import DayDetail from './components/DayDetail.jsx';
-import FullscreenImage from './components/FullscreenImage.jsx';
+import DayReel from './components/DayReel.jsx';
+import DayContextPanel from './components/DayContextPanel.jsx';
 import PreFlightOverlay from './components/PreFlightOverlay.jsx';
 import RecordingBar from './components/RecordingBar.jsx';
 import { useAudioRecorder } from './hooks/useAudioRecorder.js';
@@ -12,14 +12,10 @@ import { useChunkUploader } from './hooks/useChunkUploader.js';
 import { deleteSession as deleteLocalSession, listSessions as listLocalSessions, getChunksForSession } from './hooks/chunkDb.js';
 import { modalReducer, initialModalState } from './state/modalReducer.js';
 import { viewReducer, initialViewState } from './state/viewReducer.js';
+import { resolveKey } from './state/keymap.js';
 import './WeeklyReview.scss';
 
 const logger = getLogger().child({ component: 'weekly-review' });
-
-// Window in which two Enter presses are treated as a "double-tap exit" gesture.
-// Picked at the upper end of standard double-click (400-500ms) since remote-thumb
-// taps are slower than mouse clicks.
-const DOUBLE_ENTER_WINDOW_MS = 500;
 
 export default function WeeklyReview({ dispatch, dismiss, clear }) {
   const [data, setData] = useState(null);
@@ -27,14 +23,39 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
   const [error, setError] = useState(null);
   // eslint-disable-next-line no-unused-vars -- setUploading kept; Task 14 may revive or remove it
   const [uploading, setUploading] = useState(false);
-  // Task 5: single reducer replaces 8 individual overlay flags. See state/modalReducer.js.
-  // modal.type ∈ { null, 'stopConfirm', 'resumeDraft', 'finalizeError', 'disconnect', 'preflightFailed' }
+  // Single reducer for all overlay state. See state/modalReducer.js.
+  // modal.type ∈ { null, 'exitGate', 'resumeDraft', 'finalizeError', 'disconnect', 'preflightFailed' }
   // modal.focusIndex: button focus within the modal (0 ↔ 1)
   // modal.payload: per-modal data (e.g. resumeDraft descriptor, finalize error message, disconnect phase)
   const [modal, dispatchModal] = React.useReducer(modalReducer, initialModalState);
-  // Task 6: viewReducer consolidates viewLevel + dayIndex + imageIndex + focusRow into one state machine.
-  // See state/viewReducer.js for actions: SELECT_DAY, OPEN_DAY, OPEN_PHOTO, CYCLE_PHOTO, CYCLE_DAY, BACK, FOCUS_BAR, FOCUS_MAIN.
+  // Two-level view state machine (grid ↔ reel). See state/viewReducer.js.
   const [view, dispatchView] = React.useReducer(viewReducer, initialViewState);
+
+  // Most-recent-8-day grid is 4 columns wide.
+  const GRID_COLS = 4;
+  const DOUBLE_EDGE_WINDOW_MS = 500;
+  const lastEdgeRef = useRef(null); // { dir, at } for double-tap cross-day
+
+  // Derive everything the keymap needs about the focused media item.
+  const mediaCtx = useMemo(() => {
+    const days = data?.days || [];
+    const day = days[view.dayIndex];
+    const items = day?.photos || [];
+    const itemCount = items.length;
+    const cur = items[view.itemIndex];
+    const currentType = !cur ? 'none' : (cur.type === 'video' ? 'video' : 'photo');
+    const prevDayIndex = view.dayIndex - 1;
+    const nextDayIndex = view.dayIndex + 1;
+    const hasPrevDay = prevDayIndex >= 0;
+    const hasNextDay = nextDayIndex < days.length;
+    const prevDayLastIndex = hasPrevDay ? Math.max(0, (days[prevDayIndex]?.photos?.length || 1) - 1) : 0;
+    return {
+      itemCount, currentType,
+      atFirst: view.itemIndex <= 0,
+      atLast: view.itemIndex >= itemCount - 1,
+      hasPrevDay, hasNextDay, prevDayIndex, nextDayIndex, prevDayLastIndex,
+    };
+  }, [data, view.dayIndex, view.itemIndex]);
 
   const autoStartRef = useRef(false);
   const menuNav = React.useContext(MenuNavigationContext);
@@ -71,13 +92,6 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
   // defense-in-depth if any timing edge-case slips through.
   const preflightStatusRef = useRef(preflightStatus);
   preflightStatusRef.current = preflightStatus;
-
-  // Double-Enter exit gesture: a non-Esc path to open stopConfirm, since FKB on the
-  // Shield TV swallows Esc. Two Enters within DOUBLE_ENTER_WINDOW_MS in the main
-  // hierarchy (toc/day/fullscreen) revert the first transition and open the prompt.
-  // Refs (not state) so consecutive keydowns within a single frame don't fight React.
-  const lastEnterAtRef = useRef(0);
-  const lastEnterSnapshotRef = useRef(null);
 
   // Task 9 callbacks — declared after useAudioRecorder so stopRecording is in scope.
   // Some are stubs; Tasks 10–12 will wire them up fully.
@@ -120,17 +134,6 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
     stopRecording();
     setTimeout(() => { autoStartRef.current = true; startRecording(); }, 100);
   }, [stopRecording, startRecording]);
-  const onPreflightExit  = useCallback(() => onExitWidget(), [onExitWidget]);
-
-  const onBackPressed = useCallback(() => {
-    // Climb hierarchy at L2/L3; save-confirm modal at L1 TOC.
-    if (view.focusRow === 'bar' || view.level !== 'toc') {
-      dispatchView({ type: 'BACK' });
-      return;
-    }
-    dispatchModal({ type: 'OPEN', modal: 'stopConfirm' });
-  }, [view.focusRow, view.level]);
-
   useEffect(() => {
     logger.info('mount');
     return () => logger.info('unmount');
@@ -157,7 +160,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       try {
         const result = await DaylightAPI('/api/v1/weekly-review/bootstrap');
         setData(result);
-        dispatchView({ type: 'SELECT_DAY', index: 0, totalDays: result.days?.length });
+        dispatchView({ type: 'SELECT_DAY', dayIndex: Math.max(0, (result.days?.length || 1) - 1) });
         const totalPhotos = result.days?.reduce((s, d) => s + (d.photoCount || 0), 0) || 0;
         const totalEvents = result.days?.reduce((s, d) => s + (d.calendar?.length || 0), 0) || 0;
         const daysWithPhotos = result.days?.filter(d => d.photoCount > 0).length || 0;
@@ -197,7 +200,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
   useEffect(() => {
     if (firstAudibleFrameSeen) {
       // Audio recovered — clear the preflight-failed modal if it's the one open.
-      // Don't blindly CLOSE: other modals (stopConfirm, finalizeError) must persist.
+      // Don't blindly CLOSE: other modals (exitGate, finalizeError) must persist.
       if (modalTypeRef.current === 'preflightFailed') {
         dispatchModal({ type: 'CLOSE' });
       }
@@ -359,236 +362,44 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
     };
   }, [isRecording, uploaderPendingCount, uploaderBeaconFlush]);
 
-  // 4-level keyboard navigation hierarchy
   useEffect(() => {
     const handleKeyDown = (e) => {
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (!data?.days) return;
-      const total = data.days.length;
-      const isEnter = e.key === 'Enter';
-      const isBack  = e.key === 'Escape';
+      if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Escape'].includes(e.key)) return;
+      e.preventDefault();
+      e.stopPropagation();
 
-      // ---- Overlay-specific handling. These modals override "Enter = upload" ----
+      const result = resolveKey({
+        view,
+        modalType: modal.type,
+        modalFocus: modal.focusIndex,
+        preflight: preflightStatusRef.current,
+        key: e.key,
+        now: Date.now(),
+        cols: GRID_COLS,
+        totalDays: data.days.length,
+        media: mediaCtx,
+        lastEdge: lastEdgeRef.current,
+        doubleWindowMs: DOUBLE_EDGE_WINDOW_MS,
+      });
 
-      // Preflight 'acquiring' gate. The overlay is visible but not a hard block:
-      // Esc/Backspace exits the widget; other keys (arrows, Enter) fall through to
-      // the main hierarchy so the user can pre-navigate while the mic warms up.
-      // Use ref to avoid stale-closure lag on rapid key presses right after preflight clears.
-      const currentPreflightStatus = preflightStatusRef.current;
-      if (currentPreflightStatus === 'acquiring' && isBack) {
-        e.preventDefault();
-        onExitWidget();
-        return;
-      }
-
-      // Modal handling. Per-modal Enter/Back semantics differ.
-      // 2-button modals (stopConfirm, finalizeError, preflightFailed) capture
-      // arrows to toggle focus. 1-button modal (resumeDraft) lets arrows fall
-      // through to underlying TOC nav, so the grid doesn't feel dead while
-      // the user has the prompt up.
-      if (modal.type) {
-        const isTwoButton = modal.type === 'stopConfirm'
-          || modal.type === 'finalizeError'
-          || modal.type === 'preflightFailed';
-
-        if (modal.type === 'disconnect') {
-          // Informational while reconnecting/finalizing — swallow all keys.
-          e.preventDefault();
-          return;
-        }
-        if (isBack) {
-          e.preventDefault();
-          if (modal.type === 'resumeDraft') return;            // must explicitly Finalize
-          if (modal.type === 'preflightFailed') { onExitWidget(); return; }
-          dispatchModal({ type: 'CLOSE' });
-          return;
-        }
-        if (isTwoButton && (e.key === 'ArrowLeft' || e.key === 'ArrowRight'
-                         || e.key === 'ArrowUp'   || e.key === 'ArrowDown')) {
-          e.preventDefault();
-          dispatchModal({ type: 'TOGGLE_FOCUS' });
-          return;
-        }
-        if (isEnter) {
-          e.preventDefault();
-          if (modal.type === 'stopConfirm') {
-            if (modal.focusIndex === 0) {
-              dispatchModal({ type: 'CLOSE' });
-            } else {
-              dispatchModal({ type: 'CLOSE' });
-              onSaveAndExit();
-            }
-            return;
-          }
-          if (modal.type === 'finalizeError') {
-            // Task 4 polish: both buttons just close; "Exit (save later)" also exits the widget.
-            dispatchModal({ type: 'CLOSE' });
-            if (modal.focusIndex === 1) onExitWidget();
-            return;
-          }
-          if (modal.type === 'preflightFailed') {
-            if (modal.focusIndex === 0) onPreflightRetry();
-            else onPreflightExit();
-            return;
-          }
-          if (modal.type === 'resumeDraft') {
-            finalizePriorDraft();
-            return;
-          }
-        }
-        // resumeDraft + arrows: fall through to main hierarchy so the
-        // underlying grid stays navigable while the prompt is up.
-      }
-
-      // ---- Bottom recording bar focus ----
-      // view.focusRow === 'bar' means the user has tabbed down onto the bar. Enter activates Save.
-      if (view.focusRow === 'bar') {
-        e.preventDefault();
-        if (isEnter) { onSaveAndExit(); return; }
-        if (e.key === 'ArrowUp')   { dispatchView({ type: 'FOCUS_MAIN' }); return; }
-        if (e.key === 'ArrowDown') { onExitWidget(); return; }
-        if (isBack) { dispatchView({ type: 'BACK' }); return; }
-        return;
-      }
-
-      // ---- Main hierarchy: Enter = open focused day (TOC) or fullscreen (day), Back = climb ----
-      if (isEnter) {
-        // Double-Enter detection: second Enter within window reverts first transition
-        // and opens stopConfirm. Provides a D-pad/OK exit path when Esc is unreliable.
-        const now = Date.now();
-        if ((now - lastEnterAtRef.current) < DOUBLE_ENTER_WINDOW_MS) {
-          e.preventDefault();
-          e.stopPropagation();
-          dispatchView({ type: 'RESTORE_VIEW', snapshot: lastEnterSnapshotRef.current });
-          dispatchModal({ type: 'OPEN', modal: 'stopConfirm' });
-          lastEnterAtRef.current = 0;
-          lastEnterSnapshotRef.current = null;
-          return;
-        }
-        // First Enter: snapshot pre-transition view so a follow-up tap can revert.
-        lastEnterAtRef.current = now;
-        lastEnterSnapshotRef.current = view;
-
-        if (view.level === 'toc') {
-          e.preventDefault();
-          e.stopPropagation();
-          dispatchView({ type: 'OPEN_DAY' });
-          return;
-        }
-        if (view.level === 'day') {
-          // Enter at day view: open fullscreen if photos exist; otherwise no-op.
-          const photos = data.days[view.dayIndex]?.photos || [];
-          if (photos.length > 0) {
-            e.preventDefault();
-            e.stopPropagation();
-            dispatchView({ type: 'OPEN_PHOTO', index: 0 });
-          }
-          return;
-        }
-        // Fullscreen: Enter is a no-op (use Esc to back out, arrows to navigate).
-        return;
-      }
-
-      if (isBack) {
-        e.preventDefault();
-        e.stopPropagation();
-        onBackPressed();
-        return;
-      }
-
-      if (view.level === 'fullscreen') {
-        const photos = data.days[view.dayIndex]?.photos || [];
-        if (photos.length === 0) {
-          // No images — drop straight to day view
-          dispatchView({ type: 'BACK' });
-          return;
-        }
-        switch (e.key) {
-          case 'ArrowUp':
-            e.preventDefault();
-            dispatchView({ type: 'CYCLE_PHOTO', delta: 1, totalPhotos: photos.length });
-            return;
-          case 'ArrowDown':
-            // ↓ climbs out of fullscreen back to day view — gives D-pad users an
-            // exit path that doesn't depend on Esc (which FKB swallows on Shield).
-            e.preventDefault();
-            dispatchView({ type: 'BACK' });
-            return;
-          case 'ArrowLeft':
-            e.preventDefault();
-            dispatchView({ type: 'CYCLE_PHOTO', delta: -1, totalPhotos: photos.length });
-            return;
-          case 'ArrowRight':
-            e.preventDefault();
-            dispatchView({ type: 'CYCLE_PHOTO', delta: 1, totalPhotos: photos.length });
-            return;
-          default: return;
-        }
-      }
-
-      if (view.level === 'day') {
-        switch (e.key) {
-          case 'ArrowDown':
-            e.preventDefault();
-            dispatchView({ type: 'BACK' });
-            return;
-          case 'ArrowUp':
-            e.preventDefault();
-            if ((data.days[view.dayIndex]?.photos?.length || 0) > 0) {
-              dispatchView({ type: 'OPEN_PHOTO', index: 0 });
-            }
-            return;
-          case 'ArrowLeft':
-            e.preventDefault();
-            dispatchView({ type: 'CYCLE_DAY', delta: -1, totalDays: total });
-            return;
-          case 'ArrowRight':
-            e.preventDefault();
-            dispatchView({ type: 'CYCLE_DAY', delta: 1, totalDays: total });
-            return;
-          default: return;
-        }
-      }
-
-      // view.level === 'toc' — 4-column grid, 2 rows
-      // Up/Down traverse rows (±4); Left/Right traverse within row (±1).
-      // Up from row 0 exits; Down from row 1 focuses the recording bar.
-      const TOC_COLS = 4;
-      switch (e.key) {
-        case 'ArrowUp':
-          e.preventDefault();
-          if (view.dayIndex >= TOC_COLS) {
-            dispatchView({ type: 'CYCLE_DAY', delta: -TOC_COLS, totalDays: total });
-          } else {
-            onExitWidget();
-          }
-          return;
-        case 'ArrowDown':
-          e.preventDefault();
-          if (view.dayIndex + TOC_COLS < total) {
-            dispatchView({ type: 'CYCLE_DAY', delta: +TOC_COLS, totalDays: total });
-          } else {
-            dispatchView({ type: 'FOCUS_BAR' });
-          }
-          return;
-        case 'ArrowLeft':
-          e.preventDefault();
-          dispatchView({ type: 'CYCLE_DAY', delta: -1, totalDays: total });
-          return;
-        case 'ArrowRight':
-          e.preventDefault();
-          dispatchView({ type: 'CYCLE_DAY', delta: 1, totalDays: total });
-          return;
-        default: return;
+      lastEdgeRef.current = result.edge; // null clears it; {dir,at} arms the next tap
+      result.view.forEach(a => dispatchView(a));
+      result.modal.forEach(a => dispatchModal(a));
+      for (const intent of result.intents) {
+        if (intent === 'saveAndExit') onSaveAndExit();
+        else if (intent === 'exitWidget' || intent === 'exitNoSave') onExitWidget();
+        else if (intent === 'retryMic') onPreflightRetry();
+        else if (intent === 'finalizeDraft') finalizePriorDraft();
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [data, view, modal,
-      finalizePriorDraft, onExitWidget, onSaveAndExit,
-      onPreflightRetry, onPreflightExit, onBackPressed]);
+  }, [data, view, modal, mediaCtx,
+      finalizePriorDraft, onExitWidget, onSaveAndExit, onPreflightRetry]);
 
   // Pop guard: prevent MenuNavigationContext from popping the app while recording or uploading.
   // Handles remote Back button (FKB/Shield popstate) and any other pop() caller.
@@ -606,18 +417,10 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
     }
 
     menuNav.setPopGuard(() => {
-      logger.info('nav.pop-guard', {
-        isRecording: isRecordingRef.current,
-        viewLevel: viewLevelRef.current,
-        modalType: modalTypeRef.current,
-      });
-
-      if (modalTypeRef.current === 'stopConfirm') { dispatchModal({ type: 'CLOSE' }); return false; }
-      if (viewLevelRef.current === 'fullscreen' || viewLevelRef.current === 'day') {
-        dispatchView({ type: 'BACK' });
-        return false;
-      }
-      dispatchModal({ type: 'OPEN', modal: 'stopConfirm' });
+      logger.info('nav.pop-guard', { isRecording: isRecordingRef.current, viewLevel: viewLevelRef.current, modalType: modalTypeRef.current });
+      if (modalTypeRef.current === 'exitGate') { dispatchModal({ type: 'CLOSE' }); return false; }
+      if (viewLevelRef.current === 'reel') { dispatchView({ type: 'CLIMB' }); return false; }
+      dispatchModal({ type: 'OPEN', modal: 'exitGate' });
       return false;
     });
 
@@ -645,11 +448,11 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
 
   return (
     <div className="weekly-review">
-      {/* Resume-draft overlay — shown after bootstrap if an unfinalized draft exists */}
+      {/* Resume-draft overlay */}
       {modal.type === 'resumeDraft' && !isRecording && (
         <div className="weekly-review-confirm-overlay">
-          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="weekly-review-resume-label">
-            <div className="confirm-message" id="weekly-review-resume-label">
+          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="wr-resume-label">
+            <div className="confirm-message" id="wr-resume-label">
               A previous recording was not finalized.<br/>
               <small>{modal.payload?.source === 'server' ? `Server draft · ${Math.round((modal.payload?.totalBytes || 0) / 1024)} KB` : `Local-only draft · ${modal.payload?.chunkCount || 0} chunks`}</small>
             </div>
@@ -660,88 +463,81 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
         </div>
       )}
 
-      {/* Task 6: view-driven render — fullscreen > day > toc */}
-      {view.level === 'fullscreen' && data?.days?.[view.dayIndex] && (() => {
-        const photos = data.days[view.dayIndex].photos || [];
-        const safeIdx = Math.min(view.imageIndex, Math.max(0, photos.length - 1));
-        const dt = new Date(`${data.days[view.dayIndex].date}T12:00:00Z`);
+      {/* Two-level surface: reel over grid */}
+      {view.level === 'reel' && data?.days?.[view.dayIndex] ? (() => {
+        const day = data.days[view.dayIndex];
+        const items = day.photos || [];
+        const safeIdx = Math.min(view.itemIndex, Math.max(0, items.length - 1));
+        const dt = new Date(`${day.date}T12:00:00Z`);
         const dayLabel = dt.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-        return <FullscreenImage photo={photos[safeIdx]} index={safeIdx} total={photos.length} dayLabel={dayLabel} />;
-      })()}
-
-      {view.level === 'day' && data?.days?.[view.dayIndex] && (
-        <DayDetail
-          day={data.days[view.dayIndex]}
-          onClose={() => dispatchView({ type: 'BACK' })}
-        />
-      )}
-
-      {view.level === 'toc' && (
-        <div className="weekly-review-grid">
-          {data.days.map((day, i) => (
-            <DayColumn
-              key={day.date}
-              day={day}
-              isFocused={i === view.dayIndex}
-              onClick={() => {
-                dispatchView({ type: 'OPEN_DAY', index: i, totalDays: data.days.length });
-              }}
+        return (
+          <>
+            <DayReel
+              item={items[safeIdx] || null}
+              index={safeIdx}
+              total={items.length}
+              dayLabel={dayLabel}
+              playing={view.playing}
+              muted={view.muted}
+              paused={view.contextOpen}
+              onEnded={() => dispatchView({ type: 'STOP_VIDEO' })}
             />
-          ))}
+            <DayContextPanel day={day} open={view.contextOpen} />
+          </>
+        );
+      })() : (
+        <div className="weekly-review-grid">
+          {data.days.slice(-8).map((day, i) => {
+            const offset = Math.max(0, data.days.length - 8);
+            const realIndex = offset + i;
+            return (
+              <DayColumn
+                key={day.date}
+                day={day}
+                isFocused={realIndex === view.dayIndex}
+                onClick={() => dispatchView({ type: 'OPEN_DAY' })}
+              />
+            );
+          })}
         </div>
       )}
 
-      {/* Finalize error dialog — shown when upload/finalize fails after recording stops */}
+      {/* Finalize-error dialog */}
       {modal.type === 'finalizeError' && !isRecording && (
         <div className="weekly-review-confirm-overlay">
-          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="weekly-review-error-label">
-            <div className="confirm-message" id="weekly-review-error-label">
-              Save failed: {modal.payload}
-              <br/>
+          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="wr-error-label">
+            <div className="confirm-message" id="wr-error-label">
+              Save failed: {modal.payload}<br/>
               <small>Your recording is safe — stored locally and on the server.</small>
             </div>
             <div className="confirm-actions">
-              <button className={`confirm-btn confirm-btn--save${modal.focusIndex === 0 ? ' focused' : ''}`} onClick={() => { dispatchModal({ type: 'CLOSE' }); }}>Dismiss</button>
-              <button className={`confirm-btn confirm-btn--continue${modal.focusIndex === 1 ? ' focused' : ''}`} onClick={() => { dispatchModal({ type: 'CLOSE' }); if (typeof dispatch === 'function') dispatch('escape'); else if (typeof dismiss === 'function') dismiss(); }}>Exit (save later)</button>
+              <button className={`confirm-btn confirm-btn--save${modal.focusIndex === 0 ? ' focused' : ''}`}>Dismiss</button>
+              <button className={`confirm-btn confirm-btn--continue${modal.focusIndex === 1 ? ' focused' : ''}`}>Exit (save later)</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Stop confirmation overlay */}
-      {modal.type === 'stopConfirm' && (
+      {/* Exit gate */}
+      {modal.type === 'exitGate' && (
         <div className="weekly-review-confirm-overlay">
-          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="weekly-review-stop-confirm-label">
-            <div className="confirm-message" id="weekly-review-stop-confirm-label">End weekly review recording?</div>
+          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="wr-exit-label">
+            <div className="confirm-message" id="wr-exit-label">End weekly review recording?</div>
             <div className="confirm-actions">
-              <button
-                className={`confirm-btn confirm-btn--continue${modal.focusIndex === 0 ? ' focused' : ''}`}
-                onClick={() => { logger.info('recording.confirm-continue'); dispatchModal({ type: 'CLOSE' }); }}
-              >
-                Continue Recording
-              </button>
-              <button
-                className={`confirm-btn confirm-btn--save${modal.focusIndex === 1 ? ' focused' : ''}`}
-                onClick={() => { logger.info('recording.confirm-save'); dispatchModal({ type: 'CLOSE' }); onSaveAndExit(); }}
-              >
-                Save &amp; Close
-              </button>
+              <button className={`confirm-btn confirm-btn--continue${modal.focusIndex === 0 ? ' focused' : ''}`}>Keep going</button>
+              <button className={`confirm-btn confirm-btn--save${modal.focusIndex === 1 ? ' focused' : ''}`}>Save &amp; end</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Disconnect modal — shown when mic drops; blocks input while reconnecting or finalizing */}
+      {/* Disconnect modal */}
       {modal.type === 'disconnect' && (
         <div className="weekly-review-confirm-overlay">
-          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="weekly-review-disconnect-label" aria-live="polite">
-            <div className="confirm-message" id="weekly-review-disconnect-label">
-              {modal.payload?.phase === 'reconnecting' && (
-                <>Microphone dropped — reconnecting…<br/><small>Please hold tight.</small></>
-              )}
-              {modal.payload?.phase === 'finalizing' && (
-                <>Microphone disconnected.<br/><small>Saving your recording…</small></>
-              )}
+          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="wr-disc-label" aria-live="polite">
+            <div className="confirm-message" id="wr-disc-label">
+              {modal.payload?.phase === 'reconnecting' && (<>Microphone dropped — reconnecting…<br/><small>Please hold tight.</small></>)}
+              {modal.payload?.phase === 'finalizing' && (<>Microphone disconnected.<br/><small>Saving your recording…</small></>)}
             </div>
           </div>
         </div>
@@ -750,12 +546,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       <PreFlightOverlay
         status={preflightStatus}
         focusIndex={modal.focusIndex}
-        onRetry={() => {
-          dispatchModal({ type: 'CLOSE' });
-          autoStartRef.current = false;
-          stopRecording();
-          setTimeout(() => { autoStartRef.current = true; startRecording(); }, 100);
-        }}
+        onRetry={onPreflightRetry}
         onExit={onExitWidget}
       />
 
@@ -772,12 +563,6 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
         syncStatus={uploaderStatus}
         pendingCount={uploaderPendingCount}
         lastAckedAt={uploaderLastAckedAt}
-        isFocused={view.focusRow === 'bar'}
-        canSave={isRecording}
-        onSave={() => {
-          logger.info('nav.bar-save-clicked');
-          onSaveAndExit();
-        }}
       />
     </div>
   );
