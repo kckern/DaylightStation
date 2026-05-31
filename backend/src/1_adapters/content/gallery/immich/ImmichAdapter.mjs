@@ -769,6 +769,32 @@ export class ImmichAdapter {
   }
 
   /**
+   * Build a stable, curated EXIF subset from Immich's raw exifInfo.
+   * Returns undefined when no exif is present so the field can be omitted entirely.
+   * Individual null/undefined members are left in place; the API boundary strips them.
+   * @param {Object|null|undefined} exifInfo
+   * @returns {Object|undefined}
+   */
+  #curateExif(exifInfo) {
+    if (!exifInfo || typeof exifInfo !== 'object') return undefined;
+    return {
+      capturedAt: exifInfo.dateTimeOriginal,
+      city: exifInfo.city,
+      state: exifInfo.state,
+      country: exifInfo.country,
+      latitude: exifInfo.latitude,
+      longitude: exifInfo.longitude,
+      make: exifInfo.make,
+      model: exifInfo.model,
+      lensModel: exifInfo.lensModel,
+      fNumber: exifInfo.fNumber,
+      iso: exifInfo.iso,
+      exposureTime: exifInfo.exposureTime,
+      focalLength: exifInfo.focalLength,
+    };
+  }
+
+  /**
    * Convert asset to ListableItem (for images in browse view)
    * @param {Object} asset
    * @param {Object} [context] - Optional context for parent info
@@ -797,6 +823,7 @@ export class ImmichAdapter {
         height: asset.height,
         capturedAt: asset.exifInfo?.dateTimeOriginal,
         location: asset.exifInfo?.city,
+        exif: this.#curateExif(asset.exifInfo),
         favorite: asset.isFavorite,
         people: asset.people?.map(p => ({
           name: p.name,
@@ -847,6 +874,7 @@ export class ImmichAdapter {
         height: asset.height,
         capturedAt: asset.exifInfo?.dateTimeOriginal,
         location: asset.exifInfo?.city,
+        exif: this.#curateExif(asset.exifInfo),
         favorite: asset.isFavorite,
         people: asset.people?.map(p => ({
           name: p.name,
