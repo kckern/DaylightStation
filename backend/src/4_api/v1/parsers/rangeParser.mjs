@@ -110,6 +110,16 @@ export function parseTime(value) {
     };
   }
 
+  // Single full date (YYYY-MM-DD): expand to a same-day window [date, nextDay].
+  // Immich's takenBefore is effectively an exclusive upper bound at day granularity,
+  // so a zero-width [date, date] window returns nothing — use the next day as the end.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const next = new Date(`${value}T00:00:00.000Z`);
+    next.setUTCDate(next.getUTCDate() + 1);
+    const to = next.toISOString().slice(0, 10);
+    return { from: value, to };
+  }
+
   return { value: result };
 }
 

@@ -50,9 +50,22 @@ describe('rangeParser', () => {
       expect(result.to).toBe('2025-06-30');
     });
 
-    it('parses full date as single value', () => {
+    it('parses full date as a same-day range', () => {
       const result = parseTime('2025-06-15');
-      expect(result.value).toBe('2025-06-15');
+      expect(result.from).toBe('2025-06-15');
+      expect(result.to).toBe('2025-06-16');
+    });
+
+    test('single full date returns a same-day range (from..next day)', () => {
+      expect(parseTime('2025-12-25')).toEqual({ from: '2025-12-25', to: '2025-12-26' });
+    });
+
+    test('single full date crossing month boundary increments correctly', () => {
+      expect(parseTime('2025-01-31')).toEqual({ from: '2025-01-31', to: '2025-02-01' });
+    });
+
+    test('single full date crossing year boundary increments correctly', () => {
+      expect(parseTime('2025-12-31')).toEqual({ from: '2025-12-31', to: '2026-01-01' });
     });
 
     it('parses year range', () => {
