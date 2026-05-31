@@ -18,9 +18,6 @@ export default function RecordingBar({
   syncStatus,
   pendingCount,
   lastAckedAt,
-  isFocused,
-  canSave,
-  onSave,
   micConnected,
 }) {
   // Task 10: VU meter is driven by rAF + DOM mutation (not React render).
@@ -89,16 +86,6 @@ export default function RecordingBar({
         {error && <span className="recording-error">{error}</span>}
 
         {uploading && <span className="uploading-status">Transcribing...</span>}
-
-        <button
-          className={`recording-bar__save ${isFocused ? 'focused' : ''} ${canSave ? 'can-save' : ''}`}
-          onClick={onSave}
-          disabled={!canSave}
-          aria-label="Save and finish recording"
-        >
-          <span className="recording-bar__save-icon" aria-hidden="true">■</span>
-          <span className="recording-bar__save-label">Save Recording</span>
-        </button>
 
       </div>
     </div>
