@@ -455,6 +455,16 @@ describe('AudiobookshelfAdapter', () => {
       expect(capabilities.specific).toContain('author');
     });
 
+    test('getSearchCapabilities (structured) advertises mediaType so the unified query gate routes mediaType-only queries', () => {
+      const adapter = new AudiobookshelfAdapter(
+        { host: 'http://localhost:13378', token: 'test-token' },
+        { httpClient: mockHttpClient }
+      );
+      const caps = adapter.getSearchCapabilities();
+      expect(caps).toHaveProperty('canonical');
+      expect(caps.canonical).toContain('mediaType');
+    });
+
     test('search returns audiobooks with mediaType=audio filter', async () => {
       // Mock getLibraries
       mockHttpClient.get.mockResolvedValueOnce({

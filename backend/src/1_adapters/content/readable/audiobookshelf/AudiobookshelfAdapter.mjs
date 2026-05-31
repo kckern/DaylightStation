@@ -428,14 +428,6 @@ export class AudiobookshelfAdapter {
   }
 
   /**
-   * Get available search capabilities (implements IMediaSearchable)
-   * @returns {string[]} - Supported query fields
-   */
-  getSearchCapabilities() {
-    return ['text', 'mediaType', 'take', 'skip'];
-  }
-
-  /**
    * Convert Audiobookshelf item to ReadableItem (for ebooks)
    * @param {Object} item
    * @param {Object} [progress]
@@ -615,7 +607,7 @@ export class AudiobookshelfAdapter {
    */
   getSearchCapabilities() {
     return {
-      canonical: ['text', 'creator'],
+      canonical: ['text', 'creator', 'mediaType'],
       specific: ['narrator', 'author', 'series']
     };
   }
