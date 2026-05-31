@@ -101,6 +101,15 @@ export function parseContentQuery(rawParams) {
     query.favorites = true;
   }
 
+  // Native Immich enrichment flags — passed straight through to the adapter,
+  // which forwards them to Immich's /api/search/metadata. Other adapters ignore them.
+  if (isTruthy(rawParams.withExif) || hasKey(rawParams, 'withExif')) {
+    query.withExif = true;
+  }
+  if (isTruthy(rawParams.withPeople) || hasKey(rawParams, 'withPeople')) {
+    query.withPeople = true;
+  }
+
   // Canonical filters (pass through)
   for (const key of CANONICAL_KEYS) {
     if (rawParams[key] !== undefined) {

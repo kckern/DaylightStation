@@ -154,6 +154,25 @@ describe('contentQueryParser', () => {
     });
   });
 
+  describe('parseContentQuery - Immich enrichment flags', () => {
+    test('recognizes withExif and withPeople as boolean passthrough flags', () => {
+      const q = parseContentQuery({ source: 'immich', time: '2025-12-25', withExif: '1', withPeople: 'true' });
+      expect(q.withExif).toBe(true);
+      expect(q.withPeople).toBe(true);
+    });
+
+    test('omits withExif/withPeople when not provided', () => {
+      const q = parseContentQuery({ source: 'immich', time: '2025-12-25' });
+      expect(q.withExif).toBeUndefined();
+      expect(q.withPeople).toBeUndefined();
+    });
+
+    test('treats bare withExif key (no value) as true', () => {
+      const q = parseContentQuery({ source: 'immich', withExif: '' });
+      expect(q.withExif).toBe(true);
+    });
+  });
+
   describe('parseContentQuery - time parsing', () => {
     it('parses year to date range', () => {
       const result = parseContentQuery({ time: '2025' });
