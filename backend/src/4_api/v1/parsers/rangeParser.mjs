@@ -114,10 +114,20 @@ export function parseTime(value) {
   // Immich's takenBefore is effectively an exclusive upper bound at day granularity,
   // so a zero-width [date, date] window returns nothing — use the next day as the end.
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const next = new Date(`${value}T00:00:00.000Z`);
-    next.setUTCDate(next.getUTCDate() + 1);
-    const to = next.toISOString().slice(0, 10);
-    return { from: value, to };
+    const [y, m, d] = value.split('-').map(Number);
+    const parsed = new Date(Date.UTC(y, m - 1, d));
+    // Guard against calendar-illegal dates (e.g. 2025-02-30): V8 rolls overflow dates
+    // forward, so verify the UTC components round-trip back to the original values.
+    const isCalendarLegal =
+      parsed.getUTCFullYear() === y &&
+      parsed.getUTCMonth() === m - 1 &&
+      parsed.getUTCDate() === d;
+    if (isCalendarLegal) {
+      const next = new Date(parsed);
+      next.setUTCDate(next.getUTCDate() + 1);
+      const to = next.toISOString().slice(0, 10);
+      return { from: value, to };
+    }
   }
 
   return { value: result };

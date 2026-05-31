@@ -68,6 +68,11 @@ describe('rangeParser', () => {
       expect(parseTime('2025-12-31')).toEqual({ from: '2025-12-31', to: '2026-01-01' });
     });
 
+    test('calendar-illegal full date does not throw and is not treated as a range', () => {
+      const result = parseTime('2025-02-30');
+      expect(result).not.toHaveProperty('from');
+    });
+
     it('parses year range', () => {
       const result = parseTime('2024..2025');
       expect(result.from).toBe('2024-01-01');
