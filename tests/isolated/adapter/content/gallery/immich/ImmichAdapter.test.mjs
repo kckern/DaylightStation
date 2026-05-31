@@ -214,6 +214,32 @@ describe('ImmichAdapter', () => {
     });
   });
 
+  describe('search date + enrichment passthrough', () => {
+    test('forwards takenAfter/takenBefore and withExif/withPeople to Immich', async () => {
+      mockHttpClient.post.mockResolvedValue({ data: { assets: { items: [], total: 0 } } });
+      const adapter = new ImmichAdapter(
+        { host: 'http://localhost:2283', apiKey: 'test-key' },
+        { httpClient: mockHttpClient }
+      );
+
+      // Shape the adapter receives AFTER ContentQueryService translation (no text → assets-only path).
+      await adapter.search({
+        takenAfter: '2025-12-25',
+        takenBefore: '2025-12-26',
+        withExif: true,
+        withPeople: true,
+      });
+
+      expect(mockHttpClient.post).toHaveBeenCalledTimes(1);
+      const [url, body] = mockHttpClient.post.mock.calls[0];
+      expect(url).toContain('/api/search/metadata');
+      expect(body.takenAfter).toBe('2025-12-25');
+      expect(body.takenBefore).toBe('2025-12-26');
+      expect(body.withExif).toBe(true);
+      expect(body.withPeople).toBe(true);
+    });
+  });
+
   describe('getSearchCapabilities', () => {
     test('returns supported search fields', () => {
       const adapter = new ImmichAdapter(

@@ -627,12 +627,34 @@ export class ImmichAdapter {
       immichQuery.type = query.mediaType.toUpperCase();
     }
 
+    // Legacy date path: callers that set dateFrom/dateTo directly
+    // (deprecated /api/v1/content/search router, ImmichFeedAdapter, QueryAdapter).
+    // The unified query path instead sends pre-translated takenAfter/takenBefore
+    // (handled below), which take precedence when both are present.
     if (query.dateFrom) {
       immichQuery.takenAfter = query.dateFrom;
     }
 
     if (query.dateTo) {
       immichQuery.takenBefore = query.dateTo;
+    }
+
+    // Canonical time filter arrives pre-translated as takenAfter/takenBefore
+    // (ContentQueryService maps `time` → { takenAfter, takenBefore }). Forward verbatim.
+    if (query.takenAfter) {
+      immichQuery.takenAfter = query.takenAfter;
+    }
+    if (query.takenBefore) {
+      immichQuery.takenBefore = query.takenBefore;
+    }
+
+    // Native Immich enrichment flags — forwarded so a single search call returns
+    // full exifInfo and people/faces inline (no per-asset hydration).
+    if (query.withExif) {
+      immichQuery.withExif = true;
+    }
+    if (query.withPeople) {
+      immichQuery.withPeople = true;
     }
 
     if (query.location) {
