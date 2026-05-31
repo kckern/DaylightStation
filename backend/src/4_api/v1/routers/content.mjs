@@ -437,7 +437,7 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
   /**
    * GET /api/content/search
    * Search across content sources that implement IMediaSearchable
-   * @deprecated Use /api/content/query/search instead
+   * @deprecated Use /api/v1/content/query/search instead. Sunset: 2026-09-01.
    *
    * Query params:
    * - sources: Comma-separated source filter (optional, defaults to all searchable)
@@ -451,6 +451,11 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
    * - sort: date, title, or random
    */
   router.get('/search', asyncHandler(async (req, res) => {
+    // DEPRECATED: superseded by /api/v1/content/query/search (unified query interface).
+    res.set('Deprecation', 'true');
+    res.set('Sunset', 'Tue, 01 Sep 2026 00:00:00 GMT');
+    res.set('Link', '</api/v1/content/query/search>; rel="successor-version"');
+
     // Parse sources filter
     const sourcesParam = req.query.sources;
     const requestedSources = sourcesParam ? sourcesParam.split(',').map(s => s.trim()) : null;
