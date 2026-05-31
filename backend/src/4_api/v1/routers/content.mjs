@@ -5,6 +5,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { isMediaSearchable, validateSearchQuery } from '#domains/media/IMediaSearchable.mjs';
 import { parseContentQuery, validateContentQuery } from '../parsers/contentQueryParser.mjs';
 import { checkSchedule } from '#apps/content/services/scheduleCheck.mjs';
+import { stripEmpty } from '#api/v1/utils/stripEmpty.mjs';
 
 /**
  * Create content API router
@@ -308,6 +309,7 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
       res.json({
         query,
         ...cleanResult,
+        items: (cleanResult.items || []).map(stripEmpty),
         _perf: { ...(_perf || {}), requestMs: totalMs },
       });
     } catch (error) {
@@ -419,7 +421,8 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
       const result = await contentQueryService.list(query);
       res.json({
         from: query.from,
-        ...result
+        ...result,
+        items: (result.items || []).map(stripEmpty),
       });
     } catch (error) {
       logger.error?.('content.query.list.error', { query, error: error.message });

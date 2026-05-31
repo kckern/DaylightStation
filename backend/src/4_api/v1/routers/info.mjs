@@ -16,6 +16,7 @@ import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
 import { resolveFormat } from '../utils/resolveFormat.mjs';
+import { stripEmpty } from '#api/v1/utils/stripEmpty.mjs';
 
 /**
  * Derive capabilities from item properties.
@@ -200,7 +201,7 @@ export function createInfoRouter(config) {
       totalMs
     });
 
-    res.json(response);
+    res.json(stripEmpty(response));
   });
 
   // Register routes: order matters - more specific first
