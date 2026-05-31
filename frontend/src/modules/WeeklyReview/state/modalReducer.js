@@ -5,7 +5,7 @@ export const OVERLAY_PRIORITY = {
   preflightFailed: 100,
   disconnect:      90,
   finalizeError:   80,
-  stopConfirm:     70,
+  exitGate:        70,
   resumeDraft:     60,
 };
 
