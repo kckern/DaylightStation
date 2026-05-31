@@ -271,4 +271,51 @@ describe('ImmichAdapter', () => {
       expect(result).toBe('immich');
     });
   });
+
+  describe('curated exif block', () => {
+    const FULL_EXIF = {
+      dateTimeOriginal: '2025-12-25T15:11:57.000Z',
+      city: 'Lakeland South', state: 'Washington', country: 'United States of America',
+      latitude: 47.292154, longitude: -122.310757,
+      make: 'samsung', model: 'Galaxy S24', lensModel: null,
+      fNumber: 1.8, iso: 160, exposureTime: '1/120', focalLength: 5.4,
+      fileSizeInByte: 123456, orientation: '1', projectionType: null, // noise — must be dropped
+    };
+
+    test('getItem maps a curated exif subset (and drops noise fields)', async () => {
+      mockHttpClient.get.mockResolvedValue({
+        data: { id: 'abc-123', type: 'IMAGE', originalFileName: 'beach.jpg', width: 4624, height: 2604, exifInfo: FULL_EXIF, people: [] }
+      });
+      const adapter = new ImmichAdapter(
+        { host: 'http://localhost:2283', apiKey: 'test-key' },
+        { httpClient: mockHttpClient }
+      );
+
+      const result = await adapter.getItem('immich:abc-123');
+      const exif = result.metadata.exif;
+
+      expect(exif).toMatchObject({
+        capturedAt: '2025-12-25T15:11:57.000Z',
+        city: 'Lakeland South', state: 'Washington', country: 'United States of America',
+        latitude: 47.292154, longitude: -122.310757,
+        make: 'samsung', model: 'Galaxy S24',
+        fNumber: 1.8, iso: 160, exposureTime: '1/120', focalLength: 5.4,
+      });
+      // Noise fields must NOT appear in the curated block.
+      expect(exif.fileSizeInByte).toBeUndefined();
+      expect(exif.projectionType).toBeUndefined();
+    });
+
+    test('omits exif block entirely when Immich returns no exifInfo', async () => {
+      mockHttpClient.get.mockResolvedValue({
+        data: { id: 'no-exif', type: 'IMAGE', originalFileName: 'x.jpg', width: 1, height: 1 }
+      });
+      const adapter = new ImmichAdapter(
+        { host: 'http://localhost:2283', apiKey: 'test-key' },
+        { httpClient: mockHttpClient }
+      );
+      const result = await adapter.getItem('immich:no-exif');
+      expect(result.metadata.exif).toBeUndefined();
+    });
+  });
 });
