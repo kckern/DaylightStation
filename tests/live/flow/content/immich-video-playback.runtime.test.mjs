@@ -57,11 +57,11 @@ test.describe('Immich Video Playback', () => {
   // TEST 1: Search API finds Immich video
   // ═══════════════════════════════════════════════════════════════════════════
   test('Search API returns Immich video', async ({ request }) => {
-    console.log(`\n🔍 Searching for Immich videos via ${BASE_URL}/api/v1/content/search`);
+    console.log(`\n🔍 Searching for Immich videos via ${BASE_URL}/api/v1/content/query/search`);
 
-    const response = await request.get(`${BASE_URL}/api/v1/content/search`, {
+    const response = await request.get(`${BASE_URL}/api/v1/content/query/search`, {
       params: {
-        sources: 'immich',
+        source: 'immich',
         mediaType: 'video',
         take: 1
       }

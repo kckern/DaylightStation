@@ -60,11 +60,11 @@ test.describe('Audiobookshelf Audiobook Playback', () => {
   // TEST 1: Search API finds Audiobookshelf audiobook
   // ═══════════════════════════════════════════════════════════════════════════
   test('Search API returns Audiobookshelf audiobook', async ({ request }) => {
-    console.log(`\n🔍 Searching for audiobooks via ${BASE_URL}/api/v1/content/search`);
+    console.log(`\n🔍 Searching for audiobooks via ${BASE_URL}/api/v1/content/query/search`);
 
-    const response = await request.get(`${BASE_URL}/api/v1/content/search`, {
+    const response = await request.get(`${BASE_URL}/api/v1/content/query/search`, {
       params: {
-        sources: 'abs',
+        source: 'abs',
         mediaType: 'audio',
         take: 1
       }
