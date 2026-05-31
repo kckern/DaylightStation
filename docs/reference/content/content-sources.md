@@ -168,6 +168,9 @@ Connects to an Immich photo/video management server.
 - **Capabilities**: `playable`, `listable`, `displayable`, `searchable`
 - **Multi-instance**: Yes
 - **Config**: host, API key, albums
+- **Date filtering**: `time` accepts a single day (`2025-12-25`), month (`2025-12`), year (`2025`), or range (`2024..2025`). A single day expands to a same-day window. Date filters are forwarded to Immich as `takenAfter`/`takenBefore`.
+- **Rich metadata (opt-in)**: add `withExif=1` and/or `withPeople=1` to a `query/search` request. These pass straight through to Immich's `/api/search/metadata`, so exif and people/faces come back in a single call (no per-asset hydration). Output is normalized into a curated `metadata.exif` block (`capturedAt, city, state, country, latitude, longitude, make, model, lensModel, fNumber, iso, exposureTime, focalLength`) and `metadata.people` (with face bounding boxes). Tags are not available on the search path.
+- **Empty fields**: `null`/`[]`/`{}` members are stripped from item payloads at the API boundary to reduce response size.
 
 ### audiobookshelf (source name: `abs`)
 
