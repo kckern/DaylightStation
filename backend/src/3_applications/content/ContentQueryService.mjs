@@ -603,7 +603,8 @@ export class ContentQueryService {
    */
   #canHandle(adapter, query) {
     const caps = adapter.getSearchCapabilities?.() ?? { canonical: [], specific: [] };
-    const queryKeys = Object.keys(query).filter(k => !['source', 'take', 'skip', 'sort'].includes(k));
+    const META_KEYS = ['source', 'take', 'skip', 'sort', 'withExif', 'withPeople'];
+    const queryKeys = Object.keys(query).filter(k => !META_KEYS.includes(k));
 
     // Must support at least one query key (or query is empty = list all)
     if (queryKeys.length === 0) return true;
