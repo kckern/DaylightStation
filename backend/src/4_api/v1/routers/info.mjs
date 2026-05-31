@@ -201,7 +201,15 @@ export function createInfoRouter(config) {
       totalMs
     });
 
-    res.json(stripEmpty(response));
+    // Strip empty-field noise from metadata and top-level scalars, but preserve
+    // `content` (ordered verse/stanza data for readalong/singalong renderers) and
+    // `style` verbatim — stripEmpty could drop empty-array spacers or {}-stripped
+    // entries and shift renderer indices.
+    const { content, style, ...rest } = response;
+    const trimmed = stripEmpty(rest);
+    if (content !== undefined) trimmed.content = content;
+    if (style !== undefined) trimmed.style = style;
+    res.json(trimmed);
   });
 
   // Register routes: order matters - more specific first
