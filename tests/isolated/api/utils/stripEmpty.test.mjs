@@ -31,4 +31,12 @@ describe('stripEmpty', () => {
     expect(stripEmpty('hi')).toBe('hi');
     expect(stripEmpty(0)).toBe(0);
   });
+
+  test('removes array elements that strip to empty (documents hole-creation)', () => {
+    // An element that becomes {} after stripping is dropped entirely — this is
+    // intended for e.g. people-with-no-name, but means callers must not rely on
+    // array index stability across stripEmpty.
+    expect(stripEmpty([{ name: null }, { id: 'y' }])).toEqual([{ id: 'y' }]);
+    expect(stripEmpty({ items: [{ a: null }, { b: 2 }] })).toEqual({ items: [{ b: 2 }] });
+  });
 });
