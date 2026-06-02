@@ -1,17 +1,461 @@
-.cycle-game-home {
-  display: flex; gap: 16px; height: 100%; padding: 20px;
-  background: #0e0f13; color: #e2e8f0;
+// Cycle-game lobby. Cohesive with the rest of the cycle-game widgets:
+// dark fitness surfaces (#0e0f13 base, #101218 panels, #2a2e36 borders),
+// monospace accents, zone-blue (#7aa2ff) highlight.
 
-  &__main { flex: 1; display: flex; flex-direction: column; gap: 20px; }
-  &__title { font-size: 1.8rem; font-weight: 800; }
-  &__label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: #8b93a1; margin-bottom: 8px; }
-  &__courses { display: flex; gap: 12px; flex-wrap: wrap; }
-  &__course { background: #101218; border: 1px solid #2a2e36; border-radius: 10px; padding: 14px 18px; color: #e2e8f0; font-size: 1.05rem; cursor: pointer; }
-  &__course--custom { border-style: dashed; color: #8b93a1; }
-  &__riders { display: flex; gap: 12px; flex-wrap: wrap; }
-  &__rider { display: flex; gap: 8px; align-items: center; background: #101218; border: 1px solid #2a2e36; border-radius: 10px; padding: 10px 14px; opacity: 0.55; }
-  &__rider.is-live { opacity: 1; }
-  &__records { width: 240px; background: #101218; border: 1px solid #2a2e36; border-radius: 10px; padding: 16px; }
-  &__record { padding: 6px 0; border-bottom: 1px solid #1c2027; font-size: 0.95rem; }
-  &__empty { color: #5b626e; font-size: 0.9rem; }
+$cgh-bg: #0e0f13;
+$cgh-panel: #101218;
+$cgh-panel-2: #15171c;
+$cgh-border: #2a2e36;
+$cgh-border-soft: #1c2027;
+$cgh-text: #e2e8f0;
+$cgh-muted: #8b93a1;
+$cgh-faint: #5b626e;
+$cgh-accent: #7aa2ff;
+$cgh-accent-strong: #2563eb;
+
+.cycle-game-home {
+  display: flex;
+  gap: 20px;
+  height: 100%;
+  padding: 24px;
+  background: $cgh-bg;
+  color: $cgh-text;
+  box-sizing: border-box;
+  overflow: hidden;
+
+  &__main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    min-width: 0;
+    overflow-y: auto;
+  }
+
+  &__header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 1.9rem;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+  }
+
+  &__subtitle {
+    margin: 0;
+    color: $cgh-muted;
+    font-size: 0.95rem;
+  }
+
+  &__actions {
+    margin-top: auto;
+    padding-top: 8px;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  &__start {
+    appearance: none;
+    border: 1px solid $cgh-accent-strong;
+    background: linear-gradient(180deg, lighten($cgh-accent-strong, 6%), $cgh-accent-strong);
+    color: #f8fafc;
+    border-radius: 12px;
+    padding: 14px 34px;
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    box-shadow: 0 8px 22px rgba(37, 99, 235, 0.35);
+    transition: transform 0.12s ease, opacity 0.2s ease, box-shadow 0.2s ease;
+
+    &:hover:not(:disabled) { transform: translateY(-1px); }
+    &:active:not(:disabled) { transform: translateY(0); }
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.4;
+      background: $cgh-panel;
+      border-color: $cgh-border;
+      box-shadow: none;
+    }
+  }
+
+  &__records {
+    width: 260px;
+    flex-shrink: 0;
+    background: $cgh-panel;
+    border: 1px solid $cgh-border;
+    border-radius: 14px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+  }
+}
+
+.cgh-section-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: $cgh-muted;
+  margin-bottom: 12px;
+
+  &--sub {
+    margin-bottom: 8px;
+    letter-spacing: 0.06em;
+  }
+}
+
+.cgh-section-count {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: $cgh-accent;
+  text-transform: none;
+}
+
+.cgh-empty {
+  color: $cgh-faint;
+  font-size: 0.92rem;
+  padding: 6px 0;
+}
+
+// ── Race type dichotomy ──────────────────────────────────────────────────
+.cgh-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.cgh-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 22px 18px;
+  background: $cgh-panel;
+  border: 1.5px solid $cgh-border;
+  border-radius: 16px;
+  color: $cgh-text;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
+
+  &:hover { transform: translateY(-2px); border-color: lighten($cgh-border, 12%); }
+
+  &.is-selected {
+    border-color: $cgh-accent;
+    background: linear-gradient(180deg, rgba(122, 162, 255, 0.12), $cgh-panel);
+    box-shadow: 0 0 0 1px rgba(122, 162, 255, 0.4), 0 8px 24px rgba(0, 0, 0, 0.4);
+  }
+
+  &__icon {
+    width: 52px;
+    height: 52px;
+    color: $cgh-muted;
+    transition: color 0.15s ease;
+  }
+  &.is-selected &__icon { color: $cgh-accent; }
+
+  &__name {
+    font-size: 1.15rem;
+    font-weight: 700;
+  }
+  &__hint {
+    font-size: 0.78rem;
+    color: $cgh-muted;
+  }
+}
+
+// ── Value step ───────────────────────────────────────────────────────────
+.cgh-value {
+  margin-top: 14px;
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+}
+
+.cgh-presets {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cgh-preset {
+  background: $cgh-panel-2;
+  border: 1px solid $cgh-border;
+  border-radius: 999px;
+  padding: 8px 16px;
+  color: $cgh-text;
+  font-size: 0.92rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+
+  &:hover { border-color: lighten($cgh-border, 12%); }
+  &.is-selected {
+    border-color: $cgh-accent;
+    color: $cgh-accent;
+    background: rgba(122, 162, 255, 0.12);
+  }
+}
+
+.cgh-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: $cgh-panel-2;
+  border: 1px solid $cgh-border;
+  border-radius: 999px;
+  padding: 4px;
+
+  &__btn {
+    width: 30px;
+    height: 30px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: $cgh-text;
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.12s ease;
+
+    &:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
+    &:disabled { opacity: 0.3; cursor: not-allowed; }
+  }
+
+  &__value {
+    min-width: 64px;
+    text-align: center;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.9rem;
+    color: $cgh-accent;
+  }
+}
+
+// ── Starting grid ────────────────────────────────────────────────────────
+.cgh-grid-section { display: flex; flex-direction: column; }
+
+.cgh-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 16px;
+}
+
+.cgh-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 10px;
+  background: $cgh-panel;
+  border: 1px solid $cgh-border;
+  border-radius: 14px;
+  transition: border-color 0.15s ease;
+
+  &.is-filled { border-color: rgba(122, 162, 255, 0.45); }
+
+  &__main {
+    appearance: none;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 84px;
+    height: 84px;
+  }
+
+  &__empty {
+    width: 72px;
+    height: 72px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: $cgh-faint;
+    transition: color 0.15s ease;
+  }
+  &__main:hover &__empty { color: $cgh-accent; }
+  &__plus { width: 64px; height: 64px; }
+
+  &__label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-align: center;
+  }
+
+  &__rider {
+    min-height: 18px;
+    font-size: 0.78rem;
+    text-align: center;
+  }
+
+  &__tap { color: $cgh-faint; }
+
+  &__clear {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: $cgh-muted;
+    font-size: 0.78rem;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 6px;
+
+    &:hover { color: #f87171; background: rgba(248, 113, 113, 0.1); }
+  }
+}
+
+// ── Records rail ─────────────────────────────────────────────────────────
+.cgh-records {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cgh-record {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid $cgh-border-soft;
+  font-size: 0.92rem;
+
+  &:last-child { border-bottom: none; }
+
+  &__rank {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: $cgh-panel-2;
+    color: $cgh-accent;
+    font-size: 0.75rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__label { color: $cgh-text; }
+}
+
+// ── Rider picker modal ───────────────────────────────────────────────────
+.cgh-picker {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
+  }
+
+  &__sheet {
+    position: relative;
+    z-index: 1;
+    width: min(560px, 86%);
+    max-height: 80%;
+    overflow-y: auto;
+    background: $cgh-panel;
+    border: 1px solid $cgh-border;
+    border-radius: 18px;
+    padding: 22px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  }
+
+  &__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 18px;
+  }
+
+  &__bike {
+    font-size: 1.15rem;
+    font-weight: 700;
+  }
+
+  &__close {
+    appearance: none;
+    border: 1px solid $cgh-border;
+    background: $cgh-panel-2;
+    color: $cgh-text;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    font-size: 1.3rem;
+    line-height: 1;
+    cursor: pointer;
+
+    &:hover { border-color: lighten($cgh-border, 12%); }
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 14px;
+  }
+}
+
+.cgh-person {
+  appearance: none;
+  border: 1px solid transparent;
+  background: $cgh-panel-2;
+  border-radius: 14px;
+  padding: 14px 8px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.15s ease, transform 0.12s ease;
+
+  &:hover { transform: translateY(-2px); border-color: $cgh-border; }
+
+  &.has-hr {
+    border-color: rgba(122, 162, 255, 0.4);
+    background: linear-gradient(180deg, rgba(122, 162, 255, 0.1), $cgh-panel-2);
+  }
+
+  &__name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-align: center;
+  }
+
+  &__badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #0e0f13;
+    background: #4ade80;
+    border-radius: 999px;
+    padding: 2px 7px;
+  }
 }

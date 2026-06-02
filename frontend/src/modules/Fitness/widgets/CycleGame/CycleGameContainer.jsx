@@ -16,22 +16,6 @@ const RACE_TICK_MS = 1000;
 const COUNTDOWN_TICK_MS = 1000;
 
 /**
- * Default course presets when the fitness config exposes no cycle_game.courses.
- * Always offers a distance race and a time race so both win conditions are
- * reachable from the home screen.
- */
-function deriveCourses(cfg) {
-  const configured = Array.isArray(cfg?.courses) ? cfg.courses : [];
-  if (configured.length > 0) return configured;
-  const goalM = Number.isFinite(cfg?.distance_goal_default_m) ? cfg.distance_goal_default_m : 3000;
-  const timeCapS = Number.isFinite(cfg?.time_cap_default_s) ? cfg.time_cap_default_s : 300;
-  return [
-    { id: 'distance', name: `Distance — ${goalM} m`, win_condition: 'distance', goal_m: goalM },
-    { id: 'time', name: `Time — ${Math.round(timeCapS / 60)} min`, win_condition: 'time', time_cap_s: timeCapS }
-  ];
-}
-
-/**
  * Live cycle-game lifecycle container. Composes the prop-driven screens
  * (CycleGameHome / CountdownStoplight / CycleRaceScreen / RaceResults) with the
  * Plan-4 CycleRaceController and live fitness data (claimed riders, per-bike
@@ -45,13 +29,20 @@ export default function CycleGameContainer({ onMount } = {}) {
     equipment = [],
     zones = [],
     cycleGameConfig = {},
+    configuredUsers = [],
     fitnessSessionInstance: session,
     getUserVitals,
     getDisplayName,
     getUserByName
   } = ctx;
 
-  const courses = useMemo(() => deriveCourses(cycleGameConfig), [cycleGameConfig]);
+  const distanceDefaultM = Number.isFinite(cycleGameConfig?.distance_goal_default_m)
+    ? cycleGameConfig.distance_goal_default_m
+    : 3000;
+  const timeDefaultS = Number.isFinite(cycleGameConfig?.time_cap_default_s)
+    ? cycleGameConfig.time_cap_default_s
+    : 300;
+
   const cadenceBands = useMemo(
     () => (Array.isArray(cycleGameConfig?.cadence_zones) ? cycleGameConfig.cadence_zones : []),
     [cycleGameConfig]
@@ -102,7 +93,12 @@ export default function CycleGameContainer({ onMount } = {}) {
 
   // ── lifecycle state ──────────────────────────────────────────────────────
   const [phase, setPhase] = useState('idle'); // idle | countdown | racing | results
-  const [selectedCourseId, setSelectedCourseId] = useState(null);
+  const [raceType, setRaceType] = useState(null); // 'distance' | 'time' | null
+  const [raceValueM, setRaceValueM] = useState(null); // chosen distance goal (m)
+  const [raceValueS, setRaceValueS] = useState(null); // chosen time cap (s)
+  // Bump to force a re-read of session.getEquipmentRider after an assignment
+  // (the session is a mutable instance; mutating it doesn't change React state).
+  const [assignVersion, setAssignVersion] = useState(0);
   const [snapshot, setSnapshot] = useState(null); // controller.getState()
   const controllerRef = useRef(null);
   const raceMetaRef = useRef(null);
@@ -131,27 +127,78 @@ export default function CycleGameContainer({ onMount } = {}) {
     else if (state.phase === 'cancelled') setPhase('idle');
   }, []);
 
-  // Roster shown on the home screen (live = the bike has a fresh RPM reading).
-  const homeRiders = useMemo(() => buildRiders().map((r) => {
-    const cadence = session?.getEquipmentCadence?.(r.equipmentId);
-    return { userId: r.userId, displayName: r.displayName, live: !!(cadence && cadence.connected && cadence.rpm > 0) };
-  }), [buildRiders, session, snapshot, phase]);
+  // People to choose from on the home screen: the registered users, mapped to
+  // the avatar/HR shape the lobby renders. Users with an active heart rate are
+  // surfaced first / highlighted.
+  const people = useMemo(() => {
+    const list = (Array.isArray(configuredUsers) ? configuredUsers : []).map((u) => {
+      const id = u?.id || u?.profileId;
+      const vitals = id ? getUserVitals?.(id) : null;
+      const heartRate = Number.isFinite(vitals?.heartRate) ? vitals.heartRate : null;
+      const hasHR = Number.isFinite(heartRate) && heartRate > 0;
+      return {
+        id,
+        name: vitals?.name || u?.name || id,
+        avatarSrc: `/api/v1/static/img/users/${id}`,
+        heartRate,
+        zoneId: vitals?.zoneId || null,
+        zoneColor: vitals?.zoneColor || null,
+        progress: Number.isFinite(vitals?.progress) ? vitals.progress : null,
+        hasHR
+      };
+    }).filter((p) => p.id);
+    // active-HR first, then by name
+    return list.sort((a, b) => {
+      if (a.hasHR !== b.hasHR) return a.hasHR ? -1 : 1;
+      return String(a.name).localeCompare(String(b.name));
+    });
+    // assignVersion intentionally excluded — people don't change on assignment
+  }, [configuredUsers, getUserVitals]);
+
+  // Bikes for the starting grid (each with its currently-claimed rider).
+  const bikesForGrid = useMemo(
+    () => bikes.map((bike) => ({
+      id: bike.id,
+      name: bike.name || bike.id,
+      type: bike.type || null,
+      rider: session?.getEquipmentRider?.(bike.id) || null
+    })),
+    // assignVersion forces a re-read after assign/unassign
+    [bikes, session, assignVersion]
+  );
+
+  const assignedRiderCount = useMemo(
+    () => bikesForGrid.filter((b) => b.rider).length,
+    [bikesForGrid]
+  );
+
+  // The current value for the chosen race type (defaults applied at start).
+  const raceValue = raceType === 'time' ? raceValueS : raceValueM;
+
+  const canStart = !!raceType && assignedRiderCount >= 1;
 
   // ── home → stage + start ─────────────────────────────────────────────────
   useEffect(() => {
     if (phase === 'idle') {
-      log.info('cycle_game.home', { courses: courses.length, riderCount: buildRiders().length });
+      log.info('cycle_game.home', { raceType, riderCount: buildRiders().length });
     }
     // run once on entering idle; depend on phase only
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
   const startRace = useCallback(() => {
-    const course = courses.find((c) => c.id === selectedCourseId) || courses[0];
-    if (!course) {
-      log.warn('cycle_game.staged', { error: 'no_course' });
-      return;
-    }
+    // The race "course" is derived from the chosen type + value. Default the
+    // value from config when none was picked (so the E2E — which only clicks a
+    // race type then Start — still works).
+    const type = raceType || 'distance';
+    const goalM = type === 'distance' ? (Number.isFinite(raceValueM) ? raceValueM : distanceDefaultM) : null;
+    const timeCapS = type === 'time' ? (Number.isFinite(raceValueS) ? raceValueS : timeDefaultS) : null;
+    const course = {
+      id: 'custom',
+      win_condition: type,
+      goal_m: goalM,
+      time_cap_s: timeCapS
+    };
     const riders = buildRiders();
     if (riders.length === 0) {
       log.warn('cycle_game.staged', { courseId: course.id, error: 'no_riders' });
@@ -185,14 +232,14 @@ export default function CycleGameContainer({ onMount } = {}) {
     controllerRef.current = controller;
 
     log.info('cycle_game.staged', {
-      courseId: course.id,
+      courseId: cfg.winCondition,
       winCondition: cfg.winCondition,
       ...(cfg.winCondition === 'distance' ? { goalM: cfg.goalM } : { timeCapS: cfg.timeCapS }),
       riders: riders.map((r) => r.userId)
     });
 
     applySnapshot(controller.startCountdown());
-  }, [courses, selectedCourseId, buildRiders, zones, hrlessMultiplier, cycleGameConfig, applySnapshot, log]);
+  }, [raceType, raceValueM, raceValueS, distanceDefaultM, timeDefaultS, buildRiders, zones, hrlessMultiplier, cycleGameConfig, applySnapshot, log]);
 
   // ── countdown interval ───────────────────────────────────────────────────
   useEffect(() => {
@@ -310,9 +357,28 @@ export default function CycleGameContainer({ onMount } = {}) {
   }, [onMount]);
 
   // ── handlers ─────────────────────────────────────────────────────────────
-  const onSelectCourse = useCallback((course) => {
-    setSelectedCourseId(course?.id ?? null);
+  const onSelectRaceType = useCallback((type) => {
+    setRaceType((prev) => (prev === type ? prev : type));
   }, []);
+
+  const onSetRaceValue = useCallback((value) => {
+    if (!Number.isFinite(value)) return;
+    setRaceType((current) => {
+      if (current === 'time') setRaceValueS(value);
+      else setRaceValueM(value);
+      return current;
+    });
+  }, []);
+
+  const onAssign = useCallback((bikeId, userId) => {
+    session?.setEquipmentRider?.(bikeId, userId);
+    setAssignVersion((v) => v + 1);
+  }, [session]);
+
+  const onUnassign = useCallback((bikeId) => {
+    session?.setEquipmentRider?.(bikeId, null);
+    setAssignVersion((v) => v + 1);
+  }, [session]);
 
   const onCancel = useCallback(() => {
     const controller = controllerRef.current;
@@ -329,7 +395,6 @@ export default function CycleGameContainer({ onMount } = {}) {
     controllerRef.current = null;
     raceMetaRef.current = null;
     setSnapshot(null);
-    setSelectedCourseId(null);
     setPhase('idle');
   }, []);
 
@@ -338,30 +403,18 @@ export default function CycleGameContainer({ onMount } = {}) {
     return (
       <div className="cycle-game-container" data-testid="cycle-game-container">
         <CycleGameHome
-          courses={courses}
-          riders={homeRiders}
+          raceType={raceType}
+          onSelectRaceType={onSelectRaceType}
+          raceValue={Number.isFinite(raceValue) ? raceValue : undefined}
+          onSetRaceValue={onSetRaceValue}
+          bikes={bikesForGrid}
+          people={people}
+          onAssign={onAssign}
+          onUnassign={onUnassign}
           records={[]}
-          onSelectCourse={onSelectCourse}
-          onCustom={() => {}}
+          onStart={startRace}
+          canStart={canStart}
         />
-        <div className="cycle-game-container__controls">
-          <button
-            type="button"
-            data-testid="cycle-game-start"
-            className="cycle-game-container__start"
-            onClick={startRace}
-          >
-            Start race{selectedCourseId ? '' : ' (first course)'}
-          </button>
-          <button
-            type="button"
-            data-testid="cycle-game-cancel"
-            className="cycle-game-container__cancel"
-            onClick={onCancel}
-          >
-            Cancel
-          </button>
-        </div>
       </div>
     );
   }
