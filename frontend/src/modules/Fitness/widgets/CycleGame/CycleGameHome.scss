@@ -1,0 +1,17 @@
+.cycle-game-home {
+  display: flex; gap: 16px; height: 100%; padding: 20px;
+  background: #0e0f13; color: #e2e8f0;
+
+  &__main { flex: 1; display: flex; flex-direction: column; gap: 20px; }
+  &__title { font-size: 1.8rem; font-weight: 800; }
+  &__label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: #8b93a1; margin-bottom: 8px; }
+  &__courses { display: flex; gap: 12px; flex-wrap: wrap; }
+  &__course { background: #101218; border: 1px solid #2a2e36; border-radius: 10px; padding: 14px 18px; color: #e2e8f0; font-size: 1.05rem; cursor: pointer; }
+  &__course--custom { border-style: dashed; color: #8b93a1; }
+  &__riders { display: flex; gap: 12px; flex-wrap: wrap; }
+  &__rider { display: flex; gap: 8px; align-items: center; background: #101218; border: 1px solid #2a2e36; border-radius: 10px; padding: 10px 14px; opacity: 0.55; }
+  &__rider.is-live { opacity: 1; }
+  &__records { width: 240px; background: #101218; border: 1px solid #2a2e36; border-radius: 10px; padding: 16px; }
+  &__record { padding: 6px 0; border-bottom: 1px solid #1c2027; font-size: 0.95rem; }
+  &__empty { color: #5b626e; font-size: 0.9rem; }
+}
