@@ -68,3 +68,38 @@ describe('CycleRaceEngine — HR-less rider', () => {
     expect(e.getState().riders.a.cumulativeDistanceM).toBe(10);
   });
 });
+
+describe('CycleRaceEngine — ghost replay', () => {
+  it('replays a ghost cumulative-distance series instead of using rpm', () => {
+    const e = new CycleRaceEngine({
+      winCondition: 'distance', goalM: 1000, intervalMs: 1000,
+      riders: [{ userId: 'g', ghostSeries: [10, 20, 30], ghostIntervalS: 1 }]
+    });
+    e.tick({}); // t=1s → 10
+    expect(e.getState().riders.g.cumulativeDistanceM).toBe(10);
+    e.tick({}); // t=2s → 20
+    expect(e.getState().riders.g.cumulativeDistanceM).toBe(20);
+    e.tick({}); // t=3s → 30
+    expect(e.getState().riders.g.cumulativeDistanceM).toBe(30);
+    e.tick({}); // beyond the recording → clamps to last sample
+    expect(e.getState().riders.g.cumulativeDistanceM).toBe(30);
+  });
+
+  it('interpolates a ghost recorded at a different interval', () => {
+    const e = new CycleRaceEngine({
+      winCondition: 'time', timeCapS: 10, intervalMs: 1000,
+      riders: [{ userId: 'g', ghostSeries: [100], ghostIntervalS: 2 }]
+    });
+    e.tick({}); // t=1s, sample at 2s → linear half → 50
+    expect(e.getState().riders.g.cumulativeDistanceM).toBe(50);
+  });
+
+  it('flags ghost riders in state', () => {
+    const e = new CycleRaceEngine({
+      winCondition: 'distance', goalM: 1000, intervalMs: 1000,
+      riders: [{ userId: 'a', wheelCircumferenceM: 2 }, { userId: 'g', ghostSeries: [50] }]
+    });
+    expect(e.getState().riders.g.isGhost).toBe(true);
+    expect(e.getState().riders.a.isGhost).toBe(false);
+  });
+});

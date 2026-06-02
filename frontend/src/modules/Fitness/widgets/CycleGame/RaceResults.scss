@@ -1,11 +1,72 @@
+@use './cgTokens' as cg;
+
 .race-results {
-  color: #e2e8f0; padding: 24px; text-align: center;
-  &__title { font-size: 1.6rem; font-weight: 800; margin-bottom: 16px; }
-  &__list { list-style: none; margin: 0 auto; padding: 0; max-width: 520px; }
-  &__row { margin: 8px 0; }
-  &__place { display: flex; align-items: center; gap: 16px; background: #101218; border: 1px solid #2a2e36; border-radius: 10px; padding: 12px 16px; }
-  &__placement { font-size: 1.4rem; font-weight: 800; color: #f1c40f; width: 1.5em; }
-  &__name { flex: 1; text-align: left; font-size: 1.1rem; }
-  &__metric { font-family: ui-monospace, monospace; font-size: 1.1rem; color: #7aa2ff; }
-  &__metric--dnf { color: #8b93a1; }
+  color: cg.$cg-text;
+  padding: 32px 24px;
+  text-align: center;
+  width: 100%;
+  @include cg.cg-backdrop;
+
+  &__eyebrow { @include cg.cg-eyebrow; animation: cg-rr-in 0.4s ease both; }
+  &__title {
+    font-family: cg.$cg-display;
+    font-size: 2.4rem; font-weight: 800; letter-spacing: 0.02em;
+    margin: 2px 0 22px;
+    animation: cg-rr-in 0.45s ease both;
+  }
+
+  &__list { list-style: none; margin: 0 auto; padding: 0; max-width: 560px; display: flex; flex-direction: column; gap: 10px; }
+
+  &__row {
+    animation: cg-rr-row 0.5s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+  }
+
+  &__place {
+    display: flex; align-items: center; gap: 16px;
+    background: linear-gradient(180deg, cg.$cg-panel, cg.$cg-bg-2);
+    border: 1px solid cg.$cg-border;
+    border-radius: 14px;
+    padding: 12px 18px;
+  }
+  &__placement {
+    font-family: cg.$cg-display; font-size: 1.5rem; font-weight: 800;
+    color: cg.$cg-muted; min-width: 1.6em; text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  &__avatar { flex-shrink: 0; display: flex; }
+  &__name {
+    flex: 1; text-align: left; font-family: cg.$cg-display;
+    font-size: 1.15rem; font-weight: 700; letter-spacing: 0.01em;
+    display: flex; align-items: center; gap: 8px;
+  }
+  &__crown { font-size: 1.1rem; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); }
+  &__metric {
+    font-family: cg.$cg-mono; font-size: 1.15rem; font-weight: 600;
+    color: cg.$cg-accent; font-variant-numeric: tabular-nums;
+  }
+  &__metric--dnf { color: cg.$cg-faint; }
+
+  // Medal accents.
+  &__row--p1 .race-results__place {
+    border-color: rgba(245, 197, 66, 0.55);
+    background: linear-gradient(180deg, rgba(245, 197, 66, 0.12), cg.$cg-bg-2);
+    box-shadow: 0 0 0 1px rgba(245, 197, 66, 0.3), 0 8px 26px rgba(0, 0, 0, 0.45);
+  }
+  &__row--p2 .race-results__place { border-color: rgba(203, 213, 225, 0.4); }
+  &__row--p3 .race-results__place { border-color: rgba(208, 138, 82, 0.45); }
+
+  &__row.is-winner {
+    .race-results__placement { color: cg.$cg-gold; font-size: 1.9rem; }
+    .race-results__name { font-size: 1.4rem; }
+    .race-results__metric { color: cg.$cg-gold; font-size: 1.3rem; }
+  }
+}
+
+@keyframes cg-rr-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes cg-rr-row {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }

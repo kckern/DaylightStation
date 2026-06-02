@@ -11,15 +11,27 @@ export default function CountdownStoplight({ remaining, total = 3 }) {
   const isGo = remaining <= 0;
   const frac = total > 0 ? remaining / total : 0;
   const lamp = isGo ? 'green' : frac > 2 / 3 ? 'red' : 'yellow';
+  const n = Math.ceil(remaining);
   return (
-    <div className="countdown-stoplight" data-testid="countdown-stoplight">
-      <div className="countdown-stoplight__lamps">
+    <div className={`countdown-stoplight${isGo ? ' is-go' : ''}`} data-testid="countdown-stoplight">
+      <div className="countdown-stoplight__eyebrow">{isGo ? 'Race!' : 'Get ready'}</div>
+
+      <div className="countdown-stoplight__stage">
+        <div className="countdown-stoplight__ring" aria-hidden="true" />
+        {/* key on the value punches the number in on every change */}
+        <div
+          className="countdown-stoplight__number"
+          data-testid="countdown-number"
+          key={isGo ? 'go' : n}
+        >
+          {isGo ? 'GO' : n}
+        </div>
+      </div>
+
+      <div className="countdown-stoplight__lamps" aria-hidden="true">
         <span data-testid="lamp-red" className={`countdown-stoplight__lamp countdown-stoplight__lamp--red${lamp === 'red' ? ' is-on' : ''}`} />
         <span data-testid="lamp-yellow" className={`countdown-stoplight__lamp countdown-stoplight__lamp--yellow${lamp === 'yellow' ? ' is-on' : ''}`} />
         <span data-testid="lamp-green" className={`countdown-stoplight__lamp countdown-stoplight__lamp--green${lamp === 'green' ? ' is-on' : ''}`} />
-      </div>
-      <div className="countdown-stoplight__number" data-testid="countdown-number">
-        {isGo ? 'GO' : Math.ceil(remaining)}
       </div>
     </div>
   );

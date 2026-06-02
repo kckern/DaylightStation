@@ -1,0 +1,38 @@
+// Shared cycle-game design tokens — "Velodrome Broadcast HUD".
+// A pro-cycling broadcast cockpit: near-black surfaces with a radial vignette,
+// per-rider electric lane accents, condensed display type + mono telemetry.
+
+$cg-bg:        #0a0b0f;
+$cg-bg-2:      #0e1016;
+$cg-panel:     #12141b;
+$cg-panel-2:   #181b22;
+$cg-border:    #2a2e36;
+$cg-border-soft: #1c2027;
+$cg-text:      #eef2f8;
+$cg-muted:     #8b93a1;
+$cg-faint:     #5b626e;
+$cg-accent:    #7aa2ff;
+$cg-gold:      #f5c542;
+$cg-silver:    #cbd5e1;
+$cg-bronze:    #d08a52;
+
+$cg-display: 'Roboto Condensed', system-ui, sans-serif;
+$cg-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+// Atmospheric backdrop shared across countdown / race / results.
+@mixin cg-backdrop {
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(122, 162, 255, 0.08), transparent 60%),
+    radial-gradient(100% 100% at 50% 120%, rgba(0, 0, 0, 0.6), transparent 70%),
+    $cg-bg;
+}
+
+// Condensed uppercase section/eyebrow label.
+@mixin cg-eyebrow {
+  font-family: $cg-display;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: $cg-muted;
+}

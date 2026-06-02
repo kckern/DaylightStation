@@ -6,6 +6,9 @@ import { buildRaceConfigFromCourse } from '@/modules/Fitness/lib/cycleGame/cycle
 import { buildRaceRecord } from '@/modules/Fitness/lib/cycleGame/raceRecord.js';
 import { zoneMultiplierFor } from '@/modules/Fitness/lib/cycleGame/distanceModel.js';
 import { playSound } from '@/modules/Fitness/lib/cycleGame/playSound.js';
+import { DaylightMediaPath } from '@/lib/api.mjs';
+import { SessionSerializerV3 } from '@/hooks/fitness/SessionSerializerV3.js';
+import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
 import CycleGameHome from './CycleGameHome.jsx';
 import CountdownStoplight from './CountdownStoplight.jsx';
 import CycleRaceScreen from './CycleRaceScreen.jsx';
@@ -29,7 +32,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     equipment = [],
     zones = [],
     cycleGameConfig = {},
-    configuredUsers = [],
+    usersConfig = {},
     fitnessSessionInstance: session,
     getUserVitals,
     getDisplayName,
@@ -59,12 +62,49 @@ export default function CycleGameContainer({ onMount } = {}) {
   );
   const soundsRef = useRef(sounds);
   soundsRef.current = sounds;
+  const musicVolume = Number.isFinite(cycleGameConfig?.music_volume) ? cycleGameConfig.music_volume : 0.55;
+
+  // Background-music channel (one looping track at a time, swapped per phase).
+  // Separate from the one-shot SFX channel (playSound). Null/absent = silent.
+  const musicRef = useRef(null);
+  const musicKeyRef = useRef(null);
+  const stopMusic = useCallback(() => {
+    if (musicRef.current) {
+      try { musicRef.current.pause(); musicRef.current.src = ''; } catch { /* ignore */ }
+    }
+    musicRef.current = null;
+    musicKeyRef.current = null;
+  }, []);
+  const playMusic = useCallback((url, key, { loop = true } = {}) => {
+    if (!url) { stopMusic(); return; }
+    if (musicKeyRef.current === key && musicRef.current) return; // already on this track
+    stopMusic();
+    try {
+      const a = new Audio(url);
+      a.loop = loop;
+      a.volume = musicVolume;
+      a.play().catch(() => { /* autoplay may defer until a gesture */ });
+      musicRef.current = a;
+      musicKeyRef.current = key;
+    } catch { /* Audio unavailable (e.g. tests) */ }
+  }, [musicVolume, stopMusic]);
+  // Pick a random track from the racing playlist folder.
+  const pickRacingTrack = useCallback(() => {
+    const r = soundsRef.current?.racing;
+    if (!r || !r.dir || !Number.isFinite(r.tracks) || r.tracks < 1) return null;
+    const n = Math.floor(Math.random() * r.tracks) + 1;
+    return `${r.dir}/${String(n).padStart(3, '0')}.mp3`;
+  }, []);
 
   // Bikes (equipment carrying a cadence sensor and a wheel circumference).
   const bikes = useMemo(
     () => (Array.isArray(equipment) ? equipment : []).filter((e) => e && e.cadence != null),
     [equipment]
   );
+
+  // Race history + ghost selection (declared early — buildRiders/startRace read them).
+  const [pastRaces, setPastRaces] = useState([]); // recent saved race records
+  const [ghost, setGhost] = useState(null); // selected ghost competitor (locks config)
 
   const resolveDisplayName = useCallback((userId) => {
     if (!userId) return userId;
@@ -75,21 +115,48 @@ export default function CycleGameContainer({ onMount } = {}) {
     return getDisplayName?.(userId) || userId;
   }, [getUserVitals, getUserByName, getDisplayName]);
 
+  // Per-equipment abuse defaults (used when a bike doesn't define its own).
+  const abuseMaxRpmDefault = Number.isFinite(cycleGameConfig?.abuse_max_rpm)
+    ? cycleGameConfig.abuse_max_rpm
+    : null;
+  const abuseDurationDefault = Number.isFinite(cycleGameConfig?.abuse_max_rpm_duration_s)
+    ? cycleGameConfig.abuse_max_rpm_duration_s
+    : null;
+
   // Resolve the currently-claimed riders (bikes with a getEquipmentRider claim).
   const buildRiders = useCallback(() => {
     const riders = [];
     bikes.forEach((bike) => {
       const userId = session?.getEquipmentRider?.(bike.id) || null;
       if (!userId) return;
+      const maxRpm = Number.isFinite(bike.max_rpm) ? bike.max_rpm : abuseMaxRpmDefault;
+      const maxRpmDurationS = Number.isFinite(bike.max_rpm_duration_s)
+        ? bike.max_rpm_duration_s
+        : abuseDurationDefault;
       riders.push({
         userId,
         displayName: resolveDisplayName(userId),
         equipmentId: bike.id,
-        wheelCircumferenceM: Number.isFinite(bike.wheel_circumference_m) ? bike.wheel_circumference_m : 0
+        wheelCircumferenceM: Number.isFinite(bike.wheel_circumference_m) ? bike.wheel_circumference_m : 0,
+        maxRpm: Number.isFinite(maxRpm) ? maxRpm : null,
+        maxRpmDurationS: Number.isFinite(maxRpmDurationS) ? maxRpmDurationS : null
       });
     });
+    // A selected ghost replays its whole recorded field as competitors.
+    if (ghost && Array.isArray(ghost.riders)) {
+      ghost.riders.forEach((g) => {
+        riders.push({
+          userId: g.userId,
+          displayName: g.displayName,
+          equipmentId: null,
+          wheelCircumferenceM: 0,
+          ghostSeries: g.ghostSeries,
+          ghostIntervalS: g.ghostIntervalS
+        });
+      });
+    }
     return riders;
-  }, [bikes, session, resolveDisplayName]);
+  }, [bikes, session, resolveDisplayName, abuseMaxRpmDefault, abuseDurationDefault, ghost]);
 
   // ── lifecycle state ──────────────────────────────────────────────────────
   const [phase, setPhase] = useState('idle'); // idle | countdown | racing | results
@@ -105,6 +172,7 @@ export default function CycleGameContainer({ onMount } = {}) {
   const startCountdownRef = useRef(3);
   const savedRef = useRef(false);
   const prevDnfRef = useRef(new Set());
+  const prevDqRef = useRef(new Set());
 
   // Live-data refs so the race-tick interval can read the freshest
   // session/vitals without re-subscribing. The fitness context value changes
@@ -131,45 +199,203 @@ export default function CycleGameContainer({ onMount } = {}) {
   // the avatar/HR shape the lobby renders. Users with an active heart rate are
   // surfaced first / highlighted.
   const people = useMemo(() => {
-    const list = (Array.isArray(configuredUsers) ? configuredUsers : []).map((u) => {
-      const id = u?.id || u?.profileId;
-      const vitals = id ? getUserVitals?.(id) : null;
-      const heartRate = Number.isFinite(vitals?.heartRate) ? vitals.heartRate : null;
-      const hasHR = Number.isFinite(heartRate) && heartRate > 0;
-      return {
-        id,
-        name: vitals?.name || u?.name || id,
-        avatarSrc: `/api/v1/static/img/users/${id}`,
-        heartRate,
-        zoneId: vitals?.zoneId || null,
-        zoneColor: vitals?.zoneColor || null,
-        progress: Number.isFinite(vitals?.progress) ? vitals.progress : null,
-        hasHR
-      };
-    }).filter((p) => p.id);
-    // active-HR first, then by name
+    // Registered users from the fitness config (always present, hydrated by the
+    // backend) across all groups — NOT the session userCollections (which is
+    // empty until a session is active).
+    const cfg = usersConfig || {};
+    const seen = new Set();
+    const list = [];
+    // Config group → picker category: household / family / guest.
+    const CATEGORY_BY_GROUP = {
+      primary: 'household',
+      secondary: 'household',
+      family: 'family',
+      friends: 'guest',
+      guests: 'guest'
+    };
+    ['primary', 'secondary', 'family', 'friends', 'guests'].forEach((group) => {
+      (Array.isArray(cfg[group]) ? cfg[group] : []).forEach((u) => {
+        const id = typeof u === 'string' ? u : (u?.id || u?.profileId);
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        const vitals = getUserVitals?.(id);
+        const heartRate = Number.isFinite(vitals?.heartRate) ? vitals.heartRate : null;
+        const hasHR = Number.isFinite(heartRate) && heartRate > 0;
+        const category = CATEGORY_BY_GROUP[group] || 'household';
+        list.push({
+          id,
+          name: vitals?.name || (typeof u === 'object' ? u.name : null) || id,
+          avatarSrc: `/api/v1/static/img/users/${id}`,
+          heartRate,
+          zoneId: vitals?.zoneId || null,
+          zoneColor: vitals?.zoneColor || null,
+          progress: Number.isFinite(vitals?.progress) ? vitals.progress : null,
+          hasHR,
+          group,
+          category,
+          isGuest: category === 'guest'
+        });
+      });
+    });
+    // Two always-available anonymous guests (no profile, no HR). They lead the
+    // Guests tab. Avatars: media/img/users/guest-adult.* and guest-kid.*
+    [
+      { id: 'guest-adult', name: 'Guest (Adult)' },
+      { id: 'guest-kid', name: 'Guest (Kid)' }
+    ].forEach((g) => {
+      if (seen.has(g.id)) return;
+      seen.add(g.id);
+      list.push({
+        id: g.id,
+        name: g.name,
+        avatarSrc: `/api/v1/static/img/users/${g.id}`,
+        heartRate: null,
+        zoneId: null,
+        zoneColor: null,
+        progress: null,
+        hasHR: false,
+        group: 'guests',
+        category: 'guest',
+        isGuest: true,
+        native: true
+      });
+    });
+    // active-HR first, then by name (native anonymous guests handled in the picker)
     return list.sort((a, b) => {
       if (a.hasHR !== b.hasHR) return a.hasHR ? -1 : 1;
       return String(a.name).localeCompare(String(b.name));
     });
-    // assignVersion intentionally excluded — people don't change on assignment
-  }, [configuredUsers, getUserVitals]);
+  }, [usersConfig, getUserVitals]);
 
-  // Bikes for the starting grid (each with its currently-claimed rider).
+  // Bikes for the starting grid (each with its currently-claimed rider + live
+  // cadence so the lobby shows wheels spinning / warmups before the race).
   const bikesForGrid = useMemo(
-    () => bikes.map((bike) => ({
-      id: bike.id,
-      name: bike.name || bike.id,
-      type: bike.type || null,
-      rider: session?.getEquipmentRider?.(bike.id) || null
-    })),
-    // assignVersion forces a re-read after assign/unassign
+    () => bikes.map((bike) => {
+      const cadence = session?.getEquipmentCadence?.(bike.id);
+      const connected = !!(cadence && cadence.connected);
+      const rpm = connected && Number.isFinite(cadence.rpm) ? cadence.rpm : 0;
+      return {
+        id: bike.id,
+        name: bike.name || bike.id,
+        type: bike.type || null,
+        iconSrc: DaylightMediaPath(`/static/img/equipment/${bike.id}`),
+        rider: session?.getEquipmentRider?.(bike.id) || null,
+        rpm,
+        connected
+      };
+    }),
+    // assignVersion forces a re-read after assign/unassign AND on the idle poll,
+    // so live RPM refreshes ~1 Hz on the lobby.
     [bikes, session, assignVersion]
   );
 
   const assignedRiderCount = useMemo(
     () => bikesForGrid.filter((b) => b.rider).length,
     [bikesForGrid]
+  );
+
+  // While on the lobby, riders can be claimed OUTSIDE the React tree — by the
+  // physical rider-select button or the dev simulator, both of which mutate the
+  // session instance directly without bumping assignVersion. Poll so the grid
+  // (and the Start button's enabled state) reflects those external claims.
+  useEffect(() => {
+    if (phase !== 'idle') return undefined;
+    const id = setInterval(() => setAssignVersion((v) => v + 1), 750);
+    return () => clearInterval(id);
+  }, [phase]);
+
+  // Load recent race history (records rail + ghost candidates) on entering idle.
+  useEffect(() => {
+    if (phase !== 'idle') return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const datesResp = await fetch('/api/v1/fitness/cycle-races');
+        if (!datesResp.ok) return;
+        const { dates = [] } = await datesResp.json();
+        const recent = [...dates].sort().reverse().slice(0, 5);
+        const all = [];
+        for (const date of recent) {
+          const r = await fetch(`/api/v1/fitness/cycle-races?date=${encodeURIComponent(date)}`);
+          if (!r.ok) continue;
+          const { races = [] } = await r.json();
+          all.push(...races);
+        }
+        if (!cancelled) {
+          setPastRaces(all);
+          log.info('cycle_game.history_loaded', { dates: recent.length, races: all.length });
+        }
+      } catch (err) {
+        log.warn('cycle_game.history_error', { error: err?.message || String(err) });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [phase, log]);
+
+  // Ghost candidates: each past race with ALL its participants, so racing a
+  // ghost replays the whole field. Goal vs score are inverted by win condition
+  // (distance race → goal=distance, score=time; time race → goal=time, score=distance).
+  const ghostCandidates = useMemo(() => {
+    const fmtMs = (s) => {
+      if (!Number.isFinite(s)) return '—';
+      const m = Math.floor(s / 60);
+      return `${m}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+    };
+    return (Array.isArray(pastRaces) ? pastRaces : []).map((rec) => {
+      const race = rec?.race || {};
+      const winCondition = race.win_condition || 'distance';
+      const participants = Object.entries(rec?.participants || {})
+        .map(([id, p]) => ({
+          id,
+          displayName: p.display_name || id,
+          avatarSrc: `/api/v1/static/img/users/${id}`,
+          distanceSeries: p.distance_series || null,
+          finalDistanceM: p.final_distance_m ?? null,
+          finalTimeS: p.final_time_s ?? null,
+          placement: p.placement ?? null
+        }))
+        .sort((a, b) => (a.placement || 99) - (b.placement || 99));
+      if (participants.length === 0) return null;
+      const winner = participants[0];
+      // Derive calendar day + time-of-day from the YYYYMMDDHHmmss raceId.
+      const rid = String(race.id || '');
+      const day = rid.length >= 8 ? `${rid.slice(0, 4)}-${rid.slice(4, 6)}-${rid.slice(6, 8)}` : 'unknown';
+      const hh = rid.length >= 12 ? parseInt(rid.slice(8, 10), 10) : 0;
+      const mm = rid.length >= 12 ? rid.slice(10, 12) : '00';
+      const timeOfDay = rid.length >= 12
+        ? `${((hh % 12) || 12)}:${mm} ${hh < 12 ? 'am' : 'pm'}`
+        : '';
+      return {
+        raceId: race.id,
+        date: race.date || null,
+        day,
+        timeOfDay,
+        winCondition,
+        goalM: race.goal_m ?? null,
+        timeCapS: race.time_cap_s ?? null,
+        intervalSeconds: race.interval_seconds || 1,
+        participants,
+        winnerName: winner.displayName,
+        // goal = what the race was set to; score = the winner's achieved metric
+        goalKind: winCondition === 'distance' ? 'distance' : 'time',
+        goalLabel: winCondition === 'distance' ? formatDistance(race.goal_m || 0) : fmtMs(race.time_cap_s),
+        scoreKind: winCondition === 'distance' ? 'time' : 'distance',
+        scoreLabel: winCondition === 'distance' ? fmtMs(winner.finalTimeS) : formatDistance(winner.finalDistanceM || 0)
+      };
+    }).filter(Boolean);
+  }, [pastRaces]);
+
+  // Records rail rows: avatars of the field + goal chip + score (both metrics).
+  const records = useMemo(
+    () => ghostCandidates.slice(0, 12).map((g) => ({
+      raceId: g.raceId,
+      avatars: g.participants.slice(0, 4).map((p) => ({ id: p.id, src: p.avatarSrc, name: p.displayName })),
+      goalKind: g.goalKind,
+      goalLabel: g.goalLabel,
+      scoreKind: g.scoreKind,
+      scoreLabel: g.scoreLabel
+    })),
+    [ghostCandidates]
   );
 
   // The current value for the chosen race type (defaults applied at start).
@@ -190,11 +416,16 @@ export default function CycleGameContainer({ onMount } = {}) {
     // The race "course" is derived from the chosen type + value. Default the
     // value from config when none was picked (so the E2E — which only clicks a
     // race type then Start — still works).
-    const type = raceType || 'distance';
-    const goalM = type === 'distance' ? (Number.isFinite(raceValueM) ? raceValueM : distanceDefaultM) : null;
-    const timeCapS = type === 'time' ? (Number.isFinite(raceValueS) ? raceValueS : timeDefaultS) : null;
+    // A selected ghost is authoritative for the win condition + goal.
+    const type = ghost ? ghost.winCondition : (raceType || 'distance');
+    const goalM = type === 'distance'
+      ? (ghost ? ghost.goalM : (Number.isFinite(raceValueM) ? raceValueM : distanceDefaultM))
+      : null;
+    const timeCapS = type === 'time'
+      ? (ghost ? ghost.timeCapS : (Number.isFinite(raceValueS) ? raceValueS : timeDefaultS))
+      : null;
     const course = {
-      id: 'custom',
+      id: ghost ? 'ghost' : 'custom',
       win_condition: type,
       goal_m: goalM,
       time_cap_s: timeCapS
@@ -210,10 +441,18 @@ export default function CycleGameContainer({ onMount } = {}) {
       hrlessMultiplier,
       startCountdownS: Number.isFinite(cycleGameConfig?.start_countdown_s) ? cycleGameConfig.start_countdown_s : 3,
       raceIdleDnfS: Number.isFinite(cycleGameConfig?.race_idle_dnf_s) ? cycleGameConfig.race_idle_dnf_s : 20,
+      hotStartPenaltyS: Number.isFinite(cycleGameConfig?.hot_start_penalty_s) ? cycleGameConfig.hot_start_penalty_s : 0,
+      backgroundPlexId: cycleGameConfig?.default_background ?? null,
       intervalMs: RACE_TICK_MS
     });
 
-    const raceId = `cr_${Date.now()}`;
+    // raceId MUST be a YYYYMMDDHHmmss timestamp — the datastore slices the date
+    // (YYYY-MM-DD) directly out of it to choose the history folder. A `cr_<ms>`
+    // form lands in a garbage dir that listDates() filters out (no history).
+    const now = new Date();
+    const p2 = (n) => String(n).padStart(2, '0');
+    const raceId = `${now.getFullYear()}${p2(now.getMonth() + 1)}${p2(now.getDate())}`
+      + `${p2(now.getHours())}${p2(now.getMinutes())}${p2(now.getSeconds())}`;
     raceMetaRef.current = {
       raceId,
       date: new Date().toISOString(),
@@ -227,6 +466,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     startCountdownRef.current = cfg.startCountdownS;
     savedRef.current = false;
     prevDnfRef.current = new Set();
+    prevDqRef.current = new Set();
 
     const controller = new CycleRaceController(cfg);
     controllerRef.current = controller;
@@ -239,7 +479,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     });
 
     applySnapshot(controller.startCountdown());
-  }, [raceType, raceValueM, raceValueS, distanceDefaultM, timeDefaultS, buildRiders, zones, hrlessMultiplier, cycleGameConfig, applySnapshot, log]);
+  }, [raceType, raceValueM, raceValueS, distanceDefaultM, timeDefaultS, ghost, buildRiders, zones, hrlessMultiplier, cycleGameConfig, applySnapshot, log]);
 
   // ── countdown interval ───────────────────────────────────────────────────
   useEffect(() => {
@@ -301,6 +541,19 @@ export default function CycleGameContainer({ onMount } = {}) {
       });
       prevDnfRef.current = dnfSet;
 
+      // DQ detection — diff the controller dq set (sustained over-max RPM abuse).
+      const dqSet = new Set(state.dq || []);
+      dqSet.forEach((userId) => {
+        if (!prevDqRef.current.has(userId)) {
+          log.warn('cycle_game.rider_dq', {
+            raceId: raceMetaRef.current?.raceId,
+            userId,
+            elapsedS: state.engineState?.elapsedS ?? null
+          });
+        }
+      });
+      prevDqRef.current = dqSet;
+
       if (state.phase === 'finished') {
         const finalState = controller.showResults();
         const standings = finalState.engineState?.standings || [];
@@ -356,19 +609,79 @@ export default function CycleGameContainer({ onMount } = {}) {
     onMount?.();
   }, [onMount]);
 
+  // ── lifecycle soundtrack ───────────────────────────────────────────────────
+  // lobby (idle, loop) → start jingle (countdown, one-shot) → racing playlist
+  // (loop, random track) → end (results, once). Background music swaps per phase;
+  // the start jingle is a one-shot SFX layered over the (stopped) music.
+  useEffect(() => {
+    const s = soundsRef.current || {};
+    if (phase === 'idle') {
+      playMusic(s.lobby, 'lobby');
+    } else if (phase === 'countdown') {
+      stopMusic();
+      playSound(s.start); // one-shot 3-2-1 jingle
+    } else if (phase === 'racing') {
+      playMusic(pickRacingTrack(), 'racing');
+    } else if (phase === 'results') {
+      playMusic(s.end, 'end', { loop: false });
+    }
+  }, [phase, playMusic, stopMusic, pickRacingTrack]);
+
+  // Silence everything when the cycle game unmounts.
+  useEffect(() => () => stopMusic(), [stopMusic]);
+
   // ── handlers ─────────────────────────────────────────────────────────────
   const onSelectRaceType = useCallback((type) => {
+    setGhost(null); // distance/time are mutually exclusive with a ghost race
     setRaceType((prev) => (prev === type ? prev : type));
-  }, []);
+    // Pre-select a concrete value so the value step never reads "default".
+    if (type === 'time') setRaceValueS((v) => (Number.isFinite(v) ? v : timeDefaultS));
+    else setRaceValueM((v) => (Number.isFinite(v) ? v : distanceDefaultM));
+  }, [timeDefaultS, distanceDefaultM]);
+
+  // Selecting a ghost replays the WHOLE recorded field and locks the race type
+  // + value to that recording.
+  const onSelectGhost = useCallback((candidate) => {
+    if (!candidate) return;
+    const riders = (candidate.participants || []).map((p) => ({
+      userId: `ghost:${candidate.raceId}:${p.id}`,
+      displayName: `${p.displayName} 👻`,
+      ghostSeries: SessionSerializerV3.decodeSeries(p.distanceSeries) || [],
+      ghostIntervalS: candidate.intervalSeconds || 1
+    })).filter((r) => r.ghostSeries.length > 0);
+    if (riders.length === 0) {
+      log.warn('cycle_game.ghost_empty', { raceId: candidate.raceId });
+      return;
+    }
+    setGhost({
+      sourceRaceId: candidate.raceId,
+      winCondition: candidate.winCondition,
+      goalM: candidate.goalM,
+      timeCapS: candidate.timeCapS,
+      riderCount: riders.length,
+      displayName: candidate.winnerName + (riders.length > 1 ? ` +${riders.length - 1}` : ''),
+      riders
+    });
+    setRaceType(candidate.winCondition);
+    if (candidate.winCondition === 'time') setRaceValueS(candidate.timeCapS);
+    else setRaceValueM(candidate.goalM);
+    log.info('cycle_game.ghost_selected', { raceId: candidate.raceId, winCondition: candidate.winCondition, riders: riders.length });
+  }, [log]);
+
+  const onClearGhost = useCallback(() => {
+    setGhost(null);
+    log.info('cycle_game.ghost_cleared', {});
+  }, [log]);
 
   const onSetRaceValue = useCallback((value) => {
+    if (ghost) return; // ghost locks the value
     if (!Number.isFinite(value)) return;
     setRaceType((current) => {
       if (current === 'time') setRaceValueS(value);
       else setRaceValueM(value);
       return current;
     });
-  }, []);
+  }, [ghost]);
 
   const onAssign = useCallback((bikeId, userId) => {
     session?.setEquipmentRider?.(bikeId, userId);
@@ -411,7 +724,11 @@ export default function CycleGameContainer({ onMount } = {}) {
           people={people}
           onAssign={onAssign}
           onUnassign={onUnassign}
-          records={[]}
+          records={records}
+          ghost={ghost}
+          ghostCandidates={ghostCandidates}
+          onSelectGhost={onSelectGhost}
+          onClearGhost={onClearGhost}
           onStart={startRace}
           canStart={canStart}
         />
@@ -436,11 +753,16 @@ export default function CycleGameContainer({ onMount } = {}) {
     const riders = engineState.riders || {};
     const riderLive = {};
     Object.keys(riders).forEach((userId) => {
+      // Ghost rider ids are `ghost:<raceId>:<sourceUserId>` — resolve the avatar
+      // from the original user so the speedometer shows their face.
+      const isGhostRider = userId.startsWith('ghost:');
+      const sourceId = isGhostRider ? userId.split(':')[2] : userId;
       const cadence = session?.getEquipmentCadence?.(riders[userId].equipmentId);
-      const vitals = getUserVitals?.(userId) || {};
+      const vitals = isGhostRider ? {} : (getUserVitals?.(userId) || {});
       const zoneId = vitals.zoneId || null;
       riderLive[userId] = {
         rpm: cadence && cadence.connected ? cadence.rpm : 0,
+        avatarSrc: `/api/v1/static/img/users/${sourceId}`,
         heartRate: vitals.heartRate ?? null,
         zoneId,
         zoneColor: vitals.zoneColor || null,
@@ -476,6 +798,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         riders={engineState.riders || {}}
         winCondition={engineState.winCondition || raceMetaRef.current?.winCondition || 'distance'}
         dnf={snapshot?.dnf || []}
+        dq={snapshot?.dq || []}
       />
       <button type="button" data-testid="cycle-game-start" className="cycle-game-container__start" onClick={backToHome}>
         Back to home

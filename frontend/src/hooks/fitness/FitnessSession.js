@@ -1102,8 +1102,18 @@ export class FitnessSession {
       getLogger().info('fitness.rider.unclaimed', { equipmentId: String(equipmentId), previousRider: prev });
       return;
     }
-    this._equipmentRider.set(String(equipmentId), String(userId));
-    getLogger().info('fitness.rider.claimed', { equipmentId: String(equipmentId), userId: String(userId), previousRider: prev });
+    // Guardrail: a rider can be on at most one piece of equipment. Claiming a
+    // user moves them — drop any other equipment they currently occupy.
+    const uid = String(userId);
+    const eid = String(equipmentId);
+    this._equipmentRider.forEach((claimedUser, otherEquip) => {
+      if (otherEquip !== eid && String(claimedUser) === uid) {
+        this._equipmentRider.delete(otherEquip);
+        getLogger().info('fitness.rider.moved', { from: otherEquip, to: eid, userId: uid });
+      }
+    });
+    this._equipmentRider.set(eid, uid);
+    getLogger().info('fitness.rider.claimed', { equipmentId: eid, userId: uid, previousRider: prev });
   }
 
   /**
