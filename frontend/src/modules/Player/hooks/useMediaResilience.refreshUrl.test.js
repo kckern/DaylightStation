@@ -87,3 +87,69 @@ describe('useMediaResilience — refreshUrl signal in onReload', () => {
     expect(typeof result.current._testTriggerRecovery).toBe('function');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Exhaustion retry — the user-clicks-"Restart playback" path. Must force a
+// FRESH stream URL *and* escalate to a real React remount, because in-place
+// reattach on a reaped Plex transcode session leaves the <video> wedged.
+// Regression: dead-session / idle-reap (2026-05-22).
+// ---------------------------------------------------------------------------
+
+describe('useMediaResilience — retryFromExhausted (user retry after exhaustion)', () => {
+  const exhaustionArgs = () => ({
+    onReload: vi.fn(),
+    meta: { src: 'https://example.test/stream/1', mediaKey: 'plex:1' },
+    waitKey: 'test:exhausted',
+    playbackSessionKey: `session-${Math.random()}`,
+    disabled: false,
+    getMediaEl: () => null,
+    configOverrides: {
+      monitorSettings: {
+        recoveryCooldownMs: 0,
+        recoveryCooldownBackoffMultiplier: 1,
+        hardRecoverLoadingGraceMs: 0,
+        epsilonSeconds: 1,
+      },
+      recoveryConfig: { maxAttempts: 5 }
+    }
+  });
+
+  it('exposes retryFromExhausted from the hook return (so Player can wire the button to it)', () => {
+    const args = exhaustionArgs();
+    const { result } = renderHook(() => useMediaResilience(args));
+    expect(typeof result.current.retryFromExhausted).toBe('function');
+  });
+
+  it('requests a FRESH stream URL and a REAL remount on user retry', () => {
+    const args = exhaustionArgs();
+    const { result } = renderHook(() => useMediaResilience(args));
+    act(() => result.current.retryFromExhausted());
+    expect(args.onReload).toHaveBeenCalledTimes(1);
+    expect(args.onReload).toHaveBeenCalledWith(expect.objectContaining({
+      reason: 'user-retry-exhausted',
+      refreshUrl: true,
+      forceRemount: true
+    }));
+  });
+
+  it('clears the recovery tracker so the next attempt is not gated by maxAttempts', () => {
+    const args = exhaustionArgs();
+    const { result } = renderHook(() => useMediaResilience(args));
+    // Drive the tracker to exhaustion (maxAttempts: 5)
+    act(() => {
+      for (let i = 0; i < 6; i += 1) {
+        result.current._testTriggerRecovery?.('playback-stalled');
+      }
+    });
+    args.onReload.mockClear();
+    // After exhaustion, a plain triggerRecovery is a no-op (tracker at max).
+    act(() => result.current._testTriggerRecovery?.('playback-stalled'));
+    expect(args.onReload).not.toHaveBeenCalled();
+    // retryFromExhausted clears the tracker and fires a reload regardless.
+    act(() => result.current._testRetryFromExhausted?.());
+    expect(args.onReload).toHaveBeenCalledWith(expect.objectContaining({
+      refreshUrl: true,
+      forceRemount: true
+    }));
+  });
+});
