@@ -1371,6 +1371,54 @@ playlist_index_of() { # playlist_file plex_id -> prints index or -1
     echo -1
 }
 
+# PURE: prints the file path of the Nth (0-based) media entry in an m3u, or
+# empty when the index is out of range. Skips #-comments and blank lines.
+playlist_file_at() { # playlist_file index -> path or empty
+    local file="$1" want="$2" i=0 line
+    [[ -f "$file" ]] || return 0
+    while IFS= read -r line; do
+        [[ "$line" == \#* || -z "$line" ]] && continue
+        if (( i == want )); then printf '%s' "$line"; return 0; fi
+        i=$((i+1))
+    done < "$file"
+}
+
+# Duration (seconds, float) of an audio file via ffprobe, or empty when it can't
+# be determined. Wrapped in its own function so tests can stub it without real
+# media. Failures are non-fatal (the caller treats "unknown" conservatively).
+track_duration() { # file -> seconds or empty
+    local f="$1"
+    [[ -n "$f" && -f "$f" ]] || return 0
+    ffprobe -v error -show_entries format=duration -of csv=p=0 "$f" 2>/dev/null || true
+}
+
+# Clamp a saved (track,pos) resume pair against the LIVE playlist so mpv is
+# never launched with --start=+POS past a track's end. mpv applies --start to
+# every file, so a position past EOF makes it burn through the whole list,
+# "Errors when loading file", exit immediately — and the watchdog then
+# crash-loops the slot, which plays nothing while the headset is "connected"
+# (observed on red/slot 1: state.json pos=4847 on a 75s track 0 after a
+# playlist rebuild). Rules: an out-of-range / non-numeric track index restarts
+# at "0 0"; a position at/after the resolved track's duration resets pos to 0;
+# an undeterminable duration keeps the saved pos (don't silently lose resume).
+# Prints "track pos". See tests/test_sanitize_resume.sh.
+sanitize_resume() { # playlist_file track pos -> "track pos"
+    local file="$1" track="${2:-0}" pos="${3:-0}"
+    local count=0
+    [[ -f "$file" ]] && count="$(grep -c '^/' "$file" 2>/dev/null || echo 0)"
+    if ! [[ "$track" =~ ^[0-9]+$ ]] || (( track < 0 || track >= count )); then
+        echo "0 0"; return
+    fi
+    if [[ "$pos" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+        local f dur; f="$(playlist_file_at "$file" "$track")"
+        dur="$(track_duration "$f")"
+        if [[ "$dur" =~ ^[0-9]+([.][0-9]+)?$ ]] && awk "BEGIN{exit !($pos >= $dur)}"; then
+            echo "$track 0"; return
+        fi
+    fi
+    echo "$track $pos"
+}
+
 # Reload playlist.m3u into mpv (replace) while keeping the current track if it
 # survives the new list. loadlist resets pos to 0, so we re-seek to the
 # surviving entry's new index. Logs a reconcile.loadlist event.
@@ -1455,6 +1503,18 @@ start_playback() {
         fi
         if bool_enabled "$resume_track"; then
             start_pos=$(jq -r '.position // 0' "$dir/state.json")
+        fi
+        # Clamp the saved resume against the live playlist. After a playlist
+        # rebuild the saved track index can be gone, or the saved position can
+        # exceed the new track's duration — either makes mpv seek past EOF and
+        # exit immediately, and the watchdog then crash-loops the slot so it
+        # plays nothing while "connected". See sanitize_resume + tests.
+        local _safe _st _sp
+        _safe="$(sanitize_resume "$dir/playlist.m3u" "$start_track" "$start_pos")"
+        read -r _st _sp <<< "$_safe"
+        if [[ "$_st" != "$start_track" || "$_sp" != "$start_pos" ]]; then
+            logev "$name" resume.clamped from_track="$start_track" from_pos="$start_pos" to_track="$_st" to_pos="$_sp"
+            start_track="$_st"; start_pos="$_sp"
         fi
         log "$name" "Resuming: track=$start_track pos=$start_pos"
         logev "$name" resume track="$start_track" pos="$start_pos"
