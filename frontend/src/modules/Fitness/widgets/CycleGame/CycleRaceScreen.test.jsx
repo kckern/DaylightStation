@@ -35,4 +35,12 @@ describe('CycleRaceScreen', () => {
     const { container } = render(<CycleRaceScreen {...props} />);
     expect(container.querySelectorAll('[data-testid="race-line"]').length).toBe(2);
   });
+  it('mounts an ambient background video only when a Plex id is set', () => {
+    const off = render(<CycleRaceScreen {...props} />);
+    expect(off.queryByTestId('cycle-race-bg')).toBeNull();
+    const on = render(<CycleRaceScreen {...props} backgroundPlexId="plex:123456" />);
+    const vid = within(on.container).getByTestId('cycle-race-bg');
+    expect(vid.tagName.toLowerCase()).toBe('video');
+    expect(vid.getAttribute('src')).toContain('plex/123456');
+  });
 });
