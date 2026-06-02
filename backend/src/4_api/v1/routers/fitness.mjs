@@ -88,6 +88,7 @@ export function createFitnessRouter(config) {
     enrichmentService = null,
     agentOrchestrator = null,
     fitnessSuggestionService = null,
+    cycleRaceService = null,
     logger = console
   } = config;
 
@@ -349,6 +350,53 @@ export function createFitnessRouter(config) {
     }
   });
 
+  // -------------------- Cycle Game races --------------------
+  router.post('/cycle-races', async (req, res) => {
+    if (!cycleRaceService) return res.status(503).json({ error: 'cycle races unavailable' });
+    const { record, household } = req.body || {};
+    if (!record?.race?.id) return res.status(400).json({ error: 'record.race.id required' });
+    try {
+      const file = await cycleRaceService.save(record, household);
+      return res.json({ ok: true, raceId: record.race.id, file });
+    } catch (err) {
+      logger.error?.('fitness.cycle_races.save.error', { error: err?.message });
+      return res.status(400).json({ error: err?.message || 'save failed' });
+    }
+  });
+
+  router.get('/cycle-races/:raceId', async (req, res) => {
+    if (!cycleRaceService) return res.status(503).json({ error: 'cycle races unavailable' });
+    try {
+      const race = await cycleRaceService.get(req.params.raceId, req.query.household);
+      if (!race) return res.status(404).json({ error: 'not found' });
+      return res.json({ race });
+    } catch (err) {
+      logger.error?.('fitness.cycle_races.get.error', { error: err?.message });
+      return res.status(500).json({ error: 'lookup failed' });
+    }
+  });
+
+  router.get('/cycle-races', async (req, res) => {
+    if (!cycleRaceService) return res.status(503).json({ error: 'cycle races unavailable' });
+    const { date, courseId, winCondition, goalM, timeCapS, household } = req.query;
+    try {
+      if (date) return res.json({ races: await cycleRaceService.listByDate(date, household) });
+      if (courseId || winCondition) {
+        return res.json({ races: await cycleRaceService.findGhostCandidates({
+          courseId: courseId || null,
+          winCondition: winCondition || null,
+          goalM: goalM != null ? Number(goalM) : null,
+          timeCapS: timeCapS != null ? Number(timeCapS) : null,
+          householdId: household
+        }) });
+      }
+      return res.json({ dates: await cycleRaceService.listDates(household) });
+    } catch (err) {
+      logger.error?.('fitness.cycle_races.list.error', { error: err?.message });
+      return res.status(500).json({ error: 'list failed' });
+    }
+  });
+
   /**
    * DELETE /api/fitness/sessions/:sessionId - Delete a session and its media
    */
@@ -504,7 +552,7 @@ export function createFitnessRouter(config) {
    * Query params:
    *   - upsidedown: 'true'/'false' (default: true for print)
    */
-  router.get('/receipt/:sessionId/print/:location?', async (req, res) => {
+  router.get('/receipt/:sessionId/print{/:location}', async (req, res) => {
     if (!createReceiptCanvas) {
       return res.status(501).json({ error: 'Receipt renderer not configured' });
     }
