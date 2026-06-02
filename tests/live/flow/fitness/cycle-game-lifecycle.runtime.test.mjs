@@ -137,12 +137,15 @@ test.describe('Cycle game lifecycle (simulator-driven)', () => {
     };
 
     let clockDecreased = false;
-    for (let i = 0; i < 120; i++) {
+    for (let i = 0; i < 150; i++) {
+      // Break as soon as results render — once the race finishes the race-clock
+      // element is unmounted, so reading it (with the default auto-wait) would
+      // otherwise stall each post-finish iteration and exhaust the test budget.
+      if (await page.getByTestId('race-results').isVisible().catch(() => false)) break;
       await setRpm(page, BIKE, 100);
       await setRpm(page, BIKE2, 100);
-      const nowClock = await page.getByTestId('race-clock').textContent().catch(() => null);
+      const nowClock = await page.getByTestId('race-clock').textContent({ timeout: 1000 }).catch(() => null);
       if (nowClock != null && toSeconds(nowClock) < toSeconds(firstClock)) clockDecreased = true;
-      if (await page.getByTestId('race-results').isVisible().catch(() => false)) break;
       await page.waitForTimeout(1000);
     }
 
