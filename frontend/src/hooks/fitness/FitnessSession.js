@@ -1092,9 +1092,16 @@ export class FitnessSession {
    * @param {string} userId
    */
   setEquipmentRider(equipmentId, userId) {
-    if (!equipmentId || !userId) return;
+    if (!equipmentId) return;
     if (!this._equipmentRider) return;
     const prev = this._equipmentRider.get(String(equipmentId)) || null;
+    // Falsy userId unclaims the bike (on-screen unassign). Don't store the
+    // string "null" — delete the entry so getEquipmentRider returns null.
+    if (!userId) {
+      this._equipmentRider.delete(String(equipmentId));
+      getLogger().info('fitness.rider.unclaimed', { equipmentId: String(equipmentId), previousRider: prev });
+      return;
+    }
     this._equipmentRider.set(String(equipmentId), String(userId));
     getLogger().info('fitness.rider.claimed', { equipmentId: String(equipmentId), userId: String(userId), previousRider: prev });
   }

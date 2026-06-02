@@ -20,6 +20,16 @@ describe('FitnessSession — equipmentRider', () => {
     expect(session.getEquipmentRider('niceday')).toBe('milo');
   });
 
+  it('unclaims the bike when set with a falsy userId', () => {
+    const session = new FitnessSession();
+    session.setEquipmentRider('niceday', 'felix');
+    session.setEquipmentRider('niceday', null);
+    expect(session.getEquipmentRider('niceday')).toBeNull();
+    // must not have stored the string "null"
+    session.setEquipmentRider('niceday', '');
+    expect(session.getEquipmentRider('niceday')).toBeNull();
+  });
+
   it('updates the claim when a rider_select event is routed', () => {
     const session = new FitnessSession();
     session.ingestData({ topic: 'rider_select', equipmentId: 'niceday', userId: 'kckern', action: '3_single' });

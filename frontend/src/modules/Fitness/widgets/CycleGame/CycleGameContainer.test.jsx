@@ -25,6 +25,10 @@ function makeCtx(overrides = {}) {
       { id: 'cycle_ace', name: 'CycleAce', cadence: 49904, wheel_circumference_m: 2.1, eligible_users: ['kckern'] },
       { id: 'tricycle', name: 'Tricycle', cadence: 7153, wheel_circumference_m: 1.2 }
     ],
+    configuredUsers: [
+      { id: 'kckern', name: 'KC' },
+      { id: 'felix', name: 'Felix' }
+    ],
     zones: [
       { id: 'warm', distance_multiplier: 1.5, color: 'yellow' },
       { id: 'hot', distance_multiplier: 2, color: 'orange' }
@@ -55,17 +59,24 @@ describe('CycleGameContainer (smoke)', () => {
     global.fetch = vi.fn(() => Promise.resolve({ ok: true }));
   });
 
-  it('renders the home screen with derived courses and a start button', () => {
-    const { getByTestId } = render(<CycleGameContainer />);
+  it('renders the home screen with the race-type dichotomy and a start button', () => {
+    const { getByTestId, queryByTestId } = render(<CycleGameContainer />);
     expect(getByTestId('cycle-game-home')).toBeTruthy();
     expect(getByTestId('course-distance')).toBeTruthy();
     expect(getByTestId('course-time')).toBeTruthy();
     expect(getByTestId('cycle-game-start')).toBeTruthy();
-    expect(getByTestId('cycle-game-cancel')).toBeTruthy();
+    // Cancel must NOT appear on the home/idle screen.
+    expect(queryByTestId('cycle-game-cancel')).toBeNull();
     expect(logSpy.info).toHaveBeenCalledWith('cycle_game.home', expect.objectContaining({ riderCount: 2 }));
   });
 
-  it('moves off the home screen when a course is selected and Start is clicked', () => {
+  it('renders a starting grid slot per bike with the claimed rider', () => {
+    const { getByTestId } = render(<CycleGameContainer />);
+    expect(getByTestId('bike-cycle_ace')).toBeTruthy();
+    expect(getByTestId('bike-tricycle')).toBeTruthy();
+  });
+
+  it('moves off the home screen when a race type is selected and Start is clicked', () => {
     const { getByTestId, queryByTestId } = render(<CycleGameContainer />);
     act(() => {
       fireEvent.click(getByTestId('course-distance'));
