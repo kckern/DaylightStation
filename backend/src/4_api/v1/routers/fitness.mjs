@@ -706,11 +706,31 @@ export function createFitnessRouter(config) {
               householdId,
               success: Boolean(appended),
             });
+            // Persist was attempted but the memo was not written (e.g. session
+            // record not found). Do NOT report success to the client — return
+            // an error so the UI can surface/retry instead of silently losing
+            // the transcribed memo.
+            if (!appended) {
+              logger.error?.('fitness.voice_memo.retroactive_persist_dropped', {
+                sessionId,
+                householdId,
+              });
+              return res.status(500).json({
+                ok: false,
+                error: 'Voice memo transcribed but could not be saved to the session',
+                memo,
+              });
+            }
           }
         } catch (persistErr) {
           logger.warn?.('fitness.voice_memo.retroactive_persist_failed', {
             sessionId,
             error: persistErr?.message,
+          });
+          return res.status(500).json({
+            ok: false,
+            error: 'Voice memo transcribed but could not be saved to the session',
+            memo,
           });
         }
       }

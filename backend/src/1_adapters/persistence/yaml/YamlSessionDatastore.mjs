@@ -27,8 +27,13 @@ import { ItemId } from '#domains/content/value-objects/ItemId.mjs';
  * @returns {string|null} YYYY-MM-DD date string
  */
 function deriveSessionDate(sessionId) {
-  if (!sessionId || sessionId.length < 8) return null;
-  return `${sessionId.slice(0, 4)}-${sessionId.slice(4, 6)}-${sessionId.slice(6, 8)}`;
+  if (!sessionId) return null;
+  // Defensive: strip any non-digit prefix (e.g. "fs_20260601192802") so the
+  // date is always derived from the canonical 14-digit timestamp. Without this
+  // a prefixed id slices to a bogus date and points at a non-existent dir.
+  const digits = String(sessionId).replace(/\D/g, '');
+  if (digits.length < 8) return null;
+  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
 }
 
 /**
@@ -72,12 +77,17 @@ export class YamlSessionDatastore extends ISessionDatastore {
     const sessionDate = deriveSessionDate(sessionId);
     if (!sessionDate) return null;
 
+    // Defensive: derive every path component from the canonical digit id so a
+    // prefixed id (e.g. "fs_20260601192802") resolves to the same dir/file as
+    // the bare id. SessionService already sanitizes, this is belt-and-suspenders.
+    const canonicalId = String(sessionId).replace(/\D/g, '');
+
     const sessionsDir = path.join(
       this.configService.getHouseholdPath('history/fitness', householdId),
       sessionDate
     );
 
-    const sessionFilePath = path.join(sessionsDir, sessionId);
+    const sessionFilePath = path.join(sessionsDir, canonicalId);
 
     const screenshotsDir = path.join(
       this.mediaRoot,
@@ -85,12 +95,12 @@ export class YamlSessionDatastore extends ISessionDatastore {
       'fitness',
       'sessions',
       sessionDate,
-      sessionId,
+      canonicalId,
       'screenshots'
     );
 
     // Relative path for API responses
-    const screenshotsRelativeBase = `apps/fitness/sessions/${sessionDate}/${sessionId}/screenshots`;
+    const screenshotsRelativeBase = `apps/fitness/sessions/${sessionDate}/${canonicalId}/screenshots`;
 
     return {
       sessionDate,

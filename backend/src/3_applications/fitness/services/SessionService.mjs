@@ -242,7 +242,13 @@ export class SessionService {
    */
   async appendVoiceMemo(sessionId, householdId, memo) {
     const hid = this.resolveHouseholdId(householdId);
-    return this.sessionStore.appendVoiceMemo(sessionId, hid, memo);
+    // Sanitize the id the same way getSession does — callers may pass a
+    // prefixed id like "fs_20260601192802". Without stripping the prefix the
+    // datastore derives a bogus date from the raw string and silently drops
+    // the memo.
+    const sanitizedId = Session.sanitizeSessionId(sessionId);
+    if (!sanitizedId) return null;
+    return this.sessionStore.appendVoiceMemo(sanitizedId, hid, memo);
   }
 
   async saveSession(sessionData, householdId) {
