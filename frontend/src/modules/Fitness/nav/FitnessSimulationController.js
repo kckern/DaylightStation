@@ -155,6 +155,7 @@ export class FitnessSimulationController {
    */
   getEquipment() {
     const catalog = this._getEquipmentCatalog();
+    const session = this.getSession?.();
     const now = Date.now();
     return catalog
       .filter(entry => entry && entry.cadence != null)
@@ -162,6 +163,9 @@ export class FitnessSimulationController {
         const equipmentId = entry.id;
         const cadenceDeviceId = String(entry.cadence);
         const state = this._equipmentState.get(String(equipmentId)) || {};
+        const eligible = Array.isArray(entry.eligible_users) && entry.eligible_users.length
+          ? [...entry.eligible_users]
+          : this._allUserIds();
         return {
           equipmentId,
           name: entry.name || entry.label || equipmentId,
@@ -170,11 +174,51 @@ export class FitnessSimulationController {
           currentRpm: state.lastRpm != null ? state.lastRpm : null,
           isActive: state.lastRpm != null && state.lastSent != null
             && (now - state.lastSent) < 5000,
-          eligibleUsers: Array.isArray(entry.eligible_users)
-            ? [...entry.eligible_users]
-            : []
+          eligibleUsers: eligible,
+          // Current claimed rider (so the panel can show + preselect it)
+          rider: session?.getEquipmentRider?.(equipmentId) || null
         };
       });
+  }
+
+  /** All configured user ids — fallback rider list for equipment without eligible_users. */
+  _allUserIds() {
+    const cfg = this.getUsersConfig?.() || {};
+    const ids = new Set();
+    ['primary', 'secondary', 'family', 'friends', 'other'].forEach((k) => {
+      (Array.isArray(cfg[k]) ? cfg[k] : []).forEach((u) => {
+        const id = typeof u === 'string' ? u : (u?.id || u?.profileId);
+        if (id) ids.add(String(id));
+      });
+    });
+    return [...ids];
+  }
+
+  /**
+   * Assign a rider to a bike — the dev-panel equivalent of the hardware
+   * rider_select button. Broadcasts a real `rider_select` message so the full
+   * path (DeviceEventRouter → setEquipmentRider → rider toast) runs, and also
+   * applies it directly to the session as a synchronous fallback.
+   * @param {string} equipmentId
+   * @param {string} userId - user slug; falsy is ignored (clearing isn't supported)
+   */
+  setEquipmentRider(equipmentId, userId) {
+    if (!equipmentId) return { ok: false, error: 'equipmentId required' };
+    const uid = userId == null || userId === '' ? null : String(userId);
+    if (!uid) return { ok: false, error: 'userId required' };
+    const msg = {
+      topic: 'rider_select',
+      source: 'fitness-simulator',
+      timestamp: new Date().toISOString(),
+      equipmentId: String(equipmentId),
+      userId: uid,
+      action: 'sim'
+    };
+    if (this.wsService?.send) this.wsService.send(msg);
+    const session = this.getSession?.();
+    if (session?.setEquipmentRider) session.setEquipmentRider(equipmentId, uid);
+    this._notifyStateChange();
+    return { ok: true, equipmentId, userId: uid };
   }
 
   /**

@@ -470,6 +470,16 @@
             ).join('')}
             <button class="rpm-quick-btn danger" onclick="stopEquipment('${e.equipmentId}')">stop</button>
           </div>
+          <div class="rider-row" style="display:flex;align-items:center;gap:6px;margin-top:4px">
+            <span style="font-size:10px;color:#666">rider:</span>
+            <select onchange="setRider('${e.equipmentId}', this.value)" style="flex:1;font-size:11px">
+              <option value="">— none —</option>
+              ${(e.eligibleUsers || []).map(u =>
+                `<option value="${escapeHtml(u)}" ${e.rider === u ? 'selected' : ''}>${escapeHtml(u)}</option>`
+              ).join('')}
+            </select>
+            <span style="font-size:10px;color:${e.rider ? '#6c6' : '#888'}">${e.rider ? ('🚴 ' + escapeHtml(e.rider)) : 'unclaimed'}</span>
+          </div>
         </div>`;
       }
 
@@ -619,6 +629,12 @@
     function stopEquipment(equipmentId) {
       controller.stopEquipment(equipmentId);
       equipmentSliderValues[equipmentId] = 0;
+      render();
+    }
+
+    function setRider(equipmentId, userId) {
+      if (!userId) return; // clearing not supported; pick a different rider to reassign
+      controller.setEquipmentRider(equipmentId, userId);
       render();
     }
 
