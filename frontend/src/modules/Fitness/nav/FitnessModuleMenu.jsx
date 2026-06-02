@@ -53,13 +53,6 @@ const FitnessModuleMenu = ({ activeModuleMenuId, onModuleSelect, onBack }) => {
   const availableModules = useMemo(() => {
     const items = [...(menuConfig?.items || [])];
 
-    // Ensure Component Showcase appears even if not yet in config
-    const showcaseManifest = getModuleManifest('component_showcase');
-    const hasShowcase = items.some((item) => String(item.id) === 'component_showcase');
-    if (showcaseManifest && !hasShowcase) {
-      items.push({ id: 'component_showcase', name: showcaseManifest.name || 'UX Showcase' });
-    }
-
     // Ensure Pose Demo appears even if not yet in config
     const poseDemoManifest = getModuleManifest('pose_demo');
     const hasPoseDemo = items.some((item) => String(item.id) === 'pose_demo');
@@ -72,13 +65,6 @@ const FitnessModuleMenu = ({ activeModuleMenuId, onModuleSelect, onBack }) => {
     const hasVibration = items.some((item) => String(item.id) === 'vibration_monitor');
     if (vibrationManifest && !hasVibration) {
       items.push({ id: 'vibration_monitor', name: vibrationManifest.name || 'Vibration Monitor' });
-    }
-
-    // Ensure Session Browser appears even if not yet in config
-    const sessionBrowserManifest = getModuleManifest('session-browser');
-    const hasSessionBrowser = items.some((item) => String(item.id) === 'session-browser');
-    if (sessionBrowserManifest && !hasSessionBrowser) {
-      items.push({ id: 'session-browser', name: sessionBrowserManifest.name || 'History' });
     }
 
     return items
