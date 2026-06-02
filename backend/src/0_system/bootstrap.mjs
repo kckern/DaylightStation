@@ -69,6 +69,8 @@ import { createQueriesRouter } from '#api/v1/routers/queries.mjs';
 import { SessionService } from '#apps/fitness/services/SessionService.mjs';
 import { FitnessProgressClassifier } from '#domains/fitness/index.mjs';
 import { YamlSessionDatastore } from '#adapters/persistence/yaml/YamlSessionDatastore.mjs';
+import { YamlCycleRaceDatastore } from '#adapters/persistence/yaml/YamlCycleRaceDatastore.mjs';
+import { CycleRaceService } from '#apps/fitness/services/CycleRaceService.mjs';
 import { AmbientLedAdapter } from '#adapters/fitness/AmbientLedAdapter.mjs';
 import { VoiceMemoTranscriptionService } from '#adapters/fitness/VoiceMemoTranscriptionService.mjs';
 import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
@@ -882,6 +884,9 @@ export function createFitnessServices(config) {
     logger
   });
 
+  const cycleRaceStore = new YamlCycleRaceDatastore({ configService });
+  const cycleRaceService = new CycleRaceService({ datastore: cycleRaceStore });
+
   // Home automation gateway (provided by composition root)
   const haGateway = preloadedHaGateway ?? null;
   let ambientLedController = null;
@@ -911,6 +916,8 @@ export function createFitnessServices(config) {
   return {
     sessionStore,
     sessionService,
+    cycleRaceStore,
+    cycleRaceService,
     ambientLedController,
     transcriptionService,
     haGateway // Expose for other uses
@@ -1019,6 +1026,7 @@ export function createFitnessApiRouter(config) {
 
   return createFitnessRouter({
     sessionService: fitnessServices.sessionService,
+    cycleRaceService: fitnessServices.cycleRaceService,
     zoneLedController: fitnessServices.ambientLedController,
     transcriptionService: fitnessServices.transcriptionService,
     screenshotService,
