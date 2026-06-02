@@ -28,8 +28,16 @@ export function readCycleGameEvents({ baseDir, maxFiles = 25 } = {}) {
       } catch { /* skip malformed line */ }
     }
   }
-  // Stable chronological order so lastEvent() reflects the most recent occurrence.
-  events.sort((a, b) => (a.ts || a.timestamp || 0) - (b.ts || b.timestamp || 0));
+  // Chronological order so lastEvent() reflects the most recent occurrence.
+  // Timestamps are ISO strings (e.g. "2026-06-02T18:38:02.308Z"), so parse them
+  // to epoch ms — a naive numeric subtraction of strings yields NaN (no ordering)
+  // and lets lastEvent() pick a stale event from an older rotated file.
+  const tsOf = (e) => {
+    const t = e.ts ?? e.timestamp ?? e.time ?? 0;
+    const n = typeof t === 'number' ? t : Date.parse(t);
+    return Number.isFinite(n) ? n : 0;
+  };
+  events.sort((a, b) => tsOf(a) - tsOf(b));
   return events;
 }
 
