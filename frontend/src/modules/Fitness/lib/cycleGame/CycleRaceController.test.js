@@ -61,6 +61,92 @@ describe('CycleRaceController — racing + DNF', () => {
   });
 });
 
+describe('CycleRaceController — abuse DQ', () => {
+  const toRacing = (cfg) => { const c = new CycleRaceController(cfg); c.startCountdown(); return c; };
+
+  it('DQs a rider whose RPM stays above max for the configured duration', () => {
+    const c = toRacing(distConfig({
+      startCountdownS: 0, goalM: 100000,
+      riders: [{ userId: 'a', wheelCircumferenceM: 2.1, maxRpm: 100, maxRpmDurationS: 10 }]
+    }));
+    c.tick({ a: { rpm: 200, zoneId: 'hot' } }); // 5s over
+    expect(c.getState().dq).not.toContain('a');
+    c.tick({ a: { rpm: 200, zoneId: 'hot' } }); // 10s over → DQ
+    expect(c.getState().dq).toContain('a');
+  });
+
+  it('does not DQ a rider who briefly spikes then drops below max', () => {
+    const c = toRacing(distConfig({
+      startCountdownS: 0, goalM: 100000,
+      riders: [{ userId: 'a', wheelCircumferenceM: 2.1, maxRpm: 100, maxRpmDurationS: 10 }]
+    }));
+    c.tick({ a: { rpm: 200, zoneId: 'hot' } }); // 5s over
+    c.tick({ a: { rpm: 50, zoneId: 'hot' } });  // resets the over counter
+    c.tick({ a: { rpm: 200, zoneId: 'hot' } }); // only 5s over again
+    expect(c.getState().dq).not.toContain('a');
+  });
+
+  it('freezes a DQ rider distance (their input is zeroed)', () => {
+    const c = toRacing(distConfig({
+      startCountdownS: 0, goalM: 100000,
+      riders: [{ userId: 'a', wheelCircumferenceM: 2.1, maxRpm: 100, maxRpmDurationS: 5 }]
+    }));
+    c.tick({ a: { rpm: 200, zoneId: 'hot' } }); // 5s over → DQ this tick, input zeroed
+    const dist = c.getState().engineState.riders.a.cumulativeDistanceM;
+    c.tick({ a: { rpm: 200, zoneId: 'hot' } });
+    expect(c.getState().engineState.riders.a.cumulativeDistanceM).toBe(dist);
+  });
+});
+
+describe('CycleRaceController — hot-start penalty', () => {
+  const toRacing = (cfg) => { const c = new CycleRaceController(cfg); c.startCountdown(); return c; };
+
+  it('disables the meter of a rider already pedalling at the green light', () => {
+    const c = toRacing(distConfig({
+      startCountdownS: 0, goalM: 100000, hotStartPenaltyS: 10,
+      riders: [{ userId: 'a', wheelCircumferenceM: 2.1 }]
+    }));
+    c.tick({ a: { rpm: 60, zoneId: 'hot' } }); // hot start → penalised, no distance
+    expect(c.getState().engineState.riders.a.cumulativeDistanceM).toBe(0);
+    expect(c.getState().penalized).toContain('a');
+    c.tick({ a: { rpm: 60, zoneId: 'hot' } }); // penalty window still consuming
+    expect(c.getState().engineState.riders.a.cumulativeDistanceM).toBe(0);
+    c.tick({ a: { rpm: 60, zoneId: 'hot' } }); // penalty over → distance accrues
+    expect(c.getState().engineState.riders.a.cumulativeDistanceM).toBe(21);
+  });
+
+  it('does not penalise a rider who starts from rest', () => {
+    const c = toRacing(distConfig({
+      startCountdownS: 0, goalM: 100000, hotStartPenaltyS: 10,
+      riders: [{ userId: 'a', wheelCircumferenceM: 2.1 }]
+    }));
+    c.tick({ a: { rpm: 0 } }); // at rest at green light → no penalty
+    expect(c.getState().penalized).not.toContain('a');
+    c.tick({ a: { rpm: 60, zoneId: 'hot' } }); // counts immediately
+    expect(c.getState().engineState.riders.a.cumulativeDistanceM).toBe(21);
+  });
+});
+
+describe('CycleRaceController — ghost rider', () => {
+  it('never DNFs a ghost (it replays a recording) and the race still finishes', () => {
+    const c = new CycleRaceController({
+      winCondition: 'distance', goalM: 1000, intervalMs: 1000, zones: HOT, hrlessMultiplier: 1,
+      startCountdownS: 0, raceIdleDnfS: 2,
+      riders: [
+        { userId: 'a', wheelCircumferenceM: 2.1 },
+        { userId: 'g', ghostSeries: [2000], ghostIntervalS: 1 }
+      ]
+    });
+    c.startCountdown();
+    c.tick({ a: { rpm: 0 } }); // ghost → 2000 (finished); a idle 1s
+    c.tick({ a: { rpm: 0 } }); // a idle 2s → DNF
+    const s = c.getState();
+    expect(s.dnf).toContain('a');
+    expect(s.dnf).not.toContain('g');
+    expect(s.phase).toBe('finished');
+  });
+});
+
 describe('CycleRaceController — time race', () => {
   it('finishes at the time cap', () => {
     const c = new CycleRaceController({

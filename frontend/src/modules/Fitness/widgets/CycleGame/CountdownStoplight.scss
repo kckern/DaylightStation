@@ -1,12 +1,90 @@
+@use './cgTokens' as cg;
+
 .countdown-stoplight {
   position: absolute; inset: 0; z-index: 50;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 24px; background: rgba(0,0,0,0.7);
+  gap: 28px;
+  @include cg.cg-backdrop;
+  background-color: rgba(6, 7, 10, 0.86);
 
-  &__lamps { display: flex; flex-direction: column; gap: 12px; padding: 16px; background: #0b0c10; border-radius: 16px; }
-  &__lamp { width: 56px; height: 56px; border-radius: 50%; background: #1c2027; opacity: 0.25; transition: opacity 0.15s; }
-  &__lamp--red.is-on    { background: #e74c3c; opacity: 1; box-shadow: 0 0 24px #e74c3c; }
-  &__lamp--yellow.is-on { background: #f1c40f; opacity: 1; box-shadow: 0 0 24px #f1c40f; }
-  &__lamp--green.is-on  { background: #2ecc71; opacity: 1; box-shadow: 0 0 24px #2ecc71; }
-  &__number { font-size: 4rem; font-weight: 800; color: #f5f7fa; }
+  &__eyebrow {
+    @include cg.cg-eyebrow;
+    font-size: 1rem;
+    color: cg.$cg-muted;
+    animation: cg-fade-up 0.4s ease both;
+  }
+  &.is-go &__eyebrow { color: #2ecc71; letter-spacing: 0.4em; }
+
+  // Big number sits inside a pulsing accent ring.
+  &__stage {
+    position: relative;
+    width: 240px; height: 240px;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  &__ring {
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    border: 3px solid rgba(122, 162, 255, 0.25);
+    box-shadow: inset 0 0 60px rgba(122, 162, 255, 0.12), 0 0 50px rgba(0, 0, 0, 0.6);
+    animation: cg-ring-pulse 1s ease-in-out infinite;
+  }
+  &.is-go &__ring {
+    border-color: rgba(46, 204, 113, 0.7);
+    box-shadow: inset 0 0 80px rgba(46, 204, 113, 0.25), 0 0 70px rgba(46, 204, 113, 0.4);
+    animation: cg-ring-burst 0.5s ease-out forwards;
+  }
+
+  &__number {
+    font-family: cg.$cg-display;
+    font-weight: 800;
+    font-size: 9rem;
+    line-height: 1;
+    color: cg.$cg-text;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 6px 30px rgba(0, 0, 0, 0.7);
+    // Punch in on every value change (keyed remount).
+    animation: cg-count-punch 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  }
+  &.is-go &__number {
+    font-size: 7rem; letter-spacing: 0.04em;
+    color: #46e08a;
+    text-shadow: 0 0 40px rgba(46, 224, 138, 0.6);
+    animation: cg-go-pop 0.5s cubic-bezier(0.2, 1.5, 0.4, 1) both;
+  }
+
+  &__lamps { display: flex; gap: 16px; }
+  &__lamp {
+    width: 40px; height: 40px; border-radius: 50%;
+    background: #15171c;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    opacity: 0.4;
+    transition: opacity 0.15s, box-shadow 0.15s, transform 0.15s;
+  }
+  &__lamp.is-on { transform: scale(1.12); }
+  &__lamp--red.is-on    { background: #e74c3c; opacity: 1; box-shadow: 0 0 28px #e74c3c; }
+  &__lamp--yellow.is-on { background: #f1c40f; opacity: 1; box-shadow: 0 0 28px #f1c40f; }
+  &__lamp--green.is-on  { background: #2ecc71; opacity: 1; box-shadow: 0 0 28px #2ecc71; }
+}
+
+@keyframes cg-count-punch {
+  0%   { opacity: 0; transform: scale(1.6); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes cg-go-pop {
+  0%   { opacity: 0; transform: scale(0.4); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes cg-ring-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50%      { transform: scale(1.06); opacity: 1; }
+}
+@keyframes cg-ring-burst {
+  0%   { transform: scale(1); }
+  100% { transform: scale(1.18); opacity: 0; }
+}
+@keyframes cg-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }

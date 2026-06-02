@@ -23,6 +23,14 @@ describe('RaceResults', () => {
     const { getByTestId } = render(<RaceResults standings={standings} riders={riders} winCondition="distance" dnf={['user_2']} />);
     expect(getByTestId('result-row-user_2').textContent).toContain('DNF');
   });
+  it('marks DQ riders (and DQ takes precedence over DNF)', () => {
+    const { getByTestId } = render(
+      <RaceResults standings={standings} riders={riders} winCondition="distance" dnf={['user_2']} dq={['user_2']} />
+    );
+    const row = getByTestId('result-row-user_2').textContent;
+    expect(row).toContain('DQ');
+    expect(row).not.toContain('DNF');
+  });
   it('shows time for distance races and distance for time races', () => {
     const dist = render(<RaceResults standings={standings} riders={riders} winCondition="distance" dnf={[]} />);
     expect(within(dist.container).getByTestId('result-row-user_3').textContent).toContain('4:12'); // 252s

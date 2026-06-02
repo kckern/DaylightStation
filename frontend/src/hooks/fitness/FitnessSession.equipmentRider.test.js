@@ -30,6 +30,24 @@ describe('FitnessSession — equipmentRider', () => {
     expect(session.getEquipmentRider('niceday')).toBeNull();
   });
 
+  it('moves a rider off any other equipment (a user can only be on one bike)', () => {
+    const session = new FitnessSession();
+    session.setEquipmentRider('niceday', 'user_2');
+    session.setEquipmentRider('cycle_ace', 'user_2'); // same user → moves
+    expect(session.getEquipmentRider('niceday')).toBeNull();
+    expect(session.getEquipmentRider('cycle_ace')).toBe('user_2');
+  });
+
+  it('does not disturb other riders when moving a user', () => {
+    const session = new FitnessSession();
+    session.setEquipmentRider('niceday', 'user_2');
+    session.setEquipmentRider('cycle_ace', 'user_3');
+    session.setEquipmentRider('tricycle', 'user_2'); // user_2 moves off niceday only
+    expect(session.getEquipmentRider('niceday')).toBeNull();
+    expect(session.getEquipmentRider('cycle_ace')).toBe('user_3');
+    expect(session.getEquipmentRider('tricycle')).toBe('user_2');
+  });
+
   it('updates the claim when a rider_select event is routed', () => {
     const session = new FitnessSession();
     session.ingestData({ topic: 'rider_select', equipmentId: 'niceday', userId: 'kckern', action: '3_single' });

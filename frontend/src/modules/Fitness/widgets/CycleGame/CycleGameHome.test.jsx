@@ -41,16 +41,22 @@ describe('CycleGameHome', () => {
     expect(queryByTestId('cgh-value')).toBeTruthy();
   });
 
-  it('renders a starting grid slot per bike with its assigned rider', () => {
-    const { getByTestId, getByText } = render(
+  it('renders a starting grid slot per bike, equipment hero + assigned rider avatar', () => {
+    const { getByTestId } = render(
       <CycleGameHome bikes={bikes} people={people} records={[]} />
     );
     expect(getByTestId('bike-cycle_ace')).toBeTruthy();
     expect(getByTestId('bike-tricycle')).toBeTruthy();
-    // assigned rider shows name + remove affordance
-    expect(getByText(/User_3 · remove/)).toBeTruthy();
-    // empty slot prompts assignment
-    expect(getByText('tap to assign')).toBeTruthy();
+    // a filled slot keeps the equipment hero AND shows the rider's avatar
+    // (no name label on the slot — names live in the picker)
+    const filled = getByTestId('bike-cycle_ace');
+    expect(filled.querySelector('.cgh-slot__device')).toBeTruthy();
+    expect(filled.querySelector('.cgh-slot__rider-avatar')).toBeTruthy();
+    expect(filled.querySelector('.cgh-slot__rider-name')).toBeNull();
+    // an empty slot has no rider avatar, still has the equipment hero
+    const empty = getByTestId('bike-tricycle');
+    expect(empty.querySelector('.cgh-slot__rider-avatar')).toBeNull();
+    expect(empty.querySelector('.cgh-slot__device')).toBeTruthy();
   });
 
   it('opens the rider picker and assigns a rider on-screen', () => {
@@ -65,13 +71,51 @@ describe('CycleGameHome', () => {
     expect(onAssign).toHaveBeenCalledWith('tricycle', 'user_2');
   });
 
-  it('fires onUnassign from a filled slot', () => {
+  it('clears an assigned rider via the picker Clear tile', () => {
     const onUnassign = vi.fn();
-    const { getByText } = render(
+    const { getByTestId } = render(
       <CycleGameHome bikes={bikes} people={people} records={[]} onUnassign={onUnassign} />
     );
-    fireEvent.click(getByText(/User_3 · remove/));
+    // clicking a filled slot reopens the picker, which offers Clear
+    fireEvent.click(getByTestId('bike-cycle_ace').querySelector('.cgh-slot__main'));
+    expect(getByTestId('rider-picker')).toBeTruthy();
+    fireEvent.click(getByTestId('rider-clear'));
     expect(onUnassign).toHaveBeenCalledWith('cycle_ace');
+  });
+
+  it('separates guests behind a tab; household shows on the main tab', () => {
+    const mixed = [
+      { id: 'user_3', name: 'User_3', hasHR: false, isGuest: false },
+      { id: 'user_7', name: 'User_7', hasHR: false, isGuest: true }
+    ];
+    const { getByTestId, queryByTestId, getByRole } = render(
+      <CycleGameHome bikes={bikes} people={mixed} records={[]} />
+    );
+    fireEvent.click(getByTestId('bike-tricycle').querySelector('.cgh-slot__main'));
+    // household tab is default: User_3 present, User_7 (guest) hidden
+    expect(getByTestId('assign-user_3')).toBeTruthy();
+    expect(queryByTestId('assign-user_7')).toBeNull();
+    // switch to Guests tab → User_7 appears
+    fireEvent.click(getByRole('tab', { name: 'Guests' }));
+    expect(getByTestId('assign-user_7')).toBeTruthy();
+  });
+
+  it('ghost picker: first tap focuses a card, second tap selects it (two-stage)', () => {
+    const onSelectGhost = vi.fn();
+    const candidates = [{
+      raceId: '20260602150118', day: '2026-06-02', timeOfDay: '3:01 pm',
+      participants: [{ id: 'user_3', displayName: 'User_3', avatarSrc: '/x' }],
+      winnerName: 'User_3', goalKind: 'distance', goalLabel: '3 km', scoreKind: 'time', scoreLabel: '4:12'
+    }];
+    const { getByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} ghostCandidates={candidates} onSelectGhost={onSelectGhost} />
+    );
+    fireEvent.click(getByTestId('course-ghost')); // open the ghost picker
+    const card = getByTestId('ghost-20260602150118');
+    fireEvent.click(card); // first tap → focus only
+    expect(onSelectGhost).not.toHaveBeenCalled();
+    fireEvent.click(card); // second tap → commit
+    expect(onSelectGhost).toHaveBeenCalled();
   });
 
   it('disables Start until canStart, then fires onStart', () => {
@@ -104,9 +148,16 @@ describe('CycleGameHome', () => {
       <CycleGameHome
         bikes={bikes}
         people={people}
-        records={[{ courseId: 'distance', userId: 'user_3', label: 'User_3 — 4:12' }]}
+        records={[{
+          raceId: '20260602150118',
+          avatars: [{ id: 'user_3', src: '/api/v1/static/img/users/user_3', name: 'User_3' }],
+          goalKind: 'distance', goalLabel: '3 km',
+          scoreKind: 'time', scoreLabel: '4:12'
+        }]}
       />
     );
-    expect(getByText('User_3 — 4:12')).toBeTruthy();
+    // goal chip + winner score both render
+    expect(getByText(/3 km/)).toBeTruthy();
+    expect(getByText('4:12')).toBeTruthy();
   });
 });

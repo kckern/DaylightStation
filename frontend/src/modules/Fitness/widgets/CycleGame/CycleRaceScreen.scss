@@ -1,11 +1,96 @@
+@use './cgTokens' as cg;
+
 .cycle-race-screen {
   position: relative; width: 100%; height: 100%;
-  display: flex; flex-direction: column; align-items: center; gap: 12px;
-  background: #0e0f13; color: #e2e8f0; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  padding: 18px 28px 30px;
+  box-sizing: border-box;
+  @include cg.cg-backdrop;
+  color: cg.$cg-text;
+  overflow: hidden;
 
-  &__bg { position: absolute; inset: 0; background: #000; opacity: 0.35; z-index: 0; }
-  &__clock { position: relative; z-index: 1; font-family: ui-monospace, monospace; font-size: 2.4rem; font-weight: 800; margin-top: 12px; }
-  &__chart { position: relative; z-index: 1; width: 90%; height: 38%; }
-  &__goal { stroke: #f1c40f; stroke-width: 2; stroke-dasharray: 6 5; }
-  &__speedos { position: relative; z-index: 1; display: flex; gap: 24px; justify-content: center; align-items: flex-start; flex-wrap: wrap; }
+  &__bg {
+    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+    opacity: 0.28; z-index: 0;
+  }
+  // Vignette over the video for depth + legibility.
+  &__vignette {
+    position: absolute; inset: 0; z-index: 0; pointer-events: none;
+    background:
+      radial-gradient(120% 90% at 50% 0%, rgba(122, 162, 255, 0.10), transparent 55%),
+      radial-gradient(140% 120% at 50% 110%, rgba(0, 0, 0, 0.85), transparent 60%),
+      linear-gradient(180deg, rgba(8, 9, 12, 0.55), rgba(8, 9, 12, 0.2) 30%, rgba(8, 9, 12, 0.7));
+  }
+
+  // ── Race clock (framed, labeled) ────────────────────────────────────────
+  &__clock-frame {
+    position: relative; z-index: 1;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 8px 34px 10px;
+    background: linear-gradient(180deg, rgba(20, 23, 30, 0.85), rgba(12, 14, 19, 0.85));
+    border: 1px solid cg.$cg-border;
+    border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  }
+  &__clock-label { @include cg.cg-eyebrow; font-size: 0.7rem; }
+  &__clock {
+    font-family: cg.$cg-display;
+    font-weight: 800; font-size: 3.4rem; line-height: 1;
+    letter-spacing: 0.01em;
+    font-variant-numeric: tabular-nums;
+    color: cg.$cg-text;
+    text-shadow: 0 0 24px rgba(122, 162, 255, 0.25);
+  }
+  &__clock-goal {
+    font-family: cg.$cg-mono; font-size: 0.78rem; color: cg.$cg-muted;
+  }
+
+  // ── Chart ───────────────────────────────────────────────────────────────
+  &__chart-wrap {
+    position: relative; z-index: 1; width: 94%; flex: 1 1 auto; min-height: 0;
+    border-left: 1px solid cg.$cg-border-soft;
+    border-bottom: 1px solid cg.$cg-border-soft;
+  }
+  &__chart { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  &__grid { stroke: rgba(255, 255, 255, 0.06); stroke-width: 1; }
+  &__goal { stroke: cg.$cg-gold; stroke-width: 1.5; stroke-dasharray: 7 5; opacity: 0.8; }
+
+  &__grid-labels { position: absolute; inset: 0; pointer-events: none; }
+  &__grid-label {
+    position: absolute; left: 6px; transform: translateY(-50%);
+    font-family: cg.$cg-mono; font-size: 0.62rem; color: cg.$cg-faint;
+    background: rgba(8, 9, 12, 0.5); padding: 0 4px; border-radius: 3px;
+  }
+
+  // Gliding rider chips (name + head dot) — smooth between 1 Hz ticks.
+  &__heads { position: absolute; inset: 0; pointer-events: none; }
+  &__rider-tag {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    transition: left 0.95s linear, top 0.95s linear;
+    display: flex; align-items: center; gap: 6px;
+    white-space: nowrap;
+  }
+  &__rider-name {
+    font-family: cg.$cg-display; font-weight: 700; font-size: 0.8rem;
+    letter-spacing: 0.03em; text-transform: uppercase;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+    transform: translateX(-100%); padding-right: 2px;
+  }
+  &__head {
+    width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.6), 0 0 0 2px rgba(255, 255, 255, 0.3);
+  }
+  &__rider-tag.is-leader &__head {
+    box-shadow: 0 0 14px currentColor, 0 0 0 2px rgba(255, 255, 255, 0.85);
+  }
+  &__rider-tag.is-leader &__rider-name { font-size: 0.9rem; }
+  &__rider-tag.is-ghost { opacity: 0.78; }
+  &__rider-tag.is-ghost &__head { width: 10px; height: 10px; }
+
+  // ── Speedometers ────────────────────────────────────────────────────────
+  &__speedos {
+    position: relative; z-index: 1; flex-shrink: 0;
+    display: flex; gap: 40px; justify-content: center; align-items: flex-start; flex-wrap: wrap;
+  }
 }

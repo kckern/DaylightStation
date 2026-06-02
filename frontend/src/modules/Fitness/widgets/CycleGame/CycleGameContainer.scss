@@ -1,3 +1,5 @@
+@use './cgTokens' as cg;
+
 .cycle-game-container {
   position: relative;
   width: 100%;
@@ -6,7 +8,7 @@
   flex-direction: column;
   align-items: stretch;
   justify-content: center;
-  color: #e2e8f0;
+  color: cg.$cg-text;
 
   &__controls {
     display: flex;
@@ -18,24 +20,41 @@
   &__start,
   &__cancel {
     appearance: none;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 8px;
-    padding: 10px 22px;
-    font-size: 15px;
-    letter-spacing: 0.03em;
+    font-family: cg.$cg-display;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    border-radius: 10px;
     cursor: pointer;
-    color: #f8fafc;
+    transition: transform 0.12s ease, border-color 0.15s ease, background 0.15s ease;
   }
 
   &__start {
-    background: #2563eb;
-    border-color: #1d4ed8;
+    align-self: center;
+    min-width: 200px;
+    margin-top: 24px;
+    padding: 13px 32px;
+    font-size: 1rem;
+    color: #f8fafc;
+    background: linear-gradient(180deg, lighten(cg.$cg-accent, 4%), cg.$cg-accent);
+    border: 1px solid cg.$cg-accent;
+    box-shadow: 0 10px 26px rgba(122, 162, 255, 0.3);
+
+    &:hover { transform: translateY(-1px); }
+    &:active { transform: translateY(0); }
   }
 
   &__cancel {
-    background: rgba(255, 255, 255, 0.06);
     position: absolute;
-    top: 16px;
-    right: 16px;
+    top: 18px;
+    right: 18px;
+    padding: 9px 18px;
+    font-size: 0.82rem;
+    color: cg.$cg-muted;
+    background: rgba(18, 20, 27, 0.7);
+    border: 1px solid cg.$cg-border;
+    backdrop-filter: blur(4px);
+
+    &:hover { color: #f87171; border-color: rgba(248, 113, 113, 0.5); }
   }
 }
