@@ -580,8 +580,7 @@ export class GovernanceEngine {
       });
 
       // Swap is allowed only during init or the very first ramp (phase 0)
-      const swapAllowed = activeChallenge.cycleState === 'init'
-        || (activeChallenge.cycleState === 'ramp' && activeChallenge.currentPhaseIndex === 0);
+      const swapAllowed = this._isCycleSwapAllowed(activeChallenge);
 
       // Eligible swap targets = equipment whitelist minus current rider minus
       // users still on cooldown
@@ -1906,9 +1905,8 @@ export class GovernanceEngine {
       // Reconcile a changed standing claim in the early-exit (no-media) path as well.
       const _claimManual = this._latestInputs?.equipmentRiderMap?.[active.equipment];
       if (_claimManual && _claimManual !== active.rider) {
-        const _swapAllowed = active.cycleState === 'init'
-          || (active.cycleState === 'ramp' && active.currentPhaseIndex === 0);
-        if (_swapAllowed) this.swapCycleRider(_claimManual, { force: true });
+        // swapCycleRider self-gates on non-terminal state; let it decide.
+        this.swapCycleRider(_claimManual, { force: true });
       }
       const filtered = this._filteredCadenceFor(active.equipment, this._now());
       const equipmentRpm = filtered.rpm;
@@ -2127,15 +2125,16 @@ export class GovernanceEngine {
     }
 
     // 7. Handle Challenges
-    // Reconcile a changed standing claim: a physical re-press during the swap
-    // window reassigns the active cycle rider (force = bypass cooldown).
+    // Reconcile a changed standing claim: a physical re-press at any non-terminal
+    // point in the challenge reassigns the active cycle rider (force = bypass
+    // cooldown) so a tired rider can tag-team out.
     const _activeCycle = this.challengeState?.activeChallenge;
     if (_activeCycle && _activeCycle.type === 'cycle') {
       const _claim = this._latestInputs?.equipmentRiderMap?.[_activeCycle.equipment];
       if (_claim && _claim !== _activeCycle.rider) {
-        const _swapAllowed = _activeCycle.cycleState === 'init'
-          || (_activeCycle.cycleState === 'ramp' && _activeCycle.currentPhaseIndex === 0);
-        if (_swapAllowed) this.swapCycleRider(_claim, { force: true });
+        // Tag-team: honor a rider-change press at any non-terminal point in the
+        // challenge (swapCycleRider self-gates). force = bypass cooldown.
+        this.swapCycleRider(_claim, { force: true });
       }
     }
     this._evaluateChallenges(activePolicy, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, evalContext);
@@ -3752,13 +3751,13 @@ export class GovernanceEngine {
   /**
    * Swap the rider on the currently active cycle challenge.
    *
-   * Swap is only allowed in a narrow window:
-   *   - cycleState === 'init', OR
-   *   - cycleState === 'ramp' AND currentPhaseIndex === 0 (i.e. phase-1 ramp)
+   * Allowed at any non-terminal point in the challenge (init/ramp/maintain/
+   * locked) so a tired rider can tag-team out mid-challenge — see
+   * _isCycleSwapAllowed.
    *
    * Rejected if:
    *   - there is no active cycle challenge
-   *   - swap window is closed
+   *   - the challenge is terminal (success/failed)
    *   - riderId not in equipment's eligible_users
    *   - rider is on cooldown (unless { force: true })
    *
@@ -3783,9 +3782,7 @@ export class GovernanceEngine {
       });
       return { success: false, reason: 'no active cycle challenge' };
     }
-    const allowed = active.cycleState === 'init'
-      || (active.cycleState === 'ramp' && active.currentPhaseIndex === 0);
-    if (!allowed) {
+    if (!this._isCycleSwapAllowed(active)) {
       getLogger().info('governance.cycle.swap_requested', {
         challengeId: active.id,
         fromRider: active.rider,
@@ -3793,9 +3790,9 @@ export class GovernanceEngine {
         cycleState: active.cycleState,
         force,
         accepted: false,
-        rejectionReason: 'swap_window_closed'
+        rejectionReason: 'challenge_terminal'
       });
-      return { success: false, reason: 'swap window closed' };
+      return { success: false, reason: 'challenge is terminal' };
     }
     const eligible = this._getEligibleUsers(active.equipment);
     if (!eligible.includes(riderId)) {
@@ -3846,6 +3843,23 @@ export class GovernanceEngine {
       ridersUsed: [...active.ridersUsed]
     });
     return { success: true };
+  }
+
+  /**
+   * Whether the active cycle challenge can accept a rider swap right now.
+   *
+   * Tag-team rule: a rider may hand off at ANY point during an active
+   * (non-terminal) cycle challenge — init, ramp, maintain, OR while
+   * health-locked. The health-lock case is the whole point: when one rider is
+   * too tired and the challenge locks, a teammate can take over and pedal it
+   * back to green. Only terminal states (success/failed) reject a swap.
+   *
+   * @param {Object|null} active - the active challenge
+   * @returns {boolean}
+   */
+  _isCycleSwapAllowed(active) {
+    if (!active || active.type !== 'cycle') return false;
+    return ['init', 'ramp', 'maintain', 'locked'].includes(active.cycleState);
   }
 
   /**
