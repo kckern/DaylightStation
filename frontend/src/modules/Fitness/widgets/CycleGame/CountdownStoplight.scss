@@ -1,0 +1,12 @@
+.countdown-stoplight {
+  position: absolute; inset: 0; z-index: 50;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 24px; background: rgba(0,0,0,0.7);
+
+  &__lamps { display: flex; flex-direction: column; gap: 12px; padding: 16px; background: #0b0c10; border-radius: 16px; }
+  &__lamp { width: 56px; height: 56px; border-radius: 50%; background: #1c2027; opacity: 0.25; transition: opacity 0.15s; }
+  &__lamp--red.is-on    { background: #e74c3c; opacity: 1; box-shadow: 0 0 24px #e74c3c; }
+  &__lamp--yellow.is-on { background: #f1c40f; opacity: 1; box-shadow: 0 0 24px #f1c40f; }
+  &__lamp--green.is-on  { background: #2ecc71; opacity: 1; box-shadow: 0 0 24px #2ecc71; }
+  &__number { font-size: 4rem; font-weight: 800; color: #f5f7fa; }
+}
