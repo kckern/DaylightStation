@@ -257,3 +257,43 @@ export async function listCycleSelections(page) {
     return ctl ? (ctl.listCycleSelections?.() || []) : [];
   });
 }
+
+/**
+ * Drive a heart-rate device's BPM via the controller in the page.
+ */
+export async function setHR(page, deviceId, bpm) {
+  return page.evaluate(({ id, bpm }) => {
+    const ctl = window.__fitnessSimController;
+    if (!ctl) return { ok: false, error: 'controller_unavailable' };
+    return ctl.setHR?.(id, bpm);
+  }, { id: deviceId, bpm });
+}
+
+/**
+ * Claim a rider for a bike (the dev-panel equivalent of the hardware
+ * rider_select button). Broadcasts a real rider_select message and applies
+ * it to the session.
+ */
+export async function setEquipmentRider(page, equipmentId, userId) {
+  return page.evaluate(
+    ([eq, u]) => window.__fitnessSimController.setEquipmentRider(eq, u),
+    [equipmentId, userId]
+  );
+}
+
+/**
+ * List equipment with their currently-claimed riders.
+ */
+export async function getEquipmentRiders(page) {
+  return page.evaluate(() => (window.__fitnessSimController.getEquipment() || [])
+    .map((e) => ({ equipmentId: e.equipmentId, rider: e.rider })));
+}
+
+/**
+ * Deep-link to the cycle game's standalone module route. The game registers
+ * as a fitness module widget under legacy id `cycle_game`.
+ */
+export async function launchCycleGame(page) {
+  const origin = await page.evaluate(() => location.origin);
+  await page.goto(`${origin}/fitness/module/cycle_game`);
+}
