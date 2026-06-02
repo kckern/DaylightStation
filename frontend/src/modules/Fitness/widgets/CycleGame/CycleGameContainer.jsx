@@ -100,6 +100,17 @@ export default function CycleGameContainer({ onMount } = {}) {
   const savedRef = useRef(false);
   const prevDnfRef = useRef(new Set());
 
+  // Live-data refs so the race-tick interval can read the freshest
+  // session/vitals without re-subscribing. The fitness context value changes
+  // identity on nearly every render (new RPM/HR readings); if the race interval
+  // depended on those identities it would be torn down and recreated before its
+  // 1000ms timer could fire, starving the engine of ticks (a time race would
+  // never reach its cap). Keep these in refs and depend only on `phase`.
+  const sessionRef = useRef(session);
+  const getUserVitalsRef = useRef(getUserVitals);
+  useEffect(() => { sessionRef.current = session; }, [session]);
+  useEffect(() => { getUserVitalsRef.current = getUserVitals; }, [getUserVitals]);
+
   // Map controller phases to render phases.
   const applySnapshot = useCallback((state) => {
     setSnapshot(state);
@@ -202,12 +213,14 @@ export default function CycleGameContainer({ onMount } = {}) {
     const id = setInterval(() => {
       const controller = controllerRef.current;
       if (!controller) return;
+      const liveSession = sessionRef.current;
+      const liveGetUserVitals = getUserVitalsRef.current;
       const before = controller.getState();
       const inputs = {};
       Object.keys(before.engineState?.riders || {}).forEach((userId) => {
         const rider = before.engineState.riders[userId];
-        const cadence = session?.getEquipmentCadence?.(rider.equipmentId);
-        const vitals = getUserVitals?.(userId);
+        const cadence = liveSession?.getEquipmentCadence?.(rider.equipmentId);
+        const vitals = liveGetUserVitals?.(userId);
         inputs[userId] = {
           rpm: cadence && cadence.connected ? cadence.rpm : 0,
           zoneId: vitals?.zoneId || null
@@ -246,7 +259,9 @@ export default function CycleGameContainer({ onMount } = {}) {
       applySnapshot(state);
     }, RACE_TICK_MS);
     return () => clearInterval(id);
-  }, [phase, session, getUserVitals, applySnapshot, log]);
+    // Live data is read from refs (sessionRef/getUserVitalsRef) so the interval
+    // is set up once per racing phase and never starved by context churn.
+  }, [phase, applySnapshot, log]);
 
   // ── save the record once on results ──────────────────────────────────────
   useEffect(() => {
