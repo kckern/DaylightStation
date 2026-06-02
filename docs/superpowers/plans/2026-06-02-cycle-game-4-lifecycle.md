@@ -326,7 +326,7 @@ Create `frontend/src/modules/Fitness/widgets/CycleGame/RaceResults.test.jsx`:
 
 ```jsx
 import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, within } from '@testing-library/react';
 import RaceResults from './RaceResults.jsx';
 
 const standings = [
@@ -352,9 +352,9 @@ describe('RaceResults', () => {
   });
   it('shows time for distance races and distance for time races', () => {
     const dist = render(<RaceResults standings={standings} riders={riders} winCondition="distance" dnf={[]} />);
-    expect(dist.getByTestId('result-row-milo').textContent).toContain('4:12'); // 252s
+    expect(within(dist.container).getByTestId('result-row-milo').textContent).toContain('4:12'); // 252s
     const time = render(<RaceResults standings={standings} riders={riders} winCondition="time" dnf={[]} />);
-    expect(time.getByTestId('result-row-milo').textContent).toContain('3.00 km'); // 3000 m
+    expect(within(time.container).getByTestId('result-row-milo').textContent).toContain('3.00 km'); // 3000 m
   });
 });
 ```
