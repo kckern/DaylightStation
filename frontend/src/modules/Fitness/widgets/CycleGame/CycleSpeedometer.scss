@@ -1,0 +1,38 @@
+.cycle-speedometer {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  &__svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  &__ring { stroke: #23272f; stroke-width: 3; }
+  &__band { stroke-linecap: butt; }
+  &__tick { stroke: rgba(255,255,255,0.35); stroke-width: 1; }
+  &__tick--major { stroke: rgba(255,255,255,0.7); stroke-width: 1.5; }
+  &__tick-label { fill: #8b93a1; font-size: 8px; font-family: inherit; }
+  &__needle { stroke: #e2e8f0; stroke-width: 2.5; stroke-linecap: round; }
+  &__needle-group { transition: transform 0.18s ease; }
+  &__hub { fill: #e2e8f0; }
+
+  &__avatar { position: relative; display: flex; align-items: center; justify-content: center; }
+  &__multiplier {
+    position: absolute; right: -4%; bottom: 6%;
+    min-width: 1.6em; padding: 0.1em 0.3em;
+    border-radius: 999px; border: 2px solid #15171c;
+    color: #1a1205; font-weight: 700; font-size: 0.8rem; text-align: center;
+  }
+
+  &__readout {
+    position: absolute; bottom: 4%; left: 0; right: 0;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    pointer-events: none;
+  }
+  &__rpm { color: #e2e8f0; font-weight: 700; font-size: 0.95rem; }
+  &__rpm-unit { color: #8b93a1; font-weight: 400; font-size: 0.65rem; }
+  &__odometer {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #7aa2ff; font-size: 0.8rem;
+    background: #05060a; border: 1px solid #2a2e36; border-radius: 4px;
+    padding: 1px 6px;
+  }
+}

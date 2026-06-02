@@ -1,0 +1,104 @@
+import React, { useMemo } from 'react';
+import PropTypes from 'prop-types';
+import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.jsx';
+import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
+import { buildTicks, buildBandArcs, needleAngleDeg } from '@/modules/Fitness/lib/cycleGame/speedometerGeometry.js';
+import './CycleSpeedometer.scss';
+
+const VIEWBOX = 200;
+const CENTER = 100;
+const GAUGE_RADIUS = 80;
+
+export default function CycleSpeedometer({
+  rpm = 0, maxRpm = 120, cadenceBands = [], tickStep = 10, labelStep = 30,
+  avatar = {}, distanceMeters = 0, multiplier = 1, multiplierColor, size = 220, className = ''
+}) {
+  const ticks = useMemo(
+    () => buildTicks({ maxRpm, tickStep, labelStep, center: CENTER, gaugeRadius: GAUGE_RADIUS }),
+    [maxRpm, tickStep, labelStep]
+  );
+  const bands = useMemo(
+    () => buildBandArcs({ bands: cadenceBands, maxRpm, center: CENTER, gaugeRadius: GAUGE_RADIUS }),
+    [cadenceBands, maxRpm]
+  );
+  const needleDeg = needleAngleDeg(rpm, maxRpm);
+  const showBadge = Number.isFinite(multiplier) && multiplier > 1;
+  const badgeColor = multiplierColor || avatar.zoneColor || '#e67e22';
+
+  return (
+    <div className={`cycle-speedometer ${className}`.trim()} style={{ width: size, height: size }}>
+      <svg className="cycle-speedometer__svg" viewBox={`0 0 ${VIEWBOX} ${VIEWBOX}`} aria-hidden="true">
+        <circle className="cycle-speedometer__ring" cx={CENTER} cy={CENTER} r={GAUGE_RADIUS + 8} fill="none" />
+        {bands.map((b) => (
+          <path key={b.id} className="cycle-speedometer__band" d={b.d} stroke={b.color} fill="none" strokeWidth="5" />
+        ))}
+        {ticks.map((t) => (
+          <line
+            key={`t-${t.rpm}`}
+            className={`cycle-speedometer__tick${t.major ? ' cycle-speedometer__tick--major' : ''}`}
+            x1={t.inner.x} y1={t.inner.y} x2={t.outer.x} y2={t.outer.y}
+          />
+        ))}
+        {ticks.filter((t) => t.major).map((t) => (
+          <text
+            key={`l-${t.rpm}`}
+            className="cycle-speedometer__tick-label"
+            x={t.outer.x} y={t.outer.y - 3}
+            textAnchor="middle"
+          >{t.label}</text>
+        ))}
+        <g
+          className="cycle-speedometer__needle-group"
+          style={{ transform: `rotate(${needleDeg}deg)`, transformOrigin: `${CENTER}px ${CENTER}px`, transformBox: 'view-box' }}
+        >
+          <line className="cycle-speedometer__needle" x1={CENTER} y1={CENTER} x2={CENTER} y2={CENTER - GAUGE_RADIUS} />
+        </g>
+        <circle className="cycle-speedometer__hub" cx={CENTER} cy={CENTER} r="3" />
+      </svg>
+
+      <div className="cycle-speedometer__avatar">
+        <CircularUserAvatar
+          name={avatar.name}
+          avatarSrc={avatar.src}
+          fallbackSrc={avatar.fallbackSrc}
+          heartRate={avatar.heartRate}
+          zoneId={avatar.zoneId}
+          zoneColor={avatar.zoneColor}
+          progress={avatar.progress}
+          size={Math.round((typeof size === 'number' ? size : 220) * 0.42)}
+        />
+        {showBadge && (
+          <div className="cycle-speedometer__multiplier" data-testid="cycle-speedometer-multiplier" style={{ background: badgeColor }}>
+            ×{Number(multiplier).toFixed(multiplier % 1 === 0 ? 0 : 1)}
+          </div>
+        )}
+      </div>
+
+      <div className="cycle-speedometer__readout">
+        <div className="cycle-speedometer__rpm" data-testid="cycle-speedometer-rpm">
+          {Math.round(Number.isFinite(rpm) ? rpm : 0)}<span className="cycle-speedometer__rpm-unit"> rpm</span>
+        </div>
+        <div className="cycle-speedometer__odometer" data-testid="cycle-speedometer-odometer">
+          {formatDistance(distanceMeters)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+CycleSpeedometer.propTypes = {
+  rpm: PropTypes.number,
+  maxRpm: PropTypes.number,
+  cadenceBands: PropTypes.arrayOf(PropTypes.shape({ id: PropTypes.string, min: PropTypes.number, color: PropTypes.string })),
+  tickStep: PropTypes.number,
+  labelStep: PropTypes.number,
+  avatar: PropTypes.shape({
+    name: PropTypes.string, src: PropTypes.string, fallbackSrc: PropTypes.string,
+    heartRate: PropTypes.number, zoneId: PropTypes.string, zoneColor: PropTypes.string, progress: PropTypes.number
+  }),
+  distanceMeters: PropTypes.number,
+  multiplier: PropTypes.number,
+  multiplierColor: PropTypes.string,
+  size: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  className: PropTypes.string
+};
