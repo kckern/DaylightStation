@@ -207,6 +207,39 @@ describe('CycleChallengeOverlay — extended UI', () => {
   });
 });
 
+describe('CycleChallengeOverlay — success completion hold (§5A)', () => {
+  const successChallenge = {
+    type: 'cycle',
+    status: 'success',
+    rider: { id: 'felix', name: 'Felix' },
+    totalPhases: 3,
+    currentPhaseIndex: 3,
+    currentPhase: { hiRpm: 80, loRpm: 60 }
+  };
+
+  it('without done + no active cycleState, early-returns null (baseline)', () => {
+    const { container } = render(<CycleChallengeOverlay challenge={successChallenge} />);
+    expect(container.querySelector('.cycle-challenge-overlay')).toBeFalsy();
+  });
+
+  it('renders the overlay when the done prop is set, even with visuals off', () => {
+    const { container } = render(<CycleChallengeOverlay challenge={successChallenge} done />);
+    expect(container.querySelector('.cycle-challenge-overlay')).toBeTruthy();
+  });
+
+  it('adds the phase-done class and a completion checkmark', () => {
+    const { container } = render(<CycleChallengeOverlay challenge={successChallenge} done />);
+    expect(container.querySelector('.cycle-challenge-overlay--phase-done')).toBeTruthy();
+    expect(container.querySelector('.cycle-challenge-overlay__done-check')).toBeTruthy();
+  });
+
+  it('fills the phase-progress arc completely on done (dashoffset 0)', () => {
+    const { container } = render(<CycleChallengeOverlay challenge={successChallenge} done />);
+    const arc = container.querySelector('.cycle-challenge-overlay__phase-arc');
+    expect(parseFloat(arc.getAttribute('stroke-dashoffset'))).toBeCloseTo(0, 3);
+  });
+});
+
 describe('CycleChallengeOverlay — C3 cleanup (badge float, no boosters, no countdown)', () => {
   const c3Challenge = {
     type: 'cycle',

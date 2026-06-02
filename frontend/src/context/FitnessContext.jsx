@@ -26,6 +26,7 @@ import ParticipantFactory from '../modules/Fitness/domain/ParticipantFactory.js'
 
 // Phase 5 SSOT: Participant display map — single source for "how to render a participant"
 import { buildParticipantDisplayMap } from '../hooks/fitness/participantDisplayMap.js';
+import { buildConfiguredDeviceIdSet, filterGhostRpmDevices } from '../hooks/fitness/rpmGhostFilter.js';
 
 // Phase 5 SSOT: Zone metadata — single source for zone system info
 import { buildZoneMetadata } from '../hooks/fitness/zoneMetadata.js';
@@ -1437,13 +1438,18 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
    * Used by FitnessUsers.jsx for the unified RPM group display
    */
   const rpmDevices = React.useMemo(() => {
-    return allDevicesRaw.filter(d =>
-      d.type === 'cadence' || 
+    const candidates = allDevicesRaw.filter(d =>
+      d.type === 'cadence' ||
       d.type === 'stationary_bike' ||
-      d.type === 'ab_roller' || 
+      d.type === 'ab_roller' ||
       d.type === 'jumprope'
     );
-  }, [allDevicesRaw]);
+    // §2A: drop stray unregistered cadence sensors reading 0 RPM (drawer ghosts)
+    // so they don't render as phantom RPM meters. Registered equipment is never
+    // filtered — see rpmGhostFilter.js.
+    const configuredIds = buildConfiguredDeviceIdSet(equipmentConfig);
+    return filterGhostRpmDevices(candidates, configuredIds);
+  }, [allDevicesRaw, equipmentConfig]);
 
   /**
    * Equipment/other devices: everything that's not HR or RPM
@@ -2232,7 +2238,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     const { event, tracker } = nextChallengeToast(challengeToastTrackerRef.current, govChallenge);
     challengeToastTrackerRef.current = tracker;
     if (event) {
-      pushFitnessToast(buildChallengeToast(event, govChallenge));
+      pushFitnessToast(buildChallengeToast(event, govChallenge, {
+        // Contributor names (§5B): cycle rider / HR metUsers are user slugs —
+        // resolve against configuredUsers, the same SSOT the rider toast uses.
+        resolveUserName: (uid) => lookupUserName(configuredUsers, uid, { preferGroupLabels }),
+      }));
       getLogger().info('fitness.challenge.toast', {
         event,
         challengeId: govChallengeId,

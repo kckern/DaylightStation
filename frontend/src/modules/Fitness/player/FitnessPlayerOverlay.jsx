@@ -5,6 +5,7 @@ import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import { useRenderProfiler } from '@/hooks/fitness/useRenderProfiler.js';
 import { ChallengeOverlay, useChallengeOverlays } from './overlays/ChallengeOverlay.jsx';
 import { CycleChallengeOverlay } from './overlays/CycleChallengeOverlay.jsx';
+import { useCycleSuccessHold } from './overlays/useCycleSuccessHold.js';
 import { ChallengeOverlayDeck } from './overlays/ChallengeOverlayDeck.jsx';
 import CycleRiderSwapModal from './overlays/CycleRiderSwapModal.jsx';
 import GovernanceStateOverlay from './overlays/GovernanceStateOverlay.jsx';
@@ -213,6 +214,15 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
   // In-deck cycle overlay only when NOT promoted.
   const cycleOverlay = (cycleOverlayActive && !lockScreen.promoteCycle) ? cycleOverlayNode : null;
 
+  // §5A: on a cycle challenge success, hold a brief completion celebration
+  // (full green ring + ✓ + pulse) instead of vanishing — mirrors the HR overlay.
+  // useCycleSuccessHold captures the success snapshot so it survives the engine
+  // clearing the live challenge during the hold window.
+  const cycleSuccess = useCycleSuccessHold(isCycleChallenge ? activeChallenge : null);
+  const cycleDoneOverlay = (cycleSuccess.done && cycleSuccess.challenge && !lockScreen.promoteCycle) ? (
+    <CycleChallengeOverlay challenge={cycleSuccess.challenge} done />
+  ) : null;
+
   const primaryOverlay = lockScreen.showGovernanceOverlay ? (
     <GovernanceStateOverlay
       voiceMemoOpen={voiceMemoOverlayOpen}
@@ -250,6 +260,7 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
     challengeOverlay ||
     (!challengeOverlay && nextChallengeOverlay) ||
     cycleOverlay ||
+    cycleDoneOverlay ||
     promotedCycleLock ||
     isSwapModalOpen ||
     showFullscreenVitals ||
@@ -266,7 +277,8 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
   // tap-to-cycle; the overlays inside are pure presentation.
   const visibleChallengeContent = challengeOverlay
     || (!challengeOverlay && nextChallengeOverlay)
-    || cycleOverlay;
+    || cycleOverlay
+    || cycleDoneOverlay;
   const challengeDeck = visibleChallengeContent ? (
     <ChallengeOverlayDeck>
       {visibleChallengeContent}

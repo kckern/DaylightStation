@@ -16,6 +16,16 @@ import { ParticipantStatus } from '../../modules/Fitness/domain/types.js';
 import getLogger from '../../lib/logging/Logger.js';
 
 /**
+ * Default heart-rate floor (BPM) for UNREGISTERED devices. A stray ANT+ strap
+ * sitting in a drawer broadcasts physiologically impossible readings (e.g.
+ * 16 BPM); below this floor an unregistered device is treated as noise and
+ * dropped from the roster rather than rendered as a tappable `#<deviceId>`
+ * card. Registered users and explicitly-assigned guests are never filtered.
+ * Overridable per-instance via configure({ anonymousHrFloor }).
+ */
+export const DEFAULT_ANONYMOUS_HR_FLOOR_BPM = 60;
+
+/**
  * @typedef {Object} RosterEntry
  * @property {string} name - Participant name
  * @property {string} displayLabel - Display label
@@ -52,6 +62,9 @@ export class ParticipantRoster {
     this._activityMonitor = null;
     this._timeline = null;
     this._zoneProfileStore = null;
+
+    // HR floor (BPM) below which an UNREGISTERED device is dropped as noise.
+    this._anonymousHrFloor = DEFAULT_ANONYMOUS_HR_FLOOR_BPM;
   }
 
   /**
@@ -63,6 +76,7 @@ export class ParticipantRoster {
    * @param {Object} [config.activityMonitor]
    * @param {Object} [config.timeline]
    * @param {Object} [config.zoneProfileStore]
+   * @param {number} [config.anonymousHrFloor] - HR floor (BPM) for unregistered devices
    */
   configure(config = {}) {
     if (config.deviceManager) this._deviceManager = config.deviceManager;
@@ -71,6 +85,7 @@ export class ParticipantRoster {
     if (config.activityMonitor !== undefined) this._activityMonitor = config.activityMonitor;
     if (config.timeline !== undefined) this._timeline = config.timeline;
     if (config.zoneProfileStore !== undefined) this._zoneProfileStore = config.zoneProfileStore;
+    if (Number.isFinite(config.anonymousHrFloor)) this._anonymousHrFloor = config.anonymousHrFloor;
     this._invalidateCache();
   }
 
@@ -430,6 +445,21 @@ export class ParticipantRoster {
       || guestEntry?.occupantId
       || guestEntry?.metadata?.profileId
       || `device:${deviceId}`;
+
+    // §2B: Drop UNREGISTERED devices (no mapped user AND no guest-assignment
+    // ledger entry) whose heart rate is below the physiological floor. A stray
+    // ANT+ strap in a drawer broadcasts impossible readings (e.g. 16 BPM) that
+    // would otherwise render as a `#<deviceId>` card. Registered users and
+    // explicitly-assigned guests are exempt — only true ghosts are filtered.
+    const isUnregistered = !mappedUser && !guestEntry;
+    if (isUnregistered && rawHeartRate != null && rawHeartRate < this._anonymousHrFloor) {
+      getLogger().debug('participant.roster.dropped_unregistered_low_hr', {
+        deviceId,
+        heartRate: rawHeartRate,
+        floor: this._anonymousHrFloor,
+      });
+      return null;
+    }
 
     // Phase 4: Get entityId from ledger for entity-aware tracking
     const entityId = guestEntry?.entityId || null;

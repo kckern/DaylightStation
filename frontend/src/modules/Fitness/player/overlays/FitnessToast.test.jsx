@@ -51,6 +51,29 @@ describe('FitnessToast', () => {
     expect(onDone).toHaveBeenCalledTimes(2);
   });
 
+  it('renders contributor names and avatars when present (§5B)', () => {
+    render(
+      <FitnessToast
+        toast={{
+          id: 7,
+          icon: '🏆',
+          title: 'Challenge complete!',
+          durationMs: 4000,
+          contributors: [
+            { id: 'felix', name: 'Felix', avatarUrl: '/api/v1/static/img/users/felix' },
+            { id: 'soren', name: 'Soren', avatarUrl: '/api/v1/static/img/users/soren' },
+          ],
+        }}
+        onDone={() => {}}
+      />
+    );
+    expect(screen.getByText('Felix')).toBeTruthy();
+    expect(screen.getByText('Soren')).toBeTruthy();
+    const avatars = document.querySelectorAll('.fitness-toast__contributor-avatar');
+    expect(avatars.length).toBe(2);
+    expect(avatars[0].getAttribute('src')).toBe('/api/v1/static/img/users/felix');
+  });
+
   it('dismisses on click: fires onDone(id) once after the exit animation', () => {
     const onDone = vi.fn();
     const { container } = render(<FitnessToast toast={{ id: 9, title: 'Tap me', durationMs: 4000 }} onDone={onDone} />);

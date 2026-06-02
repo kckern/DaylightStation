@@ -8,6 +8,37 @@ import './FitnessToast.scss';
 export const TOAST_EXIT_MS = 320;
 
 /**
+ * A single contributor chip: avatar (with initials fallback on image error) + name.
+ * Used by the challenge success toast to show who earned the challenge (§5B).
+ */
+function ContributorChip({ name, avatarUrl }) {
+  const [failed, setFailed] = useState(false);
+  const initial = (name || '?').trim().slice(0, 1).toUpperCase();
+  return (
+    <div className="fitness-toast__contributor">
+      {avatarUrl && !failed ? (
+        <img
+          className="fitness-toast__contributor-avatar"
+          src={avatarUrl}
+          alt=""
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <div className="fitness-toast__contributor-avatar fitness-toast__contributor-avatar--fallback">
+          {initial}
+        </div>
+      )}
+      <span className="fitness-toast__contributor-name">{name}</span>
+    </div>
+  );
+}
+
+ContributorChip.propTypes = {
+  name: PropTypes.string,
+  avatarUrl: PropTypes.string,
+};
+
+/**
  * Ephemeral, centered, self-dismissing notification for the video view.
  * Single-slot: the parent passes the current toast (or null). A new `toast.id`
  * restarts the countdown + animation; on completion the toast fades/collapses
@@ -55,7 +86,8 @@ export default function FitnessToast({ toast, onDone }) {
 
   if (!toast) return null;
 
-  const { avatarUrl, icon, title, subtitle, variant = 'info', durationMs = DEFAULT_TOAST_DURATION_MS } = toast;
+  const { avatarUrl, icon, title, subtitle, contributors, variant = 'info', durationMs = DEFAULT_TOAST_DURATION_MS } = toast;
+  const hasContributors = Array.isArray(contributors) && contributors.length > 0;
   const className = [
     'fitness-toast',
     `fitness-toast--${variant}`,
@@ -78,6 +110,13 @@ export default function FitnessToast({ toast, onDone }) {
         <div className="fitness-toast__text">
           <div className="fitness-toast__title">{title}</div>
           {subtitle ? <div className="fitness-toast__subtitle">{subtitle}</div> : null}
+          {hasContributors ? (
+            <div className="fitness-toast__contributors">
+              {contributors.map((c) => (
+                <ContributorChip key={c.id} name={c.name} avatarUrl={c.avatarUrl} />
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
       <div className="fitness-toast__countdown">
@@ -99,6 +138,11 @@ FitnessToast.propTypes = {
     icon: PropTypes.node,
     title: PropTypes.node,
     subtitle: PropTypes.node,
+    contributors: PropTypes.arrayOf(PropTypes.shape({
+      id: PropTypes.string,
+      name: PropTypes.string,
+      avatarUrl: PropTypes.string,
+    })),
     variant: PropTypes.string,
     durationMs: PropTypes.number,
   }),
