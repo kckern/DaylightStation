@@ -40,7 +40,10 @@ async function launchCycleGameSafe(page) {
 }
 
 test.describe('Cycle game lifecycle (simulator-driven)', () => {
-  test.setTimeout(180000);
+  // A time race runs the full configured cap (120 s) at a true 1 Hz tick, plus
+  // boot + navigation + countdown + the per-iteration polling overhead. 180 s is
+  // too tight for that lifecycle; give each case generous wall-clock headroom.
+  test.setTimeout(300000);
 
   test('distance race: assign riders, race to goal, results + record saved', async ({ page }) => {
     await boot(page);
