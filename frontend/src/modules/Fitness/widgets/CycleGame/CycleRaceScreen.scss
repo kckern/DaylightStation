@@ -1,0 +1,11 @@
+.cycle-race-screen {
+  position: relative; width: 100%; height: 100%;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  background: #0e0f13; color: #e2e8f0; overflow: hidden;
+
+  &__bg { position: absolute; inset: 0; background: #000; opacity: 0.35; z-index: 0; }
+  &__clock { position: relative; z-index: 1; font-family: ui-monospace, monospace; font-size: 2.4rem; font-weight: 800; margin-top: 12px; }
+  &__chart { position: relative; z-index: 1; width: 90%; height: 38%; }
+  &__goal { stroke: #f1c40f; stroke-width: 2; stroke-dasharray: 6 5; }
+  &__speedos { position: relative; z-index: 1; display: flex; gap: 24px; justify-content: center; align-items: flex-start; flex-wrap: wrap; }
+}
