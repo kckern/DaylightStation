@@ -624,6 +624,7 @@ const Player = forwardRef(function Player(props, ref) {
     const {
       forceDocumentReload: forceDocReload,
       forceFullReload,
+      forceRemount,
       seekToIntentMs,
       refreshUrl,
       meta: _ignoredMeta,
@@ -671,7 +672,12 @@ const Player = forwardRef(function Player(props, ref) {
     // chain, causing Firefox to block autoplay after 3-4 cycles.
     // The startup deadline timer (15s) in useMediaResilience will trigger
     // another recovery attempt if hardReset fails silently.
-    if (hardResetInvoked && !hardResetErrored) {
+    //
+    // EXCEPTION: forceRemount (user-initiated retry after stall exhaustion).
+    // In-place reattach on a reaped Plex transcode session leaves the <video>
+    // wedged at readyState=0 — only a real React remount (fresh plexClientSession)
+    // recovers. Skip the in-place short-circuit and escalate to a remount.
+    if (hardResetInvoked && !hardResetErrored && !forceRemount) {
       playbackLog('player-remount', {
         payload: {
           waitKey: resolvedWaitKey,
@@ -722,7 +728,7 @@ const Player = forwardRef(function Player(props, ref) {
   // suppress the resilience overlay which would never exit startup.
   const isSelfContainedFormat = effectiveMeta?.format === 'titlecard';
 
-  const { overlayProps, state: resilienceState, onStartupSignal, cancelDeadline, requestRecovery } = useMediaResilience({
+  const { overlayProps, state: resilienceState, onStartupSignal, cancelDeadline, requestRecovery, retryFromExhausted } = useMediaResilience({
     getMediaEl: transportAdapter.getMediaEl,
     meta: effectiveMeta,
     maxVideoBitrate: effectiveMeta?.maxVideoBitrate
@@ -1024,11 +1030,18 @@ const Player = forwardRef(function Player(props, ref) {
       secondsStalled: stallExhaustion.secondsStalled,
       mediaIdentity
     }, { level: 'warn' });
-    if (typeof requestRecovery === 'function') {
+    // Use retryFromExhausted (not requestRecovery): the recovery tracker is already
+    // at maxAttempts in the exhausted state, so requestRecovery('...') would hit the
+    // early-return and do nothing. retryFromExhausted clears the tracker, forces a
+    // fresh stream URL (refreshUrl:true), and escalates to a real React remount
+    // (forceRemount:true) — the only path proven to recover a reaped transcode session.
+    if (typeof retryFromExhausted === 'function') {
+      retryFromExhausted();
+    } else if (typeof requestRecovery === 'function') {
       requestRecovery('user-requested-after-exhaustion');
     }
     stallExhaustion.dismiss();
-  }, [requestRecovery, stallExhaustion, mediaIdentity]);
+  }, [retryFromExhausted, requestRecovery, stallExhaustion, mediaIdentity]);
 
   const handleStallExhaustedDismiss = useCallback(() => {
     playbackLog('player.stall-exhausted-dismiss', {

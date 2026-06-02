@@ -207,7 +207,12 @@ export function useMediaResilience({
     actions.setStatus(STATUS.recovering);
     playbackLog('resilience-retry-from-exhausted', { waitKey: logWaitKey, seekToIntentMs: seekMs });
     if (typeof onReload === 'function') {
-      onReload({ reason: 'user-retry-exhausted', meta, waitKey, refreshUrl: true, seekToIntentMs: seekMs });
+      // forceRemount: in-place hardReset (even with refreshUrl) is unreliable on a
+      // reaped Plex transcode session — the <video> stays wedged at readyState=0.
+      // A user-initiated exhaustion retry must escalate to a real React remount,
+      // which mints a fresh transcode session (plexClientSession bumps with the
+      // remount nonce). refreshUrl stays true so any in-place fallback still refreshes.
+      onReload({ reason: 'user-retry-exhausted', meta, waitKey, refreshUrl: true, forceRemount: true, seekToIntentMs: seekMs });
     }
   }, [actions, consumeTargetTimeSeconds, logWaitKey, meta, onReload, playbackSessionKey, waitKey, targetTimeSeconds, playbackHealth.lastProgressSeconds, seconds, initialStart]);
 
@@ -545,8 +550,10 @@ export function useMediaResilience({
     onStartupSignal: NOOP, // Stable reference to avoid re-render cascades
     cancelDeadline,
     requestRecovery: triggerRecovery,
+    retryFromExhausted,
     ...(process.env.NODE_ENV !== 'production' && {
-      _testTriggerRecovery: triggerRecovery
+      _testTriggerRecovery: triggerRecovery,
+      _testRetryFromExhausted: retryFromExhausted
     })
   };
 }
