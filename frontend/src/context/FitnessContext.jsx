@@ -460,7 +460,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     nomusicLabels,
     governedLabels,
     governedTypes,
-    sessionsConfig
+    sessionsConfig,
+    cycleGameConfig
   } = React.useMemo(() => {
     const root = fitnessConfiguration?.fitness ? fitnessConfiguration.fitness : fitnessConfiguration?.plex ? fitnessConfiguration : (fitnessConfiguration || {});
     // Prefer 'content' config key, fall back to legacy 'plex' key
@@ -504,7 +505,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       nomusicLabels: normalizedNomusicLabels,
       governedLabels: normalizedGovernedLabels,
       governedTypes: normalizedGovernedTypes,
-      sessionsConfig: root?.sessions || {}
+      sessionsConfig: root?.sessions || {},
+      cycleGameConfig: root?.cycle_game || {}
     };
   }, [fitnessConfiguration]);
 
@@ -2435,6 +2437,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     secondaryUsers: [],
     deviceConfiguration: ant_devices,
     equipment: equipmentConfig,
+    cycleGameConfig,
     hrColorMap: {},
     plexConfig,
     nomusicLabels,
