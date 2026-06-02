@@ -10,10 +10,33 @@ import { readCycleGameEvents, hasEvent, lastEvent } from '#testlib/cycleGameLog.
 const BIKE = 'cycle_ace';      // cadence 49904
 const BIKE2 = 'tricycle';      // cadence 7153
 
+// The sim controller is exposed via an effect and DELETED on unmount, so it is
+// transiently undefined across full-page navigations (/fitness and
+// /fitness/module/cycle_game). Every access right after a navigation must wait
+// null-safely for it to be (re)exposed before touching its methods.
+async function waitForController(page) {
+  await page.waitForFunction(
+    () => !!(window.__fitnessSimController && typeof window.__fitnessSimController.getEquipment === 'function'),
+    null,
+    { timeout: 30000 }
+  );
+}
+
 async function boot(page) {
   await page.goto(`${FRONTEND_URL}/fitness`);
-  await page.waitForFunction(() => !!window.__fitnessSimController, null, { timeout: 30000 });
-  await page.waitForFunction(() => (window.__fitnessSimController.getEquipment?.() || []).length > 0, null, { timeout: 15000 });
+  await waitForController(page);
+  await page.waitForFunction(
+    () => ((window.__fitnessSimController?.getEquipment?.() || []).length > 0),
+    null,
+    { timeout: 15000 }
+  );
+}
+
+// Launch the cycle game and wait for the controller to be re-exposed after the
+// full-page navigation, so subsequent setEquipmentRider/setRpm calls are safe.
+async function launchCycleGameSafe(page) {
+  await launchCycleGame(page);
+  await waitForController(page);
 }
 
 test.describe('Cycle game lifecycle (simulator-driven)', () => {
@@ -25,7 +48,7 @@ test.describe('Cycle game lifecycle (simulator-driven)', () => {
     const rider1 = eq.find((e) => e.equipmentId === BIKE).eligibleUsers[0];
     const rider2 = eq.find((e) => e.equipmentId === BIKE2).eligibleUsers[0];
 
-    await launchCycleGame(page);
+    await launchCycleGameSafe(page);
     await expect(page.getByTestId('cycle-game-home')).toBeVisible({ timeout: 15000 });
 
     // assign riders + give them an HR zone so the multiplier applies
@@ -63,7 +86,7 @@ test.describe('Cycle game lifecycle (simulator-driven)', () => {
     const eq = await getEquipment(page);
     const rider1 = eq.find((e) => e.equipmentId === BIKE).eligibleUsers[0];
     const rider2 = eq.find((e) => e.equipmentId === BIKE2).eligibleUsers[0];
-    await launchCycleGame(page);
+    await launchCycleGameSafe(page);
     await expect(page.getByTestId('cycle-game-home')).toBeVisible({ timeout: 15000 });
     await setEquipmentRider(page, BIKE, rider1);
     await setEquipmentRider(page, BIKE2, rider2);
@@ -90,7 +113,7 @@ test.describe('Cycle game lifecycle (simulator-driven)', () => {
     const eq = await getEquipment(page);
     const rider1 = eq.find((e) => e.equipmentId === BIKE).eligibleUsers[0];
     const rider2 = eq.find((e) => e.equipmentId === BIKE2).eligibleUsers[0];
-    await launchCycleGame(page);
+    await launchCycleGameSafe(page);
     await expect(page.getByTestId('cycle-game-home')).toBeVisible({ timeout: 15000 });
     await setEquipmentRider(page, BIKE, rider1);
     await setEquipmentRider(page, BIKE2, rider2);
