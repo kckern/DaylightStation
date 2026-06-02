@@ -88,6 +88,9 @@ export class UserService {
         if (fitnessConfig.resting_heart_rate) {
           hydrated.resting_heart_rate = fitnessConfig.resting_heart_rate;
         }
+        if (fitnessConfig.cadence_zones) {
+          hydrated.cadence_zones = fitnessConfig.cadence_zones;
+        }
       }
 
       // Attach HR device IDs if mapped (user may have multiple monitors)
