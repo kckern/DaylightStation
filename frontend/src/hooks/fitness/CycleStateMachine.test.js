@@ -795,3 +795,76 @@ describe('Cycle SM — live rider swap on claim change', () => {
     expect(engine.challengeState.activeChallenge.rider).toBe('milo');
   });
 });
+
+describe('Cycle SM — tag-team swap mid-challenge (any non-terminal state)', () => {
+  // A tired rider must be able to hand off mid-challenge — including while the
+  // challenge is in maintain or health-locked. Previously the swap window was
+  // gated to init / ramp@phase0, so a rider-change press during maintain/locked
+  // was silently dropped (the 2026-06-01 session: milo's claim at 02:55:05 was
+  // ignored because cycleState was 'maintain').
+  const makeActiveCycle = (claim) => {
+    let nowValue = 100000;
+    const session = buildSession();
+    const engine = new GovernanceEngine(session, { now: () => nowValue, random: seededRng(42) });
+    engine.configure(POLICY);
+    engine.setMedia({ id: 'v1', type: 'episode', labels: ['cardio'] });
+    engine.triggerChallenge({ type: 'cycle', selectionId: CYCLE_SELECTION_ID, riderId: 'felix' });
+    // Make the incoming rider eligible via a standing claim (mirrors a real press).
+    engine._latestInputs.equipmentRiderMap = { cycle_ace: claim };
+    return { engine, active: engine.challengeState.activeChallenge, advance: (ms) => { nowValue += ms; } };
+  };
+
+  it('honors a swap during the maintain phase', () => {
+    const { engine, active } = makeActiveCycle('milo');
+    active.cycleState = 'maintain';
+    active.currentPhaseIndex = 1;
+    const res = engine.swapCycleRider('milo', { force: true });
+    expect(res.success).toBe(true);
+    expect(active.rider).toBe('milo');
+    // New rider re-warms up from init.
+    expect(active.cycleState).toBe('init');
+  });
+
+  it('honors a swap while health-locked (fresh legs take over a tired rider)', () => {
+    const { engine, active } = makeActiveCycle('milo');
+    active.cycleState = 'locked';
+    active.lockReason = 'health';
+    const res = engine.swapCycleRider('milo', { force: true });
+    expect(res.success).toBe(true);
+    expect(active.rider).toBe('milo');
+    expect(active.cycleState).toBe('init');
+  });
+
+  it('rejects a swap once the challenge is terminal (success)', () => {
+    const { engine, active } = makeActiveCycle('milo');
+    active.cycleState = 'success';
+    const res = engine.swapCycleRider('milo', { force: true });
+    expect(res.success).toBe(false);
+    expect(active.rider).toBe('felix');
+  });
+
+  it('reassigns the rider when the claim changes during maintain (the 02:55 bug)', () => {
+    let nowValue = 100000;
+    const session = buildSession();
+    const engine = new GovernanceEngine(session, { now: () => nowValue, random: seededRng(42) });
+    engine.configure(POLICY);
+    engine.setMedia({ id: 'v1', type: 'episode', labels: ['cardio'] });
+    engine.triggerChallenge({ type: 'cycle', selectionId: CYCLE_SELECTION_ID, riderId: 'felix' });
+    const active = engine.challengeState.activeChallenge;
+    active.cycleState = 'maintain'; // phase 0 maintain — old gate only allowed ramp@phase0
+
+    engine._latestInputs.equipmentRiderMap = { cycle_ace: 'milo' };
+    nowValue += 200;
+    engine.evaluate({
+      activeParticipants: ['felix', 'milo'],
+      userZoneMap: { felix: 'warm', milo: 'warm' },
+      zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
+      zoneInfoMap: { warm: { id: 'warm', name: 'Warm' } },
+      totalCount: 2,
+      equipmentCadenceMap: { cycle_ace: { rpm: 70, connected: true, ts: nowValue } },
+      equipmentRiderMap: { cycle_ace: 'milo' }
+    });
+
+    expect(engine.challengeState.activeChallenge.rider).toBe('milo');
+  });
+});
