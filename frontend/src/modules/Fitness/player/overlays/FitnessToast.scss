@@ -21,7 +21,7 @@
   overflow: hidden;
   // 320ms here must stay in sync with TOAST_EXIT_MS in FitnessToast.jsx
   transition: opacity 320ms ease, transform 320ms ease, max-height 320ms ease, padding 320ms ease;
-  max-height: 240px;
+  max-height: 360px; // headroom for the optional contributor row (§5B)
 
   &--entered { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 
@@ -49,6 +49,29 @@
   &__text { display: flex; flex-direction: column; gap: 2px; }
   &__title { font-size: 1.5rem; font-weight: 700; }
   &__subtitle { font-size: 1.05rem; opacity: 0.85; }
+
+  // Contributor chips on the challenge success toast (§5B): avatar + name of
+  // each user who earned the challenge (cycle rider / HR metUsers).
+  &__contributors {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    margin-top: 8px;
+  }
+  &__contributor {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  &__contributor-avatar {
+    width: 32px; height: 32px; border-radius: 50%; object-fit: cover;
+    background: rgba(255, 255, 255, 0.06);
+    flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.95rem; font-weight: 700; color: #cbd5e1;
+    &--fallback { background: rgba(255, 255, 255, 0.12); }
+  }
+  &__contributor-name { font-size: 1.05rem; font-weight: 600; }
 
   &__countdown {
     height: 4px; border-radius: 2px;

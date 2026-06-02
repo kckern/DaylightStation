@@ -48,6 +48,9 @@ const CYCLE_GAUGE_HILO_INNER_OFFSET = 6;
 const CYCLE_GAUGE_HILO_OUTER_OFFSET = 6;
 const CYCLE_GAUGE_TARGET_OFFSET = 18; // px outward from arc for the target label anchor
 
+// Completion-hold ring color (§5A) — matches the HR overlay's SUCCESS_RING_COLOR.
+const CYCLE_DONE_RING_COLOR = '#22c55e';
+
 const firstInitial = (value) => {
   if (typeof value !== 'string') return '?';
   const trimmed = value.trim();
@@ -56,7 +59,7 @@ const firstInitial = (value) => {
   return ch || '?';
 };
 
-export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
+export const CycleChallengeOverlay = ({ challenge, onRequestSwap, done = false }) => {
   const visuals = useMemo(() => getCycleOverlayVisuals(challenge), [challenge]);
 
   const logger = useMemo(
@@ -146,7 +149,10 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
     };
   }, [challenge?.currentPhase?.hiRpm, challenge?.currentPhase?.loRpm]);
 
-  if (!visuals.visible || !challenge) {
+  // On success the overlay holds briefly in a "done" celebration (§5A) even
+  // though getCycleOverlayVisuals returns OFF for terminal states — the `done`
+  // prop (driven by useCycleSuccessHold) keeps it mounted for the hold window.
+  if ((!visuals.visible && !done) || !challenge) {
     return null;
   }
 
@@ -160,6 +166,11 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
     waitingForBaseReq,
     cycleHealthPct
   } = visuals;
+
+  // Done overrides: full green completion ring at full opacity.
+  const effRingColor = done ? CYCLE_DONE_RING_COLOR : ringColor;
+  const effRingOpacity = done ? 1 : ringOpacity;
+  const effPhaseProgress = done ? 1 : phaseProgress;
 
   const totalPhases = Number.isFinite(challenge.totalPhases)
     ? Math.max(0, challenge.totalPhases)
@@ -204,8 +215,9 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
     CYCLE_RING_CENTER, CYCLE_RING_CENTER, CYCLE_RING_RADIUS, 0
   );
   const phaseArcLen = Math.PI * CYCLE_RING_RADIUS; // half-circumference
-  // Phase arc is progress ONLY — monotonic. It holds when paused.
-  const phaseArcDashOffset = phaseArcLen * (1 - phaseProgress);
+  // Phase arc is progress ONLY — monotonic. It holds when paused, and fills
+  // completely during the done celebration (effPhaseProgress === 1).
+  const phaseArcDashOffset = phaseArcLen * (1 - effPhaseProgress);
   // Sweep flag = 0 with start at 9 o'clock and end at 3 o'clock routes through
   // the bottom (6 o'clock) in SVG y-down coordinates.
   const phaseArcPath =
@@ -228,6 +240,7 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
   }
   if (lostSignal) classNames.push('cycle-challenge-overlay--lost-signal');
   if (stale)      classNames.push('cycle-challenge-overlay--stale');
+  if (done)       classNames.push('cycle-challenge-overlay--phase-done');
 
   const swapAllowed = Boolean(challenge.swapAllowed);
 
@@ -335,12 +348,12 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
           className="cycle-challenge-overlay__phase-arc"
           d={phaseArcPath}
           fill="none"
-          stroke={ringColor}
+          stroke={effRingColor}
           strokeWidth={CYCLE_RING_STROKE_WIDTH}
           strokeLinecap="round"
           strokeDasharray={`${phaseArcLen}px`}
           strokeDashoffset={`${phaseArcDashOffset}px`}
-          style={{ opacity: ringOpacity }}
+          style={{ opacity: effRingOpacity }}
         />
       </svg>
 
@@ -376,6 +389,9 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap }) => {
             </span>
           )}
         </button>
+        {done && (
+          <span className="cycle-challenge-overlay__done-check" aria-hidden="true">✓</span>
+        )}
         <CycleBaseReqIndicator
           compact
           baseReqSatisfied={Boolean(challenge.baseReqSatisfiedForRider)}
@@ -463,9 +479,12 @@ CycleChallengeOverlay.propTypes = {
     clockPaused: PropTypes.bool,
     initRemainingMs: PropTypes.number,
     rampRemainingMs: PropTypes.number,
-    cycleHealthPct: PropTypes.number
+    cycleHealthPct: PropTypes.number,
+    status: PropTypes.string
   }),
-  onRequestSwap: PropTypes.func
+  onRequestSwap: PropTypes.func,
+  // §5A: render the brief success-completion celebration (full green ring + ✓).
+  done: PropTypes.bool
 };
 
 export default CycleChallengeOverlay;
