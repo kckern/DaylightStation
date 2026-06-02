@@ -246,4 +246,61 @@ A ghost = a chosen race record's per-rider `distance_series`. The lobby's ghost 
 
 One comprehensive spec covering: config additions, `<CycleSpeedometer>` extraction, distance model + `formatDistance`, race screen (clock + chart + modular speedometer row + sidebar + ambient video), lobby, modes/opponents, ghost replay, and result persistence.
 
-**Out of scope (follow-on):** the standalone **high-scores / records screen** (browse + filter), and racing ghosts of *other* users/friends beyond what result persistence already enables.
+**Out of scope (follow-on):** racing ghosts of *other* users/friends beyond what result persistence already enables; best-of-N / series grouping.
+
+---
+
+## 12. Race lifecycle & taxonomy (added 2026-06-02; refines §5, §7, §8)
+
+### 12.1 Lifecycle state machine — independent of the HR session
+
+Races are **independent of the session lifecycle**. A race can run inside an active HR session *or* standalone (cycling with no HR straps — HR is the prerequisite for a *session*, not for a *race*). A race never alters session governance or the session timeline; it persists only its own `cycle-races` record.
+
+States: `idle` → `staged` → `countdown` → `racing` → `finished` → `results` → `idle`; plus `cancelled` (from `staged`/`racing`).
+
+- **`idle` (game home):** no race active. **One home screen** with a course/custom race picker + rider lineup **and** a Records panel (high scores / past results). This *is* the lobby (refines §5: lobby = home).
+- **`staged`:** race configured and armed; explicit **START** affordance.
+- **`countdown`:** full-screen stoplight 🔴→🟡→🟢 overlay + sound, driven by `cycle_game.start_countdown_s` (0 = skip). Simultaneous = shared GO; sequential = a per-rider countdown as each takes their turn.
+- **`racing`:** the race screen (clock + animated distance chart + speedometer row + ambient Plex video + optional music).
+- **`finished`:** goal reached / time cap hit / **all riders finished-or-DNF**.
+- **`results`:** standings with animated count-up of time/distance + sound; **saves the record**; flags a new high score; offers "race again" / "home".
+- **`cancelled`:** Cancel button (in `staged`/`racing`) → confirm modal ("Cancel & discard?") → back to `idle`, nothing saved.
+
+**Drop-out / DNF:** a rider whose RPM stays 0 beyond `cycle_game.race_idle_dnf_s` (default 20s) is marked **DNF** (their chart line flatlines earlier as a visual cue). A distance race's finish condition is therefore **"every rider finished OR DNF"** — so a quitter can't hang the race forever. DNF riders rank after finishers in standings/results.
+
+### 12.2 Taxonomy: Courses (no series)
+
+A **Course** is a named, themed race preset = the **leaderboard/ghost key**. It bundles: win-condition + goal/cap + background video + music + cadence theme. Three jobs: apples-to-apples leaderboards ("Alps · 3 km" comparable across days), the natural filter for ghosts, and the "themed group" idea — without any series machinery. **Ad-hoc custom races** are allowed (no shared leaderboard). **No heats / best-of-N / series.**
+
+### 12.3 Config delta (refines §7.1)
+
+Add to the `cycle_game` section:
+```yaml
+cycle_game:
+  # ...existing...
+  race_idle_dnf_s: 20            # NEW — RPM-0 idle seconds before a rider is DNF'd
+  courses:                       # NEW — named themed race presets (leaderboard keys)
+    - id: alps_3k
+      name: Alps · 3 km
+      win_condition: distance
+      goal_m: 3000
+      background_plex_id: "plex:123456"
+      music: null                # optional plex id / playlist
+      cadence_theme: null        # optional cadence_zones override id
+    - id: coastal_5min
+      name: Coastal · 5 min
+      win_condition: time
+      time_cap_s: 300
+      background_plex_id: "plex:234567"
+```
+
+### 12.4 Persistence / leaderboard delta (refines §8)
+
+- The race record's `race` block gains **`course_id`** (null for custom races).
+- **High scores are keyed by `course_id`** (fallback for custom races: `win_condition` + goal/cap). `records.yml` groups by `course_id`.
+- **Ghost candidates** are filtered by `course_id` (custom: by `win_condition` + goal/cap) so comparisons stay apples-to-apples.
+
+### 12.5 Plan impact
+
+- **Plan 4** (active race) now also covers: the lifecycle controller (pure state machine, testable), the countdown stoplight overlay, the results screen with count-up, DNF handling, and the `/api/v1/fitness/cycle-races` HTTP wiring (deferred from Plan 3).
+- **Plan 5** (game home) = the single-home lobby: course picker + custom builder + rider lineup + Records panel; plus `cycle_game.courses` consumption.
