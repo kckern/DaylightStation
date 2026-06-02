@@ -28,6 +28,8 @@ MEMBERSHIP_INTERVAL=60
 HEAD_FULL_PASS=900
 SWEEP_INTERVAL=3600
 STALL_REVALIDATE_COOLDOWN=120  # min seconds between stall revalidations of the SAME plex_id (anti-thrash)
+ORPHAN_SINK_TICKS=2            # consecutive watchdog ticks a slot's sink must be ABSENT before reaping its mpv (audio cross-routing guard; ~ORPHAN_SINK_TICKS*WATCHDOG_INTERVAL s of hysteresis)
+ORPHAN_REAP_COOLDOWN=20        # after an orphan-sink reap, suppress the watchdog's (blocking) respawn for this many seconds while the sink is still gone — avoids a 12s resolve_audio_device stall + log spam every tick during a sustained A2DP outage
 
 # Central cache manager — sourced for both direct-exec and source (tests).
 # Defined here, before refresh_config_cache, and NOT inside the dispatch guard.
@@ -91,23 +93,28 @@ slot_dir() { echo "$BASE_DIR/slots/$1"; }
 # intentionally not over-engineered for that case.
 logev() {
     local tag="$1" evt="$2"; shift 2
-    local kv="$*"
-    echo "[$(date '+%H:%M:%S')] [$tag] evt=$evt $kv" >&2
+    echo "[$(date '+%H:%M:%S')] [$tag] evt=$evt $*" >&2
     local slot; slot=$(slot_for_tag "$tag" 2>/dev/null || echo "")
     [[ -z "$slot" ]] && return 0
     local dir; dir="$(slot_dir "$slot")"; mkdir -p "$dir"
     local jl="$dir/events.jsonl"
     [[ -f "$jl" && $(file_size_bytes "$jl") -gt $((5*1024*1024)) ]] && mv "$jl" "$jl.1"
-    local json; json=$(kv_to_json "$kv")
+    local json; json=$(kv_to_json "$@")
     echo "{\"ts\":\"$(date -Is 2>/dev/null || date)\",\"evt\":\"$evt\",\"slot\":$slot${json:+,$json}}" >> "$jl"
 }
 
-kv_to_json() { # "a=1 b=two" -> "\"a\":\"1\",\"b\":\"two\"" (values quoted as strings)
+# Each ARG is one complete key=val pair (not a space-joined string), so values
+# may contain spaces — track titles/albums do. Backslash + double-quote are
+# JSON-escaped. Callers MUST quote a spaced value as a single arg:
+#   logev tag evt "title=La maja y el ruiseñor"   (NOT title=La maja ...)
+kv_to_json() { # key=val [key=val ...] -> "\"k\":\"v\",..." (values quoted as strings)
     local out="" tok k v
-    for tok in $1; do
+    for tok in "$@"; do
         [[ "$tok" != *=* ]] && continue
         k="${tok%%=*}"; v="${tok#*=}"
-        out+="\"$k\":\"${v//\"/\\\"}\","
+        v="${v//\\/\\\\}"   # escape backslashes first
+        v="${v//\"/\\\"}"   # then double-quotes
+        out+="\"$k\":\"$v\","
     done
     echo "${out%,}"
 }
@@ -1306,6 +1313,39 @@ mpv_get_prop() { # socket prop -> prints .data or empty
     echo "{\"command\":[\"get_property\",\"$prop\"]}" | socat - "$socket" 2>/dev/null | jq -r '.data // empty'
 }
 
+# Best-effort current-track tags from the LIVE mpv via IPC. NO network, NO cache
+# dependency: media-title is mpv's resolved display title; artist/album come
+# from the file's embedded tags (empty when absent). Tab-separated so values may
+# contain spaces. Used to enrich the track.start timeline so events carry the
+# human-readable track, not just the plex_id.
+mpv_track_tags() { # socket -> "<title>\t<artist>\t<album>"
+    local socket="$1" title artist album
+    title=$(mpv_get_prop "$socket" media-title)
+    artist=$(mpv_get_prop "$socket" metadata/by-key/artist)
+    album=$(mpv_get_prop "$socket" metadata/by-key/album)
+    printf '%s\t%s\t%s' "$title" "$artist" "$album"
+}
+
+# The audio sink this mpv is ACTUALLY configured to output to, plus whether that
+# sink is currently present in mpv's live device list. CRITICAL for detecting
+# cross-routing: when a BT headset disconnects WITHOUT the daemon tearing down
+# its mpv (a missed gdbus disconnect), mpv keeps its --audio-device string but
+# that bluez_output sink is gone from PipeWire, so the stream is rerouted to
+# whatever sink survives — i.e. one slot's audio plays on ANOTHER slot's
+# headset. present=0 means "this slot's intended output is gone; audio (if any)
+# is landing elsewhere" — the signal the per-slot track timeline alone cannot
+# give. NO network; one extra IPC round-trip, only at track boundaries.
+mpv_output_sink() { # socket -> "<audio-device>\t<present 1|0>"
+    local socket="$1" dev list present=0
+    dev=$(mpv_get_prop "$socket" audio-device)
+    if [[ -n "$dev" ]]; then
+        list=$(echo '{"command":["get_property","audio-device-list"]}' \
+            | socat - "$socket" 2>/dev/null | jq -r '.data[]?.name // empty' 2>/dev/null)
+        grep -qxF "$dev" <<< "$list" && present=1
+    fi
+    printf '%s\t%d' "$dev" "$present"
+}
+
 # PURE predicate (Unit F Part 2): has playback stalled between two watchdog
 # ticks? Stalled iff NOT paused AND both samples are present AND time-pos did
 # not advance (prev == cur). Conservative: a paused player or any missing sample
@@ -1733,7 +1773,22 @@ mpv_check_stall() {
         local last_id; last_id="$(cat "$dir/.last_track_id" 2>/dev/null || echo "")"
         if [[ "$id" != "$last_id" ]]; then
             printf '%s' "$id" > "$dir/.last_track_id"
-            logev "$tag" track.start plex_id="$id" idx="$(mpv_get_prop "$socket" playlist-pos)"
+            # Enrich the timeline with the human-readable track + the ACTUAL
+            # output sink. `|| true` on the reads: mpv_track_tags/mpv_output_sink
+            # emit no trailing delimiter, so `read` returns non-zero at EOF even
+            # though it assigns the vars — guard it so `set -e` can't abort here.
+            local _title _artist _album _sink _present
+            IFS=$'\t' read -r _title _artist _album < <(mpv_track_tags "$socket") || true
+            IFS=$'\t' read -r _sink _present < <(mpv_output_sink "$socket") || true
+            logev "$tag" track.start plex_id="$id" idx="$(mpv_get_prop "$socket" playlist-pos)" \
+                "title=$_title" "artist=$_artist" "album=$_album" "sink=$_sink" "sink_live=$_present"
+            # Audio-routing guard: the configured sink is gone from mpv's live
+            # device list, so this slot's audio is being rerouted to whatever
+            # sink survives — it can surface on ANOTHER headset (the
+            # Baby-Joy-Joy-on-yellow failure). Emit a loud, greppable event so
+            # this is detectable instead of silently mis-attributed to this slot.
+            [[ "$_present" == "0" ]] && \
+                logev "$tag" audio.sink_orphaned plex_id="$id" "sink=$_sink" slot="$slot"
         fi
     fi
 
@@ -1761,6 +1816,56 @@ mpv_check_stall() {
     loadlist_replace_preserving_pos "$slot" "$tag" || true
     logev "$tag" cache.revalidate plex_id="$id" slot="$slot" reason=playback_stall
     return 0
+}
+
+# Audio cross-routing reaper. The watchdog only reaches its ALIVE branch when
+# org.bluez Device1.Connected is true — but that is the ACL link, NOT the audio
+# path. Audio needs the A2DP bluez_output.<mac> sink, and under BT-adapter
+# contention (one adapter can't sustain two A2DP streams) the two diverge: the
+# ACL stays up while the sink vanishes. mpv then keeps its --audio-device
+# pointed at the gone sink and PipeWire MIGRATES the orphaned stream onto
+# whatever sink survives — one slot's audio plays on ANOTHER slot's headset
+# (the "Baby-Joy-Joy-on-yellow" bug). The gdbus disconnect handler that runs
+# stop_playback fast never fires here (the device never "disconnected").
+#
+# This poll-based check closes that gap: when mpv's configured sink is absent
+# from its own live device list for ORPHAN_SINK_TICKS consecutive watchdog ticks
+# (hysteresis rides out a transient A2DP renegotiation), reap mpv with the same
+# fast teardown that slams the migration window shut. Respawn is gated by
+# resolve_audio_device (it waits for the real sink and refuses otherwise), so
+# this cannot thrash into a reap/respawn loop. Tick state lives in
+# $dir/.sink_gone_ticks alongside the stall machinery.
+#
+# Conservative by design: an EMPTY sink string (mpv not reporting a device yet,
+# or an IPC hiccup) is treated as healthy — we only reap on a positively-absent
+# sink. Returns 0 IF IT REAPED (so the watchdog can `&& continue`), 1 otherwise.
+#   args: slot tag socket
+mpv_check_orphan_sink() {
+    local slot="$1" tag="$2" socket="$3" dir; dir="$(slot_dir "$slot")"
+    [[ -S "$socket" ]] || return 1
+    local sink present
+    IFS=$'\t' read -r sink present < <(mpv_output_sink "$socket") || true
+    local f="$dir/.sink_gone_ticks"
+    # Healthy (sink present) or indeterminate (empty) -> reset the counter and
+    # clear any orphan-reap respawn-suppression stamp (audio is flowing again).
+    if [[ "$present" == "1" || -z "$sink" ]]; then
+        printf '0' > "$f"
+        rm -f "$dir/.last_orphan_reap"
+        return 1
+    fi
+    # Sink positively absent: count consecutive ticks.
+    local n; n="$(cat "$f" 2>/dev/null || echo 0)"; [[ "$n" =~ ^[0-9]+$ ]] || n=0
+    n=$((n + 1)); printf '%s' "$n" > "$f"
+    if (( n >= ORPHAN_SINK_TICKS )); then
+        logev "$tag" audio.sink_reap sink="$sink" ticks="$n" slot="$slot"
+        stop_playback "$slot" "$tag" fast
+        printf '0' > "$f"
+        # Stamp the reap so the watchdog can suppress its blocking respawn while
+        # the sink is still absent (see ORPHAN_REAP_COOLDOWN).
+        printf '%s' "$(date +%s)" > "$dir/.last_orphan_reap"
+        return 0
+    fi
+    return 1
 }
 
 # Tight liveness watchdog. Every WATCHDOG_INTERVAL seconds, for each
@@ -1813,11 +1918,28 @@ mpv_watchdog() {
             local device_path conn
             device_path=$(device_path_for_mac "$mac" 2>/dev/null) || continue
             conn=$(busctl --system get-property org.bluez "$device_path" org.bluez.Device1 Connected 2>/dev/null)
-            [[ "$conn" != "b true" ]] && continue
+            if [[ "$conn" != "b true" ]]; then
+                # Device disconnected. The gdbus monitor normally fast-kills mpv
+                # here, but it can DROP disconnect events during BT flapping —
+                # leaving an orphaned mpv whose audio PipeWire migrates onto
+                # another headset. Poll-based backstop: reap any survivor.
+                if [[ -f "$dir/mpv.pid" ]] && kill -0 "$(cat "$dir/mpv.pid" 2>/dev/null)" 2>/dev/null; then
+                    log "$tag" "watchdog: device disconnected but mpv alive — reaping (missed gdbus disconnect?)"
+                    stop_playback "$slot" "$tag" fast
+                fi
+                continue
+            fi
 
             if [[ -f "$dir/mpv.pid" ]]; then
                 mpv_pid=$(cat "$dir/mpv.pid" 2>/dev/null)
                 if [[ -n "$mpv_pid" ]] && kill -0 "$mpv_pid" 2>/dev/null; then
+                    # Audio cross-routing reaper: the ACL link is up but if this
+                    # mpv's A2DP sink has vanished (adapter contention), its
+                    # stream is leaking onto another headset — reap it before the
+                    # stall/save work (no point IPC-saving into a gone sink).
+                    # Returns 0 only when it reaped; `&& continue` then skips the
+                    # rest of this tick (set -e ignores the non-last && member).
+                    mpv_check_orphan_sink "$slot" "$tag" "$dir/mpv-socket" && continue
                     # Persist position every tick (quiet — no log spam) so the
                     # fast-kill disconnect path has a fresh resume point without
                     # needing a live IPC save while the sink is being torn down.
@@ -1830,6 +1952,20 @@ mpv_watchdog() {
                     continue
                 fi
                 rm -f "$dir/mpv.pid" "$dir/mpv-socket"
+            fi
+
+            # Respawn suppression after an orphan-sink reap: if we just reaped
+            # this slot's mpv because its A2DP sink vanished, don't immediately
+            # call start_playback — resolve_audio_device would block ~12s waiting
+            # for a sink that is still gone, stalling the whole watchdog loop and
+            # spamming the log, every tick. Skip respawn for ORPHAN_REAP_COOLDOWN
+            # seconds; a real reconnect still respawns instantly via the gdbus
+            # monitor's connect handler, independent of this backstop.
+            local _reap_ts
+            _reap_ts="$(cat "$dir/.last_orphan_reap" 2>/dev/null || echo 0)"
+            [[ "$_reap_ts" =~ ^[0-9]+$ ]] || _reap_ts=0
+            if (( _reap_ts > 0 && $(date +%s) - _reap_ts < ORPHAN_REAP_COOLDOWN )); then
+                continue
             fi
 
             log "$tag" "watchdog: BT connected but mpv missing/dead — respawning (queue=$eff_queue)"

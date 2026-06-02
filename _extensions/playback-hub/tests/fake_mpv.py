@@ -37,6 +37,10 @@ import threading
 _lock = threading.Lock()
 PLAYLIST = []   # list of file paths
 POS = 0         # current playlist position
+MEDIA_TITLE = ""          # mpv `media-title`
+AUDIO_DEVICE = ""         # mpv `audio-device` (configured output sink)
+AUDIO_DEVICE_LIST = []    # mpv `audio-device-list` device names
+META = {}                 # mpv `metadata` / `metadata/by-key/<k>` (lowercase keys)
 
 
 def _read_m3u(path):
@@ -74,6 +78,21 @@ def handle_command(cmd):
                 if 0 <= POS < len(PLAYLIST):
                     return {"data": PLAYLIST[POS], "error": "success"}
                 # mpv returns an error when no file is loaded.
+                return {"error": "property unavailable"}
+            if prop == "media-title":
+                return {"data": MEDIA_TITLE, "error": "success"}
+            if prop == "audio-device":
+                return {"data": AUDIO_DEVICE, "error": "success"}
+            if prop == "audio-device-list":
+                return {"data": [{"name": n, "description": n}
+                                 for n in AUDIO_DEVICE_LIST], "error": "success"}
+            if prop == "metadata":
+                return {"data": dict(META), "error": "success"}
+            if prop.startswith("metadata/by-key/"):
+                key = prop.split("/", 2)[2].lower()
+                if key in META:
+                    return {"data": META[key], "error": "success"}
+                # mpv reports an error for an absent tag key.
                 return {"error": "property unavailable"}
             return {"data": None, "error": "success"}
 
@@ -177,12 +196,30 @@ def main():
                     help="comma-separated initial playlist entries")
     ap.add_argument("--pos", type=int, default=0,
                     help="initial playlist position")
+    ap.add_argument("--media-title", default="",
+                    help="value for mpv `media-title`")
+    ap.add_argument("--audio-device", default="",
+                    help="value for mpv `audio-device` (configured sink)")
+    ap.add_argument("--audio-device-list", default="",
+                    help="comma-separated device names for `audio-device-list`")
+    ap.add_argument("--meta", default="",
+                    help="comma-separated key=value embedded tags "
+                         "(e.g. artist=Foo,album=Bar)")
     args = ap.parse_args()
 
-    global PLAYLIST, POS
+    global PLAYLIST, POS, MEDIA_TITLE, AUDIO_DEVICE, AUDIO_DEVICE_LIST, META
     if args.playlist:
         PLAYLIST = [p for p in args.playlist.split(",") if p]
     POS = args.pos
+    MEDIA_TITLE = args.media_title
+    AUDIO_DEVICE = args.audio_device
+    if args.audio_device_list:
+        AUDIO_DEVICE_LIST = [d for d in args.audio_device_list.split(",") if d]
+    if args.meta:
+        for pair in args.meta.split(","):
+            if "=" in pair:
+                k, v = pair.split("=", 1)
+                META[k.strip().lower()] = v
 
     serve(args.socket)
 
