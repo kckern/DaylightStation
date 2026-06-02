@@ -5,6 +5,7 @@ import { CycleRaceController } from '@/modules/Fitness/lib/cycleGame/CycleRaceCo
 import { buildRaceConfigFromCourse } from '@/modules/Fitness/lib/cycleGame/cycleGameLobby.js';
 import { buildRaceRecord } from '@/modules/Fitness/lib/cycleGame/raceRecord.js';
 import { zoneMultiplierFor } from '@/modules/Fitness/lib/cycleGame/distanceModel.js';
+import { playSound } from '@/modules/Fitness/lib/cycleGame/playSound.js';
 import CycleGameHome from './CycleGameHome.jsx';
 import CountdownStoplight from './CountdownStoplight.jsx';
 import CycleRaceScreen from './CycleRaceScreen.jsx';
@@ -58,6 +59,15 @@ export default function CycleGameContainer({ onMount } = {}) {
   const hrlessMultiplier = Number.isFinite(cycleGameConfig?.hrless_multiplier)
     ? cycleGameConfig.hrless_multiplier
     : 1;
+
+  // Optional sound effects (config-driven; null/absent = silent). Kept in a ref
+  // so the countdown/race intervals read the latest without re-subscribing.
+  const sounds = useMemo(
+    () => (cycleGameConfig?.sounds && typeof cycleGameConfig.sounds === 'object' ? cycleGameConfig.sounds : {}),
+    [cycleGameConfig]
+  );
+  const soundsRef = useRef(sounds);
+  soundsRef.current = sounds;
 
   // Bikes (equipment carrying a cadence sensor and a wheel circumference).
   const bikes = useMemo(
@@ -196,11 +206,14 @@ export default function CycleGameContainer({ onMount } = {}) {
       const state = c.countdownTick();
       log.debug('cycle_game.countdown', { remaining: state.countdownRemaining });
       if (state.phase === 'racing') {
+        playSound(soundsRef.current?.go); // null = silent
         log.info('cycle_game.race_started', {
           raceId: raceMetaRef.current?.raceId,
           riders: Object.keys(state.engineState?.riders || {}),
           winCondition: raceMetaRef.current?.winCondition
         });
+      } else {
+        playSound(soundsRef.current?.countdown); // beep per tick; null = silent
       }
       applySnapshot(state);
     }, COUNTDOWN_TICK_MS);
@@ -244,6 +257,7 @@ export default function CycleGameContainer({ onMount } = {}) {
       if (state.phase === 'finished') {
         const finalState = controller.showResults();
         const standings = finalState.engineState?.standings || [];
+        playSound(soundsRef.current?.finish); // null = silent
         log.info('cycle_game.race_finished', {
           raceId: raceMetaRef.current?.raceId,
           standings: standings.map((s) => ({

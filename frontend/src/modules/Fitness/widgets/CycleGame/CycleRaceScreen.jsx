@@ -2,6 +2,7 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import CycleSpeedometer from './CycleSpeedometer.jsx';
 import { formatClock } from '@/modules/Fitness/lib/cycleGame/cycleGameLobby.js';
+import { DaylightMediaPath } from '@/lib/api.mjs';
 import './CycleRaceScreen.scss';
 
 const LINE_COLORS = ['#2ecc71', '#e67e22', '#9b59b6'];
@@ -29,7 +30,19 @@ export default function CycleRaceScreen({
 
   return (
     <div className="cycle-race-screen" data-testid="cycle-race-screen">
-      {backgroundPlexId && <div className="cycle-race-screen__bg" data-plex={backgroundPlexId} aria-hidden="true" />}
+      {/* Ambient background video — only mounts when a Plex id is configured (null = no video). */}
+      {backgroundPlexId && (
+        <video
+          className="cycle-race-screen__bg"
+          data-testid="cycle-race-bg"
+          src={DaylightMediaPath(`api/v1/play/plex/${String(backgroundPlexId).replace(/^plex:/i, '')}`)}
+          autoPlay
+          muted
+          loop
+          playsInline
+          aria-hidden="true"
+        />
+      )}
 
       <div className="cycle-race-screen__clock" data-testid="race-clock">{formatClock(clockSeconds)}</div>
 
