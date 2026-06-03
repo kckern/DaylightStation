@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { LINE_COLORS } from '@/modules/Fitness/lib/cycleGame/lineColors.js';
 import { plotStartIndex } from '@/modules/Fitness/lib/cycleGame/chartTrim.js';
 import getLogger from '@/lib/logging/Logger.js';
+import { useFitGuard } from './useFitGuard.js';
 
 const EVENT_GLYPH = { dnf: '🛑', penalty: '⏱️' };
 
@@ -12,8 +13,10 @@ const EVENT_GLYPH = { dnf: '🛑', penalty: '⏱️' };
  * Auto-scales linear→log when riders crowd together near the finish. Officiating
  * events (DNF / penalty) are re-projected onto the lane where they fired.
  */
-export default function DistanceChart({ riderIds, riders, riderLive, winCondition, goalM, events = [] }) {
+export default function DistanceChart({ riderIds, riders, riderLive, winCondition, goalM, events = [], zoneBox }) {
   const chartRef = useRef(null);
+  const fitRef = useRef(null);
+  const fitScaleVal = useFitGuard(fitRef, zoneBox, 'distanceChart');
   const [chartH, setChartH] = useState(220); // chart px height (for collision spacing)
   const lastHRef = useRef(220);
   const log = useMemo(() => getLogger().child({ component: 'cycle-distance-chart' }), []);
@@ -130,6 +133,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
 
   return (
     <div className="cycle-race-screen__chart-wrap" ref={chartRef}>
+      <div ref={fitRef} style={fitScaleVal < 1 ? { transform: `scale(${fitScaleVal})`, transformOrigin: 'top left' } : undefined}>
       <svg className="cycle-race-screen__chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
         <defs>
           {riderIds.map((id, idx) => {
@@ -244,6 +248,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
           ))}
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -260,5 +265,6 @@ DistanceChart.propTypes = {
     riderId: PropTypes.string,
     seriesIndex: PropTypes.number,
     distanceM: PropTypes.number
-  }))
+  })),
+  zoneBox: PropTypes.shape({ width: PropTypes.number, height: PropTypes.number }),
 };
