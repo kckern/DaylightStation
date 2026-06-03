@@ -72,6 +72,29 @@ describe('TelegramAdapter', () => {
       await expect(adapter.callApi('sendMessage', {})).rejects.toThrow('Bad Request');
       expect(adapter.metrics.errors).toBe(errorsBefore + 1);
     });
+
+    // axios throws on 4xx before we read response.data, so Telegram's actual reason
+    // lives on error.response.data.description. Surface it instead of just the
+    // generic axios message ("Request failed with status code 400").
+    test('logs Telegram description when axios throws on an HTTP error', async () => {
+      const axiosErr = new Error('Request failed with status code 400');
+      axiosErr.response = {
+        status: 400,
+        data: { ok: false, description: 'Bad Request: wrong type of the web page content' }
+      };
+      mockHttpClient.post.mockRejectedValue(axiosErr);
+
+      await expect(adapter.callApi('sendPhoto', { chat_id: '1', photo: 'x' })).rejects.toThrow();
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'telegram.api.error',
+        expect.objectContaining({
+          method: 'sendPhoto',
+          status: 400,
+          description: 'Bad Request: wrong type of the web page content'
+        })
+      );
+    });
   });
 
   describe('sendMessage', () => {
@@ -152,24 +175,77 @@ describe('TelegramAdapter', () => {
   });
 
   describe('sendImage', () => {
-    test('sends image with URL', async () => {
-      mockHttpClient.post.mockResolvedValue({
+    // Telegram's servers fetch remote photo URLs themselves and reject some with
+    // 400 "wrong type of the web page content" (e.g. OpenFoodFacts images). We can
+    // fetch those URLs fine, so download the bytes and upload them as a multipart
+    // buffer instead of handing Telegram the URL.
+    test('downloads remote URL and uploads as multipart buffer', async () => {
+      const bytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00]); // jpeg-ish
+      mockHttpClient.get.mockResolvedValue({
+        data: bytes,
+        headers: { 'content-type': 'image/jpeg' }
+      });
+      mockHttpClient.postForm = vi.fn().mockResolvedValue({
         data: { ok: true, result: { message_id: 789 } }
       });
 
       const result = await adapter.sendImage(
         'chat-123',
-        'https://example.com/image.jpg',
+        'https://images.openfoodfacts.org/product/front.jpg',
         'Nice photo'
       );
 
+      expect(result).toEqual({ messageId: '789', ok: true });
+      // downloaded the image as binary
+      expect(mockHttpClient.get).toHaveBeenCalledWith(
+        'https://images.openfoodfacts.org/product/front.jpg',
+        expect.objectContaining({ responseType: 'arraybuffer' })
+      );
+      // uploaded via multipart form, NOT by handing Telegram the URL
+      expect(mockHttpClient.postForm).toHaveBeenCalledWith(
+        expect.stringContaining('sendPhoto'),
+        expect.anything(),
+        expect.anything()
+      );
+      expect(mockHttpClient.post).not.toHaveBeenCalledWith(
+        expect.stringContaining('sendPhoto'),
+        expect.objectContaining({ photo: expect.stringContaining('http') })
+      );
+    });
+
+    test('falls back to URL sendPhoto if our own download fails', async () => {
+      mockHttpClient.get.mockRejectedValue(new Error('ECONNRESET'));
+      mockHttpClient.postForm = vi.fn();
+      mockHttpClient.post.mockResolvedValue({
+        data: { ok: true, result: { message_id: 321 } }
+      });
+
+      const result = await adapter.sendImage('chat-123', 'https://example.com/x.jpg', 'Cap');
+
       expect(result.ok).toBe(true);
+      expect(mockHttpClient.postForm).not.toHaveBeenCalled();
       expect(mockHttpClient.post).toHaveBeenCalledWith(
         expect.stringContaining('sendPhoto'),
-        expect.objectContaining({
-          photo: 'https://example.com/image.jpg',
-          caption: 'Nice photo'
-        })
+        expect.objectContaining({ photo: 'https://example.com/x.jpg', caption: 'Cap' })
+      );
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'telegram.image.downloadFallback',
+        expect.objectContaining({ url: 'https://example.com/x.jpg' })
+      );
+    });
+
+    test('sends a Telegram file_id via the standard API without downloading', async () => {
+      mockHttpClient.post.mockResolvedValue({
+        data: { ok: true, result: { message_id: 5 } }
+      });
+
+      const result = await adapter.sendImage('chat-123', 'AgACAgIDfileId123', 'Cap');
+
+      expect(result.ok).toBe(true);
+      expect(mockHttpClient.get).not.toHaveBeenCalled();
+      expect(mockHttpClient.post).toHaveBeenCalledWith(
+        expect.stringContaining('sendPhoto'),
+        expect.objectContaining({ photo: 'AgACAgIDfileId123', caption: 'Cap' })
       );
     });
   });
