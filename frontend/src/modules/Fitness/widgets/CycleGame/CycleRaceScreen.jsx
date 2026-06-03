@@ -10,6 +10,7 @@ import Rankings from './panels/Rankings.jsx';
 import SpeedoRow from './panels/SpeedoRow.jsx';
 import LapTable from './panels/LapTable.jsx';
 import OvalTrack from './panels/OvalTrack.jsx';
+import CameraZoom from './panels/CameraZoom.jsx';
 import RaceLayoutManager from './RaceLayoutManager.jsx';
 import './CycleRaceScreen.scss';
 
@@ -73,6 +74,9 @@ export default function CycleRaceScreen({
     ovalTrack: () => (
       <OvalTrack riderIds={riderIds} riders={riders} riderLive={riderLive}
         lapProgress={Object.fromEntries(riderIds.map((id) => [id, snapshot.ridersView[id]?.lapProgress || 0]))} />
+    ),
+    cameraZoom: () => (
+      <CameraZoom riderIds={riderIds} riders={riders} riderLive={riderLive} />
     ),
     ...(showSpeedos ? {
       speedoRow: () => (
