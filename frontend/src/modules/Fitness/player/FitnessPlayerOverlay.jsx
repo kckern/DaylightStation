@@ -201,10 +201,12 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
   // Cycle overlay shows for any active, non-terminal cycle challenge. When the
   // resolver promotes it (cycle health-lock), it renders as a centered, scaled,
   // dimmed lock screen instead of inside the deck (see promotedCycleLock below).
+  // The cycle overlay node renders for every non-success cycle state. When the
+  // challenge is locked or failed, resolveLockScreen promotes it (rendered as the
+  // centered lock stage below); otherwise it renders in-deck. Success is handled
+  // by the success-hold (cycleDoneOverlay).
   const cycleOverlayActive = isCycleChallenge
-    && activeChallenge?.status !== 'success'
-    && activeChallenge?.status !== 'failed'
-    && (activeChallenge?.cycleState !== 'locked' || lockScreen.variety === 'cycle-health');
+    && activeChallenge?.status !== 'success';
   const cycleOverlayNode = cycleOverlayActive ? (
     <CycleChallengeOverlay
       challenge={activeChallenge}
@@ -233,7 +235,11 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
   // Promoted cycle health-lock: the cycle overlay becomes a centered, ~2x, dimmed
   // lock screen covering everything else. Single owner via resolveLockScreen.
   const promotedCycleLock = (lockScreen.promoteCycle && cycleOverlayNode) ? (
-    <div className="cycle-lock-screen" role="dialog" aria-label="Cycle challenge locked">
+    <div
+      className={`cycle-lock-screen${lockScreen.variety === 'cycle-fail' ? ' cycle-lock-screen--fail' : ''}`}
+      role="dialog"
+      aria-label={lockScreen.variety === 'cycle-fail' ? 'Cycle challenge failed' : 'Cycle challenge locked'}
+    >
       <div className="cycle-lock-screen__scrim" />
       <div className="cycle-lock-screen__stage">
         {cycleOverlayNode}
@@ -245,9 +251,10 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
   ) : null;
 
   useEffect(() => {
-    if (lockScreen.variety === 'cycle-health') {
-      cycleLogger.info('health-lock-shown', {
+    if (lockScreen.promoteCycle) {
+      cycleLogger.info('cycle-lock-shown', {
         challengeId: activeChallenge?.id || null,
+        variety: lockScreen.variety,
         audioTrack: lockScreen.audioTrack
       });
     }
