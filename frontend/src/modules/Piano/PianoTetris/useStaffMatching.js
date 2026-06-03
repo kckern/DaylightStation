@@ -12,34 +12,111 @@ export const REPEAT_INTERVAL = 100;      // ms between repeated actions
 // Actions that should NOT repeat on hold (one-shot per key press)
 const NO_REPEAT_ACTIONS = new Set(['hardDrop', 'hold', 'jump', 'duck']);
 
+// ─── Progression (line-driven difficulty ramp) ──────────────────
+
+/**
+ * Hardcoded fallback for PianoTetris musical progression. Each piano.yml
+ * `games.tetris.progression` field overrides the matching default; anything
+ * omitted falls back here. Thresholds are cumulative lines cleared in the
+ * current game (resets each game). Treble is the always-on baseline.
+ */
+export const DEFAULT_PROGRESSION = {
+  thresholds: { treble: 1, bass: 2, dyad: 3, triad: 5, accidentals: 7 },
+  treble_range: [60, 81], // C4–A5: entirely treble clef (baseline)
+  bass_range: [48, 81],   // C3–A5: low notes (<C4) render in bass clef
+};
+
+const NOTES_PER_COMPLEXITY = { single: 1, dyad: 2, triad: 3 };
+
+/**
+ * Resolve which musical features are active for a given lines-cleared count.
+ * Each threshold ADDS to what's available — it does not replace. So once
+ * dyads/triads unlock, they join the pool of possible chord sizes alongside
+ * singles, rather than forcing every staff to that size.
+ *
+ * @param {number} linesCleared - cumulative lines cleared this game
+ * @param {Object} [config] - partial override of DEFAULT_PROGRESSION
+ * @returns {{ noteRange: [number, number], unlockedChordSizes: number[], whiteKeysOnly: boolean }}
+ */
+export function computeProgression(linesCleared, config = {}) {
+  const thresholds = { ...DEFAULT_PROGRESSION.thresholds, ...(config.thresholds || {}) };
+  const trebleRange = config.treble_range ?? DEFAULT_PROGRESSION.treble_range;
+  const bassRange = config.bass_range ?? DEFAULT_PROGRESSION.bass_range;
+
+  const noteRange = linesCleared >= thresholds.bass ? bassRange : trebleRange;
+
+  const unlockedChordSizes = [1];
+  if (linesCleared >= thresholds.dyad) unlockedChordSizes.push(2);
+  if (linesCleared >= thresholds.triad) unlockedChordSizes.push(3);
+
+  const whiteKeysOnly = linesCleared < thresholds.accidentals;
+
+  return { noteRange, unlockedChordSizes, whiteKeysOnly };
+}
+
+/**
+ * Randomly assign a chord size to each staff from the unlocked pool. Each
+ * staff is independently one of the unlocked sizes (additive mix), so a board
+ * is a random blend rather than a uniform wall of the newest-unlocked size.
+ *
+ * @param {number[]} unlockedSizes - chord sizes currently allowed (e.g. [1,2,3])
+ * @param {number} numStaves - how many staves to fill
+ * @returns {number[]} per-staff chord sizes
+ */
+export function assignChordSizes(unlockedSizes, numStaves) {
+  const pool = unlockedSizes.length > 0 ? unlockedSizes : [1];
+  const sizes = [];
+  for (let i = 0; i < numStaves; i++) {
+    sizes.push(pool[Math.floor(Math.random() * pool.length)]);
+  }
+  return sizes;
+}
+
 // ─── Pure Functions ─────────────────────────────────────────────
+
+/**
+ * Resolve per-staff note counts from a complexity spec.
+ * @param {'single'|'dyad'|'triad'|number[]} complexity - string preset, or a
+ *   per-staff array of counts (length is padded/truncated to ACTIONS.length).
+ * @returns {number[]} count for each action/staff
+ */
+function resolveCounts(complexity) {
+  if (Array.isArray(complexity)) {
+    return ACTIONS.map((_, i) => complexity[i] ?? 1);
+  }
+  const count = NOTES_PER_COMPLEXITY[complexity] || 1;
+  return ACTIONS.map(() => count);
+}
 
 /**
  * Generate target pitch assignments for each action.
  *
  * @param {[number, number]} noteRange - [low, high] MIDI note range (inclusive)
- * @param {'single'|'dyad'|'triad'} complexity - how many notes per action
+ * @param {'single'|'dyad'|'triad'|number[]} complexity - notes per action: a
+ *   string preset applied to every staff, or a per-staff array of counts.
  * @param {boolean} whiteKeysOnly - if true, only use white keys (no sharps/flats)
  * @returns {Object<string, number[]>} mapping of action name to array of target MIDI pitches
  */
 export function generateTargets(noteRange, complexity = 'single', whiteKeysOnly = false) {
-  const notesPerAction = { single: 1, dyad: 2, triad: 3 };
-  let count = notesPerAction[complexity] || 1;
+  let counts = resolveCounts(complexity);
 
   const available = shuffle([...buildNotePool(noteRange, whiteKeysOnly)]);
 
-  const totalNeeded = count * ACTIONS.length;
+  let totalNeeded = counts.reduce((sum, c) => sum + c, 0);
 
+  // Not enough distinct notes for the requested chords — fall back to singles.
   if (available.length < totalNeeded) {
-    count = 1;
+    counts = ACTIONS.map(() => 1);
+    totalNeeded = counts.reduce((sum, c) => sum + c, 0);
   }
 
   const targets = {};
+  let idx = 0;
   for (let a = 0; a < ACTIONS.length; a++) {
-    const start = a * count;
     const pitches = [];
-    for (let i = 0; i < count; i++) {
-      pitches.push(available[(start + i) % available.length]);
+    for (let i = 0; i < counts[a]; i++) {
+      pitches.push(available[idx % available.length]);
+      idx++;
     }
     targets[ACTIONS[a]] = pitches;
   }

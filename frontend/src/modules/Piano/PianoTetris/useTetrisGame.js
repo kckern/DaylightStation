@@ -14,7 +14,13 @@ import {
   getGravityMs,
   generateBag,
 } from './tetrisEngine.js';
-import { generateTargets, useStaffMatching } from './useStaffMatching.js';
+import {
+  generateTargets,
+  useStaffMatching,
+  computeProgression,
+  assignChordSizes,
+  ACTIONS,
+} from './useStaffMatching.js';
 
 // ─── Constants ──────────────────────────────────────────────────
 
@@ -65,6 +71,7 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
   }, [gameState]);
 
   const levels = tetrisConfig?.levels ?? [];
+  const progression = tetrisConfig?.progression;
 
   // Timer refs
   const gravityRef = useRef(null);
@@ -75,6 +82,8 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
 
   // Targets for staff matching
   const [targets, setTargets] = useState(null);
+  // Active note range driven by the progression — also feeds the keyboard display
+  const [activeNoteRange, setActiveNoteRange] = useState(null);
 
   // ─── Cleanup ────────────────────────────────────────────────
 
@@ -88,14 +97,16 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
 
   // ─── Target Generation ──────────────────────────────────────
 
-  const regenerateTargets = useCallback((levelConfig) => {
-    if (!levelConfig) return;
-    const noteRange = levelConfig.note_range || [60, 72];
-    const complexity = levelConfig.complexity || 'single';
-    const whiteKeysOnly = levelConfig.white_keys_only ?? false;
-    const newTargets = generateTargets(noteRange, complexity, whiteKeysOnly);
+  // Musical difficulty ramps with cumulative lines cleared (see computeProgression):
+  // treble → bass clef → dyads → triads → accidentals, each ADDED to the mix.
+  // Chord sizes are a random per-staff blend of the unlocked sizes, not uniform.
+  const regenerateTargets = useCallback((linesCleared) => {
+    const { noteRange, unlockedChordSizes, whiteKeysOnly } = computeProgression(linesCleared, progression);
+    const sizes = assignChordSizes(unlockedChordSizes, ACTIONS.length);
+    const newTargets = generateTargets(noteRange, sizes, whiteKeysOnly);
     setTargets(newTargets);
-  }, []);
+    setActiveNoteRange(noteRange);
+  }, [progression]);
 
   // ─── Spawn Next Piece + Target Rotation ─────────────────────
 
@@ -179,13 +190,12 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
     lastSpawnCountRef.current = gameState._spawnCount;
 
     const levelConfig = levels[gameState.level] ?? levels[0];
-    if (!levelConfig) return;
-    const rotation = levelConfig.target_rotation || 'piece';
+    const rotation = levelConfig?.target_rotation || 'piece';
 
     if (rotation === 'piece') {
-      regenerateTargets(levelConfig);
+      regenerateTargets(gameState.linesCleared);
     }
-  }, [gameState.phase, gameState._spawnCount, gameState.level, levels, regenerateTargets]);
+  }, [gameState.phase, gameState._spawnCount, gameState.level, gameState.linesCleared, levels, regenerateTargets]);
 
   // ─── Gravity Tick ───────────────────────────────────────────
 
@@ -243,7 +253,7 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
     if (rotation === 'timer') {
       const interval = levelConfig.target_change_ms || 5000;
       targetTimerRef.current = setInterval(() => {
-        regenerateTargets(levelConfig);
+        regenerateTargets(gameStateRef.current.linesCleared);
       }, interval);
 
       return () => {
@@ -367,7 +377,8 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
       const levelConfig = levels[prev.level] ?? levels[0];
       if (levelConfig?.target_rotation === 'match') {
         // Schedule target regeneration outside setState
-        setTimeout(() => regenerateTargets(levelConfig), 0);
+        const lines = prev.linesCleared;
+        setTimeout(() => regenerateTargets(lines), 0);
       }
 
       return { ...prev, currentPiece: result };
@@ -449,13 +460,10 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
   const prevPhaseRef = useRef(gameState.phase);
   useEffect(() => {
     if (prevPhaseRef.current !== 'PLAYING' && gameState.phase === 'PLAYING') {
-      const levelConfig = levels[gameState.level] ?? levels[0];
-      if (levelConfig) {
-        regenerateTargets(levelConfig);
-      }
+      regenerateTargets(gameState.linesCleared);
     }
     prevPhaseRef.current = gameState.phase;
-  }, [gameState.phase, gameState.level, levels, regenerateTargets]);
+  }, [gameState.phase, gameState.linesCleared, regenerateTargets]);
 
   // ─── Game Over Auto-Dismiss ─────────────────────────────────
 
@@ -472,6 +480,7 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
       logger.info('tetris.game-dismissed', { score: gameStateRef.current.score, lines: gameStateRef.current.linesCleared });
       setGameState(createInitialGameState());
       setTargets(null);
+      setActiveNoteRange(null);
       lastSpawnCountRef.current = 0;
     }, GAME_OVER_DISPLAY_MS);
 
@@ -486,6 +495,7 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
     clearAllTimers();
     setGameState(createInitialGameState());
     setTargets(null);
+    setActiveNoteRange(null);
     lastSpawnCountRef.current = 0;
     logger.info('tetris.game-deactivated', {});
   }, [clearAllTimers, logger]);
@@ -510,6 +520,7 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
     countdown: gameState.countdown,
     spawnCount: gameState._spawnCount,
     targets,
+    activeNoteRange,
     matchedActions,
     startGame,
     deactivate,

@@ -25,13 +25,17 @@ export function PianoTetris({ activeNotes, gameConfig, onDeactivate }) {
   const game = useTetrisGame(activeNotes, gameConfig);
   useAutoGameLifecycle(game.phase, game.startGame, onDeactivate, logger, 'tetris');
 
-  // Calculate keyboard range from current level's note_range with padding
+  // Keyboard range follows the progression's active note range (widens when
+  // bass clef unlocks); falls back to the level's note_range, then C4–C5.
   const levels = gameConfig?.levels ?? [];
   const currentLevelConfig = levels[game.level] ?? levels[0];
-  const { startNote, endNote } = useMemo(() => {
-    const noteRange = currentLevelConfig?.note_range ?? [60, 72];
-    return computeKeyboardRange(noteRange);
-  }, [currentLevelConfig]);
+  const noteRange = game.activeNoteRange ?? currentLevelConfig?.note_range ?? [60, 72];
+  const rangeLow = noteRange[0];
+  const rangeHigh = noteRange[1];
+  const { startNote, endNote } = useMemo(
+    () => computeKeyboardRange([rangeLow, rangeHigh]),
+    [rangeLow, rangeHigh],
+  );
 
   // Expose game state for automated testing (localhost only)
   useEffect(() => {
