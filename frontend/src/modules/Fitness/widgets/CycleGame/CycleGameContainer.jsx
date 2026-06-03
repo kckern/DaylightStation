@@ -13,6 +13,7 @@ import { usePersistentVolume } from '@/modules/Fitness/nav/usePersistentVolume.j
 import CycleGameHome from './CycleGameHome.jsx';
 import CountdownStoplight from './CountdownStoplight.jsx';
 import CycleRaceScreen from './CycleRaceScreen.jsx';
+import CycleEventToast from './CycleEventToast.jsx';
 import RaceResults from './RaceResults.jsx';
 import RaceRecap from './RaceRecap.jsx';
 import './CycleGameContainer.scss';
@@ -131,13 +132,10 @@ export default function CycleGameContainer({ onMount } = {}) {
     return getDisplayLabel?.(name, { userId }) || name;
   }, [getUserVitals, getUserByName, getDisplayName, getDisplayLabel]);
 
-  // Per-equipment abuse defaults (used when a bike doesn't define its own).
-  const abuseMaxRpmDefault = Number.isFinite(cycleGameConfig?.abuse_max_rpm)
-    ? cycleGameConfig.abuse_max_rpm
-    : null;
-  const abuseDurationDefault = Number.isFinite(cycleGameConfig?.abuse_max_rpm_duration_s)
-    ? cycleGameConfig.abuse_max_rpm_duration_s
-    : null;
+  // Officiating thresholds (shared by the race config and the event toasts so
+  // the on-screen copy always matches the rule that fired).
+  const raceIdleDnfS = Number.isFinite(cycleGameConfig?.race_idle_dnf_s) ? cycleGameConfig.race_idle_dnf_s : 20;
+  const hotStartPenaltyS = Number.isFinite(cycleGameConfig?.hot_start_penalty_s) ? cycleGameConfig.hot_start_penalty_s : 0;
 
   // Resolve the currently-claimed riders (bikes with a getEquipmentRider claim).
   const buildRiders = useCallback(() => {
@@ -145,17 +143,11 @@ export default function CycleGameContainer({ onMount } = {}) {
     bikes.forEach((bike) => {
       const userId = session?.getEquipmentRider?.(bike.id) || null;
       if (!userId) return;
-      const maxRpm = Number.isFinite(bike.max_rpm) ? bike.max_rpm : abuseMaxRpmDefault;
-      const maxRpmDurationS = Number.isFinite(bike.max_rpm_duration_s)
-        ? bike.max_rpm_duration_s
-        : abuseDurationDefault;
       riders.push({
         userId,
         displayName: resolveDisplayName(userId),
         equipmentId: bike.id,
-        wheelCircumferenceM: Number.isFinite(bike.wheel_circumference_m) ? bike.wheel_circumference_m : 0,
-        maxRpm: Number.isFinite(maxRpm) ? maxRpm : null,
-        maxRpmDurationS: Number.isFinite(maxRpmDurationS) ? maxRpmDurationS : null
+        wheelCircumferenceM: Number.isFinite(bike.wheel_circumference_m) ? bike.wheel_circumference_m : 0
       });
     });
     // A selected ghost replays its whole recorded field as competitors.
@@ -173,7 +165,7 @@ export default function CycleGameContainer({ onMount } = {}) {
       });
     }
     return riders;
-  }, [bikes, session, resolveDisplayName, abuseMaxRpmDefault, abuseDurationDefault, ghost]);
+  }, [bikes, session, resolveDisplayName, ghost]);
 
   // ── lifecycle state ──────────────────────────────────────────────────────
   const [phase, setPhase] = useState('idle'); // idle | staging | countdown | racing | results
@@ -191,8 +183,14 @@ export default function CycleGameContainer({ onMount } = {}) {
   const startCountdownRef = useRef(3);
   const savedRef = useRef(false);
   const prevDnfRef = useRef(new Set());
-  const prevDqRef = useRef(new Set());
   const prevPenalizedRef = useRef(new Set());
+  // Officiating events (DNF / hot-start penalty) accumulated over the race —
+  // drives the persistent chart markers and the results legend.
+  const [raceEvents, setRaceEvents] = useState([]);
+  const eventIdRef = useRef(0);
+  // Single-slot, self-dismissing event toast + a queue for events that pile up.
+  const [eventToast, setEventToast] = useState(null);
+  const toastQueueRef = useRef([]);
 
   // Live-data refs so the race-tick interval can read the freshest
   // session/vitals without re-subscribing. The fitness context value changes
@@ -214,6 +212,30 @@ export default function CycleGameContainer({ onMount } = {}) {
     else if (state.phase === 'finished' || state.phase === 'results') setPhase('results');
     else if (state.phase === 'cancelled') setPhase('idle');
   }, []);
+
+  // Pop the finished toast and immediately show the next queued one (if any).
+  const onEventToastDone = useCallback(() => {
+    setEventToast(toastQueueRef.current.shift() || null);
+  }, []);
+
+  // Record an officiating event: append it for the chart markers + results
+  // legend, and enqueue a self-explaining toast (single-slot; queue overflow).
+  const recordRaceEvent = useCallback((type, userId, state) => {
+    const rider = state.engineState?.riders?.[userId] || {};
+    const seriesIndex = Math.max(0, (rider.distanceSeries?.length || 1) - 1);
+    const distanceM = rider.cumulativeDistanceM || 0;
+    const displayName = rider.displayName || userId;
+    const id = (eventIdRef.current += 1);
+    setRaceEvents((list) => [...list, { id, type, riderId: userId, displayName, seriesIndex, distanceM }]);
+    const toast = type === 'dnf'
+      ? { id, variant: 'dnf', icon: '🛑', title: `${displayName} — Did Not Finish`, subtitle: `Stopped pedaling for ${raceIdleDnfS}s` }
+      : { id, variant: 'penalty', icon: '⏱️', title: `${displayName} — False Start`, subtitle: `Pedaling before the green · ${hotStartPenaltyS}s penalty` };
+    // Show now if the slot is free, otherwise queue behind the current toast.
+    setEventToast((cur) => {
+      if (cur) { toastQueueRef.current.push(toast); return cur; }
+      return toast;
+    });
+  }, [raceIdleDnfS, hotStartPenaltyS]);
 
   // People to choose from on the home screen: the registered users, mapped to
   // the avatar/HR shape the lobby renders. Users with an active heart rate are
@@ -479,8 +501,8 @@ export default function CycleGameContainer({ onMount } = {}) {
       zones,
       hrlessMultiplier,
       startCountdownS: Number.isFinite(cycleGameConfig?.start_countdown_s) ? cycleGameConfig.start_countdown_s : 3,
-      raceIdleDnfS: Number.isFinite(cycleGameConfig?.race_idle_dnf_s) ? cycleGameConfig.race_idle_dnf_s : 20,
-      hotStartPenaltyS: Number.isFinite(cycleGameConfig?.hot_start_penalty_s) ? cycleGameConfig.hot_start_penalty_s : 0,
+      raceIdleDnfS,
+      hotStartPenaltyS,
       backgroundPlexId: cycleGameConfig?.default_background ?? null,
       intervalMs: RACE_TICK_MS
     });
@@ -505,8 +527,10 @@ export default function CycleGameContainer({ onMount } = {}) {
     startCountdownRef.current = cfg.startCountdownS;
     savedRef.current = false;
     prevDnfRef.current = new Set();
-    prevDqRef.current = new Set();
     prevPenalizedRef.current = new Set();
+    setRaceEvents([]);
+    setEventToast(null);
+    toastQueueRef.current = [];
 
     const controller = new CycleRaceController(cfg);
     controllerRef.current = controller;
@@ -531,7 +555,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     } else {
       applySnapshot(controller.startCountdown());
     }
-  }, [raceType, raceValueM, raceValueS, distanceDefaultM, timeDefaultS, stagingBufferMs, ghost, buildRiders, zones, hrlessMultiplier, cycleGameConfig, applySnapshot, log]);
+  }, [raceType, raceValueM, raceValueS, distanceDefaultM, timeDefaultS, stagingBufferMs, ghost, buildRiders, zones, hrlessMultiplier, cycleGameConfig, raceIdleDnfS, hotStartPenaltyS, applySnapshot, log]);
 
   // Staging seconds tick (display only). Cleared when leaving the staging phase.
   useEffect(() => {
@@ -588,7 +612,8 @@ export default function CycleGameContainer({ onMount } = {}) {
       });
       const state = controller.tick(inputs);
 
-      // DNF detection — diff the controller dnf set.
+      // DNF detection — diff the controller dnf set; a new entry logs + raises
+      // an on-screen event (toast + persistent chart marker).
       const dnfSet = new Set(state.dnf || []);
       dnfSet.forEach((userId) => {
         if (!prevDnfRef.current.has(userId)) {
@@ -597,24 +622,13 @@ export default function CycleGameContainer({ onMount } = {}) {
             userId,
             elapsedS: state.engineState?.elapsedS ?? null
           });
+          recordRaceEvent('dnf', userId, state);
         }
       });
       prevDnfRef.current = dnfSet;
 
-      // DQ detection — diff the controller dq set (sustained over-max RPM abuse).
-      const dqSet = new Set(state.dq || []);
-      dqSet.forEach((userId) => {
-        if (!prevDqRef.current.has(userId)) {
-          log.warn('cycle_game.rider_dq', {
-            raceId: raceMetaRef.current?.raceId,
-            userId,
-            elapsedS: state.engineState?.elapsedS ?? null
-          });
-        }
-      });
-      prevDqRef.current = dqSet;
-
-      // Hot-start penalty detection — diff the controller penalized set.
+      // Hot-start penalty detection — diff the controller penalized set; a new
+      // entry logs + raises an on-screen event.
       const penalizedSet = new Set(state.penalized || []);
       penalizedSet.forEach((userId) => {
         if (!prevPenalizedRef.current.has(userId)) {
@@ -624,6 +638,7 @@ export default function CycleGameContainer({ onMount } = {}) {
             reason: 'hot-start',
             elapsedS: state.engineState?.elapsedS ?? null
           });
+          recordRaceEvent('penalty', userId, state);
         }
       });
       prevPenalizedRef.current = penalizedSet;
@@ -649,7 +664,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     return () => clearInterval(id);
     // Live data is read from refs (sessionRef/getUserVitalsRef) so the interval
     // is set up once per racing phase and never starved by context churn.
-  }, [phase, applySnapshot, log]);
+  }, [phase, applySnapshot, recordRaceEvent, log]);
 
   // ── save the record once on results ──────────────────────────────────────
   useEffect(() => {
@@ -905,7 +920,9 @@ export default function CycleGameContainer({ onMount } = {}) {
           riderLive={riderLive}
           cadenceBands={cadenceBands}
           backgroundPlexId={raceMetaRef.current?.backgroundPlexId || null}
+          events={raceEvents}
         />
+        <CycleEventToast toast={eventToast} onDone={onEventToastDone} />
         <button type="button" data-testid="cycle-game-cancel" className="cycle-game-container__cancel" onClick={onCancel}>
           Cancel
         </button>
@@ -922,7 +939,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         riders={engineState.riders || {}}
         winCondition={engineState.winCondition || raceMetaRef.current?.winCondition || 'distance'}
         dnf={snapshot?.dnf || []}
-        dq={snapshot?.dq || []}
+        penalized={raceEvents.filter((e) => e.type === 'penalty').map((e) => e.riderId)}
       />
       <button type="button" data-testid="cycle-game-start" className="cycle-game-container__start" onClick={backToHome}>
         Back to home

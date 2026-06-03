@@ -14,26 +14,17 @@ export class CycleRaceController {
     this.engine = null;
     this.dnf = new Set();
     this._idle = new Map();
-    // Abuse / disqualification: RPM sustained above an equipment's max (e.g.
-    // spinning the wheel by hand) for its configured duration → DQ.
-    this.dq = new Set();
-    this._over = new Map(); // userId -> consecutive seconds over max rpm
     // Hot-start penalty: a rider already pedalling at the green light has their
     // RPM meter disabled for this many seconds (no jumping the gun). 0 = off.
     this.hotStartPenaltyS = Number.isFinite(config.hotStartPenaltyS) ? config.hotStartPenaltyS : 0;
     this._penalty = new Map(); // userId -> remaining penalty seconds
     this._firstTick = true;
-    this._riderLimits = new Map();
-    // Ghost riders replay a recording — they are exempt from idle/DNF, abuse DQ,
-    // and the hot-start penalty (none of which apply to a replay).
+    // Ghost riders replay a recording — they are exempt from idle/DNF and the
+    // hot-start penalty (neither applies to a replay).
     this.ghosts = new Set();
     (Array.isArray(config.riders) ? config.riders : []).forEach((r) => {
-      if (r && r.userId) {
-        if (Array.isArray(r.ghostSeries) && r.ghostSeries.length > 0) this.ghosts.add(r.userId);
-        this._riderLimits.set(r.userId, {
-          maxRpm: Number.isFinite(r.maxRpm) ? r.maxRpm : null,
-          durationS: Number.isFinite(r.maxRpmDurationS) ? r.maxRpmDurationS : null
-        });
+      if (r && r.userId && Array.isArray(r.ghostSeries) && r.ghostSeries.length > 0) {
+        this.ghosts.add(r.userId);
       }
     });
   }
@@ -76,7 +67,7 @@ export class CycleRaceController {
     const filtered = {};
     for (const userId of Object.keys(before.riders)) {
       // Ghosts are driven by their recording — pass through untouched, no idle/
-      // DNF, abuse, or penalty bookkeeping.
+      // DNF or penalty bookkeeping.
       if (this.ghosts.has(userId)) {
         filtered[userId] = inputs[userId] || {};
         continue;
@@ -94,16 +85,7 @@ export class CycleRaceController {
       const finished = before.riders[userId].finishTimeS != null;
       if (!finished && nextIdle >= this.raceIdleDnfS) this.dnf.add(userId);
 
-      // Over-RPM abuse → DQ (sustained rpm above the bike's max for its duration).
-      const limit = this._riderLimits.get(userId);
-      if (limit && Number.isFinite(limit.maxRpm) && limit.maxRpm > 0
-          && Number.isFinite(limit.durationS) && limit.durationS > 0) {
-        const over = rpm > limit.maxRpm ? (this._over.get(userId) || 0) + intervalS : 0;
-        this._over.set(userId, over);
-        if (!finished && over >= limit.durationS) this.dq.add(userId);
-      }
-
-      filtered[userId] = (this.dnf.has(userId) || this.dq.has(userId) || penalized)
+      filtered[userId] = (this.dnf.has(userId) || penalized)
         ? { rpm: 0, zoneId: input.zoneId ?? null }
         : input;
     }
@@ -116,7 +98,7 @@ export class CycleRaceController {
     const s = this.engine.getState();
     if (this.config.winCondition === 'time') return s.finished;
     return Object.values(s.riders).every(
-      (r) => r.finishTimeS != null || this.dnf.has(r.userId) || this.dq.has(r.userId)
+      (r) => r.finishTimeS != null || this.dnf.has(r.userId)
     );
   }
 
@@ -135,7 +117,6 @@ export class CycleRaceController {
       phase: this.phase,
       countdownRemaining: this.countdownRemaining,
       dnf: [...this.dnf],
-      dq: [...this.dq],
       penalized: [...this._penalty.entries()].filter(([, s]) => s > 0).map(([id]) => id),
       engineState: this.engine ? this.engine.getState() : null
     };
