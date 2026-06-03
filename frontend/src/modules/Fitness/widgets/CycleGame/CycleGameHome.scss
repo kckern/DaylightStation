@@ -1,35 +1,32 @@
-// Cycle-game lobby. Cohesive with the rest of the cycle-game widgets:
-// dark fitness surfaces (#0e0f13 base, #101218 panels, #2a2e36 borders),
-// monospace accents, zone-blue (#7aa2ff) highlight.
+// Cycle-game lobby — "Arcade Synthwave Race-Day".
+// Deep indigo-black surfaces, neon magenta/cyan chrome, a glowing start-line
+// behind the grid, scanline atmosphere. Consumes the shared cgTokens palette.
+// Roboto Condensed is canon (no new font).
 
 @use '../../shared/styles/rpm-device' as rpm;
-
-$cgh-bg: #0e0f13;
-$cgh-panel: #101218;
-$cgh-panel-2: #15171c;
-$cgh-border: #2a2e36;
-$cgh-border-soft: #1c2027;
-$cgh-text: #e2e8f0;
-$cgh-muted: #8b93a1;
-$cgh-faint: #5b626e;
-$cgh-accent: #7aa2ff;
-$cgh-accent-strong: #2563eb;
+@use './cgTokens' as t;
 
 .cycle-game-home {
+  position: relative;
   display: flex;
-  gap: 20px;
+  gap: 28px;
   height: 100%;
   padding: 24px;
-  background: $cgh-bg;
-  color: $cgh-text;
+  color: t.$cg-text;
   box-sizing: border-box;
   overflow: hidden;
+  @include t.cg-backdrop;
+
+  // Scanline overlay sits above the backdrop but below content.
+  &::before { @include t.cg-scanlines; }
 
   &__main {
+    position: relative;
+    z-index: 1;
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 22px;
+    gap: 28px;
     min-width: 0;
     overflow-y: auto;
     // Everything in the main panel reads as a single centered column.
@@ -45,14 +42,17 @@ $cgh-accent-strong: #2563eb;
 
   &__title {
     margin: 0;
+    font-family: t.$cg-display;
     font-size: 1.9rem;
     font-weight: 800;
-    letter-spacing: 0.01em;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    text-shadow: 0 0 18px rgba(255, 45, 149, 0.35), 0 0 30px rgba(33, 230, 255, 0.18);
   }
 
   &__subtitle {
     margin: 0;
-    color: $cgh-muted;
+    color: t.$cg-muted;
     font-size: 0.95rem;
   }
 
@@ -65,37 +65,43 @@ $cgh-accent-strong: #2563eb;
 
   &__start {
     appearance: none;
-    border: 1px solid $cgh-accent-strong;
-    background: linear-gradient(180deg, lighten($cgh-accent-strong, 6%), $cgh-accent-strong);
-    color: #f8fafc;
+    border: 1px solid t.$cg-magenta;
+    background: linear-gradient(180deg, lighten(t.$cg-magenta, 8%), t.$cg-magenta);
+    color: #fff;
     border-radius: 12px;
     padding: 14px 34px;
+    font-family: t.$cg-display;
     font-size: 1.05rem;
-    font-weight: 700;
-    letter-spacing: 0.03em;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
     cursor: pointer;
-    box-shadow: 0 8px 22px rgba(37, 99, 235, 0.35);
+    box-shadow: 0 0 0 1px rgba(33, 230, 255, 0.4), 0 8px 26px rgba(255, 45, 149, 0.4);
     transition: transform 0.12s ease, opacity 0.2s ease, box-shadow 0.2s ease;
 
     &:hover:not(:disabled) { transform: translateY(-1px); }
     &:active:not(:disabled) { transform: translateY(0); }
+    &:not(:disabled) { animation: cgh-pulse 2.2s ease-in-out infinite; }
 
-    // Clearly grayed-out until a race type + at least one rider are configured.
+    // Clearly grayed-out / inert until a race type + at least one rider are set.
     &:disabled {
       cursor: not-allowed;
       opacity: 1;
-      color: #717784;
-      background: #262b33;
-      border-color: #3a414c;
+      color: t.$cg-faint;
+      background: t.$cg-panel-2;
+      border-color: t.$cg-border;
       box-shadow: none;
+      animation: none;
     }
   }
 
   &__records {
+    position: relative;
+    z-index: 1;
     width: 260px;
     flex-shrink: 0;
-    background: $cgh-panel;
-    border: 1px solid $cgh-border;
+    background: t.$cg-panel;
+    border: 1px solid t.$cg-border;
     border-radius: 14px;
     padding: 18px;
     display: flex;
@@ -105,14 +111,17 @@ $cgh-accent-strong: #2563eb;
   }
 }
 
+// Gentle box-shadow breathe — only on an enabled Start button.
+@keyframes cgh-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(33, 230, 255, 0.4), 0 8px 26px rgba(255, 45, 149, 0.4); }
+  50%      { box-shadow: 0 0 0 1px rgba(33, 230, 255, 0.6), 0 10px 34px rgba(255, 45, 149, 0.6); }
+}
+
 .cgh-section-label {
+  @include t.cg-eyebrow;
   display: flex;
   align-items: baseline;
   justify-content: center;
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: $cgh-muted;
   margin-bottom: 12px;
 
   &--sub {
@@ -121,8 +130,17 @@ $cgh-accent-strong: #2563eb;
   }
 }
 
+.cgh-section-label--with-readout { justify-content: space-between; }
+.cgh-volume__readout {
+  font-family: t.$cg-mono;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  color: t.$cg-cyan;
+  text-shadow: 0 0 8px rgba(33, 230, 255, 0.45);
+}
+
 .cgh-empty {
-  color: $cgh-faint;
+  color: t.$cg-faint;
   font-size: 0.92rem;
   padding: 6px 0;
 }
@@ -140,30 +158,32 @@ $cgh-accent-strong: #2563eb;
   align-items: center;
   gap: 20px;
   padding: 22px 28px;
-  background: $cgh-panel;
-  border: 1.5px solid $cgh-border;
+  background: t.$cg-panel;
+  border: 1.5px solid t.$cg-border;
   border-radius: 16px;
-  color: $cgh-text;
+  color: t.$cg-text;
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
+  opacity: 0.55;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease, opacity 0.15s ease, box-shadow 0.15s ease;
 
-  &:hover { transform: translateY(-2px); border-color: lighten($cgh-border, 12%); }
+  &:hover { transform: translateY(-2px); opacity: 1; border-color: t.$cg-border-soft; }
 
   &.is-selected {
-    border-color: $cgh-accent;
-    background: linear-gradient(110deg, rgba(122, 162, 255, 0.16), $cgh-panel 70%);
-    box-shadow: 0 0 0 1px rgba(122, 162, 255, 0.4), 0 8px 24px rgba(0, 0, 0, 0.4);
+    opacity: 1;
+    border-color: t.$cg-magenta;
+    background: linear-gradient(110deg, rgba(255, 45, 149, 0.16), t.$cg-panel 70%);
+    box-shadow: 0 0 0 1px rgba(255, 45, 149, 0.5), 0 0 26px rgba(255, 45, 149, 0.25);
   }
 
   &__icon {
     width: 58px;
     height: 58px;
     flex-shrink: 0;
-    color: $cgh-muted;
+    color: t.$cg-muted;
     transition: color 0.15s ease;
   }
-  &.is-selected &__icon { color: $cgh-accent; }
+  &.is-selected &__icon { color: t.$cg-cyan; }
 
   &__text {
     display: flex;
@@ -173,13 +193,14 @@ $cgh-accent-strong: #2563eb;
   }
 
   &__name {
+    font-family: t.$cg-display;
     font-size: 1.35rem;
     font-weight: 800;
-    letter-spacing: 0.01em;
+    letter-spacing: 0.02em;
   }
   &__hint {
     font-size: 0.88rem;
-    color: $cgh-muted;
+    color: t.$cg-muted;
   }
 }
 
@@ -195,7 +216,7 @@ $cgh-accent-strong: #2563eb;
 }
 
 .cgh-value-hint {
-  color: $cgh-faint;
+  color: t.$cg-faint;
   font-size: 0.88rem;
   font-style: italic;
 }
@@ -226,29 +247,45 @@ $cgh-accent-strong: #2563eb;
 }
 
 .cgh-preset {
-  background: $cgh-panel-2;
-  border: 1px solid $cgh-border;
+  background: t.$cg-panel-2;
+  border: 1px solid t.$cg-border;
   border-radius: 999px;
   padding: 8px 16px;
-  color: $cgh-text;
+  color: t.$cg-text;
   font-size: 0.92rem;
   cursor: pointer;
   transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
 
-  &:hover { border-color: lighten($cgh-border, 12%); }
+  &:hover { border-color: t.$cg-border-soft; }
   &.is-selected {
-    border-color: $cgh-accent;
-    color: $cgh-accent;
-    background: rgba(122, 162, 255, 0.12);
+    border-color: t.$cg-cyan;
+    color: t.$cg-cyan;
+    background: rgba(33, 230, 255, 0.12);
   }
+}
+
+// Named tier: the category name leads (bold), the value reads as a quiet
+// sub-label so riders pick the category, not the digits.
+.cgh-preset--tier {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  border-radius: 14px;
+  padding: 7px 16px;
+  line-height: 1.1;
+
+  .cgh-preset__name { font-weight: 700; font-size: 0.96rem; letter-spacing: 0.01em; }
+  .cgh-preset__value { font-size: 0.74rem; opacity: 0.62; }
+  &.is-selected .cgh-preset__value { opacity: 0.85; }
 }
 
 .cgh-stepper {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: $cgh-panel-2;
-  border: 1px solid $cgh-border;
+  background: t.$cg-panel-2;
+  border: 1px solid t.$cg-border;
   border-radius: 999px;
   padding: 4px;
 
@@ -258,7 +295,7 @@ $cgh-accent-strong: #2563eb;
     border: none;
     border-radius: 50%;
     background: transparent;
-    color: $cgh-text;
+    color: t.$cg-text;
     font-size: 1.2rem;
     line-height: 1;
     cursor: pointer;
@@ -271,9 +308,9 @@ $cgh-accent-strong: #2563eb;
   &__value {
     min-width: 64px;
     text-align: center;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: t.$cg-mono;
     font-size: 0.9rem;
-    color: $cgh-accent;
+    color: t.$cg-cyan;
   }
 }
 
@@ -281,25 +318,68 @@ $cgh-accent-strong: #2563eb;
 .cgh-grid-section { display: flex; flex-direction: column; }
 
 .cgh-grid {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 16px;
+
+  // Neon start-line: a glowing magenta→cyan bar behind the row of slots.
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 3px;
+    background: linear-gradient(90deg, t.$cg-magenta, t.$cg-cyan);
+    box-shadow: 0 0 12px rgba(255, 45, 149, 0.5), 0 0 18px rgba(33, 230, 255, 0.35);
+    z-index: 0;
+    pointer-events: none;
+  }
 }
 
 .cgh-slot {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
   width: 150px;
   padding: 16px 10px;
-  background: $cgh-panel;
-  border: 1px solid $cgh-border;
+  background: t.$cg-panel;
+  border: 1px solid t.$cg-border;
   border-radius: 14px;
-  transition: border-color 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 
-  &.is-filled { border-color: rgba(122, 162, 255, 0.45); }
+  &.is-filled {
+    border-color: rgba(33, 230, 255, 0.45);
+    box-shadow: 0 0 16px rgba(33, 230, 255, 0.15);
+  }
+
+  // Lane numeral — dim italic tabular numeral, top-left of the slot.
+  &__lane {
+    @include t.cg-numeral(t.$cg-cyan);
+    position: absolute;
+    top: 6px;
+    left: 10px;
+    font-size: 0.8rem;
+    color: t.$cg-faint;
+    text-shadow: none;
+    z-index: 2;
+  }
+
+  // Dashed neon pill advertising how to fill an empty slot.
+  &__add {
+    border: 1px dashed t.$cg-cyan;
+    color: t.$cg-cyan;
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: 0.7rem;
+    text-align: center;
+  }
 
   // Hero = equipment icon rendered as a true circle (RpmDeviceAvatar, cover
   // crop); the assigned rider's avatar overlaps the bottom-right quadrant.
@@ -324,7 +404,7 @@ $cgh-accent-strong: #2563eb;
     // Lighter bottom-hemisphere shade than the player default (was too dark).
     --rpm-overlay-bg: rgba(7, 9, 13, 0.45);
     @include rpm.rpm-device-base;
-    border: 1px solid $cgh-border;
+    border: 1px solid t.$cg-border;
     transition: border-color 0.15s ease;
 
     .rpm-avatar-wrapper { @include rpm.rpm-avatar-wrapper; }
@@ -338,7 +418,7 @@ $cgh-accent-strong: #2563eb;
     }
     .rpm-value { font-size: 1.2rem; transition: transform 0.18s ease; }
   }
-  &__main:hover &__device { border-color: $cgh-accent; }
+  &__main:hover &__device { border-color: t.$cg-cyan; }
 
   // When a rider avatar occupies the bottom-right, scoot the RPM readout left so
   // it stays centered in the remaining visible space.
@@ -352,7 +432,7 @@ $cgh-accent-strong: #2563eb;
     width: 48px;
     height: 48px;
     border-radius: 50%;
-    background: $cgh-panel;
+    background: t.$cg-panel;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
   }
 
@@ -360,7 +440,7 @@ $cgh-accent-strong: #2563eb;
     min-height: 16px;
     font-size: 0.82rem;
     font-weight: 600;
-    color: $cgh-accent;
+    color: t.$cg-cyan;
     text-align: center;
   }
 }
@@ -379,7 +459,7 @@ $cgh-accent-strong: #2563eb;
   align-items: center;
   gap: 10px;
   padding: 9px 0;
-  border-bottom: 1px solid $cgh-border-soft;
+  border-bottom: 1px solid t.$cg-border-soft;
   font-size: 0.92rem;
 
   &:last-child { border-bottom: none; }
@@ -389,8 +469,8 @@ $cgh-accent-strong: #2563eb;
     width: 22px;
     height: 22px;
     border-radius: 50%;
-    background: $cgh-panel-2;
-    color: $cgh-accent;
+    background: t.$cg-panel-2;
+    color: t.$cg-cyan;
     font-size: 0.75rem;
     font-weight: 700;
     display: flex;
@@ -398,7 +478,7 @@ $cgh-accent-strong: #2563eb;
     justify-content: center;
   }
 
-  &__label { color: $cgh-text; }
+  &__label { color: t.$cg-text; }
 }
 
 // ── Rider picker modal ───────────────────────────────────────────────────
@@ -423,8 +503,8 @@ $cgh-accent-strong: #2563eb;
     width: min(560px, 86%);
     max-height: 80%;
     overflow-y: auto;
-    background: $cgh-panel;
-    border: 1px solid $cgh-border;
+    background: t.$cg-panel;
+    border: 1px solid t.$cg-border;
     border-radius: 18px;
     padding: 22px;
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
@@ -453,9 +533,9 @@ $cgh-accent-strong: #2563eb;
 
   &__close {
     appearance: none;
-    border: 1px solid $cgh-border;
-    background: $cgh-panel-2;
-    color: $cgh-text;
+    border: 1px solid t.$cg-border;
+    background: t.$cg-panel-2;
+    color: t.$cg-text;
     width: 34px;
     height: 34px;
     border-radius: 50%;
@@ -463,7 +543,7 @@ $cgh-accent-strong: #2563eb;
     line-height: 1;
     cursor: pointer;
 
-    &:hover { border-color: lighten($cgh-border, 12%); }
+    &:hover { border-color: t.$cg-border-soft; }
   }
 
   &__grid {
@@ -476,33 +556,33 @@ $cgh-accent-strong: #2563eb;
 
 .cgh-tab {
   appearance: none;
-  background: $cgh-panel-2;
-  border: 1px solid $cgh-border;
+  background: t.$cg-panel-2;
+  border: 1px solid t.$cg-border;
   border-radius: 999px;
   padding: 7px 20px;
-  color: $cgh-muted;
+  color: t.$cg-muted;
   font-size: 0.85rem;
   font-weight: 600;
   letter-spacing: 0.02em;
   cursor: pointer;
   transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
 
-  &:hover { border-color: lighten($cgh-border, 12%); }
+  &:hover { border-color: t.$cg-border-soft; }
   &.is-active {
-    border-color: $cgh-accent;
-    color: $cgh-accent;
-    background: rgba(122, 162, 255, 0.12);
+    border-color: t.$cg-cyan;
+    color: t.$cg-cyan;
+    background: rgba(33, 230, 255, 0.12);
   }
 }
 
 .cgh-person {
   appearance: none;
   border: 1px solid transparent;
-  background: $cgh-panel-2;
+  background: t.$cg-panel-2;
   border-radius: 14px;
   padding: 14px 8px 12px;
   width: 100%;
-  color: $cgh-text; // ensure the name label isn't the default black-on-dark
+  color: t.$cg-text; // ensure the name label isn't the default black-on-dark
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -511,25 +591,25 @@ $cgh-accent-strong: #2563eb;
   position: relative;
   transition: border-color 0.15s ease, transform 0.12s ease;
 
-  &:hover { transform: translateY(-2px); border-color: $cgh-border; }
+  &:hover { transform: translateY(-2px); border-color: t.$cg-border; }
 
   &.has-hr {
-    border-color: rgba(122, 162, 255, 0.4);
-    background: linear-gradient(180deg, rgba(122, 162, 255, 0.1), $cgh-panel-2);
+    border-color: rgba(33, 230, 255, 0.4);
+    background: linear-gradient(180deg, rgba(33, 230, 255, 0.1), t.$cg-panel-2);
   }
 
   &.is-current {
-    border-color: $cgh-accent;
-    box-shadow: 0 0 0 1px rgba(122, 162, 255, 0.4);
+    border-color: t.$cg-cyan;
+    box-shadow: 0 0 0 1px rgba(33, 230, 255, 0.4);
   }
 
   // Clear/remove tile — distinct, muted, dashed.
   &--clear {
-    border: 1px dashed $cgh-border;
+    border: 1px dashed t.$cg-border;
     background: transparent;
     justify-content: center;
     gap: 8px;
-    color: $cgh-muted;
+    color: t.$cg-muted;
 
     &:hover { border-color: #f87171; color: #f87171; }
   }
@@ -562,8 +642,8 @@ $cgh-accent-strong: #2563eb;
     font-weight: 700;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: #0e0f13;
-    background: #4ade80;
+    color: t.$cg-bg;
+    background: t.$cg-lane-1;
     border-radius: 999px;
     padding: 2px 7px;
   }
@@ -576,47 +656,11 @@ $cgh-accent-strong: #2563eb;
   .cgh-preset, .cgh-stepper__btn { opacity: 0.45; cursor: default; }
 }
 
-// ── Ghost slot (virtual competitor in the starting grid) ──────────────────
-.cgh-slot--ghost {
-  border-style: dashed;
-  &.is-filled { border-style: solid; border-color: rgba(155, 89, 182, 0.6); }
-}
-
-.cgh-ghost-disc {
-  display: flex; align-items: center; justify-content: center;
-  font-size: 2.6rem;
-  background: radial-gradient(circle at 50% 38%, #241b33, #0e0e16);
-  color: #d8c8f0;
-}
-
-// ── Ghost picker list ─────────────────────────────────────────────────────
-.cgh-ghost-list {
-  list-style: none; margin: 0; padding: 0;
-  display: flex; flex-direction: column; gap: 8px;
-}
-
-.cgh-ghost-row {
-  width: 100%;
-  display: flex; align-items: center; gap: 14px;
-  appearance: none; cursor: pointer; text-align: left;
-  background: $cgh-panel-2; border: 1px solid $cgh-border;
-  border-radius: 12px; padding: 12px 16px; color: $cgh-text;
-  transition: border-color 0.15s ease, transform 0.12s ease;
-
-  &:hover { transform: translateY(-1px); border-color: lighten($cgh-border, 12%); }
-  &.is-current { border-color: #9b59b6; box-shadow: 0 0 0 1px rgba(155, 89, 182, 0.45); }
-
-  &__icon { font-size: 1.6rem; flex-shrink: 0; }
-  &__main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  &__name { font-size: 1.02rem; font-weight: 700; }
-  &__meta { font-size: 0.82rem; color: $cgh-muted; }
-}
-
 .cgh-ghost-clear {
   margin-top: 16px;
   appearance: none; cursor: pointer; width: 100%;
-  background: transparent; border: 1px dashed $cgh-border;
-  border-radius: 10px; padding: 10px; color: $cgh-muted;
+  background: transparent; border: 1px dashed t.$cg-border;
+  border-radius: 10px; padding: 10px; color: t.$cg-muted;
   transition: border-color 0.15s ease, color 0.15s ease;
 
   &:hover { border-color: #f87171; color: #f87171; }
@@ -626,10 +670,10 @@ $cgh-accent-strong: #2563eb;
 .cgh-tiles--three { grid-template-columns: repeat(3, 1fr); }
 
 .cgh-tile--ghost.is-selected {
-  border-color: #9b59b6;
-  background: linear-gradient(110deg, rgba(155, 89, 182, 0.18), $cgh-panel 70%);
-  box-shadow: 0 0 0 1px rgba(155, 89, 182, 0.45), 0 8px 24px rgba(0, 0, 0, 0.4);
-  .cgh-tile__icon { color: #c79be0; }
+  border-color: t.$cg-lane-3;
+  background: linear-gradient(110deg, rgba(176, 114, 255, 0.18), t.$cg-panel 70%);
+  box-shadow: 0 0 0 1px rgba(176, 114, 255, 0.5), 0 0 26px rgba(176, 114, 255, 0.25);
+  .cgh-tile__icon { color: t.$cg-lane-3; }
 }
 
 // ── Selected-ghost summary (replaces the value step) ──────────────────────
@@ -642,15 +686,15 @@ $cgh-accent-strong: #2563eb;
   &__text { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
   &__vs { font-size: 1.05rem; font-weight: 700; }
   &__meta {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.82rem; color: #c79be0;
+    font-family: t.$cg-mono;
+    font-size: 0.82rem; color: t.$cg-lane-3;
   }
   &__btn {
     appearance: none; cursor: pointer;
-    background: $cgh-panel-2; border: 1px solid $cgh-border;
-    border-radius: 999px; padding: 7px 16px; color: $cgh-text; font-size: 0.85rem;
+    background: t.$cg-panel-2; border: 1px solid t.$cg-border;
+    border-radius: 999px; padding: 7px 16px; color: t.$cg-text; font-size: 0.85rem;
     transition: border-color 0.15s ease, color 0.15s ease;
-    &:hover { border-color: lighten($cgh-border, 12%); }
+    &:hover { border-color: t.$cg-border-soft; }
     &--clear:hover { border-color: #f87171; color: #f87171; }
   }
 }
@@ -672,35 +716,27 @@ $cgh-accent-strong: #2563eb;
 .cgh-record__avatars { display: flex; align-items: center; }
 .cgh-record__avatar {
   width: 28px; height: 28px; border-radius: 50%; object-fit: cover;
-  border: 2px solid $cgh-panel; background: $cgh-panel-2;
+  border: 2px solid t.$cg-panel; background: t.$cg-panel-2;
   &:not(:first-child) { margin-left: -10px; }
 }
 .cgh-record__stats { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
-.cgh-record__score { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; color: $cgh-muted; }
+.cgh-record__score {
+  @include t.cg-numeral(t.$cg-cyan);
+  font-size: 0.85rem;
+  color: t.$cg-cyan;
+}
+.cgh-record__score--empty { color: t.$cg-faint; font-style: italic; text-shadow: none; }
 
-// Goal chip — colored by what the goal metric was.
+// Goal chip — colored by what the goal metric was (neon family).
 .cgh-record__chip {
   display: inline-flex; align-items: center; gap: 4px;
   font-size: 0.7rem; font-weight: 700; letter-spacing: 0.02em;
   padding: 2px 9px; border-radius: 999px;
-  border: 1px solid $cgh-border; color: $cgh-text; background: $cgh-panel-2;
+  border: 1px solid t.$cg-border; color: t.$cg-text; background: t.$cg-panel-2;
 
-  &[data-kind="distance"] { border-color: rgba(122, 162, 255, 0.5); color: $cgh-accent; background: rgba(122, 162, 255, 0.1); }
-  &[data-kind="time"] { border-color: rgba(245, 197, 66, 0.5); color: #f5c542; background: rgba(245, 197, 66, 0.1); }
+  &[data-kind="distance"] { border-color: rgba(33, 230, 255, 0.5); color: t.$cg-cyan; background: rgba(33, 230, 255, 0.1); }
+  &[data-kind="time"] { border-color: rgba(255, 213, 74, 0.5); color: t.$cg-gold; background: rgba(255, 213, 74, 0.1); }
 }
-
-// ── Ghost picker rows: avatars + both metrics ─────────────────────────────
-.cgh-ghost-row__avatars { display: flex; align-items: center; flex-shrink: 0; }
-.cgh-ghost-row__avatar {
-  width: 36px; height: 36px; border-radius: 50%; object-fit: cover;
-  border: 2px solid $cgh-panel-2; background: $cgh-panel;
-  &:not(:first-child) { margin-left: -12px; }
-}
-.cgh-ghost-row__meta {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-}
-.cgh-ghost-row__score { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; color: $cgh-accent; }
-.cgh-ghost-row__date { font-size: 0.72rem; color: $cgh-faint; }
 
 // ── Ghost picker: day columns + two-stage cards ───────────────────────────
 .cgh-picker--ghost .cgh-picker__sheet { width: min(1040px, 95%); }
@@ -718,10 +754,10 @@ $cgh-accent-strong: #2563eb;
   position: sticky; top: 0; z-index: 1;
   text-align: center;
   font-size: 0.78rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
-  color: $cgh-accent;
+  color: t.$cg-cyan;
   padding: 6px 0 8px;
-  background: linear-gradient(180deg, $cgh-panel 70%, transparent);
-  border-bottom: 1px solid $cgh-border-soft;
+  background: linear-gradient(180deg, t.$cg-panel 70%, transparent);
+  border-bottom: 1px solid t.$cg-border-soft;
 }
 .cgh-ghost-col__list {
   display: flex; flex-direction: column; gap: 10px;
@@ -729,26 +765,36 @@ $cgh-accent-strong: #2563eb;
   padding: 2px;
 }
 
+.cgh-ghost-card__confirm {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: t.$cg-cyan;
+}
+
 .cgh-ghost-card {
   appearance: none; cursor: pointer; text-align: left; width: 100%;
   display: flex; align-items: center; gap: 14px;
-  background: $cgh-panel-2; border: 1.5px solid $cgh-border;
-  border-radius: 14px; padding: 12px 14px; color: $cgh-text;
+  background: t.$cg-panel-2; border: 1.5px solid t.$cg-border;
+  border-radius: 14px; padding: 12px 14px; color: t.$cg-text;
   transition: border-color 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
 
-  &:hover { border-color: lighten($cgh-border, 12%); }
+  &:hover { border-color: t.$cg-border-soft; }
   // First tap focuses (scrolled into view); second tap commits.
   &.is-focused {
-    border-color: $cgh-accent;
-    box-shadow: 0 0 0 2px rgba(122, 162, 255, 0.5), 0 10px 26px rgba(0, 0, 0, 0.45);
+    border-color: t.$cg-cyan;
+    box-shadow: 0 0 0 2px rgba(33, 230, 255, 0.5), 0 10px 26px rgba(0, 0, 0, 0.45);
     transform: translateY(-1px);
   }
-  &.is-current { border-color: #9b59b6; }
+  &.is-current { border-color: t.$cg-lane-3; }
 
   &__avatars { display: flex; align-items: center; flex-shrink: 0; }
   &__avatar {
     width: 64px; height: 64px; border-radius: 50%; object-fit: cover;
-    border: 2px solid $cgh-panel; background: $cgh-panel;
+    border: 2px solid t.$cg-panel; background: t.$cg-panel;
     &:not(:first-child) { margin-left: -18px; }
   }
 
@@ -756,11 +802,11 @@ $cgh-accent-strong: #2563eb;
   // Score = the figure you're racing against → prominent.
   &__score {
     font-size: 1.6rem; font-weight: 800; line-height: 1.05;
-    color: $cgh-text; font-variant-numeric: tabular-nums;
+    color: t.$cg-text; font-variant-numeric: tabular-nums;
   }
   // Goal = obvious context (the course) → muted denominator.
-  &__goal { font-size: 0.82rem; color: $cgh-muted; }
-  &__time { font-size: 0.72rem; color: $cgh-faint; margin-top: 2px; }
+  &__goal { font-size: 0.82rem; color: t.$cg-muted; }
+  &__time { font-size: 0.72rem; color: t.$cg-faint; margin-top: 2px; }
 }
 
 // ── Master volume (lobby) — official TouchVolumeButtons bound to the fitness
@@ -768,7 +814,7 @@ $cgh-accent-strong: #2563eb;
 .cgh-volume {
   margin-bottom: 16px;
   padding-bottom: 14px;
-  border-bottom: 1px solid $cgh-border-soft;
+  border-bottom: 1px solid t.$cg-border-soft;
 
   .touch-volume {
     display: grid;
@@ -795,14 +841,14 @@ $cgh-accent-strong: #2563eb;
     border-color: rgba(220, 53, 69, 0.6);
   }
   .touch-volume-button.on {
-    background: linear-gradient(180deg, lighten($cgh-accent, 4%), $cgh-accent);
-    border-color: $cgh-accent;
+    background: linear-gradient(180deg, lighten(t.$cg-cyan, 4%), t.$cg-cyan);
+    border-color: t.$cg-cyan;
     box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.25);
   }
   .touch-volume-button.off { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.22); }
   .touch-volume-button.active {
-    border-color: #46e08a;
-    box-shadow: 0 0 8px rgba(70, 224, 138, 0.5);
+    border-color: t.$cg-cyan;
+    box-shadow: 0 0 8px rgba(33, 230, 255, 0.5);
   }
 }
 

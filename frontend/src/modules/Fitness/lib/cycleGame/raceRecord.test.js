@@ -51,4 +51,21 @@ describe('buildRaceRecord', () => {
     const rec = buildRaceRecord(s, { raceId: '20260603120000', date: 'x', mode: 'simultaneous', winCondition: 'distance', goalM: 100, intervalSeconds: 1 });
     expect(rec.participants.a.hr_series).toBe(SessionSerializerV3.encodeSeries([150, 160]));
   });
+  it('encodes rpm_series + zone_series (so ghosts can replay all metrics)', () => {
+    const s = {
+      riders: {
+        a: {
+          userId: 'a', displayName: 'A', equipmentId: 'cycle_ace', cumulativeDistanceM: 100, finishTimeS: 50,
+          distanceSeries: [50, 100], hrSeries: [150, 160], rpmSeries: [80, 92], zoneSeries: ['warm', 'hot']
+        }
+      },
+      standings: [{ userId: 'a', placement: 1 }]
+    };
+    const rec = buildRaceRecord(s, { raceId: '20260603120000', date: 'x', mode: 'simultaneous', winCondition: 'distance', goalM: 100, intervalSeconds: 1 });
+    expect(rec.participants.a.rpm_series).toBe(SessionSerializerV3.encodeSeries([80, 92]));
+    expect(rec.participants.a.zone_series).toBe(SessionSerializerV3.encodeSeries(['warm', 'hot']));
+    // round-trips back to the original arrays
+    expect(SessionSerializerV3.decodeSeries(rec.participants.a.rpm_series)).toEqual([80, 92]);
+    expect(SessionSerializerV3.decodeSeries(rec.participants.a.zone_series)).toEqual(['warm', 'hot']);
+  });
 });

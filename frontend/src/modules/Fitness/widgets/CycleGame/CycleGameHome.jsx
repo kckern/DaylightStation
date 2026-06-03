@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.jsx';
 import RpmDeviceAvatar from '@/modules/Fitness/components/RpmDeviceAvatar.jsx';
@@ -15,13 +15,39 @@ function uiLog() {
   return _uiLog;
 }
 
+/** Dismiss a modal on the Escape key. Cleans up its own listener. */
+function useEscapeToClose(onClose) {
+  useEffect(() => {
+    if (!onClose) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+}
+
 const EQUIPMENT_FALLBACK = DaylightMediaPath('/static/img/equipment/equipment');
 
 const AVATAR_BASE = '/api/v1/static/img/users';
 const FALLBACK_AVATAR = `${AVATAR_BASE}/user`;
 
-const DISTANCE_PRESETS_M = [1000, 3000, 5000, 10000];
-const TIME_PRESETS_S = [60, 120, 300, 600];
+// Named tiers so riders pick a *category* (effort/length) rather than anchoring
+// on the raw number. The value is shown as a sub-label; the custom stepper still
+// lets you dial in anything. Medium is the default-selected tier.
+const DISTANCE_TIERS = [
+  { key: 'flash', label: 'Flash', value: 100 },
+  { key: 'sprint', label: 'Sprint', value: 300 },
+  { key: 'short', label: 'Short', value: 1000 },
+  { key: 'medium', label: 'Medium', value: 2500 },
+  { key: 'long', label: 'Long', value: 5000 }
+];
+const TIME_TIERS = [
+  { key: 'flash', label: 'Flash', value: 60 },
+  { key: 'sprint', label: 'Sprint', value: 120 },
+  { key: 'short', label: 'Short', value: 180 },
+  { key: 'medium', label: 'Medium', value: 300 },
+  { key: 'long', label: 'Long', value: 600 }
+];
+const DEFAULT_TIER_KEY = 'medium';
 
 const DISTANCE_STEP_M = 500;
 const TIME_STEP_S = 60;
@@ -101,12 +127,13 @@ function RaceTypePicker({ raceType, onSelectRaceType, raceValue, onSetRaceValue,
   const isDistance = !hasGhost && raceType === 'distance';
   const isTime = !hasGhost && raceType === 'time';
 
-  const presets = raceType === 'time' ? TIME_PRESETS_S : DISTANCE_PRESETS_M;
+  const tiers = raceType === 'time' ? TIME_TIERS : DISTANCE_TIERS;
   const step = raceType === 'time' ? TIME_STEP_S : DISTANCE_STEP_M;
   const minValue = step;
   const fmt = raceType === 'time' ? formatTime : formatDistance;
-  // Effective value: the chosen value, or the sensible pre-selected preset.
-  const value = Number.isFinite(raceValue) ? raceValue : presets[1];
+  const defaultTierValue = (tiers.find((t) => t.key === DEFAULT_TIER_KEY) || tiers[0]).value;
+  // Effective value: the chosen value, or the default (Medium) tier.
+  const value = Number.isFinite(raceValue) ? raceValue : defaultTierValue;
 
   const ghostSummary = hasGhost
     ? (ghost.winCondition === 'time'
@@ -179,14 +206,16 @@ function RaceTypePicker({ raceType, onSelectRaceType, raceValue, onSetRaceValue,
             </div>
             <div className="cgh-value__row">
               <div className="cgh-presets">
-                {presets.map((p) => (
+                {tiers.map((t) => (
                   <button
-                    key={p}
+                    key={t.key}
                     type="button"
-                    className={`cgh-preset${value === p ? ' is-selected' : ''}`}
-                    onClick={() => onSetRaceValue?.(p)}
+                    data-testid={`tier-${t.key}`}
+                    className={`cgh-preset cgh-preset--tier${value === t.value ? ' is-selected' : ''}`}
+                    onClick={() => onSetRaceValue?.(t.value)}
                   >
-                    {fmt(p)}
+                    <span className="cgh-preset__name">{t.label}</span>
+                    <span className="cgh-preset__value">{fmt(t.value)}</span>
                   </button>
                 ))}
               </div>
@@ -259,6 +288,7 @@ function RiderPicker({ bike, people = [], currentRiderId = null, onAssign, onCle
     .filter((p) => categoryOf(p) === activeTab)
     .sort((a, b) => (b.native ? 1 : 0) - (a.native ? 1 : 0));
   const showTabs = available.length > 1;
+  useEscapeToClose(onClose);
 
   const renderPerson = (p) => (
     <button
@@ -349,12 +379,13 @@ RiderPicker.propTypes = {
  * hero; an assigned rider's avatar overlaps the bottom-right quadrant as a
  * secondary circle. Clicking the slot (empty OR filled) opens the rider picker.
  */
-function BikeSlot({ bike, person, onPick }) {
+function BikeSlot({ bike, person, onPick, lane }) {
   const filled = !!person;
   const rpm = Number.isFinite(bike.rpm) ? bike.rpm : 0;
   const spinDuration = rpm > 0 ? `${(60 / rpm).toFixed(2)}s` : '0s';
   return (
     <div className={`cgh-slot${filled ? ' is-filled' : ''}`} data-testid={`bike-${bike.id}`}>
+      <span className="cgh-slot__lane" aria-hidden="true">{lane}</span>
       <button
         type="button"
         className="cgh-slot__main"
@@ -389,6 +420,9 @@ function BikeSlot({ bike, person, onPick }) {
           </span>
         )}
       </button>
+      {!filled && (
+        <span className="cgh-slot__add" aria-hidden="true">+ Add rider</span>
+      )}
     </div>
   );
 }
@@ -396,7 +430,8 @@ function BikeSlot({ bike, person, onPick }) {
 BikeSlot.propTypes = {
   bike: PropTypes.object.isRequired,
   person: PropTypes.object,
-  onPick: PropTypes.func
+  onPick: PropTypes.func,
+  lane: PropTypes.number
 };
 
 /** Header label for a day column: Today / Yesterday / weekday + date. */
@@ -421,6 +456,7 @@ function formatDayHeader(day) {
  */
 function GhostPicker({ candidates = [], currentGhost = null, onSelect, onClear, onClose }) {
   const [focusedId, setFocusedId] = useState(currentGhost?.sourceRaceId || null);
+  useEscapeToClose(onClose);
 
   const columns = useMemo(() => {
     const map = new Map();
@@ -476,7 +512,7 @@ function GhostPicker({ candidates = [], currentGhost = null, onSelect, onClear, 
                         type="button"
                         className={`cgh-ghost-card${isFocused ? ' is-focused' : ''}${isCurrent ? ' is-current' : ''}`}
                         data-testid={`ghost-${c.raceId}`}
-                        onPointerDown={() => handleTap(c)}
+                        onClick={() => handleTap(c)}
                       >
                         <span className="cgh-ghost-card__avatars" data-count={Math.min(riders.length, 4)}>
                           {riders.slice(0, 4).map((p) => (
@@ -495,6 +531,9 @@ function GhostPicker({ candidates = [], currentGhost = null, onSelect, onClear, 
                           <span className="cgh-ghost-card__goal">{c.scoreKind === 'time' ? 'in' : 'to'} {c.goalLabel}</span>
                           <span className="cgh-ghost-card__time">{c.timeOfDay}</span>
                         </span>
+                        {isFocused && (
+                          <span className="cgh-ghost-card__confirm">Tap again to choose</span>
+                        )}
                       </button>
                     );
                   })}
@@ -598,10 +637,11 @@ export default function CycleGameHome({
             <div className="cgh-empty">No bikes detected (equipment with a cadence sensor).</div>
           ) : (
             <div className="cgh-grid">
-              {bikes.map((bike) => (
+              {bikes.map((bike, i) => (
                 <BikeSlot
                   key={bike.id}
                   bike={bike}
+                  lane={i + 1}
                   person={bike.rider ? peopleById.get(bike.rider) || { id: bike.rider, name: bike.rider } : null}
                   onPick={(b) => { uiLog().info('cycle_game.ui.rider_picker_open', { equipmentId: b.id, currentRider: b.rider || null }); setPickerBike(b); }}
                 />
@@ -625,7 +665,12 @@ export default function CycleGameHome({
       </div>
 
       <aside className="cycle-game-home__records" data-testid="cycle-game-records">
-        <div className="cgh-section-label" id="cycle-game-volume-label">Volume</div>
+        <div className="cgh-section-label cgh-section-label--with-readout" id="cycle-game-volume-label">
+          <span>Volume</span>
+          <span className="cgh-volume__readout" data-testid="cycle-game-volume-readout">
+            {masterMuted ? 'Muted' : `${Math.round((masterVolume ?? 0) * 100)}%`}
+          </span>
+        </div>
         <div className="cgh-volume" data-testid="cycle-game-volume">
           <TouchVolumeButtons
             controlId="cycle-game-volume"
@@ -662,7 +707,15 @@ export default function CycleGameHome({
                     <span className="cgh-record__chip" data-kind={rec.goalKind}>
                       🏁 {rec.goalLabel}
                     </span>
+                  {rec.scoreLabel && rec.scoreLabel !== '—' ? (
                     <span className="cgh-record__score">{rec.scoreLabel}</span>
+                  ) : (
+                    <span
+                      className="cgh-record__score cgh-record__score--empty"
+                      title="No result recorded"
+                      aria-label="No result recorded"
+                    >—</span>
+                  )}
                   </span>
                 </button>
               </li>

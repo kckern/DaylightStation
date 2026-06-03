@@ -33,4 +33,25 @@ describe('CycleSpeedometer', () => {
     const { container } = render(<CycleSpeedometer {...baseProps} />);
     expect(container.querySelector('.hr-value')?.textContent).toBe('168');
   });
+  it('shows a FINISHED state with placement when finished', () => {
+    const { getByTestId, container } = render(
+      <CycleSpeedometer {...baseProps} finished placement={1} />
+    );
+    const badge = getByTestId('cycle-speedometer-finished');
+    expect(badge.textContent).toContain('1st');
+    expect(container.querySelector('.cycle-speedometer--finished')).not.toBeNull();
+  });
+  it('does not show the FINISHED badge while still racing', () => {
+    const { queryByTestId } = render(<CycleSpeedometer {...baseProps} />);
+    expect(queryByTestId('cycle-speedometer-finished')).toBeNull();
+  });
+  it('shows a FALSE START penalty overlay when penalized', () => {
+    const { getByTestId, container } = render(<CycleSpeedometer {...baseProps} penalized />);
+    expect(getByTestId('cycle-speedometer-penalty').textContent.toUpperCase()).toContain('FALSE START');
+    expect(container.querySelector('.cycle-speedometer--penalized')).not.toBeNull();
+  });
+  it('does not show the penalty overlay when not penalized', () => {
+    const { queryByTestId } = render(<CycleSpeedometer {...baseProps} />);
+    expect(queryByTestId('cycle-speedometer-penalty')).toBeNull();
+  });
 });

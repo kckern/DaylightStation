@@ -17,9 +17,9 @@
   &__vignette {
     position: absolute; inset: 0; z-index: 0; pointer-events: none;
     background:
-      radial-gradient(120% 90% at 50% 0%, rgba(122, 162, 255, 0.10), transparent 55%),
-      radial-gradient(140% 120% at 50% 110%, rgba(0, 0, 0, 0.85), transparent 60%),
-      linear-gradient(180deg, rgba(8, 9, 12, 0.55), rgba(8, 9, 12, 0.2) 30%, rgba(8, 9, 12, 0.7));
+      radial-gradient(120% 90% at 50% 0%, rgba(33, 230, 255, 0.10), transparent 55%),
+      radial-gradient(140% 120% at 50% 110%, rgba(0, 0, 0, 0.92), transparent 62%),
+      linear-gradient(180deg, rgba(6, 6, 12, 0.7), rgba(6, 6, 12, 0.32) 30%, rgba(6, 6, 12, 0.82));
   }
 
   // ── Race clock (framed, labeled) ────────────────────────────────────────
@@ -34,15 +34,29 @@
   }
   &__clock-label { @include cg.cg-eyebrow; font-size: 0.7rem; }
   &__clock {
-    font-family: cg.$cg-display;
-    font-weight: 800; font-size: 3.4rem; line-height: 1;
-    letter-spacing: 0.01em;
-    font-variant-numeric: tabular-nums;
+    @include cg.cg-numeral(cg.$cg-cyan);
+    font-size: 3.4rem; line-height: 1;
     color: cg.$cg-text;
-    text-shadow: 0 0 24px rgba(122, 162, 255, 0.25);
+    text-shadow: 0 0 24px rgba(33, 230, 255, 0.45);
   }
   &__clock-goal {
     font-family: cg.$cg-mono; font-size: 0.78rem; color: cg.$cg-muted;
+  }
+
+  // False-start banner — names whoever jumped the green light.
+  &__penalty-banner {
+    position: relative; z-index: 3;
+    display: inline-flex; align-items: center; gap: 10px;
+    margin-top: 10px; padding: 8px 20px;
+    border-radius: 999px;
+    background: rgba(120, 12, 12, 0.92);
+    border: 1px solid #ff5a5a;
+    box-shadow: 0 8px 26px rgba(180, 0, 0, 0.4);
+    animation: cg-penalty-banner-pulse 0.7s ease-in-out infinite;
+  }
+  &__penalty-icon { font-size: 1.3rem; line-height: 1; }
+  &__penalty-text {
+    color: #ffe3e3; font-weight: 800; font-size: 0.96rem; letter-spacing: 0.01em;
   }
 
   // ── Top region: chart (2/3) + roster (1/3) ────────────────────────────────
@@ -84,6 +98,7 @@
   &__tag.is-leader &__node {
     width: 32px; height: 32px; font-size: 1.15rem;
     box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9), 0 0 14px currentColor;
+    filter: drop-shadow(0 0 8px rgba(33, 230, 255, 0.7));
   }
   &__tag.is-ghost &__node { opacity: 0.85; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25); }
 
@@ -120,8 +135,9 @@
     &.is-ghost { opacity: 0.85; }
   }
   &__roster-rank {
-    font-family: cg.$cg-display; font-weight: 800; font-size: 1.3rem;
-    color: cg.$cg-muted; min-width: 1.2em; text-align: center; flex-shrink: 0;
+    @include cg.cg-numeral(cg.$cg-cyan);
+    font-size: 1.3rem;
+    color: cg.$cg-cyan; min-width: 1.2em; text-align: center; flex-shrink: 0;
   }
   &__roster-avatar {
     flex-shrink: 0; width: 44px; height: 44px; border-radius: 50%;
@@ -132,7 +148,7 @@
     font-family: cg.$cg-display; font-weight: 700; font-size: 1rem;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  &__roster-metric { font-family: cg.$cg-mono; font-weight: 700; font-size: 0.95rem; }
+  &__roster-metric { font-family: cg.$cg-mono; font-weight: 700; font-size: 0.95rem; color: cg.$cg-text; }
 
   // ── Speedometers ──────────────────────────────────────────────────────────
   // Reserved bottom band; ALWAYS a single row (gauges scale down to fit, never
@@ -150,4 +166,9 @@
 @keyframes cg-marker-pop {
   from { opacity: 0; transform: translate(-50%, -50%) scale(0.4); }
   to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes cg-penalty-banner-pulse {
+  0%, 100% { box-shadow: 0 8px 26px rgba(180, 0, 0, 0.4); }
+  50% { box-shadow: 0 8px 34px rgba(255, 60, 60, 0.7); }
 }

@@ -41,6 +41,46 @@ describe('CycleGameHome', () => {
     expect(queryByTestId('cgh-value')).toBeTruthy();
   });
 
+  it('renders named distance tiers (Flash…Long) with the value as a sub-label', () => {
+    const { getByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} raceType="distance" />
+    );
+    ['flash', 'sprint', 'short', 'medium', 'long'].forEach((key) => {
+      expect(getByTestId(`tier-${key}`)).toBeTruthy();
+    });
+    expect(getByTestId('tier-flash').textContent).toContain('Flash');
+    expect(getByTestId('tier-flash').textContent).toContain('100 m');
+    expect(getByTestId('tier-long').textContent).toContain('5 km');
+  });
+
+  it('renders named time tiers with minute sub-labels', () => {
+    const { getByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} raceType="time" />
+    );
+    expect(getByTestId('tier-flash').textContent).toContain('1 min');
+    expect(getByTestId('tier-medium').textContent).toContain('5 min');
+    expect(getByTestId('tier-long').textContent).toContain('10 min');
+  });
+
+  it('clicking a named tier fires onSetRaceValue with its numeric value', () => {
+    const onSetRaceValue = vi.fn();
+    const { getByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} raceType="distance" onSetRaceValue={onSetRaceValue} />
+    );
+    fireEvent.click(getByTestId('tier-sprint'));
+    expect(onSetRaceValue).toHaveBeenCalledWith(300);
+    fireEvent.click(getByTestId('tier-long'));
+    expect(onSetRaceValue).toHaveBeenCalledWith(5000);
+  });
+
+  it('pre-selects the Medium tier when no value is supplied', () => {
+    const { getByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} raceType="distance" />
+    );
+    expect(getByTestId('tier-medium').className).toContain('is-selected');
+    expect(getByTestId('tier-flash').className).not.toContain('is-selected');
+  });
+
   it('renders a starting grid slot per bike, equipment hero + assigned rider avatar', () => {
     const { getByTestId } = render(
       <CycleGameHome bikes={bikes} people={people} records={[]} />
@@ -112,9 +152,9 @@ describe('CycleGameHome', () => {
     );
     fireEvent.click(getByTestId('course-ghost')); // open the ghost picker
     const card = getByTestId('ghost-20260602150118');
-    fireEvent.pointerDown(card); // first tap → focus only (tap-to-scroll pattern)
+    fireEvent.click(card); // first tap (via click) → focus only (tap-to-scroll pattern)
     expect(onSelectGhost).not.toHaveBeenCalled();
-    fireEvent.pointerDown(card); // second tap → commit
+    fireEvent.click(card); // second tap (via click) → commit
     expect(onSelectGhost).toHaveBeenCalled();
   });
 
@@ -161,6 +201,19 @@ describe('CycleGameHome', () => {
     expect(getByText('4:12')).toBeTruthy();
   });
 
+  it('renders an explained placeholder when a record has no score', () => {
+    const records = [{
+      raceId: 'r-noscore',
+      avatars: [{ id: 'milo', src: '/api/v1/static/img/users/milo', name: 'Milo' }],
+      goalKind: 'distance', goalLabel: '3 km',
+      scoreKind: 'time', scoreLabel: ''
+    }];
+    const { getByTitle } = render(
+      <CycleGameHome bikes={bikes} people={people} records={records} />
+    );
+    expect(getByTitle('No result recorded')).toBeTruthy();
+  });
+
   it('records rail entries are clickable and fire onSelectRecord with the raceId', () => {
     const onSelectRecord = vi.fn();
     const records = [{
@@ -173,5 +226,62 @@ describe('CycleGameHome', () => {
     );
     fireEvent.click(getByTestId('record-20260603120000'));
     expect(onSelectRecord).toHaveBeenCalledWith('20260603120000');
+  });
+
+  it('closes the rider picker on Escape', () => {
+    const { getByTestId, queryByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} />
+    );
+    fireEvent.click(getByTestId('bike-tricycle').querySelector('.cgh-slot__main'));
+    expect(getByTestId('rider-picker')).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(queryByTestId('rider-picker')).toBeNull();
+  });
+
+  it('closes the ghost picker on Escape', () => {
+    const { getByTestId, queryByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} ghostCandidates={[]} />
+    );
+    fireEvent.click(getByTestId('course-ghost'));
+    expect(getByTestId('ghost-picker')).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(queryByTestId('ghost-picker')).toBeNull();
+  });
+
+  it('shows a numeric volume readout (non-color cue)', () => {
+    const { getByTestId, rerender } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} masterVolume={0.7} />
+    );
+    expect(getByTestId('cycle-game-volume-readout').textContent).toBe('70%');
+    rerender(
+      <CycleGameHome bikes={bikes} people={people} records={[]} masterVolume={0.7} masterMuted />
+    );
+    expect(getByTestId('cycle-game-volume-readout').textContent).toBe('Muted');
+  });
+
+  it('shows a lane number on every grid slot and an add-rider hint on empty slots', () => {
+    const { getByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} />
+    );
+    expect(getByTestId('bike-cycle_ace').querySelector('.cgh-slot__lane')).toBeTruthy();
+    expect(getByTestId('bike-tricycle').querySelector('.cgh-slot__lane')).toBeTruthy();
+    // empty slot advertises how to fill it; filled slot does not
+    expect(getByTestId('bike-tricycle').querySelector('.cgh-slot__add')).toBeTruthy();
+    expect(getByTestId('bike-cycle_ace').querySelector('.cgh-slot__add')).toBeNull();
+  });
+
+  it('reveals a confirm hint on the focused ghost card', () => {
+    const candidates = [{
+      raceId: '20260602150118', day: '2026-06-02', timeOfDay: '3:01 pm',
+      participants: [{ id: 'milo', displayName: 'Milo', avatarSrc: '/x' }],
+      goalKind: 'distance', goalLabel: '3 km', scoreKind: 'time', scoreLabel: '4:12'
+    }];
+    const { getByTestId, queryByText, getByText } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} ghostCandidates={candidates} />
+    );
+    fireEvent.click(getByTestId('course-ghost'));        // open the ghost picker
+    expect(queryByText('Tap again to choose')).toBeNull(); // nothing focused yet
+    fireEvent.click(getByTestId('ghost-20260602150118')); // first tap focuses
+    expect(getByText('Tap again to choose')).toBeTruthy();
   });
 });
