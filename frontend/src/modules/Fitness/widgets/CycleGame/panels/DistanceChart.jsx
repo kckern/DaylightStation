@@ -2,12 +2,15 @@ import React, { useEffect, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { LINE_COLORS } from '@/modules/Fitness/lib/cycleGame/lineColors.js';
 
+const EVENT_GLYPH = { dnf: '🛑', penalty: '⏱️' };
+
 /**
  * Gradient-filled distance chart — one climbing lane per rider toward the goal,
  * with goal line, area fills, lane lines, and de-overlapped terminus tags.
- * Auto-scales linear→log when riders crowd together near the finish.
+ * Auto-scales linear→log when riders crowd together near the finish. Officiating
+ * events (DNF / penalty) are re-projected onto the lane where they fired.
  */
-export default function DistanceChart({ riderIds, riders, riderLive, winCondition, goalM }) {
+export default function DistanceChart({ riderIds, riders, riderLive, winCondition, goalM, events = [] }) {
   const chartRef = useRef(null);
   const [chartH, setChartH] = useState(220); // chart px height (for collision spacing)
 
@@ -96,6 +99,22 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     raw.forEach((t) => { if (t.topPct < 3) t.topPct = 3; });
     return raw;
   })();
+
+  // Officiating-event markers (DNF / penalty), anchored to where they fired on
+  // the rider's lane. seriesIndex + distanceM were captured at event time; we
+  // re-project them with the current scale so each marker tracks its line point.
+  const eventMarkers = events.map((e) => {
+    const idx = riderIds.indexOf(e.riderId);
+    if (idx < 0) return null;
+    return {
+      id: e.id,
+      type: e.type,
+      glyph: EVENT_GLYPH[e.type] || '•',
+      leftPct: (xFor(e.seriesIndex) / W) * 100,
+      topPct: (yFor(e.distanceM) / H) * 100,
+      color: LINE_COLORS[idx % LINE_COLORS.length]
+    };
+  }).filter(Boolean);
 
   return (
     <div className="cycle-race-screen__chart-wrap" ref={chartRef}>
@@ -189,6 +208,22 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
           </div>
         ))}
       </div>
+
+      {/* Officiating-event markers pinned to the lane where each fired. */}
+      {eventMarkers.length > 0 && (
+        <div className="cycle-race-screen__markers" data-testid="race-event-markers">
+          {eventMarkers.map((m) => (
+            <div
+              key={`evt-${m.id}`}
+              className={`cycle-race-screen__marker cycle-race-screen__marker--${m.type}`}
+              data-testid={`race-event-marker-${m.type}`}
+              style={{ left: `${m.leftPct}%`, top: `${m.topPct}%`, '--marker-color': m.color }}
+            >
+              <span className="cycle-race-screen__marker-glyph" aria-hidden="true">{m.glyph}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -198,5 +233,12 @@ DistanceChart.propTypes = {
   riders: PropTypes.object.isRequired,
   riderLive: PropTypes.object.isRequired,
   winCondition: PropTypes.string,
-  goalM: PropTypes.number
+  goalM: PropTypes.number,
+  events: PropTypes.arrayOf(PropTypes.shape({
+    id: PropTypes.number,
+    type: PropTypes.oneOf(['dnf', 'penalty']),
+    riderId: PropTypes.string,
+    seriesIndex: PropTypes.number,
+    distanceM: PropTypes.number
+  }))
 };
