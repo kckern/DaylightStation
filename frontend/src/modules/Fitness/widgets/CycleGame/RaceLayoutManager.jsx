@@ -8,7 +8,10 @@ import getLogger from '@/lib/logging/Logger.js';
 import './RaceLayoutManager.scss';
 
 const TOP = ['topLeft', 'topCenter', 'topRight'];
-const BOTTOM_BAND = '38%'; // stable speedo-band height (collapses to 0 when empty)
+// Speedo band: the gauges are the key feedback, so reserve ~half the height with
+// a hard pixel floor so they never shrink to illegible. minmax keeps it stable
+// (depends only on container height, not content); collapses to 0 when empty.
+const BOTTOM_BAND = 'minmax(240px, 48%)';
 
 export default function RaceLayoutManager({ decision, panels }) {
   const zones = decision?.zones || {};
