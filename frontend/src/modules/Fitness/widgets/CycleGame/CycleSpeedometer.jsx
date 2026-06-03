@@ -20,7 +20,8 @@ function ordinal(n) {
 export default function CycleSpeedometer({
   rpm = 0, maxRpm = 120, cadenceBands = [], tickStep = 10, labelStep = 30,
   avatar = {}, distanceMeters = 0, multiplier = 1, multiplierColor, size = 220, className = '',
-  isGhost = false, finished = false, placement = null, penalized = false
+  isGhost = false, finished = false, placement = null, penalized = false,
+  penaltyRemainingS = null, penaltyTotalS = null, penaltyAwaitingStop = false
 }) {
   const ticks = useMemo(
     () => buildTicks({ maxRpm, tickStep, labelStep, center: CENTER, gaugeRadius: GAUGE_RADIUS }),
@@ -43,7 +44,24 @@ export default function CycleSpeedometer({
           <div className="cycle-speedometer__penalty" data-testid="cycle-speedometer-penalty">
             <span className="cycle-speedometer__penalty-icon" aria-hidden="true">⛔</span>
             <span className="cycle-speedometer__penalty-title">False start</span>
-            <span className="cycle-speedometer__penalty-sub">meter locked</span>
+            {penaltyAwaitingStop ? (
+              // Timer served — they just need to stop pedalling to clear the box.
+              <span className="cycle-speedometer__penalty-stop">Stop pedaling to clear</span>
+            ) : (
+              <>
+                <span className="cycle-speedometer__penalty-sub">
+                  Penalty box · {Math.ceil(Number.isFinite(penaltyRemainingS) ? penaltyRemainingS : 0)}s
+                </span>
+                {Number.isFinite(penaltyTotalS) && penaltyTotalS > 0 && (
+                  <span className="cycle-speedometer__penalty-bar" data-testid="cycle-speedometer-penalty-bar">
+                    <span
+                      className="cycle-speedometer__penalty-fill"
+                      style={{ width: `${Math.max(0, Math.min(100, (penaltyRemainingS / penaltyTotalS) * 100))}%` }}
+                    />
+                  </span>
+                )}
+              </>
+            )}
           </div>
         )}
         {finished && (
@@ -132,5 +150,8 @@ CycleSpeedometer.propTypes = {
   isGhost: PropTypes.bool,
   finished: PropTypes.bool,
   placement: PropTypes.number,
-  penalized: PropTypes.bool
+  penalized: PropTypes.bool,
+  penaltyRemainingS: PropTypes.number,
+  penaltyTotalS: PropTypes.number,
+  penaltyAwaitingStop: PropTypes.bool
 };

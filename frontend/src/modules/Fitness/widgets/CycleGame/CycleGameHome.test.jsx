@@ -228,6 +228,28 @@ describe('CycleGameHome', () => {
     expect(onSelectRecord).toHaveBeenCalledWith('20260603120000');
   });
 
+  it('gives ghost avatars in a record the tinted-ghost treatment; real riders stay plain', () => {
+    const records = [{
+      raceId: '20260603120000',
+      avatars: [
+        { id: 'user_3', src: '/api/v1/static/img/users/user_3', name: 'User_3', isGhost: false, tint: '#5dff9b' },
+        { id: 'ghost:20260601100000:user_2', src: '/api/v1/static/img/users/user_2', name: 'User_2', isGhost: true, tint: '#ffb13d' }
+      ],
+      goalKind: 'distance', goalLabel: '3 km', scoreKind: 'time', scoreLabel: '4:12'
+    }];
+    const { getByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={records} />
+    );
+    const avatars = getByTestId('record-20260603120000').querySelectorAll('.cgh-record__avatar');
+    expect(avatars).toHaveLength(2);
+    // real rider: plain, no ghost treatment
+    expect(avatars[0].className).not.toContain('cg-ghost');
+    // ghost: tinted treatment + resolved (user_2, not the guest fallback) face
+    expect(avatars[1].className).toContain('cg-ghost');
+    expect(avatars[1].style.getPropertyValue('--cg-ghost-tint')).toBe('#ffb13d99');
+    expect(avatars[1].querySelector('img').getAttribute('src')).toBe('/api/v1/static/img/users/user_2');
+  });
+
   it('closes the rider picker on Escape', () => {
     const { getByTestId, queryByTestId } = render(
       <CycleGameHome bikes={bikes} people={people} records={[]} />

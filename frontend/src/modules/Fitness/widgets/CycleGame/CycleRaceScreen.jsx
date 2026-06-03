@@ -373,6 +373,9 @@ export default function CycleRaceScreen({
                 finished={!!live.finished}
                 placement={live.placement}
                 penalized={!!live.penalized}
+                penaltyRemainingS={live.penaltyRemainingS}
+                penaltyTotalS={live.penaltyTotalS}
+                penaltyAwaitingStop={!!live.penaltyAwaitingStop}
                 size={speedoSize}
               />
             );

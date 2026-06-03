@@ -693,14 +693,18 @@ export default function CycleGameHome({
                 >
                   <span className="cgh-record__avatars">
                     {(rec.avatars || []).map((a) => (
-                      <img
+                      <span
                         key={a.id}
-                        className="cgh-record__avatar"
-                        src={a.src}
-                        alt={a.name}
+                        className={`cgh-record__avatar${a.isGhost ? ' cg-ghost' : ''}`}
+                        style={a.isGhost && a.tint ? { '--cg-ghost-tint': `${a.tint}99` } : undefined}
                         title={a.name}
-                        onError={(e) => { e.currentTarget.src = FALLBACK_AVATAR; }}
-                      />
+                      >
+                        <img
+                          src={a.src}
+                          alt={a.name}
+                          onError={(e) => { e.currentTarget.src = FALLBACK_AVATAR; }}
+                        />
+                      </span>
                     ))}
                   </span>
                   <span className="cgh-record__stats">
