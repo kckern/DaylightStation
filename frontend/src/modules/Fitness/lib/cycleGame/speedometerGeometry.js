@@ -3,6 +3,34 @@ import { rpmToAngle, polarToCartesian } from '@/modules/Fitness/player/overlays/
 const TICK_INNER_OFFSET = 4;
 const TICK_OUTER_OFFSET = 2;
 
+// The cadence_zones in config (warmup/cruising/pushing/sprint) were authored for
+// the original ~120-RPM gauge. On a larger gauge (e.g. a 250-RPM tricycle) their
+// absolute thresholds leave a huge "sprint/red" wedge. Treat them as proportions
+// of this reference and stretch them to the actual gauge so the colour tiers keep
+// their intent across equipment.
+const BAND_REFERENCE_RPM = 120;
+
+// Pick a tick/label spacing that keeps the dial legible at any gauge max — aim
+// for ~12 minor ticks, labelling every third. A fixed 10/30 crowds a 250 gauge.
+const NICE_STEPS = [5, 10, 20, 25, 50];
+export function tickStepsFor(maxRpm) {
+  const m = Number.isFinite(maxRpm) && maxRpm > 0 ? maxRpm : BAND_REFERENCE_RPM;
+  const rawTick = m / 12;
+  const tickStep = NICE_STEPS.find((n) => n >= rawTick) || NICE_STEPS[NICE_STEPS.length - 1];
+  return { tickStep, labelStep: tickStep * 3 };
+}
+
+// Scale band thresholds from the reference gauge to the actual one so the colour
+// zones stay proportional (a steady cruise is green, a real sprint is red) no
+// matter the equipment's max RPM.
+export function scaleBands(bands, maxRpm, referenceRpm = BAND_REFERENCE_RPM) {
+  const list = Array.isArray(bands) ? bands : [];
+  const ref = Number.isFinite(referenceRpm) && referenceRpm > 0 ? referenceRpm : BAND_REFERENCE_RPM;
+  const m = Number.isFinite(maxRpm) && maxRpm > 0 ? maxRpm : ref;
+  const factor = m / ref;
+  return list.map((b) => ({ ...b, min: Math.round((Number.isFinite(b.min) ? b.min : 0) * factor) }));
+}
+
 export function buildTicks({ maxRpm = 120, tickStep = 10, labelStep = 30, center = 100, gaugeRadius = 80 } = {}) {
   const ticks = [];
   for (let rpm = 0; rpm <= maxRpm; rpm += tickStep) {

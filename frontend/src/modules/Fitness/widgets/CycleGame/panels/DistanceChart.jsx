@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { LINE_COLORS } from '@/modules/Fitness/lib/cycleGame/lineColors.js';
 import { plotStartIndex } from '@/modules/Fitness/lib/cycleGame/chartTrim.js';
+import getLogger from '@/lib/logging/Logger.js';
 
 const EVENT_GLYPH = { dnf: '🛑', penalty: '⏱️' };
 
@@ -14,16 +15,26 @@ const EVENT_GLYPH = { dnf: '🛑', penalty: '⏱️' };
 export default function DistanceChart({ riderIds, riders, riderLive, winCondition, goalM, events = [] }) {
   const chartRef = useRef(null);
   const [chartH, setChartH] = useState(220); // chart px height (for collision spacing)
+  const lastHRef = useRef(220);
+  const log = useMemo(() => getLogger().child({ component: 'cycle-distance-chart' }), []);
 
   useEffect(() => {
     const el = chartRef.current;
     if (!el) return undefined;
-    const compute = () => setChartH(el.clientHeight || 220);
+    // Only react to a real height change — logs the new dimension (so layout
+    // thrashing is visible in telemetry) and avoids redundant re-renders.
+    const compute = () => {
+      const next = el.clientHeight || 220;
+      if (next === lastHRef.current) return;
+      lastHRef.current = next;
+      log.debug('cycle_game.chart_resize', { h: next });
+      setChartH(next);
+    };
     compute();
     let ro;
     if (typeof ResizeObserver !== 'undefined') { ro = new ResizeObserver(compute); ro.observe(el); }
     return () => { if (ro) ro.disconnect(); };
-  }, []);
+  }, [log]);
 
   // chart scaling
   const maxSeriesLen = Math.max(1, ...riderIds.map((id) => (riders[id].distanceSeries || []).length));
