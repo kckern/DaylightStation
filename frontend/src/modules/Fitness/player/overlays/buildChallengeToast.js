@@ -26,6 +26,20 @@ export function buildChallengeToast(event, challenge, { resolveUserName } = {}) 
   }
 
   // event === 'end' (success)
+  if (c.type === 'cycle') {
+    const riderName = (c.rider && (c.rider.name || c.rider.id))
+      || (typeof resolveUserName === 'function' && c.rider?.id && resolveUserName(c.rider.id))
+      || 'Rider';
+    const phases = Number.isFinite(c.totalPhases) ? c.totalPhases : null;
+    const cycleSubtitle = phases != null
+      ? `${riderName} completed ${phases} phase${phases === 1 ? '' : 's'}`
+      : undefined;
+    const cycleToast = { icon: '🏆', title: 'Challenge complete!', subtitle: cycleSubtitle, variant: 'success' };
+    const cycleContributors = buildContributors(c, resolveUserName);
+    if (cycleContributors.length) cycleToast.contributors = cycleContributors;
+    return cycleToast;
+  }
+
   const subtitle = (actualCount != null && requiredCount != null && zoneLabel)
     ? `${actualCount} of ${requiredCount} ${peopleWord(requiredCount)} reached ${zoneLabel}`
     : undefined;
