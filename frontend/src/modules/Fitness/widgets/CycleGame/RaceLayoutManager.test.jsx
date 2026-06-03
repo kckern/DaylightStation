@@ -46,7 +46,7 @@ describe('RaceLayoutManager', () => {
     const noSpeedo = { zones: { topLeft: 'rankings', bottom: null } };
     const panels = { rankings: () => <div />, speedoRow: () => <div /> };
     const a = render(<RaceLayoutManager decision={withSpeedo} panels={panels} />);
-    expect(a.container.querySelector('.race-layout').style.getPropertyValue('--rows')).toBe('1fr 38%');
+    expect(a.container.querySelector('.race-layout').style.getPropertyValue('--rows')).toBe('1fr minmax(240px, 48%)');
     const b = render(<RaceLayoutManager decision={noSpeedo} panels={panels} />);
     expect(b.container.querySelector('.race-layout').style.getPropertyValue('--rows')).toBe('1fr 0px');
   });
