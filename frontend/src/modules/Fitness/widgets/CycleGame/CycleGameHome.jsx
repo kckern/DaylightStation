@@ -1,10 +1,19 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.jsx';
 import RpmDeviceAvatar from '@/modules/Fitness/components/RpmDeviceAvatar.jsx';
-import VolumeControl from '@/modules/Fitness/shared/primitives/VolumeControl';
+import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from '@/modules/Fitness/player/panels/TouchVolumeButtons.jsx';
 import { DaylightMediaPath } from '@/lib/api.mjs';
+import getLogger from '@/lib/logging/Logger.js';
 import './CycleGameHome.scss';
+
+// Module-level logger (lazy) for purely-local lobby UI events — modal opens,
+// tab switches, ghost focus — that don't surface to the container's handlers.
+let _uiLog;
+function uiLog() {
+  if (!_uiLog) _uiLog = getLogger().child({ component: 'cycle-game-ui' });
+  return _uiLog;
+}
 
 const EQUIPMENT_FALLBACK = DaylightMediaPath('/static/img/equipment/equipment');
 
@@ -296,7 +305,7 @@ function RiderPicker({ bike, people = [], currentRiderId = null, onAssign, onCle
                 role="tab"
                 aria-selected={activeTab === c.key}
                 className={`cgh-tab${activeTab === c.key ? ' is-active' : ''}`}
-                onClick={() => setTab(c.key)}
+                onClick={() => { uiLog().debug('cycle_game.ui.picker_tab', { tab: c.key, equipmentId: bike?.id }); setTab(c.key); }}
               >
                 {c.label}
               </button>
@@ -412,7 +421,6 @@ function formatDayHeader(day) {
  */
 function GhostPicker({ candidates = [], currentGhost = null, onSelect, onClear, onClose }) {
   const [focusedId, setFocusedId] = useState(currentGhost?.sourceRaceId || null);
-  const cardRefs = useRef({});
 
   const columns = useMemo(() => {
     const map = new Map();
@@ -425,11 +433,13 @@ function GhostPicker({ candidates = [], currentGhost = null, onSelect, onClear, 
     return [...map.entries()].slice(0, 3); // most recent 3 days
   }, [candidates]);
 
+  // Tap-to-scroll pattern (mirrors FitnessSessionsWidget): the first tap focuses
+  // the card — the focused card's ref scrolls itself into view (block:center) —
+  // and a second tap on the focused card commits the selection.
   const handleTap = (c) => {
     if (focusedId !== c.raceId) {
+      uiLog().debug('cycle_game.ui.ghost_focus', { raceId: c.raceId, day: c.day });
       setFocusedId(c.raceId);
-      const el = cardRefs.current[c.raceId];
-      if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     } else {
       onSelect?.(c);
     }
@@ -462,11 +472,11 @@ function GhostPicker({ candidates = [], currentGhost = null, onSelect, onClear, 
                     return (
                       <button
                         key={c.raceId}
-                        ref={(el) => { cardRefs.current[c.raceId] = el; }}
+                        ref={isFocused ? (el) => { if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } : undefined}
                         type="button"
                         className={`cgh-ghost-card${isFocused ? ' is-focused' : ''}${isCurrent ? ' is-current' : ''}`}
                         data-testid={`ghost-${c.raceId}`}
-                        onClick={() => handleTap(c)}
+                        onPointerDown={() => handleTap(c)}
                       >
                         <span className="cgh-ghost-card__avatars" data-count={Math.min(riders.length, 4)}>
                           {riders.slice(0, 4).map((p) => (
@@ -540,6 +550,7 @@ export default function CycleGameHome({
   onSelectGhost,
   onClearGhost,
   masterVolume = 1,
+  masterMuted = false,
   onSetMasterVolume,
   onStart,
   canStart = false
@@ -577,7 +588,7 @@ export default function CycleGameHome({
           raceValue={raceValue}
           onSetRaceValue={onSetRaceValue}
           ghost={ghost}
-          onPickGhost={() => setShowGhostPicker(true)}
+          onPickGhost={() => { uiLog().info('cycle_game.ui.ghost_picker_open', {}); setShowGhostPicker(true); }}
           onClearGhost={onClearGhost}
         />
 
@@ -592,7 +603,7 @@ export default function CycleGameHome({
                   key={bike.id}
                   bike={bike}
                   person={bike.rider ? peopleById.get(bike.rider) || { id: bike.rider, name: bike.rider } : null}
-                  onPick={setPickerBike}
+                  onPick={(b) => { uiLog().info('cycle_game.ui.rider_picker_open', { equipmentId: b.id, currentRider: b.rider || null }); setPickerBike(b); }}
                 />
               ))}
             </div>
@@ -614,17 +625,12 @@ export default function CycleGameHome({
       </div>
 
       <aside className="cycle-game-home__records" data-testid="cycle-game-records">
-        <div className="cgh-section-label">Volume</div>
+        <div className="cgh-section-label" id="cycle-game-volume-label">Volume</div>
         <div className="cgh-volume" data-testid="cycle-game-volume">
-          <VolumeControl
-            value={Math.round((Number.isFinite(masterVolume) ? masterVolume : 1) * 100)}
-            min={0}
-            max={100}
-            step={5}
-            orientation="horizontal"
-            size="md"
-            showValue
-            onChange={(v) => onSetMasterVolume?.(Math.max(0, Math.min(1, v / 100)))}
+          <TouchVolumeButtons
+            controlId="cycle-game-volume"
+            currentLevel={snapToTouchLevel(linearLevelFromVolume(masterMuted ? 0 : masterVolume))}
+            onSelect={(level) => onSetMasterVolume?.(linearVolumeFromLevel(level))}
           />
         </div>
         <div className="cgh-section-label">Records</div>
@@ -672,7 +678,7 @@ export default function CycleGameHome({
           currentRiderId={pickerBike.rider || null}
           onAssign={handleAssign}
           onClear={handleClear}
-          onClose={() => setPickerBike(null)}
+          onClose={() => { uiLog().debug('cycle_game.ui.rider_picker_close', { equipmentId: pickerBike?.id }); setPickerBike(null); }}
         />
       )}
 
@@ -682,7 +688,7 @@ export default function CycleGameHome({
           currentGhost={ghost}
           onSelect={(g) => { onSelectGhost?.(g); setShowGhostPicker(false); }}
           onClear={() => { onClearGhost?.(); }}
-          onClose={() => setShowGhostPicker(false)}
+          onClose={() => { uiLog().debug('cycle_game.ui.ghost_picker_close', {}); setShowGhostPicker(false); }}
         />
       )}
     </div>
@@ -705,6 +711,7 @@ CycleGameHome.propTypes = {
   onSelectGhost: PropTypes.func,
   onClearGhost: PropTypes.func,
   masterVolume: PropTypes.number,
+  masterMuted: PropTypes.bool,
   onSetMasterVolume: PropTypes.func,
   onStart: PropTypes.func,
   canStart: PropTypes.bool

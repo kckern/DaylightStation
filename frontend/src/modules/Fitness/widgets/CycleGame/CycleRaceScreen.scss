@@ -45,45 +45,85 @@
     font-family: cg.$cg-mono; font-size: 0.78rem; color: cg.$cg-muted;
   }
 
-  // ── Chart ───────────────────────────────────────────────────────────────
+  // ── Top region: chart (2/3) + roster (1/3) ────────────────────────────────
+  &__top {
+    position: relative; z-index: 1;
+    flex: 1 1 auto; min-height: 0; width: 94%;
+    display: flex; gap: 20px; align-items: stretch;
+  }
+
+  // ── Chart (2/3) ────────────────────────────────────────────────────────────
   &__chart-wrap {
-    position: relative; z-index: 1; width: 94%; flex: 1 1 auto; min-height: 0;
+    position: relative; flex: 2 1 0; min-width: 0;
     border-left: 1px solid cg.$cg-border-soft;
     border-bottom: 1px solid cg.$cg-border-soft;
   }
   &__chart { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
   &__goal { stroke: cg.$cg-gold; stroke-width: 1.5; stroke-dasharray: 7 5; opacity: 0.8; }
 
-  // Terminus markers — avatar + running score riding each line's tip. Short
-  // transition keeps them gliding without lagging behind the line end (no gap).
+  // Terminus nodes — a small lettered disc riding each line's tip (avatars live
+  // in the roster). De-overlapped vertically; a connector links a displaced node
+  // back to its true line endpoint.
   &__tags { position: absolute; inset: 0; pointer-events: none; }
+  &__tag-connector {
+    position: absolute; width: 2px; transform: translateX(-50%);
+    opacity: 0.55; border-radius: 1px;
+    transition: top 0.3s linear, height 0.3s linear;
+  }
   &__tag {
     position: absolute;
     transform: translate(-50%, -50%);
     transition: left 0.3s linear, top 0.3s linear;
-    display: flex; align-items: center; gap: 8px;
-    white-space: nowrap;
   }
-  &__tag-avatar {
-    width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+  &__node {
+    display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; border-radius: 50%;
+    font-family: cg.$cg-display; font-weight: 800; font-size: 0.95rem; color: #0a0b0f;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3), 0 2px 8px rgba(0, 0, 0, 0.6);
   }
-  &__tag-info { display: flex; flex-direction: column; line-height: 1.05; }
-  &__tag-score {
-    font-family: cg.$cg-display; font-weight: 800; font-size: 1.05rem;
-    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+  &__tag.is-leader &__node {
+    width: 32px; height: 32px; font-size: 1.15rem;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9), 0 0 14px currentColor;
   }
-  &__tag-hr {
-    font-family: cg.$cg-mono; font-size: 0.74rem; color: #ff6b6b; font-weight: 700;
-  }
-  &__tag-hr-icon { margin-left: 1px; }
-  &__tag.is-leader &__tag-score { font-size: 1.2rem; }
-  &__tag.is-ghost { opacity: 0.9; }
-  &__tag.is-ghost &__tag-score { font-style: italic; }
+  &__tag.is-ghost &__node { opacity: 0.85; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25); }
 
-  // ── Speedometers ────────────────────────────────────────────────────────
+  // ── Roster (1/3) — sorted by who's ahead ────────────────────────────────────
+  &__roster {
+    flex: 1 1 0; min-width: 0;
+    display: flex; flex-direction: column; gap: 8px;
+    overflow-y: auto; padding-left: 4px;
+  }
+  &__roster-row {
+    display: flex; align-items: center; gap: 12px;
+    background: rgba(18, 20, 27, 0.6);
+    border: 1px solid cg.$cg-border-soft; border-radius: 12px;
+    padding: 8px 12px;
+    &.is-ghost { opacity: 0.85; }
+  }
+  &__roster-rank {
+    font-family: cg.$cg-display; font-weight: 800; font-size: 1.3rem;
+    color: cg.$cg-muted; min-width: 1.2em; text-align: center; flex-shrink: 0;
+  }
+  &__roster-avatar {
+    flex-shrink: 0; width: 44px; height: 44px; border-radius: 50%;
+    .circular-user-avatar { min-width: 0 !important; width: 44px !important; height: 44px !important; --vital-avatar-size: 44px; }
+  }
+  &__roster-main { display: flex; flex-direction: column; min-width: 0; }
+  &__roster-name {
+    font-family: cg.$cg-display; font-weight: 700; font-size: 1rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  &__roster-metric { font-family: cg.$cg-mono; font-weight: 700; font-size: 0.95rem; }
+
+  // ── Speedometers ──────────────────────────────────────────────────────────
+  // Reserved bottom band; ALWAYS a single row (gauges scale down to fit, never
+  // wrap — see the measure-and-size effect in CycleRaceScreen.jsx).
   &__speedos {
-    position: relative; z-index: 1; flex-shrink: 0;
-    display: flex; gap: 40px; justify-content: center; align-items: flex-start; flex-wrap: wrap;
+    position: relative; z-index: 1;
+    flex: 0 0 44%;
+    min-height: 0;
+    display: flex; gap: 28px; justify-content: center; align-items: center;
+    flex-wrap: nowrap;
+    overflow: hidden;
   }
 }

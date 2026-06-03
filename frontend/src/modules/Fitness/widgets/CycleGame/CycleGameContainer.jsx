@@ -9,7 +9,7 @@ import { playSound } from '@/modules/Fitness/lib/cycleGame/playSound.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import { SessionSerializerV3 } from '@/hooks/fitness/SessionSerializerV3.js';
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
-import { useScreenVolume, getEffectiveMaster } from '@/lib/volume/ScreenVolumeContext.js';
+import { usePersistentVolume } from '@/modules/Fitness/nav/usePersistentVolume.js';
 import CycleGameHome from './CycleGameHome.jsx';
 import CountdownStoplight from './CountdownStoplight.jsx';
 import CycleRaceScreen from './CycleRaceScreen.jsx';
@@ -38,6 +38,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     fitnessSessionInstance: session,
     getUserVitals,
     getDisplayName,
+    getDisplayLabel,
     getUserByName
   } = ctx;
 
@@ -71,9 +72,13 @@ export default function CycleGameContainer({ onMount } = {}) {
   soundsRef.current = sounds;
   const musicVolume = Number.isFinite(cycleGameConfig?.music_volume) ? cycleGameConfig.music_volume : 0.55;
 
-  // Master volume (screen-framework). Everything — soundtrack + SFX (via
-  // playSound→getEffectiveMaster) — is scaled by it; the lobby exposes a control.
-  const { master, effectiveMaster, setMaster } = useScreenVolume();
+  // Master volume — the OFFICIAL fitness volume store (the same level the rest
+  // of the app's video uses). Scales all cycle-game music + SFX; the lobby
+  // exposes the standard TouchVolumeButtons control bound to it.
+  const masterVol = usePersistentVolume({ grandparentId: 'fitness', parentId: 'global', trackId: 'video' });
+  const effectiveMaster = masterVol.muted ? 0 : (Number.isFinite(masterVol.volume) ? masterVol.volume : 1);
+  const masterRef = useRef(1);
+  masterRef.current = effectiveMaster;
 
   // Background-music channel (one looping track at a time, swapped per phase).
   // Separate from the one-shot SFX channel (playSound). Null/absent = silent.
@@ -93,8 +98,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     try {
       const a = new Audio(url);
       a.loop = loop;
-      const m = (() => { try { return getEffectiveMaster(); } catch { return 1; } })();
-      a.volume = Math.max(0, Math.min(1, musicVolume * (Number.isFinite(m) ? m : 1)));
+      a.volume = Math.max(0, Math.min(1, musicVolume * masterRef.current));
       a.play().catch(() => { /* autoplay may defer until a gesture */ });
       musicRef.current = a;
       musicKeyRef.current = key;
@@ -118,14 +122,14 @@ export default function CycleGameContainer({ onMount } = {}) {
   const [pastRaces, setPastRaces] = useState([]); // recent saved race records
   const [ghost, setGhost] = useState(null); // selected ghost competitor (locks config)
 
+  // Use the canonical relational name resolver: getDisplayLabel applies the
+  // household nickname ("Dad"/"Mom") when 2+ HR riders are present, else the
+  // given name. Don't reinvent this.
   const resolveDisplayName = useCallback((userId) => {
     if (!userId) return userId;
-    const vitals = getUserVitals?.(userId);
-    if (vitals?.name) return vitals.name;
-    const user = getUserByName?.(userId);
-    if (user?.name) return user.name;
-    return getDisplayName?.(userId) || userId;
-  }, [getUserVitals, getUserByName, getDisplayName]);
+    const name = getUserVitals?.(userId)?.name || getUserByName?.(userId)?.name || getDisplayName?.(userId) || userId;
+    return getDisplayLabel?.(name, { userId }) || name;
+  }, [getUserVitals, getUserByName, getDisplayName, getDisplayLabel]);
 
   // Per-equipment abuse defaults (used when a bike doesn't define its own).
   const abuseMaxRpmDefault = Number.isFinite(cycleGameConfig?.abuse_max_rpm)
@@ -188,6 +192,7 @@ export default function CycleGameContainer({ onMount } = {}) {
   const savedRef = useRef(false);
   const prevDnfRef = useRef(new Set());
   const prevDqRef = useRef(new Set());
+  const prevPenalizedRef = useRef(new Set());
 
   // Live-data refs so the race-tick interval can read the freshest
   // session/vitals without re-subscribing. The fitness context value changes
@@ -416,7 +421,14 @@ export default function CycleGameContainer({ onMount } = {}) {
 
   // Race Recap overlay — replay a saved race's chart from the records rail.
   const [recapRaceId, setRecapRaceId] = useState(null);
-  const onSelectRecord = useCallback((raceId) => setRecapRaceId(raceId), []);
+  const onSelectRecord = useCallback((raceId) => {
+    log.info('cycle_game.recap_opened', { raceId, control: 'lobby.records-rail' });
+    setRecapRaceId(raceId);
+  }, [log]);
+  const closeRecap = useCallback(() => {
+    log.info('cycle_game.recap_closed', {});
+    setRecapRaceId(null);
+  }, [log]);
   const recapCandidate = useMemo(
     () => ghostCandidates.find((g) => g.raceId === recapRaceId) || null,
     [ghostCandidates, recapRaceId]
@@ -437,6 +449,9 @@ export default function CycleGameContainer({ onMount } = {}) {
   }, [phase]);
 
   const startRace = useCallback(() => {
+    log.info('cycle_game.start_pressed', {
+      raceType: ghost ? 'ghost' : raceType, hasGhost: !!ghost, control: 'lobby.start-button'
+    });
     // The race "course" is derived from the chosen type + value. Default the
     // value from config when none was picked (so the E2E — which only clicks a
     // race type then Start — still works).
@@ -491,6 +506,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     savedRef.current = false;
     prevDnfRef.current = new Set();
     prevDqRef.current = new Set();
+    prevPenalizedRef.current = new Set();
 
     const controller = new CycleRaceController(cfg);
     controllerRef.current = controller;
@@ -536,14 +552,14 @@ export default function CycleGameContainer({ onMount } = {}) {
       const state = c.countdownTick();
       log.debug('cycle_game.countdown', { remaining: state.countdownRemaining });
       if (state.phase === 'racing') {
-        playSound(soundsRef.current?.go); // null = silent
+        playSound(soundsRef.current?.go, { volume: masterRef.current }); // null = silent
         log.info('cycle_game.race_started', {
           raceId: raceMetaRef.current?.raceId,
           riders: Object.keys(state.engineState?.riders || {}),
           winCondition: raceMetaRef.current?.winCondition
         });
       } else {
-        playSound(soundsRef.current?.countdown); // beep per tick; null = silent
+        playSound(soundsRef.current?.countdown, { volume: masterRef.current }); // beep per tick; null = silent
       }
       applySnapshot(state);
     }, COUNTDOWN_TICK_MS);
@@ -598,10 +614,24 @@ export default function CycleGameContainer({ onMount } = {}) {
       });
       prevDqRef.current = dqSet;
 
+      // Hot-start penalty detection — diff the controller penalized set.
+      const penalizedSet = new Set(state.penalized || []);
+      penalizedSet.forEach((userId) => {
+        if (!prevPenalizedRef.current.has(userId)) {
+          log.info('cycle_game.rider_penalized', {
+            raceId: raceMetaRef.current?.raceId,
+            userId,
+            reason: 'hot-start',
+            elapsedS: state.engineState?.elapsedS ?? null
+          });
+        }
+      });
+      prevPenalizedRef.current = penalizedSet;
+
       if (state.phase === 'finished') {
         const finalState = controller.showResults();
         const standings = finalState.engineState?.standings || [];
-        playSound(soundsRef.current?.finish); // null = silent
+        playSound(soundsRef.current?.finish, { volume: masterRef.current }); // null = silent
         log.info('cycle_game.race_finished', {
           raceId: raceMetaRef.current?.raceId,
           standings: standings.map((s) => ({
@@ -664,7 +694,7 @@ export default function CycleGameContainer({ onMount } = {}) {
       playMusic(s.lobby, 'lobby');
     } else if (phase === 'countdown') {
       stopMusic();
-      playSound(s.start); // one-shot 3-2-1 jingle
+      playSound(s.start, { volume: masterRef.current }); // one-shot 3-2-1 jingle
     } else if (phase === 'racing') {
       playMusic(pickRacingTrack(), 'racing');
     } else if (phase === 'results') {
@@ -687,12 +717,13 @@ export default function CycleGameContainer({ onMount } = {}) {
 
   // ── handlers ─────────────────────────────────────────────────────────────
   const onSelectRaceType = useCallback((type) => {
+    log.info('cycle_game.race_type_selected', { type, clearedGhost: !!ghost, control: 'lobby.race-type-tile' });
     setGhost(null); // distance/time are mutually exclusive with a ghost race
     setRaceType((prev) => (prev === type ? prev : type));
     // Pre-select a concrete value so the value step never reads "default".
     if (type === 'time') setRaceValueS((v) => (Number.isFinite(v) ? v : timeDefaultS));
     else setRaceValueM((v) => (Number.isFinite(v) ? v : distanceDefaultM));
-  }, [timeDefaultS, distanceDefaultM]);
+  }, [timeDefaultS, distanceDefaultM, ghost, log]);
 
   // Selecting a ghost replays the WHOLE recorded field and locks the race type
   // + value to that recording.
@@ -733,40 +764,49 @@ export default function CycleGameContainer({ onMount } = {}) {
     if (ghost) return; // ghost locks the value
     if (!Number.isFinite(value)) return;
     setRaceType((current) => {
+      log.info('cycle_game.race_value_set', { type: current, value, control: 'lobby.value-step' });
       if (current === 'time') setRaceValueS(value);
       else setRaceValueM(value);
       return current;
     });
-  }, [ghost]);
+  }, [ghost, log]);
 
   const onAssign = useCallback((bikeId, userId) => {
+    log.info('cycle_game.rider_assigned', { equipmentId: bikeId, userId, control: 'lobby.rider-picker' });
     session?.setEquipmentRider?.(bikeId, userId);
     setAssignVersion((v) => v + 1);
-  }, [session]);
+  }, [session, log]);
 
   const onUnassign = useCallback((bikeId) => {
+    log.info('cycle_game.rider_unassigned', { equipmentId: bikeId, control: 'lobby.rider-picker.clear' });
     session?.setEquipmentRider?.(bikeId, null);
     setAssignVersion((v) => v + 1);
-  }, [session]);
+  }, [session, log]);
+
+  const onSetMasterVolume = useCallback((v) => {
+    log.info('cycle_game.volume_set', { volume: v, control: 'lobby.volume' });
+    masterVol.setVolume?.(v);
+  }, [masterVol, log]);
 
   const onCancel = useCallback(() => {
     const controller = controllerRef.current;
     const raceId = raceMetaRef.current?.raceId || null;
     if (stagingTimerRef.current) { clearTimeout(stagingTimerRef.current); stagingTimerRef.current = null; }
     if (controller) controller.cancel();
-    log.info('cycle_game.cancelled', { raceId });
+    log.info('cycle_game.cancelled', { raceId, fromPhase: phase, control: 'cancel-button' });
+    controllerRef.current = null;
+    raceMetaRef.current = null;
+    setSnapshot(null);
+    setPhase('idle');
+  }, [log, phase]);
+
+  const backToHome = useCallback(() => {
+    log.info('cycle_game.back_to_home', { from: 'results' });
     controllerRef.current = null;
     raceMetaRef.current = null;
     setSnapshot(null);
     setPhase('idle');
   }, [log]);
-
-  const backToHome = useCallback(() => {
-    controllerRef.current = null;
-    raceMetaRef.current = null;
-    setSnapshot(null);
-    setPhase('idle');
-  }, []);
 
   // ── render ───────────────────────────────────────────────────────────────
   if (phase === 'idle') {
@@ -787,13 +827,14 @@ export default function CycleGameContainer({ onMount } = {}) {
           ghostCandidates={ghostCandidates}
           onSelectGhost={onSelectGhost}
           onClearGhost={onClearGhost}
-          masterVolume={master}
-          onSetMasterVolume={setMaster}
+          masterVolume={masterVol.volume}
+          masterMuted={masterVol.muted}
+          onSetMasterVolume={onSetMasterVolume}
           onStart={startRace}
           canStart={canStart}
         />
         {recapCandidate && (
-          <RaceRecap candidate={recapCandidate} onClose={() => setRecapRaceId(null)} />
+          <RaceRecap candidate={recapCandidate} onClose={closeRecap} />
         )}
       </div>
     );

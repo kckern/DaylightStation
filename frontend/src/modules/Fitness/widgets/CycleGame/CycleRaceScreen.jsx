@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.jsx';
 import CycleSpeedometer from './CycleSpeedometer.jsx';
@@ -22,6 +22,46 @@ export default function CycleRaceScreen({
   showSpeedos = true
 }) {
   const riderIds = Object.keys(riders);
+
+  // Keep the speedometer row to ONE line within the reserved bottom band —
+  // scale the gauges down to fit (never wrap). Measure the row and divide.
+  const speedosRef = useRef(null);
+  const [speedoSize, setSpeedoSize] = useState(240);
+  const chartRef = useRef(null);
+  const [chartH, setChartH] = useState(220); // chart px height (for collision spacing)
+  const riderCount = riderIds.length;
+
+  useEffect(() => {
+    const el = chartRef.current;
+    if (!el) return undefined;
+    const compute = () => setChartH(el.clientHeight || 220);
+    compute();
+    let ro;
+    if (typeof ResizeObserver !== 'undefined') { ro = new ResizeObserver(compute); ro.observe(el); }
+    return () => { if (ro) ro.disconnect(); };
+  }, []);
+  useEffect(() => {
+    if (!showSpeedos) return undefined;
+    const el = speedosRef.current;
+    if (!el) return undefined;
+    const SPEEDO_GAP = 28; // keep in sync with .cycle-race-screen__speedos gap
+    const compute = () => {
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      const n = Math.max(1, riderCount);
+      const byWidth = (w - SPEEDO_GAP * (n - 1)) / n;
+      const byHeight = h - 50; // room for the odometer pill beneath the gauge
+      const size = Math.max(96, Math.min(280, Math.floor(Math.min(byWidth, byHeight))));
+      setSpeedoSize(Number.isFinite(size) && size > 0 ? size : 96);
+    };
+    compute();
+    let ro;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(compute);
+      ro.observe(el);
+    }
+    return () => { if (ro) ro.disconnect(); };
+  }, [riderCount, showSpeedos]);
   const clockSeconds = winCondition === 'time' ? Math.max(0, timeCapS - elapsedS) : elapsedS;
 
   // chart scaling
@@ -61,6 +101,60 @@ export default function CycleRaceScreen({
     null
   );
 
+  // Tag positions with 1D vertical de-overlap (collision avoidance, mirroring
+  // the fitness chart's displace-and-connect): tips that crowd are pushed apart
+  // and a connector links the displaced tag back to its true line endpoint.
+  const minSepPct = Math.min(38, (46 / Math.max(80, chartH)) * 100);
+  const tagLayout = (() => {
+    const raw = riderIds.map((id, idx) => {
+      const series = riders[id].distanceSeries || [];
+      if (!series.length) return null;
+      return {
+        id,
+        idx,
+        leftPct: (xFor(series.length - 1) / W) * 100,
+        rawTopPct: (yFor(series[series.length - 1]) / H) * 100,
+        color: LINE_COLORS[idx % LINE_COLORS.length],
+        isGhost: !!riders[id].isGhost,
+        live: riderLive[id] || {},
+        distanceM: riders[id].cumulativeDistanceM || 0,
+        displayName: riders[id].displayName,
+        isLeader: id === leaderId
+      };
+    }).filter(Boolean).sort((a, b) => a.rawTopPct - b.rawTopPct);
+
+    // forward pass — push down to keep min separation
+    let prev = -Infinity;
+    raw.forEach((t) => { t.topPct = Math.max(t.rawTopPct, prev + minSepPct); prev = t.topPct; });
+    // backward pass — if the stack overflowed the bottom, pull it up
+    const maxTop = 96;
+    if (raw.length && raw[raw.length - 1].topPct > maxTop) {
+      let next = Infinity;
+      for (let i = raw.length - 1; i >= 0; i--) {
+        const t = raw[i];
+        t.topPct = Math.min(t.topPct, i === raw.length - 1 ? maxTop : next - minSepPct);
+        next = t.topPct;
+      }
+    }
+    raw.forEach((t) => { if (t.topPct < 3) t.topPct = 3; });
+    return raw;
+  })();
+
+  // Roster panel (right of the chart): riders sorted by who's ahead.
+  const roster = [...riderIds]
+    .sort((a, b) => (riders[b].cumulativeDistanceM || 0) - (riders[a].cumulativeDistanceM || 0))
+    .map((id) => {
+      const origIdx = riderIds.indexOf(id);
+      return {
+        id,
+        displayName: riders[id].displayName || id,
+        distanceM: riders[id].cumulativeDistanceM || 0,
+        isGhost: !!riders[id].isGhost,
+        color: LINE_COLORS[origIdx % LINE_COLORS.length],
+        live: riderLive[id] || {}
+      };
+    });
+
   return (
     <div className="cycle-race-screen" data-testid="cycle-race-screen">
       {/* Ambient background video — only mounts when a Plex id is configured (null = no video). */}
@@ -88,7 +182,8 @@ export default function CycleRaceScreen({
         </span>
       </div>
 
-      <div className="cycle-race-screen__chart-wrap">
+      <div className="cycle-race-screen__top">
+      <div className="cycle-race-screen__chart-wrap" ref={chartRef}>
         <svg className="cycle-race-screen__chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
           <defs>
             {riderIds.map((id, idx) => {
@@ -148,49 +243,66 @@ export default function CycleRaceScreen({
         </svg>
 
         {/* Terminus markers: each line's tip carries the rider's avatar + running
-            score (distance) + live HR. Distance is read here, not off a y-axis. */}
+            score (distance) + live HR. Distance is read here, not off a y-axis.
+            Tags are de-overlapped vertically; a connector links a displaced tag
+            back to its true line endpoint. */}
         <div className="cycle-race-screen__tags">
-          {riderIds.map((id, idx) => {
-            const series = riders[id].distanceSeries || [];
-            if (series.length === 0) return null;
-            const leftPct = (xFor(series.length - 1) / W) * 100;
-            const topPct = (yFor(series[series.length - 1]) / H) * 100;
-            const color = LINE_COLORS[idx % LINE_COLORS.length];
-            const isGhost = !!riders[id].isGhost;
-            const live = riderLive[id] || {};
-            const hr = Number.isFinite(live.heartRate) ? Math.round(live.heartRate) : null;
-            return (
+          {tagLayout.map((t) => {
+            const displaced = Math.abs(t.topPct - t.rawTopPct) > 1.5;
+            return displaced ? (
               <div
-                key={`tag-${id}`}
-                className={`cycle-race-screen__tag${isGhost ? ' is-ghost' : ''}${id === leaderId ? ' is-leader' : ''}`}
-                style={{ left: `${leftPct}%`, top: `${topPct}%` }}
-              >
-                <span className={`cycle-race-screen__tag-avatar${isGhost ? ' cg-ghost' : ''}`}>
-                  <CircularUserAvatar
-                    name={riders[id].displayName}
-                    avatarSrc={live.avatarSrc}
-                    fallbackSrc={FALLBACK_AVATAR}
-                    size={40}
-                    showGauge={false}
-                    showIndicator={false}
-                  />
-                </span>
-                <span className="cycle-race-screen__tag-info">
-                  <span className="cycle-race-screen__tag-score" style={{ color }}>
-                    {formatDistance(riders[id].cumulativeDistanceM || 0)}
-                  </span>
-                  {hr != null && (
-                    <span className="cycle-race-screen__tag-hr">{hr}<span className="cycle-race-screen__tag-hr-icon">♥</span></span>
-                  )}
-                </span>
-              </div>
-            );
+                key={`conn-${t.id}`}
+                className="cycle-race-screen__tag-connector"
+                style={{
+                  left: `${t.leftPct}%`,
+                  top: `${Math.min(t.topPct, t.rawTopPct)}%`,
+                  height: `${Math.abs(t.topPct - t.rawTopPct)}%`,
+                  background: t.color
+                }}
+              />
+            ) : null;
           })}
+          {tagLayout.map((t) => (
+            <div
+              key={`tag-${t.id}`}
+              className={`cycle-race-screen__tag${t.isGhost ? ' is-ghost' : ''}${t.isLeader ? ' is-leader' : ''}`}
+              style={{ left: `${t.leftPct}%`, top: `${t.topPct}%` }}
+            >
+              <span className="cycle-race-screen__node" style={{ background: t.color }}>
+                {String(t.displayName || t.id).trim().charAt(0).toUpperCase()}
+              </span>
+            </div>
+          ))}
         </div>
       </div>
 
+      <aside className="cycle-race-screen__roster" data-testid="race-roster">
+        {roster.map((r, i) => (
+          <div key={`roster-${r.id}`} className={`cycle-race-screen__roster-row${r.isGhost ? ' is-ghost' : ''}`}>
+            <span className="cycle-race-screen__roster-rank">{i + 1}</span>
+            <span className={`cycle-race-screen__roster-avatar${r.isGhost ? ' cg-ghost' : ''}`}>
+              <CircularUserAvatar
+                name={r.displayName}
+                avatarSrc={r.live.avatarSrc}
+                fallbackSrc={FALLBACK_AVATAR}
+                heartRate={Number.isFinite(r.live.heartRate) ? r.live.heartRate : undefined}
+                zoneColor={r.live.zoneColor || r.color}
+                size={44}
+                showGauge={Number.isFinite(r.live.heartRate) && r.live.heartRate > 0}
+                showIndicator={false}
+              />
+            </span>
+            <span className="cycle-race-screen__roster-main">
+              <span className="cycle-race-screen__roster-name">{r.displayName}</span>
+              <span className="cycle-race-screen__roster-metric" style={{ color: r.color }}>{formatDistance(r.distanceM)}</span>
+            </span>
+          </div>
+        ))}
+      </aside>
+      </div>
+
       {showSpeedos && (
-        <div className="cycle-race-screen__speedos">
+        <div className="cycle-race-screen__speedos" ref={speedosRef}>
           {riderIds.map((id, idx) => {
             const live = riderLive[id] || {};
             return (
@@ -209,7 +321,7 @@ export default function CycleRaceScreen({
                   progress: live.zoneProgress
                 }}
                 isGhost={!!riders[id].isGhost}
-                size={260}
+                size={speedoSize}
               />
             );
           })}

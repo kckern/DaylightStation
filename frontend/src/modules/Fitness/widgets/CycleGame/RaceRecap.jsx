@@ -3,7 +3,14 @@ import PropTypes from 'prop-types';
 import CycleRaceScreen from './CycleRaceScreen.jsx';
 import RaceResults from './RaceResults.jsx';
 import { SessionSerializerV3 } from '@/hooks/fitness/SessionSerializerV3.js';
+import getLogger from '@/lib/logging/Logger.js';
 import './RaceRecap.scss';
+
+let _recapLog;
+function recapLog() {
+  if (!_recapLog) _recapLog = getLogger().child({ component: 'cycle-game-recap' });
+  return _recapLog;
+}
 
 const LINE_COLORS = ['#3ddc84', '#ff9f43', '#a66cff'];
 const REPLAY_TARGET_MS = 12000; // whole race replays in ~12s regardless of length
@@ -104,11 +111,18 @@ export default function RaceRecap({ candidate, onClose }) {
       <div className="race-recap__controls">
         <button type="button" className="race-recap__btn" data-testid="race-recap-play" onClick={() => {
           if (t >= decoded.maxLen - 1) setT(0);
-          setPlaying((p) => !p);
+          setPlaying((p) => {
+            recapLog().info('cycle_game.recap_play', { raceId: candidate?.raceId, playing: !p, t });
+            return !p;
+          });
         }}>{playing ? 'Pause' : 'Play'}</button>
         <input
           type="range" className="race-recap__scrub" min={0} max={decoded.maxLen - 1} value={t}
-          onChange={(e) => { setPlaying(false); setT(Number(e.target.value)); }}
+          onChange={(e) => {
+            setPlaying(false);
+            setT(Number(e.target.value));
+            recapLog().sampled('cycle_game.recap_scrub', { raceId: candidate?.raceId, t: Number(e.target.value) }, { maxPerMinute: 30, aggregate: true });
+          }}
           aria-label="scrub"
         />
       </div>

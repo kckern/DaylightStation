@@ -112,9 +112,9 @@ describe('CycleGameHome', () => {
     );
     fireEvent.click(getByTestId('course-ghost')); // open the ghost picker
     const card = getByTestId('ghost-20260602150118');
-    fireEvent.click(card); // first tap → focus only
+    fireEvent.pointerDown(card); // first tap → focus only (tap-to-scroll pattern)
     expect(onSelectGhost).not.toHaveBeenCalled();
-    fireEvent.click(card); // second tap → commit
+    fireEvent.pointerDown(card); // second tap → commit
     expect(onSelectGhost).toHaveBeenCalled();
   });
 
