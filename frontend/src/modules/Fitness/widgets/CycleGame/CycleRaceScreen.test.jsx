@@ -92,4 +92,22 @@ describe('CycleRaceScreen', () => {
     // A 250-max gauge labels ticks every 30 RPM → "240" appears; the 120 default never reaches it.
     expect(getByText('240')).toBeTruthy();
   });
+  it('shows a medal + finish time on the roster for a finished distance-race rider', () => {
+    const riders = {
+      a: { userId: 'a', displayName: 'Ann', distanceSeries: [1000], cumulativeDistanceM: 1000, finishTimeS: 252, isGhost: false },
+      b: { userId: 'b', displayName: 'Bo', distanceSeries: [600], cumulativeDistanceM: 600, finishTimeS: null, isGhost: false }
+    };
+    const { getByTestId } = render(
+      <CycleRaceScreen winCondition="distance" goalM={1000} elapsedS={260}
+        riders={riders} riderLive={{ a: {}, b: {} }} />
+    );
+    const roster = getByTestId('race-roster');
+    const rows = roster.querySelectorAll('.cycle-race-screen__roster-row');
+    // Finisher Ann shows 1st-place medal + her 4:12 finish time; she's the top row.
+    expect(rows[0].textContent).toContain('🥇');
+    expect(rows[0].textContent).toContain('4:12');
+    // Still-racing Bo shows distance, no medal.
+    expect(rows[1].textContent).toContain('600');
+    expect(rows[1].textContent).not.toContain('🥇');
+  });
 });

@@ -10,6 +10,13 @@ import './CycleRaceScreen.scss';
 
 const FALLBACK_AVATAR = '/api/v1/static/img/users/user';
 
+const ROSTER_MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' };
+const fmtRosterTime = (s) => {
+  if (!Number.isFinite(s)) return '—';
+  const m = Math.floor(s / 60);
+  return `${m}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+};
+
 /**
  * Presentational race screen — a velodrome broadcast HUD: framed race clock on
  * top, a gradient-filled distance chart (one climbing lane per rider toward the
@@ -164,15 +171,29 @@ export default function CycleRaceScreen({
     };
   }).filter(Boolean);
 
-  // Roster panel (right of the chart): riders sorted by who's ahead.
+  // Roster panel (right of the chart): finishers float to the top in finish order
+  // (earliest time first); everyone else follows by distance. Finishers carry a
+  // placement so the row can show their medal + finish time.
+  const isDistanceRace = winCondition === 'distance';
   const roster = [...riderIds]
-    .sort((a, b) => (riders[b].cumulativeDistanceM || 0) - (riders[a].cumulativeDistanceM || 0))
-    .map((id) => {
+    .sort((a, b) => {
+      const fa = riders[a].finishTimeS, fb = riders[b].finishTimeS;
+      const aDone = isDistanceRace && fa != null, bDone = isDistanceRace && fb != null;
+      if (aDone && bDone) return fa - fb;
+      if (aDone) return -1;
+      if (bDone) return 1;
+      return (riders[b].cumulativeDistanceM || 0) - (riders[a].cumulativeDistanceM || 0);
+    })
+    .map((id, i) => {
       const origIdx = riderIds.indexOf(id);
+      const finishTimeS = isDistanceRace ? riders[id].finishTimeS : null;
       return {
         id,
         displayName: riders[id].displayName || id,
         distanceM: riders[id].cumulativeDistanceM || 0,
+        finished: finishTimeS != null,
+        finishTimeS,
+        placement: finishTimeS != null ? i + 1 : null,
         isGhost: !!riders[id].isGhost,
         color: LINE_COLORS[origIdx % LINE_COLORS.length],
         live: riderLive[id] || {}
@@ -327,8 +348,10 @@ export default function CycleRaceScreen({
 
       <aside className="cycle-race-screen__roster" data-testid="race-roster">
         {roster.map((r, i) => (
-          <div key={`roster-${r.id}`} className={`cycle-race-screen__roster-row${r.isGhost ? ' is-ghost' : ''}`}>
-            <span className="cycle-race-screen__roster-rank">{i + 1}</span>
+          <div key={`roster-${r.id}`} className={`cycle-race-screen__roster-row${r.isGhost ? ' is-ghost' : ''}${r.finished ? ' is-finished' : ''}`}>
+            <span className="cycle-race-screen__roster-rank">
+              {r.finished ? (ROSTER_MEDALS[r.placement] || r.placement) : i + 1}
+            </span>
             <span className={`cycle-race-screen__roster-avatar${r.isGhost ? ' cg-ghost' : ''}`}>
               <CircularUserAvatar
                 name={r.displayName}
@@ -343,7 +366,9 @@ export default function CycleRaceScreen({
             </span>
             <span className="cycle-race-screen__roster-main">
               <span className="cycle-race-screen__roster-name">{r.displayName}</span>
-              <span className="cycle-race-screen__roster-metric" style={{ color: r.color }}>{formatDistance(r.distanceM)}</span>
+              <span className="cycle-race-screen__roster-metric" style={{ color: r.color }}>
+                {r.finished ? `🏁 ${fmtRosterTime(r.finishTimeS)}` : formatDistance(r.distanceM)}
+              </span>
             </span>
           </div>
         ))}
