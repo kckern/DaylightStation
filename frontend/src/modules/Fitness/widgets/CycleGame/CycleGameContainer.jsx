@@ -969,6 +969,7 @@ export default function CycleGameContainer({ onMount } = {}) {
           riderLive={riderLive}
           cadenceBands={cadenceBands}
           backgroundPlexId={raceMetaRef.current?.backgroundPlexId || null}
+          lapLengthM={Number.isFinite(cycleGameConfig?.lap_length_m) ? cycleGameConfig.lap_length_m : 0}
         />
         <button type="button" data-testid="cycle-game-cancel" className="cycle-game-container__cancel" onClick={onCancel}>
           Cancel

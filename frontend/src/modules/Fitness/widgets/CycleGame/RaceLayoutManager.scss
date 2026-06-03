@@ -1,0 +1,12 @@
+@use 'cgTokens' as t;
+.race-layout {
+  display: grid; grid-template-rows: 1fr auto; gap: 16px; height: 100%;
+  &__top {
+    display: grid; gap: 16px;
+    grid-template-columns: repeat(var(--top-filled, 3), 1fr);
+  }
+  &__zone { position: relative; min-width: 0; }
+  &__zone--empty { display: none; } // collapsed; siblings reflow via --top-filled
+  &__slot { animation: race-slot-in 300ms ease both; }
+}
+@keyframes race-slot-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }

@@ -1,11 +1,14 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import PropTypes from 'prop-types';
 import { formatClock } from '@/modules/Fitness/lib/cycleGame/cycleGameLobby.js';
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
+import { deriveRaceSnapshot } from '@/modules/Fitness/lib/cycleGame/deriveRaceSnapshot.js';
+import { raceDirector } from '@/modules/Fitness/lib/cycleGame/raceDirector.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import DistanceChart from './panels/DistanceChart.jsx';
 import Rankings from './panels/Rankings.jsx';
 import SpeedoRow from './panels/SpeedoRow.jsx';
+import RaceLayoutManager from './RaceLayoutManager.jsx';
 import './CycleRaceScreen.scss';
 
 /**
@@ -17,9 +20,34 @@ import './CycleRaceScreen.scss';
 export default function CycleRaceScreen({
   winCondition = 'distance', goalM = 3000, timeCapS = 300, elapsedS = 0,
   riders = {}, riderLive = {}, cadenceBands = [], backgroundPlexId = null,
-  showSpeedos = true
+  showSpeedos = true, lapLengthM = 0
 }) {
   const riderIds = Object.keys(riders);
+
+  // Pure race director: derive a snapshot from current engine state, then ask
+  // the director which panel owns each layout zone. Sticky refs carry phase /
+  // dwell / hysteresis state across renders (mirrors the existing logRef pattern).
+  const prevSnapRef = useRef(null);
+  const prevDecisionRef = useRef(null);
+  const snapshot = deriveRaceSnapshot(
+    { elapsedS, winCondition, goalM, timeCapS, finished: false, riders },
+    { lapLengthM },
+    prevSnapRef.current
+  );
+  prevSnapRef.current = snapshot;
+  const directorDecision = raceDirector(snapshot, prevDecisionRef.current, elapsedS);
+  prevDecisionRef.current = directorDecision;
+
+  // Consumer-side safety net (NOT director logic): the director deliberately
+  // leaves the top zones empty for a solo distance race (chart candidacy is
+  // fieldSize >= 2). Surfaces that replay a single rider — e.g. RaceRecap —
+  // would otherwise show a blank stage. When the director assigns no top panel
+  // but riders exist, fall back to the distance chart so no surface goes blank.
+  const topEmpty = !directorDecision.zones.topLeft
+    && !directorDecision.zones.topCenter && !directorDecision.zones.topRight;
+  const decision = (topEmpty && riderIds.length > 0)
+    ? { ...directorDecision, zones: { ...directorDecision.zones, topLeft: 'distanceChart' } }
+    : directorDecision;
 
   const clockSeconds = winCondition === 'time' ? Math.max(0, timeCapS - elapsedS) : elapsedS;
 
@@ -34,6 +62,25 @@ export default function CycleRaceScreen({
   const maxDistance = winCondition === 'distance'
     ? goalM
     : Math.max(1, ...riderIds.map((id) => riders[id].cumulativeDistanceM || 0));
+
+  // Bind extracted panels to current props. speedoRow is included ONLY when
+  // showSpeedos is true, so the director assigning it to a hidden row renders
+  // nothing (preserves the showSpeedos={false} behavior). lapTable/ovalTrack/
+  // cameraZoom are added in Phase D — absent ids render empty zones gracefully.
+  const panels = {
+    distanceChart: () => (
+      <DistanceChart riderIds={riderIds} riders={riders} riderLive={riderLive}
+        winCondition={winCondition} goalM={goalM} />
+    ),
+    rankings: () => (
+      <Rankings riderIds={riderIds} riders={riders} riderLive={riderLive} />
+    ),
+    ...(showSpeedos ? {
+      speedoRow: () => (
+        <SpeedoRow riderIds={riderIds} riders={riders} riderLive={riderLive} cadenceBands={cadenceBands} />
+      )
+    } : {})
+  };
 
   return (
     <div className="cycle-race-screen" data-testid="cycle-race-screen">
@@ -71,29 +118,7 @@ export default function CycleRaceScreen({
         </div>
       )}
 
-      <div className="cycle-race-screen__top">
-        <DistanceChart
-          riderIds={riderIds}
-          riders={riders}
-          riderLive={riderLive}
-          winCondition={winCondition}
-          goalM={goalM}
-        />
-        <Rankings
-          riderIds={riderIds}
-          riders={riders}
-          riderLive={riderLive}
-        />
-      </div>
-
-      {showSpeedos && (
-        <SpeedoRow
-          riderIds={riderIds}
-          riders={riders}
-          riderLive={riderLive}
-          cadenceBands={cadenceBands}
-        />
-      )}
+      <RaceLayoutManager decision={decision} panels={panels} />
     </div>
   );
 }
@@ -107,5 +132,6 @@ CycleRaceScreen.propTypes = {
   riderLive: PropTypes.object,
   cadenceBands: PropTypes.array,
   backgroundPlexId: PropTypes.string,
-  showSpeedos: PropTypes.bool
+  showSpeedos: PropTypes.bool,
+  lapLengthM: PropTypes.number
 };
