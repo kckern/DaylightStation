@@ -574,7 +574,7 @@ export class GovernanceEngine {
       }
 
       // Reuse the boost helper for consistent behaviour with _evaluateCycleChallenge
-      const { multiplier, contributors } = this._computeBoostMultiplier(activeChallenge, {
+      const { multiplier, contributors, contributions } = this._computeBoostMultiplier(activeChallenge, {
         activeParticipants: this._latestInputs?.activeParticipants || [],
         userZoneMap: this._latestInputs?.userZoneMap || {}
       });
@@ -726,6 +726,7 @@ export class GovernanceEngine {
         cycleHealthPct,
         boostMultiplier: multiplier,
         boostingUsers: contributors,
+        boostContributions: contributions || {},
         lockReason: activeChallenge.lockReason || null,
         waitingForBaseReq: Boolean(activeChallenge.waitingForBaseReq),
         baseReqSatisfiedForRider: Boolean(activeChallenge.baseReqSatisfiedForRider),
@@ -2874,13 +2875,14 @@ export class GovernanceEngine {
     const participants = ctx.activeParticipants || [];
     let sum = 0;
     const contributors = [];
+    const contributions = {};
     participants.forEach(uid => {
       const z = ctx.userZoneMap?.[uid];
       const m = z && mults[z];
-      if (m) { sum += m; contributors.push(uid); }
+      if (m) { sum += m; contributors.push(uid); contributions[uid] = m; }
     });
     const total = Math.min(1.0 + sum, cap);
-    return { multiplier: Math.max(1.0, total), contributors };
+    return { multiplier: Math.max(1.0, total), contributors, contributions };
   }
 
   /**
