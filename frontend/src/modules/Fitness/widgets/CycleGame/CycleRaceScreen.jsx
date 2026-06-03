@@ -4,10 +4,10 @@ import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.
 import CycleSpeedometer from './CycleSpeedometer.jsx';
 import { formatClock } from '@/modules/Fitness/lib/cycleGame/cycleGameLobby.js';
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
+import { LINE_COLORS } from '@/modules/Fitness/lib/cycleGame/lineColors.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import './CycleRaceScreen.scss';
 
-const LINE_COLORS = ['#3ddc84', '#ff9f43', '#a66cff'];
 const FALLBACK_AVATAR = '/api/v1/static/img/users/user';
 
 /**
@@ -321,6 +321,8 @@ export default function CycleRaceScreen({
                   progress: live.zoneProgress
                 }}
                 isGhost={!!riders[id].isGhost}
+                finished={!!live.finished}
+                placement={live.placement}
                 size={speedoSize}
               />
             );

@@ -584,42 +584,6 @@ $cgh-accent-strong: #2563eb;
   .cgh-preset, .cgh-stepper__btn { opacity: 0.45; cursor: default; }
 }
 
-// ── Ghost slot (virtual competitor in the starting grid) ──────────────────
-.cgh-slot--ghost {
-  border-style: dashed;
-  &.is-filled { border-style: solid; border-color: rgba(155, 89, 182, 0.6); }
-}
-
-.cgh-ghost-disc {
-  display: flex; align-items: center; justify-content: center;
-  font-size: 2.6rem;
-  background: radial-gradient(circle at 50% 38%, #241b33, #0e0e16);
-  color: #d8c8f0;
-}
-
-// ── Ghost picker list ─────────────────────────────────────────────────────
-.cgh-ghost-list {
-  list-style: none; margin: 0; padding: 0;
-  display: flex; flex-direction: column; gap: 8px;
-}
-
-.cgh-ghost-row {
-  width: 100%;
-  display: flex; align-items: center; gap: 14px;
-  appearance: none; cursor: pointer; text-align: left;
-  background: $cgh-panel-2; border: 1px solid $cgh-border;
-  border-radius: 12px; padding: 12px 16px; color: $cgh-text;
-  transition: border-color 0.15s ease, transform 0.12s ease;
-
-  &:hover { transform: translateY(-1px); border-color: lighten($cgh-border, 12%); }
-  &.is-current { border-color: #9b59b6; box-shadow: 0 0 0 1px rgba(155, 89, 182, 0.45); }
-
-  &__icon { font-size: 1.6rem; flex-shrink: 0; }
-  &__main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  &__name { font-size: 1.02rem; font-weight: 700; }
-  &__meta { font-size: 0.82rem; color: $cgh-muted; }
-}
-
 .cgh-ghost-clear {
   margin-top: 16px;
   appearance: none; cursor: pointer; width: 100%;
@@ -697,19 +661,6 @@ $cgh-accent-strong: #2563eb;
   &[data-kind="distance"] { border-color: rgba(122, 162, 255, 0.5); color: $cgh-accent; background: rgba(122, 162, 255, 0.1); }
   &[data-kind="time"] { border-color: rgba(245, 197, 66, 0.5); color: #f5c542; background: rgba(245, 197, 66, 0.1); }
 }
-
-// ── Ghost picker rows: avatars + both metrics ─────────────────────────────
-.cgh-ghost-row__avatars { display: flex; align-items: center; flex-shrink: 0; }
-.cgh-ghost-row__avatar {
-  width: 36px; height: 36px; border-radius: 50%; object-fit: cover;
-  border: 2px solid $cgh-panel-2; background: $cgh-panel;
-  &:not(:first-child) { margin-left: -12px; }
-}
-.cgh-ghost-row__meta {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-}
-.cgh-ghost-row__score { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; color: $cgh-accent; }
-.cgh-ghost-row__date { font-size: 0.72rem; color: $cgh-faint; }
 
 // ── Ghost picker: day columns + two-stage cards ───────────────────────────
 .cgh-picker--ghost .cgh-picker__sheet { width: min(1040px, 95%); }
