@@ -1,0 +1,63 @@
+@use '../cgTokens' as t;
+
+// Top-down velodrome oval — avatars circling a neon track. Synthwave HUD panel:
+// cyan-glow lane, faint violet infield for depth, lane-colored markers that
+// glide between progress ticks. Roboto Condensed numerals (canon font).
+.cg-oval-track {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: t.$cg-panel;
+  border: 1px solid t.$cg-border;
+  border-radius: 8px;
+  padding: 0.5rem;
+  overflow: hidden;
+
+  &__svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  &__lane {
+    fill: none;
+    stroke: t.$cg-cyan;
+    stroke-width: 2.5;
+    filter: drop-shadow(0 0 6px rgba(t.$cg-cyan, 0.6));
+  }
+
+  &__infield {
+    fill: rgba(t.$cg-panel-2, 0.6);
+    stroke: t.$cg-border;
+    stroke-width: 1;
+  }
+
+  &__startline {
+    stroke: t.$cg-magenta;
+    stroke-width: 2.5;
+    filter: drop-shadow(0 0 5px rgba(t.$cg-magenta, 0.7));
+  }
+
+  // Markers glide between progress ticks rather than snapping.
+  &__marker {
+    transition: transform 0.3s linear;
+
+    &--ghost {
+      opacity: 0.55;
+    }
+  }
+
+  &__dot {
+    stroke-width: 1.5;
+    filter: drop-shadow(0 0 5px currentColor);
+  }
+
+  &__initial {
+    font-family: t.$cg-display;
+    font-weight: 800;
+    font-size: 9px;
+    fill: t.$cg-bg;
+    paint-order: stroke;
+  }
+}

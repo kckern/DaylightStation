@@ -245,3 +245,44 @@ describe('CycleRaceEngine — ghost HR replay', () => {
     expect(e.getState().riders.g.heartRate).toBeNull();
   });
 });
+
+describe('CycleRaceEngine lap splits', () => {
+  it('records interpolated lap-crossing times when lapLengthM is set', () => {
+    // 1 rider, wheel 1m/rotation, hrless mult 1, 1s ticks, lap = 100m.
+    // 6000 rpm = 100 rotations/sec = 100 m/s → crosses 100m at exactly t=1s.
+    const eng = new CycleRaceEngine({
+      winCondition: 'time', timeCapS: 10, intervalMs: 1000, lapLengthM: 100,
+      hrlessMultiplier: 1,
+      riders: [{ userId: 'a', wheelCircumferenceM: 1 }]
+    });
+    eng.tick({ a: { rpm: 6000 } }); // +100m → 1 lap at t=1
+    eng.tick({ a: { rpm: 6000 } }); // +100m → 2 laps at t=2
+    const st = eng.getState();
+    expect(st.riders.a.lapSplits.length).toBe(2);
+    expect(st.riders.a.lapSplits[0]).toBeCloseTo(1, 2);
+    expect(st.riders.a.lapSplits[1]).toBeCloseTo(2, 2);
+  });
+
+  it('interpolates a mid-tick crossing', () => {
+    // 3000 rpm = 50 m/s. After 1 tick = 50m (no lap). After 2 ticks = 100m → lap
+    // crossing exactly at t=2. After a faster tick we cross mid-interval.
+    const eng = new CycleRaceEngine({
+      winCondition: 'time', timeCapS: 10, intervalMs: 1000, lapLengthM: 100,
+      hrlessMultiplier: 1, riders: [{ userId: 'a', wheelCircumferenceM: 1 }]
+    });
+    eng.tick({ a: { rpm: 3000 } }); // 50m, t=1
+    eng.tick({ a: { rpm: 6000 } }); // +100m → 150m at t=2; crosses 100m mid-tick
+    const st = eng.getState();
+    // d0=50, d1=150 over [t=1,t=2]; boundary 100 at frac 0.5 → t≈1.5
+    expect(st.riders.a.lapSplits[0]).toBeCloseTo(1.5, 2);
+  });
+
+  it('records nothing when laps are disabled (no lapLengthM)', () => {
+    const eng = new CycleRaceEngine({
+      winCondition: 'time', timeCapS: 10, intervalMs: 1000,
+      hrlessMultiplier: 1, riders: [{ userId: 'a', wheelCircumferenceM: 1 }]
+    });
+    eng.tick({ a: { rpm: 6000 } });
+    expect(eng.getState().riders.a.lapSplits).toEqual([]);
+  });
+});

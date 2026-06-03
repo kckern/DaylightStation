@@ -4,7 +4,7 @@ export class CycleRaceEngine {
   constructor({
     mode = 'simultaneous', winCondition = 'distance',
     goalM = 3000, timeCapS = 300, intervalMs = 5000,
-    riders = [], zones = [], hrlessMultiplier = 1
+    riders = [], zones = [], hrlessMultiplier = 1, lapLengthM = 0
   } = {}) {
     this.mode = mode;
     this.winCondition = winCondition;
@@ -13,6 +13,7 @@ export class CycleRaceEngine {
     this.intervalSeconds = intervalMs / 1000;
     this.zones = zones;
     this.hrlessMultiplier = hrlessMultiplier;
+    this.lapLengthM = Number.isFinite(lapLengthM) && lapLengthM > 0 ? lapLengthM : 0;
     this.elapsedS = 0;
     this.finished = false;
     this.riders = new Map();
@@ -28,6 +29,7 @@ export class CycleRaceEngine {
         wheelCircumferenceM: Number.isFinite(r.wheelCircumferenceM) ? r.wheelCircumferenceM : 0,
         cumulativeDistanceM: 0,
         distanceSeries: [],
+        lapSplits: [],
         hrSeries: [],
         rpmSeries: [],
         zoneSeries: [],
@@ -76,6 +78,7 @@ export class CycleRaceEngine {
     this.elapsedS += this.intervalSeconds;
     for (const rider of this.riders.values()) {
       const input = inputs[rider.userId] || {};
+      const lapD0 = rider.cumulativeDistanceM; // distance at start of this tick
       // A rider who already crossed the line in a distance race is parked at the
       // line: no more progress counts, and the gauge reads idle (rpm 0 / no zone).
       const alreadyFinished = this.winCondition === 'distance' && rider.finishTimeS != null;
@@ -101,6 +104,17 @@ export class CycleRaceEngine {
       if (this.winCondition === 'distance' && rider.finishTimeS == null && rider.cumulativeDistanceM >= this.goalM) {
         rider.finishTimeS = this.elapsedS;
         rider.cumulativeDistanceM = this.goalM;
+      }
+      if (this.lapLengthM > 0) {
+        const d1 = rider.cumulativeDistanceM;
+        const t0 = this.elapsedS - this.intervalSeconds;
+        let lap = Math.floor(lapD0 / this.lapLengthM) + 1;
+        while (lap * this.lapLengthM <= d1) {
+          const boundary = lap * this.lapLengthM;
+          const frac = d1 > lapD0 ? (boundary - lapD0) / (d1 - lapD0) : 0;
+          rider.lapSplits.push(Math.round((t0 + frac * this.intervalSeconds) * 100) / 100);
+          lap += 1;
+        }
       }
       rider.distanceSeries.push(Math.round(rider.cumulativeDistanceM));
       rider.rpmSeries.push(Math.round(Number.isFinite(rider.rpm) ? rider.rpm : 0));
@@ -145,6 +159,7 @@ export class CycleRaceEngine {
         equipmentId: r.equipmentId,
         cumulativeDistanceM: Math.round(r.cumulativeDistanceM),
         distanceSeries: r.distanceSeries.slice(),
+        lapSplits: r.lapSplits.slice(),
         hrSeries: r.hrSeries.slice(),
         rpmSeries: r.rpmSeries.slice(),
         zoneSeries: r.zoneSeries.slice(),
