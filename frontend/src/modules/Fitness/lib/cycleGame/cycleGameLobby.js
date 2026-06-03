@@ -20,6 +20,7 @@ export function buildRaceConfigFromCourse(course = {}, opts = {}) {
     startCountdownS: opts.startCountdownS ?? 3,
     raceIdleDnfS: opts.raceIdleDnfS ?? 20,
     hotStartPenaltyS: opts.hotStartPenaltyS ?? 0,
+    lapLengthM: Number.isFinite(course.lap_length_m) ? course.lap_length_m : (opts.lapLengthM ?? 0),
     courseId: course.id ?? null,
     backgroundPlexId: course.background_plex_id ?? opts.backgroundPlexId ?? null
   };
