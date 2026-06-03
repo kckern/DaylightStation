@@ -408,9 +408,11 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap, done = false }
           <CompletionCountBlocks
             targetCount={totalPhases}
             actualCount={Math.max(0, currentPhaseIndex)}
+            activeIndex={Math.max(0, currentPhaseIndex)}
             containerClassName="cycle-challenge-overlay__phase-blocks"
             blockClassName="cycle-challenge-overlay__phase-block"
             completeBlockClassName="cycle-challenge-overlay__phase-block--complete"
+            activeBlockClassName="cycle-challenge-overlay__phase-block--active"
             ariaLabel={`Phase ${Math.min(totalPhases, currentPhaseIndex + 1)} of ${totalPhases}`}
           />
         )}
