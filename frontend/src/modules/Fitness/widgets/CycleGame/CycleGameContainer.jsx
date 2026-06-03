@@ -10,7 +10,7 @@ import { DaylightMediaPath } from '@/lib/api.mjs';
 import { SessionSerializerV3 } from '@/hooks/fitness/SessionSerializerV3.js';
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
 import { resolveParticipantIdentity } from '@/modules/Fitness/lib/cycleGame/participantIdentity.js';
-import { resolveRpmLimits, clampCountedRpm } from '@/modules/Fitness/lib/cycleGame/equipmentRpm.js';
+import { resolveRpmLimits, clampCountedRpm, rpmDuringGap } from '@/modules/Fitness/lib/cycleGame/equipmentRpm.js';
 import { LINE_COLORS } from '@/modules/Fitness/lib/cycleGame/lineColors.js';
 import { usePersistentVolume } from '@/modules/Fitness/nav/usePersistentVolume.js';
 import CycleGameHome from './CycleGameHome.jsx';
@@ -207,6 +207,10 @@ export default function CycleGameContainer({ onMount } = {}) {
   const prevCadenceRef = useRef(new Map());
   const prevPhaseRef = useRef('idle');
   const tickCountRef = useRef(0);
+  // Per-rider recent CONNECTED rpm readings (oldest→newest, capped) — lets a
+  // cadence broadcast gap hold the last value instead of flatlining, while a
+  // genuine downward-trend-to-zero is still honored. See rpmDuringGap.
+  const rpmHistoryRef = useRef(new Map());
   // Officiating events (DNF / hot-start penalty) accumulated over the race —
   // drives the persistent chart markers and the results legend.
   const [raceEvents, setRaceEvents] = useState([]);
@@ -620,6 +624,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     prevPenalizedRef.current = new Set();
     prevAwaitingRef.current = new Set();
     prevCadenceRef.current = new Map();
+    rpmHistoryRef.current = new Map();
     tickCountRef.current = 0;
     setRaceEvents([]);
     setEventToast(null);
@@ -726,8 +731,23 @@ export default function CycleGameContainer({ onMount } = {}) {
         if (rider.equipmentId) cadenceConnected[userId] = connected; // ghosts have no equipment
         const vitals = liveGetUserVitals?.(userId);
         const { abuseMaxRpm } = resolveRpmLimits(bikeByIdRef.current.get(rider.equipmentId) || {});
+        // Cadence gap tolerance (racing only — this loop runs only while racing).
+        // A connected reading (even 0) is the truth: use it + remember it. While
+        // the sensor is DROPPED, hold the last good reading through the broadcast
+        // gap instead of flatlining — unless the rider was trending down into the
+        // gap, in which case a real cooldown-to-stop is honored (rpmDuringGap).
+        let rawRpm;
+        if (connected) {
+          rawRpm = Number.isFinite(cadence.rpm) ? cadence.rpm : 0;
+          const hist = rpmHistoryRef.current.get(userId) || [];
+          hist.push(rawRpm);
+          if (hist.length > 4) hist.shift();
+          rpmHistoryRef.current.set(userId, hist);
+        } else {
+          rawRpm = rpmDuringGap(rpmHistoryRef.current.get(userId) || []);
+        }
         inputs[userId] = {
-          rpm: clampCountedRpm(connected ? cadence.rpm : 0, abuseMaxRpm),
+          rpm: clampCountedRpm(rawRpm, abuseMaxRpm),
           zoneId: vitals?.zoneId || null,
           heartRate: Number.isFinite(vitals?.heartRate) ? vitals.heartRate : null
         };
