@@ -9,6 +9,8 @@ import { playSound } from '@/modules/Fitness/lib/cycleGame/playSound.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import { SessionSerializerV3 } from '@/hooks/fitness/SessionSerializerV3.js';
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
+import { resolveParticipantIdentity } from '@/modules/Fitness/lib/cycleGame/participantIdentity.js';
+import { LINE_COLORS } from '@/modules/Fitness/lib/cycleGame/lineColors.js';
 import { usePersistentVolume } from '@/modules/Fitness/nav/usePersistentVolume.js';
 import CycleGameHome from './CycleGameHome.jsx';
 import CountdownStoplight from './CountdownStoplight.jsx';
@@ -103,11 +105,16 @@ export default function CycleGameContainer({ onMount } = {}) {
       const a = new Audio(url);
       a.loop = loop;
       a.volume = Math.max(0, Math.min(1, musicVolume * masterRef.current));
-      a.play().catch(() => { /* autoplay may defer until a gesture */ });
+      // Autoplay can defer until a user gesture — benign, logged at debug so a
+      // "no music" report can be told apart from a genuine load failure.
+      a.play().catch((err) => { log.debug('cycle_game.music_deferred', { key, error: err?.message || String(err) }); });
       musicRef.current = a;
       musicKeyRef.current = key;
-    } catch { /* Audio unavailable (e.g. tests) */ }
-  }, [musicVolume, stopMusic]);
+      log.debug('cycle_game.music', { key, loop });
+    } catch (err) {
+      log.warn('cycle_game.music_unavailable', { key, error: err?.message || String(err) });
+    }
+  }, [musicVolume, stopMusic, log]);
   // Pick a random track from the racing playlist folder.
   const pickRacingTrack = useCallback(() => {
     const r = soundsRef.current?.racing;
@@ -189,6 +196,13 @@ export default function CycleGameContainer({ onMount } = {}) {
   const savedRef = useRef(false);
   const prevDnfRef = useRef(new Set());
   const prevPenalizedRef = useRef(new Set());
+  // Telemetry: track prior tick state so transitions (not steady state) are what
+  // gets logged — penalty awaiting-stop edges, cadence connect/drop, phase, and
+  // a monotonic tick index for the per-tick firehose.
+  const prevAwaitingRef = useRef(new Set());
+  const prevCadenceRef = useRef(new Map());
+  const prevPhaseRef = useRef('idle');
+  const tickCountRef = useRef(0);
   // Officiating events (DNF / hot-start penalty) accumulated over the race —
   // drives the persistent chart markers and the results legend.
   const [raceEvents, setRaceEvents] = useState([]);
@@ -207,6 +221,13 @@ export default function CycleGameContainer({ onMount } = {}) {
   const getUserVitalsRef = useRef(getUserVitals);
   useEffect(() => { sessionRef.current = session; }, [session]);
   useEffect(() => { getUserVitalsRef.current = getUserVitals; }, [getUserVitals]);
+  // Same ref pattern for the zone config the per-tick firehose reads to compute
+  // the multiplier — constant during a race, but kept in a ref so the interval
+  // (which depends only on `phase`) isn't torn down by config identity churn.
+  const zonesRef = useRef(zones);
+  const hrlessMultiplierRef = useRef(hrlessMultiplier);
+  useEffect(() => { zonesRef.current = zones; }, [zones]);
+  useEffect(() => { hrlessMultiplierRef.current = hrlessMultiplier; }, [hrlessMultiplier]);
 
   // Map controller phases to render phases.
   const applySnapshot = useCallback((state) => {
@@ -217,6 +238,20 @@ export default function CycleGameContainer({ onMount } = {}) {
     else if (state.phase === 'finished' || state.phase === 'results') setPhase('results');
     else if (state.phase === 'cancelled') setPhase('idle');
   }, []);
+
+  // Telemetry spine: a single chokepoint logging every render-phase transition
+  // exactly once, correlated by raceId + elapsed. No transition is ever silent.
+  useEffect(() => {
+    const from = prevPhaseRef.current;
+    if (from === phase) return;
+    prevPhaseRef.current = phase;
+    log.info('cycle_game.phase_transition', {
+      from,
+      to: phase,
+      raceId: raceMetaRef.current?.raceId ?? null,
+      elapsedS: controllerRef.current?.getState()?.engineState?.elapsedS ?? null
+    });
+  }, [phase, log]);
 
   // Pop the finished toast and immediately show the next queued one (if any).
   const onEventToastDone = useCallback(() => {
@@ -426,18 +461,24 @@ export default function CycleGameContainer({ onMount } = {}) {
       const race = rec?.race || {};
       const winCondition = race.win_condition || 'distance';
       const participants = Object.entries(rec?.participants || {})
-        .map(([id, p]) => ({
-          id,
-          displayName: p.display_name || id,
-          avatarSrc: `/api/v1/static/img/users/${id}`,
-          distanceSeries: p.distance_series || null,
-          hrSeries: p.hr_series || null,
-          rpmSeries: p.rpm_series || null,
-          zoneSeries: p.zone_series || null,
-          finalDistanceM: p.final_distance_m ?? null,
-          finalTimeS: p.final_time_s ?? null,
-          placement: p.placement ?? null
-        }))
+        .map(([id, p]) => {
+          // Ghosts are persisted as `ghost:<raceId>:<sourceId>` — resolve to the
+          // real face/name so the records rail doesn't fall back to the guest avatar.
+          const ident = resolveParticipantIdentity(id, p.display_name);
+          return {
+            id,
+            isGhost: ident.isGhost,
+            displayName: ident.displayName,
+            avatarSrc: ident.avatarSrc,
+            distanceSeries: p.distance_series || null,
+            hrSeries: p.hr_series || null,
+            rpmSeries: p.rpm_series || null,
+            zoneSeries: p.zone_series || null,
+            finalDistanceM: p.final_distance_m ?? null,
+            finalTimeS: p.final_time_s ?? null,
+            placement: p.placement ?? null
+          };
+        })
         .sort((a, b) => (a.placement || 99) - (b.placement || 99));
       if (participants.length === 0) return null;
       const winner = participants[0];
@@ -473,7 +514,10 @@ export default function CycleGameContainer({ onMount } = {}) {
   const records = useMemo(
     () => ghostCandidates.slice(0, 12).map((g) => ({
       raceId: g.raceId,
-      avatars: g.participants.slice(0, 4).map((p) => ({ id: p.id, src: p.avatarSrc, name: p.displayName })),
+      avatars: g.participants.slice(0, 4).map((p, idx) => ({
+        id: p.id, src: p.avatarSrc, name: p.displayName,
+        isGhost: !!p.isGhost, tint: LINE_COLORS[idx % LINE_COLORS.length]
+      })),
       goalKind: g.goalKind,
       goalLabel: g.goalLabel,
       scoreKind: g.scoreKind,
@@ -569,12 +613,40 @@ export default function CycleGameContainer({ onMount } = {}) {
     savedRef.current = false;
     prevDnfRef.current = new Set();
     prevPenalizedRef.current = new Set();
+    prevAwaitingRef.current = new Set();
+    prevCadenceRef.current = new Map();
+    tickCountRef.current = 0;
     setRaceEvents([]);
     setEventToast(null);
     toastQueueRef.current = [];
 
     const controller = new CycleRaceController(cfg);
     controllerRef.current = controller;
+
+    // Telemetry: full effective config, once. Per-tick logs stay dynamic-only;
+    // this is where the static facts (zone multipliers, penalty, sounds) live so
+    // "the multiplier/penalty was wrong" complaints can be corroborated.
+    const sx = soundsRef.current || {};
+    log.info('cycle_game.config', {
+      raceId,
+      winCondition: cfg.winCondition,
+      goalM: cfg.goalM ?? null,
+      timeCapS: cfg.timeCapS ?? null,
+      startCountdownS: cfg.startCountdownS,
+      raceIdleDnfS,
+      hotStartPenaltyS,
+      hrlessMultiplier,
+      stagingBufferMs,
+      intervalMs: RACE_TICK_MS,
+      zoneMultipliers: (Array.isArray(zones) ? zones : []).map((z) => ({ id: z.id, mult: z.distance_multiplier })),
+      cadenceBands: (Array.isArray(cadenceBands) ? cadenceBands : []).map((b) => ({ id: b.id, min: b.min })),
+      sounds: {
+        lobby: !!sx.lobby, ready: !!sx.ready, start: !!sx.start, go: !!sx.go,
+        countdown: !!sx.countdown, finish: !!sx.finish, end: !!sx.end, racing: !!sx.racing?.dir
+      },
+      backgroundPlexId: cfg.backgroundPlexId ?? null,
+      riders: riders.map((r) => ({ userId: r.userId, isGhost: Array.isArray(r.ghostSeries) && r.ghostSeries.length > 0, equipmentId: r.equipmentId ?? null }))
+    });
 
     log.info('cycle_game.staged', {
       courseId: cfg.winCondition,
@@ -596,7 +668,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     } else {
       applySnapshot(controller.startCountdown());
     }
-  }, [raceType, raceValueM, raceValueS, distanceDefaultM, timeDefaultS, stagingBufferMs, ghost, buildRiders, zones, hrlessMultiplier, cycleGameConfig, raceIdleDnfS, hotStartPenaltyS, applySnapshot, log]);
+  }, [raceType, raceValueM, raceValueS, distanceDefaultM, timeDefaultS, stagingBufferMs, ghost, buildRiders, zones, cadenceBands, hrlessMultiplier, cycleGameConfig, raceIdleDnfS, hotStartPenaltyS, applySnapshot, log]);
 
   // Staging seconds tick (display only). Cleared when leaving the staging phase.
   useEffect(() => {
@@ -617,7 +689,7 @@ export default function CycleGameContainer({ onMount } = {}) {
       const state = c.countdownTick();
       log.debug('cycle_game.countdown', { remaining: state.countdownRemaining });
       if (state.phase === 'racing') {
-        playSound(soundsRef.current?.go, { volume: masterRef.current }); // null = silent
+        log.debug('cycle_game.sfx', { cue: 'go', attempted: playSound(soundsRef.current?.go, { volume: masterRef.current }) }); // null = silent
         log.info('cycle_game.race_started', {
           raceId: raceMetaRef.current?.raceId,
           riders: Object.keys(state.engineState?.riders || {}),
@@ -641,17 +713,37 @@ export default function CycleGameContainer({ onMount } = {}) {
       const liveGetUserVitals = getUserVitalsRef.current;
       const before = controller.getState();
       const inputs = {};
+      const cadenceConnected = {}; // userId → bool, for the firehose + drop detection
       Object.keys(before.engineState?.riders || {}).forEach((userId) => {
         const rider = before.engineState.riders[userId];
         const cadence = liveSession?.getEquipmentCadence?.(rider.equipmentId);
+        const connected = !!(cadence && cadence.connected);
+        if (rider.equipmentId) cadenceConnected[userId] = connected; // ghosts have no equipment
         const vitals = liveGetUserVitals?.(userId);
         inputs[userId] = {
-          rpm: cadence && cadence.connected ? cadence.rpm : 0,
+          rpm: connected ? cadence.rpm : 0,
           zoneId: vitals?.zoneId || null,
           heartRate: Number.isFinite(vitals?.heartRate) ? vitals.heartRate : null
         };
       });
       const state = controller.tick(inputs);
+
+      // ── Cadence connectivity transitions (info) — connect/drop only, not steady
+      // state. The first read seeds the map without logging. Answers "my pedaling
+      // didn't register" with a timestamped connect/drop trail.
+      Object.keys(cadenceConnected).forEach((userId) => {
+        const now = cadenceConnected[userId];
+        const had = prevCadenceRef.current.get(userId);
+        if (had !== undefined && had !== now) {
+          log.info('cycle_game.cadence_change', {
+            raceId: raceMetaRef.current?.raceId,
+            userId,
+            connected: now,
+            elapsedS: state.engineState?.elapsedS ?? null
+          });
+        }
+        prevCadenceRef.current.set(userId, now);
+      });
 
       // DNF detection — diff the controller dnf set; a new entry logs + raises
       // an on-screen event (toast + persistent chart marker).
@@ -668,26 +760,69 @@ export default function CycleGameContainer({ onMount } = {}) {
       });
       prevDnfRef.current = dnfSet;
 
-      // Hot-start penalty detection — diff the controller penalized set; a new
-      // entry logs + raises an on-screen event.
+      // ── Penalty box lifecycle (info) — entry, awaiting-stop edge, and clear.
+      // Every entry is paired with its exit so a tester's "stuck in penalty" is
+      // fully reconstructable. recordRaceEvent (toast + chart marker) fires once,
+      // on entry.
+      const penaltyInfo = state.penaltyInfo || {};
       const penalizedSet = new Set(state.penalized || []);
+      const elapsedS = state.engineState?.elapsedS ?? null;
       penalizedSet.forEach((userId) => {
+        const info = penaltyInfo[userId] || {};
         if (!prevPenalizedRef.current.has(userId)) {
-          log.info('cycle_game.rider_penalized', {
-            raceId: raceMetaRef.current?.raceId,
-            userId,
-            reason: 'hot-start',
-            elapsedS: state.engineState?.elapsedS ?? null
+          log.info('cycle_game.penalty_entered', {
+            raceId: raceMetaRef.current?.raceId, userId, reason: 'hot-start',
+            totalS: info.totalS ?? null, remainingS: info.remainingS ?? null, elapsedS
           });
           recordRaceEvent('penalty', userId, state);
         }
+        // Awaiting-stop edge: timer served but still pedalling (gate is now RPM 0).
+        if (info.awaitingStop && !prevAwaitingRef.current.has(userId)) {
+          log.info('cycle_game.penalty_awaiting_stop', {
+            raceId: raceMetaRef.current?.raceId, userId, elapsedS
+          });
+        }
+      });
+      // Cleared: anyone who was boxed last tick but is no longer in the set.
+      prevPenalizedRef.current.forEach((userId) => {
+        if (!penalizedSet.has(userId)) {
+          log.info('cycle_game.penalty_cleared', {
+            raceId: raceMetaRef.current?.raceId, userId, elapsedS
+          });
+        }
       });
       prevPenalizedRef.current = penalizedSet;
+      prevAwaitingRef.current = new Set(Object.keys(penaltyInfo).filter((id) => penaltyInfo[id]?.awaitingStop));
+
+      // ── Per-tick firehose (debug) — one event per second, riders as an array,
+      // read from post-resolution engine state (correct for ghosts/penalty/finish).
+      // Off by default in console; captured to the per-session JSONL for forensics.
+      tickCountRef.current += 1;
+      const tickRiders = state.engineState?.riders || {};
+      log.debug('cycle_game.tick', {
+        raceId: raceMetaRef.current?.raceId,
+        tick: tickCountRef.current,
+        elapsedS,
+        riders: Object.keys(tickRiders).map((userId) => {
+          const r = tickRiders[userId];
+          return {
+            userId,
+            rpm: Math.round(Number.isFinite(r.rpm) ? r.rpm : 0),
+            cadenceConnected: cadenceConnected[userId] ?? null,
+            hr: Number.isFinite(r.heartRate) ? r.heartRate : null,
+            zoneId: r.zoneId ?? null,
+            multiplier: zoneMultiplierFor(r.zoneId ?? null, zonesRef.current, hrlessMultiplierRef.current),
+            distanceM: Math.round(Number.isFinite(r.cumulativeDistanceM) ? r.cumulativeDistanceM : 0),
+            penalized: penalizedSet.has(userId),
+            finished: r.finishTimeS != null
+          };
+        })
+      });
 
       if (state.phase === 'finished') {
         const finalState = controller.showResults();
         const standings = finalState.engineState?.standings || [];
-        playSound(soundsRef.current?.finish, { volume: masterRef.current }); // null = silent
+        log.debug('cycle_game.sfx', { cue: 'finish', attempted: playSound(soundsRef.current?.finish, { volume: masterRef.current }) }); // null = silent
         log.info('cycle_game.race_finished', {
           raceId: raceMetaRef.current?.raceId,
           standings: standings.map((s) => ({
@@ -752,13 +887,13 @@ export default function CycleGameContainer({ onMount } = {}) {
       playMusic(s.ready || s.lobby, s.ready ? 'ready' : 'lobby');
     } else if (phase === 'countdown') {
       stopMusic();
-      playSound(s.start, { volume: masterRef.current }); // one-shot 3-2-1 jingle
+      log.debug('cycle_game.sfx', { cue: 'start', attempted: playSound(s.start, { volume: masterRef.current }) }); // one-shot 3-2-1 jingle
     } else if (phase === 'racing') {
       playMusic(pickRacingTrack(), 'racing');
     } else if (phase === 'results') {
       playMusic(s.end, 'end', { loop: false });
     }
-  }, [phase, playMusic, stopMusic, pickRacingTrack]);
+  }, [phase, playMusic, stopMusic, pickRacingTrack, log]);
 
   // Keep the currently-playing track in sync with live master-volume changes.
   useEffect(() => {
@@ -800,6 +935,18 @@ export default function CycleGameContainer({ onMount } = {}) {
       log.warn('cycle_game.ghost_empty', { raceId: candidate.raceId });
       return;
     }
+    // Telemetry: per-ghost series point-counts so "the ghost wasn't moving / had
+    // no rpm" is diagnosable (old records carry distance+HR only).
+    log.info('cycle_game.ghost_rider', {
+      raceId: candidate.raceId,
+      riders: riders.map((r) => ({
+        userId: r.userId,
+        distancePts: r.ghostSeries.length,
+        hrPts: r.ghostHrSeries.length,
+        rpmPts: r.ghostRpmSeries.length,
+        zonePts: r.ghostZoneSeries.length
+      }))
+    });
     setGhost({
       sourceRaceId: candidate.raceId,
       winCondition: candidate.winCondition,
@@ -940,8 +1087,10 @@ export default function CycleGameContainer({ onMount } = {}) {
     const winConditionNow = engineState.winCondition || raceMetaRef.current?.winCondition || 'distance';
     const placementByUser = {};
     (engineState.standings || []).forEach((s) => { placementByUser[s.userId] = s.placement; });
-    // Riders currently serving a hot-start penalty (pedalled at the green light).
+    // Riders currently in the penalty box (pedalled at the green light). The
+    // controller exposes per-rider detail for the countdown bar / awaiting-stop cue.
     const penalizedNow = new Set(snapshot?.penalized || []);
+    const penaltyInfo = snapshot?.penaltyInfo || {};
     const riderLive = {};
     Object.keys(riders).forEach((userId) => {
       const rider = riders[userId];
@@ -969,7 +1118,13 @@ export default function CycleGameContainer({ onMount } = {}) {
         zoneProgress: isGhostRider ? null : (vitals.progress ?? null),
         multiplier: isFinished ? 1 : zoneMultiplierFor(zoneId, zones, hrlessMultiplier),
         finished: isFinished,
-        placement: isFinished ? (placementByUser[userId] ?? null) : null
+        placement: isFinished ? (placementByUser[userId] ?? null) : null,
+        // Penalty box: flag + countdown detail. Needle keeps showing real RPM
+        // (riderLive.rpm above) so the rider can see they must pedal down to 0.
+        penalized: penalizedNow.has(userId),
+        penaltyRemainingS: penaltyInfo[userId]?.remainingS ?? null,
+        penaltyTotalS: penaltyInfo[userId]?.totalS ?? null,
+        penaltyAwaitingStop: !!penaltyInfo[userId]?.awaitingStop
       };
     });
     return (

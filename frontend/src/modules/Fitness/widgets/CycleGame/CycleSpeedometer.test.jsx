@@ -54,4 +54,20 @@ describe('CycleSpeedometer', () => {
     const { queryByTestId } = render(<CycleSpeedometer {...baseProps} />);
     expect(queryByTestId('cycle-speedometer-penalty')).toBeNull();
   });
+  it('shows a draining countdown bar with seconds remaining while serving the timer', () => {
+    const { getByTestId } = render(
+      <CycleSpeedometer {...baseProps} penalized penaltyRemainingS={6} penaltyTotalS={10} penaltyAwaitingStop={false} />
+    );
+    const bar = getByTestId('cycle-speedometer-penalty-bar');
+    // fill reflects remaining/total (6/10 = 60%)
+    expect(bar.querySelector('.cycle-speedometer__penalty-fill').style.width).toBe('60%');
+    expect(getByTestId('cycle-speedometer-penalty').textContent).toContain('6');
+  });
+  it('swaps to a STOP PEDALING cue once the timer is served but the rider is still pedalling', () => {
+    const { getByTestId, queryByTestId } = render(
+      <CycleSpeedometer {...baseProps} penalized penaltyRemainingS={0} penaltyTotalS={10} penaltyAwaitingStop />
+    );
+    expect(queryByTestId('cycle-speedometer-penalty-bar')).toBeNull();
+    expect(getByTestId('cycle-speedometer-penalty').textContent.toUpperCase()).toContain('STOP PEDALING');
+  });
 });
