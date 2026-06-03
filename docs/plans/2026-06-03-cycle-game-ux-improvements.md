@@ -21,10 +21,19 @@
 - #9 Two-tap ghost gesture is undiscoverable → Task 6
 - #10 Dead CSS + duplicated `LINE_COLORS` token → Task 7
 
+**Phase 2 — visual redesign (added 2026-06-03 per KC; see `docs/plans/2026-06-03-cycle-game-visual-redesign-design.md`):**
+- Bold **arcade/synthwave race-day identity** across lobby + race screen. → Tasks 8–11.
+- #3 (lobby adopts a token system) + audit §1–3 (color/typography/spacing) → Tasks 8, 9, 10
+- #8 (equipment iconography) → Task 11
+- **Task 3 (standalone contrast fix) is absorbed into Task 8** — the new token palette picks AA-passing muted/faint, verified by the same node check. Do NOT run Task 3 separately when doing the full pass.
+
 **Explicitly dropped (verified during planning):**
 - **Audit #1 (inert CSS motion under the TV kiosk) — FALSE ALARM.** The global `animation-duration: 0s !important` rule lives in `frontend/src/modules/Menu/Menu.scss` scoped to `.menu-items-container`, **not** `TVApp.scss`. CycleGame renders in the fitness player content area, not inside the menu, so its motion is **not** suppressed. No task. (The audit doc has been corrected.)
-- **Audit #6 "add rider names to the grid"** — re-adding names would contradict an intentional, test-asserted decision (`CycleGameHome.test.jsx:55`: names live in the picker, not the slot). We instead delete the orphaned `.cgh-slot__rider-name` CSS (Task 7).
-- **Audit #3 (lobby adopts the `_cgTokens.scss` design system) and #8 (equipment iconography)** — these are a visual-cohesion refactor, not a UX-behavior fix. Deferred to a separate Phase 2 (noted at the end). This plan keeps the lobby's existing look and fixes behavior.
+- **Audit #6 "add rider names to the grid"** — re-adding names would contradict an intentional, test-asserted decision (`CycleGameHome.test.jsx:55`: names live in the picker, not the slot). We instead delete the orphaned `.cgh-slot__rider-name` CSS (Task 7) and give empty slots a dashed "add rider" affordance in Task 9.
+
+**Font: Roboto Condensed is canon** — no new display font anywhere (see design doc §2).
+
+**Recommended execution order:** Phase 1 behavioral first (Tasks 2 → 4 → 5 → 6 → 7), then Phase 2 visual (Tasks 8 → 9 → 10 → 11). Task 7 (clean SCSS + shared `lineColors.js`) must land before the visual re-skin. Skip standalone Task 3.
 
 **Test command (memorize — used in every task):**
 ```bash
@@ -177,6 +186,8 @@ git commit -m "feat(cycle-game): Escape dismisses rider and ghost pickers"
 ---
 
 ### Task 3: Faint text — meet WCAG AA contrast
+
+> **⚠ ABSORBED into Task 8 for the full visual pass.** The token rewrite in Task 8 replaces the lobby palette entirely and selects an AA-passing `--cg-faint`, so running this standalone fix would be thrown away. Skip Task 3; Task 8 carries the AA verification. (Kept below only as the fallback if Phase 2 is ever cancelled.)
 
 **Why:** `$cgh-faint: #5b626e` on `$cgh-bg: #0e0f13` is ≈ 3.0:1, below the 4.5:1 AA floor for normal text. It styles the most explanatory copy (value-step hint, empty states, record timestamps). Bump it to a value that passes while staying visually subordinate to `$cgh-muted`.
 
@@ -521,13 +532,268 @@ Expected: all PASS.
 - Volume label shows e.g. `70%` / `Muted`.
 - Focusing a ghost card shows "Tap again to choose".
 
-**Step 3: Docs** — no reference-doc changes required (behavior of a single widget). If the audit is referenced elsewhere, note that audit finding #1 was retracted.
+**Step 2b: Visual smoke (after Phase 2)** — on the TV/dev app, confirm the arcade identity reads at distance:
+- Lobby has the synthwave backdrop (horizon glow + faint scanlines), not a flat grey fill.
+- Selected race-type tile glows magenta; unselected dim.
+- Starting grid sits on a neon start-line; slots show lane numbers; empty slots show "+ Add rider".
+- Start button glows/pulses when enabled, inert when disabled.
+- Countdown "GO" is a big magenta neon numeral; lamps glow.
+- Race screen chart lanes use the neon trio; leader has a cyan halo; clock/RPM are italic tabular numerals.
+- Equipment icons (incl. the "Nicoday" wordmark) sit in consistent neon circular chips.
+- Nothing is illegible: muted/faint text still readable (AA held).
+
+**Step 3: Docs** — no reference-doc changes required (behavior of a single widget). The audit (`docs/_wip/audits/2026-06-03-...`) already records that finding #1 was retracted; the visual design lives in `docs/plans/2026-06-03-cycle-game-visual-redesign-design.md`.
 
 ---
 
-## Phase 2 (deferred — not in this plan)
+## Phase 2 — Visual Redesign (arcade/synthwave)
 
-These are real but are visual-cohesion / larger-risk items, intentionally out of "point-by-point UX behavior":
-- **Audit #3 — lobby adopts `_cgTokens.scss`** ("Velodrome Broadcast HUD": Roboto Condensed display, JetBrains Mono telemetry, token palette). A visual redesign pass; needs its own brainstorming + plan.
-- **Audit #8 — equipment iconography** (the "Nicoday" wordmark vs. vector glyphs). Data/asset problem, not pure code.
-- **Audit #4 remainder — full modal focus trap + restore-to-trigger.** Needs a vetted focus-trap utility and kiosk-remote focus testing.
+> Design source of truth: `docs/plans/2026-06-03-cycle-game-visual-redesign-design.md`. Read its locked decisions before starting. **Roboto Condensed is canon — introduce no new font.** Run Tasks 8→9→10→11 in order, after Phase 1 (esp. Task 7).
+>
+> **Testing approach for Phase 2:** these are CSS-dominant. The regression guard is that **all existing CycleGame vitest suites stay green** (component behavior unchanged). Contrast is verified by the node script. There are no new behavioral tests for pure styling (snapshot tests are brittle on a kiosk and are not used). Where a task adds a *new DOM hook* (e.g. a lane-number element), add a minimal render assertion.
+
+---
+
+### Task 8: Synthwave token system + atmosphere backdrop
+
+**Why:** Single source of truth for the new palette; absorbs the Task 3 contrast fix. Today the lobby ignores `_cgTokens.scss` entirely and uses its own grey `$cgh-*` vars.
+
+**Files:**
+- Modify: `frontend/src/modules/Fitness/widgets/CycleGame/_cgTokens.scss`
+
+**Step 1: Rewrite the token file** to the synthwave palette + backdrop. Replace the whole file with:
+
+```scss
+// Shared cycle-game design tokens — "Arcade Synthwave Race-Day".
+// Deep indigo-black surfaces, neon magenta/cyan chrome, neon-shifted rider lanes,
+// horizon-glow + scanline atmosphere. Roboto Condensed is canon (no new font).
+
+$cg-bg:          #0a0a14; // deep indigo-black
+$cg-bg-2:        #0e0c1a;
+$cg-panel:       #12101f;
+$cg-panel-2:     #1a1730;
+$cg-border:      #2a2440; // violet-tinted, not grey
+$cg-border-soft: #1c1830;
+$cg-text:        #f3f0ff; // cool white
+$cg-muted:       #a79fc4; // AA-checked on $cg-bg (Step 2)
+$cg-faint:       #8a82a8; // AA-checked on $cg-bg (Step 2)
+
+// Brand / chrome accents (reserved — never a rider color)
+$cg-magenta:     #ff2d95; // primary / energy / selection
+$cg-cyan:        #21e6ff; // telemetry / live / GO
+
+// Rider lane identity — green/orange/purple semantics, neon-shifted
+$cg-lane-1:      #5dff9b;
+$cg-lane-2:      #ffb13d;
+$cg-lane-3:      #b072ff;
+
+// Legacy aliases kept so existing consumers don't break mid-migration
+$cg-accent:      $cg-cyan;
+$cg-gold:        #ffd54a;
+$cg-silver:      #cbd5e1;
+$cg-bronze:      #d08a52;
+
+$cg-display: 'Roboto Condensed', system-ui, sans-serif;
+$cg-mono: ui-monospace, SFMono-Regular, Menlo, monospace; // JetBrains Mono is never loaded — don't claim it
+
+// Synthwave atmosphere — horizon glow + scanlines. Used behind every screen.
+@mixin cg-backdrop {
+  position: relative;
+  background:
+    radial-gradient(120% 90% at 50% 118%, rgba(255, 45, 149, 0.22), transparent 60%),
+    radial-gradient(100% 70% at 50% 120%, rgba(33, 230, 255, 0.16), transparent 62%),
+    radial-gradient(140% 100% at 50% -10%, rgba(33, 230, 255, 0.05), transparent 55%),
+    $cg-bg;
+}
+
+// Faint scanline overlay — apply to a ::before on the backdrop element.
+@mixin cg-scanlines {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.025) 0,
+    rgba(255, 255, 255, 0.025) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  z-index: 0;
+}
+
+// Neon numeral treatment — Roboto Condensed 800 italic, tabular, with glow.
+@mixin cg-numeral($glow: $cg-cyan) {
+  font-family: $cg-display;
+  font-weight: 800;
+  font-style: italic;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 10px rgba($glow, 0.55);
+}
+
+// Condensed uppercase eyebrow.
+@mixin cg-eyebrow {
+  font-family: $cg-display;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: $cg-muted;
+}
+
+// Ghost avatar treatment (unchanged behavior) — grayscale + tint via mix-blend.
+.cg-ghost {
+  position: relative;
+  display: inline-flex;
+  border-radius: 50%;
+  img { filter: grayscale(1) contrast(0.9) brightness(1.18); }
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: var(--cg-ghost-tint, rgba(120, 180, 255, 0.6));
+    mix-blend-mode: color;
+    pointer-events: none;
+    z-index: 6;
+  }
+}
+```
+
+**Step 2: Verify muted + faint pass WCAG AA on the new bg**
+
+```bash
+node -e "const hex=h=>{const n=parseInt(h.slice(1),16);return[(n>>16)&255,(n>>8)&255,n&255]};const lin=c=>{c/=255;return c<=0.03928?c/12.92:((c+0.055)/1.055)**2.4};const L=a=>0.2126*lin(a[0])+0.7152*lin(a[1])+0.0722*lin(a[2]);const r=(a,b)=>{const x=L(hex(a)),y=L(hex(b)),[h,l]=x>y?[x,y]:[y,x];return((h+0.05)/(l+0.05)).toFixed(2)};console.log('muted #a79fc4:', r('#a79fc4','#0a0a14'));console.log('faint #8a82a8:', r('#8a82a8','#0a0a14'));"
+```
+Expected: both ≥ 4.5 (muted ≈ 6.7, faint ≈ 4.8). If either is under, lighten it and re-run before proceeding.
+
+**Step 3: Confirm consumers still compile** — the race screen already imports these tokens. Run the full CycleGame suite:
+
+```bash
+npx --no-install vitest run --config vitest.config.mjs frontend/src/modules/Fitness/widgets/CycleGame/
+```
+Expected: all PASS (no JS behavior touched; SCSS variables resolved at build, tests use jsdom and don't assert computed colors).
+
+**Step 4: Commit**
+
+```bash
+git add frontend/src/modules/Fitness/widgets/CycleGame/_cgTokens.scss
+git commit -m "feat(cycle-game): synthwave token palette + horizon-glow backdrop (replaces grey HUD; AA-verified)"
+```
+
+---
+
+### Task 9: Lobby re-skin (`CycleGameHome.scss`)
+
+**Why:** Make the lobby consume the tokens and gain the arcade identity, spacing rhythm, and the start-grid motif (audit §1–3).
+
+**Files:**
+- Modify: `frontend/src/modules/Fitness/widgets/CycleGame/CycleGameHome.scss`
+- Modify: `frontend/src/modules/Fitness/widgets/CycleGame/CycleGameHome.jsx` (add a lane-number span + dashed empty-slot affordance hook in `BikeSlot`)
+- Test: `frontend/src/modules/Fitness/widgets/CycleGame/CycleGameHome.test.jsx`
+
+**Step 1 (DOM hooks first, TDD):** add a failing test for the two new DOM hooks the re-skin needs:
+
+```jsx
+  it('shows a lane number on every grid slot and an add-rider hint on empty slots', () => {
+    const { getByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} />
+    );
+    // every slot has a lane number
+    expect(getByTestId('bike-cycle_ace').querySelector('.cgh-slot__lane')).toBeTruthy();
+    // empty slot advertises how to fill it; filled slot does not
+    expect(getByTestId('bike-tricycle').querySelector('.cgh-slot__add')).toBeTruthy();
+    expect(getByTestId('bike-cycle_ace').querySelector('.cgh-slot__add')).toBeNull();
+  });
+```
+Run (expect FAIL):
+```bash
+npx --no-install vitest run --config vitest.config.mjs frontend/src/modules/Fitness/widgets/CycleGame/CycleGameHome.test.jsx -t "lane number"
+```
+
+**Step 2:** in `CycleGameHome.jsx` `BikeSlot`, accept a `lane` index prop (pass `i+1` from the `.map` in the grid) and render inside `.cgh-slot`:
+- `<span className="cgh-slot__lane" aria-hidden="true">{lane}</span>`
+- when `!filled`, render `<span className="cgh-slot__add">+ Add rider</span>` (visual only; the whole slot button already has the accessible `aria-label`).
+
+Wire the grid map to pass `lane={i + 1}` (the existing `bikes.map((bike) => ...)` becomes `bikes.map((bike, i) => ...)`).
+
+**Step 3:** rewrite `CycleGameHome.scss` to consume tokens (`@use '../../shared/...'` as today plus the new token vars), delete the local `$cgh-*` palette, and implement per the design doc §3:
+- `.cycle-game-home { @include cg-backdrop; }` + a `&::before { @include cg-scanlines; }`; keep children above with `position: relative; z-index: 1`.
+- Race-type tiles: selected → magenta border + `box-shadow` inner/outer glow + icon `color: $cg-cyan`; unselected `opacity: 0.55`.
+- Starting grid: a `.cgh-grid` neon **start-line** (a `::before` bar: magenta→cyan gradient with a checkered-edge mask hint); slots as framed grid boxes; `.cgh-slot__lane` small italic tabular numeral top-left; filled slot glows in lane color; `.cgh-slot__add` dashed neon pill.
+- Spacing rhythm: standardize gaps to a 28px (major) / 16px (intra) scale.
+- Start button: magenta gradient + cyan edge-glow + `@keyframes` idle pulse when enabled; disabled inert.
+- Records/volume: lane-colored accents; `.cgh-record__score--empty` (Task 4) and `.cgh-volume__readout` (Task 5) styled as cyan telemetry chips; hero numerals via `@include cg-numeral`.
+
+**Step 4:** run the full lobby suite (the new test + all prior behavioral tests must pass):
+```bash
+npx --no-install vitest run --config vitest.config.mjs frontend/src/modules/Fitness/widgets/CycleGame/CycleGameHome.test.jsx
+```
+Expected: all PASS.
+
+**Step 5: Commit**
+```bash
+git add frontend/src/modules/Fitness/widgets/CycleGame/CycleGameHome.scss frontend/src/modules/Fitness/widgets/CycleGame/CycleGameHome.jsx frontend/src/modules/Fitness/widgets/CycleGame/CycleGameHome.test.jsx
+git commit -m "feat(cycle-game): synthwave lobby re-skin — start-grid motif, neon tiles, spacing rhythm"
+```
+
+---
+
+### Task 10: Race screen, countdown, results, speedometer re-skin
+
+**Why:** Carry the identity to the live screens (design doc §4). Pure CSS + token consumption + the shared lane colors from Task 7.
+
+**Files:**
+- Modify: `CycleRaceScreen.scss`, `CountdownStoplight.scss`, `RaceResults.scss`, `CycleSpeedometer.scss`, `RaceRecap.scss`
+- Modify (lane colors only): ensure `CycleRaceScreen.jsx` / `RaceRecap.jsx` import `LINE_COLORS` from the Task 7 `lineColors.js` and that those values equal the token lane trio (`#5dff9b`/`#ffb13d`/`#b072ff`). Update `lineColors.js` to the neon trio.
+- Test: existing `.test.jsx` suites for each (no new behavior).
+
+**Step 1:** update `frontend/src/modules/Fitness/lib/cycleGame/lineColors.js` to the neon trio `['#5dff9b', '#ffb13d', '#b072ff']`.
+
+**Step 2:** in each SCSS file, `@use` the tokens and apply per §4:
+- `CycleRaceScreen.scss`: `@include cg-backdrop` on the screen; clock + tags `@include cg-numeral`; leader tag/line cyan halo (`filter: drop-shadow`); roster rank accents in lane colors; darken the `__vignette`.
+- `CountdownStoplight.scss`: `.countdown-stoplight__number { @include cg-numeral($cg-magenta); }` with a bigger burst glow on the keyed punch; lamps get neon glows; add speed-line streaks via a `::before` gradient.
+- `RaceResults.scss`: winner row magenta spotlight + crown glow; medals on lane-colored chips; keep the staggered `animation-delay` reveal.
+- `CycleSpeedometer.scss`: ring/ticks → token colors; needle cyan + glow; `.cycle-speedometer__rpm { @include cg-numeral; }`.
+
+**Step 3:** run all CycleGame suites:
+```bash
+npx --no-install vitest run --config vitest.config.mjs frontend/src/modules/Fitness/widgets/CycleGame/
+```
+Expected: all PASS.
+
+**Step 4: Commit**
+```bash
+git add frontend/src/modules/Fitness/widgets/CycleGame/ frontend/src/modules/Fitness/lib/cycleGame/lineColors.js
+git commit -m "feat(cycle-game): synthwave re-skin for race screen, countdown, results, speedometer"
+```
+
+---
+
+### Task 11: Equipment icon framing (audit #8)
+
+**Why:** Equipment tiles mix vector glyphs with raster wordmarks (e.g. "Nicoday"). A uniform neon circular chip frame makes them sit consistently — CSS only, no new assets.
+
+**Files:**
+- Modify: `frontend/src/modules/Fitness/widgets/CycleGame/CycleGameHome.scss` (the `.cgh-slot__device` / `RpmDeviceAvatar` framing)
+
+**Step 1:** in `CycleGameHome.scss`, give `.cgh-slot__device` a consistent neon ring + inner shadow + a subtle dark inset behind the image so wordmark logos and silhouette glyphs both read inside the same circular chip (border in `$cg-border`, hover/filled ring in lane/cyan; `background: radial-gradient(...)` floor). Ensure `object-fit: cover` framing is consistent for all equipment images.
+
+**Step 2:** run the lobby suite (no behavior change):
+```bash
+npx --no-install vitest run --config vitest.config.mjs frontend/src/modules/Fitness/widgets/CycleGame/CycleGameHome.test.jsx
+```
+Expected: all PASS.
+
+**Step 3: Commit**
+```bash
+git add frontend/src/modules/Fitness/widgets/CycleGame/CycleGameHome.scss
+git commit -m "fix(cycle-game): uniform neon chip framing for equipment icons (consistent iconography)"
+```
+
+---
+
+## Phase 2 still-deferred
+
+- **Audit #4 remainder — full modal focus trap + restore-to-trigger.** Needs a vetted focus-trap utility and kiosk-remote focus testing. Escape + backdrop + × (Task 2) covers the immediate dismiss gap.
