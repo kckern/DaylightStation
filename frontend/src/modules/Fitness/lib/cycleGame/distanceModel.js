@@ -23,6 +23,22 @@ export function zoneMultiplierFor(zoneId, zones, hrlessMultiplier = 1) {
 }
 
 /**
+ * Resolve a zone's display color from config by id (case-insensitive). Lets a
+ * ghost rebuild its recorded zone color from `zone_series` ids, the same way a
+ * live rider reads it from vitals.
+ * @param {string|null} zoneId
+ * @param {Array<{id:string, color:string}>} zones
+ * @returns {string|null}
+ */
+export function zoneColorFor(zoneId, zones) {
+  if (!zoneId) return null;
+  const list = Array.isArray(zones) ? zones : [];
+  const target = String(zoneId).toLowerCase();
+  const match = list.find((z) => z && String(z.id).toLowerCase() === target);
+  return match && match.color ? match.color : null;
+}
+
+/**
  * @param {number} rotationsDelta - rotations this tick (> 0)
  * @param {number} wheelCircumferenceM - meters per rotation
  * @param {number} zoneMultiplier
