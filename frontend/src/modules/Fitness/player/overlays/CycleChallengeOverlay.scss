@@ -216,6 +216,10 @@
     border-color: #22c55e;
   }
 
+  &__phase-block--active {
+    animation: cycle-phase-block-flash 0.7s steps(1, end) infinite;
+  }
+
   // --- Lower-hemisphere phase progress arc -------------------------------
   // Sweeps 9 → 6 → 3 o'clock. Stroke color comes from the visuals helper
   // (state-driven). Monotonic phase progress fill; never repurposed for
@@ -429,4 +433,9 @@
 @keyframes cycle-health-empty-flash {
   0%, 100% { background: rgba(15, 23, 42, 0.7); }
   50%      { background: rgba(239, 68, 68, 0.4); }
+}
+
+@keyframes cycle-phase-block-flash {
+  0%, 100% { background: #000; border-color: #000; }
+  50%      { background: #fff; border-color: #fff; }
 }

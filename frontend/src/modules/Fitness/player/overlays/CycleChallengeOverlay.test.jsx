@@ -210,6 +210,19 @@ describe('CycleChallengeOverlay — extended UI', () => {
     expect(container.querySelector('.cycle-challenge-overlay__health-meter')).toBeNull();
   });
 
+  it('flashes the in-progress phase block (active = currentPhaseIndex)', () => {
+    const challenge = {
+      type: 'cycle', cycleState: 'maintain', status: 'pending',
+      rider: { id: 'felix', name: 'Felix' },
+      currentPhaseIndex: 2, totalPhases: 4,
+      currentPhase: { hiRpm: 70, loRpm: 52 },
+      currentRpm: 68, phaseProgressPct: 0.3, cycleHealthPct: 1
+    };
+    const { container } = render(<CycleChallengeOverlay challenge={challenge} />);
+    const blocks = container.querySelectorAll('.cycle-challenge-overlay__phase-block');
+    expect(blocks[2].classList.contains('cycle-challenge-overlay__phase-block--active')).toBe(true);
+  });
+
   it('does not violate the rules of hooks when toggling visibility', () => {
     // Visible cycle challenge → renders. Then a non-cycle challenge makes
     // visuals.visible false → early return. If any hook sits after that return,
