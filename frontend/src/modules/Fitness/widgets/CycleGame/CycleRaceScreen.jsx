@@ -9,6 +9,7 @@ import DistanceChart from './panels/DistanceChart.jsx';
 import Rankings from './panels/Rankings.jsx';
 import SpeedoRow from './panels/SpeedoRow.jsx';
 import LapTable from './panels/LapTable.jsx';
+import OvalTrack from './panels/OvalTrack.jsx';
 import RaceLayoutManager from './RaceLayoutManager.jsx';
 import './CycleRaceScreen.scss';
 
@@ -68,6 +69,10 @@ export default function CycleRaceScreen({
     lapTable: () => (
       <LapTable riderIds={riderIds} riders={riders}
         lapSplits={Object.fromEntries(riderIds.map((id) => [id, riders[id].lapSplits || []]))} />
+    ),
+    ovalTrack: () => (
+      <OvalTrack riderIds={riderIds} riders={riders} riderLive={riderLive}
+        lapProgress={Object.fromEntries(riderIds.map((id) => [id, snapshot.ridersView[id]?.lapProgress || 0]))} />
     ),
     ...(showSpeedos ? {
       speedoRow: () => (
