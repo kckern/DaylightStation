@@ -3,7 +3,17 @@ import {
   ACTIONS,
   generateTargets,
   isActionMatched,
+  computeProgression,
+  assignChordSizes,
+  DEFAULT_PROGRESSION,
 } from './useStaffMatching.js';
+
+// multiset helper: count occurrences of each value
+function counts(arr) {
+  const m = {};
+  for (const v of arr) m[v] = (m[v] || 0) + 1;
+  return m;
+}
 
 // ─── generateTargets ────────────────────────────────────────────
 
@@ -66,6 +76,119 @@ describe('generateTargets', () => {
     for (const action of ACTIONS) {
       expect(targets[action].length).toBe(1);
     }
+  });
+});
+
+// ─── computeProgression ─────────────────────────────────────────
+
+describe('computeProgression', () => {
+  const T = DEFAULT_PROGRESSION.thresholds; // { treble:1, bass:2, dyad:3, triad:5, accidentals:7 }
+
+  it('baseline (0 lines): treble range, single only, white keys only', () => {
+    const p = computeProgression(0);
+    expect(p.noteRange).toEqual(DEFAULT_PROGRESSION.treble_range);
+    expect(p.unlockedChordSizes).toEqual([1]);
+    expect(p.whiteKeysOnly).toBe(true);
+  });
+
+  it('below bass threshold keeps treble range', () => {
+    const p = computeProgression(T.bass - 1);
+    expect(p.noteRange).toEqual(DEFAULT_PROGRESSION.treble_range);
+  });
+
+  it('at bass threshold switches to bass range', () => {
+    const p = computeProgression(T.bass);
+    expect(p.noteRange).toEqual(DEFAULT_PROGRESSION.bass_range);
+  });
+
+  it('below dyad threshold has only singles', () => {
+    const p = computeProgression(T.dyad - 1);
+    expect(p.unlockedChordSizes).toEqual([1]);
+  });
+
+  it('at dyad threshold unlocks dyads', () => {
+    const p = computeProgression(T.dyad);
+    expect(p.unlockedChordSizes).toEqual([1, 2]);
+  });
+
+  it('below triad threshold has no triads', () => {
+    const p = computeProgression(T.triad - 1);
+    expect(p.unlockedChordSizes).not.toContain(3);
+  });
+
+  it('at triad threshold unlocks triads', () => {
+    const p = computeProgression(T.triad);
+    expect(p.unlockedChordSizes).toEqual([1, 2, 3]);
+  });
+
+  it('below accidentals threshold stays white keys only', () => {
+    const p = computeProgression(T.accidentals - 1);
+    expect(p.whiteKeysOnly).toBe(true);
+  });
+
+  it('at accidentals threshold enables sharps/flats', () => {
+    const p = computeProgression(T.accidentals);
+    expect(p.whiteKeysOnly).toBe(false);
+  });
+
+  it('honors custom thresholds from config', () => {
+    const config = { thresholds: { bass: 4, dyad: 6, triad: 8, accidentals: 10 } };
+    expect(computeProgression(3, config).noteRange).toEqual(DEFAULT_PROGRESSION.treble_range);
+    expect(computeProgression(4, config).noteRange).toEqual(DEFAULT_PROGRESSION.bass_range);
+    expect(computeProgression(5, config).unlockedChordSizes).toEqual([1]);
+    expect(computeProgression(6, config).unlockedChordSizes).toEqual([1, 2]);
+    expect(computeProgression(9, config).whiteKeysOnly).toBe(true);
+    expect(computeProgression(10, config).whiteKeysOnly).toBe(false);
+  });
+
+  it('honors custom ranges from config, merging partial config with defaults', () => {
+    const config = { treble_range: [64, 76], bass_range: [40, 76] };
+    expect(computeProgression(0, config).noteRange).toEqual([64, 76]);
+    expect(computeProgression(2, config).noteRange).toEqual([40, 76]);
+    // thresholds fall back to defaults when not provided
+    expect(computeProgression(2, config).noteRange).toEqual([40, 76]);
+    expect(computeProgression(1, config).noteRange).toEqual([64, 76]);
+  });
+});
+
+// ─── assignChordSizes ───────────────────────────────────────────
+
+describe('assignChordSizes', () => {
+  it('returns one size per staff', () => {
+    expect(assignChordSizes([1, 2, 3], 6)).toHaveLength(6);
+  });
+
+  it('all singles when only single is unlocked', () => {
+    expect(assignChordSizes([1], 6)).toEqual([1, 1, 1, 1, 1, 1]);
+  });
+
+  it('only ever emits sizes from the unlocked set (additive mix, not forced)', () => {
+    const sizes = assignChordSizes([1, 3], 6);
+    for (const s of sizes) expect([1, 3]).toContain(s);
+  });
+
+  it('every unlocked size is reachable in the random mix', () => {
+    // Large sample so all unlocked sizes appear with overwhelming probability
+    const c = counts(assignChordSizes([1, 2, 3], 300));
+    expect(Object.keys(c).map(Number).sort()).toEqual([1, 2, 3]);
+  });
+});
+
+// ─── generateTargets with per-staff size array ──────────────────
+
+describe('generateTargets (per-staff sizes)', () => {
+  it('gives each staff the count from the array', () => {
+    const sizes = [1, 2, 3, 1, 2, 3];
+    const targets = generateTargets([48, 84], sizes);
+    ACTIONS.forEach((action, i) => {
+      expect(targets[action].length).toBe(sizes[i]);
+    });
+  });
+
+  it('no duplicate notes across mixed-size staves on a wide range', () => {
+    const targets = generateTargets([48, 84], [1, 2, 3, 1, 2, 3]);
+    const all = ACTIONS.flatMap((a) => targets[a]);
+    expect(new Set(all).size).toBe(all.length);
   });
 });
 
