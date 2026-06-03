@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTicks, buildBandArcs, needleAngleDeg, bandForRpm } from './speedometerGeometry.js';
+import { buildTicks, buildBandArcs, needleAngleDeg, bandForRpm, tickStepsFor, scaleBands } from './speedometerGeometry.js';
 
 const BANDS = [
   { id: 'warmup',   min: 0,  color: '#5b6470' },
@@ -7,6 +7,34 @@ const BANDS = [
   { id: 'pushing',  min: 70, color: '#f1c40f' },
   { id: 'sprint',   min: 90, color: '#e74c3c' }
 ];
+
+describe('tickStepsFor', () => {
+  it('keeps the legacy 10/30 spacing for the 120 gauge', () => {
+    expect(tickStepsFor(120)).toEqual({ tickStep: 10, labelStep: 30 });
+  });
+  it('widens the spacing for a large gauge so ticks do not crowd', () => {
+    const { tickStep, labelStep } = tickStepsFor(250);
+    expect(tickStep).toBe(25); // 250/12 ≈ 20.8 → next nice step 25
+    expect(labelStep).toBe(75);
+    // ~10-11 minor ticks across the dial instead of 25
+    expect(Math.floor(250 / tickStep) + 1).toBeLessThanOrEqual(12);
+  });
+  it('falls back to the default gauge for invalid input', () => {
+    expect(tickStepsFor(0)).toEqual({ tickStep: 10, labelStep: 30 });
+  });
+});
+
+describe('scaleBands', () => {
+  it('leaves bands unchanged at the reference gauge (120)', () => {
+    expect(scaleBands(BANDS, 120).map((b) => b.min)).toEqual([0, 40, 70, 90]);
+  });
+  it('stretches band thresholds proportionally for a larger gauge', () => {
+    // factor 250/120 ≈ 2.083 → sprint moves from 90 to ~188, not a giant red wedge
+    const scaled = scaleBands(BANDS, 250);
+    expect(scaled.map((b) => b.min)).toEqual([0, 83, 146, 188]);
+    expect(scaled[3].color).toBe('#e74c3c'); // preserves the rest of the band
+  });
+});
 
 describe('buildTicks', () => {
   it('produces maxRpm/tickStep + 1 ticks, with majors at labelStep', () => {

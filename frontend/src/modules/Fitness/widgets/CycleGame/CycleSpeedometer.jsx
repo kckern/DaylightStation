@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.jsx';
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
-import { buildTicks, buildBandArcs, needleAngleDeg } from '@/modules/Fitness/lib/cycleGame/speedometerGeometry.js';
+import { buildTicks, buildBandArcs, needleAngleDeg, tickStepsFor, scaleBands } from '@/modules/Fitness/lib/cycleGame/speedometerGeometry.js';
 import './CycleSpeedometer.scss';
 
 const VIEWBOX = 200;
@@ -18,17 +18,24 @@ function ordinal(n) {
 }
 
 export default function CycleSpeedometer({
-  rpm = 0, maxRpm = 120, cadenceBands = [], tickStep = 10, labelStep = 30,
+  rpm = 0, maxRpm = 120, cadenceBands = [], tickStep, labelStep,
   avatar = {}, distanceMeters = 0, multiplier = 1, multiplierColor, size = 220, className = '',
   isGhost = false, finished = false, placement = null, penalized = false,
   penaltyRemainingS = null, penaltyTotalS = null, penaltyAwaitingStop = false
 }) {
+  // Tick spacing scales with the gauge max (a fixed 10/30 crowds a 250 dial);
+  // explicit tickStep/labelStep props still override when provided.
+  const steps = useMemo(() => tickStepsFor(maxRpm), [maxRpm]);
+  const effTickStep = Number.isFinite(tickStep) ? tickStep : steps.tickStep;
+  const effLabelStep = Number.isFinite(labelStep) ? labelStep : steps.labelStep;
   const ticks = useMemo(
-    () => buildTicks({ maxRpm, tickStep, labelStep, center: CENTER, gaugeRadius: GAUGE_RADIUS }),
-    [maxRpm, tickStep, labelStep]
+    () => buildTicks({ maxRpm, tickStep: effTickStep, labelStep: effLabelStep, center: CENTER, gaugeRadius: GAUGE_RADIUS }),
+    [maxRpm, effTickStep, effLabelStep]
   );
+  // Bands scale proportionally to the gauge so the colour zones keep their intent
+  // (a real sprint is the top tier, not a giant red wedge on a 250 dial).
   const bands = useMemo(
-    () => buildBandArcs({ bands: cadenceBands, maxRpm, center: CENTER, gaugeRadius: GAUGE_RADIUS }),
+    () => buildBandArcs({ bands: scaleBands(cadenceBands, maxRpm), maxRpm, center: CENTER, gaugeRadius: GAUGE_RADIUS }),
     [cadenceBands, maxRpm]
   );
   const needleDeg = needleAngleDeg(rpm, maxRpm);
