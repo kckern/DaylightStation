@@ -174,4 +174,24 @@ describe('CycleGameHome', () => {
     fireEvent.click(getByTestId('record-20260603120000'));
     expect(onSelectRecord).toHaveBeenCalledWith('20260603120000');
   });
+
+  it('closes the rider picker on Escape', () => {
+    const { getByTestId, queryByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} />
+    );
+    fireEvent.click(getByTestId('bike-tricycle').querySelector('.cgh-slot__main'));
+    expect(getByTestId('rider-picker')).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(queryByTestId('rider-picker')).toBeNull();
+  });
+
+  it('closes the ghost picker on Escape', () => {
+    const { getByTestId, queryByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} ghostCandidates={[]} />
+    );
+    fireEvent.click(getByTestId('course-ghost'));
+    expect(getByTestId('ghost-picker')).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(queryByTestId('ghost-picker')).toBeNull();
+  });
 });

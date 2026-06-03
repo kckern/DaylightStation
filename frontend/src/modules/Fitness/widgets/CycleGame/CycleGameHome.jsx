@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.jsx';
 import RpmDeviceAvatar from '@/modules/Fitness/components/RpmDeviceAvatar.jsx';
@@ -13,6 +13,16 @@ let _uiLog;
 function uiLog() {
   if (!_uiLog) _uiLog = getLogger().child({ component: 'cycle-game-ui' });
   return _uiLog;
+}
+
+/** Dismiss a modal on the Escape key. Cleans up its own listener. */
+function useEscapeToClose(onClose) {
+  useEffect(() => {
+    if (!onClose) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
 }
 
 const EQUIPMENT_FALLBACK = DaylightMediaPath('/static/img/equipment/equipment');
@@ -259,6 +269,7 @@ function RiderPicker({ bike, people = [], currentRiderId = null, onAssign, onCle
     .filter((p) => categoryOf(p) === activeTab)
     .sort((a, b) => (b.native ? 1 : 0) - (a.native ? 1 : 0));
   const showTabs = available.length > 1;
+  useEscapeToClose(onClose);
 
   const renderPerson = (p) => (
     <button
@@ -421,6 +432,7 @@ function formatDayHeader(day) {
  */
 function GhostPicker({ candidates = [], currentGhost = null, onSelect, onClear, onClose }) {
   const [focusedId, setFocusedId] = useState(currentGhost?.sourceRaceId || null);
+  useEscapeToClose(onClose);
 
   const columns = useMemo(() => {
     const map = new Map();
