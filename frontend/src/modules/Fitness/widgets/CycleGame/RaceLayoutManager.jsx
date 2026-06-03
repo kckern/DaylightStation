@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import PropTypes from 'prop-types';
 import PanelSlot from './panels/PanelSlot.jsx';
+import getLogger from '@/lib/logging/Logger.js';
 import './RaceLayoutManager.scss';
 
 const TOP = ['topLeft', 'topCenter', 'topRight'];
@@ -8,6 +9,19 @@ const TOP = ['topLeft', 'topCenter', 'topRight'];
 export default function RaceLayoutManager({ decision, panels }) {
   const zones = decision?.zones || {};
   const filledTop = TOP.filter((z) => zones[z]).length || 1;
+
+  // Telemetry: log the layout whenever the zone assignment or the top-column
+  // count changes. filledTop drives the top grid's column count; churn here is
+  // what reflows the chart + speedo band, so this surfaces layout thrashing.
+  const log = useMemo(() => getLogger().child({ component: 'cycle-race-layout' }), []);
+  const sig = `${filledTop}|${TOP.map((z) => zones[z] || '-').join(',')}|${zones.bottom || '-'}`;
+  const lastSigRef = useRef(null);
+  useEffect(() => {
+    if (lastSigRef.current === sig) return;
+    lastSigRef.current = sig;
+    log.debug('cycle_game.layout', { filledTop, zones });
+  }, [sig, filledTop, zones, log]);
+
   const renderZone = (zone) => {
     const id = zones[zone];
     const Panel = id ? panels[id] : null;
