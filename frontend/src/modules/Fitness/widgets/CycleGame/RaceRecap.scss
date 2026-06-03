@@ -30,9 +30,12 @@
     appearance: none; cursor: pointer; font-family: cg.$cg-display; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.04em;
     padding: 10px 24px; border-radius: 10px; min-width: 110px;
-    color: #f8fafc; background: cg.$cg-accent; border: 1px solid cg.$cg-accent;
+    color: cg.$cg-bg; background: cg.$cg-cyan; border: 1px solid cg.$cg-cyan;
+    box-shadow: 0 0 18px rgba(33, 230, 255, 0.45);
+    transition: box-shadow 0.15s, filter 0.15s;
+    &:hover { filter: brightness(1.08); box-shadow: 0 0 26px rgba(33, 230, 255, 0.7); }
   }
-  &__scrub { flex: 1; accent-color: cg.$cg-accent; }
+  &__scrub { flex: 1; accent-color: cg.$cg-cyan; }
 
   &__results { max-height: 34%; overflow-y: auto; border-top: 1px solid cg.$cg-border-soft; }
 }

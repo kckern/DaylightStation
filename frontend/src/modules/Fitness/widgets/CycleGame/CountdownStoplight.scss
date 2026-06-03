@@ -10,16 +10,32 @@
   &__eyebrow {
     @include cg.cg-eyebrow;
     font-size: 1rem;
-    color: cg.$cg-muted;
     animation: cg-fade-up 0.4s ease both;
   }
-  &.is-go &__eyebrow { color: #2ecc71; letter-spacing: 0.4em; }
+  &.is-go &__eyebrow { color: cg.$cg-lane-1; letter-spacing: 0.4em; }
 
   // Big number sits inside a pulsing accent ring.
   &__stage {
     position: relative;
     width: 240px; height: 240px;
     display: flex; align-items: center; justify-content: center;
+
+    // Decorative speed-line streaks behind the number.
+    &::before {
+      content: '';
+      position: absolute; inset: -40% -60%;
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.18;
+      background: repeating-linear-gradient(
+        -18deg,
+        transparent 0,
+        transparent 22px,
+        rgba(33, 230, 255, 0.55) 22px,
+        rgba(33, 230, 255, 0.55) 24px
+      );
+      mask-image: radial-gradient(60% 60% at 50% 50%, #000 0%, transparent 78%);
+    }
   }
 
   &__ring {
@@ -36,20 +52,23 @@
   }
 
   &__number {
-    font-family: cg.$cg-display;
-    font-weight: 800;
+    position: relative; z-index: 1;
+    @include cg.cg-numeral(cg.$cg-magenta);
     font-size: 9rem;
     line-height: 1;
     color: cg.$cg-text;
-    font-variant-numeric: tabular-nums;
-    text-shadow: 0 6px 30px rgba(0, 0, 0, 0.7);
+    text-shadow:
+      0 0 28px rgba(255, 45, 149, 0.7),
+      0 6px 30px rgba(0, 0, 0, 0.7);
     // Punch in on every value change (keyed remount).
     animation: cg-count-punch 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both;
   }
   &.is-go &__number {
     font-size: 7rem; letter-spacing: 0.04em;
-    color: #46e08a;
-    text-shadow: 0 0 40px rgba(46, 224, 138, 0.6);
+    color: cg.$cg-lane-1;
+    text-shadow:
+      0 0 56px rgba(93, 255, 155, 0.85),
+      0 0 28px rgba(93, 255, 155, 0.6);
     animation: cg-go-pop 0.5s cubic-bezier(0.2, 1.5, 0.4, 1) both;
   }
 
@@ -62,9 +81,9 @@
     transition: opacity 0.15s, box-shadow 0.15s, transform 0.15s;
   }
   &__lamp.is-on { transform: scale(1.12); }
-  &__lamp--red.is-on    { background: #e74c3c; opacity: 1; box-shadow: 0 0 28px #e74c3c; }
-  &__lamp--yellow.is-on { background: #f1c40f; opacity: 1; box-shadow: 0 0 28px #f1c40f; }
-  &__lamp--green.is-on  { background: #2ecc71; opacity: 1; box-shadow: 0 0 28px #2ecc71; }
+  &__lamp--red.is-on    { background: #ff5a5a; opacity: 1; box-shadow: 0 0 18px #ff5a5a, 0 0 36px rgba(255, 90, 90, 0.7); }
+  &__lamp--yellow.is-on { background: cg.$cg-lane-2; opacity: 1; box-shadow: 0 0 18px cg.$cg-lane-2, 0 0 36px rgba(255, 177, 61, 0.7); }
+  &__lamp--green.is-on  { background: cg.$cg-lane-1; opacity: 1; box-shadow: 0 0 18px cg.$cg-lane-1, 0 0 36px rgba(93, 255, 155, 0.7); }
 }
 
 @keyframes cg-count-punch {
