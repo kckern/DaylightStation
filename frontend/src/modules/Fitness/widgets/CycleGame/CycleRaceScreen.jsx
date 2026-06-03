@@ -16,10 +16,12 @@ const FALLBACK_AVATAR = '/api/v1/static/img/users/user';
  * goal) with gridlines + gliding rider chips, and a row of CycleSpeedometers
  * beneath. Pure — the live container feeds it engine state + per-rider metrics.
  */
+const EVENT_GLYPH = { dnf: '🛑', penalty: '⏱️' };
+
 export default function CycleRaceScreen({
   winCondition = 'distance', goalM = 3000, timeCapS = 300, elapsedS = 0,
   riders = {}, riderLive = {}, cadenceBands = [], backgroundPlexId = null,
-  showSpeedos = true
+  showSpeedos = true, events = []
 }) {
   const riderIds = Object.keys(riders);
 
@@ -145,6 +147,22 @@ export default function CycleRaceScreen({
     raw.forEach((t) => { if (t.topPct < 3) t.topPct = 3; });
     return raw;
   })();
+
+  // Officiating-event markers (DNF / penalty), anchored to where they fired on
+  // the rider's lane. seriesIndex + distanceM were captured at event time; we
+  // re-project them with the current scale so each marker tracks its line point.
+  const eventMarkers = events.map((e) => {
+    const idx = riderIds.indexOf(e.riderId);
+    if (idx < 0) return null;
+    return {
+      id: e.id,
+      type: e.type,
+      glyph: EVENT_GLYPH[e.type] || '•',
+      leftPct: (xFor(e.seriesIndex) / W) * 100,
+      topPct: (yFor(e.distanceM) / H) * 100,
+      color: LINE_COLORS[idx % LINE_COLORS.length]
+    };
+  }).filter(Boolean);
 
   // Roster panel (right of the chart): riders sorted by who's ahead.
   const roster = [...riderIds]
@@ -289,6 +307,22 @@ export default function CycleRaceScreen({
             </div>
           ))}
         </div>
+
+        {/* Officiating-event markers pinned to the lane where each fired. */}
+        {eventMarkers.length > 0 && (
+          <div className="cycle-race-screen__markers" data-testid="race-event-markers">
+            {eventMarkers.map((m) => (
+              <div
+                key={`evt-${m.id}`}
+                className={`cycle-race-screen__marker cycle-race-screen__marker--${m.type}`}
+                data-testid={`race-event-marker-${m.type}`}
+                style={{ left: `${m.leftPct}%`, top: `${m.topPct}%`, '--marker-color': m.color }}
+              >
+                <span className="cycle-race-screen__marker-glyph" aria-hidden="true">{m.glyph}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <aside className="cycle-race-screen__roster" data-testid="race-roster">
@@ -358,5 +392,12 @@ CycleRaceScreen.propTypes = {
   riderLive: PropTypes.object,
   cadenceBands: PropTypes.array,
   backgroundPlexId: PropTypes.string,
-  showSpeedos: PropTypes.bool
+  showSpeedos: PropTypes.bool,
+  events: PropTypes.arrayOf(PropTypes.shape({
+    id: PropTypes.number,
+    type: PropTypes.oneOf(['dnf', 'penalty']),
+    riderId: PropTypes.string,
+    seriesIndex: PropTypes.number,
+    distanceM: PropTypes.number
+  }))
 };
