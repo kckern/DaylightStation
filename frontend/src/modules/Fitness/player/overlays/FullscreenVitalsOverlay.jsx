@@ -172,8 +172,8 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
           heartRate: hrValid ? Math.round(device.heartRate) : null,
           isInactive,
           progressValue,
-          boostBadge: boostContributions && Number.isFinite(boostContributions[user?.name])
-            ? `×${(1 + boostContributions[user.name]).toFixed(1)}`
+          boostBadge: boostContributions && Number.isFinite(boostContributions[user?.id])
+            ? `×${(1 + boostContributions[user.id]).toFixed(1)}`
             : null
         };
       });
