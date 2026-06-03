@@ -523,6 +523,7 @@ export default function CycleGameContainer({ onMount } = {}) {
       raceIdleDnfS: Number.isFinite(cycleGameConfig?.race_idle_dnf_s) ? cycleGameConfig.race_idle_dnf_s : 20,
       hotStartPenaltyS: Number.isFinite(cycleGameConfig?.hot_start_penalty_s) ? cycleGameConfig.hot_start_penalty_s : 0,
       backgroundPlexId: cycleGameConfig?.default_background ?? null,
+      lapLengthM: Number.isFinite(cycleGameConfig?.lap_length_m) ? cycleGameConfig.lap_length_m : 0,
       intervalMs: RACE_TICK_MS
     });
 
