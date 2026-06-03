@@ -637,7 +637,12 @@ export default function CycleGameHome({
       </div>
 
       <aside className="cycle-game-home__records" data-testid="cycle-game-records">
-        <div className="cgh-section-label" id="cycle-game-volume-label">Volume</div>
+        <div className="cgh-section-label cgh-section-label--with-readout" id="cycle-game-volume-label">
+          <span>Volume</span>
+          <span className="cgh-volume__readout" data-testid="cycle-game-volume-readout">
+            {masterMuted ? 'Muted' : `${Math.round((masterVolume ?? 0) * 100)}%`}
+          </span>
+        </div>
         <div className="cgh-volume" data-testid="cycle-game-volume">
           <TouchVolumeButtons
             controlId="cycle-game-volume"
