@@ -16,14 +16,14 @@ import './CycleRaceScreen.scss';
 
 /**
  * Presentational race screen — a velodrome broadcast HUD: framed race clock on
- * top, a gradient-filled distance chart (one climbing lane per rider toward the
- * goal) with gridlines + gliding rider chips, and a row of CycleSpeedometers
- * beneath. Pure — the live container feeds it engine state + per-rider metrics.
+ * top, then a director-driven layout (distance chart, rankings, lap table, oval
+ * track, transient camera) over a row of CycleSpeedometers. Pure — the live
+ * container feeds it engine state + per-rider metrics.
  */
 export default function CycleRaceScreen({
   winCondition = 'distance', goalM = 3000, timeCapS = 300, elapsedS = 0,
   riders = {}, riderLive = {}, cadenceBands = [], backgroundPlexId = null,
-  showSpeedos = true, lapLengthM = 0
+  showSpeedos = true, lapLengthM = 0, events = []
 }) {
   const riderIds = Object.keys(riders);
 
@@ -57,12 +57,14 @@ export default function CycleRaceScreen({
 
   // Bind extracted panels to current props. speedoRow is included ONLY when
   // showSpeedos is true, so the director assigning it to a hidden row renders
-  // nothing (preserves the showSpeedos={false} behavior). lapTable/ovalTrack/
-  // cameraZoom are added in Phase D — absent ids render empty zones gracefully.
+  // nothing (preserves the showSpeedos={false} behavior). An id absent from this
+  // map renders as an empty zone gracefully. Officiating-event markers (DNF /
+  // penalty) ride the chart, so `events` is threaded into DistanceChart — it owns
+  // the xFor/yFor projection those markers need.
   const panels = {
     distanceChart: () => (
       <DistanceChart riderIds={riderIds} riders={riders} riderLive={riderLive}
-        winCondition={winCondition} goalM={goalM} />
+        winCondition={winCondition} goalM={goalM} events={events} />
     ),
     rankings: () => (
       <Rankings riderIds={riderIds} riders={riders} riderLive={riderLive} />
@@ -136,5 +138,12 @@ CycleRaceScreen.propTypes = {
   cadenceBands: PropTypes.array,
   backgroundPlexId: PropTypes.string,
   showSpeedos: PropTypes.bool,
-  lapLengthM: PropTypes.number
+  lapLengthM: PropTypes.number,
+  events: PropTypes.arrayOf(PropTypes.shape({
+    id: PropTypes.number,
+    type: PropTypes.oneOf(['dnf', 'penalty']),
+    riderId: PropTypes.string,
+    seriesIndex: PropTypes.number,
+    distanceM: PropTypes.number
+  }))
 };

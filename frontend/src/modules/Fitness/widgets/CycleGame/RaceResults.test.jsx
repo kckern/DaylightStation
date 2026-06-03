@@ -19,17 +19,21 @@ describe('RaceResults', () => {
     expect(rows[0].textContent).toContain('User_3');
     expect(rows[0].textContent).toContain('1');
   });
-  it('marks DNF riders', () => {
+  it('marks DNF riders and shows a DNF legend', () => {
     const { getByTestId } = render(<RaceResults standings={standings} riders={riders} winCondition="distance" dnf={['user_2']} />);
     expect(getByTestId('result-row-user_2').textContent).toContain('DNF');
+    expect(getByTestId('race-results-legend').textContent).toContain('Did Not Finish');
   });
-  it('marks DQ riders (and DQ takes precedence over DNF)', () => {
+  it('flags penalized riders with a badge and a false-start legend', () => {
     const { getByTestId } = render(
-      <RaceResults standings={standings} riders={riders} winCondition="distance" dnf={['user_2']} dq={['user_2']} />
+      <RaceResults standings={standings} riders={riders} winCondition="distance" dnf={[]} penalized={['user_2']} />
     );
-    const row = getByTestId('result-row-user_2').textContent;
-    expect(row).toContain('DQ');
-    expect(row).not.toContain('DNF');
+    expect(getByTestId('result-row-user_2').textContent).toContain('⏱️');
+    expect(getByTestId('race-results-legend').textContent).toContain('False start');
+  });
+  it('renders no legend when there are no DNF or penalty events', () => {
+    const { queryByTestId } = render(<RaceResults standings={standings} riders={riders} winCondition="distance" dnf={[]} />);
+    expect(queryByTestId('race-results-legend')).toBeNull();
   });
   it('shows time for distance races and distance for time races', () => {
     const dist = render(<RaceResults standings={standings} riders={riders} winCondition="distance" dnf={[]} />);

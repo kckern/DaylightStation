@@ -61,40 +61,26 @@ describe('CycleRaceController — racing + DNF', () => {
   });
 });
 
-describe('CycleRaceController — abuse DQ', () => {
+describe('CycleRaceController — no RPM-abuse disqualification', () => {
   const toRacing = (cfg) => { const c = new CycleRaceController(cfg); c.startCountdown(); return c; };
 
-  it('DQs a rider whose RPM stays above max for the configured duration', () => {
+  // The over-RPM "abuse" DQ was removed: a small-wheeled bike (tricycle) spins
+  // past any old threshold under legitimate hard pedaling, and the gate punished
+  // real effort. There is no DQ concept anymore.
+  it('never disqualifies a rider sustaining very high RPM — keeps accumulating distance', () => {
     const c = toRacing(distConfig({
       startCountdownS: 0, goalM: 100000,
-      riders: [{ userId: 'a', wheelCircumferenceM: 2.1, maxRpm: 100, maxRpmDurationS: 10 }]
+      riders: [{ userId: 'a', wheelCircumferenceM: 1.2 }]
     }));
-    c.tick({ a: { rpm: 200, zoneId: 'hot' } }); // 5s over
-    expect(c.getState().dq).not.toContain('a');
-    c.tick({ a: { rpm: 200, zoneId: 'hot' } }); // 10s over → DQ
-    expect(c.getState().dq).toContain('a');
-  });
-
-  it('does not DQ a rider who briefly spikes then drops below max', () => {
-    const c = toRacing(distConfig({
-      startCountdownS: 0, goalM: 100000,
-      riders: [{ userId: 'a', wheelCircumferenceM: 2.1, maxRpm: 100, maxRpmDurationS: 10 }]
-    }));
-    c.tick({ a: { rpm: 200, zoneId: 'hot' } }); // 5s over
-    c.tick({ a: { rpm: 50, zoneId: 'hot' } });  // resets the over counter
-    c.tick({ a: { rpm: 200, zoneId: 'hot' } }); // only 5s over again
-    expect(c.getState().dq).not.toContain('a');
-  });
-
-  it('freezes a DQ rider distance (their input is zeroed)', () => {
-    const c = toRacing(distConfig({
-      startCountdownS: 0, goalM: 100000,
-      riders: [{ userId: 'a', wheelCircumferenceM: 2.1, maxRpm: 100, maxRpmDurationS: 5 }]
-    }));
-    c.tick({ a: { rpm: 200, zoneId: 'hot' } }); // 5s over → DQ this tick, input zeroed
-    const dist = c.getState().engineState.riders.a.cumulativeDistanceM;
-    c.tick({ a: { rpm: 200, zoneId: 'hot' } });
-    expect(c.getState().engineState.riders.a.cumulativeDistanceM).toBe(dist);
+    expect(c.getState().dq).toBeUndefined();
+    let prev = 0;
+    for (let i = 0; i < 12; i++) {
+      c.tick({ a: { rpm: 200, zoneId: 'hot' } }); // would have tripped the old gate
+      const dist = c.getState().engineState.riders.a.cumulativeDistanceM;
+      expect(dist).toBeGreaterThan(prev); // distance keeps growing — never frozen
+      prev = dist;
+    }
+    expect(c.getState().dq).toBeUndefined();
   });
 });
 

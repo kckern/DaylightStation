@@ -1,0 +1,111 @@
+@use './cgTokens' as cg;
+
+// Officiating-event banner — slides down from the top-center of the race screen,
+// rides above the chart, and self-dismisses. Non-blocking (pointer-events only
+// on the chip itself so a tap can dismiss it early).
+.cycle-event-toast {
+  position: absolute;
+  top: 1.4rem;
+  left: 50%;
+  z-index: 30;
+  min-width: 22rem;
+  max-width: min(40rem, 86vw);
+  overflow: hidden;
+  border-radius: 0.85rem;
+  border: 1px solid cg.$cg-border;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 60%),
+    cg.$cg-panel-2;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  transform: translate(-50%, 0);
+  will-change: transform, opacity;
+
+  // Accent rail down the left edge, colored per variant.
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 4px;
+    background: var(--cycle-event-accent, #{cg.$cg-accent});
+  }
+
+  &--dnf { --cycle-event-accent: #ff5a52; }
+  &--penalty { --cycle-event-accent: #{cg.$cg-gold}; }
+  &--info { --cycle-event-accent: #{cg.$cg-accent}; }
+
+  &--entered {
+    animation: cycle-event-toast-in 240ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
+  }
+
+  &--exiting {
+    opacity: 0;
+    transform: translate(-50%, -0.6rem);
+    transition: opacity 280ms ease, transform 280ms ease;
+  }
+}
+
+@keyframes cycle-event-toast-in {
+  from { opacity: 0; transform: translate(-50%, -0.9rem) scale(0.97); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+.cycle-event-toast__body {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.8rem 1.1rem 0.8rem 1.25rem;
+}
+
+.cycle-event-toast__icon {
+  flex: 0 0 auto;
+  font-size: 1.7rem;
+  line-height: 1;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+}
+
+.cycle-event-toast__text {
+  min-width: 0;
+}
+
+.cycle-event-toast__title {
+  font-family: cg.$cg-display;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: cg.$cg-text;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cycle-event-toast__subtitle {
+  margin-top: 0.1rem;
+  font-family: cg.$cg-display;
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: cg.$cg-muted;
+}
+
+.cycle-event-toast__countdown {
+  height: 3px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.cycle-event-toast__countdown-bar {
+  height: 100%;
+  transform-origin: left center;
+  background: var(--cycle-event-accent, #{cg.$cg-accent});
+  animation: cycle-event-toast-countdown linear both;
+}
+
+@keyframes cycle-event-toast-countdown {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+// Respect reduced-motion: skip the slide/scale, keep the fade.
+@media (prefers-reduced-motion: reduce) {
+  .cycle-event-toast--entered { animation: none; }
+  .cycle-event-toast__countdown-bar { animation: none; }
+}
