@@ -1,26 +1,38 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import PropTypes from 'prop-types';
 import PanelSlot from './panels/PanelSlot.jsx';
+import { panelById } from '@/modules/Fitness/lib/cycleGame/racePanels.js';
+import { columnTemplateFor } from '@/modules/Fitness/lib/cycleGame/layoutSizing.js';
+import { createThrashDetector } from '@/modules/Fitness/lib/cycleGame/layoutMonitor.js';
 import getLogger from '@/lib/logging/Logger.js';
 import './RaceLayoutManager.scss';
 
 const TOP = ['topLeft', 'topCenter', 'topRight'];
+const BOTTOM_BAND = '38%'; // stable speedo-band height (collapses to 0 when empty)
 
 export default function RaceLayoutManager({ decision, panels }) {
   const zones = decision?.zones || {};
-  const filledTop = TOP.filter((z) => zones[z]).length || 1;
+  const filledTop = TOP.filter((z) => zones[z]);
+  // Columns weighted by each filled top panel's sizeHint (focus wider than standard).
+  const topCols = columnTemplateFor(filledTop.map((z) => panelById(zones[z])?.sizeHint || 'standard'));
+  // Deterministic rows: a stable bottom band when the speedo row is present (so its
+  // zone box doesn't depend on content), collapsed when absent.
+  const rows = `1fr ${zones.bottom ? BOTTOM_BAND : '0px'}`;
 
-  // Telemetry: log the layout whenever the zone assignment or the top-column
-  // count changes. filledTop drives the top grid's column count; churn here is
-  // what reflows the chart + speedo band, so this surfaces layout thrashing.
+  // Telemetry + thrash warn: log the layout on change; warn if it churns too fast.
   const log = useMemo(() => getLogger().child({ component: 'cycle-race-layout' }), []);
-  const sig = `${filledTop}|${TOP.map((z) => zones[z] || '-').join(',')}|${zones.bottom || '-'}`;
+  const detector = useMemo(() => createThrashDetector({ windowMs: 2000, threshold: 8 }), []);
+  const sig = `${rows}|${topCols}|${TOP.map((z) => zones[z] || '-').join(',')}|${zones.bottom || '-'}`;
   const lastSigRef = useRef(null);
   useEffect(() => {
     if (lastSigRef.current === sig) return;
     lastSigRef.current = sig;
-    log.debug('cycle_game.layout', { filledTop, zones });
-  }, [sig, filledTop, zones, log]);
+    const now = Date.now();
+    log.debug('cycle_game.layout', { rows, topCols, zones });
+    if (detector.record(now) >= 8) {
+      log.warn('cycle_game.layout_thrash', { count: detector.count(now), windowMs: 2000, zones });
+    }
+  }, [sig, rows, topCols, zones, log, detector]);
 
   const renderZone = (zone) => {
     const id = zones[zone];
@@ -28,16 +40,13 @@ export default function RaceLayoutManager({ decision, panels }) {
     return (
       <div key={zone} data-testid={`zone-${zone}`}
         className={`race-layout__zone race-layout__zone--${zone}${Panel ? '' : ' race-layout__zone--empty'}`}>
-        {/* key on the slot WHERE IT'S USED so an in-zone panel swap remounts the
-            slot and re-fires the race-slot-in enter animation (a key on the slot's
-            own returned root would not). */}
         {Panel ? <PanelSlot key={id} panelId={id}><Panel /></PanelSlot> : null}
       </div>
     );
   };
   return (
-    <div className="race-layout" style={{ '--top-filled': filledTop }}>
-      <div className="race-layout__top">{TOP.map(renderZone)}</div>
+    <div className="race-layout" style={{ '--rows': rows }}>
+      <div className="race-layout__top" style={{ '--top-cols': topCols }}>{TOP.map(renderZone)}</div>
       {renderZone('bottom')}
     </div>
   );
