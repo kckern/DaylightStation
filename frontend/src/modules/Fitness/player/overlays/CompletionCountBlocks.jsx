@@ -31,6 +31,8 @@ function CompletionCountBlocks({
   containerClassName,
   blockClassName,
   completeBlockClassName,
+  activeBlockClassName,
+  activeIndex,
   ariaLabel,
   resolveMetUserLabel
 }) {
@@ -43,6 +45,7 @@ function CompletionCountBlocks({
 
     const safeCompleted = Math.min(safeTarget, safeActual);
     const safeMetUsers = Array.isArray(metUsers) ? metUsers : [];
+    const safeActiveIndex = Number.isFinite(activeIndex) ? Math.round(activeIndex) : -1;
     const nextBlocks = Array.from({ length: safeTarget }, (_, index) => {
       const complete = index < safeCompleted;
       const user = complete ? safeMetUsers[index] : null;
@@ -50,6 +53,7 @@ function CompletionCountBlocks({
       return {
         id: index + 1,
         complete,
+        active: !complete && index === safeActiveIndex,
         initial
       };
     });
@@ -59,7 +63,7 @@ function CompletionCountBlocks({
       completedCount: safeCompleted,
       blocks: nextBlocks
     };
-  }, [targetCount, actualCount, metUsers, resolveMetUserLabel]);
+  }, [targetCount, actualCount, metUsers, resolveMetUserLabel, activeIndex]);
 
   if (!blocks.length) return null;
 
@@ -73,9 +77,11 @@ function CompletionCountBlocks({
       aria-valuenow={completedCount}
     >
       {blocks.map((block) => {
-        const className = block.complete
-          ? `${blockClassName} ${completeBlockClassName}`
-          : blockClassName;
+        const className = [
+          blockClassName,
+          block.complete ? completeBlockClassName : null,
+          block.active && activeBlockClassName ? activeBlockClassName : null
+        ].filter(Boolean).join(' ');
         return (
           <span key={block.id} className={className} aria-hidden="true">
             {block.complete && block.initial ? block.initial : null}
@@ -93,6 +99,8 @@ CompletionCountBlocks.propTypes = {
   containerClassName: PropTypes.string.isRequired,
   blockClassName: PropTypes.string.isRequired,
   completeBlockClassName: PropTypes.string.isRequired,
+  activeBlockClassName: PropTypes.string,
+  activeIndex: PropTypes.number,
   ariaLabel: PropTypes.string,
   resolveMetUserLabel: PropTypes.func
 };
