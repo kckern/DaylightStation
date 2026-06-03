@@ -13,4 +13,16 @@ describe('SpeedoRow panel', () => {
     expect(container.querySelector('.cycle-race-screen__speedos')).not.toBeNull();
     expect(container.querySelectorAll('.cycle-speedometer').length).toBe(2);
   });
+
+  it('sizes gauges from the provided zoneBox (no self-measuring)', () => {
+    const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 0 } };
+    const { container } = render(
+      <SpeedoRow riderIds={['a']} riders={riders} riderLive={{ a: { rpm: 0 } }} cadenceBands={[]}
+        zoneBox={{ width: 900, height: 400 }} />
+    );
+    // 1 gauge in a 900-wide / 400-tall band → clamped to the 280 max; gauge width follows.
+    const gauge = container.querySelector('.cycle-speedometer');
+    expect(gauge).toBeTruthy();
+    expect(gauge.style.width).toBe('280px');
+  });
 });
