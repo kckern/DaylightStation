@@ -72,3 +72,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-05-27 | worktree-period-string-shorthand | 49e634834 | Health-coach chat prompt — Period syntax section. Orphan branch, ancestor of main; branch deleted. |
 | 2026-05-29 | feature/fitness-challenge-toasts | 6131f9349 | Challenge start/success toasts (squash-merged to main as 77119cd38) |
 | 2026-05-30 | feature/fitness-toast-cycle-lock | 966d4f4b6 | Toast polish + cycle health-lock redesign (squash-merged to main as 3f9e8c8a1) |
+| 2026-06-03 | wip/cycle-event-toast | 2b0dbe002 | CycleEventToast + officiating-event-markers (dnf/penalty chart markers, controller event wiring, RaceResults penalty styling). Preserved local uncommitted work before pulling origin; merged to main via no-ff merge commit 60a439b2a after reconciling synthwave re-skin conflicts. |
