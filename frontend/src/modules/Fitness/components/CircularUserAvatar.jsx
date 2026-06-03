@@ -40,7 +40,8 @@ const CircularUserAvatar = ({
   ariaLabel,
   children,
   onClick,
-  role
+  role,
+  boostBadge
 }) => {
   const isFireZone = zoneId === 'fire';
   //if fire, showIndicator is false
@@ -103,6 +104,9 @@ const CircularUserAvatar = ({
       role={role}
       onClick={onClick}
     >
+      {boostBadge ? (
+        <div className="vital-boost-badge" aria-hidden="true">{boostBadge}</div>
+      ) : null}
       {/* Fire sunbeams effect */}
       {isFireZone && (
         <div className="fire-sunbeams" aria-hidden="true">
@@ -189,7 +193,8 @@ CircularUserAvatar.propTypes = {
   ariaLabel: PropTypes.string,
   children: PropTypes.node,
   onClick: PropTypes.func,
-  role: PropTypes.string
+  role: PropTypes.string,
+  boostBadge: PropTypes.string
 };
 
 export default CircularUserAvatar;
