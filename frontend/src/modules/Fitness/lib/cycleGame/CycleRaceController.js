@@ -105,6 +105,20 @@ export class CycleRaceController {
     return this.getState();
   }
 
+  // Operator-driven end: mark every non-ghost rider who hasn't crossed the line
+  // as a forfeit (DNF) and end the race. Distinct from cancel() — the race is
+  // finalized and saved, not discarded. No-op outside the racing phase.
+  finishNow() {
+    if (this.phase !== 'racing' || !this.engine) return this.getState();
+    const s = this.engine.getState();
+    Object.values(s.riders).forEach((r) => {
+      if (this.ghosts.has(r.userId)) return;
+      if (r.finishTimeS == null) this.dnf.add(r.userId);
+    });
+    this.phase = 'finished';
+    return this.getState();
+  }
+
   _isFinished() {
     const s = this.engine.getState();
     if (this.config.winCondition === 'time') return s.finished;
