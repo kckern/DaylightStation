@@ -677,6 +677,7 @@ $cgh-accent-strong: #2563eb;
 }
 .cgh-record__stats { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
 .cgh-record__score { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; color: $cgh-muted; }
+.cgh-record__score--empty { color: $cgh-faint; font-style: italic; }
 
 // Goal chip — colored by what the goal metric was.
 .cgh-record__chip {
