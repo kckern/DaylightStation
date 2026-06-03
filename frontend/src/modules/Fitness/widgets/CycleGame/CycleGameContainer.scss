@@ -57,6 +57,18 @@
 
     &:hover { color: #f87171; border-color: rgba(248, 113, 113, 0.5); }
   }
+
+  &__finish {
+    position: absolute; z-index: 60;
+    top: 18px;
+    right: 120px;
+    appearance: none; cursor: pointer;
+    padding: 8px 16px; border-radius: 999px;
+    font-family: cg.$cg-display; font-weight: 800; letter-spacing: 0.04em;
+    color: cg.$cg-bg; background: cg.$cg-lane-1; border: none;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    &:hover { filter: brightness(1.08); }
+  }
 }
 
 // On-board rider compliance strip during the stoplight countdown — sits above

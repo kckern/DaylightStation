@@ -1000,6 +1000,19 @@ export default function CycleGameContainer({ onMount } = {}) {
     masterVol.setVolume?.(v);
   }, [masterVol, log]);
 
+  // Operator-driven finish: forfeit any unfinished riders, finalize standings,
+  // and roll to results so the race saves (unlike cancel, which discards it).
+  const onFinishRace = useCallback(() => {
+    const controller = controllerRef.current;
+    if (!controller) return;
+    log.info('cycle_game.finish_forced', {
+      raceId: raceMetaRef.current?.raceId,
+      elapsedS: controller.getState()?.engineState?.elapsedS ?? null
+    });
+    controller.finishNow();
+    applySnapshot(controller.showResults());
+  }, [applySnapshot, log]);
+
   const onCancel = useCallback(() => {
     const controller = controllerRef.current;
     const raceId = raceMetaRef.current?.raceId || null;
@@ -1147,6 +1160,9 @@ export default function CycleGameContainer({ onMount } = {}) {
           events={raceEvents}
         />
         <CycleEventToast toast={eventToast} onDone={onEventToastDone} />
+        <button type="button" data-testid="cycle-game-finish" className="cycle-game-container__finish" onClick={onFinishRace}>
+          Finish race
+        </button>
         <button type="button" data-testid="cycle-game-cancel" className="cycle-game-container__cancel" onClick={onCancel}>
           Cancel
         </button>

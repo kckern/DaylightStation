@@ -188,3 +188,29 @@ describe('CycleRaceController — time race', () => {
     expect(c.getState().phase).toBe('finished');
   });
 });
+
+describe('CycleRaceController — finishNow (forfeit)', () => {
+  it('marks unfinished non-ghost riders as DNF and ends the race; finishers + ghosts untouched', () => {
+    const c = new CycleRaceController(distConfig({
+      startCountdownS: 0, goalM: 21,
+      riders: [
+        { userId: 'a', wheelCircumferenceM: 2.1 },
+        { userId: 'b', wheelCircumferenceM: 2.1 },
+        { userId: 'g', ghostSeries: [2000], ghostIntervalS: 1 }
+      ]
+    }));
+    c.startCountdown();
+    // One tick: 'a' crosses the 21m line (finishes); 'b' barely moves; ghost replays.
+    c.tick({ a: { rpm: 60, zoneId: 'hot' }, b: { rpm: 1 } });
+    const s = c.finishNow();
+    expect(s.phase).toBe('finished');
+    expect(s.dnf).toContain('b');     // unfinished real rider → forfeit
+    expect(s.dnf).not.toContain('a'); // already finished → not a forfeit
+    expect(s.dnf).not.toContain('g'); // ghost → never forfeits
+  });
+
+  it('is a no-op when not racing', () => {
+    const c = new CycleRaceController(distConfig({ startCountdownS: 3 }));
+    expect(c.finishNow().phase).toBe('staged');
+  });
+});
