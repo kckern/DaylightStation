@@ -1,0 +1,20 @@
+@use 'cgTokens' as t;
+// The screen (.cycle-race-screen) is a flex column: clock chrome, then this
+// manager. Fill the remaining height as a flex item so the internal grid's
+// `1fr` top row is meaningful — mirrors the old `.cycle-race-screen__top`
+// flex:1 behavior the extracted panels used to rely on.
+.race-layout {
+  display: grid; grid-template-rows: 1fr auto; gap: 16px;
+  flex: 1 1 auto; min-height: 0; width: 100%;
+  &__top {
+    display: grid; gap: 16px; min-height: 0;
+    grid-template-columns: repeat(var(--top-filled, 3), 1fr);
+  }
+  &__zone { position: relative; min-width: 0; min-height: 0; }
+  &__zone--empty { display: none; } // collapsed; siblings reflow via --top-filled
+  // Fill the zone (a grid cell with a definite track height) so panels whose
+  // height comes from an absolutely-positioned child — notably DistanceChart's
+  // SVG (inset:0) — get a sized parent instead of collapsing to 0.
+  &__slot { height: 100%; min-height: 0; animation: race-slot-in 300ms ease both; }
+}
+@keyframes race-slot-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }

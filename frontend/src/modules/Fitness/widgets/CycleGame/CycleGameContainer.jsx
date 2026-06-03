@@ -593,6 +593,7 @@ export default function CycleGameContainer({ onMount } = {}) {
       raceIdleDnfS,
       hotStartPenaltyS,
       backgroundPlexId: cycleGameConfig?.default_background ?? null,
+      lapLengthM: Number.isFinite(cycleGameConfig?.lap_length_m) ? cycleGameConfig.lap_length_m : 0,
       intervalMs: RACE_TICK_MS
     });
 
@@ -1157,6 +1158,7 @@ export default function CycleGameContainer({ onMount } = {}) {
           riderLive={riderLive}
           cadenceBands={cadenceBands}
           backgroundPlexId={raceMetaRef.current?.backgroundPlexId || null}
+          lapLengthM={Number.isFinite(cycleGameConfig?.lap_length_m) ? cycleGameConfig.lap_length_m : 0}
           events={raceEvents}
         />
         <CycleEventToast toast={eventToast} onDone={onEventToastDone} />
