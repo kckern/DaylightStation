@@ -35,6 +35,30 @@ describe('CycleRaceScreen', () => {
     const { container } = render(<CycleRaceScreen {...props} />);
     expect(container.querySelectorAll('[data-testid="race-line"]').length).toBe(2);
   });
+  it('starts a penalty-boxed late starter\'s line to the right of the origin (no flat zero line)', () => {
+    const riders = {
+      // boxed for the first 2 ticks (distance 0), then accelerates away
+      boxed: { userId: 'boxed', displayName: 'Boxed', cumulativeDistanceM: 300, distanceSeries: [0, 0, 150, 300], isGhost: false }
+    };
+    const { container } = render(
+      <CycleRaceScreen winCondition="distance" goalM={1000} elapsedS={4} riders={riders} riderLive={{ boxed: {} }} />
+    );
+    const line = container.querySelector('[data-testid="race-line"]');
+    expect(line).toBeTruthy();
+    const firstX = parseFloat(line.getAttribute('points').trim().split(' ')[0].split(',')[0]);
+    // plotStartIndex anchors at index 1 (the last zero before movement), so the
+    // line must NOT begin at the origin (x=0).
+    expect(firstX).toBeGreaterThan(0);
+  });
+  it('draws no line for a rider who never left the penalty box (all-zero series)', () => {
+    const riders = {
+      stuck: { userId: 'stuck', displayName: 'Stuck', cumulativeDistanceM: 0, distanceSeries: [0, 0, 0], isGhost: false }
+    };
+    const { container } = render(
+      <CycleRaceScreen winCondition="distance" goalM={1000} elapsedS={3} riders={riders} riderLive={{ stuck: {} }} />
+    );
+    expect(container.querySelector('[data-testid="race-line"]')).toBeNull();
+  });
   it('mounts an ambient background video only when a Plex id is set', () => {
     const off = render(<CycleRaceScreen {...props} />);
     expect(off.queryByTestId('cycle-race-bg')).toBeNull();
