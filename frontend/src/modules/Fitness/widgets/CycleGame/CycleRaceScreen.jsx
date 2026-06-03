@@ -35,19 +35,8 @@ export default function CycleRaceScreen({
     prevSnapRef.current
   );
   prevSnapRef.current = snapshot;
-  const directorDecision = raceDirector(snapshot, prevDecisionRef.current, elapsedS);
-  prevDecisionRef.current = directorDecision;
-
-  // Consumer-side safety net (NOT director logic): the director deliberately
-  // leaves the top zones empty for a solo distance race (chart candidacy is
-  // fieldSize >= 2). Surfaces that replay a single rider — e.g. RaceRecap —
-  // would otherwise show a blank stage. When the director assigns no top panel
-  // but riders exist, fall back to the distance chart so no surface goes blank.
-  const topEmpty = !directorDecision.zones.topLeft
-    && !directorDecision.zones.topCenter && !directorDecision.zones.topRight;
-  const decision = (topEmpty && riderIds.length > 0)
-    ? { ...directorDecision, zones: { ...directorDecision.zones, topLeft: 'distanceChart' } }
-    : directorDecision;
+  const decision = raceDirector(snapshot, prevDecisionRef.current, elapsedS);
+  prevDecisionRef.current = decision;
 
   const clockSeconds = winCondition === 'time' ? Math.max(0, timeCapS - elapsedS) : elapsedS;
 
