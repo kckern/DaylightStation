@@ -111,6 +111,18 @@ describe('CycleGameHome', () => {
     expect(onAssign).toHaveBeenCalledWith('tricycle', 'felix');
   });
 
+  it('opens the rider picker when the add-rider hint (anywhere in the slot) is clicked', () => {
+    const { getByTestId, queryByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} />
+    );
+    expect(queryByTestId('rider-picker')).toBeNull();
+    // Click the "+ Add rider" hint specifically — the whole slot must be the target.
+    const addHint = getByTestId('bike-tricycle').querySelector('.cgh-slot__add');
+    expect(addHint).toBeTruthy();
+    fireEvent.click(addHint);
+    expect(getByTestId('rider-picker')).toBeTruthy();
+  });
+
   it('clears an assigned rider via the picker Clear tile', () => {
     const onUnassign = vi.fn();
     const { getByTestId } = render(
