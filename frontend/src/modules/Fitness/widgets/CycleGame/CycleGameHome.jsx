@@ -674,7 +674,15 @@ export default function CycleGameHome({
                     <span className="cgh-record__chip" data-kind={rec.goalKind}>
                       🏁 {rec.goalLabel}
                     </span>
+                  {rec.scoreLabel && rec.scoreLabel !== '—' ? (
                     <span className="cgh-record__score">{rec.scoreLabel}</span>
+                  ) : (
+                    <span
+                      className="cgh-record__score cgh-record__score--empty"
+                      title="No result recorded"
+                      aria-label="No result recorded"
+                    >—</span>
+                  )}
                   </span>
                 </button>
               </li>

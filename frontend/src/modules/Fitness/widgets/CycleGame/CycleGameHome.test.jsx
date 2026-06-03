@@ -161,6 +161,19 @@ describe('CycleGameHome', () => {
     expect(getByText('4:12')).toBeTruthy();
   });
 
+  it('renders an explained placeholder when a record has no score', () => {
+    const records = [{
+      raceId: 'r-noscore',
+      avatars: [{ id: 'milo', src: '/api/v1/static/img/users/milo', name: 'Milo' }],
+      goalKind: 'distance', goalLabel: '3 km',
+      scoreKind: 'time', scoreLabel: ''
+    }];
+    const { getByTitle } = render(
+      <CycleGameHome bikes={bikes} people={people} records={records} />
+    );
+    expect(getByTitle('No result recorded')).toBeTruthy();
+  });
+
   it('records rail entries are clickable and fire onSelectRecord with the raceId', () => {
     const onSelectRecord = vi.fn();
     const records = [{
