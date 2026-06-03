@@ -30,8 +30,24 @@ const EQUIPMENT_FALLBACK = DaylightMediaPath('/static/img/equipment/equipment');
 const AVATAR_BASE = '/api/v1/static/img/users';
 const FALLBACK_AVATAR = `${AVATAR_BASE}/user`;
 
-const DISTANCE_PRESETS_M = [1000, 3000, 5000, 10000];
-const TIME_PRESETS_S = [60, 120, 300, 600];
+// Named tiers so riders pick a *category* (effort/length) rather than anchoring
+// on the raw number. The value is shown as a sub-label; the custom stepper still
+// lets you dial in anything. Medium is the default-selected tier.
+const DISTANCE_TIERS = [
+  { key: 'flash', label: 'Flash', value: 100 },
+  { key: 'sprint', label: 'Sprint', value: 300 },
+  { key: 'short', label: 'Short', value: 1000 },
+  { key: 'medium', label: 'Medium', value: 2500 },
+  { key: 'long', label: 'Long', value: 5000 }
+];
+const TIME_TIERS = [
+  { key: 'flash', label: 'Flash', value: 60 },
+  { key: 'sprint', label: 'Sprint', value: 120 },
+  { key: 'short', label: 'Short', value: 180 },
+  { key: 'medium', label: 'Medium', value: 300 },
+  { key: 'long', label: 'Long', value: 600 }
+];
+const DEFAULT_TIER_KEY = 'medium';
 
 const DISTANCE_STEP_M = 500;
 const TIME_STEP_S = 60;
@@ -111,12 +127,13 @@ function RaceTypePicker({ raceType, onSelectRaceType, raceValue, onSetRaceValue,
   const isDistance = !hasGhost && raceType === 'distance';
   const isTime = !hasGhost && raceType === 'time';
 
-  const presets = raceType === 'time' ? TIME_PRESETS_S : DISTANCE_PRESETS_M;
+  const tiers = raceType === 'time' ? TIME_TIERS : DISTANCE_TIERS;
   const step = raceType === 'time' ? TIME_STEP_S : DISTANCE_STEP_M;
   const minValue = step;
   const fmt = raceType === 'time' ? formatTime : formatDistance;
-  // Effective value: the chosen value, or the sensible pre-selected preset.
-  const value = Number.isFinite(raceValue) ? raceValue : presets[1];
+  const defaultTierValue = (tiers.find((t) => t.key === DEFAULT_TIER_KEY) || tiers[0]).value;
+  // Effective value: the chosen value, or the default (Medium) tier.
+  const value = Number.isFinite(raceValue) ? raceValue : defaultTierValue;
 
   const ghostSummary = hasGhost
     ? (ghost.winCondition === 'time'
@@ -189,14 +206,16 @@ function RaceTypePicker({ raceType, onSelectRaceType, raceValue, onSetRaceValue,
             </div>
             <div className="cgh-value__row">
               <div className="cgh-presets">
-                {presets.map((p) => (
+                {tiers.map((t) => (
                   <button
-                    key={p}
+                    key={t.key}
                     type="button"
-                    className={`cgh-preset${value === p ? ' is-selected' : ''}`}
-                    onClick={() => onSetRaceValue?.(p)}
+                    data-testid={`tier-${t.key}`}
+                    className={`cgh-preset cgh-preset--tier${value === t.value ? ' is-selected' : ''}`}
+                    onClick={() => onSetRaceValue?.(t.value)}
                   >
-                    {fmt(p)}
+                    <span className="cgh-preset__name">{t.label}</span>
+                    <span className="cgh-preset__value">{fmt(t.value)}</span>
                   </button>
                 ))}
               </div>
@@ -360,12 +379,13 @@ RiderPicker.propTypes = {
  * hero; an assigned rider's avatar overlaps the bottom-right quadrant as a
  * secondary circle. Clicking the slot (empty OR filled) opens the rider picker.
  */
-function BikeSlot({ bike, person, onPick }) {
+function BikeSlot({ bike, person, onPick, lane }) {
   const filled = !!person;
   const rpm = Number.isFinite(bike.rpm) ? bike.rpm : 0;
   const spinDuration = rpm > 0 ? `${(60 / rpm).toFixed(2)}s` : '0s';
   return (
     <div className={`cgh-slot${filled ? ' is-filled' : ''}`} data-testid={`bike-${bike.id}`}>
+      <span className="cgh-slot__lane" aria-hidden="true">{lane}</span>
       <button
         type="button"
         className="cgh-slot__main"
@@ -400,6 +420,9 @@ function BikeSlot({ bike, person, onPick }) {
           </span>
         )}
       </button>
+      {!filled && (
+        <span className="cgh-slot__add" aria-hidden="true">+ Add rider</span>
+      )}
     </div>
   );
 }
@@ -407,7 +430,8 @@ function BikeSlot({ bike, person, onPick }) {
 BikeSlot.propTypes = {
   bike: PropTypes.object.isRequired,
   person: PropTypes.object,
-  onPick: PropTypes.func
+  onPick: PropTypes.func,
+  lane: PropTypes.number
 };
 
 /** Header label for a day column: Today / Yesterday / weekday + date. */
@@ -613,10 +637,11 @@ export default function CycleGameHome({
             <div className="cgh-empty">No bikes detected (equipment with a cadence sensor).</div>
           ) : (
             <div className="cgh-grid">
-              {bikes.map((bike) => (
+              {bikes.map((bike, i) => (
                 <BikeSlot
                   key={bike.id}
                   bike={bike}
+                  lane={i + 1}
                   person={bike.rider ? peopleById.get(bike.rider) || { id: bike.rider, name: bike.rider } : null}
                   onPick={(b) => { uiLog().info('cycle_game.ui.rider_picker_open', { equipmentId: b.id, currentRider: b.rider || null }); setPickerBike(b); }}
                 />

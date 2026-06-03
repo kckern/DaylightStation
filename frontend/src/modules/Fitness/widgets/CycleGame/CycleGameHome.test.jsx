@@ -41,6 +41,46 @@ describe('CycleGameHome', () => {
     expect(queryByTestId('cgh-value')).toBeTruthy();
   });
 
+  it('renders named distance tiers (Flash…Long) with the value as a sub-label', () => {
+    const { getByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} raceType="distance" />
+    );
+    ['flash', 'sprint', 'short', 'medium', 'long'].forEach((key) => {
+      expect(getByTestId(`tier-${key}`)).toBeTruthy();
+    });
+    expect(getByTestId('tier-flash').textContent).toContain('Flash');
+    expect(getByTestId('tier-flash').textContent).toContain('100 m');
+    expect(getByTestId('tier-long').textContent).toContain('5 km');
+  });
+
+  it('renders named time tiers with minute sub-labels', () => {
+    const { getByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} raceType="time" />
+    );
+    expect(getByTestId('tier-flash').textContent).toContain('1 min');
+    expect(getByTestId('tier-medium').textContent).toContain('5 min');
+    expect(getByTestId('tier-long').textContent).toContain('10 min');
+  });
+
+  it('clicking a named tier fires onSetRaceValue with its numeric value', () => {
+    const onSetRaceValue = vi.fn();
+    const { getByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} raceType="distance" onSetRaceValue={onSetRaceValue} />
+    );
+    fireEvent.click(getByTestId('tier-sprint'));
+    expect(onSetRaceValue).toHaveBeenCalledWith(300);
+    fireEvent.click(getByTestId('tier-long'));
+    expect(onSetRaceValue).toHaveBeenCalledWith(5000);
+  });
+
+  it('pre-selects the Medium tier when no value is supplied', () => {
+    const { getByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} raceType="distance" />
+    );
+    expect(getByTestId('tier-medium').className).toContain('is-selected');
+    expect(getByTestId('tier-flash').className).not.toContain('is-selected');
+  });
+
   it('renders a starting grid slot per bike, equipment hero + assigned rider avatar', () => {
     const { getByTestId } = render(
       <CycleGameHome bikes={bikes} people={people} records={[]} />
@@ -217,6 +257,17 @@ describe('CycleGameHome', () => {
       <CycleGameHome bikes={bikes} people={people} records={[]} masterVolume={0.7} masterMuted />
     );
     expect(getByTestId('cycle-game-volume-readout').textContent).toBe('Muted');
+  });
+
+  it('shows a lane number on every grid slot and an add-rider hint on empty slots', () => {
+    const { getByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} />
+    );
+    expect(getByTestId('bike-cycle_ace').querySelector('.cgh-slot__lane')).toBeTruthy();
+    expect(getByTestId('bike-tricycle').querySelector('.cgh-slot__lane')).toBeTruthy();
+    // empty slot advertises how to fill it; filled slot does not
+    expect(getByTestId('bike-tricycle').querySelector('.cgh-slot__add')).toBeTruthy();
+    expect(getByTestId('bike-cycle_ace').querySelector('.cgh-slot__add')).toBeNull();
   });
 
   it('reveals a confirm hint on the focused ghost card', () => {
