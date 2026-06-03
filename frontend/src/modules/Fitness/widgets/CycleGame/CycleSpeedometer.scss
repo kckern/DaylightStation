@@ -20,10 +20,11 @@
   // Avatar centered in the gauge.
   &__avatar { position: relative; display: flex; align-items: center; justify-content: center; }
   &__multiplier {
-    position: absolute; right: -6%; bottom: 4%;
-    min-width: 1.6em; padding: 0.12em 0.36em;
-    border-radius: 999px; border: 2px solid #15171c;
-    color: #1a1205; font-weight: 700; font-size: 0.95rem; text-align: center;
+    position: absolute; right: -8%; bottom: 2%;
+    min-width: 1.8em; padding: 0.18em 0.5em;
+    border-radius: 999px; border: 2px solid #0a0b0f;
+    color: #1a1205; font-weight: 800; font-size: 1.35rem; line-height: 1; text-align: center;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
   }
 
   // RPM sits in the lower portion of the gauge, under the avatar.
@@ -37,8 +38,8 @@
   // Odometer sits BELOW the gauge (lower), as its own pill.
   &__odometer {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    color: #7aa2ff; font-size: 1.1rem; font-weight: 700;
-    background: #05060a; border: 1px solid #2a2e36; border-radius: 6px;
-    padding: 4px 14px;
+    color: #eef2f8; font-size: 1.5rem; font-weight: 800;
+    background: #05060a; border: 1px solid #2a2e36; border-radius: 8px;
+    padding: 6px 18px; letter-spacing: 0.01em;
   }
 }

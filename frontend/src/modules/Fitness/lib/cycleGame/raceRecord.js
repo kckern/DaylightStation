@@ -12,7 +12,8 @@ export function buildRaceRecord(state, meta = {}) {
       final_distance_m: r.cumulativeDistanceM,
       final_time_s: r.finishTimeS ?? null,
       placement: placeByUser[r.userId] ?? null,
-      distance_series: SessionSerializerV3.encodeSeries(r.distanceSeries || [])
+      distance_series: SessionSerializerV3.encodeSeries(r.distanceSeries || []),
+      hr_series: SessionSerializerV3.encodeSeries(r.hrSeries || [])
     };
   });
 

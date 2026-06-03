@@ -10,18 +10,17 @@
  * immediately review the session they just finished.
  *
  * @param {{ hasActiveSession?: any, sessionId?: string|null }} [input]
- * @returns {null | {
- *   view: 'screen', screenId: 'home', sessionId: string|null,
+ * @returns {{ view: 'screen', screenId: 'home', sessionId: string|null,
  *   clearActiveModule: true, clearActiveCollection: true, clearSelectedShow: true
- * }}
+ * } | null}
  */
 export function resolvePostEpisodeRedirect(input) {
   if (!input || typeof input !== 'object') return null;
-  if (!input.hasActiveSession) return null;
   return {
     view: 'screen',
     screenId: 'home',
-    sessionId: input.sessionId ?? null,
+    // Only pre-select session when one is active; null otherwise (still navigates to home)
+    sessionId: input.hasActiveSession ? (input.sessionId ?? null) : null,
     clearActiveModule: true,
     clearActiveCollection: true,
     clearSelectedShow: true,

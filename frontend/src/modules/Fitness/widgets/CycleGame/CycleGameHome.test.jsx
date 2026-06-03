@@ -160,4 +160,18 @@ describe('CycleGameHome', () => {
     expect(getByText(/3 km/)).toBeTruthy();
     expect(getByText('4:12')).toBeTruthy();
   });
+
+  it('records rail entries are clickable and fire onSelectRecord with the raceId', () => {
+    const onSelectRecord = vi.fn();
+    const records = [{
+      raceId: '20260603120000',
+      avatars: [{ id: 'user_3', src: '/api/v1/static/img/users/user_3', name: 'User_3' }],
+      goalKind: 'distance', goalLabel: '3 km', scoreKind: 'time', scoreLabel: '4:12'
+    }];
+    const { getByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={records} onSelectRecord={onSelectRecord} />
+    );
+    fireEvent.click(getByTestId('record-20260603120000'));
+    expect(onSelectRecord).toHaveBeenCalledWith('20260603120000');
+  });
 });

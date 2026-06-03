@@ -11,7 +11,7 @@ const GAUGE_RADIUS = 80;
 
 export default function CycleSpeedometer({
   rpm = 0, maxRpm = 120, cadenceBands = [], tickStep = 10, labelStep = 30,
-  avatar = {}, distanceMeters = 0, multiplier = 1, multiplierColor, size = 220, className = ''
+  avatar = {}, distanceMeters = 0, multiplier = 1, multiplierColor, size = 220, className = '', isGhost = false
 }) {
   const ticks = useMemo(
     () => buildTicks({ maxRpm, tickStep, labelStep, center: CENTER, gaugeRadius: GAUGE_RADIUS }),
@@ -59,7 +59,7 @@ export default function CycleSpeedometer({
           <circle className="cycle-speedometer__hub" cx={CENTER} cy={CENTER} r="3" />
         </svg>
 
-        <div className="cycle-speedometer__avatar">
+        <div className={`cycle-speedometer__avatar${isGhost ? ' cg-ghost' : ''}`}>
           <CircularUserAvatar
             name={avatar.name}
             avatarSrc={avatar.src}
@@ -103,5 +103,6 @@ CycleSpeedometer.propTypes = {
   multiplier: PropTypes.number,
   multiplierColor: PropTypes.string,
   size: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
-  className: PropTypes.string
+  className: PropTypes.string,
+  isGhost: PropTypes.bool
 };

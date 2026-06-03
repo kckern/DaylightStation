@@ -1040,7 +1040,11 @@ const Player = forwardRef(function Player(props, ref) {
     } else if (typeof requestRecovery === 'function') {
       requestRecovery('user-requested-after-exhaustion');
     }
-    stallExhaustion.dismiss();
+    // reset() (not dismiss()): restart a fresh exhaustion window so the banner
+    // reappears with a working Retry if the retried stream also stalls. dismiss()
+    // would permanently suppress the banner for the rest of this stall episode,
+    // leaving a dead screen when the retry doesn't recover.
+    stallExhaustion.reset();
   }, [retryFromExhausted, requestRecovery, stallExhaustion, mediaIdentity]);
 
   const handleStallExhaustedDismiss = useCallback(() => {

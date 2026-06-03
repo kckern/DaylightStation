@@ -103,3 +103,49 @@ describe('CycleRaceEngine — ghost replay', () => {
     expect(e.getState().riders.a.isGhost).toBe(false);
   });
 });
+
+describe('CycleRaceEngine — HR series', () => {
+  it('records each tick\'s heart rate into hrSeries and exposes latest heartRate', () => {
+    const e = new CycleRaceEngine({
+      winCondition: 'time', timeCapS: 30, intervalMs: 1000,
+      riders: [{ userId: 'a', wheelCircumferenceM: 2 }]
+    });
+    e.tick({ a: { rpm: 60, zoneId: 'hot', heartRate: 150 } });
+    e.tick({ a: { rpm: 60, zoneId: 'hot', heartRate: 162 } });
+    const s = e.getState();
+    expect(s.riders.a.hrSeries).toEqual([150, 162]);
+    expect(s.riders.a.heartRate).toBe(162);
+  });
+
+  it('records null when no heart rate is present', () => {
+    const e = new CycleRaceEngine({
+      winCondition: 'time', timeCapS: 30, intervalMs: 1000,
+      riders: [{ userId: 'a', wheelCircumferenceM: 2 }]
+    });
+    e.tick({ a: { rpm: 60, zoneId: 'hot' } });
+    expect(e.getState().riders.a.hrSeries).toEqual([null]);
+    expect(e.getState().riders.a.heartRate).toBeNull();
+  });
+});
+
+describe('CycleRaceEngine — ghost HR replay', () => {
+  it('replays a ghost hr series sampled at the elapsed time', () => {
+    const e = new CycleRaceEngine({
+      winCondition: 'time', timeCapS: 30, intervalMs: 1000,
+      riders: [{ userId: 'g', ghostSeries: [10, 20, 30], ghostHrSeries: [140, 150, 160], ghostIntervalS: 1 }]
+    });
+    e.tick({}); // t=1s
+    expect(e.getState().riders.g.heartRate).toBe(140);
+    e.tick({}); // t=2s
+    expect(e.getState().riders.g.heartRate).toBe(150);
+  });
+
+  it('reports null ghost HR when no hr series was recorded', () => {
+    const e = new CycleRaceEngine({
+      winCondition: 'time', timeCapS: 30, intervalMs: 1000,
+      riders: [{ userId: 'g', ghostSeries: [10, 20], ghostIntervalS: 1 }]
+    });
+    e.tick({});
+    expect(e.getState().riders.g.heartRate).toBeNull();
+  });
+});

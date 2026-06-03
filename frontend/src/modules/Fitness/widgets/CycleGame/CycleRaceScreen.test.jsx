@@ -43,4 +43,11 @@ describe('CycleRaceScreen', () => {
     expect(vid.tagName.toLowerCase()).toBe('video');
     expect(vid.getAttribute('src')).toContain('plex/123456');
   });
+  it('hides the speedometer row when showSpeedos is false', () => {
+    const riders = { a: { userId: 'a', displayName: 'A', distanceSeries: [10, 20], cumulativeDistanceM: 20, finishTimeS: null, isGhost: false } };
+    const { container } = render(
+      <CycleRaceScreen winCondition="distance" goalM={100} elapsedS={2} riders={riders} riderLive={{ a: {} }} showSpeedos={false} />
+    );
+    expect(container.querySelector('.cycle-race-screen__speedos')).toBeNull();
+  });
 });

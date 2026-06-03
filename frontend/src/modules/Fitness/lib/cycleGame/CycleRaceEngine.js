@@ -28,10 +28,13 @@ export class CycleRaceEngine {
         wheelCircumferenceM: Number.isFinite(r.wheelCircumferenceM) ? r.wheelCircumferenceM : 0,
         cumulativeDistanceM: 0,
         distanceSeries: [],
+        hrSeries: [],
+        heartRate: null,
         finishTimeS: null,
         isGhost,
         // Prepend an implicit (t=0 → 0m) sample so interpolation is exact.
         ghostArr: isGhost ? [0, ...r.ghostSeries.map((d) => Number(d) || 0)] : null,
+        ghostHrArr: isGhost && Array.isArray(r.ghostHrSeries) ? r.ghostHrSeries.map((v) => (Number.isFinite(v) ? v : null)) : null,
         ghostIntervalS: Number.isFinite(r.ghostIntervalS) && r.ghostIntervalS > 0
           ? r.ghostIntervalS
           : this.intervalSeconds
@@ -50,20 +53,34 @@ export class CycleRaceEngine {
     return arr[j] + (arr[next] - arr[j]) * frac;
   }
 
+  // Nearest-sample lookup for replayed step values (HR). Samples are at times
+  // intervalS, 2*intervalS, ... so the value at elapsed t is index round(t/dt)-1.
+  _ghostSampleAt(arr, t, intervalS) {
+    if (!arr || !arr.length) return null;
+    const idx = Math.min(arr.length - 1, Math.max(0, Math.round(t / intervalS) - 1));
+    const v = arr[idx];
+    return Number.isFinite(v) ? v : null;
+  }
+
   tick(inputs = {}) {
     if (this.finished) return this.getState();
     this.elapsedS += this.intervalSeconds;
     for (const rider of this.riders.values()) {
+      const input = inputs[rider.userId] || {};
       if (rider.isGhost) {
         rider.cumulativeDistanceM = this._ghostDistanceAt(rider, this.elapsedS);
       } else {
-        const input = inputs[rider.userId] || {};
         const rpm = Number.isFinite(input.rpm) ? input.rpm : 0;
         const rotationsDelta = rpm > 0 ? (rpm / 60) * this.intervalSeconds : 0;
         const mult = zoneMultiplierFor(input.zoneId ?? null, this.zones, this.hrlessMultiplier);
         rider.cumulativeDistanceM += computeDistanceDelta(rotationsDelta, rider.wheelCircumferenceM, mult);
       }
       rider.distanceSeries.push(Math.round(rider.cumulativeDistanceM));
+      const hr = rider.isGhost
+        ? this._ghostSampleAt(rider.ghostHrArr, this.elapsedS, rider.ghostIntervalS)
+        : (Number.isFinite(input.heartRate) ? input.heartRate : null);
+      rider.heartRate = hr;
+      rider.hrSeries.push(hr);
       if (this.winCondition === 'distance' && rider.finishTimeS == null && rider.cumulativeDistanceM >= this.goalM) {
         rider.finishTimeS = this.elapsedS;
       }
@@ -101,6 +118,8 @@ export class CycleRaceEngine {
         equipmentId: r.equipmentId,
         cumulativeDistanceM: Math.round(r.cumulativeDistanceM),
         distanceSeries: r.distanceSeries.slice(),
+        hrSeries: r.hrSeries.slice(),
+        heartRate: r.heartRate ?? null,
         finishTimeS: r.finishTimeS,
         isGhost: !!r.isGhost
       }])),

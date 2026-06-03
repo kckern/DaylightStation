@@ -1,0 +1,38 @@
+@use './cgTokens' as cg;
+
+.race-recap {
+  position: absolute; inset: 0; z-index: 60;
+  display: flex; flex-direction: column;
+  @include cg.cg-backdrop;
+  background-color: rgba(6, 7, 10, 0.96);
+  color: cg.$cg-text;
+
+  &__head {
+    display: flex; align-items: center; gap: 14px;
+    padding: 16px 22px; border-bottom: 1px solid cg.$cg-border;
+  }
+  &__title { font-family: cg.$cg-display; font-weight: 800; font-size: 1.6rem; }
+  &__meta { color: cg.$cg-muted; font-size: 0.9rem; flex: 1; }
+  &__close {
+    appearance: none; cursor: pointer; width: 38px; height: 38px; border-radius: 50%;
+    border: 1px solid cg.$cg-border; background: cg.$cg-panel-2; color: cg.$cg-text; font-size: 1.4rem; line-height: 1;
+    &:hover { border-color: #f87171; color: #f87171; }
+  }
+
+  &__stage { flex: 1 1 auto; min-height: 0; position: relative; }
+  &__stage .cycle-race-screen { height: 100%; }
+
+  &__controls {
+    display: flex; align-items: center; gap: 16px; padding: 12px 22px;
+    border-top: 1px solid cg.$cg-border-soft;
+  }
+  &__btn {
+    appearance: none; cursor: pointer; font-family: cg.$cg-display; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.04em;
+    padding: 10px 24px; border-radius: 10px; min-width: 110px;
+    color: #f8fafc; background: cg.$cg-accent; border: 1px solid cg.$cg-accent;
+  }
+  &__scrub { flex: 1; accent-color: cg.$cg-accent; }
+
+  &__results { max-height: 34%; overflow-y: auto; border-top: 1px solid cg.$cg-border-soft; }
+}

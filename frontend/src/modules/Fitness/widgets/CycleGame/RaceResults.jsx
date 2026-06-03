@@ -42,7 +42,10 @@ export default function RaceResults({ standings = [], riders = {}, winCondition 
                 ? fmtTime(s.finishTimeS)
                 : formatDistance(s.distanceM);
           const rider = riders[s.userId] || {};
-          const avatarSrc = rider.avatarSrc || `${AVATAR_BASE}/${s.userId}`;
+          // Ghost ids are `ghost:<raceId>:<sourceUserId>` — resolve to the real face.
+          const isGhost = !!rider.isGhost || String(s.userId).startsWith('ghost:');
+          const sourceId = isGhost ? String(s.userId).split(':')[2] || s.userId : s.userId;
+          const avatarSrc = rider.avatarSrc || `${AVATAR_BASE}/${sourceId}`;
           const medalClass = s.placement <= 3 ? ` race-results__row--p${s.placement}` : '';
           const isWinner = s.placement === 1 && !flagged;
           return (
@@ -57,7 +60,7 @@ export default function RaceResults({ standings = [], riders = {}, winCondition 
                 <span className="race-results__placement">
                   {MEDALS[s.placement] || s.placement}
                 </span>
-                <span className="race-results__avatar">
+                <span className={`race-results__avatar${isGhost ? ' cg-ghost' : ''}`}>
                   <CircularUserAvatar
                     name={name}
                     avatarSrc={avatarSrc}

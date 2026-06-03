@@ -35,9 +35,11 @@ export function useStallExhaustion({ stalled, thresholdMs = 15000 }) {
       setSecondsStalled(0);
       return undefined;
     }
-    if (!startRef.current) startRef.current = Date.now();
     const tick = () => {
       if (dismissedRef.current) return;
+      // (Re)arm the episode start inside the tick so reset() can restart a fresh
+      // window mid-stall (e.g. after a Retry whose stream stalls again).
+      if (!startRef.current) startRef.current = Date.now();
       const elapsed = Date.now() - startRef.current;
       setSecondsStalled(Math.floor(elapsed / 1000));
       if (elapsed >= thresholdMs) setExhausted(true);
@@ -52,5 +54,15 @@ export function useStallExhaustion({ stalled, thresholdMs = 15000 }) {
     setExhausted(false);
   }, []);
 
-  return { exhausted, secondsStalled, dismiss };
+  // Restart a fresh exhaustion window without waiting for the stall to clear.
+  // Used after a Retry so the "Playback stuck" banner can reappear (with a
+  // working Retry) if the retried stream also stalls past the threshold.
+  const reset = useCallback(() => {
+    startRef.current = null;
+    dismissedRef.current = false;
+    setExhausted(false);
+    setSecondsStalled(0);
+  }, []);
+
+  return { exhausted, secondsStalled, dismiss, reset };
 }

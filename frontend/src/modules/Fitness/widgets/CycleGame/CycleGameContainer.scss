@@ -58,3 +58,37 @@
     &:hover { color: #f87171; border-color: rgba(248, 113, 113, 0.5); }
   }
 }
+
+// "Riders, to your bikes!" staging buffer before the stoplight.
+.cycle-game-staging {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column; align-items: center; gap: 18px;
+  text-align: center;
+
+  &__eyebrow {
+    font-family: cg.$cg-display; font-weight: 800;
+    font-size: 2.2rem; letter-spacing: 0.06em; text-transform: uppercase;
+    color: cg.$cg-text; text-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+  }
+  &__count {
+    font-family: cg.$cg-display; font-weight: 800; font-size: 6rem; line-height: 1;
+    color: cg.$cg-accent; font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 36px rgba(122, 162, 255, 0.4);
+  }
+  &__bar {
+    width: min(420px, 70vw); height: 8px; border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08); overflow: hidden;
+    span {
+      display: block; height: 100%; width: 100%; border-radius: 999px;
+      background: linear-gradient(90deg, cg.$cg-accent, #46e08a);
+      transform-origin: left center;
+      animation: cg-staging-drain linear forwards;
+    }
+  }
+  &__hint { color: cg.$cg-muted; font-size: 1rem; }
+}
+
+@keyframes cg-staging-drain {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}

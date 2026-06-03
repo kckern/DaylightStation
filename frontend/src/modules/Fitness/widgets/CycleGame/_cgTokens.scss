@@ -27,6 +27,28 @@ $cg-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
     $cg-bg;
 }
 
+// Ghost avatar treatment — wrap any avatar in <span class="cg-ghost"> to render
+// it as a recognizable-but-spectral version: the photo goes grayscale, a tinted
+// overlay (default ice-blue) re-colors it via mix-blend. Override --cg-ghost-tint.
+.cg-ghost {
+  position: relative;
+  display: inline-flex;
+  border-radius: 50%;
+
+  img { filter: grayscale(1) contrast(0.9) brightness(1.18); }
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: var(--cg-ghost-tint, rgba(120, 180, 255, 0.6));
+    mix-blend-mode: color;
+    pointer-events: none;
+    z-index: 6;
+  }
+}
+
 // Condensed uppercase section/eyebrow label.
 @mixin cg-eyebrow {
   font-family: $cg-display;
