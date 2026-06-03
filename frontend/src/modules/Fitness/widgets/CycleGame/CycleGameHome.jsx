@@ -476,7 +476,7 @@ function GhostPicker({ candidates = [], currentGhost = null, onSelect, onClear, 
                         type="button"
                         className={`cgh-ghost-card${isFocused ? ' is-focused' : ''}${isCurrent ? ' is-current' : ''}`}
                         data-testid={`ghost-${c.raceId}`}
-                        onPointerDown={() => handleTap(c)}
+                        onClick={() => handleTap(c)}
                       >
                         <span className="cgh-ghost-card__avatars" data-count={Math.min(riders.length, 4)}>
                           {riders.slice(0, 4).map((p) => (
