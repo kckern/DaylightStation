@@ -207,4 +207,15 @@ describe('CycleGameHome', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(queryByTestId('ghost-picker')).toBeNull();
   });
+
+  it('shows a numeric volume readout (non-color cue)', () => {
+    const { getByTestId, rerender } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} masterVolume={0.7} />
+    );
+    expect(getByTestId('cycle-game-volume-readout').textContent).toBe('70%');
+    rerender(
+      <CycleGameHome bikes={bikes} people={people} records={[]} masterVolume={0.7} masterMuted />
+    );
+    expect(getByTestId('cycle-game-volume-readout').textContent).toBe('Muted');
+  });
 });

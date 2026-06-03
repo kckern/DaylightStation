@@ -121,6 +121,14 @@ $cgh-accent-strong: #2563eb;
   }
 }
 
+.cgh-section-label--with-readout { justify-content: space-between; }
+.cgh-volume__readout {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  color: $cgh-accent;
+}
+
 .cgh-empty {
   color: $cgh-faint;
   font-size: 0.92rem;
