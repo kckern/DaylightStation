@@ -179,8 +179,8 @@ describe('CycleGameHome', () => {
     expect(queryByTestId('cycle-game-cancel')).toBeNull();
   });
 
-  it('shows "No races yet" when records are empty, and rows when present', () => {
-    const { getByText, rerender } = render(
+  it('shows "No races yet" when records are empty, and a History row when present', () => {
+    const { getByText, getByTestId, rerender } = render(
       <CycleGameHome bikes={bikes} people={people} records={[]} />
     );
     expect(getByText('No races yet')).toBeTruthy();
@@ -189,24 +189,38 @@ describe('CycleGameHome', () => {
         bikes={bikes}
         people={people}
         records={[{
-          raceId: '20260602150118',
-          avatars: [{ id: 'milo', src: '/api/v1/static/img/users/milo', name: 'Milo' }],
-          goalKind: 'distance', goalLabel: '3 km',
-          scoreKind: 'time', scoreLabel: '4:12'
+          raceId: '20260602150118', winnerId: 'milo', winnerName: 'Milo',
+          winnerAvatar: '/api/v1/static/img/users/milo', others: [],
+          distanceLabel: '3 km', timeLabel: '4:12', goalColumn: 'distance', when: 'Today 3:01p'
         }]}
       />
     );
-    // goal chip + winner score both render
-    expect(getByText(/3 km/)).toBeTruthy();
-    expect(getByText('4:12')).toBeTruthy();
+    const row = getByTestId('record-20260602150118');
+    expect(row).toHaveTextContent('Milo');
+    expect(row).toHaveTextContent('3 km');
+    expect(row).toHaveTextContent('4:12');
+    expect(row).toHaveTextContent('Today 3:01p');
   });
 
-  it('renders an explained placeholder when a record has no score', () => {
+  it('renders the History table: winner, goal-marked metric columns, and when', () => {
     const records = [{
-      raceId: 'r-noscore',
-      avatars: [{ id: 'milo', src: '/api/v1/static/img/users/milo', name: 'Milo' }],
-      goalKind: 'distance', goalLabel: '3 km',
-      scoreKind: 'time', scoreLabel: ''
+      raceId: 'r1', winnerId: 'milo', winnerName: 'Milo', winnerAvatar: '/a',
+      others: [{ id: 'felix', displayName: 'Felix', avatarSrc: '/b' }],
+      distanceLabel: '1.00 km', timeLabel: '5:13', goalColumn: 'distance', when: 'Today 6:12p'
+    }];
+    const { getByTestId } = render(<CycleGameHome bikes={bikes} people={people} records={records} />);
+    const row = getByTestId('record-r1');
+    // distance is the goal cell, time is the result cell
+    expect(row.querySelector('[data-col="distance"][data-goal="true"]')).toBeTruthy();
+    expect(row.querySelector('[data-col="time"][data-goal="false"]')).toBeTruthy();
+    // section renamed to History
+    expect(getByTestId('cycle-game-records')).toHaveTextContent('History');
+  });
+
+  it('renders an explained placeholder when the result cell is empty', () => {
+    const records = [{
+      raceId: 'r-noscore', winnerId: 'milo', winnerName: 'Milo', winnerAvatar: '/a', others: [],
+      distanceLabel: '3 km', timeLabel: '', goalColumn: 'distance', when: 'Today'
     }];
     const { getByTitle } = render(
       <CycleGameHome bikes={bikes} people={people} records={records} />
@@ -214,12 +228,11 @@ describe('CycleGameHome', () => {
     expect(getByTitle('No result recorded')).toBeTruthy();
   });
 
-  it('records rail entries are clickable and fire onSelectRecord with the raceId', () => {
+  it('History rows are clickable and fire onSelectRecord with the raceId', () => {
     const onSelectRecord = vi.fn();
     const records = [{
-      raceId: '20260603120000',
-      avatars: [{ id: 'milo', src: '/api/v1/static/img/users/milo', name: 'Milo' }],
-      goalKind: 'distance', goalLabel: '3 km', scoreKind: 'time', scoreLabel: '4:12'
+      raceId: '20260603120000', winnerId: 'milo', winnerName: 'Milo', winnerAvatar: '/a',
+      others: [], distanceLabel: '3 km', timeLabel: '4:12', goalColumn: 'distance', when: 'Today'
     }];
     const { getByTestId } = render(
       <CycleGameHome bikes={bikes} people={people} records={records} onSelectRecord={onSelectRecord} />

@@ -678,11 +678,14 @@ export default function CycleGameHome({
             onSelect={(level) => onSetMasterVolume?.(linearVolumeFromLevel(level))}
           />
         </div>
-        <div className="cgh-section-label">Records</div>
+        <div className="cgh-section-label">History</div>
         {records.length === 0 ? (
           <div className="cgh-empty">No races yet</div>
         ) : (
-          <ol className="cgh-records">
+          <ol className="cgh-records cgh-records--table">
+            <li className="cgh-records__head" aria-hidden="true">
+              <span>Riders</span><span>Distance</span><span>Time</span><span>When</span>
+            </li>
             {records.map((rec, i) => (
               <li key={`${rec.raceId || i}`} className="cgh-record">
                 <button
@@ -690,33 +693,59 @@ export default function CycleGameHome({
                   className="cgh-record__btn"
                   data-testid={`record-${rec.raceId}`}
                   onClick={() => onSelectRecord?.(rec.raceId)}
+                  aria-label={`${rec.winnerName || 'Winner'} won — ${rec.distanceLabel || '—'}, ${rec.timeLabel || '—'}, ${rec.when || ''}`}
                 >
-                  <span className="cgh-record__avatars">
-                    {(rec.avatars || []).map((a) => (
+                  <span className="cgh-record__riders">
+                    <span className="cgh-record__winner-wrap">
                       <img
-                        key={a.id}
-                        className="cgh-record__avatar"
-                        src={a.src}
-                        alt={a.name}
-                        title={a.name}
+                        className="cgh-record__winner"
+                        src={rec.winnerAvatar || FALLBACK_AVATAR}
+                        alt={rec.winnerName || 'Winner'}
+                        title={rec.winnerName || ''}
                         onError={(e) => { e.currentTarget.src = FALLBACK_AVATAR; }}
                       />
-                    ))}
-                  </span>
-                  <span className="cgh-record__stats">
-                    <span className="cgh-record__chip" data-kind={rec.goalKind}>
-                      🏁 {rec.goalLabel}
+                      <span className="cgh-record__crown" aria-hidden="true">👑</span>
                     </span>
-                  {rec.scoreLabel && rec.scoreLabel !== '—' ? (
-                    <span className="cgh-record__score">{rec.scoreLabel}</span>
-                  ) : (
-                    <span
-                      className="cgh-record__score cgh-record__score--empty"
-                      title="No result recorded"
-                      aria-label="No result recorded"
-                    >—</span>
-                  )}
+                    <span className="cgh-record__winner-name">{rec.winnerName}</span>
+                    {(rec.others || []).length > 0 && (
+                      <span className="cgh-record__others">
+                        {(rec.others || []).slice(0, 3).map((o) => (
+                          <img
+                            key={o.id}
+                            className="cgh-record__other"
+                            src={o.avatarSrc || FALLBACK_AVATAR}
+                            alt={o.displayName}
+                            title={o.displayName}
+                            onError={(e) => { e.currentTarget.src = FALLBACK_AVATAR; }}
+                          />
+                        ))}
+                        {(rec.others || []).length > 3 && (
+                          <span className="cgh-record__more">+{rec.others.length - 3}</span>
+                        )}
+                      </span>
+                    )}
                   </span>
+
+                  {['distance', 'time'].map((col) => {
+                    const value = col === 'distance' ? rec.distanceLabel : rec.timeLabel;
+                    const isGoal = rec.goalColumn === col;
+                    const empty = !value || value === '—';
+                    return (
+                      <span
+                        key={col}
+                        className="cgh-record__cell"
+                        data-col={col}
+                        data-goal={isGoal ? 'true' : 'false'}
+                      >
+                        {isGoal && <span className="cgh-record__flag" aria-hidden="true">🏁</span>}
+                        {empty ? (
+                          <span className="cgh-record__cell-empty" title="No result recorded" aria-label="No result recorded">—</span>
+                        ) : value}
+                      </span>
+                    );
+                  })}
+
+                  <span className="cgh-record__when">{rec.when}</span>
                 </button>
               </li>
             ))}
