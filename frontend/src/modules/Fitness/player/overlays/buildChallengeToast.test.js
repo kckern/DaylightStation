@@ -102,3 +102,26 @@ describe('buildChallengeToast', () => {
     });
   });
 });
+
+describe('buildChallengeToast — cycle success', () => {
+  it('uses a phase-count subtitle and the rider as contributor', () => {
+    const toast = buildChallengeToast('end', {
+      type: 'cycle',
+      rider: { id: 'felix', name: 'Felix' },
+      totalPhases: 4
+    }, { resolveUserName: (id) => (id === 'felix' ? 'Felix' : id) });
+    expect(toast.variant).toBe('success');
+    expect(toast.title).toBe('Challenge complete!');
+    expect(toast.subtitle).toBe('Felix completed 4 phases');
+    expect(toast.contributors).toEqual([
+      { id: 'felix', name: 'Felix', avatarUrl: '/api/v1/static/img/users/felix' }
+    ]);
+  });
+
+  it('singular phase wording', () => {
+    const toast = buildChallengeToast('end', {
+      type: 'cycle', rider: { id: 'felix', name: 'Felix' }, totalPhases: 1
+    });
+    expect(toast.subtitle).toBe('Felix completed 1 phase');
+  });
+});
