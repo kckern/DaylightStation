@@ -59,6 +59,16 @@
   }
 }
 
+// On-board rider compliance strip during the stoplight countdown — sits above
+// the full-screen stoplight overlay (z-index 50), anchored to the bottom.
+.cycle-game-countdown-riders {
+  position: absolute;
+  left: 0; right: 0; bottom: 28px;
+  z-index: 51;
+  display: flex; justify-content: center;
+  pointer-events: none;
+}
+
 // "Riders, to your bikes!" staging buffer before the stoplight.
 .cycle-game-staging {
   position: relative; z-index: 1;

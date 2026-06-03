@@ -9,9 +9,18 @@ const VIEWBOX = 200;
 const CENTER = 100;
 const GAUGE_RADIUS = 80;
 
+/** 1 → "1st", 2 → "2nd", 3 → "3rd", 4 → "4th", … */
+function ordinal(n) {
+  if (!Number.isFinite(n)) return '';
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
+}
+
 export default function CycleSpeedometer({
   rpm = 0, maxRpm = 120, cadenceBands = [], tickStep = 10, labelStep = 30,
-  avatar = {}, distanceMeters = 0, multiplier = 1, multiplierColor, size = 220, className = '', isGhost = false
+  avatar = {}, distanceMeters = 0, multiplier = 1, multiplierColor, size = 220, className = '',
+  isGhost = false, finished = false, placement = null, penalized = false
 }) {
   const ticks = useMemo(
     () => buildTicks({ maxRpm, tickStep, labelStep, center: CENTER, gaugeRadius: GAUGE_RADIUS }),
@@ -28,8 +37,24 @@ export default function CycleSpeedometer({
   const px = typeof size === 'number' ? size : 220;
 
   return (
-    <div className={`cycle-speedometer ${className}`.trim()} style={{ width: px }}>
+    <div className={`cycle-speedometer${finished ? ' cycle-speedometer--finished' : ''}${penalized ? ' cycle-speedometer--penalized' : ''} ${className}`.trim()} style={{ width: px }}>
       <div className="cycle-speedometer__gauge" style={{ width: px, height: px }}>
+        {penalized && !finished && (
+          <div className="cycle-speedometer__penalty" data-testid="cycle-speedometer-penalty">
+            <span className="cycle-speedometer__penalty-icon" aria-hidden="true">⛔</span>
+            <span className="cycle-speedometer__penalty-title">False start</span>
+            <span className="cycle-speedometer__penalty-sub">meter locked</span>
+          </div>
+        )}
+        {finished && (
+          <div className="cycle-speedometer__finished" data-testid="cycle-speedometer-finished">
+            <span className="cycle-speedometer__finished-flag" aria-hidden="true">🏁</span>
+            <span className="cycle-speedometer__finished-place">
+              {Number.isFinite(placement) ? ordinal(placement) : 'Finished'}
+            </span>
+            <span className="cycle-speedometer__finished-label">Finished</span>
+          </div>
+        )}
         <svg className="cycle-speedometer__svg" viewBox={`0 0 ${VIEWBOX} ${VIEWBOX}`} aria-hidden="true">
           <circle className="cycle-speedometer__ring" cx={CENTER} cy={CENTER} r={GAUGE_RADIUS + 8} fill="none" />
           {bands.map((b) => (
@@ -104,5 +129,8 @@ CycleSpeedometer.propTypes = {
   multiplierColor: PropTypes.string,
   size: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   className: PropTypes.string,
-  isGhost: PropTypes.bool
+  isGhost: PropTypes.bool,
+  finished: PropTypes.bool,
+  placement: PropTypes.number,
+  penalized: PropTypes.bool
 };

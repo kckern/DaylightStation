@@ -4,7 +4,7 @@ import getLogger from '@/lib/logging/Logger.js';
 import { CycleRaceController } from '@/modules/Fitness/lib/cycleGame/CycleRaceController.js';
 import { buildRaceConfigFromCourse } from '@/modules/Fitness/lib/cycleGame/cycleGameLobby.js';
 import { buildRaceRecord } from '@/modules/Fitness/lib/cycleGame/raceRecord.js';
-import { zoneMultiplierFor } from '@/modules/Fitness/lib/cycleGame/distanceModel.js';
+import { zoneMultiplierFor, zoneColorFor } from '@/modules/Fitness/lib/cycleGame/distanceModel.js';
 import { playSound } from '@/modules/Fitness/lib/cycleGame/playSound.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import { SessionSerializerV3 } from '@/hooks/fitness/SessionSerializerV3.js';
@@ -12,6 +12,7 @@ import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.j
 import { usePersistentVolume } from '@/modules/Fitness/nav/usePersistentVolume.js';
 import CycleGameHome from './CycleGameHome.jsx';
 import CountdownStoplight from './CountdownStoplight.jsx';
+import RiderReadyStrip from './RiderReadyStrip.jsx';
 import CycleRaceScreen from './CycleRaceScreen.jsx';
 import RaceResults from './RaceResults.jsx';
 import RaceRecap from './RaceRecap.jsx';
@@ -42,9 +43,11 @@ export default function CycleGameContainer({ onMount } = {}) {
     getUserByName
   } = ctx;
 
+  // Default = the lobby's "Medium" tier (2500 m / 300 s) so the pre-selected
+  // tile and the no-pick fallback agree. See DISTANCE_TIERS in CycleGameHome.
   const distanceDefaultM = Number.isFinite(cycleGameConfig?.distance_goal_default_m)
     ? cycleGameConfig.distance_goal_default_m
-    : 3000;
+    : 2500;
   const timeDefaultS = Number.isFinite(cycleGameConfig?.time_cap_default_s)
     ? cycleGameConfig.time_cap_default_s
     : 300;
@@ -168,6 +171,8 @@ export default function CycleGameContainer({ onMount } = {}) {
           wheelCircumferenceM: 0,
           ghostSeries: g.ghostSeries,
           ghostHrSeries: g.ghostHrSeries,
+          ghostRpmSeries: g.ghostRpmSeries,
+          ghostZoneSeries: g.ghostZoneSeries,
           ghostIntervalS: g.ghostIntervalS
         });
       });
@@ -314,6 +319,40 @@ export default function CycleGameContainer({ onMount } = {}) {
     [bikesForGrid]
   );
 
+  // On-board riders for the pre-race compliance strip (staging + countdown): the
+  // claimed bikes with their LIVE rpm. `compliant = !(rpm > 0)` mirrors exactly
+  // the controller's green-light test, so the strip predicts the penalty.
+  // assignVersion drives the refresh (bumped by the staging/countdown poll).
+  const stagingRiders = useMemo(
+    () => bikes.map((bike) => {
+      const userId = session?.getEquipmentRider?.(bike.id);
+      if (!userId) return null;
+      const cadence = session?.getEquipmentCadence?.(bike.id);
+      const rpm = cadence && cadence.connected && Number.isFinite(cadence.rpm) ? cadence.rpm : 0;
+      const vitals = getUserVitals?.(userId) || {};
+      return {
+        id: userId,
+        equipmentId: bike.id,
+        name: resolveDisplayName(userId),
+        avatarSrc: `/api/v1/static/img/users/${userId}`,
+        rpm,
+        heartRate: Number.isFinite(vitals.heartRate) ? vitals.heartRate : null,
+        zoneColor: vitals.zoneColor || null,
+        compliant: !(rpm > 0)
+      };
+    }).filter(Boolean),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [bikes, session, getUserVitals, resolveDisplayName, assignVersion]
+  );
+
+  // Keep on-board RPM live during staging + countdown so the compliance strip
+  // reacts quickly when someone starts pedalling early.
+  useEffect(() => {
+    if (phase !== 'staging' && phase !== 'countdown') return undefined;
+    const id = setInterval(() => setAssignVersion((v) => v + 1), 300);
+    return () => clearInterval(id);
+  }, [phase]);
+
   // While on the lobby, riders can be claimed OUTSIDE the React tree — by the
   // physical rider-select button or the dev simulator, both of which mutate the
   // session instance directly without bumping assignVersion. Poll so the grid
@@ -371,6 +410,8 @@ export default function CycleGameContainer({ onMount } = {}) {
           avatarSrc: `/api/v1/static/img/users/${id}`,
           distanceSeries: p.distance_series || null,
           hrSeries: p.hr_series || null,
+          rpmSeries: p.rpm_series || null,
+          zoneSeries: p.zone_series || null,
           finalDistanceM: p.final_distance_m ?? null,
           finalTimeS: p.final_time_s ?? null,
           placement: p.placement ?? null
@@ -689,9 +730,11 @@ export default function CycleGameContainer({ onMount } = {}) {
   // the start jingle is a one-shot SFX layered over the (stopped) music.
   useEffect(() => {
     const s = soundsRef.current || {};
-    if (phase === 'idle' || phase === 'staging') {
-      // Lobby track carries through the "to your bikes" buffer ("start your engines").
+    if (phase === 'idle') {
       playMusic(s.lobby, 'lobby');
+    } else if (phase === 'staging') {
+      // "Riders, to your bikes!" — the get-ready cue (falls back to lobby if unset).
+      playMusic(s.ready || s.lobby, s.ready ? 'ready' : 'lobby');
     } else if (phase === 'countdown') {
       stopMusic();
       playSound(s.start, { volume: masterRef.current }); // one-shot 3-2-1 jingle
@@ -734,6 +777,8 @@ export default function CycleGameContainer({ onMount } = {}) {
       displayName: `${p.displayName} 👻`,
       ghostSeries: SessionSerializerV3.decodeSeries(p.distanceSeries) || [],
       ghostHrSeries: SessionSerializerV3.decodeSeries(p.hrSeries) || [],
+      ghostRpmSeries: SessionSerializerV3.decodeSeries(p.rpmSeries) || [],
+      ghostZoneSeries: SessionSerializerV3.decodeSeries(p.zoneSeries) || [],
       ghostIntervalS: candidate.intervalSeconds || 1
     })).filter((r) => r.ghostSeries.length > 0);
     if (riders.length === 0) {
@@ -849,7 +894,8 @@ export default function CycleGameContainer({ onMount } = {}) {
           <div className="cycle-game-staging__bar">
             <span style={{ animationDuration: `${stagingBufferMs}ms` }} />
           </div>
-          <div className="cycle-game-staging__hint">Get on, get ready — the lights are next.</div>
+          <RiderReadyStrip riders={stagingRiders} />
+          <div className="cycle-game-staging__hint">Don’t pedal until the light turns green.</div>
         </div>
         <button type="button" data-testid="cycle-game-cancel" className="cycle-game-container__cancel" onClick={onCancel}>
           Cancel
@@ -863,6 +909,9 @@ export default function CycleGameContainer({ onMount } = {}) {
     return (
       <div className="cycle-game-container" data-testid="cycle-game-container">
         <CountdownStoplight remaining={remaining} total={startCountdownRef.current} />
+        <div className="cycle-game-countdown-riders">
+          <RiderReadyStrip riders={stagingRiders} />
+        </div>
         <button type="button" data-testid="cycle-game-cancel" className="cycle-game-container__cancel" onClick={onCancel}>
           Cancel
         </button>
@@ -873,25 +922,39 @@ export default function CycleGameContainer({ onMount } = {}) {
   if (phase === 'racing') {
     const engineState = snapshot?.engineState || {};
     const riders = engineState.riders || {};
+    const winConditionNow = engineState.winCondition || raceMetaRef.current?.winCondition || 'distance';
+    const placementByUser = {};
+    (engineState.standings || []).forEach((s) => { placementByUser[s.userId] = s.placement; });
+    // Riders currently serving a hot-start penalty (pedalled at the green light).
+    const penalizedNow = new Set(snapshot?.penalized || []);
     const riderLive = {};
     Object.keys(riders).forEach((userId) => {
+      const rider = riders[userId];
       // Ghost rider ids are `ghost:<raceId>:<sourceUserId>` — resolve the avatar
       // from the original user so the speedometer shows their face.
       const isGhostRider = userId.startsWith('ghost:');
       const sourceId = isGhostRider ? userId.split(':')[2] : userId;
-      const cadence = session?.getEquipmentCadence?.(riders[userId].equipmentId);
+      // A finished distance-race rider is parked at the line: gauge reads idle.
+      const isFinished = winConditionNow === 'distance' && rider.finishTimeS != null;
+      const cadence = isGhostRider ? null : session?.getEquipmentCadence?.(rider.equipmentId);
       const vitals = isGhostRider ? {} : (getUserVitals?.(userId) || {});
-      const zoneId = vitals.zoneId || null;
+      // Ghosts replay their recorded rpm + zone; live riders read cadence/vitals.
+      const zoneId = isGhostRider ? (rider.zoneId || null) : (vitals.zoneId || null);
+      const liveRpm = isGhostRider
+        ? (Number.isFinite(rider.rpm) ? rider.rpm : 0)
+        : (cadence && cadence.connected ? cadence.rpm : 0);
       riderLive[userId] = {
-        rpm: cadence && cadence.connected ? cadence.rpm : 0,
+        rpm: isFinished ? 0 : liveRpm,
         avatarSrc: `/api/v1/static/img/users/${sourceId}`,
         heartRate: isGhostRider
-          ? (Number.isFinite(riders[userId].heartRate) ? riders[userId].heartRate : null)
+          ? (Number.isFinite(rider.heartRate) ? rider.heartRate : null)
           : (vitals.heartRate ?? null),
         zoneId,
-        zoneColor: vitals.zoneColor || null,
-        zoneProgress: vitals.progress ?? null,
-        multiplier: zoneMultiplierFor(zoneId, zones, hrlessMultiplier)
+        zoneColor: isGhostRider ? zoneColorFor(zoneId, zones) : (vitals.zoneColor || null),
+        zoneProgress: isGhostRider ? null : (vitals.progress ?? null),
+        multiplier: isFinished ? 1 : zoneMultiplierFor(zoneId, zones, hrlessMultiplier),
+        finished: isFinished,
+        placement: isFinished ? (placementByUser[userId] ?? null) : null
       };
     });
     return (
