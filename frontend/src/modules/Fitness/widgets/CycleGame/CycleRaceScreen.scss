@@ -52,41 +52,34 @@
     border-bottom: 1px solid cg.$cg-border-soft;
   }
   &__chart { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-  &__grid { stroke: rgba(255, 255, 255, 0.06); stroke-width: 1; }
   &__goal { stroke: cg.$cg-gold; stroke-width: 1.5; stroke-dasharray: 7 5; opacity: 0.8; }
 
-  &__grid-labels { position: absolute; inset: 0; pointer-events: none; }
-  &__grid-label {
-    position: absolute; left: 6px; transform: translateY(-50%);
-    font-family: cg.$cg-mono; font-size: 0.62rem; color: cg.$cg-faint;
-    background: rgba(8, 9, 12, 0.5); padding: 0 4px; border-radius: 3px;
-  }
-
-  // Gliding rider chips (name + head dot) — smooth between 1 Hz ticks.
-  &__heads { position: absolute; inset: 0; pointer-events: none; }
-  &__rider-tag {
+  // Terminus markers — avatar + running score riding each line's tip. Short
+  // transition keeps them gliding without lagging behind the line end (no gap).
+  &__tags { position: absolute; inset: 0; pointer-events: none; }
+  &__tag {
     position: absolute;
     transform: translate(-50%, -50%);
-    transition: left 0.95s linear, top 0.95s linear;
-    display: flex; align-items: center; gap: 6px;
+    transition: left 0.3s linear, top 0.3s linear;
+    display: flex; align-items: center; gap: 8px;
     white-space: nowrap;
   }
-  &__rider-name {
-    font-family: cg.$cg-display; font-weight: 700; font-size: 0.8rem;
-    letter-spacing: 0.03em; text-transform: uppercase;
+  &__tag-avatar {
+    width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+  }
+  &__tag-info { display: flex; flex-direction: column; line-height: 1.05; }
+  &__tag-score {
+    font-family: cg.$cg-display; font-weight: 800; font-size: 1.05rem;
     text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
-    transform: translateX(-100%); padding-right: 2px;
   }
-  &__head {
-    width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.6), 0 0 0 2px rgba(255, 255, 255, 0.3);
+  &__tag-hr {
+    font-family: cg.$cg-mono; font-size: 0.74rem; color: #ff6b6b; font-weight: 700;
   }
-  &__rider-tag.is-leader &__head {
-    box-shadow: 0 0 14px currentColor, 0 0 0 2px rgba(255, 255, 255, 0.85);
-  }
-  &__rider-tag.is-leader &__rider-name { font-size: 0.9rem; }
-  &__rider-tag.is-ghost { opacity: 0.78; }
-  &__rider-tag.is-ghost &__head { width: 10px; height: 10px; }
+  &__tag-hr-icon { margin-left: 1px; }
+  &__tag.is-leader &__tag-score { font-size: 1.2rem; }
+  &__tag.is-ghost { opacity: 0.9; }
+  &__tag.is-ghost &__tag-score { font-style: italic; }
 
   // ── Speedometers ────────────────────────────────────────────────────────
   &__speedos {

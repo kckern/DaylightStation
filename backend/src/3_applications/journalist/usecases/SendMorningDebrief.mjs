@@ -114,18 +114,11 @@ export class SendMorningDebrief {
         };
       }
 
-      // Build full message with summary (no "What would you like..." - buttons are self-explanatory)
-      // Format date as "Mon, 1 Jan 2025"
+      // Build full message: an engaging headline (provocative question or teaser)
+      // over a subordinate date line, then the styled summary.
       const dateObj = new Date(debrief.date + 'T00:00:00');
-      const formattedDate = dateObj.toLocaleDateString('en-US', {
-        weekday: 'short',
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      });
-
       const styledSummary = SendMorningDebrief.applyTelegramStyling(debrief.summary);
-      const message = `📅 <b>Yesterday</b> (${formattedDate})\n\n${styledSummary}`;
+      const message = `${SendMorningDebrief.buildHeader(debrief.headline, dateObj)}\n\n${styledSummary}`;
 
       // Build main 3-button keyboard
       const keyboard = this.#buildMainKeyboard();
@@ -214,6 +207,51 @@ export class SendMorningDebrief {
 
       throw error;
     }
+  }
+
+  /**
+   * Escape HTML entities for Telegram HTML parse mode.
+   */
+  static escapeHtml(text) {
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  /**
+   * Build the message header.
+   *
+   * With an adaptive headline (a deduction/statement or a question), lead with it and
+   * demote the date to a small subordinate line. The emoji is chosen deterministically:
+   * 💬 for a question (ends with "?"), 💭 for a deduction/statement. When no headline is available
+   * (model omitted it, or the existing-debrief re-send path made no AI call), fall back
+   * to the legacy date header so a headerless message is never shipped.
+   *
+   * @param {string|null|undefined} headline - Adaptive hook line, if any
+   * @param {Date} dateObj - The debrief date (yesterday)
+   * @returns {string} Header markup (HTML)
+   */
+  static buildHeader(headline, dateObj) {
+    const trimmed = headline && String(headline).trim();
+
+    if (!trimmed) {
+      const formattedDate = dateObj.toLocaleDateString('en-US', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      });
+      return `📅 <b>Yesterday</b> (${formattedDate})`;
+    }
+
+    const emoji = trimmed.endsWith('?') ? '💬' : '💭';
+    const weekday = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+    const day = dateObj.toLocaleDateString('en-US', { day: 'numeric' });
+    const month = dateObj.toLocaleDateString('en-US', { month: 'short' });
+    const dateLabel = `${weekday} · ${day} ${month} · yesterday`;
+
+    return `${emoji} <b>${SendMorningDebrief.escapeHtml(trimmed)}</b>\n<i>${dateLabel}</i>`;
   }
 
   /**

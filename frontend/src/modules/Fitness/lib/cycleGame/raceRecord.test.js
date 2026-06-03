@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildRaceRecord } from './raceRecord.js';
+import { SessionSerializerV3 } from '@/hooks/fitness/SessionSerializerV3.js';
 
 const state = {
   winCondition: 'distance',
@@ -39,5 +40,15 @@ describe('buildRaceRecord', () => {
     const rec = buildRaceRecord({ ...state, winCondition: 'time' }, { ...meta, winCondition: 'time', timeCapS: 300, goalM: undefined });
     expect(rec.race.time_cap_s).toBe(300);
     expect(rec.race.goal_m).toBeUndefined();
+  });
+  it('encodes each participant hr_series from the engine hrSeries', () => {
+    const s = {
+      riders: {
+        a: { userId: 'a', displayName: 'A', equipmentId: 'cycle_ace', cumulativeDistanceM: 100, finishTimeS: 50, distanceSeries: [50, 100], hrSeries: [150, 160] }
+      },
+      standings: [{ userId: 'a', placement: 1 }]
+    };
+    const rec = buildRaceRecord(s, { raceId: '20260603120000', date: 'x', mode: 'simultaneous', winCondition: 'distance', goalM: 100, intervalSeconds: 1 });
+    expect(rec.participants.a.hr_series).toBe(SessionSerializerV3.encodeSeries([150, 160]));
   });
 });

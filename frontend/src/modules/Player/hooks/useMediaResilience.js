@@ -151,6 +151,10 @@ export function useMediaResilience({
 
   // Startup deadline timer (for initial load grace period)
   const startupDeadlineRef = useRef(null);
+  // Bumped by a recovery that doesn't change `status` (e.g. retryFromExhausted
+  // while already in `recovering`) so the startup-deadline arm effect re-runs and
+  // re-arms the watchdog for the fresh attempt instead of orphaning it.
+  const [recoveryNonce, setRecoveryNonce] = useState(0);
   // Track if video has ever successfully played (for loop detection)
   const hasEverPlayedRef = useRef(false);
   // Track transcode warmup state (0-byte fragment detection extends startup deadline)
@@ -205,6 +209,12 @@ export function useMediaResilience({
     const seekMs = (targetTimeSeconds || playbackHealth.lastProgressSeconds || seconds || initialStart || 0) * 1000;
     consumeTargetTimeSeconds();
     actions.setStatus(STATUS.recovering);
+    // Force the startup-deadline watchdog to re-arm even though `status` was
+    // already `recovering` (so the retried remount isn't left without a watchdog
+    // and escalation continues if it also stalls).
+    clearTimeout(startupDeadlineRef.current);
+    startupDeadlineRef.current = null;
+    setRecoveryNonce((n) => n + 1);
     playbackLog('resilience-retry-from-exhausted', { waitKey: logWaitKey, seekToIntentMs: seekMs });
     if (typeof onReload === 'function') {
       // forceRemount: in-place hardReset (even with refreshUrl) is unreliable on a
@@ -260,7 +270,7 @@ export function useMediaResilience({
         }, hardRecoverLoadingGraceMs);
       }
     }
-  }, [status, playbackHealth.progressToken, userIntent, actions, triggerRecovery, hardRecoverLoadingGraceMs, playbackSessionKey, disabled, hasMediaMeta]);
+  }, [status, playbackHealth.progressToken, userIntent, actions, triggerRecovery, hardRecoverLoadingGraceMs, playbackSessionKey, disabled, hasMediaMeta, recoveryNonce]);
 
   // Clean up timers on unmount or waitKey change
   useEffect(() => {

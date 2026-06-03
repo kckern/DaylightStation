@@ -846,7 +846,12 @@ export class PlexAdapter {
     params.append('X-Plex-Platform', this.platform);
     params.append('autoAdjustQuality', '1');
     params.append('directPlay', '0');
-    params.append('directStream', '1');
+    // directStream=0: force a transcode rather than letting Plex remux the
+    // ORIGINAL codec into the DASH container. With directStream=1, AV1/VP9
+    // sources are direct-streamed unchanged and MSE rejects the append
+    // (CHUNK_DEMUXER_ERROR_APPEND_FAILED → perpetual t=0 stall). Forcing
+    // transcode routes them through the advertised h264/hevc targets.
+    params.append('directStream', '0');
     params.append('subtitleSize', '100');
     params.append('audioBoost', '100');
     params.append('fastSeek', '1');
@@ -954,11 +959,14 @@ export class PlexAdapter {
       `autoAdjustQuality=1`,
       `fastSeek=1`,
       `mediaBufferSize=${mediaBufferSize}`,
-      // Advertise AV1 and VP9 in addition to H.264/HEVC so Plex DirectStreams
-      // (remux-only, no transcode) AV1/VP9 sources instead of doing a software
-      // AV1 → H.264 encode. Modern browser clients (Firefox 90+, Chrome 90+,
-      // Safari 17+) all decode AV1 natively; VP9 has even broader support.
-      `X-Plex-Client-Profile-Extra=${encodeURIComponent('append-transcode-target-codec(type=videoProfile&context=streaming&videoCodec=h264,hevc,av1,vp9&audioCodec=aac&protocol=dash)')}`
+      // Advertise only H.264/HEVC as transcode targets. We deliberately do NOT
+      // advertise AV1/VP9: although browsers decode them natively for direct
+      // <video> playback, this pipeline feeds dash.js via MSE, and Chromium's
+      // demuxer rejects AV1/VP9 fMP4 segments with
+      // "CHUNK_DEMUXER_ERROR_APPEND_FAILED: Video stream codec vp9 doesn't
+      // match SourceBuffer codecs." Advertising them makes Plex emit segments
+      // the SourceBuffer can't append, stalling playback at t=0 forever.
+      `X-Plex-Client-Profile-Extra=${encodeURIComponent('append-transcode-target-codec(type=videoProfile&context=streaming&videoCodec=h264,hevc&audioCodec=aac&protocol=dash)')}`
     ];
 
     if (maxVideoBitrate != null) {
@@ -1498,14 +1506,20 @@ export class PlexAdapter {
     params.append('X-Plex-Session-Identifier', sessionIdentifier);
     params.append('X-Plex-Platform', this.platform);
     // Mirror the codec advertisement used by _buildTranscodeUrl so Plex makes
-    // a consistent decision (DirectStream AV1/VP9 instead of transcode).
+    // a consistent decision (H.264/HEVC only — never AV1/VP9, which Chromium's
+    // MSE demuxer cannot append; see _buildTranscodeUrl comment).
     params.append(
       'X-Plex-Client-Profile-Extra',
-      'append-transcode-target-codec(type=videoProfile&context=streaming&videoCodec=h264,hevc,av1,vp9&audioCodec=aac&protocol=dash)'
+      'append-transcode-target-codec(type=videoProfile&context=streaming&videoCodec=h264,hevc&audioCodec=aac&protocol=dash)'
     );
     params.append('autoAdjustQuality', '1');
     params.append('directPlay', '0');
-    params.append('directStream', '1');
+    // directStream=0: force a transcode rather than letting Plex remux the
+    // ORIGINAL codec into the DASH container. With directStream=1, AV1/VP9
+    // sources are direct-streamed unchanged and MSE rejects the append
+    // (CHUNK_DEMUXER_ERROR_APPEND_FAILED → perpetual t=0 stall). Forcing
+    // transcode routes them through the advertised h264/hevc targets.
+    params.append('directStream', '0');
     params.append('subtitleSize', '100');
     params.append('audioBoost', '100');
     params.append('fastSeek', '1');
@@ -1604,11 +1618,14 @@ export class PlexAdapter {
       'autoAdjustQuality=1',
       'fastSeek=1',
       `mediaBufferSize=${mediaBufferSize}`,
-      // Advertise AV1 and VP9 in addition to H.264/HEVC so Plex DirectStreams
-      // (remux-only, no transcode) AV1/VP9 sources instead of doing a software
-      // AV1 → H.264 encode. Modern browser clients (Firefox 90+, Chrome 90+,
-      // Safari 17+) all decode AV1 natively; VP9 has even broader support.
-      `X-Plex-Client-Profile-Extra=${encodeURIComponent('append-transcode-target-codec(type=videoProfile&context=streaming&videoCodec=h264,hevc,av1,vp9&audioCodec=aac&protocol=dash)')}`
+      // Advertise only H.264/HEVC as transcode targets. We deliberately do NOT
+      // advertise AV1/VP9: although browsers decode them natively for direct
+      // <video> playback, this pipeline feeds dash.js via MSE, and Chromium's
+      // demuxer rejects AV1/VP9 fMP4 segments with
+      // "CHUNK_DEMUXER_ERROR_APPEND_FAILED: Video stream codec vp9 doesn't
+      // match SourceBuffer codecs." Advertising them makes Plex emit segments
+      // the SourceBuffer can't append, stalling playback at t=0 forever.
+      `X-Plex-Client-Profile-Extra=${encodeURIComponent('append-transcode-target-codec(type=videoProfile&context=streaming&videoCodec=h264,hevc&audioCodec=aac&protocol=dash)')}`
     ];
 
     if (startOffset > 0) {

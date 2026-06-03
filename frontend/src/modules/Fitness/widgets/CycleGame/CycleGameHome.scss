@@ -320,7 +320,7 @@ $cgh-accent-strong: #2563eb;
     width: 96px;
     height: 96px;
     --rpm-scale: 0.78;
-    --rpm-ring-color: #{$cgh-accent};
+    --rpm-ring-color: rgba(226, 232, 240, 0.85); // light gray crawling dots (not blue)
     // Lighter bottom-hemisphere shade than the player default (was too dark).
     --rpm-overlay-bg: rgba(7, 9, 13, 0.45);
     @include rpm.rpm-device-base;
@@ -761,4 +761,20 @@ $cgh-accent-strong: #2563eb;
   // Goal = obvious context (the course) → muted denominator.
   &__goal { font-size: 0.82rem; color: $cgh-muted; }
   &__time { font-size: 0.72rem; color: $cgh-faint; margin-top: 2px; }
+}
+
+// ── Master volume control (lobby, drives the screen master volume) ────────
+.cgh-volume {
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid $cgh-border-soft;
+  display: flex;
+  justify-content: center;
+}
+
+.cgh-record__btn {
+  appearance: none; cursor: pointer; width: 100%;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: transparent; border: none; color: inherit; padding: 4px; border-radius: 8px;
+  &:hover { background: rgba(255, 255, 255, 0.05); }
 }

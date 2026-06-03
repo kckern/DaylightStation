@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.jsx';
 import RpmDeviceAvatar from '@/modules/Fitness/components/RpmDeviceAvatar.jsx';
+import VolumeControl from '@/modules/Fitness/shared/primitives/VolumeControl';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import './CycleGameHome.scss';
 
@@ -533,10 +534,13 @@ export default function CycleGameHome({
   onAssign,
   onUnassign,
   records = [],
+  onSelectRecord,
   ghost = null,
   ghostCandidates = [],
   onSelectGhost,
   onClearGhost,
+  masterVolume = 1,
+  onSetMasterVolume,
   onStart,
   canStart = false
 }) {
@@ -610,6 +614,19 @@ export default function CycleGameHome({
       </div>
 
       <aside className="cycle-game-home__records" data-testid="cycle-game-records">
+        <div className="cgh-section-label">Volume</div>
+        <div className="cgh-volume" data-testid="cycle-game-volume">
+          <VolumeControl
+            value={Math.round((Number.isFinite(masterVolume) ? masterVolume : 1) * 100)}
+            min={0}
+            max={100}
+            step={5}
+            orientation="horizontal"
+            size="md"
+            showValue
+            onChange={(v) => onSetMasterVolume?.(Math.max(0, Math.min(1, v / 100)))}
+          />
+        </div>
         <div className="cgh-section-label">Records</div>
         {records.length === 0 ? (
           <div className="cgh-empty">No races yet</div>
@@ -617,24 +634,31 @@ export default function CycleGameHome({
           <ol className="cgh-records">
             {records.map((rec, i) => (
               <li key={`${rec.raceId || i}`} className="cgh-record">
-                <span className="cgh-record__avatars">
-                  {(rec.avatars || []).map((a) => (
-                    <img
-                      key={a.id}
-                      className="cgh-record__avatar"
-                      src={a.src}
-                      alt={a.name}
-                      title={a.name}
-                      onError={(e) => { e.currentTarget.src = FALLBACK_AVATAR; }}
-                    />
-                  ))}
-                </span>
-                <span className="cgh-record__stats">
-                  <span className="cgh-record__chip" data-kind={rec.goalKind}>
-                    🏁 {rec.goalLabel}
+                <button
+                  type="button"
+                  className="cgh-record__btn"
+                  data-testid={`record-${rec.raceId}`}
+                  onClick={() => onSelectRecord?.(rec.raceId)}
+                >
+                  <span className="cgh-record__avatars">
+                    {(rec.avatars || []).map((a) => (
+                      <img
+                        key={a.id}
+                        className="cgh-record__avatar"
+                        src={a.src}
+                        alt={a.name}
+                        title={a.name}
+                        onError={(e) => { e.currentTarget.src = FALLBACK_AVATAR; }}
+                      />
+                    ))}
                   </span>
-                  <span className="cgh-record__score">{rec.scoreLabel}</span>
-                </span>
+                  <span className="cgh-record__stats">
+                    <span className="cgh-record__chip" data-kind={rec.goalKind}>
+                      🏁 {rec.goalLabel}
+                    </span>
+                    <span className="cgh-record__score">{rec.scoreLabel}</span>
+                  </span>
+                </button>
               </li>
             ))}
           </ol>
@@ -675,10 +699,13 @@ CycleGameHome.propTypes = {
   onAssign: PropTypes.func,
   onUnassign: PropTypes.func,
   records: PropTypes.array,
+  onSelectRecord: PropTypes.func,
   ghost: PropTypes.object,
   ghostCandidates: PropTypes.array,
   onSelectGhost: PropTypes.func,
   onClearGhost: PropTypes.func,
+  masterVolume: PropTypes.number,
+  onSetMasterVolume: PropTypes.func,
   onStart: PropTypes.func,
   canStart: PropTypes.bool
 };

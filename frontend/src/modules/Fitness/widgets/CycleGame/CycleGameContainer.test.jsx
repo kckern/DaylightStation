@@ -39,6 +39,7 @@ function makeCtx(overrides = {}) {
       time_cap_default_s: 300,
       hrless_multiplier: 1.0,
       start_countdown_s: 3,
+      staging_buffer_ms: 0, // skip the "to your bikes" buffer in this smoke test
       cadence_zones: [{ id: 'cruising', name: 'Cruising', min: 40, color: '#2ecc71' }]
     },
     fitnessSessionInstance: {

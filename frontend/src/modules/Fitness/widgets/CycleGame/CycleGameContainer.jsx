@@ -9,10 +9,12 @@ import { playSound } from '@/modules/Fitness/lib/cycleGame/playSound.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import { SessionSerializerV3 } from '@/hooks/fitness/SessionSerializerV3.js';
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
+import { useScreenVolume, getEffectiveMaster } from '@/lib/volume/ScreenVolumeContext.js';
 import CycleGameHome from './CycleGameHome.jsx';
 import CountdownStoplight from './CountdownStoplight.jsx';
 import CycleRaceScreen from './CycleRaceScreen.jsx';
 import RaceResults from './RaceResults.jsx';
+import RaceRecap from './RaceRecap.jsx';
 import './CycleGameContainer.scss';
 
 const RACE_TICK_MS = 1000;
@@ -45,6 +47,11 @@ export default function CycleGameContainer({ onMount } = {}) {
   const timeDefaultS = Number.isFinite(cycleGameConfig?.time_cap_default_s)
     ? cycleGameConfig.time_cap_default_s
     : 300;
+  // "Riders, to your bikes!" buffer after Start, before the stoplight countdown
+  // (lobby music keeps playing). Configurable; 0 = skip straight to countdown.
+  const stagingBufferMs = Number.isFinite(cycleGameConfig?.staging_buffer_ms)
+    ? cycleGameConfig.staging_buffer_ms
+    : 5000;
 
   const cadenceBands = useMemo(
     () => (Array.isArray(cycleGameConfig?.cadence_zones) ? cycleGameConfig.cadence_zones : []),
@@ -64,6 +71,10 @@ export default function CycleGameContainer({ onMount } = {}) {
   soundsRef.current = sounds;
   const musicVolume = Number.isFinite(cycleGameConfig?.music_volume) ? cycleGameConfig.music_volume : 0.55;
 
+  // Master volume (screen-framework). Everything — soundtrack + SFX (via
+  // playSound→getEffectiveMaster) — is scaled by it; the lobby exposes a control.
+  const { master, effectiveMaster, setMaster } = useScreenVolume();
+
   // Background-music channel (one looping track at a time, swapped per phase).
   // Separate from the one-shot SFX channel (playSound). Null/absent = silent.
   const musicRef = useRef(null);
@@ -82,7 +93,8 @@ export default function CycleGameContainer({ onMount } = {}) {
     try {
       const a = new Audio(url);
       a.loop = loop;
-      a.volume = musicVolume;
+      const m = (() => { try { return getEffectiveMaster(); } catch { return 1; } })();
+      a.volume = Math.max(0, Math.min(1, musicVolume * (Number.isFinite(m) ? m : 1)));
       a.play().catch(() => { /* autoplay may defer until a gesture */ });
       musicRef.current = a;
       musicKeyRef.current = key;
@@ -151,6 +163,7 @@ export default function CycleGameContainer({ onMount } = {}) {
           equipmentId: null,
           wheelCircumferenceM: 0,
           ghostSeries: g.ghostSeries,
+          ghostHrSeries: g.ghostHrSeries,
           ghostIntervalS: g.ghostIntervalS
         });
       });
@@ -159,7 +172,9 @@ export default function CycleGameContainer({ onMount } = {}) {
   }, [bikes, session, resolveDisplayName, abuseMaxRpmDefault, abuseDurationDefault, ghost]);
 
   // ── lifecycle state ──────────────────────────────────────────────────────
-  const [phase, setPhase] = useState('idle'); // idle | countdown | racing | results
+  const [phase, setPhase] = useState('idle'); // idle | staging | countdown | racing | results
+  const [stagingSeconds, setStagingSeconds] = useState(0); // "to your bikes" countdown
+  const stagingTimerRef = useRef(null);
   const [raceType, setRaceType] = useState(null); // 'distance' | 'time' | null
   const [raceValueM, setRaceValueM] = useState(null); // chosen distance goal (m)
   const [raceValueS, setRaceValueS] = useState(null); // chosen time cap (s)
@@ -350,6 +365,7 @@ export default function CycleGameContainer({ onMount } = {}) {
           displayName: p.display_name || id,
           avatarSrc: `/api/v1/static/img/users/${id}`,
           distanceSeries: p.distance_series || null,
+          hrSeries: p.hr_series || null,
           finalDistanceM: p.final_distance_m ?? null,
           finalTimeS: p.final_time_s ?? null,
           placement: p.placement ?? null
@@ -396,6 +412,14 @@ export default function CycleGameContainer({ onMount } = {}) {
       scoreLabel: g.scoreLabel
     })),
     [ghostCandidates]
+  );
+
+  // Race Recap overlay — replay a saved race's chart from the records rail.
+  const [recapRaceId, setRecapRaceId] = useState(null);
+  const onSelectRecord = useCallback((raceId) => setRecapRaceId(raceId), []);
+  const recapCandidate = useMemo(
+    () => ghostCandidates.find((g) => g.raceId === recapRaceId) || null,
+    [ghostCandidates, recapRaceId]
   );
 
   // The current value for the chosen race type (defaults applied at start).
@@ -478,8 +502,27 @@ export default function CycleGameContainer({ onMount } = {}) {
       riders: riders.map((r) => r.userId)
     });
 
-    applySnapshot(controller.startCountdown());
-  }, [raceType, raceValueM, raceValueS, distanceDefaultM, timeDefaultS, ghost, buildRiders, zones, hrlessMultiplier, cycleGameConfig, applySnapshot, log]);
+    // "Riders, to your bikes!" — hold before the stoplight so whoever pressed
+    // Start can get on their bike. Lobby music keeps playing through it.
+    if (stagingBufferMs > 0) {
+      setStagingSeconds(Math.ceil(stagingBufferMs / 1000));
+      setPhase('staging');
+      log.info('cycle_game.staging', { ms: stagingBufferMs });
+      if (stagingTimerRef.current) clearTimeout(stagingTimerRef.current);
+      stagingTimerRef.current = setTimeout(() => {
+        applySnapshot(controllerRef.current?.startCountdown());
+      }, stagingBufferMs);
+    } else {
+      applySnapshot(controller.startCountdown());
+    }
+  }, [raceType, raceValueM, raceValueS, distanceDefaultM, timeDefaultS, stagingBufferMs, ghost, buildRiders, zones, hrlessMultiplier, cycleGameConfig, applySnapshot, log]);
+
+  // Staging seconds tick (display only). Cleared when leaving the staging phase.
+  useEffect(() => {
+    if (phase !== 'staging') return undefined;
+    const id = setInterval(() => setStagingSeconds((s) => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(id);
+  }, [phase]);
 
   // ── countdown interval ───────────────────────────────────────────────────
   useEffect(() => {
@@ -523,7 +566,8 @@ export default function CycleGameContainer({ onMount } = {}) {
         const vitals = liveGetUserVitals?.(userId);
         inputs[userId] = {
           rpm: cadence && cadence.connected ? cadence.rpm : 0,
-          zoneId: vitals?.zoneId || null
+          zoneId: vitals?.zoneId || null,
+          heartRate: Number.isFinite(vitals?.heartRate) ? vitals.heartRate : null
         };
       });
       const state = controller.tick(inputs);
@@ -615,7 +659,8 @@ export default function CycleGameContainer({ onMount } = {}) {
   // the start jingle is a one-shot SFX layered over the (stopped) music.
   useEffect(() => {
     const s = soundsRef.current || {};
-    if (phase === 'idle') {
+    if (phase === 'idle' || phase === 'staging') {
+      // Lobby track carries through the "to your bikes" buffer ("start your engines").
       playMusic(s.lobby, 'lobby');
     } else if (phase === 'countdown') {
       stopMusic();
@@ -627,8 +672,18 @@ export default function CycleGameContainer({ onMount } = {}) {
     }
   }, [phase, playMusic, stopMusic, pickRacingTrack]);
 
-  // Silence everything when the cycle game unmounts.
-  useEffect(() => () => stopMusic(), [stopMusic]);
+  // Keep the currently-playing track in sync with live master-volume changes.
+  useEffect(() => {
+    if (musicRef.current) {
+      musicRef.current.volume = Math.max(0, Math.min(1, musicVolume * (Number.isFinite(effectiveMaster) ? effectiveMaster : 1)));
+    }
+  }, [effectiveMaster, musicVolume]);
+
+  // Silence everything (and cancel any pending staging) when the game unmounts.
+  useEffect(() => () => {
+    stopMusic();
+    if (stagingTimerRef.current) clearTimeout(stagingTimerRef.current);
+  }, [stopMusic]);
 
   // ── handlers ─────────────────────────────────────────────────────────────
   const onSelectRaceType = useCallback((type) => {
@@ -647,6 +702,7 @@ export default function CycleGameContainer({ onMount } = {}) {
       userId: `ghost:${candidate.raceId}:${p.id}`,
       displayName: `${p.displayName} 👻`,
       ghostSeries: SessionSerializerV3.decodeSeries(p.distanceSeries) || [],
+      ghostHrSeries: SessionSerializerV3.decodeSeries(p.hrSeries) || [],
       ghostIntervalS: candidate.intervalSeconds || 1
     })).filter((r) => r.ghostSeries.length > 0);
     if (riders.length === 0) {
@@ -696,6 +752,7 @@ export default function CycleGameContainer({ onMount } = {}) {
   const onCancel = useCallback(() => {
     const controller = controllerRef.current;
     const raceId = raceMetaRef.current?.raceId || null;
+    if (stagingTimerRef.current) { clearTimeout(stagingTimerRef.current); stagingTimerRef.current = null; }
     if (controller) controller.cancel();
     log.info('cycle_game.cancelled', { raceId });
     controllerRef.current = null;
@@ -725,13 +782,37 @@ export default function CycleGameContainer({ onMount } = {}) {
           onAssign={onAssign}
           onUnassign={onUnassign}
           records={records}
+          onSelectRecord={onSelectRecord}
           ghost={ghost}
           ghostCandidates={ghostCandidates}
           onSelectGhost={onSelectGhost}
           onClearGhost={onClearGhost}
+          masterVolume={master}
+          onSetMasterVolume={setMaster}
           onStart={startRace}
           canStart={canStart}
         />
+        {recapCandidate && (
+          <RaceRecap candidate={recapCandidate} onClose={() => setRecapRaceId(null)} />
+        )}
+      </div>
+    );
+  }
+
+  if (phase === 'staging') {
+    return (
+      <div className="cycle-game-container" data-testid="cycle-game-container">
+        <div className="cycle-game-staging" data-testid="cycle-game-staging">
+          <div className="cycle-game-staging__eyebrow">Riders, to your bikes!</div>
+          <div className="cycle-game-staging__count">{stagingSeconds}</div>
+          <div className="cycle-game-staging__bar">
+            <span style={{ animationDuration: `${stagingBufferMs}ms` }} />
+          </div>
+          <div className="cycle-game-staging__hint">Get on, get ready — the lights are next.</div>
+        </div>
+        <button type="button" data-testid="cycle-game-cancel" className="cycle-game-container__cancel" onClick={onCancel}>
+          Cancel
+        </button>
       </div>
     );
   }
@@ -763,7 +844,9 @@ export default function CycleGameContainer({ onMount } = {}) {
       riderLive[userId] = {
         rpm: cadence && cadence.connected ? cadence.rpm : 0,
         avatarSrc: `/api/v1/static/img/users/${sourceId}`,
-        heartRate: vitals.heartRate ?? null,
+        heartRate: isGhostRider
+          ? (Number.isFinite(riders[userId].heartRate) ? riders[userId].heartRate : null)
+          : (vitals.heartRate ?? null),
         zoneId,
         zoneColor: vitals.zoneColor || null,
         zoneProgress: vitals.progress ?? null,

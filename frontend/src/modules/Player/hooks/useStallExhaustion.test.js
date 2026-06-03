@@ -67,6 +67,20 @@ describe('useStallExhaustion', () => {
     expect(result.current.secondsStalled).toBe(frozen);
   });
 
+  it('reset() restarts a fresh exhaustion window mid-stall so exhausted can flip true again', () => {
+    const { result } = renderHook(() => useStallExhaustion({ stalled: true, thresholdMs: 5000 }));
+    act(() => { vi.advanceTimersByTime(6000); });
+    expect(result.current.exhausted).toBe(true);
+    // Retry path: reset (NOT dismiss) — window restarts even though still stalled.
+    act(() => { result.current.reset(); });
+    expect(result.current.exhausted).toBe(false);
+    expect(result.current.secondsStalled).toBe(0);
+    // Stall persists; the next tick re-arms the window (~1s), then after another
+    // full threshold the banner can return.
+    act(() => { vi.advanceTimersByTime(7000); });
+    expect(result.current.exhausted).toBe(true);
+  });
+
   it('after stall ends and starts again, dismiss state is cleared (counter and exhausted reset)', () => {
     const { result, rerender } = renderHook(
       ({ stalled }) => useStallExhaustion({ stalled, thresholdMs: 5000 }),
