@@ -14,7 +14,10 @@ export default function RaceLayoutManager({ decision, panels }) {
     return (
       <div key={zone} data-testid={`zone-${zone}`}
         className={`race-layout__zone race-layout__zone--${zone}${Panel ? '' : ' race-layout__zone--empty'}`}>
-        {Panel ? <PanelSlot panelId={id}><Panel /></PanelSlot> : null}
+        {/* key on the slot WHERE IT'S USED so an in-zone panel swap remounts the
+            slot and re-fires the race-slot-in enter animation (a key on the slot's
+            own returned root would not). */}
+        {Panel ? <PanelSlot key={id} panelId={id}><Panel /></PanelSlot> : null}
       </div>
     );
   };

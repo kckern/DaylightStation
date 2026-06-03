@@ -32,7 +32,7 @@ export function framePositions(riders) {
  */
 export default function CameraZoom({ riderIds, riders, riderLive = {} }) {
   const framed = framePositions(
-    riderIds.map((id) => ({ id, distanceM: riders[id].cumulativeDistanceM || 0 }))
+    riderIds.map((id) => ({ id, distanceM: riders[id]?.cumulativeDistanceM || 0 }))
   );
 
   // Extremes for the gap connector line (trailing → leading).
