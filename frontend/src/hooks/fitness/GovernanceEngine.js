@@ -27,6 +27,7 @@ const normalizeName = (value) => (typeof value === 'string' ? value.trim().toLow
 // while in the green zone (>= hiRpm). At zero the video pauses until the rider
 // is back in green. Replaces the old 3-second danger grace.
 const CYCLE_HEALTH_MAX_MS = 3000;
+const CYCLE_SUCCESS_PUBLISH_MS = 600;
 const CYCLE_HEALTH_DEPLETE_RATE = 1;    // ms health lost per ms below loRpm
 const CYCLE_HEALTH_REGEN_RATE = 1.5;    // ms health gained per ms in green
 
@@ -2618,7 +2619,9 @@ export class GovernanceEngine {
     // do not re-evaluate. The state-machine's branch conditions stay true
     // (e.g. phaseProgressMs >= maintainSeconds*1000) and would otherwise
     // re-emit the same state_transition every tick.
-    if (active.status === 'success' || active.status === 'failed') {
+    // Terminal challenges are held published for a brief window (success) or
+    // about to clear (failed/abandoned); do not re-process their state machine.
+    if (active.status === 'success' || active.status === 'failed' || active.status === 'abandoned') {
       return;
     }
 
@@ -2867,6 +2870,28 @@ export class GovernanceEngine {
         return;
       }
     }
+  }
+
+  // Keep a freshly-successful cycle challenge published in `status: 'success'`
+  // for one short window before clearing, so the ~200ms-sampled governance
+  // snapshot can surface the success toast + ✅ hold (mirrors the HR challenge,
+  // which likewise does not null the challenge the instant it succeeds).
+  // Returns true once the challenge has been cleared and the next queued.
+  _maybeClearCycleSuccess(challenge, challengeConfig, queueNextChallenge) {
+    const now = this._now();
+    this.challengeState.videoLocked = false;
+    if (!Number.isFinite(challenge.successPublishedAt)) {
+      challenge.successPublishedAt = now;
+    }
+    if (now - challenge.successPublishedAt < CYCLE_SUCCESS_PUBLISH_MS) {
+      this._schedulePulse(100);
+      return false;
+    }
+    this.challengeState.activeChallenge = null;
+    const nextDelay = this._pickIntervalMs(challengeConfig.intervalRangeSeconds);
+    queueNextChallenge(nextDelay);
+    this._schedulePulse(50);
+    return true;
   }
 
   _computeBoostMultiplier(active, ctx) {
@@ -3370,12 +3395,7 @@ export class GovernanceEngine {
               });
             }
 
-            this.challengeState.activeChallenge = null;
-            this.challengeState.videoLocked = false;
-
-            const nextDelay = this._pickIntervalMs(challengeConfig.intervalRangeSeconds);
-            queueNextChallenge(nextDelay);
-            this._schedulePulse(50);
+            this._maybeClearCycleSuccess(challenge, challengeConfig, queueNextChallenge);
             return;
           }
 

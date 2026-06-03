@@ -123,6 +123,13 @@ describe('GovernanceEngine cycle challenge dispatch', () => {
     const history = engine.challengeState.challengeHistory;
     expect(history.at(-1)?.status).toBe('success');
     expect(history.at(-1)?.type).toBe('cycle');
+    // Challenge is held published for CYCLE_SUCCESS_PUBLISH_MS (600ms) before clearing.
+    // At this point (t=106000, successPublishedAt=106000) the hold window has not elapsed.
+    expect(engine.challengeState.activeChallenge?.status).toBe('success');
+
+    // Tick 6: advance past the 600ms hold window → challenge clears.
+    nowValue = 106800;
+    tick(engine, nowValue, { zone: 'warm', rpm: 80 });
     expect(engine.challengeState.activeChallenge).toBeNull();
   });
 
