@@ -8,6 +8,7 @@ import { DaylightMediaPath } from '@/lib/api.mjs';
 import DistanceChart from './panels/DistanceChart.jsx';
 import Rankings from './panels/Rankings.jsx';
 import SpeedoRow from './panels/SpeedoRow.jsx';
+import LapTable from './panels/LapTable.jsx';
 import RaceLayoutManager from './RaceLayoutManager.jsx';
 import './CycleRaceScreen.scss';
 
@@ -63,6 +64,10 @@ export default function CycleRaceScreen({
     ),
     rankings: () => (
       <Rankings riderIds={riderIds} riders={riders} riderLive={riderLive} />
+    ),
+    lapTable: () => (
+      <LapTable riderIds={riderIds} riders={riders}
+        lapSplits={Object.fromEntries(riderIds.map((id) => [id, riders[id].lapSplits || []]))} />
     ),
     ...(showSpeedos ? {
       speedoRow: () => (
