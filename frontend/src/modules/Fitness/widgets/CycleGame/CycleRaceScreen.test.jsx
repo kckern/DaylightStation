@@ -43,6 +43,22 @@ describe('CycleRaceScreen', () => {
     expect(vid.tagName.toLowerCase()).toBe('video');
     expect(vid.getAttribute('src')).toContain('plex/123456');
   });
+  it('renders an officiating-event marker per event on the chart', () => {
+    const events = [
+      { id: 1, type: 'dnf', riderId: 'felix', seriesIndex: 2, distanceM: 900 },
+      { id: 2, type: 'penalty', riderId: 'milo', seriesIndex: 0, distanceM: 0 }
+    ];
+    const { getAllByTestId, getByTestId } = render(<CycleRaceScreen {...props} events={events} />);
+    expect(getByTestId('race-event-markers')).toBeTruthy();
+    expect(getAllByTestId(/^race-event-marker-/)).toHaveLength(2);
+    expect(getByTestId('race-event-marker-dnf')).toBeTruthy();
+    expect(getByTestId('race-event-marker-penalty')).toBeTruthy();
+  });
+  it('ignores events for riders not on the chart', () => {
+    const events = [{ id: 1, type: 'dnf', riderId: 'ghost-nobody', seriesIndex: 1, distanceM: 100 }];
+    const { queryByTestId } = render(<CycleRaceScreen {...props} events={events} />);
+    expect(queryByTestId('race-event-markers')).toBeNull();
+  });
   it('hides the speedometer row when showSpeedos is false', () => {
     const riders = { a: { userId: 'a', displayName: 'A', distanceSeries: [10, 20], cumulativeDistanceM: 20, finishTimeS: null, isGhost: false } };
     const { container } = render(
