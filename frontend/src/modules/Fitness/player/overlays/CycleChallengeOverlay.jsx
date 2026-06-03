@@ -7,6 +7,7 @@ import {
 } from './cycleOverlayVisuals.js';
 import { CycleBaseReqIndicator } from './CycleBaseReqIndicator.jsx';
 import CompletionCountBlocks from './CompletionCountBlocks.jsx';
+import CycleHealthBar from './CycleHealthBar.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 import './CycleChallengeOverlay.scss';
 
@@ -403,19 +404,6 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap, done = false }
           name, boost badge, phase blocks, and RPM readout stack
           without overlap and stay centered regardless of overlay diameter. */}
       <div className="cycle-challenge-overlay__stack">
-        <div
-          className="cycle-challenge-overlay__health-meter"
-          role="meter"
-          aria-label={`Health ${Math.round((cycleHealthPct ?? 1) * 100)} percent`}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={Math.round((cycleHealthPct ?? 1) * 100)}
-        >
-          <div
-            className="cycle-challenge-overlay__health-fill"
-            style={{ width: `${Math.round((cycleHealthPct ?? 1) * 100)}%` }}
-          />
-        </div>
         {totalPhases > 0 && (
           <CompletionCountBlocks
             targetCount={totalPhases}
@@ -435,6 +423,8 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap, done = false }
           <span className="cycle-challenge-overlay__current-rpm-unit">RPM</span>
         </div>
       </div>
+
+      <CycleHealthBar pct={cycleHealthPct ?? 1} />
 
       {showBoostBadge && (
         <div
