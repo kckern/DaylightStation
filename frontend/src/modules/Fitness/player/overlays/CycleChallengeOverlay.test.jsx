@@ -60,10 +60,11 @@ describe('CycleChallengeOverlay — extended UI', () => {
   it('renders a health meter reflecting cycleHealthPct', () => {
     const ch = { ...baseChallenge, cycleState: 'maintain', cycleHealthPct: 0.5 };
     const { container } = render(<CycleChallengeOverlay challenge={ch} />);
-    const meter = container.querySelector('.cycle-challenge-overlay__health-meter');
+    const meter = container.querySelector('.cycle-health-bar');
     expect(meter).toBeTruthy();
-    const fill = container.querySelector('.cycle-challenge-overlay__health-fill');
-    expect(fill.getAttribute('style') || '').toMatch(/width:\s*50%/);
+    const litSegs = container.querySelectorAll('.cycle-health-bar__seg--lit');
+    // 0.5 pct × 10 segments → 5 lit segments
+    expect(litSegs.length).toBe(5);
   });
 
   it('keeps the phase-progress arc (positive indicator)', () => {
@@ -174,7 +175,7 @@ describe('CycleChallengeOverlay — extended UI', () => {
   it('renders (phase arc + health meter visible) when cycleState=locked with cycleHealthPct:0', () => {
     // During a health-lock the engine sets cycleState='locked' and cycleHealthPct=0.
     // getCycleOverlayVisuals returns visible:true for 'locked', so the overlay must
-    // stay mounted showing the empty health meter — NOT early-return.
+    // stay mounted showing the empty health bar — NOT early-return.
     const ch = {
       ...baseChallenge,
       cycleState: 'locked',
@@ -188,10 +189,25 @@ describe('CycleChallengeOverlay — extended UI', () => {
     expect(container.querySelector('.cycle-challenge-overlay')).toBeTruthy();
     // Phase arc (lower hemisphere) must be present.
     expect(container.querySelector('.cycle-challenge-overlay__phase-arc')).toBeTruthy();
-    // Health meter must be present and show 0% fill.
-    const fill = container.querySelector('.cycle-challenge-overlay__health-fill');
-    expect(fill).toBeTruthy();
-    expect(fill.getAttribute('style') || '').toMatch(/width:\s*0%/);
+    // Health bar must be present and show locked state (0 lit segments).
+    const bar = container.querySelector('.cycle-health-bar');
+    expect(bar).toBeTruthy();
+    expect(bar.classList.contains('cycle-health-bar--locked')).toBe(true);
+    expect(container.querySelectorAll('.cycle-health-bar__seg--lit').length).toBe(0);
+  });
+
+  it('renders the segmented health bar (not the old smooth meter)', () => {
+    const challenge = {
+      type: 'cycle', cycleState: 'maintain', status: 'pending',
+      rider: { id: 'felix', name: 'Felix' },
+      currentPhaseIndex: 1, totalPhases: 4,
+      currentPhase: { hiRpm: 70, loRpm: 52 },
+      currentRpm: 68, phaseProgressPct: 0.4, cycleHealthPct: 0.5
+    };
+    const { container } = render(<CycleChallengeOverlay challenge={challenge} />);
+    expect(container.querySelector('.cycle-health-bar')).not.toBeNull();
+    expect(container.querySelectorAll('.cycle-health-bar__seg--lit')).toHaveLength(5);
+    expect(container.querySelector('.cycle-challenge-overlay__health-meter')).toBeNull();
   });
 
   it('does not violate the rules of hooks when toggling visibility', () => {
