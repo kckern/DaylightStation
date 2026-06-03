@@ -44,6 +44,18 @@ describe('raceDirector transient camera', () => {
     const d4 = raceDirector(fire, d3, 19); // event again, but < cooldown(10) since show
     expect(d4.zones.topCenter).not.toBe('cameraZoom');
   });
+
+  it('cooldown is anchored on release: blocked until release + cooldownS', () => {
+    const fire = base({ lapsEnabled: true, fieldSize: 2, events: [{ type: 'LAPPING_IMMINENT' }] });
+    const noev = base({ lapsEnabled: true, fieldSize: 2, events: [] });
+    const d1 = raceDirector(fire, null, 10);          // shown at 10
+    const d2 = raceDirector(noev, d1, 17);            // held 7s ≥ 6 → released at 17
+    expect(d2.zones.topCenter).not.toBe('cameraZoom');
+    const d3 = raceDirector(fire, d2, 26);            // 26 - 17 = 9 < 10 → still blocked
+    expect(d3.zones.topCenter).not.toBe('cameraZoom');
+    const d4 = raceDirector(fire, d3, 27);            // 27 - 17 = 10 ≥ 10 → shown again
+    expect(d4.zones.topCenter).toBe('cameraZoom');
+  });
 });
 
 describe('raceDirector stability', () => {
@@ -54,5 +66,21 @@ describe('raceDirector stability', () => {
     const incumbent = d1.zones.topCenter;
     const d2 = raceDirector(s, d1, 11);
     expect(d2.zones.topCenter).toBe(incumbent); // no thrash on identical input
+  });
+});
+
+describe('raceDirector candidacy loss during dwell', () => {
+  it('drops a panel immediately when it stops being a candidate, even within min-dwell', () => {
+    // laps on → lapTable/ovalTrack eligible; assign, then turn laps off next tick.
+    const on = base({ fieldSize: 2, lapsEnabled: true });
+    const d1 = raceDirector(on, null, 10);
+    // find a zone occupied by a laps-only panel (lapTable or ovalTrack)
+    const lapsPanels = ['lapTable', 'ovalTrack'];
+    const occupied = Object.entries(d1.zones).find(([, id]) => lapsPanels.includes(id));
+    expect(occupied).toBeTruthy();
+    const off = base({ fieldSize: 2, lapsEnabled: false });
+    const d2 = raceDirector(off, d1, 12); // within MIN_DWELL_S(5) of t=10
+    // no laps-only panel may remain on screen
+    Object.values(d2.zones).forEach((id) => expect(lapsPanels).not.toContain(id));
   });
 });
