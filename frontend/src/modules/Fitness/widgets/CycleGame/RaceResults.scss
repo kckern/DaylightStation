@@ -29,9 +29,9 @@
     padding: 12px 18px;
   }
   &__placement {
-    font-family: cg.$cg-display; font-size: 1.5rem; font-weight: 800;
+    @include cg.cg-numeral(cg.$cg-cyan);
+    font-size: 1.5rem;
     color: cg.$cg-muted; min-width: 1.6em; text-align: center;
-    font-variant-numeric: tabular-nums;
   }
   &__avatar { flex-shrink: 0; display: flex; }
   &__name {
@@ -39,25 +39,40 @@
     font-size: 1.15rem; font-weight: 700; letter-spacing: 0.01em;
     display: flex; align-items: center; gap: 8px;
   }
-  &__crown { font-size: 1.1rem; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); }
+  &__crown { font-size: 1.1rem; filter: drop-shadow(0 0 6px rgba(255, 213, 74, 0.8)) drop-shadow(0 2px 4px rgba(0,0,0,0.5)); }
   &__metric {
     font-family: cg.$cg-mono; font-size: 1.15rem; font-weight: 600;
-    color: cg.$cg-accent; font-variant-numeric: tabular-nums;
+    color: cg.$cg-cyan; font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 8px rgba(33, 230, 255, 0.4);
   }
   &__metric--dnf { color: cg.$cg-faint; }
 
   // Medal accents.
   &__row--p1 .race-results__place {
-    border-color: rgba(245, 197, 66, 0.55);
-    background: linear-gradient(180deg, rgba(245, 197, 66, 0.12), cg.$cg-bg-2);
-    box-shadow: 0 0 0 1px rgba(245, 197, 66, 0.3), 0 8px 26px rgba(0, 0, 0, 0.45);
+    border-color: rgba(255, 213, 74, 0.55);
+    background: linear-gradient(180deg, rgba(255, 213, 74, 0.12), cg.$cg-bg-2);
+    box-shadow: 0 0 0 1px rgba(255, 213, 74, 0.3), 0 8px 26px rgba(0, 0, 0, 0.45);
+    .race-results__placement { color: cg.$cg-gold; }
   }
-  &__row--p2 .race-results__place { border-color: rgba(203, 213, 225, 0.4); }
-  &__row--p3 .race-results__place { border-color: rgba(208, 138, 82, 0.45); }
+  &__row--p2 .race-results__place {
+    border-color: rgba(203, 213, 225, 0.4);
+    .race-results__placement { color: cg.$cg-silver; }
+  }
+  &__row--p3 .race-results__place {
+    border-color: rgba(208, 138, 82, 0.45);
+    .race-results__placement { color: cg.$cg-bronze; }
+  }
 
+  // Winner — magenta spotlight + glowing crown.
   &__row.is-winner {
+    .race-results__place {
+      border-color: rgba(255, 45, 149, 0.6);
+      background: linear-gradient(180deg, rgba(255, 45, 149, 0.16), cg.$cg-bg-2);
+      box-shadow: 0 0 0 1px rgba(255, 45, 149, 0.4), 0 0 32px rgba(255, 45, 149, 0.35), 0 8px 26px rgba(0, 0, 0, 0.5);
+    }
     .race-results__placement { color: cg.$cg-gold; font-size: 1.9rem; }
-    .race-results__name { font-size: 1.4rem; }
+    .race-results__name { font-size: 1.4rem; text-shadow: 0 0 14px rgba(255, 45, 149, 0.5); }
+    .race-results__crown { filter: drop-shadow(0 0 10px rgba(255, 213, 74, 0.95)) drop-shadow(0 2px 4px rgba(0,0,0,0.5)); }
     .race-results__metric { color: cg.$cg-gold; font-size: 1.3rem; }
   }
 }
