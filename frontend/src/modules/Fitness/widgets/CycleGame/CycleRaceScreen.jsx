@@ -5,6 +5,7 @@ import CycleSpeedometer from './CycleSpeedometer.jsx';
 import { formatClock } from '@/modules/Fitness/lib/cycleGame/cycleGameLobby.js';
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
 import { LINE_COLORS } from '@/modules/Fitness/lib/cycleGame/lineColors.js';
+import { plotStartIndex } from '@/modules/Fitness/lib/cycleGame/chartTrim.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import './CycleRaceScreen.scss';
 
@@ -258,10 +259,14 @@ export default function CycleRaceScreen({
           {/* area fills (under each lane) */}
           {riderIds.map((id, idx) => {
             const series = riders[id].distanceSeries || [];
-            if (series.length === 0) return null;
-            const linePts = series.map((d, i) => `${xFor(i).toFixed(1)},${yFor(d).toFixed(1)}`).join(' ');
+            // Skip the leading flat-zero run (e.g. a penalty-boxed late start): the
+            // fill begins where the rider first moves. No movement at all → no fill.
+            const start = plotStartIndex(series);
+            if (start < 0) return null;
+            const linePts = series.slice(start).map((d, i) => `${xFor(start + i).toFixed(1)},${yFor(d).toFixed(1)}`).join(' ');
+            const startX = xFor(start).toFixed(1);
             const lastX = xFor(series.length - 1).toFixed(1);
-            const area = `0,${H} ${linePts} ${lastX},${H}`;
+            const area = `${startX},${H} ${linePts} ${lastX},${H}`;
             return (
               <polygon
                 key={`area-${id}`}
@@ -275,7 +280,11 @@ export default function CycleRaceScreen({
           {/* lane lines */}
           {riderIds.map((id, idx) => {
             const series = riders[id].distanceSeries || [];
-            const pts = series.map((d, i) => `${xFor(i).toFixed(1)},${yFor(d).toFixed(1)}`).join(' ');
+            // Line begins at first movement — a rider boxed at the start emerges
+            // from the axis to the right of the origin, never a flat zero line.
+            const start = plotStartIndex(series);
+            if (start < 0) return null;
+            const pts = series.slice(start).map((d, i) => `${xFor(start + i).toFixed(1)},${yFor(d).toFixed(1)}`).join(' ');
             const color = LINE_COLORS[idx % LINE_COLORS.length];
             const isGhost = !!riders[id].isGhost;
             return (
