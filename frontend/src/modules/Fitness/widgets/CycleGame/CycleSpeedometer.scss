@@ -1,3 +1,5 @@
+@use 'cgTokens' as cg;
+
 .cycle-speedometer {
   position: relative;
   display: inline-flex;
@@ -8,14 +10,15 @@
   &__gauge { position: relative; display: flex; align-items: center; justify-content: center; }
 
   &__svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-  &__ring { stroke: #23272f; stroke-width: 3; }
+  &__ring { stroke: cg.$cg-border; stroke-width: 3; }
   &__band { stroke-linecap: butt; }
   &__tick { stroke: rgba(255,255,255,0.4); stroke-width: 1.2; }
   &__tick--major { stroke: rgba(255,255,255,0.8); stroke-width: 2; }
-  &__tick-label { fill: #c2c9d4; font-size: 12px; font-weight: 600; font-family: inherit; }
-  &__needle { stroke: #e2e8f0; stroke-width: 2.5; stroke-linecap: round; }
+  &__tick-label { fill: cg.$cg-muted; font-size: 12px; font-weight: 600; font-family: inherit; }
+  // Cyan telemetry needle with a neon glow.
+  &__needle { stroke: cg.$cg-cyan; stroke-width: 2.5; stroke-linecap: round; filter: drop-shadow(0 0 4px rgba(33, 230, 255, 0.8)); }
   &__needle-group { transition: transform 0.18s ease; }
-  &__hub { fill: #e2e8f0; }
+  &__hub { fill: cg.$cg-cyan; }
 
   // Avatar centered in the gauge.
   &__avatar { position: relative; display: flex; align-items: center; justify-content: center; }
@@ -23,25 +26,27 @@
     position: absolute; right: -8%; bottom: 2%;
     z-index: 10; // above the avatar (its ring/gauge use z-index up to ~6)
     min-width: 1.8em; padding: 0.18em 0.5em;
-    border-radius: 999px; border: 2px solid #0a0b0f;
+    border-radius: 999px; border: 2px solid cg.$cg-bg;
     color: #1a1205; font-weight: 800; font-size: 1.35rem; line-height: 1; text-align: center;
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
   }
 
-  // RPM sits in the lower portion of the gauge, under the avatar.
+  // RPM sits in the lower portion of the gauge, under the avatar — neon numeral.
   &__rpm {
+    @include cg.cg-numeral(cg.$cg-cyan);
     position: absolute; left: 0; right: 0; bottom: 8%;
-    text-align: center; color: #e2e8f0; font-weight: 800; font-size: 1.4rem;
-    pointer-events: none; text-shadow: 0 2px 6px rgba(0,0,0,0.7);
+    text-align: center; color: cg.$cg-text; font-size: 1.4rem;
+    pointer-events: none;
   }
-  &__rpm-unit { color: #8b93a1; font-weight: 500; font-size: 0.8rem; }
+  &__rpm-unit { color: cg.$cg-muted; font-weight: 500; font-size: 0.8rem; font-style: normal; }
 
-  // Odometer sits BELOW the gauge (lower), as its own pill.
+  // Odometer sits BELOW the gauge (lower), as its own cyan telemetry pill.
   &__odometer {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    color: #eef2f8; font-size: 1.5rem; font-weight: 800;
-    background: #05060a; border: 1px solid #2a2e36; border-radius: 8px;
+    font-family: cg.$cg-mono;
+    color: cg.$cg-cyan; font-size: 1.5rem; font-weight: 800;
+    background: cg.$cg-bg; border: 1px solid cg.$cg-border; border-radius: 8px;
     padding: 6px 18px; letter-spacing: 0.01em;
+    box-shadow: 0 0 12px rgba(33, 230, 255, 0.12);
   }
 
   // FINISHED — a rider who crossed the line in a distance race. The gauge is
@@ -54,15 +59,15 @@
     background: radial-gradient(circle at center, rgba(5, 6, 10, 0.78) 0%, rgba(5, 6, 10, 0.35) 70%, transparent 100%);
   }
   &__finished-flag { font-size: 1.8rem; line-height: 1; }
-  &__finished-place { color: #ffd34d; font-weight: 900; font-size: 2rem; line-height: 1; text-shadow: 0 2px 8px rgba(0,0,0,0.8); }
+  &__finished-place { color: cg.$cg-gold; font-weight: 900; font-size: 2rem; line-height: 1; text-shadow: 0 0 12px rgba(255, 213, 74, 0.6), 0 2px 8px rgba(0,0,0,0.8); }
   &__finished-label {
-    color: #eef2f8; font-weight: 800; font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase;
+    color: cg.$cg-text; font-weight: 800; font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase;
   }
 
   // FALSE START — a rider pedalling at the green light. Their meter is locked
   // (no distance) for the penalty window; the gauge still shows real RPM so they
-  // can see pedalling isn't counting.
-  &--penalized &__needle { stroke: #ff5a5a; }
+  // can see pedalling isn't counting. Red is the danger semantic — kept.
+  &--penalized &__needle { stroke: #ff5a5a; filter: drop-shadow(0 0 4px rgba(255, 90, 90, 0.8)); }
   &__penalty {
     position: absolute; inset: 0; z-index: 21;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
