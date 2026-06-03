@@ -43,6 +43,102 @@ describe('CycleRaceEngine — distance race', () => {
   });
 });
 
+describe('CycleRaceEngine — distance finish-line lock', () => {
+  it('freezes a finished rider at exactly goalM; later ticks add no distance', () => {
+    const e = distRace(); // goalM 63, a gains 21/tick, b gains 12/tick
+    e.tick(hotInputs); e.tick(hotInputs); e.tick(hotInputs); // a: 63 at t=15
+    expect(e.getState().riders.a.cumulativeDistanceM).toBe(63);
+    expect(e.getState().riders.a.finishTimeS).toBe(15);
+    e.tick(hotInputs); // a finished → frozen, b advances to 48
+    const s = e.getState();
+    expect(s.riders.a.cumulativeDistanceM).toBe(63); // not 84
+    expect(s.riders.b.cumulativeDistanceM).toBe(48);
+  });
+  it('clamps an overshooting crossing to goalM (no overshoot recorded)', () => {
+    // b crosses on tick 6 (72 >= 63) — must record 63, not 72.
+    const e = distRace();
+    for (let i = 0; i < 6; i++) e.tick(hotInputs);
+    const s = e.getState();
+    expect(s.riders.b.cumulativeDistanceM).toBe(63);
+    expect(s.riders.b.finishTimeS).toBe(30);
+    expect(s.riders.b.distanceSeries[s.riders.b.distanceSeries.length - 1]).toBe(63);
+  });
+  it('records rpm 0 / zone null for a parked finished rider', () => {
+    const e = distRace();
+    e.tick(hotInputs); e.tick(hotInputs); e.tick(hotInputs); // a finished
+    e.tick(hotInputs); // a parked this tick
+    const a = e.getState().riders.a;
+    expect(a.rpm).toBe(0);
+    expect(a.zoneId).toBeNull();
+  });
+  it('freezes a ghost at the line too', () => {
+    const e = new CycleRaceEngine({
+      winCondition: 'distance', goalM: 25, intervalMs: 1000,
+      riders: [{ userId: 'g', ghostSeries: [10, 20, 30, 40], ghostIntervalS: 1 }]
+    });
+    e.tick({}); e.tick({}); e.tick({}); // t=3s → recorded 30 ≥ 25 → clamp 25, finish at 3
+    const s = e.getState();
+    expect(s.riders.g.cumulativeDistanceM).toBe(25);
+    expect(s.riders.g.finishTimeS).toBe(3);
+  });
+});
+
+describe('CycleRaceEngine — rpm + zone series', () => {
+  it('records each tick rpm and zoneId for a live rider', () => {
+    const e = new CycleRaceEngine({
+      winCondition: 'time', timeCapS: 30, intervalMs: 1000, zones: HOT,
+      riders: [{ userId: 'a', wheelCircumferenceM: 2 }]
+    });
+    e.tick({ a: { rpm: 80, zoneId: 'hot', heartRate: 150 } });
+    e.tick({ a: { rpm: 92, zoneId: 'hot', heartRate: 160 } });
+    const a = e.getState().riders.a;
+    expect(a.rpmSeries).toEqual([80, 92]);
+    expect(a.zoneSeries).toEqual(['hot', 'hot']);
+    expect(a.rpm).toBe(92);
+    expect(a.zoneId).toBe('hot');
+  });
+  it('records rpm 0 / zone null when inputs are absent', () => {
+    const e = new CycleRaceEngine({
+      winCondition: 'time', timeCapS: 30, intervalMs: 1000,
+      riders: [{ userId: 'a', wheelCircumferenceM: 2 }]
+    });
+    e.tick({ a: {} });
+    const a = e.getState().riders.a;
+    expect(a.rpmSeries).toEqual([0]);
+    expect(a.zoneSeries).toEqual([null]);
+  });
+});
+
+describe('CycleRaceEngine — ghost rpm + zone replay', () => {
+  it('replays a ghost rpm and zone series sampled at elapsed time', () => {
+    const e = new CycleRaceEngine({
+      winCondition: 'time', timeCapS: 30, intervalMs: 1000,
+      riders: [{
+        userId: 'g',
+        ghostSeries: [10, 20, 30],
+        ghostRpmSeries: [70, 85, 95],
+        ghostZoneSeries: ['warm', 'hot', 'hot'],
+        ghostIntervalS: 1
+      }]
+    });
+    e.tick({}); // t=1s
+    expect(e.getState().riders.g.rpm).toBe(70);
+    expect(e.getState().riders.g.zoneId).toBe('warm');
+    e.tick({}); // t=2s
+    expect(e.getState().riders.g.rpm).toBe(85);
+    expect(e.getState().riders.g.zoneId).toBe('hot');
+  });
+  it('reports rpm 0 / zone null when no rpm/zone series recorded (old record)', () => {
+    const e = new CycleRaceEngine({
+      winCondition: 'time', timeCapS: 30, intervalMs: 1000,
+      riders: [{ userId: 'g', ghostSeries: [10, 20], ghostIntervalS: 1 }]
+    });
+    e.tick({});
+    expect(e.getState().riders.g.rpm).toBe(0);
+    expect(e.getState().riders.g.zoneId).toBeNull();
+  });
+});
+
 describe('CycleRaceEngine — time race', () => {
   it('finishes at time cap and ranks by distance', () => {
     const e = new CycleRaceEngine({

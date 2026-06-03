@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { zoneMultiplierFor, computeDistanceDelta } from './distanceModel.js';
+import { zoneMultiplierFor, zoneColorFor, computeDistanceDelta } from './distanceModel.js';
 
 const ZONES = [
-  { id: 'cool',   distance_multiplier: 0.5 },
-  { id: 'active', distance_multiplier: 1.0 },
-  { id: 'warm',   distance_multiplier: 1.5 },
-  { id: 'hot',    distance_multiplier: 2.0 },
-  { id: 'fire',   distance_multiplier: 3.0 }
+  { id: 'cool',   distance_multiplier: 0.5, color: '#3b82f6' },
+  { id: 'active', distance_multiplier: 1.0, color: '#22c55e' },
+  { id: 'warm',   distance_multiplier: 1.5, color: '#eab308' },
+  { id: 'hot',    distance_multiplier: 2.0, color: '#ef4444' },
+  { id: 'fire',   distance_multiplier: 3.0, color: '#a21caf' }
 ];
 
 describe('zoneMultiplierFor', () => {
@@ -24,6 +24,18 @@ describe('zoneMultiplierFor', () => {
   });
   it('defaults the HR-less multiplier to 1', () => {
     expect(zoneMultiplierFor(null, ZONES)).toBe(1);
+  });
+});
+
+describe('zoneColorFor', () => {
+  it('returns the zone color, case-insensitive', () => {
+    expect(zoneColorFor('hot', ZONES)).toBe('#ef4444');
+    expect(zoneColorFor('HOT', ZONES)).toBe('#ef4444');
+  });
+  it('returns null for no zone or an unknown zone', () => {
+    expect(zoneColorFor(null, ZONES)).toBeNull();
+    expect(zoneColorFor('bogus', ZONES)).toBeNull();
+    expect(zoneColorFor('hot', [])).toBeNull();
   });
 });
 

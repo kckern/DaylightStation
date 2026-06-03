@@ -1,42 +1,87 @@
-// Shared cycle-game design tokens — "Velodrome Broadcast HUD".
-// A pro-cycling broadcast cockpit: near-black surfaces with a radial vignette,
-// per-rider electric lane accents, condensed display type + mono telemetry.
+// Shared cycle-game design tokens — "Arcade Synthwave Race-Day".
+// Deep indigo-black surfaces, neon magenta/cyan chrome, neon-shifted rider lanes,
+// horizon-glow + scanline atmosphere. Roboto Condensed is canon (no new font).
 
-$cg-bg:        #0a0b0f;
-$cg-bg-2:      #0e1016;
-$cg-panel:     #12141b;
-$cg-panel-2:   #181b22;
-$cg-border:    #2a2e36;
-$cg-border-soft: #1c2027;
-$cg-text:      #eef2f8;
-$cg-muted:     #8b93a1;
-$cg-faint:     #5b626e;
-$cg-accent:    #7aa2ff;
-$cg-gold:      #f5c542;
-$cg-silver:    #cbd5e1;
-$cg-bronze:    #d08a52;
+$cg-bg:          #0a0a14; // deep indigo-black
+$cg-bg-2:        #0e0c1a;
+$cg-panel:       #12101f;
+$cg-panel-2:     #1a1730;
+$cg-border:      #2a2440; // violet-tinted, not grey
+$cg-border-soft: #1c1830;
+$cg-text:        #f3f0ff; // cool white
+$cg-muted:       #a79fc4; // AA-checked on $cg-bg
+$cg-faint:       #8a82a8; // AA-checked on $cg-bg
+
+// Brand / chrome accents (reserved — never a rider color)
+$cg-magenta:     #ff2d95; // primary / energy / selection
+$cg-cyan:        #21e6ff; // telemetry / live / GO
+
+// Rider lane identity — green/orange/purple semantics, neon-shifted
+$cg-lane-1:      #5dff9b;
+$cg-lane-2:      #ffb13d;
+$cg-lane-3:      #b072ff;
+
+// Legacy aliases kept so existing consumers don't break mid-migration
+$cg-accent:      $cg-cyan;
+$cg-gold:        #ffd54a;
+$cg-silver:      #cbd5e1;
+$cg-bronze:      #d08a52;
 
 $cg-display: 'Roboto Condensed', system-ui, sans-serif;
-$cg-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+$cg-mono: ui-monospace, SFMono-Regular, Menlo, monospace; // JetBrains Mono is never loaded — don't claim it
 
-// Atmospheric backdrop shared across countdown / race / results.
+// Synthwave atmosphere — horizon glow + scanlines. Used behind every screen.
 @mixin cg-backdrop {
+  position: relative;
   background:
-    radial-gradient(120% 80% at 50% 0%, rgba(122, 162, 255, 0.08), transparent 60%),
-    radial-gradient(100% 100% at 50% 120%, rgba(0, 0, 0, 0.6), transparent 70%),
+    radial-gradient(120% 90% at 50% 118%, rgba(255, 45, 149, 0.22), transparent 60%),
+    radial-gradient(100% 70% at 50% 120%, rgba(33, 230, 255, 0.16), transparent 62%),
+    radial-gradient(140% 100% at 50% -10%, rgba(33, 230, 255, 0.05), transparent 55%),
     $cg-bg;
 }
 
-// Ghost avatar treatment — wrap any avatar in <span class="cg-ghost"> to render
-// it as a recognizable-but-spectral version: the photo goes grayscale, a tinted
-// overlay (default ice-blue) re-colors it via mix-blend. Override --cg-ghost-tint.
+// Faint scanline overlay — apply to a ::before on the backdrop element.
+@mixin cg-scanlines {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.025) 0,
+    rgba(255, 255, 255, 0.025) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  z-index: 0;
+}
+
+// Neon numeral treatment — Roboto Condensed 800 italic, tabular, with glow.
+@mixin cg-numeral($glow: $cg-cyan) {
+  font-family: $cg-display;
+  font-weight: 800;
+  font-style: italic;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 10px rgba($glow, 0.55);
+}
+
+// Condensed uppercase eyebrow.
+@mixin cg-eyebrow {
+  font-family: $cg-display;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: $cg-muted;
+}
+
+// Ghost avatar treatment (unchanged behavior) — grayscale + tint via mix-blend.
 .cg-ghost {
   position: relative;
   display: inline-flex;
   border-radius: 50%;
-
   img { filter: grayscale(1) contrast(0.9) brightness(1.18); }
-
   &::after {
     content: '';
     position: absolute;
@@ -47,14 +92,4 @@ $cg-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
     pointer-events: none;
     z-index: 6;
   }
-}
-
-// Condensed uppercase section/eyebrow label.
-@mixin cg-eyebrow {
-  font-family: $cg-display;
-  font-size: 0.8rem;
-  font-weight: 600;
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-  color: $cg-muted;
 }

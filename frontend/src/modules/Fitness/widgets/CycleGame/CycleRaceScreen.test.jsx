@@ -59,6 +59,23 @@ describe('CycleRaceScreen', () => {
     const { queryByTestId } = render(<CycleRaceScreen {...props} events={events} />);
     expect(queryByTestId('race-event-markers')).toBeNull();
   });
+  it('shows a false-start banner naming penalized riders', () => {
+    const penalized = {
+      ...props,
+      riderLive: {
+        user_3: { ...props.riderLive.user_3 },
+        user_2: { ...props.riderLive.user_2, penalized: true }
+      }
+    };
+    const { getByTestId, queryByTestId, rerender } = render(<CycleRaceScreen {...penalized} />);
+    const banner = getByTestId('cycle-race-penalty-banner');
+    expect(banner.textContent.toUpperCase()).toContain('FALSE START');
+    expect(banner.textContent).toContain('User_2');
+    expect(banner.textContent).not.toContain('User_3');
+    // clears once nobody is penalized
+    rerender(<CycleRaceScreen {...props} />);
+    expect(queryByTestId('cycle-race-penalty-banner')).toBeNull();
+  });
   it('hides the speedometer row when showSpeedos is false', () => {
     const riders = { a: { userId: 'a', displayName: 'A', distanceSeries: [10, 20], cumulativeDistanceM: 20, finishTimeS: null, isGhost: false } };
     const { container } = render(

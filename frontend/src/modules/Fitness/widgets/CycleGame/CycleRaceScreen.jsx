@@ -4,10 +4,10 @@ import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.
 import CycleSpeedometer from './CycleSpeedometer.jsx';
 import { formatClock } from '@/modules/Fitness/lib/cycleGame/cycleGameLobby.js';
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
+import { LINE_COLORS } from '@/modules/Fitness/lib/cycleGame/lineColors.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import './CycleRaceScreen.scss';
 
-const LINE_COLORS = ['#3ddc84', '#ff9f43', '#a66cff'];
 const FALLBACK_AVATAR = '/api/v1/static/img/users/user';
 
 /**
@@ -65,6 +65,12 @@ export default function CycleRaceScreen({
     return () => { if (ro) ro.disconnect(); };
   }, [riderCount, showSpeedos]);
   const clockSeconds = winCondition === 'time' ? Math.max(0, timeCapS - elapsedS) : elapsedS;
+
+  // False-start banner: who is currently serving a hot-start penalty (meter
+  // locked because they were pedalling at the green light).
+  const penalizedNames = riderIds
+    .filter((id) => (riderLive[id] || {}).penalized)
+    .map((id) => riders[id].displayName || id);
 
   // chart scaling
   const maxSeriesLen = Math.max(1, ...riderIds.map((id) => (riders[id].distanceSeries || []).length));
@@ -199,6 +205,15 @@ export default function CycleRaceScreen({
           {winCondition === 'distance' ? `to ${formatDistance(goalM)}` : `${formatDistance(maxDistance)} led`}
         </span>
       </div>
+
+      {penalizedNames.length > 0 && (
+        <div className="cycle-race-screen__penalty-banner" data-testid="cycle-race-penalty-banner" role="alert">
+          <span className="cycle-race-screen__penalty-icon" aria-hidden="true">⛔</span>
+          <span className="cycle-race-screen__penalty-text">
+            False start — {penalizedNames.join(', ')} jumped the gun (meter locked)
+          </span>
+        </div>
+      )}
 
       <div className="cycle-race-screen__top">
       <div className="cycle-race-screen__chart-wrap" ref={chartRef}>
@@ -355,6 +370,9 @@ export default function CycleRaceScreen({
                   progress: live.zoneProgress
                 }}
                 isGhost={!!riders[id].isGhost}
+                finished={!!live.finished}
+                placement={live.placement}
+                penalized={!!live.penalized}
                 size={speedoSize}
               />
             );
