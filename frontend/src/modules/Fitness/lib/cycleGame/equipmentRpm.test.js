@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveRpmLimits, clampCountedRpm } from './equipmentRpm.js';
+import { resolveRpmLimits, clampCountedRpm, rpmDuringGap } from './equipmentRpm.js';
 
 describe('resolveRpmLimits', () => {
   it('uses the equipment max_rpm as the gauge scale', () => {
@@ -24,5 +24,25 @@ describe('clampCountedRpm', () => {
   });
   it('coerces non-finite RPM to 0', () => {
     expect(clampCountedRpm(undefined, null)).toBe(0);
+  });
+});
+
+describe('rpmDuringGap', () => {
+  it('holds the last RPM when the rider was steady/high (abrupt cut = sensor gap)', () => {
+    expect(rpmDuringGap([186, 180, 175])).toBe(175); // 175 ≥ 70% of peak 186 → hold
+  });
+  it('holds when accelerating into the gap', () => {
+    expect(rpmDuringGap([170, 180, 186])).toBe(186);
+  });
+  it('honors zero when the rider was decelerating into the gap (real cooldown)', () => {
+    expect(rpmDuringGap([186, 120, 60])).toBe(0); // 60 < 70% of 186 → cooldown → drop
+    expect(rpmDuringGap([100, 80, 50])).toBe(0);
+  });
+  it('returns 0 with no history or when already at rest', () => {
+    expect(rpmDuringGap([])).toBe(0);
+    expect(rpmDuringGap([0])).toBe(0);
+  });
+  it('holds a single steady reading', () => {
+    expect(rpmDuringGap([150])).toBe(150);
   });
 });
