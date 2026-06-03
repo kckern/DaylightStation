@@ -107,6 +107,11 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
     userZoneProgress
   } = fitnessCtx || {};
 
+  const cycleChallenge = fitnessCtx?.governanceState?.challenge || null;
+  const boostContributions = (cycleChallenge?.type === 'cycle' && cycleChallenge.boostContributions)
+    ? cycleChallenge.boostContributions
+    : null;
+
   const equipmentMap = useMemo(() => {
     const map = {};
     if (Array.isArray(equipment)) {
@@ -166,10 +171,13 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
           zoneColor: effectiveZoneColor,
           heartRate: hrValid ? Math.round(device.heartRate) : null,
           isInactive,
-          progressValue
+          progressValue,
+          boostBadge: boostContributions && Number.isFinite(boostContributions[user?.name])
+            ? `×${(1 + boostContributions[user.name]).toFixed(1)}`
+            : null
         };
       });
-  }, [allUsers, getUserByDevice, heartRateDevices, userCurrentZones, usersConfigRaw, zones, userZoneProgress]);
+  }, [allUsers, getUserByDevice, heartRateDevices, userCurrentZones, usersConfigRaw, zones, userZoneProgress, boostContributions]);
 
   const rpmItems = useMemo(() => {
     const cadenceConfig = deviceConfiguration?.cadence || {};
@@ -241,6 +249,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
               progress={item.progressValue}
               className={item.isInactive ? 'inactive' : ''}
               showIndicator={item.progressValue !== null}
+              boostBadge={item.boostBadge}
             />
           ))}
         </div>
