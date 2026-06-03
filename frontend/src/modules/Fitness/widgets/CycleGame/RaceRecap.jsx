@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import CycleRaceScreen from './CycleRaceScreen.jsx';
 import RaceResults from './RaceResults.jsx';
 import { SessionSerializerV3 } from '@/hooks/fitness/SessionSerializerV3.js';
+import { LINE_COLORS } from '@/modules/Fitness/lib/cycleGame/lineColors.js';
 import getLogger from '@/lib/logging/Logger.js';
 import './RaceRecap.scss';
 
@@ -12,7 +13,6 @@ function recapLog() {
   return _recapLog;
 }
 
-const LINE_COLORS = ['#3ddc84', '#ff9f43', '#a66cff'];
 const REPLAY_TARGET_MS = 12000; // whole race replays in ~12s regardless of length
 
 /**
