@@ -1,20 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { resolveLockScreen } from './resolveLockScreen.js';
 
-const cycleHealthLockChallenge = {
-  type: 'cycle',
-  cycleState: 'locked',
-  lockReason: 'health',
-  status: 'pending'
-};
+const govShown = { show: true, status: 'locked', rows: [{ key: 'a' }], videoLocked: true };
 
-describe('resolveLockScreen', () => {
-  it('cycle health-lock takes precedence even when governance shows a panel', () => {
+describe('resolveLockScreen — cycle owns all lock/fail presentation', () => {
+  it('health lock promotes the cycle overlay (variety cycle-lock)', () => {
     const d = resolveLockScreen({
-      activeChallenge: cycleHealthLockChallenge,
+      activeChallenge: { type: 'cycle', cycleState: 'locked', lockReason: 'health', status: 'pending' },
       governanceDisplay: { show: true, status: 'pending', rows: [] }
     });
-    expect(d.variety).toBe('cycle-health');
+    expect(d.variety).toBe('cycle-lock');
     expect(d.showCycleOverlay).toBe(true);
     expect(d.showGovernanceOverlay).toBe(false);
     expect(d.promoteCycle).toBe(true);
@@ -22,46 +17,53 @@ describe('resolveLockScreen', () => {
     expect(d.videoLocked).toBe(true);
   });
 
-  it('cycle health-lock is detected when governance status is unlocked (the normal case)', () => {
+  it('ramp lock ALSO promotes the cycle overlay (no blank governance panel)', () => {
     const d = resolveLockScreen({
-      activeChallenge: cycleHealthLockChallenge,
-      governanceDisplay: { show: false, status: 'unlocked', rows: [] }
+      activeChallenge: { type: 'cycle', cycleState: 'locked', lockReason: 'ramp', status: 'pending' },
+      governanceDisplay: govShown
     });
-    expect(d.variety).toBe('cycle-health');
-    expect(d.showGovernanceOverlay).toBe(false);
+    expect(d.variety).toBe('cycle-lock');
     expect(d.promoteCycle).toBe(true);
+    expect(d.showGovernanceOverlay).toBe(false);
+    expect(d.videoLocked).toBe(true);
   });
 
-  it('governance lock renders the governance overlay (no cycle promotion)', () => {
+  it('init lock ALSO promotes the cycle overlay', () => {
     const d = resolveLockScreen({
-      activeChallenge: null,
-      governanceDisplay: { show: true, status: 'locked', rows: [{ key: 'a' }], videoLocked: true }
+      activeChallenge: { type: 'cycle', cycleState: 'locked', lockReason: 'init', status: 'pending' },
+      governanceDisplay: govShown
     });
+    expect(d.promoteCycle).toBe(true);
+    expect(d.showGovernanceOverlay).toBe(false);
+  });
+
+  it('terminal fail promotes the cycle overlay (variety cycle-fail)', () => {
+    const d = resolveLockScreen({
+      activeChallenge: { type: 'cycle', status: 'failed' },
+      governanceDisplay: govShown
+    });
+    expect(d.variety).toBe('cycle-fail');
+    expect(d.promoteCycle).toBe(true);
+    expect(d.showGovernanceOverlay).toBe(false);
+  });
+
+  it('never shows the generic governance panel for ANY cycle challenge, even unlocked', () => {
+    const d = resolveLockScreen({
+      activeChallenge: { type: 'cycle', cycleState: 'maintain', status: 'pending' },
+      governanceDisplay: govShown
+    });
+    expect(d.showGovernanceOverlay).toBe(false);
+    expect(d.promoteCycle).toBe(false);
+    expect(d.variety).toBe('none');
+  });
+
+  it('non-cycle governance lock still uses the governance panel', () => {
+    const d = resolveLockScreen({ activeChallenge: null, governanceDisplay: govShown });
     expect(d.variety).toBe('governance');
     expect(d.showGovernanceOverlay).toBe(true);
     expect(d.showCycleOverlay).toBe(false);
     expect(d.promoteCycle).toBe(false);
     expect(d.videoLocked).toBe(true);
-  });
-
-  it('non-health cycle lock (init/ramp) is NOT a cycle-health lock', () => {
-    const d = resolveLockScreen({
-      activeChallenge: { type: 'cycle', cycleState: 'locked', lockReason: 'init', status: 'pending' },
-      governanceDisplay: { show: false, status: 'unlocked' }
-    });
-    expect(d.variety).not.toBe('cycle-health');
-    expect(d.promoteCycle).toBe(false);
-  });
-
-  it('no lock: defaults, governance overlay follows its own show flag', () => {
-    const d = resolveLockScreen({
-      activeChallenge: { type: 'cycle', cycleState: 'maintain', status: 'pending' },
-      governanceDisplay: { show: false, status: 'unlocked' }
-    });
-    expect(d.variety).toBe('none');
-    expect(d.showGovernanceOverlay).toBe(false);
-    expect(d.promoteCycle).toBe(false);
-    expect(d.audioTrack).toBeNull();
   });
 
   it('handles null/empty inputs without throwing', () => {

@@ -8,7 +8,7 @@
  * @param {Object|null} args.activeChallenge - governanceState.challenge snapshot
  * @param {Object|null} args.governanceDisplay - result of useGovernanceDisplay
  * @returns {{
- *   variety: 'none'|'governance'|'cycle-health',
+ *   variety: 'none'|'governance'|'cycle-lock'|'cycle-fail',
  *   showGovernanceOverlay: boolean,
  *   showCycleOverlay: boolean,
  *   promoteCycle: boolean,
@@ -18,38 +18,38 @@
  */
 export function resolveLockScreen({ activeChallenge = null, governanceDisplay = null } = {}) {
   const isCycle = activeChallenge?.type === 'cycle';
-  const isCycleHealthLock = isCycle
-    && activeChallenge?.cycleState === 'locked'
-    && activeChallenge?.lockReason === 'health';
+  const cycleLocked = isCycle && activeChallenge?.cycleState === 'locked';
+  const cycleFailed = isCycle && (activeChallenge?.status === 'failed' || activeChallenge?.status === 'abandoned');
 
-  // Cycle health-lock wins outright: the cycle overlay becomes the promoted lock,
-  // the generic governance panel is suppressed, lock music plays. This precedence
-  // holds even if governance momentarily reports a non-unlocked status (the race
-  // that previously produced a blank panel).
-  if (isCycleHealthLock) {
+  // A cycle challenge owns its own presentation in EVERY state. The generic
+  // governance panel is never shown while a cycle challenge is active — it has
+  // no cycle-aware content and previously rendered as a blank box for non-health
+  // locks (and lingered after recovery). Promote the cycle overlay as a centered
+  // lock stage for any lock reason and on terminal fail.
+  if (isCycle) {
+    const promote = cycleLocked || cycleFailed;
     return {
-      variety: 'cycle-health',
+      variety: promote ? (cycleFailed ? 'cycle-fail' : 'cycle-lock') : 'none',
       showGovernanceOverlay: false,
       showCycleOverlay: true,
-      promoteCycle: true,
-      audioTrack: 'locked',
-      videoLocked: true
+      promoteCycle: promote,
+      audioTrack: promote ? 'locked' : null,
+      videoLocked: promote
     };
   }
 
-  // Governance lock/pending/warning: defer to the existing governanceDisplay decision.
+  // Non-cycle governance lock/pending/warning: defer to governanceDisplay.
   if (governanceDisplay?.show) {
     return {
       variety: 'governance',
       showGovernanceOverlay: true,
       showCycleOverlay: false,
       promoteCycle: false,
-      audioTrack: null, // GovernanceStateOverlay owns its own audio track selection
+      audioTrack: null,
       videoLocked: Boolean(governanceDisplay?.videoLocked)
     };
   }
 
-  // No lock screen active.
   return {
     variety: 'none',
     showGovernanceOverlay: false,
