@@ -237,4 +237,21 @@
       }
     }
   }
+
+  .vital-boost-badge {
+    position: absolute;
+    bottom: -4px;
+    right: -4px;
+    z-index: 3;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: rgba(249, 115, 22, 0.95);
+    color: #1e293b;
+    font-size: 0.7rem;
+    font-weight: 800;
+    line-height: 1.2;
+    letter-spacing: 0.02em;
+    pointer-events: none;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  }
 }
