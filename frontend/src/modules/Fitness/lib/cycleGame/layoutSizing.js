@@ -22,4 +22,16 @@ export function fitScale(content = {}, zone = {}) {
   return Math.min(1, zw / cw, zh / ch);
 }
 
-export default { columnTemplateFor, fitScale };
+// gaugeRowSize: the per-gauge pixel size for the speedo row, derived from the
+// zone box the LAYOUT measured (not the row's own content height — that
+// self-measuring is the thrash loop). Fits N gauges across the width minus gaps,
+// capped by the available height, clamped to [min, max].
+export function gaugeRowSize({ zoneW = 0, zoneH = 0, count = 1, gap = 28, min = 96, max = 280 } = {}) {
+  const n = Math.max(1, count);
+  const byWidth = (zoneW - gap * (n - 1)) / n;
+  const byHeight = zoneH - 50; // room for the odometer pill beneath the gauge
+  const raw = Math.floor(Math.min(byWidth, byHeight));
+  return Math.max(min, Math.min(max, Number.isFinite(raw) && raw > 0 ? raw : min));
+}
+
+export default { columnTemplateFor, fitScale, gaugeRowSize };
