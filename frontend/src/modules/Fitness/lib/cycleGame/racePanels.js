@@ -13,7 +13,10 @@ export const RACE_PANELS = [
   },
   {
     id: 'distanceChart', zones: ['topLeft', 'topCenter'], sizeHint: 'standard', cycles: true,
-    candidacy: (s) => s.fieldSize >= 2,
+    // Shows with competitors (the race), and also solo when there's no lap table
+    // to take the stage — a single climbing line still reads as pace toward the
+    // goal. Only suppressed for a solo race WITH laps (lapTable is the better view).
+    candidacy: (s) => s.fieldSize >= 2 || !s.lapsEnabled,
     priority: (s) => 50 + Math.min(20, (s.leaderGapM || 0) * 0.02), transient: null
   },
   {

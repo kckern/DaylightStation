@@ -21,7 +21,10 @@ describe('racePanels registry', () => {
     expect(panelById('speedoRow').candidacy(snap({ fieldSize: 1, isSolo: true }))).toBe(true);
     expect(panelById('rankings').candidacy(snap({ fieldSize: 1, isSolo: true }))).toBe(false);
     expect(panelById('rankings').candidacy(snap({ fieldSize: 2 }))).toBe(true); // ghost counts
-    expect(panelById('distanceChart').candidacy(snap({ fieldSize: 1, isSolo: true }))).toBe(false);
+    // Solo: chart is suppressed ONLY when laps are on (the lap table takes the
+    // stage). A solo race with no laps still shows the chart as a pace line.
+    expect(panelById('distanceChart').candidacy(snap({ fieldSize: 1, isSolo: true, lapsEnabled: true }))).toBe(false);
+    expect(panelById('distanceChart').candidacy(snap({ fieldSize: 1, isSolo: true, lapsEnabled: false }))).toBe(true);
   });
 
   it('lapTable needs laps and is boosted when solo', () => {
