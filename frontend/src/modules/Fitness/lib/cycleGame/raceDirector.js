@@ -36,19 +36,20 @@ export function raceDirector(snapshot, prevDecision, clock) {
     const shownAt = tr.shownAt;
     let show = false;
     if (wasShowing) {
-      // hold until minHoldS elapses; extend hold if still triggered
+      // hold until minHoldS elapses; extend hold while still triggered
       const heldFor = clock - (shownAt ?? clock);
       show = triggered || heldFor < t.minHoldS;
     } else if (triggered) {
-      // re-fire only if past cooldown since last show ended
-      const lastShown = tr.shownAt ?? -Infinity;
-      show = (clock - lastShown) >= t.cooldownS;
+      // re-fire only once cooldownS has passed since the last RELEASE
+      const since = tr.releasedAt ?? -Infinity;
+      show = (clock - since) >= t.cooldownS;
     }
     if (show) {
       assign(zone, p.id);
-      decision.transient[p.id] = { shownAt: wasShowing ? (shownAt ?? clock) : clock };
+      decision.transient[p.id] = { shownAt: wasShowing ? (shownAt ?? clock) : clock, releasedAt: undefined };
     } else {
-      decision.transient[p.id] = { shownAt: tr.shownAt }; // remember for cooldown
+      // the tick we stop showing IS the release; otherwise carry the prior release forward
+      decision.transient[p.id] = { shownAt: undefined, releasedAt: wasShowing ? clock : tr.releasedAt };
     }
   });
 
@@ -62,8 +63,9 @@ export function raceDirector(snapshot, prevDecision, clock) {
       return;
     }
     const incumbent = prev.zones[zone];
+    const incStillCandidate = scored.some((s) => s.panel.id === incumbent);
     const incumbentDwell = clock - (prev.timers.assignedAt[zone] ?? -Infinity);
-    if (incumbent && incumbent !== panel.id && incumbentDwell < MIN_DWELL_S) {
+    if (incumbent && incStillCandidate && incumbent !== panel.id && incumbentDwell < MIN_DWELL_S) {
       // incumbent still within min dwell — keep it, pool the challenger
       assign(zone, incumbent);
       pools[zone].push({ id: panel.id, score, cycles: panel.cycles });
@@ -89,7 +91,8 @@ export function raceDirector(snapshot, prevDecision, clock) {
     if (!leadCycles || pool.length === 0) { decision.timers.cycleAt[zone] = prev.timers.cycleAt?.[zone] ?? clock; return; }
     const rotation = [lead, ...pool.map((c) => c.id)];
     const cycleStart = prev.timers.cycleAt?.[zone] ?? clock;
-    if (clock - cycleStart >= CYCLE_DWELL_S) {
+    const zoneDwell = clock - (decision.timers.assignedAt[zone] ?? -Infinity);
+    if (clock - cycleStart >= CYCLE_DWELL_S && zoneDwell >= MIN_DWELL_S) {
       const curIdx = rotation.indexOf(prev.zones[zone]);
       const next = rotation[(curIdx + 1) % rotation.length];
       assign(zone, next);

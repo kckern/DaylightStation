@@ -8,7 +8,7 @@ const PHOTO_FINISH_GAP_M = 25;
 
 function progressOf(state) {
   if (state.winCondition === 'distance') {
-    const lead = Math.max(0, ...Object.values(state.riders).map((r) => r.cumulativeDistanceM || 0));
+    const lead = Math.max(0, ...Object.values(state.riders || {}).map((r) => r.cumulativeDistanceM || 0));
     return state.goalM > 0 ? lead / state.goalM : 0;
   }
   return state.timeCapS > 0 ? state.elapsedS / state.timeCapS : 0;
@@ -19,11 +19,10 @@ function nextPhase(prevPhase, started, finished, progress) {
   if (!started) return 'PRE';
   if (prevPhase === 'FINALE') return progress < FINALE_EXIT ? 'MID' : 'FINALE';
   if (progress >= FINALE_ENTER) return 'FINALE';
+  if (prevPhase === 'MID') return 'MID'; // MID is sticky; only FINALE/FINISHED leave it
   if (prevPhase === 'EARLY') return progress >= EARLY_EXIT ? 'MID' : 'EARLY';
-  if (progress < EARLY_ENTER + 1e-9 || progress < EARLY_EXIT) {
-    return prevPhase === 'MID' && progress >= EARLY_EXIT ? 'MID' : 'EARLY';
-  }
-  return 'MID';
+  // first started tick (from PRE)
+  return progress >= EARLY_EXIT ? 'MID' : 'EARLY';
 }
 
 export function deriveRaceSnapshot(state, config = {}, prevSnapshot = null) {
@@ -49,7 +48,10 @@ export function deriveRaceSnapshot(state, config = {}, prevSnapshot = null) {
   });
 
   // Leader + tension metrics.
-  const byDist = [...ids].sort((a, b) => (state.riders[b].cumulativeDistanceM || 0) - (state.riders[a].cumulativeDistanceM || 0));
+  const byDist = [...ids].sort((a, b) => {
+    const dd = (state.riders[b].cumulativeDistanceM || 0) - (state.riders[a].cumulativeDistanceM || 0);
+    return dd !== 0 ? dd : String(a).localeCompare(String(b));
+  });
   const leaderId = byDist[0] ?? null;
   const leaderGapM = byDist.length >= 2
     ? (state.riders[byDist[0]].cumulativeDistanceM || 0) - (state.riders[byDist[1]].cumulativeDistanceM || 0)
