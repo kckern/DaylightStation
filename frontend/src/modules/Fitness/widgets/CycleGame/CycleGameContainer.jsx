@@ -525,12 +525,13 @@ export default function CycleGameContainer({ onMount } = {}) {
     const n = new Date();
     return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
   }, []);
-  // Most-recent first: raceId is YYYYMMDDHHmmss, so lexical-desc = chronological
-  // desc. (The load gives newest *day* first but oldest race first within a day,
-  // so an explicit sort is needed for a true recent-on-top rail.)
+  // Sort by time DESC (most-recent first). raceId is a YYYYMMDDHHmmss timestamp,
+  // so a numeric compare orders chronologically. (The history load gives newest
+  // *day* first but oldest race first within a day, so this explicit sort is what
+  // makes the rail truly recent-on-top.)
   const records = useMemo(
     () => [...ghostCandidates]
-      .sort((a, b) => String(b.raceId).localeCompare(String(a.raceId)))
+      .sort((a, b) => (Number(b.raceId) || 0) - (Number(a.raceId) || 0))
       .slice(0, 12)
       .map((g) => buildRecordRow(g, todayYmd)),
     [ghostCandidates, todayYmd]
