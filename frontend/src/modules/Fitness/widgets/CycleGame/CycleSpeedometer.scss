@@ -43,4 +43,39 @@
     background: #05060a; border: 1px solid #2a2e36; border-radius: 8px;
     padding: 6px 18px; letter-spacing: 0.01em;
   }
+
+  // FINISHED — a rider who crossed the line in a distance race. The gauge is
+  // parked (rpm forced to 0 upstream); this overlay marks them done + placement.
+  &--finished &__gauge { opacity: 0.72; }
+  &__finished {
+    position: absolute; inset: 0; z-index: 20;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 2px; pointer-events: none;
+    background: radial-gradient(circle at center, rgba(5, 6, 10, 0.78) 0%, rgba(5, 6, 10, 0.35) 70%, transparent 100%);
+  }
+  &__finished-flag { font-size: 1.8rem; line-height: 1; }
+  &__finished-place { color: #ffd34d; font-weight: 900; font-size: 2rem; line-height: 1; text-shadow: 0 2px 8px rgba(0,0,0,0.8); }
+  &__finished-label {
+    color: #eef2f8; font-weight: 800; font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase;
+  }
+
+  // FALSE START — a rider pedalling at the green light. Their meter is locked
+  // (no distance) for the penalty window; the gauge still shows real RPM so they
+  // can see pedalling isn't counting.
+  &--penalized &__needle { stroke: #ff5a5a; }
+  &__penalty {
+    position: absolute; inset: 0; z-index: 21;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 1px; pointer-events: none;
+    background: radial-gradient(circle at center, rgba(60, 6, 6, 0.78) 0%, rgba(40, 4, 4, 0.32) 70%, transparent 100%);
+    animation: cg-penalty-pulse 0.6s ease-in-out infinite;
+  }
+  &__penalty-icon { font-size: 1.7rem; line-height: 1; }
+  &__penalty-title { color: #ff6b6b; font-weight: 900; font-size: 1.15rem; line-height: 1; text-transform: uppercase; letter-spacing: 0.04em; }
+  &__penalty-sub { color: #ffd0d0; font-weight: 700; font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase; }
+}
+
+@keyframes cg-penalty-pulse {
+  0%, 100% { opacity: 0.92; }
+  50% { opacity: 1; }
 }

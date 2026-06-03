@@ -43,6 +43,23 @@ describe('CycleRaceScreen', () => {
     expect(vid.tagName.toLowerCase()).toBe('video');
     expect(vid.getAttribute('src')).toContain('plex/123456');
   });
+  it('shows a false-start banner naming penalized riders', () => {
+    const penalized = {
+      ...props,
+      riderLive: {
+        milo: { ...props.riderLive.milo },
+        felix: { ...props.riderLive.felix, penalized: true }
+      }
+    };
+    const { getByTestId, queryByTestId, rerender } = render(<CycleRaceScreen {...penalized} />);
+    const banner = getByTestId('cycle-race-penalty-banner');
+    expect(banner.textContent.toUpperCase()).toContain('FALSE START');
+    expect(banner.textContent).toContain('Felix');
+    expect(banner.textContent).not.toContain('Milo');
+    // clears once nobody is penalized
+    rerender(<CycleRaceScreen {...props} />);
+    expect(queryByTestId('cycle-race-penalty-banner')).toBeNull();
+  });
   it('hides the speedometer row when showSpeedos is false', () => {
     const riders = { a: { userId: 'a', displayName: 'A', distanceSeries: [10, 20], cumulativeDistanceM: 20, finishTimeS: null, isGhost: false } };
     const { container } = render(

@@ -64,6 +64,12 @@ export default function CycleRaceScreen({
   }, [riderCount, showSpeedos]);
   const clockSeconds = winCondition === 'time' ? Math.max(0, timeCapS - elapsedS) : elapsedS;
 
+  // False-start banner: who is currently serving a hot-start penalty (meter
+  // locked because they were pedalling at the green light).
+  const penalizedNames = riderIds
+    .filter((id) => (riderLive[id] || {}).penalized)
+    .map((id) => riders[id].displayName || id);
+
   // chart scaling
   const maxSeriesLen = Math.max(1, ...riderIds.map((id) => (riders[id].distanceSeries || []).length));
   const maxDistance = winCondition === 'distance'
@@ -181,6 +187,15 @@ export default function CycleRaceScreen({
           {winCondition === 'distance' ? `to ${formatDistance(goalM)}` : `${formatDistance(maxDistance)} led`}
         </span>
       </div>
+
+      {penalizedNames.length > 0 && (
+        <div className="cycle-race-screen__penalty-banner" data-testid="cycle-race-penalty-banner" role="alert">
+          <span className="cycle-race-screen__penalty-icon" aria-hidden="true">⛔</span>
+          <span className="cycle-race-screen__penalty-text">
+            False start — {penalizedNames.join(', ')} jumped the gun (meter locked)
+          </span>
+        </div>
+      )}
 
       <div className="cycle-race-screen__top">
       <div className="cycle-race-screen__chart-wrap" ref={chartRef}>
@@ -323,6 +338,7 @@ export default function CycleRaceScreen({
                 isGhost={!!riders[id].isGhost}
                 finished={!!live.finished}
                 placement={live.placement}
+                penalized={!!live.penalized}
                 size={speedoSize}
               />
             );
