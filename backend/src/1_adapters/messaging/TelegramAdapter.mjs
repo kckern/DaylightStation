@@ -65,7 +65,16 @@ export class TelegramAdapter {
         // Only increment errors for network-level failures (not already-handled API errors)
         if (!error._isApiError) {
           this.metrics.errors++;
-          this.logger.error?.('telegram.api.error', { method, error: error.message });
+          // axios throws on 4xx/5xx before we read response.data, so Telegram's actual
+          // reason lives on error.response.data.description — surface it.
+          const description = error.response?.data?.description;
+          const status = error.response?.status;
+          this.logger.error?.('telegram.api.error', {
+            method,
+            error: error.message,
+            ...(description ? { description } : {}),
+            ...(status ? { status } : {}),
+          });
         }
         throw error;
       }
@@ -135,12 +144,28 @@ export class TelegramAdapter {
     // Check if imageSource is a Buffer
     const isBuffer = Buffer.isBuffer(imageSource);
 
+    // Check if imageSource is a remote http(s) URL
+    const isRemoteUrl = typeof imageSource === 'string' && /^https?:\/\//i.test(imageSource);
+
     if (isLocalPath || isBuffer) {
       // Use multipart form upload for local files and buffers
       return this.#sendImageMultipart(numericChatId, imageSource, caption, options);
     }
 
-    // URL or file_id - use standard API call
+    if (isRemoteUrl) {
+      // Telegram fetches remote URLs server-side and rejects some (e.g. OpenFoodFacts
+      // image URLs) with 400 "wrong type of the web page content". We can fetch them
+      // fine, so download the bytes and upload as a multipart buffer instead of handing
+      // Telegram the URL. Falls back to the URL path if our own download fails.
+      try {
+        const buffer = await this.#downloadImage(imageSource);
+        return await this.#sendImageMultipart(numericChatId, buffer, caption, options);
+      } catch (error) {
+        this.logger.warn?.('telegram.image.downloadFallback', { url: imageSource, error: error.message });
+      }
+    }
+
+    // file_id (or remote URL after a failed download) - use standard API call
     const params = {
       chat_id: numericChatId,
       photo: imageSource
@@ -167,6 +192,15 @@ export class TelegramAdapter {
       messageId: result.message_id.toString(),
       ok: true
     };
+  }
+
+  /**
+   * Download a remote image URL into a Buffer.
+   * @private
+   */
+  async #downloadImage(url) {
+    const response = await this.httpClient.get(url, { responseType: 'arraybuffer' });
+    return Buffer.from(response.data);
   }
 
   /**
