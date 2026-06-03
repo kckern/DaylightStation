@@ -392,37 +392,39 @@ function BikeSlot({ bike, person, onPick, lane }) {
         onClick={() => onPick?.(bike)}
         aria-label={filled ? `Change rider for ${bike.name}` : `Assign rider to ${bike.name}`}
       >
-        <RpmDeviceAvatar
-          className="cgh-slot__device"
-          avatarSrc={bike.iconSrc}
-          avatarAlt={bike.name}
-          fallbackSrc={EQUIPMENT_FALLBACK}
-          rpm={rpm}
-          animationDuration={spinDuration}
-          showValue
-          renderValue={(v, isZero) => (isZero ? '' : v)}
-          hideSpinnerWhenZero
-        />
-        {filled && (
-          <span className="cgh-slot__rider-avatar">
-            <CircularUserAvatar
-              name={person.name}
-              avatarSrc={person.avatarSrc}
-              fallbackSrc={FALLBACK_AVATAR}
-              heartRate={Number.isFinite(person.heartRate) ? person.heartRate : undefined}
-              zoneId={person.zoneId || undefined}
-              zoneColor={person.zoneColor || undefined}
-              progress={Number.isFinite(person.progress) ? person.progress : undefined}
-              size={48}
-              showGauge={person.hasHR}
-              showIndicator={false}
-            />
-          </span>
+        <span className="cgh-slot__device-wrap">
+          <RpmDeviceAvatar
+            className="cgh-slot__device"
+            avatarSrc={bike.iconSrc}
+            avatarAlt={bike.name}
+            fallbackSrc={EQUIPMENT_FALLBACK}
+            rpm={rpm}
+            animationDuration={spinDuration}
+            showValue
+            renderValue={(v, isZero) => (isZero ? '' : v)}
+            hideSpinnerWhenZero
+          />
+          {filled && (
+            <span className="cgh-slot__rider-avatar">
+              <CircularUserAvatar
+                name={person.name}
+                avatarSrc={person.avatarSrc}
+                fallbackSrc={FALLBACK_AVATAR}
+                heartRate={Number.isFinite(person.heartRate) ? person.heartRate : undefined}
+                zoneId={person.zoneId || undefined}
+                zoneColor={person.zoneColor || undefined}
+                progress={Number.isFinite(person.progress) ? person.progress : undefined}
+                size={48}
+                showGauge={person.hasHR}
+                showIndicator={false}
+              />
+            </span>
+          )}
+        </span>
+        {!filled && (
+          <span className="cgh-slot__add" aria-hidden="true">+ Add rider</span>
         )}
       </button>
-      {!filled && (
-        <span className="cgh-slot__add" aria-hidden="true">+ Add rider</span>
-      )}
     </div>
   );
 }
