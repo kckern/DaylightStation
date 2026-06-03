@@ -1,16 +1,21 @@
 import { describe, it, expect } from 'vitest';
-import { relativeWhen, buildRecordRow } from './recordRow.js';
+import { relativeDay, compactTime, buildRecordRow } from './recordRow.js';
 
-describe('relativeWhen', () => {
+describe('compactTime', () => {
+  it('compacts a time-of-day, tolerating junk', () => {
+    expect(compactTime('6:12 pm')).toBe('6:12p');
+    expect(compactTime('8:00 am')).toBe('8:00a');
+    expect(compactTime('')).toBe('');
+  });
+});
+
+describe('relativeDay', () => {
   // `todayYmd` is injected (pure — no Date.now()).
   it('labels today / yesterday / older', () => {
-    expect(relativeWhen('2026-06-03', '6:12 pm', '2026-06-03')).toBe('Today 6:12p');
-    expect(relativeWhen('2026-06-02', '7:22 pm', '2026-06-03')).toBe('Yest 7:22p');
-    expect(relativeWhen('2026-05-28', '8:00 am', '2026-06-03')).toBe('May 28 8:00a');
-  });
-  it('tolerates missing/odd input', () => {
-    expect(relativeWhen('unknown', '', '2026-06-03')).toBe('');
-    expect(relativeWhen('2026-06-03', '', '2026-06-03')).toBe('Today');
+    expect(relativeDay('2026-06-03', '2026-06-03')).toBe('Today');
+    expect(relativeDay('2026-06-02', '2026-06-03')).toBe('Yest');
+    expect(relativeDay('2026-05-28', '2026-06-03')).toBe('May 28');
+    expect(relativeDay('unknown', '2026-06-03')).toBe('');
   });
 });
 
@@ -27,7 +32,8 @@ describe('buildRecordRow', () => {
     expect(r.distanceLabel).toBe('1.00 km');
     expect(r.timeLabel).toBe('5:13');
     expect(r.goalColumn).toBe('distance');
-    expect(r.when).toBe('Today 6:12p');
+    expect(r.whenDay).toBe('Today');
+    expect(r.whenTime).toBe('6:12p');
     expect(r.winnerId).toBe('milo');
     expect(r.winnerName).toBe('Milo');
     expect(r.others).toEqual([{ id: 'felix', displayName: 'Felix', avatarSrc: '/b' }]);

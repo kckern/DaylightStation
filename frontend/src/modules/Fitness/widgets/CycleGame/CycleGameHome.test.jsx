@@ -191,7 +191,7 @@ describe('CycleGameHome', () => {
         records={[{
           raceId: '20260602150118', winnerId: 'milo', winnerName: 'Milo',
           winnerAvatar: '/api/v1/static/img/users/milo', others: [],
-          distanceLabel: '3 km', timeLabel: '4:12', goalColumn: 'distance', when: 'Today 3:01p'
+          distanceLabel: '3 km', timeLabel: '4:12', goalColumn: 'distance', whenDay: 'Today', whenTime: '3:01p'
         }]}
       />
     );
@@ -199,14 +199,15 @@ describe('CycleGameHome', () => {
     expect(row).toHaveTextContent('Milo');
     expect(row).toHaveTextContent('3 km');
     expect(row).toHaveTextContent('4:12');
-    expect(row).toHaveTextContent('Today 3:01p');
+    expect(row).toHaveTextContent('Today');
+    expect(row).toHaveTextContent('3:01p');
   });
 
   it('renders the History table: winner, goal-marked metric columns, and when', () => {
     const records = [{
       raceId: 'r1', winnerId: 'milo', winnerName: 'Milo', winnerAvatar: '/a',
       others: [{ id: 'felix', displayName: 'Felix', avatarSrc: '/b' }],
-      distanceLabel: '1.00 km', timeLabel: '5:13', goalColumn: 'distance', when: 'Today 6:12p'
+      distanceLabel: '1.00 km', timeLabel: '5:13', goalColumn: 'distance', whenDay: 'Today', whenTime: '6:12p'
     }];
     const { getByTestId } = render(<CycleGameHome bikes={bikes} people={people} records={records} />);
     const row = getByTestId('record-r1');
@@ -220,7 +221,7 @@ describe('CycleGameHome', () => {
   it('renders an explained placeholder when the result cell is empty', () => {
     const records = [{
       raceId: 'r-noscore', winnerId: 'milo', winnerName: 'Milo', winnerAvatar: '/a', others: [],
-      distanceLabel: '3 km', timeLabel: '', goalColumn: 'distance', when: 'Today'
+      distanceLabel: '3 km', timeLabel: '', goalColumn: 'distance', whenDay: 'Today', whenTime: ''
     }];
     const { getByTitle } = render(
       <CycleGameHome bikes={bikes} people={people} records={records} />
@@ -232,7 +233,7 @@ describe('CycleGameHome', () => {
     const onSelectRecord = vi.fn();
     const records = [{
       raceId: '20260603120000', winnerId: 'milo', winnerName: 'Milo', winnerAvatar: '/a',
-      others: [], distanceLabel: '3 km', timeLabel: '4:12', goalColumn: 'distance', when: 'Today'
+      others: [], distanceLabel: '3 km', timeLabel: '4:12', goalColumn: 'distance', whenDay: 'Today', whenTime: ''
     }];
     const { getByTestId } = render(
       <CycleGameHome bikes={bikes} people={people} records={records} onSelectRecord={onSelectRecord} />
