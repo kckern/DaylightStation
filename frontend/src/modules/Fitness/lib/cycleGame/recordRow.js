@@ -8,33 +8,32 @@
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // Compact a time-of-day label: "6:12 pm" -> "6:12p". Returns '' if unparseable.
-function compactTime(t) {
+export function compactTime(t) {
   const m = String(t || '').match(/^(\d{1,2}:\d{2})\s*([ap])m$/i);
   return m ? `${m[1]}${m[2].toLowerCase()}` : '';
 }
 
 /**
- * Relative "when" label. `todayYmd` is injected (YYYY-MM-DD) so this stays pure
- * and unit-testable — no Date.now() inside.
- * @returns {string} e.g. "Today 6:12p" | "Yest 7:22p" | "May 28 8:00a" | ''
+ * Relative day label. `todayYmd` (YYYY-MM-DD) is injected so this stays pure and
+ * unit-testable — no Date.now() inside. A Date is built only from the injected
+ * integers via Date.UTC, so the result is deterministic.
+ * @returns {string} "Today" | "Yest" | "May 28" | ''
  */
-export function relativeWhen(dayYmd, timeOfDay, todayYmd) {
-  const tt = compactTime(timeOfDay);
+export function relativeDay(dayYmd, todayYmd) {
   if (!dayYmd || dayYmd === 'unknown') return '';
-  if (dayYmd === todayYmd) return `Today ${tt}`.trim();
-  // Yesterday = todayYmd minus one calendar day. Build the Date only from the
-  // injected integers via Date.UTC, so the result is deterministic.
+  if (dayYmd === todayYmd) return 'Today';
   const [y, m, d] = todayYmd.split('-').map(Number);
   const prev = new Date(Date.UTC(y, m - 1, d - 1));
   const yest = `${prev.getUTCFullYear()}-${String(prev.getUTCMonth() + 1).padStart(2, '0')}-${String(prev.getUTCDate()).padStart(2, '0')}`;
-  if (dayYmd === yest) return `Yest ${tt}`.trim();
+  if (dayYmd === yest) return 'Yest';
   const [, mm, dd] = dayYmd.split('-').map(Number);
-  return `${MONTHS[(mm || 1) - 1]} ${dd} ${tt}`.trim();
+  return `${MONTHS[(mm || 1) - 1]} ${dd}`;
 }
 
 /**
  * Build a columnar record row from a ghost candidate (participants sorted
- * winner-first; goalLabel/scoreLabel already formatted).
+ * winner-first; goalLabel/scoreLabel already formatted). The "when" is split into
+ * a day + time so it can stack in a narrow column while showing both.
  */
 export function buildRecordRow(g, todayYmd) {
   const isDistance = g.winCondition === 'distance';
@@ -48,7 +47,8 @@ export function buildRecordRow(g, todayYmd) {
     distanceLabel: isDistance ? g.goalLabel : g.scoreLabel,
     timeLabel: isDistance ? g.scoreLabel : g.goalLabel,
     goalColumn: isDistance ? 'distance' : 'time',
-    when: relativeWhen(g.day, g.timeOfDay, todayYmd)
+    whenDay: relativeDay(g.day, todayYmd),
+    whenTime: compactTime(g.timeOfDay)
   };
 }
 

@@ -684,7 +684,7 @@ export default function CycleGameHome({
         ) : (
           <ol className="cgh-records cgh-records--table">
             <li className="cgh-records__head" aria-hidden="true">
-              <span>Riders</span><span>Distance</span><span>Time</span><span>When</span>
+              <span>Riders</span><span>Dist</span><span>Time</span><span>When</span>
             </li>
             {records.map((rec, i) => (
               <li key={`${rec.raceId || i}`} className="cgh-record">
@@ -693,36 +693,16 @@ export default function CycleGameHome({
                   className="cgh-record__btn"
                   data-testid={`record-${rec.raceId}`}
                   onClick={() => onSelectRecord?.(rec.raceId)}
-                  aria-label={`${rec.winnerName || 'Winner'} won — ${rec.distanceLabel || '—'}, ${rec.timeLabel || '—'}, ${rec.when || ''}`}
+                  aria-label={`${rec.winnerName || 'Winner'} won — ${rec.distanceLabel || '—'}, ${rec.timeLabel || '—'}, ${rec.whenDay || ''} ${rec.whenTime || ''}`}
                 >
                   <span className="cgh-record__riders">
-                    <span className="cgh-record__winner-wrap">
-                      <img
-                        className="cgh-record__winner"
-                        src={rec.winnerAvatar || FALLBACK_AVATAR}
-                        alt={rec.winnerName || 'Winner'}
-                        title={rec.winnerName || ''}
-                        onError={(e) => { e.currentTarget.src = FALLBACK_AVATAR; }}
-                      />
-                      <span className="cgh-record__crown" aria-hidden="true">👑</span>
-                    </span>
+                    <span className="cgh-record__crown" aria-hidden="true">👑</span>
                     <span className="cgh-record__winner-name">{rec.winnerName}</span>
                     {(rec.others || []).length > 0 && (
-                      <span className="cgh-record__others">
-                        {(rec.others || []).slice(0, 3).map((o) => (
-                          <img
-                            key={o.id}
-                            className="cgh-record__other"
-                            src={o.avatarSrc || FALLBACK_AVATAR}
-                            alt={o.displayName}
-                            title={o.displayName}
-                            onError={(e) => { e.currentTarget.src = FALLBACK_AVATAR; }}
-                          />
-                        ))}
-                        {(rec.others || []).length > 3 && (
-                          <span className="cgh-record__more">+{rec.others.length - 3}</span>
-                        )}
-                      </span>
+                      <span
+                        className="cgh-record__more"
+                        title={(rec.others || []).map((o) => o.displayName).join(', ')}
+                      >+{rec.others.length}</span>
                     )}
                   </span>
 
@@ -745,7 +725,10 @@ export default function CycleGameHome({
                     );
                   })}
 
-                  <span className="cgh-record__when">{rec.when}</span>
+                  <span className="cgh-record__when">
+                    <span className="cgh-record__when-day">{rec.whenDay}</span>
+                    <span className="cgh-record__when-time">{rec.whenTime}</span>
+                  </span>
                 </button>
               </li>
             ))}

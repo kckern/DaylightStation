@@ -716,34 +716,74 @@
 .cgh-start-flag { width: 22px; height: 22px; flex-shrink: 0; }
 
 // ── Records rail: avatars + goal chip + score ─────────────────────────────
-.cgh-record {
-  justify-content: space-between;
+// ── History table ──────────────────────────────────────────────────────────
+// Header + each row share ONE grid template so columns align. A value's column
+// declares its kind (distance vs time) — no per-row meaning flip. The result
+// cell is the bright cyan payoff; the goal cell is calmer and carries the flag.
+// Proportional columns (not `auto`) so the numeric/when cells can't starve the
+// riders column on a narrow rail — riders gets a guaranteed share for the name.
+// Distance min fits a flagged "🏁 1.00 km"; when stacks day/time so it stays narrow.
+$cgh-record-cols: minmax(0, 1.4fr) minmax(66px, 1fr) minmax(38px, 0.7fr) minmax(42px, 0.8fr);
+
+.cgh-records__head {
+  display: grid;
+  grid-template-columns: $cgh-record-cols;
   gap: 10px;
+  align-items: center;
+  padding: 0 4px 4px;
+  span { @include t.cg-eyebrow; font-size: 0.6rem; }
+  span:not(:first-child) { text-align: right; }
 }
-.cgh-record__avatars { display: flex; align-items: center; }
-.cgh-record__avatar {
-  width: 28px; height: 28px; border-radius: 50%; object-fit: cover;
-  border: 2px solid t.$cg-panel; background: t.$cg-panel-2;
-  &:not(:first-child) { margin-left: -10px; }
+
+.cgh-record__btn {
+  appearance: none; cursor: pointer; width: 100%;
+  display: grid;
+  grid-template-columns: $cgh-record-cols;
+  gap: 10px;
+  align-items: center;
+  background: transparent; border: none; color: inherit; text-align: left;
+  padding: 6px 4px; border-radius: 12px;
+  &:hover { background: rgba(255, 255, 255, 0.05); }
+  &:focus-visible {
+    outline: 2px solid t.$cg-cyan; outline-offset: 2px;
+    background: rgba(33, 230, 255, 0.06);
+  }
 }
-.cgh-record__stats { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
-.cgh-record__score {
+
+// Riders cell — crowned winner name (prominent) + a muted "+N" for runner-ups.
+// No avatar in the rail: at this width the name is the clearer identity signal,
+// and the Recap shows full avatars.
+.cgh-record__riders { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.cgh-record__crown {
+  flex-shrink: 0; font-size: 0.8rem;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
+}
+.cgh-record__winner-name {
+  flex: 1 1 auto; min-width: 0;
+  font-family: t.$cg-display; font-weight: 700; font-size: 0.92rem; color: t.$cg-text;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cgh-record__more {
+  flex-shrink: 0; color: t.$cg-faint; font-size: 0.72rem; font-weight: 700;
+}
+
+// Metric cells — result (data-goal=false) is bright cyan; goal is calm + flagged.
+.cgh-record__cell {
   @include t.cg-numeral(t.$cg-cyan);
-  font-size: 0.85rem;
-  color: t.$cg-cyan;
+  font-size: 0.82rem; text-align: right; white-space: nowrap; overflow: hidden;
+  display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px;
+  &[data-goal="true"] { color: t.$cg-muted; text-shadow: none; font-style: normal; }
 }
-.cgh-record__score--empty { color: t.$cg-faint; font-style: italic; text-shadow: none; }
+.cgh-record__flag { font-size: 0.68rem; }
+.cgh-record__cell-empty { color: t.$cg-faint; font-style: italic; text-shadow: none; }
 
-// Goal chip — colored by what the goal metric was (neon family).
-.cgh-record__chip {
-  display: inline-flex; align-items: center; gap: 4px;
-  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.02em;
-  padding: 2px 9px; border-radius: 999px;
-  border: 1px solid t.$cg-border; color: t.$cg-text; background: t.$cg-panel-2;
-
-  &[data-kind="distance"] { border-color: rgba(33, 230, 255, 0.5); color: t.$cg-cyan; background: rgba(33, 230, 255, 0.1); }
-  &[data-kind="time"] { border-color: rgba(255, 213, 74, 0.5); color: t.$cg-gold; background: rgba(255, 213, 74, 0.1); }
+// When cell — day over time so both fit in a narrow column.
+.cgh-record__when {
+  display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15;
+  white-space: nowrap; overflow: hidden;
 }
+.cgh-record__when-day { color: t.$cg-muted; font-size: 0.68rem; font-weight: 600; }
+.cgh-record__when-time { font-family: t.$cg-mono; color: t.$cg-faint; font-size: 0.62rem; }
 
 // ── Ghost picker: day columns + two-stage cards ───────────────────────────
 .cgh-picker--ghost .cgh-picker__sheet { width: min(1040px, 95%); }
@@ -859,9 +899,4 @@
   }
 }
 
-.cgh-record__btn {
-  appearance: none; cursor: pointer; width: 100%;
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  background: transparent; border: none; color: inherit; padding: 4px; border-radius: 8px;
-  &:hover { background: rgba(255, 255, 255, 0.05); }
-}
+// .cgh-record__btn is defined with the History table grid above.
