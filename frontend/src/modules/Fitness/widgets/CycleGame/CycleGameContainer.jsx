@@ -10,6 +10,7 @@ import { DaylightMediaPath } from '@/lib/api.mjs';
 import { SessionSerializerV3 } from '@/hooks/fitness/SessionSerializerV3.js';
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
 import { resolveParticipantIdentity } from '@/modules/Fitness/lib/cycleGame/participantIdentity.js';
+import { resolveRpmLimits, clampCountedRpm } from '@/modules/Fitness/lib/cycleGame/equipmentRpm.js';
 import { LINE_COLORS } from '@/modules/Fitness/lib/cycleGame/lineColors.js';
 import { usePersistentVolume } from '@/modules/Fitness/nav/usePersistentVolume.js';
 import CycleGameHome from './CycleGameHome.jsx';
@@ -128,6 +129,9 @@ export default function CycleGameContainer({ onMount } = {}) {
     () => (Array.isArray(equipment) ? equipment : []).filter((e) => e && e.cadence != null),
     [equipment]
   );
+  const bikeById = useMemo(() => new Map(bikes.map((b) => [b.id, b])), [bikes]);
+  const bikeByIdRef = useRef(bikeById);
+  useEffect(() => { bikeByIdRef.current = bikeById; }, [bikeById]);
 
   // Race history + ghost selection (declared early — buildRiders/startRace read them).
   const [pastRaces, setPastRaces] = useState([]); // recent saved race records
@@ -720,8 +724,9 @@ export default function CycleGameContainer({ onMount } = {}) {
         const connected = !!(cadence && cadence.connected);
         if (rider.equipmentId) cadenceConnected[userId] = connected; // ghosts have no equipment
         const vitals = liveGetUserVitals?.(userId);
+        const { abuseMaxRpm } = resolveRpmLimits(bikeByIdRef.current.get(rider.equipmentId) || {});
         inputs[userId] = {
-          rpm: connected ? cadence.rpm : 0,
+          rpm: clampCountedRpm(connected ? cadence.rpm : 0, abuseMaxRpm),
           zoneId: vitals?.zoneId || null,
           heartRate: Number.isFinite(vitals?.heartRate) ? vitals.heartRate : null
         };
@@ -1119,6 +1124,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         multiplier: isFinished ? 1 : zoneMultiplierFor(zoneId, zones, hrlessMultiplier),
         finished: isFinished,
         placement: isFinished ? (placementByUser[userId] ?? null) : null,
+        maxRpm: resolveRpmLimits(bikeById.get(rider.equipmentId) || {}).gaugeMaxRpm,
         // Penalty box: flag + countdown detail. Needle keeps showing real RPM
         // (riderLive.rpm above) so the rider can see they must pedal down to 0.
         penalized: penalizedNow.has(userId),

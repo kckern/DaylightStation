@@ -358,6 +358,7 @@ export default function CycleRaceScreen({
               <CycleSpeedometer
                 key={id}
                 rpm={live.rpm}
+                maxRpm={live.maxRpm}
                 cadenceBands={cadenceBands}
                 distanceMeters={riders[id].cumulativeDistanceM}
                 multiplier={live.multiplier}
