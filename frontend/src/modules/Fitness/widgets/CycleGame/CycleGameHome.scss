@@ -738,6 +738,16 @@ $cgh-accent-strong: #2563eb;
   padding: 2px;
 }
 
+.cgh-ghost-card__confirm {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: $cgh-accent;
+}
+
 .cgh-ghost-card {
   appearance: none; cursor: pointer; text-align: left; width: 100%;
   display: flex; align-items: center; gap: 14px;

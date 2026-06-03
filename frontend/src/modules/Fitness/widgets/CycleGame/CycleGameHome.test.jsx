@@ -218,4 +218,19 @@ describe('CycleGameHome', () => {
     );
     expect(getByTestId('cycle-game-volume-readout').textContent).toBe('Muted');
   });
+
+  it('reveals a confirm hint on the focused ghost card', () => {
+    const candidates = [{
+      raceId: '20260602150118', day: '2026-06-02', timeOfDay: '3:01 pm',
+      participants: [{ id: 'milo', displayName: 'Milo', avatarSrc: '/x' }],
+      goalKind: 'distance', goalLabel: '3 km', scoreKind: 'time', scoreLabel: '4:12'
+    }];
+    const { getByTestId, queryByText, getByText } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} ghostCandidates={candidates} />
+    );
+    fireEvent.click(getByTestId('course-ghost'));        // open the ghost picker
+    expect(queryByText('Tap again to choose')).toBeNull(); // nothing focused yet
+    fireEvent.click(getByTestId('ghost-20260602150118')); // first tap focuses
+    expect(getByText('Tap again to choose')).toBeTruthy();
+  });
 });
