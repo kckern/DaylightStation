@@ -4,6 +4,9 @@
   position: absolute; inset: 0; z-index: 50;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 28px;
+  // Reserve room at the bottom for the on-board rider strip so the centered
+  // stoplight group lifts clear of it (it used to overlap the avatars).
+  padding-bottom: 220px;
   @include cg.cg-backdrop;
   background-color: rgba(6, 7, 10, 0.86);
 

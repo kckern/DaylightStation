@@ -35,6 +35,30 @@ describe('CycleRaceScreen', () => {
     const { container } = render(<CycleRaceScreen {...props} />);
     expect(container.querySelectorAll('[data-testid="race-line"]').length).toBe(2);
   });
+  it('starts a penalty-boxed late starter\'s line to the right of the origin (no flat zero line)', () => {
+    const riders = {
+      // boxed for the first 2 ticks (distance 0), then accelerates away
+      boxed: { userId: 'boxed', displayName: 'Boxed', cumulativeDistanceM: 300, distanceSeries: [0, 0, 150, 300], isGhost: false }
+    };
+    const { container } = render(
+      <CycleRaceScreen winCondition="distance" goalM={1000} elapsedS={4} riders={riders} riderLive={{ boxed: {} }} />
+    );
+    const line = container.querySelector('[data-testid="race-line"]');
+    expect(line).toBeTruthy();
+    const firstX = parseFloat(line.getAttribute('points').trim().split(' ')[0].split(',')[0]);
+    // plotStartIndex anchors at index 1 (the last zero before movement), so the
+    // line must NOT begin at the origin (x=0).
+    expect(firstX).toBeGreaterThan(0);
+  });
+  it('draws no line for a rider who never left the penalty box (all-zero series)', () => {
+    const riders = {
+      stuck: { userId: 'stuck', displayName: 'Stuck', cumulativeDistanceM: 0, distanceSeries: [0, 0, 0], isGhost: false }
+    };
+    const { container } = render(
+      <CycleRaceScreen winCondition="distance" goalM={1000} elapsedS={3} riders={riders} riderLive={{ stuck: {} }} />
+    );
+    expect(container.querySelector('[data-testid="race-line"]')).toBeNull();
+  });
   it('mounts an ambient background video only when a Plex id is set', () => {
     const off = render(<CycleRaceScreen {...props} />);
     expect(off.queryByTestId('cycle-race-bg')).toBeNull();
@@ -82,5 +106,32 @@ describe('CycleRaceScreen', () => {
       <CycleRaceScreen winCondition="distance" goalM={100} elapsedS={2} riders={riders} riderLive={{ a: {} }} showSpeedos={false} />
     );
     expect(container.querySelector('.cycle-race-screen__speedos')).toBeNull();
+  });
+  it('scales each speedometer to the rider\'s per-equipment max RPM', () => {
+    const riders = { a: { userId: 'a', displayName: 'A', distanceSeries: [0], cumulativeDistanceM: 0, finishTimeS: null, isGhost: false } };
+    const { getByText } = render(
+      <CycleRaceScreen winCondition="distance" goalM={1000} elapsedS={1}
+        riders={riders} riderLive={{ a: { rpm: 0, maxRpm: 250 } }} />
+    );
+    // A 250-max gauge labels ticks every 30 RPM → "240" appears; the 120 default never reaches it.
+    expect(getByText('240')).toBeTruthy();
+  });
+  it('shows a medal + finish time on the roster for a finished distance-race rider', () => {
+    const riders = {
+      a: { userId: 'a', displayName: 'Ann', distanceSeries: [1000], cumulativeDistanceM: 1000, finishTimeS: 252, isGhost: false },
+      b: { userId: 'b', displayName: 'Bo', distanceSeries: [600], cumulativeDistanceM: 600, finishTimeS: null, isGhost: false }
+    };
+    const { getByTestId } = render(
+      <CycleRaceScreen winCondition="distance" goalM={1000} elapsedS={260}
+        riders={riders} riderLive={{ a: {}, b: {} }} />
+    );
+    const roster = getByTestId('race-roster');
+    const rows = roster.querySelectorAll('.cycle-race-screen__roster-row');
+    // Finisher Ann shows 1st-place medal + her 4:12 finish time; she's the top row.
+    expect(rows[0].textContent).toContain('🥇');
+    expect(rows[0].textContent).toContain('4:12');
+    // Still-racing Bo shows distance, no medal.
+    expect(rows[1].textContent).toContain('600');
+    expect(rows[1].textContent).not.toContain('🥇');
   });
 });

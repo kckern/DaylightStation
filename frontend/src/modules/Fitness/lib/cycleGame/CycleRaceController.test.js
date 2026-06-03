@@ -87,18 +87,60 @@ describe('CycleRaceController — no RPM-abuse disqualification', () => {
 describe('CycleRaceController — hot-start penalty', () => {
   const toRacing = (cfg) => { const c = new CycleRaceController(cfg); c.startCountdown(); return c; };
 
-  it('disables the meter of a rider already pedalling at the green light', () => {
+  it('boxes a rider pedalling at the green light and reports penalty detail', () => {
     const c = toRacing(distConfig({
       startCountdownS: 0, goalM: 100000, hotStartPenaltyS: 10,
       riders: [{ userId: 'a', wheelCircumferenceM: 2.1 }]
     }));
-    c.tick({ a: { rpm: 60, zoneId: 'hot' } }); // hot start → penalised, no distance
+    c.tick({ a: { rpm: 60, zoneId: 'hot' } }); // hot start → boxed, no distance
+    const s = c.getState();
+    expect(s.engineState.riders.a.cumulativeDistanceM).toBe(0);
+    expect(s.penalized).toContain('a');
+    expect(s.penaltyInfo.a.totalS).toBe(10);
+    expect(s.penaltyInfo.a.remainingS).toBe(5); // 10s − one 5s tick
+    expect(s.penaltyInfo.a.awaitingStop).toBe(false);
+  });
+
+  it('keeps a rider boxed past the timer while they keep pedalling (awaiting RPM 0)', () => {
+    const c = toRacing(distConfig({
+      startCountdownS: 0, goalM: 100000, hotStartPenaltyS: 10,
+      riders: [{ userId: 'a', wheelCircumferenceM: 2.1 }]
+    }));
+    c.tick({ a: { rpm: 60 } }); // remaining 5
+    c.tick({ a: { rpm: 60 } }); // remaining 0
+    c.tick({ a: { rpm: 60 } }); // time served but STILL pedalling → stay boxed
+    const s = c.getState();
+    expect(s.engineState.riders.a.cumulativeDistanceM).toBe(0); // no progress
+    expect(s.penalized).toContain('a');
+    expect(s.penaltyInfo.a.remainingS).toBe(0);
+    expect(s.penaltyInfo.a.awaitingStop).toBe(true);
+  });
+
+  it('clears the box only after the timer AND a return to RPM 0, then distance accrues', () => {
+    const c = toRacing(distConfig({
+      startCountdownS: 0, goalM: 100000, hotStartPenaltyS: 10,
+      riders: [{ userId: 'a', wheelCircumferenceM: 2.1 }]
+    }));
+    c.tick({ a: { rpm: 60 } }); // remaining 5
+    c.tick({ a: { rpm: 60 } }); // remaining 0
+    c.tick({ a: { rpm: 0 } });  // time served + RPM 0 → released (no distance at rest)
+    expect(c.getState().penalized).not.toContain('a');
     expect(c.getState().engineState.riders.a.cumulativeDistanceM).toBe(0);
-    expect(c.getState().penalized).toContain('a');
-    c.tick({ a: { rpm: 60, zoneId: 'hot' } }); // penalty window still consuming
-    expect(c.getState().engineState.riders.a.cumulativeDistanceM).toBe(0);
-    c.tick({ a: { rpm: 60, zoneId: 'hot' } }); // penalty over → distance accrues
+    c.tick({ a: { rpm: 60, zoneId: 'hot' } }); // now pedalling counts
     expect(c.getState().engineState.riders.a.cumulativeDistanceM).toBe(21);
+  });
+
+  it('does NOT release a rider who reaches RPM 0 before the timer is served', () => {
+    const c = toRacing(distConfig({
+      startCountdownS: 0, goalM: 100000, hotStartPenaltyS: 15,
+      riders: [{ userId: 'a', wheelCircumferenceM: 2.1 }]
+    }));
+    c.tick({ a: { rpm: 60 } }); // remaining 10
+    c.tick({ a: { rpm: 0 } });  // remaining 5 — owes time, RPM 0 isn't enough yet
+    const s = c.getState();
+    expect(s.penalized).toContain('a');
+    expect(s.penaltyInfo.a.remainingS).toBe(5);
+    expect(s.penaltyInfo.a.awaitingStop).toBe(false);
   });
 
   it('does not penalise a rider who starts from rest', () => {
@@ -144,5 +186,31 @@ describe('CycleRaceController — time race', () => {
     expect(c.getState().phase).toBe('racing');
     c.tick({ a: { rpm: 60, zoneId: 'hot' } });
     expect(c.getState().phase).toBe('finished');
+  });
+});
+
+describe('CycleRaceController — finishNow (forfeit)', () => {
+  it('marks unfinished non-ghost riders as DNF and ends the race; finishers + ghosts untouched', () => {
+    const c = new CycleRaceController(distConfig({
+      startCountdownS: 0, goalM: 21,
+      riders: [
+        { userId: 'a', wheelCircumferenceM: 2.1 },
+        { userId: 'b', wheelCircumferenceM: 2.1 },
+        { userId: 'g', ghostSeries: [2000], ghostIntervalS: 1 }
+      ]
+    }));
+    c.startCountdown();
+    // One tick: 'a' crosses the 21m line (finishes); 'b' barely moves; ghost replays.
+    c.tick({ a: { rpm: 60, zoneId: 'hot' }, b: { rpm: 1 } });
+    const s = c.finishNow();
+    expect(s.phase).toBe('finished');
+    expect(s.dnf).toContain('b');     // unfinished real rider → forfeit
+    expect(s.dnf).not.toContain('a'); // already finished → not a forfeit
+    expect(s.dnf).not.toContain('g'); // ghost → never forfeits
+  });
+
+  it('is a no-op when not racing', () => {
+    const c = new CycleRaceController(distConfig({ startCountdownS: 3 }));
+    expect(c.finishNow().phase).toBe('staged');
   });
 });

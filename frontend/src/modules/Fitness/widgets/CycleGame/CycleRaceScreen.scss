@@ -152,6 +152,8 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   &__roster-metric { font-family: cg.$cg-mono; font-weight: 700; font-size: 0.95rem; color: cg.$cg-text; }
+  &__roster-row.is-finished { background: rgba(255, 213, 74, 0.08); border-radius: 8px; }
+  &__roster-row.is-finished &__roster-metric { color: cg.$cg-gold; }
 
   // ── Speedometers ──────────────────────────────────────────────────────────
   // Reserved bottom band; ALWAYS a single row (gauges scale down to fit, never
