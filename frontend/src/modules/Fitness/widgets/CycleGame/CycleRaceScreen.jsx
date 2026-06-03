@@ -67,7 +67,7 @@ export default function CycleRaceScreen({
         winCondition={winCondition} goalM={goalM} events={events} />
     ),
     rankings: () => (
-      <Rankings riderIds={riderIds} riders={riders} riderLive={riderLive} />
+      <Rankings riderIds={riderIds} riders={riders} riderLive={riderLive} winCondition={winCondition} />
     ),
     lapTable: () => (
       <LapTable riderIds={riderIds} riders={riders}

@@ -14,10 +14,12 @@ export class CycleRaceController {
     this.engine = null;
     this.dnf = new Set();
     this._idle = new Map();
-    // Hot-start penalty: a rider already pedalling at the green light has their
-    // RPM meter disabled for this many seconds (no jumping the gun). 0 = off.
+    // Hot-start penalty ("penalty box"): a rider already pedalling at the green
+    // light has their meter disabled (no distance). They leave the box only once
+    // BOTH the configured timer has elapsed AND they have returned to RPM 0 — so
+    // someone who keeps pedalling stays boxed indefinitely. 0 = off.
     this.hotStartPenaltyS = Number.isFinite(config.hotStartPenaltyS) ? config.hotStartPenaltyS : 0;
-    this._penalty = new Map(); // userId -> remaining penalty seconds
+    this._penalty = new Map(); // userId -> remaining penalty seconds (0 = time served, awaiting RPM 0)
     this._firstTick = true;
     // Ghost riders replay a recording — they are exempt from idle/DNF and the
     // hot-start penalty (neither applies to a replay).
@@ -75,22 +77,45 @@ export class CycleRaceController {
       const input = inputs[userId] || {};
       const rpm = Number.isFinite(input.rpm) ? input.rpm : 0;
 
-      // Hot-start penalty window: meter disabled (no distance) while it lasts.
-      let penaltyLeft = this._penalty.get(userId) || 0;
-      const penalized = penaltyLeft > 0;
-      if (penalized) this._penalty.set(userId, Math.max(0, penaltyLeft - intervalS));
+      // Penalty box: meter disabled (no distance) until BOTH the timer is served
+      // AND the rider has returned to RPM 0. Keep pedalling → stay boxed. The
+      // timer counts down every tick; once at 0 the gate is "are you at rest?".
+      let boxed = this._penalty.has(userId);
+      if (boxed) {
+        const remaining = Math.max(0, (this._penalty.get(userId) || 0) - intervalS);
+        if (remaining <= 0 && rpm === 0) {
+          this._penalty.delete(userId); // time served + at rest → released this tick
+          boxed = false;
+        } else {
+          this._penalty.set(userId, remaining);
+        }
+      }
 
       const nextIdle = rpm > 0 ? 0 : (this._idle.get(userId) || 0) + intervalS;
       this._idle.set(userId, nextIdle);
       const finished = before.riders[userId].finishTimeS != null;
       if (!finished && nextIdle >= this.raceIdleDnfS) this.dnf.add(userId);
 
-      filtered[userId] = (this.dnf.has(userId) || penalized)
+      filtered[userId] = (this.dnf.has(userId) || boxed)
         ? { rpm: 0, zoneId: input.zoneId ?? null }
         : input;
     }
     this.engine.tick(filtered);
     if (this._isFinished()) this.phase = 'finished';
+    return this.getState();
+  }
+
+  // Operator-driven end: mark every non-ghost rider who hasn't crossed the line
+  // as a forfeit (DNF) and end the race. Distinct from cancel() — the race is
+  // finalized and saved, not discarded. No-op outside the racing phase.
+  finishNow() {
+    if (this.phase !== 'racing' || !this.engine) return this.getState();
+    const s = this.engine.getState();
+    Object.values(s.riders).forEach((r) => {
+      if (this.ghosts.has(r.userId)) return;
+      if (r.finishTimeS == null) this.dnf.add(r.userId);
+    });
+    this.phase = 'finished';
     return this.getState();
   }
 
@@ -113,11 +138,22 @@ export class CycleRaceController {
   }
 
   getState() {
+    // Every rider still in the box is "penalized" — including those whose timer
+    // is served but who are still pedalling (remaining 0, awaiting RPM 0).
+    const penaltyInfo = {};
+    for (const [id, remaining] of this._penalty.entries()) {
+      penaltyInfo[id] = {
+        remainingS: Math.max(0, remaining),
+        totalS: this.hotStartPenaltyS,
+        awaitingStop: remaining <= 0
+      };
+    }
     return {
       phase: this.phase,
       countdownRemaining: this.countdownRemaining,
       dnf: [...this.dnf],
-      penalized: [...this._penalty.entries()].filter(([, s]) => s > 0).map(([id]) => id),
+      penalized: [...this._penalty.keys()],
+      penaltyInfo,
       engineState: this.engine ? this.engine.getState() : null
     };
   }

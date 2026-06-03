@@ -45,6 +45,7 @@ export default function SpeedoRow({ riderIds, riders, riderLive, cadenceBands })
           <CycleSpeedometer
             key={id}
             rpm={live.rpm}
+            maxRpm={live.maxRpm}
             cadenceBands={cadenceBands}
             distanceMeters={riders[id].cumulativeDistanceM}
             multiplier={live.multiplier}
@@ -60,6 +61,9 @@ export default function SpeedoRow({ riderIds, riders, riderLive, cadenceBands })
             finished={!!live.finished}
             placement={live.placement}
             penalized={!!live.penalized}
+            penaltyRemainingS={live.penaltyRemainingS}
+            penaltyTotalS={live.penaltyTotalS}
+            penaltyAwaitingStop={!!live.penaltyAwaitingStop}
             size={speedoSize}
           />
         );

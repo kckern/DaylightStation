@@ -111,6 +111,18 @@ describe('CycleGameHome', () => {
     expect(onAssign).toHaveBeenCalledWith('tricycle', 'felix');
   });
 
+  it('opens the rider picker when the add-rider hint (anywhere in the slot) is clicked', () => {
+    const { getByTestId, queryByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} />
+    );
+    expect(queryByTestId('rider-picker')).toBeNull();
+    // Click the "+ Add rider" hint specifically — the whole slot must be the target.
+    const addHint = getByTestId('bike-tricycle').querySelector('.cgh-slot__add');
+    expect(addHint).toBeTruthy();
+    fireEvent.click(addHint);
+    expect(getByTestId('rider-picker')).toBeTruthy();
+  });
+
   it('clears an assigned rider via the picker Clear tile', () => {
     const onUnassign = vi.fn();
     const { getByTestId } = render(
@@ -241,6 +253,10 @@ describe('CycleGameHome', () => {
     fireEvent.click(getByTestId('record-20260603120000'));
     expect(onSelectRecord).toHaveBeenCalledWith('20260603120000');
   });
+
+  // NOTE: the History redesign replaced rail avatars with a crowned winner name
+  // (ghost faces now live in the Recap), so the former "ghost avatars in a record"
+  // tint test was removed — the rail no longer renders .cgh-record__avatar.
 
   it('closes the rider picker on Escape', () => {
     const { getByTestId, queryByTestId } = render(
