@@ -113,8 +113,9 @@ describe('CycleRaceScreen', () => {
       <CycleRaceScreen winCondition="distance" goalM={1000} elapsedS={1}
         riders={riders} riderLive={{ a: { rpm: 0, maxRpm: 250 } }} />
     );
-    // A 250-max gauge labels ticks every 30 RPM → "240" appears; the 120 default never reaches it.
-    expect(getByText('240')).toBeTruthy();
+    // A 250-max gauge scales tick spacing (label every 75) → "225" appears; the
+    // 120 default (labels to 120) never reaches it.
+    expect(getByText('225')).toBeTruthy();
   });
   it('shows a medal + finish time on the roster for a finished distance-race rider', () => {
     const riders = {
