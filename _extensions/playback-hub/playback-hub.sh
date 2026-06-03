@@ -16,6 +16,8 @@ REFRESH_INTERVAL=300       # seconds between queue refreshes (full playlist re-f
 WATCHDOG_INTERVAL=5        # seconds between mpv liveness checks (tight respawn)
 SCHEDULE_TICK_INTERVAL=30  # seconds between scheduled-fire checks
 SELFCHECK_INTERVAL=300     # seconds between self-check (missed fires, orphans)
+CONNECT_CHECK_INTERVAL=60  # seconds between BT connectivity checks for schedule-active private headsets
+CONNECT_MISS_ALERT=5       # consecutive failed reconnects (~CONNECT_MISS_ALERT*CONNECT_CHECK_INTERVAL s) before alerting
 BT_WAKE_TIMEOUT=60         # max seconds to wait for BT after HA turn_on
 DUPE_FIRE_WINDOW=60        # window in which a scheduled time matches "now"
 LAZY_PRIME_COUNT=5         # tracks to download synchronously before starting mpv
@@ -505,6 +507,93 @@ selfcheck_loop() {
     done
 }
 
+# connectivity_loop — proactive Bluetooth self-heal for private headsets.
+#
+# The gdbus monitor only reacts to a headset connecting *itself*. If a bonded
+# headset is powered on but its adapter has silently dropped PSCAN (the Intel
+# BT-flapping failure that left "red" dead), the headset's reconnect pages go
+# unanswered: no event, no recovery, no alert — the operator becomes the
+# monitor. This loop closes that gap. For each PRIVATE device that is inside an
+# active schedule window (i.e. the hub *wants* it playing now) but is not
+# connected, it:
+#   1) heals the adapter's PSCAN if missing (power-cycle over D-Bus),
+#   2) issues an OUTBOUND connect — works even with PSCAN dead, because the hub
+#      pages the headset instead of waiting to be paged; the gdbus handler then
+#      starts playback on the resulting Connected event (we do NOT play here),
+#   3) after CONNECT_MISS_ALERT consecutive failures (~5 min) dispatches a
+#      single warning alert so a truly unreachable headset surfaces instead of
+#      sitting silent.
+# Reconnects are gated to schedule windows so we never hammer a headset the hub
+# has no reason to be playing (no-schedule slots, or off-hours). The alert
+# routes per alerts.on_bt_reconnect_fail in devices.yml ("log" default, or
+# "notify" for an HA phone push).
+connectivity_loop() {
+    while true; do
+        sleep "$CONNECT_CHECK_INTERVAL"
+        local count idx
+        count=$(jq '.devices | length' "$CONFIG_FILE" 2>/dev/null) || continue
+        for ((idx=0; idx<count; idx++)); do
+            local device_json slot mac name cls tag dir miss_file alert_file
+            device_json=$(jq -c ".devices[$idx]" "$CONFIG_FILE" 2>/dev/null) || continue
+            cls=$(device_class "$device_json")
+            [[ "$cls" == "private" ]] || continue
+            slot=$(jq -r '.slot' <<< "$device_json")
+            mac=$(jq -r '.mac'  <<< "$device_json")
+            name=$(jq -r '.name // "device"' <<< "$device_json")
+            [[ -z "$mac" || "$mac" == null ]] && continue
+            tag=$(device_tag "$slot" "$mac" "$name")
+            dir=$(slot_dir "$slot")
+            miss_file="$dir/.connect-misses"
+            alert_file="$dir/.connect-alerted"
+
+            # Only the hub's "should be playing now" windows drive proactive
+            # reconnects. Outside any window: clear state and leave it alone.
+            if ! active_schedule_json "$device_json" >/dev/null 2>&1; then
+                rm -f "$miss_file" "$alert_file" 2>/dev/null || true
+                continue
+            fi
+
+            # Already linked → healthy; clear counters and move on.
+            if bt_connected "$mac"; then
+                rm -f "$miss_file" "$alert_file" 2>/dev/null || true
+                continue
+            fi
+
+            # Disconnected during an active window → heal adapter + reconnect.
+            local path
+            if path=$(device_path_for_mac "$mac"); then
+                heal_adapter_pscan "$mac" "$tag" || true
+                log "$tag" "schedule-active but disconnected — attempting outbound reconnect"
+                timeout 25 busctl --system call org.bluez "$path" \
+                    org.bluez.Device1 Connect 2>/dev/null || true
+                sleep 3
+            else
+                log "$tag" "schedule-active but no BlueZ device object for $mac (unpaired?)"
+            fi
+
+            if bt_connected "$mac"; then
+                log "$tag" "reconnect succeeded"
+                logev "$tag" bt.reconnect_ok mac="$mac"
+                rm -f "$miss_file" "$alert_file" 2>/dev/null || true
+                continue
+            fi
+
+            # Still down — bump the miss counter; alert once per outage streak.
+            local misses=0
+            [[ -f "$miss_file" ]] && misses=$(cat "$miss_file" 2>/dev/null || echo 0)
+            [[ "$misses" =~ ^[0-9]+$ ]] || misses=0
+            misses=$((misses + 1))
+            echo "$misses" > "$miss_file"
+            logev "$tag" bt.reconnect_fail mac="$mac" misses="$misses"
+            if (( misses >= CONNECT_MISS_ALERT )) && [[ ! -f "$alert_file" ]]; then
+                dispatch_alert warning bt_reconnect_fail \
+                    "$name (slot $slot) is scheduled to play but unreachable for ~$((misses*CONNECT_CHECK_INTERVAL/60)) min — headset off, out of range, or BT fault"
+                : > "$alert_file"
+            fi
+        done
+    done
+}
+
 # scheduled_loop — background tick (every SCHEDULE_TICK_INTERVAL) that
 # fires matching `scheduled:` entries and handles auto-stop. Restart-safe:
 # re-reads .scheduled-state.json each tick so we never double-fire today.
@@ -760,6 +849,39 @@ media_control_connected() {
     local output
     output=$(busctl --system get-property org.bluez "$path" org.bluez.MediaControl1 Connected 2>/dev/null || true)
     [[ "$output" == "b true" ]]
+}
+
+# True (0) iff BlueZ reports the device's Device1.Connected as true. Unlike
+# media_control_connected (AVRCP), this is the link-level connection state used
+# by the gdbus monitor — the right signal for "is the headset actually linked".
+bt_connected() {
+    local mac="$1" path
+    path=$(device_path_for_mac "$mac") || return 1
+    [[ "$(busctl --system get-property org.bluez "$path" org.bluez.Device1 Connected 2>/dev/null)" == "b true" ]]
+}
+
+# Heal a controller stuck without PSCAN (page scan). Failure mode: a bonded
+# headset can no longer reconnect because its Intel adapter silently stopped
+# accepting incoming pages (PSCAN flag gone). The service user can't run
+# `hciconfig piscan` (needs root), but power-cycling the adapter over D-Bus —
+# bluetoothd runs privileged — re-inits it and restores PSCAN. Safe because
+# each adapter hosts exactly one headset and we only call this when that
+# headset is already disconnected. Returns 0 if a heal was performed.
+heal_adapter_pscan() {
+    local mac="$1" tag="$2" path hci
+    path=$(device_path_for_mac "$mac") || return 1
+    hci="${path#/org/bluez/}"; hci="${hci%%/*}"   # /org/bluez/hci3/dev_.. -> hci3
+    [[ "$hci" == hci* ]] || return 1
+    # PSCAN present → adapter healthy, nothing to do.
+    hciconfig "$hci" 2>/dev/null | grep -qw PSCAN && return 1
+    log "$tag" "adapter $hci missing PSCAN — power-cycling over D-Bus to restore page scan"
+    logev "$tag" bt.adapter_heal hci="$hci"
+    local apath="/org/bluez/$hci"
+    busctl --system set-property org.bluez "$apath" org.bluez.Adapter1 Powered b false 2>/dev/null || true
+    sleep 2
+    busctl --system set-property org.bluez "$apath" org.bluez.Adapter1 Powered b true 2>/dev/null || true
+    sleep 2
+    return 0
 }
 
 # Resolve the adapter BD address for a paired headset MAC. The evdev
@@ -1615,6 +1737,7 @@ stop_all() {
     [[ -n "${WATCHDOG_PID:-}" ]]  && kill "$WATCHDOG_PID"  2>/dev/null || true
     [[ -n "${SCHEDULED_PID:-}" ]] && kill "$SCHEDULED_PID" 2>/dev/null || true
     [[ -n "${SELFCHECK_PID:-}" ]] && kill "$SELFCHECK_PID" 2>/dev/null || true
+    [[ -n "${CONNECTIVITY_PID:-}" ]] && kill "$CONNECTIVITY_PID" 2>/dev/null || true
 
     local count idx
     count=$(jq '.devices | length' "$CONFIG_FILE")
@@ -2129,6 +2252,11 @@ monitor() {
     # Start self-check loop (missed fires, override orphans, stuck armed flags)
     selfcheck_loop &
     SELFCHECK_PID=$!
+
+    # Start BT connectivity self-heal loop: proactive reconnect + PSCAN heal +
+    # alert for schedule-active private headsets the gdbus monitor can't see.
+    connectivity_loop &
+    CONNECTIVITY_PID=$!
 
     while read -r line; do
         for dbus_id in "${!dbus_to_slot[@]}"; do
