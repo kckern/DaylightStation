@@ -83,4 +83,13 @@ describe('CycleRaceScreen', () => {
     );
     expect(container.querySelector('.cycle-race-screen__speedos')).toBeNull();
   });
+  it('scales each speedometer to the rider\'s per-equipment max RPM', () => {
+    const riders = { a: { userId: 'a', displayName: 'A', distanceSeries: [0], cumulativeDistanceM: 0, finishTimeS: null, isGhost: false } };
+    const { getByText } = render(
+      <CycleRaceScreen winCondition="distance" goalM={1000} elapsedS={1}
+        riders={riders} riderLive={{ a: { rpm: 0, maxRpm: 250 } }} />
+    );
+    // A 250-max gauge labels ticks every 30 RPM → "240" appears; the 120 default never reaches it.
+    expect(getByText('240')).toBeTruthy();
+  });
 });
