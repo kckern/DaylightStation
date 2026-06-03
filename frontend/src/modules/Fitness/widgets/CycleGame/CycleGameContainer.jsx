@@ -9,6 +9,7 @@ import { playSound } from '@/modules/Fitness/lib/cycleGame/playSound.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import { SessionSerializerV3 } from '@/hooks/fitness/SessionSerializerV3.js';
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
+import { buildRecordRow } from '@/modules/Fitness/lib/cycleGame/recordRow.js';
 import { usePersistentVolume } from '@/modules/Fitness/nav/usePersistentVolume.js';
 import CycleGameHome from './CycleGameHome.jsx';
 import CountdownStoplight from './CountdownStoplight.jsx';
@@ -469,17 +470,16 @@ export default function CycleGameContainer({ onMount } = {}) {
     }).filter(Boolean);
   }, [pastRaces]);
 
-  // Records rail rows: avatars of the field + goal chip + score (both metrics).
+  // History table rows: winner + both metric columns + which is the goal + when.
+  // "today" is computed once here (the container may read the clock); recordRow
+  // helpers stay pure by taking it as an argument.
+  const todayYmd = useMemo(() => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+  }, []);
   const records = useMemo(
-    () => ghostCandidates.slice(0, 12).map((g) => ({
-      raceId: g.raceId,
-      avatars: g.participants.slice(0, 4).map((p) => ({ id: p.id, src: p.avatarSrc, name: p.displayName })),
-      goalKind: g.goalKind,
-      goalLabel: g.goalLabel,
-      scoreKind: g.scoreKind,
-      scoreLabel: g.scoreLabel
-    })),
-    [ghostCandidates]
+    () => ghostCandidates.slice(0, 12).map((g) => buildRecordRow(g, todayYmd)),
+    [ghostCandidates, todayYmd]
   );
 
   // Race Recap overlay — replay a saved race's chart from the records rail.
