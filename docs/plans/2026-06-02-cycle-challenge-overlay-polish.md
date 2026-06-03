@@ -10,10 +10,14 @@
 
 **Spec:** `docs/_wip/plans/2026-06-02-cycle-challenge-overlay-polish-design.md`
 
-**Conventions for this plan:**
-- Run a single colocated component test with: `npx jest --testPathPattern "<Name>" --testPathIgnorePatterns worktrees`
-  (the bare path form fails jest's `testMatch`; `--testPathIgnorePatterns worktrees` skips the `.claude/worktrees/*` duplicate copies).
-- Engine tests live in `tests/unit/governance/`, run with `npx jest tests/unit/governance/<file>`.
+**Conventions for this plan — TWO test runners:**
+This repo splits tests across jest and vitest. Use the right one or the test won't run:
+- **Component / colocated tests** (`.test.jsx` and `.test.js` next to source under `frontend/src/...`): **vitest** (jest's `testMatch` only covers `tests/**/*.test.mjs`, so it silently matches nothing for these — "Run with --passWithNoTests"). Run one file with:
+  `./node_modules/.bin/vitest run --config vitest.config.mjs <path/to/file.test.jsx>`
+  (vitest supplies the React JSX runtime + `@testing-library` + jsdom env via `vitest.config.mjs`; no `import React` needed in tests.)
+  **Wherever a task step below says `npx jest --testPathPattern "<Name>"`, substitute the vitest command above against the colocated test file** — those are all component/colocated tests.
+- **Engine tests** (`tests/unit/governance/**/*.test.mjs`, using `@jest/globals` + `jest.unstable_mockModule`): **jest**. Run with `npx jest tests/unit/governance/<file>`. (Tasks 7 and 12 only.)
+- New component tests in this plan are colocated `.test.jsx`/`.test.js` next to the source (matches the existing redesign tests, e.g. `CycleChallengeOverlay.test.jsx`).
 - Never use raw `console.*` — use `getLogger()` per CLAUDE.md.
 - Do NOT commit automatically beyond the per-task commits in this plan; the user reviews before merge.
 
