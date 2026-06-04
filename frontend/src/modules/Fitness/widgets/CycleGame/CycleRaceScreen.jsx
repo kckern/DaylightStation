@@ -4,7 +4,7 @@ import { formatClock } from '@/modules/Fitness/lib/cycleGame/cycleGameLobby.js';
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
 import { deriveRaceSnapshot } from '@/modules/Fitness/lib/cycleGame/deriveRaceSnapshot.js';
 import { raceDirector } from '@/modules/Fitness/lib/cycleGame/raceDirector.js';
-import { circuitTargetFor, circuitProgress } from '@/modules/Fitness/lib/cycleGame/ovalTrackModel.js';
+import { ovalProgressFor } from '@/modules/Fitness/lib/cycleGame/ovalTrackModel.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import DistanceChart from './panels/DistanceChart.jsx';
 import Rankings from './panels/Rankings.jsx';
@@ -83,11 +83,13 @@ export default function CycleRaceScreen({
         lapSplits={Object.fromEntries(riderIds.map((id) => [id, riders[id].lapSplits || []]))}
         progress={Object.fromEntries(riderIds.map((id) => [
           id,
-          circuitProgress(
-            riders[id]?.cumulativeDistanceM || 0,
-            circuitTargetFor(winCondition, goalM, ovalCircuitM),
-            { clamp: winCondition === 'distance' }
-          )
+          ovalProgressFor({
+            winCondition,
+            distanceM: riders[id]?.cumulativeDistanceM || 0,
+            goalM,
+            ovalCircuitM,
+            lapLengthM
+          })
         ]))} />
     ),
     racePistons: () => (
