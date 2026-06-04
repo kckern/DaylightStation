@@ -362,6 +362,26 @@ export class FitnessSimulationController {
   }
 
   /**
+   * "Ambient workout" preset: every HR strap runs an auto-session arc and every
+   * bike spins on a gently varying RPM arc. No game, no navigation.
+   */
+  startAmbientWorkout() {
+    this.startAutoSessionAll();
+    this.getEquipment().forEach((bike, i) => {
+      this.driveRpmArc(bike.equipmentId, { base: 68 + i * 4, amp: 14, periodS: 22 });
+    });
+    return { ok: true };
+  }
+
+  /** "Stop All" preset: halt HR straps, bike arcs, and any lingering cadence. */
+  stopEverything() {
+    this.stopAll();
+    this.stopAllRpmArcs();
+    this.getEquipment().forEach((bike) => this.stopEquipment(bike.equipmentId));
+    return { ok: true };
+  }
+
+  /**
    * Trigger a cycle challenge via the live governance engine.
    * Returns the engine's result verbatim, or an error if the engine isn't reachable.
    */
