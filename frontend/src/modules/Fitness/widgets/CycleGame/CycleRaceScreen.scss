@@ -133,6 +133,9 @@
   &__roster {
     flex: 1 1 0; min-width: 0;
     display: flex; flex-direction: column; gap: 8px;
+    // Centre the rows so a small field doesn't cram at the top of a tall panel;
+    // `safe` falls back to top-aligned (and scrolls) once a big field overflows.
+    justify-content: safe center;
     overflow-y: auto; padding-left: 4px;
   }
   &__roster-row {
