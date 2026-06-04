@@ -73,3 +73,27 @@ describe('FitnessSimulationController — RPM arc driver', () => {
     expect(wsService.send).not.toHaveBeenCalled();
   });
 });
+
+describe('FitnessSimulationController — ambient + stop', () => {
+  it('startAmbientWorkout runs auto-session-all and a bike arc per equipment', () => {
+    const { ctrl } = makeController();
+    const sess = vi.spyOn(ctrl, 'startAutoSessionAll').mockReturnValue({ ok: true });
+    const arc = vi.spyOn(ctrl, 'driveRpmArc').mockReturnValue({ ok: true });
+    ctrl.startAmbientWorkout();
+    expect(sess).toHaveBeenCalledTimes(1);
+    expect(arc).toHaveBeenCalledWith('cycle_ace', expect.any(Object));
+    expect(arc).toHaveBeenCalledWith('cycle_bee', expect.any(Object));
+  });
+
+  it('stopEverything stops HR, bikes, and all arcs', () => {
+    const { ctrl } = makeController();
+    const hr = vi.spyOn(ctrl, 'stopAll').mockReturnValue({ ok: true });
+    const arcs = vi.spyOn(ctrl, 'stopAllRpmArcs').mockReturnValue({ ok: true });
+    const eq = vi.spyOn(ctrl, 'stopEquipment').mockReturnValue({ ok: true });
+    ctrl.stopEverything();
+    expect(hr).toHaveBeenCalledTimes(1);
+    expect(arcs).toHaveBeenCalledTimes(1);
+    expect(eq).toHaveBeenCalledWith('cycle_ace');
+    expect(eq).toHaveBeenCalledWith('cycle_bee');
+  });
+});
