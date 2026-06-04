@@ -12,4 +12,25 @@ describe('DistanceChart panel', () => {
     />);
     expect(container.querySelectorAll('[data-testid="race-line"]').length).toBe(2);
   });
+  it('frames the chart in the fixed window at level 0 (point not pegged to the right)', () => {
+    const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 50, distanceSeries: [10, 20, 30, 40, 50, 60], isGhost: false } };
+    const { container } = render(
+      <DistanceChart riderIds={['a']} riders={riders} riderLive={{ a: {} }}
+        winCondition="time" goalM={3000} elapsedS={5} />
+    );
+    const line = container.querySelector('[data-testid="race-line"]');
+    const xs = line.getAttribute('points').trim().split(' ').map((p) => parseFloat(p.split(',')[0]));
+    expect(Math.max(...xs)).toBeLessThan(200);
+  });
+  it('doubles the Y window when the leader passes 90% of it (distance race)', () => {
+    const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 240, distanceSeries: [240], isGhost: false } };
+    const { container } = render(
+      <DistanceChart riderIds={['a']} riders={riders} riderLive={{ a: {} }}
+        winCondition="distance" goalM={5000} elapsedS={5} />
+    );
+    const line = container.querySelector('[data-testid="race-line"]');
+    const y = parseFloat(line.getAttribute('points').trim().split(',')[1]);
+    expect(y).toBeGreaterThan(90);
+    expect(y).toBeLessThan(110);
+  });
 });

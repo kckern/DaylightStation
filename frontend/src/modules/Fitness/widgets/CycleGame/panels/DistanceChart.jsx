@@ -4,6 +4,11 @@ import { LINE_COLORS } from '@/modules/Fitness/lib/cycleGame/lineColors.js';
 import { plotStartIndex } from '@/modules/Fitness/lib/cycleGame/chartTrim.js';
 import getLogger from '@/lib/logging/Logger.js';
 import { useFitGuard } from './useFitGuard.js';
+import { nextZoomLevel } from '@/modules/Fitness/lib/cycleGame/chartZoom.js';
+
+const X_BASE_S = 30;        // level-0 time window (seconds; 1 sample = 1s at the 1Hz tick)
+const Y_BASE_M = 250;       // level-0 distance window (metres)
+const ZOOM_THRESHOLD = 0.9; // grow the window when data hits 90% of it
 
 const EVENT_GLYPH = { dnf: '🛑', penalty: '⏱️' };
 
@@ -13,7 +18,7 @@ const EVENT_GLYPH = { dnf: '🛑', penalty: '⏱️' };
  * Auto-scales linear→log when riders crowd together near the finish. Officiating
  * events (DNF / penalty) are re-projected onto the lane where they fired.
  */
-export default function DistanceChart({ riderIds, riders, riderLive, winCondition, goalM, events = [], zoneBox }) {
+export default function DistanceChart({ riderIds, riders, riderLive, winCondition, goalM, events = [], zoneBox, elapsedS = 0 }) {
   const chartRef = useRef(null);
   const fitRef = useRef(null);
   const fitScaleVal = useFitGuard(fitRef, zoneBox, 'distanceChart');
@@ -39,35 +44,44 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     return () => { if (ro) ro.disconnect(); };
   }, [log]);
 
-  // chart scaling
+  // chart scaling — stepped zoom-out camera. The window doubles in 2x steps as
+  // the leader's distance or the elapsed time nears the edge (monotonic level in
+  // a sticky ref, like logRef). X maps over a time window T, Y over a distance
+  // window D; the lin↔log crowding transform (below) is orthogonal and kept.
   const maxSeriesLen = Math.max(1, ...riderIds.map((id) => (riders[id].distanceSeries || []).length));
-  const maxDistance = winCondition === 'distance'
-    ? goalM
-    : Math.max(1, ...riderIds.map((id) => riders[id].cumulativeDistanceM || 0));
+  const leaderDistanceM = Math.max(0, ...riderIds.map((id) => riders[id].cumulativeDistanceM || 0));
+  const zoomRef = useRef(0);
+  zoomRef.current = nextZoomLevel(zoomRef.current, {
+    leaderDistanceM, elapsedS, xBaseS: X_BASE_S, yBaseM: Y_BASE_M, threshold: ZOOM_THRESHOLD
+  });
+  const L = zoomRef.current;
   const W = 600, H = 200;
-  const xFor = (i) => (maxSeriesLen <= 1 ? 0 : (i / (maxSeriesLen - 1)) * W);
+  const T = X_BASE_S * 2 ** L;   // seconds visible
+  const D = Y_BASE_M * 2 ** L;   // metres visible
+  const stepS = maxSeriesLen > 1 ? elapsedS / (maxSeriesLen - 1) : 1;
+  const xForTime = (t) => Math.min(W, ((t || 0) / T) * W);
+  const xFor = (i) => xForTime(i * stepS);
 
-  // Auto-scale: linear by default, switch to logarithmic when the riders' tips
-  // crowd together (so close finishers stay legible). Sticky via a ref so it
-  // doesn't flicker tick-to-tick near the threshold.
+  // Lin↔log crowding transform (kept): switch to log when adjacent leaders bunch
+  // within the window, with hysteresis so it doesn't flap.
   const lastDists = riderIds.map((id) => (riders[id].distanceSeries || []).slice(-1)[0] || 0);
   const logRef = useRef(false);
   if (riderIds.length >= 2) {
     const sorted = [...lastDists].sort((a, b) => a - b);
     let minGap = Infinity;
     for (let i = 1; i < sorted.length; i++) minGap = Math.min(minGap, sorted[i] - sorted[i - 1]);
-    if (!logRef.current && minGap < maxDistance * 0.05) logRef.current = true;
-    else if (logRef.current && minGap > maxDistance * 0.14) logRef.current = false;
+    if (!logRef.current && minGap < D * 0.05) logRef.current = true;
+    else if (logRef.current && minGap > D * 0.14) logRef.current = false;
   } else {
     logRef.current = false;
   }
   const useLog = logRef.current;
   const yFor = (d) => {
     if (useLog) {
-      const D = Math.max(1, maxDistance);
-      return H - (Math.log1p(Math.max(0, d || 0)) / Math.log1p(D)) * H;
+      const Dd = Math.max(1, D);
+      return H - (Math.log1p(Math.max(0, d || 0)) / Math.log1p(Dd)) * H;
     }
-    return H - Math.min(1, (d || 0) / maxDistance) * H;
+    return H - Math.min(1, (d || 0) / D) * H;
   };
 
   // leader (for emphasis) — furthest along
@@ -267,4 +281,5 @@ DistanceChart.propTypes = {
     distanceM: PropTypes.number
   })),
   zoneBox: PropTypes.shape({ width: PropTypes.number, height: PropTypes.number }),
+  elapsedS: PropTypes.number,
 };
