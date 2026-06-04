@@ -41,7 +41,8 @@
 
   // Markers glide between progress ticks rather than snapping.
   &__marker {
-    transition: transform 0.3s linear;
+    // Glide across the whole 1 Hz tick interval so motion reads continuous.
+    transition: transform 0.9s linear;
 
     &--ghost {
       opacity: 0.55;
