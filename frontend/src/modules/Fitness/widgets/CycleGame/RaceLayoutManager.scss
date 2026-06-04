@@ -10,7 +10,10 @@
     display: grid; gap: 16px; min-height: 0;
     grid-template-columns: var(--top-cols, 1fr);
   }
-  &__zone { position: relative; min-width: 0; min-height: 0; }
+  // overflow:hidden is the cross-zone overlap guard — clips any panel (or the
+  // chart's transient 2x zoom-out animation) to its own grid cell so it can never
+  // bleed into a neighbouring zone or the speedo band.
+  &__zone { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
   &__zone--empty { display: none; } // collapsed; siblings reflow via --top-filled
   // Fill the zone (a grid cell with a definite track height) so panels whose
   // height comes from an absolutely-positioned child — notably DistanceChart's
