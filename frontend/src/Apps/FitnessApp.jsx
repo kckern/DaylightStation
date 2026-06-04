@@ -660,7 +660,24 @@ const FitnessApp = () => {
       }
     };
   }, []);
-  
+
+  // Sim-panel seam: let the simulation popup open a module (e.g. the cycle game)
+  // via SPA navigation — NO page reload, so window.__fitnessSimController and the
+  // popup's reference to it survive.
+  useEffect(() => {
+    window.__fitnessLaunchModule = (moduleId) => {
+      if (!moduleId) return;
+      setActiveModule({ id: moduleId });
+      setActiveCollection(null);
+      setSelectedShow(null);
+      setCurrentView('module');
+      navigate(`/fitness/module/${moduleId}`, { replace: true });
+    };
+    return () => {
+      if (window.__fitnessLaunchModule) delete window.__fitnessLaunchModule;
+    };
+  }, [navigate]);
+
   // Extract content source from config (default: 'plex')
   const contentSource = useMemo(() => {
     const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
