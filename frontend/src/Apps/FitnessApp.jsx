@@ -665,7 +665,7 @@ const FitnessApp = () => {
   // via SPA navigation — NO page reload, so window.__fitnessSimController and the
   // popup's reference to it survive.
   useEffect(() => {
-    window.__fitnessLaunchModule = (moduleId) => {
+    const launch = (moduleId) => {
       if (!moduleId) return;
       setActiveModule({ id: moduleId });
       setActiveCollection(null);
@@ -673,8 +673,10 @@ const FitnessApp = () => {
       setCurrentView('module');
       navigate(`/fitness/module/${moduleId}`, { replace: true });
     };
+    window.__fitnessLaunchModule = launch;
     return () => {
-      if (window.__fitnessLaunchModule) delete window.__fitnessLaunchModule;
+      // Only clear if it's still ours (guards a StrictMode/remount interleave).
+      if (window.__fitnessLaunchModule === launch) delete window.__fitnessLaunchModule;
     };
   }, [navigate]);
 
