@@ -99,7 +99,8 @@ export default function CycleRaceScreen({
     ...(showSpeedos ? {
       speedoRow: (slot) => (
         <SpeedoRow riderIds={riderIds} riders={riders} riderLive={riderLive}
-          cadenceBands={cadenceBands} zoneBox={slot?.zoneBox} maxGauge={solo ? 420 : 280} />
+          cadenceBands={cadenceBands} zoneBox={slot?.zoneBox}
+          maxGauge={solo ? 520 : 280} minGauge={solo ? 320 : 96} />
       )
     } : {})
   };

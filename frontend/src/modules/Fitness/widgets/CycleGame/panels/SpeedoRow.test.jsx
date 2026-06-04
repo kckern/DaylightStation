@@ -36,4 +36,15 @@ describe('SpeedoRow panel', () => {
     const gauge = container.querySelector('.cycle-speedometer');
     expect(gauge.style.width).toBe('420px');
   });
+
+  it('never shrinks the gauge below minGauge, even before the zone is measured', () => {
+    const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 0 } };
+    // zoneBox {0,0} = the pre-measurement transient; the gauge must still honour the
+    // minimum radius (the solo hero floor), never collapse to the 96px default.
+    const { container } = render(
+      <SpeedoRow riderIds={['a']} riders={riders} riderLive={{ a: { rpm: 0 } }} cadenceBands={[]}
+        zoneBox={{ width: 0, height: 0 }} minGauge={320} maxGauge={520} />
+    );
+    expect(container.querySelector('.cycle-speedometer').style.width).toBe('320px');
+  });
 });
