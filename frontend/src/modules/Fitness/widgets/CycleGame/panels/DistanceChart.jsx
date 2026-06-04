@@ -6,8 +6,9 @@ import getLogger from '@/lib/logging/Logger.js';
 import { useFitGuard } from './useFitGuard.js';
 import { nextZoomLevel, gridValues } from '@/modules/Fitness/lib/cycleGame/chartZoom.js';
 
-const X_BASE_S = 30;        // level-0 time window (seconds; 1 sample = 1s at the 1Hz tick)
-const Y_BASE_M = 250;       // level-0 distance window (metres)
+const X_BASE_S = 20;        // level-0 time window (seconds; 1 sample = 1s at the 1Hz tick)
+const Y_BASE_M = 150;       // level-0 distance window (metres) — tight so the lanes fill
+                            // the chart instead of sitting half-empty (window grows in 2x steps)
 const ZOOM_THRESHOLD = 0.9; // grow the window when data hits 90% of it
 const GRID_MIN_PX = 32;    // never draw gridlines closer than this (bottom cap)
 const ZOOM_ANIM_MS = 300;  // zoom-out camera ease duration

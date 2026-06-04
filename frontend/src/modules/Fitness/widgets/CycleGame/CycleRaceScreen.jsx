@@ -102,7 +102,8 @@ export default function CycleRaceScreen({
       speedoRow: (slot) => (
         <SpeedoRow riderIds={riderIds} riders={riders} riderLive={riderLive}
           cadenceBands={cadenceBands} zoneBox={slot?.zoneBox}
-          maxGauge={solo ? 520 : 280} minGauge={solo ? 320 : 96} />
+          maxGauge={solo ? 520 : riderIds.length <= 3 ? 360 : 280}
+          minGauge={solo ? 320 : riderIds.length <= 3 ? 220 : 96} />
       )
     } : {})
   };
@@ -143,7 +144,7 @@ export default function CycleRaceScreen({
         </div>
       )}
 
-      <RaceLayoutManager decision={decision} panels={panels} solo={solo} />
+      <RaceLayoutManager decision={decision} panels={panels} solo={solo} fieldSize={riderIds.length} />
     </div>
   );
 }

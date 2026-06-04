@@ -13,14 +13,16 @@ const TOP = ['topLeft', 'topCenter', 'topRight'];
 // (depends only on container height, not content); collapses to 0 when empty.
 const BOTTOM_BAND = 'minmax(240px, 48%)';
 
-export default function RaceLayoutManager({ decision, panels, solo = false }) {
+export default function RaceLayoutManager({ decision, panels, solo = false, fieldSize = 0 }) {
   const zones = decision?.zones || {};
   const filledTop = TOP.filter((z) => zones[z]);
   // Columns weighted by each filled top panel's sizeHint (focus wider than standard).
   const topCols = columnTemplateFor(filledTop.map((z) => panelById(zones[z])?.sizeHint || 'standard'));
   // Deterministic rows: a stable bottom band when the speedo row is present (so its
-  // zone box doesn't depend on content), collapsed when absent.
-  const rows = `1fr ${zones.bottom ? BOTTOM_BAND : '0px'}`;
+  // zone box doesn't depend on content), collapsed when absent. A SMALL field gets a
+  // taller band so the (fewer) gauges grow to fill it instead of floating.
+  const bottomBand = fieldSize > 0 && fieldSize <= 3 ? 'minmax(280px, 54%)' : BOTTOM_BAND;
+  const rows = `1fr ${zones.bottom ? bottomBand : '0px'}`;
 
   // Telemetry + thrash warn: log the layout on change; warn if it churns too fast.
   const log = useMemo(() => getLogger().child({ component: 'cycle-race-layout' }), []);
@@ -71,4 +73,4 @@ export default function RaceLayoutManager({ decision, panels, solo = false }) {
     </div>
   );
 }
-RaceLayoutManager.propTypes = { decision: PropTypes.object, panels: PropTypes.object, solo: PropTypes.bool };
+RaceLayoutManager.propTypes = { decision: PropTypes.object, panels: PropTypes.object, solo: PropTypes.bool, fieldSize: PropTypes.number };

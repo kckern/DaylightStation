@@ -30,8 +30,11 @@ describe('DistanceChart panel', () => {
     );
     const line = container.querySelector('[data-testid="race-line"]');
     const y = parseFloat(line.getAttribute('points').trim().split(',')[1]);
-    expect(y).toBeGreaterThan(90);
-    expect(y).toBeLessThan(110);
+    // 240 m is past 90% of the 150 m base window, so it doubles to 300 m: the
+    // leader lands at ~80% height (well off the top padding it would peg to if the
+    // window had NOT grown), not clamped at the goal line.
+    expect(y).toBeGreaterThan(40);
+    expect(y).toBeLessThan(100);
   });
   it('renders decimating gridlines for the current window', () => {
     const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 120, distanceSeries: [120], isGhost: false } };
