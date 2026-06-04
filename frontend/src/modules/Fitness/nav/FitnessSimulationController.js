@@ -1,4 +1,5 @@
 // frontend/src/modules/Fitness/FitnessSimulationController.js
+import { rpmArcValue } from './rpmArc.js';
 
 /**
  * FitnessSimulationController
@@ -29,6 +30,9 @@ export class FitnessSimulationController {
 
     // State change callback for popup sync
     this.onStateChange = null;
+
+    // RPM arc driver intervals: equipmentId -> { intervalId, tick }
+    this._rpmArcs = new Map();
 
     this._computeZoneMidpoints();
   }
@@ -303,6 +307,39 @@ export class FitnessSimulationController {
     state.lastSent = null;
     this._notifyStateChange();
     return { ok: true, equipmentId };
+  }
+
+  /**
+   * Start a 1 Hz wandering-RPM driver on a bike (re-sends each second so the
+   * cadence stays fresh). Idempotent per equipment — restarts if already running.
+   */
+  driveRpmArc(equipmentId, opts = {}) {
+    if (!equipmentId) return { ok: false, error: 'equipmentId required' };
+    this.stopRpmArc(equipmentId);
+    const arc = { tick: 0, intervalId: null };
+    const send = () => {
+      this.setRpm(equipmentId, rpmArcValue(arc.tick, opts));
+      arc.tick += 1;
+    };
+    send(); // emit immediately so the bike reads active without a 1s wait
+    arc.intervalId = setInterval(send, 1000);
+    this._rpmArcs.set(String(equipmentId), arc);
+    return { ok: true, equipmentId };
+  }
+
+  /** Stop a single bike's RPM arc and let it go stale. */
+  stopRpmArc(equipmentId) {
+    const arc = this._rpmArcs.get(String(equipmentId));
+    if (arc?.intervalId) clearInterval(arc.intervalId);
+    this._rpmArcs.delete(String(equipmentId));
+    this.stopEquipment(equipmentId);
+    return { ok: true, equipmentId };
+  }
+
+  /** Stop every running RPM arc. */
+  stopAllRpmArcs() {
+    for (const id of [...this._rpmArcs.keys()]) this.stopRpmArc(id);
+    return { ok: true };
   }
 
   /**
@@ -1003,6 +1040,7 @@ export class FitnessSimulationController {
    * Cleanup on destroy
    */
   destroy() {
+    this.stopAllRpmArcs();
     // Clear all auto intervals
     for (const state of this.deviceState.values()) {
       if (state.autoInterval) {
