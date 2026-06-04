@@ -332,6 +332,10 @@
       const assigns = controller.autoAssignRiders(2);
       if (assigns.length === 0) { alert('No bikes available to race.'); return; }
       if (typeof opener.__fitnessLaunchModule !== 'function') { alert('Launch seam missing — reload the Fitness app.'); return; }
+      // Hold the assigned bikes at 0 rpm from the outset — driveRpmArc first STOPS any
+      // prior arc (e.g. from a previous Ambient run) and then sends a steady 0 each
+      // second — so they can't trip the false-start rule during the countdown.
+      assigns.forEach((a) => controller.driveRpmArc(a.equipmentId, { base: 0, amp: 0 }));
       opener.__fitnessLaunchModule('cycle_game');
       const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
       const deadline = Date.now() + 5000;
@@ -339,7 +343,26 @@
         if (Date.now() > deadline) { alert("Cycle game didn't start (control hook never appeared)."); return; }
         await sleep(200);
       }
+      const phaseOf = () => (opener.__cycleGameControl && opener.__cycleGameControl.getPhase
+        ? opener.__cycleGameControl.getPhase() : null);
       opener.__cycleGameControl.startRace({ winCondition: win, value });
+      // STRICT FALSE-START RULE: the game penalty-boxes any bike pedalling (rpm > 0)
+      // at the green light. The bikes are held at 0 (above) through staging +
+      // countdown; only switch to real RPM once the race is actually 'racing' (the
+      // first racing tick has then already read rpm 0 → no penalty).
+      const greenBy = Date.now() + 30000; // staging buffer + countdown, with margin
+      let phase = phaseOf();
+      while (Date.now() < greenBy && phase !== 'racing') {
+        if (phase === 'results' || phase === 'idle') break; // aborted before start
+        await sleep(150);
+        phase = phaseOf();
+      }
+      if (phase !== 'racing') {
+        alert("Race never reached the green light — bikes left idle.");
+        assigns.forEach((a) => controller.stopRpmArc(a.equipmentId));
+        return;
+      }
+      // Green light — now drive the bikes to the finish.
       assigns.forEach((a, i) => controller.driveRpmArc(a.equipmentId, { base: 80 + i*5, amp: 12, periodS: 18 }));
       // Watch for the race to finish (phase reaches 'results'), then stop the RPM
       // drivers so the bikes don't keep spinning after the race ends. A generous
@@ -347,8 +370,7 @@
       const stopBy = Date.now() + (win === 'time' ? value * 1000 : 300000) + 30000;
       while (Date.now() < stopBy) {
         await sleep(1000);
-        const phase = opener.__cycleGameControl && opener.__cycleGameControl.getPhase
-          ? opener.__cycleGameControl.getPhase() : null;
+        phase = phaseOf();
         if (!phase || phase === 'results' || phase === 'idle') break;
       }
       assigns.forEach((a) => controller.stopRpmArc(a.equipmentId));
