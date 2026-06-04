@@ -71,16 +71,14 @@ describe('raceDirector stability', () => {
 
 describe('raceDirector candidacy loss during dwell', () => {
   it('drops a panel immediately when it stops being a candidate, even within min-dwell', () => {
-    // laps on → lapTable/ovalTrack eligible; assign, then turn laps off next tick.
-    const on = base({ fieldSize: 2, lapsEnabled: true });
+    // Solo + laps on → lapTable (the still-laps-gated panel) takes the stage;
+    // turn laps off next tick and it must drop even inside min-dwell.
+    const on = base({ fieldSize: 1, isSolo: true, lapsEnabled: true });
     const d1 = raceDirector(on, null, 10);
-    // find a zone occupied by a laps-only panel (lapTable or ovalTrack)
-    const lapsPanels = ['lapTable', 'ovalTrack'];
-    const occupied = Object.entries(d1.zones).find(([, id]) => lapsPanels.includes(id));
+    const occupied = Object.entries(d1.zones).find(([, id]) => id === 'lapTable');
     expect(occupied).toBeTruthy();
-    const off = base({ fieldSize: 2, lapsEnabled: false });
+    const off = base({ fieldSize: 1, isSolo: true, lapsEnabled: false });
     const d2 = raceDirector(off, d1, 12); // within MIN_DWELL_S(5) of t=10
-    // no laps-only panel may remain on screen
-    Object.values(d2.zones).forEach((id) => expect(lapsPanels).not.toContain(id));
+    Object.values(d2.zones).forEach((id) => expect(id).not.toBe('lapTable'));
   });
 });

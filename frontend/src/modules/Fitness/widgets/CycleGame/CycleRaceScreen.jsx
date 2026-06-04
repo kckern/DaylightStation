@@ -4,6 +4,7 @@ import { formatClock } from '@/modules/Fitness/lib/cycleGame/cycleGameLobby.js';
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
 import { deriveRaceSnapshot } from '@/modules/Fitness/lib/cycleGame/deriveRaceSnapshot.js';
 import { raceDirector } from '@/modules/Fitness/lib/cycleGame/raceDirector.js';
+import { circuitTargetFor, circuitProgress } from '@/modules/Fitness/lib/cycleGame/ovalTrackModel.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import DistanceChart from './panels/DistanceChart.jsx';
 import Rankings from './panels/Rankings.jsx';
@@ -23,7 +24,7 @@ import './CycleRaceScreen.scss';
 export default function CycleRaceScreen({
   winCondition = 'distance', goalM = 3000, timeCapS = 300, elapsedS = 0,
   riders = {}, riderLive = {}, cadenceBands = [], backgroundPlexId = null,
-  showSpeedos = true, lapLengthM = 0, events = []
+  showSpeedos = true, lapLengthM = 0, events = [], ovalCircuitM = 1000
 }) {
   const riderIds = Object.keys(riders);
 
@@ -75,7 +76,14 @@ export default function CycleRaceScreen({
     ),
     ovalTrack: () => (
       <OvalTrack riderIds={riderIds} riders={riders} riderLive={riderLive}
-        lapProgress={Object.fromEntries(riderIds.map((id) => [id, snapshot.ridersView[id]?.lapProgress || 0]))} />
+        progress={Object.fromEntries(riderIds.map((id) => [
+          id,
+          circuitProgress(
+            riders[id]?.cumulativeDistanceM || 0,
+            circuitTargetFor(winCondition, goalM, ovalCircuitM),
+            { clamp: winCondition === 'distance' }
+          )
+        ]))} />
     ),
     cameraZoom: () => (
       <CameraZoom riderIds={riderIds} riders={riders} riderLive={riderLive} />
@@ -139,6 +147,7 @@ CycleRaceScreen.propTypes = {
   backgroundPlexId: PropTypes.string,
   showSpeedos: PropTypes.bool,
   lapLengthM: PropTypes.number,
+  ovalCircuitM: PropTypes.number,
   events: PropTypes.arrayOf(PropTypes.shape({
     id: PropTypes.number,
     type: PropTypes.oneOf(['dnf', 'penalty']),

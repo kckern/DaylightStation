@@ -19,12 +19,14 @@ export function ovalPoint(progress, rx, ry) {
 }
 
 /**
- * Top-down velodrome oval — one avatar marker per rider, positioned by lap
- * progress around the track. Synthwave HUD panel: a neon ellipse track with a
- * start/finish tick at the top and lane-colored markers that glide between
- * progress ticks via a CSS transform transition. Pure presentational component.
+ * Top-down velodrome oval — a "whole-race track": one full loop represents the
+ * ENTIRE race, so each rider's marker sits at their fraction of the way to the
+ * finish (`progress`, 0→1). A finisher parks at the start/finish tick at the top;
+ * a fast time-racer past their circuit target wraps around again (progress > 1).
+ * Synthwave HUD panel; lane-colored markers glide via a CSS transform transition.
+ * Pure presentational component.
  */
-export default function OvalTrack({ riderIds, riders, riderLive = {}, lapProgress = {} }) {
+export default function OvalTrack({ riderIds, riders, riderLive = {}, progress = {} }) {
   return (
     <div className="cg-oval-track" data-testid="oval-track">
       <svg
@@ -43,7 +45,7 @@ export default function OvalTrack({ riderIds, riders, riderLive = {}, lapProgres
 
         {riderIds.map((id, idx) => {
           const color = LINE_COLORS[idx % LINE_COLORS.length];
-          const p = ovalPoint(lapProgress[id] || 0, RX, RY);
+          const p = ovalPoint(progress[id] || 0, RX, RY);
           const isGhost = !!riders[id]?.isGhost;
           const initial = (riders[id]?.displayName || id || '?').trim().charAt(0).toUpperCase() || '?';
           return (
@@ -75,5 +77,5 @@ OvalTrack.propTypes = {
   riderIds: PropTypes.array.isRequired,
   riders: PropTypes.object.isRequired,
   riderLive: PropTypes.object,
-  lapProgress: PropTypes.object
+  progress: PropTypes.object
 };
