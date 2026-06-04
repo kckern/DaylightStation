@@ -22,7 +22,7 @@ describe('OvalTrack render', () => {
       riderIds={['a', 'b']}
       riders={{ a: { displayName: 'Ann' }, b: { displayName: 'Bob' } }}
       riderLive={{ a: {}, b: {} }}
-      lapProgress={{ a: 0.1, b: 0.6 }}
+      progress={{ a: 0.1, b: 0.6 }}
     />);
     expect(screen.getAllByTestId('oval-marker')).toHaveLength(2);
   });

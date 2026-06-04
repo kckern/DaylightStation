@@ -1182,6 +1182,7 @@ export default function CycleGameContainer({ onMount } = {}) {
           cadenceBands={cadenceBands}
           backgroundPlexId={raceMetaRef.current?.backgroundPlexId || null}
           lapLengthM={Number.isFinite(cycleGameConfig?.lap_length_m) ? cycleGameConfig.lap_length_m : 0}
+          ovalCircuitM={Number.isFinite(cycleGameConfig?.oval_circuit_m) ? cycleGameConfig.oval_circuit_m : 1000}
           events={raceEvents}
         />
         <CycleEventToast toast={eventToast} onDone={onEventToastDone} />

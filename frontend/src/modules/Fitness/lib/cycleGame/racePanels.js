@@ -31,7 +31,9 @@ export const RACE_PANELS = [
   },
   {
     id: 'ovalTrack', zones: ['topCenter', 'topLeft'], sizeHint: 'standard', cycles: true,
-    candidacy: (s) => !!s.lapsEnabled && s.fieldSize >= 2,
+    // A whole-race progress track (one loop = the whole race), so it no longer
+    // requires laps — shown for any field of 2+ (ghosts count).
+    candidacy: (s) => s.fieldSize >= 2,
     priority: (s) => 42 + Math.min(25, (s.lapDeltaMax || 0) * 15), transient: null
   },
   {
