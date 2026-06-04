@@ -35,3 +35,29 @@ describe('RacePistons', () => {
     expect(dists[1]).toContain('1');
   });
 });
+
+describe('RacePistons — ghost tip avatar carries the cg-ghost treatment', () => {
+  it('wraps a ghost rider tip avatar in .cg-ghost', () => {
+    const { container } = render(
+      <RacePistons
+        riderIds={['g']}
+        riders={{ g: { displayName: 'Ann 👻', isGhost: true, cumulativeDistanceM: 120 } }}
+        riderLive={{ g: {} }}
+      />
+    );
+    const head = container.querySelector('.cg-pistons__head');
+    expect(head).not.toBeNull();
+    expect(head.querySelector('.cg-ghost')).not.toBeNull();
+  });
+
+  it('does NOT wrap a live (non-ghost) rider in .cg-ghost', () => {
+    const { container } = render(
+      <RacePistons
+        riderIds={['h']}
+        riders={{ h: { displayName: 'Bob', isGhost: false, cumulativeDistanceM: 120 } }}
+        riderLive={{ h: {} }}
+      />
+    );
+    expect(container.querySelector('.cg-pistons__head .cg-ghost')).toBeNull();
+  });
+});
