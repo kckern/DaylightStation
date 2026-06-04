@@ -27,3 +27,18 @@ describe('OvalTrack render', () => {
     expect(screen.getAllByTestId('oval-marker')).toHaveLength(2);
   });
 });
+
+describe('OvalTrack — marker positioned via CSS transform property (animatable on FF)', () => {
+  it('sets an inline style transform and NOT the SVG transform attribute', () => {
+    const { getAllByTestId } = render(
+      <OvalTrack
+        riderIds={['a']}
+        riders={{ a: { displayName: 'Ann' } }}
+        progress={{ a: 0.25 }}
+      />
+    );
+    const marker = getAllByTestId('oval-marker')[0];
+    expect(marker.getAttribute('transform')).toBeNull();
+    expect(marker.style.transform).toMatch(/translate\(/);
+  });
+});

@@ -53,7 +53,10 @@ export default function OvalTrack({ riderIds, riders, riderLive = {}, progress =
               key={`oval-marker-${id}`}
               className={`cg-oval-track__marker${isGhost ? ' cg-oval-track__marker--ghost' : ''}`}
               data-testid="oval-marker"
-              transform={`translate(${p.x} ${p.y})`}
+              // CSS transform PROPERTY (not the SVG attribute) so the glide transition
+              // in OvalTrack.scss actually animates on the Firefox kiosk. px == user units
+              // for a translate, so the ellipse coordinates carry over unchanged.
+              style={{ transform: `translate(${p.x}px, ${p.y}px)` }}
             >
               <circle
                 className="cg-oval-track__dot"
