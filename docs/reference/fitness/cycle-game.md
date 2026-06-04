@@ -365,12 +365,20 @@ priority(snap), transient }`:
 | `speedoRow` (bottom) | always | constant-high |
 | `distanceChart` (topLeft/Center) | `fieldSize ≥ 2 \|\| !lapsEnabled` ¹ | rises with spread |
 | `rankings` (topRight/Center) | `fieldSize ≥ 2` (ghost counts) | rises with `leaderGapM` |
-| `lapTable` (any top) | `lapsEnabled` | **boosted when `isSolo`** |
-| `ovalTrack` (topCenter/Left) | `lapsEnabled && fieldSize ≥ 2` | rises with `lapDeltaMax` |
+| `lapPanel` (any top, wide) | `lapsEnabled` | **boosted when `isSolo`** |
+| `racePistons` (topCenter/Left/Right, wide) | `fieldSize ≥ 2` (ghost counts) | rises with `leaderGapM` |
 | `cameraZoom` (topCenter, focus) | event-driven only | spikes on trigger |
 
+`lapPanel` is the **combined lap unit** — the velodrome oval (whole-race progress
+loop) stacked over the growing per-lap split table — replacing what used to be two
+separate `lapTable` + `ovalTrack` panels (those components still exist; `LapPanel`
+composes them). `racePistons` is the **piston standings chart**: one horizontal bar
+per rider in fixed lane order, length scaled to the leader (leader pinned to the
+right edge, the field trailing), a small avatar at each bar's tip; bars + tips glide
+(CSS) so the column reads like pistons as riders trade places.
+
 ¹ The chart shows solo **without** laps (a single climbing line reads as pace
-toward the goal); it's suppressed only for solo **with** laps, where the lap table
+toward the goal); it's suppressed only for solo **with** laps, where the lap panel
 takes the stage. `cameraZoom` is the only **transient**: `{ minHoldS: 6,
 cooldownS: 10, triggers: [LAPPING_IMMINENT, PHOTO_FINISH] }`.
 
@@ -455,21 +463,41 @@ geometric collision detector or rightsizing governor** yet (planned).
   by height + `maxGauge`); never self-measures (avoids the resize feedback loop).
   Renders `cycle-race-screen__speedos`; the parent omits it from the panels map
   when `showSpeedos` is false (preserving the hide behavior even though the
-  director always candidates it).
+  director always candidates it). The **avatar is promoted to its own compositor
+  layer** (`.cycle-speedometer__avatar { transform: translateZ(0); will-change }`)
+  so the needle's per-tick repaint (it carries a `drop-shadow` filter) doesn't
+  flush/flicker the overlaid avatar image — the avatar DOM is otherwise stable
+  (0 mutations per tick), so the flicker was a repaint/compositing artifact.
 - **DistanceChart** — climbing gradient lanes toward the goal line, de-overlapped
   terminus tags, log/linear auto-scale (sticky), and **officiating-event markers**
   (DNF/penalty glyphs re-projected onto the lane where they fired — see §11). A
   rider's lane **starts at first movement** (`chartTrim.plotStartIndex`): a
   penalty-boxed late starter emerges from the axis to the right of the origin
   instead of drawing a flat zero line, and a rider who never moved draws nothing.
+  **Stepped zoom-out camera** (`chartZoom`): X/Y windows double in 2× steps at a 90%
+  edge threshold; the pull-back is a **300ms** ease applied INLINE with a snap-then-
+  ease trick — the new scale is set first with `transition:none` (no visible jump),
+  then on the next frame eased to 1× with `transition:transform 300ms` (leaving the
+  CSS transition always-on animated the wrong way and read as abrupt). **Leading-edge
+  interpolation**: the engine ticks at 1 Hz, so each lane's newest point is glided
+  from its previous-tick position to the current one over the tick interval via a rAF
+  clock (`tickFrac`), so the line grows continuously to match the gliding terminus
+  node instead of snapping.
 - **Rankings** — roster sorted by lead. In a distance race, riders who've crossed
   the line **float to the top in finish order** and show a **medal + finish time**
   (🥇🥈🥉, gold row); everyone else shows running distance. Lane-colored metric;
   ghost rows dimmed.
-- **LapTable** — growing table, one row per completed lap, one column per rider,
-  cells = per-lap split (`splits[i] − splits[i-1]`), em-dash until completed.
-- **OvalTrack** — a velodrome oval; each rider's avatar sits at `ovalPoint(lapProgress)`
-  (`θ = −π/2 + progress·2π`, start at top, clockwise); ghost dashed.
+- **LapPanel** — the **combined lap unit**: `OvalTrack` (whole-race oval loop) over
+  `LapTable` (growing per-lap split table) in one zone. Laps-gated, boosted solo.
+  Replaces the former standalone `lapTable` + `ovalTrack` director panels.
+- **RacePistons** — stacked horizontal standings bars, one per rider in **fixed lane
+  order**, length = `distance / leaderDistance` (leader pinned to the right edge, the
+  field trailing behind it), a small face avatar at each bar's tip. Bars + tips glide
+  (CSS transition) so the column reads like pistons as gaps open and close.
+- **LapTable** / **OvalTrack** — still exist as the two sub-components `LapPanel`
+  composes (`LapTable`: per-lap split table; `OvalTrack`: avatar at
+  `ovalPoint(progress)`, `θ = −π/2 + progress·2π`, clockwise from top, ghost dashed)
+  — no longer registered as standalone director panels.
 - **CameraZoom** — transient "broadcast camera": `framePositions` normalizes the
   framed riders' distances to 0–100% (trailing left → leader right; all-equal →
   50%), over a drifting neon grid, with a gap connector. Promoted by the director

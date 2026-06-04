@@ -7,12 +7,12 @@ const base = (over = {}) => ({
 });
 
 describe('raceDirector zone assignment', () => {
-  it('solo with laps: no rankings/chart, lap table promoted up top', () => {
+  it('solo with laps: no rankings/chart, lap panel promoted up top', () => {
     const snap = base({ fieldSize: 1, isSolo: true, lapsEnabled: true });
     const d = raceDirector(snap, null, 10);
     expect(d.zones.bottom).toBe('speedoRow');
     const top = [d.zones.topLeft, d.zones.topCenter, d.zones.topRight];
-    expect(top).toContain('lapTable');
+    expect(top).toContain('lapPanel');
     expect(top).not.toContain('rankings');
     expect(top).not.toContain('distanceChart');
   });
@@ -71,14 +71,14 @@ describe('raceDirector stability', () => {
 
 describe('raceDirector candidacy loss during dwell', () => {
   it('drops a panel immediately when it stops being a candidate, even within min-dwell', () => {
-    // Solo + laps on → lapTable (the still-laps-gated panel) takes the stage;
+    // Solo + laps on → lapPanel (the still-laps-gated panel) takes the stage;
     // turn laps off next tick and it must drop even inside min-dwell.
     const on = base({ fieldSize: 1, isSolo: true, lapsEnabled: true });
     const d1 = raceDirector(on, null, 10);
-    const occupied = Object.entries(d1.zones).find(([, id]) => id === 'lapTable');
+    const occupied = Object.entries(d1.zones).find(([, id]) => id === 'lapPanel');
     expect(occupied).toBeTruthy();
     const off = base({ fieldSize: 1, isSolo: true, lapsEnabled: false });
     const d2 = raceDirector(off, d1, 12); // within MIN_DWELL_S(5) of t=10
-    Object.values(d2.zones).forEach((id) => expect(id).not.toBe('lapTable'));
+    Object.values(d2.zones).forEach((id) => expect(id).not.toBe('lapPanel'));
   });
 });

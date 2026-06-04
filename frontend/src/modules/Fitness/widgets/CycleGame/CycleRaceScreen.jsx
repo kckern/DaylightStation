@@ -9,8 +9,8 @@ import { DaylightMediaPath } from '@/lib/api.mjs';
 import DistanceChart from './panels/DistanceChart.jsx';
 import Rankings from './panels/Rankings.jsx';
 import SpeedoRow from './panels/SpeedoRow.jsx';
-import LapTable from './panels/LapTable.jsx';
-import OvalTrack from './panels/OvalTrack.jsx';
+import LapPanel from './panels/LapPanel.jsx';
+import RacePistons from './panels/RacePistons.jsx';
 import CameraZoom from './panels/CameraZoom.jsx';
 import RaceLayoutManager from './RaceLayoutManager.jsx';
 import './CycleRaceScreen.scss';
@@ -78,12 +78,9 @@ export default function CycleRaceScreen({
     rankings: () => (
       <Rankings riderIds={riderIds} riders={riders} riderLive={riderLive} winCondition={winCondition} />
     ),
-    lapTable: () => (
-      <LapTable riderIds={riderIds} riders={riders}
-        lapSplits={Object.fromEntries(riderIds.map((id) => [id, riders[id].lapSplits || []]))} />
-    ),
-    ovalTrack: () => (
-      <OvalTrack riderIds={riderIds} riders={riders} riderLive={riderLive}
+    lapPanel: () => (
+      <LapPanel riderIds={riderIds} riders={riders} riderLive={riderLive}
+        lapSplits={Object.fromEntries(riderIds.map((id) => [id, riders[id].lapSplits || []]))}
         progress={Object.fromEntries(riderIds.map((id) => [
           id,
           circuitProgress(
@@ -92,6 +89,9 @@ export default function CycleRaceScreen({
             { clamp: winCondition === 'distance' }
           )
         ]))} />
+    ),
+    racePistons: () => (
+      <RacePistons riderIds={riderIds} riders={riders} riderLive={riderLive} />
     ),
     cameraZoom: () => (
       <CameraZoom riderIds={riderIds} riders={riders} riderLive={riderLive} />

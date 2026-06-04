@@ -20,8 +20,14 @@
   &__needle-group { transition: transform 0.18s ease; }
   &__hub { fill: cg.$cg-cyan; }
 
-  // Avatar centered in the gauge.
-  &__avatar { position: relative; display: flex; align-items: center; justify-content: center; }
+  // Avatar centered in the gauge. Promoted to its own compositor layer so the
+  // needle's per-tick repaint (it carries a drop-shadow filter, which repaints its
+  // region each frame of the 0.18s transition) does not flush/flicker the avatar
+  // image overlaid on the same SVG — the avatar DOM is otherwise fully stable.
+  &__avatar {
+    position: relative; display: flex; align-items: center; justify-content: center;
+    transform: translateZ(0); will-change: transform; backface-visibility: hidden;
+  }
   &__multiplier {
     // Top-right of the avatar — the HR readout owns the bottom 25% band, so the
     // multiplier moved up here to stop covering the heart-rate number.
