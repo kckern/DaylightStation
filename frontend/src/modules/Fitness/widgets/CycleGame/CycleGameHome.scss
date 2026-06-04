@@ -827,16 +827,6 @@ $cgh-record-cols: minmax(0, 1.4fr) minmax(66px, 1fr) minmax(38px, 0.7fr) minmax(
   padding: 2px;
 }
 
-.cgh-ghost-card__confirm {
-  margin-left: auto;
-  flex-shrink: 0;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: t.$cg-cyan;
-}
-
 .cgh-ghost-card {
   appearance: none; cursor: pointer; text-align: left; width: 100%;
   display: flex; align-items: center; gap: 14px;

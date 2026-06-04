@@ -533,9 +533,6 @@ function GhostPicker({ candidates = [], currentGhost = null, onSelect, onClear, 
                           <span className="cgh-ghost-card__goal">{c.scoreKind === 'time' ? 'in' : 'to'} {c.goalLabel}</span>
                           <span className="cgh-ghost-card__time">{c.timeOfDay}</span>
                         </span>
-                        {isFocused && (
-                          <span className="cgh-ghost-card__confirm">Tap again to choose</span>
-                        )}
                       </button>
                     );
                   })}
