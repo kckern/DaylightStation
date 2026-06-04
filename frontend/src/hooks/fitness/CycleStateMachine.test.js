@@ -868,3 +868,26 @@ describe('Cycle SM — tag-team swap mid-challenge (any non-terminal state)', ()
     expect(engine.challengeState.activeChallenge.rider).toBe('milo');
   });
 });
+
+describe('Cycle SM — video pause covers every lock reason (regression)', () => {
+  // Bug (2026-06-04): state.videoLocked was special-cased to lockReason ===
+  // 'health', so a ramp-timeout lock surfaced the lock overlay over a video
+  // that kept playing. The single governance pause must fire for ANY cycle
+  // lock; lockReason only steers the overlay UX, not whether the video pauses.
+  it('sets state.videoLocked on a ramp-timeout lock, not just health', () => {
+    const { engine, advance } = makeEngineWithActiveCycle(42);
+    // Pedal at 45 RPM: above init.min_rpm (30) so we clear init into ramp, but
+    // below hi_rpm (60) so the 5 s ramp window times out -> lockReason 'ramp'.
+    let snap = null;
+    for (let i = 0; i < 120; i += 1) {
+      const now = advance(200);
+      tick(engine, now, { zone: 'warm', rpm: 45 });
+      snap = engine.state;
+      // Wait for the PUBLISHED (debounced) snapshot to surface the lock.
+      if (snap?.challenge?.cycleState === 'locked') break;
+    }
+    expect(snap?.challenge?.cycleState).toBe('locked');
+    expect(snap?.challenge?.lockReason).toBe('ramp');
+    expect(snap.videoLocked).toBe(true);
+  });
+});

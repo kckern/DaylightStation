@@ -1723,11 +1723,18 @@ export class GovernanceEngine {
       countdownSecondsTotal: gracePeriodTotal,
       deadline: this.meta?.deadline || null,
       gracePeriodTotal,
+      // A cycle challenge pauses the video for ANY lock reason (health, ramp,
+      // init, maintain) — videoLocked is the single governance pause authority,
+      // decoupled from the overlay UX (resolveLockScreen / lockReason only steer
+      // how the lock screen *looks*, not whether the video is paused). Keyed on
+      // the published (debounced) cycleState so the pause and the lock overlay
+      // surface together. Previously this was special-cased to lockReason ===
+      // 'health', which left ramp/init locks showing a lock screen over a video
+      // that kept playing.
       videoLocked: ((this.challengeState?.videoLocked || this._mediaIsGoverned())
           && this.phase !== 'unlocked' && this.phase !== 'warning')
-        || (this.challengeState?.activeChallenge?.type === 'cycle'
-            && this.challengeState?.activeChallenge?.cycleState === 'locked'
-            && this.challengeState?.activeChallenge?.lockReason === 'health'),
+        || (challengeSnapshot?.type === 'cycle'
+            && challengeSnapshot?.cycleState === 'locked'),
       challengePaused: challengeSnapshot ? Boolean(challengeSnapshot.paused) : false,
       challenge: challengeSnapshot,
       challengeHistory: Array.isArray(this.challengeState?.challengeHistory)

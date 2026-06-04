@@ -22,6 +22,13 @@ describe('buildChallengeToast', () => {
     });
   });
 
+  it('builds a cycling-specific start toast for cycle challenges', () => {
+    const toast = buildChallengeToast('start', { type: 'cycle', rider: { id: 'felix', name: 'Felix' } });
+    expect(toast.title).toBe('Cycling challenge started');
+    expect(toast.variant).toBe('info');
+    expect(toast.subtitle).toBeUndefined();
+  });
+
   it('uses singular "person" when requiredCount is 1', () => {
     expect(buildChallengeToast('start', { zoneLabel: 'Hot', requiredCount: 1 }).subtitle)
       .toBe('Get 1 person to Hot');

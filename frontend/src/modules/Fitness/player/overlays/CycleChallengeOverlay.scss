@@ -232,10 +232,17 @@
   // Segmented health bar — Mega-Man style pips beneath the widget. Lit segments
   // deplete right -> left; empty bar (locked) flashes to signal video paused.
   .cycle-health-bar {
+    // Anchored just below the circle (the widget's other content is absolutely
+    // positioned, so an in-flow bar would float to the top). Sits underneath the
+    // ring, centered.
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
     gap: clamp(2px, calc(var(--cycle-overlay-diameter) * 0.012), 4px);
     width: clamp(110px, calc(var(--cycle-overlay-diameter) * 0.85), 230px);
-    margin: clamp(4px, calc(var(--cycle-overlay-diameter) * 0.03), 10px) auto 0;
+    margin: 0;
     padding: 3px;
     border-radius: 4px;
     background: rgba(15, 23, 42, 0.7);
@@ -318,7 +325,8 @@
   // when boostMultiplier > 1.0.
   &__boost-badge {
     position: absolute;
-    top: calc(100% + 6px);
+    // Sits below the health bar (which now lives just under the circle).
+    top: calc(100% + 32px);
     left: 50%;
     transform: translateX(-50%);
     padding: 2px clamp(6px, calc(var(--cycle-overlay-diameter) * 0.04), 10px);
@@ -436,6 +444,8 @@
 }
 
 @keyframes cycle-phase-block-flash {
-  0%, 100% { background: #000; border-color: #000; }
+  // Down-state is visually identical to a not-yet-done block (muted slate fill,
+  // light outline); only the up-state lights to white. No black "off" frame.
+  0%, 100% { background: rgba(148, 163, 184, 0.35); border-color: rgba(255, 255, 255, 0.2); }
   50%      { background: #fff; border-color: #fff; }
 }
