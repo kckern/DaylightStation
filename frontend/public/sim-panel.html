@@ -341,6 +341,17 @@
       }
       opener.__cycleGameControl.startRace({ winCondition: win, value });
       assigns.forEach((a, i) => controller.driveRpmArc(a.equipmentId, { base: 80 + i*5, amp: 12, periodS: 18 }));
+      // Watch for the race to finish (phase reaches 'results'), then stop the RPM
+      // drivers so the bikes don't keep spinning after the race ends. A generous
+      // safety cap stops them even if the finish signal never arrives.
+      const stopBy = Date.now() + (win === 'time' ? value * 1000 : 300000) + 30000;
+      while (Date.now() < stopBy) {
+        await sleep(1000);
+        const phase = opener.__cycleGameControl && opener.__cycleGameControl.getPhase
+          ? opener.__cycleGameControl.getPhase() : null;
+        if (!phase || phase === 'results' || phase === 'idle') break;
+      }
+      assigns.forEach((a) => controller.stopRpmArc(a.equipmentId));
     }
     function runAmbient(){ controller.startAmbientWorkout(); render(); }
     function stopAll(){ controller.stopEverything(); render(); }

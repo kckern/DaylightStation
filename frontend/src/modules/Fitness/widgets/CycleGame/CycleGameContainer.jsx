@@ -687,19 +687,24 @@ export default function CycleGameContainer({ onMount } = {}) {
     }
   }, [raceType, raceValueM, raceValueS, distanceDefaultM, timeDefaultS, stagingBufferMs, ghost, buildRiders, zones, cadenceBands, hrlessMultiplier, cycleGameConfig, raceIdleDnfS, hotStartPenaltyS, applySnapshot, log]);
 
-  // Keep a stable ref to the latest startRace so the sim control hook (registered
-  // once) always calls the current closure.
+  // Keep stable refs to the latest startRace + phase so the sim control hook
+  // (registered once) always reads current values.
   const startRaceRef = useRef(startRace);
   useEffect(() => { startRaceRef.current = startRace; }, [startRace]);
+  const phaseRef = useRef(phase);
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
 
   // Sim-panel seam: expose a programmatic race start so the simulation popup's
   // "Cycle Game Race" preset can launch a real race. Riders are assigned
   // separately (the sim sets equipment riders, which buildRiders reads).
+  // getPhase lets the popup watch for the race to finish (reaches 'results')
+  // so it can stop the RPM drivers it started.
   useEffect(() => {
     window.__cycleGameControl = {
       ready: true,
       startRace: ({ winCondition, value } = {}) =>
-        startRaceRef.current(buildAutoStartCourse({ winCondition, value }))
+        startRaceRef.current(buildAutoStartCourse({ winCondition, value })),
+      getPhase: () => phaseRef.current
     };
     return () => {
       if (window.__cycleGameControl) delete window.__cycleGameControl;
