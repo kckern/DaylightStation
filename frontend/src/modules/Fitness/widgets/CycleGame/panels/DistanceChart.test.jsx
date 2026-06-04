@@ -33,4 +33,15 @@ describe('DistanceChart panel', () => {
     expect(y).toBeGreaterThan(90);
     expect(y).toBeLessThan(110);
   });
+  it('renders decimating gridlines for the current window', () => {
+    const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 120, distanceSeries: [120], isGhost: false } };
+    const { container } = render(
+      <DistanceChart riderIds={['a']} riders={riders} riderLive={{ a: {} }}
+        winCondition="distance" goalM={5000} elapsedS={10} />
+    );
+    const grid = container.querySelector('[data-testid="chart-grid"]');
+    expect(grid).toBeTruthy();
+    expect(grid.querySelectorAll('.cycle-race-screen__gridline--y').length).toBeGreaterThanOrEqual(2);
+    expect(grid.querySelectorAll('.cycle-race-screen__gridline--x').length).toBeGreaterThanOrEqual(2);
+  });
 });
