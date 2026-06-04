@@ -64,7 +64,7 @@ export default function CycleRaceScreen({
   const panels = {
     distanceChart: () => (
       <DistanceChart riderIds={riderIds} riders={riders} riderLive={riderLive}
-        winCondition={winCondition} goalM={goalM} events={events} />
+        winCondition={winCondition} goalM={goalM} events={events} elapsedS={elapsedS} />
     ),
     rankings: () => (
       <Rankings riderIds={riderIds} riders={riders} riderLive={riderLive} winCondition={winCondition} />
