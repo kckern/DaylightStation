@@ -44,4 +44,14 @@ describe('DistanceChart panel', () => {
     expect(grid.querySelectorAll('.cycle-race-screen__gridline--y').length).toBeGreaterThanOrEqual(2);
     expect(grid.querySelectorAll('.cycle-race-screen__gridline--x').length).toBeGreaterThanOrEqual(2);
   });
+  it('wraps the plotted content in a zoomable group that carries the transition', () => {
+    const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 50, distanceSeries: [50], isGhost: false } };
+    const { container } = render(
+      <DistanceChart riderIds={['a']} riders={riders} riderLive={{ a: {} }}
+        winCondition="distance" goalM={5000} elapsedS={5} />
+    );
+    const g = container.querySelector('[data-testid="chart-zoomable"]');
+    expect(g).toBeTruthy();
+    expect(g.getAttribute('class')).toContain('cycle-race-screen__zoomable');
+  });
 });
