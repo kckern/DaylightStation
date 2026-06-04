@@ -412,8 +412,18 @@ left, the **single qualifying top panel** (chart, or lap table when laps are on 
 the director already chose via candidacy) on the right. The director and panel
 registry are unchanged; only the rendering branches. Each half keeps its
 `PanelSlot`, so the measured `zoneBox` still flows; the lone gauge uses a larger
-cap (`maxGauge` 420 vs 280) so it fills its column. This kills the "tiny gauge
-marooned in a void" start-state of a solo race.
+cap **and a hard floor** (`maxGauge` 520 / `minGauge` 320 in solo vs 280 / 96) so
+it fills its column and is **never** reduced below a legible radius — even during
+the pre-measurement transient (`zoneBox` {0,0} → `gaugeRowSize` returns the floor,
+not the 96px default). This kills the "tiny gauge marooned in a void" solo state.
+
+> **Layout gotcha (cost a regression):** do NOT flex-center the solo *zones*
+> (`display:flex; align-items/justify-content:center`). The `.race-layout__slot`
+> inside is `height:100%` and is what `PanelSlot` measures; centering the zone
+> shrinks the slot to its content, so `zoneBox` collapses to ~0 and the gauge pins
+> to its floor *in a half-empty column*. Keep the zones plain grid cells (slot
+> fills them) and centre the gauge **inside** `.cycle-race-screen__speedos`
+> (`flex:none; height:100%`).
 
 > **Wiring gotcha:** the `panels` map factories in `CycleRaceScreen` are invoked
 > as components by `PanelSlot.cloneElement`, which injects `{ zoneBox }`. Each

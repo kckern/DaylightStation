@@ -22,11 +22,18 @@
 }
 // Solo (one participant): two balanced columns — gauge left, the single top panel
 // (chart or lap table) right — filling the height instead of the top-row-over-band
-// velodrome. Each column centres its content so the lone gauge/chart isn't marooned.
+// velodrome.
+//
+// CRITICAL: do NOT flex-center the *zones*. The `.race-layout__slot` inside each
+// zone is `height:100%` and is what PanelSlot measures into `zoneBox`; flex-
+// centering the zone shrinks the slot to its content, so gaugeRowSize sees a tiny
+// box and pins the gauge to its floor. The zones stay plain grid cells (the slot
+// fills them, same as the velodrome zones) and centering happens INSIDE the panel.
 .race-layout--solo {
   grid-template-rows: 1fr;
   grid-template-columns: 1fr 1fr;
-  .race-layout__zone--solo-left,
-  .race-layout__zone--solo-right { display: flex; align-items: center; justify-content: center; }
+  // The speedo container is normally a 44%-height band item; in a solo slot it must
+  // fill the slot height and centre the lone hero gauge.
+  .cycle-race-screen__speedos { flex: none; height: 100%; }
 }
 @keyframes race-slot-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
