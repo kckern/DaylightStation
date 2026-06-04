@@ -100,6 +100,17 @@ describe('CycleRaceScreen', () => {
     rerender(<CycleRaceScreen {...props} />);
     expect(queryByTestId('cycle-race-penalty-banner')).toBeNull();
   });
+  it('uses the solo split layout for a single participant', () => {
+    const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 0, distanceSeries: [0], finishTimeS: null, isGhost: false } };
+    const { getByTestId } = render(
+      <CycleRaceScreen winCondition="time" timeCapS={120} elapsedS={1} riders={riders} riderLive={{ a: { rpm: 0 } }} />
+    );
+    expect(getByTestId('race-layout-solo')).toBeTruthy();
+  });
+  it('uses the velodrome grid (no solo split) for two or more participants', () => {
+    const { queryByTestId } = render(<CycleRaceScreen {...props} />);
+    expect(queryByTestId('race-layout-solo')).toBeNull();
+  });
   it('hides the speedometer row when showSpeedos is false', () => {
     const riders = { a: { userId: 'a', displayName: 'A', distanceSeries: [10, 20], cumulativeDistanceM: 20, finishTimeS: null, isGhost: false } };
     const { container } = render(

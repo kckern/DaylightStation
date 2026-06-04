@@ -1,0 +1,49 @@
+@use '../cgTokens' as cg;
+
+// Piston race chart — a fixed stack of horizontal bars; the tip avatar + bar glide
+// as the field trades places.
+.cg-pistons {
+  display: flex; flex-direction: column; justify-content: space-around;
+  width: 100%; height: 100%; min-height: 0;
+  padding: 8px 14px; box-sizing: border-box; gap: 6px;
+
+  &__row {
+    display: flex; align-items: center; gap: 14px;
+    min-height: 0;
+    &.is-leader .cg-pistons__head { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), 0 0 16px var(--cg-piston-color); }
+  }
+
+  // The lane the bar grows along. Right padding reserves room for the tip avatar so
+  // the leader (100%) doesn't clip the edge.
+  &__track {
+    position: relative; flex: 1 1 auto; min-width: 0;
+    height: 10px; margin-right: 26px;
+    background: rgba(122, 162, 255, 0.10);
+    border-radius: 999px;
+  }
+
+  &__bar {
+    position: absolute; left: 0; top: 0; height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(0, 0, 0, 0) 0%, var(--cg-piston-color) 100%);
+    box-shadow: 0 0 10px -2px var(--cg-piston-color);
+    transition: width 0.45s cubic-bezier(0.33, 1, 0.68, 1);
+  }
+
+  // Avatar marker riding the bar tip. transition on `left` is the piston glide.
+  &__head {
+    position: absolute; top: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px var(--cg-piston-color), 0 2px 8px rgba(0, 0, 0, 0.6);
+    transition: left 0.45s cubic-bezier(0.33, 1, 0.68, 1);
+    .circular-user-avatar { width: 38px !important; height: 38px !important; --vital-avatar-size: 38px; }
+    &.is-ghost { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3); }
+  }
+
+  &__dist {
+    flex: 0 0 auto; min-width: 3.6em; text-align: right;
+    font-family: cg.$cg-mono; font-weight: 800; font-size: 0.95rem;
+    color: cg.$cg-cyan;
+  }
+}

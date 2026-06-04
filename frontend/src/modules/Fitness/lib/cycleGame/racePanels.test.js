@@ -27,11 +27,16 @@ describe('racePanels registry', () => {
     expect(panelById('distanceChart').candidacy(snap({ fieldSize: 1, isSolo: true, lapsEnabled: false }))).toBe(true);
   });
 
-  it('lapTable needs laps and is boosted when solo', () => {
-    expect(panelById('lapTable').candidacy(snap({ lapsEnabled: false }))).toBe(false);
-    const grouped = panelById('lapTable').priority(snap({ lapsEnabled: true, isSolo: false }));
-    const solo = panelById('lapTable').priority(snap({ lapsEnabled: true, isSolo: true }));
+  it('lapPanel needs laps and is boosted when solo', () => {
+    expect(panelById('lapPanel').candidacy(snap({ lapsEnabled: false }))).toBe(false);
+    const grouped = panelById('lapPanel').priority(snap({ lapsEnabled: true, isSolo: false }));
+    const solo = panelById('lapPanel').priority(snap({ lapsEnabled: true, isSolo: true }));
     expect(solo).toBeGreaterThan(grouped);
+  });
+
+  it('racePistons needs competitors (fieldSize >= 2)', () => {
+    expect(panelById('racePistons').candidacy(snap({ fieldSize: 1, isSolo: true }))).toBe(false);
+    expect(panelById('racePistons').candidacy(snap({ fieldSize: 2 }))).toBe(true);
   });
 
   it('cameraZoom only candidates on its trigger events', () => {
