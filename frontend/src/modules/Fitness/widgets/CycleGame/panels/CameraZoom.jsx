@@ -5,20 +5,22 @@ import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.j
 import './CameraZoom.scss';
 
 /**
- * Pure framing helper: normalize the framed riders' distances to 0..100% so the
- * broadcast camera auto-fills the frame on whatever cluster the director is
- * promoting (a lapping pair, a photo finish). The trailing rider pins to the
- * left edge (0%), the leader to the right (100%). When every distance is equal
+ * Pure framing helper: normalize the framed riders' distances into a 15%–85%
+ * band so the broadcast camera keeps the field off the literal panel edges.
+ * The trailing rider insets to 15%, the leader to 85%; intermediate riders
+ * are placed proportionally inside that band. When every distance is equal
  * (e.g. a dead heat or a single rider) there is no spread, so everyone centers
  * at 50% — this also guards against divide-by-zero.
  */
 export function framePositions(riders) {
+  const MARGIN_PCT = 15; // keep the field off the literal edges so the shot is framed
+  const span = 100 - MARGIN_PCT * 2;
   const ds = riders.map((r) => r.distanceM || 0);
   const min = Math.min(...ds), max = Math.max(...ds);
   const range = max - min;
   return riders.map((r) => ({
     id: r.id,
-    xPct: range > 0 ? (((r.distanceM || 0) - min) / range) * 100 : 50
+    xPct: range > 0 ? MARGIN_PCT + (((r.distanceM || 0) - min) / range) * span : 50
   }));
 }
 
