@@ -700,14 +700,16 @@ export default function CycleGameContainer({ onMount } = {}) {
   // getPhase lets the popup watch for the race to finish (reaches 'results')
   // so it can stop the RPM drivers it started.
   useEffect(() => {
-    window.__cycleGameControl = {
+    const api = {
       ready: true,
       startRace: ({ winCondition, value } = {}) =>
         startRaceRef.current(buildAutoStartCourse({ winCondition, value })),
       getPhase: () => phaseRef.current
     };
+    window.__cycleGameControl = api;
     return () => {
-      if (window.__cycleGameControl) delete window.__cycleGameControl;
+      // Only clear if it's still ours (guards a StrictMode/remount interleave).
+      if (window.__cycleGameControl === api) delete window.__cycleGameControl;
     };
   }, []);
 

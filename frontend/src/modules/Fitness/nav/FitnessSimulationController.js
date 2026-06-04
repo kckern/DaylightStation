@@ -1,4 +1,4 @@
-// frontend/src/modules/Fitness/FitnessSimulationController.js
+// frontend/src/modules/Fitness/nav/FitnessSimulationController.js
 import { rpmArcValue } from './rpmArc.js';
 
 /**
