@@ -226,6 +226,25 @@ export class FitnessSimulationController {
   }
 
   /**
+   * Assign distinct eligible riders to the first `count` bikes (the 1-click
+   * race setup). Returns the assignments actually made; a bike whose only
+   * eligible riders are already taken is skipped.
+   */
+  autoAssignRiders(count = 2) {
+    const bikes = this.getEquipment().slice(0, Math.max(0, count));
+    const taken = new Set();
+    const assignments = [];
+    for (const bike of bikes) {
+      const pick = (bike.eligibleUsers || []).find((u) => !taken.has(u));
+      if (!pick) continue;
+      taken.add(pick);
+      this.setEquipmentRider(bike.equipmentId, pick);
+      assignments.push({ equipmentId: bike.equipmentId, userId: pick });
+    }
+    return assignments;
+  }
+
+  /**
    * Build an ANT+ cadence (CAD profile) message in the shape
    * expected by the WebSocket -> DeviceManager pipeline.
    */
