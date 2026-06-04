@@ -45,17 +45,23 @@ export default function RacePistons({ riderIds, riders, riderLive = {} }) {
                 className={`cg-pistons__head${isGhost ? ' is-ghost' : ''}`}
                 style={{ left: `${(f * 100).toFixed(2)}%`, '--cg-piston-color': color }}
               >
-                <CircularUserAvatar
-                  name={riders[id]?.displayName}
-                  avatarSrc={live.avatarSrc}
-                  heartRate={live.heartRate}
-                  zoneId={live.zoneId}
-                  zoneColor={live.zoneColor || color}
-                  size={38}
-                  showGauge={false}
-                  showIndicator={false}
-                  opacity={isGhost ? 0.85 : undefined}
-                />
+                {(() => {
+                  const avatar = (
+                    <CircularUserAvatar
+                      name={riders[id]?.displayName}
+                      avatarSrc={live.avatarSrc}
+                      heartRate={live.heartRate}
+                      zoneId={live.zoneId}
+                      zoneColor={live.zoneColor || color}
+                      size={38}
+                      showGauge={false}
+                      showIndicator={false}
+                    />
+                  );
+                  // Ghost riders get the canonical grayscale+tint treatment (the same
+                  // .cg-ghost used by the speedometer/rankings/results), not a bare opacity.
+                  return isGhost ? <span className="cg-ghost">{avatar}</span> : avatar;
+                })()}
               </div>
             </div>
             <div className="cg-pistons__dist" data-testid="piston-dist">{formatDistance(distOf(id))}</div>
