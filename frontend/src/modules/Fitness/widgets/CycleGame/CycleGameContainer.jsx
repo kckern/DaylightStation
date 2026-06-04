@@ -12,6 +12,7 @@ import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.j
 import { buildRecordRow } from '@/modules/Fitness/lib/cycleGame/recordRow.js';
 import { resolveParticipantIdentity } from '@/modules/Fitness/lib/cycleGame/participantIdentity.js';
 import { resolveRpmLimits, clampCountedRpm, rpmDuringGap } from '@/modules/Fitness/lib/cycleGame/equipmentRpm.js';
+import { buildAutoStartCourse } from '@/modules/Fitness/lib/cycleGame/autoStartCourse.js';
 import { usePersistentVolume } from '@/modules/Fitness/nav/usePersistentVolume.js';
 import CycleGameHome from './CycleGameHome.jsx';
 import CountdownStoplight from './CountdownStoplight.jsx';
@@ -566,20 +567,23 @@ export default function CycleGameContainer({ onMount } = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
-  const startRace = useCallback(() => {
+  const startRace = useCallback((override = null) => {
+    const ov = override && override.win_condition ? override : null;
     log.info('cycle_game.start_pressed', {
-      raceType: ghost ? 'ghost' : raceType, hasGhost: !!ghost, control: 'lobby.start-button'
+      raceType: ov ? ov.win_condition : (ghost ? 'ghost' : raceType),
+      hasGhost: !!ghost,
+      control: ov ? 'sim.autostart' : 'lobby.start-button'
     });
     // The race "course" is derived from the chosen type + value. Default the
     // value from config when none was picked (so the E2E — which only clicks a
     // race type then Start — still works).
     // A selected ghost is authoritative for the win condition + goal.
-    const type = ghost ? ghost.winCondition : (raceType || 'distance');
+    const type = ov ? ov.win_condition : (ghost ? ghost.winCondition : (raceType || 'distance'));
     const goalM = type === 'distance'
-      ? (ghost ? ghost.goalM : (Number.isFinite(raceValueM) ? raceValueM : distanceDefaultM))
+      ? (ov ? ov.goal_m : (ghost ? ghost.goalM : (Number.isFinite(raceValueM) ? raceValueM : distanceDefaultM)))
       : null;
     const timeCapS = type === 'time'
-      ? (ghost ? ghost.timeCapS : (Number.isFinite(raceValueS) ? raceValueS : timeDefaultS))
+      ? (ov ? ov.time_cap_s : (ghost ? ghost.timeCapS : (Number.isFinite(raceValueS) ? raceValueS : timeDefaultS)))
       : null;
     const course = {
       id: ghost ? 'ghost' : 'custom',
@@ -682,6 +686,25 @@ export default function CycleGameContainer({ onMount } = {}) {
       applySnapshot(controller.startCountdown());
     }
   }, [raceType, raceValueM, raceValueS, distanceDefaultM, timeDefaultS, stagingBufferMs, ghost, buildRiders, zones, cadenceBands, hrlessMultiplier, cycleGameConfig, raceIdleDnfS, hotStartPenaltyS, applySnapshot, log]);
+
+  // Keep a stable ref to the latest startRace so the sim control hook (registered
+  // once) always calls the current closure.
+  const startRaceRef = useRef(startRace);
+  useEffect(() => { startRaceRef.current = startRace; }, [startRace]);
+
+  // Sim-panel seam: expose a programmatic race start so the simulation popup's
+  // "Cycle Game Race" preset can launch a real race. Riders are assigned
+  // separately (the sim sets equipment riders, which buildRiders reads).
+  useEffect(() => {
+    window.__cycleGameControl = {
+      ready: true,
+      startRace: ({ winCondition, value } = {}) =>
+        startRaceRef.current(buildAutoStartCourse({ winCondition, value }))
+    };
+    return () => {
+      if (window.__cycleGameControl) delete window.__cycleGameControl;
+    };
+  }, []);
 
   // Staging seconds tick (display only). Cleared when leaving the staging phase.
   useEffect(() => {
