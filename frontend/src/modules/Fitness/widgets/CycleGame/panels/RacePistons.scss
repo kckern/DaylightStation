@@ -13,11 +13,12 @@
     &.is-leader .cg-pistons__head { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), 0 0 16px var(--cg-piston-color); }
   }
 
-  // The lane the bar grows along. Right padding reserves room for the tip avatar so
-  // the leader (100%) doesn't clip the edge.
+  // The lane the bar grows along. Symmetric side margins reserve room for the tip
+  // avatar at BOTH ends — the leader pinned at 100% and a rider at 0% (race start /
+  // trailing) — so neither half-clips against the panel edge.
   &__track {
     position: relative; flex: 1 1 auto; min-width: 0;
-    height: 10px; margin-right: 26px;
+    height: 10px; margin: 0 26px;
     background: rgba(122, 162, 255, 0.10);
     border-radius: 999px;
   }
