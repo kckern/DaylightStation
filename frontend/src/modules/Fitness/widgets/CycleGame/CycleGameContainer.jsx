@@ -951,15 +951,22 @@ export default function CycleGameContainer({ onMount } = {}) {
   // + value to that recording.
   const onSelectGhost = useCallback((candidate) => {
     if (!candidate) return;
-    const riders = (candidate.participants || []).map((p) => ({
-      userId: `ghost:${candidate.raceId}:${p.id}`,
-      displayName: `${p.displayName} 👻`,
-      ghostSeries: SessionSerializerV3.decodeSeries(p.distanceSeries) || [],
-      ghostHrSeries: SessionSerializerV3.decodeSeries(p.hrSeries) || [],
-      ghostRpmSeries: SessionSerializerV3.decodeSeries(p.rpmSeries) || [],
-      ghostZoneSeries: SessionSerializerV3.decodeSeries(p.zoneSeries) || [],
-      ghostIntervalS: candidate.intervalSeconds || 1
-    })).filter((r) => r.ghostSeries.length > 0);
+    const riders = (candidate.participants || []).map((p) => {
+      // Flatten ghost-of-a-ghost: reference the ORIGINAL source user so we never
+      // mint `ghost:R2:ghost:R1:user` (which 404s the avatar). resolveParticipantIdentity
+      // returns the final source slug for nested ids; for a real id it's the id itself.
+      const { sourceId } = resolveParticipantIdentity(p.id, p.displayName);
+      const baseName = String(p.displayName || sourceId).replace(/\s*👻\s*$/, '');
+      return {
+        userId: `ghost:${candidate.raceId}:${sourceId}`,
+        displayName: `${baseName} 👻`,
+        ghostSeries: SessionSerializerV3.decodeSeries(p.distanceSeries) || [],
+        ghostHrSeries: SessionSerializerV3.decodeSeries(p.hrSeries) || [],
+        ghostRpmSeries: SessionSerializerV3.decodeSeries(p.rpmSeries) || [],
+        ghostZoneSeries: SessionSerializerV3.decodeSeries(p.zoneSeries) || [],
+        ghostIntervalS: candidate.intervalSeconds || 1
+      };
+    }).filter((r) => r.ghostSeries.length > 0);
     if (riders.length === 0) {
       log.warn('cycle_game.ghost_empty', { raceId: candidate.raceId });
       return;

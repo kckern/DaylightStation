@@ -30,3 +30,29 @@ describe('resolveParticipantIdentity', () => {
     expect(r.displayName).toBe('kc');
   });
 });
+
+describe('resolveParticipantIdentity — ghost dereference', () => {
+  it('resolves a first-generation ghost to its source user', () => {
+    const r = resolveParticipantIdentity('ghost:20260604055230:kckern', 'KC');
+    expect(r.isGhost).toBe(true);
+    expect(r.sourceId).toBe('kckern');
+    expect(r.avatarSrc).toBe('/api/v1/static/img/users/kckern');
+  });
+
+  it('resolves a SECOND-generation ghost back to the original user (not "ghost")', () => {
+    const r = resolveParticipantIdentity('ghost:R2:ghost:R1:kckern', 'KC');
+    expect(r.isGhost).toBe(true);
+    expect(r.sourceId).toBe('kckern');
+    expect(r.avatarSrc).toBe('/api/v1/static/img/users/kckern');
+  });
+
+  it('resolves a ghost of a hyphenated guest id', () => {
+    const r = resolveParticipantIdentity('ghost:R1:guest-adult', 'Guest (Adult)');
+    expect(r.sourceId).toBe('guest-adult');
+  });
+
+  it('falls back to the full id when the source segment is empty', () => {
+    const r = resolveParticipantIdentity('ghost:R1:', 'x');
+    expect(r.sourceId).toBe('ghost:R1:');
+  });
+});

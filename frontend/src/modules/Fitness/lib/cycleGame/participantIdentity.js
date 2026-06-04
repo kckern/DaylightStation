@@ -13,7 +13,13 @@ const AVATAR_BASE = '/api/v1/static/img/users';
  */
 export function resolveParticipantIdentity(id, displayName) {
   const isGhost = typeof id === 'string' && id.startsWith('ghost:');
-  const sourceId = isGhost ? (id.split(':')[2] || id) : id;
+  // A ghost id is `ghost:<raceId>:<sourceId>`. A ghost recorded from a race that
+  // itself contained a ghost nests (`ghost:R2:ghost:R1:user`); the real source is
+  // always the FINAL segment (source slugs — incl. hyphenated guests — never
+  // contain a colon), so dereference straight to it rather than blindly taking [2].
+  // If the id is malformed (only 2 segments), fall back to the whole id.
+  const ghostParts = isGhost ? id.split(':') : [];
+  const sourceId = isGhost ? (ghostParts.length >= 3 ? (ghostParts.pop() || id) : id) : id;
   return {
     id,
     isGhost,
