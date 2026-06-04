@@ -56,6 +56,21 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     leaderDistanceM, elapsedS, xBaseS: X_BASE_S, yBaseM: Y_BASE_M, threshold: ZOOM_THRESHOLD
   });
   const L = zoomRef.current;
+  // Zoom-out animation: when the level jumps, start the content scaled up by the
+  // jump ratio (so it looks like the pre-zoom scale) then ease to 1x — the world
+  // shrinks into the new, wider frame about the bottom-left origin.
+  const prevLevelRef = useRef(L);
+  const [animScale, setAnimScale] = useState(1);
+  useEffect(() => {
+    if (L > prevLevelRef.current) {
+      setAnimScale(2 ** (L - prevLevelRef.current));
+      const id = requestAnimationFrame(() => requestAnimationFrame(() => setAnimScale(1)));
+      prevLevelRef.current = L;
+      return () => cancelAnimationFrame(id);
+    }
+    prevLevelRef.current = L;
+    return undefined;
+  }, [L]);
   const W = 600, H = 200;
   const T = X_BASE_S * 2 ** L;   // seconds visible
   const D = Y_BASE_M * 2 ** L;   // metres visible
@@ -168,6 +183,12 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
           })}
         </defs>
 
+        <g
+          data-testid="chart-zoomable"
+          className="cycle-race-screen__zoomable"
+          style={{ transform: `scale(${animScale})`, transformOrigin: `0px ${H}px`, transformBox: 'view-box' }}
+        >
+
         <g className="cycle-race-screen__grid" data-testid="chart-grid">
           {xGrid.map(({ t, x }) => (
             <line key={`gx-${t}`} className="cycle-race-screen__gridline cycle-race-screen__gridline--x"
@@ -230,6 +251,8 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
             />
           );
         })}
+
+        </g>
       </svg>
 
       {/* Terminus markers: each line's tip carries the rider's avatar + running
