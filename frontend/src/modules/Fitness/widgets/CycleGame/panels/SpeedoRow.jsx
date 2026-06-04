@@ -12,12 +12,14 @@ const SPEEDO_GAP = 28; // keep in sync with .cycle-race-screen__speedos gap
  * (`zoneBox`), so there's no self-measuring ResizeObserver loop. Falls back to a
  * reasonable size before the first measurement.
  */
-export default function SpeedoRow({ riderIds, riders, riderLive, cadenceBands, zoneBox }) {
+export default function SpeedoRow({ riderIds, riders, riderLive, cadenceBands, zoneBox, maxGauge = 280, minGauge = 96 }) {
   const speedoSize = gaugeRowSize({
     zoneW: zoneBox?.width || 0,
     zoneH: zoneBox?.height || 0,
     count: riderIds.length,
-    gap: SPEEDO_GAP
+    gap: SPEEDO_GAP,
+    max: maxGauge,
+    min: minGauge
   });
 
   return (
@@ -60,5 +62,7 @@ SpeedoRow.propTypes = {
   riders: PropTypes.object.isRequired,
   riderLive: PropTypes.object.isRequired,
   cadenceBands: PropTypes.array,
-  zoneBox: PropTypes.shape({ width: PropTypes.number, height: PropTypes.number })
+  zoneBox: PropTypes.shape({ width: PropTypes.number, height: PropTypes.number }),
+  maxGauge: PropTypes.number,
+  minGauge: PropTypes.number
 };

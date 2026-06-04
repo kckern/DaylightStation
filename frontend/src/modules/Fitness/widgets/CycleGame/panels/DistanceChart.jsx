@@ -10,6 +10,10 @@ const X_BASE_S = 30;        // level-0 time window (seconds; 1 sample = 1s at th
 const Y_BASE_M = 250;       // level-0 distance window (metres)
 const ZOOM_THRESHOLD = 0.9; // grow the window when data hits 90% of it
 const GRID_MIN_PX = 32;    // never draw gridlines closer than this (bottom cap)
+const ZOOM_ANIM_MS = 300;  // zoom-out camera ease duration
+const TICK_INTERP_MS = 1000; // glide the leading edge over one 1Hz tick interval
+
+const easeOutQuad = (t) => 1 - (1 - t) * (1 - t);
 
 const EVENT_GLYPH = { dnf: '🛑', penalty: '⏱️' };
 
@@ -56,16 +60,20 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     leaderDistanceM, elapsedS, xBaseS: X_BASE_S, yBaseM: Y_BASE_M, threshold: ZOOM_THRESHOLD
   });
   const L = zoomRef.current;
-  // Zoom-out animation: when the level jumps, start the content scaled up by the
-  // jump ratio (so it looks like the pre-zoom scale) then ease to 1x — the world
-  // shrinks into the new, wider frame about the bottom-left origin.
+  // Zoom-out animation: when the level jumps, SNAP the content up by the jump ratio
+  // with NO transition (so it reads as the pre-zoom scale), then on the next frame
+  // ease back to 1x over ZOOM_ANIM_MS — the world shrinks into the new, wider frame
+  // about the bottom-left origin. Toggling the transition off for the snap is the
+  // whole trick: leaving it on animates 1→ratio and gets interrupted, which looks
+  // abrupt (almost no visible move).
   const prevLevelRef = useRef(L);
-  const [animScale, setAnimScale] = useState(1);
+  const [zoom, setZoom] = useState({ scale: 1, animate: false });
   useEffect(() => {
     if (L > prevLevelRef.current) {
-      setAnimScale(2 ** (L - prevLevelRef.current));
-      const id = requestAnimationFrame(() => requestAnimationFrame(() => setAnimScale(1)));
+      const ratio = 2 ** (L - prevLevelRef.current);
       prevLevelRef.current = L;
+      setZoom({ scale: ratio, animate: false });
+      const id = requestAnimationFrame(() => requestAnimationFrame(() => setZoom({ scale: 1, animate: true })));
       return () => cancelAnimationFrame(id);
     }
     prevLevelRef.current = L;
@@ -98,6 +106,62 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
       return H - (Math.log1p(Math.max(0, d || 0)) / Math.log1p(Dd)) * H;
     }
     return H - Math.min(1, (d || 0) / D) * H;
+  };
+
+  // ── Smooth leading edge ────────────────────────────────────────────────────
+  // The engine ticks at 1 Hz, so each line's newest point jumps once per second
+  // while its terminus node glides (CSS transition). Glide the line tip too: lerp
+  // it from its previous-tick position to the current one across the tick interval
+  // via a rAF clock, so the line grows continuously instead of snapping.
+  const tickKey = `${maxSeriesLen}`;
+  const prevTipsRef = useRef({});
+  const lastTipsRef = useRef({});
+  const tickKeyRef = useRef(tickKey);
+  const tickAtRef = useRef(0);
+  const [tickFrac, setTickFrac] = useState(1);
+  const curTips = {};
+  riderIds.forEach((id) => {
+    const series = riders[id].distanceSeries || [];
+    const last = series.length - 1;
+    if (last < 0) return;
+    curTips[id] = { x: xFor(last), y: yFor(series[last]) };
+  });
+  if (tickKeyRef.current !== tickKey) {
+    prevTipsRef.current = lastTipsRef.current;   // tip positions as of the prior tick
+    tickKeyRef.current = tickKey;
+    tickAtRef.current = (typeof performance !== 'undefined' ? performance.now() : 0);
+  }
+  lastTipsRef.current = curTips;                  // remember for next tick's prev
+  useEffect(() => {
+    setTickFrac(0);
+    if (typeof requestAnimationFrame === 'undefined') { setTickFrac(1); return undefined; }
+    let raf;
+    const step = () => {
+      const now = (typeof performance !== 'undefined' ? performance.now() : 0);
+      const f = TICK_INTERP_MS > 0 ? Math.min(1, (now - tickAtRef.current) / TICK_INTERP_MS) : 1;
+      setTickFrac(f);
+      if (f < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => { if (raf) cancelAnimationFrame(raf); };
+  }, [tickKey]);
+  const tipFrac = easeOutQuad(Math.min(1, Math.max(0, tickFrac)));
+  const tipFor = (id) => {
+    const cur = curTips[id];
+    if (!cur) return null;
+    const prev = prevTipsRef.current[id];
+    if (!prev) return cur;
+    return { x: prev.x + (cur.x - prev.x) * tipFrac, y: prev.y + (cur.y - prev.y) * tipFrac };
+  };
+  // Shared mapped coordinates for a rider's lane (area + line), tip interpolated.
+  const lineCoordsFor = (id) => {
+    const series = riders[id].distanceSeries || [];
+    const start = plotStartIndex(series);
+    if (start < 0) return null;
+    const coords = series.slice(start).map((d, i) => ({ x: xFor(start + i), y: yFor(d) }));
+    const tip = tipFor(id);
+    if (tip && coords.length) coords[coords.length - 1] = tip;
+    return { coords, start };
   };
 
   // leader (for emphasis) — furthest along
@@ -186,7 +250,12 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
         <g
           data-testid="chart-zoomable"
           className="cycle-race-screen__zoomable"
-          style={{ transform: `scale(${animScale})`, transformOrigin: `0px ${H}px`, transformBox: 'view-box' }}
+          style={{
+            transform: `scale(${zoom.scale})`,
+            transformOrigin: `0px ${H}px`,
+            transformBox: 'view-box',
+            transition: zoom.animate ? `transform ${ZOOM_ANIM_MS}ms ease-out` : 'none'
+          }}
         >
 
         <g className="cycle-race-screen__grid" data-testid="chart-grid">
@@ -206,14 +275,13 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
 
         {/* area fills (under each lane) */}
         {riderIds.map((id, idx) => {
-          const series = riders[id].distanceSeries || [];
           // Skip the leading flat-zero run (e.g. a penalty-boxed late start): the
           // fill begins where the rider first moves. No movement at all → no fill.
-          const start = plotStartIndex(series);
-          if (start < 0) return null;
-          const linePts = series.slice(start).map((d, i) => `${xFor(start + i).toFixed(1)},${yFor(d).toFixed(1)}`).join(' ');
-          const startX = xFor(start).toFixed(1);
-          const lastX = xFor(series.length - 1).toFixed(1);
+          const lc = lineCoordsFor(id);
+          if (!lc) return null;
+          const linePts = lc.coords.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+          const startX = lc.coords[0].x.toFixed(1);
+          const lastX = lc.coords[lc.coords.length - 1].x.toFixed(1);
           const area = `${startX},${H} ${linePts} ${lastX},${H}`;
           return (
             <polygon
@@ -227,12 +295,11 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
 
         {/* lane lines */}
         {riderIds.map((id, idx) => {
-          const series = riders[id].distanceSeries || [];
           // Line begins at first movement — a rider boxed at the start emerges
           // from the axis to the right of the origin, never a flat zero line.
-          const start = plotStartIndex(series);
-          if (start < 0) return null;
-          const pts = series.slice(start).map((d, i) => `${xFor(start + i).toFixed(1)},${yFor(d).toFixed(1)}`).join(' ');
+          const lc = lineCoordsFor(id);
+          if (!lc) return null;
+          const pts = lc.coords.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
           const color = LINE_COLORS[idx % LINE_COLORS.length];
           const isGhost = !!riders[id].isGhost;
           return (

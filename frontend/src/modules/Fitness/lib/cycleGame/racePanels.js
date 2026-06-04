@@ -25,16 +25,19 @@ export const RACE_PANELS = [
     priority: (s) => 45 + Math.min(30, (s.leaderGapM || 0) * 0.05), transient: null
   },
   {
-    id: 'lapTable', zones: ['topLeft', 'topCenter', 'topRight'], sizeHint: 'standard', cycles: true,
+    id: 'lapPanel', zones: ['topLeft', 'topCenter', 'topRight'], sizeHint: 'wide', cycles: true,
+    // Combined velodrome oval (whole-race loop) + growing lap-split table as one
+    // lap-context unit. Laps-gated; boosted when solo (the lap view is the star of
+    // a solo lap race). Replaces the former separate lapTable + ovalTrack panels.
     candidacy: (s) => !!s.lapsEnabled,
     priority: (s) => (s.isSolo ? 80 : 40), transient: null
   },
   {
-    id: 'ovalTrack', zones: ['topCenter', 'topLeft'], sizeHint: 'standard', cycles: true,
-    // A whole-race progress track (one loop = the whole race), so it no longer
-    // requires laps — shown for any field of 2+ (ghosts count).
+    id: 'racePistons', zones: ['topCenter', 'topLeft', 'topRight'], sizeHint: 'wide', cycles: true,
+    // Relative-standings "piston" bars — leader pinned to the right edge, the field
+    // trailing; needs competitors (ghosts count) to read as a race.
     candidacy: (s) => s.fieldSize >= 2,
-    priority: (s) => 42 + Math.min(25, (s.lapDeltaMax || 0) * 15), transient: null
+    priority: (s) => 44 + Math.min(22, (s.leaderGapM || 0) * 0.04), transient: null
   },
   {
     id: 'cameraZoom', zones: ['topCenter'], sizeHint: 'focus', cycles: false,
