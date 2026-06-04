@@ -27,7 +27,7 @@
     border-radius: 999px;
     background: linear-gradient(90deg, rgba(0, 0, 0, 0) 0%, var(--cg-piston-color) 100%);
     box-shadow: 0 0 10px -2px var(--cg-piston-color);
-    transition: width 0.45s cubic-bezier(0.33, 1, 0.68, 1);
+    transition: width 0.9s linear;
   }
 
   // Avatar marker riding the bar tip. transition on `left` is the piston glide.
@@ -36,7 +36,7 @@
     transform: translate(-50%, -50%);
     border-radius: 50%;
     box-shadow: 0 0 0 2px var(--cg-piston-color), 0 2px 8px rgba(0, 0, 0, 0.6);
-    transition: left 0.45s cubic-bezier(0.33, 1, 0.68, 1);
+    transition: left 0.9s linear;
     .circular-user-avatar { width: 38px !important; height: 38px !important; --vital-avatar-size: 38px; }
     &.is-ghost { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3); }
   }
