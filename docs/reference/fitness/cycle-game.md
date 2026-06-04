@@ -404,6 +404,23 @@ the use site** so an in-zone swap remounts and the enter animation fires. The
 clock frame and false-start banner are fixed chrome above the grid (always-on,
 not director-managed).
 
+**Solo split (one participant).** When the field is exactly one rider
+(`riderIds.length === 1` — a ghost/pacer is a second entry and reverts to the
+velodrome grid), `CycleRaceScreen` passes `solo` to the manager, which re-arranges
+into two balanced 50/50 columns instead of top-row-over-band: the **gauge** on the
+left, the **single qualifying top panel** (chart, or lap table when laps are on —
+the director already chose via candidacy) on the right. The director and panel
+registry are unchanged; only the rendering branches. Each half keeps its
+`PanelSlot`, so the measured `zoneBox` still flows; the lone gauge uses a larger
+cap (`maxGauge` 420 vs 280) so it fills its column. This kills the "tiny gauge
+marooned in a void" start-state of a solo race.
+
+> **Wiring gotcha:** the `panels` map factories in `CycleRaceScreen` are invoked
+> as components by `PanelSlot.cloneElement`, which injects `{ zoneBox }`. Each
+> factory **must forward `zoneBox`** (`(slot) => <Panel zoneBox={slot?.zoneBox} />`);
+> a zero-arg `() => <Panel />` silently drops it, leaving `SpeedoRow` at its 96px
+> gauge floor. Locked by `CycleRaceScreen.zoneBox.test.jsx`.
+
 **Collision / overlap prevention** is *logical*, not geometric: the director's
 `taken` set guarantees one panel per zone (overflow goes to the cycle pool, never
 overlaps), and the CSS grid keeps zones in distinct cells, so there's no
@@ -411,10 +428,12 @@ pixel-level overlap to detect. *Within* a panel there is real collision
 avoidance — `DistanceChart` 1-D de-overlaps its terminus tags, and `SpeedoRow`
 never wraps. **Temporal thrash** is prevented in the director (min-dwell,
 score-hysteresis, cycle-dwell, transient hold/cooldown — §9.3). **Size thrash**
-was a separate failure mode: `SpeedoRow` once derived its gauge size from the
-measured *height* of an `auto`-height grid track, a measure→resize→measure loop
-that made the chart + RPM band oscillate; it now sizes from **width only**
-(stable input). Layout dimensions are monitored via debug telemetry —
+was a separate failure mode: `SpeedoRow` once ran its own `ResizeObserver` on an
+`auto`-height grid track, a measure→resize→measure loop that made the chart + RPM
+band oscillate; it now sizes purely from the **`zoneBox`** the `PanelSlot` measures
+once and injects (`gaugeRowSize` fits N gauges across the width, capped by height
+and the `maxGauge` clamp), so the panel never measures itself. Layout dimensions
+are monitored via debug telemetry —
 `cycle_game.layout` (zone/`filledTop` changes), `cycle_game.speedo_resize`,
 `cycle_game.chart_resize` — emitted only on change. There is **no active
 geometric collision detector or rightsizing governor** yet (planned).
@@ -422,7 +441,8 @@ geometric collision detector or rightsizing governor** yet (planned).
 ### 9.5 The panels
 
 - **SpeedoRow** — one `CycleSpeedometer` per rider on a single line, gauge size
-  computed from the row **width** (not height — avoids the resize feedback loop).
+  computed from the injected `zoneBox` via `gaugeRowSize` (fit-across-width, capped
+  by height + `maxGauge`); never self-measures (avoids the resize feedback loop).
   Renders `cycle-race-screen__speedos`; the parent omits it from the panels map
   when `showSpeedos` is false (preserving the hide behavior even though the
   director always candidates it).

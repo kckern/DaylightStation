@@ -13,7 +13,7 @@ const TOP = ['topLeft', 'topCenter', 'topRight'];
 // (depends only on container height, not content); collapses to 0 when empty.
 const BOTTOM_BAND = 'minmax(240px, 48%)';
 
-export default function RaceLayoutManager({ decision, panels }) {
+export default function RaceLayoutManager({ decision, panels, solo = false }) {
   const zones = decision?.zones || {};
   const filledTop = TOP.filter((z) => zones[z]);
   // Columns weighted by each filled top panel's sizeHint (focus wider than standard).
@@ -37,16 +37,33 @@ export default function RaceLayoutManager({ decision, panels }) {
     }
   }, [sig, rows, topCols, zones, log, detector]);
 
-  const renderZone = (zone) => {
-    const id = zones[zone];
+  // Render one panel into a zone div. `cls` overrides the zone class so the solo
+  // branch can reuse the same PanelSlot wiring (zoneBox flows) with its own layout.
+  const renderPanel = (id, testid, cls) => {
     const Panel = id ? panels[id] : null;
     return (
-      <div key={zone} data-testid={`zone-${zone}`}
-        className={`race-layout__zone race-layout__zone--${zone}${Panel ? '' : ' race-layout__zone--empty'}`}>
+      <div data-testid={testid}
+        className={`race-layout__zone ${cls}${Panel ? '' : ' race-layout__zone--empty'}`}>
         {Panel ? <PanelSlot key={id} panelId={id}><Panel /></PanelSlot> : null}
       </div>
     );
   };
+  const renderZone = (zone) => renderPanel(zones[zone], `zone-${zone}`, `race-layout__zone--${zone}`);
+
+  // Solo (one participant): the director already chose the right top panel (chart
+  // vs lapTable via candidacy) and put the speedo in `bottom`. Re-arrange those two
+  // into balanced 50/50 columns — gauge left, that top panel right — instead of the
+  // top-row-over-band velodrome. Each half keeps its PanelSlot so zoneBox still flows.
+  if (solo) {
+    const rightId = filledTop.length ? zones[filledTop[0]] : null;
+    return (
+      <div className="race-layout race-layout--solo" data-testid="race-layout-solo">
+        {renderPanel(zones.bottom, 'zone-solo-left', 'race-layout__zone--solo-left')}
+        {renderPanel(rightId, 'zone-solo-right', 'race-layout__zone--solo-right')}
+      </div>
+    );
+  }
+
   return (
     <div className="race-layout" style={{ '--rows': rows }}>
       <div className="race-layout__top" style={{ '--top-cols': topCols }}>{TOP.map(renderZone)}</div>
@@ -54,4 +71,4 @@ export default function RaceLayoutManager({ decision, panels }) {
     </div>
   );
 }
-RaceLayoutManager.propTypes = { decision: PropTypes.object, panels: PropTypes.object };
+RaceLayoutManager.propTypes = { decision: PropTypes.object, panels: PropTypes.object, solo: PropTypes.bool };

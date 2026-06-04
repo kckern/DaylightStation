@@ -50,4 +50,27 @@ describe('RaceLayoutManager', () => {
     const b = render(<RaceLayoutManager decision={noSpeedo} panels={panels} />);
     expect(b.container.querySelector('.race-layout').style.getPropertyValue('--rows')).toBe('1fr 0px');
   });
+
+  it('renders a two-column solo split (gauge left, the single top panel right) when solo', () => {
+    const { container } = render(<RaceLayoutManager
+      decision={{ zones: { bottom: 'speedoRow', topLeft: 'distanceChart', topCenter: null, topRight: null } }}
+      panels={panels}
+      solo
+    />);
+    expect(screen.getByTestId('race-layout-solo')).toBeInTheDocument();
+    // left column = the bottom-zone panel (the gauge); right column = the one filled top panel
+    expect(screen.getByTestId('zone-solo-left')).toContainElement(screen.getByTestId('p-speedo'));
+    expect(screen.getByTestId('zone-solo-right')).toContainElement(screen.getByTestId('p-chart'));
+    // the velodrome top-row / band markup is absent in solo mode
+    expect(container.querySelector('.race-layout__top')).toBeNull();
+  });
+
+  it('falls back to the velodrome grid (no solo split) when solo is not set', () => {
+    const { container } = render(<RaceLayoutManager
+      decision={{ zones: { bottom: 'speedoRow', topLeft: 'distanceChart' } }}
+      panels={panels}
+    />);
+    expect(screen.queryByTestId('race-layout-solo')).toBeNull();
+    expect(container.querySelector('.race-layout__top')).not.toBeNull();
+  });
 });
