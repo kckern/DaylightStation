@@ -4,11 +4,12 @@ import { LINE_COLORS } from '@/modules/Fitness/lib/cycleGame/lineColors.js';
 import { plotStartIndex } from '@/modules/Fitness/lib/cycleGame/chartTrim.js';
 import getLogger from '@/lib/logging/Logger.js';
 import { useFitGuard } from './useFitGuard.js';
-import { nextZoomLevel } from '@/modules/Fitness/lib/cycleGame/chartZoom.js';
+import { nextZoomLevel, gridValues } from '@/modules/Fitness/lib/cycleGame/chartZoom.js';
 
 const X_BASE_S = 30;        // level-0 time window (seconds; 1 sample = 1s at the 1Hz tick)
 const Y_BASE_M = 250;       // level-0 distance window (metres)
 const ZOOM_THRESHOLD = 0.9; // grow the window when data hits 90% of it
+const GRID_MIN_PX = 32;    // never draw gridlines closer than this (bottom cap)
 
 const EVENT_GLYPH = { dnf: '🛑', penalty: '⏱️' };
 
@@ -145,6 +146,12 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     };
   }).filter(Boolean);
 
+  // Gridlines at decimated fixed units, positioned through the active transforms
+  // (Y via yFor, so log mode compresses them toward the top — the grid morph
+  // signals the scale change alongside the line shapes).
+  const xGrid = gridValues(T, X_BASE_S, W, GRID_MIN_PX).map((t) => ({ t, x: xForTime(t) }));
+  const yGrid = gridValues(D, Y_BASE_M, H, GRID_MIN_PX).map((d) => ({ d, y: yFor(d) }));
+
   return (
     <div className="cycle-race-screen__chart-wrap" ref={chartRef}>
       <div ref={fitRef} style={fitScaleVal < 1 ? { transform: `scale(${fitScaleVal})`, transformOrigin: 'top left' } : undefined}>
@@ -160,6 +167,17 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
             );
           })}
         </defs>
+
+        <g className="cycle-race-screen__grid" data-testid="chart-grid">
+          {xGrid.map(({ t, x }) => (
+            <line key={`gx-${t}`} className="cycle-race-screen__gridline cycle-race-screen__gridline--x"
+              x1={x.toFixed(1)} y1="0" x2={x.toFixed(1)} y2={H} vectorEffect="non-scaling-stroke" />
+          ))}
+          {yGrid.map(({ d, y }) => (
+            <line key={`gy-${d}`} className="cycle-race-screen__gridline cycle-race-screen__gridline--y"
+              x1="0" y1={y.toFixed(1)} x2={W} y2={y.toFixed(1)} vectorEffect="non-scaling-stroke" />
+          ))}
+        </g>
 
         {winCondition === 'distance' && (
           <line className="cycle-race-screen__goal" x1="0" y1="0" x2={W} y2="0" vectorEffect="non-scaling-stroke" />
