@@ -27,6 +27,9 @@ export default function CycleRaceScreen({
   showSpeedos = true, lapLengthM = 0, events = [], ovalCircuitM = 1000
 }) {
   const riderIds = Object.keys(riders);
+  // Solo = exactly one participant (a ghost/pacer would be a second entry). Drives
+  // the 50/50 split layout + a larger hero-gauge cap; 2+ keeps the velodrome grid.
+  const solo = riderIds.length === 1;
 
   // Pure race director: derive a snapshot from current engine state, then ask
   // the director which panel owns each layout zone. Sticky refs carry phase /
@@ -62,10 +65,15 @@ export default function CycleRaceScreen({
   // map renders as an empty zone gracefully. Officiating-event markers (DNF /
   // penalty) ride the chart, so `events` is threaded into DistanceChart — it owns
   // the xFor/yFor projection those markers need.
+  // Each factory receives the PanelSlot-injected slot props ({ zoneBox }) and
+  // MUST forward zoneBox to panels that size from it (DistanceChart's fit-guard,
+  // SpeedoRow's gauge sizing) — otherwise the measured band is lost and SpeedoRow
+  // falls back to its 96px gauge floor.
   const panels = {
-    distanceChart: () => (
+    distanceChart: (slot) => (
       <DistanceChart riderIds={riderIds} riders={riders} riderLive={riderLive}
-        winCondition={winCondition} goalM={goalM} events={events} elapsedS={elapsedS} />
+        winCondition={winCondition} goalM={goalM} events={events} elapsedS={elapsedS}
+        zoneBox={slot?.zoneBox} />
     ),
     rankings: () => (
       <Rankings riderIds={riderIds} riders={riders} riderLive={riderLive} winCondition={winCondition} />
@@ -89,8 +97,9 @@ export default function CycleRaceScreen({
       <CameraZoom riderIds={riderIds} riders={riders} riderLive={riderLive} />
     ),
     ...(showSpeedos ? {
-      speedoRow: () => (
-        <SpeedoRow riderIds={riderIds} riders={riders} riderLive={riderLive} cadenceBands={cadenceBands} />
+      speedoRow: (slot) => (
+        <SpeedoRow riderIds={riderIds} riders={riders} riderLive={riderLive}
+          cadenceBands={cadenceBands} zoneBox={slot?.zoneBox} maxGauge={solo ? 420 : 280} />
       )
     } : {})
   };
@@ -131,7 +140,7 @@ export default function CycleRaceScreen({
         </div>
       )}
 
-      <RaceLayoutManager decision={decision} panels={panels} />
+      <RaceLayoutManager decision={decision} panels={panels} solo={solo} />
     </div>
   );
 }
