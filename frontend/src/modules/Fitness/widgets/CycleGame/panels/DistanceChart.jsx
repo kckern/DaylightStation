@@ -49,41 +49,56 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     return () => { if (ro) ro.disconnect(); };
   }, [log]);
 
-  // chart scaling — stepped zoom-out camera. The window doubles in 2x steps as
-  // the leader's distance or the elapsed time nears the edge (monotonic level in
-  // a sticky ref, like logRef). X maps over a time window T, Y over a distance
-  // window D; the lin↔log crowding transform (below) is orthogonal and kept.
+  // chart scaling — stepped zoom-out camera, DECOUPLED per axis. The TIME axis (T)
+  // grows to fit elapsed; the DISTANCE axis (D) grows to fit the leader —
+  // independently and monotonically. (A single shared level let a long time race's
+  // time-zoom blow up the distance window too, squashing the lanes into the bottom
+  // corner.) The lin↔log crowding transform (below) is orthogonal and kept.
   const maxSeriesLen = Math.max(1, ...riderIds.map((id) => (riders[id].distanceSeries || []).length));
   const leaderDistanceM = Math.max(0, ...riderIds.map((id) => riders[id].cumulativeDistanceM || 0));
-  const zoomRef = useRef(0);
-  zoomRef.current = nextZoomLevel(zoomRef.current, {
-    leaderDistanceM, elapsedS, xBaseS: X_BASE_S, yBaseM: Y_BASE_M, threshold: ZOOM_THRESHOLD
-  });
-  const L = zoomRef.current;
-  // Zoom-out animation: when the level jumps, SNAP the content up by the jump ratio
-  // with NO transition (so it reads as the pre-zoom scale), then on the next frame
-  // ease back to 1x over ZOOM_ANIM_MS — the world shrinks into the new, wider frame
-  // about the bottom-left origin. Toggling the transition off for the snap is the
-  // whole trick: leaving it on animates 1→ratio and gets interrupted, which looks
-  // abrupt (almost no visible move).
-  const prevLevelRef = useRef(L);
-  const [zoom, setZoom] = useState({ scale: 1, animate: false });
+  // nextZoomLevel keeps BOTH inputs under threshold; feed each axis only its own
+  // driver (0 for the other, which always fits) to get an independent level.
+  const lxRef = useRef(0);
+  const lyRef = useRef(0);
+  lxRef.current = nextZoomLevel(lxRef.current, { elapsedS, leaderDistanceM: 0, xBaseS: X_BASE_S, yBaseM: Y_BASE_M, threshold: ZOOM_THRESHOLD });
+  lyRef.current = nextZoomLevel(lyRef.current, { elapsedS: 0, leaderDistanceM, xBaseS: X_BASE_S, yBaseM: Y_BASE_M, threshold: ZOOM_THRESHOLD });
+  const Lx = lxRef.current;
+  const Ly = lyRef.current;
+  // Zoom-out animation: when either axis level jumps, SNAP that axis by the jump
+  // ratio with NO transition (so it reads as the pre-zoom scale), then on the next
+  // frame ease back to 1x over ZOOM_ANIM_MS — the world shrinks into the new, wider
+  // frame about the bottom-left origin. Toggling the transition off for the snap is
+  // the trick: leaving it on animates 1→ratio and gets interrupted (reads abrupt).
+  const prevLxRef = useRef(Lx);
+  const prevLyRef = useRef(Ly);
+  const [zoom, setZoom] = useState({ sx: 1, sy: 1, animate: false });
   useEffect(() => {
-    if (L > prevLevelRef.current) {
-      const ratio = 2 ** (L - prevLevelRef.current);
-      prevLevelRef.current = L;
-      setZoom({ scale: ratio, animate: false });
-      const id = requestAnimationFrame(() => requestAnimationFrame(() => setZoom({ scale: 1, animate: true })));
+    const bumpX = Lx > prevLxRef.current;
+    const bumpY = Ly > prevLyRef.current;
+    if (bumpX || bumpY) {
+      const sx = bumpX ? 2 ** (Lx - prevLxRef.current) : 1;
+      const sy = bumpY ? 2 ** (Ly - prevLyRef.current) : 1;
+      prevLxRef.current = Lx;
+      prevLyRef.current = Ly;
+      setZoom({ sx, sy, animate: false });
+      const id = requestAnimationFrame(() => requestAnimationFrame(() => setZoom({ sx: 1, sy: 1, animate: true })));
       return () => cancelAnimationFrame(id);
     }
-    prevLevelRef.current = L;
+    prevLxRef.current = Lx;
+    prevLyRef.current = Ly;
     return undefined;
-  }, [L]);
+  }, [Lx, Ly]);
   const W = 600, H = 200;
-  const T = X_BASE_S * 2 ** L;   // seconds visible
-  const D = Y_BASE_M * 2 ** L;   // metres visible
+  // Internal plot padding (viewBox units) so line tips, terminus nodes, and the
+  // goal line never clip against the panel edges — all content maps into the inset
+  // rect, never to 0/W/H. (The panel zone is overflow:hidden.)
+  const PAD_T = 22, PAD_B = 22, PAD_L = 16, PAD_R = 36;
+  const PLOT_W = W - PAD_L - PAD_R;
+  const PLOT_H = H - PAD_T - PAD_B;
+  const T = X_BASE_S * 2 ** Lx;   // seconds visible
+  const D = Y_BASE_M * 2 ** Ly;   // metres visible
   const stepS = maxSeriesLen > 1 ? elapsedS / (maxSeriesLen - 1) : 1;
-  const xForTime = (t) => Math.min(W, ((t || 0) / T) * W);
+  const xForTime = (t) => PAD_L + Math.max(0, Math.min(1, (t || 0) / T)) * PLOT_W;
   const xFor = (i) => xForTime(i * stepS);
 
   // Lin↔log crowding transform (kept): switch to log when adjacent leaders bunch
@@ -101,11 +116,10 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   }
   const useLog = logRef.current;
   const yFor = (d) => {
-    if (useLog) {
-      const Dd = Math.max(1, D);
-      return H - (Math.log1p(Math.max(0, d || 0)) / Math.log1p(Dd)) * H;
-    }
-    return H - Math.min(1, (d || 0) / D) * H;
+    const frac = useLog
+      ? (Math.log1p(Math.max(0, d || 0)) / Math.log1p(Math.max(1, D)))
+      : Math.min(1, (d || 0) / D);
+    return (H - PAD_B) - Math.max(0, Math.min(1, frac)) * PLOT_H;
   };
 
   // ── Smooth leading edge ────────────────────────────────────────────────────
@@ -196,7 +210,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     let prev = -Infinity;
     raw.forEach((t) => { t.topPct = Math.max(t.rawTopPct, prev + minSepPct); prev = t.topPct; });
     // backward pass — if the stack overflowed the bottom, pull it up
-    const maxTop = 96;
+    const maxTop = 88;
     if (raw.length && raw[raw.length - 1].topPct > maxTop) {
       let next = Infinity;
       for (let i = raw.length - 1; i >= 0; i--) {
@@ -205,7 +219,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
         next = t.topPct;
       }
     }
-    raw.forEach((t) => { if (t.topPct < 3) t.topPct = 3; });
+    raw.forEach((t) => { if (t.topPct < 11) t.topPct = 11; });
     return raw;
   })();
 
@@ -251,7 +265,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
           data-testid="chart-zoomable"
           className="cycle-race-screen__zoomable"
           style={{
-            transform: `scale(${zoom.scale})`,
+            transform: `scale(${zoom.sx}, ${zoom.sy})`,
             transformOrigin: `0px ${H}px`,
             transformBox: 'view-box',
             transition: zoom.animate ? `transform ${ZOOM_ANIM_MS}ms ease-out` : 'none'
@@ -270,7 +284,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
         </g>
 
         {winCondition === 'distance' && (
-          <line className="cycle-race-screen__goal" x1="0" y1="0" x2={W} y2="0" vectorEffect="non-scaling-stroke" />
+          <line className="cycle-race-screen__goal" x1={PAD_L} y1={PAD_T} x2={W - PAD_R} y2={PAD_T} vectorEffect="non-scaling-stroke" />
         )}
 
         {/* area fills (under each lane) */}
