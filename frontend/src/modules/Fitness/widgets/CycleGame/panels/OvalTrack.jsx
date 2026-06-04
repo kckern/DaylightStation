@@ -19,12 +19,13 @@ export function ovalPoint(progress, rx, ry) {
 }
 
 /**
- * Top-down velodrome oval — a "whole-race track": one full loop represents the
- * ENTIRE race, so each rider's marker sits at their fraction of the way to the
- * finish (`progress`, 0→1). A finisher parks at the start/finish tick at the top;
- * a fast time-racer past their circuit target wraps around again (progress > 1).
- * Synthwave HUD panel; lane-colored markers glide via a CSS transform transition.
- * Pure presentational component.
+ * Top-down velodrome oval. Each rider's marker sits at `progress` (0→1+) around
+ * the loop — the caller decides what one loop means: when laps are enabled it's a
+ * LAP track (one full revolution = one lap, progress wraps 1→0 across the top tick
+ * each lap, via `ovalProgressFor`); when laps are off it's a "whole-race track"
+ * (one loop = the entire race, a finisher parking at the start/finish tick, a fast
+ * time-racer wrapping past their circuit target). Synthwave HUD panel; lane-colored
+ * markers glide via a CSS transform-property transition. Pure presentational component.
  */
 export default function OvalTrack({ riderIds, riders, riderLive = {}, progress = {} }) {
   return (
