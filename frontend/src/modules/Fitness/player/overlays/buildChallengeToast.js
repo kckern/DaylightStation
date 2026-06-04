@@ -19,6 +19,9 @@ export function buildChallengeToast(event, challenge, { resolveUserName } = {}) 
   const peopleWord = (n) => (n === 1 ? 'person' : 'people');
 
   if (event === 'start') {
+    if (c.type === 'cycle') {
+      return { icon: '🚴', title: 'Cycling challenge started', variant: 'info' };
+    }
     const subtitle = (requiredCount != null && zoneLabel)
       ? `Get ${requiredCount} ${peopleWord(requiredCount)} to ${zoneLabel}`
       : undefined;
