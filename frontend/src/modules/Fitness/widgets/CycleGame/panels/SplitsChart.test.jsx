@@ -44,4 +44,8 @@ describe('SplitsChart', () => {
     );
     expect(getByTestId('splits-empty')).toBeInTheDocument();
   });
+  it('renders without crashing (no -Infinity) when laps are on but no riders yet', () => {
+    const { getByTestId } = render(<SplitsChart riderIds={[]} riders={{}} lapLengthM={100} elapsedS={10} />);
+    expect(getByTestId('race-splits').textContent).not.toContain('Infinity');
+  });
 });
