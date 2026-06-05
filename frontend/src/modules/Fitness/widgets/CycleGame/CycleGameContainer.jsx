@@ -704,7 +704,32 @@ export default function CycleGameContainer({ onMount } = {}) {
       ready: true,
       startRace: ({ winCondition, value } = {}) =>
         startRaceRef.current(buildAutoStartCourse({ winCondition, value })),
-      getPhase: () => phaseRef.current
+      getPhase: () => phaseRef.current,
+      // Per-rider race readback so a driver (sim panel / tests) can close the loop:
+      // see who is penalty-boxed (false start) and whether distance is advancing,
+      // instead of blindly holding RPM down a course that may be wedged. Keyed by
+      // equipmentId so the caller can map a bike → its rider's live state.
+      getRaceState: () => {
+        const st = controllerRef.current?.getState?.();
+        if (!st) return null;
+        const riders = st.engineState?.riders || {};
+        const penaltyInfo = st.penaltyInfo || {};
+        return {
+          phase: st.phase,
+          penaltyInfo,
+          riders: Object.values(riders).map((r) => ({
+            userId: r.userId,
+            equipmentId: r.equipmentId,
+            distanceM: r.cumulativeDistanceM,
+            rpm: r.rpm,
+            finished: r.finishTimeS != null,
+            isGhost: !!r.isGhost,
+            boxed: !!penaltyInfo[r.userId],            // false-started, meter locked
+            penaltyRemainingS: penaltyInfo[r.userId]?.remainingS ?? 0,
+            awaitingStop: penaltyInfo[r.userId]?.awaitingStop ?? false // served; needs RPM 0 to clear
+          }))
+        };
+      }
     };
     window.__cycleGameControl = api;
     return () => {

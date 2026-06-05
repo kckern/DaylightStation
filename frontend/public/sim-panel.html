@@ -293,6 +293,13 @@
     .cg-toggle { display:inline-flex; gap:2px; }
     .cg-win { padding:6px 10px; font-size:12px; background:#2a2a2a; border:none; color:#bbb; border-radius:4px; cursor:pointer; }
     .cg-win.selected { background:#5a3d10; color:#fff; }
+
+    #race-banner { background:#16210f; border:1px solid #2f4a22; border-radius:6px; padding:8px 10px; margin-bottom:10px; font-size:12px; line-height:1.6; }
+    #race-banner .rb-title { font-weight:600; color:#8fd14f; margin-bottom:4px; }
+    #race-banner .rb-bike { font-family:monospace; }
+    #race-banner .rb-ok { color:#9fe07a; }
+    #race-banner .rb-warn { color:#f3b341; }
+    #race-banner .rb-bad { color:#e76d5a; }
   </style>
 </head>
 <body>
@@ -301,6 +308,9 @@
       Fitness Simulation Panel
       <button onclick="window.close()">X</button>
     </h1>
+    <!-- Live race feedback, OUTSIDE #content so render() (which rebuilds #content
+         on every sim-state-change) never wipes it mid-race. -->
+    <div id="race-banner" style="display:none"></div>
     <div id="content">Loading...</div>
   </div>
 
@@ -325,55 +335,140 @@
 
     // ----- Quick Sims -----
     function cycleRaceWin(win){ window.__cgWin = win; document.querySelectorAll('.cg-win').forEach(b=>b.classList.toggle('selected', b.dataset.win===win)); }
+    function setRaceStatus(html, show = true) {
+      const el = document.getElementById('race-banner');
+      if (!el) return;
+      el.style.display = show ? 'block' : 'none';
+      el.innerHTML = html;
+    }
+
+    // Closed-loop cycle-game race driver. Instead of firing RPM and praying, it
+    // reads __cycleGameControl.getRaceState() each tick and self-corrects:
+    //   • a false-started (penalty-boxed) bike is dropped to RPM 0 — the box
+    //     releases ONLY at rest, so holding throttle would lock it for the whole race;
+    //   • if the whole field makes no forward progress for several seconds it runs a
+    //     recovery (release all throttle to drain any latent lock), then escalates;
+    //   • live per-bike distance/state is shown in the banner so progress is visible.
     async function runCycleGameRace() {
       const win = window.__cgWin || 'time';
       const value = win === 'time' ? 60 : 100;
       const opener = window.opener;
+      const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
       const assigns = controller.autoAssignRiders(2);
       if (assigns.length === 0) { alert('No bikes available to race.'); return; }
       if (typeof opener.__fitnessLaunchModule !== 'function') { alert('Launch seam missing — reload the Fitness app.'); return; }
-      // Hold the assigned bikes at 0 rpm from the outset — driveRpmArc first STOPS any
-      // prior arc (e.g. from a previous Ambient run) and then sends a steady 0 each
-      // second — so they can't trip the false-start rule during the countdown.
-      assigns.forEach((a) => controller.driveRpmArc(a.equipmentId, { base: 0, amp: 0 }));
+      const bikeIds = assigns.map((a) => a.equipmentId);
+
+      // Hold the assigned bikes at 0 rpm from the outset (driveRpmArc stops any prior
+      // arc, then sends a steady 0 each second) so they can't trip the false-start
+      // rule during the countdown.
+      bikeIds.forEach((id) => controller.driveRpmArc(id, { base: 0, amp: 0 }));
+      setRaceStatus('<div class="rb-title">🚴 Launching race…</div>Holding bikes at 0 through the countdown.');
       opener.__fitnessLaunchModule('cycle_game');
-      const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
+
       const deadline = Date.now() + 5000;
       while (!(opener.__cycleGameControl && opener.__cycleGameControl.ready)) {
-        if (Date.now() > deadline) { alert("Cycle game didn't start (control hook never appeared)."); return; }
+        if (Date.now() > deadline) { setRaceStatus('<div class="rb-bad">Cycle game didn\'t start (control hook never appeared).</div>'); return; }
         await sleep(200);
       }
-      const phaseOf = () => (opener.__cycleGameControl && opener.__cycleGameControl.getPhase
-        ? opener.__cycleGameControl.getPhase() : null);
-      opener.__cycleGameControl.startRace({ winCondition: win, value });
-      // STRICT FALSE-START RULE: the game penalty-boxes any bike pedalling (rpm > 0)
-      // at the green light. The bikes are held at 0 (above) through staging +
-      // countdown; only switch to real RPM once the race is actually 'racing' (the
-      // first racing tick has then already read rpm 0 → no penalty).
-      const greenBy = Date.now() + 30000; // staging buffer + countdown, with margin
+      const ctl = opener.__cycleGameControl;
+      const phaseOf = () => (ctl.getPhase ? ctl.getPhase() : null);
+      const hasFeedback = typeof ctl.getRaceState === 'function';
+      const raceStateOf = () => (hasFeedback ? ctl.getRaceState() : null);
+
+      ctl.startRace({ winCondition: win, value });
+
+      // Wait for the green light. Bikes are still held at 0 → no false start.
+      const greenBy = Date.now() + 30000;
       let phase = phaseOf();
       while (Date.now() < greenBy && phase !== 'racing') {
         if (phase === 'results' || phase === 'idle') break; // aborted before start
+        setRaceStatus(`<div class="rb-title">🚦 Staging…</div>phase: ${escapeHtml(String(phase))}`);
         await sleep(150);
         phase = phaseOf();
       }
       if (phase !== 'racing') {
-        alert("Race never reached the green light — bikes left idle.");
-        assigns.forEach((a) => controller.stopRpmArc(a.equipmentId));
+        setRaceStatus('<div class="rb-bad">Race never reached the green light — bikes left idle.</div>');
+        bikeIds.forEach((id) => controller.stopRpmArc(id));
         return;
       }
-      // Green light — now drive the bikes to the finish.
-      assigns.forEach((a, i) => controller.driveRpmArc(a.equipmentId, { base: 80 + i*5, amp: 12, periodS: 18 }));
-      // Watch for the race to finish (phase reaches 'results'), then stop the RPM
-      // drivers so the bikes don't keep spinning after the race ends. A generous
-      // safety cap stops them even if the finish signal never arrives.
+
+      // GREEN LIGHT — hand off from the holding arc to a per-tick closed-loop driver,
+      // so our setRpm (informed by feedback) is the sole RPM authority.
+      bikeIds.forEach((id) => controller.stopRpmArc(id));
+
+      const targetFor = (i, t) => Math.round(80 + i * 5 + 10 * Math.sin(t / 3));
+      const last = {};           // equipmentId -> last distanceM
+      const stall = {};          // equipmentId -> consecutive no-progress ticks (while driving)
+      let fieldStall = 0;        // consecutive ticks NOTHING in the field advanced
+      let recoveries = 0;
+      let t = 0;
+
       const stopBy = Date.now() + (win === 'time' ? value * 1000 : 300000) + 30000;
       while (Date.now() < stopBy) {
-        await sleep(1000);
         phase = phaseOf();
         if (!phase || phase === 'results' || phase === 'idle') break;
+
+        const rs = raceStateOf();
+        const byBike = {};
+        (rs?.riders || []).forEach((r) => { if (r.equipmentId) byBike[r.equipmentId] = r; });
+
+        let fieldAdvanced = false;
+        const rows = bikeIds.map((id, i) => {
+          const r = byBike[id];
+          const dist = r?.distanceM ?? 0;
+          const prev = last[id] ?? 0;
+          if (dist > prev + 0.5) fieldAdvanced = true;
+
+          let rpm, cls = 'rb-ok', state;
+          if (r?.finished) {
+            rpm = 0; state = 'FINISHED'; stall[id] = 0;
+          } else if (r?.boxed) {
+            // FALSE START — meter locked. Back off to 0; the box opens only at rest.
+            rpm = 0; cls = 'rb-warn'; stall[id] = 0;
+            state = `⚠ FALSE START — backing off to clear (${r.penaltyRemainingS | 0}s${r.awaitingStop ? ', awaiting stop' : ''})`;
+          } else {
+            rpm = targetFor(i, t);
+            stall[id] = (dist <= prev + 0.5) ? (stall[id] || 0) + 1 : 0;
+            state = stall[id] >= 3
+              ? `⚠ not advancing (${stall[id]}t) — driving ${rpm}` : `driving ${rpm} rpm`;
+            if (stall[id] >= 3) cls = 'rb-warn';
+          }
+          controller.setRpm(id, rpm);
+          last[id] = dist;
+          const nm = r?.userId || id;
+          return `<div class="rb-bike ${cls}">${escapeHtml(String(nm))}: ${dist | 0} m · ${state}</div>`;
+        });
+
+        fieldStall = fieldAdvanced ? 0 : fieldStall + 1;
+        let banner = `<div class="rb-title">🏁 RACING</div>${rows.join('')}`;
+        if (!hasFeedback) banner += '<div class="rb-warn">No race-state feedback (update the app) — driving blind.</div>';
+
+        // Field watchdog: nothing moved for a while → release all throttle to drain
+        // any latent lock, then re-drive. Escalate to abort if it still won't move.
+        if (hasFeedback && fieldStall >= 5 && recoveries < 2) {
+          recoveries++;
+          setRaceStatus(banner + `<div class="rb-warn">No field progress for ${fieldStall}s — recovery ${recoveries}/2: releasing throttle to clear locks…</div>`);
+          bikeIds.forEach((id) => controller.setRpm(id, 0));
+          await sleep(2500);
+          fieldStall = 0;
+          continue;
+        }
+        if (hasFeedback && fieldStall >= 9) {
+          setRaceStatus(banner + '<div class="rb-bad">Simulation not progressing after recovery — aborting drive. Check the race screen.</div>');
+          bikeIds.forEach((id) => controller.setRpm(id, 0));
+          return;
+        }
+
+        setRaceStatus(banner);
+        await sleep(1000);
+        t++;
       }
-      assigns.forEach((a) => controller.stopRpmArc(a.equipmentId));
+
+      bikeIds.forEach((id) => controller.stopRpmArc(id));
+      setRaceStatus('<div class="rb-title rb-ok">✅ Race complete.</div>');
+      await sleep(4000);
+      setRaceStatus('', false);
     }
     function runAmbient(){ controller.startAmbientWorkout(); render(); }
     function stopAll(){ controller.stopEverything(); render(); }
