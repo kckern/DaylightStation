@@ -7,8 +7,15 @@ import PropTypes from 'prop-types';
  * into the panel, so panels size from a parent-provided box instead of running
  * their own ResizeObserver (which caused measure→resize→measure thrash). The box
  * only updates when it actually changes. Keyed by panelId so a swap remounts.
+ *
+ * Prefer the `render` prop: PanelSlot CALLS it with { zoneBox }, so the element it
+ * returns has a STABLE type (SpeedoRow, DistanceChart, …) and React reconciles it
+ * in place. The legacy `children` path used `<Factory />` as a component type, but
+ * CycleRaceScreen rebuilds those factory closures every tick — a new function
+ * identity each render — so React remounted the whole panel subtree every frame
+ * (reloading avatars, resetting CSS transitions). `render` avoids that.
  */
-export default function PanelSlot({ panelId, children }) {
+export default function PanelSlot({ panelId, render, children }) {
   const ref = useRef(null);
   const [box, setBox] = useState({ width: 0, height: 0 });
 
@@ -26,9 +33,11 @@ export default function PanelSlot({ panelId, children }) {
     return () => { if (ro) ro.disconnect(); };
   }, [panelId]);
 
-  const child = isValidElement(children) ? cloneElement(children, { zoneBox: box }) : children;
+  const content = typeof render === 'function'
+    ? render({ zoneBox: box })
+    : (isValidElement(children) ? cloneElement(children, { zoneBox: box }) : children);
   return (
-    <div ref={ref} className="race-layout__slot" data-panel={panelId}>{child}</div>
+    <div ref={ref} className="race-layout__slot" data-panel={panelId}>{content}</div>
   );
 }
-PanelSlot.propTypes = { panelId: PropTypes.string, children: PropTypes.node };
+PanelSlot.propTypes = { panelId: PropTypes.string, render: PropTypes.func, children: PropTypes.node };

@@ -65,11 +65,33 @@ test.describe('Cycle Game Race (Flash) — UI verification', () => {
     await page.waitForTimeout(1500);
     await snap('race-early');
 
+    // REMOUNT CHECK: tag the live DOM nodes; if the panels remount each tick they
+    // are replaced and the tag/markers vanish (and the avatar <img> reloads).
+    await page.evaluate(() => {
+      const img = document.querySelector('.cycle-speedometer__avatar img');
+      const head = document.querySelector('.cg-pistons__head');
+      if (img) { img.dataset.persist = 'tagged'; window.__avatarSrc0 = img.getAttribute('src'); }
+      if (head) head.dataset.persist = 'tagged';
+    });
+
+    let remount = null;
     // Drive the assigned bikes until results render; snapshot mid + late.
     for (let i = 0; i < 80; i++) {
       for (const id of bikeIds) await setRpm(page, id, id === bikeIds[0] ? 95 : 100);
       if (await page.getByTestId('race-results').isVisible().catch(() => false)) break;
       if (i === 12) await snap('race-mid');
+      if (i === 18) {
+        // ~17 ticks after tagging — still racing. Did the tagged nodes survive?
+        remount = await page.evaluate(() => {
+          const img = document.querySelector('.cycle-speedometer__avatar img');
+          const head = document.querySelector('.cg-pistons__head');
+          return {
+            avatarPersisted: img?.dataset.persist === 'tagged',   // false ⇒ remounted
+            avatarSrcStable: img ? img.getAttribute('src') === window.__avatarSrc0 : null,
+            pistonHeadPersisted: head ? head.dataset.persist === 'tagged' : null
+          };
+        });
+      }
       if (i === 30) await snap('race-late');
       await page.waitForTimeout(1000);
     }
@@ -114,10 +136,18 @@ test.describe('Cycle Game Race (Flash) — UI verification', () => {
     const badAvatars = ui.avatars.filter((a) => a.ratio < 0.92 || a.ratio > 1.08);
     // eslint-disable-next-line no-console
     console.log('FLASH_UI_REPORT', JSON.stringify({
-      shots, avatarCount: ui.avatars.length, badAvatars, clipped: ui.clipped
+      shots, avatarCount: ui.avatars.length, badAvatars, clipped: ui.clipped, remount
     }, null, 2));
 
-    // Surface (don't hard-fail) the visual findings — screenshots are the artifact.
+    // Hard assert the panels do NOT remount per tick (the bug behind avatar
+    // trashing + abrupt motion). The tagged nodes must survive ~17 ticks.
+    expect(remount, 'remount check ran').not.toBeNull();
+    expect(remount.avatarPersisted, 'speedometer avatar <img> not remounted').toBe(true);
+    expect(remount.avatarSrcStable, 'avatar src stable (no reload)').toBe(true);
+    // Pistons can be swapped out by the director mid-race; only assert when present.
+    if (remount.pistonHeadPersisted !== null) {
+      expect(remount.pistonHeadPersisted, 'piston head not remounted').toBe(true);
+    }
     expect(assigns.length, 'at least one bike auto-assigned').toBeGreaterThanOrEqual(1);
   });
 });
