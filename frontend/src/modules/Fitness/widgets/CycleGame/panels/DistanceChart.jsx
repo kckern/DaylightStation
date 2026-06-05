@@ -5,6 +5,9 @@ import { plotStartIndex } from '@/modules/Fitness/lib/cycleGame/chartTrim.js';
 import getLogger from '@/lib/logging/Logger.js';
 import { useFitGuard } from './useFitGuard.js';
 import { nextZoomLevel, gridValues } from '@/modules/Fitness/lib/cycleGame/chartZoom.js';
+import { formatClock } from '@/modules/Fitness/lib/cycleGame/cycleGameLobby.js';
+import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
+import './DistanceChart.scss';
 
 const X_BASE_S = 20;        // level-0 time window (seconds; 1 sample = 1s at the 1Hz tick)
 const Y_BASE_M = 150;       // level-0 distance window (metres) — tight so the lanes fill
@@ -24,7 +27,7 @@ const EVENT_GLYPH = { dnf: '🛑', penalty: '⏱️' };
  * Auto-scales linear→log when riders crowd together near the finish. Officiating
  * events (DNF / penalty) are re-projected onto the lane where they fired.
  */
-export default function DistanceChart({ riderIds, riders, riderLive, winCondition, goalM, events = [], zoneBox, elapsedS = 0 }) {
+export default function DistanceChart({ riderIds, riders, riderLive, winCondition, goalM, events = [], zoneBox, elapsedS = 0, clockSeconds = 0, maxDistanceM = 0 }) {
   const chartRef = useRef(null);
   const fitRef = useRef(null);
   const fitScaleVal = useFitGuard(fitRef, zoneBox, 'distanceChart');
@@ -247,7 +250,15 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   const yGrid = gridValues(D, Y_BASE_M, H, GRID_MIN_PX).map((d) => ({ d, y: yFor(d) }));
 
   return (
-    <div className="cycle-race-screen__chart-wrap" ref={chartRef}>
+    <div className="cg-chart" data-testid="distance-chart">
+      <div className="cg-chart__header" data-testid="chart-header">
+        <span className="cg-chart__clock-label">{winCondition === 'time' ? 'Time left' : 'Elapsed'}</span>
+        <span className="cg-chart__clock">{formatClock(clockSeconds)}</span>
+        <span className="cg-chart__goal">
+          {winCondition === 'distance' ? `to ${formatDistance(goalM)}` : `${formatDistance(maxDistanceM)} led`}
+        </span>
+      </div>
+      <div className="cg-chart__plot" ref={chartRef}>
       <div ref={fitRef} style={fitScaleVal < 1 ? { transform: `scale(${fitScaleVal})`, transformOrigin: 'top left' } : undefined}>
       <svg className="cycle-race-screen__chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
         <defs>
@@ -386,6 +397,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
         </div>
       )}
       </div>
+      </div>
     </div>
   );
 }
@@ -405,4 +417,6 @@ DistanceChart.propTypes = {
   })),
   zoneBox: PropTypes.shape({ width: PropTypes.number, height: PropTypes.number }),
   elapsedS: PropTypes.number,
+  clockSeconds: PropTypes.number,
+  maxDistanceM: PropTypes.number,
 };
