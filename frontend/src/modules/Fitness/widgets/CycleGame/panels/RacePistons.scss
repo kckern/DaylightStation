@@ -1,49 +1,46 @@
 @use '../cgTokens' as cg;
 
-// Piston race chart — a fixed stack of horizontal bars; the tip avatar + bar glide
-// as the field trades places.
+// Piston race chart — a leader-anchored spatial view. Bars/tips are placed by metric
+// gap through a held zoom; a fixed-metre grid behind the lanes reads the scale; gap
+// connectors carry "X m" labels between adjacent lanes. The bar + tip glide on a CSS
+// transition, and the grid lines glide (pan + rezoom) the same way.
 .cg-pistons {
-  display: flex; flex-direction: column; justify-content: space-around;
-  width: 100%; height: 100%; min-height: 0;
-  padding: 8px 14px; box-sizing: border-box; gap: 6px;
   position: relative;
+  width: 100%; height: 100%; min-height: 0;
+  padding: 6px 24px; box-sizing: border-box; // 24px sides give the tip avatars edge room
+  overflow: hidden;
 
-  // Chart-wide panning grid BACKDROP (not per-lane): the whole piston chart reads
-  // as a tracking camera — the grid slides left by the leader's distance (--cg-pan,
-  // metres, ~6px/m) behind every lane, eased over the 1 Hz tick. The lanes/bars sit
-  // on top (z-index above), so the grid is the moving background, never bar texture.
-  &::before {
-    content: '';
-    position: absolute; inset: 0;
-    background-image: repeating-linear-gradient(
-      90deg,
-      rgba(255, 255, 255, 0.08) 0,
-      rgba(255, 255, 255, 0.08) 1px,
-      transparent 1px,
-      transparent 30px
-    );
-    background-position: calc(var(--cg-pan, 0) * -6px) 0;
-    transition: background-position 0.9s linear;
-    pointer-events: none;
-    z-index: 0;
+  // Fixed-metre grid backdrop. Spans the same horizontal box as the tracks (the
+  // padding insets it), so a gridline at x% lines up with a bar at x%.
+  &__grid {
+    position: absolute; inset: 6px 24px;
+    pointer-events: none; z-index: 0;
+  }
+  &__gridline {
+    position: absolute; top: 0; bottom: 0; width: 1px;
+    background: rgba(255, 255, 255, 0.08);
+    transition: left 0.9s linear; // pan as the leader advances; re-space on rezoom
+  }
+
+  // Rows + gap connectors stack and fill the height; tracks sit above the grid.
+  &__lanes {
+    position: relative; z-index: 1;
+    height: 100%; min-height: 0;
+    display: flex; flex-direction: column; justify-content: center;
   }
 
   &__row {
-    display: flex; align-items: center; gap: 14px;
-    min-height: 0;
-    position: relative; z-index: 1; // above the grid backdrop
+    flex: 1 1 0; min-height: 0;
+    display: flex; align-items: center;
     &.is-leader .cg-pistons__head { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), 0 0 16px var(--cg-piston-color); }
   }
 
-  // The lane the bar grows along. Symmetric side margins reserve room for the tip
-  // avatar at BOTH ends — the leader pinned at 100% and a rider at 0% (race start /
-  // trailing) — so neither half-clips against the panel edge.
+  // The lane spans the full row width; bar/tip x% map directly onto the grid.
   &__track {
     position: relative; flex: 1 1 auto; min-width: 0;
-    height: 10px; margin: 0 26px;
+    height: 10px;
     background: rgba(122, 162, 255, 0.10);
     border-radius: 999px;
-    z-index: 1; // above the chart-wide panning grid backdrop
   }
 
   &__bar {
@@ -61,13 +58,40 @@
     border-radius: 50%;
     box-shadow: 0 0 0 2px var(--cg-piston-color), 0 2px 8px rgba(0, 0, 0, 0.6);
     transition: left 0.9s linear;
+    z-index: 2;
     .circular-user-avatar { width: 38px !important; height: 38px !important; --vital-avatar-size: 38px; }
     &.is-ghost { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3); }
   }
 
-  &__dist {
-    flex: 0 0 auto; min-width: 3.6em; text-align: right;
-    font-family: cg.$cg-mono; font-weight: 800; font-size: 0.95rem;
-    color: cg.$cg-cyan;
+  // Distance label hanging under the tip avatar (travels with the rider).
+  &__headdist {
+    position: absolute; top: calc(100% + 2px); left: 50%;
+    transform: translateX(-50%);
+    font-family: cg.$cg-mono; font-weight: 800; font-size: 0.7rem;
+    color: cg.$cg-cyan; white-space: nowrap;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+    pointer-events: none;
+  }
+
+  // Connector segment between two adjacent lanes, carrying the metric gap. Sits in
+  // the thin band between rows; glides with the tips (transition on left/width).
+  &__gap {
+    position: relative; flex: 0 0 16px; min-height: 0;
+  }
+  &__gapseg {
+    position: absolute; top: 50%; height: 0;
+    border-top: 1px dashed rgba(255, 255, 255, 0.30);
+    transform: translateY(-50%);
+    transition: left 0.9s linear, width 0.9s linear;
+    display: flex; align-items: center; justify-content: center;
+  }
+  &__gaplabel {
+    position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    padding: 0 5px;
+    background: cg.$cg-bg;
+    font-family: cg.$cg-mono; font-weight: 700; font-size: 0.68rem;
+    color: rgba(255, 255, 255, 0.78); white-space: nowrap;
+    border-radius: 4px;
   }
 }

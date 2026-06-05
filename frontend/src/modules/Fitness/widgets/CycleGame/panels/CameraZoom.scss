@@ -14,34 +14,18 @@
   border: 1px solid t.$cg-border;
   border-radius: 8px;
 
-  // Drifting perspective grid — cyan/magenta lines on both axes, low opacity,
-  // slow horizontal background-position drift to imply a panning camera.
+  // Fixed-metre vertical grid — each line is an absolute world position mapped
+  // through the leader-anchored zoom, so the lines pan left as the leader advances
+  // and re-space (glide) on a rezoom. Density reads the current zoom level.
   &__grid {
     position: absolute;
     inset: 0;
-    background-image:
-      repeating-linear-gradient(
-        90deg,
-        rgba(t.$cg-cyan, 0.18) 0,
-        rgba(t.$cg-cyan, 0.18) 1px,
-        transparent 1px,
-        transparent 38px
-      ),
-      repeating-linear-gradient(
-        0deg,
-        rgba(t.$cg-magenta, 0.12) 0,
-        rgba(t.$cg-magenta, 0.12) 1px,
-        transparent 1px,
-        transparent 30px
-      );
-    background-size: 38px 100%, 100% 30px;
-    opacity: 0.85;
-    // Pan the vertical lines left by the leader's distance (--cg-pan, in metres,
-    // ~6px/m) so the world slides past behind the framed riders — a tracking
-    // camera. Eased over the 1 Hz tick so it glides rather than jumps. The
-    // horizontal lines hold (no vertical camera motion).
-    background-position: calc(var(--cg-pan, 0) * -6px) 0, 0 0;
-    transition: background-position 0.9s linear;
+    pointer-events: none;
+  }
+  &__gridline {
+    position: absolute; top: 0; bottom: 0; width: 1px;
+    background: rgba(t.$cg-cyan, 0.16);
+    transition: left 0.9s linear;
   }
 
   &__field {
@@ -64,6 +48,17 @@
       rgba(t.$cg-cyan, 0.15)
     );
     box-shadow: 0 0 6px rgba(t.$cg-magenta, 0.4);
+    transition: left 0.9s linear, width 0.9s linear;
+  }
+
+  &__gaplabel {
+    position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    padding: 1px 6px;
+    background: rgba(t.$cg-bg, 0.85);
+    border-radius: 4px;
+    font-family: t.$cg-mono; font-weight: 700; font-size: 0.7rem;
+    color: t.$cg-text; white-space: nowrap;
   }
 
   &__marker {

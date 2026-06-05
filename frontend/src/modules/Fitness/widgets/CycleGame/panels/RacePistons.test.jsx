@@ -15,14 +15,16 @@ describe('RacePistons', () => {
     expect(getAllByTestId('piston-row')).toHaveLength(2);
   });
 
-  it('scales bars to the leader so the leader fills the track and the trailer trails', () => {
+  it('pins the leader near the right (88%) and frames the trailer by its metric gap (~25%)', () => {
     const { getAllByTestId } = render(
       <RacePistons riderIds={['user_3', 'user_2']} riders={riders} riderLive={{ user_3: {}, user_2: {} }} />
     );
     const [user_3, user_2] = getAllByTestId('piston-bar');
-    // User_3 leads (1500) → 100%; User_2 (900) → 60% of the leader.
-    expect(user_3.style.width).toBe('100.00%');
-    expect(user_2.style.width).toBe('60.00%');
+    // Leader-anchored zoom: User_3 (leader) pinned at the right pad; User_2 framed near
+    // home (25%) on the first frame, NOT a fraction of the leader's total distance.
+    expect(user_3.style.width).toBe('88.00%');
+    expect(parseFloat(user_2.style.width)).toBeGreaterThan(20);
+    expect(parseFloat(user_2.style.width)).toBeLessThan(40);
   });
 
   it('keeps lanes in a fixed order (riderIds), not sorted by distance', () => {
