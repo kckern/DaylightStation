@@ -13,7 +13,12 @@
   color: #fff;
   font-weight: 600;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
-  min-width: 48px;
+  // Floor the avatar at its intended size in BOTH dimensions so it can't collapse
+  // in a flex row — and, crucially, can't be widened past its height into an
+  // ellipse. A bare `min-width` (with no min-height) squished small avatars (e.g.
+  // the 38px piston-tip markers got forced to 48px wide × 38px tall).
+  min-width: var(--vital-avatar-size, 76px);
+  min-height: var(--vital-avatar-size, 76px);
   pointer-events: none;
   background: transparent;
   transition: opacity 0.25s ease;
