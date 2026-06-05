@@ -46,7 +46,7 @@ export default function PovGrid({ riderIds, riders, riderLive = {} }) {
                 const avatar = (
                   <CircularUserAvatar name={riders[id]?.displayName} avatarSrc={live.avatarSrc}
                     heartRate={live.heartRate} zoneId={live.zoneId} zoneColor={live.zoneColor || color}
-                    size={34} showGauge={false} showIndicator={false} />
+                    size={44} showGauge={false} showIndicator={false} />
                 );
                 return isGhost ? <span className="cg-ghost">{avatar}</span> : avatar;
               })()}
