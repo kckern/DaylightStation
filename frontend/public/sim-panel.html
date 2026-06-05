@@ -409,12 +409,37 @@
       await sleep(1400);
       bikeIds.forEach((id) => controller.stopRpmArc(id));
 
-      const targetFor = (i, t) => Math.round(80 + i * 5 + 10 * Math.sin(t / 3));
-      const last = {};           // equipmentId -> last distanceM
-      const stall = {};          // equipmentId -> consecutive no-progress ticks (while driving)
-      let fieldStall = 0;        // consecutive ticks NOTHING in the field advanced
+      // Per-bike INDEPENDENT wandering RPM. A shared sine made the bikes track each
+      // other (fixed gap → same result every time); instead each bike random-walks on
+      // its own, with occasional surges/fades, floored well above 0 so it never idles
+      // or DNFs. Different starts + independent noise make the field diverge and the
+      // outcome vary run to run.
+      const RPM_MIN = 58, RPM_MAX = 118;
+      const rpmState = {};
+      bikeIds.forEach((id, i) => { rpmState[id] = 76 + i * 8 + Math.random() * 10; });
+      const nextRpm = (id) => {
+        const cur = rpmState[id] ?? 88;
+        const revert = (88 - cur) * 0.10;                                        // gentle pull off the rails
+        const wander = (Math.random() - 0.5) * 26;                               // ±13 rpm drift
+        const surge = Math.random() < 0.18 ? (Math.random() - 0.5) * 50 : 0;      // occasional kick
+        let v = cur + revert + wander + surge;
+        v = Math.max(RPM_MIN, Math.min(RPM_MAX, v));
+        rpmState[id] = v;
+        return Math.round(v);
+      };
+      const last = {};            // equipmentId -> last distanceM
+      const lastAdvanceAt = {};   // equipmentId -> wall time it last gained ground
+      let lastFieldProgressAt = Date.now();
       let recoveries = 0;
-      let t = 0;
+      let iter = 0;
+
+      // Re-send cadence FAST (the game's needle goes stale well under a second, so a
+      // 1 Hz re-send dropped it to 0 between sends). Wander each bike's TARGET only
+      // every ~1.4 s so it's lively but not jittery; the in-between sends just hold
+      // the current target to keep the needle warm.
+      const SEND_MS = 350;
+      const TARGET_EVERY = 4;     // 4 × 350ms ≈ 1.4 s between random-walk steps
+      bikeIds.forEach((id) => { lastAdvanceAt[id] = Date.now(); });
 
       const stopBy = Date.now() + (win === 'time' ? value * 1000 : 300000) + 30000;
       while (Date.now() < stopBy) {
@@ -424,30 +449,32 @@
         const rs = raceStateOf();
         const byBike = {};
         (rs?.riders || []).forEach((r) => { if (r.equipmentId) byBike[r.equipmentId] = r; });
+        const stepTarget = (iter % TARGET_EVERY === 0);
+        const nowMs = Date.now();
 
         let fieldAdvanced = false;
-        const rows = bikeIds.map((id, i) => {
+        const rows = bikeIds.map((id) => {
           const r = byBike[id];
           const dist = r?.distanceM ?? 0;
           const prev = last[id] ?? 0;
-          if (dist > prev + 0.5) fieldAdvanced = true;
+          if (dist > prev + 0.5) { fieldAdvanced = true; lastAdvanceAt[id] = nowMs; }
 
           let rpm, cls = 'rb-ok', state, releaseBox = false;
           if (r?.finished) {
-            rpm = 0; state = 'FINISHED'; stall[id] = 0;
+            rpm = 0; state = 'FINISHED';
           } else if (r?.boxed) {
             // FALSE START — meter locked. The box opens only at a clean RPM 0, but a
             // plain setRpm(0) can still read non-zero (cadence is derived from
             // revolution deltas). So force the cadence STALE (stopEquipment) → it
             // zeroes and the box reliably releases.
-            releaseBox = true; cls = 'rb-warn'; stall[id] = 0;
+            releaseBox = true; cls = 'rb-warn';
             state = `⚠ FALSE START — clearing (${r.penaltyRemainingS | 0}s${r.awaitingStop ? ', at rest' : ''})`;
           } else {
-            rpm = targetFor(i, t);
-            stall[id] = (dist <= prev + 0.5) ? (stall[id] || 0) + 1 : 0;
-            state = stall[id] >= 3
-              ? `⚠ not advancing (${stall[id]}t) — driving ${rpm}` : `driving ${rpm} rpm`;
-            if (stall[id] >= 3) cls = 'rb-warn';
+            if (stepTarget) nextRpm(id);                  // wander the target ~every 1.4 s
+            rpm = Math.round(rpmState[id] ?? 80);          // re-send every 350 ms (warm needle)
+            const idleMs = nowMs - (lastAdvanceAt[id] ?? nowMs);
+            if (idleMs > 3000) { cls = 'rb-warn'; state = `⚠ not advancing (${(idleMs / 1000) | 0}s) — driving ${rpm}`; }
+            else state = `driving ${rpm} rpm`;
           }
           if (releaseBox) controller.stopEquipment(id); else controller.setRpm(id, rpm);
           last[id] = dist;
@@ -455,29 +482,32 @@
           return `<div class="rb-bike ${cls}">${escapeHtml(String(nm))}: ${dist | 0} m · ${state}</div>`;
         });
 
-        fieldStall = fieldAdvanced ? 0 : fieldStall + 1;
+        if (fieldAdvanced) lastFieldProgressAt = nowMs;
+        const stalledMs = nowMs - lastFieldProgressAt;
         let banner = `<div class="rb-title">🏁 RACING</div>${rows.join('')}`;
         if (!hasFeedback) banner += '<div class="rb-warn">No race-state feedback (update the app) — driving blind.</div>';
 
-        // Field watchdog: nothing moved for a while → release all throttle to drain
-        // any latent lock, then re-drive. Escalate to abort if it still won't move.
-        if (hasFeedback && fieldStall >= 5 && recoveries < 2) {
+        // Field watchdog — wall-time, since the game advances distance only ~once a
+        // second (tick-counting would false-trip at the 350 ms send rate). No progress
+        // for a while → drain any latent lock, then re-drive; abort if still stuck.
+        if (hasFeedback && stalledMs > 4000 && recoveries < 2) {
           recoveries++;
-          setRaceStatus(banner + `<div class="rb-warn">No field progress for ${fieldStall}s — recovery ${recoveries}/2: releasing throttle to clear locks…</div>`);
-          bikeIds.forEach((id) => controller.setRpm(id, 0));
+          setRaceStatus(banner + `<div class="rb-warn">No field progress for ${(stalledMs / 1000) | 0}s — recovery ${recoveries}/2: releasing throttle to clear locks…</div>`);
+          bikeIds.forEach((id) => controller.stopEquipment(id));
           await sleep(2500);
-          fieldStall = 0;
+          lastFieldProgressAt = Date.now();
+          iter++;
           continue;
         }
-        if (hasFeedback && fieldStall >= 9) {
+        if (hasFeedback && stalledMs > 8000) {
           setRaceStatus(banner + '<div class="rb-bad">Simulation not progressing after recovery — aborting drive. Check the race screen.</div>');
-          bikeIds.forEach((id) => controller.setRpm(id, 0));
+          bikeIds.forEach((id) => controller.stopEquipment(id));
           return;
         }
 
         setRaceStatus(banner);
-        await sleep(1000);
-        t++;
+        await sleep(SEND_MS);
+        iter++;
       }
 
       bikeIds.forEach((id) => controller.stopRpmArc(id));
