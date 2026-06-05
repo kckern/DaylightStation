@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { LINE_COLORS } from '@/modules/Fitness/lib/cycleGame/lineColors.js';
 import { formatClock } from '@/modules/Fitness/lib/cycleGame/cycleGameLobby.js';
@@ -7,14 +7,29 @@ import './SplitsChart.scss';
 
 /**
  * Compact lap-splits table — laps down the rows (newest completed at the bottom),
- * one column per rider. Completed laps show the per-lap delta; a final row shows the
- * current lap counting up live (elapsedS − last crossing). Each rider's best lap is
- * highlighted. Order is read from the POV grid, so there is no ranking here.
+ * one column per rider. Completed laps show the per-lap delta; a pinned footer row
+ * shows the current lap counting up live (elapsedS − last crossing). Each rider's
+ * best lap is highlighted. Order is read from the POV grid, so there is no ranking.
+ *
+ * Holds many laps without clipping: the rider header (thead) is sticky at the top,
+ * the current-lap row (tfoot) is pinned at the bottom, and the completed-lap rows
+ * scroll between them — auto-scrolled to the newest as laps accumulate (the kiosk
+ * has no scroll input, so we pin the view to the bottom on each new lap).
  *
  * `riders[id].lapSplits` = cumulative crossing times (s); element i = end of lap i+1.
  */
 export default function SplitsChart({ riderIds, riders, lapLengthM = 0, elapsedS = 0 }) {
+  const scrollRef = useRef(null);
   const lapsOn = Number.isFinite(lapLengthM) && lapLengthM > 0;
+  const splitsOf = (id) => riders[id]?.lapSplits || [];
+  const completed = lapsOn ? Math.max(0, ...riderIds.map((id) => splitsOf(id).length)) : 0;
+
+  // Keep the view pinned to the newest completed lap as the race adds laps.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [completed]);
+
   if (!lapsOn) {
     return (
       <div className="cg-splits" data-testid="race-splits">
@@ -23,8 +38,6 @@ export default function SplitsChart({ riderIds, riders, lapLengthM = 0, elapsedS
     );
   }
 
-  const splitsOf = (id) => riders[id]?.lapSplits || [];
-  const completed = Math.max(0, ...riderIds.map((id) => splitsOf(id).length));
   const lapDelta = (id, i) => { const s = splitsOf(id); return i < s.length ? s[i] - (s[i - 1] || 0) : null; };
   const bestLapIdx = (id) => {
     const s = splitsOf(id); let best = -1, bestT = Infinity;
@@ -39,7 +52,7 @@ export default function SplitsChart({ riderIds, riders, lapLengthM = 0, elapsedS
   const best = Object.fromEntries(riderIds.map((id) => [id, bestLapIdx(id)]));
 
   return (
-    <div className="cg-splits" data-testid="race-splits">
+    <div className="cg-splits" data-testid="race-splits" ref={scrollRef}>
       <table className="cg-splits__table">
         <thead>
           <tr>
@@ -68,6 +81,8 @@ export default function SplitsChart({ riderIds, riders, lapLengthM = 0, elapsedS
               })}
             </tr>
           ))}
+        </tbody>
+        <tfoot>
           <tr className="cg-splits__row cg-splits__row--current">
             <th scope="row" className="cg-splits__lap">{Math.max(1, ...riderIds.map(curLapNo))}•</th>
             {riderIds.map((id) => (
@@ -76,7 +91,7 @@ export default function SplitsChart({ riderIds, riders, lapLengthM = 0, elapsedS
               </td>
             ))}
           </tr>
-        </tbody>
+        </tfoot>
       </table>
     </div>
   );

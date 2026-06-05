@@ -48,4 +48,12 @@ describe('SplitsChart', () => {
     const { getByTestId } = render(<SplitsChart riderIds={[]} riders={{}} lapLengthM={100} elapsedS={10} />);
     expect(getByTestId('race-splits').textContent).not.toContain('Infinity');
   });
+  it('pins the current lap in a tfoot and scrolls completed laps in a tbody (sticky layout)', () => {
+    const { container } = render(
+      <SplitsChart riderIds={['felix']} riders={{ felix: riders.felix }} lapLengthM={100} elapsedS={120} />
+    );
+    expect(container.querySelector('tfoot [data-testid="splits-current"]')).not.toBeNull();
+    expect(container.querySelectorAll('tbody [data-testid="splits-lap-row"]').length).toBe(2);
+    expect(container.querySelector('thead [data-testid="splits-rider"]')).not.toBeNull();
+  });
 });
