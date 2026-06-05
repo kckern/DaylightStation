@@ -24,13 +24,18 @@
   }
 
   &__marker {
-    position: absolute; transform: translate(-50%, -50%);
+    position: absolute;
+    // Billboard: counter-rotate the plane's rotateX(38deg) so the rider's face
+    // stands upright toward the camera (Cruising-USA sprite) instead of being
+    // foreshortened flat into the road. Keeps the road's depth position.
+    transform: translate(-50%, -50%) rotateX(-38deg);
+    transform-origin: 50% 100%;
     display: flex; flex-direction: column; align-items: center; gap: 2px;
     transition: top 0.9s linear, left 0.9s linear;
     z-index: 2;
     // Rider-color ring + glow so identity reads off the marker, not just its lane.
     .circular-user-avatar {
-      width: 34px !important; height: 34px !important; --vital-avatar-size: 34px;
+      width: 44px !important; height: 44px !important; --vital-avatar-size: 44px;
       box-shadow: 0 0 0 2px var(--cg-pov-color, #{cg.$cg-cyan}), 0 0 12px -2px var(--cg-pov-color, #{cg.$cg-cyan});
       border-radius: 50%;
     }
