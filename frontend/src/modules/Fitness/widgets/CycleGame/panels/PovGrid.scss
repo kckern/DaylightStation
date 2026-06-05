@@ -28,7 +28,12 @@
     display: flex; flex-direction: column; align-items: center; gap: 2px;
     transition: top 0.9s linear, left 0.9s linear;
     z-index: 2;
-    .circular-user-avatar { width: 34px !important; height: 34px !important; --vital-avatar-size: 34px; }
+    // Rider-color ring + glow so identity reads off the marker, not just its lane.
+    .circular-user-avatar {
+      width: 34px !important; height: 34px !important; --vital-avatar-size: 34px;
+      box-shadow: 0 0 0 2px var(--cg-pov-color, #{cg.$cg-cyan}), 0 0 12px -2px var(--cg-pov-color, #{cg.$cg-cyan});
+      border-radius: 50%;
+    }
     &.is-ghost { opacity: 0.6; }
   }
   &__dist {
