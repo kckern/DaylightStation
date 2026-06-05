@@ -262,6 +262,8 @@
       background: #3b2a12;
     }
     .rpm-quick-btn:hover { background: #553d1a; }
+    .rpm-quick-btn.sel { background: #f39c12; color: #1a1a1a; font-weight: 700; }
+    .manual-tag { font-size: 9px; background: #f39c12; color: #1a1a1a; padding: 1px 4px; border-radius: 3px; font-weight: 700; margin-left: 6px; vertical-align: middle; }
 
     .cycle-ctrl {
       display: flex;
@@ -321,6 +323,11 @@
     let activeSlider = null;
     const rpmSliderValues = {};
     let activeRpmSlider = null;
+    // Per-bike MANUAL override of the auto-race driver. When a bike is in this map,
+    // the running race driver re-sends THIS value (keeping the needle warm) instead
+    // of its random walk — so the RPM buttons/slider override the simulator. Cleared
+    // per bike by the AUTO button, and wholesale at the start of each race.
+    const rpmOverride = {};
 
     function init() {
       if (!window.opener) { showError('Open this panel from the Fitness app'); return; }
@@ -358,6 +365,7 @@
       if (assigns.length === 0) { alert('No bikes available to race.'); return; }
       if (typeof opener.__fitnessLaunchModule !== 'function') { alert('Launch seam missing — reload the Fitness app.'); return; }
       const bikeIds = assigns.map((a) => a.equipmentId);
+      bikeIds.forEach((id) => { delete rpmOverride[id]; }); // clean slate — no stale manual holds
 
       // Hold the assigned bikes at 0 rpm from the outset (driveRpmArc stops any prior
       // arc, then sends a steady 0 each second) so they can't trip the false-start
@@ -469,6 +477,14 @@
             // zeroes and the box reliably releases.
             releaseBox = true; cls = 'rb-warn';
             state = `⚠ FALSE START — clearing (${r.penaltyRemainingS | 0}s${r.awaitingStop ? ', at rest' : ''})`;
+          } else if (rpmOverride[id] != null) {
+            // MANUAL OVERRIDE — the RPM buttons/slider win. Re-send the user's value
+            // (keeps the needle warm) instead of the auto random walk.
+            rpm = rpmOverride[id];
+            const idleMs = nowMs - (lastAdvanceAt[id] ?? nowMs);
+            state = (rpm > 0 && idleMs > 3000)
+              ? `🎛 manual ${rpm} — ⚠ not advancing` : `🎛 manual ${rpm} rpm`;
+            if (rpm > 0 && idleMs > 3000) cls = 'rb-warn';
           } else {
             if (stepTarget) nextRpm(id);                  // wander the target ~every 1.4 s
             rpm = Math.round(rpmState[id] ?? 80);          // re-send every 350 ms (warm needle)
@@ -527,10 +543,11 @@
     function setZone(id,z){ controller.setZone(id,z); }
     function startSession(id){ controller.startAutoSession(id); }
     function stopDevice(id){ controller.stopDevice(id); }
-    function onRpmInput(id,v){ const r=parseInt(v,10); rpmSliderValues[id]=r; const l=document.getElementById('rpm-'+id); if(l)l.textContent=r+' rpm'; controller.setRpm(id,r); }
-    function onRpmChange(id,v){ rpmSliderValues[id]=parseInt(v,10); activeRpmSlider=null; controller.setRpm(id,parseInt(v,10)); }
-    function setRpmQuick(id,r){ controller.setRpm(id,r); const s=document.getElementById('rpms-'+id); if(s)s.value=r; const l=document.getElementById('rpm-'+id); if(l)l.textContent=r+' rpm'; rpmSliderValues[id]=r; }
-    function stopEquipment(id){ controller.stopRpmArc(id); render(); }
+    function onRpmInput(id,v){ const r=parseInt(v,10); rpmSliderValues[id]=r; rpmOverride[id]=r; const l=document.getElementById('rpm-'+id); if(l)l.textContent=r+' rpm'; controller.setRpm(id,r); }
+    function onRpmChange(id,v){ const r=parseInt(v,10); rpmSliderValues[id]=r; rpmOverride[id]=r; activeRpmSlider=null; controller.setRpm(id,r); }
+    function setRpmQuick(id,r){ rpmOverride[id]=r; controller.setRpm(id,r); const s=document.getElementById('rpms-'+id); if(s)s.value=r; const l=document.getElementById('rpm-'+id); if(l)l.textContent=r+' rpm'; rpmSliderValues[id]=r; render(); }
+    function clearRpmOverride(id){ delete rpmOverride[id]; render(); } // hand the bike back to the auto-sim
+    function stopEquipment(id){ delete rpmOverride[id]; controller.stopRpmArc(id); render(); }
     function setRider(id,u){ if(u) controller.setEquipmentRider(id,u); render(); }
 
     // ----- Advanced: governance + cycle challenge -----
@@ -583,15 +600,16 @@
         for (const e of equipment) {
           const rpm = (activeRpmSlider===e.equipmentId ? (rpmSliderValues[e.equipmentId]??e.currentRpm??0) : (e.currentRpm??rpmSliderValues[e.equipmentId]??0));
           rpmSliderValues[e.equipmentId]=rpm;
+          const overridden = rpmOverride[e.equipmentId] != null;
           html += `<div class="equipment-tile">
-            <div class="equipment-header"><span>${escapeHtml(e.name)}</span><span class="equipment-rpm ${e.isActive?'':'inactive'}">${e.currentRpm!=null?e.currentRpm+' rpm':'-- rpm'}</span></div>
+            <div class="equipment-header"><span>${escapeHtml(e.name)}${overridden?' <span class="manual-tag">MANUAL</span>':''}</span><span class="equipment-rpm ${e.isActive?'':'inactive'}">${e.currentRpm!=null?e.currentRpm+' rpm':'-- rpm'}</span></div>
             <div class="rpm-slider-row">
               <input type="range" class="rpm-slider" id="rpms-${e.equipmentId}" min="0" max="150" value="${rpm}"
                      oninput="onRpmInput('${e.equipmentId}',this.value)" onchange="onRpmChange('${e.equipmentId}',this.value)"
                      onmousedown="activeRpmSlider='${e.equipmentId}'" onmouseup="activeRpmSlider=null" ontouchstart="activeRpmSlider='${e.equipmentId}'" ontouchend="activeRpmSlider=null">
               <span class="rpm-value" id="rpm-${e.equipmentId}">${rpm} rpm</span>
             </div>
-            <div class="rpm-quick-row">${[0,40,60,80,100].map(v=>`<button class="rpm-quick-btn" onclick="setRpmQuick('${e.equipmentId}',${v})">${v}</button>`).join('')}<button class="rpm-quick-btn danger" onclick="stopEquipment('${e.equipmentId}')">✕</button></div>
+            <div class="rpm-quick-row">${[0,40,60,80,100].map(v=>`<button class="rpm-quick-btn${rpmOverride[e.equipmentId]===v?' sel':''}" onclick="setRpmQuick('${e.equipmentId}',${v})">${v}</button>`).join('')}<button class="rpm-quick-btn${overridden?'':' sel'}" onclick="clearRpmOverride('${e.equipmentId}')" title="hand this bike back to the auto-sim">AUTO</button><button class="rpm-quick-btn danger" onclick="stopEquipment('${e.equipmentId}')">✕</button></div>
             <div class="rider-row"><span style="font-size:10px;color:#666">rider:</span>
               <select onchange="setRider('${e.equipmentId}',this.value)"><option value="">— none —</option>${(e.eligibleUsers||[]).map(u=>`<option value="${escapeHtml(u)}"${e.rider===u?' selected':''}>${escapeHtml(u)}</option>`).join('')}</select>
             </div>
