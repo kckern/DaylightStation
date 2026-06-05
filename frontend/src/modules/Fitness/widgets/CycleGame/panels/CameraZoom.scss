@@ -36,7 +36,12 @@
       );
     background-size: 38px 100%, 100% 30px;
     opacity: 0.85;
-    animation: cg-camera-drift 6s linear infinite;
+    // Pan the vertical lines left by the leader's distance (--cg-pan, in metres,
+    // ~6px/m) so the world slides past behind the framed riders — a tracking
+    // camera. Eased over the 1 Hz tick so it glides rather than jumps. The
+    // horizontal lines hold (no vertical camera motion).
+    background-position: calc(var(--cg-pan, 0) * -6px) 0, 0 0;
+    transition: background-position 0.9s linear;
   }
 
   &__field {
@@ -104,9 +109,4 @@
     color: t.$cg-text;
     white-space: nowrap;
   }
-}
-
-@keyframes cg-camera-drift {
-  from { background-position: 0 0, 0 0; }
-  to   { background-position: 38px 0, 0 0; }
 }
