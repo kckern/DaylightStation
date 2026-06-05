@@ -25,6 +25,7 @@ import './CycleGameContainer.scss';
 
 const RACE_TICK_MS = 1000;
 const COUNTDOWN_TICK_MS = 1000;
+const GO_HOLD_MS = 800; // hold the green light (engine already live) before the race screen
 
 /**
  * Live cycle-game lifecycle container. Composes the prop-driven screens
@@ -191,6 +192,9 @@ export default function CycleGameContainer({ onMount } = {}) {
   const [stagingSeconds, setStagingSeconds] = useState(0); // "to your bikes" countdown
   const [resultsSecondsLeft, setResultsSecondsLeft] = useState(null); // results auto-exit countdown
   const stagingTimerRef = useRef(null);
+  const stagingDeadlineRef = useRef(0); // earliest wall-time staging may advance to countdown
+  const preGreenPedalersRef = useRef(new Set()); // riders who pedalled BEFORE the green light
+  const goHoldTimerRef = useRef(null); // green-light hold before the race screen appears
   const [raceType, setRaceType] = useState(null); // 'distance' | 'time' | null
   const [raceValueM, setRaceValueM] = useState(null); // chosen distance goal (m)
   const [raceValueS, setRaceValueS] = useState(null); // chosen time cap (s)
@@ -413,6 +417,9 @@ export default function CycleGameContainer({ onMount } = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [bikes, session, getUserVitals, resolveDisplayName, assignVersion]
   );
+
+  // True when no on-board rider is pedalling — the gate for leaving staging.
+  const stagingAllStopped = !stagingRiders.some((r) => r.rpm > 0);
 
   // Keep on-board RPM live during staging + countdown so the compliance strip
   // reacts quickly when someone starts pedalling early.
@@ -677,14 +684,14 @@ export default function CycleGameContainer({ onMount } = {}) {
 
     // "Riders, to your bikes!" — hold before the stoplight so whoever pressed
     // Start can get on their bike. Lobby music keeps playing through it.
+    preGreenPedalersRef.current = new Set(); // clean slate for false-start tracking
     if (stagingBufferMs > 0) {
       setStagingSeconds(Math.ceil(stagingBufferMs / 1000));
       setPhase('staging');
       log.info('cycle_game.staging', { ms: stagingBufferMs });
-      if (stagingTimerRef.current) clearTimeout(stagingTimerRef.current);
-      stagingTimerRef.current = setTimeout(() => {
-        applySnapshot(controllerRef.current?.startCountdown());
-      }, stagingBufferMs);
+      // The advance to countdown is gated (buffer elapsed AND all bikes stopped) by
+      // a dedicated effect — record the earliest wall-time it may proceed.
+      stagingDeadlineRef.current = Date.now() + stagingBufferMs;
     } else {
       applySnapshot(controller.startCountdown());
     }
@@ -748,6 +755,27 @@ export default function CycleGameContainer({ onMount } = {}) {
     return () => clearInterval(id);
   }, [phase]);
 
+  // Staging → countdown gate: advance only once the buffer has elapsed AND no bike
+  // is pedalling (re-checked on every staging tick and whenever a bike stops, since
+  // the RPM poll bumps assignVersion → stagingAllStopped). Until then we hold on the
+  // "to your bikes" screen with the indeterminate "waiting for bikes to stop" bar.
+  useEffect(() => {
+    if (phase !== 'staging') return undefined;
+    if (Date.now() >= stagingDeadlineRef.current && stagingAllStopped) {
+      applySnapshot(controllerRef.current?.startCountdown());
+    }
+    return undefined;
+  }, [phase, stagingSeconds, stagingAllStopped, applySnapshot]);
+
+  // Track who pedals BEFORE the green light (during the red/yellow countdown) — only
+  // those riders false-start. Green pedalling is the GO signal and is allowed, so we
+  // stop accumulating once the countdown ends (phase leaves 'countdown').
+  useEffect(() => {
+    if (phase !== 'countdown') return undefined;
+    stagingRiders.forEach((r) => { if (r.rpm > 0) preGreenPedalersRef.current.add(r.id); });
+    return undefined;
+  }, [phase, stagingRiders]);
+
   // ── countdown interval ───────────────────────────────────────────────────
   useEffect(() => {
     if (phase !== 'countdown') return undefined;
@@ -760,23 +788,35 @@ export default function CycleGameContainer({ onMount } = {}) {
       const state = c.countdownTick();
       log.debug('cycle_game.countdown', { remaining: state.countdownRemaining });
       if (state.phase === 'racing') {
+        // GREEN LIGHT. Lock in the false starters (anyone who pedalled before green),
+        // then HOLD the green light while the engine is already live — the race
+        // interval ticks in the 'go' phase, so RPMs count from green — and switch to
+        // the race screen after GO_HOLD_MS.
+        c.markFalseStarters?.([...preGreenPedalersRef.current]);
         log.debug('cycle_game.sfx', { cue: 'go', attempted: playSound(soundsRef.current?.go, { volume: masterRef.current }) }); // null = silent
         log.info('cycle_game.race_started', {
           raceId: raceMetaRef.current?.raceId,
           riders: Object.keys(state.engineState?.riders || {}),
-          winCondition: raceMetaRef.current?.winCondition
+          winCondition: raceMetaRef.current?.winCondition,
+          falseStarters: [...preGreenPedalersRef.current]
         });
+        setSnapshot(state);
+        setPhase('go');
+        if (goHoldTimerRef.current) clearTimeout(goHoldTimerRef.current);
+        goHoldTimerRef.current = setTimeout(() => setPhase('racing'), GO_HOLD_MS);
       } else {
         playSound(soundsRef.current?.countdown, { volume: masterRef.current }); // beep per tick; null = silent
+        applySnapshot(state);
       }
-      applySnapshot(state);
     }, COUNTDOWN_TICK_MS);
     return () => clearInterval(id);
   }, [phase, applySnapshot, log]);
 
   // ── race interval ────────────────────────────────────────────────────────
+  // Runs while racing AND during the brief green-light 'go' hold, so RPMs count from
+  // the moment the light turns green — before the race screen appears.
   useEffect(() => {
-    if (phase !== 'racing') return undefined;
+    if (phase !== 'racing' && phase !== 'go') return undefined;
     const id = setInterval(() => {
       const controller = controllerRef.current;
       if (!controller) return;
@@ -922,7 +962,9 @@ export default function CycleGameContainer({ onMount } = {}) {
         applySnapshot(finalState);
         return;
       }
-      applySnapshot(state);
+      // During the green-light hold, advance the engine but keep showing the green
+      // stoplight (don't flip render to 'racing' yet — the go-hold timer does that).
+      if (phase === 'go') setSnapshot(state); else applySnapshot(state);
     }, RACE_TICK_MS);
     return () => clearInterval(id);
     // Live data is read from refs (sessionRef/getUserVitalsRef) so the interval
@@ -993,6 +1035,7 @@ export default function CycleGameContainer({ onMount } = {}) {
   useEffect(() => () => {
     stopMusic();
     if (stagingTimerRef.current) clearTimeout(stagingTimerRef.current);
+    if (goHoldTimerRef.current) clearTimeout(goHoldTimerRef.current);
   }, [stopMusic]);
 
   // ── handlers ─────────────────────────────────────────────────────────────
@@ -1106,6 +1149,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     const controller = controllerRef.current;
     const raceId = raceMetaRef.current?.raceId || null;
     if (stagingTimerRef.current) { clearTimeout(stagingTimerRef.current); stagingTimerRef.current = null; }
+    if (goHoldTimerRef.current) { clearTimeout(goHoldTimerRef.current); goHoldTimerRef.current = null; }
     if (controller) controller.cancel();
     log.info('cycle_game.cancelled', { raceId, fromPhase: phase, control: 'cancel-button' });
     controllerRef.current = null;
@@ -1169,16 +1213,25 @@ export default function CycleGameContainer({ onMount } = {}) {
   }
 
   if (phase === 'staging') {
+    // Once the buffer elapses we may still be holding for a bike to stop — swap the
+    // countdown bar for an indeterminate striped "waiting" bar until all are at 0.
+    const waitingForStop = stagingSeconds <= 0 && !stagingAllStopped;
     return (
       <div className="cycle-game-container" data-testid="cycle-game-container">
         <div className="cycle-game-staging" data-testid="cycle-game-staging">
           <div className="cycle-game-staging__eyebrow">Riders, to your bikes!</div>
-          <div className="cycle-game-staging__count">{stagingSeconds}</div>
-          <div className="cycle-game-staging__bar">
-            <span style={{ animationDuration: `${stagingBufferMs}ms` }} />
+          {waitingForStop ? (
+            <div className="cycle-game-staging__count cycle-game-staging__count--wait" data-testid="staging-waiting">Stop pedalling</div>
+          ) : (
+            <div className="cycle-game-staging__count">{stagingSeconds}</div>
+          )}
+          <div className={`cycle-game-staging__bar${waitingForStop ? ' cycle-game-staging__bar--waiting' : ''}`} data-testid="staging-bar">
+            {!waitingForStop && <span style={{ animationDuration: `${stagingBufferMs}ms` }} />}
           </div>
           <RiderReadyStrip riders={stagingRiders} />
-          <div className="cycle-game-staging__hint">Don’t pedal until the light turns green.</div>
+          <div className="cycle-game-staging__hint">
+            {waitingForStop ? 'Waiting for all bikes to stop…' : 'Don’t pedal until the light turns green.'}
+          </div>
         </div>
         <button type="button" data-testid="cycle-game-cancel" className="cycle-game-container__cancel" onClick={onCancel}>
           Cancel
@@ -1187,17 +1240,21 @@ export default function CycleGameContainer({ onMount } = {}) {
     );
   }
 
-  if (phase === 'countdown') {
-    const remaining = snapshot?.countdownRemaining ?? startCountdownRef.current;
+  if (phase === 'countdown' || phase === 'go') {
+    // 'go' is the held GREEN light: the engine is already running (race interval
+    // ticks in 'go') while we show GO for a beat before the race screen appears.
+    const remaining = phase === 'go' ? 0 : (snapshot?.countdownRemaining ?? startCountdownRef.current);
     return (
       <div className="cycle-game-container" data-testid="cycle-game-container">
         <CountdownStoplight remaining={remaining} total={startCountdownRef.current} />
         <div className="cycle-game-countdown-riders">
           <RiderReadyStrip riders={stagingRiders} />
         </div>
-        <button type="button" data-testid="cycle-game-cancel" className="cycle-game-container__cancel" onClick={onCancel}>
-          Cancel
-        </button>
+        {phase === 'countdown' && (
+          <button type="button" data-testid="cycle-game-cancel" className="cycle-game-container__cancel" onClick={onCancel}>
+            Cancel
+          </button>
+        )}
       </div>
     );
   }

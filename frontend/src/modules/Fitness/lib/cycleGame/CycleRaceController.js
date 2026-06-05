@@ -50,6 +50,19 @@ export class CycleRaceController {
     this.phase = 'racing';
   }
 
+  /**
+   * Pre-set the false starters (riders who pedalled BEFORE the green light) and
+   * skip the engine's own first-tick RPM check. The green light is the GO signal —
+   * pedalling on/after green is allowed and counts — so the penalty is decided by
+   * the caller during the countdown, not by RPM at the first racing tick.
+   */
+  markFalseStarters(userIds = []) {
+    if (this.hotStartPenaltyS > 0) {
+      for (const uid of userIds) this._penalty.set(uid, this.hotStartPenaltyS);
+    }
+    this._firstTick = false; // bypass the auto rpm>0 check — green pedalling is OK
+  }
+
   tick(inputs = {}) {
     if (this.phase !== 'racing' || !this.engine) return this.getState();
     const intervalS = this.engine.intervalSeconds;

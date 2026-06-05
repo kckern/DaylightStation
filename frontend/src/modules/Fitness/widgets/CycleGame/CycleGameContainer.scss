@@ -97,6 +97,10 @@
     color: cg.$cg-accent; font-variant-numeric: tabular-nums;
     text-shadow: 0 0 36px rgba(122, 162, 255, 0.4);
   }
+  // Held past the buffer, waiting for a bike to stop.
+  &__count--wait {
+    font-size: 2.6rem; color: #ffb13d; text-shadow: 0 0 28px rgba(255, 177, 61, 0.4);
+  }
   &__bar {
     width: min(420px, 70vw); height: 8px; border-radius: 999px;
     background: rgba(255, 255, 255, 0.08); overflow: hidden;
@@ -107,10 +111,25 @@
       animation: cg-staging-drain linear forwards;
     }
   }
+  // Indeterminate diagonal-striped "loading" bar while we wait for bikes to stop.
+  &__bar--waiting {
+    background-color: rgba(255, 177, 61, 0.18);
+    background-image: repeating-linear-gradient(
+      45deg,
+      rgba(255, 177, 61, 0.95) 0, rgba(255, 177, 61, 0.95) 12px,
+      rgba(255, 177, 61, 0.3) 12px, rgba(255, 177, 61, 0.3) 24px
+    );
+    background-size: 34px 100%;
+    animation: cg-staging-stripes 0.6s linear infinite;
+  }
   &__hint { color: cg.$cg-muted; font-size: 1rem; }
 }
 
 @keyframes cg-staging-drain {
   from { transform: scaleX(1); }
   to   { transform: scaleX(0); }
+}
+@keyframes cg-staging-stripes {
+  from { background-position: 0 0; }
+  to   { background-position: 34px 0; }
 }
