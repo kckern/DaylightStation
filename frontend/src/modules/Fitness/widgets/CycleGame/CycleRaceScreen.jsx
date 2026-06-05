@@ -12,10 +12,12 @@ import RaceLayoutManager from './RaceLayoutManager.jsx';
 import './CycleRaceScreen.scss';
 
 /**
- * Presentational race screen — a velodrome broadcast HUD: framed race clock on
- * top, then a director-driven layout (distance chart, rankings, lap table, oval
- * track, transient camera) over a row of CycleSpeedometers. Pure — the live
- * container feeds it engine state + per-rider metrics.
+ * Presentational race screen — a velodrome broadcast HUD. RaceLayoutManager picks a
+ * fixed layout by field size: ≤3 riders → sidebar mode (distance chart + splits over
+ * the speedometers, with a POV grid + lap oval in a right sidebar); ≥4 riders → wide
+ * mode (chart | splits | POV across the top, speedometers full-width, no oval). The
+ * race clock lives inside the chart's header. Pure — the live container feeds it
+ * engine state + per-rider metrics.
  */
 export default function CycleRaceScreen({
   winCondition = 'distance', goalM = 3000, timeCapS = 300, elapsedS = 0,
