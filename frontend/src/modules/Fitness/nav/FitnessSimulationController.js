@@ -165,7 +165,7 @@ export class FitnessSimulationController {
       .filter(entry => entry && entry.cadence != null)
       .map(entry => {
         const equipmentId = entry.id;
-        const cadenceDeviceId = String(entry.cadence);
+        const cadenceDeviceId = String(Array.isArray(entry.cadence) ? entry.cadence[0] : entry.cadence);
         const state = this._equipmentState.get(String(equipmentId)) || {};
         const eligible = Array.isArray(entry.eligible_users) && entry.eligible_users.length
           ? [...entry.eligible_users]
