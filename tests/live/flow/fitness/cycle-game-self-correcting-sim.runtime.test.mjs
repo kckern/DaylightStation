@@ -49,17 +49,25 @@ test.describe('Cycle Game — self-correcting sim', () => {
 
     await page.evaluate(() => window.__cycleGameControl.startRace({ winCondition: 'time', value: 90 }));
 
-    // INDUCE A FALSE START: pedal hard from the gun, re-sending every 200ms (cadence
-    // freshness is per-message) so rpm > 0 is read at the first racing tick.
-    const induceDeadline = Date.now() + 30000;
+    // Pass the staging gate first: hold 0 until the stoplight countdown begins
+    // (pedalling during staging just HOLDS the gate, it doesn't false-start).
     let phase = await phaseOf(page);
+    const stageDeadline = Date.now() + 25000;
+    while (Date.now() < stageDeadline && phase !== 'countdown' && phase !== 'go' && phase !== 'racing') {
+      for (const id of bikeIds) await setRpm(page, id, 0);
+      await page.waitForTimeout(150);
+      phase = await phaseOf(page);
+    }
+    // INDUCE A FALSE START: pedal during the red/yellow countdown — BEFORE green. The
+    // container locks these pre-green pedalers in as the false starters at green.
+    const induceDeadline = Date.now() + 30000;
     while (Date.now() < induceDeadline && phase !== 'racing') {
       for (const id of bikeIds) await setRpm(page, id, 110);
-      await page.waitForTimeout(200);
+      await page.waitForTimeout(150);
       phase = await phaseOf(page);
     }
     expect(phase, 'race reached the green light').toBe('racing');
-    // Keep pedalling briefly so the first racing tick definitely reads rpm > 0.
+    // Keep pedalling briefly so the boxed lock is observable before we self-correct.
     for (let i = 0; i < 5; i++) { for (const id of bikeIds) await setRpm(page, id, 110); await page.waitForTimeout(200); }
 
     // CONFIRM the lock is visible via the readback (and that distance is frozen).
