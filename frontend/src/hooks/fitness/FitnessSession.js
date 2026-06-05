@@ -1156,27 +1156,39 @@ export class FitnessSession {
 
     const cadenceRef = equipment.cadence;
     if (cadenceRef == null) return disconnected;
-    const cadenceDeviceId = String(cadenceRef).trim();
-    if (!cadenceDeviceId) return disconnected;
 
+    // Equipment may carry MULTIPLE cadence sensors (e.g. a sensor on each wheel of a
+    // tricycle). Treat them as one unit: connected if ANY sensor is live, and the rpm
+    // is the fastest live sensor — any wheel turning means the equipment is moving.
+    const deviceIds = (Array.isArray(cadenceRef) ? cadenceRef : [cadenceRef])
+      .map((d) => String(d).trim()).filter(Boolean);
+    let best = null;
+    for (const id of deviceIds) {
+      const reading = this._readCadenceDevice(id);
+      if (!reading.connected) continue;
+      if (!best || reading.rpm > best.rpm) best = reading;
+    }
+    return best || disconnected;
+  }
+
+  // Read a single cadence device's live reading (rpm + connected + ts), applying the
+  // same staleness rule as DeviceManager.pruneStaleDevices so readers see
+  // "disconnected" even between prune cycles.
+  _readCadenceDevice(cadenceDeviceId) {
+    const disconnected = { rpm: 0, connected: false };
+    if (!cadenceDeviceId) return disconnected;
     const device = this.deviceManager?.getDevice(cadenceDeviceId);
     if (!device) return disconnected;
-
     const rpmRaw = device.cadence;
     if (!Number.isFinite(rpmRaw)) return disconnected;
-
-    // Staleness check — mirrors DeviceManager.pruneStaleDevices' rpmZero logic
-    // so readers see "disconnected" even between prune cycles.
     const { rpmZero } = this._getTimeouts();
     const lastActivity = Number.isFinite(device.lastSignificantActivity)
       ? device.lastSignificantActivity
       : (Number.isFinite(device.lastSeen) ? device.lastSeen : null);
     if (lastActivity == null) return disconnected;
     if (Date.now() - lastActivity > rpmZero) return disconnected;
-
-    // Use lastSeen (advances on every packet, including 0 readings) so 0-RPM
-    // blips between rotations reach CadenceFilter's EMA. lastActivity above is
-    // kept for the rpmZero timeout check only.
+    // Use lastSeen (advances on every packet, including 0 readings) so 0-RPM blips
+    // between rotations reach CadenceFilter's EMA.
     return { rpm: rpmRaw, connected: true, ts: device.lastSeen ?? lastActivity };
   }
 

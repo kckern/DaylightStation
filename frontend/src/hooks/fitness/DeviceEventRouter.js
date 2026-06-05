@@ -86,9 +86,13 @@ export class DeviceEventRouter {
         bleMap.set(String(entry.ble).trim(), entry);
       }
       
-      // ANT+ cadence devices
+      // ANT+ cadence devices — a piece of equipment may carry MULTIPLE cadence
+      // sensors (e.g. a tricycle with a sensor on two wheels); route every one to it.
       if (entry.cadence != null) {
-        cadenceMap.set(String(entry.cadence).trim(), entry);
+        (Array.isArray(entry.cadence) ? entry.cadence : [entry.cadence]).forEach((d) => {
+          const k = String(d).trim();
+          if (k) cadenceMap.set(k, entry);
+        });
       }
       
       // Vibration sensors (by equipment ID since MQTT maps to equipment)
