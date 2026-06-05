@@ -19,7 +19,19 @@
   &__track {
     position: relative; flex: 1 1 auto; min-width: 0;
     height: 10px; margin: 0 26px;
-    background: rgba(122, 162, 255, 0.10);
+    // Solid lane fill + a tick grid that pans left by the leader's distance
+    // (--cg-pan, metres, ~6px/m) so the ground slides under the bars — conveys
+    // absolute speed the relative-scaled bars hide. Eased over the 1 Hz tick.
+    background-color: rgba(122, 162, 255, 0.10);
+    background-image: repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.16) 0,
+      rgba(255, 255, 255, 0.16) 1px,
+      transparent 1px,
+      transparent 18px
+    );
+    background-position: calc(var(--cg-pan, 0) * -6px) 0;
+    transition: background-position 0.9s linear;
     border-radius: 999px;
   }
 

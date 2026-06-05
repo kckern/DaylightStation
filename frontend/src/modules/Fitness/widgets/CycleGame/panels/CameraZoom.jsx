@@ -43,10 +43,16 @@ export default function CameraZoom({ riderIds, riders, riderLive = {} }) {
   const right = sorted[sorted.length - 1];
   const showConnector = framed.length >= 2 && right.xPct > left.xPct;
 
+  // Pan the grid by the leader's forward progress so it reads like a tracking
+  // camera: as the field advances, the world (grid) slides past behind the framed
+  // riders. Driven off real distance (not a fixed loop), eased per tick.
+  const leaderDistanceM = Math.max(0, ...riderIds.map((id) => riders[id]?.cumulativeDistanceM || 0));
+
   return (
     <div className="cg-camera-zoom" data-testid="camera-zoom">
-      {/* Drifting perspective grid backdrop — implies a panning broadcast camera. */}
-      <div className="cg-camera-zoom__grid" data-testid="camera-grid" aria-hidden="true" />
+      {/* Perspective grid backdrop that pans with the field's forward progress. */}
+      <div className="cg-camera-zoom__grid" data-testid="camera-grid" aria-hidden="true"
+        style={{ '--cg-pan': Math.round(leaderDistanceM) }} />
 
       <div className="cg-camera-zoom__field">
         {showConnector && (

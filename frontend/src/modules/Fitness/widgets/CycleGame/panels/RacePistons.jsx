@@ -25,8 +25,11 @@ export default function RacePistons({ riderIds, riders, riderLive = {} }) {
   // Rank for the leader flag (furthest = 1st) without reordering the lanes.
   const ranked = [...riderIds].sort((a, b) => distOf(b) - distOf(a));
 
+  // The bars are scaled RELATIVE to the leader, so they barely move when the whole
+  // field is sprinting in lockstep — nothing conveys absolute speed. Pan the lane
+  // grids by the leader's real distance so the ground slides past under the bars.
   return (
-    <div className="cg-pistons" data-testid="race-pistons">
+    <div className="cg-pistons" data-testid="race-pistons" style={{ '--cg-pan': Math.round(leader) }}>
       {riderIds.map((id, idx) => {
         const color = LINE_COLORS[idx % LINE_COLORS.length];
         const f = frac(id);
