@@ -42,11 +42,14 @@ export default function RaceLayoutManager({ decision, panels, solo = false, fiel
   // Render one panel into a zone div. `cls` overrides the zone class so the solo
   // branch can reuse the same PanelSlot wiring (zoneBox flows) with its own layout.
   const renderPanel = (id, testid, cls) => {
-    const Panel = id ? panels[id] : null;
+    // Pass the factory as `render` (PanelSlot CALLS it) — NOT as <Panel /> (a
+    // component type). The factory identity changes every tick, so using it as a
+    // type remounts the whole panel each frame (avatar reload, transition reset).
+    const factory = id ? panels[id] : null;
     return (
       <div data-testid={testid}
-        className={`race-layout__zone ${cls}${Panel ? '' : ' race-layout__zone--empty'}`}>
-        {Panel ? <PanelSlot key={id} panelId={id}><Panel /></PanelSlot> : null}
+        className={`race-layout__zone ${cls}${factory ? '' : ' race-layout__zone--empty'}`}>
+        {factory ? <PanelSlot key={id} panelId={id} render={factory} /> : null}
       </div>
     );
   };
