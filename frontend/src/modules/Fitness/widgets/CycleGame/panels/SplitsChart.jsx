@@ -69,7 +69,7 @@ export default function SplitsChart({ riderIds, riders, lapLengthM = 0, elapsedS
             </tr>
           ))}
           <tr className="cg-splits__row cg-splits__row--current">
-            <th scope="row" className="cg-splits__lap">{Math.max(...riderIds.map(curLapNo))}•</th>
+            <th scope="row" className="cg-splits__lap">{Math.max(1, ...riderIds.map(curLapNo))}•</th>
             {riderIds.map((id) => (
               <td key={id} className="cg-splits__cell cg-splits__cell--current" data-testid="splits-current">
                 {formatClock(currentLapRunning(id))}…
