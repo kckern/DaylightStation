@@ -1,39 +1,13 @@
-@use 'cgTokens' as t;
-// The screen (.cycle-race-screen) is a flex column: clock chrome, then this
-// manager. Fill the remaining height as a flex item so the internal grid's
-// `1fr` top row is meaningful — mirrors the old `.cycle-race-screen__top`
-// flex:1 behavior the extracted panels used to rely on.
 .race-layout {
-  display: grid; grid-template-rows: var(--rows, 1fr 38%); gap: 16px;
-  flex: 1 1 auto; min-height: 0; width: 100%;
-  &__top {
-    display: grid; gap: 16px; min-height: 0;
-    grid-template-columns: var(--top-cols, 1fr);
-  }
-  // overflow:hidden is the cross-zone overlap guard — clips any panel (or the
-  // chart's transient 2x zoom-out animation) to its own grid cell so it can never
-  // bleed into a neighbouring zone or the speedo band.
-  &__zone { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
-  &__zone--empty { display: none; } // collapsed; siblings reflow via --top-filled
-  // Fill the zone (a grid cell with a definite track height) so panels whose
-  // height comes from an absolutely-positioned child — notably DistanceChart's
-  // SVG (inset:0) — get a sized parent instead of collapsing to 0.
-  &__slot { height: 100%; min-height: 0; animation: race-slot-in 300ms ease both; }
+  width: 100%; height: 100%; min-height: 0; box-sizing: border-box;
+  &__zone { min-width: 0; min-height: 0; overflow: hidden; }
+  &__zone--empty { display: none; }
+
+  &--sidebar { display: grid; grid-template-columns: 68% 32%; gap: 8px; }
+  .race-layout__main { display: grid; grid-template-rows: 1fr minmax(240px, 48%); gap: 8px; min-height: 0; }
+  .race-layout__main-top { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-height: 0; }
+  .race-layout__sidebar { display: grid; grid-template-rows: 70% 30%; gap: 8px; min-height: 0; }
+
+  &--wide { display: grid; grid-template-rows: 1fr minmax(240px, 42%); gap: 8px; }
+  .race-layout__top3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; min-height: 0; }
 }
-// Solo (one participant): two balanced columns — gauge left, the single top panel
-// (chart or lap table) right — filling the height instead of the top-row-over-band
-// velodrome.
-//
-// CRITICAL: do NOT flex-center the *zones*. The `.race-layout__slot` inside each
-// zone is `height:100%` and is what PanelSlot measures into `zoneBox`; flex-
-// centering the zone shrinks the slot to its content, so gaugeRowSize sees a tiny
-// box and pins the gauge to its floor. The zones stay plain grid cells (the slot
-// fills them, same as the velodrome zones) and centering happens INSIDE the panel.
-.race-layout--solo {
-  grid-template-rows: 1fr;
-  grid-template-columns: 1fr 1fr;
-  // The speedo container is normally a 44%-height band item; in a solo slot it must
-  // fill the slot height and centre the lone hero gauge.
-  .cycle-race-screen__speedos { flex: none; height: 100%; }
-}
-@keyframes race-slot-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
