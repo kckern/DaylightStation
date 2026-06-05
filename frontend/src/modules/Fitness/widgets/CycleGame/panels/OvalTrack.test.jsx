@@ -42,3 +42,18 @@ describe('OvalTrack — marker positioned via CSS transform property (animatable
     expect(marker.style.transform).toMatch(/translate\(/);
   });
 });
+
+describe('OvalTrack lap counter', () => {
+  it('renders the lap label in the center when provided', () => {
+    const { getByTestId } = render(
+      <OvalTrack riderIds={['a']} riders={{ a: { displayName: 'A' } }} progress={{ a: 0.4 }} lapLabel="Lap 3" />
+    );
+    expect(getByTestId('oval-lap-label').textContent).toBe('Lap 3');
+  });
+  it('omits the lap label when not provided', () => {
+    const { queryByTestId } = render(
+      <OvalTrack riderIds={['a']} riders={{ a: { displayName: 'A' } }} progress={{ a: 0.4 }} />
+    );
+    expect(queryByTestId('oval-lap-label')).toBeNull();
+  });
+});

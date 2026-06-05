@@ -57,4 +57,14 @@ describe('DistanceChart panel', () => {
     expect(g).toBeTruthy();
     expect(g.getAttribute('class')).toContain('cycle-race-screen__zoomable');
   });
+  it('renders a header strip with the clock and goal label', () => {
+    const { getByTestId } = render(
+      <DistanceChart riderIds={['a']} riders={{ a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 50, distanceSeries: [50] } }}
+        riderLive={{ a: {} }} winCondition="time" goalM={3000} elapsedS={5}
+        clockSeconds={55} maxDistanceM={50} />
+    );
+    const hdr = getByTestId('chart-header');
+    expect(hdr.textContent).toContain('0:55');
+    expect(hdr.textContent.toLowerCase()).toContain('time left');
+  });
 });
