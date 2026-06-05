@@ -27,7 +27,7 @@ export function ovalPoint(progress, rx, ry) {
  * time-racer wrapping past their circuit target). Synthwave HUD panel; lane-colored
  * markers glide via a CSS transform-property transition. Pure presentational component.
  */
-export default function OvalTrack({ riderIds, riders, riderLive = {}, progress = {} }) {
+export default function OvalTrack({ riderIds, riders, riderLive = {}, progress = {}, lapLabel = null }) {
   return (
     <div className="cg-oval-track" data-testid="oval-track">
       <svg
@@ -73,6 +73,9 @@ export default function OvalTrack({ riderIds, riders, riderLive = {}, progress =
           );
         })}
       </svg>
+      {lapLabel ? (
+        <div className="cg-oval-track__lap-label" data-testid="oval-lap-label">{lapLabel}</div>
+      ) : null}
     </div>
   );
 }
@@ -81,5 +84,6 @@ OvalTrack.propTypes = {
   riderIds: PropTypes.array.isRequired,
   riders: PropTypes.object.isRequired,
   riderLive: PropTypes.object,
-  progress: PropTypes.object
+  progress: PropTypes.object,
+  lapLabel: PropTypes.string
 };
