@@ -1,0 +1,38 @@
+@use '../cgTokens' as cg;
+
+.cg-pov {
+  position: relative; width: 100%; height: 100%; min-height: 0; overflow: hidden;
+  background: radial-gradient(130% 80% at 50% 6%, #2a0a3a 0%, #0a0118 70%);
+  perspective: 520px; perspective-origin: 50% 18%;
+
+  &__plane {
+    position: absolute; inset: 0;
+    transform-style: preserve-3d;
+    transform: rotateX(38deg) scale(1.05);
+    transform-origin: 50% 100%;
+  }
+
+  &__grid { position: absolute; inset: 0; pointer-events: none; }
+  &__hline {
+    position: absolute; left: 0; right: 0; height: 1px;
+    background: rgba(cg.$cg-cyan, 0.35);
+    transition: top 0.9s linear;
+  }
+  &__vline {
+    position: absolute; top: 0; bottom: 0; width: 1px;
+    background: rgba(cg.$cg-magenta, 0.30);
+  }
+
+  &__marker {
+    position: absolute; transform: translate(-50%, -50%);
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    transition: top 0.9s linear, left 0.9s linear;
+    z-index: 2;
+    .circular-user-avatar { width: 34px !important; height: 34px !important; --vital-avatar-size: 34px; }
+    &.is-ghost { opacity: 0.6; }
+  }
+  &__dist {
+    font-family: cg.$cg-mono; font-weight: 800; font-size: 0.62rem; color: cg.$cg-cyan;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85); white-space: nowrap;
+  }
+}
