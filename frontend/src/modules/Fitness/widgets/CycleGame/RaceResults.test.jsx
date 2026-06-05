@@ -13,7 +13,7 @@ const riders = {
 
 describe('RaceResults', () => {
   it('renders a row per standing in placement order with names', () => {
-    const { getAllByTestId } = render(<RaceResults standings={standings} riders={riders} winCondition="distance" dnf={[]} />);
+    const { getAllByTestId } = render(<RaceResults standings={standings} riders={riders} winCondition="distance" dnf={[]} animate={false} />);
     const rows = getAllByTestId('result-row');
     expect(rows).toHaveLength(2);
     expect(rows[0].textContent).toContain('Milo');
@@ -36,9 +36,9 @@ describe('RaceResults', () => {
     expect(queryByTestId('race-results-legend')).toBeNull();
   });
   it('shows time for distance races and distance for time races', () => {
-    const dist = render(<RaceResults standings={standings} riders={riders} winCondition="distance" dnf={[]} />);
+    const dist = render(<RaceResults standings={standings} riders={riders} winCondition="distance" dnf={[]} animate={false} />);
     expect(within(dist.container).getByTestId('result-row-milo').textContent).toContain('4:12'); // 252s
-    const time = render(<RaceResults standings={standings} riders={riders} winCondition="time" dnf={[]} />);
+    const time = render(<RaceResults standings={standings} riders={riders} winCondition="time" dnf={[]} animate={false} />);
     expect(within(time.container).getByTestId('result-row-milo').textContent).toContain('3.00 km'); // 3000 m
   });
 });

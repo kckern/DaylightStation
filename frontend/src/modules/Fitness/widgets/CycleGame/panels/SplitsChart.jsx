@@ -18,7 +18,7 @@ import './SplitsChart.scss';
  *
  * `riders[id].lapSplits` = cumulative crossing times (s); element i = end of lap i+1.
  */
-export default function SplitsChart({ riderIds, riders, lapLengthM = 0, elapsedS = 0 }) {
+export default function SplitsChart({ riderIds, riders, lapLengthM = 0, elapsedS = 0, final = false }) {
   const scrollRef = useRef(null);
   const lapsOn = Number.isFinite(lapLengthM) && lapLengthM > 0;
   const splitsOf = (id) => riders[id]?.lapSplits || [];
@@ -82,16 +82,18 @@ export default function SplitsChart({ riderIds, riders, lapLengthM = 0, elapsedS
             </tr>
           ))}
         </tbody>
-        <tfoot>
-          <tr className="cg-splits__row cg-splits__row--current">
-            <th scope="row" className="cg-splits__lap">{Math.max(1, ...riderIds.map(curLapNo))}•</th>
-            {riderIds.map((id) => (
-              <td key={id} className="cg-splits__cell cg-splits__cell--current" data-testid="splits-current">
-                {formatClock(currentLapRunning(id))}…
-              </td>
-            ))}
-          </tr>
-        </tfoot>
+        {!final && (
+          <tfoot>
+            <tr className="cg-splits__row cg-splits__row--current">
+              <th scope="row" className="cg-splits__lap">{Math.max(1, ...riderIds.map(curLapNo))}•</th>
+              {riderIds.map((id) => (
+                <td key={id} className="cg-splits__cell cg-splits__cell--current" data-testid="splits-current">
+                  {formatClock(currentLapRunning(id))}…
+                </td>
+              ))}
+            </tr>
+          </tfoot>
+        )}
       </table>
     </div>
   );
@@ -101,5 +103,6 @@ SplitsChart.propTypes = {
   riderIds: PropTypes.array.isRequired,
   riders: PropTypes.object.isRequired,
   lapLengthM: PropTypes.number,
-  elapsedS: PropTypes.number
+  elapsedS: PropTypes.number,
+  final: PropTypes.bool
 };

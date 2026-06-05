@@ -2,9 +2,13 @@
 
 .race-results {
   color: cg.$cg-text;
-  padding: 32px 24px;
+  padding: 22px 24px;
   text-align: center;
   width: 100%;
+  box-sizing: border-box;
+  min-height: 100vh;            // backdrop fills the full app height
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px;
   @include cg.cg-backdrop;
 
   &__eyebrow { @include cg.cg-eyebrow; animation: cg-rr-in 0.4s ease both; }
@@ -15,10 +19,11 @@
     animation: cg-rr-in 0.45s ease both;
   }
 
-  &__list { list-style: none; margin: 0 auto; padding: 0; max-width: 560px; display: flex; flex-direction: column; gap: 10px; }
+  &__list { list-style: none; margin: 0 auto; padding: 0; width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 10px; flex: 0 0 auto; }
 
+  // Mario-Kart fly-in: each row rushes in from the left, overshoots, snaps home.
   &__row {
-    animation: cg-rr-row 0.5s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+    animation: cg-rr-fly 0.55s cubic-bezier(0.2, 0.85, 0.3, 1.2) both;
   }
 
   &__place {
@@ -77,9 +82,27 @@
     .race-results__metric { color: cg.$cg-gold; font-size: 1.3rem; }
   }
 
+  // Full lap splits table below the podium — bounded + scrollable (it owns its own
+  // sticky header / scroll), so it never pushes the podium off-screen.
+  &__splits {
+    width: 100%; max-width: 620px; margin: 16px auto 0;
+    flex: 1 1 auto; min-height: 180px;   // grow to use the vertical space
+    border: 1px solid cg.$cg-border; border-radius: 12px;
+    background: rgba(0, 0, 0, 0.28); overflow: hidden;
+    animation: cg-rr-in 0.6s ease both;
+  }
+
+  // Auto-exit countdown (last few seconds before returning to the lobby).
+  &__countdown {
+    margin-top: 14px; flex: 0 0 auto;
+    font-family: cg.$cg-mono; font-size: 1rem; font-weight: 700;
+    color: cg.$cg-gold; letter-spacing: 0.04em;
+    animation: cg-rr-pulse 1s ease-in-out infinite;
+  }
+
   // Acronym legend — spells out the badges that appeared above.
   &__legend {
-    margin: 18px auto 0; padding: 0; max-width: 560px;
+    margin: 14px auto 0; padding: 0; max-width: 560px; flex: 0 0 auto;
     display: flex; flex-direction: column; gap: 4px;
     animation: cg-rr-in 0.5s ease both;
   }
@@ -95,7 +118,12 @@
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-@keyframes cg-rr-row {
-  from { opacity: 0; transform: translateY(14px) scale(0.98); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
+@keyframes cg-rr-fly {
+  0%   { opacity: 0; transform: translateX(-90px) scale(0.9); }
+  70%  { opacity: 1; transform: translateX(8px) scale(1.03); }
+  100% { opacity: 1; transform: translateX(0) scale(1); }
+}
+@keyframes cg-rr-pulse {
+  0%, 100% { opacity: 0.6; }
+  50%      { opacity: 1; }
 }
