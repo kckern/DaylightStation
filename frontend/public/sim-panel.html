@@ -379,10 +379,17 @@
       ctl.startRace({ winCondition: win, value });
 
       // Wait for the green light. Bikes are still held at 0 → no false start.
+      // NOTE: the phase is a TRANSIENT 'idle' for the first frame after startRace
+      // (React hasn't flushed setPhase('staging') yet), so 'idle' is only an abort
+      // signal AFTER we've seen the race actually begin staging — otherwise we'd
+      // bail before the race even starts and leave the bikes to idle-DNF.
       const greenBy = Date.now() + 30000;
       let phase = phaseOf();
+      let sawStart = false;
       while (Date.now() < greenBy && phase !== 'racing') {
-        if (phase === 'results' || phase === 'idle') break; // aborted before start
+        if (phase === 'staging' || phase === 'countdown') sawStart = true;
+        if (phase === 'results') break;                 // race already over
+        if (phase === 'idle' && sawStart) break;         // returned to idle = cancelled
         setRaceStatus(`<div class="rb-title">🚦 Staging…</div>phase: ${escapeHtml(String(phase))}`);
         await sleep(150);
         phase = phaseOf();
@@ -393,8 +400,13 @@
         return;
       }
 
-      // GREEN LIGHT — hand off from the holding arc to a per-tick closed-loop driver,
-      // so our setRpm (informed by feedback) is the sole RPM authority.
+      // GREEN LIGHT — but the render phase flips to 'racing' up to one engine tick
+      // BEFORE the engine runs its first-tick green-light (false-start) check. If we
+      // drove now, our own RPM would trip that check and box our bikes. So keep the
+      // hold-at-0 arc running across that first tick, THEN take manual control — the
+      // first tick reads RPM 0, no self-inflicted false start.
+      setRaceStatus('<div class="rb-title">🟢 Green — settling the start…</div>Holding 0 across the first tick.');
+      await sleep(1400);
       bikeIds.forEach((id) => controller.stopRpmArc(id));
 
       const targetFor = (i, t) => Math.round(80 + i * 5 + 10 * Math.sin(t / 3));
@@ -420,13 +432,16 @@
           const prev = last[id] ?? 0;
           if (dist > prev + 0.5) fieldAdvanced = true;
 
-          let rpm, cls = 'rb-ok', state;
+          let rpm, cls = 'rb-ok', state, releaseBox = false;
           if (r?.finished) {
             rpm = 0; state = 'FINISHED'; stall[id] = 0;
           } else if (r?.boxed) {
-            // FALSE START — meter locked. Back off to 0; the box opens only at rest.
-            rpm = 0; cls = 'rb-warn'; stall[id] = 0;
-            state = `⚠ FALSE START — backing off to clear (${r.penaltyRemainingS | 0}s${r.awaitingStop ? ', awaiting stop' : ''})`;
+            // FALSE START — meter locked. The box opens only at a clean RPM 0, but a
+            // plain setRpm(0) can still read non-zero (cadence is derived from
+            // revolution deltas). So force the cadence STALE (stopEquipment) → it
+            // zeroes and the box reliably releases.
+            releaseBox = true; cls = 'rb-warn'; stall[id] = 0;
+            state = `⚠ FALSE START — clearing (${r.penaltyRemainingS | 0}s${r.awaitingStop ? ', at rest' : ''})`;
           } else {
             rpm = targetFor(i, t);
             stall[id] = (dist <= prev + 0.5) ? (stall[id] || 0) + 1 : 0;
@@ -434,7 +449,7 @@
               ? `⚠ not advancing (${stall[id]}t) — driving ${rpm}` : `driving ${rpm} rpm`;
             if (stall[id] >= 3) cls = 'rb-warn';
           }
-          controller.setRpm(id, rpm);
+          if (releaseBox) controller.stopEquipment(id); else controller.setRpm(id, rpm);
           last[id] = dist;
           const nm = r?.userId || id;
           return `<div class="rb-bike ${cls}">${escapeHtml(String(nm))}: ${dist | 0} m · ${state}</div>`;
