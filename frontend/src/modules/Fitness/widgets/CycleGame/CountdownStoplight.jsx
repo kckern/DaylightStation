@@ -4,14 +4,16 @@ import './CountdownStoplight.scss';
 
 /**
  * Full-screen stoplight countdown overlay. `remaining` counts down to 0 (GO).
- * Lamp mapping: high third = red, middle third = yellow, 0 = green/GO.
- * Sound is triggered by the caller on each change (kept out of this presentational component).
+ * One distinct beat per lamp on the final three counts: the last three beats are
+ * RED → YELLOW → GREEN, and any earlier beats flash all three (a "get set" pre-stage)
+ * — so yellow never holds for two beats. Sound is triggered by the caller on each
+ * change (kept out of this presentational component).
  */
 export default function CountdownStoplight({ remaining, total = 3 }) {
   const isGo = remaining <= 0;
-  const frac = total > 0 ? remaining / total : 0;
-  const lamp = isGo ? 'green' : frac > 2 / 3 ? 'red' : 'yellow';
   const n = Math.ceil(remaining);
+  const lamp = isGo ? 'green' : n === 1 ? 'yellow' : n === 2 ? 'red' : 'all';
+  const isAll = lamp === 'all';
   return (
     <div className={`countdown-stoplight${isGo ? ' is-go' : ''}`} data-testid="countdown-stoplight">
       <div className="countdown-stoplight__eyebrow">{isGo ? 'Race!' : 'Get ready'}</div>
@@ -29,9 +31,9 @@ export default function CountdownStoplight({ remaining, total = 3 }) {
       </div>
 
       <div className="countdown-stoplight__lamps" aria-hidden="true">
-        <span data-testid="lamp-red" className={`countdown-stoplight__lamp countdown-stoplight__lamp--red${lamp === 'red' ? ' is-on' : ''}`} />
-        <span data-testid="lamp-yellow" className={`countdown-stoplight__lamp countdown-stoplight__lamp--yellow${lamp === 'yellow' ? ' is-on' : ''}`} />
-        <span data-testid="lamp-green" className={`countdown-stoplight__lamp countdown-stoplight__lamp--green${lamp === 'green' ? ' is-on' : ''}`} />
+        <span data-testid="lamp-red" className={`countdown-stoplight__lamp countdown-stoplight__lamp--red${lamp === 'red' || isAll ? ' is-on' : ''}`} />
+        <span data-testid="lamp-yellow" className={`countdown-stoplight__lamp countdown-stoplight__lamp--yellow${lamp === 'yellow' || isAll ? ' is-on' : ''}`} />
+        <span data-testid="lamp-green" className={`countdown-stoplight__lamp countdown-stoplight__lamp--green${lamp === 'green' || isAll ? ' is-on' : ''}`} />
       </div>
     </div>
   );
