@@ -8,6 +8,7 @@ const props = {
   goalM: 3000,
   elapsedS: 75,
   cadenceBands: BANDS,
+  lapLengthM: 100,
   riders: {
     milo: { userId: 'milo', displayName: 'Milo', cumulativeDistanceM: 1500, distanceSeries: [500, 1000, 1500] },
     felix: { userId: 'felix', displayName: 'Felix', cumulativeDistanceM: 900, distanceSeries: [300, 600, 900] }
@@ -18,14 +19,32 @@ const props = {
   }
 };
 
+// 4-rider fixture for wide-mode tests
+const base4RiderProps = {
+  ...props,
+  riders: {
+    milo: { userId: 'milo', displayName: 'Milo', cumulativeDistanceM: 1500, distanceSeries: [500, 1000, 1500] },
+    felix: { userId: 'felix', displayName: 'Felix', cumulativeDistanceM: 900, distanceSeries: [300, 600, 900] },
+    ann: { userId: 'ann', displayName: 'Ann', cumulativeDistanceM: 1200, distanceSeries: [400, 800, 1200] },
+    bo: { userId: 'bo', displayName: 'Bo', cumulativeDistanceM: 600, distanceSeries: [200, 400, 600] }
+  },
+  riderLive: {
+    milo: { rpm: 92 }, felix: { rpm: 78 }, ann: { rpm: 85 }, bo: { rpm: 70 }
+  }
+};
+
 describe('CycleRaceScreen', () => {
-  it('shows the race clock (elapsed for a distance race)', () => {
+  it('renders sidebar mode for ≤3 riders with chart, splits, pov', () => {
     const { getByTestId } = render(<CycleRaceScreen {...props} />);
-    expect(getByTestId('race-clock').textContent).toContain('1:15');
+    expect(getByTestId('race-layout').dataset.mode).toBe('sidebar');
+    expect(getByTestId('distance-chart')).toBeInTheDocument();
+    expect(getByTestId('race-splits')).toBeInTheDocument();
+    expect(getByTestId('race-pov')).toBeInTheDocument();
   });
-  it('shows the time remaining for a time race (count down)', () => {
-    const { getByTestId } = render(<CycleRaceScreen {...props} winCondition="time" timeCapS={300} goalM={undefined} elapsedS={75} />);
-    expect(getByTestId('race-clock').textContent).toContain('3:45'); // 300-75
+  it('renders wide mode (no oval) for 4+ riders', () => {
+    const { getByTestId, queryByTestId } = render(<CycleRaceScreen {...base4RiderProps} />);
+    expect(getByTestId('race-layout').dataset.mode).toBe('wide');
+    expect(queryByTestId('zone-oval')).toBeNull();
   });
   it('renders one speedometer per rider', () => {
     const { container } = render(<CycleRaceScreen {...props} />);
@@ -100,23 +119,13 @@ describe('CycleRaceScreen', () => {
     rerender(<CycleRaceScreen {...props} />);
     expect(queryByTestId('cycle-race-penalty-banner')).toBeNull();
   });
-  it('uses the solo split layout for a single participant', () => {
-    const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 0, distanceSeries: [0], finishTimeS: null, isGhost: false } };
-    const { getByTestId } = render(
-      <CycleRaceScreen winCondition="time" timeCapS={120} elapsedS={1} riders={riders} riderLive={{ a: { rpm: 0 } }} />
-    );
-    expect(getByTestId('race-layout-solo')).toBeTruthy();
-  });
-  it('uses the velodrome grid (no solo split) for two or more participants', () => {
-    const { queryByTestId } = render(<CycleRaceScreen {...props} />);
-    expect(queryByTestId('race-layout-solo')).toBeNull();
-  });
   it('hides the speedometer row when showSpeedos is false', () => {
     const riders = { a: { userId: 'a', displayName: 'A', distanceSeries: [10, 20], cumulativeDistanceM: 20, finishTimeS: null, isGhost: false } };
     const { container } = render(
       <CycleRaceScreen winCondition="distance" goalM={100} elapsedS={2} riders={riders} riderLive={{ a: {} }} showSpeedos={false} />
     );
-    expect(container.querySelector('.cycle-race-screen__speedos')).toBeNull();
+    // No speedometer gauges rendered when showSpeedos=false (zone slot is empty)
+    expect(container.querySelector('.cycle-speedometer')).toBeNull();
   });
   it('scales each speedometer to the rider\'s per-equipment max RPM', () => {
     const riders = { a: { userId: 'a', displayName: 'A', distanceSeries: [0], cumulativeDistanceM: 0, finishTimeS: null, isGhost: false } };
@@ -127,23 +136,5 @@ describe('CycleRaceScreen', () => {
     // A 250-max gauge scales tick spacing (label every 75) → "225" appears; the
     // 120 default (labels to 120) never reaches it.
     expect(getByText('225')).toBeTruthy();
-  });
-  it('shows a medal + finish time on the roster for a finished distance-race rider', () => {
-    const riders = {
-      a: { userId: 'a', displayName: 'Ann', distanceSeries: [1000], cumulativeDistanceM: 1000, finishTimeS: 252, isGhost: false },
-      b: { userId: 'b', displayName: 'Bo', distanceSeries: [600], cumulativeDistanceM: 600, finishTimeS: null, isGhost: false }
-    };
-    const { getByTestId } = render(
-      <CycleRaceScreen winCondition="distance" goalM={1000} elapsedS={260}
-        riders={riders} riderLive={{ a: {}, b: {} }} />
-    );
-    const roster = getByTestId('race-roster');
-    const rows = roster.querySelectorAll('.cycle-race-screen__roster-row');
-    // Finisher Ann shows 1st-place medal + her 4:12 finish time; she's the top row.
-    expect(rows[0].textContent).toContain('🥇');
-    expect(rows[0].textContent).toContain('4:12');
-    // Still-racing Bo shows distance, no medal.
-    expect(rows[1].textContent).toContain('600');
-    expect(rows[1].textContent).not.toContain('🥇');
   });
 });

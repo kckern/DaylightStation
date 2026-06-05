@@ -1,0 +1,16 @@
+@use '../cgTokens' as cg;
+
+.cg-chart {
+  width: 100%; height: 100%; min-height: 0; display: flex; flex-direction: column; box-sizing: border-box;
+
+  &__header {
+    flex: 0 0 30%; min-height: 0; display: flex; align-items: center; justify-content: center; gap: 10px;
+    border-bottom: 1px solid cg.$cg-border-soft;
+
+    .cg-chart__clock-label { font-size: 0.7rem; text-transform: uppercase; color: cg.$cg-faint; }
+    .cg-chart__clock { font-family: cg.$cg-mono; font-weight: 800; font-size: 1.6rem; color: cg.$cg-text; }
+    .cg-chart__goal { font-size: 0.7rem; color: cg.$cg-muted; }
+  }
+
+  &__plot { flex: 1 1 auto; min-height: 0; position: relative; }
+}
