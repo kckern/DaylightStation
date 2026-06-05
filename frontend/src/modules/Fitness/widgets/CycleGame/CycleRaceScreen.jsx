@@ -1,17 +1,13 @@
-import React, { useRef } from 'react';
+import React from 'react';
 import PropTypes from 'prop-types';
-import { formatClock } from '@/modules/Fitness/lib/cycleGame/cycleGameLobby.js';
-import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
-import { deriveRaceSnapshot } from '@/modules/Fitness/lib/cycleGame/deriveRaceSnapshot.js';
-import { raceDirector } from '@/modules/Fitness/lib/cycleGame/raceDirector.js';
 import { ovalProgressFor } from '@/modules/Fitness/lib/cycleGame/ovalTrackModel.js';
+import { lapCount } from '@/modules/Fitness/lib/cycleGame/lapModel.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import DistanceChart from './panels/DistanceChart.jsx';
-import Rankings from './panels/Rankings.jsx';
+import SplitsChart from './panels/SplitsChart.jsx';
+import PovGrid from './panels/PovGrid.jsx';
+import OvalTrack from './panels/OvalTrack.jsx';
 import SpeedoRow from './panels/SpeedoRow.jsx';
-import LapPanel from './panels/LapPanel.jsx';
-import RacePistons from './panels/RacePistons.jsx';
-import CameraZoom from './panels/CameraZoom.jsx';
 import RaceLayoutManager from './RaceLayoutManager.jsx';
 import './CycleRaceScreen.scss';
 
@@ -27,23 +23,6 @@ export default function CycleRaceScreen({
   showSpeedos = true, lapLengthM = 0, events = [], ovalCircuitM = 1000
 }) {
   const riderIds = Object.keys(riders);
-  // Solo = exactly one participant (a ghost/pacer would be a second entry). Drives
-  // the 50/50 split layout + a larger hero-gauge cap; 2+ keeps the velodrome grid.
-  const solo = riderIds.length === 1;
-
-  // Pure race director: derive a snapshot from current engine state, then ask
-  // the director which panel owns each layout zone. Sticky refs carry phase /
-  // dwell / hysteresis state across renders (mirrors the existing logRef pattern).
-  const prevSnapRef = useRef(null);
-  const prevDecisionRef = useRef(null);
-  const snapshot = deriveRaceSnapshot(
-    { elapsedS, winCondition, goalM, timeCapS, finished: false, riders },
-    { lapLengthM },
-    prevSnapRef.current
-  );
-  prevSnapRef.current = snapshot;
-  const decision = raceDirector(snapshot, prevDecisionRef.current, elapsedS);
-  prevDecisionRef.current = decision;
 
   const clockSeconds = winCondition === 'time' ? Math.max(0, timeCapS - elapsedS) : elapsedS;
 
@@ -53,18 +32,18 @@ export default function CycleRaceScreen({
     .filter((id) => (riderLive[id] || {}).penalized)
     .map((id) => riders[id].displayName || id);
 
-  // Clock-frame label for time races reads the leading distance. DistanceChart
-  // computes its own internally; this is a decoupled duplicate for the label.
   const maxDistance = winCondition === 'distance'
     ? goalM
     : Math.max(1, ...riderIds.map((id) => riders[id].cumulativeDistanceM || 0));
 
-  // Bind extracted panels to current props. speedoRow is included ONLY when
-  // showSpeedos is true, so the director assigning it to a hidden row renders
-  // nothing (preserves the showSpeedos={false} behavior). An id absent from this
-  // map renders as an empty zone gracefully. Officiating-event markers (DNF /
-  // penalty) ride the chart, so `events` is threaded into DistanceChart — it owns
-  // the xFor/yFor projection those markers need.
+  const fieldSize = riderIds.length;
+  const leaderLap = lapLengthM > 0
+    ? lapCount(Math.max(0, ...riderIds.map((id) => riders[id]?.cumulativeDistanceM || 0)), lapLengthM) + 1
+    : 0;
+  const ovalProgress = Object.fromEntries(riderIds.map((id) => [
+    id, ovalProgressFor({ winCondition, distanceM: riders[id]?.cumulativeDistanceM || 0, goalM, ovalCircuitM, lapLengthM })
+  ]));
+
   // Each factory receives the PanelSlot-injected slot props ({ zoneBox }) and
   // MUST forward zoneBox to panels that size from it (DistanceChart's fit-guard,
   // SpeedoRow's gauge sizing) — otherwise the measured band is lost and SpeedoRow
@@ -73,37 +52,23 @@ export default function CycleRaceScreen({
     distanceChart: (slot) => (
       <DistanceChart riderIds={riderIds} riders={riders} riderLive={riderLive}
         winCondition={winCondition} goalM={goalM} events={events} elapsedS={elapsedS}
-        zoneBox={slot?.zoneBox} />
+        clockSeconds={clockSeconds} maxDistanceM={maxDistance} zoneBox={slot?.zoneBox} />
     ),
-    rankings: () => (
-      <Rankings riderIds={riderIds} riders={riders} riderLive={riderLive} winCondition={winCondition} />
+    splitsChart: () => (
+      <SplitsChart riderIds={riderIds} riders={riders} lapLengthM={lapLengthM} elapsedS={elapsedS} />
     ),
-    lapPanel: () => (
-      <LapPanel riderIds={riderIds} riders={riders} riderLive={riderLive}
-        lapSplits={Object.fromEntries(riderIds.map((id) => [id, riders[id].lapSplits || []]))}
-        progress={Object.fromEntries(riderIds.map((id) => [
-          id,
-          ovalProgressFor({
-            winCondition,
-            distanceM: riders[id]?.cumulativeDistanceM || 0,
-            goalM,
-            ovalCircuitM,
-            lapLengthM
-          })
-        ]))} />
+    povGrid: () => (
+      <PovGrid riderIds={riderIds} riders={riders} riderLive={riderLive} />
     ),
-    racePistons: () => (
-      <RacePistons riderIds={riderIds} riders={riders} riderLive={riderLive} />
-    ),
-    cameraZoom: () => (
-      <CameraZoom riderIds={riderIds} riders={riders} riderLive={riderLive} />
+    ovalTrack: () => (
+      <OvalTrack riderIds={riderIds} riders={riders} riderLive={riderLive}
+        progress={ovalProgress} lapLabel={leaderLap > 0 ? `Lap ${leaderLap}` : null} />
     ),
     ...(showSpeedos ? {
       speedoRow: (slot) => (
         <SpeedoRow riderIds={riderIds} riders={riders} riderLive={riderLive}
           cadenceBands={cadenceBands} zoneBox={slot?.zoneBox}
-          maxGauge={solo ? 520 : riderIds.length <= 3 ? 360 : 280}
-          minGauge={solo ? 320 : riderIds.length <= 3 ? 220 : 96} />
+          maxGauge={fieldSize <= 3 ? 360 : 280} minGauge={fieldSize <= 3 ? 220 : 96} />
       )
     } : {})
   };
@@ -125,16 +90,6 @@ export default function CycleRaceScreen({
       )}
       <div className="cycle-race-screen__vignette" aria-hidden="true" />
 
-      <div className="cycle-race-screen__clock-frame">
-        <span className="cycle-race-screen__clock-label">
-          {winCondition === 'time' ? 'Time left' : 'Elapsed'}
-        </span>
-        <span className="cycle-race-screen__clock" data-testid="race-clock">{formatClock(clockSeconds)}</span>
-        <span className="cycle-race-screen__clock-goal">
-          {winCondition === 'distance' ? `to ${formatDistance(goalM)}` : `${formatDistance(maxDistance)} led`}
-        </span>
-      </div>
-
       {penalizedNames.length > 0 && (
         <div className="cycle-race-screen__penalty-banner" data-testid="cycle-race-penalty-banner" role="alert">
           <span className="cycle-race-screen__penalty-icon" aria-hidden="true">⛔</span>
@@ -144,7 +99,7 @@ export default function CycleRaceScreen({
         </div>
       )}
 
-      <RaceLayoutManager decision={decision} panels={panels} solo={solo} fieldSize={riderIds.length} />
+      <RaceLayoutManager panels={panels} fieldSize={fieldSize} />
     </div>
   );
 }
