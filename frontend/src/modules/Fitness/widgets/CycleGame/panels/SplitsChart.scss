@@ -1,0 +1,19 @@
+@use '../cgTokens' as cg;
+
+.cg-splits {
+  width: 100%; height: 100%; min-height: 0; overflow: hidden;
+  display: flex; flex-direction: column; box-sizing: border-box; padding: 4px 6px;
+
+  &__empty { margin: auto; color: cg.$cg-faint; font-size: 0.9rem; }
+
+  &__table { width: 100%; border-collapse: collapse; font-family: cg.$cg-mono; font-size: 0.78rem; }
+  &__corner { text-align: left; color: cg.$cg-faint; font-size: 0.62rem; padding: 2px 4px; }
+  &__rider { text-align: right; color: cg.$cg-muted; font-weight: 600; padding: 2px 4px;
+             border-bottom: 1px solid cg.$cg-border-soft; white-space: nowrap; }
+  &__dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+  &__lap { text-align: left; color: cg.$cg-faint; font-weight: 700; padding: 1px 4px; }
+  &__cell { text-align: right; color: cg.$cg-text; padding: 1px 4px; }
+  &__row:nth-child(even) .cg-splits__cell { background: rgba(255, 255, 255, 0.02); }
+  &__cell--best { color: cg.$cg-lane-1; font-weight: 700; }
+  &__row--current .cg-splits__cell--current { color: cg.$cg-gold; }
+}
