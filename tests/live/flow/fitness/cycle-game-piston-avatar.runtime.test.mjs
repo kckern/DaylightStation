@@ -81,7 +81,7 @@ test.describe('Cycle Game — piston avatar + grid', () => {
     await page.screenshot({ path: `${SHOT_DIR}/piston-avatar-grid.png` });
 
     // Measure every piston-head avatar (container, core, img) for 1:1 aspect, and
-    // confirm the grid backdrop is on the container (not the per-lane track).
+    // confirm the chart-wide grid lines + gap labels render.
     const m = await page.evaluate(() => {
       const ratios = [];
       document.querySelectorAll('.cg-pistons__head').forEach((head) => {
@@ -92,13 +92,10 @@ test.describe('Cycle Game — piston avatar + grid', () => {
           if (r.width > 6 && r.height > 6) ratios.push({ sel, w: Math.round(r.width), h: Math.round(r.height), ratio: +(r.width / r.height).toFixed(3) });
         });
       });
-      const pistons = document.querySelector('.cg-pistons');
-      const track = document.querySelector('.cg-pistons__track');
-      const bg = (el) => el ? getComputedStyle(el, '::before').backgroundImage : null;
       return {
         ratios,
-        containerHasGrid: !!pistons && (getComputedStyle(pistons, '::before').backgroundImage || '').includes('gradient'),
-        trackHasGrid: !!track && (getComputedStyle(track).backgroundImage || '').includes('gradient')
+        gridlineCount: document.querySelectorAll('.cg-pistons__gridline').length,
+        gapLabels: [...document.querySelectorAll('.cg-pistons__gaplabel')].map((e) => e.textContent)
       };
     });
 
@@ -110,7 +107,7 @@ test.describe('Cycle Game — piston avatar + grid', () => {
       expect(r.ratio, `${r.sel} is ~1:1 (was ${r.w}x${r.h})`).toBeGreaterThan(0.95);
       expect(r.ratio, `${r.sel} is ~1:1 (was ${r.w}x${r.h})`).toBeLessThan(1.05);
     }
-    expect(m.containerHasGrid, 'panning grid is the chart-wide backdrop (on .cg-pistons::before)').toBe(true);
-    expect(m.trackHasGrid, 'grid is NOT per-lane texture inside the bars (.cg-pistons__track)').toBe(false);
+    expect(m.gridlineCount, 'chart-wide metre grid lines render').toBeGreaterThan(0);
+    expect(m.gapLabels.length, 'a gap label renders between the lanes').toBeGreaterThanOrEqual(1);
   });
 });

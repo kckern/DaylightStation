@@ -68,9 +68,11 @@ test.describe('Cycle Game — transition animation proof', () => {
     await expect(page.getByTestId('cycle-race-screen')).toBeVisible({ timeout: 30000 });
     await expect(page.getByTestId('race-pistons')).toBeVisible({ timeout: 15000 });
 
+    // Leader distance from the race-state readback (the --cg-pan var was retired with
+    // the spatial-grid redesign). Used to confirm the meter is actually advancing.
     const readPan = () => page.evaluate(() => {
-      const p = document.querySelector('.cg-pistons');
-      return p ? parseFloat(getComputedStyle(p).getPropertyValue('--cg-pan')) : null;
+      const rs = window.__cycleGameControl?.getRaceState?.();
+      return rs ? Math.max(0, ...(rs.riders || []).map((r) => r.distanceM || 0)) : 0;
     });
     const setRpms = (rpm) => Promise.all(bikeIds.map((id) =>
       page.evaluate(({ id, rpm }) => window.__fitnessSimController.setRpm(id, rpm), { id, rpm })));
@@ -92,76 +94,73 @@ test.describe('Cycle Game — transition animation proof', () => {
     // in-page rAF burst that records the rendered grid position while this tick's
     // distance bump slides over its 0.9 s transition. Sequential, so the Node-side
     // setRpm always lands (no CDP contention with a long-running evaluate).
-    const out = { computed: {}, trackBgX: [], panVar: [] };
+    // Drive ASYMMETRIC pace so the trailing rider's gap keeps changing — in the
+    // leader-anchored model the leader's tip is pinned (static) and the TRAILER's
+    // tip slides/rezooms, so the trailer head is the always-animating element. After
+    // each 1Hz tick, burst-sample the rendered tip positions over its 0.9s glide.
+    const out = { computed: {}, heads: [] };
     for (let tick = 0; tick < 12; tick++) {
       for (const id of bikeIds) {
         await page.evaluate(({ id, rpm }) => window.__fitnessSimController.setRpm(id, rpm),
-          { id, rpm: id === bikeIds[0] ? 92 : 104 });
+          { id, rpm: id === bikeIds[0] ? 78 : 112 });
       }
       const burst = await page.evaluate(() => new Promise((resolve) => {
-        const parseBgX = (bg) => {
-          const m = ((bg || '').split(',')[0].trim()).match(/(-?\d+(\.\d+)?)px/);
-          return m ? parseFloat(m[1]) : null;
-        };
-        const xs = [], pans = [];
+        const series = [];
         let comp = null;
         const t0 = performance.now();
         function frame() {
-          const track = document.querySelector('.cg-pistons__track');
-          const head = document.querySelector('.cg-pistons__head');
+          const heads = [...document.querySelectorAll('.cg-pistons__head')];
           const bar = document.querySelector('.cg-pistons__bar');
-          const pistons = document.querySelector('.cg-pistons');
-          if (track && !comp) {
-            const ct = getComputedStyle(track), ch = head && getComputedStyle(head), cb = bar && getComputedStyle(bar);
+          const gridline = document.querySelector('.cg-pistons__gridline');
+          if (heads[0] && !comp) {
+            const chh = getComputedStyle(heads[0]);
+            const cb = bar && getComputedStyle(bar);
+            const cg = gridline && getComputedStyle(gridline);
             comp = {
-              track: { property: ct.transitionProperty, duration: ct.transitionDuration },
-              head: ch && { property: ch.transitionProperty, duration: ch.transitionDuration },
-              bar: cb && { property: cb.transitionProperty, duration: cb.transitionDuration }
+              head: { property: chh.transitionProperty, duration: chh.transitionDuration },
+              bar: cb && { property: cb.transitionProperty, duration: cb.transitionDuration },
+              gridline: cg && { property: cg.transitionProperty, duration: cg.transitionDuration }
             };
           }
-          xs.push(track ? parseBgX(getComputedStyle(track).backgroundPosition) : null);
-          pans.push(pistons ? parseFloat(getComputedStyle(pistons).getPropertyValue('--cg-pan')) : null);
+          // rendered tip centre-x of each head (reflects the interpolated `left`).
+          series.push(heads.map((h) => { const r = h.getBoundingClientRect(); return +(r.left + r.width / 2).toFixed(2); }));
           if (performance.now() - t0 < 880) requestAnimationFrame(frame);
-          else resolve({ xs, pans, comp });
+          else resolve({ series, comp });
         }
         requestAnimationFrame(frame);
       }));
-      if (burst.comp && !out.computed.track) out.computed = burst.comp;
-      out.trackBgX.push(...burst.xs);
-      out.panVar.push(...burst.pans);
+      if (burst.comp && !out.computed.head) out.computed = burst.comp;
+      out.heads.push(...burst.series);
     }
 
-    const grid = analyze(out.trackBgX);
-    const panStart = out.panVar.find((x) => x != null);
-    const panEnd = [...out.panVar].reverse().find((x) => x != null);
+    // Transpose head columns and analyze each; the trailing rider's head moves, the
+    // leader's is pinned — pick the most-active series.
+    const nHeads = Math.max(0, ...out.heads.map((r) => r.length));
+    const cols = Array.from({ length: nHeads }, (_, c) => out.heads.map((r) => r[c]));
+    const head = cols.map(analyze).filter(Boolean).sort((a, b) => b.movingRatio - a.movingRatio)[0] || null;
 
     // eslint-disable-next-line no-console
     console.log('TRANSITION_PROOF', JSON.stringify({
       computed: out.computed,
-      panVarMetres: { start: panStart, end: panEnd, advanced: +(panEnd - panStart).toFixed(0) },
-      trackGrid: grid,
-      note: 'movingRatio≈0.8+ and maxSmoothRun≫1 ⇒ interpolated; a snap gives ratio≈0 and run≈1'
+      movingHead: head,
+      note: 'movingRatio high and maxSmoothRun≫1 ⇒ interpolated; a snap gives ratio≈0 and run≈1'
     }, null, 2));
 
     // ── Proof assertions ──────────────────────────────────────────────────────
     // 1. The transitions are declared on the LIVE nodes (not merely present in a .scss).
-    expect(out.computed.track?.duration, 'piston track grid has 0.9s transition on the live node').toBe('0.9s');
-    expect(out.computed.track?.property, 'piston track grid transitions background-position').toContain('background-position');
     expect(out.computed.head?.duration, 'piston head has 0.9s transition on the live node').toBe('0.9s');
     expect(out.computed.head?.property, 'piston head transitions left').toContain('left');
     expect(out.computed.bar?.duration, 'piston bar has 0.9s transition on the live node').toBe('0.9s');
     expect(out.computed.bar?.property, 'piston bar transitions width').toContain('width');
+    expect(out.computed.gridline?.duration, 'grid line has 0.9s transition on the live node').toBe('0.9s');
+    expect(out.computed.gridline?.property, 'grid line transitions left').toContain('left');
 
-    // 2. The grid actually PANS: the leader's distance advanced and the rendered
-    //    background-position travelled a meaningful number of pixels.
-    expect(panEnd - panStart, 'leader distance (--cg-pan) advanced during sampling').toBeGreaterThan(5);
-    expect(grid, 'captured grid background-position motion').not.toBeNull();
-    expect(grid.totalTravel, 'rendered grid background-position panned (px)').toBeGreaterThan(20);
-
-    // 3. The pan is INTERPOLATED, not snapped: most frames are mid-motion and the
+    // 2. The tip is INTERPOLATED, not snapped: most frames are mid-motion and the
     //    longest smooth run is far longer than a single-frame jump.
-    expect(grid.movingRatio, 'grid animates across most frames (not a per-tick snap)').toBeGreaterThan(0.5);
-    expect(grid.maxSmoothRun, 'grid slides over many consecutive frames').toBeGreaterThan(10);
-    expect(grid.distinctValues, 'grid visits many intermediate positions').toBeGreaterThan(20);
+    expect(head, 'captured a moving piston tip').not.toBeNull();
+    expect(head.totalTravel, 'rendered tip travelled (px)').toBeGreaterThan(15);
+    expect(head.movingRatio, 'tip animates across frames (not a per-tick snap)').toBeGreaterThan(0.4);
+    expect(head.maxSmoothRun, 'tip slides over many consecutive frames').toBeGreaterThan(10);
+    expect(head.distinctValues, 'tip visits many intermediate positions').toBeGreaterThan(20);
   });
 });
