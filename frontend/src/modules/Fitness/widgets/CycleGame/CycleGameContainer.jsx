@@ -151,6 +151,8 @@ export default function CycleGameContainer({ onMount } = {}) {
   // the on-screen copy always matches the rule that fired).
   const raceIdleDnfS = Number.isFinite(cycleGameConfig?.race_idle_dnf_s) ? cycleGameConfig.race_idle_dnf_s : 20;
   const hotStartPenaltyS = Number.isFinite(cycleGameConfig?.hot_start_penalty_s) ? cycleGameConfig.hot_start_penalty_s : 0;
+  // How long the results board holds before auto-returning to the lobby.
+  const resultsDwellS = Number.isFinite(cycleGameConfig?.results_dwell_s) ? cycleGameConfig.results_dwell_s : 20;
 
   // Resolve the currently-claimed riders (bikes with a getEquipmentRider claim).
   const buildRiders = useCallback(() => {
@@ -187,6 +189,7 @@ export default function CycleGameContainer({ onMount } = {}) {
   // ── lifecycle state ──────────────────────────────────────────────────────
   const [phase, setPhase] = useState('idle'); // idle | staging | countdown | racing | results
   const [stagingSeconds, setStagingSeconds] = useState(0); // "to your bikes" countdown
+  const [resultsSecondsLeft, setResultsSecondsLeft] = useState(null); // results auto-exit countdown
   const stagingTimerRef = useRef(null);
   const [raceType, setRaceType] = useState(null); // 'distance' | 'time' | null
   const [raceValueM, setRaceValueM] = useState(null); // chosen distance goal (m)
@@ -1119,6 +1122,20 @@ export default function CycleGameContainer({ onMount } = {}) {
     setPhase('idle');
   }, [log]);
 
+  // Results auto-exit: hold the board for resultsDwellS, ticking a countdown, then
+  // return to the lobby. The Back-to-home button still exits immediately.
+  useEffect(() => {
+    if (phase !== 'results') { setResultsSecondsLeft(null); return undefined; }
+    let left = resultsDwellS;
+    setResultsSecondsLeft(left);
+    const id = setInterval(() => {
+      left -= 1;
+      setResultsSecondsLeft(left);
+      if (left <= 0) { clearInterval(id); backToHome(); }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [phase, resultsDwellS, backToHome]);
+
   // ── render ───────────────────────────────────────────────────────────────
   if (phase === 'idle') {
     return (
@@ -1268,6 +1285,9 @@ export default function CycleGameContainer({ onMount } = {}) {
         winCondition={engineState.winCondition || raceMetaRef.current?.winCondition || 'distance'}
         dnf={snapshot?.dnf || []}
         penalized={raceEvents.filter((e) => e.type === 'penalty').map((e) => e.riderId)}
+        lapLengthM={Number.isFinite(cycleGameConfig?.lap_length_m) ? cycleGameConfig.lap_length_m : 0}
+        elapsedS={engineState.elapsedS || 0}
+        secondsLeft={resultsSecondsLeft}
       />
       <button type="button" data-testid="cycle-game-start" className="cycle-game-container__start" onClick={backToHome}>
         Back to home
