@@ -129,7 +129,7 @@ export default function PovGrid({ riderIds, riders, riderLive = {} }) {
         const x = camera.vanishX + (m.laneX - camera.vanishX) * m.scale;
         el.style.transform =
           `translate3d(${x.toFixed(2)}cqw, ${(m.y * 100).toFixed(3)}cqh, 0) translate(-50%, -50%) scale(${(0.55 + 0.45 * m.scale).toFixed(3)})`;
-        el.style.zIndex = String(100 + Math.round(m.t * 100));
+        el.style.zIndex = String(100 + Math.round((1 - m.t) * 100)); // nearer (t→0) on top
       });
       raf = requestAnimationFrame(draw);
     };
