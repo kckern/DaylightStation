@@ -1,4 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// Silence the structured logger in this unit suite. The engine emits warn/sampled
+// events during cue parsing/evaluation; their console output otherwise races the
+// vitest worker teardown ("Closing rpc while onUserConsoleLog was pending") when
+// this file runs alongside the rest of the fitness suite. We assert on return
+// values, never on logs.
+vi.mock('../../lib/logging/Logger.js', () => {
+  const noop = () => {};
+  const logger = { child: () => logger, debug: noop, info: noop, warn: noop, error: noop, sampled: noop };
+  return { default: () => logger };
+});
+
 import { GovernanceEngine } from './GovernanceEngine.js';
 
 const baseConfig = (audioCues) => ({
