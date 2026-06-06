@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
 vi.mock('@/lib/api.mjs', () => ({ DaylightMediaPath: (p) => p }));
+const warn = vi.fn();
 vi.mock('@/lib/logging/Logger.js', () => {
   const noop = () => {};
-  const logger = { child: () => logger, debug: noop, info: noop, warn: noop, error: noop, sampled: noop };
+  const logger = { child: () => logger, debug: noop, info: noop, warn: (...a) => warn(...a), error: noop, sampled: noop };
   return { default: () => logger };
 });
 
@@ -83,6 +84,25 @@ describe('useGovernanceAudioDuck', () => {
   it('lifts the duck on unmount mid-cue', () => {
     const { unmount } = render(descriptor());
     unmount();
+    expect(videoVolume.setDuck).toHaveBeenLastCalledWith(1);
+  });
+
+  it('logs the rejection reason when play() is rejected', async () => {
+    warn.mockClear();
+    global.Audio = class extends FakeAudio {
+      play() { this.playCalls += 1; return Promise.reject(Object.assign(new Error('blocked'), { name: 'NotAllowedError' })); }
+    };
+    render(descriptor());
+    await act(async () => { await Promise.resolve(); });
+    expect(warn).toHaveBeenCalledWith('fitness.audio_duck.play_rejected',
+      expect.objectContaining({ cueId: 'challenge_hurry', name: 'NotAllowedError' }));
+  });
+
+  it('logs + lifts the duck when the audio element fires error', () => {
+    warn.mockClear();
+    render(descriptor());
+    act(() => FakeAudio.instances[0].fire('error'));
+    expect(warn).toHaveBeenCalledWith('fitness.audio_duck.error', expect.objectContaining({ cueId: 'challenge_hurry' }));
     expect(videoVolume.setDuck).toHaveBeenLastCalledWith(1);
   });
 });
