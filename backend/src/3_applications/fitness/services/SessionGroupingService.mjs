@@ -34,21 +34,46 @@ export class SessionGroupingService {
     const intervalMs = intervalSec * 1000;
 
     let merged = members[0].timeline;
-    let offsetTicks = tickCountOf(members[0].timeline);
+    const firstCount = tickCountOf(members[0].timeline);
+    let offsetTicks = firstCount;
     const segments = [{ sessionId: members[0].seg.sessionId, offsetMs: 0, durationMs: members[0].seg.durationMs, gapBeforeMs: 0 }];
     const segBounds = [{ start: members[0].seg.start, end: members[0].seg.end, offsetMs: 0 }];
+    // tick ranges per segment on the compressed axis — used to make cumulative series continuous
+    const segTicks = [{ startTick: 0, count: firstCount }];
     const seams = [];
 
     for (let i = 1; i < members.length; i++) {
       const { seg, timeline } = members[i];
       const offsetMs = offsetTicks * intervalMs;
       merged = mergeTimelines(merged, timeline, 0);
+      const count = tickCountOf(timeline);
       segments.push({ sessionId: seg.sessionId, offsetMs, durationMs: seg.durationMs, gapBeforeMs: seg.gapBeforeMs });
       segBounds.push({ start: seg.start, end: seg.end, offsetMs });
+      segTicks.push({ startTick: offsetTicks, count });
       seams.push({ atMs: offsetMs, gapMs: seg.gapBeforeMs });
-      offsetTicks += tickCountOf(timeline);
+      offsetTicks += count;
     }
     const totalDurationMs = offsetTicks * intervalMs;
+
+    // Cumulative series (coins/beats/rotations totals) restart at 0 in each member session.
+    // After concatenation they'd reset at every seam — offset each segment by the prior
+    // running total so the cumulative line stays continuous across the time breaks.
+    // Instantaneous series (heart-rate/rpm/zone) are left untouched.
+    const CUMULATIVE_METRICS = new Set(['beats', 'coins', 'rotations']);
+    const isCumulativeKey = (key) => CUMULATIVE_METRICS.has(String(key).split(':').pop());
+    for (const [key, arr] of Object.entries(merged.series || {})) {
+      if (!Array.isArray(arr) || !isCumulativeKey(key)) continue;
+      let carry = 0;
+      for (const { startTick, count } of segTicks) {
+        let segLast = carry;
+        const end = Math.min(startTick + count, arr.length);
+        for (let t = startTick; t < end; t++) {
+          const v = arr[t];
+          if (v != null && Number.isFinite(v)) { arr[t] = v + carry; segLast = arr[t]; }
+        }
+        carry = segLast;
+      }
+    }
 
     let activities = [];
     if (this.activityRegistry) {
@@ -67,6 +92,9 @@ export class SessionGroupingService {
     return {
       id: groupId, sessionId: groupId, isGroup: true, date,
       startTime: group.startTime, endTime: group.endTime, durationMs: totalDurationMs,
+      // `start` / `duration_seconds` mirror the normal-session shape the detail header reads
+      start: group.startTime,
+      duration_seconds: Math.round(totalDurationMs / 1000),
       participants: group.participants, totalCoins: group.totalCoins,
       media: null, segments, seams, activities, timeline: merged,
     };

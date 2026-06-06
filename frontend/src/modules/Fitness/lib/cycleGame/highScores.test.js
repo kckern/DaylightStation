@@ -3,35 +3,49 @@ import { buildHighScores } from './highScores.js';
 
 describe('buildHighScores', () => {
   const races = [
+    // short effort (<5 min): 120 s
     { raceId: 'A', day: '2026-06-04', timeOfDay: '8:30 am', participants: [
-      { id: 'milo', displayName: 'Milo', avatarSrc: '/m', finalDistanceM: 770, finalTimeS: 60 },
-      { id: 'felix', displayName: 'Felix', avatarSrc: '/f', finalDistanceM: 600, finalTimeS: 60 }
+      { id: 'milo', displayName: 'Milo', avatarSrc: '/m', finalDistanceM: 1200, finalTimeS: 120 }, // 36.0 km/h
+      { id: 'felix', displayName: 'Felix', avatarSrc: '/f', finalDistanceM: 600, finalTimeS: 120 }  // 18.0 km/h
     ] },
+    // long effort (>=5 min): 360 s
     { raceId: 'B', day: '2026-06-05', timeOfDay: '9:06 pm', participants: [
-      { id: 'milo', displayName: 'Milo', avatarSrc: '/m', finalDistanceM: 2470, finalTimeS: 180 }
+      { id: 'milo', displayName: 'Milo', avatarSrc: '/m', finalDistanceM: 4000, finalTimeS: 360 } // 40.0 km/h
     ] }
   ];
 
-  it('returns the furthest distance and longest time, each tied to its race + day', () => {
+  it('splits into fastest under-5-min and 5-min+ km/h, each tied to its race + day', () => {
     const hs = buildHighScores(races, '2026-06-05');
-    const dist = hs.find((h) => h.key === 'distance');
-    const time = hs.find((h) => h.key === 'time');
-    expect(dist.valueLabel).toBe('2.47 km'); // 2470 m furthest, from race B
-    expect(dist.raceId).toBe('B');
-    expect(dist.holderName).toBe('Milo');
-    expect(dist.whenDay).toBe('Today'); // race B is on todayYmd
-    expect(dist.whenTime).toBe('9:06p');
-    expect(time.valueLabel).toBe('3:00'); // 180 s longest, from race B
-    expect(time.raceId).toBe('B');
+    const sprint = hs.find((h) => h.key === 'sprint');
+    const endurance = hs.find((h) => h.key === 'endurance');
+    expect(sprint.valueLabel).toBe('36.0 km/h'); // milo 1200 m / 120 s, race A
+    expect(sprint.raceId).toBe('A');
+    expect(sprint.holderName).toBe('Milo');
+    expect(sprint.whenDay).toBe('Yest'); // race A is the day before todayYmd
+    expect(sprint.whenTime).toBe('8:30a');
+    expect(endurance.valueLabel).toBe('40.0 km/h'); // milo 4000 m / 360 s, race B
+    expect(endurance.raceId).toBe('B');
+    expect(endurance.whenDay).toBe('Today');
+  });
+
+  it('falls back to the race time cap when a participant has no finish time', () => {
+    const hs = buildHighScores([
+      { raceId: 'C', timeCapS: 600, participants: [
+        { id: 'milo', displayName: 'Milo', avatarSrc: '/m', finalDistanceM: 5000, finalTimeS: null } // 5000 m / 600 s = 30.0 km/h
+      ] }
+    ]);
+    expect(hs.find((h) => h.key === 'endurance').valueLabel).toBe('30.0 km/h');
+    expect(hs.find((h) => h.key === 'sprint')).toBeUndefined();
   });
 
   it('ignores ghost participants (replays do not set records)', () => {
     const hs = buildHighScores([
-      { raceId: 'A', participants: [{ id: 'milo', displayName: 'Milo', avatarSrc: '/m', finalDistanceM: 500, finalTimeS: 60 }] },
-      { raceId: 'B', participants: [{ id: 'ghost:X:milo', displayName: 'Milo 👻', avatarSrc: '/m', isGhost: true, finalDistanceM: 9999, finalTimeS: 9999 }] }
+      { raceId: 'A', participants: [{ id: 'milo', displayName: 'Milo', avatarSrc: '/m', finalDistanceM: 1000, finalTimeS: 100 }] }, // 36.0 km/h
+      { raceId: 'B', participants: [{ id: 'ghost:X:milo', displayName: 'Milo 👻', avatarSrc: '/m', isGhost: true, finalDistanceM: 99999, finalTimeS: 100 }] }
     ]);
-    expect(hs.find((h) => h.key === 'distance').valueLabel).toBe('500 m'); // ghost 9999 ignored
-    expect(hs.find((h) => h.key === 'distance').raceId).toBe('A');
+    const sprint = hs.find((h) => h.key === 'sprint');
+    expect(sprint.valueLabel).toBe('36.0 km/h'); // ghost 99999 ignored
+    expect(sprint.raceId).toBe('A');
   });
 
   it('returns an empty list when there is no live data', () => {

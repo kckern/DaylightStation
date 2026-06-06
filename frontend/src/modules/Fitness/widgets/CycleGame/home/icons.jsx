@@ -28,6 +28,17 @@ export function TimeIcon() {
   );
 }
 
+/** Speedometer/gauge glyph for the km/h high-score categories. */
+export function SpeedIcon() {
+  return (
+    <svg className="cgh-tile__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="M4.5 17.5A9 9 0 1 1 19.5 17.5" />
+      <path d="M12 13.5 16 8.5" />
+      <circle cx="12" cy="13.5" r="1.4" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 /** Ghost glyph for the Ghost race type (svgrepo 507709). */
 export function GhostIcon() {
   return (

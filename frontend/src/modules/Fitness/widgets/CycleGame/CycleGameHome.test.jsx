@@ -403,16 +403,16 @@ describe('CycleGameHome', () => {
   it('high scores: render above history and tap into the recap like a record', () => {
     const onSelectRecord = vi.fn();
     const highScores = [
-      { key: 'distance', label: 'Furthest', valueLabel: '2.5 km', raceId: 'R1', holderName: 'Milo', holderAvatar: '/m' },
-      { key: 'time', label: 'Longest', valueLabel: '3:00', raceId: 'R2', holderName: 'Felix', holderAvatar: '/f' }
+      { key: 'sprint', label: 'Fastest <5 min', valueLabel: '36.0 km/h', raceId: 'R1', holderName: 'Milo', holderAvatar: '/m' },
+      { key: 'endurance', label: 'Fastest 5 min+', valueLabel: '40.0 km/h', raceId: 'R2', holderName: 'Felix', holderAvatar: '/f' }
     ];
     const { getByTestId } = render(
       <CycleGameHome bikes={bikes} people={people} records={[]} highScores={highScores} onSelectRecord={onSelectRecord} />
     );
     expect(getByTestId('cycle-game-highscores')).toBeTruthy();
-    expect(getByTestId('highscore-distance').textContent).toContain('2.5 km');
-    expect(getByTestId('highscore-time').textContent).toContain('3:00');
-    fireEvent.click(getByTestId('highscore-distance'));
+    expect(getByTestId('highscore-sprint').textContent).toContain('36.0 km/h');
+    expect(getByTestId('highscore-endurance').textContent).toContain('40.0 km/h');
+    fireEvent.click(getByTestId('highscore-sprint'));
     expect(onSelectRecord).toHaveBeenCalledWith('R1');
   });
 

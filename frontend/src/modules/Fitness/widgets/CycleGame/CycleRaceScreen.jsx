@@ -4,7 +4,6 @@ import { ovalProgressFor } from '@/modules/Fitness/lib/cycleGame/ovalTrackModel.
 import { lapCount } from '@/modules/Fitness/lib/cycleGame/lapModel.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import DistanceChart from './panels/DistanceChart.jsx';
-import SplitsChart from './panels/SplitsChart.jsx';
 import PovGrid from './panels/PovGrid.jsx';
 import OvalTrack from './panels/OvalTrack.jsx';
 import SpeedoRow from './panels/SpeedoRow.jsx';
@@ -13,9 +12,9 @@ import './CycleRaceScreen.scss';
 
 /**
  * Presentational race screen — a velodrome broadcast HUD. RaceLayoutManager picks a
- * fixed layout by field size: ≤3 riders → sidebar mode (distance chart + splits over
- * the speedometers, with a POV grid + lap oval in a right sidebar); ≥4 riders → wide
- * mode (chart | splits | POV across the top, speedometers full-width, no oval). The
+ * fixed layout by field size: ≤3 riders → sidebar mode (distance chart over the
+ * speedometers, with a POV grid + lap oval in a right sidebar); ≥4 riders → wide
+ * mode (chart 2× | POV across the top, speedometers full-width, no oval). The
  * race clock lives inside the chart's header. Pure — the live container feeds it
  * engine state + per-rider metrics.
  */
@@ -56,15 +55,13 @@ export default function CycleRaceScreen({
         winCondition={winCondition} goalM={goalM} events={events} elapsedS={elapsedS}
         clockSeconds={clockSeconds} maxDistanceM={maxDistance} zoneBox={slot?.zoneBox} />
     ),
-    splitsChart: () => (
-      <SplitsChart riderIds={riderIds} riders={riders} lapLengthM={lapLengthM} elapsedS={elapsedS} />
-    ),
     povGrid: () => (
       <PovGrid riderIds={riderIds} riders={riders} riderLive={riderLive} />
     ),
     ovalTrack: () => (
       <OvalTrack riderIds={riderIds} riders={riders} riderLive={riderLive}
-        progress={ovalProgress} lapLabel={leaderLap > 0 ? `Lap ${leaderLap}` : null} />
+        progress={ovalProgress} lapLabel={leaderLap > 0 ? `Lap ${leaderLap}` : null}
+        lapLengthM={lapLengthM} elapsedS={elapsedS} />
     ),
     ...(showSpeedos ? {
       speedoRow: (slot) => (
