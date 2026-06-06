@@ -3,25 +3,25 @@ import { render } from '@testing-library/react';
 import PovGrid from './PovGrid.jsx';
 
 const riders = {
-  a: { displayName: 'A', cumulativeDistanceM: 1000 },
-  b: { displayName: 'B', cumulativeDistanceM: 940 }
+  a: { displayName: 'A', cumulativeDistanceM: 500 },
+  b: { displayName: 'B', cumulativeDistanceM: 400 }
 };
-const topPct = (el) => parseFloat(el.style.top);
 
 describe('PovGrid', () => {
-  it('renders the road, a lane marker per rider, and metre gridlines', () => {
-    const { getAllByTestId, getByTestId } = render(
-      <PovGrid riderIds={['a','b']} riders={riders} riderLive={{ a:{}, b:{} }} />
+  it('renders the road container, a recycled hline pool, the lane fan, and one marker per rider', () => {
+    const { getByTestId, getAllByTestId, container } = render(
+      <PovGrid riderIds={['a', 'b']} riders={riders} riderLive={{}} />
     );
-    expect(getByTestId('pov-road')).toBeInTheDocument();
-    expect(getAllByTestId('pov-marker').length).toBe(2);
-    expect(getByTestId('pov-grid').querySelectorAll('.cg-pov__hline').length).toBeGreaterThan(0);
+    expect(getByTestId('race-pov')).toBeInTheDocument();
+    expect(getByTestId('pov-grid')).toBeInTheDocument();
+    expect(container.querySelectorAll('.cg-pov__hline').length).toBe(24); // fixed pool, keyed by slot
+    expect(container.querySelector('.cg-pov__fan')).toBeTruthy();
+    expect(getAllByTestId('pov-marker')).toHaveLength(2);
   });
-  it('places the leader nearer the top (far) than the trailer', () => {
-    const { getAllByTestId } = render(
-      <PovGrid riderIds={['a','b']} riders={riders} riderLive={{ a:{}, b:{} }} />
-    );
-    const [a, b] = getAllByTestId('pov-marker'); // DOM order follows riderIds [a,b]
-    expect(topPct(a)).toBeLessThan(topPct(b)); // leader 'a' higher up (smaller top)
+  it('does not animate layout-triggering properties (no top/left transitions)', () => {
+    const { container } = render(<PovGrid riderIds={['a']} riders={{ a: riders.a }} riderLive={{}} />);
+    const hline = container.querySelector('.cg-pov__hline');
+    expect(hline.style.top).toBe('');
+    expect(hline.style.left).toBe('');
   });
 });
