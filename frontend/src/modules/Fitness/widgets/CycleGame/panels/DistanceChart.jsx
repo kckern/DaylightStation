@@ -69,7 +69,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   const lxRef = useRef(0);
   const lyRef = useRef(0);
   lxRef.current = nextZoomLevel(lxRef.current, { elapsedS, leaderDistanceM: 0, xBaseS: X_BASE_S, yBaseM: Y_BASE_M, threshold: ZOOM_THRESHOLD });
-  lyRef.current = distanceGoal ? 0 : nextZoomLevel(lyRef.current, { elapsedS: 0, leaderDistanceM, xBaseS: X_BASE_S, yBaseM: Y_BASE_M, threshold: ZOOM_THRESHOLD });
+  lyRef.current = nextZoomLevel(lyRef.current, { elapsedS: 0, leaderDistanceM, xBaseS: X_BASE_S, yBaseM: Y_BASE_M, threshold: ZOOM_THRESHOLD });
   const Lx = lxRef.current;
   const Ly = lyRef.current;
   // Zoom-out animation: when either axis level jumps, SNAP that axis by the jump
@@ -104,8 +104,10 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   const PLOT_W = W - PAD_L - PAD_R;
   const PLOT_H = H - PAD_T - PAD_B;
   const T = X_BASE_S * 2 ** Lx;   // seconds visible
-  // Distance race: window = goal (goal line pinned to the top). Time race: auto-zoom window.
-  const D = distanceGoal ? goalM : Y_BASE_M * 2 ** Ly;   // metres visible
+  // Distance race: cap the auto-zoom window at the goal so the goal line sits at the TOP
+  // (yFor clamps it there). Short races top out exactly at the goal; long races still
+  // auto-zoom to fit the leader until the window reaches the goal. Time race: pure auto-zoom.
+  const D = distanceGoal ? Math.min(Y_BASE_M * 2 ** Ly, goalM) : Y_BASE_M * 2 ** Ly;   // metres visible
   const stepS = maxSeriesLen > 1 ? elapsedS / (maxSeriesLen - 1) : 1;
   const xForTime = (t) => PAD_L + Math.max(0, Math.min(1, (t || 0) / T)) * PLOT_W;
   const xFor = (i) => xForTime(i * stepS);
