@@ -39,6 +39,18 @@ export default function CycleGameContainer({ onMount } = {}) {
   const ctx = useFitnessContext();
   const log = useMemo(() => getLogger().child({ component: 'cycle-game' }), []);
 
+  // Suspend HR/cycle governance for as long as the race owns the screen. The
+  // paused governed video remains the engine's media, so without this the
+  // engine keeps evaluating zones and firing challenges over the race (see
+  // the 2026-06-06 governance audit). setGovernanceSuspended is a stable
+  // useCallback, so this effect runs exactly once on mount / once on unmount.
+  const setGovernanceSuspended = ctx?.setGovernanceSuspended;
+  useEffect(() => {
+    if (!setGovernanceSuspended) return undefined;
+    setGovernanceSuspended(true);
+    return () => setGovernanceSuspended(false);
+  }, [setGovernanceSuspended]);
+
   const {
     equipment = [],
     zones = [],

@@ -1139,6 +1139,17 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     forceUpdate();
   }, [forceUpdate]);
 
+  // Park/unpark HR + cycle governance while an ungoverned screen takeover
+  // (the CycleGame race) owns the display. Keyed to the race container's
+  // mount/unmount. See docs/_wip/audits/2026-06-06-cycle-governance-deadlock-
+  // and-stale-media-audit.md (Issue 2).
+  const setGovernanceSuspended = React.useCallback((suspended) => {
+    const session = fitnessSessionRef.current;
+    if (!session) return;
+    session.governanceEngine.setSuspended(Boolean(suspended));
+    forceUpdate();
+  }, [forceUpdate]);
+
   const updateGovernancePhase = React.useCallback((nextPhase) => {
     // No-op, handled by engine callbacks
   }, []);
@@ -2375,6 +2386,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     openVoiceMemoCapture,
     
     setGovernanceMedia,
+    setGovernanceSuspended,
     updateGovernancePhase,
     governanceState,
     governanceChallenge,
