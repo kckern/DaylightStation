@@ -13,6 +13,7 @@ import { buildRecordRow } from '@/modules/Fitness/lib/cycleGame/recordRow.js';
 import { resolveParticipantIdentity } from '@/modules/Fitness/lib/cycleGame/participantIdentity.js';
 import { resolveRpmLimits, clampCountedRpm, rpmDuringGap } from '@/modules/Fitness/lib/cycleGame/equipmentRpm.js';
 import { buildAutoStartCourse } from '@/modules/Fitness/lib/cycleGame/autoStartCourse.js';
+import { effectiveLapLength } from '@/modules/Fitness/lib/cycleGame/effectiveLapLength.js';
 import { usePersistentVolume } from '@/modules/Fitness/nav/usePersistentVolume.js';
 import CycleGameHome from './CycleGameHome.jsx';
 import CountdownStoplight from './CountdownStoplight.jsx';
@@ -606,6 +607,8 @@ export default function CycleGameContainer({ onMount } = {}) {
       log.warn('cycle_game.staged', { courseId: course.id, error: 'no_riders' });
       return;
     }
+    const cfgLap = Number.isFinite(cycleGameConfig?.lap_length_m) ? cycleGameConfig.lap_length_m : 0;
+    const lapLengthM = effectiveLapLength({ lapLengthM: cfgLap, winCondition: type, goalM });
     const cfg = buildRaceConfigFromCourse(course, {
       riders,
       zones,
@@ -614,7 +617,7 @@ export default function CycleGameContainer({ onMount } = {}) {
       raceIdleDnfS,
       hotStartPenaltyS,
       backgroundPlexId: cycleGameConfig?.default_background ?? null,
-      lapLengthM: Number.isFinite(cycleGameConfig?.lap_length_m) ? cycleGameConfig.lap_length_m : 0,
+      lapLengthM,
       intervalMs: RACE_TICK_MS
     });
 
@@ -1317,7 +1320,11 @@ export default function CycleGameContainer({ onMount } = {}) {
           riderLive={riderLive}
           cadenceBands={cadenceBands}
           backgroundPlexId={raceMetaRef.current?.backgroundPlexId || null}
-          lapLengthM={Number.isFinite(cycleGameConfig?.lap_length_m) ? cycleGameConfig.lap_length_m : 0}
+          lapLengthM={effectiveLapLength({
+            lapLengthM: Number.isFinite(cycleGameConfig?.lap_length_m) ? cycleGameConfig.lap_length_m : 0,
+            winCondition: engineState.winCondition || raceMetaRef.current?.winCondition || 'distance',
+            goalM: engineState.goalM ?? raceMetaRef.current?.goalM ?? null
+          })}
           ovalCircuitM={Number.isFinite(cycleGameConfig?.oval_circuit_m) ? cycleGameConfig.oval_circuit_m : 1000}
           events={raceEvents}
         />
@@ -1342,7 +1349,11 @@ export default function CycleGameContainer({ onMount } = {}) {
         winCondition={engineState.winCondition || raceMetaRef.current?.winCondition || 'distance'}
         dnf={snapshot?.dnf || []}
         penalized={raceEvents.filter((e) => e.type === 'penalty').map((e) => e.riderId)}
-        lapLengthM={Number.isFinite(cycleGameConfig?.lap_length_m) ? cycleGameConfig.lap_length_m : 0}
+        lapLengthM={effectiveLapLength({
+          lapLengthM: Number.isFinite(cycleGameConfig?.lap_length_m) ? cycleGameConfig.lap_length_m : 0,
+          winCondition: engineState.winCondition || raceMetaRef.current?.winCondition || 'distance',
+          goalM: engineState.goalM ?? raceMetaRef.current?.goalM ?? null
+        })}
         elapsedS={engineState.elapsedS || 0}
         secondsLeft={resultsSecondsLeft}
       />
