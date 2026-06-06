@@ -75,6 +75,7 @@ import { ActivityRegistry } from '#apps/fitness/activities/ActivityRegistry.mjs'
 import { CycleGameProvider } from '#apps/fitness/activities/CycleGameProvider.mjs';
 import { SessionGroupingService } from '#apps/fitness/services/SessionGroupingService.mjs';
 import { AmbientLedAdapter } from '#adapters/fitness/AmbientLedAdapter.mjs';
+import { GarageFanAdapter } from '#adapters/fitness/GarageFanAdapter.mjs';
 import { VoiceMemoTranscriptionService } from '#adapters/fitness/VoiceMemoTranscriptionService.mjs';
 import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
 import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs';
@@ -911,6 +912,16 @@ export function createFitnessServices(config) {
     });
   }
 
+  // Equipment fan controller (uses home automation gateway)
+  let equipmentFanController = null;
+  if (haGateway) {
+    equipmentFanController = new GarageFanAdapter({
+      gateway: haGateway,
+      loadFitnessConfig,
+      logger
+    });
+  }
+
   // Voice memo transcription (optional - requires AI gateway)
   let transcriptionService = null;
   if (openaiAdapter) {
@@ -927,6 +938,7 @@ export function createFitnessServices(config) {
     cycleRaceService,
     sessionGroupingService,
     ambientLedController,
+    equipmentFanController,
     transcriptionService,
     haGateway // Expose for other uses
   };
@@ -1037,6 +1049,7 @@ export function createFitnessApiRouter(config) {
     cycleRaceService: fitnessServices.cycleRaceService,
     sessionGroupingService: fitnessServices.sessionGroupingService,
     zoneLedController: fitnessServices.ambientLedController,
+    equipmentFanController: fitnessServices.equipmentFanController,
     transcriptionService: fitnessServices.transcriptionService,
     screenshotService,
     fitnessConfigService,

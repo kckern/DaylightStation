@@ -1,7 +1,7 @@
 # Garage Fan Trigger — Design
 
 **Date:** 2026-06-06
-**Status:** Approved design, pending implementation
+**Status:** Implemented
 **Author:** KC + Claude (brainstorming session)
 
 ## Goal
