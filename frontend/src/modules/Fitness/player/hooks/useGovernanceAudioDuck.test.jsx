@@ -106,4 +106,22 @@ describe('useGovernanceAudioDuck', () => {
     expect(warn).toHaveBeenCalledWith('fitness.audio_duck.error', expect.objectContaining({ cueId: 'challenge_hurry' }));
     expect(videoVolume.setDuck).toHaveBeenLastCalledWith(1);
   });
+
+  it('does NOT lift the duck on an aborted media error (superseded load)', () => {
+    render(descriptor());
+    videoVolume.setDuck.mockClear();
+    const el = FakeAudio.instances[0];
+    el.error = { code: 1, message: 'aborted' };
+    act(() => el.fire('error'));
+    // duck must NOT be lifted (no setDuck(1) call) for an aborted load
+    expect(videoVolume.setDuck).not.toHaveBeenCalledWith(1);
+  });
+
+  it('lifts the duck on a real media error (code 4)', () => {
+    render(descriptor());
+    const el = FakeAudio.instances[0];
+    el.error = { code: 4, message: 'src not supported' };
+    act(() => el.fire('error'));
+    expect(videoVolume.setDuck).toHaveBeenLastCalledWith(1);
+  });
 });
