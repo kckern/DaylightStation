@@ -8,6 +8,7 @@ import SportIcon, { formatSportType } from '../_shared/SportIcon.jsx';
 import MiniRouteMap from './MiniRouteMap.jsx';
 import './FitnessSessionsWidget.scss';
 import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
+import { resolveSessionTitle, resolveSessionActivity } from './sessionDisplay.js';
 
 const CoinIcon = ({ size = 12 }) => (
   <svg width={size} height={size} viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
@@ -117,6 +118,8 @@ function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) 
             </Text>
             {group.sessions.map((s) => {
               const pm = s.media?.primary;
+              const sessionTitle = resolveSessionTitle(s);
+              const sessionActivity = resolveSessionActivity(s);
               const bgUrl = pm?.grandparentId
                 ? mediaDisplayUrl(pm.contentId)
                 : null;
@@ -149,6 +152,15 @@ function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) 
                       <div className="session-poster session-poster--map">
                         <MiniRouteMap polyline={s.strava.mapPolyline} sessionId={s.sessionId} />
                       </div>
+                    ) : sessionActivity ? (
+                      (() => {
+                        const P = sessionActivity.display.Poster;
+                        return (
+                          <div className="session-poster session-poster--activity" style={{ color: sessionActivity.display.accent }}>
+                            <P />
+                          </div>
+                        );
+                      })()
                     ) : (
                       <div className="session-poster">
                         <SportIcon
@@ -190,8 +202,8 @@ function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) 
                             {Math.round(s.durationMs / 60000)}m
                           </span>
                         )}
-                        <Text size="md" fw={700} truncate="end" title={pm?.title || s.strava?.name || 'Workout'}>
-                          {pm?.title || s.strava?.name || 'Workout'}
+                        <Text size="md" fw={700} truncate="end" title={sessionTitle}>
+                          {sessionTitle}
                         </Text>
                       </div>
 
