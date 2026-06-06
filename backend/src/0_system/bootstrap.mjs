@@ -71,6 +71,9 @@ import { FitnessProgressClassifier } from '#domains/fitness/index.mjs';
 import { YamlSessionDatastore } from '#adapters/persistence/yaml/YamlSessionDatastore.mjs';
 import { YamlCycleRaceDatastore } from '#adapters/persistence/yaml/YamlCycleRaceDatastore.mjs';
 import { CycleRaceService } from '#apps/fitness/services/CycleRaceService.mjs';
+import { ActivityRegistry } from '#apps/fitness/activities/ActivityRegistry.mjs';
+import { CycleGameProvider } from '#apps/fitness/activities/CycleGameProvider.mjs';
+import { SessionGroupingService } from '#apps/fitness/services/SessionGroupingService.mjs';
 import { AmbientLedAdapter } from '#adapters/fitness/AmbientLedAdapter.mjs';
 import { VoiceMemoTranscriptionService } from '#adapters/fitness/VoiceMemoTranscriptionService.mjs';
 import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
@@ -887,6 +890,10 @@ export function createFitnessServices(config) {
   const cycleRaceStore = new YamlCycleRaceDatastore({ configService });
   const cycleRaceService = new CycleRaceService({ datastore: cycleRaceStore });
 
+  const activityRegistry = new ActivityRegistry()
+    .register(new CycleGameProvider({ cycleRaceService }));
+  const sessionGroupingService = new SessionGroupingService({ activityRegistry, logger });
+
   // Home automation gateway (provided by composition root)
   const haGateway = preloadedHaGateway ?? null;
   let ambientLedController = null;
@@ -918,6 +925,7 @@ export function createFitnessServices(config) {
     sessionService,
     cycleRaceStore,
     cycleRaceService,
+    sessionGroupingService,
     ambientLedController,
     transcriptionService,
     haGateway // Expose for other uses
@@ -1027,6 +1035,7 @@ export function createFitnessApiRouter(config) {
   return createFitnessRouter({
     sessionService: fitnessServices.sessionService,
     cycleRaceService: fitnessServices.cycleRaceService,
+    sessionGroupingService: fitnessServices.sessionGroupingService,
     zoneLedController: fitnessServices.ambientLedController,
     transcriptionService: fitnessServices.transcriptionService,
     screenshotService,

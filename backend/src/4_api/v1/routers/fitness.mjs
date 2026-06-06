@@ -89,6 +89,7 @@ export function createFitnessRouter(config) {
     agentOrchestrator = null,
     fitnessSuggestionService = null,
     cycleRaceService = null,
+    sessionGroupingService = null,
     logger = console
   } = config;
 
@@ -277,11 +278,13 @@ export function createFitnessRouter(config) {
    */
   router.get('/sessions', async (req, res) => {
     const { date, since, limit, household } = req.query;
-    
+    const doGroup = sessionGroupingService && req.query.group !== 'none';
+
     // Mode 1: Single date query (backwards compat)
     if (date && !since) {
       try {
-        const sessions = await sessionService.listSessionsByDate(date, household);
+        let sessions = await sessionService.listSessionsByDate(date, household);
+        if (doGroup) sessions = await sessionGroupingService.group(sessions, household);
         return res.json({
           sessions,
           date,
@@ -305,7 +308,9 @@ export function createFitnessRouter(config) {
           d.setDate(d.getDate() - parseInt(relMatch[1], 10));
           startDate = d.toISOString().split('T')[0];
         }
-        const sessions = await sessionService.listSessionsInRange(startDate, endDate, household);
+        let sessions = await sessionService.listSessionsInRange(startDate, endDate, household);
+        if (doGroup) sessions = await sessionGroupingService.group(sessions, household);
+        sessions.sort((a, b) => b.startTime - a.startTime); // grouping returns ascending; list is desc
         const maxLimit = parseInt(limit) || 20;
         const limited = sessions.slice(0, maxLimit);
         
