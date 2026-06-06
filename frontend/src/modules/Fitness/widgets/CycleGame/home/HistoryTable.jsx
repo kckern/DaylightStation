@@ -14,7 +14,7 @@ export function HistoryTable({ records = [], onSelectRecord }) {
   return (
     <ol className="cgh-records cgh-records--table">
       <li className="cgh-records__head" aria-hidden="true">
-        <span>Riders</span><span>Dist</span><span>Time</span><span>When</span>
+        <span>Riders</span><span>Speed</span><span>Race</span><span>When</span>
       </li>
       {records.map((rec, i) => {
         // Day repeats across consecutive rows (all of "Today" etc.), so
@@ -32,7 +32,7 @@ export function HistoryTable({ records = [], onSelectRecord }) {
             className="cgh-record__btn"
             data-testid={`record-${rec.raceId}`}
             onClick={() => onSelectRecord?.(rec.raceId)}
-            aria-label={`${rec.winnerName || 'Winner'} won — ${rec.distanceLabel || '—'}, ${rec.timeLabel || '—'}, ${rec.whenDay || ''} ${rec.whenTime || ''}`}
+            aria-label={`${rec.winnerName || 'Winner'} — ${rec.speedLabel || '—'}, ${rec.raceLabel || 'race'}, ${rec.whenDay || ''} ${rec.whenTime || ''}`}
           >
             <span className="cgh-record__riders">
               <span className="cgh-record__avatars">
@@ -52,24 +52,16 @@ export function HistoryTable({ records = [], onSelectRecord }) {
               <span className="cgh-record__winner-name">{rec.winnerName}</span>
             </span>
 
-            {['distance', 'time'].map((col) => {
-              const value = col === 'distance' ? rec.distanceLabel : rec.timeLabel;
-              const isGoal = rec.goalColumn === col;
-              const empty = !value || value === '—';
-              return (
-                <span
-                  key={col}
-                  className="cgh-record__cell"
-                  data-col={col}
-                  data-goal={isGoal ? 'true' : 'false'}
-                >
-                  {isGoal && <span className="cgh-record__flag" aria-hidden="true">🏁</span>}
-                  {empty ? (
-                    <span className="cgh-record__cell-empty" title="No result recorded" aria-label="No result recorded">—</span>
-                  ) : value}
-                </span>
-              );
-            })}
+            <span className="cgh-record__cell" data-col="speed">
+              {rec.speedLabel ? rec.speedLabel : (
+                <span className="cgh-record__cell-empty" title="No result recorded" aria-label="No result recorded">—</span>
+              )}
+            </span>
+
+            <span className="cgh-record__cell cgh-record__cell--race" data-col="race">
+              <span className="cgh-record__race-icon" aria-hidden="true">{rec.raceKind === 'time' ? '⏱' : '🏁'}</span>
+              {rec.raceLabel || '—'}
+            </span>
 
             <span className="cgh-record__when">{rec.whenTime}</span>
           </button>

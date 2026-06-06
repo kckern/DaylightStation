@@ -43,8 +43,8 @@
 // cell is the bright cyan payoff; the goal cell is calmer and carries the flag.
 // Proportional columns (not `auto`) so the numeric/when cells can't starve the
 // riders column on a narrow rail — riders gets a guaranteed share for the name.
-// Distance min fits a flagged "🏁 1.00 km"; when stacks day/time so it stays narrow.
-$cgh-record-cols: minmax(0, 1.4fr) minmax(66px, 1fr) minmax(38px, 0.7fr) minmax(42px, 0.8fr);
+// Speed fits "30.6 km/h"; race fits an iconed "🏁 1.00 km"; when stays narrow.
+$cgh-record-cols: minmax(0, 1.25fr) minmax(76px, 1fr) minmax(70px, 1fr) minmax(40px, 0.7fr);
 
 .cgh-records__head {
   display: grid;
@@ -101,14 +101,14 @@ $cgh-record-cols: minmax(0, 1.4fr) minmax(66px, 1fr) minmax(38px, 0.7fr) minmax(
   flex-shrink: 0; margin-left: 4px; color: t.$cg-faint; font-size: 0.7rem; font-weight: 700; opacity: 0.85;
 }
 
-// Metric cells — result (data-goal=false) is bright cyan; goal is calm + flagged.
+// Metric cells — SPEED (the score) is bright cyan; RACE (the target) is calm + iconed.
 .cgh-record__cell {
   @include t.cg-numeral(t.$cg-cyan);
   font-size: 0.82rem; text-align: right; white-space: nowrap; overflow: hidden;
-  display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px;
-  &[data-goal="true"] { color: t.$cg-muted; text-shadow: none; font-style: normal; }
+  display: inline-flex; align-items: center; justify-content: flex-end; gap: 3px;
+  &--race { color: t.$cg-muted; text-shadow: none; font-style: normal; }
 }
-.cgh-record__flag { font-size: 0.68rem; }
+.cgh-record__race-icon { font-size: 0.68rem; opacity: 0.9; }
 .cgh-record__cell-empty { color: t.$cg-faint; font-style: italic; text-shadow: none; }
 
 // When cell — just the clock time now (the day lives in the group header).

@@ -4,7 +4,7 @@ import getLogger from '@/lib/logging/Logger.js';
 import { CycleRaceController } from '@/modules/Fitness/lib/cycleGame/CycleRaceController.js';
 import { buildRaceConfigFromCourse } from '@/modules/Fitness/lib/cycleGame/cycleGameLobby.js';
 import { buildRaceRecord } from '@/modules/Fitness/lib/cycleGame/raceRecord.js';
-import { zoneMultiplierFor, zoneColorFor } from '@/modules/Fitness/lib/cycleGame/distanceModel.js';
+import { zoneMultiplierFor, zoneColorFor, computeDistanceDelta } from '@/modules/Fitness/lib/cycleGame/distanceModel.js';
 import { playSound } from '@/modules/Fitness/lib/cycleGame/playSound.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import { SessionSerializerV3 } from '@/hooks/fitness/SessionSerializerV3.js';
@@ -1310,8 +1310,18 @@ export default function CycleGameContainer({ onMount } = {}) {
       const liveRpm = isGhostRider
         ? (Number.isFinite(rider.rpm) ? rider.rpm : 0)
         : (cadence && cadence.connected ? cadence.rpm : 0);
+      const effRpm = isFinished ? 0 : liveRpm;
+      const mult = isFinished ? 1 : zoneMultiplierFor(zoneId, zones, hrlessMultiplier);
+      // Effective speed = the SAME physics the engine uses to accrue distance, taken
+      // per second (rpm/60 rotations) → km/h. Surfaces the otherwise-hidden
+      // rpm × wheel-size × boost product as the gauge's hero number.
+      const wheelM = Number.isFinite(rider.wheelCircumferenceM) && rider.wheelCircumferenceM > 0
+        ? rider.wheelCircumferenceM
+        : (bikeById.get(rider.equipmentId)?.wheel_circumference_m || 0);
+      const speedKmh = computeDistanceDelta(effRpm / 60, wheelM, mult) * 3.6;
       riderLive[userId] = {
-        rpm: isFinished ? 0 : liveRpm,
+        rpm: effRpm,
+        speedKmh,
         avatarSrc: `/api/v1/static/img/users/${sourceId}`,
         heartRate: isGhostRider
           ? (Number.isFinite(rider.heartRate) ? rider.heartRate : null)
@@ -1319,7 +1329,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         zoneId,
         zoneColor: isGhostRider ? zoneColorFor(zoneId, zones) : (vitals.zoneColor || null),
         zoneProgress: isGhostRider ? null : (vitals.progress ?? null),
-        multiplier: isFinished ? 1 : zoneMultiplierFor(zoneId, zones, hrlessMultiplier),
+        multiplier: mult,
         finished: isFinished,
         placement: isFinished ? (placementByUser[userId] ?? null) : null,
         maxRpm: resolveRpmLimits(bikeById.get(rider.equipmentId) || {}).gaugeMaxRpm,

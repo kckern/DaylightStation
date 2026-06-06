@@ -9,14 +9,10 @@
  * the ghost roster). Pure + injection-free for unit testing.
  */
 import { relativeDay, compactTime } from './recordRow.js';
+import { kmh } from './speed.js';
 
 // The split between the "short" and "long" effort categories.
 const SHORT_EFFORT_MAX_S = 5 * 60; // 5 minutes
-
-// Average speed in km/h from metres covered over seconds elapsed.
-function kmh(distanceM, durationS) {
-  return (distanceM / durationS) * 3.6;
-}
 
 /**
  * @param {Array} candidates ghost candidates (each with participants[] carrying
@@ -47,7 +43,7 @@ export function buildHighScores(candidates = [], todayYmd) {
       }
     });
   });
-  const fmtSpeed = (v) => `${v.toFixed(1)} km/h`;
+  const fmtSpeed = (v) => `${Math.round(v)} km/h`;
   const card = (key, label, r) => ({
     key, label, valueLabel: fmtSpeed(r.value),
     raceId: r.raceId, holderName: r.holderName, holderAvatar: r.holderAvatar,

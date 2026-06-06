@@ -31,6 +31,7 @@ export default function SpeedoRow({ riderIds, riders, riderLive, cadenceBands, z
             key={id}
             rpm={live.rpm}
             maxRpm={live.maxRpm}
+            speedKmh={live.speedKmh}
             cadenceBands={cadenceBands}
             distanceMeters={riders[id].cumulativeDistanceM}
             multiplier={live.multiplier}
