@@ -34,6 +34,10 @@ describe('groupSessions', () => {
     expect(g1.media).toBeNull();
     expect(g1.segments[0].gapBeforeMs).toBe(0);
     expect(g1.segments[1].gapBeforeMs).toBeGreaterThan(0);
+    // merged groups must carry the group id as sessionId too, so the frontend list
+    // (which keys clicks/selection on sessionId) can open the group's detail
+    expect(g1.sessionId).toBe('group:s1');
+    expect(g1.sessionId).toBe(g1.id);
   });
 
   it('breaks the chain when the gap exceeds the ceiling', () => {

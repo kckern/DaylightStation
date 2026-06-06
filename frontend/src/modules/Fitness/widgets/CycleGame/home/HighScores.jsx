@@ -1,6 +1,6 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { DistanceIcon, TimeIcon } from './icons.jsx';
+import { SpeedIcon } from './icons.jsx';
 import './HighScores.scss';
 
 /**
@@ -23,7 +23,7 @@ export function HighScores({ highScores = [], onSelectRecord }) {
             aria-label={`${hs.label}: ${hs.valueLabel} by ${hs.holderName}. View race.`}
           >
             <span className="cgh-hs__icon" aria-hidden="true">
-              {hs.key === 'time' ? <TimeIcon /> : <DistanceIcon />}
+              <SpeedIcon />
             </span>
             <span className="cgh-hs__body">
               <span className="cgh-hs__label">{hs.label}</span>

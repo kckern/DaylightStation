@@ -9,7 +9,15 @@ export class CycleRaceService {
     this.datastore = datastore;
   }
 
-  save(record, householdId) { return this.datastore.save(record, householdId); }
+  save(record, householdId) {
+    // Never persist a dead race: if no participant covered any distance the row is
+    // worthless ("0 m") and just clutters history. The client guards this too, but
+    // we enforce it here so a stray POST can't slip a zero-distance race into storage.
+    const totalDistanceM = Object.values(record?.participants || {})
+      .reduce((sum, p) => sum + (Number(p?.final_distance_m) || 0), 0);
+    if (totalDistanceM <= 0) return null;
+    return this.datastore.save(record, householdId);
+  }
   get(raceId, householdId) { return this.datastore.findById(raceId, householdId); }
   listByDate(date, householdId) { return this.datastore.findByDate(date, householdId); }
   listDates(householdId) { return this.datastore.listDates(householdId); }

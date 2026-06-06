@@ -15,9 +15,9 @@ Slot.propTypes = { id: PropTypes.string, panels: PropTypes.object, testid: PropT
 
 /**
  * Fixed race layout, chosen by field size:
- *  - sidebar (≤3 riders): main panel (chart top-left, splits top-right, speedos band)
+ *  - sidebar (≤3 riders): main panel (chart fills the row, speedos band)
  *    + right sidebar (POV grid top ~70%, oval bottom ~30%).
- *  - wide (≥4 riders): top row of three equal columns (chart | splits | POV),
+ *  - wide (≥4 riders): top row of chart (2×) | POV,
  *    speedometers full-width below; no oval.
  */
 export default function RaceLayoutManager({ panels = {}, fieldSize = 0 }) {
@@ -35,7 +35,6 @@ export default function RaceLayoutManager({ panels = {}, fieldSize = 0 }) {
     return (
       <div className={`race-layout race-layout--wide${noSpeedo}`} data-testid="race-layout" data-mode="wide">
         <div className="race-layout__top3">
-          {p('splitsChart', 'zone-splits', 'race-layout__zone--splits')}
           {p('distanceChart', 'zone-chart', 'race-layout__zone--chart')}
           {p('povGrid', 'zone-pov', 'race-layout__zone--pov')}
         </div>
@@ -48,7 +47,6 @@ export default function RaceLayoutManager({ panels = {}, fieldSize = 0 }) {
     <div className={`race-layout race-layout--sidebar${noSpeedo}`} data-testid="race-layout" data-mode="sidebar">
       <div className={`race-layout__main${hasSpeedo ? '' : ' race-layout__main--no-speedo'}`}>
         <div className="race-layout__main-top">
-          {p('splitsChart', 'zone-splits', 'race-layout__zone--splits')}
           {p('distanceChart', 'zone-chart', 'race-layout__zone--chart')}
         </div>
         {hasSpeedo && p('speedoRow', 'zone-speedo', 'race-layout__zone--speedo')}

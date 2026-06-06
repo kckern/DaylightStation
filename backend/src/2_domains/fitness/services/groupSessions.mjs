@@ -54,9 +54,13 @@ function finalize(g) {
     participants[r] = seg ? seg.participants[r] : { displayName: r };
   }
   const single = g.segments.length === 1;
+  // Singletons keep their real id; merged groups use the `group:` id. Both `id` and
+  // `sessionId` carry the SAME value so the frontend list (which keys clicks/selection on
+  // `sessionId`) can open a merged group's detail — the detail route handles `group:` ids.
+  const finalId = single ? g.segments[0].sessionId : g.id;
   return {
-    id: single ? g.segments[0].sessionId : g.id, // keep real id for un-merged singletons
-    sessionId: single ? g.segments[0].sessionId : null, // downstream compat for singletons
+    id: finalId,
+    sessionId: finalId,
     isGroup: !single,
     date: g.date,
     startTime: g.startTime,
