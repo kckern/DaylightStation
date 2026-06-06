@@ -74,6 +74,7 @@ export function createFitnessRouter(config) {
   const {
     sessionService,
     zoneLedController,
+    equipmentFanController,
     userService,
     configService,
     contentRegistry,
@@ -920,6 +921,47 @@ export function createFitnessRouter(config) {
     const result = zoneLedController.reset();
     result.resetBy = req.ip || 'unknown';
     res.json(result);
+  });
+
+  // =============================================================================
+  // Equipment Fan Endpoints (require Home Assistant configuration)
+  // =============================================================================
+
+  /**
+   * POST /api/fitness/equipment_fan - Evaluate fan trigger conditions and fire
+   */
+  router.post('/equipment_fan', async (req, res) => {
+    if (!equipmentFanController) {
+      return res.status(503).json({ ok: false, error: 'Equipment fan controller not configured (Home Assistant required)' });
+    }
+    try {
+      const { rpm = {}, zones = [], sessionEnded = false, householdId } = req.body;
+      const result = await equipmentFanController.evaluate({ rpm, zones, sessionEnded, householdId });
+      return res.json(result);
+    } catch (error) {
+      logger.error?.('fitness.equipment_fan.error', { error: error.message });
+      return res.status(500).json({ ok: false, error: error.message });
+    }
+  });
+
+  /**
+   * GET /api/fitness/equipment_fan/status
+   */
+  router.get('/equipment_fan/status', (req, res) => {
+    if (!equipmentFanController) {
+      return res.status(503).json({ ok: false, error: 'Equipment fan controller not configured' });
+    }
+    res.json(equipmentFanController.getStatus(req.query.householdId));
+  });
+
+  /**
+   * POST /api/fitness/equipment_fan/reset
+   */
+  router.post('/equipment_fan/reset', (req, res) => {
+    if (!equipmentFanController) {
+      return res.status(503).json({ ok: false, error: 'Equipment fan controller not configured' });
+    }
+    res.json(equipmentFanController.reset());
   });
 
   // =============================================================================

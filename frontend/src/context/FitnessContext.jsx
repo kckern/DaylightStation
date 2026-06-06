@@ -9,6 +9,7 @@ import {
 import { DeviceAssignmentLedger } from '../hooks/fitness/DeviceAssignmentLedger.js';
 import { GuestAssignmentService } from '../hooks/fitness/GuestAssignmentService.js';
 import { useZoneLedSync } from '../hooks/fitness/useZoneLedSync.js';
+import { useEquipmentFanSync } from '../hooks/fitness/useEquipmentFanSync.js';
 import { playbackLog } from '../modules/Player/lib/playbackLogger.js';
 import getLogger from '../lib/logging/Logger.js';
 import { getModuleManifest } from '../modules/Fitness/index.js';
@@ -1632,6 +1633,34 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     participantRoster: zoneLedPayload,
     sessionActive: !!session.sessionId,
     enabled: ambientLedEnabled,
+    householdId: fitnessRoot?._household || null
+  });
+
+  // Equipment fan: backend owns the decision + the per-session latch; the
+  // frontend just reports live RPM + HR-zone state. Enabled when any equipment
+  // has a `fan` block configured.
+  const equipmentFanEnabled = React.useMemo(() => {
+    const list = Array.isArray(fitnessRoot?.equipment) ? fitnessRoot.equipment : [];
+    return list.some(e => e?.fan && e.fan.plug_entity);
+  }, [fitnessRoot]);
+
+  // Ungated roster for the fan. Unlike `zoneLedPayload` (which returns [] unless
+  // ambient-LED scenes are configured), the fan must see the real HR-zone roster
+  // even in a household that has only a `fan:` block and no ambient-LED scenes —
+  // otherwise the backend computes maxZoneRank=-1 and the fan never fires.
+  const fanRoster = React.useMemo(
+    () => participantRoster.map(p => ({
+      zoneId: p.rawZoneId || p.zoneId || null,
+      isActive: p.isActive !== false
+    })),
+    [participantRoster]
+  );
+
+  useEquipmentFanSync({
+    rpmDevices,
+    participantRoster: fanRoster,
+    sessionActive: !!session.sessionId,
+    enabled: equipmentFanEnabled,
     householdId: fitnessRoot?._household || null
   });
 
