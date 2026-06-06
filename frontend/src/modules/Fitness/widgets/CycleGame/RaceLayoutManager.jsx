@@ -28,8 +28,8 @@ export default function RaceLayoutManager({ panels = {}, fieldSize = 0 }) {
     return (
       <div className="race-layout race-layout--wide" data-testid="race-layout" data-mode="wide">
         <div className="race-layout__top3">
-          {p('distanceChart', 'zone-chart', 'race-layout__zone--chart')}
           {p('splitsChart', 'zone-splits', 'race-layout__zone--splits')}
+          {p('distanceChart', 'zone-chart', 'race-layout__zone--chart')}
           {p('povGrid', 'zone-pov', 'race-layout__zone--pov')}
         </div>
         {p('speedoRow', 'zone-speedo', 'race-layout__zone--speedo')}
@@ -41,8 +41,8 @@ export default function RaceLayoutManager({ panels = {}, fieldSize = 0 }) {
     <div className="race-layout race-layout--sidebar" data-testid="race-layout" data-mode="sidebar">
       <div className="race-layout__main">
         <div className="race-layout__main-top">
-          {p('distanceChart', 'zone-chart', 'race-layout__zone--chart')}
           {p('splitsChart', 'zone-splits', 'race-layout__zone--splits')}
+          {p('distanceChart', 'zone-chart', 'race-layout__zone--chart')}
         </div>
         {p('speedoRow', 'zone-speedo', 'race-layout__zone--speedo')}
       </div>

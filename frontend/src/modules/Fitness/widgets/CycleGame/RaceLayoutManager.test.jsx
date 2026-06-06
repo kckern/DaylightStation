@@ -22,4 +22,17 @@ describe('RaceLayoutManager', () => {
     expect(queryByTestId('p-oval')).toBeNull();
     expect(getByTestId('race-layout').dataset.mode).toBe('wide');
   });
+  it('puts splits before the chart (chart is never far-left)', () => {
+    // sidebar mode
+    const { getByTestId } = render(<RaceLayoutManager panels={panels} fieldSize={2} />);
+    const root = getByTestId('race-layout');
+    const zones = [...root.querySelectorAll('[data-testid^="zone-"]')].map((z) => z.dataset.testid);
+    expect(zones.indexOf('zone-splits')).toBeLessThan(zones.indexOf('zone-chart'));
+  });
+  it('puts splits before the chart in wide mode', () => {
+    const { getByTestId } = render(<RaceLayoutManager panels={panels} fieldSize={4} />);
+    const root = getByTestId('race-layout');
+    const zones = [...root.querySelectorAll('[data-testid^="zone-"]')].map((z) => z.dataset.testid);
+    expect(zones.indexOf('zone-splits')).toBeLessThan(zones.indexOf('zone-chart'));
+  });
 });
