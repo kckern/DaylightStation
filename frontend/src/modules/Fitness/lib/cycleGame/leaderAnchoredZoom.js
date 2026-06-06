@@ -13,7 +13,8 @@ export const ZOOM_DEFAULTS = {
   homePct: 0.25,  // last place's resting position after a rezoom
   lowPct: 0.15,   // last place drifts left past this (gap grew) → zoom out
   highPct: 0.33,  // last place pushes right past this (gap shrank) → zoom in
-  minGapM: 8      // clamp so a near-zero field gap doesn't blow k up to infinity
+  minGapM: 8,     // clamp so a near-zero field gap doesn't blow k up to infinity
+  maxLines: 80    // interval-doubling cap: coarsen gridM until span fits in this many lines
 };
 
 // Round to a "nice" 1/2/5 ×10ⁿ value (grid intervals, so the scale reads cleanly).
@@ -53,15 +54,18 @@ export function pickGridMeters(kFrac, targetFrac = 0.085) {
 // Visible world-metre grid lines (keyed by metre value so they reconcile/glide as
 // the leader advances). Returns [{ m, x }] with x in [~0, rightPct].
 export function gridLines(leaderDistM, kFrac, gridM, cfg = {}) {
-  const { rightPct } = { ...ZOOM_DEFAULTS, ...cfg };
+  const { rightPct, maxLines = 80 } = { ...ZOOM_DEFAULTS, ...cfg };
   if (!(kFrac > 0) || !(gridM > 0) || !isFinite(kFrac)) return [];
-  const leftMeters = rightPct / kFrac;                      // metres from leader-pin to x=0
-  const startM = Math.max(0, Math.ceil(((leaderDistM || 0) - leftMeters) / gridM) * gridM);
+  const leftMeters = rightPct / kFrac;            // metres from the leader-pin to x=0
+  // Coarsen the interval (x2 multiples of gridM) until the whole span fits in maxLines —
+  // covers the full road instead of truncating one edge.
+  let step = gridM;
+  while (leftMeters / step > maxLines) step *= 2;
+  const startM = Math.ceil(((leaderDistM || 0) - leftMeters) / step) * step;
   const lines = [];
-  for (let m = startM; m <= (leaderDistM || 0) + 1e-6; m += gridM) {
+  for (let m = startM; m <= (leaderDistM || 0) + step; m += step) {
     const x = rightPct - ((leaderDistM || 0) - m) * kFrac;
     if (x >= -0.02 && x <= rightPct + 0.02) lines.push({ m: Math.round(m), x });
-    if (lines.length > 80) break; // safety against pathological intervals
   }
   return lines;
 }

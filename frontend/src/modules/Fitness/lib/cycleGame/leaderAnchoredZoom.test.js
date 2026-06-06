@@ -68,3 +68,20 @@ describe('leaderAnchoredZoom', () => {
     expect(lines.every((l) => Number.isInteger(l.m))).toBe(true);
   });
 });
+
+describe('gridLines coarsening', () => {
+  it('never exceeds maxLines and covers the whole visible span (no truncation)', () => {
+    const lines = gridLines(10000, 0.00002, 1, { maxLines: 24 });
+    expect(lines.length).toBeLessThanOrEqual(24);
+    expect(lines.length).toBeGreaterThan(2);
+    const ms = lines.map((l) => l.m);
+    const span = 0.88 / 0.00002; // rightPct / k metres visible
+    expect(Math.min(...ms)).toBeLessThan(10000 - span * 0.5); // a genuinely-near line survives
+    expect(Math.max(...ms)).toBeGreaterThan(10000 - 200);     // a near-leader line survives
+  });
+  it('keeps the requested interval when it already fits', () => {
+    const lines = gridLines(500, 0.0017, 50, { maxLines: 24 });
+    const ms = lines.map((l) => l.m).sort((a, b) => a - b);
+    if (ms.length >= 2) expect(ms[1] - ms[0]).toBe(50);
+  });
+});
