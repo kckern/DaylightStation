@@ -19,7 +19,7 @@ function ordinal(n) {
 
 export default function CycleSpeedometer({
   rpm = 0, maxRpm = 120, cadenceBands = [], tickStep, labelStep,
-  avatar = {}, distanceMeters = 0, multiplier = 1, multiplierColor, size = 220, className = '',
+  avatar = {}, distanceMeters = 0, multiplier = 1, multiplierColor, riderColor = null, size = 220, className = '',
   isGhost = false, finished = false, placement = null, penalized = false,
   penaltyRemainingS = null, penaltyTotalS = null, penaltyAwaitingStop = false
 }) {
@@ -46,7 +46,7 @@ export default function CycleSpeedometer({
 
   return (
     <div className={`cycle-speedometer${finished ? ' cycle-speedometer--finished' : ''}${penalized ? ' cycle-speedometer--penalized' : ''} ${className}`.trim()} style={{ width: px }}>
-      <div className="cycle-speedometer__gauge" style={{ width: px, height: px }}>
+      <div className="cycle-speedometer__gauge" style={{ width: px, height: px, '--cg-rider-tint': riderColor || 'transparent' }}>
         {penalized && !finished && (
           <div className="cycle-speedometer__penalty" data-testid="cycle-speedometer-penalty">
             <span className="cycle-speedometer__penalty-icon" aria-hidden="true">⛔</span>
@@ -152,6 +152,7 @@ CycleSpeedometer.propTypes = {
   distanceMeters: PropTypes.number,
   multiplier: PropTypes.number,
   multiplierColor: PropTypes.string,
+  riderColor: PropTypes.string,
   size: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   className: PropTypes.string,
   isGhost: PropTypes.bool,
