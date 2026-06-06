@@ -97,6 +97,10 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
 
   // ─── Target Generation ──────────────────────────────────────
 
+  // Tracks the last difficulty signature so we emit an info event only when the
+  // unlocked tier actually changes (not on every piece-spawn regeneration).
+  const lastProgressionRef = useRef(null);
+
   // Musical difficulty ramps with cumulative lines cleared (see computeProgression):
   // treble → bass clef → dyads → triads → accidentals, each ADDED to the mix.
   // Chord sizes are a random per-staff blend of the unlocked sizes, not uniform.
@@ -106,7 +110,30 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
     const newTargets = generateTargets(noteRange, sizes, whiteKeysOnly);
     setTargets(newTargets);
     setActiveNoteRange(noteRange);
-  }, [progression]);
+
+    // Difficulty-ramp observability. The unlocked-tier change is logged at info
+    // (low volume — one line each time treble→bass→dyad→triad→accidentals
+    // engages), so the ramp is visible in prod logs over a game. The actual
+    // per-staff note selections are logged at debug for deeper inspection.
+    const signature = `${noteRange[0]}-${noteRange[1]}|${unlockedChordSizes.join(',')}|wk:${whiteKeysOnly}`;
+    if (signature !== lastProgressionRef.current) {
+      lastProgressionRef.current = signature;
+      logger.info('tetris.difficulty-changed', {
+        linesCleared,
+        noteRange,
+        unlockedChordSizes,
+        whiteKeysOnly,
+      });
+    }
+    logger.debug('tetris.targets-generated', {
+      linesCleared,
+      noteRange,
+      unlockedChordSizes,
+      whiteKeysOnly,
+      sizes,
+      targets: newTargets,
+    });
+  }, [progression, logger]);
 
   // ─── Spawn Next Piece + Target Rotation ─────────────────────
 
@@ -481,6 +508,7 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
       setGameState(createInitialGameState());
       setTargets(null);
       setActiveNoteRange(null);
+      lastProgressionRef.current = null;
       lastSpawnCountRef.current = 0;
     }, GAME_OVER_DISPLAY_MS);
 
@@ -496,6 +524,7 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
     setGameState(createInitialGameState());
     setTargets(null);
     setActiveNoteRange(null);
+    lastProgressionRef.current = null;
     lastSpawnCountRef.current = 0;
     logger.info('tetris.game-deactivated', {});
   }, [clearAllTimers, logger]);
