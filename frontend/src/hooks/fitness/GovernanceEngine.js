@@ -1699,6 +1699,41 @@ export class GovernanceEngine {
     }
   }
 
+  /**
+   * Compute the active audio-duck descriptor (or null) for the current
+   * challenge snapshot. Stateless: returns the same stable `token` for the
+   * whole in-window period; the React consumer dedupes by token so the SFX
+   * fires once per challenge. Only `challenge_remaining` cues are evaluated,
+   * and only while the zone challenge is pending AND unsatisfied (a satisfied
+   * challenge won't lock, so there is nothing to hurry for).
+   */
+  _computeAudioDuck(challengeSnapshot) {
+    if (!challengeSnapshot || !Array.isArray(this._audioCues) || this._audioCues.length === 0) {
+      return null;
+    }
+    const { id: challengeId, status, remainingSeconds, requiredCount, actualCount, missingUsers } = challengeSnapshot;
+    if (status !== 'pending' || !Number.isFinite(remainingSeconds)) return null;
+
+    const satisfied = Number.isFinite(requiredCount) && Number.isFinite(actualCount)
+      ? actualCount >= requiredCount
+      : (Array.isArray(missingUsers) ? missingUsers.length === 0 : false);
+    if (satisfied) return null;
+
+    for (const cue of this._audioCues) {
+      if (cue.trigger !== 'challenge_remaining') continue;
+      if (remainingSeconds > cue.thresholdSeconds) continue;
+      const token = `${challengeId || 'challenge'}:${cue.id}`;
+      getLogger().sampled('governance.audio_cue.fired', {
+        cueId: cue.id,
+        challengeId: challengeId || null,
+        remainingSeconds,
+        threshold: cue.thresholdSeconds
+      }, { maxPerMinute: 6 });
+      return { cueId: cue.id, sound: cue.sound, duckTo: cue.duckTo, token };
+    }
+    return null;
+  }
+
   _composeState() {
     const now = this._now();
     const summary = this.requirementSummary || {};
@@ -1787,6 +1822,7 @@ export class GovernanceEngine {
             && challengeSnapshot?.cycleState === 'locked'),
       challengePaused: challengeSnapshot ? Boolean(challengeSnapshot.paused) : false,
       challenge: challengeSnapshot,
+      audioDuck: this._computeAudioDuck(challengeSnapshot),
       challengeHistory: Array.isArray(this.challengeState?.challengeHistory)
         ? [...this.challengeState.challengeHistory]
         : [],
