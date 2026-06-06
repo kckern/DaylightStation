@@ -23,6 +23,9 @@ const normalizeZoneId = (value) => {
 
 const normalizeName = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
 
+// Supported governance audio-cue triggers (see _normalizeAudioCues).
+const SUPPORTED_AUDIO_CUE_TRIGGERS = new Set(['challenge_remaining']);
+
 // Cycle challenge "health" pool: depletes while RPM is below loRpm, regenerates
 // while in the green zone (>= hiRpm). At zero the video pauses until the rider
 // is back in green. Replaces the old 3-second danger grace.
@@ -868,7 +871,6 @@ export class GovernanceEngine {
    * `duck_to` is clamped to [0, 1] (defaults to 0.1 when absent).
    */
   _normalizeAudioCues(raw) {
-    const SUPPORTED_TRIGGERS = new Set(['challenge_remaining']);
     if (!Array.isArray(raw)) return [];
     const cues = [];
     raw.forEach((entry, index) => {
@@ -876,10 +878,16 @@ export class GovernanceEngine {
       const trigger = String(entry.trigger || '').trim();
       const sound = typeof entry.sound === 'string' ? entry.sound.trim() : '';
       const thresholdSeconds = Number(entry.threshold_seconds ?? entry.thresholdSeconds);
-      if (!SUPPORTED_TRIGGERS.has(trigger) || !sound || !Number.isFinite(thresholdSeconds)) {
+      if (!SUPPORTED_AUDIO_CUE_TRIGGERS.has(trigger) || !sound || !Number.isFinite(thresholdSeconds)) {
+        const reason = !SUPPORTED_AUDIO_CUE_TRIGGERS.has(trigger)
+          ? 'unknown_trigger'
+          : !sound
+            ? 'missing_sound'
+            : 'invalid_threshold';
         getLogger().warn('governance.audio_cue.config_rejected', {
           index,
           id: entry.id || null,
+          reason,
           trigger: trigger || null,
           hasSound: Boolean(sound),
           thresholdSeconds: Number.isFinite(thresholdSeconds) ? thresholdSeconds : null

@@ -42,4 +42,21 @@ describe('GovernanceEngine — audio_cues config parsing', () => {
     engine.configure(baseConfig(undefined));
     expect(engine._audioCues).toEqual([]);
   });
+
+  it('accepts camelCase threshold/duck aliases', () => {
+    const engine = new GovernanceEngine(null, { now: () => 1000 });
+    engine.configure(baseConfig([
+      { id: 'alias_cue', trigger: 'challenge_remaining', thresholdSeconds: 12, sound: 'a.mp3', duckTo: 0.2 }
+    ]));
+    expect(engine._audioCues).toHaveLength(1);
+    expect(engine._audioCues[0]).toMatchObject({ thresholdSeconds: 12, duckTo: 0.2 });
+  });
+
+  it('clamps a negative duck_to up to 0', () => {
+    const engine = new GovernanceEngine(null, { now: () => 1000 });
+    engine.configure(baseConfig([
+      { id: 'neg_duck', trigger: 'challenge_remaining', threshold_seconds: 10, sound: 'a.mp3', duck_to: -0.5 }
+    ]));
+    expect(engine._audioCues[0].duckTo).toBe(0);
+  });
 });
