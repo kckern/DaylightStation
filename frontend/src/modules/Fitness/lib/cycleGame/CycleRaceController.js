@@ -11,9 +11,17 @@ export class CycleRaceController {
     this.phase = 'staged';
     this.countdownRemaining = Number.isFinite(config.startCountdownS) ? config.startCountdownS : 3;
     this.raceIdleDnfS = Number.isFinite(config.raceIdleDnfS) ? config.raceIdleDnfS : 20;
+    // Start-grace: a rider who has NOT yet registered any movement gets this
+    // (more generous) window before a no-show DNF, instead of raceIdleDnfS. It
+    // exists because magnetless cadence sensors (e.g. the COOSPO BK467 on the
+    // tricycle) can take ~20s to lock onto rotation from a dead stop, reporting
+    // rpm 0 the whole time even while the rider is pedalling. Once a rider has
+    // registered movement once, the normal raceIdleDnfS clock takes over.
+    this.raceStartGraceS = Number.isFinite(config.raceStartGraceS) ? config.raceStartGraceS : 30;
     this.engine = null;
     this.dnf = new Set();
     this._idle = new Map();
+    this._started = new Set(); // riders that have registered rpm > 0 at least once
     // Hot-start penalty ("penalty box"): a rider already pedalling at the green
     // light has their meter disabled (no distance). They leave the box only once
     // BOTH the configured timer has elapsed AND they have returned to RPM 0 — so
@@ -104,10 +112,15 @@ export class CycleRaceController {
         }
       }
 
-      const nextIdle = rpm > 0 ? 0 : (this._idle.get(userId) || 0) + intervalS;
+      const moving = rpm > 0;
+      if (moving) this._started.add(userId);
+      const nextIdle = moving ? 0 : (this._idle.get(userId) || 0) + intervalS;
       this._idle.set(userId, nextIdle);
       const finished = before.riders[userId].finishTimeS != null;
-      if (!finished && nextIdle >= this.raceIdleDnfS) this.dnf.add(userId);
+      // Before a rider's first movement the (more generous) start-grace applies —
+      // covering sensor lock-on lag; afterwards the normal idle clock governs.
+      const dnfThreshold = this._started.has(userId) ? this.raceIdleDnfS : this.raceStartGraceS;
+      if (!finished && nextIdle >= dnfThreshold) this.dnf.add(userId);
 
       filtered[userId] = (this.dnf.has(userId) || boxed)
         ? { rpm: 0, zoneId: input.zoneId ?? null }
