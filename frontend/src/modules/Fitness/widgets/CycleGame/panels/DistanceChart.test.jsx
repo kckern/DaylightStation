@@ -36,6 +36,20 @@ describe('DistanceChart panel', () => {
     expect(y).toBeGreaterThan(40);
     expect(y).toBeLessThan(100);
   });
+  it('pins the goal line to the top of the chart for a short distance race', () => {
+    // goal (100 m) is below the 150 m base window, so the window caps at the goal and
+    // the goal line lands at the top inset (PAD_T = 22), not mid-chart.
+    const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 40, distanceSeries: [40], isGhost: false } };
+    const { container } = render(
+      <DistanceChart riderIds={['a']} riders={riders} riderLive={{ a: {} }}
+        winCondition="distance" goalM={100} elapsedS={5} />
+    );
+    const goal = container.querySelector('.cycle-race-screen__goal');
+    expect(goal).toBeTruthy();
+    const y1 = parseFloat(goal.getAttribute('y1'));
+    expect(y1).toBeLessThanOrEqual(30); // near the top inset, not ~⅓ down
+  });
+
   it('renders decimating gridlines for the current window', () => {
     const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 120, distanceSeries: [120], isGhost: false } };
     const { container } = render(

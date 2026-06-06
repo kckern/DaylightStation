@@ -19,18 +19,19 @@ const today = [
 ];
 
 describe('groupSessions', () => {
-  it('merges the no-video afternoon runs and leaves the video session standalone', () => {
+  it('merges ALL no-video sessions of the day into one (roster changes do not split) and leaves the video session standalone', () => {
     const groups = groupSessions(today);
     const ids = groups.map(g => g.segments.map(x => x.sessionId));
-    expect(ids).toEqual([['s1','s2','s3','s4'], ['s5'], ['s6'], ['s7']]);
+    // s5 is felix-only (disjoint roster) but still merges — only the video session (s7) splits
+    expect(ids).toEqual([['s1','s2','s3','s4','s5','s6'], ['s7']]);
   });
 
-  it('flags video groups and sums coins + unions rosters', () => {
+  it('flags video groups and sums coins + unions rosters across rotating riders', () => {
     const [g1] = groupSessions(today);
     expect(g1.id).toBe('group:s1');
     expect(g1.isGroup).toBe(true);
-    expect(g1.totalCoins).toBe(60 + 8 + 1139 + 466);
-    expect(Object.keys(g1.participants).sort()).toEqual(['alan','milo']);
+    expect(g1.totalCoins).toBe(60 + 8 + 1139 + 466 + 151 + 194);
+    expect(Object.keys(g1.participants).sort()).toEqual(['alan','felix','milo']);
     expect(g1.media).toBeNull();
     expect(g1.segments[0].gapBeforeMs).toBe(0);
     expect(g1.segments[1].gapBeforeMs).toBeGreaterThan(0);

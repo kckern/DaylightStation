@@ -2,7 +2,6 @@ export const GROUP_MAX_GAP_MS = 4 * 60 * 60 * 1000; // 4h ceiling
 
 const rosterSet = (s) => new Set(Object.keys(s.participants || {}));
 const hasVideo  = (s) => !!(s.media && s.media.primary);
-const disjoint  = (a, b) => { for (const x of b) if (a.has(x)) return false; return true; };
 
 export function groupSessions(sessions, { maxGapMs = GROUP_MAX_GAP_MS } = {}) {
   const sorted = [...(sessions || [])].sort((a, b) => a.startTime - b.startTime);
@@ -14,12 +13,14 @@ export function groupSessions(sessions, { maxGapMs = GROUP_MAX_GAP_MS } = {}) {
     const endMs   = s.startTime + (s.durationMs || 0);
     const newRoster = rosterSet(s);
 
+    // A new group starts on: a video session (stands alone + separates), a calendar-day
+    // change, or a gap exceeding the ceiling. Roster changes do NOT split — rotating
+    // riders across a continuous no-video block stay one merged session.
     const mustBreak =
       !cur ||
       cur._hasVideo || hasVideo(s) ||
       s.date !== cur.date ||
-      (startMs - cur._lastEndMs) > maxGapMs ||
-      disjoint(union, newRoster);
+      (startMs - cur._lastEndMs) > maxGapMs;
 
     if (mustBreak) {
       cur = { id: `group:${s.sessionId}`, isGroup: true, date: s.date,
