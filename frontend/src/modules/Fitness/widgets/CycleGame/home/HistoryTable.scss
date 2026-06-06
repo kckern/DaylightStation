@@ -1,0 +1,118 @@
+@use '../cgTokens' as t;
+
+// ── Records rail ─────────────────────────────────────────────────────────
+.cgh-records {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cgh-record {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 0;
+  border-bottom: 1px solid t.$cg-border-soft;
+  font-size: 0.92rem;
+
+  &:last-child { border-bottom: none; }
+
+  &__rank {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: t.$cg-panel-2;
+    color: t.$cg-cyan;
+    font-size: 0.75rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__label { color: t.$cg-text; }
+}
+
+// ── Records rail: avatars + goal chip + score ─────────────────────────────
+// ── History table ──────────────────────────────────────────────────────────
+// Header + each row share ONE grid template so columns align. A value's column
+// declares its kind (distance vs time) — no per-row meaning flip. The result
+// cell is the bright cyan payoff; the goal cell is calmer and carries the flag.
+// Proportional columns (not `auto`) so the numeric/when cells can't starve the
+// riders column on a narrow rail — riders gets a guaranteed share for the name.
+// Distance min fits a flagged "🏁 1.00 km"; when stacks day/time so it stays narrow.
+$cgh-record-cols: minmax(0, 1.4fr) minmax(66px, 1fr) minmax(38px, 0.7fr) minmax(42px, 0.8fr);
+
+.cgh-records__head {
+  display: grid;
+  grid-template-columns: $cgh-record-cols;
+  gap: 10px;
+  align-items: center;
+  padding: 0 4px 4px;
+  span { @include t.cg-eyebrow; font-size: 0.6rem; }
+  span:not(:first-child) { text-align: right; }
+}
+
+.cgh-record__btn {
+  appearance: none; cursor: pointer; width: 100%;
+  display: grid;
+  grid-template-columns: $cgh-record-cols;
+  gap: 10px;
+  align-items: center;
+  background: transparent; border: none; color: inherit; text-align: left;
+  padding: 4px; border-radius: 10px;
+  &:hover { background: rgba(255, 255, 255, 0.05); }
+  &:focus-visible {
+    outline: 2px solid t.$cg-cyan; outline-offset: 2px;
+    background: rgba(33, 230, 255, 0.06);
+  }
+}
+
+// Day group header — printed once per calendar day instead of on every row.
+// Sticky so the active day stays labelled while the rail scrolls.
+.cgh-records__day {
+  position: sticky; top: -1px; z-index: 2;
+  padding: 8px 4px 4px;
+  @include t.cg-eyebrow;
+  font-size: 0.6rem; color: t.$cg-cyan; letter-spacing: 0.2em;
+  background: linear-gradient(180deg, t.$cg-panel 68%, transparent);
+}
+
+// Riders cell — winner avatar + up to two crescent runner-up avatars + "+N" overflow.
+.cgh-record__riders { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.cgh-record__avatars { display: inline-flex; align-items: center; position: relative; flex-shrink: 0; }
+.cgh-record__winner-avatar {
+  width: 26px; height: 26px; border-radius: 50%; object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.85); position: relative; z-index: 1;
+}
+.cgh-record__crescent {
+  width: 22px; height: 22px; border-radius: 50%; object-fit: cover;
+  margin-left: -12px; border: 1px solid rgba(0, 0, 0, 0.6); opacity: 0.9;
+}
+.cgh-record__winner-name {
+  flex: 1 1 auto; min-width: 0;
+  font-family: t.$cg-display; font-weight: 700; font-size: 0.92rem; color: t.$cg-text;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cgh-record__more {
+  flex-shrink: 0; margin-left: 4px; color: t.$cg-faint; font-size: 0.7rem; font-weight: 700; opacity: 0.85;
+}
+
+// Metric cells — result (data-goal=false) is bright cyan; goal is calm + flagged.
+.cgh-record__cell {
+  @include t.cg-numeral(t.$cg-cyan);
+  font-size: 0.82rem; text-align: right; white-space: nowrap; overflow: hidden;
+  display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px;
+  &[data-goal="true"] { color: t.$cg-muted; text-shadow: none; font-style: normal; }
+}
+.cgh-record__flag { font-size: 0.68rem; }
+.cgh-record__cell-empty { color: t.$cg-faint; font-style: italic; text-shadow: none; }
+
+// When cell — just the clock time now (the day lives in the group header).
+.cgh-record__when {
+  font-family: t.$cg-mono; color: t.$cg-faint; font-size: 0.66rem;
+  text-align: right; white-space: nowrap; overflow: hidden;
+}

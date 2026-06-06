@@ -1,0 +1,35 @@
+@use '../cgTokens' as t;
+
+// ── High scores — clickable personal-best cards above History. Same tap-into-
+//    recap affordance as a History row; the metric value is the hero figure.
+.cgh-hs-section { display: flex; flex-direction: column; }
+.cgh-highscores { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
+.cgh-hs {
+  appearance: none; cursor: pointer; width: 100%; text-align: left;
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: 12px;
+  background: linear-gradient(180deg, t.$cg-panel-2, t.$cg-panel);
+  border: 1px solid t.$cg-border; color: t.$cg-text;
+  transition: border-color 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
+  &:hover { border-color: t.$cg-cyan; transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4); }
+  &:focus-visible { outline: 2px solid t.$cg-cyan; outline-offset: 2px; }
+
+  &__icon {
+    width: 30px; height: 30px; display: grid; place-items: center; color: t.$cg-magenta; flex-shrink: 0;
+    svg { width: 26px; height: 26px; }
+  }
+  &__body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  &__label { @include t.cg-eyebrow; font-size: 0.58rem; color: t.$cg-muted; }
+  &__value {
+    @include t.cg-numeral(t.$cg-cyan);
+    font-size: 1.4rem; line-height: 1.05;
+  }
+  // When the record was set — relative day (+ compact time).
+  &__when { margin-top: 2px; font-family: t.$cg-mono; font-size: 0.62rem; color: t.$cg-faint; }
+  &__holder { display: flex; flex-direction: column; align-items: center; gap: 3px; flex-shrink: 0; width: 48px; }
+  &__avatar { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; border: 1px solid rgba(255, 255, 255, 0.7); }
+  &__name {
+    font-family: t.$cg-display; font-weight: 700; font-size: 0.66rem; color: t.$cg-muted;
+    max-width: 48px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center;
+  }
+}

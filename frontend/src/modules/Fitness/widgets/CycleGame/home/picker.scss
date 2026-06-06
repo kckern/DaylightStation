@@ -1,0 +1,74 @@
+@use '../cgTokens' as t;
+
+// ── Picker modal chrome — shared by RiderPicker / GhostPicker / VolumeModal ──
+.cgh-picker {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
+  }
+
+  &__sheet {
+    position: relative;
+    z-index: 1;
+    width: min(560px, 86%);
+    max-height: 80%;
+    overflow-y: auto;
+    background: t.$cg-panel;
+    border: 1px solid t.$cg-border;
+    border-radius: 18px;
+    padding: 22px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  }
+
+  &__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  &__heading { text-align: left; }
+
+  &__bike {
+    font-size: 1.15rem;
+    font-weight: 700;
+  }
+
+  &__tabs {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-bottom: 18px;
+  }
+
+  &__close {
+    appearance: none;
+    border: 1px solid t.$cg-border;
+    background: t.$cg-panel-2;
+    color: t.$cg-text;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    font-size: 1.3rem;
+    line-height: 1;
+    cursor: pointer;
+
+    &:hover { border-color: t.$cg-border-soft; }
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    gap: 20px 14px;
+    justify-items: center;
+  }
+}

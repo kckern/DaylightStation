@@ -9,11 +9,19 @@
   &__fan  { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
   &__grid { position: absolute; inset: 0; pointer-events: none; }
 
+  // Fixed metre scale: a minor line every 10 m, a major every 50 m. Each pooled slot
+  // has a constant major/minor identity (set here, statically) so only transform +
+  // opacity animate per frame — the height/glow never change (perf contract).
   &__hline {
-    position: absolute; left: 0; right: 0; top: 0; height: 2px;
+    position: absolute; left: 0; right: 0; top: 0;
     transform-origin: 50% 50%;
-    background: rgba(cg.$cg-cyan, 0.40);
+    background: cg.$cg-cyan;
     will-change: transform, opacity;
+  }
+  &__hline--minor { height: 1px; }
+  &__hline--major {
+    height: 2px;
+    box-shadow: 0 0 7px -1px rgba(cg.$cg-cyan, 0.8);
   }
 
   &__marker {

@@ -1,0 +1,210 @@
+@use '../cgTokens' as t;
+
+// ── Race type dichotomy ──────────────────────────────────────────────────
+.cgh-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.cgh-tile {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 20px;
+  padding: 22px 28px;
+  background: t.$cg-panel;
+  border: 1.5px solid t.$cg-border;
+  border-radius: 16px;
+  color: t.$cg-text;
+  text-align: left;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease, opacity 0.15s ease, box-shadow 0.15s ease;
+
+  &:hover { transform: translateY(-2px); opacity: 1; border-color: t.$cg-border-soft; }
+
+  &.is-selected {
+    opacity: 1;
+    border-color: t.$cg-magenta;
+    background: linear-gradient(110deg, rgba(255, 45, 149, 0.16), t.$cg-panel 70%);
+    box-shadow: 0 0 0 1px rgba(255, 45, 149, 0.5), 0 0 26px rgba(255, 45, 149, 0.25);
+  }
+
+  &__icon {
+    width: 58px;
+    height: 58px;
+    flex-shrink: 0;
+    color: t.$cg-muted;
+    transition: color 0.15s ease;
+  }
+  &.is-selected &__icon { color: t.$cg-cyan; }
+
+  &__text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  &__name {
+    font-family: t.$cg-display;
+    font-size: 1.35rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+  }
+  &__hint {
+    font-size: 0.88rem;
+    color: t.$cg-muted;
+  }
+}
+
+// ── Value step ───────────────────────────────────────────────────────────
+// Fixed-height slot reserved up front so revealing the value controls never
+// pushes the starting grid down (avoids the layout "rug pull").
+.cgh-value-slot {
+  margin-top: 14px;
+  min-height: 84px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cgh-value-hint {
+  color: t.$cg-faint;
+  font-size: 0.88rem;
+  font-style: italic;
+}
+
+@keyframes cgh-value-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.cgh-value {
+  width: 100%;
+  animation: cgh-value-in 0.18s ease;
+
+  &__row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+}
+
+.cgh-presets {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cgh-preset {
+  background: t.$cg-panel-2;
+  border: 1px solid t.$cg-border;
+  border-radius: 999px;
+  padding: 8px 16px;
+  color: t.$cg-text;
+  font-size: 0.92rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+
+  &:hover { border-color: t.$cg-border-soft; }
+  &.is-selected {
+    border-color: t.$cg-cyan;
+    color: t.$cg-cyan;
+    background: rgba(33, 230, 255, 0.12);
+  }
+}
+
+// Named tier: the category name leads (bold), the value reads as a quiet
+// sub-label so riders pick the category, not the digits.
+.cgh-preset--tier {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  border-radius: 14px;
+  padding: 7px 16px;
+  line-height: 1.1;
+
+  .cgh-preset__name { font-weight: 700; font-size: 0.96rem; letter-spacing: 0.01em; }
+  .cgh-preset__value { font-size: 0.74rem; opacity: 0.62; }
+  &.is-selected .cgh-preset__value { opacity: 0.85; }
+}
+
+.cgh-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: t.$cg-panel-2;
+  border: 1px solid t.$cg-border;
+  border-radius: 999px;
+  padding: 4px;
+
+  &__btn {
+    width: 30px;
+    height: 30px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: t.$cg-text;
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.12s ease;
+
+    &:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
+    &:disabled { opacity: 0.3; cursor: not-allowed; }
+  }
+
+  &__value {
+    min-width: 64px;
+    text-align: center;
+    font-family: t.$cg-mono;
+    font-size: 0.9rem;
+    color: t.$cg-cyan;
+  }
+}
+
+// ── Locked race type (set by a ghost) ─────────────────────────────────────
+.cgh-tile:disabled { cursor: default; }
+.cgh-race.is-locked {
+  .cgh-tile:not(.is-selected) { opacity: 0.4; }
+  .cgh-preset, .cgh-stepper__btn { opacity: 0.45; cursor: default; }
+}
+
+// ── Three race-type tiles (Distance / Time / Ghost) ───────────────────────
+.cgh-tiles--three { grid-template-columns: repeat(3, 1fr); }
+
+.cgh-tile--ghost.is-selected {
+  border-color: t.$cg-lane-3;
+  background: linear-gradient(110deg, rgba(176, 114, 255, 0.18), t.$cg-panel 70%);
+  box-shadow: 0 0 0 1px rgba(176, 114, 255, 0.5), 0 0 26px rgba(176, 114, 255, 0.25);
+  .cgh-tile__icon { color: t.$cg-lane-3; }
+}
+
+// ── Selected-ghost summary (replaces the value step) ──────────────────────
+.cgh-ghost-summary {
+  width: 100%;
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  animation: cgh-value-in 0.18s ease;
+
+  &__icon { font-size: 2rem; }
+  &__text { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+  &__vs { font-size: 1.05rem; font-weight: 700; }
+  &__meta {
+    font-family: t.$cg-mono;
+    font-size: 0.82rem; color: t.$cg-lane-3;
+  }
+  &__btn {
+    appearance: none; cursor: pointer;
+    background: t.$cg-panel-2; border: 1px solid t.$cg-border;
+    border-radius: 999px; padding: 7px 16px; color: t.$cg-text; font-size: 0.85rem;
+    transition: border-color 0.15s ease, color 0.15s ease;
+    &:hover { border-color: t.$cg-border-soft; }
+    &--clear:hover { border-color: #f87171; color: #f87171; }
+  }
+}
