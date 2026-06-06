@@ -32,9 +32,12 @@ export function primeCueAudio(trigger = 'manual') {
     // is only used to roll back if play() actually rejected (autoplay denied).
     try { el.pause(); } catch { /* noop */ }
     el.currentTime = 0; el.muted = false; _unlocked = true;
+    // NOTE: this 'unlocked' event is OPTIMISTIC — play() may still reject, in
+    // which case it is retracted by a following 'audio_cue.unlock_failed' below.
+    // Read the pair together when auditing (unlocked → unlock_failed = no unlock).
     logger().info('audio_cue.unlocked', { trigger });
     if (p && typeof p.catch === 'function') {
-      p.catch((err) => { _unlocked = false; el.muted = false; logger().warn('audio_cue.unlock_failed', { trigger, name: err?.name ?? null, message: err?.message ?? null }); });
+      p.catch((err) => { _unlocked = false; el.currentTime = 0; el.muted = false; logger().warn('audio_cue.unlock_failed', { trigger, name: err?.name ?? null, message: err?.message ?? null }); });
     }
   } catch (err) {
     logger().warn('audio_cue.unlock_threw', { trigger, message: err?.message ?? null });
@@ -50,9 +53,18 @@ export function primeCueAudio(trigger = 'manual') {
 export function installCueAudioUnlock(target = (typeof window !== 'undefined' ? window : null)) {
   if (!target || _unlocked) return () => {};
   const events = ['pointerdown', 'touchstart', 'keydown', 'click'];
+  const add = () => events.forEach((e) => target.addEventListener(e, handler, { passive: true }));
   const remove = () => events.forEach((e) => target.removeEventListener(e, handler));
-  function handler(e) { primeCueAudio(e?.type ? `gesture:${e.type}` : 'gesture'); if (_unlocked) remove(); }
-  events.forEach((e) => target.addEventListener(e, handler, { passive: true }));
+  function handler(e) {
+    primeCueAudio(e?.type ? `gesture:${e.type}` : 'gesture');
+    if (_unlocked) {
+      remove();
+      // Optimistic unlock may roll back asynchronously if play() rejects; re-arm
+      // the listeners so a later gesture can retry rather than locking forever.
+      Promise.resolve().then(() => { if (!_unlocked) { add(); logger().debug('audio_cue.unlock_rearmed', { reason: 'play_rejected' }); } });
+    }
+  }
+  add();
   logger().debug('audio_cue.unlock_listeners_installed', { events });
   return remove;
 }
