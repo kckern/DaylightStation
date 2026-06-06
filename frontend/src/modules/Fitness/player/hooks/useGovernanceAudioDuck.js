@@ -23,7 +23,6 @@ function logger() {
  */
 export function useGovernanceAudioDuck({ mediaElement, videoVolume, audioDuck }) {
   const firedTokenRef = useRef(null);
-  const audioRef = useRef(null);
   const duckedMediaRef = useRef(null);
 
   useEffect(() => {
@@ -63,21 +62,29 @@ export function useGovernanceAudioDuck({ mediaElement, videoVolume, audioDuck })
     let audio = null;
     try {
       audio = new Audio(DaylightMediaPath(`/media/${audioDuck.sound}`));
-      audioRef.current = audio;
       audio.addEventListener('ended', restore);
       const p = audio.play();
-      if (p && typeof p.catch === 'function') p.catch(() => {});
+      // Autoplay rejection is async — if it were swallowed, the SFX 'ended'
+      // event would never fire and the video would stay ducked forever.
+      // Restore on rejection so the duck can never get stuck.
+      if (p && typeof p.catch === 'function') p.catch(() => restore());
     } catch {
-      // Audio construction/playback failed — restore immediately so we never
-      // leave the video ducked with no SFX to end it.
+      // Synchronous Audio construction/play failure — restore immediately so we
+      // never leave the video ducked with no SFX to end it.
       restore();
       return undefined;
     }
 
     return () => {
-      if (audio) audio.removeEventListener('ended', restore);
-      // If the duck is still active when this effect tears down (unmount or a
-      // new token arriving mid-SFX), restore the video volume.
+      if (audio) {
+        audio.removeEventListener('ended', restore);
+        // Stop and release the SFX so a new token doesn't leave the previous
+        // instance decoding in the background (orphaned stream).
+        audio.pause();
+        audio.src = '';
+      }
+      // duckedMediaRef doubles as the "already restored" sentinel — restore()
+      // nulls it, so this won't double-restore after a natural 'ended'.
       if (duckedMediaRef.current) restore();
     };
   }, [audioDuck, mediaElement, videoVolume]);
