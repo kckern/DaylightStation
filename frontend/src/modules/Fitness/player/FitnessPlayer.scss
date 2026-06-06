@@ -497,11 +497,15 @@ dash-video {
     .governance-warning-scrim {
       position: absolute;
       inset: 0;
-      background: rgba(0, 0, 0, 0.7);
-      backdrop-filter: blur(4px) grayscale(1) sepia(0.4);
-      -webkit-backdrop-filter: blur(4px) grayscale(1) sepia(0.4);
       z-index: 5;
       pointer-events: none;
+      // Darken / blur / desaturate are driven by inline style and ramp up with
+      // the grace countdown (see GovernanceWarningScrim). The transition smooths
+      // between the per-notch updates so the ramp reads as continuous.
+      transition:
+        background-color 0.5s linear,
+        backdrop-filter 0.5s linear,
+        -webkit-backdrop-filter 0.5s linear;
     }
 
     &.governance-filter-critical {
