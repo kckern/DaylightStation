@@ -160,7 +160,7 @@ export default function CycleSpeedometer({
       </div>
 
       <div className="cycle-speedometer__odometer" data-testid="cycle-speedometer-odometer">
-        {isLeader && <span className="cycle-speedometer__leader-medal" aria-label="Current leader">🥇</span>}
+        {isLeader && !finished && <span className="cycle-speedometer__leader-medal" aria-label="Current leader">🥇</span>}
         {formatDistance(distanceMeters)}
       </div>
     </div>

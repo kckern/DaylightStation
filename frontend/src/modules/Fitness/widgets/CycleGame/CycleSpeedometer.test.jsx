@@ -100,4 +100,9 @@ describe('CycleSpeedometer', () => {
     rerender(<CycleSpeedometer {...baseProps} isLeader={true} />);
     expect(getByTestId('cycle-speedometer-odometer').textContent).toContain('🥇');
   });
+
+  it('suppresses the leader medal once the rider has finished (the finished overlay marks the winner)', () => {
+    const { getByTestId } = render(<CycleSpeedometer {...baseProps} isLeader={true} finished={true} placement={1} />);
+    expect(getByTestId('cycle-speedometer-odometer').textContent).not.toContain('🥇');
+  });
 });
