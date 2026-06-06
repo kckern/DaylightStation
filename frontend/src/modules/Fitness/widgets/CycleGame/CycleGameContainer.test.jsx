@@ -55,6 +55,7 @@ function makeCtx(overrides = {}) {
     getUserVitals: (id) => vitals[id] || null,
     getDisplayName: (id) => id,
     getUserByName: (id) => ({ name: vitals[id]?.name || id }),
+    setGovernanceSuspended: vi.fn(),
     ...overrides
   };
 }
@@ -98,5 +99,21 @@ describe('CycleGameContainer (smoke)', () => {
       'cycle_game.staged',
       expect.objectContaining({ courseId: 'distance', winCondition: 'distance', riders: ['kckern', 'felix'] })
     );
+  });
+});
+
+describe('CycleGameContainer — governance suspension', () => {
+  beforeEach(() => { mockCtx = makeCtx(); });
+
+  it('suspends governance on mount and resumes it on unmount', () => {
+    const suspendSpy = vi.fn();
+    mockCtx = makeCtx({ setGovernanceSuspended: suspendSpy });
+
+    let view;
+    act(() => { view = render(<CycleGameContainer />); });
+    expect(suspendSpy).toHaveBeenCalledWith(true);
+
+    act(() => { view.unmount(); });
+    expect(suspendSpy).toHaveBeenCalledWith(false);
   });
 });
