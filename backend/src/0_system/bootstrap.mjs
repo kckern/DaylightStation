@@ -892,7 +892,7 @@ export function createFitnessServices(config) {
 
   const activityRegistry = new ActivityRegistry()
     .register(new CycleGameProvider({ cycleRaceService }));
-  const sessionGroupingService = new SessionGroupingService({ activityRegistry, logger });
+  const sessionGroupingService = new SessionGroupingService({ activityRegistry, sessionService, logger });
 
   // Home automation gateway (provided by composition root)
   const haGateway = preloadedHaGateway ?? null;

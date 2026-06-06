@@ -342,6 +342,11 @@ export function createFitnessRouter(config) {
       return res.status(400).json({ error: 'sessionId is required' });
     }
     try {
+      if (sessionId.startsWith('group:') && sessionGroupingService) {
+        const group = await sessionGroupingService.getGroupDetail(sessionId, household);
+        if (!group) return res.status(404).json({ error: 'Session not found' });
+        return res.json({ session: group });
+      }
       const session = await sessionService.getSession(sessionId, household, {
         decodeTimeline: true
       });
