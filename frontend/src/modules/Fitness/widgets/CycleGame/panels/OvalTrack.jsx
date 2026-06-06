@@ -54,6 +54,13 @@ export default function OvalTrack({ riderIds, riders, riderLive = {}, progress =
         {/* Start/finish tick at the top of the oval. */}
         <line className="cg-oval-track__startline" x1="0" y1={-RY - 8} x2="0" y2={-RY + 8} />
 
+        {/* Current lap number, centered in the infield (inside the SVG so it can't
+            drift onto the track when the panel resizes around the strip below). */}
+        {lapLabel ? (
+          <text className="cg-oval-track__lap-label" data-testid="oval-lap-label"
+            x="0" y="0" textAnchor="middle" dominantBaseline="central">{lapLabel}</text>
+        ) : null}
+
         {riderIds.map((id, idx) => {
           const color = LINE_COLORS[idx % LINE_COLORS.length];
           const p = ovalPoint(progress[id] || 0, RX, RY);
@@ -83,9 +90,6 @@ export default function OvalTrack({ riderIds, riders, riderLive = {}, progress =
           );
         })}
       </svg>
-      {lapLabel ? (
-        <div className="cg-oval-track__lap-label" data-testid="oval-lap-label">{lapLabel}</div>
-      ) : null}
       {lapsOn ? (
         <table className="cg-oval-track__laps" data-testid="oval-lap-strip">
           <thead>
@@ -94,7 +98,7 @@ export default function OvalTrack({ riderIds, riders, riderLive = {}, progress =
               {riderIds.map((id, idx) => (
                 <th key={id} className="cg-oval-track__laps-rider" data-testid="oval-lap-rider">
                   <span className="cg-oval-track__laps-dot" style={{ background: LINE_COLORS[idx % LINE_COLORS.length] }} />
-                  {riders[id]?.displayName || id}
+                  <span className="cg-oval-track__laps-name">{riders[id]?.displayName || id}</span>
                 </th>
               ))}
             </tr>
@@ -111,7 +115,7 @@ export default function OvalTrack({ riderIds, riders, riderLive = {}, progress =
               <th scope="row" className="cg-oval-track__laps-label">Now</th>
               {riderIds.map((id) => (
                 <td key={id} className="cg-oval-track__laps-cell cg-oval-track__laps-cell--current">
-                  {formatClock(curLap(id))}…
+                  {formatClock(curLap(id))}
                 </td>
               ))}
             </tr>

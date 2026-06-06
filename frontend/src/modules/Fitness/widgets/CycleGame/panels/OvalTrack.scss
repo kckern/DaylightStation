@@ -17,10 +17,15 @@
   padding: 0.5rem;
   overflow: hidden;
 
+  // Size the oval to the panel width (its own aspect ratio), capped so it leaves
+  // room for the lap strip — and let justify-content:center keep oval+strip together
+  // as one block instead of stranding the strip at the bottom with a dead gap.
   &__svg {
     width: 100%;
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     min-height: 0;
+    aspect-ratio: 260 / 160;
+    max-height: 62%;
   }
 
   &__lane {
@@ -65,60 +70,78 @@
     paint-order: stroke;
   }
 
+  // Lap number, drawn as SVG text dead-centre in the infield.
   &__lap-label {
-    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    font-family: t.$cg-mono; font-weight: 800; font-size: 1.1rem; color: t.$cg-text;
-    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8); pointer-events: none; z-index: 3;
+    font-family: t.$cg-display;
+    font-weight: 800;
+    font-size: 17px;
+    fill: t.$cg-text;
+    paint-order: stroke;
+    stroke: rgba(0, 0, 0, 0.55);
+    stroke-width: 3;
+    letter-spacing: 0.02em;
   }
 
   // Compact two-row lap strip beneath the oval: previous lap (fixed) + current lap
-  // (counting up), one column per rider. Roboto Condensed numerals (canon font).
+  // (counting up), one column per rider. Centered + width-capped so the columns sit
+  // close together instead of stretching edge-to-edge. Roboto Condensed (canon font).
   &__laps {
     flex: 0 0 auto;
     width: 100%;
+    max-width: 24rem;
+    margin: 0.4rem auto 0;
     border-collapse: collapse;
     table-layout: fixed;
     font-family: t.$cg-mono;
     color: t.$cg-text;
-    margin-top: 0.25rem;
 
-    th, td { text-align: center; padding: 1px 2px; }
+    th, td { text-align: center; padding: 2px 6px; }
 
-    &-corner { width: 2.2rem; }
+    // Row-label gutter — narrow, sits right beside the value columns.
+    &-corner,
+    &-label { width: 2.6rem; }
 
     &-rider {
       font-family: t.$cg-display;
       font-weight: 700;
-      font-size: 0.7rem;
-      color: rgba(t.$cg-text, 0.85);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      font-size: 0.82rem;
+      color: t.$cg-text;
+      padding-bottom: 4px;
+      border-bottom: 1px solid t.$cg-border-soft;
+      // dot + name on one baseline; name truncates with an ellipsis if long.
+      span.cg-oval-track__laps-name {
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        vertical-align: middle;
+      }
     }
 
     &-dot {
-      display: inline-block; width: 7px; height: 7px; border-radius: 50%;
-      margin-right: 3px; vertical-align: middle;
-      box-shadow: 0 0 4px currentColor;
+      display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+      margin-right: 5px; vertical-align: middle;
+      box-shadow: 0 0 5px currentColor;
     }
 
     &-label {
-      width: 2.2rem;
       font-family: t.$cg-display;
       font-weight: 700;
       font-size: 0.6rem;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: rgba(t.$cg-text, 0.55);
-      text-align: left;
+      letter-spacing: 0.06em;
+      color: t.$cg-faint;
+      text-align: right;
+      padding-right: 10px;
     }
 
     &-cell {
       font-weight: 700;
-      font-size: 0.85rem;
+      font-size: 1.05rem;
       font-variant-numeric: tabular-nums;
+      color: t.$cg-muted;
 
-      &--current { color: t.$cg-cyan; }
+      &--current {
+        color: t.$cg-cyan;
+        text-shadow: 0 0 8px rgba(t.$cg-cyan, 0.45);
+      }
     }
   }
 }
