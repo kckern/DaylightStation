@@ -39,15 +39,55 @@ const CARD_MAX_SCALE = 1.5;
 const BG = 0x0a0118;
 const MAGENTA = 0xff40a0;
 const GOLD = 0xffc846;
-const MAJOR_RGB = [0.18, 0.92, 1.0];   // bright cyan
-const MINOR_RGB = [0.06, 0.42, 0.52];  // dim cyan
-const RAIL_CYAN = 0x21e6ff;
+const GRID_MINOR_COLOR = 0x1fb6d8;  // dim cyan (1 m lines)
+const GRID_MAJOR_COLOR = 0x5cf2ff;  // bright cyan (10 m lines)
+const MINOR_FADE_M = 70;            // 1 m lines fade out by ~70 m (majors persist to fog)
+const GRID_PLANE_Z = 4000;          // ground-plane length (world units)
 
 // Pools.
-const MAX_TRUSS = 320;       // metre-mark line capacity (≈ (FOG_FAR_M+AHEAD_M)/MINOR)
 const GATE_POOL = 10;        // simultaneous lap/finish arches
 const MAJOR_LABEL_POOL = 30; // simultaneous off-road metre labels
 const ARCH_H = 3.2;          // gate arch height (world units)
+
+// Procedural ground-plane grid. A fragment shader draws world-anchored 1 m + 10 m
+// lines whose width is measured in *pixels* via screen-space derivatives (fwidth),
+// so each line stays a crisp ~1 px regardless of depth and never bunches into a
+// sub-pixel moiré (the cause of thin-line shimmer). One plane replaces both the
+// longitudinal rails and the lateral metre trusses.
+const GRID_VERT = `
+  varying vec3 vWorldPos;
+  void main() {
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    vWorldPos = wp.xyz;
+    gl_Position = projectionMatrix * viewMatrix * wp;
+  }
+`;
+const GRID_FRAG = `
+  precision highp float;
+  varying vec3 vWorldPos;
+  uniform float uMinor, uMajor, uFogNear, uFogFar, uMinorFar;
+  uniform vec3 uMinorColor, uMajorColor, uCamPos;
+  // Analytic line coverage: distance to the nearest integer line, measured in
+  // pixels, anti-aliased over the last pixel. halfPx = half the line width in px.
+  float lineCov(vec2 uv, float halfPx) {
+    vec2 d = vec2(length(vec2(dFdx(uv.x), dFdy(uv.x))),
+                  length(vec2(dFdx(uv.y), dFdy(uv.y))));
+    vec2 g = abs(fract(uv + 0.5) - 0.5) / max(d, vec2(1e-6));
+    return 1.0 - clamp(min(g.x, g.y) - halfPx, 0.0, 1.0);
+  }
+  void main() {
+    vec2 xz = vWorldPos.xz;
+    float minor = lineCov(xz / uMinor, 0.6);
+    float major = lineCov(xz / uMajor, 1.1);
+    float dist = distance(vWorldPos, uCamPos);
+    float fog = 1.0 - clamp((dist - uFogNear) / (uFogFar - uFogNear), 0.0, 1.0);
+    float minorFade = 1.0 - smoothstep(uMinorFar * 0.55, uMinorFar, dist);
+    float a = max(minor * 0.45 * minorFade, major * 0.95) * fog;
+    if (a < 0.003) discard;
+    vec3 col = mix(uMinorColor, uMajorColor, step(0.5, major));
+    gl_FragColor = vec4(col, a);
+  }
+`;
 
 const clamp = (lo, hi, v) => Math.max(lo, Math.min(hi, v));
 
@@ -156,26 +196,25 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
       controls.mouseButtons.wheel = NONE; controls.mouseButtons.middle = NONE;
       controls.touches.one = NONE; controls.touches.two = NONE; controls.touches.three = NONE;
 
-      // Rails: static longitudinal gridlines down the road (9 lines, x = -4..+4).
-      const railPts = [];
-      for (let x = -ROAD_HALF_W; x <= ROAD_HALF_W + 1e-6; x += 1) railPts.push(x, 0, 8, x, 0, -100000);
-      const railGeom = new THREE.BufferGeometry();
-      railGeom.setAttribute('position', new THREE.Float32BufferAttribute(railPts, 3));
-      const railMat = new THREE.LineBasicMaterial({ color: RAIL_CYAN, transparent: true, opacity: 0.45 });
-      const rails = new THREE.LineSegments(railGeom, railMat);
-      rails.frustumCulled = false;
-      scene.add(rails);
-
-      // Trusses: dynamic lateral metre marks, one LineSegments with vertex colors.
-      const trussPos = new Float32Array(MAX_TRUSS * 6);
-      const trussCol = new Float32Array(MAX_TRUSS * 6);
-      const trussGeom = new THREE.BufferGeometry();
-      trussGeom.setAttribute('position', new THREE.BufferAttribute(trussPos, 3));
-      trussGeom.setAttribute('color', new THREE.BufferAttribute(trussCol, 3));
-      const trussMat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 });
-      const trusses = new THREE.LineSegments(trussGeom, trussMat);
-      trusses.frustumCulled = false;
-      scene.add(trusses);
+      // Ground-plane grid (shader): replaces both the rails and the metre trusses.
+      const gridMat = new THREE.ShaderMaterial({
+        uniforms: {
+          uMinor: { value: GRID_MINOR_M }, uMajor: { value: GRID_MAJOR_M },
+          uMinorColor: { value: new THREE.Color(GRID_MINOR_COLOR) },
+          uMajorColor: { value: new THREE.Color(GRID_MAJOR_COLOR) },
+          uFogNear: { value: MIN_DIST }, uFogFar: { value: FOG_FAR_M },
+          uMinorFar: { value: MINOR_FADE_M }, uCamPos: { value: new THREE.Vector3() },
+        },
+        vertexShader: GRID_VERT, fragmentShader: GRID_FRAG,
+        transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      });
+      gridMat.extensions = { derivatives: true }; // GL_OES_standard_derivatives (WebGL1 path)
+      const gridGeom = new THREE.PlaneGeometry(2 * ROAD_HALF_W, GRID_PLANE_Z, 1, 1);
+      const grid = new THREE.Mesh(gridGeom, gridMat);
+      grid.rotation.x = -Math.PI / 2;                  // lay flat in the XZ plane
+      grid.position.set(0, 0, 40 - GRID_PLANE_Z / 2);  // covers ~ +40 → -(GRID_PLANE_Z - 40)
+      grid.frustumCulled = false;
+      scene.add(grid);
 
       // Gate arches (pooled) + their labels.
       const archPts = [];
@@ -212,7 +251,7 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
 
       const s = {
         THREE, renderer, scene, camera, controls,
-        trussGeom, trussPos, trussCol, gatePool, majorLabelPool,
+        gridMat, gridGeom, gatePool, majorLabelPool,
         webgl: true, W, H,
         _v: new THREE.Vector3(), _cs: new THREE.Vector3(),
       };
@@ -237,22 +276,6 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
         const dist = -s._cs.z;
         s._v.set(x, y, z).project(camera);
         return { sx: (s._v.x * 0.5 + 0.5) * s.W, sy: (-s._v.y * 0.5 + 0.5) * s.H, inFront, dist };
-      };
-
-      const writeTrusses = (marks) => {
-        const n = Math.min(marks.length, MAX_TRUSS);
-        for (let i = 0; i < n; i++) {
-          const m = marks[i];
-          const o = i * 6;
-          trussPos[o] = -ROAD_HALF_W; trussPos[o + 1] = 0; trussPos[o + 2] = m.z;
-          trussPos[o + 3] = ROAD_HALF_W; trussPos[o + 4] = 0; trussPos[o + 5] = m.z;
-          const c = m.major ? MAJOR_RGB : MINOR_RGB;
-          trussCol[o] = c[0]; trussCol[o + 1] = c[1]; trussCol[o + 2] = c[2];
-          trussCol[o + 3] = c[0]; trussCol[o + 4] = c[1]; trussCol[o + 5] = c[2];
-        }
-        trussGeom.setDrawRange(0, n * 2);
-        trussGeom.attributes.position.needsUpdate = true;
-        trussGeom.attributes.color.needsUpdate = true;
       };
 
       const updateMajorLabels = (marks) => {
@@ -318,7 +341,6 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
           roadHalfW: ROAD_HALF_W, laneInset: LANE_INSET,
         });
 
-        writeTrusses(world.marks);
         updateGates(world.gates);
 
         if (world.riders.length) {
@@ -336,6 +358,7 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
           controls.setLookAt(0, camY, camZ, 0, 0, tgtZ, true);
         }
         controls.update(dt);
+        gridMat.uniforms.uCamPos.value.copy(camera.position); // fog fade is camera-relative
         renderer.render(scene, camera);
 
         updateMajorLabels(world.marks);
@@ -364,6 +387,7 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
       const s = sceneRef.current;
       if (s && s.webgl) {
         try { s.controls.dispose(); } catch (e) { /* noop */ }
+        try { s.gridGeom.dispose(); s.gridMat.dispose(); } catch (e) { /* noop */ }
         try { s.renderer.dispose(); } catch (e) { /* noop */ }
         try {
           const el = s.renderer.domElement;

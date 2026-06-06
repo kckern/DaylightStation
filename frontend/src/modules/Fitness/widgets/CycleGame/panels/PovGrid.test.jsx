@@ -33,16 +33,21 @@ vi.mock('three', () => {
     setDrawRange() {}
     dispose() {}
   }
-  class Obj3D { constructor() { this.position = new V3(); this.visible = true; this.frustumCulled = true; } }
+  class Obj3D { constructor() { this.position = new V3(); this.rotation = { x: 0, y: 0, z: 0 }; this.visible = true; this.frustumCulled = true; } }
   return {
     Scene: class { constructor() { this.fog = null; } add() {} remove() {} },
     Fog: class {},
+    Color: class {},
+    DoubleSide: 2,
     PerspectiveCamera: class { constructor() { this.position = new V3(); this.aspect = 1; this.fov = 55; this.matrixWorldInverse = {}; } updateProjectionMatrix() {} },
     WebGLRenderer: class { constructor() { this.domElement = document.createElement('canvas'); } setPixelRatio() {} setSize() {} render() {} dispose() {} },
     BufferGeometry: Geom,
+    PlaneGeometry: class { dispose() {} },
     Float32BufferAttribute: class { constructor() { this.needsUpdate = false; } },
     BufferAttribute: class { constructor() { this.needsUpdate = false; } },
     LineBasicMaterial: class { constructor() { this.color = { setHex() {} }; this.opacity = 1; } },
+    ShaderMaterial: class { constructor(o) { this.uniforms = (o && o.uniforms) || {}; } dispose() {} },
+    Mesh: Obj3D,
     LineSegments: Obj3D,
     Line: Obj3D,
     Vector3: V3,
