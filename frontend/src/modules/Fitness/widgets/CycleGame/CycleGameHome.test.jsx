@@ -152,21 +152,25 @@ describe('CycleGameHome', () => {
     expect(getByTestId('assign-lila')).toBeTruthy();
   });
 
-  it('ghost picker: first tap focuses a card, second tap selects it (two-stage)', () => {
+  it('ghost picker: first tap focuses a card, second tap opens the roster submenu', () => {
     const onSelectGhost = vi.fn();
     const candidates = [{
       raceId: '20260602150118', day: '2026-06-02', timeOfDay: '3:01 pm',
       participants: [{ id: 'milo', displayName: 'Milo', avatarSrc: '/x' }],
       winnerName: 'Milo', goalKind: 'distance', goalLabel: '3 km', scoreKind: 'time', scoreLabel: '4:12'
     }];
-    const { getByTestId } = render(
+    const { getByTestId, queryByTestId } = render(
       <CycleGameHome bikes={bikes} people={people} records={[]} ghostCandidates={candidates} onSelectGhost={onSelectGhost} />
     );
     fireEvent.click(getByTestId('course-ghost')); // open the ghost picker
     const card = getByTestId('ghost-20260602150118');
-    fireEvent.click(card); // first tap (via click) → focus only (tap-to-scroll pattern)
+    fireEvent.click(card); // first tap → focus only (tap-to-scroll pattern)
     expect(onSelectGhost).not.toHaveBeenCalled();
-    fireEvent.click(card); // second tap (via click) → commit
+    expect(queryByTestId('ghost-roster')).toBeNull(); // roster not yet open
+    fireEvent.click(card); // second tap → opens roster submenu, does NOT yet commit
+    expect(onSelectGhost).not.toHaveBeenCalled();
+    expect(getByTestId('ghost-roster')).toBeTruthy(); // roster is now visible
+    fireEvent.click(getByTestId('ghost-roster-start')); // Start commits the selection
     expect(onSelectGhost).toHaveBeenCalled();
   });
 
