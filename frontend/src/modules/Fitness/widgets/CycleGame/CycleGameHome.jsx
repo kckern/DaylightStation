@@ -695,14 +695,21 @@ export default function CycleGameHome({
                   aria-label={`${rec.winnerName || 'Winner'} won — ${rec.distanceLabel || '—'}, ${rec.timeLabel || '—'}, ${rec.whenDay || ''} ${rec.whenTime || ''}`}
                 >
                   <span className="cgh-record__riders">
-                    <span className="cgh-record__crown" aria-hidden="true">👑</span>
+                    <span className="cgh-record__avatars">
+                      {rec.winnerAvatar && (
+                        <img className="cgh-record__winner-avatar" src={rec.winnerAvatar} alt={rec.winnerName}
+                          onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                      )}
+                      {(rec.others || []).slice(0, 2).map((o, i) => (
+                        <img key={o.id || i} className="cgh-record__crescent" src={o.avatarSrc} alt={o.displayName}
+                          style={{ zIndex: -1 - i }} title={o.displayName}
+                          onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                      ))}
+                      {(rec.others || []).length > 2 && (
+                        <span className="cgh-record__more" title={(rec.others || []).map((o) => o.displayName).join(', ')}>+{rec.others.length - 2}</span>
+                      )}
+                    </span>
                     <span className="cgh-record__winner-name">{rec.winnerName}</span>
-                    {(rec.others || []).length > 0 && (
-                      <span
-                        className="cgh-record__more"
-                        title={(rec.others || []).map((o) => o.displayName).join(', ')}
-                      >+{rec.others.length}</span>
-                    )}
                   </span>
 
                   {['distance', 'time'].map((col) => {
