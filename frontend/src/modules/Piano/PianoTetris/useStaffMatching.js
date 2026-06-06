@@ -100,28 +100,80 @@ function resolveCounts(complexity) {
 export function generateTargets(noteRange, complexity = 'single', whiteKeysOnly = false) {
   let counts = resolveCounts(complexity);
 
-  const available = shuffle([...buildNotePool(noteRange, whiteKeysOnly)]);
+  // Ascending pool of distinct candidate pitches (buildNotePool is sorted).
+  const pool = [...buildNotePool(noteRange, whiteKeysOnly)];
 
   let totalNeeded = counts.reduce((sum, c) => sum + c, 0);
 
   // Not enough distinct notes for the requested chords — fall back to singles.
-  if (available.length < totalNeeded) {
+  if (pool.length < totalNeeded) {
     counts = ACTIONS.map(() => 1);
     totalNeeded = counts.reduce((sum, c) => sum + c, 0);
   }
 
+  const used = new Set();
   const targets = {};
-  let idx = 0;
-  for (let a = 0; a < ACTIONS.length; a++) {
-    const pitches = [];
-    for (let i = 0; i < counts[a]; i++) {
-      pitches.push(available[idx % available.length]);
-      idx++;
-    }
-    targets[ACTIONS[a]] = pitches;
+
+  // Assign the largest chords first so triads/dyads get first pick of a
+  // clustered window before singles fragment the pool.
+  const order = ACTIONS.map((_, i) => i).sort((a, b) => counts[b] - counts[a]);
+
+  for (const a of order) {
+    targets[ACTIONS[a]] = pickChordCluster(pool, used, counts[a]);
   }
 
   return targets;
+}
+
+// Dyads and triads must sit within a single octave — no huge leaps. The chord's
+// lowest and highest notes differ by at most this many semitones.
+export const MAX_CHORD_SPAN_SEMITONES = 12;
+
+/**
+ * Pick `count` distinct, unused pitches from an ascending `pool` such that the
+ * whole chord spans at most MAX_CHORD_SPAN_SEMITONES (one octave). The lowest
+ * note is a random unused anchor; the rest are drawn from the unused notes in
+ * [anchor, anchor + octave]. Falls back to a smaller cluster (down to a single
+ * note) if no window has enough room. Marks chosen pitches as used.
+ *
+ * @param {number[]} pool - ascending distinct candidate MIDI pitches
+ * @param {Set<number>} used - pitches already taken by other staves (mutated)
+ * @param {number} count - desired chord size
+ * @returns {number[]} chosen pitches
+ */
+function pickChordCluster(pool, used, count) {
+  if (pool.length === 0) return [];
+
+  // Prefer unused notes for the anchor; if the pool is exhausted across staves,
+  // allow reuse so each staff still receives a full chord (matches the
+  // tiny-range fallback contract).
+  const freeUnused = shuffle(pool.filter((p) => !used.has(p)));
+  const anchors = freeUnused.length ? freeUnused : shuffle([...pool]);
+
+  // anchor is the chord's LOWEST note; everything else is drawn from the octave
+  // above it, so max-min <= MAX_CHORD_SPAN_SEMITONES by construction.
+  for (const anchor of anchors) {
+    const windowUnused = pool.filter(
+      (p) => p > anchor && p <= anchor + MAX_CHORD_SPAN_SEMITONES && !used.has(p),
+    );
+    if (windowUnused.length >= count - 1) {
+      const rest = shuffle(windowUnused).slice(0, count - 1);
+      const chord = [anchor, ...rest];
+      chord.forEach((p) => used.add(p));
+      return chord;
+    }
+  }
+
+  // Pool too fragmented for an all-distinct octave cluster — build within an
+  // octave window allowing reuse so the staff still gets its `count` notes.
+  const anchor = anchors[0];
+  const window = pool.filter(
+    (p) => p >= anchor && p <= anchor + MAX_CHORD_SPAN_SEMITONES,
+  );
+  const chord = [];
+  for (let i = 0; i < count; i++) chord.push(window[i % window.length]);
+  chord.forEach((p) => used.add(p));
+  return chord;
 }
 
 /**
