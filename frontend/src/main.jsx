@@ -25,6 +25,7 @@ import { configurePlaybackLogger } from './modules/Player/lib/playbackLogger.js'
 import { configureDaylightLogger, getDaylightLogger } from './lib/logging/singleton.js';
 import { setupGlobalErrorHandlers } from './lib/logging/errorHandlers.js';
 import { interceptConsole } from './lib/logging/consoleInterceptor.js';
+import { installChunkReloadHandler } from './lib/chunkReload.js';
 
 const getWebSocketUrl = () => {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -50,6 +51,12 @@ if (typeof window !== 'undefined') {
   window.DaylightLogger = frontendLogger;
 }
 frontendLogger.info('frontend-start', { path: window.location?.pathname });
+
+// Auto-recover from stale lazy chunks after a deploy (registered before the
+// logging error handlers so the reload wins the unhandledrejection race).
+// Without this, a deploy that rotates asset hashes leaves any lazy import on a
+// long-lived tab DOA in a blank Suspense. See lib/chunkReload.js.
+installChunkReloadHandler();
 
 // Set up global error handlers to capture uncaught errors and promise rejections
 setupGlobalErrorHandlers();
