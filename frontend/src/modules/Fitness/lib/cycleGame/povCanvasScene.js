@@ -53,9 +53,18 @@ export function drawScene(ctx, { camera, lineSlots = [], railsX = [], gates = []
 
   // Trusses — lateral metre marks bunching to the horizon, fogged by depth.
   // Each major line is labeled with its metre value just off the road's left edge.
-  for (const s of lineSlots) {
-    if (!(s.opacity > 0)) continue;
+  // Depth-aware thinning: the 1 m minors bunch into a smear near the vanishing point,
+  // so a minor that would land within MIN_MINOR_DY px of the last line drawn is dropped.
+  // Majors always draw (they carry the labels); processed top→bottom (major-first on a
+  // tie) so a major wins over a coincident minor.
+  const MIN_MINOR_DY = 7;
+  const trusses = lineSlots
+    .filter((s) => s.opacity > 0)
+    .sort((a, b) => (a.y - b.y) || (b.major - a.major)); // far→near; major before minor at a tie
+  let lastTrussY = -Infinity;
+  for (const s of trusses) {
     const y = Y(s.y);
+    if (!s.major && (y - lastTrussY) < MIN_MINOR_DY) continue; // too close to the last line → skip
     const xl = X(vanishX + (0 - vanishX) * s.scale);
     const xr = X(vanishX + (100 - vanishX) * s.scale);
     const alpha = s.opacity * (s.major ? 0.95 : 0.45);
@@ -68,6 +77,7 @@ export function drawScene(ctx, { camera, lineSlots = [], railsX = [], gates = []
       ctx.fillStyle = `rgba(${CYAN}, ${(alpha * 0.85).toFixed(3)})`;
       ctx.fillText(`${Math.round(s.m)}m`, xl - 4 - 6 * s.scale, y); // off-course, left of the road edge
     }
+    lastTrussY = y;
   }
 
   // Lap gates — a curved arch over the road, with a label, at each lap mark.
