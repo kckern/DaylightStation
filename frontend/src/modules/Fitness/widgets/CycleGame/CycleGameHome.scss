@@ -908,3 +908,20 @@ $cgh-record-cols: minmax(0, 1.4fr) minmax(66px, 1fr) minmax(38px, 0.7fr) minmax(
 }
 
 // .cgh-record__btn is defined with the History table grid above.
+
+// ── Ghost roster submenu — overlays the picker sheet on the second tap,
+//    letting the user toggle individual participants before committing.
+.cgh-ghost-roster {
+  position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column;
+  background: rgba(10, 10, 20, 0.96); padding: 16px; gap: 10px; border-radius: 10px;
+}
+.cgh-ghost-roster__title { font-family: t.$cg-display; font-weight: 800; font-size: 1.2rem; color: t.$cg-text; }
+.cgh-ghost-roster__list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1 1 auto; }
+.cgh-ghost-roster__item { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 8px; cursor: pointer; }
+.cgh-ghost-roster__item.is-off { opacity: 0.4; }
+.cgh-ghost-roster__avatar { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; }
+.cgh-ghost-roster__name { flex: 1; color: t.$cg-text; }
+.cgh-ghost-roster__check { font-size: 1.1rem; color: t.$cg-cyan; }
+.cgh-ghost-roster__actions { display: flex; gap: 8px; justify-content: flex-end; }
+.cgh-ghost-roster__actions button { padding: 8px 16px; border-radius: 8px; border: 1px solid t.$cg-border; background: t.$cg-panel; color: t.$cg-text; cursor: pointer; }
+.cgh-ghost-roster__actions button:disabled { opacity: 0.4; cursor: default; }

@@ -458,6 +458,8 @@ function formatDayHeader(day) {
  */
 function GhostPicker({ candidates = [], currentGhost = null, onSelect, onClear, onClose }) {
   const [focusedId, setFocusedId] = useState(currentGhost?.sourceRaceId || null);
+  const [rosterFor, setRosterFor] = useState(null);          // candidate awaiting roster confirm
+  const [excluded, setExcluded] = useState(() => new Set()); // participant ids toggled OFF
   useEscapeToClose(onClose);
 
   const columns = useMemo(() => {
@@ -478,9 +480,10 @@ function GhostPicker({ candidates = [], currentGhost = null, onSelect, onClear, 
     if (focusedId !== c.raceId) {
       uiLog().debug('cycle_game.ui.ghost_focus', { raceId: c.raceId, day: c.day });
       setFocusedId(c.raceId);
-    } else {
-      onSelect?.(c);
+      return;
     }
+    setExcluded(new Set());   // default: all ghosts in
+    setRosterFor(c);          // open the roster submenu
   };
 
   return (
@@ -551,6 +554,39 @@ function GhostPicker({ candidates = [], currentGhost = null, onSelect, onClear, 
           >
             Remove ghost
           </button>
+        )}
+
+        {rosterFor && (
+          <div className="cgh-ghost-roster" data-testid="ghost-roster">
+            <div className="cgh-ghost-roster__title">Race against…</div>
+            <ul className="cgh-ghost-roster__list">
+              {(rosterFor.participants || []).map((p) => {
+                const off = excluded.has(p.id);
+                return (
+                  <li key={p.id}
+                    className={`cgh-ghost-roster__item${off ? ' is-off' : ''}`}
+                    data-testid="ghost-roster-item"
+                    onClick={() => setExcluded((s) => { const n = new Set(s); if (n.has(p.id)) n.delete(p.id); else n.add(p.id); return n; })}>
+                    <img className="cgh-ghost-roster__avatar" src={p.avatarSrc} alt={p.displayName}
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                    <span className="cgh-ghost-roster__name">{p.displayName}</span>
+                    <span className="cgh-ghost-roster__check">{off ? '○' : '●'}</span>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="cgh-ghost-roster__actions">
+              <button type="button" data-testid="ghost-roster-all" onClick={() => setExcluded(new Set())}>Select all</button>
+              <button type="button" data-testid="ghost-roster-start"
+                disabled={(rosterFor.participants || []).every((p) => excluded.has(p.id))}
+                onClick={() => {
+                  const kept = (rosterFor.participants || []).filter((p) => !excluded.has(p.id));
+                  onSelect?.({ ...rosterFor, participants: kept });
+                  setRosterFor(null);
+                }}>Start</button>
+              <button type="button" data-testid="ghost-roster-cancel" onClick={() => setRosterFor(null)}>Back</button>
+            </div>
+          </div>
         )}
       </div>
     </div>
