@@ -58,6 +58,12 @@ export function GhostPicker({ candidates = [], currentGhost = null, onSelect, on
     // Default = every LIVE rider in (the 1-tap "race everyone" path). Ghosts from
     // a past race can't be re-raced, so they never seed the selection.
     const live = (c.participants || []).filter((p) => !p.isGhost);
+    // Single live rider → nothing to choose; commit straight through, skip the roster.
+    if (live.length === 1) {
+      uiLog().debug('cycle_game.ui.ghost_skip_roster', { raceId: c.raceId });
+      onSelect?.({ ...c, participants: live });
+      return;
+    }
     setSelected(new Set(live.map((p) => p.id)));
     setRosterFor(c);          // open the roster confirm card
   };
