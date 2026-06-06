@@ -20,8 +20,12 @@ function startSession({ videoVolume, audioDuck }) {
   videoVolume.setDuck(audioDuck.duckTo);
   logger().info('fitness.audio_duck.start', {
     cueId: audioDuck.cueId, token: audioDuck.token, duckTo: audioDuck.duckTo,
-    unlocked: isCueAudioUnlocked(),
+    sound: audioDuck.sound, unlocked: isCueAudioUnlocked(),
   });
+
+  // Declared above the closures below so the dependency is lexically clear; the
+  // closures still run after this is assigned in the try block.
+  let audio = null;
 
   let lifted = false;
   const lift = () => {
@@ -34,13 +38,14 @@ function startSession({ videoVolume, audioDuck }) {
   const onEnded = () => lift();
   const onError = () => {
     const mediaErr = audio?.error;
+    const code = mediaErr?.code ?? null;
+    const aborted = code === 1; // MEDIA_ERR_ABORTED — superseded load, not a real cue failure
     logger().warn('fitness.audio_duck.error', {
       cueId: audioDuck.cueId, token: audioDuck.token,
-      code: mediaErr?.code ?? null, message: mediaErr?.message ?? null,
+      code, message: mediaErr?.message ?? null, aborted,
     });
-    lift();
+    if (!aborted) lift();
   };
-  let audio = null;
   try {
     audio = getCueAudioElement();
     if (!audio) { lift(); return null; }
@@ -76,6 +81,8 @@ function stopSession(session) {
   if (audio) {
     audio.removeEventListener('ended', onEnded);
     if (onError) audio.removeEventListener('error', onError);
+    // Do NOT clear src — the element is shared/reused; clearing it fires a
+    // spurious 'error' (aborted load) on the next consumer.
     try { audio.pause(); } catch { /* already released */ }
   }
   lift?.();
