@@ -41,3 +41,18 @@ describe('computeSeamLines', () => {
     expect(computeSeamLines(undefined, OPTS)).toEqual([]);
   });
 });
+
+describe('clamping to the plot', () => {
+  const OPTS = { intervalMs: 5000, effectiveTicks: 5, plotWidth: 100, marginLeft: 10 };
+  it('clamps a band that would overflow the right edge', () => {
+    const activities = [{ items: [{ axisStartMs: 18000, axisEndMs: 40000, meta: {} }] }];
+    const [b] = computeRaceBands(activities, OPTS);
+    expect(b.x).toBeGreaterThanOrEqual(10);
+    expect(b.x + b.width).toBeLessThanOrEqual(110); // marginLeft + plotWidth
+  });
+  it('clamps a seam to the plot bounds', () => {
+    const [s] = computeSeamLines([{ atMs: 999999, gapMs: 1 }], OPTS);
+    expect(s.x).toBeLessThanOrEqual(110);
+    expect(s.x).toBeGreaterThanOrEqual(10);
+  });
+});

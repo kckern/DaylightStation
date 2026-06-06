@@ -38,6 +38,7 @@ export class CycleGameProvider {
     this.cycleRaceService = cycleRaceService;
   }
   async loadOverlapping(startMs, endMs, dateStr, householdId) {
+    // Races are read from the single local-date folder; safe because groups never span local midnight (calendar-day boundary).
     const records = (await this.cycleRaceService.listByDate(dateStr, householdId)) || [];
     return records
       .map(toItem)

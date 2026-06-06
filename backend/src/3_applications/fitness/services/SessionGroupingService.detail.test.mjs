@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { SessionGroupingService } from './SessionGroupingService.mjs';
 
 const T0 = Date.parse('2026-06-05T16:22:00-07:00');
-const tl = (ticks, val) => ({ series: { milo: Array(ticks).fill(val) }, events: [], tick_count: ticks, interval_seconds: 5 });
+const tl = (ticks, val) => ({ series: { 'milo:heart_rate': Array(ticks).fill(val) }, events: [], tick_count: ticks, interval_seconds: 5 });
 
 // two no-video sessions that groupSessions will merge (overlap on milo); 10-min idle gap
 const s1 = { sessionId: '20260605162200', date: '2026-06-05', startTime: T0, durationMs: 15000, participants: { milo: { displayName: 'milo' }, alan: { displayName: 'alan' } }, media: null, totalCoins: 100 };
@@ -25,7 +25,7 @@ describe('SessionGroupingService.getGroupDetail', () => {
     expect(detail.isGroup).toBe(true);
     expect(detail.date).toBe('2026-06-05');
     expect(detail.timeline.tick_count).toBe(5);                 // 3 + 0 + 2 (no null filler)
-    expect(detail.timeline.series.milo).toEqual(['a','a','a','b','b']);
+    expect(detail.timeline.series['milo:heart_rate']).toEqual(['a','a','a','b','b']);
     expect(detail.segments.map(s => s.offsetMs)).toEqual([0, 15000]); // 3 ticks * 5s
     expect(detail.seams).toEqual([{ atMs: 15000, gapMs: 585000 }]);   // gap = 600000 - 15000
     expect(detail.media).toBeNull();
