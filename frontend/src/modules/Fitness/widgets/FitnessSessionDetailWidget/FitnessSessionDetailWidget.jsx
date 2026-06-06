@@ -6,6 +6,7 @@ import { useScreenData, useScreenDataRefetch } from '@/screen-framework/data/Scr
 import { useFitnessScreen } from '@/modules/Fitness/FitnessScreenProvider.jsx';
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import FitnessTimeline from './FitnessTimeline.jsx';
+import GroupSummaryPanel from './GroupSummaryPanel.jsx';
 import SportIcon from '../_shared/SportIcon.jsx';
 import RouteMap from './RouteMap.jsx';
 import './FitnessSessionDetailWidget.scss';
@@ -211,7 +212,14 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
         ? `${sessionData.sessionId.slice(0, 4)}-${sessionData.sessionId.slice(4, 6)}-${sessionData.sessionId.slice(6, 8)}`
         : null);
 
-    const durationMs = (session.duration_seconds || 0) * 1000;
+    // Group detail puts start/end/duration at the ROOT; normal sessions nest them under .session.
+    const startMs = session.start ? new Date(session.start).getTime()
+      : (sessionData.start != null ? new Date(sessionData.start).getTime()
+        : (Number.isFinite(sessionData.startTime) ? sessionData.startTime : null));
+    const endMs = Number.isFinite(sessionData.endTime) ? sessionData.endTime
+      : (sessionData.end ? new Date(sessionData.end).getTime() : null);
+    const durationSec = session.duration_seconds ?? sessionData.duration_seconds ?? 0;
+    const durationMs = durationSec * 1000;
 
     // Extract max suffer score and first activityId across all participants
     const participants = sessionData.participants || {};
@@ -241,9 +249,14 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       thumbUrl: pm?.contentId ? mediaDisplayUrl(pm.contentId) : null,
       description: pm?.description || null,
       date: dateStr ? formatDate(dateStr) : '',
-      time: session.start ? formatTime(new Date(session.start).getTime(), sessionData.timezone) : '--',
+      time: startMs ? formatTime(startMs, sessionData.timezone) : null,
+      endTime: endMs ? formatTime(endMs, sessionData.timezone) : null,
       durationMin: durationMs > 0 ? Math.round(durationMs / 60000) : null,
-      totalCoins: sessionData.treasureBox?.totalCoins || summary.coins?.total || 0,
+      isGroup: !!sessionData.isGroup,
+      raceCount: act?.count || 0,
+      segmentCount: Array.isArray(sessionData.segments) ? sessionData.segments.length : 0,
+      riders: Object.entries(participants).map(([id, p]) => ({ id, name: p?.displayName || id })),
+      totalCoins: sessionData.treasureBox?.totalCoins || summary.coins?.total || sessionData.totalCoins || 0,
       sufferScore,
       stravaActivityId,
       voiceMemos: Array.isArray(summary.voiceMemos) ? summary.voiceMemos.filter(m => m.transcript) : [],
@@ -329,32 +342,27 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
           </FitText>
           <div className="session-detail__meta-bottom">
             <div className="session-detail__stats-row">
-              {header?.date && <span className="session-detail__meta-item">{header.date}</span>}
-              <span className="session-detail__meta-sep" />
-              {header?.time && <span className="session-detail__meta-item">{header.time}</span>}
-              <span className="session-detail__meta-sep" />
-              {header?.durationMin && <span className="session-detail__meta-item">{header.durationMin}m</span>}
-              {header?.totalCoins > 0 && (
-                <>
-                  <span className="session-detail__meta-sep" />
-                  <span className="session-detail__meta-item session-detail__coins"><CoinIcon size={14} /> {header.totalCoins}</span>
-                </>
-              )}
-              {header?.sufferScore != null && (
-                <>
-                  <span className="session-detail__meta-sep" />
-                  {header.stravaActivityId ? (
-                    <a
-                      href={`https://www.strava.com/activities/${header.stravaActivityId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="session-detail__meta-item session-detail__suffer"
-                    ><StravaIcon size={14} /> {header.sufferScore}</a>
-                  ) : (
-                    <span className="session-detail__meta-item session-detail__suffer"><StravaIcon size={14} /> {header.sufferScore}</span>
-                  )}
-                </>
-              )}
+              {(() => {
+                // Build only the present meta items, then interleave separators — no dangling
+                // "·" when time/duration/coins are missing (e.g. merged race-group sessions).
+                const items = [];
+                if (header?.date) items.push(<span key="date" className="session-detail__meta-item">{header.date}</span>);
+                // groups show a start–end range; single sessions show the start time
+                if (header?.time) items.push(
+                  <span key="time" className="session-detail__meta-item">
+                    {header.isGroup && header.endTime ? `${header.time} – ${header.endTime}` : header.time}
+                  </span>
+                );
+                if (header?.durationMin) items.push(<span key="dur" className="session-detail__meta-item">{header.durationMin}m</span>);
+                if (header?.isGroup && header?.raceCount > 0) items.push(<span key="races" className="session-detail__meta-item">{header.raceCount} races</span>);
+                if (header?.totalCoins > 0) items.push(<span key="coins" className="session-detail__meta-item session-detail__coins"><CoinIcon size={14} /> {header.totalCoins}</span>);
+                if (header?.sufferScore != null) items.push(
+                  header.stravaActivityId
+                    ? <a key="suffer" href={`https://www.strava.com/activities/${header.stravaActivityId}`} target="_blank" rel="noopener noreferrer" className="session-detail__meta-item session-detail__suffer"><StravaIcon size={14} /> {header.sufferScore}</a>
+                    : <span key="suffer" className="session-detail__meta-item session-detail__suffer"><StravaIcon size={14} /> {header.sufferScore}</span>
+                );
+                return items.flatMap((node, i) => i === 0 ? [node] : [<span key={`sep${i}`} className="session-detail__meta-sep" />, node]);
+              })()}
             </div>
             {(header?.voiceMemos?.length > 0 || header?.stravaNotes) && (
               <div className="session-detail__memos">
@@ -453,6 +461,16 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
               <code className="session-detail__session-id" onClick={() => navigator.clipboard?.writeText(sessionId)} title="Click to copy session ID">{sessionId}</code>
             )}
           </div>
+        ) : header?.isGroup ? (
+          <GroupSummaryPanel
+            riders={header.riders}
+            segmentCount={header.segmentCount}
+            sessionId={sessionId}
+            onClose={() => restore('right-area')}
+            onDelete={handleDelete}
+            deleting={deleting}
+            onAddMemo={handleAddVoiceMemo}
+          />
         ) : (
           <div className="session-detail__thumb session-detail__thumb--placeholder">
             <button className="session-detail__close" onClick={() => restore('right-area')} title="Close">&times;</button>
