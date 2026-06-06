@@ -30,26 +30,46 @@ function startSession({ videoVolume, audioDuck }) {
   };
 
   const onEnded = () => lift();
+  const onError = () => {
+    const mediaErr = audio?.error;
+    logger().warn('fitness.audio_duck.error', {
+      cueId: audioDuck.cueId, token: audioDuck.token,
+      code: mediaErr?.code ?? null, message: mediaErr?.message ?? null,
+    });
+    lift();
+  };
   let audio = null;
   try {
     audio = new Audio(DaylightMediaPath(`/media/${audioDuck.sound}`));
     audio.addEventListener('ended', onEnded);
+    audio.addEventListener('error', onError);
     const p = audio.play();
     // Autoplay rejection is async; lift so the duck can't get stuck if the SFX
-    // never produces an 'ended' event.
-    if (p && typeof p.catch === 'function') p.catch(() => lift());
-  } catch {
+    // never produces an 'ended' event. Log the reason so on-device failures are
+    // visible (the reason is otherwise swallowed silently).
+    if (p && typeof p.catch === 'function') p.catch((err) => {
+      logger().warn('fitness.audio_duck.play_rejected', {
+        cueId: audioDuck.cueId, token: audioDuck.token,
+        name: err?.name ?? null, message: err?.message ?? null,
+      });
+      lift();
+    });
+  } catch (err) {
+    logger().warn('fitness.audio_duck.play_threw', {
+      cueId: audioDuck.cueId, token: audioDuck.token, message: err?.message ?? null,
+    });
     lift();
   }
-  return { token: audioDuck.token, audio, onEnded, lift };
+  return { token: audioDuck.token, audio, onEnded, onError, lift };
 }
 
 /** Stop a session: detach + release the SFX, and lift the duck. Idempotent. */
 function stopSession(session) {
   if (!session) return;
-  const { audio, onEnded, lift } = session;
+  const { audio, onEnded, onError, lift } = session;
   if (audio) {
     audio.removeEventListener('ended', onEnded);
+    if (onError) audio.removeEventListener('error', onError);
     try { audio.pause(); } catch { /* already released */ }
     audio.src = '';
   }
