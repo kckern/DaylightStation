@@ -23,8 +23,8 @@
     transform-origin: 50% 50%;
     will-change: transform, opacity;
     .circular-user-avatar {
-      width: 44px !important; height: 44px !important; --vital-avatar-size: 44px;
-      box-shadow: 0 0 0 2px var(--cg-pov-color, #{cg.$cg-cyan}), 0 0 12px -2px var(--cg-pov-color, #{cg.$cg-cyan});
+      width: 88px !important; height: 88px !important; --vital-avatar-size: 88px;
+      box-shadow: 0 0 0 4px var(--cg-pov-color, #{cg.$cg-cyan}), 0 0 24px -4px var(--cg-pov-color, #{cg.$cg-cyan});
       border-radius: 50%;
     }
     &.is-ghost { opacity: 0.6; }
