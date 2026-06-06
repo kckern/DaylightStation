@@ -2,23 +2,26 @@
 
 .cg-pov {
   position: relative; width: 100%; height: 100%; min-height: 0; overflow: hidden;
-  container-type: size;              // enables cqw/cqh positioning of the avatar overlay
   contain: layout paint;             // isolate from the rest of the screen
   background: radial-gradient(130% 80% at 50% 6%, #2a0a3a 0%, #0a0118 70%);
 
-  // The road grid is a single canvas surface — no per-element compositor layers,
-  // so no sub-pixel shimmer. Stretches to the panel; the JS sizes the backing store.
-  &__canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  // The three.js WebGL canvas host — the neon road grid + gate arches.
+  &__gl { position: absolute; inset: 0; }
+  &__gl > canvas { display: block; width: 100%; height: 100%; }
 
-  // DOM avatar overlay — the few rich CircularUserAvatar cards, positioned each
-  // frame by the same camera that draws the canvas.
-  &__avatars { position: absolute; inset: 0; pointer-events: none; }
+  // Off-road metre labels + gate labels — plain DOM nodes the renderer owns and
+  // positions each frame by projecting their 3D world points to screen.
+  &__labels { position: absolute; inset: 0; pointer-events: none; }
+
+  // DOM avatar overlay — the rich CircularUserAvatar cards, positioned each frame
+  // by projecting each rider's world point to screen (transform written imperatively).
+  &__cards { position: absolute; inset: 0; pointer-events: none; }
 
   &__marker {
     position: absolute; top: 0; left: 0;
     display: flex; flex-direction: column; align-items: center; gap: 2px;
     transform-origin: 50% 50%;
-    will-change: transform;
+    will-change: transform, opacity;
     .circular-user-avatar {
       width: 44px !important; height: 44px !important; --vital-avatar-size: 44px;
       box-shadow: 0 0 0 2px var(--cg-pov-color, #{cg.$cg-cyan}), 0 0 12px -2px var(--cg-pov-color, #{cg.$cg-cyan});
@@ -29,5 +32,18 @@
   &__dist {
     font-family: cg.$cg-mono; font-weight: 800; font-size: 0.62rem; color: cg.$cg-cyan;
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85); white-space: nowrap;
+  }
+
+  &__mark-label {
+    position: absolute; top: 0; left: 0;
+    font-family: cg.$cg-mono; font-weight: 700; font-size: 0.55rem;
+    color: cg.$cg-cyan; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9); white-space: nowrap;
+    will-change: transform, opacity;
+  }
+  &__gate-label {
+    position: absolute; top: 0; left: 0;
+    font-family: cg.$cg-mono; font-weight: 800; font-size: 0.72rem; letter-spacing: 0.06em;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9); white-space: nowrap;
+    will-change: transform, opacity;
   }
 }
