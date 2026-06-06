@@ -10,11 +10,14 @@ import { computeGridRails } from '@/modules/Fitness/lib/cycleGame/povRails.js';
 import { BASE_CAMERA } from '@/modules/Fitness/lib/cycleGame/povCamera.js';
 import { stepCameraDynamics, cameraFrom, NEUTRAL_DYNAMICS } from '@/modules/Fitness/lib/cycleGame/povCameraDynamics.js';
 import { drawScene } from '@/modules/Fitness/lib/cycleGame/povCanvasScene.js';
+import { computeGates } from '@/modules/Fitness/lib/cycleGame/povGates.js';
 import './PovGrid.scss';
 
-const MINOR_M = 10;        // minor metre mark every 10 m
-const MAJOR_M = 50;        // major every 50 m
-const GRID_SLOTS = 50;     // recycled metre-mark pool (covers 500 m)
+const MINOR_M = 1;         // minor metre mark every 1 m
+const MAJOR_M = 10;        // major every 10 m
+const GRID_SLOTS = 200;    // metre-mark count (covers 200 m of road at 1 m spacing;
+                           // a multiple of MAJOR_M/MINOR_M=10 so major identity stays exact.
+                           // off-road/fogged marks are skipped in drawScene, so the count is cheap)
 const TICK_MS = 1000;      // matches RACE_TICK_MS — the 1 Hz data cadence
 const K_TAU_MS = 320;      // zoom-ease time constant
 const VLINES = 9;          // fixed vertical gridlines (road edges + interior)
@@ -29,9 +32,11 @@ const RAILS_X = computeGridRails(BASE_CAMERA, VLINES).map((r) => r.nearX);
  * camera leans toward the leader and pulses FOV on sprints — but rigidly (the
  * grid never deforms; "not jello"). See README.
  */
-export default function PovGrid({ riderIds, riders, riderLive = {} }) {
+export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM = 0, finishM = null }) {
   const distOf = (id) => Math.max(0, riders[id]?.cumulativeDistanceM || 0);
-  const movedIds = riderIds.filter((id) => distOf(id) > 0);
+  // DNF riders are off the course entirely — excluded from BOTH the leader-anchored
+  // zoom (so a stalled rider can't crush the scale) and the avatar overlay.
+  const movedIds = riderIds.filter((id) => distOf(id) > 0 && !riderLive[id]?.dnf);
   const colorOf = (id) => LINE_COLORS[riderIds.indexOf(id) % LINE_COLORS.length];
   const zoom = useLeaderAnchoredZoom(movedIds.map(distOf), { maxLines: GRID_SLOTS });
   const laneX = (idx) => (movedIds.length <= 1 ? 50 : 12 + idx * (76 / (movedIds.length - 1)));
@@ -44,6 +49,9 @@ export default function PovGrid({ riderIds, riders, riderLive = {} }) {
   const camDynRef = useRef(NEUTRAL_DYNAMICS);
   const markerEls = useRef({});
   const prevDistRef = useRef({});
+  // Live lap-gate config for the rAF loop (refreshed each render; the loop reads the ref).
+  const gateCfgRef = useRef({ lapLengthM, finishM });
+  gateCfgRef.current = { lapLengthM, finishM };
 
   // Capture each new tick's targets (only on real data change), and derive the
   // camera signals (leader lane + acceleration) for the dynamics.
@@ -121,7 +129,11 @@ export default function PovGrid({ riderIds, riders, riderLive = {} }) {
         k: kFrame, frac, cam: camera, count: GRID_SLOTS, minorM: MINOR_M, majorM: MAJOR_M
       });
 
-      drawScene(ctxRef.current, { camera, lineSlots, railsX: RAILS_X, dims: dimsRef.current });
+      // Lap gates at each lap multiple behind the interpolated leader (+ the finish).
+      const leaderNow = t.leaderPrev + (t.leaderCur - t.leaderPrev) * frac;
+      const gates = computeGates(leaderNow, kFrame, camera, gateCfgRef.current);
+
+      drawScene(ctxRef.current, { camera, lineSlots, railsX: RAILS_X, gates, dims: dimsRef.current });
 
       markers.forEach((m) => {
         const el = markerEls.current[m.id];
@@ -163,5 +175,7 @@ export default function PovGrid({ riderIds, riders, riderLive = {} }) {
 PovGrid.propTypes = {
   riderIds: PropTypes.array.isRequired,
   riders: PropTypes.object.isRequired,
-  riderLive: PropTypes.object
+  riderLive: PropTypes.object,
+  lapLengthM: PropTypes.number,
+  finishM: PropTypes.number
 };

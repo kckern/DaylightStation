@@ -33,4 +33,15 @@ describe('PovGrid', () => {
     const { queryAllByTestId } = render(<PovGrid riderIds={['a', 'b']} riders={field} riderLive={{}} />);
     expect(queryAllByTestId('pov-marker')).toHaveLength(0);
   });
+
+  it('excludes DNF riders from the course entirely (riderLive[id].dnf)', () => {
+    const field = {
+      a: { displayName: 'A', cumulativeDistanceM: 500 },
+      b: { displayName: 'B', cumulativeDistanceM: 300 }, // moved, but DNF
+      c: { displayName: 'C', cumulativeDistanceM: 120 }
+    };
+    const live = { b: { dnf: true } };
+    const { getAllByTestId } = render(<PovGrid riderIds={['a', 'b', 'c']} riders={field} riderLive={live} />);
+    expect(getAllByTestId('pov-marker')).toHaveLength(2); // a + c, not the DNF'd b
+  });
 });

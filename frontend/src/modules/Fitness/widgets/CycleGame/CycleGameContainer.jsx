@@ -1293,6 +1293,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     // Riders currently in the penalty box (pedalled at the green light). The
     // controller exposes per-rider detail for the countdown bar / awaiting-stop cue.
     const penalizedNow = new Set(snapshot?.penalized || []);
+    const dnfNow = new Set(snapshot?.dnf || []);
     const penaltyInfo = snapshot?.penaltyInfo || {};
     const riderLive = {};
     Object.keys(riders).forEach((userId) => {
@@ -1326,6 +1327,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         // Penalty box: flag + countdown detail. Needle keeps showing real RPM
         // (riderLive.rpm above) so the rider can see they must pedal down to 0.
         penalized: penalizedNow.has(userId),
+        dnf: dnfNow.has(userId),
         penaltyRemainingS: penaltyInfo[userId]?.remainingS ?? null,
         penaltyTotalS: penaltyInfo[userId]?.totalS ?? null,
         penaltyAwaitingStop: !!penaltyInfo[userId]?.awaitingStop
