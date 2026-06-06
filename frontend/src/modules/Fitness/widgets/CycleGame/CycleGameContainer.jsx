@@ -1351,6 +1351,10 @@ export default function CycleGameContainer({ onMount } = {}) {
         multiplier: mult,
         finished: isFinished,
         placement: isFinished ? (placementByUser[userId] ?? null) : null,
+        // Live leader (rank-1 in standings) once the race is underway. standings()
+        // ranks un-finished riders by distance every tick, so this hops on each lead
+        // change and lands on the eventual winner.
+        isLeader: engineState.elapsedS > 0 && placementByUser[userId] === 1,
         maxRpm: resolveRpmLimits(bikeById.get(rider.equipmentId) || {}).gaugeMaxRpm,
         // Penalty box: flag + countdown detail. Needle keeps showing real RPM
         // (riderLive.rpm above) so the rider can see they must pedal down to 0.
