@@ -56,4 +56,17 @@ describe('SplitsChart', () => {
     expect(container.querySelectorAll('tbody [data-testid="splits-lap-row"]').length).toBe(2);
     expect(container.querySelector('thead [data-testid="splits-rider"]')).not.toBeNull();
   });
+  it('shows a live order (distance + gap) before any lap completes', () => {
+    const riders = {
+      a: { displayName: 'A', cumulativeDistanceM: 120, lapSplits: [] },
+      b: { displayName: 'B', cumulativeDistanceM: 90, lapSplits: [] }
+    };
+    const { getByTestId, getAllByTestId } = render(
+      <SplitsChart riderIds={['a','b']} riders={riders} lapLengthM={400} elapsedS={30} />
+    );
+    expect(getByTestId('splits-live')).toBeInTheDocument();
+    const rows = getAllByTestId('splits-live-row');
+    expect(rows[0].textContent).toContain('A');     // leader first
+    expect(rows[1].textContent).toContain('-30');   // B is 30 m back
+  });
 });
