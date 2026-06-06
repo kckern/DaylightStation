@@ -289,6 +289,9 @@ export class GovernanceEngine {
 
     this._lastCycleSig = null;
 
+    // Config-driven governance audio-duck cues (parsed in configure()).
+    this._audioCues = [];
+
     // Per-equipment cadence filters and freshness watermarks. Filters are
     // created lazily by _filteredCadenceFor(); the watermark map ensures we
     // only treat a cadence-map entry as fresh when its `ts` strictly advances.
@@ -859,6 +862,43 @@ export class GovernanceEngine {
     this._updateGlobalState();
   }
 
+  /**
+   * Normalize the `audio_cues` config block into validated cue descriptors.
+   * Drops entries with a non-finite threshold, empty sound, or unknown trigger.
+   * `duck_to` is clamped to [0, 1] (defaults to 0.1 when absent).
+   */
+  _normalizeAudioCues(raw) {
+    const SUPPORTED_TRIGGERS = new Set(['challenge_remaining']);
+    if (!Array.isArray(raw)) return [];
+    const cues = [];
+    raw.forEach((entry, index) => {
+      if (!entry || typeof entry !== 'object') return;
+      const trigger = String(entry.trigger || '').trim();
+      const sound = typeof entry.sound === 'string' ? entry.sound.trim() : '';
+      const thresholdSeconds = Number(entry.threshold_seconds ?? entry.thresholdSeconds);
+      if (!SUPPORTED_TRIGGERS.has(trigger) || !sound || !Number.isFinite(thresholdSeconds)) {
+        getLogger().warn('governance.audio_cue.config_rejected', {
+          index,
+          id: entry.id || null,
+          trigger: trigger || null,
+          hasSound: Boolean(sound),
+          thresholdSeconds: Number.isFinite(thresholdSeconds) ? thresholdSeconds : null
+        });
+        return;
+      }
+      const rawDuck = Number(entry.duck_to ?? entry.duckTo ?? 0.1);
+      const duckTo = Number.isFinite(rawDuck) ? Math.max(0, Math.min(1, rawDuck)) : 0.1;
+      cues.push({
+        id: String(entry.id || `audio_cue_${index}`),
+        trigger,
+        thresholdSeconds: Math.max(0, thresholdSeconds),
+        sound,
+        duckTo
+      });
+    });
+    return cues;
+  }
+
   configure(config, policies, { subscribeToAppEvent } = {}) {
     this.config = config || {};
     if (Array.isArray(policies) && policies.length > 0) {
@@ -909,6 +949,8 @@ export class GovernanceEngine {
     if (subscribeToAppEvent) {
       this._setupPlaybackSubscription(subscribeToAppEvent);
     }
+
+    this._audioCues = this._normalizeAudioCues(this.config.audio_cues);
 
     // Initial evaluation from current state
     this.evaluate();
