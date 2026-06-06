@@ -38,6 +38,27 @@ export default function SplitsChart({ riderIds, riders, lapLengthM = 0, elapsedS
     );
   }
 
+  if (completed === 0) {
+    const order = [...riderIds]
+      .map((id) => ({ id, name: riders[id]?.displayName || id, d: Math.max(0, riders[id]?.cumulativeDistanceM || 0) }))
+      .sort((a, b) => b.d - a.d);
+    const lead = order[0]?.d || 0;
+    return (
+      <div className="cg-splits" data-testid="race-splits">
+        <div className="cg-splits__livehdr">Live order</div>
+        <ol className="cg-splits__live" data-testid="splits-live">
+          {order.map((r, i) => (
+            <li key={r.id} className="cg-splits__live-row" data-testid="splits-live-row">
+              <span className="cg-splits__live-pos">{i + 1}</span>
+              <span className="cg-splits__live-name">{r.name}</span>
+              <span className="cg-splits__live-gap">{i === 0 ? `${Math.round(r.d)} m` : `-${Math.round(lead - r.d)} m`}</span>
+            </li>
+          ))}
+        </ol>
+      </div>
+    );
+  }
+
   const lapDelta = (id, i) => { const s = splitsOf(id); return i < s.length ? s[i] - (s[i - 1] || 0) : null; };
   const bestLapIdx = (id) => {
     const s = splitsOf(id); let best = -1, bestT = Infinity;

@@ -33,4 +33,11 @@
   &__row:nth-child(even) .cg-splits__cell { background: rgba(255, 255, 255, 0.02); }
   &__cell--best { color: cg.$cg-lane-1; font-weight: 700; }
   &__row--current .cg-splits__cell--current { color: cg.$cg-gold; }
+
+  &__livehdr { font-family: cg.$cg-mono; font-size: 0.62rem; color: cg.$cg-faint; text-transform: uppercase; padding: 4px 4px 2px; }
+  &__live { list-style: none; margin: 0; padding: 0 4px; }
+  &__live-row { display: flex; align-items: center; gap: 8px; padding: 3px 4px; font-family: cg.$cg-mono; font-size: 0.85rem; border-bottom: 1px solid cg.$cg-border-soft; }
+  &__live-pos { color: cg.$cg-faint; font-weight: 700; min-width: 1.2em; }
+  &__live-name { flex: 1; color: cg.$cg-text; }
+  &__live-gap { color: cg.$cg-cyan; font-weight: 700; }
 }
