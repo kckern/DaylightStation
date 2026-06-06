@@ -190,6 +190,38 @@ describe('generateTargets (per-staff sizes)', () => {
     const all = ACTIONS.flatMap((a) => targets[a]);
     expect(new Set(all).size).toBe(all.length);
   });
+
+  it('keeps every dyad/triad within one octave (span <= 12 semitones), even on a 3-octave range', () => {
+    const sizes = [2, 3, 2, 3, 2, 3];
+    // Many trials: random selection must NEVER produce an out-of-octave chord.
+    for (let trial = 0; trial < 100; trial++) {
+      const targets = generateTargets([48, 84], sizes); // C3..C6, 3 octaves
+      ACTIONS.forEach((action) => {
+        const pitches = targets[action];
+        if (pitches.length >= 2) {
+          const span = Math.max(...pitches) - Math.min(...pitches);
+          expect(span).toBeLessThanOrEqual(12);
+        }
+      });
+    }
+  });
+
+  it('octave-clustered chords still respect whiteKeysOnly', () => {
+    const WHITE = new Set([0, 2, 4, 5, 7, 9, 11]);
+    for (let trial = 0; trial < 20; trial++) {
+      const targets = generateTargets([48, 84], [3, 3, 3, 3, 3, 3], true);
+      const all = ACTIONS.flatMap((a) => targets[a]);
+      for (const p of all) expect(WHITE.has(((p % 12) + 12) % 12)).toBe(true);
+    }
+  });
+
+  it('still gives each staff its requested count when the range has room', () => {
+    const sizes = [1, 2, 3, 1, 2, 3];
+    const targets = generateTargets([48, 84], sizes);
+    ACTIONS.forEach((action, i) => {
+      expect(targets[action].length).toBe(sizes[i]);
+    });
+  });
 });
 
 // ─── isActionMatched ────────────────────────────────────────────
