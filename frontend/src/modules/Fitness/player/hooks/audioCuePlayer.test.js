@@ -66,9 +66,8 @@ describe('audioCuePlayer', () => {
     expect(isCueAudioUnlocked()).toBe(false);                 // rolled back
     expect(Object.keys(handlers).length).toBeGreaterThan(0);  // re-armed
 
-    // Now a gesture where play() resolves should unlock. Swap in a resolving
-    // Audio and drop the cached (rejecting) element so a fresh one is created.
-    global.Audio = FakeAudio;
+    // Now a gesture where play() resolves should unlock. The element is cached,
+    // so patch its play() directly to resolve for the retry leg.
     getCueAudioElement().play = () => Promise.resolve();
     handlers.pointerdown();
     await Promise.resolve();
