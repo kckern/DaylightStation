@@ -42,6 +42,7 @@ export default function SpeedoRow({ riderIds, riders, riderLive, cadenceBands, z
               zoneColor: live.zoneColor || LINE_COLORS[idx % LINE_COLORS.length],
               progress: live.zoneProgress
             }}
+            riderColor={LINE_COLORS[idx % LINE_COLORS.length]}
             isGhost={!!riders[id].isGhost}
             finished={!!live.finished}
             placement={live.placement}
