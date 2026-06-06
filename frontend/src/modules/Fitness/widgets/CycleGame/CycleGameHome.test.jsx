@@ -154,9 +154,14 @@ describe('CycleGameHome', () => {
 
   it('ghost picker: first tap focuses a card, second tap opens the roster submenu', () => {
     const onSelectGhost = vi.fn();
+    // Multi-rider race: the second tap opens the roster (single-rider races skip it —
+    // covered separately below).
     const candidates = [{
       raceId: '20260602150118', day: '2026-06-02', timeOfDay: '3:01 pm',
-      participants: [{ id: 'milo', displayName: 'Milo', avatarSrc: '/x' }],
+      participants: [
+        { id: 'milo', displayName: 'Milo', avatarSrc: '/x', isGhost: false },
+        { id: 'felix', displayName: 'Felix', avatarSrc: '/f', isGhost: false }
+      ],
       winnerName: 'Milo', goalKind: 'distance', goalLabel: '3 km', scoreKind: 'time', scoreLabel: '4:12'
     }];
     const { getByTestId, queryByTestId } = render(
@@ -172,6 +177,25 @@ describe('CycleGameHome', () => {
     expect(getByTestId('ghost-roster')).toBeTruthy(); // roster is now visible
     fireEvent.click(getByTestId('ghost-roster-start')); // Start commits the selection
     expect(onSelectGhost).toHaveBeenCalled();
+  });
+
+  it('ghost picker: a single-live-rider race skips the roster and commits on the second tap', () => {
+    const onSelectGhost = vi.fn();
+    const candidates = [{
+      raceId: '20260605110000', day: '2026-06-05', timeOfDay: '11:00 am',
+      participants: [{ id: 'milo', displayName: 'Milo', avatarSrc: '/x', isGhost: false }],
+      winnerName: 'Milo'
+    }];
+    const { getByTestId, queryByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} ghostCandidates={candidates} onSelectGhost={onSelectGhost} />
+    );
+    fireEvent.click(getByTestId('course-ghost'));
+    const card = getByTestId('ghost-20260605110000');
+    fireEvent.click(card); // focus
+    fireEvent.click(card); // single live rider → commit directly, no roster step
+    expect(queryByTestId('ghost-roster')).toBeNull();
+    expect(onSelectGhost).toHaveBeenCalledTimes(1);
+    expect(onSelectGhost.mock.calls[0][0].participants.map((p) => p.id)).toEqual(['milo']);
   });
 
   // Helper: open the roster for a candidate (two taps on its card).
@@ -245,14 +269,18 @@ describe('CycleGameHome', () => {
   });
 
   it('roster: CTA is disabled when no riders are selected', () => {
+    // Two live riders so the roster opens (a single-rider race auto-commits).
     const candidate = {
       raceId: '20260604140000', day: '2026-06-04', timeOfDay: '2:00 pm', winnerName: 'Milo',
-      participants: [{ id: 'milo', displayName: 'Milo', avatarSrc: '/m', isGhost: false }]
+      participants: [
+        { id: 'milo', displayName: 'Milo', avatarSrc: '/m', isGhost: false },
+        { id: 'felix', displayName: 'Felix', avatarSrc: '/f', isGhost: false }
+      ]
     };
-    const { getByTestId } = openRoster(candidate);
+    const { getByTestId, getAllByTestId } = openRoster(candidate);
     const cta = getByTestId('ghost-roster-start');
     expect(cta.disabled).toBe(false);
-    fireEvent.click(getByTestId('ghost-roster-item')); // deselect the only rider
+    getAllByTestId('ghost-roster-item').forEach((item) => fireEvent.click(item)); // deselect every rider
     expect(cta.textContent).toContain('Pick a rider');
     expect(cta.disabled).toBe(true);
   });
