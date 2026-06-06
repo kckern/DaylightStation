@@ -6,11 +6,13 @@
 // HR-zone colors. Avoided hues: blue-green (#6ab8ff, #51cf66), yellow (#ffd43b),
 // orange (#ff922b), red (#ff6b6b). Reserved UI chrome absent here: cyan (#21e6ff)
 // and hot magenta (#ff2d95) stay exclusive to telemetry/selection accents.
+// Assignment priority (index = rider order): cyan, teal, sand, then magenta lead,
+// with maroon + slate filling the remaining lanes.
 export const LINE_COLORS = [
   '#4dd0e1', // cyan (softer than the reserved chrome cyan #21e6ff)
-  '#d472c0', // magenta (softer than the reserved hot magenta #ff2d95)
   '#2dd4bf', // teal
-  '#a14d6b', // maroon / rose
   '#cbb285', // sand / tan
+  '#d472c0', // magenta (softer than the reserved hot magenta #ff2d95)
+  '#a14d6b', // maroon / rose
   '#9aa3c0'  // slate gray
 ];
